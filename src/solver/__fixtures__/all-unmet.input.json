@@ -1,0 +1,215 @@
+{
+  "week": {
+    "startMs": 1767484800000,
+    "days": [
+      {
+        "dayIndex": 0,
+        "startSlot": 0,
+        "endSlot": 96,
+        "dayEndSlot": 95
+      },
+      {
+        "dayIndex": 1,
+        "startSlot": 96,
+        "endSlot": 192,
+        "dayEndSlot": 191
+      },
+      {
+        "dayIndex": 2,
+        "startSlot": 192,
+        "endSlot": 288,
+        "dayEndSlot": 287
+      },
+      {
+        "dayIndex": 3,
+        "startSlot": 288,
+        "endSlot": 384,
+        "dayEndSlot": 383
+      },
+      {
+        "dayIndex": 4,
+        "startSlot": 384,
+        "endSlot": 480,
+        "dayEndSlot": 479
+      },
+      {
+        "dayIndex": 5,
+        "startSlot": 480,
+        "endSlot": 576,
+        "dayEndSlot": 575
+      },
+      {
+        "dayIndex": 6,
+        "startSlot": 576,
+        "endSlot": 672,
+        "dayEndSlot": 671
+      }
+    ]
+  },
+  "homeLocationId": "home",
+  "cars": [],
+  "requests": [
+    {
+      "id": "R1",
+      "memberId": "member-1",
+      "departmentId": "dept-1",
+      "destinationId": "destA",
+      "rideType": "other",
+      "tripShape": "round_trip",
+      "flexDeparture": {
+        "earlierMin": 0,
+        "laterMin": 0
+      },
+      "flexReturn": {
+        "earlierMin": 0,
+        "laterMin": 0
+      },
+      "passengers": {
+        "adults": 1,
+        "childSeats": 0,
+        "boosters": 0
+      },
+      "coRiderMemberIds": [],
+      "luggage": false,
+      "needsCarAtDestination": true,
+      "submittedAtMs": 0,
+      "isLate": false,
+      "departureMs": 1767513600000,
+      "returnMs": 1767528000000
+    },
+    {
+      "id": "R2",
+      "memberId": "member-2",
+      "departmentId": "dept-1",
+      "destinationId": "destA",
+      "rideType": "other",
+      "tripShape": "round_trip",
+      "flexDeparture": {
+        "earlierMin": 0,
+        "laterMin": 0
+      },
+      "flexReturn": {
+        "earlierMin": 0,
+        "laterMin": 0
+      },
+      "passengers": {
+        "adults": 1,
+        "childSeats": 0,
+        "boosters": 0
+      },
+      "coRiderMemberIds": [],
+      "luggage": false,
+      "needsCarAtDestination": true,
+      "submittedAtMs": 0,
+      "isLate": false,
+      "departureMs": 1767520800000,
+      "returnMs": 1767535200000
+    }
+  ],
+  "fixedRides": [],
+  "destinations": {
+    "destA": {
+      "id": "destA",
+      "zone": "zoneA",
+      "distanceKm": 20,
+      "travelMinutes": 30,
+      "publicTransportScore": 0.2
+    },
+    "destB": {
+      "id": "destB",
+      "zone": "zoneB",
+      "distanceKm": 40,
+      "travelMinutes": 45,
+      "publicTransportScore": 0.5
+    },
+    "home": {
+      "id": "home",
+      "zone": "home"
+    }
+  },
+  "policy": {
+    "id": "test-policy",
+    "version": 1,
+    "rules": [
+      {
+        "type": "rideType",
+        "weight": 1,
+        "params": {
+          "weights": {
+            "work": 8,
+            "healthcare": 10,
+            "childcare": 8,
+            "other": 5,
+            "errands": 3
+          }
+        }
+      },
+      {
+        "type": "distance",
+        "weight": 0.4,
+        "params": {
+          "maxKm": 60
+        }
+      },
+      {
+        "type": "publicTransport",
+        "weight": 0.3,
+        "params": {}
+      },
+      {
+        "type": "peopleServed",
+        "weight": 0.3,
+        "params": {
+          "cap": 4
+        }
+      },
+      {
+        "type": "fairness",
+        "weight": 0.5,
+        "params": {
+          "lookbackWeeks": 3
+        }
+      },
+      {
+        "type": "submissionTime",
+        "weight": 0.2,
+        "params": {
+          "latePenalty": 1
+        }
+      },
+      {
+        "type": "flexibilityOffered",
+        "weight": 0.2,
+        "params": {
+          "fullCreditMinutes": 240
+        }
+      },
+      {
+        "type": "manualBoost",
+        "weight": 2,
+        "params": {}
+      }
+    ]
+  },
+  "stats": {
+    "fairness": {},
+    "usualCarId": {}
+  },
+  "config": {
+    "bufferMinutes": 30,
+    "detour": {
+      "maxMinutes": 20,
+      "maxKm": 15
+    },
+    "beyondFlexMaxMinutes": 120,
+    "defaultTravelMinutes": 60,
+    "chauffeurDwellMinutes": 10,
+    "improvementBudget": 5000,
+    "perRequestBudget": 200,
+    "externalHints": {
+      "cabMaxMinutes": 90,
+      "rentalMinHours": 30,
+      "ptMinScore": 0.6
+    }
+  }
+}

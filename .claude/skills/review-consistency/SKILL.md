@@ -10,7 +10,7 @@ Output: a **checklist of drift items**, each with file:line (or §) on both side
 ## 1. Gather canonical lists
 
 Docs:
-- [ ] REQUIREMENTS: §5.2 request states; §7.3 proposal states; §4 phases + defaults; §5.1 fields; §7.2 rule types; §9 events; §6.1 car statuses; §3 roles; §13 constants (buffer 15, detour 20/15, 15-min grid).
+- [ ] REQUIREMENTS: §5.2 request states; §7.3 proposal states; §4 phases + defaults; §5.1 fields; §5.4 legs/car modes (`trip_shape`, `leg_car_mode`, car location); §7.2 rule types; §9 events; §6.1 car statuses; §3 roles; §13 constants (buffer 30, detour 20/15, 15-min grid, fairness lookback 3 weeks, chauffeur dwell 10 min, day end 23:59).
 - [ ] DATA_MODEL: §2 enums; §3 tables/columns; §4.2 helpers; §4.3 policy matrix; §6 migration list + seed; retention.
 - [ ] SOLVER: §2 types; §3 module list; §3.11 suggestion order; §3.13 reason codes; §4.1 interface; §4.3 rule table; §4.4 default policy; `SolverConfig` defaults.
 - [ ] ARCHITECTURE: §4 layout; §5 state machines; §9 events + pipeline names; §10 cron jobs; §13 env vars; §14 commands/ports.
@@ -26,8 +26,11 @@ Code (grep, do not read whole files):
 
 ## 2. Cross-checks (one report line each)
 
-Enums — for `request_status`, `proposal_status`, `week_phase`, `ride_status`, `car_status`, `car_type`, `notification_event`, `notification_channel`, `role`, `approval_status`, `freed_offer_status`, `freed_claim_status`:
+Enums — for `request_status`, `proposal_status`, `week_phase`, `ride_status`, `car_status`, `car_type`, `trip_shape`, `leg_car_mode`, `home_week_preference`, `notification_event`, `notification_channel`, `role`, `approval_status`, `freed_offer_status`, `freed_claim_status`:
 - [ ] REQUIREMENTS ⇔ DATA_MODEL §2 ⇔ ARCHITECTURE §5/§9 ⇔ SQL ⇔ `enums.ts` ⇔ `he.enums` keys. List every missing/extra value.
+
+Car location / relay model:
+- [ ] REQ §5.4, §13.57 ⇔ DATA_MODEL §5 (`rides.origin_id`/`destination_id`, `departments.home_destination_id`, `department_settings.day_end_time`/`chauffeur_dwell_minutes`) ⇔ SOLVER §1.2–1.3, §3.2, §3.6.1 (`CarTimeline`, relay pairing) ⇔ `assert_car_chain()` called at the end of every ride-writing RPC (`apply_solver_result`, `edit_ride`, `apply_proposal`, `try_auto_approve`, `resolve_freed_offer`, `approve_claim`) ⇔ ARCHITECTURE §7 location-chain / day-end rows. Flag any ride-writing RPC that skips the call, and any leftover `one_way` boolean / `leg_direction` column.
 
 Rule types:
 - [ ] REQ §7.2 rows ⇔ SOLVER §4.3 rows ⇔ `ruleRegistry` keys ⇔ `rules/*.ts` files ⇔ `validate_policy_rules()` set ⇔ `he.admin.policies.rules` keys ⇔ `ruleParamForms/index.ts` keys. Param names in SOLVER §4.3 ⇔ each rule's `defaultParams`.
@@ -37,7 +40,7 @@ Request fields:
 - [ ] REQ §5.1 ⇔ DATA_MODEL `requests` (and `request_templates` mirror) ⇔ `schema.ts` ⇔ `he.requests.fields` ⇔ UX_FLOWS form ⇔ SOLVER §2 `Request`. Flag required/nullable mismatches and flexibility step lists (0/15/30/60/120/'day').
 
 Notifications:
-- [ ] UX_FLOWS §6.1 (canonical, 18 rows) ⇔ DATA_MODEL §2 `notification_event` (value = snake_case of the `notif.*` suffix) ⇔ ARCHITECTURE §9 list ⇔ SQL ⇔ `he.notif.*` ⇔ an emitter per event ⇔ `inbox` + `push` template rows per event in the seed (+ five `whatsapp` variants). REQ §9 prose names nothing outside the list. Names: `enqueue_notification`, `notifications`, `push_outbox`, `notification_templates`, `profiles.muted_events` (anything else — `notify`, `notification_prefs`, templates in `app_settings` — is drift).
+- [ ] UX_FLOWS §6.1 (canonical, 20 rows, incl. the Sadran-only `window_closed_solve_now`/`publish_reminder`) ⇔ DATA_MODEL §2 `notification_event` (value = snake_case of the `notif.*` suffix) ⇔ ARCHITECTURE §9 list ⇔ SQL ⇔ `he.notif.*` ⇔ an emitter per event ⇔ `inbox` + `push` template rows per event in the seed (+ seven `whatsapp` variants: shift, merge_passenger, merge_driver, deny, external, chauffeur, reminder). REQ §9 prose names nothing outside the list. Names: `enqueue_notification`, `notifications`, `push_outbox`, `notification_templates`, `profiles.muted_events` (anything else — `notify`, `notification_prefs`, templates in `app_settings` — is drift).
 
 Weekly cycle:
 - [ ] REQ §4 defaults ⇔ `department_settings` column defaults ⇔ seed ⇔ ARCHITECTURE §10. Exactly one `cron.schedule` (`app_tick`, `*/15 * * * *`, `app.tick()`) ⇔ DATA_MODEL §6 step 17 ⇔ ARCHITECTURE §10; tick sub-functions `advance_week_phases`, `send_due_reminders`, `expire_proposals`, `drain_push_outbox`, `housekeeping` exist. `week_phase` = `open, solving, published, live, archived`.

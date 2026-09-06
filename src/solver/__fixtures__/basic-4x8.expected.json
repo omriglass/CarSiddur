@@ -1,0 +1,370 @@
+{
+  "policyId": "test-policy",
+  "policyVersion": 1,
+  "assignments": [
+    {
+      "rideId": "ride:R1",
+      "carId": "C1",
+      "window": {
+        "start": 128,
+        "end": 144
+      },
+      "originId": "home",
+      "destinationId": "home",
+      "driverRequestId": "R1",
+      "driverMemberId": "dana",
+      "legs": [
+        {
+          "requestId": "R1",
+          "leg": "both",
+          "carMode": "keep",
+          "originId": "home",
+          "destinationId": "ASH",
+          "role": "driver"
+        }
+      ],
+      "servedRequestIds": [
+        "R1"
+      ],
+      "passengers": {
+        "adults": 1,
+        "childSeats": 0,
+        "boosters": 0
+      },
+      "luggageCount": 0,
+      "shift": {
+        "departureMin": 0,
+        "returnMin": 0
+      },
+      "source": "solver",
+      "reasonCode": "PLACED_PREFERRED",
+      "reason": "שובץ לPicanto בזמן המבוקש"
+    },
+    {
+      "rideId": "ride:R3",
+      "carId": "C3",
+      "window": {
+        "start": 132,
+        "end": 135
+      },
+      "originId": "home",
+      "destinationId": "BIN",
+      "driverRequestId": "R3",
+      "driverMemberId": "noa",
+      "legs": [
+        {
+          "requestId": "R3",
+          "leg": "out",
+          "carMode": "relay",
+          "originId": "home",
+          "destinationId": "BIN",
+          "role": "driver"
+        }
+      ],
+      "servedRequestIds": [
+        "R3"
+      ],
+      "passengers": {
+        "adults": 1,
+        "childSeats": 0,
+        "boosters": 0
+      },
+      "luggageCount": 0,
+      "shift": {
+        "departureMin": 0,
+        "returnMin": 0
+      },
+      "pairedRideId": "ride:R7",
+      "source": "solver",
+      "reasonCode": "PLACED_RELAY_PAIR",
+      "reason": "שובץ לCorolla: noa נוהג/ת לBIN ב-09:00 ומשאיר/ה את הרכב; eitan מחזיר/ה אותו ב-12:00"
+    },
+    {
+      "rideId": "ride:R4",
+      "carId": "C1",
+      "window": {
+        "start": 148,
+        "end": 158
+      },
+      "originId": "home",
+      "destinationId": "home",
+      "driverRequestId": "R4",
+      "driverMemberId": "avi",
+      "legs": [
+        {
+          "requestId": "R4",
+          "leg": "both",
+          "carMode": "keep",
+          "originId": "home",
+          "destinationId": "BS",
+          "role": "driver"
+        }
+      ],
+      "servedRequestIds": [
+        "R4"
+      ],
+      "passengers": {
+        "adults": 2,
+        "childSeats": 1,
+        "boosters": 0
+      },
+      "luggageCount": 0,
+      "shift": {
+        "departureMin": 0,
+        "returnMin": 0
+      },
+      "source": "solver",
+      "reasonCode": "PLACED_PREFERRED",
+      "reason": "שובץ לPicanto בזמן המבוקש"
+    },
+    {
+      "rideId": "ride:R5",
+      "carId": "C2",
+      "window": {
+        "start": 154,
+        "end": 160
+      },
+      "originId": "home",
+      "destinationId": "home",
+      "driverRequestId": "R5",
+      "driverMemberId": "michal",
+      "legs": [
+        {
+          "requestId": "R5",
+          "leg": "both",
+          "carMode": "keep",
+          "originId": "home",
+          "destinationId": "BS",
+          "role": "driver"
+        }
+      ],
+      "servedRequestIds": [
+        "R5"
+      ],
+      "passengers": {
+        "adults": 1,
+        "childSeats": 0,
+        "boosters": 0
+      },
+      "luggageCount": 0,
+      "shift": {
+        "departureMin": 60,
+        "returnMin": 60
+      },
+      "source": "solver",
+      "reasonCode": "PLACED_SHIFTED",
+      "reason": "שובץ לOctavia עם הזזה של 60 דק' ביציאה ו-60 דק' בחזרה, בתוך הגמישות שהוצהרה"
+    },
+    {
+      "rideId": "ride:R6",
+      "carId": "C4",
+      "window": {
+        "start": 132,
+        "end": 166
+      },
+      "originId": "home",
+      "destinationId": "home",
+      "driverRequestId": "R6",
+      "driverMemberId": "levi",
+      "legs": [
+        {
+          "requestId": "R6",
+          "leg": "both",
+          "carMode": "keep",
+          "originId": "home",
+          "destinationId": "TA",
+          "role": "driver"
+        }
+      ],
+      "servedRequestIds": [
+        "R6"
+      ],
+      "passengers": {
+        "adults": 4,
+        "childSeats": 2,
+        "boosters": 0
+      },
+      "luggageCount": 1,
+      "shift": {
+        "departureMin": 0,
+        "returnMin": 0
+      },
+      "source": "solver",
+      "reasonCode": "PLACED_PREFERRED",
+      "reason": "שובץ לStaria בזמן המבוקש"
+    },
+    {
+      "rideId": "ride:R7",
+      "carId": "C3",
+      "window": {
+        "start": 141,
+        "end": 144
+      },
+      "originId": "BIN",
+      "destinationId": "home",
+      "driverRequestId": "R7",
+      "driverMemberId": "eitan",
+      "legs": [
+        {
+          "requestId": "R7",
+          "leg": "return",
+          "carMode": "relay",
+          "originId": "BIN",
+          "destinationId": "home",
+          "role": "driver"
+        }
+      ],
+      "servedRequestIds": [
+        "R7"
+      ],
+      "passengers": {
+        "adults": 1,
+        "childSeats": 0,
+        "boosters": 0
+      },
+      "luggageCount": 0,
+      "shift": {
+        "departureMin": 0,
+        "returnMin": 0
+      },
+      "pairedRideId": "ride:R3",
+      "source": "solver",
+      "reasonCode": "PLACED_RELAY_PAIR",
+      "reason": "שובץ לCorolla: noa נוהג/ת לBIN ב-09:00 ומשאיר/ה את הרכב; eitan מחזיר/ה אותו ב-12:00"
+    },
+    {
+      "rideId": "ride:R8",
+      "carId": "C2",
+      "window": {
+        "start": 144,
+        "end": 152
+      },
+      "originId": "home",
+      "destinationId": "home",
+      "driverRequestId": "R8",
+      "driverMemberId": "rina",
+      "legs": [
+        {
+          "requestId": "R8",
+          "leg": "both",
+          "carMode": "keep",
+          "originId": "home",
+          "destinationId": "ASH",
+          "role": "driver"
+        }
+      ],
+      "servedRequestIds": [
+        "R8"
+      ],
+      "passengers": {
+        "adults": 1,
+        "childSeats": 0,
+        "boosters": 1
+      },
+      "luggageCount": 0,
+      "shift": {
+        "departureMin": -30,
+        "returnMin": -30
+      },
+      "source": "solver",
+      "reasonCode": "PLACED_SHIFTED",
+      "reason": "שובץ לOctavia עם הזזה של 30 דק' ביציאה ו-30 דק' בחזרה, בתוך הגמישות שהוצהרה"
+    }
+  ],
+  "unmet": [
+    {
+      "requestId": "R2",
+      "score": 1.656667,
+      "blockers": [
+        {
+          "carId": "C1",
+          "rideIds": [
+            "ride:R1",
+            "ride:R4"
+          ]
+        },
+        {
+          "carId": "C2",
+          "rideIds": [
+            "ride:R8",
+            "ride:R5"
+          ]
+        },
+        {
+          "carId": "C3",
+          "rideIds": [
+            "ride:R3",
+            "ride:R7"
+          ]
+        },
+        {
+          "carId": "C4",
+          "rideIds": [
+            "ride:R6"
+          ]
+        }
+      ],
+      "suggestions": [
+        {
+          "kind": "merge",
+          "requestId": "R2",
+          "hostRideId": "ride:R6",
+          "guestRequestIds": [
+            "R2"
+          ],
+          "leg": "both",
+          "proposedDriverRequestId": "R6",
+          "window": {
+            "start": 132,
+            "end": 166
+          },
+          "detourMinutes": 0,
+          "detourKm": 0,
+          "reasonCode": "SUGGEST_MERGE",
+          "reason": "הצטרפות לנסיעה של levi לTA ביציאה 09:00 ובחזרה 17:30, ללא סטייה",
+          "cost": 60,
+          "confidence": 0.875
+        },
+        {
+          "kind": "externalHint",
+          "requestId": "R2",
+          "hint": "publicTransport",
+          "reasonCode": "SUGGEST_EXTERNAL_PT",
+          "reason": "יש תחבורה ציבורית סבירה לTA",
+          "cost": 0,
+          "confidence": 0.3
+        },
+        {
+          "kind": "deny",
+          "requestId": "R2",
+          "reasonCode": "SUGGEST_DENY",
+          "reason": "לא נמצא פתרון; ניתן לדחות עם הסבר",
+          "cost": 0,
+          "confidence": 1
+        }
+      ],
+      "reasonCode": "UNMET_NO_CAR",
+      "reason": "אין רכב פנוי בחלון המבוקש; חוסמים: C1, C2, C3, C4"
+    }
+  ],
+  "mergeOpportunities": [],
+  "carsAway": [
+    {
+      "carId": "C3",
+      "locationId": "BIN",
+      "window": {
+        "start": 135,
+        "end": 141
+      }
+    }
+  ],
+  "warnings": [],
+  "stats": {
+    "served": 7,
+    "unmet": 1,
+    "needsDriver": 0,
+    "relocations": 1,
+    "budgetExhausted": false,
+    "elapsedMs": 0
+  }
+}

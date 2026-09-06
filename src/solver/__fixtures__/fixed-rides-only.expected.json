@@ -1,0 +1,56 @@
+{
+  "policyId": "test-policy",
+  "policyVersion": 1,
+  "assignments": [
+    {
+      "rideId": "pinned-1",
+      "carId": "C1",
+      "window": {
+        "start": 32,
+        "end": 48
+      },
+      "originId": "home",
+      "destinationId": "home",
+      "driverRequestId": "R-PINNED",
+      "driverMemberId": "dana",
+      "legs": [
+        {
+          "requestId": "R-PINNED",
+          "leg": "both",
+          "carMode": "keep",
+          "originId": "home",
+          "destinationId": "destA",
+          "role": "driver"
+        }
+      ],
+      "servedRequestIds": [
+        "R-PINNED"
+      ],
+      "passengers": {
+        "adults": 1,
+        "childSeats": 0,
+        "boosters": 0
+      },
+      "luggageCount": 0,
+      "shift": {
+        "departureMin": 0,
+        "returnMin": 0
+      },
+      "source": "fixed",
+      "reasonCode": "PLACED_FIXED",
+      "reason": "נסיעה קבועה שנקבעה מראש"
+    }
+  ],
+  "unmet": [],
+  "mergeOpportunities": [],
+  "carsAway": [],
+  "warnings": [],
+  "stats": {
+    "served": 1,
+    "unmet": 0,
+    "needsDriver": 0,
+    "relocations": 0,
+    "budgetExhausted": false,
+    "elapsedMs": 0
+  }
+}

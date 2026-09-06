@@ -10,7 +10,7 @@ Tables: `requests` (DATA_MODEL §3.6) and its mirror `request_templates` (repeat
 ## Inputs to collect before starting
 
 - Column name (snake_case), SQL type, nullable?, default. Prefer `not null default …` for booleans/enums.
-- Enum? Name + values (`/add-migration` rules).
+- Enum? Name + values (`/add-migration` rules) — e.g. `requests.trip_shape` (`round_trip | one_way_to | one_way_from`) and `requests.one_way_car_mode` (`relay | passenger`, required only when `trip_shape <> 'round_trip'`) are the reference example of an enum-backed request field with a conditional-required rule.
 - Who sets it: member (form), Sadran only (board drawer), or both. Which week phases allow editing it.
 - Does the solver use it (feasibility, merge, a rule)? Does changing it after solving count as "solve-relevant" (sets `changed_since_solve`)?
 - Where it shows: request form, my-requests card, board request drawer, ride tooltip, WhatsApp proposal text, siddur view.
@@ -23,7 +23,7 @@ Tables: `requests` (DATA_MODEL §3.6) and its mirror `request_templates` (repeat
 - [ ] Same column on `public.request_templates` (templates materialize into requests).
 - [ ] Enum: `create type <enum> as enum (...)` earlier in the same file is fine (new type); adding a *value* to an existing type goes in its own file.
 - [ ] `create or replace function public.submit_request(payload jsonb)`: map `payload->><field>` to the column on insert and edit; if solve-relevant, add the column to its "changed while `weeks.phase <> 'open'` ⇒ `changed_since_solve = true`" comparison; if Sadran-only, accept it only when `can_manage_week()` (members have no other write path).
-- [ ] If validated (range, dependency on `one_way`, etc.): `check` constraint, mirrored in zod and in `submit_request`'s warning/validation block.
+- [ ] If validated (range, dependency on `trip_shape`/`one_way_car_mode`, etc. — e.g. `one_way_car_mode` is required only when `trip_shape <> 'round_trip'`, the enum-backed field pattern to follow for a new enum column): `check` constraint, mirrored in zod and in `submit_request`'s warning/validation block.
 - [ ] Views: `create or replace view v_my_requests` / `v_board_rides` including the column (`security_invoker = true` stays).
 - [ ] Other RPCs copying request fields (`materialize_templates`, `apply_solver_result` if it copies request fields): extend the mapping.
 - [ ] RLS: adding a column changes no policy. Confirm: `supabase db diff` shows no policy changes.

@@ -1,0 +1,206 @@
+import { CalendarClock } from "lucide-react";
+import { useState } from "react";
+import { Link } from "react-router-dom";
+
+import { formatWeekRangeLabel } from "@/components/DateField";
+import { EmptyState } from "@/components/EmptyState";
+import { PageHeader } from "@/components/PageHeader";
+import { StatusBadge } from "@/components/StatusBadge";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import type { MyRequestRow } from "@/features/requests/api";
+import {
+  useCancelRideMutation,
+  useClaimFreedSlotMutation,
+  useMyFreedSlotOffers,
+  useMyRequests,
+  useSetFreedSlotOptOutMutation,
+  useWithdrawFreedSlotClaimMutation,
+  useWithdrawRequestMutation,
+} from "@/features/requests/hooks";
+import { he, t, tv } from "@/i18n/he";
+import { formatTime } from "@/lib/time";
+
+const EDITABLE_STATUSES = new Set<MyRequestRow["status"]>(["draft", "submitted", "waitlisted", "denied", "proposed"]);
+// Mirrors freed_slot_candidates()'s own `status in ('waitlisted','denied')` filter
+// (supabase/migrations/20260907091100_freed_slots.sql) — only these statuses are ever
+// eligible to be offered a freed slot, so the opt-out toggle is only meaningful here.
+const FREED_SLOT_ELIGIBLE_STATUSES = new Set<MyRequestRow["status"]>(["waitlisted", "denied"]);
+
+function groupByWeek(rows: MyRequestRow[]): { weekStart: string; rows: MyRequestRow[] }[] {
+  const byWeek = new Map<string, MyRequestRow[]>();
+  for (const row of rows) {
+    const list = byWeek.get(row.weekStart) ?? [];
+    list.push(row);
+    byWeek.set(row.weekStart, list);
+  }
+  return [...byWeek.entries()]
+    .sort((a, b) => (a[0] < b[0] ? 1 : -1))
+    .map(([weekStart, weekRows]) => ({ weekStart, rows: weekRows }));
+}
+
+type ConfirmAction =
+  | { kind: "withdraw"; row: MyRequestRow }
+  | { kind: "cancel"; row: MyRequestRow };
+
+/** `/requests` — My requests, grouped by week (UX_FLOWS.md §3.3 extended into its own list route). */
+export function RequestsListPage() {
+  const requestsQuery = useMyRequests();
+  const freedOffersQuery = useMyFreedSlotOffers();
+  const withdrawMutation = useWithdrawRequestMutation();
+  const cancelMutation = useCancelRideMutation();
+  const claimMutation = useClaimFreedSlotMutation();
+  const withdrawClaimMutation = useWithdrawFreedSlotClaimMutation();
+  const optOutMutation = useSetFreedSlotOptOutMutation();
+
+  const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
+
+  const rows = requestsQuery.data ?? [];
+  const groups = groupByWeek(rows);
+  const openOffers = (freedOffersQuery.data ?? []).filter(
+    (o) => o.offerStatus === "open" && (o.claimStatus === "offered" || o.claimStatus === "claimed"),
+  );
+
+  function runConfirm() {
+    if (!confirmAction) return;
+    if (confirmAction.kind === "withdraw") {
+      withdrawMutation.mutate({ requestId: confirmAction.row.id, expectedVersion: confirmAction.row.version });
+    } else if (confirmAction.row.ride) {
+      cancelMutation.mutate({
+        rideId: confirmAction.row.ride.id,
+        reason: "CANCELLED_BY_MEMBER",
+      });
+    }
+    setConfirmAction(null);
+  }
+
+  return (
+    <div className="mx-auto max-w-2xl space-y-6 p-4 pb-24">
+      <PageHeader title={he.requestsList.title} />
+
+      {openOffers.length > 0 ? (
+        <section className="space-y-2">
+          <h2 className="text-sm font-semibold text-muted-foreground">{he.freedSlot.title}</h2>
+          {openOffers.map((offer) => (
+            <div key={offer.offerId} className="space-y-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm">
+              <p>
+                {tv("requestsList.freedSlotOffer", {
+                  car: offer.carName,
+                  day: "",
+                  depart: formatTime(new Date(offer.startsAt)),
+                  return: formatTime(new Date(offer.endsAt)),
+                })}
+              </p>
+              {offer.claimStatus === "offered" ? (
+                <Button size="sm" onClick={() => claimMutation.mutate({ offerId: offer.offerId, requestId: offer.requestId })}>
+                  {t("action.stillWant")}
+                </Button>
+              ) : (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => withdrawClaimMutation.mutate({ offerId: offer.offerId, requestId: offer.requestId })}
+                >
+                  {he.requestsList.withdrawClaim}
+                </Button>
+              )}
+            </div>
+          ))}
+        </section>
+      ) : null}
+
+      {groups.length === 0 ? (
+        <EmptyState icon={CalendarClock} message={he.requestsList.empty} />
+      ) : (
+        groups.map(({ weekStart, rows: weekRows }) => (
+          <section key={weekStart} className="space-y-2">
+            <h2 className="text-sm font-semibold text-muted-foreground" dir="ltr">
+              {formatWeekRangeLabel(weekStart)}
+            </h2>
+            <div className="space-y-2">
+              {weekRows.map((row) => (
+                <div key={row.id} className="space-y-2 rounded-md border p-3 text-sm">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-medium">{row.destination}</span>
+                    <StatusBadge kind="request" status={row.status} />
+                  </div>
+                  {row.departAt ? (
+                    <span dir="ltr" className="text-xs text-muted-foreground">
+                      {formatTime(new Date(row.departAt))}
+                      {row.returnAt ? `–${formatTime(new Date(row.returnAt))}` : ""}
+                    </span>
+                  ) : null}
+                  {row.statusReason && row.statusReason in he.statusReason ? (
+                    <p className="text-xs text-muted-foreground">
+                      {he.statusReason[row.statusReason as keyof typeof he.statusReason]}
+                    </p>
+                  ) : null}
+                  {FREED_SLOT_ELIGIBLE_STATUSES.has(row.status) ? (
+                    <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <input
+                        type="checkbox"
+                        className="size-4"
+                        checked={row.freedSlotOptOut}
+                        onChange={(e) => optOutMutation.mutate({ requestId: row.id, optOut: e.target.checked })}
+                      />
+                      {he.requestsList.freedSlotOptOut}
+                    </label>
+                  ) : null}
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    {EDITABLE_STATUSES.has(row.status) ? (
+                      <Button asChild size="sm" variant="outline">
+                        <Link to={`/requests/${row.id}/edit`}>{he.requestsList.edit}</Link>
+                      </Button>
+                    ) : null}
+                    {row.status !== "withdrawn" && row.status !== "cancelled" && !row.ride ? (
+                      <Button size="sm" variant="outline" onClick={() => setConfirmAction({ kind: "withdraw", row })}>
+                        {he.requestsList.withdraw}
+                      </Button>
+                    ) : null}
+                    {row.ride && row.ride.status !== "cancelled" ? (
+                      <Button size="sm" variant="outline" onClick={() => setConfirmAction({ kind: "cancel", row })}>
+                        {he.requestsList.cancelRide}
+                      </Button>
+                    ) : null}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        ))
+      )}
+
+      <Dialog open={!!confirmAction} onOpenChange={(open) => !open && setConfirmAction(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {confirmAction?.kind === "withdraw" ? he.request.withdrawConfirmTitle : he.request.cancelConfirmTitle}
+            </DialogTitle>
+            <DialogDescription>
+              {confirmAction?.kind === "withdraw"
+                ? he.request.withdrawConfirmBody
+                : confirmAction?.row.ride && confirmAction.row.ride.originName !== confirmAction.row.ride.destinationName
+                  ? he.request.cancelConfirmBodyRelay
+                  : he.request.cancelConfirmBodyFreed}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmAction(null)}>
+              {he.common.cancel}
+            </Button>
+            <Button variant="destructive" onClick={runConfirm}>
+              {confirmAction?.kind === "withdraw" ? he.requestsList.withdraw : he.requestsList.cancelRide}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}

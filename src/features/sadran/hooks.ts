@@ -1,0 +1,403 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+
+import { fetchCars } from "@/features/fleet/api";
+import { showErrorToast } from "@/lib/rpc";
+
+import * as api from "./api";
+import { sadranKeys } from "./keys";
+
+import type { Database, Json } from "@/integrations/supabase/types";
+
+// ---------------------------------------------------------------------------
+// Week / phase
+// ---------------------------------------------------------------------------
+
+export function useWeekRow(departmentId: string | undefined, weekStart: string | undefined) {
+  return useQuery({
+    queryKey: sadranKeys.weekRow(departmentId ?? "", weekStart ?? ""),
+    queryFn: () => api.fetchWeekRow(departmentId as string, weekStart as string),
+    enabled: !!departmentId && !!weekStart,
+    staleTime: 15_000,
+  });
+}
+
+export function useOpenWeekMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ departmentId, weekStart }: { departmentId: string; weekStart: string }) =>
+      api.openWeek(departmentId, weekStart),
+    onSuccess: (_data, { departmentId, weekStart }) => {
+      queryClient.invalidateQueries({ queryKey: sadranKeys.weekRow(departmentId, weekStart) });
+    },
+    onError: showErrorToast,
+  });
+}
+
+export function useSetWeekPhaseMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      departmentId,
+      weekStart,
+      phase,
+    }: {
+      departmentId: string;
+      weekStart: string;
+      phase: Database["public"]["Enums"]["week_phase"];
+    }) => api.setWeekPhase(departmentId, weekStart, phase),
+    onSuccess: (_data, { departmentId, weekStart }) => {
+      queryClient.invalidateQueries({ queryKey: sadranKeys.weekRow(departmentId, weekStart) });
+    },
+    onError: showErrorToast,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Requests / board reads
+// ---------------------------------------------------------------------------
+
+export function useWeekRequests(departmentId: string | undefined, weekStart: string | undefined) {
+  return useQuery({
+    queryKey: sadranKeys.weekRequests(departmentId ?? "", weekStart ?? ""),
+    queryFn: () => api.fetchWeekRequests(departmentId as string, weekStart as string),
+    enabled: !!departmentId && !!weekStart,
+    staleTime: 10_000,
+  });
+}
+
+/** Reuses `@/features/fleet/api`'s `fetchCars` (already department-scoped, excludes retired). */
+export function useCarsForDepartment(departmentId: string | undefined) {
+  return useQuery({
+    queryKey: sadranKeys.cars(departmentId ?? ""),
+    queryFn: () => fetchCars(departmentId as string),
+    enabled: !!departmentId,
+    staleTime: 60_000,
+  });
+}
+
+export function useDepartmentSettings(departmentId: string | undefined) {
+  return useQuery({
+    queryKey: sadranKeys.departmentSettings(departmentId ?? ""),
+    queryFn: () => api.fetchDepartmentSettings(departmentId as string),
+    enabled: !!departmentId,
+    staleTime: 60_000,
+  });
+}
+
+export function useMaintenanceBlocks(departmentId: string | undefined) {
+  return useQuery({
+    queryKey: sadranKeys.maintenanceBlocks(departmentId ?? ""),
+    queryFn: () => api.fetchMaintenanceBlocksForDepartment(departmentId as string),
+    enabled: !!departmentId,
+    staleTime: 30_000,
+  });
+}
+
+export function useActivePolicy(departmentId: string | undefined) {
+  return useQuery({
+    queryKey: sadranKeys.activePolicy(departmentId ?? ""),
+    queryFn: () => api.fetchActivePolicy(departmentId as string),
+    enabled: !!departmentId,
+    staleTime: 60_000,
+  });
+}
+
+export function usePolicyOptions(departmentId: string | undefined) {
+  return useQuery({
+    queryKey: [...sadranKeys.activePolicy(departmentId ?? ""), "options"],
+    queryFn: () => api.fetchPolicyOptions(departmentId as string),
+    enabled: !!departmentId,
+    staleTime: 60_000,
+  });
+}
+
+export function useFairnessStats(departmentId: string | undefined, weekStart: string | undefined, lookbackWeeks: number) {
+  return useQuery({
+    queryKey: sadranKeys.fairness(departmentId ?? "", weekStart ?? "", lookbackWeeks),
+    queryFn: () => api.fetchFairnessStats(departmentId as string, weekStart as string, lookbackWeeks),
+    enabled: !!departmentId && !!weekStart,
+    staleTime: 60_000,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Solver runs
+// ---------------------------------------------------------------------------
+
+export function useLatestSolverRun(departmentId: string | undefined, weekStart: string | undefined) {
+  return useQuery({
+    queryKey: sadranKeys.solverRuns(departmentId ?? "", weekStart ?? ""),
+    queryFn: () => api.fetchLatestSolverRun(departmentId as string, weekStart as string),
+    enabled: !!departmentId && !!weekStart,
+    staleTime: 5_000,
+  });
+}
+
+function invalidateBoard(queryClient: ReturnType<typeof useQueryClient>, departmentId: string, weekStart: string) {
+  queryClient.invalidateQueries({ queryKey: sadranKeys.week(departmentId, weekStart) });
+}
+
+export function useRecordSolverPreviewMutation() {
+  return useMutation({
+    mutationFn: ({ departmentId, weekStart, payload }: { departmentId: string; weekStart: string; payload: Json }) =>
+      api.recordSolverPreview(departmentId, weekStart, payload),
+    onError: showErrorToast,
+  });
+}
+
+export function useApplySolverResultMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ departmentId, weekStart, payload }: { departmentId: string; weekStart: string; payload: Json }) =>
+      api.applySolverResult(departmentId, weekStart, payload),
+    onSuccess: (_data, { departmentId, weekStart }) => invalidateBoard(queryClient, departmentId, weekStart),
+    onError: showErrorToast,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Single-ride edits
+// ---------------------------------------------------------------------------
+
+export function useEditRideMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      input,
+      expectedVersion,
+    }: {
+      input: api.EditRideInput;
+      expectedVersion?: number;
+      departmentId: string;
+      weekStart: string;
+    }) => api.editRide(input, expectedVersion),
+    onSuccess: (_data, { departmentId, weekStart }) => invalidateBoard(queryClient, departmentId, weekStart),
+    onError: showErrorToast,
+  });
+}
+
+export function useCancelRideMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      rideId,
+      reason,
+      expectedVersion,
+    }: {
+      rideId: string;
+      reason: string;
+      expectedVersion?: number;
+      departmentId: string;
+      weekStart: string;
+    }) => api.cancelRide(rideId, reason, expectedVersion),
+    onSuccess: (_data, { departmentId, weekStart }) => invalidateBoard(queryClient, departmentId, weekStart),
+    onError: showErrorToast,
+  });
+}
+
+export function useSetManualBoostMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      requestId,
+      value,
+      reason,
+    }: {
+      requestId: string;
+      value: number;
+      reason: string;
+      departmentId: string;
+      weekStart: string;
+    }) => api.setManualBoost(requestId, value, reason),
+    onSuccess: (_data, { departmentId, weekStart }) => invalidateBoard(queryClient, departmentId, weekStart),
+    onError: showErrorToast,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Proposals
+// ---------------------------------------------------------------------------
+
+export function useProposalsForWeek(departmentId: string | undefined, weekStart: string | undefined) {
+  return useQuery({
+    queryKey: sadranKeys.proposals(departmentId ?? "", weekStart ?? ""),
+    queryFn: () => api.fetchProposalsForWeek(departmentId as string, weekStart as string),
+    enabled: !!departmentId && !!weekStart,
+    staleTime: 10_000,
+  });
+}
+
+export function useProposalParties(proposalId: string | undefined) {
+  return useQuery({
+    queryKey: sadranKeys.proposalParties(proposalId ?? ""),
+    queryFn: () => api.fetchProposalParties(proposalId as string),
+    enabled: !!proposalId,
+    staleTime: 10_000,
+  });
+}
+
+export function useProfilesByIds(profileIds: readonly string[]) {
+  const key = [...profileIds].sort().join(",");
+  return useQuery({
+    queryKey: [...sadranKeys.all, "profiles", key],
+    queryFn: () => api.fetchProfilesByIds([...profileIds]),
+    enabled: profileIds.length > 0,
+    staleTime: 60_000,
+  });
+}
+
+export function useWhatsappTemplates() {
+  return useQuery({
+    queryKey: sadranKeys.whatsappTemplates(),
+    queryFn: api.fetchWhatsappTemplates,
+    staleTime: 5 * 60_000,
+  });
+}
+
+export function useCreateProposalMutation() {
+  return useMutation({
+    mutationFn: (input: api.CreateProposalInput) => api.createProposal(input),
+    onError: showErrorToast,
+  });
+}
+
+export function useSendProposalMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      proposalId,
+      sentVia,
+    }: {
+      proposalId: string;
+      sentVia?: Database["public"]["Enums"]["notification_channel"][];
+      departmentId: string;
+      weekStart: string;
+    }) => api.sendProposal(proposalId, sentVia),
+    onSuccess: (_data, { departmentId, weekStart }) =>
+      queryClient.invalidateQueries({ queryKey: sadranKeys.proposals(departmentId, weekStart) }),
+    onError: showErrorToast,
+  });
+}
+
+export function useRecordAnswerOnBehalfMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      proposalId,
+      profileId,
+      accept,
+      note,
+    }: {
+      proposalId: string;
+      profileId: string;
+      accept: boolean;
+      note?: string;
+      departmentId: string;
+      weekStart: string;
+    }) => api.recordAnswerOnBehalf(proposalId, profileId, accept, note),
+    onSuccess: (_data, { proposalId, departmentId, weekStart }) => {
+      queryClient.invalidateQueries({ queryKey: sadranKeys.proposals(departmentId, weekStart) });
+      queryClient.invalidateQueries({ queryKey: sadranKeys.proposalParties(proposalId) });
+    },
+    onError: showErrorToast,
+  });
+}
+
+export function useApplyProposalMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ proposalId }: { proposalId: string; departmentId: string; weekStart: string }) =>
+      api.applyProposal(proposalId),
+    onSuccess: (_data, { departmentId, weekStart }) => invalidateBoard(queryClient, departmentId, weekStart),
+    onError: showErrorToast,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Contested freed slots
+// ---------------------------------------------------------------------------
+
+export function useFreedOffersForWeek(departmentId: string | undefined, weekStart: string | undefined) {
+  return useQuery({
+    queryKey: sadranKeys.freedOffers(departmentId ?? "", weekStart ?? ""),
+    queryFn: () => api.fetchFreedOffersForWeek(departmentId as string, weekStart as string),
+    enabled: !!departmentId && !!weekStart,
+    staleTime: 15_000,
+  });
+}
+
+export function useClaimsForOffer(offerId: string | undefined) {
+  return useQuery({
+    queryKey: sadranKeys.freedClaims(offerId ?? ""),
+    queryFn: () => api.fetchClaimsForOffer(offerId as string),
+    enabled: !!offerId,
+    staleTime: 10_000,
+  });
+}
+
+export function useApproveClaimMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ offerId, requestId }: { offerId: string; requestId: string; departmentId: string; weekStart: string }) =>
+      api.approveClaim(offerId, requestId),
+    onSuccess: (_data, { departmentId, weekStart }) => invalidateBoard(queryClient, departmentId, weekStart),
+    onError: showErrorToast,
+  });
+}
+
+export function useCloseOfferMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ offerId }: { offerId: string; departmentId: string; weekStart: string }) => api.closeOffer(offerId),
+    onSuccess: (_data, { departmentId, weekStart }) => invalidateBoard(queryClient, departmentId, weekStart),
+    onError: showErrorToast,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Publish
+// ---------------------------------------------------------------------------
+
+export function useSiddurVersions(departmentId: string | undefined, weekStart: string | undefined) {
+  return useQuery({
+    queryKey: sadranKeys.siddurVersions(departmentId ?? "", weekStart ?? ""),
+    queryFn: () => api.fetchSiddurVersions(departmentId as string, weekStart as string),
+    enabled: !!departmentId && !!weekStart,
+    staleTime: 15_000,
+  });
+}
+
+export function useAllWeekRides(departmentId: string | undefined, weekStart: string | undefined) {
+  return useQuery({
+    queryKey: sadranKeys.boardRides(departmentId ?? "", weekStart ?? ""),
+    queryFn: () => api.fetchAllWeekRides(departmentId as string, weekStart as string),
+    enabled: !!departmentId && !!weekStart,
+    staleTime: 10_000,
+  });
+}
+
+export function usePublishSiddurMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ departmentId, weekStart }: { departmentId: string; weekStart: string }) =>
+      api.publishSiddur(departmentId, weekStart),
+    onSuccess: (_data, { departmentId, weekStart }) => {
+      invalidateBoard(queryClient, departmentId, weekStart);
+      queryClient.invalidateQueries({ queryKey: sadranKeys.siddurVersions(departmentId, weekStart) });
+    },
+    onError: showErrorToast,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Change log
+// ---------------------------------------------------------------------------
+
+export function useAuditLog(departmentId: string | undefined, weekStart: string | undefined) {
+  return useQuery({
+    queryKey: sadranKeys.auditLog(departmentId ?? "", weekStart ?? ""),
+    queryFn: () => api.fetchAuditLog(departmentId as string, weekStart as string),
+    enabled: !!departmentId && !!weekStart,
+    staleTime: 15_000,
+  });
+}

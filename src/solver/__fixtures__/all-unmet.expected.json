@@ -1,0 +1,52 @@
+{
+  "policyId": "test-policy",
+  "policyVersion": 1,
+  "assignments": [],
+  "unmet": [
+    {
+      "requestId": "R1",
+      "score": 1.323333,
+      "blockers": [],
+      "suggestions": [
+        {
+          "kind": "deny",
+          "requestId": "R1",
+          "reasonCode": "SUGGEST_DENY",
+          "reason": "לא נמצא פתרון; ניתן לדחות עם הסבר",
+          "cost": 0,
+          "confidence": 1
+        }
+      ],
+      "reasonCode": "UNMET_NO_CAR",
+      "reason": "אין רכב פנוי בחלון המבוקש; חוסמים: "
+    },
+    {
+      "requestId": "R2",
+      "score": 1.323333,
+      "blockers": [],
+      "suggestions": [
+        {
+          "kind": "deny",
+          "requestId": "R2",
+          "reasonCode": "SUGGEST_DENY",
+          "reason": "לא נמצא פתרון; ניתן לדחות עם הסבר",
+          "cost": 0,
+          "confidence": 1
+        }
+      ],
+      "reasonCode": "UNMET_NO_CAR",
+      "reason": "אין רכב פנוי בחלון המבוקש; חוסמים: "
+    }
+  ],
+  "mergeOpportunities": [],
+  "carsAway": [],
+  "warnings": [],
+  "stats": {
+    "served": 0,
+    "unmet": 2,
+    "needsDriver": 0,
+    "relocations": 0,
+    "budgetExhausted": false,
+    "elapsedMs": 0
+  }
+}

@@ -1,7 +1,7 @@
 # carshare-nevo — Architecture
 
-Status: DRAFT v0.2 (2026-09-06) — reconciled per CLAUDE.md "Consistency decisions (2026-09-06)"
-Derives from: `docs/REQUIREMENTS.md` v0.2 (source of truth). Details of tables, columns and RLS policies live in `DATA_MODEL.md`; solver algorithms and rule types in `SOLVER.md`; screens and interaction flows in `UX_FLOWS.md`. This document describes how the pieces fit, where each rule is enforced, and why the stack was chosen.
+Status: DRAFT v0.3 (2026-09-06) — reconciled per CLAUDE.md "Consistency decisions (2026-09-06)"; one-way/relay model, car location, `edit_ride`, the two Sadran cron events and per-ride `overflow_allowed` folded in.
+Derives from: `docs/REQUIREMENTS.md` v0.3 (source of truth). Details of tables, columns and RLS policies live in `DATA_MODEL.md`; solver algorithms and rule types in `SOLVER.md`; screens and interaction flows in `UX_FLOWS.md`. This document describes how the pieces fit, where each rule is enforced, and why the stack was chosen.
 
 ---
 
@@ -103,7 +103,7 @@ Component responsibilities:
 |---|---|
 | `src/features/*` | One folder per business area (requests, board, proposals, fleet, admin, inbox); each owns its queries, mutations, forms and components. |
 | `src/solver` | Deterministic scheduling: feasibility (seat configs, luggage, maintenance, turnaround), policy scoring, merge detection, ranked suggestions, freed-slot candidate matching. Pure functions over plain data; see `SOLVER.md`. |
-| SQL functions (RPC) | Multi-row transactions that must be atomic and authorized server-side (full list in `DATA_MODEL.md` §6 step 16): `submit_request` (the only write path for requests), `withdraw_request`, `apply_solver_result`, `create_proposal`, `send_proposal`, `answer_proposal`, `record_proposal_answer`, `apply_proposal`, `publish_siddur`, `cancel_ride`, `resolve_freed_offer`, `claim_freed_slot`, `approve_claim`. |
+| SQL functions (RPC) | Multi-row transactions that must be atomic and authorized server-side (full list in `DATA_MODEL.md` §6 step 16): `submit_request` (the only write path for requests; creates the merge proposal directly to the owner when `join_ride_id` points at a temporary car), `withdraw_request`, `apply_solver_result`, `edit_ride` (the Sadran's create/move/reassign/pin/driver/`overflow_allowed`/`overnight_ack` path for one ride, including assigning a volunteer to a chauffeur ride), `create_proposal`, `send_proposal`, `answer_proposal`, `record_proposal_answer`, `apply_proposal`, `publish_siddur`, `cancel_ride`, `resolve_freed_offer`, `claim_freed_slot`, `approve_claim`. Every ride-writing RPC (`apply_solver_result`, `edit_ride`, `apply_proposal`, `try_auto_approve` inside `submit_request`, `resolve_freed_offer`, `approve_claim`) ends with `assert_car_chain()` — the car-location invariant of REQUIREMENTS §13.57 is enforced procedurally, not by a constraint (`DATA_MODEL.md` §5 #17). |
 | Triggers | Audit log on every state change; `version` bump on rides/requests/proposals; state-transition guards; block illegal transitions (e.g. solver output touching pinned rides). Notifications are enqueued by `enqueue_notification()` from RPCs, triggers and the tick. |
 | `push-dispatch` | Drains `push_outbox` (called by pg_net on insert and by `drain_push_outbox()` in the tick), sends via `web-push`, marks rows sent/failed, prunes dead subscriptions (404/410). |
 | `answer-proposal` | Verifies the deep-link token (hash lookup, expiry, status) — **no session required** — and calls `answer_proposal(token, accept, note, via => 'token')`; when a JWT is also present it is verified and `via => 'session'` is recorded instead. |
@@ -173,7 +173,7 @@ stateDiagram-v2
   archived --> [*]
 ```
 
-`week_phase` = `open, solving, published, live, archived` (DATA_MODEL §2). `archived` weeks are read-only and feed the fairness lookback.
+`week_phase` = `open, solving, published, live, archived` (DATA_MODEL §2). `archived` weeks are read-only and feed the fairness lookback (default 3 weeks, `lookbackWeeks` param of the fairness policy rule — data, not a department setting, REQ §13.18).
 
 ### 5.2 Request (REQUIREMENTS §5.2)
 
@@ -377,14 +377,18 @@ Principle: **the database is the last line of defence** (constraints, triggers, 
 | §5.2 editing after solve bumps version + "changed" flag | – | – | `submit_request` (edit path) when week.phase ≠ open; `bump_version` trigger |
 | §5.2 audit every state change | – | – | generic `audit_row()` trigger on requests, rides, proposals, policies, … (DATA_MODEL §3.12) |
 | §5 requests written only via RPC | – | – | no INSERT/UPDATE policy on `requests`; `submit_request`, `withdraw_request`, `set_manual_boost` are SECURITY DEFINER |
-| §6.4 solver never assigns temporary car to others | solver rule | – | trigger `rides_temp_car_owner_only`: `ride.driver_id = car.owner_id` when car.type = temporary |
+| §6.4 solver never assigns temporary car to others | solver rule | – | trigger `rides_temp_car_owner_only`: `ride.driver_id = car.owner_id` when car.type = temporary; `rides_temp_car_never_relays` forces `origin_id = destination_id = home` |
 | §7.1 never override pinned / accepted / temp-owner rides | solver treats as fixed | – | `apply_solver_result` rejects diffs touching pinned rides |
-| §7.1 no car double-booking + turnaround buffer | board conflict highlight | – | `rides_no_overlap_per_car`: EXCLUDE USING gist (car_id WITH =, tstzrange(starts_at, blocked_until) WITH &&) |
+| §7.1 no car double-booking + turnaround buffer (default 30 min) | board conflict highlight | – | `rides_no_overlap_per_car`: EXCLUDE USING gist (car_id WITH =, tstzrange(starts_at, blocked_until) WITH &&); `blocked_until` includes `department_settings.turnaround_minutes` (default 30, REQ §13.10) |
+| §5.4/§13.57 **car location chain**: a leg may start on a car only where the car is; consecutive rides of a car chain origin→destination | board location badge | – | `assert_car_chain(car, week)` at the end of every ride-writing RPC (`apply_solver_result`, `edit_ride`, `apply_proposal`, `try_auto_approve`, `resolve_freed_offer`, `approve_claim`); raises `car_chain_broken` (P0410) — no exclusion constraint can express "the car is elsewhere in the gap" |
+| §5.4/§7.4 **day end**: every shared car home by `department_settings.day_end_time` (default 23:59) unless the Sadran acknowledges an overnight stay | board warning + "אשר לינת לילה" action | – | same `assert_car_chain()` call raises `car_away_at_day_end` (P0411) unless `rides.overnight_ack_by/_at` are both set |
+| §5.3/§13.62 rides ending after Saturday are per-ride, no department setting | Sadran sets `overflow_allowed` in the `RideSheet`; members cannot | – | `rides_within_week` trigger allows only when `rides.overflow_allowed`; `requests_within_week` allows a request past Saturday only when `filed_by <> requester_id and can_manage_week()` |
 | §7.2 policy version recorded per run | – | – | `solver_runs.policy_version_id` NOT NULL |
 | §7.3 merge applied only when all parties accept | – | `answer-proposal` | party roll-up trigger; `apply_proposal` counts parties |
 | §7.3 proposal expiry → fall back status | – | – | `app.tick()` → `expire_proposals()`; `answer_proposal` refuses after `expires_at` |
 | §7.3 Sadran may record answer on behalf | – | – | `record_proposal_answer` checks `is_sadran(dept, week)`; `answered_via = 'sadran'` |
-| §7.3 ask to join → merge proposal | "בקש/י להצטרף" prefills the form | – | `submit_request` stores `join_ride_id`; Sadran converts via `create_proposal(type merge)` |
+| §7.3 ask to join a **shared-car** ride → merge proposal | "בקש/י להצטרף" prefills the form | – | `submit_request` stores `join_ride_id`; Sadran converts via `create_proposal(type merge)` |
+| §7.3/§13.43 ask to join a **temporary-car** ride → proposal goes straight to the owner | same form; owner answers like any driver | – | `submit_request` creates and sends the `merge` proposal directly to the ride's owner when `join_ride_id` resolves to a `temporary` car; the Sadran only sees it in the proposals list and gets `proposal_answered` — no Sadran action in between |
 | §7.5 publish freezes version, notifies changed outcomes only | – | – | `publish_siddur` diffs against previous version |
 | §8 cancel → candidates, auto-assign if 1, contest if >1 | – | `on-ride-cancelled` (solver `matchFreedSlot`) | `cancel_ride`, `freed_slot_candidates`, `resolve_freed_offer`, `approve_claim`; exclusion constraint |
 | §8 new request on free car → auto-approve | form preview via solver `tryAutoApprove` | – | `submit_request` → `try_auto_approve()` in live phase |
@@ -406,7 +410,7 @@ Principle: **the database is the last line of defence** (constraints, triggers, 
 
 **RLS strategy.** Every table has RLS enabled and forced with no exceptions. Reads: members see rows of departments they belong to (published rides of any department are readable, per assumption §14.2; the `phone` column is revoked and only reachable through `phone_of()`); draft rides, proposals and solver runs are readable only when `can_manage_week`. Writes: direct `INSERT/UPDATE` policies are granted only for low-risk single-row edits (own notification read state, own push subscription, own profile, own car issue, own client error). Every multi-row or state-changing operation — **including creating or editing a request** (`submit_request`) — goes through a `SECURITY DEFINER` RPC that re-checks the role, so no client can, for example, set `requests.status = 'assigned'` or `is_late = false` directly. Service-role bypass is used only by Edge Functions and cron.
 
-**Service-role boundaries.** Edge Functions verify their caller first: `solve` requires a user JWT (`verify_jwt = true`); `push-dispatch` and `on-ride-cancelled` are called only by pg_net with a shared `x-cron-secret` header and reject anything else; `answer-proposal` has `verify_jwt = false` because the token *is* the credential (below) — if a JWT is present it is verified too. Inside, they use the service role only to call the specific RPCs listed in §3; they never issue raw table writes. Secrets (`SUPABASE_SERVICE_ROLE_KEY`, VAPID private key, cron secret) are Edge Function secrets and Vault entries, never in the repo or `VITE_*`.
+**Service-role boundaries.** Edge Functions verify their caller first: `solve` requires a user JWT (`verify_jwt = true`); `push-dispatch` and `on-ride-cancelled` are called only by pg_net with a shared `x-cron-secret` header and reject anything else; `answer-proposal` has `verify_jwt = false` because the token *is* the credential (below) — if a JWT is present it is verified too. Inside, they use the service role only to call the specific RPCs listed in §3; they never issue raw table writes. Secrets (`SUPABASE_SERVICE_ROLE_KEY`, VAPID private key, cron secret) are Edge Function secrets; the cron secret's server-side copy lives in `public.app_secrets` (`20260907092100_secure_app_settings.sql`) — RLS enabled and forced with no policies at all, so only `service_role` and `SECURITY DEFINER` functions can read it, never `anon`/`authenticated` via PostgREST (DATA_MODEL.md §6.1 item 12) — not in `app_settings` (whose `is_approved()` SELECT policy is readable by any approved member) and not the repo or `VITE_*`.
 
 **Deep-link token (`/p/<token>`).** Answering a proposal from the link **does not require sign-in**. Rationale: the link arrives in WhatsApp, which on iOS opens it in an in-app or Safari browser context that does not share the installed PWA's session; demanding Google sign-in there costs several taps on a fresh browser and breaks the "answer in two taps" promise (REQUIREMENTS §1, UX_FLOWS §3.6). The token is therefore a *capability*:
 
@@ -430,7 +434,7 @@ One durable pipeline, three channels:
 
 WhatsApp is not a delivery channel of this pipeline: the text and link are rendered client-side from the `whatsapp` rows of `notification_templates` and opened via `wa.me` by the Sadran. All templates (Hebrew, `{{placeholders}}`) are rows in `notification_templates`, editable by admins and seeded from UX_FLOWS §6; `he.ts` holds only UI strings (including the short event labels for the mute list).
 
-Events — exactly the 18 of UX_FLOWS §6.1 (`notification_event` in DATA_MODEL §2; value = snake_case of the `notif.*` key): `window_open`, `window_closing`, `published`, `outcome_changed`, `proposal_received`, `proposal_answered` (Sadran), `freed_slot`, `freed_slot_auto`, `claim_approved`, `claim_declined`, `claim_contested` (Sadran), `maintenance_affects`, `late_request` (Sadran), `waitlisted_request` (Sadran), `auto_approved` (member, Sadran copy), `request_changed` (Sadran), `access_request` (Admin), `access_approved`.
+Events — exactly the 20 of UX_FLOWS §6.1 (`notification_event` in DATA_MODEL §2; value = snake_case of the `notif.*` key): `window_open`, `window_closing`, `window_closed_solve_now` (Sadran), `published`, `outcome_changed`, `proposal_received`, `proposal_answered` (Sadran), `freed_slot`, `freed_slot_auto`, `claim_approved`, `claim_declined`, `claim_contested` (Sadran), `maintenance_affects`, `late_request` (Sadran), `waitlisted_request` (Sadran), `auto_approved` (member, Sadran copy), `request_changed` (Sadran), `access_request` (Admin), `access_approved`, `publish_reminder` (Sadran). The two Sadran-only additions over v0.2 are fired by the cron sub-functions of §10: `advance_week_phases()` enqueues `window_closed_solve_now` when a week's request window closes, and `send_due_reminders()` enqueues `publish_reminder` once the planned publish time passes while the week is still `solving`.
 
 iOS: push only works when installed to the home screen; `lib/push.ts` detects `isIOS && !standalone` (as in the reference app) and the inbox shows install instructions instead of the enable button.
 
@@ -445,9 +449,10 @@ Realtime (optional, v1.x): the Sadran board may subscribe to `postgres_changes` 
 | Tick step | What is due | Action |
 |---|---|---|
 | `advance_week_phases()` | dept config open time (default Sun 00:00, week before target) | create `weeks` row in `open`, `window_open` to members |
-| | dept config close time (default Wed 12:00) | week → `solving`; later requests are `is_late` |
+| | dept config close time (default Wed 12:00) | week → `solving`; later requests are `is_late`; `window_closed_solve_now` to `sadranim_of(dept, week)` |
 | | after the target week ends (first tick after Sun 00:00) | week → `archived` (read-only; fairness lookback reads it) |
 | `send_due_reminders()` | `closing_reminder_hours` before close (default 24 h and 2 h) | `window_closing` to members without a request |
+| | planned publish time (`publish_dow`/`publish_time`) passes while `weeks.phase = 'solving'` | `publish_reminder` to the Sadranim, once (`weeks.publish_reminder_sent_at`) |
 | | proposal unanswered and near expiry | WhatsApp reminder text offered to the Sadran (`wa.reminder`), no automatic push |
 | `expire_proposals()` | `sent` past `expires_at` | → `expired`, request falls back to `previous_status`, Sadran notified (`proposal_answered` with answer "expired") |
 | `drain_push_outbox()` | `push_outbox` rows `pending`/`failed` with `next_attempt_at <= now()` | pg_net → `push-dispatch`; `dead` after 24 h |
@@ -492,7 +497,8 @@ Each step is idempotent (`weeks.opened_notified_at` etc., dedupe keys on notific
 | Edge Function secrets | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | Injected by Supabase |
 | | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | web-push |
 | | `CRON_SECRET` | Shared header for pg_net → `push-dispatch`, `on-ride-cancelled` |
-| Postgres Vault | `cron_secret`, `edge_base_url` | Used by triggers/tick for pg_net calls (deep-link tokens need no secret: random, stored hashed) |
+| `public.app_secrets` table (RLS enabled + forced, no policies — `service_role`/`SECURITY DEFINER` only, DATA_MODEL.md §6.1 item 12) | `cron_secret` | Used by `dispatch_push_outbox_row()`/`cancel_ride()` for pg_net calls (deep-link tokens need no secret: random, stored hashed) |
+| `public.app_settings` table (`is_approved()` SELECT — non-secret only) | `push_dispatch_url`, `on_ride_cancelled_url`, `housekeeping_last_run` | URLs/watermarks pg_net and cron read; never credentials |
 | Supabase Auth | Google client ID/secret | Set in dashboard / `config.toml [auth.external.google]` for local |
 | CI (GitHub) | `SUPABASE_ACCESS_TOKEN`, `SUPABASE_DB_PASSWORD`, `SUPABASE_PROJECT_ID` | `supabase db push`, `functions deploy` |
 

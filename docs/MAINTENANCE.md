@@ -2,7 +2,7 @@
 
 How routine changes are made in carshare-nevo without an expert. Open the repo in Claude Code and type one of the prompts below. Small, cheap models can follow these because every skill is a checklist with exact file paths and a verification list.
 
-Status: scaffolding written in the design phase (2026-09-06), aligned with `ARCHITECTURE.md`, `DATA_MODEL.md`, `SOLVER.md`, `UX_FLOWS.md` and the "Consistency decisions (2026-09-06)" in `CLAUDE.md`. Paths inside skills are the documented layout and are marked "to be verified once the code lands" (see the checklist at the end of `CLAUDE.md`).
+Status: v0.3 + verified 2026-09-06 (all paths tested against actual code layout; all agents and skills present with correct names)
 
 ## Ground rules Claude follows (see `CLAUDE.md`)
 
@@ -29,11 +29,11 @@ Status: scaffolding written in the design phase (2026-09-06), aligned with `ARCH
 
 | Agent | Works on | Model | Ask it to… |
 |---|---|---|---|
-| `solver-dev` | `src/solver/` only — rules, scoring engine, seats, timelines, merge/split, suggestions; keeps it pure and tested | sonnet | "Use solver-dev to make merges prefer the requester with the larger flexibility window as driver." |
-| `db-migrator` | Migrations, RLS, enums, RPCs, cron, seed, regenerated types, `DATA_MODEL.md` | sonnet | "Use db-migrator to add a `reason` enum to `car_maintenance_blocks`." |
-| `ui-dev` | React screens, forms, Hebrew labels, RTL, TanStack Query, `UX_FLOWS.md` | sonnet | "Use ui-dev to show the luggage icon on ride cards in the board." |
-| `docs-keeper` | Keeps the five docs and `CLAUDE.md` in sync with code; runs `/review-consistency` | haiku | "Use docs-keeper to verify the consistency decisions in CLAUDE.md against the first migrations." |
-| `e2e-tester` | Playwright specs in `e2e/` against local Supabase | sonnet | "Use e2e-tester to cover: member cancels a ride, the waitlisted member gets the freed-slot notification." |
+| `solver-dev` | `src/solver/**` (pure TS: rules, scoring, seats, timeline, relay, merge/split, suggestions); keeps it pure and tested | sonnet | "Use solver-dev to make merges prefer the requester with the larger flexibility window as driver." |
+| `db-migrator` | `supabase/migrations`, `seed.sql`, `src/lib/enums.ts`, `docs/DATA_MODEL.md`, `docs/ARCHITECTURE.md` §7/§10/§13 | sonnet | "Use db-migrator to add a `reason` enum to `car_maintenance_blocks`." |
+| `ui-dev` | `src/features/**`, `src/pages/**`, `src/i18n/he*.ts`, `docs/UX_FLOWS.md`, e2e tests (behavioral only) | sonnet | "Use ui-dev to show the luggage icon on ride cards in the board." |
+| `docs-keeper` | `docs/*.md`, `CLAUDE.md`, `.claude/skills/*/SKILL.md` path corrections, `.claude/agents/*.md` path corrections; runs `/review-consistency` | haiku | "Use docs-keeper to verify the consistency decisions in CLAUDE.md against the first migrations." |
+| `e2e-tester` | `e2e/**`, `playwright.config.ts`, `supabase/seed.sql` (fixtures), `data-testid` attrs in features | sonnet | "Use e2e-tester to cover: member cancels a ride, the waitlisted member gets the freed-slot notification." |
 
 ## Typical flows
 

@@ -7,7 +7,7 @@ description: Add a new notification event (enum value, emitter trigger/RPC/edge 
 
 Pipeline (ARCHITECTURE §9, DATA_MODEL §3.11): business code (trigger / RPC / tick / edge function via RPC) calls the definer function `enqueue_notification(recipient, event, dept, week_start, vars, data, dedupe_key)` → it applies `profiles.muted_events` (Sadran-role events bypass mutes while the recipient is in `sadranim_of(dept, week_start)`), renders title/body from `notification_templates` (channel `inbox` / `push`) → one `notifications` row (inbox) + one `push_outbox` row per active subscription → pg_net / `drain_push_outbox()` (inside `app.tick()`) call the `push-dispatch` edge function → service worker shows it and opens `data.url`.
 
-The canonical event list is UX_FLOWS §6.1 (18 events). Enum value = snake_case of the `notif.*` key suffix (`notif.freedSlotAuto` ↔ `freed_slot_auto`). Adding an event means adding a row **there** and everywhere below.
+The canonical event list is UX_FLOWS §6.1 (20 events). Enum value = snake_case of the `notif.*` key suffix (`notif.freedSlotAuto` ↔ `freed_slot_auto`). Adding an event means adding a row **there** and everywhere below.
 
 ## Inputs to collect before starting
 
@@ -59,7 +59,7 @@ The canonical event list is UX_FLOWS §6.1 (18 events). Enum value = snake_case 
 - [ ] `docs/REQUIREMENTS.md` §9 "Events that notify": one plain-language item (must name only events in UX_FLOWS §6.1).
 - [ ] `docs/DATA_MODEL.md` §2 `notification_event` values (+ Sadran-role list in the notes); §3.11 emitter (trigger/RPC/function name).
 - [ ] `docs/ARCHITECTURE.md` §9 event list; §10 if a tick step changed.
-- [ ] `CLAUDE.md` "Consistency decisions" item 5 says the list has 18 events — update the count.
+- [ ] `CLAUDE.md` "Consistency decisions" item 5 says the list has 20 events — update the count.
 
 ## Final verification
 - [ ] `npm run lint && npm run typecheck && npm run test` pass; `npm run db:reset` passes.

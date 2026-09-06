@@ -1,6 +1,6 @@
 # carshare-nevo — UX Flows and Screens
 
-Status: **DRAFT v0.2** (2026-09-06, reconciled per CLAUDE.md "Consistency decisions"). Derives from `docs/REQUIREMENTS.md` v0.2 (source of truth); where this document and REQUIREMENTS disagree, REQUIREMENTS wins.
+Status: **DRAFT v0.3** (2026-09-06, owner answers applied; trip shape / car mode form, car location on the board, home-week preference, two Sadran events, `wa.external`). Derives from `docs/REQUIREMENTS.md` v0.3 (source of truth); where this document and REQUIREMENTS disagree, REQUIREMENTS wins.
 
 Fixed decisions this document builds on: shadcn/ui + Tailwind; `react-router-dom` routes; Hebrew UI, RTL, mobile-first PWA; all strings centralized under i18n keys (see §10 glossary); 15-minute time granularity everywhere; bottom tab navigation on phones for members; Sadran board optimized for tablet/desktop with a list-mode fallback on phones; proposals reachable by deep link `/p/<token>`.
 
@@ -24,7 +24,7 @@ Wireframe convention: boxes are drawn left-to-right so they stay readable in cod
 
 ### 2.1 Route table
 
-Week parameter `:week` is the target week's Sunday as `YYYY-MM-DD`. `:dept` is the department id. Where omitted, the app uses the member's default department and the "most relevant" week (Live week if one exists, else the next Open week).
+Week parameter `:week` is the target week's Sunday as `YYYY-MM-DD`. `:dept` is the department id. Where omitted, the app uses the member's default department and the week chosen by `profiles.home_week_preference` (REQUIREMENTS §5.5: `auto` = the Live week if I have a ride today or tomorrow, else the next Open week; `live`; `open`).
 
 | Path | Screen | Who | Purpose |
 |---|---|---|---|
@@ -32,7 +32,7 @@ Week parameter `:week` is the target week's Sunday as `YYYY-MM-DD`. `:dept` is t
 | `/pending` | Pending approval | unknown Google account | Wait-for-approval page (§3.1). |
 | `/onboarding` | Onboarding | first-time approved member | Phone number, default department, push permission (§3.2). |
 | `/` | → redirect `/my` | member | — |
-| `/my` | **Home — my week** (tab הבקשות שלי) | member | My rides, my requests with status + reason, next action, FAB new request (§3.3). |
+| `/my` | **Home — my week** (tab הבקשות שלי) | member | Above the fold, always: my upcoming rides (all weeks) and my unserved requests with reason; then the preferred week's requests, next action, FAB new request (§3.3). |
 | `/my/history` | My history | member | Past weeks, own stats (§10 visibility). |
 | `/requests/new` | New request | member | One-screen form (§3.4). Query `?ride=<id>` prefills "ask to join". |
 | `/requests/:id` | Request detail | member (own), Sadran, Admin | Status timeline, reason, proposal(s), edit/withdraw/cancel. |
@@ -100,8 +100,9 @@ Badges: הודעות shows unread count; הבקשות שלי shows a dot when a 
 │   🚗  סידור רכב — נבו        │
 │                              │
 │  הבקשה שלך לגישה נשלחה      │
-│  למנהל/ת. נעדכן אותך במייל  │
-│  ברגע שהיא תאושר.           │
+│  למנהל/ת. ברגע שתאושר       │
+│  תוכל/י להיכנס — בדקו שוב   │
+│  מאוחר יותר או פנו לסדרן/ית. │
 │                              │
 │  נכנסת עם: omri@gmail.com    │
 │  [ התחברות עם חשבון אחר ]    │
@@ -109,7 +110,7 @@ Badges: הודעות shows unread count; הבקשות שלי shows a dot when a 
 └──────────────────────────────┘
 ```
 
-Pending page polls every 60 s; if approved meanwhile, "בדוק שוב" (or the poll) routes on. Admin gets an inbox item "בקשת גישה חדשה".
+Pending page polls every 60 s; if approved meanwhile, "בדוק שוב" (or the poll) routes on. Admin gets an inbox item "בקשת גישה חדשה". The copy promises **no email** (decided 2026-09-06, REQUIREMENTS §13.60): a never-onboarded member has no push subscription and the email channel is v1.x.
 
 ### 3.2 Onboarding (first login)
 
@@ -121,17 +122,17 @@ Three short steps in one scrolling card, progress dots on top. Skippable except 
 
 ### 3.3 Home — my week (`/my`, tab הבקשות שלי)
 
-Screen title **השבוע שלי**. Week switcher defaults to the most relevant week. The layout is three stacked sections; the first is the *next action* and is omitted when there is nothing to do.
+Screen title **השבוע שלי**. The layout is four stacked sections. The first two are **always above the fold and span all weeks** (REQUIREMENTS §5.5): *next action* (omitted when there is nothing to do) and **my upcoming rides + my unserved requests** (waitlisted / denied / proposed, each with its reason). Below them a week switcher opens on the week chosen by the profile setting `profiles.home_week_preference` (`auto` = Live week if I have a ride today or tomorrow, else Open week; `live`; `open` — §3.8) and lists that week's requests.
 
 ```
 ┌──────────────────────────────────────┐
-│ ‹  שבוע 14–20.9  ›     [ פורסם ]     │
+│ השבוע שלי                            │
 ├──────────────────────────────────────┤
 │ ▌ מחכה לתשובה שלך                    │
 │ ▌ הסדרנית מציעה לצאת ב-08:30 במקום   │
 │ ▌ 09:00 לעפולה, יום ג'   [ לצפייה › ]│
 ├──────────────────────────────────────┤
-│ הנסיעות שלי                          │
+│ הנסיעות הקרובות שלי                  │
 │ ┌──────────────────────────────────┐ │
 │ │ ג' 16.9  08:30–13:00   ✓ שובצה   │ │
 │ │ עפולה — מרפאה     רכב: יונדאי 3 │ │
@@ -139,29 +140,36 @@ Screen title **השבוע שלי**. Week switcher defaults to the most relevant 
 │ │ נוסעת איתך: דנה                  │ │
 │ └──────────────────────────────────┘ │
 │ ┌──────────────────────────────────┐ │
-│ │ ה' 18.9  07:00–17:00  👥 משולבת │ │
+│ │ ה' 18.9  09:00 →   ⇄ העברת רכב   │ │
+│ │ נבו → בנימינה   רכב: אוקטביה     │ │
+│ │ הרכב נשאר בבנימינה; איתן מחזיר   │ │
+│ └──────────────────────────────────┘ │
+│ ┌──────────────────────────────────┐ │
+│ │ א' 21.9  07:00–17:00  👥 משולבת │ │
 │ │ חיפה — עבודה   נוסע/ת עם: יואב  │ │
 │ └──────────────────────────────────┘ │
-├──────────────────────────────────────┤
-│ בקשות שעדיין לא שובצו                │
+│ בקשות שלא שובצו                      │
 │ ┌──────────────────────────────────┐ │
 │ │ ו' 19.9  16:00–22:00  ⏳ ברשימת  │ │
 │ │ תל אביב — אחר           המתנה   │ │
 │ │ "כל הרכבים תפוסים בשעות אלה.    │ │
 │ │  אם יתפנה רכב תקבל/י הודעה."     │ │
 │ └──────────────────────────────────┘ │
+├──────────────────────────────────────┤
+│ ‹  שבוע 14–20.9  ›     [ פורסם ]     │
+│ כל הבקשות שלי לשבוע זה …             │
 │                                      │
 │ [ + בקשה חדשה ]                (FAB) │
 └──────────────────────────────────────┘
 ```
 
-Each `RequestCard` shows: day + date, time range, destination + ride type, `StatusBadge`, the one-line reason from REQUIREMENTS §5.2, and context (car name, companions, driver). Tap → `/requests/:id`. Swipe or overflow menu: ערוך / הסר בקשה (before publish) / בטל נסיעה (after publish, with confirmation "הרכב יוצע לחברים ברשימת ההמתנה"). Flags render as small chips: **מאוחרת** (late), **שונתה** (edited after solving started), **חוזרת** (weekly template, v1.x).
+Each `RequestCard` shows: day + date, time range (a one-way leg shows a single time with an arrow: `09:00 →` / `→ 12:00`), destination + ride type — for a relay leg `origin → destination` and where the car stays ("הרכב נשאר בבנימינה"), `StatusBadge`, the one-line reason from REQUIREMENTS §5.2, and context (car name, companions, driver; for a chauffeur ride "מסיע/ה: יואב"). Tap → `/requests/:id`. Swipe or overflow menu: ערוך / הסר בקשה (before publish) / בטל נסיעה (after publish, with confirmation "הרכב יוצע לחברים ברשימת ההמתנה"; for a relay leg: "הסדרן/ית יקבלו הודעה — הרכב צריך לחזור הביתה"). Flags render as small chips: **מאוחרת** (late), **שונתה** (edited after solving started), **חוזרת** (weekly template, v1.x).
 
 Request detail adds a vertical status timeline (נשלחה → הוצעה → שובצה…), the full request as filed, and proposal cards with their answers.
 
 ### 3.4 New / edit request (`/requests/new`)
 
-One scrolling screen, sticky footer with the primary button. No wizard, no modal-in-modal. Smart defaults: target week = next Open week, day = same weekday as the last request or Sunday, departure 08:00, return 4 hours later, round trip, car needed at destination = yes, adults = 1 (the driver), ride type = last used, department = default.
+One scrolling screen, sticky footer with the primary button. No wizard, no modal-in-modal. Smart defaults: target week = next Open week, day = same weekday as the last request or Sunday, departure 08:00, return 4 hours later, trip shape = round trip (הלוך ושוב), car needed at destination = yes, adults = 1 (the driver), ride type = last used, department = default.
 
 ```
 ┌──────────────────────────────────────┐
@@ -178,16 +186,25 @@ One scrolling screen, sticky footer with the primary button. No wizard, no modal
 │                                      │
 │ יום        א  ב  [ג]  ד  ה  ו  ש      ← day chips of target week
 │                                      │
+│ ([הלוך ושוב] ◦ הלוך בלבד ◦ חזור בלבד) ← TripShapeControl (trip_shape)
+│                                      │
 │ יציאה           חזרה                  │
 │ ┌──────────┐    ┌──────────┐          │
 │ │ 09 : 00  │    │ 13 : 00  │  ← TimeField15: hour wheel + 00/15/30/45
-│ └──────────┘    └──────────┘          │
-│ (◦ הלוך ושוב  ◦ כיוון אחד)  ← segmented; one-way hides return, shows "לשם / חזרה" toggle
+│ └──────────┘    └──────────┘          │  "הלוך בלבד" hides חזרה; "חזור בלבד" hides יציאה and labels חזרה "הגעה הביתה"
 │                                      │
+│ ── round trip only ──────────────────│
 │ [x] הרכב נשאר איתי ביעד   ⓘ          │
 │     "אם תכבו: הרכב יחזור לקיבוץ ויוכל │
-│      לשמש אחרים; ההלוך והחזור         │
-│      עלולים להיות ברכבים שונים."      │
+│      לשמש אחרים. ייתכן שתיסע/י כנוסע/ת│
+│      אצל מישהו, או שתנהג/י ותשאיר/י   │
+│      את הרכב שם למי שחוזר/ת."          │
+│                                      │
+│ ── one-way only ─────────────────────│
+│ (◦ אני נוהג/ת ומשאיר/ה את הרכב שם     │  ← OneWayCarModeControl (one_way_car_mode: relay)
+│  ◦ אני צריך/ה הסעה)                   │     (passenger; the Sadran's fallback is a chauffeur)
+│   ⓘ "השארת רכב ביעד אפשרית רק אם      │
+│      מישהו/י מחזיר/ה אותו באותו יום"   │
 │                                      │
 │ נוסעים                                │
 │ מבוגרים (כולל נהג/ת)      [–] 2 [+]  │
@@ -217,18 +234,19 @@ One scrolling screen, sticky footer with the primary button. No wizard, no modal
 Behaviour notes:
 
 - **DestinationCombobox** searches presets by name and aliases; typing something unknown always offers a "free text" row; free text is saved verbatim and lands in the admin merge queue (§5.6).
-- **TimeField15** is a two-column picker (hours 05–23, minutes 00/15/30/45) rendered inline in a bottom sheet on phone and a small popover on desktop; both fields also accept typed `HH:MM` and snap to 15 minutes. The return field defaults to departure + 4 h and is validated `> departure` (§5.3 REQUIREMENTS). A return on the next day is allowed via a small "למחרת" toggle; leaving the target week shows a blocking error unless the Sadran allows it later.
+- **TripShapeControl** (`trip_shape`): הלוך ושוב / הלוך בלבד / חזור בלבד. One-way shapes hide the irrelevant time field and the "car stays with me" switch and show **OneWayCarModeControl** (`one_way_car_mode`): "אני נוהג/ת ומשאיר/ה את הרכב שם" (`relay` — for חזור בלבד the label reads "אני נוהג/ת ברכב שנמצא שם הביתה") or "אני צריך/ה הסעה" (`passenger`). Helper under `relay`: the car is left at the destination only if someone brings it back the same day, otherwise the Sadran will suggest a round trip or a lift (REQUIREMENTS §5.4). The "will be approved immediately" preview (live weeks) is never shown for one-way shapes (§13.64).
+- **TimeField15** is a two-column picker (hours 05–23, minutes 00/15/30/45) rendered inline in a bottom sheet on phone and a small popover on desktop; both fields also accept typed `HH:MM` and snap to 15 minutes. The return field defaults to departure + 4 h and is validated `> departure` (§5.3 REQUIREMENTS). A return on the next day is allowed via a small "למחרת" toggle; leaving the target week is a **blocking error** for members ("נסיעה שמסתיימת אחרי שבת — פנה/י לסדרן/ית"); a Sadran filing on behalf may pass it and later marks the ride `overflow_allowed` in the `RideSheet` (REQUIREMENTS §13.62).
 - **Flexibility** is four compact `FlexibilitySegmented` rows (departure earlier/later, return earlier/later), each with the six REQUIREMENTS values; defaults 0. Below them a helper: "גמישות מעלה את הסיכוי לקבל רכב" (ties to the policy rule).
 - **Duplicate detection**: on submit, if the member has an overlapping request the footer shows "יש לך כבר בקשה ליום ג' 08:00–12:00 — לערוך אותה במקום?" with links.
 - **Edit mode**: same screen, title **עריכת בקשה**; after solving started, a banner "השבוע כבר בהכנה — השינוי יסומן לסדרן/ית" (REQUIREMENTS §5.2 versioning). After publish for an assigned ride, saving shows the §8 warning if the new window is not free on the same car.
 - **On behalf of**: Sadran/Admin see an extra "מבקש/ת" member combobox at the top.
-- **Ask to join prefill** (`?ride=<id>`): destination, day, times copied from the ride; a banner "בקשה להצטרף לנסיעה של יואב — הסדרן/ית יציעו לו את האיחוד" (§3.5).
+- **Ask to join prefill** (`?ride=<id>`): destination, day, times and trip shape copied from the ride (a relay-out ride prefills הלוך בלבד + אני צריך/ה הסעה); a banner "בקשה להצטרף לנסיעה של יואב — הסדרן/ית יציעו לו את האיחוד", or, when the ride is on a **temporary car**, "בקשה להצטרף לנסיעה של יואב ברכב הפרטי שלו — ההצעה תישלח אליו ישירות" (§3.5, REQUIREMENTS §13.43).
 
 ### 3.5 Published siddur (`/siddur`, tab הסידור)
 
-Phase-aware: for an Open week members see only their own requests and a note "הסידור יפורסם ביום רביעי בערב"; for Published/Live weeks they see the full department siddur (REQUIREMENTS §10).
+Phase-aware: for an Open week members see only their own requests and a note "הסידור יפורסם ביום רביעי בערב"; for Published/Live weeks they see the full department siddur (REQUIREMENTS §10). The department switcher in the header also lists departments the member does **not** belong to; their published siddurim open read-only (no "ask to join", no FAB — REQUIREMENTS §13.52).
 
-**Phone default — day-by-day list** (`DayList`): sticky day tabs (א ב ג ד ה ו ש with a small count), then rides sorted by departure. Each `RideCard` shows time range, destination, driver, car, free seats indicator ("2 מקומות פנויים" computed from the car's best fitting configuration minus passengers), and a chip if it is a temporary car ("רכב פרטי של יואב").
+**Phone default — day-by-day list** (`DayList`): sticky day tabs (א ב ג ד ה ו ש with a small count), then rides sorted by departure. Each `RideCard` shows time range, destination, driver, car, free seats indicator ("2 מקומות פנויים" computed from the car's best fitting configuration minus passengers), and a chip if it is a temporary car ("רכב פרטי של יואב"). A ride whose car changes location (a relay leg, `rides.origin_id ≠ destination_id`) shows **origin → destination** instead of the plain destination ("נבו → בנימינה", "בנימינה → נבו") and the chip **⇄ העברת רכב**; a chauffeur ride shows "הסעה · מסיע/ה: יואב".
 
 ```
 ┌──────────────────────────────────────┐
@@ -242,6 +260,9 @@ Phase-aware: for an Open week members see only their own requests and a note "ה
 │ 08:30–13:00  עפולה (בריאות)  יונדאי 3│
 │ נהגת: את · דנה נוסעת איתך           │
 │──────────────────────────────────────│
+│ 09:00 →  נבו → בנימינה  ⇄  אוקטביה  │
+│ נהגת: נועה · 3 מקומות פנויים         │
+│──────────────────────────────────────│
 │ 09:00–11:00  ● חסום — טיפול  קיה 2  │
 │ ...                                  │
 │          [ + בקשה חדשה ]             │
@@ -252,7 +273,7 @@ Phase-aware: for an Open week members see only their own requests and a note "ה
 
 **Filter by destination** (`[יעד ▾]`): a `DestinationCombobox` in filter mode; matches presets by zone too ("עפולה" also lists rides to "עפולה · קניון"). Empty result: "אין נסיעות ל-{{dest}} השבוע — לפתוח בקשה?" (this is the v1 version of the v1.x lift-finding search).
 
-**Ride detail (`/rides/:id`)**: header with times/destination/car; driver row (phone visible only if you share the ride, per §10); passengers; "הרכב נשאר ביעד" indicator; buttons: **בקש/י להצטרף** (opens `/requests/new?ride=<id>`; on submit this is a **normal request** created through `submit_request` with `join_ride_id = <ride>` — REQUIREMENTS §7.3, DATA_MODEL §3.6. The Sadran sees it flagged "merge requested" in the unmet list with the merge suggestion first and sends the driver a `merge` proposal), **דווח/י על תקלה ברכב**, and for own rides **ערוך** / **בטל נסיעה**.
+**Ride detail (`/rides/:id`)**: header with times, origin → destination and car; driver row (phone visible only if you share the ride, per §10); passengers; car-mode indicator — "הרכב נשאר איתי ביעד" (keep), "הרכב נשאר בבנימינה" (relay out), "הרכב נאסף מבנימינה" (relay back), "הסעה — הנהג/ת חוזר/ת עם הרכב" (chauffeur); buttons: **בקש/י להצטרף** (opens `/requests/new?ride=<id>`; on submit this is a **normal request** created through `submit_request` with `join_ride_id = <ride>` — REQUIREMENTS §7.3, DATA_MODEL §3.6. **Shared car**: the Sadran sees it flagged "merge requested" in the unmet list with the merge suggestion first and sends the driver a `merge` proposal. **Temporary car**: `submit_request` creates and sends the `merge` proposal to the owner immediately; the owner answers via `/p/<token>` like any driver, the requester is told the outcome through `outcome_changed`, and the Sadran only sees the proposal in the list and gets `proposal_answered` — REQUIREMENTS §13.43), **דווח/י על תקלה ברכב**, and for own rides **ערוך** / **בטל נסיעה**.
 
 ### 3.6 Proposal screen (`/p/:token`)
 
@@ -282,7 +303,7 @@ Opened from the WhatsApp link or a push. **Decided (2026-09-06): answering does 
 └──────────────────────────────────────┘
 ```
 
-Variants: **איחוד נסיעות** shows the other party's first name, destination, times and "תוספת של כ-{{detourMin}} דק'" and notes whether you would be driver or passenger; the passenger variant hides the car. **דחייה** (deny) has no accept button — it shows the reason and two options: **הבנתי** and **מצאתי פתרון אחר** (records `external`), plus a checkbox "אל תציעו לי מקומות שמתפנים השבוע" (opt-out per REQUIREMENTS §13.7). "Suggest other time" declines the proposal and attaches the counter-times as a note for the Sadran (no new proposal is auto-created).
+Variants: **איחוד נסיעות** shows the other party's first name, destination, times and "תוספת של כ-{{detourMin}} דק'" and notes whether you would be driver or passenger; the passenger variant hides the car; the one-way variant shows a single leg ("הלוך בלבד, יציאה 09:00"). **הלוך ושוב במקום הלוך בלבד** (a `shift` proposal carrying `trip_shape: 'round_trip'`, from the solver's `convertToRoundTrip`): "אין מי שיחזיר את הרכב מבנימינה; אפשר לקחת את הרכב הלוך ושוב ולחזור עד 12:30?" with the before/after boxes showing `09:00 →` versus `09:00 → 12:30`. **הסעה** (a `merge` proposal to a **volunteer**, `role: driver`, `car_mode: chauffeur`): "האם תוכל/י להסיע את נועה לבנימינה ביום ה' ב-09:00 ולחזור עם הרכב (כ-100 דק')?" — accept creates the pinned chauffeur ride with the volunteer as driver. **דחייה** (deny) has no accept button — it shows the reason and two options: **הבנתי** and **מצאתי פתרון אחר** (records `external`), plus a checkbox "אל תציעו לי מקומות שמתפנים השבוע" (opt-out per REQUIREMENTS §13.7). **פתרון חיצוני** (`external`, REQUIREMENTS §13.59): shows the reason and the hint line (מונית / רכבת ואוטובוס / השכרה) with two buttons — **אסתדר בעצמי** (accept → request `external`) and **להשאיר אותי ברשימת ההמתנה** (decline → back to `waitlisted`, freed-slot offers keep coming). "Suggest other time" declines the proposal and attaches the counter-times as a note for the Sadran (no new proposal is auto-created).
 
 After answering: confirmation state "תודה! הסדרנית תעדכן את הסידור" with a link to `/my`. Expired: "ההצעה פקעה — הבקשה חזרה למצב הקודם". Already answered: shows the recorded answer and by whom (e.g. "נרשם על ידי הסדרנית לפי תשובתך בוואטסאפ").
 
@@ -296,8 +317,9 @@ Sections in cards:
 
 1. **פרטים** — name, phone (required, edit inline), Google email (read-only), child seats I usually need (default for the stepper).
 2. **מחלקות** — chips of my departments, star marks the default; joining another department is an Admin action ("לבקשת שינוי פנה/י למנהל/ת").
+2a. **מסך הבית** — `HomeWeekPreference` segmented control "שבוע ברירת מחדל במסך הבית": **אוטומטי** (השבוע הפעיל אם יש לי נסיעה היום או מחר, אחרת השבוע הפתוח) / **השבוע הפעיל** / **השבוע הפתוח** → `profiles.home_week_preference` (REQUIREMENTS §5.5). Helper: "הנסיעות הקרובות והבקשות שלא שובצו מוצגות תמיד למעלה, בלי קשר לבחירה".
 3. **התראות** — push status (מופעל / כבוי / דורש התקנה with `InstallHint`), then mute switches per category: תזכורות על חלון בקשות, פרסום הסידור, הצעות, מקומות שמתפנים, תקלות ותחזוקה. Each category is a fixed set of `notification_event` values (§6.1); toggling it writes those values to `profiles.muted_events`. Sadran alerts row shown disabled with "לא ניתן להשתקה כל עוד את/ה סדרן/ית" (enforced in `enqueue_notification()`, DATA_MODEL §3.11).
-4. **רכב פרטי לשיתוף** (temporary car, §6.4) — register: nickname, seats configuration (preset picker), department, active until date; then a mini list of my own rides on it with **הוסף נסיעה** (opens the request form in "own car" mode: auto-assigned, appears on the board only as a merge target).
+4. **רכב פרטי לשיתוף** (temporary car, §6.4) — any member may register (REQUIREMENTS §13.53): nickname, seats configuration (preset picker), department, active until date; then a mini list of my own rides on it with **הוסף נסיעה** (opens the request form in "own car" mode: round trips only — a temporary car never relays — auto-assigned, appears on the board only as a merge target). Merge requests from members who "ask to join" my car arrive here and in the inbox as proposals I answer myself. An admin may revoke the car (it shows as "הוצא משימוש על ידי המנהל/ת").
 5. **היסטוריה וסטטיסטיקה** — link to `/my/history` (rides received, denied, fairness note).
 6. **ניהול** — visible to Sadran/Admin: links to `/sadran` and `/admin`.
 7. **התנתקות**, app version, "מדריך קצר" (replays the 5-step coach marks).
@@ -325,11 +347,13 @@ Sections in cards:
 │ • 3 בקשות מאוחרות (מאז סגירת החלון)         [ הצג ]      │
 │ • 2 בקשות שונו לאחר תחילת הסידור             [ הצג ]      │
 │ • 4 הצעות ללא תשובה, פוקעות בעוד 6 שעות      [ הצג ]      │
+│ • 2 הסעות דרושות נהג/ת                       [ הצג ]      │
+│ • "אוקטביה" לא חוזרת הביתה ביום ה' — דרוש אישור  [ ללוח ] │
 │ • רכב "קיה 2" נכנס לטיפול ה' 08:00–14:00 — 2 נסיעות מושפעות │
 └────────────────────────────────────────────────────────────┘
 ```
 
-"הרץ פותר" runs the solver against the current draft (preserving pinned rides), shows a progress toast, then a result sheet: "שובצו 61 מתוך 84 · 14 עם הצעות · 3 ללא הצעה" with **פתח לוח**. For a *Live* week the dashboard instead lists today's rides, cancellations in the last 24 h, freed slots awaiting approval (§4.4), and waitlisted new requests.
+"הרץ פותר" runs the solver against the current draft (preserving pinned rides), shows a progress toast, then a result sheet: "שובצו 61 מתוך 84 · 14 עם הצעות · 2 דרושות נהג/ת · 3 ללא הצעה" with **פתח לוח**. The Sadran is brought here by two pushes (§6.1): `window_closed_solve_now` when the window closes and `publish_reminder` if the planned publish time passes while the week is still בהכנה. For a *Live* week the dashboard instead lists today's rides, cars currently away from home ("אוקטביה בבנימינה עד 11:15"), cancellations in the last 24 h (a cancelled relay leg shows its flagged partner with **טפל/י**), freed slots awaiting approval (§4.4), and waitlisted new requests (one-way requests always land here, REQUIREMENTS §13.64).
 
 ### 4.2 The board (`/sadran/:dept/:week/board`)
 
@@ -523,10 +547,10 @@ Ordered list (drag handle), name, icon picker, active. Initial values from REQUI
 Each `PolicyRuleRow` has an enable switch, a `WeightSlider` (0–10, step 0.1, numeric input beside it — the seeded default policy in SOLVER.md §4.4 uses weights such as 0.3 and 0.4) and a params editor specific to the rule type (map editor for ride types keyed by `ride_types.code`, `maxKm` for distance, `lookbackWeeks` for fairness; param names come from `ruleRegistry[type].defaultParams`). **בדיקה על השבוע שעבר** re-scores the previous week's requests with the edited (unsaved) policy and shows the `RankingPreviewTable` with rank deltas, plus a dry-run solver pass reporting which requests would flip between served and unmet. Saving always creates a new version (REQUIREMENTS §7.2); "הפוך לפעילה במחלקה…" assigns it. History tab lists versions with notes and which solver runs used them.
 
 ### 5.9 Notification templates (`/admin/templates`)
-Edits the `notification_templates` table (DATA_MODEL §3.11): for each of the 18 events in §6.1 an inbox row and a push row, plus the five WhatsApp templates in §6.2 (`channel = whatsapp`, `variant` = shift / merge_passenger / merge_driver / deny / reminder). Editor: title, body (textarea), placeholder chips that insert `{{…}}` at the caret, live preview with sample data, "שחזר ברירת מחדל" (re-inserts the seed row). Validation blocks removing the `{{link}}` placeholder from WhatsApp templates and enforces the push length limits.
+Edits the `notification_templates` table (DATA_MODEL §3.11): for each of the 20 events in §6.1 an inbox row and a push row, plus the seven WhatsApp templates in §6.2 (`channel = whatsapp`, `variant` = shift / merge_passenger / merge_driver / deny / external / chauffeur / reminder). Editor: title, body (textarea), placeholder chips that insert `{{…}}` at the caret, live preview with sample data, "שחזר ברירת מחדל" (re-inserts the seed row). Validation blocks removing the `{{link}}` placeholder from WhatsApp templates and enforces the push length limits.
 
 ### 5.10 Settings (`/admin/settings`)
-Per department (with a global default row): request window open (day + time), close (day + time), planned publish time (used as default proposal expiry), grid hours (05:00–24:00), turnaround buffer (15 min), detour limit (20 min / 15 km), allow rides ending after Saturday (off), auto-apply proposals when all accepted (on), who may register temporary cars (any member / admin approved). Time inputs use `TimeField15`.
+Per department (with a global default row): request window open (day + time), close (day + time), planned publish time (used as default proposal expiry), grid hours (05:00–24:00), turnaround buffer (30 min), day end (default 23:59 — every shared car must be home by then unless the Sadran acknowledges an overnight stay), chauffeur dwell (default 10 min), detour limit (20 min / 15 km), auto-apply proposals when all accepted (on). Time inputs use `TimeField15`. Two settings from the reference app are **gone in v0.3** (DATA_MODEL §3.1): rides ending after Saturday are a per-ride Sadran flag (`rides.overflow_allowed`, set in the `RideSheet`, not here — REQ §13.62), and any member may register a temporary car with no admin gate (an admin can only revoke one — REQ §13.53).
 
 ---
 
@@ -536,12 +560,13 @@ Placeholders: `{{firstName}}`, `{{sadranName}}`, `{{dept}}`, `{{weekLabel}}` (e.
 
 ### 6.1 Push / inbox events (REQUIREMENTS §9) — the canonical event list
 
-This table **is** the `notification_event` enum (DATA_MODEL §2) and ARCHITECTURE §9's event list: exactly these 18 events, no others. The enum value is the snake_case of the i18n key suffix (`notif.freedSlotAuto` → `freed_slot_auto`). The i18n key holds only the short label used in the mute list and inbox filters; Title and Body are the **seeded defaults** of the `inbox` and `push` rows in `notification_templates`, editable by admins (§5.9). "(to Sadran)" events are Sadran-role events that cannot be muted while assigned.
+This table **is** the `notification_event` enum (DATA_MODEL §2) and ARCHITECTURE §9's event list: exactly these 20 events, no others. The enum value is the snake_case of the i18n key suffix (`notif.freedSlotAuto` → `freed_slot_auto`). The i18n key holds only the short label used in the mute list and inbox filters; Title and Body are the **seeded defaults** of the `inbox` and `push` rows in `notification_templates`, editable by admins (§5.9). "(to Sadran)" events are Sadran-role events that cannot be muted while assigned.
 
 | Key | Enum value | Event | Title | Body |
 |---|---|---|---|---|
 | `notif.windowOpen` | `window_open` | Request window opened | הבקשות לשבוע {{weekLabel}} נפתחו | אפשר להגיש בקשות עד {{closeTime}}. |
 | `notif.windowClosing` | `window_closing` | Closing reminder (T-24h, T-2h; `closing_reminder_hours`) | עוד {{count}} שעות לסגירת הבקשות | עדיין לא הגשת בקשה לשבוע {{weekLabel}}? זה הזמן. |
+| `notif.windowClosedSolveNow` | `window_closed_solve_now` | Request window closed, solve now (to Sadran; fired by `advance_week_phases()`) | הבקשות לשבוע {{weekLabel}} נסגרו | אפשר להריץ את הפתרון האוטומטי וללוח הסדרן/ית. |
 | `notif.published` | `published` | Siddur published | הסידור לשבוע {{weekLabel}} פורסם | {{outcomeLine}} (per member, e.g. "שובצת ליונדאי 3 ביום ג' 08:30–13:00" / "הבקשה לעפולה לא שובצה: {{reason}}") |
 | `notif.outcomeChanged` | `outcome_changed` | Your outcome changed | שינוי בסידור שלך | {{diffLine}} (e.g. "הנסיעה לעפולה עברה מ-09:00 ל-08:30, רכב יונדאי 3") |
 | `notif.proposalReceived` | `proposal_received` | Proposal received | הצעה מהסדרן/ית לגבי {{destination}} | {{sadranName}} מציע/ה {{proposalShort}}. לחצו לענות. |
@@ -558,16 +583,17 @@ This table **is** the `notification_event` enum (DATA_MODEL §2) and ARCHITECTUR
 | `notif.requestChanged` | `request_changed` | Member edited after solving started (to Sadran) | {{firstName}} שינה/תה בקשה | {{destination}}, {{day}} — {{diffLine}} |
 | `notif.accessRequest` | `access_request` | Unknown account signed in (to Admin) | בקשת גישה חדשה | {{email}} מבקש/ת להצטרף. |
 | `notif.accessApproved` | `access_approved` | Approved (to member; push/inbox now, email channel in v1.x — REQUIREMENTS §14.10) | הגישה שלך אושרה | אפשר להיכנס לסידור הרכב של נבו. |
+| `notif.publishReminder` | `publish_reminder` | Planned publish time passed, week still solving (to Sadran; fired once by `send_due_reminders()`) | תזכורת: הסידור לשבוע {{weekLabel}} עדיין לא פורסם | שעת הפרסום המתוכננת עברה. אפשר לפרסם או להמשיך לנהל את הבקשות שנותרו. |
 
 Mute categories (§3.8) → events: תזכורות על חלון בקשות = `window_open`, `window_closing`; פרסום הסידור = `published`, `outcome_changed`; הצעות = `proposal_received`; מקומות שמתפנים = `freed_slot`, `freed_slot_auto`, `claim_approved`, `claim_declined`; תקלות ותחזוקה = `maintenance_affects`. Sadran/Admin events and `auto_approved`/`access_approved` are not mutable.
 
 ### 6.2 WhatsApp proposal templates (`wa.me` text)
 
-Stored as `notification_templates` rows with `channel = 'whatsapp'`, `event = 'proposal_received'` and `variant` = the key suffix (`shift`, `merge_passenger`, `merge_driver`, `deny`, `reminder`); the composer renders them client-side and the Sadran can edit before sending. Proposal type → template: `shift` → `wa.shift`; `merge` → `wa.mergePassenger` to the joining member and `wa.mergeDriver` to the driver; `deny` → `wa.deny`; `external` — see REQUIREMENTS §14.9 (no template yet). Gender-neutral forms are used where Hebrew allows; `{{sadranName}}` is inserted after "זה/זו" is resolved from the Sadran's profile gender (`{{sadranThisIs}}` → "זה"/"זו").
+Stored as `notification_templates` rows with `channel = 'whatsapp'`, `event = 'proposal_received'` and `variant` = the key suffix (`shift`, `merge_passenger`, `merge_driver`, `deny`, `external`, `chauffeur`, `reminder`); the composer renders them client-side and the Sadran can edit before sending. Proposal type → template: `shift` → `wa.shift`; `merge` → `wa.mergePassenger` to the joining member and `wa.mergeDriver` to the driver; `deny` → `wa.deny`; `external` → `wa.external` (REQUIREMENTS §13.59: no car available, suggest a cab/other solution; accept = "אסתדר בעצמי" → `external`, decline = "להשאיר אותי ברשימת ההמתנה"); `chauffeur` → `wa.chauffeur`, sent optionally to a volunteer as a `merge` proposal with `role: 'driver'` and `request_id = null` (SOLVER §3.15). Gendered Hebrew uses **slash forms only** — there is no per-member gender field (REQUIREMENTS §11, §13.49): every template introduces the Sadran with the fixed form "זה/זו {{sadranName}}", never a resolved pronoun.
 
 **`wa.shift` — shift hours**
 ```
-היי {{firstName}}, {{sadranThisIs}} {{sadranName}} מסידור הרכב 🚗
+היי {{firstName}}, זה/זו {{sadranName}} מסידור הרכב 🚗
 ביקשת רכב ל{{destination}} ב{{day}} {{date}}, {{depart}}–{{return}}.
 בשעות האלה אין רכב פנוי, אבל יש רכב אם יוצאים {{newDepart}} וחוזרים {{newReturn}}.
 מתאים? אפשר לאשר או לדחות כאן (עד {{expiresAt}}):
@@ -576,7 +602,7 @@ Stored as `notification_templates` rows with `channel = 'whatsapp'`, `event = 'p
 
 **`wa.mergePassenger` — merge, to the person who would ride along**
 ```
-היי {{firstName}}, {{sadranThisIs}} {{sadranName}} מסידור הרכב 🚗
+היי {{firstName}}, זה/זו {{sadranName}} מסידור הרכב 🚗
 ביקשת רכב ל{{destination}} ב{{day}} {{date}}.
 {{driverName}} נוסע/ת לשם באותו יום — יציאה {{newDepart}}, חזרה {{newReturn}} — ויש מקום ברכב.
 להצטרף לנסיעה כנוסע/ת? כך משתחרר רכב לחבר/ה אחר/ת.
@@ -586,7 +612,7 @@ Stored as `notification_templates` rows with `channel = 'whatsapp'`, `event = 'p
 
 **`wa.mergeDriver` — merge, to the driver**
 ```
-היי {{firstName}}, {{sadranThisIs}} {{sadranName}} מסידור הרכב 🚗
+היי {{firstName}}, זה/זו {{sadranName}} מסידור הרכב 🚗
 בנסיעה שלך ל{{destination}} ב{{day}} {{date}} ({{depart}}–{{return}}) יש מקום פנוי.
 {{passengerName}} צריך/ה להגיע לאותו אזור. אפשר לצרף? התוספת בדרך: כ-{{detourMin}} דק'.
 תשובה כאן (עד {{expiresAt}}):
@@ -595,10 +621,28 @@ Stored as `notification_templates` rows with `channel = 'whatsapp'`, `event = 'p
 
 **`wa.deny` — deny**
 ```
-היי {{firstName}}, {{sadranThisIs}} {{sadranName}} מסידור הרכב 🚗
+היי {{firstName}}, זה/זו {{sadranName}} מסידור הרכב 🚗
 לצערי לא הצלחנו לשבץ רכב ל{{destination}} ב{{day}} {{date}} {{depart}}–{{return}}.
 הסיבה: {{reason}}.
 אם יתפנה רכב מתאים במהלך השבוע תקבל/י הודעה אוטומטית. פרטים ואפשרויות:
+{{link}}
+```
+
+**`wa.external` — no car available, external solution (REQUIREMENTS §13.59)**
+```
+היי {{firstName}}, זה/זו {{sadranName}} מסידור הרכב 🚗
+לצערי אין רכב פנוי ל{{destination}} ב{{day}} {{date}} {{depart}}–{{return}}, גם לא עם הזזה.
+אפשר לענות כאן (עד {{expiresAt}}):
+{{link}}
+(אסתדר/ת בעצמי, או להישאר ברשימת ההמתנה למקרה שיתפנה רכב)
+```
+
+**`wa.chauffeur` — asking a volunteer to drive (optional `merge` proposal, `role: 'driver'`)**
+```
+היי {{firstName}}, זה/זו {{sadranName}} מסידור הרכב 🚗
+{{passengerName}} צריך/ה הסעה ל{{destination}} ב{{day}} {{date}} סביב {{depart}} ({{driverName}} לא נוהג/ת בעצמו/ה הפעם).
+אפשר/י להסיע ולהחזיר את הרכב הביתה? זה ייקח כ-{{detourMin}} דק'.
+תשובה כאן (עד {{expiresAt}}):
 {{link}}
 ```
 
@@ -911,8 +955,104 @@ Screen titles, primary actions, statuses and navigation. Keys are the namespaced
 
 ## 11. Open UX questions (for review)
 
-Resolved on 2026-09-06 (CLAUDE.md "Consistency decisions"): **deep-link answering needs no sign-in** — the token is a random, hashed, single-purpose secret (§3.6, ARCHITECTURE §8); **"ask to join" creates a full request** via `submit_request` with `join_ride_id` (§3.5, REQUIREMENTS §7.3). Still open:
+Resolved on 2026-09-06 (CLAUDE.md "Consistency decisions"): **deep-link answering needs no sign-in** — the token is a random, hashed, single-purpose secret (§3.6, ARCHITECTURE §8); **"ask to join" creates a full request** via `submit_request` with `join_ride_id` (§3.5, REQUIREMENTS §7.3). All three questions below were also closed by the owner's 2026-09-06 answers (REQUIREMENTS §13.42, §13.49, §13.56) and are kept only as a record of the reasoning:
 
-1. Should Home default to the **Live** week or the **Open** week on Sunday–Tuesday when both exist? (Assumed: Live week if I have a ride today or tomorrow, otherwise the Open week.)
-2. Board default: one day at a time (proposed) vs. the reference app's full-week rows. Day view is needed for 15-minute drag precision; the `WeekStrip` compensates for orientation.
-3. Gendered Hebrew: we use slash forms (נהג/ת, מקבל/ת). Alternative is a per-member gender field driving proper conjugation everywhere; adds a profile field and doubles many strings. Decision needed before the strings file grows.
+1. ~~Should Home default to the **Live** week or the **Open** week…?~~ **Resolved**: `profiles.home_week_preference` (`auto | live | open`, default `auto` = Live week if I have a ride today or tomorrow, else the Open week); Home always shows upcoming rides and unserved requests above the fold regardless (§5.5, REQUIREMENTS §13.56).
+2. ~~Board default: one day at a time vs. the reference app's full-week rows.~~ **Resolved**: one day at a time with a week strip for orientation (`WeekStrip`), phones get a list mode (REQUIREMENTS §13.42).
+3. ~~Gendered Hebrew: slash forms vs. a per-member gender field.~~ **Resolved**: slash forms only (נהג/ת, מקבל/ת); there is no per-member gender field (REQUIREMENTS §11, §13.49) — §6.2's WhatsApp templates use the fixed form "זה/זו {{sadranName}}", never a resolved pronoun.
+
+---
+
+## 12. Stage 1c implementation notes (2026-09-06, ui-dev)
+
+Deviations/simplifications taken while building the UI foundation (auth, AppShell, data layer, shared components, Home). Recorded here per CLAUDE.md hard rule 2; none contradict REQUIREMENTS.
+
+1. **Route path `/login` vs `/signin`.** The pre-existing scaffold (`src/app/router.tsx`, before this stage) already used `/login` for the screen this document calls `/signin` (§2.1). Kept as-is rather than renamed, since renaming touches the scaffold's existing links; the two names refer to the same screen.
+2. **Home's "my requests" data source.** `v_my_requests` (DATA_MODEL.md §6 step 18) is `security_invoker` and selects no `requester_id`/`filed_by` column; under the base `requests` RLS policy ("own ∨ sadran ∨ admin ∨ any approved user when served by a non-draft ride and the week is public"), a plain member querying that view can also get back *other* members' requests from any published siddur department-wide, with no column left to filter back out client-side. `src/features/requests/api.ts` queries the base `requests` table directly (`.eq('requester_id', profileId)`) instead. Flagged for `db-migrator`: the view likely wants a `requester_id`/`filed_by` column, or a second `is_own` boolean, before a future stage relies on it for the siddur/board readers.
+3. **`RideCard`/Home show only the first placed leg per request.** A request whose two legs (relay out + return) landed on two different rides would need two cards; `MyRequestRow.ride` currently picks the first `ride_requests` row with a joined ride. Fine for the common case (round trip on one car, or a single one-way leg) and for the seed data; a later stage handling relay/split legs on Home should expand this to a list.
+4. **`InstallHint`'s Android/desktop copy is new.** §3.2 only specifies the iOS Safari "add to home screen" text; the component inventory also calls for Android/desktop variants (§9 `InstallHint`), so `src/components/InstallHint.tsx` adds reasonable equivalent copy for those platforms (i18n keys `installHint.android`/`installHint.desktop`).
+5. **Onboarding (§3.2) covers only the phone step for real**, plus a UI-only push-permission step (browser `Notification.requestPermission()`, no VAPID subscription yet — `register_push_subscription` RPC is wrapped in `src/features/auth/api.ts` but not called from the UI until a later push-notifications stage). Name/default-department fields from the wireframe are deferred: `full_name` is already set from the Google profile by `handle_new_user()`, and the seed has a single department per member so there is nothing to choose yet.
+6. **Home resolves `home_week_preference` against `profile.default_department_id` only** (falling back to the first `department_members` row), not per-department. The setting is a single profile-level column, so this matches the schema; a member of several departments would need a department switcher on Home first, which is out of this stage's scope.
+7. **`/requests/:id` detail doesn't exist yet**, so Home's "next action" banner (a proposal awaiting my answer) is informational only — no click-through — until the request-detail screen lands.
+
+---
+
+## 13. Stage 2c implementation notes (2026-09-06, ui-dev)
+
+Deviations/simplifications taken while building the admin screens (§5). Recorded here per CLAUDE.md hard rule 2; none contradict REQUIREMENTS. All admin code lives under `src/features/admin/` and `src/pages/admin/`; the DB→solver mapper lives at `src/features/solverBridge/buildSolverInput.ts` (exported, reusable by a future Sadran-board stage) rather than `src/features/board/solverInput.ts`, since the board feature doesn't exist yet and the policy editor's preview needs it now.
+
+1. **Destination free-text merge does not relink past requests.** §5.6's "מזג לתוך…" adds the free text as an alias on the target destination (direct admin write, future matching works client-side) but cannot backfill `requests.destination_id`/`destination_text` on already-submitted requests: those columns are RPC-only (`submit_request` is the only writer, DATA_MODEL.md §4.3) and no shipped RPC performs this bulk relink. `src/features/admin/destinations/api.ts`'s `mergeFreeTextIntoDestination` docblock flags this; a future migration needs either a `merge_destination()` RPC or to make this an explicit admin-only exception.
+2. **Policy "test on last week" deep-imports solver internals.** `src/features/admin/policy/preview.ts` imports `normalize` (`src/solver/slots.ts`) and `scoreRequests` (`src/solver/policy/engine.ts`) directly rather than through the `@/solver` barrel, which only re-exports whole-pipeline `solve()` — per-request scores for *served* requests aren't otherwise surfaced (only `UnmetRequest.score`). Allowed either way per CLAUDE.md ("importing the solver into the UI is fine; the reverse is not"), but worth re-exporting `scoreRequests`/`normalize` from `@/solver` in a later pass so admin code doesn't reach past the barrel.
+3. **`buildSolverInput`'s week grid ignores `department_settings.board_start_time`.** It builds seven full midnight-to-midnight 96-slot days (matching `src/solver/__fixtures__/gen.ts`'s `makeWeekDays()` convention), not a board-start-time-offset grid. Fine for an ad-hoc scoring/ranking preview that never renders a board or persists rides; a future Sadran-board stage building the real board will need the board-start-time-aware version.
+4. **Policy preview omits relay pairing and fixed rides.** `runPolicyPreview` builds `SolverInput.fixedRides: []` and calls `scoreRequests`/`solve` without first computing relay pairs (`pairRelays`, not re-exported from `@/solver`), so the `peopleServed` rule scores relay legs individually instead of as a combined pair for this preview only — a minor accuracy gap in the ranking table, not in the real board/solve path (which already does this correctly).
+5. **Notification templates has no "שחזר ברירת מחדל".** Restoring a template to its seeded text would need either a stored default snapshot (a `default_title`/`default_body` column, or a separate seed-snapshot table) or duplicating the seeded Hebrew in TypeScript, which would violate CLAUDE.md hard rule 3 ("Hebrew lives in exactly three places"). `src/features/admin/templates/components/TemplatesScreen.tsx` omits the button; flagged for `db-migrator` if this is wanted.
+6. **`/admin/settings` does not render `app_settings` generically.** That table's RLS SELECT policy is `is_approved()` (any approved member, not just admin — `supabase/migrations/20260907091400_rls.sql`), and its only rows today are internal plumbing (`push_dispatch_url`, `cron_secret`, `on_ride_cancelled_url`, `housekeeping_last_run`). A generic key/value editor here would be the first UI to actually *display* `cron_secret` in this app's own browser network traffic. `src/features/admin/settings/components/SettingsScreen.tsx` links to the Departments screen's per-department settings instead and documents the gap; a real fix (restricting the SELECT policy to admin, or moving secrets out of `app_settings`) needs a migration, out of scope here.
+7. **`MaintenanceBlockForm` uses a native `<input type="date">` + `TimeField15` pair**, not a dedicated `TimeRangePicker15`-across-dates component (component inventory §9). Building the latter generically (spanning midnight, multi-day) was out of scope for this stage; the simpler pair covers the same admin need (pick a start/end date+time for a block).
+8. **New `policies` rows are created with `is_active: false`.** `policies_one_active_idx` (a partial unique index) allows only one active policy per department, or one global (DATA_MODEL.md §3.4); defaulting a freshly created policy to the table's default `is_active = true` would race whatever is already active for that scope and fail with a raw `unique_violation` the app doesn't map to a Hebrew message. Admins turn a policy on explicitly via "הפוך לפעילה במחלקה…" (`set_policy_active`).
+9. **Admin i18n additions live in a new sibling file, `src/i18n/he.admin.ts`,** spread into `he` via one import + one line (`...heAdmin`) in `src/i18n/he.ts`, per this stage's task split (kept `he.ts` itself to that one-line diff so the concurrent member-screens stage's edits to the same file never collide with this one). One export, `notificationEventLabels` (all 20 `notification_event` values), is deliberately *not* nested inside the spread `heAdmin` object — it's a `Record<string, string>` looked up by enum value at runtime (the templates list), not through `t()`/`tv()`, and nesting it would have forced `he.ts`'s `DotPaths<Dictionary>` mapped type to reason about an open-ended index signature.
+10. **Admin routes live in `src/features/admin/routes.tsx`**, spread into `src/app/router.tsx` as `...adminRoutes` under the existing `RequireAdmin` element (same one-line-diff reasoning as above); the pre-existing placeholder `src/pages/AdminPage.tsx` (a bare `PlaceholderScreen`) was deleted since `adminRoutes` fully replaces its one route.
+11. **Seat-config dominance and the quick-fit tester reuse `dominates()`/`fits()` from `src/solver/seatFit.ts` verbatim** (`src/features/admin/cars/lib/seatConfig.ts`, `SeatConfigEditor.tsx`) rather than re-implementing the comparison, so "redundant row" in the admin editor can never drift from what the solver actually treats as dominated.
+
+---
+
+## 14. Stage 2a implementation notes (2026-09-06, ui-dev)
+
+Deviations/simplifications taken while building the member screens (§3: new/edit request, my requests list, published siddur, `/p/:token`, inbox, profile). Recorded here per CLAUDE.md hard rule 2; none contradict REQUIREMENTS. Member i18n lives in a new sibling file, `src/i18n/he.member.ts`, spread into `he` via one import + one line (`...heMember`) in `src/i18n/he.ts` — same one-line-diff reasoning as the admin stage's `he.admin.ts` (§13 note 9), and routes live in `src/features/member/routes.tsx`, spread as `...memberRoutes` in `src/app/router.tsx` alongside the pre-existing literal `/requests/new`, `/siddur`, `/inbox`, `/profile` entries (which already pointed at their real pages before this stage and were left as-is).
+
+1. **`answer-proposal`'s actual response shape differs from this stage's brief.** The brief described `GET ?token= → { proposal: {type, payload, expiresAt, status, requestSummary, partiesCount} }`; the shipped `supabase/functions/answer-proposal/index.ts` (built concurrently) instead returns the fields flattened at the top level (`proposalId, type, status, reasonHe, expiresAt, payload, request, parties`) with no wrapper object, and POST returns `{proposal_id, accepted}` rather than `{ok, status}`. `src/features/proposals/api.ts`'s `fetchProposalSummary`/`answerProposalViaToken` code against the real shape (read from the actual file, not the brief) and are the single place to update if the function's contract changes again.
+2. **No dedicated `/rides/:id` route.** UX_FLOWS §2.1 lists one; this stage implements "ride detail" as a `Sheet` (`RideDetailSheet`) opened from a tap on `/siddur`'s day list or grid instead, per the "ride detail sheet" wording in the stage brief. It is not deep-linkable by URL; a future stage could add the route and have it open the same sheet content on load.
+3. **[Fixed in Stage 3, §16 item 3 — `set_freed_slot_opt_out` RPC.]** The freed-slot opt-out checkbox on `/p/:token`'s deny/external variant is UI-only. No RPC sets `requests.freed_slot_opt_out` on an *existing* request outside of `submit_request`, and that RPC's update branch does not `coalesce()` `destination_id`/`destination_text`/`ride_type_id`/`trip_shape`/`depart_at`/`return_at`/`one_way_car_mode` — calling it with only `freed_slot_opt_out` set would null those columns out. Flagged for `db-migrator`: either a small dedicated RPC, or making `submit_request`'s update path coalesce those fields the same way it already does for `adults`/`flex_*`/`notes`.
+4. **Temporary car registration has no department picker.** `ProfilePage` registers against `useMyDepartments()[0]`; a member of several departments would need an explicit picker (REQUIREMENTS §13.2 allows several departments per member, but the seed data and this stage's time budget only exercise the single-department case).
+5. **No "active until" field on temporary cars.** UX_FLOWS §3.8 item 4 mentions one; `cars` (DATA_MODEL §5, `src/integrations/supabase/types.ts`) has no such column, so it is omitted rather than invented client-side.
+6. **Car issue reporting ("דווח/י על תקלה ברכב") is not built this stage.** It is part of the `/rides/:id` wireframe (§3.5) but outside this stage's seven enumerated deliverables; `car_issues` and `report_car_issue_unsafe_to_maintenance` are untouched.
+7. **No "on behalf of" member picker on the request form.** §3.4's Sadran/Admin-only "מבקש/ת" combobox is out of scope for a member-facing stage; `submit_request`'s `requester_id` override path exists server-side but nothing in this stage's UI calls it.
+8. **Companions are persisted in a second round trip.** `submit_request`'s payload has no companions field; `RequestForm` calls `submit_request` first, then directly deletes+reinserts `request_companions` for the returned/edited request id (`request_companions_insert`/`_delete` RLS already allow this for the requester, DATA_MODEL §4.3) rather than one atomic call.
+9. **The siddur destination filter matches by exact origin/destination name**, not zone (§3.5's "עפולה" also lists rides to "עפולה · קניון" example). `DestinationCombobox`'s `mode: 'input' | 'filter'` prop (pre-existing from stage 1c) is declared but not behaviorally distinguished in the component itself; extending it to zone-aware matching in filter mode is a follow-up.
+10. **`WeekGrid` is exercised read-only in this stage** (`onRideClick` only, no `onSlotClick` usage) — the props for drag/resize/slot-click exist per the component-inventory contract for a future Sadran-board stage to reuse, but `/siddur` itself never creates or moves rides.
+11. **Push subscribe/unsubscribe (`src/lib/push.ts`) is real** (VAPID `applicationServerKey`, `register_push_subscription` RPC, direct `push_subscriptions` delete for unsubscribe since no unregister RPC exists) but untested against a real push service — `.env.local`'s `VITE_VAPID_PUBLIC_KEY` is a local placeholder (ARCHITECTURE §13), so `pushManager.subscribe()` will only succeed against a real key pair in a deployed environment.
+12. **`/requests` combines "my requests" and freed-slot offers on one route**, not a separate screen — matches the stage brief's "add /requests list" instruction; `RequestsListPage` groups by week and lists open freed-slot claims addressed to me above the groups.
+
+---
+
+## 15. Stage 2b implementation notes (2026-09-06, ui-dev)
+
+Deviations/simplifications taken while building the Sadran screens (§4: week dashboard, board, proposal composer, contested claims, publish confirmation, change log). Recorded here per CLAUDE.md hard rule 2; none contradict REQUIREMENTS. All code lives under `src/features/sadran/` and `src/pages/sadran/`; routes in `src/features/sadran/routes.tsx` spread as `...sadranRoutes` in `src/app/router.tsx` (same one-line-diff reasoning as stages 2a/2c), Hebrew in a new sibling `src/i18n/he.sadran.ts` spread as `...heSadran` in `src/i18n/he.ts`. `src/features/solverBridge/buildSolverInput.ts` gained one additive optional field, `fixedRides?: FixedRide[]` (defaulting to `[]`, its previous hard-coded behavior), so the board/dashboard can seed pinned rides/accepted proposals as solver constraints — the stage 2c policy preview is unaffected. `WeekGrid` gained three additive, optional props (`draggable`, `onRideDrop`, `onRideResize`) implemented as native HTML5 drag-and-drop on top of the existing layout-only rendering — no data fetching or dialogs were added to it, and the read-only `/siddur` usage from stage 2a is unaffected (defaults are `draggable = false`, `onRideDrop`/`onRideResize` undefined).
+
+1. **[Fixed in Stage 3, §16 item 1.]** Blocked: `publish_siddur` cannot currently succeed at all. Its own last statement, `update public.siddur_versions set notified_count = v_notified where id = v_version_id;` (`supabase/migrations/20260907091500_rpc.sql`), is unconditionally rejected by the `siddur_versions_forbid_mutation` trigger (`before update or delete on siddur_versions execute function forbid_mutation()`, `supabase/migrations/20260907091000_siddur_versions.sql`, which always raises `SQLSTATE 0A000`) — every call, for any department/week, fails and rolls back the whole transaction (the insert and the `weeks` phase flip never persist either). Reproduced directly against the local Supabase stack, independent of any client code. `PublishScreen`/`publishSiddur()`/`usePublishSiddurMutation` call the RPC exactly as documented; nothing here is fixable from the UI layer without touching `supabase/migrations` (out of scope for this stage — a hardening/db-migrator pass needs to either compute `notified_count` before the initial insert instead of updating after, or relax the trigger with a `when` clause). `e2e/sadran.spec.ts`'s publish test is `test.skip()`-ed with this exact reasoning inline; un-skip once fixed.
+2. **[Partially fixed in Stage 3, §16 item 4 — both variants are now seeded and `external` is wired; `chauffeur` still has no composer action, see item 6.]** Blocked: two WhatsApp template variants are undocumented-but-missing from the seed. UX_FLOWS §6.2 names `external`/`chauffeur` as the templates for the `external`/chauffeur-volunteer flows, but `supabase/seed.sql` only seeds `shift`, `merge_passenger`, `merge_driver`, `deny`, `reminder` (5 rows, not 7) under `notification_templates` (`channel = 'whatsapp'`). The composer (`ProposalComposerScreen.tsx`) detects the missing template (`VARIANT_OF_TYPE.external === null`) and shows `he.sadranProposal.templateMissing` instead of a preview/send button rather than inventing Hebrew copy client-side (hard rule 3). `chauffeur` proposals (assigning a driver to a chauffeur leg) are not wired up at all this stage — see item 6.
+3. **[Fixed in Stage 3, §16 item 2.]** `apply_solver_result`'s documented `input_hash` staleness check does not exist server-side. ARCHITECTURE.md §12 invariant 16 and DATA_MODEL.md §7 describe the RPC re-verifying `input_hash` before applying; the shipped RPC only stores whatever hash it's given, never recomputes or compares it (`supabase/migrations/20260907091500_rpc.sql`). `src/features/sadran/solverRun.ts`'s `hashSolverInput()` still computes and sends a hash (useful for `solver_runs` audit/debugging), but the "stale input → Hebrew conflict toast + reload" behavior the task brief asked for cannot be a real server-enforced guarantee until a migration adds the check; the client currently has no way to detect a genuine mid-solve race.
+4. **`buildSolverInput`'s week grid still ignores `department_settings.board_start_time`** (carried over from the stage 2c note it already recorded) — the board itself lays out each day independently from `v_board_rides` timestamps (`isoToMinutesSinceMidnight`), so this only affects the client-side solver preview's internal slot numbering, not what the Sadran sees on screen.
+5. **Fixed-ride mapping (`boardRideToFixedRide` in `solverRun.ts`) gives every served leg the ride's own origin/destination** rather than the precise per-leg `AssignmentLeg.originId/destinationId` direction SOLVER.md §2 describes (a `relay`/`passenger` leg's true travel direction). This only affects relay-pair suggestion text for *already-placed* rides, which a fixed ride never re-enters (SOLVER §5.1) — the same class of simplification stage 2c's policy preview already took for a different reason.
+6. **Chauffeur suggestions have no dedicated UI action this stage.** `SOLVER.md §3.15`: a `chauffeur` suggestion is "a Sadran task — שבץ נהג/ת creates the pinned chauffeur ride with the chosen volunteer as driver_id", not a proposal to the requester. The board's `UnmetList` shows the suggestion's Hebrew reason like any other, but there is no "assign a driver" picker/action wired to `edit_ride` for it yet (dashboard/board "needs driver" counts are derived from `solver_runs.summary.needsDriver` — a count only, no request ids, since that detail isn't persisted — see item 8). An optional `merge` proposal asking a volunteer to drive (`wa.chauffeur`) is likewise not built, compounded by item 2's missing template.
+7. **Manual proposal creation only offers `shift`/`deny`/`external`, not `merge`.** `proposals_payload_shape_ck` (`validate_proposal_payload`, `supabase/migrations/20260907090900_proposals.sql`) requires a merge proposal's payload to carry a real `ride_id` + `legs`, which only a concrete host ride (from the board's merge-by-drag, or an `UnmetRequest`'s `merge`/`splitLegs` suggestion) supplies; `ProposalsListScreen`'s manual composer entry point deliberately excludes `merge` from its type picker rather than accept a payload that would always fail the check constraint.
+8. **Per-request solver suggestions/scores are session-only, never persisted.** `solver_runs.summary` stores only aggregate counts (`served/unmet/needsDriver/relocations`), not the full `SolverOutput.unmet[]` (scores + ranked suggestions) — there is no column for it (and adding one is a migration). The board therefore recomputes a fresh client-side preview (`computePreview()`, a click on "הרץ פותר") to populate the `UnmetList`'s score/suggestion chips; reloading the board page loses that preview until re-run. The dashboard's "run solver" result sheet has the same character — its `SolverOutput` lives only in component state, not the DB, between the record-preview and apply-draft steps.
+9. **The board's drag/resize consent check uses only the ride's driver-role request's declared flexibility** (`RequestRow.flex_depart_early/late`) to decide "apply directly" vs. "open the composer with a `shift` proposal" (UX_FLOWS §4.2's interaction table). A ride serving several passengers has only one flexibility window checked (the driver's); REQUIREMENTS doesn't specify a combination rule for a multi-passenger ride's drag consent, so this is the simplest reasonable reading, not a documented multi-party rule.
+10. **Merge-by-drag and "drop onto another ride" always open the composer**; there is no "כבר אישרו לי בוואטסאפ — החל עכשיו" one-click shortcut mentioned in UX_FLOWS §4.2 for recording an already-obtained verbal/WhatsApp yes without going through the composer screen first. The composer itself does have **"רשום תשובה ידנית"** (`record_answer_on_behalf`) once a proposal exists, which covers the same need with one extra step.
+11. **`ClaimsPage`/`ClaimsScreen` always lists every contested offer**; the `/claims/:offerId` route (reached from a push deep link, UX_FLOWS §4.4) is registered and resolvable but the screen does not scroll to or expand that specific offer — with typically one or two contested offers at a time this wasn't prioritized, but a future pass should thread the param through to `OfferClaims`.
+12. **`DiffSummary` (`computeDiffSummary`) omits a distinct "↔ N איחודים" (merges) count** the §4.5 wireframe shows alongside new/changed/cancelled rides. `siddur_versions.snapshot` stores `rides` (full rows) and a reduced `requests` projection (`{id, requester_id, status, status_reason}`) but no `ride_requests` join, so "which requests are now merged onto which ride" isn't reconstructable from two snapshots alone — only ride-level and request-status-level diffs are, which is exactly what `publish_siddur` itself uses to decide who gets notified.
+13. **The publish screen's blocking-conflicts check reuses the board's client-side `scanBoardConflicts`** (overlap/buffer/location, SOLVER.md §3.2 `CarTimeline`) across the *whole* week's rides, not just conflicts a Sadran has already seen on the board — `sent`-proposal-would-be-cut-off blocking (§4.5 "option: פקע את ההצעות הפתוחות ופרסם") is not implemented; publishing today does not warn about or offer to expire open `sent` proposals.
+14. **`RideSheet`'s time fields assume the ride stays on the same calendar day** (`dayIso()` derived once from `ride.starts_at`); moving a ride across local midnight via the sheet's typed time fields isn't supported (dragging on the grid is also necessarily same-day, since the board shows one day at a time). A ride that must move to a different day needs a proposal (shift beyond flex) or a cancel + new pinned ride via the sheet.
+15. **`needsAttention`'s "chauffeur needed" count is synthetic** (`Array.from({ length: chauffeurNeededCount }, (_, i) => \`chauffeur-${i}\`)` in `WeekDashboardScreen.tsx`) rather than real request ids, following directly from item 8 — the dashboard's "הצג" button for every needs-attention row already just links to the board (it doesn't deep-link to a specific request), so this only affects the (unused) `ids` field of that one section.
+
+---
+
+## 16. Stage 3 hardening implementation notes (2026-09-07)
+
+Deviations/simplifications taken while fixing the blockers §15 items 1–3 recorded and completing the e2e suite. Recorded here per CLAUDE.md hard rule 2; none contradict REQUIREMENTS.
+
+1. **`publish_siddur` fix has no UX-visible change.** Computing `notified_count` before the `siddur_versions` insert instead of updating after (DATA_MODEL.md §6.1 item 16) is purely internal; the Sadran's publish flow (`PublishScreen`) is unchanged — it previously failed on every call and now succeeds.
+2. **`apply_solver_result` staleness surfaces as a new toast, no new screen.** A conflict now shows `he.errors.staleInput` ("הבקשות או הנסיעות השתנו מאז הרצת הפתרון — יש להריץ את הפתרון מחדש") via the existing generic `showErrorToast` path (DATA_MODEL.md §6.1 item 17) — the dashboard's "run solver" → preview sheet → "apply" flow gets no dedicated reload button; the Sadran re-runs "הרץ פותר" manually, same as any other RPC error today. The board's "auto-solve remaining" path is unaffected (no preview row exists for it to compare against, by design — see the migration's own comment).
+3. **Freed-slot opt-out is now a real toggle in "My requests", not just `/p/:token`.** UX_FLOWS §3.3/§9's component inventory does not show a persistent opt-out control outside the proposal-answer screen; `RequestsListPage.tsx` adds one small checkbox (`he.requestsList.freedSlotOptOut`) per `waitlisted`/`denied` request row (mirroring `freed_slot_candidates()`'s own status filter, DATA_MODEL.md §6.1 item 18) so a member can opt out without waiting for a deny/external proposal to arrive first. On `/p/:token`, the checkbox now actually persists: with a session, via the new `set_freed_slot_opt_out` RPC directly; without one (the common WhatsApp-link case), the value rides along in the existing POST to `answer-proposal`, which applies it with the service role after resolving the request from the same token (`supabase/functions/answer-proposal/index.ts`) — no new endpoint, no UI change to that screen itself.
+4. **`external` proposals now render a WhatsApp preview; `chauffeur` still has no composer action.** `VARIANT_OF_TYPE.external` changed from `null` to `"external"` (`ProposalComposerScreen.tsx`) now that the row is seeded (DATA_MODEL.md §6.1 item 19) — the "template missing" placeholder no longer shows for `external`. `chauffeur` remains unwired: it has no dedicated `proposal_type` value (it is sent as a `merge` proposal with `role: 'driver'`, SOLVER.md §3.15) and building that action was out of scope here, same gap §15 item 6 already recorded — the seeded row exists for whenever that UI ships.
+5. **Two real WhatsApp-message bugs fixed while writing `e2e/proposal.spec.ts`, both present since stage 2b, neither previously caught (no e2e spec exercised a real send before now):**
+   - **The real `/p/<token>` link never made it into any sent WhatsApp message.** `baseVars()` filled `{{link}}` with a placeholder string ("(ייווצר בשליחה)") for the live on-screen preview *before* sending; `waButtonFor()`'s second `renderTemplate(previewText, { link })` pass (meant to substitute the real link in once a token exists) had no `{{link}}` token left in the text to find, since the first pass had already consumed it. Fixed by leaving `{{link}}` unresolved in `baseVars()` — the live preview textarea now shows the literal token instead of friendlier placeholder text (the correct tradeoff: a real link doesn't exist until send).
+   - **Every message's Sadran-introduction line rendered the literal, never-filled placeholder `{{sadranThisIs}}`** instead of UX_FLOWS.md §6.2's actual copy (`זה/זו {{sadranName}}` — no such variable exists) — a seed-data copy bug, not a template-engine bug (`renderTemplate` correctly leaves unmatched placeholders as-is, which is exactly what exposed this). Fixed in `supabase/seed.sql`.
+   - **The day name rendered in English** ("ביקשת רכב ל... בFriday 18.9...") — `baseVars()`'s `day` used date-fns' bare `"EEEE"` format token with no locale. Fixed to index `he.days.long` by the Asia/Jerusalem zoned day-of-week (hard rule 6), matching every other Hebrew-weekday-name spot in the app.
+6. **The proposal composer now shows a proposal's real status when reopened, and applying it is now a real action.** Two related composer gaps, both found while writing `e2e/proposal.spec.ts`:
+   - Clicking an **already-sent** proposal's card in `ProposalsListScreen.tsx` used to reopen the composer as if composing a brand-new one — `proposalId` was only ever set locally right after *this same screen* sent one, never restored from an existing proposal. Fixed by passing `proposalId` through the list card's router state and seeding the composer's local state from it.
+   - `he.sadranProposal.applyNow`/`.autoAppliedNote` and the `useApplyProposalMutation` hook already existed but no screen ever rendered them — a department with `auto_apply_accepted_proposals = false` had no way to actually apply an accepted proposal at all. The composer now shows the proposal's own status (`he.sadranProposal.proposalStatusLabel`) and, once `accepted`, an "החל" button; the previous unconditional "הוטמע בלוח" toast on the plain "back" button (which fired regardless of whether anything had actually been applied) was removed and moved onto the real apply action's own success handler.
+   - Applying a **manually-composed** shift proposal (no `car_id` in its payload — only the board's suggestion/drag actions ever supply one) does not result in an `assigned` request; per the already-documented simplification (DATA_MODEL.md §6.1 item 6), it returns the request to `submitted`/`PROPOSAL_APPLIED_PENDING_ASSIGNMENT` for the Sadran to place on the board next. `e2e/proposal.spec.ts` asserts this real outcome rather than `assigned`.
+7. **Two real DB authorization bugs found while writing `e2e/auto-approve.spec.ts`** (and one more found by inspection while fixing them) **— all fixed in DATA_MODEL.md §6.1 items 20–21, no UI change:** `try_auto_approve()` (REQUIREMENTS §8's live-week auto-approve/waitlist), `submit_request()`'s live-phase one-way branch, and `apply_proposal()`'s status updates could all raise `invalid_request_status_transition` when the actor and the request's own owner were the same person — a case `requests_status_guard()` couldn't distinguish from a member trying to write their own status directly. None of these had ever been exercised end to end by a previous e2e spec or RLS assertion.
+8. **`/requests/new` can now target the Live week, not only the next Open week.** `NewRequestPage.tsx`'s `resolveOpenWeekStart` (renamed `resolveWeekStart`) previously only ever resolved a week whose `phase = 'open'`, with no fallback — REQUIREMENTS §8's "new request on a free car" / "new request with no free car" live-changes rows describe a member filing a genuinely new request during a Live week (after the normal window closed), but there was no way to reach that week from this screen at all once an Open week existed too (the seed always has both). `submit_request` itself never restricted this (it accepts any existing `(department_id, week_start)` row regardless of phase); only the page's own default-week resolution did. Fixed additively: an explicit `?week=<date>` query param on `/requests/new` targets that week directly if it's a real week for the department, and the no-override fallback now tries Open first, then Live, instead of only Open — `e2e/auto-approve.spec.ts` uses the query param to reach the seeded Live week as member2.
+9. **`playwright.config.ts`'s `webServer` is now an array** (`npm run dev` + `npm run functions:serve`, both `reuseExistingServer: true`) instead of a single entry, per ARCHITECTURE.md §14's local-dev description of the two processes; unchanged behavior when both are already running (the common case here, since the local Supabase stack's bundled edge runtime already serves the same functions on the same port). `workers` is now forced to `1`: every spec shares the one seeded department/week dataset, and `apply_solver_result`'s new staleness check (item 2 above) started *correctly* detecting real concurrent modifications between specs that happened to race under true parallel workers — reproduced by running the full suite repeatedly; the affected test (`e2e/sadran.spec.ts`'s first one) never failed running alone, only under `workers > 1`.
+10. **`e2e/helpers.ts` is new**: seeded-user login (email/password against the local stack, `supabase/seed.sql`'s four demo accounts), `newSignedInPage()` (a fresh browser context + sign-in, the reliable way to switch identity mid-test — `LoginPage.tsx` redirects an already-authenticated session straight back to wherever it came from rather than ever showing the sign-in form again, so reusing one `page` across two `signIn()` calls is unreliable), a thin service-role client (key read at runtime, falling back to the fixed local demo key every other spec already relies on, never committed) for setup/assertions that are cheaper to do directly against the DB than through the UI, and `wireEdgeFunctionSettings()` (scripts `supabase/functions/README.md`'s own manual local-verification steps for `e2e/freed-slot.spec.ts`'s pg_net round trip, reading `CRON_SECRET` straight out of the gitignored `supabase/functions/.env`). No production code path changes.

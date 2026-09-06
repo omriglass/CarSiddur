@@ -47,10 +47,10 @@ Reference: `docs/SOLVER.md` §4.1 (interface), §4.3 (shipped types), §4.5 (thi
 - [ ] `supabase/seed.sql`: optionally add `{ "type": "<type>", "weight": 0, "params": {...} }` to the seeded default policy version so it shows in the editor (weight 0 = neutral). Never touch production policies; admins add it via the UI (creates a new `policy_versions` row).
 - [ ] `npm run db:reset` passes.
 
-### 3. Admin policy editor (`src/features/admin/policies/`)
+### 3. Admin policy editor (`src/features/admin/policy/`)
 - [ ] The editor lists `Object.keys(ruleRegistry)`, shows `describe(params)` and seeds `defaultParams` — no change for the list itself.
-- [ ] Add a params form `ruleParamForms/<type>.tsx` (shadcn `Input`/`Slider`/`Select`, labels from `useT()`) and register it in `ruleParamForms/index.ts` (typed `Record<RuleType, ComponentType>` so a missing entry fails typecheck). Validation calls `ruleRegistry[type].validateParams` — no second schema.
-- [ ] i18n (`src/i18n/he.ts`): `he.admin.policies.rules.<type>.label` and `.params.<param>`; `he.admin.policies.rules` is `Record<RuleType, ...>`.
+- [ ] RuleParamsEditor.tsx (in `src/features/admin/policy/components/`) handles rendering params via the rule's `describe/defaultParams/validateParams`; no separate param-form files per rule. Validation calls `ruleRegistry[type].validateParams` — no second schema.
+- [ ] i18n (`src/i18n/he.ts` and `src/i18n/he.admin.ts`): `he.admin.policies.rules.<type>.label` and `.params.<param>`; `he.admin.policies.rules` is `Record<RuleType, ...>`.
 
 ### 4. Tests (`src/solver/rules/__tests__/<type>.test.ts`, Vitest — SOLVER.md §4.5, §7.1)
 - [ ] Value range: min case → 0 (or batch min), max case → 1; clamped on extremes.

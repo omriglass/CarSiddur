@@ -1,6 +1,6 @@
 # carshare-nevo — Requirements
 
-Status: **DRAFT v0.2 for review (2026-09-06) — reconciled with derived docs**
+Status: **DRAFT v0.3 for review (2026-09-06) — owner answers applied; one-way/relay model added**
 Owner: Omri Glass (product owner + architect)
 Source of truth for *what* the system does. Architecture, data model, solver and UX docs derive from this file and must not contradict it.
 
@@ -31,7 +31,12 @@ The app **proposes**; a human always makes the final decision.
 | Department | מחלקה | An organizational unit with its own members, cars and Sadran (e.g. the whole kibbutz, or "education", "factory"). |
 | Car | רכב | A shared vehicle owned by a department, or a *temporary car* offered by a member (see §6.4). |
 | Request | בקשה | A member's ask for a ride: destination, times, passengers, flexibility, type, notes. |
-| Ride | נסיעה | A concrete allocation: one car, one time window, one driver, zero or more passengers, one or more served requests. |
+| Ride | נסיעה | A concrete allocation: one car, one time window, one driver, zero or more passengers, one or more served requests. A ride has an origin and a destination for the *car* (both are home for an ordinary round trip). |
+| Leg | קטע | One direction of a request: `out` (home → destination) or `return` (destination → home). A round trip has both; a one-way request has one (§5.4). |
+| Car mode | אופן שימוש ברכב | How a leg uses a car: `keep` (car stays with the requester), `relay` (requester drives and the car changes location), `passenger` (seat in someone else's ride), `chauffeur` (a volunteer drives and brings the car back). See §5.4. |
+| Relay | העברת רכב | A one-way leg where the requester drives and leaves the car at the destination (or picks it up there and drives it home). The car is free but *located* at the destination in between. |
+| Chauffeur | הסעה | A volunteer driver (not the requester, may have no request) drives the requester one way and returns the car home immediately (drop-off) or goes to fetch them (pick-up). |
+| Home location | בית | The department's base (the kibbutz). A row in the destinations list with zone `home`; every shared car starts and ends the day there. |
 | Merge | איחוד נסיעות | Serving two or more requests with one ride (possibly with a detour). Requires consent of all parties. |
 | Proposal | הצעה | A suggested change to a request that needs a member's consent (shift hours, merge, deny, external solution). |
 | Siddur | סידור | The published weekly schedule for a department: the set of rides and the status of every request. |
@@ -44,7 +49,7 @@ The app **proposes**; a human always makes the final decision.
 
 | Role | Can do |
 |---|---|
-| **Member** | Sign in with Google; maintain profile (name, phone, default department, child seats needed); create/edit/withdraw own requests; see the published siddur of their department(s); accept/decline proposals addressed to them; cancel own rides; report car issues; receive notifications. |
+| **Member** | Sign in with Google; maintain profile (name, phone, default department, child seats needed, home-screen week preference §5.5); create/edit/withdraw own requests; see the published siddur of their department(s) and, read-only, of other departments; accept/decline proposals addressed to them; cancel own rides; register a temporary car (§6.4); report car issues; receive notifications. |
 | **Sadran** | Everything a member can, plus for the department(s) and week(s) they are assigned to: open/close the request window, run the solver, edit the draft siddur by hand, create and send proposals, approve contested claims, publish, edit after publishing. |
 | **Admin** | Everything, plus: manage departments, members and their departments, cars and seat configurations, destinations list, priority policies, Sadran roster, notification templates, app settings. |
 
@@ -58,7 +63,7 @@ Rules:
 
 ## 4. Weekly cycle
 
-All times are Asia/Jerusalem. Everything below is **configurable per department** by an admin; the defaults reflect current practice.
+All times are Asia/Jerusalem. Everything below is **configurable per department** by an admin; the defaults reflect current practice. The Sadran may override the open, close and publish times of a specific week (confirmed 2026-09-06, §13.51).
 
 | Phase | Default timing | What happens |
 |---|---|---|
@@ -81,10 +86,11 @@ A department can have several target weeks in different phases at once (next wee
 | Department | yes | Defaults to member's department. |
 | Destination | yes | Pick from the managed destinations list **or** free text. Free-text destinations can later be promoted to the list by an admin. |
 | Ride type | yes | One of an admin-managed list. Initial values: Work (עבודה), Childcare (ילדים), Healthcare (בריאות), Errands (סידורים), Other (אחר). Used by the priority policy. |
-| Departure time | yes | Date + time, 15-minute granularity. |
-| Return time | yes unless one-way | Round trip is the default. |
-| One-way | no | If set, direction is "to destination" or "from destination", and only one leg exists. |
-| Car needed at destination | no, default **yes** | If **no**, the member only needs to get there and back; the car may serve others in between, and the two legs may be served by different rides. If **yes**, the car is blocked for the whole window. |
+| Trip shape | yes, default `round_trip` | `round_trip` (an outbound leg and a return leg), `one_way_to` (outbound leg only — "הלוך בלבד"), `one_way_from` (return leg only — "חזור בלבד"). Replaces the earlier one-way flag + direction. See §5.4. |
+| Departure time | yes unless `one_way_from` | Date + time the outbound leg leaves home, 15-minute granularity. |
+| Return time | yes unless `one_way_to` | Time the return leg arrives home. |
+| One-way car mode | yes for one-way shapes | `relay` — "אני נוהג/ת ומשאיר/ה את הרכב שם": the requester drives; the car stays at the destination (or is picked up there and driven home). `passenger` — "אני צריך/ה הסעה": a seat in a ride going the same way; if none exists the Sadran may arrange a *chauffeur* (§5.4). |
+| Car needed at destination | round trips only, default **yes** | **Yes**: the car stays with the requester for the whole window (`keep`, one occupancy block). **No**: the requester only needs to get there and back; the solver may serve each leg as a passenger in another ride or by relaying the car (§5.4), so the car can serve others in between and the two legs may be served by different rides. |
 | Passengers | yes | Structured, not just a count: number of adults (including the driver), number of children needing a child seat, number of children needing a booster. Optional: names of other members riding along (so they don't file duplicate requests). |
 | Luggage | no | Boolean "I have large luggage". Affects merge feasibility and car choice. |
 | Flexibility — departure | no | Separate "may leave up to X earlier" and "may leave up to X later" (0, 15m, 30m, 1h, 2h, "any time that day"). |
@@ -111,16 +117,42 @@ any non-final state ─► withdrawn (by member) / cancelled (by member after pu
 - Every state change is recorded in an audit log with who/when/why.
 
 ### 5.3 Validation
-- Return after departure; both inside the target week (a ride may end after Saturday only if explicitly allowed by the Sadran).
+- Return after departure (round trips); every time inside the target week. A ride may end after Saturday only when the Sadran marks that ride `overflow_allowed` (per ride, no department setting — §13.62); members cannot file such a request themselves, the Sadran files it on their behalf.
 - Passenger count must fit at least one active car in the department, otherwise warn but allow (Sadran may merge/deny).
 - Duplicate detection: same member, overlapping window → warn.
+- One-way shapes require a car mode; `needs_car_at_destination` is ignored for one-way shapes.
+
+### 5.4 Legs and car modes
+
+A request is one or two **legs**: `out` (home → destination) and `return` (destination → home). Every leg is served with one **car mode**; the solver records the resolved mode per leg on the ride (`ride_requests.car_mode`):
+
+| Car mode | Who drives | Car occupancy | Where the car ends up |
+|---|---|---|---|
+| `keep` | requester | one fused block `[departure, return)` — home → destination → home (round trips with *car needed at destination* = yes) | home |
+| `relay` | requester | the travel time of that leg only (`out`: `[D, D + travel)`; `return`: `[R − travel, R)`) | `out`: **at the destination**; `return`: home. A `return` relay requires the car to *be* at that destination when the leg starts. |
+| `passenger` | someone else (the host ride's driver) | none of its own — the requester takes a seat in a ride going the same way (this is how merges serve legs) | wherever the host ride ends |
+| `chauffeur` | a volunteer (≠ requester, may have no request of their own) | `2 × travel + dwell` (dwell default 10 min, configurable): drop-off `[D, D + 2·travel + dwell)`, pick-up `[R − 2·travel − dwell, R)` | home |
+
+Rules:
+- A round trip with *car needed at destination* = yes is always `keep`. With **no**, each leg is served as `passenger` or `relay` when that frees the car; the fallback is still `keep`.
+- A one-way request carries the member's preferred mode (`relay` or `passenger`). `chauffeur` is never requested by a member; it is the Sadran's fallback for a `passenger` leg without a host, or for a `relay` leg without a partner.
+- **Car location.** Every department has a home location (§6). The system tracks where each shared car is: a `relay` out-leg leaves it at the destination, where it is *free but away*; only legs starting at that location may use it there (typically a `relay` back-leg by another member). Every shared car must be back home by the department's **day end** (default 23:59) — the solver never plans a relay-out without a relay-back the same day; the Sadran may acknowledge an overnight stay per ride (§7.4).
+- **Relay pairing.** The solver matches relay out-legs with relay back-legs to the *same destination* (exact destination in v1, §13.58) with compatible times and seats; a pair serves both requests with one car and counts for the "people served" rule (§7.2). An unpaired relay request is unmet and gets the suggestions of §7.1 item 5.
+- Temporary cars (§6.4) never relay and never chauffeur; only their owner drives them.
+- Example: X files `one_way_to` Binyamina 09:00 `relay`; Y files `one_way_from` Binyamina arriving 12:00 `relay`. The solver puts both on one car: X drives out 09:00–09:45, the car sits in Binyamina, Y drives it home 11:15–12:00. The board shows the car "בבנימינה" in between.
+
+### 5.5 Home-screen week preference
+
+Which week the Home screen opens on is a profile setting (`auto | live | open`, default `auto` = the live week if I have a ride today or tomorrow, else the open week). Regardless of the setting, Home always shows above the fold: my upcoming rides (all weeks) and my requests that were not served (waitlisted / denied / proposed) with their reason. (confirmed 2026-09-06, §13.56)
 
 ---
 
 ## 6. Fleet
 
+Every department has a **home location** — a row in the destinations list with zone `home` (`departments.home_destination_id`). A shared car is at home unless a relay leg (§5.4) has moved it; the board shows where a car is when it is away, and warns when a car is not home at the department's day end (default 23:59) until the Sadran acknowledges an overnight stay for that ride. Temporary cars never relay.
+
 ### 6.1 Car fields
-Name, license plate, department, status (active / in maintenance / retired), notes (key location, quirks), features (roof rack, large trunk, automatic, 4x4…), **seat configurations** (§6.2), type (shared / temporary).
+Name, license plate, department, status (active / in maintenance / retired), notes (key location, quirks), features (roof rack, large trunk, automatic, 4x4…), **seat configurations** (§6.2), type (shared / temporary). Location is not a car field: it is derived from the rides of the day (§5.4).
 
 ### 6.2 Seat configurations
 Capacity is not a single number. Each car has a list of allowed (adults, child seats, boosters) combinations, e.g. a 5-seater: `{5,0,0}`, `{3,1,0}`, `{2,2,0}`, `{4,0,1}`. A passenger set fits a car if some configuration dominates it. Child seats belong to the passengers, not the car, unless the car lists built-in seats.
@@ -129,7 +161,7 @@ Capacity is not a single number. Each car has a list of allowed (adults, child s
 Admin or Sadran can block a car for a time window with a reason. Blocked windows are unavailable to the solver and shown on the board.
 
 ### 6.4 Temporary cars
-A member may register a *temporary car* (typically their private car) for a department and enter their own rides on it. Their rides are auto-approved and appear on the board **only so other members can ask to merge into them**. The solver never assigns a temporary car to anyone else. The owner accepts or declines merge proposals like any driver.
+**Any member** may register a *temporary car* (typically their private car) for a department and enter their own rides on it; an admin can revoke it (confirmed 2026-09-06, §13.53). Their rides are auto-approved and appear on the board **only so other members can ask to merge into them**. The solver never assigns a temporary car to anyone else, and temporary cars never relay or chauffeur (§5.4). The owner accepts or declines merge proposals like any driver. A member who asks to join a ride on a temporary car (§7.3) sends the merge proposal **directly to the owner**; the Sadran is informed but not in the loop (confirmed 2026-09-06, §13.43).
 
 ### 6.5 Car issues
 Members can report an issue on a car (free text, optional photo later). Issues are listed for admins; an open "unsafe" issue lets an admin quickly move the car to maintenance.
@@ -139,20 +171,25 @@ Members can report an issue on a car (free text, optional photo later). Issues a
 ## 7. Solving and negotiation
 
 ### 7.1 Solver
-Input: all non-final requests of one department and target week, active cars, maintenance blocks, existing pinned rides, the department's priority policy. Output: a **draft siddur** — for every request either a ride assignment or an unmet status with ranked suggestions. Requirements:
+Input: all non-final requests of one department and target week, active cars, maintenance blocks, existing pinned rides, the department's home location and settings (turnaround buffer, day end, chauffeur dwell), the department's priority policy. Output: a **draft siddur** — for every request either a ride assignment (with the resolved car mode per leg, §5.4) or an unmet status with ranked suggestions. Requirements:
 
 - Deterministic for identical inputs; explainable — each decision carries a human-readable reason (Hebrew).
 - Never overrides a ride pinned by the Sadran, an existing accepted proposal, or a temporary-car owner's ride.
-- Respects seat configurations, luggage, maintenance blocks, and a configurable turnaround buffer between consecutive rides on the same car.
+- Respects seat configurations, luggage, maintenance blocks, and a configurable **turnaround buffer** between consecutive rides on the same car and between a ride and a maintenance block (default **30 minutes**, §13.10).
+- **Car location** (§5.4): a leg may start on a car only if the car is at the leg's origin at that time; every shared car is back home by the department's day end; relay out-legs are always paired with a relay back-leg the same day. Temporary cars never relay.
+- **Relay pairing**: matches relay out-legs and back-legs to the same destination with compatible times and seat fit; the pair is placed on one car as a unit.
+- **Chauffeur occupancy**: a chauffeur leg blocks the car for `2 × travel + dwell` and needs a driver; the solver proposes it, the Sadran assigns the driver.
 - Uses flexibility windows before declaring a request unmet.
-- Detects merge candidates: same or nearby destination (destinations list carries coordinates or a "zone"), compatible time windows within both parties' flexibility, seats fit, detour below a configurable limit.
+- Detects merge candidates per leg: same or nearby destination (destinations list carries coordinates or a "zone"), compatible time windows within both parties' flexibility, seats fit, detour below a configurable limit. One-way `passenger` legs are served this way.
+- May suggest **displacing** an already-placed ride to serve a higher-priority request — as a suggestion only, and **only before publish**; after publish nothing is ever displaced automatically (confirmed 2026-09-06, §13.19).
 - Ranks unmet requests by the priority policy (§7.2) and surfaces, per unmet request, an ordered list of suggestions:
-  1. Shift within declared flexibility to a free car (no consent needed beyond the declared flexibility — but still shown to the member).
-  2. Merge into ride X (consent of both).
+  1. Shift within declared flexibility to a free car — including shifting a relay leg to meet its partner (no consent needed beyond the declared flexibility — but still shown to the member).
+  2. Merge into ride X as passenger (consent of both).
   3. Shift beyond declared flexibility by up to 2h (consent).
-  4. Split legs (when *car needed at destination* is no): outbound with ride X, return with ride Y.
-  5. Stop-gap hints: short/one-way rides that look cab-eligible, or "rental" for very long blocks — display only, solved outside the app (→ `external`).
-  6. Deny.
+  4. Split legs (when *car needed at destination* is no): outbound with ride X, return with ride Y — each leg as passenger or relay.
+  5. One-way legs without a host or partner: convert to a round trip with the car (`keep`) when capacity allows (consent), or **chauffeur** — a volunteer drives and brings the car back; the request shows as "needs a driver" and the Sadran assigns one (optionally asking a volunteer via a merge proposal).
+  6. Stop-gap hints: short/one-way rides that look cab-eligible, or "rental" for very long blocks — display only, solved outside the app (→ `external`).
+  7. Deny.
 - Runs in well under 10 seconds for 300 requests and 15 cars, in the browser or an edge function.
 - Can be re-run after manual edits; manual edits are preserved (they become pinned).
 
@@ -164,8 +201,8 @@ A policy is a named, versioned set of weighted rules stored as data and edited i
 | Ride type weight | map type → weight | e.g. Healthcare 10, Work 8, Childcare 8, Errands 3. |
 | Distance | curve/thresholds | Farther destinations get more priority (fewer alternatives). |
 | Public transport alternative | per-destination score | Destinations with good bus/train service get lower priority. |
-| Merge-ability / people served | weight per extra person served | A ride serving 3 requests outranks one serving 1. |
-| Fairness over time | lookback window (weeks), weight | Members who got fewer rides (or more denials) recently get a boost. |
+| Merge-ability / people served | weight per extra person served | A ride serving 3 requests outranks one serving 1; a relay pair counts the people of both legs. |
+| Fairness over time | lookback window (weeks, default **3**), weight | Members who got fewer rides (or more denials) in the last N weeks get a boost. Per member; the window is a parameter of the rule (data), not code (confirmed 2026-09-06, §13.18). |
 | Submission time | weight | Earlier submissions get a small edge; late requests a penalty. |
 | Flexibility offered | weight | Members who declare flexibility get a small boost (encourages it). |
 | Manual boost | per-request | Sadran can add a one-off boost with a reason. |
@@ -173,17 +210,17 @@ A policy is a named, versioned set of weighted rules stored as data and edited i
 Policies are per department with a global default. Every solver run records which policy version it used. Changing a policy never rewrites history.
 
 ### 7.3 Proposals (negotiation)
-A proposal targets one request (or two, for a merge) and describes a concrete change: new times, merge into ride X as passenger/driver, deny with reason, or external. Lifecycle: `draft → sent → accepted | declined | expired → applied`.
+A proposal targets one request (or two, for a merge) and describes a concrete change: new times (including converting a one-way into a round trip), merge into ride X as passenger/driver, deny with reason, or external (no car — the member is asked to manage outside the app or stay waitlisted). A **chauffeur** is not a proposal to the requester: it is a Sadran task (assign a driver), optionally with a merge proposal asking a volunteer to drive. Lifecycle: `draft → sent → accepted | declined | expired → applied`.
 
 - **Sending**: the app generates a Hebrew WhatsApp message (personalized, with the concrete option and a deep link) and opens `wa.me/<phone>?text=…` for the Sadran to send with one tap. There is no WhatsApp API integration (cost). A web-push notification is also sent when available.
 - **Answering**: the member taps the deep link and accepts/declines in the app. No sign-in is required: the link carries a single-purpose secret token that expires with the proposal (see `ARCHITECTURE.md` §8 for the rationale). The Sadran can also record an answer on the member's behalf ("she said yes on WhatsApp").
 - **Merges** need acceptance from every affected member before they are applied.
-- **Ask to join**: a member who sees a ride in the published siddur may ask to join it. This files a normal request carrying a hint to that ride (`join_ride_id`); the Sadran sees it flagged and turns it into a merge proposal to the driver, with the usual consent.
+- **Ask to join**: a member who sees a ride in the published siddur may ask to join it. This files a normal request carrying a hint to that ride (`join_ride_id`). On a **shared car** the Sadran sees it flagged and turns it into a merge proposal to the driver, with the usual consent. On a **temporary car** the merge proposal goes directly to the owner (the owner is the driver and decides); the Sadran sees it in the proposals list and is notified of the answer but is not in the loop (confirmed 2026-09-06).
 - Proposals expire at a configurable time (default: publish time); expired proposals fall back to the request's previous status.
 - Applying a proposal updates the draft siddur; rides created this way are pinned.
 
 ### 7.4 The Sadran board
-A week grid (cars × time, 15-minute resolution) plus a side list of unmet requests with their suggestions. The Sadran can drag/resize rides, reassign cars, pin, merge by drag, open a request, send proposals, run "auto-solve remaining", undo, and see conflicts highlighted. A summary panel shows: served / unmet / awaiting answer, per ride type.
+One day at a time (cars × time, 15-minute resolution) with a week strip for orientation (confirmed 2026-09-06, §13.42), plus a side list of unmet requests with their suggestions. The Sadran can drag/resize rides, reassign cars, pin, merge by drag, open a request, send proposals, assign a driver to a chauffeur leg, run "auto-solve remaining", undo, and see conflicts highlighted. Car location is visible: a car column shows a location badge while the car is away from home (e.g. "בבנימינה"); a car that is not home at day end shows a warning the Sadran must acknowledge (allowed for overnight trips); a ride shows origin → destination when the car moves one way; unmet one-way legs waiting for a chauffeur show a "needs driver" state. A summary panel shows: served / unmet / awaiting answer / needs driver, per ride type.
 
 ### 7.5 Publishing
 Publishing freezes a **siddur version** for the department and week, notifies every member with a request about their outcome, and switches the week to *Live*. Re-publishing after edits creates a new version; only members whose outcome changed are notified.
@@ -194,8 +231,8 @@ Publishing freezes a **siddur version** for the department and week, notifies ev
 
 | Event | Behavior |
 |---|---|
-| **Member cancels a ride** | Ride is removed. The app finds candidate requests (waitlisted/denied, same department, overlapping window, seats fit, not opted out). **All candidates get a push.** If there is exactly one candidate, it is auto-assigned and notified. If there are several, the Sadran also gets a push; candidates can tap "I still want it", and the Sadran approves one. If none, the slot simply shows as free. |
-| **New request on a free car** | Auto-approved immediately, member notified, Sadran informed (no action needed). |
+| **Member cancels a ride** | Ride is removed. The app finds candidate requests (waitlisted/denied, same department, overlapping window, seats fit, not opted out, and — for the car's location — round trips starting from home). **All candidates get a push.** If there is exactly one candidate, it is auto-assigned and notified. If there are several, the Sadran also gets a push; candidates can tap "I still want it", and the Sadran approves one. If none, the slot simply shows as free. Cancelling one leg of a **relay pair** flags the other leg for the Sadran (the car would be stranded or missing) and opens no automatic offer (§13.63). Nothing already placed is ever displaced. |
+| **New request on a free car** | Round trips only: auto-approved immediately at the exact requested time (no flexibility, §13.16) if a shared car is free *and at home* for the window; member notified, Sadran informed (no action needed). One-way requests are never auto-approved (they need a partner, a host or a driver) and go to the Sadran as `waitlisted`. |
 | **New request with no free car** | Becomes `waitlisted`; Sadran notified; may start a proposal. |
 | **Member edits an assigned ride** | Allowed if the new window is free on the same car; otherwise treated as cancel + new request, with a warning first. |
 | **Car goes to maintenance** | Affected rides are flagged; Sadran re-solves those rides only; affected members notified. |
@@ -213,7 +250,7 @@ Channels, in priority order, all free:
 3. **WhatsApp** — outbound only, via click-to-chat links generated for the Sadran (proposals, reminders). No API.
 4. **Email** — later; only if a free provider tier suffices.
 
-Events that notify: request window opening/closing reminders, siddur published, your outcome changed, proposal received, proposal answered (to Sadran), freed slot available, freed slot auto-assigned to you, several claimants for a freed slot (to Sadran), claim approved/declined, car maintenance affecting you, new late/waitlisted request (to Sadran), request auto-approved in a live week (member, Sadran informed), request edited after solving started (to Sadran), access request from an unknown account (to Admin), access approved. The canonical list with Hebrew copy is `UX_FLOWS.md` §6.1.
+Events that notify: request window opening/closing reminders, request window closed — solve now (to Sadran), publish reminder when the planned publish time passes and the week is still being solved (to Sadran), siddur published, your outcome changed, proposal received, proposal answered (to Sadran), freed slot available, freed slot auto-assigned to you, several claimants for a freed slot (to Sadran), claim approved/declined, car maintenance affecting you, new late/waitlisted request (to Sadran), request auto-approved in a live week (member, Sadran informed), request edited after solving started (to Sadran), access request from an unknown account (to Admin), access approved. The canonical list (20 events) with Hebrew copy is `UX_FLOWS.md` §6.1. WhatsApp texts exist for every proposal type, including `external` (§13.59).
 
 Members can mute categories; Sadran alerts cannot be muted while assigned.
 
@@ -221,7 +258,7 @@ Members can mute categories; Sadran alerts cannot be muted while assigned.
 
 ## 10. Visibility and privacy
 
-- Members see the full published siddur of their department(s): who drives where and when (needed for merging and for finding a lift). Phone numbers are visible only to Sadranim/Admins and to members sharing a ride.
+- Members see the full published siddur of their department(s): who drives where and when (needed for merging and for finding a lift). They may also read the **published** siddurim of other departments, read-only, for lift-finding (confirmed 2026-09-06, §13.52). Phone numbers are visible only to Sadranim/Admins and to members sharing a ride.
 - Draft siddurim are visible only to Sadranim/Admins of that department.
 - Members see their own request history and stats; Sadranim see department stats; Admins see all.
 - All data access is enforced server-side (row-level security), not only in the UI.
@@ -232,7 +269,7 @@ Members can mute categories; Sadran alerts cannot be muted while assigned.
 
 | Area | Requirement |
 |---|---|
-| Language | Hebrew UI, RTL. Code, docs and identifiers in English. Hebrew strings live in exactly three places so a second language can be added: `src/i18n/he.ts` (UI), `src/solver/reasons.ts` (solver reason strings, keyed by reason code), and seeded database data (notification templates, ride types, destinations). |
+| Language | Hebrew UI, RTL. Code, docs and identifiers in English. Hebrew strings live in exactly three places so a second language can be added: `src/i18n/he.ts` (UI), `src/solver/reasons.ts` (solver reason strings, keyed by reason code), and seeded database data (notification templates, ride types, destinations). Gendered Hebrew uses **slash forms** (נהג/ת, מקבל/ת); there is no per-member gender field (confirmed 2026-09-06, §13.49). |
 | Devices | Mobile-first responsive PWA; Sadran board optimized for tablet/desktop but usable on phone. |
 | Cost | Free tiers only: Supabase Free, Vercel Hobby (or equivalent), Google OAuth, VAPID web push. Document the upgrade path and its triggers (Supabase Free pauses after 7 idle days, 500 MB DB, 50k MAU). |
 | Security | Google sign-in only; members must be pre-registered (allow-list) or approved by an admin on first login. Row-level security on every table. Service-role keys never reach the browser. |
@@ -248,13 +285,13 @@ Members can mute categories; Sadran alerts cannot be muted while assigned.
 ## 12. Scope
 
 ### Must-have (v1)
-Members, departments, roles, Sadran roster; requests with all fields in §5.1 except *Repeat weekly*; cars with seat configurations and maintenance blocks; temporary cars; solver with suggestions; configurable priority policy; proposals with WhatsApp links and deep-link answers; Sadran board; publish with versions; live-change rules in §8; web push + in-app inbox; destinations list; audit log; car issues.
+Members, departments, roles, Sadran roster; requests with all fields in §5.1 except *Repeat weekly*; legs and car modes of §5.4 (round trips, one-way relay and passenger legs, relay pairing, chauffeur rides, car location and day-end rule); cars with seat configurations and maintenance blocks; temporary cars; solver with suggestions; configurable priority policy; proposals with WhatsApp links and deep-link answers; Sadran board; publish with versions; live-change rules in §8; web push + in-app inbox; destinations list; audit log; car issues.
 
 ### Should-have (v1.x)
-Repeat-weekly request templates; email channel; statistics dashboards (utilization, fairness, denials by type); export week to image/PDF for WhatsApp groups; member-facing "who is driving to X on day Y" search for finding lifts.
+Repeat-weekly request templates; **standing pre-allocations** (e.g. a car reserved every weekday 07:00–09:00 for a school run) modelled as recurring pinned rides — a future `ride_templates` table, no v1 schema (confirmed 2026-09-06, §13.54); email channel; statistics dashboards (utilization, fairness, denials by type); export week to image/PDF for WhatsApp groups; member-facing "who is driving to X on day Y" search for finding lifts (including where a shared car is parked away from home).
 
 ### Out of scope (for now)
-Cab ordering/booking and payment; rental-car booking; private-car lending beyond temporary cars; WhatsApp API; km/fuel logging; billing members; multi-language UI; native mobile apps.
+Cab ordering/booking and payment; rental-car booking; private-car lending beyond temporary cars; WhatsApp API; km/fuel logging; billing members; multi-language UI; native mobile apps; households as a modelled entity (§13.55).
 
 ---
 
@@ -269,24 +306,24 @@ Cab ordering/booking and payment; rental-car booking; private-car lending beyond
 7. **Denied requests stay eligible** for freed-slot offers until the member opts out or the week ends.
 8. **Destination list carries** name, aliases, zone, approximate distance/travel time from the kibbutz, public-transport score. Free-text destinations get zone "unknown" and no distance until an admin classifies them.
 9. **The driver is the requester** unless the Sadran sets another member as driver (e.g. in a merge, the one who owns the original ride drives).
-10. **Turnaround buffer** between rides on the same car defaults to 15 minutes.
+10. **Turnaround buffer** between rides on the same car defaults to **30 minutes** (`department_settings.turnaround_minutes`, per-week override allowed); it also applies between a ride and a maintenance block. (confirmed 2026-09-06; was 15)
 11. **Detour limit for merge suggestions** defaults to 20 minutes or 15 km, configurable.
 12. **Phone numbers are required** on the profile because WhatsApp links need them.
 13. Google sign-in only; an admin pre-loads the member allow-list (name + Google email). Unknown Google accounts land on a "wait for approval" page.
 
 Items 14+ were introduced by the derived docs (SOLVER, DATA_MODEL, ARCHITECTURE, UX_FLOWS) and are collected here for review in one place:
 
-14. **One-way requests occupy the car for 2 × travel time** (driver goes and comes back); unknown travel time → 60 minutes. (SOLVER §1.2)
-15. **Turnaround buffer also applies between a ride and a maintenance block.** (SOLVER §1.3)
-16. **Freed-slot matching may use the candidate's declared flexibility; live auto-approve only places a request at its exact requested time** (no human in the loop). (SOLVER §5.2)
+14. **One-way requests are legs with a car mode** (§5.4): a `relay` leg occupies the car for its travel time and moves the car; a `chauffeur` leg occupies `2 × travel + dwell` (dwell default 10 min, `department_settings.chauffeur_dwell_minutes`) and ends at home; a `passenger` leg has no occupancy of its own. Unknown travel time → 60 minutes. (confirmed 2026-09-06 — replaces the earlier "2 × travel for every one-way" rule; SOLVER §1.2)
+15. **Turnaround buffer also applies between a ride and a maintenance block.** (confirmed 2026-09-06; SOLVER §1.3)
+16. **Freed-slot matching may use the candidate's declared flexibility; live auto-approve only places a request at its exact requested time** (no human in the loop). Neither ever displaces a placed ride. (confirmed 2026-09-06; SOLVER §5.2)
 17. **Merge detour is estimated from destination travel-minute / distance differences and zone**, not geography; zone `unknown` never merges. (SOLVER §3.8)
-18. **Fairness deficit and "usual car" are computed by the data layer** (`fairness_stats()`), passed to the solver in 0..1 with default 0.5; **lookback default 8 weeks** (`department_settings.fairness_lookback_weeks`), counting outcomes in published/archived weeks. (SOLVER §9, DATA_MODEL §7.3)
-19. **The solver is a heuristic** (ordered greedy + bounded improvement, depth ≤ 2, budget 5000 evaluations), not an exact optimizer; the improvement pass only relocates rides within their declared flexibility and never ejects a placed ride. (SOLVER §1.4, §3.10)
+18. **Fairness deficit and "usual car" are computed by the data layer** (`fairness_stats()`), passed to the solver in 0..1 with default 0.5; **lookback default 3 weeks, per member**, configured as the `lookbackWeeks` parameter of the fairness rule in the policy (data, not code — there is no department setting for it), counting outcomes in published/archived weeks. (confirmed 2026-09-06; SOLVER §4.3, DATA_MODEL §7.3)
+19. **The solver is a heuristic** (ordered greedy + bounded improvement, depth ≤ 2, budget 5000 evaluations), not an exact optimizer; the improvement pass only relocates rides within their declared flexibility and never ejects a placed ride automatically. Displacing a placed ride for a higher-priority one is offered as a **suggestion before publish only**; post-publish helpers (`matchFreedSlot`, `tryAutoApprove`) never displace. (confirmed 2026-09-06; SOLVER §1.4, §3.10)
 20. **Merged-passenger seat accounting**: a request's adults include its own driver; when merged as passenger into a host ride all of its adults/child seats/boosters are added to the host load and the host's driver counts once. (SOLVER §3.3)
 21. **Luggage capacity is 1 large-luggage request per car, 2 with the `large_trunk` feature.** (SOLVER §1.1)
 22. **External-hint thresholds**: cab if single leg or ≤ 90 min occupancy and ≤ 30 km; rental if occupancy ≥ 30 h; public transport if the destination's score ≥ 3/5. (SOLVER §3.11)
 23. **In a merge the host's driver drives**, unless the host does not need the car at the destination and the guest does — then the guest is proposed as driver. (SOLVER §3.8)
-24. **Suggestion kinds map to proposal types** as in SOLVER §3.15 (shift within flexibility → applied directly, no proposal; beyond → `shift`; merge and split legs → `merge`; external hint → `external`; deny → `deny`).
+24. **Suggestion kinds map to proposal types** as in SOLVER §3.15 (shift within flexibility → applied directly, no proposal; beyond → `shift`; merge and split legs → `merge`; convert one-way to round trip → `shift`; chauffeur → no proposal to the requester, a Sadran task with an optional `merge` proposal to the volunteer; external hint → `external`; deny → `deny`).
 25. **The allow-list is `member_invites`** (email, name, phone, department, role); a matching Google account is approved automatically and memberships are created; unknown accounts raise an access request to admins. (DATA_MODEL §3.1)
 26. **Companions are a join table** (`request_companions`, member ids); a companion can see the request. (DATA_MODEL §3.6)
 27. **No cross-department car loans in v1**: the lending Sadran blocks the car with a maintenance block ("lent to X") and the borrowing side records `external`; a `car_loans` table is the documented follow-up. (DATA_MODEL §3.7)
@@ -294,7 +331,7 @@ Items 14+ were introduced by the derived docs (SOLVER, DATA_MODEL, ARCHITECTURE,
 29. **Proposal expiry default is the week's planned publish time**, or a fixed number of hours per department; at most one `sent` proposal per request; **`weeks_open_ahead` default 1.** (DATA_MODEL §3.1, §3.8)
 30. **Retention**: notifications 90 days, push outbox 30 days, audit log 3 years for core tables / 1 year otherwise, deep-link token hashes nulled 30 days after week end; removed members are anonymized, never deleted. (DATA_MODEL §8)
 31. **Free-text destinations** are stored on the request and can be promoted or merged into the list by an admin; a member's free text also inserts an unapproved destination row for the admin queue. (DATA_MODEL §3.3, UX_FLOWS §5.6)
-32. **Only the owner drives a temporary car**; passengers may merge into it; temporary cars are a separate group on the board. (DATA_MODEL §3.7, UX_FLOWS §4.2)
+32. **Only the owner drives a temporary car**; passengers may merge into it; temporary cars never relay or chauffeur and are a separate group on the board. (DATA_MODEL §3.7, UX_FLOWS §4.2)
 33. **Freed-slot offers expire when the freed window starts**; claims go `offered → claimed → approved | declined | withdrawn`. (DATA_MODEL §3.10)
 34. **Requests are created and edited only through the `submit_request` RPC**; in a live week it calls `try_auto_approve`, and the SQL exclusion constraint is the final arbiter against double booking. (ARCHITECTURE §6.1, §6.4)
 35. **Freed-slot ranking runs in the `on-ride-cancelled` edge function** with the solver's `matchFreedSlot()`; the database hard-filters candidates (status, seats, window). (ARCHITECTURE §6.3)
@@ -304,28 +341,37 @@ Items 14+ were introduced by the derived docs (SOLVER, DATA_MODEL, ARCHITECTURE,
 39. **Optimistic concurrency via a `version` column** on rides, requests and proposals; conflicts surface as `stale_version`. (ARCHITECTURE §12)
 40. **Uncaught front-end errors are logged to a `client_errors` table** (insert-only, rate-limited). (ARCHITECTURE §12)
 41. **Notification templates (push/inbox and the WhatsApp texts) are admin-editable database rows** seeded from UX_FLOWS §6; members mute per category, stored as a list of muted events on the profile. (ARCHITECTURE §9, DATA_MODEL §3.11)
-42. **The board shows one day at a time** at 15-minute resolution with a week strip for orientation; phones get a list mode. (UX_FLOWS §4.2)
-43. **"Ask to join" from the published siddur files a normal request** with a `join_ride_id` hint that the Sadran converts into a merge proposal. (UX_FLOWS §3.5)
+42. **The board shows one day at a time** at 15-minute resolution with a week strip for orientation; phones get a list mode. (confirmed 2026-09-06; UX_FLOWS §4.2)
+43. **"Ask to join" from the published siddur files a normal request** with a `join_ride_id` hint. On a shared car the Sadran converts it into a merge proposal; on a **temporary car** `submit_request` creates and sends the merge proposal to the owner directly (the owner is the driver), the Sadran sees it in the proposals list and gets the `proposal_answered` notification, nothing else. (confirmed 2026-09-06; UX_FLOWS §3.5)
 44. **Member navigation is four bottom tabs** (הסידור / הבקשות שלי / הודעות / פרופיל); Sadranim get a fifth tab while assigned; admin is reached from the profile. (UX_FLOWS §2.2)
 45. **Request-form defaults**: next Open week, departure 08:00, return +4 h, round trip, car stays at destination, 1 adult, last-used ride type. (UX_FLOWS §3.4)
 46. **On a deny proposal the member can mark "found another solution" (→ `external`) and opt out of freed-slot offers for that week**; "suggest another time" is a decline with a note, no counter-proposal is created. (UX_FLOWS §3.6)
 47. **Publishing is blocked while board conflicts or unanswered `sent` proposals exist** (option to expire them and publish). (UX_FLOWS §4.5)
 48. **Offline**: request drafts are saved on the device and sent later; proposal answers require connectivity. (UX_FLOWS §7.2)
-49. **Gendered Hebrew uses slash forms** (נהג/ת) pending UX_FLOWS §11 question 3.
+49. **Gendered Hebrew uses slash forms** (נהג/ת, מקבל/ת); no per-member gender field. (confirmed 2026-09-06; UX_FLOWS §7.3, CLAUDE.md Conventions)
 50. **Public-transport score is 0–5** on destinations (5 = excellent service), mapped to 0..1 for the solver. (DATA_MODEL §3.3)
+
+Items 51+ record the owner's answers of 2026-09-06 to the former open questions and the decisions of the one-way/relay model:
+
+51. **Weekly cycle**: configured per-department defaults; the Sadran may override open/close/publish per week (`weeks.open_at/close_at/publish_at`). (confirmed 2026-09-06)
+52. **Members may read other departments' published siddurim** (read-only, lift-finding). RLS: any approved member reads published rides, siddur versions and the requests they serve of any department (`is_week_public`); draft data stays department-scoped. (confirmed 2026-09-06; DATA_MODEL §4.3)
+53. **Any member may register a temporary car; an admin can revoke it.** No department knob. (confirmed 2026-09-06)
+54. **Standing pre-allocations** (e.g. school run every weekday) are a should-have (v1.x), modelled as recurring pinned rides in a future `ride_templates` table; no v1 schema. (confirmed 2026-09-06; DATA_MODEL §9)
+55. **Households are not modelled in v1**; "other members riding along" (companions) covers couples. (confirmed 2026-09-06)
+56. **Home-screen week preference** is `profiles.home_week_preference` (`auto | live | open`, default `auto`); Home always shows upcoming rides and unserved requests above the fold. (confirmed 2026-09-06; §5.5, UX_FLOWS §3.3)
+57. **Location model**: the destinations list doubles as the location table; each department has `home_destination_id` (zone `home`); rides carry `origin_id`/`destination_id` = where the *car* is at ride start/end (both home for round trips and chauffeur rides); `ride_requests.car_mode` records the resolved mode per leg. **Invariant**: per car, consecutive rides chain locations (end of ride n = origin of ride n+1) and the last ride of each local day ends at home unless the Sadran acknowledged an overnight stay (`rides.overnight_ack_by`); enforced by `assert_car_chain()` inside the ride-writing RPCs (`apply_solver_result`, `edit_ride`, …), **not** by an exclusion constraint. Day end defaults to 23:59 (`department_settings.day_end_time`). (confirmed 2026-09-06; §5.4, DATA_MODEL §5)
+58. **Relay pairing matches on the exact `destination_id`** in v1 (zone-level pairing is a possible v1.x extension). (confirmed 2026-09-06; SOLVER §3.6)
+59. **`external` proposals have a WhatsApp template** (`wa.external`): no car available, suggest a cab/other solution; accept = "אסתדר בעצמי" (→ `external`), decline = "להשאיר אותי ברשימת ההמתנה". (confirmed 2026-09-06; UX_FLOWS §6.2)
+60. **The pending-approval page promises no email**: the admin has been notified; you can enter once approved; check back or ask the Sadran. (confirmed 2026-09-06; UX_FLOWS §3.1)
+61. **Two Sadran-only events** join the canonical list: `window_closed_solve_now` (week enters `solving`) and `publish_reminder` (planned publish time passed, week still `solving`). The list has **20** events. (confirmed 2026-09-06; UX_FLOWS §6.1)
+62. **Rides ending after Saturday** are allowed per ride by the Sadran (`rides.overflow_allowed`); there is no department-level setting. Members cannot file such a request; the Sadran files on their behalf. (confirmed 2026-09-06)
+63. **Cancelling one leg of a relay pair flags the other leg** (`flagged`, reason "relay partner cancelled") and creates no freed-slot offer; the Sadran re-pairs, assigns a chauffeur, or cancels both — cancelling both frees the whole window at home. (new in v0.3, please confirm)
+64. **One-way requests are never auto-approved in a live week** (a relay needs a partner, a passenger needs a host, a chauffeur needs a driver); they become `waitlisted` for the Sadran. Round trips are auto-approved only when a shared car is free *and at home* for the exact window and the car's location chain stays valid. (new in v0.3, please confirm)
+65. **Chauffeur seat accounting**: the volunteer is not part of any request, so a chauffeur ride adds one adult to the served requests' load; the requester's own `adults` still counts them as a passenger. (new in v0.3; SOLVER §3.3, DATA_MODEL §5.2)
 
 ## 14. Open questions
 
-1. Does each department have a *fixed* weekly cycle, or can the Sadran open/close manually week by week? (Assumed: configured defaults, Sadran can override per week.)
-2. Should members see *other departments'* siddurim? (Assumed: read-only yes, for lift-finding.)
-3. Recurring requests (work commutes): must-have or should-have? Currently should-have.
-4. Who may register a temporary car — any member, or admin-approved? (Assumed: any member; admin can revoke.)
-5. Are there standing pre-allocations (e.g. a car reserved every weekday 07:00–09:00 for a school run) that should be modeled as recurring pinned rides rather than requests?
-6. Should the solver be allowed to *suggest* moving an already-assigned ride to make room for a higher-priority one (the reference app did "displacement swaps")? (Assumed: yes, as a suggestion only, never automatically after publish.)
-7. Fairness lookback: months? weeks? per member or per household?
-8. What identifies a household (couples often share requests)? (Assumed: not modeled in v1; "other members riding along" covers it.)
-9. There is no WhatsApp template for an `external` proposal (UX_FLOWS §6.2 has shift, merge ×2, deny, reminder). Recommendation: add a `wa.external` variant based on the deny text plus the concrete hint (cab / rental / bus).
-10. The pending-approval page promises an update "by email", but the email channel is v1.x and a never-onboarded member has no push subscription. Recommendation: change the copy to "the admin will let you know" for v1 and ship email with v1.x.
-11. ARCHITECTURE v0.1 had a "window closed" alert and a "publish reminder" for the Sadran; neither is in the canonical event list (UX_FLOWS §6.1). Recommendation: rely on the Sadran dashboard in v1 and add both as Sadran events in v1.x.
-12. UX_FLOWS §5.10 shows a department-level "allow rides ending after Saturday" setting, while §5.3 grants this per ride by the Sadran (`overflow_allowed`), and the data model has no department column. Recommendation: per-ride only in v1; drop the setting from the screen.
-13. Should the Sadran be able to *convert* an "ask to join" request into a merge proposal with one tap even when the driver's ride is a temporary car? (Assumed: yes — the owner answers like any driver, §6.4.)
+All questions of v0.2 (1–13) were answered by the owner on 2026-09-06 and folded into the body text and §13.51–62. Recurring requests stay should-have (v1.x). Two new questions raised by the one-way/relay model:
+
+1. **Chauffeur volunteers.** Should members be able to flag themselves as willing chauffeurs (a profile flag "מוכן/ה להסיע"), so the Sadran can send "needs a driver" requests to that list in one tap? Recommendation: v1.x; in v1 the Sadran picks any member from the member picker and optionally sends a `merge` proposal (`wa.chauffeur`).
+2. **Car location in the published siddur.** Should members see where a shared car is parked away from home (e.g. "האוקטביה בבנימינה 09:45–11:15") so they can spontaneously ask for a relay-back? Recommendation: v1 shows it on the Sadran board only; the member view joins the v1.x lift-finding search (§12).

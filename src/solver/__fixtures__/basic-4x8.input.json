@@ -1,0 +1,534 @@
+{
+  "week": {
+    "startMs": 1767484800000,
+    "days": [
+      {
+        "dayIndex": 0,
+        "startSlot": 0,
+        "endSlot": 96,
+        "dayEndSlot": 95
+      },
+      {
+        "dayIndex": 1,
+        "startSlot": 96,
+        "endSlot": 192,
+        "dayEndSlot": 191
+      },
+      {
+        "dayIndex": 2,
+        "startSlot": 192,
+        "endSlot": 288,
+        "dayEndSlot": 287
+      },
+      {
+        "dayIndex": 3,
+        "startSlot": 288,
+        "endSlot": 384,
+        "dayEndSlot": 383
+      },
+      {
+        "dayIndex": 4,
+        "startSlot": 384,
+        "endSlot": 480,
+        "dayEndSlot": 479
+      },
+      {
+        "dayIndex": 5,
+        "startSlot": 480,
+        "endSlot": 576,
+        "dayEndSlot": 575
+      },
+      {
+        "dayIndex": 6,
+        "startSlot": 576,
+        "endSlot": 672,
+        "dayEndSlot": 671
+      }
+    ]
+  },
+  "homeLocationId": "home",
+  "cars": [
+    {
+      "id": "C1",
+      "name": "Picanto",
+      "type": "shared",
+      "seatConfigs": [
+        {
+          "adults": 4,
+          "childSeats": 0,
+          "boosters": 0
+        },
+        {
+          "adults": 2,
+          "childSeats": 1,
+          "boosters": 0
+        },
+        {
+          "adults": 3,
+          "childSeats": 0,
+          "boosters": 1
+        }
+      ],
+      "features": [],
+      "luggageCapacity": 1,
+      "maintenance": [
+        {
+          "start": 116,
+          "end": 124
+        }
+      ]
+    },
+    {
+      "id": "C2",
+      "name": "Octavia",
+      "type": "shared",
+      "seatConfigs": [
+        {
+          "adults": 5,
+          "childSeats": 0,
+          "boosters": 0
+        },
+        {
+          "adults": 3,
+          "childSeats": 1,
+          "boosters": 0
+        },
+        {
+          "adults": 2,
+          "childSeats": 2,
+          "boosters": 0
+        },
+        {
+          "adults": 4,
+          "childSeats": 0,
+          "boosters": 1
+        }
+      ],
+      "features": [
+        "large_trunk"
+      ],
+      "luggageCapacity": 2,
+      "maintenance": []
+    },
+    {
+      "id": "C3",
+      "name": "Corolla",
+      "type": "shared",
+      "seatConfigs": [
+        {
+          "adults": 5,
+          "childSeats": 0,
+          "boosters": 0
+        },
+        {
+          "adults": 3,
+          "childSeats": 1,
+          "boosters": 0
+        },
+        {
+          "adults": 4,
+          "childSeats": 0,
+          "boosters": 1
+        }
+      ],
+      "features": [],
+      "luggageCapacity": 1,
+      "maintenance": [
+        {
+          "start": 148,
+          "end": 164
+        }
+      ]
+    },
+    {
+      "id": "C4",
+      "name": "Staria",
+      "type": "shared",
+      "seatConfigs": [
+        {
+          "adults": 7,
+          "childSeats": 0,
+          "boosters": 0
+        },
+        {
+          "adults": 5,
+          "childSeats": 2,
+          "boosters": 0
+        },
+        {
+          "adults": 4,
+          "childSeats": 2,
+          "boosters": 1
+        },
+        {
+          "adults": 6,
+          "childSeats": 0,
+          "boosters": 1
+        }
+      ],
+      "features": [
+        "large_trunk"
+      ],
+      "luggageCapacity": 2,
+      "maintenance": []
+    }
+  ],
+  "requests": [
+    {
+      "id": "R1",
+      "memberId": "dana",
+      "departmentId": "dept-1",
+      "destinationId": "ASH",
+      "rideType": "healthcare",
+      "tripShape": "round_trip",
+      "flexDeparture": {
+        "earlierMin": 0,
+        "laterMin": 0
+      },
+      "flexReturn": {
+        "earlierMin": 0,
+        "laterMin": 0
+      },
+      "passengers": {
+        "adults": 1,
+        "childSeats": 0,
+        "boosters": 0
+      },
+      "coRiderMemberIds": [],
+      "luggage": false,
+      "needsCarAtDestination": true,
+      "submittedAtMs": 0,
+      "isLate": false,
+      "departureMs": 1767600000000,
+      "returnMs": 1767614400000
+    },
+    {
+      "id": "R2",
+      "memberId": "yossi",
+      "departmentId": "dept-1",
+      "destinationId": "TA",
+      "rideType": "work",
+      "tripShape": "round_trip",
+      "flexDeparture": {
+        "earlierMin": 30,
+        "laterMin": 30
+      },
+      "flexReturn": {
+        "earlierMin": 30,
+        "laterMin": 30
+      },
+      "passengers": {
+        "adults": 1,
+        "childSeats": 0,
+        "boosters": 0
+      },
+      "coRiderMemberIds": [],
+      "luggage": false,
+      "needsCarAtDestination": true,
+      "submittedAtMs": 0,
+      "isLate": false,
+      "departureMs": 1767601800000,
+      "returnMs": 1767632400000
+    },
+    {
+      "id": "R3",
+      "memberId": "noa",
+      "departmentId": "dept-1",
+      "destinationId": "BIN",
+      "rideType": "work",
+      "tripShape": "one_way_to",
+      "flexDeparture": {
+        "earlierMin": 30,
+        "laterMin": 30
+      },
+      "flexReturn": {
+        "earlierMin": 0,
+        "laterMin": 0
+      },
+      "passengers": {
+        "adults": 1,
+        "childSeats": 0,
+        "boosters": 0
+      },
+      "coRiderMemberIds": [],
+      "luggage": false,
+      "needsCarAtDestination": true,
+      "submittedAtMs": 0,
+      "isLate": false,
+      "oneWayCarMode": "relay",
+      "departureMs": 1767603600000
+    },
+    {
+      "id": "R4",
+      "memberId": "avi",
+      "departmentId": "dept-1",
+      "destinationId": "BS",
+      "rideType": "childcare",
+      "tripShape": "round_trip",
+      "flexDeparture": {
+        "earlierMin": 0,
+        "laterMin": 0
+      },
+      "flexReturn": {
+        "earlierMin": 0,
+        "laterMin": 0
+      },
+      "passengers": {
+        "adults": 2,
+        "childSeats": 1,
+        "boosters": 0
+      },
+      "coRiderMemberIds": [],
+      "luggage": false,
+      "needsCarAtDestination": true,
+      "submittedAtMs": 0,
+      "isLate": false,
+      "departureMs": 1767618000000,
+      "returnMs": 1767627000000
+    },
+    {
+      "id": "R5",
+      "memberId": "michal",
+      "departmentId": "dept-1",
+      "destinationId": "BS",
+      "rideType": "errands",
+      "tripShape": "round_trip",
+      "flexDeparture": {
+        "earlierMin": 30,
+        "laterMin": 60
+      },
+      "flexReturn": {
+        "earlierMin": 30,
+        "laterMin": 60
+      },
+      "passengers": {
+        "adults": 1,
+        "childSeats": 0,
+        "boosters": 0
+      },
+      "coRiderMemberIds": [],
+      "luggage": false,
+      "needsCarAtDestination": true,
+      "submittedAtMs": 0,
+      "isLate": false,
+      "departureMs": 1767619800000,
+      "returnMs": 1767625200000
+    },
+    {
+      "id": "R6",
+      "memberId": "levi",
+      "departmentId": "dept-1",
+      "destinationId": "TA",
+      "rideType": "other",
+      "tripShape": "round_trip",
+      "flexDeparture": {
+        "earlierMin": 0,
+        "laterMin": 0
+      },
+      "flexReturn": {
+        "earlierMin": 0,
+        "laterMin": 0
+      },
+      "passengers": {
+        "adults": 4,
+        "childSeats": 2,
+        "boosters": 0
+      },
+      "coRiderMemberIds": [],
+      "luggage": true,
+      "needsCarAtDestination": true,
+      "submittedAtMs": 0,
+      "isLate": false,
+      "departureMs": 1767603600000,
+      "returnMs": 1767634200000
+    },
+    {
+      "id": "R7",
+      "memberId": "eitan",
+      "departmentId": "dept-1",
+      "destinationId": "BIN",
+      "rideType": "work",
+      "tripShape": "one_way_from",
+      "flexDeparture": {
+        "earlierMin": 0,
+        "laterMin": 0
+      },
+      "flexReturn": {
+        "earlierMin": 30,
+        "laterMin": 30
+      },
+      "passengers": {
+        "adults": 1,
+        "childSeats": 0,
+        "boosters": 0
+      },
+      "coRiderMemberIds": [],
+      "luggage": false,
+      "needsCarAtDestination": true,
+      "submittedAtMs": 0,
+      "isLate": false,
+      "oneWayCarMode": "relay",
+      "returnMs": 1767614400000
+    },
+    {
+      "id": "R8",
+      "memberId": "rina",
+      "departmentId": "dept-1",
+      "destinationId": "ASH",
+      "rideType": "healthcare",
+      "tripShape": "round_trip",
+      "flexDeparture": {
+        "earlierMin": 30,
+        "laterMin": 30
+      },
+      "flexReturn": {
+        "earlierMin": 30,
+        "laterMin": 30
+      },
+      "passengers": {
+        "adults": 1,
+        "childSeats": 0,
+        "boosters": 1
+      },
+      "coRiderMemberIds": [],
+      "luggage": false,
+      "needsCarAtDestination": true,
+      "submittedAtMs": 0,
+      "isLate": true,
+      "departureMs": 1767616200000,
+      "returnMs": 1767623400000
+    }
+  ],
+  "fixedRides": [],
+  "destinations": {
+    "home": {
+      "id": "home",
+      "zone": "home"
+    },
+    "TA": {
+      "id": "TA",
+      "zone": "TA",
+      "distanceKm": 55,
+      "travelMinutes": 60,
+      "publicTransportScore": 0.7
+    },
+    "BS": {
+      "id": "BS",
+      "zone": "BS",
+      "distanceKm": 40,
+      "travelMinutes": 45,
+      "publicTransportScore": 0.5
+    },
+    "ASH": {
+      "id": "ASH",
+      "zone": "ASH",
+      "distanceKm": 25,
+      "travelMinutes": 30,
+      "publicTransportScore": 0.3
+    },
+    "BIN": {
+      "id": "BIN",
+      "zone": "BIN",
+      "distanceKm": 35,
+      "travelMinutes": 45,
+      "publicTransportScore": 0.8
+    }
+  },
+  "policy": {
+    "id": "test-policy",
+    "version": 1,
+    "rules": [
+      {
+        "type": "rideType",
+        "weight": 1,
+        "params": {
+          "weights": {
+            "work": 8,
+            "healthcare": 10,
+            "childcare": 8,
+            "other": 5,
+            "errands": 3
+          }
+        }
+      },
+      {
+        "type": "distance",
+        "weight": 0.4,
+        "params": {
+          "maxKm": 60
+        }
+      },
+      {
+        "type": "publicTransport",
+        "weight": 0.3,
+        "params": {}
+      },
+      {
+        "type": "peopleServed",
+        "weight": 0.3,
+        "params": {
+          "cap": 4
+        }
+      },
+      {
+        "type": "fairness",
+        "weight": 0.5,
+        "params": {
+          "lookbackWeeks": 3
+        }
+      },
+      {
+        "type": "submissionTime",
+        "weight": 0.2,
+        "params": {
+          "latePenalty": 1
+        }
+      },
+      {
+        "type": "flexibilityOffered",
+        "weight": 0.2,
+        "params": {
+          "fullCreditMinutes": 240
+        }
+      },
+      {
+        "type": "manualBoost",
+        "weight": 2,
+        "params": {}
+      }
+    ]
+  },
+  "stats": {
+    "fairness": {
+      "yossi": {
+        "deficit": 0.2
+      },
+      "michal": {
+        "deficit": 0.9
+      },
+      "eitan": {
+        "deficit": 0.7
+      }
+    },
+    "usualCarId": {
+      "noa": "C3"
+    }
+  },
+  "config": {
+    "bufferMinutes": 30,
+    "detour": {
+      "maxMinutes": 20,
+      "maxKm": 15
+    },
+    "beyondFlexMaxMinutes": 120,
+    "defaultTravelMinutes": 60,
+    "chauffeurDwellMinutes": 10,
+    "improvementBudget": 5000,
+    "perRequestBudget": 200,
+    "externalHints": {
+      "cabMaxMinutes": 90,
+      "rentalMinHours": 30,
+      "ptMinScore": 0.6
+    }
+  }
+}

@@ -1,6 +1,6 @@
 # carshare-nevo — Data Model
 
-Status: **DRAFT v0.1** (2026-09-06). Derives from `docs/REQUIREMENTS.md` (source of truth). Where this document and REQUIREMENTS disagree, REQUIREMENTS wins and this file must be fixed.
+Status: **DRAFT v0.3** (2026-09-06, owner answers applied; one-way/relay model, car location and the two Sadran events added). Derives from `docs/REQUIREMENTS.md` v0.3 (source of truth). Where this document and REQUIREMENTS disagree, REQUIREMENTS wins and this file must be fixed.
 
 Fixed decisions (from architecture): Supabase Postgres + Supabase Auth (Google only); RLS on **every** table; roles per department; Sadran assignment per department per target week with optional standing default; 15-minute granularity; `Asia/Jerusalem`; every timestamp is `timestamptz`; weeks identified by `week_start` (a Sunday `date`); priority policy stored as versioned JSON; solver runs in the browser and writes its result through one RPC (one transaction).
 
@@ -53,6 +53,8 @@ erDiagram
   cars ||--o{ car_issues : ""
   cars ||--o{ rides : ""
   destinations ||--o{ requests : ""
+  destinations |o--o{ departments : "home_destination_id"
+  destinations ||--o{ rides : "origin_id / destination_id (car location)"
   ride_types ||--o{ requests : ""
   profiles ||--o{ requests : "requester"
   requests ||--o{ request_companions : ""
@@ -94,7 +96,9 @@ create type public.approval_status      as enum ('pending','approved','blocked')
 create type public.week_phase           as enum ('open','solving','published','live','archived');
 create type public.request_status       as enum ('draft','submitted','proposed','assigned','merged',
                                                  'waitlisted','denied','external','withdrawn','cancelled');
-create type public.leg_direction        as enum ('to_destination','from_destination');
+create type public.trip_shape           as enum ('round_trip','one_way_to','one_way_from');   -- REQ §5.1, §5.4
+create type public.leg_car_mode         as enum ('keep','relay','passenger','chauffeur');     -- REQ §5.4
+create type public.home_week_preference as enum ('auto','live','open');                        -- REQ §5.5
 create type public.ride_status          as enum ('draft','confirmed','flagged','cancelled');
 create type public.ride_role            as enum ('driver','passenger');
 create type public.ride_leg             as enum ('out','return','both');
@@ -108,8 +112,9 @@ create type public.solver_run_status    as enum ('succeeded','failed');
 create type public.freed_offer_status   as enum ('open','auto_assigned','pending_approval','approved','expired','closed');
 create type public.freed_claim_status   as enum ('offered','claimed','approved','declined','withdrawn');
 create type public.notification_channel as enum ('push','inbox','whatsapp','email');
--- Canonical list = UX_FLOWS.md §6.1 (18 events). Value = snake_case of the i18n key suffix (`notif.freedSlotAuto` → 'freed_slot_auto').
-create type public.notification_event   as enum ('window_open','window_closing','published','outcome_changed',
+-- Canonical list = UX_FLOWS.md §6.1 (20 events). Value = snake_case of the i18n key suffix (`notif.freedSlotAuto` → 'freed_slot_auto').
+create type public.notification_event   as enum ('window_open','window_closing','window_closed_solve_now','publish_reminder',
+                                                 'published','outcome_changed',
                                                  'proposal_received','proposal_answered','freed_slot','freed_slot_auto',
                                                  'claim_approved','claim_declined','claim_contested','maintenance_affects',
                                                  'late_request','waitlisted_request','auto_approved','request_changed',
@@ -124,8 +129,9 @@ Notes:
 - `ride_status`: `draft` = exists only in the Sadran's draft siddur; `confirmed` = part of a published version or auto-approved after publish; `flagged` = confirmed but invalidated by a maintenance block (§8), Sadran must re-solve; `cancelled` keeps the row for history and freed-slot linkage.
 - `week_phase` adds `archived` (REQUIREMENTS §4: Saturday 23:59 passed, read-only) to the four working phases; it exists for retention and for the fairness lookback. The full list is `open, solving, published, live, archived`.
 - `role` is used by `department_members` (`member`/`sadran` only — admin is global, see `profiles.is_admin`) and by `audit_log.actor_role`.
-- `notification_event` **Sadran-role events** (cannot be muted while the recipient is a Sadran of the week, REQUIREMENTS §9): `proposal_answered`, `claim_contested`, `late_request`, `waitlisted_request`, `request_changed`, and the Sadran copy of `auto_approved`. Admin events: `access_request`. Everything else goes to members.
-- `proposal_type` ↔ solver suggestion kinds: the mapping table lives in `SOLVER.md` §3.15. In particular "split legs" (§7.1 suggestion 4) is a `merge` proposal whose payload lists two rides (`legs: [{leg:'out', ride_id}, {leg:'return', ride_id}]`), not a separate type.
+- `notification_event` **Sadran-role events** (cannot be muted while the recipient is a Sadran of the week, REQUIREMENTS §9): `window_closed_solve_now`, `publish_reminder`, `proposal_answered`, `claim_contested`, `late_request`, `waitlisted_request`, `request_changed`, and the Sadran copy of `auto_approved`. Admin events: `access_request`. Everything else goes to members.
+- `trip_shape` (REQ §5.1) replaces the v0.1 `one_way boolean` + `leg_direction` pair; `leg_direction` is **not created**. `leg_car_mode` is the resolved mode of one served leg (`ride_requests.car_mode`, REQ §5.4); members may request only `relay` or `passenger` for one-way shapes (`requests.one_way_car_mode`), `keep` is the round-trip default and `chauffeur` is Sadran-assigned.
+- `proposal_type` ↔ solver suggestion kinds: the mapping table lives in `SOLVER.md` §3.15. In particular "split legs" (§7.1 suggestion 4) is a `merge` proposal whose payload lists two rides (`legs: [{leg:'out', ride_id, car_mode}, {leg:'return', ride_id, car_mode}]`), "convert to round trip" is a `shift` proposal carrying `trip_shape`, and a chauffeur is **no** proposal type (a Sadran action, optionally a `merge` proposal to the volunteer).
 - `answer_channel`: how a proposal answer was recorded — `token` (deep link, no session), `session` (signed-in app), `sadran` (recorded on the member's behalf).
 
 ---
@@ -145,15 +151,18 @@ Organizational unit owning members, cars and a Sadran.
 | name | text | NN | | unique, Hebrew display name |
 | slug | text | NN | | unique, `^[a-z0-9-]+$`, used in URLs |
 | is_active | boolean | NN | true | |
+| home_destination_id | uuid | | | FK destinations (added in migration step 5, after `destinations` exists) — the department's **home location** (REQ §5.4, §6; a destination row with `zone = 'home'`). Required by the admin UI at creation; `apply_solver_result`/`edit_ride`/`try_auto_approve` raise `no_home_location` while null. |
 | created_at / updated_at | timestamptz | NN | now() | |
 
-#### `department_settings` (§4, §7.1, §13.10–11)
+#### `department_settings` (§4, §5.4, §7.1, §13.10–11)
 1:1 with `departments`, created by trigger on department insert. Per-department knobs; global fallbacks live in `app_settings`.
 
 | column | type | null | default | notes |
 |---|---|---|---|---|
 | department_id | uuid | NN | | PK, FK departments ON DELETE CASCADE |
-| turnaround_buffer | interval | NN | '15 minutes' | copied onto `rides.turnaround` at write time |
+| turnaround_minutes | int | NN | 30 | CHECK `turnaround_minutes % 15 = 0 and between 0 and 120`; turned into `rides.turnaround` (interval) at write time (REQ §13.10; was 15 in v0.2) |
+| day_end_time | time | NN | '23:59' | every shared car must be home by this local time unless the Sadran acknowledged an overnight stay on the ride (REQ §5.4, §13.57) |
+| chauffeur_dwell_minutes | int | NN | 10 | added to `2 × travel` for chauffeur legs (REQ §5.4, §13.14) |
 | detour_limit_minutes | int | NN | 20 | |
 | detour_limit_km | numeric(6,1) | NN | 15 | |
 | open_dow / open_time | smallint / time | NN | 0 / '00:00' | cycle defaults, week before target (dow 0 = Sunday) |
@@ -164,14 +173,24 @@ Organizational unit owning members, cars and a Sadran.
 | proposal_expiry_hours | int | NN | 24 | used when mode = fixed_hours |
 | auto_apply_accepted_proposals | boolean | NN | true | apply a proposal as soon as every party accepted (UX_FLOWS §4.3, §5.10) |
 | board_start_time | time | NN | '05:00' | first hour drawn on the board grid (UX_FLOWS §5.10 "grid hours") |
-| fairness_lookback_weeks | int | NN | 8 | default for the fairness rule (§14.7 open) |
 | weeks_open_ahead | smallint | NN | 1 | how many target weeks are Open simultaneously |
-| members_may_add_temp_cars | boolean | NN | true | §14.4 |
 | overrides | jsonb | NN | '{}' | escape hatch for future keys; validated by app |
+
+Removed in v0.3 (owner answers 2026-09-06): `fairness_lookback_weeks` — the lookback is the `lookbackWeeks` param of the fairness rule in the policy (default 3, REQ §13.18); `members_may_add_temp_cars` — any member may register a temporary car (REQ §13.53); there is no department-level "rides may end after Saturday" setting (per ride, REQ §13.62).
 | updated_at / updated_by | timestamptz / uuid | | | |
 
 #### `app_settings`
-Singleton key/value for global defaults (VAPID public key, default policy id, iOS install hint text, housekeeping watermarks). Notification templates are **not** here — see `notification_templates` (§3.11).
+Singleton key/value for global, **non-secret** defaults (VAPID public key, `push_dispatch_url`, `on_ride_cancelled_url`, iOS install hint text, housekeeping watermarks). Notification templates are **not** here — see `notification_templates` (§3.11). Secrets live in `app_secrets` instead (§6.1 item 12).
+
+| column | type | null | default | notes |
+|---|---|---|---|---|
+| key | text | NN | | PK |
+| value | jsonb | NN | | |
+| description | text | | | |
+| updated_at / updated_by | timestamptz / uuid | | | |
+
+#### `app_secrets` (§6.1 item 12)
+Same key/value shape as `app_settings`, for values a SECURITY DEFINER function passes to `pg_net` (currently `cron_secret`, the shared header for `push-dispatch`/`on-ride-cancelled`). RLS enabled and forced with **no policies at all** — nobody reaches it through PostgREST (`anon`/`authenticated`); only the service role and SECURITY DEFINER functions (owned by a superuser migration role, which always bypasses RLS) can read or write it.
 
 | column | type | null | default | notes |
 |---|---|---|---|---|
@@ -195,6 +214,7 @@ Singleton key/value for global defaults (VAPID public key, default policy id, iO
 | is_admin | boolean | NN | false | global admin (§3 "Admin actions are global"). Only changed via `grant_admin()` RPC or service role |
 | default_child_seats | smallint | NN | 0 | pre-fills the request form |
 | default_boosters | smallint | NN | 0 | |
+| home_week_preference | home_week_preference | NN | 'auto' | which week Home opens on (REQ §5.5): `auto` = live week if I have a ride today/tomorrow else the open week; `live`; `open`. Upcoming rides and unserved requests are always shown regardless |
 | muted_events | notification_event[] | NN | '{}' | §9 "Members can mute categories" — the UI toggles categories, each writing a set of events. `enqueue_notification()` ignores mutes for Sadran-role events while the recipient is a Sadran of the week (§2 notes) |
 | avatar_url | text | | | from Google |
 | created_at / updated_at | timestamptz | NN | now() | |
@@ -316,7 +336,7 @@ Index `(car_id) where status = 'open'`.
 | id | uuid | NN | | PK |
 | name | text | NN | | unique (case/whitespace-normalized by trigger) |
 | aliases | text[] | NN | '{}' | GIN index for typeahead |
-| zone | text | NN | 'unknown' | free vocabulary managed by admin ('north','haifa','tel_aviv',...) |
+| zone | text | NN | 'unknown' | free vocabulary managed by admin ('north','haifa','tel_aviv',...). Reserved value **`home`**: the row is a department's home location (`departments.home_destination_id`); zone `home` never merges and is never a request destination |
 | lat / lng | numeric(9,6) | | | optional coordinates (§7.1 merge detection) |
 | distance_km | numeric(6,1) | | | from the kibbutz; null until classified |
 | travel_minutes | int | | | |
@@ -326,6 +346,8 @@ Index `(car_id) where status = 'open'`.
 | created_at / updated_at | timestamptz | NN | now() | |
 
 Free-text requests keep `requests.destination_text`; "promote to list" is an admin action that inserts a destination and back-fills `destination_id` on matching requests.
+
+**Destinations double as the location table** (REQ §5.4, §13.57): `rides.origin_id`/`rides.destination_id` and `departments.home_destination_id` reference this table, so "where is the car" is always a destination row. Relay pairing matches on the exact `destination_id` (REQ §13.58); free-text destinations (no row) therefore never relay.
 
 #### `ride_types`
 
@@ -374,9 +396,10 @@ One row per department per target week. Created by the `open_week()` RPC or by `
 | department_id | uuid | NN | | FK departments |
 | week_start | date | NN | | CHECK `extract(dow from week_start) = 0` (Sunday) |
 | phase | week_phase | NN | 'open' | |
-| open_at | timestamptz | NN | | computed from settings, Sadran may override (§14.1) |
-| close_at | timestamptz | NN | | requests after this are `is_late` |
-| publish_at | timestamptz | NN | | default proposal expiry |
+| open_at | timestamptz | NN | | computed from settings, Sadran may override per week (REQ §13.51) |
+| close_at | timestamptz | NN | | requests after this are `is_late`; passing it moves the week to `solving` and enqueues `window_closed_solve_now` to the Sadranim |
+| publish_at | timestamptz | NN | | default proposal expiry; if it passes while `phase = 'solving'`, `send_due_reminders()` enqueues `publish_reminder` once |
+| publish_reminder_sent_at | timestamptz | | | idempotency for `publish_reminder` |
 | published_version_id | uuid | | | FK siddur_versions; **the one published pointer** |
 | published_at | timestamptz | | | |
 | settings_overrides | jsonb | NN | '{}' | per-week overrides of `department_settings` keys (e.g. turnaround) |
@@ -399,11 +422,11 @@ PK `(department_id, week_start)`. CHECK `open_at < close_at and close_at <= publ
 | destination_id | uuid | | | FK destinations |
 | destination_text | text | | | CHECK `(destination_id is not null) or (destination_text is not null)` |
 | ride_type_id | uuid | NN | | FK ride_types |
-| depart_at | timestamptz | NN | | 15-min aligned (`is_quarter_hour()` CHECK) |
-| return_at | timestamptz | | | CHECK `return_at is null or return_at > depart_at`; aligned |
-| one_way | boolean | NN | false | |
-| direction | leg_direction | | | CHECK `one_way = (direction is not null)`; CHECK `one_way or return_at is not null` |
-| needs_car_at_destination | boolean | NN | true | §5.1 |
+| trip_shape | trip_shape | NN | 'round_trip' | §5.1, §5.4 |
+| depart_at | timestamptz | | | outbound leg leaves home; 15-min aligned (`is_quarter_hour()` CHECK); CHECK `(depart_at is not null) = (trip_shape <> 'one_way_from')` |
+| return_at | timestamptz | | | return leg arrives home; aligned; CHECK `(return_at is not null) = (trip_shape <> 'one_way_to')`; CHECK `depart_at is null or return_at is null or return_at > depart_at` |
+| one_way_car_mode | leg_car_mode | | | member's preferred mode for a one-way leg: CHECK `(one_way_car_mode is null) = (trip_shape = 'round_trip')` and `one_way_car_mode in ('relay','passenger')` (§5.4; `keep`/`chauffeur` are never requested) |
+| needs_car_at_destination | boolean | NN | true | §5.1; round trips only — `submit_request` forces `true` for one-way shapes |
 | adults | smallint | NN | 1 | CHECK >= 1 (includes driver) |
 | child_seats | smallint | NN | 0 | CHECK >= 0 |
 | boosters | smallint | NN | 0 | CHECK >= 0 |
@@ -421,15 +444,14 @@ PK `(department_id, week_start)`. CHECK `open_at < close_at and close_at <= publ
 | freed_slot_opt_out | boolean | NN | false | §8, §13.7 |
 | manual_boost | numeric(6,2) | NN | 0 | §7.2 "Manual boost"; Sadran only |
 | manual_boost_reason | text | | | CHECK `manual_boost = 0 or manual_boost_reason is not null` |
-| overflow_allowed | boolean | NN | false | Sadran-set: ride may end after Saturday (§5.3) |
-| join_ride_id | uuid | | | FK rides ON DELETE SET NULL — "ask to join" hint (§7.3): the member wants to ride along in this published ride; the Sadran sees the flag and turns it into a `merge` proposal |
+| join_ride_id | uuid | | | FK rides ON DELETE SET NULL — "ask to join" hint (§7.3): the member wants to ride along in this published ride. Shared car: the Sadran sees the flag and turns it into a `merge` proposal. **Temporary car**: `submit_request` itself creates and sends the `merge` proposal to the owner (REQ §13.43) |
 | template_id | uuid | | | FK request_templates ON DELETE SET NULL |
 | version | int | NN | 1 | optimistic concurrency (§5 invariants) |
 | created_at / updated_at | timestamptz | NN | now() | |
 
-Indexes: `(department_id, week_start, status)`; `(requester_id, week_start desc)`; `(department_id, week_start) where status in ('waitlisted','denied') and not freed_slot_opt_out` (freed-slot candidates); GiST `(department_id, tstzrange(depart_at, coalesce(return_at, depart_at + interval '15 min'), '[)'))` for duplicate/overlap detection.
+Indexes: `(department_id, week_start, status)`; `(requester_id, week_start desc)`; `(department_id, week_start) where status in ('waitlisted','denied') and not freed_slot_opt_out` (freed-slot candidates); GiST `(department_id, request_span(depart_at, return_at))` for duplicate/overlap detection, where `request_span(d, r) = tstzrange(coalesce(d, r), coalesce(r, d), '[]')` is an **immutable** helper (a one-way request spans a single instant; no interval arithmetic, so it may be indexed — see §5.1).
 
-**Write path.** Requests are created and edited **only** through the `submit_request(payload jsonb)` SECURITY DEFINER RPC (no direct INSERT/UPDATE policies, §4.3). Payload keys mirror the columns above plus `request_id` (edit), `requester_id` (Sadran/Admin filing on behalf) and `expected_version`. The RPC validates §5.3 (returns non-blocking `warnings[]` for seat fit and duplicate overlap), sets `submitted_at`, computes `is_late` from `weeks.close_at`, bumps `version` and sets `changed_since_solve` when a solve-relevant column changes while `weeks.phase <> 'open'`, writes the audit row with reason, and in a `live` week calls `try_auto_approve()` (§8). Members withdraw through `withdraw_request(request_id, expected_version)`; after publish `cancel_ride()` cancels the request together with its ride. Sadran boosts go through `set_manual_boost(request_id, value, reason)`.
+**Write path.** Requests are created and edited **only** through the `submit_request(payload jsonb)` SECURITY DEFINER RPC (no direct INSERT/UPDATE policies, §4.3). Payload keys mirror the columns above plus `request_id` (edit), `requester_id` (Sadran/Admin filing on behalf) and `expected_version`. The RPC validates §5.3 (returns non-blocking `warnings[]` for seat fit and duplicate overlap; a `return_at` after Saturday is accepted only when filed by a Sadran/Admin on behalf — REQ §13.62), normalizes one-way shapes (`needs_car_at_destination = true`, `one_way_car_mode` required), sets `submitted_at`, computes `is_late` from `weeks.close_at`, bumps `version` and sets `changed_since_solve` when a solve-relevant column changes while `weeks.phase <> 'open'`, writes the audit row with reason, and in a `live` week calls `try_auto_approve()` (§8; round trips only — one-way shapes become `waitlisted`, REQ §13.64). When `join_ride_id` points at a ride on a **temporary car**, the RPC also calls `create_proposal` + `send_proposal` (type `merge`, `created_by = requester_id`, parties = owner + requester) so the owner decides directly (REQ §13.43). Members withdraw through `withdraw_request(request_id, expected_version)`; after publish `cancel_ride()` cancels the request together with its ride. Sadran boosts go through `set_manual_boost(request_id, value, reason)`.
 
 Triggers (last line of defence behind the RPCs): `requests_within_week` (§5 invariants), `requests_status_guard` (allowed transitions per §5.2 and who may perform them), `bump_version`, `audit_row`.
 
@@ -451,10 +473,10 @@ PK `(request_id, profile_id)`. CHECK via trigger: `profile_id <> requester_id`. 
 | department_id | uuid | NN | | FK departments |
 | destination_id / destination_text | uuid / text | | | same CHECK as requests |
 | ride_type_id | uuid | NN | | |
-| depart_dow | smallint | NN | | 0..6 |
-| depart_time | time | NN | | 15-min aligned |
-| return_dow / return_time | smallint / time | | | |
-| one_way / direction | boolean / leg_direction | NN / | false | same CHECKs as requests |
+| trip_shape | trip_shape | NN | 'round_trip' | |
+| depart_dow / depart_time | smallint / time | | | 0..6, 15-min aligned; null iff `one_way_from` |
+| return_dow / return_time | smallint / time | | | null iff `one_way_to` |
+| one_way_car_mode | leg_car_mode | | | same CHECKs as requests |
 | needs_car_at_destination, adults, child_seats, boosters, has_luggage, flex_* , notes | | | | identical to requests |
 | is_active | boolean | NN | true | member "stops it" → false |
 | paused_until | date | | | skip weeks |
@@ -490,11 +512,15 @@ Index `(department_id, week_start, started_at desc)`.
 | department_id / week_start | uuid / date | NN | | composite FK weeks |
 | car_id | uuid | NN | | FK cars; trigger `rides_car_same_department`: `cars.department_id = rides.department_id` (§13.1 hard boundary). Cross-department borrowing (§13.1 "manual Sadran-to-Sadran act") is **not modelled in v1**: the lending Sadran blocks the car with a `car_maintenance_blocks` row (reason "lent to X") and the borrowing side records its ride as `external`. A `car_loans` table lifting this trigger for a window is the documented follow-up. |
 | starts_at / ends_at | timestamptz | NN | | CHECK ends_at > starts_at; 15-min aligned |
-| turnaround | interval | NN | | copied from department/week settings by trigger at insert |
+| origin_id | uuid | NN | | FK destinations — where the **car** is when the ride starts (REQ §5.4, §13.57). Home for `keep`/`chauffeur` rides and relay out-legs; the destination for a relay back-leg |
+| destination_id | uuid | NN | | FK destinations — where the **car** is when the ride ends. Home for `keep`/`chauffeur` rides and relay back-legs; the destination for a relay out-leg. The "far point" of a round trip is *not* here — it is on the served requests. Consecutive rides of a car must chain (§5 #17, `assert_car_chain()`) |
+| turnaround | interval | NN | | `make_interval(mins => turnaround_minutes)` from department/week settings by trigger at insert |
 | blocked_until | timestamptz | NN | | trigger-maintained `= ends_at + turnaround` (see §5.1 for why not a generated column) |
-| driver_id | uuid | NN | | FK profiles (§13.9) |
+| driver_id | uuid | NN | | FK profiles (§13.9). Normally the requester of the `driver` row in `ride_requests`; for a **chauffeur ride** it is the volunteer, who has no request in this ride (`ride_requests` then has no `driver` row — see below) |
+| overflow_allowed | boolean | NN | false | Sadran-set: this ride may end after Saturday (REQ §5.3, §13.62); checked by `rides_within_week` |
+| overnight_ack_by / overnight_ack_at | uuid / timestamptz | | | Sadran acknowledged that this ride leaves the car away from home past `day_end_time` (overnight trip, REQ §5.4); CHECK both null or both set; read by `assert_car_chain()` |
 | status | ride_status | NN | 'draft' | |
-| is_pinned | boolean | NN | false | Sadran manual edit / applied proposal / temporary-car owner ride |
+| is_pinned | boolean | NN | false | Sadran manual edit / applied proposal / temporary-car owner ride / chauffeur ride |
 | pin_reason | text | | | CHECK `not is_pinned or pin_reason is not null` |
 | created_by_solver_run_id | uuid | | | FK solver_runs ON DELETE SET NULL; null = manual/auto-approved |
 | created_by | uuid | NN | | FK profiles |
@@ -511,23 +537,25 @@ alter table public.rides
   where (status <> 'cancelled');
 create index rides_week_idx on public.rides (department_id, week_start, status);
 create index rides_driver_idx on public.rides (driver_id, starts_at);
+create index rides_car_chain_idx on public.rides (car_id, week_start, starts_at) where status <> 'cancelled';   -- assert_car_chain()
 ```
-Triggers: `rides_set_blocked_until`, `rides_within_week` (unless every served request has `overflow_allowed`), `rides_temp_car_owner_only` (a `temporary` car's rides must have `driver_id = cars.owner_id` — §6.4 "The solver never assigns a temporary car to anyone else"; merging passengers into it is fine), `bump_version`, `audit_row`.
+Triggers: `rides_set_blocked_until`, `rides_within_week` (unless `overflow_allowed`), `rides_temp_car_owner_only` (a `temporary` car's rides must have `driver_id = cars.owner_id` — §6.4 "The solver never assigns a temporary car to anyone else"; merging passengers into it is fine), `rides_temp_car_never_relays` (a `temporary` car's rides have `origin_id = destination_id = home`, REQ §13.32), `rides_location_ends` (`origin_id`/`destination_id` each equal the department's home or the destination of a served relay leg — never two away locations), `bump_version`, `audit_row`. The **location chain** (REQ §13.57) is *not* a trigger: it is `assert_car_chain(car_id, week_start)` called at the end of every ride-writing RPC (§5 #17).
 
-#### `ride_requests` (which requests a ride serves; passengers are derived from the requests)
+#### `ride_requests` (which requests a ride serves, one row per served leg; passengers are derived from the requests)
 
 | column | type | null | default | notes |
 |---|---|---|---|---|
 | ride_id | uuid | NN | | FK rides ON DELETE CASCADE |
 | request_id | uuid | NN | | FK requests ON DELETE CASCADE |
-| role | ride_role | NN | | `driver` ⇒ `requests.requester_id = rides.driver_id` (trigger) |
-| leg | ride_leg | NN | 'both' | |
+| role | ride_role | NN | | `driver` ⇒ `requests.requester_id = rides.driver_id` (trigger). CHECK `(role = 'driver') = (car_mode in ('keep','relay'))` — the requester drives in `keep`/`relay`, rides along in `passenger`/`chauffeur` |
+| leg | ride_leg | NN | 'both' | CHECK `leg = 'both' or car_mode <> 'keep'`; `relay`/`chauffeur` rows are always `out` or `return` |
+| car_mode | leg_car_mode | NN | | the resolved mode of this leg (REQ §5.4, SOLVER `AssignmentLeg.carMode`) |
 | covers_out | boolean | NN | generated: `leg in ('out','both')` | |
 | covers_return | boolean | NN | generated: `leg in ('return','both')` | |
 | detour_minutes | smallint | NN | 0 | for merges (display + policy) |
 | created_at | timestamptz | NN | now() | |
 
-PK `(ride_id, request_id)`. Unique partial indexes `(request_id) where covers_out` and `(request_id) where covers_return` — a request's outbound leg is served by at most one ride, same for return, and `both` cannot coexist with `out`/`return`. Exactly one `driver` row per ride (unique `(ride_id) where role = 'driver'`). Seat fit: deferred constraint trigger `ride_seat_fit_check()` (§5.2).
+PK `(ride_id, request_id, leg)` — a split round trip served by one ride on both legs still uses a single `both` row; two rows for one request exist only on *different* rides. Unique partial indexes `(request_id) where covers_out` and `(request_id) where covers_return` — a request's outbound leg is served by at most one ride, same for return, and `both` cannot coexist with `out`/`return`. **Driver rows**: at most one `driver` row per ride (unique `(ride_id) where role = 'driver'`); a ride has **zero** driver rows iff it has at least one `car_mode = 'chauffeur'` row — then `rides.driver_id` is the volunteer (trigger `ride_driver_row_check`, deferred). Trigger `ride_requests_leg_location`: a `relay` `out` row requires `rides.origin_id = home and rides.destination_id = requests.destination_id`; a `relay` `return` row requires `rides.origin_id = requests.destination_id and rides.destination_id = home`; `keep`/`chauffeur` rows require `origin_id = destination_id = home`; `passenger` rows only require the host ride to cover the leg. Seat fit: deferred constraint trigger `ride_seat_fit_check()` (§5.2, +1 adult for chauffeur rides).
 
 ### 3.8 Proposals (REQUIREMENTS §7.3)
 
@@ -541,7 +569,7 @@ PK `(ride_id, request_id)`. Unique partial indexes `(request_id) where covers_ou
 | status | proposal_status | NN | 'draft' | |
 | request_id | uuid | NN | | FK requests — the primary target |
 | ride_id | uuid | | | FK rides — target ride for `merge` |
-| payload | jsonb | NN | | type-specific, validated by `validate_proposal_payload()`: shift `{depart_at, return_at}`; merge `{ride_id, role, legs:[...], detour_minutes}` (split legs = two entries in `legs`); deny `{reason}`; external `{hint: 'cab'|'rental'|'public_transport'|'private', reason}`. Which solver suggestion produces which type: `SOLVER.md` §3.15 |
+| payload | jsonb | NN | | type-specific, validated by `validate_proposal_payload()`: shift `{depart_at, return_at, trip_shape?, needs_car_at_destination?}` (`trip_shape: 'round_trip'` = the solver's `convertToRoundTrip`); merge `{ride_id, role, legs:[{leg, ride_id, car_mode}], detour_minutes}` (split legs = two entries in `legs`; a chauffeur volunteer proposal has `role: 'driver'` and `legs[].car_mode = 'chauffeur'`); deny `{reason}`; external `{hint: 'cab'|'rental'|'public_transport'|'private', reason}`. Which solver suggestion produces which type: `SOLVER.md` §3.15 |
 | reason_he | text | NN | | Hebrew explanation shown to the member (solver `reason` string or Sadran text) |
 | previous_status | request_status | NN | | request status before `proposed`, restored on decline/expiry |
 | token_hash | text | NN | | unique; sha256 of the requester's deep-link token — a random 128-bit secret generated by `send_proposal()`, returned to the Sadran's UI once and never stored in clear. Re-sending regenerates it (old links die); `withdrawn`/`expired` status makes it unusable. Other parties of a merge have their own token on `proposal_parties` |
@@ -553,11 +581,12 @@ PK `(ride_id, request_id)`. Unique partial indexes `(request_id) where covers_ou
 | answered_via | answer_channel | | | `token` (deep link, no session — set by the `answer-proposal` edge function), `session`, `sadran` |
 | answer_note | text | | | e.g. "she said yes on WhatsApp" |
 | applied_at / applied_ride_id | timestamptz / uuid | | | ride created/modified when applied (pinned) |
-| created_by | uuid | NN | | FK profiles |
+| created_by | uuid | NN | | FK profiles — the Sadran, **or the requesting member** when `submit_request` creates an owner-direct merge proposal for a ride on a temporary car (REQ §13.43); `created_via` tells them apart |
+| created_via | text | NN | 'sadran' | CHECK in ('sadran','ask_to_join') |
 | version | int | NN | 1 | |
 | created_at / updated_at | timestamptz | NN | now() | |
 
-Indexes: `(request_id, status)`; `(department_id, week_start, status)`; `(expires_at) where status = 'sent'`. Trigger `proposals_status_guard` enforces `draft → sent → accepted|declined|expired|withdrawn → applied (only from accepted)` and on `sent` sets `requests.status = 'proposed'`; on `declined|expired|withdrawn` restores `previous_status`. At most one `sent` proposal per request (partial unique index `(request_id) where status in ('sent')`).
+Indexes: `(request_id, status)`; `(department_id, week_start, status)`; `(expires_at) where status = 'sent'`. For `created_via = 'ask_to_join'` the answer flow is the same (`answer_proposal` / `apply_proposal`); on apply the requester is told through `outcome_changed`, on decline the request falls back to `waitlisted` and the requester also gets `outcome_changed`; the Sadran learns of the answer through `proposal_answered` as usual. Trigger `proposals_status_guard` enforces `draft → sent → accepted|declined|expired|withdrawn → applied (only from accepted)` and on `sent` sets `requests.status = 'proposed'`; on `declined|expired|withdrawn` restores `previous_status`. At most one `sent` proposal per request (partial unique index `(request_id) where status in ('sent')`).
 
 #### `proposal_parties` (§7.3 "Merges need acceptance from every affected member")
 
@@ -566,7 +595,7 @@ Indexes: `(request_id, status)`; `(department_id, week_start, status)`; `(expire
 | id | uuid | NN | | PK |
 | proposal_id | uuid | NN | | FK proposals ON DELETE CASCADE |
 | profile_id | uuid | NN | | FK profiles |
-| request_id | uuid | | | that party's request (null for a temporary-car owner with no request) |
+| request_id | uuid | | | that party's request (null for a temporary-car owner with no request, or for a chauffeur volunteer) |
 | response | party_response | NN | 'pending' | |
 | responded_at / responded_by | timestamptz / uuid | | | |
 | responded_via | answer_channel | | | same semantics as `proposals.answered_via` |
@@ -666,9 +695,10 @@ Index `(next_attempt_at) where status in ('pending','failed')`. An AFTER INSERT 
 | id | uuid | NN | | PK |
 | event | notification_event | NN | | |
 | channel | notification_channel | NN | | `inbox`, `push`, `whatsapp` (`email` reserved) |
-| variant | text | | | null for inbox/push; for `whatsapp` (event `proposal_received`): `shift`, `merge_passenger`, `merge_driver`, `deny`, `reminder` — UX_FLOWS §6.2 `wa.*` |
+| variant | text | | | null for inbox/push; for `whatsapp` (event `proposal_received`): `shift`, `merge_passenger`, `merge_driver`, `deny`, `external`, `chauffeur`, `reminder` — the seven UX_FLOWS §6.2 `wa.*` texts |
 | title | text | | | ≤ 40 chars for push; null for whatsapp |
 | body | text | NN | | placeholders `{{…}}`; WhatsApp bodies must contain `{{link}}` (CHECK) |
+| default_title / default_body | text / text | | | seed-time snapshot of `title`/`body`, null for rows with no seeded default; the admin "restore default" action copies these back onto `title`/`body` instead of duplicating the seed Hebrew in TS (§6.1 item 15) |
 | updated_at / updated_by | timestamptz / uuid | | | |
 
 Unique `(event, channel, coalesce(variant, ''))`. Every `notification_event` value has an `inbox` and a `push` row in the seed (`he.ts` holds only the short event labels for the mute list, `notif.*`). "שחזר ברירת מחדל" in the admin UI re-inserts the seed row.
@@ -837,25 +867,26 @@ Legend: **own** = row's profile column = `auth.uid()`; **dept** = `member_of(dep
 | departments | approved users (`is_approved()`) | admin | admin | admin (RESTRICT if members exist) |
 | department_settings | dept ∨ admin | admin (trigger-created) | admin | — |
 | app_settings | approved users (public keys, hints); secret keys are not stored here | admin | admin | admin |
-| profiles | own ∨ admin ∨ shares a department (`exists dm1,dm2`); `phone` column revoked (use `phone_of`) | svc (auth trigger) | own (name, phone, default_department_id, defaults, muted_events only — trigger rejects changes to `is_admin`, `approval_status`, `email`) ∨ admin | — (cascade from auth.users by admin via svc) |
+| app_secrets | svc / SECURITY DEFINER only (no policy at all — RLS enabled + forced) | svc / SECURITY DEFINER only | svc / SECURITY DEFINER only | svc / SECURITY DEFINER only |
+| profiles | approved users (name/avatar of any member — needed to read drivers of other departments' published siddurim, REQ §10/§13.52); `phone` column revoked (use `phone_of`) | svc (auth trigger) | own (name, phone, default_department_id, defaults, home_week_preference, muted_events only — trigger rejects changes to `is_admin`, `approval_status`, `email`) ∨ admin | — (cascade from auth.users by admin via svc) |
 | member_invites | admin | admin | admin | admin |
 | department_members | own ∨ dept ∨ admin | admin | admin | admin (soft-remove preferred) |
 | sadran_assignments | dept ∨ admin | admin | admin | admin |
-| cars | dept ∨ admin ∨ any approved user for `is_week_public` context (lift-finding, §14.2) → simplified to **approved users** | admin; **own temporary car**: `type='temporary' and owner_id = auth.uid() and member_of(department_id) and settings allow` | admin; owner (temporary, own) — status/notes/features only | admin; owner (temporary) if no non-cancelled rides |
+| cars | **approved users** (any department — published siddurim of other departments are readable, REQ §13.52) | admin; **own temporary car**: `type='temporary' and owner_id = auth.uid() and member_of(department_id)` (any member, REQ §13.53) | admin (incl. revoking a temporary car → `retired`); owner (temporary, own) — status/notes/features only | admin; owner (temporary) if no non-cancelled rides |
 | car_seat_configs | approved users | admin; temp-car owner for own car | same | same |
 | car_maintenance_blocks | dept ∨ admin | admin ∨ sadran_any(dept) | admin ∨ sadran_any | admin ∨ sadran_any |
 | car_issues | dept ∨ admin | dept (reported_by = own) | admin ∨ sadran_any (resolve); reporter (description while open) | admin |
-| destinations | approved users | admin; RPC `suggest_destination()` for members (inserts `is_approved=false`) | admin | admin (RESTRICT if referenced) |
+| destinations | approved users | admin; RPC `suggest_destination()` for members (inserts `is_approved=false`) | admin; RPC `merge_destination()` (admin-only, repoints references then deletes/deactivates the source, §6.1 item 14) | admin (RESTRICT if referenced) |
 | ride_types | approved users | admin | admin | — (deactivate) |
 | policies | dept ∨ admin (global rows: approved users) | admin | admin | admin (RESTRICT if versions referenced) |
 | policy_versions | as policies | admin | — (immutable) | — |
 | weeks | dept ∨ admin ∨ (approved users when public) | admin ∨ sadran (RPC `open_week`) | admin ∨ sadran (phase/close_at/publish_at/overrides; `published_version_id` only via RPC — trigger) | admin (only if no requests) |
-| requests | own (requester ∨ filed_by ∨ companion) ∨ sadran ∨ admin ∨ (dept ∧ served by non-draft ride ∧ is_week_public) | **RPC only** — `submit_request` (member for self while `week.phase <> 'archived'`; sadran/admin on behalf of any member of the dept). No direct policy. | **RPC only** — `submit_request` (edit), `withdraw_request`, `set_manual_boost`, `apply_solver_result`, `apply_proposal`, `cancel_ride`, `approve_claim`, … No direct policy. | own: only `status='draft'`; admin |
+| requests | own (requester ∨ filed_by ∨ companion) ∨ sadran ∨ admin ∨ (**any approved user** ∧ served by a non-draft ride ∧ `is_week_public(department_id, week_start)`) — published siddurim are readable across departments (REQ §13.52); `notes` and `manual_boost*` are revoked for that path via a view | **RPC only** — `submit_request` (member for self while `week.phase <> 'archived'`; sadran/admin on behalf of any member of the dept). No direct policy. | **RPC only** — `submit_request` (edit), `withdraw_request`, `set_manual_boost`, `apply_solver_result`, `apply_proposal`, `cancel_ride`, `approve_claim`, … No direct policy. | own: only `status='draft'`; admin |
 | request_companions | as parent request | requester ∨ sadran ∨ admin | — | requester ∨ sadran ∨ admin |
 | request_templates | own ∨ sadran_any(dept) ∨ admin | own | own | own ∨ admin |
 | solver_runs | sadran ∨ admin | RPC `apply_solver_result` / `record_solver_preview` (sadran) | — | admin |
-| rides | sadran ∨ admin (all); approved users: `status <> 'draft' and is_week_public(dept, week)`; driver: own rides in any status | sadran/admin (direct or RPC); members only via `submit_request` → `try_auto_approve()` (§8 "new request on a free car"); temp-car owner on own car | sadran/admin; driver: RPC `cancel_ride` only | admin (rides are cancelled, not deleted) |
-| ride_requests | as parent ride, plus requester of the request | sadran/admin | sadran/admin | sadran/admin |
+| rides | sadran ∨ admin (all); approved users of **any** department: `status <> 'draft' and is_week_public(dept, week)`; driver: own rides in any status | **RPC only** — `edit_ride` (sadran/admin: create/move/reassign, set driver incl. chauffeur volunteer, `overflow_allowed`, `overnight_ack`), `apply_solver_result`, `apply_proposal`, `resolve_freed_offer`, `approve_claim`; members only via `submit_request` → `try_auto_approve()` (§8 "new request on a free car"); temp-car owner via `submit_request` in "own car" mode. Every one of these ends with `assert_car_chain()` (§5 #17) — hence no direct policy | **RPC only** — `edit_ride`; driver: `cancel_ride` only | admin (rides are cancelled, not deleted) |
+| ride_requests | as parent ride, plus requester of the request | RPC (same set as rides) | RPC | RPC |
 | proposals | party (`exists proposal_parties where profile_id = auth.uid()`) ∨ sadran ∨ admin | sadran ∨ admin (`create_proposal`) | sadran/admin (draft edits, `send_proposal`, withdraw); party: `answer_proposal(token, …)` called by the `answer-proposal` edge function (service role) — never directly | sadran/admin while `draft` |
 | proposal_parties | own ∨ sadran ∨ admin | sadran/admin | `answer_proposal` (via edge function) / `record_proposal_answer` (sadran) | sadran/admin while draft |
 | siddur_versions | approved users (dept public) ∨ sadran ∨ admin | RPC `publish_siddur` | — | — |
@@ -879,23 +910,27 @@ Service role bypasses RLS and is used only for: the `push-dispatch` edge functio
 | 1 | No two non-cancelled rides overlap on the same car, including turnaround buffer | DB | `rides_no_overlap_per_car` exclusion constraint on `(car_id, tstzrange(starts_at, blocked_until))`. Needs `btree_gist`. |
 | 2 | Rides never overlap a maintenance block | DB (soft) + app | Trigger on `car_maintenance_blocks` flags rides (`status='flagged'`) instead of refusing, because §8 says "affected rides are flagged; Sadran re-solves". Trigger on `rides` insert/update **refuses** a new ride into an existing block unless `is_admin()`. |
 | 3 | Passengers of every ride leg fit a seat configuration of the car | DB | Deferred constraint trigger (below). DB rather than app-level because the solver RPC bulk-writes many `ride_requests` and manual drag/reassign-car edits both hit this rule; a single implementation that runs at commit protects all paths. Luggage/detour feasibility stays **app-level** (fuzzy, advisory, §5.3 "warn but allow"). |
-| 4 | Request times inside the target week; 15-minute grid | DB | CHECK `is_quarter_hour(depart_at)` etc.; trigger `requests_within_week` compares with `week_range(week_start)` (Asia/Jerusalem; a `stable` function so a trigger, not a CHECK). `return_at` may pass Saturday only when `overflow_allowed`. Same trigger family on `rides`. |
-| 5 | Return after departure; one-way ⇔ direction set | DB | CHECK constraints on `requests`, `request_templates`. |
+| 4 | Request times inside the target week; 15-minute grid | DB | CHECK `is_quarter_hour(depart_at)` etc.; trigger `requests_within_week` compares with `week_range(week_start)` (Asia/Jerusalem; a `stable` function so a trigger, not a CHECK). A request's `return_at` may pass Saturday only when filed by a Sadran/Admin on behalf (`filed_by <> requester_id and can_manage_week`); a ride may end after Saturday only when `rides.overflow_allowed` (REQ §13.62). Same trigger family on `rides`. |
+| 5 | Return after departure; trip shape ⇔ which times exist ⇔ one-way car mode | DB | CHECK constraints on `requests`, `request_templates` (§3.6): `depart_at` present iff shape ≠ `one_way_from`, `return_at` present iff shape ≠ `one_way_to`, `one_way_car_mode` present iff shape ≠ `round_trip` and ∈ {relay, passenger}. |
 | 6 | Proposals expire | DB + cron | `expires_at` NN; `app.tick()` (every 15 minutes) runs `expire_proposals()` which flips `sent → expired`, restores `requests.status = previous_status` and notifies the Sadran; `answer_proposal()` also refuses when `now() > expires_at` (no reliance on cron timing). |
 | 7 | At most one `sent` proposal per request; a `proposed` request has exactly one | DB | Partial unique index + `proposals_status_guard` trigger. |
 | 8 | One published version pointer per week; versions immutable | DB | `weeks.published_version_id` single FK column; `siddur_versions` has `forbid_mutation()`; trigger on `weeks` forbids changing `published_version_id` outside `publish_siddur()` (checks `current_setting('app.in_publish', true) = 'on'`). |
 | 9 | Optimistic concurrency on `rides`, `requests`, `proposals` | DB + client | `version int`; BEFORE UPDATE trigger `bump_version()` sets `new.version = old.version + 1`. Client updates with `.eq('version', expected)`; zero rows affected ⇒ conflict, reload. RPCs take `p_expected_version` and `raise exception 'stale_version' using errcode = 'P0409'` (the client maps the SQLSTATE, ARCHITECTURE §12). |
 | 10 | Request status transitions follow §5.2 | DB | `requests_status_guard` trigger with a transition table and actor check (member may only submit/withdraw/cancel own; `assigned/merged/denied/external/waitlisted` only by sadran/admin/RPC). Every change is also audited with reason. |
 | 10a | Requests are written only through RPCs | DB | No INSERT/UPDATE policy on `requests` for `authenticated`; `submit_request`, `withdraw_request`, `set_manual_boost` and the state-changing RPCs are SECURITY DEFINER and re-check `requester_id = auth.uid()` or `can_manage_week()`. |
-| 11 | Temporary cars: only the owner drives | DB | Trigger `rides_temp_car_owner_only`. |
+| 11 | Temporary cars: only the owner drives; they never relay or chauffeur | DB | Triggers `rides_temp_car_owner_only`, `rides_temp_car_never_relays` (`origin_id = destination_id = home`). |
 | 12 | Ride served requests belong to the same dept and week as the ride | DB | Trigger on `ride_requests`. |
 | 13 | Sadran assignments come from the roster | DB | Composite FK to `department_members` + trigger `role = 'sadran'`. |
 | 14 | Approved profile has a phone | DB | Trigger on `profiles` (admin may override for e.g. a shared family account). |
 | 15 | Policy versions are append-only; runs reference versions | DB | `forbid_mutation()`, FK `solver_runs.policy_version_id ... on delete restrict`. |
-| 16 | Solver never corrupts the draft | RPC | `apply_solver_result()` is one transaction: verifies `input_hash` still matches current inputs (re-computed server side from the same canonicalization, else `raise 'stale_input'`), deletes unpinned draft rides of the week, inserts new rides + ride_requests, updates request statuses/reasons, inserts the `solver_runs` row. Any failure rolls everything back. |
+| 16 | Solver never corrupts the draft | RPC | `apply_solver_result()` is one transaction: verifies `input_hash` still matches current inputs (re-computed server side from the same canonicalization, else `raise 'stale_input'`), deletes unpinned draft rides of the week, inserts new rides + ride_requests, updates request statuses/reasons, inserts the `solver_runs` row, then runs `assert_car_chain()` for every touched car. Any failure rolls everything back. |
+| 17 | **Car location chain** (REQ §5.4, §13.57): per car, the non-cancelled rides ordered by `starts_at` chain (`destination_id` of ride *n* = `origin_id` of ride *n+1*, the first ride starts at home); a ride that leaves the car away from home is followed by a ride starting before that local day's `day_end_time`, unless `overnight_ack_by` is set | RPC (not a constraint) | `assert_car_chain(_car, _week)` (§5.3) is called at the end of **every** ride-writing RPC: `apply_solver_result`, `edit_ride` (the two primary sites), `apply_proposal`, `try_auto_approve` (inside `submit_request`), `resolve_freed_offer`, `approve_claim`. It raises `car_chain_broken` / `car_away_at_day_end` (SQLSTATE `P0410`/`P0411`, mapped to Hebrew by `lib/errors.ts`). An exclusion constraint cannot express "the car is somewhere else in the gap", which is why this is procedural; `rides` therefore has no direct INSERT/UPDATE policy (§4.3). `cancel_ride` does not run the check — cancelling a relay leg instead flags the partner leg (`flagged`, `flag_reason = 'relay_pair_cancelled'`) and opens no freed-slot offer (REQ §13.63). |
+| 18 | Ride endpoints are real locations | DB | `rides.origin_id`/`destination_id` NN FK destinations; trigger `rides_location_ends` (each equals home or a served relay leg's destination); trigger `ride_requests_leg_location` (§3.7) ties each served leg's mode to the ride's endpoints. |
+| 19 | Driver rows vs chauffeur rides | DB | Deferred trigger `ride_driver_row_check`: exactly one `driver` row per ride unless the ride has a `chauffeur` row, then none and `rides.driver_id` is the volunteer (≠ any served requester). CHECK `(role = 'driver') = (car_mode in ('keep','relay'))`. |
+| 20 | One-way requests are never auto-approved after publish | RPC | `try_auto_approve()` returns null for `trip_shape <> 'round_trip'` (REQ §13.64) and requires the candidate car to be at home for the window (`car_location_at(car, starts_at) = home`, §7.5). |
 
 ### 5.1 Why `blocked_until` is a trigger-maintained column
-`timestamptz + interval` is `STABLE` in Postgres (DST-dependent), so it cannot appear in a generated column or an index expression. `rides_set_blocked_until` computes `ends_at + coalesce(week override, department_settings.turnaround_buffer)` BEFORE INSERT/UPDATE OF `ends_at, car_id, department_id`. Changing a department's buffer does not rewrite existing rides (history stays valid); the admin UI offers "re-apply buffer to future draft rides".
+`timestamptz + interval` is `STABLE` in Postgres (DST-dependent), so it cannot appear in a generated column or an index expression. `rides_set_blocked_until` computes `ends_at + make_interval(mins => coalesce(week override, department_settings.turnaround_minutes))` BEFORE INSERT/UPDATE OF `ends_at, car_id, department_id`. Changing a department's buffer does not rewrite existing rides (history stays valid); the admin UI offers "re-apply buffer to future draft rides". For the same reason `request_span(depart_at, return_at)` (§3.6) uses only `coalesce` — no interval arithmetic — so it can back the GiST index.
 
 ### 5.2 Seat-fit constraint trigger
 ```sql
@@ -952,7 +987,51 @@ create constraint trigger ride_seat_fit_on_car_change
   after update of car_id on public.rides
   deferrable initially deferred for each row execute function public.ride_seat_fit_check_ride();
 ```
-**Seat accounting for merges** (same rule as `SOLVER.md` §3.3): a request's `adults` includes its own would-be driver. When a request is merged as passenger into a host ride, *all* of its `adults`, `child_seats` and `boosters` are added to the host ride's load — the guest's former driver simply becomes a passenger — and the host's driver is counted once, inside the host request's own `adults`. So the trigger's plain `sum()` over served requests is exactly the load to fit; nothing is subtracted anywhere. Built-in seats: `car_seat_configs` rows already reflect them.
+**Seat accounting for merges** (same rule as `SOLVER.md` §3.3): a request's `adults` includes its own would-be driver. When a request is merged as passenger into a host ride, *all* of its `adults`, `child_seats` and `boosters` are added to the host ride's load — the guest's former driver simply becomes a passenger — and the host's driver is counted once, inside the host request's own `adults`. So the trigger's plain `sum()` over served requests is exactly the load to fit; nothing is subtracted anywhere. **Chauffeur rides** (REQ §13.65): the volunteer has no request, so the loop above adds `1` to `a` when the ride has no `driver` row (`not exists (select 1 from ride_requests where ride_id = v_ride and role = 'driver')`). Built-in seats: `car_seat_configs` rows already reflect them.
+
+### 5.3 Car location chain check (invariant #17)
+```sql
+-- Raises if the rides of one car in one week do not chain, or leave the car away at day end without acknowledgement.
+create or replace function public.assert_car_chain(_car uuid, _week date) returns void
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  v_home uuid; v_day_end time; v_loc uuid; r record;
+begin
+  select d.home_destination_id, s.day_end_time into v_home, v_day_end
+  from public.cars c
+  join public.departments d on d.id = c.department_id
+  join public.department_settings s on s.department_id = d.id
+  where c.id = _car;
+  if v_home is null then raise exception 'no_home_location' using errcode = 'P0412'; end if;
+
+  v_loc := v_home;                                   -- v1: every car starts the week at home
+  for r in
+    select id, origin_id, destination_id, starts_at, ends_at, overnight_ack_by
+    from public.rides
+    where car_id = _car and week_start = _week and status <> 'cancelled'
+    order by starts_at
+  loop
+    if r.origin_id <> v_loc then
+      raise exception 'car_chain_broken' using errcode = 'P0410',
+        detail = format('ride %s starts at %s but the car is at %s', r.id, r.origin_id, v_loc);
+    end if;
+    v_loc := r.destination_id;
+
+    if r.destination_id <> v_home and r.overnight_ack_by is null then
+      -- the car must be brought home by a later ride that starts before this local day's day_end
+      if not exists (
+        select 1 from public.rides n
+        where n.car_id = _car and n.status <> 'cancelled' and n.starts_at > r.ends_at
+          and n.starts_at < (((r.ends_at at time zone 'Asia/Jerusalem')::date + v_day_end) at time zone 'Asia/Jerusalem')
+      ) then
+        raise exception 'car_away_at_day_end' using errcode = 'P0411',
+          detail = format('ride %s leaves car %s at %s past day end', r.id, _car, r.destination_id);
+      end if;
+    end if;
+  end loop;
+end $$;
+```
+Because a car with an ordinary week has only round trips (`home → home`), the loop is a cheap pass over a few dozen rows (`rides_car_chain_idx`). The solver's `assertInvariants()` performs the same check in TypeScript before `apply_solver_result` is even called (`SOLVER.md` §3.12).
 
 ---
 
@@ -962,35 +1041,71 @@ Files live in `supabase/migrations/` and use the Supabase CLI form **`YYYYMMDDHH
 
 | # | file | contents |
 |---|---|---|
-| 1 | `20260907090000_extensions_and_enums.sql` | `create extension if not exists btree_gist, pg_cron, pg_net, pgcrypto;` `create schema app;` all enums of §2. Shared functions: `set_updated_at()`, `bump_version()`, `forbid_mutation()`, `is_quarter_hour(timestamptz)` (immutable: `extract(epoch from $1)::bigint % 900 = 0`), `week_range(date) returns tstzrange` (stable, Asia/Jerusalem), `current_week_start()`. |
-| 2 | `20260907090100_identity.sql` | `departments`, `department_settings` (+ auto-create trigger), `app_settings`, `profiles` (+ column revoke on `phone`), `member_invites`, `department_members`, `sadran_assignments` (+ roster trigger). `auth.users` AFTER INSERT trigger `handle_new_user()` (security definer, owner postgres): creates profile, consumes matching invite, inserts memberships, else enqueues `access_request` to admins. |
+| 1 | `20260907090000_extensions_and_enums.sql` | `create extension if not exists btree_gist, pg_cron, pg_net, pgcrypto;` `create schema app;` all enums of §2 (incl. `trip_shape`, `leg_car_mode`, `home_week_preference`, the 20-value `notification_event`). Shared functions: `set_updated_at()`, `bump_version()`, `forbid_mutation()`, `is_quarter_hour(timestamptz)` (immutable: `extract(epoch from $1)::bigint % 900 = 0`), `request_span(timestamptz, timestamptz)` (immutable, §3.6), `week_range(date) returns tstzrange` (stable, Asia/Jerusalem), `current_week_start()`. |
+| 2 | `20260907090100_identity.sql` | `departments` (with `home_destination_id uuid` as a plain column; FK in step 5), `department_settings` (+ auto-create trigger; `turnaround_minutes`, `day_end_time`, `chauffeur_dwell_minutes`), `app_settings`, `profiles` (+ column revoke on `phone`; `home_week_preference`), `member_invites`, `department_members`, `sadran_assignments` (+ roster trigger). `auth.users` AFTER INSERT trigger `handle_new_user()` (security definer, owner postgres): creates profile, consumes matching invite, inserts memberships, else enqueues `access_request` to admins. |
 | 3 | `20260907090200_helpers.sql` | All §4.2 helper functions, `phone_of`, grants/revokes. |
 | 4 | `20260907090300_fleet.sql` | `cars`, `car_seat_configs`, `car_fits()`, `car_maintenance_blocks`, `car_issues`, denormalization triggers. |
-| 5 | `20260907090400_catalogs.sql` | `destinations`, `ride_types`, name-normalization trigger, GIN index on aliases. |
+| 5 | `20260907090400_catalogs.sql` | `destinations` (zone `home` reserved), `ride_types`, name-normalization trigger, GIN index on aliases; `alter table departments add constraint … foreign key (home_destination_id) references destinations(id)`. |
 | 6 | `20260907090500_policies.sql` | `policies`, `policy_versions`, `validate_policy_rules()` (known set = `SOLVER.md` §4.3 types), version_no trigger, immutability, `current_version_id` FK, one-active partial unique index. |
 | 7 | `20260907090600_weeks.sql` | `weeks` (without `published_version_id` FK yet — column added as plain uuid), phase-consistency trigger. |
-| 8 | `20260907090700_requests.sql` | `request_templates`, `requests` (incl. `join_ride_id` as plain uuid; FK added in step 9), `request_companions`, CHECKs, indexes, triggers `requests_within_week`, `requests_status_guard`. |
-| 9 | `20260907090800_rides.sql` | `solver_runs`, `rides` (+ `blocked_until` trigger, exclusion constraint, within-week, temp-car owner, maintenance refusal), `ride_requests` (+ generated columns, partial unique indexes, seat-fit constraint triggers), `flag_rides_in_maintenance` trigger on blocks, FK `requests.join_ride_id → rides`. |
-| 10 | `20260907090900_proposals.sql` | `proposals`, `proposal_parties`, `validate_proposal_payload()`, status guard, party roll-up trigger, `expire_proposals()`. |
+| 8 | `20260907090700_requests.sql` | `request_templates`, `requests` (`trip_shape`, nullable `depart_at`/`return_at` with the §3.6 CHECKs, `one_way_car_mode`; `join_ride_id` as plain uuid, FK added in step 9), `request_companions`, CHECKs, GiST index on `request_span(...)`, triggers `requests_within_week` (on-behalf overflow rule), `requests_status_guard`. |
+| 9 | `20260907090800_rides.sql` | `solver_runs`, `rides` (`origin_id`/`destination_id` FK destinations, `overflow_allowed`, `overnight_ack_*`; + `blocked_until` trigger, exclusion constraint, within-week, temp-car owner, `rides_temp_car_never_relays`, `rides_location_ends`, maintenance refusal, `rides_car_chain_idx`), `ride_requests` (`car_mode`; + generated columns, partial unique indexes, `ride_driver_row_check`, `ride_requests_leg_location`, seat-fit constraint triggers with the chauffeur +1), `assert_car_chain()` (§5.3), `car_location_at()` (§7.5), `flag_rides_in_maintenance` trigger on blocks, FK `requests.join_ride_id → rides`. |
+| 10 | `20260907090900_proposals.sql` | `proposals` (`created_via`), `proposal_parties`, `validate_proposal_payload()` (shift with optional `trip_shape`, merge legs with `car_mode`), status guard, party roll-up trigger, `expire_proposals()`. |
 | 11 | `20260907091000_siddur_versions.sql` | `siddur_versions`, immutability, `alter table weeks add constraint ... foreign key (published_version_id) references siddur_versions(id)`, publish-guard trigger. |
 | 12 | `20260907091100_freed_slots.sql` | `freed_slot_offers`, `freed_slot_claims`, `freed_slot_candidates(offer_id)` set-returning function (§7.2), `expire_freed_offers()`. |
-| 13 | `20260907091200_notifications.sql` | `notification_templates`, `notifications`, `push_subscriptions`, `push_outbox` (+ AFTER INSERT pg_net trigger → `push-dispatch`), `enqueue_notification(...)` definer function (§3.11: mutes, Sadran no-mute rule, template rendering, inbox row + outbox rows), `drain_push_outbox()`. |
+| 13 | `20260907091200_notifications.sql` | `notification_templates`, `notifications`, `push_subscriptions`, `push_outbox` (+ AFTER INSERT pg_net trigger → `push-dispatch`), `enqueue_notification(...)` definer function (§3.11: mutes, Sadran no-mute rule incl. `window_closed_solve_now`/`publish_reminder`, template rendering, inbox row + outbox rows), `drain_push_outbox()`. |
 | 14 | `20260907091300_audit_log.sql` | `audit_log`, `audit_row()` trigger function (strips `phone`, resolves `subject_profile_id` per table), attach to all audited tables; `client_errors` (+ rate-limit trigger). |
 | 15 | `20260907091400_rls.sql` | `enable row level security` + `force row level security` on every table; all policies of §4.3; `revoke all on all tables in schema public from anon`. A `pg_tap`/SQL test in `supabase/tests/rls_spec.sql` asserts every table has RLS enabled and no policy has `qual = 'true'` for insert/update/delete. |
-| 16 | `20260907091500_rpc.sql` | SECURITY DEFINER RPCs (all re-check `can_manage_week` / ownership, set `app.audit_reason`, take `p_expected_version` where a `version` column exists): `submit_request(payload jsonb)` (§3.6 write path; calls `try_auto_approve()` in `live` weeks — validates via the exclusion constraint by attempting the insert), `withdraw_request`, `set_manual_boost`, `open_week`, `set_week_phase`, `apply_solver_result`, `record_solver_preview`, `create_proposal`, `send_proposal` (generates the random tokens, stores hashes, returns plain tokens once), `answer_proposal(token, accept, note, via)`, `record_proposal_answer`, `apply_proposal`, `publish_siddur`, `cancel_ride` (cancels ride + request, creates the `freed_slot_offers` row, pg_net → `on-ride-cancelled`), `resolve_freed_offer(offer_id, ranked_candidates jsonb)` (0 → `closed`; 1 → ride + `auto_assigned` + `freed_slot_auto`; >1 → `offered` claims + `freed_slot` to candidates + `claim_contested` to Sadranim, offer `pending_approval`), `claim_freed_slot`, `approve_claim`, `close_offer`, `report_car_issue_unsafe_to_maintenance`, `grant_admin`, `suggest_destination`, `materialize_templates`, `advance_week_phases`, `send_due_reminders`, `housekeeping`. |
-| 17 | `20260907091600_cron.sql` | **Exactly one** `cron.schedule('app_tick', '*/15 * * * *', $$select app.tick()$$)`. `app.tick(p_now timestamptz default now())` converts `p_now` to Asia/Jerusalem and calls, in order: `advance_week_phases()` (open / close / archive weeks per `department_settings`, `window_open` notifications), `send_due_reminders()` (`window_closing` at `closing_reminder_hours` before close, unanswered-proposal reminders), `expire_proposals()`, `drain_push_outbox()`, `housekeeping()` (every tick: `expire_freed_offers()`; once per local day after 00:00: `materialize_templates()`; once per local day at 03:00: prune `notifications`, `push_outbox`, `client_errors`, `audit_log`, dead `push_subscriptions`, inactive `request_templates`, null old `token_hash`es — watermarks in `app_settings`). Every step is idempotent (`weeks.*_notified_at`, dedupe keys). Schema `app` holds only this entry point and is not exposed through PostgREST. |
-| 18 | `20260907091700_views.sql` | Read-only views with `security_invoker = true`: `v_board_rides` (rides + car + driver name + served requests aggregated as jsonb), `v_my_requests` (request + ride + status_reason), `v_week_summary` (counts per status / ride type). Views only join; RLS of base tables applies. |
+| 16 | `20260907091500_rpc.sql` | SECURITY DEFINER RPCs (all re-check `can_manage_week` / ownership, set `app.audit_reason`, take `p_expected_version` where a `version` column exists; every ride-writing RPC ends with `assert_car_chain()` per touched car — §5 #17): `submit_request(payload jsonb)` (§3.6 write path; calls `try_auto_approve()` in `live` weeks for round trips — validates via the exclusion constraint by attempting the insert, then the chain check; creates the owner-direct `merge` proposal when `join_ride_id` is on a temporary car), `withdraw_request`, `set_manual_boost`, `open_week`, `set_week_phase` (open → solving also enqueues `window_closed_solve_now` to `sadranim_of`), `apply_solver_result`, `record_solver_preview`, **`edit_ride(p_ride jsonb, p_expected_version int)`** (the Sadran's create/move/reassign/pin/driver/`overflow_allowed`/`overnight_ack` path for one ride, incl. creating a chauffeur ride with a volunteer `driver_id`), `create_proposal`, `send_proposal` (generates the random tokens, stores hashes, returns plain tokens once), `answer_proposal(token, accept, note, via)`, `record_proposal_answer`, `apply_proposal`, `publish_siddur`, `cancel_ride` (cancels ride + request; relay leg → flags the partner leg, no offer; otherwise creates the `freed_slot_offers` row, pg_net → `on-ride-cancelled`), `resolve_freed_offer(offer_id, ranked_candidates jsonb)` (0 → `closed`; 1 → ride + `auto_assigned` + `freed_slot_auto`; >1 → `offered` claims + `freed_slot` to candidates + `claim_contested` to Sadranim, offer `pending_approval`), `claim_freed_slot`, `approve_claim`, `close_offer`, `report_car_issue_unsafe_to_maintenance`, `grant_admin`, `suggest_destination`, `materialize_templates`, `fairness_stats(dept, week, lookback_weeks)`, `advance_week_phases`, `send_due_reminders`, `housekeeping`. |
+| 17 | `20260907091600_cron.sql` | **Exactly one** `cron.schedule('app_tick', '*/15 * * * *', $$select app.tick()$$)`. `app.tick(p_now timestamptz default now())` converts `p_now` to Asia/Jerusalem and calls, in order: `advance_week_phases()` (open / close / archive weeks per `department_settings`; `window_open` to members on open, `window_closed_solve_now` to `sadranim_of(dept, week)` on close), `send_due_reminders()` (`window_closing` at `closing_reminder_hours` before close; `publish_reminder` to the Sadranim at `publish_dow/publish_time` while `weeks.phase = 'solving'`, once, via `weeks.publish_reminder_sent_at`; unanswered-proposal reminders), `expire_proposals()`, `drain_push_outbox()`, `housekeeping()` (every tick: `expire_freed_offers()`; once per local day after 00:00: `materialize_templates()`; once per local day at 03:00: prune `notifications`, `push_outbox`, `client_errors`, `audit_log`, dead `push_subscriptions`, inactive `request_templates`, null old `token_hash`es — watermarks in `app_settings`). Every step is idempotent (`weeks.*_notified_at`, dedupe keys). Schema `app` holds only this entry point and is not exposed through PostgREST. |
+| 18 | `20260907091700_views.sql` | Read-only views with `security_invoker = true`: `v_board_rides` (rides + car + driver name + origin/destination names + served legs with `car_mode` aggregated as jsonb), `v_my_requests` (request + ride + status_reason + car mode per leg), `v_week_summary` (counts per status / ride type, incl. "needs driver" = waitlisted with `status_reason` code `UNMET_NEEDS_DRIVER`), `v_car_locations` (§7.5: per car and day, the away windows and the not-home-at-day-end flag for the board badges). Views only join; RLS of base tables applies. |
 
-`supabase/seed.sql` (Supabase CLI default; replayed by `npm run db:reset`; local/dev only, never production):
-- Departments: `kibbutz` ("כללי"), `education` ("חינוך"). `department_settings` defaults.
+`supabase/seed.sql` (Supabase CLI default; replayed by `npm run db:reset`; local/dev only, never production). **Implemented shape** (see §6.1 for why it differs from the paragraph originally sketched here):
+- `destinations`: the home row `נבו` (zone `home`, fixed UUID `...0010`) first, then 9 more with zone/distance/travel_minutes/public_transport_score.
+- One department, `נבו` (`00000000-0000-0000-0000-000000000001`), `home_destination_id` = the home row.
 - `ride_types`: work/childcare/healthcare/errands/other with Hebrew names.
-- `destinations`: ~15 common ones with zone, distance, travel_minutes, public_transport_score.
-- `policies`: global default with `policy_versions` v1 = the §7.2 initial weights (`SOLVER.md` §4.4).
-- `notification_templates`: one `inbox` + one `push` row per `notification_event` and the five `whatsapp` variants, copied from UX_FLOWS §6.
-- `app_settings`: `vapid_public_key` (dev), `ios_install_hint`.
-- Dev-only demo data: 4 fake `auth.users` (admin, sadran, member1, member2) via `supabase auth admin` script, matching `member_invites`, 4 cars with seat configs (5-seater: `{5,0,0},{3,1,0},{2,2,0},{4,0,1}`; 7-seater; 2 more), one Open week with ~20 requests, one Published week with rides; fixed UUIDs `00000000-0000-0000-0000-0000000000NN` mirrored in `e2e/fixtures/data.ts`. Production gets only catalogs + templates + settings + invites (via admin UI/CSV import).
+- `policies`: one global default with `policy_versions` v1 = the §7.2 / `SOLVER.md` §4.4 initial weights (all 8 rule types, `fairness.lookbackWeeks = 3`).
+- `notification_templates`: one `inbox` + one `push` row per `notification_event` (20 events) and 5 `whatsapp` variants (`shift`, `merge_passenger`, `merge_driver`, `deny`, `reminder`), copied from UX_FLOWS §6.
+- 4 demo `auth.users` + matching `member_invites` (admin, sadran, member1, member2), 4 cars with seat configs (a 5-seater, a 7-seater, a second 5-seater, and one `temporary` car owned by member2).
+- One Live (published) week with 3 requests and 2 confirmed rides, one Open week with 2 fresh `submitted` requests.
+- Fixed UUIDs `00000000-0000-0000-0000-0000000000NN`. Production gets only catalogs + templates + settings + invites (via admin UI/CSV import) — the seed file is gated to local/dev by convention (never run against a remote project, ARCHITECTURE.md §14).
 
-Type generation: `npm run db:types` = `supabase gen types typescript --local > src/integrations/supabase/types.ts`; CI diff check.
+Type generation: `npm run db:types` = `supabase gen types typescript --local > src/integrations/supabase/types.ts`; the generator drops the leading `// GENERATED` comment, so it is prepended back by hand/script after every regeneration.
+
+### 6.1 Implementation status and deviations (2026-09-07, db-migrator)
+
+All 18 files applied; `npm run db:reset` and `npm run db:test` (new npm script, `supabase/tests/rls_smoke.sql`) pass; `npm run db:types` regenerated `src/integrations/supabase/types.ts` cleanly (`npm run typecheck` still passes). Deviations from the plan above, all forced by things only visible once the SQL was actually run:
+
+1. **Helper function ordering** (§4.2, §6 step 3): `is_week_public()` is defined in `20260907090600_weeks.sql` (not step 3) and `shares_ride_with()`/`phone_of()` in `20260907090800_rides.sql` (not step 3), because `language sql` functions are validated against the catalog at `CREATE FUNCTION` time (unlike `plpgsql`, which compiles lazily) — `weeks`/`ride_requests`/`requests`/`rides` do not exist yet at step 3. Behavior is unchanged; only the file that first defines them moved.
+2. **Three additional RLS-only helper functions**, not in §4.2: `request_served_by_public_ride(_request_id)`, `is_request_companion(_request_id)`, `is_proposal_party(_proposal_id)` (all in `20260907091400_rls.sql`, `security definer stable`). Without them, `requests_select` ↔ `request_companions_select` and `proposals_select` ↔ `proposal_parties_select` each form a two-table RLS cycle (`ERROR: infinite recursion detected in policy`) — Postgres re-evaluates the second table's own row policy for every row an `exists (select … from other_table …)` subquery touches. The fix follows the same pattern as `is_admin()`/`is_sadran()`: a `security definer` function bypasses RLS on the table it reads, breaking the cycle at one side.
+3. **`requests.status_reason` stores an `UPPER_SNAKE` reason code for every DB-native write path** (`submit_request`, `try_auto_approve`, `apply_solver_result`'s non-solver statuses, `cancel_ride`, `resolve_freed_offer`, `apply_proposal`, …), not literal Hebrew, even though the column comment in §3.6 says "the one-line Hebrew reason". Hard rule 3 forbids composing Hebrew inside SQL logic; the solver (TS) already produces Hebrew via `reasons.ts` for solver-driven placements, but pure-SQL paths (live-phase auto-approve/waitlist, cancellations, freed-slot resolution) have no TS caller in the loop. The codes mirror the solver's `reasonCode` convention (`PLACED_SHIFTED`-style) and need a lookup mirrored into `src/i18n/he.ts` (or `lib/errors.ts`) — flagged for `ui-dev`/`solver-dev`, not implemented here (out of DB-layer scope).
+4. **`notification_templates` seed gap**: UX_FLOWS.md §6.1's table lists 18 events and has no copy for the two Sadran-only additions (`window_closed_solve_now`, `publish_reminder`, ARCHITECTURE §9). `supabase/seed.sql` supplies short, consistent placeholder Hebrew copy directly for these two; UX_FLOWS.md should gain a matching row (out of scope for this change — not mine to edit per the task boundaries). Similarly, only 5 of the 7 `whatsapp` variants named in §3.11 (`shift`, `merge_passenger`, `merge_driver`, `deny`, `reminder`) have copy in UX_FLOWS §6.2 and are seeded; `chauffeur` and `external` are not seeded (no canonical text exists yet, REQ §14.9).
+5. **Seed department count**: one department (`נבו`) instead of the two (`kibbutz`, `education`) originally sketched in this section, per explicit direction for this pass. `department_settings` still auto-creates with all documented defaults.
+6. **`apply_proposal()`'s `shift` branch** only produces an immediately pinned ride when the proposal payload includes `car_id` (i.e., the composer already picked a car); otherwise it updates the request's window and returns it to `submitted` for the Sadran to place on the board on the next pass, rather than picking a car itself. Documented as a simplification in the function's own comment (`20260907091500_rpc.sql`).
+7. **`requests` base SELECT policy** does include the cross-department "published week, any approved user" clause verbatim (§4.3), so `notes`/`manual_boost`/`manual_boost_reason` are technically reachable through that same read path for a request served by a non-draft ride in a public week — RLS cannot redact individual columns, and building a `phone_of()`-style column wrapper for two low-sensitivity, Sadran-internal fields was judged disproportionate for v1 (noted in `20260907091400_rls.sql`).
+8. **Two RLS-adjacent triggers not in §5's invariant table**: `cars_protect_owner_editable_fields()` and `car_issues_protect_resolution_fields()` (both in `20260907091400_rls.sql`) lock non-admin/non-owner writers out of specific columns (`cars.license_plate`/`type`/`owner_id`/… ; `car_issues.status`/`resolved_*`), because a single RLS `UPDATE` policy cannot restrict which columns a matched row may change — the policy matrix's "owner: status/notes/features only" and "reporter: description while open" cells need this backstop.
+
+**Three follow-up migrations (2026-09-06, stage 2d — Edge Functions), all fixes to existing RPCs found while smoke-testing `push-dispatch`/`answer-proposal`/`on-ride-cancelled` end-to-end; none change an RPC signature, table shape, or grant beyond what's noted:**
+
+9. **`20260907091800_pgcrypto_public_wrappers.sql`**: `pgcrypto` was installed into the `extensions` schema (step 1), which is on the `postgres` role's own search_path but **not** on the database default search_path used by `authenticated`/`anon`/`service_role` (PostgREST, Edge Functions). Every `security definer set search_path = public, pg_temp` function calling `gen_random_bytes()`/`digest()` unqualified — `generate_token()`, `create_proposal()`, `send_proposal()`, `answer_proposal()`, `record_answer_on_behalf()` — therefore failed with `function gen_random_bytes(integer) does not exist` for every real caller (`seed.sql`'s own `crypt()`/`gen_salt()` calls only ever worked because `db reset` runs it as `postgres`). Fix: thin `public.gen_random_bytes`/`digest`/`crypt`/`gen_salt` wrappers delegating to `extensions.*`, granted to `authenticated`/`service_role`. No RPC body changed.
+10. **`20260907091900_fix_answer_proposal_row_found_check.sql`**: `answer_proposal()`'s `if v_proposal is not null then` (meaning "found by the proposal-level token") is unreliable — SQL's composite `IS NOT NULL` is true only when *every* field of the record is non-null, and a `sent` (unanswered) `proposals` row always has several still-null columns (`ride_id`, `answered_by`, `answered_at`, …), so the check was false even when the row *was* found, silently falling through to raise `invalid_token` for every valid, unexpired token. Reproduced against a real `create_proposal`/`send_proposal` round trip. Fixed to check `v_proposal.id is not null` (the PK, always non-null iff found) — the standard-safe idiom, equivalent to plpgsql's `FOUND`. Same migration also adds an explicit `::public.party_response` cast to the `response = case when p_accept then 'accepted' else 'declined' end` assignment (a second, previously-unreachable-behind-the-first-bug defect: Postgres does not always resolve a bare string-literal `CASE` embedded in a query inside a plpgsql function against the target enum column, raising `column "response" is of type party_response but expression is of type text`).
+11. **`20260907092000_fix_apply_proposal_auto_apply_authz.sql`**: `apply_proposal()` requires `can_manage_week()` (a Sadran/Admin session) — correct when a Sadran calls it directly, but `apply_proposal` is also invoked with **no session at all** via `proposal_parties_roll_up()` → `maybe_apply_accepted_proposal()` the instant the last party accepts (ARCHITECTURE §6.2). Since `answer-proposal` always calls `answer_proposal()` with the **service role** (ARCHITECTURE §8, precisely so answering via the token needs no session), `auth.uid()` is null for that whole chain and every auto-apply raised `not_authorized`, breaking the documented "all accepted → applied" transition for every proposal answered via token. Fixed with the same "internal trusted operation" idiom `publish_siddur` already uses (`set_config('app.in_publish', …)`): `maybe_apply_accepted_proposal` sets `app.auto_applying_proposal = 'on'` before calling `apply_proposal`, which skips its `can_manage_week` check only when that flag is set; a Sadran calling `apply_proposal` directly is still checked exactly as before. Same migration also adds the `::public.request_status` cast to the `merge` branch's `status = case when v_has_driver_leg then 'assigned' else 'merged' end` (same class of bug as #10, latent — not exercised by any test proposal here, fixed proactively since the function was already being redefined).
+
+**Four hardening migrations (2026-09-07, db-hardening pass), all fixing gaps flagged in item 7 above / `IMPLEMENTATION_PLAN.md`'s "DB follow-ups for hardening migration" note on 2c:**
+
+12. **`20260907092100_secure_app_settings.sql`**: `app_settings`' SELECT policy is `is_approved()` — any approved member, not just admin — and the table held `cron_secret` in plain jsonb, the shared header pg_net sends to `push-dispatch`/`on-ride-cancelled`. Any signed-in member could read it via PostgREST. Fixed by adding `app_secrets` (same key/value/description/updated_at/updated_by shape as `app_settings`), RLS **enabled + forced with no policies at all** — the same "service role / SECURITY DEFINER functions only" shape already used for `push_outbox`. Every SECURITY DEFINER function here is owned by the migration role (`postgres`, a superuser, which always bypasses RLS regardless of `force row level security`, the same reason `is_admin()`/`is_sadran()` can read `department_members` without recursing through its own policy) and the service role bypasses RLS outright, so `dispatch_push_outbox_row()` and `cancel_ride()` (both updated to read `app_secrets` instead) keep working; nothing reachable through PostgREST as `anon`/`authenticated` can read the row (0 rows / `insufficient_privilege`, both asserted in `rls_smoke.sql`). Any existing `app_settings.cron_secret` row is migrated across and deleted from `app_settings` in the same migration. `app_settings` keeps its `is_approved()` policy for its remaining, non-secret rows (`push_dispatch_url`, `on_ride_cancelled_url`, `housekeeping_last_run`) — matching what §4.3's policy-matrix row for `app_settings` already said ("secret keys are not stored here"). `department_settings` and `notification_templates` were reviewed too: both hold only scheduling numbers / admin-editable Hebrew copy, nothing secret to move.
+13. **`20260907092200_fix_v_my_requests_requester_id.sql`**: `v_my_requests` (`20260907091700_views.sql`) already had `security_invoker = true`, so RLS of `requests` was already applied per query — but the view exposed no `requester_id` column, so the calling code had no way to add an explicit "mine" filter and instead trusted the view's name. Anyone whose `requests_select` visibility is broader than "my own" (a Sadran, an admin, or any approved member reading a published cross-department siddur via `request_served_by_public_ride()`) could get other members' rows back from an unfiltered query — the leak stage 1c flagged. Fixed by adding `q.requester_id` to the view (`create or replace view` can only append columns, not insert one in the middle of the existing list, so this migration drops and recreates the view instead, re-granting `select` to `authenticated` / revoking from `anon` same as before). The other three views in that file (`v_board_rides`, `v_week_summary`, `v_car_locations`) were reviewed for the same class of bug and don't need it: the first and last are intentionally broad Sadran/admin board views, and `v_week_summary` returns department/week/status aggregates only, no per-member rows. `rls_smoke.sql` TEST 6 asserts member1 sees their own row through the view (filtered by `requester_id`) and not member2's draft/open-week row even when explicitly filtering by member2's `requester_id`.
+14. **`20260907092300_add_merge_destination.sql`**: adds `merge_destination(p_source_id uuid, p_target_id uuid)`, SECURITY DEFINER, admin-only, for the "two destinations are the same place" cleanup case (REQ §5.1, §13.8). Repoints `requests.destination_id`, `request_templates.destination_id`, and `rides.origin_id`/`destination_id` off the source and onto the target; folds the source's name and existing aliases into the target's `aliases`; then either soft-marks the source `is_approved = false` (if anything still references it — the only case this can't repoint is a department's `home_destination_id`, which it refuses to merge away entirely, raising `merge_destination_is_home`) or deletes it outright if nothing references it anymore. Writes one manual `audit_log` row for the merge itself (`destinations` has no `audit_row()` trigger, unlike `requests`/`rides`, whose own triggers already record the repointed rows as ordinary updates). `rls_smoke.sql` TEST 8 asserts no `requests` row still references the source destination after a merge.
+15. **`20260907092400_add_notification_template_defaults.sql`**: adds nullable `notification_templates.default_title`/`default_body` columns, populated from the seed `title`/`body` values in the same `insert` statements in `supabase/seed.sql`. The admin UI's "restore default" action re-inserts the seed row today, which would otherwise mean duplicating the seed Hebrew copy in TS (violating hard rule 3 — Hebrew lives only in `he.ts`/`solver/reasons.ts`/seeded data); with these columns, "restore default" can copy `default_title`/`default_body` back onto `title`/`body` for the row with no Hebrew in TS at all. Rows an admin adds later with no seeded default simply get null defaults (restore is a no-op/disabled for those, left to the admin UI to decide).
+
+**Stage 3 hardening (2026-09-07), fixing the blockers UX_FLOWS.md §15 items 1–3 recorded and completing the follow-ups above:**
+
+16. **`20260907092500_fix_publish_siddur_notified_count.sql`**: `publish_siddur()`'s own final statement, `update siddur_versions set notified_count = …`, was unconditionally rejected by `siddur_versions_forbid_mutation` (item's own trigger has no `app.in_publish`-style escape hatch, unlike `weeks_guard_published_version`) — every publish failed and rolled back, reproduced independently of any client code (UX_FLOWS §15 item 1). Fixed by computing `notified_count` (and running the whole per-request notification loop) *before* the `siddur_versions` row is inserted, with the row's id generated client-side (`gen_random_uuid()`) so the notification loop's idempotency keys are stable — a single INSERT with the final value, no UPDATE at all, so the immutability trigger is never exercised. `supabase/tests/rls_smoke.sql` TEST 9 asserts the seeded Sadran (`sadran@nevo.local`) can publish the seeded open week and that a `siddur_versions` row is actually created.
+17. **`20260907092600_apply_solver_result_staleness.sql`**: `apply_solver_result()` stored whatever `input_hash` it was given but never verified it, so the "stale input → reject" guarantee ARCHITECTURE.md §12 invariant 16 describes did not exist server-side (UX_FLOWS §15 item 3). Since the client's `hashSolverInput()` (`src/features/sadran/solverRun.ts`) is an opaque browser-side FNV hash with no server-side equivalent, this adds an independent `week_state_fingerprint(department_id, week_start)` — an md5 over every `requests`/`rides` row's `(id, version)` pair for that department+week, which changes on any `bump_version()`-backed write. `record_solver_preview()` now stores this fingerprint alongside the client's `input_hash` at preview time; `apply_solver_result()` looks up the *unapplied* preview row matching the given `input_hash` and, if one exists, recomputes the fingerprint and compares, raising `stale_input` (SQLSTATE `P0409`, same class as `stale_version` — `src/lib/rpc.ts`'s `toAppError` now disambiguates by message, checking `MESSAGE_TO_CODE` before falling back to the `SQLSTATE_TO_CODE` table) on a mismatch. `BoardScreen.tsx`'s "auto-solve remaining" direct-apply path (no preceding `record_solver_preview` call, by design — UX_FLOWS §15 item 3's own note) has no matching preview row, so the check is a no-op for it; that path already re-fetches request/ride versions client-side immediately before applying.
+18. **`20260907092700_set_freed_slot_opt_out.sql`**: adds `set_freed_slot_opt_out(p_request_id uuid, p_opt_out boolean)`, SECURITY DEFINER, callable by the request's own owner or the Sadran of its week, updating only `requests.freed_slot_opt_out`. Wires the freed-slot opt-out checkbox on `/p/:token`'s deny/external variant and a new toggle in "My requests" (UX_FLOWS §14 item 3's recorded blocker: `submit_request`'s update branch doesn't coalesce every column, so reusing it for a one-field change would null out destination/timing data).
+19. **`supabase/seed.sql`** (no new migration — seeded data only): added the two missing `notification_templates` WhatsApp variants, `external` and `chauffeur` (UX_FLOWS.md §6.2 copy verbatim), with `default_title`/`default_body` populated the same way item 15's columns already work for the other rows — closes the gap item 4 above recorded. Also added: (a) one more `waitlisted` request (`...204`) for `member2` in the live week that time-overlaps the live week's `ride ...301` (car `יונדאי 1`) so `e2e/freed-slot.spec.ts` has a real single freed-slot candidate to exercise auto-assignment against (REQUIREMENTS §8) without needing a second Playwright browser context to file it first; (b) one more `submitted` request (`...213`) for `member1` in the open week with a free-text destination, so `e2e/proposal.spec.ts` can select it deterministically in the Sadran composer's manual-entry dropdown — every other seeded request uses a preset `destination_id`, leaving `destination_text` null, so their dropdown labels all fall back to the same ambiguous id-prefix text. The same seed pass also fixed a real copy bug found while building `e2e/proposal.spec.ts`: every seeded `whatsapp` template used a placeholder `{{sadranThisIs}}` that no template var ever supplied (`baseVars()` in `ProposalComposerScreen.tsx` has no `sadranThisIs` key), so it survived unrendered into every WhatsApp message ever sent; replaced with UX_FLOWS.md §6.2's actual literal text, `זה/זו {{sadranName}}`.
+20. **`20260907092800_fix_requests_status_guard_system_transitions.sql`** (bug found while writing `e2e/auto-approve.spec.ts`): `try_auto_approve()` (REQUIREMENTS §8 "new request on a free car"/"no free car", called from `submit_request()` in `live` weeks) failed unconditionally — for *both* outcomes, not only the "found a car" one — with `invalid_request_status_transition` / "member cannot move request ... from submitted to ...", raised by `requests_status_guard()` (`20260907090700_requests.sql` invariant #10). That guard correctly blocks a member from writing their own request's status directly, but couldn't distinguish that from the *trusted system logic* deciding the outcome of their own live-phase submission — reproduced directly against the local stack, independent of any client code (every path shares `auth.uid() = old.requester_id`, the exact condition the guard restricts). No previous migration or e2e spec exercised "member submits a fresh request during a live week" end to end. Fixed with the same `app.in_publish`-style trusted-call flag already used elsewhere (`app.system_status_transition`), set narrowly around `try_auto_approve()`'s own two status-changing statements and `submit_request()`'s live-phase one-way branch.
+21. **`20260907092900_fix_apply_proposal_status_guard.sql`** / **`20260907093000_fix_answer_proposal_party_token_cast.sql`**: two more bugs in the same family, found by code inspection and by writing `e2e/proposal.spec.ts` respectively, both pre-dating this stage. (a) `apply_proposal()`'s status-changing `UPDATE`s hit the same `requests_status_guard()` restriction as item 20 whenever a signed-in member accepts their *own* proposal via `answer_proposal(via: 'session')` directly (not through the token/service-role Edge Function path, which has no `auth.uid()` and never trips it) with the department's default `auto_apply_accepted_proposals = true` — fixed the same way, via `app.system_status_transition`, set unconditionally inside `apply_proposal()` since by that point the caller is already established as authorized. (b) `answer_proposal()` has two structurally identical branches — one for the sole-party convenience token (`proposals.token_hash`), one for the real per-party tokens `send_proposal()` actually sends out (`proposal_parties.token_hash`, what every WhatsApp link uses). `20260907091900_fix_answer_proposal_row_found_check.sql` had already fixed a `column "response" is of type party_response but expression is of type text` cast bug in the *first* branch but missed the identical bug in the *second* — the one every real party answer actually goes through — so accepting/declining via a real per-party WhatsApp link was broken. Reproduced via a real `create_proposal`/`send_proposal`/`answer_proposal` round trip using the party token specifically. Fixed with the same `::public.party_response` cast, added to the second branch too.
 
 ---
 
@@ -1009,15 +1124,20 @@ left join car_maintenance_blocks b
 where c.department_id = $1 and c.status <> 'retired'
 group by c.id;
 
--- Grid items: rides with served requests
+-- Grid items: rides with served legs, car origin/destination (REQ §5.4)
 select r.id, r.car_id, r.starts_at, r.ends_at, r.blocked_until, r.status, r.is_pinned, r.pin_reason, r.version,
+       r.origin_id, o.name as origin, r.destination_id, e.name as destination_loc,   -- differ only for relay legs
+       r.overflow_allowed, r.overnight_ack_by,
        r.driver_id, d.full_name as driver_name,
+       not exists (select 1 from ride_requests x where x.ride_id = r.id and x.role = 'driver') as is_chauffeur,
        jsonb_agg(jsonb_build_object(
-         'request_id', q.id, 'role', rr.role, 'leg', rr.leg, 'requester', p.full_name,
+         'request_id', q.id, 'role', rr.role, 'leg', rr.leg, 'car_mode', rr.car_mode, 'requester', p.full_name,
          'destination', coalesce(dst.name, q.destination_text), 'ride_type', rt.code,
          'adults', q.adults, 'child_seats', q.child_seats, 'boosters', q.boosters, 'luggage', q.has_luggage)
          order by rr.role, p.full_name) as served
 from rides r
+join destinations o on o.id = r.origin_id
+join destinations e on e.id = r.destination_id
 join profiles d on d.id = r.driver_id
 join ride_requests rr on rr.ride_id = r.id
 join requests q on q.id = rr.request_id
@@ -1025,12 +1145,12 @@ join profiles p on p.id = q.requester_id
 join ride_types rt on rt.id = q.ride_type_id
 left join destinations dst on dst.id = q.destination_id
 where r.department_id = $1 and r.week_start = $2 and r.status <> 'cancelled'
-group by r.id, d.full_name;
+group by r.id, o.name, e.name, d.full_name;
 
 -- Side list: unmet / awaiting requests
 select q.id, q.status, q.status_reason, q.is_late, q.changed_since_solve, q.manual_boost, q.join_ride_id,
        p.full_name, coalesce(dst.name, q.destination_text) as destination, rt.code as ride_type,
-       q.depart_at, q.return_at, q.one_way, q.direction, q.needs_car_at_destination,
+       q.depart_at, q.return_at, q.trip_shape, q.one_way_car_mode, q.needs_car_at_destination,
        q.adults, q.child_seats, q.boosters, q.has_luggage,
        q.flex_depart_early, q.flex_depart_late, q.flex_return_early, q.flex_return_late,
        pr.id as proposal_id, pr.type as proposal_type, pr.expires_at
@@ -1056,29 +1176,32 @@ returns table (request_id uuid, requester_id uuid, fits boolean, slack interval)
 language sql stable security definer set search_path = public, pg_temp as $$
   select q.id, q.requester_id,
          public.car_fits(o.car_id, q.adults, q.child_seats, q.boosters) as fits,
-         (o.ends_at - o.starts_at) - (coalesce(q.return_at, q.depart_at + interval '15 min') - q.depart_at) as slack
+         (o.ends_at - o.starts_at) - (q.return_at - q.depart_at) as slack
   from freed_slot_offers o
+  join rides cr on cr.id = o.cancelled_ride_id
   join requests q
     on q.department_id = o.department_id and q.week_start = o.week_start
    and q.status in ('waitlisted','denied')
    and not q.freed_slot_opt_out
+   and q.trip_shape = 'round_trip'                     -- one-way requests are never auto-placed (REQ §13.64)
    -- request's flexible window overlaps the freed slot ...
-   and tstzrange(q.depart_at - q.flex_depart_early,
-                 coalesce(q.return_at, q.depart_at + interval '15 min') + q.flex_return_late, '[)')
+   and tstzrange(q.depart_at - q.flex_depart_early, q.return_at + q.flex_return_late, '[)')
        && tstzrange(o.starts_at, o.ends_at, '[)')
    -- ... and the required duration fits inside it
-   and (coalesce(q.return_at, q.depart_at + interval '15 min') - q.depart_at) <= (o.ends_at - o.starts_at)
+   and (q.return_at - q.depart_at) <= (o.ends_at - o.starts_at)
   where o.id = _offer and o.status = 'open'
+    -- the freed window is at home (a cancelled relay leg never opens an offer, but be explicit)
+    and cr.origin_id = cr.destination_id
     and public.car_fits(o.car_id, q.adults, q.child_seats, q.boosters)
   order by slack asc, q.submitted_at asc;
 $$;
 ```
-This is the **hard filter**. `cancel_ride()` creates the offer and calls the `on-ride-cancelled` edge function (pg_net), which loads these rows, ranks them with the solver's `matchFreedSlot()` (policy score, timeline fit incl. adjacent free time — `SOLVER.md` §5.2) and calls `resolve_freed_offer(offer_id, ranked_candidates)`: 0 rows ⇒ offer `closed`; 1 row ⇒ create ride, request `assigned`, offer `auto_assigned`, `freed_slot_auto` to the member; >1 ⇒ insert `freed_slot_claims (offered)` per row, `freed_slot` to all candidates + `claim_contested` to the Sadranim, offer `pending_approval`. If the edge function is unreachable, `expire_freed_offers()` closes the offer at `starts_at` and the slot simply stays free on the board.
+This is the **hard filter**. `cancel_ride()` creates the offer (only for `home → home` rides; cancelling a relay leg flags the partner instead, REQ §13.63) and calls the `on-ride-cancelled` edge function (pg_net), which loads these rows, ranks them with the solver's `matchFreedSlot()` (policy score, location-aware timeline fit incl. adjacent free time — `SOLVER.md` §5.2) and calls `resolve_freed_offer(offer_id, ranked_candidates)`: 0 rows ⇒ offer `closed`; 1 row ⇒ create ride (then `assert_car_chain()`), request `assigned`, offer `auto_assigned`, `freed_slot_auto` to the member; >1 ⇒ insert `freed_slot_claims (offered)` per row, `freed_slot` to all candidates + `claim_contested` to the Sadranim, offer `pending_approval`. If the edge function is unreachable, `expire_freed_offers()` closes the offer at `starts_at` and the slot simply stays free on the board.
 
 ### 7.3 Fairness lookback for the policy — §7.2 "Fairness over time"
-The solver fetches this once per run (client-side scoring); it counts outcomes in archived/published weeks only.
+The solver fetches this once per run (client-side scoring); it counts outcomes in archived/published weeks only. `$3` is the `lookbackWeeks` param of the fairness rule in the active policy version (default **3**, REQ §13.18) — there is no department setting.
 ```sql
--- $1 department_id, $2 target week_start, $3 lookback weeks
+-- $1 department_id, $2 target week_start, $3 lookback weeks (from the policy's fairness rule params)
 select p.id as profile_id,
        count(*) filter (where q.status in ('assigned','merged'))        as served,
        count(*) filter (where q.status = 'merged')                       as served_as_passenger,
@@ -1099,10 +1222,11 @@ Exposed as `fairness_stats(_dept, _week, _weeks)` (definer, Sadran/admin only) s
 ### 7.4 My outcome for a week — §5.2, §7.5
 ```sql
 -- $1 week_start; auth.uid() implicit through RLS
-select q.id, q.status, q.status_reason, q.is_late, q.depart_at, q.return_at, q.one_way, q.direction,
+select q.id, q.status, q.status_reason, q.is_late, q.depart_at, q.return_at, q.trip_shape, q.one_way_car_mode,
        coalesce(dst.name, q.destination_text) as destination, rt.name_he as ride_type,
        r.id as ride_id, r.starts_at, r.ends_at, r.status as ride_status, c.name as car_name, c.license_plate,
-       d.full_name as driver_name, rr.role, rr.leg,
+       ro.name as ride_origin, re.name as ride_destination,          -- differ only for relay legs ("נבו → בנימינה")
+       d.full_name as driver_name, rr.role, rr.leg, rr.car_mode,
        (select jsonb_agg(jsonb_build_object('name', p2.full_name, 'phone', public.phone_of(p2.id)))
           from ride_requests rr2 join requests q2 on q2.id = rr2.request_id
           join profiles p2 on p2.id = q2.requester_id
@@ -1113,15 +1237,48 @@ join ride_types rt on rt.id = q.ride_type_id
 left join destinations dst on dst.id = q.destination_id
 left join ride_requests rr on rr.request_id = q.id
 left join rides r on r.id = rr.ride_id and r.status <> 'cancelled'
+left join destinations ro on ro.id = r.origin_id
+left join destinations re on re.id = r.destination_id
 left join cars c on c.id = r.car_id
 left join profiles d on d.id = r.driver_id
 left join proposals pr on pr.request_id = q.id and pr.status = 'sent'
 where q.week_start = $1
   and (q.requester_id = auth.uid()
        or exists (select 1 from request_companions rc where rc.request_id = q.id and rc.profile_id = auth.uid()))
-order by q.depart_at;
+order by coalesce(q.depart_at, q.return_at);
 ```
-Member history (§8 "members see their own history"): `select * from audit_log where subject_profile_id = auth.uid() order by at desc` — RLS restricts it to exactly that.
+Member history (§8 "members see their own history"): `select * from audit_log where subject_profile_id = auth.uid() order by at desc` — RLS restricts it to exactly that. The Home screen (REQ §5.5) runs this for every non-archived week and shows upcoming rides and unserved requests (`status in ('waitlisted','denied','proposed')`) above the fold, regardless of `profiles.home_week_preference`.
+
+### 7.5 Where is the car? — §5.4 car location (board badges, day-end warning)
+```sql
+-- The car's location at an instant: destination of the last non-cancelled ride that started at or before it, else home.
+create or replace function public.car_location_at(_car uuid, _at timestamptz) returns uuid
+language sql stable security definer set search_path = public, pg_temp as $$
+  select coalesce(
+    (select r.destination_id from public.rides r
+      where r.car_id = _car and r.status <> 'cancelled' and r.starts_at <= _at
+      order by r.starts_at desc limit 1),
+    (select d.home_destination_id from public.cars c join public.departments d on d.id = c.department_id where c.id = _car));
+$$;
+
+-- v_car_locations: away windows per car (gaps that start with a ride ending away from home).
+create or replace view public.v_car_locations with (security_invoker = true) as
+select r.car_id, r.department_id, r.week_start,
+       r.ends_at                                   as away_from,
+       n.starts_at                                 as away_until,          -- null = not brought home (day-end warning unless acknowledged)
+       r.destination_id                            as location_id,
+       dl.name                                     as location_name,
+       r.id                                        as leaving_ride_id,
+       r.overnight_ack_by is not null              as overnight_acknowledged
+from public.rides r
+join public.departments d on d.id = r.department_id
+join public.destinations dl on dl.id = r.destination_id
+left join lateral (select n.starts_at from public.rides n
+                   where n.car_id = r.car_id and n.status <> 'cancelled' and n.starts_at > r.ends_at
+                   order by n.starts_at limit 1) n on true
+where r.status <> 'cancelled' and r.destination_id <> d.home_destination_id;
+```
+The board draws `location_name` as a badge on the car row for `[away_from, away_until)` ("בבנימינה") and a warning on rows where `away_until` is null or later than the local day's `day_end_time` and `overnight_acknowledged` is false (UX_FLOWS §4.2). `try_auto_approve()` uses `car_location_at(car, depart_at) = home` before attempting the insert (invariant #20).
 
 ---
 
@@ -1143,3 +1300,13 @@ Supabase Free: 500 MB. Estimated steady state at 2 departments × 300 requests/w
 | request_templates | while `is_active` or paused; inactive ones deleted after 1 year | `housekeeping()` daily |
 
 Backups: Supabase Free has no PITR; a weekly `pg_dump` via GitHub Actions to a private artifact (or Storage) is part of the ops doc. Upgrade triggers (§11 Cost): DB > 400 MB, or paused-project complaints, or > 5 departments.
+
+---
+
+## 9. Future tables (documented follow-ups, no v1 schema)
+
+| table | purpose | trigger to build it |
+|---|---|---|
+| `car_loans` | Cross-department car lending for a window (lifts `rides_car_same_department`); v1 uses a maintenance block "lent to X" + `external` on the borrowing side (§3.7, REQ §13.27). | A second department actually borrows cars regularly. |
+| `ride_templates` | **Standing pre-allocations** (REQ §12 should-have, §13.54): recurring pinned rides (car, dow, time window, driver, origin/destination) that `materialize_templates()` copies into each newly opened week as `is_pinned` rides, before members' requests are solved around them. Same shape as `request_templates` but produces rides, not requests. | The owner confirms the school-run use case for v1.x. |
+| `chauffeur_volunteers` (or a `profiles` flag) | Members willing to drive chauffeur legs, so the Sadran can send "needs a driver" requests to a list (REQ §14 question 1). | Owner decision. |
