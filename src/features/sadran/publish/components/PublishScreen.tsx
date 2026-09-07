@@ -10,7 +10,7 @@ import { useState } from "react";
 import { he, tv } from "@/i18n/he";
 import { formatTime } from "@/lib/time";
 
-import { scanBoardConflicts } from "../../board/geometry";
+import { requestDayMismatchRideIds, scanBoardConflicts } from "../../board/geometry";
 import { computeDiffSummary } from "../diffSummary";
 import {
   useAllWeekRides,
@@ -21,6 +21,8 @@ import {
 } from "../../hooks";
 import { useDepartments } from "@/features/siddur/hooks";
 import { buildWeek } from "@/features/solverBridge/buildSolverInput";
+import type { PolicyBoardScore } from "../profileScores";
+import { RideChangeAnswers } from "@/features/siddur/components/RideChangeAnswers";
 
 interface PublishScreenProps {
   departmentId: string;
@@ -42,6 +44,7 @@ export function PublishScreen({ departmentId, weekStart }: PublishScreenProps) {
 
   const versions = versionsQuery.data ?? [];
   const previousVersion = versions[0] ?? null;
+  const savedScores = ((previousVersion?.snapshot as { policy_scores?: PolicyBoardScore[] } | null)?.policy_scores ?? []);
 
   const daySettings = departmentSettingsQuery.data;
   const rides = ridesQuery.data ?? [];
@@ -54,7 +57,7 @@ export function PublishScreen({ departmentId, weekStart }: PublishScreenProps) {
           );
           const weekStartMs = buildWeek(weekStart, daySettings.day_end_time).startMs;
           const days = buildWeek(weekStart, daySettings.day_end_time).days;
-          return scanBoardConflicts({
+          const conflicts = scanBoardConflicts({
             rides: validRides.map((r) => ({
               id: r.id,
               carId: r.car_id,
@@ -69,7 +72,9 @@ export function PublishScreen({ departmentId, weekStart }: PublishScreenProps) {
             bufferMinutes: daySettings.turnaround_minutes,
             homeLocationId: department.home_destination_id,
             days,
-          }).conflictRideIds.size;
+          }).conflictRideIds;
+          for (const id of requestDayMismatchRideIds(rides, requestsQuery.data ?? [])) conflicts.add(id);
+          return conflicts.size;
         })()
       : 0;
 
@@ -103,6 +108,20 @@ export function PublishScreen({ departmentId, weekStart }: PublishScreenProps) {
   return (
     <div className="mx-auto max-w-3xl space-y-4 p-4 pb-24">
       <PageHeader title={he.screen.publish.title} subtitle={formatWeekRangeLabel(weekStart)} />
+      <p className="text-sm text-muted-foreground">{he.publishScores.help}</p>
+      <RideChangeAnswers departmentId={departmentId} weekStart={weekStart} canManage />
+      {savedScores.length ? <Card><CardContent className="overflow-x-auto p-4">
+        <h2 className="mb-2 font-medium">{he.publishScores.title}</h2>
+        <table className="w-full text-start text-sm">
+          <thead><tr><th className="p-2 text-start">{he.publishScores.policy}</th><th className="p-2 text-start">{he.publishScores.served}</th><th className="p-2 text-start">{he.publishScores.priority}</th><th className="p-2 text-start">{he.publishScores.coverage}</th></tr></thead>
+          <tbody>{savedScores.map((s) => <tr key={s.policy_version_id} className="border-t">
+            <td className="p-2">{s.policy_name}</td>
+            <td className="p-2" dir="ltr">{s.served_count} / {s.request_count}</td>
+            <td className="p-2" dir="ltr">{s.served_priority_total.toFixed(2)} / {s.priority_total.toFixed(2)}</td>
+            <td className="p-2" dir="ltr">{s.alignment_ratio == null ? he.publishScores.noPriority : `${(s.alignment_ratio * 100).toFixed(1)}%`}</td>
+          </tr>)}</tbody>
+        </table>
+      </CardContent></Card> : null}
 
       <Card>
         <CardContent className="space-y-2 p-4 text-sm">
@@ -154,9 +173,9 @@ export function PublishScreen({ departmentId, weekStart }: PublishScreenProps) {
         className="w-full"
         size="lg"
         onClick={handlePublish}
-        disabled={conflictCount > 0 || publishMutation.isPending}
+        disabled={conflictCount > 0 || publishMutation.isPending || ridesQuery.isLoading || requestsQuery.isLoading || departmentSettingsQuery.isLoading || departmentsQuery.isLoading || ridesQuery.isError || requestsQuery.isError || departmentSettingsQuery.isError || departmentsQuery.isError}
       >
-        {he.action.publishAndNotify}
+        {publishMutation.isPending ? he.publishScores.calculating : he.action.publishAndNotify}
       </Button>
     </div>
   );

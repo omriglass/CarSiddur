@@ -14,12 +14,13 @@ interface BoardListModeProps {
   rides: readonly RideCardData[];
   onRideClick: (rideId: string) => void;
   unmetItems: readonly UnmetListItem[];
+  onUnmetDecision?: (item: UnmetListItem, type: "deny" | "shift" | "external") => void;
   onUnmetAction: (item: UnmetListItem, suggestion: Suggestion | null) => void;
   onOpenProposals: () => void;
 }
 
 /** Phone fallback for the board (UX_FLOWS.md §4.2 "Phone fallback — list mode"): רכבים / לא שובצו / הצעות segments. */
-export function BoardListMode({ rides, onRideClick, unmetItems, onUnmetAction, onOpenProposals }: BoardListModeProps) {
+export function BoardListMode({ rides, onRideClick, unmetItems, onUnmetAction, onUnmetDecision, onOpenProposals }: BoardListModeProps) {
   const [segment, setSegment] = useState<Segment>("cars");
 
   return (
@@ -56,7 +57,7 @@ export function BoardListMode({ rides, onRideClick, unmetItems, onUnmetAction, o
         </div>
       ) : null}
 
-      {segment === "unmet" ? <UnmetList items={unmetItems} onAction={onUnmetAction} /> : null}
+      {segment === "unmet" ? <UnmetList items={unmetItems} onAction={onUnmetAction} onDecision={onUnmetDecision} /> : null}
     </div>
   );
 }

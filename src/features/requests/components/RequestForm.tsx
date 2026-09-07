@@ -1,5 +1,4 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { getDay } from "date-fns";
 import { formatInTimeZone } from "date-fns-tz";
 import { useMemo, useState } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
@@ -13,7 +12,7 @@ import { CarAtDestinationToggle } from "@/components/CarAtDestinationToggle";
 import { CompanionPicker } from "@/components/CompanionPicker";
 import { DateField, datesOfWeek } from "@/components/DateField";
 import { DestinationCombobox, type DestinationValue } from "@/components/DestinationCombobox";
-import { FlexibilitySegmented, type FlexValue } from "@/components/FlexibilitySegmented";
+import { FlexibilityRange } from "@/components/FlexibilitySegmented";
 import { OneWayCarModeControl } from "@/components/OneWayCarModeControl";
 import { PassengerStepper } from "@/components/PassengerStepper";
 import { RideTypeChips } from "@/components/RideTypeChips";
@@ -74,7 +73,7 @@ function timeFromInstant(instant: string): string {
 function buildDefaultDay(weekStart: string, lastDepartAt: string | null | undefined): string {
   if (!lastDepartAt) return weekStart; // datesOfWeek(weekStart)[0] === weekStart (the Sunday itself)
   const dates = datesOfWeek(weekStart);
-  const weekday = getDay(new Date(lastDepartAt)); // 0=Sun..6=Sat, matches datesOfWeek order
+  const weekday = Number(formatInTimeZone(new Date(lastDepartAt), TZ, "i")) % 7; // 0=Sun..6=Sat, matches datesOfWeek order
   return dates[weekday] ?? weekStart;
 }
 
@@ -174,7 +173,7 @@ function mapEditRowToValues(row: RequestEditRow, weekStart: string, companions: 
 
 function FieldError({ message }: { message?: string }) {
   if (!message) return null;
-  return <p className="text-sm font-medium text-destructive">{message}</p>;
+  return <p role="alert" className="text-sm font-medium text-destructive">{message}</p>;
 }
 
 /**
@@ -356,7 +355,7 @@ export function RequestForm({ mode, departmentId, weekStart, initial, joinRide, 
             />
           )}
         />
-        <FieldError message={form.formState.errors.destination ? t("field.destination") : undefined} />
+        <FieldError message={form.formState.errors.destination ? t("request.destinationRequired") : undefined} />
       </FormItem>
 
       <FormItem>
@@ -372,6 +371,7 @@ export function RequestForm({ mode, departmentId, weekStart, initial, joinRide, 
             />
           )}
         />
+        <FieldError message={form.formState.errors.rideTypeId?.message} />
       </FormItem>
 
       <FormItem>
@@ -535,43 +535,27 @@ export function RequestForm({ mode, departmentId, weekStart, initial, joinRide, 
       {tripShape !== "one_way_from" ? (
         <FormItem>
           <Label>{t("field.flexDepart")}</Label>
-          <div className="space-y-1">
-            <Controller
-              control={form.control}
-              name="flexDepartEarly"
-              render={({ field }) => (
-                <FlexibilitySegmented value={field.value as FlexValue} onChange={field.onChange} aria-label={t("flex.earlier")} />
-              )}
-            />
-            <Controller
-              control={form.control}
-              name="flexDepartLate"
-              render={({ field }) => (
-                <FlexibilitySegmented value={field.value as FlexValue} onChange={field.onChange} aria-label={t("flex.later")} />
-              )}
-            />
-          </div>
+          <FlexibilityRange
+            early={values.flexDepartEarly ?? 0}
+            late={values.flexDepartLate ?? 0}
+            onChange={(early, late) => {
+              form.setValue("flexDepartEarly", early, { shouldDirty: true });
+              form.setValue("flexDepartLate", late, { shouldDirty: true });
+            }}
+          />
         </FormItem>
       ) : null}
       {tripShape !== "one_way_to" ? (
         <FormItem>
           <Label>{t("field.flexReturn")}</Label>
-          <div className="space-y-1">
-            <Controller
-              control={form.control}
-              name="flexReturnEarly"
-              render={({ field }) => (
-                <FlexibilitySegmented value={field.value as FlexValue} onChange={field.onChange} aria-label={t("flex.earlier")} />
-              )}
-            />
-            <Controller
-              control={form.control}
-              name="flexReturnLate"
-              render={({ field }) => (
-                <FlexibilitySegmented value={field.value as FlexValue} onChange={field.onChange} aria-label={t("flex.later")} />
-              )}
-            />
-          </div>
+          <FlexibilityRange
+            early={values.flexReturnEarly ?? 0}
+            late={values.flexReturnLate ?? 0}
+            onChange={(early, late) => {
+              form.setValue("flexReturnEarly", early, { shouldDirty: true });
+              form.setValue("flexReturnLate", late, { shouldDirty: true });
+            }}
+          />
           <p className="text-xs text-muted-foreground">{t("request.flexibilityHelper")}</p>
         </FormItem>
       ) : null}
@@ -585,6 +569,13 @@ export function RequestForm({ mode, departmentId, weekStart, initial, joinRide, 
         <div className="mx-auto max-w-2xl space-y-2">
           {seatFitWarning ? <p className="text-sm text-amber-700">⚠ {t("request.seatFitWarning")}</p> : null}
           {duplicate ? <p className="text-sm text-amber-700">{t("request.duplicateWarning")}</p> : null}
+          {form.formState.submitCount > 0 && Object.keys(form.formState.errors).length > 0 ? (
+            <p role="alert" className="text-sm text-destructive">
+              {t("request.validationSummary")}
+              {form.formState.errors.rideTypeId ? ` · ${t("request.rideTypeRequired")}` : ""}
+              {form.formState.errors.destination ? ` · ${t("request.destinationRequired")}` : ""}
+            </p>
+          ) : null}
           {submitError ? <p className="text-sm text-destructive">{submitError}</p> : null}
           <Button type="submit" className="w-full" size="lg" disabled={submitMutation.isPending}>
             {mode === "edit" ? t("action.saveRequest") : t("action.submitRequest")}

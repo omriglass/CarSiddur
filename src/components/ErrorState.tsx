@@ -11,7 +11,9 @@ interface ErrorStateProps {
 export function ErrorState({ onRetry }: ErrorStateProps) {
   return (
     <div className="flex min-h-[50dvh] flex-col items-center justify-center gap-4 p-8 text-center">
-      <AlertTriangle className="size-10 text-destructive" aria-hidden="true" />
+      <span className="flex size-14 items-center justify-center rounded-full bg-destructive/10">
+        <AlertTriangle className="size-7 text-destructive" aria-hidden="true" />
+      </span>
       <p className="text-muted-foreground">{t("errorState.title")}</p>
       {onRetry ? <Button onClick={onRetry}>{t("errorState.refresh")}</Button> : null}
     </div>

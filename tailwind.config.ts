@@ -1,4 +1,5 @@
 import type { Config } from "tailwindcss";
+import plugin from "tailwindcss/plugin";
 import tailwindcssAnimate from "tailwindcss-animate";
 
 export default {
@@ -51,6 +52,31 @@ export default {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
+        available: {
+          DEFAULT: "hsl(var(--available))",
+          foreground: "hsl(var(--available-foreground))",
+        },
+        maintenance: {
+          DEFAULT: "hsl(var(--maintenance))",
+          foreground: "hsl(var(--maintenance-foreground))",
+        },
+        booked: {
+          DEFAULT: "hsl(var(--booked))",
+          foreground: "hsl(var(--booked-foreground))",
+        },
+        rideWork: "hsl(var(--ride-work))",
+        rideChildcare: "hsl(var(--ride-childcare))",
+        rideHealthcare: "hsl(var(--ride-healthcare))",
+        rideErrands: "hsl(var(--ride-errands))",
+        rideOther: "hsl(var(--ride-other))",
+      },
+      backgroundImage: {
+        "gradient-hero": "var(--gradient-hero)",
+        "gradient-card": "var(--gradient-card)",
+      },
+      boxShadow: {
+        elegant: "var(--shadow-elegant)",
+        card: "var(--shadow-card)",
       },
       borderRadius: {
         lg: "var(--radius)",
@@ -73,5 +99,12 @@ export default {
       },
     },
   },
-  plugins: [tailwindcssAnimate],
+  plugins: [
+    tailwindcssAnimate,
+    // `transition-smooth` utility: `all 0.3s cubic-bezier(0.4,0,0.2,1)` in one
+    // class, matching the reference app's `--transition-smooth` token.
+    plugin(({ addUtilities }) => {
+      addUtilities({ ".transition-smooth": { transition: "var(--transition-smooth)" } });
+    }),
+  ],
 } satisfies Config;

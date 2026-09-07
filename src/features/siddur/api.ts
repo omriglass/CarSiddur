@@ -1,5 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
-import { toAppError } from "@/lib/rpc";
+import { rpc, toAppError } from "@/lib/rpc";
 
 import type { Database } from "@/integrations/supabase/types";
 
@@ -12,6 +12,45 @@ import type { Database } from "@/integrations/supabase/types";
 export type Department = Database["public"]["Tables"]["departments"]["Row"];
 export type Week = Database["public"]["Tables"]["weeks"]["Row"];
 export type BoardRide = Database["public"]["Views"]["v_board_rides"]["Row"];
+
+export type RideChange = Database["public"]["Tables"]["ride_change_requests"]["Row"] & {
+  requester: { full_name: string } | null;
+  parties: Database["public"]["Tables"]["ride_change_parties"]["Row"][];
+};
+
+export interface RideMove {
+  rideId: string;
+  carId: string;
+  startsAt: string;
+  endsAt: string;
+  expectedVersion: number;
+}
+
+export async function fetchRideChanges(departmentId?: string, weekStart?: string): Promise<RideChange[]> {
+  let query = supabase.from("ride_change_requests")
+    .select("*, requester:profiles!ride_change_requests_requester_id_fkey(full_name), parties:ride_change_parties(*)")
+    .eq("status", "pending");
+  if (departmentId) query = query.eq("department_id", departmentId);
+  if (weekStart) query = query.eq("week_start", weekStart);
+  const { data, error } = await query.order("created_at");
+  if (error) throw toAppError(error);
+  return (data ?? []) as RideChange[];
+}
+
+export async function requestRideChange(move: RideMove): Promise<string> {
+  return rpc("request_ride_change", {
+    p_ride_id: move.rideId, p_car_id: move.carId,
+    p_starts_at: move.startsAt, p_ends_at: move.endsAt, p_expected_version: move.expectedVersion,
+  });
+}
+
+export async function respondRideChange(changeId: string, accept: boolean): Promise<void> {
+  await rpc("respond_ride_change", { p_change_id: changeId, p_accept: accept });
+}
+
+export async function cancelRideChange(changeId: string): Promise<void> {
+  await rpc("cancel_ride_change", { p_change_id: changeId });
+}
 
 export async function fetchDepartments(): Promise<Department[]> {
   const { data, error } = await supabase.from("departments").select("*").eq("is_active", true);

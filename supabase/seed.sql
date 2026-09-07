@@ -366,3 +366,13 @@ begin
 end $$;
 
 commit;
+
+-- Consent-based ride-change inbox and push messages.
+insert into public.notification_templates(event,channel,variant,title,body,default_title,default_body)
+select 'proposal_received',channel,'ride_change',
+  '{{requesterName}} ביקש/ה לבטל את הנסיעה שלך',
+  'בקשה לרכב ב־{{date}} {{depart}}–{{return}}. האם לאשר את ביטול הנסיעה שלך?',
+  '{{requesterName}} ביקש/ה לבטל את הנסיעה שלך',
+  'בקשה לרכב ב־{{date}} {{depart}}–{{return}}. האם לאשר את ביטול הנסיעה שלך?'
+from unnest(array['inbox','push']::public.notification_channel[]) channel
+on conflict (event,channel,(coalesce(variant,''))) do update set title=excluded.title,body=excluded.body,default_title=excluded.default_title,default_body=excluded.default_body;

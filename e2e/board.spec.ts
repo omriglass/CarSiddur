@@ -4,9 +4,9 @@ import { formatInTimeZone } from "date-fns-tz";
 import { expect, test, type Page } from "@playwright/test";
 
 import { NEVO_DEPARTMENT_ID, serviceRoleClient } from "./helpers";
+import resetDatabase from "./global-setup";
 
 const TZ = "Asia/Jerusalem";
-const DAY_LABELS = ["א", "ב", "ג", "ד", "ה", "ו", "ש"];
 /** This department's `department_settings.board_start_time` (seed default, unchanged by the vertical-board redesign, UX_FLOWS.md §20). */
 const GRID_START_MINUTES = 5 * 60;
 const GRID_END_MINUTES = 24 * 60;
@@ -27,6 +27,36 @@ async function selectDayFor(page: Page, iso: string): Promise<void> {
   const dayIndex = Number(formatInTimeZone(new Date(iso), TZ, "i")) % 7; // ISO 1=Mon..7=Sun -> 0=Sun..6=Sat
   await page.getByRole("radio").nth(dayIndex).click();
   await page.waitForTimeout(300);
+}
+
+/**
+ * `WeekGrid`'s own scroll container caps itself to `max-h-[70vh]`
+ * (`overflow-auto`, UX_FLOWS.md §20) while a car column's *content* spans
+ * the full day (`GRID_START_MINUTES`..`GRID_END_MINUTES`) — a `boundingBox()`
+ * read on the column always reports that full, unclipped height, so a naive
+ * `top + fraction * height` target for a later-in-the-day drop routinely
+ * lands below the actual visible viewport (real, reproduced: an 11:00 drop
+ * target computed this way landed at clientY 739 against a 720px-tall
+ * viewport — `document.elementFromPoint` returns `null` for any point
+ * outside the viewport, so the drop silently never registered). A real
+ * Sadran hits the same limit — nothing here auto-scrolls the grid while a
+ * drag is in progress (`docs/UX_FLOWS.md`'s "regression risk accepted" note)
+ * — and would first scroll the column into view before dropping; this
+ * mirrors that by scrolling the column's own `overflow-auto` ancestor so the
+ * target time is centered before any pointer coordinates are computed.
+ */
+async function scrollGridToMinutes(page: Page, carId: string, minutes: number): Promise<void> {
+  await page.locator(`[data-car-col-id="${carId}"]`).evaluate(
+    (el, { minutes, gridStart, gridEnd }) => {
+      const scrollParent = el.closest<HTMLElement>(".overflow-auto");
+      if (!scrollParent) return;
+      const fraction = (minutes - gridStart) / (gridEnd - gridStart);
+      const targetOffset = fraction * el.scrollHeight;
+      const desired = targetOffset - scrollParent.clientHeight / 2;
+      scrollParent.scrollTop = Math.max(0, Math.min(desired, scrollParent.scrollHeight - scrollParent.clientHeight));
+    },
+    { minutes, gridStart: GRID_START_MINUTES, gridEnd: GRID_END_MINUTES },
+  );
 }
 
 // Regression coverage for the bug-fix pass after the Sadran owner's manual
@@ -66,11 +96,10 @@ test.describe.serial("board (bug-fix pass regression, fake-week data)", () => {
   });
 
   test.afterAll(() => {
-    if (process.env.E2E_SKIP_RESET === "1") return;
-    execSync("npx supabase db reset", { stdio: "inherit" });
+    resetDatabase();
   });
 
-  test("bug #1: unmet list shows every unsolved request straight from the DB, before any solve", async ({ page }) => {
+  test("unmet requests and phantom lanes show only the selected day, before any solve", async ({ page }) => {
     await signIn(page);
     const weekUrl = await goToOpenWeek(page);
 
@@ -85,6 +114,20 @@ test.describe.serial("board (bug-fix pass regression, fake-week data)", () => {
     await expect(unmetHeading).toBeVisible();
     const n = unmetCountFromHeading(await unmetHeading.textContent());
     expect(n).toBeGreaterThan(0);
+    const admin = serviceRoleClient();
+    const weekStart = weekUrl.match(/(\d{4}-\d{2}-\d{2})$/)?.[1] ?? "";
+    const { data: requests } = await admin.from("requests").select("id, depart_at, return_at, trip_shape, status").eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", weekStart).in("status", ["submitted", "waitlisted", "proposed", "denied"]);
+    for (const day of [0, 3]) {
+      await page.getByRole("radio").nth(day).click();
+      const expected = (requests ?? []).filter((request) => {
+        const anchor = request.trip_shape === "one_way_from" ? request.return_at : request.depart_at;
+        return request.status !== "denied" && anchor && Number(formatInTimeZone(new Date(anchor), TZ, "i")) % 7 === day;
+      }).map((request) => `request:${request.id}`).sort();
+      await expect(async () => {
+        const ids = await page.locator('[data-ride-id^="request:"]').evaluateAll((elements) => elements.map((element) => element.getAttribute("data-ride-id")).sort());
+        expect(ids).toEqual(expected);
+      }).toPass();
+    }
   });
 
   // Vertical-board redesign (UX_FLOWS.md §20 item 3): drag-and-drop from
@@ -104,7 +147,8 @@ test.describe.serial("board (bug-fix pass regression, fake-week data)", () => {
       .eq("type", "shared")
       .neq("status", "retired");
     expect(cars?.length ?? 0).toBeGreaterThan(0);
-    const targetCar = cars![0];
+    const targetCar = cars?.[0];
+    if (!targetCar) throw new Error("no shared car found");
 
     const { data: requests } = await admin
       .from("requests")
@@ -125,11 +169,20 @@ test.describe.serial("board (bug-fix pass regression, fake-week data)", () => {
     const card = page.locator(`[data-request-id="${candidate!.id}"]`);
     await expect(card).toBeVisible({ timeout: 10_000 });
     const grip = card.getByRole("button", { name: "גרור/י ללוח" });
+    // `UnmetList`'s own panel is independently scrollable (bounded to match
+    // `WeekGrid`'s 70vh, UX_FLOWS.md §20) — a busy week's 40+ unmet cards mean
+    // this specific candidate is very often below the fold of that panel.
+    await grip.scrollIntoViewIfNeeded();
+    const dropMinutes = minutesSinceMidnight(candidate!.depart_at as string);
+    // Same reasoning on the target side: the car column's *content* spans
+    // the whole day, taller than the grid's own clipped viewport, so the
+    // drop time must actually be scrolled into view first — see
+    // `scrollGridToMinutes`'s own doc comment.
+    await scrollGridToMinutes(page, targetCar.id, dropMinutes);
     const gripBox = await grip.boundingBox();
     const colBox = await page.locator(`[data-car-col-id="${targetCar.id}"]`).boundingBox();
     if (!gripBox || !colBox) throw new Error("grip or car column not found");
 
-    const dropMinutes = minutesSinceMidnight(candidate!.depart_at as string);
     const startX = gripBox.x + gripBox.width / 2;
     const startY = gripBox.y + gripBox.height / 2;
     const endX = colBox.x + colBox.width / 2;
@@ -140,6 +193,7 @@ test.describe.serial("board (bug-fix pass regression, fake-week data)", () => {
     await page.mouse.down();
     await page.mouse.move(startX + 20, startY + 20, { steps: 5 });
     await page.mouse.move(endX, endY, { steps: 10 });
+    await expect(page.locator("[data-drag-preview]")).toContainText(targetCar.name);
     await page.mouse.up();
 
     await expect(async () => {
@@ -165,6 +219,7 @@ test.describe.serial("board (bug-fix pass regression, fake-week data)", () => {
     await page.goto(`${weekUrl}/board`);
     const unmetHeading = page.getByText(/לא שובצו \(\d+\)/).first();
     await expect(unmetHeading).toBeVisible();
+    const selectedDayIndex = await page.getByRole("radio").evaluateAll((elements) => elements.findIndex((element) => element.getAttribute("aria-checked") === "true"));
     const unmetBefore = unmetCountFromHeading(await unmetHeading.textContent());
     expect(unmetBefore).toBeGreaterThan(0);
 
@@ -177,8 +232,10 @@ test.describe.serial("board (bug-fix pass regression, fake-week data)", () => {
     // slowness) — the default 5s assertion timeout flaked here once.
     await expect(page).toHaveURL(/\/board$/, { timeout: 15_000 });
 
+    await page.getByRole("radio").nth(selectedDayIndex).click();
+
     // At least one ride block rendered on the default (busiest) day.
-    const firstRide = page.locator("button[data-ride-id]").first();
+    const firstRide = page.locator('button[data-ride-id]:not([data-ride-id^="request:"])').first();
     await expect(firstRide).toBeVisible({ timeout: 10_000 });
 
     // bug #3: the label is "<driver first name> ל/מ<destination>", never the department's own name.
@@ -187,7 +244,8 @@ test.describe.serial("board (bug-fix pass regression, fake-week data)", () => {
     expect(label).toMatch(/^\S+ [למ]\S/);
     expect(label).not.toBe("נבו");
 
-    const unmetAfter = unmetCountFromHeading(await page.getByText(/לא שובצו \(\d+\)/).first().textContent());
+    const unmetAfterHeading = page.getByText(/לא שובצו \(\d+\)/).first();
+    const unmetAfter = await unmetAfterHeading.count() ? unmetCountFromHeading(await unmetAfterHeading.textContent()) : 0;
     expect(unmetAfter).toBeLessThan(unmetBefore);
   });
 
@@ -360,6 +418,13 @@ test.describe.serial("board (bug-fix pass regression, fake-week data)", () => {
     await selectDayFor(page, chosenRide!.starts_at);
     const rideLocator = page.locator(`button[data-ride-id="${chosenRide?.id}"]`);
     await expect(rideLocator).toBeVisible({ timeout: 10_000 });
+    // `toBeVisible()` only asserts CSS visibility, not that the block sits
+    // within `WeekGrid`'s own clipped `max-h-[70vh]` scrollport (see
+    // `scrollGridToMinutes`'s doc comment) — a ride later in the day is
+    // routinely rendered well below the fold, at a `boundingBox()` y beyond
+    // the browser viewport entirely, which no synthetic pointer event can
+    // land on.
+    await rideLocator.scrollIntoViewIfNeeded();
 
     const rideBox = await rideLocator.boundingBox();
     const targetColBox = await page.locator(`[data-car-col-id="${chosenCar!.id}"]`).boundingBox();
@@ -493,4 +558,45 @@ test.describe.serial("board (bug-fix pass regression, fake-week data)", () => {
       ).toBe(statusBefore);
     }
   });
+  test("free-text reservations persist, resize their end, and can be removed", async ({ page }) => {
+    await signIn(page);
+    const weekUrl = await goToOpenWeek(page);
+    const weekStart = weekUrl.match(/(\d{4}-\d{2}-\d{2})$/)?.[1] ?? "";
+    const admin = serviceRoleClient();
+    const { error: cleanupError } = await admin.from("rides").delete().eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", weekStart).eq("notes", "Board regression reservation");
+    expect(cleanupError).toBeNull();
+    await page.goto(`${weekUrl}/board`);
+    await page.getByRole("radio").first().click();
+    await page.getByRole("button", { name: "שמירת זמן", exact: true }).click();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByLabel("יציאה", { exact: true }).fill("00:30");
+    await dialog.getByLabel("חזרה", { exact: true }).fill("01:30");
+    await dialog.getByLabel("תיאור השמירה — יוצג בלוח").fill("Board regression reservation");
+    await dialog.getByRole("button", { name: "שמירה", exact: true }).click();
+    await expect(dialog).toBeHidden();
+    const { data: reserved, error } = await admin.from("rides").select("id, starts_at, ends_at, driver_id").eq("week_start", weekStart).eq("notes", "Board regression reservation").single();
+    expect(error).toBeNull();
+    expect(reserved?.driver_id).toBeNull();
+    await page.getByRole("button", { name: "הצג שעות מוקדמות" }).click();
+    const block = page.locator(`[data-ride-id="${reserved!.id}"]`);
+    await block.scrollIntoViewIfNeeded();
+    const edge = block.locator(".bottom-0");
+    const box = await edge.boundingBox();
+    if (!box) throw new Error("reservation resize edge missing");
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 + 20, { steps: 5 });
+    await expect(page.locator("[data-drag-preview]")).toContainText("00:30–01:45");
+    await page.mouse.up();
+    await expect(async () => {
+      const { data: after } = await admin.from("rides").select("starts_at, ends_at").eq("id", reserved!.id).single();
+      expect(after?.starts_at).toBe(reserved?.starts_at);
+      expect(minutesSinceMidnight(after!.ends_at)).toBe(105);
+    }).toPass();
+    await expect(block).toContainText("00:30–01:45");
+    await block.click();
+    await page.getByRole("button", { name: "הסר שיבוץ" }).click();
+    await expect(block).toHaveCount(0);
+  });
+
 });

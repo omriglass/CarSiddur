@@ -1,5 +1,10 @@
 import { defineConfig, devices } from "@playwright/test";
 
+// Allow a disposable Supabase/Vite stack without disturbing the developer's data.
+const baseURL = process.env.E2E_BASE_URL ?? "http://localhost:8080";
+const appPort = new URL(baseURL).port || "8080";
+const apiURL = process.env.VITE_SUPABASE_URL ?? "http://127.0.0.1:54321";
+
 // ARCHITECTURE.md §14: runs against the local Supabase stack + dev server.
 // `npm run db:start` must be running separately; this config starts the Vite
 // dev server and the local Edge Functions server (Stage 3 hardening,
@@ -34,7 +39,7 @@ export default defineConfig({
   timeout: 60_000,
   reporter: "html",
   use: {
-    baseURL: "http://localhost:8080",
+    baseURL,
     navigationTimeout: 45_000,
     trace: "on-first-retry",
   },
@@ -46,13 +51,13 @@ export default defineConfig({
   ],
   webServer: [
     {
-      command: "npm run dev",
-      url: "http://localhost:8080",
+      command: `npm run dev -- --port ${appPort} --strictPort`,
+      url: baseURL,
       reuseExistingServer: !process.env.CI,
     },
     {
       command: "npm run functions:serve",
-      url: "http://127.0.0.1:54321/functions/v1/answer-proposal",
+      url: `${apiURL}/functions/v1/answer-proposal`,
       reuseExistingServer: true,
     },
   ],

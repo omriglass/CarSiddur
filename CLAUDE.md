@@ -8,7 +8,7 @@ Guidance for Claude Code working in this repository.
 - The app **proposes**; a human always decides. The solver ranks requests with a data-driven, admin-editable priority policy.
 - Stack: Vite + React 18 + TypeScript strict + shadcn/ui + Tailwind + TanStack Query + react-router; Supabase (Postgres, Google Auth, RLS, Edge Functions, pg_cron); Vitest + Playwright; Vercel Hobby. Free tiers only.
 - `docs/REQUIREMENTS.md` is the source of truth for *what*; `ARCHITECTURE.md`, `DATA_MODEL.md`, `SOLVER.md`, `UX_FLOWS.md` derive from it and must never contradict it.
-- **Status: design phase, no application code yet.** Paths and commands below come from the docs. Once code lands, verify and correct this file in the same PR (see "To be verified" at the bottom).
+- **Status: implemented application.** See `docs/IMPLEMENTATION_PLAN.md` for completed work, validation and deferred items.
 
 ## Hard rules
 
@@ -27,7 +27,7 @@ Guidance for Claude Code working in this repository.
 | Command | Purpose |
 |---|---|
 | `npm run dev` | Vite dev server on `:8080` against local Supabase |
-| `npm run build` | Production build (also bundles the solver for edge functions) |
+| `npm run build` | Production frontend/PWA build; run `functions:bundle` separately after solver changes |
 | `npm run preview` | Preview the production build locally |
 | `npm run lint` | ESLint over the entire project |
 | `npm run typecheck` | `tsc --noEmit -p tsconfig.app.json` |
@@ -40,7 +40,7 @@ Guidance for Claude Code working in this repository.
 | `npm run db:types` | `supabase gen types typescript --local > src/integrations/supabase/types.ts` |
 | `npm run db:new` | `supabase migration new <name>` → `supabase/migrations/YYYYMMDDHHMMSS_<name>.sql` (CLI will prompt for name) |
 | `npm run db:push` | `supabase db push` — sync pending local migrations to the remote project (after linking) |
-| `npm run db:test` | Run `supabase/tests/rls_smoke.sql` assertions in the local Docker container |
+| `npm run db:test` | Run RLS, solver persistence and TODO regression suites in the configured local Docker container; `SUPABASE_DB_CONTAINER` selects a disposable test container |
 | `npm run functions:serve` | `supabase functions serve --env-file supabase/functions/.env` |
 | `npm run functions:bundle` | Bundle the solver for edge functions and run the bundle test |
 
@@ -100,10 +100,12 @@ src/
   types/                       domain types shared by UI and solver (not DB rows)
   main.tsx sw.ts index.css     PWA service worker, entry point, global styles
 supabase/
-  migrations/                  31 hand-written migrations: 20260907090000_extensions_and_enums … 20260907091700_views, then 0918–0930 (fixes)
+  migrations/                  additive migrations through 0947; owner TODO changes are 0934–0947
   seed.sql                     demo data: departments, ride types, destinations, default policy, templates, member invites, demo auth users (local/e2e only)
   tests/
     rls_smoke.sql              assertions: every table has forced RLS, no `using (true)` on writes
+    solve_semantics.sql        solver persistence and assignment behavior
+    todo_board_semantics.sql   ownership, consent, operational permissions and publication scores
     bundle_solver.test.mjs     verify bundled solver output runs in Deno
   functions/
     push-dispatch/             send push notifications via browser API
@@ -125,6 +127,7 @@ e2e/
   helpers.ts                   common test utilities
 scripts/
   bundle-solver.mjs            esbuild solver for edge functions
+  test-db.mjs                  SQL regression runner with explicit database-container selection
 .claude/
   skills/                      8 routine-change playbooks with exact steps and file paths
   agents/                      5 specialized agents: solver-dev, db-migrator, ui-dev, docs-keeper, e2e-tester

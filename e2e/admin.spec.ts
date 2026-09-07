@@ -1,5 +1,8 @@
 import { expect, test } from "@playwright/test";
 
+import { he } from "../src/i18n/he";
+import { SEEDED_USERS, signIn } from "./helpers";
+
 // Admin screens smoke test (stage 2c, docs/UX_FLOWS.md §5): the seeded demo
 // admin (supabase/seed.sql) creates a car with a seat config, a destination
 // and a policy version, and each shows up where expected. Runs against the
@@ -81,5 +84,42 @@ test.describe("admin", () => {
 
     await page.getByRole("tab", { name: "היסטוריית גרסאות" }).click();
     await expect(page.getByRole("cell", { name: "1", exact: true })).toBeVisible();
+  });
+});
+
+
+test.describe("Sadran operational administration", () => {
+  test.beforeEach(async ({ page }) => { await signIn(page, SEEDED_USERS.sadran); });
+
+  test("can manage operational areas while department, member and roster routes stay protected", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.getByRole("link", { name: he.nav.admin, exact: true }).click();
+    await expect(page).toHaveURL(/\/admin$/);
+    for (const area of ["cars", "destinations", "ride-types", "policies", "templates", "settings"]) {
+      await expect(page.locator(`a[href="/admin/${area}"]`)).toBeVisible();
+    }
+    for (const area of ["departments", "members", "roster"]) {
+      await expect(page.locator(`a[href="/admin/${area}"]`)).toHaveCount(0);
+      await page.goto(`/admin/${area}`);
+      await expect(page).toHaveURL(/\/my$/);
+    }
+  });
+
+  test("creates a destination and edits operational settings without department fields", async ({ page }) => {
+    const destinationName = `Sadran E2E destination ${Date.now()}`;
+    await page.goto("/admin/destinations");
+    await page.getByRole("button", { name: he.adminDestinations.new }).click();
+    await page.getByLabel(he.adminDestinations.fieldName).fill(destinationName);
+    await page.getByRole("button", { name: he.adminCommon.save, exact: true }).click();
+    await expect(page.getByRole("cell", { name: destinationName })).toBeVisible();
+
+    await page.goto("/admin/settings");
+    await page.getByRole("button", { name: he.adminCommon.edit, exact: true }).first().click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog.getByText(he.adminDepartments.sectionSettings)).toBeVisible();
+    await expect(dialog.getByLabel(he.adminDepartments.fieldSlug)).toHaveCount(0);
+    await expect(dialog.getByLabel(he.adminDepartments.fieldTurnaround)).toHaveValue("30");
+    await dialog.getByRole("button", { name: he.adminCommon.save, exact: true }).click();
+    await expect(page.getByText(he.adminCommon.savedToast, { exact: true })).toBeVisible();
   });
 });

@@ -38,6 +38,15 @@ export type ErrorCode =
   | "proposal_not_answerable"
   | "invalid_token"
   | "offer_not_found"
+  | "ride_unavailable"
+  | "ride_wrong_day"
+  | "ride_needs_coordinator"
+  | "ride_change_closed"
+  | "ride_no_conflict"
+  | "week_archived"
+  | "publication_scores_invalid"
+  | "pending_ride_changes"
+  | "request_window_closed"
   | "network"
   | "unknown";
 
@@ -62,6 +71,22 @@ const MESSAGE_TO_CODE: Record<string, ErrorCode> = {
   proposal_not_answerable: "proposal_not_answerable",
   invalid_token: "invalid_token",
   offer_not_found: "offer_not_found",
+  car_unavailable: "ride_unavailable",
+  ride_conflicts_with_maintenance: "ride_unavailable",
+  ride_seats_do_not_fit: "ride_unavailable",
+  ride_request_day_mismatch: "ride_wrong_day",
+  ride_outside_week: "ride_wrong_day",
+  shared_ride_requires_sadran: "ride_needs_coordinator",
+  ride_change_not_found: "ride_change_closed",
+  ride_change_not_pending: "ride_change_closed",
+  no_conflicting_ride: "ride_no_conflict",
+  week_archived: "week_archived",
+  invalid_publication_scores: "publication_scores_invalid",
+  pending_ride_changes: "pending_ride_changes",
+  request_window_closed: "request_window_closed",
+  request_not_editable: "request_window_closed",
+  seat_config_violation: "ride_unavailable",
+  temporary_car_owner_only: "ride_unavailable",
 };
 
 const CODE_TO_MESSAGE: Record<ErrorCode, string> = {
@@ -82,6 +107,15 @@ const CODE_TO_MESSAGE: Record<ErrorCode, string> = {
   proposal_not_answerable: he.memberErrors.proposalNotAnswerable,
   invalid_token: he.memberErrors.invalidToken,
   offer_not_found: he.memberErrors.offerNotFound,
+  ride_unavailable: he.rideEditing.unavailable,
+  ride_wrong_day: he.rideEditing.wrongDay,
+  ride_needs_coordinator: he.rideEditing.needsCoordinator,
+  ride_change_closed: he.rideEditing.noLongerPending,
+  ride_no_conflict: he.rideEditing.noConflict,
+  week_archived: he.rideEditing.archived,
+  publication_scores_invalid: he.publishScores.invalid,
+  pending_ride_changes: he.rideEditing.pendingPublish,
+  request_window_closed: he.request.editWindowClosed,
   network: he.errors.network,
   unknown: he.errors.unknown,
 };

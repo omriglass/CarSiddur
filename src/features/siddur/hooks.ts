@@ -1,4 +1,6 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSession } from "@/features/auth/useSession";
+import { showErrorToast } from "@/lib/rpc";
 
 import {
   fetchBoardRideById,
@@ -10,8 +12,54 @@ import {
   fetchDepartments,
   fetchOpenAndLiveWeekStarts,
   fetchWeeks,
+  fetchRideChanges,
+  requestRideChange,
+  respondRideChange,
+  cancelRideChange,
+  type RideMove,
 } from "./api";
 import { siddurKeys } from "./queryKeys";
+
+export function useRideChanges(departmentId?: string, weekStart?: string) {
+  const { session } = useSession();
+  return useQuery({
+    queryKey: ["siddur", "rideChanges", session?.user.id, departmentId, weekStart],
+    queryFn: () => fetchRideChanges(departmentId, weekStart),
+    enabled: !!session,
+    refetchInterval: 15_000,
+  });
+}
+
+export function useRequestRideChangeMutation() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (move: RideMove) => requestRideChange(move),
+    onSuccess: () => client.invalidateQueries({ queryKey: ["siddur"] }),
+    onError: showErrorToast,
+  });
+}
+
+export function useRespondRideChangeMutation() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ changeId, accept }: { changeId: string; accept: boolean }) => respondRideChange(changeId, accept),
+    onSuccess: () => {
+      for (const key of ["siddur", "sadran", "requests", "inbox"]) void client.invalidateQueries({ queryKey: [key] });
+    },
+    onError: showErrorToast,
+  });
+}
+
+export function useCancelRideChangeMutation() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: cancelRideChange,
+    onSuccess: () => {
+      for (const key of ["siddur", "sadran", "inbox"]) void client.invalidateQueries({ queryKey: [key] });
+    },
+    onError: showErrorToast,
+  });
+}
 
 export function useDepartments() {
   return useQuery({

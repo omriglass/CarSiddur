@@ -42,6 +42,7 @@ export type BoardRide = Database["public"]["Views"]["v_board_rides"]["Row"];
 export interface WeekRequestRow extends RequestRow {
   requester_full_name: string | null;
   destination_resolved_name: string | null;
+  destination_travel_minutes: number | null;
   ride_type_code: string | null;
   ride_type_name_he: string | null;
   /** Quick-request-from-empty-slot (UX_FLOWS.md §18) — the car the member asked for, if any. */
@@ -50,13 +51,13 @@ export interface WeekRequestRow extends RequestRow {
 
 const WEEK_REQUEST_SELECT = `*,
   requester:profiles!requests_requester_id_fkey(full_name),
-  destination:destinations(name),
+  destination:destinations(name, travel_minutes),
   ride_type:ride_types(code, name_he),
   preferred_car:cars!requests_preferred_car_id_fkey(name)`;
 
 interface WeekRequestJoinRow extends RequestRow {
   requester: { full_name: string } | null;
-  destination: { name: string } | null;
+  destination: { name: string; travel_minutes: number | null } | null;
   ride_type: { code: string; name_he: string } | null;
   preferred_car: { name: string } | null;
 }
@@ -67,6 +68,7 @@ function flattenWeekRequest(row: WeekRequestJoinRow): WeekRequestRow {
     ...rest,
     requester_full_name: requester?.full_name ?? null,
     destination_resolved_name: destination?.name ?? rest.destination_text ?? null,
+    destination_travel_minutes: destination?.travel_minutes ?? null,
     ride_type_code: ride_type?.code ?? null,
     ride_type_name_he: ride_type?.name_he ?? null,
     preferred_car_name: preferred_car?.name ?? null,
@@ -330,7 +332,8 @@ export interface EditRideInput {
   ends_at: string;
   origin_id: string;
   destination_id: string;
-  driver_id: string;
+  driver_id: string | null;
+  notes?: string | null;
   overflow_allowed?: boolean;
   overnight_ack?: boolean;
   is_pinned?: boolean;
@@ -344,6 +347,10 @@ export async function editRide(input: EditRideInput, expectedVersion?: number): 
 
 export async function cancelRide(rideId: string, reason: string, expectedVersion?: number): Promise<void> {
   await rpc("cancel_ride", { p_ride_id: rideId, p_reason: reason, p_expected_version: expectedVersion });
+}
+
+export async function unassignRide(rideId: string, expectedVersion: number): Promise<void> {
+  await rpc("unassign_ride", { p_ride_id: rideId, p_expected_version: expectedVersion });
 }
 
 export async function setManualBoost(requestId: string, value: number, reason: string): Promise<void> {
@@ -484,8 +491,13 @@ export async function fetchLatestSiddurVersion(departmentId: string, weekStart: 
   return versions[0] ?? null;
 }
 
-export async function publishSiddur(departmentId: string, weekStart: string): Promise<string> {
-  return rpc("publish_siddur", { p_department_id: departmentId, p_week_start: weekStart });
+export async function fetchPublishFingerprint(departmentId: string, weekStart: string): Promise<string> {
+  return rpc("publish_scores_fingerprint", { p_department_id: departmentId, p_week_start: weekStart });
+}
+
+export async function publishSiddur(departmentId: string, weekStart: string, scores: Json, fingerprint: string, policyScores: Json): Promise<string> {
+  return rpc("publish_siddur", { p_department_id: departmentId, p_week_start: weekStart,
+    p_profile_scores: scores, p_expected_fingerprint: fingerprint, p_policy_scores: policyScores });
 }
 
 /** All non-cancelled rides of the week, for the publish diff and blocking-conflicts checks (same RLS as the board). */

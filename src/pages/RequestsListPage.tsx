@@ -5,6 +5,7 @@ import { Link } from "react-router-dom";
 import { formatWeekRangeLabel } from "@/components/DateField";
 import { EmptyState } from "@/components/EmptyState";
 import { PageHeader } from "@/components/PageHeader";
+import { CardListSkeleton } from "@/components/skeletons/CardListSkeleton";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
 import {
@@ -16,6 +17,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import type { MyRequestRow } from "@/features/requests/api";
+import { canEditRequest } from "@/features/requests/window";
 import {
   useCancelRideMutation,
   useClaimFreedSlotMutation,
@@ -24,37 +26,40 @@ import {
   useSetFreedSlotOptOutMutation,
   useWithdrawFreedSlotClaimMutation,
   useWithdrawRequestMutation,
+  useWithdrawAllRequestsMutation,
 } from "@/features/requests/hooks";
 import { he, t, tv } from "@/i18n/he";
 import { formatTime } from "@/lib/time";
 
-const EDITABLE_STATUSES = new Set<MyRequestRow["status"]>(["draft", "submitted", "waitlisted", "denied", "proposed"]);
 // Mirrors freed_slot_candidates()'s own `status in ('waitlisted','denied')` filter
 // (supabase/migrations/20260907091100_freed_slots.sql) — only these statuses are ever
 // eligible to be offered a freed slot, so the opt-out toggle is only meaningful here.
 const FREED_SLOT_ELIGIBLE_STATUSES = new Set<MyRequestRow["status"]>(["waitlisted", "denied"]);
 
-function groupByWeek(rows: MyRequestRow[]): { weekStart: string; rows: MyRequestRow[] }[] {
+function groupByWeek(rows: MyRequestRow[]): { weekStart: string; departmentId: string; rows: MyRequestRow[] }[] {
   const byWeek = new Map<string, MyRequestRow[]>();
   for (const row of rows) {
-    const list = byWeek.get(row.weekStart) ?? [];
+    const key = `${row.weekStart}:${row.departmentId}`;
+    const list = byWeek.get(key) ?? [];
     list.push(row);
-    byWeek.set(row.weekStart, list);
+    byWeek.set(key, list);
   }
   return [...byWeek.entries()]
     .sort((a, b) => (a[0] < b[0] ? 1 : -1))
-    .map(([weekStart, weekRows]) => ({ weekStart, rows: weekRows }));
+    .map(([, weekRows]) => ({ weekStart: weekRows[0]!.weekStart, departmentId: weekRows[0]!.departmentId, rows: weekRows }));
 }
 
 type ConfirmAction =
   | { kind: "withdraw"; row: MyRequestRow }
-  | { kind: "cancel"; row: MyRequestRow };
+  | { kind: "cancel"; row: MyRequestRow }
+  | { kind: "withdrawAll"; departmentId: string; weekStart: string };
 
 /** `/requests` — My requests, grouped by week (UX_FLOWS.md §3.3 extended into its own list route). */
 export function RequestsListPage() {
   const requestsQuery = useMyRequests();
   const freedOffersQuery = useMyFreedSlotOffers();
   const withdrawMutation = useWithdrawRequestMutation();
+  const withdrawAllMutation = useWithdrawAllRequestsMutation();
   const cancelMutation = useCancelRideMutation();
   const claimMutation = useClaimFreedSlotMutation();
   const withdrawClaimMutation = useWithdrawFreedSlotClaimMutation();
@@ -68,17 +73,30 @@ export function RequestsListPage() {
     (o) => o.offerStatus === "open" && (o.claimStatus === "offered" || o.claimStatus === "claimed"),
   );
 
-  function runConfirm() {
+  async function runConfirm() {
     if (!confirmAction) return;
-    if (confirmAction.kind === "withdraw") {
-      withdrawMutation.mutate({ requestId: confirmAction.row.id, expectedVersion: confirmAction.row.version });
+    try {
+    if (confirmAction.kind === "withdrawAll") {
+      await withdrawAllMutation.mutateAsync(confirmAction);
+    } else if (confirmAction.kind === "withdraw") {
+      await withdrawMutation.mutateAsync({ requestId: confirmAction.row.id, expectedVersion: confirmAction.row.version });
     } else if (confirmAction.row.ride) {
-      cancelMutation.mutate({
+      await cancelMutation.mutateAsync({
         rideId: confirmAction.row.ride.id,
         reason: "CANCELLED_BY_MEMBER",
       });
     }
     setConfirmAction(null);
+    } catch { /* Mutation shows a localized error; keep confirmation open for retry. */ }
+  }
+
+  if (requestsQuery.isLoading) {
+    return (
+      <div className="mx-auto max-w-2xl space-y-6 p-4 pb-24">
+        <PageHeader title={he.requestsList.title} />
+        <CardListSkeleton />
+      </div>
+    );
   }
 
   return (
@@ -89,7 +107,7 @@ export function RequestsListPage() {
         <section className="space-y-2">
           <h2 className="text-sm font-semibold text-muted-foreground">{he.freedSlot.title}</h2>
           {openOffers.map((offer) => (
-            <div key={offer.offerId} className="space-y-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm">
+            <div key={offer.offerId} className="space-y-2 rounded-md border border-maintenance/40 bg-maintenance/10 p-3 text-sm">
               <p>
                 {tv("requestsList.freedSlotOffer", {
                   car: offer.carName,
@@ -119,11 +137,16 @@ export function RequestsListPage() {
       {groups.length === 0 ? (
         <EmptyState icon={CalendarClock} message={he.requestsList.empty} />
       ) : (
-        groups.map(({ weekStart, rows: weekRows }) => (
-          <section key={weekStart} className="space-y-2">
+        groups.map(({ weekStart, departmentId, rows: weekRows }) => (
+          <section key={`${weekStart}:${departmentId}`} className="space-y-2">
             <h2 className="text-sm font-semibold text-muted-foreground" dir="ltr">
               {formatWeekRangeLabel(weekStart)}
             </h2>
+            {weekRows.some((row) => canEditRequest(row)) ? (
+              <Button size="sm" variant="outline" onClick={() => setConfirmAction({ kind: "withdrawAll", departmentId, weekStart })}>
+                {he.requestsList.withdrawAll}
+              </Button>
+            ) : null}
             <div className="space-y-2">
               {weekRows.map((row) => (
                 <div key={row.id} className="space-y-2 rounded-md border p-3 text-sm">
@@ -131,10 +154,10 @@ export function RequestsListPage() {
                     <span className="font-medium">{row.destination}</span>
                     <StatusBadge kind="request" status={row.status} />
                   </div>
-                  {row.departAt ? (
+                  {row.departAt || row.returnAt ? (
                     <span dir="ltr" className="text-xs text-muted-foreground">
-                      {formatTime(new Date(row.departAt))}
-                      {row.returnAt ? `–${formatTime(new Date(row.returnAt))}` : ""}
+                      {row.departAt ? formatTime(new Date(row.departAt)) : he.request.tripShapeOneWayFrom}
+                      {row.returnAt ? ` ${row.departAt ? "–" : ""}${formatTime(new Date(row.returnAt))}` : ` · ${he.request.tripShapeOneWayTo}`}
                     </span>
                   ) : null}
                   {row.statusReason && row.statusReason in he.statusReason ? (
@@ -154,7 +177,7 @@ export function RequestsListPage() {
                     </label>
                   ) : null}
                   <div className="flex flex-wrap gap-2 pt-1">
-                    {EDITABLE_STATUSES.has(row.status) ? (
+                    {canEditRequest(row) ? (
                       <Button asChild size="sm" variant="outline">
                         <Link to={`/requests/${row.id}/edit`}>{he.requestsList.edit}</Link>
                       </Button>
@@ -181,12 +204,12 @@ export function RequestsListPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              {confirmAction?.kind === "withdraw" ? he.request.withdrawConfirmTitle : he.request.cancelConfirmTitle}
+              {confirmAction?.kind === "withdrawAll" ? he.requestsList.withdrawAllTitle : confirmAction?.kind === "withdraw" ? he.request.withdrawConfirmTitle : he.request.cancelConfirmTitle}
             </DialogTitle>
             <DialogDescription>
-              {confirmAction?.kind === "withdraw"
+              {confirmAction?.kind === "withdrawAll" ? he.requestsList.withdrawAllBody : confirmAction?.kind === "withdraw"
                 ? he.request.withdrawConfirmBody
-                : confirmAction?.row.ride && confirmAction.row.ride.originName !== confirmAction.row.ride.destinationName
+                : confirmAction?.kind === "cancel" && confirmAction.row.ride && confirmAction.row.ride.originName !== confirmAction.row.ride.destinationName
                   ? he.request.cancelConfirmBodyRelay
                   : he.request.cancelConfirmBodyFreed}
             </DialogDescription>
@@ -195,8 +218,8 @@ export function RequestsListPage() {
             <Button variant="outline" onClick={() => setConfirmAction(null)}>
               {he.common.cancel}
             </Button>
-            <Button variant="destructive" onClick={runConfirm}>
-              {confirmAction?.kind === "withdraw" ? he.requestsList.withdraw : he.requestsList.cancelRide}
+            <Button variant="destructive" onClick={() => void runConfirm()} disabled={withdrawMutation.isPending || cancelMutation.isPending || withdrawAllMutation.isPending}>
+              {confirmAction?.kind === "withdrawAll" ? he.requestsList.withdrawAll : confirmAction?.kind === "withdraw" ? he.requestsList.withdraw : he.requestsList.cancelRide}
             </Button>
           </DialogFooter>
         </DialogContent>

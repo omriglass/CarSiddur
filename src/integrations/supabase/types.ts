@@ -1867,6 +1867,193 @@ export type Database = {
           },
         ]
       }
+      ride_change_parties: {
+        Row: {
+          accepted: boolean | null
+          change_id: string
+          created_at: string
+          expected_version: number
+          id: string
+          profile_id: string
+          responded_at: string | null
+          ride_id: string
+          updated_at: string
+          version: number
+        }
+        Insert: {
+          accepted?: boolean | null
+          change_id: string
+          created_at?: string
+          expected_version: number
+          id?: string
+          profile_id: string
+          responded_at?: string | null
+          ride_id: string
+          updated_at?: string
+          version?: number
+        }
+        Update: {
+          accepted?: boolean | null
+          change_id?: string
+          created_at?: string
+          expected_version?: number
+          id?: string
+          profile_id?: string
+          responded_at?: string | null
+          ride_id?: string
+          updated_at?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ride_change_parties_change_id_fkey"
+            columns: ["change_id"]
+            isOneToOne: false
+            referencedRelation: "ride_change_requests"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ride_change_parties_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ride_change_parties_ride_id_fkey"
+            columns: ["ride_id"]
+            isOneToOne: false
+            referencedRelation: "rides"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ride_change_parties_ride_id_fkey"
+            columns: ["ride_id"]
+            isOneToOne: false
+            referencedRelation: "v_board_rides"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ride_change_parties_ride_id_fkey"
+            columns: ["ride_id"]
+            isOneToOne: false
+            referencedRelation: "v_car_locations"
+            referencedColumns: ["leaving_ride_id"]
+          },
+          {
+            foreignKeyName: "ride_change_parties_ride_id_fkey"
+            columns: ["ride_id"]
+            isOneToOne: false
+            referencedRelation: "v_my_requests"
+            referencedColumns: ["ride_id"]
+          },
+        ]
+      }
+      ride_change_requests: {
+        Row: {
+          car_id: string
+          created_at: string
+          department_id: string
+          ends_at: string
+          expected_version: number
+          id: string
+          requester_id: string
+          ride_id: string
+          starts_at: string
+          status: string
+          updated_at: string
+          version: number
+          week_start: string
+        }
+        Insert: {
+          car_id: string
+          created_at?: string
+          department_id: string
+          ends_at: string
+          expected_version: number
+          id?: string
+          requester_id: string
+          ride_id: string
+          starts_at: string
+          status?: string
+          updated_at?: string
+          version?: number
+          week_start: string
+        }
+        Update: {
+          car_id?: string
+          created_at?: string
+          department_id?: string
+          ends_at?: string
+          expected_version?: number
+          id?: string
+          requester_id?: string
+          ride_id?: string
+          starts_at?: string
+          status?: string
+          updated_at?: string
+          version?: number
+          week_start?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ride_change_requests_car_id_fkey"
+            columns: ["car_id"]
+            isOneToOne: false
+            referencedRelation: "cars"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ride_change_requests_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ride_change_requests_department_id_week_start_fkey"
+            columns: ["department_id", "week_start"]
+            isOneToOne: false
+            referencedRelation: "weeks"
+            referencedColumns: ["department_id", "week_start"]
+          },
+          {
+            foreignKeyName: "ride_change_requests_requester_id_fkey"
+            columns: ["requester_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ride_change_requests_ride_id_fkey"
+            columns: ["ride_id"]
+            isOneToOne: false
+            referencedRelation: "rides"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ride_change_requests_ride_id_fkey"
+            columns: ["ride_id"]
+            isOneToOne: false
+            referencedRelation: "v_board_rides"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ride_change_requests_ride_id_fkey"
+            columns: ["ride_id"]
+            isOneToOne: false
+            referencedRelation: "v_car_locations"
+            referencedColumns: ["leaving_ride_id"]
+          },
+          {
+            foreignKeyName: "ride_change_requests_ride_id_fkey"
+            columns: ["ride_id"]
+            isOneToOne: false
+            referencedRelation: "v_my_requests"
+            referencedColumns: ["ride_id"]
+          },
+        ]
+      }
       ride_requests: {
         Row: {
           car_mode: Database["public"]["Enums"]["leg_car_mode"]
@@ -1982,11 +2169,12 @@ export type Database = {
           created_by_solver_run_id: string | null
           department_id: string
           destination_id: string
-          driver_id: string
+          driver_id: string | null
           ends_at: string
           flag_reason: string | null
           id: string
           is_pinned: boolean
+          notes: string | null
           origin_id: string
           overflow_allowed: boolean
           overnight_ack_at: string | null
@@ -2010,11 +2198,12 @@ export type Database = {
           created_by_solver_run_id?: string | null
           department_id: string
           destination_id: string
-          driver_id: string
+          driver_id?: string | null
           ends_at: string
           flag_reason?: string | null
           id?: string
           is_pinned?: boolean
+          notes?: string | null
           origin_id: string
           overflow_allowed?: boolean
           overnight_ack_at?: string | null
@@ -2038,11 +2227,12 @@ export type Database = {
           created_by_solver_run_id?: string | null
           department_id?: string
           destination_id?: string
-          driver_id?: string
+          driver_id?: string | null
           ends_at?: string
           flag_reason?: string | null
           id?: string
           is_pinned?: boolean
+          notes?: string | null
           origin_id?: string
           overflow_allowed?: boolean
           overnight_ack_at?: string | null
@@ -2389,6 +2579,7 @@ export type Database = {
           id: string | null
           is_chauffeur: boolean | null
           is_pinned: boolean | null
+          notes: string | null
           origin_id: string | null
           origin_name: string | null
           overflow_allowed: boolean | null
@@ -2577,7 +2768,19 @@ export type Database = {
         Args: { _car: string; _week: string }
         Returns: undefined
       }
+      assert_publication_scores: {
+        Args: { p_department_id: string; p_scores: Json; p_week_start: string }
+        Returns: undefined
+      }
+      assert_ride_request_day: {
+        Args: { p_ride_id: string }
+        Returns: undefined
+      }
       assert_ride_seats_fit: { Args: { v_ride: string }; Returns: undefined }
+      can_manage_operations: {
+        Args: { p_department_id?: string }
+        Returns: boolean
+      }
       can_manage_week: {
         Args: { _dept: string; _week: string }
         Returns: boolean
@@ -2590,6 +2793,7 @@ export type Database = {
         }
         Returns: undefined
       }
+      cancel_ride_change: { Args: { p_change_id: string }; Returns: undefined }
       car_fits: {
         Args: {
           _adults: number
@@ -2696,13 +2900,32 @@ export type Database = {
         Args: { p_source_id: string; p_target_id: string }
         Returns: undefined
       }
+      notification_context: {
+        Args: {
+          _data: Json
+          _department_id: string
+          _recipient: string
+          _week_start: string
+        }
+        Returns: Json
+      }
       open_week: {
         Args: { p_department_id: string; p_week_start: string }
         Returns: string
       }
       phone_of: { Args: { _profile: string }; Returns: string }
-      publish_siddur: {
+      publish_scores_fingerprint: {
         Args: { p_department_id: string; p_week_start: string }
+        Returns: string
+      }
+      publish_siddur: {
+        Args: {
+          p_department_id: string
+          p_expected_fingerprint?: string
+          p_policy_scores?: Json
+          p_profile_scores?: Json
+          p_week_start: string
+        }
         Returns: string
       }
       raise_stale_version: { Args: never; Returns: undefined }
@@ -2728,12 +2951,26 @@ export type Database = {
         }
         Returns: string
       }
+      release_request_draft_rides: {
+        Args: { p_request_id: string }
+        Returns: undefined
+      }
       render_notification_text: {
         Args: { _text: string; _vars: Json }
         Returns: string
       }
       report_car_issue_unsafe_to_maintenance: {
         Args: { p_hours?: number; p_issue_id: string }
+        Returns: string
+      }
+      request_ride_change: {
+        Args: {
+          p_car_id: string
+          p_ends_at: string
+          p_expected_version: number
+          p_ride_id: string
+          p_starts_at: string
+        }
         Returns: string
       }
       request_served_by_public_ride: {
@@ -2746,6 +2983,10 @@ export type Database = {
       }
       resolve_freed_offer: {
         Args: { p_offer_id: string; p_ranked_candidates: Json }
+        Returns: undefined
+      }
+      respond_ride_change: {
+        Args: { p_accept: boolean; p_change_id: string }
         Returns: undefined
       }
       sadranim_of: { Args: { _dept: string; _week: string }; Returns: string[] }
@@ -2784,6 +3025,10 @@ export type Database = {
         Returns: string
       }
       try_auto_approve: { Args: { p_request_id: string }; Returns: Json }
+      unassign_ride: {
+        Args: { p_expected_version: number; p_ride_id: string }
+        Returns: undefined
+      }
       validate_policy_rules: { Args: { _rules: Json }; Returns: boolean }
       validate_proposal_payload: {
         Args: {
@@ -2796,6 +3041,10 @@ export type Database = {
       week_state_fingerprint: {
         Args: { p_department_id: string; p_week_start: string }
         Returns: string
+      }
+      withdraw_all_requests: {
+        Args: { p_department_id: string; p_week_start: string }
+        Returns: number
       }
       withdraw_freed_slot_claim: {
         Args: { p_offer_id: string; p_request_id: string }

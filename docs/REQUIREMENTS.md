@@ -369,6 +369,19 @@ Items 51+ record the owner's answers of 2026-09-06 to the former open questions 
 64. **One-way requests are never auto-approved in a live week** (a relay needs a partner, a passenger needs a host, a chauffeur needs a driver); they become `waitlisted` for the Sadran. Round trips are auto-approved only when a shared car is free *and at home* for the exact window and the car's location chain stays valid. (new in v0.3, please confirm)
 65. **Chauffeur seat accounting**: the volunteer is not part of any request, so a chauffeur ride adds one adult to the served requests' load; the requester's own `adults` still counts them as a passenger. (new in v0.3; SOLVER §3.3, DATA_MODEL §5.2)
 
+## Owner TODO amendments — 2026-09-07
+
+These amendments take precedence over older behavior descriptions above.
+
+- Members can move and resize their own future rides to available slots on the same local day. Other members' rides cannot be changed directly. An acknowledged collision creates a pending shadow and asks every affected driver to cancel; confirmed bookings remain intact until consent and atomic availability revalidation.
+- Board gestures show a translucent preview with the snapped car and time. Tall, narrow ride cards wrap their labels. Sadranim can resize either endpoint, remove assignments back to requests, and reserve a car/time range with visible free-text notes and no named driver.
+- Unassigned requests appear in day-specific phantom car lanes, packed by overlapping time ranges. They offer rejection, an alternative, time-change proposals, and drag placement. Requests cannot be assigned to another local day. One-way requests display their actual leg time.
+- Flexibility is anchored to the original request times, never to a subsequently shifted assignment. Direction controls are symmetric (default), later-only, or earlier-only. Members may edit or withdraw all their own requests while the submission window is open, with confirmation for bulk withdrawal and explicit missing-field feedback.
+- Sadranim may manage destinations, ride types, cars, policies and operational settings/templates. Departments, users and roster administration remain admin-only; database authorization must mirror navigation.
+- Notification templates render their variables; successful automatic approval does not create a notification. Collision merging requires confirmation before preparing a proposal. WhatsApp message preparation is an in-app dialog with explicit handoff to WhatsApp and a usable return path.
+- Publishing recalculates the final board score against every applicable policy profile (all current department/global profiles, including inactive ones), as clarified by the owner. Persist policy version, served/total priority, weighted coverage and per-request rule breakdowns with the publication for later review of manual changes against alternative policies.
+- Excel export of requests and the board is deferred to v1.x: export-only, no import, with local dates/times, request identity, cars, assignment status, notes and policy scores.
+
 ## 14. Open questions
 
 All questions of v0.2 (1–13) were answered by the owner on 2026-09-06 and folded into the body text and §13.51–62. Recurring requests stay should-have (v1.x). Two new questions raised by the one-way/relay model:

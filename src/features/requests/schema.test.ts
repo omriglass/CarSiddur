@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { he } from "@/i18n/he";
 
 import { REQUEST_FORM_DEFAULTS, requestFormSchema, type RequestFormValues } from "./schema";
 
@@ -105,4 +106,13 @@ describe("requestFormSchema", () => {
     );
     expect(result.success).toBe(false);
   });
+});
+
+
+it("identifies a missing ride type with a localized actionable message", () => {
+  const result = requestFormSchema.safeParse(baseValues({ rideTypeId: "" }));
+  expect(result.success).toBe(false);
+  if (!result.success) {
+    expect(result.error.issues).toContainEqual(expect.objectContaining({ path: ["rideTypeId"], message: he.request.rideTypeRequired }));
+  }
 });

@@ -6,6 +6,8 @@
 // `buildTimelines` — docs/SOLVER.md §3.2) rather than reimplemented, per the
 // stage 2b brief ("reuse solver helpers"). No React, no Supabase here.
 
+import { formatInTimeZone } from "date-fns-tz";
+import { TZ } from "@/lib/time";
 import { buildTimelines } from "@/solver";
 
 import type { Car as SolverCar, DayBounds, Window } from "@/solver";
@@ -158,4 +160,28 @@ export function wouldOverlap(
     const re = Date.parse(r.endsAt);
     return start < re + bufferMs && rs < end + bufferMs;
   });
+}
+
+/** Detect legacy wrong-day placements without changing their data. Return legs
+ * are anchored to requested arrival; outbound/both legs to requested departure.
+ * Reads the board view's JSON served links and plain request rows only.
+ */
+export function requestDayMismatchRideIds(
+  rides: readonly { id: string | null; starts_at: string | null; served: unknown }[],
+  requests: readonly { id: string; trip_shape: string; depart_at: string | null; return_at: string | null }[],
+): Set<string> {
+  const byId = new Map(requests.map((request) => [request.id, request]));
+  const invalid = new Set<string>();
+  for (const ride of rides) {
+    if (!ride.id || !ride.starts_at || !Array.isArray(ride.served)) continue;
+    const day = formatInTimeZone(ride.starts_at, TZ, "yyyy-MM-dd");
+    for (const entry of ride.served) {
+      if (!entry || typeof entry !== "object" || typeof entry.request_id !== "string") continue;
+      const request = byId.get(entry.request_id);
+      if (!request) continue;
+      const anchor = entry.leg === "return" || request.trip_shape === "one_way_from" ? request.return_at : request.depart_at;
+      if (anchor && formatInTimeZone(anchor, TZ, "yyyy-MM-dd") !== day) invalid.add(ride.id);
+    }
+  }
+  return invalid;
 }

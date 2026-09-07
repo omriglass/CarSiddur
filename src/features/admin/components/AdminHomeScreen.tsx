@@ -16,6 +16,7 @@ import { Link } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useCarIssues } from "@/features/admin/cars/hooks";
+import { useProfile } from "@/features/auth/useProfile";
 import { he } from "@/i18n/he";
 
 interface AdminCard {
@@ -26,6 +27,7 @@ interface AdminCard {
 }
 
 export function AdminHomeScreen() {
+  const isAdmin = !!useProfile().data?.is_admin;
   const issuesQuery = useCarIssues();
   const openIssuesCount = (issuesQuery.data ?? []).filter((i) => i.status === "open").length;
 
@@ -49,12 +51,14 @@ export function AdminHomeScreen() {
         <p className="text-sm text-muted-foreground">{he.adminHome.subtitle}</p>
       </div>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3">
-        {cards.map(({ to, title, subtitle, icon: Icon }) => (
+        {cards.filter((card) => isAdmin || !["/admin/departments", "/admin/members", "/admin/roster"].includes(card.to)).map(({ to, title, subtitle, icon: Icon }) => (
           <Link key={to} to={to}>
-            <Card className="h-full transition-colors hover:bg-accent">
+            <Card className="h-full bg-gradient-card shadow-card transition-smooth hover:shadow-elegant">
               <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
                 <CardTitle className="flex items-center gap-2 text-base">
-                  <Icon className="size-5" />
+                  <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                    <Icon className="size-5" />
+                  </span>
                   {title}
                 </CardTitle>
                 {to === "/admin/issues" && openIssuesCount > 0 ? (

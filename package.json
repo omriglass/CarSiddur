@@ -19,7 +19,7 @@
     "db:types": "npx supabase gen types typescript --local > src/integrations/supabase/types.ts",
     "db:new": "npx supabase migration new",
     "db:push": "npx supabase db push",
-    "db:test": "docker exec -i \"$(docker ps --format '{{.Names}}' | grep '^supabase_db_')\" psql -U postgres -d postgres -v ON_ERROR_STOP=1 < supabase/tests/rls_smoke.sql && docker exec -i \"$(docker ps --format '{{.Names}}' | grep '^supabase_db_')\" psql -U postgres -d postgres -v ON_ERROR_STOP=1 < supabase/tests/solve_semantics.sql",
+    "db:test": "node scripts/test-db.mjs",
     "functions:serve": "npx supabase functions serve --env-file supabase/functions/.env",
     "functions:bundle": "node scripts/bundle-solver.mjs && node supabase/tests/bundle_solver.test.mjs",
     "db:fake": "node scripts/fake-week.mjs"

@@ -91,11 +91,27 @@ export interface ServedEntry {
   requester?: string | null;
   /** `v_board_rides.served[].destination` — `coalesce(destinations.name, requests.destination_text)`. */
   destination?: string | null;
+  /** `v_board_rides.served[].ride_type` — `ride_types.code` (visual pass: ride-type block coloring, `src/lib/rideTypeColors.ts`). Already selected by the view; no new query needed. */
+  ride_type?: string | null;
 }
 
 /** Reads `v_board_rides.served` (a jsonb aggregate, RideDetailSheet.tsx uses the same shape) into typed rows. */
 export function servedOf(ride: BoardRide): ServedEntry[] {
   return ((ride.served as unknown as ServedEntry[] | null) ?? []).filter((s) => !!s.request_id);
+}
+
+/**
+ * One `ride_types.code` to color the whole block/card by (visual pass,
+ * `src/lib/rideTypeColors.ts`): the driver's own request, or the first
+ * served passenger if there's no driver leg for some reason, or `null` (the
+ * caller's color map falls back to `"other"`). A merged ride can serve
+ * requests of different types — this is a deliberate single-color
+ * simplification, same spirit as `boardRideToFixedRide`'s origin/destination
+ * one above.
+ */
+export function representativeRideTypeCode(served: readonly ServedEntry[]): string | null {
+  const driver = served.find((s) => s.role === "driver");
+  return driver?.ride_type ?? served[0]?.ride_type ?? null;
 }
 
 /** `served` in the shape `edit_ride`'s payload expects, unchanged — for a board edit that only moves/reassigns a ride. */
@@ -121,8 +137,7 @@ export function boardRideToFixedRide(ride: BoardRide, weekStartMs: number): Fixe
     !ride.starts_at ||
     !ride.ends_at ||
     !ride.origin_id ||
-    !ride.destination_id ||
-    !ride.driver_id
+    !ride.destination_id
   ) {
     return null;
   }
@@ -152,7 +167,7 @@ export function boardRideToFixedRide(ride: BoardRide, weekStartMs: number): Fixe
     originId: ride.origin_id,
     destinationId: ride.destination_id,
     driverRequestId: served.find((s) => s.role === "driver")?.request_id ?? undefined,
-    driverMemberId: ride.driver_id,
+    driverMemberId: ride.driver_id ?? undefined,
     legs,
     servedRequestIds: served.map((s) => s.request_id as string),
     passengers,
@@ -190,6 +205,8 @@ export interface GatherSolverContextParams {
    * confirm step naming what would change (see `computeFullResolveDiff`).
    */
   mode: "full" | "remaining";
+  /** Publication scoring includes every submitted outcome, including fixed and denied requests. */
+  forScoring?: boolean;
 }
 
 export interface SolverContext {
@@ -199,6 +216,7 @@ export interface SolverContext {
   requestsById: Map<string, RequestRow>;
   /** `'full'` only: the non-pinned board rides this re-solve may replace (for `computeFullResolveDiff`). */
   replaceableRides: BoardRide[];
+  boardRides: BoardRide[];
 }
 
 /**
@@ -258,13 +276,15 @@ export async function gatherSolverContext(params: GatherSolverContextParams): Pr
 
   const { startMs: weekStartMs } = buildWeek(params.weekStart, departmentSettings.day_end_time);
 
-  const eligibleBoardRides = params.mode === "remaining" ? boardRides : boardRides.filter((r) => r.is_pinned);
+  const eligibleBoardRides = params.forScoring ? [] : params.mode === "remaining" ? boardRides : boardRides.filter((r) => r.is_pinned);
   const fixedRides = eligibleBoardRides
     .map((r) => boardRideToFixedRide(r, weekStartMs))
     .filter((f): f is FixedRide => f !== null);
 
   const fixedRequestIds = new Set(fixedRides.flatMap((f) => f.servedRequestIds));
-  const openRequests = selectOpenRequests(allRequests, fixedRequestIds);
+  const openRequests = params.forScoring
+    ? allRequests.filter((r) => !["draft", "withdrawn", "cancelled"].includes(r.status))
+    : selectOpenRequests(allRequests, fixedRequestIds);
 
   // Rides a 'full' re-solve may replace: current, non-pinned board rides
   // (i.e. everything not in `fixedRides`). Used both for continuity
@@ -311,6 +331,7 @@ export async function gatherSolverContext(params: GatherSolverContextParams): Pr
     policyVersionId: params.policy.policyVersionId,
     requestsById: new Map(allRequests.map((r) => [r.id, r])),
     replaceableRides,
+    boardRides,
   };
 }
 

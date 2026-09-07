@@ -350,7 +350,10 @@ async function clearFakeRequests(admin, dept, week, members) {
     .in("requester_id", memberIds);
   if (error) throw error;
   const requestIds = (existing ?? []).map((r) => r.id);
-  if (requestIds.length === 0) return 0;
+  if (requestIds.length === 0) {
+    await clearEmptyFakeRides(admin, dept, week, memberIds);
+    return 0;
+  }
 
   // proposals.request_id / freed_slot_claims.request_id / freed_slot_offers.winning_request_id
   // have no ON DELETE CASCADE (supabase/migrations/20260907090900_proposals.sql,
@@ -363,7 +366,29 @@ async function clearFakeRequests(admin, dept, week, members) {
   await admin.from("request_companions").delete().in("request_id", requestIds);
   const { error: deleteError } = await admin.from("requests").delete().in("id", requestIds);
   if (deleteError) throw deleteError;
+  await clearEmptyFakeRides(admin, dept, week, memberIds);
   return requestIds.length;
+}
+
+/** Clear only empty rides driven by generated members in this same week.
+ * A previous solve survives request deletion otherwise, occupying cars forever.
+ * Rides still serving any real request are preserved, as are their references.
+ */
+async function clearEmptyFakeRides(admin, dept, week, memberIds) {
+  const { data: rides, error } = await admin.from("rides")
+    .select("id, driver_id, ride_requests(request_id)")
+    .eq("department_id", dept.id).eq("week_start", week.week_start)
+    .in("driver_id", memberIds).neq("status", "cancelled");
+  if (error) throw error;
+  const emptyRides = (rides ?? []).filter((ride) => ride.ride_requests.length === 0);
+  if (!emptyRides.length) return;
+  // Retain rows so historical proposals/audit references remain valid.
+  for (const ride of emptyRides) {
+    const { error: cancelError } = await admin.from("rides")
+      .update({ status: "cancelled", cancel_reason: "FAKE_WEEK_RESET", cancelled_by: ride.driver_id, cancelled_at: new Date().toISOString() })
+      .eq("id", ride.id);
+    if (cancelError) throw cancelError;
+  }
 }
 
 // ---------------------------------------------------------------------------

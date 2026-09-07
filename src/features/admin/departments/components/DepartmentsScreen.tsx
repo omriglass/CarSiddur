@@ -1,7 +1,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Plus } from "lucide-react";
 import { useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 
 import { EmptyState } from "@/components/EmptyState";
 import { PageHeader } from "@/components/PageHeader";
@@ -31,7 +31,7 @@ import type { Department } from "../api";
 
 const DOW_LABELS = he.days.long;
 
-function DepartmentForm({ department, onSaved }: { department: Department | null; onSaved: () => void }) {
+export function DepartmentForm({ department, onSaved, settingsOnly = false }: { department: Department | null; onSaved: () => void; settingsOnly?: boolean }) {
   const destinationsQuery = useDestinations();
   const createMutation = useCreateDepartmentMutation();
   const updateMutation = useUpdateDepartmentMutation();
@@ -70,6 +70,9 @@ function DepartmentForm({ department, onSaved }: { department: Department | null
       : undefined,
   });
 
+  const settingsOpenTime = useWatch({ control: settingsForm.control, name: "open_time" });
+  const settingsReady = !!settingsQuery.data && settingsOpenTime !== undefined;
+
   async function onSubmit(values: DepartmentFormValues) {
     try {
       if (department) {
@@ -96,7 +99,7 @@ function DepartmentForm({ department, onSaved }: { department: Department | null
 
   return (
     <div className="flex flex-col gap-8">
-      <Form {...form}>
+      {!settingsOnly ? <Form {...form}>
         <form className="flex flex-col gap-4" onSubmit={form.handleSubmit(onSubmit)}>
           <FormField
             control={form.control}
@@ -164,9 +167,10 @@ function DepartmentForm({ department, onSaved }: { department: Department | null
             {he.adminCommon.save}
           </Button>
         </form>
-      </Form>
+      </Form> : null}
 
-      {department ? (
+      {department && !settingsReady ? <p>{settingsQuery.isError ? he.errors.unknown : he.common.loading}</p> : null}
+      {department && settingsReady ? (
         <Form {...settingsForm}>
           <form className="flex flex-col gap-4 border-t pt-6" onSubmit={settingsForm.handleSubmit(onSubmitSettings)}>
             <h3 className="font-semibold">{he.adminDepartments.sectionSettings}</h3>

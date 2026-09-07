@@ -27,6 +27,7 @@ export interface RideSheetSaveInput {
   startsAt: string;
   endsAt: string;
   overnightAck: boolean;
+  notes: string;
 }
 
 interface RideSheetProps {
@@ -39,15 +40,7 @@ interface RideSheetProps {
   onSave: (input: RideSheetSaveInput) => void;
   onTogglePin: (nextPinned: boolean, reason: string | null) => void;
   onCancel: (reason: string) => void;
-  /**
-   * "הסר שיבוץ" (UX_FLOWS.md §20) — the no-drag equivalent of dragging a
-   * ride block onto the unmet panel. No RPC returns a served request
-   * straight to `submitted`/unmet (only `cancel_ride`, which sets
-   * `cancelled`), so this is, underneath, the same cancellation as "בטל
-   * נסיעה" below — kept as a separate, one-click button (no reason prompt)
-   * since it's the deliberate-gesture counterpart, not an accidental-click
-   * risk. Omit to hide it (e.g. a read-only caller).
-   */
+  /** Return served requests to the unmet board without cancelling them. */
   onUnassign?: () => void;
   saving?: boolean;
 }
@@ -75,6 +68,7 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
   const [carId, setCarId] = useState(ride?.car_id ?? "");
   const [startTime, setStartTime] = useState(ride?.starts_at ? formatTime(new Date(ride.starts_at)) : "08:00");
   const [endTime, setEndTime] = useState(ride?.ends_at ? formatTime(new Date(ride.ends_at)) : "09:00");
+  const [notes, setNotes] = useState(ride?.notes ?? "");
   const [cancelReason, setCancelReason] = useState("");
   const [showCancelForm, setShowCancelForm] = useState(false);
 
@@ -86,6 +80,7 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
     setStartTime(ride?.starts_at ? formatTime(new Date(ride.starts_at)) : "08:00");
     setEndTime(ride?.ends_at ? formatTime(new Date(ride.ends_at)) : "09:00");
     setShowCancelForm(false);
+    setNotes(ride?.notes ?? "");
   }
 
   function dayIso(): string {
@@ -99,7 +94,7 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
     const endMin = parseHHMM(endTime) ?? 0;
     const startsAt = fromZonedTime(`${day}T${formatMinutes(startMin)}:00`, TZ).toISOString();
     const endsAt = fromZonedTime(`${day}T${formatMinutes(endMin)}:00`, TZ).toISOString();
-    onSave({ carId, startsAt, endsAt, overnightAck: false });
+    onSave({ carId, startsAt, endsAt, overnightAck: false, notes });
   }
 
   return (
@@ -125,9 +120,9 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
               </p>
 
               <div className="flex items-center gap-2">
-                <TimeField15 value={startTime} onChange={setStartTime} aria-label={he.sadranRideSheet.depart} />
+                <TimeField15 min="00:00" value={startTime} onChange={setStartTime} aria-label={he.sadranRideSheet.depart} />
                 <span>–</span>
-                <TimeField15 value={endTime} onChange={setEndTime} aria-label={he.sadranRideSheet.return} />
+                <TimeField15 min="00:00" value={endTime} onChange={setEndTime} aria-label={he.sadranRideSheet.return} />
               </div>
 
               <div>
@@ -145,6 +140,8 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
                   </SelectContent>
                 </Select>
               </div>
+
+              <Textarea aria-label={he.sadranBoard.reservationNotes} value={notes} onChange={(event) => setNotes(event.target.value)} />
 
               <Button className="w-full" onClick={handleSave} disabled={saving}>
                 {he.sadranRideSheet.save}

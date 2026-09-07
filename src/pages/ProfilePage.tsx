@@ -15,7 +15,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useIsSadranAnywhere } from "@/features/auth/useIsSadran";
+import { useTheme, type ThemePreference } from "@/hooks/useTheme";
 import { useMyDepartments } from "@/features/auth/useMyDepartments";
 import { useProfile, useUpdateProfileMutation } from "@/features/auth/useProfile";
 import { usePushSubscriptionStatus } from "@/features/auth/usePushSubscriptionStatus";
@@ -48,6 +50,7 @@ export function ProfilePage() {
   const departmentsQuery = useMyDepartments();
   const { isSadran } = useIsSadranAnywhere();
   const isAdmin = !!profileQuery.data?.is_admin;
+  const { preference: themePreference, setPreference: setThemePreference } = useTheme();
 
   const pushStatus = usePushSubscriptionStatus();
   const [pushBusy, setPushBusy] = useState(false);
@@ -165,6 +168,31 @@ export function ProfilePage() {
             </SelectContent>
           </Select>
           <p className="text-xs text-muted-foreground">{he.profileExtra.homeWeekHelper}</p>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">{he.profileExtra.themeTitle}</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          <Label>{he.profileExtra.themeLabel}</Label>
+          <ToggleGroup
+            type="single"
+            value={themePreference}
+            onValueChange={(next) => next && setThemePreference(next as ThemePreference)}
+            className="justify-start"
+          >
+            <ToggleGroupItem value="light" className="h-11 px-3 text-sm">
+              {he.profileExtra.themeLight}
+            </ToggleGroupItem>
+            <ToggleGroupItem value="dark" className="h-11 px-3 text-sm">
+              {he.profileExtra.themeDark}
+            </ToggleGroupItem>
+            <ToggleGroupItem value="system" className="h-11 px-3 text-sm">
+              {he.profileExtra.themeSystem}
+            </ToggleGroupItem>
+          </ToggleGroup>
         </CardContent>
       </Card>
 

@@ -6,6 +6,7 @@ import { toast } from "sonner";
 
 import { EmptyState } from "@/components/EmptyState";
 import { PageHeader } from "@/components/PageHeader";
+import { TableRowsSkeleton } from "@/components/skeletons/TableRowsSkeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -15,7 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
-import { useDepartments } from "@/features/siddur/hooks";
+import { useOperationalDepartments } from "@/features/admin/useOperations";
 import { he } from "@/i18n/he";
 import { showErrorToast } from "@/lib/rpc";
 
@@ -34,7 +35,7 @@ const FEATURE_LABEL: Record<(typeof CAR_FEATURES)[number], string> = {
 };
 
 function CarForm({ car, onSaved }: { car: Car | null; onSaved: () => void }) {
-  const departmentsQuery = useDepartments();
+  const departmentsQuery = useOperationalDepartments();
   const createMutation = useCreateCarMutation();
   const updateMutation = useUpdateCarMutation();
   const seatConfigsQuery = useSeatConfigs(car?.id);
@@ -254,14 +255,14 @@ function CarForm({ car, onSaved }: { car: Car | null; onSaved: () => void }) {
 
 export function CarsScreen({ initialCarId }: { initialCarId?: string } = {}) {
   const carsQuery = useCarsAdmin();
-  const departmentsQuery = useDepartments();
+  const departmentsQuery = useOperationalDepartments();
   const [editing, setEditing] = useState<Car | null | undefined>(undefined);
   // Deep-link support for `/admin/cars/:id` (UX_FLOWS §2.1 route table): open
   // that car's editor sheet once its row has loaded, without a fetch effect
   // (state-adjustment-during-render, same pattern as TimeField15's re-sync).
   const [openedInitialFor, setOpenedInitialFor] = useState<string | undefined>(undefined);
   if (initialCarId && initialCarId !== openedInitialFor && carsQuery.data) {
-    const match = carsQuery.data.find((c) => c.id === initialCarId);
+    const match = carsQuery.data.find((c) => c.id === initialCarId && departmentsQuery.data?.some((department) => department.id === c.department_id));
     if (match) {
       setOpenedInitialFor(initialCarId);
       setEditing(match);
@@ -269,7 +270,7 @@ export function CarsScreen({ initialCarId }: { initialCarId?: string } = {}) {
   }
 
   const departmentsById = new Map((departmentsQuery.data ?? []).map((d) => [d.id, d.name]));
-  const cars = carsQuery.data ?? [];
+  const cars = (carsQuery.data ?? []).filter((car) => departmentsQuery.data?.some((department) => department.id === car.department_id));
 
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-4 p-4">
@@ -283,7 +284,22 @@ export function CarsScreen({ initialCarId }: { initialCarId?: string } = {}) {
         }
       />
 
-      {cars.length === 0 ? (
+      {carsQuery.isLoading ? (
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>{he.adminCars.fieldName}</TableHead>
+              <TableHead>{he.adminCars.fieldPlate}</TableHead>
+              <TableHead>{he.adminCars.fieldDepartment}</TableHead>
+              <TableHead>{he.adminCars.fieldType}</TableHead>
+              <TableHead>{he.adminCars.fieldStatus}</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            <TableRowsSkeleton columns={5} />
+          </TableBody>
+        </Table>
+      ) : cars.length === 0 ? (
         <EmptyState icon={Plus} message={he.adminCars.empty} />
       ) : (
         <Table>

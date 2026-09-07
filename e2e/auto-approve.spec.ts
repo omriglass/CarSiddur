@@ -1,17 +1,17 @@
 import { expect, test } from "@playwright/test";
 
-import { getWeekStart, SEEDED_USERS, signIn } from "./helpers";
+import { getWeekStart, SEEDED_USERS, signIn, serviceRoleClient } from "./helpers";
 
 // REQUIREMENTS §8 "New request on a free car": in a Live week, a round-trip request at a
 // time when a shared car is free and at home auto-approves immediately (`try_auto_approve()`,
-// no Sadran action) and both the member and the Sadran are notified. Exercised through the
+// no Sadran action) without notifying the member or Sadran (owner TODO). Exercised through the
 // real UI: `/requests/new` previously had no way to target the Live week at all once an Open
 // week also existed (Stage 3 hardening fix, UX_FLOWS.md §16 item 7) — `?week=` now overrides
 // the page's smart-default week resolution.
 const DESTINATION = "בדיקת אישור אוטומטי";
 
 test.describe("auto-approve on a free car (live week)", () => {
-  test("member2 submits a new request and it is assigned immediately, with an inbox notification", async ({
+  test("member2 submits a new request and it is assigned immediately without notifications", async ({
     page,
   }) => {
     const liveWeekStart = await getWeekStart("live");
@@ -38,7 +38,10 @@ test.describe("auto-approve on a free car (live week)", () => {
     const requestCard = page.locator("div.rounded-md", { hasText: DESTINATION });
     await expect(requestCard.getByText("שובצה")).toBeVisible({ timeout: 10_000 });
 
-    await page.goto("/inbox");
-    await expect(page.getByText("הבקשה אושרה אוטומטית")).toBeVisible({ timeout: 10_000 });
+    const service = serviceRoleClient();
+    const { data: request } = await service.from("requests").select("id").eq("destination_text", DESTINATION).order("created_at", { ascending: false }).limit(1).single();
+    const { data: notifications, error } = await service.from("notifications").select("id,event").contains("data", { request_id: request!.id });
+    if (error) throw error;
+    expect(notifications).toEqual([]);
   });
 });

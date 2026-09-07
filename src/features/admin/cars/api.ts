@@ -1,3 +1,4 @@
+import { fetchOperationalDepartments } from "@/features/admin/operationsApi";
 import { supabase } from "@/integrations/supabase/client";
 import { rpc, toAppError } from "@/lib/rpc";
 
@@ -21,7 +22,8 @@ export type CarIssue = Database["public"]["Tables"]["car_issues"]["Row"];
 export async function fetchCarsAll(): Promise<Car[]> {
   const { data, error } = await supabase.from("cars").select("*").order("name", { ascending: true });
   if (error) throw toAppError(error);
-  return data ?? [];
+  const departmentIds = new Set((await fetchOperationalDepartments()).map((department) => department.id));
+  return (data ?? []).filter((row) => departmentIds.has(row.department_id));
 }
 
 export async function createCar(input: CarInsert): Promise<Car> {
@@ -71,7 +73,8 @@ export async function fetchMaintenanceBlocks(): Promise<MaintenanceBlock[]> {
     .select("*")
     .order("starts_at", { ascending: false });
   if (error) throw toAppError(error);
-  return data ?? [];
+  const departmentIds = new Set((await fetchOperationalDepartments()).map((department) => department.id));
+  return (data ?? []).filter((row) => departmentIds.has(row.department_id));
 }
 
 export async function createMaintenanceBlock(input: {
@@ -109,7 +112,8 @@ export async function endMaintenanceBlockNow(blockId: string): Promise<void> {
 export async function fetchCarIssues(): Promise<CarIssue[]> {
   const { data, error } = await supabase.from("car_issues").select("*").order("created_at", { ascending: false });
   if (error) throw toAppError(error);
-  return data ?? [];
+  const departmentIds = new Set((await fetchOperationalDepartments()).map((department) => department.id));
+  return (data ?? []).filter((row) => departmentIds.has(row.department_id));
 }
 
 export async function resolveCarIssue(issueId: string): Promise<void> {

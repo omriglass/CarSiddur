@@ -3,12 +3,13 @@ import { createBrowserRouter, Navigate } from "react-router-dom";
 import { AppShell } from "@/app/AppShell";
 import {
   RequireAdmin,
+  RequireOperations,
   RequireApproved,
   RequireAuth,
   RequireOnboarded,
   RequireSadran,
 } from "@/features/auth/guards";
-import { adminRoutes } from "@/features/admin/routes";
+import { adminRoutes, operationsRoutes } from "@/features/admin/routes";
 import { memberRoutes } from "@/features/member/routes";
 import { sadranRoutes } from "@/features/sadran/routes";
 import { HomePage } from "@/pages/HomePage";
@@ -50,6 +51,10 @@ export const router = createBrowserRouter([
                   {
                     element: <RequireSadran />,
                     children: [...sadranRoutes],
+                  },
+                  {
+                    element: <RequireOperations />,
+                    children: [...operationsRoutes],
                   },
                   {
                     element: <RequireAdmin />,

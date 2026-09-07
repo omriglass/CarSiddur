@@ -1308,7 +1308,7 @@ Supabase Free: 500 MB. Estimated steady state at 2 departments × 300 requests/w
 | data | kept | pruned |
 |---|---|---|
 | departments, profiles, department_members, sadran_assignments, cars, car_seat_configs, destinations, ride_types, policies, policy_versions, app/department settings | forever | profiles of members removed by admin: anonymized (`full_name → 'חבר לשעבר'`, phone/email null, `approval_status='blocked'`) rather than deleted, so history and fairness stats stay consistent |
-| weeks, requests, request_companions, rides, ride_requests, siddur_versions, solver_runs (summary) | forever (stats, fairness lookback, §12 dashboards) | `solver_runs.summary` is small; no detailed per-request scores stored in DB (they live in the browser session) |
+| weeks, requests, request_companions, rides, ride_requests, siddur_versions, solver_runs (summary) | forever (stats, fairness lookback, §12 dashboards) | `solver_runs.summary` is small; published `siddur_versions.snapshot` includes per-policy, member and request scores for later comparison |
 | proposals, proposal_parties, freed_slot_offers, freed_slot_claims | forever for outcome fields | `token_hash` nulled 30 days after week end (`housekeeping()`); `payload` kept |
 | car_maintenance_blocks, car_issues, notification_templates | forever | — |
 | notifications | 90 days after `created_at` (read or not) | `housekeeping()` daily |
@@ -1329,3 +1329,32 @@ Backups: Supabase Free has no PITR; a weekly `pg_dump` via GitHub Actions to a p
 | `car_loans` | Cross-department car lending for a window (lifts `rides_car_same_department`); v1 uses a maintenance block "lent to X" + `external` on the borrowing side (§3.7, REQ §13.27). | A second department actually borrows cars regularly. |
 | `ride_templates` | **Standing pre-allocations** (REQ §12 should-have, §13.54): recurring pinned rides (car, dow, time window, driver, origin/destination) that `materialize_templates()` copies into each newly opened week as `is_pinned` rides, before members' requests are solved around them. Same shape as `request_templates` but produces rides, not requests. | The owner confirms the school-run use case for v1.x. |
 | `chauffeur_volunteers` (or a `profiles` flag) | Members willing to drive chauffeur legs, so the Sadran can send "needs a driver" requests to a list (REQ §14 question 1). | Owner decision. |
+## Owner TODO schema amendments — 2026-09-07
+
+New additive migrations after 0933 implement operational Sadran permissions, owned-ride edits, request editing windows, notification interpolation, consent-based ride changes, publication scoring and accepted board proposals.
+
+| Migration suffix | Purpose |
+| --- | --- |
+| 0934 | Operational Sadran permissions |
+| 0935 | Owned ride edits, driverless reservations and assignment-day integrity |
+| 0936 | Request ownership, deadlines and bulk rescind |
+| 0937 | Notification context and interpolation |
+| 0938 | Pending ride changes and driver consent |
+| 0939 | Publication scores and input fingerprint |
+| 0940 | Accepted shift/merge updates and draft release |
+| 0941 | Comparisons across all policy profiles |
+| 0942 | Owned-ride authorization order |
+| 0943 | Bulk-rescind SQL alias and score-rounding tolerance |
+| 0944 | Withdraw pending ride changes; enforce solo-ride edit boundary |
+| 0945 | Accepted merge leg alias correction |
+| 0946 | Ride-change consent versions and audit records |
+| 0947 | Reject null request-edit versions |
+
+- `can_manage_operations(department_id default null)` authorizes admins or approved assigned Sadranim. Global catalogs/policy profiles/templates are shared; fleet and settings writes require authority for their department. Users, departments and roster retain admin-only writes.
+- `rides.notes text` and nullable `driver_id` support reservations; a driverless ride requires nonblank notes and cannot serve requests. `v_board_rides` preserves such rows with a left driver join and exposes notes.
+- `edit_ride` checks ownership or coordinator authorization, optimistic version, local day, fleet availability, seat fit, maintenance, turnaround exclusion and location chain. Request-to-ride local-day integrity also has deferred constraint triggers. Requests keep original flexibility anchors. `unassign_ride` atomically returns served requests to waitlisted and removes their assignment.
+- Request edits require actor ownership and an open submission window, even if early solving has created drafts. Draft assignments are released atomically; published rides cannot be silently rewritten through request editing. `withdraw_all_requests` is scoped to actor, department and week and uses the same deadline rules.
+- `ride_change_requests` stores source ride/version, requester, target car/window and pending/accepted/declined/cancelled state. `ride_change_parties` stores each conflicting ride's driver/version and nullable approval. Both tables use forced RLS, read policies and RPC-only writes. `request_ride_change` creates pending overlays; `respond_ride_change` requires affected-driver identity and only performs cancellation/movement atomically after unanimous consent, version and availability checks. Confirmed rides retain their exclusion constraint throughout.
+- `cancel_ride_change` lets the requester or the week's coordinator withdraw a pending change without touching either confirmed ride. This also removes the pending-publication blocker.
+- `notification_context` resolves variable values from persisted request/ride/week/catalog records. `enqueue_notification` renders those values for inbox/push, and suppresses auto-approval notifications. Existing malformed inbox text is repaired by the migration.
+- Publication carries complete per-policy board scores and a database fingerprint. `siddur_versions.snapshot.policy_scores` stores each applicable policy/version/name, request/served counts, total/served priority, weighted coverage and nested member/request/per-rule breakdowns. `profile_scores` retains the active-policy member breakdown. Freshness checks and snapshot persistence occur in the publication transaction.

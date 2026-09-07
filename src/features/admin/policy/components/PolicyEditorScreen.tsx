@@ -11,7 +11,7 @@ import { Slider } from "@/components/ui/slider";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import { useDepartments } from "@/features/siddur/hooks";
+import { useOperationalDepartments } from "@/features/admin/useOperations";
 import { he, tv } from "@/i18n/he";
 import { showErrorToast } from "@/lib/rpc";
 import { ruleRegistry, type RuleType } from "@/solver";
@@ -62,13 +62,13 @@ function describeRule(type: RuleType, params: Record<string, unknown>): string {
 
 function PolicyEditorInner({ policyId }: { policyId: string }) {
   const policiesQuery = usePoliciesAdmin();
-  const departmentsQuery = useDepartments();
+  const departmentsQuery = useOperationalDepartments();
   const rideTypesQuery = useRideTypesAdmin();
   const versionsQuery = usePolicyVersions(policyId);
   const createVersionMutation = useCreatePolicyVersionMutation();
   const setActiveMutation = useSetPolicyActiveMutation();
 
-  const policy = (policiesQuery.data ?? []).find((p) => p.id === policyId);
+  const policy = (policiesQuery.data ?? []).find((p) => p.id === policyId && (!p.department_id || departmentsQuery.data?.some((department) => department.id === p.department_id)));
   const latestVersion = versionsQuery.data?.[0];
   const rideTypeLabels = Object.fromEntries((rideTypesQuery.data ?? []).map((rt) => [rt.code, rt.name_he]));
 

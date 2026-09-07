@@ -1,0 +1,21 @@
+- [x] make sure you can edit your own rides: when dragging your ride, if the car is avialable, it should just let you do it.
+- [x] Changing other people's rides should be not possible, however it should be possible to "shadow" them. I.e. it will pop up to tell you "There is already a ride here" and if you select "I am aware" it will put BOTH of your rides, with the other ride in 50% opacity + send a notification "X had asked that you cancel your ride. Approve?"
+- [x] In general, everything should be easy and clear. When dragging, you should have a shadow (50% opacity or more) of the thing you are dragging, and easily see where it snaps (Specifically: Which car, at what time)
+- [x] Notifications show up wierd, with {{}} instead of the relvant variables (i.e. {{date}} instead of 10/2/26)
+- [x] Auto-approve shouldn't send a notification.
+- [x] Some admin capabilities should be open to the Sadran as well: Adding destinations to list, adding ride types, changing cars, as well as deciding on policies. Basically, anything that does not involve departments OR users.
+- [x] One way rides appear wierdly on the side bar. 
+- [x] Everything should be more compact. Since we know that most rides are tall and not wide (since we have many cars, but each ride takes several time slots often  2-5 hours) we need to make sure the letters cascade down.
+- [x] You should be able to easily remove requests from the board. Visually, it might be best to have "phantom cars" added to the board, so that I can see EASILY which times are more crowded (For example: autosolver put 3 requests in 3 cars in 10:00-12:00. Since there are 2 more requests for the same time, there need be atleast 2 "phantom cars" which get either a "Reject / other alternative / change hours" OR can be dragged and dropped into their respective cars)
+- [x] Phantom cars should be day-specific. If I choose Thursday, I shouldn't be seeing anything from other days as it might get overwhelming.
+- [x] Before publishing the Siddur, it should recalculate the score for each policy profile and save it (compare the final board against every applicable policy, including inactive profiles). The idea is that we will be able to see how closely do our Manual fixes relate to the rules, and thus improve on the rules in the future.
+- [x] A user should be able to edit their requests if they are still within the window. It can be done either with "Rescind all requests" (Including an "Are you sure?" prompt) OR by clicking a specific request and changing it.
+- [x] Requests should show you what is missing when you submit. Mostly ride type.
+- [x] When moving within the flexibility range, the flexibility range itself shouldn't move (i.e. moving One or Two hours forward allows further moving one or two hours forward indefinitely)
+- [x] Flexibility ranges should be: +- / + / - (default is +-).
+- [x] It should be easy for the Sadran to grab the start / end of a ride and extend them. It should also be easy for average members to do this on their own rides.
+- [x] When two rides collide, a popup should come up with "Merge these two rides?" If the answer is yes, it should prepare the message to send. 
+- [x] Sending whatsapp messages should be in a popup and not in a new window, as it doesn't allow a proper "back" action.
+- [x] Currently, in the board, rides can be assigned to the wrong day (i.e. a ride for Thursday can be assigned to Wednseday)
+- [ ] (Deferred to v1.x; documented in docs/REQUIREMENTS.md.) There should be an "Export requests and board to excel" which will allow manual work outside of the app. No import, just export. This can be put in the docs for a later time is it is not MVP.
+- [x] It should be possible for the sadran to reserve times with free text. I.e. reserver 12:00-16:00 without anyone specific. Any notes written on it will be displayed. This is to allow for quick fixes that are not in the current data models (For example: X and Y going to A, leaving Y there and picking up Z, then returning)

@@ -15,6 +15,7 @@ import {
 import { he, t } from "@/i18n/he";
 import { formatInTimeZone } from "date-fns-tz";
 import { formatTime, TZ } from "@/lib/time";
+import { RideChangeAnswers } from "@/features/siddur/components/RideChangeAnswers";
 
 type Filter = "all" | "proposals" | "siddur" | "freedSlot" | "system";
 
@@ -43,6 +44,7 @@ const SADRAN_EVENTS = new Set([
 /** Deep-links a notification's `data` payload to a screen (UX_FLOWS.md §3.7). */
 function deepLinkFor(n: Notification): string {
   const data = (n.data as Record<string, unknown>) ?? {};
+  if (typeof data.ride_change_id === "string") return `/inbox?change=${data.ride_change_id}`;
   if (typeof data.request_id === "string" || typeof data.offer_id === "string") return "/requests";
   if (typeof data.ride_id === "string") return "/siddur";
   return "/inbox";
@@ -91,6 +93,8 @@ export function InboxPage() {
           ) : undefined
         }
       />
+
+      <RideChangeAnswers />
 
       <ToggleGroup
         type="single"

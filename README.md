@@ -73,7 +73,7 @@ URLs unless `--allow-remote`); never touches `src/`, migrations, or `seed.sql`.
 See docs/ARCHITECTURE.md (deployment, cost, security) for details. Short version:
 
 1. **Supabase project**: create one on supabase.com (Free tier). Note the project ref, URL and anon key.
-2. **Link and push schema**: `npx supabase link --project-ref <ref>` then `npm run db:push` (applies all 31 migrations). Seed is local-only; create the first admin via the `member_invites` table before signing in.
+2. **Link and push schema**: `npx supabase link --project-ref <ref>` then `npm run db:push` (applies pending migrations). Seed is local-only; create the first admin via the `member_invites` table before signing in.
 3. **Edge functions**: `npm run functions:bundle`, then `npx supabase functions deploy push-dispatch answer-proposal on-ride-cancelled`. Set function secrets: `npx supabase secrets set VAPID_PUBLIC_KEY=… VAPID_PRIVATE_KEY=… VAPID_SUBJECT=mailto:… CRON_SECRET=…` (generate VAPID keys with `npx web-push generate-vapid-keys`). Insert the same `CRON_SECRET` into the `app_secrets` table (see supabase/functions/README.md).
 4. **Google OAuth**: create an OAuth client in Google Cloud Console; enable the Google provider in Supabase Auth with its client id/secret; add the Vercel URL to the redirect list. Disable the email provider in production.
 5. **Vercel**: import the GitHub repo; set `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_VAPID_PUBLIC_KEY`, `VITE_APP_URL` (the public site URL, used in WhatsApp deep links).
@@ -82,3 +82,9 @@ See docs/ARCHITECTURE.md (deployment, cost, security) for details. Short version
 ## Reference
 
 `../commucar-share` is an earlier community car-sharing app used as a reference. It is read-only and must never be modified from this project.
+
+### Isolated verification
+
+`npm run db:test` runs the RLS, solver persistence and TODO regression suites. Set `SUPABASE_DB_CONTAINER` to target a disposable local database container; by default it uses this repository's configured Supabase project.
+
+Browser tests accept `E2E_BASE_URL` and `VITE_SUPABASE_URL`, so a separate Vite/Supabase stack can be used without changing `.env.local`. Use `E2E_SKIP_RESET=1` after seeding that stack, or set `E2E_SUPABASE_WORKDIR` explicitly to reset only its disposable project. An alternate API without either setting refuses to reset the development database.

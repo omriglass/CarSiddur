@@ -51,7 +51,7 @@ export const requestFormSchema = z
     /** 0 (Sunday) .. 6 (Saturday) — the index of `day` within the target week. */
     dayIndex: z.number().int().min(0).max(6),
     destination: destinationValueSchema,
-    rideTypeId: z.string().min(1),
+    rideTypeId: z.string().min(1, he.request.rideTypeRequired),
     tripShape: z.enum(REQUEST_TRIP_SHAPES),
     departTime: timeStringSchema.optional(),
     returnTime: timeStringSchema.optional(),

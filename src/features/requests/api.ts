@@ -2,6 +2,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { rpc, toAppError } from "@/lib/rpc";
 
 import type { Database, Json } from "@/integrations/supabase/types";
+import type { RequestWindow } from "./window";
 
 /**
  * The only file in the `requests` feature that calls `supabase.from`/`.rpc`.
@@ -47,6 +48,8 @@ export interface MyRequestPendingProposal {
 }
 
 export interface MyRequestRow {
+  hasPublishedRide?: boolean;
+  window?: RequestWindow | null;
   id: string;
   departmentId: string;
   weekStart: string;
@@ -60,6 +63,7 @@ export interface MyRequestRow {
   destination: string;
   rideTypeId: string;
   rideTypeName: string;
+  rideTypeCode: string | null;
   needsCarAtDestination: boolean;
   version: number;
   freedSlotOptOut: boolean;
@@ -72,8 +76,9 @@ const SELECT = `
   id, department_id, week_start, status, status_reason, is_late, changed_since_solve,
   depart_at, return_at, trip_shape, needs_car_at_destination, destination_text, version, ride_type_id,
   freed_slot_opt_out,
+  window:weeks(phase, open_at, close_at),
   destination:destinations(name),
-  ride_type:ride_types(name_he),
+  ride_type:ride_types(code, name_he),
   ride_requests(
     role,
     ride:rides(
@@ -88,6 +93,7 @@ const SELECT = `
 `;
 
 interface RawRequestRow {
+  window: RequestWindow | null;
   id: string;
   department_id: string;
   week_start: string;
@@ -104,7 +110,7 @@ interface RawRequestRow {
   freed_slot_opt_out: boolean;
   ride_type_id: string;
   destination: { name: string } | null;
-  ride_type: { name_he: string } | null;
+  ride_type: { code: string; name_he: string } | null;
   ride_requests: {
     role: RideRole;
     ride: {
@@ -128,7 +134,7 @@ interface RawRequestRow {
 }
 
 function mapRow(row: RawRequestRow): MyRequestRow {
-  const legWithRide = row.ride_requests.find((leg) => leg.ride !== null);
+  const legWithRide = row.ride_requests.find((leg) => leg.ride !== null && leg.ride.status !== "cancelled");
   const ride = legWithRide?.ride ?? null;
   const pendingProposal =
     row.proposals.find((p) => p.status === "sent") ??
@@ -136,6 +142,8 @@ function mapRow(row: RawRequestRow): MyRequestRow {
     null;
 
   return {
+    window: row.window,
+    hasPublishedRide: row.ride_requests.some((link) => link.ride && link.ride.status !== "cancelled" && link.ride.status !== "draft"),
     id: row.id,
     departmentId: row.department_id,
     weekStart: row.week_start,
@@ -149,6 +157,7 @@ function mapRow(row: RawRequestRow): MyRequestRow {
     destination: row.destination?.name ?? row.destination_text ?? "",
     rideTypeId: row.ride_type_id,
     rideTypeName: row.ride_type?.name_he ?? "",
+    rideTypeCode: row.ride_type?.code ?? null,
     needsCarAtDestination: row.needs_car_at_destination,
     version: row.version,
     freedSlotOptOut: row.freed_slot_opt_out,
@@ -180,6 +189,8 @@ function mapRow(row: RawRequestRow): MyRequestRow {
 }
 
 export interface RequestEditRow {
+  window?: RequestWindow | null;
+  hasPublishedRide?: boolean;
   id: string;
   departmentId: string;
   weekStart: string;
@@ -211,15 +222,19 @@ const EDIT_SELECT = `
   trip_shape, depart_at, return_at, one_way_car_mode, needs_car_at_destination,
   adults, child_seats, boosters, has_luggage,
   flex_depart_early, flex_depart_late, flex_return_early, flex_return_late, notes, changed_since_solve,
-  destination:destinations(name)
+  destination:destinations(name),
+  window:weeks(phase, open_at, close_at),
+  ride_requests(ride:rides(status))
 `;
 
-/** A single request for the edit form (own request only — RLS enforces it either way). */
-export async function fetchRequestById(requestId: string): Promise<RequestEditRow | null> {
-  const { data, error } = await supabase.from("requests").select(EDIT_SELECT).eq("id", requestId).maybeSingle();
+/** Explicit owner filter: published-request RLS also permits reading other members' requests. */
+export async function fetchRequestById(requestId: string, profileId: string): Promise<RequestEditRow | null> {
+  const { data, error } = await supabase.from("requests").select(EDIT_SELECT).eq("id", requestId).eq("requester_id", profileId).maybeSingle();
   if (error) throw toAppError(error);
   if (!data) return null;
   const row = data as unknown as {
+    window: RequestWindow | null;
+    ride_requests: { ride: { status: string } | null }[];
     id: string;
     department_id: string;
     week_start: string;
@@ -246,6 +261,8 @@ export async function fetchRequestById(requestId: string): Promise<RequestEditRo
     destination: { name: string } | null;
   };
   return {
+    window: row.window,
+    hasPublishedRide: row.ride_requests.some((link) => link.ride && link.ride.status !== "cancelled" && link.ride.status !== "draft"),
     id: row.id,
     departmentId: row.department_id,
     weekStart: row.week_start,
@@ -447,4 +464,8 @@ export async function setRequestCompanions(requestId: string, profileIds: string
     .from("request_companions")
     .insert(profileIds.map((profileId) => ({ request_id: requestId, profile_id: profileId })));
   if (insertError) throw toAppError(insertError);
+}
+
+export async function withdrawAllRequests(departmentId: string, weekStart: string): Promise<void> {
+  await rpc("withdraw_all_requests", { p_department_id: departmentId, p_week_start: weekStart });
 }

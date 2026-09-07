@@ -1,5 +1,7 @@
 import { Navigate, Outlet, useLocation } from "react-router-dom";
 
+import { useCanManageOperations } from "@/features/admin/useOperations";
+
 import { t } from "@/i18n/he";
 
 import { useIsSadranAnywhere } from "./useIsSadran";
@@ -71,5 +73,14 @@ export function RequireAdmin() {
 
   if (profileQuery.isLoading) return <GuardLoading />;
   if (!profileQuery.data?.is_admin) return <Navigate to="/my" replace />;
+  return <Outlet />;
+}
+
+
+/** Operational administration excludes departments, users and role assignments. */
+export function RequireOperations() {
+  const access = useCanManageOperations();
+  if (access.isLoading) return <GuardLoading />;
+  if (!access.data) return <Navigate to="/my" replace />;
   return <Outlet />;
 }

@@ -8,7 +8,11 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { he, tv } from "@/i18n/he";
+import { rideTypeColorClasses } from "@/lib/rideTypeColors";
 import { TZ, formatTime } from "@/lib/time";
+import { cn } from "@/lib/utils";
+
+import { requestStart, requestWindow } from "../phantomLanes";
 
 import type { WeekRequestRow } from "../../api";
 import type { Suggestion, UnmetRequest } from "@/solver";
@@ -46,15 +50,9 @@ interface DragState {
 
 interface UnmetListProps {
   items: readonly UnmetListItem[];
+  onDecision?: (item: UnmetListItem, type: "deny" | "shift" | "external") => void;
   onAction: (item: UnmetListItem, suggestion: Suggestion | null) => void;
-  /**
-   * Drag-to-place (UX_FLOWS §20): dragging a round-trip request's card onto
-   * a car column in `WeekGrid` creates a ride there. One-way requests are
-   * never draggable this way (no single "host" ride to create — same
-   * restriction the solver's own `tryAutoApprove`/`try_auto_approve()` apply
-   * to direct placement, `src/solver/live.ts`). Omit both to render a
-   * plain, non-draggable list (e.g. read-only contexts).
-   */
+  /** Drag-to-place; the board chooses direct assignment or a proposal for one-way legs. */
   dayStartMinutes?: number;
   dayEndMinutes?: number;
   onDragHover?: (item: UnmetListItem, carId: string | null, minutes: number | null) => void;
@@ -84,7 +82,7 @@ function suggestionActionLabel(kind: Suggestion["kind"]): string {
  * week with no ride (bug #1), sorted by policy score when a solver preview
  * exists for it, otherwise by departure time.
  */
-export function UnmetList({ items, onAction, dayStartMinutes = 6 * 60, dayEndMinutes = 24 * 60, onDragHover, onDragDrop }: UnmetListProps) {
+export function UnmetList({ items, onAction, onDecision, dayStartMinutes = 6 * 60, dayEndMinutes = 24 * 60, onDragHover, onDragDrop }: UnmetListProps) {
   const dragEnabled = !!onDragDrop;
   const [drag, setDrag] = useState<DragState | null>(null);
   const dragRef = useRef<DragState | null>(null);
@@ -167,14 +165,14 @@ export function UnmetList({ items, onAction, dayStartMinutes = 6 * 60, dayEndMin
   }
 
   function beginPointerDown(item: UnmetListItem, event: React.PointerEvent<HTMLElement>) {
-    if (!dragEnabled || item.request.trip_shape !== "round_trip") return;
+    if (!dragEnabled) return;
     const state: DragState = {
       item,
       pointerId: event.pointerId,
       pointerType: event.pointerType,
       clientX: event.clientX,
       clientY: event.clientY,
-      confirmed: event.pointerType !== "touch",
+      confirmed: false,
     };
     dragRef.current = state;
     setDrag(state);
@@ -198,13 +196,21 @@ export function UnmetList({ items, onAction, dayStartMinutes = 6 * 60, dayEndMin
     <div className="space-y-2">
       <h2 className="text-sm font-medium">{tv("sadranBoard.unmetTitle", { count: String(items.length) })}</h2>
       {sorted.map((item) => {
-        const isDraggable = dragEnabled && item.request.trip_shape === "round_trip";
+        const isDraggable = dragEnabled;
         const isDragged = drag?.confirmed && drag.item.request.id === item.request.id;
         return (
-          <Card key={item.request.id} data-request-id={item.request.id} className={isDragged ? "opacity-50" : undefined}>
+          <Card
+            key={item.request.id}
+            data-request-id={item.request.id}
+            className={cn("bg-gradient-card shadow-card transition-smooth", isDragged && "opacity-50")}
+          >
             <CardContent className="space-y-2 p-3 text-sm">
               <div className="flex items-center justify-between gap-2">
                 <span className="flex min-w-0 items-center gap-1.5">
+                  <span
+                    className={cn("size-2.5 shrink-0 rounded-full", rideTypeColorClasses(item.request.ride_type_code).dot)}
+                    aria-hidden="true"
+                  />
                   {isDraggable ? (
                     <span
                       className="shrink-0 cursor-grab touch-none text-muted-foreground active:cursor-grabbing"
@@ -215,14 +221,14 @@ export function UnmetList({ items, onAction, dayStartMinutes = 6 * 60, dayEndMin
                       <GripVertical className="size-4" aria-hidden="true" />
                     </span>
                   ) : null}
-                  <span className="truncate font-medium">
+                  <span className="whitespace-normal break-words font-medium">
                     {item.request.requester_full_name ?? "—"} · {item.destinationName}
                   </span>
                 </span>
                 <StatusBadge kind="request" status={item.request.status} />
               </div>
               <div className="flex items-center justify-between text-xs text-muted-foreground">
-                <span dir="ltr">{dayTimeLabel(item.request.depart_at)}</span>
+                <span dir="ltr">{dayTimeLabel(requestStart(item.request))}</span>
                 <span>{item.request.ride_type_name_he ?? ""}</span>
                 {item.solverInfo ? (
                   <span dir="ltr">
@@ -230,15 +236,24 @@ export function UnmetList({ items, onAction, dayStartMinutes = 6 * 60, dayEndMin
                   </span>
                 ) : null}
               </div>
-              {item.request.is_late ? <span className="text-xs text-orange-600">{he.flag.late}</span> : null}
-              {item.request.changed_since_solve ? <span className="text-xs text-blue-600">{he.flag.changed}</span> : null}
+              <p className="text-xs text-muted-foreground" dir="ltr">
+                {requestWindow(item.request) ? `${formatTime(new Date(requestWindow(item.request)!.startsAt))}–${formatTime(new Date(requestWindow(item.request)!.endsAt))}` : "—"}
+                {item.request.trip_shape !== "round_trip" ? ` · ${(item.request.trip_shape === "one_way_from" ? he.request.tripShapeOneWayFrom : he.request.tripShapeOneWayTo)} · ${he.sadranBoard.estimatedDuration}` : ""}
+              </p>
+              {onDecision ? <div className="flex flex-wrap gap-1">
+                <Button size="sm" variant="outline" onClick={() => onDecision(item, "deny")}>{he.action.deny}</Button>
+                <Button size="sm" variant="outline" onClick={() => onDecision(item, "external")}>{he.sadranBoard.alternative}</Button>
+                <Button size="sm" variant="outline" onClick={() => onDecision(item, "shift")}>{he.sadranBoard.changeHours}</Button>
+              </div> : null}
+              {item.request.is_late ? <span className="text-xs font-medium text-maintenance">{he.flag.late}</span> : null}
+              {item.request.changed_since_solve ? <span className="text-xs font-medium text-booked">{he.flag.changed}</span> : null}
               {item.request.preferred_car_name ? (
                 <p className="text-xs text-muted-foreground">
                   {tv("sadranBoard.preferredCar", { car: item.request.preferred_car_name })}
                 </p>
               ) : null}
               {item.solverInfo?.reason ? <p className="text-xs text-muted-foreground">{item.solverInfo.reason}</p> : null}
-              {dragEnabled && !isDraggable ? (
+              {dragEnabled && item.request.trip_shape !== "round_trip" ? (
                 <p className="text-xs text-muted-foreground">{he.sadranBoard.dragOneWayUnsupported}</p>
               ) : null}
 
@@ -267,7 +282,7 @@ export function UnmetList({ items, onAction, dayStartMinutes = 6 * 60, dayEndMin
       })}
       {drag?.confirmed ? (
         <div
-          className="pointer-events-none fixed z-50 -translate-x-1/2 -translate-y-1/2 rounded-md border bg-popover px-3 py-1.5 text-xs shadow-lg"
+          className="pointer-events-none fixed z-50 -translate-x-1/2 -translate-y-1/2 rounded-md border bg-popover opacity-50 px-3 py-1.5 text-xs shadow-lg"
           style={{ left: drag.clientX, top: drag.clientY }}
         >
           {drag.item.request.requester_full_name ?? "—"} · {drag.item.destinationName}

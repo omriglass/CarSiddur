@@ -5,6 +5,7 @@ import { showErrorToast } from "@/lib/rpc";
 
 import * as api from "./api";
 import { sadranKeys } from "./keys";
+import { publishWithScores } from "./publish/publishWithScores";
 
 import type { Database, Json } from "@/integrations/supabase/types";
 
@@ -209,6 +210,17 @@ export function useCancelRideMutation() {
   });
 }
 
+export function useUnassignRideMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ rideId, expectedVersion }: {
+      rideId: string; expectedVersion: number; departmentId: string; weekStart: string;
+    }) => api.unassignRide(rideId, expectedVersion),
+    onSuccess: (_data, { departmentId, weekStart }) => invalidateBoard(queryClient, departmentId, weekStart),
+    onError: showErrorToast,
+  });
+}
+
 export function useSetManualBoostMutation() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -394,7 +406,7 @@ export function usePublishSiddurMutation() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ departmentId, weekStart }: { departmentId: string; weekStart: string }) =>
-      api.publishSiddur(departmentId, weekStart),
+      publishWithScores(departmentId, weekStart),
     onSuccess: (_data, { departmentId, weekStart }) => {
       invalidateBoard(queryClient, departmentId, weekStart);
       queryClient.invalidateQueries({ queryKey: sadranKeys.siddurVersions(departmentId, weekStart) });

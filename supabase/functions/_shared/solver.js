@@ -1812,7 +1812,7 @@ function volunteerCandidates(input, window) {
   const driversToday = /* @__PURE__ */ new Set();
   for (const a of input.fixedRides) {
     const overlaps = a.window.start < window.end && window.start < a.window.end;
-    if (!overlaps) driversToday.add(a.driverMemberId);
+    if (!overlaps && a.driverMemberId) driversToday.add(a.driverMemberId);
   }
   return [...driversToday].sort();
 }

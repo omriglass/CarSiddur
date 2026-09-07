@@ -45,7 +45,10 @@ Both running agents were stopped mid-task. State at halt:
 ## Post-showcase fixes (owner manual testing)
 - [x] Board bug pass 1 (2026-09-07): unmet list DB-derived + always visible; pointer-event drag with live seat/overlap checks and dead-zone (car-only drag keeps times); ride labels "driver ו passengers ל destination"; busiest-day default + result sheet detail; apply_solver_result `mode: remaining` never deletes (migration 093100), manual edits pin; hour-axis RTL mirroring fixed; RideSheet car select reset bug. UX_FLOWS §17. e2e 19/19, unit 310.
 - [x] Quick request from empty slot (2026-09-07): migration 093200 adds requests.preferred_car_id; try_auto_approve tries it first; QuickRequestSheet from live-week grid cells, phone "לוקח/ת רכב עכשיו" + free-gap rows, Home card; freeWindows.ts mirrors the RPC rules. UX_FLOWS §18. Unit 327, e2e 21/21, RLS 13 assertions. Note: `npm run db:test` must run on a fresh seed (e2e specs mutate state) — run `npm run db:reset` first.
-- Also: `npm run db:fake` generator (scripts/fake-week.mjs) for manual testing.
+- [x] Solve/apply semantics (2026-09-07): root cause of disappearing rides = requests assigned by a previous unpinned solver ride were neither "open" (status) nor "fixed" (unpinned), so full mode deleted their ride without re-solving them. Primary Solve is now remaining-mode (never deletes); "פתור מחדש את כל השבוע" is a separate confirmed action; apply_solver_result returns {inserted,deleted,unchanged,unassigned_requests} (migration 093300); supabase/tests/solve_semantics.sql. UX_FLOWS §19, SOLVER §5.3.
+- [x] Vertical board (2026-09-07): cars as columns, hours as rows, 06:00–24:00 default with early-hours toggle, drag unmet card onto a column places it (edit_ride create branch), cross-column drag keeps times (window-level pointer listeners; setPointerCapture removed), member siddur uses shared rideLabel. UX_FLOWS §20. Unit 344, e2e 25/25. Deferred: auto-scroll during drag.
+- [x] Visual design pass (2026-09-07): reference HSL tokens (light+dark), app shell (logo, blurred header, tab indicator), login hero, cards/badges on semantic colors, board bands/pin/hatching/drop tints/now line, ride-type colors + legend (src/lib/rideTypeColors.ts), skeletons, dark mode fixed (.dark moved out of @layer base) + theme toggle in Profile (useTheme). Verified typecheck+lint only per owner request; e2e NOT run.
+- Also: `npm run db:fake` generator (scripts/fake-week.mjs) for manual testing; scripts/diag-solve.mjs diagnostic.
 
 ## Status
 - [x] 0 Scaffold — done 2026-09-06 (lint/typecheck/test/build pass; 24 shadcn components hand-written; CI workflow added). Halt note above is historical.
@@ -85,3 +88,17 @@ One-line items blocked/deferred per design document:
 - **Solver improvements**: static golden JSON test pairs, relay-pair relocation in improve pass, one-way-host shifting in merges (SOLVER.md §9.1)
 - **Admin**: "restore default" notification template snapshot (2c note)
 - **Database**: destination merge RPC backfill of `requests.destination_id` (2c note)
+
+
+## Owner TODO implementation — 2026-09-07
+
+- [x] Member ride edits and resizing, explicit collision consent, pending overlays and notifications. Shared passenger/relay changes remain coordinator-managed.
+- [x] Compact board, precise drag previews, day-specific phantom lanes, request removal, collision proposals, stable flexibility anchors and assignment-day guards.
+- [x] Driverless reservations with visible notes, preserved as occupied time by the solver.
+- [x] Request editing and confirmed bulk rescind before the deadline, required-field feedback and directional flexibility.
+- [x] Sadran operational administration, notification interpolation and silent auto-approval.
+- [x] In-app WhatsApp composition with an explicit handoff.
+- [x] Recalculate and persist the final board against every applicable policy profile, including inactive profiles, with per-member/request breakdowns and publication freshness checks.
+- [ ] Excel export deferred to v1.x as permitted by the TODO; export requests and assignments without import (REQUIREMENTS owner amendments).
+
+Validation: 378 unit/component tests; 26 targeted browser scenarios covering board, member/admin, proposals, quick requests, automatic approval, publication and member collision consent; all three database suites; lint, typecheck, production build and generated solver smoke check. Browser and database regression fixtures ran on a separate disposable Supabase stack.

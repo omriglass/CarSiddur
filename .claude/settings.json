@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://127.0.0.1:54321/functions/v1/answer-proposal)",
+      "Bash(open -a Docker)",
+      "Bash(E2E_SKIP_RESET=1 npx playwright test e2e/board.spec.ts --project=chromium --trace=on --reporter=list)",
+      "Bash(cd /Users/omriglass/carshare/carshare-nevo *)",
+      "Bash(pkill -f \"show-trace\")",
+      "Bash(mkdir -p /private/tmp/claude-502/-Users-omriglass-carshare-carshare-nevo/df4cfe05-ee1e-4023-a7e5-e5ba47bc8fc4/scratchpad/trace)",
+      "Bash(unzip -o /Users/omriglass/carshare/carshare-nevo/test-results/board-board-bug-fix-pass-r-fd84d-column-creates-a-ride-there-chromium/trace.zip -d extracted)",
+      "Bash(sort -t- -k2 -n)"
+    ],
+    "additionalDirectories": [
+      "/tmp"
+    ]
+  }
+}

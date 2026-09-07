@@ -8,6 +8,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/EmptyState";
 import { PageHeader } from "@/components/PageHeader";
 import { RideCard, type RideCardData } from "@/components/RideCard";
+import { CardListSkeleton } from "@/components/skeletons/CardListSkeleton";
 import { StatusBadge } from "@/components/StatusBadge";
 import { formatWeekRangeLabel, todayInJerusalem } from "@/components/DateField";
 import { useMyDepartments } from "@/features/auth/useMyDepartments";
@@ -51,6 +52,7 @@ function toRideCardData(row: MyRequestRow): RideCardData | null {
     isChauffeur: row.ride.isChauffeur,
     carName: row.ride.carName,
     carType: row.ride.carType ?? undefined,
+    rideTypeCode: row.rideTypeCode,
   };
 }
 
@@ -96,8 +98,8 @@ export function HomePage() {
     return (
       <div className="mx-auto max-w-2xl space-y-4 p-4">
         <PageHeader title={t("screen.home.title")} />
-        <div className="h-24 animate-pulse rounded-md bg-muted" />
-        <div className="h-24 animate-pulse rounded-md bg-muted" />
+        <CardListSkeleton count={2} />
+        <CardListSkeleton count={2} />
       </div>
     );
   }
@@ -136,9 +138,9 @@ export function HomePage() {
       />
 
       {nextAction ? (
-        <div className="rounded-md border-s-4 border-amber-500 bg-amber-50 p-3 text-sm">
-          <p className="font-medium text-amber-900">{t("home.nextAction")}</p>
-          <p className="text-amber-800">{reasonLine(nextAction)}</p>
+        <div className="rounded-md border-s-4 border-maintenance bg-maintenance/10 p-3 text-sm">
+          <p className="font-medium text-maintenance">{t("home.nextAction")}</p>
+          <p className="text-foreground/80">{reasonLine(nextAction)}</p>
         </div>
       ) : null}
 
@@ -160,12 +162,14 @@ export function HomePage() {
         <Card
           role="button"
           tabIndex={0}
-          className="cursor-pointer transition-colors hover:bg-accent/40"
+          className="cursor-pointer bg-gradient-card shadow-card transition-smooth hover:shadow-elegant"
           onClick={() => setQuickRequestOpen(true)}
         >
           <CardContent className="flex items-center justify-between gap-2 p-4 text-sm">
-            <div className="flex items-center gap-2">
-              <CarFront className="size-5 text-muted-foreground" aria-hidden="true" />
+            <div className="flex items-center gap-3">
+              <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-available/10 text-available">
+                <CarFront className="size-5" aria-hidden="true" />
+              </span>
               <div>
                 <p className="font-medium">{t("quickRequest.takeCarNow")}</p>
                 <p className="text-xs text-muted-foreground">
@@ -186,20 +190,22 @@ export function HomePage() {
         ) : (
           <div className="space-y-2">
             {unserved.map((row) => (
-              <div key={row.id} className="space-y-1 rounded-md border p-3 text-sm">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-medium">{row.destination}</span>
-                  <StatusBadge kind="request" status={row.status} />
-                </div>
-                {row.departAt ? (
-                  <span dir="ltr" className="text-xs text-muted-foreground">
-                    {formatTime(new Date(row.departAt))}
-                  </span>
-                ) : null}
-                {reasonLine(row) ? (
-                  <p className="text-xs text-muted-foreground">{reasonLine(row)}</p>
-                ) : null}
-              </div>
+              <Card key={row.id} className="bg-gradient-card shadow-card">
+                <CardContent className="space-y-1 p-3 text-sm">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-medium">{row.destination}</span>
+                    <StatusBadge kind="request" status={row.status} />
+                  </div>
+                  {row.departAt ? (
+                    <span dir="ltr" className="text-xs text-muted-foreground">
+                      {formatTime(new Date(row.departAt))}
+                    </span>
+                  ) : null}
+                  {reasonLine(row) ? (
+                    <p className="text-xs text-muted-foreground">{reasonLine(row)}</p>
+                  ) : null}
+                </CardContent>
+              </Card>
             ))}
           </div>
         )}
@@ -233,13 +239,15 @@ export function HomePage() {
           ) : (
             <div className="space-y-2">
               {weekRequests.map((row) => (
-                <div key={row.id} className="flex items-center justify-between gap-2 rounded-md border p-3 text-sm">
-                  <span className="flex items-center gap-2">
-                    <CarFront className="size-4 text-muted-foreground" aria-hidden="true" />
-                    {row.destination}
-                  </span>
-                  <StatusBadge kind="request" status={row.status} />
-                </div>
+                <Card key={row.id} className="bg-gradient-card shadow-card">
+                  <CardContent className="flex items-center justify-between gap-2 p-3 text-sm">
+                    <span className="flex items-center gap-2">
+                      <CarFront className="size-4 text-muted-foreground" aria-hidden="true" />
+                      {row.destination}
+                    </span>
+                    <StatusBadge kind="request" status={row.status} />
+                  </CardContent>
+                </Card>
               ))}
             </div>
           )}

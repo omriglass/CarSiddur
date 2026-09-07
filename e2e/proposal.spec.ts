@@ -36,6 +36,7 @@ test.describe("proposal round trip", () => {
     // Create + send (defaults to type "shift"; the request's own depart/return times are used).
     await page.getByRole("button", { name: "הצע", exact: true }).click();
 
+    await page.getByRole("button", { name: /פתח בוואטסאפ/ }).first().click();
     const waLink = page.locator('a[href^="https://wa.me/"]').first();
     await expect(waLink).toBeVisible({ timeout: 10_000 });
     const href = await waLink.getAttribute("href");

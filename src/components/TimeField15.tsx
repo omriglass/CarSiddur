@@ -98,6 +98,7 @@ export function TimeField15({ value, min, max, onChange, disabled, ...rest }: Ti
       <PopoverTrigger asChild>
         <Input
           {...rest}
+          type="text"
           value={draft}
           dir="ltr"
           inputMode="numeric"

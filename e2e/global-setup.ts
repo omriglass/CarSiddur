@@ -1,4 +1,4 @@
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 
 // Every spec assumes the exact state of supabase/seed.sql (one Open week, one
 // Live week, four demo accounts). Specs mutate that state (publishing the Open
@@ -10,6 +10,11 @@ export default function globalSetup(): void {
     console.log("[e2e] E2E_SKIP_RESET=1 — using the database as-is");
     return;
   }
+  const workdir = process.env.E2E_SUPABASE_WORKDIR;
+  const api = process.env.VITE_SUPABASE_URL;
+  if (api && !["http://127.0.0.1:54321", "http://localhost:54321"].includes(api) && !workdir) {
+    throw new Error("An isolated E2E API requires E2E_SKIP_RESET=1 or E2E_SUPABASE_WORKDIR; refusing to reset the development database.");
+  }
   console.log("[e2e] resetting local database to the seed state…");
-  execSync("npx supabase db reset", { stdio: "inherit" });
+  execFileSync("npx", ["supabase", "db", "reset", "--local", ...(workdir ? ["--workdir", workdir] : [])], { stdio: "inherit" });
 }

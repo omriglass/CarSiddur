@@ -108,7 +108,7 @@ begin
     'driver_id', '00000000-0000-0000-0000-000000000103', 'is_pinned', true, 'pin_reason', 'SMOKE_TEST',
     'served', jsonb_build_array(jsonb_build_object(
       'request_id', '00000000-0000-0000-0000-000000000201', 'role', 'driver', 'leg', 'both', 'car_mode', 'keep'))
-  ));
+  ), (select version from public.rides where id='00000000-0000-0000-0000-000000000301'));
   raise notice 'TEST 3a PASSED: Sadran of נבו can edit a ride of their own department via edit_ride()';
 end $$;
 
@@ -280,8 +280,23 @@ declare
   v_version_id uuid;
   v_notified int;
   v_phase public.week_phase;
+  v_profiles jsonb; v_policies jsonb;
 begin
-  v_version_id := public.publish_siddur('00000000-0000-0000-0000-000000000001', v_open_week);
+  with requests as (
+    select q.*,exists(select 1 from public.ride_requests rr join public.rides r on r.id=rr.ride_id where rr.request_id=q.id and r.status<>'cancelled') as served
+    from public.requests q where department_id='00000000-0000-0000-0000-000000000001' and week_start=v_open_week and status not in ('draft','withdrawn','cancelled')
+  ), profiles as (
+    select jsonb_build_object('profile_id',requester_id,'request_count',count(*),'served_count',count(*) filter(where served),'priority_total',count(*),'served_priority_total',count(*) filter(where served),
+      'requests',jsonb_agg(jsonb_build_object('request_id',id,'score',1,'served',served))) as profile from requests group by requester_id
+  ) select coalesce(jsonb_agg(profile),'[]') into v_profiles from profiles;
+  select jsonb_agg(jsonb_build_object('policy_id',id,'policy_version_id',current_version_id,'policy_name',name,'profiles',v_profiles,
+    'request_count',(select sum((x->>'request_count')::int) from jsonb_array_elements(v_profiles) x),
+    'served_count',(select sum((x->>'served_count')::int) from jsonb_array_elements(v_profiles) x),
+    'priority_total',(select sum((x->>'priority_total')::numeric) from jsonb_array_elements(v_profiles) x),
+    'served_priority_total',(select sum((x->>'served_priority_total')::numeric) from jsonb_array_elements(v_profiles) x))) into v_policies
+  from public.policies where (department_id='00000000-0000-0000-0000-000000000001' or department_id is null) and current_version_id is not null;
+  v_version_id := public.publish_siddur('00000000-0000-0000-0000-000000000001', v_open_week,v_profiles,
+    public.publish_scores_fingerprint('00000000-0000-0000-0000-000000000001',v_open_week),v_policies);
   assert v_version_id is not null, 'TEST 9 FAILED: publish_siddur() should return a version id';
 
   select notified_count into v_notified from public.siddur_versions where id = v_version_id;

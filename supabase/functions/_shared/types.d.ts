@@ -90,7 +90,8 @@ export interface FixedRide {
     originId: string;
     destinationId: string;
     driverRequestId?: string;
-    driverMemberId: string;
+    /** Driverless pinned reservations still block the car's timeline. */
+    driverMemberId?: string;
     legs: AssignmentLeg[];
     servedRequestIds: string[];
     passengers: Passengers;

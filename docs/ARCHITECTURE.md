@@ -581,3 +581,8 @@ Nothing in the architecture changes on upgrade; only the plan does.
 | 20 | Single repo, feature folders, no monorepo | One deployable app plus one Supabase project; tooling stays simple | Turborepo with `packages/solver` (worth it only if a second app appears) |
 | 21 | Vitest + Playwright against local Supabase | Unit-test the pure core; e2e the four flows in §11 on a real database | Mock Supabase in e2e (misses RLS bugs); Cypress (slower, no parallel free tier) |
 | 22 | WhatsApp via `wa.me` links only | Free, one tap for the Sadran; API is out of scope (§12) | WhatsApp Business API (cost, approval); Twilio (cost) |
+## TODO enforcement additions — 2026-09-07
+
+Owned ride editing and collision consent are enforced in Postgres RPCs, with the UI ownership predicate only controlling gestures. Pending overlays live outside confirmed rides so database overlap constraints are never weakened. Deferred local-day triggers protect every assignment writer, including solver/proposal paths. Coordinators gain operational authority through `can_manage_operations`; identity/department administration remains separate.
+
+Publication computes comparisons for every current department/global policy version with the pure TS policy engine, then passes the results and a freshly read database fingerprint to `publish_siddur`. The RPC validates complete score coverage and saves the comparison alongside the immutable final board snapshot in the same transaction. No new service, paid dependency, scheduler or edge function is introduced.

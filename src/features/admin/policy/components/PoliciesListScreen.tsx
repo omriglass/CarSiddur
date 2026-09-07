@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { useDepartments } from "@/features/siddur/hooks";
+import { useOperationalDepartments } from "@/features/admin/useOperations";
 import { he } from "@/i18n/he";
 import { showErrorToast } from "@/lib/rpc";
 
@@ -18,7 +18,7 @@ import { useCreatePolicyMutation, usePoliciesAdmin } from "../hooks";
 
 export function PoliciesListScreen() {
   const policiesQuery = usePoliciesAdmin();
-  const departmentsQuery = useDepartments();
+  const departmentsQuery = useOperationalDepartments();
   const createMutation = useCreatePolicyMutation();
   const navigate = useNavigate();
 
@@ -27,7 +27,7 @@ export function PoliciesListScreen() {
   const [departmentId, setDepartmentId] = useState<string>("");
 
   const departmentsById = new Map((departmentsQuery.data ?? []).map((d) => [d.id, d.name]));
-  const policies = policiesQuery.data ?? [];
+  const policies = (policiesQuery.data ?? []).filter((policy) => !policy.department_id || departmentsById.has(policy.department_id));
 
   async function submit() {
     if (!name.trim()) return;

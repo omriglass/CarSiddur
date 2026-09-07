@@ -7,7 +7,7 @@ import { formatWeekRangeLabel } from "@/components/DateField";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { PageHeader } from "@/components/PageHeader";
-import { Badge } from "@/components/ui/badge";
+import { StatTilesSkeleton } from "@/components/skeletons/StatTilesSkeleton";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -36,7 +36,15 @@ import {
   useWeekRequestsWithNames,
   useWeekRow,
 } from "../../hooks";
-import { buildApplyPayload, gatherSolverContext, hashSolverInput, nowMs, runSolve } from "../../solverRun";
+import {
+  buildApplyPayload,
+  computeFullResolveDiff,
+  gatherSolverContext,
+  hashSolverInput,
+  nowMs,
+  runSolve,
+  type FullResolveDiff,
+} from "../../solverRun";
 
 import type { Json } from "@/integrations/supabase/types";
 import type { SolverOutput } from "@/solver";
@@ -87,6 +95,18 @@ export function WeekDashboardScreen({ departmentId, weekStart }: WeekDashboardSc
   // Read once via a lazy initializer (not on every render, matching
   // `MaintenanceScreen`'s convention) rather than `Date.now()` directly during render.
   const [nowMsSnapshot] = useState(() => Date.now());
+
+  // "פתור מחדש את כל השבוע" (UX_FLOWS.md §19/§20 — a separate, explicit
+  // secondary action next to the primary "הרץ פותר"): `mode: 'full'` may
+  // replace non-pinned rides, so it always previews the diff first
+  // (`computeFullResolveDiff`) and requires an explicit confirm before
+  // applying — unlike the primary Solve action above, which applies its
+  // 'remaining'-mode result directly since it can only ever add rides.
+  const [fullResolvePreview, setFullResolvePreview] = useState<{
+    payload: ReturnType<typeof buildApplyPayload>;
+    diff: FullResolveDiff;
+  } | null>(null);
+  const [fullResolveLoading, setFullResolveLoading] = useState(false);
 
   const requests = requestsQuery.data ?? [];
   const nonDraft = requests.filter((r) => r.status !== "draft" && r.status !== "withdrawn");
@@ -282,6 +302,74 @@ export function WeekDashboardScreen({ departmentId, weekStart }: WeekDashboardSc
     }
   }
 
+  /**
+   * Gathers/solves in `mode: 'full'` and computes the confirm dialog's diff
+   * (`computeFullResolveDiff`) — never applies anything itself; nothing is
+   * written to the DB until `handleApplyFullResolve` below.
+   */
+  async function handleRunFullResolve() {
+    if (!activePolicyQuery.data || !department?.home_destination_id) {
+      toast.error(he.errors.noHomeLocation);
+      return;
+    }
+    setFullResolveLoading(true);
+    try {
+      const context = await gatherSolverContext({
+        departmentId,
+        weekStart,
+        homeDestinationId: department.home_destination_id,
+        policy: {
+          policyId: activePolicyQuery.data.policyId,
+          policyVersionId: activePolicyQuery.data.policyVersionId,
+          versionNo: activePolicyQuery.data.versionNo,
+          rules: activePolicyQuery.data.rules,
+        },
+        mode: "full",
+      });
+      const startedAtMs = nowMs();
+      const output = runSolve(context.input);
+      const finishedAtMs = nowMs();
+      const diff = computeFullResolveDiff(context, output);
+      const payload = buildApplyPayload({
+        output,
+        weekStartMs: context.weekStartMs,
+        policyVersionId: context.policyVersionId,
+        startedAtMs,
+        finishedAtMs,
+        inputHash: hashSolverInput(context.input),
+        requestsById: context.requestsById,
+        mode: "full",
+      });
+      setFullResolvePreview({ payload, diff });
+    } catch (error) {
+      toast.error(toAppError(error).message);
+    } finally {
+      setFullResolveLoading(false);
+    }
+  }
+
+  async function handleApplyFullResolve() {
+    if (!fullResolvePreview) return;
+    try {
+      const summary = await applyMutation.mutateAsync({
+        departmentId,
+        weekStart,
+        payload: fullResolvePreview.payload as unknown as Json,
+      });
+      toast.success(
+        tv("sadranDashboard.appliedSummary", {
+          inserted: String(summary.inserted),
+          deleted: String(summary.deleted),
+          unassigned: String(summary.unassigned_requests.length),
+        }),
+      );
+      setFullResolvePreview(null);
+      navigate(`/sadran/${departmentId}/${weekStart}/board`);
+    } catch {
+      // toast already shown by the mutation's onError
+    }
+  }
+
   if (weekRowQuery.isError || requestsQuery.isError) {
     return <ErrorState onRetry={() => weekRowQuery.refetch()} />;
   }
@@ -290,7 +378,15 @@ export function WeekDashboardScreen({ departmentId, weekStart }: WeekDashboardSc
   // counters row renders as all-zero for a moment on every load, before the
   // real counts arrive — indistinguishable from an actually-empty week.
   if (requestsQuery.isLoading) {
-    return <div className="flex min-h-[50dvh] items-center justify-center text-muted-foreground">{he.common.loading}</div>;
+    return (
+      <div className="mx-auto max-w-4xl space-y-4 p-4 pb-24">
+        <PageHeader
+          title={he.screen.sadran.dashboard}
+          subtitle={`${department?.name ?? ""} · ${formatWeekRangeLabel(weekStart)}`}
+        />
+        <StatTilesSkeleton />
+      </div>
+    );
   }
 
   return (
@@ -302,9 +398,16 @@ export function WeekDashboardScreen({ departmentId, weekStart }: WeekDashboardSc
 
       <div className="flex flex-wrap items-center gap-2">
         {(["open", "solving", "published", "live", "archived"] as const).map((p) => (
-          <Badge key={p} variant={phase === p ? "default" : "outline"}>
+          <span
+            key={p}
+            className={
+              phase === p
+                ? "rounded-full bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground shadow-sm"
+                : "rounded-full border border-border px-3 py-1 text-xs text-muted-foreground"
+            }
+          >
             {he.phase[p]}
-          </Badge>
+          </span>
         ))}
         {!weekRowQuery.data ? (
           <Button
@@ -329,14 +432,14 @@ export function WeekDashboardScreen({ departmentId, weekStart }: WeekDashboardSc
 
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-6">
         {[
-          { label: he.sadranDashboard.counters.requests, value: nonDraft.length },
-          { label: he.sadranDashboard.counters.served, value: served },
-          { label: he.sadranDashboard.counters.unmet, value: unmet },
-          { label: he.sadranDashboard.counters.awaitingAnswer, value: awaitingAnswer },
-          { label: he.sadranDashboard.counters.late, value: lateIds.length },
-          { label: he.sadranDashboard.counters.changed, value: changedIds.length },
+          { label: he.sadranDashboard.counters.requests, value: nonDraft.length, border: "border-t-primary" },
+          { label: he.sadranDashboard.counters.served, value: served, border: "border-t-available" },
+          { label: he.sadranDashboard.counters.unmet, value: unmet, border: "border-t-destructive" },
+          { label: he.sadranDashboard.counters.awaitingAnswer, value: awaitingAnswer, border: "border-t-maintenance" },
+          { label: he.sadranDashboard.counters.late, value: lateIds.length, border: "border-t-maintenance" },
+          { label: he.sadranDashboard.counters.changed, value: changedIds.length, border: "border-t-booked" },
         ].map((c) => (
-          <Card key={c.label}>
+          <Card key={c.label} className={`border-t-4 bg-gradient-card shadow-card ${c.border}`}>
             <CardContent className="p-3 text-center">
               <div className="text-2xl font-semibold tabular-nums">{c.value}</div>
               <div className="text-xs text-muted-foreground">{c.label}</div>
@@ -349,6 +452,13 @@ export function WeekDashboardScreen({ departmentId, weekStart }: WeekDashboardSc
         <Button onClick={handleRunSolver} disabled={solving || !activePolicyQuery.data}>
           {solving ? he.sadranDashboard.solving : he.action.runSolver}
         </Button>
+        <Button
+          variant="outline"
+          onClick={() => void handleRunFullResolve()}
+          disabled={fullResolveLoading || !activePolicyQuery.data}
+        >
+          {fullResolveLoading ? he.sadranDashboard.fullResolveLoading : he.sadranDashboard.fullResolveButton}
+        </Button>
         <Button variant="outline" onClick={() => navigate(`/sadran/${departmentId}/${weekStart}/board`)}>
           {he.action.openBoard}
         </Button>
@@ -360,7 +470,7 @@ export function WeekDashboardScreen({ departmentId, weekStart }: WeekDashboardSc
         </Button>
       </div>
 
-      <Card>
+      <Card className="bg-gradient-card shadow-card">
         <CardContent className="space-y-2 p-4 text-sm">
           <h2 className="font-medium">{he.sadranDashboard.byTypeTitle}</h2>
           <div className="flex flex-wrap gap-x-4 gap-y-1 text-muted-foreground">
@@ -377,7 +487,7 @@ export function WeekDashboardScreen({ departmentId, weekStart }: WeekDashboardSc
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="bg-gradient-card shadow-card">
         <CardContent className="space-y-2 p-4">
           <h2 className="font-medium">{he.sadranDashboard.needsAttentionTitle}</h2>
           {needsAttention.length === 0 ? (
@@ -385,9 +495,10 @@ export function WeekDashboardScreen({ departmentId, weekStart }: WeekDashboardSc
           ) : (
             <ul className="space-y-1 text-sm">
               {needsAttention.map((section) => (
-                <li key={section.kind} className="flex items-center justify-between gap-2">
+                <li key={section.kind} className="flex items-center justify-between gap-2 rounded-md px-1 py-1">
                   <span className="flex items-center gap-2">
-                    <AlertTriangle className="size-3.5 shrink-0 text-amber-600" aria-hidden="true" />
+                    <span className="size-2 shrink-0 rounded-full bg-maintenance" aria-hidden="true" />
+                    <AlertTriangle className="size-3.5 shrink-0 text-maintenance" aria-hidden="true" />
                     {NEEDS_ATTENTION_LABEL[section.kind](section.count)}
                   </span>
                   <Button
@@ -454,13 +565,51 @@ export function WeekDashboardScreen({ departmentId, weekStart }: WeekDashboardSc
               ) : null}
 
               {confirmingReplace ? (
-                <p className="rounded-md border border-amber-500/50 bg-amber-50 p-2 text-amber-700">
+                <p className="rounded-md border border-maintenance/40 bg-maintenance/10 p-2 text-maintenance">
                   {tv("sadranDashboard.replaceUnpinnedConfirmBody", { count: String(existingUnpinnedRideCount) })}
                 </p>
               ) : null}
 
               <Button className="w-full" size="lg" onClick={handleApplyDraft} disabled={applyMutation.isPending}>
                 {confirmingReplace ? he.sadranDashboard.replaceUnpinnedConfirmAction : he.sadranDashboard.applyDraft}
+              </Button>
+            </div>
+          ) : null}
+        </SheetContent>
+      </Sheet>
+
+      <Sheet open={!!fullResolvePreview} onOpenChange={(open) => !open && setFullResolvePreview(null)}>
+        <SheetContent side="bottom" className="max-h-[85dvh] overflow-y-auto">
+          <SheetHeader>
+            <SheetTitle>{he.sadranDashboard.fullResolveConfirmTitle}</SheetTitle>
+          </SheetHeader>
+          {fullResolvePreview ? (
+            <div className="space-y-4 py-4 text-sm">
+              {fullResolvePreview.diff.changedOrRemovedRides.length === 0 ? (
+                <p className="text-muted-foreground">{he.sadranDashboard.fullResolveConfirmNone}</p>
+              ) : (
+                <>
+                  <p className="rounded-md border border-maintenance/40 bg-maintenance/10 p-2 text-maintenance">
+                    {tv("sadranDashboard.fullResolveConfirmBody", {
+                      rideCount: String(fullResolvePreview.diff.changedOrRemovedRides.length),
+                      lostCount: String(fullResolvePreview.diff.requestsLosingAssignment),
+                    })}
+                  </p>
+                  <div className="space-y-1">
+                    <h3 className="font-medium">{he.sadranDashboard.fullResolveRidesListTitle}</h3>
+                    <ul className="max-h-40 space-y-1 overflow-y-auto text-xs text-muted-foreground">
+                      {fullResolvePreview.diff.changedOrRemovedRides.map((r) => (
+                        <li key={r.rideId} dir="ltr" className="text-end">
+                          {r.label}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </>
+              )}
+
+              <Button className="w-full" size="lg" onClick={() => void handleApplyFullResolve()} disabled={applyMutation.isPending}>
+                {he.sadranDashboard.fullResolveConfirmAction}
               </Button>
             </div>
           ) : null}

@@ -1,5 +1,5 @@
 import { getDay } from "date-fns";
-import { formatInTimeZone, toZonedTime } from "date-fns-tz";
+import { formatInTimeZone, fromZonedTime, toZonedTime } from "date-fns-tz";
 import { useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -15,14 +15,17 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { TimeField15 } from "@/components/TimeField15";
+import { useCars, useDestinations } from "@/features/fleet/hooks";
 import { useProfile } from "@/features/auth/useProfile";
 import { fetchBoardRideById } from "@/features/siddur/api";
-import { he, t, tv } from "@/i18n/he";
+import { he, t } from "@/i18n/he";
 import { env } from "@/lib/env";
 import { TZ, formatTime } from "@/lib/time";
 import { useQuery } from "@tanstack/react-query";
 
-import { buildWaUrl, renderTemplate } from "../waLink";
+import { renderTemplate } from "../waLink";
+import { WhatsappDialog } from "./WhatsappDialog";
 import {
   useApplyProposalMutation,
   useCreateProposalMutation,
@@ -82,12 +85,24 @@ export function ProposalComposerScreen({ departmentId, weekStart }: ProposalComp
   const profileQuery = useProfile();
   const requestsQuery = useWeekRequests(departmentId, weekStart);
   const templatesQuery = useWhatsappTemplates();
+  const destinationsQuery = useDestinations();
+  const carsQuery = useCars(departmentId);
 
   const [requestId] = useState(prefill?.requestId ?? "");
   const [type] = useState<ProposalType>(prefill?.type ?? "shift");
   const [rideId] = useState<string | null>(prefill?.rideId ?? null);
 
   const request = (requestsQuery.data ?? []).find((r) => r.id === requestId);
+  const [departOverride, setDepartOverride] = useState<string | null>(null);
+  const [returnOverride, setReturnOverride] = useState<string | null>(null);
+  const departAt = typeof prefill?.payload.depart_at === "string" ? prefill.payload.depart_at : request?.depart_at;
+  const returnAt = typeof prefill?.payload.return_at === "string" ? prefill.payload.return_at : request?.return_at;
+  function atTime(instant: string | null | undefined, time: string | null) {
+    return instant && time ? fromZonedTime(`${formatInTimeZone(instant, TZ, "yyyy-MM-dd")}T${time}:00`, TZ).toISOString() : instant;
+  }
+  const proposedDepartAt = atTime(departAt, departOverride);
+  const proposedReturnAt = atTime(returnAt, returnOverride);
+  const destinationName = destinationsQuery.data?.find((d) => d.id === request?.destination_id)?.name ?? request?.destination_text ?? "";
 
   const hostRideQuery = useQuery({
     queryKey: ["sadran", "proposalHostRide", rideId],
@@ -148,18 +163,18 @@ export function ProposalComposerScreen({ departmentId, weekStart }: ProposalComp
     return {
       firstName: firstNameOf(requester?.full_name),
       sadranName: profileQuery.data?.full_name ?? "",
-      destination: request?.destination_text ?? "",
+      destination: destinationName,
       day,
       date,
       depart: request?.depart_at ? formatTime(new Date(request.depart_at)) : "",
       return: request?.return_at ? formatTime(new Date(request.return_at)) : "",
-      newDepart: typeof prefill?.payload.depart_at === "string" ? formatTime(new Date(prefill.payload.depart_at)) : "",
-      newReturn: typeof prefill?.payload.return_at === "string" ? formatTime(new Date(prefill.payload.return_at)) : "",
-      car: hostRideQuery.data?.car_id ?? "",
+      newDepart: proposedDepartAt ? formatTime(new Date(proposedDepartAt)) : "",
+      newReturn: proposedReturnAt ? formatTime(new Date(proposedReturnAt)) : "",
+      car: carsQuery.data?.find((c) => c.id === hostRideQuery.data?.car_id)?.name ?? "",
       driverName: hostRideQuery.data?.driver_name ?? "",
       passengerName: firstNameOf(requester?.full_name),
       detourMin: "",
-      reason: typeof prefill?.payload.reason === "string" ? prefill.payload.reason : "",
+      reason: reasonInput,
       expiresAt: "",
       // Deliberately no `link` key (Stage 3 hardening bug fix, found while writing
       // e2e/proposal.spec.ts, UX_FLOWS.md §16 item 9): `renderTemplate` only replaces a
@@ -185,9 +200,10 @@ export function ProposalComposerScreen({ departmentId, weekStart }: ProposalComp
    */
   function buildPayload(): Record<string, unknown> | null {
     if (type === "shift") {
-      const departAt = (prefill?.payload.depart_at as string | undefined) ?? request?.depart_at ?? undefined;
-      const returnAt = (prefill?.payload.return_at as string | undefined) ?? request?.return_at ?? undefined;
+      const departAt = proposedDepartAt;
+      const returnAt = proposedReturnAt;
       if (!departAt && !returnAt) return null;
+      if (departAt && returnAt && Date.parse(returnAt) <= Date.parse(departAt)) return null;
       return { ...prefill?.payload, depart_at: departAt, return_at: returnAt };
     }
     if (type === "deny") {
@@ -234,13 +250,8 @@ export function ProposalComposerScreen({ departmentId, weekStart }: ProposalComp
     if (!token || !contact.phone) return null;
     const link = `${env.VITE_APP_URL}/p/${token}`;
     const text = renderTemplate(previewText, { link });
-    const url = buildWaUrl(contact.phone, text);
     return (
-      <Button asChild key={contact.id} variant="outline" className="w-full">
-        <a href={url} target="_blank" rel="noreferrer">
-          {tv("sadranProposal.sendWhatsapp", { name: contact.full_name })}
-        </a>
-      </Button>
+      <WhatsappDialog key={contact.id} name={contact.full_name} phone={contact.phone} message={text} />
     );
   }
 
@@ -275,8 +286,13 @@ export function ProposalComposerScreen({ departmentId, weekStart }: ProposalComp
           </div>
 
           <p className="text-muted-foreground">
-            {request.destination_text} · {request.depart_at ? formatTime(new Date(request.depart_at)) : ""}
+            {destinationName} · {request.depart_at ? formatTime(new Date(request.depart_at)) : request.return_at ? formatTime(new Date(request.return_at)) : ""}
           </p>
+
+          {type === "shift" && !proposalId ? <div className="flex flex-wrap gap-4">
+            {departAt ? <label className="space-y-1 text-xs"><span className="block">{he.field.depart}</span><TimeField15 min="00:00" value={departOverride ?? formatInTimeZone(departAt, TZ, "HH:mm")} onChange={(time) => { setDepartOverride(time); setEditedText(null); }} aria-label={he.field.depart} /></label> : null}
+            {returnAt ? <label className="space-y-1 text-xs"><span className="block">{he.field.return}</span><TimeField15 min="00:00" value={returnOverride ?? formatInTimeZone(returnAt, TZ, "HH:mm")} onChange={(time) => { setReturnOverride(time); setEditedText(null); }} aria-label={he.field.return} /></label> : null}
+          </div> : null}
 
           {(type === "deny" || type === "external") && !proposalId ? (
             <div>

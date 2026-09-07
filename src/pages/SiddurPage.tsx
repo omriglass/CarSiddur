@@ -2,13 +2,18 @@ import { formatInTimeZone } from "date-fns-tz";
 import { CalendarDays, Inbox } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { toast } from "sonner";
+import { useQueryClient } from "@tanstack/react-query";
 
 import { formatWeekRangeLabel, todayInJerusalem } from "@/components/DateField";
 import { DestinationCombobox, type DestinationValue } from "@/components/DestinationCombobox";
 import { EmptyState } from "@/components/EmptyState";
 import { PageHeader } from "@/components/PageHeader";
 import { RideCard, type RideCardData } from "@/components/RideCard";
+import { RideTypeLegend } from "@/components/RideTypeLegend";
+import { CardListSkeleton } from "@/components/skeletons/CardListSkeleton";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -22,9 +27,12 @@ import { WeekStrip } from "@/components/WeekStrip";
 import { useMyDepartments } from "@/features/auth/useMyDepartments";
 import { useProfile } from "@/features/auth/useProfile";
 import { useSession } from "@/features/auth/useSession";
-import { useCars, useDestinations, useRideTypes } from "@/features/fleet/hooks";
+import { useCars, useDestinations, useRideTypes, useMaintenanceBlocks, useCarSeatConfigs } from "@/features/fleet/hooks";
 import { QuickRequestSheet } from "@/features/requests/components/QuickRequestSheet";
 import { RideDetailSheet } from "@/features/siddur/components/RideDetailSheet";
+import { MemberRideEditor } from "@/features/siddur/components/MemberRideEditor";
+import { conflictingRides, moveOnRideDay } from "@/features/siddur/rideEditing";
+import { useEditRideMutation, useDepartmentSettings } from "@/features/sadran/hooks";
 import { groupByDay } from "@/features/siddur/dayGrouping";
 import { firstCarFreeNow, roundUpToQuarterHour } from "@/features/siddur/freeWindows";
 import {
@@ -33,10 +41,12 @@ import {
   useCarLocations,
   useDepartments,
   useWeeks,
+  useRideChanges,
+  useRequestRideChangeMutation,
 } from "@/features/siddur/hooks";
 import { useDayFreeWindows } from "@/features/siddur/useDayFreeWindows";
-import type { Week } from "@/features/siddur/api";
-import { servedOf } from "@/features/sadran/solverRun";
+import type { Week, RideMove } from "@/features/siddur/api";
+import { representativeRideTypeCode, servedOf } from "@/features/sadran/solverRun";
 import { rideBlockLabel, resolveRideRealDestination } from "@/lib/rideLabel";
 import { parseTimeToMinutes } from "@/features/solverBridge/buildSolverInput";
 import { he, t, tv } from "@/i18n/he";
@@ -69,6 +79,7 @@ function minutesSinceMidnight(instant: string): number {
 export function SiddurPage() {
   const params = useParams<{ dept?: string; week?: string }>();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   const { session } = useSession();
   const profileId = session?.user.id;
@@ -88,9 +99,16 @@ export function SiddurPage() {
 
   const boardRidesQuery = useBoardRides(departmentId, weekStart);
   const carsQuery = useCars(departmentId);
+  const maintenanceQuery = useMaintenanceBlocks(departmentId);
+  const seatsQuery = useCarSeatConfigs(departmentId);
   const carLocationsQuery = useCarLocations(departmentId, weekStart);
   const boardStartTimeQuery = useBoardStartTime(departmentId);
   const rideTypesQuery = useRideTypes();
+  const settingsQuery = useDepartmentSettings(departmentId);
+  const changesQuery = useRideChanges(departmentId, weekStart);
+  const editMutation = useEditRideMutation();
+  const changeMutation = useRequestRideChangeMutation();
+  const [collisionMove, setCollisionMove] = useState<RideMove | null>(null);
 
   const [destFilter, setDestFilter] = useState<DestinationValue | null>(null);
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
@@ -120,13 +138,14 @@ export function SiddurPage() {
   const dayGroups = weekStart ? groupByDay(rides, weekStart, (r) => r.starts_at ?? "") : [];
   const today = todayInJerusalem();
   const defaultDay = dayGroups.find((g) => g.date === today)?.date ?? dayGroups[0]?.date ?? null;
-  const activeDay = selectedDay ?? defaultDay;
+  const activeDay = dayGroups.some((g) => g.date === selectedDay) ? selectedDay : defaultDay;
   const activeDayRides = dayGroups.find((g) => g.date === activeDay)?.items ?? [];
 
   // Quick-request-from-empty-slot (UX_FLOWS.md §18): only the live week auto-approves onto a
   // specific car (REQ §8) — an Open/Solving week has no car to target yet, the Sadran solves
   // later, so a click there just prefills the normal form's day/time instead (below).
   const isLiveWeek = resolvedWeek?.phase === "live";
+  const canEditWeek = isMyDepartment && (isLiveWeek || resolvedWeek?.phase === "published");
   const now = new Date();
   const dayFreeWindows = useDayFreeWindows(departmentId, isLiveWeek ? weekStart : undefined, isLiveWeek ? (activeDay ?? undefined) : undefined, now);
   const defaultRideTypeId = rideTypesQuery.data?.find((rt) => rt.code === "other")?.id ?? rideTypesQuery.data?.[0]?.id ?? "";
@@ -164,6 +183,59 @@ export function SiddurPage() {
     : [];
 
   const selectedRide = rides.find((r) => r.id === selectedRideId) ?? null;
+  const pendingChanges = changesQuery.data ?? [];
+  const shadowedRideIds = new Set(pendingChanges.flatMap((c) => [c.ride_id, ...c.parties.map((p) => p.ride_id)]));
+
+  function ownsEditableRide(rideId: string) {
+    const ride = boardRidesQuery.data?.find((r) => r.id === rideId);
+    if (!ride) return false;
+    if (servedOf(ride).some((entry) => entry.role !== "driver" || entry.car_mode !== "keep")) return false;
+    return !!(canEditWeek && ride.driver_id === profileId && ride.starts_at && Date.parse(ride.starts_at) > now.getTime()
+      && !pendingChanges.some((c) => c.ride_id === rideId));
+  }
+
+  async function saveMove(move: RideMove) {
+    const ride = boardRidesQuery.data?.find((r) => r.id === move.rideId);
+    if (!ride || !ownsEditableRide(move.rideId) || !departmentId || !weekStart || !ride.origin_id || !ride.destination_id) return;
+    if (conflictingRides(move, boardRidesQuery.data ?? [], settingsQuery.data?.turnaround_minutes ?? 30).length) {
+      setCollisionMove(move);
+      return;
+    }
+    try {
+      await editMutation.mutateAsync({
+        input: { id: move.rideId, department_id: departmentId, week_start: weekStart, car_id: move.carId,
+          starts_at: move.startsAt, ends_at: move.endsAt, origin_id: ride.origin_id, destination_id: ride.destination_id,
+          driver_id: ride.driver_id },
+        expectedVersion: move.expectedVersion, departmentId, weekStart,
+      });
+      await queryClient.invalidateQueries({ queryKey: ["siddur"] });
+      setSelectedRideId(null);
+      toast.success(he.rideEditing.saved);
+    } catch { /* Mutation displays the database validation error. */ }
+  }
+
+  function moveRide(rideId: string, carId: string, startMinutes: number, endMinutes?: number) {
+    const ride = boardRidesQuery.data?.find((r) => r.id === rideId);
+    if (!ride?.starts_at || !ride.ends_at || !ownsEditableRide(rideId)) return;
+    const duration = (Date.parse(ride.ends_at) - Date.parse(ride.starts_at)) / 60_000;
+    const move = moveOnRideDay(ride, carId, startMinutes, endMinutes ?? startMinutes + duration);
+    if (move) void saveMove(move);
+  }
+
+  function validMemberTarget(rideId: string, carId: string, startMinutes: number, endMinutes: number) {
+    const ride = boardRidesQuery.data?.find((r) => r.id === rideId);
+    const car = carsQuery.data?.find((c) => c.id === carId);
+    if (!ride || !car || car.status !== "active" || (car.type === "temporary" && car.owner_id !== profileId)) return false;
+    const move = moveOnRideDay(ride, carId, startMinutes, endMinutes);
+    if (!move || Date.parse(move.startsAt) <= now.getTime()) return false;
+    const buffer = settingsQuery.data?.turnaround_minutes ?? 30;
+    if (conflictingRides(move, boardRidesQuery.data ?? [], buffer).length) return false;
+    if ((maintenanceQuery.data ?? []).some((block) => block.car_id === carId && Date.parse(move.startsAt) < Date.parse(block.ends_at)
+      && Date.parse(move.endsAt) + buffer * 60_000 > Date.parse(block.starts_at))) return false;
+    const served = servedOf(ride);
+    const need = served.reduce((sum, entry) => ({ adults: sum.adults + entry.adults, child: sum.child + entry.child_seats, boosters: sum.boosters + entry.boosters }), { adults: 0, child: 0, boosters: 0 });
+    return (seatsQuery.data ?? []).some((config) => config.car_id === carId && config.adults >= Math.max(1, need.adults) && config.child_seats >= need.child && config.boosters >= need.boosters);
+  }
   const selectedCar = selectedRide ? (carsQuery.data ?? []).find((c) => c.id === selectedRide.car_id) ?? null : null;
   const selectedLocation = selectedRide
     ? carLocationsQuery.data?.find((l) => l.car_id === selectedRide.car_id)?.location_name ?? null
@@ -195,9 +267,9 @@ export function SiddurPage() {
       id: r.id as string,
       carId: r.car_id as string,
       startMinutes: minutesSinceMidnight(r.starts_at as string),
-      endMinutes: minutesSinceMidnight(r.ends_at as string),
+      endMinutes: minutesSinceMidnight(r.starts_at as string) + (Date.parse(r.ends_at as string) - Date.parse(r.starts_at as string)) / 60_000,
       label:
-        homeDestinationId && r.origin_id && r.destination_id
+        r.notes || (homeDestinationId && r.origin_id && r.destination_id
           ? rideBlockLabel({
               originId: r.origin_id,
               destinationId: r.destination_id,
@@ -206,8 +278,19 @@ export function SiddurPage() {
               homeDestinationId,
               served: servedOf(r),
             })
-          : (r.destination_name ?? ""),
+          : (r.destination_name ?? "")),
+      rideTypeCode: representativeRideTypeCode(servedOf(r)),
+      shadowed: shadowedRideIds.has(r.id as string),
     }));
+  for (const change of pendingChanges) {
+    if (formatInTimeZone(change.starts_at, TZ, "yyyy-MM-dd") !== activeDay) continue;
+    const original = weekGridRides.find((r) => r.id === change.ride_id);
+    weekGridRides.push({ id: `change:${change.id}`, carId: change.car_id,
+      startMinutes: minutesSinceMidnight(change.starts_at),
+      endMinutes: minutesSinceMidnight(change.starts_at) + (Date.parse(change.ends_at) - Date.parse(change.starts_at)) / 60_000,
+      label: `${original?.label ?? change.requester?.full_name ?? ""} · ${he.rideEditing.pending}`,
+      pendingConsent: true, rideTypeCode: original?.rideTypeCode });
+  }
 
   function goTo(nextDept: string, nextWeek: string | undefined) {
     navigate(nextWeek ? `/siddur/${nextDept}/${nextWeek}` : "/siddur");
@@ -295,7 +378,9 @@ export function SiddurPage() {
                   {t("quickRequest.takeCarNow")}
                 </Button>
               ) : null}
-              {filterName && activeDayRides.length === 0 ? (
+              {boardRidesQuery.isLoading ? (
+                <CardListSkeleton />
+              ) : filterName && activeDayRides.length === 0 ? (
                 <EmptyState
                   icon={CalendarDays}
                   message={tv("siddur.filterEmpty", { destination: filterName })}
@@ -322,15 +407,22 @@ export function SiddurPage() {
                     startsAt: r.starts_at as string,
                     endsAt: r.ends_at,
                     originName: r.origin_name ?? "",
-                    destinationName,
+                    destinationName: r.notes || destinationName,
                     driverName: r.driver_name,
                     isChauffeur: !!r.is_chauffeur,
                     carName: (carsQuery.data ?? []).find((c) => c.id === r.car_id)?.name ?? null,
                     carType: (carsQuery.data ?? []).find((c) => c.id === r.car_id)?.type,
+                    rideTypeCode: representativeRideTypeCode(servedOf(r)),
                   };
-                  return <RideCard key={r.id} ride={data} onClick={() => setSelectedRideId(r.id as string)} />;
+                  return <div key={r.id} className={shadowedRideIds.has(r.id as string) ? "opacity-50" : undefined}><RideCard ride={data} onClick={() => setSelectedRideId(r.id as string)} /></div>;
                 })
               )}
+              {pendingChanges.filter((c) => formatInTimeZone(c.starts_at, TZ, "yyyy-MM-dd") === activeDay).map((c) => (
+                <div key={c.id} className="rounded-md border border-dashed border-primary p-3 text-sm">
+                  <p className="font-medium">{c.requester?.full_name} · {he.rideEditing.pending}</p>
+                  <p>{carsQuery.data?.find((car) => car.id === c.car_id)?.name} · <span dir="ltr">{formatInTimeZone(c.starts_at, TZ, "HH:mm")}–{formatInTimeZone(c.ends_at, TZ, "HH:mm")}</span></p>
+                </div>
+              ))}
               {isMyDepartment
                 ? freeGapRows.map((gap) => (
                     <button
@@ -355,13 +447,24 @@ export function SiddurPage() {
                 {showEarlyHours ? he.board.hideEarlyHours : he.board.showEarlyHours}
               </Button>
             </div>
+            <RideTypeLegend
+              types={(rideTypesQuery.data ?? []).map((rt) => ({ code: rt.code, nameHe: rt.name_he }))}
+            />
             <div className="mt-3">
               <WeekGrid
                 cars={weekGridCars}
                 rides={weekGridRides}
                 dayStartMinutes={dayStartMinutes}
                 dayEndMinutes={dayEndMinutes}
-                readOnly
+                readOnly={!canEditWeek}
+                draggable={canEditWeek && !editMutation.isPending && !changeMutation.isPending}
+                canDragRide={(ride) => ownsEditableRide(ride.id)}
+                isDropTargetValid={validMemberTarget}
+                onRideDrop={(rideId, carId, startMinutes) => moveRide(rideId, carId, startMinutes)}
+                onRideResize={(rideId, edge, minutes) => {
+                  const ride = weekGridRides.find((r) => r.id === rideId);
+                  if (ride) moveRide(rideId, ride.carId, edge === "start" ? minutes : ride.startMinutes, edge === "end" ? minutes : ride.endMinutes);
+                }}
                 onRideClick={setSelectedRideId}
                 onSlotClick={isMyDepartment ? handleSlotClick : undefined}
               />
@@ -378,7 +481,23 @@ export function SiddurPage() {
         onOpenChange={(open) => !open && setSelectedRideId(null)}
         onAskToJoin={() => selectedRide && navigate(`/requests/new?ride=${selectedRide.id}`)}
         showAskToJoin={!!selectedRide && isMyDepartment && selectedRide.driver_id !== profileId}
+        editor={selectedRide?.id && ownsEditableRide(selectedRide.id) ? <MemberRideEditor key={`${selectedRide.id}:${selectedRide.version}`} ride={selectedRide} cars={carsQuery.data ?? []} saving={editMutation.isPending || changeMutation.isPending} onSave={(move) => void saveMove(move)} /> : undefined}
       />
+
+      <Dialog open={!!collisionMove} onOpenChange={(open) => !open && setCollisionMove(null)}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>{he.rideEditing.collisionTitle}</DialogTitle><DialogDescription>{he.rideEditing.collisionBody}</DialogDescription></DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCollisionMove(null)}>{he.common.cancel}</Button>
+            <Button disabled={changeMutation.isPending} onClick={() => {
+              if (!collisionMove) return;
+              changeMutation.mutate(collisionMove, { onSuccess: () => {
+                setCollisionMove(null); setSelectedRideId(null); toast.success(he.rideEditing.requested);
+              } });
+            }}>{he.rideEditing.acknowledge}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {isMyDepartment ? (
         <a

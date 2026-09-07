@@ -7,13 +7,12 @@ import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { Separator } from "@/components/ui/separator";
 import { useSession } from "@/features/auth/useSession";
 import { he, t } from "@/i18n/he";
 import { env } from "@/lib/env";
 import { showErrorToast } from "@/lib/rpc";
 import { supabase } from "@/integrations/supabase/client";
-import { PageHeader } from "@/components/PageHeader";
+import { AppLogoMark } from "@/components/AppLogoMark";
 
 const devLoginSchema = z.object({
   email: z.string().email(he.errors.invalidEmail),
@@ -64,53 +63,60 @@ export function LoginPage() {
   }
 
   return (
-    <div className="mx-auto flex min-h-dvh max-w-sm flex-col justify-center gap-6 p-4">
-      <PageHeader title={he.app.name} />
-      <Button size="lg" onClick={handleGoogleSignIn} disabled={isSubmittingGoogle}>
-        {t("action.signinGoogle")}
-      </Button>
+    <div className="flex min-h-dvh flex-col items-center justify-center gap-6 bg-background p-4">
+      <div className="w-full max-w-sm overflow-hidden rounded-xl shadow-elegant">
+        <div className="flex flex-col items-center gap-3 bg-gradient-hero px-6 py-10 text-center text-primary-foreground">
+          <span className="flex size-14 items-center justify-center rounded-2xl bg-white/15">
+            <AppLogoMark className="size-10 bg-transparent" />
+          </span>
+          <h1 className="text-xl font-semibold">{he.app.name}</h1>
+          <p className="text-sm text-primary-foreground/85">{t("app.tagline")}</p>
+        </div>
+        <div className="space-y-4 bg-card p-6">
+          <Button size="lg" className="w-full" onClick={handleGoogleSignIn} disabled={isSubmittingGoogle}>
+            {t("action.signinGoogle")}
+          </Button>
+        </div>
+      </div>
 
       {import.meta.env.DEV ? (
-        <>
-          <Separator />
-          <div className="space-y-4">
-            <p className="text-sm font-medium text-muted-foreground">{t("auth.devSectionTitle")}</p>
-            <Form {...form}>
-              <form className="space-y-3" onSubmit={form.handleSubmit(handleDevLogin)}>
-                <FormField
-                  control={form.control}
-                  name="email"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>{t("field.email")}</FormLabel>
-                      <FormControl>
-                        <Input {...field} type="email" dir="ltr" autoComplete="email" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="password"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>{t("field.password")}</FormLabel>
-                      <FormControl>
-                        <Input {...field} type="password" dir="ltr" autoComplete="current-password" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <Button type="submit" variant="outline" className="w-full">
-                  {t("action.signInEmail")}
-                </Button>
-              </form>
-            </Form>
-            <p className="text-xs text-muted-foreground">{t("auth.devHint")}</p>
-          </div>
-        </>
+        <div className="w-full max-w-sm space-y-4 rounded-xl border border-dashed bg-muted/60 p-4">
+          <p className="text-sm font-medium text-muted-foreground">{t("auth.devSectionTitle")}</p>
+          <Form {...form}>
+            <form className="space-y-3" onSubmit={form.handleSubmit(handleDevLogin)}>
+              <FormField
+                control={form.control}
+                name="email"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t("field.email")}</FormLabel>
+                    <FormControl>
+                      <Input {...field} type="email" dir="ltr" autoComplete="email" className="bg-background" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="password"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t("field.password")}</FormLabel>
+                    <FormControl>
+                      <Input {...field} type="password" dir="ltr" autoComplete="current-password" className="bg-background" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <Button type="submit" variant="outline" className="w-full">
+                {t("action.signInEmail")}
+              </Button>
+            </form>
+          </Form>
+          <p className="text-xs text-muted-foreground">{t("auth.devHint")}</p>
+        </div>
       ) : null}
     </div>
   );

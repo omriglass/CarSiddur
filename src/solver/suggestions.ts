@@ -34,7 +34,7 @@ function volunteerCandidates(input: SolverInput, window: { start: number; end: n
   const driversToday = new Set<string>();
   for (const a of input.fixedRides) {
     const overlaps = a.window.start < window.end && window.start < a.window.end;
-    if (!overlaps) driversToday.add(a.driverMemberId);
+    if (!overlaps && a.driverMemberId) driversToday.add(a.driverMemberId);
   }
   return [...driversToday].sort();
 }

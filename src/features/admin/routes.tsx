@@ -22,10 +22,13 @@ import { TemplatesPage } from "@/pages/admin/TemplatesPage";
  * absolute, matching the router's existing convention for `/my`, `/siddur`, …
  */
 export const adminRoutes: RouteObject[] = [
-  { path: "/admin", element: <AdminHomePage /> },
   { path: "/admin/departments", element: <DepartmentsPage /> },
   { path: "/admin/members", element: <MembersPage /> },
   { path: "/admin/roster", element: <RosterPage /> },
+];
+
+export const operationsRoutes: RouteObject[] = [
+  { path: "/admin", element: <AdminHomePage /> },
   { path: "/admin/cars", element: <CarsPage /> },
   { path: "/admin/cars/:id", element: <CarDetailPage /> },
   { path: "/admin/maintenance", element: <MaintenancePage /> },

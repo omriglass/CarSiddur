@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { he } from "@/i18n/he";
 
@@ -46,5 +47,39 @@ export function FlexibilitySegmented({ value, onChange, ...rest }: FlexibilitySe
         </ToggleGroupItem>
       ))}
     </ToggleGroup>
+  );
+}
+
+
+type FlexDirection = "both" | "later" | "earlier";
+
+/** Compact direction + amount, persisted through the existing early/late fields. */
+export function FlexibilityRange({ early, late, onChange }: {
+  early: FlexValue;
+  late: FlexValue;
+  onChange: (early: FlexValue, late: FlexValue) => void;
+}) {
+  const [zeroDirection, setZeroDirection] = useState<FlexDirection>("both");
+  const direction: FlexDirection = early === 0 && late === 0 ? zeroDirection : early === 0 ? "later" : late === 0 ? "earlier" : "both";
+  const amount: FlexValue = early === "any" || late === "any" ? "any" : Math.max(early, late) as FlexValue;
+  function change(nextDirection: FlexDirection, nextAmount: FlexValue) {
+    setZeroDirection(nextDirection);
+    onChange(nextDirection === "later" ? 0 : nextAmount, nextDirection === "earlier" ? 0 : nextAmount);
+  }
+  return (
+    <div className="space-y-1">
+      <ToggleGroup type="single" value={direction} aria-label={he.request.flexDirection}
+        onValueChange={(next) => { if (next) change(next as FlexDirection, amount); }} className="justify-start" dir="ltr">
+        <ToggleGroupItem value="both" aria-label={he.request.flexBoth}>±</ToggleGroupItem>
+        <ToggleGroupItem value="later" aria-label={he.request.flexLater}>+</ToggleGroupItem>
+        <ToggleGroupItem value="earlier" aria-label={he.request.flexEarlier}>−</ToggleGroupItem>
+      </ToggleGroup>
+      {direction === "both" && early !== late ? (
+        <div>
+          <FlexibilitySegmented value={early} onChange={(value) => onChange(value, late)} aria-label={he.flex.earlier} />
+          <FlexibilitySegmented value={late} onChange={(value) => onChange(early, value)} aria-label={he.flex.later} />
+        </div>
+      ) : <FlexibilitySegmented value={amount} onChange={(value) => change(direction, value)} />}
+    </div>
   );
 }

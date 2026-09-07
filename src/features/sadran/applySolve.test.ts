@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { buildApplyPayload, computeFullResolveDiff, selectOpenRequests } from "./applySolve";
+import { boardRideToFixedRide, buildApplyPayload, computeFullResolveDiff, selectOpenRequests } from "./applySolve";
+import { solve } from "@/solver";
+import { baseInput, makeCar, makeRequest, slotMs, WEEK_START_MS } from "@/solver/__fixtures__/gen";
 
-import type { RequestRow } from "./api";
+import type { RequestRow, BoardRide } from "./api";
 import type { SolverContext } from "./applySolve";
 import type { SolverOutput } from "@/solver";
 
@@ -22,6 +24,19 @@ import type { SolverOutput } from "@/solver";
 function req(overrides: Partial<{ id: string; status: string }> = {}) {
   return { id: "req-1", status: "submitted", ...overrides };
 }
+
+it("preserves a driverless reservation as a fixed constraint during subsequent solves", () => {
+  const reservation = boardRideToFixedRide({ id: "reservation", car_id: "car", driver_id: null,
+    starts_at: new Date(slotMs(32)).toISOString(), ends_at: new Date(slotMs(48)).toISOString(),
+    origin_id: "home", destination_id: "home", served: [], notes: "Reserved", is_pinned: true,
+  } as unknown as BoardRide, WEEK_START_MS);
+  expect(reservation).not.toBeNull();
+  const result = solve(baseInput({ cars: [makeCar("car")], fixedRides: [reservation!], requests: [
+    makeRequest({ id: "request", departureMs: slotMs(36), returnMs: slotMs(44) }),
+  ] }));
+  expect(result.assignments.find((r) => r.rideId === "reservation")?.source).toBe("fixed");
+  expect(result.assignments.some((r) => r.servedRequestIds.includes("request"))).toBe(false);
+});
 
 describe("selectOpenRequests (bug-fix: assigned-by-unpinned-ride requests must reopen)", () => {
   it("includes submitted and waitlisted requests with no fixed ride", () => {
@@ -98,6 +113,7 @@ describe("buildApplyPayload (every reopened request lands in rides or request_st
 describe("computeFullResolveDiff (confirm-dialog data for 're-solve the whole week')", () => {
   it("lists every currently-replaceable ride and counts requests that would lose their assignment", () => {
     const context: SolverContext = {
+      boardRides: [],
       input: {} as SolverContext["input"],
       weekStartMs: 0,
       policyVersionId: "pv",
@@ -124,6 +140,7 @@ describe("computeFullResolveDiff (confirm-dialog data for 're-solve the whole we
 
   it("counts zero when the re-solve reassigns every previously-served request", () => {
     const context: SolverContext = {
+      boardRides: [],
       input: {} as SolverContext["input"],
       weekStartMs: 0,
       policyVersionId: "pv",

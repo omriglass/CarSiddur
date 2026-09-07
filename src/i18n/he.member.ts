@@ -10,6 +10,15 @@
  */
 export const heMember = {
   request: {
+    rideTypeRequired: "יש לבחור סוג נסיעה",
+    destinationRequired: "יש לבחור או להזין יעד",
+    validationSummary: "יש להשלים או לתקן את השדות המסומנים",
+    editWindowClosed: "חלון עריכת הבקשות נסגר. לשינוי הבקשה פנו לסדרן/ית.",
+    notFound: "הבקשה לא נמצאה",
+    flexBoth: "מוקדם או מאוחר (±)",
+    flexLater: "מאוחר בלבד (+)",
+    flexEarlier: "מוקדם בלבד (−)",
+    flexDirection: "כיוון הגמישות",
     tripShapeRoundTrip: "הלוך ושוב",
     tripShapeOneWayTo: "הלוך בלבד",
     tripShapeOneWayFrom: "חזור בלבד",
@@ -40,6 +49,9 @@ export const heMember = {
     submitError: "לא ניתן היה לשלוח את הבקשה",
   },
   requestsList: {
+    withdrawAll: "הסר את כל הבקשות",
+    withdrawAllTitle: "להסיר את כל הבקשות לשבוע הזה?",
+    withdrawAllBody: "כל הבקשות שלך במחלקה ובשבוע הזה יוסרו, כולל שיבוצים שטרם פורסמו. אפשר להגיש בקשות חדשות עד סגירת החלון.",
     title: "הבקשות שלי",
     empty: "אין לך בקשות עדיין.",
     groupLabel: "שבוע {{weekLabel}}",
@@ -145,6 +157,11 @@ export const heMember = {
     tempCarRevoked: "הוצא משימוש על ידי המנהל/ת",
     historyLink: "היסטוריה וסטטיסטיקה",
     managementTitle: "ניהול",
+    themeTitle: "מראה",
+    themeLabel: "ערכת צבעים",
+    themeLight: "בהיר",
+    themeDark: "כהה",
+    themeSystem: "לפי המכשיר",
   },
   freedSlot: {
     title: "רכב שהתפנה",

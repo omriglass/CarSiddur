@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 
-import { formatMinutes, parseHHMM, snapToQuarterHour } from "./TimeField15";
+import { TimeField15, formatMinutes, parseHHMM, snapToQuarterHour } from "./TimeField15";
 
 describe("parseHHMM", () => {
   it("parses well-formed HH:MM", () => {
@@ -51,5 +52,17 @@ describe("snapToQuarterHour", () => {
 
   it("returns null for unparsable input", () => {
     expect(snapToQuarterHour("not a time")).toBeNull();
+  });
+});
+
+describe("typed time entry", () => {
+  it("keeps an editable text input inside the popover trigger and commits snapped text", () => {
+    const onChange = vi.fn();
+    render(<TimeField15 value="08:00" onChange={onChange} aria-label="time" />);
+    const input = screen.getByLabelText("time");
+    expect(input).toHaveAttribute("type", "text");
+    fireEvent.change(input, { target: { value: "09:22" } });
+    fireEvent.blur(input);
+    expect(onChange).toHaveBeenCalledWith("09:15");
   });
 });

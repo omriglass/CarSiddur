@@ -29,10 +29,26 @@ type RideStatus = Database["public"]["Enums"]["ride_status"];
 interface StatusMeta {
   icon: LucideIcon;
   label: string;
-  /** Tailwind text color token from the UX_FLOWS.md §7.4 legend. */
+  /**
+   * Tailwind color token classes (text + tinted background + border), mapped
+   * onto the shared semantic palette (visual pass): `booked` (primary blue)
+   * for a placed/confirmed ride or request, `maintenance` (amber) for
+   * anything awaiting an answer, `destructive` (muted red) for a denial or
+   * cancellation, `available` (green) for a successful/accepted outcome, and
+   * plain `muted` for neutral/inert states — never color alone, the icon and
+   * Hebrew label always carry the meaning too (UX_FLOWS.md §7.4).
+   */
   colorClass: string;
   strikethrough?: boolean;
 }
+
+const TONE = {
+  booked: "text-booked bg-booked/10 border-booked/20",
+  amber: "text-maintenance bg-maintenance/10 border-maintenance/20",
+  destructive: "text-destructive bg-destructive/10 border-destructive/20",
+  available: "text-available bg-available/10 border-available/20",
+  neutral: "text-muted-foreground bg-muted border-border",
+} as const;
 
 /**
  * `Record<RequestStatus, StatusMeta>` — a plain TS object type, so a
@@ -44,59 +60,59 @@ interface StatusMeta {
  * UX_FLOWS.md §7.4.
  */
 const REQUEST_STATUS_META: Record<RequestStatus, StatusMeta> = {
-  draft: { icon: PencilLine, label: he.status.draft, colorClass: "text-slate-500" },
-  submitted: { icon: Send, label: he.status.submitted, colorClass: "text-slate-500" },
+  draft: { icon: PencilLine, label: he.status.draft, colorClass: TONE.neutral },
+  submitted: { icon: Send, label: he.status.submitted, colorClass: TONE.neutral },
   proposed: {
     icon: MessageCircleQuestion,
     label: he.status.proposed,
-    colorClass: "text-amber-500",
+    colorClass: TONE.amber,
   },
-  assigned: { icon: CheckCircle2, label: he.status.assigned, colorClass: "text-green-600" },
-  merged: { icon: Users, label: he.status.merged, colorClass: "text-teal-600" },
-  waitlisted: { icon: Clock, label: he.status.waitlisted, colorClass: "text-slate-400" },
-  denied: { icon: XCircle, label: he.status.denied, colorClass: "text-red-600" },
-  external: { icon: ExternalLink, label: he.status.external, colorClass: "text-violet-600" },
+  assigned: { icon: CheckCircle2, label: he.status.assigned, colorClass: TONE.booked },
+  merged: { icon: Users, label: he.status.merged, colorClass: TONE.booked },
+  waitlisted: { icon: Clock, label: he.status.waitlisted, colorClass: TONE.amber },
+  denied: { icon: XCircle, label: he.status.denied, colorClass: TONE.destructive },
+  external: { icon: ExternalLink, label: he.status.external, colorClass: TONE.neutral },
   withdrawn: {
     icon: Ban,
     label: he.status.withdrawn,
-    colorClass: "text-slate-400",
+    colorClass: TONE.neutral,
     strikethrough: true,
   },
   cancelled: {
     icon: Ban,
     label: he.status.cancelled,
-    colorClass: "text-slate-400",
+    colorClass: TONE.destructive,
     strikethrough: true,
   },
 };
 
 const PROPOSAL_STATUS_META: Record<ProposalStatus, StatusMeta> = {
-  draft: { icon: PencilLine, label: he.proposalStatus.draft, colorClass: "text-slate-500" },
-  sent: { icon: SendHorizontal, label: he.proposalStatus.sent, colorClass: "text-amber-500" },
-  accepted: { icon: ThumbsUp, label: he.proposalStatus.accepted, colorClass: "text-green-600" },
-  declined: { icon: ThumbsDown, label: he.proposalStatus.declined, colorClass: "text-red-600" },
-  expired: { icon: TimerOff, label: he.proposalStatus.expired, colorClass: "text-slate-400" },
+  draft: { icon: PencilLine, label: he.proposalStatus.draft, colorClass: TONE.neutral },
+  sent: { icon: SendHorizontal, label: he.proposalStatus.sent, colorClass: TONE.amber },
+  accepted: { icon: ThumbsUp, label: he.proposalStatus.accepted, colorClass: TONE.available },
+  declined: { icon: ThumbsDown, label: he.proposalStatus.declined, colorClass: TONE.destructive },
+  expired: { icon: TimerOff, label: he.proposalStatus.expired, colorClass: TONE.neutral },
   withdrawn: {
     icon: Ban,
     label: he.proposalStatus.withdrawn,
-    colorClass: "text-slate-400",
+    colorClass: TONE.neutral,
     strikethrough: true,
   },
-  applied: { icon: CheckCheck, label: he.proposalStatus.applied, colorClass: "text-green-700" },
+  applied: { icon: CheckCheck, label: he.proposalStatus.applied, colorClass: TONE.booked },
 };
 
 const RIDE_STATUS_META: Record<RideStatus, StatusMeta> = {
-  draft: { icon: PencilLine, label: he.rideStatus.draft, colorClass: "text-slate-500" },
+  draft: { icon: PencilLine, label: he.rideStatus.draft, colorClass: TONE.neutral },
   confirmed: {
     icon: CheckCircle2,
     label: he.rideStatus.confirmed,
-    colorClass: "text-green-600",
+    colorClass: TONE.booked,
   },
-  flagged: { icon: XCircle, label: he.rideStatus.flagged, colorClass: "text-orange-500" },
+  flagged: { icon: XCircle, label: he.rideStatus.flagged, colorClass: TONE.amber },
   cancelled: {
     icon: Ban,
     label: he.rideStatus.cancelled,
-    colorClass: "text-slate-400",
+    colorClass: TONE.destructive,
     strikethrough: true,
   },
 };
@@ -128,7 +144,7 @@ export function StatusBadge(props: StatusBadgeProps) {
   return (
     <Badge
       variant="outline"
-      className={cn("gap-1 border-current font-normal", meta.colorClass, props.className)}
+      className={cn("gap-1 font-medium transition-smooth", meta.colorClass, props.className)}
     >
       <Icon className="size-3.5" aria-hidden="true" />
       <span className={cn(meta.strikethrough && "line-through")}>{meta.label}</span>

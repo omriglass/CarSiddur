@@ -4,6 +4,7 @@ import {
   isoToMinutesSinceMidnight,
   isoToSlot,
   scanBoardConflicts,
+  requestDayMismatchRideIds,
   slotToIso,
   snapMinutesTo15,
   withinFlex,
@@ -189,5 +190,26 @@ describe("scanBoardConflicts", () => {
       days: DAYS,
     });
     expect(result.dayEndViolationsByCarId.get("car-1")?.length).toBe(0);
+  });
+});
+
+
+describe("requestDayMismatchRideIds", () => {
+  const requests = [
+    { id: "out", trip_shape: "round_trip", depart_at: "2026-09-10T07:00:00Z", return_at: "2026-09-10T12:00:00Z" },
+    { id: "back", trip_shape: "one_way_from", depart_at: null, return_at: "2026-09-10T21:30:00Z" },
+  ];
+  it("flags a legacy wrong-day assignment while permitting an empty reservation", () => {
+    expect([...requestDayMismatchRideIds([
+      { id: "wrong", starts_at: "2026-09-09T07:00:00Z", served: [{ request_id: "out", leg: "both" }] },
+      { id: "correct", starts_at: "2026-09-10T07:00:00Z", served: [{ request_id: "out", leg: "both" }] },
+      { id: "reservation", starts_at: "2026-09-09T07:00:00Z", served: [] },
+    ], requests)]).toEqual(["wrong"]);
+  });
+  it("uses the Jerusalem return day rather than UTC day or a missing departure", () => {
+    expect([...requestDayMismatchRideIds([
+      { id: "return-ok", starts_at: "2026-09-10T21:15:00Z", served: [{ request_id: "back", leg: "return" }] },
+      { id: "return-wrong", starts_at: "2026-09-10T18:00:00Z", served: [{ request_id: "back", leg: "return" }] },
+    ], requests)]).toEqual(["return-wrong"]);
   });
 });

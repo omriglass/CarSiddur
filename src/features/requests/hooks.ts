@@ -1,5 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { siddurKeys } from "@/features/siddur/queryKeys";
+import { sadranKeys } from "@/features/sadran/keys";
 import { useSession } from "@/features/auth/useSession";
 import { showErrorToast } from "@/lib/rpc";
 
@@ -15,6 +17,7 @@ import {
   submitRequest,
   withdrawFreedSlotClaim,
   withdrawRequest,
+  withdrawAllRequests,
   type SubmitRequestPayload,
 } from "./api";
 import { requestsKeys } from "./queryKeys";
@@ -38,8 +41,12 @@ export function useSubmitRequestMutation() {
 
   return useMutation({
     mutationFn: (payload: SubmitRequestPayload) => submitRequest(payload),
-    onSuccess: () => {
+    onSuccess: (_result, payload) => {
       queryClient.invalidateQueries({ queryKey: requestsKeys.mine(profileId) });
+      if (payload.request_id) queryClient.invalidateQueries({ queryKey: requestsKeys.byId(payload.request_id) });
+      queryClient.invalidateQueries({ queryKey: sadranKeys.week(payload.department_id, payload.week_start) });
+      queryClient.invalidateQueries({ queryKey: siddurKeys.boardRides(payload.department_id, payload.week_start) });
+      queryClient.invalidateQueries({ queryKey: siddurKeys.carLocations(payload.department_id, payload.week_start) });
     },
     onError: showErrorToast,
   });
@@ -84,10 +91,12 @@ export function useCancelRideMutation() {
 
 /** A single request for the edit form (`/requests/:id/edit`). */
 export function useRequestQuery(requestId: string | undefined) {
+  const { session } = useSession();
+  const profileId = session?.user.id;
   return useQuery({
-    queryKey: requestsKeys.byId(requestId),
-    queryFn: () => fetchRequestById(requestId as string),
-    enabled: !!requestId,
+    queryKey: [...requestsKeys.byId(requestId), profileId],
+    queryFn: () => fetchRequestById(requestId as string, profileId as string),
+    enabled: !!requestId && !!profileId,
   });
 }
 
@@ -162,6 +171,21 @@ export function useWithdrawFreedSlotClaimMutation() {
       withdrawFreedSlotClaim(offerId, requestId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: requestsKeys.freedOffers(profileId) });
+    },
+    onError: showErrorToast,
+  });
+}
+
+export function useWithdrawAllRequestsMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ departmentId, weekStart }: { departmentId: string; weekStart: string }) =>
+      withdrawAllRequests(departmentId, weekStart),
+    onSuccess: (_result, { departmentId, weekStart }) => {
+      void queryClient.invalidateQueries({ queryKey: ["requests"] });
+      void queryClient.invalidateQueries({ queryKey: sadranKeys.week(departmentId, weekStart) });
+      void queryClient.invalidateQueries({ queryKey: siddurKeys.boardRides(departmentId, weekStart) });
+      void queryClient.invalidateQueries({ queryKey: siddurKeys.carLocations(departmentId, weekStart) });
     },
     onError: showErrorToast,
   });

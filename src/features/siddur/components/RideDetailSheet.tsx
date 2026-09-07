@@ -1,4 +1,5 @@
 import { MapPin } from "lucide-react";
+import type { ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -62,10 +63,11 @@ interface RideDetailSheetProps {
   onAskToJoin: () => void;
   /** Own rides don't show "ask to join"; other-department rides never do (REQ §13.52). */
   showAskToJoin: boolean;
+  editor?: ReactNode;
 }
 
 /** Ride detail sheet (UX_FLOWS.md §3.5 "Ride detail"): driver, passengers, car, origin→destination, "ask to join". */
-export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = null, onOpenChange, onAskToJoin, showAskToJoin }: RideDetailSheetProps) {
+export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = null, onOpenChange, onAskToJoin, showAskToJoin, editor }: RideDetailSheetProps) {
   const served = (ride?.served as unknown as ServedEntry[] | null) ?? [];
 
   return (
@@ -95,6 +97,8 @@ export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = 
               </div>
 
               <p className="text-muted-foreground">{carModeLabel(ride)}</p>
+              {ride.notes ? <p className="whitespace-pre-wrap break-words">{ride.notes}</p> : null}
+              {editor}
 
               <div className="space-y-1">
                 <span className="font-medium">
