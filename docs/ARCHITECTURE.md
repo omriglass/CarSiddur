@@ -583,6 +583,20 @@ Nothing in the architecture changes on upgrade; only the plan does.
 | 22 | WhatsApp via `wa.me` links only | Free, one tap for the Sadran; API is out of scope (§12) | WhatsApp Business API (cost, approval); Twilio (cost) |
 ## TODO enforcement additions — 2026-09-07
 
-Owned ride editing and collision consent are enforced in Postgres RPCs, with the UI ownership predicate only controlling gestures. Pending overlays live outside confirmed rides so database overlap constraints are never weakened. Deferred local-day triggers protect every assignment writer, including solver/proposal paths. Coordinators gain operational authority through `can_manage_operations`; identity/department administration remains separate.
+Owned ride editing and collision consent are enforced in Postgres RPCs, with the UI ownership predicate only controlling gestures. Pending published-ride overlays live outside confirmed rides; explicit coordinator planning drafts can overlap and must be resolved before publication. Deferred local-day triggers protect every assignment writer, including solver/proposal paths. Coordinators gain operational authority through `can_manage_operations`; identity/department administration remains separate.
 
 Publication computes comparisons for every current department/global policy version with the pure TS policy engine, then passes the results and a freshly read database fingerprint to `publish_siddur`. The RPC validates complete score coverage and saves the comparison alongside the immutable final board snapshot in the same transaction. No new service, paid dependency, scheduler or edge function is introduced.
+
+
+### One-way coordination continuation — 2026-09-07
+
+Expanded merges use the existing proposal lifecycle with server-derived affected parties, request/ride freshness checks, and atomic all-party application. Driver cancellation retains orphaned passenger bookings; `claim_ride_driver` handles approved same-department volunteering with ride versions and driver locks. Coordinator-only buffer exceptions are persisted on rides; the car exclusion constraint prevents confirmed occupied-time overlap; explicitly marked private planning drafts are excluded until resolved. The browser displays pending combined bookings without mutating confirmed ones.
+
+Excel export runs locally in the browser using an OpenXML workbook writer, with literal shared-string cells and no import path or additional runtime service. The export queries only the authorized department/week.
+
+
+### Board-first publication and planning — 2026-09-07
+
+The board is the default coordinator route. Publication atomically closes requests and confirms only selected Jerusalem dates, recording their cumulative visibility in `weeks.published_days`. Readiness and publication checks run on the server; unresolved requests require an explicit acknowledgement and remain pending. Physical collisions block their affected dates. Current member views enforce day visibility through RLS; full historical snapshots and whole-board policy scores remain coordinator-only.
+
+Coordinator overlap planning uses `rides.planning_conflict` for private drafts and `ride_change_requests.is_planning` for private edits of published rides. The latter preserves the confirmed booking and creates no consent notifications. Normal member changes retain their existing consent flow. Same-day scheduling guards cover all database writers, with 23:59 allowed as the final endpoint. Reopening uses a publication fingerprint and preserves assignments and immutable history.

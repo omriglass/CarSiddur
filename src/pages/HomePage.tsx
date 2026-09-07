@@ -6,8 +6,9 @@ import { formatInTimeZone } from "date-fns-tz";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/EmptyState";
+import { ErrorState } from "@/components/ErrorState";
 import { PageHeader } from "@/components/PageHeader";
-import { RideCard, type RideCardData } from "@/components/RideCard";
+import { RideCard } from "@/components/RideCard";
 import { CardListSkeleton } from "@/components/skeletons/CardListSkeleton";
 import { StatusBadge } from "@/components/StatusBadge";
 import { formatWeekRangeLabel, todayInJerusalem } from "@/components/DateField";
@@ -18,43 +19,16 @@ import { QuickRequestSheet } from "@/features/requests/components/QuickRequestSh
 import { useMyRequests } from "@/features/requests/hooks";
 import type { MyRequestRow } from "@/features/requests/api";
 import { firstCarFreeNow, roundUpToQuarterHour } from "@/features/siddur/freeWindows";
-import { useWeeks } from "@/features/siddur/hooks";
+import { useWeeks, useMyUpcomingRides } from "@/features/siddur/hooks";
+import { myRideCard } from "@/features/siddur/myRideCard";
+import { TripSummary } from "@/components/TripSummary";
 import { useDayFreeWindows } from "@/features/siddur/useDayFreeWindows";
 import { he, t, tv } from "@/i18n/he";
-import { formatTime, TZ } from "@/lib/time";
+import { TZ } from "@/lib/time";
 
 import { hasRideTodayOrTomorrow, resolveHomeWeek } from "./homeWeek";
 
 const UNSERVED_STATUSES = new Set<MyRequestRow["status"]>(["waitlisted", "denied", "proposed"]);
-
-/**
- * Owner-reported bug (UX_FLOWS.md §20): a round trip is stored as one ride
- * row with `origin_id === destination_id === the department's home
- * location` (DATA_MODEL.md consistency decision #14), so `row.ride.
- * destinationName` is always the department's own name ("נבו") for that
- * common case — `row.destination` (the *request's* own destination, always
- * the real place regardless of how the ride row happens to store it) is
- * used instead. One-way requests are unaffected: their ride row's own
- * `destinationName` is already the real place (one-way-to) or genuinely home
- * (one-way-from), so this only overrides the round-trip case — matching the
- * same underlying fix already shipped for the Sadran board's phone list mode
- * (`rideBlockLabel`/`resolveRideRealDestination`, `src/lib/rideLabel.ts`).
- */
-function toRideCardData(row: MyRequestRow): RideCardData | null {
-  if (!row.ride) return null;
-  return {
-    id: row.ride.id,
-    startsAt: row.ride.startsAt,
-    endsAt: row.ride.endsAt,
-    originName: row.ride.originName,
-    destinationName: row.tripShape === "round_trip" ? row.destination : row.ride.destinationName,
-    driverName: row.ride.driverName,
-    isChauffeur: row.ride.isChauffeur,
-    carName: row.ride.carName,
-    carType: row.ride.carType ?? undefined,
-    rideTypeCode: row.rideTypeCode,
-  };
-}
 
 function reasonLine(row: MyRequestRow): string | null {
   if (row.pendingProposal) return row.pendingProposal.reasonHe;
@@ -74,6 +48,7 @@ export function HomePage() {
   const profileQuery = useProfile();
   const departmentsQuery = useMyDepartments();
   const requestsQuery = useMyRequests();
+  const upcomingRidesQuery = useMyUpcomingRides();
   const destinationsQuery = useDestinations();
   const rideTypesQuery = useRideTypes();
 
@@ -81,18 +56,19 @@ export function HomePage() {
     profileQuery.data?.default_department_id ?? departmentsQuery.data?.[0]?.department_id;
   const weeksQuery = useWeeks(defaultDepartmentId);
 
-  // "לוקח/ת רכב עכשיו" card (UX_FLOWS.md §18): only when the live week exists and some shared
+  // Immediate-car request card (UX_FLOWS.md §18): only when the live week exists and some shared
   // car is free right now. Hooks must run unconditionally (before the loading early-return
   // below), so `now`/the live week start are resolved here even while other data is loading.
   const now = new Date();
   const today = todayInJerusalem();
-  const liveWeekStart = (weeksQuery.data ?? []).find((w) => w.phase === "live")?.week_start;
+  const liveWeek = (weeksQuery.data ?? []).find((w) => w.phase === "live");
+  const liveWeekStart = (liveWeek?.published_days?.includes(today) ?? true) ? liveWeek?.week_start : undefined;
   const dayFreeWindows = useDayFreeWindows(defaultDepartmentId, liveWeekStart, liveWeekStart ? today : undefined, now);
   const freeCarNow = firstCarFreeNow(dayFreeWindows.freeWindows, now.getTime());
   const [quickRequestOpen, setQuickRequestOpen] = useState(false);
   const defaultRideTypeId = rideTypesQuery.data?.find((rt) => rt.code === "other")?.id ?? rideTypesQuery.data?.[0]?.id ?? "";
 
-  const isLoading = profileQuery.isLoading || requestsQuery.isLoading || weeksQuery.isLoading;
+  const isLoading = profileQuery.isLoading || requestsQuery.isLoading || upcomingRidesQuery.isLoading || weeksQuery.isLoading;
 
   if (isLoading) {
     return (
@@ -104,11 +80,15 @@ export function HomePage() {
     );
   }
 
-  const requests = requestsQuery.data ?? [];
+  const requests = [...(requestsQuery.data ?? [])].sort((a, b) => {
+    const start = (row: MyRequestRow) => {
+      const instant = row.ride?.startsAt ?? row.departAt ?? row.returnAt;
+      return instant ? Date.parse(instant) : Infinity;
+    };
+    return start(a) - start(b) || a.id.localeCompare(b.id);
+  });
 
-  const upcomingRides = requests
-    .filter((r) => r.ride && r.ride.status !== "cancelled" && new Date(r.ride.startsAt) >= now)
-    .sort((a, b) => new Date(a.ride!.startsAt).getTime() - new Date(b.ride!.startsAt).getTime());
+  const upcomingRides = upcomingRidesQuery.data ?? [];
 
   const nextAction = requests.find((r) => r.status === "proposed" && r.pendingProposal);
   const unserved = requests.filter(
@@ -120,7 +100,7 @@ export function HomePage() {
     profileQuery.data?.home_week_preference ?? "auto",
     weeks,
     hasRideTodayOrTomorrow(
-      upcomingRides.map((r) => r.ride!.startsAt),
+      upcomingRides.flatMap((ride) => ride.starts_at ? [ride.starts_at] : []),
       now,
     ),
   );
@@ -136,27 +116,6 @@ export function HomePage() {
             : undefined
         }
       />
-
-      {nextAction ? (
-        <div className="rounded-md border-s-4 border-maintenance bg-maintenance/10 p-3 text-sm">
-          <p className="font-medium text-maintenance">{t("home.nextAction")}</p>
-          <p className="text-foreground/80">{reasonLine(nextAction)}</p>
-        </div>
-      ) : null}
-
-      <section className="space-y-3">
-        <h2 className="text-sm font-semibold text-muted-foreground">{t("home.upcomingRides")}</h2>
-        {upcomingRides.length === 0 ? (
-          <EmptyState icon={CalendarClock} message={t("home.emptyUpcoming")} />
-        ) : (
-          <div className="space-y-2">
-            {upcomingRides.map((row) => {
-              const data = toRideCardData(row);
-              return data ? <RideCard key={row.id} ride={data} /> : null;
-            })}
-          </div>
-        )}
-      </section>
 
       {freeCarNow ? (
         <Card
@@ -183,6 +142,29 @@ export function HomePage() {
         </Card>
       ) : null}
 
+      {nextAction ? (
+        <div className="rounded-md border-s-4 border-maintenance bg-maintenance/10 p-3 text-sm">
+          <p className="font-medium text-maintenance">{t("home.nextAction")}</p>
+          <p className="text-foreground/80">{reasonLine(nextAction)}</p>
+        </div>
+      ) : null}
+
+      <section className="space-y-3">
+        <h2 className="text-sm font-semibold text-muted-foreground">{t("home.upcomingRides")}</h2>
+        {upcomingRidesQuery.isError ? (
+          <ErrorState onRetry={() => void upcomingRidesQuery.refetch()} />
+        ) : upcomingRides.length === 0 ? (
+          <EmptyState icon={CalendarClock} message={t("home.emptyUpcoming")} />
+        ) : (
+          <div className="space-y-2">
+            {upcomingRides.map((row) => {
+              const data = myRideCard(row, requests, rideTypesQuery.data ?? []);
+              return data ? <RideCard key={row.id} ride={data} /> : null;
+            })}
+          </div>
+        )}
+      </section>
+
       <section className="space-y-3">
         <h2 className="text-sm font-semibold text-muted-foreground">{t("home.unservedRequests")}</h2>
         {unserved.length === 0 ? (
@@ -196,11 +178,7 @@ export function HomePage() {
                     <span className="font-medium">{row.destination}</span>
                     <StatusBadge kind="request" status={row.status} />
                   </div>
-                  {row.departAt ? (
-                    <span dir="ltr" className="text-xs text-muted-foreground">
-                      {formatTime(new Date(row.departAt))}
-                    </span>
-                  ) : null}
+                  <TripSummary purpose={row.rideTypeName} departAt={row.ride?.startsAt ?? row.departAt} returnAt={row.ride?.endsAt ?? row.returnAt} />
                   {reasonLine(row) ? (
                     <p className="text-xs text-muted-foreground">{reasonLine(row)}</p>
                   ) : null}
@@ -241,10 +219,7 @@ export function HomePage() {
               {weekRequests.map((row) => (
                 <Card key={row.id} className="bg-gradient-card shadow-card">
                   <CardContent className="flex items-center justify-between gap-2 p-3 text-sm">
-                    <span className="flex items-center gap-2">
-                      <CarFront className="size-4 text-muted-foreground" aria-hidden="true" />
-                      {row.destination}
-                    </span>
+                    <TripSummary destination={row.destination} purpose={row.rideTypeName} departAt={row.ride?.startsAt ?? row.departAt} returnAt={row.ride?.endsAt ?? row.returnAt} />
                     <StatusBadge kind="request" status={row.status} />
                   </CardContent>
                 </Card>

@@ -5,6 +5,7 @@ import { Controller, useForm, useWatch } from "react-hook-form";
 import { useNavigate } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { FormItem } from "@/components/ui/form";
@@ -93,6 +94,7 @@ function emptyValues(
     dayIndex: Math.max(dates.indexOf(day), 0),
     destination: { freeText: "" },
     rideTypeId,
+    preferredCarId: "",
     tripShape: "round_trip",
     departTime,
     returnTime,
@@ -109,6 +111,7 @@ function emptyValues(
     flexReturnEarly: 0,
     flexReturnLate: 0,
     notes: "",
+    rideDescription: "",
   };
 }
 
@@ -152,10 +155,11 @@ function mapEditRowToValues(row: RequestEditRow, weekStart: string, companions: 
       ? { presetId: row.destinationId, name: row.destinationName ?? "" }
       : { freeText: row.destinationText ?? "" },
     rideTypeId: row.rideTypeId,
+    preferredCarId: row.preferredCarId ?? "",
     tripShape: row.tripShape,
     departTime,
-    returnTime,
-    returnNextDay,
+    returnTime: returnNextDay ? "23:59" : returnTime,
+    returnNextDay: false,
     oneWayCarMode: (row.oneWayCarMode ?? undefined) as "relay" | "passenger" | undefined,
     needsCarAtDestination: row.needsCarAtDestination,
     adults: row.adults,
@@ -168,6 +172,7 @@ function mapEditRowToValues(row: RequestEditRow, weekStart: string, companions: 
     flexReturnEarly: intervalToFlexValue(row.flexReturnEarly),
     flexReturnLate: intervalToFlexValue(row.flexReturnLate),
     notes: row.notes ?? "",
+    rideDescription: row.rideDescription ?? "",
   };
 }
 
@@ -199,17 +204,17 @@ export function RequestForm({ mode, departmentId, weekStart, initial, joinRide, 
   const lastRequest = [...(myRequestsQuery.data ?? [])]
     .filter((r) => r.departAt)
     .sort((a, b) => new Date(b.departAt as string).getTime() - new Date(a.departAt as string).getTime())[0];
-  const firstRideTypeId = rideTypesQuery.data?.[0]?.id ?? "";
+  const defaultRideTypeId = rideTypesQuery.data?.find((type) => type.code === "other")?.id ?? rideTypesQuery.data?.[0]?.id ?? "";
 
   const defaultValues = useMemo(() => {
-    if (mode === "edit") return emptyValues(departmentId, weekStart, weekStart, firstRideTypeId);
-    if (joinRide) return buildJoinRideValues(departmentId, weekStart, lastRequest?.rideTypeId ?? firstRideTypeId, joinRide);
+    if (mode === "edit") return emptyValues(departmentId, weekStart, weekStart, defaultRideTypeId);
+    if (joinRide) return buildJoinRideValues(departmentId, weekStart, defaultRideTypeId, joinRide);
     if (slotPrefill) {
       return emptyValues(
         departmentId,
         weekStart,
         slotPrefill.day,
-        lastRequest?.rideTypeId ?? firstRideTypeId,
+        defaultRideTypeId,
         slotPrefill.departTime,
       );
     }
@@ -217,16 +222,21 @@ export function RequestForm({ mode, departmentId, weekStart, initial, joinRide, 
       departmentId,
       weekStart,
       buildDefaultDay(weekStart, lastRequest?.departAt),
-      lastRequest?.rideTypeId ?? firstRideTypeId,
+      defaultRideTypeId,
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [departmentId, weekStart, mode, firstRideTypeId, joinRide?.rideId, slotPrefill?.day, slotPrefill?.departTime]);
+  }, [departmentId, weekStart, mode, defaultRideTypeId, joinRide?.rideId, slotPrefill?.day, slotPrefill?.departTime]);
 
   const form = useForm<RequestFormValues>({
     resolver: zodResolver(requestFormSchema),
     defaultValues,
     mode: "onBlur",
   });
+
+  // The catalog may arrive after useForm captures its initial defaults.
+  if (mode !== "edit" && defaultRideTypeId && !form.getValues("rideTypeId")) {
+    form.setValue("rideTypeId", defaultRideTypeId);
+  }
 
   // Resets the form once the edit-mode data (`initial` + companions) arrives. Done
   // synchronously during render — the same "remembered previous value" idiom
@@ -246,6 +256,7 @@ export function RequestForm({ mode, departmentId, weekStart, initial, joinRide, 
   const values = useWatch({ control: form.control });
   const tripShape = values.tripShape ?? "round_trip";
   const day = values.day ?? weekStart;
+  const preferredCars = (carsQuery.data ?? []).filter((car) => car.type === "shared" && car.status === "active");
 
   const seatFitWarning = useMemo(() => {
     if (!carsQuery.data || !seatConfigsQuery.data) return false;
@@ -276,13 +287,13 @@ export function RequestForm({ mode, departmentId, weekStart, initial, joinRide, 
       tripShape !== "one_way_from" && values.departTime ? toInstant(day, values.departTime, false) : null;
     const returnAt =
       tripShape !== "one_way_to" && values.returnTime
-        ? toInstant(day, values.returnTime, !!values.returnNextDay)
+        ? toInstant(day, values.returnTime, false)
         : null;
     const candidates = (myRequestsQuery.data ?? []).filter(
       (r) => r.departmentId === departmentId && !["withdrawn", "cancelled", "denied"].includes(r.status),
     );
     return findOverlappingRequest({ departAt, returnAt }, candidates, initial?.id);
-  }, [day, tripShape, values.departTime, values.returnTime, values.returnNextDay, myRequestsQuery.data, departmentId, initial?.id]);
+  }, [day, tripShape, values.departTime, values.returnTime, myRequestsQuery.data, departmentId, initial?.id]);
 
   const [submitError, setSubmitError] = useState<string | null>(null);
 
@@ -375,6 +386,23 @@ export function RequestForm({ mode, departmentId, weekStart, initial, joinRide, 
       </FormItem>
 
       <FormItem>
+        <Label htmlFor="request-preferred-car">{t("request.preferredCar")}</Label>
+        <Controller control={form.control} name="preferredCarId" render={({ field }) => (
+          <Select value={field.value || "none"} onValueChange={(value) => field.onChange(value === "none" ? "" : value)}>
+            <SelectTrigger id="request-preferred-car"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">{t("request.noPreferredCar")}</SelectItem>
+              {field.value && !preferredCars.some((car) => car.id === field.value) ? (
+                <SelectItem value={field.value} disabled>{initial?.preferredCarName ?? t("request.preferredCarUnavailable")}</SelectItem>
+              ) : null}
+              {preferredCars.map((car) => <SelectItem key={car.id} value={car.id}>{car.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        )} />
+        <p className="text-xs text-muted-foreground">{t("request.preferredCarHelper")}</p>
+      </FormItem>
+
+      <FormItem>
         <Label>{t("field.day")}</Label>
         <Controller
           control={form.control}
@@ -406,7 +434,7 @@ export function RequestForm({ mode, departmentId, weekStart, initial, joinRide, 
               control={form.control}
               name="departTime"
               render={({ field }) => (
-                <TimeField15 value={field.value ?? "08:00"} onChange={field.onChange} aria-label={t("field.depart")} />
+                <TimeField15 min="06:00" value={field.value ?? "08:00"} onChange={field.onChange} aria-label={t("field.depart")} />
               )}
             />
             <FieldError message={form.formState.errors.departTime?.message} />
@@ -419,7 +447,7 @@ export function RequestForm({ mode, departmentId, weekStart, initial, joinRide, 
               control={form.control}
               name="returnTime"
               render={({ field }) => (
-                <TimeField15 value={field.value ?? "12:00"} onChange={field.onChange} aria-label={t("field.return")} />
+                <TimeField15 min="06:00" max="23:59" value={field.value ?? "12:00"} onChange={field.onChange} aria-label={t("field.return")} />
               )}
             />
             <FieldError message={form.formState.errors.returnTime?.message} />
@@ -427,24 +455,7 @@ export function RequestForm({ mode, departmentId, weekStart, initial, joinRide, 
         ) : null}
       </div>
 
-      {tripShape !== "one_way_to" ? (
-        <Controller
-          control={form.control}
-          name="returnNextDay"
-          render={({ field }) => (
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={field.value}
-                onChange={(e) => field.onChange(e.target.checked)}
-                className="size-4"
-              />
-              {t("request.returnNextDay")}
-            </label>
-          )}
-        />
-      ) : null}
-      <FieldError message={form.formState.errors.returnNextDay?.message} />
+
 
       {tripShape === "round_trip" ? (
         <Controller
@@ -561,8 +572,15 @@ export function RequestForm({ mode, departmentId, weekStart, initial, joinRide, 
       ) : null}
 
       <FormItem>
-        <Label>{t("field.notes")}</Label>
-        <Controller control={form.control} name="notes" render={({ field }) => <Textarea {...field} rows={2} />} />
+        <Label htmlFor="request-description">{t("quickRequest.rideDescription")}</Label>
+        <Controller control={form.control} name="rideDescription" render={({ field }) => <Textarea {...field} id="request-description" rows={2} maxLength={1000} aria-describedby="request-description-help" />} />
+        <p id="request-description-help" className="text-xs text-muted-foreground">{t("quickRequest.rideDescriptionHelp")}</p>
+        <FieldError message={form.formState.errors.rideDescription?.message} />
+      </FormItem>
+
+      <FormItem>
+        <Label htmlFor="request-notes">{t("field.notes")}</Label>
+        <Controller control={form.control} name="notes" render={({ field }) => <Textarea {...field} id="request-notes" rows={2} />} />
       </FormItem>
 
       <div className="fixed inset-x-0 bottom-16 z-30 border-t bg-background p-3 md:bottom-0">

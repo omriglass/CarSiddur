@@ -16,6 +16,7 @@ export interface Block {
   endLocationId: string;
   /** true only for a fixed ride the Sadran explicitly acknowledged may leave the car away overnight */
   overnightAck: boolean;
+  approvedBufferAfterSlots?: number;
 }
 
 export interface Gap {
@@ -34,6 +35,7 @@ function tooClose(aStart: number, aEnd: number, bStart: number, bEnd: number, bu
 
 export class CarTimeline {
   private blocks: Block[] = [];
+  private fixedRideIds = new Set<string>();
   private maintenance: MaintenanceEntry[] = [];
   private readonly startLocation: string;
 
@@ -57,9 +59,12 @@ export class CarTimeline {
     return location;
   }
 
-  private overlapsAnything(start: number, end: number): boolean {
+  private overlapsAnything(start: number, end: number, fixed?: Block): boolean {
     for (const b of this.blocks) {
-      if (tooClose(start, end, b.window.start, b.window.end, this.bufferSlots)) return true;
+      if (fixed && this.fixedRideIds.has(b.rideId)) {
+        const approved = (slots: number | undefined) => slots != null && Number.isFinite(slots) ? Math.max(0, Math.min(this.bufferSlots, slots)) : this.bufferSlots;
+        if (start < b.window.end + approved(b.approvedBufferAfterSlots) && b.window.start < end + approved(fixed.approvedBufferAfterSlots)) return true;
+      } else if (tooClose(start, end, b.window.start, b.window.end, this.bufferSlots)) return true;
     }
     for (const m of this.maintenance) {
       if (tooClose(start, end, m.window.start, m.window.end, this.bufferSlots)) return true;
@@ -97,16 +102,18 @@ export class CarTimeline {
    * computed location (SOLVER §3.1, FIXED_RIDE_LOCATION_MISMATCH warning).
    */
   forceAdd(b: Block): void {
-    if (this.overlapsAnything(b.window.start, b.window.end)) {
+    if (this.overlapsAnything(b.window.start, b.window.end, b)) {
       throw new Error(`CarTimeline.forceAdd: block ${b.rideId} overlaps an existing block/maintenance on car ${this.car.id}`);
     }
     const idx = this.blocks.findIndex((x) => x.window.start > b.window.start);
     if (idx === -1) this.blocks.push(b);
     else this.blocks.splice(idx, 0, b);
+    this.fixedRideIds.add(b.rideId);
   }
 
   remove(rideId: string): void {
     this.blocks = this.blocks.filter((b) => b.rideId !== rideId);
+    this.fixedRideIds.delete(rideId);
   }
 
   has(rideId: string): boolean {

@@ -52,10 +52,11 @@ export const requestFormSchema = z
     dayIndex: z.number().int().min(0).max(6),
     destination: destinationValueSchema,
     rideTypeId: z.string().min(1, he.request.rideTypeRequired),
+    preferredCarId: z.string().optional(),
     tripShape: z.enum(REQUEST_TRIP_SHAPES),
     departTime: timeStringSchema.optional(),
-    returnTime: timeStringSchema.optional(),
-    /** Round trips and `one_way_from`: the return leg lands the day after `day`. */
+    returnTime: z.union([timeStringSchema, z.literal("23:59")]).optional(),
+    /** Kept for old callers; overnight values are rejected. No UI toggle. */
     returnNextDay: z.boolean(),
     oneWayCarMode: z.enum(ONE_WAY_CAR_MODES).optional(),
     needsCarAtDestination: z.boolean(),
@@ -69,6 +70,7 @@ export const requestFormSchema = z
     flexReturnEarly: flexValueSchema,
     flexReturnLate: flexValueSchema,
     notes: z.string(),
+    rideDescription: z.string().trim().max(1000, he.ridePublicDetails.invalidDescription),
   })
   .superRefine((value, ctx) => {
     const needsDepart = value.tripShape !== "one_way_from";
@@ -91,7 +93,7 @@ export const requestFormSchema = z
 
     if (needsDepart && needsReturn && value.departTime && value.returnTime) {
       const departMinutes = timeToMinutes(value.departTime);
-      const returnMinutes = timeToMinutes(value.returnTime) + (value.returnNextDay ? 24 * 60 : 0);
+      const returnMinutes = timeToMinutes(value.returnTime);
       if (returnMinutes <= departMinutes) {
         ctx.addIssue({
           path: ["returnTime"],
@@ -101,14 +103,11 @@ export const requestFormSchema = z
       }
     }
 
-    // A round trip's (or one_way_from's) return landing after Saturday is a blocking
-    // error for members (UX_FLOWS §3.4; REQUIREMENTS §5.3, §13.62 — only a Sadran/Admin
-    // filing on behalf may pass it, out of this stage's "on behalf" scope).
-    if (needsReturn && value.returnNextDay && value.dayIndex === 6) {
+    if (value.returnNextDay) {
       ctx.addIssue({
         path: ["returnNextDay"],
         code: z.ZodIssueCode.custom,
-        message: he.request.weekEndBlockingError,
+        message: he.sadranProposal.sameDayOnly,
       });
     }
   });
@@ -116,6 +115,7 @@ export const requestFormSchema = z
 export type RequestFormValues = z.infer<typeof requestFormSchema>;
 
 export const REQUEST_FORM_DEFAULTS: Omit<RequestFormValues, "departmentId" | "weekStart" | "day" | "dayIndex" | "rideTypeId" | "destination"> = {
+  preferredCarId: "",
   tripShape: "round_trip",
   departTime: "08:00",
   returnTime: "12:00",
@@ -132,4 +132,5 @@ export const REQUEST_FORM_DEFAULTS: Omit<RequestFormValues, "departmentId" | "we
   flexReturnEarly: 0,
   flexReturnLate: 0,
   notes: "",
+  rideDescription: "",
 };

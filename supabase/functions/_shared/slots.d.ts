@@ -32,9 +32,12 @@ export interface NormalizedRequest {
     luggage: boolean;
     destinationId: string;
     dayIndex: number;
+    /** Hard scheduling bounds, independent of declared or suggested flexibility. */
+    dayWindow: Window;
     /** one-way passenger mode: the solver never places this itself; it is served only via merge/chauffeur suggestions */
     isPassengerOnly: boolean;
 }
+export declare function withinRequestDay(nr: NormalizedRequest, window: Window): boolean;
 export interface Warning {
     code: string;
     message: string;

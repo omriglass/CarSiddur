@@ -1,11 +1,4 @@
-/**
- * Duration-chip -> end-time mapping for the quick-request sheet (UX_FLOWS.md §18):
- * "1h / 2h / 3h / 4h" chips plus a "custom" escape hatch that lets the member pick an
- * explicit end time via `TimeField15` instead. Pure minutes-since-midnight arithmetic (no
- * `Date`/timezone) — mirrors `TimeField15`'s own "HH:MM" 15-minute grid and `RequestForm`'s
- * `returnNextDay` idiom for a window that crosses midnight (a `4h` quick request starting
- * after 20:00 does, so it is handled rather than assumed away).
- */
+/** Quick duration chips stay within the selected day, capped at 23:59. */
 export const QUICK_REQUEST_DURATION_HOURS = [1, 2, 3, 4] as const;
 export type QuickRequestDurationHours = (typeof QUICK_REQUEST_DURATION_HOURS)[number];
 export type QuickRequestDuration = QuickRequestDurationHours | "custom";
@@ -26,14 +19,12 @@ function minutesToTime(value: number): string {
 export interface DurationEnd {
   /** "HH:MM" */
   time: string;
-  /** True when the computed end lands the day after `start`'s own day (midnight rollover). */
+  /** Always false: quick requests end within the selected day. */
   nextDay: boolean;
 }
 
-/** `start` ("HH:MM") + a duration chip (whole hours) -> end ("HH:MM"), flagging a midnight rollover. */
+/** `start` + duration, capped at the last minute of that day. */
 export function endTimeForDuration(start: string, hours: QuickRequestDurationHours): DurationEnd {
   const totalMinutes = timeToMinutes(start) + hours * 60;
-  const nextDay = totalMinutes >= MINUTES_PER_DAY;
-  const normalized = ((totalMinutes % MINUTES_PER_DAY) + MINUTES_PER_DAY) % MINUTES_PER_DAY;
-  return { time: minutesToTime(normalized), nextDay };
+  return { time: minutesToTime(Math.min(totalMinutes, MINUTES_PER_DAY - 1)), nextDay: false };
 }

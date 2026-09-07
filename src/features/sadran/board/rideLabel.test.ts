@@ -7,6 +7,18 @@ const TLV = "tlv-dest";
 const HAIFA = "haifa-dest";
 
 describe("rideBlockLabel", () => {
+  it("keeps different passenger destinations visible on one combined booking", () => {
+    const input = { originId: HOME, destinationId: HOME, originName: "home", destinationName: "home", homeDestinationId: HOME,
+      served: [
+        { role: "driver" as const, requester: "X", destination: "Pardes Hana" },
+        { role: "passenger" as const, requester: "Y", destination: "Train", leg: "out" as const },
+      ] };
+    expect(rideBlockLabel(input)).toContain("X");
+    expect(rideBlockLabel(input)).toContain("Y");
+    expect(rideBlockLabel(input)).toContain("Pardes Hana");
+    expect(rideBlockLabel(input)).toContain("Train");
+    expect(resolveRideRealDestination(input)).toBe("Pardes Hana · Train");
+  });
   it("driver only, round trip", () => {
     const label = rideBlockLabel({
       originId: HOME,

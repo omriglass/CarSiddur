@@ -108,7 +108,8 @@ function readLocalCronSecret(): string | null {
  */
 export async function wireEdgeFunctionSettings(): Promise<{ cronSecretWired: boolean }> {
   const client = serviceRoleClient();
-  const kongBase = "http://supabase_kong_carshare-nevo:8000/functions/v1";
+  const kongBase = process.env.E2E_EDGE_FUNCTIONS_URL
+    ?? `http://host.docker.internal:${new URL(SUPABASE_URL).port || "54321"}/functions/v1`;
   const { error: settingsError } = await client.from("app_settings").upsert(
     [
       { key: "on_ride_cancelled_url", value: { value: `${kongBase}/on-ride-cancelled` } },

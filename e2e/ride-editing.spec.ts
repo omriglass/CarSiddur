@@ -1,7 +1,9 @@
 import { expect, test } from "@playwright/test";
-import { createClient } from "@supabase/supabase-js";
+import { publishedFixtureWeek } from "./published-week";
 import { he } from "../src/i18n/he";
-import { NEVO_DEPARTMENT_ID, newSignedInPage, SEEDED_USERS, serviceRoleClient, SUPABASE_URL, SUPABASE_ANON_KEY } from "./helpers";
+import { NEVO_DEPARTMENT_ID, newSignedInPage, SEEDED_USERS, serviceRoleClient } from "./helpers";
+
+test.use({ actionTimeout: 15_000 });
 
 test("members resize owned rides and resolve a shadow collision through explicit driver consent", async ({ browser }) => {
   const service = serviceRoleClient();
@@ -9,29 +11,8 @@ test("members resize owned rides and resolve a shadow collision through explicit
   const members = ["00000000-0000-0000-0000-000000000103", "00000000-0000-0000-0000-000000000104"];
   const { data: department } = await service.from("departments").select("home_destination_id").eq("id", NEVO_DEPARTMENT_ID).single();
   const { data: car } = await service.from("cars").select("id").eq("department_id", NEVO_DEPARTMENT_ID).eq("type", "shared").eq("status", "active").limit(1).single();
-  const { data: existingWeek } = await service.from("weeks").select("phase").eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", week).maybeSingle();
-  if (!existingWeek) {
-    const { error: weekError } = await service.from("weeks").insert({ department_id: NEVO_DEPARTMENT_ID,
-      week_start: week, phase: "open", open_at: "2040-12-20T00:00:00Z", close_at: "2040-12-25T00:00:00Z", publish_at: "2040-12-28T00:00:00Z" });
-    if (weekError) throw weekError;
-  }
-  if (existingWeek?.phase !== "published") {
-    const admin = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { persistSession: false } });
-    const { error: authError } = await admin.auth.signInWithPassword(SEEDED_USERS.admin);
-    if (authError) throw authError;
-    const { data: policies, error: policyError } = await service.from("policies").select("id,current_version_id,name")
-      .or(`department_id.eq.${NEVO_DEPARTMENT_ID},department_id.is.null`).not("current_version_id", "is", null);
-    if (policyError) throw policyError;
-    const { data: fingerprint, error: fingerprintError } = await admin.rpc("publish_scores_fingerprint", { p_department_id: NEVO_DEPARTMENT_ID, p_week_start: week });
-    if (fingerprintError) throw fingerprintError;
-    const { error: publishError } = await admin.rpc("publish_siddur", { p_department_id: NEVO_DEPARTMENT_ID, p_week_start: week,
-      p_expected_fingerprint: fingerprint, p_profile_scores: [], p_policy_scores: policies!.map((policy) => ({
-        policy_id: policy.id, policy_version_id: policy.current_version_id, policy_name: policy.name,
-        request_count: 0, served_count: 0, priority_total: 0, served_priority_total: 0, alignment_ratio: null, profiles: [],
-      })) });
-    if (publishError) throw publishError;
-    await admin.auth.signOut();
-  }
+  const admin = await publishedFixtureWeek(week);
+  await admin.auth.signOut();
   const rideIds: string[] = [];
   const contexts: { close: () => Promise<void> }[] = [];
   try {
@@ -59,21 +40,21 @@ test("members resize owned rides and resolve a shadow collision through explicit
     const page = member1.page;
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(`/siddur/${NEVO_DEPARTMENT_ID}/${week}`);
-    const own = page.locator(`[data-ride-id="${rideIds[0]}"]`);
-    const other = page.locator(`[data-ride-id="${rideIds[1]}"]`);
+    const own = page.locator(`[data-ride-id="${rideIds[0]}"]:visible`);
+    const other = page.locator(`[data-ride-id="${rideIds[1]}"]:visible`);
     await other.click();
     await expect(page.getByText(he.rideEditing.edit, { exact: true })).toHaveCount(0);
     await page.keyboard.press("Escape");
     await own.click();
-    await page.locator("#member-ride-end").fill("11:30");
+    await page.getByRole("dialog").getByLabel(he.field.return, { exact: true }).fill("11:30");
     await page.getByRole("dialog").getByRole("button", { name: he.common.save, exact: true }).click();
     await expect(page.getByRole("dialog")).not.toBeVisible();
     const { data: resized } = await service.from("rides").select("ends_at").eq("id", rideIds[0]).single();
     expect(new Date(resized!.ends_at).toISOString()).toBe("2041-01-06T09:30:00.000Z");
 
     await own.click();
-    await page.locator("#member-ride-end").fill("14:00");
-    await page.locator("#member-ride-start").fill("12:00");
+    await page.getByRole("dialog").getByLabel(he.field.return, { exact: true }).fill("14:00");
+    await page.getByRole("dialog").getByLabel(he.field.depart, { exact: true }).fill("12:00");
     await page.getByRole("dialog").getByRole("button", { name: he.common.save, exact: true }).click();
     await expect(page.getByRole("heading", { name: he.rideEditing.collisionTitle })).toBeVisible();
     await page.getByRole("button", { name: he.rideEditing.acknowledge }).click();
@@ -95,7 +76,7 @@ test("members resize owned rides and resolve a shadow collision through explicit
     expect(after!.find((r) => r.id === rideIds[1])!.status).toBe("cancelled");
     expect(new Date(after!.find((r) => r.id === rideIds[0])!.starts_at).toISOString()).toBe("2041-01-06T10:00:00.000Z");
   } finally {
-    for (const context of contexts) await context.close();
+    for (const context of contexts) await context.close().catch(() => undefined);
     await service.from("ride_change_requests").delete().eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", week);
     if (rideIds.length) await service.from("ride_requests").delete().in("ride_id", rideIds);
     await service.from("rides").delete().eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", week);

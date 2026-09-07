@@ -23,8 +23,8 @@ function clamp(v: number, lo: number, hi: number): number {
 }
 
 function placeInGap(nr: NormalizedRequest, leg: NormalizedLeg, gap: Gap, widenSlots: number): Placement | null {
-  const g1 = gap.window.start;
-  const g2 = gap.window.end;
+  const g1 = Math.max(gap.window.start, nr.dayWindow.start);
+  const g2 = Math.min(gap.window.end, nr.dayWindow.end);
 
   if (leg.side === 'both') {
     const D = nr.window.start;

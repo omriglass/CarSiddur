@@ -11,6 +11,7 @@ import { he, tv } from "@/i18n/he";
 import { rideTypeColorClasses } from "@/lib/rideTypeColors";
 import { TZ, formatTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
+import { ridePassengerSummary } from "@/lib/ridePassengerSummary";
 
 import { requestStart, requestWindow } from "../phantomLanes";
 
@@ -55,26 +56,8 @@ interface UnmetListProps {
   /** Drag-to-place; the board chooses direct assignment or a proposal for one-way legs. */
   dayStartMinutes?: number;
   dayEndMinutes?: number;
-  onDragHover?: (item: UnmetListItem, carId: string | null, minutes: number | null) => void;
-  onDragDrop?: (item: UnmetListItem, carId: string, minutes: number) => void;
-}
-
-function suggestionActionLabel(kind: Suggestion["kind"]): string {
-  switch (kind) {
-    case "shiftWithinFlex":
-      return he.action.apply;
-    case "merge":
-    case "shiftBeyondFlex":
-    case "splitLegs":
-    case "convertToRoundTrip":
-      return he.action.propose;
-    case "chauffeur":
-      return he.action.propose;
-    case "externalHint":
-      return he.action.markExternal;
-    case "deny":
-      return he.action.deny;
-  }
+  onDragHover?: (item: UnmetListItem, carId: string | null, minutes: number | null, rideId?: string) => void;
+  onDragDrop?: (item: UnmetListItem, carId: string, minutes: number, rideId?: string) => void;
 }
 
 /**
@@ -82,7 +65,7 @@ function suggestionActionLabel(kind: Suggestion["kind"]): string {
  * week with no ride (bug #1), sorted by policy score when a solver preview
  * exists for it, otherwise by departure time.
  */
-export function UnmetList({ items, onAction, onDecision, dayStartMinutes = 6 * 60, dayEndMinutes = 24 * 60, onDragHover, onDragDrop }: UnmetListProps) {
+export function UnmetList({ items, onAction, onDecision, dayStartMinutes = 6 * 60, dayEndMinutes = 23 * 60 + 59, onDragHover, onDragDrop }: UnmetListProps) {
   const dragEnabled = !!onDragDrop;
   const [drag, setDrag] = useState<DragState | null>(null);
   const dragRef = useRef<DragState | null>(null);
@@ -101,13 +84,14 @@ export function UnmetList({ items, onAction, onDecision, dayStartMinutes = 6 * 6
     }
   }
 
-  function hoverCarIdAt(clientX: number, clientY: number): { carId: string; minutes: number } | null {
-    const el = document.elementFromPoint(clientX, clientY)?.closest<HTMLElement>(`[${CAR_COLUMN_ATTR}]`);
+  function hoverCarIdAt(clientX: number, clientY: number): { carId: string; minutes: number; rideId?: string } | null {
+    const hit = document.elementFromPoint(clientX, clientY);
+    const el = hit?.closest<HTMLElement>(`[${CAR_COLUMN_ATTR}]`);
     if (!el) return null;
     const carId = el.getAttribute(CAR_COLUMN_ATTR);
     if (!carId) return null;
     const rect = el.getBoundingClientRect();
-    return { carId, minutes: minutesFromClientY(rect, clientY, dayStartMinutes, dayEndMinutes) };
+    return { carId, minutes: minutesFromClientY(rect, clientY, dayStartMinutes, dayEndMinutes), rideId: hit?.closest<HTMLElement>("[data-ride-id]")?.getAttribute("data-ride-id") ?? undefined };
   }
 
   function endDrag(commit: boolean) {
@@ -121,7 +105,7 @@ export function UnmetList({ items, onAction, onDecision, dayStartMinutes = 6 * 6
     onDragHover?.(finished.item, null, null);
     if (!commit) return;
     const hover = hoverCarIdAt(finished.clientX, finished.clientY);
-    if (hover) onDragDrop?.(finished.item, hover.carId, hover.minutes);
+    if (hover) onDragDrop?.(finished.item, hover.carId, hover.minutes, hover.rideId);
   }
 
   function handleWindowMove(event: PointerEvent) {
@@ -148,7 +132,7 @@ export function UnmetList({ items, onAction, onDecision, dayStartMinutes = 6 * 6
     dragRef.current = next;
     setDrag(next);
     const hover = hoverCarIdAt(event.clientX, event.clientY);
-    onDragHover?.(next.item, hover?.carId ?? null, hover?.minutes ?? null);
+    onDragHover?.(next.item, hover?.carId ?? null, hover?.minutes ?? null, hover?.rideId);
     event.preventDefault();
   }
 
@@ -240,11 +224,10 @@ export function UnmetList({ items, onAction, onDecision, dayStartMinutes = 6 * 6
                 {requestWindow(item.request) ? `${formatTime(new Date(requestWindow(item.request)!.startsAt))}–${formatTime(new Date(requestWindow(item.request)!.endsAt))}` : "—"}
                 {item.request.trip_shape !== "round_trip" ? ` · ${(item.request.trip_shape === "one_way_from" ? he.request.tripShapeOneWayFrom : he.request.tripShapeOneWayTo)} · ${he.sadranBoard.estimatedDuration}` : ""}
               </p>
-              {onDecision ? <div className="flex flex-wrap gap-1">
-                <Button size="sm" variant="outline" onClick={() => onDecision(item, "deny")}>{he.action.deny}</Button>
-                <Button size="sm" variant="outline" onClick={() => onDecision(item, "external")}>{he.sadranBoard.alternative}</Button>
-                <Button size="sm" variant="outline" onClick={() => onDecision(item, "shift")}>{he.sadranBoard.changeHours}</Button>
-              </div> : null}
+              <div className="flex flex-wrap gap-1">
+                <Button size="sm" variant="outline" onClick={() => onDecision ? onDecision(item, "shift") : onAction(item, null)}>{he.sadranProposal.suggestTimes}</Button>
+                <Button size="sm" variant="outline" disabled={!onDecision} onClick={() => onDecision?.(item, "external")}>{he.sadranProposal.solveOutside}</Button>
+              </div>
               {item.request.is_late ? <span className="text-xs font-medium text-maintenance">{he.flag.late}</span> : null}
               {item.request.changed_since_solve ? <span className="text-xs font-medium text-booked">{he.flag.changed}</span> : null}
               {item.request.preferred_car_name ? (
@@ -252,30 +235,15 @@ export function UnmetList({ items, onAction, onDecision, dayStartMinutes = 6 * 6
                   {tv("sadranBoard.preferredCar", { car: item.request.preferred_car_name })}
                 </p>
               ) : null}
+              <p className="whitespace-pre-wrap break-words text-xs">{ridePassengerSummary([{ ...item.request, requester: item.request.requester_full_name }])}</p>
+              {item.request.ride_description ? <p className="whitespace-pre-wrap break-words text-xs">{item.request.ride_description}</p> : null}
+              {item.request.notes ? <p className="whitespace-pre-wrap break-words text-xs text-muted-foreground"><span className="font-medium">{he.field.notes}: </span>{item.request.notes}</p> : null}
               {item.solverInfo?.reason ? <p className="text-xs text-muted-foreground">{item.solverInfo.reason}</p> : null}
               {dragEnabled && item.request.trip_shape !== "round_trip" ? (
                 <p className="text-xs text-muted-foreground">{he.sadranBoard.dragOneWayUnsupported}</p>
               ) : null}
 
-              <div className="space-y-1">
-                {item.solverInfo && item.solverInfo.suggestions.length > 0 ? (
-                  item.solverInfo.suggestions.map((s, i) => (
-                    <div key={i} className="flex items-center justify-between gap-2">
-                      <span className="text-xs">{s.reason}</span>
-                      <Button size="sm" variant="outline" onClick={() => onAction(item, s)}>
-                        {suggestionActionLabel(s.kind)}
-                      </Button>
-                    </div>
-                  ))
-                ) : (
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs text-muted-foreground">{he.sadranBoard.noSuggestions}</span>
-                    <Button size="sm" variant="outline" onClick={() => onAction(item, null)}>
-                      {he.action.propose}
-                    </Button>
-                  </div>
-                )}
-              </div>
+
             </CardContent>
           </Card>
         );

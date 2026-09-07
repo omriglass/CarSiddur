@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { formatInTimeZone } from "date-fns-tz";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { TimeField15 } from "@/components/TimeField15";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { Car } from "@/features/fleet/api";
 import { he } from "@/i18n/he";
 import { TZ } from "@/lib/time";
+import { siddurCarName } from "@/lib/siddurCarName";
 import type { BoardRide, RideMove } from "../api";
 import { moveOnRideDay } from "../rideEditing";
 
@@ -15,10 +16,11 @@ export function MemberRideEditor({ ride, cars, saving, onSave }: {
 }) {
   const [carId, setCarId] = useState(ride.car_id ?? "");
   const [start, setStart] = useState(formatInTimeZone(ride.starts_at!, TZ, "HH:mm"));
-  const [end, setEnd] = useState(formatInTimeZone(ride.ends_at!, TZ, "HH:mm"));
+  const [end, setEnd] = useState(formatInTimeZone(ride.starts_at!, TZ, "yyyy-MM-dd") === formatInTimeZone(ride.ends_at!, TZ, "yyyy-MM-dd")
+    ? formatInTimeZone(ride.ends_at!, TZ, "HH:mm") : "23:59");
   const minutes = (value: string) => value.split(":").reduce((h, m) => h * 60 + Number(m), 0);
-  const endMinutes = end === "00:00" ? 1440 : minutes(end);
-  const valid = !!carId && !!start && !!end && endMinutes > minutes(start);
+  const endMinutes = minutes(end);
+  const valid = !!carId && !!start && !!end && endMinutes > minutes(start) && endMinutes <= 1439;
   return (
     <form className="space-y-3 rounded-md border p-3" onSubmit={(e) => {
       e.preventDefault();
@@ -28,11 +30,11 @@ export function MemberRideEditor({ ride, cars, saving, onSave }: {
       <h3 className="font-medium">{he.rideEditing.edit}</h3>
       <Select value={carId} onValueChange={setCarId}>
         <SelectTrigger aria-label={he.rideDetail.car}><SelectValue /></SelectTrigger>
-        <SelectContent>{cars.filter((c) => c.status === "active" && (c.type === "shared" || c.owner_id === ride.driver_id)).map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent>
+        <SelectContent>{cars.filter((c) => c.status === "active" && (c.type === "shared" || c.owner_id === ride.driver_id)).map((c) => <SelectItem key={c.id} value={c.id}>{siddurCarName(c)}</SelectItem>)}</SelectContent>
       </Select>
       <div className="grid grid-cols-2 gap-3">
-        <div><Label htmlFor="member-ride-start">{he.field.depart}</Label><Input id="member-ride-start" type="time" step={900} dir="ltr" required value={start} onChange={(e) => setStart(e.target.value)} /></div>
-        <div><Label htmlFor="member-ride-end">{he.field.return}</Label><Input id="member-ride-end" type="time" step={900} dir="ltr" required value={end} onChange={(e) => setEnd(e.target.value)} /></div>
+        <div><Label>{he.field.depart}</Label><TimeField15 min="00:00" aria-label={he.field.depart} value={start} onChange={setStart} /></div>
+        <div><Label>{he.field.return}</Label><TimeField15 min="00:00" max="23:59" aria-label={he.field.return} value={end} onChange={setEnd} /></div>
       </div>
       {!valid ? <p className="text-xs text-destructive">{he.rideEditing.invalidTime}</p> : null}
       <Button disabled={!valid || saving} type="submit" className="w-full">{he.common.save}</Button>

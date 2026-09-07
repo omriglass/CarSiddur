@@ -79,6 +79,9 @@ export function nowMs(): number {
 }
 
 export interface ServedEntry {
+  ride_description?: string | null;
+  guest_passenger_names?: string[];
+  companions?: { profile_id: string; name: string }[];
   request_id: string | null;
   role: "driver" | "passenger";
   leg: "out" | "return" | "both";
@@ -173,6 +176,7 @@ export function boardRideToFixedRide(ride: BoardRide, weekStartMs: number): Fixe
     passengers,
     luggageCount,
     overnightAck: !!ride.overnight_ack_by,
+    approvedBufferAfterSlots: ride.turnaround_override_minutes == null ? undefined : Math.ceil(ride.turnaround_override_minutes / 15),
     kind: "pinned",
   };
 }
@@ -356,7 +360,7 @@ export function hashSolverInput(input: SolverInput): string {
     requests: [...input.requests].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)),
     fixedRides: [...input.fixedRides]
       .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
-      .map((f) => ({ id: f.id, carId: f.carId, window: f.window })),
+      .map((f) => ({ id: f.id, carId: f.carId, window: f.window, approvedBufferAfterSlots: f.approvedBufferAfterSlots })),
     carIds: [...input.cars].map((c) => c.id).sort(),
     policyId: input.policy.id,
     policyVersion: input.policy.version,
@@ -452,10 +456,14 @@ export function buildApplyPayload(params: {
   const rides: ApplyPayloadRide[] = solverAssignments.map((a) => {
     const driverMemberId =
       a.driverMemberId ?? (a.driverRequestId ? requestsById.get(a.driverRequestId)?.requester_id : undefined) ?? "";
+    const roundedEnd = slotToIso(a.window.end, weekStartMs);
+    const exactEnd = a.legs.filter((leg) => leg.leg === "return" || leg.leg === "both")
+      .map((leg) => requestsById.get(leg.requestId)?.return_at)
+      .find((end): end is string => !!end && Date.parse(roundedEnd) - Date.parse(end) === 60_000);
     return {
       car_id: a.carId,
       starts_at: slotToIso(a.window.start, weekStartMs),
-      ends_at: slotToIso(a.window.end, weekStartMs),
+      ends_at: exactEnd ?? roundedEnd,
       origin_id: a.originId,
       destination_id: a.destinationId,
       driver_id: driverMemberId,

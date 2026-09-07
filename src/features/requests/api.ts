@@ -1,5 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import { rpc, toAppError } from "@/lib/rpc";
+import { siddurCarName } from "@/lib/siddurCarName";
 
 import type { Database, Json } from "@/integrations/supabase/types";
 import type { RequestWindow } from "./window";
@@ -27,6 +28,8 @@ export type RideRole = Database["public"]["Enums"]["ride_role"];
 export type ProposalType = Database["public"]["Enums"]["proposal_type"];
 
 export interface MyRequestRide {
+  needsDriver?: boolean;
+  version?: number;
   id: string;
   startsAt: string;
   endsAt: string;
@@ -48,6 +51,8 @@ export interface MyRequestPendingProposal {
 }
 
 export interface MyRequestRow {
+  preferredCarId?: string | null;
+  preferredCarName?: string | null;
   hasPublishedRide?: boolean;
   window?: RequestWindow | null;
   id: string;
@@ -75,17 +80,18 @@ export interface MyRequestRow {
 const SELECT = `
   id, department_id, week_start, status, status_reason, is_late, changed_since_solve,
   depart_at, return_at, trip_shape, needs_car_at_destination, destination_text, version, ride_type_id,
-  freed_slot_opt_out,
+  freed_slot_opt_out, preferred_car_id,
+  preferred_car:cars!requests_preferred_car_id_fkey(name),
   window:weeks(phase, open_at, close_at),
   destination:destinations(name),
   ride_type:ride_types(code, name_he),
   ride_requests(
     role,
     ride:rides(
-      id, starts_at, ends_at, status,
+      id, starts_at, ends_at, status, needs_driver, version,
       origin:destinations!rides_origin_id_fkey(name),
       destination:destinations!rides_destination_id_fkey(name),
-      car:cars(name, type),
+      car:cars(name, type, access_code, is_replaced, replacement_code),
       driver:profiles!rides_driver_id_fkey(full_name)
     )
   ),
@@ -93,6 +99,8 @@ const SELECT = `
 `;
 
 interface RawRequestRow {
+  preferred_car_id: string | null;
+  preferred_car: { name: string } | null;
   window: RequestWindow | null;
   id: string;
   department_id: string;
@@ -114,13 +122,15 @@ interface RawRequestRow {
   ride_requests: {
     role: RideRole;
     ride: {
+      needs_driver: boolean;
+      version: number;
       id: string;
       starts_at: string;
       ends_at: string;
       status: Database["public"]["Enums"]["ride_status"];
       origin: { name: string } | null;
       destination: { name: string } | null;
-      car: { name: string; type: CarType } | null;
+      car: { name: string; type: CarType; access_code: string | null; is_replaced: boolean; replacement_code: string | null } | null;
       driver: { full_name: string } | null;
     } | null;
   }[];
@@ -142,6 +152,8 @@ function mapRow(row: RawRequestRow): MyRequestRow {
     null;
 
   return {
+    preferredCarId: row.preferred_car_id,
+    preferredCarName: row.preferred_car?.name ?? null,
     window: row.window,
     hasPublishedRide: row.ride_requests.some((link) => link.ride && link.ride.status !== "cancelled" && link.ride.status !== "draft"),
     id: row.id,
@@ -164,13 +176,15 @@ function mapRow(row: RawRequestRow): MyRequestRow {
     ride:
       ride && legWithRide
         ? {
+            needsDriver: ride.needs_driver,
+            version: ride.version,
             id: ride.id,
             startsAt: ride.starts_at,
             endsAt: ride.ends_at,
             status: ride.status,
             originName: ride.origin?.name ?? "",
             destinationName: ride.destination?.name ?? "",
-            carName: ride.car?.name ?? null,
+            carName: ride.car ? siddurCarName(ride.car) : null,
             carType: ride.car?.type ?? null,
             driverName: ride.driver?.full_name ?? null,
             isChauffeur: legWithRide.role === "passenger" && ride.driver?.full_name !== undefined,
@@ -189,6 +203,8 @@ function mapRow(row: RawRequestRow): MyRequestRow {
 }
 
 export interface RequestEditRow {
+  preferredCarId?: string | null;
+  preferredCarName?: string | null;
   window?: RequestWindow | null;
   hasPublishedRide?: boolean;
   id: string;
@@ -214,6 +230,7 @@ export interface RequestEditRow {
   flexReturnEarly: string;
   flexReturnLate: string;
   notes: string | null;
+  rideDescription: string | null;
   changedSinceSolve: boolean;
 }
 
@@ -221,7 +238,8 @@ const EDIT_SELECT = `
   id, department_id, week_start, status, version, destination_id, destination_text, ride_type_id,
   trip_shape, depart_at, return_at, one_way_car_mode, needs_car_at_destination,
   adults, child_seats, boosters, has_luggage,
-  flex_depart_early, flex_depart_late, flex_return_early, flex_return_late, notes, changed_since_solve,
+  flex_depart_early, flex_depart_late, flex_return_early, flex_return_late, notes, ride_description, changed_since_solve, preferred_car_id,
+  preferred_car:cars!requests_preferred_car_id_fkey(name),
   destination:destinations(name),
   window:weeks(phase, open_at, close_at),
   ride_requests(ride:rides(status))
@@ -233,6 +251,8 @@ export async function fetchRequestById(requestId: string, profileId: string): Pr
   if (error) throw toAppError(error);
   if (!data) return null;
   const row = data as unknown as {
+    preferred_car_id: string | null;
+    preferred_car: { name: string } | null;
     window: RequestWindow | null;
     ride_requests: { ride: { status: string } | null }[];
     id: string;
@@ -257,10 +277,13 @@ export async function fetchRequestById(requestId: string, profileId: string): Pr
     flex_return_early: string;
     flex_return_late: string;
     notes: string | null;
+    ride_description: string | null;
     changed_since_solve: boolean;
     destination: { name: string } | null;
   };
   return {
+    preferredCarId: row.preferred_car_id,
+    preferredCarName: row.preferred_car?.name ?? null,
     window: row.window,
     hasPublishedRide: row.ride_requests.some((link) => link.ride && link.ride.status !== "cancelled" && link.ride.status !== "draft"),
     id: row.id,
@@ -286,6 +309,7 @@ export async function fetchRequestById(requestId: string, profileId: string): Pr
     flexReturnEarly: row.flex_return_early,
     flexReturnLate: row.flex_return_late,
     notes: row.notes,
+    rideDescription: row.ride_description,
     changedSinceSolve: row.changed_since_solve,
   };
 }
@@ -320,16 +344,22 @@ export interface SubmitRequestPayload {
   flex_return_early?: string;
   flex_return_late?: string;
   notes?: string;
+  /** Public ride text, independent of the private coordinator notes. */
+  ride_description?: string | null;
+  guest_passenger_names?: string[];
+  companion_ids?: string[];
+  /** New live one-way quick request: reserve a vehicle while awaiting a driver. */
+  reserve_missing_driver?: boolean;
   request_id?: string;
   expected_version?: number;
   join_ride_id?: string;
   requester_id?: string;
   /**
-   * Optional car the member asked for (quick-request-from-empty-slot, UX_FLOWS.md §18); in a
-   * live week `try_auto_approve()` tries it first, falling back to any free car exactly as
-   * before if it's busy (`supabase/migrations/20260907093200_quick_request_preferred_car.sql`).
+   * Optional shared-car preference from the normal form or quick request (UX_FLOWS.md §21).
+   * Feasible alternatives remain allowed. Explicit null clears an existing preference;
+   * omission preserves it when editing through callers that do not expose this field.
    */
-  preferred_car_id?: string;
+  preferred_car_id?: string | null;
 }
 
 /**
@@ -346,6 +376,9 @@ export interface SubmitRequestResult {
   ride_id?: string;
   car_id?: string;
   reason?: string;
+  needs_driver?: boolean;
+  starts_at?: string;
+  ends_at?: string;
 }
 
 /** `submit_request(payload jsonb)` — the only write path for requests (CLAUDE.md decision 8). */

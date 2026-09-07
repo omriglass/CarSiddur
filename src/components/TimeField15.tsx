@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 
-const MIN_MINUTES = 5 * 60; // 05:00 — the board/day grid starts at 05:00 (UX_FLOWS.md §4.2).
+const MIN_MINUTES = 6 * 60;
 const MAX_MINUTES = 23 * 60 + 45; // 23:45
 const QUARTER_HOURS = [0, 15, 30, 45] as const;
 
@@ -30,7 +30,8 @@ export function formatMinutes(totalMinutes: number): string {
 
 /**
  * Rounds `"HH:MM"` to the nearest 15-minute mark and clamps to `[min, max]`
- * (default the board's 05:00–23:45 grid). Returns `null` for unparsable
+ * (default 06:00–23:45). End fields may explicitly allow 23:59.
+ * Returns `null` for unparsable
  * input so callers can revert instead of committing garbage.
  */
 export function snapToQuarterHour(
@@ -41,6 +42,7 @@ export function snapToQuarterHour(
   if (parsed === null) return null;
   const min = bounds.min ?? MIN_MINUTES;
   const max = bounds.max ?? MAX_MINUTES;
+  if (parsed === 1439 && max === 1439) return "23:59";
   const rounded = Math.round(parsed / 15) * 15;
   return formatMinutes(Math.min(Math.max(rounded, min), max));
 }
@@ -48,7 +50,7 @@ export function snapToQuarterHour(
 interface TimeField15Props {
   /** `"HH:MM"`, already on the 15-minute grid. */
   value: string;
-  /** `"HH:MM"`, defaults to 05:00. */
+  /** `"HH:MM"`, defaults to 06:00. */
   min?: string;
   /** `"HH:MM"`, defaults to 23:45. */
   max?: string;
@@ -126,7 +128,7 @@ export function TimeField15({ value, min, max, onChange, disabled, ...rest }: Ti
             ))}
           </div>
           <div role="listbox" aria-label="דקות">
-            {QUARTER_HOURS.map((m) => (
+            {[...QUARTER_HOURS, ...(draftHour === "23" && maxMinutes === 1439 ? [59] : [])].map((m) => (
               <button
                 key={m}
                 type="button"

@@ -3,7 +3,7 @@
 // Ordered greedy assignment (docs/SOLVER.md §3.6). Places units — a single
 // round-trip request, or a relay pair (§3.6.1) that must land on one car
 // together — in score order, preferred time first, falling back to
-// bestPlacementWithinFlex. Car choice is a 5-part deterministic key.
+// bestPlacementWithinFlex. Car choice is a 6-part deterministic key including a soft vehicle preference.
 //
 // Simplification (documented in docs/SOLVER.md §9): unpaired one-way relay
 // requests and one-way passenger requests never enter this loop (a lone
@@ -11,10 +11,11 @@
 // passenger leg has no car of its own) — they go straight to the unmet pool
 // for suggestion generation.
 
+import { carPreferenceRank } from './carPreference';
 import { bestPlacementWithinFlex } from './flexibility';
 import type { RelayPair } from './relay';
 import { reason } from './reasons';
-import { dayBoundsForSlot, formatSlotTime, type NormalizedRequest } from './slots';
+import { dayBoundsForSlot, formatSlotTime, withinRequestDay, type NormalizedRequest } from './slots';
 import { fits, luggageFits, slack } from './seatFit';
 import { CarTimeline } from './timeline';
 import type { Assignment, Car, SolverInput, Window } from './types';
@@ -87,6 +88,7 @@ function continuityRank(carId: string, requestId: string, memberId: string, inpu
 
 interface CarKey {
   shiftCost: number;
+  preference: number;
   slackVal: number;
   continuity: number;
   fragmentation: number;
@@ -95,6 +97,7 @@ interface CarKey {
 
 function compareKey(a: CarKey, b: CarKey): number {
   if (a.shiftCost !== b.shiftCost) return a.shiftCost - b.shiftCost;
+  if (a.preference !== b.preference) return a.preference - b.preference;
   if (a.slackVal !== b.slackVal) return a.slackVal - b.slackVal;
   if (a.continuity !== b.continuity) return a.continuity - b.continuity;
   if (a.fragmentation !== b.fragmentation) return a.fragmentation - b.fragmentation;
@@ -152,9 +155,10 @@ export function runGreedy(
         if (!fits(car, nr.passengers) || !luggageFits(car, nr.luggage ? 1 : 0)) continue;
         const tl = timelines.get(car.id);
         if (!tl) continue;
-        if (tl.isFree(nr.window, leg.originId)) {
+        if (withinRequestDay(nr, nr.window) && tl.isFree(nr.window, leg.originId)) {
           const key: CarKey = {
             shiftCost: 0,
+            preference: carPreferenceRank(car.id, [nr.request.preferredCarId]),
             slackVal: homeSlack(car, nr),
             continuity: continuityRank(car.id, nr.id, nr.request.memberId, input),
             fragmentation: fragmentationFor(tl, nr.window),
@@ -176,6 +180,7 @@ export function runGreedy(
           if (!placement) continue;
           const key: CarKey = {
             shiftCost: placement.cost,
+            preference: carPreferenceRank(car.id, [nr.request.preferredCarId]),
             slackVal: homeSlack(car, nr),
             continuity: continuityRank(car.id, nr.id, nr.request.memberId, input),
             fragmentation: fragmentationFor(tl, placement.window),
@@ -235,7 +240,8 @@ export function runGreedy(
           continuityRank(car.id, retNr.id, retNr.request.memberId, input),
         );
         const fragmentation = fragmentationFor(tl, { start: pair.outWindow.start, end: pair.returnWindow.end });
-        const key: CarKey = { shiftCost, slackVal, continuity, fragmentation, carId: car.id };
+        const preference = carPreferenceRank(car.id, [outNr.request.preferredCarId, retNr.request.preferredCarId]);
+        const key: CarKey = { shiftCost, preference, slackVal, continuity, fragmentation, carId: car.id };
         if (!best || compareKey(key, best.key) < 0) best = { car, key };
       }
       if (!best) {

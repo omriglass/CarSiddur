@@ -6,6 +6,7 @@ export interface Block {
     endLocationId: string;
     /** true only for a fixed ride the Sadran explicitly acknowledged may leave the car away overnight */
     overnightAck: boolean;
+    approvedBufferAfterSlots?: number;
 }
 export interface Gap {
     window: Window;
@@ -17,6 +18,7 @@ export declare class CarTimeline {
     private readonly weekSlots;
     private readonly homeLocationId;
     private blocks;
+    private fixedRideIds;
     private maintenance;
     private readonly startLocation;
     constructor(car: Car, bufferSlots: number, weekSlots: number, homeLocationId: string);

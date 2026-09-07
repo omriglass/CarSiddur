@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
+import { he } from "@/i18n/he";
 
 // Sidesteps the real `SessionProvider` (which talks to the Supabase client) —
 // this page must work with *no* session (ARCHITECTURE §8), so the default
@@ -34,6 +35,17 @@ function renderPage(token = "tok123") {
 }
 
 describe("ProposalTokenPage", () => {
+  it("shows the combined booking window before a merge party consents", async () => {
+    fetchProposalSummaryMock.mockResolvedValueOnce({
+      proposalId: "combined", type: "merge", status: "sent", reasonHe: "Combined trip", expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+      payload: { starts_at: "2041-01-13T07:00:00+02:00", ends_at: "2041-01-13T10:00:00+02:00" },
+      request: { id: "passenger", destination: "Train", departAt: "2041-01-13T07:00:00+02:00", returnAt: null }, parties: [],
+    });
+    renderPage();
+    await waitFor(() => expect(screen.getByText(he.rideCoordination.combinedWindow)).toBeInTheDocument());
+    expect(screen.getByText("07:00 → 10:00")).toBeInTheDocument();
+    expect(screen.getByText(he.rideCoordination.combinedConsent)).toBeInTheDocument();
+  });
   it("shows the not-found copy for an invalid token (edge function 404)", async () => {
     fetchProposalSummaryMock.mockRejectedValueOnce(new ProposalFetchError("invalid_token"));
     renderPage();

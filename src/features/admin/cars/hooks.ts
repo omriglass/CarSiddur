@@ -1,4 +1,8 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
+
+import { fleetKeys } from "@/features/fleet/queryKeys";
+import { sadranKeys } from "@/features/sadran/keys";
+import { siddurKeys } from "@/features/siddur/queryKeys";
 
 import {
   createCar,
@@ -19,6 +23,24 @@ import { carAdminKeys } from "./queryKeys";
 
 import type { Passengers } from "@/solver";
 
+/** Car details also live in member and board caches, including embedded ride rows. */
+async function invalidateCarQueries(queryClient: QueryClient) {
+  await Promise.all([
+    queryClient.invalidateQueries({ queryKey: carAdminKeys.list() }),
+    queryClient.invalidateQueries({ queryKey: ["requests"] }),
+    queryClient.invalidateQueries({ queryKey: fleetKeys.cars(undefined).slice(0, 2) }),
+    queryClient.invalidateQueries({ queryKey: fleetKeys.myTemporaryCars(undefined).slice(0, 2) }),
+    queryClient.invalidateQueries({ queryKey: siddurKeys.carForRide(undefined).slice(0, 2) }),
+    queryClient.invalidateQueries({ queryKey: siddurKeys.boardRides("", "").slice(0, 2) }),
+    queryClient.invalidateQueries({ queryKey: siddurKeys.boardRideById(undefined).slice(0, 2) }),
+    queryClient.invalidateQueries({ queryKey: ["siddur", "myUpcomingRides"] }),
+    queryClient.invalidateQueries({
+      queryKey: sadranKeys.all,
+      predicate: ({ queryKey }) => queryKey.at(-1) === "cars" || queryKey.at(-1) === "boardRides",
+    }),
+  ]);
+}
+
 export function useCarsAdmin() {
   return useQuery({ queryKey: carAdminKeys.list(), queryFn: fetchCarsAll, staleTime: 60_000 });
 }
@@ -35,7 +57,7 @@ export function useCreateCarMutation() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (input: CarInsert) => createCar(input),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: carAdminKeys.list() }),
+    onSuccess: () => invalidateCarQueries(queryClient),
   });
 }
 
@@ -43,7 +65,7 @@ export function useUpdateCarMutation() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ id, patch }: { id: string; patch: CarUpdate }) => updateCar(id, patch),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: carAdminKeys.list() }),
+    onSuccess: () => invalidateCarQueries(queryClient),
   });
 }
 

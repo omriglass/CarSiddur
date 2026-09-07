@@ -21,12 +21,16 @@
 //
 // Pure/no React, no Supabase — unit tested directly (rideLabel.test.ts).
 
+import { tv } from "@/i18n/he";
+
 export interface RideLabelServedEntry {
   role: "driver" | "passenger";
   /** `v_board_rides.served[].requester` — the request's `profiles.full_name`. */
   requester?: string | null;
   /** `v_board_rides.served[].destination` — `coalesce(destinations.name, requests.destination_text)`. */
   destination?: string | null;
+  leg?: "out" | "return" | "both";
+  car_mode?: "keep" | "relay" | "passenger" | "chauffeur";
 }
 
 export interface RideLabelInput {
@@ -36,6 +40,9 @@ export interface RideLabelInput {
   destinationName: string;
   homeDestinationId: string;
   served: readonly RideLabelServedEntry[];
+  driverName?: string | null;
+  isChauffeur?: boolean;
+  needsDriver?: boolean;
 }
 
 function firstName(fullName: string): string {
@@ -50,6 +57,27 @@ function hebrewList(names: readonly string[]): string {
   const last = clean[clean.length - 1] as string;
   if (clean.length === 1) return last;
   return `${clean.slice(0, -1).join(", ")} ו${last}`;
+}
+
+/** The designated driver may have no request of their own (a volunteer). */
+export function chauffeurRideLabel(driverName: string | null, passengers: readonly RideLabelServedEntry[]): string {
+  const groups = new Map<string, { destination: string; returning: boolean; names: string[] }>();
+  for (const passenger of passengers) {
+    const destination = passenger.destination ?? "";
+    const returning = passenger.leg === "return";
+    const key = JSON.stringify([destination, returning]);
+    const group = groups.get(key) ?? { destination, returning, names: [] };
+    if (passenger.requester) group.names.push(firstName(passenger.requester));
+    groups.set(key, group);
+  }
+  const routes = [...groups.values()].map((group) => tv(
+    group.returning ? "rideCoordination.passengerFrom" : "rideCoordination.passengerTo",
+    { name: hebrewList(group.names), destination: group.destination },
+  ));
+  return tv("rideCoordination.chauffeurLabel", {
+    driver: driverName?.trim() ? firstName(driverName) : "_____",
+    passengers: hebrewList(routes),
+  });
 }
 
 /**
@@ -87,6 +115,29 @@ function resolveDirection(input: RideLabelInput): { prefix: "ל" | "מ"; place: 
 export function rideBlockLabel(input: RideLabelInput): string {
   const driver = input.served.find((s) => s.role === "driver");
   const passengers = input.served.filter((s) => s.role === "passenger");
+  if (passengers.length && (input.isChauffeur || input.needsDriver || passengers.some((s) => s.car_mode === "chauffeur"))) {
+    const direction = resolveDirection(input);
+    const label = chauffeurRideLabel(input.needsDriver ? null : input.driverName ?? driver?.requester ?? null, passengers.map((passenger) => ({
+      ...passenger,
+      destination: passenger.destination ?? direction.place,
+      leg: passenger.leg ?? (direction.prefix === "מ" ? "return" : "out"),
+    })));
+    // A merged passenger leg must not hide the host's separate destination.
+    if (driver?.destination && !passengers.some((passenger) => passenger.destination === driver.destination)) {
+      return `${label} · ${tv(driver.leg === "return" ? "rideCoordination.passengerFrom" : "rideCoordination.passengerTo", {
+        name: driver.requester ? firstName(driver.requester) : "", destination: driver.destination,
+      })}`;
+    }
+    return label;
+  }
+  const destinations = new Set(input.served.map((s) => s.destination).filter(Boolean));
+  if (destinations.size > 1) {
+    return [driver, ...passengers].filter((s): s is RideLabelServedEntry => !!s).map((s) =>
+      tv(s.leg === "return" ? "rideCoordination.passengerFrom" : "rideCoordination.passengerTo", {
+        name: s.requester ? firstName(s.requester) : "", destination: s.destination ?? "",
+      }),
+    ).join(" · ");
+  }
   const names = [driver, ...passengers]
     .map((s) => (s?.requester ? firstName(s.requester) : null))
     .filter((n): n is string => !!n);
@@ -103,5 +154,7 @@ export function rideBlockLabel(input: RideLabelInput): string {
  * `destination_name`, which is always the home location for a round trip.
  */
 export function resolveRideRealDestination(input: RideLabelInput): string {
+  const destinations = [...new Set(input.served.map((s) => s.destination).filter((d): d is string => !!d))];
+  if (destinations.length > 1) return destinations.join(" · ");
   return resolveDirection(input).place;
 }

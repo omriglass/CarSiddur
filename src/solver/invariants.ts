@@ -8,7 +8,7 @@
 // SolverInvariantError — the caller keeps the previous draft.
 
 import { fits, luggageFits } from './seatFit';
-import { minutesToSlots } from './slots';
+import { minutesToSlots, SLOT_MS } from './slots';
 import { CarTimeline } from './timeline';
 import type { Assignment, FixedRide, SolverInput, SolverOutput } from './types';
 import { SolverInvariantError } from './types';
@@ -22,6 +22,7 @@ export function assertInvariants(input: SolverInput, output: SolverOutput): void
   const bufferSlots = minutesToSlots(input.config.bufferMinutes);
   const weekSlots = weekSlotsOf(input);
   const overnightAckByRideId = new Map<string, boolean>(input.fixedRides.map((fr: FixedRide) => [fr.id, fr.overnightAck]));
+  const approvedBufferByRideId = new Map(input.fixedRides.map((fr) => [fr.id, fr.approvedBufferAfterSlots]));
 
   const timelines = new Map<string, CarTimeline>();
   for (const car of input.cars) timelines.set(car.id, new CarTimeline(car, bufferSlots, weekSlots, input.homeLocationId));
@@ -48,6 +49,14 @@ export function assertInvariants(input: SolverInput, output: SolverOutput): void
 
     const sorted = [...list].sort((a, b) => a.window.start - b.window.start);
     for (const a of sorted) {
+      if (a.source === 'solver') {
+        const day = input.week.days.find((day) => day.startSlot <= a.window.start && a.window.start < day.endSlot);
+        const exactDayEnd = day && a.window.end === day.endSlot && input.requests.some((request) =>
+          a.servedRequestIds.includes(request.id) && request.returnMs === input.week.startMs + day.endSlot * SLOT_MS - 60_000);
+        if (!day || a.window.end > day.endSlot - 1 && !exactDayEnd) {
+          throw new SolverInvariantError(`ride ${a.rideId} crosses its scheduling day`, 'RIDE_OUTSIDE_DAY');
+        }
+      }
       if (!fits(car, a.passengers)) {
         throw new SolverInvariantError(`ride ${a.rideId} does not fit car ${carId}'s seat configs`, 'SEAT_OVERFLOW');
       }
@@ -61,6 +70,7 @@ export function assertInvariants(input: SolverInput, output: SolverOutput): void
           startLocationId: a.originId,
           endLocationId: a.destinationId,
           overnightAck: overnightAckByRideId.get(a.rideId) ?? false,
+          approvedBufferAfterSlots: approvedBufferByRideId.get(a.rideId),
         };
         // Fixed rides are "still honoured" even if their recorded origin does
         // not chain from the previous ride (SOLVER §3.1) — only the solver's

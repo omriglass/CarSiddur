@@ -17,5 +17,26 @@
 - [x] When two rides collide, a popup should come up with "Merge these two rides?" If the answer is yes, it should prepare the message to send. 
 - [x] Sending whatsapp messages should be in a popup and not in a new window, as it doesn't allow a proper "back" action.
 - [x] Currently, in the board, rides can be assigned to the wrong day (i.e. a ride for Thursday can be assigned to Wednseday)
-- [ ] (Deferred to v1.x; documented in docs/REQUIREMENTS.md.) There should be an "Export requests and board to excel" which will allow manual work outside of the app. No import, just export. This can be put in the docs for a later time is it is not MVP.
+- [x] Export requests and board to Excel for manual work outside the app; export only, no import (included in continuation).
 - [x] It should be possible for the sadran to reserve times with free text. I.e. reserver 12:00-16:00 without anyone specific. Any notes written on it will be displayed. This is to allow for quick fixes that are not in the current data models (For example: X and Y going to A, leaving Y there and picking up Z, then returning)
+- [x] Assign one-way passengers to existing rides with expanded times and consent from all affected people.
+- [x] Drag one-way requests onto cars without a driver; retain orphaned passengers after driver cancellation and let members volunteer.
+- [x] Allow coordinator-approved adjacent rides and mark tight schedules.
+- [x] Make WhatsApp easy to close on desktop and mobile.
+- [x] Show all deviations from original requests for the selected week.
+- [x] Add an optional preferred-car field to the request form.
+
+- [x] Include the driver in car capacity and clarify seat configuration labels.
+- [x] Return sent proposals to their originating screen and retain WhatsApp links for the session.
+- [x] Make the board the default Sadran screen, with department/week switching and full-solve confirmation.
+- [x] Combine closing requests with publication; confirm reopening or unpublishing without losing assignments.
+- [x] Publish all days, ready days, or selected days; confirm unanswered items and keep unpublished days private.
+- [x] Keep new rides, proposals, and solver flexibility within one day, ending no later than 23:59.
+- [x] Use 06:00 as the default board start and reserve time by clicking an empty hour.
+- [x] Snap assignments to requested times and retain coordinator collision drafts on the board.
+- [x] Offer only time suggestions or outside-Siddur solutions for unmet requests, with optional reasons.
+- [x] Show day/date/purpose and merged passengers in chronological My Rides summaries.
+- [x] Add optional preferred cars, public ride information, named companions and guest passengers.
+- [x] Show chauffeur names/placeholders, Sadran-only request notes, passenger totals and highlighted own rides.
+- [x] Add car access/replacement codes to administration and finished Siddur car labels.
+- [x] Make collision counts navigate through the affected days and ride times.

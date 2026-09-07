@@ -4,6 +4,7 @@ import { showErrorToast } from "@/lib/rpc";
 
 import {
   fetchBoardRideById,
+  fetchMyUpcomingRides,
   fetchBoardRides,
   fetchBoardStartTime,
   fetchCarForRide,
@@ -16,9 +17,46 @@ import {
   requestRideChange,
   respondRideChange,
   cancelRideChange,
+  claimRideDriver,
+  updateRidePublicNotes,
   type RideMove,
 } from "./api";
 import { siddurKeys } from "./queryKeys";
+
+export function useMyUpcomingRides() {
+  const { session } = useSession();
+  const profileId = session?.user.id;
+  return useQuery({
+    queryKey: ["siddur", "myUpcomingRides", profileId],
+    queryFn: () => fetchMyUpcomingRides(profileId as string),
+    enabled: !!profileId,
+    staleTime: 30_000,
+    refetchInterval: 30_000,
+  });
+}
+
+export function useUpdateRidePublicNotesMutation() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ rideId, expectedVersion, notes }: { rideId: string; expectedVersion: number; notes: string | null }) =>
+      updateRidePublicNotes(rideId, expectedVersion, notes),
+    onSuccess: () => {
+      for (const key of ["siddur", "sadran", "requests"]) void client.invalidateQueries({ queryKey: [key] });
+    },
+    onError: showErrorToast,
+  });
+}
+
+export function useClaimRideDriverMutation() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ rideId, expectedVersion }: { rideId: string; expectedVersion: number }) => claimRideDriver(rideId, expectedVersion),
+    onSuccess: () => {
+      for (const key of ["siddur", "sadran", "requests", "inbox"]) void client.invalidateQueries({ queryKey: [key] });
+    },
+    onError: showErrorToast,
+  });
+}
 
 export function useRideChanges(departmentId?: string, weekStart?: string) {
   const { session } = useSession();

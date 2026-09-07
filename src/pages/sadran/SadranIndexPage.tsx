@@ -15,5 +15,5 @@ export function SadranIndexPage() {
   if (!data) {
     return <Navigate to="/my" replace />;
   }
-  return <Navigate to={`/sadran/${data.departmentId}/${data.weekStart}`} replace />;
+  return <Navigate to={`/sadran/${data.departmentId}/${data.weekStart}/board`} replace />;
 }

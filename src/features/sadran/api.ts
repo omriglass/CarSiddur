@@ -40,6 +40,7 @@ export type BoardRide = Database["public"]["Views"]["v_board_rides"]["Row"];
  * `features/requests/api.ts`'s `EDIT_SELECT`.
  */
 export interface WeekRequestRow extends RequestRow {
+  companions?: { profile_id: string; name: string }[];
   requester_full_name: string | null;
   destination_resolved_name: string | null;
   destination_travel_minutes: number | null;
@@ -53,9 +54,11 @@ const WEEK_REQUEST_SELECT = `*,
   requester:profiles!requests_requester_id_fkey(full_name),
   destination:destinations(name, travel_minutes),
   ride_type:ride_types(code, name_he),
-  preferred_car:cars!requests_preferred_car_id_fkey(name)`;
+  preferred_car:cars!requests_preferred_car_id_fkey(name),
+  companions:request_companions(profile_id, profile:profiles!request_companions_profile_id_fkey(full_name))`;
 
 interface WeekRequestJoinRow extends RequestRow {
+  companions: { profile_id: string; profile: { full_name: string } | null }[];
   requester: { full_name: string } | null;
   destination: { name: string; travel_minutes: number | null } | null;
   ride_type: { code: string; name_he: string } | null;
@@ -63,10 +66,11 @@ interface WeekRequestJoinRow extends RequestRow {
 }
 
 function flattenWeekRequest(row: WeekRequestJoinRow): WeekRequestRow {
-  const { requester, destination, ride_type, preferred_car, ...rest } = row;
+  const { requester, destination, ride_type, preferred_car, companions, ...rest } = row;
   return {
     ...rest,
     requester_full_name: requester?.full_name ?? null,
+    companions: (companions ?? []).flatMap((person) => person.profile ? [{ profile_id: person.profile_id, name: person.profile.full_name }] : []),
     destination_resolved_name: destination?.name ?? rest.destination_text ?? null,
     destination_travel_minutes: destination?.travel_minutes ?? null,
     ride_type_code: ride_type?.code ?? null,
@@ -333,6 +337,8 @@ export interface EditRideInput {
   origin_id: string;
   destination_id: string;
   driver_id: string | null;
+  needs_driver?: boolean;
+  allow_conflict?: boolean;
   notes?: string | null;
   overflow_allowed?: boolean;
   overnight_ack?: boolean;
@@ -408,8 +414,13 @@ export interface SendProposalResult {
 export async function sendProposal(
   proposalId: string,
   sentVia: Database["public"]["Enums"]["notification_channel"][] = [],
+  replacement?: { id: string; version: number },
 ): Promise<SendProposalResult> {
-  const result = await rpc("send_proposal", { p_proposal_id: proposalId, p_sent_via: sentVia });
+  const result = await rpc("send_proposal", {
+    p_proposal_id: proposalId, p_sent_via: sentVia,
+    p_replace_proposal_id: replacement?.id,
+    p_replace_expected_version: replacement?.version,
+  });
   return result as unknown as SendProposalResult;
 }
 
@@ -495,9 +506,30 @@ export async function fetchPublishFingerprint(departmentId: string, weekStart: s
   return rpc("publish_scores_fingerprint", { p_department_id: departmentId, p_week_start: weekStart });
 }
 
-export async function publishSiddur(departmentId: string, weekStart: string, scores: Json, fingerprint: string, policyScores: Json): Promise<string> {
+export interface PublicationDay {
+  day: string;
+  published: boolean;
+  requestCount: number;
+  unresolvedRequests: number;
+  pendingProposals: number;
+  missingDriverRides: number;
+  conflictRides: number;
+  ready: boolean;
+}
+export interface PublicationOptions { days?: string[]; allowUnanswered?: boolean }
+
+export async function fetchPublicationReadiness(departmentId: string, weekStart: string): Promise<PublicationDay[]> {
+  return await rpc("publication_readiness", { p_department_id: departmentId, p_week_start: weekStart }) as unknown as PublicationDay[];
+}
+
+export async function reopenWeek(departmentId: string, weekStart: string, phase: "open" | "solving", expectedFingerprint: string): Promise<void> {
+  await rpc("reopen_week", { p_department_id: departmentId, p_week_start: weekStart, p_phase: phase, p_expected_fingerprint: expectedFingerprint });
+}
+
+export async function publishSiddur(departmentId: string, weekStart: string, scores: Json, fingerprint: string, policyScores: Json, options: PublicationOptions = {}): Promise<string> {
   return rpc("publish_siddur", { p_department_id: departmentId, p_week_start: weekStart,
-    p_profile_scores: scores, p_expected_fingerprint: fingerprint, p_policy_scores: policyScores });
+    p_profile_scores: scores, p_expected_fingerprint: fingerprint, p_policy_scores: policyScores,
+    p_days: options.days, p_allow_unanswered: options.allowUnanswered ?? false });
 }
 
 /** All non-cancelled rides of the week, for the publish diff and blocking-conflicts checks (same RLS as the board). */

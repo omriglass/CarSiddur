@@ -8,8 +8,9 @@ describe("member ride changes", () => {
     expect(moveOnRideDay(ride, "car2", 9 * 60, 12 * 60)).toMatchObject({ startsAt: "2026-09-10T06:00:00.000Z", endsAt: "2026-09-10T09:00:00.000Z", carId: "car2" });
     expect(moveOnRideDay(ride, "car", 10 * 60, 13 * 60)?.endsAt).toBe("2026-09-10T10:00:00.000Z");
   });
-  it("handles midnight and rejects day overflow and reversed windows", () => {
-    expect(moveOnRideDay(ride, "car", 23 * 60, 1440)?.endsAt).toBe("2026-09-10T21:00:00.000Z");
+  it("allows 23:59 and rejects midnight, day overflow and reversed windows", () => {
+    expect(moveOnRideDay(ride, "car", 23 * 60, 1439)?.endsAt).toBe("2026-09-10T20:59:00.000Z");
+    expect(moveOnRideDay(ride, "car", 23 * 60, 1440)).toBeNull();
     expect(moveOnRideDay(ride, "car", 23 * 60, 1455)).toBeNull();
     expect(moveOnRideDay(ride, "car", 600, 500)).toBeNull();
   });

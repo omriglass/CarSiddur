@@ -40,8 +40,13 @@ describe("snapToQuarterHour", () => {
     expect(snapToQuarterHour("08:38")).toBe("08:45");
   });
 
-  it("clamps to the default 05:00–23:45 grid", () => {
-    expect(snapToQuarterHour("00:00")).toBe("05:00");
+  it("clamps to the default 06:00–23:45 grid", () => {
+    expect(snapToQuarterHour("00:00")).toBe("06:00");
+    expect(snapToQuarterHour("23:59")).toBe("23:45");
+  });
+
+  it("preserves the explicit same-day endpoint for end fields", () => {
+    expect(snapToQuarterHour("23:59", { max: 1439 })).toBe("23:59");
     expect(snapToQuarterHour("23:59")).toBe("23:45");
   });
 

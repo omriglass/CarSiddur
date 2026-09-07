@@ -1,4 +1,4 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { showErrorToast } from "@/lib/rpc";
 
@@ -7,8 +7,10 @@ import { proposalsKeys } from "./queryKeys";
 
 /** In-app answer (a session exists) — `answer_proposal` RPC directly. */
 export function useAnswerProposalMutation() {
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (input: AnswerProposalInput) => answerProposal(input),
+    onSettled: () => Promise.all(["sadran", "siddur", "requests"].map((key) => queryClient.invalidateQueries({ queryKey: [key] }))),
     onError: showErrorToast,
   });
 }
@@ -25,6 +27,7 @@ export function useProposalSummaryQuery(token: string | undefined) {
 
 /** `/p/:token` answer via the public edge function (works with or without a session). */
 export function useAnswerProposalViaTokenMutation() {
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({
       token,
@@ -37,5 +40,6 @@ export function useAnswerProposalViaTokenMutation() {
       note?: string;
       optOut?: boolean;
     }) => answerProposalViaToken(token, answer, note, optOut),
+    onSettled: () => Promise.all(["sadran", "siddur", "requests"].map((key) => queryClient.invalidateQueries({ queryKey: [key] }))),
   });
 }

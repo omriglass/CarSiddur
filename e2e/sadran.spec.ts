@@ -19,16 +19,15 @@ async function signIn(page: import("@playwright/test").Page) {
 }
 
 test.describe("sadran", () => {
-  test("opens the open week, runs the solver, applies the draft, and sees rides on the board", async ({ page }) => {
+  test("opens the board directly and fills the remaining requests", async ({ page }) => {
     await signIn(page);
 
     await page.goto("/sadran");
-    await expect(page).toHaveURL(/\/sadran\/[\w-]+\/\d{4}-\d{2}-\d{2}$/);
-    await expect(page.getByRole("heading", { name: "סידור השבוע" })).toBeVisible();
-
-    await page.getByRole("button", { name: "הרץ פותר" }).click();
-    await expect(page.getByRole("heading", { name: "תוצאת הפתרון" })).toBeVisible({ timeout: 15_000 });
-    await page.getByRole("button", { name: "החל טיוטה" }).click();
+    await expect(page).toHaveURL(/\/sadran\/[\w-]+\/\d{4}-\d{2}-\d{2}\/board$/);
+    await expect(page.getByRole("heading", { name: he.screen.board.title })).toBeVisible();
+    const applied = page.waitForResponse((response) => response.url().endsWith("/rest/v1/rpc/apply_solver_result") && response.request().method() === "POST");
+    await page.getByRole("button", { name: he.action.autoSolveRemaining, exact: true }).click();
+    expect((await applied).ok()).toBe(true);
 
     await expect(page).toHaveURL(/\/board$/);
     await expect(page.getByRole("heading", { name: "לוח הסידור" })).toBeVisible();
@@ -37,8 +36,8 @@ test.describe("sadran", () => {
   test("creates a shift proposal and prepares WhatsApp in a dialog", async ({ page }) => {
     await signIn(page);
     await page.goto("/sadran");
-    await expect(page).toHaveURL(/\/sadran\/[\w-]+\/\d{4}-\d{2}-\d{2}$/);
-    const weekUrl = page.url();
+    await expect(page).toHaveURL(/\/sadran\/[\w-]+\/\d{4}-\d{2}-\d{2}\/board$/);
+    const weekUrl = page.url().replace(/\/board$/, "");
 
     await page.goto(`${weekUrl}/proposals`);
     await expect(page.getByRole("heading", { name: "הצעות" })).toBeVisible();
@@ -51,6 +50,8 @@ test.describe("sadran", () => {
     await expect(page).toHaveURL(/\/proposals\/new$/);
     await page.getByRole("button", { name: "הצע", exact: true }).click();
 
+    await expect(page).toHaveURL(`${weekUrl}/proposals`);
+    await page.getByRole("button", { name: he.sadranProposal.openSentProposal, exact: true }).click();
     await page.getByRole("button", { name: /פתח בוואטסאפ/ }).first().click();
     const waLink = page.locator('a[href^="https://wa.me/"]').first();
     await expect(waLink).toBeVisible({ timeout: 10_000 });
@@ -66,8 +67,8 @@ test.describe("sadran", () => {
     // the immutability trigger is never exercised. Un-skipped accordingly.
     await signIn(page);
     await page.goto("/sadran");
-    await expect(page).toHaveURL(/\/sadran\/[\w-]+\/\d{4}-\d{2}-\d{2}$/);
-    const weekUrl = page.url();
+    await expect(page).toHaveURL(/\/sadran\/[\w-]+\/\d{4}-\d{2}-\d{2}\/board$/);
+    const weekUrl = page.url().replace(/\/board$/, "");
     const weekStart = weekUrl.split("/").at(-1)!;
     const service = serviceRoleClient();
     const policyId = "00000000-0000-0000-0000-00000000e091";
@@ -82,11 +83,15 @@ test.describe("sadran", () => {
       if (currentError) throw currentError;
     }
 
-    await page.goto(`${weekUrl}/publish`);
-    await expect(page.getByRole("heading", { name: "פרסום הסידור" })).toBeVisible();
-
-    await page.getByRole("button", { name: "פרסם ושלח הודעות" }).click();
-    await expect(page).toHaveURL(weekUrl);
+    await page.getByRole("button", { name: he.publicationFlow.closeAndPublish, exact: true })
+      .or(page.getByRole("button", { name: he.action.publish, exact: true })).click();
+    await expect(page).toHaveURL(`${weekUrl}/publish`);
+    await expect(page.getByRole("heading", { name: he.screen.publish.title })).toBeVisible();
+    await page.getByRole("button", { name: he.publicationFlow.allYes, exact: true }).click();
+    const confirm = page.getByRole("button", { name: he.publicationFlow.confirmUnresolved, exact: true });
+    await expect.poll(async () => page.url().endsWith("/board") || await confirm.isVisible()).toBe(true);
+    if (await confirm.isVisible()) await confirm.click();
+    await expect(page).toHaveURL(`${weekUrl}/board`);
 
     await page.goto(`${weekUrl}/publish`);
     await expect(page.getByText("קודמת: גרסה", { exact: false })).toBeVisible();

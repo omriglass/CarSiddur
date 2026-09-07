@@ -5,10 +5,11 @@ import { expect, test, type Page } from "@playwright/test";
 
 import { NEVO_DEPARTMENT_ID, serviceRoleClient } from "./helpers";
 import resetDatabase from "./global-setup";
+import { he } from "../src/i18n/he";
 
 const TZ = "Asia/Jerusalem";
-/** This department's `department_settings.board_start_time` (seed default, unchanged by the vertical-board redesign, UX_FLOWS.md §20). */
-const GRID_START_MINUTES = 5 * 60;
+/** Default selected-day range, matching the visible board. */
+const GRID_START_MINUTES = 6 * 60;
 const GRID_END_MINUTES = 24 * 60;
 
 function minutesSinceMidnight(iso: string): number {
@@ -82,8 +83,14 @@ async function signIn(page: Page): Promise<void> {
 
 async function goToOpenWeek(page: Page): Promise<string> {
   await page.goto("/sadran");
-  await expect(page).toHaveURL(/\/sadran\/[\w-]+\/\d{4}-\d{2}-\d{2}$/);
-  return page.url();
+  await expect(page).toHaveURL(/\/sadran\/[\w-]+\/\d{4}-\d{2}-\d{2}\/board$/);
+  return page.url().replace(/\/board$/, "");
+}
+
+async function fillRemaining(page: Page) {
+  const applied = page.waitForResponse((response) => response.url().endsWith("/rest/v1/rpc/apply_solver_result") && response.request().method() === "POST");
+  await page.getByRole("button", { name: he.action.autoSolveRemaining, exact: true }).click();
+  expect((await applied).ok()).toBe(true);
 }
 
 function unmetCountFromHeading(text: string | null): number {
@@ -103,14 +110,10 @@ test.describe.serial("board (bug-fix pass regression, fake-week data)", () => {
     await signIn(page);
     const weekUrl = await goToOpenWeek(page);
 
-    // Dashboard's own "לא שובצו" counter (WeekDashboardScreen.tsx).
-    const unmetCard = page.getByText("לא שובצו").locator("..");
-    await expect(unmetCard).toBeVisible();
-
     await page.goto(`${weekUrl}/board`);
     await expect(page.getByRole("heading", { name: "לוח הסידור" })).toBeVisible();
 
-    const unmetHeading = page.getByText(/לא שובצו \(\d+\)/).first();
+    const unmetHeading = page.locator("h2:visible").filter({ hasText: /לא שובצו \(\d+\)/ });
     await expect(unmetHeading).toBeVisible();
     const n = unmetCountFromHeading(await unmetHeading.textContent());
     expect(n).toBeGreaterThan(0);
@@ -124,7 +127,7 @@ test.describe.serial("board (bug-fix pass regression, fake-week data)", () => {
         return request.status !== "denied" && anchor && Number(formatInTimeZone(new Date(anchor), TZ, "i")) % 7 === day;
       }).map((request) => `request:${request.id}`).sort();
       await expect(async () => {
-        const ids = await page.locator('[data-ride-id^="request:"]').evaluateAll((elements) => elements.map((element) => element.getAttribute("data-ride-id")).sort());
+        const ids = await page.locator('button[data-ride-id^="request:"]:visible').evaluateAll((elements) => elements.map((element) => element.getAttribute("data-ride-id")).sort());
         expect(ids).toEqual(expected);
       }).toPass();
     }
@@ -166,14 +169,15 @@ test.describe.serial("board (bug-fix pass regression, fake-week data)", () => {
     await expect(page.getByRole("heading", { name: "לוח הסידור" })).toBeVisible();
     await selectDayFor(page, candidate!.depart_at as string);
 
-    const card = page.locator(`[data-request-id="${candidate!.id}"]`);
+    const card = page.locator(`[data-request-id="${candidate!.id}"]:visible`);
     await expect(card).toBeVisible({ timeout: 10_000 });
     const grip = card.getByRole("button", { name: "גרור/י ללוח" });
     // `UnmetList`'s own panel is independently scrollable (bounded to match
     // `WeekGrid`'s 70vh, UX_FLOWS.md §20) — a busy week's 40+ unmet cards mean
     // this specific candidate is very often below the fold of that panel.
     await grip.scrollIntoViewIfNeeded();
-    const dropMinutes = minutesSinceMidnight(candidate!.depart_at as string);
+    const requestedMinutes = minutesSinceMidnight(candidate!.depart_at as string);
+    const dropMinutes = requestedMinutes + 15; // A nearby drop snaps back to the requested start.
     // Same reasoning on the target side: the car column's *content* spans
     // the whole day, taller than the grid's own clipped viewport, so the
     // drop time must actually be scrolled into view first — see
@@ -203,9 +207,10 @@ test.describe.serial("board (bug-fix pass regression, fake-week data)", () => {
         .eq("request_id", candidate!.id)
         .maybeSingle();
       expect(rideRequest?.ride_id).toBeTruthy();
-      const { data: ride } = await admin.from("rides").select("car_id, starts_at").eq("id", rideRequest!.ride_id).single();
+      const { data: ride } = await admin.from("rides").select("car_id, starts_at, ends_at").eq("id", rideRequest!.ride_id).single();
       expect(ride?.car_id).toBe(targetCar.id);
-      expect(minutesSinceMidnight(ride!.starts_at)).toBe(dropMinutes);
+      expect(minutesSinceMidnight(ride!.starts_at)).toBe(requestedMinutes);
+      expect(Date.parse(ride!.ends_at)).toBe(Date.parse(candidate!.return_at as string));
     }).toPass({ timeout: 10_000 });
 
     const { data: reqAfter } = await admin.from("requests").select("status").eq("id", candidate!.id).single();
@@ -217,16 +222,14 @@ test.describe.serial("board (bug-fix pass regression, fake-week data)", () => {
     const weekUrl = await goToOpenWeek(page);
 
     await page.goto(`${weekUrl}/board`);
-    const unmetHeading = page.getByText(/לא שובצו \(\d+\)/).first();
+    const unmetHeading = page.locator("h2:visible").filter({ hasText: /לא שובצו \(\d+\)/ });
     await expect(unmetHeading).toBeVisible();
     const selectedDayIndex = await page.getByRole("radio").evaluateAll((elements) => elements.findIndex((element) => element.getAttribute("aria-checked") === "true"));
     const unmetBefore = unmetCountFromHeading(await unmetHeading.textContent());
     expect(unmetBefore).toBeGreaterThan(0);
 
     await page.goto(weekUrl);
-    await page.getByRole("button", { name: "הרץ פותר", exact: true }).click();
-    await expect(page.getByRole("heading", { name: "תוצאת הפתרון" })).toBeVisible({ timeout: 15_000 });
-    await page.getByRole("button", { name: "החל טיוטה" }).click();
+    await fillRemaining(page);
     // apply_solver_result + query invalidation can be slow under a busy
     // full-suite run (playwright.config.ts's own note on post-reset
     // slowness) — the default 5s assertion timeout flaked here once.
@@ -235,7 +238,7 @@ test.describe.serial("board (bug-fix pass regression, fake-week data)", () => {
     await page.getByRole("radio").nth(selectedDayIndex).click();
 
     // At least one ride block rendered on the default (busiest) day.
-    const firstRide = page.locator('button[data-ride-id]:not([data-ride-id^="request:"])').first();
+    const firstRide = page.locator('button[data-ride-id]:not([data-ride-id^="request:"]):visible').first();
     await expect(firstRide).toBeVisible({ timeout: 10_000 });
 
     // bug #3: the label is "<driver first name> ל/מ<destination>", never the department's own name.
@@ -244,7 +247,7 @@ test.describe.serial("board (bug-fix pass regression, fake-week data)", () => {
     expect(label).toMatch(/^\S+ [למ]\S/);
     expect(label).not.toBe("נבו");
 
-    const unmetAfterHeading = page.getByText(/לא שובצו \(\d+\)/).first();
+    const unmetAfterHeading = page.locator("h2:visible").filter({ hasText: /לא שובצו \(\d+\)/ });
     const unmetAfter = await unmetAfterHeading.count() ? unmetCountFromHeading(await unmetAfterHeading.textContent()) : 0;
     expect(unmetAfter).toBeLessThan(unmetBefore);
   });
@@ -321,7 +324,7 @@ test.describe.serial("board (bug-fix pass regression, fake-week data)", () => {
     expect(chosenRide).toBeTruthy();
     expect(chosenCar).toBeTruthy();
 
-    const rideLocator = page.locator(`button[data-ride-id="${chosenRide?.id}"]`);
+    const rideLocator = page.locator(`button[data-ride-id="${chosenRide?.id}"]:visible`);
     // The chosen ride may be on a different day than the board's default — walk day tabs until it's visible.
     for (const dayIndex of [0, 1, 2, 3, 4, 5, 6]) {
       if (await rideLocator.isVisible()) break;
@@ -416,7 +419,7 @@ test.describe.serial("board (bug-fix pass regression, fake-week data)", () => {
     expect(chosenCar).toBeTruthy();
 
     await selectDayFor(page, chosenRide!.starts_at);
-    const rideLocator = page.locator(`button[data-ride-id="${chosenRide?.id}"]`);
+    const rideLocator = page.locator(`button[data-ride-id="${chosenRide?.id}"]:visible`);
     await expect(rideLocator).toBeVisible({ timeout: 10_000 });
     // `toBeVisible()` only asserts CSS visibility, not that the block sits
     // within `WeekGrid`'s own clipped `max-h-[70vh]` scrollport (see
@@ -530,9 +533,7 @@ test.describe.serial("board (bug-fix pass regression, fake-week data)", () => {
 
     async function solveAndApply() {
       await page.goto(weekUrl);
-      await page.getByRole("button", { name: "הרץ פותר", exact: true }).click();
-      await expect(page.getByRole("heading", { name: "תוצאת הפתרון" })).toBeVisible({ timeout: 15_000 });
-      await page.getByRole("button", { name: "החל טיוטה" }).click();
+      await fillRemaining(page);
       await expect(page).toHaveURL(/\/board$/, { timeout: 15_000 });
     }
 
@@ -567,8 +568,17 @@ test.describe.serial("board (bug-fix pass regression, fake-week data)", () => {
     expect(cleanupError).toBeNull();
     await page.goto(`${weekUrl}/board`);
     await page.getByRole("radio").first().click();
-    await page.getByRole("button", { name: "שמירת זמן", exact: true }).click();
+    await page.getByRole("button", { name: he.board.showEarlyHours, exact: true }).click();
+    const column = page.locator('[data-car-col-id]:not([data-car-col-id^="phantom:"]):visible').first();
+    await column.evaluate((element) => {
+      const scroller = element.closest<HTMLElement>(".overflow-auto");
+      if (scroller) scroller.scrollTop = 0;
+    });
+    const columnBox = await column.boundingBox();
+    if (!columnBox) throw new Error("car column not found");
+    await column.click({ position: { x: columnBox.width / 2, y: 30 / 1440 * columnBox.height } });
     const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible();
     await dialog.getByLabel("יציאה", { exact: true }).fill("00:30");
     await dialog.getByLabel("חזרה", { exact: true }).fill("01:30");
     await dialog.getByLabel("תיאור השמירה — יוצג בלוח").fill("Board regression reservation");
@@ -577,8 +587,7 @@ test.describe.serial("board (bug-fix pass regression, fake-week data)", () => {
     const { data: reserved, error } = await admin.from("rides").select("id, starts_at, ends_at, driver_id").eq("week_start", weekStart).eq("notes", "Board regression reservation").single();
     expect(error).toBeNull();
     expect(reserved?.driver_id).toBeNull();
-    await page.getByRole("button", { name: "הצג שעות מוקדמות" }).click();
-    const block = page.locator(`[data-ride-id="${reserved!.id}"]`);
+    const block = page.locator(`button[data-ride-id="${reserved!.id}"]:visible`);
     await block.scrollIntoViewIfNeeded();
     const edge = block.locator(".bottom-0");
     const box = await edge.boundingBox();

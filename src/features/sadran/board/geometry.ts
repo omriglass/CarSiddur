@@ -53,6 +53,8 @@ export interface BoardRideForConflict {
   originId: string;
   destinationId: string;
   overnightAck: boolean;
+  /** Effective approved buffer after this ride; absent uses the department default. */
+  turnaroundMinutes?: number;
 }
 
 export interface ConflictScanResult {
@@ -81,7 +83,7 @@ export function scanBoardConflicts(params: {
   homeLocationId: string;
   days: readonly DayBounds[];
 }): ConflictScanResult {
-  const bufferSlots = Math.round(params.bufferMinutes / SLOT_MINUTES);
+
   const days = [...params.days];
   const weekSlots = days.reduce((max, d) => Math.max(max, d.endSlot), 0);
   const stubCars: SolverCar[] = params.carIds.map((id) => ({
@@ -93,12 +95,22 @@ export function scanBoardConflicts(params: {
     luggageCapacity: 0,
     maintenance: [],
   }));
-  const timelines = buildTimelines(stubCars, bufferSlots, weekSlots, params.homeLocationId);
+  const timelines = buildTimelines(stubCars, 0, weekSlots, params.homeLocationId);
 
   const conflictRideIds = new Set<string>();
   const sorted = [...params.rides].sort(
     (a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
   );
+  const previousByCar = new Map<string, BoardRideForConflict>();
+  // Record both sides, including nested overlaps that the timeline cannot add.
+  for (let i = 0; i < sorted.length; i++) {
+    const ride = sorted[i]!;
+    for (let j = i + 1; j < sorted.length; j++) {
+      const other = sorted[j]!;
+      if (Date.parse(other.startsAt) >= Date.parse(ride.endsAt)) break;
+      if (ride.carId === other.carId) { conflictRideIds.add(ride.id); conflictRideIds.add(other.id); }
+    }
+  }
   for (const ride of sorted) {
     const tl = timelines.get(ride.carId);
     if (!tl) continue;
@@ -106,7 +118,11 @@ export function scanBoardConflicts(params: {
       start: isoToSlot(ride.startsAt, params.weekStartMs),
       end: isoToSlot(ride.endsAt, params.weekStartMs),
     };
-    const free = tl.isFree(window, ride.originId);
+    const previous = previousByCar.get(ride.carId);
+    const previousBuffer = previous?.turnaroundMinutes ?? params.bufferMinutes;
+    const bufferConflict = !!previous && Date.parse(ride.startsAt) < Date.parse(previous.endsAt) + previousBuffer * 60_000;
+    previousByCar.set(ride.carId, ride);
+    const free = tl.isFree(window, ride.originId) && !bufferConflict;
     if (!free) conflictRideIds.add(ride.id);
     try {
       // `forceAdd` skips the location check (already covered by `isFree`
@@ -184,4 +200,28 @@ export function requestDayMismatchRideIds(
     }
   }
   return invalid;
+}
+
+/** Both neighboring rides are tight when their real windows do not overlap but
+ * leave less than the usual turnaround. This is informational, not a collision.
+ */
+export function tightScheduleRideIds(
+  rides: readonly { id: string | null; car_id: string | null; starts_at: string | null; ends_at: string | null }[],
+  bufferMinutes: number,
+): Set<string> {
+  const tight = new Set<string>();
+  const previousByCar = new Map<string, { id: string; end: number }>();
+  const ordered = rides.filter((ride): ride is { id: string; car_id: string; starts_at: string; ends_at: string } =>
+    !!ride.id && !!ride.car_id && !!ride.starts_at && !!ride.ends_at)
+    .sort((a, b) => Date.parse(a.starts_at) - Date.parse(b.starts_at) || a.id.localeCompare(b.id));
+  for (const ride of ordered) {
+    const previous = previousByCar.get(ride.car_id);
+    const gap = previous ? Date.parse(ride.starts_at) - previous.end : null;
+    if (previous && gap != null && gap >= 0 && gap < bufferMinutes * 60_000) {
+      tight.add(previous.id);
+      tight.add(ride.id);
+    }
+    previousByCar.set(ride.car_id, { id: ride.id, end: Date.parse(ride.ends_at) });
+  }
+  return tight;
 }

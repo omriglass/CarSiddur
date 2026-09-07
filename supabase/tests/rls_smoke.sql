@@ -43,11 +43,19 @@ begin
     returning id into v_version;
 
     perform set_config('app.in_publish', 'on', true);
-    update public.weeks set phase = 'live', published_version_id = v_version
+    update public.weeks set published_days=array(select week_start+i from generate_series(0,6) i), phase = 'live', published_version_id = v_version
     where department_id = '20000000-0000-0000-0000-000000000001' and week_start = v_week;
     perform set_config('app.in_publish', 'off', true);
   end if;
 end $$;
+
+insert into public.cars(id,department_id,name,license_plate,type)
+values('20000000-0000-0000-0000-000000000040','20000000-0000-0000-0000-000000000001','Public fixture car','9999912','shared');
+insert into public.rides(id,department_id,week_start,car_id,starts_at,ends_at,origin_id,destination_id,driver_id,notes,status,created_by)
+values('20000000-0000-0000-0000-000000000301','20000000-0000-0000-0000-000000000001',public.current_week_start(),
+  '20000000-0000-0000-0000-000000000040',(public.current_week_start()+time '10:00') at time zone 'Asia/Jerusalem',
+  (public.current_week_start()+time '11:00') at time zone 'Asia/Jerusalem','20000000-0000-0000-0000-000000000010',
+  '20000000-0000-0000-0000-000000000010',null,'Published reservation','confirmed','00000000-0000-0000-0000-000000000101');
 
 -- ---------------------------------------------------------------------------
 -- 1) A member sees own requests but not another member's draft (unpublished) data.
@@ -133,8 +141,8 @@ exception
 end $$;
 
 -- ---------------------------------------------------------------------------
--- 4) An approved member can read published siddur_versions of another department
---    (REQ §10, §13.52 — lift-finding across departments).
+-- 4) Public current-day rides remain cross-department-readable for lift-finding;
+--    full planning/scoring snapshots are private to coordinators.
 -- ---------------------------------------------------------------------------
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000103","role":"authenticated"}', true);
 
@@ -142,8 +150,9 @@ do $$
 declare v_count int;
 begin
   select count(*) into v_count from public.siddur_versions where department_id = '20000000-0000-0000-0000-000000000001';
-  assert v_count >= 1, 'TEST 4 FAILED: approved member should read another department''s published siddur_versions';
-  raise notice 'TEST 4 PASSED: cross-department published siddur_versions read';
+  assert v_count = 0, 'TEST 4 FAILED: full private snapshot leaked across departments';
+  assert exists(select 1 from public.v_board_rides where id='20000000-0000-0000-0000-000000000301'), 'TEST 4 FAILED: public current ride unavailable across departments';
+  raise notice 'TEST 4 PASSED: public rides readable, full snapshots private';
 end $$;
 
 -- ---------------------------------------------------------------------------
@@ -296,7 +305,7 @@ begin
     'served_priority_total',(select sum((x->>'served_priority_total')::numeric) from jsonb_array_elements(v_profiles) x))) into v_policies
   from public.policies where (department_id='00000000-0000-0000-0000-000000000001' or department_id is null) and current_version_id is not null;
   v_version_id := public.publish_siddur('00000000-0000-0000-0000-000000000001', v_open_week,v_profiles,
-    public.publish_scores_fingerprint('00000000-0000-0000-0000-000000000001',v_open_week),v_policies);
+    public.publish_scores_fingerprint('00000000-0000-0000-0000-000000000001',v_open_week),v_policies,null,true);
   assert v_version_id is not null, 'TEST 9 FAILED: publish_siddur() should return a version id';
 
   select notified_count into v_notified from public.siddur_versions where id = v_version_id;

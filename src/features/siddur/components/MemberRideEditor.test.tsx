@@ -7,12 +7,12 @@ import { MemberRideEditor } from "./MemberRideEditor";
 
 afterEach(cleanup);
 
-it("allows a ride ending at next midnight to retain that endpoint when edited", () => {
+it("caps a legacy overnight ride at 23:59 when editing its schedule", () => {
   const save = vi.fn();
   render(<MemberRideEditor ride={{ id: "ride", car_id: "car", version: 1, starts_at: "2041-01-06T20:00:00Z", ends_at: "2041-01-06T22:00:00Z" } as BoardRide}
     cars={[{ id: "car", name: "Car", status: "active", type: "shared" } as Car]} saving={false} onSave={save} />);
-  expect(screen.getByLabelText(he.field.return)).toHaveValue("00:00");
+  expect(screen.getByLabelText(he.field.return)).toHaveValue("23:59");
   expect(screen.getByRole("button", { name: he.common.save })).toBeEnabled();
   fireEvent.click(screen.getByRole("button", { name: he.common.save }));
-  expect(save).toHaveBeenCalledWith(expect.objectContaining({ startsAt: "2041-01-06T20:00:00.000Z", endsAt: "2041-01-06T22:00:00.000Z" }));
+  expect(save).toHaveBeenCalledWith(expect.objectContaining({ startsAt: "2041-01-06T20:00:00.000Z", endsAt: "2041-01-06T21:59:00.000Z" }));
 });

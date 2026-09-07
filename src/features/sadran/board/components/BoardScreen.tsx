@@ -1,6 +1,8 @@
+import { TableViewControls } from "@/components/TableViewControls";
+import { parseTimeToMinutes } from "@/features/solverBridge/buildSolverInput";
 import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
-import { useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { useQuery } from "@tanstack/react-query";
 
@@ -12,7 +14,10 @@ import { formatMinutes } from "@/components/TimeField15";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { TimeField15, parseHHMM } from "@/components/TimeField15";
 import { Textarea } from "@/components/ui/textarea";
-import { packPhantomLanes, requestStart, requestWindow, requestWithinFlex } from "../phantomLanes";
+import { WeekExcelExportButton } from "@/features/sadran/export/WeekExcelExportButton";
+import { RequestDeviationsDialog } from "../../deviations/RequestDeviationsDialog";
+import { expandedMergeWindow } from "../mergeWindow";
+import { packPhantomLanes, requestStart, requestWindow, requestWithinFlex, standaloneChauffeurWindow } from "../phantomLanes";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -25,17 +30,20 @@ import {
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { UNMET_DROP_ZONE_ATTR, WeekGrid, type WeekGridBlock, type WeekGridCar, type WeekGridRide } from "@/components/WeekGrid";
 import { WeekStrip } from "@/components/WeekStrip";
-import { parseTimeToMinutes } from "@/features/solverBridge/buildSolverInput";
 import { CalendarDays } from "lucide-react";
 import { fetchCarSeatConfigs } from "@/features/fleet/api";
 import { useRideTypes } from "@/features/fleet/hooks";
 import { RideTypeLegend } from "@/components/RideTypeLegend";
 import { BoardGridSkeleton } from "@/components/skeletons/BoardGridSkeleton";
-import { useCarLocations, useDepartments, useRideChanges } from "@/features/siddur/hooks";
+import { useCarLocations, useDepartments, useRideChanges, useClaimRideDriverMutation, useCancelRideChangeMutation } from "@/features/siddur/hooks";
+import { BoardPublicationActions } from "../../publish/components/BoardPublicationActions";
 import { he, tv } from "@/i18n/he";
 import { TZ } from "@/lib/time";
+import { ridePublicDetails } from "@/lib/ridePublicDetails";
+import { ridePassengerSummary } from "@/lib/ridePassengerSummary";
+import { rideCoordinatorNotes } from "@/lib/rideCoordinatorNotes";
 
-import { scanBoardConflicts, wouldOverlap, requestDayMismatchRideIds } from "../geometry";
+import { scanBoardConflicts, wouldOverlap, requestDayMismatchRideIds, tightScheduleRideIds } from "../geometry";
 import { rideBlockLabel, resolveRideRealDestination } from "../rideLabel";
 import { isUnmetStatus } from "../../unmetStatuses";
 import {
@@ -64,6 +72,8 @@ import {
 } from "../../solverRun";
 import { useUndoStack } from "../useUndoStack";
 import { BoardListMode } from "./BoardListMode";
+import { BoardWeekSwitcher } from "./BoardWeekSwitcher";
+import { FullResolveAction } from "./FullResolveAction";
 import { RideSheet } from "./RideSheet";
 import { UnmetList, type UnmetListItem } from "./UnmetList";
 
@@ -80,6 +90,7 @@ interface BoardScreenProps {
 /** `/sadran/:dept/:week/board` — the board (UX_FLOWS.md §4.2). */
 export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
   const navigate = useNavigate();
+  const location = useLocation();
 
   const departmentsQuery = useDepartments();
   const department = (departmentsQuery.data ?? []).find((d) => d.id === departmentId);
@@ -97,6 +108,8 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
   // landed on the actual busy days.
   const [selectedDayOverride, setSelectedDayOverride] = useState<string | null>(null);
   const [selectedRideId, setSelectedRideId] = useState<string | null>(null);
+  const [conflictJump, setConflictJump] = useState<{ rideId: string; sequence: number } | null>(null);
+  const boardRef = useRef<HTMLDivElement>(null);
 
   const carsQuery = useCarsForDepartment(departmentId);
   const carLocationsQuery = useCarLocations(departmentId, weekStart);
@@ -117,6 +130,8 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
   });
 
   const editRideMutation = useEditRideMutation();
+  const claimDriverMutation = useClaimRideDriverMutation();
+  const cancelRideChangeMutation = useCancelRideChangeMutation();
   const cancelRideMutation = useCancelRideMutation();
   const unassignRideMutation = useUnassignRideMutation();
   const [mergePrefill, setMergePrefill] = useState<Parameters<typeof goToComposer>[0] | null>(null);
@@ -128,13 +143,10 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
   const [autoSolving, setAutoSolving] = useState(false);
 
   // Vertical-board redesign (UX_FLOWS.md §20 "owner feedback: visible range
-  // 06:00–24:00 by default"): `department_settings.board_start_time` (an
-  // existing column, previously unused for display) is the default start
-  // when set, else 06:00; "הצג שעות מוקדמות" expands down to 00:00.
+  // 06:00–24:00 by default; "הצג שעות מוקדמות" expands down to 00:00.
   const [showEarlyHours, setShowEarlyHours] = useState(false);
   const boardStartMinutes = departmentSettingsQuery.data?.board_start_time
-    ? parseTimeToMinutes(departmentSettingsQuery.data.board_start_time)
-    : 6 * 60;
+    ? parseTimeToMinutes(departmentSettingsQuery.data.board_start_time) : 6 * 60;
   const dayStartMinutes = showEarlyHours ? 0 : boardStartMinutes;
   const dayEndMinutes = 24 * 60;
 
@@ -143,9 +155,10 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
   // gesture since the drag starts on its cards, outside the grid) — the
   // grid only needs to know which car to highlight and whether the drop
   // would be valid right now.
-  const [unmetDragHover, setUnmetDragHover] = useState<{ item: UnmetListItem; carId: string; minutes: number } | null>(null);
+  const [unmetDragHover, setUnmetDragHover] = useState<{ item: UnmetListItem; carId: string; minutes: number; hostRideId?: string } | null>(null);
   /** Collapsible bottom drawer for the md–lg gap (UX_FLOWS §20) — the side panel only shows at `lg:`. */
-  const [unmetDrawerOpen, setUnmetDrawerOpen] = useState(false);
+  const [tableView, setTableView] = useState(false);
+  const [tableZoom, setTableZoom] = useState(1);
 
   function computeDefaultDay(): string {
     if (days.includes(today)) return today;
@@ -194,18 +207,8 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
    * sheet flow, to keep every solver invocation an explicit Sadran action;
    * see the stage 2b report).
    *
-   * MAJOR BUG fix (docs/UX_FLOWS.md §19): this board's own apply action is
-   * only "▶ השלם אוטומטית" below, always `'remaining'` mode — a full
-   * re-solve of the whole week (`mode: 'full'`, `computeFullResolveDiff`'s
-   * confirm dialog) is wired on the dashboard instead
-   * (`WeekDashboardScreen.tsx`'s "פתור מחדש את כל השבוע", next to its
-   * primary "הרץ פותר"), not duplicated here. Previewing in `'full'` mode
-   * here used to forecast a solve the board could never actually apply (and,
-   * before the root-cause fix in `applySolve.ts`, under-reported unmet
-   * requests whose ride was an unpinned solver draft — exactly the requests
-   * that were disappearing). Matching the preview's mode to the only apply
-   * path this screen offers keeps what the Sadran sees in sync with what a
-   * click on "השלם אוטומטית" will actually do.
+   * The ordinary preview matches remaining-only autofill. Full solving is
+   * a separate FullResolveAction with an explicit replacement confirmation.
    */
   async function computePreview() {
     const chosen = (policyOptionsQuery.data ?? []).find((p) => p.policyVersionId === effectivePolicyVersionId);
@@ -302,6 +305,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
 
   const daySettings = departmentSettingsQuery.data;
   const rides = ridesQuery.data ?? [];
+  const awaitingDriverRequestIds = new Set(rides.filter((ride) => ride.needs_driver).flatMap((ride) => servedOf(ride).map((entry) => entry.request_id)));
   const activeDayRides = rides.filter(
     (r) => r.starts_at && formatInTimeZone(new Date(r.starts_at), TZ, "yyyy-MM-dd") === selectedDay,
   );
@@ -329,6 +333,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
               originId: r.origin_id,
               destinationId: r.destination_id,
               overnightAck: !!r.overnight_ack_by,
+              turnaroundMinutes: r.turnaround_override_minutes ?? undefined,
             })),
             carIds: [...new Set(validRides.map((r) => r.car_id))],
             weekStartMs,
@@ -339,10 +344,43 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
         })()
       : null;
 
+  const tightRideIds = tightScheduleRideIds(rides, daySettings?.turnaround_minutes ?? 30);
+  const planningRows = (rideChangesQuery.data ?? []).filter((change) => change.is_planning).flatMap((change) => {
+    const original = rides.find((ride) => ride.id === change.ride_id);
+    return original ? [{ ...original, id: `change:${change.id}`, car_id: change.car_id, starts_at: change.starts_at, ends_at: change.ends_at }] : [];
+  });
   const conflictRideIds = new Set([
     ...(conflictScan?.conflictRideIds ?? []),
     ...requestDayMismatchRideIds(rides, requestsQuery.data ?? []),
+    ...planningRows.map((ride) => ride.id),
+    ...rides.filter((ride) => ride.starts_at && ride.ends_at && (
+      formatInTimeZone(ride.starts_at, TZ, "yyyy-MM-dd") !== formatInTimeZone(ride.ends_at, TZ, "yyyy-MM-dd")
+      || formatInTimeZone(ride.ends_at, TZ, "HH:mm:ss") > "23:59:00"
+    )).map((ride) => ride.id as string),
   ]);
+  const conflicts = [...rides, ...planningRows].filter((ride): ride is typeof ride & { id: string; starts_at: string; ends_at: string } =>
+    !!ride.id && conflictRideIds.has(ride.id) && !!ride.starts_at && !!ride.ends_at)
+    .sort((a, b) => Date.parse(a.starts_at) - Date.parse(b.starts_at) || a.id.localeCompare(b.id));
+  const focusedConflictIndex = conflicts.findIndex((ride) => ride.id === conflictJump?.rideId);
+  const focusedConflict = conflicts[focusedConflictIndex];
+
+  function jumpToNextConflict() {
+    const next = conflicts[(focusedConflictIndex + 1) % conflicts.length];
+    if (!next) return;
+    setSelectedDay(formatInTimeZone(next.starts_at, TZ, "yyyy-MM-dd"));
+    const minutes = Number(formatInTimeZone(next.starts_at, TZ, "H")) * 60 + Number(formatInTimeZone(next.starts_at, TZ, "m"));
+    if (minutes < dayStartMinutes) setShowEarlyHours(true);
+    setConflictJump({ rideId: next.id, sequence: (conflictJump?.sequence ?? 0) + 1 });
+  }
+
+  useEffect(() => {
+    if (!conflictJump) return;
+    // The chosen day and phone's car list have rendered before finding the target.
+    const target = [...(boardRef.current?.querySelectorAll<HTMLElement>("[data-ride-id]") ?? [])]
+      .find((element) => element.dataset.rideId === conflictJump.rideId && element.getClientRects().length > 0);
+    target?.focus({ preventScroll: true });
+    target?.scrollIntoView({ behavior: "smooth", block: "start", inline: "center" });
+  }, [conflictJump]);
 
   const pendingConsentRideIds = new Set(
     (proposalsQuery.data ?? []).filter((p) => p.status === "sent" && p.ride_id).map((p) => p.ride_id as string),
@@ -359,7 +397,20 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
     locationBadge: carLocationsQuery.data?.find((l) => l.car_id === c.id)?.location_name ?? undefined,
   }));
 
-  const shadowedRideIds = new Set((rideChangesQuery.data ?? []).flatMap((change) => [change.ride_id, ...change.parties.map((party) => party.ride_id)]));
+  const pendingMerges = (proposalsQuery.data ?? []).flatMap((proposal) => {
+    if (proposal.type !== "merge" || !["sent", "accepted"].includes(proposal.status)) return [];
+    const payload = proposal.payload;
+    if (!payload || typeof payload !== "object" || Array.isArray(payload) || typeof payload.starts_at !== "string" || typeof payload.ends_at !== "string") return [];
+    const host = rides.find((ride) => ride.id === proposal.ride_id);
+    const guest = (requestsQuery.data ?? []).find((request) => request.id === proposal.request_id);
+    if (!host?.car_id || !host.id || !guest) return [];
+    return [{ proposal, host, guest, startsAt: payload.starts_at, endsAt: payload.ends_at }];
+  });
+  const shadowedRideIds = new Set((rideChangesQuery.data ?? []).filter((change) => !change.is_planning).flatMap((change) => [change.ride_id, ...change.parties.map((party) => party.ride_id)]));
+  for (const merge of pendingMerges) {
+    shadowedRideIds.add(merge.host.id!);
+    for (const ride of rides) if (ride.id && servedOf(ride).some((entry) => entry.request_id === merge.guest.id)) shadowedRideIds.add(ride.id);
+  }
   const weekGridRides: WeekGridRide[] = activeDayRides
     .filter((r) => r.id && r.car_id && r.starts_at && r.ends_at)
     .map((r) => ({
@@ -367,13 +418,22 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
       carId: r.car_id as string,
       startMinutes: Math.round((Date.parse(r.starts_at as string) - Date.parse(dayStartIso(selectedDay))) / 60_000),
       endMinutes: Math.round((Date.parse(r.ends_at as string) - Date.parse(dayStartIso(selectedDay))) / 60_000),
+      requestedStartMinutes: (() => {
+        const entry = servedOf(r).find((served) => served.role === "driver") ?? servedOf(r)[0];
+        const request = (requestsQuery.data ?? []).find((request) => request.id === entry?.request_id);
+        const window = request ? standaloneChauffeurWindow(request, daySettings?.chauffeur_dwell_minutes ?? 10) : null;
+        return window ? (Date.parse(window.startsAt) - Date.parse(dayStartIso(selectedDay))) / 60_000 : undefined;
+      })(),
       // Owner bug report #3: a round-trip ride is stored as one row with
       // origin_id === destination_id === the department's home location
       // (DATA_MODEL.md consistency decision #14), so `r.destination_name`
       // alone is always the department's own name ("נבו") for the common
       // case — `rideBlockLabel` composes "<driver> ו<passengers> ל<real
       // destination>" from `served` instead (see `rideLabel.ts`).
-      label: r.notes || (
+      description: [servedOf(r).length ? r.notes : null, ridePublicDetails(servedOf(r), { includeCompanions: false })].filter(Boolean).join("\n"),
+      passengerSummary: ridePassengerSummary(servedOf(r), r.needs_driver ? null : r.driver_name),
+      coordinatorNotes: rideCoordinatorNotes(servedOf(r), requestsQuery.data ?? []),
+      label: (!servedOf(r).length && r.notes) || (
         department?.home_destination_id && r.origin_id && r.destination_id
           ? rideBlockLabel({
               originId: r.origin_id,
@@ -382,14 +442,30 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
               destinationName: r.destination_name ?? "",
               homeDestinationId: department.home_destination_id,
               served: servedOf(r),
+              driverName: r.driver_name,
+              isChauffeur: !!r.is_chauffeur,
+              needsDriver: !!r.needs_driver,
             })
           : (r.destination_name ?? "")),
       pinned: !!r.is_pinned,
+      needsDriver: !!r.needs_driver,
+      tightSchedule: tightRideIds.has(r.id as string),
       shadowed: shadowedRideIds.has(r.id as string),
       conflict: conflictRideIds.has(r.id as string),
+      highlighted: focusedConflict?.id === r.id,
       pendingConsent: pendingConsentRideIds.has(r.id as string),
       rideTypeCode: representativeRideTypeCode(servedOf(r)),
     }));
+
+  for (const merge of pendingMerges) {
+    if (formatInTimeZone(merge.startsAt, TZ, "yyyy-MM-dd") !== selectedDay) continue;
+    const host = weekGridRides.find((ride) => ride.id === merge.host.id);
+    weekGridRides.push({ id: `merge:${merge.proposal.id}`, carId: merge.host.car_id!,
+      startMinutes: (Date.parse(merge.startsAt) - Date.parse(dayStartIso(selectedDay))) / 60_000,
+      endMinutes: (Date.parse(merge.endsAt) - Date.parse(dayStartIso(selectedDay))) / 60_000,
+      label: `${host?.label ?? merge.host.driver_name ?? ""} · ${merge.guest.requester_full_name ?? ""} · ${merge.guest.destination_resolved_name ?? merge.guest.destination_text ?? ""}`,
+      pendingConsent: true, needsDriver: !!merge.host.needs_driver, rideTypeCode: host?.rideTypeCode });
+  }
 
   for (const change of rideChangesQuery.data ?? []) {
     if (formatInTimeZone(change.starts_at, TZ, "yyyy-MM-dd") !== selectedDay) continue;
@@ -397,7 +473,9 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
     weekGridRides.push({ id: `change:${change.id}`, carId: change.car_id,
       startMinutes: (Date.parse(change.starts_at) - Date.parse(dayStartIso(selectedDay))) / 60_000,
       endMinutes: (Date.parse(change.ends_at) - Date.parse(dayStartIso(selectedDay))) / 60_000,
-      label: `${original?.label ?? change.requester?.full_name ?? ""} · ${he.rideEditing.pending}`, pendingConsent: true, rideTypeCode: original?.rideTypeCode });
+      label: `${original?.label ?? change.requester?.full_name ?? ""} · ${change.is_planning ? he.boardCoordination.planning : he.rideEditing.pending}`,
+      requestedStartMinutes: original?.requestedStartMinutes,
+      conflict: change.is_planning, pendingConsent: true, rideTypeCode: original?.rideTypeCode });
   }
 
   const weekGridBlocks: WeekGridBlock[] = (maintenanceQuery.data ?? []).flatMap((block) => {
@@ -409,7 +487,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
   const dayCounts = days.map((d) => ({
     rides: rides.filter((r) => r.starts_at && formatInTimeZone(new Date(r.starts_at), TZ, "yyyy-MM-dd") === d).length,
     unmet: (requestsQuery.data ?? []).filter(
-      (r) => isUnmetStatus(r.status) && requestStart(r) && formatInTimeZone(new Date(requestStart(r)!), TZ, "yyyy-MM-dd") === d,
+      (r) => isUnmetStatus(r.status) && !awaitingDriverRequestIds.has(r.id) && requestStart(r) && formatInTimeZone(new Date(requestStart(r)!), TZ, "yyyy-MM-dd") === d,
     ).length,
   }));
 
@@ -421,7 +499,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
    * nobody has clicked "הרץ פותר" yet or the page was reloaded (bug #1).
    */
   const unmetItems: UnmetListItem[] = (requestsQuery.data ?? [])
-    .filter((r) => isUnmetStatus(r.status) && requestStart(r) && formatInTimeZone(new Date(requestStart(r)!), TZ, "yyyy-MM-dd") === selectedDay)
+    .filter((r) => isUnmetStatus(r.status) && !awaitingDriverRequestIds.has(r.id) && requestStart(r) && formatInTimeZone(new Date(requestStart(r)!), TZ, "yyyy-MM-dd") === selectedDay)
     .map((r) => ({
       request: r,
       destinationName: r.destination_resolved_name ?? "—",
@@ -433,16 +511,18 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
     if (!window) return [];
     return [{ id: `request:${item.request.id}`, startMinutes: (Date.parse(window.startsAt) - Date.parse(dayStartIso(selectedDay))) / 60_000,
       endMinutes: (Date.parse(window.endsAt) - Date.parse(dayStartIso(selectedDay))) / 60_000,
-      label: `${item.request.requester_full_name ?? ""} · ${item.destinationName}`, rideTypeCode: item.request.ride_type_code }];
+      label: `${item.request.requester_full_name ?? ""} · ${item.destinationName}`, rideTypeCode: item.request.ride_type_code,
+      passengerSummary: ridePassengerSummary([{ ...item.request, requester: item.request.requester_full_name }]) }];
   }));
   for (let lane = 0; lane <= Math.max(-1, ...phantomRides.map((ride) => ride.lane)); lane++) {
     weekGridCars.push({ id: `phantom:${lane}`, name: tv("sadranBoard.phantomCar", { number: String(lane + 1) }), group: "phantom" });
   }
   weekGridCars.push({ id: "phantom:unassign", name: he.sadranBoard.unassignLane, group: "phantom" });
-  weekGridRides.push(...phantomRides.map((ride) => ({ ...ride, carId: `phantom:${ride.lane}`, pendingConsent: true })));
+  weekGridRides.push(...phantomRides.map((ride) => ({ ...ride, requestedStartMinutes: ride.startMinutes, carId: `phantom:${ride.lane}`, pendingConsent: true })));
   const selectedUnmet = unmetItems.find((item) => item.request.id === selectedUnmetId);
 
-  const selectedRide = rides.find((r) => r.id === selectedRideId) ?? null;
+  const selectedPlanningChange = (rideChangesQuery.data ?? []).find((change) => change.is_planning && `change:${change.id}` === selectedRideId);
+  const selectedRide = rides.find((r) => r.id === (selectedPlanningChange?.ride_id ?? selectedRideId)) ?? null;
   const selectedRideDriverName = selectedRide?.driver_name ?? null;
 
   const seatConfigsByCarId = new Map<string, { adults: number; child_seats: number; boosters: number }[]>();
@@ -453,9 +533,10 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
   }
 
   function passengersOf(ride: (typeof rides)[number]) {
-    return servedOf(ride).reduce(
+    const served = servedOf(ride);
+    return served.reduce(
       (acc, s) => ({ adults: acc.adults + s.adults, childSeats: acc.childSeats + s.child_seats, boosters: acc.boosters + s.boosters }),
-      { adults: 0, childSeats: 0, boosters: 0 },
+      { adults: served.length && !served.some((entry) => entry.role === "driver") ? 1 : 0, childSeats: 0, boosters: 0 },
     );
   }
 
@@ -472,25 +553,42 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
       .map((block) => ({ startsAt: block.starts_at, endsAt: block.ends_at })), 0);
   }
 
+  function mergeCandidateForRide(rideId: string, carId: string, _startsAt: string, _endsAt: string, hostRideId?: string) {
+    const source = rides.find((ride) => ride.id === rideId);
+    if (!source?.needs_driver || !hostRideId) return null;
+    const host = rides.find((ride) => ride.id !== rideId && ride.car_id === carId && ride.starts_at && ride.ends_at
+      && ride.id === hostRideId && !!ride.driver_id && !ride.needs_driver);
+    const guest = source ? servedOf(source).find((entry) => entry.role === "driver") ?? servedOf(source)[0] : undefined;
+    if (!source?.starts_at || !source.ends_at || !host?.starts_at || !host.ends_at || !guest) return null;
+    const request = (requestsQuery.data ?? []).find((request) => request.id === guest.request_id);
+    const window = source.needs_driver && request ? requestWindow(request) : { startsAt: source.starts_at, endsAt: source.ends_at };
+    return window ? { host, source, request, window: expandedMergeWindow({ startsAt: host.starts_at, endsAt: host.ends_at }, window) } : null;
+  }
+
   /** Validate the live preview window, including phantom requests dragged into real cars. */
-  function isDropTargetValid(rideId: string, carId: string, startMinutes: number, endMinutes: number): boolean {
+  function isDropTargetValid(rideId: string, carId: string, startMinutes: number, endMinutes: number, hostRideId?: string): boolean {
     if (carId.startsWith("phantom:")) return !rideId.startsWith("request:");
     if (rideId.startsWith("request:")) {
       const item = unmetItems.find((item) => `request:${item.request.id}` === rideId);
-      return !!item && isUnmetDropValid(item, carId, startMinutes);
+      return !!item && isUnmetDropValid(item, carId, startMinutes, hostRideId);
     }
-    if (startMinutes < 0 || endMinutes > 1440 || endMinutes <= startMinutes || unavailable(carId, minutesIso(startMinutes), minutesIso(endMinutes))) return false;
+    if (startMinutes < 0 || endMinutes > 1439 || endMinutes <= startMinutes || unavailable(carId, minutesIso(startMinutes), minutesIso(endMinutes))) return false;
     const ride = rides.find((r) => r.id === rideId);
     if (!ride?.starts_at || !ride.ends_at) return true;
+    const merge = mergeCandidateForRide(rideId, carId, minutesIso(startMinutes), minutesIso(endMinutes), hostRideId);
+    if (merge) {
+      if (!merge.host.driver_id || merge.host.needs_driver || !merge.request || unavailable(carId, merge.window.startsAt, merge.window.endsAt)) return false;
+      const hostNeed = passengersOf(merge.host);
+      if (!seatsFit(carId, { adults: hostNeed.adults + merge.request.adults, childSeats: hostNeed.childSeats + merge.request.child_seats, boosters: hostNeed.boosters + merge.request.boosters })) return false;
+      return !wouldOverlap(merge.window, rides.filter((other) => other.id !== rideId && other.id !== merge.host.id && other.car_id === carId && other.starts_at && other.ends_at)
+        .map((other) => ({ startsAt: other.starts_at!, endsAt: other.ends_at! })), 0);
+    }
     if (!seatsFit(carId, passengersOf(ride))) return false;
-    const others = rides
-      .filter((r) => r.id !== rideId && r.car_id === carId && r.starts_at && r.ends_at)
-      .map((r) => ({ startsAt: r.starts_at as string, endsAt: r.ends_at as string }));
-    return !wouldOverlap({ startsAt: minutesIso(startMinutes), endsAt: minutesIso(endMinutes) }, others, daySettings?.turnaround_minutes ?? 30);
+    return true;
   }
 
   function unmetRequestPassengers(r: WeekRequestRow) {
-    return { adults: r.adults, childSeats: r.child_seats, boosters: r.boosters };
+    return { adults: r.adults + (r.trip_shape === "round_trip" ? 0 : 1), childSeats: r.child_seats, boosters: r.boosters };
   }
 
   /** Shared timestamp conversion for the current day and snapped preview/drop windows. */
@@ -501,70 +599,77 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
     return fromZonedTime(`${date.toISOString().slice(0, 10)}T${time}:00`, TZ).toISOString();
   }
 
-  function unmetCandidateWindow(item: UnmetListItem, minutes: number): { startsAt: string; endsAt: string } | null {
+  function unmetCandidateWindow(item: UnmetListItem, minutes: number, standalone = false): { startsAt: string; endsAt: string } | null {
     const req = item.request;
-    const original = requestWindow(req);
-    if (!original || !requestStart(req) || formatInTimeZone(new Date(requestStart(req)!), TZ, "yyyy-MM-dd") !== selectedDay) return null;
+    const passenger = requestWindow(req);
+    const original = standalone ? standaloneChauffeurWindow(req, daySettings?.chauffeur_dwell_minutes ?? 10) : passenger;
+    if (!original || !passenger || !requestStart(req) || formatInTimeZone(new Date(requestStart(req)!), TZ, "yyyy-MM-dd") !== selectedDay) return null;
     const duration = (Date.parse(original.endsAt) - Date.parse(original.startsAt)) / 60_000;
-    if (minutes < 0 || minutes + duration > 1440) return null;
-    return { startsAt: minutesIso(minutes), endsAt: minutesIso(minutes + duration) };
+    const requestedMinutes = (Date.parse(passenger.startsAt) - Date.parse(dayStartIso(selectedDay))) / 60_000;
+    if (Math.abs(minutes - requestedMinutes) <= 15) minutes = requestedMinutes;
+    const start = minutes - (standalone && req.trip_shape === "one_way_from" ? (Date.parse(passenger.startsAt) - Date.parse(original.startsAt)) / 60_000 : 0);
+    if (start < 0 || start + duration > 1439) return null;
+    return { startsAt: minutesIso(start), endsAt: minutesIso(start + duration) };
   }
 
-  /** Live drag feedback for an unmet card hovering a car column — same seat-fit/overlap checks as `isDropTargetValid` above. */
-  function isUnmetDropValid(item: UnmetListItem, carId: string, minutes: number): boolean {
-    const window = unmetCandidateWindow(item, minutes);
+  function unmetMergeHost(item: UnmetListItem, carId: string, _minutes: number, hostRideId?: string) {
+    if (item.request.trip_shape === "round_trip" || !hostRideId) return undefined;
+    return rides.find((ride) => ride.id === hostRideId && ride.car_id === carId && !!ride.driver_id && !ride.needs_driver);
+  }
+
+  function unmetPreviewWindow(item: UnmetListItem, carId: string, minutes: number, hostRideId?: string) {
+    const host = unmetMergeHost(item, carId, minutes, hostRideId);
+    const passenger = requestWindow(item.request);
+    return host?.starts_at && host.ends_at && passenger
+      ? expandedMergeWindow({ startsAt: host.starts_at, endsAt: host.ends_at }, passenger)
+      : unmetCandidateWindow(item, minutes, true);
+  }
+
+  /** Includes the whole chauffeur return block or expanded host, using actual
+   * overlap rather than rejecting coordinator-approved short turnaround gaps. */
+  function isUnmetDropValid(item: UnmetListItem, carId: string, minutes: number, hostRideId?: string): boolean {
+    const window = unmetPreviewWindow(item, carId, minutes, hostRideId);
     if (!window || carId.startsWith("phantom:") || unavailable(carId, window.startsAt, window.endsAt)) return false;
-    if (item.request.trip_shape !== "round_trip" && item.request.one_way_car_mode !== "relay") {
-      return rides.some((host) => host.car_id === carId && host.starts_at && host.ends_at
-        && Date.parse(host.starts_at) < Date.parse(window.endsAt) && Date.parse(window.startsAt) < Date.parse(host.ends_at)
-        && seatsFit(carId, { adults: passengersOf(host).adults + item.request.adults, childSeats: passengersOf(host).childSeats + item.request.child_seats, boosters: passengersOf(host).boosters + item.request.boosters }));
-    }
-    if (!seatsFit(carId, unmetRequestPassengers(item.request))) return false;
-    const others = rides
-      .filter((r) => r.car_id === carId && r.starts_at && r.ends_at)
-      .map((r) => ({ startsAt: r.starts_at as string, endsAt: r.ends_at as string }));
-    return !wouldOverlap(window, others, daySettings?.turnaround_minutes ?? 30);
+    const host = unmetMergeHost(item, carId, minutes, hostRideId);
+    if (host && (!host.driver_id || host.needs_driver)) return false;
+    const need = host ? passengersOf(host) : { adults: 1, childSeats: 0, boosters: 0 };
+    if (!seatsFit(carId, host || item.request.trip_shape !== "round_trip"
+      ? { adults: need.adults + item.request.adults, childSeats: need.childSeats + item.request.child_seats, boosters: need.boosters + item.request.boosters }
+      : unmetRequestPassengers(item.request))) return false;
+    const others = rides.filter((ride) => ride.id !== host?.id && ride.car_id === carId && ride.starts_at && ride.ends_at)
+      .map((ride) => ({ startsAt: ride.starts_at!, endsAt: ride.ends_at! }));
+    return !host || !wouldOverlap(window, others, 0);
   }
 
   /** Assign a request leg or prepare a proposal when sharing/relay coordination is required. */
-  async function handlePlaceUnmetRequest(item: UnmetListItem, carId: string, minutes: number) {
+  async function handlePlaceUnmetRequest(item: UnmetListItem, carId: string, minutes: number, droppedOnRideId?: string) {
     setUnmetDragHover(null);
     const req = item.request;
     if (carId.startsWith("phantom:")) return;
     if (!requestStart(req) || formatInTimeZone(new Date(requestStart(req)!), TZ, "yyyy-MM-dd") !== selectedDay) {
       toast.error(he.sadranBoard.wrongDay); return;
     }
-    const window = unmetCandidateWindow(item, minutes);
+    let window = unmetCandidateWindow(item, minutes);
     if (!window || !department?.home_destination_id) {
       toast.error(he.sadranBoard.invalidWindow);
       return;
     }
-    if (req.trip_shape !== "round_trip" && req.one_way_car_mode !== "relay") {
-      const host = rides.find((ride) => ride.car_id === carId && ride.starts_at && ride.ends_at
-        && Date.parse(ride.starts_at) < Date.parse(window.endsAt) && Date.parse(window.startsAt) < Date.parse(ride.ends_at));
-      if (host?.id) {
-        setMergePrefill({ requestId: req.id, rideId: host.id, type: "merge", payload: { ride_id: host.id,
-          legs: [{ ride_id: host.id, role: "passenger", leg: req.trip_shape === "one_way_from" ? "return" : "out", car_mode: "passenger" }] } });
-      } else {
-        toast(he.sadranBoard.passengerNeedsHost);
-        goToComposer({ requestId: req.id, rideId: null, type: "external", payload: { hint: "cab" } });
-      }
+    const host = unmetMergeHost(item, carId, minutes, droppedOnRideId);
+    if (host?.id && host.starts_at && host.ends_at) {
+      if (!host.driver_id || host.needs_driver) { toast.error(he.boardCoordination.mergeNeedsDriver); return; }
+      if (!isUnmetDropValid(item, carId, minutes, droppedOnRideId)) { toast.error(he.sadranBoard.dragInvalidOverlapToast); return; }
+      const original = requestWindow(req)!;
+      const expanded = expandedMergeWindow({ startsAt: host.starts_at, endsAt: host.ends_at }, original);
+      setMergePrefill({ requestId: req.id, rideId: host.id, type: "merge", payload: { ride_id: host.id,
+        starts_at: expanded.startsAt, ends_at: expanded.endsAt,
+        legs: [{ ride_id: host.id, role: "passenger", leg: req.trip_shape === "round_trip" ? "both" : req.trip_shape === "one_way_from" ? "return" : "out", car_mode: "passenger" }] } });
       return;
     }
-    if (req.trip_shape !== "round_trip" && !req.destination_id) {
-      goToComposer({ requestId: req.id, rideId: null, type: "external", payload: { hint: "cab" } });
-      return;
-    }
+    window = unmetCandidateWindow(item, minutes, true);
+    if (!window) { toast.error(he.sadranBoard.invalidWindow); return; }
     if (unavailable(carId, window.startsAt, window.endsAt)) { toast.error(he.sadranBoard.maintenanceUnavailable); return; }
     if (!seatsFit(carId, unmetRequestPassengers(req))) {
       toast.error(he.sadranBoard.dragInvalidSeatsToast);
-      return;
-    }
-    const others = rides
-      .filter((r) => r.car_id === carId && r.starts_at && r.ends_at)
-      .map((r) => ({ startsAt: r.starts_at as string, endsAt: r.ends_at as string }));
-    if (wouldOverlap(window, others, daySettings?.turnaround_minutes ?? 30)) {
-      toast.error(he.sadranBoard.dragInvalidOverlapToast);
       return;
     }
     if (!requestWithinFlex(req, window.startsAt, window.endsAt)) {
@@ -579,25 +684,22 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
           car_id: carId,
           starts_at: window.startsAt,
           ends_at: window.endsAt,
-          origin_id: req.trip_shape === "one_way_from" ? req.destination_id! : department.home_destination_id,
-          destination_id: req.trip_shape === "one_way_to" ? req.destination_id! : department.home_destination_id,
-          driver_id: req.requester_id,
+          origin_id: department.home_destination_id,
+          destination_id: department.home_destination_id,
+          driver_id: req.trip_shape === "round_trip" ? req.requester_id : null,
+          needs_driver: req.trip_shape !== "round_trip",
+          allow_conflict: true,
           is_pinned: true,
           pin_reason: "SADRAN_MANUAL",
-          served: [{ request_id: req.id, role: "driver", leg: req.trip_shape === "round_trip" ? "both" : req.trip_shape === "one_way_from" ? "return" : "out", car_mode: req.trip_shape === "round_trip" ? "keep" : "relay" }],
+          served: [{ request_id: req.id, role: req.trip_shape === "round_trip" ? "driver" : "passenger", leg: req.trip_shape === "round_trip" ? "both" : req.trip_shape === "one_way_from" ? "return" : "out", car_mode: req.trip_shape === "round_trip" ? "keep" : "chauffeur" }],
         },
         departmentId,
         weekStart,
       });
       const carName = (carsQuery.data ?? []).find((c) => c.id === carId)?.name ?? "";
-      toast.success(tv("sadranBoard.dragPlacedToast", { car: carName, start: formatMinutes(minutes) }));
+      toast.success(req.trip_shape === "round_trip" ? tv("sadranBoard.dragPlacedToast", { car: carName, start: formatMinutes(minutes) }) : he.boardCoordination.standaloneSaved);
     } catch {
-      // A relay requires a compatible car-location chain. Keep the requested
-      // placement reviewable when a direct assignment cannot satisfy it.
-      if (req.trip_shape !== "round_trip") {
-        toast(he.sadranBoard.relayNeedsCoordination);
-        goToComposer({ requestId: req.id, rideId: null, type: "shift", payload: req.trip_shape === "one_way_from" ? { return_at: window.endsAt } : { depart_at: window.startsAt } });
-      }
+      // The mutation reports validation errors; keep the request on its phantom lane.
     }
   }
 
@@ -623,35 +725,60 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
     rideId: string | null;
     type: "shift" | "merge" | "deny" | "external";
     payload: Record<string, unknown>;
+    proposalId?: string;
   }) {
-    navigate(`/sadran/${departmentId}/${weekStart}/proposals/new`, { state: prefill });
+    navigate(`/sadran/${departmentId}/${weekStart}/proposals/new`, { state: { ...prefill, returnTo: location.pathname + location.search } });
+  }
+
+  function handleRideClick(id: string) {
+    if (id.startsWith("change:")) {
+      const change = (rideChangesQuery.data ?? []).find((change) => `change:${change.id}` === id);
+      if (change) setSelectedRideId(change.is_planning ? id : change.ride_id);
+      return;
+    }
+    if (id.startsWith("request:")) { setSelectedUnmetId(id.slice(8)); return; }
+    if (id.startsWith("merge:")) {
+      const merge = pendingMerges.find((entry) => entry.proposal.id === id.slice(6));
+      if (merge) goToComposer({ requestId: merge.guest.id, rideId: merge.host.id, type: "merge", payload: merge.proposal.payload as Record<string, unknown>, proposalId: merge.proposal.id });
+      return;
+    }
+    setSelectedRideId(id);
   }
 
 
   async function handleRideDrop(rideId: string, carId: string, startMinutes: number, droppedOnRideId?: string, resizedEndMinutes?: number) {
+    const planningChange = (rideChangesQuery.data ?? []).find((change) => change.is_planning && `change:${change.id}` === rideId);
+    if (planningChange) {
+      if (carId.startsWith("phantom:")) { await cancelRideChangeMutation.mutateAsync(planningChange.id); return; }
+      rideId = planningChange.ride_id;
+      resizedEndMinutes ??= startMinutes + (Date.parse(planningChange.ends_at) - Date.parse(planningChange.starts_at)) / 60_000;
+    }
     if (rideId.startsWith("request:")) {
       const item = unmetItems.find((item) => `request:${item.request.id}` === rideId);
-      if (item) await handlePlaceUnmetRequest(item, carId, startMinutes);
+      if (item) await handlePlaceUnmetRequest(item, carId, startMinutes, droppedOnRideId);
       return;
     }
     if (carId.startsWith("phantom:")) { await handleUnassignRide(rideId); return; }
     const ride = rides.find((r) => r.id === rideId);
     if (!ride?.id || !ride.starts_at || !ride.ends_at || !ride.car_id || !ride.origin_id || !ride.destination_id) return;
 
-    const candidateEnd = resizedEndMinutes ?? startMinutes + (Date.parse(ride.ends_at) - Date.parse(ride.starts_at)) / 60_000;
-    const collision = rides.find((other) => other.id !== rideId && other.car_id === carId && other.starts_at && other.ends_at
-      && Date.parse(minutesIso(startMinutes)) < Date.parse(other.ends_at) && Date.parse(other.starts_at) < Date.parse(minutesIso(candidateEnd)));
-    droppedOnRideId = collision?.id ?? rides.find((other) => other.id === droppedOnRideId)?.id ?? undefined;
-    if (droppedOnRideId && droppedOnRideId !== rideId) {
-      const driverEntry = servedOf(ride).find((s) => s.role === "driver");
+    if (ride.needs_driver && droppedOnRideId && droppedOnRideId !== rideId && rides.some((other) => other.id === droppedOnRideId && !!other.driver_id && !other.needs_driver)) {
+      const driverEntry = servedOf(ride).find((s) => s.role === "driver") ?? servedOf(ride)[0];
       if (driverEntry?.request_id) {
+        const host = rides.find((candidate) => candidate.id === droppedOnRideId);
+        if (!host?.starts_at || !host.ends_at) return;
+        if (!host.driver_id || host.needs_driver) { toast.error(he.boardCoordination.mergeNeedsDriver); return; }
+        const sourceRequest = (requestsQuery.data ?? []).find((request) => request.id === driverEntry.request_id);
+        const guestWindow = ride.needs_driver && sourceRequest ? requestWindow(sourceRequest) : null;
+        const expanded = expandedMergeWindow({ startsAt: host.starts_at, endsAt: host.ends_at }, guestWindow ?? { startsAt: ride.starts_at, endsAt: ride.ends_at });
         setMergePrefill({
           requestId: driverEntry.request_id,
           rideId: droppedOnRideId,
           type: "merge",
           payload: {
             ride_id: droppedOnRideId,
-            legs: [{ ride_id: droppedOnRideId, role: "passenger", leg: "both", car_mode: "passenger" }],
+            starts_at: expanded.startsAt, ends_at: expanded.endsAt,
+            legs: [{ ride_id: droppedOnRideId, role: "passenger", leg: driverEntry.leg ?? "both", car_mode: "passenger" }],
           },
         });
       }
@@ -661,10 +788,11 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
     const oldStartMinutes = Math.round((Date.parse(ride.starts_at) - Date.parse(dayStartIso(selectedDay))) / 60_000);
     const oldEndMinutes = Math.round((Date.parse(ride.ends_at) - Date.parse(dayStartIso(selectedDay))) / 60_000);
     const durationMinutes = oldEndMinutes - oldStartMinutes;
-    const newEndMinutes = resizedEndMinutes ?? startMinutes + durationMinutes;
-    if (startMinutes < 0 || newEndMinutes > 1440 || newEndMinutes <= startMinutes) { toast.error(he.sadranBoard.invalidWindow); return; }
+    const rawEndMinutes = resizedEndMinutes ?? startMinutes + durationMinutes;
+    const newEndMinutes = rawEndMinutes === 1439 ? 1439 : Math.round(rawEndMinutes / 15) * 15;
+    if (startMinutes < 0 || newEndMinutes > 1439 || newEndMinutes <= startMinutes) { toast.error(he.sadranBoard.invalidWindow); return; }
 
-    const driverEntry = servedOf(ride).find((s) => s.role === "driver");
+    const driverEntry = servedOf(ride).find((s) => s.role === "driver") ?? servedOf(ride)[0];
     const driverRequest = driverEntry ? (requestsQuery.data ?? []).find((r) => r.id === driverEntry.request_id) : undefined;
     const newStartsAt = minutesIso(startMinutes);
     const newEndsAt = minutesIso(newEndMinutes);
@@ -686,12 +814,9 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
     const otherRidesOnTargetCar = rides
       .filter((r) => r.id !== ride.id && r.car_id === carId && r.starts_at && r.ends_at)
       .map((r) => ({ startsAt: r.starts_at as string, endsAt: r.ends_at as string }));
-    if (wouldOverlap({ startsAt: newStartsAt, endsAt: newEndsAt }, otherRidesOnTargetCar, daySettings?.turnaround_minutes ?? 30)) {
-      toast.error(he.sadranBoard.overlapToast);
-      return;
-    }
+    const hasCollision = wouldOverlap({ startsAt: newStartsAt, endsAt: newEndsAt }, otherRidesOnTargetCar, 0);
 
-    if (withinDepartFlex) {
+    if (withinDepartFlex || (hasCollision && ride.status !== "draft")) {
       const prevInput: EditRideInput = {
         id: ride.id,
         department_id: departmentId,
@@ -702,6 +827,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
         origin_id: ride.origin_id,
         destination_id: ride.destination_id,
         driver_id: ride.driver_id,
+        needs_driver: !!ride.needs_driver,
         notes: ride.notes ?? undefined,
         is_pinned: !!ride.is_pinned,
         pin_reason: ride.pin_reason,
@@ -717,10 +843,12 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
         starts_at: newStartsAt,
         ends_at: newEndsAt,
         is_pinned: true,
+        allow_conflict: true,
         pin_reason: prevInput.pin_reason ?? "SADRAN_MANUAL",
       };
       try {
-        await editRideMutation.mutateAsync({ input: nextInput, expectedVersion: ride.version ?? undefined, departmentId, weekStart });
+        await editRideMutation.mutateAsync({ input: nextInput, expectedVersion: planningChange?.expected_version ?? ride.version ?? undefined, departmentId, weekStart });
+        if (hasCollision && ride.status !== "draft") { toast.success(he.boardCoordination.planningSaved); return; }
         undoVersions.current.set(rideId, (ride.version ?? 0) + 1);
         toast.success(he.sadranBoard.dragAppliedToast);
         undoStack.push({
@@ -775,7 +903,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
 
   function handleUnmetAction(item: UnmetListItem, suggestion: Suggestion | null) {
     if (!suggestion) {
-      goToComposer({ requestId: item.request.id, rideId: null, type: "deny", payload: { reason: "" } });
+      goToComposer({ requestId: item.request.id, rideId: null, type: "shift", payload: {} });
       return;
     }
     switch (suggestion.kind) {
@@ -825,14 +953,17 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
     );
   }
 
-  const conflictCount = conflictRideIds.size;
+  const conflictCount = conflicts.length;
+  const unmetPreview = unmetDragHover ? unmetPreviewWindow(unmetDragHover.item, unmetDragHover.carId, unmetDragHover.minutes, unmetDragHover.hostRideId) : null;
 
   return (
-    <div className="mx-auto max-w-6xl space-y-3 p-4 pb-24">
+    <div ref={boardRef} className="mx-auto max-w-6xl space-y-3 p-4 pb-24">
       <PageHeader title={he.screen.board.title} subtitle={formatWeekRangeLabel(weekStart)} />
+      <BoardWeekSwitcher departmentId={departmentId} weekStart={weekStart} />
 
       <div className="flex flex-wrap items-center gap-2">
-        <Button variant="outline" size="sm" onClick={() => setReservation({ carId: carsQuery.data?.[0]?.id ?? "", start: "12:00", end: "16:00", notes: "" })}>{he.sadranBoard.reservation}</Button>
+        <RequestDeviationsDialog departmentId={departmentId} weekStart={weekStart} />
+        <WeekExcelExportButton departmentId={departmentId} weekStart={weekStart} />
         <Select value={effectivePolicyVersionId ?? undefined} onValueChange={setPolicyVersionOverride}>
           <SelectTrigger className="w-48">
             <SelectValue placeholder={he.board.policy} />
@@ -856,32 +987,45 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
         <Button variant="outline" size="sm" onClick={handleAutoSolveRemaining} disabled={autoSolving}>
           {autoSolving ? he.sadranDashboard.solving : he.action.autoSolveRemaining}
         </Button>
+        <FullResolveAction key={`${departmentId}:${weekStart}:${effectivePolicyVersionId}`} departmentId={departmentId} weekStart={weekStart}
+          homeDestinationId={department?.home_destination_id ?? null} disabled={autoSolving}
+          policy={(policyOptionsQuery.data ?? []).find((policy) => policy.policyVersionId === effectivePolicyVersionId)
+            ?? (activePolicyQuery.data?.policyVersionId === effectivePolicyVersionId ? activePolicyQuery.data ?? null : null)} />
         <Button variant="outline" size="sm" onClick={handleUndo} disabled={!undoStack.canUndo}>
           {he.action.undo}
         </Button>
-        <Button variant="outline" size="sm" onClick={() => navigate(`/sadran/${departmentId}/${weekStart}/publish`)}>
-          {he.action.publish}
-        </Button>
+        <BoardPublicationActions departmentId={departmentId} weekStart={weekStart} />
       </div>
 
       {conflictCount > 0 ? (
-        <div className="rounded-md border border-destructive/40 bg-destructive/5 p-2 text-sm text-destructive">
+        <button type="button" onClick={jumpToNextConflict} title={he.sadranBoard.nextConflict}
+          className="w-full rounded-md border border-destructive/40 bg-destructive/5 p-2 text-start text-sm text-destructive hover:bg-destructive/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-destructive">
           {tv("sadranBoard.conflictBanner", { count: String(conflictCount) })}
-        </div>
+          <span className="ms-2 text-xs">{he.sadranBoard.nextConflict}</span>
+          {focusedConflict ? <span aria-live="polite" className="mt-1 block font-semibold">{tv("sadranBoard.conflictLocation", {
+            index: String(focusedConflictIndex + 1), count: String(conflictCount),
+            day: he.days.long[Number(formatInTimeZone(focusedConflict.starts_at, TZ, "i")) % 7] ?? "",
+            date: formatInTimeZone(focusedConflict.starts_at, TZ, "d/M/yyyy"),
+            time: `${formatInTimeZone(focusedConflict.starts_at, TZ, "HH:mm")}–${formatInTimeZone(focusedConflict.ends_at, TZ, "HH:mm")}`,
+            car: carsQuery.data?.find((car) => car.id === focusedConflict.car_id)?.name ?? "",
+          })}</span> : null}
+        </button>
       ) : null}
 
       <div className="flex items-center justify-between gap-2">
         <WeekStrip weekStart={weekStart} counts={dayCounts} selected={selectedDay} onSelect={setSelectedDay} />
-        <Button variant="ghost" size="sm" className="hidden shrink-0 md:inline-flex" onClick={() => setShowEarlyHours((v) => !v)}>
+        <Button variant="ghost" size="sm" className={tableView ? "shrink-0" : "hidden shrink-0 lg:inline-flex"} onClick={() => setShowEarlyHours((v) => !v)}>
           {showEarlyHours ? he.board.hideEarlyHours : he.board.showEarlyHours}
         </Button>
       </div>
 
       <RideTypeLegend types={(rideTypesQuery.data ?? []).map((rt) => ({ code: rt.code, nameHe: rt.name_he }))} />
 
+      <TableViewControls table={tableView} onTableChange={setTableView} zoom={tableZoom} onZoomChange={setTableZoom} />
       <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_340px]">
-        <div className="hidden min-w-0 md:block">
+        <div className={tableView ? "min-w-0" : "hidden min-w-0 lg:block"}>
           <WeekGrid
+            zoom={tableZoom}
             cars={weekGridCars}
             rides={weekGridRides}
             blocks={weekGridBlocks}
@@ -889,21 +1033,29 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
             dayEndMinutes={dayEndMinutes}
             readOnly={false}
             draggable
-            canDragRide={(ride) => !ride.id.startsWith("change:")}
-            canResizeRide={(ride) => !ride.id.startsWith("request:")}
-            onSlotClick={(carId, minutes) => !carId.startsWith("phantom:") && setReservation({ carId, start: formatMinutes(minutes), end: formatMinutes(Math.min(1440, minutes + 60)), notes: "" })}
-            onRideClick={(id) => id.startsWith("request:") ? setSelectedUnmetId(id.slice(8)) : setSelectedRideId(id)}
+            canDragRide={(ride) => !ride.id.startsWith("merge:") && (!ride.id.startsWith("change:") || !!(rideChangesQuery.data ?? []).find((change) => change.is_planning && `change:${change.id}` === ride.id))}
+            canResizeRide={(ride) => !ride.id.startsWith("request:") && !ride.id.startsWith("change:") && !ride.id.startsWith("merge:")}
+            onSlotClick={(carId, minutes) => !carId.startsWith("phantom:") && setReservation({ carId, start: formatMinutes(minutes), end: formatMinutes(Math.min(1439, minutes + 60)), notes: "" })}
+            onRideClick={handleRideClick}
             onRideDrop={(rideId, carId, minutes, droppedOnRideId) => void handleRideDrop(rideId, carId, minutes, droppedOnRideId)}
             onRideResize={handleRideResize}
             isDropTargetValid={isDropTargetValid}
+            resolveDropPreview={(ride, carId, startMinutes, endMinutes, hostRideId) => {
+              const item = unmetItems.find((item) => `request:${item.request.id}` === ride.id);
+              if (carId.startsWith("phantom:")) return { startMinutes, endMinutes };
+              const window = item ? unmetPreviewWindow(item, carId, startMinutes, hostRideId)
+                : mergeCandidateForRide(ride.id, carId, minutesIso(startMinutes), minutesIso(endMinutes), hostRideId)?.window;
+              return window ? { startMinutes: (Date.parse(window.startsAt) - Date.parse(dayStartIso(selectedDay))) / 60_000,
+                endMinutes: (Date.parse(window.endsAt) - Date.parse(dayStartIso(selectedDay))) / 60_000 } : { startMinutes, endMinutes };
+            }}
             externalDropTarget={
               unmetDragHover
                 ? {
                     carId: unmetDragHover.carId,
-                    startMinutes: unmetDragHover.minutes,
-                    endMinutes: unmetDragHover.minutes + ((Date.parse(requestWindow(unmetDragHover.item.request)?.endsAt ?? "") - Date.parse(requestWindow(unmetDragHover.item.request)?.startsAt ?? "")) / 60_000 || 30),
+                    startMinutes: unmetPreview ? (Date.parse(unmetPreview.startsAt) - Date.parse(dayStartIso(selectedDay))) / 60_000 : unmetDragHover.minutes,
+                    endMinutes: unmetPreview ? (Date.parse(unmetPreview.endsAt) - Date.parse(dayStartIso(selectedDay))) / 60_000 : unmetDragHover.minutes + 30,
                     label: `${unmetDragHover.item.request.requester_full_name ?? ""} · ${unmetDragHover.item.destinationName}`,
-                    valid: isUnmetDropValid(unmetDragHover.item, unmetDragHover.carId, unmetDragHover.minutes),
+                    valid: isUnmetDropValid(unmetDragHover.item, unmetDragHover.carId, unmetDragHover.minutes, unmetDragHover.hostRideId),
                   }
                 : null
             }
@@ -911,55 +1063,63 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
           />
         </div>
 
-        <BoardListMode
-          rides={activeDayRides
-            .filter((r) => r.id && r.starts_at)
-            .map((r) => ({
-              id: r.id as string,
-              startsAt: r.starts_at as string,
-              endsAt: r.ends_at,
-              originName: r.origin_name ?? "",
-              // Same fix as the grid's `rideBlockLabel` (bug #3): a round
-              // trip's own `destination_name` is always home ("נבו").
-              destinationName: r.notes || (
-                department?.home_destination_id && r.origin_id && r.destination_id
-                  ? resolveRideRealDestination({
-                      originId: r.origin_id,
-                      destinationId: r.destination_id,
-                      originName: r.origin_name ?? "",
-                      destinationName: r.destination_name ?? "",
-                      homeDestinationId: department.home_destination_id,
-                      served: servedOf(r),
-                    })
-                  : (r.destination_name ?? "")),
-              driverName: r.driver_name,
-              isChauffeur: !!r.is_chauffeur,
-              carName: (carsQuery.data ?? []).find((c) => c.id === r.car_id)?.name ?? null,
-              carType: (carsQuery.data ?? []).find((c) => c.id === r.car_id)?.type,
-              rideTypeCode: representativeRideTypeCode(servedOf(r)),
+        <div className={tableView ? "hidden" : "lg:hidden"}>
+          <BoardListMode
+            key={conflictJump?.sequence ?? 0}
+            shadowedRideIds={shadowedRideIds}
+            pendingRides={pendingMerges.filter((merge) => formatInTimeZone(merge.startsAt, TZ, "yyyy-MM-dd") === selectedDay).map((merge) => ({
+              id: `merge:${merge.proposal.id}`, startsAt: merge.startsAt, endsAt: merge.endsAt,
+              originName: merge.host.origin_name ?? "", destinationName: weekGridRides.find((ride) => ride.id === `merge:${merge.proposal.id}`)?.label ?? "",
+              driverName: merge.host.driver_name, carName: (carsQuery.data ?? []).find((car) => car.id === merge.host.car_id)?.name ?? null,
             }))}
-          onRideClick={(id) => id.startsWith("request:") ? setSelectedUnmetId(id.slice(8)) : setSelectedRideId(id)}
-          unmetItems={unmetItems}
-          onUnmetAction={handleUnmetAction}
-          onUnmetDecision={handleUnmetDecision}
-          onOpenProposals={() => navigate(`/sadran/${departmentId}/${weekStart}/proposals`)}
-        />
+            rides={[...activeDayRides, ...planningRows.filter((ride) => formatInTimeZone(ride.starts_at, TZ, "yyyy-MM-dd") === selectedDay)]
+              .filter((r) => r.id && r.starts_at)
+              .map((r) => ({
+                id: r.id as string,
+                startsAt: r.starts_at as string,
+                endsAt: r.ends_at,
+                originName: r.origin_name ?? "",
+                // Same fix as the grid's `rideBlockLabel` (bug #3): a round
+                // trip's own `destination_name` is always home ("נבו").
+                description: [servedOf(r).length ? r.notes : null, ridePublicDetails(servedOf(r), { includeCompanions: false })].filter(Boolean).join("\n"),
+                passengerSummary: ridePassengerSummary(servedOf(r), r.needs_driver ? null : r.driver_name),
+                coordinatorNotes: rideCoordinatorNotes(servedOf(r), requestsQuery.data ?? []),
+                label: weekGridRides.find((item) => item.id === r.id)?.label,
+                destinationName: (
+                  department?.home_destination_id && r.origin_id && r.destination_id
+                    ? resolveRideRealDestination({
+                        originId: r.origin_id,
+                        destinationId: r.destination_id,
+                        originName: r.origin_name ?? "",
+                        destinationName: r.destination_name ?? "",
+                        homeDestinationId: department.home_destination_id,
+                        served: servedOf(r),
+                      })
+                    : (r.destination_name ?? "")),
+                driverName: r.driver_name,
+                needsDriver: !!r.needs_driver,
+                conflict: conflictRideIds.has(r.id as string),
+                highlighted: focusedConflict?.id === r.id,
+                tightSchedule: tightRideIds.has(r.id as string),
+                isChauffeur: !!r.is_chauffeur,
+                carName: (carsQuery.data ?? []).find((c) => c.id === r.car_id)?.name ?? null,
+                carType: (carsQuery.data ?? []).find((c) => c.id === r.car_id)?.type,
+                rideTypeCode: representativeRideTypeCode(servedOf(r)),
+              }))}
+            onRideClick={handleRideClick}
+            unmetItems={unmetItems}
+            onUnmetAction={handleUnmetAction}
+            onUnmetDecision={handleUnmetDecision}
+            onOpenProposals={() => navigate(`/sadran/${departmentId}/${weekStart}/proposals`)}
+          />
 
-        {/* Bounded + independently scrollable at the same height as `WeekGrid`'s
-            own `max-h-[70vh]` (UX_FLOWS §20 fast-follow): without this, a busy
-            week's unmet list (40+ cards) has no height cap of its own, so its
-            natural height stretches this whole grid row far past the
-            viewport — bringing a far-down card into view then scrolls the
-            *page*, carrying the target car column below/above the viewport
-            with it, so the drag-from-unmet-list gesture (item 3) becomes
-            physically impossible for any card that doesn't already fit
-            alongside the grid on one screen. Keeping both panels
-            independently scrollable at a matching height guarantees a source
-            card and every car column can always be made visible together. */}
+        </div>
+
         <div
-          className="hidden max-h-[70vh] overflow-y-auto lg:block"
+          className={tableView ? "min-w-0" : "hidden min-w-0 lg:block"}
           {...{ [UNMET_DROP_ZONE_ATTR]: "true" }}
         >
+          <h2 className="mb-2 font-semibold">{tv("sadranBoard.unmetTitle", { count: String(unmetItems.length) })}</h2>
           {unmetItems.length === 0 ? (
             <EmptyState icon={CalendarDays} message={he.sadranBoard.noSuggestions} />
           ) : (
@@ -969,53 +1129,20 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
               onDecision={handleUnmetDecision}
               dayStartMinutes={dayStartMinutes}
               dayEndMinutes={dayEndMinutes}
-              onDragHover={(item, carId, minutes) => setUnmetDragHover(carId && minutes != null ? { item, carId, minutes } : null)}
-              onDragDrop={(item, carId, minutes) => void handlePlaceUnmetRequest(item, carId, minutes)}
+              onDragHover={(item, carId, minutes, hostRideId) => setUnmetDragHover(carId && minutes != null ? { item, carId, minutes, hostRideId } : null)}
+              onDragDrop={(item, carId, minutes, hostRideId) => void handlePlaceUnmetRequest(item, carId, minutes, hostRideId)}
             />
           )}
         </div>
       </div>
 
-      {/* Collapsible bottom drawer for the md–lg gap (UX_FLOWS §20): the
-          grid already renders at `md:`, but the side panel above only shows
-          at `lg:` — below that, the phone `BoardListMode` covers `< md` with
-          its own "לא שובצו" segment, so this drawer specifically fills the
-          space between. */}
-      <div className="fixed bottom-4 end-4 z-40 hidden md:block lg:hidden">
-        <Button variant="default" size="lg" className="relative shadow-lg" onClick={() => setUnmetDrawerOpen(true)}>
-          {he.board.unmet}
-          {unmetItems.length > 0 ? (
-            <Badge variant="destructive" className="absolute -top-2 -start-2 min-w-5 justify-center px-1">
-              {unmetItems.length}
-            </Badge>
-          ) : null}
-        </Button>
-      </div>
-      <Sheet open={unmetDrawerOpen} onOpenChange={setUnmetDrawerOpen}>
-        <SheetContent side="bottom" className="max-h-[80dvh] overflow-y-auto" {...{ [UNMET_DROP_ZONE_ATTR]: "true" }}>
-          <SheetHeader>
-            <SheetTitle>{tv("sadranBoard.unmetTitle", { count: String(unmetItems.length) })}</SheetTitle>
-          </SheetHeader>
-          <div className="py-2">
-            {unmetItems.length === 0 ? (
-              <EmptyState icon={CalendarDays} message={he.sadranBoard.noSuggestions} />
-            ) : (
-              <UnmetList
-                items={unmetItems}
-                onAction={handleUnmetAction}
-              onDecision={handleUnmetDecision}
-                dayStartMinutes={dayStartMinutes}
-                dayEndMinutes={dayEndMinutes}
-                onDragHover={(item, carId, minutes) => setUnmetDragHover(carId && minutes != null ? { item, carId, minutes } : null)}
-                onDragDrop={(item, carId, minutes) => void handlePlaceUnmetRequest(item, carId, minutes)}
-              />
-            )}
-          </div>
-        </SheetContent>
-      </Sheet>
-
       <Dialog open={!!mergePrefill} onOpenChange={(open) => !open && setMergePrefill(null)}>
-        <DialogContent><DialogHeader><DialogTitle>{he.sadranBoard.mergeConfirm}</DialogTitle><DialogDescription>{he.sadranBoard.mergeDescription}</DialogDescription></DialogHeader>
+        <DialogContent><DialogHeader><DialogTitle>{he.boardCoordination.mergeTitle}</DialogTitle><DialogDescription>{he.boardCoordination.mergeHelp}</DialogDescription></DialogHeader>
+          {mergePrefill ? <div className="space-y-2 rounded-md border p-3 text-sm">
+            <p>{weekGridRides.find((ride) => ride.id === mergePrefill.rideId)?.label}</p>
+            <p>{(requestsQuery.data ?? []).find((request) => request.id === mergePrefill.requestId)?.requester_full_name} · {(requestsQuery.data ?? []).find((request) => request.id === mergePrefill.requestId)?.destination_resolved_name}</p>
+            {typeof mergePrefill.payload.starts_at === "string" && typeof mergePrefill.payload.ends_at === "string" ? <p>{he.boardCoordination.expandedWindow} · <strong dir="ltr">{formatInTimeZone(mergePrefill.payload.starts_at, TZ, "HH:mm")}–{formatInTimeZone(mergePrefill.payload.ends_at, TZ, "HH:mm")}</strong></p> : null}
+          </div> : null}
           <Button onClick={() => { if (mergePrefill) goToComposer(mergePrefill); setMergePrefill(null); }}>{he.sadranBoard.prepareMerge}</Button>
           <Button variant="outline" onClick={() => setMergePrefill(null)}>{he.common.cancel}</Button>
         </DialogContent>
@@ -1029,25 +1156,35 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
         <DialogContent><DialogHeader><DialogTitle>{he.sadranBoard.reservation}</DialogTitle><DialogDescription>{selectedDay}</DialogDescription></DialogHeader>
           {reservation ? <>
             <Select value={reservation.carId} onValueChange={(carId) => setReservation({ ...reservation, carId })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{(carsQuery.data ?? []).map((car) => <SelectItem key={car.id} value={car.id}>{car.name}</SelectItem>)}</SelectContent></Select>
-            <div className="flex gap-2"><TimeField15 min="00:00" aria-label={he.sadranRideSheet.depart} value={reservation.start} onChange={(start) => setReservation({ ...reservation, start })} /><TimeField15 min="00:00" aria-label={he.sadranRideSheet.return} value={reservation.end} onChange={(end) => setReservation({ ...reservation, end })} /></div>
+            <div className="flex gap-2"><TimeField15 min="00:00" aria-label={he.sadranRideSheet.depart} value={reservation.start} onChange={(start) => setReservation({ ...reservation, start })} /><TimeField15 min="00:00" max="23:59" aria-label={he.sadranRideSheet.return} value={reservation.end} onChange={(end) => setReservation({ ...reservation, end })} /></div>
             <Textarea aria-label={he.sadranBoard.reservationNotes} placeholder={he.sadranBoard.reservationNotes} value={reservation.notes} onChange={(event) => setReservation({ ...reservation, notes: event.target.value })} />
             <Button disabled={editRideMutation.isPending || !reservation.notes.trim() || !reservation.carId} onClick={() => void saveReservation()}>{he.common.save}</Button>
           </> : null}
         </DialogContent>
       </Dialog>
       <RideSheet
-        ride={selectedRide}
+        key={selectedPlanningChange?.id ?? selectedRide?.id ?? "no-ride"}
+        ride={selectedRide && selectedPlanningChange ? { ...selectedRide, car_id: selectedPlanningChange.car_id, starts_at: selectedPlanningChange.starts_at, ends_at: selectedPlanningChange.ends_at } : selectedRide}
+        isPlanning={!!selectedPlanningChange}
+        coordinatorNotes={selectedRide ? rideCoordinatorNotes(servedOf(selectedRide), requestsQuery.data ?? []) : undefined}
         cars={carsQuery.data ?? []}
         driverName={selectedRideDriverName}
         homeDestinationId={department?.home_destination_id ?? null}
         onOpenChange={(open) => !open && setSelectedRideId(null)}
-        saving={editRideMutation.isPending}
+        saving={editRideMutation.isPending || claimDriverMutation.isPending}
+        tightSchedule={!!selectedRide?.id && tightRideIds.has(selectedRide.id)}
+        onClaimDriver={() => {
+          if (!selectedRide?.id || selectedRide.version == null) return;
+          claimDriverMutation.mutate({ rideId: selectedRide.id, expectedVersion: selectedRide.version }, { onSuccess: () => toast.success(he.boardCoordination.driverClaimed) });
+        }}
         onSave={(input) => {
           if (!selectedRide?.id || !selectedRide.origin_id || !selectedRide.destination_id) return;
           if (Date.parse(input.endsAt) <= Date.parse(input.startsAt)) { toast.error(he.sadranBoard.invalidWindow); return; }
+          const hasCollision = rides.some((other) => other.id !== selectedRide.id && other.car_id === input.carId && other.starts_at && other.ends_at
+            && Date.parse(other.starts_at) < Date.parse(input.endsAt) && Date.parse(input.startsAt) < Date.parse(other.ends_at));
           const outsideFlex = servedOf(selectedRide).map((entry) => (requestsQuery.data ?? []).find((req) => req.id === entry.request_id))
             .find((req) => req && !requestWithinFlex(req, input.startsAt, input.endsAt));
-          if (outsideFlex) {
+          if (outsideFlex && !(hasCollision && selectedRide.status !== "draft")) {
             goToComposer({ requestId: outsideFlex.id, rideId: selectedRide.id, type: "shift", payload: { car_id: input.carId, depart_at: input.startsAt, return_at: input.endsAt, origin_id: selectedRide.origin_id, destination_id: selectedRide.destination_id, ride_id: selectedRide.id } });
             return;
           }
@@ -1063,13 +1200,6 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
             toast.error(he.sadranBoard.seatMismatchToast);
             return;
           }
-          const otherRidesOnTargetCar = rides
-            .filter((r) => r.id !== selectedRide.id && r.car_id === input.carId && r.starts_at && r.ends_at)
-            .map((r) => ({ startsAt: r.starts_at as string, endsAt: r.ends_at as string }));
-          if (wouldOverlap({ startsAt: input.startsAt, endsAt: input.endsAt }, otherRidesOnTargetCar, daySettings?.turnaround_minutes ?? 30)) {
-            toast.error(he.sadranBoard.overlapToast);
-            return;
-          }
           void editRideMutation
             .mutateAsync({
               input: {
@@ -1082,7 +1212,9 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
                 origin_id: selectedRide.origin_id,
                 destination_id: selectedRide.destination_id,
                 driver_id: selectedRide.driver_id,
-                notes: input.notes,
+                needs_driver: !!selectedRide.needs_driver,
+                allow_conflict: true,
+                notes: selectedRide.notes,
                 overnight_ack: input.overnightAck,
                 // Manual save (including a plain car change via the sheet's
                 // select, the no-drag fallback bug #2 asks for) auto-pins,
@@ -1091,11 +1223,11 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
                 pin_reason: selectedRide.pin_reason ?? "SADRAN_MANUAL",
                 served: servedToEditRideLegs(servedOf(selectedRide)),
               },
-              expectedVersion: selectedRide.version ?? undefined,
+              expectedVersion: selectedPlanningChange?.expected_version ?? selectedRide.version ?? undefined,
               departmentId,
               weekStart,
             })
-            .then(() => setSelectedRideId(null))
+            .then(() => { if (hasCollision && selectedRide.status !== "draft") toast.success(he.boardCoordination.planningSaved); setSelectedRideId(null); })
             .catch(() => {
               // Toast already shown by the mutation's onError; keep the
               // sheet open (not closed) so the Sadran can adjust and retry,
@@ -1126,6 +1258,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
           });
         }}
         onCancel={(reason) => {
+          if (selectedPlanningChange) { cancelRideChangeMutation.mutate(selectedPlanningChange.id, { onSuccess: () => setSelectedRideId(null) }); return; }
           if (!selectedRide?.id) return;
           void cancelRideMutation
             .mutateAsync({ rideId: selectedRide.id, reason, expectedVersion: selectedRide.version ?? undefined, departmentId, weekStart })

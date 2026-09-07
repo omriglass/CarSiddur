@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { WeekRequestRow } from "../../api";
+import { he } from "@/i18n/he";
 import { UnmetList } from "./UnmetList";
 
 const request = {
@@ -27,8 +28,18 @@ describe("one-way unmet cards", () => {
     fireEvent.pointerDown(grip, { clientX: 20, clientY: 20 });
     fireEvent.pointerMove(window, { clientX: 200, clientY: 600 });
     fireEvent.pointerUp(window, { clientX: 200, clientY: 600 });
-    expect(drop).toHaveBeenCalledWith(item, "car", 600);
+    expect(drop).toHaveBeenCalledWith(item, "car", 600, undefined);
   });
+  it("offers only time changes and outside-siddur solutions without a solver suggestion", () => {
+    const decide = vi.fn();
+    render(<UnmetList items={[item]} onAction={vi.fn()} onDecision={decide} />);
+    expect(screen.getAllByRole("button")).toHaveLength(2);
+    fireEvent.click(screen.getByRole("button", { name: he.sadranProposal.suggestTimes }));
+    fireEvent.click(screen.getByRole("button", { name: he.sadranProposal.solveOutside }));
+    expect(decide.mock.calls).toEqual([[item, "shift"], [item, "external"]]);
+    expect(screen.queryByRole("button", { name: he.action.deny })).not.toBeInTheDocument();
+  });
+
   it("a click on the grip never places a request", () => {
     const drop = vi.fn();
     render(<UnmetList items={[item]} onAction={vi.fn()} onDragDrop={drop} />);

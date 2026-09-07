@@ -10,7 +10,7 @@ begin
   insert into public.siddur_versions(department_id,week_start,snapshot,published_by)
   values('00000000-0000-0000-0000-000000000001',w,'{}','00000000-0000-0000-0000-000000000102') returning id into v;
   perform set_config('app.in_publish','on',true);
-  update public.weeks set phase='published',published_version_id=v where week_start=w and department_id='00000000-0000-0000-0000-000000000001';
+  update public.weeks set published_days=array(select week_start+i from generate_series(0,6) i),phase='published',published_version_id=v where week_start=w and department_id='00000000-0000-0000-0000-000000000001';
   perform set_config('app.in_publish','off',true);
   for n in 1..2 loop
     base:=((w+1)+time '08:00') at time zone 'Asia/Jerusalem';
@@ -94,7 +94,7 @@ begin
   assert (select status='waitlisted' from public.requests where id=(select id from todo_ids where k='request1')),'unassign did not preserve request';
   fp:=public.publish_scores_fingerprint(r.department_id,r.week_start);
   begin
-    perform public.publish_siddur(r.department_id,r.week_start,'[]',fp);
+    perform public.publish_siddur(r.department_id,r.week_start,'[]',fp,'[]',null,true);
     raise exception 'publish accepted missing scores';
   exception when raise_exception then if sqlerrm<>'invalid_publication_scores' then raise; end if; end;
   profiles:=jsonb_build_array(jsonb_build_object(
@@ -103,7 +103,7 @@ begin
   select jsonb_agg(jsonb_build_object('policy_id',id,'policy_version_id',current_version_id,'policy_name',name,'request_count',1,'served_count',0,
     'priority_total',1,'served_priority_total',0,'alignment_ratio',0,'profiles',profiles)) into policies
   from public.policies where (department_id=r.department_id or department_id is null) and current_version_id is not null;
-  perform public.publish_siddur(r.department_id,r.week_start,profiles,fp,policies);
+  perform public.publish_siddur(r.department_id,r.week_start,profiles,fp,policies,null,true);
   assert exists(select 1 from public.siddur_versions where department_id=r.department_id and week_start=r.week_start and jsonb_array_length(snapshot->'profile_scores')=1),'publication omitted scores';
 end $$;
 reset role;
@@ -135,14 +135,23 @@ begin
     raise exception 'null expected_version bypassed concurrency check';
   exception when sqlstate 'P0409' then null; end;
   assert (select version=q.version and depart_at=q.depart_at from public.requests where id=q.id),'rejected null version modified request';
+  -- Draft assignments are private: inspect persistence as the coordinator only.
+  perform set_config('request.jwt.claims','{"sub":"00000000-0000-0000-0000-000000000102","role":"authenticated"}',true);
   assert (select status='draft' from public.rides where id=(select id from todo_ids where k='draft_ride1')),'rejected null version released assignment';
+  perform set_config('request.jwt.claims','{"sub":"00000000-0000-0000-0000-000000000103","role":"authenticated"}',true);
   result:=public.submit_request(to_jsonb(q)||jsonb_build_object('request_id',q.id,'expected_version',q.version,'depart_at',q.depart_at+interval '1 hour'));
   assert result->>'request_id'=q.id::text,'edit lost request id';
   assert (select status='submitted' from public.requests where id=q.id),'draft edit did not reopen request';
+  -- Draft assignments are private: inspect persistence as the coordinator only.
+  perform set_config('request.jwt.claims','{"sub":"00000000-0000-0000-0000-000000000102","role":"authenticated"}',true);
   assert (select status='cancelled' from public.rides where id=(select id from todo_ids where k='draft_ride1')),'draft edit left assignment';
+  perform set_config('request.jwt.claims','{"sub":"00000000-0000-0000-0000-000000000103","role":"authenticated"}',true);
   n:=public.withdraw_all_requests(q.department_id,q.week_start);
   assert n=2,'bulk withdrawal did not include draft-assigned requests';
+  -- Draft assignments are private: inspect persistence as the coordinator only.
+  perform set_config('request.jwt.claims','{"sub":"00000000-0000-0000-0000-000000000102","role":"authenticated"}',true);
   assert (select status='cancelled' from public.rides where id=(select id from todo_ids where k='draft_ride2')),'bulk withdrawal left draft assignment';
+  perform set_config('request.jwt.claims','{"sub":"00000000-0000-0000-0000-000000000103","role":"authenticated"}',true);
 end $$;
 reset role;
 do $$
@@ -166,6 +175,9 @@ begin
   values('00000000-0000-0000-0000-000000000001',w,'merge','accepted',(select id from todo_ids where k='merge_req1'),r,
     jsonb_build_object('ride_id',r,'legs',jsonb_build_array(jsonb_build_object('ride_id',r,'leg','both','car_mode','passenger'))),
     'Test accepted merge','assigned',gen_random_uuid()::text,now()+interval '1 day','00000000-0000-0000-0000-000000000102') returning id into prop;
+  insert into public.proposal_parties(proposal_id,profile_id,response,token_hash)
+  values(prop,'00000000-0000-0000-0000-000000000103','accepted',gen_random_uuid()::text),
+        (prop,'00000000-0000-0000-0000-000000000104','accepted',gen_random_uuid()::text);
   insert into todo_ids values('merge',prop);
 end $$;
 set local role authenticated;

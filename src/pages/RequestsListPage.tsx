@@ -7,6 +7,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { PageHeader } from "@/components/PageHeader";
 import { CardListSkeleton } from "@/components/skeletons/CardListSkeleton";
 import { StatusBadge } from "@/components/StatusBadge";
+import { TripSummary } from "@/components/TripSummary";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -36,6 +37,11 @@ import { formatTime } from "@/lib/time";
 // eligible to be offered a freed slot, so the opt-out toggle is only meaningful here.
 const FREED_SLOT_ELIGIBLE_STATUSES = new Set<MyRequestRow["status"]>(["waitlisted", "denied"]);
 
+function requestStart(row: MyRequestRow): number {
+  const instant = row.ride?.startsAt ?? row.departAt ?? row.returnAt;
+  return instant ? new Date(instant).getTime() : Number.POSITIVE_INFINITY;
+}
+
 function groupByWeek(rows: MyRequestRow[]): { weekStart: string; departmentId: string; rows: MyRequestRow[] }[] {
   const byWeek = new Map<string, MyRequestRow[]>();
   for (const row of rows) {
@@ -46,7 +52,11 @@ function groupByWeek(rows: MyRequestRow[]): { weekStart: string; departmentId: s
   }
   return [...byWeek.entries()]
     .sort((a, b) => (a[0] < b[0] ? 1 : -1))
-    .map(([, weekRows]) => ({ weekStart: weekRows[0]!.weekStart, departmentId: weekRows[0]!.departmentId, rows: weekRows }));
+    .map(([, weekRows]) => ({
+      weekStart: weekRows[0]!.weekStart,
+      departmentId: weekRows[0]!.departmentId,
+      rows: weekRows.sort((a, b) => requestStart(a) - requestStart(b) || a.id.localeCompare(b.id)),
+    }));
 }
 
 type ConfirmAction =
@@ -84,6 +94,7 @@ export function RequestsListPage() {
       await cancelMutation.mutateAsync({
         rideId: confirmAction.row.ride.id,
         reason: "CANCELLED_BY_MEMBER",
+        expectedVersion: confirmAction.row.ride.version,
       });
     }
     setConfirmAction(null);
@@ -149,17 +160,18 @@ export function RequestsListPage() {
             ) : null}
             <div className="space-y-2">
               {weekRows.map((row) => (
-                <div key={row.id} className="space-y-2 rounded-md border p-3 text-sm">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="font-medium">{row.destination}</span>
+                <div key={row.id} data-request-id={row.id} className="space-y-2 rounded-md border p-3 text-sm">
+                  <div className="flex items-start justify-between gap-2">
+                    <TripSummary
+                      destination={row.destination}
+                      purpose={row.rideTypeName}
+                      departAt={row.ride?.startsAt ?? row.departAt}
+                      returnAt={row.ride?.endsAt ?? row.returnAt}
+                    />
                     <StatusBadge kind="request" status={row.status} />
                   </div>
-                  {row.departAt || row.returnAt ? (
-                    <span dir="ltr" className="text-xs text-muted-foreground">
-                      {row.departAt ? formatTime(new Date(row.departAt)) : he.request.tripShapeOneWayFrom}
-                      {row.returnAt ? ` ${row.departAt ? "–" : ""}${formatTime(new Date(row.returnAt))}` : ` · ${he.request.tripShapeOneWayTo}`}
-                    </span>
-                  ) : null}
+                  {row.ride?.needsDriver ? <p className="text-sm font-medium text-destructive">{he.rideCoordination.missingDriver}</p> : null}
+                  {row.preferredCarName ? <p className="text-xs text-muted-foreground">{he.request.preferredCar}: {row.preferredCarName}</p> : null}
                   {row.statusReason && row.statusReason in he.statusReason ? (
                     <p className="text-xs text-muted-foreground">
                       {he.statusReason[row.statusReason as keyof typeof he.statusReason]}
@@ -209,9 +221,7 @@ export function RequestsListPage() {
             <DialogDescription>
               {confirmAction?.kind === "withdrawAll" ? he.requestsList.withdrawAllBody : confirmAction?.kind === "withdraw"
                 ? he.request.withdrawConfirmBody
-                : confirmAction?.kind === "cancel" && confirmAction.row.ride && confirmAction.row.ride.originName !== confirmAction.row.ride.destinationName
-                  ? he.request.cancelConfirmBodyRelay
-                  : he.request.cancelConfirmBodyFreed}
+                : he.rideCoordination.cancelHelp}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

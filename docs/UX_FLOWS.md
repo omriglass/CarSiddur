@@ -37,7 +37,7 @@ Week parameter `:week` is the target week's Sunday as `YYYY-MM-DD`. `:dept` is t
 | `/requests/new` | New request | member | One-screen form (§3.4). Query `?ride=<id>` prefills "ask to join". |
 | `/requests/:id` | Request detail | member (own), Sadran, Admin | Status timeline, reason, proposal(s), edit/withdraw/cancel. |
 | `/requests/:id/edit` | Edit request | member (own) | Same form as new, edit mode. |
-| `/siddur` `/siddur/:dept/:week` | **Published siddur** (tab הסידור) | member | Day list on phone, grid on wide screens, destination filter, tap ride → detail (§3.5). |
+| `/siddur` `/siddur/:dept/:week` | **Published siddur** (tab הסידור) | member | Day list on phone, grid on wide screens, own rides emphasized, tap ride → detail (§3.5). |
 | `/rides/:id` | Ride detail | member | Driver, passengers, times, car; "ask to join" (§3.5). |
 | `/p/:token` | **Proposal** | addressee (token) | Accept / decline / suggest other time (§3.6). |
 | `/inbox` | **Inbox** (tab הודעות) | member | All notifications with read state (§3.7). |
@@ -122,6 +122,8 @@ Three short steps in one scrolling card, progress dots on top. Skippable except 
 
 ### 3.3 Home — my week (`/my`, tab הבקשות שלי)
 
+My upcoming/ongoing rides are ordered chronologically by actual start time, with stable ride-ID ties. Every card shows Hebrew weekday, date, time window, actual destination and purpose; overnight rides also identify their ending date. The list includes every assigned leg of the member's requests and rides they drive without their own request, including volunteer driving. Each ride appears once. Confirmed merged passengers appear on separate “מצטרף/ת X לY” lines (pickup legs use “מY”), excluding the member's own request. Missing-driver rides retain the red dashed presentation. The chosen week's requests and My Requests also show day/date/time/purpose and sort chronologically within each week.
+
 Screen title **השבוע שלי**. The layout is four stacked sections. The first two are **always above the fold and span all weeks** (REQUIREMENTS §5.5): *next action* (omitted when there is nothing to do) and **my upcoming rides + my unserved requests** (waitlisted / denied / proposed, each with its reason). Below them a week switcher opens on the week chosen by the profile setting `profiles.home_week_preference` (`auto` = Live week if I have a ride today or tomorrow, else Open week; `live`; `open` — §3.8) and lists that week's requests.
 
 ```
@@ -169,7 +171,7 @@ Request detail adds a vertical status timeline (נשלחה → הוצעה → ש
 
 ### 3.4 New / edit request (`/requests/new`)
 
-One scrolling screen, sticky footer with the primary button. No wizard, no modal-in-modal. Smart defaults: target week = next Open week, day = same weekday as the last request or Sunday, departure 08:00, return 4 hours later, trip shape = round trip (הלוך ושוב), car needed at destination = yes, adults = 1 (the driver), ride type = last used, department = default.
+One scrolling screen, sticky footer with the primary button. No wizard, no modal-in-modal. Smart defaults: target week = next Open week, day = same weekday as the last request or Sunday, departure 08:00, return 4 hours later, trip shape = round trip (הלוך ושוב), car needed at destination = yes, adults = 1 (the driver), ride type = Other (אחר), department = default. New requests, including slot-prefilled and join-ride requests, start with Other; editing retains the saved type.
 
 ```
 ┌──────────────────────────────────────┐
@@ -235,8 +237,9 @@ Behaviour notes:
 
 - **DestinationCombobox** searches presets by name and aliases; typing something unknown always offers a "free text" row; free text is saved verbatim and lands in the admin merge queue (§5.6).
 - **TripShapeControl** (`trip_shape`): הלוך ושוב / הלוך בלבד / חזור בלבד. One-way shapes hide the irrelevant time field and the "car stays with me" switch and show **OneWayCarModeControl** (`one_way_car_mode`): "אני נוהג/ת ומשאיר/ה את הרכב שם" (`relay` — for חזור בלבד the label reads "אני נוהג/ת ברכב שנמצא שם הביתה") or "אני צריך/ה הסעה" (`passenger`). Helper under `relay`: the car is left at the destination only if someone brings it back the same day, otherwise the Sadran will suggest a round trip or a lift (REQUIREMENTS §5.4). The "will be approved immediately" preview (live weeks) is never shown for one-way shapes (§13.64).
-- **TimeField15** is a two-column picker (hours 05–23, minutes 00/15/30/45) rendered inline in a bottom sheet on phone and a small popover on desktop; both fields also accept typed `HH:MM` and snap to 15 minutes. The return field defaults to departure + 4 h and is validated `> departure` (§5.3 REQUIREMENTS). A return on the next day is allowed via a small "למחרת" toggle; leaving the target week is a **blocking error** for members ("נסיעה שמסתיימת אחרי שבת — פנה/י לסדרן/ית"); a Sadran filing on behalf may pass it and later marks the ride `overflow_allowed` in the `RideSheet` (REQUIREMENTS §13.62).
+- **TimeField15** is a two-column picker (default hours 06–23, minutes 00/15/30/45), also accepting typed `HH:MM`. End fields additionally allow 23:59. Requests begin and end on the selected Jerusalem day; the return must be later than departure. There is no next-day, overnight, or week-overflow option. Editing a legacy request that ends on a later day prefills its end as 23:59 on the departure day.
 - **Flexibility** is four compact `FlexibilitySegmented` rows (departure earlier/later, return earlier/later), each with the six REQUIREMENTS values; defaults 0. Below them a helper: "גמישות מעלה את הסיכוי לקבל רכב" (ties to the policy rule).
+- **Ride description and coordinator notes** are separate optional text boxes. The description accepts up to 1,000 characters and explains that everyone viewing the ride can see it; it is saved as `ride_description`, restored when editing, and clearing it removes the public text. Notes retain their coordinator-specific label and are never copied into the public description. Both ordinary and quick request creation support the public description.
 - **Duplicate detection**: on submit, if the member has an overlapping request the footer shows "יש לך כבר בקשה ליום ג' 08:00–12:00 — לערוך אותה במקום?" with links.
 - **Edit mode**: same screen, title **עריכת בקשה**; after solving started, a banner "השבוע כבר בהכנה — השינוי יסומן לסדרן/ית" (REQUIREMENTS §5.2 versioning). After publish for an assigned ride, saving shows the §8 warning if the new window is not free on the same car.
 - **On behalf of**: Sadran/Admin see an extra "מבקש/ת" member combobox at the top.
@@ -244,13 +247,15 @@ Behaviour notes:
 
 ### 3.5 Published siddur (`/siddur`, tab הסידור)
 
+Every car name in the finished siddur includes its active 4–5 digit code, including grid headers, ride cards/details, available-car slots and car selectors. When marked replaced in car details it reads `שם הרכב (חלופי)` with the replacement code; switching back restores the regular name/code. Leading zeroes are preserved. Legacy cars with no code explicitly show “קוד לא הוזן”. Upcoming assigned rides on Home use the same label.
+
 Phase-aware: for an Open week members see only their own requests and a note "הסידור יפורסם ביום רביעי בערב"; for Published/Live weeks they see the full department siddur (REQUIREMENTS §10). The department switcher in the header also lists departments the member does **not** belong to; their published siddurim open read-only (no "ask to join", no FAB — REQUIREMENTS §13.52).
 
 **Phone default — day-by-day list** (`DayList`): sticky day tabs (א ב ג ד ה ו ש with a small count), then rides sorted by departure. Each `RideCard` shows time range, destination, driver, car, free seats indicator ("2 מקומות פנויים" computed from the car's best fitting configuration minus passengers), and a chip if it is a temporary car ("רכב פרטי של יואב"). A ride whose car changes location (a relay leg, `rides.origin_id ≠ destination_id`) shows **origin → destination** instead of the plain destination ("נבו → בנימינה", "בנימינה → נבו") and the chip **⇄ העברת רכב**; a chauffeur ride shows "הסעה · מסיע/ה: יואב".
 
 ```
 ┌──────────────────────────────────────┐
-│ ‹ שבוע 14–20.9 ›  [ פורסם ]  [יעד ▾] │
+│ ‹ שבוע 14–20.9 ›  [ פורסם ]          │
 │  א   ב  [ג]  ד   ה   ו   ש            │
 │  4   6   7   3   5   8   1            │
 ├──────────────────────────────────────┤
@@ -271,7 +276,7 @@ Phase-aware: for an Open week members see only their own requests and a note "ה
 
 **Wide screens (≥ lg)** — read-only `WeekGrid` (same component as the board, `readOnly`): rows = cars, columns = 15-minute slots for the selected day; a week strip on top with 7 mini-columns to jump between days. Own rides are outlined; maintenance blocks hatched.
 
-**Filter by destination** (`[יעד ▾]`): a `DestinationCombobox` in filter mode; matches presets by zone too ("עפולה" also lists rides to "עפולה · קניון"). Empty result: "אין נסיעות ל-{{dest}} השבוע — לפתוח בקשה?" (this is the v1 version of the v1.x lift-finding search).
+The main siddur has no destination/“where” filter. In both the phone list and wide grid, rides linked to the signed-in member's requests or assigned to them as driver use bold route/time text, a small star and “הנסיעה שלי”. Assigned personal rides also have an outline. Missing-driver bookings retain their red background and dashed red border; personal emphasis uses the bold text and star without replacing that status styling. Membership is based on request IDs or designated driver ID, including a passenger's one-way ride with no driver. Ride ordering stays chronological.
 
 **Ride detail (`/rides/:id`)**: header with times, origin → destination and car; driver row (phone visible only if you share the ride, per §10); passengers; car-mode indicator — "הרכב נשאר איתי ביעד" (keep), "הרכב נשאר בבנימינה" (relay out), "הרכב נאסף מבנימינה" (relay back), "הסעה — הנהג/ת חוזר/ת עם הרכב" (chauffeur); buttons: **בקש/י להצטרף** (opens `/requests/new?ride=<id>`; on submit this is a **normal request** created through `submit_request` with `join_ride_id = <ride>` — REQUIREMENTS §7.3, DATA_MODEL §3.6. **Shared car**: the Sadran sees it flagged "merge requested" in the unmet list with the merge suggestion first and sends the driver a `merge` proposal. **Temporary car**: `submit_request` creates and sends the `merge` proposal to the owner immediately; the owner answers via `/p/<token>` like any driver, the requester is told the outcome through `outcome_changed`, and the Sadran only sees the proposal in the list and gets `proposal_answered` — REQUIREMENTS §13.43), **דווח/י על תקלה ברכב**, and for own rides **ערוך** / **בטל נסיעה**.
 
@@ -358,7 +363,11 @@ Sections in cards:
 
 ### 4.2 The board (`/sadran/:dept/:week/board`)
 
-**Tablet/desktop layout.** A single day is shown at a time (a week of 15 cars at 15-minute resolution is 672 columns — unusable). Day tabs carry per-day unmet counts; a thin `WeekStrip` above the grid shows all 7 days as heat bars (rides / unmet) for orientation. Rows = cars (temporary cars in a separate group at the bottom, maintenance blocks hatched), columns = time 05:00–24:00 in 15-minute cells (major gridline every hour). Side panel on the start edge (right, in RTL) 320–360 px wide, collapsible: the `UnmetList`.
+Passenger summaries show requester, named members/guests and the remaining unnamed adults/children instead of silently omitting unnamed passengers. Example: `נוסעים: ג׳וני, שרה וילד/ה 1`. They appear in ride blocks, the phone list, ride details and unmet requests, and also when the week's Sadran views the published siddur. The requester is already included in the adult total; a volunteer driver is added once only when not represented by a driver request. Children use the combined child-seat/booster count. Since names carry no age, they consume adult places first, then child places. Repeated legs of one request do not duplicate its passengers.
+
+The collision count is a button. Each click advances through conflicting rides chronologically, wraps after the last, selects the affected day and scrolls/focuses the highlighted ride (including horizontal car scrolling and revealing early hours). The banner identifies the selected collision's index, weekday, date, time window and car. On phones it switches to the car list before focusing the card. Navigation does not edit rides.
+
+**Tablet/desktop layout.** A single day is shown at a time (a week of 15 cars at 15-minute resolution is 672 columns — unusable). Day tabs carry per-day unmet counts; a thin `WeekStrip` above the grid shows all 7 days as heat bars (rides / unmet) for orientation. Rows = cars (temporary cars in a separate group at the bottom, maintenance blocks hatched), columns = time 06:00–23:59 in 15-minute cells (major gridline every hour). Side panel on the start edge (right, in RTL) 320–360 px wide, collapsible: the `UnmetList`.
 
 ```
 ┌──────────────────────────────────────────────────┬─────────────────────────┐
@@ -401,6 +410,8 @@ The `UnmetList` orders requests by policy score (shown as ▲ score with a toolt
 **Phone fallback — list mode.** The board route on `< md` renders `BoardListMode`: segmented control רכבים / לא שובצו / הצעות. The רכבים view lists each car per day with its rides as cards; tapping a ride opens the same `RideSheet`, where time and car are changed with `TimeRangePicker15` and a car select instead of dragging. The לא שובצו view is the `UnmetList` full-screen. Everything the grid can do is reachable; only drag/resize is absent.
 
 ### 4.3 Proposal composer (`/sadran/:dept/:week/proposals/new`)
+
+The title row includes a small accessible X button that closes the composer and returns to the same department/week board, including when the request is still loading or unavailable.
 
 Opened from a suggestion (prefilled) or blank. On desktop it is a side sheet over the board so context stays visible. The proposal **type** is derived from the suggestion kind by the mapping in SOLVER.md §3.15 (`shiftBeyondFlex` → הזזת שעות, `merge`/`splitLegs` → איחוד, `externalHint` → פתרון חיצוני, `deny` → דחייה; `shiftWithinFlex` never reaches the composer). For an "ask to join" request (`join_ride_id` set) the composer opens as a merge proposal to that ride's driver.
 
@@ -487,6 +498,8 @@ Tabs: **חברים** / **ממתינים לאישור (n)** / **ייבוא**.
 Calendar grid: rows = upcoming 12 weeks, columns = departments; a cell shows Sadran chips; click → member multi-select for that week. Column header holds the standing default Sadran ("ברירת מחדל: מיכל"). Empty cells for the next two weeks are highlighted amber "אין סדרן/ית". Also reachable from the Sadran dashboard as read-only ("מי אחרי/י?").
 
 ### 5.4 Cars and seat configuration editor (`/admin/cars/:id`)
+
+Car details include a required 4–5 digit regular code and a replacement checkbox. Checking it reveals a required replacement code, which must also be 4–5 digits and differ from the regular code. Inputs preserve leading zeroes. Clearing the checkbox clears the replacement code and restores the regular code in the published siddur. The admin car list marks replaced cars. Existing cars with no code are preserved; their next car-details save asks for the code. Replacement is separate from active/maintenance/retired status.
 Fields per REQUIREMENTS §6.1: name, plate, department, status (פעיל / בטיפול / הוצא משימוש), type (משותף / פרטי), features (multi-select chips: גגון, תא מטען גדול, אוטומט, 4×4…), notes (key location, quirks).
 
 ```
@@ -551,7 +564,7 @@ Each `PolicyRuleRow` has an enable switch, a `WeightSlider` (0–10, step 0.1, n
 Edits the `notification_templates` table (DATA_MODEL §3.11): for each of the 20 events in §6.1 an inbox row and a push row, plus the seven WhatsApp templates in §6.2 (`channel = whatsapp`, `variant` = shift / merge_passenger / merge_driver / deny / external / chauffeur / reminder). Editor: title, body (textarea), placeholder chips that insert `{{…}}` at the caret, live preview with sample data, "שחזר ברירת מחדל" (re-inserts the seed row). Validation blocks removing the `{{link}}` placeholder from WhatsApp templates and enforces the push length limits.
 
 ### 5.10 Settings (`/admin/settings`)
-Per department (with a global default row): request window open (day + time), close (day + time), planned publish time (used as default proposal expiry), grid hours (05:00–24:00), turnaround buffer (30 min), day end (default 23:59 — every shared car must be home by then unless the Sadran acknowledges an overnight stay), chauffeur dwell (default 10 min), detour limit (20 min / 15 km), auto-apply proposals when all accepted (on). Time inputs use `TimeField15`. Two settings from the reference app are **gone in v0.3** (DATA_MODEL §3.1): rides ending after Saturday are a per-ride Sadran flag (`rides.overflow_allowed`, set in the `RideSheet`, not here — REQ §13.62), and any member may register a temporary car with no admin gate (an admin can only revoke one — REQ §13.53).
+Per department (with a global default row): request window open (day + time), close (day + time), planned publish time (used as default proposal expiry), grid hours (06:00–23:59), turnaround buffer (30 min), day end (default 23:59 — every shared car must be home by then unless the Sadran acknowledges an overnight stay), chauffeur dwell (default 10 min), detour limit (20 min / 15 km), auto-apply proposals when all accepted (on). Time inputs use `TimeField15`. Two settings from the reference app are **gone in v0.3** (DATA_MODEL §3.1): rides must end on their starting day by 23:59 (`rides.overflow_allowed` is retained only for legacy data — REQ §13.62), and any member may register a temporary car with no admin gate (an admin can only revoke one — REQ §13.53).
 
 ---
 
@@ -663,7 +676,6 @@ Stored as `notification_templates` rows with `channel = 'whatsapp'`, `event = 'p
 | Home, no requests, week Open | עוד אין לך בקשות לשבוע {{weekLabel}}. הבקשות נסגרות ב{{closeTime}}. | + בקשה חדשה |
 | Home, no requests, week Published | לא הגשת בקשות לשבוע הזה. אפשר להגיש בקשה חדשה — אם יש רכב פנוי היא תאושר מיד. | + בקשה חדשה |
 | Siddur, week not yet published | הסידור לשבוע {{weekLabel}} יפורסם ב{{publishTime}}. בינתיים אפשר לראות את הבקשות שלך. | לבקשות שלי |
-| Siddur, destination filter no match | אין נסיעות ל{{destination}} השבוע. | פתח/י בקשה ל{{destination}} |
 | Inbox | אין הודעות עדיין. כשהסידור יפורסם או תתקבל הצעה — זה יופיע כאן. | — |
 | Unmet list, all served | כל הבקשות שובצו 🎉 | פרסם… |
 | Proposals, none | עוד לא נשלחו הצעות לשבוע הזה. | ללוח |
@@ -1009,7 +1021,7 @@ Deviations/simplifications taken while building the member screens (§3: new/edi
 6. **Car issue reporting ("דווח/י על תקלה ברכב") is not built this stage.** It is part of the `/rides/:id` wireframe (§3.5) but outside this stage's seven enumerated deliverables; `car_issues` and `report_car_issue_unsafe_to_maintenance` are untouched.
 7. **No "on behalf of" member picker on the request form.** §3.4's Sadran/Admin-only "מבקש/ת" combobox is out of scope for a member-facing stage; `submit_request`'s `requester_id` override path exists server-side but nothing in this stage's UI calls it.
 8. **Companions are persisted in a second round trip.** `submit_request`'s payload has no companions field; `RequestForm` calls `submit_request` first, then directly deletes+reinserts `request_companions` for the returned/edited request id (`request_companions_insert`/`_delete` RLS already allow this for the requester, DATA_MODEL §4.3) rather than one atomic call.
-9. **The siddur destination filter matches by exact origin/destination name**, not zone (§3.5's "עפולה" also lists rides to "עפולה · קניון" example). `DestinationCombobox`'s `mode: 'input' | 'filter'` prop (pre-existing from stage 1c) is declared but not behaviorally distinguished in the component itself; extending it to zone-aware matching in filter mode is a follow-up.
+9. **Superseded 2026-09-07:** the owner removed the destination filter from the main siddur (§3.5).
 10. **`WeekGrid` is exercised read-only in this stage** (`onRideClick` only, no `onSlotClick` usage) — the props for drag/resize/slot-click exist per the component-inventory contract for a future Sadran-board stage to reuse, but `/siddur` itself never creates or moves rides.
 11. **Push subscribe/unsubscribe (`src/lib/push.ts`) is real** (VAPID `applicationServerKey`, `register_push_subscription` RPC, direct `push_subscriptions` delete for unsubscribe since no unregister RPC exists) but untested against a real push service — `.env.local`'s `VITE_VAPID_PUBLIC_KEY` is a local placeholder (ARCHITECTURE §13), so `pushManager.subscribe()` will only succeed against a real key pair in a deployed environment.
 12. **`/requests` combines "my requests" and freed-slot offers on one route**, not a separate screen — matches the stage brief's "add /requests list" instruction; `RequestsListPage` groups by week and lists open freed-slot claims addressed to me above the groups.
@@ -1084,6 +1096,10 @@ The Sadran (product owner) manually tested the board with `npm run db:fake --cou
 ---
 
 ## 18. Quick request from an empty slot (2026-09-07, product feature)
+
+**Current-week additions (owner clarification, 2026-09-07):** The quick form supports round-trip, outbound-only and return-only requests. One-way choices ask for transport and reserve a free shared car with a red missing-driver label; the booking remains visible while awaiting a volunteer. The full vehicle window includes the driver's return home, while the request retains only the passenger's chosen departure/arrival. If no car is suitable the request remains waitlisted. Only available capacity can be reserved; this action never merges with an occupied ride without consent.
+
+The quick form offers an optional public ride description in place of coordinator notes. Additional passengers can be selected from the department's approved members or entered as guest names. Passenger counts include these names and remain the authority for seats; named passengers do not create separate requests. Descriptions and names appear in the published grid/cards and both member/coordinator ride details, including after reloading or assigning a volunteer. Existing notes to the coordinator remain separate.
 
 Product owner's ask, verbatim: *"When clicking an empty slot in this week's siddur, open a request for that day, car and hour. It should be super simple to say: I'm taking this car in two hours for 3 hours."* REQUIREMENTS §8's "new request on a free car" already auto-approves a live-week round trip with no Sadran action; this gives the member a direct, car-targeted entry point into that same rule instead of only the full request form, plus an optional preference (`requests.preferred_car_id`, DATA_MODEL.md §6.1 item 24) so the Sadran can still see what was asked for even when the server had to fall back to a different car.
 
@@ -1218,4 +1234,78 @@ The two drag tests §20 describes above were written but, run against the actual
 - Collision merging opens a confirmation before preparing the proposal. Time-change proposals expose actual time controls. WhatsApp messages open in an in-app editable dialog with copy and an explicit same-tab WhatsApp handoff, preserving browser Back.
 - Before publishing, recompute the final board against every applicable policy profile, including inactive profiles. The publish page shows the last saved comparison: assigned count, served/total priority and weighted coverage. The saved version includes the policy version and per-member/request rule breakdown. This scores the actual assignments without rerunning or applying the solver. Input changes during scoring require retry.
 - Notifications interpolate persisted context, including previously malformed inbox rows. Successful automatic approval sends no notification. Pending collision approvals appear at the top of the inbox.
-- Excel export is deferred to v1.x per the TODO: requests and assignments, export only, no import.
+- The board exports requests, assignments and saved publication scores to Excel; see §21. Export only, no import.
+
+## 21. Optional preferred car and Excel export (2026-09-07)
+
+The normal new/edit request form includes an optional preferred-car picker. It lists active shared cars in the request's department, defaults to no preference, and explains that another feasible car may be assigned. Editing loads the stored preference; choosing no preference explicitly clears it. My Requests displays the chosen car. Existing quick requests retain their specifically selected car, and recurring request templates preserve the same optional field when materialized. No new recurring-template management screen is introduced.
+
+The solver treats this as a soft car-selection tie-break after time-shift cost and before seat slack/continuity. It never changes member priority or relaxes capacity, location, availability, or time constraints. Missing/ineligible preferences fall back to normal feasible cars. The DB-to-solver bridge only forwards active shared-car preferences belonging to the request's department.
+
+The Sadran board toolbar has an export-to-Excel action for its selected department and full week, independently of day/filter selection. Clicking fetches current persisted data and downloads a real `.xlsx` workbook with three RTL sheets:
+
+- **Requests:** every request and its status, member, actual destination, trip direction, requested times, preferred car, passengers/seats, flexibility, notes, department and week.
+- **Board:** current noncancelled assignments and manual reservations, car, driver or explicit missing-driver flag, start/end/occupied-until times, requested destinations and car locations, linked request IDs/member names, and notes.
+- **Publication scores:** the last saved publication's request scores for every saved policy, including policy-version IDs, member/request identifiers, served-at-publication flags, rule breakdowns and publication time. The sheet clearly states when no scores have been saved. These are historical saved scores, not newly calculated scores for unpublished manual edits.
+
+Dates are native Excel date cells representing Asia/Jerusalem local time, labelled as Israel time. Hebrew, multiline notes and XML characters are preserved. All user-controlled strings are typed as literal strings; formula-looking values never become spreadsheet formula or hyperlink cells. Headers are frozen and filterable. There is no import operation. The export-only OpenXML/ZIP writer adds no runtime dependency.
+
+
+## 22. One-way coordination and deviation review (2026-09-07)
+
+A manual one-way drop onto an empty car creates a red missing-driver booking. Its car window covers the passenger journey plus the volunteer's return, using twice the destination travel time and the department's chauffeur dwell time, rounded to15minutes. Outbound requests retain their requested departure; inbound requests retain their requested arrival. A note-only reservation remains a separate, neutral booking.
+
+Dropping onto a driven booking prepares a merge with the union of the host window and the passenger leg. Different destinations remain visible in the combined label and detail sheet. The composer and each member's consent screen show the full combined window. Until all affected people accept, the board shows a combined pending overlay and fades the original booking; its confirmed times remain unchanged.
+
+Driver cancellation retains passenger links in the same car window, marked in red as missing driver. Opening the booking offers an approved department member the explicit volunteer action, explaining the full driving/return window. Successful claiming refreshes the board and clears the warning. A passenger cancellation removes only that member's request, without cancelling other people's trips.
+
+Chauffeur labels on board/member grids, cards and details read `_____ מסיע את X לבנימינה` until a designated driver replaces the placeholder. Multiple passenger destinations and return directions stay visible. Descriptions supplement the route instead of replacing it (a requestless manual reservation retains its description as its label).
+
+Coordinator request notes are shown with the time, route and passengers on the board, its unmet list and ride detail; the same notes appear on the member siddur only for that week's Sadran. They are never copied into the public description. This is a display relevance rule; existing request read permissions are unchanged. The public information box on an existing ride has its own save action, available to the coordinator, designated driver or linked requester while the ride/week remains editable. It updates public text independently of car/time edits or pending consent, and uses ride version checking. Both request descriptions and shared ride information remain visible to other viewers.
+
+Coordinator changes may create short or zero turnaround gaps. Both neighboring bookings show a small clock indicator with an accessible tight-schedule label; actual overlap remains an error. Publishing permits approved tight gaps and warns about missing drivers, which members can resolve after publication.
+
+The board's full-week deviation dialog lists the member and destination for each changed request, with original and current departure/arrival times, preferred-car differences, passenger assignments, missing drivers, and unassigned/denied/external/cancelled requests. Original-time baselines survive coordinator changes; a member's own accepted edit establishes a new request baseline. Times include Jerusalem weekday and date, so moving to a different day cannot be hidden by identical clock times.
+
+WhatsApp preparation has a prominent close button in a sticky footer, a bounded scrollable dialog, and Escape/outside dismissal. Closing returns to the composer without creating a new browser window.
+
+## 23. Proposal send recovery (2026-09-07)
+
+The composer, member proposal screen and deviations dialog show a compact trip summary: member/destination followed by weekday, full date, requested hours and purpose. Times and dates use Asia/Jerusalem; return-only and overnight requests retain their direction and date context. The deviations header uses original request times, with changes shown underneath.
+
+Rejection and external proposals label the reason as optional. Blank or whitespace-only input uses the default car-shortage explanation in the payload and message; a custom reason overrides it. External messages also ask about the selected alternative (public transport, taxi, rental or private solution). These lines remain included with existing templates that lack the relevant placeholders. The full message remains editable before sending.
+
+The coordinator composer checks for an already-sent proposal even when entered from a board suggestion or drag. It shows the pending proposal and offers **view pending proposal** or **replace and send**. Replacement explicitly invalidates the previous approval link and sends the new proposal to its recipients; a proposal with any answer cannot be replaced. The database verifies the displayed proposal ID and version, so concurrent answers or coordinator changes require a refresh.
+
+A failed send retains the created draft and offers **send draft**, including after reopening it from the proposals list. Retrying does not create another draft. Failed sends refresh proposal state and display actionable messages for a pending proposal, an already-sent draft, or an answered replacement. Manual answer buttons appear only on sent proposals.
+
+
+### Coordinator proposal actions and same-day requests (owner clarification, 2026-09-07)
+
+This clarification supersedes earlier descriptions of overnight controls and the unmet-request action menu. Each unmet request offers exactly **Suggest other times** and **Solve outside the siddur**. The first opens an editable time-change proposal even when the solver has no suggestion. The second offers taxi, public transport, private car, or waiving the ride; waiving uses the existing denial proposal flow. Reasons remain optional with the car-shortage default. Solver explanations can remain visible without adding competing action buttons.
+
+The composer remembers whether it opened from the board or the proposals list. Successful sending and closing return to that screen, including its query parameters. Failure leaves the saved draft open for retry. A successful-send toast offers reopening the sent proposal and its WhatsApp links; tokens stay in actor-scoped session memory and can be reused when reopening from the proposals list, never in route URLs or browser storage. Reopening a pending proposal retains the original return destination.
+
+Normal requests have no next-day control, and quick duration chips cap the end at 23:59 on the selected day. Return fields accept this endpoint in addition to quarter-hour values. One-way quick requests validate the driver's complete vehicle window against the same day; a window crossing midnight requires an earlier departure/later pickup time. Shared-car free windows start at 06:00 and end at 23:59. Public descriptions, named passengers, and separate coordinator notes are preserved.
+
+
+### Board-first planning and day publication (owner clarification,2026-09-07)
+
+The Sadran entry route and former dashboard route open the board directly. Publish also closes the request window; Cancel opens a confirmation with choices to reopen requests or unpublish without reopening. Both preserve assignments and hide the current publication. Clicking an empty hour remains the reservation entry point; the redundant reservation button is removed.
+
+Publish asks “Publish everything?” with Yes and Only ready days. The latter preselects ready dates and exposes all seven date checkboxes so a coordinator can publish specific days. A day with unresolved requests, unanswered proposals or missing drivers requires explicit confirmation; these records are not silently rejected or expired. Real conflicts and unresolved planning shadows must be fixed on the selected dates. Remaining dates stay private, and publication can be expanded later. The member siddur identifies unpublished days instead of presenting their cars as free.
+
+The board opens at06:00; earlier hours can still be revealed. Dragged unassigned requests snap to their requested starting times. Coordinator collisions remain visible as provisional drafts; a conflicting change to an already-published booking is a private planning shadow, leaving the member's original booking visible. Resolving the shadow applies the valid change. Collision navigation includes these plans. This supersedes earlier descriptions that rejected every conflicting coordinator drop or blocked whole-week publication for unanswered proposals.
+
+The board also retains full-week re-solving under the currently selected policy. A preview names the affected rides and requires explicit confirmation before replacing unpinned assignments.
+
+### Page scrolling for the Siddur table — owner clarification
+
+The shared Siddur/board grid displays its full day height and scrolls vertically with the page, without a separate capped vertical scroll area. Wide fleets retain horizontal scrolling and the pinned hour column. This supersedes the earlier bounded grid scrolling description.
+
+The immediate-car action is labeled **רוצה רכב עכשיו!** and appears first beneath the My Rides page header, before pending actions and upcoming rides, whenever a car is available now.
+
+### Mobile table controls and unassigned list (owner clarification)
+Both Siddur and coordinator board offer cards (default) and table below the desktop breakpoint. Table controls zoom from 50% to 150%, reset to 100%, and request landscape fullscreen where supported. Unsupported orientation lock shows a rotate-phone instruction; the ordinary responsive table works after manual rotation. Exiting landscape or leaving the screen releases fullscreen owned by the view. Fullscreen uses the document so ride dialogs remain available. Zoom scales the actual layout, preserving measured pointer/drop coordinates.
+
+The unassigned list has no height cap or independent vertical scrolling. In table view it follows the grid on smaller screens and sits alongside it on desktop; card view keeps its unassigned segment. The tablet bottom drawer is removed. Both panels contribute their full height to page scrolling; horizontal table scrolling remains available.

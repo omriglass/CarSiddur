@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
+import { TripSummary } from "@/components/TripSummary";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { useSession } from "@/features/auth/useSession";
@@ -35,6 +36,8 @@ function BeforeAfterBox({ label, depart, ret }: { label: string; depart: string 
 interface ShiftPayload {
   depart_at?: string;
   return_at?: string;
+  starts_at?: string;
+  ends_at?: string;
 }
 
 function readShiftPayload(payload: unknown): ShiftPayload {
@@ -43,6 +46,8 @@ function readShiftPayload(payload: unknown): ShiftPayload {
   return {
     depart_at: typeof record.depart_at === "string" ? record.depart_at : undefined,
     return_at: typeof record.return_at === "string" ? record.return_at : undefined,
+    starts_at: typeof record.starts_at === "string" ? record.starts_at : undefined,
+    ends_at: typeof record.ends_at === "string" ? record.ends_at : undefined,
   };
 }
 
@@ -176,7 +181,8 @@ function ProposalAnswerBody({
       {summary.request ? (
         <div className="space-y-1 text-sm text-muted-foreground">
           <p className="font-medium text-foreground">{he.proposalScreen.yourRequest}</p>
-          <p>{summary.request.destination}</p>
+          <TripSummary destination={summary.request.destination} purpose={summary.request.rideType}
+            departAt={summary.request.departAt} returnAt={summary.request.returnAt} />
         </div>
       ) : null}
 
@@ -190,12 +196,13 @@ function ProposalAnswerBody({
               ret={summary.request?.returnAt ?? null}
             />
             <BeforeAfterBox
-              label={he.proposalScreen.after}
-              depart={shift.depart_at ?? summary.request?.departAt ?? null}
-              ret={shift.return_at ?? summary.request?.returnAt ?? null}
+              label={summary.type === "merge" ? he.rideCoordination.combinedWindow : he.proposalScreen.after}
+              depart={(summary.type === "merge" ? shift.starts_at : shift.depart_at) ?? summary.request?.departAt ?? null}
+              ret={(summary.type === "merge" ? shift.ends_at : shift.return_at) ?? summary.request?.returnAt ?? null}
             />
           </div>
         ) : null}
+        {summary.type === "merge" ? <p className="mt-2 text-sm text-muted-foreground">{he.rideCoordination.combinedConsent}</p> : null}
       </div>
 
       <div className="space-y-1 text-sm">

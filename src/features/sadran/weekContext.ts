@@ -12,13 +12,13 @@ export interface DefaultSadranWeek {
   weekStart: string;
 }
 
-/** `open` before `live` (a Sadran lands here to work the request window first, REQ §4); anything else is never a default. */
-const PHASE_PRIORITY: Record<string, number> = { open: 0, live: 1 };
+/** Prefer the next request window, then work in progress, then the live board. */
+const PHASE_PRIORITY: Record<string, number> = { open: 0, solving: 1, published: 2, live: 3 };
 
 /**
  * Resolves which `(departmentId, weekStart)` the bare `/sadran` route should
  * redirect to: the first department I'm Sadran of, preferring its currently
- * `open` week over a `live` one. Mirrors `useIsSadranAnywhere`'s resolution
+ * open or in-progress week over a live one. Mirrors `useIsSadranAnywhere`'s resolution
  * (`sadranim_of` RPC) rather than reimplementing it.
  */
 export function useDefaultSadranWeek() {
@@ -33,7 +33,7 @@ export function useDefaultSadranWeek() {
       for (const departmentId of departmentIds) {
         const weeks = await fetchWeeks(departmentId);
         const candidates = weeks
-          .filter((w) => w.phase === "open" || w.phase === "live")
+          .filter((w) => w.phase in PHASE_PRIORITY)
           .sort((a, b) => (PHASE_PRIORITY[a.phase] ?? 99) - (PHASE_PRIORITY[b.phase] ?? 99));
         for (const week of candidates) {
           const sadranim = await fetchSadranimOf(departmentId, week.week_start);

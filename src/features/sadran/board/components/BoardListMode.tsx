@@ -12,6 +12,8 @@ type Segment = "cars" | "unmet" | "proposals";
 
 interface BoardListModeProps {
   rides: readonly RideCardData[];
+  pendingRides?: readonly RideCardData[];
+  shadowedRideIds?: ReadonlySet<string>;
   onRideClick: (rideId: string) => void;
   unmetItems: readonly UnmetListItem[];
   onUnmetDecision?: (item: UnmetListItem, type: "deny" | "shift" | "external") => void;
@@ -20,11 +22,11 @@ interface BoardListModeProps {
 }
 
 /** Phone fallback for the board (UX_FLOWS.md §4.2 "Phone fallback — list mode"): רכבים / לא שובצו / הצעות segments. */
-export function BoardListMode({ rides, onRideClick, unmetItems, onUnmetAction, onUnmetDecision, onOpenProposals }: BoardListModeProps) {
+export function BoardListMode({ rides, pendingRides = [], shadowedRideIds, onRideClick, unmetItems, onUnmetAction, onUnmetDecision, onOpenProposals }: BoardListModeProps) {
   const [segment, setSegment] = useState<Segment>("cars");
 
   return (
-    <div className="space-y-3 md:hidden">
+    <div className="space-y-3">
       <div className="flex gap-1 rounded-md border p-1" role="tablist">
         {(
           [
@@ -51,8 +53,14 @@ export function BoardListMode({ rides, onRideClick, unmetItems, onUnmetAction, o
 
       {segment === "cars" ? (
         <div className="space-y-2">
+          {pendingRides.map((ride) => <div key={ride.id} className="rounded-md border-2 border-dashed p-1">
+            <p className="px-2 text-xs text-muted-foreground">{he.rideEditing.pending}</p>
+            <RideCard ride={ride} onClick={() => onRideClick(ride.id)} />
+          </div>)}
           {rides.map((ride) => (
-            <RideCard key={ride.id} ride={ride} onClick={() => onRideClick(ride.id)} />
+            <div key={ride.id} data-ride-id={ride.id} tabIndex={-1} className={shadowedRideIds?.has(ride.id) ? "opacity-50" : undefined}>
+              <RideCard ride={ride} onClick={() => onRideClick(ride.id)} />
+            </div>
           ))}
         </div>
       ) : null}

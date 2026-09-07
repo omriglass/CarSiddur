@@ -242,7 +242,7 @@ src/solver/
 ### 3.1 Normalization (`normalize.ts`)
 
 - `toSlot(ms) = floor((ms − week.startMs) / 900_000)`. Departure floors, return ceils; misalignment emits a warning `TIME_NOT_ALIGNED`.
-- `'day'` flexibility resolves to `days[dayIndex(D)].startSlot … endSlot`. Because DST days are handled by the caller's `DayBounds`, the solver's arithmetic is uniform.
+- Numeric and `'day'` flexibility are clipped to the request's own `DayBounds`; preferred, improved, relay, and beyond-flex placements cannot cross midnight. Ordinary quarter-hour returns end by `endSlot − 1` (23:45). An explicitly requested 23:59 return conservatively occupies `endSlot` internally, and persistence restores the exact requested minute. Return-only requests use their actual timestamp's day, before ceiling. DST boundaries come from the caller's `DayBounds`.
 - **Legs.** From `tripShape`/`needsCarAtDestination`/`oneWayCarMode` build `NormalizedLeg { side: 'out'|'return'|'both', preferredMode: LegCarMode, originId, destinationId, window, flex: [lo, hi] }` per §1.2 (`round_trip` + needs car → one `both` leg `keep`; `round_trip` without → `both` leg `keep` as fallback plus `out`/`return` legs eligible for `passenger`/`relay`; `one_way_to` → `out` leg in the stated mode; `one_way_from` → `return` leg).
 - Build `NormalizedRequest { legs, window, minDurationSlots, flexDep: [lo, hi], flexRet: [lo, hi], durationFixed: boolean, travelSlots }`. For one-way shapes `durationFixed = true` (only one shift dimension). `travelSlots = ceil((dest.travelMinutes ?? config.defaultTravelMinutes) / 15)`.
 - Requests served by a `FixedRide` are marked `servedByFixed` and skipped; their fixed rides become `Assignment { source: 'fixed' }` and seed the timelines with their origin/destination.
@@ -315,10 +315,11 @@ Preferred time is always tried first on every car; flexibility is used only when
 **Car choice key** (lexicographic, all deterministic):
 
 1. `shiftCost = |departureShift| + |returnShift|` (minutes; for a pair, the sum over both legs)
-2. `slack(car, passengers)` — tightest seat fit, keeps large cars for large groups (for a pair: the max over the two legs)
-3. continuity: `0` if `car.id === previousAssignment(r).carId`, else `1` if `car.id === stats.usualCarId[member]`, else `2` (for a pair: the min over both members)
-4. fragmentation: leftover of the gap the ride lands in (`gap.length − ride.length`, best-fit) — avoids splitting a long free window (for a pair: the gap is `[out.start, back.end)`)
-5. `car.id`
+2. soft preferred-car rank: zero when no preference was supplied or this is the preferred car, otherwise one; for a relay pair sum the two members' mismatch ranks. This only ranks feasible cars and never alters request priority or the time-first search.
+3. `slack(car, passengers)` — tightest seat fit, keeps large cars for large groups (for a pair: the max over the two legs)
+4. continuity: `0` if `car.id === previousAssignment(r).carId`, else `1` if `car.id === stats.usualCarId[member]`, else `2` (for a pair: the min over both members)
+5. fragmentation: leftover of the gap the ride lands in (`gap.length − ride.length`, best-fit) — avoids splitting a long free window (for a pair: the gap is `[out.start, back.end)`)
+6. `car.id`
 
 #### 3.6.1 Relay pairing (`relay.ts`)
 
@@ -530,7 +531,7 @@ No other file changes. The engine, the sort and the UI breakdown pick the rule u
 
 ### 5.1 Fixed inputs and "solve remaining only"
 
-`fixedRides` (pinned, applied proposals, temporary-car owner rides) are copied to the output as `source: 'fixed'` and seeded into timelines; the requests they serve are excluded. The solver is stateless about request status — the caller decides which requests are open (`submitted`, `waitlisted`, `denied` if the Sadran wishes, `proposed` if it wants the fallback computed). "Auto-solve remaining" on the board is the caller passing every current draft ride as a `FixedRide { kind: 'pinned' }` (REQUIREMENTS §7.1: manual edits become pinned). A full re-run passes only real pins and supplies the previous draft as `previousAssignments` so continuity (§3.6 key 3) minimizes churn. Output never contains changes to fixed rides.
+`fixedRides` (pinned, applied proposals, temporary-car owner rides) are copied to the output as `source: 'fixed'` and seeded into timelines; the requests they serve are excluded. The solver is stateless about request status — the caller decides which requests are open (`submitted`, `waitlisted`, `denied` if the Sadran wishes, `proposed` if it wants the fallback computed). "Auto-solve remaining" on the board is the caller passing every current draft ride as a `FixedRide { kind: 'pinned' }` (REQUIREMENTS §7.1: manual edits become pinned). A full re-run passes only real pins and supplies the previous draft as `previousAssignments` so continuity (§3.6 key 4) minimizes churn. Output never contains changes to fixed rides.
 
 ### 5.2 After publish: no automatic solve
 
@@ -564,7 +565,7 @@ export function tryAutoApprove(input: AutoApproveInput): Assignment | null;
 
 This section already says "the caller decides which requests are open" — the MAJOR BUG investigation (`docs/UX_FLOWS.md` §19, `docs/DATA_MODEL.md` §6.1 item 25) found a caller (`src/features/sadran/applySolve.ts`, formerly `solverRun.ts`) that computed "open" from `requests.status` alone, independently of which rides it had just built `fixedRides` from (`rides.is_pinned`). A request already `assigned`/`merged` by a **previous solve's own unpinned ride** was neither open (wrong status) nor fixed (its ride isn't pinned) — invisible to `solve()` in both directions, so a `'full'` re-solve deleted its ride without the solver ever being told to replace it. The invariant a caller must maintain, stated precisely: **every non-final request must be either fed to `solve()` as open, or served by an entry in `fixedRides`, never neither.** `applySolve.ts`'s `selectOpenRequests` now enforces this directly — "open" is *derived from* `fixedRides`' `servedRequestIds` (`!fixedRequestIds.has(r.id)`), not computed independently and hoped to agree. §7.2's property test 3 ("every open request appears exactly once in `assignments ∪ unmet`") already covers `solve()`'s own side of this; it cannot catch a caller-side bug like this one, because from the solver's point of view the request was simply never part of the input at all — this is why the fix is unit-tested at the caller (`applySolve.test.ts`) and with a DB-level invariant (`supabase/tests/solve_semantics.sql`), not inside `src/solver`.
 
-Separately, `previousAssignments` (§2, §3.6 key 3) was defined in `types.ts` from the start but no caller ever actually populated it — `gatherSolverContext`'s `'full'` mode now builds it from the board rides it is about to treat as replaceable (the same rides it computes for the "re-solve the whole week" confirm dialog's diff), so a full re-solve prefers keeping each request's members on the same car instead of reshuffling everyone for no reason.
+Separately, `previousAssignments` (§2, §3.6 key 4) was defined in `types.ts` from the start but no caller ever actually populated it — `gatherSolverContext`'s `'full'` mode now builds it from the board rides it is about to treat as replaceable (the same rides it computes for the "re-solve the whole week" confirm dialog's diff), so a full re-solve prefers keeping each request's members on the same car instead of reshuffling everyone for no reason.
 
 ---
 
@@ -746,3 +747,8 @@ Publication scores the **final board against every policy profile**, including i
 Actual `ride_requests` links determine served status. Each policy comparison stores total requested priority, served priority and `served / total` weighted coverage (null if total priority is zero), plus member/request rule breakdowns. Scores are not comparable as absolute values across differently weighted profiles; weighted coverage describes how much of each profile's requested priority the actual board serves. The persisted policy version makes later comparisons reproducible. Optimistic database fingerprints reject edits made while scoring. Manual drag flexibility stays anchored to original departure/return times.
 
 Driverless pinned reservations become `FixedRide` constraints with no served request and no driver. They occupy the car timeline in both remaining/full solve modes, and cannot be suggested as a chauffeur or merge host.
+
+
+### Existing tight bookings and missing drivers
+
+`FixedRide.approvedBufferAfterSlots` carries the persisted coordinator-approved turnaround after a booking. Timeline loading and final invariant checks allow that reduced gap only between two fixed bookings; actual overlap and maintenance checks remain enforced. New solver placements keep the normal configured buffer. Missing-driver bookings remain pinned occupancy with their passenger request IDs, preventing a full resolve from silently deleting or duplicating them. Publication priority coverage counts those requests as unserved until a driver claims the booking.

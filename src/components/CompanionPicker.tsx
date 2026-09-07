@@ -64,6 +64,7 @@ export function CompanionPicker({ members, value, onChange }: CompanionPickerPro
               variant="outline"
               size="sm"
               role="combobox"
+              aria-label={t("field.companions")}
               aria-expanded={open}
               className="h-8 gap-1"
             >

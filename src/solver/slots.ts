@@ -87,8 +87,25 @@ export interface NormalizedRequest {
   luggage: boolean;
   destinationId: string;
   dayIndex: number;
+  /** Hard scheduling bounds, independent of declared or suggested flexibility. */
+  dayWindow: Window;
   /** one-way passenger mode: the solver never places this itself; it is served only via merge/chauffeur suggestions */
   isPassengerOnly: boolean;
+}
+
+function requestDayWindow(request: Request, day: DayBounds, weekStartMs: number): Window {
+  // 23:59 is conservatively represented by the next boundary slot internally.
+  // Persistence restores its exact minute; other rides end on a quarter hour.
+  const exactEndOfDay = request.returnMs === weekStartMs + day.endSlot * SLOT_MS - 60_000;
+  return { start: day.startSlot, end: day.endSlot - (exactEndOfDay ? 0 : 1) };
+}
+
+export function withinRequestDay(nr: NormalizedRequest, window: Window): boolean {
+  return window.start >= nr.dayWindow.start && window.end <= nr.dayWindow.end && window.end > window.start;
+}
+
+function boundedFlex(bounds: [number, number], window: Window): [number, number] {
+  return [Math.max(bounds[0], window.start), Math.min(bounds[1], window.end)];
 }
 
 export interface Warning {
@@ -176,6 +193,7 @@ export function normalize(input: SolverInput): NormalizeResult {
       const D = toSlotFloor(request.departureMs, input.week.startMs);
       const R = toSlotCeil(request.returnMs, input.week.startMs);
       const day = dayBoundsForSlot(input.week.days, D);
+      const dayWindow = requestDayWindow(request, day, input.week.startMs);
       const flexDep: [number, number] = [
         resolveFlexBound(D, request.flexDeparture.earlierMin, 'earlier', day),
         resolveFlexBound(D, request.flexDeparture.laterMin, 'later', day),
@@ -190,14 +208,15 @@ export function normalize(input: SolverInput): NormalizeResult {
         legs: [buildKeepLeg(home, D, R)],
         window: { start: D, end: R },
         minDurationSlots: Math.max(1, R - D),
-        flexDep,
-        flexRet,
+        flexDep: boundedFlex(flexDep, { ...dayWindow, end: day.endSlot - 1 }),
+        flexRet: boundedFlex(flexRet, dayWindow),
         durationFixed: false,
         travelSlots,
         passengers: request.passengers,
         luggage: request.luggage,
         destinationId: request.destinationId,
         dayIndex: day.dayIndex,
+        dayWindow,
         isPassengerOnly: false,
       });
       continue;
@@ -217,6 +236,7 @@ export function normalize(input: SolverInput): NormalizeResult {
       }
       const D = toSlotFloor(request.departureMs, input.week.startMs);
       const day = dayBoundsForSlot(input.week.days, D);
+      const dayWindow = requestDayWindow(request, day, input.week.startMs);
       const flexDep: [number, number] = [
         resolveFlexBound(D, request.flexDeparture.earlierMin, 'earlier', day),
         resolveFlexBound(D, request.flexDeparture.laterMin, 'later', day),
@@ -228,7 +248,7 @@ export function normalize(input: SolverInput): NormalizeResult {
         legs: [{ side: 'out', preferredMode: mode, originId: home, destinationId: request.destinationId, window }],
         window,
         minDurationSlots: mode === 'relay' ? Math.max(1, travelSlots) : 0,
-        flexDep,
+        flexDep: boundedFlex(flexDep, dayWindow),
         flexRet: [D, D],
         durationFixed: true,
         travelSlots,
@@ -236,6 +256,7 @@ export function normalize(input: SolverInput): NormalizeResult {
         luggage: request.luggage,
         destinationId: request.destinationId,
         dayIndex: day.dayIndex,
+        dayWindow,
         isPassengerOnly: mode === 'passenger',
       });
       continue;
@@ -247,7 +268,8 @@ export function normalize(input: SolverInput): NormalizeResult {
       warnings.push({ code: 'TIME_NOT_ALIGNED', message: 'WARN_TIME_NOT_ALIGNED', requestId: request.id });
     }
     const R = toSlotCeil(request.returnMs, input.week.startMs);
-    const day = dayBoundsForSlot(input.week.days, R);
+    const day = dayBoundsForSlot(input.week.days, toSlotFloor(request.returnMs, input.week.startMs));
+    const dayWindow = requestDayWindow(request, day, input.week.startMs);
     const flexRet: [number, number] = [
       resolveFlexBound(R, request.flexReturn.earlierMin, 'earlier', day),
       resolveFlexBound(R, request.flexReturn.laterMin, 'later', day),
@@ -260,13 +282,14 @@ export function normalize(input: SolverInput): NormalizeResult {
       window,
       minDurationSlots: mode === 'relay' ? Math.max(1, travelSlots) : 0,
       flexDep: [R, R],
-      flexRet,
+      flexRet: boundedFlex(flexRet, dayWindow),
       durationFixed: true,
       travelSlots,
       passengers: request.passengers,
       luggage: request.luggage,
       destinationId: request.destinationId,
       dayIndex: day.dayIndex,
+      dayWindow,
       isPassengerOnly: mode === 'passenger',
     });
   }

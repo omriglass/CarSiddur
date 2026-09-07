@@ -70,14 +70,9 @@ URLs unless `--allow-remote`); never touches `src/`, migrations, or `seed.sql`.
 
 ## Going to production
 
-See docs/ARCHITECTURE.md (deployment, cost, security) for details. Short version:
+See [the free deployment checklist](docs/FREE_DEPLOYMENT.md) for GitHub + Cloudflare Pages + Supabase, Google sign-in, notification secrets, first-admin setup and production data initialization. Cloudflare Pages can host this Vite app without a separate application server.
 
-1. **Supabase project**: create one on supabase.com (Free tier). Note the project ref, URL and anon key.
-2. **Link and push schema**: `npx supabase link --project-ref <ref>` then `npm run db:push` (applies pending migrations). Seed is local-only; create the first admin via the `member_invites` table before signing in.
-3. **Edge functions**: `npm run functions:bundle`, then `npx supabase functions deploy push-dispatch answer-proposal on-ride-cancelled`. Set function secrets: `npx supabase secrets set VAPID_PUBLIC_KEY=… VAPID_PRIVATE_KEY=… VAPID_SUBJECT=mailto:… CRON_SECRET=…` (generate VAPID keys with `npx web-push generate-vapid-keys`). Insert the same `CRON_SECRET` into the `app_secrets` table (see supabase/functions/README.md).
-4. **Google OAuth**: create an OAuth client in Google Cloud Console; enable the Google provider in Supabase Auth with its client id/secret; add the Vercel URL to the redirect list. Disable the email provider in production.
-5. **Vercel**: import the GitHub repo; set `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_VAPID_PUBLIC_KEY`, `VITE_APP_URL` (the public site URL, used in WhatsApp deep links).
-6. **Keep-alive** (not yet set up): the Supabase Free tier pauses after 7 idle days. Weekly real use prevents this; as a safety net add a scheduled GitHub Action that calls the REST endpoint with the anon key every few days (see docs/ARCHITECTURE.md scheduled jobs).
+The development seed contains demo users and rides; it must not be imported wholesale into production. Production catalogs/templates need a reviewed initialization/import. Supabase Free can pause after inactivity and does not include automatic backups; the checklist covers these limitations.
 
 ## Reference
 
@@ -85,6 +80,6 @@ See docs/ARCHITECTURE.md (deployment, cost, security) for details. Short version
 
 ### Isolated verification
 
-`npm run db:test` runs the RLS, solver persistence and TODO regression suites. Set `SUPABASE_DB_CONTAINER` to target a disposable local database container; by default it uses this repository's configured Supabase project.
+`npm run db:test` runs the RLS, solver persistence, TODO, one-way lifecycle, proposal replacement, live quick-add, selected-day publication, coordinator planning and proposal day-boundary regression suites. Set `SUPABASE_DB_CONTAINER` to target a disposable local database container; by default it uses this repository's configured Supabase project.
 
-Browser tests accept `E2E_BASE_URL` and `VITE_SUPABASE_URL`, so a separate Vite/Supabase stack can be used without changing `.env.local`. Use `E2E_SKIP_RESET=1` after seeding that stack, or set `E2E_SUPABASE_WORKDIR` explicitly to reset only its disposable project. An alternate API without either setting refuses to reset the development database.
+Browser tests accept `E2E_BASE_URL` and `VITE_SUPABASE_URL`, so a separate Vite/Supabase stack can be used without changing `.env.local`. Use `E2E_SKIP_RESET=1` after seeding that stack, or set `E2E_SUPABASE_WORKDIR` explicitly to reset only its disposable project. An alternate API without either setting refuses to reset the development database. Test callbacks use the selected API port through Docker’s host gateway; `E2E_EDGE_FUNCTIONS_URL` can override that internal endpoint.

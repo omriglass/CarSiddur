@@ -272,6 +272,9 @@ Unique index `(department_id, profile_id, coalesce(week_start, '1970-01-04'))`. 
 | department_id | uuid | NN | | FK departments (hard boundary, §13.1) |
 | name | text | NN | | |
 | license_plate | text | NN | | unique, digits only after normalization |
+| access_code | text | | | Optional legacy-compatible base vehicle code; when present, exactly 4–5 ASCII digits (leading zeroes preserved). |
+| is_replaced | boolean | NN | false | Whether a replacement vehicle/code is currently in use. |
+| replacement_code | text | | | Optional code, exactly 4–5 ASCII digits when present. Replacement mode requires both codes and a replacement code different from `access_code`; switching replacement off in the UI clears this field. |
 | type | car_type | NN | 'shared' | |
 | status | car_status | NN | 'active' | |
 | owner_id | uuid | | | FK profiles; CHECK `(type = 'temporary') = (owner_id is not null)` |
@@ -402,6 +405,7 @@ One row per department per target week. Created by the `open_week()` RPC or by `
 | publish_reminder_sent_at | timestamptz | | | idempotency for `publish_reminder` |
 | published_version_id | uuid | | | FK siddur_versions; **the one published pointer** |
 | published_at | timestamptz | | | |
+| published_days | date[] | NN | {} | Jerusalem-local dates explicitly published; publication adds selected days, reopening clears visibility. Existing public weeks backfilled with all seven days. |
 | settings_overrides | jsonb | NN | '{}' | per-week overrides of `department_settings` keys (e.g. turnaround) |
 | opened_by | uuid | | | |
 | created_at / updated_at | timestamptz | NN | now() | |
@@ -425,6 +429,10 @@ PK `(department_id, week_start)`. CHECK `open_at < close_at and close_at <= publ
 | trip_shape | trip_shape | NN | 'round_trip' | §5.1, §5.4 |
 | depart_at | timestamptz | | | outbound leg leaves home; 15-min aligned (`is_quarter_hour()` CHECK); CHECK `(depart_at is not null) = (trip_shape <> 'one_way_from')` |
 | return_at | timestamptz | | | return leg arrives home; aligned; CHECK `(return_at is not null) = (trip_shape <> 'one_way_to')`; CHECK `depart_at is null or return_at is null or return_at > depart_at` |
+| preferred_car_id | uuid | | | Soft preference, FK cars ON DELETE SET NULL. New selections must be active shared cars in the same department; omitted RPC key preserves it, explicit null clears it. |
+| ride_description | text | | | Public ride context, trimmed, max 1000 characters; separate from private `notes`. |
+| guest_passenger_names | text[] | NN | {} | Public guest names, max 20 nonblank names of up to 100 characters; named people must fit the counted passengers. |
+| original_depart_at / original_return_at | timestamptz | | | Member-requested baseline for final-board deviations. Reset by the owner submitting an edit; preserved by coordinator/proposal changes. Backfilled from earliest available request audit, falling back to current times. |
 | one_way_car_mode | leg_car_mode | | | member's preferred mode for a one-way leg: CHECK `(one_way_car_mode is null) = (trip_shape = 'round_trip')` and `one_way_car_mode in ('relay','passenger')` (§5.4; `keep`/`chauffeur` are never requested) |
 | needs_car_at_destination | boolean | NN | true | §5.1; round trips only — `submit_request` forces `true` for one-way shapes |
 | adults | smallint | NN | 1 | CHECK >= 1 (includes driver) |
@@ -472,6 +480,9 @@ PK `(request_id, profile_id)`. CHECK via trigger: `profile_id <> requester_id`. 
 | requester_id | uuid | NN | | FK profiles |
 | department_id | uuid | NN | | FK departments |
 | destination_id / destination_text | uuid / text | | | same CHECK as requests |
+| preferred_car_id | uuid | | | Same optional soft preference as requests; materialization copies an active preference and drops a retired one. |
+| ride_description / guest_passenger_names | text / text[] | / NN | / {} | Same public details as requests, copied during materialization. |
+| companion_ids | uuid[] | NN | {} | Selected approved members of the template’s department, excluding its requester; copied into request_companions while still eligible. |
 | ride_type_id | uuid | NN | | |
 | trip_shape | trip_shape | NN | 'round_trip' | |
 | depart_dow / depart_time | smallint / time | | | 0..6, 15-min aligned; null iff `one_way_from` |
@@ -516,7 +527,10 @@ Index `(department_id, week_start, started_at desc)`.
 | destination_id | uuid | NN | | FK destinations — where the **car** is when the ride ends. Home for `keep`/`chauffeur` rides and relay back-legs; the destination for a relay out-leg. The "far point" of a round trip is *not* here — it is on the served requests. Consecutive rides of a car must chain (§5 #17, `assert_car_chain()`) |
 | turnaround | interval | NN | | `make_interval(mins => turnaround_minutes)` from department/week settings by trigger at insert |
 | blocked_until | timestamptz | NN | | trigger-maintained `= ends_at + turnaround` (see §5.1 for why not a generated column) |
-| driver_id | uuid | NN | | FK profiles (§13.9). Normally the requester of the `driver` row in `ride_requests`; for a **chauffeur ride** it is the volunteer, who has no request in this ride (`ride_requests` then has no `driver` row — see below) |
+| driver_id | uuid | | | FK profiles. The driver request owner or a volunteer, who may already be a served passenger requester. Null for a reservation or a passenger booking awaiting a driver. |
+| needs_driver | boolean | NN | false | True means a pinned passenger booking without a driver. Requires passenger links and a null driver; ordinary empty reservations remain false. |
+| notes | text | | | Required for an empty driverless reservation. |
+| turnaround_override_minutes | smallint | | | Coordinator-approved shortened preparation buffer. Null uses department/week settings; zero permits adjacent occupied windows. Never permits actual overlap. |
 | overflow_allowed | boolean | NN | false | Sadran-set: this ride may end after Saturday (REQ §5.3, §13.62); checked by `rides_within_week` |
 | overnight_ack_by / overnight_ack_at | uuid / timestamptz | | | Sadran acknowledged that this ride leaves the car away from home past `day_end_time` (overnight trip, REQ §5.4); CHECK both null or both set; read by `assert_car_chain()` |
 | status | ride_status | NN | 'draft' | |
@@ -533,7 +547,7 @@ Constraints and indexes:
 ```sql
 alter table public.rides
   add constraint rides_no_overlap_per_car
-  exclude using gist (car_id with =, tstzrange(starts_at, blocked_until, '[)') with &&)
+  exclude using gist (car_id with =, tstzrange(starts_at, ends_at, '[)') with &&)
   where (status <> 'cancelled');
 create index rides_week_idx on public.rides (department_id, week_start, status);
 create index rides_driver_idx on public.rides (driver_id, starts_at);
@@ -555,7 +569,7 @@ Triggers: `rides_set_blocked_until`, `rides_within_week` (unless `overflow_allow
 | detour_minutes | smallint | NN | 0 | for merges (display + policy) |
 | created_at | timestamptz | NN | now() | |
 
-PK `(ride_id, request_id, leg)` — a split round trip served by one ride on both legs still uses a single `both` row; two rows for one request exist only on *different* rides. Unique partial indexes `(request_id) where covers_out` and `(request_id) where covers_return` — a request's outbound leg is served by at most one ride, same for return, and `both` cannot coexist with `out`/`return`. **Driver rows**: at most one `driver` row per ride (unique `(ride_id) where role = 'driver'`); a ride has **zero** driver rows iff it has at least one `car_mode = 'chauffeur'` row — then `rides.driver_id` is the volunteer (trigger `ride_driver_row_check`, deferred). Trigger `ride_requests_leg_location`: a `relay` `out` row requires `rides.origin_id = home and rides.destination_id = requests.destination_id`; a `relay` `return` row requires `rides.origin_id = requests.destination_id and rides.destination_id = home`; `keep`/`chauffeur` rows require `origin_id = destination_id = home`; `passenger` rows only require the host ride to cover the leg. Seat fit: deferred constraint trigger `ride_seat_fit_check()` (§5.2, +1 adult for chauffeur rides).
+PK `(ride_id, request_id, leg)` — a split round trip served by one ride on both legs still uses a single `both` row; two rows for one request exist only on *different* rides. Unique partial indexes `(request_id) where covers_out` and `(request_id) where covers_return` — a request's outbound leg is served by at most one ride, same for return, and `both` cannot coexist with `out`/`return`. **Driver rows**: at most one `driver` row per ride (unique `(ride_id) where role = 'driver'`); zero driver rows are allowed for volunteer-driven passenger bookings and bookings with `needs_driver=true`. Deferred driver checks require a served non-waiting booking to have a driver, and every driver row to belong to that driver. Trigger `ride_requests_leg_location`: a `relay` `out` row requires `rides.origin_id = home and rides.destination_id = requests.destination_id`; a `relay` `return` row requires `rides.origin_id = requests.destination_id and rides.destination_id = home`; `keep`/`chauffeur` rows require `origin_id = destination_id = home`; `passenger` rows only require the host ride to cover the leg. Seat fit: deferred constraint trigger `ride_seat_fit_check()` (§5.2). A booking without a driver request reserves one extra adult seat for its volunteer; it does not add that seat if the claimed driver is already counted among that leg’s served requesters.
 
 ### 3.8 Proposals (REQUIREMENTS §7.3)
 
@@ -885,11 +899,11 @@ Legend: **own** = row's profile column = `auth.uid()`; **dept** = `member_of(dep
 | request_companions | as parent request | requester ∨ sadran ∨ admin | — | requester ∨ sadran ∨ admin |
 | request_templates | own ∨ sadran_any(dept) ∨ admin | own | own | own ∨ admin |
 | solver_runs | sadran ∨ admin | RPC `apply_solver_result` / `record_solver_preview` (sadran) | — | admin |
-| rides | sadran ∨ admin (all); approved users of **any** department: `status <> 'draft' and is_week_public(dept, week)`; driver: own rides in any status | **RPC only** — `edit_ride` (sadran/admin: create/move/reassign, set driver incl. chauffeur volunteer, `overflow_allowed`, `overnight_ack`), `apply_solver_result`, `apply_proposal`, `resolve_freed_offer`, `approve_claim`; members only via `submit_request` → `try_auto_approve()` (§8 "new request on a free car"); temp-car owner via `submit_request` in "own car" mode. Every one of these ends with `assert_car_chain()` (§5 #17) — hence no direct policy | **RPC only** — `edit_ride`; driver: `cancel_ride` only | admin (rides are cancelled, not deleted) |
-| ride_requests | as parent ride, plus requester of the request | RPC (same set as rides) | RPC | RPC |
+| rides | sadran ∨ admin (all); approved users of **any** department: non-draft status and `is_day_public(dept, week, Jerusalem ride day)`; unpublished assignments remain private even to their designated driver | **RPC only** — `edit_ride` (sadran/admin: create/move/reassign, set driver incl. chauffeur volunteer, `overflow_allowed`, `overnight_ack`), `apply_solver_result`, `apply_proposal`, `resolve_freed_offer`, `approve_claim`; members only via `submit_request` → `try_auto_approve()` (§8 "new request on a free car"); temp-car owner via `submit_request` in "own car" mode. Every one of these ends with `assert_car_chain()` (§5 #17) — hence no direct policy | **RPC only** — `edit_ride`; driver: `cancel_ride` only | admin (rides are cancelled, not deleted) |
+| ride_requests | as parent ride; owning a request does not expose unpublished ride links | RPC (same set as rides) | RPC | RPC |
 | proposals | party (`exists proposal_parties where profile_id = auth.uid()`) ∨ sadran ∨ admin | sadran ∨ admin (`create_proposal`) | sadran/admin (draft edits, `send_proposal`, withdraw); party: `answer_proposal(token, …)` called by the `answer-proposal` edge function (service role) — never directly | sadran/admin while `draft` |
 | proposal_parties | own ∨ sadran ∨ admin | sadran/admin | `answer_proposal` (via edge function) / `record_proposal_answer` (sadran) | sadran/admin while draft |
-| siddur_versions | approved users (dept public) ∨ sadran ∨ admin | RPC `publish_siddur` | — | — |
+| siddur_versions | sadran ∨ admin only (snapshots include private planning days and policy scores) | RPC `publish_siddur` | — | — |
 | freed_slot_offers | dept ∨ admin | RPC `cancel_ride` | RPC `resolve_freed_offer` (edge function `on-ride-cancelled`, service role), `approve_claim` / `close_offer` (sadran) | admin |
 | freed_slot_claims | own ∨ sadran ∨ admin | RPC `resolve_freed_offer` creates `offered` rows | own: RPC `claim_freed_slot` (offered→claimed, →withdrawn); sadran: RPC `approve_claim` | admin |
 | notifications | own | `enqueue_notification()` (definer) only | own: `read_at` only (trigger) | own |
@@ -907,7 +921,7 @@ Service role bypasses RLS and is used only for: the `push-dispatch` edge functio
 
 | # | Invariant | Where | How |
 |---|---|---|---|
-| 1 | No two non-cancelled rides overlap on the same car, including turnaround buffer | DB | `rides_no_overlap_per_car` exclusion constraint on `(car_id, tstzrange(starts_at, blocked_until))`. Needs `btree_gist`. |
+| 1 | Non-cancelled occupied car windows never overlap; preparation gaps use ordinary settings or a coordinator override | DB | `rides_no_overlap_per_car` excludes `(car_id, tstzrange(starts_at, ends_at))`. `rides_before_write` serializes per car and checks the effective buffered ranges. Needs `btree_gist`. |
 | 2 | Rides never overlap a maintenance block | DB (soft) + app | Trigger on `car_maintenance_blocks` flags rides (`status='flagged'`) instead of refusing, because §8 says "affected rides are flagged; Sadran re-solves". Trigger on `rides` insert/update **refuses** a new ride into an existing block unless `is_admin()`. |
 | 3 | Passengers of every ride leg fit a seat configuration of the car | DB | Deferred constraint trigger (below). DB rather than app-level because the solver RPC bulk-writes many `ride_requests` and manual drag/reassign-car edits both hit this rule; a single implementation that runs at commit protects all paths. Luggage/detour feasibility stays **app-level** (fuzzy, advisory, §5.3 "warn but allow"). |
 | 4 | Request times inside the target week; 15-minute grid | DB | CHECK `is_quarter_hour(depart_at)` etc.; trigger `requests_within_week` compares with `week_range(week_start)` (Asia/Jerusalem; a `stable` function so a trigger, not a CHECK). A request's `return_at` may pass Saturday only when filed by a Sadran/Admin on behalf (`filed_by <> requester_id and can_manage_week`); a ride may end after Saturday only when `rides.overflow_allowed` (REQ §13.62). Same trigger family on `rides`. |
@@ -930,7 +944,7 @@ Service role bypasses RLS and is used only for: the `push-dispatch` edge functio
 | 20 | One-way requests are never auto-approved after publish | RPC | `try_auto_approve()` returns null for `trip_shape <> 'round_trip'` (REQ §13.64) and requires the candidate car to be at home for the window (`car_location_at(car, starts_at) = home`, §7.5). |
 
 ### 5.1 Why `blocked_until` is a trigger-maintained column
-`timestamptz + interval` is `STABLE` in Postgres (DST-dependent), so it cannot appear in a generated column or an index expression. `rides_set_blocked_until` computes `ends_at + make_interval(mins => coalesce(week override, department_settings.turnaround_minutes))` BEFORE INSERT/UPDATE OF `ends_at, car_id, department_id`. Changing a department's buffer does not rewrite existing rides (history stays valid); the admin UI offers "re-apply buffer to future draft rides". For the same reason `request_span(depart_at, return_at)` (§3.6) uses only `coalesce` — no interval arithmetic — so it can back the GiST index.
+`timestamptz + interval` is `STABLE` in Postgres (DST-dependent), so it cannot appear in a generated column or an index expression. `rides_before_write` computes `ends_at + turnaround`, taking the smaller of the department/week buffer and an explicit `turnaround_override_minutes`. Authorized coordinator edits clip neighboring gaps and restore obsolete overrides when a ride moves away. The same helper applies to accepted coordinator shift/merge proposals; member-created proposals cannot shorten gaps. Changing a department's buffer does not rewrite existing rides (history stays valid); the admin UI offers "re-apply buffer to future draft rides". For the same reason `request_span(depart_at, return_at)` (§3.6) uses only `coalesce` — no interval arithmetic — so it can back the GiST index.
 
 ### 5.2 Seat-fit constraint trigger
 ```sql
@@ -1351,10 +1365,69 @@ New additive migrations after 0933 implement operational Sadran permissions, own
 | 0947 | Reject null request-edit versions |
 
 - `can_manage_operations(department_id default null)` authorizes admins or approved assigned Sadranim. Global catalogs/policy profiles/templates are shared; fleet and settings writes require authority for their department. Users, departments and roster retain admin-only writes.
-- `rides.notes text` and nullable `driver_id` support reservations; a driverless ride requires nonblank notes and cannot serve requests. `v_board_rides` preserves such rows with a left driver join and exposes notes.
+- `rides.notes text` and nullable `driver_id` support reservations. Empty reservations require nonblank notes; passenger bookings instead use `needs_driver=true`. `v_board_rides` preserves both with a left driver join.
 - `edit_ride` checks ownership or coordinator authorization, optimistic version, local day, fleet availability, seat fit, maintenance, turnaround exclusion and location chain. Request-to-ride local-day integrity also has deferred constraint triggers. Requests keep original flexibility anchors. `unassign_ride` atomically returns served requests to waitlisted and removes their assignment.
 - Request edits require actor ownership and an open submission window, even if early solving has created drafts. Draft assignments are released atomically; published rides cannot be silently rewritten through request editing. `withdraw_all_requests` is scoped to actor, department and week and uses the same deadline rules.
 - `ride_change_requests` stores source ride/version, requester, target car/window and pending/accepted/declined/cancelled state. `ride_change_parties` stores each conflicting ride's driver/version and nullable approval. Both tables use forced RLS, read policies and RPC-only writes. `request_ride_change` creates pending overlays; `respond_ride_change` requires affected-driver identity and only performs cancellation/movement atomically after unanimous consent, version and availability checks. Confirmed rides retain their exclusion constraint throughout.
 - `cancel_ride_change` lets the requester or the week's coordinator withdraw a pending change without touching either confirmed ride. This also removes the pending-publication blocker.
 - `notification_context` resolves variable values from persisted request/ride/week/catalog records. `enqueue_notification` renders those values for inbox/push, and suppresses auto-approval notifications. Existing malformed inbox text is repaired by the migration.
 - Publication carries complete per-policy board scores and a database fingerprint. `siddur_versions.snapshot.policy_scores` stores each applicable policy/version/name, request/served counts, total/served priority, weighted coverage and nested member/request/per-rule breakdowns. `profile_scores` retains the active-policy member breakdown. Freshness checks and snapshot persistence occur in the publication transaction.
+
+
+## One-way booking and consent additions (2026-09-07)
+
+| Migration suffix | Change |
+|---|---|
+| 0948 | Complete request/template preferences and preserve original requested timestamps |
+| 0949 | Strict actual occupancy with authorized shortened turnaround gaps |
+| 0950 | Persistent missing-driver bookings, safe cancellations and volunteer claims |
+| 0951 | Expanded merge windows with every affected party’s consent |
+| 0952 | Expose driver/preference state and exclude missing-driver bookings from fulfilled scores |
+| 0953 | Serialize driver claims and restrict merge buffer authorization |
+| 0954 | Authorize member join-proposal sending and trusted request transitions |
+| 0955 | Apply approved preparation gaps to accepted coordinator shifts |
+| 0956 | Explicit versioned replacement of unanswered sent proposals |
+| 0957 | Public descriptions, guest names and atomic member companions |
+| 0958 | Live one-way quick-add reserves a chauffeur vehicle window awaiting a driver |
+| 0959 | Versioned public ride information edits by the owner or coordinator |
+
+`edit_ride` accepts `needs_driver=true`, a null `driver_id`, and passenger `served` legs. A standalone one-way placement uses `car_mode='chauffeur'`, home origin/destination and a full outward-and-return vehicle window. The passenger’s requested endpoint stays on the request. Its request remains `waitlisted/UNMET_NEEDS_DRIVER`; its linked, pinned ride occupies the car and is not duplicated as a free unmet request. Publication permits the booking but counts it as unfulfilled until a driver claims it.
+
+`cancel_ride(id, reason, expected_version)` distinguishes the caller’s role. A passenger removes only their own linked request; the host and other passengers remain. A departing driver’s own request is cancelled, while other passengers retain the vehicle window and links. That booking becomes pinned (`MISSING_DRIVER`), `needs_driver=true`, and flagged `NEEDS_DRIVER` after publication. Relay-dependent later rides are flagged for review. `claim_ride_driver(id, expected_version)` accepts an approved department member, including a served requester, and checks publication visibility, the current version, active car, seat fit, location chain and overlapping driving. A per-driver transaction lock prevents simultaneous claims on different cars from bypassing availability. Draft claims remain coordinator-only.
+
+Merge proposal payloads carry `starts_at`/`ends_at` for the combined host window, `host_versions`, `source_versions` and a request fingerprint. `create_proposal` supplies all required parties: the joining requester, each host driver and existing host requesters. Each receives their own token URL through `send_proposal`. Until every party accepts, both original assignments remain. Application checks consent and versions, replaces any prior solo source booking and then expands and attaches to the host atomically. A declined or stale proposal cannot move the host. Only coordinator-created proposals may shorten preparation buffers.
+
+The invoker-security views expose `needs_driver` and `turnaround_override_minutes`; board served-request JSON also includes `preferred_car_id` and original timestamps. `v_my_requests` exposes those request fields directly. No table read policy was broadened: published driver vacancies are visible within the department, and unpublished boards retain coordinator access.
+
+
+`send_proposal(proposal_id, sent_via default '{}', replace_proposal_id default null, replace_expected_version default null)` keeps the single-sent-proposal invariant explicit. A second draft raises `proposal_already_sent` unless the coordinator supplies the exact current offer ID and version. A replacement is allowed only while every party is pending; partial answers raise `proposal_replacement_answered`, and a changed ID/version or completed offer raises `stale_version`. Retrying the same sent proposal raises `proposal_not_draft` and never rotates its tokens.
+
+Sending, token answers and coordinator-recorded answers lock the request before checking proposal state. Expiry cron follows the same lock order and skips busy requests until its next tick. Replacement atomically expires the old offer, carries its original `previous_status` into the new offer, sends the new offer, and creates each party’s notification/token. Old main and party tokens are no longer answerable. A later decline restores the original request state, and any failure rolls back expiry, token changes and notifications together. The migration only replaces RPC definitions; existing proposal and notification rows are untouched.
+
+
+`submit_request` accepts `ride_description`, `guest_passenger_names` and `companion_ids`. Omission preserves existing metadata; explicit null or empty values clear it. Companion IDs must be unique, approved members of the request’s department, excluding its requester (maximum 20). Guest names are trimmed and blank entries dropped (maximum 20, 100 characters each); descriptions are trimmed and limited to 1000 characters. The named people must fit `adults + child_seats + boosters - 1`, since the requester is already counted. Member companions remain in `request_companions`, replaced atomically with the request. Unrelated edits do not revalidate legacy unchanged passenger counts. Templates mirror these fields and materialize eligible member companions into the same join table.
+
+`v_board_rides.served` and `v_my_requests` expose `ride_description`, `guest_passenger_names` and `companions: [{profile_id,name}]`. Private request notes are not copied into public ride descriptions or served JSON. Companion SELECT visibility includes active published rides only for approved members of the ride’s department; cancelled and draft rides do not expose companion names through that policy.
+
+A new own live one-way passenger request may explicitly pass `reserve_missing_driver=true`. The private `reserve_live_one_way_slot` helper computes a home-to-home vehicle window of twice destination travel time plus chauffeur dwell, rounded up to 15 minutes (at least 15; unknown travel defaults to 30 minutes each way). Outbound requests anchor its start at the requested departure; return-only requests anchor its end at the requested arrival. The whole window must be future, inside the request week and consistent with the existing request-day invariant. Only active shared cars are eligible, with the preferred car tried first. Car locks, location, maintenance, full normal turnaround and seats including an extra volunteer driver are checked before creating a confirmed pinned booking with a null driver, `needs_driver=true`, and a linked passenger chauffeur leg. No car fit leaves the request waitlisted with no booking. The existing unflagged one-way path is unchanged.
+
+Successful quick reservation returns `status: waitlisted`, `reason: UNMET_NEEDS_DRIVER`, `needs_driver: true`, `ride_id`, `car_id`, `starts_at` and `ends_at`. No fit returns `needs_driver: false` and `WAITLISTED_NO_CAR`. Coordinators receive the existing `waitlisted_request` event, including the ride ID when a slot was reserved. The description and named passengers do not change solver ranking or seat demand beyond the explicit numeric passenger counts.
+
+### Public ride-information edits
+
+`update_ride_public_notes(p_ride_id uuid, p_expected_version int, p_notes text)` updates only the existing public `rides.notes` field. It does not change the schedule, driver, request assignments, pinning, status or consent records. Approved coordinators/admins authorized by `can_manage_week` may edit; approved members must belong to the ride's department, the week must be public, and they must be its designated driver or the requester of an attached served request. Merely being a named companion does not grant edit authority.
+
+The RPC locks the ride, checks the expected version and rejects cancelled rides, archived weeks and rides whose end time has passed. Notes are trimmed and limited to 1000 characters; blank/null clears the field except for a driverless manual reservation without `needs_driver`, which retains its existing mandatory-description invariant. Unchanged notes are a no-op. Existing ride version, timestamp and audit triggers record real changes with reason `update_ride_public_notes`. Execution is granted only to authenticated users; row authorization stays inside the RPC.
+
+
+### Selected-day publication and reopening
+
+Request and ride windows, including expanded merge proposals, must start and end on the same Jerusalem calendar date. Starts use quarter-hour values; ends also permit exact `23:59`. Existing overnight ride metadata and reopening without schedule changes remain supported, while new or changed overnight windows are rejected.
+
+`weeks.published_days` is the authoritative day-level visibility set, in Asia/Jerusalem dates. `is_day_public(department_id, week_start, day)` requires both a public week phase and explicit day membership. RLS on rides and their request links, the public-request helper, companion visibility, and the security-invoker member views enforce this boundary. Own request details remain readable; unpublished ride assignments do not. Immutable full-board publication snapshots are coordinator/admin-only to prevent leaking unselected planning days through history.
+
+`publication_readiness(department_id, week_start)` is coordinator-only and returns seven day records with request counts, unresolved requests, pending proposals/ride changes, missing-driver bookings, conflict counts, readiness and published state. Draft, sent and accepted-but-unapplied proposals remain unresolved. An assigned/merged request also remains unresolved if any expected leg is absent or lacks a driver: round trips need both out and return, while one-way requests need their corresponding leg. Denied/external outcomes are resolved. Missing-driver bookings make a day unready but may be published after explicit acknowledgment. Physical vehicle/driver overlaps, unavailable cars, maintenance conflicts, wrong dates/locations, invalid seat loads and unresolved provisional planning shadows are hard blockers on affected selected days. Adjacent rides with coordinator-approved preparation gaps remain allowed.
+
+`publish_siddur` retains the all-policy whole-board scoring/fingerprint arguments and adds `p_days date[]` (omitted means all seven) and `p_allow_unanswered boolean` (default false). Empty/out-of-week selections are rejected. Selected days with unanswered requests/proposals or missing drivers require explicit acknowledgment; publication never expires, rejects, applies or otherwise answers them. Only selected-day draft rides become confirmed, selected dates are added to the visibility set, and notifications concern selected-day requests. The request window closes atomically with successful publication. Snapshots retain all policy comparisons and full planning state, with `selected_days`, cumulative `published_days`, `unanswered_acknowledged`, and `scores_scope: whole_board`. Fingerprints include proposal and ride-change consent state as well as board/scoring inputs.
+
+`reopen_week(department_id, week_start, phase, expected_fingerprint)` accepts only `open` or `solving`. Coordinator authorization, locked current inputs and fingerprint agreement are required; archived/ended weeks cannot reopen. It clears published-day visibility and the active publication pointer, while retaining immutable versions and all assignments. Future rides become private drafts without changing IDs, times, cars, drivers, pins or request links; ongoing/completed rides retain their status. `open` extends a passed deadline through the target week's end (or retains an already later deadline), allowing manual closure/publication sooner. `solving` keeps the request window closed. Neither operation modifies outstanding proposals or their answers.

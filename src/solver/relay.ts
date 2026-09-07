@@ -11,7 +11,7 @@
 // self-pair) by splitLegs.ts.
 
 import type { NormalizedRequest } from './slots';
-import { byId } from './slots';
+import { byId, withinRequestDay } from './slots';
 import type { Car, Window } from './types';
 import { fits } from './seatFit';
 
@@ -57,6 +57,7 @@ export function tryPair(out: NormalizedRequest, ret: NormalizedRequest, cars: Ca
   const retStart = ret.window.start;
 
   if (outEnd <= retStart) {
+    if (!withinRequestDay(out, out.window) || !withinRequestDay(ret, ret.window)) return null;
     return {
       out,
       ret,
@@ -81,6 +82,7 @@ export function tryPair(out: NormalizedRequest, ret: NormalizedRequest, cars: Ca
   const newRetStart = ret.window.start + retShift;
   const newOutStart = out.window.start - outShift;
   const newOutEnd = out.window.end - outShift;
+  if (!withinRequestDay(out, { start: newOutStart, end: newOutEnd }) || !withinRequestDay(ret, { start: newRetStart, end: newRetEnd })) return null;
 
   return {
     out,

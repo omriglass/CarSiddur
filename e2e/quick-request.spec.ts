@@ -16,14 +16,12 @@ import { getWeekStart, NEVO_DEPARTMENT_ID, SEEDED_USERS, serviceRoleClient, sign
 // Vertical-board redesign (UX_FLOWS.md §20): cars are now columns, hours are rows (time
 // flows top→bottom) — `[data-car-row-id]` became `[data-car-col-id]` and a click's vertical
 // (y) offset within that column maps to the time, not the horizontal (x) offset within a row.
-// The visible range's default start is unchanged for this seeded department (`department_
-// settings.board_start_time` defaults to 05:00, `supabase/seed.sql` — same as the old
-// hardcoded default), so `DAY_START_MINUTES` below still matches what the grid actually shows.
+// The default display range is 06:00–23:59 on the selected Jerusalem day.
 const DEST_1 = "בדיקת בקשה מהירה — רכב פנוי";
 const DEST_2 = "בדיקת בקשה מהירה — רכב תפוס";
 const VAN_NAME = "ואן 7 מקומות";
 const FRIDAY_INDEX = 5;
-const DAY_START_MINUTES = 5 * 60;
+const DAY_START_MINUTES = 6 * 60;
 const DAY_END_MINUTES = 24 * 60;
 
 /** Physical y offset (px) for a given minutes-since-midnight, matching `WeekGrid`'s own `clampRideVertical`. */

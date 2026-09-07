@@ -6,11 +6,12 @@
 // tryAutoApprove only places a request at its exact requested time (no
 // human in the loop).
 
+import { carPreferenceRank } from './carPreference';
 import { bestPlacementWithinFlex } from './flexibility';
 import { scoreRequests } from './policy/engine';
 import { reason } from './reasons';
 import { fits, luggageFits, slack } from './seatFit';
-import { byId, dayBoundsForSlot, formatSlotTime, normalize } from './slots';
+import { byId, dayBoundsForSlot, formatSlotTime, normalize, withinRequestDay } from './slots';
 import type { CarTimeline } from './timeline';
 import type {
   Assignment,
@@ -125,18 +126,19 @@ export function tryAutoApprove(input: AutoApproveInput): Assignment | null {
   };
   const { normalized } = normalize(pseudoInput);
   const nr = normalized[0];
-  if (!nr) return null;
+  if (!nr || !withinRequestDay(nr, nr.window)) return null;
 
   const sharedCars = input.cars.filter((c) => c.type === 'shared').sort((a, b) => (a.id < b.id ? -1 : 1));
-  let best: { car: Car; slackVal: number } | null = null;
+  let best: { car: Car; slackVal: number; preference: number } | null = null;
   for (const car of sharedCars) {
     if (!fits(car, nr.passengers) || !luggageFits(car, nr.luggage ? 1 : 0)) continue;
     const tl = input.timelines[car.id];
     if (!tl) continue;
     if (!tl.isFree(nr.window, input.homeLocationId)) continue;
     const slackVal = slack(car, nr.passengers) ?? Number.POSITIVE_INFINITY;
-    if (!best || slackVal < best.slackVal || (slackVal === best.slackVal && car.id < best.car.id)) {
-      best = { car, slackVal };
+    const preference = carPreferenceRank(car.id, [input.request.preferredCarId]);
+    if (!best || preference < best.preference || (preference === best.preference && (slackVal < best.slackVal || (slackVal === best.slackVal && car.id < best.car.id)))) {
+      best = { car, slackVal, preference };
     }
   }
   if (!best) return null;

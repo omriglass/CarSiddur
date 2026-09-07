@@ -64,11 +64,12 @@ export function toSubmitRequestPayload(
     destination_id: "presetId" in values.destination ? values.destination.presetId : undefined,
     destination_text: "freeText" in values.destination ? values.destination.freeText : undefined,
     ride_type_id: values.rideTypeId,
+    preferred_car_id: values.preferredCarId || null,
     trip_shape: values.tripShape,
     depart_at: needsDepart && values.departTime ? toInstant(values.day, values.departTime, false) : undefined,
     return_at:
       needsReturn && values.returnTime
-        ? toInstant(values.day, values.returnTime, values.returnNextDay)
+        ? toInstant(values.day, values.returnTime, false)
         : undefined,
     adults: values.adults,
     child_seats: values.childSeats,
@@ -81,6 +82,7 @@ export function toSubmitRequestPayload(
     flex_return_early: flexValueToInterval(values.flexReturnEarly as FlexValue),
     flex_return_late: flexValueToInterval(values.flexReturnLate as FlexValue),
     notes: values.notes.trim() || undefined,
+    ride_description: values.rideDescription.trim() || null,
     request_id: options.requestId,
     expected_version: options.expectedVersion,
     join_ride_id: options.joinRideId,

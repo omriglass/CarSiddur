@@ -78,6 +78,7 @@ export function solve(input: SolverInput): SolverOutput {
         startLocationId: fr.originId,
         endLocationId: fr.destinationId,
         overnightAck: fr.overnightAck,
+        approvedBufferAfterSlots: fr.approvedBufferAfterSlots,
       });
     }
     fixedAssignments.push({

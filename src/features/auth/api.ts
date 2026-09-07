@@ -65,7 +65,7 @@ export async function fetchDepartmentMembers(
 ): Promise<DepartmentMemberOption[]> {
   const { data, error } = await supabase
     .from("department_members")
-    .select("profile_id, profile:profiles(id, full_name)")
+    .select("profile_id, profile:profiles!department_members_profile_id_fkey(id, full_name)")
     .eq("department_id", departmentId)
     .is("removed_at", null)
     .neq("profile_id", excludeProfileId);

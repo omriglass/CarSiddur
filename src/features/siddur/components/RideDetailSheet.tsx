@@ -4,13 +4,16 @@ import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { rideBlockLabel } from "@/lib/rideLabel";
+import { siddurCarName } from "@/lib/siddurCarName";
+import { ridePublicDetails, type RidePublicEntry } from "@/lib/ridePublicDetails";
 import { he, t, tv } from "@/i18n/he";
 import { formatTime } from "@/lib/time";
 import type { Car } from "@/features/fleet/api";
 
 import type { BoardRide } from "../api";
+import { RidePublicNotesEditor } from "./RidePublicNotesEditor";
 
-interface ServedEntry {
+interface ServedEntry extends RidePublicEntry {
   request_id: string | null;
   role: "driver" | "passenger";
   car_mode: "keep" | "relay" | "passenger" | "chauffeur";
@@ -43,6 +46,9 @@ function headerLabel(ride: BoardRide, served: readonly ServedEntry[], homeDestin
     destinationName: ride.destination_name ?? "",
     homeDestinationId,
     served,
+    driverName: ride.driver_name,
+    isChauffeur: !!ride.is_chauffeur,
+    needsDriver: !!ride.needs_driver,
   });
 }
 
@@ -64,10 +70,13 @@ interface RideDetailSheetProps {
   /** Own rides don't show "ask to join"; other-department rides never do (REQ §13.52). */
   showAskToJoin: boolean;
   editor?: ReactNode;
+  coordinatorNotes?: string;
+  canEditPublicNotes?: boolean;
+  passengerSummary?: string;
 }
 
 /** Ride detail sheet (UX_FLOWS.md §3.5 "Ride detail"): driver, passengers, car, origin→destination, "ask to join". */
-export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = null, onOpenChange, onAskToJoin, showAskToJoin, editor }: RideDetailSheetProps) {
+export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = null, onOpenChange, onAskToJoin, showAskToJoin, editor, coordinatorNotes, canEditPublicNotes, passengerSummary }: RideDetailSheetProps) {
   const served = (ride?.served as unknown as ServedEntry[] | null) ?? [];
 
   return (
@@ -97,21 +106,26 @@ export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = 
               </div>
 
               <p className="text-muted-foreground">{carModeLabel(ride)}</p>
-              {ride.notes ? <p className="whitespace-pre-wrap break-words">{ride.notes}</p> : null}
+              {canEditPublicNotes && ride.id && ride.version != null ? (
+                <RidePublicNotesEditor key={`${ride.id}:${ride.version}`} rideId={ride.id} expectedVersion={ride.version} initialNotes={ride.notes} />
+              ) : ride.notes ? <p className="whitespace-pre-wrap break-words">{ride.notes}</p> : null}
+              {passengerSummary ? <p className="whitespace-pre-wrap break-words">{passengerSummary}</p> : null}
+              {ridePublicDetails(served, { includeCompanions: !passengerSummary }) ? <p className="whitespace-pre-wrap break-words">{ridePublicDetails(served, { includeCompanions: !passengerSummary })}</p> : null}
+              {coordinatorNotes ? <div className="whitespace-pre-wrap break-words text-muted-foreground"><span className="font-medium">{he.field.notes}: </span>{coordinatorNotes}</div> : null}
               {editor}
 
               <div className="space-y-1">
                 <span className="font-medium">
                   {ride.is_chauffeur ? he.rideDetail.chauffeur : he.rideDetail.driver}
                 </span>
-                <p>{ride.driver_name}</p>
+                <p className={ride.needs_driver ? "font-semibold text-destructive" : undefined}>{ride.needs_driver ? he.rideCoordination.missingDriver : ride.driver_name}</p>
               </div>
 
               {car ? (
                 <div className="space-y-1">
                   <span className="font-medium">{he.rideDetail.car}</span>
                   <p>
-                    {car.name}
+                    {siddurCarName(car)}
                     {car.type === "temporary" ? ` · ${he.car.type.temporary}` : ""}
                   </p>
                 </div>

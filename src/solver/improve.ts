@@ -14,6 +14,7 @@
 // pairs are not retried by this pass — a conservative reading of "a relay
 // pair relocates as one unit" that keeps the search bounded.
 
+import { carsByPreference } from './carPreference';
 import { bestPlacementWithinFlex } from './flexibility';
 import type { PlacedSingle, Unit } from './greedy';
 import { fits, luggageFits } from './seatFit';
@@ -76,7 +77,7 @@ export function runImprove(
     let perReq = config.perRequestBudget;
     let solved = false;
 
-    for (const car of sharedCars) {
+    for (const car of carsByPreference(sharedCars, nr.request.preferredCarId)) {
       if (solved || budgetState.exhausted || perReq <= 0) break;
       if (!fits(car, nr.passengers) || !luggageFits(car, nr.luggage ? 1 : 0)) continue;
       const tl = timelines.get(car.id);
@@ -240,7 +241,7 @@ function tryRelocateSetAndPlace(
       break;
     }
     let placedTarget: { targetCarId: string; window: { start: number; end: number } } | null = null;
-    for (const target of sharedCars) {
+    for (const target of carsByPreference(sharedCars, b.nr.request.preferredCarId)) {
       if (target.id === car.id) continue; // same-car case already tried above
       if (budgetState.budget <= 0) break;
       budgetState.budget--;

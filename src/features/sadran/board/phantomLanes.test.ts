@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { WeekRequestRow } from "../api";
-import { packPhantomLanes, requestStart, requestWindow, requestWithinFlex } from "./phantomLanes";
+import { packPhantomLanes, standaloneChauffeurWindow, requestStart, requestWindow, requestWithinFlex } from "./phantomLanes";
 
 const request = {
   trip_shape: "round_trip", depart_at: "2026-09-10T07:00:00Z", return_at: "2026-09-10T09:00:00Z",
@@ -40,5 +40,22 @@ describe("original request flexibility", () => {
   });
   it("validates arrival time for return-only requests", () => {
     expect(requestWithinFlex({ ...request, trip_shape: "one_way_from", depart_at: null }, "2026-09-10T09:15:00Z", "2026-09-10T10:00:00Z")).toBe(true);
+  });
+});
+
+
+describe("standalone chauffeur reservations", () => {
+  it("includes return travel and dwell, while the phantom shows only passenger travel", () => {
+    const outbound = { ...request, trip_shape: "one_way_to" as const, return_at: null };
+    expect(standaloneChauffeurWindow(outbound, 15)).toEqual({ startsAt: request.depart_at, endsAt: "2026-09-10T08:45:00.000Z" });
+    expect(requestWindow(outbound)?.endsAt).toBe("2026-09-10T07:45:00.000Z");
+  });
+  it("keeps 23:59 arrival and reserves a quarter-hour-aligned start", () => {
+    const returning = { ...request, trip_shape: "one_way_from" as const, depart_at: null, return_at: "2026-09-10T23:59:00+03:00" };
+    expect(standaloneChauffeurWindow(returning, 10)).toEqual({ startsAt: "2026-09-10T19:15:00.000Z", endsAt: returning.return_at });
+  });
+  it("anchors return-only arrival after empty outward travel and pickup", () => {
+    const returning = { ...request, trip_shape: "one_way_from" as const, depart_at: null };
+    expect(standaloneChauffeurWindow(returning, 10)).toEqual({ startsAt: "2026-09-10T07:30:00.000Z", endsAt: request.return_at });
   });
 });

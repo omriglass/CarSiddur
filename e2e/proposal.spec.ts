@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { he } from "../src/i18n/he";
 
 import { newSignedInPage, SEEDED_USERS, signIn } from "./helpers";
 
@@ -19,8 +20,8 @@ test.describe("proposal round trip", () => {
     await signIn(page, SEEDED_USERS.sadran);
 
     await page.goto("/sadran");
-    await expect(page).toHaveURL(/\/sadran\/[\w-]+\/\d{4}-\d{2}-\d{2}$/);
-    const weekUrl = page.url();
+    await expect(page).toHaveURL(/\/sadran\/[\w-]+\/\d{4}-\d{2}-\d{2}\/board$/);
+    const weekUrl = page.url().replace(/\/board$/, "");
 
     await page.goto(`${weekUrl}/proposals`);
     await expect(page.getByRole("heading", { name: "הצעות" })).toBeVisible();
@@ -36,6 +37,8 @@ test.describe("proposal round trip", () => {
     // Create + send (defaults to type "shift"; the request's own depart/return times are used).
     await page.getByRole("button", { name: "הצע", exact: true }).click();
 
+    await expect(page).toHaveURL(`${weekUrl}/proposals`);
+    await page.getByRole("button", { name: he.sadranProposal.openSentProposal, exact: true }).click();
     await page.getByRole("button", { name: /פתח בוואטסאפ/ }).first().click();
     const waLink = page.locator('a[href^="https://wa.me/"]').first();
     await expect(waLink).toBeVisible({ timeout: 10_000 });
@@ -46,6 +49,14 @@ test.describe("proposal round trip", () => {
     const tokenMatch = text.match(/\/p\/([\w-]+)/);
     expect(tokenMatch, `expected a /p/<token> link inside the wa.me text, got: ${text}`).toBeTruthy();
     const token = (tokenMatch as RegExpMatchArray)[1];
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.getByRole("button", { name: he.whatsappDialog.close, exact: true }).click();
+    await expect(page.getByRole("dialog")).not.toBeVisible();
+    await page.getByRole("button", { name: /פתח בוואטסאפ/ }).first().click();
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog")).not.toBeVisible();
+    await page.setViewportSize({ width: 1280, height: 720 });
 
     // Fresh, unauthenticated browser context — no session at all (ARCHITECTURE.md §8: the
     // WhatsApp link must work standalone, since iOS WhatsApp does not share the PWA session).

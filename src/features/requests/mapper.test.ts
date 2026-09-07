@@ -103,3 +103,9 @@ describe("toSubmitRequestPayload", () => {
     expect(payload.join_ride_id).toBe("ride-1");
   });
 });
+
+
+it("persists an optional preferred car and explicitly clears it when removed", () => {
+  expect(toSubmitRequestPayload(baseValues({ preferredCarId: "car-1" })).preferred_car_id).toBe("car-1");
+  expect(toSubmitRequestPayload(baseValues({ preferredCarId: "" }), { requestId: "request-1", expectedVersion: 2 }).preferred_car_id).toBeNull();
+});

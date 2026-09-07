@@ -98,6 +98,8 @@ export interface FixedRide {
     luggageCount: number;
     /** Sadran acknowledged the car is not home at day end */
     overnightAck: boolean;
+    /** Coordinator-approved buffer after this existing booking; never authorizes a new solver placement. */
+    approvedBufferAfterSlots?: number;
     kind: 'pinned' | 'acceptedProposal' | 'temporaryOwner';
 }
 export interface PolicyRuleConfig {

@@ -10,6 +10,21 @@ function bufferedTl(bufferSlots: number) {
 }
 
 describe('CarTimeline', () => {
+  it('honors an approved gap only between existing fixed bookings, in either insertion order', () => {
+    const first = { rideId: 'a', window: { start: 10, end: 20 }, startLocationId: HOME, endLocationId: HOME, overnightAck: false, approvedBufferAfterSlots: 0 };
+    const next = { rideId: 'b', window: { start: 20, end: 30 }, startLocationId: HOME, endLocationId: HOME, overnightAck: false };
+    for (const blocks of [[first, next], [next, first]]) {
+      const tl = bufferedTl(2);
+      for (const block of blocks) tl.forceAdd(block);
+      expect(tl.allBlocks()).toHaveLength(2);
+      expect(() => tl.forceAdd({ ...next, rideId: 'overlap', window: { start: 19, end: 22 } })).toThrow();
+    }
+    const tl = bufferedTl(2);
+    tl.forceAdd(first);
+    expect(tl.isFree(next.window, HOME)).toBe(false);
+    expect(() => tl.add(next)).toThrow();
+    expect(tl.isFree({ start: 22, end: 30 }, HOME)).toBe(true);
+  });
   it('a ride ending exactly at the next start fails with buffer 30, passes with buffer 0', () => {
     const withBuffer = bufferedTl(2); // 30 min
     withBuffer.add({ rideId: 'a', window: { start: 0, end: 10 }, startLocationId: HOME, endLocationId: HOME, overnightAck: false });

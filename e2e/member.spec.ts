@@ -126,7 +126,7 @@ test("member edits own request, saves directional flexibility, and confirms scop
     if (error) throw error;
     const mine = requests!.filter((row) => row.requester_id === memberId);
     const other = requests!.find((row) => row.requester_id === otherMemberId)!;
-    const { data: car } = await service.from("cars").select("id").eq("department_id", NEVO_DEPARTMENT_ID).eq("type", "shared").limit(1).single();
+    const { data: car } = await service.from("cars").select("id, name").eq("department_id", NEVO_DEPARTMENT_ID).eq("type", "shared").eq("status", "active").limit(1).single();
     const { data: department } = await service.from("departments").select("home_destination_id").eq("id", NEVO_DEPARTMENT_ID).single();
     const draftIds: string[] = [];
     for (const [index, request] of mine.entries()) {
@@ -148,13 +148,24 @@ test("member edits own request, saves directional flexibility, and confirms scop
     await expect(page.getByRole("button", { name: he.action.saveRequest })).toBeVisible();
     await page.getByLabel(he.request.flexLater).first().click();
     await page.getByText(he.flex["30"], { exact: true }).first().click();
-    await page.locator("textarea").fill("Updated through member request form");
+    await page.getByLabel(he.request.preferredCar, { exact: true }).click();
+    await page.getByRole("option", { name: car!.name, exact: true }).click();
+    await page.getByLabel(he.field.notes, { exact: true }).fill("Updated through member request form");
     await page.getByRole("button", { name: he.action.saveRequest }).click();
     await expect(page).toHaveURL(/\/requests$/);
-    const { data: edited } = await service.from("requests").select("notes, flex_depart_early, flex_depart_late").eq("id", mine[0]!.id).single();
-    expect(edited).toMatchObject({ notes: "Updated through member request form", flex_depart_early: "00:00:00", flex_depart_late: "00:30:00" });
+    const { data: edited } = await service.from("requests").select("notes, flex_depart_early, flex_depart_late, preferred_car_id").eq("id", mine[0]!.id).single();
+    expect(edited).toMatchObject({ notes: "Updated through member request form", preferred_car_id: car!.id, flex_depart_early: "00:00:00", flex_depart_late: "00:30:00" });
     const { data: released } = await service.from("rides").select("status").eq("id", draftIds[0]).single();
     expect(released?.status).toBe("cancelled");
+
+    await page.goto(`/requests/${mine[0]!.id}/edit`);
+    await expect(page.getByLabel(he.request.preferredCar, { exact: true })).toContainText(car!.name);
+    await page.getByLabel(he.request.preferredCar, { exact: true }).click();
+    await page.getByRole("option", { name: he.request.noPreferredCar, exact: true }).click();
+    await page.getByRole("button", { name: he.action.saveRequest }).click();
+    await expect(page).toHaveURL(/\/requests$/);
+    const { data: cleared } = await service.from("requests").select("preferred_car_id").eq("id", mine[0]!.id).single();
+    expect(cleared?.preferred_car_id).toBeNull();
 
     await page.goto(`/requests/${other.id}/edit`);
     await expect(page.getByText(he.request.notFound)).toBeVisible();

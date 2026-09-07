@@ -38,6 +38,21 @@ it("preserves a driverless reservation as a fixed constraint during subsequent s
   expect(result.assignments.some((r) => r.servedRequestIds.includes("request"))).toBe(false);
 });
 
+it("solves around coordinator-approved adjacent fixed rides while retaining normal buffers for new rides", () => {
+  const fixed = [
+    { id: "late-id", start: 32, end: 40, turnaround: 0 },
+    { id: "early-id", start: 40, end: 48, turnaround: null },
+  ].map((r) => boardRideToFixedRide({ id: r.id, car_id: "car", driver_id: null,
+    starts_at: new Date(slotMs(r.start)).toISOString(), ends_at: new Date(slotMs(r.end)).toISOString(),
+    origin_id: "home", destination_id: "home", served: [], turnaround_override_minutes: r.turnaround,
+  } as unknown as BoardRide, WEEK_START_MS)!);
+  const result = solve(baseInput({ cars: [makeCar("car")], fixedRides: fixed, requests: [
+    makeRequest({ id: "new", departureMs: slotMs(50), returnMs: slotMs(56) }),
+  ] }));
+  expect(result.assignments.filter((r) => r.source === "fixed")).toHaveLength(2);
+  expect(result.assignments.some((r) => r.servedRequestIds.includes("new"))).toBe(true);
+});
+
 describe("selectOpenRequests (bug-fix: assigned-by-unpinned-ride requests must reopen)", () => {
   it("includes submitted and waitlisted requests with no fixed ride", () => {
     const requests = [req({ id: "r1", status: "submitted" }), req({ id: "r2", status: "waitlisted" })];
@@ -162,4 +177,13 @@ describe("computeFullResolveDiff (confirm-dialog data for 're-solve the whole we
     // Still listed as "would change" — 'full' mode deletes+reinserts unconditionally.
     expect(diff.changedOrRemovedRides).toHaveLength(1);
   });
+});
+
+it("persists a 23:59 return exactly instead of the solver's conservative midnight slot", () => {
+  const returnAt = new Date(slotMs(96) - 60_000).toISOString();
+  const output = solve(baseInput({ cars: [makeCar("C1")], requests: [makeRequest({ id: "late", departureMs: slotMs(88), returnMs: Date.parse(returnAt) })] }));
+  const payload = buildApplyPayload({ output, weekStartMs: WEEK_START_MS, policyVersionId: "policy", startedAtMs: 0, finishedAtMs: 1,
+    inputHash: "fixture", requestsById: new Map([["late", { id: "late", requester_id: "m1", return_at: returnAt } as RequestRow]]) });
+  expect(payload.rides).toHaveLength(1);
+  expect(payload.rides[0]?.ends_at).toBe(returnAt);
 });

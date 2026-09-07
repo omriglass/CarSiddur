@@ -14,5 +14,5 @@ export function BoardPage() {
   }
   if (!isSadran) return <Navigate to="/sadran" replace />;
 
-  return <BoardScreen departmentId={departmentId} weekStart={weekStart} />;
+  return <BoardScreen key={`${departmentId}:${weekStart}`} departmentId={departmentId} weekStart={weekStart} />;
 }

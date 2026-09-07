@@ -33,6 +33,9 @@ export type ErrorCode =
   | "request_not_found"
   | "ride_not_found"
   | "proposal_not_found"
+  | "proposal_already_sent"
+  | "proposal_not_draft"
+  | "proposal_replacement_answered"
   | "request_outside_week"
   | "proposal_expired"
   | "proposal_not_answerable"
@@ -40,13 +43,28 @@ export type ErrorCode =
   | "offer_not_found"
   | "ride_unavailable"
   | "ride_wrong_day"
+  | "ride_same_day"
+  | "ride_change_pending"
   | "ride_needs_coordinator"
   | "ride_change_closed"
   | "ride_no_conflict"
   | "week_archived"
   | "publication_scores_invalid"
+  | "publication_days_invalid"
+  | "publication_conflicts"
+  | "publication_unanswered"
   | "pending_ride_changes"
   | "request_window_closed"
+  | "driver_unavailable"
+  | "driver_assigned"
+  | "ride_past"
+  | "preferred_car_invalid"
+  | "consent_required"
+  | "ride_description_invalid"
+  | "passenger_names_invalid"
+  | "companions_invalid"
+  | "passenger_count_mismatch"
+  | "quick_ride_unavailable"
   | "network"
   | "unknown";
 
@@ -66,6 +84,9 @@ const MESSAGE_TO_CODE: Record<string, ErrorCode> = {
   request_not_found: "request_not_found",
   ride_not_found: "ride_not_found",
   proposal_not_found: "proposal_not_found",
+  proposal_already_sent: "proposal_already_sent",
+  proposal_not_draft: "proposal_not_draft",
+  proposal_replacement_answered: "proposal_replacement_answered",
   request_outside_week: "request_outside_week",
   proposal_expired: "proposal_expired",
   proposal_not_answerable: "proposal_not_answerable",
@@ -76,17 +97,34 @@ const MESSAGE_TO_CODE: Record<string, ErrorCode> = {
   ride_seats_do_not_fit: "ride_unavailable",
   ride_request_day_mismatch: "ride_wrong_day",
   ride_outside_week: "ride_wrong_day",
+  ride_must_end_same_day: "ride_same_day",
+  ride_change_already_pending: "ride_change_pending",
   shared_ride_requires_sadran: "ride_needs_coordinator",
   ride_change_not_found: "ride_change_closed",
   ride_change_not_pending: "ride_change_closed",
   no_conflicting_ride: "ride_no_conflict",
   week_archived: "week_archived",
   invalid_publication_scores: "publication_scores_invalid",
+  invalid_publication_days: "publication_days_invalid",
+  publication_conflicts: "publication_conflicts",
+  publication_unanswered: "publication_unanswered",
   pending_ride_changes: "pending_ride_changes",
   request_window_closed: "request_window_closed",
   request_not_editable: "request_window_closed",
   seat_config_violation: "ride_unavailable",
   temporary_car_owner_only: "ride_unavailable",
+  driver_already_busy: "driver_unavailable",
+  ride_driver_already_assigned: "driver_assigned",
+  ride_in_past: "ride_past",
+  invalid_preferred_car: "preferred_car_invalid",
+  proposal_consent_required: "consent_required",
+  ride_time_overlap: "ride_unavailable",
+  ride_turnaround_conflict: "ride_unavailable",
+  invalid_ride_description: "ride_description_invalid",
+  invalid_passenger_names: "passenger_names_invalid",
+  invalid_companions: "companions_invalid",
+  passenger_names_exceed_seats: "passenger_count_mismatch",
+  invalid_quick_reservation: "quick_ride_unavailable",
 };
 
 const CODE_TO_MESSAGE: Record<ErrorCode, string> = {
@@ -102,6 +140,9 @@ const CODE_TO_MESSAGE: Record<ErrorCode, string> = {
   request_not_found: he.errors.requestNotFound,
   ride_not_found: he.errors.rideNotFound,
   proposal_not_found: he.errors.proposalNotFound,
+  proposal_already_sent: he.sadranProposal.alreadySent,
+  proposal_not_draft: he.sadranProposal.noLongerDraft,
+  proposal_replacement_answered: he.sadranProposal.replacementAnswered,
   request_outside_week: he.memberErrors.requestOutsideWeek,
   proposal_expired: he.memberErrors.proposalExpired,
   proposal_not_answerable: he.memberErrors.proposalNotAnswerable,
@@ -109,13 +150,28 @@ const CODE_TO_MESSAGE: Record<ErrorCode, string> = {
   offer_not_found: he.memberErrors.offerNotFound,
   ride_unavailable: he.rideEditing.unavailable,
   ride_wrong_day: he.rideEditing.wrongDay,
+  ride_same_day: he.boardCoordination.sameDayOnly,
+  ride_change_pending: he.rideEditing.alreadyPending,
   ride_needs_coordinator: he.rideEditing.needsCoordinator,
   ride_change_closed: he.rideEditing.noLongerPending,
   ride_no_conflict: he.rideEditing.noConflict,
   week_archived: he.rideEditing.archived,
   publication_scores_invalid: he.publishScores.invalid,
+  publication_days_invalid: he.publicationFlow.noSelection,
+  publication_conflicts: he.sadranPublish.blockedByConflicts,
+  publication_unanswered: he.publicationFlow.unresolvedHelp,
   pending_ride_changes: he.rideEditing.pendingPublish,
   request_window_closed: he.request.editWindowClosed,
+  driver_unavailable: he.rideCoordination.driverBusy,
+  driver_assigned: he.rideCoordination.noLongerMissing,
+  ride_past: he.rideCoordination.past,
+  preferred_car_invalid: he.rideCoordination.invalidPreferredCar,
+  consent_required: he.rideCoordination.awaitingConsent,
+  ride_description_invalid: he.ridePublicDetails.invalidDescription,
+  passenger_names_invalid: he.ridePublicDetails.invalidGuestNames,
+  companions_invalid: he.ridePublicDetails.invalidCompanions,
+  passenger_count_mismatch: he.ridePublicDetails.namesExceedSeats,
+  quick_ride_unavailable: he.ridePublicDetails.invalidQuickReservation,
   network: he.errors.network,
   unknown: he.errors.unknown,
 };
@@ -161,7 +217,11 @@ export function toAppError(error: unknown): AppError {
   // P0409 (see the `ErrorCode` doc comment above), so the message-keyed table — which
   // both `P0001`-style errors and this one already rely on — must win the tie.
   const byMessage = pgError?.message ? MESSAGE_TO_CODE[pgError.message] : undefined;
-  const bySqlstate = pgError?.code ? SQLSTATE_TO_CODE[pgError.code] : undefined;
+  // Recognize this specific constraint for older servers and concurrency races;
+  // other uniqueness errors must retain their own meaning.
+  const bySqlstate = pgError?.code === "23505" && pgError.message?.includes('"proposals_one_sent_per_request_idx"')
+    ? "proposal_already_sent"
+    : pgError?.code ? SQLSTATE_TO_CODE[pgError.code] : undefined;
   const code = byMessage ?? bySqlstate ?? "unknown";
   const baseMessage = CODE_TO_MESSAGE[code];
   const message =

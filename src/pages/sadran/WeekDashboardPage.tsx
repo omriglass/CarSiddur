@@ -1,6 +1,5 @@
 import { Navigate } from "react-router-dom";
 
-import { WeekDashboardScreen } from "@/features/sadran/dashboard/components/WeekDashboardScreen";
 import { t } from "@/i18n/he";
 
 import { useSadranRouteParams } from "./useSadranRouteParams";
@@ -14,5 +13,5 @@ export function WeekDashboardPage() {
   }
   if (!isSadran) return <Navigate to="/sadran" replace />;
 
-  return <WeekDashboardScreen departmentId={departmentId} weekStart={weekStart} />;
+  return <Navigate to={`/sadran/${departmentId}/${weekStart}/board`} replace />;
 }

@@ -1,4 +1,5 @@
 import { useCars, useMaintenanceBlocks, useTurnaroundMinutes } from "@/features/fleet/hooks";
+import { siddurCarName } from "@/lib/siddurCarName";
 import { toInstant } from "@/features/requests/mapper";
 
 import { computeCarFreeWindows, type CarFreeWindow } from "./freeWindows";
@@ -18,7 +19,7 @@ export interface DayFreeWindowsAway {
 
 export interface DayFreeWindowsResult {
   isLoading: boolean;
-  /** Every shared car's free windows for `day`'s 05:00–24:00 range (`features/siddur/freeWindows.ts`). */
+  /** Every shared car's free windows for `day`'s 06:00–23:59 range. */
   freeWindows: CarFreeWindow[];
   /** Raw away-from-home windows (any car), for the quick-request sheet's more specific warning. */
   awayWindows: DayFreeWindowsAway[];
@@ -66,8 +67,8 @@ export function useDayFreeWindows(
             .map((b) => ({ startsAt: b.starts_at, endsAt: b.ends_at })),
           awayWindows: awayWindows.filter((w) => w.carId === c.id),
           turnaroundMinutes,
-          rangeStart: Date.parse(toInstant(day, "05:00", false)),
-          rangeEnd: Date.parse(toInstant(day, "00:00", true)),
+          rangeStart: Date.parse(toInstant(day, "06:00", false)),
+          rangeEnd: Date.parse(toInstant(day, "23:59", false)),
           now: now.getTime(),
         });
       })
@@ -77,6 +78,6 @@ export function useDayFreeWindows(
     isLoading: carsQuery.isLoading || boardRidesQuery.isLoading || turnaroundQuery.isLoading || maintenanceQuery.isLoading,
     freeWindows,
     awayWindows,
-    cars: sharedCars.map((c) => ({ id: c.id, name: c.name, type: c.type })),
+    cars: sharedCars.map((c) => ({ id: c.id, name: siddurCarName(c), type: c.type })),
   };
 }

@@ -32,11 +32,11 @@ describe("requestFormSchema", () => {
     }
   });
 
-  it("accepts a return time before departure when returnNextDay is set", () => {
+  it("rejects next-day requests even before the end of the week", () => {
     const result = requestFormSchema.safeParse(
       baseValues({ departTime: "20:00", returnTime: "07:00", returnNextDay: true }),
     );
-    expect(result.success).toBe(true);
+    expect(result.success).toBe(false);
   });
 
   it("rejects returnNextDay on the last day of the week (would leave the target week)", () => {
@@ -47,6 +47,12 @@ describe("requestFormSchema", () => {
     if (!result.success) {
       expect(result.error.issues.some((i) => i.path.join(".") === "returnNextDay")).toBe(true);
     }
+  });
+
+  it("permits 23:59 only as the same-day end, while departure stays on the quarter-hour grid", () => {
+    expect(requestFormSchema.safeParse(baseValues({ departTime: "23:45", returnTime: "23:59" })).success).toBe(true);
+    expect(requestFormSchema.safeParse(baseValues({ departTime: "23:59", returnTime: "23:59" })).success).toBe(false);
+    expect(requestFormSchema.safeParse(baseValues({ returnTime: "23:58" })).success).toBe(false);
   });
 
   it("requires oneWayCarMode for a one-way trip shape", () => {

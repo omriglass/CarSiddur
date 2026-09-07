@@ -207,6 +207,8 @@ export function buildSolverInput(params: BuildSolverInputParams): SolverInput {
         coRiderMemberIds: params.companionsByRequestId?.[r.id] ?? [],
         luggage: r.has_luggage,
         needsCarAtDestination: r.needs_car_at_destination,
+        preferredCarId: params.cars.some((car) => car.id === r.preferred_car_id && car.department_id === r.department_id && car.type === "shared" && car.status === "active")
+          ? r.preferred_car_id ?? undefined : undefined,
         submittedAtMs: epochMs(r.submitted_at ?? r.created_at) ?? weekStartMs,
         isLate: r.is_late,
         manualBoost:

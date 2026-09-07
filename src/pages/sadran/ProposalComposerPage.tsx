@@ -1,4 +1,4 @@
-import { Navigate } from "react-router-dom";
+import { Navigate, useLocation } from "react-router-dom";
 
 import { ProposalComposerScreen } from "@/features/sadran/proposals/components/ProposalComposerScreen";
 import { t } from "@/i18n/he";
@@ -7,6 +7,7 @@ import { useSadranRouteParams } from "./useSadranRouteParams";
 
 /** `/sadran/:dept/:week/proposals/new` — proposal composer (UX_FLOWS.md §4.3). */
 export function ProposalComposerPage() {
+  const location = useLocation();
   const { departmentId, weekStart, isSadran, isLoading } = useSadranRouteParams();
 
   if (isLoading) {
@@ -14,5 +15,5 @@ export function ProposalComposerPage() {
   }
   if (!isSadran) return <Navigate to="/sadran" replace />;
 
-  return <ProposalComposerScreen departmentId={departmentId} weekStart={weekStart} />;
+  return <ProposalComposerScreen key={location.key} departmentId={departmentId} weekStart={weekStart} />;
 }

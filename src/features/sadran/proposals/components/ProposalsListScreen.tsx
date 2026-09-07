@@ -1,6 +1,6 @@
 import { Inbox } from "lucide-react";
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 
 import { EmptyState } from "@/components/EmptyState";
 import { PageHeader } from "@/components/PageHeader";
@@ -31,6 +31,8 @@ interface ProposalsListScreenProps {
 /** `/sadran/:dept/:week/proposals` — proposals list + manual composer entry (UX_FLOWS.md §4.3, "from a suggestion or manual"). */
 export function ProposalsListScreen({ departmentId, weekStart }: ProposalsListScreenProps) {
   const navigate = useNavigate();
+  const location = useLocation();
+  const returnTo = location.pathname + location.search;
   const proposalsQuery = useProposalsForWeek(departmentId, weekStart);
   const requestsQuery = useWeekRequests(departmentId, weekStart);
 
@@ -84,7 +86,7 @@ export function ProposalsListScreen({ departmentId, weekStart }: ProposalsListSc
             disabled={!manualRequestId}
             onClick={() =>
               navigate(`/sadran/${departmentId}/${weekStart}/proposals/new`, {
-                state: { requestId: manualRequestId, rideId: null, type: manualType, payload: {} },
+                state: { returnTo, requestId: manualRequestId, rideId: null, type: manualType, payload: {} },
               })
             }
           >
@@ -106,7 +108,7 @@ export function ProposalsListScreen({ departmentId, weekStart }: ProposalsListSc
                 onClick={() => navigate(`/sadran/${departmentId}/${weekStart}/proposals/new`, {
                   // `proposalId` (Stage 3 hardening fix, UX_FLOWS.md §16 item 9): shows this
                   // proposal's actual current status instead of an empty "compose new" form.
-                  state: { requestId: p.request_id, rideId: p.ride_id, type: p.type, payload: p.payload ?? {}, proposalId: p.id },
+                  state: { returnTo, requestId: p.request_id, rideId: p.ride_id, type: p.type, payload: p.payload ?? {}, proposalId: p.id },
                 })}
               >
                 <CardContent className="flex items-center justify-between gap-2 p-3 text-sm">

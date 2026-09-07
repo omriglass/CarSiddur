@@ -43,6 +43,7 @@ export function useSubmitRequestMutation() {
     mutationFn: (payload: SubmitRequestPayload) => submitRequest(payload),
     onSuccess: (_result, payload) => {
       queryClient.invalidateQueries({ queryKey: requestsKeys.mine(profileId) });
+      queryClient.invalidateQueries({ queryKey: ["siddur", "myUpcomingRides"] });
       if (payload.request_id) queryClient.invalidateQueries({ queryKey: requestsKeys.byId(payload.request_id) });
       queryClient.invalidateQueries({ queryKey: sadranKeys.week(payload.department_id, payload.week_start) });
       queryClient.invalidateQueries({ queryKey: siddurKeys.boardRides(payload.department_id, payload.week_start) });
@@ -62,6 +63,8 @@ export function useWithdrawRequestMutation() {
       withdrawRequest(requestId, expectedVersion),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: requestsKeys.mine(profileId) });
+      queryClient.invalidateQueries({ queryKey: ["siddur"] });
+      queryClient.invalidateQueries({ queryKey: ["sadran"] });
     },
     onError: showErrorToast,
   });
@@ -84,6 +87,8 @@ export function useCancelRideMutation() {
     }) => cancelRide(rideId, reason, expectedVersion),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: requestsKeys.mine(profileId) });
+      queryClient.invalidateQueries({ queryKey: ["siddur"] });
+      queryClient.invalidateQueries({ queryKey: ["sadran"] });
     },
     onError: showErrorToast,
   });
@@ -109,9 +114,13 @@ export function useRequestCompanionsQuery(requestId: string | undefined) {
 }
 
 export function useSetRequestCompanionsMutation() {
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ requestId, profileIds }: { requestId: string; profileIds: string[] }) =>
       setRequestCompanions(requestId, profileIds),
+    onSuccess: () => {
+      for (const key of ["siddur", "sadran", "requests"]) void queryClient.invalidateQueries({ queryKey: [key] });
+    },
     onError: showErrorToast,
   });
 }
@@ -183,6 +192,7 @@ export function useWithdrawAllRequestsMutation() {
       withdrawAllRequests(departmentId, weekStart),
     onSuccess: (_result, { departmentId, weekStart }) => {
       void queryClient.invalidateQueries({ queryKey: ["requests"] });
+      void queryClient.invalidateQueries({ queryKey: ["siddur", "myUpcomingRides"] });
       void queryClient.invalidateQueries({ queryKey: sadranKeys.week(departmentId, weekStart) });
       void queryClient.invalidateQueries({ queryKey: siddurKeys.boardRides(departmentId, weekStart) });
       void queryClient.invalidateQueries({ queryKey: siddurKeys.carLocations(departmentId, weekStart) });

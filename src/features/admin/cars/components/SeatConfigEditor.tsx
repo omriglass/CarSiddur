@@ -92,6 +92,7 @@ export function SeatConfigEditor({ initial, onChange }: SeatConfigEditorProps) {
         </Select>
       </div>
 
+      <p className="text-sm text-muted-foreground">{he.adminCars.seatCapacityHelp}</p>
       {rows.length === 0 ? <p className="text-sm text-destructive">{he.adminCars.seatConfigEmptyWarning}</p> : null}
 
       <Table>

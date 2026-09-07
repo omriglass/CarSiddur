@@ -31,7 +31,8 @@ insert into public.departments (id, name, slug, home_destination_id)
 values ('00000000-0000-0000-0000-000000000001', 'נבו', 'nevo', '00000000-0000-0000-0000-000000000010')
 on conflict (id) do nothing;
 
--- department_settings row is auto-created by departments_create_settings(); defaults are fine.
+-- The row is auto-created; keep demo board hours explicit.
+update public.department_settings set board_start_time='06:00' where department_id='00000000-0000-0000-0000-000000000001';
 
 -- ---------------------------------------------------------------------------
 -- Ride types
@@ -333,7 +334,8 @@ begin
     returning id into v_version_id;
 
     perform set_config('app.in_publish', 'on', true);
-    update public.weeks set phase = 'live', published_version_id = v_version_id, published_at = now() - interval '9 days'
+    update public.weeks set phase = 'live', published_version_id = v_version_id, published_at = now() - interval '9 days',
+      published_days = array(select v_live_week + day_number from generate_series(0,6) day_number)
     where department_id = v_dept and week_start = v_live_week;
     perform set_config('app.in_publish', 'off', true);
   end if;

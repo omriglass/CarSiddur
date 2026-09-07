@@ -1,7 +1,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Plus } from "lucide-react";
 import { useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
 
 import { EmptyState } from "@/components/EmptyState";
@@ -10,7 +10,7 @@ import { TableRowsSkeleton } from "@/components/skeletons/TableRowsSkeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -47,6 +47,9 @@ function CarForm({ car, onSaved }: { car: Car | null; onSaved: () => void }) {
     defaultValues: {
       name: car?.name ?? "",
       license_plate: car?.license_plate ?? "",
+      access_code: car?.access_code ?? "",
+      is_replaced: car?.is_replaced ?? false,
+      replacement_code: car?.replacement_code ?? null,
       department_id: car?.department_id ?? "",
       type: car?.type ?? "shared",
       status: car?.status ?? "active",
@@ -56,14 +59,16 @@ function CarForm({ car, onSaved }: { car: Car | null; onSaved: () => void }) {
       built_in_boosters: car?.built_in_boosters ?? 0,
     },
   });
+  const isReplaced = useWatch({ control: form.control, name: "is_replaced" });
 
   async function onSubmit(values: CarFormValues) {
     try {
+      const payload = { ...values, replacement_code: values.is_replaced ? values.replacement_code : null };
       let carId = car?.id;
       if (car) {
-        await updateMutation.mutateAsync({ id: car.id, patch: values });
+        await updateMutation.mutateAsync({ id: car.id, patch: payload });
       } else {
-        const created = await createMutation.mutateAsync(values);
+        const created = await createMutation.mutateAsync(payload);
         carId = created.id;
       }
       if (carId && pendingSeatConfigs) {
@@ -105,6 +110,56 @@ function CarForm({ car, onSaved }: { car: Car | null; onSaved: () => void }) {
             </FormItem>
           )}
         />
+        <FormField
+          control={form.control}
+          name="access_code"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>{he.adminCars.fieldAccessCode}</FormLabel>
+              <FormControl>
+                <Input {...field} type="text" inputMode="numeric" dir="ltr" maxLength={5} autoComplete="off" />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          control={form.control}
+          name="is_replaced"
+          render={({ field }) => (
+            <FormItem className="flex items-center gap-2 space-y-0">
+              <FormControl>
+                <Checkbox
+                  checked={field.value}
+                  onCheckedChange={(checked) => {
+                    field.onChange(checked === true);
+                    if (checked !== true) {
+                      form.setValue("replacement_code", null, { shouldDirty: true });
+                      form.clearErrors("replacement_code");
+                    }
+                  }}
+                />
+              </FormControl>
+              <FormLabel>{he.adminCars.fieldIsReplaced}</FormLabel>
+            </FormItem>
+          )}
+        />
+        {isReplaced ? (
+          <FormField
+            control={form.control}
+            name="replacement_code"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{he.adminCars.fieldReplacementCode}</FormLabel>
+                <FormControl>
+                  <Input {...field} value={field.value ?? ""} type="text" inputMode="numeric" dir="ltr" maxLength={5} autoComplete="off" />
+                </FormControl>
+                <FormDescription>{he.adminCars.replacementCodeHelp}</FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        ) : null}
         <FormField
           control={form.control}
           name="department_id"
@@ -315,7 +370,10 @@ export function CarsScreen({ initialCarId }: { initialCarId?: string } = {}) {
           <TableBody>
             {cars.map((car) => (
               <TableRow key={car.id} className="cursor-pointer" onClick={() => setEditing(car)}>
-                <TableCell>{car.name}</TableCell>
+                <TableCell>
+                  {car.name}
+                  {car.is_replaced ? <Badge variant="outline" className="ms-2">{he.adminCars.replacedBadge}</Badge> : null}
+                </TableCell>
                 <TableCell dir="ltr">{car.license_plate}</TableCell>
                 <TableCell>{departmentsById.get(car.department_id) ?? car.department_id}</TableCell>
                 <TableCell>{he.car.type[car.type]}</TableCell>

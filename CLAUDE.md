@@ -100,12 +100,13 @@ src/
   types/                       domain types shared by UI and solver (not DB rows)
   main.tsx sw.ts index.css     PWA service worker, entry point, global styles
 supabase/
-  migrations/                  additive migrations through 0947; owner TODO changes are 0934–0947
+  migrations/                  61 additive migrations through 1000; owner changes start at 0934
   seed.sql                     demo data: departments, ride types, destinations, default policy, templates, member invites, demo auth users (local/e2e only)
   tests/
     rls_smoke.sql              assertions: every table has forced RLS, no `using (true)` on writes
     solve_semantics.sql        solver persistence and assignment behavior
     todo_board_semantics.sql   ownership, consent, operational permissions and publication scores
+    one_way_lifecycle.sql      orphan retention, volunteering, expanded merge consent and tight schedules
     bundle_solver.test.mjs     verify bundled solver output runs in Deno
   functions/
     push-dispatch/             send push notifications via browser API
@@ -208,7 +209,7 @@ Confirmed against the code:
 - Folder structure: all features, pages, solver modules, i18n files exist with correct names
 - Solver: ruleRegistry in rules/index.ts, 8 rule types, reasons.ts with templates, __tests__ per rule and golden fixtures in __fixtures__
 - Skills: all 8 skills have correct file paths verified against actual layout (add-migration, add-priority-rule, add-request-field, add-notification-event, change-weekly-cycle-defaults, manage-destinations, review-consistency, new-feature-checklist)
-- Database: 31 migrations from 20260907090000 through 20260907091700 (views), then 0918–0930 (fixes); seed.sql with demo data; supabase/tests/rls_smoke.sql in place
+- Database: 61 additive migrations from 20260907090000 through 20260907100000; seed.sql with demo data; supabase/tests/rls_smoke.sql in place
 - e2e: 6 core specs (submit-request, solve-and-publish, proposal-accept-deeplink, cancel-freed-slot, auto-approve, publish), fixtures with auth/time/db helpers
 
 ## Consistency decisions (2026-09-06)

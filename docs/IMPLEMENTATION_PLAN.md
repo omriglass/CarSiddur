@@ -102,3 +102,25 @@ One-line items blocked/deferred per design document:
 - [ ] Excel export deferred to v1.x as permitted by the TODO; export requests and assignments without import (REQUIREMENTS owner amendments).
 
 Validation: 378 unit/component tests; 26 targeted browser scenarios covering board, member/admin, proposals, quick requests, automatic approval, publication and member collision consent; all three database suites; lint, typecheck, production build and generated solver smoke check. Browser and database regression fixtures ran on a separate disposable Supabase stack.
+
+
+## Owner continuation — completed 2026-09-07
+
+- [x] One-way requests on existing rides with expanded windows, visible destinations, all-party consent and pending overlays.
+- [x] Standalone missing-driver bookings, orphan retention after driver cancellation, passenger-only cancellation, and member volunteering.
+- [x] Coordinator-approved tight schedules with indicators and preservation across subsequent solves.
+- [x] Full-week original-request deviation review and original-time baselines.
+- [x] Optional preferred car with scoped validation, persistence/clearing, template materialization and feasible solver fallback.
+- [x] Excel export of all requests, board bookings and saved policy comparisons; no import or new runtime dependency.
+- [x] Reachable WhatsApp close control on mobile and desktop.
+
+Validation: 408 unit/component tests; 14 browser scenarios (8 existing board regressions, the new board coordination scenario, full two-member consent/cancellation/volunteering, proposal/WhatsApp and ride-editing regressions, preferred-car editing, and Excel download). The workbook was also opened by an independent OpenXML reader to verify Hebrew, dates, literal strings and RTL settings. Four SQL suites cover database access, solver persistence, prior TODO semantics and the one-way lifecycle.
+
+
+### Owner continuation validation — 2026-09-07
+
+Completed the board-first workflow, selected-day publication/reopening, private coordinator collision planning, same-day scheduling, proposal origin returns, ride/passenger/public-note displays, and car access/replacement details. The Home page missing `CarFront` import was corrected. Full-week solving remains available on the board with a concrete preview and confirmation.
+
+Consolidated validation: `npm run check` passed 445 tests in 74 files, with zero lint errors and 23 existing Fast Refresh warnings; production build passed. The regenerated edge solver passed its bundle check. A fresh disposable Supabase reset through migration 1050 and all nine transactional SQL suites passed. The full Playwright run passed 39/41 scenarios; the two remaining tests referenced retired time-input IDs. After updating those selectors, all four tests in the affected files passed, verifying all 41 scenarios across the full run and focused rerun. Development data received additive migrations only; resets and browser fixtures used the separate `carshare-astra-e2e` stack.
+
+Mobile table/page-scroll follow-up: removed the unassigned panel height cap and tablet drawer; added shared cards/table, zoom and landscape controls to member Siddur and coordinator board. Validation: `npm run check` passed (445 tests, TypeScript, lint with existing warnings); subsequent final control/prop edits passed TypeScript and targeted lint. A standalone Playwright mobile component smoke check passed table/card switching, measured 90% zoom, no independent vertical grid scroll, landscape fallback at 844×390 and return to cards. No database reset or mutation was used. Native device orientation locking still needs a real-device check.

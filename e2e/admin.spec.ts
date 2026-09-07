@@ -38,6 +38,7 @@ test.describe("admin", () => {
 
     await page.getByLabel("שם הרכב").fill(carName);
     await page.getByLabel("מספר רישוי").fill(plate);
+    await page.getByLabel(he.adminCars.fieldAccessCode, { exact: true }).fill("01234");
     await page.getByLabel("מחלקה").click();
     await page.getByRole("option", { name: DEPARTMENT_NAME }).click();
 
@@ -46,6 +47,22 @@ test.describe("admin", () => {
     await page.getByRole("button", { name: "שמירה", exact: true }).click();
 
     await expect(page.getByRole("cell", { name: carName })).toBeVisible();
+
+    // Codes remain text across editing, and ending a replacement clears its old code.
+    await page.getByRole("cell", { name: carName, exact: true }).click();
+    await expect(page.getByLabel(he.adminCars.fieldAccessCode, { exact: true })).toHaveValue("01234");
+    await page.getByRole("checkbox", { name: he.adminCars.fieldIsReplaced }).check();
+    await page.getByLabel(he.adminCars.fieldReplacementCode, { exact: true }).fill("0567");
+    await page.getByRole("button", { name: he.adminCommon.save, exact: true }).click();
+    const carRow = page.getByRole("row").filter({ hasText: carName });
+    await expect(carRow.getByText(he.adminCars.replacedBadge, { exact: true })).toBeVisible();
+    await carRow.click();
+    await expect(page.getByLabel(he.adminCars.fieldReplacementCode, { exact: true })).toHaveValue("0567");
+    await page.getByRole("checkbox", { name: he.adminCars.fieldIsReplaced }).uncheck();
+    await page.getByRole("button", { name: he.adminCommon.save, exact: true }).click();
+    await carRow.click();
+    await page.getByRole("checkbox", { name: he.adminCars.fieldIsReplaced }).check();
+    await expect(page.getByLabel(he.adminCars.fieldReplacementCode, { exact: true })).toHaveValue("");
   });
 
   test("creates a destination and sees it in the list", async ({ page }) => {

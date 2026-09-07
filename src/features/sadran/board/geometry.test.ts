@@ -4,6 +4,7 @@ import {
   isoToMinutesSinceMidnight,
   isoToSlot,
   scanBoardConflicts,
+  tightScheduleRideIds,
   requestDayMismatchRideIds,
   slotToIso,
   snapMinutesTo15,
@@ -117,7 +118,7 @@ describe("scanBoardConflicts", () => {
       homeLocationId: "home",
       days: DAYS,
     });
-    expect(result.conflictRideIds.has("r1")).toBe(false);
+    expect(result.conflictRideIds.has("r1")).toBe(true);
     expect(result.conflictRideIds.has("r2")).toBe(true);
     expect(result.conflictRideIds.has("r3")).toBe(false);
   });
@@ -211,5 +212,23 @@ describe("requestDayMismatchRideIds", () => {
       { id: "return-ok", starts_at: "2026-09-10T21:15:00Z", served: [{ request_id: "back", leg: "return" }] },
       { id: "return-wrong", starts_at: "2026-09-10T18:00:00Z", served: [{ request_id: "back", leg: "return" }] },
     ], requests)]).toEqual(["return-wrong"]);
+  });
+});
+
+describe("approved tight turnarounds", () => {
+  const first = { id: "a", carId: "car", startsAt: iso(8 * 3600_000), endsAt: iso(9 * 3600_000), originId: "home", destinationId: "home", overnightAck: false };
+  const next = { ...first, id: "b", startsAt: iso(9 * 3600_000), endsAt: iso(10 * 3600_000) };
+  const scan = (rides: (typeof first & { turnaroundMinutes?: number })[]) => scanBoardConflicts({ rides, carIds: ["car"], weekStartMs: WEEK_START_MS, bufferMinutes: 30, homeLocationId: "home", days: DAYS });
+  it("allows an intentional zero gap while retaining the standard buffer otherwise", () => {
+    expect(scan([first, next]).conflictRideIds.has("b")).toBe(true);
+    expect(scan([{ ...first, turnaroundMinutes: 0 }, next]).conflictRideIds.size).toBe(0);
+    expect(scan([{ ...first, turnaroundMinutes: 15 }, { ...next, startsAt: iso(9.25 * 3600_000) }]).conflictRideIds.size).toBe(0);
+  });
+  it("still blocks actual overlap even with zero turnaround", () => {
+    expect(scan([{ ...first, turnaroundMinutes: 0 }, { ...next, startsAt: iso(8.75 * 3600_000) }]).conflictRideIds.has("b")).toBe(true);
+  });
+  it("marks both neighbors, ignores other cars and the exact standard boundary", () => {
+    const ride = (id: string, start: number, end: number, car_id = "car") => ({ id, car_id, starts_at: iso(start * 3600_000), ends_at: iso(end * 3600_000) });
+    expect([...tightScheduleRideIds([ride("b", 9.25, 10), ride("a", 8, 9), ride("c", 10.5, 11), ride("other", 9, 10, "other")], 30)].sort()).toEqual(["a", "b"]);
   });
 });

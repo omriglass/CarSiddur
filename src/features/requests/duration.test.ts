@@ -9,12 +9,12 @@ describe("endTimeForDuration", () => {
     expect(endTimeForDuration("14:15", 3)).toEqual({ time: "17:15", nextDay: false });
   });
 
-  it("flags a midnight rollover and wraps the time", () => {
-    expect(endTimeForDuration("22:00", 3)).toEqual({ time: "01:00", nextDay: true });
-    expect(endTimeForDuration("23:45", 1)).toEqual({ time: "00:45", nextDay: true });
+  it("caps durations that would cross midnight at the last minute of the same day", () => {
+    expect(endTimeForDuration("22:00", 3)).toEqual({ time: "23:59", nextDay: false });
+    expect(endTimeForDuration("23:45", 1)).toEqual({ time: "23:59", nextDay: false });
   });
 
-  it("does not roll over when the sum lands exactly on midnight boundary going forward from earlier", () => {
-    expect(endTimeForDuration("20:00", 4)).toEqual({ time: "00:00", nextDay: true });
+  it("caps an exact midnight end at 23:59", () => {
+    expect(endTimeForDuration("20:00", 4)).toEqual({ time: "23:59", nextDay: false });
   });
 });

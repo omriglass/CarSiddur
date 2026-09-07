@@ -41,6 +41,25 @@ function show() {
 afterEach(() => { vi.restoreAllMocks(); mocks.withdrawAll.mockReset(); });
 
 describe("member request editing", () => {
+  it("orders by actual assigned day, then requested day, and identifies each trip with its date, hours and purpose", () => {
+    mocks.rows = [
+      request({ id: "assigned", destination: "Moved ride", rideTypeName: "Errands", departAt: "2026-09-14T08:00:00+03:00", ride: {
+        id: "ride", startsAt: "2026-09-17T10:00:00+03:00", endsAt: "2026-09-17T15:00:00+03:00", status: "confirmed",
+        originName: "Home", destinationName: "Home", carName: "Car", carType: "shared", driverName: "Driver", isChauffeur: false, role: "driver",
+      } }),
+      request({ id: "later", destination: "Wednesday request", departAt: "2026-09-16T08:00:00+03:00", returnAt: "2026-09-16T12:00:00+03:00" }),
+      request({ id: "return", destination: "Tuesday pickup", tripShape: "one_way_from", departAt: null, returnAt: "2026-09-15T09:00:00+03:00" }),
+    ];
+    const { container } = show();
+    const summaries = [...container.querySelectorAll("[data-trip-summary]")];
+    expect(summaries.map((summary) => summary.querySelector("p")?.textContent)).toEqual(["Tuesday pickup", "Wednesday request", "Moved ride"]);
+    expect(summaries[0]).toHaveTextContent("15/9/2026");
+    expect(summaries[0]).toHaveTextContent("09:00");
+    expect(summaries[2]).toHaveTextContent(`${he.days.long[4]} 17/9/2026`);
+    expect(summaries[2]).toHaveTextContent("10:00–15:00");
+    expect(summaries[2]).toHaveTextContent("Errands");
+  });
+
   it("requires confirmation and scopes rescinding to the selected department and week", async () => {
     mocks.rows = [request()];
     mocks.withdrawAll.mockResolvedValue(undefined);

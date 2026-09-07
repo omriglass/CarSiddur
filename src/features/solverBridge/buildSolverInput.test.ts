@@ -272,3 +272,14 @@ describe("buildSolverInput", () => {
     expect(input.previousAssignments).toBeUndefined();
   });
 });
+
+it("only forwards a preference for an active shared car in the request's department", () => {
+  for (const car of [carRow(), carRow({ department_id: "another-department" }), carRow({ type: "temporary" }), carRow({ status: "maintenance" })]) {
+    const input = buildSolverInput({
+      weekStart: WEEK_START, homeDestinationId: HOME, departmentSettings: DEFAULT_SETTINGS,
+      requests: [requestRow({ preferred_car_id: "car-1" })], rideTypeCodesById: {}, cars: [car],
+      seatConfigsByCarId: {}, destinations: [destRow()], policy: { id: "p", version: 1, rules: [] },
+    });
+    expect(input.requests[0]?.preferredCarId).toBe(car.department_id === DEPT && car.type === "shared" && car.status === "active" ? "car-1" : undefined);
+  }
+});

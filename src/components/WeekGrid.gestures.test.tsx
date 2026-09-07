@@ -53,4 +53,22 @@ describe("WeekGrid gestures", () => {
     expect(onDrop).not.toHaveBeenCalled();
   });
 
+  it("uses a reservation preview without changing the passenger drop anchor", () => {
+    const onDrop = vi.fn();
+    const { container } = render(<WeekGrid cars={cars} rides={[ride]} dayStartMinutes={0} readOnly={false} draggable onRideDrop={onDrop}
+      resolveDropPreview={(_ride, _car, startMinutes) => ({ startMinutes: startMinutes - 30, endMinutes: startMinutes + 60 })} />);
+    fireEvent.pointerDown(container.querySelector('[data-ride-id="ride"]')!, { clientX: 50, clientY: 650 });
+    fireEvent.pointerMove(window, { clientX: 250, clientY: 680 });
+    expect(container.querySelector('[data-drag-preview]')).toHaveTextContent("10:00–11:30");
+    fireEvent.pointerUp(window, { clientX: 250, clientY: 680 });
+    expect(onDrop).toHaveBeenCalledWith("ride", "b", 630, undefined);
+  });
+  it("shows missing driver and tight turnaround indicators on the ride itself", () => {
+    const { container } = render(<WeekGrid cars={cars} rides={[{ ...ride, needsDriver: true, tightSchedule: true }]} />);
+    const block = container.querySelector('[data-ride-id="ride"]')!;
+    expect(block).toHaveAttribute("data-needs-driver", "true");
+    expect(block).toHaveAttribute("data-tight-schedule", "true");
+    expect(block).toHaveClass("border-destructive");
+  });
+
 });

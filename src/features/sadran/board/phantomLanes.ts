@@ -40,3 +40,16 @@ export function requestWithinFlex(req: WeekRequestRow, startsAt: string, endsAt:
   return !!req.return_at && withinFlex((Date.parse(endsAt) - Date.parse(req.return_at)) / 60_000,
     parseFlexInterval(req.flex_return_early), parseFlexInterval(req.flex_return_late));
 }
+
+/** The vehicle reservation also covers the volunteer's empty return/repositioning
+ * leg; the passenger's requested arrival/departure stays the same anchor.
+ */
+export function standaloneChauffeurWindow(request: WeekRequestRow, dwellMinutes: number): { startsAt: string; endsAt: string } | null {
+  if (request.trip_shape === "round_trip") return requestWindow(request);
+  const anchor = requestStart(request);
+  if (!anchor) return null;
+  const duration = Math.max(15, Math.ceil((2 * Math.max(0, request.destination_travel_minutes ?? 30) + Math.max(0, dwellMinutes)) / 15) * 15) * 60_000;
+  return request.trip_shape === "one_way_from"
+    ? { startsAt: new Date(Math.floor((Date.parse(anchor) - duration) / (15 * 60_000)) * 15 * 60_000).toISOString(), endsAt: anchor }
+    : { startsAt: anchor, endsAt: new Date(Date.parse(anchor) + duration).toISOString() };
+}

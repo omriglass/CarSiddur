@@ -119,7 +119,7 @@ describe('normalize()', () => {
       ],
     });
     const { normalized } = normalize(input);
-    expect(normalized[0]?.flexDep).toEqual([monday!.startSlot, monday!.endSlot]);
+    expect(normalized[0]?.flexDep).toEqual([monday!.startSlot, monday!.endSlot - 1]);
     expect(normalized[0]?.dayIndex).toBe(1);
   });
 });

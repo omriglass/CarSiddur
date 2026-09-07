@@ -1,4 +1,4 @@
-import { CarFront, Pin } from "lucide-react";
+import { CarFront, Pin, Clock3, UserRoundX, Star } from "lucide-react";
 import type { MouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import { useMemo, useRef, useState } from "react";
 
@@ -43,10 +43,19 @@ export interface WeekGridRide {
   startMinutes: number;
   endMinutes: number;
   label: string;
+  description?: string;
+  coordinatorNotes?: string;
+  /** An original request time that a nearby drag should snap back to. */
+  requestedStartMinutes?: number;
+  passengerSummary?: string;
   pinned?: boolean;
   shadowed?: boolean;
   conflict?: boolean;
   pendingConsent?: boolean;
+  needsDriver?: boolean;
+  isMine?: boolean;
+  highlighted?: boolean;
+  tightSchedule?: boolean;
   /** `ride_types.code` of the ride's driver request (falls back to any served request, then `"other"`) — tints the block (visual pass, `src/lib/rideTypeColors.ts`). */
   rideTypeCode?: string | null;
 }
@@ -81,13 +90,15 @@ export interface WeekGridProps {
   /** One edge (top = start, bottom = end) of a ride block was dragged to a new time (resize). */
   onRideResize?: (rideId: string, edge: "start" | "end", minutes: number) => void;
   /** While dragging `rideId` over `carId`, is this a valid drop target (seat fit, no overlap, no maintenance block)? Defaults to always-valid. */
-  isDropTargetValid?: (rideId: string, carId: string, startMinutes: number, endMinutes: number) => boolean;
+  resolveDropPreview?: (ride: WeekGridRide, carId: string, startMinutes: number, endMinutes: number, hostRideId?: string) => { startMinutes: number; endMinutes: number };
+  isDropTargetValid?: (rideId: string, carId: string, startMinutes: number, endMinutes: number, hostRideId?: string) => boolean;
   /** Live highlight for an external drag in progress over the grid (UX_FLOWS §20 — dragging an unmet request card from `UnmetList`). `null`/absent when none is active. */
   externalDropTarget?: { carId: string; valid: boolean; startMinutes?: number; endMinutes?: number; label?: string } | null;
   /** A ride block was dragged out of the grid and released over `[data-unmet-drop-zone]` (the reverse of `onRideDrop` — UX_FLOWS §20). */
   onRideDropOnUnmet?: (rideId: string) => void;
   /** Minutes-since-midnight for "now", only when the grid's day is today — draws a thin primary line across every column (visual pass). Omit/`null` to hide it (e.g. a past or future day). */
   nowMinutes?: number | null;
+  zoom?: number;
 }
 
 /** Any drop target carrying this attribute (e.g. the board's `UnmetList`/drawer) accepts a ride dragged out of the grid — see `onRideDropOnUnmet`. */
@@ -139,8 +150,11 @@ export function snapTimeShift(rawDeltaMinutes: number): number {
 function defaultRenderRide(ride: WeekGridRide) {
   return (
     <span className="flex w-full flex-col items-start overflow-hidden px-1.5 py-1 text-start text-xs font-medium text-foreground">
-      <span className="w-full whitespace-normal break-words leading-snug">{ride.label}</span>
-      <span className="w-full truncate text-[10px] font-normal opacity-90" dir="ltr">
+      <span className={cn("w-full whitespace-normal break-words leading-snug", ride.isMine && "font-bold")}>{ride.label}</span>
+      {ride.passengerSummary ? <span className="w-full whitespace-normal break-words text-xs" title={ride.passengerSummary}>{ride.passengerSummary}</span> : null}
+      {ride.description ? <span className="line-clamp-2 w-full whitespace-pre-wrap break-words text-xs" title={ride.description}>{ride.description}</span> : null}
+      {ride.coordinatorNotes ? <span className="line-clamp-2 w-full whitespace-pre-wrap break-words text-xs" title={`${he.field.notes}: ${ride.coordinatorNotes}`}>{he.field.notes}: {ride.coordinatorNotes}</span> : null}
+      <span className={cn("w-full truncate text-[10px] opacity-90", ride.isMine ? "font-bold" : "font-normal")} dir="ltr">
         {formatMinutes(ride.startMinutes)}–{formatMinutes(ride.endMinutes)}
       </span>
     </span>
@@ -166,11 +180,9 @@ interface DragState {
 }
 
 /**
- * One day, time × cars. A CSS grid (sticky car-header row, sticky hour
- * column) so a fleet wider than the viewport scrolls horizontally and a
- * 06:00–24:00 (or expanded 00:00–24:00) day scrolls vertically, both within
- * one bounded, scrollable box — the standard "frozen header + frozen first
- * column" pattern.
+ * One day, time × cars. The full day contributes to the page height, so
+ * vertical scrolling belongs to the page. Wide fleets can still scroll
+ * horizontally, with the hour column pinned to the starting edge.
  */
 export function WeekGrid({
   cars,
@@ -188,9 +200,11 @@ export function WeekGrid({
   onRideDrop,
   onRideResize,
   isDropTargetValid,
+  resolveDropPreview,
   externalDropTarget = null,
   onRideDropOnUnmet,
   nowMinutes = null,
+  zoom = 1,
 }: WeekGridProps) {
   const hours = Array.from(
     { length: Math.ceil((dayEndMinutes - dayStartMinutes) / 60) },
@@ -283,7 +297,7 @@ export function WeekGrid({
     const confirmed = current.confirmed || movedPx >= DRAG_START_THRESHOLD_PX;
     const hoverCarId = current.kind === "move" ? carIdAtClientX(event.clientX) : current.originCarId;
     const overRideId = current.kind === "move" ? rideIdAtPoint(event.clientX, event.clientY, current.rideId) : null;
-    const shiftMinutes = snapTimeShift((event.clientY - current.anchorClientY) / current.anchorRect.height * (dayEndMinutes - dayStartMinutes));
+    const shiftMinutes = dragShift(current, event.clientY);
     const next = { ...current, confirmed, hoverCarId, overRideId, shiftMinutes };
     dragRef.current = next;
     setDrag(next);
@@ -294,7 +308,7 @@ export function WeekGrid({
   function handleWindowUp(event: PointerEvent) {
     const current = dragRef.current;
     if (!current || event.pointerId !== current.pointerId) return;
-    const shift = snapTimeShift((event.clientY - current.anchorClientY) / current.anchorRect.height * (dayEndMinutes - dayStartMinutes));
+    const shift = dragShift(current, event.clientY);
     const finished = current;
     suppressClick.current = true;
     finishDrag();
@@ -321,6 +335,18 @@ export function WeekGrid({
   function handleWindowCancel(event: PointerEvent) {
     if (dragRef.current?.pointerId !== event.pointerId) return;
     finishDrag();
+  }
+
+  function dragShift(current: DragState, clientY: number): number {
+    const shift = snapTimeShift((clientY - current.anchorClientY) / current.anchorRect.height * (dayEndMinutes - dayStartMinutes));
+    if (current.kind === "resize-end" && current.originEndMinutes + shift >= 1439 && dayEndMinutes === 1440) {
+      return 1439 - current.originEndMinutes;
+    }
+    const requestedStart = rideById.get(current.rideId)?.requestedStartMinutes;
+    if (current.kind === "move" && requestedStart != null && Math.abs(current.originStartMinutes + shift - requestedStart) <= 15) {
+      return requestedStart - current.originStartMinutes;
+    }
+    return shift;
   }
 
   function beginDrag(
@@ -354,21 +380,24 @@ export function WeekGrid({
   }
 
   const draggedRide = drag ? rideById.get(drag.rideId) : undefined;
-  const preview = drag?.confirmed && draggedRide && drag.hoverCarId
+  const rawPreview = drag?.confirmed && draggedRide && drag.hoverCarId
     ? { carId: drag.hoverCarId, label: draggedRide.label,
         startMinutes: drag.originStartMinutes + (drag.kind === "resize-end" ? 0 : drag.shiftMinutes),
         endMinutes: drag.originEndMinutes + (drag.kind === "resize-start" ? 0 : drag.shiftMinutes) }
     : externalDropTarget?.startMinutes != null && externalDropTarget.endMinutes != null
       ? { ...externalDropTarget, startMinutes: externalDropTarget.startMinutes, endMinutes: externalDropTarget.endMinutes }
       : null;
-  const gridTemplateRows = `${HEADER_ROW_HEIGHT_PX}px repeat(${hours.length}, ${HOUR_ROW_HEIGHT_PX}px)`;
+  const preview = rawPreview && draggedRide && drag?.kind === "move" && resolveDropPreview
+    ? { ...rawPreview, ...resolveDropPreview(draggedRide, rawPreview.carId, rawPreview.startMinutes, rawPreview.endMinutes, drag.overRideId ?? undefined) }
+    : rawPreview;
+  const gridTemplateRows = `minmax(${HEADER_ROW_HEIGHT_PX}px, auto) repeat(${hours.length}, ${HOUR_ROW_HEIGHT_PX}px)`;
   const gridTemplateColumns = `${HOUR_COL_WIDTH_PX}px repeat(${allCars.length}, ${CAR_COL_WIDTH_PX}px)`;
 
   function Column({ car, colIndex }: { car: WeekGridCar; colIndex: number }) {
     const isDragHoverTarget = drag?.confirmed && drag.hoverCarId === car.id;
     const isExternalHover = externalDropTarget?.carId === car.id;
     const hoverValid = isDragHoverTarget
-      ? (draggedRide ? (isDropTargetValid?.(draggedRide.id, car.id, preview?.startMinutes ?? draggedRide.startMinutes, preview?.endMinutes ?? draggedRide.endMinutes) ?? true) : true)
+      ? (draggedRide ? (isDropTargetValid?.(draggedRide.id, car.id, rawPreview?.startMinutes ?? draggedRide.startMinutes, rawPreview?.endMinutes ?? draggedRide.endMinutes, drag?.overRideId ?? undefined) ?? true) : true)
       : (externalDropTarget?.valid ?? true);
     const showHoverRing = isDragHoverTarget || isExternalHover;
     const isFirstTemporary = colIndex === sharedCars.length && temporaryCars.length > 0;
@@ -446,6 +475,9 @@ export function WeekGrid({
               key={ride.id}
               type="button"
               data-ride-id={ride.id}
+              data-needs-driver={ride.needsDriver || undefined}
+              data-my-ride={ride.isMine || undefined}
+              data-tight-schedule={ride.tightSchedule || undefined}
               className={cn(
                 "absolute inset-x-1 flex flex-col overflow-hidden rounded-sm border-s-4 text-start text-foreground shadow-sm transition-smooth",
                 typeColors.bg,
@@ -457,6 +489,10 @@ export function WeekGrid({
                 onRideClick && "cursor-pointer",
                 dragEnabled && (canDragRide?.(ride) ?? true) && "touch-none",
                 ride.shadowed && "opacity-50",
+                ride.isMine && "shadow-md",
+                ride.isMine && !ride.needsDriver && "ring-2 ring-primary/60",
+                ride.needsDriver && "border-2 border-dashed border-destructive bg-destructive/10",
+                ride.highlighted && "z-10 scroll-mt-24 ring-4 ring-destructive ring-offset-2",
                 isDragged && "opacity-50 ring-2 ring-primary",
               )}
               style={{ top: rect.top, height: rect.height, minHeight: RIDE_MIN_HEIGHT_PX }}
@@ -472,8 +508,13 @@ export function WeekGrid({
                 if (!rect2) return;
                 beginDrag(e, ride, "move", rect2);
               }}
-              aria-label={ride.label}
+              aria-label={ride.isMine ? `${he.siddur.myRide} · ${ride.label}` : ride.label}
             >
+              {(ride.isMine || ride.needsDriver || ride.tightSchedule) ? <span className="flex w-full flex-wrap gap-1 px-1.5 pt-1 text-[10px] leading-tight">
+                {ride.isMine ? <span className={cn("flex items-center gap-1 font-bold", ride.needsDriver ? "text-destructive" : "text-foreground")}><Star className="size-3 shrink-0 fill-current" aria-hidden="true" />{he.siddur.myRide}</span> : null}
+                {ride.needsDriver ? <span className="flex items-center gap-1 font-semibold text-destructive"><UserRoundX className="size-3 shrink-0" aria-hidden="true" />{he.boardCoordination.needsDriver}</span> : null}
+                {ride.tightSchedule ? <span className="flex items-center gap-1 text-amber-700" title={he.boardCoordination.tightHelp}><Clock3 className="size-3 shrink-0" aria-hidden="true" />{he.boardCoordination.tight}</span> : null}
+              </span> : null}
               {ride.pinned ? (
                 <span className="absolute end-1 top-1 z-10 text-foreground/70" aria-hidden="true">
                   <Pin className="size-3" />
@@ -517,22 +558,22 @@ export function WeekGrid({
   }
 
   return (
-    <div className="max-h-[70vh] min-w-0 overflow-auto rounded-md border shadow-card">
-      <div className="grid" style={{ gridTemplateColumns, gridTemplateRows, minWidth: HOUR_COL_WIDTH_PX + allCars.length * CAR_COL_WIDTH_PX }}>
+    <div className="min-w-0 overflow-auto rounded-md border shadow-card">
+      <div className="grid" style={{ zoom, gridTemplateColumns, gridTemplateRows, minWidth: HOUR_COL_WIDTH_PX + allCars.length * CAR_COL_WIDTH_PX }}>
         <div className="sticky start-0 top-0 z-30 border-b border-e bg-muted/70 shadow-[0_2px_6px_-2px_hsl(var(--foreground)/0.12)]" style={{ gridColumn: 1, gridRow: 1 }} />
         {allCars.map((car, i) => (
           <div
             key={`h-${car.id}`}
             className={cn(
-              "sticky top-0 z-20 flex flex-col justify-center gap-0.5 overflow-hidden border-b border-e bg-muted/70 px-2 text-sm shadow-[0_2px_6px_-2px_hsl(var(--foreground)/0.12)]",
+              "sticky top-0 z-20 flex flex-col justify-center gap-0.5 overflow-hidden border-b border-e bg-muted/70 px-2 py-1 text-sm shadow-[0_2px_6px_-2px_hsl(var(--foreground)/0.12)]",
               car.group === "temporary" && "bg-booked/10",
               i === sharedCars.length && temporaryCars.length > 0 && "border-s-2 border-s-border",
             )}
             style={{ gridColumn: i + 2, gridRow: 1 }}
           >
-            <span className="flex items-center gap-1 truncate font-medium">
+            <span className="flex items-center gap-1 font-medium">
               <CarFront className="size-3.5 shrink-0 text-primary" aria-hidden="true" />
-              <span className="truncate">{car.name}</span>
+              <span className="min-w-0 whitespace-normal break-words">{car.name}</span>
             </span>
             {car.locationBadge ? <span className="truncate text-xs text-muted-foreground">{car.locationBadge}</span> : null}
             {car.group === "temporary" ? <span className="truncate text-[10px] text-booked">{he.car.type.temporary}</span> : null}

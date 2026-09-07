@@ -150,6 +150,8 @@ export function useLatestSolverRun(departmentId: string | undefined, weekStart: 
 
 function invalidateBoard(queryClient: ReturnType<typeof useQueryClient>, departmentId: string, weekStart: string) {
   queryClient.invalidateQueries({ queryKey: sadranKeys.week(departmentId, weekStart) });
+  queryClient.invalidateQueries({ queryKey: ["siddur"] });
+  queryClient.invalidateQueries({ queryKey: ["requests"] });
 }
 
 export function useRecordSolverPreviewMutation() {
@@ -281,8 +283,10 @@ export function useWhatsappTemplates() {
 }
 
 export function useCreateProposalMutation() {
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (input: api.CreateProposalInput) => api.createProposal(input),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: sadranKeys.all }),
     onError: showErrorToast,
   });
 }
@@ -293,14 +297,17 @@ export function useSendProposalMutation() {
     mutationFn: ({
       proposalId,
       sentVia,
+      replacement,
     }: {
       proposalId: string;
       sentVia?: Database["public"]["Enums"]["notification_channel"][];
+      replacement?: { id: string; version: number };
       departmentId: string;
       weekStart: string;
-    }) => api.sendProposal(proposalId, sentVia),
-    onSuccess: (_data, { departmentId, weekStart }) =>
-      queryClient.invalidateQueries({ queryKey: sadranKeys.proposals(departmentId, weekStart) }),
+    }) => api.sendProposal(proposalId, sentVia, replacement),
+    // Also refresh after failures: another coordinator may have sent/answered the
+    // proposal, or the server may have committed before the connection dropped.
+    onSettled: () => Promise.all(["sadran", "siddur", "requests"].map((key) => queryClient.invalidateQueries({ queryKey: [key] }))),
     onError: showErrorToast,
   });
 }
@@ -322,6 +329,7 @@ export function useRecordAnswerOnBehalfMutation() {
       weekStart: string;
     }) => api.recordAnswerOnBehalf(proposalId, profileId, accept, note),
     onSuccess: (_data, { proposalId, departmentId, weekStart }) => {
+      invalidateBoard(queryClient, departmentId, weekStart);
       queryClient.invalidateQueries({ queryKey: sadranKeys.proposals(departmentId, weekStart) });
       queryClient.invalidateQueries({ queryKey: sadranKeys.proposalParties(proposalId) });
     },
@@ -405,12 +413,32 @@ export function useAllWeekRides(departmentId: string | undefined, weekStart: str
 export function usePublishSiddurMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ departmentId, weekStart }: { departmentId: string; weekStart: string }) =>
-      publishWithScores(departmentId, weekStart),
+    mutationFn: ({ departmentId, weekStart, days, allowUnanswered }: { departmentId: string; weekStart: string; days?: string[]; allowUnanswered?: boolean }) =>
+      publishWithScores(departmentId, weekStart, { days, allowUnanswered }),
     onSuccess: (_data, { departmentId, weekStart }) => {
       invalidateBoard(queryClient, departmentId, weekStart);
       queryClient.invalidateQueries({ queryKey: sadranKeys.siddurVersions(departmentId, weekStart) });
     },
+    onError: showErrorToast,
+  });
+}
+
+export function usePublicationReadiness(departmentId: string, weekStart: string) {
+  return useQuery({
+    queryKey: [...sadranKeys.week(departmentId, weekStart), "publicationReadiness"],
+    queryFn: () => api.fetchPublicationReadiness(departmentId, weekStart),
+    enabled: !!departmentId && !!weekStart,
+    staleTime: 5_000,
+    refetchInterval: 15_000,
+  });
+}
+
+export function useReopenWeekMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ departmentId, weekStart, phase, expectedFingerprint }: { departmentId: string; weekStart: string; phase: "open" | "solving"; expectedFingerprint: string }) =>
+      api.reopenWeek(departmentId, weekStart, phase, expectedFingerprint),
+    onSuccess: (_data, { departmentId, weekStart }) => invalidateBoard(queryClient, departmentId, weekStart),
     onError: showErrorToast,
   });
 }

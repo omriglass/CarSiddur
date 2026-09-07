@@ -532,9 +532,8 @@ function buildRequestPlan(rng, { weekStart, rideTypes, destinations, members, re
   if (needsDepart) payload.depart_at = toInstant(dayDate, departMinutes);
   if (needsReturn) {
     let returnMinutes = needsDepart ? departMinutes + durationMinutes : departMinutes;
-    // Requests must stay inside the target week (requests_within_week() trigger); a Saturday
-    // ride rolling into the following Sunday would violate that, so clamp same-day instead.
-    if (dayIndex === 6 && returnMinutes >= 1440) returnMinutes = 23 * 60 + 45; // 23:45, stays on the 15-min grid
+    // Every generated ride must end on its departure day, including weekdays.
+    returnMinutes = Math.min(returnMinutes, 23 * 60 + 45); // retain quarter-hour fixtures
     payload.return_at = toInstant(dayDate, returnMinutes);
   }
 
