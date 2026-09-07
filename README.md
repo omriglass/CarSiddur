@@ -53,6 +53,21 @@ npm run build                        # Production build
 
 Current counts: 296 unit tests, 9 RLS/behavior assertions, 15 e2e tests, all passing on a fresh seed.
 
+### Fake data for manual testing
+
+```bash
+npm run db:fake -- --count 40 --clear   # fills the department's Open week with 40 requests
+npm run db:fake -- --count 40 --members 12 --week 2026-09-13 --seed 42 --clear
+```
+
+`scripts/fake-week.mjs` creates (or reuses) `--members` fake department members
+(`fake01@nevo.local` … , password `nevo-demo-1234`) and submits realistic requests for them
+through the real `submit_request` RPC — signed in as each member, so RLS and validation run
+exactly like the member-facing form. Defaults to the department's current Open week; `--week`
+opens/creates one via `open_week` if needed. `--clear` removes fake members' previous requests
+in that week first, so repeated runs don't pile up. Local stack only (refuses non-localhost
+URLs unless `--allow-remote`); never touches `src/`, migrations, or `seed.sql`.
+
 ## Going to production
 
 See docs/ARCHITECTURE.md (deployment, cost, security) for details. Short version:

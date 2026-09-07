@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   fetchBoardRideById,
   fetchBoardRides,
+  fetchBoardStartTime,
   fetchCarForRide,
   fetchCarLocations,
   fetchCurrentWeekStart,
@@ -77,5 +78,15 @@ export function useCarLocations(departmentId: string | undefined, weekStart: str
     queryFn: () => fetchCarLocations(departmentId as string, weekStart as string),
     enabled: !!departmentId && !!weekStart,
     staleTime: 30_000,
+  });
+}
+
+/** The member grid's default visible-range start (UX_FLOWS.md §20). */
+export function useBoardStartTime(departmentId: string | undefined) {
+  return useQuery({
+    queryKey: siddurKeys.boardStartTime(departmentId),
+    queryFn: () => fetchBoardStartTime(departmentId as string),
+    enabled: !!departmentId,
+    staleTime: 60_000,
   });
 }

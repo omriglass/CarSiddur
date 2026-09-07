@@ -231,6 +231,10 @@ export const he = {
     policyChanged: "המדיניות שונתה — הרץ שוב",
     pendingConsent: "ממתין להסכמה",
     willUpdateOnPublish: "יעודכן בפרסום",
+    /** Vertical-board redesign (UX_FLOWS.md §20): shared by the Sadran board and the member siddur grid, so kept here rather than under `sadranBoard.*`. */
+    showEarlyHours: "הצג שעות מוקדמות",
+    hideEarlyHours: "הסתר שעות מוקדמות",
+    earlyMarkerTitle: "{{start}}–{{end}} (לפני טווח התצוגה)",
   },
   admin: {
     members: {

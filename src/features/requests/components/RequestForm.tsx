@@ -55,6 +55,13 @@ interface RequestFormProps {
   initial?: RequestEditRow;
   /** "Ask to join" prefill from `/requests/new?ride=<id>` (UX_FLOWS §3.4/§3.5). */
   joinRide?: JoinRidePrefill;
+  /**
+   * Day/time prefill from clicking an empty grid cell on an Open/Solving-week siddur
+   * (UX_FLOWS.md §18): unlike the live-week flow (`QuickRequestSheet`, which knows and
+   * targets one specific car), the Sadran hasn't solved this week yet, so there is no car to
+   * pin — only the day and start time carry over, exactly like typing them in by hand.
+   */
+  slotPrefill?: { day: string; departTime: string };
 }
 
 function dayFromInstant(instant: string): string {
@@ -76,6 +83,8 @@ function emptyValues(
   weekStart: string,
   day: string,
   rideTypeId: string,
+  departTime = "08:00",
+  returnTime = "12:00",
 ): RequestFormValues {
   const dates = datesOfWeek(weekStart);
   return {
@@ -86,8 +95,8 @@ function emptyValues(
     destination: { freeText: "" },
     rideTypeId,
     tripShape: "round_trip",
-    departTime: "08:00",
-    returnTime: "12:00",
+    departTime,
+    returnTime,
     returnNextDay: false,
     oneWayCarMode: undefined,
     needsCarAtDestination: true,
@@ -173,7 +182,7 @@ function FieldError({ message }: { message?: string }) {
  * One screen, sticky footer, smart defaults, non-blocking seat-fit and
  * duplicate warnings, submits via `submit_request` (CLAUDE.md decision 8).
  */
-export function RequestForm({ mode, departmentId, weekStart, initial, joinRide }: RequestFormProps) {
+export function RequestForm({ mode, departmentId, weekStart, initial, joinRide, slotPrefill }: RequestFormProps) {
   const navigate = useNavigate();
 
   const destinationsQuery = useDestinations();
@@ -196,6 +205,15 @@ export function RequestForm({ mode, departmentId, weekStart, initial, joinRide }
   const defaultValues = useMemo(() => {
     if (mode === "edit") return emptyValues(departmentId, weekStart, weekStart, firstRideTypeId);
     if (joinRide) return buildJoinRideValues(departmentId, weekStart, lastRequest?.rideTypeId ?? firstRideTypeId, joinRide);
+    if (slotPrefill) {
+      return emptyValues(
+        departmentId,
+        weekStart,
+        slotPrefill.day,
+        lastRequest?.rideTypeId ?? firstRideTypeId,
+        slotPrefill.departTime,
+      );
+    }
     return emptyValues(
       departmentId,
       weekStart,
@@ -203,7 +221,7 @@ export function RequestForm({ mode, departmentId, weekStart, initial, joinRide }
       lastRequest?.rideTypeId ?? firstRideTypeId,
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [departmentId, weekStart, mode, firstRideTypeId, joinRide?.rideId]);
+  }, [departmentId, weekStart, mode, firstRideTypeId, joinRide?.rideId, slotPrefill?.day, slotPrefill?.departTime]);
 
   const form = useForm<RequestFormValues>({
     resolver: zodResolver(requestFormSchema),

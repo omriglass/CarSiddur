@@ -6,8 +6,10 @@ import {
   fetchCars,
   fetchCarSeatConfigs,
   fetchDestinations,
+  fetchMaintenanceBlocks,
   fetchMyTemporaryCars,
   fetchRideTypes,
+  fetchTurnaroundMinutes,
   registerTemporaryCar,
   suggestDestination,
 } from "./api";
@@ -44,6 +46,25 @@ export function useCarSeatConfigs(departmentId: string | undefined) {
     queryFn: () => fetchCarSeatConfigs(departmentId as string),
     enabled: !!departmentId,
     staleTime: 5 * 60_000,
+  });
+}
+
+/** For the quick-request sheet's client-side free-window pre-check (`features/siddur/freeWindows.ts`). */
+export function useTurnaroundMinutes(departmentId: string | undefined) {
+  return useQuery({
+    queryKey: fleetKeys.turnaroundMinutes(departmentId),
+    queryFn: () => fetchTurnaroundMinutes(departmentId as string),
+    enabled: !!departmentId,
+    staleTime: 5 * 60_000,
+  });
+}
+
+export function useMaintenanceBlocks(departmentId: string | undefined) {
+  return useQuery({
+    queryKey: fleetKeys.maintenanceBlocks(departmentId),
+    queryFn: () => fetchMaintenanceBlocks(departmentId as string),
+    enabled: !!departmentId,
+    staleTime: 60_000,
   });
 }
 

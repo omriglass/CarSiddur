@@ -34,6 +34,10 @@ export function NewRequestPage() {
   const [searchParams] = useSearchParams();
   const joinRideId = searchParams.get("ride") ?? undefined;
   const weekOverride = searchParams.get("week") ?? undefined;
+  // Quick-request-from-empty-slot on an Open/Solving-week siddur (UX_FLOWS.md §18): the
+  // Sadran hasn't solved yet, so there is no car to target — only day/time carry over.
+  const dayParam = searchParams.get("day") ?? undefined;
+  const timeParam = searchParams.get("time") ?? undefined;
 
   const profileQuery = useProfile();
   const departmentsQuery = useMyDepartments();
@@ -75,7 +79,13 @@ export function NewRequestPage() {
           <div className="h-11 animate-pulse rounded-md bg-muted" />
         </div>
       ) : (
-        <RequestForm mode="new" departmentId={departmentId} weekStart={weekStart} joinRide={joinRide} />
+        <RequestForm
+          mode="new"
+          departmentId={departmentId}
+          weekStart={weekStart}
+          joinRide={joinRide}
+          slotPrefill={!joinRideId && dayParam && timeParam ? { day: dayParam, departTime: timeParam } : undefined}
+        />
       )}
     </div>
   );

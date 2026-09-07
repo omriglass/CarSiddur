@@ -42,6 +42,11 @@ Both running agents were stopped mid-task. State at halt:
 - Scaffold: partial. Present: package.json, tsconfigs, vite.config.ts, tailwind/postcss, index.html, components.json, public/, src/. Not verified: `npm install`, lint, typecheck, test, build. Missing likely: supabase/ init, vitest/playwright/eslint configs, CI workflow, .env.example.
 - Resume order: (1) finish/verify docs to v0.3 (ARCHITECTURE, SOLVER check, CLAUDE.md, skills) with one haiku/sonnet agent; (2) finish scaffold and make checks pass; (3) commit "Stage 0"; (4) launch 1a DB (needs Docker running) and 1b solver in parallel.
 
+## Post-showcase fixes (owner manual testing)
+- [x] Board bug pass 1 (2026-09-07): unmet list DB-derived + always visible; pointer-event drag with live seat/overlap checks and dead-zone (car-only drag keeps times); ride labels "driver ו passengers ל destination"; busiest-day default + result sheet detail; apply_solver_result `mode: remaining` never deletes (migration 093100), manual edits pin; hour-axis RTL mirroring fixed; RideSheet car select reset bug. UX_FLOWS §17. e2e 19/19, unit 310.
+- [x] Quick request from empty slot (2026-09-07): migration 093200 adds requests.preferred_car_id; try_auto_approve tries it first; QuickRequestSheet from live-week grid cells, phone "לוקח/ת רכב עכשיו" + free-gap rows, Home card; freeWindows.ts mirrors the RPC rules. UX_FLOWS §18. Unit 327, e2e 21/21, RLS 13 assertions. Note: `npm run db:test` must run on a fresh seed (e2e specs mutate state) — run `npm run db:reset` first.
+- Also: `npm run db:fake` generator (scripts/fake-week.mjs) for manual testing.
+
 ## Status
 - [x] 0 Scaffold — done 2026-09-06 (lint/typecheck/test/build pass; 24 shadcn components hand-written; CI workflow added). Halt note above is historical.
 - [x] 1a Database — done 2026-09-06 (18 migrations, 33 tables RLS-forced, ~30 RPCs, app.tick cron, seed; `npm run db:reset` clean; 7 RLS smoke assertions pass via `npm run db:test` (runs psql inside the db container); types regenerated). Deviations in DATA_MODEL §6.1. Follow-ups: seed notification_templates copy for 2 events + chauffeur/external WhatsApp variants must be aligned with UX_FLOWS §6 (docs-keeper); status_reason Hebrew label map (stage 1c).

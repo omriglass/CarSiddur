@@ -1698,6 +1698,7 @@ export type Database = {
           needs_car_at_destination: boolean
           notes: string | null
           one_way_car_mode: Database["public"]["Enums"]["leg_car_mode"] | null
+          preferred_car_id: string | null
           requester_id: string
           return_at: string | null
           ride_type_id: string
@@ -1735,6 +1736,7 @@ export type Database = {
           needs_car_at_destination?: boolean
           notes?: string | null
           one_way_car_mode?: Database["public"]["Enums"]["leg_car_mode"] | null
+          preferred_car_id?: string | null
           requester_id: string
           return_at?: string | null
           ride_type_id: string
@@ -1772,6 +1774,7 @@ export type Database = {
           needs_car_at_destination?: boolean
           notes?: string | null
           one_way_car_mode?: Database["public"]["Enums"]["leg_car_mode"] | null
+          preferred_car_id?: string | null
           requester_id?: string
           return_at?: string | null
           ride_type_id?: string
@@ -1826,6 +1829,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "v_my_requests"
             referencedColumns: ["ride_id"]
+          },
+          {
+            foreignKeyName: "requests_preferred_car_id_fkey"
+            columns: ["preferred_car_id"]
+            isOneToOne: false
+            referencedRelation: "cars"
+            referencedColumns: ["id"]
           },
           {
             foreignKeyName: "requests_requester_id_fkey"
@@ -2557,7 +2567,7 @@ export type Database = {
       apply_proposal: { Args: { p_proposal_id: string }; Returns: string }
       apply_solver_result: {
         Args: { p_department_id: string; p_payload: Json; p_week_start: string }
-        Returns: string
+        Returns: Json
       }
       approve_claim: {
         Args: { p_offer_id: string; p_request_id: string }
@@ -2773,10 +2783,7 @@ export type Database = {
         Args: { p_name: string; p_zone?: string }
         Returns: string
       }
-      try_auto_approve: {
-        Args: { p_request_id: string }
-        Returns: Database["public"]["Enums"]["request_status"]
-      }
+      try_auto_approve: { Args: { p_request_id: string }; Returns: Json }
       validate_policy_rules: { Args: { _rules: Json }; Returns: boolean }
       validate_proposal_payload: {
         Args: {

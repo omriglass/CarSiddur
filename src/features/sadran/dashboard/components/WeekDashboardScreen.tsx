@@ -20,6 +20,7 @@ import { useQuery } from "@tanstack/react-query";
 import { scanBoardConflicts } from "../../board/geometry";
 import { buildWeek } from "@/features/solverBridge/buildSolverInput";
 import { deriveNeedsAttention, type NeedsAttentionKind } from "../needsAttention";
+import { isUnmetStatus } from "../../unmetStatuses";
 import {
   useActivePolicy,
   useAllWeekRides,
@@ -32,7 +33,7 @@ import {
   useProposalsForWeek,
   useRecordSolverPreviewMutation,
   useSetWeekPhaseMutation,
-  useWeekRequests,
+  useWeekRequestsWithNames,
   useWeekRow,
 } from "../../hooks";
 import { buildApplyPayload, gatherSolverContext, hashSolverInput, nowMs, runSolve } from "../../solverRun";
@@ -63,7 +64,7 @@ export function WeekDashboardScreen({ departmentId, weekStart }: WeekDashboardSc
   const department = (departmentsQuery.data ?? []).find((d) => d.id === departmentId);
 
   const weekRowQuery = useWeekRow(departmentId, weekStart);
-  const requestsQuery = useWeekRequests(departmentId, weekStart);
+  const requestsQuery = useWeekRequestsWithNames(departmentId, weekStart);
   const ridesQuery = useAllWeekRides(departmentId, weekStart);
   const proposalsQuery = useProposalsForWeek(departmentId, weekStart);
   const freedOffersQuery = useFreedOffersForWeek(departmentId, weekStart);
@@ -82,6 +83,7 @@ export function WeekDashboardScreen({ departmentId, weekStart }: WeekDashboardSc
   const [result, setResult] = useState<{ output: SolverOutput; payload: ReturnType<typeof buildApplyPayload> } | null>(
     null,
   );
+  const [confirmingReplace, setConfirmingReplace] = useState(false);
   // Read once via a lazy initializer (not on every render, matching
   // `MaintenanceScreen`'s convention) rather than `Date.now()` directly during render.
   const [nowMsSnapshot] = useState(() => Date.now());
@@ -89,7 +91,11 @@ export function WeekDashboardScreen({ departmentId, weekStart }: WeekDashboardSc
   const requests = requestsQuery.data ?? [];
   const nonDraft = requests.filter((r) => r.status !== "draft" && r.status !== "withdrawn");
   const served = nonDraft.filter((r) => r.status === "assigned" || r.status === "merged").length;
-  const unmet = nonDraft.filter((r) => r.status === "waitlisted" || r.status === "denied").length;
+  // Owner bug report #1: "לא שובצו" must count every request without a ride
+  // (submitted/proposed/waitlisted/denied), not only waitlisted/denied — a
+  // freshly-submitted, never-solved week showed 0 here even with 40+ open
+  // requests, matching the board's own `UnmetList` definition (`isUnmetStatus`).
+  const unmet = nonDraft.filter((r) => isUnmetStatus(r.status)).length;
   const awaitingAnswer = (proposalsQuery.data ?? []).filter((p) => p.status === "sent").length;
   const lateIds = nonDraft.filter((r) => r.is_late).map((r) => r.id);
   const changedIds = nonDraft.filter((r) => r.changed_since_solve).map((r) => r.id);
@@ -171,6 +177,23 @@ export function WeekDashboardScreen({ departmentId, weekStart }: WeekDashboardSc
 
   const phase = weekRowQuery.data?.phase;
 
+  /**
+   * MAJOR BUG fix (docs/UX_FLOWS.md §19 "Solve/apply semantics after owner
+   * testing"): the dashboard's "הרץ פותר" is the app's primary Solve
+   * action, so — per the investigation's required outcome — it must never
+   * remove or un-assign anything. It now always gathers/solves/applies in
+   * `'remaining'` mode ("שבץ בקשות פתוחות" — every current ride, pinned or
+   * not, is passed to the solver as a fixed constraint; `solve()` only ever
+   * places requests that have no ride at all), the same safe semantics
+   * `BoardScreen.tsx`'s "▶ השלם אוטומטית" already used. A full re-solve of
+   * the whole week (replacing non-pinned solver-made rides,
+   * `previousAssignments` for continuity, confirming exactly what would
+   * change) is still implemented — `../../applySolve.ts`'s `mode: 'full'`
+   * path plus `computeFullResolveDiff` — but is not wired to a button here;
+   * see this file's header note in the investigation report for why (the
+   * board layout is being redesigned concurrently and adding a new confirm
+   * surface is out of scope for a handler-body-only change).
+   */
   async function handleRunSolver() {
     if (!activePolicyQuery.data || !department?.home_destination_id) {
       toast.error(he.errors.noHomeLocation);
@@ -188,7 +211,7 @@ export function WeekDashboardScreen({ departmentId, weekStart }: WeekDashboardSc
           versionNo: activePolicyQuery.data.versionNo,
           rules: activePolicyQuery.data.rules,
         },
-        mode: "full",
+        mode: "remaining",
       });
       const startedAtMs = nowMs();
       const output = runSolve(context.input);
@@ -202,6 +225,7 @@ export function WeekDashboardScreen({ departmentId, weekStart }: WeekDashboardSc
         finishedAtMs,
         inputHash,
         requestsById: context.requestsById,
+        mode: "remaining",
       });
       await recordPreviewMutation.mutateAsync({
         departmentId,
@@ -209,6 +233,7 @@ export function WeekDashboardScreen({ departmentId, weekStart }: WeekDashboardSc
         payload: payload as unknown as Json,
       });
       setResult({ output, payload });
+      setConfirmingReplace(false);
     } catch (error) {
       toast.error(toAppError(error).message);
     } finally {
@@ -216,16 +241,41 @@ export function WeekDashboardScreen({ departmentId, weekStart }: WeekDashboardSc
     }
   }
 
+  /**
+   * Dead in practice now that `handleRunSolver` always builds a
+   * `mode: 'remaining'` payload (which `apply_solver_result` never lets
+   * delete anything, migration 20260907093100) — kept keyed off
+   * `result.payload.mode` rather than deleted outright so a future `'full'`
+   * re-solve entry point (see the note above) only needs to set that mode
+   * to make this guard live again, and so the existing confirm-dialog JSX
+   * (`confirmingReplace`, `replaceUnpinnedConfirmBody`) keeps working
+   * unchanged.
+   */
+  const existingUnpinnedRideCount = (ridesQuery.data ?? []).filter((r) => r.status === "draft" && !r.is_pinned).length;
+
   async function handleApplyDraft() {
     if (!result) return;
+    if (result.payload.mode === "full" && existingUnpinnedRideCount > 0 && !confirmingReplace) {
+      setConfirmingReplace(true);
+      return;
+    }
     try {
-      await applyMutation.mutateAsync({
+      const summary = await applyMutation.mutateAsync({
         departmentId,
         weekStart,
         payload: result.payload as unknown as Json,
       });
-      toast.success(he.sadranDashboard.applied);
+      // Structured summary (bug-fix pass requirement: never a silent
+      // partial result) — `apply_solver_result` returns exactly what it did.
+      toast.success(
+        tv("sadranDashboard.appliedSummary", {
+          inserted: String(summary.inserted),
+          deleted: String(summary.deleted),
+          unassigned: String(summary.unassigned_requests.length),
+        }),
+      );
       setResult(null);
+      setConfirmingReplace(false);
       navigate(`/sadran/${departmentId}/${weekStart}/board`);
     } catch {
       // toast already shown by the mutation's onError
@@ -234,6 +284,13 @@ export function WeekDashboardScreen({ departmentId, weekStart }: WeekDashboardSc
 
   if (weekRowQuery.isError || requestsQuery.isError) {
     return <ErrorState onRetry={() => weekRowQuery.refetch()} />;
+  }
+
+  // Papercut fix (usability sweep, same as BoardScreen.tsx): otherwise the
+  // counters row renders as all-zero for a moment on every load, before the
+  // real counts arrive — indistinguishable from an actually-empty week.
+  if (requestsQuery.isLoading) {
+    return <div className="flex min-h-[50dvh] items-center justify-center text-muted-foreground">{he.common.loading}</div>;
   }
 
   return (
@@ -347,7 +404,15 @@ export function WeekDashboardScreen({ departmentId, weekStart }: WeekDashboardSc
         </CardContent>
       </Card>
 
-      <Sheet open={!!result} onOpenChange={(open) => !open && setResult(null)}>
+      <Sheet
+        open={!!result}
+        onOpenChange={(open) => {
+          if (!open) {
+            setResult(null);
+            setConfirmingReplace(false);
+          }
+        }}
+      >
         <SheetContent side="bottom" className="max-h-[85dvh] overflow-y-auto">
           <SheetHeader>
             <SheetTitle>{he.sadranDashboard.resultSheetTitle}</SheetTitle>
@@ -362,8 +427,40 @@ export function WeekDashboardScreen({ departmentId, weekStart }: WeekDashboardSc
                   needsDriver: String(result.output.stats.needsDriver),
                 })}
               </p>
+              <p className="text-muted-foreground">
+                {tv("sadranDashboard.resultBreakdown", {
+                  assigned: String(result.output.assignments.flatMap((a) => a.legs).filter((l) => l.role === "driver").length),
+                  merged: String(result.output.assignments.flatMap((a) => a.legs).filter((l) => l.role === "passenger").length),
+                })}
+              </p>
+
+              {result.output.unmet.length > 0 ? (
+                <div className="space-y-1">
+                  <h3 className="font-medium">
+                    {tv("sadranDashboard.resultUnmetTitle", { count: String(result.output.unmet.length) })}
+                  </h3>
+                  <ul className="max-h-40 space-y-1 overflow-y-auto text-xs text-muted-foreground">
+                    {result.output.unmet.map((u) => {
+                      const req = requests.find((r) => r.id === u.requestId);
+                      return (
+                        <li key={u.requestId} className="flex justify-between gap-2">
+                          <span>{req?.requester_full_name ?? u.requestId}</span>
+                          <span>{u.reason}</span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              ) : null}
+
+              {confirmingReplace ? (
+                <p className="rounded-md border border-amber-500/50 bg-amber-50 p-2 text-amber-700">
+                  {tv("sadranDashboard.replaceUnpinnedConfirmBody", { count: String(existingUnpinnedRideCount) })}
+                </p>
+              ) : null}
+
               <Button className="w-full" size="lg" onClick={handleApplyDraft} disabled={applyMutation.isPending}>
-                {he.sadranDashboard.applyDraft}
+                {confirmingReplace ? he.sadranDashboard.replaceUnpinnedConfirmAction : he.sadranDashboard.applyDraft}
               </Button>
             </div>
           ) : null}

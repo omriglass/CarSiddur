@@ -1,7 +1,8 @@
-import { ArrowLeft, MapPin } from "lucide-react";
+import { MapPin } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { rideBlockLabel } from "@/lib/rideLabel";
 import { he, t, tv } from "@/i18n/he";
 import { formatTime } from "@/lib/time";
 import type { Car } from "@/features/fleet/api";
@@ -20,6 +21,30 @@ interface ServedEntry {
   boosters: number;
 }
 
+/**
+ * "<driver> ו<passengers> ל/מ<real destination>" (UX_FLOWS.md §20 — the
+ * same "shows the department's own name instead of the real destination"
+ * bug the Sadran board fixed for round trips, `rideBlockLabel`/
+ * DATA_MODEL.md consistency decision #14) — falls back to the ride's own
+ * origin/destination names (pre-fix behavior) when `homeDestinationId` isn't
+ * known yet (still loading).
+ */
+function headerLabel(ride: BoardRide, served: readonly ServedEntry[], homeDestinationId: string | null): string {
+  if (!homeDestinationId || !ride.origin_id || !ride.destination_id) {
+    return ride.origin_id !== ride.destination_id
+      ? `${ride.origin_name} → ${ride.destination_name}`
+      : (ride.destination_name ?? "");
+  }
+  return rideBlockLabel({
+    originId: ride.origin_id,
+    destinationId: ride.destination_id,
+    originName: ride.origin_name ?? "",
+    destinationName: ride.destination_name ?? "",
+    homeDestinationId,
+    served,
+  });
+}
+
 function carModeLabel(ride: BoardRide): string {
   if (ride.origin_id === ride.destination_id) {
     return ride.is_chauffeur ? he.rideDetail.carModeChauffeur : he.rideDetail.carModeKeep;
@@ -31,6 +56,8 @@ interface RideDetailSheetProps {
   ride: BoardRide | null;
   car: Car | null;
   locationBadge: string | null;
+  /** The department's home location — for composing the real destination on a round trip (bug fix, see `headerLabel` above). */
+  homeDestinationId?: string | null;
   onOpenChange: (open: boolean) => void;
   onAskToJoin: () => void;
   /** Own rides don't show "ask to join"; other-department rides never do (REQ §13.52). */
@@ -38,7 +65,7 @@ interface RideDetailSheetProps {
 }
 
 /** Ride detail sheet (UX_FLOWS.md §3.5 "Ride detail"): driver, passengers, car, origin→destination, "ask to join". */
-export function RideDetailSheet({ ride, car, locationBadge, onOpenChange, onAskToJoin, showAskToJoin }: RideDetailSheetProps) {
+export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = null, onOpenChange, onAskToJoin, showAskToJoin }: RideDetailSheetProps) {
   const served = (ride?.served as unknown as ServedEntry[] | null) ?? [];
 
   return (
@@ -64,15 +91,7 @@ export function RideDetailSheet({ ride, car, locationBadge, onOpenChange, onAskT
 
               <div className="flex items-center gap-1 font-medium">
                 <MapPin className="size-4 shrink-0 text-muted-foreground" />
-                {ride.origin_id !== ride.destination_id ? (
-                  <span className="flex items-center gap-1">
-                    {ride.origin_name}
-                    <ArrowLeft className="size-3.5 shrink-0 rtl:-scale-x-100" />
-                    {ride.destination_name}
-                  </span>
-                ) : (
-                  <span>{ride.destination_name}</span>
-                )}
+                <span>{headerLabel(ride, served, homeDestinationId)}</span>
               </div>
 
               <p className="text-muted-foreground">{carModeLabel(ride)}</p>

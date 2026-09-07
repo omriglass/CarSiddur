@@ -233,4 +233,42 @@ describe("buildSolverInput", () => {
 
     expect(input.cars[0]!.luggageCapacity).toBe(2);
   });
+
+  // MAJOR BUG investigation (docs/UX_FLOWS.md §19): a full re-solve needs
+  // `previousAssignments` for continuity (SOLVER.md §5.1, `greedy.ts`'s
+  // `continuityRank`) — this was never threaded through from
+  // `gatherSolverContext`/`applySolve.ts` before this bug-fix pass.
+  it("passes previousAssignments through unchanged for continuity", () => {
+    const previousAssignments = [{ servedRequestIds: ["req-1"], carId: "car-1" }];
+    const input = buildSolverInput({
+      weekStart: WEEK_START,
+      homeDestinationId: HOME,
+      departmentSettings: DEFAULT_SETTINGS,
+      requests: [],
+      rideTypeCodesById: {},
+      cars: [],
+      seatConfigsByCarId: {},
+      destinations: [],
+      policy: { id: "p1", version: 1, rules: [] },
+      previousAssignments,
+    });
+
+    expect(input.previousAssignments).toBe(previousAssignments);
+  });
+
+  it("omits previousAssignments when not supplied (e.g. 'remaining' mode)", () => {
+    const input = buildSolverInput({
+      weekStart: WEEK_START,
+      homeDestinationId: HOME,
+      departmentSettings: DEFAULT_SETTINGS,
+      requests: [],
+      rideTypeCodesById: {},
+      cars: [],
+      seatConfigsByCarId: {},
+      destinations: [],
+      policy: { id: "p1", version: 1, rules: [] },
+    });
+
+    expect(input.previousAssignments).toBeUndefined();
+  });
 });

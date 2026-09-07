@@ -104,6 +104,38 @@ export async function registerTemporaryCar(input: {
   return car;
 }
 
+/**
+ * `department_settings.turnaround_minutes` — the buffer the quick-request sheet's client-side
+ * free-window pre-check (`features/siddur/freeWindows.ts`) needs to mirror `try_auto_approve()`.
+ * Readable by any member of the department (`department_settings_select` RLS), not just Sadran/
+ * Admin — see `20260907091400_rls.sql`.
+ */
+export async function fetchTurnaroundMinutes(departmentId: string): Promise<number> {
+  const { data, error } = await supabase
+    .from("department_settings")
+    .select("turnaround_minutes")
+    .eq("department_id", departmentId)
+    .single();
+  if (error) throw toAppError(error);
+  return data.turnaround_minutes;
+}
+
+export interface MaintenanceBlockWindow {
+  car_id: string;
+  starts_at: string;
+  ends_at: string;
+}
+
+/** Active maintenance blocks for every car in the department (member-readable, same RLS as above). */
+export async function fetchMaintenanceBlocks(departmentId: string): Promise<MaintenanceBlockWindow[]> {
+  const { data, error } = await supabase
+    .from("car_maintenance_blocks")
+    .select("car_id, starts_at, ends_at")
+    .eq("department_id", departmentId);
+  if (error) throw toAppError(error);
+  return data ?? [];
+}
+
 /** My own temporary cars (Profile "רכב פרטי לשיתוף"). */
 export async function fetchMyTemporaryCars(ownerId: string): Promise<Car[]> {
   const { data, error } = await supabase

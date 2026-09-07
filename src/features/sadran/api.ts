@@ -25,6 +25,54 @@ export type PolicyRow = Database["public"]["Tables"]["policies"]["Row"];
 export type PolicyVersionRow = Database["public"]["Tables"]["policy_versions"]["Row"];
 export type BoardRide = Database["public"]["Views"]["v_board_rides"]["Row"];
 
+/**
+ * `requests` plus the joined names the board/dashboard need to show *which*
+ * request is unmet (owner bug report #1: the unmet list/counters must be
+ * usable without a solver run, straight from persisted data) — embedded via
+ * PostgREST's FK-embed syntax rather than a new view/migration, since every
+ * relationship already exists (`requests.requester_id -> profiles`,
+ * `.destination_id -> destinations`, `.ride_type_id -> ride_types`) and RLS
+ * on the joined tables already allows a signed-in Sadran to read them (the
+ * same tables `v_board_rides`/`fetchProfilesByIds`/`fetchRideTypes` already
+ * join/select). `requests` has two FKs to `profiles` (`requester_id`,
+ * `filed_by`), so the embed must name the constraint explicitly
+ * (`!requests_requester_id_fkey`) — same convention as
+ * `features/requests/api.ts`'s `EDIT_SELECT`.
+ */
+export interface WeekRequestRow extends RequestRow {
+  requester_full_name: string | null;
+  destination_resolved_name: string | null;
+  ride_type_code: string | null;
+  ride_type_name_he: string | null;
+  /** Quick-request-from-empty-slot (UX_FLOWS.md §18) — the car the member asked for, if any. */
+  preferred_car_name: string | null;
+}
+
+const WEEK_REQUEST_SELECT = `*,
+  requester:profiles!requests_requester_id_fkey(full_name),
+  destination:destinations(name),
+  ride_type:ride_types(code, name_he),
+  preferred_car:cars!requests_preferred_car_id_fkey(name)`;
+
+interface WeekRequestJoinRow extends RequestRow {
+  requester: { full_name: string } | null;
+  destination: { name: string } | null;
+  ride_type: { code: string; name_he: string } | null;
+  preferred_car: { name: string } | null;
+}
+
+function flattenWeekRequest(row: WeekRequestJoinRow): WeekRequestRow {
+  const { requester, destination, ride_type, preferred_car, ...rest } = row;
+  return {
+    ...rest,
+    requester_full_name: requester?.full_name ?? null,
+    destination_resolved_name: destination?.name ?? rest.destination_text ?? null,
+    ride_type_code: ride_type?.code ?? null,
+    ride_type_name_he: ride_type?.name_he ?? null,
+    preferred_car_name: preferred_car?.name ?? null,
+  } as WeekRequestRow;
+}
+
 // ---------------------------------------------------------------------------
 // Week / phase overrides
 // ---------------------------------------------------------------------------
@@ -66,6 +114,27 @@ export async function fetchWeekRequests(departmentId: string, weekStart: string)
     .eq("week_start", weekStart);
   if (error) throw toAppError(error);
   return data ?? [];
+}
+
+/**
+ * Same rows as `fetchWeekRequests`, plus the requester/destination/ride-type
+ * names the board's `UnmetList` and the dashboard's counters need (bug #1) —
+ * a separate function (rather than changing `fetchWeekRequests` itself)
+ * because `solverRun.ts#gatherSolverContext` only needs the plain columns
+ * `buildSolverInput` maps and re-fetching with joins there would be wasted
+ * work on every solve.
+ */
+export async function fetchWeekRequestsWithNames(
+  departmentId: string,
+  weekStart: string,
+): Promise<WeekRequestRow[]> {
+  const { data, error } = await supabase
+    .from("requests")
+    .select(WEEK_REQUEST_SELECT)
+    .eq("department_id", departmentId)
+    .eq("week_start", weekStart);
+  if (error) throw toAppError(error);
+  return ((data ?? []) as unknown as WeekRequestJoinRow[]).map(flattenWeekRequest);
 }
 
 // ---------------------------------------------------------------------------
@@ -212,8 +281,32 @@ export async function recordSolverPreview(departmentId: string, weekStart: strin
   return rpc("record_solver_preview", { p_department_id: departmentId, p_week_start: weekStart, p_payload: payload });
 }
 
-export async function applySolverResult(departmentId: string, weekStart: string, payload: Json): Promise<string> {
-  return rpc("apply_solver_result", { p_department_id: departmentId, p_week_start: weekStart, p_payload: payload });
+/**
+ * `apply_solver_result`'s return shape changed from a bare run-id uuid to a
+ * structured summary jsonb (bug-fix pass, `supabase/migrations/
+ * 20260907093300_apply_solver_result_atomic_summary.sql`) so the caller can
+ * show exactly what an apply did — never a silently partial result. See
+ * `applySolve.ts`'s `ApplySolverResultSummary`.
+ */
+export interface ApplySolverResultResponse {
+  run_id: string;
+  inserted: number;
+  deleted: number;
+  unchanged: number;
+  unassigned_requests: string[];
+}
+
+export async function applySolverResult(
+  departmentId: string,
+  weekStart: string,
+  payload: Json,
+): Promise<ApplySolverResultResponse> {
+  const result = await rpc("apply_solver_result", {
+    p_department_id: departmentId,
+    p_week_start: weekStart,
+    p_payload: payload,
+  });
+  return result as unknown as ApplySolverResultResponse;
 }
 
 // ---------------------------------------------------------------------------

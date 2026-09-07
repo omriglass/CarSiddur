@@ -12,6 +12,8 @@ export const sadranKeys = {
     [...sadranKeys.week(departmentId, weekStart), "carLocations"] as const,
   weekRequests: (departmentId: string, weekStart: string) =>
     [...sadranKeys.week(departmentId, weekStart), "requests"] as const,
+  weekRequestsWithNames: (departmentId: string, weekStart: string) =>
+    [...sadranKeys.week(departmentId, weekStart), "requestsWithNames"] as const,
   cars: (departmentId: string) => [...sadranKeys.all, departmentId, "cars"] as const,
   seatConfigs: (departmentId: string) => [...sadranKeys.all, departmentId, "seatConfigs"] as const,
   destinations: () => [...sadranKeys.all, "destinations"] as const,

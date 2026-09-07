@@ -31,9 +31,23 @@ export const heSadran = {
     proposalsButton: "הצעות ({{count}})",
     resultSheetTitle: "תוצאת הפתרון",
     resultSummary: "שובצו {{served}} מתוך {{total}} · {{withSuggestions}} עם הצעות · {{needsDriver}} דרושות נהג/ת",
+    resultBreakdown: "כנהג/ת {{assigned}} · כנוסע/ת (איחוד) {{merged}}",
+    resultUnmetTitle: "לא שובצו ({{count}})",
     applyDraft: "החל טיוטה",
     applied: "הוטמע בלוח",
+    /**
+     * MAJOR BUG investigation (docs/UX_FLOWS.md §19): `apply_solver_result`
+     * now returns a structured summary `{ inserted, deleted, unchanged,
+     * unassigned_requests }` (supabase/migrations/
+     * 20260907093300_apply_solver_result_atomic_summary.sql) instead of a
+     * bare run-id, so an apply is never a silent black box — the toast
+     * names exactly what happened.
+     */
+    appliedSummary: "הוטמע בלוח: {{inserted}} נסיעות חדשות · {{deleted}} הוסרו · {{unassigned}} בלי שיבוץ",
     solving: "מסדר…",
+    replaceUnpinnedConfirmTitle: "להחליף נסיעות קיימות?",
+    replaceUnpinnedConfirmBody: "יוחלפו {{count}} נסיעות שלא ננעלו. נסיעות נעולות ובקשות שכבר טופלו לא ייפגעו.",
+    replaceUnpinnedConfirmAction: "החלף והחל",
     liveCarsAwayTitle: "רכבים הרחק מהבית",
     liveCancellationsTitle: "ביטולים ב-24 השעות האחרונות",
     liveWaitlistedTitle: "בקשות חדשות ברשימת המתנה",
@@ -57,6 +71,7 @@ export const heSadran = {
     filterMerge: "בקשו להצטרף",
     conflictBanner: "{{count}} התנגשויות בלוח",
     unmetTitle: "לא שובצו ({{count}})",
+    preferredCar: "ביקש/ה רכב מסוים: {{car}}",
     scoreLabel: "ניקוד",
     suggestionsLabel: "הצעות",
     noSuggestions: "אין הצעות זמינות",
@@ -76,9 +91,21 @@ export const heSadran = {
     listModeUnmet: "לא שובצו",
     listModeProposals: "הצעות",
     locationBadge: "ב{{location}}",
+    seatMismatchToast: "לרכב שנבחר אין מספיק מקומות לנוסעי הנסיעה הזו",
+    overlapToast: "הזמן מתנגש עם נסיעה אחרת ברכב הזה",
+    unmetEmptyDb: "כל הבקשות של השבוע שובצו",
+    unmetRequesterLine: "{{requester}} · {{destination}} · {{dayTime}}",
+    dragHandleLabel: "גרור/י ללוח",
+    dragOneWayUnsupported: "לא ניתן לגרור בקשות חד-כיווניות ללוח — יש להשתמש בהצעה",
+    dragPlacedToast: "שובץ/ה ל{{car}} {{start}}",
+    dragInvalidSeatsToast: "לרכב הזה אין מספיק מקומות לנוסעי הבקשה הזו",
+    dragInvalidOverlapToast: "הזמן מתנגש עם נסיעה אחרת ברכב הזה",
+    dragInvalidLocationToast: "הרכב לא נמצא בבית בשעה הזו",
+    unassignedToast: "השיבוץ הוסר — הנסיעה בוטלה",
   },
   sadranRideSheet: {
     title: "פרטי הנסיעה",
+    moveToCar: "העבר לרכב",
     car: "רכב",
     driver: "נהג/ת",
     depart: "יציאה",
@@ -89,6 +116,8 @@ export const heSadran = {
     save: "שמור שינויים",
     version: "גרסה {{version}}",
     cancelled: "הנסיעה בוטלה",
+    removeAssignment: "הסר שיבוץ",
+    removeAssignmentReason: "הוסר שיבוץ מהלוח (נגרר לרשימת הלא-משובצים)",
   },
   sadranProposal: {
     typeChauffeur: "הסעה בהתנדבות",

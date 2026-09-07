@@ -16,6 +16,9 @@ import { TimeField15 } from "@/components/TimeField15";
 import { he, t } from "@/i18n/he";
 import { TZ, formatTime } from "@/lib/time";
 
+import { rideBlockLabel } from "../rideLabel";
+import { servedOf } from "../../solverRun";
+
 import type { BoardRide } from "../../api";
 import type { Car } from "@/features/fleet/api";
 
@@ -30,29 +33,59 @@ interface RideSheetProps {
   ride: BoardRide | null;
   cars: readonly Car[];
   driverName: string | null;
+  /** For composing the same driver+passengers+direction label as the board block (bug #3) instead of a blank line when origin === destination (round trip). */
+  homeDestinationId?: string | null;
   onOpenChange: (open: boolean) => void;
   onSave: (input: RideSheetSaveInput) => void;
   onTogglePin: (nextPinned: boolean, reason: string | null) => void;
   onCancel: (reason: string) => void;
+  /**
+   * "הסר שיבוץ" (UX_FLOWS.md §20) — the no-drag equivalent of dragging a
+   * ride block onto the unmet panel. No RPC returns a served request
+   * straight to `submitted`/unmet (only `cancel_ride`, which sets
+   * `cancelled`), so this is, underneath, the same cancellation as "בטל
+   * נסיעה" below — kept as a separate, one-click button (no reason prompt)
+   * since it's the deliberate-gesture counterpart, not an accidental-click
+   * risk. Omit to hide it (e.g. a read-only caller).
+   */
+  onUnassign?: () => void;
   saving?: boolean;
 }
 
-/** `RideSheet` (UX_FLOWS.md §4.2 "click block"): time/car edit, pin toggle, cancel — the board's non-drag path. */
-export function RideSheet({ ride, cars, driverName, onOpenChange, onSave, onTogglePin, onCancel, saving }: RideSheetProps) {
+/**
+ * `RideSheet` (UX_FLOWS.md §4.2 "click block"): time/car edit, pin toggle,
+ * cancel — the board's non-drag path, and (bug #2) the no-drag/touch
+ * fallback for reassigning a car via the "העבר לרכב" select below instead of
+ * dragging.
+ */
+export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenChange, onSave, onTogglePin, onCancel, onUnassign, saving }: RideSheetProps) {
+  // Bug-fix pass (owner bug #2): the previous re-sync condition compared
+  // `ride.car_id !== carId` to detect "a different ride opened" — but that's
+  // exactly as true the moment the Sadran picks a *different* car for the
+  // *same* open ride via the select below (`onValueChange` sets `carId` to
+  // something that, by definition, no longer equals `ride.car_id` until
+  // saved). Every render after that pick re-entered this block and reset
+  // `carId` straight back to `ride.car_id`, so the "העבר לרכב" no-drag
+  // fallback silently could never actually change the selection — reproduced
+  // in `e2e/board.spec.ts`. Fixed by keying the reset on the ride's own
+  // `id` (only a genuinely different ride, or closing and reopening the
+  // same one, resets the local fields), not on whether `carId` happens to
+  // differ from the ride's persisted value.
+  const [lastRideId, setLastRideId] = useState<string | null>(ride?.id ?? null);
   const [carId, setCarId] = useState(ride?.car_id ?? "");
   const [startTime, setStartTime] = useState(ride?.starts_at ? formatTime(new Date(ride.starts_at)) : "08:00");
   const [endTime, setEndTime] = useState(ride?.ends_at ? formatTime(new Date(ride.ends_at)) : "09:00");
   const [cancelReason, setCancelReason] = useState("");
   const [showCancelForm, setShowCancelForm] = useState(false);
 
-  if (!ride || ride.car_id !== carId) {
-    // Re-sync local state when a different ride opens (no effect needed: derived during render).
-    if (ride && ride.car_id && carId !== ride.car_id) {
-      setCarId(ride.car_id);
-      setStartTime(ride.starts_at ? formatTime(new Date(ride.starts_at)) : "08:00");
-      setEndTime(ride.ends_at ? formatTime(new Date(ride.ends_at)) : "09:00");
-      setShowCancelForm(false);
-    }
+  if ((ride?.id ?? null) !== lastRideId) {
+    // Derived during render, no effect needed (same convention as
+    // `BoardScreen.tsx`'s `policyVersionOverride`).
+    setLastRideId(ride?.id ?? null);
+    setCarId(ride?.car_id ?? "");
+    setStartTime(ride?.starts_at ? formatTime(new Date(ride.starts_at)) : "08:00");
+    setEndTime(ride?.ends_at ? formatTime(new Date(ride.ends_at)) : "09:00");
+    setShowCancelForm(false);
   }
 
   function dayIso(): string {
@@ -79,8 +112,16 @@ export function RideSheet({ ride, cars, driverName, onOpenChange, onSave, onTogg
             </SheetHeader>
             <div className="space-y-4 py-4 text-sm">
               <p className="text-muted-foreground">
-                {ride.origin_name} {ride.origin_id !== ride.destination_id ? `→ ${ride.destination_name}` : ""} ·{" "}
-                {driverName ?? ride.driver_name}
+                {ride.origin_id && ride.destination_id && homeDestinationId
+                  ? rideBlockLabel({
+                      originId: ride.origin_id,
+                      destinationId: ride.destination_id,
+                      originName: ride.origin_name ?? "",
+                      destinationName: ride.destination_name ?? "",
+                      homeDestinationId,
+                      served: servedOf(ride),
+                    })
+                  : `${ride.origin_name} → ${ride.destination_name} · ${driverName ?? ride.driver_name}`}
               </p>
 
               <div className="flex items-center gap-2">
@@ -90,7 +131,7 @@ export function RideSheet({ ride, cars, driverName, onOpenChange, onSave, onTogg
               </div>
 
               <div>
-                <label className="mb-1 block text-xs text-muted-foreground">{he.sadranRideSheet.car}</label>
+                <label className="mb-1 block text-xs text-muted-foreground">{he.sadranRideSheet.moveToCar}</label>
                 <Select value={carId} onValueChange={setCarId}>
                   <SelectTrigger>
                     <SelectValue />
@@ -117,6 +158,11 @@ export function RideSheet({ ride, cars, driverName, onOpenChange, onSave, onTogg
                 >
                   {ride.is_pinned ? t("action.unpin") : t("action.pin")}
                 </Button>
+                {onUnassign ? (
+                  <Button variant="outline" className="flex-1" onClick={onUnassign} disabled={saving}>
+                    {he.sadranRideSheet.removeAssignment}
+                  </Button>
+                ) : null}
               </div>
 
               {showCancelForm ? (

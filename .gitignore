@@ -15,6 +15,9 @@ dist-ssr/
 supabase/.branches/
 supabase/.temp/
 
+# diag-solve.mjs snapshots (local diagnostics, never committed)
+scripts/.diag-solve/
+
 # tests
 coverage/
 test-results/

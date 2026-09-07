@@ -307,6 +307,28 @@ export interface SubmitRequestPayload {
   expected_version?: number;
   join_ride_id?: string;
   requester_id?: string;
+  /**
+   * Optional car the member asked for (quick-request-from-empty-slot, UX_FLOWS.md §18); in a
+   * live week `try_auto_approve()` tries it first, falling back to any free car exactly as
+   * before if it's busy (`supabase/migrations/20260907093200_quick_request_preferred_car.sql`).
+   */
+  preferred_car_id?: string;
+}
+
+/**
+ * `submit_request`'s response, extended backward-compatibly (DATA_MODEL.md §6.1 item 24):
+ * `status`/`ride_id`/`car_id`/`reason` are only present for a live-week submission (where
+ * `try_auto_approve()` ran) — every other caller only ever read `request_id`/`is_late`/
+ * `warnings`, which are unchanged.
+ */
+export interface SubmitRequestResult {
+  request_id: string;
+  is_late: boolean;
+  warnings: string[];
+  status?: "assigned" | "waitlisted";
+  ride_id?: string;
+  car_id?: string;
+  reason?: string;
 }
 
 /** `submit_request(payload jsonb)` — the only write path for requests (CLAUDE.md decision 8). */

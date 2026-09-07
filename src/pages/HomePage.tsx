@@ -1,24 +1,44 @@
 import { CalendarClock, CarFront, Inbox, MessageCircleQuestion } from "lucide-react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
+import { formatInTimeZone } from "date-fns-tz";
 
 import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/EmptyState";
 import { PageHeader } from "@/components/PageHeader";
 import { RideCard, type RideCardData } from "@/components/RideCard";
 import { StatusBadge } from "@/components/StatusBadge";
-import { formatWeekRangeLabel } from "@/components/DateField";
+import { formatWeekRangeLabel, todayInJerusalem } from "@/components/DateField";
 import { useMyDepartments } from "@/features/auth/useMyDepartments";
 import { useProfile } from "@/features/auth/useProfile";
+import { useDestinations, useRideTypes } from "@/features/fleet/hooks";
+import { QuickRequestSheet } from "@/features/requests/components/QuickRequestSheet";
 import { useMyRequests } from "@/features/requests/hooks";
 import type { MyRequestRow } from "@/features/requests/api";
+import { firstCarFreeNow, roundUpToQuarterHour } from "@/features/siddur/freeWindows";
 import { useWeeks } from "@/features/siddur/hooks";
+import { useDayFreeWindows } from "@/features/siddur/useDayFreeWindows";
 import { he, t, tv } from "@/i18n/he";
-import { formatTime } from "@/lib/time";
+import { formatTime, TZ } from "@/lib/time";
 
 import { hasRideTodayOrTomorrow, resolveHomeWeek } from "./homeWeek";
 
 const UNSERVED_STATUSES = new Set<MyRequestRow["status"]>(["waitlisted", "denied", "proposed"]);
 
+/**
+ * Owner-reported bug (UX_FLOWS.md §20): a round trip is stored as one ride
+ * row with `origin_id === destination_id === the department's home
+ * location` (DATA_MODEL.md consistency decision #14), so `row.ride.
+ * destinationName` is always the department's own name ("נבו") for that
+ * common case — `row.destination` (the *request's* own destination, always
+ * the real place regardless of how the ride row happens to store it) is
+ * used instead. One-way requests are unaffected: their ride row's own
+ * `destinationName` is already the real place (one-way-to) or genuinely home
+ * (one-way-from), so this only overrides the round-trip case — matching the
+ * same underlying fix already shipped for the Sadran board's phone list mode
+ * (`rideBlockLabel`/`resolveRideRealDestination`, `src/lib/rideLabel.ts`).
+ */
 function toRideCardData(row: MyRequestRow): RideCardData | null {
   if (!row.ride) return null;
   return {
@@ -26,7 +46,7 @@ function toRideCardData(row: MyRequestRow): RideCardData | null {
     startsAt: row.ride.startsAt,
     endsAt: row.ride.endsAt,
     originName: row.ride.originName,
-    destinationName: row.ride.destinationName,
+    destinationName: row.tripShape === "round_trip" ? row.destination : row.ride.destinationName,
     driverName: row.ride.driverName,
     isChauffeur: row.ride.isChauffeur,
     carName: row.ride.carName,
@@ -52,10 +72,23 @@ export function HomePage() {
   const profileQuery = useProfile();
   const departmentsQuery = useMyDepartments();
   const requestsQuery = useMyRequests();
+  const destinationsQuery = useDestinations();
+  const rideTypesQuery = useRideTypes();
 
   const defaultDepartmentId =
     profileQuery.data?.default_department_id ?? departmentsQuery.data?.[0]?.department_id;
   const weeksQuery = useWeeks(defaultDepartmentId);
+
+  // "לוקח/ת רכב עכשיו" card (UX_FLOWS.md §18): only when the live week exists and some shared
+  // car is free right now. Hooks must run unconditionally (before the loading early-return
+  // below), so `now`/the live week start are resolved here even while other data is loading.
+  const now = new Date();
+  const today = todayInJerusalem();
+  const liveWeekStart = (weeksQuery.data ?? []).find((w) => w.phase === "live")?.week_start;
+  const dayFreeWindows = useDayFreeWindows(defaultDepartmentId, liveWeekStart, liveWeekStart ? today : undefined, now);
+  const freeCarNow = firstCarFreeNow(dayFreeWindows.freeWindows, now.getTime());
+  const [quickRequestOpen, setQuickRequestOpen] = useState(false);
+  const defaultRideTypeId = rideTypesQuery.data?.find((rt) => rt.code === "other")?.id ?? rideTypesQuery.data?.[0]?.id ?? "";
 
   const isLoading = profileQuery.isLoading || requestsQuery.isLoading || weeksQuery.isLoading;
 
@@ -70,7 +103,6 @@ export function HomePage() {
   }
 
   const requests = requestsQuery.data ?? [];
-  const now = new Date();
 
   const upcomingRides = requests
     .filter((r) => r.ride && r.ride.status !== "cancelled" && new Date(r.ride.startsAt) >= now)
@@ -123,6 +155,29 @@ export function HomePage() {
           </div>
         )}
       </section>
+
+      {freeCarNow ? (
+        <Card
+          role="button"
+          tabIndex={0}
+          className="cursor-pointer transition-colors hover:bg-accent/40"
+          onClick={() => setQuickRequestOpen(true)}
+        >
+          <CardContent className="flex items-center justify-between gap-2 p-4 text-sm">
+            <div className="flex items-center gap-2">
+              <CarFront className="size-5 text-muted-foreground" aria-hidden="true" />
+              <div>
+                <p className="font-medium">{t("quickRequest.takeCarNow")}</p>
+                <p className="text-xs text-muted-foreground">
+                  {tv("quickRequest.homeCardSubtitle", {
+                    car: dayFreeWindows.cars.find((c) => c.id === freeCarNow.carId)?.name ?? "",
+                  })}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
 
       <section className="space-y-3">
         <h2 className="text-sm font-semibold text-muted-foreground">{t("home.unservedRequests")}</h2>
@@ -194,6 +249,30 @@ export function HomePage() {
       <Button asChild size="lg" className="fixed bottom-20 end-4 z-30 rounded-full shadow-lg md:bottom-6">
         <Link to="/requests/new">{t("action.newRequest")}</Link>
       </Button>
+
+      {quickRequestOpen && freeCarNow && defaultDepartmentId && liveWeekStart ? (
+        <QuickRequestSheet
+          open={quickRequestOpen}
+          onOpenChange={setQuickRequestOpen}
+          departmentId={defaultDepartmentId}
+          weekStart={liveWeekStart}
+          rideTypeId={defaultRideTypeId}
+          day={today}
+          initialStartTime={formatInTimeZone(new Date(roundUpToQuarterHour(now.getTime())), TZ, "HH:mm")}
+          initialCarId={freeCarNow.carId}
+          showCarPicker
+          cars={dayFreeWindows.cars}
+          destinations={(destinationsQuery.data ?? []).map((d) => ({
+            id: d.id,
+            name: d.name,
+            aliases: d.aliases,
+            zone: d.zone,
+          }))}
+          freeWindows={dayFreeWindows.freeWindows}
+          awayWindows={dayFreeWindows.awayWindows}
+          now={now}
+        />
+      ) : null}
     </div>
   );
 }

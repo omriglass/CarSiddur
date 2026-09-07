@@ -296,4 +296,86 @@ end $$;
 
 reset role;
 
+-- ---------------------------------------------------------------------------
+-- 10) submit_request()'s optional `preferred_car_id` (live week, "quick request from an
+--     empty slot", DATA_MODEL.md §6.1 item 24): the preferred car is free for the whole
+--     window -> try_auto_approve() assigns exactly it (not just "some" free car), and the
+--     preference is recorded on the request row for the Sadran to see. Friday of the
+--     seeded live week (day index 5) carries no seeded ride on any car.
+-- ---------------------------------------------------------------------------
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000103","role":"authenticated"}', true);
+
+do $$
+declare
+  v_live_week date := public.current_week_start();
+  v_result jsonb;
+  v_request_id uuid;
+begin
+  v_result := public.submit_request(jsonb_build_object(
+    'department_id', '00000000-0000-0000-0000-000000000001',
+    'week_start', v_live_week,
+    'destination_id', '00000000-0000-0000-0000-000000000011',
+    'ride_type_id', '00000000-0000-0000-0000-000000000021',
+    'trip_shape', 'round_trip',
+    'depart_at', (v_live_week + interval '5 days 8 hours')::text,
+    'return_at', (v_live_week + interval '5 days 12 hours')::text,
+    'adults', 1,
+    'preferred_car_id', '00000000-0000-0000-0000-000000000041'
+  ));
+  v_request_id := (v_result ->> 'request_id')::uuid;
+
+  assert v_result ->> 'status' = 'assigned',
+    format('TEST 10 FAILED: expected status=assigned, got %s', v_result ->> 'status');
+  assert v_result ->> 'car_id' = '00000000-0000-0000-0000-000000000041',
+    format('TEST 10 FAILED: expected the preferred (free) car ...041 to be assigned, got car_id=%s', v_result ->> 'car_id');
+
+  perform 1 from public.requests where id = v_request_id and preferred_car_id = '00000000-0000-0000-0000-000000000041';
+  assert found, 'TEST 10 FAILED: requests.preferred_car_id should be recorded for the Sadran to see';
+
+  raise notice 'TEST 10 PASSED: preferred car free -> submit_request()/try_auto_approve() assign exactly it';
+end $$;
+
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 11) Preferred car busy for (part of) the window -> falls back to another free car exactly
+--     like a plain request with no preference (REQUIREMENTS §8), instead of waitlisting.
+--     Car ...040 is busy the whole of day index 2 08:00-16:00 (seed ride ...301).
+-- ---------------------------------------------------------------------------
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000104","role":"authenticated"}', true);
+
+do $$
+declare
+  v_live_week date := public.current_week_start();
+  v_result jsonb;
+  v_request_id uuid;
+begin
+  v_result := public.submit_request(jsonb_build_object(
+    'department_id', '00000000-0000-0000-0000-000000000001',
+    'week_start', v_live_week,
+    'destination_id', '00000000-0000-0000-0000-000000000011',
+    'ride_type_id', '00000000-0000-0000-0000-000000000021',
+    'trip_shape', 'round_trip',
+    'depart_at', (v_live_week + interval '2 days 8 hours')::text,
+    'return_at', (v_live_week + interval '2 days 16 hours')::text,
+    'adults', 1,
+    'preferred_car_id', '00000000-0000-0000-0000-000000000040'
+  ));
+  v_request_id := (v_result ->> 'request_id')::uuid;
+
+  assert v_result ->> 'status' = 'assigned',
+    format('TEST 11 FAILED: expected status=assigned via fallback car, got %s', v_result ->> 'status');
+  assert v_result ->> 'car_id' is not null and v_result ->> 'car_id' <> '00000000-0000-0000-0000-000000000040',
+    format('TEST 11 FAILED: preferred car ...040 is busy (seed ride ...301) and must not be the one assigned, got car_id=%s', v_result ->> 'car_id');
+
+  perform 1 from public.requests where id = v_request_id and preferred_car_id = '00000000-0000-0000-0000-000000000040';
+  assert found, 'TEST 11 FAILED: requests.preferred_car_id should still record the (busy) car the member originally asked for';
+
+  raise notice 'TEST 11 PASSED: preferred car busy -> submit_request()/try_auto_approve() fall back to another free car';
+end $$;
+
+reset role;
+
 rollback;

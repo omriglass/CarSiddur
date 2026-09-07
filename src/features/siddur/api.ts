@@ -90,3 +90,19 @@ export async function fetchCarLocations(departmentId: string, weekStart: string)
   if (error) throw toAppError(error);
   return data ?? [];
 }
+
+/**
+ * `department_settings.board_start_time` only — the member grid's default
+ * visible-range start (UX_FLOWS.md §20, same field the Sadran board reads
+ * via its own `fetchDepartmentSettings`; a minimal, single-column read here
+ * rather than pulling in the whole `sadran` feature's settings row).
+ */
+export async function fetchBoardStartTime(departmentId: string): Promise<string | null> {
+  const { data, error } = await supabase
+    .from("department_settings")
+    .select("board_start_time")
+    .eq("department_id", departmentId)
+    .maybeSingle();
+  if (error) throw toAppError(error);
+  return data?.board_start_time ?? null;
+}

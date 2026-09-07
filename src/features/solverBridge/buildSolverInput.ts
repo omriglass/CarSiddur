@@ -19,6 +19,7 @@ import { fromZonedTime } from "date-fns-tz";
 import { TZ } from "@/lib/time";
 
 import type {
+  Assignment,
   Car as SolverCar,
   DayBounds,
   Destination as SolverDestination,
@@ -134,6 +135,18 @@ export interface BuildSolverInputParams {
    * (SOLVER.md §5.1: "the caller decides which requests are open").
    */
   fixedRides?: FixedRide[];
+  /**
+   * Continuity hints for a full re-solve (SOLVER.md §5.1: "a full re-run ...
+   * supplies the previous draft as `previousAssignments` so continuity ...
+   * minimizes churn", `greedy.ts`'s `continuityRank`). Bug-fix pass
+   * (docs/UX_FLOWS.md §19 "Solve/apply semantics after owner testing"):
+   * every non-pinned ride that existed before a full re-solve — the ones a
+   * full re-solve is allowed to replace — is passed here so the solver
+   * prefers to keep each request's members on the same car rather than
+   * reshuffling everyone. Omit for `'remaining'` mode (nothing is replaced
+   * there, so there is nothing to keep continuity with).
+   */
+  previousAssignments?: Pick<Assignment, "servedRequestIds" | "carId">[];
 }
 
 function toSolverDestination(row: DestinationRow): SolverDestination {
@@ -248,5 +261,6 @@ export function buildSolverInput(params: BuildSolverInputParams): SolverInput {
     stats: { fairness, usualCarId: {} },
     config,
     now: params.now,
+    previousAssignments: params.previousAssignments,
   };
 }

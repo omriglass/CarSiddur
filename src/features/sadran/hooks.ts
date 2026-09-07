@@ -65,6 +65,20 @@ export function useWeekRequests(departmentId: string | undefined, weekStart: str
   });
 }
 
+/**
+ * `useWeekRequests` plus requester/destination/ride-type names (bug #1: the
+ * board's `UnmetList` and the dashboard's counters need to show *which*
+ * request is unmet straight from the DB, not only from a solver run).
+ */
+export function useWeekRequestsWithNames(departmentId: string | undefined, weekStart: string | undefined) {
+  return useQuery({
+    queryKey: sadranKeys.weekRequestsWithNames(departmentId ?? "", weekStart ?? ""),
+    queryFn: () => api.fetchWeekRequestsWithNames(departmentId as string, weekStart as string),
+    enabled: !!departmentId && !!weekStart,
+    staleTime: 10_000,
+  });
+}
+
 /** Reuses `@/features/fleet/api`'s `fetchCars` (already department-scoped, excludes retired). */
 export function useCarsForDepartment(departmentId: string | undefined) {
   return useQuery({

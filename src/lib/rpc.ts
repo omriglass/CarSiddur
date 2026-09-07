@@ -99,7 +99,21 @@ export class AppError extends Error {
 interface PostgrestLikeError {
   code?: string | null;
   message?: string | null;
+  /**
+   * Postgrest's `error.details` — set from a PL/pgSQL `raise ... using
+   * detail = ...` (e.g. `assert_car_chain`'s bug-fix pass update,
+   * `supabase/migrations/20260907093300_apply_solver_result_atomic_summary.sql`,
+   * which now puts the car's name and the offending ride's time window
+   * there). Appended to the toast message below for the few codes where a
+   * generic sentence alone would not identify *which* ride broke — the
+   * MAJOR BUG investigation's "never silently partial, never anonymous"
+   * requirement for apply_solver_result/edit_ride failures.
+   */
+  details?: string | null;
 }
+
+/** Codes whose Hebrew message is generic on its own; `error.details` (when present) names the specific ride/car. */
+const CODES_NAMING_THE_RIDE = new Set<ErrorCode>(["car_chain_broken", "car_away_at_day_end"]);
 
 /** Maps a Postgrest/Supabase error (or unknown thrown value) to a Hebrew `AppError`. */
 export function toAppError(error: unknown): AppError {
@@ -115,7 +129,10 @@ export function toAppError(error: unknown): AppError {
   const byMessage = pgError?.message ? MESSAGE_TO_CODE[pgError.message] : undefined;
   const bySqlstate = pgError?.code ? SQLSTATE_TO_CODE[pgError.code] : undefined;
   const code = byMessage ?? bySqlstate ?? "unknown";
-  return new AppError(code, CODE_TO_MESSAGE[code]);
+  const baseMessage = CODE_TO_MESSAGE[code];
+  const message =
+    CODES_NAMING_THE_RIDE.has(code) && pgError?.details ? `${baseMessage} (${pgError.details})` : baseMessage;
+  return new AppError(code, message);
 }
 
 /** Maps the error and shows a Hebrew toast (mutations' `onError`, CLAUDE.md "Data"). */

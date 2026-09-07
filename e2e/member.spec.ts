@@ -63,4 +63,35 @@ test.describe("member", () => {
     }
     expect(sawARide).toBe(true);
   });
+
+  // UX_FLOWS.md §20: the member siddur's wide-screen grid used to show the
+  // department's own name ("נבו") instead of the real destination for a
+  // round trip (`ride.destination_id === origin_id === home`, DATA_MODEL.md
+  // consistency decision #14) — the same bug the Sadran board fixed for
+  // itself (`src/lib/rideLabel.ts`) but never wired into the member-facing
+  // screens. A wide viewport is needed here since the grid only renders
+  // `lg:` and up (`SiddurPage.tsx`); every ride block's `aria-label` is the
+  // composed "<driver> ל/מ<place>" label (same convention `board.spec.ts`
+  // already asserts for the Sadran board).
+  test("wide-screen siddur grid shows the real destination, not the department name, on a ride block", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await signIn(page);
+
+    await page.goto("/siddur");
+    await expect(page.getByRole("heading", { name: "הסידור" })).toBeVisible();
+
+    const dayLabels = ["א", "ב", "ג", "ד", "ה", "ו", "ש"];
+    let label: string | null = null;
+    for (const dayLabel of dayLabels) {
+      await page.getByRole("radiogroup", { name: "יום" }).last().getByRole("radio", { name: dayLabel }).first().click();
+      const firstRide = page.locator("button[data-ride-id]").first();
+      if (await firstRide.isVisible()) {
+        label = await firstRide.getAttribute("aria-label");
+        break;
+      }
+    }
+    expect(label).toBeTruthy();
+    expect(label).toMatch(/[למ]\S/);
+    expect(label).not.toBe("נבו");
+  });
 });

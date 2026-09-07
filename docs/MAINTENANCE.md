@@ -10,6 +10,7 @@ Status: v0.3 + verified 2026-09-06 (all paths tested against actual code layout;
 - Hebrew text lives only in `src/i18n/he.ts` (UI), `src/solver/reasons.ts` (solver explanations) and seeded data (ride types, destinations, notification templates).
 - Every table has row-level security. The solver is pure code with tests.
 - Nothing is "done" until `npm run lint && npm run typecheck && npm run test` pass.
+- Need realistic requests to click through manually? `npm run db:fake -- --count 40 --clear` (local stack only, see README "Fake data for manual testing").
 - The reference project `../commucar-share` is never modified.
 
 ## Skills (type `/name` in Claude Code)
