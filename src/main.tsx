@@ -7,6 +7,7 @@ import { router } from "@/app/router";
 import { Toaster } from "@/components/ui/sonner";
 import { SessionProvider } from "@/features/auth/SessionProvider";
 import { applyTheme, getStoredPreference } from "@/hooks/useTheme";
+import { captureInstallPrompt } from "@/lib/installPrompt";
 
 import "@/index.css";
 
@@ -14,6 +15,7 @@ import "@/index.css";
 // wrong theme (the `useTheme()` hook re-applies this once Profile mounts,
 // and keeps it in sync with OS changes while on "system").
 applyTheme(getStoredPreference());
+captureInstallPrompt();
 
 const queryClient = new QueryClient({
   defaultOptions: {

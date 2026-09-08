@@ -20,7 +20,7 @@ test.describe("admin", () => {
     await expect(page).toHaveURL(/\/my$/);
   });
 
-  test("edits member details and promotes an ordinary member through the weekly roster", async ({ page }) => {
+  test("edits member details and assigns an ordinary member without permanent promotion", async ({ page }) => {
     await page.goto("/admin/members");
     const row = page.getByRole("row").filter({ hasText: "member2@nevo.local" });
     const nameButton = row.getByRole("button").first();
@@ -48,7 +48,7 @@ test.describe("admin", () => {
     await expect(page.getByRole("dialog")).not.toBeVisible();
     await expect(cell).toContainText(editedName);
     await page.goto("/admin/members");
-    await expect(row.getByRole("combobox")).toContainText(he.adminMembers.roleSadran);
+    await expect(row.getByRole("combobox")).toContainText(he.adminMembers.roleMember);
     await row.getByRole("button", { name: editedName, exact: true }).click();
     await editor.getByLabel(he.adminMembers.columnName).fill(originalName);
     await editor.getByLabel(he.adminMembers.columnPhone).fill(originalPhone);

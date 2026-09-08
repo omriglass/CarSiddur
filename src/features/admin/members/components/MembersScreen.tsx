@@ -46,7 +46,7 @@ function MembersTab() {
   const revokeAdminMutation = useRevokeAdminMutation();
   const setRoleMutation = useSetMemberRoleMutation();
   const updateDetailsMutation = useUpdateMemberDetailsMutation();
-  const [editing, setEditing] = useState<{ profileId: string; fullName: string; phone: string } | null>(null);
+  const [editing, setEditing] = useState<{ profileId: string; fullName: string; phone: string; departmentId?: string } | null>(null);
 
   const approvedProfiles = (profilesQuery.data ?? []).filter((p) => p.approval_status !== "pending");
   const profileIds = approvedProfiles.map((p) => p.id);
@@ -155,6 +155,19 @@ function MembersTab() {
         <label className="grid gap-2">{he.adminMembers.columnPhone}
           <Input type="tel" dir="ltr" value={editing?.phone ?? ""} onChange={(e) => setEditing((old) => old && ({ ...old, phone: e.target.value }))} />
         </label>
+        <div className="grid gap-2">
+          <label htmlFor="member-add-department">{he.adminMembers.addDepartment}</label>
+          <Select value={editing?.departmentId ?? "none"} onValueChange={(value) => setEditing((old) => old && ({ ...old, departmentId: value === "none" ? undefined : value }))}>
+            <SelectTrigger id="member-add-department"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">{he.adminMembers.keepDepartments}</SelectItem>
+              {(departmentsQuery.data ?? []).filter((department) => department.is_active &&
+                !(membershipsByProfile.get(editing?.profileId ?? "") ?? []).some((membership) => membership.departmentId === department.id))
+                .map((department) => <SelectItem key={department.id} value={department.id}>{department.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <p className="text-sm text-muted-foreground">{he.adminMembers.departmentMembershipHelp}</p>
+        </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => setEditing(null)}>{he.adminCommon.cancel}</Button>
           <Button disabled={!editing?.fullName.trim() || updateDetailsMutation.isPending} onClick={async () => {

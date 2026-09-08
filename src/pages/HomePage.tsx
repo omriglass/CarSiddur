@@ -14,6 +14,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { formatWeekRangeLabel, todayInJerusalem } from "@/components/DateField";
 import { useMyDepartments } from "@/features/auth/useMyDepartments";
 import { useProfile } from "@/features/auth/useProfile";
+import { DeviceSetupPrompts } from "@/features/member/components/DeviceSetupPrompts";
 import { useDestinations, useRideTypes } from "@/features/fleet/hooks";
 import { QuickRequestSheet } from "@/features/requests/components/QuickRequestSheet";
 import { useMyRequests } from "@/features/requests/hooks";
@@ -116,6 +117,8 @@ export function HomePage() {
             : undefined
         }
       />
+
+      <DeviceSetupPrompts />
 
       {freeCarNow ? (
         <Card

@@ -50,12 +50,12 @@ The app **proposes**; a human always makes the final decision.
 | Role | Can do |
 |---|---|
 | **Member** | Sign in with Google; maintain profile (name, phone, default department, child seats needed, home-screen week preference §5.5); create/edit/withdraw own requests; see the published siddur of their department(s) and, read-only, of other departments; accept/decline proposals addressed to them; cancel own rides; register a temporary car (§6.4); report car issues; receive notifications. |
-| **Sadran** | Everything a member can, plus for the department(s) and week(s) they are assigned to: open/close the request window, run the solver, edit the draft siddur by hand, create and send proposals, approve contested claims, publish, edit after publishing. |
+| **Sadran** | Everything a member can, plus manage all weeks and operational settings in their permanent department(s): open/close the request window, run the solver, edit the draft siddur by hand, create and send proposals, approve contested claims, publish, edit after publishing. Members assigned weekly duty receive only that week’s board abilities. |
 | **Admin** | Everything, plus: manage departments, members and their departments, cars and seat configurations, destinations list, priority policies, Sadran roster, notification templates, app settings. |
 
 Rules:
 - Roles are per department: a person may be Sadran of one department and a plain member of another.
-- Sadran assignment is per department per target week, with an optional standing default Sadran. Admins may assign any approved active department member; saving promotes a selected member to Sadran atomically with the roster update. Invalid replacements leave the previous roster intact.
+- Every approved active member is eligible for a weekly Sadran assignment without promotion, revocation or reinstatement. That assignment grants board, request, solver, proposal and publication access only to its department and week; it never grants operational settings access. Permanent department Sadranim can manage every week in their department, regardless of who is on duty. They rotate weekly responsibility in stable profile-ID order, anchored to Sunday 1970-01-04; explicit weekly assignments override rotation. Duty is saved when a week opens, so later pool changes do not rewrite existing assignments. Invalid replacements leave the previous roster intact.
 - Admins can edit member names and phone numbers, approve members into a department atomically, and change department roles with visible save/error feedback.
 - There may be several Sadranim for one department and week (any of them may act).
 - Admin actions are global.
@@ -433,3 +433,11 @@ The unassigned list scrolls with the page, including tablets. Mobile members and
 All application routes must support direct navigation, refresh and browser Back/Forward on the production static host, including signed-out proposal links before service-worker installation.
 
 `todo:defered` tracks Google Maps distance/time calculations per department origin and full department isolation with an explicit home-page context selector. These two changes are deferred; multi-department membership must remain supported when implementing them.
+
+### Admin department membership (2026-09-08)
+
+Global administrator privileges and department membership are independent. Administrators participate in a department as ordinary members and may be added to one or more departments through the member details editor, including their own account. Adding membership must preserve admin privileges and any existing department role, restore removed membership, and set a valid default department when none exists. Do not assign an administrator arbitrarily to an unrelated department.
+
+### Home device setup suggestions (2026-09-08)
+
+Home suggests enabling notifications on the current device and installing the app to the home screen. Suggestions are dismissible for seven days on that device, without blocking requests. Native installation and notification permission are requested only from a user click. Installed apps hide the installation suggestion; subscribed devices hide the notification suggestion. Denied permission explains browser settings; unsupported push has no enable action. iPhone/iPad browser users first receive home-screen installation instructions, then enable notifications after opening the installed app.

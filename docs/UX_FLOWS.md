@@ -1314,3 +1314,13 @@ The unassigned list has no height cap or independent vertical scrolling. In tabl
 ### Admin deployment fixes (2026-09-08)
 
 Member names in the admin member table open a name/phone editor. Department-role changes show success/error toasts and wait for the server before another change. Roster pickers offer approved active department members; selecting an ordinary member promotes them automatically on save. Both standing and weekly roster saves are atomic; errors preserve the existing roster.
+
+### Home device setup suggestions (2026-09-08)
+
+Home shows compact, independent installation and notification cards. Installation uses the browser install prompt when available and platform instructions otherwise. Each card has a seven-day “later” dismissal persisted on the device. Push opt-in uses the existing subscription registration flow and never requests permission during render or page load. Check the current browser subscription rather than treating a subscription on another device as sufficient. On iOS/iPadOS outside standalone mode, show installation guidance first; denied notification permission shows settings guidance without a repeat permission request.
+
+### Department participation and weekly coordination (2026-09-08)
+
+The member details dialog offers an optional department to add, including for the current admin's own account. Existing memberships remain visible and global admin privileges remain independent. Saving refreshes the member list and signed-in profile/department queries.
+
+A dated roster assignment is a one-week responsibility, not a user status: the person's department role stays member. All approved members are eligible. They can open the assigned board, solve, send proposals and publish that week, but cannot open another week's coordination screens or operational settings. Regular department Sadranim retain access to all department boards and operational settings, even when another person is responsible. The roster previews the automatic rotation of the regular pool; explicit week overrides take precedence. Navigation, direct-route guards and board week selectors use the same week-specific authorization as the database.

@@ -75,15 +75,14 @@ export async function fetchDepartmentMembers(
     .map((row) => ({ id: row.profile_id, name: row.profile!.full_name }));
 }
 
-/**
- * Profile ids who are Sadran of `(departmentId, weekStart)` — explicit rows
- * for that week if any exist, otherwise the standing default
- * (`sadran_assignments.week_start is null`); mirrors the SQL `is_sadran()`
- * resolution rule exactly since it calls the same `sadranim_of()` function
- * (DATA_MODEL.md §3.1, §4.2) rather than reimplementing it client-side.
- */
+/** Duty recipients for a week: explicit assignment or permanent Sadran rotation. */
 export async function fetchSadranimOf(departmentId: string, weekStart: string): Promise<string[]> {
   return rpc("sadranim_of", { _dept: departmentId, _week: weekStart });
+}
+
+/** Server authorization includes permanent Sadrans even when somebody else is on duty. */
+export async function fetchCanManageWeek(departmentId: string, weekStart: string): Promise<boolean> {
+  return rpc("can_manage_week", { _dept: departmentId, _week: weekStart });
 }
 
 export async function registerPushSubscription(input: {

@@ -2,7 +2,29 @@
 
 ## Quick update for the existing site
 
-For the redirect-loop failure, the source fix removes `public/_redirects` and keeps Workers native SPA routing. Commit and push the fix; Cloudflare will rebuild and deploy it. No additional database migration is needed for this routing correction. Cloudflare build command: `npm run build`; deploy command: `npx wrangler deploy`.
+For the admin membership, weekly Sadran and home-screen/notification prompts update:
+
+1. Apply the two new database migrations first:
+
+   ```sh
+   npx supabase db push
+   ```
+
+   Confirm when prompted. If this fails, stop before the next step.
+
+2. Publish the updated code:
+
+   ```sh
+   git add .
+   git commit -m "Add weekly Sadran roles, department membership and device prompts"
+   git push origin main
+   ```
+
+Cloudflare rebuilds the existing `carsiddur` Worker from the pushed commit. Wait for its deployment to succeed, then refresh the app. There are no Edge Function or secret changes for this update. Cloudflare build command: `npm run build`; deploy command: `npx wrangler deploy`.
+
+Admins can join a department by editing their own entry in **Members**. Set regular Sadranim in the roster's permanent pool; choose any approved member in a specific week for that week only. Existing permanent roles are preserved: if a previous weekly assignment promoted someone under the old behavior, change their department role back to member while keeping their dated assignment.
+
+Final combined database/browser validation is pending at the user's request; these are deployment instructions, not a record of a tested or completed release.
 
 Checked against provider documentation on 2026-09-07. This is a deployment checklist, not a record of a completed deployment.
 

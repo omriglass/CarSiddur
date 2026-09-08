@@ -2,7 +2,7 @@
 
 Status: **DRAFT v0.3** (2026-09-06, owner answers applied; one-way/relay model, car location and the two Sadran events added). Derives from `docs/REQUIREMENTS.md` v0.3 (source of truth). Where this document and REQUIREMENTS disagree, REQUIREMENTS wins and this file must be fixed.
 
-Fixed decisions (from architecture): Supabase Postgres + Supabase Auth (Google only); RLS on **every** table; roles per department; Sadran assignment per department per target week with optional standing default; 15-minute granularity; `Asia/Jerusalem`; every timestamp is `timestamptz`; weeks identified by `week_start` (a Sunday `date`); priority policy stored as versioned JSON; solver runs in the browser and writes its result through one RPC (one transaction).
+Fixed decisions (from architecture): Supabase Postgres + Supabase Auth (Google only); RLS on **every** table; roles per department; permanent department Sadranim plus member duty per target week; 15-minute granularity; `Asia/Jerusalem`; every timestamp is `timestamptz`; weeks identified by `week_start` (a Sunday `date`); priority policy stored as versioned JSON; solver runs in the browser and writes its result through one RPC (one transaction).
 
 ## 0. Conventions and lessons from the reference app
 
@@ -256,11 +256,11 @@ PK `(department_id, profile_id)`. Index `(profile_id) where removed_at is null`.
 | id | uuid | NN | | PK |
 | department_id | uuid | NN | | FK departments ON DELETE CASCADE |
 | profile_id | uuid | NN | | FK profiles ON DELETE CASCADE |
-| week_start | date | | | **NULL = standing default** for the department; else CHECK `extract(dow from week_start) = 0` |
+| week_start | date | | | **NULL = legacy permanent pool row**; permanent authority is the membership role; else CHECK `extract(dow from week_start) = 0` |
 | assigned_by | uuid | | | FK profiles |
 | created_at | timestamptz | NN | now() | |
 
-Unique index `(department_id, profile_id, coalesce(week_start, '1970-01-04'))`. Composite FK `(department_id, profile_id)` → `department_members` (must be on roster; trigger also checks `role = 'sadran'`). Resolution rule (implemented in `is_sadran()`): explicit rows for `(dept, week)` if any exist, otherwise the standing defaults. Several rows per week are allowed (§3 "several Sadranim").
+Unique index `(department_id, profile_id, coalesce(week_start, '1970-01-04'))`. Composite FK `(department_id, profile_id)` → `department_members` (must be an approved active member; null rows require `role = 'sadran'`). `sadranim_of()` selects valid explicit duty rows, otherwise one permanent member by stable UUID order and the week index since 1970-01-04 modulo pool size. The `assign_week_sadran` trigger persists rotation before opening notifications; `notify_week_sadran_assigned` sends deadline reminders for replacements. `is_sadran()` authorizes every week for permanent department Sadranim, or exactly the explicitly assigned week for a member. `is_sadran_any()` and `can_manage_operations()` require permanent membership roles (or admin for operations); weekly assignment alone grants no settings access. `weeks` INSERT/UPDATE RLS permits direct cycle configuration writes only for permanent Sadranim/admins; lifecycle RPCs still authorize weekly coordinators and normalize timestamps when publishing/reopening. `phone_of` lets weekly coordinators contact requesters, companions, drivers and proposal parties only within their assigned boards, preserving existing own/admin/shared-ride visibility. Several rows per week are allowed (§3 "several Sadranim").
 
 ### 3.2 Fleet (REQUIREMENTS §6)
 
@@ -798,31 +798,47 @@ language sql stable security definer set search_path = public, pg_temp as $$
     where dm.department_id = _dept and dm.profile_id = (select auth.uid()) and dm.removed_at is null);
 $$;
 
--- Effective Sadranim of (dept, week): explicit rows for that week if any exist, else standing defaults.
-create or replace function public.sadranim_of(_dept uuid, _week date) returns setof uuid
+create or replace function public.is_sadran_any(_dept uuid) returns boolean
 language sql stable security definer set search_path = public, pg_temp as $$
-  with explicit as (
-    select sa.profile_id from public.sadran_assignments sa
-    where sa.department_id = _dept and sa.week_start = _week)
-  select profile_id from explicit
-  union all
-  select sa.profile_id from public.sadran_assignments sa
-  where sa.department_id = _dept and sa.week_start is null
-    and not exists (select 1 from explicit);
+  select public.is_approved() and exists (
+    select 1 from public.department_members dm where dm.department_id=_dept
+      and dm.profile_id=(select auth.uid()) and dm.removed_at is null and dm.role='sadran');
 $$;
 
 create or replace function public.is_sadran(_dept uuid, _week date) returns boolean
 language sql stable security definer set search_path = public, pg_temp as $$
-  select public.is_approved() and (select auth.uid()) in (select public.sadranim_of(_dept, _week));
+  select public.is_sadran_any(_dept) or (public.member_of(_dept) and exists (
+    select 1 from public.sadran_assignments sa where sa.department_id=_dept
+      and sa.week_start=_week and sa.profile_id=(select auth.uid())));
 $$;
 
--- Sadran of the department for any current/future week or standing default (car blocks, issues triage).
-create or replace function public.is_sadran_any(_dept uuid) returns boolean
+create or replace function public.can_manage_operations(p_department_id uuid default null) returns boolean
 language sql stable security definer set search_path = public, pg_temp as $$
-  select public.is_approved() and exists (
-    select 1 from public.sadran_assignments sa
-    where sa.department_id = _dept and sa.profile_id = (select auth.uid())
-      and (sa.week_start is null or sa.week_start >= public.current_week_start()));
+  select public.is_admin() or (public.is_approved() and exists (
+    select 1 from public.department_members dm where dm.profile_id=(select auth.uid())
+      and dm.removed_at is null and dm.role='sadran'
+      and (p_department_id is null or dm.department_id=p_department_id)));
+$$;
+
+-- Responsibility recipients, not an authorization helper. Legacy null assignments
+-- are not a separate permission or eligibility flag; department membership is canonical.
+create or replace function public.sadranim_of(_dept uuid, _week date) returns setof uuid
+language sql stable security definer set search_path = public, pg_temp as $$
+  with explicit as (
+    select sa.profile_id from public.sadran_assignments sa
+    join public.department_members dm on dm.department_id=sa.department_id and dm.profile_id=sa.profile_id
+    join public.profiles p on p.id=sa.profile_id
+    where sa.department_id=_dept and sa.week_start=_week
+      and dm.removed_at is null and p.approval_status='approved'
+  ), pool as (
+    select dm.profile_id,row_number() over(order by dm.profile_id)-1 position,count(*) over() size
+    from public.department_members dm join public.profiles p on p.id=dm.profile_id
+    where dm.department_id=_dept and dm.role='sadran' and dm.removed_at is null and p.approval_status='approved'
+  )
+  select profile_id from explicit
+  union all
+  select profile_id from pool where not exists(select 1 from explicit)
+    and position=mod(mod((_week-date '1970-01-04')/7,size)+size,size);
 $$;
 
 create or replace function public.can_manage_week(_dept uuid, _week date) returns boolean
@@ -859,14 +875,19 @@ $$;
 -- Phone visibility per REQUIREMENTS §10.
 create or replace function public.phone_of(_profile uuid) returns text
 language sql stable security definer set search_path = public, pg_temp as $$
-  select p.phone from public.profiles p
-  where p.id = _profile
-    and ( _profile = (select auth.uid())
-       or public.is_admin()
-       or exists (select 1 from public.department_members dm
-                  where dm.profile_id = _profile and dm.removed_at is null
-                    and public.is_sadran_any(dm.department_id))
-       or public.shares_ride_with(_profile));
+  select p.phone from public.profiles p where p.id=_profile and (
+    _profile=(select auth.uid()) or public.is_admin()
+    or exists(select 1 from public.department_members dm
+      where dm.profile_id=_profile and dm.removed_at is null and public.is_sadran_any(dm.department_id))
+    or exists(select 1 from public.requests q
+      where (q.requester_id=_profile or exists(select 1 from public.request_companions rc
+        where rc.request_id=q.id and rc.profile_id=_profile))
+      and public.is_sadran(q.department_id,q.week_start))
+    or exists(select 1 from public.rides r where r.driver_id=_profile
+      and r.status<>'cancelled' and public.is_sadran(r.department_id,r.week_start))
+    or exists(select 1 from public.proposal_parties pp join public.proposals proposal on proposal.id=pp.proposal_id
+      where pp.profile_id=_profile and public.is_sadran(proposal.department_id,proposal.week_start))
+    or public.shares_ride_with(_profile));
 $$;
 ```
 
@@ -1437,3 +1458,11 @@ Account notifications: `notify_profile_status_changed()` emits approval and Admi
 ### Deployment admin repair (2026-09-08)
 
 `20260908120000_admin_member_fixes.sql` adds three authenticated admin-only SECURITY DEFINER RPCs: `admin_update_member(profile_id, details)` edits names/phone; `admin_approve_member(profile_id, department_id)` atomically approves the profile and restores/adds membership; `admin_set_sadran_assignments(department_id, profile_ids, week_start default null)` validates approved active members, promotes them to Sadran, and replaces the weekly or standing roster in one transaction. A department row lock serializes replacement; unchanged assignments retain their identity. The existing assignment-role invariant remains enforced. A failed replacement never deletes the previous roster.
+
+### Admin membership editor (2026-09-08)
+
+Migration `20260908131000_admin_department_membership.sql` extends `admin_update_member(uuid,jsonb)` with optional `department_id`. The admin-only RPC atomically saves details, inserts/restores department membership without altering existing role or global admin privileges, and repairs a missing/inactive default department. Invalid/inactive department IDs reject the entire change. No new table or grants are introduced.
+
+### Weekly duty authorization update (2026-09-08)
+
+`20260908130000_weekly_sadran_permissions.sql` separates duty notifications and rotation from permanent role authorization. The weekly roster RPC preserves membership roles; its null-week permanent-pool editor promotes selected members and demotes deselected permanent members. Existing explicit duty and permanent membership roles are preserved during upgrade; older automatically promoted roles cannot be distinguished safely from intended permanent roles. Admins can change these users back to members without removing weekly duty.

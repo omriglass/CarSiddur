@@ -54,11 +54,7 @@ export function RequireOnboarded() {
   return <Outlet />;
 }
 
-/**
- * Not Sadran of any department for its open/live week → `/my`. This stage
- * has no `/sadran/:dept/:week` routes yet, so the check is "Sadran of
- * anything I belong to right now" rather than a specific dept/week.
- */
+/** Active coordinator entry point; each week route also checks its own authorization. */
 export function RequireSadran() {
   const { isSadran, isLoading } = useIsSadranAnywhere();
 

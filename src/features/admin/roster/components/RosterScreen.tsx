@@ -13,7 +13,7 @@ import { showErrorToast } from "@/lib/rpc";
 import { toast } from "sonner";
 
 import { useAllDepartmentMembers, useAllProfiles } from "../../members/hooks";
-import { useSadranAssignments, useSetStandingDefaultMutation, useSetWeekAssignmentsMutation } from "../hooks";
+import { useDutyRoster, useSadranAssignments, useSetStandingDefaultMutation, useSetWeekAssignmentsMutation } from "../hooks";
 
 const WEEK_COUNT = 12;
 
@@ -36,6 +36,7 @@ export function RosterScreen() {
   }, [currentWeekQuery.data]);
 
   const assignmentsQuery = useSadranAssignments(weekStarts);
+  const dutyQuery = useDutyRoster((departmentsQuery.data ?? []).map((department) => department.id), weekStarts);
   const setWeekMutation = useSetWeekAssignmentsMutation();
   const setStandingMutation = useSetStandingDefaultMutation();
 
@@ -64,11 +65,13 @@ export function RosterScreen() {
   function effectiveFor(departmentId: string, weekStart: string): { ids: string[]; isStanding: boolean } {
     const explicit = explicitFor(departmentId, weekStart);
     if (explicit.length > 0) return { ids: explicit, isStanding: false };
-    return { ids: explicitFor(departmentId, null), isStanding: true };
+    return { ids: dutyQuery.data?.find((row) => row.departmentId === departmentId && row.weekStart === weekStart)?.profileIds ?? [], isStanding: true };
   }
 
   function openCell(departmentId: string, departmentName: string, weekStart: string | null) {
-    const current = explicitFor(departmentId, weekStart);
+    const current = weekStart === null
+      ? (deptMembersQuery.data ?? []).filter((member) => member.department_id === departmentId && member.role === "sadran" && profilesById.get(member.profile_id)?.approval_status === "approved").map((member) => member.profile_id)
+      : explicitFor(departmentId, weekStart);
     setDraft(new Set(current));
     setTarget({ departmentId, departmentName, weekStart });
   }
@@ -112,8 +115,8 @@ export function RosterScreen() {
                     onClick={() => openCell(dept.id, dept.name, null)}
                   >
                     {he.adminRoster.standingDefault}:{" "}
-                    {explicitFor(dept.id, null)
-                      .map((id) => profilesById.get(id)?.full_name ?? id)
+                    {(deptMembersQuery.data ?? []).filter((member) => member.department_id === dept.id && member.role === "sadran")
+                      .map((member) => profilesById.get(member.profile_id)?.full_name ?? member.profile_id)
                       .join(", ") || "—"}
                   </button>
                 </th>
@@ -170,7 +173,7 @@ export function RosterScreen() {
             </DialogTitle>
           </DialogHeader>
           <div className="flex flex-col gap-2">
-            <p className="text-sm text-muted-foreground">{he.adminRoster.pickMembers}</p>
+            <p className="text-sm text-muted-foreground">{target?.weekStart === null ? he.adminRoster.pickPermanentMembers : he.adminRoster.pickMembers}</p>
             {(membersByDept.get(target?.departmentId ?? "") ?? []).map((profileId) => (
               <label key={profileId} className="flex items-center gap-2">
                 <Checkbox

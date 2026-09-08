@@ -5,7 +5,7 @@ import { toast } from "sonner";
 
 import { formatWeekRangeLabel } from "@/components/DateField";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { fetchSadranimOf } from "@/features/auth/api";
+import { fetchCanManageWeek } from "@/features/auth/api";
 import { authKeys } from "@/features/auth/queryKeys";
 import { useMyDepartments } from "@/features/auth/useMyDepartments";
 import { useSession } from "@/features/auth/useSession";
@@ -29,11 +29,10 @@ export function BoardWeekSwitcher({ departmentId, weekStart }: { departmentId: s
 
   async function canManage(department: string, week: string) {
     if (!profileId) return false;
-    const coordinators = await queryClient.fetchQuery({
+    return queryClient.fetchQuery({
       queryKey: authKeys.isSadran(profileId, department, week),
-      queryFn: () => fetchSadranimOf(department, week), staleTime: 60_000,
+      queryFn: () => fetchCanManageWeek(department, week), staleTime: 60_000,
     });
-    return coordinators.includes(profileId);
   }
 
   const availableWeeksQuery = useQuery({

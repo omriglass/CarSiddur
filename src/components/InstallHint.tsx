@@ -1,14 +1,7 @@
 import { t } from "@/i18n/he";
+import { detectPlatform } from "@/lib/pwaPlatform";
 
 type Platform = "ios" | "android" | "desktop";
-
-function detectPlatform(): Platform {
-  if (typeof navigator === "undefined") return "desktop";
-  const ua = navigator.userAgent;
-  if (/iPhone|iPad|iPod/.test(ua)) return "ios";
-  if (/Android/.test(ua)) return "android";
-  return "desktop";
-}
 
 /** True once the PWA is launched from the home-screen icon, not a browser tab. */
 export function isStandalonePwa(): boolean {

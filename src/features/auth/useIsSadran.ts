@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { fetchOpenAndLiveWeekStarts } from "@/features/siddur/api";
 
-import { fetchSadranimOf } from "./api";
+import { fetchCanManageWeek } from "./api";
 import { authKeys } from "./queryKeys";
 import { useMyDepartments } from "./useMyDepartments";
 import { useSession } from "./useSession";
@@ -12,12 +12,7 @@ interface IsSadranResult {
   isLoading: boolean;
 }
 
-/**
- * Whether I am Sadran of `(departmentId, weekStart)` — explicit
- * `sadran_assignments` rows for that week if any exist, otherwise the
- * standing default (DATA_MODEL.md §3.1). Delegates to the `sadranim_of` RPC
- * so the client never reimplements that resolution rule.
- */
+/** Board authorization: permanent department Sadrans, admins, or this week's assignee. */
 export function useIsSadran(
   departmentId: string | undefined,
   weekStart: string | undefined,
@@ -27,13 +22,13 @@ export function useIsSadran(
 
   const query = useQuery({
     queryKey: authKeys.isSadran(profileId, departmentId ?? "", weekStart ?? ""),
-    queryFn: () => fetchSadranimOf(departmentId as string, weekStart as string),
+    queryFn: () => fetchCanManageWeek(departmentId as string, weekStart as string),
     enabled: !!profileId && !!departmentId && !!weekStart,
     staleTime: 60_000,
   });
 
   return {
-    isSadran: !!profileId && (query.data?.includes(profileId) ?? false),
+    isSadran: !!profileId && (query.data ?? false),
     isLoading: query.isLoading,
   };
 }
@@ -58,10 +53,10 @@ export function useIsSadranAnywhere(): IsSadranResult {
       const pairs = departmentIds.flatMap((departmentId, index) =>
         (weekStartsByDept[index] ?? []).map((weekStart) => ({ departmentId, weekStart })),
       );
-      const sadranLists = await Promise.all(
-        pairs.map((pair) => fetchSadranimOf(pair.departmentId, pair.weekStart)),
+      const permissions = await Promise.all(
+        pairs.map((pair) => fetchCanManageWeek(pair.departmentId, pair.weekStart)),
       );
-      return sadranLists.some((ids) => profileId !== undefined && ids.includes(profileId));
+      return permissions.some(Boolean);
     },
     enabled: !!profileId && departmentsQuery.isSuccess,
     staleTime: 60_000,

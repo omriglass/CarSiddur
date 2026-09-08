@@ -1,4 +1,4 @@
--- Admin roster replacements promote eligible members, preserve data on failure, and reject members.
+-- Admin weekly roster replacements preserve member roles, preserve data on failure, and reject members.
 begin;
 do $$
 declare
@@ -13,7 +13,7 @@ begin
   assert (select full_name='Edited member' from public.profiles where id=member_id), 'admin detail update failed';
   update public.department_members set role='member' where department_id=dept and profile_id=member_id;
   perform public.admin_set_sadran_assignments(dept,array[member_id,member_id],week_date);
-  assert (select role='sadran' from public.department_members where department_id=dept and profile_id=member_id), 'member not promoted';
+  assert (select role='member' from public.department_members where department_id=dept and profile_id=member_id), 'weekly assignment promoted member';
   assert (select count(*)=1 from public.sadran_assignments where department_id=dept and week_start=week_date), 'duplicate assignment';
   begin
     perform public.admin_set_sadran_assignments(dept,array[gen_random_uuid()],week_date);
