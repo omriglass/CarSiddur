@@ -1,3 +1,4 @@
+import { useActiveDepartment } from "@/features/auth/useActiveDepartment";
 import { Plus, ScrollText } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -24,18 +25,17 @@ export function PoliciesListScreen() {
 
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
-  const [departmentId, setDepartmentId] = useState<string>("");
+  const { departmentId } = useActiveDepartment();
 
   const departmentsById = new Map((departmentsQuery.data ?? []).map((d) => [d.id, d.name]));
-  const policies = (policiesQuery.data ?? []).filter((policy) => !policy.department_id || departmentsById.has(policy.department_id));
+  const policies = (policiesQuery.data ?? []).filter((policy) => departmentsById.has(policy.department_id));
 
   async function submit() {
-    if (!name.trim()) return;
+    if (!name.trim() || !departmentId) return;
     try {
-      const created = await createMutation.mutateAsync({ name: name.trim(), department_id: departmentId || null });
+      const created = await createMutation.mutateAsync({ name: name.trim(), department_id: departmentId });
       setOpen(false);
       setName("");
-      setDepartmentId("");
       navigate(`/admin/policies/${created.id}`);
     } catch (error) {
       showErrorToast(error);
@@ -69,7 +69,7 @@ export function PoliciesListScreen() {
             {policies.map((p) => (
               <TableRow key={p.id} className="cursor-pointer" onClick={() => navigate(`/admin/policies/${p.id}`)}>
                 <TableCell>{p.name}</TableCell>
-                <TableCell>{p.department_id ? (departmentsById.get(p.department_id) ?? p.department_id) : he.adminPolicy.globalDefault}</TableCell>
+                <TableCell>{departmentsById.get(p.department_id) ?? p.department_id}</TableCell>
                 <TableCell>
                   <Badge variant={p.is_active ? "default" : "outline"}>
                     {p.is_active ? he.adminCommon.active : he.adminCommon.inactive}
@@ -93,9 +93,9 @@ export function PoliciesListScreen() {
             </label>
             <label className="flex flex-col gap-1 text-sm">
               {he.adminPolicy.department}
-              <Select value={departmentId} onValueChange={setDepartmentId}>
+              <Select value={departmentId} disabled>
                 <SelectTrigger>
-                  <SelectValue placeholder={he.adminPolicy.globalDefault} />
+                  <SelectValue placeholder={he.departmentContext.label} />
                 </SelectTrigger>
                 <SelectContent>
                   {(departmentsQuery.data ?? []).map((d) => (

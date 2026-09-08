@@ -15,6 +15,7 @@ import { heMember } from "./he.member";
 import { heSadran } from "./he.sadran";
 
 export const he = {
+  departmentContext: { copyFrom: "העתקת רשימות ממחלקה", blankDepartment: "מחלקה ריקה", copyHelp: "יועתקו יעדים, סוגי נסיעות ומדיניות. הרשימות יהיו עצמאיות; לאחר היצירה ניתן לשנות את נקודת המוצא.", label: "מחלקה", viewOnly: "צפייה בלבד", noMembership: "כדי להגיש בקשה למחלקה זו יש להצטרף אליה דרך מנהל/ת המערכת." },
   tableView: {
     cards: "כרטיסיות", table: "טבלה", label: "תצוגת הסידור",
     zoomIn: "הגדלת הטבלה", zoomOut: "הקטנת הטבלה", resetZoom: "איפוס גודל הטבלה",

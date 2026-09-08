@@ -70,7 +70,7 @@ erDiagram
   proposals ||--o{ proposal_parties : ""
   profiles ||--o{ proposal_parties : ""
   policies ||--o{ policy_versions : ""
-  departments ||--o{ policies : "null = global"
+  departments ||--o{ policies : ""
   policy_versions ||--o{ solver_runs : ""
   rides ||--o{ freed_slot_offers : "cancelled_ride"
   freed_slot_offers ||--o{ freed_slot_claims : ""
@@ -337,11 +337,12 @@ Index `(car_id) where status = 'open'`.
 | column | type | null | default | notes |
 |---|---|---|---|---|
 | id | uuid | NN | | PK |
-| name | text | NN | | unique (case/whitespace-normalized by trigger) |
+| department_id | uuid | NN | | FK departments; immutable ownership |
+| name | text | NN | | unique within department (whitespace-normalized by trigger) |
 | aliases | text[] | NN | '{}' | GIN index for typeahead |
 | zone | text | NN | 'unknown' | free vocabulary managed by admin ('north','haifa','tel_aviv',...). Reserved value **`home`**: the row is a department's home location (`departments.home_destination_id`); zone `home` never merges and is never a request destination |
 | lat / lng | numeric(9,6) | | | optional coordinates (§7.1 merge detection) |
-| distance_km | numeric(6,1) | | | from the kibbutz; null until classified |
+| distance_km | numeric(6,1) | | | from this department’s home/start location; null until classified |
 | travel_minutes | int | | | |
 | public_transport_score | smallint | | | 0 (none) … 5 (excellent); null = unknown. Mapped to `score / 5` (0..1) for the solver (`SOLVER.md` §2 `Destination.publicTransportScore`) |
 | is_approved | boolean | NN | false | false = promoted from free text, pending admin classification |
@@ -357,7 +358,8 @@ Free-text requests keep `requests.destination_text`; "promote to list" is an adm
 | column | type | null | default | notes |
 |---|---|---|---|---|
 | id | uuid | NN | | PK |
-| code | text | NN | | unique: 'work','childcare','healthcare','errands','other' |
+| department_id | uuid | NN | | FK departments; immutable ownership |
+| code | text | NN | | unique within department: 'work','childcare','healthcare','errands','other' |
 | name_he | text | NN | | |
 | sort_order | smallint | NN | 0 | |
 | is_active | boolean | NN | true | inactive types stay referenced by history |
@@ -369,9 +371,9 @@ Free-text requests keep `requests.destination_text`; "promote to list" is an adm
 | column | type | null | default | notes |
 |---|---|---|---|---|
 | id | uuid | NN | | PK |
-| department_id | uuid | | | FK departments; **NULL = global default** |
+| department_id | uuid | NN | | FK departments; immutable ownership, no shared/global policy |
 | name | text | NN | | unique per `(coalesce(department_id, zero-uuid), name)` |
-| is_active | boolean | NN | true | at most one active policy per department (partial unique index) and one global |
+| is_active | boolean | NN | true | at most one active policy per department (partial unique index) |
 | current_version_id | uuid | | | FK policy_versions (added after that table exists) |
 | created_by | uuid | | | |
 | created_at / updated_at | timestamptz | NN | now() | |
@@ -913,7 +915,7 @@ Legend: **own** = row's profile column = `auth.uid()`; **dept** = `member_of(dep
 | car_issues | dept ∨ admin | dept (reported_by = own) | admin ∨ sadran_any (resolve); reporter (description while open) | admin |
 | destinations | approved users | admin; RPC `suggest_destination()` for members (inserts `is_approved=false`) | admin; RPC `merge_destination()` (admin-only, repoints references then deletes/deactivates the source, §6.1 item 14) | admin (RESTRICT if referenced) |
 | ride_types | approved users | admin | admin | — (deactivate) |
-| policies | dept ∨ admin (global rows: approved users) | admin | admin | admin (RESTRICT if versions referenced) |
+| policies | dept ∨ admin | admin | admin | admin (RESTRICT if versions referenced) |
 | policy_versions | as policies | admin | — (immutable) | — |
 | weeks | dept ∨ admin ∨ (approved users when public) | admin ∨ sadran (RPC `open_week`) | admin ∨ sadran (phase/close_at/publish_at/overrides; `published_version_id` only via RPC — trigger) | admin (only if no requests) |
 | requests | own (requester ∨ filed_by ∨ companion) ∨ sadran ∨ admin ∨ (**any approved user** ∧ served by a non-draft ride ∧ `is_week_public(department_id, week_start)`) — published siddurim are readable across departments (REQ §13.52); `notes` and `manual_boost*` are revoked for that path via a view | **RPC only** — `submit_request` (member for self while `week.phase <> 'archived'`; sadran/admin on behalf of any member of the dept). No direct policy. | **RPC only** — `submit_request` (edit), `withdraw_request`, `set_manual_boost`, `apply_solver_result`, `apply_proposal`, `cancel_ride`, `approve_claim`, … No direct policy. | own: only `status='draft'`; admin |
@@ -1099,7 +1101,7 @@ Files live in `supabase/migrations/` and use the Supabase CLI form **`YYYYMMDDHH
 - `destinations`: the home row `נבו` (zone `home`, fixed UUID `...0010`) first, then 9 more with zone/distance/travel_minutes/public_transport_score.
 - One department, `נבו` (`00000000-0000-0000-0000-000000000001`), `home_destination_id` = the home row.
 - `ride_types`: work/childcare/healthcare/errands/other with Hebrew names.
-- `policies`: one global default with `policy_versions` v1 = the §7.2 / `SOLVER.md` §4.4 initial weights (all 8 rule types, `fairness.lookbackWeeks = 3`).
+- `policies`: one department-owned default with `policy_versions` v1 = the §7.2 / `SOLVER.md` §4.4 initial weights (all 8 rule types, `fairness.lookbackWeeks = 3`).
 - `notification_templates`: one `inbox` + one `push` row per `notification_event` (21 events) and 5 `whatsapp` variants (`shift`, `merge_passenger`, `merge_driver`, `deny`, `reminder`), copied from UX_FLOWS §6.
 - 4 demo `auth.users` + matching `member_invites` (admin, sadran, member1, member2), 4 cars with seat configs (a 5-seater, a 7-seater, a second 5-seater, and one `temporary` car owned by member2).
 - One Live (published) week with 3 requests and 2 confirmed rides, one Open week with 2 fresh `submitted` requests.
@@ -1466,3 +1468,15 @@ Migration `20260908131000_admin_department_membership.sql` extends `admin_update
 ### Weekly duty authorization update (2026-09-08)
 
 `20260908130000_weekly_sadran_permissions.sql` separates duty notifications and rotation from permanent role authorization. The weekly roster RPC preserves membership roles; its null-week permanent-pool editor promotes selected members and demotes deselected permanent members. Existing explicit duty and permanent membership roles are preserved during upgrade; older automatically promoted roles cannot be distinguished safely from intended permanent roles. Admins can change these users back to members without removing weekly duty.
+
+### Member identity migration (20260908140000)
+`profiles.google_name text not null` retains the Google/source name. `display_name text null` holds an optional override. `profiles_effective_name` normalizes whitespace and maintains `full_name = coalesce(display_name, google_name)` for existing views, joins, notifications and lists. Legacy explicit full_name edits become overrides. `sync_google_profile_name` updates only the source on auth metadata changes; an override survives sign-in. Existing non-Google names are preserved during backfill.
+`admin_update_member` accepts `display_name` and `removed_department_ids` alongside phone and optional department addition. All changes are atomic and admin-only. Removal soft-deactivates membership, resets its role to member, removes standing/current/future assignments, and selects an active replacement default department or null. Global administrator status and request/ride history remain intact. The cleanup trigger also covers legacy direct membership deactivation; existing status notification triggers send the removal notice.
+
+### Department catalog isolation (2026-09-08)
+
+Migration `20260908141000_department_catalogs.sql` makes destinations, their travel values, ride types and priority policies department-owned. Uniqueness is `(department_id,name)` / `(department_id,code)`. Approved users may read approved destination and ride-type labels for another department’s public Siddur; unapproved suggestions and policy versions require membership or admin. Catalog writes use `can_manage_operations(department_id)`. Ownership cannot be changed after creation. Composite FKs enforce the same department for home locations, request/template destinations and ride types, and ride endpoints. Solver-run policies and policy current versions have matching-scope triggers. Destination merges reject cross-department targets.
+
+The migration retains original shared IDs for the oldest department and clones the existing shared catalogs and global policies for every other department. It repoints relational request/template/ride/solver references and proposal payload IDs without changing business versions or replaying notifications. Existing immutable publication snapshots and audit history remain as originally recorded. Shared global policy versions are cloned verbatim; an existing department active policy wins over an imported global default. No catalog is deleted.
+
+New departments can use `create_department(p_name,p_slug,p_source_department_id)`: the admin explicitly selects a source; creation and `initialize_department_catalogs(department,source)` run atomically. Omitting the source creates a deliberately empty department for manual setup. The initializer only accepts an empty target, copies approved destinations and the home location, ride types, and current policy versions into independent rows. It does not copy members, fleet, requests, history, or notification infrastructure. Department settings retain their standard creation defaults. The copied home location is a starting value and should be changed when the new department starts elsewhere. `suggest_destination(p_department_id,p_name,p_zone)` validates membership/admin before inserting an unapproved department-local suggestion.

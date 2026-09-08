@@ -1,3 +1,4 @@
+import { useActiveDepartment } from "@/features/auth/useActiveDepartment";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Plus, Signpost } from "lucide-react";
 import { useState } from "react";
@@ -21,6 +22,7 @@ import { rideTypeSchema, type RideTypeFormValues } from "../schema";
 import type { RideType } from "../api";
 
 function RideTypeForm({ rideType, onSaved }: { rideType: RideType | null; onSaved: () => void }) {
+  const { departmentId } = useActiveDepartment();
   const createMutation = useCreateRideTypeMutation();
   const updateMutation = useUpdateRideTypeMutation();
 
@@ -39,7 +41,8 @@ function RideTypeForm({ rideType, onSaved }: { rideType: RideType | null; onSave
       if (rideType) {
         await updateMutation.mutateAsync({ id: rideType.id, patch: values });
       } else {
-        await createMutation.mutateAsync(values);
+        if (!departmentId) return;
+        await createMutation.mutateAsync({ ...values, department_id: departmentId });
       }
       toast.success(he.adminCommon.savedToast);
       onSaved();

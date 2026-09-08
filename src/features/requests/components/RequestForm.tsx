@@ -189,8 +189,8 @@ function FieldError({ message }: { message?: string }) {
 export function RequestForm({ mode, departmentId, weekStart, initial, joinRide, slotPrefill }: RequestFormProps) {
   const navigate = useNavigate();
 
-  const destinationsQuery = useDestinations();
-  const rideTypesQuery = useRideTypes();
+  const destinationsQuery = useDestinations(departmentId);
+  const rideTypesQuery = useRideTypes(departmentId);
   const carsQuery = useCars(departmentId);
   const seatConfigsQuery = useCarSeatConfigs(departmentId);
   const myRequestsQuery = useMyRequests();
@@ -199,7 +199,7 @@ export function RequestForm({ mode, departmentId, weekStart, initial, joinRide, 
 
   const submitMutation = useSubmitRequestMutation();
   const setCompanionsMutation = useSetRequestCompanionsMutation();
-  const suggestDestinationMutation = useSuggestDestinationMutation();
+  const suggestDestinationMutation = useSuggestDestinationMutation(departmentId);
 
   const lastRequest = [...(myRequestsQuery.data ?? [])]
     .filter((r) => r.departAt)

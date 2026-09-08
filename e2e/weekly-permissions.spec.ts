@@ -51,7 +51,7 @@ test("weekly member manages only their assigned board while permanent Sadran ret
       await expect(temporary.page).toHaveURL(/\/my$/);
       await temporary.page.goto(`/sadran/${NEVO_DEPARTMENT_ID}/${week}/proposals`);
       await expect(temporary.page).toHaveURL(/\/proposals$/);
-      await temporary.page.getByRole("combobox").first().click();
+      await temporary.page.getByRole("combobox").filter({ hasText: he.field.destination }).click();
       await temporary.page.getByRole("option").first().click();
       await temporary.page.getByRole("button", { name: he.action.propose, exact: true }).click();
       await expect(temporary.page).toHaveURL(/\/proposals\/new$/);

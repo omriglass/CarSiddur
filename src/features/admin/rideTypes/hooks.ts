@@ -1,3 +1,4 @@
+import { useActiveDepartment } from "@/features/auth/useActiveDepartment";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { createRideType, fetchAllRideTypes, updateRideType, type RideTypeInsert, type RideTypeUpdate } from "./api";
@@ -5,7 +6,8 @@ import { createRideType, fetchAllRideTypes, updateRideType, type RideTypeInsert,
 const key = ["admin", "rideTypes"] as const;
 
 export function useRideTypesAdmin() {
-  return useQuery({ queryKey: key, queryFn: fetchAllRideTypes, staleTime: 60_000 });
+  const { departmentId } = useActiveDepartment();
+  return useQuery({ queryKey: [...key, departmentId], enabled: !!departmentId, queryFn: () => fetchAllRideTypes(departmentId as string), staleTime: 60_000 });
 }
 
 export function useCreateRideTypeMutation() {

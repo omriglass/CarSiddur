@@ -1324,3 +1324,13 @@ Home shows compact, independent installation and notification cards. Installatio
 The member details dialog offers an optional department to add, including for the current admin's own account. Existing memberships remain visible and global admin privileges remain independent. Saving refreshes the member list and signed-in profile/department queries.
 
 A dated roster assignment is a one-week responsibility, not a user status: the person's department role stays member. All approved members are eligible. They can open the assigned board, solve, send proposals and publish that week, but cannot open another week's coordination screens or operational settings. Regular department Sadranim retain access to all department boards and operational settings, even when another person is responsible. The roster previews the automatic rotation of the regular pool; explicit week overrides take precedence. Navigation, direct-route guards and board week selectors use the same week-specific authorization as the database.
+
+### Member editor identity and removal (2026-09-08)
+The admin member dialog shows the read-only Google name and an optional display name (Hebrew name/nickname). Blank means use Google name. Existing department memberships each have Remove/Undo removal; removals are staged until Save, with helper text explaining loss of department and Sadran access. Save applies name, phone, additions and removals atomically. Cancel discards the staged edits. Global admin privileges survive department removal.
+
+### Google Maps destination estimates (2026-09-08)
+The destination editor includes optional latitude/longitude (both required together). Save new destinations or changed coordinates/names before requesting a route. The Google Maps button then estimates driving distance/time from the selected department's configured home destination. While calculating, the form is disabled; returned estimates fill editable distance/time fields and require an explicit Save. Missing configuration, home location or route produces actionable Hebrew feedback and preserves manual entry. No lookup runs automatically on opening the page.
+
+### Active department selector (2026-09-08)
+
+The shell selector switches Home and all operational catalogs together. A view-only badge explains absent membership and hides Home request actions; the public Siddur remains reachable. Direct Siddur/board links select their own department. New departments may explicitly copy another department's catalogs and policy into independent records, including its home destination; edit that home afterward for a different starting location.

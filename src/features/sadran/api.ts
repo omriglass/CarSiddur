@@ -175,7 +175,7 @@ export interface ActivePolicy {
   rules: unknown;
 }
 
-/** The department's active policy if one exists, else the active global default (DATA_MODEL.md §3.4). */
+/** The selected department's active policy. */
 export async function fetchActivePolicy(departmentId: string): Promise<ActivePolicy | null> {
   const deptRes = await supabase
     .from("policies")
@@ -185,17 +185,7 @@ export async function fetchActivePolicy(departmentId: string): Promise<ActivePol
     .maybeSingle();
   if (deptRes.error) throw toAppError(deptRes.error);
 
-  let policyRow = deptRes.data;
-  if (!policyRow) {
-    const globalRes = await supabase
-      .from("policies")
-      .select("id, current_version_id")
-      .is("department_id", null)
-      .eq("is_active", true)
-      .maybeSingle();
-    if (globalRes.error) throw toAppError(globalRes.error);
-    policyRow = globalRes.data;
-  }
+  const policyRow = deptRes.data;
   if (!policyRow?.current_version_id) return null;
 
   const versionRes = await supabase
@@ -222,12 +212,12 @@ export interface PolicyOption {
   isActive: boolean;
 }
 
-/** Every policy the board's policy switcher may pick (this department's own + the global default). */
+/** Policies belonging to this department for the board switcher. */
 export async function fetchPolicyOptions(departmentId: string): Promise<PolicyOption[]> {
   const { data: policies, error } = await supabase
     .from("policies")
     .select("id, name, current_version_id, is_active, department_id")
-    .or(`department_id.eq.${departmentId},department_id.is.null`);
+    .eq("department_id", departmentId);
   if (error) throw toAppError(error);
 
   const versionIds = (policies ?? []).map((p) => p.current_version_id).filter((id): id is string => !!id);

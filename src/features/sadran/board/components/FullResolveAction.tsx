@@ -28,7 +28,7 @@ interface FullResolveActionProps {
 /** Full solving replaces unpinned placements only after reviewing the concrete diff. */
 export function FullResolveAction({ departmentId, weekStart, homeDestinationId, policy, disabled }: FullResolveActionProps) {
   const weekQuery = useWeekRow(departmentId, weekStart);
-  const rideTypesQuery = useRideTypes();
+  const rideTypesQuery = useRideTypes(departmentId);
   const applyMutation = useApplySolverResultMutation();
   const [loading, setLoading] = useState(false);
   const [preview, setPreview] = useState<{ payload: ReturnType<typeof buildApplyPayload>; diff: FullResolveDiff } | null>(null);

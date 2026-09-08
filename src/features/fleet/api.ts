@@ -24,20 +24,22 @@ export async function fetchCars(departmentId: string): Promise<Car[]> {
   return data ?? [];
 }
 
-export async function fetchDestinations(): Promise<Destination[]> {
+export async function fetchDestinations(departmentId: string): Promise<Destination[]> {
   const { data, error } = await supabase
     .from("destinations")
     .select("*")
+    .eq("department_id", departmentId)
     .eq("is_approved", true)
     .order("name", { ascending: true });
   if (error) throw toAppError(error);
   return data ?? [];
 }
 
-export async function fetchRideTypes(): Promise<RideType[]> {
+export async function fetchRideTypes(departmentId: string): Promise<RideType[]> {
   const { data, error } = await supabase
     .from("ride_types")
     .select("*")
+    .eq("department_id", departmentId)
     .eq("is_active", true)
     .order("sort_order", { ascending: true });
   if (error) throw toAppError(error);
@@ -63,8 +65,8 @@ export async function fetchCarSeatConfigs(departmentId: string): Promise<SeatCon
  * itself; this is the separate `suggest_destination` RPC the request form
  * calls in parallel so it shows up for the admin to classify.
  */
-export async function suggestDestination(name: string, zone = "unknown"): Promise<string> {
-  return rpc("suggest_destination", { p_name: name, p_zone: zone });
+export async function suggestDestination(departmentId: string, name: string, zone = "unknown"): Promise<string> {
+  return rpc("suggest_destination", { p_department_id: departmentId, p_name: name, p_zone: zone });
 }
 
 /**

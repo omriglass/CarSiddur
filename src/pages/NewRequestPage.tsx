@@ -1,3 +1,4 @@
+import { useActiveDepartment } from "@/features/auth/useActiveDepartment";
 import { useSearchParams } from "react-router-dom";
 
 import { formatWeekRangeLabel } from "@/components/DateField";
@@ -24,7 +25,8 @@ export function NewRequestPage() {
 
   const profileQuery = useProfile();
   const departmentsQuery = useMyDepartments();
-  const departmentId = profileQuery.data?.default_department_id ?? departmentsQuery.data?.[0]?.department_id;
+  const active = useActiveDepartment();
+  const departmentId = active.departmentId;
   const weeksQuery = useWeeks(departmentId);
   const weekStart = resolveWeekStart(weeksQuery.data ?? [], weekOverride);
 
@@ -32,7 +34,7 @@ export function NewRequestPage() {
   const carQuery = useCarForRide(rideQuery.data?.car_id ?? undefined);
 
   const isLoading =
-    profileQuery.isLoading || departmentsQuery.isLoading || weeksQuery.isLoading || (!!joinRideId && (rideQuery.isLoading || carQuery.isLoading));
+    active.isLoading || profileQuery.isLoading || departmentsQuery.isLoading || weeksQuery.isLoading || (!!joinRideId && (rideQuery.isLoading || carQuery.isLoading));
 
   const joinRide: JoinRidePrefill | undefined =
     joinRideId && rideQuery.data && carQuery.data
@@ -56,7 +58,7 @@ export function NewRequestPage() {
           subtitle={weekStart ? formatWeekRangeLabel(weekStart) : undefined}
         />
       </div>
-      {isLoading || !departmentId || !weekStart ? (
+      {!isLoading && !active.canSubmit ? <p className="p-4">{he.departmentContext.noMembership}</p> : isLoading || !departmentId || !weekStart ? (
         <div className="space-y-3 p-4">
           <div className="h-11 animate-pulse rounded-md bg-muted" />
           <div className="h-11 animate-pulse rounded-md bg-muted" />

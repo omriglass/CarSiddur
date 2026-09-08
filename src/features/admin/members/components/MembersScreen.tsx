@@ -46,7 +46,7 @@ function MembersTab() {
   const revokeAdminMutation = useRevokeAdminMutation();
   const setRoleMutation = useSetMemberRoleMutation();
   const updateDetailsMutation = useUpdateMemberDetailsMutation();
-  const [editing, setEditing] = useState<{ profileId: string; fullName: string; phone: string; departmentId?: string } | null>(null);
+  const [editing, setEditing] = useState<{ profileId: string; fullName: string; displayName: string; removedDepartmentIds: string[]; phone: string; departmentId?: string } | null>(null);
 
   const approvedProfiles = (profilesQuery.data ?? []).filter((p) => p.approval_status !== "pending");
   const profileIds = approvedProfiles.map((p) => p.id);
@@ -102,7 +102,7 @@ function MembersTab() {
             <TableRow key={profile.id}>
               <TableCell>
                 <Button variant="link" className="h-auto p-0" onClick={() => setEditing({
-                  profileId: profile.id, fullName: profile.full_name, phone: phonesQuery.data?.[profile.id] ?? "",
+                  profileId: profile.id, fullName: profile.google_name, displayName: profile.display_name ?? "", removedDepartmentIds: [], phone: phonesQuery.data?.[profile.id] ?? "",
                 })} disabled={phonesQuery.isPending || phonesQuery.isError}>{profile.full_name}</Button>
               </TableCell>
               <TableCell dir="ltr">{profile.email}</TableCell>
@@ -149,13 +149,29 @@ function MembersTab() {
     <Dialog open={!!editing} onOpenChange={(open) => !open && setEditing(null)}>
       <DialogContent>
         <DialogHeader><DialogTitle>{he.adminMembers.editDetails}</DialogTitle></DialogHeader>
-        <label className="grid gap-2">{he.adminMembers.columnName}
-          <Input value={editing?.fullName ?? ""} onChange={(e) => setEditing((old) => old && ({ ...old, fullName: e.target.value }))} />
+        <label className="grid gap-2">{he.adminMembers.googleName}
+          <Input value={editing?.fullName ?? ""} readOnly />
         </label>
+        <label className="grid gap-2">{he.adminMembers.displayName}
+          <Input aria-describedby="member-display-name-help" value={editing?.displayName ?? ""} placeholder={editing?.fullName} onChange={(e) => setEditing((old) => old && ({ ...old, displayName: e.target.value }))} />
+        </label>
+        <p id="member-display-name-help" className="text-sm text-muted-foreground">{he.adminMembers.displayNameHelp}</p>
         <label className="grid gap-2">{he.adminMembers.columnPhone}
           <Input type="tel" dir="ltr" value={editing?.phone ?? ""} onChange={(e) => setEditing((old) => old && ({ ...old, phone: e.target.value }))} />
         </label>
         <div className="grid gap-2">
+          <span>{he.adminMembers.columnDepartments}</span>
+          {(membershipsByProfile.get(editing?.profileId ?? "") ?? []).map((membership) => {
+            const removing = editing?.removedDepartmentIds.includes(membership.departmentId);
+            return <div key={membership.departmentId} className="flex items-center justify-between gap-2">
+              <span className={removing ? "line-through text-muted-foreground" : ""}>{departmentsById.get(membership.departmentId)}</span>
+              <Button variant="outline" size="sm" onClick={() => setEditing((old) => old && ({ ...old,
+                removedDepartmentIds: removing ? old.removedDepartmentIds.filter((id) => id !== membership.departmentId)
+                  : [...old.removedDepartmentIds, membership.departmentId],
+              }))}>{removing ? he.adminMembers.undoRemoval : he.adminMembers.removeDepartment}</Button>
+            </div>;
+          })}
+          <p className="text-sm text-muted-foreground">{he.adminMembers.removalHelp}</p>
           <label htmlFor="member-add-department">{he.adminMembers.addDepartment}</label>
           <Select value={editing?.departmentId ?? "none"} onValueChange={(value) => setEditing((old) => old && ({ ...old, departmentId: value === "none" ? undefined : value }))}>
             <SelectTrigger id="member-add-department"><SelectValue /></SelectTrigger>
@@ -170,7 +186,7 @@ function MembersTab() {
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => setEditing(null)}>{he.adminCommon.cancel}</Button>
-          <Button disabled={!editing?.fullName.trim() || updateDetailsMutation.isPending} onClick={async () => {
+          <Button disabled={!editing || updateDetailsMutation.isPending} onClick={async () => {
             if (!editing) return;
             try {
               await updateDetailsMutation.mutateAsync(editing);

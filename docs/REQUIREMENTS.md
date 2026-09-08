@@ -58,7 +58,7 @@ Rules:
 - Every approved active member is eligible for a weekly Sadran assignment without promotion, revocation or reinstatement. That assignment grants board, request, solver, proposal and publication access only to its department and week; it never grants operational settings access. Permanent department Sadranim can manage every week in their department, regardless of who is on duty. They rotate weekly responsibility in stable profile-ID order, anchored to Sunday 1970-01-04; explicit weekly assignments override rotation. Duty is saved when a week opens, so later pool changes do not rewrite existing assignments. Invalid replacements leave the previous roster intact.
 - Admins can edit member names and phone numbers, approve members into a department atomically, and change department roles with visible save/error feedback.
 - There may be several Sadranim for one department and week (any of them may act).
-- Admin actions are global.
+- Admin identity and membership administration are global; operational actions follow the selected department.
 
 ---
 
@@ -218,7 +218,7 @@ A policy is a named, versioned set of weighted rules stored as data and edited i
 | Flexibility offered | weight | Members who declare flexibility get a small boost (encourages it). |
 | Manual boost | per-request | Sadran can add a one-off boost with a reason. |
 
-Policies are per department with a global default. Every solver run records which policy version it used. Changing a policy never rewrites history.
+Policies belong to a department; each department chooses its own active default. Every solver run records which policy version it used. Changing a policy never rewrites history.
 
 ### 7.3 Proposals (negotiation)
 Quick trip summaries in change/proposal screens include the member (where available), destination, requested time window, weekday, calendar date and purpose/ride type. One-way trips identify departure or return; overnight trips show the return date too. Deviation summaries identify the original request above the individual changes. (Owner clarification, 2026-09-07.)
@@ -403,7 +403,7 @@ These amendments take precedence over older behavior descriptions above.
 - Flexibility is anchored to the original request times, never to a subsequently shifted assignment. Direction controls are symmetric (default), later-only, or earlier-only. Members may edit or withdraw all their own requests while the submission window is open, with confirmation for bulk withdrawal and explicit missing-field feedback.
 - Sadranim may manage destinations, ride types, cars, policies and operational settings/templates. Departments, users and roster administration remain admin-only; database authorization must mirror navigation.
 - Notification templates render their variables; successful automatic approval does not create a notification. Collision merging requires confirmation before preparing a proposal. WhatsApp message preparation is an in-app dialog with explicit handoff to WhatsApp and a usable return path.
-- Publishing recalculates the final board score against every applicable policy profile (all current department/global profiles, including inactive ones), as clarified by the owner. Persist policy version, served/total priority, weighted coverage and per-request rule breakdowns with the publication for later review of manual changes against alternative policies.
+- Publishing recalculates the final board score against every applicable policy profile (all current profiles belonging to the department, including inactive ones), as clarified by the owner. Persist policy version, served/total priority, weighted coverage and per-request rule breakdowns with the publication for later review of manual changes against alternative policies.
 - Excel export of requests and the board is included in the owner's continuation: export-only, no import, with local dates/times, request identity, cars, assignment status, notes and policy scores.
 
 ### Owner continuation — one-way rides and review tools
@@ -441,3 +441,15 @@ Global administrator privileges and department membership are independent. Admin
 ### Home device setup suggestions (2026-09-08)
 
 Home suggests enabling notifications on the current device and installing the app to the home screen. Suggestions are dismissible for seven days on that device, without blocking requests. Native installation and notification permission are requested only from a user click. Installed apps hide the installation suggestion; subscribed devices hide the notification suggestion. Denied permission explains browser settings; unsupported push has no enable action. iPhone/iPad browser users first receive home-screen installation instructions, then enable notifications after opening the installed app.
+
+### Member identity and department removal (2026-09-08)
+Admins can set an optional Hebrew display name or nickname for any person. It replaces the Google name throughout the app; clearing it restores the Google name. Google sign-in must preserve the override. Admins can remove a person from any department, including their last department, without revoking global admin privileges or deleting ride history. Removal ends department access and clears standing/current/future weekly duty so rejoining does not restore old privileges; the default department falls back to another active membership or none.
+
+### Department route estimates (2026-09-08)
+Permanent department Sadranim and admins can request a Google Maps driving estimate from the selected department's configured home destination to a saved destination in that department. The estimate fills distance/time for explicit review and Save; it never silently replaces manual values. Weekly temporary duty does not grant catalog access. The Maps key remains a server secret. Without configured Google Routes credentials, manual distances and times remain available.
+
+### Department context and destination routing (2026-09-08)
+
+The active department is selected in the app shell and remembered per account on this device. Home, requests, fleet, destinations, ride types, policies and operational settings follow that context; changing it resets open forms. A Siddur or board deep link selects its department. Approved members may view another department's public Siddur, but request submission requires active membership there, including for admins. User identity, membership administration, notification inbox and notification templates remain account/application-wide.
+
+Google driving distance and duration are calculated on demand from the selected department's home destination to a saved destination. Authorized operational staff review the calculated values and explicitly save them; manual corrections remain possible. Coordinates are optional, paired and validated; names are the address fallback. Automatic periodic refresh is deferred.

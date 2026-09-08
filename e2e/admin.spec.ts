@@ -24,12 +24,12 @@ test.describe("admin", () => {
     await page.goto("/admin/members");
     const row = page.getByRole("row").filter({ hasText: "member2@nevo.local" });
     const nameButton = row.getByRole("button").first();
-    const originalName = await nameButton.innerText();
     await nameButton.click();
     const editor = page.getByRole("dialog");
     const originalPhone = await editor.getByLabel(he.adminMembers.columnPhone).inputValue();
+    const originalDisplayName = await editor.getByLabel(he.adminMembers.displayName).inputValue();
     const editedName = `Member edit ${Date.now()}`;
-    await editor.getByLabel(he.adminMembers.columnName).fill(editedName);
+    await editor.getByLabel(he.adminMembers.displayName).fill(editedName);
     await editor.getByLabel(he.adminMembers.columnPhone).fill("+972509998877");
     await editor.getByRole("button", { name: he.adminCommon.save, exact: true }).click();
     await expect(editor).not.toBeVisible();
@@ -50,7 +50,7 @@ test.describe("admin", () => {
     await page.goto("/admin/members");
     await expect(row.getByRole("combobox")).toContainText(he.adminMembers.roleMember);
     await row.getByRole("button", { name: editedName, exact: true }).click();
-    await editor.getByLabel(he.adminMembers.columnName).fill(originalName);
+    await editor.getByLabel(he.adminMembers.displayName).fill(originalDisplayName);
     await editor.getByLabel(he.adminMembers.columnPhone).fill(originalPhone);
     await editor.getByRole("button", { name: he.adminCommon.save, exact: true }).click();
     await expect(editor).not.toBeVisible();
@@ -75,7 +75,7 @@ test.describe("admin", () => {
     await page.getByLabel("שם הרכב").fill(carName);
     await page.getByLabel("מספר רישוי").fill(plate);
     await page.getByLabel(he.adminCars.fieldAccessCode, { exact: true }).fill("01234");
-    await page.getByLabel("מחלקה").click();
+    await page.getByRole("dialog").getByLabel("מחלקה", { exact: true }).click();
     await page.getByRole("option", { name: DEPARTMENT_NAME }).click();
 
     await page.getByRole("button", { name: "הוסף תצורה" }).click();

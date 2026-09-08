@@ -1,3 +1,4 @@
+import { useActiveDepartment } from "@/features/auth/useActiveDepartment";
 import { useQuery } from "@tanstack/react-query";
 
 import { fetchOpenAndLiveWeekStarts } from "@/features/siddur/api";
@@ -42,7 +43,8 @@ export function useIsSadranAnywhere(): IsSadranResult {
   const { session } = useSession();
   const profileId = session?.user.id;
   const departmentsQuery = useMyDepartments();
-  const departmentIds = (departmentsQuery.data ?? []).map((d) => d.department_id);
+  const active = useActiveDepartment();
+  const departmentIds = active.departmentId ? [active.departmentId] : [];
 
   const query = useQuery({
     queryKey: authKeys.isSadranAnywhere(profileId, departmentIds),
@@ -58,12 +60,12 @@ export function useIsSadranAnywhere(): IsSadranResult {
       );
       return permissions.some(Boolean);
     },
-    enabled: !!profileId && departmentsQuery.isSuccess,
+    enabled: !!profileId && departmentsQuery.isSuccess && !!active.departmentId,
     staleTime: 60_000,
   });
 
   return {
     isSadran: query.data ?? false,
-    isLoading: departmentsQuery.isLoading || query.isLoading,
+    isLoading: active.isLoading || departmentsQuery.isLoading || query.isLoading,
   };
 }

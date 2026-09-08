@@ -20,20 +20,20 @@ export interface PolicyRuleConfig {
   params: unknown;
 }
 
-export async function fetchPolicies(): Promise<PolicyRow[]> {
-  const { data, error } = await supabase.from("policies").select("*").order("name", { ascending: true });
+export async function fetchPolicies(departmentId: string): Promise<PolicyRow[]> {
+  const { data, error } = await supabase.from("policies").select("*").eq("department_id", departmentId).order("name", { ascending: true });
   if (error) throw toAppError(error);
   return data ?? [];
 }
 
 /**
  * `is_active: false` on purpose: `policies_one_active_idx` allows only one
- * active policy per department (or one global, DATA_MODEL.md §3.4) — a new
+ * active policy per department (DATA_MODEL.md §3.4) — a new
  * policy starts inactive and is switched on explicitly via
  * `he.action.activateForDept` / `setPolicyActive`, never by racing whatever
  * is already active for that scope.
  */
-export async function createPolicy(input: { name: string; department_id: string | null }): Promise<PolicyRow> {
+export async function createPolicy(input: { name: string; department_id: string }): Promise<PolicyRow> {
   const { data, error } = await supabase
     .from("policies")
     .insert({ name: input.name, department_id: input.department_id, is_active: false })

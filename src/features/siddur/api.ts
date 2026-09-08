@@ -19,7 +19,7 @@ export type MyUpcomingRide = BoardRide & {
 };
 
 /** Every upcoming/ongoing requested leg, plus designated-driver rides without an own request. */
-export async function fetchMyUpcomingRides(profileId: string): Promise<MyUpcomingRide[]> {
+export async function fetchMyUpcomingRides(profileId: string, departmentId?: string): Promise<MyUpcomingRide[]> {
   const now = new Date().toISOString();
   const rideIds = new Set<string>();
   const pageSize = 500;
@@ -61,6 +61,7 @@ export async function fetchMyUpcomingRides(profileId: string): Promise<MyUpcomin
     for (const car of data ?? []) cars.set(car.id, { label: siddurCarName(car), type: car.type });
   }
   return [...rides.values()]
+    .filter((ride) => !departmentId || ride.department_id === departmentId)
     .sort((a, b) => (a.starts_at ?? "").localeCompare(b.starts_at ?? "") || (a.id ?? "").localeCompare(b.id ?? ""))
     .map((ride) => ({ ...ride, car_name: cars.get(ride.car_id ?? "")?.label ?? null, car_type: cars.get(ride.car_id ?? "")?.type ?? null }));
 }

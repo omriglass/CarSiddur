@@ -2,6 +2,8 @@ import { Bell, CalendarDays, ClipboardList, Settings, User, Users } from "lucide
 import type { ComponentType } from "react";
 import { Link, NavLink, Outlet } from "react-router-dom";
 
+import { DepartmentContextSelector } from "@/components/DepartmentContextSelector";
+import { useActiveDepartment } from "@/features/auth/useActiveDepartment";
 import { OfflineNotice } from "@/components/OfflineNotice";
 import { AppLogoMark } from "@/components/AppLogoMark";
 import { useIsSadranAnywhere } from "@/features/auth/useIsSadran";
@@ -89,6 +91,7 @@ function NavLinks({
 
 /** App-wide layout: skip link, offline banner, top bar / md+ side nav, mobile bottom tab bar, `<Outlet>`. */
 export function AppShell() {
+  const context = useActiveDepartment();
   const { isSadran } = useIsSadranAnywhere();
   const canManageOperations = !!useCanManageOperations().data;
   const unreadCount = useUnreadCount();
@@ -134,7 +137,8 @@ export function AppShell() {
         </header>
         <OfflineNotice />
         <main id="main-content" className="flex-1 overflow-y-auto pb-16 md:pb-0">
-          <Outlet />
+          <DepartmentContextSelector />
+          <div key={context.departmentId}><Outlet /></div>
         </main>
 
         <nav

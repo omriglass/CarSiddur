@@ -1,3 +1,4 @@
+import { useActiveDepartment } from "@/features/auth/useActiveDepartment";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { siddurKeys } from "@/features/siddur/queryKeys";
@@ -23,13 +24,14 @@ import {
 import { requestsKeys } from "./queryKeys";
 
 export function useMyRequests() {
+  const { departmentId } = useActiveDepartment();
   const { session } = useSession();
   const profileId = session?.user.id;
 
   return useQuery({
-    queryKey: requestsKeys.mine(profileId),
-    queryFn: () => fetchMyRequests(profileId as string),
-    enabled: !!profileId,
+    queryKey: [...requestsKeys.mine(profileId), departmentId],
+    queryFn: () => fetchMyRequests(profileId as string, departmentId),
+    enabled: !!profileId && !!departmentId,
     staleTime: 30_000,
   });
 }

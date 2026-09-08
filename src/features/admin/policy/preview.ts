@@ -53,8 +53,8 @@ export async function runPolicyPreview(params: {
     fetchDepartmentSettings(departmentId),
     fetchWeekRequests(departmentId, weekStart),
     fetchCarsAll(),
-    fetchAllDestinations(),
-    fetchAllRideTypes(),
+    fetchAllDestinations(departmentId),
+    fetchAllRideTypes(departmentId),
   ]);
 
   const cars = allCars.filter((c) => c.department_id === departmentId && c.status !== "retired");

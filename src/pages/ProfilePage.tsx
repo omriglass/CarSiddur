@@ -1,3 +1,4 @@
+import { useActiveDepartment } from "@/features/auth/useActiveDepartment";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 
@@ -48,6 +49,7 @@ export function ProfilePage() {
   const profileQuery = useProfile();
   const updateProfileMutation = useUpdateProfileMutation();
   const departmentsQuery = useMyDepartments();
+  const active = useActiveDepartment();
   const { isSadran } = useIsSadranAnywhere();
   const isAdmin = !!profileQuery.data?.is_admin;
   const { preference: themePreference, setPreference: setThemePreference } = useTheme();
@@ -91,9 +93,9 @@ export function ProfilePage() {
   }
 
   async function handleRegisterCar() {
-    if (!profileQuery.data || !departmentsQuery.data?.[0]) return;
+    if (!profileQuery.data || !active.departmentId || !active.canSubmit) return;
     await registerCarMutation.mutateAsync({
-      departmentId: departmentsQuery.data[0].department_id,
+      departmentId: active.departmentId,
       ownerId: profileQuery.data.id,
       name: carName,
       licensePlate: carPlate,
@@ -255,18 +257,18 @@ export function ProfilePage() {
           )}
           <div className="space-y-2 border-t pt-3">
             <div className="space-y-1">
-              <Label>{he.profileExtra.tempCarNickname}</Label>
-              <Input value={carName} onChange={(e) => setCarName(e.target.value)} />
+              <Label htmlFor="temporary-car-name">{he.profileExtra.tempCarNickname}</Label>
+              <Input id="temporary-car-name" value={carName} onChange={(e) => setCarName(e.target.value)} />
             </div>
             <div className="space-y-1">
-              <Label>{he.profileExtra.tempCarPlate}</Label>
-              <Input dir="ltr" value={carPlate} onChange={(e) => setCarPlate(e.target.value)} />
+              <Label htmlFor="temporary-car-plate">{he.profileExtra.tempCarPlate}</Label>
+              <Input id="temporary-car-plate" dir="ltr" value={carPlate} onChange={(e) => setCarPlate(e.target.value)} />
             </div>
             <Label>{he.profileExtra.tempCarSeats}</Label>
             <PassengerStepper value={carSeats} onChange={setCarSeats} />
             <Button
               size="sm"
-              disabled={!carName || !carPlate || registerCarMutation.isPending}
+              disabled={!active.canSubmit || !carName || !carPlate || registerCarMutation.isPending}
               onClick={handleRegisterCar}
             >
               {he.action.registerTempCar}

@@ -68,7 +68,7 @@ function PolicyEditorInner({ policyId }: { policyId: string }) {
   const createVersionMutation = useCreatePolicyVersionMutation();
   const setActiveMutation = useSetPolicyActiveMutation();
 
-  const policy = (policiesQuery.data ?? []).find((p) => p.id === policyId && (!p.department_id || departmentsQuery.data?.some((department) => department.id === p.department_id)));
+  const policy = (policiesQuery.data ?? []).find((p) => p.id === policyId && departmentsQuery.data?.some((department) => department.id === p.department_id));
   const latestVersion = versionsQuery.data?.[0];
   const rideTypeLabels = Object.fromEntries((rideTypesQuery.data ?? []).map((rt) => [rt.code, rt.name_he]));
 

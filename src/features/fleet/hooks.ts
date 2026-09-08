@@ -1,3 +1,4 @@
+import { useActiveDepartment } from "@/features/auth/useActiveDepartment";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { showErrorToast } from "@/lib/rpc";
@@ -24,18 +25,24 @@ export function useCars(departmentId: string | undefined) {
   });
 }
 
-export function useDestinations() {
+export function useDestinations(departmentOverride?: string) {
+  const active = useActiveDepartment();
+  const departmentId = departmentOverride ?? active.departmentId;
   return useQuery({
-    queryKey: fleetKeys.destinations(),
-    queryFn: fetchDestinations,
+    queryKey: [...fleetKeys.destinations(), departmentId],
+    queryFn: () => fetchDestinations(departmentId as string),
+    enabled: !!departmentId,
     staleTime: 10 * 60_000,
   });
 }
 
-export function useRideTypes() {
+export function useRideTypes(departmentOverride?: string) {
+  const active = useActiveDepartment();
+  const departmentId = departmentOverride ?? active.departmentId;
   return useQuery({
-    queryKey: fleetKeys.rideTypes(),
-    queryFn: fetchRideTypes,
+    queryKey: [...fleetKeys.rideTypes(), departmentId],
+    queryFn: () => fetchRideTypes(departmentId as string),
+    enabled: !!departmentId,
     staleTime: 10 * 60_000,
   });
 }
@@ -69,9 +76,10 @@ export function useMaintenanceBlocks(departmentId: string | undefined) {
 }
 
 export function useMyTemporaryCars(ownerId: string | undefined) {
+  const { departmentId } = useActiveDepartment();
   return useQuery({
-    queryKey: fleetKeys.myTemporaryCars(ownerId),
-    queryFn: () => fetchMyTemporaryCars(ownerId as string),
+    queryKey: [...fleetKeys.myTemporaryCars(ownerId), departmentId],
+    queryFn: async () => (await fetchMyTemporaryCars(ownerId as string)).filter((car) => car.department_id === departmentId),
     enabled: !!ownerId,
     staleTime: 60_000,
   });
@@ -89,9 +97,11 @@ export function useRegisterTemporaryCarMutation() {
   });
 }
 
-export function useSuggestDestinationMutation() {
+export function useSuggestDestinationMutation(departmentOverride?: string) {
+  const active = useActiveDepartment();
+  const departmentId = departmentOverride ?? active.departmentId;
   return useMutation({
-    mutationFn: ({ name, zone }: { name: string; zone?: string }) => suggestDestination(name, zone),
+    mutationFn: ({ name, zone }: { name: string; zone?: string }) => { if (!departmentId) throw new Error("Missing department"); return suggestDestination(departmentId, name, zone); },
     onError: showErrorToast,
   });
 }

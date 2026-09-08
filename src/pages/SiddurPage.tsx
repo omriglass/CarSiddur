@@ -1,3 +1,5 @@
+import { useProfile } from "@/features/auth/useProfile";
+import { useActiveDepartment } from "@/features/auth/useActiveDepartment";
 import { TableViewControls } from "@/components/TableViewControls";
 import { parseTimeToMinutes } from "@/features/solverBridge/buildSolverInput";
 import { formatInTimeZone } from "date-fns-tz";
@@ -26,7 +28,6 @@ import { formatMinutes } from "@/components/TimeField15";
 import { WeekGrid, type WeekGridCar, type WeekGridRide } from "@/components/WeekGrid";
 import { WeekStrip } from "@/components/WeekStrip";
 import { useMyDepartments } from "@/features/auth/useMyDepartments";
-import { useProfile } from "@/features/auth/useProfile";
 import { useSession } from "@/features/auth/useSession";
 import { useIsSadran } from "@/features/auth/useIsSadran";
 import { useMyRequests } from "@/features/requests/hooks";
@@ -90,14 +91,15 @@ export function SiddurPage() {
 
   const { session } = useSession();
   const profileId = session?.user.id;
-  const profileQuery = useProfile();
   const myDepartmentsQuery = useMyDepartments();
   const departmentsQuery = useDepartments();
-  const destinationsQuery = useDestinations();
+  const active = useActiveDepartment();
+  const profileQuery = useProfile();
 
   const defaultDepartmentId =
-    profileQuery.data?.default_department_id ?? myDepartmentsQuery.data?.[0]?.department_id;
+    active.departmentId;
   const departmentId = params.dept ?? defaultDepartmentId;
+  const destinationsQuery = useDestinations(departmentId);
 
   const weeksQuery = useWeeks(departmentId);
   const weeks = weeksQuery.data ?? [];
@@ -113,7 +115,7 @@ export function SiddurPage() {
   const maintenanceQuery = useMaintenanceBlocks(departmentId);
   const seatsQuery = useCarSeatConfigs(departmentId);
   const carLocationsQuery = useCarLocations(departmentId, weekStart);
-  const rideTypesQuery = useRideTypes();
+  const rideTypesQuery = useRideTypes(departmentId);
   const settingsQuery = useDepartmentSettings(departmentId);
   const changesQuery = useRideChanges(departmentId, weekStart);
   const editMutation = useEditRideMutation();
@@ -338,7 +340,7 @@ export function SiddurPage() {
           (myDepartmentsQuery.data?.length ?? 0) > 1 || (departmentsQuery.data?.length ?? 0) > 1 ? (
             <Select
               value={departmentId}
-              onValueChange={(next) => goTo(next, undefined)}
+              onValueChange={(next) => { active.setDepartmentId(next); goTo(next, undefined); }}
             >
               <SelectTrigger className="w-40">
                 <SelectValue placeholder={he.siddur.departmentSwitcher} />

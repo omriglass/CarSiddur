@@ -314,12 +314,10 @@ export async function fetchRequestById(requestId: string, profileId: string): Pr
   };
 }
 
-export async function fetchMyRequests(profileId: string): Promise<MyRequestRow[]> {
-  const { data, error } = await supabase
-    .from("requests")
-    .select(SELECT)
-    .eq("requester_id", profileId)
-    .order("depart_at", { ascending: true, nullsFirst: false });
+export async function fetchMyRequests(profileId: string, departmentId?: string): Promise<MyRequestRow[]> {
+  let query = supabase.from("requests").select(SELECT).eq("requester_id", profileId);
+  if (departmentId) query = query.eq("department_id", departmentId);
+  const { data, error } = await query.order("depart_at", { ascending: true, nullsFirst: false });
   if (error) throw toAppError(error);
   return ((data ?? []) as unknown as RawRequestRow[]).map(mapRow);
 }

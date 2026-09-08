@@ -1,3 +1,4 @@
+import { useActiveDepartment } from "@/features/auth/useActiveDepartment";
 import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 
 import { fleetKeys } from "@/features/fleet/queryKeys";
@@ -42,7 +43,8 @@ async function invalidateCarQueries(queryClient: QueryClient) {
 }
 
 export function useCarsAdmin() {
-  return useQuery({ queryKey: carAdminKeys.list(), queryFn: fetchCarsAll, staleTime: 60_000 });
+  const { departmentId } = useActiveDepartment();
+  return useQuery({ queryKey: [...carAdminKeys.list(), departmentId], queryFn: async () => (await fetchCarsAll()).filter((row) => row.department_id === departmentId), staleTime: 60_000 });
 }
 
 export function useSeatConfigs(carId: string | undefined) {
@@ -79,7 +81,8 @@ export function useReplaceSeatConfigsMutation() {
 }
 
 export function useMaintenanceBlocks() {
-  return useQuery({ queryKey: carAdminKeys.maintenance(), queryFn: fetchMaintenanceBlocks, staleTime: 30_000 });
+  const { departmentId } = useActiveDepartment();
+  return useQuery({ queryKey: [...carAdminKeys.maintenance(), departmentId], queryFn: async () => (await fetchMaintenanceBlocks()).filter((row) => row.department_id === departmentId), staleTime: 30_000 });
 }
 
 export function useCreateMaintenanceBlockMutation() {
@@ -99,7 +102,8 @@ export function useEndMaintenanceBlockMutation() {
 }
 
 export function useCarIssues() {
-  return useQuery({ queryKey: carAdminKeys.issues(), queryFn: fetchCarIssues, staleTime: 30_000 });
+  const { departmentId } = useActiveDepartment();
+  return useQuery({ queryKey: [...carAdminKeys.issues(), departmentId], queryFn: async () => (await fetchCarIssues()).filter((row) => row.department_id === departmentId), staleTime: 30_000 });
 }
 
 export function useResolveCarIssueMutation() {

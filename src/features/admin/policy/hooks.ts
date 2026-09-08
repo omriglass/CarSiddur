@@ -1,3 +1,4 @@
+import { useActiveDepartment } from "@/features/auth/useActiveDepartment";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
@@ -16,7 +17,8 @@ const policyKeys = {
 };
 
 export function usePoliciesAdmin() {
-  return useQuery({ queryKey: policyKeys.list(), queryFn: fetchPolicies, staleTime: 60_000 });
+  const { departmentId } = useActiveDepartment();
+  return useQuery({ queryKey: [...policyKeys.list(), departmentId], enabled: !!departmentId, queryFn: () => fetchPolicies(departmentId as string), staleTime: 60_000 });
 }
 
 export function usePolicyVersions(policyId: string | undefined) {
@@ -30,7 +32,7 @@ export function usePolicyVersions(policyId: string | undefined) {
 export function useCreatePolicyMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (input: { name: string; department_id: string | null }) => createPolicy(input),
+    mutationFn: (input: { name: string; department_id: string }) => createPolicy(input),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: policyKeys.list() }),
   });
 }

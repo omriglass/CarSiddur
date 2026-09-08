@@ -98,7 +98,7 @@ export function ProposalComposerScreen({ departmentId, weekStart }: ProposalComp
   const profileQuery = useProfile();
   const requestsQuery = useWeekRequestsWithNames(departmentId, weekStart);
   const templatesQuery = useWhatsappTemplates();
-  const destinationsQuery = useDestinations();
+  const destinationsQuery = useDestinations(departmentId);
   const carsQuery = useCars(departmentId);
 
   const [requestId] = useState(prefill?.requestId ?? "");

@@ -1,5 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
-import { toAppError } from "@/lib/rpc";
+import { rpc, toAppError } from "@/lib/rpc";
 
 import type { Database } from "@/integrations/supabase/types";
 
@@ -39,10 +39,11 @@ export async function fetchDepartmentCounts(): Promise<{
   return { members, cars };
 }
 
-export async function createDepartment(input: DepartmentInsert): Promise<Department> {
-  const { data, error } = await supabase.from("departments").insert(input).select().single();
-  if (error) throw toAppError(error);
-  return data;
+export async function createDepartment(input: DepartmentInsert & { source_department_id?: string }): Promise<Department> {
+  const department = await rpc("create_department", { p_name: input.name, p_slug: input.slug,
+    ...(input.source_department_id ? { p_source_department_id: input.source_department_id } : {}) });
+  if (input.is_active === false) return updateDepartment(department.id, { is_active: false });
+  return department;
 }
 
 export async function updateDepartment(id: string, patch: DepartmentUpdate): Promise<Department> {

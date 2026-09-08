@@ -1,5 +1,23 @@
 -- Weekly duty grants only that board; permanent roles retain department authority.
 begin;
+create function pg_temp.publication_scores(dept uuid,w date) returns jsonb language sql as $$
+  with scored as (
+    select q.id,q.requester_id,exists(select 1 from public.ride_requests rr join public.rides r on r.id=rr.ride_id
+      where rr.request_id=q.id and r.status<>'cancelled' and not r.needs_driver) served
+    from public.requests q where q.department_id=dept and q.week_start=w and q.status not in ('draft','withdrawn','cancelled')
+  ), grouped as (
+    select requester_id,jsonb_build_object('profile_id',requester_id,'request_count',count(*),'served_count',count(*) filter(where served),
+      'priority_total',count(*),'served_priority_total',count(*) filter(where served),
+      'requests',jsonb_agg(jsonb_build_object('request_id',id,'score',1,'served',served,'breakdown','{}'::jsonb) order by id)) profile
+    from scored group by requester_id
+  ), profiles as (select coalesce(jsonb_agg(profile order by requester_id),'[]') value from grouped)
+  select jsonb_build_object('profiles',(select value from profiles),'policies',(
+    select jsonb_agg(jsonb_build_object('policy_id',p.id,'policy_version_id',p.current_version_id,'policy_name',p.name,
+      'request_count',(select count(*) from scored),'served_count',(select count(*) from scored where served),
+      'priority_total',(select count(*) from scored),'served_priority_total',(select count(*) from scored where served),
+      'profiles',(select value from profiles)))
+    from public.policies p where (p.department_id=dept or p.department_id is null) and p.current_version_id is not null));
+$$;
 do $$
 declare d uuid:=gen_random_uuid(); other_d uuid:=gen_random_uuid();
   relevant_id uuid:=gen_random_uuid(); unrelated_id uuid:=gen_random_uuid(); foreign_id uuid:=gen_random_uuid();
@@ -8,7 +26,7 @@ declare d uuid:=gen_random_uuid(); other_d uuid:=gen_random_uuid();
   member_id uuid:='00000000-0000-0000-0000-000000000103';
   second_id uuid:='00000000-0000-0000-0000-000000000104';
   w date:=public.current_week_start()+280;
-  first_duty uuid; second_duty uuid; n int;
+  first_duty uuid; second_duty uuid; n int; scores jsonb;
 begin
   insert into public.departments(id,name,slug) values(d,'Weekly permissions','weekly-permissions'),
     (other_d,'Other phone scope','other-phone-scope');
@@ -29,6 +47,8 @@ begin
   assert (select count(*)=2 from public.sadran_assignments where department_id=d),'rotation not persisted';
   assert (select count(*)=2 from public.notifications where department_id=d and event='window_open' and data->>'variant'='sadran'),'rotation notification duplicated or absent';
   perform set_config('request.jwt.claims',jsonb_build_object('sub',admin_id,'role','authenticated')::text,true);
+  perform public.initialize_department_catalogs(d,'00000000-0000-0000-0000-000000000001');
+  perform public.initialize_department_catalogs(other_d,'00000000-0000-0000-0000-000000000001');
   perform public.admin_set_sadran_assignments(d,array[member_id],w);
   assert (select role='member' from public.department_members where department_id=d and profile_id=member_id),'weekly assignment promoted role';
   assert (select array_agg(profile_id)=array[member_id] from public.sadranim_of(d,w) s(profile_id)),'duty roster includes off-duty permanent sadran';
@@ -37,7 +57,7 @@ begin
   insert into public.weeks(department_id,week_start,phase,open_at,close_at,publish_at)
     values(other_d,w,'open',now(),now()+interval '2 days',now()+interval '3 days');
   insert into public.requests(department_id,week_start,requester_id,filed_by,destination_text,ride_type_id,depart_at,return_at)
-    select dept,week_date,profile_id,profile_id,'Phone scope test','00000000-0000-0000-0000-000000000024'::uuid,
+    select dept,week_date,profile_id,profile_id,'Phone scope test',(select id from public.ride_types where department_id=dept and code='errands'),
       (week_date+time '09:00') at time zone 'Asia/Jerusalem',(week_date+time '10:00') at time zone 'Asia/Jerusalem'
     from (values(d,w,relevant_id),(d,w+7,unrelated_id),(other_d,w,foreign_id)) v(dept,week_date,profile_id);
   perform set_config('request.jwt.claims',jsonb_build_object('sub',member_id,'role','authenticated')::text,true);
@@ -56,7 +76,9 @@ begin
   get diagnostics n=row_count;
   assert n=0,'temporary member changed week settings';
   perform public.set_week_phase(d,w,'solving');
-  perform public.publish_siddur(d,w,'[]',public.publish_scores_fingerprint(d,w),'[]',array[w+6],false);
+  scores:=pg_temp.publication_scores(d,w);
+  perform public.publish_siddur(d,w,scores->'profiles',public.publish_scores_fingerprint(d,w),
+    coalesce(nullif(scores->'policies','null'::jsonb),'[]'::jsonb),array[w+6],false);
   assert (select phase='published' from public.weeks where department_id=d and week_start=w),'temporary member could not publish';
   perform public.reopen_week(d,w,'solving',public.publish_scores_fingerprint(d,w));
   assert (select phase='solving' from public.weeks where department_id=d and week_start=w),'temporary member could not reopen board';

@@ -1,3 +1,4 @@
+import { useActiveDepartment } from "@/features/auth/useActiveDepartment";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Plus } from "lucide-react";
 import { useState } from "react";
@@ -32,7 +33,9 @@ import type { Department } from "../api";
 const DOW_LABELS = he.days.long;
 
 export function DepartmentForm({ department, onSaved, settingsOnly = false }: { department: Department | null; onSaved: () => void; settingsOnly?: boolean }) {
-  const destinationsQuery = useDestinations();
+  const active = useActiveDepartment();
+  const [sourceDepartmentId, setSourceDepartmentId] = useState(active.departmentId ?? "none");
+  const destinationsQuery = useDestinations(department?.id);
   const createMutation = useCreateDepartmentMutation();
   const updateMutation = useUpdateDepartmentMutation();
   const settingsQuery = useDepartmentSettings(department?.id);
@@ -78,7 +81,7 @@ export function DepartmentForm({ department, onSaved, settingsOnly = false }: { 
       if (department) {
         await updateMutation.mutateAsync({ id: department.id, patch: values });
       } else {
-        await createMutation.mutateAsync(values);
+        await createMutation.mutateAsync({ ...values, source_department_id: sourceDepartmentId === "none" ? undefined : sourceDepartmentId });
       }
       toast.success(he.adminCommon.savedToast);
       onSaved();
@@ -101,6 +104,10 @@ export function DepartmentForm({ department, onSaved, settingsOnly = false }: { 
     <div className="flex flex-col gap-8">
       {!settingsOnly ? <Form {...form}>
         <form className="flex flex-col gap-4" onSubmit={form.handleSubmit(onSubmit)}>
+          {!department && <div className="grid gap-2"><label htmlFor="catalog-source">{he.departmentContext.copyFrom}</label>
+            <Select value={sourceDepartmentId} onValueChange={setSourceDepartmentId}><SelectTrigger id="catalog-source"><SelectValue /></SelectTrigger>
+              <SelectContent><SelectItem value="none">{he.departmentContext.blankDepartment}</SelectItem>{active.departments.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select>
+            <p className="text-sm text-muted-foreground">{he.departmentContext.copyHelp}</p></div>}
           <FormField
             control={form.control}
             name="name"
@@ -127,7 +134,7 @@ export function DepartmentForm({ department, onSaved, settingsOnly = false }: { 
               </FormItem>
             )}
           />
-          <FormField
+          {department && <FormField
             control={form.control}
             name="home_destination_id"
             render={({ field }) => (
@@ -150,7 +157,7 @@ export function DepartmentForm({ department, onSaved, settingsOnly = false }: { 
                 <FormMessage />
               </FormItem>
             )}
-          />
+          />}
           <FormField
             control={form.control}
             name="is_active"

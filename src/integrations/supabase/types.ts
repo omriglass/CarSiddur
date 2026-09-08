@@ -598,10 +598,10 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "departments_home_destination_fk"
-            columns: ["home_destination_id"]
+            columns: ["id", "home_destination_id"]
             isOneToOne: false
             referencedRelation: "destinations"
-            referencedColumns: ["id"]
+            referencedColumns: ["department_id", "id"]
           },
         ]
       }
@@ -610,6 +610,7 @@ export type Database = {
           aliases: string[]
           created_at: string
           created_by: string | null
+          department_id: string
           distance_km: number | null
           id: string
           is_approved: boolean
@@ -625,6 +626,7 @@ export type Database = {
           aliases?: string[]
           created_at?: string
           created_by?: string | null
+          department_id: string
           distance_km?: number | null
           id?: string
           is_approved?: boolean
@@ -640,6 +642,7 @@ export type Database = {
           aliases?: string[]
           created_at?: string
           created_by?: string | null
+          department_id?: string
           distance_km?: number | null
           id?: string
           is_approved?: boolean
@@ -657,6 +660,13 @@ export type Database = {
             columns: ["created_by"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "destinations_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
             referencedColumns: ["id"]
           },
         ]
@@ -1005,7 +1015,7 @@ export type Database = {
           created_at: string
           created_by: string | null
           current_version_id: string | null
-          department_id: string | null
+          department_id: string
           id: string
           is_active: boolean
           name: string
@@ -1015,7 +1025,7 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           current_version_id?: string | null
-          department_id?: string | null
+          department_id: string
           id?: string
           is_active?: boolean
           name: string
@@ -1025,7 +1035,7 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           current_version_id?: string | null
-          department_id?: string | null
+          department_id?: string
           id?: string
           is_active?: boolean
           name?: string
@@ -1110,8 +1120,10 @@ export type Database = {
           default_boosters: number
           default_child_seats: number
           default_department_id: string | null
+          display_name: string | null
           email: string
           full_name: string
+          google_name: string
           home_week_preference: Database["public"]["Enums"]["home_week_preference"]
           id: string
           is_admin: boolean
@@ -1128,8 +1140,10 @@ export type Database = {
           default_boosters?: number
           default_child_seats?: number
           default_department_id?: string | null
+          display_name?: string | null
           email: string
           full_name?: string
+          google_name?: string
           home_week_preference?: Database["public"]["Enums"]["home_week_preference"]
           id: string
           is_admin?: boolean
@@ -1146,8 +1160,10 @@ export type Database = {
           default_boosters?: number
           default_child_seats?: number
           default_department_id?: string | null
+          display_name?: string | null
           email?: string
           full_name?: string
+          google_name?: string
           home_week_preference?: Database["public"]["Enums"]["home_week_preference"]
           id?: string
           is_admin?: boolean
@@ -1672,10 +1688,10 @@ export type Database = {
           },
           {
             foreignKeyName: "request_templates_destination_id_fkey"
-            columns: ["destination_id"]
+            columns: ["department_id", "destination_id"]
             isOneToOne: false
             referencedRelation: "destinations"
-            referencedColumns: ["id"]
+            referencedColumns: ["department_id", "id"]
           },
           {
             foreignKeyName: "request_templates_preferred_car_id_fkey"
@@ -1693,10 +1709,10 @@ export type Database = {
           },
           {
             foreignKeyName: "request_templates_ride_type_id_fkey"
-            columns: ["ride_type_id"]
+            columns: ["department_id", "ride_type_id"]
             isOneToOne: false
             referencedRelation: "ride_types"
-            referencedColumns: ["id"]
+            referencedColumns: ["department_id", "id"]
           },
         ]
       }
@@ -1830,10 +1846,10 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "requests_destination_id_fkey"
-            columns: ["destination_id"]
+            columns: ["department_id", "destination_id"]
             isOneToOne: false
             referencedRelation: "destinations"
-            referencedColumns: ["id"]
+            referencedColumns: ["department_id", "id"]
           },
           {
             foreignKeyName: "requests_filed_by_fkey"
@@ -1886,10 +1902,10 @@ export type Database = {
           },
           {
             foreignKeyName: "requests_ride_type_id_fkey"
-            columns: ["ride_type_id"]
+            columns: ["department_id", "ride_type_id"]
             isOneToOne: false
             referencedRelation: "ride_types"
-            referencedColumns: ["id"]
+            referencedColumns: ["department_id", "id"]
           },
           {
             foreignKeyName: "requests_template_id_fkey"
@@ -2179,6 +2195,7 @@ export type Database = {
       ride_types: {
         Row: {
           code: string
+          department_id: string
           id: string
           is_active: boolean
           name_he: string
@@ -2186,6 +2203,7 @@ export type Database = {
         }
         Insert: {
           code: string
+          department_id: string
           id?: string
           is_active?: boolean
           name_he: string
@@ -2193,12 +2211,21 @@ export type Database = {
         }
         Update: {
           code?: string
+          department_id?: string
           id?: string
           is_active?: boolean
           name_he?: string
           sort_order?: number
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "ride_types_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       rides: {
         Row: {
@@ -2328,10 +2355,10 @@ export type Database = {
           },
           {
             foreignKeyName: "rides_destination_id_fkey"
-            columns: ["destination_id"]
+            columns: ["department_id", "destination_id"]
             isOneToOne: false
             referencedRelation: "destinations"
-            referencedColumns: ["id"]
+            referencedColumns: ["department_id", "id"]
           },
           {
             foreignKeyName: "rides_driver_id_fkey"
@@ -2342,10 +2369,10 @@ export type Database = {
           },
           {
             foreignKeyName: "rides_origin_id_fkey"
-            columns: ["origin_id"]
+            columns: ["department_id", "origin_id"]
             isOneToOne: false
             referencedRelation: "destinations"
-            referencedColumns: ["id"]
+            referencedColumns: ["department_id", "id"]
           },
           {
             foreignKeyName: "rides_overnight_ack_by_fkey"
@@ -2659,10 +2686,10 @@ export type Database = {
           },
           {
             foreignKeyName: "rides_destination_id_fkey"
-            columns: ["destination_id"]
+            columns: ["department_id", "destination_id"]
             isOneToOne: false
             referencedRelation: "destinations"
-            referencedColumns: ["id"]
+            referencedColumns: ["department_id", "id"]
           },
           {
             foreignKeyName: "rides_driver_id_fkey"
@@ -2673,10 +2700,10 @@ export type Database = {
           },
           {
             foreignKeyName: "rides_origin_id_fkey"
-            columns: ["origin_id"]
+            columns: ["department_id", "origin_id"]
             isOneToOne: false
             referencedRelation: "destinations"
-            referencedColumns: ["id"]
+            referencedColumns: ["department_id", "id"]
           },
           {
             foreignKeyName: "rides_overnight_ack_by_fkey"
@@ -2716,10 +2743,10 @@ export type Database = {
           },
           {
             foreignKeyName: "rides_destination_id_fkey"
-            columns: ["location_id"]
+            columns: ["department_id", "location_id"]
             isOneToOne: false
             referencedRelation: "destinations"
-            referencedColumns: ["id"]
+            referencedColumns: ["department_id", "id"]
           },
           {
             foreignKeyName: "rides_week_fk"
@@ -2923,6 +2950,28 @@ export type Database = {
         Returns: undefined
       }
       close_offer: { Args: { p_offer_id: string }; Returns: undefined }
+      create_department: {
+        Args: {
+          p_name: string
+          p_slug: string
+          p_source_department_id?: string
+        }
+        Returns: {
+          created_at: string
+          home_destination_id: string | null
+          id: string
+          is_active: boolean
+          name: string
+          slug: string
+          updated_at: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "departments"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       create_policy_version: {
         Args: { p_note?: string; p_policy_id: string; p_rules: Json }
         Returns: string
@@ -3001,6 +3050,10 @@ export type Database = {
       generate_token: { Args: never; Returns: string }
       grant_admin: { Args: { p_profile_id: string }; Returns: undefined }
       housekeeping: { Args: { p_now?: string }; Returns: undefined }
+      initialize_department_catalogs: {
+        Args: { p_department_id: string; p_source_department_id: string }
+        Returns: undefined
+      }
       is_admin: { Args: never; Returns: boolean }
       is_approved: { Args: never; Returns: boolean }
       is_day_public: {
@@ -3217,7 +3270,7 @@ export type Database = {
       shares_ride_with: { Args: { _profile: string }; Returns: boolean }
       submit_request: { Args: { payload: Json }; Returns: Json }
       suggest_destination: {
-        Args: { p_name: string; p_zone?: string }
+        Args: { p_department_id: string; p_name: string; p_zone?: string }
         Returns: string
       }
       try_auto_approve: { Args: { p_request_id: string }; Returns: Json }

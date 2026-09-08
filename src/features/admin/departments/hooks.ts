@@ -32,9 +32,11 @@ export function useDepartmentSettings(departmentId: string | undefined) {
 export function useCreateDepartmentMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (input: DepartmentInsert) => createDepartment(input),
+    mutationFn: (input: DepartmentInsert & { source_department_id?: string }) => createDepartment(input),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: departmentAdminKeys.list() });
+      void queryClient.invalidateQueries({ queryKey: ["context"] });
+      void queryClient.invalidateQueries({ queryKey: ["siddur", "departments"] });
       void queryClient.invalidateQueries({ queryKey: departmentAdminKeys.counts() });
     },
   });
@@ -46,6 +48,8 @@ export function useUpdateDepartmentMutation() {
     mutationFn: ({ id, patch }: { id: string; patch: DepartmentUpdate }) => updateDepartment(id, patch),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: departmentAdminKeys.list() });
+      void queryClient.invalidateQueries({ queryKey: ["context"] });
+      void queryClient.invalidateQueries({ queryKey: ["siddur", "departments"] });
     },
   });
 }

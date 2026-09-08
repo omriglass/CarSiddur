@@ -28,7 +28,7 @@ test.describe("member", () => {
     await expect(page.getByText("בקשה חדשה")).toBeVisible();
 
     // Destination: free text (always offered as the last combobox row).
-    await page.getByRole("combobox").first().click();
+    await page.getByRole("combobox").filter({ hasText: "לאן?" }).click();
     await page.getByPlaceholder("לאן?").fill("עפולה");
     await page.getByText('"עפולה" — יעד חופשי').click();
 

@@ -1,3 +1,4 @@
+import { useActiveDepartment } from "@/features/auth/useActiveDepartment";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSession } from "@/features/auth/useSession";
 import { showErrorToast } from "@/lib/rpc";
@@ -24,11 +25,12 @@ import {
 import { siddurKeys } from "./queryKeys";
 
 export function useMyUpcomingRides() {
+  const { departmentId } = useActiveDepartment();
   const { session } = useSession();
   const profileId = session?.user.id;
   return useQuery({
-    queryKey: ["siddur", "myUpcomingRides", profileId],
-    queryFn: () => fetchMyUpcomingRides(profileId as string),
+    queryKey: ["siddur", "myUpcomingRides", profileId, departmentId],
+    queryFn: () => fetchMyUpcomingRides(profileId as string, departmentId),
     enabled: !!profileId,
     staleTime: 30_000,
     refetchInterval: 30_000,

@@ -1,3 +1,4 @@
+import { useActiveDepartment } from "@/features/auth/useActiveDepartment";
 import { CalendarClock, CarFront, Inbox, MessageCircleQuestion } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router-dom";
@@ -12,7 +13,6 @@ import { RideCard } from "@/components/RideCard";
 import { CardListSkeleton } from "@/components/skeletons/CardListSkeleton";
 import { StatusBadge } from "@/components/StatusBadge";
 import { formatWeekRangeLabel, todayInJerusalem } from "@/components/DateField";
-import { useMyDepartments } from "@/features/auth/useMyDepartments";
 import { useProfile } from "@/features/auth/useProfile";
 import { DeviceSetupPrompts } from "@/features/member/components/DeviceSetupPrompts";
 import { useDestinations, useRideTypes } from "@/features/fleet/hooks";
@@ -47,14 +47,14 @@ function reasonLine(row: MyRequestRow): string | null {
  */
 export function HomePage() {
   const profileQuery = useProfile();
-  const departmentsQuery = useMyDepartments();
+  const active = useActiveDepartment();
   const requestsQuery = useMyRequests();
   const upcomingRidesQuery = useMyUpcomingRides();
   const destinationsQuery = useDestinations();
   const rideTypesQuery = useRideTypes();
 
   const defaultDepartmentId =
-    profileQuery.data?.default_department_id ?? departmentsQuery.data?.[0]?.department_id;
+    active.departmentId;
   const weeksQuery = useWeeks(defaultDepartmentId);
 
   // Immediate-car request card (UX_FLOWS.md §18): only when the live week exists and some shared
@@ -69,7 +69,7 @@ export function HomePage() {
   const [quickRequestOpen, setQuickRequestOpen] = useState(false);
   const defaultRideTypeId = rideTypesQuery.data?.find((rt) => rt.code === "other")?.id ?? rideTypesQuery.data?.[0]?.id ?? "";
 
-  const isLoading = profileQuery.isLoading || requestsQuery.isLoading || upcomingRidesQuery.isLoading || weeksQuery.isLoading;
+  const isLoading = active.isLoading || profileQuery.isLoading || requestsQuery.isLoading || upcomingRidesQuery.isLoading || weeksQuery.isLoading;
 
   if (isLoading) {
     return (
@@ -119,8 +119,9 @@ export function HomePage() {
       />
 
       <DeviceSetupPrompts />
+      {!active.canSubmit && <p className="text-sm text-muted-foreground">{he.departmentContext.noMembership} <Link to={`/siddur/${active.departmentId}`}>{he.nav.siddur}</Link></p>}
 
-      {freeCarNow ? (
+      {active.canSubmit && freeCarNow ? (
         <Card
           role="button"
           tabIndex={0}
@@ -211,7 +212,7 @@ export function HomePage() {
                       weekLabel: formatWeekRangeLabel(homeWeek.weekStart),
                     })
               }
-              action={
+              action={active.canSubmit &&
                 <Button asChild size="sm">
                   <Link to="/requests/new">{t("action.newRequest")}</Link>
                 </Button>
@@ -232,9 +233,9 @@ export function HomePage() {
         </section>
       ) : null}
 
-      <Button asChild size="lg" className="fixed bottom-20 end-4 z-30 rounded-full shadow-lg md:bottom-6">
+      {active.canSubmit && <Button asChild size="lg" className="fixed bottom-20 end-4 z-30 rounded-full shadow-lg md:bottom-6">
         <Link to="/requests/new">{t("action.newRequest")}</Link>
-      </Button>
+      </Button>}
 
       {quickRequestOpen && freeCarNow && defaultDepartmentId && liveWeekStart ? (
         <QuickRequestSheet

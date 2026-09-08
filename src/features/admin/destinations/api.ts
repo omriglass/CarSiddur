@@ -1,5 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
-import { toAppError } from "@/lib/rpc";
+import { AppError, toAppError } from "@/lib/rpc";
+
+import { he } from "@/i18n/he";
 
 import type { Database } from "@/integrations/supabase/types";
 
@@ -11,8 +13,8 @@ export type Destination = Database["public"]["Tables"]["destinations"]["Row"];
 export type DestinationInsert = Database["public"]["Tables"]["destinations"]["Insert"];
 export type DestinationUpdate = Database["public"]["Tables"]["destinations"]["Update"];
 
-export async function fetchAllDestinations(): Promise<Destination[]> {
-  const { data, error } = await supabase.from("destinations").select("*").order("name", { ascending: true });
+export async function fetchAllDestinations(departmentId: string): Promise<Destination[]> {
+  const { data, error } = await supabase.from("destinations").select("*").eq("department_id", departmentId).order("name", { ascending: true });
   if (error) throw toAppError(error);
   return data ?? [];
 }
@@ -41,10 +43,11 @@ export interface FreeTextGroup {
  * for this yet — see the stage 2c report). `requests` SELECT is open to
  * admin directly (DATA_MODEL.md §4.3), unlike its RPC-only writes.
  */
-export async function fetchFreeTextQueue(): Promise<FreeTextGroup[]> {
+export async function fetchFreeTextQueue(departmentId: string): Promise<FreeTextGroup[]> {
   const { data, error } = await supabase
     .from("requests")
     .select("destination_text, created_at")
+    .eq("department_id", departmentId)
     .is("destination_id", null)
     .not("destination_text", "is", null);
   if (error) throw toAppError(error);
@@ -88,4 +91,29 @@ export async function mergeFreeTextIntoDestination(destinationId: string, freeTe
     .single();
   if (error) throw toAppError(error);
   return data;
+}
+
+
+export async function calculateDestinationRoute(departmentId: string, destinationId: string): Promise<{ distance_km: number; travel_minutes: number }> {
+  const { data, error } = await supabase.functions.invoke("destination-route", {
+    body: { department_id: departmentId, destination_id: destinationId },
+  });
+  if (error) {
+    let code: string | undefined;
+    if (error.context instanceof Response) {
+      try { code = (await error.context.json())?.error?.code; } catch { /* Gateway/network error has no function payload. */ }
+    }
+    const messages: Record<string, string> = {
+      maps_not_configured: he.adminDestinations.mapsNotConfigured,
+      home_not_configured: he.adminDestinations.mapsHomeMissing,
+      destination_not_found: he.adminDestinations.mapsDestinationMissing,
+      not_authorized: he.adminDestinations.mapsUnauthorized,
+      route_not_found: he.adminDestinations.mapsNoRoute,
+    };
+    throw new AppError("unknown", messages[code ?? ""] ?? he.adminDestinations.mapsFailed);
+  }
+  if (!data || !Number.isFinite(data.distance_km) || data.distance_km < 0 || !Number.isInteger(data.travel_minutes) || data.travel_minutes < 0) {
+    throw new AppError("unknown", he.adminDestinations.mapsFailed);
+  }
+  return { distance_km: data.distance_km, travel_minutes: data.travel_minutes };
 }

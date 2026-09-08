@@ -1,3 +1,4 @@
+import { useActiveDepartment } from "@/features/auth/useActiveDepartment";
 import { useQuery } from "@tanstack/react-query";
 
 import { fetchCanManageWeek } from "@/features/auth/api";
@@ -25,10 +26,11 @@ export function useDefaultSadranWeek() {
   const { session } = useSession();
   const profileId = session?.user.id;
   const departmentsQuery = useMyDepartments();
-  const departmentIds = (departmentsQuery.data ?? []).map((d) => d.department_id);
+  const active = useActiveDepartment();
+  const departmentIds = active.departmentId ? [active.departmentId] : [];
 
   const query = useQuery({
-    queryKey: sadranKeys.mySadranDepartments(profileId),
+    queryKey: [...sadranKeys.mySadranDepartments(profileId), active.departmentId],
     queryFn: async (): Promise<DefaultSadranWeek | null> => {
       for (const departmentId of departmentIds) {
         const weeks = await fetchWeeks(departmentId);
@@ -44,9 +46,9 @@ export function useDefaultSadranWeek() {
       }
       return null;
     },
-    enabled: !!profileId && departmentsQuery.isSuccess,
+    enabled: !!profileId && departmentsQuery.isSuccess && !!active.departmentId,
     staleTime: 30_000,
   });
 
-  return { data: query.data, isLoading: departmentsQuery.isLoading || query.isLoading };
+  return { data: query.data, isLoading: active.isLoading || departmentsQuery.isLoading || query.isLoading };
 }

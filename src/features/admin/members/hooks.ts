@@ -48,7 +48,7 @@ function useInvalidateMembers() {
   const queryClient = useQueryClient();
   return () => {
     void queryClient.invalidateQueries({ queryKey: memberAdminKeys.all });
-    void queryClient.invalidateQueries({ queryKey: ["auth"] });
+    void queryClient.invalidateQueries();
   };
 }
 
@@ -115,8 +115,8 @@ export function useImportAllowListMutation() {
 export function useUpdateMemberDetailsMutation() {
   const invalidate = useInvalidateMembers();
   return useMutation({
-    mutationFn: ({ profileId, fullName, phone, departmentId }: { profileId: string; fullName: string; phone: string; departmentId?: string }) =>
-      updateMemberDetails(profileId, fullName, phone, departmentId),
+    mutationFn: ({ profileId, fullName, phone, departmentId, displayName, removedDepartmentIds }: { profileId: string; fullName: string; phone: string; departmentId?: string; displayName?: string; removedDepartmentIds?: string[] }) =>
+      updateMemberDetails(profileId, fullName, phone, departmentId, displayName, removedDepartmentIds),
     onSuccess: invalidate,
   });
 }

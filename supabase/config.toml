@@ -440,3 +440,7 @@ enabled = true
 # declarative_schema_path = "./schemas"
 # JSON string passed through to pg-delta SQL formatting.
 # format_options = "{\"keywordCase\":\"upper\",\"indent\":2,\"maxWidth\":80,\"commaStyle\":\"trailing\"}"
+
+# Verifies the bearer JWT with getUser inside the function, then checks department authority.
+[functions.destination-route]
+verify_jwt = false

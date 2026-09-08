@@ -8,8 +8,8 @@ export type RideType = Database["public"]["Tables"]["ride_types"]["Row"];
 export type RideTypeInsert = Database["public"]["Tables"]["ride_types"]["Insert"];
 export type RideTypeUpdate = Database["public"]["Tables"]["ride_types"]["Update"];
 
-export async function fetchAllRideTypes(): Promise<RideType[]> {
-  const { data, error } = await supabase.from("ride_types").select("*").order("sort_order", { ascending: true });
+export async function fetchAllRideTypes(departmentId: string): Promise<RideType[]> {
+  const { data, error } = await supabase.from("ride_types").select("*").eq("department_id", departmentId).order("sort_order", { ascending: true });
   if (error) throw toAppError(error);
   return data ?? [];
 }

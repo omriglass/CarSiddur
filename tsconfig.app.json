@@ -26,6 +26,6 @@
 
     "types": ["vite/client"]
   },
-  "include": ["src", "e2e", "vitest.config.ts", "playwright.config.ts"],
+  "include": ["src", "e2e", "vitest.config.ts", "playwright.config.ts", "supabase/functions/destination-route/handler.ts", "supabase/functions/_shared/cors.ts"],
   "exclude": ["src/sw.ts"]
 }

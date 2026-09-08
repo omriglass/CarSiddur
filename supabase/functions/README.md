@@ -241,3 +241,11 @@ same value as the `CRON_SECRET` secret.
   direct INSERT).
 - **`npx supabase functions deploy`** (an actual remote project) — no project is linked in this
   environment; only local `functions serve` was exercised.
+
+## Destination route estimates
+
+`destination-route` accepts `POST { department_id, destination_id }` with a signed-in user's bearer token. It verifies the token using Supabase Auth, checks `can_manage_operations(department_id)` under that user's JWT, and reads only destinations belonging to that department. It uses the department's configured home destination as origin. Coordinates take precedence over destination names; name-based addresses use the Israel region. It returns `{ distance_km, travel_minutes }` for review without writing to the database. Distances round to 0.1 km, time rounds up to whole minutes. This is a traffic-unaware driving estimate, not a live traffic promise.
+
+Configure `GOOGLE_MAPS_API_KEY` in Supabase Edge Function secrets and deploy `destination-route`. Enable Google Routes API for that key's Google Cloud project. Never put the key in `VITE_*` variables. Missing credentials return `maps_not_configured`; manual catalog entry continues to work. Other error codes include `home_not_configured`, `destination_not_found`, `not_authorized`, `route_not_found`, and `maps_request_failed`; responses never expose upstream error bodies or secrets.
+
+Implementation follows [Google's computeRoutes reference](https://developers.google.com/maps/documentation/routes/reference/rest/v2/TopLevel/computeRoutes): POST to `directions/v2:computeRoutes` with an explicit `routes.distanceMeters,routes.duration` field mask. Local tests inject mock authentication, catalog reads, and HTTP responses and make no billable Google requests.

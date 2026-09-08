@@ -80,7 +80,7 @@ export function WeekDashboardScreen({ departmentId, weekStart }: WeekDashboardSc
   const departmentSettingsQuery = useDepartmentSettings(departmentId);
   const activePolicyQuery = useActivePolicy(departmentId);
   const latestRunQuery = useLatestSolverRun(departmentId, weekStart);
-  const rideTypesQuery = useQuery({ queryKey: ["sadran", "rideTypes"], queryFn: fetchRideTypes, staleTime: 5 * 60_000 });
+  const rideTypesQuery = useQuery({ queryKey: ["sadran", "rideTypes", departmentId], queryFn: () => fetchRideTypes(departmentId), staleTime: 5 * 60_000 });
 
   const openWeekMutation = useOpenWeekMutation();
   const setWeekPhaseMutation = useSetWeekPhaseMutation();

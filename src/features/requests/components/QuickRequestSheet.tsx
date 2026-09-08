@@ -152,7 +152,7 @@ export function QuickRequestSheet({
   const queryClient = useQueryClient();
   const submitMutation = useSubmitRequestMutation();
   const membersQuery = useDepartmentMembers(departmentId);
-  const destinationsQuery = useDestinations();
+  const destinationsQuery = useDestinations(departmentId);
   const settingsQuery = useDepartmentSettings(departmentId);
   const weekQuery = useWeekRow(departmentId, weekStart);
 

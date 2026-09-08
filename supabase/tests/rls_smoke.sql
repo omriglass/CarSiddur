@@ -16,13 +16,14 @@ begin;
 -- Fixture: a second department ("דרום") with a published/live week, so the
 -- cross-department read check (#4) has something real to read.
 -- ---------------------------------------------------------------------------
-insert into public.destinations (id, name, zone)
-values ('20000000-0000-0000-0000-000000000010', 'עיר דרומית (בדיקה)', 'south')
+insert into public.departments (id, name, slug)
+values ('20000000-0000-0000-0000-000000000001', 'South test', 'darom-smoke')
 on conflict (id) do nothing;
-
-insert into public.departments (id, name, slug, home_destination_id)
-values ('20000000-0000-0000-0000-000000000001', 'דרום (בדיקה)', 'darom-smoke', '20000000-0000-0000-0000-000000000010')
+insert into public.destinations (id, department_id, name, zone, is_approved)
+values ('20000000-0000-0000-0000-000000000010', '20000000-0000-0000-0000-000000000001', 'South city test', 'south', true)
 on conflict (id) do nothing;
+update public.departments set home_destination_id='20000000-0000-0000-0000-000000000010'
+where id='20000000-0000-0000-0000-000000000001';
 
 do $$
 declare
@@ -242,10 +243,10 @@ reset role;
 -- 8) merge_destination(): admin merges a duplicate destination into a canonical one; every
 --    reference is repointed off the source (DATA_MODEL.md §6.1 item 14).
 -- ---------------------------------------------------------------------------
-insert into public.destinations (id, name, zone)
+insert into public.destinations (id, department_id, name, zone)
 values
-  ('30000000-0000-0000-0000-000000000001', 'מיזוג-מקור (בדיקה)', 'unknown'),
-  ('30000000-0000-0000-0000-000000000002', 'מיזוג-יעד (בדיקה)', 'unknown')
+  ('30000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000001', 'מיזוג-מקור (בדיקה)', 'unknown'),
+  ('30000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000001', 'מיזוג-יעד (בדיקה)', 'unknown')
 on conflict (id) do nothing;
 
 insert into public.requests (id, department_id, week_start, requester_id, filed_by, destination_id, ride_type_id,

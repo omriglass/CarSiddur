@@ -1,3 +1,4 @@
+import { useActiveDepartment } from "@/features/auth/useActiveDepartment";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -20,6 +21,7 @@ const PHASE_PRIORITY: Record<string, number> = { open: 0, solving: 1, published:
 /** Department/week navigation stays on the board and uses server-resolved assignments. */
 export function BoardWeekSwitcher({ departmentId, weekStart }: { departmentId: string; weekStart: string }) {
   const navigate = useNavigate();
+  const active = useActiveDepartment();
   const queryClient = useQueryClient();
   const { session } = useSession();
   const profileId = session?.user.id;
@@ -59,6 +61,7 @@ export function BoardWeekSwitcher({ departmentId, weekStart }: { departmentId: s
         || a.week_start.localeCompare(b.week_start));
       for (const week of candidates) {
         if (await canManage(nextDepartment, week.week_start)) {
+          active.setDepartmentId(nextDepartment);
           navigate(`/sadran/${nextDepartment}/${week.week_start}/board`);
           return;
         }

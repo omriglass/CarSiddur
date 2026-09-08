@@ -2,29 +2,39 @@
 
 ## Quick update for the existing site
 
-For the admin membership, weekly Sadran and home-screen/notification prompts update:
+For department removal, display names, department isolation and Google route calculation:
 
-1. Apply the two new database migrations first:
+1. Apply the database migrations:
 
    ```sh
    npx supabase db push
    ```
 
-   Confirm when prompted. If this fails, stop before the next step.
+   If this fails, stop before publishing the frontend. Existing shared catalogs are copied into independent department catalogs.
 
-2. Publish the updated code:
+2. Deploy the route function:
+
+   ```sh
+   npx supabase functions deploy destination-route
+   ```
+
+   To enable Google calculations, enable **Routes API** in Google Cloud and put its key in Supabase → Edge Functions → Secrets as `GOOGLE_MAPS_API_KEY`. Restrict the key to Routes API and configure billing/quota limits. Keep it out of Cloudflare/frontend variables. Without a key, manual destination editing still works and the calculation button explains the missing setup. See [Google's Routes setup](https://developers.google.com/maps/documentation/routes/cloud-setup).
+
+3. Publish the updated code:
 
    ```sh
    git add .
-   git commit -m "Add weekly Sadran roles, department membership and device prompts"
+   git commit -m "Add display names, department isolation and route calculation"
    git push origin main
    ```
 
-Cloudflare rebuilds the existing `carsiddur` Worker from the pushed commit. Wait for its deployment to succeed, then refresh the app. There are no Edge Function or secret changes for this update. Cloudflare build command: `npm run build`; deploy command: `npx wrangler deploy`.
+Cloudflare rebuilds the existing `carsiddur` Worker. Wait for success and refresh the app. Build command: `npm run build`; deploy command: `npx wrangler deploy`.
 
-Admins can join a department by editing their own entry in **Members**. Set regular Sadranim in the roster's permanent pool; choose any approved member in a specific week for that week only. Existing permanent roles are preserved: if a previous weekly assignment promoted someone under the old behavior, change their department role back to member while keeping their dated assignment.
+In the updated app, the department selector appears above the page. In **Members**, click a name: you can set a display name, remove department membership, or undo removal before Save. Clearing a display name restores the Google name. In **Destinations**, save a destination, then calculate its route from that department's configured home location and Save the reviewed result.
 
-Final combined database/browser validation is pending at the user's request; these are deployment instructions, not a record of a tested or completed release.
+New departments can start empty or copy another department's destinations, ride types and policy. Copies are independent. If the new department starts elsewhere, change its home destination before calculating routes.
+
+Local validation for this update: full migration/seed replay in a disposable database, regenerated Supabase types, all 16 SQL suites, lint (0 errors), typecheck, 470 unit tests and production/PWA build passed. All 18 relevant browser scenarios passed (16 in the final full run and two targeted reruns after updating test selectors for the new department dropdown). Coverage includes nickname reset, membership removal, catalog isolation, reviewed route saving, view-only switching, selected-department temporary cars, requests and weekly permissions. The local route function also authenticated an admin and returned the expected missing-key response; Google responses are mocked in tests, with no billed Google call or hosted deployment.
 
 Checked against provider documentation on 2026-09-07. This is a deployment checklist, not a record of a completed deployment.
 
@@ -34,7 +44,7 @@ Checked against provider documentation on 2026-09-07. This is a deployment check
 | --- | --- |
 | GitHub repository | Stores the code and supplies Cloudflare builds. A private repository is suitable. |
 | Cloudflare Pages Free | Hosts the React/Vite site over HTTPS at a free `PROJECT.pages.dev` address. |
-| Supabase Free project | Hosts PostgreSQL, authentication, scheduled database tasks and the three Edge Functions. |
+| Supabase Free project | Hosts PostgreSQL, authentication, scheduled database tasks and the Edge Functions. |
 | Google Cloud project with an OAuth web client | Enables the app's production Google sign-in. No separate Google hosting is needed. |
 | VAPID key pair and a random cron secret | Configures browser push and internal callbacks; these are generated credentials, not extra services. |
 | A backup location | Keep regular database exports outside the live project and outside the code repository. |
@@ -87,6 +97,7 @@ npm run functions:bundle
 npx supabase functions deploy push-dispatch --project-ref YOUR_PROJECT_REF
 npx supabase functions deploy answer-proposal --project-ref YOUR_PROJECT_REF
 npx supabase functions deploy on-ride-cancelled --project-ref YOUR_PROJECT_REF
+npx supabase functions deploy destination-route --project-ref YOUR_PROJECT_REF
 ```
 
 These functions perform their own authentication. In particular, `answer-proposal` must accept the app's proposal token without requiring a signed-in Supabase session; preserve the checked-in `verify_jwt = false` settings.

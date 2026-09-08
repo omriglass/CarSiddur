@@ -263,8 +263,8 @@ export async function gatherSolverContext(params: GatherSolverContextParams): Pr
       api.fetchDepartmentSettings(params.departmentId),
       api.fetchWeekRequests(params.departmentId, params.weekStart),
       fetchCars(params.departmentId),
-      fetchDestinations(),
-      fetchRideTypes(),
+      fetchDestinations(params.departmentId),
+      fetchRideTypes(params.departmentId),
       api.fetchMaintenanceBlocksForDepartment(params.departmentId),
       api.fetchAllWeekRides(params.departmentId, params.weekStart),
     ]);

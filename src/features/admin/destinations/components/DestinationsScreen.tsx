@@ -1,3 +1,4 @@
+import { useActiveDepartment } from "@/features/auth/useActiveDepartment";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { formatInTimeZone } from "date-fns-tz";
 import { MapPin, Plus } from "lucide-react";
@@ -22,6 +23,7 @@ import { showErrorToast } from "@/lib/rpc";
 
 import {
   useCreateDestinationMutation,
+  useCalculateDestinationRouteMutation,
   useDestinationsAdmin,
   useFreeTextQueue,
   useMergeFreeTextMutation,
@@ -33,8 +35,10 @@ import type { Destination } from "../api";
 const PT_SCORES = [0, 1, 2, 3, 4, 5] as const;
 
 function DestinationForm({ destination, prefillName, onSaved }: { destination: Destination | null; prefillName?: string; onSaved: () => void }) {
+  const { departmentId } = useActiveDepartment();
   const createMutation = useCreateDestinationMutation();
   const updateMutation = useUpdateDestinationMutation();
+  const routeMutation = useCalculateDestinationRouteMutation();
 
   const form = useForm<DestinationFormValues>({
     resolver: zodResolver(destinationSchema),
@@ -42,6 +46,8 @@ function DestinationForm({ destination, prefillName, onSaved }: { destination: D
       name: destination?.name ?? prefillName ?? "",
       aliasesText: (destination?.aliases ?? []).join(", "),
       zone: destination?.zone ?? "unknown",
+      lat: destination?.lat ?? null,
+      lng: destination?.lng ?? null,
       distance_km: destination?.distance_km ?? null,
       travel_minutes: destination?.travel_minutes ?? null,
       public_transport_score: destination?.public_transport_score ?? null,
@@ -54,6 +60,8 @@ function DestinationForm({ destination, prefillName, onSaved }: { destination: D
       name: values.name,
       aliases: aliasesTextToArray(values.aliasesText),
       zone: values.zone,
+      lat: values.lat,
+      lng: values.lng,
       distance_km: values.distance_km,
       travel_minutes: values.travel_minutes,
       public_transport_score: values.public_transport_score,
@@ -63,7 +71,8 @@ function DestinationForm({ destination, prefillName, onSaved }: { destination: D
       if (destination) {
         await updateMutation.mutateAsync({ id: destination.id, patch });
       } else {
-        await createMutation.mutateAsync(patch);
+        if (!departmentId) return;
+        await createMutation.mutateAsync({ ...patch, department_id: departmentId });
       }
       toast.success(he.adminCommon.savedToast);
       onSaved();
@@ -74,7 +83,8 @@ function DestinationForm({ destination, prefillName, onSaved }: { destination: D
 
   return (
     <Form {...form}>
-      <form className="flex flex-col gap-4" onSubmit={form.handleSubmit(onSubmit)}>
+      <form onSubmit={form.handleSubmit(onSubmit)}>
+        <fieldset className="flex flex-col gap-4" disabled={routeMutation.isPending || form.formState.isSubmitting}>
         <FormField
           control={form.control}
           name="name"
@@ -113,6 +123,31 @@ function DestinationForm({ destination, prefillName, onSaved }: { destination: D
           )}
         />
         <div className="grid grid-cols-2 gap-4">
+          {(["lat", "lng"] as const).map((coordinate) => <FormField key={coordinate}
+            control={form.control} name={coordinate} render={({ field }) => (
+              <FormItem>
+                <FormLabel>{coordinate === "lat" ? he.adminDestinations.fieldLat : he.adminDestinations.fieldLng}</FormLabel>
+                <FormControl><Input type="number" step="any" dir="ltr" value={field.value ?? ""}
+                  onChange={(event) => field.onChange(event.target.value === "" ? null : Number(event.target.value))} /></FormControl>
+                <FormMessage />
+              </FormItem>
+            )} />)}
+        </div>
+        <p className="text-sm text-muted-foreground">{he.adminDestinations.coordinatesHelp}</p>
+        <div className="grid gap-2">
+          <Button type="button" variant="outline" disabled={!destination || !departmentId || form.formState.isDirty || routeMutation.isPending}
+            onClick={async () => {
+              if (!destination || !departmentId || form.formState.isDirty) return;
+              try {
+                const estimate = await routeMutation.mutateAsync({ departmentId, destinationId: destination.id });
+                form.setValue("distance_km", estimate.distance_km, { shouldDirty: true, shouldValidate: true });
+                form.setValue("travel_minutes", estimate.travel_minutes, { shouldDirty: true, shouldValidate: true });
+                toast.success(he.adminDestinations.mapsReview);
+              } catch (error) { showErrorToast(error); }
+            }}>{routeMutation.isPending ? he.adminDestinations.mapsCalculating : he.adminDestinations.mapsCalculate}</Button>
+          <p className="text-sm text-muted-foreground">{!destination || form.formState.isDirty ? he.adminDestinations.mapsSaveFirst : he.adminDestinations.mapsHelp}</p>
+        </div>
+        <div className="grid grid-cols-2 gap-4">
           <FormField
             control={form.control}
             name="distance_km"
@@ -122,6 +157,7 @@ function DestinationForm({ destination, prefillName, onSaved }: { destination: D
                 <FormControl>
                   <Input
                     type="number"
+                    step="any"
                     value={field.value ?? ""}
                     onChange={(e) => field.onChange(e.target.value === "" ? null : Number(e.target.value))}
                   />
@@ -187,6 +223,7 @@ function DestinationForm({ destination, prefillName, onSaved }: { destination: D
         <Button type="submit" disabled={form.formState.isSubmitting}>
           {he.adminCommon.save}
         </Button>
+        </fieldset>
       </form>
     </Form>
   );

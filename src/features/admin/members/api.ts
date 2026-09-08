@@ -51,7 +51,7 @@ export async function approveMember(profileId: string, departmentId: string): Pr
   await rpc("admin_approve_member", { p_profile_id: profileId, p_department_id: departmentId });
 }
 
-export async function updateMemberDetails(profileId: string, fullName: string, phone: string, departmentId?: string): Promise<void> {
+export async function updateMemberDetails(profileId: string, fullName: string, phone: string, departmentId?: string, displayName?: string, removedDepartmentIds: string[] = []): Promise<void> {
   let normalizedPhone = phone.trim();
   if (normalizedPhone && !/^\+[1-9][0-9]{7,14}$/.test(normalizedPhone)) {
     const parsed = phoneSchema.safeParse(normalizedPhone);
@@ -59,7 +59,7 @@ export async function updateMemberDetails(profileId: string, fullName: string, p
     normalizedPhone = parsed.data;
   }
   await rpc("admin_update_member", { p_profile_id: profileId, p_details: {
-    full_name: fullName, phone: normalizedPhone, ...(departmentId ? { department_id: departmentId } : {}),
+    full_name: fullName, phone: normalizedPhone, ...(displayName !== undefined ? { display_name: displayName } : {}), removed_department_ids: removedDepartmentIds, ...(departmentId ? { department_id: departmentId } : {}),
   } });
 }
 

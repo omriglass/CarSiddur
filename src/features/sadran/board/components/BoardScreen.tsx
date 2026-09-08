@@ -113,7 +113,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
 
   const carsQuery = useCarsForDepartment(departmentId);
   const carLocationsQuery = useCarLocations(departmentId, weekStart);
-  const rideTypesQuery = useRideTypes();
+  const rideTypesQuery = useRideTypes(departmentId);
   const maintenanceQuery = useMaintenanceBlocks(departmentId);
   const requestsQuery = useWeekRequestsWithNames(departmentId, weekStart);
   const ridesQuery = useAllWeekRides(departmentId, weekStart);
