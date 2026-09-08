@@ -18,12 +18,14 @@ import { cn } from "@/lib/utils";
 export interface CompanionOption {
   id: string;
   name: string;
+  isPriority?: boolean;
 }
 
 interface CompanionPickerProps {
   members: readonly CompanionOption[];
   value: readonly string[];
   onChange: (value: string[]) => void;
+  label?: string;
 }
 
 /**
@@ -33,7 +35,7 @@ interface CompanionPickerProps {
  * overlap warning — this component is presentational only, like
  * `DestinationCombobox`.
  */
-export function CompanionPicker({ members, value, onChange }: CompanionPickerProps) {
+export function CompanionPicker({ members, value, onChange, label = t("field.companions") }: CompanionPickerProps) {
   const [open, setOpen] = useState(false);
   const selected = members.filter((m) => value.includes(m.id));
 
@@ -64,17 +66,17 @@ export function CompanionPicker({ members, value, onChange }: CompanionPickerPro
               variant="outline"
               size="sm"
               role="combobox"
-              aria-label={t("field.companions")}
+              aria-label={label}
               aria-expanded={open}
               className="h-8 gap-1"
             >
-              {t("field.companions")}
+              {label}
               <ChevronsUpDown className="size-3.5 opacity-50" />
             </Button>
           </PopoverTrigger>
           <PopoverContent className="w-64 p-0" align="start">
             <Command>
-              <CommandInput placeholder={t("field.companions")} />
+              <CommandInput placeholder={label} />
               <CommandList>
                 <CommandEmpty>—</CommandEmpty>
                 <CommandGroup>
@@ -83,7 +85,7 @@ export function CompanionPicker({ members, value, onChange }: CompanionPickerPro
                     return (
                       <CommandItem key={m.id} value={m.name} onSelect={() => toggle(m.id)}>
                         <Check className={cn("size-4", isSelected ? "opacity-100" : "opacity-0")} />
-                        {m.name}
+                        {m.name}{m.isPriority ? " ★" : ""}
                       </CommandItem>
                     );
                   })}

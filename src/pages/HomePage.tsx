@@ -9,6 +9,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { PageHeader } from "@/components/PageHeader";
+import { datesOfWeek } from "@/components/DateField";
 import { RideCard } from "@/components/RideCard";
 import { CardListSkeleton } from "@/components/skeletons/CardListSkeleton";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -57,14 +58,15 @@ export function HomePage() {
     active.departmentId;
   const weeksQuery = useWeeks(defaultDepartmentId);
 
-  // Immediate-car request card (UX_FLOWS.md §18): only when the live week exists and some shared
-  // car is free right now. Hooks must run unconditionally (before the loading early-return
-  // below), so `now`/the live week start are resolved here even while other data is loading.
+  // Show the immediate-car entry point for the current week even before its
+  // Siddur has been published. In that case the same request is filed for the
+  // coordinator rather than auto-approved; hiding the entry point entirely
+  // made an available car look unavailable.
   const now = new Date();
   const today = todayInJerusalem();
-  const liveWeek = (weeksQuery.data ?? []).find((w) => w.phase === "live");
-  const liveWeekStart = (liveWeek?.published_days?.includes(today) ?? true) ? liveWeek?.week_start : undefined;
-  const dayFreeWindows = useDayFreeWindows(defaultDepartmentId, liveWeekStart, liveWeekStart ? today : undefined, now);
+  const currentWeek = (weeksQuery.data ?? []).find((w) => datesOfWeek(w.week_start).includes(today));
+  const currentWeekStart = currentWeek?.week_start;
+  const dayFreeWindows = useDayFreeWindows(defaultDepartmentId, currentWeekStart, currentWeekStart ? today : undefined, now);
   const freeCarNow = firstCarFreeNow(dayFreeWindows.freeWindows, now.getTime());
   const [quickRequestOpen, setQuickRequestOpen] = useState(false);
   const defaultRideTypeId = rideTypesQuery.data?.find((rt) => rt.code === "other")?.id ?? rideTypesQuery.data?.[0]?.id ?? "";
@@ -237,12 +239,12 @@ export function HomePage() {
         <Link to="/requests/new">{t("action.newRequest")}</Link>
       </Button>}
 
-      {quickRequestOpen && freeCarNow && defaultDepartmentId && liveWeekStart ? (
+      {quickRequestOpen && freeCarNow && defaultDepartmentId && currentWeekStart ? (
         <QuickRequestSheet
           open={quickRequestOpen}
           onOpenChange={setQuickRequestOpen}
           departmentId={defaultDepartmentId}
-          weekStart={liveWeekStart}
+          weekStart={currentWeekStart}
           rideTypeId={defaultRideTypeId}
           day={today}
           initialStartTime={formatInTimeZone(new Date(roundUpToQuarterHour(now.getTime())), TZ, "HH:mm")}

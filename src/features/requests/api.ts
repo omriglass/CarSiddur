@@ -319,7 +319,12 @@ export async function fetchMyRequests(profileId: string, departmentId?: string):
   if (departmentId) query = query.eq("department_id", departmentId);
   const { data, error } = await query.order("depart_at", { ascending: true, nullsFirst: false });
   if (error) throw toAppError(error);
-  return ((data ?? []) as unknown as RawRequestRow[]).map(mapRow);
+  // A withdrawn/cancelled request is terminal and no longer actionable.  Keep
+  // it out of the member feed even when it was withdrawn by a coordinator on
+  // the member's behalf.
+  return ((data ?? []) as unknown as RawRequestRow[])
+    .filter((row) => !["withdrawn", "cancelled"].includes(row.status))
+    .map(mapRow);
 }
 
 export interface SubmitRequestPayload {
@@ -494,6 +499,22 @@ export async function setRequestCompanions(requestId: string, profileIds: string
   const { error: insertError } = await supabase
     .from("request_companions")
     .insert(profileIds.map((profileId) => ({ request_id: requestId, profile_id: profileId })));
+  if (insertError) throw toAppError(insertError);
+}
+
+export async function fetchRequestChildIds(requestId: string): Promise<string[]> {
+  const { data, error } = await supabase.from("request_children").select("child_id").eq("request_id", requestId);
+  if (error) throw toAppError(error);
+  return (data ?? []).map((row) => row.child_id);
+}
+
+export async function setRequestChildren(requestId: string, childIds: string[]): Promise<void> {
+  const { error: deleteError } = await supabase.from("request_children").delete().eq("request_id", requestId);
+  if (deleteError) throw toAppError(deleteError);
+  if (childIds.length === 0) return;
+  const { error: insertError } = await supabase
+    .from("request_children")
+    .insert(childIds.map((childId) => ({ request_id: requestId, child_id: childId })));
   if (insertError) throw toAppError(insertError);
 }
 

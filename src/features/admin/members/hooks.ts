@@ -7,6 +7,8 @@ import {
   fetchAllDepartmentMembers,
   fetchAllProfiles,
   fetchMemberInvites,
+  fetchManagedChildren,
+  createChild,
   fetchPhones,
   grantAdmin,
   importAllowList,
@@ -33,6 +35,15 @@ export function useAllDepartmentMembers() {
 
 export function useMemberInvites() {
   return useQuery({ queryKey: memberAdminKeys.invites(), queryFn: fetchMemberInvites, staleTime: 30_000 });
+}
+
+export function useManagedChildren() {
+  return useQuery({ queryKey: [...memberAdminKeys.all, "children"], queryFn: fetchManagedChildren, staleTime: 30_000 });
+}
+
+export function useCreateChildMutation() {
+  const invalidate = useInvalidateMembers();
+  return useMutation({ mutationFn: ({ departmentId, fullName, guardianIds }: { departmentId: string; fullName: string; guardianIds: string[] }) => createChild(departmentId, fullName, guardianIds), onSuccess: invalidate });
 }
 
 export function usePhones(profileIds: string[]) {

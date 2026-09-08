@@ -34,6 +34,18 @@ export type Database = {
   }
   public: {
     Tables: {
+      child_guardians: {
+        Row: { child_id: string; profile_id: string }
+        Insert: { child_id: string; profile_id: string }
+        Update: { child_id?: string; profile_id?: string }
+        Relationships: []
+      }
+      children: {
+        Row: { id: string; department_id: string; full_name: string; created_at: string }
+        Insert: { id?: string; department_id: string; full_name: string; created_at?: string }
+        Update: { id?: string; department_id?: string; full_name?: string; created_at?: string }
+        Relationships: []
+      }
       app_secrets: {
         Row: {
           description: string | null
@@ -1577,6 +1589,12 @@ export type Database = {
             referencedColumns: ["request_id"]
           },
         ]
+      }
+      request_children: {
+        Row: { request_id: string; child_id: string }
+        Insert: { request_id: string; child_id: string }
+        Update: { request_id?: string; child_id?: string }
+        Relationships: []
       }
       request_templates: {
         Row: {
@@ -3593,4 +3611,3 @@ export const Constants = {
     },
   },
 } as const
-

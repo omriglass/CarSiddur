@@ -293,6 +293,7 @@ export const he = {
     childSeats: "ילדים במושב בטיחות",
     boosters: "ילדים בבוסטר",
     companions: "חברים שנוסעים איתך",
+    children: "ילדים שנוסעים איתך",
     luggage: "מטען גדול",
     flexDepart: "גמישות ביציאה",
     flexReturn: "גמישות בחזרה",

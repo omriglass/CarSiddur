@@ -22,6 +22,8 @@ export const heMember = {
     noScores: "אין ניקוד שמור לפרסום בשבוע הזה", yes: "כן", no: "לא",
   },
   request: {
+    namedPassengerCount: "נוסעים מבוגרים: {{count}} (כולל אותך)",
+    namedChildCount: "ילדים: {{count}}",
     preferredCar: "רכב מועדף (לא חובה)",
     noPreferredCar: "ללא העדפה",
     preferredCarHelper: "ננסה לשבץ את הרכב שבחרת. אם לא יתאפשר, אפשר לשבץ רכב אחר.",

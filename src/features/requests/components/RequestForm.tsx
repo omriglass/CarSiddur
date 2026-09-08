@@ -15,11 +15,11 @@ import { DateField, datesOfWeek } from "@/components/DateField";
 import { DestinationCombobox, type DestinationValue } from "@/components/DestinationCombobox";
 import { FlexibilityRange } from "@/components/FlexibilitySegmented";
 import { OneWayCarModeControl } from "@/components/OneWayCarModeControl";
-import { PassengerStepper } from "@/components/PassengerStepper";
 import { RideTypeChips } from "@/components/RideTypeChips";
 import { TimeField15 } from "@/components/TimeField15";
 import { TripShapeControl } from "@/components/TripShapeControl";
 import { useDepartmentMembers } from "@/features/auth/useDepartmentMembers";
+import { useSession } from "@/features/auth/useSession";
 import { useCars, useCarSeatConfigs, useDestinations, useRideTypes, useSuggestDestinationMutation } from "@/features/fleet/hooks";
 import { t, tv } from "@/i18n/he";
 import { TZ } from "@/lib/time";
@@ -31,8 +31,12 @@ import {
   useMyRequests,
   useRequestCompanionsQuery,
   useSetRequestCompanionsMutation,
+  useSetRequestChildrenMutation,
+  useRequestChildrenQuery,
   useSubmitRequestMutation,
 } from "../hooks";
+import { fetchChildren } from "../children";
+import { useQuery } from "@tanstack/react-query";
 import { intervalToFlexValue, toInstant, toSubmitRequestPayload } from "../mapper";
 import { requestFormSchema, type RequestFormValues } from "../schema";
 
@@ -105,6 +109,8 @@ function emptyValues(
     childSeats: 0,
     boosters: 0,
     companions: [],
+    children: [],
+    legacyChildSeats: 0,
     luggage: false,
     flexDepartEarly: 0,
     flexDepartLate: 0,
@@ -135,7 +141,7 @@ function buildJoinRideValues(
   };
 }
 
-function mapEditRowToValues(row: RequestEditRow, weekStart: string, companions: string[]): RequestFormValues {
+function mapEditRowToValues(row: RequestEditRow, weekStart: string, companions: string[], children: string[]): RequestFormValues {
   const day = row.departAt ? dayFromInstant(row.departAt) : row.returnAt ? dayFromInstant(row.returnAt) : weekStart;
   const dates = datesOfWeek(weekStart);
   const departTime = row.departAt ? timeFromInstant(row.departAt) : undefined;
@@ -163,9 +169,11 @@ function mapEditRowToValues(row: RequestEditRow, weekStart: string, companions: 
     oneWayCarMode: (row.oneWayCarMode ?? undefined) as "relay" | "passenger" | undefined,
     needsCarAtDestination: row.needsCarAtDestination,
     adults: row.adults,
-    childSeats: row.childSeats,
+    childSeats: children.length,
+    legacyChildSeats: children.length ? 0 : row.childSeats,
     boosters: row.boosters,
     companions,
+    children,
     luggage: row.hasLuggage,
     flexDepartEarly: intervalToFlexValue(row.flexDepartEarly),
     flexDepartLate: intervalToFlexValue(row.flexDepartLate),
@@ -195,10 +203,14 @@ export function RequestForm({ mode, departmentId, weekStart, initial, joinRide, 
   const seatConfigsQuery = useCarSeatConfigs(departmentId);
   const myRequestsQuery = useMyRequests();
   const membersQuery = useDepartmentMembers(departmentId);
+  const { session } = useSession();
+  const childrenQuery = useQuery({ queryKey: ["children", departmentId, session?.user.id], queryFn: () => fetchChildren(departmentId, session!.user.id), enabled: !!session?.user.id });
   const companionsQuery = useRequestCompanionsQuery(initial?.id);
+  const requestChildrenQuery = useRequestChildrenQuery(initial?.id);
 
   const submitMutation = useSubmitRequestMutation();
   const setCompanionsMutation = useSetRequestCompanionsMutation();
+  const setChildrenMutation = useSetRequestChildrenMutation();
   const suggestDestinationMutation = useSuggestDestinationMutation(departmentId);
 
   const lastRequest = [...(myRequestsQuery.data ?? [])]
@@ -244,16 +256,21 @@ export function RequestForm({ mode, departmentId, weekStart, initial, joinRide, 
   // `react-hooks/set-state-in-effect` lint rule (calling `setState` inside an effect
   // body is flagged; adjusting state for freshly-arrived props during render is not).
   const [resetKey, setResetKey] = useState<string | null>(null);
-  if (mode === "edit" && initial && companionsQuery.isSuccess) {
+  if (mode === "edit" && initial && companionsQuery.isSuccess && requestChildrenQuery.isSuccess) {
     const nextResetKey = `${initial.id}:${initial.version}`;
     if (nextResetKey !== resetKey) {
-      form.reset(mapEditRowToValues(initial, weekStart, companionsQuery.data));
+      form.reset(mapEditRowToValues(initial, weekStart, companionsQuery.data, requestChildrenQuery.data));
       setResetKey(nextResetKey);
     }
   }
   const hasResetForEdit = mode !== "edit" || resetKey !== null;
 
   const values = useWatch({ control: form.control });
+  // The requester is always one adult; every selected member is another.
+  // Counts are derived rather than editable so the request cannot drift away
+  // from the named passengers.
+  const namedAdultCount = 1 + (values.companions?.length ?? 0);
+  const namedChildCount = Math.max(values.children?.length ?? 0, values.legacyChildSeats ?? 0);
   const tripShape = values.tripShape ?? "round_trip";
   const day = values.day ?? weekStart;
   const preferredCars = (carsQuery.data ?? []).filter((car) => car.type === "shared" && car.status === "active");
@@ -261,8 +278,8 @@ export function RequestForm({ mode, departmentId, weekStart, initial, joinRide, 
   const seatFitWarning = useMemo(() => {
     if (!carsQuery.data || !seatConfigsQuery.data) return false;
     const passengers = {
-      adults: values.adults ?? 1,
-      childSeats: values.childSeats ?? 0,
+      adults: namedAdultCount,
+      childSeats: namedChildCount,
       boosters: values.boosters ?? 0,
     };
     const cars: SolverCar[] = carsQuery.data
@@ -279,7 +296,7 @@ export function RequestForm({ mode, departmentId, weekStart, initial, joinRide, 
         maintenance: [],
       }));
     return cars.length > 0 && !cars.some((c) => fits(c, passengers));
-  }, [carsQuery.data, seatConfigsQuery.data, values.adults, values.childSeats, values.boosters]);
+  }, [carsQuery.data, seatConfigsQuery.data, namedAdultCount, namedChildCount, values.boosters]);
 
   const duplicate = useMemo(() => {
     if (!values.departTime && !values.returnTime) return null;
@@ -299,7 +316,7 @@ export function RequestForm({ mode, departmentId, weekStart, initial, joinRide, 
 
   async function onSubmit(formValues: RequestFormValues) {
     setSubmitError(null);
-    const payload = toSubmitRequestPayload(formValues, {
+    const payload = toSubmitRequestPayload({ ...formValues, adults: 1 + formValues.companions.length, childSeats: Math.max(formValues.children.length, formValues.legacyChildSeats) }, {
       requestId: initial?.id,
       expectedVersion: initial?.version,
       joinRideId: mode === "new" ? joinRide?.rideId : undefined,
@@ -311,6 +328,7 @@ export function RequestForm({ mode, departmentId, weekStart, initial, joinRide, 
 
       if (requestId) {
         await setCompanionsMutation.mutateAsync({ requestId, profileIds: formValues.companions });
+        await setChildrenMutation.mutateAsync({ requestId, childIds: formValues.children });
       }
       if ("freeText" in formValues.destination && formValues.destination.freeText.trim()) {
         suggestDestinationMutation.mutate({ name: formValues.destination.freeText.trim() });
@@ -479,40 +497,6 @@ export function RequestForm({ mode, departmentId, weekStart, initial, joinRide, 
       <FieldError message={form.formState.errors.oneWayCarMode?.message} />
 
       <FormItem>
-        <Label>{t("field.passengers")}</Label>
-        <Controller
-          control={form.control}
-          name="adults"
-          render={({ field: adultsField }) => (
-            <Controller
-              control={form.control}
-              name="childSeats"
-              render={({ field: childField }) => (
-                <Controller
-                  control={form.control}
-                  name="boosters"
-                  render={({ field: boosterField }) => (
-                    <PassengerStepper
-                      value={{
-                        adults: adultsField.value,
-                        childSeats: childField.value,
-                        boosters: boosterField.value,
-                      }}
-                      onChange={(next) => {
-                        adultsField.onChange(next.adults);
-                        childField.onChange(next.childSeats);
-                        boosterField.onChange(next.boosters);
-                      }}
-                    />
-                  )}
-                />
-              )}
-            />
-          )}
-        />
-      </FormItem>
-
-      <FormItem>
         <Label>{t("field.companions")}</Label>
         <Controller
           control={form.control}
@@ -525,6 +509,15 @@ export function RequestForm({ mode, departmentId, weekStart, initial, joinRide, 
             />
           )}
         />
+        <p className="text-sm text-muted-foreground">{tv("request.namedPassengerCount", { count: String(namedAdultCount) })}</p>
+      </FormItem>
+
+      <FormItem>
+        <Label>{t("field.children")}</Label>
+        <Controller control={form.control} name="children" render={({ field }) => (
+          <CompanionPicker members={childrenQuery.data ?? []} value={field.value} onChange={field.onChange} label={t("field.children")} />
+        )} />
+        <p className="text-sm text-muted-foreground">{tv("request.namedChildCount", { count: String(namedChildCount) })}</p>
       </FormItem>
 
       <Controller

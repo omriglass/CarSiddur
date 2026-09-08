@@ -64,6 +64,9 @@ export const requestFormSchema = z
     childSeats: z.number().int().min(0).max(8),
     boosters: z.number().int().min(0).max(8),
     companions: z.array(z.string()),
+    children: z.array(z.string()),
+    /** Pre-registry requests can have unnamed child seats; preserve them on edit. */
+    legacyChildSeats: z.number().int().min(0).max(8),
     luggage: z.boolean(),
     flexDepartEarly: flexValueSchema,
     flexDepartLate: flexValueSchema,
@@ -126,6 +129,8 @@ export const REQUEST_FORM_DEFAULTS: Omit<RequestFormValues, "departmentId" | "we
   childSeats: 0,
   boosters: 0,
   companions: [],
+  children: [],
+  legacyChildSeats: 0,
   luggage: false,
   flexDepartEarly: 0,
   flexDepartLate: 0,

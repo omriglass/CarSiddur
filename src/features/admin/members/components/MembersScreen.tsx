@@ -16,6 +16,7 @@ import { useSession } from "@/features/auth/useSession";
 import { he, tv } from "@/i18n/he";
 import { showErrorToast } from "@/lib/rpc";
 import { Users } from "lucide-react";
+import { CompanionPicker } from "@/components/CompanionPicker";
 
 import { parseInviteLines, type ParsedInviteRow } from "../lib/parseInviteLines";
 import {
@@ -30,6 +31,8 @@ import {
   useRejectMemberMutation,
   useRevokeAdminMutation,
   useSetMemberRoleMutation,
+  useManagedChildren,
+  useCreateChildMutation,
 } from "../hooks";
 import type { Profile } from "../api";
 
@@ -202,6 +205,30 @@ function MembersTab() {
     </Dialog>
     </>
   );
+}
+
+function ChildrenTab() {
+  const profilesQuery = useAllProfiles();
+  const departmentsQuery = useDepartments();
+  const childrenQuery = useManagedChildren();
+  const createMutation = useCreateChildMutation();
+  const [departmentId, setDepartmentId] = useState("");
+  const [fullName, setFullName] = useState("");
+  const [guardianIds, setGuardianIds] = useState<string[]>([]);
+  const profiles = (profilesQuery.data ?? []).filter((profile) => profile.approval_status === "approved");
+  const profileNames = new Map(profiles.map((profile) => [profile.id, profile.full_name]));
+
+  return <div className="space-y-5">
+    <div className="grid gap-3 rounded-md border p-4">
+      <label className="grid gap-2">מחלקה
+        <Select value={departmentId} onValueChange={setDepartmentId}><SelectTrigger><SelectValue placeholder="בחרו מחלקה" /></SelectTrigger><SelectContent>{(departmentsQuery.data ?? []).filter((d) => d.is_active).map((d) => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}</SelectContent></Select>
+      </label>
+      <label className="grid gap-2">שם הילד/ה <Input value={fullName} onChange={(event) => setFullName(event.target.value)} /></label>
+      <div className="grid gap-2"><span>משויך/ת ל</span><CompanionPicker members={profiles.map((p) => ({ id: p.id, name: p.full_name }))} value={guardianIds} onChange={setGuardianIds} label="הוספת הורים" /></div>
+      <Button disabled={!departmentId || !fullName.trim() || createMutation.isPending} onClick={async () => { try { await createMutation.mutateAsync({ departmentId, fullName, guardianIds }); setFullName(""); setGuardianIds([]); toast.success(he.adminCommon.savedToast); } catch (error) { showErrorToast(error); } }}>הוספת ילד/ה</Button>
+    </div>
+    <div className="space-y-2">{(childrenQuery.data ?? []).map((child) => <div key={child.id} className="rounded-md border p-3"><div className="font-medium">{child.full_name}</div><div className="text-sm text-muted-foreground">{child.guardian_ids.map((id) => profileNames.get(id)).filter(Boolean).join(" · ") || "ללא שיוך"}</div></div>)}</div>
+  </div>;
 }
 
 function PendingTab() {
@@ -408,6 +435,7 @@ export function MembersScreen() {
             {pendingCount > 0 ? ` (${pendingCount})` : ""}
           </TabsTrigger>
           <TabsTrigger value="import">{he.adminMembers.tabImport}</TabsTrigger>
+          <TabsTrigger value="children">ילדים</TabsTrigger>
         </TabsList>
         <TabsContent value="members">
           <MembersTab />
@@ -418,6 +446,7 @@ export function MembersScreen() {
         <TabsContent value="import">
           <ImportTab />
         </TabsContent>
+        <TabsContent value="children"><ChildrenTab /></TabsContent>
       </Tabs>
     </div>
   );

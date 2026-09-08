@@ -13,8 +13,10 @@ import {
   fetchMyRequests,
   fetchRequestById,
   fetchRequestCompanionIds,
+  fetchRequestChildIds,
   setFreedSlotOptOut,
   setRequestCompanions,
+  setRequestChildren,
   submitRequest,
   withdrawFreedSlotClaim,
   withdrawRequest,
@@ -115,6 +117,14 @@ export function useRequestCompanionsQuery(requestId: string | undefined) {
   });
 }
 
+export function useRequestChildrenQuery(requestId: string | undefined) {
+  return useQuery({
+    queryKey: [...requestsKeys.companions(requestId), "children"],
+    queryFn: () => fetchRequestChildIds(requestId as string),
+    enabled: !!requestId,
+  });
+}
+
 export function useSetRequestCompanionsMutation() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -123,6 +133,15 @@ export function useSetRequestCompanionsMutation() {
     onSuccess: () => {
       for (const key of ["siddur", "sadran", "requests"]) void queryClient.invalidateQueries({ queryKey: [key] });
     },
+    onError: showErrorToast,
+  });
+}
+
+export function useSetRequestChildrenMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ requestId, childIds }: { requestId: string; childIds: string[] }) => setRequestChildren(requestId, childIds),
+    onSuccess: () => { void queryClient.invalidateQueries({ queryKey: ["requests"] }); },
     onError: showErrorToast,
   });
 }

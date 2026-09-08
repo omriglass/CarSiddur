@@ -35,6 +35,28 @@ export async function fetchMemberInvites(): Promise<MemberInvite[]> {
   return data ?? [];
 }
 
+export interface ManagedChild { id: string; department_id: string; full_name: string; guardian_ids: string[] }
+
+export async function fetchManagedChildren(): Promise<ManagedChild[]> {
+  const [{ data: children, error: childrenError }, { data: guardians, error: guardiansError }] = await Promise.all([
+    supabase.from("children").select("id, department_id, full_name").order("full_name"),
+    supabase.from("child_guardians").select("child_id, profile_id"),
+  ]);
+  if (childrenError) throw toAppError(childrenError);
+  if (guardiansError) throw toAppError(guardiansError);
+  const byChild = new Map<string, string[]>();
+  for (const guardian of guardians ?? []) byChild.set(guardian.child_id, [...(byChild.get(guardian.child_id) ?? []), guardian.profile_id]);
+  return (children ?? []).map((child) => ({ ...child, guardian_ids: byChild.get(child.id) ?? [] }));
+}
+
+export async function createChild(departmentId: string, fullName: string, guardianIds: string[]): Promise<void> {
+  const { data, error } = await supabase.from("children").insert({ department_id: departmentId, full_name: fullName.trim() }).select("id").single();
+  if (error) throw toAppError(error);
+  if (!guardianIds.length) return;
+  const { error: guardianError } = await supabase.from("child_guardians").insert(guardianIds.map((profileId) => ({ child_id: data.id, profile_id: profileId })));
+  if (guardianError) throw toAppError(guardianError);
+}
+
 /** `phone` is column-privilege-revoked from `authenticated` (DATA_MODEL.md §4.2) — read it through `phone_of()`. */
 export async function fetchPhones(profileIds: string[]): Promise<Record<string, string | null>> {
   const entries = await Promise.all(
