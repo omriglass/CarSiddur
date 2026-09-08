@@ -1,6 +1,6 @@
 import { CarFront, Pin, Clock3, UserRoundX, Star } from "lucide-react";
 import type { MouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { formatMinutes } from "@/components/TimeField15";
 import { he } from "@/i18n/he";
@@ -98,6 +98,8 @@ export interface WeekGridProps {
   onRideDropOnUnmet?: (rideId: string) => void;
   /** Minutes-since-midnight for "now", only when the grid's day is today — draws a thin primary line across every column (visual pass). Omit/`null` to hide it (e.g. a past or future day). */
   nowMinutes?: number | null;
+  /** When supplied, initially position the grid so this time is the first visible hour below the car headers. */
+  initialScrollMinutes?: number | null;
   zoom?: number;
 }
 
@@ -204,6 +206,7 @@ export function WeekGrid({
   externalDropTarget = null,
   onRideDropOnUnmet,
   nowMinutes = null,
+  initialScrollMinutes = null,
   zoom = 1,
 }: WeekGridProps) {
   const hours = Array.from(
@@ -218,8 +221,25 @@ export function WeekGrid({
 
   const rideById = useMemo(() => new Map(rides.map((r) => [r.id, r])), [rides]);
   const colRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const scrollViewportRef = useRef<HTMLDivElement>(null);
+  const lastInitialScroll = useRef<number | null>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
   const suppressClick = useRef(false);
+
+  // Keep the header visible while the hours scroll inside the grid. The target is
+  // deliberately below the sticky header: at scrollTop=0 the first time row
+  // begins after it, so no extra header-height offset belongs here.
+  useEffect(() => {
+    if (initialScrollMinutes == null) {
+      lastInitialScroll.current = null;
+      return;
+    }
+    if (!scrollViewportRef.current) return;
+    const target = Math.min(dayEndMinutes, Math.max(dayStartMinutes, initialScrollMinutes));
+    if (lastInitialScroll.current === target) return;
+    lastInitialScroll.current = target;
+    scrollViewportRef.current.scrollTop = ((target - dayStartMinutes) / 60) * HOUR_ROW_HEIGHT_PX * zoom;
+  }, [dayEndMinutes, dayStartMinutes, initialScrollMinutes, zoom]);
 
   function ridesFor(carId: string) {
     return rides.filter((r) => r.carId === carId);
@@ -558,7 +578,7 @@ export function WeekGrid({
   }
 
   return (
-    <div className="min-w-0 overflow-auto rounded-md border shadow-card">
+    <div ref={scrollViewportRef} className="min-w-0 overflow-auto rounded-md border shadow-card lg:max-h-[70dvh]" data-week-grid-scroll-viewport>
       <div className="grid" style={{ zoom, gridTemplateColumns, gridTemplateRows, minWidth: HOUR_COL_WIDTH_PX + allCars.length * CAR_COL_WIDTH_PX }}>
         <div className="sticky start-0 top-0 z-30 border-b border-e bg-muted/70 shadow-[0_2px_6px_-2px_hsl(var(--foreground)/0.12)]" style={{ gridColumn: 1, gridRow: 1 }} />
         {allCars.map((car, i) => (

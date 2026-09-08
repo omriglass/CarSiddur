@@ -12,11 +12,14 @@ export function RuleParamsEditor({
   params,
   onChange,
   keyLabels,
+  paramLabels,
 }: {
   params: Record<string, unknown>;
   onChange: (next: Record<string, unknown>) => void;
   /** optional key -> Hebrew label map (e.g. ride type code -> name_he) for nested-object params. */
   keyLabels?: Record<string, string>;
+  /** Hebrew labels for the rule's own setting names. */
+  paramLabels?: Record<string, string>;
 }) {
   const entries = Object.entries(params);
   if (entries.length === 0) return null;
@@ -27,7 +30,7 @@ export function RuleParamsEditor({
         if (typeof value === "number") {
           return (
             <label key={key} className="flex flex-col gap-1 text-xs">
-              {key}
+              {paramLabels?.[key] ?? key}
               <Input
                 type="number"
                 className="w-24"
@@ -41,7 +44,7 @@ export function RuleParamsEditor({
           const nested = value as Record<string, number>;
           return (
             <div key={key} className="flex flex-col gap-1">
-              <span className="text-xs text-muted-foreground">{key}</span>
+              <span className="text-xs text-muted-foreground">{paramLabels?.[key] ?? key}</span>
               <div className="flex flex-wrap gap-2">
                 {Object.entries(nested).map(([nestedKey, nestedValue]) => (
                   <label key={nestedKey} className="flex flex-col gap-1 text-xs">

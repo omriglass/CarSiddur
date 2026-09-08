@@ -16,6 +16,12 @@ beforeEach(() => {
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe("WeekGrid gestures", () => {
+  it("opens a supplied time at the top of the visible time rows", () => {
+    const { container } = render(<WeekGrid cars={cars} rides={[]} dayStartMinutes={6 * 60} initialScrollMinutes={9 * 60} />);
+
+    expect(container.querySelector<HTMLElement>("[data-week-grid-scroll-viewport]")?.scrollTop).toBe(3 * 80);
+  });
+
   it("previews and drops the exact same snapped car/time while retaining the column DOM", () => {
     const onDrop = vi.fn();
     const { container } = render(<WeekGrid cars={cars} rides={[ride]} dayStartMinutes={0} readOnly={false} draggable onRideDrop={onDrop} />);

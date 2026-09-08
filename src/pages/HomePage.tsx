@@ -3,9 +3,11 @@ import { CalendarClock, CarFront, Inbox, MessageCircleQuestion } from "lucide-re
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { formatInTimeZone } from "date-fns-tz";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { PageHeader } from "@/components/PageHeader";
@@ -16,17 +18,21 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { formatWeekRangeLabel, todayInJerusalem } from "@/components/DateField";
 import { useProfile } from "@/features/auth/useProfile";
 import { DeviceSetupPrompts } from "@/features/member/components/DeviceSetupPrompts";
-import { useDestinations, useRideTypes } from "@/features/fleet/hooks";
+import { useCars, useDestinations, useRideTypes } from "@/features/fleet/hooks";
 import { QuickRequestSheet } from "@/features/requests/components/QuickRequestSheet";
 import { useMyRequests, useCancelRideMutation } from "@/features/requests/hooks";
 import type { MyRequestRow } from "@/features/requests/api";
 import { firstCarFreeNow, roundUpToQuarterHour } from "@/features/siddur/freeWindows";
-import { useWeeks, useMyUpcomingRides } from "@/features/siddur/hooks";
+import { useBoardRides, useRideChanges, useWeeks, useMyUpcomingRides, useRequestRideChangeMutation } from "@/features/siddur/hooks";
 import { RideDetailSheet } from "@/features/siddur/components/RideDetailSheet";
-import type { BoardRide } from "@/features/siddur/api";
+import { MemberRideEditor } from "@/features/siddur/components/MemberRideEditor";
+import type { BoardRide, RideMove } from "@/features/siddur/api";
 import { myRideCard } from "@/features/siddur/myRideCard";
+import { conflictingRides } from "@/features/siddur/rideEditing";
 import { TripSummary } from "@/components/TripSummary";
 import { useDayFreeWindows } from "@/features/siddur/useDayFreeWindows";
+import { useDepartmentSettings, useEditRideMutation } from "@/features/sadran/hooks";
+import { servedOf } from "@/features/sadran/solverRun";
 import { he, t, tv } from "@/i18n/he";
 import { TZ } from "@/lib/time";
 
@@ -59,6 +65,8 @@ export function HomePage() {
   const defaultDepartmentId =
     active.departmentId;
   const weeksQuery = useWeeks(defaultDepartmentId);
+  const carsQuery = useCars(defaultDepartmentId);
+  const settingsQuery = useDepartmentSettings(defaultDepartmentId);
 
   // Show the immediate-car entry point for the current week even before its
   // Siddur has been published. In that case the same request is filed for the
@@ -72,7 +80,13 @@ export function HomePage() {
   const freeCarNow = firstCarFreeNow(dayFreeWindows.freeWindows, now.getTime());
   const [quickRequestOpen, setQuickRequestOpen] = useState(false);
   const [selectedMyRide, setSelectedMyRide] = useState<BoardRide | null>(null);
+  const [collisionMove, setCollisionMove] = useState<RideMove | null>(null);
   const cancelRideMutation = useCancelRideMutation();
+  const editMutation = useEditRideMutation();
+  const changeMutation = useRequestRideChangeMutation();
+  const selectedRideWeekStart = selectedMyRide?.week_start ?? undefined;
+  const selectedRideWeekQuery = useBoardRides(defaultDepartmentId, selectedRideWeekStart);
+  const selectedRideChangesQuery = useRideChanges(defaultDepartmentId, selectedRideWeekStart);
   const defaultRideTypeId = rideTypesQuery.data?.find((rt) => rt.code === "other")?.id ?? rideTypesQuery.data?.[0]?.id ?? "";
 
   const isLoading = active.isLoading || profileQuery.isLoading || requestsQuery.isLoading || upcomingRidesQuery.isLoading || weeksQuery.isLoading;
@@ -112,6 +126,47 @@ export function HomePage() {
     ),
   );
   const weekRequests = homeWeek ? requests.filter((r) => r.weekStart === homeWeek.weekStart) : [];
+  // Fetch the selected ride's complete week before editing. The Home card is
+  // intentionally small, but the same conflict and pending-change safeguards
+  // as the Siddur must still apply.
+  const editableRide = selectedMyRide?.id
+    ? selectedRideWeekQuery.data?.find((ride) => ride.id === selectedMyRide.id) ?? null
+    : null;
+  const editableWeek = (weeksQuery.data ?? []).find((week) => week.week_start === editableRide?.week_start) ?? null;
+  const ownsEditableRide = !!editableRide &&
+    servedOf(editableRide).every((entry) => entry.role === "driver" && entry.car_mode === "keep") &&
+    active.canSubmit && editableRide.driver_id === profileQuery.data?.id &&
+    !!editableRide.starts_at && Date.parse(editableRide.starts_at) > now.getTime() &&
+    (editableWeek?.phase === "published" || editableWeek?.phase === "live") &&
+    !(selectedRideChangesQuery.data ?? []).some((change) => change.ride_id === editableRide.id);
+
+  async function saveMyRideMove(move: RideMove) {
+    if (!editableRide || !ownsEditableRide || !editableRide.department_id || !editableRide.week_start || !editableRide.origin_id || !editableRide.destination_id) return;
+    if (conflictingRides(move, selectedRideWeekQuery.data ?? [], settingsQuery.data?.turnaround_minutes ?? 30).length) {
+      setCollisionMove(move);
+      return;
+    }
+    try {
+      await editMutation.mutateAsync({
+        input: {
+          id: move.rideId,
+          department_id: editableRide.department_id,
+          week_start: editableRide.week_start,
+          car_id: move.carId,
+          starts_at: move.startsAt,
+          ends_at: move.endsAt,
+          origin_id: editableRide.origin_id,
+          destination_id: editableRide.destination_id,
+          driver_id: editableRide.driver_id,
+        },
+        expectedVersion: move.expectedVersion,
+        departmentId: editableRide.department_id,
+        weekStart: editableRide.week_start,
+      });
+      setSelectedMyRide(null);
+      toast.success(he.rideEditing.saved);
+    } catch { /* The mutation presents the database validation error. */ }
+  }
 
   return (
     <div className="mx-auto max-w-2xl space-y-6 p-4 pb-24">
@@ -264,14 +319,39 @@ export function HomePage() {
       ) : null}
       <RideDetailSheet
         ride={selectedMyRide}
-        car={null}
+        car={selectedMyRide ? (carsQuery.data ?? []).find((car) => car.id === selectedMyRide.car_id) ?? null : null}
         locationBadge={null}
         onOpenChange={(open) => !open && setSelectedMyRide(null)}
         onAskToJoin={() => undefined}
         showAskToJoin={false}
         onRemoveOwnRide={selectedMyRide?.id && selectedMyRide.version != null ? () => cancelRideMutation.mutate({ rideId: selectedMyRide.id!, expectedVersion: selectedMyRide.version!, reason: "CANCELLED_BY_MEMBER" }, { onSuccess: () => setSelectedMyRide(null) }) : undefined}
         removingOwnRide={cancelRideMutation.isPending}
+        editor={editableRide && ownsEditableRide ? (
+          <MemberRideEditor
+            key={`${editableRide.id}:${editableRide.version}`}
+            ride={editableRide}
+            cars={carsQuery.data ?? []}
+            saving={editMutation.isPending || changeMutation.isPending}
+            onSave={(move) => void saveMyRideMove(move)}
+          />
+        ) : undefined}
       />
+      <Dialog open={!!collisionMove} onOpenChange={(open) => !open && setCollisionMove(null)}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>{he.rideEditing.collisionTitle}</DialogTitle><DialogDescription>{he.rideEditing.collisionBody}</DialogDescription></DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCollisionMove(null)}>{he.common.cancel}</Button>
+            <Button disabled={changeMutation.isPending} onClick={() => {
+              if (!collisionMove) return;
+              changeMutation.mutate(collisionMove, { onSuccess: () => {
+                setCollisionMove(null);
+                setSelectedMyRide(null);
+                toast.success(he.rideEditing.requested);
+              } });
+            }}>{he.rideEditing.acknowledge}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

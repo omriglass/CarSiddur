@@ -35,11 +35,11 @@ export async function fetchMemberInvites(): Promise<MemberInvite[]> {
   return data ?? [];
 }
 
-export interface ManagedChild { id: string; department_id: string; full_name: string; guardian_ids: string[] }
+export interface ManagedChild { id: string; department_id: string; full_name: string; birth_year: number | null; guardian_ids: string[] }
 
 export async function fetchManagedChildren(): Promise<ManagedChild[]> {
   const [{ data: children, error: childrenError }, { data: guardians, error: guardiansError }] = await Promise.all([
-    supabase.from("children").select("id, department_id, full_name").order("full_name"),
+    supabase.from("children").select("id, department_id, full_name, birth_year").order("full_name"),
     supabase.from("child_guardians").select("child_id, profile_id"),
   ]);
   if (childrenError) throw toAppError(childrenError);
@@ -49,11 +49,23 @@ export async function fetchManagedChildren(): Promise<ManagedChild[]> {
   return (children ?? []).map((child) => ({ ...child, guardian_ids: byChild.get(child.id) ?? [] }));
 }
 
-export async function createChild(departmentId: string, fullName: string, guardianIds: string[]): Promise<void> {
-  const { data, error } = await supabase.from("children").insert({ department_id: departmentId, full_name: fullName.trim() }).select("id").single();
+export async function createChild(departmentId: string, fullName: string, birthYear: number | null, guardianIds: string[]): Promise<void> {
+  const { data, error } = await supabase.from("children").insert({ department_id: departmentId, full_name: fullName.trim(), birth_year: birthYear }).select("id").single();
   if (error) throw toAppError(error);
   if (!guardianIds.length) return;
   const { error: guardianError } = await supabase.from("child_guardians").insert(guardianIds.map((profileId) => ({ child_id: data.id, profile_id: profileId })));
+  if (guardianError) throw toAppError(guardianError);
+}
+
+export async function updateChild(childId: string, departmentId: string, fullName: string, birthYear: number | null, guardianIds: string[]): Promise<void> {
+  const { error } = await supabase.from("children")
+    .update({ department_id: departmentId, full_name: fullName.trim(), birth_year: birthYear })
+    .eq("id", childId);
+  if (error) throw toAppError(error);
+  const { error: deleteError } = await supabase.from("child_guardians").delete().eq("child_id", childId);
+  if (deleteError) throw toAppError(deleteError);
+  if (!guardianIds.length) return;
+  const { error: guardianError } = await supabase.from("child_guardians").insert(guardianIds.map((profileId) => ({ child_id: childId, profile_id: profileId })));
   if (guardianError) throw toAppError(guardianError);
 }
 

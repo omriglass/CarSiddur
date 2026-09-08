@@ -17,6 +17,7 @@ import { he, tv } from "@/i18n/he";
 import { showErrorToast } from "@/lib/rpc";
 import { Users } from "lucide-react";
 import { CompanionPicker } from "@/components/CompanionPicker";
+import { ageFromBirthYear, isAdultPassenger } from "@/lib/childAge";
 
 import { parseInviteLines, type ParsedInviteRow } from "../lib/parseInviteLines";
 import {
@@ -33,6 +34,7 @@ import {
   useSetMemberRoleMutation,
   useManagedChildren,
   useCreateChildMutation,
+  useUpdateChildMutation,
 } from "../hooks";
 import type { Profile } from "../api";
 
@@ -212,22 +214,75 @@ function ChildrenTab() {
   const departmentsQuery = useDepartments();
   const childrenQuery = useManagedChildren();
   const createMutation = useCreateChildMutation();
+  const updateMutation = useUpdateChildMutation();
   const [departmentId, setDepartmentId] = useState("");
   const [fullName, setFullName] = useState("");
+  const [birthYear, setBirthYear] = useState("");
   const [guardianIds, setGuardianIds] = useState<string[]>([]);
+  const [addOpen, setAddOpen] = useState(false);
+  const [editingChildId, setEditingChildId] = useState<string | null>(null);
   const profiles = (profilesQuery.data ?? []).filter((profile) => profile.approval_status === "approved");
   const profileNames = new Map(profiles.map((profile) => [profile.id, profile.full_name]));
 
-  return <div className="space-y-5">
-    <div className="grid gap-3 rounded-md border p-4">
-      <label className="grid gap-2">מחלקה
-        <Select value={departmentId} onValueChange={setDepartmentId}><SelectTrigger><SelectValue placeholder="בחרו מחלקה" /></SelectTrigger><SelectContent>{(departmentsQuery.data ?? []).filter((d) => d.is_active).map((d) => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}</SelectContent></Select>
-      </label>
-      <label className="grid gap-2">שם הילד/ה <Input value={fullName} onChange={(event) => setFullName(event.target.value)} /></label>
-      <div className="grid gap-2"><span>משויך/ת ל</span><CompanionPicker members={profiles.map((p) => ({ id: p.id, name: p.full_name }))} value={guardianIds} onChange={setGuardianIds} label="הוספת הורים" /></div>
-      <Button disabled={!departmentId || !fullName.trim() || createMutation.isPending} onClick={async () => { try { await createMutation.mutateAsync({ departmentId, fullName, guardianIds }); setFullName(""); setGuardianIds([]); toast.success(he.adminCommon.savedToast); } catch (error) { showErrorToast(error); } }}>הוספת ילד/ה</Button>
+  const departmentsById = new Map((departmentsQuery.data ?? []).map((department) => [department.id, department.name]));
+  const children = childrenQuery.data ?? [];
+
+  function closeChildDialog() {
+    setAddOpen(false); setEditingChildId(null); setDepartmentId(""); setFullName(""); setBirthYear(""); setGuardianIds([]);
+  }
+
+  function openChildEditor(child?: typeof children[number]) {
+    setEditingChildId(child?.id ?? null);
+    setDepartmentId(child?.department_id ?? "");
+    setFullName(child?.full_name ?? "");
+    setBirthYear(child?.birth_year?.toString() ?? "");
+    setGuardianIds(child?.guardian_ids ?? []);
+    setAddOpen(true);
+  }
+
+  async function saveChild() {
+    const normalizedBirthYear = birthYear.trim() ? Number(birthYear) : null;
+    try {
+      if (editingChildId) await updateMutation.mutateAsync({ childId: editingChildId, departmentId, fullName, birthYear: normalizedBirthYear, guardianIds });
+      else await createMutation.mutateAsync({ departmentId, fullName, birthYear: normalizedBirthYear, guardianIds });
+      closeChildDialog();
+      toast.success(he.adminCommon.savedToast);
+    } catch (error) { showErrorToast(error); }
+  }
+
+  const validBirthYear = !birthYear.trim() || (Number.isInteger(Number(birthYear)) && Number(birthYear) >= 1900 && Number(birthYear) <= new Date().getFullYear());
+
+  return <div className="space-y-4">
+    <div className="flex items-center justify-between gap-3">
+      <h2 className="font-medium">{he.adminMembers.childrenTitle}</h2>
+      <Button onClick={() => openChildEditor()}>{he.adminMembers.addChild}</Button>
     </div>
-    <div className="space-y-2">{(childrenQuery.data ?? []).map((child) => <div key={child.id} className="rounded-md border p-3"><div className="font-medium">{child.full_name}</div><div className="text-sm text-muted-foreground">{child.guardian_ids.map((id) => profileNames.get(id)).filter(Boolean).join(" · ") || "ללא שיוך"}</div></div>)}</div>
+    {childrenQuery.isLoading ? <div className="h-24 animate-pulse rounded-md bg-muted" /> : children.length === 0 ? <EmptyState icon={Users} message={he.adminMembers.childrenEmpty} /> : (
+      <Table>
+        <TableHeader><TableRow><TableHead>{he.adminMembers.childName}</TableHead><TableHead>{he.adminMembers.childBirthYear}</TableHead><TableHead>{he.adminMembers.childAge}</TableHead><TableHead>{he.adminMembers.childDepartment}</TableHead><TableHead>{he.adminMembers.childParents}</TableHead></TableRow></TableHeader>
+        <TableBody>{children.map((child) => <TableRow key={child.id} className="cursor-pointer hover:bg-muted/50" onClick={() => openChildEditor(child)}>
+          <TableCell className="font-medium">{child.full_name}</TableCell>
+          <TableCell>{child.birth_year ?? "—"}</TableCell>
+          <TableCell>{ageFromBirthYear(child.birth_year) ?? he.adminMembers.childAgeUnknown}{isAdultPassenger(child.birth_year) ? ` · ${he.adminMembers.childAdultSeat}` : ""}</TableCell>
+          <TableCell>{departmentsById.get(child.department_id) ?? child.department_id}</TableCell>
+          <TableCell>{child.guardian_ids.map((id) => profileNames.get(id)).filter((name): name is string => !!name).join(" · ") || he.adminMembers.childNoParents}</TableCell>
+        </TableRow>)}</TableBody>
+      </Table>
+    )}
+    <Dialog open={addOpen} onOpenChange={(open) => open ? setAddOpen(true) : closeChildDialog()}>
+      <DialogContent>
+        <DialogHeader><DialogTitle>{editingChildId ? he.adminMembers.editChild : he.adminMembers.addChild}</DialogTitle></DialogHeader>
+        <div className="grid gap-4">
+          <label className="grid gap-2">{he.adminMembers.childDepartment}
+            <Select value={departmentId} onValueChange={setDepartmentId}><SelectTrigger><SelectValue placeholder={he.adminMembers.childChooseDepartment} /></SelectTrigger><SelectContent>{(departmentsQuery.data ?? []).filter((d) => d.is_active).map((d) => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}</SelectContent></Select>
+          </label>
+          <label className="grid gap-2">{he.adminMembers.childName}<Input value={fullName} onChange={(event) => setFullName(event.target.value)} /></label>
+          <label className="grid gap-2">{he.adminMembers.childBirthYear}<Input type="number" min="1900" max={new Date().getFullYear()} value={birthYear} onChange={(event) => setBirthYear(event.target.value)} /></label>
+          <div className="grid gap-2"><span>{he.adminMembers.childParents}</span><CompanionPicker members={profiles.map((p) => ({ id: p.id, name: p.full_name }))} value={guardianIds} onChange={setGuardianIds} label={he.adminMembers.childParents} /></div>
+        </div>
+        <DialogFooter><Button variant="outline" onClick={closeChildDialog}>{he.adminCommon.cancel}</Button><Button disabled={!departmentId || !fullName.trim() || !validBirthYear || createMutation.isPending || updateMutation.isPending} onClick={saveChild}>{he.adminCommon.save}</Button></DialogFooter>
+      </DialogContent>
+    </Dialog>
   </div>;
 }
 
@@ -435,7 +490,7 @@ export function MembersScreen() {
             {pendingCount > 0 ? ` (${pendingCount})` : ""}
           </TabsTrigger>
           <TabsTrigger value="import">{he.adminMembers.tabImport}</TabsTrigger>
-          <TabsTrigger value="children">ילדים</TabsTrigger>
+          <TabsTrigger value="children">{he.adminMembers.tabChildren}</TabsTrigger>
         </TabsList>
         <TabsContent value="members">
           <MembersTab />

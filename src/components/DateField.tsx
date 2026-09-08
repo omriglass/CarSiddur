@@ -16,11 +16,11 @@ export function todayInJerusalem(): string {
   return formatInTimeZone(new Date(), TZ, "yyyy-MM-dd");
 }
 
-/** `"14–20.9"` — the compact week-range label used in headers/switchers (UX_FLOWS.md §3.3). */
+/** `"14.9 – 20.9"` — an unambiguous, direction-safe week-range label for RTL headers/switchers. */
 export function formatWeekRangeLabel(weekStart: string): string {
   const start = parseISO(weekStart);
   const end = addDays(start, 6);
-  return `${format(start, "d")}–${format(end, "d.M")}`;
+  return `${format(start, "d.M")} – ${format(end, "d.M")}`;
 }
 
 interface DateFieldProps {

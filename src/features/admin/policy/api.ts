@@ -43,6 +43,17 @@ export async function createPolicy(input: { name: string; department_id: string 
   return data;
 }
 
+export async function updatePolicyName(policyId: string, name: string): Promise<PolicyRow> {
+  const { data, error } = await supabase
+    .from("policies")
+    .update({ name: name.trim() })
+    .eq("id", policyId)
+    .select()
+    .single();
+  if (error) throw toAppError(error);
+  return data;
+}
+
 export async function fetchPolicyVersions(policyId: string): Promise<PolicyVersionRow[]> {
   const { data, error } = await supabase
     .from("policy_versions")

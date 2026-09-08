@@ -41,9 +41,9 @@ export type Database = {
         Relationships: []
       }
       children: {
-        Row: { id: string; department_id: string; full_name: string; created_at: string }
-        Insert: { id?: string; department_id: string; full_name: string; created_at?: string }
-        Update: { id?: string; department_id?: string; full_name?: string; created_at?: string }
+        Row: { id: string; department_id: string; full_name: string; birth_year: number | null; created_at: string }
+        Insert: { id?: string; department_id: string; full_name: string; birth_year?: number | null; created_at?: string }
+        Update: { id?: string; department_id?: string; full_name?: string; birth_year?: number | null; created_at?: string }
         Relationships: []
       }
       app_secrets: {
@@ -3046,12 +3046,8 @@ export type Database = {
           p_week_start: string
         }
         Returns: {
-          external: number
+          granted_hours: number
           profile_id: string
-          requested: number
-          served: number
-          served_as_passenger: number
-          unmet: number
         }[]
       }
       freed_slot_candidates: {
@@ -3287,6 +3283,7 @@ export type Database = {
       }
       shares_ride_with: { Args: { _profile: string }; Returns: boolean }
       submit_request: { Args: { payload: Json }; Returns: Json }
+      set_request_children: { Args: { p_request_id: string; p_child_ids: string[] }; Returns: undefined }
       enter_waiting_list: { Args: { p_payload: Json }; Returns: Json }
       suggest_destination: {
         Args: { p_department_id: string; p_name: string; p_zone?: string }

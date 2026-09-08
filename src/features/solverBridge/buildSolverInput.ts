@@ -166,10 +166,17 @@ function toWindow(startsAt: string, endsAt: string, weekStartMs: number): Window
   return { start: slotIndex(startsAt, weekStartMs), end: slotIndex(endsAt, weekStartMs) };
 }
 
-/** `fairness_stats()` row -> 0..1 deficit (`unmet / requested`, per DATA_MODEL.md §7.3; default 0.5 with no history). */
-function fairnessDeficit(row: FairnessRow): number {
-  if (!row.requested) return 0.5;
-  return Math.min(1, Math.max(0, row.unmet / row.requested));
+/**
+ * `fairness_stats()` -> 0..1 priority boost from granted ride-hours only.
+ * The most-served member in the lookback gets 0; no granted history is a
+ * neutral 0.5 for everyone. Request volume never enters this calculation.
+ */
+export function fairnessDeficits(rows: FairnessRow[]): Record<string, { deficit: number }> {
+  const maxGrantedHours = Math.max(0, ...rows.map((row) => Number(row.granted_hours) || 0));
+  if (maxGrantedHours === 0) return Object.fromEntries(rows.map((row) => [row.profile_id, { deficit: 0.5 }]));
+  return Object.fromEntries(rows.map((row) => [row.profile_id, {
+    deficit: Math.min(1, Math.max(0, 1 - (Number(row.granted_hours) || 0) / maxGrantedHours)),
+  }]));
 }
 
 /** Builds a pure `SolverInput` for one department/week from raw Supabase rows. */
@@ -235,8 +242,7 @@ export function buildSolverInput(params: BuildSolverInputParams): SolverInput {
     ),
   }));
 
-  const fairness: SolverStats["fairness"] = {};
-  for (const row of params.fairness ?? []) fairness[row.profile_id] = { deficit: fairnessDeficit(row) };
+  const fairness: SolverStats["fairness"] = fairnessDeficits(params.fairness ?? []);
 
   const config: SolverConfig = {
     bufferMinutes: params.departmentSettings.turnaround_minutes,

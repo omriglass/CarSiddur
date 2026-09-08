@@ -62,7 +62,8 @@ interface TimeField15Props {
 /**
  * Two-column 15-minute time picker (UX_FLOWS.md §3.4, component inventory
  * `TimeField15`): a typed `HH:MM` input that snaps on blur, plus a popover
- * with an hours column (05–23) and a 00/15/30/45 minutes column.
+ * with a minutes column (00/15/30/45) on the RTL starting edge and an hours
+ * column (05–23) beside it.
  */
 export function TimeField15({ value, min, max, onChange, disabled, ...rest }: TimeField15Props) {
   const [draft, setDraft] = useState(value);
@@ -111,22 +112,7 @@ export function TimeField15({ value, min, max, onChange, disabled, ...rest }: Ti
         />
       </PopoverTrigger>
       <PopoverContent className="w-56 p-2" align="start">
-        <div className="grid grid-cols-2 gap-2">
-          <div className="max-h-48 overflow-y-auto" role="listbox" aria-label="שעה">
-            {hours.map((h) => (
-              <button
-                key={h}
-                type="button"
-                className={cn(
-                  "flex h-11 w-full min-w-11 items-center justify-center rounded text-sm hover:bg-accent",
-                  draftHour === pad2(h) && "bg-accent font-semibold",
-                )}
-                onClick={() => commit(`${pad2(h)}:${draftMinute ?? "00"}`)}
-              >
-                {pad2(h)}
-              </button>
-            ))}
-          </div>
+        <div className="grid grid-cols-2 gap-2" dir="rtl">
           <div role="listbox" aria-label="דקות">
             {[...QUARTER_HOURS, ...(draftHour === "23" && maxMinutes === 1439 ? [59] : [])].map((m) => (
               <button
@@ -139,6 +125,21 @@ export function TimeField15({ value, min, max, onChange, disabled, ...rest }: Ti
                 onClick={() => commit(`${draftHour ?? "08"}:${pad2(m)}`)}
               >
                 {pad2(m)}
+              </button>
+            ))}
+          </div>
+          <div className="max-h-48 overflow-y-auto" role="listbox" aria-label="שעה">
+            {hours.map((h) => (
+              <button
+                key={h}
+                type="button"
+                className={cn(
+                  "flex h-11 w-full min-w-11 items-center justify-center rounded text-sm hover:bg-accent",
+                  draftHour === pad2(h) && "bg-accent font-semibold",
+                )}
+                onClick={() => commit(`${pad2(h)}:${draftMinute ?? "00"}`)}
+              >
+                {pad2(h)}
               </button>
             ))}
           </div>

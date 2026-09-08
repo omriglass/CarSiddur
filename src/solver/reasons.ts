@@ -50,7 +50,7 @@ const RULE_DESCRIPTIONS: Record<string, string> = {
   RULE_DISTANCE_DESC: 'מעניק עדיפות ליעדים רחוקים יותר, בהם פחות חלופות',
   RULE_PUBLICTRANSPORT_DESC: 'מעניק עדיפות נמוכה יותר ליעדים עם תחבורה ציבורית טובה',
   RULE_PEOPLESERVED_DESC: 'מעניק עדיפות לנסיעות שמשרתות יותר אנשים (כולל זוג ממסר)',
-  RULE_FAIRNESS_DESC: 'מעניק עדיפות לחברים שקיבלו פחות נסיעות בשבועות האחרונים',
+  RULE_FAIRNESS_DESC: 'מעניק עדיפות לחברים שקיבלו פחות שעות נסיעה מאושרות בשבועות האחרונים',
   RULE_SUBMISSIONTIME_DESC: 'מעניק יתרון קל להגשה מוקדמת וקנס להגשה מאוחרת',
   RULE_FLEXIBILITYOFFERED_DESC: 'מעניק בונוס להצהרת גמישות בזמנים',
   RULE_MANUALBOOST_DESC: 'בונוס חד-פעמי שניתן ידנית על ידי הסדרן/ית',

@@ -156,6 +156,11 @@ export function SiddurPage() {
   const defaultDay = dayGroups.find((g) => g.date === today)?.date ?? dayGroups[0]?.date ?? null;
   const activeDay = dayGroups.some((g) => g.date === selectedDay) ? selectedDay : defaultDay;
   const activeDayRides = dayGroups.find((g) => g.date === activeDay)?.items ?? [];
+  // On the current day, open the calendar at the full hour before now. This
+  // leaves enough recent context to see a ride that has just begun.
+  const initialGridScrollMinutes = !tableView && activeDay === today
+    ? Math.floor(minutesSinceMidnight(new Date().toISOString()) / 60) * 60 - 60
+    : null;
 
   // Quick-request-from-empty-slot (UX_FLOWS.md §18): only the live week auto-approves onto a
   // specific car (REQ §8) — an Open/Solving week has no car to target yet, the Sadran solves
@@ -488,6 +493,7 @@ export function SiddurPage() {
                 rides={weekGridRides}
                 dayStartMinutes={dayStartMinutes}
                 dayEndMinutes={dayEndMinutes}
+                initialScrollMinutes={initialGridScrollMinutes}
                 readOnly={!canEditWeek}
                 draggable={canEditWeek && !editMutation.isPending && !changeMutation.isPending}
                 canDragRide={(ride) => ownsEditableRide(ride.id)}

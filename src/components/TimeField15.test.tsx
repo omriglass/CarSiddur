@@ -70,4 +70,10 @@ describe("typed time entry", () => {
     fireEvent.blur(input);
     expect(onChange).toHaveBeenCalledWith("09:15");
   });
+
+  it("places minutes on the RTL starting edge of the picker", () => {
+    render(<TimeField15 value="08:00" onChange={vi.fn()} aria-label="time" />);
+    fireEvent.click(screen.getByLabelText("time"));
+    expect(screen.getAllByRole("listbox").map((list) => list.getAttribute("aria-label"))).toEqual(["דקות", "שעה"]);
+  });
 });

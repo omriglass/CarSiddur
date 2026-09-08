@@ -512,13 +512,7 @@ export async function fetchRequestChildIds(requestId: string): Promise<string[]>
 }
 
 export async function setRequestChildren(requestId: string, childIds: string[]): Promise<void> {
-  const { error: deleteError } = await supabase.from("request_children").delete().eq("request_id", requestId);
-  if (deleteError) throw toAppError(deleteError);
-  if (childIds.length === 0) return;
-  const { error: insertError } = await supabase
-    .from("request_children")
-    .insert(childIds.map((childId) => ({ request_id: requestId, child_id: childId })));
-  if (insertError) throw toAppError(insertError);
+  await rpc("set_request_children", { p_request_id: requestId, p_child_ids: childIds });
 }
 
 export async function withdrawAllRequests(departmentId: string, weekStart: string): Promise<void> {

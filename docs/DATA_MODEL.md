@@ -1255,25 +1255,21 @@ $$;
 This is the **hard filter**. `cancel_ride()` creates the offer (only for `home → home` rides; cancelling a relay leg flags the partner instead, REQ §13.63) and calls the `on-ride-cancelled` edge function (pg_net), which loads these rows, ranks them with the solver's `matchFreedSlot()` (policy score, location-aware timeline fit incl. adjacent free time — `SOLVER.md` §5.2) and calls `resolve_freed_offer(offer_id, ranked_candidates)`: 0 rows ⇒ offer `closed`; 1 row ⇒ create ride (then `assert_car_chain()`), request `assigned`, offer `auto_assigned`, `freed_slot_auto` to the member; >1 ⇒ insert `freed_slot_claims (offered)` per row, `freed_slot` to all candidates + `claim_contested` to the Sadranim, offer `pending_approval`. If the edge function is unreachable, `expire_freed_offers()` closes the offer at `starts_at` and the slot simply stays free on the board.
 
 ### 7.3 Fairness lookback for the policy — §7.2 "Fairness over time"
-The solver fetches this once per run (client-side scoring); it counts outcomes in archived/published weeks only. `$3` is the `lookbackWeeks` param of the fairness rule in the active policy version (default **3**, REQ §13.18) — there is no department setting.
+The solver fetches this once per run (client-side scoring). `$3` is the `lookbackWeeks` param of the fairness rule in the active policy version (default **3**, REQ §13.18) — there is no department setting. Fairness counts only granted ride-hours, never the number of requests made or left unmet.
 ```sql
 -- $1 department_id, $2 target week_start, $3 lookback weeks (from the policy's fairness rule params)
 select p.id as profile_id,
-       count(*) filter (where q.status in ('assigned','merged'))        as served,
-       count(*) filter (where q.status = 'merged')                       as served_as_passenger,
-       count(*) filter (where q.status in ('denied','waitlisted'))       as unmet,
-       count(*) filter (where q.status = 'external')                     as external,
-       count(*)                                                          as requested
+       coalesce(sum(extract(epoch from (q.return_at - q.depart_at)) / 3600.0)
+         filter (where q.status in ('assigned','merged')), 0) as granted_hours
 from department_members dm
 join profiles p on p.id = dm.profile_id
 left join requests q
   on q.requester_id = p.id and q.department_id = $1
  and q.week_start >= $2 - ($3 * 7) and q.week_start < $2
- and q.status in ('assigned','merged','denied','waitlisted','external')
 where dm.department_id = $1 and dm.removed_at is null
 group by p.id;
 ```
-Exposed as `fairness_stats(_dept, _week, _weeks)` (definer, Sadran/admin only) so members' statuses are not leaked through direct table reads. The rule value is e.g. `unmet / nullif(requested,0)` or `-served`, per `params`.
+Exposed as `fairness_stats(_dept, _week, _weeks)` (definer, Sadran/admin only) so members' history is not leaked through direct table reads. The caller normalizes granted hours against the member with the most granted hours in the lookback: fewer granted hours yields more priority; no history is neutral.
 
 ### 7.4 My outcome for a week — §5.2, §7.5
 ```sql

@@ -197,7 +197,7 @@ describe("buildSolverInput", () => {
     expect(input.destinations[FREE_TEXT_DESTINATION_ID]).toEqual({ id: FREE_TEXT_DESTINATION_ID, zone: "unknown" });
   });
 
-  it("derives fairness deficit as unmet/requested, defaulting to 0.5 with no history", () => {
+  it("derives fairness from granted hours, not request volume", () => {
     const input = buildSolverInput({
       weekStart: WEEK_START,
       homeDestinationId: HOME,
@@ -209,13 +209,17 @@ describe("buildSolverInput", () => {
       destinations: [],
       policy: { id: "p1", version: 1, rules: [] },
       fairness: [
-        { profile_id: "m1", requested: 4, served: 2, served_as_passenger: 0, unmet: 2, external: 0 },
-        { profile_id: "m2", requested: 0, served: 0, served_as_passenger: 0, unmet: 0, external: 0 },
+        // Two two-hour grants equal one four-hour grant; only their total
+        // granted hours matter, not how many requests led to them.
+        { profile_id: "m1", granted_hours: 4 },
+        { profile_id: "m2", granted_hours: 2 },
+        { profile_id: "m3", granted_hours: 0 },
       ],
     });
 
-    expect(input.stats.fairness.m1!.deficit).toBeCloseTo(0.5);
+    expect(input.stats.fairness.m1!.deficit).toBe(0);
     expect(input.stats.fairness.m2!.deficit).toBe(0.5);
+    expect(input.stats.fairness.m3!.deficit).toBe(1);
   });
 
   it("computes luggage capacity 2 for cars with the large_trunk feature", () => {

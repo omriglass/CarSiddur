@@ -11,10 +11,12 @@ import { Slider } from "@/components/ui/slider";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useOperationalDepartments } from "@/features/admin/useOperations";
 import { he, tv } from "@/i18n/he";
 import { showErrorToast } from "@/lib/rpc";
 import { ruleRegistry, type RuleType } from "@/solver";
+import { Info } from "lucide-react";
 
 import { useRideTypesAdmin } from "../../rideTypes/hooks";
 import type { PolicyRuleConfig } from "../api";
@@ -23,6 +25,7 @@ import {
   usePoliciesAdmin,
   usePolicyVersions,
   useSetPolicyActiveMutation,
+  useUpdatePolicyNameMutation,
 } from "../hooks";
 import { runPolicyPreview, type PolicyPreviewResult } from "../preview";
 import { RuleParamsEditor } from "./RuleParamsEditor";
@@ -67,6 +70,7 @@ function PolicyEditorInner({ policyId }: { policyId: string }) {
   const versionsQuery = usePolicyVersions(policyId);
   const createVersionMutation = useCreatePolicyVersionMutation();
   const setActiveMutation = useSetPolicyActiveMutation();
+  const updateNameMutation = useUpdatePolicyNameMutation();
 
   const policy = (policiesQuery.data ?? []).find((p) => p.id === policyId && departmentsQuery.data?.some((department) => department.id === p.department_id));
   const latestVersion = versionsQuery.data?.[0];
@@ -80,6 +84,12 @@ function PolicyEditorInner({ policyId }: { policyId: string }) {
   }
 
   const [note, setNote] = useState("");
+  const [policyName, setPolicyName] = useState("");
+  const [policyNameFor, setPolicyNameFor] = useState<string | undefined>();
+  if (policy && policy.id !== policyNameFor) {
+    setPolicyNameFor(policy.id);
+    setPolicyName(policy.name);
+  }
   const [testDepartmentId, setTestDepartmentId] = useState(policy?.department_id ?? "");
   const [preview, setPreview] = useState<PolicyPreviewResult | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -108,6 +118,16 @@ function PolicyEditorInner({ policyId }: { policyId: string }) {
     if (!policy) return;
     try {
       await setActiveMutation.mutateAsync({ policyId: policy.id, isActive: true });
+      toast.success(he.adminCommon.savedToast);
+    } catch (error) {
+      showErrorToast(error);
+    }
+  }
+
+  async function handleSaveName() {
+    if (!policy || !policyName.trim() || policyName.trim() === policy.name) return;
+    try {
+      await updateNameMutation.mutateAsync({ policyId: policy.id, name: policyName });
       toast.success(he.adminCommon.savedToast);
     } catch (error) {
       showErrorToast(error);
@@ -154,6 +174,7 @@ function PolicyEditorInner({ policyId }: { policyId: string }) {
         actions={<Button onClick={handleActivate}>{he.action.activateForDept}</Button>}
       />
 
+      <TooltipProvider>
       <Tabs defaultValue="editor">
         <TabsList>
           <TabsTrigger value="editor">{he.adminPolicy.editorTab}</TabsTrigger>
@@ -161,11 +182,26 @@ function PolicyEditorInner({ policyId }: { policyId: string }) {
         </TabsList>
 
         <TabsContent value="editor" className="flex flex-col gap-4">
+          <div className="flex flex-col gap-2 rounded-md border p-3 sm:flex-row sm:items-end">
+            <label className="flex min-w-0 flex-1 flex-col gap-1 text-sm">
+              {he.adminPolicy.name}
+              <Input value={policyName} onChange={(event) => setPolicyName(event.target.value)} maxLength={100} />
+            </label>
+            <Button onClick={handleSaveName} disabled={!policyName.trim() || policyName.trim() === policy.name || updateNameMutation.isPending}>
+              {he.adminPolicy.saveName}
+            </Button>
+          </div>
           {draft.map((row) => (
             <div key={row.type} className="flex flex-col gap-2 rounded-md border p-3">
               <div className="flex flex-wrap items-center gap-4">
                 <Checkbox checked={row.enabled} onCheckedChange={(v) => updateRule(row.type, { enabled: !!v })} />
-                <span className="font-medium">{row.type}</span>
+                <span className="flex items-center gap-1 font-medium">
+                  {he.adminPolicy.ruleNames[row.type]}
+                  <Tooltip>
+                    <TooltipTrigger asChild><button type="button" aria-label={`מידע על ${he.adminPolicy.ruleNames[row.type]}`}><Info className="size-4 text-muted-foreground" /></button></TooltipTrigger>
+                    <TooltipContent className="max-w-xs">{he.adminPolicy.ruleInfo[row.type]}</TooltipContent>
+                  </Tooltip>
+                </span>
                 <span className="flex items-center gap-2 text-sm">
                   {he.adminPolicy.ruleWeight}
                   <Slider
@@ -190,6 +226,7 @@ function PolicyEditorInner({ policyId }: { policyId: string }) {
                 params={row.params}
                 onChange={(params) => updateRule(row.type, { params })}
                 keyLabels={row.type === "rideType" ? rideTypeLabels : undefined}
+                paramLabels={he.adminPolicy.paramNames}
               />
               <p className="text-xs text-muted-foreground">{describeRule(row.type, row.params)}</p>
             </div>
@@ -302,6 +339,7 @@ function PolicyEditorInner({ policyId }: { policyId: string }) {
           </Table>
         </TabsContent>
       </Tabs>
+      </TooltipProvider>
     </div>
   );
 }

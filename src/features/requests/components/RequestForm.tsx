@@ -206,7 +206,6 @@ export function RequestForm({ mode, departmentId, weekStart, initial, joinRide, 
   const myRequestsQuery = useMyRequests();
   const membersQuery = useDepartmentMembers(departmentId);
   const { session } = useSession();
-  const childrenQuery = useQuery({ queryKey: ["children", departmentId, session?.user.id], queryFn: () => fetchChildren(departmentId, session!.user.id), enabled: !!session?.user.id });
   const companionsQuery = useRequestCompanionsQuery(initial?.id);
   const requestChildrenQuery = useRequestChildrenQuery(initial?.id);
 
@@ -268,13 +267,16 @@ export function RequestForm({ mode, departmentId, weekStart, initial, joinRide, 
   const hasResetForEdit = mode !== "edit" || resetKey !== null;
 
   const values = useWatch({ control: form.control });
-  // The requester is always one adult; every selected member is another.
-  // Counts are derived rather than editable so the request cannot drift away
-  // from the named passengers.
-  const namedAdultCount = 1 + (values.companions?.length ?? 0);
-  const namedChildCount = Math.max(values.children?.length ?? 0, values.legacyChildSeats ?? 0);
   const tripShape = values.tripShape ?? "round_trip";
   const day = values.day ?? weekStart;
+  const childReferenceYear = Number(day.slice(0, 4));
+  const childrenQuery = useQuery({ queryKey: ["children", departmentId, session?.user.id, childReferenceYear], queryFn: () => fetchChildren(departmentId, session!.user.id, childReferenceYear), enabled: !!session?.user.id });
+  // The requester is always one adult; every selected member is another.
+  // Named children aged eight or older use an ordinary adult seat.
+  const selectedChildren = (childrenQuery.data ?? []).filter((child) => values.children?.includes(child.id));
+  const namedAdultCount = 1 + (values.companions?.length ?? 0) + selectedChildren.filter((child) => child.isAdultPassenger).length;
+  const selectedChildSeatCount = selectedChildren.filter((child) => !child.isAdultPassenger).length;
+  const namedChildCount = Math.max(selectedChildSeatCount, values.legacyChildSeats ?? 0);
   const preferredCars = (carsQuery.data ?? []).filter((car) => car.type === "shared" && car.status === "active");
 
   const seatFitWarning = useMemo(() => {
@@ -318,7 +320,10 @@ export function RequestForm({ mode, departmentId, weekStart, initial, joinRide, 
 
   async function onSubmit(formValues: RequestFormValues) {
     setSubmitError(null);
-    const payload = { ...toSubmitRequestPayload({ ...formValues, adults: 1 + formValues.companions.length, childSeats: Math.max(formValues.children.length, formValues.legacyChildSeats) }, {
+    const selected = (childrenQuery.data ?? []).filter((child) => formValues.children.includes(child.id));
+    const childAdults = selected.filter((child) => child.isAdultPassenger).length;
+    const childSeats = selected.filter((child) => !child.isAdultPassenger).length;
+    const payload = { ...toSubmitRequestPayload({ ...formValues, adults: 1 + formValues.companions.length + childAdults, childSeats: Math.max(childSeats, formValues.legacyChildSeats) }, {
       requestId: initial?.id,
       expectedVersion: initial?.version,
       joinRideId: mode === "new" ? joinRide?.rideId : undefined,
@@ -518,7 +523,15 @@ export function RequestForm({ mode, departmentId, weekStart, initial, joinRide, 
       <FormItem>
         <Label>{t("field.children")}</Label>
         <Controller control={form.control} name="children" render={({ field }) => (
-          <CompanionPicker members={childrenQuery.data ?? []} value={field.value} onChange={field.onChange} label={t("field.children")} />
+          <CompanionPicker
+            members={(childrenQuery.data ?? []).map((child) => ({
+              ...child,
+              name: child.age == null ? child.name : `${child.name} · ${child.age}`,
+            }))}
+            value={field.value}
+            onChange={field.onChange}
+            label={t("field.children")}
+          />
         )} />
         <p className="text-sm text-muted-foreground">{tv("request.namedChildCount", { count: String(namedChildCount) })}</p>
       </FormItem>

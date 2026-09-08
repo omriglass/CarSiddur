@@ -493,7 +493,7 @@ Normalization runs per rule over the whole batch before weighting: `unit` clamps
 | `distance` | `{ maxKm: number }` | `min(distanceKm / maxKm, 1)`; unknown → 0 |
 | `publicTransport` | `{}` | `1 − publicTransportScore`; unknown → 0.5 |
 | `peopleServed` | `{ cap: number }` | `min((adults + childSeats + boosters − 1) / cap, 1)`; for a request in a relay pair (§3.6.1) the people of both legs are summed, so a pair outranks a lone request of the same type |
-| `fairness` | `{ lookbackWeeks: number }` | `stats.fairness[member].deficit` (0..1, computed by the caller for the lookback; missing → 0.5). `lookbackWeeks` default **3** (REQUIREMENTS §13.18); the caller passes it to `fairness_stats()` |
+| `fairness` | `{ lookbackWeeks: number }` | `stats.fairness[member].deficit` (0..1, computed by the caller from granted ride-hours in the lookback; fewer granted hours → higher score, no history → 0.5). Number of requests submitted is not used. `lookbackWeeks` default **3** (REQUIREMENTS §13.18); the caller passes it to `fairness_stats()` |
 | `submissionTime` | `{ latePenalty: number }` | on time: `1 − 0.3 · rank/N` by `submittedAtMs`; late: `max(0, 0.7 − latePenalty)` |
 | `flexibilityOffered` | `{ fullCreditMinutes: number }` | `min(totalDeclaredFlexMinutes / fullCreditMinutes, 1)`; `'day'` counts as 480 |
 | `manualBoost` | `{}` | `request.manualBoost?.value ?? 0` |

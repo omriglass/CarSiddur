@@ -7,6 +7,7 @@ import {
   fetchPolicies,
   fetchPolicyVersions,
   setPolicyActive,
+  updatePolicyName,
   type PolicyRuleConfig,
 } from "./api";
 
@@ -46,6 +47,14 @@ export function useCreatePolicyVersionMutation() {
       void queryClient.invalidateQueries({ queryKey: policyKeys.versions(variables.policyId) });
       void queryClient.invalidateQueries({ queryKey: policyKeys.list() });
     },
+  });
+}
+
+export function useUpdatePolicyNameMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ policyId, name }: { policyId: string; name: string }) => updatePolicyName(policyId, name),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: policyKeys.list() }),
   });
 }
 
