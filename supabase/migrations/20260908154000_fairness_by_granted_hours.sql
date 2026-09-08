@@ -2,6 +2,11 @@
 -- member asked. A two-hour granted request therefore counts half as much as a
 -- four-hour granted request. One-way requests fall back to the served ride's
 -- duration when their request itself has only one timestamp.
+-- PostgreSQL does not permit CREATE OR REPLACE to change a function's OUT
+-- columns, so remove the previous count-based row type first. No database
+-- object depends on this RPC; its grants are restored below.
+drop function if exists public.fairness_stats(uuid, date, int);
+
 create or replace function public.fairness_stats(p_department_id uuid, p_week_start date, p_lookback_weeks int)
 returns table (profile_id uuid, granted_hours numeric)
 security definer set search_path=public,pg_temp language plpgsql as $$
