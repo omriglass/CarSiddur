@@ -10,14 +10,25 @@ export async function publishWithScores(departmentId: string, weekStart: string,
   const before = await fetchPublishFingerprint(departmentId, weekStart);
   const [activePolicy, policies, departments] = await Promise.all([fetchActivePolicy(departmentId), fetchPolicyOptions(departmentId), fetchDepartments()]);
   const homeDestinationId = departments.find((d) => d.id === departmentId)?.home_destination_id;
-  if (!activePolicy || !policies.length || !homeDestinationId) throw new AppError("unknown", he.publishScores.invalid);
-  const policyScores = await Promise.all(policies.map(async (policy) => {
-    const context = await gatherSolverContext({ departmentId, weekStart, homeDestinationId, policy, mode: "remaining", forScoring: true });
-    const served = new Set(context.boardRides.filter((r) => r.status !== "cancelled" && !r.needs_driver).flatMap((r) => servedOf(r).map((s) => s.request_id!)));
-    try { return summarizePolicyScore(policy, calculateProfileScores(context.input, served)); }
-    catch { throw new AppError("unknown", he.publishScores.invalid); }
-  }));
-  const activeScores = policyScores.find((p) => p.policy_version_id === activePolicy.policyVersionId)?.profiles ?? [];
+  // Policy-score snapshots are reporting data, not a publication precondition.
+  // A week may contain legacy or incomplete requests that cannot be scored
+  // today; the schedule must still be publishable and can be scored later.
+  let policyScores: ReturnType<typeof summarizePolicyScore>[] = [];
+  if (activePolicy && policies.length && homeDestinationId) {
+    try {
+      policyScores = await Promise.all(policies.map(async (policy) => {
+        const context = await gatherSolverContext({ departmentId, weekStart, homeDestinationId, policy, mode: "remaining", forScoring: true });
+        const served = new Set(context.boardRides.filter((r) => r.status !== "cancelled" && !r.needs_driver).flatMap((r) => servedOf(r).map((s) => s.request_id!)));
+        return summarizePolicyScore(policy, calculateProfileScores(context.input, served));
+      }));
+    } catch {
+      // Persist an empty score snapshot rather than blocking the schedule.
+      policyScores = [];
+    }
+  }
+  const activeScores = activePolicy
+    ? policyScores.find((p) => p.policy_version_id === activePolicy.policyVersionId)?.profiles ?? []
+    : [];
   if (before !== await fetchPublishFingerprint(departmentId, weekStart)) throw new AppError("stale_input", he.errors.staleInput);
   return publishSiddur(departmentId, weekStart, activeScores as unknown as Json, before, policyScores as unknown as Json, options);
 }

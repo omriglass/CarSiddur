@@ -42,6 +42,7 @@ import { TZ } from "@/lib/time";
 import { ridePublicDetails } from "@/lib/ridePublicDetails";
 import { ridePassengerSummary } from "@/lib/ridePassengerSummary";
 import { rideCoordinatorNotes } from "@/lib/rideCoordinatorNotes";
+import { readLastUsedPolicyVersion, rememberLastUsedPolicyVersion } from "../../lastUsedPolicy";
 
 import { scanBoardConflicts, wouldOverlap, requestDayMismatchRideIds, tightScheduleRideIds } from "../geometry";
 import { rideBlockLabel, resolveRideRealDestination } from "../rideLabel";
@@ -193,11 +194,23 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
   // codebase derives such "default until the user picks something" state
   // during render rather than via a `useEffect` + `setState`, per the
   // `react-hooks/set-state-in-effect` lint rule).
-  const [policyVersionOverride, setPolicyVersionOverride] = useState<string | null>(null);
+  const [policyVersionOverride, setPolicyVersionOverride] = useState<string | null>(readLastUsedPolicyVersion);
   const [preview, setPreview] = useState<{ output: SolverOutput; policyVersionId: string } | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
 
-  const effectivePolicyVersionId = policyVersionOverride ?? activePolicyQuery.data?.policyVersionId ?? null;
+  // A policy saved on this device is only a default, never an entitlement: if
+  // it is not offered by this department, fall back to its active policy.
+  const storedPolicyIsAvailable = (policyOptionsQuery.data ?? []).some((policy) => policy.policyVersionId === policyVersionOverride);
+  const effectivePolicyVersionId = storedPolicyIsAvailable ? policyVersionOverride : activePolicyQuery.data?.policyVersionId ?? null;
+
+  function selectPolicyVersion(policyVersionId: string) {
+    setPolicyVersionOverride(policyVersionId);
+  }
+
+  function rememberUsedPolicy(policyVersionId: string) {
+    rememberLastUsedPolicyVersion(policyVersionId);
+    setPolicyVersionOverride(policyVersionId);
+  }
 
   /**
    * Populates the unmet list's per-request score/suggestions by running the
@@ -229,6 +242,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
         mode: "remaining",
       });
       const output = runSolve(context.input);
+      rememberUsedPolicy(policy.policyVersionId);
       setPreview({ output, policyVersionId: policy.policyVersionId });
     } catch {
       // Non-blocking: the board still works from persisted request/ride data alone.
@@ -264,6 +278,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
       });
       const startedAtMs = nowMs();
       const output = runSolve(context.input);
+      rememberUsedPolicy(policy.policyVersionId);
       const finishedAtMs = nowMs();
       const payload = buildApplyPayload({
         output,
@@ -964,7 +979,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
       <div className="flex flex-wrap items-center gap-2">
         <RequestDeviationsDialog departmentId={departmentId} weekStart={weekStart} />
         <WeekExcelExportButton departmentId={departmentId} weekStart={weekStart} />
-        <Select value={effectivePolicyVersionId ?? undefined} onValueChange={setPolicyVersionOverride}>
+        <Select value={effectivePolicyVersionId ?? undefined} onValueChange={selectPolicyVersion}>
           <SelectTrigger className="w-48">
             <SelectValue placeholder={he.board.policy} />
           </SelectTrigger>
@@ -989,6 +1004,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
         </Button>
         <FullResolveAction key={`${departmentId}:${weekStart}:${effectivePolicyVersionId}`} departmentId={departmentId} weekStart={weekStart}
           homeDestinationId={department?.home_destination_id ?? null} disabled={autoSolving}
+          onPolicyUsed={rememberUsedPolicy}
           policy={(policyOptionsQuery.data ?? []).find((policy) => policy.policyVersionId === effectivePolicyVersionId)
             ?? (activePolicyQuery.data?.policyVersionId === effectivePolicyVersionId ? activePolicyQuery.data ?? null : null)} />
         <Button variant="outline" size="sm" onClick={handleUndo} disabled={!undoStack.canUndo}>

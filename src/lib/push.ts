@@ -1,6 +1,8 @@
 import { registerPushSubscription, unregisterPushSubscription } from "@/features/auth/api";
 import { env } from "@/lib/env";
 
+const SERVICE_WORKER_TIMEOUT_MS = 10_000;
+
 /**
  * Web push subscribe/unsubscribe (UX_FLOWS.md §3.2/§3.8, ARCHITECTURE.md §9).
  * The service worker itself (`src/sw.ts`) is registered by `vite-plugin-pwa`
@@ -29,7 +31,15 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
 
 async function getRegistration(): Promise<ServiceWorkerRegistration | null> {
   if (!isPushSupported()) return null;
-  return navigator.serviceWorker.ready;
+  try {
+    return await Promise.race([
+      navigator.serviceWorker.ready,
+      new Promise<never>((_, reject) => window.setTimeout(() => reject(new Error("push_service_worker_timeout")), SERVICE_WORKER_TIMEOUT_MS)),
+    ]);
+  } catch (error) {
+    if (error instanceof Error && error.message === "push_service_worker_timeout") throw error;
+    throw new Error("push_service_worker_timeout");
+  }
 }
 
 /** The current subscription, if any — used to render "מופעל / כבוי" on Profile. */
@@ -52,14 +62,26 @@ export async function subscribeToPush(): Promise<PushSubscription> {
   if (permission !== "granted") {
     throw new Error("push_permission_denied");
   }
-  const registration = await navigator.serviceWorker.ready;
+  const registration = await getRegistration();
+  if (!registration) throw new Error("push_service_worker_timeout");
   const existing = await registration.pushManager.getSubscription();
-  const subscription =
-    existing ??
-    (await registration.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(env.VITE_VAPID_PUBLIC_KEY) as BufferSource,
-    }));
+  let subscription = existing;
+  if (!subscription) {
+    let applicationServerKey: Uint8Array;
+    try {
+      applicationServerKey = urlBase64ToUint8Array(env.VITE_VAPID_PUBLIC_KEY);
+    } catch {
+      throw new Error("push_vapid_key_invalid");
+    }
+    try {
+      subscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: applicationServerKey as BufferSource });
+    } catch (error) {
+      if (error instanceof DOMException && ["DataError", "InvalidAccessError"].includes(error.name)) {
+        throw new Error("push_vapid_key_invalid");
+      }
+      throw new Error("push_subscription_failed");
+    }
+  }
 
   const json = subscription.toJSON();
   if (!json.endpoint || !json.keys?.p256dh || !json.keys?.auth) {

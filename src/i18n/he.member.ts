@@ -146,6 +146,8 @@ export const heMember = {
   profileExtra: {
     detailsTitle: "פרטים",
     email: "אימייל",
+    displayName: "שם לתצוגה (כינוי / שם בעברית)",
+    displayNameHelp: "השם יופיע באפליקציה. השאירו ריק כדי להשתמש בשם מחשבון Google.",
     departmentsTitle: "מחלקות",
     defaultBadge: "ברירת מחדל",
     homeWeekTitle: "מסך הבית",

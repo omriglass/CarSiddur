@@ -25,6 +25,13 @@ begin
   update public.department_members set removed_at=now() where department_id=dept and profile_id=member_id;
   perform public.admin_approve_member(member_id,dept);
   assert (select removed_at is null from public.department_members where department_id=dept and profile_id=member_id), 'approval did not restore membership';
+  -- The final approved administrator cannot remove their own (or anyone's)
+  -- remaining admin access and leave the system unmanageable.
+  begin
+    update public.profiles set is_admin=false where id=admin_id;
+    raise exception 'last admin revocation accepted';
+  exception when raise_exception then if sqlerrm<>'last_admin_required' then raise; end if; end;
+  assert (select is_admin from public.profiles where id=admin_id), 'last admin was revoked';
   perform set_config('request.jwt.claims',jsonb_build_object('sub',member_id,'role','authenticated')::text,true);
   begin
     perform public.admin_set_sadran_assignments(dept,array[member_id],week_date);

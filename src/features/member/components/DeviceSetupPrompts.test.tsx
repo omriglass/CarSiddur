@@ -21,7 +21,7 @@ vi.mock("@/lib/push", () => ({
 vi.mock("@/features/auth/usePushSubscriptionStatus", () => ({
   usePushSubscriptionStatus: () => ({ isSubscribed: mocks.subscribed, isLoading: false, refresh: mocks.refresh }),
 }));
-vi.mock("@/lib/rpc", () => ({ showErrorToast: vi.fn() }));
+vi.mock("@/lib/rpc", () => ({ showErrorToast: vi.fn(), showDiagnosticErrorToast: vi.fn() }));
 
 function mount() {
   return render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><DeviceSetupPrompts /></QueryClientProvider>);

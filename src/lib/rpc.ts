@@ -27,6 +27,7 @@ export type ErrorCode =
   | "car_away_at_day_end"
   | "no_home_location"
   | "not_authorized"
+  | "last_admin_required"
   | "week_not_open"
   | "one_way_car_mode_required"
   | "manual_boost_requires_reason"
@@ -65,6 +66,12 @@ export type ErrorCode =
   | "companions_invalid"
   | "passenger_count_mismatch"
   | "quick_ride_unavailable"
+  | "push_unsupported"
+  | "push_permission_denied"
+  | "push_vapid_key_invalid"
+  | "push_service_worker_timeout"
+  | "push_subscription_incomplete"
+  | "push_subscription_failed"
   | "network"
   | "unknown";
 
@@ -78,6 +85,7 @@ const SQLSTATE_TO_CODE: Record<string, ErrorCode> = {
 const MESSAGE_TO_CODE: Record<string, ErrorCode> = {
   stale_input: "stale_input",
   not_authorized: "not_authorized",
+  last_admin_required: "last_admin_required",
   week_not_open: "week_not_open",
   one_way_car_mode_required: "one_way_car_mode_required",
   manual_boost_requires_reason: "manual_boost_requires_reason",
@@ -125,6 +133,12 @@ const MESSAGE_TO_CODE: Record<string, ErrorCode> = {
   invalid_companions: "companions_invalid",
   passenger_names_exceed_seats: "passenger_count_mismatch",
   invalid_quick_reservation: "quick_ride_unavailable",
+  push_unsupported: "push_unsupported",
+  push_permission_denied: "push_permission_denied",
+  push_vapid_key_invalid: "push_vapid_key_invalid",
+  push_service_worker_timeout: "push_service_worker_timeout",
+  push_subscription_incomplete: "push_subscription_incomplete",
+  push_subscription_failed: "push_subscription_failed",
 };
 
 const CODE_TO_MESSAGE: Record<ErrorCode, string> = {
@@ -134,6 +148,7 @@ const CODE_TO_MESSAGE: Record<ErrorCode, string> = {
   car_away_at_day_end: he.errors.carAwayAtDayEnd,
   no_home_location: he.errors.noHomeLocation,
   not_authorized: he.errors.notAuthorized,
+  last_admin_required: he.errors.lastAdminRequired,
   week_not_open: he.errors.weekNotOpen,
   one_way_car_mode_required: he.errors.oneWayCarModeRequired,
   manual_boost_requires_reason: he.errors.manualBoostRequiresReason,
@@ -172,6 +187,12 @@ const CODE_TO_MESSAGE: Record<ErrorCode, string> = {
   companions_invalid: he.ridePublicDetails.invalidCompanions,
   passenger_count_mismatch: he.ridePublicDetails.namesExceedSeats,
   quick_ride_unavailable: he.ridePublicDetails.invalidQuickReservation,
+  push_unsupported: he.errors.pushUnsupported,
+  push_permission_denied: he.errors.pushPermissionDenied,
+  push_vapid_key_invalid: he.errors.pushVapidKeyInvalid,
+  push_service_worker_timeout: he.errors.pushServiceWorkerTimeout,
+  push_subscription_incomplete: he.errors.pushSubscriptionIncomplete,
+  push_subscription_failed: he.errors.pushSubscriptionFailed,
   network: he.errors.network,
   unknown: he.errors.unknown,
 };
@@ -233,6 +254,13 @@ export function toAppError(error: unknown): AppError {
 export function showErrorToast(error: unknown): AppError {
   const appError = toAppError(error);
   toast.error(appError.message);
+  return appError;
+}
+
+/** Use for setup flows where a stable failure code helps support diagnose a device/browser issue. */
+export function showDiagnosticErrorToast(error: unknown): AppError {
+  const appError = toAppError(error);
+  toast.error(`${appError.message} · ${he.errors.errorCode}: ${appError.code}`);
   return appError;
 }
 

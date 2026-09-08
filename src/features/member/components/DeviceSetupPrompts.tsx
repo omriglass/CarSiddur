@@ -10,7 +10,7 @@ import { t } from "@/i18n/he";
 import { clearInstallPrompt, useInstallPrompt } from "@/lib/installPrompt";
 import { getCurrentPushSubscription, isPushSupported, subscribeToPush } from "@/lib/push";
 import { detectPlatform } from "@/lib/pwaPlatform";
-import { showErrorToast } from "@/lib/rpc";
+import { showDiagnosticErrorToast, showErrorToast } from "@/lib/rpc";
 
 const SNOOZE_MS = 7 * 24 * 60 * 60 * 1000;
 function useDismissal(kind: string) {
@@ -64,7 +64,7 @@ export function DeviceSetupPrompts() {
     try {
       await subscribeToPush();
       await Promise.all([localPush.refetch(), serverPush.refresh()]);
-    } catch (error) { showErrorToast(error); }
+    } catch (error) { showDiagnosticErrorToast(error); }
     finally {
       setPermission(Notification.permission);
       setBusy(false);

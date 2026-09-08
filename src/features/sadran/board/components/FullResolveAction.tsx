@@ -22,11 +22,12 @@ interface FullResolveActionProps {
   weekStart: string;
   homeDestinationId: string | null;
   policy: ActivePolicy | null;
+  onPolicyUsed?: (policyVersionId: string) => void;
   disabled?: boolean;
 }
 
 /** Full solving replaces unpinned placements only after reviewing the concrete diff. */
-export function FullResolveAction({ departmentId, weekStart, homeDestinationId, policy, disabled }: FullResolveActionProps) {
+export function FullResolveAction({ departmentId, weekStart, homeDestinationId, policy, onPolicyUsed, disabled }: FullResolveActionProps) {
   const weekQuery = useWeekRow(departmentId, weekStart);
   const rideTypesQuery = useRideTypes(departmentId);
   const applyMutation = useApplySolverResultMutation();
@@ -40,6 +41,7 @@ export function FullResolveAction({ departmentId, weekStart, homeDestinationId, 
       const context = await gatherSolverContext({ departmentId, weekStart, homeDestinationId, policy, mode: "full" });
       const startedAtMs = nowMs();
       const output = runSolve(context.input);
+      onPolicyUsed?.(policy.policyVersionId);
       const finishedAtMs = nowMs();
       const diff = computeFullResolveDiff(context, output);
       // Replace the legacy UUID/timestamp fallback with recognizable ride details.

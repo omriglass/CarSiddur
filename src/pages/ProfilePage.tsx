@@ -30,7 +30,7 @@ import {
 import { MUTE_CATEGORIES } from "@/features/inbox/muteCategories";
 import { he } from "@/i18n/he";
 import { isPushSupported, subscribeToPush, unsubscribeFromPush } from "@/lib/push";
-import { showErrorToast } from "@/lib/rpc";
+import { showDiagnosticErrorToast } from "@/lib/rpc";
 import { supabase } from "@/integrations/supabase/client";
 
 import type { Database } from "@/integrations/supabase/types";
@@ -86,7 +86,7 @@ export function ProfilePage() {
       }
       pushStatus.refresh();
     } catch (error) {
-      showErrorToast(error);
+      showDiagnosticErrorToast(error);
     } finally {
       setPushBusy(false);
     }
@@ -117,6 +117,17 @@ export function ProfilePage() {
           <div className="space-y-1">
             <Label>{he.field.fullName}</Label>
             <Input value={profileQuery.data?.full_name ?? ""} readOnly />
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="profile-display-name">{he.profileExtra.displayName}</Label>
+            <Input
+              id="profile-display-name"
+              key={profileQuery.data?.display_name ?? ""}
+              defaultValue={profileQuery.data?.display_name ?? ""}
+              placeholder={profileQuery.data?.google_name ?? profileQuery.data?.full_name ?? ""}
+              onBlur={(e) => updateProfileMutation.mutate({ display_name: e.target.value })}
+            />
+            <p className="text-xs text-muted-foreground">{he.profileExtra.displayNameHelp}</p>
           </div>
           <div className="space-y-1">
             <Label>{he.profileExtra.email}</Label>

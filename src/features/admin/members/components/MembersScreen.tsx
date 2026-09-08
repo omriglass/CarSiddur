@@ -12,6 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { useDepartments } from "@/features/siddur/hooks";
+import { useSession } from "@/features/auth/useSession";
 import { he, tv } from "@/i18n/he";
 import { showErrorToast } from "@/lib/rpc";
 import { Users } from "lucide-react";
@@ -39,6 +40,7 @@ const ROLE_LABEL: Record<"member" | "sadran" | "admin", string> = {
 };
 
 function MembersTab() {
+  const { session } = useSession();
   const profilesQuery = useAllProfiles();
   const deptMembersQuery = useAllDepartmentMembers();
   const departmentsQuery = useDepartments();
@@ -137,7 +139,8 @@ function MembersTab() {
                 </div>
               </TableCell>
               <TableCell>
-                <Button size="sm" variant={profile.is_admin ? "default" : "outline"} onClick={() => toggleAdmin(profile)}>
+                <Button size="sm" variant={profile.is_admin ? "default" : "outline"} onClick={() => toggleAdmin(profile)}
+                  disabled={revokeAdminMutation.isPending || (profile.is_admin && profile.id === session?.user.id && (profilesQuery.data ?? []).filter((candidate) => candidate.is_admin && candidate.approval_status === "approved").length === 1)}>
                   {profile.is_admin ? he.adminMembers.revokeAdmin : he.adminMembers.grantAdmin}
                 </Button>
               </TableCell>

@@ -11,7 +11,7 @@ export type Profile = Database["public"]["Tables"]["profiles"]["Row"];
 export type ProfilePatch = Partial<
   Pick<
     Profile,
-    "full_name" | "phone" | "default_department_id" | "home_week_preference" | "muted_events"
+    "full_name" | "display_name" | "phone" | "default_department_id" | "home_week_preference" | "muted_events"
   >
 >;
 

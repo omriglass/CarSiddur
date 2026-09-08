@@ -337,7 +337,7 @@ export function SiddurPage() {
         title={t("screen.siddur.title")}
         subtitle={weekStart ? formatWeekRangeLabel(weekStart) : undefined}
         actions={
-          (myDepartmentsQuery.data?.length ?? 0) > 1 || (departmentsQuery.data?.length ?? 0) > 1 ? (
+          (myDepartmentsQuery.data?.length ?? 0) > 1 ? (
             <Select
               value={departmentId}
               onValueChange={(next) => { active.setDepartmentId(next); goTo(next, undefined); }}
@@ -346,9 +346,9 @@ export function SiddurPage() {
                 <SelectValue placeholder={he.siddur.departmentSwitcher} />
               </SelectTrigger>
               <SelectContent>
-                {(departmentsQuery.data ?? []).map((d) => (
-                  <SelectItem key={d.id} value={d.id}>
-                    {d.name}
+                {(myDepartmentsQuery.data ?? []).map((membership) => (
+                  <SelectItem key={membership.department_id} value={membership.department_id}>
+                    {membership.department.name}
                   </SelectItem>
                 ))}
               </SelectContent>

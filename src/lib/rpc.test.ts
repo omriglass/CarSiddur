@@ -21,4 +21,10 @@ describe("proposal send errors", () => {
     expect(toAppError({ message: "proposal_replacement_answered" }).message).toBe(he.sadranProposal.replacementAnswered);
     expect(toAppError({ message: "proposal_not_draft" }).message).toBe(he.sadranProposal.noLongerDraft);
   });
+
+  it("classifies push-subscription failures into a copyable diagnostic code", () => {
+    expect(toAppError(new Error("push_vapid_key_invalid"))).toMatchObject({
+      code: "push_vapid_key_invalid", message: he.errors.pushVapidKeyInvalid,
+    });
+  });
 });
