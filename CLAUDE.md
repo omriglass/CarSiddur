@@ -181,7 +181,7 @@ scripts/
 | Tables, enums, RLS matrix, migration plan | `docs/DATA_MODEL.md` §2, §3, §4.3, §6 |
 | Request / proposal / week / ride states | REQ §5.2, §7.3, §4; `ARCHITECTURE.md` §5; `src/lib/enums.ts` |
 | Rule types, scoring, suggestion order | `docs/SOLVER.md` §4.3, §3.11; `src/solver/rules/` |
-| Notification events (canonical list + copy), pipeline, templates | `UX_FLOWS.md` §6 (canonical 20 events); `ARCHITECTURE.md` §9; `DATA_MODEL.md` §3.11 (`enqueue_notification`, `notifications`, `push_outbox`, `notification_templates`); REQ §9 |
+| Notification events (canonical list + copy), pipeline, templates | `UX_FLOWS.md` §6 (canonical 21 events); `ARCHITECTURE.md` §9; `DATA_MODEL.md` §3.11 (`enqueue_notification`, `notifications`, `push_outbox`, `notification_templates`); REQ §9 |
 | Weekly cycle, cron | REQ §4; `ARCHITECTURE.md` §10 (`app.tick()`); `DATA_MODEL.md` `department_settings`, `weeks`, §6 step 17 `20260907091600_cron.sql` |
 | Suggestion kind → proposal type | `SOLVER.md` §3.15 |
 | Screens, routes, Hebrew copy, i18n key plan | `docs/UX_FLOWS.md` §2.1 routes, §3–5 screens, §6 notification/WhatsApp copy, §10 i18n keys; `src/i18n/he.ts` |
@@ -220,7 +220,7 @@ Final; applied across all docs, skills and agents. Do not relitigate — if code
 2. Seed file is `supabase/seed.sql` (Supabase CLI default); demo seed data is described in DATA_MODEL §6.
 3. Migrations use the Supabase CLI form `YYYYMMDDHHMMSS_short_name.sql`; the 18-step initial plan starts at `20260907090000_extensions_and_enums.sql` (DATA_MODEL §6).
 4. `week_phase` = `open, solving, published, live, archived`; after the target week ends the week is `archived` (read-only, kept for fairness stats). No `closed`.
-5. One canonical `notification_event` list: the 20 events of UX_FLOWS §6.1 (enum value = snake_case of the `notif.*` key suffix); DATA_MODEL §2 and ARCHITECTURE §9 list exactly those; REQ §9 prose names nothing outside it.
+5. One canonical `notification_event` list: the 21 events of UX_FLOWS §6.1 (enum value = snake_case of the `notif.*` key suffix); DATA_MODEL §2 and ARCHITECTURE §9 list exactly those; REQ §9 prose names nothing outside it.
 6. Notification plumbing: `enqueue_notification(...)` writes one `notifications` row (inbox) plus one `push_outbox` row per active push subscription; pg_net/`drain_push_outbox()` deliver via the `push-dispatch` edge function with retries and 404/410 pruning; mutes in `profiles.muted_events notification_event[]` (Sadran-role events unmutable while assigned, enforced in enqueue); copy in the admin-editable `notification_templates` table (event, channel, variant, title, body) seeded from UX_FLOWS §6. No `notification_prefs`, no templates in `app_settings`.
 7. Exactly one pg_cron entry: `app.tick()` every 15 minutes computes Asia/Jerusalem time and calls `advance_week_phases()`, `send_due_reminders()`, `expire_proposals()`, `drain_push_outbox()`, `housekeeping()`; the daily GitHub Actions keep-alive stays.
 8. Requests are created/edited only via the `submit_request(payload jsonb)` SECURITY DEFINER RPC (validates §5.3, computes `is_late`, duplicate warning, versioning, audit; in `live` weeks calls `try_auto_approve`). Members SELECT own requests directly; no direct INSERT/UPDATE policies on `requests`.

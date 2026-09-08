@@ -4,27 +4,10 @@ import { formatWeekRangeLabel } from "@/components/DateField";
 import { PageHeader } from "@/components/PageHeader";
 import { useMyDepartments } from "@/features/auth/useMyDepartments";
 import { useProfile } from "@/features/auth/useProfile";
+import { resolveWeekStart } from "@/features/requests/resolveWeekStart";
 import { RequestForm, type JoinRidePrefill } from "@/features/requests/components/RequestForm";
 import { useCarForRide, useBoardRideById, useWeeks } from "@/features/siddur/hooks";
 import { he } from "@/i18n/he";
-
-/**
- * Resolves the target week for a new request: an explicit `?week=` override if it names a
- * real week (Stage 3 hardening addition, below), else the next Open week (smart default of
- * UX_FLOWS §3.4), else — if none is open right now — the current Live week, so
- * REQUIREMENTS §8's "new request on a free car" / "new request with no free car" live-changes
- * rows have a real submission path at all.
- */
-function resolveWeekStart(
-  weeks: readonly { week_start: string; phase: string }[],
-  weekOverride: string | undefined,
-): string | undefined {
-  if (weekOverride && weeks.some((w) => w.week_start === weekOverride)) return weekOverride;
-  const open = [...weeks].filter((w) => w.phase === "open").sort((a, b) => (a.week_start < b.week_start ? -1 : 1))[0];
-  if (open) return open.week_start;
-  return [...weeks].filter((w) => w.phase === "live").sort((a, b) => (a.week_start < b.week_start ? -1 : 1))[0]
-    ?.week_start;
-}
 
 /**
  * `/requests/new` (UX_FLOWS.md §3.4). `?ride=<id>` prefills an "ask to join"

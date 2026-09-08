@@ -3,6 +3,8 @@ import { toast } from "sonner";
 
 import { EmptyState } from "@/components/EmptyState";
 import { PageHeader } from "@/components/PageHeader";
+import { Input } from "@/components/ui/input";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -16,6 +18,7 @@ import { Users } from "lucide-react";
 
 import { parseInviteLines, type ParsedInviteRow } from "../lib/parseInviteLines";
 import {
+  useUpdateMemberDetailsMutation,
   useAllDepartmentMembers,
   useAllProfiles,
   useApproveMemberMutation,
@@ -42,6 +45,8 @@ function MembersTab() {
   const grantAdminMutation = useGrantAdminMutation();
   const revokeAdminMutation = useRevokeAdminMutation();
   const setRoleMutation = useSetMemberRoleMutation();
+  const updateDetailsMutation = useUpdateMemberDetailsMutation();
+  const [editing, setEditing] = useState<{ profileId: string; fullName: string; phone: string } | null>(null);
 
   const approvedProfiles = (profilesQuery.data ?? []).filter((p) => p.approval_status !== "pending");
   const profileIds = approvedProfiles.map((p) => p.id);
@@ -79,6 +84,7 @@ function MembersTab() {
   }
 
   return (
+    <>
     <Table>
       <TableHeader>
         <TableRow>
@@ -94,7 +100,11 @@ function MembersTab() {
           const memberships = membershipsByProfile.get(profile.id) ?? [];
           return (
             <TableRow key={profile.id}>
-              <TableCell>{profile.full_name}</TableCell>
+              <TableCell>
+                <Button variant="link" className="h-auto p-0" onClick={() => setEditing({
+                  profileId: profile.id, fullName: profile.full_name, phone: phonesQuery.data?.[profile.id] ?? "",
+                })} disabled={phonesQuery.isPending || phonesQuery.isError}>{profile.full_name}</Button>
+              </TableCell>
               <TableCell dir="ltr">{profile.email}</TableCell>
               <TableCell dir="ltr">{phonesQuery.data?.[profile.id] ?? "—"}</TableCell>
               <TableCell>
@@ -103,12 +113,13 @@ function MembersTab() {
                     <Select
                       key={m.departmentId}
                       value={m.role}
+                      disabled={setRoleMutation.isPending}
                       onValueChange={(role) =>
                         setRoleMutation.mutate({
                           departmentId: m.departmentId,
                           profileId: profile.id,
                           role: role as "member" | "sadran" | "admin",
-                        })
+                        }, { onSuccess: () => toast.success(he.adminCommon.savedToast), onError: showErrorToast })
                       }
                     >
                       <SelectTrigger className="h-7 w-auto gap-1 px-2 text-xs">
@@ -135,6 +146,29 @@ function MembersTab() {
         })}
       </TableBody>
     </Table>
+    <Dialog open={!!editing} onOpenChange={(open) => !open && setEditing(null)}>
+      <DialogContent>
+        <DialogHeader><DialogTitle>{he.adminMembers.editDetails}</DialogTitle></DialogHeader>
+        <label className="grid gap-2">{he.adminMembers.columnName}
+          <Input value={editing?.fullName ?? ""} onChange={(e) => setEditing((old) => old && ({ ...old, fullName: e.target.value }))} />
+        </label>
+        <label className="grid gap-2">{he.adminMembers.columnPhone}
+          <Input type="tel" dir="ltr" value={editing?.phone ?? ""} onChange={(e) => setEditing((old) => old && ({ ...old, phone: e.target.value }))} />
+        </label>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setEditing(null)}>{he.adminCommon.cancel}</Button>
+          <Button disabled={!editing?.fullName.trim() || updateDetailsMutation.isPending} onClick={async () => {
+            if (!editing) return;
+            try {
+              await updateDetailsMutation.mutateAsync(editing);
+              toast.success(he.adminCommon.savedToast);
+              setEditing(null);
+            } catch (error) { showErrorToast(error); }
+          }}>{he.adminCommon.save}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }
 

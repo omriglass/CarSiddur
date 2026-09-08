@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
+  updateMemberDetails,
   addMemberToDepartment,
   approveMember,
   fetchAllDepartmentMembers,
@@ -106,6 +107,15 @@ export function useImportAllowListMutation() {
   return useMutation({
     mutationFn: ({ rows, departmentId }: { rows: ImportRow[]; departmentId: string }) =>
       importAllowList(rows, departmentId),
+    onSuccess: invalidate,
+  });
+}
+
+export function useUpdateMemberDetailsMutation() {
+  const invalidate = useInvalidateMembers();
+  return useMutation({
+    mutationFn: ({ profileId, fullName, phone }: { profileId: string; fullName: string; phone: string }) =>
+      updateMemberDetails(profileId, fullName, phone),
     onSuccess: invalidate,
   });
 }

@@ -2818,6 +2818,22 @@ export type Database = {
       }
     }
     Functions: {
+      admin_approve_member: {
+        Args: { p_department_id: string; p_profile_id: string }
+        Returns: undefined
+      }
+      admin_set_sadran_assignments: {
+        Args: {
+          p_department_id: string
+          p_profile_ids: string[]
+          p_week_start?: string
+        }
+        Returns: undefined
+      }
+      admin_update_member: {
+        Args: { p_details: Json; p_profile_id: string }
+        Returns: undefined
+      }
       advance_week_phases: { Args: { p_now?: string }; Returns: number }
       answer_proposal: {
         Args: {
@@ -2950,6 +2966,10 @@ export type Database = {
         }
         Returns: string
       }
+      ensure_department_weeks: {
+        Args: { p_department_id: string }
+        Returns: undefined
+      }
       expire_freed_offers: { Args: { _now?: string }; Returns: number }
       expire_proposals: { Args: { _now?: string }; Returns: number }
       fairness_stats: {
@@ -2996,6 +3016,10 @@ export type Database = {
       is_week_public: {
         Args: { _dept: string; _week: string }
         Returns: boolean
+      }
+      materialize_department_weeks: {
+        Args: { p_department_id: string; p_now: string }
+        Returns: number
       }
       materialize_templates: { Args: never; Returns: number }
       maybe_apply_accepted_proposal: {
@@ -3275,6 +3299,7 @@ export type Database = {
         | "request_changed"
         | "access_request"
         | "access_approved"
+        | "status_changed"
       party_response: "pending" | "accepted" | "declined"
       proposal_status:
         | "draft"
@@ -3479,6 +3504,7 @@ export const Constants = {
         "request_changed",
         "access_request",
         "access_approved",
+        "status_changed",
       ],
       party_response: ["pending", "accepted", "declined"],
       proposal_status: [

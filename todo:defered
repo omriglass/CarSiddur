@@ -1,0 +1,4 @@
+# Deferred work
+
+- [ ] Calculate destination distance and driving time with Google Maps from each department's own start/home location. Store results per department and destination, define refresh behavior, and keep manual corrections possible. Decide API credentials, quota and billing before enabling the integration.
+- [ ] Make each department an independent app context: destinations, fleet, settings, policies and other operational data belong to that department. Add a home-page department selector; switching must update all views, forms and query caches together. Users with multiple memberships can switch to view and submit to the selected department's Siddur. Enforce isolation in database permissions and migrate existing shared data deliberately.

@@ -41,6 +41,7 @@ export const notificationEventLabels: Record<string, string> = {
   request_changed: "בקשה עודכנה",
   access_request: "בקשת הרשמה חדשה",
   access_approved: "ההרשמה אושרה",
+  status_changed: "שינוי בסטטוס או בתפקיד",
 };
 
 export const heAdmin = {
@@ -109,6 +110,7 @@ export const heAdmin = {
     fieldBoardStart: "שעת התחלת לוח",
   },
   adminMembers: {
+    editDetails: "עריכת פרטי משתמש",
     title: "חברים",
     tabMembers: "חברים",
     tabPending: "ממתינים לאישור",

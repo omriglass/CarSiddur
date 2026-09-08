@@ -378,3 +378,26 @@ select 'proposal_received',channel,'ride_change',
   'בקשה לרכב ב־{{date}} {{depart}}–{{return}}. האם לאשר את ביטול הנסיעה שלך?'
 from unnest(array['inbox','push']::public.notification_channel[]) channel
 on conflict (event,channel,(coalesce(variant,''))) do update set title=excluded.title,body=excluded.body,default_title=excluded.default_title,default_body=excluded.default_body;
+
+-- Account and membership status messages. Copy is data; emitters select variants.
+insert into public.notification_templates(event,channel,variant,title,body,default_title,default_body)
+select 'status_changed', ch, t.variant, t.title, t.body, t.title, t.body
+from (values
+  (null::text, 'הסטטוס שלך עודכן', 'פרטי הגישה או התפקיד שלך עודכנו.'),
+  ('pending', 'הגישה שלך ממתינה לאישור', 'החשבון שלך ממתין לאישור מנהל/ת.'),
+  ('blocked', 'הגישה שלך נחסמה', 'לפנייה לגבי הגישה, יש ליצור קשר עם מנהל/ת המערכת.'),
+  ('admin_granted', 'קיבלת הרשאות מנהל/ת', 'כעת אפשר לנהל את המערכת.'),
+  ('admin_revoked', 'הרשאות הניהול שלך הוסרו', 'הרשאות מנהל/ת המערכת שלך הוסרו.'),
+  ('sadran', 'מונית לסדרן/ית', 'התפקיד שלך במחלקת {{departmentName}} עודכן לסדרן/ית.'),
+  ('member', 'התפקיד שלך עודכן לחבר/ה', 'התפקיד שלך במחלקת {{departmentName}} עודכן לחבר/ה.'),
+  ('removed', 'החברות שלך במחלקה הוסרה', 'החברות שלך במחלקת {{departmentName}} הוסרה.')
+) t(variant,title,body)
+cross join unnest(array['inbox','push']::public.notification_channel[]) ch
+on conflict (event,channel,(coalesce(variant,''))) do nothing;
+
+-- Persisted copy is available in hosted deployments that do not load demo seed data.
+insert into public.notification_templates(event,channel,variant,title,body,default_title,default_body)
+select 'window_open',ch,'sadran',t.title,t.body,t.title,t.body from (values
+  ('תזכורת לסדרן לשבוע {{weekLabel}}','את/ה הסדרן לשבוע {{weekLabel}}. חלון הבקשות נסגר אוטומטית ב־{{closeTime}}. יש לפרסם את הסידור עד {{publishTime}}.')
+) t(title,body) cross join unnest(array['inbox','push']::public.notification_channel[]) ch
+on conflict(event,channel,coalesce(variant,'')) do nothing;

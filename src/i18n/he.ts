@@ -517,6 +517,7 @@ export const he = {
     requestChanged: "בקשה עודכנה",
     accessRequest: "בקשת הרשמה חדשה",
     accessApproved: "ההרשמה אושרה",
+    statusChanged: "שינוי בסטטוס או בתפקיד",
   },
   car: {
     status: {

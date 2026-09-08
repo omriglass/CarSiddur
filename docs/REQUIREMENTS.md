@@ -55,7 +55,8 @@ The app **proposes**; a human always makes the final decision.
 
 Rules:
 - Roles are per department: a person may be Sadran of one department and a plain member of another.
-- Sadran assignment is per department per target week, with an optional standing default Sadran.
+- Sadran assignment is per department per target week, with an optional standing default Sadran. Admins may assign any approved active department member; saving promotes a selected member to Sadran atomically with the roster update. Invalid replacements leave the previous roster intact.
+- Admins can edit member names and phone numbers, approve members into a department atomically, and change department roles with visible save/error feedback.
 - There may be several Sadranim for one department and week (any of them may act).
 - Admin actions are global.
 
@@ -71,6 +72,8 @@ All times are Asia/Jerusalem. Everything below is **configurable per department*
 | **Solving** | Wednesday | Request window closes for members (late requests still allowed but flagged "late"). Sadran runs solver, reviews proposed siddur, negotiates leftovers via proposals. |
 | **Published** | Wednesday evening / Thursday morning | Sadran publishes. Every member is notified of their outcome. |
 | **Live** | From publish until end of target week | Changes happen: cancellations, new requests, edits. Rules in §8. |
+
+Missing weeks whose scheduled opening has passed are automatically created for the current target week through the configured look-ahead horizon, including after initial deployment or a missed scheduler run. Authenticated department members trigger the same scoped catch-up when loading weeks. Existing weeks and their overrides are preserved; elapsed closing deadlines move open weeks to solving, where new requests are accepted as late requests. Opening a week also reminds its effective Sadranim of the target week, automatic closing time, and publication deadline. (Owner deployment fixes, 2026-09-08.)
 
 A department can have several target weeks in different phases at once (next week *Published/Live*, the one after *Open*). After the target week ends (Saturday 23:59) the week becomes **Archived**: read-only, kept for history and fairness statistics.
 
@@ -270,7 +273,7 @@ Channels, in priority order, all free:
 3. **WhatsApp** — outbound only, via click-to-chat links generated for the Sadran (proposals, reminders). No API.
 4. **Email** — later; only if a free provider tier suffices.
 
-Events that notify: request window opening/closing reminders, request window closed — solve now (to Sadran), publish reminder when the planned publish time passes and the week is still being solved (to Sadran), siddur published, your outcome changed, proposal received, proposal answered (to Sadran), freed slot available, freed slot auto-assigned to you, several claimants for a freed slot (to Sadran), claim approved/declined, car maintenance affecting you, new late/waitlisted request (to Sadran), request auto-approved in a live week (member, Sadran informed), request edited after solving started (to Sadran), access request from an unknown account (to Admin), access approved. The canonical list (20 events) with Hebrew copy is `UX_FLOWS.md` §6.1. WhatsApp texts exist for every proposal type, including `external` (§13.59).
+Events that notify: request window opening/closing reminders, request window closed — solve now (to Sadran), publish reminder when the planned publish time passes and the week is still being solved (to Sadran), siddur published, your outcome changed, proposal received, proposal answered (to Sadran), freed slot available, freed slot auto-assigned to you, several claimants for a freed slot (to Sadran), claim approved/declined, car maintenance affecting you, new late/waitlisted request (to Sadran), request auto-approved in a live week (member, Sadran informed), request edited after solving started (to Sadran), access request from an unknown account (to Admin), access approved, and changes to account approval, Admin privileges, or department role/membership (to the affected user). Status alerts identify the resulting status; pending access requests link admins to member approval. The canonical list (21 events) with Hebrew copy is `UX_FLOWS.md` §6.1. WhatsApp texts exist for every proposal type, including `external` (§13.59).
 
 Members can mute categories; Sadran alerts cannot be muted while assigned.
 
@@ -424,3 +427,9 @@ The Siddur table scrolls vertically with the page rather than inside an independ
 
 ### Mobile table and page scrolling (owner clarification)
 The unassigned list scrolls with the page, including tablets. Mobile members and coordinators can choose the existing card view or the time-by-car table. Tables support zoom and landscape viewing; where automatic orientation is unavailable, prompt the user to rotate their device. Do not introduce an independently scrolling vertical table or unassigned panel.
+
+### Deployment reliability and deferred department work (2026-09-08)
+
+All application routes must support direct navigation, refresh and browser Back/Forward on the production static host, including signed-out proposal links before service-worker installation.
+
+`todo:defered` tracks Google Maps distance/time calculations per department origin and full department isolation with an explicit home-page context selector. These two changes are deferred; multi-department membership must remain supported when implementing them.

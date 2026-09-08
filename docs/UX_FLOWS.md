@@ -561,7 +561,7 @@ Ordered list (drag handle), name, icon picker, active. Initial values from REQUI
 Each `PolicyRuleRow` has an enable switch, a `WeightSlider` (0–10, step 0.1, numeric input beside it — the seeded default policy in SOLVER.md §4.4 uses weights such as 0.3 and 0.4) and a params editor specific to the rule type (map editor for ride types keyed by `ride_types.code`, `maxKm` for distance, `lookbackWeeks` for fairness; param names come from `ruleRegistry[type].defaultParams`). **בדיקה על השבוע שעבר** re-scores the previous week's requests with the edited (unsaved) policy and shows the `RankingPreviewTable` with rank deltas, plus a dry-run solver pass reporting which requests would flip between served and unmet. Saving always creates a new version (REQUIREMENTS §7.2); "הפוך לפעילה במחלקה…" assigns it. History tab lists versions with notes and which solver runs used them.
 
 ### 5.9 Notification templates (`/admin/templates`)
-Edits the `notification_templates` table (DATA_MODEL §3.11): for each of the 20 events in §6.1 an inbox row and a push row, plus the seven WhatsApp templates in §6.2 (`channel = whatsapp`, `variant` = shift / merge_passenger / merge_driver / deny / external / chauffeur / reminder). Editor: title, body (textarea), placeholder chips that insert `{{…}}` at the caret, live preview with sample data, "שחזר ברירת מחדל" (re-inserts the seed row). Validation blocks removing the `{{link}}` placeholder from WhatsApp templates and enforces the push length limits.
+Edits the `notification_templates` table (DATA_MODEL §3.11): for each of the 21 events in §6.1 an inbox row and a push row, plus the seven WhatsApp templates in §6.2 (`channel = whatsapp`, `variant` = shift / merge_passenger / merge_driver / deny / external / chauffeur / reminder). Editor: title, body (textarea), placeholder chips that insert `{{…}}` at the caret, live preview with sample data, "שחזר ברירת מחדל" (re-inserts the seed row). Validation blocks removing the `{{link}}` placeholder from WhatsApp templates and enforces the push length limits.
 
 ### 5.10 Settings (`/admin/settings`)
 Per department (with a global default row): request window open (day + time), close (day + time), planned publish time (used as default proposal expiry), grid hours (06:00–23:59), turnaround buffer (30 min), day end (default 23:59 — every shared car must be home by then unless the Sadran acknowledges an overnight stay), chauffeur dwell (default 10 min), detour limit (20 min / 15 km), auto-apply proposals when all accepted (on). Time inputs use `TimeField15`. Two settings from the reference app are **gone in v0.3** (DATA_MODEL §3.1): rides must end on their starting day by 23:59 (`rides.overflow_allowed` is retained only for legacy data — REQ §13.62), and any member may register a temporary car with no admin gate (an admin can only revoke one — REQ §13.53).
@@ -574,7 +574,7 @@ Placeholders: `{{firstName}}`, `{{sadranName}}`, `{{dept}}`, `{{weekLabel}}` (e.
 
 ### 6.1 Push / inbox events (REQUIREMENTS §9) — the canonical event list
 
-This table **is** the `notification_event` enum (DATA_MODEL §2) and ARCHITECTURE §9's event list: exactly these 20 events, no others. The enum value is the snake_case of the i18n key suffix (`notif.freedSlotAuto` → `freed_slot_auto`). The i18n key holds only the short label used in the mute list and inbox filters; Title and Body are the **seeded defaults** of the `inbox` and `push` rows in `notification_templates`, editable by admins (§5.9). "(to Sadran)" events are Sadran-role events that cannot be muted while assigned.
+This table **is** the `notification_event` enum (DATA_MODEL §2) and ARCHITECTURE §9's event list: exactly these 21 events, no others. The enum value is the snake_case of the i18n key suffix (`notif.freedSlotAuto` → `freed_slot_auto`). The i18n key holds only the short label used in the mute list and inbox filters; Title and Body are the **seeded defaults** of the `inbox` and `push` rows in `notification_templates`, editable by admins (§5.9). "(to Sadran)" events are Sadran-role events that cannot be muted while assigned.
 
 | Key | Enum value | Event | Title | Body |
 |---|---|---|---|---|
@@ -597,9 +597,10 @@ This table **is** the `notification_event` enum (DATA_MODEL §2) and ARCHITECTUR
 | `notif.requestChanged` | `request_changed` | Member edited after solving started (to Sadran) | {{firstName}} שינה/תה בקשה | {{destination}}, {{day}} — {{diffLine}} |
 | `notif.accessRequest` | `access_request` | Unknown account signed in (to Admin) | בקשת גישה חדשה | {{email}} מבקש/ת להצטרף. |
 | `notif.accessApproved` | `access_approved` | Approved (to member; push/inbox now, email channel in v1.x — REQUIREMENTS §14.10) | הגישה שלך אושרה | אפשר להיכנס לסידור הרכב של נבו. |
+| `notif.statusChanged` | `status_changed` | Approval status, Admin privileges, or department membership/role changed (to affected user) | הסטטוס שלך עודכן | פרטי הגישה או התפקיד שלך עודכנו. |
 | `notif.publishReminder` | `publish_reminder` | Planned publish time passed, week still solving (to Sadran; fired once by `send_due_reminders()`) | תזכורת: הסידור לשבוע {{weekLabel}} עדיין לא פורסם | שעת הפרסום המתוכננת עברה. אפשר לפרסם או להמשיך לנהל את הבקשות שנותרו. |
 
-Mute categories (§3.8) → events: תזכורות על חלון בקשות = `window_open`, `window_closing`; פרסום הסידור = `published`, `outcome_changed`; הצעות = `proposal_received`; מקומות שמתפנים = `freed_slot`, `freed_slot_auto`, `claim_approved`, `claim_declined`; תקלות ותחזוקה = `maintenance_affects`. Sadran/Admin events and `auto_approved`/`access_approved` are not mutable.
+Mute categories (§3.8) → events: תזכורות על חלון בקשות = `window_open`, `window_closing`; פרסום הסידור = `published`, `outcome_changed`; הצעות = `proposal_received`; מקומות שמתפנים = `freed_slot`, `freed_slot_auto`, `claim_approved`, `claim_declined`; תקלות ותחזוקה = `maintenance_affects`. Sadran/Admin events and `auto_approved`/`access_approved`/`status_changed` are not mutable.
 
 ### 6.2 WhatsApp proposal templates (`wa.me` text)
 
@@ -1309,3 +1310,7 @@ The immediate-car action is labeled **רוצה רכב עכשיו!** and appears 
 Both Siddur and coordinator board offer cards (default) and table below the desktop breakpoint. Table controls zoom from 50% to 150%, reset to 100%, and request landscape fullscreen where supported. Unsupported orientation lock shows a rotate-phone instruction; the ordinary responsive table works after manual rotation. Exiting landscape or leaving the screen releases fullscreen owned by the view. Fullscreen uses the document so ride dialogs remain available. Zoom scales the actual layout, preserving measured pointer/drop coordinates.
 
 The unassigned list has no height cap or independent vertical scrolling. In table view it follows the grid on smaller screens and sits alongside it on desktop; card view keeps its unassigned segment. The tablet bottom drawer is removed. Both panels contribute their full height to page scrolling; horizontal table scrolling remains available.
+
+### Admin deployment fixes (2026-09-08)
+
+Member names in the admin member table open a name/phone editor. Department-role changes show success/error toasts and wait for the server before another change. Roster pickers offer approved active department members; selecting an ordinary member promotes them automatically on save. Both standing and weekly roster saves are atomic; errors preserve the existing roster.

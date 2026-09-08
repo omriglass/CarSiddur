@@ -20,6 +20,42 @@ test.describe("admin", () => {
     await expect(page).toHaveURL(/\/my$/);
   });
 
+  test("edits member details and promotes an ordinary member through the weekly roster", async ({ page }) => {
+    await page.goto("/admin/members");
+    const row = page.getByRole("row").filter({ hasText: "member2@nevo.local" });
+    const nameButton = row.getByRole("button").first();
+    const originalName = await nameButton.innerText();
+    await nameButton.click();
+    const editor = page.getByRole("dialog");
+    const originalPhone = await editor.getByLabel(he.adminMembers.columnPhone).inputValue();
+    const editedName = `Member edit ${Date.now()}`;
+    await editor.getByLabel(he.adminMembers.columnName).fill(editedName);
+    await editor.getByLabel(he.adminMembers.columnPhone).fill("+972509998877");
+    await editor.getByRole("button", { name: he.adminCommon.save, exact: true }).click();
+    await expect(editor).not.toBeVisible();
+    await expect(row).toContainText(editedName);
+    await expect(row).toContainText("+972509998877");
+    await row.getByRole("combobox").click();
+    await page.getByRole("option", { name: he.adminMembers.roleMember, exact: true }).click();
+    await expect(row.getByRole("combobox")).toContainText(he.adminMembers.roleMember);
+
+    await page.goto("/admin/roster");
+    // A distant week avoids changing the current live fixture's coordinator.
+    const cell = page.locator("tbody tr").last().locator("td").nth(1);
+    await cell.click();
+    await page.getByRole("dialog").getByRole("checkbox", { name: editedName, exact: true }).check();
+    await page.getByRole("dialog").getByRole("button", { name: he.adminCommon.save, exact: true }).click();
+    await expect(page.getByRole("dialog")).not.toBeVisible();
+    await expect(cell).toContainText(editedName);
+    await page.goto("/admin/members");
+    await expect(row.getByRole("combobox")).toContainText(he.adminMembers.roleSadran);
+    await row.getByRole("button", { name: editedName, exact: true }).click();
+    await editor.getByLabel(he.adminMembers.columnName).fill(originalName);
+    await editor.getByLabel(he.adminMembers.columnPhone).fill(originalPhone);
+    await editor.getByRole("button", { name: he.adminCommon.save, exact: true }).click();
+    await expect(editor).not.toBeVisible();
+  });
+
   test("admin home lists every management area", async ({ page }) => {
     await page.goto("/admin");
     await expect(page.getByRole("heading", { name: "ניהול מערכת" })).toBeVisible();

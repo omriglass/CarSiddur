@@ -127,7 +127,14 @@ export async function fetchCurrentWeekStart(): Promise<string> {
   return data;
 }
 
+export async function ensureDepartmentWeeks(departmentId: string): Promise<void> {
+  const { error } = await supabase.rpc("ensure_department_weeks", { p_department_id: departmentId });
+  // Published schedules remain readable across departments; catch-up only mutates memberships.
+  if (error && error.message !== "not_authorized") throw toAppError(error);
+}
+
 export async function fetchWeeks(departmentId: string): Promise<Week[]> {
+  await ensureDepartmentWeeks(departmentId);
   const { data, error } = await supabase
     .from("weeks")
     .select("*")
@@ -143,6 +150,7 @@ export async function fetchWeeks(departmentId: string): Promise<Week[]> {
  * shows (UX_FLOWS.md §2.2: "while assigned to at least one department/week").
  */
 export async function fetchOpenAndLiveWeekStarts(departmentId: string): Promise<string[]> {
+  await ensureDepartmentWeeks(departmentId);
   const { data, error } = await supabase
     .from("weeks")
     .select("week_start")

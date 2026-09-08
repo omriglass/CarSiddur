@@ -101,7 +101,9 @@ VITE_APP_URL=https://PROJECT.pages.dev
 
 All `VITE_` values are public browser configuration. Private VAPID, Google client and service-role secrets belong in Supabase, not these build variables. Changing these variables requires a new frontend build.
 
-Cloudflare Pages supports SPA routes automatically when there is no top-level `404.html`; this repository currently has none. Check that directly opening `/my` and `/p/TOKEN` reaches the application. Avoid adding a custom caching rule over the service worker or HTML.
+The build includes `public/_redirects` in `dist` to explicitly serve `index.html` for application URLs. If the site was created as a **Cloudflare Worker with static assets**, use the checked-in `wrangler.jsonc`: its `assets.not_found_handling` is `single-page-application`. Pages and Workers have different routing configuration; a Pages fallback alone does not configure a Worker. Vercel deployments use the checked-in `vercel.json` rewrite.
+
+After redeploying, directly open and refresh `/my`, `/admin/members`, and `/p/TOKEN` in a private window, then check browser Back/Forward. These must load the application without a hosting 404, including before a service worker is installed. Avoid custom caching rules over the service worker or HTML. See [Pages rewrites](https://developers.cloudflare.com/pages/configuration/redirects/) and [Workers SPA routing](https://developers.cloudflare.com/workers/static-assets/routing/single-page-application/).
 
 ## 5. Configure Google sign-in
 
@@ -154,3 +156,24 @@ Free Supabase does not include automatic database backups. Schedule regular CLI 
 - [Cloudflare SPA routing](https://developers.cloudflare.com/pages/configuration/serving-pages/)
 - [Supabase Google OAuth setup](https://supabase.com/docs/guides/auth/social-login/auth-google)
 - [Supabase backup guidance](https://supabase.com/docs/guides/platform/backups)
+
+## Recovery: `gen_random_bytes(integer) does not exist` during migration 0915
+
+Some hosted projects use a migration connection search path that excludes the
+`extensions` schema. Migration 0915 validates `generate_token()` before the
+existing pgcrypto wrappers in migration 0918 have been installed.
+
+1. Open `supabase/migrations/20260907091800_pgcrypto_public_wrappers.sql` locally and copy its entire contents.
+2. In the target Supabase project's SQL Editor, open a new query, paste the SQL and run it as the default postgres role. This creates/replaces only the existing crypto wrappers; it does not reset tables or data.
+3. Run `npx supabase db push` again. Completed migrations remain recorded and are skipped; 0915 is retried. Migration 0918 can safely run again because it uses `create or replace function` and repeatable grants.
+
+Do not mark 0915 as applied manually or reset the cloud database to work around this error.
+
+
+## Deploy the 2026-09-08 reliability fixes
+
+Apply the four new migrations (admin member RPCs, status event enum, production notification templates/triggers, and week recovery) with `npx supabase db push` before redeploying the frontend. The new frontend calls the new admin and week RPCs. Do not import demo seed data. Notification templates now arrive through migrations and preserve existing customizations.
+
+Missing current/upcoming weeks are recovered when an authorized member or admin loads their department, as well as by the regular cron tick. Existing closed or published weeks are preserved. A recovered week whose deadline has passed is solving; members can still submit late requests. Keep the `app_tick` cron job enabled for scheduled openings/reminders while nobody is using the app. Browser push still requires subscriptions and the push-dispatch credentials configured above; inbox notifications persist independently.
+
+Redeploy the site with its matching hosting configuration. For a Worker, set the `name` in `wrangler.jsonc` to the existing Worker name. Verify fresh direct URLs, an admin profile edit, ordinary-member roster assignment, signup approval notifications, and requests in both current and upcoming weeks on the hosted app.

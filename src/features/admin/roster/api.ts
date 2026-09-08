@@ -1,11 +1,11 @@
 import { supabase } from "@/integrations/supabase/client";
-import { toAppError } from "@/lib/rpc";
+import { rpc, toAppError } from "@/lib/rpc";
 
 import type { Database } from "@/integrations/supabase/types";
 
 /**
- * The only file in `admin/roster` that calls `supabase.from`.
- * `sadran_assignments` is admin-writable directly (DATA_MODEL.md §4.3).
+ * The only file in `admin/roster` that accesses the database.
+ * Replacements use an admin RPC so promotion and assignments commit atomically.
  */
 export type SadranAssignment = Database["public"]["Tables"]["sadran_assignments"]["Row"];
 
@@ -19,32 +19,12 @@ export async function fetchSadranAssignments(weekStarts: string[]): Promise<Sadr
   return data ?? [];
 }
 
-/** Replaces the explicit roster for one (department, week) with `profileIds`. */
+/** Atomically promotes eligible members and replaces this week's assignments. */
 export async function setWeekAssignments(departmentId: string, weekStart: string, profileIds: string[]): Promise<void> {
-  const del = await supabase
-    .from("sadran_assignments")
-    .delete()
-    .eq("department_id", departmentId)
-    .eq("week_start", weekStart);
-  if (del.error) throw toAppError(del.error);
-  if (profileIds.length === 0) return;
-  const ins = await supabase
-    .from("sadran_assignments")
-    .insert(profileIds.map((profile_id) => ({ department_id: departmentId, profile_id, week_start: weekStart })));
-  if (ins.error) throw toAppError(ins.error);
+  await rpc("admin_set_sadran_assignments", { p_department_id: departmentId, p_week_start: weekStart, p_profile_ids: profileIds });
 }
 
-/** Replaces the standing default (`week_start is null`) roster for one department. */
+/** Omitting the week selects the standing default roster. */
 export async function setStandingDefault(departmentId: string, profileIds: string[]): Promise<void> {
-  const del = await supabase
-    .from("sadran_assignments")
-    .delete()
-    .eq("department_id", departmentId)
-    .is("week_start", null);
-  if (del.error) throw toAppError(del.error);
-  if (profileIds.length === 0) return;
-  const ins = await supabase
-    .from("sadran_assignments")
-    .insert(profileIds.map((profile_id) => ({ department_id: departmentId, profile_id, week_start: null })));
-  if (ins.error) throw toAppError(ins.error);
+  await rpc("admin_set_sadran_assignments", { p_department_id: departmentId, p_profile_ids: profileIds });
 }

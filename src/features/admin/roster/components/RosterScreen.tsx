@@ -47,12 +47,13 @@ export function RosterScreen() {
   const membersByDept = useMemo(() => {
     const map = new Map<string, string[]>();
     for (const dm of deptMembersQuery.data ?? []) {
+      if (profilesById.get(dm.profile_id)?.approval_status !== "approved") continue;
       const list = map.get(dm.department_id) ?? [];
       list.push(dm.profile_id);
       map.set(dm.department_id, list);
     }
     return map;
-  }, [deptMembersQuery.data]);
+  }, [deptMembersQuery.data, profilesById]);
 
   function explicitFor(departmentId: string, weekStart: string | null): string[] {
     return (assignmentsQuery.data ?? [])
@@ -191,7 +192,7 @@ export function RosterScreen() {
             <Button variant="outline" onClick={() => setTarget(null)}>
               {he.adminCommon.cancel}
             </Button>
-            <Button onClick={saveCell}>{he.adminCommon.save}</Button>
+            <Button disabled={setWeekMutation.isPending || setStandingMutation.isPending} onClick={saveCell}>{he.adminCommon.save}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -1,5 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
-import { rpc, toAppError } from "@/lib/rpc";
+import { phoneSchema } from "@/features/auth/schema";
+import { he } from "@/i18n/he";
+import { AppError, rpc, toAppError } from "@/lib/rpc";
 
 import type { Database } from "@/integrations/supabase/types";
 
@@ -46,16 +48,17 @@ export async function fetchPhones(profileIds: string[]): Promise<Record<string, 
 }
 
 export async function approveMember(profileId: string, departmentId: string): Promise<void> {
-  const { error: profileError } = await supabase
-    .from("profiles")
-    .update({ approval_status: "approved" })
-    .eq("id", profileId);
-  if (profileError) throw toAppError(profileError);
+  await rpc("admin_approve_member", { p_profile_id: profileId, p_department_id: departmentId });
+}
 
-  const { error: memberError } = await supabase
-    .from("department_members")
-    .upsert({ department_id: departmentId, profile_id: profileId }, { onConflict: "department_id,profile_id" });
-  if (memberError) throw toAppError(memberError);
+export async function updateMemberDetails(profileId: string, fullName: string, phone: string): Promise<void> {
+  let normalizedPhone = phone.trim();
+  if (normalizedPhone && !/^\+[1-9][0-9]{7,14}$/.test(normalizedPhone)) {
+    const parsed = phoneSchema.safeParse(normalizedPhone);
+    if (!parsed.success) throw new AppError("unknown", he.onboarding.phoneInvalid);
+    normalizedPhone = parsed.data;
+  }
+  await rpc("admin_update_member", { p_profile_id: profileId, p_details: { full_name: fullName, phone: normalizedPhone } });
 }
 
 export async function rejectMember(profileId: string): Promise<void> {
@@ -77,7 +80,10 @@ export async function setMemberRole(departmentId: string, profileId: string, rol
     .from("department_members")
     .update({ role })
     .eq("department_id", departmentId)
-    .eq("profile_id", profileId);
+    .eq("profile_id", profileId)
+    .is("removed_at", null)
+    .select("profile_id")
+    .single();
   if (error) throw toAppError(error);
 }
 

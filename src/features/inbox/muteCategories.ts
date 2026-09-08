@@ -12,7 +12,7 @@ export interface MuteCategory {
 
 /**
  * Mute categories → `notification_event` values (UX_FLOWS.md §3.8 item 3).
- * Sadran/Admin-only events and `auto_approved`/`access_approved` are not
+ * Sadran/Admin-only events and `auto_approved`/`access_approved`/`status_changed` are not
  * mutable at all and so have no category here (enforced server-side too,
  * in `enqueue_notification()`, DATA_MODEL §3.11).
  */

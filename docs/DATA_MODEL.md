@@ -112,13 +112,13 @@ create type public.solver_run_status    as enum ('succeeded','failed');
 create type public.freed_offer_status   as enum ('open','auto_assigned','pending_approval','approved','expired','closed');
 create type public.freed_claim_status   as enum ('offered','claimed','approved','declined','withdrawn');
 create type public.notification_channel as enum ('push','inbox','whatsapp','email');
--- Canonical list = UX_FLOWS.md §6.1 (20 events). Value = snake_case of the i18n key suffix (`notif.freedSlotAuto` → 'freed_slot_auto').
+-- Canonical list = UX_FLOWS.md §6.1 (21 events). Value = snake_case of the i18n key suffix (`notif.freedSlotAuto` → 'freed_slot_auto').
 create type public.notification_event   as enum ('window_open','window_closing','window_closed_solve_now','publish_reminder',
                                                  'published','outcome_changed',
                                                  'proposal_received','proposal_answered','freed_slot','freed_slot_auto',
                                                  'claim_approved','claim_declined','claim_contested','maintenance_affects',
                                                  'late_request','waitlisted_request','auto_approved','request_changed',
-                                                 'access_request','access_approved');
+                                                 'access_request','access_approved','status_changed');
 create type public.push_outbox_status   as enum ('pending','sent','failed','dead');
 create type public.answer_channel       as enum ('token','session','sadran');
 create type public.audit_action         as enum ('insert','update','delete');
@@ -1079,7 +1079,7 @@ Files live in `supabase/migrations/` and use the Supabase CLI form **`YYYYMMDDHH
 - One department, `נבו` (`00000000-0000-0000-0000-000000000001`), `home_destination_id` = the home row.
 - `ride_types`: work/childcare/healthcare/errands/other with Hebrew names.
 - `policies`: one global default with `policy_versions` v1 = the §7.2 / `SOLVER.md` §4.4 initial weights (all 8 rule types, `fairness.lookbackWeeks = 3`).
-- `notification_templates`: one `inbox` + one `push` row per `notification_event` (20 events) and 5 `whatsapp` variants (`shift`, `merge_passenger`, `merge_driver`, `deny`, `reminder`), copied from UX_FLOWS §6.
+- `notification_templates`: one `inbox` + one `push` row per `notification_event` (21 events) and 5 `whatsapp` variants (`shift`, `merge_passenger`, `merge_driver`, `deny`, `reminder`), copied from UX_FLOWS §6.
 - 4 demo `auth.users` + matching `member_invites` (admin, sadran, member1, member2), 4 cars with seat configs (a 5-seater, a 7-seater, a second 5-seater, and one `temporary` car owned by member2).
 - One Live (published) week with 3 requests and 2 confirmed rides, one Open week with 2 fresh `submitted` requests.
 - Fixed UUIDs `00000000-0000-0000-0000-0000000000NN`. Production gets only catalogs + templates + settings + invites (via admin UI/CSV import) — the seed file is gated to local/dev by convention (never run against a remote project, ARCHITECTURE.md §14).
@@ -1431,3 +1431,9 @@ Request and ride windows, including expanded merge proposals, must start and end
 `publish_siddur` retains the all-policy whole-board scoring/fingerprint arguments and adds `p_days date[]` (omitted means all seven) and `p_allow_unanswered boolean` (default false). Empty/out-of-week selections are rejected. Selected days with unanswered requests/proposals or missing drivers require explicit acknowledgment; publication never expires, rejects, applies or otherwise answers them. Only selected-day draft rides become confirmed, selected dates are added to the visibility set, and notifications concern selected-day requests. The request window closes atomically with successful publication. Snapshots retain all policy comparisons and full planning state, with `selected_days`, cumulative `published_days`, `unanswered_acknowledged`, and `scores_scope: whole_board`. Fingerprints include proposal and ride-change consent state as well as board/scoring inputs.
 
 `reopen_week(department_id, week_start, phase, expected_fingerprint)` accepts only `open` or `solving`. Coordinator authorization, locked current inputs and fingerprint agreement are required; archived/ended weeks cannot reopen. It clears published-day visibility and the active publication pointer, while retaining immutable versions and all assignments. Future rides become private drafts without changing IDs, times, cars, drivers, pins or request links; ongoing/completed rides retain their status. `open` extends a passed deadline through the target week's end (or retains an already later deadline), allowing manual closure/publication sooner. `solving` keeps the request window closed. Neither operation modifies outstanding proposals or their answers.
+
+Account notifications: `notify_profile_status_changed()` emits approval and Admin privilege changes; `notify_department_member_status_changed()` emits membership/role changes, including Sadran promotion and removal. `status_changed` uses template variants for the resulting status and is unmutable, as are access-request/approval alerts. Production template defaults ship as idempotent data migrations and preserve administrator edits. `enqueue_notification()` accepts `data.variant`, with default-template fallback.
+
+### Deployment admin repair (2026-09-08)
+
+`20260908120000_admin_member_fixes.sql` adds three authenticated admin-only SECURITY DEFINER RPCs: `admin_update_member(profile_id, details)` edits names/phone; `admin_approve_member(profile_id, department_id)` atomically approves the profile and restores/adds membership; `admin_set_sadran_assignments(department_id, profile_ids, week_start default null)` validates approved active members, promotes them to Sadran, and replaces the weekly or standing roster in one transaction. A department row lock serializes replacement; unchanged assignments retain their identity. The existing assignment-role invariant remains enforced. A failed replacement never deletes the previous roster.

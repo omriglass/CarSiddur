@@ -1,3 +1,4 @@
+import { ensureDepartmentWeeks } from "@/features/siddur/api";
 import { supabase } from "@/integrations/supabase/client";
 import { rpc, toAppError } from "@/lib/rpc";
 
@@ -84,6 +85,7 @@ function flattenWeekRequest(row: WeekRequestJoinRow): WeekRequestRow {
 // ---------------------------------------------------------------------------
 
 export async function fetchWeekRow(departmentId: string, weekStart: string): Promise<WeekRow | null> {
+  await ensureDepartmentWeeks(departmentId);
   const { data, error } = await supabase
     .from("weeks")
     .select("*")
