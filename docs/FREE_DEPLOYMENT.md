@@ -1,5 +1,9 @@
 # Publish this app with free hosting
 
+## Quick update for the existing site
+
+For the redirect-loop failure, the source fix removes `public/_redirects` and keeps Workers native SPA routing. Commit and push the fix; Cloudflare will rebuild and deploy it. No additional database migration is needed for this routing correction. Cloudflare build command: `npm run build`; deploy command: `npx wrangler deploy`.
+
 Checked against provider documentation on 2026-09-07. This is a deployment checklist, not a record of a completed deployment.
 
 ## What you need
@@ -101,9 +105,9 @@ VITE_APP_URL=https://PROJECT.pages.dev
 
 All `VITE_` values are public browser configuration. Private VAPID, Google client and service-role secrets belong in Supabase, not these build variables. Changing these variables requires a new frontend build.
 
-The build includes `public/_redirects` in `dist` to explicitly serve `index.html` for application URLs. If the site was created as a **Cloudflare Worker with static assets**, use the checked-in `wrangler.jsonc`: its `assets.not_found_handling` is `single-page-application`. Pages and Workers have different routing configuration; a Pages fallback alone does not configure a Worker. Vercel deployments use the checked-in `vercel.json` rewrite.
+The existing deployment is the **Cloudflare Worker `carsiddur`**. Use the checked-in `wrangler.jsonc`, which enables `assets.not_found_handling = "single-page-application"`. Do not add `_redirects` rules to rewrite application routes to `index.html`: Workers' deployment validation rejects the previous rules as redirect loops. The native SPA fallback serves application navigation directly. For a separate Pages deployment, its default SPA behavior applies when there is no top-level `404.html`. Vercel deployments use `vercel.json`.
 
-After redeploying, directly open and refresh `/my`, `/admin/members`, and `/p/TOKEN` in a private window, then check browser Back/Forward. These must load the application without a hosting 404, including before a service worker is installed. Avoid custom caching rules over the service worker or HTML. See [Pages rewrites](https://developers.cloudflare.com/pages/configuration/redirects/) and [Workers SPA routing](https://developers.cloudflare.com/workers/static-assets/routing/single-page-application/).
+After redeploying, directly open and refresh `/my`, `/admin/members`, and `/p/TOKEN` in a private window, then check browser Back/Forward. These must load the application without a hosting 404, including before a service worker is installed. Avoid custom caching rules over the service worker or HTML. See [Pages SPA routing](https://developers.cloudflare.com/pages/configuration/serving-pages/) and [Workers SPA routing](https://developers.cloudflare.com/workers/static-assets/routing/single-page-application/).
 
 ## 5. Configure Google sign-in
 
@@ -176,4 +180,4 @@ Apply the four new migrations (admin member RPCs, status event enum, production 
 
 Missing current/upcoming weeks are recovered when an authorized member or admin loads their department, as well as by the regular cron tick. Existing closed or published weeks are preserved. A recovered week whose deadline has passed is solving; members can still submit late requests. Keep the `app_tick` cron job enabled for scheduled openings/reminders while nobody is using the app. Browser push still requires subscriptions and the push-dispatch credentials configured above; inbox notifications persist independently.
 
-Redeploy the site with its matching hosting configuration. For a Worker, set the `name` in `wrangler.jsonc` to the existing Worker name. Verify fresh direct URLs, an admin profile edit, ordinary-member roster assignment, signup approval notifications, and requests in both current and upcoming weeks on the hosted app.
+Redeploy the site with its matching hosting configuration. The checked-in Worker name is `carsiddur`, matching the existing deployment. Verify fresh direct URLs, an admin profile edit, ordinary-member roster assignment, signup approval notifications, and requests in both current and upcoming weeks on the hosted app.
