@@ -223,6 +223,7 @@ export const he = {
     enablePush: "אפשר התראות",
     newRequest: "בקשה חדשה",
     submitRequest: "שלח/י בקשה",
+    enterWaitingList: "הצטרפות לרשימת המתנה",
     saveRequest: "שמור/י שינויים",
     withdrawRequest: "הסר בקשה",
     cancelRide: "בטל נסיעה",

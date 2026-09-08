@@ -363,6 +363,8 @@ export interface SubmitRequestPayload {
    * omission preserves it when editing through callers that do not expose this field.
    */
   preferred_car_id?: string | null;
+  /** Published-day request which waits for a freed slot instead of altering the Siddur. */
+  waitlist?: boolean;
 }
 
 /**
@@ -386,6 +388,7 @@ export interface SubmitRequestResult {
 
 /** `submit_request(payload jsonb)` — the only write path for requests (CLAUDE.md decision 8). */
 export async function submitRequest(payload: SubmitRequestPayload): Promise<Json> {
+  if (payload.waitlist) return rpc("enter_waiting_list", { p_payload: payload as unknown as Json });
   return rpc("submit_request", { payload: payload as unknown as Json });
 }
 

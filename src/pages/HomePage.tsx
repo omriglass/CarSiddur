@@ -18,10 +18,12 @@ import { useProfile } from "@/features/auth/useProfile";
 import { DeviceSetupPrompts } from "@/features/member/components/DeviceSetupPrompts";
 import { useDestinations, useRideTypes } from "@/features/fleet/hooks";
 import { QuickRequestSheet } from "@/features/requests/components/QuickRequestSheet";
-import { useMyRequests } from "@/features/requests/hooks";
+import { useMyRequests, useCancelRideMutation } from "@/features/requests/hooks";
 import type { MyRequestRow } from "@/features/requests/api";
 import { firstCarFreeNow, roundUpToQuarterHour } from "@/features/siddur/freeWindows";
 import { useWeeks, useMyUpcomingRides } from "@/features/siddur/hooks";
+import { RideDetailSheet } from "@/features/siddur/components/RideDetailSheet";
+import type { BoardRide } from "@/features/siddur/api";
 import { myRideCard } from "@/features/siddur/myRideCard";
 import { TripSummary } from "@/components/TripSummary";
 import { useDayFreeWindows } from "@/features/siddur/useDayFreeWindows";
@@ -69,6 +71,8 @@ export function HomePage() {
   const dayFreeWindows = useDayFreeWindows(defaultDepartmentId, currentWeekStart, currentWeekStart ? today : undefined, now);
   const freeCarNow = firstCarFreeNow(dayFreeWindows.freeWindows, now.getTime());
   const [quickRequestOpen, setQuickRequestOpen] = useState(false);
+  const [selectedMyRide, setSelectedMyRide] = useState<BoardRide | null>(null);
+  const cancelRideMutation = useCancelRideMutation();
   const defaultRideTypeId = rideTypesQuery.data?.find((rt) => rt.code === "other")?.id ?? rideTypesQuery.data?.[0]?.id ?? "";
 
   const isLoading = active.isLoading || profileQuery.isLoading || requestsQuery.isLoading || upcomingRidesQuery.isLoading || weeksQuery.isLoading;
@@ -123,12 +127,12 @@ export function HomePage() {
       <DeviceSetupPrompts />
       {!active.canSubmit && <p className="text-sm text-muted-foreground">{he.departmentContext.noMembership} <Link to={`/siddur/${active.departmentId}`}>{he.nav.siddur}</Link></p>}
 
-      {active.canSubmit && freeCarNow ? (
+      {active.canSubmit && currentWeekStart ? (
         <Card
-          role="button"
-          tabIndex={0}
-          className="cursor-pointer bg-gradient-card shadow-card transition-smooth hover:shadow-elegant"
-          onClick={() => setQuickRequestOpen(true)}
+          role={freeCarNow ? "button" : undefined}
+          tabIndex={freeCarNow ? 0 : undefined}
+          className={freeCarNow ? "cursor-pointer bg-gradient-card shadow-card transition-smooth hover:shadow-elegant" : "bg-muted/50 shadow-card"}
+          onClick={() => freeCarNow && setQuickRequestOpen(true)}
         >
           <CardContent className="flex items-center justify-between gap-2 p-4 text-sm">
             <div className="flex items-center gap-3">
@@ -136,12 +140,8 @@ export function HomePage() {
                 <CarFront className="size-5" aria-hidden="true" />
               </span>
               <div>
-                <p className="font-medium">{t("quickRequest.takeCarNow")}</p>
-                <p className="text-xs text-muted-foreground">
-                  {tv("quickRequest.homeCardSubtitle", {
-                    car: dayFreeWindows.cars.find((c) => c.id === freeCarNow.carId)?.name ?? "",
-                  })}
-                </p>
+                <p className="font-medium">{freeCarNow ? t("quickRequest.takeCarNow") : t("quickRequest.noCarNow")}</p>
+                {freeCarNow ? <p className="text-xs text-muted-foreground">{tv("quickRequest.homeCardSubtitle", { car: dayFreeWindows.cars.find((c) => c.id === freeCarNow.carId)?.name ?? "" })}</p> : null}
               </div>
             </div>
           </CardContent>
@@ -165,7 +165,7 @@ export function HomePage() {
           <div className="space-y-2">
             {upcomingRides.map((row) => {
               const data = myRideCard(row, requests, rideTypesQuery.data ?? []);
-              return data ? <RideCard key={row.id} ride={data} /> : null;
+              return data ? <RideCard key={row.id} ride={data} onClick={() => setSelectedMyRide(row)} /> : null;
             })}
           </div>
         )}
@@ -262,6 +262,16 @@ export function HomePage() {
           now={now}
         />
       ) : null}
+      <RideDetailSheet
+        ride={selectedMyRide}
+        car={null}
+        locationBadge={null}
+        onOpenChange={(open) => !open && setSelectedMyRide(null)}
+        onAskToJoin={() => undefined}
+        showAskToJoin={false}
+        onRemoveOwnRide={selectedMyRide?.id && selectedMyRide.version != null ? () => cancelRideMutation.mutate({ rideId: selectedMyRide.id!, expectedVersion: selectedMyRide.version!, reason: "CANCELLED_BY_MEMBER" }, { onSuccess: () => setSelectedMyRide(null) }) : undefined}
+        removingOwnRide={cancelRideMutation.isPending}
+      />
     </div>
   );
 }

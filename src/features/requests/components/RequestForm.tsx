@@ -66,6 +66,8 @@ interface RequestFormProps {
    * pin — only the day and start time carry over, exactly like typing them in by hand.
    */
   slotPrefill?: { day: string; departTime: string };
+  /** Published-day request: join the freed-slot notification queue. */
+  waitlist?: boolean;
 }
 
 function dayFromInstant(instant: string): string {
@@ -194,7 +196,7 @@ function FieldError({ message }: { message?: string }) {
  * One screen, sticky footer, smart defaults, non-blocking seat-fit and
  * duplicate warnings, submits via `submit_request` (CLAUDE.md decision 8).
  */
-export function RequestForm({ mode, departmentId, weekStart, initial, joinRide, slotPrefill }: RequestFormProps) {
+export function RequestForm({ mode, departmentId, weekStart, initial, joinRide, slotPrefill, waitlist = false }: RequestFormProps) {
   const navigate = useNavigate();
 
   const destinationsQuery = useDestinations(departmentId);
@@ -316,11 +318,11 @@ export function RequestForm({ mode, departmentId, weekStart, initial, joinRide, 
 
   async function onSubmit(formValues: RequestFormValues) {
     setSubmitError(null);
-    const payload = toSubmitRequestPayload({ ...formValues, adults: 1 + formValues.companions.length, childSeats: Math.max(formValues.children.length, formValues.legacyChildSeats) }, {
+    const payload = { ...toSubmitRequestPayload({ ...formValues, adults: 1 + formValues.companions.length, childSeats: Math.max(formValues.children.length, formValues.legacyChildSeats) }, {
       requestId: initial?.id,
       expectedVersion: initial?.version,
       joinRideId: mode === "new" ? joinRide?.rideId : undefined,
-    });
+    }), ...(waitlist ? { waitlist: true } : {}) };
 
     try {
       const result = (await submitMutation.mutateAsync(payload)) as { request_id?: string } | null;
@@ -365,6 +367,7 @@ export function RequestForm({ mode, departmentId, weekStart, initial, joinRide, 
           {t("request.changedSinceSolveBanner")}
         </div>
       ) : null}
+      {waitlist ? <div className="rounded-md border-s-4 border-amber-500 bg-amber-50 p-3 text-sm text-amber-900">{t("request.waitlistBanner")}</div> : null}
 
       <FormItem>
         <Label>{t("field.destination")}</Label>
@@ -589,7 +592,7 @@ export function RequestForm({ mode, departmentId, weekStart, initial, joinRide, 
           ) : null}
           {submitError ? <p className="text-sm text-destructive">{submitError}</p> : null}
           <Button type="submit" className="w-full" size="lg" disabled={submitMutation.isPending}>
-            {mode === "edit" ? t("action.saveRequest") : t("action.submitRequest")}
+            {mode === "edit" ? t("action.saveRequest") : waitlist ? t("action.enterWaitingList") : t("action.submitRequest")}
           </Button>
         </div>
       </div>

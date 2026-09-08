@@ -73,10 +73,13 @@ interface RideDetailSheetProps {
   coordinatorNotes?: string;
   canEditPublicNotes?: boolean;
   passengerSummary?: string;
+  /** Available only when the signed-in member has a request served by this ride. */
+  onRemoveOwnRide?: () => void;
+  removingOwnRide?: boolean;
 }
 
 /** Ride detail sheet (UX_FLOWS.md §3.5 "Ride detail"): driver, passengers, car, origin→destination, "ask to join". */
-export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = null, onOpenChange, onAskToJoin, showAskToJoin, editor, coordinatorNotes, canEditPublicNotes, passengerSummary }: RideDetailSheetProps) {
+export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = null, onOpenChange, onAskToJoin, showAskToJoin, editor, coordinatorNotes, canEditPublicNotes, passengerSummary, onRemoveOwnRide, removingOwnRide = false }: RideDetailSheetProps) {
   const served = (ride?.served as unknown as ServedEntry[] | null) ?? [];
 
   return (
@@ -147,6 +150,11 @@ export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = 
               {showAskToJoin ? (
                 <Button className="w-full" size="lg" onClick={onAskToJoin}>
                   {t("rideDetail.askToJoin")}
+                </Button>
+              ) : null}
+              {onRemoveOwnRide ? (
+                <Button className="w-full" size="lg" variant="destructive" disabled={removingOwnRide} onClick={onRemoveOwnRide}>
+                  {t("action.cancelRide")}
                 </Button>
               ) : null}
             </div>

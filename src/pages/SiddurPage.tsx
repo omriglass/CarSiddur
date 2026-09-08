@@ -30,7 +30,7 @@ import { WeekStrip } from "@/components/WeekStrip";
 import { useMyDepartments } from "@/features/auth/useMyDepartments";
 import { useSession } from "@/features/auth/useSession";
 import { useIsSadran } from "@/features/auth/useIsSadran";
-import { useMyRequests } from "@/features/requests/hooks";
+import { useMyRequests, useCancelRideMutation } from "@/features/requests/hooks";
 import { useCars, useDestinations, useRideTypes, useMaintenanceBlocks, useCarSeatConfigs } from "@/features/fleet/hooks";
 import { QuickRequestSheet } from "@/features/requests/components/QuickRequestSheet";
 import { ridePublicDetails } from "@/lib/ridePublicDetails";
@@ -95,6 +95,7 @@ export function SiddurPage() {
   const departmentsQuery = useDepartments();
   const active = useActiveDepartment();
   const profileQuery = useProfile();
+  const cancelRideMutation = useCancelRideMutation();
 
   const defaultDepartmentId =
     active.departmentId;
@@ -397,8 +398,13 @@ export function SiddurPage() {
             <WeekStrip weekStart={weekStart as string} counts={dayCounts} selected={activeDay ?? ""} onSelect={setSelectedDay} />
             <div className="mt-3 space-y-2">
               {isMyDepartment && isLiveDay ? (
-                <Button type="button" variant="outline" className="w-full" onClick={handleTakeCarNow}>
-                  {t("quickRequest.takeCarNow")}
+                <Button type="button" variant="outline" className="w-full" onClick={handleTakeCarNow} disabled={!firstCarFreeNow(dayFreeWindows.freeWindows, now.getTime())}>
+                  {firstCarFreeNow(dayFreeWindows.freeWindows, now.getTime()) ? t("quickRequest.takeCarNow") : t("quickRequest.noCarNow")}
+                </Button>
+              ) : null}
+              {isMyDepartment && activeDayPublished && (resolvedWeek?.phase === "published" || isLiveWeek) && weekStart && activeDay ? (
+                <Button type="button" variant="outline" className="w-full" onClick={() => navigate(`/requests/new?week=${weekStart}&day=${activeDay}&waitlist=1`)}>
+                  {t("action.enterWaitingList")}
                 </Button>
               ) : null}
               {boardRidesQuery.isLoading ? (
@@ -510,6 +516,8 @@ export function SiddurPage() {
         onOpenChange={(open) => !open && setSelectedRideId(null)}
         onAskToJoin={() => selectedRide && navigate(`/requests/new?ride=${selectedRide.id}`)}
         showAskToJoin={!!selectedRide && activeDayPublished && !selectedRide.needs_driver && isMyDepartment && selectedRide.driver_id !== profileId}
+        onRemoveOwnRide={selectedRide?.id && ownsSelectedRide && selectedRide.version != null ? () => cancelRideMutation.mutate({ rideId: selectedRide.id!, expectedVersion: selectedRide.version!, reason: "CANCELLED_BY_MEMBER" }, { onSuccess: () => setSelectedRideId(null) }) : undefined}
+        removingOwnRide={cancelRideMutation.isPending}
         editor={selectedRide?.needs_driver && canEditWeek && selectedRide.ends_at && Date.parse(selectedRide.ends_at) > now.getTime() ? (
           <div className="space-y-2 rounded-md border border-destructive/50 p-3">
             <p className="font-semibold text-destructive">{he.rideCoordination.missingDriver}</p>

@@ -22,6 +22,7 @@ export function NewRequestPage() {
   // Sadran hasn't solved yet, so there is no car to target — only day/time carry over.
   const dayParam = searchParams.get("day") ?? undefined;
   const timeParam = searchParams.get("time") ?? undefined;
+  const waitlist = searchParams.get("waitlist") === "1";
 
   const profileQuery = useProfile();
   const departmentsQuery = useMyDepartments();
@@ -70,6 +71,7 @@ export function NewRequestPage() {
           weekStart={weekStart}
           joinRide={joinRide}
           slotPrefill={!joinRideId && dayParam && timeParam ? { day: dayParam, departTime: timeParam } : undefined}
+          waitlist={waitlist}
         />
       )}
     </div>

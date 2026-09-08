@@ -3287,6 +3287,7 @@ export type Database = {
       }
       shares_ride_with: { Args: { _profile: string }; Returns: boolean }
       submit_request: { Args: { payload: Json }; Returns: Json }
+      enter_waiting_list: { Args: { p_payload: Json }; Returns: Json }
       suggest_destination: {
         Args: { p_department_id: string; p_name: string; p_zone?: string }
         Returns: string

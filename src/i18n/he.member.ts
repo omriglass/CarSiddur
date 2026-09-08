@@ -24,6 +24,7 @@ export const heMember = {
   request: {
     namedPassengerCount: "נוסעים מבוגרים: {{count}} (כולל אותך)",
     namedChildCount: "ילדים: {{count}}",
+    waitlistBanner: "הבקשה תיכנס לרשימת ההמתנה ליום שכבר פורסם. אם נסיעה מתאימה תבוטל, תקבל/י הודעה.",
     preferredCar: "רכב מועדף (לא חובה)",
     noPreferredCar: "ללא העדפה",
     preferredCarHelper: "ננסה לשבץ את הרכב שבחרת. אם לא יתאפשר, אפשר לשבץ רכב אחר.",
@@ -206,6 +207,7 @@ export const heMember = {
     headerNoCar: "לוקח/ת רכב ביום {{day}} {{start}}",
     submit: "קח/י את הרכב",
     takeCarNow: "רוצה רכב עכשיו!",
+    noCarNow: "אין רכב פנוי עכשיו",
     duration: "משך הנסיעה",
     duration1h: "שעה",
     duration2h: "שעתיים",
