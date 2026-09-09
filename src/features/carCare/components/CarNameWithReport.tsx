@@ -39,7 +39,7 @@ export function CarNameWithReport({ carId, carName, className }: CarNameWithRepo
   }
 
   return (
-    <span className={cn("inline-flex min-w-0 items-center gap-1", className)}>
+    <span className={cn("inline-flex min-w-0 items-start gap-1", className)}>
       <span
         role="button"
         tabIndex={0}
@@ -60,7 +60,7 @@ export function CarNameWithReport({ carId, carName, className }: CarNameWithRepo
       >
         <CarFront className="size-3.5" aria-hidden="true" />
       </span>
-      <span className="truncate">{carName}</span>
+      <span className="min-w-0 whitespace-normal break-words">{carName}</span>
       <CarReportDialog carId={carId} carName={carName} open={open} onOpenChange={setOpen} />
     </span>
   );

@@ -620,7 +620,7 @@ export function WeekGrid({
             )}
             style={{ gridColumn: i + 2, gridRow: 1 }}
           >
-            <span className="flex items-center gap-1 font-medium">
+            <span className="flex min-w-0 items-start gap-1 font-medium leading-tight">
               {renderCarName ? renderCarName(car) : (
                 <>
                   <CarFront className="size-3.5 shrink-0 text-primary" aria-hidden="true" />

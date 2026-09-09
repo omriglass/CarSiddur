@@ -95,7 +95,7 @@ export const he = {
   },
   siddurCar: {
     replacementName: "{{name}} (חלופי)",
-    withCode: "{{name}} · קוד {{code}}",
+    withCode: "{{name}} · {{code}}",
     withoutCode: "{{name}} · קוד לא הוזן",
   },
   ...heMember,
