@@ -6,13 +6,14 @@ import { useForm, useWatch } from "react-hook-form";
 
 import { EmptyState } from "@/components/EmptyState";
 import { PageHeader } from "@/components/PageHeader";
+import { PortalSheetContent } from "@/components/PortalSheetContent";
 import { TimeField15 } from "@/components/TimeField15";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Sheet, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useDestinations } from "@/features/fleet/hooks";
 import { he } from "@/i18n/he";
@@ -472,7 +473,7 @@ export function DepartmentsScreen() {
       )}
 
       <Sheet open={editing !== undefined} onOpenChange={(open) => !open && setEditing(undefined)}>
-        <SheetContent className="w-full overflow-y-auto sm:max-w-lg">
+        <PortalSheetContent className="w-full overflow-y-auto sm:max-w-lg">
           <SheetHeader>
             <SheetTitle>{editing ? he.adminDepartments.edit : he.adminDepartments.new}</SheetTitle>
           </SheetHeader>
@@ -481,7 +482,7 @@ export function DepartmentsScreen() {
               <DepartmentForm department={editing} onSaved={() => setEditing(undefined)} />
             ) : null}
           </div>
-        </SheetContent>
+        </PortalSheetContent>
       </Sheet>
     </div>
   );

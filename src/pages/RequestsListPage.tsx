@@ -23,6 +23,7 @@ import {
   useWithdrawAllRequestsMutation,
 } from "@/features/requests/hooks";
 import { he, t, tv } from "@/i18n/he";
+import { describeStatusReason } from "@/lib/statusReason";
 import { formatTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { paths } from "@/app/routes";
@@ -185,10 +186,8 @@ export function RequestsListPage() {
                   {row.childNames?.length ? (
                     <p className="text-xs text-muted-foreground">{tv("ridePublicDetails.companions", { names: row.childNames.join(", ") })}</p>
                   ) : null}
-                  {row.statusReason && row.statusReason in he.statusReason ? (
-                    <p className="text-xs text-muted-foreground">
-                      {he.statusReason[row.statusReason as keyof typeof he.statusReason]}
-                    </p>
+                  {describeStatusReason(row.statusReason) ? (
+                    <p className="text-xs text-muted-foreground">{describeStatusReason(row.statusReason)}</p>
                   ) : null}
                   {FREED_SLOT_ELIGIBLE_STATUSES.has(row.status) ? (
                     <label className="flex items-center gap-2 text-xs text-muted-foreground">

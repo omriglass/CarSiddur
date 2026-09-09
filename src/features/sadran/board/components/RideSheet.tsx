@@ -12,7 +12,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Sheet, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { PortalSheetContent } from "@/components/PortalSheetContent";
 import { Textarea } from "@/components/ui/textarea";
 import { formatMinutes, parseHHMM } from "@/components/TimeField15";
 import { TimeField15 } from "@/components/TimeField15";
@@ -108,7 +109,7 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
 
   return (
     <Sheet open={!!ride} onOpenChange={onOpenChange}>
-      <SheetContent side="bottom" className="max-h-[85dvh] overflow-y-auto">
+      <PortalSheetContent side="bottom" className="max-h-[85dvh] overflow-y-auto">
         {ride ? (
           <>
             <SheetHeader>
@@ -208,7 +209,7 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
             </div>
           </>
         ) : null}
-      </SheetContent>
+      </PortalSheetContent>
     </Sheet>
   );
 }

@@ -2,7 +2,8 @@ import { MapPin } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Sheet, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { PortalSheetContent } from "@/components/PortalSheetContent";
 import { rideBlockLabel } from "@/lib/rideLabel";
 import { siddurCarName } from "@/lib/siddurCarName";
 import { ridePublicDetails } from "@/lib/ridePublicDetails";
@@ -75,7 +76,7 @@ export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = 
 
   return (
     <Sheet open={!!ride} onOpenChange={onOpenChange}>
-      <SheetContent side="bottom" className="max-h-[85dvh] overflow-y-auto">
+      <PortalSheetContent side="bottom" className="max-h-[85dvh] overflow-y-auto">
         {ride ? (
           <>
             <SheetHeader>
@@ -151,7 +152,7 @@ export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = 
             </div>
           </>
         ) : null}
-      </SheetContent>
+      </PortalSheetContent>
     </Sheet>
   );
 }

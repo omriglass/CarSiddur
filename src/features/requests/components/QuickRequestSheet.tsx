@@ -1,7 +1,5 @@
-import { useState } from "react";
-
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { SheetPortalContext } from "@/components/SheetPortalContext";
+import { Sheet, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { PortalSheetContent } from "@/components/PortalSheetContent";
 import { he } from "@/i18n/he";
 
 import type { CarFreeWindow } from "@/features/siddur/freeWindows";
@@ -37,15 +35,15 @@ export interface QuickRequestSheetProps {
  * form body itself is `RequestForm`'s `variant="quick"` (the same component the full
  * new/edit request page uses), so a field added to one appears in the other.
  *
- * `SheetPortalContext` is provided here with this sheet's own content node: the Sheet is a
- * modal Radix `Dialog`, which locks background touch-scroll to only its own content subtree.
- * `TimeField15`'s and `DestinationCombobox`'s own popovers otherwise portal to `document.body`
- * by default — a DOM *sibling* of the sheet, not a descendant — so the lock can't recognize
- * either picker's own scrollable content as belonging to it and blocks its touch-scroll outright
- * (found and fixed for `TimeField15` here rather than in `WeekGrid.tsx`, whose own drag listeners
- * are pointer-id-scoped and already cleaned up on every pointerup/cancel — not the cause; the
- * identical fix was later generalized from `TimeField15`-only to this shared context once
- * `DestinationCombobox` turned out to need it too).
+ * Uses `PortalSheetContent` (not the raw `SheetContent`) so `TimeField15`'s and
+ * `DestinationCombobox`'s own popovers portal into this sheet's own content node instead of
+ * `document.body` — a modal Radix `Dialog` locks background touch-scroll to only its own
+ * content subtree, and a popover portaled to `document.body` by default becomes a DOM
+ * *sibling* of the sheet, not a descendant, so the lock blocks its touch-scroll outright
+ * (found and fixed for `TimeField15` here rather than in `WeekGrid.tsx`, whose own drag
+ * listeners are pointer-id-scoped and already cleaned up on every pointerup/cancel — not the
+ * cause; the fix was later generalized into `PortalSheetContent`/`PortalDialogContent` once
+ * every other Sheet/Dialog hosting one of these fields needed the identical fix).
  */
 export function QuickRequestSheet({
   open,
@@ -61,26 +59,23 @@ export function QuickRequestSheet({
   awayWindows = [],
   now,
 }: QuickRequestSheetProps) {
-  const [contentEl, setContentEl] = useState<HTMLDivElement | null>(null);
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent ref={setContentEl} side="bottom" className="max-h-[85dvh] overflow-y-auto overscroll-contain">
+      <PortalSheetContent side="bottom" className="max-h-[85dvh] overflow-y-auto overscroll-contain">
         <SheetHeader className="sr-only">
           <SheetTitle>{he.quickRequest.submit}</SheetTitle>
         </SheetHeader>
-        <SheetPortalContext.Provider value={contentEl}>
-          <RequestForm
-            key={`${initialCarId}:${day}:${initialStartTime}`}
-            mode="new"
-            variant="quick"
-            departmentId={departmentId}
-            weekStart={weekStart}
-            slotPrefill={{ day, departTime: initialStartTime, carId: initialCarId }}
-            quickContext={{ cars, freeWindows, awayWindows, showCarPicker, now }}
-            onDone={() => onOpenChange(false)}
-          />
-        </SheetPortalContext.Provider>
-      </SheetContent>
+        <RequestForm
+          key={`${initialCarId}:${day}:${initialStartTime}`}
+          mode="new"
+          variant="quick"
+          departmentId={departmentId}
+          weekStart={weekStart}
+          slotPrefill={{ day, departTime: initialStartTime, carId: initialCarId }}
+          quickContext={{ cars, freeWindows, awayWindows, showCarPicker, now }}
+          onDone={() => onOpenChange(false)}
+        />
+      </PortalSheetContent>
     </Sheet>
   );
 }

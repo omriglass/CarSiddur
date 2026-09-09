@@ -13,6 +13,7 @@ import { ErrorState } from "@/components/ErrorState";
 import { PageHeader } from "@/components/PageHeader";
 import { formatMinutes } from "@/components/TimeField15";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { PortalDialogContent } from "@/components/PortalDialogContent";
 import { TimeField15, parseHHMM } from "@/components/TimeField15";
 import { Textarea } from "@/components/ui/textarea";
 import { WeekExcelExportButton } from "@/features/sadran/export/WeekExcelExportButton";
@@ -1176,14 +1177,14 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
         </SheetContent>
       </Sheet>
       <Dialog open={!!reservation} onOpenChange={(open) => !open && setReservation(null)}>
-        <DialogContent><DialogHeader><DialogTitle>{he.sadranBoard.reservation}</DialogTitle><DialogDescription>{selectedDay}</DialogDescription></DialogHeader>
+        <PortalDialogContent><DialogHeader><DialogTitle>{he.sadranBoard.reservation}</DialogTitle><DialogDescription>{selectedDay}</DialogDescription></DialogHeader>
           {reservation ? <>
             <Select value={reservation.carId} onValueChange={(carId) => setReservation({ ...reservation, carId })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{(carsQuery.data ?? []).map((car) => <SelectItem key={car.id} value={car.id}>{car.name}</SelectItem>)}</SelectContent></Select>
             <div className="flex gap-2"><TimeField15 min="00:00" aria-label={he.sadranRideSheet.depart} value={reservation.start} onChange={(start) => setReservation({ ...reservation, start })} /><TimeField15 min="00:00" max="23:59" aria-label={he.sadranRideSheet.return} value={reservation.end} onChange={(end) => setReservation({ ...reservation, end })} /></div>
             <Textarea aria-label={he.sadranBoard.reservationNotes} placeholder={he.sadranBoard.reservationNotes} value={reservation.notes} onChange={(event) => setReservation({ ...reservation, notes: event.target.value })} />
             <Button disabled={editRideMutation.isPending || !reservation.notes.trim() || !reservation.carId} onClick={() => void saveReservation()}>{he.common.save}</Button>
           </> : null}
-        </DialogContent>
+        </PortalDialogContent>
       </Dialog>
       <RideSheet
         key={selectedPlanningChange?.id ?? selectedRide?.id ?? "no-ride"}

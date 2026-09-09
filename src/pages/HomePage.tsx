@@ -34,6 +34,7 @@ import { useDayFreeWindows } from "@/features/siddur/useDayFreeWindows";
 import { useDepartmentSettings, useEditRideMutation } from "@/features/sadran/hooks";
 import { servedOf } from "@/features/sadran/solverRun";
 import { he, t, tv } from "@/i18n/he";
+import { describeStatusReason } from "@/lib/statusReason";
 import { formatTime } from "@/lib/time";
 import { paths } from "@/app/routes";
 
@@ -43,10 +44,7 @@ const UNSERVED_STATUSES = new Set<MyRequestRow["status"]>(["waitlisted", "denied
 
 function reasonLine(row: MyRequestRow): string | null {
   if (row.pendingProposal) return row.pendingProposal.reasonHe;
-  if (row.statusReason && row.statusReason in he.statusReason) {
-    return he.statusReason[row.statusReason as keyof typeof he.statusReason];
-  }
-  return row.statusReason;
+  return describeStatusReason(row.statusReason);
 }
 
 /**

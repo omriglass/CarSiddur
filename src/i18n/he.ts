@@ -18,6 +18,41 @@ import type { Database } from "@/integrations/supabase/types";
 
 type NotificationEvent = Database["public"]["Enums"]["notification_event"];
 
+// `requests.status_reason` is a free-text column (no SQL enum), so there is
+// no generated type to mirror. This TS-only list is grepped from every
+// UPPER_SNAKE literal assigned to `status_reason` across `supabase/migrations/
+// *.sql`; `statusReason` below is typed `satisfies Record<StatusReasonCode,
+// string>` so a code missing its Hebrew label fails `npm run typecheck`.
+// Renderers must fall back to `he.statusReasonUnknown` (never the raw code)
+// for any value not in this list (e.g. a future DB-only code not yet mirrored
+// here).
+export const STATUS_REASON_CODES = [
+  "ASK_TO_JOIN_TEMP_CAR",
+  "AUTO_APPROVED",
+  "AUTO_APPROVED_FREE_CAR",
+  "CANCELLED_BY_MEMBER",
+  "DENIED_BY_SADRAN",
+  "DRIVER_CLAIMED",
+  "EXTERNAL",
+  "FREED_SLOT_APPROVED",
+  "FREED_SLOT_AUTO",
+  "NO_HOME_LOCATION",
+  "PROPOSAL_APPLIED",
+  "PROPOSAL_APPLIED_PENDING_ASSIGNMENT",
+  "RIDE_CANCELLED",
+  "SADRAN_ASSIGNED",
+  "SADRAN_EDIT",
+  "SADRAN_MANUAL",
+  "SADRAN_UNASSIGNED",
+  "UNMET_NEEDS_DRIVER",
+  "UNSAFE_ISSUE",
+  "WAITLISTED_NO_CAR",
+  "WAITLISTED_ONE_WAY",
+  "WAITLISTED_PUBLISHED_DAY",
+  "WITHDRAWN_BY_MEMBER",
+] as const;
+export type StatusReasonCode = (typeof STATUS_REASON_CODES)[number];
+
 export const he = {
   timeField: { hourListLabel: "שעה", minuteListLabel: "דקות" },
   departmentContext: { copyFrom: "העתקת רשימות ממחלקה", blankDepartment: "מחלקה ריקה", copyHelp: "יועתקו יעדים, סוגי נסיעות ומדיניות. הרשימות יהיו עצמאיות; לאחר היצירה ניתן לשנות את נקודת המוצא.", label: "מחלקה", viewOnly: "צפייה בלבד", noMembership: "כדי להגיש בקשה למחלקה זו יש להצטרף אליה דרך מנהל/ת המערכת." },
@@ -454,13 +489,16 @@ export const he = {
   // `requests.status_reason` UPPER_SNAKE codes written by DB-native paths
   // (submit_request, try_auto_approve, cancel_ride, resolve_freed_offer, …
   // DATA_MODEL.md §3.6, §3.8 note 3) that have no TS caller to render Hebrew
-  // via src/solver/reasons.ts. Grepped from supabase/migrations/20260907091500_rpc.sql.
+  // via src/solver/reasons.ts. Grepped from supabase/migrations/*.sql; see
+  // `STATUS_REASON_CODES` above. `satisfies` makes an added code with no
+  // label fail typecheck.
   statusReason: {
     ASK_TO_JOIN_TEMP_CAR: "בקשה להצטרף לנסיעה ברכב פרטי",
     AUTO_APPROVED: "אושרה אוטומטית — היה רכב פנוי",
     AUTO_APPROVED_FREE_CAR: "אושרה אוטומטית — הרכב היה פנוי",
     CANCELLED_BY_MEMBER: "בוטלה על ידך",
     DENIED_BY_SADRAN: "לא נמצא רכב מתאים",
+    DRIVER_CLAIMED: "שובצת לנסיעה — נהג/ת התנדב/ה",
     EXTERNAL: "נבחר פתרון חיצוני",
     FREED_SLOT_APPROVED: "שובצת לרכב שהתפנה",
     FREED_SLOT_AUTO: "שובצת אוטומטית לרכב שהתפנה",
@@ -471,11 +509,18 @@ export const he = {
     SADRAN_ASSIGNED: "שובצה על ידי הסדרן/ית",
     SADRAN_EDIT: "עודכנה על ידי הסדרן/ית",
     SADRAN_MANUAL: "שובצה ידנית על ידי הסדרן/ית",
+    SADRAN_UNASSIGNED: "השיבוץ הוסר על ידי הסדרן/ית — מחכה לשיבוץ מחדש",
+    UNMET_NEEDS_DRIVER: "הרכב שובץ, אך חסר/ה נהג/ת מתנדב/ת. תקבל/י הודעה כשיימצא נהג/ת.",
     UNSAFE_ISSUE: "הרכב הוצא משימוש עקב תקלה",
     WAITLISTED_NO_CAR: "כל הרכבים תפוסים בשעות אלה. אם יתפנה רכב תקבל/י הודעה.",
     WAITLISTED_ONE_WAY: "נסיעה בכיוון אחד ממתינה לשיבוץ ידני",
+    WAITLISTED_PUBLISHED_DAY: "היום הזה כבר פורסם. הבקשה ממתינה לרכב שיתפנה.",
     WITHDRAWN_BY_MEMBER: "הוסרה על ידך",
-  },
+  } satisfies Record<StatusReasonCode, string>,
+  // Generic fallback for a `status_reason` value that isn't in `statusReason`
+  // above (e.g. a code added on the DB side before this file is updated) —
+  // renderers must show this instead of the raw UPPER_SNAKE code.
+  statusReasonUnknown: "עדכון סטטוס ללא פירוט",
   // SQLSTATE / RPC-message → Hebrew toast (src/lib/rpc.ts `toAppError`).
   errors: {
     staleVersion: "מישהו אחר שינה את זה בינתיים — טען/י את הגרסה החדשה ונסה/י שוב",

@@ -3,12 +3,12 @@ import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
-  DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { PortalDialogContent } from "@/components/PortalDialogContent";
 import { he } from "@/i18n/he";
 
 interface FormDialogProps {
@@ -56,7 +56,7 @@ export function FormDialog({
 }: FormDialogProps) {
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!loading) onOpenChange(next); }}>
-      <DialogContent className={className}>
+      <PortalDialogContent className={className}>
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           {description ? <DialogDescription>{description}</DialogDescription> : null}
@@ -85,7 +85,7 @@ export function FormDialog({
             </>
           )}
         </DialogFooter>
-      </DialogContent>
+      </PortalDialogContent>
     </Dialog>
   );
 }

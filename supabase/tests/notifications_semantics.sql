@@ -61,6 +61,22 @@ begin
     where recipient_id = sadran2 and event = 'proposal_answered' and data->>'proposal_id' = prop_id::text
   ) = format('/sadran/%s/%s/proposals?proposal=%s', dept, w, prop_id),
     'notification_default_url did not resolve the token-less Sadran proposals route';
+
+  -- Regression: proposal_answered used to render the raw proposal_status enum value
+  -- ("{{firstName}} accepted את ההצעה") instead of Hebrew copy
+  -- (20260909098000_proposal_answered_variants.sql).
+  assert (
+    select data->>'variant' from public.notifications
+    where recipient_id = sadran2 and event = 'proposal_answered' and data->>'proposal_id' = prop_id::text
+  ) = 'accepted', 'proposal_answered notification data should carry variant=accepted';
+  assert (
+    select title_he from public.notifications
+    where recipient_id = sadran2 and event = 'proposal_answered' and data->>'proposal_id' = prop_id::text
+  ) like '%אישר/ה%', 'accepted-variant title should contain the Hebrew verb אישר/ה';
+  assert (
+    select title_he || body_he from public.notifications
+    where recipient_id = sadran2 and event = 'proposal_answered' and data->>'proposal_id' = prop_id::text
+  ) not like '%{{%', 'proposal_answered notification text has an unresolved placeholder';
 end $$;
 
 -- ---------------------------------------------------------------------------

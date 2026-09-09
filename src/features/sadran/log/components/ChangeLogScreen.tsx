@@ -4,6 +4,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { he } from "@/i18n/he";
+import { describeStatusReason } from "@/lib/statusReason";
 import { formatTime } from "@/lib/time";
 
 import { useAuditLog } from "../../hooks";
@@ -52,9 +53,7 @@ export function ChangeLogScreen({ departmentId, weekStart }: ChangeLogScreenProp
                   {ENTITY_LABEL[entry.table_name] ?? entry.table_name} · {entry.action}
                 </div>
                 {entry.reason ? (
-                  <p className="text-xs text-muted-foreground">
-                    {he.statusReason[entry.reason as keyof typeof he.statusReason] ?? entry.reason}
-                  </p>
+                  <p className="text-xs text-muted-foreground">{describeStatusReason(entry.reason)}</p>
                 ) : null}
               </CardContent>
             </Card>

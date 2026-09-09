@@ -20,7 +20,6 @@ Kept separate from `IMPLEMENTATION_PLAN.md` so the owner can triage. Items move 
 
 - Wire the "talk to the sadran on WhatsApp" button on `/p/<token>` to the new `sadran_contact_of(dept, week)` RPC (signed-in members only). The button is coded and hides itself until then (`src/pages/ProposalTokenPage.tsx`).
 - Run `npm run db:test` (new `supabase/tests/notifications_semantics.sql`, rls_smoke TEST 12) and the e2e suite (proposal specs were rewritten blind for board-only proposal creation).
-- Deployed DB: `notification_templates` rows are data, so the shortened copy in `supabase/seed.sql` does not reach an existing environment. Either edit them in the admin templates screen or ship a one-off data migration (`update notification_templates ... where event in (...)`).
 
 ## Next feature (priority 3): add passengers to a ride by button
 

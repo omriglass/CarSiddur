@@ -186,7 +186,7 @@ from (values
   ('published', 'הסידור לשבוע {{weekLabel}} פורסם', '{{outcomeLine}}'),
   ('outcome_changed', 'שינוי בסידור שלך', '{{diffLine}}'),
   ('proposal_received', 'הצעה מ{{sadranName}} לגבי {{destination}}', '{{day}} {{depart}}–{{return}} — {{proposalShort}}'),
-  ('proposal_answered', '{{firstName}} {{answerVerb}} את ההצעה', '{{destination}}, {{day}} — {{proposalShort}}'),
+  ('proposal_answered', '{{firstName}} ענה/תה על ההצעה', '{{destination}}, {{day}} {{depart}}–{{return}}'),
   ('freed_slot', 'התפנה רכב ל{{destination}}', '{{car}}, {{day}} {{depart}}–{{return}}.'),
   ('freed_slot_auto', 'שובצת לרכב שהתפנה', '{{car}}, {{day}} {{depart}}–{{return}} ל{{destination}}.'),
   ('claim_approved', 'הרכב שלך 🎉', 'הסדרן/ית אישר/ה: {{car}}, {{day}} {{depart}}–{{return}}.'),
@@ -391,6 +391,18 @@ select 'outcome_changed',channel,'ride_cancelled',
   '{{byName}} ביטל/ה נסיעה שהיית בה',
   '{{day}} {{depart}}–{{return}}, {{car}} ל{{destination}}.'
 from unnest(array['inbox','push']::public.notification_channel[]) channel
+on conflict (event,channel,(coalesce(variant,''))) do update set title=excluded.title,body=excluded.body,default_title=excluded.default_title,default_body=excluded.default_body;
+
+-- proposal_answered variants: the requester's answer, in Hebrew, instead of the raw
+-- proposal_status enum value (bug fix, 20260909098000_proposal_answered_variants.sql).
+insert into public.notification_templates(event,channel,variant,title,body,default_title,default_body)
+select 'proposal_answered', channel, t.variant, t.title, t.body, t.title, t.body
+from (values
+  ('accepted', '{{firstName}} אישר/ה את ההצעה', '{{destination}}, {{day}} {{depart}}–{{return}}'),
+  ('declined', '{{firstName}} דחה/תה את ההצעה', '{{destination}}, {{day}} {{depart}}–{{return}}'),
+  ('expired', 'ההצעה ל{{firstName}} פקעה', '{{destination}}, {{day}} {{depart}}–{{return}}')
+) as t(variant, title, body)
+cross join unnest(array['inbox','push']::public.notification_channel[]) channel
 on conflict (event,channel,(coalesce(variant,''))) do update set title=excluded.title,body=excluded.body,default_title=excluded.default_title,default_body=excluded.default_body;
 
 -- Account and membership status messages. Copy is data; emitters select variants.

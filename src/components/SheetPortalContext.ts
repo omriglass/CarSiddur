@@ -2,7 +2,10 @@ import { createContext } from "react";
 
 /**
  * DOM node to portal a field's own Radix popover into, when one is available (set by an
- * ancestor modal `Sheet`/`Dialog` via `SheetPortalContext.Provider`, e.g. `QuickRequestSheet`).
+ * ancestor modal `Sheet`/`Dialog` via `SheetPortalContext.Provider` — in practice always
+ * through `PortalSheetContent`/`PortalDialogContent`, never a hand-rolled provider; any Sheet
+ * or Dialog that hosts one of the fields below should use one of those wrappers instead of the
+ * raw `SheetContent`/`DialogContent`).
  *
  * Radix's `Dialog`/`Sheet` locks background touch-scroll (`react-remove-scroll`) by only
  * allowing scroll within its own content subtree. A popover that portals to `document.body`
@@ -15,8 +18,9 @@ import { createContext } from "react";
  * Defaults to `null` (portal to `document.body`, unaffected) outside any such ancestor.
  *
  * Shared by every field that opens its own Radix popover while it may be rendered inside a
- * modal `Sheet` (`TimeField15`, `DestinationCombobox`) — generalized from the original
- * `TimeField15`-only `TimeFieldPortalContext` once `DestinationCombobox` needed the identical
- * fix for its own popover (UX_FLOWS.md component inventory).
+ * modal `Sheet`/`Dialog` (`TimeField15`, `DestinationCombobox`, `CompanionPicker`) —
+ * generalized from the original `TimeField15`-only `TimeFieldPortalContext` once
+ * `DestinationCombobox` and `CompanionPicker` needed the identical fix for their own popovers
+ * (UX_FLOWS.md component inventory).
  */
 export const SheetPortalContext = createContext<HTMLElement | null>(null);
