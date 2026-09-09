@@ -14,7 +14,7 @@ Guidance for Claude Code working in this repository.
 
 1. **Never modify `../commucar-share`.** Read-only reference. Do not import from it, copy files from it, or run commands inside it.
 2. **Docs are the source of truth and move with the code.** Any change to behavior, schema, states, enums, rule types, notifications or screens updates the relevant `docs/*.md` **in the same change**. If REQUIREMENTS.md does not cover it, add it there first (the owner reviews requirements, not code).
-3. **Hebrew lives in exactly three places.** (a) `src/i18n/he*.ts` — all UI strings keyed by namespace (he.ts is canonical, merged from he.admin.ts, he.member.ts, he.sadran.ts), accessed via `const t = useT(); t.requests.fields.destination.label`; (b) `src/solver/reasons.ts` — solver reason templates keyed by `reasonCode` (reason codes, rule descriptions `RULE_<TYPE>_DESC`, `PolicyParamsError` messages), so the bundled solver is self-contained and rule files have no Hebrew; (c) seeded data in `supabase/seed.sql` — `notification_templates` table (push/inbox/WhatsApp title/body), `ride_types.name_he`, `destinations.name` (Hebrew place names). Never inline Hebrew in components, hooks, rule files, SQL logic, or edge functions. Identifiers, comments and docs are English.
+3. **Hebrew lives in exactly three places.** (a) `src/i18n/he*.ts` — all UI strings keyed by namespace (he.ts is canonical, merged from he.admin.ts, he.member.ts, he.sadran.ts), accessed via the `he` object or `t(key)`/`tv(key, vars)` from `src/i18n/he.ts` (there is no `useT()` hook); (b) `src/solver/reasons.ts` — solver reason templates keyed by `reasonCode` (reason codes, rule descriptions `RULE_<TYPE>_DESC`, `PolicyParamsError` messages), so the bundled solver is self-contained and rule files have no Hebrew; (c) seeded data in `supabase/seed.sql` — `notification_templates` table (push/inbox/WhatsApp title/body), `ride_types.name_he`, `destinations.name` (Hebrew place names). Never inline Hebrew in components, hooks, rule files, SQL logic, or edge functions. Identifiers, comments and docs are English.
 4. **RLS on every table**, `enable` + `force`, policies per command (never `for all`), written with the helper functions in `DATA_MODEL.md` §4.2 (`is_approved()`, `is_admin()`, `member_of(dept)`, `is_sadran(dept, week_start)`, `is_sadran_any(dept)`, `can_manage_week(dept, week_start)`, `is_week_public(dept, week_start)`). Multi-row state changes go through `SECURITY DEFINER` RPCs. `anon` has no grants. Service-role keys never reach the browser.
 5. **The solver stays pure.** `src/solver/**` imports nothing from React, Supabase, the DOM, `Date.now()`, `Math.random()`, or `src/i18n`. `solve(input)` returns a value; persistence is the caller's job (`apply_solver_result` RPC). Deterministic: every sort ends in an `id` tie-break.
 6. **All timestamps are Asia/Jerusalem-aware.** Postgres: `timestamptz` only; `week_start date` (the Sunday) keys a week; wall-clock settings are stored as `(dow, time)` and converted inside SQL with `at time zone 'Asia/Jerusalem'`. TS: `src/lib/time.ts` (`TZ = 'Asia/Jerusalem'`, date-fns-tz); never `getHours()`/`getDay()`/`toLocale*` without it. The solver never does wall-clock arithmetic — it gets epoch ms and per-day slot bounds.
@@ -94,7 +94,7 @@ src/
     time.ts                    TZ = 'Asia/Jerusalem'; formatTime, dateKey, weekdayIndex, formatWeekLabel, toJerusalem, DayBounds
     dayLabels.ts                weekdayLabel(instant, style) — kept out of time.ts so it stays i18n-free
     enums.ts                   DOCUMENTED, NOT PRESENT (2026-09-09): code imports Database['public']['Enums'] directly; owner decides (docs/TODO.md)
-    errors.ts                  SQLSTATE / DB error → `he.errors.*` keys
+    rpc.ts                     typed `rpc()` wrapper, `toAppError()` (SQLSTATE → `he.errors.*`), `showErrorToast()`
     push.ts                    push subscription helpers
     whatsapp.ts                wa.me link builder (no Hebrew; copy comes from DB)
   hooks/                       useTheme only; session/role/department hooks live in features/auth
@@ -183,7 +183,7 @@ scripts/
 **React / UI**
 - `<html dir="rtl" lang="he">`. Logical Tailwind utilities only (`ms-/me-/ps-/pe-/text-start`); directional icons `rtl:rotate-180`; numbers/times in `<span dir="ltr">`.
 - Forms: react-hook-form + zod from `features/<f>/schema.ts`; enum options iterate `src/lib/enums.ts`, labels from `he.enums.*`.
-- Data: TanStack Query only; mutations pass `expected_version` for rides/requests/proposals and surface `stale_version` conflicts via `lib/errors.ts`.
+- Data: TanStack Query only; mutations pass `expected_version` for rides/requests/proposals and surface `stale_version` conflicts via `lib/rpc.ts` (`toAppError`/`showErrorToast`).
 - Role gating via `useRole()` mirrors RLS; RLS is the guarantee.
 - Confirmations and add/edit forms rendered in a dialog go through `ConfirmDialog`/`FormDialog` (`src/components/`); every status pill (request/ride/proposal/week/car) goes through `StatusBadge` — never a hand-rolled `Dialog`+`DialogFooter` or a bare `<Badge>` for a status enum. Proposal summaries render via `ProposalSummary`.
 - Navigation: build URLs with `paths.*` from `src/app/routes.ts` (`paths.sadran.board(dept, week)`, `paths.siddur(...)`, `paths.requests.new(...)`, …), never a hand-built `` `/sadran/${dept}/${week}/board` `` template string — `src/app/routes.test.ts` checks every builder against the real router patterns.
@@ -201,7 +201,7 @@ scripts/
 | Tables, enums, RLS matrix, migration plan | `docs/DATA_MODEL.md` §2, §3, §4.3, §6 |
 | Request / proposal / week / ride states | REQ §5.2, §7.3, §4; `ARCHITECTURE.md` §5; `src/lib/enums.ts` |
 | Rule types, scoring, suggestion order | `docs/SOLVER.md` §4.3, §3.11; `src/solver/rules/` |
-| Notification events (canonical list + copy), pipeline, templates | `UX_FLOWS.md` §6 (canonical 21 events); `ARCHITECTURE.md` §9; `DATA_MODEL.md` §3.11 (`enqueue_notification`, `notifications`, `push_outbox`, `notification_templates`); REQ §9 |
+| Notification events (canonical list + copy), pipeline, templates | `UX_FLOWS.md` §6 (canonical 22 events); `ARCHITECTURE.md` §9; `DATA_MODEL.md` §3.11 (`enqueue_notification`, `notifications`, `push_outbox`, `notification_templates`); REQ §9 |
 | Weekly cycle, cron | REQ §4; `ARCHITECTURE.md` §10 (`app.tick()`); `DATA_MODEL.md` `department_settings`, `weeks`, §6 step 17 `20260907091600_cron.sql` |
 | Suggestion kind → proposal type | `SOLVER.md` §3.15 |
 | Screens, routes, Hebrew copy, i18n key plan | `docs/UX_FLOWS.md` §2.1 routes, §3–5 screens, §6 notification/WhatsApp copy, §10 i18n keys; `src/i18n/he.ts` |
@@ -252,7 +252,7 @@ Final; applied across all docs, skills and agents. Do not relitigate — if code
 2. Seed file is `supabase/seed.sql` (Supabase CLI default); demo seed data is described in DATA_MODEL §6.
 3. Migrations use the Supabase CLI form `YYYYMMDDHHMMSS_short_name.sql`; the 18-step initial plan starts at `20260907090000_extensions_and_enums.sql` (DATA_MODEL §6).
 4. `week_phase` = `open, solving, published, live, archived`; after the target week ends the week is `archived` (read-only, kept for fairness stats). No `closed`.
-5. One canonical `notification_event` list: the 21 events of UX_FLOWS §6.1 (enum value = snake_case of the `notif.*` key suffix); DATA_MODEL §2 and ARCHITECTURE §9 list exactly those; REQ §9 prose names nothing outside it.
+5. One canonical `notification_event` list: the 22 events of UX_FLOWS §6.1 (incl. `car_care`, 2026-09-09) (enum value = snake_case of the `notif.*` key suffix); DATA_MODEL §2 and ARCHITECTURE §9 list exactly those; REQ §9 prose names nothing outside it.
 6. Notification plumbing: `enqueue_notification(...)` writes one `notifications` row (inbox) plus one `push_outbox` row per active push subscription; pg_net/`drain_push_outbox()` deliver via the `push-dispatch` edge function with retries and 404/410 pruning; mutes in `profiles.muted_events notification_event[]` (Sadran-role events unmutable while assigned, enforced in enqueue); copy in the admin-editable `notification_templates` table (event, channel, variant, title, body) seeded from UX_FLOWS §6. No `notification_prefs`, no templates in `app_settings`.
 7. Exactly one pg_cron entry: `app.tick()` every 15 minutes computes Asia/Jerusalem time and calls `advance_week_phases()`, `send_due_reminders()`, `expire_proposals()`, `drain_push_outbox()`, `housekeeping()`; the daily GitHub Actions keep-alive stays.
 8. Requests are created/edited only via the `submit_request(payload jsonb)` SECURITY DEFINER RPC (validates §5.3, computes `is_late`, duplicate warning, versioning, audit; in `live` weeks calls `try_auto_approve`). Members SELECT own requests directly; no direct INSERT/UPDATE policies on `requests`.

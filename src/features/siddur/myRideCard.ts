@@ -41,7 +41,7 @@ export function myRideCard(
     purpose: ownRequest?.rideTypeName || purposes.join(" / ") || rideTypes.find((type) => type.code === "other")?.name_he,
     joining,
     description: [ride.notes, ridePublicDetails(served)].filter(Boolean).join("\n"),
-    driverName: ride.driver_name, carName: ride.car_name, carType: ride.car_type ?? undefined,
+    driverName: ride.driver_name, carName: ride.car_name, carId: ride.car_id, carType: ride.car_type ?? undefined,
     isChauffeur: chauffeur, needsDriver: !!ride.needs_driver, isMine: true,
     rideTypeCode: ownRequest?.rideTypeCode ?? served[0]?.ride_type,
   };

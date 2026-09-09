@@ -1,317 +1,29 @@
-import { zodResolver } from "@hookform/resolvers/zod";
 import { Plus } from "lucide-react";
 import { useState } from "react";
-import { useForm, useWatch } from "react-hook-form";
-import { toast } from "sonner";
+import { Link } from "react-router-dom";
 
+import { paths } from "@/app/routes";
 import { EmptyState } from "@/components/EmptyState";
 import { PageHeader } from "@/components/PageHeader";
 import { TableRowsSkeleton } from "@/components/skeletons/TableRowsSkeleton";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Textarea } from "@/components/ui/textarea";
 import { useOperationalDepartments } from "@/features/admin/useOperations";
 import { he } from "@/i18n/he";
-import { showErrorToast } from "@/lib/rpc";
 
-import { useCreateCarMutation, useCarsAdmin, useReplaceSeatConfigsMutation, useSeatConfigs, useUpdateCarMutation } from "../hooks";
-import { CAR_FEATURES, carSchema, type CarFormValues } from "../schema";
-import { SeatConfigEditor } from "./SeatConfigEditor";
+import { useAllDepartmentMembers, useAllProfiles } from "../../members/hooks";
+import { useCarsAdmin } from "../hooks";
+import { CarForm } from "./CarForm";
 import type { Car } from "../api";
-
-import type { Passengers } from "@/solver";
-
-const FEATURE_LABEL: Record<(typeof CAR_FEATURES)[number], string> = {
-  roof_rack: he.adminCars.featureRoofRack,
-  large_trunk: he.adminCars.featureLargeTrunk,
-  automatic: he.adminCars.featureAutomatic,
-  awd: he.adminCars.featureAwd,
-};
-
-function CarForm({ car, onSaved }: { car: Car | null; onSaved: () => void }) {
-  const departmentsQuery = useOperationalDepartments();
-  const createMutation = useCreateCarMutation();
-  const updateMutation = useUpdateCarMutation();
-  const seatConfigsQuery = useSeatConfigs(car?.id);
-  const replaceSeatConfigsMutation = useReplaceSeatConfigsMutation();
-  const [pendingSeatConfigs, setPendingSeatConfigs] = useState<Passengers[] | null>(null);
-
-  const form = useForm<CarFormValues>({
-    resolver: zodResolver(carSchema),
-    defaultValues: {
-      name: car?.name ?? "",
-      license_plate: car?.license_plate ?? "",
-      access_code: car?.access_code ?? "",
-      is_replaced: car?.is_replaced ?? false,
-      replacement_code: car?.replacement_code ?? null,
-      department_id: car?.department_id ?? "",
-      type: car?.type ?? "shared",
-      status: car?.status ?? "active",
-      features: car?.features ?? [],
-      notes: car?.notes ?? null,
-      built_in_child_seats: car?.built_in_child_seats ?? 0,
-      built_in_boosters: car?.built_in_boosters ?? 0,
-    },
-  });
-  const isReplaced = useWatch({ control: form.control, name: "is_replaced" });
-
-  async function onSubmit(values: CarFormValues) {
-    try {
-      const payload = { ...values, replacement_code: values.is_replaced ? values.replacement_code : null };
-      let carId = car?.id;
-      if (car) {
-        await updateMutation.mutateAsync({ id: car.id, patch: payload });
-      } else {
-        const created = await createMutation.mutateAsync(payload);
-        carId = created.id;
-      }
-      if (carId && pendingSeatConfigs) {
-        await replaceSeatConfigsMutation.mutateAsync({ carId, configs: pendingSeatConfigs });
-      }
-      toast.success(he.adminCommon.savedToast);
-      onSaved();
-    } catch (error) {
-      showErrorToast(error);
-    }
-  }
-
-  return (
-    <Form {...form}>
-      <form className="flex flex-col gap-4" onSubmit={form.handleSubmit(onSubmit)}>
-        <FormField
-          control={form.control}
-          name="name"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>{he.adminCars.fieldName}</FormLabel>
-              <FormControl>
-                <Input {...field} />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        <FormField
-          control={form.control}
-          name="license_plate"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>{he.adminCars.fieldPlate}</FormLabel>
-              <FormControl>
-                <Input {...field} dir="ltr" />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        <FormField
-          control={form.control}
-          name="access_code"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>{he.adminCars.fieldAccessCode}</FormLabel>
-              <FormControl>
-                <Input {...field} type="text" inputMode="numeric" dir="ltr" maxLength={5} autoComplete="off" />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        <FormField
-          control={form.control}
-          name="is_replaced"
-          render={({ field }) => (
-            <FormItem className="flex items-center gap-2 space-y-0">
-              <FormControl>
-                <Checkbox
-                  checked={field.value}
-                  onCheckedChange={(checked) => {
-                    field.onChange(checked === true);
-                    if (checked !== true) {
-                      form.setValue("replacement_code", null, { shouldDirty: true });
-                      form.clearErrors("replacement_code");
-                    }
-                  }}
-                />
-              </FormControl>
-              <FormLabel>{he.adminCars.fieldIsReplaced}</FormLabel>
-            </FormItem>
-          )}
-        />
-        {isReplaced ? (
-          <FormField
-            control={form.control}
-            name="replacement_code"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>{he.adminCars.fieldReplacementCode}</FormLabel>
-                <FormControl>
-                  <Input {...field} value={field.value ?? ""} type="text" inputMode="numeric" dir="ltr" maxLength={5} autoComplete="off" />
-                </FormControl>
-                <FormDescription>{he.adminCars.replacementCodeHelp}</FormDescription>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-        ) : null}
-        <FormField
-          control={form.control}
-          name="department_id"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>{he.adminCars.fieldDepartment}</FormLabel>
-              <Select value={field.value} onValueChange={field.onChange}>
-                <FormControl>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                </FormControl>
-                <SelectContent>
-                  {(departmentsQuery.data ?? []).map((d) => (
-                    <SelectItem key={d.id} value={d.id}>
-                      {d.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        <div className="grid grid-cols-2 gap-4">
-          <FormField
-            control={form.control}
-            name="type"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>{he.adminCars.fieldType}</FormLabel>
-                <Select value={field.value} onValueChange={field.onChange}>
-                  <FormControl>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                  </FormControl>
-                  <SelectContent>
-                    <SelectItem value="shared">{he.car.type.shared}</SelectItem>
-                    <SelectItem value="temporary">{he.car.type.temporary}</SelectItem>
-                  </SelectContent>
-                </Select>
-              </FormItem>
-            )}
-          />
-          <FormField
-            control={form.control}
-            name="status"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>{he.adminCars.fieldStatus}</FormLabel>
-                <Select value={field.value} onValueChange={field.onChange}>
-                  <FormControl>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                  </FormControl>
-                  <SelectContent>
-                    <SelectItem value="active">{he.car.status.active}</SelectItem>
-                    <SelectItem value="maintenance">{he.car.status.maintenance}</SelectItem>
-                    <SelectItem value="retired">{he.car.status.retired}</SelectItem>
-                  </SelectContent>
-                </Select>
-              </FormItem>
-            )}
-          />
-        </div>
-        <FormField
-          control={form.control}
-          name="features"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>{he.adminCars.fieldFeatures}</FormLabel>
-              <div className="flex flex-wrap gap-3">
-                {CAR_FEATURES.map((feature) => (
-                  <label key={feature} className="flex items-center gap-2 text-sm">
-                    <Checkbox
-                      checked={field.value.includes(feature)}
-                      onCheckedChange={(checked) =>
-                        field.onChange(
-                          checked ? [...field.value, feature] : field.value.filter((f: string) => f !== feature),
-                        )
-                      }
-                    />
-                    {FEATURE_LABEL[feature]}
-                  </label>
-                ))}
-              </div>
-            </FormItem>
-          )}
-        />
-        <div className="grid grid-cols-2 gap-4">
-          <FormField
-            control={form.control}
-            name="built_in_child_seats"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>{he.adminCars.fieldBuiltInChildSeats}</FormLabel>
-                <FormControl>
-                  <Input type="number" min={0} value={field.value} onChange={(e) => field.onChange(Number(e.target.value))} />
-                </FormControl>
-              </FormItem>
-            )}
-          />
-          <FormField
-            control={form.control}
-            name="built_in_boosters"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>{he.adminCars.fieldBuiltInBoosters}</FormLabel>
-                <FormControl>
-                  <Input type="number" min={0} value={field.value} onChange={(e) => field.onChange(Number(e.target.value))} />
-                </FormControl>
-              </FormItem>
-            )}
-          />
-        </div>
-        <FormField
-          control={form.control}
-          name="notes"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>{he.adminCars.fieldNotes}</FormLabel>
-              <FormControl>
-                <Textarea {...field} value={field.value ?? ""} />
-              </FormControl>
-            </FormItem>
-          )}
-        />
-
-        <div className="border-t pt-4">
-          <SeatConfigEditor
-            key={car?.id ?? "new"}
-            initial={
-              (seatConfigsQuery.data ?? []).map((sc) => ({ adults: sc.adults, childSeats: sc.child_seats, boosters: sc.boosters }))
-            }
-            onChange={setPendingSeatConfigs}
-          />
-        </div>
-
-        <Button type="submit" disabled={form.formState.isSubmitting}>
-          {he.adminCommon.save}
-        </Button>
-      </form>
-    </Form>
-  );
-}
 
 export function CarsScreen({ initialCarId }: { initialCarId?: string } = {}) {
   const carsQuery = useCarsAdmin();
   const departmentsQuery = useOperationalDepartments();
+  const profilesQuery = useAllProfiles();
+  const deptMembersQuery = useAllDepartmentMembers();
   const [editing, setEditing] = useState<Car | null | undefined>(undefined);
   // Deep-link support for `/admin/cars/:id` (UX_FLOWS §2.1 route table): open
   // that car's editor sheet once its row has loaded, without a fetch effect
@@ -326,7 +38,18 @@ export function CarsScreen({ initialCarId }: { initialCarId?: string } = {}) {
   }
 
   const departmentsById = new Map((departmentsQuery.data ?? []).map((d) => [d.id, d.name]));
+  const profilesById = new Map((profilesQuery.data ?? []).map((p) => [p.id, p.full_name]));
   const cars = (carsQuery.data ?? []).filter((car) => departmentsQuery.data?.some((department) => department.id === car.department_id));
+
+  // Department-members combobox candidates for the "אחראי/ת רכב" picker (CarForm.responsibleOptions),
+  // scoped to whichever department the form's `department_id` field currently holds.
+  function responsibleOptionsFor(departmentId: string | undefined) {
+    if (!departmentId) return [];
+    return (deptMembersQuery.data ?? [])
+      .filter((member) => member.department_id === departmentId)
+      .map((member) => ({ id: member.profile_id, name: profilesById.get(member.profile_id) ?? member.profile_id }))
+      .filter((option, index, all) => all.findIndex((o) => o.id === option.id) === index);
+  }
 
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-4 p-4">
@@ -349,10 +72,11 @@ export function CarsScreen({ initialCarId }: { initialCarId?: string } = {}) {
               <TableHead>{he.adminCars.fieldDepartment}</TableHead>
               <TableHead>{he.adminCars.fieldType}</TableHead>
               <TableHead>{he.adminCars.fieldStatus}</TableHead>
+              <TableHead>{he.adminCars.columnResponsible}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            <TableRowsSkeleton columns={5} />
+            <TableRowsSkeleton columns={6} />
           </TableBody>
         </Table>
       ) : cars.length === 0 ? (
@@ -366,13 +90,20 @@ export function CarsScreen({ initialCarId }: { initialCarId?: string } = {}) {
               <TableHead>{he.adminCars.fieldDepartment}</TableHead>
               <TableHead>{he.adminCars.fieldType}</TableHead>
               <TableHead>{he.adminCars.fieldStatus}</TableHead>
+              <TableHead>{he.adminCars.columnResponsible}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {cars.map((car) => (
               <TableRow key={car.id} className="cursor-pointer" onClick={() => setEditing(car)}>
                 <TableCell>
-                  {car.name}
+                  <Link
+                    to={paths.car(car.id)}
+                    onClick={(event) => event.stopPropagation()}
+                    className="underline-offset-2 hover:underline"
+                  >
+                    {car.name}
+                  </Link>
                   {car.is_replaced ? <Badge variant="outline" className="ms-2">{he.adminCars.replacedBadge}</Badge> : null}
                 </TableCell>
                 <TableCell dir="ltr">{car.license_plate}</TableCell>
@@ -381,6 +112,7 @@ export function CarsScreen({ initialCarId }: { initialCarId?: string } = {}) {
                 <TableCell>
                   <StatusBadge kind="car" status={car.status} />
                 </TableCell>
+                <TableCell>{car.responsible_id ? profilesById.get(car.responsible_id) ?? car.responsible_id : he.adminCars.noResponsible}</TableCell>
               </TableRow>
             ))}
           </TableBody>
@@ -393,7 +125,14 @@ export function CarsScreen({ initialCarId }: { initialCarId?: string } = {}) {
             <SheetTitle>{editing ? he.adminCars.edit : he.adminCars.new}</SheetTitle>
           </SheetHeader>
           <div className="mt-4">
-            {editing !== undefined ? <CarForm car={editing} onSaved={() => setEditing(undefined)} /> : null}
+            {editing !== undefined ? (
+              <CarForm
+                car={editing}
+                departments={departmentsQuery.data ?? []}
+                responsibleOptions={responsibleOptionsFor(editing?.department_id ?? departmentsQuery.data?.[0]?.id)}
+                onSaved={() => setEditing(undefined)}
+              />
+            ) : null}
           </div>
         </SheetContent>
       </Sheet>

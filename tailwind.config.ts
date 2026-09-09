@@ -92,10 +92,25 @@ export default {
           from: { height: "var(--radix-accordion-content-height)" },
           to: { height: "0" },
         },
+        // Car report dialog celebration (REQUIREMENTS §6.6, `CarReportDialog.tsx`'s
+        // `CelebrationMessage`) — CSS-only, gated behind `motion-safe:`/`motion-reduce:`
+        // at the call site rather than a JS `matchMedia` check.
+        "car-care-bounce": {
+          "0%": { transform: "scale(0.3)", opacity: "0" },
+          "50%": { transform: "scale(1.15)" },
+          "70%": { transform: "scale(0.95)" },
+          "100%": { transform: "scale(1)", opacity: "1" },
+        },
+        "car-care-pop": {
+          "0%, 100%": { transform: "translateY(0) scale(1)", opacity: "0.6" },
+          "50%": { transform: "translateY(-8px) scale(1.3)", opacity: "1" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
+        "car-care-bounce": "car-care-bounce 0.5s ease-out",
+        "car-care-pop": "car-care-pop 1.2s ease-in-out infinite",
       },
     },
   },

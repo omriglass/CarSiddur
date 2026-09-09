@@ -175,7 +175,19 @@ Admin or Sadran can block a car for a time window with a reason. Blocked windows
 **Any member** may register a *temporary car* (typically their private car) for a department and enter their own rides on it; an admin can revoke it (confirmed 2026-09-06, §13.53). Their rides are auto-approved and appear on the board **only so other members can ask to merge into them**. The solver never assigns a temporary car to anyone else, and temporary cars never relay or chauffeur (§5.4). The owner accepts or declines merge proposals like any driver. A member who asks to join a ride on a temporary car (§7.3) sends the merge proposal **directly to the owner**; the Sadran is informed but not in the loop (confirmed 2026-09-06, §13.43).
 
 ### 6.5 Car issues
-Members can report an issue on a car (free text, optional photo later). Issues are listed for admins; an open "unsafe" issue lets an admin quickly move the car to maintenance.
+Members can report an issue on a car (a **category** — warning light / mechanical / lighting / physical damage — plus free text and an optional photo, §6.6). Issues are listed for admins; an open "unsafe" issue lets an admin quickly move the car to maintenance.
+
+### 6.6 Car care portal (owner decisions 2026-09-09)
+
+Every car has a **responsible person** (`cars.responsible_id`, admin-set on the car's edit form; optional — many cars have none). From a car's name anywhere in the app, any approved department member can open "דיווח על רכב &lt;name&gt;" and:
+
+- **Report a problem**: category (warning light / mechanical / lighting / physical damage), a free-text explanation, and an optional photo.
+- **Log a tire fill**: the state of all five tires — front-left, front-right, rear-left, rear-right, spare — each **green** (ok), **yellow** (2–5 psi added) or **red** (more than 5 psi added) — plus an optional note.
+- **Log a wash**: no further input.
+
+Each of these raises one notification to the car's **responsible person**; if the car has none, to the **department's admins** (§13 decision: "car admin" is a regular admin for now — there is no separate department-scoped admin role, `profiles.is_admin` is global).
+
+The responsible person can open their car's page (`/cars/:carId`), edit **every** field of the car (including reassigning the owner or the responsible person itself), and see and export the car's history — issues, tire fills and washes, by date. Admins have the same access for every car (again, "car admin" = regular admin for now).
 
 ---
 
@@ -275,7 +287,7 @@ Channels, in priority order, all free:
 3. **WhatsApp** — outbound only, via click-to-chat links generated for the Sadran (proposals, reminders). No API.
 4. **Email** — later; only if a free provider tier suffices.
 
-Events that notify: request window opening/closing reminders, request window closed — solve now (to Sadran), publish reminder when the planned publish time passes and the week is still being solved (to Sadran), siddur published, your outcome changed, proposal received, proposal answered (to Sadran), freed slot available, freed slot auto-assigned to you, several claimants for a freed slot (to Sadran), claim approved/declined, car maintenance affecting you, new late/waitlisted request (to Sadran), request auto-approved in a live week (member, Sadran informed), request edited after solving started (to Sadran), access request from an unknown account (to Admin), access approved, and changes to account approval, Admin privileges, or department role/membership (to the affected user). Status alerts identify the resulting status; pending access requests link admins to member approval. The canonical list (21 events) with Hebrew copy is `UX_FLOWS.md` §6.1. WhatsApp texts exist for every proposal type, including `external` (§13.59).
+Events that notify: request window opening/closing reminders, request window closed — solve now (to Sadran), publish reminder when the planned publish time passes and the week is still being solved (to Sadran), siddur published, your outcome changed, proposal received, proposal answered (to Sadran), freed slot available, freed slot auto-assigned to you, several claimants for a freed slot (to Sadran), claim approved/declined, car maintenance affecting you, new late/waitlisted request (to Sadran), request auto-approved in a live week (member, Sadran informed), request edited after solving started (to Sadran), access request from an unknown account (to Admin), access approved, changes to account approval, Admin privileges, or department role/membership (to the affected user), and a car-care report (issue reported, tire fill logged, or wash logged — to the car's responsible person, or the department's admins if it has none, §6.6). Status alerts identify the resulting status; pending access requests link admins to member approval. The canonical list (22 events) with Hebrew copy is `UX_FLOWS.md` §6.1. WhatsApp texts exist for every proposal type, including `external` (§13.59).
 
 Members can mute categories; Sadran alerts cannot be muted while assigned.
 
@@ -397,6 +409,16 @@ Items 51+ record the owner's answers of 2026-09-06 to the former open questions 
 66. **Waiting-list rule (2026-09-09): always try to place a request first; waitlist only when placement is genuinely impossible.** A round-trip request filed against an already-**published** week is now auto-approved exactly like a live-week one if a shared car is free at the requested time — previously only a live week tried this, and a published-week request just sat `submitted` with no outcome until a Sadran looked at it. A member explicitly "entering the waiting list" for an already-published day (§8) still goes through this same placement attempt first; only when no car is free does it actually become `waitlisted`. One-way requests are unaffected — they still only auto-waitlist in a live week (item 64) and rely on the waiting-list entry point otherwise. (DATA_MODEL §6.1 "Notification links, cancellation and waiting-list follow-ups")
 67. **`proposal_answered` notifies the Sadran who sent the proposal** (`proposals.created_by`), not every Sadran of the department/week — a department can have more than one Sadran on duty, and only the sender is negotiating that particular request. (2026-09-09; DATA_MODEL §3.11)
 68. **Full ride cancellation notifies every other served member**, not only whoever cancelled it — a driver's or the Sadran's cancellation of a ride with several passengers now tells each of them individually, with day/time/destination/car and who cancelled. (2026-09-09; DATA_MODEL §3.10, §3.11)
+
+Items 69+ record the car care portal decisions of 2026-09-09 (§6.6):
+
+69. **`cars.responsible_id` is admin-set, optional, and per-car** — there is no department-level default responsible person and no requirement that every car has one. (2026-09-09; DATA_MODEL §3.2)
+70. **Car-care notifications fall back to the department's admins when a car has no responsible person.** "The department's admins" is every globally approved admin (`profiles.is_admin`) — there is no department-scoped admin role to narrow it to (DATA_MODEL §2 notes on `role`). (2026-09-09; DATA_MODEL §4.2 `car_care_recipients()`)
+71. **"Car admin" = regular admin, for now.** The responsible person's edit-everything / history-export authority is also granted to any admin, for every car, rather than introducing a new scoped role. A future department-scoped "car admin" role is a documented possible follow-up, not built in v1. (2026-09-09)
+72. **Tire fill states are a 3-value enum** (`ok` / `low` / `very_low`), corresponding to the reporting UI's green (no air added) / yellow (2–5 psi added) / red (more than 5 psi added); all five tire positions (front-left, front-right, rear-left, rear-right, spare) are required on every tire-fill log. (2026-09-09; DATA_MODEL §3.2 `car_care_events`)
+73. **Car care history (issues, tire fills, washes) is exportable by date** from the responsible person's / admin's car page; the export itself is a UI concern (`ui-dev`) reading `car_issues` and `car_care_events` — no separate export table or RPC. (2026-09-09; UX_FLOWS §2.1 `/cars/:carId`)
+
+One canonical `notification_event` list now has **22** events (was 21, CLAUDE.md consistency decision #5): `car_care` joins it (UX_FLOWS §6.1).
 
 ## Owner TODO amendments — 2026-09-07
 

@@ -4,10 +4,7 @@ Kept separate from `IMPLEMENTATION_PLAN.md` so the owner can triage. Items move 
 
 ## Deferred (needs product thinking)
 
-- **Car responsible person.** Optional `cars.responsible_id` (admin-set), fallback to the week's Sadran. Prerequisite for the two items below. Decided 2026-09-09: wait.
-- **Car care log ("filled air", "washed", ...).** Anyone files a quick note per car; tire fill records which of the 5 tires (front left/right, rear left/right, spare). Repeated fills on the same car within a short window alert the responsible person (threshold per car).
-- **Car fault reporting for everyone.** `car_issues` already exists for admin; open it to all members with a one-tap report and notify the responsible person.
-
+- ~~Car responsible person, car care log, fault reporting~~ — scheduled 2026-09-09 as the car care portal (REQUIREMENTS, fleet section).
 - **Multi-day request** (owner, 2026-09-09). Today a multi-day trip is filed as several single-day requests. Constraints to add: the same car on every day; nobody else uses that car in between (the car is held from the start time to midnight, and from midnight to the end time on the last day); moving one day to another car raises a "multi-day request" warning on the board and checks whether the new car is free for the whole span. Needs a `requests.group_id` (or a `request_groups` table) and solver/board awareness of the group.
 - **One-way rides: chauffeur availability** (owner, 2026-09-09). Members can mark time windows as "available to be a chauffeur". Riders can easily see when both a chauffeur and a car are available, so requesting a one-way ride is easy. Needs a `chauffeur_availability` table, a member screen to mark windows, and an availability overlay on the published siddur / request form.
 - **Repeating requests** (owner, 2026-09-09). A request can be marked as repeating. When a new week opens, repeating requests appear as suggestions; tapping one pre-fills the request form (the member still confirms and may change anything, e.g. shift departure by 30 minutes); a suggestion can be dismissed with "stop recurring" or "snooze this week". Needs `request_templates.recurring` (or a `recurring_requests` table) with per-week snooze state, and a suggestions strip on Home / My requests when the week opens.

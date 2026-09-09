@@ -70,6 +70,13 @@ export const paths = {
   /** `/p/:token` — no-sign-in-required proposal answering (ARCHITECTURE.md §8). */
   proposalToken: (token: string) => `/p/${token}`,
 
+  /**
+   * `/cars/:carId` — car page (car care portal, REQUIREMENTS §6.6,
+   * UX_FLOWS.md §5.11). `notification_default_url()`'s `car_care` deep-link
+   * target; also linked from the admin cars list's car-name cell.
+   */
+  car: (carId: string) => `/cars/${carId}`,
+
   /** `/inbox`; `?change=<rideChangeId>` is produced by `deepLinkFor` for `ride_change_id` notifications. */
   inbox: (changeId?: string) => withQuery("/inbox", { change: changeId }),
 };

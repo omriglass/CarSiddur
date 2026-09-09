@@ -155,6 +155,11 @@ values
   ('00000000-0000-0000-0000-000000000043', '00000000-0000-0000-0000-000000000001', 'רכב פרטי של חבר', '10-100-04', 'temporary', 'active', '00000000-0000-0000-0000-000000000104', '{}', 0, 0)
 on conflict (id) do nothing;
 
+-- Car care portal: one shared car has an admin-set responsible person (member1); the
+-- others fall back to department admins in `car_care_recipients()` (REQ §6 car care).
+update public.cars set responsible_id = '00000000-0000-0000-0000-000000000103'
+where id = '00000000-0000-0000-0000-000000000040';
+
 insert into public.car_seat_configs (car_id, adults, child_seats, boosters)
 values
   ('00000000-0000-0000-0000-000000000040', 5, 0, 0),
@@ -201,6 +206,29 @@ from (values
   ('access_approved', 'הגישה שלך אושרה', 'אפשר להיכנס לסידור הרכב של נבו.')
 ) as t(event, title, body)
 cross join unnest(array['inbox', 'push']::public.notification_channel[]) as ch
+on conflict (event, channel, coalesce(variant, '')) do nothing;
+
+-- car_care: one variant per issue category plus tire_fill/wash (REQ §6 car care).
+insert into public.notification_templates (event, channel, variant, title, body, default_title, default_body)
+select 'car_care'::public.notification_event, ch, t.variant, t.title, t.body, t.title, t.body
+from (values
+  ('issue_warning_light', '{{byName}} דיווח/ה על אור אזהרה ברכב {{carName}}', '{{description}}'),
+  ('issue_mechanical', '{{byName}} דיווח/ה על תקלה מכנית ברכב {{carName}}', '{{description}}'),
+  ('issue_lighting', '{{byName}} דיווח/ה על תקלת תאורה ברכב {{carName}}', '{{description}}'),
+  ('issue_physical_damage', '{{byName}} דיווח/ה על נזק לרכב {{carName}}', '{{description}}'),
+  ('tire_fill', '{{byName}} מילא/ה אוויר בצמיגי {{carName}}', '{{lowCount}} צמיגים נמוכים, {{veryLowCount}} נמוכים מאוד'),
+  ('wash', '{{byName}} שטף/ה את {{carName}}', '{{carName}} נקי/ה ומוכן/ה לנסיעה')
+) as t(variant, title, body)
+cross join unnest(array['inbox', 'push']::public.notification_channel[]) as ch
+on conflict (event, channel, coalesce(variant, '')) do nothing;
+
+-- Defensive null-variant fallback (every emitter always sets `_data.variant`; required by
+-- the "all production events need default templates" invariant, same as proposal_answered).
+insert into public.notification_templates (event, channel, variant, title, body, default_title, default_body)
+select 'car_care'::public.notification_event, ch, null,
+  '{{byName}} עדכן/ה את {{carName}}', 'עדכון טיפול ברכב.',
+  '{{byName}} עדכן/ה את {{carName}}', 'עדכון טיפול ברכב.'
+from unnest(array['inbox', 'push']::public.notification_channel[]) as ch
 on conflict (event, channel, coalesce(variant, '')) do nothing;
 
 insert into public.notification_templates (event, channel, variant, title, body, default_title, default_body)

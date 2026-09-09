@@ -61,6 +61,8 @@ function deepLinkFor(n: Notification): string {
   }
   if (typeof data.request_id === "string" || typeof data.offer_id === "string") return paths.requests.list();
   if (typeof data.ride_id === "string") return paths.siddur();
+  // `car_care` (REQUIREMENTS §6.6, UX_FLOWS §6.1): `notification_default_url()`'s `car_id` branch.
+  if (typeof data.car_id === "string") return paths.car(data.car_id);
   return paths.inbox();
 }
 

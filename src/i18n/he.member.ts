@@ -229,6 +229,101 @@ export const heMember = {
     invalidToken: "הקישור אינו תקין",
     offerNotFound: "ההצעה לרכב שהתפנה לא נמצאה",
   },
+  /**
+   * Car report dialog (REQUIREMENTS §6.6, UX_FLOWS §3.9): three flows opened
+   * from any car's name — report a problem, log a tire fill, log a wash.
+   * `dialogTitle` doubles as the opening icon button's `aria-label`.
+   */
+  carCare: {
+    dialogTitle: "דיווח על רכב {{car}}",
+    close: "סגירה",
+    homeProblemTitle: "דיווח על תקלה",
+    homeTireFillTitle: "מילאתי אוויר בצמיגים",
+    homeWashTitle: "שטפתי את הרכב",
+    categoryLabel: "סוג התקלה",
+    categoryRequired: "יש לבחור סוג תקלה",
+    category: {
+      warning_light: "אור אזהרה",
+      mechanical: "תקלה מכנית",
+      lighting: "תקלת תאורה",
+      physical_damage: "נזק לרכב",
+    },
+    descriptionLabel: "פירוט התקלה",
+    descriptionPlaceholder: "מה קרה?",
+    descriptionRequired: "יש לפרט את התקלה",
+    descriptionTooLong: "התיאור ארוך מדי (עד 500 תווים)",
+    submitProblem: "שליחת דיווח",
+    problemSuccessToast: "תודה, הדיווח נשלח לאחראי/ת הרכב",
+    tirePosition: {
+      front_left: "קדמי שמאל",
+      front_right: "קדמי ימין",
+      rear_left: "אחורי שמאל",
+      rear_right: "אחורי ימין",
+      spare: "גלגל רזרבי",
+    },
+    tireLegendOk: "תקין",
+    tireLegendLow: "הוספתי 2–5 PSI",
+    tireLegendVeryLow: "הוספתי מעל 5 PSI",
+    tireNoteLabel: "הערה (לא חובה)",
+    tireDone: "סיימתי",
+    tireCelebration: "כל הכבוד על מילוי האוויר!",
+    washButton: "שטפתי את הרכב",
+    washCelebration: "הרכב נקי — תודה!",
+  },
+  /**
+   * Car page (`/cars/:carId`, REQUIREMENTS §6.6, UX_FLOWS §5.11): the
+   * responsible person's / admin's manage screen — details form, merged
+   * issue/tire-fill/wash history with filters, and an Excel export. Reuses
+   * `carCare.category.*`/`carCare.tirePosition.*` above for issue-category
+   * and tire-position labels (no duplicate Hebrew) and
+   * `adminIssues.statusOpen`/`statusResolved`/`unsafe` from `he.admin.ts`
+   * for issue status (CLAUDE.md hard rule 3: one Hebrew string, one place).
+   */
+  carPage: {
+    notAuthorized: "רק אחראי/ת הרכב או מנהל/ת מערכת יכולים לצפות בעמוד הזה",
+    backHome: "חזרה לדף הבית",
+    notFound: "הרכב לא נמצא",
+    tabDetails: "פרטי הרכב",
+    tabHistory: "היסטוריה",
+    tabExport: "ייצוא",
+    reportButton: "דיווח על הרכב",
+    fieldResponsible: "אחראי/ת רכב",
+    fieldResponsibleNone: "ללא אחראי/ת (הודעות יגיעו למנהלי המערכת)",
+    fieldResponsibleReadonlyHelp: "רק מנהל/ת מערכת יכול/ה לשנות את האחראי/ת על הרכב",
+    historyEmpty: "אין היסטוריה עדיין",
+    historyFilterAll: "הכול",
+    historyFilterIssue: "תקלות",
+    historyFilterTireFill: "מילוי אוויר",
+    historyFilterWash: "שטיפות",
+    historyDateFrom: "מתאריך",
+    historyDateTo: "עד תאריך",
+    historyKindIssue: "תקלה",
+    historyKindTireFill: "מילוי אוויר",
+    historyKindWash: "שטיפה",
+    historyReporter: "דיווח/ה",
+    historyNote: "הערה",
+    exportButton: "ייצוא לאקסל",
+    exportLoading: "מכין קובץ…",
+    exportIssuesSheet: "תקלות",
+    exportTireFillsSheet: "מילוי אוויר",
+    exportWashesSheet: "שטיפות",
+    exportColumnDate: "תאריך ושעה",
+    exportColumnReporter: "דיווח/ה",
+    exportColumnCategory: "סוג התקלה",
+    exportColumnDescription: "פירוט",
+    exportColumnStatus: "סטטוס",
+    exportColumnUnsafe: "לא בטוח לנסיעה",
+    exportColumnNote: "הערה",
+    exportColumnTireFrontLeft: "קדמי שמאל",
+    exportColumnTireFrontRight: "קדמי ימין",
+    exportColumnTireRearLeft: "אחורי שמאל",
+    exportColumnTireRearRight: "אחורי ימין",
+    exportColumnTireSpare: "גלגל רזרבי",
+    exportTireStateOk: "תקין",
+    exportTireStateLow: "נמוך",
+    exportTireStateVeryLow: "נמוך מאוד",
+    homeMyCarsTitle: "הרכבים באחריותי",
+  },
 } as const;
 
 export type HeMemberDictionary = typeof heMember;

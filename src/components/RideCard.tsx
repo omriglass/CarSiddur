@@ -2,6 +2,7 @@ import { ArrowLeft, CarFront, MapPin, Star } from "lucide-react";
 import { formatInTimeZone } from "date-fns-tz";
 
 import { Card, CardContent } from "@/components/ui/card";
+import { CarNameWithReport } from "@/features/carCare/components/CarNameWithReport";
 import { he } from "@/i18n/he";
 import { weekdayLabel } from "@/lib/dayLabels";
 import { rideTypeColorClasses } from "@/lib/rideTypeColors";
@@ -36,6 +37,13 @@ export interface RideCardData {
   highlighted?: boolean;
   tightSchedule?: boolean;
   carName: string | null;
+  /**
+   * Enables the "דיווח על רכב" icon next to `carName` (`CarNameWithReport`,
+   * REQUIREMENTS §6.6). Omitted by the Sadran board's `BoardListMode` (which
+   * reuses this same card shape) — by design, member self-service car
+   * reporting has no place there (UX_FLOWS §3.9).
+   */
+  carId?: string | null;
   carType?: "shared" | "temporary";
   freeSeats?: number;
   /** `ride_types.code` — tints the icon chip to match the board/siddur grid (visual pass, `src/lib/rideTypeColors.ts`). */
@@ -124,7 +132,13 @@ export function RideCard({ ride, onClick }: RideCardProps) {
             {ride.needsDriver ? <span className="font-semibold text-destructive">{he.rideCoordination.missingDriver}</span> : null}
             {ride.conflict ? <span className="font-semibold text-destructive">{he.board.conflicts}</span> : null}
             {ride.tightSchedule ? <span role="img" aria-label={he.rideCoordination.tightSchedule} title={he.rideCoordination.tightSchedule}>⏱</span> : null}
-            {ride.carName ? <span>{ride.carName}</span> : null}
+            {ride.carName ? (
+              ride.carId ? (
+                <CarNameWithReport carId={ride.carId} carName={ride.carName} />
+              ) : (
+                <span>{ride.carName}</span>
+              )
+            ) : null}
             {ride.driverName ? (
               <span>
                 {ride.isChauffeur ? he.ride.chauffeur : he.ride.driver}: {ride.driverName}

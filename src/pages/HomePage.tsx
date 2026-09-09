@@ -17,6 +17,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { formatWeekRangeLabel, todayInJerusalem } from "@/components/DateField";
 import { useProfile } from "@/features/auth/useProfile";
 import { DeviceSetupPrompts } from "@/features/member/components/DeviceSetupPrompts";
+import { useMyResponsibleCarsQuery } from "@/features/cars/hooks";
 import { useCars, useRideTypes } from "@/features/fleet/hooks";
 import { AddRideFab } from "@/features/requests/components/AddRideFab";
 import { QuickRequestSheet } from "@/features/requests/components/QuickRequestSheet";
@@ -59,6 +60,7 @@ export function HomePage() {
   const requestsQuery = useMyRequests();
   const upcomingRidesQuery = useMyUpcomingRides();
   const rideTypesQuery = useRideTypes();
+  const myCarsQuery = useMyResponsibleCarsQuery();
 
   const defaultDepartmentId =
     active.departmentId;
@@ -179,6 +181,32 @@ export function HomePage() {
 
       <DeviceSetupPrompts />
       {!active.canSubmit && <p className="text-sm text-muted-foreground">{he.departmentContext.noMembership} <Link to={paths.siddur({ dept: active.departmentId })}>{he.nav.siddur}</Link></p>}
+
+      {(myCarsQuery.data ?? []).length > 0 ? (
+        <section className="space-y-2">
+          <h2 className="text-sm font-semibold text-muted-foreground">{he.carPage.homeMyCarsTitle}</h2>
+          <div className="space-y-2">
+            {(myCarsQuery.data ?? []).map((car) => (
+              <Link key={car.id} to={paths.car(car.id)}>
+                <Card className="bg-gradient-card shadow-card transition-smooth hover:shadow-elegant">
+                  <CardContent className="flex items-center justify-between gap-2 p-3 text-sm">
+                    <div className="flex items-center gap-3">
+                      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                        <CarFront className="size-5" aria-hidden="true" />
+                      </span>
+                      <div>
+                        <p className="font-medium">{car.name}</p>
+                        <p className="text-xs text-muted-foreground" dir="ltr">{car.license_plate}</p>
+                      </div>
+                    </div>
+                    <StatusBadge kind="car" status={car.status} />
+                  </CardContent>
+                </Card>
+              </Link>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       {active.canSubmit && currentWeekStart ? (
         <Card

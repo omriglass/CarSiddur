@@ -474,6 +474,7 @@ export function SiddurPage() {
                     isMine: isMyRide(r),
                     tightSchedule: tightRideIds.has(r.id as string),
                     carName: siddurCarName(carsQuery.data?.find((c) => c.id === r.car_id)) || null,
+                    carId: r.car_id,
                     carType: (carsQuery.data ?? []).find((c) => c.id === r.car_id)?.type,
                     rideTypeCode: representativeRideTypeCode(servedOf(r)),
                   };

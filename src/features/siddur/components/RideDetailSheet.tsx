@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { PortalSheetContent } from "@/components/PortalSheetContent";
+import { CarNameWithReport } from "@/features/carCare/components/CarNameWithReport";
 import { rideBlockLabel } from "@/lib/rideLabel";
 import { siddurCarName } from "@/lib/siddurCarName";
 import { ridePublicDetails } from "@/lib/ridePublicDetails";
@@ -120,7 +121,7 @@ export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = 
                 <div className="space-y-1">
                   <span className="font-medium">{he.rideDetail.car}</span>
                   <p>
-                    {siddurCarName(car)}
+                    <CarNameWithReport carId={car.id} carName={siddurCarName(car)} />
                     {car.type === "temporary" ? ` · ${he.car.type.temporary}` : ""}
                   </p>
                 </div>

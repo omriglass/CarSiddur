@@ -42,7 +42,8 @@ Week parameter `:week` is the target week's Sunday as `YYYY-MM-DD`. `:dept` is t
 | `/inbox` | **Inbox** (tab הודעות) | member | All notifications with read state (§3.7). |
 | `/profile` | **Profile & settings** (tab פרופיל) | member | Phone, departments, mute categories, temporary car, install hint, sign out (§3.8). |
 | `/profile/temp-car` | Temporary car | member | Register/retire own car for a department; enter own rides. |
-| `/cars/:id/issue` | Report car issue | member | Free text (+ photo later). |
+| `/cars/:carId` | **Car page** (car care portal, REQ §6.6) — manage screen (details/history/export) implemented 2026-09-09 (ui-dev), route registered in `src/features/member/routes.tsx` → spread into `src/app/router.tsx` (**correction**: the row's earlier note pointed at a nonexistent `src/router.tsx`) | responsible person or admin (edit + history/export, `CarManageScreen`, §5.11); any approved member (report actions, §3.9) | Responsible/admin: full edit rights on every car field (department reassignment intentionally excluded from this screen, stays `/admin/cars`-only) and a merged issues/fills/washes history with export. The report-a-problem/log-tire-fill/log-wash dialog (`report_car_issue`/`log_car_care` RPCs) is `CarReportDialog`/`CarNameWithReport` (§3.9, `src/features/carCare`; ✅ done 2026-09-09) — opened from a car's name wherever it shows on a member surface, **not** from this page. `CarManageScreen`'s `headerActions` slot (still empty) is available for whoever owns that screen to additionally surface `CarNameWithReport` there too, if wanted. |
+| `/cars/:id/issue` | Report car issue (pre-portal, free text only) | member | Superseded by `/cars/:carId` above, which requires a category (still hand-off, see above). |
 | `/sadran` | Sadran home | Sadran | Departments/weeks I am assigned to. |
 | `/sadran/:dept/:week` | Week entry route | Sadran | Redirects to the board (`/sadran/:dept/:week/board`); the standalone dashboard screen was removed (§4.1). |
 | `/sadran/:dept/:week/board` | **Board** | Sadran | Cars × time grid + unmet list (§4.2). |
@@ -329,6 +330,27 @@ Sections in cards:
 6. **ניהול** — visible to Sadran/Admin: links to `/sadran` and `/admin`.
 7. **התנתקות**, app version, "מדריך קצר" (replays the 5-step coach marks).
 
+### 3.9 Car report dialog (`CarReportDialog`, REQUIREMENTS §6.6)
+
+Opened from the small wrench icon next to any car's name on a member surface (`CarNameWithReport`) — the published siddur's day list and grid (`RideCard`, `src/features/siddur/**`), a ride's detail sheet (`RideDetailSheet`), and Home's upcoming-rides list (`myRideCard.ts`). **Never** on the Sadran board or board sheets (`WeekGrid`/`GridRide`/`RideSheet`/`BoardListMode`) — those keep a plain car name; this is a member self-service action, not a coordination one. Any approved department member may open it, regardless of any relation to the car (REQUIREMENTS §6.6); it does not require or check `/cars/:carId` access.
+
+Built on `PortalDialogContent`. Title "דיווח על רכב &lt;name&gt;" (`carCare.dialogTitle`, also the icon button's `aria-label`); a small, visible X close button sits top-start (`data-testid="car-report-close"`) — closing at any point (including mid-sub-view) discards unsaved input and does not submit anything.
+
+**Home view** — three big tappable cards, each a full row with an icon and label:
+- **דיווח על תקלה** (`AlertTriangle`) → Problem sub-view.
+- **מילאתי אוויר בצמיגים** (`Gauge`) → Tires sub-view.
+- **שטפתי את הרכב** (`Droplets`) → Wash sub-view.
+
+**Problem sub-view** — category as a 4-option radio group (`car_issue_category`: warning_light / mechanical / lighting / physical_damage, Hebrew labels `he.carCare.category`), a required free-text description (`Textarea`, `he.carCare.descriptionRequired` when empty, 500-char cap), no photo field (see i18n-plan note below), Back / שליחת דיווח. On success: toast "תודה, הדיווח נשלח לאחראי/ת הרכב" (`carCare.problemSuccessToast`) and the dialog closes immediately — no celebration animation for this flow.
+
+**Tires sub-view** (`TireFillPanel`) — an inline SVG top-down car schematic: four wheel buttons at the corners (front-left/front-right/rear-left/rear-right) plus the spare in the trunk area, each `aria-label`led by Hebrew position name (`he.carCare.tirePosition`) and current state, tap-cycling ok → low (2–5 psi added) → very_low (&gt;5 psi added) → ok, colored green/yellow/red (`available`/`maintenance`/`destructive` tone tokens). A three-item legend below (תקין / הוספתי 2–5 PSI / הוספתי מעל 5 PSI). Optional note textarea. "סיימתי" (`carCare.tireDone`) calls `log_car_care('tire_fill', tires, note)` with all five positions always present, then shows a ~1.8s CSS-only bounce+sparkle celebration ("כל הכבוד על מילוי האוויר!") and auto-closes.
+
+**Wash sub-view** — a single big button ("שטפתי את הרכב"); tapping it calls `log_car_care('wash')` immediately (no further questions), then the same celebration pattern ("הרכב נקי — תודה!") and auto-closes.
+
+Celebration animation: Tailwind `motion-safe:animate-car-care-bounce` / `motion-safe:animate-car-care-pop` (keyframes in `tailwind.config.ts`), paired with `motion-reduce:animate-none` so `prefers-reduced-motion` is respected without a JS `matchMedia` check.
+
+**Implementation note (2026-09-09, ui-dev):** REQUIREMENTS §6.6 calls for an "optional photo" on the problem report and the RPC (`report_car_issue`) accepts `_photo_path`, but no storage bucket or upload UI exists anywhere in the app yet (checked `admin/cars`, `fleet`, any `storage.from(...)` call — none found). The photo field is omitted from this dialog until a storage bucket + RLS policy exist (hand-off: `db-migrator`) and an upload helper is built; `reportCarIssue()` never sends `_photo_path`.
+
 ---
 
 ## 4. Sadran flows
@@ -539,10 +561,24 @@ Ordered list (drag handle), name, icon picker, active. Initial values from REQUI
 Each `PolicyRuleRow` has an enable switch, a `WeightSlider` (0–10, step 0.1, numeric input beside it — the seeded default policy in SOLVER.md §4.4 uses weights such as 0.3 and 0.4) and a params editor specific to the rule type (map editor for ride types keyed by `ride_types.code`, `maxKm` for distance, `lookbackWeeks` for fairness; param names come from `ruleRegistry[type].defaultParams`). For `rideType`, the map editor (`RuleParamsEditor`, `src/features/admin/policy/components/RuleParamsEditor.tsx`) renders one number input per ride type currently in the department (from the ride types query, `src/features/admin/rideTypes/hooks.ts`'s `useRideTypesAdmin`), labelled by `ride_types.name_he` and seeded with `weights[code] ?? defaultWeight` — a code with no explicit weight is filled in automatically so saving always covers every current ride type — plus one plain input for `defaultWeight` itself (applied to any ride type the stored params don't mention, e.g. one added after this policy version was saved). A code present in the stored `weights` but no longer in `ride_types` (deleted after this policy was saved) is shown disabled/greyed with a "לא בשימוש" hint and a small remove control, rather than silently dropped. **בדיקה על השבוע שעבר** re-scores the previous week's requests with the edited (unsaved) policy and shows the `RankingPreviewTable` with rank deltas, plus a dry-run solver pass reporting which requests would flip between served and unmet. Saving always creates a new version (REQUIREMENTS §7.2); "הפוך לפעילה במחלקה…" assigns it. History tab lists versions with notes and which solver runs used them.
 
 ### 5.9 Notification templates (`/admin/templates`)
-Edits the `notification_templates` table (DATA_MODEL §3.11): for each of the 21 events in §6.1 an inbox row and a push row, plus the seven WhatsApp templates in §6.2 (`channel = whatsapp`, `variant` = shift / merge_passenger / merge_driver / deny / external / chauffeur / reminder). Editor: title, body (textarea), placeholder chips that insert `{{…}}` at the caret, live preview with sample data, "שחזר ברירת מחדל" (re-inserts the seed row). Validation blocks removing the `{{link}}` placeholder from WhatsApp templates and enforces the push length limits.
+Edits the `notification_templates` table (DATA_MODEL §3.11): for each of the 22 events in §6.1 an inbox row and a push row, plus the seven WhatsApp templates in §6.2 (`channel = whatsapp`, `variant` = shift / merge_passenger / merge_driver / deny / external / chauffeur / reminder). Editor: title, body (textarea), placeholder chips that insert `{{…}}` at the caret, live preview with sample data, "שחזר ברירת מחדל" (re-inserts the seed row). Validation blocks removing the `{{link}}` placeholder from WhatsApp templates and enforces the push length limits.
 
 ### 5.10 Settings (`/admin/settings`)
 Per department (with a global default row): request window open (day + time), close (day + time), planned publish time (used as default proposal expiry), grid hours (06:00–23:59), turnaround buffer (30 min), day end (default 23:59 — every shared car must be home by then unless the Sadran acknowledges an overnight stay), chauffeur dwell (default 10 min), detour limit (20 min / 15 km), auto-apply proposals when all accepted (on). Time inputs use `TimeField15`. Two settings from the reference app are **gone in v0.3** (DATA_MODEL §3.1): rides must end on their starting day by 23:59 (`rides.overflow_allowed` is retained only for legacy data — REQ §13.62), and any member may register a temporary car with no admin gate (an admin can only revoke one — REQ §13.53).
+
+### 5.11 Car page — car care portal (`/cars/:carId`, REQUIREMENTS §6.6, §13.69–73; built 2026-09-09, ui-dev)
+
+The corrected route from §2.1's table above. **Guard**: `is_admin() ∨ cars.responsible_id = auth.uid()`; every other approved member (including one with no relation to this car) gets the shared not-authorized empty state (`he.errors.notAuthorized`, icon `Lock`, a "לדף הבית" action) — this is stricter than REQ §6.6's "any approved member" wording, which describes the *report* entry point ("דיווח על רכב <name>"), a separate dialog (`CarReportDialog`, §3.9, `src/features/carCare`; ✅ done 2026-09-09) opened from a car's name elsewhere in the app rather than this manage screen. A car that doesn't exist (bad id) shows a not-found empty state instead.
+
+`CarManageScreen` (`src/features/cars/components/CarManageScreen.tsx`):
+- **Header**: car name (`PageHeader` title), plate (`<span dir="ltr">`) and `StatusBadge kind="car"` below it, plus a `headerActions` slot (currently empty — reserved for a future report-a-problem entry point on this screen specifically; the primary report entry points per REQ §6.6 are car-name links elsewhere in the app, out of this agent's scope).
+- **Tab "פרטי הרכב"**: the admin `CarForm` (`src/features/admin/cars/components/CarForm.tsx`, extracted from `/admin/cars` so both screens share one form), department field hidden (`showDepartmentField={false}` — this screen never reassigns a car's department; that stays admin-console-only), seat-capacity matrix editor shown only to admins (`canEditSeatConfigs`; RLS has no `is_car_responsible` grant on `car_seat_configs`, DATA_MODEL §4.3, so a non-admin responsible person could not save it anyway) — every `cars`-table field (name, plate, codes, type, status, features, built-in seats, notes) is editable by both; **"אחראי/ת רכב" is editable by admins only** (`canEditResponsible`), read-only (own name) to the responsible viewer, per this task's explicit scoping (REQ §13.71 grants RLS-level parity, but the UI narrows it).
+- **Tab "היסטוריה"**: one merged, date-descending list (`mergeCarHistory`/`filterCarHistory`, `src/features/cars/lib/history.ts`) of `car_issues` (category via `he.carCare.category.*`, description, status via `he.adminIssues.statusOpen/statusResolved`, unsafe badge) and `car_care_events` (tire fill — a five-dot mini indicator, one per tire position in fixed order front-left/front-right/rear-left/rear-right/spare, colored ok=green/low=amber/very_low=red, `aria-label`led with `he.carCare.tirePosition.*`; wash — reporter and date only). Filters: kind chips (הכול / תקלות / מילוי אוויר / שטיפות) and an optional from/to date range (`Input type="date"`, Asia/Jerusalem `dateKey` comparison).
+- **Tab "ייצוא"**: `CarExcelExportButton` — one workbook, three sheets ("תקלות" / "מילוי אוויר" / "שטיפות"), same hand-rolled OpenXML writer as `WeekExcelExportButton` (`src/features/sadran/export/xlsx.ts`, RTL sheet view baked in), row builders in `src/features/cars/export/carRows.ts`, dates via `jerusalemExcelDate` (`src/features/sadran/export/weekWorkbook.ts`).
+
+**Home** (`/my`): a compact "הרכבים באחריותי" card lists every non-retired car where `responsible_id = me` (`useMyResponsibleCarsQuery`), linking to `paths.car(id)`; hidden entirely when the member is responsible for no car.
+
+**Admin** (`/admin/cars`): a new "אחראי/ת" column (member's name or `he.adminCars.noResponsible`), the car-name cell is now a `Link` to `paths.car(id)` (`stopPropagation` so the row's own click-to-edit-sheet behavior is unaffected), and `CarForm`'s responsible picker (`Select`, candidates = department members via `useAllDepartmentMembers`/`useAllProfiles`, "ללא אחראי/ת" clears it).
 
 ---
 
@@ -552,7 +588,7 @@ Placeholders: `{{firstName}}`, `{{sadranName}}`, `{{dept}}`, `{{weekLabel}}` (e.
 
 ### 6.1 Push / inbox events (REQUIREMENTS §9) — the canonical event list
 
-This table **is** the `notification_event` enum (DATA_MODEL §2) and ARCHITECTURE §9's event list: exactly these 21 events, no others. The enum value is the snake_case of the i18n key suffix (`notif.freedSlotAuto` → `freed_slot_auto`). The i18n key holds only the short label used in the mute list and inbox filters; Title and Body are the **seeded defaults** of the `inbox` and `push` rows in `notification_templates`, editable by admins (§5.9). "(to Sadran)" events are Sadran-role events that cannot be muted while assigned.
+This table **is** the `notification_event` enum (DATA_MODEL §2) and ARCHITECTURE §9's event list: exactly these 22 events, no others. The enum value is the snake_case of the i18n key suffix (`notif.freedSlotAuto` → `freed_slot_auto`). The i18n key holds only the short label used in the mute list and inbox filters; Title and Body are the **seeded defaults** of the `inbox` and `push` rows in `notification_templates`, editable by admins (§5.9). "(to Sadran)" events are Sadran-role events that cannot be muted while assigned.
 
 | Key | Enum value | Event | Title | Body |
 |---|---|---|---|---|
@@ -577,12 +613,17 @@ This table **is** the `notification_event` enum (DATA_MODEL §2) and ARCHITECTUR
 | `notif.accessApproved` | `access_approved` | Approved (to member; push/inbox now, email channel in v1.x — REQUIREMENTS §14.10) | הגישה שלך אושרה | אפשר להיכנס לסידור הרכב של נבו. |
 | `notif.statusChanged` | `status_changed` | Approval status, Admin privileges, or department membership/role changed (to affected user) | הסטטוס שלך עודכן | פרטי הגישה או התפקיד שלך עודכנו. |
 | `notif.publishReminder` | `publish_reminder` | Planned publish time passed, week still solving (to Sadran; fired once by `send_due_reminders()`) | תזכורת: הסידור לשבוע {{weekLabel}} עדיין לא פורסם | שעת הפרסום המתוכננת עברה. אפשר לפרסם או להמשיך לנהל את הבקשות שנותרו. |
+| `notif.car_care` | `car_care` | Issue reported, tire fill logged, or wash logged (to the car's `responsible_id`, else every admin, REQ §6.6; week-less) | six variants, see below | six variants, see below |
 
-Mute categories (§3.8) → events: תזכורות על חלון בקשות = `window_open`, `window_closing`; פרסום הסידור = `published`, `outcome_changed`; הצעות = `proposal_received`; מקומות שמתפנים = `freed_slot`, `freed_slot_auto`, `claim_approved`, `claim_declined`; תקלות ותחזוקה = `maintenance_affects`. Sadran/Admin events and `auto_approved`/`access_approved`/`status_changed` are not mutable.
+Mute-list label supplied 2026-09-09 (ui-dev): `he.notif.car_care` = "טיפול ברכב" (`src/i18n/he.ts`); added to the "תקלות ותחזוקה" mute category alongside `maintenance_affects` (`src/features/inbox/muteCategories.ts`).
+
+Mute categories (§3.8) → events: תזכורות על חלון בקשות = `window_open`, `window_closing`; פרסום הסידור = `published`, `outcome_changed`; הצעות = `proposal_received`; מקומות שמתפנים = `freed_slot`, `freed_slot_auto`, `claim_approved`, `claim_declined`; תקלות ותחזוקה = `maintenance_affects`, `car_care`. Sadran/Admin events and `auto_approved`/`access_approved`/`status_changed` are not mutable. `car_care` **is** mutable — unlike the Sadran-role events, it is a normal per-recipient notification (the recipient may be a plain member who happens to be `responsible_id`, or an admin only by fallback).
 
 `outcome_changed` also has a `ride_cancelled` inbox/push variant (`_data.variant`, same selection mechanism as the `ride_change` variant of `proposal_received` above): sent to every other served passenger/driver — never the person who cancelled — when a ride is fully cancelled (`cancel_ride_without_passengers()`, DATA_MODEL §3.10), before their request flips to `cancelled`. Title "{{byName}} ביטל/ה נסיעה שהיית בה", body "{{day}} {{depart}}–{{return}}, {{car}} ל{{destination}}." (`{{byName}}` is the person who cancelled, passed explicitly; the rest comes from `notification_context()` via `request_id`/`ride_id` in `data`, resolved while the ride/request rows are still intact).
 
 `proposal_answered` also has `accepted`/`declined`/`expired` inbox/push variants (`_data.variant`, same mechanism; bug fix `20260909098000_proposal_answered_variants.sql` — the previous single copy interpolated the raw `proposal_status` enum value into `{{answerVerb}}`, rendering e.g. "{{firstName}} accepted את ההצעה"). `proposal_parties_roll_up()` sets `variant` to `'accepted'`/`'declined'`; `expire_proposals()` sets it to `'expired'`. Title/body per variant: `accepted` — "{{firstName}} אישר/ה את ההצעה" / "{{destination}}, {{day}} {{depart}}–{{return}}"; `declined` — "{{firstName}} דחה/תה את ההצעה" / same body; `expired` — "ההצעה ל{{firstName}} פקעה" / same body. The variant-less row above is now a defensive fallback only (should never be hit in practice).
+
+`car_care` (REQ §6.6) has six `_data.variant` inbox/push pairs, per-category rather than a shared template with a Hebrew category placeholder (hard rule 3: no Hebrew in SQL logic — `notification_templates` rows are the exception, not function bodies): `issue_warning_light` — "{{byName}} דיווח/ה על אור אזהרה ברכב {{carName}}" / "{{description}}"; `issue_mechanical` — "{{byName}} דיווח/ה על תקלה מכנית ברכב {{carName}}" / "{{description}}"; `issue_lighting` — "{{byName}} דיווח/ה על תקלת תאורה ברכב {{carName}}" / "{{description}}"; `issue_physical_damage` — "{{byName}} דיווח/ה על נזק לרכב {{carName}}" / "{{description}}"; `tire_fill` — "{{byName}} מילא/ה אוויר בצמיגי {{carName}}" / "{{lowCount}} צמיגים נמוכים, {{veryLowCount}} נמוכים מאוד"; `wash` — "{{byName}} שטף/ה את {{carName}}" / "{{carName}} נקי/ה ומוכן/ה לנסיעה". `data.url` is `/cars/<car_id>` (`notification_default_url()`'s new `car_id` branch). The variant-less row is a defensive fallback only, same as `proposal_answered`'s.
 
 Copy convention (owner decision, 2026-09-09): title is one line naming the event and the person involved; body is one line — day, time, destination (and car when relevant); no ids, no version numbers, and no "click to answer" call to action, since the notification itself already opens the deep link (`notification_default_url()`, ARCHITECTURE §9).
 
@@ -780,6 +821,9 @@ Contracts are one line; props in TypeScript-ish shorthand. All components are RT
 | `ChangeLogList` | `entries, filters` — audit view. |
 | `DataTable` | Admin table with search, sort, sheet editor, card fallback on phone. |
 | `AllowListImport` | Paste → parse → preview → import. |
+| `CarForm` | `car: Car\|null; onSaved; showDepartmentField?; departments?; canEditResponsible?; responsibleOptions?; canEditSeatConfigs?` — the fields+seat-config editor of §5.4, extracted so `/cars/:carId` (§5.11) can render the same form outside the admin sheet with a different field set (no department picker, seat-config admin-only, responsible-picker admin-only vs. read-only) (`src/features/admin/cars/components/CarForm.tsx`; ✅ done 2026-09-09, car care portal). |
+| `CarManageScreen` | `car; isAdmin; viewerName; headerActions?` — `/cars/:carId`'s tabs (details/history/export, §5.11); `headerActions` is the reserved slot for a future report-a-problem entry point on this screen (`src/features/cars/components/CarManageScreen.tsx`; ✅ done 2026-09-09). |
+| `CarExcelExportButton` | `carName, issues, careEvents, loading?` — one workbook, three sheets (תקלות/מילוי אוויר/שטיפות), same writer as `WeekExcelExportButton` (`src/features/cars/components/CarExcelExportButton.tsx`; ✅ done 2026-09-09). |
 | `RosterCalendar` | Weeks × departments grid with Sadran chips. |
 | `SeatConfigEditor` | `value: SeatConfig[]; presets; onChange` — rows of (adults, childSeats, boosters), dominance validation, quick fit tester. |
 | `FeatureChips` | Multi-select car features. |
@@ -789,6 +833,9 @@ Contracts are one line; props in TypeScript-ish shorthand. All components are RT
 | `RankingPreviewTable` | Current vs new score and rank delta for last week's requests; "would flip" filter. |
 | `TemplateEditor` | Title/body with placeholder chips and live preview. |
 | `CycleSettingsForm` | Per-department window/publish times, buffers, limits. |
+| `CarNameWithReport` | `carId, carName, className?` — a car's name plus a small wrench icon (`role="button"`, not a nested `<button>` — every call site can itself be inside a clickable card/row) that opens `CarReportDialog`; used everywhere a car name shows on a member surface, never on the Sadran board (§3.9, `src/features/carCare/components/CarNameWithReport.tsx`; ✅ done 2026-09-09). |
+| `CarReportDialog` | `carId, carName, open, onOpenChange` — home (3 cards) + problem/tires/wash sub-views, built on `PortalDialogContent` (§3.9, `src/features/carCare/components/CarReportDialog.tsx`; ✅ done 2026-09-09). |
+| `TireFillPanel` | `value: TireStates; onChange; note; onNoteChange` — inline SVG car schematic, 5 tap-to-cycle tire buttons + legend + note (§3.9, `src/features/carCare/components/TireFillPanel.tsx`; ✅ done 2026-09-09). |
 
 ---
 
@@ -954,6 +1001,16 @@ Screen titles, primary actions, statuses and navigation. Keys are the namespaced
 | `days.long` | ראשון שני שלישי רביעי חמישי שישי שבת | |
 | `common.cancel` / `common.save` / `common.back` / `common.retry` / `common.loading` | ביטול / שמירה / חזרה / נסה/י שוב / טוען… | |
 | `offline.banner` | אין חיבור לאינטרנט — מוצג הסידור האחרון שנשמר | |
+| `carCare.dialogTitle` | דיווח על רכב {{car}} | §3.9, also the opening icon button's `aria-label` |
+| `carCare.homeProblemTitle` / `homeTireFillTitle` / `homeWashTitle` | דיווח על תקלה / מילאתי אוויר בצמיגים / שטפתי את הרכב | §3.9 home cards |
+| `carCare.category.warning_light/mechanical/lighting/physical_damage` | אור אזהרה / תקלה מכנית / תקלת תאורה / נזק לרכב | `car_issue_category` enum; shared with `/cars/:carId`'s history view (§5.11) |
+| `carCare.descriptionLabel/descriptionRequired/descriptionTooLong` | פירוט התקלה / יש לפרט את התקלה / התיאור ארוך מדי (עד 500 תווים) | |
+| `carCare.problemSuccessToast` | תודה, הדיווח נשלח לאחראי/ת הרכב | |
+| `carCare.tirePosition.front_left/front_right/rear_left/rear_right/spare` | קדמי שמאל / קדמי ימין / אחורי שמאל / אחורי ימין / גלגל רזרבי | shared with §5.11's history view |
+| `carCare.tireLegendOk/tireLegendLow/tireLegendVeryLow` | תקין / הוספתי 2–5 PSI / הוספתי מעל 5 PSI | `tire_state` enum |
+| `carCare.tireDone/tireCelebration` | סיימתי / כל הכבוד על מילוי האוויר! | |
+| `carCare.washButton/washCelebration` | שטפתי את הרכב / הרכב נקי — תודה! | |
+| `carCare.close` | סגירה | dialog's explicit X, `aria-label` |
 
 ---
 

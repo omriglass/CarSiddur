@@ -108,17 +108,20 @@ create type public.party_response       as enum ('pending','accepted','declined'
 create type public.car_type             as enum ('shared','temporary');
 create type public.car_status           as enum ('active','maintenance','retired');
 create type public.car_issue_status     as enum ('open','resolved');
+create type public.car_issue_category   as enum ('warning_light','mechanical','lighting','physical_damage');  -- REQ §6.6
+create type public.car_care_kind        as enum ('tire_fill','wash');                                         -- REQ §6.6
+create type public.tire_state           as enum ('ok','low','very_low');  -- green/yellow(2-5psi)/red(>5psi), REQ §6.6
 create type public.solver_run_status    as enum ('succeeded','failed');
 create type public.freed_offer_status   as enum ('open','auto_assigned','pending_approval','approved','expired','closed');
 create type public.freed_claim_status   as enum ('offered','claimed','approved','declined','withdrawn');
 create type public.notification_channel as enum ('push','inbox','whatsapp','email');
--- Canonical list = UX_FLOWS.md §6.1 (21 events). Value = snake_case of the i18n key suffix (`notif.freedSlotAuto` → 'freed_slot_auto').
+-- Canonical list = UX_FLOWS.md §6.1 (22 events). Value = snake_case of the i18n key suffix (`notif.freedSlotAuto` → 'freed_slot_auto').
 create type public.notification_event   as enum ('window_open','window_closing','window_closed_solve_now','publish_reminder',
                                                  'published','outcome_changed',
                                                  'proposal_received','proposal_answered','freed_slot','freed_slot_auto',
                                                  'claim_approved','claim_declined','claim_contested','maintenance_affects',
                                                  'late_request','waitlisted_request','auto_approved','request_changed',
-                                                 'access_request','access_approved','status_changed');
+                                                 'access_request','access_approved','status_changed','car_care');
 create type public.push_outbox_status   as enum ('pending','sent','failed','dead');
 create type public.answer_channel       as enum ('token','session','sadran');
 create type public.audit_action         as enum ('insert','update','delete');
@@ -129,7 +132,7 @@ Notes:
 - `ride_status`: `draft` = exists only in the Sadran's draft siddur; `confirmed` = part of a published version or auto-approved after publish; `flagged` = confirmed but invalidated by a maintenance block (§8), Sadran must re-solve; `cancelled` keeps the row for history and freed-slot linkage.
 - `week_phase` adds `archived` (REQUIREMENTS §4: Saturday 23:59 passed, read-only) to the four working phases; it exists for retention and for the fairness lookback. The full list is `open, solving, published, live, archived`.
 - `role` is used by `department_members` (`member`/`sadran` only — admin is global, see `profiles.is_admin`) and by `audit_log.actor_role`.
-- `notification_event` **Sadran-role events** (cannot be muted while the recipient is a Sadran of the week, REQUIREMENTS §9): `window_closed_solve_now`, `publish_reminder`, `proposal_answered`, `claim_contested`, `late_request`, `waitlisted_request`, `request_changed`, and the Sadran copy of `auto_approved`. Admin events: `access_request`. Everything else goes to members.
+- `notification_event` **Sadran-role events** (cannot be muted while the recipient is a Sadran of the week, REQUIREMENTS §9): `window_closed_solve_now`, `publish_reminder`, `proposal_answered`, `claim_contested`, `late_request`, `waitlisted_request`, `request_changed`, and the Sadran copy of `auto_approved`. Admin events: `access_request`. Everything else goes to members. `car_care` (REQ §6.6) is week-less (`week_start` null) and goes to the car's `responsible_id` or, absent one, every approved admin (`car_care_recipients()`, §4.2) — it is a normal, mutable notification for whichever recipient it lands on, not a Sadran-role or unmutable-admin event; variants are `issue_<car_issue_category>` (one per category), `tire_fill`, `wash`.
 - `trip_shape` (REQ §5.1) replaces the v0.1 `one_way boolean` + `leg_direction` pair; `leg_direction` is **not created**. `leg_car_mode` is the resolved mode of one served leg (`ride_requests.car_mode`, REQ §5.4); members may request only `relay` or `passenger` for one-way shapes (`requests.one_way_car_mode`), `keep` is the round-trip default and `chauffeur` is Sadran-assigned.
 - `proposal_type` ↔ solver suggestion kinds: the mapping table lives in `SOLVER.md` §3.15. In particular "split legs" (§7.1 suggestion 4) is a `merge` proposal whose payload lists two rides (`legs: [{leg:'out', ride_id, car_mode}, {leg:'return', ride_id, car_mode}]`), "convert to round trip" is a `shift` proposal carrying `trip_shape`, and a chauffeur is **no** proposal type (a Sadran action, optionally a `merge` proposal to the volunteer).
 - `answer_channel`: how a proposal answer was recorded — `token` (deep link, no session), `session` (signed-in app), `sadran` (recorded on the member's behalf).
@@ -282,10 +285,11 @@ Unique index `(department_id, profile_id, coalesce(week_start, '1970-01-04'))`. 
 | notes | text | | | key location, quirks |
 | built_in_child_seats | smallint | NN | 0 | §6.2 "unless the car lists built-in seats" |
 | built_in_boosters | smallint | NN | 0 | |
+| responsible_id | uuid | | | FK profiles ON DELETE SET NULL; admin-set (§6.6). Recipient of `car_care` notifications and full edit rights (incl. `owner_id`) on this car; `null` falls back to every approved admin (`car_care_recipients()`, §4.2) |
 | retired_at | timestamptz | | | set when status → retired |
 | created_at / updated_at | timestamptz | NN | now() | |
 
-Indexes: `(department_id) where status <> 'retired'`, `(owner_id)`.
+Indexes: `(department_id) where status <> 'retired'`, `(owner_id)`, `(responsible_id) where responsible_id is not null`.
 
 #### `car_seat_configs` (§6.2)
 
@@ -313,7 +317,7 @@ Unique `(car_id, adults, child_seats, boosters)`. A passenger set `(a,c,b)` fits
 
 Index GiST `(car_id, tstzrange(starts_at, ends_at, '[)'))`. AFTER INSERT/UPDATE trigger `flag_rides_in_maintenance()` sets overlapping non-cancelled rides to `flagged` and enqueues `maintenance_affects` notifications to the affected members and the Sadranim of the week.
 
-#### `car_issues` (§6.5)
+#### `car_issues` (§6.5, §6.6)
 
 | column | type | null | default | notes |
 |---|---|---|---|---|
@@ -322,13 +326,29 @@ Index GiST `(car_id, tstzrange(starts_at, ends_at, '[)'))`. AFTER INSERT/UPDATE 
 | department_id | uuid | NN | | denormalized |
 | reported_by | uuid | NN | | FK profiles |
 | description | text | NN | | CHECK length(trim(description)) > 0 |
+| category | car_issue_category | | | added 2026-09-09 (car care portal, §6.6); nullable so legacy rows stay valid |
 | is_unsafe | boolean | NN | false | enables the admin "move to maintenance" shortcut |
 | photo_path | text | | | Supabase Storage path (later) |
 | status | car_issue_status | NN | 'open' | |
 | resolved_by / resolved_at | uuid / timestamptz | | | CHECK both null or both set |
 | created_at | timestamptz | NN | now() | |
 
-Index `(car_id) where status = 'open'`.
+Index `(car_id) where status = 'open'`. Insert-only via `report_car_issue(_car_id, _category, _description, _photo_path)` (SECURITY DEFINER; §6.6) — there is no direct INSERT policy (the pre-portal one, member-own-row, was dropped: `src/` never called it, so nothing regressed). It enqueues `car_care` (variant `issue_<category>`) to `car_care_recipients(_car_id)`.
+
+#### `car_care_events` (§6.6, new 2026-09-09)
+
+| column | type | null | default | notes |
+|---|---|---|---|---|
+| id | uuid | NN | | PK |
+| department_id | uuid | NN | | denormalized from car |
+| car_id | uuid | NN | | FK cars ON DELETE CASCADE |
+| kind | car_care_kind | NN | | `tire_fill` \| `wash` |
+| tires | jsonb | | | `{front_left, front_right, rear_left, rear_right, spare}`, each a `tire_state`; required (and validated) iff `kind = 'tire_fill'`, null iff `kind = 'wash'` (CHECK) |
+| note | text | | | optional |
+| reported_by | uuid | NN | | FK profiles |
+| created_at / updated_at | timestamptz | NN | now() | |
+
+Index `(car_id, created_at desc)` (history view, exportable by date, §6.6). Insert-only via `log_car_care(_car_id, _kind, _tires, _note)` (SECURITY DEFINER) — no direct INSERT policy; tire keys/values are validated inside the RPC, not by a CHECK constraint (a plain SQLSTATE the caller can render, matching `submit_request`'s style). Enqueues `car_care` (variant `tire_fill`/`wash`) to `car_care_recipients(_car_id)`, with `{{lowCount}}`/`{{veryLowCount}}` vars for `tire_fill`. No update/delete policy for any role — like `siddur_versions`, immutable in practice without a separate `forbid_mutation()` trigger.
 
 ### 3.3 Catalogs (REQUIREMENTS §5.1, §13.8)
 
@@ -671,7 +691,7 @@ Unique `(offer_id, request_id)`. At most one `approved` per offer (partial uniqu
 
 One entry point: `enqueue_notification(_recipient uuid, _event notification_event, _department_id uuid, _week_start date, _vars jsonb, _data jsonb, _dedupe_key text default null)` — SECURITY DEFINER. It (0) fills `_data.url` from `notification_default_url(_event, _data, _department_id, _week_start)` whenever the caller didn't already set one (most callers don't — only the `proposal_received` emitters build a token URL themselves); (1) drops the call if `_event` is in `profiles.muted_events`, **unless** the event is a Sadran-role event (§2 notes) and the recipient is in `sadranim_of(_department_id, _week_start)`; (2) renders `title_he`/`body_he` from `notification_templates` (channel `inbox`, `variant` selected from `coalesce(_data->>'variant', ride_change_id ? 'ride_change' : null)`) with `_vars` placeholders (`{{firstName}}`, `{{destination}}`, … — UX_FLOWS §6); (3) inserts one `notifications` row (the inbox) with the now-url-complete `_data`, honouring `dedupe_key`; (4) inserts one `push_outbox` row per active `push_subscriptions` row of the recipient, rendered from the `push` channel template, `payload.url` copied from the same `_data.url` so both channels agree. Nothing else writes to these tables.
 
-`notification_default_url(_event, _data, _department_id, _week_start) returns text` (`stable`, `20260909090000_add_notification_default_url.sql`) — first match wins: `_data.token` → `/p/<token>`; `_data.proposal_id` → `/sadran/<dept>/<week>/proposals?proposal=<id>` (the token-less Sadran list, e.g. for `proposal_answered`); `_data.ride_change_id` → `/inbox?change=<id>`; `_data.request_id` or `_data.offer_id` → `/requests?focus=<id>`; `_data.ride_id` → `/siddur/<dept>/<week>?ride=<id>`; else, for the week-scoped events `published`/`window_open`/`window_closing`/`window_closed_solve_now`/`publish_reminder`, the Sadran dashboard (`/sadran/<dept>/<week>`) for Sadran-role events or the published siddur (`/siddur/<dept>/<week>`) otherwise; otherwise `/inbox`.
+`notification_default_url(_event, _data, _department_id, _week_start) returns text` (`stable`, `20260909090000_add_notification_default_url.sql`, extended by `20260909099500_extend_notification_default_url_car_id.sql`) — first match wins: `_data.token` → `/p/<token>`; `_data.proposal_id` → `/sadran/<dept>/<week>/proposals?proposal=<id>` (the token-less Sadran list, e.g. for `proposal_answered`); `_data.ride_change_id` → `/inbox?change=<id>`; `_data.request_id` or `_data.offer_id` → `/requests?focus=<id>`; `_data.ride_id` → `/siddur/<dept>/<week>?ride=<id>`; `_data.car_id` → `/cars/<car_id>` (§6.6, `car_care`); else, for the week-scoped events `published`/`window_open`/`window_closing`/`window_closed_solve_now`/`publish_reminder`, the Sadran dashboard (`/sadran/<dept>/<week>`) for Sadran-role events or the published siddur (`/siddur/<dept>/<week>`) otherwise; otherwise `/inbox`.
 
 #### `notifications` (in-app inbox)
 
@@ -863,6 +883,31 @@ language sql stable as $$
   select (date_trunc('week', (now() at time zone 'Asia/Jerusalem') + interval '1 day') - interval '1 day')::date;
 $$;
 
+-- Car care portal (§6.6, 20260909099200_add_car_responsible.sql). Verified empirically
+-- against this project's Postgres: a SECURITY DEFINER function that re-queries the very
+-- row an UPDATE policy is being evaluated against sees the pre-statement value in *both*
+-- USING and WITH CHECK, so the current responsible person may reassign responsibility (or
+-- ownership) away in the same statement — used directly in the `cars_update_responsible`
+-- policy (§4.3) rather than an inline column comparison.
+create or replace function public.is_car_responsible(_car_id uuid) returns boolean
+language sql stable security definer set search_path = public, pg_temp as $$
+  select public.is_approved() and exists (
+    select 1 from public.cars c where c.id = _car_id and c.responsible_id = (select auth.uid()));
+$$;
+
+-- Recipients of car_care notifications for a car: its responsible person if set, else
+-- every approved global admin ("car admin" = admin for now, REQ §13.71 — there is no
+-- department-scoped admin role to narrow the fallback to).
+create or replace function public.car_care_recipients(_car_id uuid) returns setof uuid
+language sql stable security definer set search_path = public, pg_temp as $$
+  select c.responsible_id from public.cars c
+  where c.id = _car_id and c.responsible_id is not null
+  union all
+  select p.id from public.cars c
+  join public.profiles p on p.is_admin and p.approval_status = 'approved'
+  where c.id = _car_id and c.responsible_id is null;
+$$;
+
 -- Requests I am allowed to see beyond my own: served by a non-draft ride in a public week of a dept I belong to,
 -- or where I am a companion, or where I share a ride.
 create or replace function public.shares_ride_with(_profile uuid) returns boolean
@@ -911,10 +956,11 @@ Legend: **own** = row's profile column = `auth.uid()`; **dept** = `member_of(dep
 | member_invites | admin | admin | admin | admin |
 | department_members | own ∨ dept ∨ admin | admin | admin | admin (soft-remove preferred) |
 | sadran_assignments | dept ∨ admin | admin | admin | admin |
-| cars | **approved users** (any department — published siddurim of other departments are readable, REQ §13.52) | admin; **own temporary car**: `type='temporary' and owner_id = auth.uid() and member_of(department_id)` (any member, REQ §13.53) | admin (incl. revoking a temporary car → `retired`); owner (temporary, own) — status/notes/features only | admin; owner (temporary) if no non-cancelled rides |
+| cars | **approved users** (any department — published siddurim of other departments are readable, REQ §13.52) | admin; **own temporary car**: `type='temporary' and owner_id = auth.uid() and member_of(department_id)` (any member, REQ §13.53) | admin (incl. revoking a temporary car → `retired`); owner (temporary, own) — status/notes/features only; **`is_car_responsible(id)`: every column, incl. `owner_id`/`type`/`responsible_id`** (§6.6, `cars_update_responsible` policy, separate from `cars_update` — Postgres ORs permissive policies for the same command) | admin; owner (temporary) if no non-cancelled rides |
 | car_seat_configs | approved users | admin; temp-car owner for own car | same | same |
 | car_maintenance_blocks | dept ∨ admin | admin ∨ sadran_any(dept) | admin ∨ sadran_any | admin ∨ sadran_any |
-| car_issues | dept ∨ admin | dept (reported_by = own) | admin ∨ sadran_any (resolve); reporter (description while open) | admin |
+| car_issues | dept ∨ admin; **`is_car_responsible(car_id)`** (`car_issues_select_responsible`, may be outside the department) | **RPC only** — `report_car_issue()` (§6.6); the pre-portal direct `dept ∧ reported_by=own` policy was dropped 2026-09-09 (unused in `src/`) | admin ∨ sadran_any (resolve); reporter (description while open) | admin |
+| car_care_events | `is_car_responsible(car_id)` ∨ admin ∨ `reported_by = auth.uid()` (§6.6) | **RPC only** — `log_car_care()` | — (no update policy for any role; immutable in practice) | — |
 | destinations | approved users | admin; RPC `suggest_destination()` for members (inserts `is_approved=false`) | admin; RPC `merge_destination()` (admin-only, repoints references then deletes/deactivates the source, §6.1 item 14) | admin (RESTRICT if referenced) |
 | ride_types | approved users | admin | admin | — (deactivate) |
 | policies | dept ∨ admin | admin | admin | admin (RESTRICT if versions referenced) |
@@ -1107,7 +1153,7 @@ Files live in `supabase/migrations/` and use the Supabase CLI form **`YYYYMMDDHH
 - One department, `נבו` (`00000000-0000-0000-0000-000000000001`), `home_destination_id` = the home row.
 - `ride_types`: work/childcare/healthcare/errands/other with Hebrew names.
 - `policies`: one department-owned default with `policy_versions` v1 = the §7.2 / `SOLVER.md` §4.4 initial weights (all 8 rule types, `fairness.lookbackWeeks = 3`).
-- `notification_templates`: one `inbox` + one `push` row per `notification_event` (21 events) and 5 `whatsapp` variants (`shift`, `merge_passenger`, `merge_driver`, `deny`, `reminder`), copied from UX_FLOWS §6.
+- `notification_templates`: one `inbox` + one `push` row per `notification_event` (22 events, since `car_care` was added 2026-09-09 — §6.1's "Car care portal" narrative subsection below) and 5 `whatsapp` variants (`shift`, `merge_passenger`, `merge_driver`, `deny`, `reminder`), copied from UX_FLOWS §6.
 - 4 demo `auth.users` + matching `member_invites` (admin, sadran, member1, member2), 4 cars with seat configs (a 5-seater, a 7-seater, a second 5-seater, and one `temporary` car owned by member2).
 - One Live (published) week with 3 requests and 2 confirmed rides, one Open week with 2 fresh `submitted` requests.
 - Fixed UUIDs `00000000-0000-0000-0000-0000000000NN`. Production gets only catalogs + templates + settings + invites (via admin UI/CSV import) — the seed file is gated to local/dev by convention (never run against a remote project, ARCHITECTURE.md §14).
@@ -1348,7 +1394,7 @@ Supabase Free: 500 MB. Estimated steady state at 2 departments × 300 requests/w
 | departments, profiles, department_members, sadran_assignments, cars, car_seat_configs, destinations, ride_types, policies, policy_versions, app/department settings | forever | profiles of members removed by admin: anonymized (`full_name → 'חבר לשעבר'`, phone/email null, `approval_status='blocked'`) rather than deleted, so history and fairness stats stay consistent |
 | weeks, requests, request_companions, rides, ride_requests, siddur_versions, solver_runs (summary) | forever (stats, fairness lookback, §12 dashboards) | `solver_runs.summary` is small; published `siddur_versions.snapshot` includes per-policy, member and request scores for later comparison |
 | proposals, proposal_parties, freed_slot_offers, freed_slot_claims | forever for outcome fields | `token_hash` nulled 30 days after week end (`housekeeping()`); `payload` kept |
-| car_maintenance_blocks, car_issues, notification_templates | forever | — |
+| car_maintenance_blocks, car_issues, car_care_events, notification_templates | forever | — (§6.6: car care history is exported by date from the UI, not pruned) |
 | notifications | 90 days after `created_at` (read or not) | `housekeeping()` daily |
 | push_outbox | 30 days (`sent`/`dead`) | `housekeeping()` daily |
 | client_errors | 90 days | `housekeeping()` daily |
@@ -1527,3 +1573,24 @@ Two bugs surfaced by running `supabase/tests/todo_board_semantics.sql`/`notifica
 `proposal_answered` rendered "{{firstName}} accepted את ההצעה" — `answerVerb` was passed from SQL as the raw English `proposal_status` enum value (`proposal_parties_roll_up()`) or the literal `'expired'` (`expire_proposals()`), and no template ever defined `{{answerVerb}}` as a translated placeholder; hard rule 3 forbids the Hebrew translation living in the function body either. `20260909098000_proposal_answered_variants.sql` follows the `outcome_changed`/`ride_cancelled` precedent (`20260909092000_notify_passengers_on_ride_cancellation.sql`) instead: both functions now pass `_data.variant` (`'accepted'`, `'declined'`, `'expired'`) and no `answerVerb`; `enqueue_notification()` itself needed no change, since its variant lookup (`coalesce(_data->>'variant', ...)`, §3.11) already covers this. Both functions were re-created from their live definitions (`pg_get_functiondef()`), matching `20260907090900_proposals.sql`/`20260907095600_replace_sent_proposals_explicitly.sql` respectively, with only the two `enqueue_notification()` calls changed. New `notification_templates` rows for `proposal_answered` × {`inbox`,`push`} × {`accepted`,`declined`,`expired`} (§3.11); the null-variant row's copy is fixed too (no more `{{answerVerb}}`) but is now a defensive-only fallback.
 
 Same migration also backfills, with `on conflict ... do update`, the other `notification_templates` rows changed in `supabase/seed.sql` on 2026-09-09 but never carried into an existing/provisioned database (`proposal_received`, `freed_slot`, `claim_contested`, `waitlisted_request`, plus the `outcome_changed`/`ride_cancelled` variant) — seed.sql only seeds fresh databases (§0 seed conventions), so those fixes never reached this local DB either until now. `supabase/tests/notifications_semantics.sql` gained assertions on the `accepted` variant: `data->>'variant' = 'accepted'`, `title_he` contains `אישר/ה`, and neither `title_he` nor `body_he` contains an unresolved `{{`.
+
+### Car care portal (2026-09-09, db-migrator)
+
+REQ §6.6, owner decisions 2026-09-09. Seven migrations, `20260909099000` through `20260909099600`:
+
+1. `20260909099000_add_car_care_notification_event.sql`: `alter type notification_event add value 'car_care'`, alone.
+2. `20260909099100_add_car_care_enums.sql`: `car_issue_category` (`warning_light`/`mechanical`/`lighting`/`physical_damage`), `car_care_kind` (`tire_fill`/`wash`), `tire_state` (`ok`/`low`/`very_low` — green/yellow(2–5psi)/red(>5psi), REQ §6.6).
+3. `20260909099200_add_car_responsible.sql`: `cars.responsible_id` + index; `is_car_responsible(_car_id)`, `car_care_recipients(_car_id)` (§4.2); `cars_protect_owner_editable_fields()` re-created to also let `is_car_responsible(old.id)` past the owner-editable-field lock (previously `is_admin()` only); new `cars_update_responsible` policy (§4.3).
+4. `20260909099300_add_car_issue_category.sql`: `car_issues.category`; **dropped** the pre-portal `car_issues_insert` policy (direct member insert, `dept ∧ reported_by=own`) — `grep -rn car_issues src` confirmed nothing in `src/` ever called it (only `fetchCarIssues`/`resolveCarIssue` existed); added `car_issues_select_responsible`; added `report_car_issue(_car_id, _category, _description, _photo_path default null) returns uuid` (SECURITY DEFINER).
+5. `20260909099400_create_car_care_events.sql`: `car_care_events` table + RLS (select only — `is_car_responsible(car_id) ∨ is_admin() ∨ reported_by = auth.uid()`; insert is RPC-only, no direct policy at all) + `log_car_care(_car_id, _kind, _tires default null, _note default null) returns uuid` (SECURITY DEFINER; validates the five required tire keys and their `tire_state` values inside the RPC, not a CHECK constraint).
+6. `20260909099500_extend_notification_default_url_car_id.sql`: `notification_default_url()` re-created verbatim from `20260909090000` with one added branch, `_data.car_id` → `/cars/<car_id>`, checked after `ride_id` and before the week-scoped branch.
+7. `20260909099600_car_care_notification_templates.sql`: `notification_templates` rows for `car_care` × {inbox,push} × {`issue_warning_light`, `issue_mechanical`, `issue_lighting`, `issue_physical_damage`, `tire_fill`, `wash`} (per-category variants, not a Hebrew category label inside a shared template) plus a defensive null-variant fallback (required by `supabase/tests/status_notifications.sql`'s "all production events need default templates" assertion — missed on the first pass, caught by running `npm run db:test`). Same rows added to `supabase/seed.sql` for fresh databases, plus one seed car (`...040`) given a `responsible_id` (member1) so the fallback-to-admin path (the other seed cars) is exercisable too.
+
+**Deviations from the plan handed to this agent**, all forced by things only visible once the SQL was actually run:
+- The `cars_update_responsible` RLS policy is a **second, separate** UPDATE policy on `cars` (alongside the existing `cars_update`), not a widened predicate inside it — Postgres composes multiple permissive policies for the same command with `OR` on both `USING` and `WITH CHECK`, verified empirically (see the `is_car_responsible()` comment in §4.2) rather than assumed from the docs.
+- `report_car_issue()`/`log_car_care()` do not pass `department_id` to their `insert` — both tables already denormalize it via a `BEFORE INSERT` trigger from `car_id` (`car_issues_set_department()`, `car_care_events` has none — it takes `department_id` directly from `cars` inside the RPC since the table is new and has no such trigger yet); consistent either way, just worth noting the two tables use different mechanisms for the same denormalization.
+- No `audit_row()` trigger on `car_care_events` (or on `car_issues`, which also has none — an existing, undocumented-until-now gap this agent did not fix, staying consistent with the closest precedent rather than expanding scope).
+
+`npm run db:types` picked up `car_care_events`, `cars.responsible_id`, `car_issues.category`, and the four new/changed function signatures cleanly. `npm run typecheck` needed one one-line fix outside this agent's normal scope: `he.ts`'s `notif` dictionary is `satisfies Record<NotificationEvent, string>` (§2), so the new enum value requires an entry; no Hebrew mute-list label was supplied for it (the request supplied `notification_templates` copy, a different dictionary), so the entry is a `TODO(he)` placeholder, flagged for `ui-dev`/the owner to fill in.
+
+**Correction to this agent's brief**: `src/lib/enums.ts` does not exist in this repository, and neither does an `he.enums.*` namespace — `CLAUDE.md`'s "Enums are defined once, in SQL, mirrored into `src/lib/enums.ts`" convention was never implemented for `notification_event`; `NotificationEvent` is used directly from the generated `Database['public']['Enums']['notification_event']` type, and its Hebrew mirror lives at the top-level `he.notif` (snake_case keys, `satisfies Record<NotificationEvent, string>`), not `he.enums.notif`. No new mirror file was created; the single new key was added to the existing `he.notif`.

@@ -27,6 +27,7 @@ const ROUTE_PATTERNS = [
   "/requests/:id/edit",
   "/inbox",
   "/p/:token",
+  "/cars/:carId",
 ];
 
 function pathnameOf(url: string): string {
@@ -109,5 +110,12 @@ describe("paths.inbox", () => {
     expectRoutable(paths.inbox());
     expectRoutable(paths.inbox("change-1"));
     expect(paths.inbox("change-1")).toBe("/inbox?change=change-1");
+  });
+});
+
+describe("paths.car", () => {
+  it("matches /cars/:carId", () => {
+    expectRoutable(paths.car("car-1"));
+    expect(paths.car("car-1")).toBe("/cars/car-1");
   });
 });

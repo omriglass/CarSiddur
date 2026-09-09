@@ -1,5 +1,6 @@
 import type { RouteObject } from "react-router-dom";
 
+import { CarPage } from "@/pages/CarPage";
 import { EditRequestPage } from "@/pages/EditRequestPage";
 import { RequestsListPage } from "@/pages/RequestsListPage";
 import { SiddurPage } from "@/pages/SiddurPage";
@@ -17,4 +18,5 @@ export const memberRoutes: RouteObject[] = [
   { path: "/requests/:id/edit", element: <EditRequestPage /> },
   { path: "/siddur/:dept", element: <SiddurPage /> },
   { path: "/siddur/:dept/:week", element: <SiddurPage /> },
+  { path: "/cars/:carId", element: <CarPage /> },
 ];

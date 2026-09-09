@@ -594,6 +594,7 @@ export const he = {
     access_request: "בקשת הרשמה חדשה",
     access_approved: "ההרשמה אושרה",
     status_changed: "שינוי בסטטוס או בתפקיד",
+    car_care: "טיפול ברכב",
   } satisfies Record<NotificationEvent, string>,
   car: {
     status: {

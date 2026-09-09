@@ -7,7 +7,7 @@ description: Add a new notification event (enum value, emitter trigger/RPC/edge 
 
 Pipeline (ARCHITECTURE §9, DATA_MODEL §3.11): business code (trigger / RPC / tick / edge function via RPC) calls the definer function `enqueue_notification(recipient, event, dept, week_start, vars, data, dedupe_key)` → it applies `profiles.muted_events` (Sadran-role events bypass mutes while the recipient is in `sadranim_of(dept, week_start)`), renders title/body from `notification_templates` (channel `inbox` / `push`) → one `notifications` row (inbox) + one `push_outbox` row per active subscription → pg_net / `drain_push_outbox()` (inside `app.tick()`) call the `push-dispatch` edge function → service worker shows it and opens `data.url`.
 
-The canonical event list is UX_FLOWS §6.1 (21 events). Enum value = snake_case of the `notif.*` key suffix (`notif.freedSlotAuto` ↔ `freed_slot_auto`). Adding an event means adding a row **there** and everywhere below.
+The canonical event list is UX_FLOWS §6.1 (22 events). Enum value = snake_case of the `notif.*` key suffix (`notif.freedSlotAuto` ↔ `freed_slot_auto`). Adding an event means adding a row **there** and everywhere below.
 
 ## Inputs to collect before starting
 

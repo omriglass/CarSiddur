@@ -157,9 +157,68 @@ export type Database = {
           },
         ]
       }
+      car_care_events: {
+        Row: {
+          car_id: string
+          created_at: string
+          department_id: string
+          id: string
+          kind: Database["public"]["Enums"]["car_care_kind"]
+          note: string | null
+          reported_by: string
+          tires: Json | null
+          updated_at: string
+        }
+        Insert: {
+          car_id: string
+          created_at?: string
+          department_id: string
+          id?: string
+          kind: Database["public"]["Enums"]["car_care_kind"]
+          note?: string | null
+          reported_by: string
+          tires?: Json | null
+          updated_at?: string
+        }
+        Update: {
+          car_id?: string
+          created_at?: string
+          department_id?: string
+          id?: string
+          kind?: Database["public"]["Enums"]["car_care_kind"]
+          note?: string | null
+          reported_by?: string
+          tires?: Json | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "car_care_events_car_id_fkey"
+            columns: ["car_id"]
+            isOneToOne: false
+            referencedRelation: "cars"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "car_care_events_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "car_care_events_reported_by_fkey"
+            columns: ["reported_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       car_issues: {
         Row: {
           car_id: string
+          category: Database["public"]["Enums"]["car_issue_category"] | null
           created_at: string
           department_id: string
           description: string
@@ -173,6 +232,7 @@ export type Database = {
         }
         Insert: {
           car_id: string
+          category?: Database["public"]["Enums"]["car_issue_category"] | null
           created_at?: string
           department_id: string
           description: string
@@ -186,6 +246,7 @@ export type Database = {
         }
         Update: {
           car_id?: string
+          category?: Database["public"]["Enums"]["car_issue_category"] | null
           created_at?: string
           department_id?: string
           description?: string
@@ -330,6 +391,7 @@ export type Database = {
           notes: string | null
           owner_id: string | null
           replacement_code: string | null
+          responsible_id: string | null
           retired_at: string | null
           status: Database["public"]["Enums"]["car_status"]
           type: Database["public"]["Enums"]["car_type"]
@@ -349,6 +411,7 @@ export type Database = {
           notes?: string | null
           owner_id?: string | null
           replacement_code?: string | null
+          responsible_id?: string | null
           retired_at?: string | null
           status?: Database["public"]["Enums"]["car_status"]
           type?: Database["public"]["Enums"]["car_type"]
@@ -368,6 +431,7 @@ export type Database = {
           notes?: string | null
           owner_id?: string | null
           replacement_code?: string | null
+          responsible_id?: string | null
           retired_at?: string | null
           status?: Database["public"]["Enums"]["car_status"]
           type?: Database["public"]["Enums"]["car_type"]
@@ -384,6 +448,13 @@ export type Database = {
           {
             foreignKeyName: "cars_owner_id_fkey"
             columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cars_responsible_id_fkey"
+            columns: ["responsible_id"]
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
@@ -3031,6 +3102,7 @@ export type Database = {
         }
         Returns: undefined
       }
+      car_care_recipients: { Args: { _car_id: string }; Returns: string[] }
       car_fits: {
         Args: {
           _adults: number
@@ -3153,6 +3225,7 @@ export type Database = {
       }
       is_admin: { Args: never; Returns: boolean }
       is_approved: { Args: never; Returns: boolean }
+      is_car_responsible: { Args: { _car_id: string }; Returns: boolean }
       is_day_public: {
         Args: { p_day: string; p_department_id: string; p_week_start: string }
         Returns: boolean
@@ -3166,6 +3239,15 @@ export type Database = {
       is_week_public: {
         Args: { _dept: string; _week: string }
         Returns: boolean
+      }
+      log_car_care: {
+        Args: {
+          _car_id: string
+          _kind: Database["public"]["Enums"]["car_care_kind"]
+          _note?: string
+          _tires?: Json
+        }
+        Returns: string
       }
       materialize_department_weeks: {
         Args: { p_department_id: string; p_now: string }
@@ -3300,6 +3382,15 @@ export type Database = {
         }
         Returns: undefined
       }
+      report_car_issue: {
+        Args: {
+          _car_id: string
+          _category: Database["public"]["Enums"]["car_issue_category"]
+          _description: string
+          _photo_path?: string
+        }
+        Returns: string
+      }
       report_car_issue_unsafe_to_maintenance: {
         Args: { p_hours?: number; p_issue_id: string }
         Returns: string
@@ -3430,6 +3521,12 @@ export type Database = {
       answer_channel: "token" | "session" | "sadran"
       approval_status: "pending" | "approved" | "blocked"
       audit_action: "insert" | "update" | "delete"
+      car_care_kind: "tire_fill" | "wash"
+      car_issue_category:
+        | "warning_light"
+        | "mechanical"
+        | "lighting"
+        | "physical_damage"
       car_issue_status: "open" | "resolved"
       car_status: "active" | "maintenance" | "retired"
       car_type: "shared" | "temporary"
@@ -3471,6 +3568,7 @@ export type Database = {
         | "access_request"
         | "access_approved"
         | "status_changed"
+        | "car_care"
       party_response: "pending" | "accepted" | "declined"
       proposal_status:
         | "draft"
@@ -3498,6 +3596,7 @@ export type Database = {
       ride_status: "draft" | "confirmed" | "flagged" | "cancelled"
       role: "member" | "sadran" | "admin"
       solver_run_status: "succeeded" | "failed"
+      tire_state: "ok" | "low" | "very_low"
       trip_shape: "round_trip" | "one_way_to" | "one_way_from"
       week_phase: "open" | "solving" | "published" | "live" | "archived"
     }
@@ -3633,6 +3732,13 @@ export const Constants = {
       answer_channel: ["token", "session", "sadran"],
       approval_status: ["pending", "approved", "blocked"],
       audit_action: ["insert", "update", "delete"],
+      car_care_kind: ["tire_fill", "wash"],
+      car_issue_category: [
+        "warning_light",
+        "mechanical",
+        "lighting",
+        "physical_damage",
+      ],
       car_issue_status: ["open", "resolved"],
       car_status: ["active", "maintenance", "retired"],
       car_type: ["shared", "temporary"],
@@ -3676,6 +3782,7 @@ export const Constants = {
         "access_request",
         "access_approved",
         "status_changed",
+        "car_care",
       ],
       party_response: ["pending", "accepted", "declined"],
       proposal_status: [
@@ -3706,6 +3813,7 @@ export const Constants = {
       ride_status: ["draft", "confirmed", "flagged", "cancelled"],
       role: ["member", "sadran", "admin"],
       solver_run_status: ["succeeded", "failed"],
+      tire_state: ["ok", "low", "very_low"],
       trip_shape: ["round_trip", "one_way_to", "one_way_from"],
       week_phase: ["open", "solving", "published", "live", "archived"],
     },

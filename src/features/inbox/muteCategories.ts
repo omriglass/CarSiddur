@@ -25,5 +25,5 @@ export const MUTE_CATEGORIES: readonly MuteCategory[] = [
     label: he.profileExtra.muteFreedSlots,
     events: ["freed_slot", "freed_slot_auto", "claim_approved", "claim_declined"],
   },
-  { key: "maintenance", label: he.profileExtra.muteMaintenance, events: ["maintenance_affects"] },
+  { key: "maintenance", label: he.profileExtra.muteMaintenance, events: ["maintenance_affects", "car_care"] },
 ];
