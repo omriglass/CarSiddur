@@ -30,6 +30,7 @@ import { useMyDepartments } from "@/features/auth/useMyDepartments";
 import { useSession } from "@/features/auth/useSession";
 import { useIsSadran } from "@/features/auth/useIsSadran";
 import { useMyRequests, useCancelRideMutation } from "@/features/requests/hooks";
+import { CarNameWithReport } from "@/features/carCare/components/CarNameWithReport";
 import { useCars, useRideTypes, useMaintenanceBlocks, useCarSeatConfigs } from "@/features/fleet/hooks";
 import { AddRideFab } from "@/features/requests/components/AddRideFab";
 import { QuickRequestSheet } from "@/features/requests/components/QuickRequestSheet";
@@ -544,6 +545,7 @@ export function SiddurPage() {
                 }}
                 onRideClick={setSelectedRideId}
                 onSlotClick={isMyDepartment ? handleSlotClick : undefined}
+                renderCarName={(car) => <CarNameWithReport carId={car.id} carName={car.name} className="min-w-0" />}
               />
             </div>
           </div>

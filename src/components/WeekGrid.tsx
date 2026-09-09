@@ -81,6 +81,16 @@ export interface WeekGridProps {
   onRideClick?: (rideId: string) => void;
   onSlotClick?: (carId: string, minutes: number) => void;
   renderRide?: (ride: WeekGridRide) => ReactNode;
+  /**
+   * Replaces the plain car-name text in each column header (defaults to
+   * `car.name`) — the CarFront icon, location badge and temporary-car label
+   * around it are unaffected. Stays "layout only": the grid never decides
+   * *what* goes here, only where; the member siddur (`SiddurPage`) passes a
+   * `CarNameWithReport` here so the desktop table view can reach the "דיווח
+   * על רכב" dialog even on a day with no rides to click into (that dialog is
+   * a member self-service action, so the Sadran board never passes this).
+   */
+  renderCarName?: (car: WeekGridCar) => ReactNode;
   /** Sadran board additions — kept additive and still layout-only: this component only reports the *gesture result*, never calls a mutation or opens a dialog itself. Pointer Events (unified mouse/touch/pen), never native HTML5 DnD (inert on touch). */
   draggable?: boolean;
   canDragRide?: (ride: WeekGridRide) => boolean;
@@ -211,6 +221,7 @@ export function WeekGrid({
   onRideClick,
   onSlotClick,
   renderRide,
+  renderCarName,
   draggable = false,
   canDragRide,
   canResizeRide,
@@ -608,7 +619,9 @@ export function WeekGrid({
           >
             <span className="flex items-center gap-1 font-medium">
               <CarFront className="size-3.5 shrink-0 text-primary" aria-hidden="true" />
-              <span className="min-w-0 whitespace-normal break-words">{car.name}</span>
+              {renderCarName ? renderCarName(car) : (
+                <span className="min-w-0 whitespace-normal break-words">{car.name}</span>
+              )}
             </span>
             {car.locationBadge ? <span className="truncate text-xs text-muted-foreground">{car.locationBadge}</span> : null}
             {car.group === "temporary" ? <span className="truncate text-[10px] text-booked">{he.car.type.temporary}</span> : null}
