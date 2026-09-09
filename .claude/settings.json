@@ -8,7 +8,9 @@
       "Bash(pkill -f \"show-trace\")",
       "Bash(mkdir -p /private/tmp/claude-502/-Users-omriglass-carshare-carshare-nevo/df4cfe05-ee1e-4023-a7e5-e5ba47bc8fc4/scratchpad/trace)",
       "Bash(unzip -o /Users/omriglass/carshare/carshare-nevo/test-results/board-board-bug-fix-pass-r-fd84d-column-creates-a-ride-there-chromium/trace.zip -d extracted)",
-      "Bash(sort -t- -k2 -n)"
+      "Bash(sort -t- -k2 -n)",
+      "Bash(cars)",
+      "Bash(grep -n -A20 \"^### cars\\\\|^## cars\\\\|table cars\\\\|`cars`\" docs/DATA_MODEL.md)"
     ],
     "additionalDirectories": [
       "/tmp"
