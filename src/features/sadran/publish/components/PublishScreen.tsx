@@ -1,18 +1,20 @@
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
+import { paths } from "@/app/routes";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { formatWeekRangeLabel } from "@/components/DateField";
 import { TripSummary } from "@/components/TripSummary";
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { ErrorState } from "@/components/ErrorState";
 import { formatInTimeZone } from "date-fns-tz";
 import { useState } from "react";
 import { he, tv } from "@/i18n/he";
-import { formatTime, TZ } from "@/lib/time";
+import { weekdayLabel } from "@/lib/dayLabels";
+import { TZ, dateKey, formatTime } from "@/lib/time";
 
 import { computeDiffSummary } from "../diffSummary";
 import {
@@ -52,21 +54,21 @@ export function PublishScreen({ departmentId, weekStart }: PublishScreenProps) {
   const chosenDays = selectedDays ?? allDays;
   const chosen = readiness.filter((day) => chosenDays.includes(day.day));
   const conflictCount = chosen.reduce((count, day) => count + day.conflictRides, 0);
-  const rides = (ridesQuery.data ?? []).filter((ride) => ride.starts_at && chosenDays.includes(formatInTimeZone(ride.starts_at, TZ, "yyyy-MM-dd")));
+  const rides = (ridesQuery.data ?? []).filter((ride) => ride.starts_at && chosenDays.includes(dateKey(ride.starts_at)));
   const chosenRequests = (requestsQuery.data ?? []).filter((request) => {
     const anchor = request.trip_shape === "one_way_from" ? request.return_at : request.depart_at;
-    return anchor && chosenDays.includes(formatInTimeZone(anchor, TZ, "yyyy-MM-dd"));
+    return anchor && chosenDays.includes(dateKey(anchor));
   });
   const previewQueries = [requestsQuery, ridesQuery, versionsQuery];
   const unavailable = readinessQuery.isLoading || readinessQuery.isError || !readiness.length || publishMutation.isPending || previewQueries.some((query) => query.isLoading || query.isError);
-  const dateLabel = (day: string) => `${he.days.long[Number(formatInTimeZone(`${day}T12:00:00Z`, TZ, "i")) % 7]} · ${formatInTimeZone(`${day}T12:00:00Z`, TZ, "d/M/yyyy")}`;
+  const dateLabel = (day: string) => `${weekdayLabel(`${day}T12:00:00Z`)} · ${formatInTimeZone(`${day}T12:00:00Z`, TZ, "d/M/yyyy")}`;
 
   const previousSnapshot = previousVersion?.snapshot as
     | { published_days?: string[]; rides?: { id: string; starts_at: string; ends_at: string; car_id: string; status: string }[]; requests?: { id: string; status: string; status_reason: string | null }[] }
     | undefined;
 
   const diff = computeDiffSummary({
-    previousRides: previousSnapshot?.rides?.filter((ride) => chosenDays.includes(formatInTimeZone(ride.starts_at, TZ, "yyyy-MM-dd")) && (previousSnapshot.published_days?.includes(formatInTimeZone(ride.starts_at, TZ, "yyyy-MM-dd"))) !== false) ?? null,
+    previousRides: previousSnapshot?.rides?.filter((ride) => chosenDays.includes(dateKey(ride.starts_at)) && (previousSnapshot.published_days?.includes(dateKey(ride.starts_at))) !== false) ?? null,
     currentRides: rides
       .filter((r) => r.id && r.starts_at && r.ends_at && r.car_id)
       .map((r) => ({ id: r.id as string, starts_at: r.starts_at as string, ends_at: r.ends_at as string, car_id: r.car_id as string, status: r.status ?? "draft" })),
@@ -91,7 +93,7 @@ export function PublishScreen({ departmentId, weekStart }: PublishScreenProps) {
     try {
       await publishMutation.mutateAsync({ departmentId, weekStart, days, allowUnanswered });
       toast.success(he.sadranPublish.successTitle);
-      navigate(`/sadran/${departmentId}/${weekStart}/board`);
+      navigate(paths.sadran.board(departmentId, weekStart));
     } catch {
       // toast already shown
     }
@@ -99,7 +101,7 @@ export function PublishScreen({ departmentId, weekStart }: PublishScreenProps) {
 
   return (
     <div className="mx-auto max-w-3xl space-y-4 p-4 pb-24">
-      <PageHeader title={he.screen.publish.title} subtitle={formatWeekRangeLabel(weekStart)} actions={<Button variant="ghost" onClick={() => navigate(`/sadran/${departmentId}/${weekStart}/board`)}>{he.publicationFlow.backToBoard}</Button>} />
+      <PageHeader title={he.screen.publish.title} subtitle={formatWeekRangeLabel(weekStart)} actions={<Button variant="ghost" onClick={() => navigate(paths.sadran.board(departmentId, weekStart))}>{he.publicationFlow.backToBoard}</Button>} />
       {readinessQuery.isError ? <ErrorState onRetry={() => void readinessQuery.refetch()} /> : null}
       {previewQueries.some((query) => query.isError) ? <ErrorState onRetry={() => void Promise.all(previewQueries.map((query) => query.refetch()))} /> : null}
       <Card><CardContent className="space-y-3 p-4">
@@ -187,22 +189,23 @@ export function PublishScreen({ departmentId, weekStart }: PublishScreenProps) {
       {selectedDays ? <Button className="w-full" size="lg" onClick={() => proposePublish(selectedDays)} disabled={unavailable || !selectedDays.length || conflictCount > 0}>
         {publishMutation.isPending ? he.publishScores.calculating : he.publicationFlow.selectedPublish}
       </Button> : null}
-      <Dialog open={!!confirmDays} onOpenChange={(open) => !publishMutation.isPending && !open && setConfirmDays(null)}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>{he.publicationFlow.unresolvedTitle}</DialogTitle><DialogDescription>{he.publicationFlow.unresolvedHelp}</DialogDescription></DialogHeader>
-          <ul className="space-y-2 text-sm">{readiness.filter((day) => confirmDays?.includes(day.day) && (day.unresolvedRequests || day.pendingProposals || day.missingDriverRides)).map((day) => <li key={day.day}>
-            <span className="font-medium">{dateLabel(day.day)}</span>{" · "}{[
-              day.unresolvedRequests ? tv("publicationFlow.unresolved", { count: String(day.unresolvedRequests) }) : null,
-              day.pendingProposals ? tv("publicationFlow.pending", { count: String(day.pendingProposals) }) : null,
-              day.missingDriverRides ? tv("publicationFlow.missingDriver", { count: String(day.missingDriverRides) }) : null,
-            ].filter(Boolean).join(" · ")}
-          </li>)}</ul>
-          <DialogFooter>
-            <Button variant="outline" disabled={publishMutation.isPending} onClick={() => setConfirmDays(null)}>{he.common.cancel}</Button>
-            <Button disabled={publishMutation.isPending} onClick={() => confirmDays && void handlePublish(confirmDays, true)}>{he.publicationFlow.confirmUnresolved}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDialog
+        open={!!confirmDays}
+        onOpenChange={(open) => !open && setConfirmDays(null)}
+        title={he.publicationFlow.unresolvedTitle}
+        description={he.publicationFlow.unresolvedHelp}
+        confirmLabel={he.publicationFlow.confirmUnresolved}
+        loading={publishMutation.isPending}
+        onConfirm={() => confirmDays && void handlePublish(confirmDays, true)}
+      >
+        <ul className="space-y-2 text-sm">{readiness.filter((day) => confirmDays?.includes(day.day) && (day.unresolvedRequests || day.pendingProposals || day.missingDriverRides)).map((day) => <li key={day.day}>
+          <span className="font-medium">{dateLabel(day.day)}</span>{" · "}{[
+            day.unresolvedRequests ? tv("publicationFlow.unresolved", { count: String(day.unresolvedRequests) }) : null,
+            day.pendingProposals ? tv("publicationFlow.pending", { count: String(day.pendingProposals) }) : null,
+            day.missingDriverRides ? tv("publicationFlow.missingDriver", { count: String(day.missingDriverRides) }) : null,
+          ].filter(Boolean).join(" · ")}
+        </li>)}</ul>
+      </ConfirmDialog>
     </div>
   );
 }

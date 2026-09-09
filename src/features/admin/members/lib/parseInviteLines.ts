@@ -17,6 +17,9 @@ export interface ParsedInviteRow {
 const EMAIL_RE = /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/;
 const SEPARATOR_RE = /[,;\t]/;
 
+// Hebrew synonyms an admin might paste as a header row (recognition-only
+// input matching, not rendered UI copy — CLAUDE.md hard rule 3 is about
+// Hebrew UI text; docs/REFACTOR_BACKLOG.md §5.4 grep sweep, left as-is).
 const HEADER_TOKENS = new Set(["name", "email", "e-mail", "full name", "שם", "שם מלא", "אימייל", "מייל", "דוא\"ל"]);
 
 function looksLikeHeader(fields: string[]): boolean {

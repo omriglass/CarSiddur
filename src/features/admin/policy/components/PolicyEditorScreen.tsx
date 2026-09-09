@@ -39,16 +39,32 @@ interface DraftRule {
 
 const RULE_TYPES = Object.keys(ruleRegistry) as RuleType[];
 
-function buildDraft(existingRules: PolicyRuleConfig[]): DraftRule[] {
+const RIDETYPE_DEFAULT_WEIGHT_FALLBACK = 5;
+
+/** Ensures `rideType.weights` has an entry for every ride type code currently in the DB, seeded with
+ * `weights[code] ?? defaultWeight` (task requirement: saved params must include every existing code).
+ * Codes no longer in the DB are left in place (shown greyed/removable by the caller) — never dropped here. */
+function withAllRideTypeCodes(raw: Record<string, unknown>, codes: string[]): Record<string, unknown> {
+  const weights = { ...((raw.weights as Record<string, number> | undefined) ?? {}) };
+  const defaultWeight = typeof raw.defaultWeight === "number" ? raw.defaultWeight : RIDETYPE_DEFAULT_WEIGHT_FALLBACK;
+  for (const code of codes) {
+    if (!(code in weights)) weights[code] = defaultWeight;
+  }
+  return { ...raw, weights, defaultWeight };
+}
+
+function buildDraft(existingRules: PolicyRuleConfig[], rideTypeCodes: string[]): DraftRule[] {
   const byType = new Map(existingRules.map((r) => [r.type, r]));
   return RULE_TYPES.map((type) => {
     const existing = byType.get(type);
     const rule = ruleRegistry[type];
+    const rawParams = (existing?.params ?? rule.defaultParams) as Record<string, unknown>;
+    const params = type === "rideType" ? withAllRideTypeCodes(rawParams, rideTypeCodes) : rawParams;
     return {
       type,
       enabled: !!existing,
       weight: existing?.weight ?? 1,
-      params: (existing?.params ?? rule.defaultParams) as Record<string, unknown>,
+      params,
     };
   });
 }
@@ -74,13 +90,28 @@ function PolicyEditorInner({ policyId }: { policyId: string }) {
 
   const policy = (policiesQuery.data ?? []).find((p) => p.id === policyId && departmentsQuery.data?.some((department) => department.id === p.department_id));
   const latestVersion = versionsQuery.data?.[0];
+  const rideTypeCodes = (rideTypesQuery.data ?? []).map((rt) => rt.code);
   const rideTypeLabels = Object.fromEntries((rideTypesQuery.data ?? []).map((rt) => [rt.code, rt.name_he]));
 
-  const [draft, setDraft] = useState<DraftRule[]>(() => buildDraft((latestVersion?.rules as unknown as PolicyRuleConfig[]) ?? []));
+  const [draft, setDraft] = useState<DraftRule[]>(() =>
+    buildDraft((latestVersion?.rules as unknown as PolicyRuleConfig[]) ?? [], rideTypeCodes),
+  );
   const [initializedFor, setInitializedFor] = useState<string | undefined>(latestVersion?.id);
   if (versionsQuery.data && latestVersion?.id !== initializedFor && !versionsQuery.isFetching) {
     setInitializedFor(latestVersion?.id);
-    setDraft(buildDraft((latestVersion?.rules as unknown as PolicyRuleConfig[]) ?? []));
+    setDraft(buildDraft((latestVersion?.rules as unknown as PolicyRuleConfig[]) ?? [], rideTypeCodes));
+  }
+
+  // Ride types load asynchronously (and may change while the editor is open); once loaded, make sure
+  // every current code has a weight without waiting for the user to touch the field (task requirement:
+  // the saved params must include every existing ride type code).
+  const rideTypeCodesKey = rideTypeCodes.slice().sort().join(",");
+  const [seededForCodes, setSeededForCodes] = useState("");
+  if (rideTypeCodes.length > 0 && rideTypeCodesKey !== seededForCodes) {
+    setSeededForCodes(rideTypeCodesKey);
+    setDraft((rows) =>
+      rows.map((r) => (r.type === "rideType" ? { ...r, params: withAllRideTypeCodes(r.params, rideTypeCodes) } : r)),
+    );
   }
 
   const [note, setNote] = useState("");
@@ -198,7 +229,7 @@ function PolicyEditorInner({ policyId }: { policyId: string }) {
                 <span className="flex items-center gap-1 font-medium">
                   {he.adminPolicy.ruleNames[row.type]}
                   <Tooltip>
-                    <TooltipTrigger asChild><button type="button" aria-label={`מידע על ${he.adminPolicy.ruleNames[row.type]}`}><Info className="size-4 text-muted-foreground" /></button></TooltipTrigger>
+                    <TooltipTrigger asChild><button type="button" aria-label={tv("adminPolicy.ruleInfoLabel", { rule: he.adminPolicy.ruleNames[row.type] })}><Info className="size-4 text-muted-foreground" /></button></TooltipTrigger>
                     <TooltipContent className="max-w-xs">{he.adminPolicy.ruleInfo[row.type]}</TooltipContent>
                   </Tooltip>
                 </span>
@@ -227,6 +258,17 @@ function PolicyEditorInner({ policyId }: { policyId: string }) {
                 onChange={(params) => updateRule(row.type, { params })}
                 keyLabels={row.type === "rideType" ? rideTypeLabels : undefined}
                 paramLabels={he.adminPolicy.paramNames}
+                staleNestedKeys={
+                  row.type === "rideType" && rideTypeCodes.length > 0
+                    ? {
+                        weights: Object.keys((row.params.weights as Record<string, number> | undefined) ?? {}).filter(
+                          (code) => !rideTypeCodes.includes(code),
+                        ),
+                      }
+                    : undefined
+                }
+                staleHint={he.adminPolicy.rideTypeUnused}
+                removeLabel={he.adminPolicy.rideTypeRemove}
               />
               <p className="text-xs text-muted-foreground">{describeRule(row.type, row.params)}</p>
             </div>

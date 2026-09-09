@@ -1,97 +1,59 @@
 import { Inbox } from "lucide-react";
-import { useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useEffect, useRef } from "react";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 
+import { paths } from "@/app/routes";
 import { EmptyState } from "@/components/EmptyState";
 import { PageHeader } from "@/components/PageHeader";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { StatusBadge } from "@/components/StatusBadge";
-import { he, t, tv } from "@/i18n/he";
+import { ProposalSummary } from "@/features/proposals/components/ProposalSummary";
+import { he, tv } from "@/i18n/he";
 import { formatTime } from "@/lib/time";
+import { cn } from "@/lib/utils";
 
-import { useProposalsForWeek, useWeekRequests } from "../../hooks";
-
-import type { Database } from "@/integrations/supabase/types";
-
-type ProposalType = Database["public"]["Enums"]["proposal_type"];
+import { useAllWeekRides, useProposalsForWeek, useWeekRequestsWithNames } from "../../hooks";
 
 interface ProposalsListScreenProps {
   departmentId: string;
   weekStart: string;
 }
 
-/** `/sadran/:dept/:week/proposals` — proposals list + manual composer entry (UX_FLOWS.md §4.3, "from a suggestion or manual"). */
+/**
+ * `/sadran/:dept/:week/proposals` — proposals list (UX_FLOWS.md §4.3). New
+ * proposals are only ever created from the board (dragging a request onto a
+ * ride, or a suggestion action) — this screen is read/answer-status only;
+ * see `he.sadranProposal.composeFromBoardHint`.
+ */
 export function ProposalsListScreen({ departmentId, weekStart }: ProposalsListScreenProps) {
   const navigate = useNavigate();
-  const location = useLocation();
-  const returnTo = location.pathname + location.search;
+  const [searchParams] = useSearchParams();
+  const highlightedId = searchParams.get("proposal");
+  const returnTo = paths.sadran.proposals(departmentId, weekStart);
+  const boardPath = paths.sadran.board(departmentId, weekStart);
+
   const proposalsQuery = useProposalsForWeek(departmentId, weekStart);
-  const requestsQuery = useWeekRequests(departmentId, weekStart);
+  const requestsQuery = useWeekRequestsWithNames(departmentId, weekStart);
+  const ridesQuery = useAllWeekRides(departmentId, weekStart);
 
   const proposals = proposalsQuery.data ?? [];
-  // `proposals_one_sent_per_request_idx` (supabase/migrations/20260907090900_proposals.sql)
-  // allows only one `sent` proposal per request at a time — excluding those
-  // here (rather than only in `create_proposal`'s error path) also keeps a
-  // Sadran from starting a second, doomed-to-conflict proposal in the first place.
-  const requestIdsWithSentProposal = new Set(proposals.filter((p) => p.status === "sent").map((p) => p.request_id));
-  const eligibleRequests = (requestsQuery.data ?? []).filter(
-    (r) => r.status !== "draft" && r.status !== "withdrawn" && r.status !== "cancelled" && !requestIdsWithSentProposal.has(r.id),
-  );
+  const requests = requestsQuery.data ?? [];
+  const rides = ridesQuery.data ?? [];
 
-  const [manualRequestId, setManualRequestId] = useState("");
-  const [manualType, setManualType] = useState<ProposalType>("shift");
+  const highlightedRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (highlightedId) highlightedRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [highlightedId]);
 
   return (
     <div className="mx-auto max-w-3xl space-y-3 p-4 pb-24">
       <PageHeader title={he.screen.proposals.title} />
 
       <Card>
-        <CardContent className="flex flex-wrap items-center gap-2 p-3">
-          <span className="text-sm font-medium">{he.screen.proposal.compose}</span>
-          <Select value={manualRequestId} onValueChange={setManualRequestId}>
-            <SelectTrigger className="w-48">
-              <SelectValue placeholder={he.field.destination} />
-            </SelectTrigger>
-            <SelectContent>
-              {eligibleRequests.map((r) => (
-                <SelectItem key={r.id} value={r.id}>
-                  {r.destination_text ?? r.id.slice(0, 8)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={manualType} onValueChange={(v) => setManualType(v as ProposalType)}>
-            <SelectTrigger className="w-36">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {/* "merge" is deliberately not offered manually here — it needs a
-                  host ride (`payload.ride_id`/`legs`, `proposals_payload_shape_ck`),
-                  which only the board's merge-by-drag / suggestion actions supply
-                  (BoardScreen.tsx `goToComposer`); see the stage 2b report. */}
-              <SelectItem value="shift">{he.proposal.type.shift}</SelectItem>
-              <SelectItem value="deny">{he.proposal.type.deny}</SelectItem>
-              <SelectItem value="external">{he.proposal.type.external}</SelectItem>
-            </SelectContent>
-          </Select>
-          <Button
-            disabled={!manualRequestId}
-            onClick={() =>
-              navigate(`/sadran/${departmentId}/${weekStart}/proposals/new`, {
-                state: { returnTo, requestId: manualRequestId, rideId: null, type: manualType, payload: {} },
-              })
-            }
-          >
-            {t("action.propose")}
-          </Button>
+        <CardContent className="flex flex-wrap items-center justify-between gap-2 p-3 text-sm">
+          <span className="text-muted-foreground">{he.sadranProposal.composeFromBoardHint}</span>
+          <Link to={boardPath} className="font-medium text-primary underline underline-offset-2">
+            {he.sadranProposal.goToBoard}
+          </Link>
         </CardContent>
       </Card>
 
@@ -100,30 +62,38 @@ export function ProposalsListScreen({ departmentId, weekStart }: ProposalsListSc
       ) : (
         <div className="space-y-2">
           {proposals.map((p) => {
-            const request = (requestsQuery.data ?? []).find((r) => r.id === p.request_id);
+            const request = requests.find((r) => r.id === p.request_id);
+            const hostRide = p.type === "merge" && p.ride_id ? rides.find((r) => r.id === p.ride_id) : undefined;
+            const isHighlighted = highlightedId === p.id;
             return (
               <Card
                 key={p.id}
-                className="cursor-pointer"
-                onClick={() => navigate(`/sadran/${departmentId}/${weekStart}/proposals/new`, {
-                  // `proposalId` (Stage 3 hardening fix, UX_FLOWS.md §16 item 9): shows this
-                  // proposal's actual current status instead of an empty "compose new" form.
-                  state: { returnTo, requestId: p.request_id, rideId: p.ride_id, type: p.type, payload: p.payload ?? {}, proposalId: p.id },
-                })}
+                ref={isHighlighted ? highlightedRef : undefined}
+                data-testid="proposal-row"
+                data-proposal-id={p.id}
+                className={cn("cursor-pointer", isHighlighted && "ring-2 ring-primary")}
+                onClick={() =>
+                  navigate(paths.sadran.composer(departmentId, weekStart), {
+                    // `proposalId` (Stage 3 hardening fix, UX_FLOWS.md §16 item 9): shows this
+                    // proposal's actual current status instead of an empty "compose new" form.
+                    state: { returnTo, requestId: p.request_id, rideId: p.ride_id, type: p.type, payload: p.payload ?? {}, proposalId: p.id },
+                  })
+                }
               >
                 <CardContent className="flex items-center justify-between gap-2 p-3 text-sm">
-                  <div>
-                    <div className="font-medium">
-                      {he.proposal.type[p.type as "shift" | "merge" | "deny" | "external"] ?? p.type}
-                      {" · "}
-                      {request?.destination_text ?? ""}
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      {request?.depart_at ? formatTime(new Date(request.depart_at)) : ""} ·{" "}
-                      {tv("sadranProposal.expiresAtLabel", { when: formatTime(new Date(p.expires_at)) })}
-                    </div>
-                  </div>
-                  <StatusBadge kind="proposal" status={p.status} />
+                  <ProposalSummary
+                    type={p.type}
+                    status={p.status}
+                    requesterName={request?.requester_full_name}
+                    destination={request?.destination_resolved_name ?? request?.destination_text}
+                    purpose={request?.ride_type_name_he}
+                    departAt={request?.depart_at ?? null}
+                    returnAt={request?.return_at ?? null}
+                    hostDriverName={hostRide?.driver_name}
+                  />
+                  <span className="whitespace-nowrap text-xs text-muted-foreground" dir="ltr">
+                    {tv("sadranProposal.expiresAtLabel", { when: formatTime(new Date(p.expires_at)) })}
+                  </span>
                 </CardContent>
               </Card>
             );

@@ -93,9 +93,22 @@ begin
   perform public.unassign_ride(r.id,r.version);
   assert (select status='waitlisted' from public.requests where id=(select id from todo_ids where k='request1')),'unassign did not preserve request';
   fp:=public.publish_scores_fingerprint(r.department_id,r.week_start);
+  -- Entirely empty score snapshots are a supported "could not score" fallback
+  -- (src/features/sadran/publish/publishWithScores.ts) and must publish; roll the
+  -- attempt back afterwards (via the plpgsql sub-block's implicit savepoint) so it
+  -- does not disturb the fingerprint/state the rest of this test depends on.
   begin
     perform public.publish_siddur(r.department_id,r.week_start,'[]',fp,'[]',null,true);
-    raise exception 'publish accepted missing scores';
+    raise exception 'rollback_probe';
+  exception when raise_exception then if sqlerrm<>'rollback_probe' then raise; end if; end;
+  -- Score data that IS supplied must still be complete: this omits request1 (still
+  -- 'waitlisted', so it needs a score entry) while covering an unrelated profile.
+  begin
+    perform public.publish_siddur(r.department_id,r.week_start,
+      jsonb_build_array(jsonb_build_object('profile_id','00000000-0000-0000-0000-000000000104',
+        'request_count',0,'served_count',0,'priority_total',0,'served_priority_total',0,'requests','[]'::jsonb)),
+      fp,'[]',null,true);
+    raise exception 'publish accepted incomplete scores';
   exception when raise_exception then if sqlerrm<>'invalid_publication_scores' then raise; end if; end;
   profiles:=jsonb_build_array(jsonb_build_object(
     'profile_id','00000000-0000-0000-0000-000000000103','request_count',1,'served_count',0,'priority_total',1,'served_priority_total',0,

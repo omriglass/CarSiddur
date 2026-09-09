@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tansta
 import { fleetKeys } from "@/features/fleet/queryKeys";
 import { sadranKeys } from "@/features/sadran/keys";
 import { siddurKeys } from "@/features/siddur/queryKeys";
+import { requestsKeys } from "@/features/requests/queryKeys";
 
 import {
   createCar,
@@ -28,13 +29,13 @@ import type { Passengers } from "@/solver";
 async function invalidateCarQueries(queryClient: QueryClient) {
   await Promise.all([
     queryClient.invalidateQueries({ queryKey: carAdminKeys.list() }),
-    queryClient.invalidateQueries({ queryKey: ["requests"] }),
+    queryClient.invalidateQueries({ queryKey: requestsKeys.all }),
     queryClient.invalidateQueries({ queryKey: fleetKeys.cars(undefined).slice(0, 2) }),
     queryClient.invalidateQueries({ queryKey: fleetKeys.myTemporaryCars(undefined).slice(0, 2) }),
     queryClient.invalidateQueries({ queryKey: siddurKeys.carForRide(undefined).slice(0, 2) }),
     queryClient.invalidateQueries({ queryKey: siddurKeys.boardRides("", "").slice(0, 2) }),
     queryClient.invalidateQueries({ queryKey: siddurKeys.boardRideById(undefined).slice(0, 2) }),
-    queryClient.invalidateQueries({ queryKey: ["siddur", "myUpcomingRides"] }),
+    queryClient.invalidateQueries({ queryKey: siddurKeys.myUpcomingRides(undefined, undefined).slice(0, 2) }),
     queryClient.invalidateQueries({
       queryKey: sadranKeys.all,
       predicate: ({ queryKey }) => queryKey.at(-1) === "cars" || queryKey.at(-1) === "boardRides",

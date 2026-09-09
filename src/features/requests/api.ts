@@ -55,6 +55,8 @@ export interface MyRequestRow {
   preferredCarName?: string | null;
   hasPublishedRide?: boolean;
   window?: RequestWindow | null;
+  /** Named children on this request (`request_children` → `children.full_name`), UX_FLOWS.md §4.2. */
+  childNames?: string[];
   id: string;
   departmentId: string;
   weekStart: string;
@@ -95,7 +97,8 @@ const SELECT = `
       driver:profiles!rides_driver_id_fkey(full_name)
     )
   ),
-  proposals(id, type, reason_he, expires_at, status)
+  proposals(id, type, reason_he, expires_at, status),
+  request_children(child:children(full_name))
 `;
 
 interface RawRequestRow {
@@ -141,6 +144,7 @@ interface RawRequestRow {
     expires_at: string;
     status: Database["public"]["Enums"]["proposal_status"];
   }[];
+  request_children: { child: { full_name: string } | null }[];
 }
 
 function mapRow(row: RawRequestRow): MyRequestRow {
@@ -156,6 +160,7 @@ function mapRow(row: RawRequestRow): MyRequestRow {
     preferredCarName: row.preferred_car?.name ?? null,
     window: row.window,
     hasPublishedRide: row.ride_requests.some((link) => link.ride && link.ride.status !== "cancelled" && link.ride.status !== "draft"),
+    childNames: row.request_children.flatMap((entry) => entry.child?.full_name ? [entry.child.full_name] : []),
     id: row.id,
     departmentId: row.department_id,
     weekStart: row.week_start,
@@ -231,6 +236,7 @@ export interface RequestEditRow {
   flexReturnLate: string;
   notes: string | null;
   rideDescription: string | null;
+  guestPassengerNames: string[];
   changedSinceSolve: boolean;
 }
 
@@ -238,7 +244,7 @@ const EDIT_SELECT = `
   id, department_id, week_start, status, version, destination_id, destination_text, ride_type_id,
   trip_shape, depart_at, return_at, one_way_car_mode, needs_car_at_destination,
   adults, child_seats, boosters, has_luggage,
-  flex_depart_early, flex_depart_late, flex_return_early, flex_return_late, notes, ride_description, changed_since_solve, preferred_car_id,
+  flex_depart_early, flex_depart_late, flex_return_early, flex_return_late, notes, ride_description, guest_passenger_names, changed_since_solve, preferred_car_id,
   preferred_car:cars!requests_preferred_car_id_fkey(name),
   destination:destinations(name),
   window:weeks(phase, open_at, close_at),
@@ -278,6 +284,7 @@ export async function fetchRequestById(requestId: string, profileId: string): Pr
     flex_return_late: string;
     notes: string | null;
     ride_description: string | null;
+    guest_passenger_names: string[];
     changed_since_solve: boolean;
     destination: { name: string } | null;
   };
@@ -310,6 +317,7 @@ export async function fetchRequestById(requestId: string, profileId: string): Pr
     flexReturnLate: row.flex_return_late,
     notes: row.notes,
     rideDescription: row.ride_description,
+    guestPassengerNames: row.guest_passenger_names ?? [],
     changedSinceSolve: row.changed_since_solve,
   };
 }
@@ -384,6 +392,13 @@ export interface SubmitRequestResult {
   needs_driver?: boolean;
   starts_at?: string;
   ends_at?: string;
+  /**
+   * `enter_waiting_list()` (20260909093000_extend_auto_approve_and_waitlist.sql): the member
+   * asked to join the waiting list, but a car was actually free and the request was placed
+   * instead — `status` is `"assigned"` alongside this flag, distinct from a plain assigned
+   * result so the UI can say "no waiting list needed" rather than the ordinary success toast.
+   */
+  car_was_free?: boolean;
 }
 
 /** `submit_request(payload jsonb)` — the only write path for requests (CLAUDE.md decision 8). */

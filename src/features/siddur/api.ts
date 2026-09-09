@@ -1,5 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
-import { rpc, toAppError } from "@/lib/rpc";
+import { AppError, rpc, toAppError } from "@/lib/rpc";
 import { siddurCarName } from "@/lib/siddurCarName";
 
 import type { Database } from "@/integrations/supabase/types";
@@ -129,9 +129,12 @@ export async function fetchCurrentWeekStart(): Promise<string> {
 }
 
 export async function ensureDepartmentWeeks(departmentId: string): Promise<void> {
-  const { error } = await supabase.rpc("ensure_department_weeks", { p_department_id: departmentId });
-  // Published schedules remain readable across departments; catch-up only mutates memberships.
-  if (error && error.message !== "not_authorized") throw toAppError(error);
+  try {
+    await rpc("ensure_department_weeks", { p_department_id: departmentId });
+  } catch (error) {
+    // Published schedules remain readable across departments; catch-up only mutates memberships.
+    if (!(error instanceof AppError) || error.code !== "not_authorized") throw error;
+  }
 }
 
 export async function fetchWeeks(departmentId: string): Promise<Week[]> {
@@ -198,20 +201,4 @@ export async function fetchCarLocations(departmentId: string, weekStart: string)
     .eq("week_start", weekStart);
   if (error) throw toAppError(error);
   return data ?? [];
-}
-
-/**
- * `department_settings.board_start_time` only — the member grid's default
- * visible-range start (UX_FLOWS.md §20, same field the Sadran board reads
- * via its own `fetchDepartmentSettings`; a minimal, single-column read here
- * rather than pulling in the whole `sadran` feature's settings row).
- */
-export async function fetchBoardStartTime(departmentId: string): Promise<string | null> {
-  const { data, error } = await supabase
-    .from("department_settings")
-    .select("board_start_time")
-    .eq("department_id", departmentId)
-    .maybeSingle();
-  if (error) throw toAppError(error);
-  return data?.board_start_time ?? null;
 }

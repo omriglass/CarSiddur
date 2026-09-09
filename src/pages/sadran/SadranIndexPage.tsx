@@ -1,5 +1,6 @@
 import { Navigate } from "react-router-dom";
 
+import { paths } from "@/app/routes";
 import { useDefaultSadranWeek } from "@/features/sadran/weekContext";
 import { t } from "@/i18n/he";
 
@@ -15,5 +16,5 @@ export function SadranIndexPage() {
   if (!data) {
     return <Navigate to="/my" replace />;
   }
-  return <Navigate to={`/sadran/${data.departmentId}/${data.weekStart}/board`} replace />;
+  return <Navigate to={paths.sadran.board(data.departmentId, data.weekStart)} replace />;
 }

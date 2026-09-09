@@ -41,6 +41,17 @@ const RIDE_STATUSES: readonly Database["public"]["Enums"]["ride_status"][] = [
   "cancelled",
 ];
 
+const CAR_STATUSES: readonly Database["public"]["Enums"]["car_status"][] = [
+  "active",
+  "maintenance",
+  "retired",
+];
+
+// `ParsedInviteRowStatus` (src/features/admin/members/lib/parseInviteLines.ts)
+// mirrored here — a plain TS union, not a DB enum (see StatusBadge.tsx's
+// own `InviteRowStatus` type comment).
+const INVITE_ROW_STATUSES = ["new", "existing", "invalid_email", "duplicate"] as const;
+
 describe("StatusBadge", () => {
   it.each(REQUEST_STATUSES)("renders request status '%s' with a non-empty label", (status) => {
     const { container } = render(<StatusBadge kind="request" status={status} />);
@@ -54,6 +65,16 @@ describe("StatusBadge", () => {
 
   it.each(RIDE_STATUSES)("renders ride status '%s' with a non-empty label", (status) => {
     const { container } = render(<StatusBadge kind="ride" status={status} />);
+    expect(container.textContent).toBeTruthy();
+  });
+
+  it.each(CAR_STATUSES)("renders car status '%s' with a non-empty label", (status) => {
+    const { container } = render(<StatusBadge kind="car" status={status} />);
+    expect(container.textContent).toBeTruthy();
+  });
+
+  it.each(INVITE_ROW_STATUSES)("renders invite row status '%s' with a non-empty label", (status) => {
+    const { container } = render(<StatusBadge kind="inviteRow" status={status} />);
     expect(container.textContent).toBeTruthy();
   });
 });

@@ -1,5 +1,3 @@
-import { getDay } from "date-fns";
-import { toZonedTime } from "date-fns-tz";
 import { GripVertical } from "lucide-react";
 import { useRef, useState } from "react";
 
@@ -8,8 +6,9 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { he, tv } from "@/i18n/he";
+import { weekdayLabel } from "@/lib/dayLabels";
 import { rideTypeColorClasses } from "@/lib/rideTypeColors";
-import { TZ, formatTime } from "@/lib/time";
+import { formatTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { ridePassengerSummary } from "@/lib/ridePassengerSummary";
 
@@ -28,9 +27,7 @@ export interface UnmetListItem {
 /** "יום ג' 09:00" — Asia/Jerusalem-zoned, never a raw `getDay()` (CLAUDE.md hard rule 6). */
 function dayTimeLabel(departAt: string | null): string {
   if (!departAt) return "—";
-  const zoned = toZonedTime(new Date(departAt), TZ);
-  const day = he.days.short[getDay(zoned)] ?? "";
-  return `${day} ${formatTime(new Date(departAt))}`;
+  return `${weekdayLabel(departAt, "short")} ${formatTime(new Date(departAt))}`;
 }
 
 /** Below this many pixels of raw movement, a touch pointerdown is still a scroll attempt — cancel the pending long-press. */
@@ -58,6 +55,13 @@ interface UnmetListProps {
   dayEndMinutes?: number;
   onDragHover?: (item: UnmetListItem, carId: string | null, minutes: number | null, rideId?: string) => void;
   onDragDrop?: (item: UnmetListItem, carId: string, minutes: number, rideId?: string) => void;
+  /**
+   * The "לא שובצו (N)" heading. Defaults on (the phone list-mode segment and the ride-detail
+   * sheet's single-item view rely on this component owning its own heading), but the desktop
+   * board's side panel (`BoardScreen.tsx`) renders that exact same title itself right above this
+   * list — pass `false` there so it isn't duplicated.
+   */
+  showHeading?: boolean;
 }
 
 /**
@@ -65,7 +69,7 @@ interface UnmetListProps {
  * week with no ride (bug #1), sorted by policy score when a solver preview
  * exists for it, otherwise by departure time.
  */
-export function UnmetList({ items, onAction, onDecision, dayStartMinutes = 6 * 60, dayEndMinutes = 23 * 60 + 59, onDragHover, onDragDrop }: UnmetListProps) {
+export function UnmetList({ items, onAction, onDecision, dayStartMinutes = 6 * 60, dayEndMinutes = 23 * 60 + 59, onDragHover, onDragDrop, showHeading = true }: UnmetListProps) {
   const dragEnabled = !!onDragDrop;
   const [drag, setDrag] = useState<DragState | null>(null);
   const dragRef = useRef<DragState | null>(null);
@@ -178,7 +182,7 @@ export function UnmetList({ items, onAction, onDecision, dayStartMinutes = 6 * 6
 
   return (
     <div className="space-y-2">
-      <h2 className="text-sm font-medium">{tv("sadranBoard.unmetTitle", { count: String(items.length) })}</h2>
+      {showHeading ? <h2 className="text-sm font-medium">{tv("sadranBoard.unmetTitle", { count: String(items.length) })}</h2> : null}
       {sorted.map((item) => {
         const isDraggable = dragEnabled;
         const isDragged = drag?.confirmed && drag.item.request.id === item.request.id;

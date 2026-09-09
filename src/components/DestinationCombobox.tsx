@@ -1,5 +1,6 @@
+import * as PopoverPrimitive from "@radix-ui/react-popover";
 import { Check, ChevronsUpDown, MapPin } from "lucide-react";
-import { useState } from "react";
+import { useContext, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -10,9 +11,16 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { SheetPortalContext } from "@/components/SheetPortalContext";
 import { t } from "@/i18n/he";
 import { cn } from "@/lib/utils";
+
+// Raw Radix primitives rather than the shared `components/ui/popover.tsx` (component inventory,
+// same reasoning as `TimeField15`): its `PopoverContent` always portals to `document.body` with
+// no way to pass a `container`, so this field's own popover can't be moved into an ancestor
+// `Sheet`'s content node (`SheetPortalContext`) for the same nested-scroll fix `TimeField15` needed.
+const Popover = PopoverPrimitive.Root;
+const PopoverTrigger = PopoverPrimitive.Trigger;
 
 export interface DestinationPreset {
   id: string;
@@ -60,6 +68,7 @@ export function DestinationCombobox({ destinations, value, onChange, autoFocus }
   const [query, setQuery] = useState("");
   const matches = filterDestinations(destinations, query);
   const trimmedQuery = query.trim();
+  const portalContainer = useContext(SheetPortalContext);
 
   function select(next: DestinationValue) {
     onChange(next);
@@ -84,49 +93,57 @@ export function DestinationCombobox({ destinations, value, onChange, autoFocus }
           <ChevronsUpDown className="size-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
-        <Command shouldFilter={false}>
-          <CommandInput
-            value={query}
-            onValueChange={setQuery}
-            placeholder={t("field.destination")}
-          />
-          <CommandList>
-            <CommandEmpty>{t("field.destinationFreeText")}</CommandEmpty>
-            <CommandGroup>
-              {matches.map((dest) => {
-                const isSelected = value && "presetId" in value && value.presetId === dest.id;
-                return (
-                  <CommandItem
-                    key={dest.id}
-                    value={dest.id}
-                    onSelect={() => select({ presetId: dest.id, name: dest.name })}
-                  >
-                    <Check className={cn("size-4", isSelected ? "opacity-100" : "opacity-0")} />
-                    {dest.name}
-                    {dest.zone ? (
-                      <span className="ms-1 text-xs text-muted-foreground">· {dest.zone}</span>
-                    ) : null}
+      <PopoverPrimitive.Portal container={portalContainer ?? undefined}>
+        <PopoverPrimitive.Content
+          align="start"
+          sideOffset={4}
+          className={cn(
+            "z-50 w-[--radix-popover-trigger-width] rounded-md border bg-popover p-0 text-popover-foreground shadow-md outline-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2",
+          )}
+        >
+          <Command shouldFilter={false}>
+            <CommandInput
+              value={query}
+              onValueChange={setQuery}
+              placeholder={t("field.destination")}
+            />
+            <CommandList>
+              <CommandEmpty>{t("field.destinationFreeText")}</CommandEmpty>
+              <CommandGroup>
+                {matches.map((dest) => {
+                  const isSelected = value && "presetId" in value && value.presetId === dest.id;
+                  return (
+                    <CommandItem
+                      key={dest.id}
+                      value={dest.id}
+                      onSelect={() => select({ presetId: dest.id, name: dest.name })}
+                    >
+                      <Check className={cn("size-4", isSelected ? "opacity-100" : "opacity-0")} />
+                      {dest.name}
+                      {dest.zone ? (
+                        <span className="ms-1 text-xs text-muted-foreground">· {dest.zone}</span>
+                      ) : null}
+                    </CommandItem>
+                  );
+                })}
+                {trimmedQuery ? (
+                  <CommandItem value={`__freetext__${trimmedQuery}`} onSelect={() => select({ freeText: trimmedQuery })}>
+                    <Check
+                      className={cn(
+                        "size-4",
+                        value && "freeText" in value && value.freeText === trimmedQuery
+                          ? "opacity-100"
+                          : "opacity-0",
+                      )}
+                    />
+                    &quot;{trimmedQuery}&quot; — {t("field.destinationFreeText")}
                   </CommandItem>
-                );
-              })}
-              {trimmedQuery ? (
-                <CommandItem value={`__freetext__${trimmedQuery}`} onSelect={() => select({ freeText: trimmedQuery })}>
-                  <Check
-                    className={cn(
-                      "size-4",
-                      value && "freeText" in value && value.freeText === trimmedQuery
-                        ? "opacity-100"
-                        : "opacity-0",
-                    )}
-                  />
-                  &quot;{trimmedQuery}&quot; — {t("field.destinationFreeText")}
-                </CommandItem>
-              ) : null}
-            </CommandGroup>
-          </CommandList>
-        </Command>
-      </PopoverContent>
+                ) : null}
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </PopoverPrimitive.Content>
+      </PopoverPrimitive.Portal>
     </Popover>
   );
 }

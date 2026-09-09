@@ -1,5 +1,6 @@
+import * as PopoverPrimitive from "@radix-ui/react-popover";
 import { Check, ChevronsUpDown, X } from "lucide-react";
-import { useState } from "react";
+import { useContext, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -11,9 +12,18 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { SheetPortalContext } from "@/components/SheetPortalContext";
 import { t } from "@/i18n/he";
 import { cn } from "@/lib/utils";
+
+// Raw Radix primitives rather than the shared `components/ui/popover.tsx` (component inventory,
+// same reasoning as `TimeField15`/`DestinationCombobox`): its `PopoverContent` always portals to
+// `document.body` with no way to pass a `container`, so this field's own popover can't be moved
+// into an ancestor `Sheet`'s content node (`SheetPortalContext`) for the nested-scroll/positioning
+// fix those two fields needed — the quick-request sheet renders this component twice (companions,
+// children).
+const Popover = PopoverPrimitive.Root;
+const PopoverTrigger = PopoverPrimitive.Trigger;
 
 export interface CompanionOption {
   id: string;
@@ -37,6 +47,7 @@ interface CompanionPickerProps {
  */
 export function CompanionPicker({ members, value, onChange, label = t("field.companions") }: CompanionPickerProps) {
   const [open, setOpen] = useState(false);
+  const portalContainer = useContext(SheetPortalContext);
   const selected = members.filter((m) => value.includes(m.id));
 
   function toggle(id: string) {
@@ -74,25 +85,33 @@ export function CompanionPicker({ members, value, onChange, label = t("field.com
               <ChevronsUpDown className="size-3.5 opacity-50" />
             </Button>
           </PopoverTrigger>
-          <PopoverContent className="w-64 p-0" align="start">
-            <Command>
-              <CommandInput placeholder={label} />
-              <CommandList>
-                <CommandEmpty>—</CommandEmpty>
-                <CommandGroup>
-                  {members.map((m) => {
-                    const isSelected = value.includes(m.id);
-                    return (
-                      <CommandItem key={m.id} value={m.name} onSelect={() => toggle(m.id)}>
-                        <Check className={cn("size-4", isSelected ? "opacity-100" : "opacity-0")} />
-                        {m.name}{m.isPriority ? " ★" : ""}
-                      </CommandItem>
-                    );
-                  })}
-                </CommandGroup>
-              </CommandList>
-            </Command>
-          </PopoverContent>
+          <PopoverPrimitive.Portal container={portalContainer ?? undefined}>
+            <PopoverPrimitive.Content
+              align="start"
+              sideOffset={4}
+              className={cn(
+                "z-50 w-64 rounded-md border bg-popover p-0 text-popover-foreground shadow-md outline-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2",
+              )}
+            >
+              <Command>
+                <CommandInput placeholder={label} />
+                <CommandList>
+                  <CommandEmpty>—</CommandEmpty>
+                  <CommandGroup>
+                    {members.map((m) => {
+                      const isSelected = value.includes(m.id);
+                      return (
+                        <CommandItem key={m.id} value={m.name} onSelect={() => toggle(m.id)}>
+                          <Check className={cn("size-4", isSelected ? "opacity-100" : "opacity-0")} />
+                          {m.name}{m.isPriority ? " ★" : ""}
+                        </CommandItem>
+                      );
+                    })}
+                  </CommandGroup>
+                </CommandList>
+              </Command>
+            </PopoverPrimitive.Content>
+          </PopoverPrimitive.Portal>
         </Popover>
       </div>
     </div>

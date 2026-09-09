@@ -22,7 +22,7 @@ Code (grep, do not read whole files):
 - [ ] RLS: per table `enable row level security`, `force row level security`, `create policy … for <cmd>`; `grep -n "for all\|using (true)" supabase/migrations`.
 - [ ] Known rule set in SQL: body of `validate_policy_rules` (latest definition wins).
 - [ ] TS: `src/lib/enums.ts` arrays; `ruleRegistry` keys in `src/solver/rules/index.ts`; files in `src/solver/rules/*.ts`; reason codes in `src/solver/reasons.ts`; `he.enums.*`, `he.notif.*`, `he.admin.policies.rules.*` keys in `src/i18n/he.ts`; `src/features/requests/schema.ts` keys; routes in `src/app/router.tsx`; `package.json` scripts.
-- [ ] Emitters: `grep -rn "enqueue_notification(" supabase` (any `insert into notifications`/`push_outbox` outside that function is drift); cron: `grep -rn "cron.schedule" supabase/migrations` (must be exactly one live entry, `app_tick`); edge functions: `ls supabase/functions` ⇔ `push-dispatch, answer-proposal, solve, on-ride-cancelled`.
+- [ ] Emitters: `grep -rn "enqueue_notification(" supabase` (any `insert into notifications`/`push_outbox` outside that function is drift); cron: `grep -rn "cron.schedule" supabase/migrations` (must be exactly one live entry, `app_tick`); edge functions: `ls supabase/functions` ⇔ `push-dispatch, answer-proposal, on-ride-cancelled, destination-route` (there is no `solve` function — the solver runs inside RPCs via the bundled `_shared/solver.js`).
 
 ## 2. Cross-checks (one report line each)
 
@@ -40,7 +40,7 @@ Request fields:
 - [ ] REQ §5.1 ⇔ DATA_MODEL `requests` (and `request_templates` mirror) ⇔ `schema.ts` ⇔ `he.requests.fields` ⇔ UX_FLOWS form ⇔ SOLVER §2 `Request`. Flag required/nullable mismatches and flexibility step lists (0/15/30/60/120/'day').
 
 Notifications:
-- [ ] UX_FLOWS §6.1 (canonical, 20 rows, incl. the Sadran-only `window_closed_solve_now`/`publish_reminder`) ⇔ DATA_MODEL §2 `notification_event` (value = snake_case of the `notif.*` suffix) ⇔ ARCHITECTURE §9 list ⇔ SQL ⇔ `he.notif.*` ⇔ an emitter per event ⇔ `inbox` + `push` template rows per event in the seed (+ seven `whatsapp` variants: shift, merge_passenger, merge_driver, deny, external, chauffeur, reminder). REQ §9 prose names nothing outside the list. Names: `enqueue_notification`, `notifications`, `push_outbox`, `notification_templates`, `profiles.muted_events` (anything else — `notify`, `notification_prefs`, templates in `app_settings` — is drift).
+- [ ] UX_FLOWS §6.1 (canonical, 21 rows, incl. the Sadran-only `window_closed_solve_now`/`publish_reminder` and `status_changed`) ⇔ DATA_MODEL §2 `notification_event` (value = snake_case of the `notif.*` suffix) ⇔ ARCHITECTURE §9 list ⇔ SQL ⇔ `he.notif.*` ⇔ an emitter per event ⇔ `inbox` + `push` template rows per event in the seed (+ seven `whatsapp` variants: shift, merge_passenger, merge_driver, deny, external, chauffeur, reminder). REQ §9 prose names nothing outside the list. Names: `enqueue_notification`, `notifications`, `push_outbox`, `notification_templates`, `profiles.muted_events` (anything else — `notify`, `notification_prefs`, templates in `app_settings` — is drift).
 
 Weekly cycle:
 - [ ] REQ §4 defaults ⇔ `department_settings` column defaults ⇔ seed ⇔ ARCHITECTURE §10. Exactly one `cron.schedule` (`app_tick`, `*/15 * * * *`, `app.tick()`) ⇔ DATA_MODEL §6 step 17 ⇔ ARCHITECTURE §10; tick sub-functions `advance_week_phases`, `send_due_reminders`, `expire_proposals`, `drain_push_outbox`, `housekeeping` exist. `week_phase` = `open, solving, published, live, archived`.

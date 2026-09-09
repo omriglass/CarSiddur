@@ -199,6 +199,9 @@ export const heSadran = {
     expiresAtLabel: "עד {{when}}",
     reasonLabel: "סיבה (אופציונלי)",
     defaultReason: "אין מספיק רכבים פנויים בשעות המבוקשות",
+    hostDriverLabel: "נהג/ת מארח/ת: {{name}}",
+    composeFromBoardHint: "הצעות חדשות נשלחות מלוח הסידור — גררו בקשה ללוח כדי לפתוח הצעת שיבוץ.",
+    goToBoard: "מעבר ללוח הסידור",
     externalSuggestion: {
       cab: "האם אפשר להסתדר עם מונית?",
       rental: "האם אפשר להסתדר עם רכב שכור?",

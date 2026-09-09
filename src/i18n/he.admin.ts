@@ -9,40 +9,13 @@
  * this file reuses those via `he.<path>` inside components instead of
  * duplicating them).
  */
-/**
- * Full 20-event label map (UX_FLOWS §6.1), for programmatic lookup by
- * `notification_event` value (the templates screen) — kept as a standalone
- * export rather than nested in `heAdmin` so its `Record<string, string>`
- * shape never has to flow through `he.ts`'s `DotPaths<Dictionary>` mapped
- * type (that type assumes finite literal keys, matching `t()`/`tv()` dot
- * paths; this map is looked up directly, not through `t()`). Not relying
- * solely on `he.notif` (18 of the 20, stage 1c) since this screen must be
- * able to label every seeded template row, including the two Sadran-only
- * events `he.notif` doesn't cover yet.
- */
-export const notificationEventLabels: Record<string, string> = {
-  window_open: "נפתח חלון בקשות",
-  window_closing: "חלון הבקשות נסגר בקרוב",
-  window_closed_solve_now: "הבקשות נסגרו — להריץ פותר",
-  publish_reminder: "תזכורת לפרסום",
-  published: "הסידור פורסם",
-  outcome_changed: "הבקשה שלך השתנתה",
-  proposal_received: "הצעה מהסדרן/ית",
-  proposal_answered: "תשובה להצעה",
-  freed_slot: "מקום התפנה",
-  freed_slot_auto: "מקום שובץ אוטומטית",
-  claim_approved: "בקשת הצטרפות אושרה",
-  claim_declined: "בקשת הצטרפות נדחתה",
-  claim_contested: "כמה בקשות למקום שהתפנה",
-  maintenance_affects: "טיפול רכב משפיע על נסיעה",
-  late_request: "בקשה מאוחרת",
-  waitlisted_request: "בקשה ברשימת המתנה",
-  auto_approved: "שובץ אוטומטית",
-  request_changed: "בקשה עודכנה",
-  access_request: "בקשת הרשמה חדשה",
-  access_approved: "ההרשמה אושרה",
-  status_changed: "שינוי בסטטוס או בתפקיד",
-};
+// The notification_event → Hebrew label map used to live here too
+// (`notificationEventLabels`, duplicating `he.notif` in `he.ts`,
+// docs/REFACTOR_BACKLOG.md §5.3) — deleted; the admin templates screen now
+// reads `he.notif` directly, which is typed
+// `Record<Database["public"]["Enums"]["notification_event"], string>` and
+// so is guaranteed to cover every event, including the two Sadran-only ones
+// this map used to add on top of the (then-incomplete) `he.notif`.
 
 export const heAdmin = {
   adminHome: {
@@ -70,8 +43,6 @@ export const heAdmin = {
     cancel: "ביטול",
     close: "סגירה",
     name: "שם",
-    confirmDeleteTitle: "למחוק את {{name}}?",
-    confirmDeleteTypeName: "הקלד/י את השם למחיקה כדי לאשר",
     savedToast: "נשמר",
     deletedToast: "נמחק",
     errorGeneric: "משהו השתבש, נסה/י שוב",
@@ -161,6 +132,7 @@ export const heAdmin = {
     approveWithDepartment: "אשר/י ושייך/י למחלקה",
     importInstructions: 'הדביקו שורות "שם, אימייל" (אפשר גם עם טאב או נקודה-פסיק, כולל שורת כותרת)',
     importTextareaLabel: "רשימת חברים לייבוא",
+    importPlaceholder: "דנה כהן, dana@example.com\nרון לוי, ron@example.com",
     importDepartmentLabel: "מחלקה ליבוא",
     importParse: "נתח רשימה",
     importRowNew: "חדש",
@@ -322,6 +294,7 @@ export const heAdmin = {
     ruleEnabled: "מופעל",
     ruleWeight: "משקל",
     ruleParams: "פרמטרים",
+    ruleInfoLabel: "מידע על {{rule}}",
     ruleNames: {
       rideType: "סוג הנסיעה", distance: "מרחק", publicTransport: "תחבורה ציבורית", peopleServed: "מספר הנוסעים",
       fairness: "חלוקה הוגנת", submissionTime: "מועד ההגשה", flexibilityOffered: "גמישות בשעות", manualBoost: "עדיפות ידנית",
@@ -336,7 +309,9 @@ export const heAdmin = {
       flexibilityOffered: "יותר גמישות בשעות שהוצעו מעניקה יותר עדיפות.",
       manualBoost: "תוספת עדיפות חד-פעמית שהסדרן/ית קובע/ת לבקשה מסוימת.",
     },
-    paramNames: { lookbackWeeks: "שבועות אחורה", maxKm: "מרחק מרבי (ק״מ)", cap: "תקרת נוסעים לחישוב", latePenalty: "הפחתה לבקשה מאוחרת", fullCreditMinutes: "דקות גמישות לניקוד מלא", weights: "עדיפות לכל סוג נסיעה" },
+    paramNames: { lookbackWeeks: "שבועות אחורה", maxKm: "מרחק מרבי (ק״מ)", cap: "תקרת נוסעים לחישוב", latePenalty: "הפחתה לבקשה מאוחרת", fullCreditMinutes: "דקות גמישות לניקוד מלא", weights: "עדיפות לכל סוג נסיעה", defaultWeight: "ברירת מחדל לסוג נסיעה ללא משקל" },
+    rideTypeUnused: "לא בשימוש",
+    rideTypeRemove: "הסרה",
     versionNote: "הערת גרסה",
     versionNotePlaceholder: "מה השתנה ולמה…",
     testPanelTitle: "בדיקה על השבוע שעבר",

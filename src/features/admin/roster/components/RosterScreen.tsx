@@ -1,11 +1,10 @@
 import { addDays, format, parseISO } from "date-fns";
 import { useMemo, useState } from "react";
 
+import { FormDialog } from "@/components/FormDialog";
 import { PageHeader } from "@/components/PageHeader";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useCurrentWeekStart, useDepartments } from "@/features/siddur/hooks";
 import { he, tv } from "@/i18n/he";
 import { cn } from "@/lib/utils";
@@ -160,45 +159,40 @@ export function RosterScreen() {
         </table>
       </div>
 
-      <Dialog open={!!target} onOpenChange={(open) => !open && setTarget(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>
-              {target?.weekStart === null
-                ? tv("adminRoster.editStandingTitle", { dept: target?.departmentName ?? "" })
-                : tv("adminRoster.editCellTitle", {
-                    dept: target?.departmentName ?? "",
-                    week: target?.weekStart ?? "",
-                  })}
-            </DialogTitle>
-          </DialogHeader>
-          <div className="flex flex-col gap-2">
-            <p className="text-sm text-muted-foreground">{target?.weekStart === null ? he.adminRoster.pickPermanentMembers : he.adminRoster.pickMembers}</p>
-            {(membersByDept.get(target?.departmentId ?? "") ?? []).map((profileId) => (
-              <label key={profileId} className="flex items-center gap-2">
-                <Checkbox
-                  checked={draft.has(profileId)}
-                  onCheckedChange={(checked) => {
-                    setDraft((prev) => {
-                      const next = new Set(prev);
-                      if (checked) next.add(profileId);
-                      else next.delete(profileId);
-                      return next;
-                    });
-                  }}
-                />
-                {profilesById.get(profileId)?.full_name ?? profileId}
-              </label>
-            ))}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setTarget(null)}>
-              {he.adminCommon.cancel}
-            </Button>
-            <Button disabled={setWeekMutation.isPending || setStandingMutation.isPending} onClick={saveCell}>{he.adminCommon.save}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <FormDialog
+        open={!!target}
+        onOpenChange={(open) => !open && setTarget(null)}
+        title={
+          target?.weekStart === null
+            ? tv("adminRoster.editStandingTitle", { dept: target?.departmentName ?? "" })
+            : tv("adminRoster.editCellTitle", {
+                dept: target?.departmentName ?? "",
+                week: target?.weekStart ?? "",
+              })
+        }
+        onSubmit={saveCell}
+        loading={setWeekMutation.isPending || setStandingMutation.isPending}
+      >
+        <div className="flex flex-col gap-2">
+          <p className="text-sm text-muted-foreground">{target?.weekStart === null ? he.adminRoster.pickPermanentMembers : he.adminRoster.pickMembers}</p>
+          {(membersByDept.get(target?.departmentId ?? "") ?? []).map((profileId) => (
+            <label key={profileId} className="flex items-center gap-2">
+              <Checkbox
+                checked={draft.has(profileId)}
+                onCheckedChange={(checked) => {
+                  setDraft((prev) => {
+                    const next = new Set(prev);
+                    if (checked) next.add(profileId);
+                    else next.delete(profileId);
+                    return next;
+                  });
+                }}
+              />
+              {profilesById.get(profileId)?.full_name ?? profileId}
+            </label>
+          ))}
+        </div>
+      </FormDialog>
     </div>
   );
 }

@@ -11,3 +11,13 @@ import { afterEach } from "vitest";
 afterEach(() => {
   cleanup();
 });
+
+// jsdom has no `ResizeObserver` (Radix `Switch`/`Slider`'s own `useSize` hook calls it in a
+// layout effect on mount, e.g. `CarAtDestinationToggle` — throws otherwise, tanking every test
+// that renders it). A no-op stub is enough: nothing in these tests asserts on measured sizes.
+class ResizeObserverStub {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+globalThis.ResizeObserver ??= ResizeObserverStub as unknown as typeof ResizeObserver;

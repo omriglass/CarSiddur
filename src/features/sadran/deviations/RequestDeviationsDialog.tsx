@@ -6,6 +6,7 @@ import { Dialog, DialogClose, DialogContent, DialogDescription, DialogHeader, Di
 import { useAllWeekRides, useCarsForDepartment, useWeekRequestsWithNames } from "../hooks";
 import { requestDeviations, type DeviationKind } from "./requestDeviations";
 import { he } from "@/i18n/he";
+import { weekdayLabel } from "@/lib/dayLabels";
 import { TZ } from "@/lib/time";
 
 const LABELS: Record<DeviationKind, string> = {
@@ -14,8 +15,7 @@ const LABELS: Record<DeviationKind, string> = {
   unassigned: he.deviations.unassigned, status: he.deviations.reason,
 };
 function timeLabel(instant: string) {
-  const day = Number(formatInTimeZone(instant, TZ, "i")) % 7;
-  return `${he.days.long[day]} ${formatInTimeZone(instant, TZ, "d/M HH:mm")}`;
+  return `${weekdayLabel(instant)} ${formatInTimeZone(instant, TZ, "d/M HH:mm")}`;
 }
 
 export function RequestDeviationsDialog({ departmentId, weekStart }: { departmentId: string; weekStart: string }) {

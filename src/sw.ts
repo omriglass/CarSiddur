@@ -38,6 +38,14 @@ self.addEventListener("push", (event: PushEvent) => {
   const { title, body, url } = parsePushPayload(event);
 
   event.waitUntil(
+    // Documented exception to CLAUDE.md hard rule 3 (Hebrew in exactly three
+    // places): `tsconfig.sw.json` deliberately scopes this file's build to
+    // itself only (see its `include`), so it cannot statically import
+    // `src/i18n/he.ts` (which pulls in `he.admin.ts`/`he.member.ts`/
+    // `he.sadran.ts`, none listed in that project). This fallback title is
+    // only shown when a push payload omits its own title, which never
+    // happens for real notifications (every `notification_templates` row
+    // has one) — see docs/REFACTOR_BACKLOG.md §5.4.
     self.registration.showNotification(title ?? "סידור רכב נבו", {
       body: body ?? "",
       dir: "rtl",

@@ -1,4 +1,4 @@
-import type { NormalizedRequest, NormalizedLeg } from './slots';
+import type { NormalizedRequest } from './slots';
 import type { CarTimeline } from './timeline';
 import type { Window } from './types';
 export interface Placement {
@@ -18,5 +18,3 @@ export interface Placement {
 export declare function bestPlacementWithinFlex(tl: CarTimeline, nr: NormalizedRequest, opts?: {
     widenMinutes?: number;
 }): Placement | null;
-/** Lower-level placement of an arbitrary leg (used by relay pairing / split legs to place one leg at a time). */
-export declare function bestPlacementForLeg(tl: CarTimeline, nr: NormalizedRequest, leg: NormalizedLeg, widenMinutes?: number): Placement | null;

@@ -1,8 +1,7 @@
 import { addDays, format, parseISO } from "date-fns";
-import { formatInTimeZone } from "date-fns-tz";
 
 import { he } from "@/i18n/he";
-import { TZ } from "@/lib/time";
+import { dateKey } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
 /** The 7 calendar dates (`yyyy-MM-dd`) of the week starting `weekStart` (a Sunday). */
@@ -13,7 +12,7 @@ export function datesOfWeek(weekStart: string): string[] {
 
 /** Asia/Jerusalem "today" as `yyyy-MM-dd` (hard rule 6: never raw device time). */
 export function todayInJerusalem(): string {
-  return formatInTimeZone(new Date(), TZ, "yyyy-MM-dd");
+  return dateKey(new Date());
 }
 
 /** `"14.9 – 20.9"` — an unambiguous, direction-safe week-range label for RTL headers/switchers. */

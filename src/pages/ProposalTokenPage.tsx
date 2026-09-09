@@ -2,14 +2,19 @@ import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
-import { TripSummary } from "@/components/TripSummary";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Textarea } from "@/components/ui/textarea";
 import { useSession } from "@/features/auth/useSession";
 import { ProposalFetchError, type ProposalSummary } from "@/features/proposals/api";
-import { useAnswerProposalMutation, useAnswerProposalViaTokenMutation, useProposalSummaryQuery } from "@/features/proposals/hooks";
+import { ProposalSummary as ProposalSummaryView } from "@/features/proposals/components/ProposalSummary";
+import {
+  useAnswerProposalMutation,
+  useAnswerProposalViaTokenMutation,
+  useProposalSummaryQuery,
+  useSadranContactQuery,
+} from "@/features/proposals/hooks";
 import { classifyProposalScreenState } from "@/features/proposals/screenState";
 import { useSetFreedSlotOptOutMutation } from "@/features/requests/hooks";
+import { buildWaUrl } from "@/features/sadran/proposals/waLink";
 import { he, t, tv } from "@/i18n/he";
 import { formatTime } from "@/lib/time";
 
@@ -56,6 +61,10 @@ function readShiftPayload(payload: unknown): ShiftPayload {
  * session: fetches via the public `answer-proposal` edge function. When a
  * session exists, the in-app path answers through the `answer_proposal` RPC
  * directly instead (ARCHITECTURE §8).
+ *
+ * Owner decision: a proposal is either accepted or declined — anything else
+ * ("suggest another time", a free-text note) is a WhatsApp conversation with
+ * the Sadran instead, so this screen offers no note field of its own.
  */
 export function ProposalTokenPage() {
   const { token } = useParams<{ token: string }>();
@@ -66,9 +75,20 @@ export function ProposalTokenPage() {
   const answerViaToken = useAnswerProposalViaTokenMutation();
   const optOutMutation = useSetFreedSlotOptOutMutation();
 
+  /**
+   * "Talk to the sadran on WhatsApp" (UX_FLOWS.md §3.6) via `sadran_contact_of`. The `/p/:token`
+   * summary now carries the proposal's own `departmentId`/`weekStart` (`answer-proposal/index.ts`'s
+   * `buildSummary()`, `@/features/proposals/api.ts`'s `ProposalSummary`), so this is live for a
+   * signed-in member; `useSadranContactQuery` itself stays disabled without a session (its own
+   * `enabled` check), which is what keeps the button hidden for a no-session token visitor.
+   */
+  const sadranContactQuery = useSadranContactQuery(
+    summaryQuery.data?.departmentId,
+    summaryQuery.data?.weekStart,
+  );
+  const sadranPhone = sadranContactQuery.data?.[0]?.phone ?? null;
+
   const [justAnswered, setJustAnswered] = useState<"accepted" | "declined" | null>(null);
-  const [showSuggestOther, setShowSuggestOther] = useState(false);
-  const [note, setNote] = useState("");
   const [optOutFreed, setOptOutFreed] = useState(false);
 
   const errorCode = summaryQuery.error instanceof ProposalFetchError ? summaryQuery.error.code : summaryQuery.error ? "unknown" : null;
@@ -89,10 +109,10 @@ export function ProposalTokenPage() {
    * flag rides along in the same POST the edge function already makes and it applies the
    * update with the service role (`supabase/functions/answer-proposal/index.ts`).
    */
-  async function submitAnswer(answer: "accepted" | "declined", noteText?: string) {
+  async function submitAnswer(answer: "accepted" | "declined") {
     if (!token) return;
     if (session) {
-      await answerViaRpc.mutateAsync({ token, accept: answer === "accepted", note: noteText, via: "session" });
+      await answerViaRpc.mutateAsync({ token, accept: answer === "accepted", via: "session" });
       if (isDenyVariant && state.kind === "answerable" && state.summary.request) {
         await optOutMutation.mutateAsync({ requestId: state.summary.request.id, optOut: optOutFreed });
       }
@@ -100,7 +120,6 @@ export function ProposalTokenPage() {
       await answerViaToken.mutateAsync({
         token,
         answer,
-        note: noteText,
         optOut: isDenyVariant ? optOutFreed : undefined,
       });
     }
@@ -131,14 +150,11 @@ export function ProposalTokenPage() {
           {state.kind === "answerable" ? (
             <ProposalAnswerBody
               summary={state.summary}
-              showSuggestOther={showSuggestOther}
-              onToggleSuggestOther={() => setShowSuggestOther((v) => !v)}
-              note={note}
-              onNoteChange={setNote}
+              sadranPhone={sadranPhone}
               optOutFreed={optOutFreed}
               onOptOutFreedChange={setOptOutFreed}
               onAccept={() => submitAnswer("accepted")}
-              onDecline={(n) => submitAnswer("declined", n)}
+              onDecline={() => submitAnswer("declined")}
               isSubmitting={answerViaRpc.isPending || answerViaToken.isPending}
             />
           ) : null}
@@ -150,23 +166,17 @@ export function ProposalTokenPage() {
 
 interface ProposalAnswerBodyProps {
   summary: ProposalSummary;
-  showSuggestOther: boolean;
-  onToggleSuggestOther: () => void;
-  note: string;
-  onNoteChange: (note: string) => void;
+  sadranPhone: string | null;
   optOutFreed: boolean;
   onOptOutFreedChange: (checked: boolean) => void;
   onAccept: () => void;
-  onDecline: (note?: string) => void;
+  onDecline: () => void;
   isSubmitting: boolean;
 }
 
 function ProposalAnswerBody({
   summary,
-  showSuggestOther,
-  onToggleSuggestOther,
-  note,
-  onNoteChange,
+  sadranPhone,
   optOutFreed,
   onOptOutFreedChange,
   onAccept,
@@ -178,17 +188,19 @@ function ProposalAnswerBody({
 
   return (
     <div className="space-y-4">
-      {summary.request ? (
-        <div className="space-y-1 text-sm text-muted-foreground">
-          <p className="font-medium text-foreground">{he.proposalScreen.yourRequest}</p>
-          <TripSummary destination={summary.request.destination} purpose={summary.request.rideType}
-            departAt={summary.request.departAt} returnAt={summary.request.returnAt} />
-        </div>
-      ) : null}
+      <div className="space-y-1 text-sm text-muted-foreground">
+        {summary.request ? <p className="font-medium text-foreground">{he.proposalScreen.yourRequest}</p> : null}
+        <ProposalSummaryView
+          type={summary.type}
+          destination={summary.request?.destination}
+          purpose={summary.request?.rideType}
+          departAt={summary.request?.departAt ?? null}
+          returnAt={summary.request?.returnAt ?? null}
+        />
+      </div>
 
-      <div>
-        <p className="mb-1 text-sm font-medium">{he.proposal.type[summary.type]}</p>
-        {!isDenyVariant ? (
+      {!isDenyVariant ? (
+        <div>
           <div className="flex gap-2">
             <BeforeAfterBox
               label={he.proposalScreen.before}
@@ -201,9 +213,9 @@ function ProposalAnswerBody({
               ret={(summary.type === "merge" ? shift.ends_at : shift.return_at) ?? summary.request?.returnAt ?? null}
             />
           </div>
-        ) : null}
-        {summary.type === "merge" ? <p className="mt-2 text-sm text-muted-foreground">{he.rideCoordination.combinedConsent}</p> : null}
-      </div>
+          {summary.type === "merge" ? <p className="mt-2 text-sm text-muted-foreground">{he.rideCoordination.combinedConsent}</p> : null}
+        </div>
+      ) : null}
 
       <div className="space-y-1 text-sm">
         <p className="font-medium">{he.proposalScreen.reason}</p>
@@ -226,7 +238,7 @@ function ProposalAnswerBody({
             {he.proposalScreen.optOutFreedSlots}
           </label>
           <div className="flex flex-col gap-2">
-            <Button variant="outline" onClick={() => onDecline()} disabled={isSubmitting}>
+            <Button variant="outline" onClick={onDecline} disabled={isSubmitting}>
               {t("action.understood")}
             </Button>
             <Button onClick={onAccept} disabled={isSubmitting}>
@@ -239,27 +251,27 @@ function ProposalAnswerBody({
           <Button size="lg" onClick={onAccept} disabled={isSubmitting}>
             {t("action.acceptProposal")}
           </Button>
-          <Button variant="outline" onClick={() => onDecline()} disabled={isSubmitting}>
+          <Button variant="outline" onClick={onDecline} disabled={isSubmitting}>
             {t("action.declineProposal")}
           </Button>
-          <Button variant="ghost" onClick={onToggleSuggestOther}>
-            {t("action.suggestOtherTime")}
-          </Button>
-          {showSuggestOther ? (
-            <div className="space-y-2">
-              <Textarea
-                value={note}
-                onChange={(e) => onNoteChange(e.target.value)}
-                placeholder={he.proposalScreen.suggestOtherTimePlaceholder}
-                rows={2}
-              />
-              <Button size="sm" onClick={() => onDecline(note)} disabled={isSubmitting}>
-                {he.proposalScreen.suggestOtherTimeSubmit}
-              </Button>
-            </div>
-          ) : null}
         </div>
       )}
+
+      {/*
+       * "Talk to the sadran on WhatsApp" — the only escape hatch besides
+       * accept/decline (owner decision). Hidden whenever `sadranPhone` is
+       * missing: no session, `sadran_contact_of` returned no rows (an
+       * unassigned week), or — today, always — the query never had a
+       * `department_id`/`week_start` to call it with (see the doc comment
+       * on `useSadranContactQuery`, `src/features/proposals/hooks.ts`).
+       */}
+      {sadranPhone ? (
+        <Button asChild variant="outline" className="w-full">
+          <a href={buildWaUrl(sadranPhone, he.proposalScreen.contactSadranWhatsappMessage)}>
+            {he.proposalScreen.contactSadranWhatsapp}
+          </a>
+        </Button>
+      ) : null}
     </div>
   );
 }

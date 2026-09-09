@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { EmptyState } from "@/components/EmptyState";
 import { PageHeader } from "@/components/PageHeader";
 import { TableRowsSkeleton } from "@/components/skeletons/TableRowsSkeleton";
+import { StatusBadge } from "@/components/StatusBadge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -378,7 +379,7 @@ export function CarsScreen({ initialCarId }: { initialCarId?: string } = {}) {
                 <TableCell>{departmentsById.get(car.department_id) ?? car.department_id}</TableCell>
                 <TableCell>{he.car.type[car.type]}</TableCell>
                 <TableCell>
-                  <Badge variant={car.status === "active" ? "default" : "outline"}>{he.car.status[car.status]}</Badge>
+                  <StatusBadge kind="car" status={car.status} />
                 </TableCell>
               </TableRow>
             ))}

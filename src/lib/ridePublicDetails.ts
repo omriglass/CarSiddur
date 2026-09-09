@@ -5,6 +5,8 @@ export interface RidePublicEntry {
   ride_description?: string | null;
   guest_passenger_names?: string[];
   companions?: { profile_id: string; name: string }[];
+  /** Named children traveling on the request (`request_children` → `children.full_name`), distinct from guessed "unnamed child" counts. */
+  childNames?: string[];
 }
 
 /** Only explicitly public request fields belong on the shared siddur. */
@@ -13,6 +15,7 @@ export function ridePublicDetails(entries: readonly RidePublicEntry[], options: 
     const names = [
       ...(entry.companions ?? []).map((person) => person.name),
       ...(entry.guest_passenger_names ?? []),
+      ...(entry.childNames ?? []),
     ].map((name) => name.trim()).filter(Boolean);
     const lines = [entry.ride_description?.trim(), names.length && options.includeCompanions !== false ? tv("ridePublicDetails.companions", { names: names.join(", ") }) : ""].filter(Boolean);
     if (lines.length && entries.length > 1 && entry.requester) lines.unshift(`${entry.requester}:`);

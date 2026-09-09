@@ -2,6 +2,7 @@ import { useLocation } from "react-router-dom";
 import { useEffect, useSyncExternalStore } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { fetchDepartments } from "@/features/siddur/api";
+import { contextKeys } from "./queryKeys";
 import { useMyDepartments } from "./useMyDepartments";
 import { useProfile } from "./useProfile";
 import { useSession } from "./useSession";
@@ -21,7 +22,7 @@ export function useActiveDepartment() {
   const routeDepartmentId = /^\/(?:siddur|sadran)\/([0-9a-f-]{36})(?:\/|$)/i.exec(pathname)?.[1];
   const profile = useProfile();
   const memberships = useMyDepartments();
-  const all = useQuery({ queryKey: ["context", "departments", session?.user.id], queryFn: fetchDepartments, enabled: !!session });
+  const all = useQuery({ queryKey: contextKeys.departments(session?.user.id), queryFn: fetchDepartments, enabled: !!session });
   const key = `carshare:department:${session?.user.id ?? ""}`;
   const selected = useSyncExternalStore(subscribe, () => {
     try { return localStorage.getItem(key) ?? selections.get(key) ?? ""; } catch { return selections.get(key) ?? ""; }

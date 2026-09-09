@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
+import { SheetPortalContext } from "./SheetPortalContext";
 import { TimeField15, formatMinutes, parseHHMM, snapToQuarterHour } from "./TimeField15";
 
 describe("parseHHMM", () => {
@@ -75,5 +76,31 @@ describe("typed time entry", () => {
     render(<TimeField15 value="08:00" onChange={vi.fn()} aria-label="time" />);
     fireEvent.click(screen.getByLabelText("time"));
     expect(screen.getAllByRole("listbox").map((list) => list.getAttribute("aria-label"))).toEqual(["דקות", "שעה"]);
+  });
+});
+
+describe("popover portal container", () => {
+  // A modal Sheet/Dialog only allows touch-scroll within its own content subtree
+  // (`react-remove-scroll`); portaling to `document.body` (the default) makes the
+  // picker's own scrollable "שעה" list a DOM *sibling* instead of a descendant, which
+  // silently breaks its touch-scroll. `SheetPortalContext` fixes that by portaling
+  // into the ancestor's own node instead — assert the popover actually lands there.
+  it("portals into the DOM node given by SheetPortalContext instead of document.body", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    render(
+      <SheetPortalContext.Provider value={container}>
+        <TimeField15 value="08:00" onChange={vi.fn()} aria-label="time" />
+      </SheetPortalContext.Provider>,
+    );
+    fireEvent.click(screen.getByLabelText("time"));
+    expect(container.querySelector('[role="listbox"][aria-label="שעה"]')).not.toBeNull();
+    document.body.removeChild(container);
+  });
+
+  it("falls back to portaling into document.body when no context is provided", () => {
+    render(<TimeField15 value="08:00" onChange={vi.fn()} aria-label="time" />);
+    fireEvent.click(screen.getByLabelText("time"));
+    expect(document.body.querySelector('[role="listbox"][aria-label="שעה"]')).not.toBeNull();
   });
 });

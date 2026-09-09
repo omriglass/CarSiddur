@@ -19,10 +19,12 @@ interface BoardListModeProps {
   onUnmetDecision?: (item: UnmetListItem, type: "deny" | "shift" | "external") => void;
   onUnmetAction: (item: UnmetListItem, suggestion: Suggestion | null) => void;
   onOpenProposals: () => void;
+  /** Count of `status='sent'` (awaiting answer) proposals — a small badge on the "הצעות" tab when > 0. */
+  pendingProposalsCount?: number;
 }
 
 /** Phone fallback for the board (UX_FLOWS.md §4.2 "Phone fallback — list mode"): רכבים / לא שובצו / הצעות segments. */
-export function BoardListMode({ rides, pendingRides = [], shadowedRideIds, onRideClick, unmetItems, onUnmetAction, onUnmetDecision, onOpenProposals }: BoardListModeProps) {
+export function BoardListMode({ rides, pendingRides = [], shadowedRideIds, onRideClick, unmetItems, onUnmetAction, onUnmetDecision, onOpenProposals, pendingProposalsCount = 0 }: BoardListModeProps) {
   const [segment, setSegment] = useState<Segment>("cars");
 
   return (
@@ -47,6 +49,14 @@ export function BoardListMode({ rides, pendingRides = [], shadowedRideIds, onRid
             onClick={() => (tab.key === "proposals" ? onOpenProposals() : setSegment(tab.key))}
           >
             {tab.label}
+            {tab.key === "proposals" && pendingProposalsCount > 0 ? (
+              <span
+                className="ms-1 inline-flex min-w-4 items-center justify-center rounded-full bg-destructive px-1 py-0.5 text-[10px] leading-none text-destructive-foreground"
+                dir="ltr"
+              >
+                {pendingProposalsCount}
+              </span>
+            ) : null}
           </button>
         ))}
       </div>

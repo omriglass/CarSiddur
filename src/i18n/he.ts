@@ -14,7 +14,12 @@ import { heAdmin } from "./he.admin";
 import { heMember } from "./he.member";
 import { heSadran } from "./he.sadran";
 
+import type { Database } from "@/integrations/supabase/types";
+
+type NotificationEvent = Database["public"]["Enums"]["notification_event"];
+
 export const he = {
+  timeField: { hourListLabel: "שעה", minuteListLabel: "דקות" },
   departmentContext: { copyFrom: "העתקת רשימות ממחלקה", blankDepartment: "מחלקה ריקה", copyHelp: "יועתקו יעדים, סוגי נסיעות ומדיניות. הרשימות יהיו עצמאיות; לאחר היצירה ניתן לשנות את נקודת המוצא.", label: "מחלקה", viewOnly: "צפייה בלבד", noMembership: "כדי להגיש בקשה למחלקה זו יש להצטרף אליה דרך מנהל/ת המערכת." },
   tableView: {
     cards: "כרטיסיות", table: "טבלה", label: "תצוגת הסידור",
@@ -231,7 +236,6 @@ export const he = {
     reportIssue: "דווח/י על תקלה ברכב",
     acceptProposal: "מקבל/ת את ההצעה",
     declineProposal: "לא מתאים לי",
-    suggestOtherTime: "להציע שעה אחרת",
     understood: "הבנתי",
     foundExternal: "מצאתי פתרון אחר",
     markAllRead: "סמן הכול כנקרא",
@@ -289,7 +293,6 @@ export const he = {
     oneWayTo: "לשם",
     oneWayFrom: "חזרה",
     carAtDestination: "הרכב נשאר איתי ביעד",
-    passengers: "נוסעים",
     adults: "מבוגרים (כולל נהג/ת)",
     childSeats: "ילדים במושב בטיחות",
     boosters: "ילדים בבוסטר",
@@ -515,30 +518,38 @@ export const he = {
     live: "פעיל",
     archived: "בארכיון",
   },
-  // Short event labels for the mute list / inbox filters (18 canonical
-  // events, UX_FLOWS §6.1). Message copy itself comes from the DB-seeded
-  // `notification_templates` table, not from here.
+  // The single notification_event → Hebrew label map (docs/REFACTOR_BACKLOG.md
+  // §5.3 — this used to be duplicated as `notificationEventLabels` in
+  // `he.admin.ts`, deleted). Used by the mute list / inbox filters and by
+  // the admin templates screen (`he.notif[event]`). Message copy itself
+  // comes from the DB-seeded `notification_templates` table, not from here.
+  // Keyed by the DB enum's own snake_case values (not this file's usual
+  // camelCase) so lookups by a typed `notification_event` value work
+  // directly, and `satisfies Record<NotificationEvent, string>` below makes
+  // a missing/added enum literal fail `npm run typecheck`.
   notif: {
-    windowOpen: "נפתח חלון בקשות",
-    windowClosing: "חלון הבקשות נסגר בקרוב",
+    window_open: "נפתח חלון בקשות",
+    window_closing: "חלון הבקשות נסגר בקרוב",
+    window_closed_solve_now: "הבקשות נסגרו — להריץ פותר",
+    publish_reminder: "תזכורת לפרסום",
     published: "הסידור פורסם",
-    outcomeChanged: "הבקשה שלך השתנתה",
-    proposalReceived: "הצעה מהסדרן/ית",
-    proposalAnswered: "תשובה להצעה",
-    freedSlot: "מקום התפנה",
-    freedSlotAuto: "מקום שובץ אוטומטית",
-    claimApproved: "בקשת הצטרפות אושרה",
-    claimDeclined: "בקשת הצטרפות נדחתה",
-    claimContested: "כמה בקשות למקום שהתפנה",
-    maintenanceAffects: "טיפול רכב משפיע על נסיעה",
-    lateRequest: "בקשה מאוחרת",
-    waitlistedRequest: "בקשה ברשימת המתנה",
-    autoApproved: "שובץ אוטומטית",
-    requestChanged: "בקשה עודכנה",
-    accessRequest: "בקשת הרשמה חדשה",
-    accessApproved: "ההרשמה אושרה",
-    statusChanged: "שינוי בסטטוס או בתפקיד",
-  },
+    outcome_changed: "הבקשה שלך השתנתה",
+    proposal_received: "הצעה מהסדרן/ית",
+    proposal_answered: "תשובה להצעה",
+    freed_slot: "מקום התפנה",
+    freed_slot_auto: "מקום שובץ אוטומטית",
+    claim_approved: "בקשת הצטרפות אושרה",
+    claim_declined: "בקשת הצטרפות נדחתה",
+    claim_contested: "כמה בקשות למקום שהתפנה",
+    maintenance_affects: "טיפול רכב משפיע על נסיעה",
+    late_request: "בקשה מאוחרת",
+    waitlisted_request: "בקשה ברשימת המתנה",
+    auto_approved: "שובץ אוטומטית",
+    request_changed: "בקשה עודכנה",
+    access_request: "בקשת הרשמה חדשה",
+    access_approved: "ההרשמה אושרה",
+    status_changed: "שינוי בסטטוס או בתפקיד",
+  } satisfies Record<NotificationEvent, string>,
   car: {
     status: {
       active: "פעיל",
@@ -564,6 +575,7 @@ export const he = {
   },
   common: {
     cancel: "ביטול",
+    confirm: "אישור",
     save: "שמירה",
     back: "חזרה",
     retry: "נסה/י שוב",

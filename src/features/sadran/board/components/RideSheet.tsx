@@ -1,4 +1,4 @@
-import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
+import { fromZonedTime } from "date-fns-tz";
 import { useState } from "react";
 import { ridePublicDetails } from "@/lib/ridePublicDetails";
 import { ridePassengerSummary } from "@/lib/ridePassengerSummary";
@@ -17,12 +17,12 @@ import { Textarea } from "@/components/ui/textarea";
 import { formatMinutes, parseHHMM } from "@/components/TimeField15";
 import { TimeField15 } from "@/components/TimeField15";
 import { he, t } from "@/i18n/he";
-import { TZ, formatTime } from "@/lib/time";
+import { TZ, dateKey, formatTime } from "@/lib/time";
 
 import { rideBlockLabel } from "../rideLabel";
-import { servedOf } from "../../solverRun";
+import { servedOf, withChildNames } from "../../solverRun";
 
-import type { BoardRide } from "../../api";
+import type { BoardRide, WeekRequestRow } from "../../api";
 import type { Car } from "@/features/fleet/api";
 
 export interface RideSheetSaveInput {
@@ -49,6 +49,8 @@ interface RideSheetProps {
   onClaimDriver?: () => void;
   coordinatorNotes?: string;
   isPlanning?: boolean;
+  /** Every request in the week (not just this ride's) — used to attach named children (`childNames`) to `servedOf(ride)`, since `v_board_rides.served[]` itself has no child-name field yet. */
+  requests?: readonly WeekRequestRow[];
 }
 
 /**
@@ -57,7 +59,7 @@ interface RideSheetProps {
  * fallback for reassigning a car via the "העבר לרכב" select below instead of
  * dragging.
  */
-export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenChange, onSave, onTogglePin, onCancel, onUnassign, saving, tightSchedule, onClaimDriver, coordinatorNotes, isPlanning }: RideSheetProps) {
+export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenChange, onSave, onTogglePin, onCancel, onUnassign, saving, tightSchedule, onClaimDriver, coordinatorNotes, isPlanning, requests = [] }: RideSheetProps) {
   // Bug-fix pass (owner bug #2): the previous re-sync condition compared
   // `ride.car_id !== carId` to detect "a different ride opened" — but that's
   // exactly as true the moment the Sadran picks a *different* car for the
@@ -89,7 +91,7 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
   }
 
   function dayIso(): string {
-    return ride?.starts_at ? formatInTimeZone(new Date(ride.starts_at), TZ, "yyyy-MM-dd") : "";
+    return ride?.starts_at ? dateKey(ride.starts_at) : "";
   }
 
   function handleSave() {
@@ -101,6 +103,8 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
     const endsAt = fromZonedTime(`${day}T${formatMinutes(endMin)}:00`, TZ).toISOString();
     onSave({ carId, startsAt, endsAt, overnightAck: false });
   }
+
+  const servedEntries = ride ? withChildNames(servedOf(ride), requests) : [];
 
   return (
     <Sheet open={!!ride} onOpenChange={onOpenChange}>
@@ -116,8 +120,8 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
                 {onClaimDriver ? <Button disabled={saving} onClick={onClaimDriver}>{he.boardCoordination.claimDriver}</Button> : null}
               </div> : null}
               {tightSchedule ? <p className="text-xs text-amber-700">{he.boardCoordination.tight} · {he.boardCoordination.tightHelp}</p> : null}
-              <p className="whitespace-pre-wrap break-words">{ridePassengerSummary(servedOf(ride), ride.needs_driver ? null : driverName ?? ride.driver_name)}</p>
-              {ridePublicDetails(servedOf(ride), { includeCompanions: false }) ? <p className="whitespace-pre-wrap break-words">{ridePublicDetails(servedOf(ride), { includeCompanions: false })}</p> : null}
+              <p className="whitespace-pre-wrap break-words">{ridePassengerSummary(servedEntries, ride.needs_driver ? null : driverName ?? ride.driver_name)}</p>
+              {ridePublicDetails(servedEntries, { includeCompanions: false }) ? <p className="whitespace-pre-wrap break-words">{ridePublicDetails(servedEntries, { includeCompanions: false })}</p> : null}
               {coordinatorNotes ? <div className="whitespace-pre-wrap break-words text-muted-foreground"><span className="font-medium">{he.field.notes}: </span>{coordinatorNotes}</div> : null}
               <p className="text-muted-foreground">
                 {ride.origin_id && ride.destination_id && homeDestinationId

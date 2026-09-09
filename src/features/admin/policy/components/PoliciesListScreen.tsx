@@ -4,10 +4,10 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { EmptyState } from "@/components/EmptyState";
+import { FormDialog } from "@/components/FormDialog";
 import { PageHeader } from "@/components/PageHeader";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -81,40 +81,29 @@ export function PoliciesListScreen() {
         </Table>
       )}
 
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{he.adminPolicy.new}</DialogTitle>
-          </DialogHeader>
-          <div className="flex flex-col gap-3">
-            <label className="flex flex-col gap-1 text-sm">
-              {he.adminCommon.name}
-              <Input value={name} onChange={(e) => setName(e.target.value)} />
-            </label>
-            <label className="flex flex-col gap-1 text-sm">
-              {he.adminPolicy.department}
-              <Select value={departmentId} disabled>
-                <SelectTrigger>
-                  <SelectValue placeholder={he.departmentContext.label} />
-                </SelectTrigger>
-                <SelectContent>
-                  {(departmentsQuery.data ?? []).map((d) => (
-                    <SelectItem key={d.id} value={d.id}>
-                      {d.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </label>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)}>
-              {he.adminCommon.cancel}
-            </Button>
-            <Button onClick={submit}>{he.adminCommon.save}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <FormDialog open={open} onOpenChange={setOpen} title={he.adminPolicy.new} onSubmit={submit}>
+        <div className="flex flex-col gap-3">
+          <label className="flex flex-col gap-1 text-sm">
+            {he.adminCommon.name}
+            <Input value={name} onChange={(e) => setName(e.target.value)} />
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            {he.adminPolicy.department}
+            <Select value={departmentId} disabled>
+              <SelectTrigger>
+                <SelectValue placeholder={he.departmentContext.label} />
+              </SelectTrigger>
+              <SelectContent>
+                {(departmentsQuery.data ?? []).map((d) => (
+                  <SelectItem key={d.id} value={d.id}>
+                    {d.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </label>
+        </div>
+      </FormDialog>
     </div>
   );
 }

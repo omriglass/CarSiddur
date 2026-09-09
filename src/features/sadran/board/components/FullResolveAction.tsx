@@ -6,9 +6,10 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { useRideTypes } from "@/features/fleet/hooks";
 import { he, tv } from "@/i18n/he";
+import { weekdayLabel } from "@/lib/dayLabels";
 import { rideBlockLabel } from "@/lib/rideLabel";
-import { toAppError } from "@/lib/rpc";
-import { TZ } from "@/lib/time";
+import { showErrorToast } from "@/lib/rpc";
+import { TZ, formatTime } from "@/lib/time";
 import type { Json } from "@/integrations/supabase/types";
 import type { ActivePolicy } from "../../api";
 import { useApplySolverResultMutation, useWeekRow } from "../../hooks";
@@ -55,15 +56,15 @@ export function FullResolveAction({ departmentId, weekStart, homeDestinationId, 
           isChauffeur: !!ride.is_chauffeur, needsDriver: !!ride.needs_driver,
         });
         const car = context.input.cars.find((car) => car.id === item.carId)?.name ?? "";
-        const weekday = he.days.long[Number(formatInTimeZone(item.startsAt, TZ, "i")) % 7];
+        const weekday = weekdayLabel(item.startsAt);
         const purposes = [...new Set(servedOf(ride).map((entry) => rideTypesQuery.data?.find((type) => type.code === entry.ride_type)?.name_he).filter(Boolean))].join(" / ");
-        item.label = `${label} · ${car} · ${weekday} ${formatInTimeZone(item.startsAt, TZ, "dd/MM HH:mm")}–${formatInTimeZone(item.endsAt, TZ, "HH:mm")}${purposes ? ` · ${purposes}` : ""}`;
+        item.label = `${label} · ${car} · ${weekday} ${formatInTimeZone(item.startsAt, TZ, "dd/MM HH:mm")}–${formatTime(new Date(item.endsAt))}${purposes ? ` · ${purposes}` : ""}`;
       }
       setPreview({ diff, payload: buildApplyPayload({ output, weekStartMs: context.weekStartMs,
         policyVersionId: context.policyVersionId, startedAtMs, finishedAtMs,
         inputHash: hashSolverInput(context.input), requestsById: context.requestsById, mode: "full" }) });
     } catch (error) {
-      toast.error(toAppError(error).message);
+      showErrorToast(error);
     } finally { setLoading(false); }
   }
 

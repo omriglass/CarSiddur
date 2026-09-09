@@ -2,6 +2,34 @@ import { expect, test } from "@playwright/test";
 import { serviceRoleClient, NEVO_DEPARTMENT_ID } from "./helpers";
 import { he } from "../src/i18n/he";
 
+/**
+ * A standalone week + request (rather than the shared seeded Open week) so this test's proposal
+ * doesn't depend on whether "opens the board and fills remaining requests" (above, same file)
+ * already auto-solved every unmet request there — `handleAutoSolveRemaining` mode "remaining"
+ * places every currently-unmet request it can, so nothing would necessarily be left to act on.
+ */
+async function proposalFixture(week: string, label: string) {
+  const service = serviceRoleClient();
+  async function cleanup() {
+    await service.from("proposals").delete().eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", week);
+    await service.from("notifications").delete().eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", week);
+    await service.from("requests").delete().eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", week);
+    await service.from("weeks").delete().eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", week);
+  }
+  await cleanup();
+  const at = (days: number) => new Date(Date.parse(`${week}T00:00:00Z`) - days * 86400000).toISOString();
+  const { error: weekError } = await service.from("weeks").insert({ department_id: NEVO_DEPARTMENT_ID, week_start: week, phase: "open", open_at: at(7), close_at: at(3), publish_at: at(2) });
+  if (weekError) throw weekError;
+  const memberId = "00000000-0000-0000-0000-000000000103";
+  const { data: request, error: requestError } = await service.from("requests").insert({
+    department_id: NEVO_DEPARTMENT_ID, week_start: week, requester_id: memberId, filed_by: memberId,
+    ride_type_id: "00000000-0000-0000-0000-000000000021", destination_text: label,
+    trip_shape: "round_trip", depart_at: `${week}T08:00:00Z`, return_at: `${week}T10:00:00Z`, adults: 1, status: "submitted",
+  }).select("id").single();
+  if (requestError) throw requestError;
+  return { service, cleanup, request: request!, baseUrl: `/sadran/${NEVO_DEPARTMENT_ID}/${week}` };
+}
+
 // Sadran flows (stage 2b, docs/UX_FLOWS.md §4), on top of the seeded local
 // stack (supabase/seed.sql): sadran@nevo.local is the standing Sadran of
 // department "נבו", which has an Open week (two freshly submitted requests,
@@ -35,29 +63,30 @@ test.describe("sadran", () => {
 
   test("creates a shift proposal and prepares WhatsApp in a dialog", async ({ page }) => {
     await signIn(page);
-    await page.goto("/sadran");
-    await expect(page).toHaveURL(/\/sadran\/[\w-]+\/\d{4}-\d{2}-\d{2}\/board$/);
-    const weekUrl = page.url().replace(/\/board$/, "");
 
-    await page.goto(`${weekUrl}/proposals`);
-    await expect(page.getByRole("heading", { name: "הצעות" })).toBeVisible();
+    // New proposals are only ever created from the board's unmet-request action button — the
+    // manual composer entry point in ProposalsListScreen.tsx was removed.
+    const fixture = await proposalFixture("2043-02-08", "E2E sadran spec proposal");
+    try {
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await page.goto(`${fixture.baseUrl}/board`);
+      await page.locator(`[data-request-id="${fixture.request.id}"]`).getByRole("button", {
+        name: he.sadranProposal.suggestTimes, exact: true,
+      }).click();
+      await expect(page).toHaveURL(/\/proposals\/new$/);
+      await page.getByRole("button", { name: he.action.propose, exact: true }).click();
 
-    // Manual composer entry (request select + type, defaults to "shift").
-    await page.getByRole("combobox").first().click();
-    await page.getByRole("option").first().click();
-    await page.getByRole("button", { name: "הצע", exact: true }).click();
-
-    await expect(page).toHaveURL(/\/proposals\/new$/);
-    await page.getByRole("button", { name: "הצע", exact: true }).click();
-
-    await expect(page).toHaveURL(`${weekUrl}/proposals`);
-    await page.getByRole("button", { name: he.sadranProposal.openSentProposal, exact: true }).click();
-    await page.getByRole("button", { name: /פתח בוואטסאפ/ }).first().click();
-    const waLink = page.locator('a[href^="https://wa.me/"]').first();
-    await expect(waLink).toBeVisible({ timeout: 10_000 });
-    await expect(waLink).toHaveAttribute("href", /^https:\/\/wa\.me\/\d+\?text=/);
-    await expect(waLink).not.toHaveAttribute("target", "_blank");
-    await page.keyboard.press("Escape");
+      await expect(page).toHaveURL(`${fixture.baseUrl}/board`);
+      await page.getByRole("button", { name: he.sadranProposal.openSentProposal, exact: true }).click();
+      await page.getByRole("button", { name: /פתח בוואטסאפ/ }).first().click();
+      const waLink = page.locator('a[href^="https://wa.me/"]').first();
+      await expect(waLink).toBeVisible({ timeout: 10_000 });
+      await expect(waLink).toHaveAttribute("href", /^https:\/\/wa\.me\/\d+\?text=/);
+      await expect(waLink).not.toHaveAttribute("target", "_blank");
+      await page.keyboard.press("Escape");
+    } finally {
+      await fixture.cleanup();
+    }
   });
 
   test("publishes the week and sees a siddur version", async ({ page }) => {

@@ -33,6 +33,26 @@ export function formatTime(instant: Date): string {
 }
 
 /**
+ * Formats an instant as a `yyyy-MM-dd` "day bucket" key in Asia/Jerusalem
+ * local time — the canonical way to compare/group rides and requests by
+ * calendar day. Use this instead of hand-writing
+ * `formatInTimeZone(x, TZ, "yyyy-MM-dd")`.
+ */
+export function dateKey(instant: Date | string | number): string {
+  return formatInTimeZone(instant, TZ, "yyyy-MM-dd");
+}
+
+/**
+ * 0 (Sunday) .. 6 (Saturday) index of the Asia/Jerusalem-local weekday of
+ * `instant`, matching the order of `he.days.short`/`he.days.long`. Pure index
+ * math only — no Hebrew here; see `src/lib/dayLabels.ts` for the label
+ * lookup (`src/lib/time.ts` stays i18n-free).
+ */
+export function weekdayIndex(instant: Date | string | number): number {
+  return Number(formatInTimeZone(instant, TZ, "i")) % 7;
+}
+
+/**
  * Rounds an instant to the nearest 15 minutes of Asia/Jerusalem wall-clock
  * time (the app's universal scheduling grid, ARCHITECTURE.md §11). Ties
  * round up. DST-safe for the same reason as `weekStartFor`: rounding happens

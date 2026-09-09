@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
+import { paths } from "@/app/routes";
 import { formatWeekRangeLabel } from "@/components/DateField";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { fetchCanManageWeek } from "@/features/auth/api";
@@ -13,6 +14,7 @@ import { useSession } from "@/features/auth/useSession";
 import { fetchWeeks } from "@/features/siddur/api";
 import { useWeeks } from "@/features/siddur/hooks";
 import { siddurKeys } from "@/features/siddur/queryKeys";
+import { sadranKeys } from "@/features/sadran/keys";
 import { he, tv } from "@/i18n/he";
 import { showErrorToast } from "@/lib/rpc";
 
@@ -38,7 +40,7 @@ export function BoardWeekSwitcher({ departmentId, weekStart }: { departmentId: s
   }
 
   const availableWeeksQuery = useQuery({
-    queryKey: ["sadran", departmentId, "switchableWeeks", profileId, (weeksQuery.data ?? []).map((week) => week.week_start)],
+    queryKey: sadranKeys.switchableWeeks(departmentId, profileId, (weeksQuery.data ?? []).map((week) => week.week_start)),
     queryFn: async () => {
       const weeks = weeksQuery.data ?? [];
       const allowed = await Promise.all(weeks.map((week) => canManage(departmentId, week.week_start)));
@@ -62,7 +64,7 @@ export function BoardWeekSwitcher({ departmentId, weekStart }: { departmentId: s
       for (const week of candidates) {
         if (await canManage(nextDepartment, week.week_start)) {
           active.setDepartmentId(nextDepartment);
-          navigate(`/sadran/${nextDepartment}/${week.week_start}/board`);
+          navigate(paths.sadran.board(nextDepartment, week.week_start));
           return;
         }
       }
@@ -81,7 +83,7 @@ export function BoardWeekSwitcher({ departmentId, weekStart }: { departmentId: s
       <SelectTrigger className="w-36" aria-label={he.siddur.departmentSwitcher}><SelectValue /></SelectTrigger>
       <SelectContent>{(departmentsQuery.data ?? []).map((membership) => <SelectItem key={membership.department_id} value={membership.department_id}>{membership.department.name}</SelectItem>)}</SelectContent>
     </Select> : null}
-    <Select value={weekStart} onValueChange={(value) => navigate(`/sadran/${departmentId}/${value}/board`)} disabled={switching || weeksQuery.isLoading || availableWeeksQuery.isLoading}>
+    <Select value={weekStart} onValueChange={(value) => navigate(paths.sadran.board(departmentId, value))} disabled={switching || weeksQuery.isLoading || availableWeeksQuery.isLoading}>
       <SelectTrigger className="w-56" aria-label={tv("sadranCommon.weekLabel", { label: formatWeekRangeLabel(weekStart) })}><SelectValue>{formatWeekRangeLabel(weekStart)}</SelectValue></SelectTrigger>
       <SelectContent>{(availableWeeksQuery.data ?? []).map((week) => <SelectItem key={week.week_start} value={week.week_start}>{formatWeekRangeLabel(week.week_start)} · {he.phase[week.phase]}</SelectItem>)}</SelectContent>
     </Select>

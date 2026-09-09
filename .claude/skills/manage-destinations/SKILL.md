@@ -16,7 +16,7 @@ Destinations are **data**, not code (DATA_MODEL §3.3 `destinations`, REQ §13.8
 Solver mapping (`src/features/board/solverInput.ts`): `publicTransportScore = score / 5` (solver uses 0..1), `zone` passed through; `'unknown'` never merges (SOLVER.md §3.8).
 
 ## A. Add or change destinations in the seed
-- [ ] Edit the destinations block in `supabase/seed.sql`: `insert into public.destinations (id, name, aliases, zone, distance_km, travel_minutes, public_transport_score, is_approved) values (...) on conflict (name) do update set ...;` Keep alphabetical by Hebrew name; fixed UUIDs for rows referenced by `e2e/fixtures/data.ts`.
+- [ ] Edit the destinations block in `supabase/seed.sql`: `insert into public.destinations (id, name, aliases, zone, distance_km, travel_minutes, public_transport_score, is_approved) values (...) on conflict (name) do update set ...;` Keep alphabetical by Hebrew name; fixed UUIDs for rows referenced by `e2e/helpers.ts` (there is no `e2e/fixtures/` folder anymore).
 - [ ] Zone is free text but keep the vocabulary consistent: `grep -o "'[a-z_]*'" supabase/seed.sql` for existing zones before inventing one. Zone equality drives merge detection, so two names for one area silently break merges.
 - [ ] `npm run db:reset`; open Admin → Destinations and eyeball the list.
 - [ ] `docs/DATA_MODEL.md` §3.3: update only if the column semantics or zone vocabulary changed (not per row). If you added a zone, list it in DATA_MODEL §3.3 and UX_FLOWS §5.6 Destinations.

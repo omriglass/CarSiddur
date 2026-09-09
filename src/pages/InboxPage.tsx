@@ -2,6 +2,7 @@ import { Bell } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
+import { paths } from "@/app/routes";
 import { EmptyState } from "@/components/EmptyState";
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
@@ -41,13 +42,26 @@ const SADRAN_EVENTS = new Set([
   "request_changed",
 ]);
 
-/** Deep-links a notification's `data` payload to a screen (UX_FLOWS.md §3.7). */
+/**
+ * Deep-links a notification's `data` payload to a screen (UX_FLOWS.md §3.7).
+ * Prefers an explicit `data.url` (the DB is starting to populate this on
+ * more event rows) or a bare `data.token` (`/p/<token>`, the deep-link
+ * secret itself); falls back to id-based routing for older/other rows.
+ * `request_id`/`offer_id` still land on a plain `/requests` (no `?focus=`,
+ * `RequestsListPage.tsx` has no such param today — reported, not added here,
+ * `src/features/requests` is out of this agent's scope).
+ */
 function deepLinkFor(n: Notification): string {
   const data = (n.data as Record<string, unknown>) ?? {};
-  if (typeof data.ride_change_id === "string") return `/inbox?change=${data.ride_change_id}`;
-  if (typeof data.request_id === "string" || typeof data.offer_id === "string") return "/requests";
-  if (typeof data.ride_id === "string") return "/siddur";
-  return "/inbox";
+  if (typeof data.url === "string" && data.url) return data.url;
+  if (typeof data.token === "string" && data.token) return paths.proposalToken(data.token);
+  if (typeof data.ride_change_id === "string") return paths.inbox(data.ride_change_id);
+  if (typeof data.proposal_id === "string" && n.department_id && n.week_start) {
+    return paths.sadran.proposals(n.department_id, n.week_start, data.proposal_id);
+  }
+  if (typeof data.request_id === "string" || typeof data.offer_id === "string") return paths.requests.list();
+  if (typeof data.ride_id === "string") return paths.siddur();
+  return paths.inbox();
 }
 
 function dayLabel(instant: string): string {

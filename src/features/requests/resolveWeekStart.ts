@@ -1,5 +1,4 @@
-import { formatInTimeZone } from "date-fns-tz";
-import { TZ, weekStartFor } from "@/lib/time";
+import { dateKey, weekStartFor } from "@/lib/time";
 
 /** Prefer the open submission window, but retain a late-request path while solving. */
 export function resolveWeekStart(
@@ -7,7 +6,7 @@ export function resolveWeekStart(
   weekOverride: string | undefined,
   now = new Date(),
 ): string | undefined {
-  const current = formatInTimeZone(weekStartFor(now), TZ, "yyyy-MM-dd");
+  const current = dateKey(weekStartFor(now));
   const eligible = weeks.filter((week) => week.week_start >= current && week.phase !== "archived");
   if (weekOverride && eligible.some((week) => week.week_start === weekOverride)) return weekOverride;
   for (const phase of ["open", "live", "solving", "published"]) {

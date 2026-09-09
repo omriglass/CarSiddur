@@ -5,25 +5,14 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { rideBlockLabel } from "@/lib/rideLabel";
 import { siddurCarName } from "@/lib/siddurCarName";
-import { ridePublicDetails, type RidePublicEntry } from "@/lib/ridePublicDetails";
+import { ridePublicDetails } from "@/lib/ridePublicDetails";
 import { he, t, tv } from "@/i18n/he";
 import { formatTime } from "@/lib/time";
 import type { Car } from "@/features/fleet/api";
+import { servedOf, type ServedEntry } from "@/features/sadran/solverRun";
 
 import type { BoardRide } from "../api";
 import { RidePublicNotesEditor } from "./RidePublicNotesEditor";
-
-interface ServedEntry extends RidePublicEntry {
-  request_id: string | null;
-  role: "driver" | "passenger";
-  car_mode: "keep" | "relay" | "passenger" | "chauffeur";
-  requester: string | null;
-  destination: string | null;
-  ride_type: string | null;
-  adults: number;
-  child_seats: number;
-  boosters: number;
-}
 
 /**
  * "<driver> ו<passengers> ל/מ<real destination>" (UX_FLOWS.md §20 — the
@@ -80,7 +69,9 @@ interface RideDetailSheetProps {
 
 /** Ride detail sheet (UX_FLOWS.md §3.5 "Ride detail"): driver, passengers, car, origin→destination, "ask to join". */
 export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = null, onOpenChange, onAskToJoin, showAskToJoin, editor, coordinatorNotes, canEditPublicNotes, passengerSummary, onRemoveOwnRide, removingOwnRide = false }: RideDetailSheetProps) {
-  const served = (ride?.served as unknown as ServedEntry[] | null) ?? [];
+  // `servedOf()` already maps `v_board_rides.served[].child_names` onto each entry's
+  // `childNames` (`applySolve.ts`) — no more hand-rolled mapping needed here.
+  const served: ServedEntry[] = ride ? servedOf(ride) : [];
 
   return (
     <Sheet open={!!ride} onOpenChange={onOpenChange}>

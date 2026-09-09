@@ -1,8 +1,10 @@
 import {
+  AlertTriangle,
   Ban,
   CheckCheck,
   CheckCircle2,
   Clock,
+  Copy,
   ExternalLink,
   MessageCircleQuestion,
   PencilLine,
@@ -11,7 +13,9 @@ import {
   ThumbsDown,
   ThumbsUp,
   TimerOff,
+  UserPlus,
   Users,
+  Wrench,
   XCircle,
   type LucideIcon,
 } from "lucide-react";
@@ -25,6 +29,15 @@ import type { Database } from "@/integrations/supabase/types";
 type RequestStatus = Database["public"]["Enums"]["request_status"];
 type ProposalStatus = Database["public"]["Enums"]["proposal_status"];
 type RideStatus = Database["public"]["Enums"]["ride_status"];
+type CarStatus = Database["public"]["Enums"]["car_status"];
+/**
+ * Mirrors `ParsedInviteRowStatus`
+ * (`src/features/admin/members/lib/parseInviteLines.ts`) — a plain TS union,
+ * not a DB enum, so re-declared locally rather than importing a
+ * feature-local type into a shared component (components must not depend
+ * on features).
+ */
+type InviteRowStatus = "new" | "existing" | "invalid_email" | "duplicate";
 
 interface StatusMeta {
   icon: LucideIcon;
@@ -117,15 +130,41 @@ const RIDE_STATUS_META: Record<RideStatus, StatusMeta> = {
   },
 };
 
+const CAR_STATUS_META: Record<CarStatus, StatusMeta> = {
+  active: { icon: CheckCircle2, label: he.car.status.active, colorClass: TONE.available },
+  maintenance: { icon: Wrench, label: he.car.status.maintenance, colorClass: TONE.amber },
+  retired: {
+    icon: Ban,
+    label: he.car.status.retired,
+    colorClass: TONE.neutral,
+    strikethrough: true,
+  },
+};
+
+const INVITE_ROW_STATUS_META: Record<InviteRowStatus, StatusMeta> = {
+  new: { icon: UserPlus, label: he.adminMembers.importRowNew, colorClass: TONE.available },
+  existing: { icon: Users, label: he.adminMembers.importRowExisting, colorClass: TONE.neutral },
+  invalid_email: {
+    icon: AlertTriangle,
+    label: he.adminMembers.importRowInvalidEmail,
+    colorClass: TONE.destructive,
+  },
+  duplicate: { icon: Copy, label: he.adminMembers.importRowDuplicate, colorClass: TONE.destructive },
+};
+
 type StatusBadgeProps =
   | { kind: "request"; status: RequestStatus; className?: string }
   | { kind: "proposal"; status: ProposalStatus; className?: string }
-  | { kind: "ride"; status: RideStatus; className?: string };
+  | { kind: "ride"; status: RideStatus; className?: string }
+  | { kind: "car"; status: CarStatus; className?: string }
+  | { kind: "inviteRow"; status: InviteRowStatus; className?: string };
 
 /**
  * Color + icon + Hebrew text, never color alone (UX_FLOWS.md §7.3/§7.4).
- * `kind` picks which status domain `status` belongs to (request, ride or
- * proposal — the three DB enums this component covers per the task brief).
+ * `kind` picks which status domain `status` belongs to: `request`/`ride`/
+ * `proposal` (DB enums), `car` (DB enum, admin fleet screen) or `inviteRow`
+ * (the bulk member-invite preview's plain-TS-union row status, admin
+ * members screen).
  */
 function metaFor(props: StatusBadgeProps): StatusMeta {
   switch (props.kind) {
@@ -135,6 +174,10 @@ function metaFor(props: StatusBadgeProps): StatusMeta {
       return PROPOSAL_STATUS_META[props.status];
     case "ride":
       return RIDE_STATUS_META[props.status];
+    case "car":
+      return CAR_STATUS_META[props.status];
+    case "inviteRow":
+      return INVITE_ROW_STATUS_META[props.status];
   }
 }
 
@@ -152,4 +195,4 @@ export function StatusBadge(props: StatusBadgeProps) {
   );
 }
 
-export { REQUEST_STATUS_META, PROPOSAL_STATUS_META, RIDE_STATUS_META };
+export { REQUEST_STATUS_META, PROPOSAL_STATUS_META, RIDE_STATUS_META, CAR_STATUS_META, INVITE_ROW_STATUS_META };

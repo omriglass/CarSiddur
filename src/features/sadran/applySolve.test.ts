@@ -1,12 +1,38 @@
 import { describe, expect, it } from "vitest";
 
-import { boardRideToFixedRide, buildApplyPayload, computeFullResolveDiff, selectOpenRequests } from "./applySolve";
+import { boardRideToFixedRide, buildApplyPayload, computeFullResolveDiff, selectOpenRequests, servedOf } from "./applySolve";
 import { solve } from "@/solver";
 import { baseInput, makeCar, makeRequest, slotMs, WEEK_START_MS } from "@/solver/__fixtures__/gen";
 
 import type { RequestRow, BoardRide } from "./api";
 import type { SolverContext } from "./applySolve";
 import type { SolverOutput } from "@/solver";
+
+describe("servedOf (maps v_board_rides.served[].child_names onto childNames)", () => {
+  function ride(served: unknown[]): BoardRide {
+    return { served } as unknown as BoardRide;
+  }
+
+  it("maps child_names onto childNames for each entry that has them", () => {
+    const entries = servedOf(
+      ride([
+        { request_id: "r1", role: "driver", leg: "both", car_mode: "keep", adults: 1, child_seats: 0, boosters: 0, luggage: false, child_names: ["Yossi"] },
+        { request_id: "r2", role: "passenger", leg: "both", car_mode: "keep", adults: 1, child_seats: 1, boosters: 0, luggage: false, child_names: [] },
+      ]),
+    );
+    expect(entries.find((e) => e.request_id === "r1")?.childNames).toEqual(["Yossi"]);
+    expect(entries.find((e) => e.request_id === "r2")?.childNames).toBeUndefined();
+  });
+
+  it("filters out entries without a request_id, regardless of child_names", () => {
+    const entries = servedOf(ride([{ request_id: null, role: "driver", leg: "both", car_mode: "keep", adults: 1, child_seats: 0, boosters: 0, luggage: false }]));
+    expect(entries).toEqual([]);
+  });
+
+  it("returns an empty list for a ride with no served jsonb", () => {
+    expect(servedOf(ride([]))).toEqual([]);
+  });
+});
 
 // Regression coverage for the MAJOR BUG investigation (docs/UX_FLOWS.md §19
 // "Solve/apply semantics after owner testing"): owner report after the

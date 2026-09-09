@@ -1,7 +1,7 @@
 import { formatInTimeZone } from "date-fns-tz";
 import { describe, expect, it } from "vitest";
 
-import { TZ, formatTime, roundTo15, weekStartFor } from "./time";
+import { TZ, dateKey, formatTime, roundTo15, weekStartFor, weekdayIndex } from "./time";
 
 function localTime(instant: Date): string {
   return formatInTimeZone(instant, TZ, "yyyy-MM-dd HH:mm");
@@ -61,5 +61,30 @@ describe("roundTo15", () => {
 describe("formatTime", () => {
   it("formats an instant as local HH:mm", () => {
     expect(formatTime(new Date("2027-01-13T10:06:00Z"))).toBe("12:06");
+  });
+});
+
+describe("dateKey", () => {
+  it("formats an instant as the local yyyy-MM-dd day bucket", () => {
+    // 2027-01-13T22:30:00Z is already 2027-01-14 00:30 in Asia/Jerusalem.
+    expect(dateKey(new Date("2027-01-13T22:30:00Z"))).toBe("2027-01-14");
+  });
+
+  it("accepts an ISO string directly", () => {
+    expect(dateKey("2027-01-13T10:06:00Z")).toBe("2027-01-13");
+  });
+});
+
+describe("weekdayIndex", () => {
+  it("returns 0 for a local Sunday and 6 for a local Saturday", () => {
+    // 2027-01-10 is a Sunday in Asia/Jerusalem.
+    expect(weekdayIndex(new Date("2027-01-10T10:00:00Z"))).toBe(0);
+    // 2027-01-16 is a Saturday in Asia/Jerusalem.
+    expect(weekdayIndex(new Date("2027-01-16T10:00:00Z"))).toBe(6);
+  });
+
+  it("crosses local midnight correctly, not UTC midnight", () => {
+    // 2027-01-16T22:30:00Z is already Sunday 2027-01-17 00:30 in Asia/Jerusalem.
+    expect(weekdayIndex(new Date("2027-01-16T22:30:00Z"))).toBe(0);
   });
 });

@@ -1,6 +1,4 @@
-import { formatInTimeZone } from "date-fns-tz";
-
-import { TZ } from "@/lib/time";
+import { dateKey } from "@/lib/time";
 
 import type { Database } from "@/integrations/supabase/types";
 
@@ -39,11 +37,11 @@ export function resolveHomeWeek(
  * `now` is injectable for tests; defaults to the real clock.
  */
 export function hasRideTodayOrTomorrow(startsAtList: readonly string[], now: Date = new Date()): boolean {
-  const todayYmd = formatInTimeZone(now, TZ, "yyyy-MM-dd");
+  const todayYmd = dateKey(now);
   const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
-  const tomorrowYmd = formatInTimeZone(tomorrow, TZ, "yyyy-MM-dd");
+  const tomorrowYmd = dateKey(tomorrow);
   return startsAtList.some((iso) => {
-    const ymd = formatInTimeZone(new Date(iso), TZ, "yyyy-MM-dd");
+    const ymd = dateKey(iso);
     return ymd === todayYmd || ymd === tomorrowYmd;
   });
 }

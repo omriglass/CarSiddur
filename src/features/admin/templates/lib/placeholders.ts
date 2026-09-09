@@ -28,7 +28,12 @@ export const NOTIFICATION_PLACEHOLDERS = [
 
 export type NotificationPlaceholder = (typeof NOTIFICATION_PLACEHOLDERS)[number];
 
-/** Sample Hebrew values for the live preview (UX_FLOWS §5.9 "preview with sample data"). */
+/**
+ * Sample Hebrew values for the live preview (UX_FLOWS §5.9 "preview with
+ * sample data") — fake demo data standing in for what a real notification
+ * would substitute, not translatable UI copy, so left outside `he.ts`
+ * (docs/REFACTOR_BACKLOG.md §5.4 grep sweep).
+ */
 export const PLACEHOLDER_SAMPLES: Record<NotificationPlaceholder, string> = {
   firstName: "דנה",
   sadranName: "מיכל",

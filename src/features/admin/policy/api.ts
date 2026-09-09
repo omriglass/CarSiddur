@@ -2,7 +2,6 @@ import { supabase } from "@/integrations/supabase/client";
 import { rpc, toAppError } from "@/lib/rpc";
 
 import type { Database, Json } from "@/integrations/supabase/types";
-import type { FairnessRow } from "@/features/solverBridge/buildSolverInput";
 
 /**
  * The only file in `admin/policy` that calls `supabase.from`/`.rpc`.
@@ -102,16 +101,8 @@ export async function fetchWeekRequests(departmentId: string, weekStart: string)
   return data ?? [];
 }
 
-export async function fetchFairnessStats(
-  departmentId: string,
-  weekStart: string,
-  lookbackWeeks: number,
-): Promise<FairnessRow[]> {
-  const { data, error } = await supabase.rpc("fairness_stats", {
-    p_department_id: departmentId,
-    p_week_start: weekStart,
-    p_lookback_weeks: lookbackWeeks,
-  });
-  if (error) throw toAppError(error);
-  return data ?? [];
-}
+// Re-exported (not reimplemented): `sadran/api.ts` and this file both needed
+// `fairness_stats` (board dashboard vs. this file's policy preview) and used
+// to each keep their own independent `supabase.rpc("fairness_stats", ...)` —
+// defined once there now, imported here instead (REFACTOR_BACKLOG.md 1.5).
+export { fetchFairnessStats } from "@/features/sadran/api";

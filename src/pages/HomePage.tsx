@@ -2,12 +2,11 @@ import { useActiveDepartment } from "@/features/auth/useActiveDepartment";
 import { CalendarClock, CarFront, Inbox, MessageCircleQuestion } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { formatInTimeZone } from "date-fns-tz";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { PageHeader } from "@/components/PageHeader";
@@ -18,7 +17,8 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { formatWeekRangeLabel, todayInJerusalem } from "@/components/DateField";
 import { useProfile } from "@/features/auth/useProfile";
 import { DeviceSetupPrompts } from "@/features/member/components/DeviceSetupPrompts";
-import { useCars, useDestinations, useRideTypes } from "@/features/fleet/hooks";
+import { useCars, useRideTypes } from "@/features/fleet/hooks";
+import { AddRideFab } from "@/features/requests/components/AddRideFab";
 import { QuickRequestSheet } from "@/features/requests/components/QuickRequestSheet";
 import { useMyRequests, useCancelRideMutation } from "@/features/requests/hooks";
 import type { MyRequestRow } from "@/features/requests/api";
@@ -34,7 +34,8 @@ import { useDayFreeWindows } from "@/features/siddur/useDayFreeWindows";
 import { useDepartmentSettings, useEditRideMutation } from "@/features/sadran/hooks";
 import { servedOf } from "@/features/sadran/solverRun";
 import { he, t, tv } from "@/i18n/he";
-import { TZ } from "@/lib/time";
+import { formatTime } from "@/lib/time";
+import { paths } from "@/app/routes";
 
 import { hasRideTodayOrTomorrow, resolveHomeWeek } from "./homeWeek";
 
@@ -59,7 +60,6 @@ export function HomePage() {
   const active = useActiveDepartment();
   const requestsQuery = useMyRequests();
   const upcomingRidesQuery = useMyUpcomingRides();
-  const destinationsQuery = useDestinations();
   const rideTypesQuery = useRideTypes();
 
   const defaultDepartmentId =
@@ -78,6 +78,7 @@ export function HomePage() {
   const currentWeekStart = currentWeek?.week_start;
   const dayFreeWindows = useDayFreeWindows(defaultDepartmentId, currentWeekStart, currentWeekStart ? today : undefined, now);
   const freeCarNow = firstCarFreeNow(dayFreeWindows.freeWindows, now.getTime());
+  const quickCarId = freeCarNow?.carId ?? dayFreeWindows.cars[0]?.id;
   const [quickRequestOpen, setQuickRequestOpen] = useState(false);
   const [selectedMyRide, setSelectedMyRide] = useState<BoardRide | null>(null);
   const [collisionMove, setCollisionMove] = useState<RideMove | null>(null);
@@ -87,7 +88,6 @@ export function HomePage() {
   const selectedRideWeekStart = selectedMyRide?.week_start ?? undefined;
   const selectedRideWeekQuery = useBoardRides(defaultDepartmentId, selectedRideWeekStart);
   const selectedRideChangesQuery = useRideChanges(defaultDepartmentId, selectedRideWeekStart);
-  const defaultRideTypeId = rideTypesQuery.data?.find((rt) => rt.code === "other")?.id ?? rideTypesQuery.data?.[0]?.id ?? "";
 
   const isLoading = active.isLoading || profileQuery.isLoading || requestsQuery.isLoading || upcomingRidesQuery.isLoading || weeksQuery.isLoading;
 
@@ -180,7 +180,7 @@ export function HomePage() {
       />
 
       <DeviceSetupPrompts />
-      {!active.canSubmit && <p className="text-sm text-muted-foreground">{he.departmentContext.noMembership} <Link to={`/siddur/${active.departmentId}`}>{he.nav.siddur}</Link></p>}
+      {!active.canSubmit && <p className="text-sm text-muted-foreground">{he.departmentContext.noMembership} <Link to={paths.siddur({ dept: active.departmentId })}>{he.nav.siddur}</Link></p>}
 
       {active.canSubmit && currentWeekStart ? (
         <Card
@@ -271,7 +271,7 @@ export function HomePage() {
               }
               action={active.canSubmit &&
                 <Button asChild size="sm">
-                  <Link to="/requests/new">{t("action.newRequest")}</Link>
+                  <Link to={paths.requests.new()}>{t("action.newRequest")}</Link>
                 </Button>
               }
             />
@@ -290,28 +290,24 @@ export function HomePage() {
         </section>
       ) : null}
 
-      {active.canSubmit && <Button asChild size="lg" className="fixed bottom-20 end-4 z-30 rounded-full shadow-lg md:bottom-6">
-        <Link to="/requests/new">{t("action.newRequest")}</Link>
-      </Button>}
+      {active.canSubmit ? (
+        <AddRideFab
+          isLiveWeek={currentWeek?.phase === "live" && !!quickCarId}
+          onQuickRequest={() => setQuickRequestOpen(true)}
+        />
+      ) : null}
 
-      {quickRequestOpen && freeCarNow && defaultDepartmentId && currentWeekStart ? (
+      {quickRequestOpen && quickCarId && defaultDepartmentId && currentWeekStart ? (
         <QuickRequestSheet
           open={quickRequestOpen}
           onOpenChange={setQuickRequestOpen}
           departmentId={defaultDepartmentId}
           weekStart={currentWeekStart}
-          rideTypeId={defaultRideTypeId}
           day={today}
-          initialStartTime={formatInTimeZone(new Date(roundUpToQuarterHour(now.getTime())), TZ, "HH:mm")}
-          initialCarId={freeCarNow.carId}
+          initialStartTime={formatTime(new Date(roundUpToQuarterHour(now.getTime())))}
+          initialCarId={quickCarId}
           showCarPicker
           cars={dayFreeWindows.cars}
-          destinations={(destinationsQuery.data ?? []).map((d) => ({
-            id: d.id,
-            name: d.name,
-            aliases: d.aliases,
-            zone: d.zone,
-          }))}
           freeWindows={dayFreeWindows.freeWindows}
           awayWindows={dayFreeWindows.awayWindows}
           now={now}
@@ -336,22 +332,22 @@ export function HomePage() {
           />
         ) : undefined}
       />
-      <Dialog open={!!collisionMove} onOpenChange={(open) => !open && setCollisionMove(null)}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>{he.rideEditing.collisionTitle}</DialogTitle><DialogDescription>{he.rideEditing.collisionBody}</DialogDescription></DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setCollisionMove(null)}>{he.common.cancel}</Button>
-            <Button disabled={changeMutation.isPending} onClick={() => {
-              if (!collisionMove) return;
-              changeMutation.mutate(collisionMove, { onSuccess: () => {
-                setCollisionMove(null);
-                setSelectedMyRide(null);
-                toast.success(he.rideEditing.requested);
-              } });
-            }}>{he.rideEditing.acknowledge}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDialog
+        open={!!collisionMove}
+        onOpenChange={(open) => !open && setCollisionMove(null)}
+        title={he.rideEditing.collisionTitle}
+        description={he.rideEditing.collisionBody}
+        confirmLabel={he.rideEditing.acknowledge}
+        loading={changeMutation.isPending}
+        onConfirm={() => {
+          if (!collisionMove) return;
+          changeMutation.mutate(collisionMove, { onSuccess: () => {
+            setCollisionMove(null);
+            setSelectedMyRide(null);
+            toast.success(he.rideEditing.requested);
+          } });
+        }}
+      />
     </div>
   );
 }

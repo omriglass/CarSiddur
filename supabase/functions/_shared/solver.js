@@ -351,17 +351,18 @@ var TEMPLATES = {
   WARN_UNKNOWN_RULE_TYPE: "\u05E1\u05D5\u05D2 \u05DB\u05DC\u05DC \u05DE\u05D3\u05D9\u05E0\u05D9\u05D5\u05EA \u05DC\u05D0 \u05DE\u05D5\u05DB\u05E8; \u05D4\u05DB\u05DC\u05DC \u05D3\u05D5\u05DC\u05D2"
 };
 var RULE_DESCRIPTIONS = {
-  RULE_RIDETYPE_DESC: "\u05DE\u05E2\u05E0\u05D9\u05E7 \u05E2\u05D3\u05D9\u05E4\u05D5\u05EA \u05DC\u05E4\u05D9 \u05E1\u05D5\u05D2 \u05D4\u05E0\u05E1\u05D9\u05E2\u05D4 (\u05DC\u05DE\u05E9\u05DC \u05D1\u05E8\u05D9\u05D0\u05D5\u05EA \u05D2\u05D1\u05D5\u05D4 \u05DE\u05E1\u05D9\u05D3\u05D5\u05E8\u05D9\u05DD)",
+  RULE_RIDETYPE_DESC: "\u05DE\u05E2\u05E0\u05D9\u05E7 \u05E2\u05D3\u05D9\u05E4\u05D5\u05EA \u05DC\u05E4\u05D9 \u05E1\u05D5\u05D2 \u05D4\u05E0\u05E1\u05D9\u05E2\u05D4, \u05DC\u05E4\u05D9 \u05DE\u05E9\u05E7\u05DC \u05E9\u05D4\u05D5\u05D2\u05D3\u05E8 \u05DC\u05DB\u05DC \u05E1\u05D5\u05D2 \u05E0\u05E1\u05D9\u05E2\u05D4 (\u05D5\u05D1\u05E8\u05D9\u05E8\u05EA \u05DE\u05D7\u05D3\u05DC \u05DC\u05E1\u05D5\u05D2 \u05E0\u05E1\u05D9\u05E2\u05D4 \u05DC\u05DC\u05D0 \u05DE\u05E9\u05E7\u05DC \u05DE\u05D5\u05D2\u05D3\u05E8)",
   RULE_DISTANCE_DESC: "\u05DE\u05E2\u05E0\u05D9\u05E7 \u05E2\u05D3\u05D9\u05E4\u05D5\u05EA \u05DC\u05D9\u05E2\u05D3\u05D9\u05DD \u05E8\u05D7\u05D5\u05E7\u05D9\u05DD \u05D9\u05D5\u05EA\u05E8, \u05D1\u05D4\u05DD \u05E4\u05D7\u05D5\u05EA \u05D7\u05DC\u05D5\u05E4\u05D5\u05EA",
   RULE_PUBLICTRANSPORT_DESC: "\u05DE\u05E2\u05E0\u05D9\u05E7 \u05E2\u05D3\u05D9\u05E4\u05D5\u05EA \u05E0\u05DE\u05D5\u05DB\u05D4 \u05D9\u05D5\u05EA\u05E8 \u05DC\u05D9\u05E2\u05D3\u05D9\u05DD \u05E2\u05DD \u05EA\u05D7\u05D1\u05D5\u05E8\u05D4 \u05E6\u05D9\u05D1\u05D5\u05E8\u05D9\u05EA \u05D8\u05D5\u05D1\u05D4",
   RULE_PEOPLESERVED_DESC: "\u05DE\u05E2\u05E0\u05D9\u05E7 \u05E2\u05D3\u05D9\u05E4\u05D5\u05EA \u05DC\u05E0\u05E1\u05D9\u05E2\u05D5\u05EA \u05E9\u05DE\u05E9\u05E8\u05EA\u05D5\u05EA \u05D9\u05D5\u05EA\u05E8 \u05D0\u05E0\u05E9\u05D9\u05DD (\u05DB\u05D5\u05DC\u05DC \u05D6\u05D5\u05D2 \u05DE\u05DE\u05E1\u05E8)",
-  RULE_FAIRNESS_DESC: "\u05DE\u05E2\u05E0\u05D9\u05E7 \u05E2\u05D3\u05D9\u05E4\u05D5\u05EA \u05DC\u05D7\u05D1\u05E8\u05D9\u05DD \u05E9\u05E7\u05D9\u05D1\u05DC\u05D5 \u05E4\u05D7\u05D5\u05EA \u05E0\u05E1\u05D9\u05E2\u05D5\u05EA \u05D1\u05E9\u05D1\u05D5\u05E2\u05D5\u05EA \u05D4\u05D0\u05D7\u05E8\u05D5\u05E0\u05D9\u05DD",
+  RULE_FAIRNESS_DESC: "\u05DE\u05E2\u05E0\u05D9\u05E7 \u05E2\u05D3\u05D9\u05E4\u05D5\u05EA \u05DC\u05D7\u05D1\u05E8\u05D9\u05DD \u05E9\u05E7\u05D9\u05D1\u05DC\u05D5 \u05E4\u05D7\u05D5\u05EA \u05E9\u05E2\u05D5\u05EA \u05E0\u05E1\u05D9\u05E2\u05D4 \u05DE\u05D0\u05D5\u05E9\u05E8\u05D5\u05EA \u05D1\u05E9\u05D1\u05D5\u05E2\u05D5\u05EA \u05D4\u05D0\u05D7\u05E8\u05D5\u05E0\u05D9\u05DD",
   RULE_SUBMISSIONTIME_DESC: "\u05DE\u05E2\u05E0\u05D9\u05E7 \u05D9\u05EA\u05E8\u05D5\u05DF \u05E7\u05DC \u05DC\u05D4\u05D2\u05E9\u05D4 \u05DE\u05D5\u05E7\u05D3\u05DE\u05EA \u05D5\u05E7\u05E0\u05E1 \u05DC\u05D4\u05D2\u05E9\u05D4 \u05DE\u05D0\u05D5\u05D7\u05E8\u05EA",
   RULE_FLEXIBILITYOFFERED_DESC: "\u05DE\u05E2\u05E0\u05D9\u05E7 \u05D1\u05D5\u05E0\u05D5\u05E1 \u05DC\u05D4\u05E6\u05D4\u05E8\u05EA \u05D2\u05DE\u05D9\u05E9\u05D5\u05EA \u05D1\u05D6\u05DE\u05E0\u05D9\u05DD",
   RULE_MANUALBOOST_DESC: "\u05D1\u05D5\u05E0\u05D5\u05E1 \u05D7\u05D3-\u05E4\u05E2\u05DE\u05D9 \u05E9\u05E0\u05D9\u05EA\u05DF \u05D9\u05D3\u05E0\u05D9\u05EA \u05E2\u05DC \u05D9\u05D3\u05D9 \u05D4\u05E1\u05D3\u05E8\u05DF/\u05D9\u05EA"
 };
 var PARAM_ERRORS = {
   RIDETYPE_WEIGHTS_INVALID: "\u05E4\u05E8\u05DE\u05D8\u05E8 weights \u05D7\u05E1\u05E8 \u05D0\u05D5 \u05E9\u05D2\u05D5\u05D9 \u05D1\u05DB\u05DC\u05DC rideType",
+  RIDETYPE_DEFAULTWEIGHT_INVALID: "\u05E4\u05E8\u05DE\u05D8\u05E8 defaultWeight \u05E9\u05D2\u05D5\u05D9 \u05D1\u05DB\u05DC\u05DC rideType",
   DISTANCE_MAXKM_INVALID: "\u05E4\u05E8\u05DE\u05D8\u05E8 maxKm \u05D7\u05E1\u05E8 \u05D0\u05D5 \u05E9\u05D2\u05D5\u05D9 \u05D1\u05DB\u05DC\u05DC distance",
   PUBLICTRANSPORT_PARAMS_INVALID: "\u05E4\u05E8\u05DE\u05D8\u05E8\u05D9\u05DD \u05E9\u05D2\u05D5\u05D9\u05D9\u05DD \u05D1\u05DB\u05DC\u05DC publicTransport",
   PEOPLESERVED_CAP_INVALID: "\u05E4\u05E8\u05DE\u05D8\u05E8 cap \u05D7\u05E1\u05E8 \u05D0\u05D5 \u05E9\u05D2\u05D5\u05D9 \u05D1\u05DB\u05DC\u05DC peopleServed",
@@ -1500,35 +1501,45 @@ var publicTransport = {
 };
 
 // src/solver/rules/rideType.ts
+var DEFAULT_WEIGHT = 5;
 function isFiniteNumber(v) {
   return typeof v === "number" && Number.isFinite(v);
+}
+function isNonNegativeFinite(v) {
+  return isFiniteNumber(v) && v >= 0;
 }
 var rideType = {
   type: "rideType",
   normalization: "unit",
-  defaultParams: { weights: { healthcare: 10, work: 8, childcare: 8, other: 5, errands: 3 } },
+  defaultParams: {
+    weights: { healthcare: 10, work: 8, childcare: 8, other: 5, errands: 3 },
+    defaultWeight: DEFAULT_WEIGHT
+  },
   validateParams(raw) {
     if (typeof raw !== "object" || raw === null || !("weights" in raw)) {
       throw new PolicyParamsError("RIDETYPE_WEIGHTS_INVALID");
     }
     const weights = raw.weights;
-    if (typeof weights !== "object" || weights === null) throw new PolicyParamsError("RIDETYPE_WEIGHTS_INVALID");
+    if (typeof weights !== "object" || weights === null || Array.isArray(weights)) {
+      throw new PolicyParamsError("RIDETYPE_WEIGHTS_INVALID");
+    }
     const entries = Object.entries(weights);
     for (const [, v] of entries) {
-      if (!isFiniteNumber(v) || v < 0) throw new PolicyParamsError("RIDETYPE_WEIGHTS_INVALID");
+      if (!isNonNegativeFinite(v)) throw new PolicyParamsError("RIDETYPE_WEIGHTS_INVALID");
     }
-    return { weights: Object.fromEntries(entries) };
+    const rawDefaultWeight = raw.defaultWeight;
+    const defaultWeight = rawDefaultWeight === void 0 ? DEFAULT_WEIGHT : rawDefaultWeight;
+    if (!isNonNegativeFinite(defaultWeight)) throw new PolicyParamsError("RIDETYPE_DEFAULTWEIGHT_INVALID");
+    return { weights: Object.fromEntries(entries), defaultWeight };
   },
   describe() {
     return ruleDescription("RULE_RIDETYPE_DESC");
   },
   score(ctx, request) {
-    const { weights } = ctx.params;
-    const values = Object.values(weights);
-    const max = values.length > 0 ? Math.max(...values) : 0;
+    const { weights, defaultWeight } = ctx.params;
+    const max = Math.max(defaultWeight, ...Object.values(weights));
     if (max <= 0) return 0;
-    const w = weights[request.request.rideType];
-    if (w === void 0) return 0;
+    const w = weights[request.request.rideType] ?? defaultWeight;
     return w / max;
   }
 };

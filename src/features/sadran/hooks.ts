@@ -1,6 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { fetchCars } from "@/features/fleet/api";
+import { siddurKeys } from "@/features/siddur/queryKeys";
+import { requestsKeys } from "@/features/requests/queryKeys";
 import { showErrorToast } from "@/lib/rpc";
 
 import * as api from "./api";
@@ -119,18 +121,9 @@ export function useActivePolicy(departmentId: string | undefined) {
 
 export function usePolicyOptions(departmentId: string | undefined) {
   return useQuery({
-    queryKey: [...sadranKeys.activePolicy(departmentId ?? ""), "options"],
+    queryKey: sadranKeys.policyOptions(departmentId ?? ""),
     queryFn: () => api.fetchPolicyOptions(departmentId as string),
     enabled: !!departmentId,
-    staleTime: 60_000,
-  });
-}
-
-export function useFairnessStats(departmentId: string | undefined, weekStart: string | undefined, lookbackWeeks: number) {
-  return useQuery({
-    queryKey: sadranKeys.fairness(departmentId ?? "", weekStart ?? "", lookbackWeeks),
-    queryFn: () => api.fetchFairnessStats(departmentId as string, weekStart as string, lookbackWeeks),
-    enabled: !!departmentId && !!weekStart,
     staleTime: 60_000,
   });
 }
@@ -150,8 +143,8 @@ export function useLatestSolverRun(departmentId: string | undefined, weekStart: 
 
 function invalidateBoard(queryClient: ReturnType<typeof useQueryClient>, departmentId: string, weekStart: string) {
   queryClient.invalidateQueries({ queryKey: sadranKeys.week(departmentId, weekStart) });
-  queryClient.invalidateQueries({ queryKey: ["siddur"] });
-  queryClient.invalidateQueries({ queryKey: ["requests"] });
+  queryClient.invalidateQueries({ queryKey: siddurKeys.all });
+  queryClient.invalidateQueries({ queryKey: requestsKeys.all });
 }
 
 export function useRecordSolverPreviewMutation() {
@@ -223,25 +216,6 @@ export function useUnassignRideMutation() {
   });
 }
 
-export function useSetManualBoostMutation() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({
-      requestId,
-      value,
-      reason,
-    }: {
-      requestId: string;
-      value: number;
-      reason: string;
-      departmentId: string;
-      weekStart: string;
-    }) => api.setManualBoost(requestId, value, reason),
-    onSuccess: (_data, { departmentId, weekStart }) => invalidateBoard(queryClient, departmentId, weekStart),
-    onError: showErrorToast,
-  });
-}
-
 // ---------------------------------------------------------------------------
 // Proposals
 // ---------------------------------------------------------------------------
@@ -267,7 +241,7 @@ export function useProposalParties(proposalId: string | undefined) {
 export function useProfilesByIds(profileIds: readonly string[]) {
   const key = [...profileIds].sort().join(",");
   return useQuery({
-    queryKey: [...sadranKeys.all, "profiles", key],
+    queryKey: sadranKeys.profilesByIds(key),
     queryFn: () => api.fetchProfilesByIds([...profileIds]),
     enabled: profileIds.length > 0,
     staleTime: 60_000,
@@ -307,7 +281,11 @@ export function useSendProposalMutation() {
     }) => api.sendProposal(proposalId, sentVia, replacement),
     // Also refresh after failures: another coordinator may have sent/answered the
     // proposal, or the server may have committed before the connection dropped.
-    onSettled: () => Promise.all(["sadran", "siddur", "requests"].map((key) => queryClient.invalidateQueries({ queryKey: [key] }))),
+    onSettled: () => Promise.all([
+      queryClient.invalidateQueries({ queryKey: sadranKeys.all }),
+      queryClient.invalidateQueries({ queryKey: siddurKeys.all }),
+      queryClient.invalidateQueries({ queryKey: requestsKeys.all }),
+    ]),
     onError: showErrorToast,
   });
 }
@@ -425,7 +403,7 @@ export function usePublishSiddurMutation() {
 
 export function usePublicationReadiness(departmentId: string, weekStart: string) {
   return useQuery({
-    queryKey: [...sadranKeys.week(departmentId, weekStart), "publicationReadiness"],
+    queryKey: sadranKeys.publicationReadiness(departmentId, weekStart),
     queryFn: () => api.fetchPublicationReadiness(departmentId, weekStart),
     enabled: !!departmentId && !!weekStart,
     staleTime: 5_000,

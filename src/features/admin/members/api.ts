@@ -73,8 +73,7 @@ export async function updateChild(childId: string, departmentId: string, fullNam
 export async function fetchPhones(profileIds: string[]): Promise<Record<string, string | null>> {
   const entries = await Promise.all(
     profileIds.map(async (id) => {
-      const { data, error } = await supabase.rpc("phone_of", { _profile: id });
-      if (error) throw toAppError(error);
+      const data = await rpc("phone_of", { _profile: id });
       return [id, data] as const;
     }),
   );
@@ -120,25 +119,6 @@ export async function setMemberRole(departmentId: string, profileId: string, rol
     .is("removed_at", null)
     .select("profile_id")
     .single();
-  if (error) throw toAppError(error);
-}
-
-export async function addMemberToDepartment(departmentId: string, profileId: string, role: Role = "member"): Promise<void> {
-  const { error } = await supabase
-    .from("department_members")
-    .upsert(
-      { department_id: departmentId, profile_id: profileId, role, removed_at: null },
-      { onConflict: "department_id,profile_id" },
-    );
-  if (error) throw toAppError(error);
-}
-
-export async function removeMemberFromDepartment(departmentId: string, profileId: string): Promise<void> {
-  const { error } = await supabase
-    .from("department_members")
-    .update({ removed_at: new Date().toISOString() })
-    .eq("department_id", departmentId)
-    .eq("profile_id", profileId);
   if (error) throw toAppError(error);
 }
 

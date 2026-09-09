@@ -1,12 +1,11 @@
 import { useState } from "react";
-import { formatInTimeZone } from "date-fns-tz";
 import { Button } from "@/components/ui/button";
 import { TimeField15 } from "@/components/TimeField15";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { Car } from "@/features/fleet/api";
 import { he } from "@/i18n/he";
-import { TZ } from "@/lib/time";
+import { dateKey, formatTime } from "@/lib/time";
 import { siddurCarName } from "@/lib/siddurCarName";
 import type { BoardRide, RideMove } from "../api";
 import { moveOnRideDay } from "../rideEditing";
@@ -15,9 +14,9 @@ export function MemberRideEditor({ ride, cars, saving, onSave }: {
   ride: BoardRide; cars: readonly Car[]; saving: boolean; onSave: (move: RideMove) => void;
 }) {
   const [carId, setCarId] = useState(ride.car_id ?? "");
-  const [start, setStart] = useState(formatInTimeZone(ride.starts_at!, TZ, "HH:mm"));
-  const [end, setEnd] = useState(formatInTimeZone(ride.starts_at!, TZ, "yyyy-MM-dd") === formatInTimeZone(ride.ends_at!, TZ, "yyyy-MM-dd")
-    ? formatInTimeZone(ride.ends_at!, TZ, "HH:mm") : "23:59");
+  const [start, setStart] = useState(formatTime(new Date(ride.starts_at!)));
+  const [end, setEnd] = useState(dateKey(ride.starts_at!) === dateKey(ride.ends_at!)
+    ? formatTime(new Date(ride.ends_at!)) : "23:59");
   const minutes = (value: string) => value.split(":").reduce((h, m) => h * 60 + Number(m), 0);
   const endMinutes = minutes(end);
   const valid = !!carId && !!start && !!end && endMinutes > minutes(start) && endMinutes <= 1439;

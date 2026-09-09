@@ -1,8 +1,13 @@
-import { useState } from "react";
+import * as PopoverPrimitive from "@radix-ui/react-popover";
+import { useContext, useState } from "react";
 
 import { Input } from "@/components/ui/input";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { SheetPortalContext } from "@/components/SheetPortalContext";
+import { he } from "@/i18n/he";
 import { cn } from "@/lib/utils";
+
+const Popover = PopoverPrimitive.Root;
+const PopoverTrigger = PopoverPrimitive.Trigger;
 
 const MIN_MINUTES = 6 * 60;
 const MAX_MINUTES = 23 * 60 + 45; // 23:45
@@ -95,6 +100,7 @@ export function TimeField15({ value, min, max, onChange, disabled, ...rest }: Ti
   const lowHour = Math.floor((bounds.min ?? MIN_MINUTES) / 60);
   const highHour = Math.floor((bounds.max ?? MAX_MINUTES) / 60);
   const hours = Array.from({ length: highHour - lowHour + 1 }, (_, i) => lowHour + i);
+  const portalContainer = useContext(SheetPortalContext);
 
   return (
     <Popover>
@@ -111,40 +117,48 @@ export function TimeField15({ value, min, max, onChange, disabled, ...rest }: Ti
           onBlur={(event) => commit(event.target.value)}
         />
       </PopoverTrigger>
-      <PopoverContent className="w-56 p-2" align="start">
-        <div className="grid grid-cols-2 gap-2" dir="rtl">
-          <div role="listbox" aria-label="דקות">
-            {[...QUARTER_HOURS, ...(draftHour === "23" && maxMinutes === 1439 ? [59] : [])].map((m) => (
-              <button
-                key={m}
-                type="button"
-                className={cn(
-                  "flex h-11 w-full min-w-11 items-center justify-center rounded text-sm hover:bg-accent",
-                  draftMinute === pad2(m) && "bg-accent font-semibold",
-                )}
-                onClick={() => commit(`${draftHour ?? "08"}:${pad2(m)}`)}
-              >
-                {pad2(m)}
-              </button>
-            ))}
+      <PopoverPrimitive.Portal container={portalContainer ?? undefined}>
+        <PopoverPrimitive.Content
+          align="start"
+          sideOffset={4}
+          className={cn(
+            "z-50 w-56 rounded-md border bg-popover p-2 text-popover-foreground shadow-md outline-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2",
+          )}
+        >
+          <div className="grid grid-cols-2 gap-2" dir="rtl">
+            <div role="listbox" aria-label={he.timeField.minuteListLabel}>
+              {[...QUARTER_HOURS, ...(draftHour === "23" && maxMinutes === 1439 ? [59] : [])].map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  className={cn(
+                    "flex h-11 w-full min-w-11 items-center justify-center rounded text-sm hover:bg-accent",
+                    draftMinute === pad2(m) && "bg-accent font-semibold",
+                  )}
+                  onClick={() => commit(`${draftHour ?? "08"}:${pad2(m)}`)}
+                >
+                  {pad2(m)}
+                </button>
+              ))}
+            </div>
+            <div className="max-h-48 overflow-y-auto" role="listbox" aria-label={he.timeField.hourListLabel}>
+              {hours.map((h) => (
+                <button
+                  key={h}
+                  type="button"
+                  className={cn(
+                    "flex h-11 w-full min-w-11 items-center justify-center rounded text-sm hover:bg-accent",
+                    draftHour === pad2(h) && "bg-accent font-semibold",
+                  )}
+                  onClick={() => commit(`${pad2(h)}:${draftMinute ?? "00"}`)}
+                >
+                  {pad2(h)}
+                </button>
+              ))}
+            </div>
           </div>
-          <div className="max-h-48 overflow-y-auto" role="listbox" aria-label="שעה">
-            {hours.map((h) => (
-              <button
-                key={h}
-                type="button"
-                className={cn(
-                  "flex h-11 w-full min-w-11 items-center justify-center rounded text-sm hover:bg-accent",
-                  draftHour === pad2(h) && "bg-accent font-semibold",
-                )}
-                onClick={() => commit(`${pad2(h)}:${draftMinute ?? "00"}`)}
-              >
-                {pad2(h)}
-              </button>
-            ))}
-          </div>
-        </div>
-      </PopoverContent>
+        </PopoverPrimitive.Content>
+      </PopoverPrimitive.Portal>
     </Popover>
   );
 }

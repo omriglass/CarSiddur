@@ -182,9 +182,24 @@ interface DragState {
 }
 
 /**
- * One day, time × cars. The full day contributes to the page height, so
- * vertical scrolling belongs to the page. Wide fleets can still scroll
- * horizontally, with the hour column pinned to the starting edge.
+ * One day, time × cars, bounded to `max-h-[70dvh]` with its own
+ * `overflow-auto` (both axes) at every breakpoint — the standard
+ * frozen-header/frozen-column pattern (car headers `sticky top-0`, hour
+ * column `sticky start-0`, corner cell both). This is a hard CSS constraint,
+ * not a style preference: `position: sticky` only tracks the scrolling of
+ * its *nearest* scroll-container ancestor (any element whose `overflow` is
+ * not `visible`, even if that element's content never actually overflows —
+ * confirmed directly, this is the textbook "sticky doesn't stick" gotcha).
+ * Previously this bound only applied from `lg:` up, so on a phone (`<lg`)
+ * the container had no bounded height, meaning `overflow-auto` was a no-op
+ * scroll container that never itself scrolled — the *page* scrolled instead,
+ * and since `position: sticky` was still scoped to that inert container, the
+ * headers did not track the page's scroll at all (a real, confirmed
+ * regression against the "must work on a phone" requirement, not merely a
+ * cosmetic gap). Bounding the container at every breakpoint fixes it
+ * uniformly and keeps horizontal scrolling for wide fleets working the same
+ * way on a phone as on desktop. See UX_FLOWS.md "Page scrolling for the
+ * Siddur table" for the doc-side correction.
  */
 export function WeekGrid({
   cars,
@@ -578,7 +593,7 @@ export function WeekGrid({
   }
 
   return (
-    <div ref={scrollViewportRef} className="min-w-0 overflow-auto rounded-md border shadow-card lg:max-h-[70dvh]" data-week-grid-scroll-viewport>
+    <div ref={scrollViewportRef} className="min-w-0 max-h-[70dvh] overflow-auto rounded-md border shadow-card" data-week-grid-scroll-viewport>
       <div className="grid" style={{ zoom, gridTemplateColumns, gridTemplateRows, minWidth: HOUR_COL_WIDTH_PX + allCars.length * CAR_COL_WIDTH_PX }}>
         <div className="sticky start-0 top-0 z-30 border-b border-e bg-muted/70 shadow-[0_2px_6px_-2px_hsl(var(--foreground)/0.12)]" style={{ gridColumn: 1, gridRow: 1 }} />
         {allCars.map((car, i) => (

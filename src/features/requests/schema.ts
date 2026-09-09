@@ -74,6 +74,13 @@ export const requestFormSchema = z
     flexReturnLate: flexValueSchema,
     notes: z.string(),
     rideDescription: z.string().trim().max(1000, he.ridePublicDetails.invalidDescription),
+    /**
+     * Free-text guest passengers, one name per line (`quickRequest.guestPassengers`) — shared
+     * by both the weekly and quick variants of `RequestForm` (UX_FLOWS.md §18): named people
+     * with no department profile. Parsed with `guestPassengerNames()` (`../quickRequest.ts`)
+     * and sent as `guest_passenger_names` alongside `companions`/`children`.
+     */
+    guestNames: z.string(),
   })
   .superRefine((value, ctx) => {
     const needsDepart = value.tripShape !== "one_way_from";
@@ -113,6 +120,18 @@ export const requestFormSchema = z
         message: he.sadranProposal.sameDayOnly,
       });
     }
+
+    const guestLines = value.guestNames
+      .split(/\r?\n/)
+      .map((name) => name.trim())
+      .filter(Boolean);
+    if (guestLines.length > 20 || guestLines.some((name) => name.length > 100)) {
+      ctx.addIssue({
+        path: ["guestNames"],
+        code: z.ZodIssueCode.custom,
+        message: he.quickRequest.invalidGuestNames,
+      });
+    }
   });
 
 export type RequestFormValues = z.infer<typeof requestFormSchema>;
@@ -138,4 +157,5 @@ export const REQUEST_FORM_DEFAULTS: Omit<RequestFormValues, "departmentId" | "we
   flexReturnLate: 0,
   notes: "",
   rideDescription: "",
+  guestNames: "",
 };

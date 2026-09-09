@@ -2,7 +2,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
   updateMemberDetails,
-  addMemberToDepartment,
   approveMember,
   fetchAllDepartmentMembers,
   fetchAllProfiles,
@@ -14,7 +13,6 @@ import {
   grantAdmin,
   importAllowList,
   rejectMember,
-  removeMemberFromDepartment,
   revokeAdmin,
   setMemberRole,
   type ImportRow,
@@ -98,24 +96,6 @@ export function useSetMemberRoleMutation() {
   return useMutation({
     mutationFn: ({ departmentId, profileId, role }: { departmentId: string; profileId: string; role: Role }) =>
       setMemberRole(departmentId, profileId, role),
-    onSuccess: invalidate,
-  });
-}
-
-export function useAddMemberToDepartmentMutation() {
-  const invalidate = useInvalidateMembers();
-  return useMutation({
-    mutationFn: ({ departmentId, profileId, role }: { departmentId: string; profileId: string; role?: Role }) =>
-      addMemberToDepartment(departmentId, profileId, role),
-    onSuccess: invalidate,
-  });
-}
-
-export function useRemoveMemberFromDepartmentMutation() {
-  const invalidate = useInvalidateMembers();
-  return useMutation({
-    mutationFn: ({ departmentId, profileId }: { departmentId: string; profileId: string }) =>
-      removeMemberFromDepartment(departmentId, profileId),
     onSuccess: invalidate,
   });
 }

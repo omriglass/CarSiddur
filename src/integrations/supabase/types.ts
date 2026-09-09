@@ -34,18 +34,6 @@ export type Database = {
   }
   public: {
     Tables: {
-      child_guardians: {
-        Row: { child_id: string; profile_id: string }
-        Insert: { child_id: string; profile_id: string }
-        Update: { child_id?: string; profile_id?: string }
-        Relationships: []
-      }
-      children: {
-        Row: { id: string; department_id: string; full_name: string; birth_year: number | null; created_at: string }
-        Insert: { id?: string; department_id: string; full_name: string; birth_year?: number | null; created_at?: string }
-        Update: { id?: string; department_id?: string; full_name?: string; birth_year?: number | null; created_at?: string }
-        Relationships: []
-      }
       app_secrets: {
         Row: {
           description: string | null
@@ -398,6 +386,68 @@ export type Database = {
             columns: ["owner_id"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      child_guardians: {
+        Row: {
+          child_id: string
+          profile_id: string
+        }
+        Insert: {
+          child_id: string
+          profile_id: string
+        }
+        Update: {
+          child_id?: string
+          profile_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "child_guardians_child_id_fkey"
+            columns: ["child_id"]
+            isOneToOne: false
+            referencedRelation: "children"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "child_guardians_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      children: {
+        Row: {
+          birth_year: number | null
+          created_at: string
+          department_id: string
+          full_name: string
+          id: string
+        }
+        Insert: {
+          birth_year?: number | null
+          created_at?: string
+          department_id: string
+          full_name: string
+          id?: string
+        }
+        Update: {
+          birth_year?: number | null
+          created_at?: string
+          department_id?: string
+          full_name?: string
+          id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "children_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
             referencedColumns: ["id"]
           },
         ]
@@ -1553,6 +1603,43 @@ export type Database = {
           },
         ]
       }
+      request_children: {
+        Row: {
+          child_id: string
+          request_id: string
+        }
+        Insert: {
+          child_id: string
+          request_id: string
+        }
+        Update: {
+          child_id?: string
+          request_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "request_children_child_id_fkey"
+            columns: ["child_id"]
+            isOneToOne: false
+            referencedRelation: "children"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "request_children_request_id_fkey"
+            columns: ["request_id"]
+            isOneToOne: false
+            referencedRelation: "requests"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "request_children_request_id_fkey"
+            columns: ["request_id"]
+            isOneToOne: false
+            referencedRelation: "v_my_requests"
+            referencedColumns: ["request_id"]
+          },
+        ]
+      }
       request_companions: {
         Row: {
           profile_id: string
@@ -1589,12 +1676,6 @@ export type Database = {
             referencedColumns: ["request_id"]
           },
         ]
-      }
-      request_children: {
-        Row: { request_id: string; child_id: string }
-        Insert: { request_id: string; child_id: string }
-        Update: { request_id?: string; child_id?: string }
-        Relationships: []
       }
       request_templates: {
         Row: {
@@ -2780,6 +2861,7 @@ export type Database = {
           car_mode: Database["public"]["Enums"]["leg_car_mode"] | null
           car_name: string | null
           changed_since_solve: boolean | null
+          child_names: string[] | null
           companions: Json | null
           depart_at: string | null
           department_id: string | null
@@ -3037,6 +3119,7 @@ export type Database = {
         Args: { p_department_id: string }
         Returns: undefined
       }
+      enter_waiting_list: { Args: { p_payload: Json }; Returns: Json }
       expire_freed_offers: { Args: { _now?: string }; Returns: number }
       expire_proposals: { Args: { _now?: string }; Returns: number }
       fairness_stats: {
@@ -3110,6 +3193,15 @@ export type Database = {
           _week_start: string
         }
         Returns: Json
+      }
+      notification_default_url: {
+        Args: {
+          _data: Json
+          _department_id: string
+          _event: Database["public"]["Enums"]["notification_event"]
+          _week_start: string
+        }
+        Returns: string
       }
       open_week: {
         Args: { p_department_id: string; p_week_start: string }
@@ -3250,6 +3342,14 @@ export type Database = {
         Args: { p_accept: boolean; p_change_id: string }
         Returns: undefined
       }
+      sadran_contact_of: {
+        Args: { _department_id: string; _week_start: string }
+        Returns: {
+          full_name: string
+          person_id: string
+          phone: string
+        }[]
+      }
       sadranim_of: { Args: { _dept: string; _week: string }; Returns: string[] }
       send_due_reminders: { Args: { p_now?: string }; Returns: number }
       send_proposal: {
@@ -3273,6 +3373,10 @@ export type Database = {
         Args: { p_is_active: boolean; p_policy_id: string }
         Returns: undefined
       }
+      set_request_children: {
+        Args: { p_child_ids: string[]; p_request_id: string }
+        Returns: undefined
+      }
       set_week_phase: {
         Args: {
           p_department_id: string
@@ -3283,8 +3387,6 @@ export type Database = {
       }
       shares_ride_with: { Args: { _profile: string }; Returns: boolean }
       submit_request: { Args: { payload: Json }; Returns: Json }
-      set_request_children: { Args: { p_request_id: string; p_child_ids: string[] }; Returns: undefined }
-      enter_waiting_list: { Args: { p_payload: Json }; Returns: Json }
       suggest_destination: {
         Args: { p_department_id: string; p_name: string; p_zone?: string }
         Returns: string
@@ -3609,3 +3711,4 @@ export const Constants = {
     },
   },
 } as const
+

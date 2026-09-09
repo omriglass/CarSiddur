@@ -109,3 +109,16 @@ it("persists an optional preferred car and explicitly clears it when removed", (
   expect(toSubmitRequestPayload(baseValues({ preferredCarId: "car-1" })).preferred_car_id).toBe("car-1");
   expect(toSubmitRequestPayload(baseValues({ preferredCarId: "" }), { requestId: "request-1", expectedVersion: 2 }).preferred_car_id).toBeNull();
 });
+
+describe("quick-variant options", () => {
+  it("includes guest passenger names only when there are any", () => {
+    expect(toSubmitRequestPayload(baseValues(), { guestPassengerNames: ["Guest One"] }).guest_passenger_names).toEqual(["Guest One"]);
+    expect(toSubmitRequestPayload(baseValues(), { guestPassengerNames: [] }).guest_passenger_names).toBeUndefined();
+    expect(toSubmitRequestPayload(baseValues()).guest_passenger_names).toBeUndefined();
+  });
+
+  it("sets reserve_missing_driver only when requested", () => {
+    expect(toSubmitRequestPayload(baseValues(), { reserveMissingDriver: true }).reserve_missing_driver).toBe(true);
+    expect(toSubmitRequestPayload(baseValues()).reserve_missing_driver).toBeUndefined();
+  });
+});

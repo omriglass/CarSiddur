@@ -11,7 +11,6 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { he } from "@/i18n/he";
-import { notificationEventLabels } from "@/i18n/he.admin";
 import { showErrorToast } from "@/lib/rpc";
 
 import { NOTIFICATION_PLACEHOLDERS, renderSample } from "../lib/placeholders";
@@ -123,7 +122,7 @@ export function TemplatesScreen() {
           <TableBody>
             {templates.map((t) => (
               <TableRow key={t.id} className="cursor-pointer" onClick={() => setEditing(t)}>
-                <TableCell>{notificationEventLabels[t.event] ?? t.event}</TableCell>
+                <TableCell>{he.notif[t.event]}</TableCell>
                 <TableCell>
                   <Badge variant="outline">{CHANNEL_LABEL[t.channel]}</Badge>
                 </TableCell>
@@ -137,7 +136,7 @@ export function TemplatesScreen() {
       <Sheet open={!!editing} onOpenChange={(open) => !open && setEditing(null)}>
         <SheetContent className="w-full overflow-y-auto sm:max-w-lg">
           <SheetHeader>
-            <SheetTitle>{editing ? (notificationEventLabels[editing.event] ?? editing.event) : ""}</SheetTitle>
+            <SheetTitle>{editing ? he.notif[editing.event] : ""}</SheetTitle>
           </SheetHeader>
           <div className="mt-4">{editing ? <TemplateEditor template={editing} onSaved={() => setEditing(null)} /> : null}</div>
         </SheetContent>

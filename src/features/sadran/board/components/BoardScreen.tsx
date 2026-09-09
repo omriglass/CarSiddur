@@ -1,3 +1,4 @@
+import { paths } from "@/app/routes";
 import { TableViewControls } from "@/components/TableViewControls";
 import { parseTimeToMinutes } from "@/features/solverBridge/buildSolverInput";
 import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
@@ -38,11 +39,13 @@ import { BoardGridSkeleton } from "@/components/skeletons/BoardGridSkeleton";
 import { useCarLocations, useDepartments, useRideChanges, useClaimRideDriverMutation, useCancelRideChangeMutation } from "@/features/siddur/hooks";
 import { BoardPublicationActions } from "../../publish/components/BoardPublicationActions";
 import { he, tv } from "@/i18n/he";
-import { TZ } from "@/lib/time";
+import { weekdayLabel } from "@/lib/dayLabels";
+import { TZ, dateKey, formatTime } from "@/lib/time";
 import { ridePublicDetails } from "@/lib/ridePublicDetails";
 import { ridePassengerSummary } from "@/lib/ridePassengerSummary";
 import { rideCoordinatorNotes } from "@/lib/rideCoordinatorNotes";
 import { readLastUsedPolicyVersion, rememberLastUsedPolicyVersion } from "../../lastUsedPolicy";
+import { sadranKeys } from "../../keys";
 
 import { scanBoardConflicts, wouldOverlap, requestDayMismatchRideIds, tightScheduleRideIds } from "../geometry";
 import { rideBlockLabel, resolveRideRealDestination } from "../rideLabel";
@@ -70,6 +73,7 @@ import {
   runSolve,
   servedOf,
   servedToEditRideLegs,
+  withChildNames,
 } from "../../solverRun";
 import { useUndoStack } from "../useUndoStack";
 import { BoardListMode } from "./BoardListMode";
@@ -124,7 +128,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
   const activePolicyQuery = useActivePolicy(departmentId);
   const policyOptionsQuery = usePolicyOptions(departmentId);
   const seatConfigsQuery = useQuery({
-    queryKey: ["sadran", departmentId, "seatConfigs"],
+    queryKey: sadranKeys.seatConfigs(departmentId),
     queryFn: () => fetchCarSeatConfigs(departmentId),
     enabled: !!departmentId,
     staleTime: 60_000,
@@ -166,12 +170,12 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
     const activityByDay = new Map(days.map((d) => [d, 0]));
     for (const r of ridesQuery.data ?? []) {
       if (!r.starts_at) continue;
-      const d = formatInTimeZone(new Date(r.starts_at), TZ, "yyyy-MM-dd");
+      const d = dateKey(new Date(r.starts_at));
       if (activityByDay.has(d)) activityByDay.set(d, (activityByDay.get(d) ?? 0) + 1);
     }
     for (const r of requestsQuery.data ?? []) {
       if (!isUnmetStatus(r.status) || !requestStart(r)) continue;
-      const d = formatInTimeZone(new Date(requestStart(r)!), TZ, "yyyy-MM-dd");
+      const d = dateKey(new Date(requestStart(r)!));
       if (activityByDay.has(d)) activityByDay.set(d, (activityByDay.get(d) ?? 0) + 1);
     }
     let best = days[0] ?? weekStart;
@@ -322,7 +326,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
   const rides = ridesQuery.data ?? [];
   const awaitingDriverRequestIds = new Set(rides.filter((ride) => ride.needs_driver).flatMap((ride) => servedOf(ride).map((entry) => entry.request_id)));
   const activeDayRides = rides.filter(
-    (r) => r.starts_at && formatInTimeZone(new Date(r.starts_at), TZ, "yyyy-MM-dd") === selectedDay,
+    (r) => r.starts_at && dateKey(new Date(r.starts_at)) === selectedDay,
   );
 
   const conflictScan =
@@ -369,7 +373,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
     ...requestDayMismatchRideIds(rides, requestsQuery.data ?? []),
     ...planningRows.map((ride) => ride.id),
     ...rides.filter((ride) => ride.starts_at && ride.ends_at && (
-      formatInTimeZone(ride.starts_at, TZ, "yyyy-MM-dd") !== formatInTimeZone(ride.ends_at, TZ, "yyyy-MM-dd")
+      dateKey(ride.starts_at) !== dateKey(ride.ends_at)
       || formatInTimeZone(ride.ends_at, TZ, "HH:mm:ss") > "23:59:00"
     )).map((ride) => ride.id as string),
   ]);
@@ -382,7 +386,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
   function jumpToNextConflict() {
     const next = conflicts[(focusedConflictIndex + 1) % conflicts.length];
     if (!next) return;
-    setSelectedDay(formatInTimeZone(next.starts_at, TZ, "yyyy-MM-dd"));
+    setSelectedDay(dateKey(next.starts_at));
     const minutes = Number(formatInTimeZone(next.starts_at, TZ, "H")) * 60 + Number(formatInTimeZone(next.starts_at, TZ, "m"));
     if (minutes < dayStartMinutes) setShowEarlyHours(true);
     setConflictJump({ rideId: next.id, sequence: (conflictJump?.sequence ?? 0) + 1 });
@@ -445,8 +449,8 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
       // alone is always the department's own name ("נבו") for the common
       // case — `rideBlockLabel` composes "<driver> ו<passengers> ל<real
       // destination>" from `served` instead (see `rideLabel.ts`).
-      description: [servedOf(r).length ? r.notes : null, ridePublicDetails(servedOf(r), { includeCompanions: false })].filter(Boolean).join("\n"),
-      passengerSummary: ridePassengerSummary(servedOf(r), r.needs_driver ? null : r.driver_name),
+      description: [servedOf(r).length ? r.notes : null, ridePublicDetails(withChildNames(servedOf(r), requestsQuery.data ?? []), { includeCompanions: false })].filter(Boolean).join("\n"),
+      passengerSummary: ridePassengerSummary(withChildNames(servedOf(r), requestsQuery.data ?? []), r.needs_driver ? null : r.driver_name),
       coordinatorNotes: rideCoordinatorNotes(servedOf(r), requestsQuery.data ?? []),
       label: (!servedOf(r).length && r.notes) || (
         department?.home_destination_id && r.origin_id && r.destination_id
@@ -473,7 +477,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
     }));
 
   for (const merge of pendingMerges) {
-    if (formatInTimeZone(merge.startsAt, TZ, "yyyy-MM-dd") !== selectedDay) continue;
+    if (dateKey(merge.startsAt) !== selectedDay) continue;
     const host = weekGridRides.find((ride) => ride.id === merge.host.id);
     weekGridRides.push({ id: `merge:${merge.proposal.id}`, carId: merge.host.car_id!,
       startMinutes: (Date.parse(merge.startsAt) - Date.parse(dayStartIso(selectedDay))) / 60_000,
@@ -483,7 +487,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
   }
 
   for (const change of rideChangesQuery.data ?? []) {
-    if (formatInTimeZone(change.starts_at, TZ, "yyyy-MM-dd") !== selectedDay) continue;
+    if (dateKey(change.starts_at) !== selectedDay) continue;
     const original = weekGridRides.find((ride) => ride.id === change.ride_id);
     weekGridRides.push({ id: `change:${change.id}`, carId: change.car_id,
       startMinutes: (Date.parse(change.starts_at) - Date.parse(dayStartIso(selectedDay))) / 60_000,
@@ -500,9 +504,9 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
   });
 
   const dayCounts = days.map((d) => ({
-    rides: rides.filter((r) => r.starts_at && formatInTimeZone(new Date(r.starts_at), TZ, "yyyy-MM-dd") === d).length,
+    rides: rides.filter((r) => r.starts_at && dateKey(new Date(r.starts_at)) === d).length,
     unmet: (requestsQuery.data ?? []).filter(
-      (r) => isUnmetStatus(r.status) && !awaitingDriverRequestIds.has(r.id) && requestStart(r) && formatInTimeZone(new Date(requestStart(r)!), TZ, "yyyy-MM-dd") === d,
+      (r) => isUnmetStatus(r.status) && !awaitingDriverRequestIds.has(r.id) && requestStart(r) && dateKey(new Date(requestStart(r)!)) === d,
     ).length,
   }));
 
@@ -514,7 +518,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
    * nobody has clicked "הרץ פותר" yet or the page was reloaded (bug #1).
    */
   const unmetItems: UnmetListItem[] = (requestsQuery.data ?? [])
-    .filter((r) => isUnmetStatus(r.status) && !awaitingDriverRequestIds.has(r.id) && requestStart(r) && formatInTimeZone(new Date(requestStart(r)!), TZ, "yyyy-MM-dd") === selectedDay)
+    .filter((r) => isUnmetStatus(r.status) && !awaitingDriverRequestIds.has(r.id) && requestStart(r) && dateKey(new Date(requestStart(r)!)) === selectedDay)
     .map((r) => ({
       request: r,
       destinationName: r.destination_resolved_name ?? "—",
@@ -618,7 +622,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
     const req = item.request;
     const passenger = requestWindow(req);
     const original = standalone ? standaloneChauffeurWindow(req, daySettings?.chauffeur_dwell_minutes ?? 10) : passenger;
-    if (!original || !passenger || !requestStart(req) || formatInTimeZone(new Date(requestStart(req)!), TZ, "yyyy-MM-dd") !== selectedDay) return null;
+    if (!original || !passenger || !requestStart(req) || dateKey(new Date(requestStart(req)!)) !== selectedDay) return null;
     const duration = (Date.parse(original.endsAt) - Date.parse(original.startsAt)) / 60_000;
     const requestedMinutes = (Date.parse(passenger.startsAt) - Date.parse(dayStartIso(selectedDay))) / 60_000;
     if (Math.abs(minutes - requestedMinutes) <= 15) minutes = requestedMinutes;
@@ -661,7 +665,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
     setUnmetDragHover(null);
     const req = item.request;
     if (carId.startsWith("phantom:")) return;
-    if (!requestStart(req) || formatInTimeZone(new Date(requestStart(req)!), TZ, "yyyy-MM-dd") !== selectedDay) {
+    if (!requestStart(req) || dateKey(new Date(requestStart(req)!)) !== selectedDay) {
       toast.error(he.sadranBoard.wrongDay); return;
     }
     let window = unmetCandidateWindow(item, minutes);
@@ -742,7 +746,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
     payload: Record<string, unknown>;
     proposalId?: string;
   }) {
-    navigate(`/sadran/${departmentId}/${weekStart}/proposals/new`, { state: { ...prefill, returnTo: location.pathname + location.search } });
+    navigate(paths.sadran.composer(departmentId, weekStart), { state: { ...prefill, returnTo: location.pathname + location.search } });
   }
 
   function handleRideClick(id: string) {
@@ -1020,9 +1024,9 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
           <span className="ms-2 text-xs">{he.sadranBoard.nextConflict}</span>
           {focusedConflict ? <span aria-live="polite" className="mt-1 block font-semibold">{tv("sadranBoard.conflictLocation", {
             index: String(focusedConflictIndex + 1), count: String(conflictCount),
-            day: he.days.long[Number(formatInTimeZone(focusedConflict.starts_at, TZ, "i")) % 7] ?? "",
+            day: weekdayLabel(focusedConflict.starts_at),
             date: formatInTimeZone(focusedConflict.starts_at, TZ, "d/M/yyyy"),
-            time: `${formatInTimeZone(focusedConflict.starts_at, TZ, "HH:mm")}–${formatInTimeZone(focusedConflict.ends_at, TZ, "HH:mm")}`,
+            time: `${formatTime(new Date(focusedConflict.starts_at))}–${formatTime(new Date(focusedConflict.ends_at))}`,
             car: carsQuery.data?.find((car) => car.id === focusedConflict.car_id)?.name ?? "",
           })}</span> : null}
         </button>
@@ -1083,12 +1087,12 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
           <BoardListMode
             key={conflictJump?.sequence ?? 0}
             shadowedRideIds={shadowedRideIds}
-            pendingRides={pendingMerges.filter((merge) => formatInTimeZone(merge.startsAt, TZ, "yyyy-MM-dd") === selectedDay).map((merge) => ({
+            pendingRides={pendingMerges.filter((merge) => dateKey(merge.startsAt) === selectedDay).map((merge) => ({
               id: `merge:${merge.proposal.id}`, startsAt: merge.startsAt, endsAt: merge.endsAt,
               originName: merge.host.origin_name ?? "", destinationName: weekGridRides.find((ride) => ride.id === `merge:${merge.proposal.id}`)?.label ?? "",
               driverName: merge.host.driver_name, carName: (carsQuery.data ?? []).find((car) => car.id === merge.host.car_id)?.name ?? null,
             }))}
-            rides={[...activeDayRides, ...planningRows.filter((ride) => formatInTimeZone(ride.starts_at, TZ, "yyyy-MM-dd") === selectedDay)]
+            rides={[...activeDayRides, ...planningRows.filter((ride) => dateKey(ride.starts_at) === selectedDay)]
               .filter((r) => r.id && r.starts_at)
               .map((r) => ({
                 id: r.id as string,
@@ -1097,8 +1101,8 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
                 originName: r.origin_name ?? "",
                 // Same fix as the grid's `rideBlockLabel` (bug #3): a round
                 // trip's own `destination_name` is always home ("נבו").
-                description: [servedOf(r).length ? r.notes : null, ridePublicDetails(servedOf(r), { includeCompanions: false })].filter(Boolean).join("\n"),
-                passengerSummary: ridePassengerSummary(servedOf(r), r.needs_driver ? null : r.driver_name),
+                description: [servedOf(r).length ? r.notes : null, ridePublicDetails(withChildNames(servedOf(r), requestsQuery.data ?? []), { includeCompanions: false })].filter(Boolean).join("\n"),
+                passengerSummary: ridePassengerSummary(withChildNames(servedOf(r), requestsQuery.data ?? []), r.needs_driver ? null : r.driver_name),
                 coordinatorNotes: rideCoordinatorNotes(servedOf(r), requestsQuery.data ?? []),
                 label: weekGridRides.find((item) => item.id === r.id)?.label,
                 destinationName: (
@@ -1126,7 +1130,8 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
             unmetItems={unmetItems}
             onUnmetAction={handleUnmetAction}
             onUnmetDecision={handleUnmetDecision}
-            onOpenProposals={() => navigate(`/sadran/${departmentId}/${weekStart}/proposals`)}
+            onOpenProposals={() => navigate(paths.sadran.proposals(departmentId, weekStart))}
+            pendingProposalsCount={(proposalsQuery.data ?? []).filter((p) => p.status === "sent").length}
           />
 
         </div>
@@ -1147,6 +1152,8 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
               dayEndMinutes={dayEndMinutes}
               onDragHover={(item, carId, minutes, hostRideId) => setUnmetDragHover(carId && minutes != null ? { item, carId, minutes, hostRideId } : null)}
               onDragDrop={(item, carId, minutes, hostRideId) => void handlePlaceUnmetRequest(item, carId, minutes, hostRideId)}
+              // The `<h2>` right above already renders this exact title — avoid duplicating it.
+              showHeading={false}
             />
           )}
         </div>
@@ -1157,7 +1164,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
           {mergePrefill ? <div className="space-y-2 rounded-md border p-3 text-sm">
             <p>{weekGridRides.find((ride) => ride.id === mergePrefill.rideId)?.label}</p>
             <p>{(requestsQuery.data ?? []).find((request) => request.id === mergePrefill.requestId)?.requester_full_name} · {(requestsQuery.data ?? []).find((request) => request.id === mergePrefill.requestId)?.destination_resolved_name}</p>
-            {typeof mergePrefill.payload.starts_at === "string" && typeof mergePrefill.payload.ends_at === "string" ? <p>{he.boardCoordination.expandedWindow} · <strong dir="ltr">{formatInTimeZone(mergePrefill.payload.starts_at, TZ, "HH:mm")}–{formatInTimeZone(mergePrefill.payload.ends_at, TZ, "HH:mm")}</strong></p> : null}
+            {typeof mergePrefill.payload.starts_at === "string" && typeof mergePrefill.payload.ends_at === "string" ? <p>{he.boardCoordination.expandedWindow} · <strong dir="ltr">{formatTime(new Date(mergePrefill.payload.starts_at))}–{formatTime(new Date(mergePrefill.payload.ends_at))}</strong></p> : null}
           </div> : null}
           <Button onClick={() => { if (mergePrefill) goToComposer(mergePrefill); setMergePrefill(null); }}>{he.sadranBoard.prepareMerge}</Button>
           <Button variant="outline" onClick={() => setMergePrefill(null)}>{he.common.cancel}</Button>
@@ -1183,6 +1190,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
         ride={selectedRide && selectedPlanningChange ? { ...selectedRide, car_id: selectedPlanningChange.car_id, starts_at: selectedPlanningChange.starts_at, ends_at: selectedPlanningChange.ends_at } : selectedRide}
         isPlanning={!!selectedPlanningChange}
         coordinatorNotes={selectedRide ? rideCoordinatorNotes(servedOf(selectedRide), requestsQuery.data ?? []) : undefined}
+        requests={requestsQuery.data ?? []}
         cars={carsQuery.data ?? []}
         driverName={selectedRideDriverName}
         homeDestinationId={department?.home_destination_id ?? null}

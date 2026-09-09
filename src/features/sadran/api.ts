@@ -38,10 +38,17 @@ export type BoardRide = Database["public"]["Views"]["v_board_rides"]["Row"];
  * join/select). `requests` has two FKs to `profiles` (`requester_id`,
  * `filed_by`), so the embed must name the constraint explicitly
  * (`!requests_requester_id_fkey`) — same convention as
- * `features/requests/api.ts`'s `EDIT_SELECT`.
+ * `features/requests/api.ts`'s `EDIT_SELECT`. Also embeds `request_children`
+ * → `children.full_name` (child-display bugfix) so the unmet list can show
+ * a child's actual name instead of always falling back to
+ * `he.ridePublicDetails.unnamedChild`; RLS on `request_children` already
+ * allows this for a Sadran/admin managing the week (`can_manage_week`), the
+ * same condition this function is used under.
  */
 export interface WeekRequestRow extends RequestRow {
   companions?: { profile_id: string; name: string }[];
+  /** Named children (`request_children` → `children.full_name`), distinct from the guessed "unnamed child" fallback (`he.ridePublicDetails.unnamedChild`). */
+  childNames?: string[];
   requester_full_name: string | null;
   destination_resolved_name: string | null;
   destination_travel_minutes: number | null;
@@ -56,10 +63,12 @@ const WEEK_REQUEST_SELECT = `*,
   destination:destinations(name, travel_minutes),
   ride_type:ride_types(code, name_he),
   preferred_car:cars!requests_preferred_car_id_fkey(name),
-  companions:request_companions(profile_id, profile:profiles!request_companions_profile_id_fkey(full_name))`;
+  companions:request_companions(profile_id, profile:profiles!request_companions_profile_id_fkey(full_name)),
+  request_children(child:children(full_name))`;
 
 interface WeekRequestJoinRow extends RequestRow {
   companions: { profile_id: string; profile: { full_name: string } | null }[];
+  request_children: { child: { full_name: string } | null }[];
   requester: { full_name: string } | null;
   destination: { name: string; travel_minutes: number | null } | null;
   ride_type: { code: string; name_he: string } | null;
@@ -67,11 +76,12 @@ interface WeekRequestJoinRow extends RequestRow {
 }
 
 function flattenWeekRequest(row: WeekRequestJoinRow): WeekRequestRow {
-  const { requester, destination, ride_type, preferred_car, companions, ...rest } = row;
+  const { requester, destination, ride_type, preferred_car, companions, request_children, ...rest } = row;
   return {
     ...rest,
     requester_full_name: requester?.full_name ?? null,
     companions: (companions ?? []).flatMap((person) => person.profile ? [{ profile_id: person.profile_id, name: person.profile.full_name }] : []),
+    childNames: (request_children ?? []).flatMap((entry) => entry.child?.full_name ? [entry.child.full_name] : []),
     destination_resolved_name: destination?.name ?? rest.destination_text ?? null,
     destination_travel_minutes: destination?.travel_minutes ?? null,
     ride_type_code: ride_type?.code ?? null,
@@ -349,10 +359,6 @@ export async function cancelRide(rideId: string, reason: string, expectedVersion
 
 export async function unassignRide(rideId: string, expectedVersion: number): Promise<void> {
   await rpc("unassign_ride", { p_ride_id: rideId, p_expected_version: expectedVersion });
-}
-
-export async function setManualBoost(requestId: string, value: number, reason: string): Promise<void> {
-  await rpc("set_manual_boost", { p_request_id: requestId, p_value: value, p_reason: reason });
 }
 
 // ---------------------------------------------------------------------------

@@ -185,16 +185,16 @@ from (values
   ('publish_reminder', 'תזכורת לפרסום הסידור', 'השבוע {{weekLabel}} עדיין לא פורסם.'),
   ('published', 'הסידור לשבוע {{weekLabel}} פורסם', '{{outcomeLine}}'),
   ('outcome_changed', 'שינוי בסידור שלך', '{{diffLine}}'),
-  ('proposal_received', 'הצעה מהסדרן/ית לגבי {{destination}}', '{{sadranName}} מציע/ה {{proposalShort}}. לחצו לענות.'),
+  ('proposal_received', 'הצעה מ{{sadranName}} לגבי {{destination}}', '{{day}} {{depart}}–{{return}} — {{proposalShort}}'),
   ('proposal_answered', '{{firstName}} {{answerVerb}} את ההצעה', '{{destination}}, {{day}} — {{proposalShort}}'),
-  ('freed_slot', 'התפנה רכב ל{{destination}}!', '{{car}}, {{day}} {{depart}}–{{return}}. עדיין רלוונטי? לחצו "אני עדיין רוצה".'),
+  ('freed_slot', 'התפנה רכב ל{{destination}}', '{{car}}, {{day}} {{depart}}–{{return}}.'),
   ('freed_slot_auto', 'שובצת לרכב שהתפנה', '{{car}}, {{day}} {{depart}}–{{return}} ל{{destination}}.'),
   ('claim_approved', 'הרכב שלך 🎉', 'הסדרן/ית אישר/ה: {{car}}, {{day}} {{depart}}–{{return}}.'),
   ('claim_declined', 'הרכב שהתפנה נמסר לאחר/ת', 'הבקשה ל{{destination}} נשארת ברשימת ההמתנה.'),
-  ('claim_contested', '{{count}} חברים מבקשים את הרכב שהתפנה', '{{car}}, {{day}} {{depart}}–{{return}}. יש לבחור.'),
+  ('claim_contested', '{{count}} חברים מבקשים את הרכב שהתפנה', '{{car}}, {{day}} {{depart}}–{{return}}.'),
   ('maintenance_affects', '{{car}} נכנס/ת לטיפול', 'הנסיעה שלך ל{{destination}} ב{{day}} תשובץ מחדש; נעדכן בהקדם.'),
   ('late_request', 'בקשה מאוחרת מ{{firstName}}', '{{destination}}, {{day}} {{depart}}–{{return}} — התקבלה אחרי סגירת החלון.'),
-  ('waitlisted_request', 'בקשה חדשה ללא רכב פנוי', '{{firstName}} — {{destination}}, {{day}} {{depart}}–{{return}}.'),
+  ('waitlisted_request', 'בקשה חדשה מ{{firstName}} ללא רכב פנוי', '{{destination}}, {{day}} {{depart}}–{{return}}.'),
   ('auto_approved', 'הבקשה אושרה אוטומטית', '{{car}}, {{day}} {{depart}}–{{return}} ל{{destination}}.'),
   ('request_changed', '{{firstName}} שינה/תה בקשה', '{{destination}}, {{day}} — {{diffLine}}'),
   ('access_request', 'בקשת גישה חדשה', '{{email}} מבקש/ת להצטרף.'),
@@ -379,6 +379,17 @@ select 'proposal_received',channel,'ride_change',
   'בקשה לרכב ב־{{date}} {{depart}}–{{return}}. האם לאשר את ביטול הנסיעה שלך?',
   '{{requesterName}} ביקש/ה לבטל את הנסיעה שלך',
   'בקשה לרכב ב־{{date}} {{depart}}–{{return}}. האם לאשר את ביטול הנסיעה שלך?'
+from unnest(array['inbox','push']::public.notification_channel[]) channel
+on conflict (event,channel,(coalesce(variant,''))) do update set title=excluded.title,body=excluded.body,default_title=excluded.default_title,default_body=excluded.default_body;
+
+-- Full ride cancellation: every other served passenger/driver is notified (excluding
+-- whoever cancelled it), before their request is flipped to 'cancelled'.
+insert into public.notification_templates(event,channel,variant,title,body,default_title,default_body)
+select 'outcome_changed',channel,'ride_cancelled',
+  '{{byName}} ביטל/ה נסיעה שהיית בה',
+  '{{day}} {{depart}}–{{return}}, {{car}} ל{{destination}}.',
+  '{{byName}} ביטל/ה נסיעה שהיית בה',
+  '{{day}} {{depart}}–{{return}}, {{car}} ל{{destination}}.'
 from unnest(array['inbox','push']::public.notification_channel[]) channel
 on conflict (event,channel,(coalesce(variant,''))) do update set title=excluded.title,body=excluded.body,default_title=excluded.default_title,default_body=excluded.default_body;
 

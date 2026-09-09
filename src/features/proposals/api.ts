@@ -36,6 +36,12 @@ export interface ProposalSummary {
   reasonHe: string;
   expiresAt: string;
   payload: unknown;
+  // The proposal's own week key (`answer-proposal/index.ts`'s `buildSummary()`), so
+  // `ProposalTokenPage.tsx` can resolve the Sadran contact for the WhatsApp button
+  // (`useSadranContactQuery`) for a signed-in member without a second round trip. Optional:
+  // older cached responses/tests may omit them, and the button stays hidden without a session.
+  departmentId?: string;
+  weekStart?: string;
   request: ProposalRequestSummary | null;
   parties: ProposalPartySummary[];
 }
@@ -134,4 +140,24 @@ export async function answerProposal(input: AnswerProposalInput): Promise<Json> 
     p_note: input.note,
     p_via: input.via,
   });
+}
+
+/**
+ * The assigned Sadran(s)' name + phone, for the "talk to the sadran on
+ * WhatsApp" button on `/p/:token` (UX_FLOWS.md §3.6). Backed by
+ * `sadran_contact_of(department_id, week_start)`
+ * (`supabase/migrations/20260909095000_add_sadran_contact_rpc.sql`), which
+ * requires a real session (`is_approved() and member_of(department_id)`) —
+ * never callable from the public, token-only `answer-proposal` path
+ * (ARCHITECTURE.md §8/§10, "never phones").
+ *
+ * This RPC needs `(department_id, week_start)`, which `fetchProposalSummary` above now carries
+ * as `ProposalSummary.departmentId`/`.weekStart` (`answer-proposal/index.ts`'s `buildSummary()`
+ * selects the proposal's own `department_id, week_start` columns). `ProposalTokenPage.tsx` passes
+ * those straight into `useSadranContactQuery`, which is only enabled with a real session — for a
+ * no-session token visitor the RPC's own `is_approved()`/`member_of()` gate still means the
+ * button never renders, matching "hidden without a session" (UX_FLOWS.md §3.6).
+ */
+export async function fetchSadranContact(departmentId: string, weekStart: string) {
+  return rpc("sadran_contact_of", { _department_id: departmentId, _week_start: weekStart });
 }

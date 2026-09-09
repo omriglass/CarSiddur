@@ -489,7 +489,7 @@ Normalization runs per rule over the whole batch before weighting: `unit` clamps
 
 | type | params | raw value |
 |---|---|---|
-| `rideType` | `{ weights: Record<string, number> }` | `weights[type] / max(weights)`; unknown type → 0 |
+| `rideType` | `{ weights: Record<string, number>; defaultWeight: number }` | `(weights[type] ?? defaultWeight) / max(defaultWeight, ...weights.values())`; `weights` accepts any string key (admin-defined `ride_types.code`, not a fixed set) — a type absent from `weights` (e.g. a code added after this policy version was saved) uses `defaultWeight` instead of scoring 0. Stored policies from before `defaultWeight` existed keep validating: a missing `defaultWeight` defaults to 5 |
 | `distance` | `{ maxKm: number }` | `min(distanceKm / maxKm, 1)`; unknown → 0 |
 | `publicTransport` | `{}` | `1 − publicTransportScore`; unknown → 0.5 |
 | `peopleServed` | `{ cap: number }` | `min((adults + childSeats + boosters − 1) / cap, 1)`; for a request in a relay pair (§3.6.1) the people of both legs are summed, so a pair outranks a lone request of the same type |
@@ -498,13 +498,13 @@ Normalization runs per rule over the whole batch before weighting: `unit` clamps
 | `flexibilityOffered` | `{ fullCreditMinutes: number }` | `min(totalDeclaredFlexMinutes / fullCreditMinutes, 1)`; `'day'` counts as 480 |
 | `manualBoost` | `{}` | `request.manualBoost?.value ?? 0` |
 
-"Late penalty" is thus part of `submissionTime` (a policy param, not a department setting); "manual boost" is an ordinary rule whose value comes from the request, so a Sadran boost only has effect if the policy includes the rule with a weight (default 2.0). `rideType.weights` is keyed by `ride_types.code` (`work`, `childcare`, `healthcare`, `errands`, `other`); `fairness.lookbackWeeks` is likewise policy data — default **3 weeks, per member**, no department setting (REQUIREMENTS §13.18; the caller reads it from the active policy and calls `fairness_stats(dept, week, lookbackWeeks)`, DATA_MODEL §7.3). This JSON is what `supabase/seed.sql` inserts as `policy_versions` v1 of the global default.
+"Late penalty" is thus part of `submissionTime` (a policy param, not a department setting); "manual boost" is an ordinary rule whose value comes from the request, so a Sadran boost only has effect if the policy includes the rule with a weight (default 2.0). `rideType.weights` is keyed by `ride_types.code`, which is admin-editable data, not a fixed set of five — the seed policy below happens to key it by `work`/`childcare`/`healthcare`/`errands`/`other` because that's what `supabase/seed.sql` ships in `ride_types`, but the rule accepts any code and falls back to `defaultWeight` for a code the policy doesn't mention (e.g. one added after this policy version was saved); `fairness.lookbackWeeks` is likewise policy data — default **3 weeks, per member**, no department setting (REQUIREMENTS §13.18; the caller reads it from the active policy and calls `fairness_stats(dept, week, lookbackWeeks)`, DATA_MODEL §7.3). This JSON is what `supabase/seed.sql` inserts as `policy_versions` v1 of the global default.
 
 ### 4.4 Example policy
 
 ```json
 { "id": "nevo-default", "version": 3, "rules": [
-  { "type": "rideType", "weight": 1.0, "params": { "weights": { "healthcare": 10, "work": 8, "childcare": 8, "other": 5, "errands": 3 } } },
+  { "type": "rideType", "weight": 1.0, "params": { "weights": { "healthcare": 10, "work": 8, "childcare": 8, "other": 5, "errands": 3 }, "defaultWeight": 5 } },
   { "type": "distance", "weight": 0.4, "params": { "maxKm": 60 } },
   { "type": "publicTransport", "weight": 0.3, "params": {} },
   { "type": "peopleServed", "weight": 0.3, "params": { "cap": 4 } },
@@ -514,6 +514,8 @@ Normalization runs per rule over the whole batch before weighting: `unit` clamps
   { "type": "manualBoost", "weight": 2.0, "params": {} }
 ] }
 ```
+
+`supabase/seed.sql` inserts the `rideType` params without `defaultWeight` (a stored policy predating this field) — `validateParams` defaults a missing `defaultWeight` to 5, so it still validates and scores identically to the JSON above.
 
 ### 4.5 Adding a rule type (what `.claude/skills/add-priority-rule` automates)
 

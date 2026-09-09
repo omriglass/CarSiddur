@@ -6,6 +6,9 @@ import { he } from "@/i18n/he";
 import { RequestsListPage } from "@/pages/RequestsListPage";
 import type { MyRequestRow } from "../api";
 
+// jsdom has no `Element.scrollIntoView`; the `?focus=` highlight effect calls it on mount.
+Element.prototype.scrollIntoView ??= () => {};
+
 const mocks = vi.hoisted(() => ({ rows: [] as MyRequestRow[], withdrawAll: vi.fn() }));
 vi.mock("../hooks", () => {
   const mutation = () => ({ mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false });
@@ -33,9 +36,9 @@ function request(overrides: Partial<MyRequestRow> = {}): MyRequestRow {
   };
 }
 
-function show() {
+function show(initialEntries: string[] = ["/requests"]) {
   vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-09-07T12:00:00Z"));
-  return render(<MemoryRouter><RequestsListPage /></MemoryRouter>);
+  return render(<MemoryRouter initialEntries={initialEntries}><RequestsListPage /></MemoryRouter>);
 }
 
 afterEach(() => { vi.restoreAllMocks(); mocks.withdrawAll.mockReset(); });
@@ -84,5 +87,20 @@ describe("member request editing", () => {
     show();
     expect(screen.queryByRole("link", { name: he.requestsList.edit })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: he.requestsList.withdrawAll })).not.toBeInTheDocument();
+  });
+
+  it("ring-highlights the card named by ?focus= (notification deep link)", () => {
+    mocks.rows = [request({ id: "other" }), request({ id: "notified", destination: "Notified stop" })];
+    const { container } = show(["/requests?focus=notified"]);
+    const focused = container.querySelector('[data-request-id="notified"]');
+    const unfocused = container.querySelector('[data-request-id="other"]');
+    expect(focused?.className).toContain("ring-2");
+    expect(unfocused?.className).not.toContain("ring-2");
+  });
+
+  it("shows named children on a request's own card", () => {
+    mocks.rows = [request({ childNames: ["Yossi", "Dana"] })];
+    show();
+    expect(screen.getByText(new RegExp("Yossi.*Dana"))).toBeInTheDocument();
   });
 });

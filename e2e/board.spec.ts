@@ -113,7 +113,11 @@ test.describe.serial("board (bug-fix pass regression, fake-week data)", () => {
     await page.goto(`${weekUrl}/board`);
     await expect(page.getByRole("heading", { name: "לוח הסידור" })).toBeVisible();
 
-    const unmetHeading = page.locator("h2:visible").filter({ hasText: /לא שובצו \(\d+\)/ });
+    // `BoardScreen.tsx`'s desktop unmet panel renders its own heading and passes
+    // `showHeading={false}` to `<UnmetList>` so it doesn't render an identical one again — only
+    // one "לא שובצו (N)" h2 now, but `.first()` is kept (harmless) in case a future caller of
+    // `<UnmetList>` on this page ever needs its own default heading too.
+    const unmetHeading = page.locator("h2:visible").filter({ hasText: /לא שובצו \(\d+\)/ }).first();
     await expect(unmetHeading).toBeVisible();
     const n = unmetCountFromHeading(await unmetHeading.textContent());
     expect(n).toBeGreaterThan(0);
@@ -222,7 +226,7 @@ test.describe.serial("board (bug-fix pass regression, fake-week data)", () => {
     const weekUrl = await goToOpenWeek(page);
 
     await page.goto(`${weekUrl}/board`);
-    const unmetHeading = page.locator("h2:visible").filter({ hasText: /לא שובצו \(\d+\)/ });
+    const unmetHeading = page.locator("h2:visible").filter({ hasText: /לא שובצו \(\d+\)/ }).first();
     await expect(unmetHeading).toBeVisible();
     const selectedDayIndex = await page.getByRole("radio").evaluateAll((elements) => elements.findIndex((element) => element.getAttribute("aria-checked") === "true"));
     const unmetBefore = unmetCountFromHeading(await unmetHeading.textContent());
@@ -247,7 +251,7 @@ test.describe.serial("board (bug-fix pass regression, fake-week data)", () => {
     expect(label).toMatch(/^\S+ [למ]\S/);
     expect(label).not.toBe("נבו");
 
-    const unmetAfterHeading = page.locator("h2:visible").filter({ hasText: /לא שובצו \(\d+\)/ });
+    const unmetAfterHeading = page.locator("h2:visible").filter({ hasText: /לא שובצו \(\d+\)/ }).first();
     const unmetAfter = await unmetAfterHeading.count() ? unmetCountFromHeading(await unmetAfterHeading.textContent()) : 0;
     expect(unmetAfter).toBeLessThan(unmetBefore);
   });

@@ -1,5 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { authKeys } from "@/features/auth/queryKeys";
+import { operationsKeys } from "@/features/admin/queryKeys";
+import { sadranKeys } from "@/features/sadran/keys";
+
 import { fetchDutyRoster, fetchSadranAssignments, setStandingDefault, setWeekAssignments } from "./api";
 import { memberAdminKeys } from "../members/queryKeys";
 import { rosterAdminKeys } from "./queryKeys";
@@ -21,9 +25,9 @@ export function useSetWeekAssignmentsMutation() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: rosterAdminKeys.all });
       void queryClient.invalidateQueries({ queryKey: memberAdminKeys.all });
-      void queryClient.invalidateQueries({ queryKey: ["auth"] });
-      void queryClient.invalidateQueries({ queryKey: ["sadran"] });
-      void queryClient.invalidateQueries({ queryKey: ["operations"] });
+      void queryClient.invalidateQueries({ queryKey: authKeys.all });
+      void queryClient.invalidateQueries({ queryKey: sadranKeys.all });
+      void queryClient.invalidateQueries({ queryKey: operationsKeys.all });
     },
   });
 }
@@ -36,9 +40,9 @@ export function useSetStandingDefaultMutation() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: rosterAdminKeys.all });
       void queryClient.invalidateQueries({ queryKey: memberAdminKeys.all });
-      void queryClient.invalidateQueries({ queryKey: ["auth"] });
-      void queryClient.invalidateQueries({ queryKey: ["sadran"] });
-      void queryClient.invalidateQueries({ queryKey: ["operations"] });
+      void queryClient.invalidateQueries({ queryKey: authKeys.all });
+      void queryClient.invalidateQueries({ queryKey: sadranKeys.all });
+      void queryClient.invalidateQueries({ queryKey: operationsKeys.all });
     },
   });
 }

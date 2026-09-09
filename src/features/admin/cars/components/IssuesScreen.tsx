@@ -3,10 +3,10 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { EmptyState } from "@/components/EmptyState";
+import { FormDialog } from "@/components/FormDialog";
 import { PageHeader } from "@/components/PageHeader";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { he } from "@/i18n/he";
@@ -87,37 +87,28 @@ export function IssuesScreen() {
         </Table>
       )}
 
-      <Dialog open={!!moveTarget} onOpenChange={(open) => !open && setMoveTarget(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{he.action.moveToMaintenance}</DialogTitle>
-          </DialogHeader>
-          <p className="text-sm text-muted-foreground">{he.adminIssues.moveToMaintenanceConfirm}</p>
-          <label className="flex flex-col gap-1 text-sm">
-            {he.adminIssues.moveToMaintenanceHours}
-            <Input type="number" min={1} value={hours} onChange={(e) => setHours(Number(e.target.value))} />
-          </label>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setMoveTarget(null)}>
-              {he.adminCommon.cancel}
-            </Button>
-            <Button
-              onClick={async () => {
-                if (!moveTarget) return;
-                try {
-                  await moveMutation.mutateAsync({ issueId: moveTarget, hours });
-                  toast.success(he.adminCommon.savedToast);
-                  setMoveTarget(null);
-                } catch (error) {
-                  showErrorToast(error);
-                }
-              }}
-            >
-              {he.adminCommon.save}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <FormDialog
+        open={!!moveTarget}
+        onOpenChange={(open) => !open && setMoveTarget(null)}
+        title={he.action.moveToMaintenance}
+        loading={moveMutation.isPending}
+        onSubmit={async () => {
+          if (!moveTarget) return;
+          try {
+            await moveMutation.mutateAsync({ issueId: moveTarget, hours });
+            toast.success(he.adminCommon.savedToast);
+            setMoveTarget(null);
+          } catch (error) {
+            showErrorToast(error);
+          }
+        }}
+      >
+        <p className="text-sm text-muted-foreground">{he.adminIssues.moveToMaintenanceConfirm}</p>
+        <label className="flex flex-col gap-1 text-sm">
+          {he.adminIssues.moveToMaintenanceHours}
+          <Input type="number" min={1} value={hours} onChange={(e) => setHours(Number(e.target.value))} />
+        </label>
+      </FormDialog>
     </div>
   );
 }

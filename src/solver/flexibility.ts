@@ -106,21 +106,3 @@ export function bestPlacementWithinFlex(
   }
   return best;
 }
-
-/** Lower-level placement of an arbitrary leg (used by relay pairing / split legs to place one leg at a time). */
-export function bestPlacementForLeg(
-  tl: CarTimeline,
-  nr: NormalizedRequest,
-  leg: NormalizedLeg,
-  widenMinutes = 0,
-): Placement | null {
-  const widenSlots = minutesToSlots(widenMinutes);
-  let best: Placement | null = null;
-  for (const gap of tl.gaps()) {
-    if (gap.locationId !== leg.originId) continue;
-    const candidate = placeInGap(nr, leg, gap, widenSlots);
-    if (!candidate) continue;
-    if (!best || candidate.cost < best.cost) best = candidate;
-  }
-  return best;
-}

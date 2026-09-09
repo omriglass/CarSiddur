@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { WeekRequestRow } from "../../api";
-import { he } from "@/i18n/he";
+import { he, tv } from "@/i18n/he";
 import { UnmetList } from "./UnmetList";
 
 const request = {
@@ -47,5 +47,17 @@ describe("one-way unmet cards", () => {
     fireEvent.pointerDown(grip, { clientX: 20, clientY: 20 });
     fireEvent.pointerUp(window, { clientX: 20, clientY: 20 });
     expect(drop).not.toHaveBeenCalled();
+  });
+
+  // Regression: the desktop board's side panel (`BoardScreen.tsx`) renders its own
+  // "לא שובצו (N)" heading right above this list, which used to duplicate this component's own
+  // heading (`UnmetList.tsx`); `showHeading` lets a caller that already has one opt out while
+  // the phone list-mode segment and the ride-detail sheet keep the (default) built-in heading.
+  it("renders its own heading by default, and omits it when showHeading is false", () => {
+    const title = tv("sadranBoard.unmetTitle", { count: "1" });
+    const { rerender } = render(<UnmetList items={[item]} onAction={vi.fn()} />);
+    expect(screen.getByRole("heading", { name: title })).toBeInTheDocument();
+    rerender(<UnmetList items={[item]} onAction={vi.fn()} showHeading={false} />);
+    expect(screen.queryByRole("heading", { name: title })).not.toBeInTheDocument();
   });
 });

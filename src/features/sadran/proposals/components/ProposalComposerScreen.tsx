@@ -1,12 +1,11 @@
-import { getDay } from "date-fns";
-import { formatInTimeZone, fromZonedTime, toZonedTime } from "date-fns-tz";
+import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
 import { useState } from "react";
 import { X } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
+import { paths } from "@/app/routes";
 import { PageHeader } from "@/components/PageHeader";
-import { TripSummary } from "@/components/TripSummary";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -20,11 +19,14 @@ import { Textarea } from "@/components/ui/textarea";
 import { TimeField15 } from "@/components/TimeField15";
 import { useCars, useDestinations } from "@/features/fleet/hooks";
 import { useProfile } from "@/features/auth/useProfile";
+import { ProposalSummary } from "@/features/proposals/components/ProposalSummary";
 import { fetchBoardRideById } from "@/features/siddur/api";
 import { he, t, tv } from "@/i18n/he";
+import { sadranKeys } from "../../keys";
 import { servedOf } from "../../solverRun";
 import { env } from "@/lib/env";
-import { TZ, formatTime } from "@/lib/time";
+import { weekdayLabel } from "@/lib/dayLabels";
+import { TZ, dateKey, formatTime } from "@/lib/time";
 import { useQuery } from "@tanstack/react-query";
 
 import { renderTemplate } from "../waLink";
@@ -89,11 +91,15 @@ export function ProposalComposerScreen({ departmentId, weekStart }: ProposalComp
   const navigate = useNavigate();
   const location = useLocation();
   const prefill = location.state as ComposerPrefill | null;
-  const weekBase = `/sadran/${departmentId}/${weekStart}`;
   const candidateReturn = typeof prefill?.returnTo === "string" ? prefill.returnTo : undefined;
   const candidatePath = candidateReturn?.split(/[?#]/)[0];
-  const returnTo = candidateReturn && (candidatePath === `${weekBase}/board` || candidatePath === `${weekBase}/proposals` || candidatePath === weekBase)
-    ? candidateReturn : `${weekBase}/board`;
+  const safeReturnPaths = new Set([
+    paths.sadran.board(departmentId, weekStart),
+    paths.sadran.proposals(departmentId, weekStart),
+    paths.sadran.week(departmentId, weekStart),
+  ]);
+  const returnTo = candidateReturn && candidatePath && safeReturnPaths.has(candidatePath)
+    ? candidateReturn : paths.sadran.board(departmentId, weekStart);
 
   const profileQuery = useProfile();
   const requestsQuery = useWeekRequestsWithNames(departmentId, weekStart);
@@ -114,18 +120,18 @@ export function ProposalComposerScreen({ departmentId, weekStart }: ProposalComp
   const [returnOverride, setReturnOverride] = useState<string | null>(null);
   const departAt = typeof prefill?.payload.depart_at === "string" ? prefill.payload.depart_at : request?.depart_at;
   const requestedReturnAt = typeof prefill?.payload.return_at === "string" ? prefill.payload.return_at : request?.return_at;
-  const returnAt = departAt && requestedReturnAt && formatInTimeZone(departAt, TZ, "yyyy-MM-dd") !== formatInTimeZone(requestedReturnAt, TZ, "yyyy-MM-dd")
-    ? fromZonedTime(`${formatInTimeZone(departAt, TZ, "yyyy-MM-dd")}T23:59:00`, TZ).toISOString()
+  const returnAt = departAt && requestedReturnAt && dateKey(departAt) !== dateKey(requestedReturnAt)
+    ? fromZonedTime(`${dateKey(departAt)}T23:59:00`, TZ).toISOString()
     : requestedReturnAt;
   function atTime(instant: string | null | undefined, time: string | null) {
-    return instant && time ? fromZonedTime(`${formatInTimeZone(instant, TZ, "yyyy-MM-dd")}T${time}:00`, TZ).toISOString() : instant;
+    return instant && time ? fromZonedTime(`${dateKey(instant)}T${time}:00`, TZ).toISOString() : instant;
   }
   const proposedDepartAt = atTime(departAt, departOverride);
   const proposedReturnAt = atTime(returnAt, returnOverride);
   const destinationName = destinationsQuery.data?.find((d) => d.id === request?.destination_id)?.name ?? request?.destination_text ?? "";
 
   const hostRideQuery = useQuery({
-    queryKey: ["sadran", "proposalHostRide", rideId],
+    queryKey: sadranKeys.proposalHostRide(rideId),
     queryFn: () => fetchBoardRideById(rideId as string),
     enabled: !!rideId && type === "merge",
   });
@@ -184,10 +190,10 @@ export function ProposalComposerScreen({ departmentId, weekStart }: ProposalComp
     const requester = contactsQuery.data?.find((c) => c.id === requesterId);
     // Stage 3 hardening bug fix (found while writing e2e/proposal.spec.ts): date-fns'
     // "EEEE" token has no locale here, so this previously rendered the *English* weekday
-    // name ("Friday") into an otherwise all-Hebrew WhatsApp message. `he.days.long` (already
-    // used everywhere else a Hebrew weekday name is needed) indexed by the Asia/Jerusalem
-    // zoned day-of-week (hard rule 6 — never a raw, unzoned `getDay()`) is correct.
-    const day = request?.depart_at ? (he.days.long[getDay(toZonedTime(new Date(request.depart_at), TZ))] ?? "") : "";
+    // name ("Friday") into an otherwise all-Hebrew WhatsApp message. `weekdayLabel` (the
+    // single source for `he.days.long` indexed by the Asia/Jerusalem zoned day-of-week,
+    // hard rule 6 — never a raw, unzoned `getDay()`) is correct.
+    const day = request?.depart_at ? weekdayLabel(request.depart_at) : "";
     const date = request?.depart_at ? formatInTimeZone(new Date(request.depart_at), TZ, "d.M") : "";
     return {
       firstName: firstNameOf(requester?.full_name),
@@ -247,7 +253,7 @@ export function ProposalComposerScreen({ departmentId, weekStart }: ProposalComp
       const departAt = proposedDepartAt;
       const returnAt = proposedReturnAt;
       if (!departAt && !returnAt) return null;
-      if (departAt && returnAt && (Date.parse(returnAt) <= Date.parse(departAt) || formatInTimeZone(departAt, TZ, "yyyy-MM-dd") !== formatInTimeZone(returnAt, TZ, "yyyy-MM-dd"))) return null;
+      if (departAt && returnAt && (Date.parse(returnAt) <= Date.parse(departAt) || dateKey(departAt) !== dateKey(returnAt))) return null;
       return { ...prefill?.payload, depart_at: departAt, return_at: returnAt };
     }
     if (type === "deny") {
@@ -358,12 +364,13 @@ export function ProposalComposerScreen({ departmentId, weekStart }: ProposalComp
             </Select>
           </div>
 
-          <TripSummary name={request.requester_full_name} destination={destinationName}
-            purpose={request.ride_type_name_he} departAt={request.depart_at} returnAt={request.return_at} />
+          <ProposalSummary requesterName={request.requester_full_name} destination={destinationName}
+            purpose={request.ride_type_name_he} departAt={request.depart_at} returnAt={request.return_at}
+            hostDriverName={type === "merge" ? hostRideQuery.data?.driver_name : undefined} />
 
           {type === "shift" && !proposalId ? <div className="flex flex-wrap gap-4">
-            {departAt ? <label className="space-y-1 text-xs"><span className="block">{he.field.depart}</span><TimeField15 min="00:00" value={departOverride ?? formatInTimeZone(departAt, TZ, "HH:mm")} onChange={(time) => { setDepartOverride(time); setEditedText(null); }} aria-label={he.field.depart} /></label> : null}
-            {returnAt ? <label className="space-y-1 text-xs"><span className="block">{he.field.return}</span><TimeField15 min="00:00" max="23:59" value={returnOverride ?? formatInTimeZone(returnAt, TZ, "HH:mm")} onChange={(time) => { setReturnOverride(time); setEditedText(null); }} aria-label={he.field.return} /></label> : null}
+            {departAt ? <label className="space-y-1 text-xs"><span className="block">{he.field.depart}</span><TimeField15 min="00:00" value={departOverride ?? formatTime(new Date(departAt))} onChange={(time) => { setDepartOverride(time); setEditedText(null); }} aria-label={he.field.depart} /></label> : null}
+            {returnAt ? <label className="space-y-1 text-xs"><span className="block">{he.field.return}</span><TimeField15 min="00:00" max="23:59" value={returnOverride ?? formatTime(new Date(returnAt))} onChange={(time) => { setReturnOverride(time); setEditedText(null); }} aria-label={he.field.return} /></label> : null}
           </div> : null}
 
           {(type === "deny" || type === "external") && !proposalId ? (

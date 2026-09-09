@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { he } from "@/i18n/he";
 
 // Sidesteps the real `SessionProvider` (which talks to the Supabase client) —
@@ -18,8 +18,32 @@ vi.mock("@/features/proposals/api", async () => {
   };
 });
 
+// Mocked directly (rather than relying on the real hook's own `enabled` gate) so this suite can
+// cover `ProposalTokenPage`'s rendering of the result independent of `useSadranContactQuery`'s
+// own session check — that gate is unit-tested in `features/proposals/hooks.ts` itself. Defaults
+// to "no contact" (mirrors production without a session); individual tests override it.
+type SadranContactRow = { person_id: string; full_name: string; phone: string };
+const sadranContactQueryMock = vi.fn((..._args: unknown[]): { data: SadranContactRow[] | undefined } => ({
+  data: undefined,
+}));
+vi.mock("@/features/proposals/hooks", async () => {
+  const actual = await vi.importActual<typeof import("@/features/proposals/hooks")>("@/features/proposals/hooks");
+  return {
+    ...actual,
+    useSadranContactQuery: (...args: unknown[]) => sadranContactQueryMock(...args),
+  };
+});
+
 const { ProposalFetchError } = await import("@/features/proposals/api");
 const { ProposalTokenPage } = await import("./ProposalTokenPage");
+
+// Resets to "no contact" before every test — a `mockReturnValueOnce` override
+// would only apply to this component's *first* render (the loading state,
+// before `summaryQuery` resolves), not the later "answerable" render the
+// assertions actually check.
+beforeEach(() => {
+  sadranContactQueryMock.mockReturnValue({ data: undefined });
+});
 
 function renderPage(token = "tok123") {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -58,7 +82,7 @@ describe("ProposalTokenPage", () => {
     await waitFor(() => expect(screen.getByText("ההצעה פקעה — הבקשה חזרה למצב הקודם")).toBeInTheDocument());
   });
 
-  it("shows accept/decline/suggest-other-time for a sent shift proposal", async () => {
+  it("shows accept/decline (no suggest-other-time, no note field) for a sent shift proposal", async () => {
     fetchProposalSummaryMock.mockResolvedValueOnce({
       proposalId: "p1",
       type: "shift",
@@ -81,7 +105,51 @@ describe("ProposalTokenPage", () => {
     renderPage();
     await waitFor(() => expect(screen.getByText("מקבל/ת את ההצעה")).toBeInTheDocument());
     expect(screen.getByText("לא מתאים לי")).toBeInTheDocument();
-    expect(screen.getByText("להציע שעה אחרת")).toBeInTheDocument();
+    expect(screen.queryByText("להציע שעה אחרת")).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText(/מתי כן מתאים לך/)).not.toBeInTheDocument();
+  });
+
+  it("hides the WhatsApp-the-sadran button when the contact query has no data (no session)", async () => {
+    fetchProposalSummaryMock.mockResolvedValueOnce({
+      proposalId: "p4",
+      type: "shift",
+      status: "sent",
+      reasonHe: "סיבה",
+      expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+      payload: {},
+      departmentId: "dept-1",
+      weekStart: "2041-01-13",
+      request: null,
+      parties: [],
+    });
+    renderPage();
+    await waitFor(() => expect(screen.getByText("מקבל/ת את ההצעה")).toBeInTheDocument());
+    expect(screen.queryByText(he.proposalScreen.contactSadranWhatsapp)).not.toBeInTheDocument();
+  });
+
+  it("shows the WhatsApp-the-sadran button, linking to the returned phone, when the contact query returns a phone", async () => {
+    sadranContactQueryMock.mockReturnValue({
+      data: [{ person_id: "sadran-1", full_name: "מיכל", phone: "+972501234567" }],
+    });
+    fetchProposalSummaryMock.mockResolvedValueOnce({
+      proposalId: "p5",
+      type: "shift",
+      status: "sent",
+      reasonHe: "סיבה",
+      expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+      payload: {},
+      departmentId: "dept-1",
+      weekStart: "2041-01-13",
+      request: null,
+      parties: [],
+    });
+    renderPage();
+    await waitFor(() => expect(screen.getByText(he.proposalScreen.contactSadranWhatsapp)).toBeInTheDocument());
+    const link = screen.getByText(he.proposalScreen.contactSadranWhatsapp).closest("a");
+    expect(link).toHaveAttribute("href", expect.stringContaining("https://wa.me/972501234567?text="));
+    // Wired from the token summary's own week key (`answer-proposal/index.ts`'s `buildSummary()`),
+    // not hardcoded `undefined` — `useSadranContactQuery` itself still gates on a real session.
+    expect(sadranContactQueryMock).toHaveBeenCalledWith("dept-1", "2041-01-13");
   });
 
   it("shows the deny variant without an accept-proposal button", async () => {

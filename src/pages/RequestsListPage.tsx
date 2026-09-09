@@ -1,22 +1,15 @@
 import { CalendarClock } from "lucide-react";
-import { useState } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 
 import { formatWeekRangeLabel } from "@/components/DateField";
 import { EmptyState } from "@/components/EmptyState";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { PageHeader } from "@/components/PageHeader";
 import { CardListSkeleton } from "@/components/skeletons/CardListSkeleton";
 import { StatusBadge } from "@/components/StatusBadge";
 import { TripSummary } from "@/components/TripSummary";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import type { MyRequestRow } from "@/features/requests/api";
 import { canEditRequest } from "@/features/requests/window";
 import {
@@ -31,6 +24,8 @@ import {
 } from "@/features/requests/hooks";
 import { he, t, tv } from "@/i18n/he";
 import { formatTime } from "@/lib/time";
+import { cn } from "@/lib/utils";
+import { paths } from "@/app/routes";
 
 // Mirrors freed_slot_candidates()'s own `status in ('waitlisted','denied')` filter
 // (supabase/migrations/20260907091100_freed_slots.sql) — only these statuses are ever
@@ -76,6 +71,16 @@ export function RequestsListPage() {
   const optOutMutation = useSetFreedSlotOptOutMutation();
 
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
+
+  // `?focus=<request_id>` (notification deep link, `notification_default_url`'s
+  // `/requests?focus=<id>` case): scroll the matching card into view and ring-highlight it —
+  // same pattern as `ProposalsListScreen`'s `?proposal=` highlight.
+  const [searchParams] = useSearchParams();
+  const focusedId = searchParams.get("focus");
+  const highlightedRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (focusedId) highlightedRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [focusedId]);
 
   const rows = requestsQuery.data ?? [];
   const groups = groupByWeek(rows);
@@ -160,7 +165,12 @@ export function RequestsListPage() {
             ) : null}
             <div className="space-y-2">
               {weekRows.map((row) => (
-                <div key={row.id} data-request-id={row.id} className="space-y-2 rounded-md border p-3 text-sm">
+                <div
+                  key={row.id}
+                  ref={row.id === focusedId ? highlightedRef : undefined}
+                  data-request-id={row.id}
+                  className={cn("space-y-2 rounded-md border p-3 text-sm", row.id === focusedId && "ring-2 ring-primary")}
+                >
                   <div className="flex items-start justify-between gap-2">
                     <TripSummary
                       destination={row.destination}
@@ -172,6 +182,9 @@ export function RequestsListPage() {
                   </div>
                   {row.ride?.needsDriver ? <p className="text-sm font-medium text-destructive">{he.rideCoordination.missingDriver}</p> : null}
                   {row.preferredCarName ? <p className="text-xs text-muted-foreground">{he.request.preferredCar}: {row.preferredCarName}</p> : null}
+                  {row.childNames?.length ? (
+                    <p className="text-xs text-muted-foreground">{tv("ridePublicDetails.companions", { names: row.childNames.join(", ") })}</p>
+                  ) : null}
                   {row.statusReason && row.statusReason in he.statusReason ? (
                     <p className="text-xs text-muted-foreground">
                       {he.statusReason[row.statusReason as keyof typeof he.statusReason]}
@@ -185,13 +198,13 @@ export function RequestsListPage() {
                         checked={row.freedSlotOptOut}
                         onChange={(e) => optOutMutation.mutate({ requestId: row.id, optOut: e.target.checked })}
                       />
-                      {he.requestsList.freedSlotOptOut}
+                      {he.proposalScreen.optOutFreedSlots}
                     </label>
                   ) : null}
                   <div className="flex flex-wrap gap-2 pt-1">
                     {canEditRequest(row) ? (
                       <Button asChild size="sm" variant="outline">
-                        <Link to={`/requests/${row.id}/edit`}>{he.requestsList.edit}</Link>
+                        <Link to={paths.requests.edit(row.id)}>{he.requestsList.edit}</Link>
                       </Button>
                     ) : null}
                     {row.status !== "withdrawn" && row.status !== "cancelled" && !row.ride ? (
@@ -212,28 +225,18 @@ export function RequestsListPage() {
         ))
       )}
 
-      <Dialog open={!!confirmAction} onOpenChange={(open) => !open && setConfirmAction(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>
-              {confirmAction?.kind === "withdrawAll" ? he.requestsList.withdrawAllTitle : confirmAction?.kind === "withdraw" ? he.request.withdrawConfirmTitle : he.request.cancelConfirmTitle}
-            </DialogTitle>
-            <DialogDescription>
-              {confirmAction?.kind === "withdrawAll" ? he.requestsList.withdrawAllBody : confirmAction?.kind === "withdraw"
-                ? he.request.withdrawConfirmBody
-                : he.rideCoordination.cancelHelp}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirmAction(null)}>
-              {he.common.cancel}
-            </Button>
-            <Button variant="destructive" onClick={() => void runConfirm()} disabled={withdrawMutation.isPending || cancelMutation.isPending || withdrawAllMutation.isPending}>
-              {confirmAction?.kind === "withdrawAll" ? he.requestsList.withdrawAll : confirmAction?.kind === "withdraw" ? he.requestsList.withdraw : he.requestsList.cancelRide}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDialog
+        open={!!confirmAction}
+        onOpenChange={(open) => !open && setConfirmAction(null)}
+        title={confirmAction?.kind === "withdrawAll" ? he.requestsList.withdrawAllTitle : confirmAction?.kind === "withdraw" ? he.request.withdrawConfirmTitle : he.request.cancelConfirmTitle}
+        description={confirmAction?.kind === "withdrawAll" ? he.requestsList.withdrawAllBody : confirmAction?.kind === "withdraw"
+          ? he.request.withdrawConfirmBody
+          : he.rideCoordination.cancelHelp}
+        confirmLabel={confirmAction?.kind === "withdrawAll" ? he.requestsList.withdrawAll : confirmAction?.kind === "withdraw" ? he.requestsList.withdraw : he.requestsList.cancelRide}
+        destructive
+        loading={withdrawMutation.isPending || cancelMutation.isPending || withdrawAllMutation.isPending}
+        onConfirm={() => void runConfirm()}
+      />
     </div>
   );
 }

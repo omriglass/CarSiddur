@@ -4,10 +4,10 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { EmptyState } from "@/components/EmptyState";
+import { FormDialog } from "@/components/FormDialog";
 import { PageHeader } from "@/components/PageHeader";
 import { TimeField15 } from "@/components/TimeField15";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -60,54 +60,43 @@ function NewBlockDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>{he.adminMaintenance.new}</DialogTitle>
-        </DialogHeader>
-        <div className="flex flex-col gap-3">
+    <FormDialog open={open} onOpenChange={onOpenChange} title={he.adminMaintenance.new} onSubmit={submit}>
+      <div className="flex flex-col gap-3">
+        <label className="flex flex-col gap-1 text-sm">
+          {he.adminMaintenance.fieldCar}
+          <Select value={carId} onValueChange={setCarId}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {(carsQuery.data ?? []).map((c) => (
+                <SelectItem key={c.id} value={c.id}>
+                  {c.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </label>
+        <div className="flex items-end gap-2">
           <label className="flex flex-col gap-1 text-sm">
-            {he.adminMaintenance.fieldCar}
-            <Select value={carId} onValueChange={setCarId}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {(carsQuery.data ?? []).map((c) => (
-                  <SelectItem key={c.id} value={c.id}>
-                    {c.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            {he.adminMaintenance.fieldFrom}
+            <Input type="date" dir="ltr" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
           </label>
-          <div className="flex items-end gap-2">
-            <label className="flex flex-col gap-1 text-sm">
-              {he.adminMaintenance.fieldFrom}
-              <Input type="date" dir="ltr" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
-            </label>
-            <TimeField15 value={fromTime} onChange={setFromTime} />
-          </div>
-          <div className="flex items-end gap-2">
-            <label className="flex flex-col gap-1 text-sm">
-              {he.adminMaintenance.fieldTo}
-              <Input type="date" dir="ltr" value={toDate} onChange={(e) => setToDate(e.target.value)} />
-            </label>
-            <TimeField15 value={toTime} onChange={setToTime} />
-          </div>
-          <label className="flex flex-col gap-1 text-sm">
-            {he.adminMaintenance.fieldReason}
-            <Input value={reason} onChange={(e) => setReason(e.target.value)} />
-          </label>
+          <TimeField15 value={fromTime} onChange={setFromTime} />
         </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            {he.adminCommon.cancel}
-          </Button>
-          <Button onClick={submit}>{he.adminCommon.save}</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        <div className="flex items-end gap-2">
+          <label className="flex flex-col gap-1 text-sm">
+            {he.adminMaintenance.fieldTo}
+            <Input type="date" dir="ltr" value={toDate} onChange={(e) => setToDate(e.target.value)} />
+          </label>
+          <TimeField15 value={toTime} onChange={setToTime} />
+        </div>
+        <label className="flex flex-col gap-1 text-sm">
+          {he.adminMaintenance.fieldReason}
+          <Input value={reason} onChange={(e) => setReason(e.target.value)} />
+        </label>
+      </div>
+    </FormDialog>
   );
 }
 

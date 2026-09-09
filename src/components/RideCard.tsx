@@ -3,8 +3,9 @@ import { formatInTimeZone } from "date-fns-tz";
 
 import { Card, CardContent } from "@/components/ui/card";
 import { he } from "@/i18n/he";
+import { weekdayLabel } from "@/lib/dayLabels";
 import { rideTypeColorClasses } from "@/lib/rideTypeColors";
-import { formatTime, TZ } from "@/lib/time";
+import { dateKey, formatTime, TZ } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
 /**
@@ -52,8 +53,8 @@ export function RideCard({ ride, onClick }: RideCardProps) {
   const start = new Date(ride.startsAt);
   const end = ride.endsAt ? new Date(ride.endsAt) : null;
   const typeColors = rideTypeColorClasses(ride.rideTypeCode);
-  const dayLabel = (date: Date) => `${he.days.long[Number(formatInTimeZone(date, TZ, "i")) % 7]} · ${formatInTimeZone(date, TZ, "d/M/yyyy")}`;
-  const endsOnAnotherDay = end && formatInTimeZone(start, TZ, "yyyy-MM-dd") !== formatInTimeZone(end, TZ, "yyyy-MM-dd");
+  const dayLabel = (date: Date) => `${weekdayLabel(date)} · ${formatInTimeZone(date, TZ, "d/M/yyyy")}`;
+  const endsOnAnotherDay = end && dateKey(start) !== dateKey(end);
 
   return (
     <Card

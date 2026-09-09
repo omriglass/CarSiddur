@@ -20,8 +20,6 @@ export const sadranKeys = {
   rideTypes: () => [...sadranKeys.all, "rideTypes"] as const,
   departmentSettings: (departmentId: string) => [...sadranKeys.all, departmentId, "settings"] as const,
   activePolicy: (departmentId: string) => [...sadranKeys.all, departmentId, "activePolicy"] as const,
-  fairness: (departmentId: string, weekStart: string, lookbackWeeks: number) =>
-    [...sadranKeys.week(departmentId, weekStart), "fairness", lookbackWeeks] as const,
   maintenanceBlocks: (departmentId: string) => [...sadranKeys.all, departmentId, "maintenanceBlocks"] as const,
   solverRuns: (departmentId: string, weekStart: string) =>
     [...sadranKeys.week(departmentId, weekStart), "solverRuns"] as const,
@@ -38,4 +36,15 @@ export const sadranKeys = {
   departmentMembers: (departmentId: string) => [...sadranKeys.all, departmentId, "members"] as const,
   whatsappTemplates: () => [...sadranKeys.all, "whatsappTemplates"] as const,
   mySadranDepartments: (profileId: string | undefined) => [...sadranKeys.all, "mine", profileId] as const,
+  policyOptions: (departmentId: string) => [...sadranKeys.activePolicy(departmentId), "options"] as const,
+  profilesByIds: (sortedJoinedIds: string) => [...sadranKeys.all, "profiles", sortedJoinedIds] as const,
+  publicationReadiness: (departmentId: string, weekStart: string) =>
+    [...sadranKeys.week(departmentId, weekStart), "publicationReadiness"] as const,
+  switchableWeeks: (departmentId: string, profileId: string | undefined, weekStarts: readonly string[]) =>
+    [...sadranKeys.all, departmentId, "switchableWeeks", profileId, ...weekStarts] as const,
+  reopenFingerprint: (departmentId: string, weekStart: string) =>
+    [...sadranKeys.week(departmentId, weekStart), "reopenFingerprint"] as const,
+  excelExport: (departmentId: string, weekStart: string) =>
+    [...sadranKeys.week(departmentId, weekStart), "excelExport"] as const,
+  proposalHostRide: (rideId: string | null | undefined) => [...sadranKeys.all, "proposalHostRide", rideId] as const,
 };

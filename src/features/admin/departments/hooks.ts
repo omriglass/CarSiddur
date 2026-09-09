@@ -1,5 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { contextKeys } from "@/features/auth/queryKeys";
+import { siddurKeys } from "@/features/siddur/queryKeys";
 import {
   createDepartment,
   fetchDepartmentCounts,
@@ -35,8 +37,8 @@ export function useCreateDepartmentMutation() {
     mutationFn: (input: DepartmentInsert & { source_department_id?: string }) => createDepartment(input),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: departmentAdminKeys.list() });
-      void queryClient.invalidateQueries({ queryKey: ["context"] });
-      void queryClient.invalidateQueries({ queryKey: ["siddur", "departments"] });
+      void queryClient.invalidateQueries({ queryKey: contextKeys.all });
+      void queryClient.invalidateQueries({ queryKey: siddurKeys.departments() });
       void queryClient.invalidateQueries({ queryKey: departmentAdminKeys.counts() });
     },
   });
@@ -48,8 +50,8 @@ export function useUpdateDepartmentMutation() {
     mutationFn: ({ id, patch }: { id: string; patch: DepartmentUpdate }) => updateDepartment(id, patch),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: departmentAdminKeys.list() });
-      void queryClient.invalidateQueries({ queryKey: ["context"] });
-      void queryClient.invalidateQueries({ queryKey: ["siddur", "departments"] });
+      void queryClient.invalidateQueries({ queryKey: contextKeys.all });
+      void queryClient.invalidateQueries({ queryKey: siddurKeys.departments() });
     },
   });
 }

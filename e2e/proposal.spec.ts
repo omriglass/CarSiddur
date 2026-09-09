@@ -4,12 +4,15 @@ import { he } from "../src/i18n/he";
 import { newSignedInPage, SEEDED_USERS, signIn } from "./helpers";
 
 // Full shift-proposal round trip (UX_FLOWS.md §3.6, §4.3; REQUIREMENTS §7.3, ARCHITECTURE §8):
-// Sadran creates+sends a proposal, the member answers via the `/p/<token>` deep link with no
-// session (a fresh browser context, simulating the WhatsApp-link case), and the Sadran sees it
-// accepted and applies it — request 213 is a dedicated seeded request (supabase/seed.sql,
-// DATA_MODEL.md §6.1 item 19) with a free-text destination so the composer's manual-entry
-// combobox shows a distinguishable label (every other seeded request uses a preset
-// destination_id, whose label all collapse to the same ambiguous id-prefix text).
+// Sadran creates+sends a proposal from the board's unmet-request action button (the manual
+// composer entry point in ProposalsListScreen.tsx was removed — proposals are now only ever
+// created from the board), the member answers via the `/p/<token>` deep link with no session (a
+// fresh browser context, simulating the WhatsApp-link case), and the Sadran sees it accepted and
+// applies it — request 213 is a dedicated seeded request (supabase/seed.sql, DATA_MODEL.md §6.1
+// item 19) with a free-text destination, filed on the open week's Friday (index 5), so it's
+// deterministically selectable via `data-request-id` regardless of which day the board defaults
+// to for "today".
+const PROPOSAL_REQUEST_ID = "00000000-0000-0000-0000-000000000213";
 const PROPOSAL_REQUEST_LABEL = "בדיקת הצעה (בדיקה)";
 
 test.describe("proposal round trip", () => {
@@ -17,27 +20,28 @@ test.describe("proposal round trip", () => {
     page,
     browser,
   }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
     await signIn(page, SEEDED_USERS.sadran);
 
     await page.goto("/sadran");
     await expect(page).toHaveURL(/\/sadran\/[\w-]+\/\d{4}-\d{2}-\d{2}\/board$/);
     const weekUrl = page.url().replace(/\/board$/, "");
 
-    await page.goto(`${weekUrl}/proposals`);
-    await expect(page.getByRole("heading", { name: "הצעות" })).toBeVisible();
-
-    // Manual composer entry, selecting the dedicated seeded request by its distinguishable label.
-    await page.getByRole("combobox").first().click();
-    await page.getByRole("option", { name: PROPOSAL_REQUEST_LABEL }).click();
-    await page.getByRole("button", { name: "הצע", exact: true }).click();
+    // Request 213 is filed for the open week's Friday — select that day tab (radios render in
+    // Sun→Sat order, board.spec.ts's own `.nth(dayIndex)` convention) so it's on the board's
+    // unmet list regardless of BoardScreen.tsx's own "busiest day" default.
+    await page.getByRole("radio").nth(5).click();
+    const unmetCard = page.locator(`[data-request-id="${PROPOSAL_REQUEST_ID}"]`);
+    await expect(unmetCard).toBeVisible();
+    await unmetCard.getByRole("button", { name: he.sadranProposal.suggestTimes, exact: true }).click();
 
     await expect(page).toHaveURL(/\/proposals\/new$/);
     await expect(page.getByText(PROPOSAL_REQUEST_LABEL).first()).toBeVisible();
 
-    // Create + send (defaults to type "shift"; the request's own depart/return times are used).
-    await page.getByRole("button", { name: "הצע", exact: true }).click();
+    // Create + send (type "shift"; the request's own depart/return times are used).
+    await page.getByRole("button", { name: he.action.propose, exact: true }).click();
 
-    await expect(page).toHaveURL(`${weekUrl}/proposals`);
+    await expect(page).toHaveURL(`${weekUrl}/board`);
     await page.getByRole("button", { name: he.sadranProposal.openSentProposal, exact: true }).click();
     await page.getByRole("button", { name: /פתח בוואטסאפ/ }).first().click();
     const waLink = page.locator('a[href^="https://wa.me/"]').first();
@@ -82,7 +86,7 @@ test.describe("proposal round trip", () => {
     // `proposal_parties_roll_up()` flips the proposal to 'accepted' the instant the sole
     // party answers.
     await page.goto(`${weekUrl}/proposals`);
-    await page.getByText(PROPOSAL_REQUEST_LABEL).first().click();
+    await page.getByTestId("proposal-row").filter({ hasText: PROPOSAL_REQUEST_LABEL }).click();
     await expect(page.getByText("אושרה", { exact: false }).first()).toBeVisible({ timeout: 10_000 });
 
     // Apply it (Stage 3 hardening fix — see UX_FLOWS.md §16 item 9: `he.sadranProposal.applyNow`
@@ -103,13 +107,13 @@ test.describe("proposal round trip", () => {
     // already-authenticated session straight back to wherever it came from, never showing the
     // sign-in form again).
     //
-    // Manually-composed proposals from the dropdown (`ProposalsListScreen.tsx`) never carry a
-    // `car_id` in their payload (only the board's suggestion/drag actions know a car), so
-    // `apply_proposal()`'s `shift` branch takes its documented no-car-id path
-    // (DATA_MODEL.md §6.1 item 6): it updates the window and returns the request to
-    // `submitted`/`PROPOSAL_APPLIED_PENDING_ASSIGNMENT` for the Sadran to place on the board
-    // next, rather than `assigned` — this is the correct, already-documented outcome, not a
-    // bug, so the request stays `submitted` here with that status reason.
+    // The unmet list's "הצעת שעות אחרות" action (unlike the drag/drop and suggestion actions
+    // elsewhere on the board) never attaches a `car_id` to the payload, so `apply_proposal()`'s
+    // `shift` branch takes its documented no-car-id path (DATA_MODEL.md §6.1 item 6): it updates
+    // the window and returns the request to `submitted`/`PROPOSAL_APPLIED_PENDING_ASSIGNMENT` for
+    // the Sadran to place on the board next, rather than `assigned` — this is the correct,
+    // already-documented outcome, not a bug, so the request stays `submitted` here with that
+    // status reason.
     const member1 = await newSignedInPage(browser, SEEDED_USERS.member1);
     try {
       await member1.page.goto("/requests");

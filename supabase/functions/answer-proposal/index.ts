@@ -47,6 +47,12 @@ interface ProposalSummary {
   reasonHe: string;
   expiresAt: string;
   payload: unknown;
+  // The proposal's own week key — lets a signed-in member's token-answer screen resolve the
+  // Sadran contact for the WhatsApp button (`useSadranContactQuery`, src/pages/ProposalTokenPage.tsx)
+  // instead of always passing `(undefined, undefined)`. Optional: older cached clients / any
+  // future non-week-scoped proposal type may omit them.
+  departmentId?: string;
+  weekStart?: string;
   request: {
     id: string;
     destination: string | null;
@@ -65,7 +71,7 @@ async function findByToken(token: string) {
   const client = getServiceRoleClient();
 
   const proposalSelect =
-    'id, type, status, reason_he, expires_at, payload, request_id, ' +
+    'id, type, status, reason_he, expires_at, payload, request_id, department_id, week_start, ' +
     'requests(id, requester_id, destination_id, destination_text, depart_at, return_at, adults, child_seats, boosters, ride_type_id, ' +
     'destinations(name), ride_types(name_he))';
 
@@ -118,6 +124,8 @@ async function buildSummary(proposal: Record<string, unknown>, myProfileId: stri
     reasonHe: proposal.reason_he as string,
     expiresAt: proposal.expires_at as string,
     payload: proposal.payload,
+    departmentId: proposal.department_id as string | undefined,
+    weekStart: proposal.week_start as string | undefined,
     request: request
       ? {
           id: request.id,

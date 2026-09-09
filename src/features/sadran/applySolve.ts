@@ -96,11 +96,47 @@ export interface ServedEntry {
   destination?: string | null;
   /** `v_board_rides.served[].ride_type` — `ride_types.code` (visual pass: ride-type block coloring, `src/lib/rideTypeColors.ts`). Already selected by the view; no new query needed. */
   ride_type?: string | null;
+  /**
+   * Named children (`request_children` → `children.full_name`). Mapped directly from
+   * `v_board_rides.served[].child_names`
+   * (`supabase/migrations/20260909094000_add_child_names_to_published_views.sql`) by
+   * `servedOf()` below — every reader of `servedOf()` gets child names for free, no
+   * further join needed. `withChildNames()` remains a *second*, sadran-board-only
+   * enrichment path (joining against a separately-fetched `WeekRequestRow[]`,
+   * `features/sadran/api.ts`'s `WEEK_REQUEST_SELECT`) — harmless to run on top of this
+   * (it only overwrites when it has its own non-empty names), kept as-is.
+   */
+  childNames?: string[];
 }
 
 /** Reads `v_board_rides.served` (a jsonb aggregate, RideDetailSheet.tsx uses the same shape) into typed rows. */
 export function servedOf(ride: BoardRide): ServedEntry[] {
-  return ((ride.served as unknown as ServedEntry[] | null) ?? []).filter((s) => !!s.request_id);
+  const raw = (ride.served as unknown as (ServedEntry & { child_names?: string[] })[] | null) ?? [];
+  return raw
+    .filter((s) => !!s.request_id)
+    .map((s) => (s.child_names?.length ? { ...s, childNames: s.child_names } : s));
+}
+
+/**
+ * Attaches named children to already-`servedOf()`'d entries by matching
+ * `request_id` against a `WeekRequestRow[]` (which already embeds
+ * `request_children` → `children.full_name`, `features/sadran/api.ts`) —
+ * works for the Sadran board (RLS already lets a manager of the week read
+ * every request's `request_children` rows) since `requestsQuery` there
+ * fetches every request in the week, served or not. Does **not** help the
+ * read-only published siddur for a non-Sadran member: `v_board_rides` itself
+ * has no child-name column, and `request_children`'s RLS only allows the
+ * requester or a week manager to read it (no "published" policy exists yet,
+ * unlike `request_companions_published_select`) — that gap needs a
+ * migration (see UX_FLOWS.md / hand-off notes), not more client code.
+ */
+export function withChildNames(entries: readonly ServedEntry[], requests: readonly { id: string; childNames?: string[] }[]): ServedEntry[] {
+  if (!entries.length) return entries as ServedEntry[];
+  const byId = new Map(requests.map((r) => [r.id, r.childNames ?? []]));
+  return entries.map((entry) => {
+    const names = entry.request_id ? byId.get(entry.request_id) : undefined;
+    return names?.length ? { ...entry, childNames: names } : entry;
+  });
 }
 
 /**

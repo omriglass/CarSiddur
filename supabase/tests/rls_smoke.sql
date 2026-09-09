@@ -403,4 +403,23 @@ end $$;
 
 reset role;
 
+-- ---------------------------------------------------------------------------
+-- 12) No policy is written `for all` (DATA_MODEL.md §0/§4.1: "policies per
+--     command, never `for all`") — a `for all` policy shows up in pg_policies
+--     with cmd = 'ALL'.
+-- ---------------------------------------------------------------------------
+do $$
+declare v_offenders text;
+begin
+  select string_agg(schemaname || '.' || tablename || ':' || policyname, ', ')
+    into v_offenders
+    from pg_policies
+    where schemaname = 'public' and cmd = 'ALL';
+
+  assert v_offenders is null,
+    format('TEST 12 FAILED: found for-all policies (never allowed): %s', v_offenders);
+
+  raise notice 'TEST 12 PASSED: no policy in pg_policies is written for all';
+end $$;
+
 rollback;

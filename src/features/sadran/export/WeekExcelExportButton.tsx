@@ -3,13 +3,14 @@ import { Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { he } from "@/i18n/he";
 import { showErrorToast } from "@/lib/rpc";
+import { sadranKeys } from "../keys";
 import { fetchWeekExport } from "./api";
 import { createWeekWorkbook } from "./weekWorkbook";
 
 /** Export current persisted week data on demand, independently of board/day filters. */
 export function WeekExcelExportButton({ departmentId, weekStart }: { departmentId: string; weekStart: string }) {
   const exportQuery = useQuery({
-    queryKey: ["sadran", departmentId, weekStart, "excelExport"],
+    queryKey: sadranKeys.excelExport(departmentId, weekStart),
     queryFn: () => fetchWeekExport(departmentId, weekStart), enabled: false, retry: false,
   });
   async function download() {

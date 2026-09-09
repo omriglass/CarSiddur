@@ -59,7 +59,7 @@ Tables: `requests` (DATA_MODEL §3.6) and its mirror `request_templates` (repeat
 - [ ] `src/features/requests/schema.test.ts`: valid/invalid values, default, refinements.
 - [ ] `src/features/board/solverInput.test.ts`: mapping set/null (if step 5).
 - [ ] Solver tests for the behavior change (if step 5), in `src/solver/__tests__/`.
-- [ ] `e2e/submit-request.spec.ts`: fill the field, assert it on the card (if member-visible).
+- [ ] `e2e/quick-request.spec.ts` (or another member-flow spec, e.g. `member.spec.ts` — `e2e/submit-request.spec.ts` no longer exists): fill the field, assert it on the card (if member-visible).
 
 ### 8. Docs
 - [ ] `docs/REQUIREMENTS.md` §5.1 fields table (Field, Required, Notes); §5.3 if validation changed.

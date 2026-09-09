@@ -27,11 +27,3 @@ export const carSchema = z.object({
   }
 });
 export type CarFormValues = z.infer<typeof carSchema>;
-
-export const maintenanceBlockSchema = z.object({
-  carId: z.string().uuid(),
-  startsAt: z.string(),
-  endsAt: z.string(),
-  reason: z.string().trim().min(1),
-});
-export type MaintenanceBlockFormValues = z.infer<typeof maintenanceBlockSchema>;

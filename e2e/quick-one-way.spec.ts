@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { he } from "../src/i18n/he";
+import { he, tv } from "../src/i18n/he";
 import { NEVO_DEPARTMENT_ID, newSignedInPage, SEEDED_USERS, serviceRoleClient } from "./helpers";
 import { publishedFixtureWeek } from "./published-week";
 
@@ -54,13 +54,15 @@ async function fillPublicDetails(page: Page, destinationName: string, descriptio
   await page.getByRole("option").filter({ hasText: destinationName }).first().click();
   const sheet = mainDialog(page);
   await sheet.getByLabel(he.quickRequest.rideDescription, { exact: true }).fill(description);
-  await sheet.getByRole("button", { name: new RegExp(he.quickRequest.passengersExpand) }).click();
+  // Companions/children/guest names are always visible in the shared `RequestForm` body
+  // (no "more passenger details" toggle, unlike the pre-unification quick sheet).
   await sheet.getByRole("combobox", { name: he.field.companions, exact: true }).click();
   await page.getByRole("option", { name: SEEDED_USERS.admin.fullName, exact: true }).click();
   await page.keyboard.press("Escape");
   await sheet.getByLabel(he.quickRequest.guestPassengers, { exact: true }).fill(guestNames.join("\n"));
-  const adultRow = sheet.getByText(he.field.adults, { exact: true }).locator("..");
-  await expect(adultRow.locator("span[dir=ltr]")).toHaveText(String(2 + guestNames.length));
+  // Seat counts are derived from named companions/children/guests (`RequestForm.tsx`), not a
+  // manual stepper — 1 (self) + 1 companion + `guestNames.length` guests.
+  await expect(sheet.getByText(tv("request.namedPassengerCount", { count: String(1 + 1 + guestNames.length) }))).toBeVisible();
 }
 
 for (const [index, shape] of (["one_way_to", "one_way_from"] as const).entries()) {

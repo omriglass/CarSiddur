@@ -7,12 +7,10 @@ import {
   fetchBoardRideById,
   fetchMyUpcomingRides,
   fetchBoardRides,
-  fetchBoardStartTime,
   fetchCarForRide,
   fetchCarLocations,
   fetchCurrentWeekStart,
   fetchDepartments,
-  fetchOpenAndLiveWeekStarts,
   fetchWeeks,
   fetchRideChanges,
   requestRideChange,
@@ -29,7 +27,7 @@ export function useMyUpcomingRides() {
   const { session } = useSession();
   const profileId = session?.user.id;
   return useQuery({
-    queryKey: ["siddur", "myUpcomingRides", profileId, departmentId],
+    queryKey: siddurKeys.myUpcomingRides(profileId, departmentId),
     queryFn: () => fetchMyUpcomingRides(profileId as string, departmentId),
     enabled: !!profileId,
     staleTime: 30_000,
@@ -63,7 +61,7 @@ export function useClaimRideDriverMutation() {
 export function useRideChanges(departmentId?: string, weekStart?: string) {
   const { session } = useSession();
   return useQuery({
-    queryKey: ["siddur", "rideChanges", session?.user.id, departmentId, weekStart],
+    queryKey: siddurKeys.rideChanges(session?.user.id, departmentId, weekStart),
     queryFn: () => fetchRideChanges(departmentId, weekStart),
     enabled: !!session,
     refetchInterval: 15_000,
@@ -74,7 +72,7 @@ export function useRequestRideChangeMutation() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: (move: RideMove) => requestRideChange(move),
-    onSuccess: () => client.invalidateQueries({ queryKey: ["siddur"] }),
+    onSuccess: () => client.invalidateQueries({ queryKey: siddurKeys.all }),
     onError: showErrorToast,
   });
 }
@@ -126,15 +124,6 @@ export function useWeeks(departmentId: string | undefined) {
   });
 }
 
-export function useOpenAndLiveWeekStarts(departmentId: string | undefined) {
-  return useQuery({
-    queryKey: siddurKeys.openLiveWeekStarts(departmentId as string),
-    queryFn: () => fetchOpenAndLiveWeekStarts(departmentId as string),
-    enabled: !!departmentId,
-    staleTime: 60_000,
-  });
-}
-
 export function useBoardRides(departmentId: string | undefined, weekStart: string | undefined) {
   return useQuery({
     queryKey: siddurKeys.boardRides(departmentId as string, weekStart as string),
@@ -166,15 +155,5 @@ export function useCarLocations(departmentId: string | undefined, weekStart: str
     queryFn: () => fetchCarLocations(departmentId as string, weekStart as string),
     enabled: !!departmentId && !!weekStart,
     staleTime: 30_000,
-  });
-}
-
-/** The member grid's default visible-range start (UX_FLOWS.md §20). */
-export function useBoardStartTime(departmentId: string | undefined) {
-  return useQuery({
-    queryKey: siddurKeys.boardStartTime(departmentId),
-    queryFn: () => fetchBoardStartTime(departmentId as string),
-    enabled: !!departmentId,
-    staleTime: 60_000,
   });
 }

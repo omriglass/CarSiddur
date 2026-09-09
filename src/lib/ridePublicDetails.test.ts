@@ -18,4 +18,9 @@ describe("public ride details", () => {
       .toMatch(/Adi:\nGate\nBen:\n.*Visitor/);
     expect(ridePublicDetails([{}])).toBe("");
   });
+
+  it("includes named children alongside companions/guests instead of only counts", () => {
+    const result = ridePublicDetails([{ companions: [{ profile_id: "m", name: "Adi Cohen" }], childNames: ["Noa Cohen"] }]);
+    expect(result).toContain("Adi Cohen, Noa Cohen");
+  });
 });

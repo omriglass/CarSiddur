@@ -2,9 +2,10 @@ import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { EmptyState } from "@/components/EmptyState";
+import { FormDialog } from "@/components/FormDialog";
 import { PageHeader } from "@/components/PageHeader";
+import { StatusBadge } from "@/components/StatusBadge";
 import { Input } from "@/components/ui/input";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -154,9 +155,21 @@ function MembersTab() {
         })}
       </TableBody>
     </Table>
-    <Dialog open={!!editing} onOpenChange={(open) => !open && setEditing(null)}>
-      <DialogContent>
-        <DialogHeader><DialogTitle>{he.adminMembers.editDetails}</DialogTitle></DialogHeader>
+    <FormDialog
+      open={!!editing}
+      onOpenChange={(open) => !open && setEditing(null)}
+      title={he.adminMembers.editDetails}
+      submitDisabled={!editing}
+      loading={updateDetailsMutation.isPending}
+      onSubmit={async () => {
+        if (!editing) return;
+        try {
+          await updateDetailsMutation.mutateAsync(editing);
+          toast.success(he.adminCommon.savedToast);
+          setEditing(null);
+        } catch (error) { showErrorToast(error); }
+      }}
+    >
         <label className="grid gap-2">{he.adminMembers.googleName}
           <Input value={editing?.fullName ?? ""} readOnly />
         </label>
@@ -192,19 +205,7 @@ function MembersTab() {
           </Select>
           <p className="text-sm text-muted-foreground">{he.adminMembers.departmentMembershipHelp}</p>
         </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => setEditing(null)}>{he.adminCommon.cancel}</Button>
-          <Button disabled={!editing || updateDetailsMutation.isPending} onClick={async () => {
-            if (!editing) return;
-            try {
-              await updateDetailsMutation.mutateAsync(editing);
-              toast.success(he.adminCommon.savedToast);
-              setEditing(null);
-            } catch (error) { showErrorToast(error); }
-          }}>{he.adminCommon.save}</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    </FormDialog>
     </>
   );
 }
@@ -269,20 +270,23 @@ function ChildrenTab() {
         </TableRow>)}</TableBody>
       </Table>
     )}
-    <Dialog open={addOpen} onOpenChange={(open) => open ? setAddOpen(true) : closeChildDialog()}>
-      <DialogContent>
-        <DialogHeader><DialogTitle>{editingChildId ? he.adminMembers.editChild : he.adminMembers.addChild}</DialogTitle></DialogHeader>
-        <div className="grid gap-4">
-          <label className="grid gap-2">{he.adminMembers.childDepartment}
-            <Select value={departmentId} onValueChange={setDepartmentId}><SelectTrigger><SelectValue placeholder={he.adminMembers.childChooseDepartment} /></SelectTrigger><SelectContent>{(departmentsQuery.data ?? []).filter((d) => d.is_active).map((d) => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}</SelectContent></Select>
-          </label>
-          <label className="grid gap-2">{he.adminMembers.childName}<Input value={fullName} onChange={(event) => setFullName(event.target.value)} /></label>
-          <label className="grid gap-2">{he.adminMembers.childBirthYear}<Input type="number" min="1900" max={new Date().getFullYear()} value={birthYear} onChange={(event) => setBirthYear(event.target.value)} /></label>
-          <div className="grid gap-2"><span>{he.adminMembers.childParents}</span><CompanionPicker members={profiles.map((p) => ({ id: p.id, name: p.full_name }))} value={guardianIds} onChange={setGuardianIds} label={he.adminMembers.childParents} /></div>
-        </div>
-        <DialogFooter><Button variant="outline" onClick={closeChildDialog}>{he.adminCommon.cancel}</Button><Button disabled={!departmentId || !fullName.trim() || !validBirthYear || createMutation.isPending || updateMutation.isPending} onClick={saveChild}>{he.adminCommon.save}</Button></DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <FormDialog
+      open={addOpen}
+      onOpenChange={(open) => open ? setAddOpen(true) : closeChildDialog()}
+      title={editingChildId ? he.adminMembers.editChild : he.adminMembers.addChild}
+      submitDisabled={!departmentId || !fullName.trim() || !validBirthYear}
+      loading={createMutation.isPending || updateMutation.isPending}
+      onSubmit={saveChild}
+    >
+      <div className="grid gap-4">
+        <label className="grid gap-2">{he.adminMembers.childDepartment}
+          <Select value={departmentId} onValueChange={setDepartmentId}><SelectTrigger><SelectValue placeholder={he.adminMembers.childChooseDepartment} /></SelectTrigger><SelectContent>{(departmentsQuery.data ?? []).filter((d) => d.is_active).map((d) => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}</SelectContent></Select>
+        </label>
+        <label className="grid gap-2">{he.adminMembers.childName}<Input value={fullName} onChange={(event) => setFullName(event.target.value)} /></label>
+        <label className="grid gap-2">{he.adminMembers.childBirthYear}<Input type="number" min="1900" max={new Date().getFullYear()} value={birthYear} onChange={(event) => setBirthYear(event.target.value)} /></label>
+        <div className="grid gap-2"><span>{he.adminMembers.childParents}</span><CompanionPicker members={profiles.map((p) => ({ id: p.id, name: p.full_name }))} value={guardianIds} onChange={setGuardianIds} label={he.adminMembers.childParents} /></div>
+      </div>
+    </FormDialog>
   </div>;
 }
 
@@ -402,13 +406,6 @@ function ImportTab() {
     }
   }
 
-  const statusLabel: Record<ParsedInviteRow["status"], string> = {
-    new: he.adminMembers.importRowNew,
-    existing: he.adminMembers.importRowExisting,
-    invalid_email: he.adminMembers.importRowInvalidEmail,
-    duplicate: he.adminMembers.importRowDuplicate,
-  };
-
   return (
     <div className="flex flex-col gap-4">
       <p className="text-sm text-muted-foreground">{he.adminMembers.importInstructions}</p>
@@ -418,7 +415,7 @@ function ImportTab() {
         dir="ltr"
         value={text}
         onChange={(e) => setText(e.target.value)}
-        placeholder={"דנה כהן, dana@example.com\nרון לוי, ron@example.com"}
+        placeholder={he.adminMembers.importPlaceholder}
       />
       <div className="flex flex-wrap items-center gap-2">
         <Select value={departmentId} onValueChange={setDepartmentId}>
@@ -457,9 +454,7 @@ function ImportTab() {
                     <TableCell>{row.name || "—"}</TableCell>
                     <TableCell dir="ltr">{row.email}</TableCell>
                     <TableCell>
-                      <Badge variant={row.status === "invalid_email" || row.status === "duplicate" ? "destructive" : "outline"}>
-                        {statusLabel[row.status]}
-                      </Badge>
+                      <StatusBadge kind="inviteRow" status={row.status} />
                     </TableCell>
                   </TableRow>
                 ))}

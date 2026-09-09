@@ -46,7 +46,7 @@ const TEMPLATES: Record<string, string> = {
 
 /** Rule descriptions shown in the admin UI (RULE_<TYPE>_DESC). */
 const RULE_DESCRIPTIONS: Record<string, string> = {
-  RULE_RIDETYPE_DESC: 'מעניק עדיפות לפי סוג הנסיעה (למשל בריאות גבוה מסידורים)',
+  RULE_RIDETYPE_DESC: 'מעניק עדיפות לפי סוג הנסיעה, לפי משקל שהוגדר לכל סוג נסיעה (וברירת מחדל לסוג נסיעה ללא משקל מוגדר)',
   RULE_DISTANCE_DESC: 'מעניק עדיפות ליעדים רחוקים יותר, בהם פחות חלופות',
   RULE_PUBLICTRANSPORT_DESC: 'מעניק עדיפות נמוכה יותר ליעדים עם תחבורה ציבורית טובה',
   RULE_PEOPLESERVED_DESC: 'מעניק עדיפות לנסיעות שמשרתות יותר אנשים (כולל זוג ממסר)',
@@ -59,6 +59,7 @@ const RULE_DESCRIPTIONS: Record<string, string> = {
 /** PolicyParamsError messages keyed by error code. */
 const PARAM_ERRORS: Record<string, string> = {
   RIDETYPE_WEIGHTS_INVALID: 'פרמטר weights חסר או שגוי בכלל rideType',
+  RIDETYPE_DEFAULTWEIGHT_INVALID: 'פרמטר defaultWeight שגוי בכלל rideType',
   DISTANCE_MAXKM_INVALID: 'פרמטר maxKm חסר או שגוי בכלל distance',
   PUBLICTRANSPORT_PARAMS_INVALID: 'פרמטרים שגויים בכלל publicTransport',
   PEOPLESERVED_CAP_INVALID: 'פרמטר cap חסר או שגוי בכלל peopleServed',

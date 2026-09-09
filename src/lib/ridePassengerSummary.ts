@@ -21,9 +21,11 @@ export function ridePassengerSummary(entries: readonly PassengerEntry[], driverN
     if (entry.request_id) seenRequests.add(entry.request_id);
     const named = [entry.requester || (entry.role === "driver" ? driverName : null), ...(entry.companions ?? []).map((person) => person.name), ...(entry.guest_passenger_names ?? [])]
       .map((name) => name?.trim()).filter((name): name is string => !!name);
-    names.push(...named);
+    /** Explicitly named children (`request_children` → `children.full_name`) are known-for-sure children, unlike `named` above (adults/guests, whose overflow past `adults` is only *guessed* to fill a child seat). */
+    const namedChildren = (entry.childNames ?? []).map((name) => name?.trim()).filter((name): name is string => !!name);
+    names.push(...named, ...namedChildren);
     adults += Math.max(0, entry.adults - named.length);
-    children += Math.max(0, entry.child_seats + entry.boosters - Math.max(0, named.length - entry.adults));
+    children += Math.max(0, entry.child_seats + entry.boosters - Math.max(0, named.length - entry.adults) - namedChildren.length);
   }
   const parts = [...names];
   if (adults) parts.push(tv(adults === 1 ? "ridePublicDetails.unnamedAdult" : "ridePublicDetails.unnamedAdults", { count: String(adults) }));

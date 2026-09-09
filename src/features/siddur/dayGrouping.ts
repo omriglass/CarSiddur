@@ -1,7 +1,5 @@
-import { formatInTimeZone } from "date-fns-tz";
-
 import { datesOfWeek } from "@/components/DateField";
-import { TZ } from "@/lib/time";
+import { dateKey } from "@/lib/time";
 
 /** One day's bucket for the phone `DayList` (UX_FLOWS.md §3.5): sticky day tabs, rides sorted by departure. */
 export interface DayGroup<T> {
@@ -27,7 +25,7 @@ export function groupByDay<T>(
   const buckets: DayGroup<T>[] = dates.map((date, dayIndex) => ({ date, dayIndex, items: [] }));
 
   for (const item of items) {
-    const day = formatInTimeZone(new Date(getStartsAt(item)), TZ, "yyyy-MM-dd");
+    const day = dateKey(getStartsAt(item));
     const index = dates.indexOf(day);
     const bucket = index >= 0 ? buckets[index] : undefined;
     bucket?.items.push(item);

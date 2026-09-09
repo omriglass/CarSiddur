@@ -173,12 +173,12 @@ test("failed first send reopens as a sendable draft and retries the same proposa
     expect(draft?.status).toBe("draft");
     expect(creates).toBe(1);
     await page.goto(`${fixture.baseUrl}/proposals`);
-    await page.getByText(`${he.proposal.type.shift} · ${label}`, { exact: true }).click();
+    await page.getByTestId("proposal-row").filter({ hasText: label }).click();
     await page.setViewportSize({ width: 390, height: 844 });
     await page.getByRole("button", { name: he.sadranProposal.retrySend, exact: true }).click();
     await expect(page).toHaveURL(`${fixture.baseUrl}/proposals`);
     // Reopening from the list (without the success-toast action) retains WhatsApp links.
-    await page.getByText(`${he.proposal.type.shift} · ${label}`, { exact: true }).click();
+    await page.getByTestId("proposal-row").filter({ hasText: label }).click();
     await expect(page.getByText(he.sadranProposal.pushNote)).toBeVisible();
     expect(creates).toBe(1);
     expect(sentIds).toEqual([draft!.id, draft!.id]);

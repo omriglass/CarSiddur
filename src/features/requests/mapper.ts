@@ -47,6 +47,10 @@ export interface SubmitPayloadOptions {
   requestId?: string;
   expectedVersion?: number;
   joinRideId?: string;
+  /** Parsed non-member passengers (`guestPassengerNames()`, `../quickRequest.ts`). */
+  guestPassengerNames?: string[];
+  /** Live one-way quick request: reserve a vehicle while awaiting a driver (quick variant only). */
+  reserveMissingDriver?: boolean;
 }
 
 /** Builds the `submit_request` RPC payload from validated form values (schema.ts). */
@@ -83,6 +87,8 @@ export function toSubmitRequestPayload(
     flex_return_late: flexValueToInterval(values.flexReturnLate as FlexValue),
     notes: values.notes.trim() || undefined,
     ride_description: values.rideDescription.trim() || null,
+    guest_passenger_names: options.guestPassengerNames?.length ? options.guestPassengerNames : undefined,
+    reserve_missing_driver: options.reserveMissingDriver || undefined,
     request_id: options.requestId,
     expected_version: options.expectedVersion,
     join_ride_id: options.joinRideId,
