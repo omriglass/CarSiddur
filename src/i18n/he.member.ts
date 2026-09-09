@@ -286,7 +286,6 @@ export const heMember = {
     tabDetails: "פרטי הרכב",
     tabHistory: "היסטוריה",
     tabExport: "ייצוא",
-    reportButton: "דיווח על הרכב",
     fieldResponsible: "אחראי/ת רכב",
     fieldResponsibleNone: "ללא אחראי/ת (הודעות יגיעו למנהלי המערכת)",
     fieldResponsibleReadonlyHelp: "רק מנהל/ת מערכת יכול/ה לשנות את האחראי/ת על הרכב",

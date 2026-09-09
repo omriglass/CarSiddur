@@ -9,14 +9,13 @@ import { ErrorState } from "@/components/ErrorState";
 import { PageHeader } from "@/components/PageHeader";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CarForm, type ResponsibleOption } from "@/features/admin/cars/components/CarForm";
 import type { Car } from "@/features/admin/cars/api";
 import { useAllDepartmentMembers, useAllProfiles } from "@/features/admin/members/hooks";
-import { CarReportDialog } from "@/features/carCare/components/CarReportDialog";
+import { CarNameWithReport } from "@/features/carCare/components/CarNameWithReport";
 import { he } from "@/i18n/he";
 import { TZ } from "@/lib/time";
 
@@ -101,10 +100,10 @@ interface CarManageScreenProps {
   /** The signed-in viewer's own name — used to show a read-only "אחראי/ת רכב" value when the viewer *is* the responsible person (not an admin, so the field can't be reassigned here, REQ §13.71). */
   viewerName: string;
   /**
-   * Extra header actions rendered alongside this screen's own "דיווח על
-   * הרכב" button (which opens `CarReportDialog` from `src/features/carCare`
-   * directly — filled in 2026-09-09 once that dialog existed). Left as an
-   * escape hatch for anything else a future caller wants next to the title.
+   * Extra header actions slot, empty by default — the car report dialog now
+   * opens from the header's own car icon (`CarNameWithReport`, replacing the
+   * title text), not a dedicated button here. Left as an escape hatch for
+   * anything else a future caller wants next to the title.
    */
   headerActions?: ReactNode;
 }
@@ -122,7 +121,6 @@ export function CarManageScreen({ car, isAdmin, viewerName, headerActions }: Car
   const [filter, setFilter] = useState<CarHistoryFilter>("all");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
-  const [reportOpen, setReportOpen] = useState(false);
 
   const responsibleOptions: ResponsibleOption[] = useMemo(() => {
     if (!isAdmin) {
@@ -150,16 +148,8 @@ export function CarManageScreen({ car, isAdmin, viewerName, headerActions }: Car
   return (
     <div className="mx-auto max-w-2xl space-y-4 p-4 pb-24">
       <PageHeader
-        title={car.name}
-        actions={
-          <>
-            {headerActions}
-            <Button variant="outline" size="sm" onClick={() => setReportOpen(true)}>
-              <Wrench className="me-1 size-4" aria-hidden="true" />
-              {he.carPage.reportButton}
-            </Button>
-          </>
-        }
+        title={<CarNameWithReport carId={car.id} carName={car.name} />}
+        actions={headerActions}
       />
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
         <span dir="ltr">{car.license_plate}</span>
@@ -230,8 +220,6 @@ export function CarManageScreen({ car, isAdmin, viewerName, headerActions }: Car
           />
         </TabsContent>
       </Tabs>
-
-      <CarReportDialog carId={car.id} carName={car.name} open={reportOpen} onOpenChange={setReportOpen} />
     </div>
   );
 }

@@ -1,7 +1,8 @@
 import type { ReactNode } from "react";
 
 interface PageHeaderProps {
-  title: string;
+  /** Usually a plain string; a screen may pass a composite node (e.g. an icon + name) instead — see `CarManageScreen`. */
+  title: ReactNode;
   subtitle?: string;
   actions?: ReactNode;
 }
