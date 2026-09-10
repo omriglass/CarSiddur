@@ -7,10 +7,12 @@ import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { PageHeader } from "@/components/PageHeader";
 import { CardListSkeleton } from "@/components/skeletons/CardListSkeleton";
+import { RideTypePie } from "@/features/stats/components/RideTypePie";
 import { StatsDateRangePicker } from "@/features/stats/components/StatsDateRangePicker";
 import { StatsDepartmentSwitcher } from "@/features/stats/components/StatsDepartmentSwitcher";
 import { StatTile } from "@/features/stats/components/StatTile";
 import { WeekdayBarList } from "@/features/stats/components/WeekdayBarList";
+import { WeeklyUnmetChart } from "@/features/stats/components/WeeklyUnmetChart";
 import { formatDateDMY, formatDecimal, formatPercent } from "@/features/stats/format";
 import { useCanViewDepartmentStats, useDepartmentStatsQuery } from "@/features/stats/hooks";
 import { computePresetRange, DEFAULT_STATS_PRESET } from "@/features/stats/presets";
@@ -92,16 +94,29 @@ export function StatsPage() {
               footnote={he.stats.capacityFormula}
             />
             <StatTile
-              testId="stats-tile-unmet"
-              label={he.stats.tiles.unmet.label}
-              value={<span dir="ltr">{formatPercent(stats.requests.unmetRate)}</span>}
-              sub={
+              testId="stats-tile-served"
+              label={he.stats.tiles.servedRate.label}
+              value={
                 <>
-                  <span dir="ltr">{stats.requests.unmet}</span> {he.stats.tiles.unmet.subOf}{" "}
-                  <span dir="ltr">{stats.requests.total}</span> {he.stats.tiles.unmet.subUnit}
+                  {he.stats.tiles.servedRate.headlinePrefix}{" "}
+                  <span dir="ltr">
+                    {formatPercent(
+                      stats.requests.servedRate ??
+                        (stats.requests.total > 0 ? stats.requests.granted / stats.requests.total : 0),
+                    )}
+                  </span>{" "}
+                  {he.stats.tiles.servedRate.headlineSuffix}
                 </>
               }
-              help={he.stats.tiles.unmet.help}
+              sub={
+                <>
+                  <span dir="ltr">{stats.requests.granted}</span> {he.stats.tiles.servedRate.subOf}{" "}
+                  <span dir="ltr">{stats.requests.total}</span> {he.stats.tiles.servedRate.subUnit}
+                  {" · "}
+                  <span dir="ltr">{stats.requests.unmet}</span> {he.stats.tiles.servedRate.subUnmet}
+                </>
+              }
+              help={he.stats.tiles.servedRate.help}
             />
             <StatTile
               testId="stats-tile-rides"
@@ -109,6 +124,25 @@ export function StatsPage() {
               value={<span dir="ltr">{stats.rides}</span>}
               help={he.stats.tiles.rides.help}
             />
+            {stats.distinctPeople !== undefined ? (
+              <StatTile
+                testId="stats-tile-people"
+                label={he.stats.tiles.people.label}
+                value={
+                  <>
+                    <span dir="ltr">{stats.distinctPeople}</span> {he.stats.tiles.people.headlineSuffix}
+                  </>
+                }
+                sub={
+                  stats.distinctDrivers === undefined ? undefined : (
+                    <>
+                      <span dir="ltr">{stats.distinctDrivers}</span> {he.stats.tiles.people.subUnit}
+                    </>
+                  )
+                }
+                help={he.stats.tiles.people.help}
+              />
+            ) : null}
             <StatTile
               testId="stats-tile-policy-score"
               label={he.stats.tiles.policyScore.label}
@@ -139,6 +173,10 @@ export function StatsPage() {
           </p>
 
           <WeekdayBarList days={stats.byWeekday} />
+
+          {stats.byRideType !== undefined ? <RideTypePie data={stats.byRideType} /> : null}
+
+          {stats.weekly && stats.weekly.length > 0 ? <WeeklyUnmetChart weekly={stats.weekly} /> : null}
         </>
       )}
     </div>

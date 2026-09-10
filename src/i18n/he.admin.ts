@@ -384,15 +384,27 @@ export const heAdmin = {
         subUnit: "שעות",
         help: "אחוז שעות הנסיעה בפועל ברכבים המשותפים (06:00–22:00) מתוך שעות הזמינות בטווח שנבחר.",
       },
-      unmet: {
-        label: "בקשות שלא נענו",
+      // Positive framing (owner feedback, 2026-09-10): the headline is the SERVED rate, not
+      // the missed one. `headlinePrefix`/`headlineSuffix` sandwich the `<span dir="ltr">`
+      // percentage the component renders between them ("שירתנו {{served}}% מהבקשות").
+      servedRate: {
+        label: "מענה לבקשות",
+        headlinePrefix: "שירתנו",
+        headlineSuffix: "מהבקשות",
         subOf: "מתוך",
         subUnit: "בקשות",
-        help: "בקשות שנדחו, נפתרו מחוץ למערכת או נותרו ברשימת המתנה, מתוך כלל הבקשות שהוגשו בטווח.",
+        subUnmet: "לא נענו",
+        help: "אחוז הבקשות שקיבלו רכב, מתוך כלל הבקשות שהוגשו בטווח שנבחר (לא כולל בקשות שבוטלו).",
       },
       rides: {
         label: "נסיעות",
         help: "מספר הנסיעות השונות ברכבים המשותפים בטווח שנבחר.",
+      },
+      people: {
+        label: "אנשים שנסעו",
+        headlineSuffix: "אנשים שונים נסעו",
+        subUnit: "נהגים/ות",
+        help: "חברים שונים שנסעו כנהגים או כנוסעים בטווח שנבחר. ילדים ואורחים אינם נספרים.",
       },
       policyScore: {
         label: "ציון מדיניות ממוצע",
@@ -407,6 +419,21 @@ export const heAdmin = {
       ridesUnit: "נסיעות",
       busiestBadge: "העמוס ביותר",
     },
+    // Donut chart of `byRideType` (owner request, UX_FLOWS.md §5.12): pure inline SVG, colored
+    // via `src/lib/rideTypeColors.ts` — the same map the board legend uses.
+    rideTypePie: {
+      title: "נסיעות לפי סוג",
+      centerUnit: "נסיעות",
+      ridesUnit: "נסיעות",
+      hoursUnit: "שעות",
+      empty: "אין נסיעות בטווח שנבחר",
+      srSummaryItem: "{{name}}: {{rides}} נסיעות, {{hours}} שעות, {{percent}}%",
+    },
+    otherRideType: "אחר",
+    // Weekly bar chart of unmet requests (owner request, UX_FLOWS.md §5.12).
+    weeklyUnmetTitle: "בקשות שלא נענו, לפי שבוע",
+    weeklyProvisional: "שבועות שעדיין לא הסתיימו — נתונים חלקיים",
+    weeklyBarDetail: "{{unmet}} מתוך {{total}}",
     empty: "אין נתונים לטווח התאריכים שנבחר",
   },
 } as const;

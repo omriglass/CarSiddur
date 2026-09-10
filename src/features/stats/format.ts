@@ -16,6 +16,15 @@ export function formatDateDMY(dateKeyValue: string): string {
   return format(parseISO(dateKeyValue), "dd/MM/yyyy");
 }
 
+/**
+ * "10/09" from a `yyyy-MM-dd` calendar-date string — the weekly chart's
+ * x-axis labels, where the year would just be noise (UX_FLOWS.md §5.12).
+ * Caller wraps the result in `<span dir="ltr">`.
+ */
+export function formatDateDM(dateKeyValue: string): string {
+  return format(parseISO(dateKeyValue), "dd/MM");
+}
+
 /** Fixed-decimal formatting for hours/ride counts/policy scores. Caller wraps the result in `<span dir="ltr">`. */
 export function formatDecimal(value: number, digits = 1): string {
   return value.toFixed(digits);

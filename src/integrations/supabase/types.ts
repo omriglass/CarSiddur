@@ -2990,6 +2990,59 @@ export type Database = {
           },
         ]
       }
+      week_stats: {
+        Row: {
+          active_hours: number
+          cancelled: number
+          computed_at: string
+          created_at: string
+          department_id: string
+          distinct_people: number
+          granted: number
+          rides: number
+          total_requests: number
+          unmet: number
+          updated_at: string
+          week_start: string
+        }
+        Insert: {
+          active_hours?: number
+          cancelled?: number
+          computed_at?: string
+          created_at?: string
+          department_id: string
+          distinct_people?: number
+          granted?: number
+          rides?: number
+          total_requests?: number
+          unmet?: number
+          updated_at?: string
+          week_start: string
+        }
+        Update: {
+          active_hours?: number
+          cancelled?: number
+          computed_at?: string
+          created_at?: string
+          department_id?: string
+          distinct_people?: number
+          granted?: number
+          rides?: number
+          total_requests?: number
+          unmet?: number
+          updated_at?: string
+          week_start?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "week_stats_week_fk"
+            columns: ["department_id", "week_start"]
+            isOneToOne: true
+            referencedRelation: "weeks"
+            referencedColumns: ["department_id", "week_start"]
+          },
+        ]
+      }
       weekday_labels: {
         Row: {
           created_at: string
@@ -3545,6 +3598,10 @@ export type Database = {
         Returns: undefined
       }
       close_offer: { Args: { p_offer_id: string }; Returns: undefined }
+      compute_week_stats: {
+        Args: { p_department_id: string; p_week_start: string }
+        Returns: undefined
+      }
       create_department: {
         Args: {
           p_name: string

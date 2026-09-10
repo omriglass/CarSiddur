@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { formatDecimal, formatPercent } from "./format";
+import { formatDateDM, formatDecimal, formatPercent } from "./format";
 
 describe("formatPercent", () => {
   it("formats a 0..1 rate as a one-decimal percentage", () => {
@@ -20,5 +20,12 @@ describe("formatDecimal", () => {
   it("honors an explicit digit count", () => {
     expect(formatDecimal(0.83, 2)).toBe("0.83");
     expect(formatDecimal(0.8, 2)).toBe("0.80");
+  });
+});
+
+describe("formatDateDM", () => {
+  it("formats a yyyy-MM-dd string as dd/MM, dropping the year", () => {
+    expect(formatDateDM("2026-08-02")).toBe("02/08");
+    expect(formatDateDM("2026-01-31")).toBe("31/01");
   });
 });
