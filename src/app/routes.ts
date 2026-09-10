@@ -96,4 +96,12 @@ export const paths = {
 
   /** `/inbox`; `?change=<rideChangeId>` is produced by `deepLinkFor` for `ride_change_id` notifications. */
   inbox: (changeId?: string) => withQuery("/inbox", { change: changeId }),
+
+  /**
+   * `/stats/:dept` — usage statistics for admins and department Sadranim
+   * (owner request, UX_FLOWS.md §5.12); registered in
+   * `src/features/member/routes.tsx` alongside `/cars/:carId` since it's
+   * reachable by more than one role — the page itself gates access.
+   */
+  stats: (departmentId: string): string => `/stats/${departmentId}`,
 };

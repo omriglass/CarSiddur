@@ -293,6 +293,8 @@ Channels, in priority order, all free:
 
 Events that notify: request window opening/closing reminders, request window closed — solve now (to Sadran), publish reminder when the planned publish time passes and the week is still being solved (to Sadran), siddur published, your outcome changed, proposal received, proposal answered (to Sadran), freed slot available, freed slot auto-assigned to you, several claimants for a freed slot (to Sadran), claim approved/declined, car maintenance affecting you, new late/waitlisted request (to Sadran), request auto-approved in a live week (member, Sadran informed), request edited after solving started (to Sadran), access request from an unknown account (to Admin), access approved, changes to account approval, Admin privileges, or department role/membership (to the affected user), and a car-care report (issue reported, tire fill logged, or wash logged — to the car's responsible person, or the department's admins if it has none, §6.6). Status alerts identify the resulting status; pending access requests link admins to member approval. The canonical list (24 events) with Hebrew copy is `UX_FLOWS.md` §6.1. Two of them belong to contested waiting-list groups: the group was opened (`waitlist_contested`, also sent when somebody joins an existing one) and the group was settled or dropped (`waitlist_resolved`). WhatsApp texts exist for every proposal type, including `external` (§13.59).
 
+Publishing several days in one action notifies each member once, not once per day/request: `siddur published`/`your outcome changed` are sent at most once per recipient per publish action, listing the affected days (owner decision, 2026-09-10).
+
 Members can mute categories; Sadran alerts cannot be muted while assigned.
 
 ---
@@ -445,6 +447,14 @@ One canonical `notification_event` list now has **24** events (was 22, CLAUDE.md
     - **Not part of the single-day machinery.** A multi-day booking never joins a contested waiting-list group (§13.75), is never offered a freed single-day slot (§13.66), and is not a proposal subject in v1: when no car is free for the whole span it simply waits ("אין רכב פנוי לכל ימי ההזמנה הרב-יומית"). Fairness counts the real hours of each day, so a 3-day booking weighs like 3 days.
     - **v1 limitation: cancel and resubmit instead of edit.** A leg of a multi-day booking cannot be edited through the request form — the member cancels it and files it again ("בקשה רב-יומית אפשר לבטל ולהגיש מחדש, לא לערוך").
     (DATA_MODEL §3.2/§3.3/§5/§6; SOLVER §1.3.10)
+
+78. **Department statistics (2026-09-10, owner request).** A statistics screen for the admin and the Sadran, backed by one RPC, `department_stats(department_id, from, to)` — an inclusive Jerusalem-calendar date range, capped at 400 days, over five metrics:
+    - **Fleet utilization.** Active hours = the sum, over every non-cancelled ride on a **shared** car of the department, of that ride's overlap with each Jerusalem calendar day's `06:00–22:00` window; capacity hours = (number of active shared cars) × (days in range) × 16; rate = active ÷ capacity.
+    - **Requests.** How many non-draft/non-withdrawn requests fell in range (by departure/return day), how many were granted (assigned/merged), how many went unmet (denied/external/waitlisted, with the resulting rate) and how many were cancelled.
+    - **Rides.** How many non-cancelled shared-car rides started in range.
+    - **By weekday.** The same active-hours/rides/utilization figures broken down by day of week and averaged over how many times that weekday occurred in the range — so a Sadran can see "Tuesdays are always full" at a glance.
+    - **Policy score.** The average of the department's recorded weighted-coverage publication score (DATA_MODEL §3.9) across the weeks published in range, ignoring weeks with no score.
+    Only the admin or a Sadran of the department may call it. (DATA_MODEL §7.6)
 
 ## Owner TODO amendments — 2026-09-07
 

@@ -30,6 +30,7 @@ export const heAdmin = {
     cardPolicies: "מדיניות דירוג הבקשות",
     cardTemplates: "תוכן הודעות והתראות",
     cardSettings: "הגדרות כלליות",
+    cardStats: "ניצולת רכבים, בקשות ודירוג המדיניות",
   },
   adminCommon: {
     search: "חיפוש",
@@ -358,5 +359,48 @@ export const heAdmin = {
     departmentSectionTitle: "הגדרות לפי מחלקה",
     globalSectionTitle: "הגדרות כלליות (app_settings)",
     empty: "אין הגדרות כלליות נוספות",
+  },
+  stats: {
+    title: "סטטיסטיקה",
+    subtitle: "ניצולת רכבים, בקשות ודירוג המדיניות לפי טווח תאריכים",
+    navMenuItem: "סטטיסטיקה",
+    dateFrom: "מתאריך",
+    dateTo: "עד תאריך",
+    presets: {
+      last4Weeks: "4 שבועות אחרונים",
+      last3Months: "3 חודשים",
+      thisYear: "השנה",
+    },
+    tiles: {
+      utilization: {
+        label: "שיעור ניצולת",
+        subOf: "מתוך",
+        subUnit: "שעות",
+        help: "אחוז שעות הנסיעה בפועל ברכבים המשותפים (06:00–22:00) מתוך שעות הזמינות בטווח שנבחר.",
+      },
+      unmet: {
+        label: "בקשות שלא נענו",
+        subOf: "מתוך",
+        subUnit: "בקשות",
+        help: "בקשות שנדחו, נפתרו מחוץ למערכת או נותרו ברשימת המתנה, מתוך כלל הבקשות שהוגשו בטווח.",
+      },
+      rides: {
+        label: "נסיעות",
+        help: "מספר הנסיעות השונות ברכבים המשותפים בטווח שנבחר.",
+      },
+      policyScore: {
+        label: "ציון מדיניות ממוצע",
+        subUnit: "שבועות",
+        help: "ממוצע ציון המדיניות בעת הפרסום, על פני השבועות שפורסמו בטווח.",
+        noData: "אין שבועות שפורסמו בטווח זה",
+      },
+    },
+    busiestDays: {
+      title: "העומס לפי יום בשבוע",
+      hoursUnit: "שעות",
+      ridesUnit: "נסיעות",
+      busiestBadge: "העמוס ביותר",
+    },
+    empty: "אין נתונים לטווח התאריכים שנבחר",
   },
 } as const;

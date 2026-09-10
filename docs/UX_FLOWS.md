@@ -65,6 +65,7 @@ Week parameter `:week` is the target week's Sunday as `YYYY-MM-DD`. `:dept` is t
 | `/admin/templates` | Notification templates | Admin | §5.9 |
 | `/admin/settings` | Settings | Admin | Weekly cycle defaults per department, buffers, limits (§5.10). |
 | `/admin/issues` | Car issues | Admin | Open issues, "move to maintenance". |
+| `/stats/:dept` | **Statistics** | Admin, Sadran (of `:dept`) | Utilization, requests, rides and policy-score tiles + busiest-days bar list over a chosen date range (§5.12). Registered in `src/features/member/routes.tsx` since it's reachable by more than one role, same as `/cars/:carId` — the page itself gates access. |
 | `*` | Not found | anyone | Link home. |
 
 ### 2.2 Navigation structure
@@ -632,6 +633,17 @@ The corrected route from §2.1's table above. **Guard**: `is_admin() ∨ cars.re
 
 **Admin** (`/admin/cars`): a new "אחראי/ת" column (member's name or `he.adminCars.noResponsible`), the car-name cell is now a `Link` to `paths.car(id)` (`stopPropagation` so the row's own click-to-edit-sheet behavior is unaffected), and `CarForm`'s responsible picker (`Select`, candidates = department members via `useAllDepartmentMembers`/`useAllProfiles`, "ללא אחראי/ת" clears it).
 
+### 5.12 Statistics (`/stats/:dept`, owner request; built 2026-09-10, ui-dev)
+
+Open to admins **and** department Sadranim (a permanent `department_members.role = 'sadran'`/`'admin'` row for `:dept`, not a weekly-only assignment — there is no single week to check that against here), backed by the `department_stats(p_department_id, p_from, p_to)` `SECURITY DEFINER` RPC (`20260910097000_add_department_stats.sql`, db-migrator). The route is registered in `src/features/member/routes.tsx` (reachable by more than one role, same as `/cars/:carId`) and gates access client-side the same way `CarPage` does — the RPC itself is the real guarantee.
+
+- **Header**: title + one-line subtitle; a `StatsDepartmentSwitcher` (`<Select>`) appears in the header actions only when the viewer manages more than one department (admin: every active department; Sadran: every department where their role is `sadran`/`admin`) — same "don't show a switcher with nothing to switch to" rule as `DepartmentContextSelector`.
+- **Date range**: two native `<input type="date">` (from/to, `dir="ltr"`) plus three preset chips — "4 שבועות אחרונים" (28 days back), "3 חודשים", "השנה" (January 1st of the current year) — computed against `todayInJerusalem()` (`computePresetRange`, pure and unit-tested, `src/features/stats/presets.ts`). Default on load: last 4 weeks ending today. Nothing is persisted across visits.
+- **Stat tiles** (2-column grid on phone, 4-column from `md`): שיעור ניצולת (utilization rate, % + "{{active}} מתוך {{capacity}} שעות"), בקשות שלא נענו (unmet rate, % + "{{unmet}} מתוך {{total}} בקשות"), נסיעות (a bare count), ציון מדיניות ממוצע (2 decimals + "{{weeks}} שבועות", or a "no weeks published in range" line when `policyScore.average` is `null`). Each tile carries a one-line Hebrew definition of what it measures. Every number renders in its own `<span dir="ltr">` (not the whole sentence — CLAUDE.md Conventions "RTL / layout").
+- **Busiest days**: a pure-CSS horizontal bar list, one row per weekday (Sunday first, label via `weekdayShortLabelForDow` — an anchored-Sunday wrapper around the shared `weekdayLabel`, never hand-indexing `he.days.short`), bar width = that day's `utilizationRate` relative to the range's maximum (`div` widths, `bg-primary` on `bg-muted`, no chart library, bars `aria-hidden`), value text = average hours/rides per occurrence of that weekday. The single highest day gets a "העמוס ביותר" badge; no day is badged when every day is at zero utilization.
+- **Loading/empty/error**: `CardListSkeleton` while loading; `EmptyState` when `days === 0` (no data in range) or when the viewer isn't authorized (`he.errors.notAuthorized`, same pattern as `CarPage`); `ErrorState` with retry on an RPC failure.
+- **Entry points**: a "סטטיסטיקה" card on the admin home screen (`AdminHomeScreen`, visible to anyone who can reach `/admin`, department = the viewer's active department) and the board's kebab menu (`BoardActionsMenu`, `paths.stats(departmentId)`).
+
 ---
 
 ## 6. Notification copy
@@ -647,8 +659,8 @@ This table **is** the `notification_event` enum (DATA_MODEL §2) and ARCHITECTUR
 | `notif.windowOpen` | `window_open` | Request window opened | הבקשות לשבוע {{weekLabel}} נפתחו | אפשר להגיש בקשות עד {{closeTime}}. |
 | `notif.windowClosing` | `window_closing` | Closing reminder (T-24h, T-2h; `closing_reminder_hours`) | עוד {{count}} שעות לסגירת הבקשות | עדיין לא הגשת בקשה לשבוע {{weekLabel}}? זה הזמן. |
 | `notif.windowClosedSolveNow` | `window_closed_solve_now` | Request window closed, solve now (to Sadran; fired by `advance_week_phases()`) | הבקשות לשבוע {{weekLabel}} נסגרו | אפשר להריץ את הפתרון האוטומטי וללוח הסדרן/ית. |
-| `notif.published` | `published` | Siddur published | הסידור לשבוע {{weekLabel}} פורסם | {{outcomeLine}} (per member, e.g. "שובצת ליונדאי 3 ביום ג' 08:30–13:00" / "הבקשה לעפולה לא שובצה: {{reason}}") |
-| `notif.outcomeChanged` | `outcome_changed` | Your outcome changed | שינוי בסידור שלך | {{diffLine}} (e.g. "הנסיעה לעפולה עברה מ-09:00 ל-08:30, רכב יונדאי 3") |
+| `notif.published` | `published` | Siddur published | הסידור פורסם לימים {{days}} | {{outcomeLine}} |
+| `notif.outcomeChanged` | `outcome_changed` | Your outcome changed | שינוי בסידור שלך לימים {{days}} | {{diffLine}} |
 | `notif.proposalReceived` | `proposal_received` | Proposal received | הצעה מ{{sadranName}} לגבי {{destination}} | {{day}} {{depart}}–{{return}} — {{proposalShort}} |
 | `notif.proposalAnswered` | `proposal_answered` | Proposal answered or expired (to the Sadran who sent it, `proposals.created_by`; falls back to `sadranim_of(dept, week)` only if that is null) | {{firstName}} ענה/תה על ההצעה | {{destination}}, {{day}} {{depart}}–{{return}} |
 | `notif.freedSlot` | `freed_slot` | Freed slot available (several candidates) | התפנה רכב ל{{destination}} | {{car}}, {{day}} {{depart}}–{{return}}. |
@@ -672,6 +684,8 @@ This table **is** the `notification_event` enum (DATA_MODEL §2) and ARCHITECTUR
 Mute-list label supplied 2026-09-09 (ui-dev): `he.notif.car_care` = "טיפול ברכב" (`src/i18n/he.ts`); added to the "תקלות ותחזוקה" mute category alongside `maintenance_affects` (`src/features/inbox/muteCategories.ts`).
 
 Mute categories (§3.8) → events: תזכורות על חלון בקשות = `window_open`, `window_closing`; פרסום הסידור = `published`, `outcome_changed`; הצעות = `proposal_received`; מקומות שמתפנים = `freed_slot`, `freed_slot_auto`, `claim_approved`, `claim_declined`, `waitlist_contested`, `waitlist_resolved`; תקלות ותחזוקה = `maintenance_affects`, `car_care`. Sadran/Admin events and `auto_approved`/`access_approved`/`status_changed` are not mutable. `car_care` **is** mutable — unlike the Sadran-role events, it is a normal per-recipient notification (the recipient may be a plain member who happens to be `responsible_id`, or an admin only by fallback).
+
+**`published`/`outcome_changed` are one notification per recipient per `publish_siddur()` call, not one per request** (`20260910096000_group_publish_notifications_by_recipient.sql`, owner decision, REQ §9). A member with rides on several days published (or changed) in the same call gets exactly one `published` and/or one `outcome_changed` notification, never several. `{{days}}` is every affected day for that recipient, comma-joined in date order as a Hebrew weekday letter, e.g. `"א׳, ב׳, ו׳"` (`weekday_short_label(request_day)`, reading the seeded `weekday_labels` table — DATA_MODEL §3.3, `20260910096200`/`96300`; updated 2026-09-10, was previously `DD/MM`. No Hebrew is computed or hard-coded in SQL logic, hard rule 3 — the letters are seeded data, the table's third allowed location alongside `notification_templates` and `ride_types`/`destinations`); `{{outcomeLine}}`/`{{diffLine}}` become multi-line, one line per request, each `{{day}} {{depart}}–{{return}} · {{car or destination}}`, newline-joined and ordered the same way as `{{days}}`. `data.request_id` is the recipient's first affected request (by day, then id), so `notification_default_url()` still deep-links to `/requests?focus=<id>`. Dedupe keys are `published:<version_id>:<recipient>` / `outcome_changed:<version_id>:<recipient>` (previously `<event>:<version_id>:<request_id>`). `siddur_versions.notified_count` now counts recipients notified (one per kind per recipient), not requests notified.
 
 `outcome_changed` also has a `ride_cancelled` inbox/push variant (`_data.variant`, same selection mechanism as the `ride_change` variant of `proposal_received` above): sent to every other served passenger/driver — never the person who cancelled — when a ride is fully cancelled (`cancel_ride_without_passengers()`, DATA_MODEL §3.10), before their request flips to `cancelled`. Title "{{byName}} ביטל/ה נסיעה שהיית בה", body "{{day}} {{depart}}–{{return}}, {{car}} ל{{destination}}." (`{{byName}}` is the person who cancelled, passed explicitly; the rest comes from `notification_context()` via `request_id`/`ride_id` in `data`, resolved while the ride/request rows are still intact).
 
@@ -914,6 +928,10 @@ Contracts are one line; props in TypeScript-ish shorthand. All components are RT
 | `CarNameWithReport` | `carId, carName, className?` — the car's own `CarFront` icon (no separate wrench/button glyph) followed by its name; the icon is the tap target (`role="button"`, not a nested `<button>` — every call site can itself be inside a clickable card/row, `title` tooltip on desktop, ≥40px tap area via negative-margin padding) that opens `CarReportDialog`; used everywhere a car name shows on a member surface, never on the Sadran board (§3.9, `src/features/carCare/components/CarNameWithReport.tsx`; ✅ done 2026-09-09; updated 2026-09-09 to reuse the car icon as the trigger instead of an extra wrench glyph). |
 | `CarReportDialog` | `carId, carName, open, onOpenChange` — home (3 cards) + problem/tires/wash sub-views, built on `PortalDialogContent` (§3.9, `src/features/carCare/components/CarReportDialog.tsx`; ✅ done 2026-09-09). |
 | `TireFillPanel` | `value: TireStates; onChange; note; onNoteChange` — inline SVG car schematic, 5 tap-to-cycle tire buttons + legend + note (§3.9, `src/features/carCare/components/TireFillPanel.tsx`; ✅ done 2026-09-09). |
+| `StatsDateRangePicker` | `value: {from, to}; onChange` — two native `<input type="date">` + three preset chips (§5.12, `src/features/stats/components/StatsDateRangePicker.tsx`; ✅ done 2026-09-10). |
+| `StatTile` | `label, value, sub?, help` — one stat card (headline value + one-line definition) of the statistics screen's tile grid (§5.12, `src/features/stats/components/StatTile.tsx`; ✅ done 2026-09-10). |
+| `WeekdayBarList` | `days: WeekdayStat[]` — pure-CSS "busiest days" horizontal bar list, Sunday first, top day badged (§5.12, `src/features/stats/components/WeekdayBarList.tsx`; ✅ done 2026-09-10). |
+| `StatsDepartmentSwitcher` | `departmentId, options: {id, name}[]` — statistics screen's department `<Select>`, shown only when the viewer manages more than one (§5.12, `src/features/stats/components/StatsDepartmentSwitcher.tsx`; ✅ done 2026-09-10). |
 
 ---
 
@@ -1148,6 +1166,16 @@ Screen titles, primary actions, statuses and navigation. Keys are the namespaced
 | `carCare.tireDone/tireCelebration` | סיימתי / כל הכבוד על מילוי האוויר! | |
 | `carCare.washButton/washCelebration` | שטפתי את הרכב / הרכב נקי — תודה! | |
 | `carCare.close` | סגירה | dialog's explicit X, `aria-label` |
+| `stats.title/subtitle` | סטטיסטיקה / ניצולת רכבים, בקשות ודירוג המדיניות לפי טווח תאריכים | §5.12 page header, also the admin home card title |
+| `stats.dateFrom/dateTo` | מתאריך / עד תאריך | date-range input labels |
+| `stats.presets.last4Weeks/last3Months/thisYear` | 4 שבועות אחרונים / 3 חודשים / השנה | preset chips |
+| `stats.tiles.utilization.label/subOf/subUnit/help` | שיעור ניצולת / מתוך / שעות / (definition) | utilization tile |
+| `stats.tiles.unmet.label/subOf/subUnit/help` | בקשות שלא נענו / מתוך / בקשות / (definition) | unmet-rate tile |
+| `stats.tiles.rides.label/help` | נסיעות / (definition) | rides-count tile |
+| `stats.tiles.policyScore.label/subUnit/help/noData` | ציון מדיניות ממוצע / שבועות / (definition) / אין שבועות שפורסמו בטווח זה | policy-score tile |
+| `stats.busiestDays.title/hoursUnit/ridesUnit/busiestBadge` | העומס לפי יום בשבוע / שעות / נסיעות / העמוס ביותר | busiest-days bar list |
+| `stats.empty` | אין נתונים לטווח התאריכים שנבחר | empty state, `days === 0` |
+| `adminHome.cardStats` | ניצולת רכבים, בקשות ודירוג המדיניות | admin home card subtitle |
 
 ---
 

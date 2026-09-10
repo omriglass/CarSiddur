@@ -388,6 +388,17 @@ Free-text requests keep `requests.destination_text`; "promote to list" is an adm
 | sort_order | smallint | NN | 0 | |
 | is_active | boolean | NN | true | inactive types stay referenced by history |
 
+#### `weekday_labels` (added 2026-09-10, `20260910096200`)
+
+| column | type | null | default | notes |
+|---|---|---|---|---|
+| dow | smallint | NN | | PK; 0..6, matching `extract(dow from date)` (0 = Sunday .. 6 = Saturday) |
+| short_he | text | NN | | e.g. `'א׳'`; consumed by `weekday_short_label(d date)` for the `{{days}}` notification var (§3.11) |
+| long_he | text | NN | | e.g. `'ראשון'` |
+| created_at / updated_at | timestamptz | NN | now() | |
+
+Global reference data, **not** department-scoped — one row per weekday, seeded by the migration itself (so a fresh deploy has it without re-running `supabase/seed.sql`) and again idempotently in `supabase/seed.sql`. Not a catalog an admin edits through the UI today; a future admin screen would go through an RPC, same as any other multi-row write. This is the **third seeded-Hebrew location** allowed by hard rule 3(c), alongside `notification_templates` and `ride_types.name_he`/`destinations.name` — the letters live here as data, never computed or hard-coded in SQL function bodies.
+
 ### 3.4 Priority policies (REQUIREMENTS §7.2)
 
 #### `policies`
@@ -702,7 +713,7 @@ Unique `(proposal_id, profile_id)`. Every proposal has ≥ 1 party (the requeste
 | published_at | timestamptz | NN | now() | |
 | notified_count | int | NN | 0 | |
 
-Immutable (`forbid_mutation()`). `weeks.published_version_id` points to the current one; `publish_siddur()` RPC creates the row, flips draft rides to `confirmed`, updates the pointer, sets phase `published`/`live`, and inserts notifications for members whose outcome changed (all members on first publish).
+Immutable (`forbid_mutation()`). `weeks.published_version_id` points to the current one; `publish_siddur()` RPC creates the row, flips draft rides to `confirmed`, updates the pointer, sets phase `published`/`live`, and inserts notifications for members whose outcome changed (all members on first publish). **`notified_count` counts recipients notified, not requests** (`20260910096000_group_publish_notifications_by_recipient.sql`, owner decision): `publish_siddur()` groups the in-scope requests by `requester_id` and enqueues at most one `published` notification (newly-public days) and one `outcome_changed` notification (status changed on an already-public day) per recipient per call, each listing every affected day/request (`{{days}}`, multi-line `{{outcomeLine}}`/`{{diffLine}}`) instead of firing once per request as before; dedupe keys are `published:<version_id>:<recipient>` / `outcome_changed:<version_id>:<recipient>`.
 
 ### 3.10 Live changes (REQUIREMENTS §8)
 
@@ -1059,6 +1070,7 @@ Legend: **own** = row's profile column = `auth.uid()`; **dept** = `member_of(dep
 | car_care_events | `is_car_responsible(car_id)` ∨ admin ∨ `reported_by = auth.uid()` (§6.6) | **RPC only** — `log_car_care()` | — (no update policy for any role; immutable in practice) | — |
 | destinations | approved users | admin; RPC `suggest_destination()` for members (inserts `is_approved=false`) | admin; RPC `merge_destination()` (admin-only, repoints references then deletes/deactivates the source, §6.1 item 14) | admin (RESTRICT if referenced) |
 | ride_types | approved users | admin | admin | — (deactivate) |
+| weekday_labels | approved users (`is_approved()`); global, not department-scoped | — (none) | — (none) | — (none) |
 | policies | dept ∨ admin | admin | admin | admin (RESTRICT if versions referenced) |
 | policy_versions | as policies | admin | — (immutable) | — |
 | weeks | dept ∨ admin ∨ (approved users when public) | admin ∨ sadran (RPC `open_week`); internal-only `ensure_upcoming_week()` (revoked from `authenticated`) inserts phase `upcoming` from `submit_series_request()` | admin ∨ sadran (phase/close_at/publish_at/overrides; `published_version_id` only via RPC — trigger); `materialize_department_weeks()`/`advance_week_phases()` promote `upcoming` → `open` | admin (only if no requests) |
@@ -1489,6 +1501,22 @@ where r.status <> 'cancelled' and r.destination_id <> d.home_destination_id;
 ```
 The board draws `location_name` as a badge on the car row for `[away_from, away_until)` ("בבנימינה") and a warning on rows where `away_until` is null or later than the local day's `day_end_time` and `overnight_acknowledged` is false (UX_FLOWS §4.2). `try_auto_approve()` uses `car_location_at(car, depart_at) = home` before attempting the insert (invariant #20).
 
+### 7.6 Department statistics — §13.78 (admin + Sadran statistics screen)
+
+`department_stats(p_department_id uuid, p_from date, p_to date) returns jsonb` (`stable security definer set search_path = public, pg_temp`, `20260910097000_add_department_stats.sql`), granted to `authenticated` only. Authorization: `is_admin() or is_sadran_any(p_department_id)`, else `not_authorized` (`P0001`) — the same helper vocabulary as every other RLS-adjacent check, not a new one. Rejects `p_to < p_from` or a span over 400 inclusive days with `invalid_range` (`P0001`). All dates/ranges are Jerusalem-inclusive (`between p_from and p_to` on a `::date` already converted `at time zone 'Asia/Jerusalem'`).
+
+Definitions, exactly as implemented:
+- **Shared cars**: `cars.type = 'shared' and cars.status = 'active'` of the department — the same predicate every ride-writing RPC already uses to pick a usable shared car (`submit_request`, `try_auto_approve`, `place_series`, …), not `status <> 'retired'`. A car mid-`maintenance` therefore does not count toward `sharedCars`/`capacityHours` for the range, even though it still belongs to the department.
+- **Active hours**: for every non-cancelled ride on a shared car of the department whose `[starts_at, ends_at)` could touch `[p_from, p_to]` at all, and for every Jerusalem calendar day in range that ride actually touches, the overlap of the ride with that day's `[06:00, 22:00)` Jerusalem window, in hours. Ordinary rides can only ever touch one calendar day in the current schema — `assert_same_day_window()` (`20260907102000_coordinator_planning_and_same_day_rides.sql`) rejects any ride whose start and end are not on the same Jerusalem day (`ride_must_end_same_day`) — but the query does not special-case that; it computes the overlap per touched day generically, so it stays correct if that constraint is ever relaxed for some ride kind.
+- **Requests**: a request counts on the Jerusalem calendar day of `coalesce(depart_at, return_at)`. `total` = every non-`draft`/non-`withdrawn` request whose day is in range; `granted` = `status in ('assigned','merged')`; `unmet` = `status in ('denied','external','waitlisted')`; `cancelled` = `status = 'cancelled'`; the remainder (e.g. `submitted`, `proposed`) counts only toward `total`. `unmetRate = unmet / total` (`0` when `total = 0`).
+- **Rides** (top-level count): distinct non-cancelled rides on a shared car of the department whose Jerusalem start date is in range (i.e. rides that *start* in range, not every ride that merely touches it — a ride touching two boundary days only counts once, on its start day).
+- **byWeekday**: always 7 entries, `dow` 0–6, even when a weekday does not occur at all in a short range (`occurrences = 0`). `occurrences` = count of dates in range with that `dow`; `avgActiveHours`/`avgRides` = that weekday's summed active hours / summed ride-starts across every occurrence, divided by `occurrences` (`0` when `occurrences = 0`); `utilizationRate = avgActiveHours / (sharedCars × 16)` (`0` when `sharedCars = 0`).
+- **policyScore**: the *latest* `siddur_versions` row per `week_start` (highest `version_no`) whose `published_at` falls in range (Jerusalem date), read for the department's currently-recorded active-policy score — `snapshot.policy_scores[]` entry whose `policy_version_id` matches the snapshot's own top-level `policy_version_id` (the "weighted coverage"/`alignment_ratio` field described in the publication note above), null or `0` ignored (a policy with no active version, or a publish that supplied an empty score snapshot, produces no countable week). `average` is the mean of the counted weeks' `alignment_ratio` (`0` when none); `weeks` is how many were counted. This is a *reporting* read only — it never calls `publish_siddur()` and does not participate in publication.
+
+**Correction to the brief that requested this RPC**: it asked for a fixture "a ride spanning midnight 21:00→01:00 (1h)" to test the active-hours clipping. That is not constructible under the current schema: `assert_same_day_window()` (added 2026-09-07, before this feature) refuses any ride whose start and end fall on different Jerusalem calendar days. `supabase/tests/department_stats.sql` uses a same-day late-evening ride instead to exercise the same `[06:00, 22:00)` clipping logic.
+
+Tests: `supabase/tests/department_stats.sql` (registered in `scripts/test-db.mjs`) — a shared-car ride 05:00–08:00 (2h), one 21:00–23:30 (1h) and one 20:00–23:00 (2h) on a 14-day range so every weekday occurs exactly twice; a cancelled ride and a temporary-car ride are both ignored; nine requests spanning every counted/ignored status combination; two `siddur_versions` for one week (only the later version's score counts) and one for another week with a zero score (ignored, so `policyScore.weeks = 1`); admin and the department's Sadran both read the same figures; a plain member is refused `not_authorized`; a Sadran of a *different* department (via `create_department`) is refused `not_authorized` for this one but reads their own (empty) department's stats fine; `p_to < p_from` and a 402-day span are both refused `invalid_range`, a 400-day span is accepted.
+
 ---
 
 ## 8. Retention
@@ -1497,7 +1525,7 @@ Supabase Free: 500 MB. Estimated steady state at 2 departments × 300 requests/w
 
 | data | kept | pruned |
 |---|---|---|
-| departments, profiles, department_members, sadran_assignments, cars, car_seat_configs, destinations, ride_types, policies, policy_versions, app/department settings | forever | profiles of members removed by admin: anonymized (`full_name → 'חבר לשעבר'`, phone/email null, `approval_status='blocked'`) rather than deleted, so history and fairness stats stay consistent |
+| departments, profiles, department_members, sadran_assignments, cars, car_seat_configs, destinations, ride_types, weekday_labels, policies, policy_versions, app/department settings | forever | profiles of members removed by admin: anonymized (`full_name → 'חבר לשעבר'`, phone/email null, `approval_status='blocked'`) rather than deleted, so history and fairness stats stay consistent |
 | weeks, requests, request_companions, rides, ride_requests, siddur_versions, solver_runs (summary) | forever (stats, fairness lookback, §12 dashboards) | `solver_runs.summary` is small; published `siddur_versions.snapshot` includes per-policy, member and request scores for later comparison |
 | proposals, proposal_parties, freed_slot_offers, freed_slot_claims | forever for outcome fields | `token_hash` nulled 30 days after week end (`housekeeping()`); `payload` kept |
 | waitlist_groups, waitlist_group_members | forever (they record who wanted a car and who got it — fairness/history, REQ §13.75) | — (they are week-scoped and tiny; cascade with the week's requests) |
@@ -1930,3 +1958,105 @@ weeks past the series' own first leg). `supabase/tests/multi_day_series.sql`'s p
 may not reach past the last week the department has opened" case was rewritten to match: the same
 span now succeeds and materializes the next week `upcoming`, and a follow-up ordinary request into
 it is still refused.
+
+## One notification per member per publish call (2026-09-10, db-migrator)
+
+REQ §9 owner decision: `publish_siddur()`'s per-request `published`/`outcome_changed` loop
+fired one notification per request, so a member with rides on several days of the same
+publish call got one push/inbox item per day. Two migrations:
+
+| file | contents |
+|---|---|
+| `20260910096000_group_publish_notifications_by_recipient.sql` | `publish_siddur()`'s notification loop (its own in-place patches: `20260907092500`, `20260907093900`, `20260907094100`, `20260908150000`, `20260909097000`, `20260910090000`, `20260910091800`, `20260910095500`) patched via `pg_get_functiondef()`/`replace()` to group the in-scope requests by `requester_id` before enqueuing anything. |
+| `20260910096100_update_published_outcome_changed_templates.sql` | Updates the null-variant `published`/`outcome_changed` inbox/push template rows' `title`/`default_title` to add `{{days}}` (body text is unchanged — still `{{outcomeLine}}`/`{{diffLine}}`, now rendered multi-line); only overwrites `title`/`body` where they still equal the prior `default_title`/`default_body`, so an admin's own edited copy is preserved. |
+| `20260910096200_create_weekday_labels.sql` | New global (not department-scoped) reference table `weekday_labels(dow smallint pk, short_he, long_he)`, seeded with the 7 rows both in the migration and in `supabase/seed.sql`; RLS enabled + forced, `is_approved()` SELECT-only, no write policy for any role (§4.3). Helper `weekday_short_label(d date) returns text` (stable, security definer) resolves `short_he` for `extract(dow from d)`, falling back to `to_char(d,'DD/MM')` if the row is somehow missing. Third seeded-Hebrew location per hard rule 3(c), alongside `notification_templates` and `ride_types.name_he`/`destinations.name`. |
+| `20260910096300_publish_siddur_days_weekday_letters.sql` | Patches `publish_siddur()`'s `days_agg` CTE (in-place via `pg_get_functiondef()`/`replace()`, same technique as `20260910096000`) to build `{{days}}` from `weekday_short_label(request_day)` instead of `to_char(request_day,'DD/MM')`, so it now renders e.g. `"א׳, ב׳, ו׳"` (owner decision). `outcomeLine`/`diffLine`'s per-line `{{day}}` is unchanged (`DD/MM`, since each line already carries a full date). |
+
+**New grouping.** For every request in scope (non-`draft`/`withdrawn`/`cancelled`, on a day
+in `p_days`), the function now classifies it `published` (day not in `weeks.published_days`
+before this call, or no prior `siddur_versions` row) or `outcome_changed` (day already
+public, and the request's status differs from the previous version's snapshot for that
+request id) exactly as before per-request, then groups by `(requester_id, event_kind)` and
+enqueues **at most one** notification of each kind per recipient per call:
+
+- `days` — every affected day for that recipient/kind, comma-joined in date order as a Hebrew
+  weekday letter (`weekday_short_label(request_day)`, e.g. `"א׳, ב׳, ו׳"` — updated
+  2026-09-10, `20260910096200`/`96300`, owner decision; originally `to_char(request_day,'DD/MM')`
+  like the single-request `{{day}}` var). `weekday_short_label()` reads the seeded
+  `weekday_labels` reference table rather than computing/hard-coding a Hebrew string in SQL
+  logic, so hard rule 3 still holds — the day label is *data*, not code.
+- `outcomeLine` (for `published`) / `diffLine` (for `outcome_changed`) — one line per
+  request for that recipient/kind, newline-joined (`chr(10)`) in the same day/id order, each
+  line `{{day}} {{depart}}–{{return}} · {{car or destination}}` built from the same pieces
+  `notification_context()` uses per request (ride start/end if the request has a live ride,
+  else the request's own `depart_at`/`return_at`; car name if assigned, else the destination
+  name/free-text) — resolved by a fresh per-request lateral join to `rides`/`cars`/
+  `destinations`, not by calling `notification_context()` per line (that function only knows
+  about a single `_data.request_id`).
+
+Both vars are passed explicitly to `enqueue_notification()`, which merges them over
+`notification_context()`'s single-request defaults (`notification_context(...) || _vars`,
+right side wins) — so the multi-request line replaces what would otherwise be computed from
+just `data.request_id`. `data.request_id` is set to the recipient's first affected request
+(ordered by day, then id) purely so `notification_default_url()` still resolves a deep link
+(`/requests?focus=<id>`); it does not affect the rendered vars. Dedupe keys move from
+`<event>:<version_id>:<request_id>` to `published:<version_id>:<recipient>` /
+`outcome_changed:<version_id>:<recipient>`.
+
+**`notified_count`** (`siddur_versions`, DATA_MODEL §3.11) now counts recipients notified —
+one increment per `(requester_id, event_kind)` group actually looped over, same counting
+style as before (not conditioned on `enqueue_notification`'s dedupe/mute return value,
+matching prior behavior) — not one per request; a publish that used to bump it by 3 for a
+3-day member now bumps it by 1. `supabase/tests/rls_smoke.sql` TEST 9's `notified_count >= 1`
+assertion still holds under the new semantics.
+
+**Ordering unaffected.** `form_waitlist_groups()` still runs before this loop (per published
+day), so the classification and the rendered lines reflect the final, post-auto-approval
+outcome, same as before.
+
+**Tests.** `supabase/tests/selected_day_publication.sql` gained a dedicated case (own
+`weeks`/`requests` fixture, a week offset unused by the rest of the file): a member with
+round-trip requests on Sunday/Monday/Friday, published together, gets exactly one
+`published` notification whose title lists all three days in order and whose body has three
+lines; a second member with one request gets a single-day title/one-line body; flipping that
+member's request to a different served status (`merged`, chosen because it is outside the
+`submitted`/`waitlisted` range `form_waitlist_groups()` touches, so the change sticks) and
+republishing the same day fires exactly one `outcome_changed` notification for them and none
+for the unaffected member. All 22 suites pass (`npm run db:test`).
+
+**Placeholder editor.** `src/features/admin/templates/lib/placeholders.ts`'s
+`NOTIFICATION_PLACEHOLDERS`/`PLACEHOLDER_SAMPLES` gained `days` (sample `"27/06, 28/06,
+05/07"`, matching the then-actual `DD/MM`-joined runtime value). **Updated 2026-09-10**
+(`20260910096200`/`96300`): the sample is now `"א׳, ב׳, ו׳"`, matching the `weekday_labels`-backed
+runtime value described above. Pre-existing,
+unrelated to this change: that file's `day` sample (`"יום ג'"`) already does not match the
+actual numeric `DD/MM` value `notification_context()` renders — a minor doc/preview
+inconsistency, not introduced here.
+
+## Department statistics RPC (2026-09-10, db-migrator)
+
+REQ §13.78 (owner request: a statistics screen for the admin and the Sadran). One migration,
+`20260910097000_add_department_stats.sql`: `department_stats(p_department_id, p_from, p_to)
+returns jsonb` (§7.6 has the full return shape and every definition). No new table, no RLS
+changes — authorization is `is_admin() or is_sadran_any(p_department_id)`, the existing helper
+vocabulary of §4.2.
+
+**Bug caught before shipping**: the first draft computed each ride/day overlap as
+`greatest(0, least(ride.ends_at, day_end) - greatest(ride.starts_at, day_start))` against a
+`left join` onto the candidate rides for that day. `GREATEST`/`LEAST` ignore `NULL` arguments
+rather than propagating them (documented Postgres behavior), so on a day with **no** ride at all
+the join produces a row with `ride.starts_at`/`ride.ends_at` both `NULL`, and
+`least(NULL, day_end)` evaluated to `day_end` and `greatest(NULL, day_start)` to `day_start` —
+silently scoring every ride-less day as a full 16-hour day. Caught by a manual sanity check
+against a date range with zero rides in it, before the test suite was even written (a `count(*)`
+of matching rows was still zero, but `department_stats()` reported 112 active-hours over 7 empty
+days). Fixed with an explicit `case when ride.id is null then 0 else ... end` guard.
+
+**Correction to the brief**: see §7.6's "Correction to the brief" note — a ride cannot span
+midnight under the current schema (`assert_same_day_window()`, 2026-09-07), so the test fixture
+uses a same-day late-evening ride instead of the brief's cross-midnight example to exercise the
+same day-window clipping.
+
+Tests: `supabase/tests/department_stats.sql` (§7.6 has the full list of cases; registered in
+`scripts/test-db.mjs`, 23 suites total). `npm run db:test` passes (applied via `docker exec psql`
+against the owner's already-running local stack, not `db:reset`, per this task's instructions).

@@ -154,4 +154,68 @@ select set_config('request.jwt.claims','{"sub":"00000000-0000-0000-0000-00000000
 do $$ begin
   assert not exists(select 1 from public.rides where id=(select id from publication_ids where k='ride1')),'unpublished own-driver ride remained public';
 end $$;
+
+-- One notification per member per publish call (20260910096000_group_publish_notifications_by_recipient.sql):
+-- a member with rides on several newly-published days gets exactly one `published`
+-- notification listing every day, not one per request; a second member with a single day
+-- gets a single-day title/body; republishing with one changed outcome fires exactly one
+-- `outcome_changed` notification.
+reset role;
+select set_config('request.jwt.claims','{"sub":"00000000-0000-0000-0000-000000000102","role":"authenticated"}',true);
+do $$
+declare dept uuid:='00000000-0000-0000-0000-000000000001'; manager uuid:='00000000-0000-0000-0000-000000000102';
+  memberA uuid:='00000000-0000-0000-0000-000000000103'; memberB uuid:='00000000-0000-0000-0000-000000000104';
+  w2 date:=public.current_week_start()+217; dt timestamptz; q uuid; body_line_count int; title text;
+begin
+  insert into public.weeks(department_id,week_start,phase,open_at,close_at,publish_at)
+    values(dept,w2,'open',now()-interval '1 day',now()+interval '1 day',now()+interval '2 days');
+  -- memberA: Sunday, Monday, Friday round-trip requests, all trivially auto-approvable.
+  foreach dt in array array[
+    (w2+0+time '08:00') at time zone 'Asia/Jerusalem',
+    (w2+1+time '08:00') at time zone 'Asia/Jerusalem',
+    (w2+5+time '08:00') at time zone 'Asia/Jerusalem'
+  ] loop
+    insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,trip_shape,
+      needs_car_at_destination,depart_at,return_at,status)
+    values(dept,w2,memberA,manager,'00000000-0000-0000-0000-000000000011','00000000-0000-0000-0000-000000000021',
+      'round_trip'::public.trip_shape,true,dt,dt+interval '2 hours','submitted'::public.request_status);
+  end loop;
+  -- memberB: Sunday only.
+  insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,trip_shape,
+    needs_car_at_destination,depart_at,return_at,status)
+  values(dept,w2,memberB,manager,'00000000-0000-0000-0000-000000000011','00000000-0000-0000-0000-000000000021',
+    'round_trip'::public.trip_shape,true,(w2+0+time '09:00') at time zone 'Asia/Jerusalem',
+    (w2+0+time '11:00') at time zone 'Asia/Jerusalem','submitted'::public.request_status)
+  returning id into q;
+  insert into publication_ids values('groupedB_request',q);
+
+  perform public.publish_siddur(dept,w2,'[]'::jsonb,public.publish_scores_fingerprint(dept,w2),'[]'::jsonb,array[w2,w2+1,w2+5],true);
+
+  assert (select count(*) from public.notifications where recipient_id=memberA and department_id=dept and week_start=w2 and event='published')=1,
+    'memberA should get exactly one published notification for a 3-day publish';
+  select title_he into title from public.notifications where recipient_id=memberA and department_id=dept and week_start=w2 and event='published';
+  assert title=format('הסידור פורסם לימים %s, %s, %s',public.weekday_short_label(w2),public.weekday_short_label(w2+1),public.weekday_short_label(w2+5)),
+    'memberA published title should list all three days in date order: '||title;
+  select array_length(regexp_split_to_array(body_he,E'\n'),1) into body_line_count
+    from public.notifications where recipient_id=memberA and department_id=dept and week_start=w2 and event='published';
+  assert body_line_count=3,'memberA published body should have one line per request, got '||body_line_count;
+
+  assert (select count(*) from public.notifications where recipient_id=memberB and department_id=dept and week_start=w2 and event='published')=1,
+    'memberB should get exactly one published notification';
+  select title_he into title from public.notifications where recipient_id=memberB and department_id=dept and week_start=w2 and event='published';
+  assert title=format('הסידור פורסם לימים %s',public.weekday_short_label(w2)),'memberB single-day title should list one day: '||title;
+
+  -- Force a real, sticky status change on memberB's day-0 request (merged is outside the
+  -- submitted/waitlisted range form_waitlist_groups() touches) and republish the same day.
+  update public.requests set status='merged' where id=(select id from publication_ids where k='groupedB_request');
+  perform public.publish_siddur(dept,w2,'[]'::jsonb,public.publish_scores_fingerprint(dept,w2),'[]'::jsonb,array[w2],true);
+
+  assert (select count(*) from public.notifications where recipient_id=memberB and department_id=dept and week_start=w2 and event='outcome_changed')=1,
+    'memberB should get exactly one outcome_changed notification after a status change';
+  select title_he into title from public.notifications where recipient_id=memberB and department_id=dept and week_start=w2 and event='outcome_changed';
+  assert title=format('שינוי בסידור שלך לימים %s',public.weekday_short_label(w2)),'outcome_changed title should list the day: '||title;
+  assert (select count(*) from public.notifications where recipient_id=memberA and department_id=dept and week_start=w2 and event='outcome_changed')=0,
+    'memberA had no status change and should get no outcome_changed notification';
+end $$;
+
 rollback;

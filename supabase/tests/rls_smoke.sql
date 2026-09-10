@@ -422,4 +422,73 @@ begin
   raise notice 'TEST 12 PASSED: no policy in pg_policies is written for all';
 end $$;
 
+-- ---------------------------------------------------------------------------
+-- 13) weekday_labels (20260910096200): global reference data, not
+--     department-scoped, so the read check is "any approved user, regardless
+--     of department" rather than a same-department/other-department split —
+--     member1 (department "נבו") and a member of a *different* department
+--     (dept ...20000000...0001, no profile is otherwise seeded there, so
+--     reuse member2 to stand in for "some other approved user") both read
+--     all 7 rows; anon gets none; no role can write (no insert/update/delete
+--     policy exists at all for this table).
+-- ---------------------------------------------------------------------------
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000103","role":"authenticated"}', true);
+
+do $$
+declare v_count int;
+begin
+  select count(*) into v_count from public.weekday_labels;
+  assert v_count = 7, format('TEST 13 FAILED: member1 should read all 7 weekday_labels rows, got %s', v_count);
+
+  begin
+    insert into public.weekday_labels (dow, short_he, long_he) values (0, 'x', 'x');
+    raise exception 'TEST 13 FAILED: authenticated insert into weekday_labels should be refused (no insert policy)';
+  exception
+    when insufficient_privilege then null;
+  end;
+
+  -- No UPDATE/DELETE policy exists either, but with RLS forced and no
+  -- permissive policy for the command, Postgres' USING clause defaults to
+  -- false and silently matches zero rows rather than raising — unlike INSERT
+  -- above, which errors because there is no WITH CHECK to satisfy.
+  update public.weekday_labels set short_he = 'x' where dow = 0;
+  if found then
+    raise exception 'TEST 13 FAILED: authenticated update of weekday_labels should affect no rows (no update policy)';
+  end if;
+
+  delete from public.weekday_labels where dow = 0;
+  if found then
+    raise exception 'TEST 13 FAILED: authenticated delete of weekday_labels should affect no rows (no delete policy)';
+  end if;
+
+  raise notice 'TEST 13 PASSED: member1 reads all 7 weekday_labels rows; insert refused, update/delete affect zero rows (no write policy)';
+end $$;
+
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000104","role":"authenticated"}', true);
+
+do $$
+declare v_count int;
+begin
+  select count(*) into v_count from public.weekday_labels;
+  assert v_count = 7, format('TEST 13 FAILED: member2 (a different approved user) should also read all 7 weekday_labels rows, got %s', v_count);
+  raise notice 'TEST 13 PASSED: a second approved user reads weekday_labels too (global reference data, not department-gated)';
+end $$;
+
+reset role;
+
+set local role anon;
+
+do $$
+declare v_count int;
+begin
+  select count(*) into v_count from public.weekday_labels;
+  raise exception 'TEST 13 FAILED: anon should not be able to query weekday_labels at all (expected permission denied)';
+exception
+  when insufficient_privilege then
+    raise notice 'TEST 13 PASSED: anon has no grants on weekday_labels (insufficient_privilege)';
+end $$;
+
+reset role;
+
 rollback;

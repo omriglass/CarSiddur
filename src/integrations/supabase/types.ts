@@ -2990,6 +2990,30 @@ export type Database = {
           },
         ]
       }
+      weekday_labels: {
+        Row: {
+          created_at: string
+          dow: number
+          long_he: string
+          short_he: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          dow: number
+          long_he: string
+          short_he: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          dow?: number
+          long_he?: string
+          short_he?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       weeks: {
         Row: {
           close_at: string
@@ -3570,6 +3594,10 @@ export type Database = {
       }
       crypt: { Args: { password: string; salt: string }; Returns: string }
       current_week_start: { Args: never; Returns: string }
+      department_stats: {
+        Args: { p_department_id: string; p_from: string; p_to: string }
+        Returns: Json
+      }
       digest:
         | { Args: { data: string; type: string }; Returns: string }
         | { Args: { data: string; type: string }; Returns: string }
@@ -3989,6 +4017,7 @@ export type Database = {
         Args: { p_department_id: string; p_week_start: string }
         Returns: string
       }
+      weekday_short_label: { Args: { d: string }; Returns: string }
       withdraw_all_requests: {
         Args: { p_department_id: string; p_week_start: string }
         Returns: number

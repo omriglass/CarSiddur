@@ -11,6 +11,22 @@
 begin;
 
 -- ---------------------------------------------------------------------------
+-- Weekday labels (global reference data, not department-scoped): also inserted
+-- by the migration itself (20260910096200) so deployed DBs get them without
+-- running this seed; repeated here for local/e2e resets. `{{days}}` in the
+-- `published`/`outcome_changed` notifications renders `short_he`.
+-- ---------------------------------------------------------------------------
+insert into public.weekday_labels (dow, short_he, long_he) values
+  (0, 'א׳', 'ראשון'),
+  (1, 'ב׳', 'שני'),
+  (2, 'ג׳', 'שלישי'),
+  (3, 'ד׳', 'רביעי'),
+  (4, 'ה׳', 'חמישי'),
+  (5, 'ו׳', 'שישי'),
+  (6, 'ש׳', 'שבת')
+on conflict (dow) do nothing;
+
+-- ---------------------------------------------------------------------------
 -- Department "נבו" + home destination + 9 more destinations
 -- ---------------------------------------------------------------------------
 insert into public.departments (id, name, slug)
@@ -188,8 +204,8 @@ from (values
   ('window_closing', 'עוד {{count}} שעות לסגירת הבקשות', 'עדיין לא הגשת בקשה לשבוע {{weekLabel}}? זה הזמן.'),
   ('window_closed_solve_now', 'חלון הבקשות נסגר', 'השבוע {{weekLabel}} מוכן לשיבוץ.'),
   ('publish_reminder', 'תזכורת לפרסום הסידור', 'השבוע {{weekLabel}} עדיין לא פורסם.'),
-  ('published', 'הסידור לשבוע {{weekLabel}} פורסם', '{{outcomeLine}}'),
-  ('outcome_changed', 'שינוי בסידור שלך', '{{diffLine}}'),
+  ('published', 'הסידור פורסם לימים {{days}}', '{{outcomeLine}}'),
+  ('outcome_changed', 'שינוי בסידור שלך לימים {{days}}', '{{diffLine}}'),
   ('proposal_received', 'הצעה מ{{sadranName}} לגבי {{destination}}', '{{day}} {{depart}}–{{return}} — {{proposalShort}}'),
   ('proposal_answered', '{{firstName}} ענה/תה על ההצעה', '{{destination}}, {{day}} {{depart}}–{{return}}'),
   ('freed_slot', 'התפנה רכב ל{{destination}}', '{{car}}, {{day}} {{depart}}–{{return}}.'),

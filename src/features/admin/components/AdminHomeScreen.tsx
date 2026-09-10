@@ -1,5 +1,6 @@
 import {
   AlertTriangle,
+  BarChart3,
   Building2,
   Calendar,
   Car,
@@ -13,9 +14,11 @@ import {
 import type { ComponentType } from "react";
 import { Link } from "react-router-dom";
 
+import { paths } from "@/app/routes";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useCarIssues } from "@/features/admin/cars/hooks";
+import { useActiveDepartment } from "@/features/auth/useActiveDepartment";
 import { useProfile } from "@/features/auth/useProfile";
 import { he } from "@/i18n/he";
 
@@ -30,6 +33,7 @@ export function AdminHomeScreen() {
   const isAdmin = !!useProfile().data?.is_admin;
   const issuesQuery = useCarIssues();
   const openIssuesCount = (issuesQuery.data ?? []).filter((i) => i.status === "open").length;
+  const activeDepartment = useActiveDepartment();
 
   const cards: AdminCard[] = [
     { to: "/admin/departments", title: he.screen.admin.departments, subtitle: he.adminHome.cardDepartments, icon: Building2 },
@@ -42,6 +46,9 @@ export function AdminHomeScreen() {
     { to: "/admin/policies", title: he.screen.admin.policies, subtitle: he.adminHome.cardPolicies, icon: ScrollText },
     { to: "/admin/templates", title: he.screen.admin.templates, subtitle: he.adminHome.cardTemplates, icon: MessageSquare },
     { to: "/admin/settings", title: he.screen.admin.settings, subtitle: he.adminHome.cardSettings, icon: Settings },
+    ...(activeDepartment.departmentId
+      ? [{ to: paths.stats(activeDepartment.departmentId), title: he.stats.title, subtitle: he.adminHome.cardStats, icon: BarChart3 }]
+      : []),
   ];
 
   return (

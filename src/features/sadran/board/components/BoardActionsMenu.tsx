@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Download, History, ListChecks, MoreVertical, PlayCircle, RefreshCw, XCircle } from "lucide-react";
+import { BarChart3, Download, History, ListChecks, MoreVertical, PlayCircle, RefreshCw, XCircle } from "lucide-react";
 
 import { paths } from "@/app/routes";
 import {
@@ -102,6 +102,10 @@ export function BoardActionsMenu({
         <DropdownMenuItem onSelect={() => navigate(paths.sadran.proposals(departmentId, weekStart))}>
           <ListChecks className="me-2 size-4" aria-hidden="true" />
           {he.screen.proposals.title}
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => navigate(paths.stats(departmentId))} data-testid="board-actions-stats">
+          <BarChart3 className="me-2 size-4" aria-hidden="true" />
+          {he.stats.title}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

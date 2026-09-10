@@ -5,6 +5,7 @@ import { EditRequestPage } from "@/pages/EditRequestPage";
 import { RequestsListPage } from "@/pages/RequestsListPage";
 import { SiddurArchivePage } from "@/pages/SiddurArchivePage";
 import { SiddurPage } from "@/pages/SiddurPage";
+import { StatsPage } from "@/pages/StatsPage";
 
 /**
  * Member-facing routes added in stage 2a, beyond the pre-existing literal
@@ -21,4 +22,5 @@ export const memberRoutes: RouteObject[] = [
   { path: "/siddur/:dept/archive", element: <SiddurArchivePage /> },
   { path: "/siddur/:dept/:week", element: <SiddurPage /> },
   { path: "/cars/:carId", element: <CarPage /> },
+  { path: "/stats/:dept", element: <StatsPage /> },
 ];

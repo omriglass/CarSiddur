@@ -33,6 +33,7 @@ export type ErrorCode =
   | "series_edit_not_supported"
   | "series_car_unavailable"
   | "not_authorized"
+  | "invalid_range"
   | "last_admin_required"
   | "week_not_open"
   | "one_way_car_mode_required"
@@ -100,6 +101,7 @@ const SQLSTATE_TO_CODE: Record<string, ErrorCode> = {
 const MESSAGE_TO_CODE: Record<string, ErrorCode> = {
   stale_input: "stale_input",
   not_authorized: "not_authorized",
+  invalid_range: "invalid_range",
   last_admin_required: "last_admin_required",
   week_not_open: "week_not_open",
   one_way_car_mode_required: "one_way_car_mode_required",
@@ -169,6 +171,7 @@ const CODE_TO_MESSAGE: Record<ErrorCode, string> = {
   car_away_at_day_end: he.errors.carAwayAtDayEnd,
   no_home_location: he.errors.noHomeLocation,
   not_authorized: he.errors.notAuthorized,
+  invalid_range: he.errors.invalidRange,
   last_admin_required: he.errors.lastAdminRequired,
   week_not_open: he.errors.weekNotOpen,
   one_way_car_mode_required: he.errors.oneWayCarModeRequired,
