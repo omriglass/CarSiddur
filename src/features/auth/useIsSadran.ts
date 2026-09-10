@@ -1,9 +1,7 @@
 import { useActiveDepartment } from "@/features/auth/useActiveDepartment";
 import { useQuery } from "@tanstack/react-query";
 
-import { fetchOpenAndLiveWeekStarts } from "@/features/siddur/api";
-
-import { fetchCanManageWeek } from "./api";
+import { fetchCanManageAnyOpenWeek, fetchCanManageWeek } from "./api";
 import { authKeys } from "./queryKeys";
 import { useMyDepartments } from "./useMyDepartments";
 import { useSession } from "./useSession";
@@ -48,18 +46,11 @@ export function useIsSadranAnywhere(): IsSadranResult {
 
   const query = useQuery({
     queryKey: authKeys.isSadranAnywhere(profileId, departmentIds),
-    queryFn: async () => {
-      const weekStartsByDept = await Promise.all(
-        departmentIds.map((departmentId) => fetchOpenAndLiveWeekStarts(departmentId)),
-      );
-      const pairs = departmentIds.flatMap((departmentId, index) =>
-        (weekStartsByDept[index] ?? []).map((weekStart) => ({ departmentId, weekStart })),
-      );
-      const permissions = await Promise.all(
-        pairs.map((pair) => fetchCanManageWeek(pair.departmentId, pair.weekStart)),
-      );
-      return permissions.some(Boolean);
-    },
+    // One RPC (`can_manage_any_open_week`) instead of fetching every
+    // open/live week start and then one `can_manage_week` per week
+    // (docs/HARDENING_2026-09.md §3 item 4) — same open/solving/published/live
+    // + permanent-operations-rights semantics, computed server-side.
+    queryFn: () => fetchCanManageAnyOpenWeek(active.departmentId as string),
     enabled: !!profileId && departmentsQuery.isSuccess && !!active.departmentId,
     staleTime: 60_000,
   });

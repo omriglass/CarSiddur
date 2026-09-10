@@ -1,7 +1,9 @@
-import { createBrowserRouter, Navigate } from "react-router-dom";
+import { Suspense } from "react";
+import { createBrowserRouter, Navigate, Outlet } from "react-router-dom";
 
 import { AppShell } from "@/app/AppShell";
 import {
+  GuardLoading,
   RequireAdmin,
   RequireOperations,
   RequireApproved,
@@ -50,15 +52,19 @@ export const router = createBrowserRouter([
                   ...memberRoutes,
                   {
                     element: <RequireSadran />,
-                    children: [...sadranRoutes],
+                    // One `<Suspense>` boundary for the whole lazily-loaded
+                    // Sadran area (board/proposals/publish/…, `sadranRoutes`
+                    // itself does the `React.lazy()` per page) rather than one
+                    // per route — docs/HARDENING_2026-09.md §3 item 2.
+                    children: [{ element: <Suspense fallback={<GuardLoading />}><Outlet /></Suspense>, children: [...sadranRoutes] }],
                   },
                   {
                     element: <RequireOperations />,
-                    children: [...operationsRoutes],
+                    children: [{ element: <Suspense fallback={<GuardLoading />}><Outlet /></Suspense>, children: [...operationsRoutes] }],
                   },
                   {
                     element: <RequireAdmin />,
-                    children: [...adminRoutes],
+                    children: [{ element: <Suspense fallback={<GuardLoading />}><Outlet /></Suspense>, children: [...adminRoutes] }],
                   },
                 ],
               },

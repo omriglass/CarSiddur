@@ -17,10 +17,24 @@ export type DepartmentMember = Database["public"]["Tables"]["department_members"
 export type MemberInvite = Database["public"]["Tables"]["member_invites"]["Row"];
 export type Role = Database["public"]["Enums"]["role"];
 
+/**
+ * `phone` is not directly selectable (RLS); fetched in bulk via `profile_phones()` and
+ * merged back onto the rows so `Profile` (which still declares `phone`) stays satisfied.
+ */
+const PROFILE_COLUMNS_WITHOUT_PHONE =
+  "approval_status, approved_at, approved_by, avatar_url, created_at, default_boosters, default_child_seats, default_department_id, display_name, email, full_name, google_name, home_week_preference, id, is_admin, muted_events, updated_at";
+
 export async function fetchAllProfiles(): Promise<Profile[]> {
-  const { data, error } = await supabase.from("profiles").select("*").order("full_name", { ascending: true });
+  const { data, error } = await supabase
+    .from("profiles")
+    .select(PROFILE_COLUMNS_WITHOUT_PHONE)
+    .order("full_name", { ascending: true });
   if (error) throw toAppError(error);
-  return data ?? [];
+  const rows = (data ?? []) as unknown as Omit<Profile, "phone">[];
+  if (rows.length === 0) return [];
+  const phones = await rpc("profile_phones", { p_ids: rows.map((row) => row.id) });
+  const phoneById = new Map((phones ?? []).map((row) => [row.id, row.phone]));
+  return rows.map((row) => ({ ...row, phone: phoneById.get(row.id) ?? null }));
 }
 
 export async function fetchAllDepartmentMembers(): Promise<DepartmentMember[]> {

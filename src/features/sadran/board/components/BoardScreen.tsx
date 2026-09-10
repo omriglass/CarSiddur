@@ -34,7 +34,8 @@ import { WaitlistGroupSheet } from "@/features/waitlist/components/WaitlistGroup
 import { useWaitlistGroupsQuery } from "@/features/waitlist/hooks";
 import { CalendarDays, Redo2, Undo2 } from "lucide-react";
 import { fetchCarSeatConfigs } from "@/features/fleet/api";
-import { useRideTypes } from "@/features/fleet/hooks";
+import { fetchFairnessStats } from "../../api";
+import { useDestinations, useRideTypes } from "@/features/fleet/hooks";
 import { RideTypeLegend } from "@/components/RideTypeLegend";
 import { BoardGridSkeleton } from "@/components/skeletons/BoardGridSkeleton";
 import { useCarLocations, useDepartments, useRideChanges, useClaimRideDriverMutation, useCancelRideChangeMutation } from "@/features/siddur/hooks";
@@ -68,9 +69,11 @@ import {
 } from "../../hooks";
 import {
   buildApplyPayload,
+  buildSolverContextFromData,
   gatherSolverContext,
   hashSolverInput,
   nowMs,
+  policyLookbackWeeks,
   representativeRideTypeCode,
   runSolve,
   servedOf,
@@ -145,6 +148,12 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
     enabled: !!departmentId,
     staleTime: 60_000,
   });
+  // The solver preview (`computePreview` below) needs destinations too, but
+  // the board itself never otherwise reads them — cached here (60s) rather
+  // than fetched fresh on every debounced preview run the way
+  // `gatherSolverContext`'s fetching wrapper does (docs/HARDENING_2026-09.md
+  // §3 item 1).
+  const destinationsQuery = useDestinations(departmentId);
 
   const editRideMutation = useEditRideMutation();
   const claimDriverMutation = useClaimRideDriverMutation();
@@ -225,6 +234,19 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
   // it is not offered by this department, fall back to its active policy.
   const storedPolicyIsAvailable = (policyOptionsQuery.data ?? []).some((policy) => policy.policyVersionId === policyVersionOverride);
   const effectivePolicyVersionId = storedPolicyIsAvailable ? policyVersionOverride : activePolicyQuery.data?.policyVersionId ?? null;
+  const effectivePolicyForPreview = (policyOptionsQuery.data ?? []).find((p) => p.policyVersionId === effectivePolicyVersionId)
+    ?? activePolicyQuery.data ?? null;
+  // Fairness stats also feed the preview only — cached (60s) rather than
+  // refetched on every debounced preview run (docs/HARDENING_2026-09.md §3
+  // item 1); the lookback window comes from the effective policy's own
+  // `fairness` rule params, same as `gatherSolverContext`'s fetching wrapper.
+  const fairnessLookbackWeeks = effectivePolicyForPreview ? policyLookbackWeeks(effectivePolicyForPreview) : 3;
+  const fairnessStatsQuery = useQuery({
+    queryKey: sadranKeys.fairnessStats(departmentId, weekStart, fairnessLookbackWeeks),
+    queryFn: () => fetchFairnessStats(departmentId, weekStart, fairnessLookbackWeeks),
+    enabled: !!departmentId,
+    staleTime: 60_000,
+  });
 
   function selectPolicyVersion(policyVersionId: string) {
     setPolicyVersionOverride(policyVersionId);
@@ -247,23 +269,44 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
    * The ordinary preview matches remaining-only autofill. Full solving is
    * a separate FullResolveAction with an explicit replacement confirmation.
    */
-  async function computePreview() {
-    const chosen = (policyOptionsQuery.data ?? []).find((p) => p.policyVersionId === effectivePolicyVersionId);
-    const policy = chosen ?? activePolicyQuery.data;
-    if (!policy || !department?.home_destination_id) return;
+  function computePreview() {
+    const policy = effectivePolicyForPreview;
+    if (
+      !policy ||
+      !department?.home_destination_id ||
+      !departmentSettingsQuery.data ||
+      destinationsQuery.isLoading ||
+      fairnessStatsQuery.isLoading
+    ) return;
     try {
-      const context = await gatherSolverContext({
-        departmentId,
-        weekStart,
-        homeDestinationId: department.home_destination_id,
-        policy: {
-          policyId: policy.policyId,
-          policyVersionId: policy.policyVersionId,
-          versionNo: policy.versionNo,
-          rules: policy.rules,
+      // Reads straight from this screen's own already-loaded query hooks
+      // (docs/HARDENING_2026-09.md §3 item 1) instead of `gatherSolverContext`'s
+      // fetch-everything wrapper, which every apply path still uses unchanged.
+      const context = buildSolverContextFromData(
+        {
+          departmentId,
+          weekStart,
+          homeDestinationId: department.home_destination_id,
+          policy: {
+            policyId: policy.policyId,
+            policyVersionId: policy.policyVersionId,
+            versionNo: policy.versionNo,
+            rules: policy.rules,
+          },
+          mode: "remaining",
         },
-        mode: "remaining",
-      });
+        {
+          departmentSettings: departmentSettingsQuery.data,
+          allRequests: requestsQuery.data ?? [],
+          cars: carsQuery.data ?? [],
+          destinations: destinationsQuery.data ?? [],
+          rideTypes: rideTypesQuery.data ?? [],
+          maintenanceBlocks: maintenanceQuery.data ?? [],
+          boardRides: ridesQuery.data ?? [],
+          seatConfigsFlat: seatConfigsQuery.data ?? [],
+          fairness: fairnessStatsQuery.data ?? [],
+        },
+      );
       const output = runSolve(context.input);
       rememberUsedPolicy(policy.policyVersionId);
       setPreview({ output, policyVersionId: policy.policyVersionId });
@@ -354,11 +397,36 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
     (requestsQuery.data ?? []).map((r) => `${r.id}:${r.status}:${r.depart_at}:${r.return_at}:${r.version}`).join(","),
   ].join("|");
   useEffect(() => {
-    if (requestsQuery.isLoading || ridesQuery.isLoading || policyOptionsQuery.isLoading || !effectivePolicyVersionId) return;
-    const timer = window.setTimeout(() => { void computePreview(); }, 300);
+    if (
+      requestsQuery.isLoading ||
+      ridesQuery.isLoading ||
+      policyOptionsQuery.isLoading ||
+      carsQuery.isLoading ||
+      rideTypesQuery.isLoading ||
+      maintenanceQuery.isLoading ||
+      departmentSettingsQuery.isLoading ||
+      destinationsQuery.isLoading ||
+      fairnessStatsQuery.isLoading ||
+      seatConfigsQuery.isLoading ||
+      !effectivePolicyVersionId
+    ) return;
+    const timer = window.setTimeout(() => { computePreview(); }, 300);
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `solverInputFingerprint` already captures every input `computePreview` reads.
-  }, [solverInputFingerprint, requestsQuery.isLoading, ridesQuery.isLoading, policyOptionsQuery.isLoading, effectivePolicyVersionId]);
+  }, [
+    solverInputFingerprint,
+    requestsQuery.isLoading,
+    ridesQuery.isLoading,
+    policyOptionsQuery.isLoading,
+    carsQuery.isLoading,
+    rideTypesQuery.isLoading,
+    maintenanceQuery.isLoading,
+    departmentSettingsQuery.isLoading,
+    destinationsQuery.isLoading,
+    fairnessStatsQuery.isLoading,
+    seatConfigsQuery.isLoading,
+    effectivePolicyVersionId,
+  ]);
 
   const daySettings = departmentSettingsQuery.data;
   const rides = ridesQuery.data ?? [];

@@ -55,7 +55,7 @@ Every schema change is a new file in `supabase/migrations/`. Never edit a commit
   - Notifications: never insert into `notifications`/`push_outbox`; call `enqueue_notification(recipient, event, dept, week_start, vars, data, dedupe_key)`.
   - Scheduled work: do not add `cron.schedule` entries — there is exactly one (`app.tick()`); extend the relevant tick sub-function instead (`/change-weekly-cycle-defaults`).
 - [ ] **Indexes**: FK columns that are filtered; `(department_id, week_start[, status])` on week-scoped tables; partial indexes for hot statuses; GiST for `tstzrange` overlap.
-- [ ] **Functions**: `security definer` only when needed, then `set search_path = public, pg_temp`; `stable`/`immutable` where true; `revoke execute from public, anon; grant execute to authenticated` for helpers/RPCs.
+- [ ] **Functions**: `security definer` only when needed, then `set search_path = public, pg_temp`; `stable`/`immutable` where true. Grants are default-closed (`20260910099000`) — `revoke execute … from public, anon` is no longer needed, but a browser-called RPC still needs an explicit `grant execute on function … to authenticated`; a helper referenced only by an RLS policy/view/constraint/index expression also needs `authenticated` (it runs as the querying role). An internal/cron function gets no grant at all — if it is one of the highest-risk internal functions (guardable via PostgREST), add it to `rls_smoke.sql` TEST 14's list and consider calling `assert_not_direct_rpc(p_function)` first (DATA_MODEL §4.2 "Function grants").
 - [ ] **Views**: `with (security_invoker = true)`; joins only, RLS of base tables applies.
 
 ### 2. Apply and generate

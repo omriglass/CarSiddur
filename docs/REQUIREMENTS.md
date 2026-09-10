@@ -463,6 +463,8 @@ One canonical `notification_event` list now has **24** events (was 22, CLAUDE.md
     - **Weekly graph.** A week-by-week series of requests (total/granted/unmet/cancelled) and rides, one point per week overlapping the requested range, so the statistics screen can chart trends over time, not just one aggregate for the whole range. Because waiting-list outcomes (an unmet request quietly getting a car later in the week) only settle once the week is over, a week's numbers are marked **provisional** until the week is archived — at which point they are computed once, cached, and shown as final. This is why the graph is "non-accepted requests per week": showing a live week's unmet count as though it were final would be misleading precisely because some of it usually resolves before the week ends.
     (DATA_MODEL §7.6, `week_stats`)
 
+79. **Permissions hardening (2026-09-10, production go-live audit).** Car lockbox codes are visible only to members of the car's own department — another department's published siddur shows the car's name with no code, even though the car row itself stays readable department-wide for lift-finding (§13.52). Phone numbers reach the client only through `phone_of()`'s existing rules (own / admin / Sadran / shares a ride) or the equivalent set-returning `profile_phones()` — never a plain `select` on `profiles.phone`. Admins cannot delete rides or requests from the client; both are cancelled/withdrawn only, never removed (DATA_MODEL §4.3). (`docs/HARDENING_2026-09.md` §1.1–§1.7; DATA_MODEL §4.2 "Function grants", §4.3)
+
 ## Owner TODO amendments — 2026-09-07
 
 These amendments take precedence over older behavior descriptions above.

@@ -18,47 +18,62 @@ export type MyUpcomingRide = BoardRide & {
   car_type: Database["public"]["Enums"]["car_type"] | null;
 };
 
-/** Every upcoming/ongoing requested leg, plus designated-driver rides without an own request. */
+/**
+ * Every upcoming/ongoing requested leg, plus designated-driver rides without
+ * an own request. Three calls, none of them a client-side paging loop
+ * (docs/HARDENING_2026-09.md §3 item 5): (1) one embedded `ride_requests`
+ * query for the ride ids a request of mine reaches, restricted to
+ * upcoming public-status rides before the id list is ever built; (2) one
+ * `v_board_rides` read for those ids plus every ride I drive — kept as a
+ * second call because the view carries the joined display fields
+ * (`served`, names, …) a plain FK embed on `rides` cannot reach and, being a
+ * view, offers no FK embed of its own; (3) one `cars` lookup for the
+ * resulting car ids. A member's upcoming-ride set is always small enough for
+ * a single `.in()`/`.or()` each — the old 500/100-row loops guarded against
+ * an unbounded id list that never actually occurs here.
+ */
 export async function fetchMyUpcomingRides(profileId: string, departmentId?: string): Promise<MyUpcomingRide[]> {
   const now = new Date().toISOString();
-  const rideIds = new Set<string>();
-  const pageSize = 500;
-  // Restrict the links to upcoming public-status rides before paging: history
-  // must neither crowd out future legs nor create an ever-growing URL filter.
-  for (let offset = 0; ; offset += pageSize) {
-    const { data, error } = await supabase.from("ride_requests")
-      .select("ride_id, request:requests!ride_requests_request_id_fkey!inner(requester_id), ride:rides!ride_requests_ride_id_fkey!inner(ends_at, status)")
-      .eq("request.requester_id", profileId).gt("ride.ends_at", now).in("ride.status", ["confirmed", "flagged"])
-      .order("ride_id").order("request_id").order("leg").range(offset, offset + pageSize - 1);
-    if (error) throw toAppError(error);
-    for (const row of data ?? []) rideIds.add(row.ride_id);
-    if ((data?.length ?? 0) < pageSize) break;
-  }
-  const ids = [...rideIds];
+
+  const { data: passengerRows, error: passengerError } = await supabase
+    .from("ride_requests")
+    .select("ride_id, request:requests!ride_requests_request_id_fkey!inner(requester_id), ride:rides!ride_requests_ride_id_fkey!inner(ends_at, status)")
+    .eq("request.requester_id", profileId)
+    .gt("ride.ends_at", now)
+    .in("ride.status", ["confirmed", "flagged"]);
+  if (passengerError) throw toAppError(passengerError);
+  const passengerRideIds = [...new Set((passengerRows ?? []).map((row) => row.ride_id))];
+
+  let boardQuery = supabase.from("v_board_rides").select("*")
+    .in("status", ["confirmed", "flagged"]).gt("ends_at", now)
+    .order("starts_at").order("id");
+  boardQuery = passengerRideIds.length
+    ? boardQuery.or(`driver_id.eq.${profileId},id.in.(${passengerRideIds.join(",")})`)
+    : boardQuery.eq("driver_id", profileId);
+  const { data: rideRows, error: rideError } = await boardQuery;
+  if (rideError) throw toAppError(rideError);
   const rides = new Map<string, BoardRide>();
-  // Bounded ID batches avoid URL limits; the first also includes all driver rides.
-  for (let batch = 0; batch < Math.max(1, ids.length); batch += 100) {
-    const ownIds = ids.slice(batch, batch + 100);
-    const conditions = [
-      ...(batch === 0 ? [`driver_id.eq.${profileId}`] : []),
-      ...(ownIds.length ? [`id.in.(${ownIds.join(",")})`] : []),
-    ];
-    for (let offset = 0; ; offset += pageSize) {
-      const { data, error } = await supabase.from("v_board_rides").select("*")
-        .or(conditions.join(",")).in("status", ["confirmed", "flagged"]).gt("ends_at", now)
-        .order("starts_at").order("id").range(offset, offset + pageSize - 1);
-      if (error) throw toAppError(error);
-      for (const ride of data ?? []) if (ride.id) rides.set(ride.id, ride);
-      if ((data?.length ?? 0) < pageSize) break;
-    }
-  }
+  for (const ride of rideRows ?? []) if (ride.id) rides.set(ride.id, ride);
+
   const carIds = [...new Set([...rides.values()].flatMap((ride) => ride.car_id ? [ride.car_id] : []))];
   const cars = new Map<string, { label: string; type: Database["public"]["Enums"]["car_type"] }>();
-  for (let offset = 0; offset < carIds.length; offset += 100) {
-    const { data, error } = await supabase.from("cars").select("id, name, type, access_code, is_replaced, replacement_code")
-      .in("id", carIds.slice(offset, offset + 100));
-    if (error) throw toAppError(error);
-    for (const car of data ?? []) cars.set(car.id, { label: siddurCarName(car), type: car.type });
+  if (carIds.length) {
+    const { data: carRows, error: carError } = await supabase.from("cars")
+      .select("id, name, type, codes:car_access_codes(access_code, is_replaced, replacement_code)")
+      .in("id", carIds);
+    if (carError) throw toAppError(carError);
+    for (const car of carRows ?? []) {
+      const codes = Array.isArray(car.codes) ? car.codes[0] : car.codes;
+      cars.set(car.id, {
+        label: siddurCarName({
+          name: car.name,
+          access_code: codes?.access_code ?? null,
+          is_replaced: codes?.is_replaced ?? false,
+          replacement_code: codes?.replacement_code ?? null,
+        }),
+        type: car.type,
+      });
+    }
   }
   return [...rides.values()]
     .filter((ride) => !departmentId || ride.department_id === departmentId)

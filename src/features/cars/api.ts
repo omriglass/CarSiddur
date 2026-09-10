@@ -1,7 +1,9 @@
 import { supabase } from "@/integrations/supabase/client";
 import { toAppError } from "@/lib/rpc";
 
-import type { Car, CarIssue } from "@/features/admin/cars/api";
+import { CARS_WITH_CODES_SELECT, flattenCarCodes } from "@/features/admin/cars/api";
+
+import type { CarCodes, Car, CarIssue } from "@/features/admin/cars/api";
 import type { Database } from "@/integrations/supabase/types";
 
 /**
@@ -23,9 +25,10 @@ export type CarIssueWithReporter = CarIssue & ReporterName;
 export type CarCareEventWithReporter = CarCareEvent & ReporterName;
 
 export async function fetchCarById(carId: string): Promise<Car | null> {
-  const { data, error } = await supabase.from("cars").select("*").eq("id", carId).maybeSingle();
+  const { data, error } = await supabase.from("cars").select(CARS_WITH_CODES_SELECT).eq("id", carId).maybeSingle();
   if (error) throw toAppError(error);
-  return data ?? null;
+  if (!data) return null;
+  return flattenCarCodes(data as unknown as Database["public"]["Tables"]["cars"]["Row"] & { codes: CarCodes | CarCodes[] | null });
 }
 
 export async function fetchCarIssueHistory(carId: string): Promise<CarIssueWithReporter[]> {
@@ -52,10 +55,12 @@ export async function fetchCarCareHistory(carId: string): Promise<CarCareEventWi
 export async function fetchMyResponsibleCars(profileId: string): Promise<Car[]> {
   const { data, error } = await supabase
     .from("cars")
-    .select("*")
+    .select(CARS_WITH_CODES_SELECT)
     .eq("responsible_id", profileId)
     .neq("status", "retired")
     .order("name", { ascending: true });
   if (error) throw toAppError(error);
-  return data ?? [];
+  return ((data ?? []) as unknown as (Database["public"]["Tables"]["cars"]["Row"] & { codes: CarCodes | CarCodes[] | null })[]).map(
+    flattenCarCodes,
+  );
 }

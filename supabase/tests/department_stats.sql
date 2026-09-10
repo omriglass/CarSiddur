@@ -320,8 +320,11 @@ begin
   -- the (a) fixture's own data.
   select id into clamp_dept from public.create_department('Stats clamp test', 'stats-clamp-test');
   clamp_week := public.current_week_start() - 70;   -- Sunday-aligned, well before today
+  -- weeks is RPC-only since 20260910099300 (no direct write policy): seed the fixture row as the owner.
+  execute 'reset role';
   insert into public.weeks(department_id, week_start, phase, open_at, close_at, publish_at)
   values (clamp_dept, clamp_week, 'archived', now() - interval '100 days', now() - interval '90 days', now() - interval '89 days');
+  execute 'set local role authenticated';
   select (now() at time zone 'Asia/Jerusalem')::date into today_j;
 
   -- (f1) p_from before earliest is clamped up to earliest; p_to (still in the past) is untouched.
@@ -350,8 +353,11 @@ begin
   -- going negative, and from/to are returned exactly as clamped (from > to is expected here).
   select id into future_dept from public.create_department('Stats future-only test', 'stats-future-only-test');
   future_week := public.current_week_start() + 70;
+  -- weeks is RPC-only since 20260910099300 (no direct write policy): seed the fixture row as the owner.
+  execute 'reset role';
   insert into public.weeks(department_id, week_start, phase, open_at, close_at, publish_at)
   values (future_dept, future_week, 'open', now() - interval '1 day', now() + interval '60 days', now() + interval '61 days');
+  execute 'set local role authenticated';
   result2 := public.department_stats(future_dept, public.current_week_start(), future_week + 5);
   assert (result2 ->> 'earliest') = future_week::text, '(g) earliest mismatch';
   assert (result2 ->> 'from') = future_week::text, '(g) from must be clamped up to earliest even though that lands after today';

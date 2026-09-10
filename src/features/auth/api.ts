@@ -15,14 +15,26 @@ export type ProfilePatch = Partial<
   >
 >;
 
+/**
+ * `profiles.phone` is not directly selectable (RLS); the caller's own phone is fetched
+ * separately via `phone_of(uuid)` and merged in, so `Profile` (which still declares
+ * `phone`) stays satisfied.
+ */
+const PROFILE_COLUMNS_WITHOUT_PHONE =
+  "approval_status, approved_at, approved_by, avatar_url, created_at, default_boosters, default_child_seats, default_department_id, display_name, email, full_name, google_name, home_week_preference, id, is_admin, muted_events, updated_at";
+
+type ProfileWithoutPhone = Omit<Profile, "phone">;
+
 export async function fetchProfile(profileId: string): Promise<Profile | null> {
   const { data, error } = await supabase
     .from("profiles")
-    .select("*")
+    .select(PROFILE_COLUMNS_WITHOUT_PHONE)
     .eq("id", profileId)
     .maybeSingle();
   if (error) throw toAppError(error);
-  return data;
+  if (!data) return null;
+  const phone = await rpc("phone_of", { _profile: profileId });
+  return { ...(data as ProfileWithoutPhone), phone };
 }
 
 export async function updateProfile(profileId: string, patch: ProfilePatch): Promise<Profile> {
@@ -30,10 +42,11 @@ export async function updateProfile(profileId: string, patch: ProfilePatch): Pro
     .from("profiles")
     .update(patch)
     .eq("id", profileId)
-    .select("*")
+    .select(PROFILE_COLUMNS_WITHOUT_PHONE)
     .single();
   if (error) throw toAppError(error);
-  return data;
+  const phone = await rpc("phone_of", { _profile: profileId });
+  return { ...(data as ProfileWithoutPhone), phone };
 }
 
 export interface DepartmentMembership {
@@ -83,6 +96,16 @@ export async function fetchSadranimOf(departmentId: string, weekStart: string): 
 /** Server authorization includes permanent Sadrans even when somebody else is on duty. */
 export async function fetchCanManageWeek(departmentId: string, weekStart: string): Promise<boolean> {
   return rpc("can_manage_week", { _dept: departmentId, _week: weekStart });
+}
+
+/**
+ * Whether I can manage *some* open/solving/published/live week of this
+ * department (or hold permanent operations rights there) — one RPC instead
+ * of `useIsSadranAnywhere`'s old "fetch every open/live week start, then one
+ * `can_manage_week` per week" waterfall (docs/HARDENING_2026-09.md §3 item 4).
+ */
+export async function fetchCanManageAnyOpenWeek(departmentId: string): Promise<boolean> {
+  return rpc("can_manage_any_open_week", { p_department_id: departmentId });
 }
 
 export async function registerPushSubscription(input: {

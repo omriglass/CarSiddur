@@ -8,8 +8,14 @@ import { useIsSadranAnywhere } from "./useIsSadran";
 import { useProfile } from "./useProfile";
 import { useSession } from "./useSession";
 
-/** Full-screen loading placeholder while a guard's query is in flight. */
-function GuardLoading() {
+/**
+ * Full-screen loading placeholder while a guard's query is in flight — also
+ * reused as the `<Suspense fallback>` for the lazily-loaded heavy area route
+ * trees (Sadran, admin, operations; `src/app/router.tsx`,
+ * docs/HARDENING_2026-09.md §3 item 2), so a pending guard and a pending
+ * route chunk download look identical rather than one being a blank screen.
+ */
+export function GuardLoading() {
   return (
     <div className="flex min-h-dvh items-center justify-center text-muted-foreground">
       {t("common.loading")}

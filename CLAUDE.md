@@ -15,7 +15,7 @@ Guidance for Claude Code working in this repository.
 1. **Never modify `../commucar-share`.** Read-only reference. Do not import from it, copy files from it, or run commands inside it.
 2. **Docs are the source of truth and move with the code.** Any change to behavior, schema, states, enums, rule types, notifications or screens updates the relevant `docs/*.md` **in the same change**. If REQUIREMENTS.md does not cover it, add it there first (the owner reviews requirements, not code).
 3. **Hebrew lives in exactly three places.** (a) `src/i18n/he*.ts` — all UI strings keyed by namespace (he.ts is canonical, merged from he.admin.ts, he.member.ts, he.sadran.ts), accessed via the `he` object or `t(key)`/`tv(key, vars)` from `src/i18n/he.ts` (there is no `useT()` hook); (b) `src/solver/reasons.ts` — solver reason templates keyed by `reasonCode` (reason codes, rule descriptions `RULE_<TYPE>_DESC`, `PolicyParamsError` messages), so the bundled solver is self-contained and rule files have no Hebrew; (c) seeded data in `supabase/seed.sql` — `notification_templates` table (push/inbox/WhatsApp title/body), `ride_types.name_he`, `destinations.name` (Hebrew place names), `weekday_labels` (Hebrew weekday letters/names used by SQL notification vars). Never inline Hebrew in components, hooks, rule files, SQL logic, or edge functions. Identifiers, comments and docs are English.
-4. **RLS on every table**, `enable` + `force`, policies per command (never `for all`), written with the helper functions in `DATA_MODEL.md` §4.2 (`is_approved()`, `is_admin()`, `member_of(dept)`, `is_sadran(dept, week_start)`, `is_sadran_any(dept)`, `can_manage_week(dept, week_start)`, `is_week_public(dept, week_start)`). Multi-row state changes go through `SECURITY DEFINER` RPCs. `anon` has no grants. Service-role keys never reach the browser.
+4. **RLS on every table**, `enable` + `force`, policies per command (never `for all`), written with the helper functions in `DATA_MODEL.md` §4.2 (`is_approved()`, `is_admin()`, `member_of(dept)`, `is_sadran(dept, week_start)`, `is_sadran_any(dept)`, `can_manage_week(dept, week_start)`, `is_week_public(dept, week_start)`). Multi-row state changes go through `SECURITY DEFINER` RPCs. `anon` has no grants. Service-role keys never reach the browser. Functions have no default grants either: a migration that adds a browser-facing RPC must `grant execute … to authenticated` explicitly, everything else (internal/cron/helpers not referenced by RLS) stays closed — `rls_smoke.sql` TEST 14 enforces it.
 5. **The solver stays pure.** `src/solver/**` imports nothing from React, Supabase, the DOM, `Date.now()`, `Math.random()`, or `src/i18n`. `solve(input)` returns a value; persistence is the caller's job (`apply_solver_result` RPC). Deterministic: every sort ends in an `id` tie-break.
 6. **All timestamps are Asia/Jerusalem-aware.** Postgres: `timestamptz` only; `week_start date` (the Sunday) keys a week; wall-clock settings are stored as `(dow, time)` and converted inside SQL with `at time zone 'Asia/Jerusalem'`. TS: `src/lib/time.ts` (`TZ = 'Asia/Jerusalem'`, date-fns-tz); never `getHours()`/`getDay()`/`toLocale*` without it. The solver never does wall-clock arithmetic — it gets epoch ms and per-day slot bounds.
 7. **Before declaring anything done:** `npm run lint && npm run typecheck && npm run test` pass. Schema changes also need `npm run db:reset && npm run db:types` with the regenerated types committed. User-facing flows run the relevant Playwright spec.
@@ -48,7 +48,7 @@ Guidance for Claude Code working in this repository.
 ## Folder map
 
 ```
-docs/                          REQUIREMENTS, ARCHITECTURE, DATA_MODEL, SOLVER, UX_FLOWS, MAINTENANCE, TODO (owner backlog), REFACTOR_BACKLOG (code-audit findings)
+docs/                          REQUIREMENTS, ARCHITECTURE, DATA_MODEL, SOLVER, UX_FLOWS, MAINTENANCE, TODO (owner backlog), REFACTOR_BACKLOG (code-audit findings), HARDENING_2026-09 (production hardening audit trail)
 src/
   app/                         router.tsx (route patterns, all routes), routes.ts (matching path builders — `paths.sadran.*`/`paths.siddur`/`paths.requests.*`; routes.test.ts checks them against the real patterns), providers (Query, Auth, RTL), shell
   pages/                       route-level components (member, sadran, admin sections)
@@ -101,7 +101,7 @@ src/
   types/                       domain types shared by UI and solver (not DB rows)
   main.tsx sw.ts index.css     PWA service worker, entry point, global styles
 supabase/
-  migrations/                  87 additive migrations, `20260907090000` through `20260909096000`; 7 pending a `db:reset` (2026-09-09 cleanup pass — see CLAUDE.md "Verified 2026-09-09")
+  migrations/                  150 additive migrations, `20260907090000` through `20260910100200` (includes the 13-migration production-hardening pass, `20260910099000`–`20260910100200` — see docs/HARDENING_2026-09.md)
   seed.sql                     demo data: departments, ride types, destinations, default policy, templates, member invites, demo auth users (local/e2e only)
   tests/
     rls_smoke.sql              assertions: every table has forced RLS, no `using (true)` on writes, no `for all` policies
@@ -249,7 +249,6 @@ Cleanup pass (see `docs/IMPLEMENTATION_PLAN.md` "Cleanup pass — 2026-09-09" an
 - Published-week auto-approve: a round-trip request against an already-published week now runs `try_auto_approve()` immediately (previously live-week only); waiting-list entry returns `car_was_free: true` when placement succeeds instead of forcing `waitlisted`.
 - Named children (`request_children` → `children.full_name`) now reach `v_board_rides`/`v_my_requests` and the member-facing siddur/request cards, not just the board.
 - `e2e/fixtures/*` no longer exists — replaced by top-level `e2e/helpers.ts`, `global-setup.ts`, `published-week.ts` and 16 flat `*.spec.ts` files (folder map above).
-- 7 migrations dated `20260909090000`–`20260909096000` are committed but not yet run locally; they await an owner-run `npm run db:reset && npm run db:types && npm run db:test`, then the e2e suite (see `docs/TODO.md`).
 
 ## Consistency decisions (2026-09-06)
 

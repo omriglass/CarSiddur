@@ -54,7 +54,10 @@ begin
   assert (select status='confirmed' from public.rides where id=other.id),'shadow cancelled before consent';
   assert exists(select 1 from public.ride_change_parties where change_id=ch and profile_id=other.driver_id and accepted is null),'missing consent party';
   assert public.render_notification_text('{{date}} / {{unknown}}','{"date":"10/02/26"}')='10/02/26 / ','unresolved template';
+  -- enqueue_notification() is internal-only since 20260910099000 (no grant to authenticated): call it as the owner.
+  execute 'reset role';
   assert public.enqueue_notification(q.requester_id,'auto_approved',q.department_id,q.week_start) is null,'autoapproval notification sent';
+  execute 'set local role authenticated';
   assert not public.can_manage_operations(),'member gained operational privileges';
 end $$;
 select set_config('request.jwt.claims','{"sub":"00000000-0000-0000-0000-000000000104","role":"authenticated"}',true);

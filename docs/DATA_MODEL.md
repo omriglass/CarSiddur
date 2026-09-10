@@ -279,9 +279,6 @@ Unique index `(department_id, profile_id, coalesce(week_start, '1970-01-04'))`. 
 | department_id | uuid | NN | | FK departments (hard boundary, §13.1) |
 | name | text | NN | | |
 | license_plate | text | NN | | unique, digits only after normalization |
-| access_code | text | | | Optional legacy-compatible base vehicle code; when present, exactly 4–5 ASCII digits (leading zeroes preserved). |
-| is_replaced | boolean | NN | false | Whether a replacement vehicle/code is currently in use. |
-| replacement_code | text | | | Optional code, exactly 4–5 ASCII digits when present. Replacement mode requires both codes and a replacement code different from `access_code`; switching replacement off in the UI clears this field. |
 | type | car_type | NN | 'shared' | |
 | status | car_status | NN | 'active' | |
 | owner_id | uuid | | | FK profiles; CHECK `(type = 'temporary') = (owner_id is not null)` |
@@ -294,6 +291,21 @@ Unique index `(department_id, profile_id, coalesce(week_start, '1970-01-04'))`. 
 | created_at / updated_at | timestamptz | NN | now() | |
 
 Indexes: `(department_id) where status <> 'retired'`, `(owner_id)`, `(responsible_id) where responsible_id is not null`.
+
+#### `car_access_codes` (`20260910099900`, docs/HARDENING_2026-09.md §1.3)
+
+Lockbox codes were readable by any approved member regardless of department, because `cars_select` is intentionally department-unscoped (other departments' published siddurim are readable, REQ §13.52) but the row also carried the codes. Split into its own table, one row per car, department-scoped RLS (§4.3).
+
+| column | type | null | default | notes |
+|---|---|---|---|---|
+| car_id | uuid | NN | | PK; FK cars ON DELETE CASCADE |
+| department_id | uuid | NN | | set by trigger `car_access_codes_set_department()` from the car, whatever the caller sends |
+| access_code | text | | | Optional legacy-compatible base vehicle code; when present, exactly 4–5 ASCII digits (leading zeroes preserved). CHECK. |
+| is_replaced | boolean | NN | false | Whether a replacement vehicle/code is currently in use. |
+| replacement_code | text | | | Optional code, exactly 4–5 ASCII digits when present. CHECK. Replacement mode requires both codes and a replacement code different from `access_code`; switching replacement off in the UI clears this field. |
+| created_at / updated_at | timestamptz | NN | now() | `set_updated_at()` |
+
+Index `(department_id)`. No `audit_row()` trigger — the codes must not land in `audit_log`. `cars` no longer carries any of these three columns; the admin car form writes both rows together.
 
 #### `car_seat_configs` (§6.2)
 
@@ -902,7 +914,7 @@ Insert-only for `authenticated` (rate-limited to 20 rows per profile per hour by
 ### 4.1 Principles
 - `alter table ... enable row level security` on every table (33 in this version); `force row level security` too, so table owners running RPCs are still checked unless the function is SECURITY DEFINER.
 - Policies are written per command (`for select/insert/update/delete`), never `for all`.
-- Helper functions are `SECURITY DEFINER`, `STABLE`, `set search_path = public, pg_temp`, `revoke execute from public, anon; grant execute to authenticated`. They read `department_members`, `sadran_assignments`, `profiles` and `weeks` without triggering those tables' own policies (no recursion).
+- Helper functions are `SECURITY DEFINER`, `STABLE`, `set search_path = public, pg_temp`. They read `department_members`, `sadran_assignments`, `profiles` and `weeks` without triggering those tables' own policies (no recursion). Grants follow the default-closed model below: a helper referenced by an RLS policy, view or check constraint keeps an explicit `grant execute … to authenticated` (it runs as the querying role); a pure browser-facing RPC gets the same grant; everything else gets none.
 - Use `(select auth.uid())` inside policies so the planner evaluates it once per statement.
 - `anon` has **no** grants on any table. Every request is authenticated.
 - Mutating multi-row or state-changing operations (submit/edit request, apply solver result, publish, apply proposal, cancel ride, claim) go through SECURITY DEFINER RPCs that re-check authorization with the same helpers and run in one transaction. Direct table writes are allowed only for single-row, own-data edits (profile, push subscriptions, car issues, notification read state, client errors).
@@ -1047,6 +1059,17 @@ language sql stable security definer set search_path = public, pg_temp as $$
 $$;
 ```
 
+#### Function grants (`20260910099000`, `20260910099100`, `20260910100200`)
+
+Supabase's default privileges grant `EXECUTE` on every new `public` function to `anon`, `authenticated` and `service_role`; earlier migrations only ever revoked a handful `from public, anon`, so internal and cron functions were callable by any signed-in member through PostgREST (`docs/HARDENING_2026-09.md` §1.1). Fixed with a default-closed model:
+
+- `alter default privileges … revoke execute on functions from public, anon, authenticated` (both the schema-scoped and the global entry — a global grant would otherwise still leak through) so every **new** function starts with no grants; the same migration also revokes execute from every existing non-extension `public` function for `public`/`anon`.
+- A migration that adds a browser-called RPC must `grant execute on function … to authenticated` explicitly (`/add-migration` skill).
+- Internal / cron / helper functions (cron steps, notification plumbing, placement internals reached only through `submit_request`/`publish_siddur`/edge functions, pure assertions, and the inner `..._before_planning`/`..._before_series` variants the browser never calls directly — the outer wrapper it does call re-checks authorization) are revoked from `authenticated` too, by an explicit list in the migration. Helpers that RLS policies, views, check constraints or index expressions reference keep `authenticated` because they execute as the querying role. `service_role` is untouched.
+- `assert_not_direct_rpc(p_function text)` (`20260910099100`) is a second, independent guard: `housekeeping`, `expire_proposals`, `expire_freed_offers`, `send_due_reminders`, `drain_push_outbox` and `dispatch_push_outbox_row` call it first and it raises `not_authorized` when PostgREST's `request.path` GUC equals `/rpc/<name>` and the caller is not admin — a nested call from another RPC (e.g. `publish_siddur` → `expire_proposals`) or from pg_cron has a different `request.path` (or none) and is unaffected.
+- `rls_smoke.sql` TEST 14 asserts: `anon` executes no application function; the internal-function list is not executable by `authenticated`; the default ACL for new functions includes neither role.
+- `anon`/`authenticated` also no longer hold `TRUNCATE`/`TRIGGER`/`REFERENCES` on any table (`20260910100200`) — PostgREST never issues these, but nothing should rely on that; `anon` keeps no table grants at all (§4.1).
+
 `current_week_start()` is `stable`, not `immutable`, because `at time zone` depends on tz data; it is never used in an index.
 
 ### 4.3 Policy matrix
@@ -1059,29 +1082,30 @@ Legend: **own** = row's profile column = `auth.uid()`; **dept** = `member_of(dep
 | department_settings | dept ∨ admin | admin (trigger-created) | admin | — |
 | app_settings | approved users (public keys, hints); secret keys are not stored here | admin | admin | admin |
 | app_secrets | svc / SECURITY DEFINER only (no policy at all — RLS enabled + forced) | svc / SECURITY DEFINER only | svc / SECURITY DEFINER only | svc / SECURITY DEFINER only |
-| profiles | approved users (name/avatar of any member — needed to read drivers of other departments' published siddurim, REQ §10/§13.52); `phone` column revoked (use `phone_of`) | svc (auth trigger) | own (name, phone, default_department_id, defaults, home_week_preference, muted_events only — trigger rejects changes to `is_admin`, `approval_status`, `email`) ∨ admin | — (cascade from auth.users by admin via svc) |
+| profiles | approved users, via an explicit column grant excluding `phone` (`id, email, full_name, default_department_id, approval_status, approved_at, approved_by, is_admin, default_child_seats, default_boosters, home_week_preference, muted_events, avatar_url, created_at, updated_at, google_name, display_name`) — `select *` fails for members by design (`20260910100000`); phone read via `phone_of(uuid)` (own/admin/sadran/shares-a-ride) or the set-returning `profile_phones(uuid[])` for member-list/contact-sheet use | svc (auth trigger) | own (name, phone, default_department_id, defaults, home_week_preference, muted_events only — trigger rejects changes to `is_admin`, `approval_status`, `email`) ∨ admin | — (cascade from auth.users by admin via svc) |
 | member_invites | admin | admin | admin | admin |
 | department_members | own ∨ dept ∨ admin | admin | admin | admin (soft-remove preferred) |
 | sadran_assignments | dept ∨ admin | admin | admin | admin |
-| cars | **approved users** (any department — published siddurim of other departments are readable, REQ §13.52) | admin; **own temporary car**: `type='temporary' and owner_id = auth.uid() and member_of(department_id)` (any member, REQ §13.53) | admin (incl. revoking a temporary car → `retired`); owner (temporary, own) — status/notes/features only; **`is_car_responsible(id)`: every column, incl. `owner_id`/`type`/`responsible_id`** (§6.6, `cars_update_responsible` policy, separate from `cars_update` — Postgres ORs permissive policies for the same command) | admin; owner (temporary) if no non-cancelled rides |
+| cars | **approved users** (any department — published siddurim of other departments are readable, REQ §13.52); no longer carries `access_code`/`replacement_code`/`is_replaced` (moved out, `20260910099900`, see §1.3) | admin; **own temporary car**: `type='temporary' and owner_id = auth.uid() and member_of(department_id)` (any member, REQ §13.53) | admin (incl. revoking a temporary car → `retired`); owner (temporary, own) — status/notes/features only; **`is_car_responsible(id)`: every column, incl. `owner_id`/`type`/`responsible_id`** (§6.6, `cars_update_responsible` policy, separate from `cars_update` — Postgres ORs permissive policies for the same command) | admin; owner (temporary) if no non-cancelled rides |
+| car_access_codes | `member_of(department_id) ∨ can_manage_operations(department_id)` — codes for another department's car do not come back, so the siddur/board render that car's name with no code (`20260910099900`) | `can_manage_operations(department_id)` | `can_manage_operations(department_id)` | `can_manage_operations(department_id)` |
 | car_seat_configs | approved users | admin; temp-car owner for own car | same | same |
 | car_maintenance_blocks | dept ∨ admin | admin ∨ sadran_any(dept) | admin ∨ sadran_any | admin ∨ sadran_any |
-| car_issues | dept ∨ admin; **`is_car_responsible(car_id)`** (`car_issues_select_responsible`, may be outside the department) | **RPC only** — `report_car_issue()` (§6.6); the pre-portal direct `dept ∧ reported_by=own` policy was dropped 2026-09-09 (unused in `src/`) | admin ∨ sadran_any (resolve); reporter (description while open) | admin |
+| car_issues | dept ∨ admin; **`is_car_responsible(car_id)`** (`car_issues_select_responsible`, may be outside the department) | **RPC only** — `report_car_issue()` (§6.6); the pre-portal direct `dept ∧ reported_by=own` policy was dropped 2026-09-09 (unused in `src/`) | admin ∨ sadran_any (resolve, any column); reporter of an open report: only `description`/`photo_path` — trigger `car_issues_protect_resolution_fields` also locks `status`/`resolved_by`/`resolved_at`/`is_unsafe`/`category`/`car_id`/`department_id`/`reported_by` (`20260910099800`) | admin |
 | car_care_events | `is_car_responsible(car_id)` ∨ admin ∨ `reported_by = auth.uid()` (§6.6) | **RPC only** — `log_car_care()` | — (no update policy for any role; immutable in practice) | — |
 | destinations | approved users | admin; RPC `suggest_destination()` for members (inserts `is_approved=false`) | admin; RPC `merge_destination()` (admin-only, repoints references then deletes/deactivates the source, §6.1 item 14) | admin (RESTRICT if referenced) |
 | ride_types | approved users | admin | admin | — (deactivate) |
 | weekday_labels | approved users (`is_approved()`); global, not department-scoped | — (none) | — (none) | — (none) |
 | policies | dept ∨ admin | admin | admin | admin (RESTRICT if versions referenced) |
 | policy_versions | as policies | admin | — (immutable) | — |
-| weeks | dept ∨ admin ∨ (approved users when public) | admin ∨ sadran (RPC `open_week`); internal-only `ensure_upcoming_week()` (revoked from `authenticated`) inserts phase `upcoming` from `submit_series_request()` | admin ∨ sadran (phase/close_at/publish_at/overrides; `published_version_id` only via RPC — trigger); `materialize_department_weeks()`/`advance_week_phases()` promote `upcoming` → `open` | admin (only if no requests) |
-| requests | own (requester ∨ filed_by ∨ companion) ∨ sadran ∨ admin ∨ (**any approved user** ∧ served by a non-draft ride ∧ `is_week_public(department_id, week_start)`) — published siddurim are readable across departments (REQ §13.52); `notes` and `manual_boost*` are revoked for that path via a view | **RPC only** — `submit_request` (member for self while `week.phase <> 'archived'`; sadran/admin on behalf of any member of the dept). No direct policy. | **RPC only** — `submit_request` (edit), `withdraw_request`, `set_manual_boost`, `apply_solver_result`, `apply_proposal`, `cancel_ride`, `approve_claim`, … No direct policy. | own: only `status='draft'`; admin |
-| request_companions | as parent request | requester ∨ sadran ∨ admin | — | requester ∨ sadran ∨ admin |
+| weeks | dept ∨ admin ∨ (approved users when public) | **RPC only** — `open_week`, `ensure_department_weeks`; internal-only `ensure_upcoming_week()` (revoked from `authenticated`) inserts phase `upcoming` from `submit_series_request()`. No direct policy (`20260910099300`) | **RPC only** — `set_week_phase`, `publish_siddur`, `reopen_week`, `ensure_department_weeks`; `materialize_department_weeks()`/`advance_week_phases()` promote `upcoming` → `open`. No direct policy (`20260910099300`) | — (no delete path; `20260910099300`) |
+| requests | own (requester ∨ filed_by ∨ companion) ∨ sadran ∨ admin ∨ (**any approved user** ∧ served by a non-draft ride ∧ `is_week_public(department_id, week_start)`) — published siddurim are readable across departments (REQ §13.52); `notes` and `manual_boost*` are revoked for that path via a view | **RPC only** — `submit_request` (member for self while `week.phase <> 'archived'`; sadran/admin on behalf of any member of the dept). No direct policy. | **RPC only** — `submit_request` (edit), `withdraw_request`, `set_manual_boost`, `apply_solver_result`, `apply_proposal`, `cancel_ride`, `approve_claim`, … No direct policy. | — (withdrawn, never deleted; `rides_delete`/`requests_delete` policies dropped, `20260910099300`) |
+| request_companions | as parent request | **RPC only** — `set_request_companions(request_id, profile_ids)` (requester ∨ `can_manage_week`), one transaction; direct insert/delete policies dropped (`20260910099600`) | — | **RPC only** — same `set_request_companions` call (`20260910099600`) |
 | children | dept (`is_approved()` ∧ member of `department_id`) | admin | admin | admin |
 | child_guardians | own (`profile_id`) ∨ admin | admin | admin | admin |
 | request_children | requester ∨ can_manage_week ∨ (dept ∧ `request_served_by_public_ride()`, §6.1 "Named children reach the published views") | requester ∨ can_manage_week (own request; `_insert`/`_update`/`_delete`, §6.1 correction) | as insert | as insert (using only) |
 | request_templates | own ∨ sadran_any(dept) ∨ admin | own | own | own ∨ admin |
 | solver_runs | sadran ∨ admin | RPC `apply_solver_result` / `record_solver_preview` (sadran) | — | admin |
-| rides | sadran ∨ admin (all); approved users of **any** department: non-draft status and `is_day_public(dept, week, Jerusalem ride day)`; unpublished assignments remain private even to their designated driver | **RPC only** — `edit_ride` (sadran/admin: create/move/reassign, set driver incl. chauffeur volunteer, `overflow_allowed`, `overnight_ack`), `apply_solver_result`, `apply_proposal`, `resolve_freed_offer`, `approve_claim`; members only via `submit_request` → `try_auto_approve()` (§8 "new request on a free car"); temp-car owner via `submit_request` in "own car" mode. Every one of these ends with `assert_car_chain()` (§5 #17) — hence no direct policy | **RPC only** — `edit_ride`; driver: `cancel_ride` only | admin (rides are cancelled, not deleted) |
+| rides | sadran ∨ admin (all); approved users of **any** department: non-draft status and `is_day_public(dept, week, Jerusalem ride day)`; unpublished assignments remain private even to their designated driver | **RPC only** — `edit_ride` (sadran/admin: create/move/reassign, set driver incl. chauffeur volunteer, `overflow_allowed`, `overnight_ack`), `apply_solver_result`, `apply_proposal`, `resolve_freed_offer`, `approve_claim`; members only via `submit_request` → `try_auto_approve()` (§8 "new request on a free car"); temp-car owner via `submit_request` in "own car" mode. Every one of these ends with `assert_car_chain()` (§5 #17) — hence no direct policy | **RPC only** — `edit_ride`; driver: `cancel_ride` only | — (cancelled, never deleted; `rides_delete` policy dropped, `20260910099300`) |
 | ride_requests | as parent ride; owning a request does not expose unpublished ride links | RPC (same set as rides) | RPC | RPC |
 | proposals | party (`exists proposal_parties where profile_id = auth.uid()`) ∨ sadran ∨ admin | sadran ∨ admin (`create_proposal`) | sadran/admin (draft edits, `send_proposal`, withdraw); party: `answer_proposal(token, …)` called by the `answer-proposal` edge function (service role) — never directly | sadran/admin while `draft` |
 | proposal_parties | own ∨ sadran ∨ admin | sadran/admin | `answer_proposal` (via edge function) / `record_proposal_answer` (sadran) | sadran/admin while draft |
@@ -1092,7 +1116,7 @@ Legend: **own** = row's profile column = `auth.uid()`; **dept** = `member_of(dep
 | waitlist_group_members | as `waitlist_groups` | **RPC only** | **RPC only** | **RPC only** (the membership-maintenance trigger removes a row when its request leaves the waiting list) |
 | notifications | own | `enqueue_notification()` (definer) only | own: `read_at` only (trigger) | own |
 | push_outbox | — (svc: `push-dispatch`) | `enqueue_notification()` only | svc (`push-dispatch` marks sent/failed) | svc (`housekeeping()`) |
-| notification_templates | approved users (the composer renders WhatsApp text client-side) | admin | admin | admin |
+| notification_templates | approved users (the composer renders WhatsApp text client-side) | admin (`is_admin()`, not `can_manage_operations()` — a global table; fixed `20260910099700`) | admin (same) | admin (same) |
 | push_subscriptions | own | own | own | own; svc (`push-dispatch` on 404/410) |
 | client_errors | admin | own (`profile_id = auth.uid()` or null), rate-limited | — | svc (`housekeeping()`) |
 | audit_log | admin (all); sadran: rows with their dept ∧ week; member: `subject_profile_id = auth.uid()` | triggers (definer) | — | svc (retention) |
@@ -2137,3 +2161,20 @@ Owner follow-up on REQ item 78 (§7.6 has the full field-by-field definition). T
 - **`week_stats` is not a "state table"** in the `bump_version()`/optimistic-concurrency sense (nothing ever concurrently edits one row through a user-facing form) and is not `audit_row()`-audited (it is derived reporting data, not a user action) — both intentional omissions from the usual per-table checklist, called out explicitly rather than left silent.
 
 **Tests.** `supabase/tests/department_stats.sql` (§7.6 has the full case list) gained: `req1`/`req2`/`req3` (driver, passenger, second-request-same-driver) wired into `ride_requests` on rides A/B, a `request_companions` row on `req1`, ride C left unlinked; `servedRate`; `distinctPeople`/`distinctDrivers`; `byRideType` (work/childcare/other); a `weekly` case (week `w` live/provisional matching the aggregate figures exactly, since all its data falls inside that one week; week `w2` archived via a direct `compute_week_stats()` call and read back through `department_stats()` as `provisional: false`); RLS on `week_stats` (Sadran reads, member does not); and a separate far-past week `w3`, `live`, archived by calling `advance_week_phases()` itself (not `compute_week_stats()` directly) to exercise the cron hook end-to-end. All 23 suites pass (`npm run db:test`, applied via `docker exec psql` against the owner's already-running local stack per this task's instructions, then registered in `supabase_migrations.schema_migrations`). `npm run db:types` added the new `week_stats` table row/insert/update types and the `compute_week_stats` RPC signature only (`department_stats`'s return stays the generic `Json`, unaffected by internal field additions); `npm run typecheck` passes. No UI change: `src/features/stats/*` was out of this task's scope — hand off the new `servedRate`/`distinctPeople`/`distinctDrivers`/`byRideType`/`weekly` fields to `ui-dev` (schema/types/rendering) once the statistics screen is ready to show them.
+
+## Production hardening — permissions, request/ride integrity (2026-09-10, docs-keeper)
+
+13 migrations, `20260910099000`–`20260910100200`, closing the gaps recorded in `docs/HARDENING_2026-09.md`; that file is the audit trail, this is the canonical description. Function-grant model: §4.2 "Function grants" above. RLS matrix changes (`profiles`, `cars`/`car_access_codes`, `weeks`, `requests`, `rides`, `request_companions`, `notification_templates`, `car_issues`): §4.3.
+
+New RPCs:
+- `set_request_companions(p_request_id uuid, p_profile_ids uuid[])` (`20260910099600`) — replaces the client's delete-then-insert pair on `request_companions` with one transaction (requester ∨ `can_manage_week`); direct insert/delete policies on `request_companions` dropped.
+- `profile_phones(p_ids uuid[]) returns table(id uuid, phone text)` (`20260910100000`) — same predicate as `phone_of(uuid)`, set-returning, for the admin member list and the Sadran contact sheet, now that `profiles`' table-level SELECT excludes `phone`.
+- `can_manage_any_open_week(p_department_id uuid) returns boolean` (`20260910100100`) — "may this user manage any of the department's current weeks" (phase `open`/`solving`/`published`/`live`), one RPC replacing a client-side chain of one `can_manage_week` call per week.
+- `assert_not_direct_rpc(p_function text)` (`20260910099100`, internal, no grants) — raises `not_authorized` when PostgREST's `request.path` GUC equals `/rpc/<name>` and the caller is not admin; called first by `housekeeping`, `expire_proposals`, `expire_freed_offers`, `send_due_reminders`, `drain_push_outbox`, `dispatch_push_outbox_row`. A nested call from another RPC, or from pg_cron, has a different (or no) `request.path` and is unaffected.
+
+Behavior changes:
+- `withdraw_request(request_id, expected_version)` (`20260910099200`): locks the request row; a null `expected_version` is now rejected like every other RPC. Non-series branch: draft (planning-phase) rides are released via `release_request_draft_rides()` (REQ §5.2 "any non-final state → withdrawn"); a request already on a `confirmed`/`flagged` ride raises `request_has_ride` — the member must `cancel_ride` instead (REQ §5.2 "cancelled … frees the ride").
+- `cancel_ride_without_passengers(ride_id, reason, expected_version)` (`20260910099400`) now requires `expected_version` (previously optional), locks the ride `for update`, and raises `ride_not_found` for an already-cancelled ride. New partial unique index `freed_slot_offers_one_live_per_ride_idx (cancelled_ride_id) where status in ('open','pending_approval')` stops two near-simultaneous cancels from producing two live freed-slot offers. `move_series()` locks the series' first ride `for update`.
+- `apply_solver_result()` full mode (`20260910099500`): after the payload is applied, any request that lost its draft ride to the initial delete and is still `assigned`/`merged` with no covering ride is reset to `submitted`/`SOLVER_UNPLACED`; the count is returned as `unplaced_reset`.
+- `try_auto_approve(request_id)` (`20260910099100`) locks the request `for update` and returns `null` unless it is `submitted` or `waitlisted` (previously no status check, so it could resurrect a withdrawn request).
+- `car_issues_protect_resolution_fields()` (`20260910099800`): a non-admin, non-Sadran reporter may change only `description`/`photo_path` on their own open report (previously the trigger locked `status`/`resolved_by`/`resolved_at`/`is_unsafe` only).

@@ -126,7 +126,10 @@ begin
   perform public.edit_ride(jsonb_build_object(
     'department_id', '20000000-0000-0000-0000-000000000001', 'week_start', public.current_week_start(),
     'car_id', '00000000-0000-0000-0000-000000000040',
-    'starts_at', now()::text, 'ends_at', (now() + interval '1 hour')::text,
+    -- noon today (Asia/Jerusalem), not now(): a ride built from now() crosses midnight when the
+    -- suite runs late in the evening and trips ride_must_end_same_day.
+    'starts_at', (((now() at time zone 'Asia/Jerusalem')::date + time '12:00') at time zone 'Asia/Jerusalem')::text,
+    'ends_at', (((now() at time zone 'Asia/Jerusalem')::date + time '13:00') at time zone 'Asia/Jerusalem')::text,
     'origin_id', '20000000-0000-0000-0000-000000000010', 'destination_id', '20000000-0000-0000-0000-000000000010',
     'driver_id', '00000000-0000-0000-0000-000000000102', 'is_pinned', true, 'pin_reason', 'SMOKE_TEST',
     'served', '[]'::jsonb
@@ -489,6 +492,98 @@ exception
     raise notice 'TEST 13 PASSED: anon has no grants on weekday_labels (insufficient_privilege)';
 end $$;
 
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 14) Function grants (docs/HARDENING_2026-09.md §1.1, 20260910099000): anon can execute
+--     no application function; internal / cron functions are not executable by
+--     authenticated; new functions get no default grants.
+-- ---------------------------------------------------------------------------
+do $$
+declare v_count int; v_bad text;
+begin
+  select count(*) into v_count
+  from pg_proc p
+  where p.pronamespace = 'public'::regnamespace
+    and not exists (select 1 from pg_depend d where d.objid = p.oid and d.deptype = 'e')
+    and has_function_privilege('anon', p.oid, 'execute');
+  assert v_count = 0, format('TEST 14 FAILED: anon can execute %s application functions', v_count);
+
+  select string_agg(p.proname, ', ') into v_bad
+  from pg_proc p
+  where p.pronamespace = 'public'::regnamespace
+    and p.proname in ('advance_week_phases', 'send_due_reminders', 'expire_proposals', 'expire_freed_offers',
+      'drain_push_outbox', 'dispatch_push_outbox_row', 'housekeeping', 'enqueue_notification',
+      'try_auto_approve', 'resolve_freed_offer', 'maybe_apply_accepted_proposal', 'release_request_draft_rides',
+      'place_series', 'assert_car_chain', 'cancel_ride_without_passengers', 'edit_ride_before_series')
+    and has_function_privilege('authenticated', p.oid, 'execute');
+  assert v_bad is null, format('TEST 14 FAILED: internal functions executable by authenticated: %s', v_bad);
+
+  assert not exists (
+    select 1 from pg_default_acl a
+    where a.defaclnamespace = 'public'::regnamespace and a.defaclobjtype = 'f'
+      and a.defaclrole = 'postgres'::regrole
+      and (aclcontains(a.defaclacl, makeaclitem('anon'::regrole, 'postgres'::regrole, 'EXECUTE', false))
+        or aclcontains(a.defaclacl, makeaclitem('authenticated'::regrole, 'postgres'::regrole, 'EXECUTE', false)))
+  ), 'TEST 14 FAILED: default privileges still grant EXECUTE on new functions to anon/authenticated';
+  raise notice 'TEST 14 PASSED: function grants are explicit (anon none, internal functions closed, no default EXECUTE)';
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- 15) A member cannot run a cron step even when a grant slips back in: the guard reads
+--     PostgREST's request.path (20260910099100).
+-- ---------------------------------------------------------------------------
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000103","role":"authenticated"}', true);
+select set_config('request.path', '/rpc/housekeeping', true);
+reset role;
+do $$
+begin
+  perform public.housekeeping('2099-01-01 05:00+02');
+  raise exception 'TEST 15 FAILED: a direct /rpc/housekeeping call by a member must be refused';
+exception
+  when raise_exception then
+    if sqlerrm <> 'not_authorized' then raise; end if;
+    raise notice 'TEST 15 PASSED: direct RPC call to housekeeping() refused (not_authorized)';
+end $$;
+select set_config('request.path', '', true);
+
+-- ---------------------------------------------------------------------------
+-- 16) No direct deletes: rides / requests / weeks have no DELETE or direct write policy
+--     (20260910099300); companions and car codes are RPC / department-scoped.
+-- ---------------------------------------------------------------------------
+do $$
+begin
+  assert not exists (select 1 from pg_policies where tablename in ('rides', 'requests') and cmd = 'DELETE'),
+    'TEST 16 FAILED: rides/requests still have a DELETE policy';
+  assert not exists (select 1 from pg_policies where tablename = 'weeks' and cmd <> 'SELECT'),
+    'TEST 16 FAILED: weeks still has a direct write policy';
+  assert not exists (select 1 from pg_policies where tablename = 'request_companions' and cmd in ('INSERT', 'DELETE', 'UPDATE')),
+    'TEST 16 FAILED: request_companions still has direct write policies';
+  assert not exists (select 1 from pg_policies where tablename = 'notification_templates' and cmd <> 'SELECT'
+                     and (coalesce(qual, '') || coalesce(with_check, '')) not like '%is_admin()%'),
+    'TEST 16 FAILED: notification_templates write policies are not admin-only';
+  raise notice 'TEST 16 PASSED: rides/requests/weeks/companions are RPC-only, templates admin-only';
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- 17) profiles.phone is not selectable by members (20260910100000); phone_of() still
+--     returns the caller's own number.
+-- ---------------------------------------------------------------------------
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000103","role":"authenticated"}', true);
+do $$
+declare v_phone text;
+begin
+  begin
+    select phone into v_phone from public.profiles where id = '00000000-0000-0000-0000-000000000103';
+    raise exception 'TEST 17 FAILED: a member could select profiles.phone directly';
+  exception
+    when insufficient_privilege then null;
+  end;
+  perform public.phone_of('00000000-0000-0000-0000-000000000103');
+  raise notice 'TEST 17 PASSED: profiles.phone hidden behind phone_of()';
+end $$;
 reset role;
 
 rollback;

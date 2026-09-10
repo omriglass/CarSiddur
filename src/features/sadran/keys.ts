@@ -17,6 +17,8 @@ export const sadranKeys = {
   cars: (departmentId: string) => [...sadranKeys.all, departmentId, "cars"] as const,
   seatConfigs: (departmentId: string) => [...sadranKeys.all, departmentId, "seatConfigs"] as const,
   destinations: () => [...sadranKeys.all, "destinations"] as const,
+  fairnessStats: (departmentId: string, weekStart: string, lookbackWeeks: number) =>
+    [...sadranKeys.week(departmentId, weekStart), "fairnessStats", lookbackWeeks] as const,
   rideTypes: () => [...sadranKeys.all, "rideTypes"] as const,
   departmentSettings: (departmentId: string) => [...sadranKeys.all, departmentId, "settings"] as const,
   activePolicy: (departmentId: string) => [...sadranKeys.all, departmentId, "activePolicy"] as const,

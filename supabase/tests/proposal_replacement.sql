@@ -5,6 +5,7 @@ begin
   if new.data->>'proposal_id'=current_setting('app.test_fail_proposal',true) then raise exception 'fixture_notification_failure';end if;
   return new;
 end $$;
+grant execute on function pg_temp.reject_test_proposal_notification() to authenticated;  -- functions get no default grants (20260910099000)
 create trigger fixture_reject_proposal_notification before insert on public.notifications
   for each row execute function pg_temp.reject_test_proposal_notification();
 do $$

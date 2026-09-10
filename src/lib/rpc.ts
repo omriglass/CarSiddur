@@ -23,6 +23,7 @@ import type { Database } from "@/integrations/supabase/types";
 export type ErrorCode =
   | "stale_version"
   | "stale_input"
+  | "request_has_ride"
   | "car_chain_broken"
   | "car_away_at_day_end"
   | "no_home_location"
@@ -108,6 +109,7 @@ const MESSAGE_TO_CODE: Record<string, ErrorCode> = {
   one_way_car_mode_required: "one_way_car_mode_required",
   manual_boost_requires_reason: "manual_boost_requires_reason",
   request_not_found: "request_not_found",
+  request_has_ride: "request_has_ride",
   ride_not_found: "ride_not_found",
   proposal_not_found: "proposal_not_found",
   proposal_day_public: "proposal_day_public",
@@ -179,6 +181,7 @@ const CODE_TO_MESSAGE: Record<ErrorCode, string> = {
   one_way_car_mode_required: he.errors.oneWayCarModeRequired,
   manual_boost_requires_reason: he.errors.manualBoostRequiresReason,
   request_not_found: he.errors.requestNotFound,
+  request_has_ride: he.errors.requestHasRide,
   ride_not_found: he.errors.rideNotFound,
   proposal_not_found: he.errors.proposalNotFound,
   proposal_day_public: he.errors.proposalDayPublic,

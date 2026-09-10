@@ -10,18 +10,44 @@ import type { Database } from "@/integrations/supabase/types";
  * feature taxonomy (CLAUDE.md folder map); consolidated here rather than
  * duplicated per consumer.
  */
-export type Car = Database["public"]["Tables"]["cars"]["Row"];
+/**
+ * `access_code`/`is_replaced`/`replacement_code` live in `car_access_codes`
+ * (one row per car, department-scoped RLS), not on `cars` — flattened onto
+ * `Car` here so `siddurCarName()` callers (`SiddurPage`, `RideDetailSheet`,
+ * `MemberRideEditor`, `useDayFreeWindows`) keep working unchanged.
+ */
+export type Car = Database["public"]["Tables"]["cars"]["Row"] & {
+  access_code?: string | null;
+  is_replaced?: boolean;
+  replacement_code?: string | null;
+};
 export type Destination = Database["public"]["Tables"]["destinations"]["Row"];
 export type RideType = Database["public"]["Tables"]["ride_types"]["Row"];
+
+interface CarCodesEmbed {
+  access_code: string | null;
+  is_replaced: boolean;
+  replacement_code: string | null;
+}
 
 export async function fetchCars(departmentId: string): Promise<Car[]> {
   const { data, error } = await supabase
     .from("cars")
-    .select("*")
+    .select("*, codes:car_access_codes(access_code, is_replaced, replacement_code)")
     .eq("department_id", departmentId)
     .neq("status", "retired");
   if (error) throw toAppError(error);
-  return data ?? [];
+  return ((data ?? []) as unknown as (Database["public"]["Tables"]["cars"]["Row"] & { codes: CarCodesEmbed | CarCodesEmbed[] | null })[]).map(
+    ({ codes, ...rest }) => {
+      const flat = Array.isArray(codes) ? codes[0] : codes;
+      return {
+        ...rest,
+        access_code: flat?.access_code ?? null,
+        is_replaced: flat?.is_replaced ?? false,
+        replacement_code: flat?.replacement_code ?? null,
+      };
+    },
+  );
 }
 
 export async function fetchDestinations(departmentId: string): Promise<Destination[]> {

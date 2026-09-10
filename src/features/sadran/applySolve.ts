@@ -293,19 +293,42 @@ export function selectOpenRequests<R extends { id: string; status: string }>(
   return allRequests.filter((r) => REOPENABLE_REQUEST_STATUSES.has(r.status) && !fixedRequestIds.has(r.id));
 }
 
-export async function gatherSolverContext(params: GatherSolverContextParams): Promise<SolverContext> {
-  const [departmentSettings, allRequests, cars, destinations, rideTypes, maintenanceBlocks, boardRides] =
-    await Promise.all([
-      api.fetchDepartmentSettings(params.departmentId),
-      api.fetchWeekRequests(params.departmentId, params.weekStart),
-      fetchCars(params.departmentId),
-      fetchDestinations(params.departmentId),
-      fetchRideTypes(params.departmentId),
-      api.fetchMaintenanceBlocksForDepartment(params.departmentId),
-      api.fetchAllWeekRides(params.departmentId, params.weekStart),
-    ]);
+/**
+ * Every DB row `buildSolverContextFromData` needs, already fetched by the
+ * caller. `gatherSolverContext` (below) fetches these itself for callers
+ * that legitimately need a fresh read (apply paths); `BoardScreen`'s
+ * `computePreview` instead passes its own TanStack Query hook data straight
+ * through, so a debounced background preview never re-fetches the same 7-9
+ * endpoints on every board edit (docs/HARDENING_2026-09.md §3 item 1).
+ */
+export interface SolverContextRows {
+  departmentSettings: Awaited<ReturnType<typeof api.fetchDepartmentSettings>>;
+  allRequests: RequestRow[];
+  cars: Awaited<ReturnType<typeof fetchCars>>;
+  destinations: Awaited<ReturnType<typeof fetchDestinations>>;
+  rideTypes: Awaited<ReturnType<typeof fetchRideTypes>>;
+  maintenanceBlocks: Awaited<ReturnType<typeof api.fetchMaintenanceBlocksForDepartment>>;
+  boardRides: BoardRide[];
+  seatConfigsFlat: Awaited<ReturnType<typeof fetchCarSeatConfigs>>;
+  fairness: Awaited<ReturnType<typeof api.fetchFairnessStats>>;
+}
 
-  const seatConfigsFlat = await fetchCarSeatConfigs(params.departmentId);
+/** `fairness_stats()`'s `p_lookback_weeks` argument, read from the fairness rule's own params (default 3, CLAUDE.md decision 16). Exported so a caller that must fetch fairness itself (`gatherSolverContext` below, `BoardScreen`'s own fairness query) asks for the right lookback window without duplicating the policy-rules shape. */
+export function policyLookbackWeeks(policy: PolicyChoice): number {
+  const rawRules = (policy.rules as { type: string; weight: number; params?: unknown }[] | null) ?? [];
+  const fairnessRule = rawRules.find((r) => r.type === "fairness");
+  return (fairnessRule?.params as { lookbackWeeks?: number } | undefined)?.lookbackWeeks ?? 3;
+}
+
+/**
+ * Pure mapping from already-loaded rows to a `SolverContext` — the actual
+ * `buildSolverInput` shaping `gatherSolverContext` used to do inline, right
+ * after its own fetch. Extracted so a caller that already holds every row in
+ * its own query cache (`BoardScreen`'s hooks) can skip the fetch entirely.
+ */
+export function buildSolverContextFromData(params: GatherSolverContextParams, rows: SolverContextRows): SolverContext {
+  const { departmentSettings, allRequests, cars, destinations, rideTypes, maintenanceBlocks, boardRides, seatConfigsFlat, fairness } = rows;
+
   const seatConfigsByCarId: Record<string, typeof seatConfigsFlat> = {};
   for (const row of seatConfigsFlat) (seatConfigsByCarId[row.car_id] ??= []).push(row);
 
@@ -342,9 +365,6 @@ export async function gatherSolverContext(params: GatherSolverContextParams): Pr
 
   const rawRules = (params.policy.rules as { type: string; weight: number; params?: unknown }[] | null) ?? [];
   const rules: Policy["rules"] = rawRules.map((r) => ({ type: r.type, weight: r.weight, params: r.params ?? {} }));
-  const fairnessRule = rules.find((r) => r.type === "fairness");
-  const lookbackWeeks = (fairnessRule?.params as { lookbackWeeks?: number } | undefined)?.lookbackWeeks ?? 3;
-  const fairness = await api.fetchFairnessStats(params.departmentId, params.weekStart, lookbackWeeks);
 
   const policy: Policy = { id: params.policy.policyId, version: params.policy.versionNo, rules };
 
@@ -373,6 +393,41 @@ export async function gatherSolverContext(params: GatherSolverContextParams): Pr
     replaceableRides,
     boardRides,
   };
+}
+
+/**
+ * Fetches every row `buildSolverContextFromData` needs and maps them —
+ * for callers that need a guaranteed-fresh read: the apply paths
+ * (`FullResolveAction`, `BoardScreen`'s "auto-solve remaining"/apply) and the
+ * publish-time scoring pass (`publishWithScores.ts`), none of which hold all
+ * nine rows in their own query cache already.
+ */
+export async function gatherSolverContext(params: GatherSolverContextParams): Promise<SolverContext> {
+  const [departmentSettings, allRequests, cars, destinations, rideTypes, maintenanceBlocks, boardRides] =
+    await Promise.all([
+      api.fetchDepartmentSettings(params.departmentId),
+      api.fetchWeekRequests(params.departmentId, params.weekStart),
+      fetchCars(params.departmentId),
+      fetchDestinations(params.departmentId),
+      fetchRideTypes(params.departmentId),
+      api.fetchMaintenanceBlocksForDepartment(params.departmentId),
+      api.fetchAllWeekRides(params.departmentId, params.weekStart),
+    ]);
+
+  const seatConfigsFlat = await fetchCarSeatConfigs(params.departmentId);
+  const fairness = await api.fetchFairnessStats(params.departmentId, params.weekStart, policyLookbackWeeks(params.policy));
+
+  return buildSolverContextFromData(params, {
+    departmentSettings,
+    allRequests,
+    cars,
+    destinations,
+    rideTypes,
+    maintenanceBlocks,
+    boardRides,
+    seatConfigsFlat,
+    fairness,
+  });
 }
 
 export function runSolve(input: SolverInput): SolverOutput {

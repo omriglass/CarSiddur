@@ -1,13 +1,19 @@
+import { lazy } from "react";
 import type { RouteObject } from "react-router-dom";
 
-import { BoardPage } from "@/pages/sadran/BoardPage";
-import { ClaimsPage } from "@/pages/sadran/ClaimsPage";
-import { LogPage } from "@/pages/sadran/LogPage";
-import { ProposalComposerPage } from "@/pages/sadran/ProposalComposerPage";
-import { ProposalsListPage } from "@/pages/sadran/ProposalsListPage";
-import { PublishPage } from "@/pages/sadran/PublishPage";
-import { SadranIndexPage } from "@/pages/sadran/SadranIndexPage";
-import { WeekDashboardPage } from "@/pages/sadran/WeekDashboardPage";
+// Lazily loaded (docs/HARDENING_2026-09.md §3 item 2): the board and its
+// surrounding Sadran screens are a heavy area only a coordinator ever
+// reaches, so their code should not sit in the main bundle every member
+// downloads. `src/app/router.tsx` wraps `...sadranRoutes` in one shared
+// `<Suspense>` boundary rather than one per page.
+const SadranIndexPage = lazy(() => import("@/pages/sadran/SadranIndexPage").then((m) => ({ default: m.SadranIndexPage })));
+const WeekDashboardPage = lazy(() => import("@/pages/sadran/WeekDashboardPage").then((m) => ({ default: m.WeekDashboardPage })));
+const BoardPage = lazy(() => import("@/pages/sadran/BoardPage").then((m) => ({ default: m.BoardPage })));
+const ProposalsListPage = lazy(() => import("@/pages/sadran/ProposalsListPage").then((m) => ({ default: m.ProposalsListPage })));
+const ProposalComposerPage = lazy(() => import("@/pages/sadran/ProposalComposerPage").then((m) => ({ default: m.ProposalComposerPage })));
+const ClaimsPage = lazy(() => import("@/pages/sadran/ClaimsPage").then((m) => ({ default: m.ClaimsPage })));
+const PublishPage = lazy(() => import("@/pages/sadran/PublishPage").then((m) => ({ default: m.PublishPage })));
+const LogPage = lazy(() => import("@/pages/sadran/LogPage").then((m) => ({ default: m.LogPage })));
 
 /**
  * Sadran route list (stage 2b, UX_FLOWS.md §4), spread as `...sadranRoutes`

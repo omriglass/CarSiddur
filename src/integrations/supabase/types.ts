@@ -157,6 +157,51 @@ export type Database = {
           },
         ]
       }
+      car_access_codes: {
+        Row: {
+          access_code: string | null
+          car_id: string
+          created_at: string
+          department_id: string
+          is_replaced: boolean
+          replacement_code: string | null
+          updated_at: string
+        }
+        Insert: {
+          access_code?: string | null
+          car_id: string
+          created_at?: string
+          department_id: string
+          is_replaced?: boolean
+          replacement_code?: string | null
+          updated_at?: string
+        }
+        Update: {
+          access_code?: string | null
+          car_id?: string
+          created_at?: string
+          department_id?: string
+          is_replaced?: boolean
+          replacement_code?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "car_access_codes_car_id_fkey"
+            columns: ["car_id"]
+            isOneToOne: true
+            referencedRelation: "cars"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "car_access_codes_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       car_care_events: {
         Row: {
           car_id: string
@@ -378,19 +423,16 @@ export type Database = {
       }
       cars: {
         Row: {
-          access_code: string | null
           built_in_boosters: number
           built_in_child_seats: number
           created_at: string
           department_id: string
           features: string[]
           id: string
-          is_replaced: boolean
           license_plate: string
           name: string
           notes: string | null
           owner_id: string | null
-          replacement_code: string | null
           responsible_id: string | null
           retired_at: string | null
           status: Database["public"]["Enums"]["car_status"]
@@ -398,19 +440,16 @@ export type Database = {
           updated_at: string
         }
         Insert: {
-          access_code?: string | null
           built_in_boosters?: number
           built_in_child_seats?: number
           created_at?: string
           department_id: string
           features?: string[]
           id?: string
-          is_replaced?: boolean
           license_plate: string
           name: string
           notes?: string | null
           owner_id?: string | null
-          replacement_code?: string | null
           responsible_id?: string | null
           retired_at?: string | null
           status?: Database["public"]["Enums"]["car_status"]
@@ -418,19 +457,16 @@ export type Database = {
           updated_at?: string
         }
         Update: {
-          access_code?: string | null
           built_in_boosters?: number
           built_in_child_seats?: number
           created_at?: string
           department_id?: string
           features?: string[]
           id?: string
-          is_replaced?: boolean
           license_plate?: string
           name?: string
           notes?: string | null
           owner_id?: string | null
-          replacement_code?: string | null
           responsible_id?: string | null
           retired_at?: string | null
           status?: Database["public"]["Enums"]["car_status"]
@@ -3537,6 +3573,10 @@ export type Database = {
         Args: { p_end: string; p_start: string }
         Returns: undefined
       }
+      can_manage_any_open_week: {
+        Args: { p_department_id: string }
+        Returns: boolean
+      }
       can_manage_operations: {
         Args: { p_department_id?: string }
         Returns: boolean
@@ -3837,6 +3877,13 @@ export type Database = {
         }
         Returns: number
       }
+      profile_phones: {
+        Args: { p_ids: string[] }
+        Returns: {
+          id: string
+          phone: string
+        }[]
+      }
       publication_conflicting_ride_ids: {
         Args: {
           p_days: string[]
@@ -4006,6 +4053,10 @@ export type Database = {
       }
       set_request_children: {
         Args: { p_child_ids: string[]; p_request_id: string }
+        Returns: undefined
+      }
+      set_request_companions: {
+        Args: { p_profile_ids: string[]; p_request_id: string }
         Returns: undefined
       }
       set_week_phase: {

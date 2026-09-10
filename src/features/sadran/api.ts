@@ -186,32 +186,38 @@ export interface ActivePolicy {
   rules: unknown;
 }
 
-/** The selected department's active policy. */
+interface ActivePolicyJoinRow {
+  id: string;
+  name: string;
+  current_version_id: string | null;
+  current_version: PolicyVersionRow | PolicyVersionRow[] | null;
+}
+
+/**
+ * The selected department's active policy. One request via a PostgREST FK
+ * embed (`policies.current_version_id -> policy_versions.id`, constraint
+ * `policies_current_version_fk`) instead of the policy row then its version
+ * as two sequential round trips (docs/HARDENING_2026-09.md §3 item 3).
+ */
 export async function fetchActivePolicy(departmentId: string): Promise<ActivePolicy | null> {
-  const deptRes = await supabase
+  const { data, error } = await supabase
     .from("policies")
-    .select("id, name, current_version_id")
+    .select("id, name, current_version_id, current_version:policy_versions!policies_current_version_fk(*)")
     .eq("department_id", departmentId)
     .eq("is_active", true)
     .maybeSingle();
-  if (deptRes.error) throw toAppError(deptRes.error);
+  if (error) throw toAppError(error);
 
-  const policyRow = deptRes.data;
-  if (!policyRow?.current_version_id) return null;
-
-  const versionRes = await supabase
-    .from("policy_versions")
-    .select("*")
-    .eq("id", policyRow.current_version_id)
-    .single();
-  if (versionRes.error) throw toAppError(versionRes.error);
+  const policyRow = data as unknown as ActivePolicyJoinRow | null;
+  const version = Array.isArray(policyRow?.current_version) ? policyRow?.current_version[0] : policyRow?.current_version;
+  if (!policyRow?.current_version_id || !version) return null;
 
   return {
     policyId: policyRow.id,
     name: policyRow.name,
-    policyVersionId: versionRes.data.id,
-    versionNo: versionRes.data.version_no,
-    rules: versionRes.data.rules,
+    policyVersionId: version.id,
+    versionNo: version.version_no,
+    rules: version.rules,
   };
 }
 
@@ -581,9 +587,12 @@ export interface ProfileContact {
 
 export async function fetchProfilesByIds(profileIds: string[]): Promise<ProfileContact[]> {
   if (profileIds.length === 0) return [];
-  const { data, error } = await supabase.from("profiles").select("id, full_name, phone").in("id", profileIds);
+  const { data, error } = await supabase.from("profiles").select("id, full_name").in("id", profileIds);
   if (error) throw toAppError(error);
-  return data ?? [];
+  const rows = data ?? [];
+  const phones = await rpc("profile_phones", { p_ids: profileIds });
+  const phoneById = new Map((phones ?? []).map((row) => [row.id, row.phone]));
+  return rows.map((row) => ({ ...row, phone: phoneById.get(row.id) ?? null }));
 }
 
 export async function fetchAuditLog(departmentId: string, weekStart: string): Promise<AuditLogRow[]> {

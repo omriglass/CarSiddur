@@ -554,6 +554,7 @@ export const he = {
     oneWayCarModeRequired: "יש לבחור אופן נסיעה בכיוון אחד",
     manualBoostRequiresReason: "יש לציין סיבה להעדפה ידנית",
     requestNotFound: "הבקשה לא נמצאה",
+    requestHasRide: "הבקשה כבר משובצת לנסיעה — יש לבטל את הנסיעה במקום למשוך את הבקשה",
     rideNotFound: "הנסיעה לא נמצאה",
     proposalNotFound: "ההצעה לא נמצאה",
     proposalDayPublic: "היום כבר פורסם — הצעות אינן רלוונטיות ליום שפורסם; מתאמים ישירות עם הנוסע/ת",

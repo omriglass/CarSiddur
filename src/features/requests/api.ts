@@ -104,7 +104,7 @@ const SELECT = `
       id, starts_at, ends_at, status, needs_driver, version,
       origin:destinations!rides_origin_id_fkey(name),
       destination:destinations!rides_destination_id_fkey(name),
-      car:cars(name, type, access_code, is_replaced, replacement_code),
+      car:cars(name, type, codes:car_access_codes(access_code, is_replaced, replacement_code)),
       driver:profiles!rides_driver_id_fkey(full_name)
     )
   ),
@@ -148,7 +148,11 @@ interface RawRequestRow {
       status: Database["public"]["Enums"]["ride_status"];
       origin: { name: string } | null;
       destination: { name: string } | null;
-      car: { name: string; type: CarType; access_code: string | null; is_replaced: boolean; replacement_code: string | null } | null;
+      car: {
+        name: string;
+        type: CarType;
+        codes: { access_code: string | null; is_replaced: boolean; replacement_code: string | null } | { access_code: string | null; is_replaced: boolean; replacement_code: string | null }[] | null;
+      } | null;
       driver: { full_name: string } | null;
     } | null;
   }[];
@@ -208,7 +212,12 @@ function mapRow(row: RawRequestRow): MyRequestRow {
             status: ride.status,
             originName: ride.origin?.name ?? "",
             destinationName: ride.destination?.name ?? "",
-            carName: ride.car ? siddurCarName(ride.car) : null,
+            carName: ride.car
+              ? siddurCarName({
+                  name: ride.car.name,
+                  ...(Array.isArray(ride.car.codes) ? ride.car.codes[0] : ride.car.codes),
+                })
+              : null,
             carType: ride.car?.type ?? null,
             driverName: ride.driver?.full_name ?? null,
             isChauffeur: legWithRide.role === "passenger" && ride.driver?.full_name !== undefined,
@@ -568,17 +577,7 @@ export async function fetchRequestCompanionIds(requestId: string): Promise<strin
 }
 
 export async function setRequestCompanions(requestId: string, profileIds: string[]): Promise<void> {
-  const { error: deleteError } = await supabase
-    .from("request_companions")
-    .delete()
-    .eq("request_id", requestId);
-  if (deleteError) throw toAppError(deleteError);
-
-  if (profileIds.length === 0) return;
-  const { error: insertError } = await supabase
-    .from("request_companions")
-    .insert(profileIds.map((profileId) => ({ request_id: requestId, profile_id: profileId })));
-  if (insertError) throw toAppError(insertError);
+  await rpc("set_request_companions", { p_request_id: requestId, p_profile_ids: profileIds });
 }
 
 export async function fetchRequestChildIds(requestId: string): Promise<string[]> {

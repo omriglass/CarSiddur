@@ -44,6 +44,13 @@ Status: v0.3 + verified 2026-09-06 (all paths tested against actual code layout;
 
 **Something is off between docs and app** — `/review-consistency`, read the checklist, then `/review-consistency and fix the derived docs` or hand specific items to the right agent. The first run should be done as soon as the first migrations exist, to confirm the code follows the "Consistency decisions (2026-09-06)" in `CLAUDE.md` and to tick the "To be verified" items.
 
+## Before go-live
+
+- `app_settings.push_dispatch_url` and `app_settings.on_ride_cancelled_url` point at the deployed edge-function URLs — otherwise pushes leave only via the 15-minute `drain_push_outbox()` and freed-slot matching never fires.
+- `app_secrets.cron_secret` is set and equal to the edge functions' `CRON_SECRET` env var.
+- After `npm run db:push`, run the RLS smoke test (`supabase/tests/rls_smoke.sql`, `npm run db:test`) before trusting the deployed schema.
+- Every migration that adds an RPC the browser calls must grant it explicitly (`grant execute on function … to authenticated`) — functions have no default grants (`docs/HARDENING_2026-09.md` §1.1, DATA_MODEL §4.2 "Function grants").
+
 ## Tips for writing prompts
 
 - Name the thing in English (`seniority`, `wheelchair_access`) and give the Hebrew label in quotes: the identifier goes into code, the label into `he.ts` or the seed.

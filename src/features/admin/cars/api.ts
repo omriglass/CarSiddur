@@ -12,30 +12,76 @@ import type { Passengers } from "@/solver";
  * maintenance block is a multi-row operation, done via the
  * `report_car_issue_unsafe_to_maintenance` RPC.
  */
-export type Car = Database["public"]["Tables"]["cars"]["Row"];
-export type CarInsert = Database["public"]["Tables"]["cars"]["Insert"];
-export type CarUpdate = Database["public"]["Tables"]["cars"]["Update"];
+/**
+ * `access_code`/`is_replaced`/`replacement_code` moved out of `cars` into
+ * `car_access_codes` (one row per car, department-scoped RLS) — flattened
+ * back onto `Car` here so `CarForm` and callers keep working unchanged.
+ */
+export interface CarCodes {
+  access_code: string | null;
+  is_replaced: boolean;
+  replacement_code: string | null;
+}
+export type Car = Database["public"]["Tables"]["cars"]["Row"] & CarCodes;
+export type CarInsert = Database["public"]["Tables"]["cars"]["Insert"] & Partial<CarCodes>;
+export type CarUpdate = Database["public"]["Tables"]["cars"]["Update"] & Partial<CarCodes>;
 export type SeatConfig = Database["public"]["Tables"]["car_seat_configs"]["Row"];
 export type MaintenanceBlock = Database["public"]["Tables"]["car_maintenance_blocks"]["Row"];
 export type CarIssue = Database["public"]["Tables"]["car_issues"]["Row"];
 
+export const CARS_WITH_CODES_SELECT = "*, codes:car_access_codes(access_code, is_replaced, replacement_code)";
+
+/** Flattens the `codes:car_access_codes(...)` embed onto the row (null/absent → not replaced, no codes). */
+export function flattenCarCodes<T extends { codes?: CarCodes | CarCodes[] | null }>(
+  row: T,
+): Omit<T, "codes"> & CarCodes {
+  const { codes, ...rest } = row;
+  const flat = Array.isArray(codes) ? codes[0] : codes;
+  return {
+    ...rest,
+    access_code: flat?.access_code ?? null,
+    is_replaced: flat?.is_replaced ?? false,
+    replacement_code: flat?.replacement_code ?? null,
+  } as Omit<T, "codes"> & CarCodes;
+}
+
 export async function fetchCarsAll(): Promise<Car[]> {
-  const { data, error } = await supabase.from("cars").select("*").order("name", { ascending: true });
+  const { data, error } = await supabase.from("cars").select(CARS_WITH_CODES_SELECT).order("name", { ascending: true });
   if (error) throw toAppError(error);
   const departmentIds = new Set((await fetchOperationalDepartments()).map((department) => department.id));
-  return (data ?? []).filter((row) => departmentIds.has(row.department_id));
+  return ((data ?? []) as unknown as (Database["public"]["Tables"]["cars"]["Row"] & { codes: CarCodes | CarCodes[] | null })[])
+    .filter((row) => departmentIds.has(row.department_id))
+    .map(flattenCarCodes);
+}
+
+async function upsertCarCodes(carId: string, departmentId: string, codes: Partial<CarCodes>): Promise<void> {
+  const { error } = await supabase.from("car_access_codes").upsert(
+    {
+      car_id: carId,
+      department_id: departmentId,
+      access_code: codes.access_code ?? null,
+      is_replaced: codes.is_replaced ?? false,
+      replacement_code: codes.replacement_code ?? null,
+    },
+    { onConflict: "car_id" },
+  );
+  if (error) throw toAppError(error);
 }
 
 export async function createCar(input: CarInsert): Promise<Car> {
-  const { data, error } = await supabase.from("cars").insert(input).select().single();
+  const { access_code, is_replaced, replacement_code, ...carInput } = input;
+  const { data, error } = await supabase.from("cars").insert(carInput).select().single();
   if (error) throw toAppError(error);
-  return data;
+  await upsertCarCodes(data.id, data.department_id, { access_code, is_replaced, replacement_code });
+  return { ...data, access_code: access_code ?? null, is_replaced: is_replaced ?? false, replacement_code: replacement_code ?? null };
 }
 
 export async function updateCar(id: string, patch: CarUpdate): Promise<Car> {
-  const { data, error } = await supabase.from("cars").update(patch).eq("id", id).select().single();
+  const { access_code, is_replaced, replacement_code, ...carPatch } = patch;
+  const { data, error } = await supabase.from("cars").update(carPatch).eq("id", id).select().single();
   if (error) throw toAppError(error);
-  return data;
+  await upsertCarCodes(id, data.department_id, { access_code, is_replaced, replacement_code });
+  return { ...data, access_code: access_code ?? null, is_replaced: is_replaced ?? false, replacement_code: replacement_code ?? null };
 }
 
 export async function fetchSeatConfigs(carId: string): Promise<SeatConfig[]> {

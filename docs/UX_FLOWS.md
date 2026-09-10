@@ -256,7 +256,7 @@ Behaviour notes:
 
 ### 3.5 Published siddur (`/siddur`, tab הסידור)
 
-Every car name in the finished siddur includes its active 4–5 digit code, including grid headers, ride cards/details, available-car slots and car selectors. When marked replaced in car details it reads `שם הרכב (חלופי)` with the replacement code; switching back restores the regular name/code. Leading zeroes are preserved. Legacy cars with no code explicitly show “קוד לא הוזן”. Upcoming assigned rides on Home use the same label.
+Every car name in the finished siddur includes its active 4–5 digit code, including grid headers, ride cards/details, available-car slots and car selectors, read from `car_access_codes` (DATA_MODEL §3.2, §4.3). When marked replaced in car details it reads `שם הרכב (חלופי)` with the replacement code; switching back restores the regular name/code. Leading zeroes are preserved. Legacy cars with no code explicitly show “קוד לא הוזן”. Upcoming assigned rides on Home use the same label. **A car belonging to a department the viewer is not a member of renders with no code at all** (`car_access_codes` RLS is department-scoped, `20260910099900`) — the member sees only the car's name, same as any other cross-department published siddur (§13.52).
 
 Phase-aware: for an Open week members see only their own requests and a note "הסידור יפורסם ביום רביעי בערב"; for Published/Live weeks they see the full department siddur (REQUIREMENTS §10). The department switcher in the header also lists departments the member does **not** belong to; their published siddurim open read-only (no "ask to join", no FAB — REQUIREMENTS §13.52).
 
@@ -795,7 +795,7 @@ Stored as `notification_templates` rows with `channel = 'whatsapp'`, `event = 'p
 ### 7.2 Loading, errors, offline
 
 - **Loading**: skeleton cards matching the final layout (never a centered spinner for lists); the board shows the grid frame immediately and streams rides in. Solver run shows an indeterminate progress bar with "מסדר… ({{seconds}} ש')" and a cancel after 15 s.
-- **Errors**: inline for fields; toast with **נסה/י שוב** for failed mutations; a full-screen `ErrorState` only when the route cannot render ("משהו השתבש. הנתונים שלך שמורים." + רענן). Optimistic concurrency conflicts on rides (REQUIREMENTS §11): "מישהו אחר שינה את הנסיעה הזאת בינתיים" with **טען את הגרסה החדשה**.
+- **Errors**: inline for fields; toast with **נסה/י שוב** for failed mutations; a full-screen `ErrorState` only when the route cannot render ("משהו השתבש. הנתונים שלך שמורים." + רענן). Optimistic concurrency conflicts on rides (REQUIREMENTS §11): "מישהו אחר שינה את הנסיעה הזאת בינתיים" with **טען את הגרסה החדשה**. Withdrawing a request already covered by a confirmed/flagged ride (`request_has_ride`, `20260910099200`) surfaces `he.errors.requestHasRide` ("הבקשה כבר משובצת לנסיעה — יש לבטל את הנסיעה במקום") instead of silently no-op'ing — the member cancels the ride from the siddur/board instead.
 - **Offline** (`OfflineBanner`, top, amber): "אין חיבור לאינטרנט — מוצג הסידור האחרון שנשמר ({{time}})". The PWA caches the last published siddur of each of the member's departments, Home, and the inbox. Writes while offline are blocked with a clear message except request drafts, which are saved locally and show "טיוטה שמורה במכשיר — תישלח כשיהיה חיבור" with a manual **שלח/י עכשיו**. Proposal answers require connectivity (the token exchange is server-side).
 - **Session expired**: silent refresh; if it fails, a sheet "התחבר/י שוב" without losing the form.
 

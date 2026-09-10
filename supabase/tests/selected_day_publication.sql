@@ -23,6 +23,7 @@ create function pg_temp.publication_scores(dept uuid,w date) returns jsonb langu
       'profiles',(select value from profiles)))
     from public.policies p where (p.department_id=dept or p.department_id is null) and p.current_version_id is not null));
 $$;
+grant execute on function pg_temp.publication_scores(uuid, date) to authenticated;  -- functions get no default grants (20260910099000)
 
 select set_config('request.jwt.claims','{"sub":"00000000-0000-0000-0000-000000000102","role":"authenticated"}',true);
 do $$

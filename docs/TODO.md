@@ -17,6 +17,12 @@ Kept separate from `IMPLEMENTATION_PLAN.md` so the owner can triage. Items move 
 
 - Wire the "talk to the sadran on WhatsApp" button on `/p/<token>` to the new `sadran_contact_of(dept, week)` RPC (signed-in members only). The button is coded and hides itself until then (`src/pages/ProposalTokenPage.tsx`).
 - Run `npm run db:test` (new `supabase/tests/notifications_semantics.sql`, rls_smoke TEST 12) and the e2e suite (proposal specs were rewritten blind for board-only proposal creation).
+- Owner: run `npm run db:reset && npm run db:types && npm run db:test`, then the e2e suite, to validate the 13 hardening migrations (`20260910099000`–`20260910100200`, `docs/HARDENING_2026-09.md`) from a clean slate — they were applied locally with `supabase migration up`.
+
+## Low priority (2026-09-10 hardening audit, `docs/HARDENING_2026-09.md` §4)
+
+- Edge functions contain inline Hebrew error strings (hard rule 3) — move to a shared map.
+- `vercel.json` has no security headers (CSP, `X-Frame-Options`); add when convenient.
 
 ## Next feature (priority 3): add passengers to a ride by button
 

@@ -18,6 +18,7 @@ create function pg_temp.publication_scores(dept uuid,w date) returns jsonb langu
       'profiles',(select value from profiles)))
     from public.policies p where (p.department_id=dept or p.department_id is null) and p.current_version_id is not null));
 $$;
+grant execute on function pg_temp.publication_scores(uuid, date) to authenticated;  -- functions get no default grants (20260910099000)
 do $$
 declare d uuid:=gen_random_uuid(); other_d uuid:=gen_random_uuid();
   relevant_id uuid:=gen_random_uuid(); unrelated_id uuid:=gen_random_uuid(); foreign_id uuid:=gen_random_uuid();
