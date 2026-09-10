@@ -335,6 +335,24 @@ export const heMember = {
     exportTireStateVeryLow: "נמוך מאוד",
     homeMyCarsTitle: "הרכבים באחריותי",
   },
+  // Contested waiting-list groups (REQ §13.75, UX_FLOWS.md §3.5/§4.2 "בדיון"): the lane/card
+  // label, the resolution sheet (`WaitlistGroupSheet`) and the "לדיון" action on a waitlisted
+  // request whose `status_reason` is `WAITLISTED_CONTESTED`.
+  waitlist: {
+    laneTitle: "בדיון",
+    blockLabel: "בדיון: {{names}}",
+    sheetTitle: "מי נוסע/ת?",
+    driver: "נהג/ת",
+    seatsLine: "{{adults}} מבוגרים/ות · {{childSeats}} כיסאות בטיחות · {{boosters}} בוסטרים",
+    summary: "{{count}} נוסעים/ות, {{seats}} מקומות",
+    confirm: "אשר/י נסיעה משותפת",
+    confirmBody: "הנסיעה תירשם על שם {{driver}} עם {{names}}. מי שלא סומן/ה נשאר/ת ברשימת ההמתנה.",
+    resolved: "הנסיעה נרשמה",
+    readOnlyHint: "רק המשתתפים/ות או הסדרן/ית יכולים/ות להכריע",
+    cancelGroup: "בטל/י את הדיון",
+    cancelGroupBody: "כל המשתתפים/ות יישארו ברשימת ההמתנה.",
+    openGroup: "לדיון",
+  },
 } as const;
 
 export type HeMemberDictionary = typeof heMember;

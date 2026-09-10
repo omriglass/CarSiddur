@@ -26,6 +26,9 @@ export type ErrorCode =
   | "car_chain_broken"
   | "car_away_at_day_end"
   | "no_home_location"
+  | "no_car_free"
+  | "waitlist_group_closed"
+  | "waitlist_selection_invalid"
   | "not_authorized"
   | "last_admin_required"
   | "week_not_open"
@@ -80,6 +83,9 @@ const SQLSTATE_TO_CODE: Record<string, ErrorCode> = {
   P0410: "car_chain_broken",
   P0411: "car_away_at_day_end",
   P0412: "no_home_location",
+  // Contested waiting-list groups: resolve_waitlist_group() found no shared car that can
+  // take the whole chosen party for the whole window (20260910091400).
+  WLG01: "no_car_free",
 };
 
 const MESSAGE_TO_CODE: Record<string, ErrorCode> = {
@@ -133,6 +139,9 @@ const MESSAGE_TO_CODE: Record<string, ErrorCode> = {
   invalid_companions: "companions_invalid",
   passenger_names_exceed_seats: "passenger_count_mismatch",
   invalid_quick_reservation: "quick_ride_unavailable",
+  no_car_free: "no_car_free",
+  waitlist_group_closed: "waitlist_group_closed",
+  waitlist_selection_invalid: "waitlist_selection_invalid",
   push_unsupported: "push_unsupported",
   push_permission_denied: "push_permission_denied",
   push_vapid_key_invalid: "push_vapid_key_invalid",
@@ -187,6 +196,9 @@ const CODE_TO_MESSAGE: Record<ErrorCode, string> = {
   companions_invalid: he.ridePublicDetails.invalidCompanions,
   passenger_count_mismatch: he.ridePublicDetails.namesExceedSeats,
   quick_ride_unavailable: he.ridePublicDetails.invalidQuickReservation,
+  no_car_free: he.errors.noCarFree,
+  waitlist_group_closed: he.errors.waitlistGroupClosed,
+  waitlist_selection_invalid: he.errors.waitlistSelectionInvalid,
   push_unsupported: he.errors.pushUnsupported,
   push_permission_denied: he.errors.pushPermissionDenied,
   push_vapid_key_invalid: he.errors.pushVapidKeyInvalid,

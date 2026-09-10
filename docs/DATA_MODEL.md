@@ -114,14 +114,16 @@ create type public.tire_state           as enum ('ok','low','very_low');  -- gre
 create type public.solver_run_status    as enum ('succeeded','failed');
 create type public.freed_offer_status   as enum ('open','auto_assigned','pending_approval','approved','expired','closed');
 create type public.freed_claim_status   as enum ('offered','claimed','approved','declined','withdrawn');
+create type public.waitlist_group_status as enum ('open','resolved','cancelled');   -- REQ §13.75 (contested waiting-list groups)
 create type public.notification_channel as enum ('push','inbox','whatsapp','email');
--- Canonical list = UX_FLOWS.md §6.1 (22 events). Value = snake_case of the i18n key suffix (`notif.freedSlotAuto` → 'freed_slot_auto').
+-- Canonical list = UX_FLOWS.md §6.1 (24 events). Value = snake_case of the i18n key suffix (`notif.freedSlotAuto` → 'freed_slot_auto').
 create type public.notification_event   as enum ('window_open','window_closing','window_closed_solve_now','publish_reminder',
                                                  'published','outcome_changed',
                                                  'proposal_received','proposal_answered','freed_slot','freed_slot_auto',
                                                  'claim_approved','claim_declined','claim_contested','maintenance_affects',
                                                  'late_request','waitlisted_request','auto_approved','request_changed',
-                                                 'access_request','access_approved','status_changed','car_care');
+                                                 'access_request','access_approved','status_changed','car_care',
+                                                 'waitlist_contested','waitlist_resolved');
 create type public.push_outbox_status   as enum ('pending','sent','failed','dead');
 create type public.answer_channel       as enum ('token','session','sadran');
 create type public.audit_action         as enum ('insert','update','delete');
@@ -133,6 +135,8 @@ Notes:
 - `week_phase` adds `archived` (REQUIREMENTS §4: Saturday 23:59 passed, read-only) to the four working phases; it exists for retention and for the fairness lookback. The full list is `open, solving, published, live, archived`.
 - `role` is used by `department_members` (`member`/`sadran` only — admin is global, see `profiles.is_admin`) and by `audit_log.actor_role`.
 - `notification_event` **Sadran-role events** (cannot be muted while the recipient is a Sadran of the week, REQUIREMENTS §9): `window_closed_solve_now`, `publish_reminder`, `proposal_answered`, `claim_contested`, `late_request`, `waitlisted_request`, `request_changed`, and the Sadran copy of `auto_approved`. Admin events: `access_request`. Everything else goes to members. `car_care` (REQ §6.6) is week-less (`week_start` null) and goes to the car's `responsible_id` or, absent one, every approved admin (`car_care_recipients()`, §4.2) — it is a normal, mutable notification for whichever recipient it lands on, not a Sadran-role or unmutable-admin event; variants are `issue_<car_issue_category>` (one per category), `tire_fill`, `wash`.
+- `waitlist_group_status` (REQ §13.75): `open` = the discussion is live and any participant or the Sadran can settle it; `resolved` = somebody ticked who rides and `waitlist_groups.ride_id` points at the combined ride; `cancelled` = the discussion was dropped (by the Sadran, or automatically when fewer than two participants are left) and everybody simply stays waitlisted.
+- `waitlist_contested` / `waitlist_resolved` (REQ §13.75) are **member** events (mutable, not Sadran-role) even though the week's Sadranim also receive a copy. Variants: `waitlist_contested` → default (you are in a contested group), `joined` (somebody joined the group you are in), `sadran`; `waitlist_resolved` → default, `driver`, `passenger`, `not_chosen`, `cancelled`, `sadran`.
 - `trip_shape` (REQ §5.1) replaces the v0.1 `one_way boolean` + `leg_direction` pair; `leg_direction` is **not created**. `leg_car_mode` is the resolved mode of one served leg (`ride_requests.car_mode`, REQ §5.4); members may request only `relay` or `passenger` for one-way shapes (`requests.one_way_car_mode`), `keep` is the round-trip default and `chauffeur` is Sadran-assigned.
 - `proposal_type` ↔ solver suggestion kinds: the mapping table lives in `SOLVER.md` §3.15. In particular "split legs" (§7.1 suggestion 4) is a `merge` proposal whose payload lists two rides (`legs: [{leg:'out', ride_id, car_mode}, {leg:'return', ride_id, car_mode}]`), "convert to round trip" is a `shift` proposal carrying `trip_shape`, and a chauffeur is **no** proposal type (a Sadran action, optionally a `merge` proposal to the volunteer).
 - `answer_channel`: how a proposal answer was recorded — `token` (deep link, no session), `session` (signed-in app), `sadran` (recorded on the member's behalf).
@@ -687,11 +691,59 @@ Immutable (`forbid_mutation()`). `weeks.published_version_id` points to the curr
 
 Unique `(offer_id, request_id)`. At most one `approved` per offer (partial unique index).
 
+#### `waitlist_groups` (contested waiting-list groups, REQ §13.75)
+
+Two or more overlapping round-trip requests on one **published** day that cannot all be served. Distinct from `freed_slot_offers` (a car that *became* free, decided by the Sadran): here the participants themselves decide. Migration `20260910091200_create_waitlist_groups.sql`.
+
+| column | type | null | default | notes |
+|---|---|---|---|---|
+| id | uuid | NN | gen_random_uuid() | PK |
+| department_id | uuid | NN | | FK departments ON DELETE CASCADE |
+| week_start | date | NN | | composite FK weeks `(department_id, week_start)` |
+| day | date | NN | | the Jerusalem calendar day the group is about |
+| starts_at / ends_at | timestamptz | NN | | the block: earliest departure … latest return of the open members |
+| status | waitlist_group_status | NN | 'open' | |
+| ride_id | uuid | | | FK rides ON DELETE SET NULL — the combined ride, once resolved |
+| resolved_by | uuid | | | FK profiles — null when the group was dropped automatically |
+| resolved_at | timestamptz | | | |
+| version | int | NN | 1 | `bump_version()`; every RPC takes `p_expected_version` |
+| created_at / updated_at | timestamptz | NN | now() | `set_updated_at()`, `audit_row()` |
+
+Constraints: `ends_at > starts_at`; an `open` group has no `ride_id`/`resolved_at`/`resolved_by`. Indexes: `(department_id, week_start, day, status)`; GiST on `tstzrange(starts_at, ends_at)` where `status = 'open'`.
+
+#### `waitlist_group_members`
+
+| column | type | null | default | notes |
+|---|---|---|---|---|
+| id | uuid | NN | gen_random_uuid() | PK |
+| group_id | uuid | NN | | FK waitlist_groups ON DELETE CASCADE |
+| request_id | uuid | NN | | FK requests ON DELETE CASCADE |
+| profile_id | uuid | NN | | FK profiles (the requester, for display) |
+| department_id / week_start | uuid / date | NN | | composite FK weeks |
+| depart_at / return_at | timestamptz | NN | | request snapshot |
+| adults / child_seats / boosters | smallint | NN | 1 / 0 / 0 | request snapshot (seat sum for the combined ride) |
+| destination | text | | | request snapshot (`destinations.name` or free text) |
+| chosen | boolean | | | null while the group is open; true/false after resolution **or** cancellation |
+| created_at / updated_at | timestamptz | NN | now() | `set_updated_at()`, `audit_row()` |
+
+Unique `(group_id, request_id)`; **partial unique** `(request_id) where chosen is null` — a request belongs to at most one *open* group, while history rows never block a later one. The request snapshot is denormalized on purpose: `requests` RLS only exposes another member's row once a non-draft ride serves it on a public day, and a contested request by definition has no ride yet, so a `security_invoker` view joining `requests` would show each participant a group of blanks (house rule §0 "RLS never joins").
+
+**Functions** (all `security definer set search_path = public, pg_temp`):
+
+- `form_waitlist_groups(p_department_id uuid, p_week_start date, p_day date) returns int` — the publication entry point (called by `publish_siddur()` for every day being published), `can_manage_week`-guarded, granted to `authenticated`. Takes every `submitted`/`waitlisted` round-trip request of that Jerusalem day that is not already in an open group, sweeps them by departure to build overlap clusters (`[depart, return + department_settings.turnaround_minutes)`, flexibility ignored), and settles each one. Returns the number of groups formed. Idempotent.
+- `settle_waitlist_cluster(...)`, `create_waitlist_group(...)`, `notify_waitlist_contested(...)` — internals (no grants). A singleton cluster is just `try_auto_approve()`. A cluster of ≥ 2 is auto-approved inside a **subtransaction**: if every member gets a car, the placements stand and no group is created; otherwise the whole attempt is rolled back (`raise … 'waitlist_cluster_rollback'`) and the cluster becomes one group whose members are all set to `waitlisted`/`WAITLISTED_CONTESTED`.
+- `join_waitlist_group(p_request_id uuid) returns uuid` — internal, called from `try_auto_approve()`'s no-car branch (so it covers `submit_request()` and `enter_waiting_list()` alike). No-op unless the request is a `waitlisted` round trip on a **published** day and not already in an open group. Joins an overlapping open group (widening `starts_at`/`ends_at`, notifying the newcomer with the default variant and everybody else with `joined`), else pairs with another lone waitlisted round trip of that day, else does nothing.
+- `resolve_waitlist_group(p_group_id uuid, p_request_ids uuid[], p_expected_version int) returns jsonb` — granted to `authenticated`. Caller must be an open member of the group or `can_manage_week`. `p_request_ids` must be a non-empty, duplicate-free subset of the open members; **the first id is the driver**. Creates one `confirmed`, pinned ride (`pin_reason = 'WAITLIST_RESOLVED'`, home → home, window = min departure … max return of the chosen) on the driver's `preferred_car_id` if it qualifies, else the lowest-id shared active car at home whose seat config fits the summed party and which has no overlapping ride including the turnaround; `assert_car_chain()` afterwards. Driver request → `assigned`/`WAITLIST_RESOLVED_DRIVER`, the others → `merged`/`WAITLIST_RESOLVED_PASSENGER` (`ride_requests` rows `driver/both/keep` and `passenger/both/passenger` — `ride_requests_role_mode_ck` forbids `keep` on a non-driver row), unchosen stay `waitlisted`/`WAITLISTED_NOT_CHOSEN`. Errors: `stale_version` (P0409), `not_authorized`, `waitlist_group_not_found`, `waitlist_group_closed`, `waitlist_selection_invalid`, `no_home_location` (P0412), **`no_car_free` (SQLSTATE `WLG01`)**. Returns `{group_id, ride_id, car_id, driver_request_id, chosen[], not_chosen[]}`.
+- `cancel_waitlist_group(p_group_id uuid, p_expected_version int) returns jsonb` — `can_manage_week` only. Group → `cancelled`, every member `chosen = false`, requests stay `waitlisted` with `WAITLISTED_NO_CAR`, everybody notified with the `cancelled` variant.
+- `waitlist_group_membership_sync()` — `after update of status on requests`. A request that leaves the waiting list any other way (withdrawn, cancelled, denied, assigned/merged elsewhere) drops out of its open group; below two open members the group is `cancelled` and the survivor goes back to `WAITLISTED_NO_CAR`; otherwise the block shrinks to the surviving windows. Rows whose `chosen` is already set are never touched, which is why `resolve_waitlist_group()` fills `chosen` **before** it changes any request status.
+
+New `requests.status_reason` codes: `WAITLISTED_CONTESTED`, `WAITLISTED_NOT_CHOSEN`, `WAITLIST_RESOLVED_DRIVER`, `WAITLIST_RESOLVED_PASSENGER` (plus the ride `pin_reason` `WAITLIST_RESOLVED`) — all mirrored in `src/i18n/he.ts` `STATUS_REASON_CODES`/`he.statusReason`.
+
 ### 3.11 Notifications (REQUIREMENTS §9; pipeline in ARCHITECTURE §9)
 
 One entry point: `enqueue_notification(_recipient uuid, _event notification_event, _department_id uuid, _week_start date, _vars jsonb, _data jsonb, _dedupe_key text default null)` — SECURITY DEFINER. It (0) fills `_data.url` from `notification_default_url(_event, _data, _department_id, _week_start)` whenever the caller didn't already set one (most callers don't — only the `proposal_received` emitters build a token URL themselves); (1) drops the call if `_event` is in `profiles.muted_events`, **unless** the event is a Sadran-role event (§2 notes) and the recipient is in `sadranim_of(_department_id, _week_start)`; (2) renders `title_he`/`body_he` from `notification_templates` (channel `inbox`, `variant` selected from `coalesce(_data->>'variant', ride_change_id ? 'ride_change' : null)`) with `_vars` placeholders (`{{firstName}}`, `{{destination}}`, … — UX_FLOWS §6); (3) inserts one `notifications` row (the inbox) with the now-url-complete `_data`, honouring `dedupe_key`; (4) inserts one `push_outbox` row per active `push_subscriptions` row of the recipient, rendered from the `push` channel template, `payload.url` copied from the same `_data.url` so both channels agree. Nothing else writes to these tables.
 
-`notification_default_url(_event, _data, _department_id, _week_start) returns text` (`stable`, `20260909090000_add_notification_default_url.sql`, extended by `20260909099500_extend_notification_default_url_car_id.sql`) — first match wins: `_data.token` → `/p/<token>`; `_data.proposal_id` → `/sadran/<dept>/<week>/proposals?proposal=<id>` (the token-less Sadran list, e.g. for `proposal_answered`); `_data.ride_change_id` → `/inbox?change=<id>`; `_data.request_id` or `_data.offer_id` → `/requests?focus=<id>`; `_data.ride_id` → `/siddur/<dept>/<week>?ride=<id>`; `_data.car_id` → `/cars/<car_id>` (§6.6, `car_care`); else, for the week-scoped events `published`/`window_open`/`window_closing`/`window_closed_solve_now`/`publish_reminder`, the Sadran dashboard (`/sadran/<dept>/<week>`) for Sadran-role events or the published siddur (`/siddur/<dept>/<week>`) otherwise; otherwise `/inbox`.
+`notification_default_url(_event, _data, _department_id, _week_start) returns text` (`stable`, `20260909090000_add_notification_default_url.sql`, extended by `20260909099500_extend_notification_default_url_car_id.sql` and `20260910091600_extend_notification_default_url_waitlist.sql`) — first match wins: `_data.token` → `/p/<token>`; `_data.proposal_id` → `/sadran/<dept>/<week>/proposals?proposal=<id>` (the token-less Sadran list, e.g. for `proposal_answered`); `_data.group_id` together with `_data.day` → `/siddur/<dept>/<week>?day=<day>&group=<id>` (REQ §13.75, `waitlist_contested`/`waitlist_resolved`; deliberately ahead of the `request_id` branch, since those notifications carry the recipient's own request id too); `_data.ride_change_id` → `/inbox?change=<id>`; `_data.request_id` or `_data.offer_id` → `/requests?focus=<id>`; `_data.ride_id` → `/siddur/<dept>/<week>?ride=<id>`; `_data.car_id` → `/cars/<car_id>` (§6.6, `car_care`); else, for the week-scoped events `published`/`window_open`/`window_closing`/`window_closed_solve_now`/`publish_reminder`, the Sadran dashboard (`/sadran/<dept>/<week>`) for Sadran-role events or the published siddur (`/siddur/<dept>/<week>`) otherwise; otherwise `/inbox`.
 
 #### `notifications` (in-app inbox)
 
@@ -980,6 +1032,8 @@ Legend: **own** = row's profile column = `auth.uid()`; **dept** = `member_of(dep
 | siddur_versions | sadran ∨ admin only (snapshots include private planning days and policy scores) | RPC `publish_siddur` | — | — |
 | freed_slot_offers | dept ∨ admin | RPC `cancel_ride` | RPC `resolve_freed_offer` (edge function `on-ride-cancelled`, service role), `approve_claim` / `close_offer` (sadran) | admin |
 | freed_slot_claims | own ∨ sadran ∨ admin | RPC `resolve_freed_offer` creates `offered` rows | own: RPC `claim_freed_slot` (offered→claimed, →withdrawn); sadran: RPC `approve_claim` | admin |
+| waitlist_groups | `member_of(department_id)` ∧ (`is_week_public` ∨ `can_manage_week`) | **RPC only** — `form_waitlist_groups()` / `join_waitlist_group()` (no policy) | **RPC only** — `resolve_waitlist_group()`, `cancel_waitlist_group()`, `waitlist_group_membership_sync()` | — |
+| waitlist_group_members | as `waitlist_groups` | **RPC only** | **RPC only** | **RPC only** (the membership-maintenance trigger removes a row when its request leaves the waiting list) |
 | notifications | own | `enqueue_notification()` (definer) only | own: `read_at` only (trigger) | own |
 | push_outbox | — (svc: `push-dispatch`) | `enqueue_notification()` only | svc (`push-dispatch` marks sent/failed) | svc (`housekeeping()`) |
 | notification_templates | approved users (the composer renders WhatsApp text client-side) | admin | admin | admin |
@@ -1015,6 +1069,8 @@ Service role bypasses RLS and is used only for: the `push-dispatch` edge functio
 | 17 | **Car location chain** (REQ §5.4, §13.57): per car, the non-cancelled rides ordered by `starts_at` chain (`destination_id` of ride *n* = `origin_id` of ride *n+1*, the first ride starts at home); a ride that leaves the car away from home is followed by a ride starting before that local day's `day_end_time`, unless `overnight_ack_by` is set | RPC (not a constraint) | `assert_car_chain(_car, _week)` (§5.3) is called at the end of **every** ride-writing RPC: `apply_solver_result`, `edit_ride` (the two primary sites), `apply_proposal`, `try_auto_approve` (inside `submit_request`), `resolve_freed_offer`, `approve_claim`. It raises `car_chain_broken` / `car_away_at_day_end` (SQLSTATE `P0410`/`P0411`, mapped to Hebrew by `lib/errors.ts`). An exclusion constraint cannot express "the car is somewhere else in the gap", which is why this is procedural; `rides` therefore has no direct INSERT/UPDATE policy (§4.3). `cancel_ride` does not run the check — cancelling a relay leg instead flags the partner leg (`flagged`, `flag_reason = 'relay_pair_cancelled'`) and opens no freed-slot offer (REQ §13.63). |
 | 18 | Ride endpoints are real locations | DB | `rides.origin_id`/`destination_id` NN FK destinations; trigger `rides_location_ends` (each equals home or a served relay leg's destination); trigger `ride_requests_leg_location` (§3.7) ties each served leg's mode to the ride's endpoints. |
 | 19 | Driver rows vs chauffeur rides | DB | Deferred trigger `ride_driver_row_check`: exactly one `driver` row per ride unless the ride has a `chauffeur` row, then none and `rides.driver_id` is the volunteer (≠ any served requester). CHECK `(role = 'driver') = (car_mode in ('keep','relay'))`. |
+| 19a | A request belongs to at most one **open** contested waiting-list group | DB | Partial unique index `waitlist_group_members (request_id) where chosen is null` (REQ §13.75). `resolve_waitlist_group()`/`cancel_waitlist_group()` fill `chosen` for every member, which releases the index for a later group. |
+| 19b | A contested group always has at least two open members while `status = 'open'` | Trigger | `waitlist_group_membership_sync()` (`after update of status on requests`) removes a member who leaves the waiting list and cancels the group when fewer than two remain, resetting the survivor to `WAITLISTED_NO_CAR`. |
 | 20 | One-way requests are never auto-approved after publish | RPC | `try_auto_approve()` returns null for `trip_shape <> 'round_trip'` (REQ §13.64) and requires the candidate car to be at home for the window (`car_location_at(car, starts_at) = home`, §7.5). |
 
 ### 5.1 Why `blocked_until` is a trigger-maintained column
@@ -1352,6 +1408,10 @@ order by coalesce(q.depart_at, q.return_at);
 ```
 Member history (§8 "members see their own history"): `select * from audit_log where subject_profile_id = auth.uid() order by at desc` — RLS restricts it to exactly that. The Home screen (REQ §5.5) runs this for every non-archived week and shows upcoming rides and unserved requests (`status in ('waitlisted','denied','proposed')`) above the fold, regardless of `profiles.home_week_preference`.
 
+### 7.4a Contested waiting-list groups — §13.75 (`v_waitlist_groups`)
+
+`create or replace view public.v_waitlist_groups with (security_invoker = true)` (migration `20260910091500_create_v_waitlist_groups.sql`), `grant select ... to authenticated`. Columns: `id, department_id, week_start, day, starts_at, ends_at, status, ride_id, resolved_by, resolved_at, version, created_at, updated_at, members jsonb`. `members` is a `jsonb_agg` ordered by `waitlist_group_members.created_at, id`, each element `{request_id, profile_id, name, depart_at, return_at, adults, child_seats, boosters, destination, chosen}` (`name` from `profiles.full_name`, everything else from the denormalized member row). The siddur renders one "בדיון" block per `status = 'open'` row spanning `starts_at … ends_at`; the resolution sheet ticks `members[].request_id` and calls `resolve_waitlist_group(id, chosen[], version)`.
+
 ### 7.5 Where is the car? — §5.4 car location (board badges, day-end warning)
 ```sql
 -- The car's location at an instant: destination of the last non-cancelled ride that started at or before it, else home.
@@ -1394,6 +1454,7 @@ Supabase Free: 500 MB. Estimated steady state at 2 departments × 300 requests/w
 | departments, profiles, department_members, sadran_assignments, cars, car_seat_configs, destinations, ride_types, policies, policy_versions, app/department settings | forever | profiles of members removed by admin: anonymized (`full_name → 'חבר לשעבר'`, phone/email null, `approval_status='blocked'`) rather than deleted, so history and fairness stats stay consistent |
 | weeks, requests, request_companions, rides, ride_requests, siddur_versions, solver_runs (summary) | forever (stats, fairness lookback, §12 dashboards) | `solver_runs.summary` is small; published `siddur_versions.snapshot` includes per-policy, member and request scores for later comparison |
 | proposals, proposal_parties, freed_slot_offers, freed_slot_claims | forever for outcome fields | `token_hash` nulled 30 days after week end (`housekeeping()`); `payload` kept |
+| waitlist_groups, waitlist_group_members | forever (they record who wanted a car and who got it — fairness/history, REQ §13.75) | — (they are week-scoped and tiny; cascade with the week's requests) |
 | car_maintenance_blocks, car_issues, car_care_events, notification_templates | forever | — (§6.6: car care history is exported by date from the UI, not pruned) |
 | notifications | 90 days after `created_at` (read or not) | `housekeeping()` daily |
 | push_outbox | 30 days (`sent`/`dead`) | `housekeeping()` daily |
@@ -1612,3 +1673,36 @@ Owner decision, REQ §13.29: a `sent` proposal no longer has a deadline. It expi
 The seeded `notification_templates` `whatsapp`/`proposal_received` bodies (`supabase/seed.sql`) and the equivalent already-provisioned rows (`20260910090100_drop_expires_at_from_proposal_templates.sql`, `update ... set body = replace(...)`) have since dropped the "…(עד {{expiresAt}})" fragment; `{{expiresAt}}` is no longer a template placeholder (`src/features/admin/templates/lib/placeholders.ts`).
 
 Tests: `supabase/tests/selected_day_publication.sql` — its existing fixture already creates and sends a proposal for a not-yet-published day and later force-publishes that exact day — gained an assertion right after sending that `expire_proposals()` leaves an unpublished-future-day proposal `sent`, and its three assertions that used to check publishing an unanswered day's proposal was *unaffected* now check the opposite (it flips to `expired`, `version` bumps, and the request falls back to `previous_status`) plus that reopening the week afterward does not revive it. `npm run db:test` (18 suites, run against the owner's already-running local stack via `docker exec psql`, not `db:reset`) passes.
+
+### Contested waiting-list groups (2026-09-10, db-migrator)
+
+Owner decision, REQ §13.75 / CLAUDE.md consistency decision 25. Purpose: the Sadran should be able to **publish instead of solving** — everything trivial is auto-approved at publication, everything contested becomes a group the members themselves settle. Ten migrations, `20260910091000` … `20260910091900`, one concern each:
+
+| file | contents |
+|---|---|
+| `20260910091000_add_waitlist_contested_notification_event.sql` | `alter type notification_event add value 'waitlist_contested'` (alone in its file) |
+| `20260910091100_add_waitlist_resolved_notification_event.sql` | `alter type notification_event add value 'waitlist_resolved'` (alone in its file) |
+| `20260910091200_create_waitlist_groups.sql` | `waitlist_group_status` enum; `waitlist_groups` + `waitlist_group_members` (§3.10) with indexes, `set_updated_at`/`bump_version`/`audit_row`, forced RLS and a single SELECT policy each |
+| `20260910091300_form_waitlist_groups.sql` | `notify_waitlist_contested()`, `create_waitlist_group()`, `settle_waitlist_cluster()`, `form_waitlist_groups()`, `join_waitlist_group()`, and the `waitlist_group_membership_sync()` trigger on `requests` |
+| `20260910091400_resolve_waitlist_group.sql` | `resolve_waitlist_group()` and `cancel_waitlist_group()` |
+| `20260910091500_create_v_waitlist_groups.sql` | `v_waitlist_groups` (§7.4a) |
+| `20260910091600_extend_notification_default_url_waitlist.sql` | `notification_default_url()` gains the group branch, ahead of `request_id` |
+| `20260910091700_waitlist_notification_templates.sql` | inbox + push copy for both events and every variant (mirrored in `supabase/seed.sql`) |
+| `20260910091800_publish_forms_waitlist_groups.sql` | `publication_readiness()` splits `incompleteAssignments` out of `unresolvedRequests`; `publish_siddur()` calls `form_waitlist_groups()` per published day and no longer blocks on `unresolvedRequests` |
+| `20260910091900_link_auto_approve_to_waitlist_groups.sql` | `try_auto_approve()`'s no-car branch calls `join_waitlist_group()` |
+
+Design notes worth keeping:
+
+1. **"Contested" means the cluster cannot be served *in full*.** `settle_waitlist_cluster()` opens a PL/pgSQL subtransaction, runs `try_auto_approve()` for every member in `created_at, id` order and, unless *all* of them come back `assigned`, raises `waitlist_cluster_rollback` to unwind the whole attempt before creating the group. Two overlapping requests with two free cars therefore produce two rides and no group. A singleton cluster is just today's behavior, wrapped in its own exception block so one bad request (a broken car chain, say) cannot abort a whole publication.
+2. **Ordering inside `publish_siddur()`.** `form_waitlist_groups()` runs *after* the score validation (which is checked against the pre-publish board) and *before* the snapshot and the `published`/`outcome_changed` notification loop, so the `siddur_versions` snapshot and every member's notification carry the final outcome. The brief asked for "after draft rides are confirmed"; that is unnecessary — draft rides already block a car through `rides.status <> 'cancelled'` in `try_auto_approve()`'s overlap test and through `rides_no_overlap_per_car` — and it would have produced a snapshot and notifications that disagree with the database.
+3. **No recursion guard needed.** `form_waitlist_groups() → try_auto_approve() → join_waitlist_group()` terminates because `join_waitlist_group()` never calls back. Inside a multi-request cluster the call happens in the subtransaction that is rolled back wholesale; a singleton cluster overlaps no other candidate by construction, and a group's `[starts_at, ends_at]` is narrower than its cluster's span, so the only group it could join cannot exist.
+4. **`publication_readiness()` gained a key.** `unresolvedRequests` used to mix "nobody placed this request" with "this assigned request's legs are not all covered". Only the second is a defect, so it is now counted separately as **`incompleteAssignments`**, `ready` keys off it, and `publish_siddur()` blocks on it. `unresolvedRequests` keeps its old value (`unresolved + incomplete`) so existing UI/tests still read something sensible.
+
+**Corrections to this agent's brief** (design docs predate the code):
+
+- The brief specified `ride_requests` rows `leg 'both', car_mode 'keep'` for *every* chosen request. `ride_requests_role_mode_ck` (`20260907090800_rides.sql`) is `check ((role = 'driver') = (car_mode in ('keep','relay')))`, so a passenger row with `keep` is rejected. Implemented as driver `both/keep` + passengers `both/passenger`.
+- `waitlist_group_members.request_id` cannot be **globally** unique as the brief specified: resolved and cancelled groups keep their member rows for history, which would permanently bar the request from a later group. Implemented as `unique (group_id, request_id)` plus a partial unique index on `(request_id) where chosen is null` — "at most one *open* group per request" — with `cancel_waitlist_group()` and the membership trigger setting `chosen = false` so the slot is released.
+- The view cannot read `requests`: with `security_invoker = true` the `requests` SELECT policy only exposes another member's row once a non-draft ride serves it on a public day, and a contested request has no ride. The member snapshot (`depart_at`, `return_at`, seats, `destination`) is therefore denormalized onto `waitlist_group_members` at insert time.
+- `src/lib/enums.ts` still does not exist (same correction as the 2026-09-09 car-care pass): the new enum's Hebrew mirror went into the existing top-level `he.notif` dictionary, and the new `status_reason` codes into `STATUS_REASON_CODES` / `he.statusReason` in `src/i18n/he.ts`.
+
+Tests: new `supabase/tests/waitlist_groups.sql` (registered in `scripts/test-db.mjs`) covers publication with one free car (group formed, two member notifications + one Sadran notification, deep link), two free cars (both assigned, no group), a non-overlapping third request (auto-approved), a participant resolving in favour of everybody, the Sadran resolving in favour of one, re-resolving a closed group, a non-participant being refused, a stale `p_expected_version`, a withdrawal dissolving a two-member group, and the RLS shape of both tables (forced, SELECT-only, direct writes refused). `supabase/tests/notifications_semantics.sql` item 4 was updated: `enter_waiting_list()` at an already-full window now returns `WAITLISTED_CONTESTED` and forms a two-member group, which is the new intended behavior. `npm run db:test` (19 suites) passes.

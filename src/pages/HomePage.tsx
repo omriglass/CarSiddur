@@ -32,6 +32,7 @@ import { TripSummary } from "@/components/TripSummary";
 import { useDepartmentSettings, useEditRideMutation } from "@/features/sadran/hooks";
 import { servedOf } from "@/features/sadran/solverRun";
 import { OpenProposalButton } from "@/features/proposals/components/OpenProposalButton";
+import { OpenWaitlistGroupButton } from "@/features/waitlist/components/OpenWaitlistGroupButton";
 import { he, t, tv } from "@/i18n/he";
 import { describeStatusReason } from "@/lib/statusReason";
 import { paths } from "@/app/routes";
@@ -246,6 +247,14 @@ export function HomePage() {
                   <TripSummary purpose={row.rideTypeName} departAt={row.ride?.startsAt ?? row.departAt} returnAt={row.ride?.endsAt ?? row.returnAt} />
                   {reasonLine(row) ? (
                     <p className="text-xs text-muted-foreground">{reasonLine(row)}</p>
+                  ) : null}
+                  {row.statusReason === "WAITLISTED_CONTESTED" && (row.departAt ?? row.returnAt) ? (
+                    <OpenWaitlistGroupButton
+                      departmentId={row.departmentId}
+                      weekStart={row.weekStart}
+                      requestId={row.id}
+                      day={(row.departAt ?? row.returnAt) as string}
+                    />
                   ) : null}
                 </CardContent>
               </Card>

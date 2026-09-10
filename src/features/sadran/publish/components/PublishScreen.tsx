@@ -84,7 +84,9 @@ export function PublishScreen({ departmentId, weekStart }: PublishScreenProps) {
     if (!days.length) return;
     const chosen = readiness.filter((day) => days.includes(day.day));
     if (chosen.some((day) => day.conflictRides > 0)) return;
-    if (chosen.some((day) => day.unresolvedRequests > 0 || day.pendingProposals > 0 || day.missingDriverRides > 0)) {
+    // `unresolvedRequests` no longer blocks publication (REQ §13.75) — an unresolved request is
+    // auto-approved or grouped at publication time, `incompleteAssignments` is the real defect.
+    if (chosen.some((day) => day.incompleteAssignments > 0 || day.pendingProposals > 0 || day.missingDriverRides > 0)) {
       setConfirmDays(days);
     } else void handlePublish(days, false);
   }
@@ -128,6 +130,9 @@ export function PublishScreen({ departmentId, weekStart }: PublishScreenProps) {
           </label>)}
           {!selectedDays.length ? <p className="text-sm text-muted-foreground">{he.publicationFlow.noSelection}</p> : null}
         </div> : null}
+        {readiness.some((day) => day.unresolvedRequests > 0) ? (
+          <p className="text-sm text-muted-foreground">{he.sadranPublish.unresolvedWillBeGrouped}</p>
+        ) : null}
       </CardContent></Card>
       <p className="text-sm text-muted-foreground">{he.publishScores.help}</p>
       <RideChangeAnswers departmentId={departmentId} weekStart={weekStart} canManage />

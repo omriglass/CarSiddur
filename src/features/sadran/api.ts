@@ -508,7 +508,16 @@ export interface PublicationDay {
   day: string;
   published: boolean;
   requestCount: number;
+  /**
+   * "Nobody placed this request" plus "an assigned request's legs are not
+   * all covered" combined — kept for backward-compatible display; no longer
+   * a blocker (REQ §13.75, DATA_MODEL.md §7.4a "`publication_readiness()`
+   * gained a key"). `incompleteAssignments` below is the actual defect
+   * (`ready`/publication blocks on it instead).
+   */
   unresolvedRequests: number;
+  /** The real defect split out of `unresolvedRequests`: an assigned/merged request whose legs are not all covered. `ready` keys off this, not `unresolvedRequests`. */
+  incompleteAssignments: number;
   pendingProposals: number;
   missingDriverRides: number;
   conflictRides: number;

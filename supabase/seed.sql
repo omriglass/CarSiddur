@@ -231,6 +231,40 @@ select 'car_care'::public.notification_event, ch, null,
 from unnest(array['inbox', 'push']::public.notification_channel[]) as ch
 on conflict (event, channel, coalesce(variant, '')) do nothing;
 
+-- waitlist_contested / waitlist_resolved: contested waiting-list groups (REQ §7.3,
+-- consistency decision 25). Mirrors 20260910091700_waitlist_notification_templates.sql.
+insert into public.notification_templates (event, channel, variant, title, body, default_title, default_body)
+select 'waitlist_contested'::public.notification_event, ch, t.variant, t.title, t.body, t.title, t.body
+from (values
+  (null, 'רשימת המתנה משותפת ליום {{day}}',
+         'גם {{names}} מבקשים/ות רכב בשעות חופפות ({{depart}}–{{return}}). אפשר להסתדר ביניכם/ן ולסמן מי נוסע/ת — או שהסדרן/ית יחליט/ו.'),
+  ('joined', '{{newName}} הצטרף/ה לדיון על הרכב ביום {{day}}',
+         'בדיון עכשיו: {{names}}. השעות {{depart}}–{{return}}. אפשר לסמן מי נוסע/ת.'),
+  ('sadran', 'דיון על רכב ביום {{day}}',
+         '{{count}} בקשות חופפות ({{depart}}–{{return}}): {{names}}. החברים/ות יכולים/ות לסמן מי נוסע/ת, ואפשר גם להכריע במקומם/ן.')
+) as t(variant, title, body)
+cross join unnest(array['inbox', 'push']::public.notification_channel[]) as ch
+on conflict (event, channel, coalesce(variant, '')) do nothing;
+
+insert into public.notification_templates (event, channel, variant, title, body, default_title, default_body)
+select 'waitlist_resolved'::public.notification_event, ch, t.variant, t.title, t.body, t.title, t.body
+from (values
+  (null, 'רשימת ההמתנה ליום {{day}} הוסדרה',
+         '{{names}} נוסעים/ות ב{{depart}}–{{return}}.'),
+  ('driver', 'הרכב שלך ליום {{day}}',
+         '{{car}}, {{depart}}–{{return}}. את/ה הנהג/ת. נוסעים/ות: {{names}}.'),
+  ('passenger', 'שובצת כנוסע/ת ליום {{day}}',
+         '{{car}} עם {{driverName}}, {{depart}}–{{return}}.'),
+  ('not_chosen', 'הדיון על הרכב ליום {{day}} הוכרע',
+         '{{names}} נוסעים/ות הפעם. הבקשה שלך נשארת ברשימת ההמתנה.'),
+  ('sadran', 'דיון הרכב ליום {{day}} הוסדר',
+         '{{car}} עם {{driverName}} ({{depart}}–{{return}}). נוסעים/ות: {{names}}.'),
+  ('cancelled', 'הדיון על הרכב ליום {{day}} נסגר',
+         'לא נמצא פתרון משותף. הבקשות נשארות ברשימת ההמתנה.')
+) as t(variant, title, body)
+cross join unnest(array['inbox', 'push']::public.notification_channel[]) as ch
+on conflict (event, channel, coalesce(variant, '')) do nothing;
+
 insert into public.notification_templates (event, channel, variant, title, body, default_title, default_body)
 select event, channel, variant, null, body, null, body from (values
   ('proposal_received'::public.notification_event, 'whatsapp'::public.notification_channel, 'shift',

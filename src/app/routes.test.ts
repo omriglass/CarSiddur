@@ -77,6 +77,11 @@ describe("paths.siddur", () => {
   it("appends ?ride= when rideId is given", () => {
     expect(paths.siddur({ dept: "d", rideId: "r1" })).toBe("/siddur/d?ride=r1");
   });
+
+  it("appends ?day=&group= for a contested waiting-list group deep link (REQ §13.75)", () => {
+    expectRoutable(paths.siddur({ dept: "dept-1", week: "2027-01-10", day: "2027-01-12", groupId: "group-1" }));
+    expect(paths.siddur({ dept: "d", week: "w", day: "2027-01-12", groupId: "group-1" })).toBe("/siddur/d/w?day=2027-01-12&group=group-1");
+  });
 });
 
 describe("paths.siddurArchive", () => {

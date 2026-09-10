@@ -36,15 +36,19 @@ export const paths = {
   /**
    * `/siddur` | `/siddur/:dept` | `/siddur/:dept/:week` (`src/features/member/routes.tsx`).
    * `rideId` maps to the `?ride=` query param `SiddurPage` reads to open/focus
-   * a specific ride's detail sheet on load; `week` is only meaningful once
-   * `dept` is also given (there is no bare `/siddur/:week` route).
+   * a specific ride's detail sheet on load; `day`/`groupId` map to
+   * `?day=<day>&group=<id>` (`notification_default_url()`'s waitlist-group
+   * deep link, REQ §13.75) which opens that day with the contested
+   * waiting-list group's resolution sheet already open; `week` is only
+   * meaningful once `dept` is also given (there is no bare `/siddur/:week`
+   * route).
    */
-  siddur: (opts: { dept?: string; week?: string; rideId?: string } = {}): string => {
-    const { dept, week, rideId } = opts;
+  siddur: (opts: { dept?: string; week?: string; rideId?: string; day?: string; groupId?: string } = {}): string => {
+    const { dept, week, rideId, day, groupId } = opts;
     let path = "/siddur";
     if (dept) path += `/${dept}`;
     if (dept && week) path += `/${week}`;
-    return withQuery(path, { ride: rideId });
+    return withQuery(path, { ride: rideId, day, group: groupId });
   },
 
   /**

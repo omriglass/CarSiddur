@@ -30,8 +30,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { UNMET_DROP_ZONE_ATTR, WeekGrid, type WeekGridBlock, type WeekGridCar, type WeekGridRide } from "@/components/WeekGrid";
+import { UNMET_DROP_ZONE_ATTR, WeekGrid, type WeekGridBlock, type WeekGridCar, type WeekGridDiscussionBlock, type WeekGridRide } from "@/components/WeekGrid";
 import { WeekStrip } from "@/components/WeekStrip";
+import { WaitlistGroupCard } from "@/features/waitlist/components/WaitlistGroupCard";
+import { WaitlistGroupSheet } from "@/features/waitlist/components/WaitlistGroupSheet";
+import { useWaitlistGroupsQuery } from "@/features/waitlist/hooks";
 import { CalendarDays } from "lucide-react";
 import { fetchCarSeatConfigs } from "@/features/fleet/api";
 import { useRideTypes } from "@/features/fleet/hooks";
@@ -114,6 +117,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
   // landed on the actual busy days.
   const [selectedDayOverride, setSelectedDayOverride] = useState<string | null>(null);
   const [selectedRideId, setSelectedRideId] = useState<string | null>(null);
+  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [conflictJump, setConflictJump] = useState<{ rideId: string; sequence: number } | null>(null);
   const boardRef = useRef<HTMLDivElement>(null);
 
@@ -125,6 +129,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
   const ridesQuery = useAllWeekRides(departmentId, weekStart);
   const rideChangesQuery = useRideChanges(departmentId, weekStart);
   const proposalsQuery = useProposalsForWeek(departmentId, weekStart);
+  const waitlistGroupsQuery = useWaitlistGroupsQuery(departmentId, weekStart);
   const departmentSettingsQuery = useDepartmentSettings(departmentId);
   const activePolicyQuery = useActivePolicy(departmentId);
   const policyOptionsQuery = usePolicyOptions(departmentId);
@@ -503,6 +508,18 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
     const endMinutes = (Date.parse(block.ends_at) - Date.parse(dayStartIso(selectedDay))) / 60_000;
     return startMinutes < 1440 && endMinutes > 0 ? [{ id: block.id, carId: block.car_id, startMinutes, endMinutes }] : [];
   });
+
+  // Contested waiting-list groups (REQ §13.75, UX_FLOWS.md §4.2): once a day is published, its
+  // open groups no longer show as separate `UnmetList` items — they render as one "בדיון" lane
+  // block/card, the same as the member siddur.
+  const dayWaitlistGroups = (waitlistGroupsQuery.data ?? []).filter((group) => group.day === selectedDay);
+  const selectedWaitlistGroup = (waitlistGroupsQuery.data ?? []).find((group) => group.id === selectedGroupId) ?? null;
+  const weekGridDiscussionBlocks: WeekGridDiscussionBlock[] = dayWaitlistGroups.map((group) => ({
+    id: group.id,
+    startMinutes: Math.round((Date.parse(group.starts_at) - Date.parse(dayStartIso(selectedDay))) / 60_000),
+    endMinutes: Math.round((Date.parse(group.ends_at) - Date.parse(dayStartIso(selectedDay))) / 60_000),
+    label: tv("waitlist.blockLabel", { names: group.members.map((member) => member.name).join(", ") }),
+  }));
 
   const dayCounts = days.map((d) => ({
     rides: rides.filter((r) => r.starts_at && dateKey(new Date(r.starts_at)) === d).length,
@@ -1081,10 +1098,19 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
                 : null
             }
             onRideDropOnUnmet={(rideId) => void handleUnassignRide(rideId)}
+            discussionBlocks={weekGridDiscussionBlocks}
+            onDiscussionClick={setSelectedGroupId}
           />
         </div>
 
         <div className={tableView ? "hidden" : "lg:hidden"}>
+          {dayWaitlistGroups.length ? (
+            <div className="mb-2 space-y-2">
+              {dayWaitlistGroups.map((group) => (
+                <WaitlistGroupCard key={group.id} group={group} onClick={() => setSelectedGroupId(group.id)} />
+              ))}
+            </div>
+          ) : null}
           <BoardListMode
             key={conflictJump?.sequence ?? 0}
             shadowedRideIds={shadowedRideIds}
@@ -1176,6 +1202,15 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
           {selectedUnmet ? <UnmetList items={[selectedUnmet]} onAction={handleUnmetAction} onDecision={handleUnmetDecision} /> : null}
         </SheetContent>
       </Sheet>
+
+      <WaitlistGroupSheet
+        group={selectedWaitlistGroup}
+        departmentId={departmentId}
+        weekStart={weekStart}
+        profileId={undefined}
+        canManageWeek
+        onOpenChange={(open) => !open && setSelectedGroupId(null)}
+      />
       <Dialog open={!!reservation} onOpenChange={(open) => !open && setReservation(null)}>
         <PortalDialogContent><DialogHeader><DialogTitle>{he.sadranBoard.reservation}</DialogTitle><DialogDescription>{selectedDay}</DialogDescription></DialogHeader>
           {reservation ? <>

@@ -46,9 +46,14 @@ export const STATUS_REASON_CODES = [
   "SADRAN_UNASSIGNED",
   "UNMET_NEEDS_DRIVER",
   "UNSAFE_ISSUE",
+  "WAITLISTED_CONTESTED",
+  "WAITLISTED_NOT_CHOSEN",
   "WAITLISTED_NO_CAR",
   "WAITLISTED_ONE_WAY",
   "WAITLISTED_PUBLISHED_DAY",
+  "WAITLIST_RESOLVED",
+  "WAITLIST_RESOLVED_DRIVER",
+  "WAITLIST_RESOLVED_PASSENGER",
   "WITHDRAWN_BY_MEMBER",
 ] as const;
 export type StatusReasonCode = (typeof STATUS_REASON_CODES)[number];
@@ -517,9 +522,14 @@ export const he = {
     SADRAN_UNASSIGNED: "השיבוץ הוסר על ידי הסדרן/ית — מחכה לשיבוץ מחדש",
     UNMET_NEEDS_DRIVER: "הרכב שובץ, אך חסר/ה נהג/ת מתנדב/ת. תקבל/י הודעה כשיימצא נהג/ת.",
     UNSAFE_ISSUE: "הרכב הוצא משימוש עקב תקלה",
+    WAITLISTED_CONTESTED: "כמה חברים/ות מבקשים/ות רכב בשעות חופפות. אפשר לסמן ביניכם/ן מי נוסע/ת.",
+    WAITLISTED_NOT_CHOSEN: "הפעם נוסע/ת חבר/ה אחר/ת. הבקשה נשארת ברשימת ההמתנה.",
     WAITLISTED_NO_CAR: "כל הרכבים תפוסים בשעות אלה. אם יתפנה רכב תקבל/י הודעה.",
     WAITLISTED_ONE_WAY: "נסיעה בכיוון אחד ממתינה לשיבוץ ידני",
     WAITLISTED_PUBLISHED_DAY: "היום הזה כבר פורסם. הבקשה ממתינה לרכב שיתפנה.",
+    WAITLIST_RESOLVED: "שובץ אחרי דיון ברשימת ההמתנה",
+    WAITLIST_RESOLVED_DRIVER: "שובצת כנהג/ת אחרי הדיון ברשימת ההמתנה",
+    WAITLIST_RESOLVED_PASSENGER: "שובצת כנוסע/ת אחרי הדיון ברשימת ההמתנה",
     WITHDRAWN_BY_MEMBER: "הוסרה על ידך",
   } satisfies Record<StatusReasonCode, string>,
   // Generic fallback for a `status_reason` value that isn't in `statusReason`
@@ -541,6 +551,9 @@ export const he = {
     carChainBroken: "לוח הזמנים של הרכב לא רציף",
     carAwayAtDayEnd: "הרכב לא חוזר הביתה בזמן",
     noHomeLocation: "לא הוגדר מיקום בית למחלקה",
+    noCarFree: "אין רכב פנוי לחלון הזמן המבוקש",
+    waitlistGroupClosed: "הדיון על הרכב כבר הוכרע",
+    waitlistSelectionInvalid: "הבחירה אינה תקפה — יש לרענן ולנסות שוב",
     network: "אין חיבור לרשת — נסה/י שוב",
     unknown: "אירעה שגיאה. נסה/י שוב",
     errorCode: "קוד תקלה",
@@ -600,6 +613,8 @@ export const he = {
     access_approved: "ההרשמה אושרה",
     status_changed: "שינוי בסטטוס או בתפקיד",
     car_care: "טיפול ברכב",
+    waitlist_contested: "רשימת המתנה משותפת",
+    waitlist_resolved: "רשימת ההמתנה הוסדרה",
   } satisfies Record<NotificationEvent, string>,
   car: {
     status: {

@@ -69,6 +69,22 @@ export interface WeekGridBlock {
   label?: string;
 }
 
+/**
+ * One "בדיון" contested waiting-list group (REQ §13.75, UX_FLOWS.md
+ * §3.5/§4.2), rendered in a dedicated lane after every car column — it has
+ * no car of its own yet, so it cannot live inside a car column like
+ * `WeekGridRide`/`WeekGridBlock`. `startMinutes`/`endMinutes` are already
+ * minutes-since-midnight on this grid's own day (the caller converts the
+ * group's `starts_at`/`ends_at`, same as it does for rides — WeekGrid stays
+ * time-zone-unaware, CLAUDE.md "Time").
+ */
+export interface WeekGridDiscussionBlock {
+  id: string;
+  startMinutes: number;
+  endMinutes: number;
+  label: string;
+}
+
 export interface WeekGridProps {
   cars: readonly WeekGridCar[];
   rides: readonly WeekGridRide[];
@@ -121,6 +137,9 @@ export interface WeekGridProps {
    * Sadran board, which has no pinch requirement) — the ± buttons keep working either way.
    */
   onZoomChange?: (zoom: number) => void;
+  /** Contested waiting-list groups for the displayed day (REQ §13.75); omit/empty to hide the lane entirely. */
+  discussionBlocks?: readonly WeekGridDiscussionBlock[];
+  onDiscussionClick?: (id: string) => void;
 }
 
 /** Any drop target carrying this attribute (e.g. the board's `UnmetList`/drawer) accepts a ride dragged out of the grid — see `onRideDropOnUnmet`. */
@@ -245,6 +264,8 @@ export function WeekGrid({
   initialScrollMinutes = null,
   zoom = 1,
   onZoomChange,
+  discussionBlocks = [],
+  onDiscussionClick,
 }: WeekGridProps) {
   const hours = Array.from(
     { length: Math.ceil((dayEndMinutes - dayStartMinutes) / 60) },
@@ -501,8 +522,10 @@ export function WeekGrid({
   const preview = rawPreview && draggedRide && drag?.kind === "move" && resolveDropPreview
     ? { ...rawPreview, ...resolveDropPreview(draggedRide, rawPreview.carId, rawPreview.startMinutes, rawPreview.endMinutes, drag.overRideId ?? undefined) }
     : rawPreview;
+  const hasDiscussionLane = discussionBlocks.length > 0;
+  const discussionColIndex = allCars.length + 2;
   const gridTemplateRows = `minmax(${HEADER_ROW_HEIGHT_PX}px, auto) repeat(${hours.length}, ${HOUR_ROW_HEIGHT_PX}px)`;
-  const gridTemplateColumns = `${HOUR_COL_WIDTH_PX}px repeat(${allCars.length}, ${CAR_COL_WIDTH_PX}px)`;
+  const gridTemplateColumns = `${HOUR_COL_WIDTH_PX}px repeat(${allCars.length}, ${CAR_COL_WIDTH_PX}px)${hasDiscussionLane ? ` ${CAR_COL_WIDTH_PX}px` : ""}`;
 
   function Column({ car, colIndex }: { car: WeekGridCar; colIndex: number }) {
     const isDragHoverTarget = drag?.confirmed && drag.hoverCarId === car.id;
@@ -675,7 +698,7 @@ export function WeekGrid({
       style={{ touchAction: "pan-x pan-y" }}
       data-week-grid-scroll-viewport
     >
-      <div className="grid" style={{ zoom, gridTemplateColumns, gridTemplateRows, minWidth: HOUR_COL_WIDTH_PX + allCars.length * CAR_COL_WIDTH_PX }}>
+      <div className="grid" style={{ zoom, gridTemplateColumns, gridTemplateRows, minWidth: HOUR_COL_WIDTH_PX + (allCars.length + (hasDiscussionLane ? 1 : 0)) * CAR_COL_WIDTH_PX }}>
         <div className="sticky start-0 top-0 z-30 border-b border-e bg-muted/70 shadow-[0_2px_6px_-2px_hsl(var(--foreground)/0.12)]" style={{ gridColumn: 1, gridRow: 1 }} />
         {allCars.map((car, i) => (
           <div
@@ -699,6 +722,14 @@ export function WeekGrid({
             {car.group === "temporary" ? <span className="truncate text-[10px] text-booked">{he.car.type.temporary}</span> : null}
           </div>
         ))}
+        {hasDiscussionLane ? (
+          <div
+            className="sticky top-0 z-20 flex items-center justify-center border-b border-s-2 border-s-border bg-maintenance/10 px-2 py-1 text-sm shadow-[0_2px_6px_-2px_hsl(var(--foreground)/0.12)]"
+            style={{ gridColumn: discussionColIndex, gridRow: 1 }}
+          >
+            <span className="font-medium">{he.waitlist.laneTitle}</span>
+          </div>
+        ) : null}
         {hours.map((h, i) => (
           <div
             key={h}
@@ -711,6 +742,46 @@ export function WeekGrid({
         {allCars.map((car, i) => (
           Column({ car, colIndex: i })
         ))}
+        {hasDiscussionLane ? (
+          <div
+            className="relative border-s-2 border-s-border bg-maintenance/5"
+            style={{ gridColumn: discussionColIndex, gridRow: `2 / span ${hours.length}` }}
+          >
+            {hours.map((h, hi) => {
+              const bandRect = clampRideVertical(h * 60, (h + 1) * 60, dayStartMinutes, dayEndMinutes);
+              return (
+                <div
+                  key={`discussion-band-${h}`}
+                  className={cn("absolute inset-x-0", hi % 2 === 1 && "bg-muted/40")}
+                  style={{ top: bandRect.top, height: bandRect.height }}
+                  aria-hidden="true"
+                />
+              );
+            })}
+            {hours.map((h) => (
+              <div
+                key={`discussion-line-${h}`}
+                className="absolute inset-x-0 border-b border-border"
+                style={{ top: clampRideVertical(h * 60, h * 60, dayStartMinutes, dayEndMinutes).top }}
+                aria-hidden="true"
+              />
+            ))}
+            {discussionBlocks.map((block) => {
+              const rect = clampRideVertical(block.startMinutes, block.endMinutes, dayStartMinutes, dayEndMinutes);
+              return (
+                <button
+                  key={block.id}
+                  type="button"
+                  className="absolute inset-x-1 overflow-hidden rounded-sm border-2 border-dashed border-amber-500 bg-amber-500/10 p-1 text-start text-xs font-medium text-amber-900 shadow-sm"
+                  style={{ top: rect.top, height: rect.height, minHeight: RIDE_MIN_HEIGHT_PX }}
+                  onClick={() => onDiscussionClick?.(block.id)}
+                >
+                  <span className="line-clamp-3 whitespace-normal break-words">{block.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
       </div>
     </div>
   );

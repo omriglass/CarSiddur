@@ -25,8 +25,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { formatMinutes } from "@/components/TimeField15";
-import { WeekGrid, type WeekGridCar, type WeekGridRide } from "@/components/WeekGrid";
+import { WeekGrid, type WeekGridCar, type WeekGridDiscussionBlock, type WeekGridRide } from "@/components/WeekGrid";
 import { WeekStrip } from "@/components/WeekStrip";
+import { WaitlistGroupCard } from "@/features/waitlist/components/WaitlistGroupCard";
+import { WaitlistGroupSheet } from "@/features/waitlist/components/WaitlistGroupSheet";
+import { useWaitlistGroupsQuery } from "@/features/waitlist/hooks";
 import { useMyDepartments } from "@/features/auth/useMyDepartments";
 import { useSession } from "@/features/auth/useSession";
 import { useIsSadran } from "@/features/auth/useIsSadran";
@@ -130,6 +133,7 @@ export function SiddurPage() {
   const coordinatorRequests = isSadran ? coordinatorRequestsQuery.data ?? [] : [];
 
   const boardRidesQuery = useBoardRides(departmentId, weekStart);
+  const waitlistGroupsQuery = useWaitlistGroupsQuery(departmentId, weekStart);
   const carsQuery = useCars(departmentId);
   const maintenanceQuery = useMaintenanceBlocks(departmentId);
   const seatsQuery = useCarSeatConfigs(departmentId);
@@ -144,6 +148,7 @@ export function SiddurPage() {
 
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [selectedRideId, setSelectedRideId] = useState<string | null>(null);
+  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [quickRequestSlot, setQuickRequestSlot] = useState<{
     carId: string;
     day: string;
@@ -197,11 +202,30 @@ export function SiddurPage() {
     if (focusRideId) highlightedRideRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
   }, [focusRideId]);
 
+  // `?group=<id>` (notification deep link, `notification_default_url`'s
+  // `/siddur/<dept>/<week>?day=<day>&group=<id>` case, REQ §13.75): open that
+  // day and the resolution sheet for the group once, the same "adjust state
+  // for freshly-arrived data" idiom `focusRideId` above uses.
+  const focusGroupId = searchParams.get("group");
+  const [handledGroupFocus, setHandledGroupFocus] = useState<string | null>(null);
+  if (focusGroupId && handledGroupFocus !== focusGroupId) {
+    const focusedGroup = (waitlistGroupsQuery.data ?? []).find((g) => g.id === focusGroupId);
+    if (focusedGroup) {
+      setHandledGroupFocus(focusGroupId);
+      setSelectedDay(focusedGroup.day);
+      setSelectedGroupId(focusGroupId);
+    }
+  }
+
   const dayGroups = weekStart ? groupByDay(rides, weekStart, (r) => r.starts_at ?? "") : [];
   const today = todayInJerusalem();
   const defaultDay = dayGroups.find((g) => g.date === today)?.date ?? dayGroups[0]?.date ?? null;
   const activeDay = dayGroups.some((g) => g.date === selectedDay) ? selectedDay : defaultDay;
   const activeDayRides = dayGroups.find((g) => g.date === activeDay)?.items ?? [];
+  // Contested waiting-list groups (REQ §13.75, UX_FLOWS.md §3.5): one "בדיון" block/card per
+  // still-open group on the displayed day, alongside the day's rides.
+  const activeDayWaitlistGroups = (waitlistGroupsQuery.data ?? []).filter((group) => group.day === activeDay);
+  const selectedWaitlistGroup = (waitlistGroupsQuery.data ?? []).find((group) => group.id === selectedGroupId) ?? null;
   // On the current day, open the calendar at the full hour before now. This
   // leaves enough recent context to see a ride that has just begun.
   const initialGridScrollMinutes = !tableView && activeDay === today
@@ -370,6 +394,13 @@ export function SiddurPage() {
       isMine: original?.isMine, needsDriver: original?.needsDriver });
   }
 
+  const weekGridDiscussionBlocks: WeekGridDiscussionBlock[] = activeDayWaitlistGroups.map((group) => ({
+    id: group.id,
+    startMinutes: minutesSinceMidnight(group.starts_at),
+    endMinutes: minutesSinceMidnight(group.starts_at) + (Date.parse(group.ends_at) - Date.parse(group.starts_at)) / 60_000,
+    label: tv("waitlist.blockLabel", { names: group.members.map((member) => member.name).join(", ") }),
+  }));
+
   function goTo(nextDept: string, nextWeek: string | undefined) {
     navigate(paths.siddur({ dept: nextDept, week: nextWeek }));
   }
@@ -498,10 +529,14 @@ export function SiddurPage() {
               ) : null}
               {boardRidesQuery.isLoading ? (
                 <CardListSkeleton />
-              ) : activeDayRides.length === 0 && freeGapRows.length === 0 ? (
+              ) : activeDayRides.length === 0 && freeGapRows.length === 0 && activeDayWaitlistGroups.length === 0 ? (
                 <EmptyState icon={CalendarDays} message={he.siddur.noRides} />
               ) : (
-                activeDayRides.map((r) => {
+                <>
+                  {activeDayWaitlistGroups.map((group) => (
+                    <WaitlistGroupCard key={group.id} group={group} onClick={() => setSelectedGroupId(group.id)} />
+                  ))}
+                  {activeDayRides.map((r) => {
                   // Same fix as `weekGridRides` above (UX_FLOWS §20): a round trip's own
                   // `destination_name` is always the department's home name.
                   const destinationName =
@@ -547,7 +582,8 @@ export function SiddurPage() {
                       <RideCard ride={data} onClick={() => setSelectedRideId(r.id as string)} />
                     </div>
                   );
-                })
+                  })}
+                </>
               )}
               {pendingChanges.filter((c) => dateKey(c.starts_at) === activeDay).map((c) => (
                 <div key={c.id} className="rounded-md border border-dashed border-primary p-3 text-sm">
@@ -606,6 +642,8 @@ export function SiddurPage() {
                 onRideClick={setSelectedRideId}
                 onSlotClick={isMyDepartment ? handleSlotClick : undefined}
                 renderCarName={(car) => <CarNameWithReport carId={car.id} carName={car.name} className="min-w-0" />}
+                discussionBlocks={weekGridDiscussionBlocks}
+                onDiscussionClick={setSelectedGroupId}
               />
             </div>
           </div>
@@ -636,6 +674,15 @@ export function SiddurPage() {
             }}>{he.rideCoordination.volunteer}</Button>
           </div>
         ) : selectedRide?.id && ownsEditableRide(selectedRide.id) ? <MemberRideEditor key={`${selectedRide.id}:${selectedRide.version}`} ride={selectedRide} cars={carsQuery.data ?? []} saving={editMutation.isPending || changeMutation.isPending} onSave={(move) => void saveMove(move)} /> : undefined}
+      />
+
+      <WaitlistGroupSheet
+        group={selectedWaitlistGroup}
+        departmentId={departmentId as string}
+        weekStart={weekStart as string}
+        profileId={profileId}
+        canManageWeek={isSadran}
+        onOpenChange={(open) => !open && setSelectedGroupId(null)}
       />
 
       <ConfirmDialog

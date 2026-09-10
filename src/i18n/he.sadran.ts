@@ -232,6 +232,9 @@ export const heSadran = {
     blockedByConflicts: "לא ניתן לפרסם — יש התנגשויות בלוח",
     successTitle: "הסידור פורסם",
     copySummarySuccess: "הסיכום הועתק",
+    // REQ §13.75 / DATA_MODEL.md §7.4a: `unresolvedRequests` no longer blocks publication
+    // (`incompleteAssignments` does) — this note explains why to the Sadran.
+    unresolvedWillBeGrouped: "בקשות שלא שובצו יאושרו אוטומטית אם יש רכב פנוי, ואחרת ייכנסו לדיון ברשימת ההמתנה",
   },
   sadranLog: {
     filterEntityAll: "כל הסוגים",

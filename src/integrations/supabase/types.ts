@@ -2743,6 +2743,208 @@ export type Database = {
           },
         ]
       }
+      waitlist_group_members: {
+        Row: {
+          adults: number
+          boosters: number
+          child_seats: number
+          chosen: boolean | null
+          created_at: string
+          depart_at: string
+          department_id: string
+          destination: string | null
+          group_id: string
+          id: string
+          profile_id: string
+          request_id: string
+          return_at: string
+          updated_at: string
+          week_start: string
+        }
+        Insert: {
+          adults?: number
+          boosters?: number
+          child_seats?: number
+          chosen?: boolean | null
+          created_at?: string
+          depart_at: string
+          department_id: string
+          destination?: string | null
+          group_id: string
+          id?: string
+          profile_id: string
+          request_id: string
+          return_at: string
+          updated_at?: string
+          week_start: string
+        }
+        Update: {
+          adults?: number
+          boosters?: number
+          child_seats?: number
+          chosen?: boolean | null
+          created_at?: string
+          depart_at?: string
+          department_id?: string
+          destination?: string | null
+          group_id?: string
+          id?: string
+          profile_id?: string
+          request_id?: string
+          return_at?: string
+          updated_at?: string
+          week_start?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "waitlist_group_members_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "waitlist_group_members_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "v_waitlist_groups"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "waitlist_group_members_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "waitlist_groups"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "waitlist_group_members_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "waitlist_group_members_request_id_fkey"
+            columns: ["request_id"]
+            isOneToOne: false
+            referencedRelation: "requests"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "waitlist_group_members_request_id_fkey"
+            columns: ["request_id"]
+            isOneToOne: false
+            referencedRelation: "v_my_requests"
+            referencedColumns: ["request_id"]
+          },
+          {
+            foreignKeyName: "waitlist_group_members_week_fk"
+            columns: ["department_id", "week_start"]
+            isOneToOne: false
+            referencedRelation: "weeks"
+            referencedColumns: ["department_id", "week_start"]
+          },
+        ]
+      }
+      waitlist_groups: {
+        Row: {
+          created_at: string
+          day: string
+          department_id: string
+          ends_at: string
+          id: string
+          resolved_at: string | null
+          resolved_by: string | null
+          ride_id: string | null
+          starts_at: string
+          status: Database["public"]["Enums"]["waitlist_group_status"]
+          updated_at: string
+          version: number
+          week_start: string
+        }
+        Insert: {
+          created_at?: string
+          day: string
+          department_id: string
+          ends_at: string
+          id?: string
+          resolved_at?: string | null
+          resolved_by?: string | null
+          ride_id?: string | null
+          starts_at: string
+          status?: Database["public"]["Enums"]["waitlist_group_status"]
+          updated_at?: string
+          version?: number
+          week_start: string
+        }
+        Update: {
+          created_at?: string
+          day?: string
+          department_id?: string
+          ends_at?: string
+          id?: string
+          resolved_at?: string | null
+          resolved_by?: string | null
+          ride_id?: string | null
+          starts_at?: string
+          status?: Database["public"]["Enums"]["waitlist_group_status"]
+          updated_at?: string
+          version?: number
+          week_start?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "waitlist_groups_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "waitlist_groups_resolved_by_fkey"
+            columns: ["resolved_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "waitlist_groups_ride_id_fkey"
+            columns: ["ride_id"]
+            isOneToOne: false
+            referencedRelation: "rides"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "waitlist_groups_ride_id_fkey"
+            columns: ["ride_id"]
+            isOneToOne: false
+            referencedRelation: "v_board_rides"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "waitlist_groups_ride_id_fkey"
+            columns: ["ride_id"]
+            isOneToOne: false
+            referencedRelation: "v_car_locations"
+            referencedColumns: ["leaving_ride_id"]
+          },
+          {
+            foreignKeyName: "waitlist_groups_ride_id_fkey"
+            columns: ["ride_id"]
+            isOneToOne: false
+            referencedRelation: "v_my_requests"
+            referencedColumns: ["ride_id"]
+          },
+          {
+            foreignKeyName: "waitlist_groups_week_fk"
+            columns: ["department_id", "week_start"]
+            isOneToOne: false
+            referencedRelation: "weeks"
+            referencedColumns: ["department_id", "week_start"]
+          },
+        ]
+      }
       weeks: {
         Row: {
           close_at: string
@@ -2996,6 +3198,75 @@ export type Database = {
           },
         ]
       }
+      v_waitlist_groups: {
+        Row: {
+          created_at: string | null
+          day: string | null
+          department_id: string | null
+          ends_at: string | null
+          id: string | null
+          members: Json | null
+          resolved_at: string | null
+          resolved_by: string | null
+          ride_id: string | null
+          starts_at: string | null
+          status: Database["public"]["Enums"]["waitlist_group_status"] | null
+          updated_at: string | null
+          version: number | null
+          week_start: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "waitlist_groups_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "waitlist_groups_resolved_by_fkey"
+            columns: ["resolved_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "waitlist_groups_ride_id_fkey"
+            columns: ["ride_id"]
+            isOneToOne: false
+            referencedRelation: "rides"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "waitlist_groups_ride_id_fkey"
+            columns: ["ride_id"]
+            isOneToOne: false
+            referencedRelation: "v_board_rides"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "waitlist_groups_ride_id_fkey"
+            columns: ["ride_id"]
+            isOneToOne: false
+            referencedRelation: "v_car_locations"
+            referencedColumns: ["leaving_ride_id"]
+          },
+          {
+            foreignKeyName: "waitlist_groups_ride_id_fkey"
+            columns: ["ride_id"]
+            isOneToOne: false
+            referencedRelation: "v_my_requests"
+            referencedColumns: ["ride_id"]
+          },
+          {
+            foreignKeyName: "waitlist_groups_week_fk"
+            columns: ["department_id", "week_start"]
+            isOneToOne: false
+            referencedRelation: "weeks"
+            referencedColumns: ["department_id", "week_start"]
+          },
+        ]
+      }
       v_week_summary: {
         Row: {
           department_id: string | null
@@ -3102,6 +3373,10 @@ export type Database = {
         }
         Returns: undefined
       }
+      cancel_waitlist_group: {
+        Args: { p_expected_version: number; p_group_id: string }
+        Returns: Json
+      }
       car_care_recipients: { Args: { _car_id: string }; Returns: string[] }
       car_fits: {
         Args: {
@@ -3160,6 +3435,15 @@ export type Database = {
         }
         Returns: string
       }
+      create_waitlist_group: {
+        Args: {
+          _day: string
+          _department_id: string
+          _request_ids: string[]
+          _week_start: string
+        }
+        Returns: string
+      }
       crypt: { Args: { password: string; salt: string }; Returns: string }
       current_week_start: { Args: never; Returns: string }
       digest:
@@ -3205,6 +3489,10 @@ export type Database = {
           profile_id: string
         }[]
       }
+      form_waitlist_groups: {
+        Args: { p_day: string; p_department_id: string; p_week_start: string }
+        Returns: number
+      }
       freed_slot_candidates: {
         Args: { _offer: string }
         Returns: {
@@ -3240,6 +3528,7 @@ export type Database = {
         Args: { _dept: string; _week: string }
         Returns: boolean
       }
+      join_waitlist_group: { Args: { p_request_id: string }; Returns: string }
       log_car_care: {
         Args: {
           _car_id: string
@@ -3284,6 +3573,10 @@ export type Database = {
           _week_start: string
         }
         Returns: string
+      }
+      notify_waitlist_contested: {
+        Args: { _group_id: string; _new_profile?: string; _variant?: string }
+        Returns: undefined
       }
       open_week: {
         Args: { p_department_id: string; p_week_start: string }
@@ -3425,6 +3718,14 @@ export type Database = {
         Args: { p_offer_id: string; p_ranked_candidates: Json }
         Returns: undefined
       }
+      resolve_waitlist_group: {
+        Args: {
+          p_expected_version: number
+          p_group_id: string
+          p_request_ids: string[]
+        }
+        Returns: Json
+      }
       respond_ride_change: {
         Args: { p_accept: boolean; p_change_id: string }
         Returns: undefined
@@ -3475,6 +3776,15 @@ export type Database = {
           p_week_start: string
         }
         Returns: undefined
+      }
+      settle_waitlist_cluster: {
+        Args: {
+          _day: string
+          _department_id: string
+          _request_ids: string[]
+          _week_start: string
+        }
+        Returns: number
       }
       shares_ride_with: { Args: { _profile: string }; Returns: boolean }
       submit_request: { Args: { payload: Json }; Returns: Json }
@@ -3569,6 +3879,8 @@ export type Database = {
         | "access_approved"
         | "status_changed"
         | "car_care"
+        | "waitlist_contested"
+        | "waitlist_resolved"
       party_response: "pending" | "accepted" | "declined"
       proposal_status:
         | "draft"
@@ -3598,6 +3910,7 @@ export type Database = {
       solver_run_status: "succeeded" | "failed"
       tire_state: "ok" | "low" | "very_low"
       trip_shape: "round_trip" | "one_way_to" | "one_way_from"
+      waitlist_group_status: "open" | "resolved" | "cancelled"
       week_phase: "open" | "solving" | "published" | "live" | "archived"
     }
     CompositeTypes: {
@@ -3783,6 +4096,8 @@ export const Constants = {
         "access_approved",
         "status_changed",
         "car_care",
+        "waitlist_contested",
+        "waitlist_resolved",
       ],
       party_response: ["pending", "accepted", "declined"],
       proposal_status: [
@@ -3815,6 +4130,7 @@ export const Constants = {
       solver_run_status: ["succeeded", "failed"],
       tire_state: ["ok", "low", "very_low"],
       trip_shape: ["round_trip", "one_way_to", "one_way_from"],
+      waitlist_group_status: ["open", "resolved", "cancelled"],
       week_phase: ["open", "solving", "published", "live", "archived"],
     },
   },

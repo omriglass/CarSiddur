@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import type { MyRequestRow } from "@/features/requests/api";
 import { canEditRequest } from "@/features/requests/window";
 import { OpenProposalButton } from "@/features/proposals/components/OpenProposalButton";
+import { OpenWaitlistGroupButton } from "@/features/waitlist/components/OpenWaitlistGroupButton";
 import {
   useCancelRideMutation,
   useClaimFreedSlotMutation,
@@ -204,6 +205,14 @@ export function RequestsListPage() {
                   <div className="flex flex-wrap gap-2 pt-1">
                     {row.status === "proposed" && row.pendingProposal ? (
                       <OpenProposalButton proposalId={row.pendingProposal.id} size="sm" />
+                    ) : null}
+                    {row.statusReason === "WAITLISTED_CONTESTED" && (row.departAt ?? row.returnAt) ? (
+                      <OpenWaitlistGroupButton
+                        departmentId={row.departmentId}
+                        weekStart={row.weekStart}
+                        requestId={row.id}
+                        day={(row.departAt ?? row.returnAt) as string}
+                      />
                     ) : null}
                     {canEditRequest(row) ? (
                       <Button asChild size="sm" variant="outline">

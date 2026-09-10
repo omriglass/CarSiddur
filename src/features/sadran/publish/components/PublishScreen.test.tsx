@@ -33,7 +33,7 @@ function show() {
 beforeEach(() => {
   mocks.publish.mockReset().mockResolvedValue("published-version");
   mocks.readiness = days.map((day) => ({
-    day, ready: true, published: false, requestCount: 1, unresolvedRequests: 0,
+    day, ready: true, published: false, requestCount: 1, unresolvedRequests: 0, incompleteAssignments: 0,
     pendingProposals: 0, missingDriverRides: 0, conflictRides: 0,
   }));
 });
@@ -62,7 +62,7 @@ describe("publication choices", () => {
     await screen.findByTestId("returned-to-board");
   });
 
-  it.each(["unresolvedRequests", "pendingProposals", "missingDriverRides"] as const)("requires explicit confirmation before publishing days with %s", async (field) => {
+  it.each(["incompleteAssignments", "pendingProposals", "missingDriverRides"] as const)("requires explicit confirmation before publishing days with %s", async (field) => {
     mocks.readiness[2] = { ...mocks.readiness[2]!, ready: false, [field]: 1 };
     show();
     fireEvent.click(screen.getByRole("button", { name: he.publicationFlow.allYes }));
@@ -85,5 +85,14 @@ describe("publication choices", () => {
     expect(screen.getByRole("button", { name: he.publicationFlow.selectedPublish })).toBeDisabled();
     expect(mocks.publish).not.toHaveBeenCalled();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("does not block publication on unresolvedRequests alone, but shows the info note (REQ §13.75)", async () => {
+    mocks.readiness[1] = { ...mocks.readiness[1]!, unresolvedRequests: 2 };
+    show();
+    expect(screen.getByText(he.sadranPublish.unresolvedWillBeGrouped)).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: he.publicationFlow.allYes }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    await waitFor(() => expect(mocks.publish).toHaveBeenCalledExactlyOnceWith({ departmentId, weekStart, days, allowUnanswered: false }));
   });
 });

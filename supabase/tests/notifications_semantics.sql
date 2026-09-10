@@ -204,12 +204,25 @@ begin
     format('enter_waiting_list should place a request onto a genuinely free car, got %s', result::text);
 
   -- enter_waiting_list() at the already-full window: waitlisted, via submit_request's own
-  -- try_auto_approve() outcome (not a second, different status_reason).
+  -- try_auto_approve() outcome (not a second, different status_reason). Since 20260910091300
+  -- (contested waiting-list groups, REQ §7.3) this is no longer a lonely wait: the request
+  -- above is already waitlisted in exactly this window on a published day, so the two are
+  -- put into one contested group instead and both members are told.
   payload := jsonb_build_object('department_id',dept,'week_start',w::text,'destination_id',dest,'ride_type_id',typ,
     'trip_shape','round_trip','depart_at',base::text,'return_at',(base+interval '2 hours')::text,'adults',1);
   result := public.enter_waiting_list(payload);
-  assert result->>'status' = 'waitlisted' and result->>'reason' = 'WAITLISTED_NO_CAR' and not (result ? 'car_was_free'),
-    format('enter_waiting_list should waitlist with no free car, got %s', result::text);
+  assert result->>'status' = 'waitlisted' and result->>'reason' = 'WAITLISTED_CONTESTED' and not (result ? 'car_was_free'),
+    format('enter_waiting_list should waitlist as contested with no free car, got %s', result::text);
+  assert (select count(*) from public.waitlist_groups g where g.department_id = dept and g.week_start = w
+          and g.day = w + 3 and g.status = 'open') = 1,
+    'the two overlapping waitlisted round trips should share exactly one open group';
+  assert (select count(*) from public.waitlist_group_members m
+          join public.waitlist_groups g on g.id = m.group_id
+          where g.department_id = dept and g.week_start = w and g.status = 'open' and m.chosen is null) = 2,
+    'both overlapping requests should be open members of the group';
+  assert exists(select 1 from public.notifications n where n.event = 'waitlist_contested'
+          and n.recipient_id = member and n.week_start = w),
+    'the contested members should be notified';
 end $$;
 
 -- ---------------------------------------------------------------------------
