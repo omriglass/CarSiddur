@@ -68,9 +68,15 @@ async function upsertCarCodes(carId: string, departmentId: string, codes: Partia
   if (error) throw toAppError(error);
 }
 
+/**
+ * Admins add shared cars only (owner decision 2026-09-10) — `type` is always
+ * forced to `"shared"` here regardless of what `input` carries, since
+ * `CarForm` has no type selector and `cars_temporary_owner_ck` requires an
+ * owner for `type = 'temporary'` that the admin screen never collects.
+ */
 export async function createCar(input: CarInsert): Promise<Car> {
   const { access_code, is_replaced, replacement_code, ...carInput } = input;
-  const { data, error } = await supabase.from("cars").insert(carInput).select().single();
+  const { data, error } = await supabase.from("cars").insert({ ...carInput, type: "shared" }).select().single();
   if (error) throw toAppError(error);
   await upsertCarCodes(data.id, data.department_id, { access_code, is_replaced, replacement_code });
   return { ...data, access_code: access_code ?? null, is_replaced: is_replaced ?? false, replacement_code: replacement_code ?? null };

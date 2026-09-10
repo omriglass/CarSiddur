@@ -1,6 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { format, getDay, parseISO } from "date-fns";
-import { useContext, useMemo, useState } from "react";
+import { useContext, useMemo, useRef, useState } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -19,11 +19,13 @@ import { CarAtDestinationToggle } from "@/components/CarAtDestinationToggle";
 import { CompanionPicker } from "@/components/CompanionPicker";
 import { DateField, datesOfWeek } from "@/components/DateField";
 import { DestinationCombobox, type DestinationValue } from "@/components/DestinationCombobox";
+import { FieldAnchor } from "@/components/FieldAnchor";
 import { FlexibilityRange } from "@/components/FlexibilitySegmented";
 import { OneWayCarModeControl } from "@/components/OneWayCarModeControl";
 import { RideTypeChips } from "@/components/RideTypeChips";
 import { TimeField15 } from "@/components/TimeField15";
 import { TripShapeControl } from "@/components/TripShapeControl";
+import { useScrollToFirstError } from "@/components/useScrollToFirstError";
 import { useDepartmentMembers } from "@/features/auth/useDepartmentMembers";
 import { useSession } from "@/features/auth/useSession";
 import { useCars, useCarSeatConfigs, useDestinations, useRideTypes, useSuggestDestinationMutation } from "@/features/fleet/hooks";
@@ -357,6 +359,8 @@ export function RequestForm({
     defaultValues,
     mode: "onBlur",
   });
+  const formRef = useRef<HTMLFormElement>(null);
+  const onInvalid = useScrollToFirstError(form, formRef);
 
   // The catalog may arrive after useForm captures its initial defaults.
   if (mode !== "edit" && defaultRideTypeId && !form.getValues("rideTypeId")) {
@@ -635,7 +639,8 @@ export function RequestForm({
   return (
     <>
     <form
-      onSubmit={form.handleSubmit(onSubmit)}
+      ref={formRef}
+      onSubmit={form.handleSubmit(onSubmit, onInvalid)}
       className={cn("mx-auto flex max-w-2xl flex-col gap-5 p-4", insideModalSheet ? "pb-20" : "pb-28")}
     >
       {quickContext ? (
@@ -662,7 +667,7 @@ export function RequestForm({
       ) : null}
       {waitlist ? <div className="rounded-md border-s-4 border-amber-500 bg-amber-50 p-3 text-sm text-amber-900">{t("request.waitlistBanner")}</div> : null}
 
-      <FormItem>
+      <FormItem data-field="destination">
         <Label>{t("field.destination")}</Label>
         <Controller
           control={form.control}
@@ -684,7 +689,7 @@ export function RequestForm({
         <FieldError message={form.formState.errors.destination ? t("request.destinationRequired") : undefined} />
       </FormItem>
 
-      <FormItem>
+      <FormItem data-field="rideTypeId">
         <Label>{t("field.rideType")}</Label>
         <Controller
           control={form.control}
@@ -701,7 +706,7 @@ export function RequestForm({
       </FormItem>
 
       {variant === "carNow" ? (
-        <FormItem>
+        <FormItem data-field="durationHours">
           <Label htmlFor="request-duration-hours">{t("quickRequest.durationHours")}</Label>
           <Controller
             control={form.control}
@@ -723,7 +728,7 @@ export function RequestForm({
       ) : null}
 
       {!quickContext ? (
-        <FormItem>
+        <FormItem data-field="preferredCarId">
           <Label htmlFor="request-preferred-car">{t("request.preferredCar")}</Label>
           <Controller control={form.control} name="preferredCarId" render={({ field }) => (
             <Select value={field.value || "none"} onValueChange={(value) => field.onChange(value === "none" ? "" : value)}>
@@ -740,7 +745,7 @@ export function RequestForm({
           <p className="text-xs text-muted-foreground">{t("request.preferredCarHelper")}</p>
         </FormItem>
       ) : quickContext.showCarPicker ? (
-        <FormItem>
+        <FormItem data-field="preferredCarId">
           <Label htmlFor="request-preferred-car">{t("quickRequest.carPickerLabel")}</Label>
           <Controller control={form.control} name="preferredCarId" render={({ field }) => (
             <Select value={field.value || ""} onValueChange={field.onChange}>
@@ -754,7 +759,7 @@ export function RequestForm({
       ) : null}
 
       {variant !== "carNow" ? (
-        <FormItem>
+        <FormItem data-field="day">
           <Label>{t("field.day")}</Label>
           <Controller
             control={form.control}
@@ -791,7 +796,7 @@ export function RequestForm({
         </Button>
       ) : null}
       {showReturnDayPicker && returnAnotherDay ? (
-        <FormItem>
+        <FormItem data-field="returnDay">
           <div className="flex items-center justify-between gap-2">
             <Label>{t("request.returnDay")}</Label>
             <Button
@@ -830,7 +835,7 @@ export function RequestForm({
       ) : null}
 
       {variant !== "carNow" && !isMultiDay ? (
-        <>
+        <FieldAnchor name="tripShape">
           <Controller
             control={form.control}
             name="tripShape"
@@ -853,12 +858,12 @@ export function RequestForm({
             )}
           />
           {quickContext && oneWay ? <p className="text-sm text-destructive">{t("quickRequest.oneWayHelp")}</p> : null}
-        </>
+        </FieldAnchor>
       ) : null}
 
       <div className="flex gap-4">
         {variant !== "carNow" && tripShape !== "one_way_from" ? (
-          <FormItem className="flex-1">
+          <FormItem className="flex-1" data-field="departTime">
             <Label>{t("field.depart")}</Label>
             <Controller
               control={form.control}
@@ -889,7 +894,7 @@ export function RequestForm({
               variant === "carNow" ? (
                 <></>
               ) : (
-                <FormItem className="flex-1">
+                <FormItem className="flex-1" data-field="returnTime">
                   <Label>{tripShape === "one_way_from" ? t("request.departArrival") : t("field.return")}</Label>
                   <TimeField15 min="06:00" max="23:59" value={field.value ?? "12:00"} onChange={field.onChange} aria-label={t("field.return")} />
                   <FieldError message={form.formState.errors.returnTime?.message} />
@@ -921,28 +926,30 @@ export function RequestForm({
         </div>
       ) : null}
 
-      {tripShape === "round_trip" && variant !== "carNow" ? (
-        <Controller
-          control={form.control}
-          name="needsCarAtDestination"
-          render={({ field }) => <CarAtDestinationToggle checked={field.value} onChange={field.onChange} />}
-        />
-      ) : !quickContext ? (
-        <Controller
-          control={form.control}
-          name="oneWayCarMode"
-          render={({ field }) => (
-            <OneWayCarModeControl
-              value={field.value ?? null}
-              tripShape={tripShape === "one_way_from" ? "one_way_from" : "one_way_to"}
-              onChange={field.onChange}
-            />
-          )}
-        />
-      ) : null}
-      {!quickContext ? <FieldError message={form.formState.errors.oneWayCarMode?.message} /> : null}
+      <FieldAnchor name="oneWayCarMode">
+        {tripShape === "round_trip" && variant !== "carNow" ? (
+          <Controller
+            control={form.control}
+            name="needsCarAtDestination"
+            render={({ field }) => <CarAtDestinationToggle checked={field.value} onChange={field.onChange} />}
+          />
+        ) : !quickContext ? (
+          <Controller
+            control={form.control}
+            name="oneWayCarMode"
+            render={({ field }) => (
+              <OneWayCarModeControl
+                value={field.value ?? null}
+                tripShape={tripShape === "one_way_from" ? "one_way_from" : "one_way_to"}
+                onChange={field.onChange}
+              />
+            )}
+          />
+        ) : null}
+        {!quickContext ? <FieldError message={form.formState.errors.oneWayCarMode?.message} /> : null}
+      </FieldAnchor>
 
-      <FormItem>
+      <FormItem data-field="companions">
         <Label>{t("field.companions")}</Label>
         <Controller
           control={form.control}
@@ -958,7 +965,7 @@ export function RequestForm({
         <p className="text-sm text-muted-foreground">{tv("request.namedPassengerCount", { count: String(namedAdultCount) })}</p>
       </FormItem>
 
-      <FormItem>
+      <FormItem data-field="children">
         <Label>{t("field.children")}</Label>
         <Controller control={form.control} name="children" render={({ field }) => (
           <CompanionPicker
@@ -974,7 +981,7 @@ export function RequestForm({
         <p className="text-sm text-muted-foreground">{tv("request.namedChildCount", { count: String(namedChildCount) })}</p>
       </FormItem>
 
-      <FormItem>
+      <FormItem data-field="guestNames">
         <Label htmlFor="request-guest-names">{t("quickRequest.guestPassengers")}</Label>
         <Controller control={form.control} name="guestNames" render={({ field }) => (
           <Textarea id="request-guest-names" value={field.value} onChange={field.onChange} rows={2} />
@@ -987,7 +994,7 @@ export function RequestForm({
         control={form.control}
         name="luggage"
         render={({ field }) => (
-          <label className="flex items-center gap-2 text-sm">
+          <label className="flex items-center gap-2 text-sm" data-field="luggage">
             <input
               type="checkbox"
               checked={field.value}
@@ -1000,7 +1007,7 @@ export function RequestForm({
       />
 
       {variant !== "carNow" && !isMultiDay && tripShape !== "one_way_from" ? (
-        <FormItem>
+        <FormItem data-field="flexDepartEarly">
           <Label>{t("field.flexDepart")}</Label>
           <FlexibilityRange
             early={values.flexDepartEarly ?? 0}
@@ -1013,7 +1020,7 @@ export function RequestForm({
         </FormItem>
       ) : null}
       {variant !== "carNow" && !isMultiDay && tripShape !== "one_way_to" ? (
-        <FormItem>
+        <FormItem data-field="flexReturnEarly">
           <Label>{t("field.flexReturn")}</Label>
           <FlexibilityRange
             early={values.flexReturnEarly ?? 0}
@@ -1028,7 +1035,7 @@ export function RequestForm({
       ) : null}
 
       {variant !== "carNow" ? (
-        <FormItem>
+        <FormItem data-field="rideDescription">
           <Label htmlFor="request-description">{t("quickRequest.rideDescription")}</Label>
           <Controller control={form.control} name="rideDescription" render={({ field }) => <Textarea {...field} id="request-description" rows={2} maxLength={1000} aria-describedby="request-description-help" />} />
           <p id="request-description-help" className="text-xs text-muted-foreground">{t("quickRequest.rideDescriptionHelp")}</p>
@@ -1036,7 +1043,7 @@ export function RequestForm({
         </FormItem>
       ) : null}
 
-      <FormItem>
+      <FormItem data-field="notes">
         <Label htmlFor="request-notes">{t("field.notes")}</Label>
         <Controller control={form.control} name="notes" render={({ field }) => <Textarea {...field} id="request-notes" rows={2} />} />
       </FormItem>
@@ -1046,7 +1053,7 @@ export function RequestForm({
           control={form.control}
           name="repeatWeekly"
           render={({ field }) => (
-            <FormItem className="flex items-center justify-between gap-3 rounded-md border p-3">
+            <FormItem className="flex items-center justify-between gap-3 rounded-md border p-3" data-field="repeatWeekly">
               <div className="space-y-0.5">
                 <Label htmlFor="request-repeat-weekly">{t("request.repeatWeekly")}</Label>
                 <p className="text-xs text-muted-foreground">{t("request.repeatWeeklyHint")}</p>

@@ -41,6 +41,8 @@ interface DateFieldProps {
   dayCount?: number;
   /** Overrides the radiogroup's `aria-label` (default `he.field.day`) — set this when two `DateField`s render on the same screen (e.g. a departure day and a later return day) so assistive tech can tell them apart. */
   ariaLabel?: string;
+  /** react-hook-form field name, for `useScrollToFirstError` to find this control on an invalid submit. */
+  dataField?: string;
 }
 
 /**
@@ -50,12 +52,17 @@ interface DateFieldProps {
  * bars): this picks one day *within* an already-chosen week (or, with
  * `dayCount` extended, one of the next several weeks — see above).
  */
-export function DateField({ weekStart, value, onChange, dayCount = 7, ariaLabel }: DateFieldProps) {
+export function DateField({ weekStart, value, onChange, dayCount = 7, ariaLabel, dataField }: DateFieldProps) {
   const dates = datesFrom(weekStart, dayCount);
   const today = todayInJerusalem();
 
   return (
-    <div className={cn("flex gap-1", dayCount > 7 && "flex-wrap")} role="radiogroup" aria-label={ariaLabel ?? he.field.day}>
+    <div
+      className={cn("flex gap-1", dayCount > 7 && "flex-wrap")}
+      role="radiogroup"
+      aria-label={ariaLabel ?? he.field.day}
+      data-field={dataField}
+    >
       {dates.map((date, index) => {
         const isSelected = date === value;
         const isToday = date === today;

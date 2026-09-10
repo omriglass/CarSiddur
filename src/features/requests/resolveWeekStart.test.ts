@@ -38,4 +38,29 @@ describe("new request week selection", () => {
     expect(resolveWeekStart(withUpcoming, undefined, now)).toBe("2026-09-06");
     expect(resolveWeekStart(withUpcoming, "2026-09-20", now)).toBe("2026-09-06");
   });
+  it("prefers a published next week over the current live week when there is no open week", () => {
+    const liveThenPublished = [
+      { week_start: "2026-09-06", phase: "live" },
+      { week_start: "2026-09-13", phase: "published" },
+    ] as const;
+    expect(resolveWeekStart(liveThenPublished, undefined, now)).toBe("2026-09-13");
+  });
+  it("prefers a solving next week over the current live week when there is no open week", () => {
+    const liveThenSolving = [
+      { week_start: "2026-09-06", phase: "live" },
+      { week_start: "2026-09-13", phase: "solving" },
+    ] as const;
+    expect(resolveWeekStart(liveThenSolving, undefined, now)).toBe("2026-09-13");
+  });
+  it("falls back to the current week when it is published but not yet live (Saturday before rollover)", () => {
+    const publishedCurrentOnly = [{ week_start: "2026-09-06", phase: "published" }] as const;
+    expect(resolveWeekStart(publishedCurrentOnly, undefined, now)).toBe("2026-09-06");
+  });
+  it("lets an explicit override still win over the next-week preference", () => {
+    const liveThenPublished = [
+      { week_start: "2026-09-06", phase: "live" },
+      { week_start: "2026-09-13", phase: "published" },
+    ] as const;
+    expect(resolveWeekStart(liveThenPublished, "2026-09-06", now)).toBe("2026-09-06");
+  });
 });

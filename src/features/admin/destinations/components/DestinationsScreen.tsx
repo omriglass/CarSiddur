@@ -2,12 +2,13 @@ import { useActiveDepartment } from "@/features/auth/useActiveDepartment";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { formatInTimeZone } from "date-fns-tz";
 import { MapPin, Plus } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 
 import { EmptyState } from "@/components/EmptyState";
 import { PageHeader } from "@/components/PageHeader";
+import { useScrollToFirstError } from "@/components/useScrollToFirstError";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -55,6 +56,9 @@ function DestinationForm({ destination, prefillName, onSaved }: { destination: D
     },
   });
 
+  const formRef = useRef<HTMLFormElement>(null);
+  const onInvalid = useScrollToFirstError(form, formRef);
+
   async function onSubmit(values: DestinationFormValues) {
     const patch = {
       name: values.name,
@@ -83,7 +87,7 @@ function DestinationForm({ destination, prefillName, onSaved }: { destination: D
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)}>
+      <form ref={formRef} onSubmit={form.handleSubmit(onSubmit, onInvalid)}>
         <fieldset className="flex flex-col gap-4" disabled={routeMutation.isPending || form.formState.isSubmitting}>
         <FormField
           control={form.control}

@@ -9,8 +9,9 @@ import { paths } from "@/app/routes";
  * הסידור and הבקשות שלי") — used by both `SiddurPage` and `HomePage` so they can never drift
  * in icon/label/position again.
  *
- * It is a non-specific entry point, so it always links to `/requests/new`, which resolves to the
- * open (next) week (REQ §13.74). "I want a car now" is the separate `CarNowButton`.
+ * It is a non-specific entry point, so it always links to `/requests/new`, which `resolveWeekStart`
+ * resolves to the open week, or — when none is open — the next upcoming solving/published week,
+ * or finally this week (REQ §13.74). "I want a car now" is the separate `CarNowButton`.
  */
 export function AddRideFab() {
   return (

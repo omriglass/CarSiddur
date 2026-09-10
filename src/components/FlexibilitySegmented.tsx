@@ -20,6 +20,8 @@ interface FlexibilitySegmentedProps {
   value: FlexValue;
   onChange: (value: FlexValue) => void;
   "aria-label"?: string;
+  /** react-hook-form field name, for `useScrollToFirstError` to find this control on an invalid submit. */
+  "data-field"?: string;
 }
 
 /** Six-option compact segmented control, used ×4 in the request form (component inventory). */
@@ -54,10 +56,12 @@ export function FlexibilitySegmented({ value, onChange, ...rest }: FlexibilitySe
 type FlexDirection = "both" | "later" | "earlier";
 
 /** Compact direction + amount, persisted through the existing early/late fields. */
-export function FlexibilityRange({ early, late, onChange }: {
+export function FlexibilityRange({ early, late, onChange, dataField }: {
   early: FlexValue;
   late: FlexValue;
   onChange: (early: FlexValue, late: FlexValue) => void;
+  /** react-hook-form field name, for `useScrollToFirstError` to find this control on an invalid submit. */
+  dataField?: string;
 }) {
   const [zeroDirection, setZeroDirection] = useState<FlexDirection>("both");
   const direction: FlexDirection = early === 0 && late === 0 ? zeroDirection : early === 0 ? "later" : late === 0 ? "earlier" : "both";
@@ -67,7 +71,7 @@ export function FlexibilityRange({ early, late, onChange }: {
     onChange(nextDirection === "later" ? 0 : nextAmount, nextDirection === "earlier" ? 0 : nextAmount);
   }
   return (
-    <div className="space-y-1">
+    <div className="space-y-1" data-field={dataField}>
       <ToggleGroup type="single" value={direction} aria-label={he.request.flexDirection}
         onValueChange={(next) => { if (next) change(next as FlexDirection, amount); }} className="justify-start" dir="ltr">
         <ToggleGroupItem value="both" aria-label={he.request.flexBoth}>±</ToggleGroupItem>

@@ -12,12 +12,28 @@ const weekly: WeeklyStat[] = [
 ];
 
 describe("WeeklyUnmetChart", () => {
-  it("renders one bar and one inline row per week", () => {
+  it("renders the title's subtitle", () => {
+    render(<WeeklyUnmetChart weekly={weekly} />);
+    expect(screen.getByText(he.stats.weeklyUnmetSubtitle)).toBeInTheDocument();
+  });
+
+  it("renders one bar and one inline row per week, as a percentage of that week's total", () => {
     render(<WeeklyUnmetChart weekly={weekly} />);
     expect(screen.getByTestId("weekly-unmet-bar-2026-08-02")).toBeInTheDocument();
     expect(screen.getByTestId("weekly-unmet-bar-2026-08-09")).toBeInTheDocument();
-    expect(screen.getByTestId("weekly-unmet-row-2026-08-02")).toHaveTextContent("3/40");
-    expect(screen.getByTestId("weekly-unmet-row-2026-08-09")).toHaveTextContent("2/12");
+    // 3/40 = 7.5% -> rounds to 8%; 2/12 = 16.67% -> rounds to 17%.
+    expect(screen.getByTestId("weekly-unmet-row-2026-08-02")).toHaveTextContent("8%");
+    expect(screen.getByTestId("weekly-unmet-row-2026-08-09")).toHaveTextContent("17%");
+  });
+
+  it("renders no bar, only a faint baseline dash, for a week with no requests at all", () => {
+    const withEmptyWeek: WeeklyStat[] = [
+      ...weekly,
+      { weekStart: "2026-08-16", total: 0, granted: 0, unmet: 0, cancelled: 0, rides: 0, provisional: true },
+    ];
+    render(<WeeklyUnmetChart weekly={withEmptyWeek} />);
+    expect(screen.getByTestId("weekly-unmet-baseline-2026-08-16")).toBeInTheDocument();
+    expect(screen.getByTestId("weekly-unmet-row-2026-08-16")).toHaveTextContent("—");
   });
 
   it("shows the provisional-weeks legend note only when a week is provisional", () => {
@@ -31,11 +47,33 @@ describe("WeeklyUnmetChart", () => {
     expect(screen.queryByText(he.stats.weeklyProvisional)).not.toBeInTheDocument();
   });
 
-  it("carries every week's values in a screen-reader summary", () => {
+  it("carries every week's values, including the percentage, in a screen-reader summary", () => {
     render(<WeeklyUnmetChart weekly={weekly} />);
     const summary = screen.getByTestId("weekly-unmet-sr-summary");
     expect(summary).toHaveTextContent("02/08");
     expect(summary).toHaveTextContent("09/08");
+    expect(summary).toHaveTextContent("3 מתוך 40 (8%)");
+    expect(summary).toHaveTextContent("2 מתוך 12 (17%)");
+  });
+
+  it("shows all five y-axis ticks for enough weeks, and thins to 0/50/100 for a handful", () => {
+    const enoughWeeks: WeeklyStat[] = [
+      ...weekly,
+      { weekStart: "2026-08-16", total: 10, granted: 8, unmet: 2, cancelled: 0, rides: 8, provisional: false },
+      { weekStart: "2026-08-23", total: 10, granted: 8, unmet: 2, cancelled: 0, rides: 8, provisional: false },
+    ];
+    const { unmount } = render(<WeeklyUnmetChart weekly={enoughWeeks} />);
+    expect(screen.getByText("25%")).toBeInTheDocument();
+    expect(screen.getByText("75%")).toBeInTheDocument();
+    unmount();
+
+    const few = weekly.slice(0, 1);
+    render(<WeeklyUnmetChart weekly={few} />);
+    expect(screen.queryByText("25%")).not.toBeInTheDocument();
+    expect(screen.queryByText("75%")).not.toBeInTheDocument();
+    expect(screen.getByText("0%")).toBeInTheDocument();
+    expect(screen.getByText("50%")).toBeInTheDocument();
+    expect(screen.getByText("100%")).toBeInTheDocument();
   });
 
   it("hides per-bar inline text when there are many weeks", () => {

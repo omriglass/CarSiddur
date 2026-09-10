@@ -3030,6 +3030,7 @@ export type Database = {
         Row: {
           active_hours: number
           cancelled: number
+          capacity_hours: number
           computed_at: string
           created_at: string
           department_id: string
@@ -3044,6 +3045,7 @@ export type Database = {
         Insert: {
           active_hours?: number
           cancelled?: number
+          capacity_hours?: number
           computed_at?: string
           created_at?: string
           department_id: string
@@ -3058,6 +3060,7 @@ export type Database = {
         Update: {
           active_hours?: number
           cancelled?: number
+          capacity_hours?: number
           computed_at?: string
           created_at?: string
           department_id?: string
@@ -3557,6 +3560,10 @@ export type Database = {
       }
       assert_named_passenger_counts: {
         Args: { p_request_id: string }
+        Returns: undefined
+      }
+      assert_not_direct_rpc: {
+        Args: { p_function: string }
         Returns: undefined
       }
       assert_publication_scores: {

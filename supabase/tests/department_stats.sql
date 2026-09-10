@@ -465,6 +465,101 @@ begin
   perform 1 from public.week_stats where department_id = dept and week_start = w3
     and total_requests = 1 and granted = 1;
   assert found, '(j) advance_week_phases archiving a week must populate week_stats';
+
+  -- ---------------------------------------------------------------------------
+  -- (k) Retiring a car must not distort statistics (owner decision, 2026-09-10;
+  -- 20260910100300_track_car_retired_at.sql / 20260910100400_fix_department_stats_retired_cars.sql).
+  -- Historical metrics (activeHours, rides, distinctPeople/distinctDrivers, byRideType,
+  -- compute_week_stats()) must still count a retired shared car's past rides; only the
+  -- capacity denominator (sharedCars/capacityHours/week_stats.capacity_hours) excludes it
+  -- once retired before the range. A dedicated department (its catalogs copied from the
+  -- main fixture's department so its ride/request rows have a valid destination and ride
+  -- type) keeps this independent of the main fixture's precisely tuned numbers above.
+  -- ---------------------------------------------------------------------------
+  declare
+    retired_dept uuid;
+    rc_week date := public.current_week_start() - 490;   -- Sunday-aligned (multiple of 7), far-past
+    rc_from date := rc_week;
+    rc_to date := rc_week + 6;
+    rc_home uuid;
+    rc_ride_type uuid;
+    car_active_id uuid;
+    car_retired_id uuid;
+    ride_retired_id uuid;
+    req_retired_id uuid;
+    rc_result jsonb;
+    rc_by_type jsonb;
+  begin
+    execute 'set local role authenticated';
+    perform set_config('request.jwt.claims', jsonb_build_object('sub', admin_id, 'role', 'authenticated')::text, true);
+    select id into retired_dept from public.create_department('Stats retired-car test', 'stats-retired-car-test', dept);
+    select home_destination_id into rc_home from public.departments where id = retired_dept;
+    select id into rc_ride_type from public.ride_types where department_id = retired_dept and code = 'healthcare';
+
+    -- weeks/rides/requests/ride_requests are RPC-only (no direct write policy, 20260910099300);
+    -- seed the fixture rows as the table owner, same technique as (f)/(g)/(h) above.
+    execute 'reset role';
+
+    insert into public.weeks(department_id, week_start, phase, open_at, close_at, publish_at)
+    values (retired_dept, rc_week, 'archived', now() - interval '400 days', now() - interval '399 days', now() - interval '398 days');
+
+    insert into public.cars (department_id, name, license_plate, type, status)
+    values (retired_dept, 'Stats active car', 'RC-STATS-ACTIVE', 'shared', 'active')
+    returning id into car_active_id;
+
+    -- retired_at is well before rc_from: this car must not count toward sharedCars/capacityHours.
+    insert into public.cars (department_id, name, license_plate, type, status, retired_at)
+    values (retired_dept, 'Stats retired car', 'RC-STATS-RETIRED', 'shared', 'retired',
+      (rc_week - 30 + time '00:00') at time zone 'Asia/Jerusalem')
+    returning id into car_retired_id;
+
+    insert into public.requests (department_id, week_start, requester_id, filed_by, destination_id,
+      ride_type_id, trip_shape, depart_at, return_at, adults, submitted_at, status)
+    values (retired_dept, rc_week, member1, member1, rc_home, rc_ride_type, 'round_trip',
+      (rc_week + 1 + time '09:00') at time zone 'Asia/Jerusalem',
+      (rc_week + 1 + time '11:00') at time zone 'Asia/Jerusalem',
+      1, now(), 'assigned')
+    returning id into req_retired_id;
+
+    -- 09:00-11:00, fully inside [06:00,22:00) -> 2h, no clipping.
+    insert into public.rides (department_id, week_start, car_id, starts_at, ends_at, origin_id,
+      destination_id, driver_id, status, created_by)
+    values (retired_dept, rc_week, car_retired_id,
+      (rc_week + 1 + time '09:00') at time zone 'Asia/Jerusalem',
+      (rc_week + 1 + time '11:00') at time zone 'Asia/Jerusalem',
+      rc_home, rc_home, member1, 'confirmed', member1)
+    returning id into ride_retired_id;
+
+    insert into public.ride_requests (ride_id, request_id, role, leg, car_mode)
+    values (ride_retired_id, req_retired_id, 'driver', 'both', 'keep');
+
+    perform public.compute_week_stats(retired_dept, rc_week);
+    perform 1 from public.week_stats where department_id = retired_dept and week_start = rc_week
+      and rides = 1 and active_hours = 2.0 and distinct_people = 1 and capacity_hours = (1 * 7 * 16)::numeric;
+    assert found, '(k) compute_week_stats must count the retired car''s ride/hours/person but exclude it from capacity_hours (only the one active car)';
+
+    execute 'set local role authenticated';
+    perform set_config('request.jwt.claims', jsonb_build_object('sub', admin_id, 'role', 'authenticated')::text, true);
+    rc_result := public.department_stats(retired_dept, rc_from, rc_to);
+
+    assert (rc_result ->> 'sharedCars')::int = 1,
+      '(k) sharedCars must exclude the car retired before the range, counting only the active one';
+    assert (rc_result -> 'utilization' ->> 'activeHours')::numeric = 2.0,
+      '(k) activeHours must still include the retired car''s ride (2h)';
+    assert (rc_result -> 'utilization' ->> 'capacityHours')::numeric = (1 * 7 * 16)::numeric,
+      '(k) capacityHours must reflect only the one active car';
+    assert (rc_result ->> 'rides')::int = 1,
+      '(k) rides must still count the retired car''s ride';
+    assert (rc_result ->> 'distinctPeople')::int = 1,
+      '(k) distinctPeople must still include the retired car''s driver/requester (member1, once)';
+    assert (rc_result ->> 'distinctDrivers')::int = 1,
+      '(k) distinctDrivers must still include the retired car''s driver';
+
+    select item into rc_by_type from jsonb_array_elements(rc_result -> 'byRideType') item where item ->> 'code' = 'healthcare';
+    assert rc_by_type is not null, '(k) byRideType must include the retired car''s ride type';
+    assert (rc_by_type ->> 'rides')::int = 1, '(k) byRideType healthcare rides mismatch';
+    assert (rc_by_type ->> 'hours')::numeric = 2.0, '(k) byRideType healthcare hours mismatch';
+  end;
 end $$;
 
 reset role;

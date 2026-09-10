@@ -195,6 +195,7 @@ scripts/
 - Confirmations and add/edit forms rendered in a dialog go through `ConfirmDialog`/`FormDialog` (`src/components/`); every status pill (request/ride/proposal/week/car) goes through `StatusBadge` — never a hand-rolled `Dialog`+`DialogFooter` or a bare `<Badge>` for a status enum. Proposal summaries render via `ProposalSummary`.
 - Navigation: build URLs with `paths.*` from `src/app/routes.ts` (`paths.sadran.board(dept, week)`, `paths.siddur(...)`, `paths.requests.new(...)`, …), never a hand-built `` `/sadran/${dept}/${week}/board` `` template string — `src/app/routes.test.ts` checks every builder against the real router patterns.
 - Weekday label/date-key: use `dateKey(instant)` and `weekdayLabel(instant, style?)` (`src/lib/time.ts` / `src/lib/dayLabels.ts`) instead of hand-writing `formatInTimeZone(x, TZ, "yyyy-MM-dd"/"i")` or indexing `he.days.long` directly.
+- Forms: pass `useScrollToFirstError`'s `onInvalid` to `handleSubmit` (`form.handleSubmit(onSubmit, onInvalid)`, `<form ref={formRef}>`) so an invalid submit scrolls to and focuses the first bad field; custom controls carry `data-field=<rhf name>` (`src/components/useScrollToFirstError.ts`, UX_FLOWS.md §9).
 
 **Solver (SOLVER.md §4)**
 - `Rule<P> = { type, normalization: 'unit'|'minmax', defaultParams, validateParams(raw): P, describe(params): string /* Hebrew */, score(ctx, request): number }`; registered in `ruleRegistry`. Unknown types in a policy → warning `UNKNOWN_RULE_TYPE`, never a crash.

@@ -1,13 +1,14 @@
 import { useActiveDepartment } from "@/features/auth/useActiveDepartment";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Plus } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 
 import { EmptyState } from "@/components/EmptyState";
 import { PageHeader } from "@/components/PageHeader";
 import { PortalSheetContent } from "@/components/PortalSheetContent";
 import { TimeField15 } from "@/components/TimeField15";
+import { useScrollToFirstError } from "@/components/useScrollToFirstError";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
@@ -77,6 +78,11 @@ export function DepartmentForm({ department, onSaved, settingsOnly = false }: { 
   const settingsOpenTime = useWatch({ control: settingsForm.control, name: "open_time" });
   const settingsReady = !!settingsQuery.data && settingsOpenTime !== undefined;
 
+  const formRef = useRef<HTMLFormElement>(null);
+  const onInvalid = useScrollToFirstError(form, formRef);
+  const settingsFormRef = useRef<HTMLFormElement>(null);
+  const onSettingsInvalid = useScrollToFirstError(settingsForm, settingsFormRef);
+
   async function onSubmit(values: DepartmentFormValues) {
     try {
       if (department) {
@@ -104,7 +110,7 @@ export function DepartmentForm({ department, onSaved, settingsOnly = false }: { 
   return (
     <div className="flex flex-col gap-8">
       {!settingsOnly ? <Form {...form}>
-        <form className="flex flex-col gap-4" onSubmit={form.handleSubmit(onSubmit)}>
+        <form ref={formRef} className="flex flex-col gap-4" onSubmit={form.handleSubmit(onSubmit, onInvalid)}>
           {!department && <div className="grid gap-2"><label htmlFor="catalog-source">{he.departmentContext.copyFrom}</label>
             <Select value={sourceDepartmentId} onValueChange={setSourceDepartmentId}><SelectTrigger id="catalog-source"><SelectValue /></SelectTrigger>
               <SelectContent><SelectItem value="none">{he.departmentContext.blankDepartment}</SelectItem>{active.departments.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select>
@@ -180,7 +186,7 @@ export function DepartmentForm({ department, onSaved, settingsOnly = false }: { 
       {department && !settingsReady ? <p>{settingsQuery.isError ? he.errors.unknown : he.common.loading}</p> : null}
       {department && settingsReady ? (
         <Form {...settingsForm}>
-          <form className="flex flex-col gap-4 border-t pt-6" onSubmit={settingsForm.handleSubmit(onSubmitSettings)}>
+          <form ref={settingsFormRef} className="flex flex-col gap-4 border-t pt-6" onSubmit={settingsForm.handleSubmit(onSubmitSettings, onSettingsInvalid)}>
             <h3 className="font-semibold">{he.adminDepartments.sectionSettings}</h3>
             <div className="grid grid-cols-2 gap-4">
               <FormField

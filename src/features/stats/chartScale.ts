@@ -28,3 +28,13 @@ export function barHeightFraction(value: number, axisMax: number): number {
   if (axisMax <= 0) return 0;
   return Math.min(1, Math.max(0, value) / axisMax);
 }
+
+/**
+ * Fixed `0..100` y-axis ticks for `WeeklyUnmetChart`'s unmet-rate bars (a percentage axis, unlike
+ * `niceYAxisTicks`' data-driven one). Five evenly spaced ticks read comfortably when there are
+ * enough bars to fill the width; `narrow` (few bars — a compact chart, not the viewport) drops the
+ * 25/75 labels to 0/50/100 so they don't crowd a handful of bars.
+ */
+export function percentTicks(narrow: boolean): number[] {
+  return narrow ? [0, 50, 100] : [0, 25, 50, 75, 100];
+}

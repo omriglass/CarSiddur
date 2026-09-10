@@ -1,6 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { AlertTriangle, Droplets, Gauge } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 
@@ -10,6 +10,7 @@ import { Dialog, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
+import { useScrollToFirstError } from "@/components/useScrollToFirstError";
 import { he, tv } from "@/i18n/he";
 
 import { useLogCarCareMutation, useReportCarIssueMutation } from "../hooks";
@@ -52,6 +53,8 @@ export function CarReportDialog({ carId, carName, open, onOpenChange }: CarRepor
     resolver: zodResolver(carIssueReportSchema),
     defaultValues: { category: undefined, description: "" },
   });
+  const formRef = useRef<HTMLFormElement>(null);
+  const onInvalid = useScrollToFirstError(form, formRef);
 
   /** Resets every sub-view's local state so the next open starts fresh at `home`. */
   function handleOpenChange(next: boolean) {
@@ -142,7 +145,7 @@ export function CarReportDialog({ carId, carName, open, onOpenChange }: CarRepor
 
         {view === "problem" ? (
           <Form {...form}>
-            <form className="flex flex-col gap-4" onSubmit={form.handleSubmit(submitProblem)}>
+            <form ref={formRef} className="flex flex-col gap-4" onSubmit={form.handleSubmit(submitProblem, onInvalid)}>
               <FormField
                 control={form.control}
                 name="category"

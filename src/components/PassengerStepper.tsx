@@ -26,6 +26,8 @@ export function clampPassengerField(field: PassengerField, value: number): numbe
 interface PassengerStepperProps {
   value: PassengerCounts;
   onChange: (value: PassengerCounts) => void;
+  /** react-hook-form field name, for `useScrollToFirstError` to find this control on an invalid submit. */
+  dataField?: string;
 }
 
 const FIELDS: { field: PassengerField; label: string }[] = [
@@ -35,14 +37,14 @@ const FIELDS: { field: PassengerField; label: string }[] = [
 ];
 
 /** Three 44px steppers: adults (min 1, includes the driver), child seats, boosters. */
-export function PassengerStepper({ value, onChange }: PassengerStepperProps) {
+export function PassengerStepper({ value, onChange, dataField }: PassengerStepperProps) {
   function step(field: PassengerField, delta: number) {
     const next = clampPassengerField(field, value[field] + delta);
     onChange({ ...value, [field]: next });
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3" data-field={dataField}>
       {FIELDS.map(({ field, label }) => (
         <div key={field} className="flex items-center justify-between gap-3">
           <span className="text-sm">{label}</span>

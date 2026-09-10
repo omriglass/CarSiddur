@@ -172,6 +172,10 @@ export const heAdmin = {
     replacedBadge: "רכב חלופי",
     fieldDepartment: "מחלקה",
     fieldType: "סוג",
+    // Shown instead of a type selector when the admin opens an existing temporary
+    // (member-owned) car from `/admin/cars` — the form never lets an admin create
+    // one or change an existing car's type (owner decision 2026-09-10).
+    temporaryOwnedNote: "רכב פרטי של חבר/ה — מנוהל מהפרופיל של הבעלים",
     fieldStatus: "סטטוס",
     fieldFeatures: "תכונות",
     fieldNotes: "הערות (מיקום מפתח, תקלות ידועות…)",
@@ -430,10 +434,13 @@ export const heAdmin = {
       srSummaryItem: "{{name}}: {{rides}} נסיעות, {{hours}} שעות, {{percent}}%",
     },
     otherRideType: "אחר",
-    // Weekly bar chart of unmet requests (owner request, UX_FLOWS.md §5.12).
+    // Weekly bar chart of unmet requests, shown as a percentage of that week's total requests
+    // (owner request, UX_FLOWS.md §5.12).
     weeklyUnmetTitle: "בקשות שלא נענו, לפי שבוע",
+    weeklyUnmetSubtitle: "אחוז מסך הבקשות של אותו שבוע",
     weeklyProvisional: "שבועות שעדיין לא הסתיימו — נתונים חלקיים",
-    weeklyBarDetail: "{{unmet}} מתוך {{total}}",
+    weeklyBarDetail: "{{unmet}} מתוך {{total}} ({{pct}}%)",
+    weeklyNoRequests: "—",
     empty: "אין נתונים לטווח התאריכים שנבחר",
   },
 } as const;

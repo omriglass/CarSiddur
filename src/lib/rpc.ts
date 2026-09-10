@@ -81,6 +81,8 @@ export type ErrorCode =
   | "push_service_worker_timeout"
   | "push_subscription_incomplete"
   | "push_subscription_failed"
+  | "constraint_violation"
+  | "duplicate_value"
   | "network"
   | "unknown";
 
@@ -98,6 +100,11 @@ const SQLSTATE_TO_CODE: Record<string, ErrorCode> = {
   MDR01: "series_week_not_open",
   MDR02: "series_edit_not_supported",
   MDR03: "series_car_unavailable",
+  // Generic constraint failures not covered by a more specific mapping above
+  // (owner decision 2026-09-10: surface unmapped DB errors instead of the
+  // generic "unknown" toast — a CHECK violation almost always means a form
+  // field is out of range/shape, e.g. a temporary car with no owner).
+  "23514": "constraint_violation",
 };
 
 const MESSAGE_TO_CODE: Record<string, ErrorCode> = {
@@ -229,17 +236,28 @@ const CODE_TO_MESSAGE: Record<ErrorCode, string> = {
   push_service_worker_timeout: he.errors.pushServiceWorkerTimeout,
   push_subscription_incomplete: he.errors.pushSubscriptionIncomplete,
   push_subscription_failed: he.errors.pushSubscriptionFailed,
+  constraint_violation: he.errors.constraintViolation,
+  duplicate_value: he.errors.duplicateValue,
   network: he.errors.network,
   unknown: he.errors.unknown,
 };
 
 export class AppError extends Error {
   readonly code: ErrorCode;
+  /**
+   * Extra detail to show as the toast's description line (sonner's second
+   * `toast.error(message, { description })` argument) — currently populated
+   * only for the `unknown` fallback, from the Postgres error's `details`/
+   * `hint` (owner decision 2026-09-10: surface unmapped DB errors instead of
+   * a bare "אירעה שגיאה").
+   */
+  readonly description?: string;
 
-  constructor(code: ErrorCode, message: string) {
+  constructor(code: ErrorCode, message: string, description?: string) {
     super(message);
     this.name = "AppError";
     this.code = code;
+    this.description = description;
   }
 }
 
@@ -257,6 +275,8 @@ interface PostgrestLikeError {
    * requirement for apply_solver_result/edit_ride failures.
    */
   details?: string | null;
+  /** Postgrest's `error.hint` — a PL/pgSQL `raise ... using hint = ...`, or Postgres's own hint on some constraint errors. */
+  hint?: string | null;
 }
 
 /** Codes whose Hebrew message is generic on its own; `error.details` (when present) names the specific ride/car. */
@@ -275,21 +295,42 @@ export function toAppError(error: unknown): AppError {
   // both `P0001`-style errors and this one already rely on — must win the tie.
   const byMessage = pgError?.message ? MESSAGE_TO_CODE[pgError.message] : undefined;
   // Recognize this specific constraint for older servers and concurrency races;
-  // other uniqueness errors must retain their own meaning.
-  const bySqlstate = pgError?.code === "23505" && pgError.message?.includes('"proposals_one_sent_per_request_idx"')
-    ? "proposal_already_sent"
-    : pgError?.code ? SQLSTATE_TO_CODE[pgError.code] : undefined;
+  // other uniqueness errors fall back to the generic `duplicate_value` below,
+  // not `unknown` — check first that 23505 isn't already mapped to something
+  // more specific before adding another special case here.
+  const bySqlstate =
+    pgError?.code === "23505"
+      ? pgError.message?.includes('"proposals_one_sent_per_request_idx"')
+        ? "proposal_already_sent"
+        : "duplicate_value"
+      : pgError?.code
+        ? SQLSTATE_TO_CODE[pgError.code]
+        : undefined;
   const code = byMessage ?? bySqlstate ?? "unknown";
   const baseMessage = CODE_TO_MESSAGE[code];
   const message =
     CODES_NAMING_THE_RIDE.has(code) && pgError?.details ? `${baseMessage} (${pgError.details})` : baseMessage;
+  if (code === "unknown") {
+    // Never let a real Postgres error disappear behind "אירעה שגיאה" without
+    // a trace: log it for dev tools and, when the server left a `details`/
+    // `hint`, forward it as the toast's description line.
+    console.error("Unmapped database error", {
+      code: pgError?.code, message: pgError?.message, details: pgError?.details, hint: pgError?.hint,
+    });
+    const description = pgError?.details || pgError?.hint || undefined;
+    return new AppError(code, message, description ?? undefined);
+  }
   return new AppError(code, message);
 }
 
 /** Maps the error and shows a Hebrew toast (mutations' `onError`, CLAUDE.md "Data"). */
 export function showErrorToast(error: unknown): AppError {
   const appError = toAppError(error);
-  toast.error(appError.message);
+  if (appError.description) {
+    toast.error(appError.message, { description: appError.description });
+  } else {
+    toast.error(appError.message);
+  }
   return appError;
 }
 

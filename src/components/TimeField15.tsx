@@ -62,6 +62,8 @@ interface TimeField15Props {
   onChange: (value: string) => void;
   "aria-label"?: string;
   disabled?: boolean;
+  /** react-hook-form field name, for `useScrollToFirstError` to find this control on an invalid submit — forwarded onto the underlying `Input` via `...rest`. */
+  "data-field"?: string;
 }
 
 /**

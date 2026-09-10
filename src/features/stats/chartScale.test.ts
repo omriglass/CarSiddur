@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { barHeightFraction, niceYAxisTicks } from "./chartScale";
+import { barHeightFraction, niceYAxisTicks, percentTicks } from "./chartScale";
 
 describe("niceYAxisTicks", () => {
   it("returns [0] when there is no data", () => {
@@ -47,5 +47,15 @@ describe("barHeightFraction", () => {
 
   it("returns 0 when the axis max is 0", () => {
     expect(barHeightFraction(3, 0)).toBe(0);
+  });
+});
+
+describe("percentTicks", () => {
+  it("returns five evenly spaced ticks from 0 to 100 by default", () => {
+    expect(percentTicks(false)).toEqual([0, 25, 50, 75, 100]);
+  });
+
+  it("thins to three ticks when the chart is narrow", () => {
+    expect(percentTicks(true)).toEqual([0, 50, 100]);
   });
 });

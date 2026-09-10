@@ -12,7 +12,10 @@ export const carSchema = z.object({
   is_replaced: z.boolean(),
   replacement_code: z.string().nullable(),
   department_id: z.string().uuid(),
-  type: z.enum(["shared", "temporary"]),
+  // No `type` field: the admin form only ever creates/edits shared cars
+  // (owner decision 2026-09-10) — `createCar` always sends `type: "shared"`;
+  // a temporary car (member-owned, `cars_temporary_owner_ck`) keeps whatever
+  // type it already has because this form never submits the column at all.
   status: z.enum(["active", "maintenance", "retired"]),
   features: z.array(z.string()),
   notes: z.string().trim().nullable(),

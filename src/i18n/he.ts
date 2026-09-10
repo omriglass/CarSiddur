@@ -569,6 +569,8 @@ export const he = {
     seriesCarUnavailable: "הרכב לא פנוי לכל ימי הבקשה הרב-יומית",
     network: "אין חיבור לרשת — נסה/י שוב",
     unknown: "אירעה שגיאה. נסה/י שוב",
+    constraintViolation: "הנתונים לא עומדים בכללי המערכת — בדוק/י את השדות",
+    duplicateValue: "ערך כזה כבר קיים",
     errorCode: "קוד תקלה",
     pushUnsupported: "המכשיר או הדפדפן אינם תומכים בהתראות",
     pushPermissionDenied: "ההרשאה להתראות חסומה בהגדרות המכשיר או הדפדפן",

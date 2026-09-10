@@ -1,9 +1,10 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { useScrollToFirstError } from "@/components/useScrollToFirstError";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
@@ -80,7 +81,6 @@ export function CarForm({
       is_replaced: car?.is_replaced ?? false,
       replacement_code: car?.replacement_code ?? null,
       department_id: car?.department_id ?? "",
-      type: car?.type ?? "shared",
       status: car?.status ?? "active",
       features: car?.features ?? [],
       notes: car?.notes ?? null,
@@ -89,6 +89,8 @@ export function CarForm({
       responsible_id: car?.responsible_id ?? null,
     },
   });
+  const formRef = useRef<HTMLFormElement>(null);
+  const onInvalid = useScrollToFirstError(form, formRef);
   const isReplaced = useWatch({ control: form.control, name: "is_replaced" });
 
   async function onSubmit(values: CarFormValues) {
@@ -113,7 +115,7 @@ export function CarForm({
 
   return (
     <Form {...form}>
-      <form className="flex flex-col gap-4" onSubmit={form.handleSubmit(onSubmit)}>
+      <form ref={formRef} className="flex flex-col gap-4" onSubmit={form.handleSubmit(onSubmit, onInvalid)}>
         <FormField
           control={form.control}
           name="name"
@@ -216,49 +218,32 @@ export function CarForm({
             )}
           />
         ) : null}
-        <div className="grid grid-cols-2 gap-4">
-          <FormField
-            control={form.control}
-            name="type"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>{he.adminCars.fieldType}</FormLabel>
-                <Select value={field.value} onValueChange={field.onChange}>
-                  <FormControl>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                  </FormControl>
-                  <SelectContent>
-                    <SelectItem value="shared">{he.car.type.shared}</SelectItem>
-                    <SelectItem value="temporary">{he.car.type.temporary}</SelectItem>
-                  </SelectContent>
-                </Select>
-              </FormItem>
-            )}
-          />
-          <FormField
-            control={form.control}
-            name="status"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>{he.adminCars.fieldStatus}</FormLabel>
-                <Select value={field.value} onValueChange={field.onChange}>
-                  <FormControl>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                  </FormControl>
-                  <SelectContent>
-                    <SelectItem value="active">{he.car.status.active}</SelectItem>
-                    <SelectItem value="maintenance">{he.car.status.maintenance}</SelectItem>
-                    <SelectItem value="retired">{he.car.status.retired}</SelectItem>
-                  </SelectContent>
-                </Select>
-              </FormItem>
-            )}
-          />
-        </div>
+        {showDepartmentField && car?.type === "temporary" ? (
+          // Shown only on the admin fleet screen (`showDepartmentField`), not on the
+          // owner's own car page (`CarManageScreen`) where the note would be redundant.
+          <p className="text-sm text-muted-foreground">{he.adminCars.temporaryOwnedNote}</p>
+        ) : null}
+        <FormField
+          control={form.control}
+          name="status"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>{he.adminCars.fieldStatus}</FormLabel>
+              <Select value={field.value} onValueChange={field.onChange}>
+                <FormControl>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                </FormControl>
+                <SelectContent>
+                  <SelectItem value="active">{he.car.status.active}</SelectItem>
+                  <SelectItem value="maintenance">{he.car.status.maintenance}</SelectItem>
+                  <SelectItem value="retired">{he.car.status.retired}</SelectItem>
+                </SelectContent>
+              </Select>
+            </FormItem>
+          )}
+        />
         <FormField
           control={form.control}
           name="responsible_id"

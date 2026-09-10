@@ -51,6 +51,8 @@ interface DestinationComboboxProps {
   onChange: (value: DestinationValue) => void;
   /** Opens the popover as soon as this component mounts (the quick-request sheet's required, focused field — UX_FLOWS.md §18). */
   autoFocus?: boolean;
+  /** react-hook-form field name, for `useScrollToFirstError` to find this control on an invalid submit. */
+  dataField?: string;
 }
 
 function labelFor(value: DestinationValue | null): string {
@@ -63,7 +65,7 @@ function labelFor(value: DestinationValue | null): string {
  * presets by name/alias/zone, and always offers a free-text row as the last
  * option (UX_FLOWS.md §3.4) — typing something unknown never dead-ends.
  */
-export function DestinationCombobox({ destinations, value, onChange, autoFocus }: DestinationComboboxProps) {
+export function DestinationCombobox({ destinations, value, onChange, autoFocus, dataField }: DestinationComboboxProps) {
   const [open, setOpen] = useState(!!autoFocus);
   const [query, setQuery] = useState("");
   const matches = filterDestinations(destinations, query);
@@ -84,6 +86,7 @@ export function DestinationCombobox({ destinations, value, onChange, autoFocus }
           variant="outline"
           role="combobox"
           aria-expanded={open}
+          data-field={dataField}
           className="h-11 w-full justify-between font-normal"
         >
           <span className="flex items-center gap-2 truncate">

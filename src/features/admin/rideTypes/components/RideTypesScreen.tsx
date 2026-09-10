@@ -1,12 +1,13 @@
 import { useActiveDepartment } from "@/features/auth/useActiveDepartment";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Plus, Signpost } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 
 import { EmptyState } from "@/components/EmptyState";
 import { PageHeader } from "@/components/PageHeader";
+import { useScrollToFirstError } from "@/components/useScrollToFirstError";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -36,6 +37,9 @@ function RideTypeForm({ rideType, onSaved }: { rideType: RideType | null; onSave
     },
   });
 
+  const formRef = useRef<HTMLFormElement>(null);
+  const onInvalid = useScrollToFirstError(form, formRef);
+
   async function onSubmit(values: RideTypeFormValues) {
     try {
       if (rideType) {
@@ -53,7 +57,7 @@ function RideTypeForm({ rideType, onSaved }: { rideType: RideType | null; onSave
 
   return (
     <Form {...form}>
-      <form className="flex flex-col gap-4" onSubmit={form.handleSubmit(onSubmit)}>
+      <form ref={formRef} className="flex flex-col gap-4" onSubmit={form.handleSubmit(onSubmit, onInvalid)}>
         <FormField
           control={form.control}
           name="name_he"
