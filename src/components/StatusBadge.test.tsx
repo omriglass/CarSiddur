@@ -48,6 +48,7 @@ const CAR_STATUSES: readonly Database["public"]["Enums"]["car_status"][] = [
 ];
 
 const WEEK_PHASES: readonly Database["public"]["Enums"]["week_phase"][] = [
+  "upcoming",
   "open",
   "solving",
   "published",

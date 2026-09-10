@@ -164,7 +164,9 @@ The solver is consumed by Edge Functions through a build step: `scripts/bundle-s
 
 ```mermaid
 stateDiagram-v2
+  [*] --> upcoming: submit_series_request leg beyond the opening horizon (ensure_upcoming_week)
   [*] --> open: cron tick at window open
+  upcoming --> open: cron tick at window open (same instant an ordinary week would have opened)
   open --> solving: cron tick at window close / Sadran closes
   solving --> published: publish_siddur (version 1)
   published --> live: same transaction
@@ -173,7 +175,7 @@ stateDiagram-v2
   archived --> [*]
 ```
 
-`week_phase` = `open, solving, published, live, archived` (DATA_MODEL §2). `archived` weeks are read-only and feed the fairness lookback (default 3 weeks, `lookbackWeeks` param of the fairness policy rule — data, not a department setting, REQ §13.18).
+`week_phase` = `upcoming, open, solving, published, live, archived` (DATA_MODEL §2). `upcoming` (REQ §13.77) exists only so a multi-day series leg beyond the department's normal opening horizon has a `weeks` row to attach to and a car to be pinned on ahead of time; it is invisible to members (`is_week_public()` false), closed to ordinary requests (`week_not_open`), and promoted to `open` automatically, never skipped. `archived` weeks are read-only and feed the fairness lookback (default 3 weeks, `lookbackWeeks` param of the fairness policy rule — data, not a department setting, REQ §13.18).
 
 ### 5.2 Request (REQUIREMENTS §5.2)
 
@@ -451,7 +453,7 @@ Realtime (optional, v1.x): the Sadran board may subscribe to `postgres_changes` 
 
 | Tick step | What is due | Action |
 |---|---|---|
-| `advance_week_phases()` | dept config open time (default Sun 00:00, week before target) | create `weeks` row in `open`, `window_open` to members |
+| `advance_week_phases()` | dept config open time (default Sun 00:00, week before target) | create `weeks` row in `open`, `window_open` to members; also promotes any `upcoming` week (materialized early for a multi-day series leg, REQ §13.77) whose `open_at` has arrived to `open`, same notification |
 | | dept config close time (default Wed 12:00) | week → `solving`; later requests are `is_late`; `window_closed_solve_now` to `sadranim_of(dept, week)` |
 | | after the target week ends (first tick after Sun 00:00) | week → `archived` (read-only; fairness lookback reads it) |
 | `send_due_reminders()` | `closing_reminder_hours` before close (default 24 h and 2 h) | `window_closing` to members without a request |

@@ -23,16 +23,19 @@ export interface ThisNextWeekResolution<W> {
  * never computed from `Date.now()` here) so it is unit-testable without
  * mocking the clock.
  */
-export function resolveThisNextWeek<W extends Pick<Week, "week_start">>(
+export function resolveThisNextWeek<W extends Pick<Week, "week_start" | "phase">>(
   weeks: readonly W[],
   todayDateKey: string,
 ): ThisNextWeekResolution<W> {
   const thisWeekStart = dateKey(weekStartFor(parseISO(todayDateKey)));
   const nextWeekStart = dateKey(addDays(parseISO(thisWeekStart), 7));
+  // `weeks` RLS lets a member read an `upcoming` row's metadata (materialized early for a
+  // series leg), but it is not open for anything — treat it exactly like a missing row.
+  const visible = weeks.filter((w) => w.phase !== "upcoming");
   return {
     thisWeekStart,
     nextWeekStart,
-    thisWeek: weeks.find((w) => w.week_start === thisWeekStart) ?? null,
-    nextWeek: weeks.find((w) => w.week_start === nextWeekStart) ?? null,
+    thisWeek: visible.find((w) => w.week_start === thisWeekStart) ?? null,
+    nextWeek: visible.find((w) => w.week_start === nextWeekStart) ?? null,
   };
 }

@@ -562,7 +562,7 @@ export const he = {
     noCarFree: "אין רכב פנוי לחלון הזמן המבוקש",
     waitlistGroupClosed: "הדיון על הרכב כבר הוכרע",
     waitlistSelectionInvalid: "הבחירה אינה תקפה — יש לרענן ולנסות שוב",
-    seriesWeekNotOpen: "אפשר להזמין רכב רק עד סוף השבוע הפתוח הבא",
+    seriesWeekNotOpen: "אפשר לשמור רכב עד שישה שבועות קדימה, ולא לימים שכבר עברו",
     seriesEditNotSupported: "בקשה רב-יומית אפשר לבטל ולהגיש מחדש, לא לערוך",
     seriesCarUnavailable: "הרכב לא פנוי לכל ימי הבקשה הרב-יומית",
     network: "אין חיבור לרשת — נסה/י שוב",
@@ -586,6 +586,7 @@ export const he = {
     applied: "יושמה",
   },
   phase: {
+    upcoming: "טרם נפתח",
     open: "פתוח לבקשות",
     solving: "בהכנה",
     published: "פורסם",

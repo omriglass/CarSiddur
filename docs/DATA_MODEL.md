@@ -93,7 +93,7 @@ erDiagram
 ```sql
 create type public.role                 as enum ('member','sadran','admin');
 create type public.approval_status      as enum ('pending','approved','blocked');
-create type public.week_phase           as enum ('open','solving','published','live','archived');
+create type public.week_phase           as enum ('upcoming','open','solving','published','live','archived');
 create type public.request_status       as enum ('draft','submitted','proposed','assigned','merged',
                                                  'waitlisted','denied','external','withdrawn','cancelled');
 create type public.trip_shape           as enum ('round_trip','one_way_to','one_way_from');   -- REQ §5.1, §5.4
@@ -132,7 +132,7 @@ create type public.audit_action         as enum ('insert','update','delete');
 Notes:
 - `request_status` is exactly REQUIREMENTS §5.2. "Changed" is not a state; it is `requests.changed_since_solve`.
 - `ride_status`: `draft` = exists only in the Sadran's draft siddur; `confirmed` = part of a published version or auto-approved after publish; `flagged` = confirmed but invalidated by a maintenance block (§8), Sadran must re-solve; `cancelled` keeps the row for history and freed-slot linkage.
-- `week_phase` adds `archived` (REQUIREMENTS §4: Saturday 23:59 passed, read-only) to the four working phases; it exists for retention and for the fairness lookback. The full list is `open, solving, published, live, archived`.
+- `week_phase` adds `archived` (REQUIREMENTS §4: Saturday 23:59 passed, read-only) to the four working phases; it exists for retention and for the fairness lookback. The full list is `upcoming, open, solving, published, live, archived`. `upcoming` (REQ §13.77, 2026-09-10) is a `weeks` row materialized early — by `ensure_upcoming_week()`, called from `submit_series_request()` — for a week beyond the department's normal opening horizon (`department_settings.weeks_open_ahead`) that a multi-day series leg needs to exist as a composite-FK target. It is not open for an ordinary (non-series) `submit_request()` (`week_not_open`), never publicly visible (`is_week_public()` excludes it, unchanged), and never reachable by `publish_siddur()`/`publication_readiness()` (explicit `week_not_open` guard). `materialize_department_weeks()`/`advance_week_phases()` promote it to `open` — via an `on conflict (department_id, week_start) do update ... where phase = 'upcoming'`, and a floor check in `advance_week_phases()` — at exactly its normal opening time, firing `window_open` exactly once (a second, UPDATE-only trigger on `weeks`, since the phase change is an UPDATE, not an INSERT). A Sadran/admin can still `can_manage_week()` it (unaffected by phase) to see a pinned `SERIES_CARRY_OVER` ride placed there ahead of time.
 - `role` is used by `department_members` (`member`/`sadran` only — admin is global, see `profiles.is_admin`) and by `audit_log.actor_role`.
 - `notification_event` **Sadran-role events** (cannot be muted while the recipient is a Sadran of the week, REQUIREMENTS §9): `window_closed_solve_now`, `publish_reminder`, `proposal_answered`, `claim_contested`, `late_request`, `waitlisted_request`, `request_changed`, and the Sadran copy of `auto_approved`. Admin events: `access_request`. Everything else goes to members. `car_care` (REQ §6.6) is week-less (`week_start` null) and goes to the car's `responsible_id` or, absent one, every approved admin (`car_care_recipients()`, §4.2) — it is a normal, mutable notification for whichever recipient it lands on, not a Sadran-role or unmutable-admin event; variants are `issue_<car_issue_category>` (one per category), `tire_fill`, `wash`.
 - `waitlist_group_status` (REQ §13.75): `open` = the discussion is live and any participant or the Sadran can settle it; `resolved` = somebody ticked who rides and `waitlist_groups.ride_id` points at the combined ride; `cancelled` = the discussion was dropped (by the Sadran, or automatically when fewer than two participants are left) and everybody simply stays waitlisted.
@@ -418,7 +418,7 @@ Trigger `forbid_mutation()` raises on UPDATE/DELETE: "Changing a policy never re
 ### 3.5 Weeks (REQUIREMENTS §4)
 
 #### `weeks`
-One row per department per target week. Created by the `open_week()` RPC or by `advance_week_phases()` (called from the `app.tick()` cron entry, §6) according to `department_settings`.
+One row per department per target week. Created by the `open_week()` RPC, by `advance_week_phases()` (called from the `app.tick()` cron entry, §6) according to `department_settings`, or — in phase `upcoming` only — by `ensure_upcoming_week()` from `submit_series_request()` (REQ §13.77) for a week beyond the normal opening horizon that a multi-day series leg needs to exist.
 
 | column | type | null | default | notes |
 |---|---|---|---|---|
@@ -1061,7 +1061,7 @@ Legend: **own** = row's profile column = `auth.uid()`; **dept** = `member_of(dep
 | ride_types | approved users | admin | admin | — (deactivate) |
 | policies | dept ∨ admin | admin | admin | admin (RESTRICT if versions referenced) |
 | policy_versions | as policies | admin | — (immutable) | — |
-| weeks | dept ∨ admin ∨ (approved users when public) | admin ∨ sadran (RPC `open_week`) | admin ∨ sadran (phase/close_at/publish_at/overrides; `published_version_id` only via RPC — trigger) | admin (only if no requests) |
+| weeks | dept ∨ admin ∨ (approved users when public) | admin ∨ sadran (RPC `open_week`); internal-only `ensure_upcoming_week()` (revoked from `authenticated`) inserts phase `upcoming` from `submit_series_request()` | admin ∨ sadran (phase/close_at/publish_at/overrides; `published_version_id` only via RPC — trigger); `materialize_department_weeks()`/`advance_week_phases()` promote `upcoming` → `open` | admin (only if no requests) |
 | requests | own (requester ∨ filed_by ∨ companion) ∨ sadran ∨ admin ∨ (**any approved user** ∧ served by a non-draft ride ∧ `is_week_public(department_id, week_start)`) — published siddurim are readable across departments (REQ §13.52); `notes` and `manual_boost*` are revoked for that path via a view | **RPC only** — `submit_request` (member for self while `week.phase <> 'archived'`; sadran/admin on behalf of any member of the dept). No direct policy. | **RPC only** — `submit_request` (edit), `withdraw_request`, `set_manual_boost`, `apply_solver_result`, `apply_proposal`, `cancel_ride`, `approve_claim`, … No direct policy. | own: only `status='draft'`; admin |
 | request_companions | as parent request | requester ∨ sadran ∨ admin | — | requester ∨ sadran ∨ admin |
 | children | dept (`is_approved()` ∧ member of `department_id`) | admin | admin | admin |
@@ -1880,5 +1880,53 @@ Saturday→Sunday series pinned `SERIES_CARRY_OVER` and surviving the next week'
 exclusion from waiting-list grouping and freed slots, and `series_week_not_open`.
 
 **v1 limitations.** A series is never edited (cancel + resubmit), never proposed on, never grouped,
-never split across cars, and never offered a freed slot. The span may not reach past the last week
-the department has opened.
+never split across cars, and never offered a freed slot. **Superseded 2026-09-10** (see "Upcoming
+week phase for out-of-horizon series legs" below): a span may now reach up to 6 weeks past its own
+first leg, materializing any week that does not exist yet as `upcoming`; `series_week_not_open`
+(MDR01) is kept only for a leg before the current week or beyond that 6-week ceiling.
+
+## Upcoming week phase for out-of-horizon series legs (2026-09-10, db-migrator)
+
+REQ §13.77. Eight migrations, `20260910095000` … `20260910095700` (`095600` is a correction
+found while implementing the rest — see below):
+
+| file | contents |
+|---|---|
+| `20260910095000_add_week_phase_upcoming.sql` | `alter type week_phase add value 'upcoming' before 'open'` (alone, per house rule). |
+| `20260910095100_promote_upcoming_weeks_to_open.sql` | `week_phase_timestamps(settings, week_start)` (factored out of `materialize_department_weeks()`, shared with `ensure_upcoming_week()`); `materialize_department_weeks()` promotes an already-materialized `upcoming` week to `open` (`on conflict ... do update ... where phase = 'upcoming'`) instead of skipping it; a second `notify_week_opened_on_promotion` trigger (`after update of phase … when (old.phase = 'upcoming' and new.phase = 'open')`) reuses `notify_week_opened()` for that UPDATE-driven transition; `advance_week_phases()` also flat-promotes any `upcoming` week whose `open_at <= p_now` (covers a department the normal per-department loop would not reach yet) and never touches `upcoming` weeks in the solving/archived passes. |
+| `20260910095200_ensure_upcoming_week.sql` | `ensure_upcoming_week(department_id, week_start)` — internal only (revoked from `authenticated`), inserts a `weeks` row in phase `upcoming` with `week_phase_timestamps()`'s output, `on conflict do nothing`. |
+| `20260910095300_series_reaches_upcoming_weeks.sql` | `submit_series_request()`: a leg whose week has no row is materialized `upcoming` instead of raising `series_week_not_open`; MDR01 is kept only for a leg before `current_week_start()` (absolute floor) or more than 6 weeks past the series' own first leg (a ceiling relative to the series, not wall-clock "today", so it does not fight a far-future fixture week used for test isolation). |
+| `20260910095400_gate_submit_request_upcoming_phase.sql` | `submit_request()`: an ordinary (`series_id is null`) new request against a `phase = 'upcoming'` week raises `week_not_open`, same as a missing `weeks` row; a series leg (`series_id` set) is accepted — that is the whole reason the week exists. |
+| `20260910095500_reject_upcoming_in_publish_paths.sql` | `publish_siddur()` / `publication_readiness()` patched (`pg_get_functiondef`/`replace`, both have several prior in-place patches) to raise `week_not_open` for a `phase = 'upcoming'` week — defensive; neither is reachable for one from the UI. |
+| `20260910095600_defer_sadran_assigned_notice_for_upcoming_week.sql` | **Correction found while implementing this feature**: `assign_week_sadran()` (`20260908130000_weekly_sadran_permissions.sql`, AFTER INSERT on `weeks`) materializes the standing-default Sadran into an explicit `sadran_assignments` row for *every* new `weeks` row regardless of phase, and that insert's own trigger, `notify_week_sadran_assigned()`, sent a `window_open` notice unconditionally (its only exclusion was `phase = 'archived'`) — so an early `upcoming` insert fired a premature "the window is open" notice. `notify_week_sadran_assigned()` now also excludes `phase = 'upcoming'`; the real notice fires once, from `notify_week_opened()`, at the actual promotion. |
+| `20260910095700_open_week_promotes_upcoming.sql` | `open_week()` (manual admin/Sadran opening) promotes an existing `upcoming` row to `open` via `on conflict … do update … where phase = 'upcoming'` instead of silently doing nothing; the promotion trigger and the explicit `window_open` enqueue share one dedupe key, so members get a single notice. |
+
+**Storage.** No new table. `upcoming` is a `weeks.phase` value; the row's `open_at`/`close_at`/
+`publish_at` are computed exactly like a normally-opened week's (`week_phase_timestamps()`), just
+inserted before `open_at` arrives instead of at/after it.
+
+**Visibility and access.** `is_week_public()` excludes `upcoming` (it only ever matched
+`published`/`live`/`archived`, so no change was needed there). `can_manage_week()` is phase-agnostic
+(unaffected), so a Sadran/admin can still see and manage an `upcoming` week — the point is to let
+them see a pinned `SERIES_CARRY_OVER` ride placed there ahead of the week actually opening.
+`weeks_select` RLS (`member_of(department_id) ∨ admin ∨ approved-and-public`) is unchanged: any
+department member can already read the row's metadata (as they can for `open`/`solving`), just not
+its (nonexistent) siddur content.
+
+**Placement.** `place_series()`/`apply_solver_result()` have no phase check at all — placing a ride
+in an `upcoming` week works exactly like placing one in an `open`-but-unpublished week (ride status
+`draft`, since `is_week_public()` is false either way); no change was needed there.
+
+**Tests.** New `supabase/tests/upcoming_weeks.sql` (registered in `scripts/test-db.mjs`, 22 suites
+total): a series reaching a week with no row materializes it `upcoming`; an ordinary request against
+that week is refused `week_not_open`; `publication_readiness()` refuses it too; it is never
+`is_week_public()`; the Sadran can still `can_manage_week()` it; a solved leg in the still-open week
+drags the `upcoming` week's leg along as a pinned, `draft` `SERIES_CARRY_OVER` ride while it is still
+`upcoming`; `materialize_department_weeks()`/`advance_week_phases()` promote it to `open` exactly at
+its own opening time (not a moment before), firing `window_open` exactly once (idempotent on a later
+tick); the carry-over ride survives both the promotion and a later full solve of the newly-opened
+week; and the two genuinely-impossible MDR01 cases (a leg before the current week; a leg more than 6
+weeks past the series' own first leg). `supabase/tests/multi_day_series.sql`'s prior "(j) the span
+may not reach past the last week the department has opened" case was rewritten to match: the same
+span now succeeds and materializes the next week `upcoming`, and a follow-up ordinary request into
+it is still refused.

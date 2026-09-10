@@ -411,8 +411,10 @@ export function SiddurPage() {
   // Archive of past siddurim (owner decision, 2026-09-10): the regular week
   // switcher/strip only ever offers this week onward; a past week is only
   // reachable explicitly (by URL, or from `/siddur/:dept/archive`), and when
-  // it is opened this way the page says so next to the title.
-  const currentWeeks = weeks.filter((w) => !isPastWeek(w, today));
+  // it is opened this way the page says so next to the title. An `upcoming`
+  // week (materialized early for a multi-day series leg, REQ §13.79) is not
+  // past, but it is not open for anything either — members never see it here.
+  const currentWeeks = weeks.filter((w) => !isPastWeek(w, today) && w.phase !== "upcoming");
   const viewingArchivedWeek = !!resolvedWeek && isPastWeek(resolvedWeek, today);
   function goToArchive() {
     if (departmentId) navigate(paths.siddurArchive(departmentId));
@@ -499,7 +501,7 @@ export function SiddurPage() {
 
       {!resolvedWeek ? (
         <EmptyState icon={CalendarDays} message={he.requestsList.empty} />
-      ) : resolvedWeek.phase === "open" || resolvedWeek.phase === "solving" ? (
+      ) : resolvedWeek.phase === "open" || resolvedWeek.phase === "solving" || resolvedWeek.phase === "upcoming" ? (
         <EmptyState
           icon={Inbox}
           message={tv("siddur.notPublishedYet", { weekLabel: formatWeekRangeLabel(resolvedWeek.week_start) })}

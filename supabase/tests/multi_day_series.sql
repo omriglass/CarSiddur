@@ -317,15 +317,30 @@ begin
   assert (select count(*) = 0 from public.rides where series_id = s3 and status <> 'cancelled'),
     'withdrawing the series did not release the car';
 
-  -- (j) the span may not reach past the last week the department has opened.
+  -- (j) REQ §13.77: a span reaching one week past the last week the department has opened
+  -- now materializes that week as `upcoming` instead of being refused outright — MDR01 is
+  -- reserved for a genuinely impossible span (see supabase/tests/upcoming_weeks.sql, which
+  -- also covers the upcoming -> open phase lifecycle and window_open notification).
+  result := public.submit_series_request(jsonb_build_object(
+    'department_id', dept, 'week_start', w, 'destination_id', dest, 'ride_type_id', ride_type,
+    'trip_shape', 'round_trip', 'adults', 1,
+    'depart_at', ((w + 6) + time '09:00') at time zone 'Asia/Jerusalem',
+    'return_at', ((w + 7) + time '17:00') at time zone 'Asia/Jerusalem'));
+  assert jsonb_array_length(result -> 'request_ids') = 2,
+    'a series crossing into an unopened week did not produce both legs';
+  assert (select phase from public.weeks where department_id = dept and week_start = w + 7) = 'upcoming',
+    'a series leg one week beyond the opened horizon did not materialize its week as upcoming';
+
+  -- An ordinary (non-series) request against that same upcoming week is still refused.
   begin
-    perform public.submit_series_request(jsonb_build_object(
-      'department_id', dept, 'week_start', w, 'destination_id', dest, 'ride_type_id', ride_type,
-      'trip_shape', 'round_trip', 'adults', 1,
-      'depart_at', ((w + 6) + time '09:00') at time zone 'Asia/Jerusalem',
-      'return_at', ((w + 7) + time '17:00') at time zone 'Asia/Jerusalem'));
-    raise exception 'a series reaching into an unopened week was accepted';
-  exception when sqlstate 'MDR01' then null; end;
+    perform public.submit_request(jsonb_build_object('department_id', dept, 'week_start', w + 7,
+      'destination_id', dest, 'ride_type_id', ride_type, 'trip_shape', 'round_trip', 'adults', 1,
+      'depart_at', ((w + 8) + time '09:00') at time zone 'Asia/Jerusalem',
+      'return_at', ((w + 8) + time '17:00') at time zone 'Asia/Jerusalem'));
+    raise exception 'an ordinary request into an upcoming week was accepted';
+  exception when others then
+    if sqlerrm <> 'week_not_open' then raise; end if;
+  end;
 
   -- (i) a series with no car anywhere waits as one item, outside waiting-list groups …
   foreach car in array array['00000000-0000-0000-0000-000000000040'::uuid,

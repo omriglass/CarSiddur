@@ -150,6 +150,7 @@ const CAR_STATUS_META: Record<CarStatus, StatusMeta> = {
  * — previously the week chip rendered `he.phase[w.phase]` as plain text.
  */
 const WEEK_PHASE_META: Record<WeekPhase, StatusMeta> = {
+  upcoming: { icon: Clock, label: he.phase.upcoming, colorClass: TONE.neutral },
   open: { icon: Inbox, label: he.phase.open, colorClass: TONE.neutral },
   solving: { icon: Wrench, label: he.phase.solving, colorClass: TONE.amber },
   published: { icon: CheckCircle2, label: he.phase.published, colorClass: TONE.booked },

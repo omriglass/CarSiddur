@@ -30,4 +30,12 @@ describe("new request week selection", () => {
     const liveOnly = [{ week_start: "2026-09-06", phase: "live" }] as const;
     expect(resolveWeekStart(liveOnly, undefined, now)).toBe("2026-09-06");
   });
+  it("never resolves to an upcoming week, even as an explicit override", () => {
+    const withUpcoming = [
+      { week_start: "2026-09-06", phase: "solving" },
+      { week_start: "2026-09-20", phase: "upcoming" },
+    ] as const;
+    expect(resolveWeekStart(withUpcoming, undefined, now)).toBe("2026-09-06");
+    expect(resolveWeekStart(withUpcoming, "2026-09-20", now)).toBe("2026-09-06");
+  });
 });

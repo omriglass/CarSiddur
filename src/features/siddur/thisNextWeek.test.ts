@@ -37,6 +37,16 @@ describe("resolveThisNextWeek", () => {
     expect(result.nextWeekStart).toBe("2026-09-13");
   });
 
+  it("treats an upcoming week (materialized early for a series leg) as not visible", () => {
+    const weeks = [
+      { week_start: "2026-09-06", phase: "live" as const },
+      { week_start: "2026-09-13", phase: "upcoming" as const },
+    ];
+    const result = resolveThisNextWeek(weeks, today);
+    expect(result.thisWeek).toEqual(weeks[0]);
+    expect(result.nextWeek).toBeNull();
+  });
+
   it("handles a Sunday today (already the week start) without drifting", () => {
     const result = resolveThisNextWeek([], "2026-09-06");
     expect(result.thisWeekStart).toBe("2026-09-06");

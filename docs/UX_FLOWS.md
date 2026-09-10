@@ -1127,7 +1127,7 @@ Screen titles, primary actions, statuses and navigation. Keys are the namespaced
 | `flag.late` / `flag.changed` | מאוחרת / שונתה | |
 | `ride.pinned` / `ride.conflict` | נעולה / התנגשות | |
 | `proposalStatus.draft/sent/accepted/declined/expired/withdrawn/applied` | טיוטה / נשלחה / אושרה / נדחתה / פקעה / בוטלה / יושמה | `proposal_status` enum |
-| `phase.open/solving/published/live/archived` | פתוח לבקשות / בהכנה / פורסם / פעיל / בארכיון | `week_phase` enum |
+| `phase.upcoming/open/solving/published/live/archived` | טרם נפתח / פתוח לבקשות / בהכנה / פורסם / פעיל / בארכיון | `week_phase` enum — `upcoming` (REQ §13.77) is a week materialized early for a multi-day series leg beyond the normal opening horizon; not open, not public, shown to a Sadran/admin only |
 | `notif.<event>` (18 keys, §6.1) | short event labels for the mute list / inbox filters | message text comes from `notification_templates` |
 | `car.status.active/maintenance/retired` | פעיל / בטיפול / הוצא משימוש | |
 | `car.type.shared/temporary` | משותף / רכב פרטי | |

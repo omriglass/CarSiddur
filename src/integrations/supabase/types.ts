@@ -3603,6 +3603,10 @@ export type Database = {
         Args: { p_department_id: string }
         Returns: undefined
       }
+      ensure_upcoming_week: {
+        Args: { p_department_id: string; p_week_start: string }
+        Returns: undefined
+      }
       enter_waiting_list: { Args: { p_payload: Json }; Returns: Json }
       expire_freed_offers: { Args: { _now?: string }; Returns: number }
       expire_proposals: { Args: { _now?: string }; Returns: number }
@@ -3969,6 +3973,17 @@ export type Database = {
         }
         Returns: boolean
       }
+      week_phase_timestamps: {
+        Args: {
+          p_settings: Database["public"]["Tables"]["department_settings"]["Row"]
+          p_week_start: string
+        }
+        Returns: {
+          close_at: string
+          open_at: string
+          publish_at: string
+        }[]
+      }
       week_range: { Args: { _week_start: string }; Returns: unknown }
       week_state_fingerprint: {
         Args: { p_department_id: string; p_week_start: string }
@@ -4071,7 +4086,13 @@ export type Database = {
       tire_state: "ok" | "low" | "very_low"
       trip_shape: "round_trip" | "one_way_to" | "one_way_from"
       waitlist_group_status: "open" | "resolved" | "cancelled"
-      week_phase: "open" | "solving" | "published" | "live" | "archived"
+      week_phase:
+        | "upcoming"
+        | "open"
+        | "solving"
+        | "published"
+        | "live"
+        | "archived"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -4291,7 +4312,14 @@ export const Constants = {
       tire_state: ["ok", "low", "very_low"],
       trip_shape: ["round_trip", "one_way_to", "one_way_from"],
       waitlist_group_status: ["open", "resolved", "cancelled"],
-      week_phase: ["open", "solving", "published", "live", "archived"],
+      week_phase: [
+        "upcoming",
+        "open",
+        "solving",
+        "published",
+        "live",
+        "archived",
+      ],
     },
   },
 } as const
