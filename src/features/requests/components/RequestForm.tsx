@@ -5,10 +5,13 @@ import { Controller, useForm, useWatch } from "react-hook-form";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { toast } from "sonner";
+
 import { Button } from "@/components/ui/button";
 import { SheetPortalContext } from "@/components/SheetPortalContext";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { FormItem } from "@/components/ui/form";
 import { CarAtDestinationToggle } from "@/components/CarAtDestinationToggle";
@@ -31,7 +34,7 @@ import { dateKey, formatTime, weekdayIndex } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { fits, type Car as SolverCar } from "@/solver";
 
-import type { RequestEditRow, SubmitRequestResult } from "../api";
+import type { RequestEditRow, SubmitRequestResult, TemplateSuggestion } from "../api";
 import { CAR_NOW_DEFAULT_HOURS, CAR_NOW_HOURS_OPTIONS } from "../carNow";
 import { findOverlappingRequest } from "../duplicate";
 import { QUICK_REQUEST_DURATION_HOURS, endTimeForDuration, shiftReturnByDepartureDelta } from "../duration";
@@ -39,15 +42,18 @@ import { guestPassengerNames, quickVehicleWindow } from "../quickRequest";
 import {
   useMyRequests,
   useRequestCompanionsQuery,
+  useSaveRequestTemplateMutation,
   useSetRequestCompanionsMutation,
   useSetRequestChildrenMutation,
   useRequestChildrenQuery,
+  useStopTemplateMutation,
   useSubmitRequestMutation,
 } from "../hooks";
 import { fetchChildren } from "../children";
 import { intervalToFlexValue, toInstant, toSubmitRequestPayload } from "../mapper";
 import { requestFormSchema, type RequestFormValues } from "../schema";
 import { toastSubmitOutcome } from "../submitOutcome";
+import { suggestionToFormValues } from "../templatePrefill";
 
 export interface JoinRidePrefill {
   rideId: string;
@@ -113,6 +119,13 @@ interface RequestFormProps {
   slotPrefill?: { day: string; departTime: string; returnTime?: string; carId?: string };
   /** Published-day request: join the freed-slot notification queue. */
   waitlist?: boolean;
+  /**
+   * Repeating-request-suggestion prefill (`/requests/new?template=<id>`, UX_FLOWS §3.3/§3.4,
+   * REQ §76) — weekly variant only, mutually exclusive with `joinRide`/`slotPrefill` in
+   * practice. Pre-checks the "repeat weekly" switch; submitting links the new request straight
+   * to this template (`SubmitRequestPayload.template_id`) so the suggestion disappears.
+   */
+  templateSuggestion?: TemplateSuggestion;
   /** Quick-variant-only context — free-window aware car targeting (UX_FLOWS.md §18). */
   quickContext?: QuickRequestContext;
   /** Called after a successful submit instead of the default `navigate('/requests')`. */
@@ -177,6 +190,7 @@ function emptyValues(
     rideDescription: "",
     guestNames: "",
     durationHours,
+    repeatWeekly: false,
   };
 }
 
@@ -241,6 +255,7 @@ function mapEditRowToValues(row: RequestEditRow, weekStart: string, companions: 
     notes: row.notes ?? "",
     rideDescription: row.rideDescription ?? "",
     guestNames: (row.guestPassengerNames ?? []).join("\n"),
+    repeatWeekly: !!row.templateId,
   };
 }
 
@@ -264,6 +279,7 @@ export function RequestForm({
   joinRide,
   slotPrefill,
   waitlist = false,
+  templateSuggestion,
   quickContext,
   onDone,
 }: RequestFormProps) {
@@ -286,6 +302,8 @@ export function RequestForm({
   const setCompanionsMutation = useSetRequestCompanionsMutation();
   const setChildrenMutation = useSetRequestChildrenMutation();
   const suggestDestinationMutation = useSuggestDestinationMutation(departmentId);
+  const saveTemplateMutation = useSaveRequestTemplateMutation();
+  const stopTemplateMutation = useStopTemplateMutation();
 
   const lastRequest = [...(myRequestsQuery.data ?? [])]
     .filter((r) => r.departAt)
@@ -295,6 +313,7 @@ export function RequestForm({
   const defaultValues = useMemo(() => {
     if (mode === "edit") return emptyValues(departmentId, weekStart, weekStart, defaultRideTypeId);
     if (joinRide) return buildJoinRideValues(departmentId, weekStart, defaultRideTypeId, joinRide);
+    if (templateSuggestion) return suggestionToFormValues(templateSuggestion, weekStart);
     if (slotPrefill) {
       const returnTime =
         slotPrefill.returnTime ??
@@ -321,7 +340,7 @@ export function RequestForm({
       defaultRideTypeId,
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [departmentId, weekStart, mode, defaultRideTypeId, variant, joinRide?.rideId, slotPrefill?.day, slotPrefill?.departTime, slotPrefill?.returnTime, slotPrefill?.carId]);
+  }, [departmentId, weekStart, mode, defaultRideTypeId, variant, joinRide?.rideId, templateSuggestion?.templateId, slotPrefill?.day, slotPrefill?.departTime, slotPrefill?.returnTime, slotPrefill?.carId]);
 
   const form = useForm<RequestFormValues>({
     resolver: zodResolver(requestFormSchema),
@@ -484,7 +503,16 @@ export function RequestForm({
         },
       ),
       ...(waitlist ? { waitlist: true } : {}),
+      // Only a *new* request can link to an existing template on creation (`submit_request`'s
+      // insert branch is the only place it reads `template_id`); an edit's own template link,
+      // if any, is managed separately below via save/stop, never touched by this payload.
+      ...(mode === "new" && templateSuggestion ? { template_id: templateSuggestion.templateId } : {}),
     };
+
+    // The request this template link/unlink applies to, resolved once so both the "on" and
+    // "off" branches below agree: an edit keeps its own row's template, a prefilled new
+    // request inherits the suggestion's.
+    const existingTemplateId = mode === "edit" ? (initial?.templateId ?? undefined) : templateSuggestion?.templateId;
 
     try {
       const raw = await submitMutation.mutateAsync(payload);
@@ -494,6 +522,19 @@ export function RequestForm({
       if (requestId) {
         await setCompanionsMutation.mutateAsync({ requestId, profileIds: formValues.companions });
         await setChildrenMutation.mutateAsync({ requestId, childIds: formValues.children });
+
+        // "Repeat weekly" (UX_FLOWS §3.3/§3.4, REQ §76): capture/refresh the template when the
+        // switch is on, or stop a template this request was already linked to when it's off.
+        // Errors here are non-fatal to the request itself — each mutation's own `onError`
+        // already surfaced a toast — so the request submission outcome below is unaffected.
+        try {
+          if (formValues.repeatWeekly) {
+            await saveTemplateMutation.mutateAsync(requestId);
+            if (mode === "new") toast.success(t("request.repeatSaved"));
+          } else if (existingTemplateId) {
+            await stopTemplateMutation.mutateAsync(existingTemplateId);
+          }
+        } catch { /* already toasted by the mutation itself */ }
       }
       if ("freeText" in formValues.destination && formValues.destination.freeText.trim()) {
         suggestDestinationMutation.mutate({ name: formValues.destination.freeText.trim() });
@@ -887,6 +928,22 @@ export function RequestForm({
         <Label htmlFor="request-notes">{t("field.notes")}</Label>
         <Controller control={form.control} name="notes" render={({ field }) => <Textarea {...field} id="request-notes" rows={2} />} />
       </FormItem>
+
+      {variant === "weekly" ? (
+        <Controller
+          control={form.control}
+          name="repeatWeekly"
+          render={({ field }) => (
+            <FormItem className="flex items-center justify-between gap-3 rounded-md border p-3">
+              <div className="space-y-0.5">
+                <Label htmlFor="request-repeat-weekly">{t("request.repeatWeekly")}</Label>
+                <p className="text-xs text-muted-foreground">{t("request.repeatWeeklyHint")}</p>
+              </div>
+              <Switch id="request-repeat-weekly" checked={field.value} onCheckedChange={field.onChange} />
+            </FormItem>
+          )}
+        />
+      ) : null}
 
       <div
         className={cn(

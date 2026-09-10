@@ -21,6 +21,7 @@ vi.mock("../hooks", () => {
     useClaimFreedSlotMutation: mutation,
     useSetFreedSlotOptOutMutation: mutation,
     useWithdrawFreedSlotClaimMutation: mutation,
+    useSaveRequestTemplateMutation: mutation,
   };
 });
 
@@ -30,7 +31,7 @@ function request(overrides: Partial<MyRequestRow> = {}): MyRequestRow {
     statusReason: null, isLate: false, changedSinceSolve: false, departAt: "2026-09-15T08:00:00+03:00",
     returnAt: "2026-09-15T12:00:00+03:00", tripShape: "round_trip", destination: "Destination",
     rideTypeId: "type-1", rideTypeName: "Type", rideTypeCode: null, needsCarAtDestination: true,
-    version: 1, freedSlotOptOut: false, ride: null, pendingProposal: null,
+    version: 1, freedSlotOptOut: false, ride: null, pendingProposal: null, templateId: null,
     window: { phase: "open", open_at: "2026-09-01T00:00:00Z", close_at: "2026-09-12T23:00:00Z" },
     ...overrides,
   };
@@ -102,5 +103,19 @@ describe("member request editing", () => {
     mocks.rows = [request({ childNames: ["Yossi", "Dana"] })];
     show();
     expect(screen.getByText(new RegExp("Yossi.*Dana"))).toBeInTheDocument();
+  });
+
+  it("offers to make a submitted request repeating when it has no template yet", () => {
+    mocks.rows = [request({ status: "submitted", templateId: null })];
+    show();
+    expect(screen.getByRole("button", { name: he.request.makeRepeating })).toBeVisible();
+    expect(screen.queryByText(he.request.repeating)).not.toBeInTheDocument();
+  });
+
+  it("shows the repeating flag instead of the action once a template is linked", () => {
+    mocks.rows = [request({ status: "submitted", templateId: "template-1" })];
+    show();
+    expect(screen.queryByRole("button", { name: he.request.makeRepeating })).not.toBeInTheDocument();
+    expect(screen.getByText(he.request.repeating)).toBeVisible();
   });
 });

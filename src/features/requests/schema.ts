@@ -88,6 +88,13 @@ export const requestFormSchema = z
      * maps `departTime`/`returnTime`), so it needs no SQL counterpart.
      */
     durationHours: z.number().int().min(1).max(12).optional(),
+    /**
+     * Weekly-variant-only "בקשה חוזרת" switch (UX_FLOWS.md §3.3/§3.4, REQ §76): never sent to
+     * `submit_request` — a truthy value drives a follow-up `save_request_template` call, a
+     * falsy one (when a template was already linked) a `stop_request_template` call. Not part
+     * of `../mapper.ts`'s payload mapping, same pattern as `durationHours` above.
+     */
+    repeatWeekly: z.boolean(),
   })
   .superRefine((value, ctx) => {
     const needsDepart = value.tripShape !== "one_way_from";
@@ -165,4 +172,48 @@ export const REQUEST_FORM_DEFAULTS: Omit<RequestFormValues, "departmentId" | "we
   notes: "",
   rideDescription: "",
   guestNames: "",
+  repeatWeekly: false,
 };
+
+/**
+ * `v_request_template_suggestions` row (DATA_MODEL.md §3.6, `supabase/migrations/
+ * 20260910092000_request_templates_as_suggestions.sql`), validated at the `requests/api.ts`
+ * boundary before it reaches the UI. `depart_at`/`return_at` already fall on the suggestion's
+ * `week_start` (computed in SQL from `depart_dow`/`depart_time` etc.), so the prefill mapper
+ * (`../templatePrefill.ts`) can read them exactly like `RequestEditRow`'s own instants.
+ */
+export const templateSuggestionRowSchema = z.object({
+  template_id: z.string(),
+  department_id: z.string(),
+  week_start: z.string(),
+  destination_id: z.string().nullable(),
+  destination_text: z.string().nullable(),
+  destination_name: z.string().nullable(),
+  ride_type_id: z.string(),
+  ride_type_name: z.string().nullable(),
+  trip_shape: z.enum(REQUEST_TRIP_SHAPES),
+  depart_dow: z.number().nullable(),
+  depart_time: z.string().nullable(),
+  return_dow: z.number().nullable(),
+  return_time: z.string().nullable(),
+  depart_at: z.string().nullable(),
+  return_at: z.string().nullable(),
+  one_way_car_mode: z.enum(ONE_WAY_CAR_MODES).nullable(),
+  needs_car_at_destination: z.boolean().nullable(),
+  adults: z.number(),
+  child_seats: z.number(),
+  boosters: z.number(),
+  child_ids: z.array(z.string()),
+  companion_ids: z.array(z.string()),
+  has_luggage: z.boolean().nullable(),
+  flex_depart_early: z.string(),
+  flex_depart_late: z.string(),
+  flex_return_early: z.string(),
+  flex_return_late: z.string(),
+  preferred_car_id: z.string().nullable(),
+  ride_description: z.string().nullable(),
+  guest_passenger_names: z.array(z.string()),
+  notes: z.string().nullable(),
+});
+
+export type TemplateSuggestionRow = z.infer<typeof templateSuggestionRowSchema>;

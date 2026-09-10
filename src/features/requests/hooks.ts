@@ -19,9 +19,13 @@ import {
   fetchRequestById,
   fetchRequestCompanionIds,
   fetchRequestChildIds,
+  fetchTemplateSuggestions,
+  saveRequestTemplate,
   setFreedSlotOptOut,
   setRequestCompanions,
   setRequestChildren,
+  snoozeRequestTemplate,
+  stopRequestTemplate,
   submitRequest,
   withdrawFreedSlotClaim,
   withdrawRequest,
@@ -253,6 +257,64 @@ export function useFreeCarsNowQuery(departmentId: string | undefined): FreeCarsN
     freeWindows: dayFreeWindows.freeWindows,
     awayWindows: dayFreeWindows.awayWindows,
   };
+}
+
+/** Repeating-request suggestions for an `open` week (Home + `/requests/new`, REQ §76). */
+export function useTemplateSuggestionsQuery() {
+  const { session } = useSession();
+  const profileId = session?.user.id;
+
+  return useQuery({
+    queryKey: requestsKeys.templateSuggestions(profileId),
+    queryFn: fetchTemplateSuggestions,
+    enabled: !!profileId,
+    staleTime: 30_000,
+  });
+}
+
+export function useSaveRequestTemplateMutation() {
+  const { session } = useSession();
+  const profileId = session?.user.id;
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (requestId: string) => saveRequestTemplate(requestId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: requestsKeys.templateSuggestions(profileId) });
+      queryClient.invalidateQueries({ queryKey: requestsKeys.mine(profileId) });
+    },
+    onError: showErrorToast,
+  });
+}
+
+export function useSnoozeTemplateMutation() {
+  const { session } = useSession();
+  const profileId = session?.user.id;
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ templateId, weekStart }: { templateId: string; weekStart: string }) =>
+      snoozeRequestTemplate(templateId, weekStart),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: requestsKeys.templateSuggestions(profileId) });
+    },
+    onError: showErrorToast,
+  });
+}
+
+export function useStopTemplateMutation() {
+  const { session } = useSession();
+  const profileId = session?.user.id;
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (templateId: string) => stopRequestTemplate(templateId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: requestsKeys.templateSuggestions(profileId) });
+      queryClient.invalidateQueries({ queryKey: requestsKeys.mine(profileId) });
+    },
+    onError: showErrorToast,
+  });
 }
 
 export function useWithdrawAllRequestsMutation() {

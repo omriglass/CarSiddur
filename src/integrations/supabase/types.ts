@@ -1752,6 +1752,7 @@ export type Database = {
         Row: {
           adults: number
           boosters: number
+          child_ids: string[]
           child_seats: number
           companion_ids: string[]
           created_at: string
@@ -1779,12 +1780,16 @@ export type Database = {
           return_time: string | null
           ride_description: string | null
           ride_type_id: string
+          snoozed_until_week: string | null
+          source_request_id: string | null
+          stopped_at: string | null
           trip_shape: Database["public"]["Enums"]["trip_shape"]
           updated_at: string
         }
         Insert: {
           adults?: number
           boosters?: number
+          child_ids?: string[]
           child_seats?: number
           companion_ids?: string[]
           created_at?: string
@@ -1812,12 +1817,16 @@ export type Database = {
           return_time?: string | null
           ride_description?: string | null
           ride_type_id: string
+          snoozed_until_week?: string | null
+          source_request_id?: string | null
+          stopped_at?: string | null
           trip_shape?: Database["public"]["Enums"]["trip_shape"]
           updated_at?: string
         }
         Update: {
           adults?: number
           boosters?: number
+          child_ids?: string[]
           child_seats?: number
           companion_ids?: string[]
           created_at?: string
@@ -1845,6 +1854,9 @@ export type Database = {
           return_time?: string | null
           ride_description?: string | null
           ride_type_id?: string
+          snoozed_until_week?: string | null
+          source_request_id?: string | null
+          stopped_at?: string | null
           trip_shape?: Database["public"]["Enums"]["trip_shape"]
           updated_at?: string
         }
@@ -1883,6 +1895,20 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "ride_types"
             referencedColumns: ["department_id", "id"]
+          },
+          {
+            foreignKeyName: "request_templates_source_request_id_fkey"
+            columns: ["source_request_id"]
+            isOneToOne: false
+            referencedRelation: "requests"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "request_templates_source_request_id_fkey"
+            columns: ["source_request_id"]
+            isOneToOne: false
+            referencedRelation: "v_my_requests"
+            referencedColumns: ["request_id"]
           },
         ]
       }
@@ -2083,6 +2109,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "request_templates"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "requests_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "v_request_template_suggestions"
+            referencedColumns: ["template_id"]
           },
           {
             foreignKeyName: "requests_week_fk"
@@ -3198,6 +3231,71 @@ export type Database = {
           },
         ]
       }
+      v_request_template_suggestions: {
+        Row: {
+          adults: number | null
+          boosters: number | null
+          child_ids: string[] | null
+          child_seats: number | null
+          companion_ids: string[] | null
+          depart_at: string | null
+          depart_dow: number | null
+          depart_time: string | null
+          department_id: string | null
+          destination_id: string | null
+          destination_name: string | null
+          destination_text: string | null
+          flex_depart_early: string | null
+          flex_depart_late: string | null
+          flex_return_early: string | null
+          flex_return_late: string | null
+          guest_passenger_names: string[] | null
+          has_luggage: boolean | null
+          needs_car_at_destination: boolean | null
+          notes: string | null
+          one_way_car_mode: Database["public"]["Enums"]["leg_car_mode"] | null
+          preferred_car_id: string | null
+          return_at: string | null
+          return_dow: number | null
+          return_time: string | null
+          ride_description: string | null
+          ride_type_id: string | null
+          ride_type_name: string | null
+          template_id: string | null
+          trip_shape: Database["public"]["Enums"]["trip_shape"] | null
+          week_start: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "request_templates_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "request_templates_destination_id_fkey"
+            columns: ["department_id", "destination_id"]
+            isOneToOne: false
+            referencedRelation: "destinations"
+            referencedColumns: ["department_id", "id"]
+          },
+          {
+            foreignKeyName: "request_templates_preferred_car_id_fkey"
+            columns: ["preferred_car_id"]
+            isOneToOne: false
+            referencedRelation: "cars"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "request_templates_ride_type_id_fkey"
+            columns: ["department_id", "ride_type_id"]
+            isOneToOne: false
+            referencedRelation: "ride_types"
+            referencedColumns: ["department_id", "id"]
+          },
+        ]
+      }
       v_waitlist_groups: {
         Row: {
           created_at: string | null
@@ -3734,6 +3832,10 @@ export type Database = {
         Args: { p_accept: boolean; p_change_id: string }
         Returns: undefined
       }
+      resume_request_template: {
+        Args: { p_template_id: string }
+        Returns: undefined
+      }
       sadran_contact_of: {
         Args: { _department_id: string; _week_start: string }
         Returns: {
@@ -3743,6 +3845,7 @@ export type Database = {
         }[]
       }
       sadranim_of: { Args: { _dept: string; _week: string }; Returns: string[] }
+      save_request_template: { Args: { p_request_id: string }; Returns: string }
       send_due_reminders: { Args: { p_now?: string }; Returns: number }
       send_proposal: {
         Args: {
@@ -3787,6 +3890,14 @@ export type Database = {
         Returns: number
       }
       shares_ride_with: { Args: { _profile: string }; Returns: boolean }
+      snooze_request_template: {
+        Args: { p_template_id: string; p_week_start: string }
+        Returns: undefined
+      }
+      stop_request_template: {
+        Args: { p_template_id: string }
+        Returns: undefined
+      }
       submit_request: { Args: { payload: Json }; Returns: Json }
       suggest_destination: {
         Args: { p_department_id: string; p_name: string; p_zone?: string }

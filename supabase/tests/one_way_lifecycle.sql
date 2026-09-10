@@ -155,10 +155,15 @@ begin
   before_start:=q.original_depart_at;
   update public.requests set depart_at=depart_at+interval '15 minutes' where id=q.id;
   assert (select original_depart_at=before_start from public.requests where id=q.id),'coordinator update reset baseline';
-  insert into public.request_templates(requester_id,department_id,destination_id,ride_type_id,depart_dow,depart_time,return_dow,return_time,preferred_car_id,last_materialized_week)
-    values(driver,dept,dest,typ,2,'09:00',2,'11:00',car,w) returning id into template;
-  perform public.materialize_templates();
-  assert exists(select 1 from public.requests where template_id=template and week_start=w+7 and preferred_car_id=car),'template preference not materialized';
+  -- Repeating requests are suggestions, not auto-submissions (2026-09-10 design reversal):
+  -- materialize_templates() stays a no-op and the template surfaces through
+  -- v_request_template_suggestions for the department's open week instead.
+  insert into public.request_templates(requester_id,department_id,destination_id,ride_type_id,depart_dow,depart_time,return_dow,return_time,preferred_car_id)
+    values(driver,dept,dest,typ,2,'09:00',2,'11:00',car) returning id into template;
+  assert public.materialize_templates()=0,'materialize_templates must stay a no-op';
+  assert not exists(select 1 from public.requests where template_id=template),'materialize_templates must never insert a request';
+  assert (select preferred_car_id=car from public.v_request_template_suggestions where template_id=template and week_start=w+7),
+    'active template must surface its preferred_car_id as a suggestion for the open week';
   -- Accepted shifts also honor coordinator-approved tight gaps, preserving the request baseline.
   perform set_config('request.jwt.claims',jsonb_build_object('sub',manager,'role','authenticated')::text,true);
   insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,depart_at,return_at,status)

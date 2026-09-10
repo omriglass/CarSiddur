@@ -7,6 +7,8 @@ import { useMyDepartments } from "@/features/auth/useMyDepartments";
 import { useProfile } from "@/features/auth/useProfile";
 import { resolveWeekStart } from "@/features/requests/resolveWeekStart";
 import { RequestForm, type JoinRidePrefill } from "@/features/requests/components/RequestForm";
+import { TemplateSuggestions } from "@/features/requests/components/TemplateSuggestions";
+import { useTemplateSuggestionsQuery } from "@/features/requests/hooks";
 import { useCarForRide, useBoardRideById, useWeeks } from "@/features/siddur/hooks";
 import { he } from "@/i18n/he";
 
@@ -23,6 +25,8 @@ export function NewRequestPage() {
   const dayParam = searchParams.get("day") ?? undefined;
   const timeParam = searchParams.get("time") ?? undefined;
   const waitlist = searchParams.get("waitlist") === "1";
+  // Repeating-request suggestion prefill (UX_FLOWS §3.4, REQ §76).
+  const templateId = searchParams.get("template") ?? undefined;
 
   const profileQuery = useProfile();
   const departmentsQuery = useMyDepartments();
@@ -33,9 +37,15 @@ export function NewRequestPage() {
 
   const rideQuery = useBoardRideById(joinRideId);
   const carQuery = useCarForRide(rideQuery.data?.car_id ?? undefined);
+  const templateSuggestionsQuery = useTemplateSuggestionsQuery();
+  const templateSuggestion = templateId
+    ? (templateSuggestionsQuery.data ?? []).find((row) => row.templateId === templateId)
+    : undefined;
 
   const isLoading =
-    active.isLoading || profileQuery.isLoading || departmentsQuery.isLoading || weeksQuery.isLoading || (!!joinRideId && (rideQuery.isLoading || carQuery.isLoading));
+    active.isLoading || profileQuery.isLoading || departmentsQuery.isLoading || weeksQuery.isLoading ||
+    (!!joinRideId && (rideQuery.isLoading || carQuery.isLoading)) ||
+    (!!templateId && templateSuggestionsQuery.isLoading);
 
   const joinRide: JoinRidePrefill | undefined =
     joinRideId && rideQuery.data && carQuery.data
@@ -65,14 +75,22 @@ export function NewRequestPage() {
           <div className="h-11 animate-pulse rounded-md bg-muted" />
         </div>
       ) : (
-        <RequestForm
-          mode="new"
-          departmentId={departmentId}
-          weekStart={weekStart}
-          joinRide={joinRide}
-          slotPrefill={!joinRideId && dayParam && timeParam ? { day: dayParam, departTime: timeParam } : undefined}
-          waitlist={waitlist}
-        />
+        <>
+          {!templateId ? (
+            <div className="p-4 pb-0">
+              <TemplateSuggestions weekStart={weekStart} />
+            </div>
+          ) : null}
+          <RequestForm
+            mode="new"
+            departmentId={departmentId}
+            weekStart={weekStart}
+            joinRide={joinRide}
+            slotPrefill={!joinRideId && dayParam && timeParam ? { day: dayParam, departTime: timeParam } : undefined}
+            waitlist={waitlist}
+            templateSuggestion={templateSuggestion}
+          />
+        </>
       )}
     </div>
   );

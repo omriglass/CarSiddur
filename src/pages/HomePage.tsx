@@ -20,6 +20,7 @@ import { useMyResponsibleCarsQuery } from "@/features/cars/hooks";
 import { useCars, useRideTypes } from "@/features/fleet/hooks";
 import { AddRideFab } from "@/features/requests/components/AddRideFab";
 import { CarNowButton } from "@/features/requests/components/CarNowButton";
+import { TemplateSuggestions } from "@/features/requests/components/TemplateSuggestions";
 import { useMyRequests, useCancelRideMutation } from "@/features/requests/hooks";
 import type { MyRequestRow } from "@/features/requests/api";
 import { useBoardRides, useRideChanges, useWeeks, useMyUpcomingRides, useRequestRideChangeMutation } from "@/features/siddur/hooks";
@@ -214,6 +215,8 @@ export function HomePage() {
           </div>
         </OpenProposalButton>
       ) : null}
+
+      <TemplateSuggestions />
 
       <section className="space-y-3">
         <h2 className="text-sm font-semibold text-muted-foreground">{t("home.upcomingRides")}</h2>

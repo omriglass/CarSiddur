@@ -5,4 +5,6 @@ export const requestsKeys = {
   byId: (requestId: string | undefined) => ["requests", "byId", requestId] as const,
   companions: (requestId: string | undefined) => ["requests", "companions", requestId] as const,
   freedOffers: (profileId: string | undefined) => ["requests", "freedOffers", profileId] as const,
+  /** Repeating-request suggestions (`v_request_template_suggestions`, REQ §76) — always "my own", RLS-scoped. */
+  templateSuggestions: (profileId: string | undefined) => ["requests", "templateSuggestions", profileId] as const,
 };

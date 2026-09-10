@@ -1,6 +1,7 @@
-import { CalendarClock } from "lucide-react";
+import { CalendarClock, Repeat } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
+import { toast } from "sonner";
 
 import { formatWeekRangeLabel } from "@/components/DateField";
 import { EmptyState } from "@/components/EmptyState";
@@ -19,6 +20,7 @@ import {
   useClaimFreedSlotMutation,
   useMyFreedSlotOffers,
   useMyRequests,
+  useSaveRequestTemplateMutation,
   useSetFreedSlotOptOutMutation,
   useWithdrawFreedSlotClaimMutation,
   useWithdrawRequestMutation,
@@ -34,6 +36,10 @@ import { paths } from "@/app/routes";
 // (supabase/migrations/20260907091100_freed_slots.sql) — only these statuses are ever
 // eligible to be offered a freed slot, so the opt-out toggle is only meaningful here.
 const FREED_SLOT_ELIGIBLE_STATUSES = new Set<MyRequestRow["status"]>(["waitlisted", "denied"]);
+
+// "הפוך/י לחוזר" is only meaningful once the request is a real, still-relevant filing —
+// mirrors the statuses a repeating request could plausibly resubmit as (REQ §76).
+const MAKE_REPEATING_STATUSES = new Set<MyRequestRow["status"]>(["submitted", "assigned"]);
 
 function requestStart(row: MyRequestRow): number {
   const instant = row.ride?.startsAt ?? row.departAt ?? row.returnAt;
@@ -72,6 +78,7 @@ export function RequestsListPage() {
   const claimMutation = useClaimFreedSlotMutation();
   const withdrawClaimMutation = useWithdrawFreedSlotClaimMutation();
   const optOutMutation = useSetFreedSlotOptOutMutation();
+  const saveTemplateMutation = useSaveRequestTemplateMutation();
 
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
 
@@ -188,6 +195,12 @@ export function RequestsListPage() {
                   {row.childNames?.length ? (
                     <p className="text-xs text-muted-foreground">{tv("ridePublicDetails.companions", { names: row.childNames.join(", ") })}</p>
                   ) : null}
+                  {row.templateId ? (
+                    <p className="flex items-center gap-1 text-xs text-muted-foreground">
+                      <Repeat className="size-3.5" aria-hidden="true" />
+                      {he.request.repeating}
+                    </p>
+                  ) : null}
                   {describeStatusReason(row.statusReason) ? (
                     <p className="text-xs text-muted-foreground">{describeStatusReason(row.statusReason)}</p>
                   ) : null}
@@ -227,6 +240,17 @@ export function RequestsListPage() {
                     {row.ride && row.ride.status !== "cancelled" ? (
                       <Button size="sm" variant="outline" onClick={() => setConfirmAction({ kind: "cancel", row })}>
                         {he.requestsList.cancelRide}
+                      </Button>
+                    ) : null}
+                    {!row.templateId && MAKE_REPEATING_STATUSES.has(row.status) ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() =>
+                          saveTemplateMutation.mutate(row.id, { onSuccess: () => toast.success(he.request.repeatSaved) })
+                        }
+                      >
+                        {he.request.makeRepeating}
                       </Button>
                     ) : null}
                   </div>

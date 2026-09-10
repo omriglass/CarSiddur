@@ -66,14 +66,20 @@ export const paths = {
      * a harmless no-op until that screen adds the param.
      */
     list: (focusId?: string) => withQuery("/requests", { focus: focusId }),
-    /** `/requests/new`; `ride` triggers the "ask to join" prefill, `day`/`time` the quick-request-from-slot prefill (mutually exclusive in practice), `waitlist=1` the waitlist checkbox. */
-    new: (params: { ride?: string; week?: string; day?: string; time?: string; waitlist?: boolean } = {}) =>
+    /**
+     * `/requests/new`; `ride` triggers the "ask to join" prefill, `day`/`time` the
+     * quick-request-from-slot prefill, `template` the repeating-request-suggestion prefill
+     * (`v_request_template_suggestions`, all mutually exclusive in practice), `waitlist=1` the
+     * waitlist checkbox.
+     */
+    new: (params: { ride?: string; week?: string; day?: string; time?: string; waitlist?: boolean; template?: string } = {}) =>
       withQuery("/requests/new", {
         ride: params.ride,
         week: params.week,
         day: params.day,
         time: params.time,
         waitlist: params.waitlist ? "1" : undefined,
+        template: params.template,
       }),
     edit: (requestId: string) => `/requests/${requestId}/edit`,
   },

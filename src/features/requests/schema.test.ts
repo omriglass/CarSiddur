@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { he } from "@/i18n/he";
 
-import { REQUEST_FORM_DEFAULTS, requestFormSchema, type RequestFormValues } from "./schema";
+import { REQUEST_FORM_DEFAULTS, requestFormSchema, templateSuggestionRowSchema, type RequestFormValues } from "./schema";
 
 function baseValues(overrides: Partial<RequestFormValues> = {}): RequestFormValues {
   return {
@@ -121,4 +121,52 @@ it("identifies a missing ride type with a localized actionable message", () => {
   if (!result.success) {
     expect(result.error.issues).toContainEqual(expect.objectContaining({ path: ["rideTypeId"], message: he.request.rideTypeRequired }));
   }
+});
+
+describe("templateSuggestionRowSchema", () => {
+  function baseSuggestionRow() {
+    return {
+      template_id: "template-1",
+      department_id: "dept-1",
+      week_start: "2027-01-10",
+      destination_id: "dest-1",
+      destination_text: null,
+      destination_name: "עפולה",
+      ride_type_id: "ride-type-1",
+      ride_type_name: "אחר",
+      trip_shape: "round_trip",
+      depart_dow: 2,
+      depart_time: "08:00:00",
+      return_dow: 2,
+      return_time: "12:00:00",
+      depart_at: "2027-01-12T06:00:00+00:00",
+      return_at: "2027-01-12T10:00:00+00:00",
+      one_way_car_mode: null,
+      needs_car_at_destination: true,
+      adults: 1,
+      child_seats: 0,
+      boosters: 0,
+      child_ids: [],
+      companion_ids: [],
+      has_luggage: false,
+      flex_depart_early: "00:00:00",
+      flex_depart_late: "00:00:00",
+      flex_return_early: "00:00:00",
+      flex_return_late: "00:00:00",
+      preferred_car_id: null,
+      ride_description: null,
+      guest_passenger_names: [],
+      notes: null,
+    };
+  }
+
+  it("accepts a well-formed view row", () => {
+    const result = templateSuggestionRowSchema.safeParse(baseSuggestionRow());
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects an unknown trip_shape", () => {
+    const result = templateSuggestionRowSchema.safeParse({ ...baseSuggestionRow(), trip_shape: "sideways" });
+    expect(result.success).toBe(false);
+  });
 });

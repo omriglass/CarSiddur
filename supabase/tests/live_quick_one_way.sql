@@ -98,11 +98,16 @@ begin
       values(member,dept,dest,typ,2,'11:00',2,'13:00',2,array[gen_random_uuid()]);
     raise exception 'invalid template companion accepted';
   exception when raise_exception then if sqlerrm<>'invalid_companions' then raise;end if;end;
-  insert into public.request_templates(requester_id,department_id,destination_id,ride_type_id,depart_dow,depart_time,return_dow,return_time,adults,ride_description,guest_passenger_names,companion_ids,last_materialized_week)
-    values(member,dept,dest,typ,2,'11:00',2,'13:00',3,'Template outing',array['Template guest'],array[companion],w) returning id into template;
-  perform public.materialize_templates();
-  assert exists(select 1 from public.requests templated join public.request_companions rc on rc.request_id=templated.id where templated.template_id=template
-    and templated.ride_description='Template outing' and templated.guest_passenger_names=array['Template guest'] and rc.profile_id=companion),'template lost public metadata or companions';
+  -- Repeating requests are suggestions, not auto-submissions (2026-09-10 design reversal):
+  -- materialize_templates() stays a no-op and the template's public metadata/companions
+  -- surface through v_request_template_suggestions for the department's open week instead.
+  insert into public.request_templates(requester_id,department_id,destination_id,ride_type_id,depart_dow,depart_time,return_dow,return_time,adults,ride_description,guest_passenger_names,companion_ids)
+    values(member,dept,dest,typ,2,'11:00',2,'13:00',3,'Template outing',array['Template guest'],array[companion]) returning id into template;
+  assert public.materialize_templates()=0,'materialize_templates must stay a no-op';
+  assert not exists(select 1 from public.requests where template_id=template),'materialize_templates must never insert a request';
+  assert (select ride_description='Template outing' and guest_passenger_names=array['Template guest'] and companion_ids=array[companion]
+    from public.v_request_template_suggestions where template_id=template and week_start=w+7),
+    'template lost public metadata or companions from the open-week suggestion';
 end $$;
 set constraints all immediate;
 set constraints all deferred;

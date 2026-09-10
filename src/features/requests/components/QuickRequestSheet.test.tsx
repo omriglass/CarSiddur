@@ -13,6 +13,8 @@ vi.mock("../hooks", () => ({
   useRequestChildrenQuery: () => ({ data: [], isSuccess: true }),
   useSetRequestCompanionsMutation: () => ({ mutateAsync: mocks.setCompanions }),
   useSetRequestChildrenMutation: () => ({ mutateAsync: mocks.setChildren }),
+  useSaveRequestTemplateMutation: () => ({ mutateAsync: vi.fn() }),
+  useStopTemplateMutation: () => ({ mutateAsync: vi.fn() }),
 }));
 vi.mock("@/features/auth/useDepartmentMembers", () => ({ useDepartmentMembers: () => ({ data: [{ id: "member", name: "Member" }] }) }));
 vi.mock("@/features/auth/useSession", () => ({ useSession: () => ({ session: null }) }));

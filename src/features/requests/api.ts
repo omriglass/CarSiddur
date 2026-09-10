@@ -2,6 +2,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { rpc, toAppError } from "@/lib/rpc";
 import { siddurCarName } from "@/lib/siddurCarName";
 
+import { templateSuggestionRowSchema, type TemplateSuggestionRow } from "./schema";
+
 import type { Database, Json } from "@/integrations/supabase/types";
 import type { RequestWindow } from "./window";
 
@@ -78,12 +80,14 @@ export interface MyRequestRow {
   /** First placed leg, if any — a split relay's second leg is not shown separately (known simplification, see final report). */
   ride: MyRequestRide | null;
   pendingProposal: MyRequestPendingProposal | null;
+  /** Links to `request_templates` (DATA_MODEL §3.6) when this request came from — or was marked as — a repeating request. */
+  templateId: string | null;
 }
 
 const SELECT = `
   id, department_id, week_start, status, status_reason, is_late, changed_since_solve,
   depart_at, return_at, trip_shape, needs_car_at_destination, destination_text, version, ride_type_id,
-  freed_slot_opt_out, preferred_car_id,
+  freed_slot_opt_out, preferred_car_id, template_id,
   preferred_car:cars!requests_preferred_car_id_fkey(name),
   window:weeks(phase, open_at, close_at),
   destination:destinations(name),
@@ -121,6 +125,7 @@ interface RawRequestRow {
   version: number;
   freed_slot_opt_out: boolean;
   ride_type_id: string;
+  template_id: string | null;
   destination: { name: string } | null;
   ride_type: { code: string; name_he: string } | null;
   ride_requests: {
@@ -179,6 +184,7 @@ function mapRow(row: RawRequestRow): MyRequestRow {
     needsCarAtDestination: row.needs_car_at_destination,
     version: row.version,
     freedSlotOptOut: row.freed_slot_opt_out,
+    templateId: row.template_id,
     ride:
       ride && legWithRide
         ? {
@@ -239,13 +245,15 @@ export interface RequestEditRow {
   rideDescription: string | null;
   guestPassengerNames: string[];
   changedSinceSolve: boolean;
+  /** Links to `request_templates` (DATA_MODEL §3.6) — drives the edit form's "repeat weekly" switch default. */
+  templateId: string | null;
 }
 
 const EDIT_SELECT = `
   id, department_id, week_start, status, version, destination_id, destination_text, ride_type_id,
   trip_shape, depart_at, return_at, one_way_car_mode, needs_car_at_destination,
   adults, child_seats, boosters, has_luggage,
-  flex_depart_early, flex_depart_late, flex_return_early, flex_return_late, notes, ride_description, guest_passenger_names, changed_since_solve, preferred_car_id,
+  flex_depart_early, flex_depart_late, flex_return_early, flex_return_late, notes, ride_description, guest_passenger_names, changed_since_solve, preferred_car_id, template_id,
   preferred_car:cars!requests_preferred_car_id_fkey(name),
   destination:destinations(name),
   window:weeks(phase, open_at, close_at),
@@ -287,6 +295,7 @@ export async function fetchRequestById(requestId: string, profileId: string): Pr
     ride_description: string | null;
     guest_passenger_names: string[];
     changed_since_solve: boolean;
+    template_id: string | null;
     destination: { name: string } | null;
   };
   return {
@@ -320,6 +329,7 @@ export async function fetchRequestById(requestId: string, profileId: string): Pr
     rideDescription: row.ride_description,
     guestPassengerNames: row.guest_passenger_names ?? [],
     changedSinceSolve: row.changed_since_solve,
+    templateId: row.template_id,
   };
 }
 
@@ -374,6 +384,15 @@ export interface SubmitRequestPayload {
   preferred_car_id?: string | null;
   /** Published-day request which waits for a freed slot instead of altering the Siddur. */
   waitlist?: boolean;
+  /**
+   * Links the created/edited request straight to an existing `request_templates` row
+   * (repeating-request suggestion prefill, `/requests/new?template=<id>`, REQ §76) — the
+   * suggestion then disappears for this week the moment the request exists, regardless of
+   * whether the member keeps the "repeat weekly" switch on. Omitted for a plain new request;
+   * `save_request_template`/`stop_request_template` (`RequestForm`'s own follow-up calls)
+   * manage the link for every other case.
+   */
+  template_id?: string;
 }
 
 /**
@@ -533,4 +552,110 @@ export async function setRequestChildren(requestId: string, childIds: string[]):
 
 export async function withdrawAllRequests(departmentId: string, weekStart: string): Promise<void> {
   await rpc("withdraw_all_requests", { p_department_id: departmentId, p_week_start: weekStart });
+}
+
+/** Camel-cased, zod-validated `v_request_template_suggestions` row (DATA_MODEL §3.6, REQ §76). */
+export interface TemplateSuggestion {
+  templateId: string;
+  departmentId: string;
+  weekStart: string;
+  destinationId: string | null;
+  destinationText: string | null;
+  destinationName: string | null;
+  rideTypeId: string;
+  rideTypeName: string | null;
+  tripShape: TripShape;
+  departDow: number | null;
+  departTime: string | null;
+  returnDow: number | null;
+  returnTime: string | null;
+  /** Already anchored to `weekStart` (computed in SQL from `departDow`/`departTime`). */
+  departAt: string | null;
+  returnAt: string | null;
+  oneWayCarMode: Database["public"]["Enums"]["leg_car_mode"] | null;
+  needsCarAtDestination: boolean;
+  adults: number;
+  childSeats: number;
+  boosters: number;
+  childIds: string[];
+  companionIds: string[];
+  hasLuggage: boolean;
+  flexDepartEarly: string;
+  flexDepartLate: string;
+  flexReturnEarly: string;
+  flexReturnLate: string;
+  preferredCarId: string | null;
+  rideDescription: string | null;
+  guestPassengerNames: string[];
+  notes: string | null;
+}
+
+function mapTemplateSuggestion(row: TemplateSuggestionRow): TemplateSuggestion {
+  return {
+    templateId: row.template_id,
+    departmentId: row.department_id,
+    weekStart: row.week_start,
+    destinationId: row.destination_id,
+    destinationText: row.destination_text,
+    destinationName: row.destination_name,
+    rideTypeId: row.ride_type_id,
+    rideTypeName: row.ride_type_name,
+    tripShape: row.trip_shape,
+    departDow: row.depart_dow,
+    departTime: row.depart_time,
+    returnDow: row.return_dow,
+    returnTime: row.return_time,
+    departAt: row.depart_at,
+    returnAt: row.return_at,
+    oneWayCarMode: row.one_way_car_mode,
+    needsCarAtDestination: row.needs_car_at_destination ?? true,
+    adults: row.adults,
+    childSeats: row.child_seats,
+    boosters: row.boosters,
+    childIds: row.child_ids,
+    companionIds: row.companion_ids,
+    hasLuggage: row.has_luggage ?? false,
+    flexDepartEarly: row.flex_depart_early,
+    flexDepartLate: row.flex_depart_late,
+    flexReturnEarly: row.flex_return_early,
+    flexReturnLate: row.flex_return_late,
+    preferredCarId: row.preferred_car_id,
+    rideDescription: row.ride_description,
+    guestPassengerNames: row.guest_passenger_names,
+    notes: row.notes,
+  };
+}
+
+const TEMPLATE_SUGGESTION_SELECT = `
+  template_id, department_id, week_start, destination_id, destination_text, destination_name,
+  ride_type_id, ride_type_name, trip_shape, depart_dow, depart_time, return_dow, return_time,
+  depart_at, return_at, one_way_car_mode, needs_car_at_destination, adults, child_seats, boosters,
+  child_ids, companion_ids, has_luggage, flex_depart_early, flex_depart_late, flex_return_early,
+  flex_return_late, preferred_car_id, ride_description, guest_passenger_names, notes
+`;
+
+/** Repeating-request suggestions for the caller's own open week(s) (REQ §76, DATA_MODEL §3.6). */
+export async function fetchTemplateSuggestions(): Promise<TemplateSuggestion[]> {
+  const { data, error } = await supabase
+    .from("v_request_template_suggestions")
+    .select(TEMPLATE_SUGGESTION_SELECT)
+    .order("week_start", { ascending: true })
+    .order("depart_at", { ascending: true, nullsFirst: false });
+  if (error) throw toAppError(error);
+  return (data ?? []).map((row) => mapTemplateSuggestion(templateSuggestionRowSchema.parse(row)));
+}
+
+/** Creates or updates the caller's template from one of their own requests, linking it back. */
+export async function saveRequestTemplate(requestId: string): Promise<string> {
+  return rpc("save_request_template", { p_request_id: requestId });
+}
+
+/** "Not this week" — suggestions for this template resume the following week. */
+export async function snoozeRequestTemplate(templateId: string, weekStart: string): Promise<void> {
+  await rpc("snooze_request_template", { p_template_id: templateId, p_week_start: weekStart });
+}
+
+/** "Stop repeating" — reversible via `resume_request_template` (not yet exposed in the UI). */
+export async function stopRequestTemplate(templateId: string): Promise<void> {
+  await rpc("stop_request_template", { p_template_id: templateId });
 }
