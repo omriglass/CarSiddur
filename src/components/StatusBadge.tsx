@@ -1,11 +1,13 @@
 import {
   AlertTriangle,
+  Archive,
   Ban,
   CheckCheck,
   CheckCircle2,
   Clock,
   Copy,
   ExternalLink,
+  Inbox,
   MessageCircleQuestion,
   PencilLine,
   Send,
@@ -30,6 +32,7 @@ type RequestStatus = Database["public"]["Enums"]["request_status"];
 type ProposalStatus = Database["public"]["Enums"]["proposal_status"];
 type RideStatus = Database["public"]["Enums"]["ride_status"];
 type CarStatus = Database["public"]["Enums"]["car_status"];
+type WeekPhase = Database["public"]["Enums"]["week_phase"];
 /**
  * Mirrors `ParsedInviteRowStatus`
  * (`src/features/admin/members/lib/parseInviteLines.ts`) — a plain TS union,
@@ -141,6 +144,19 @@ const CAR_STATUS_META: Record<CarStatus, StatusMeta> = {
   },
 };
 
+/**
+ * `weeks.phase` (`he.phase`, DATA_MODEL §2 / consistency decision #4). Used
+ * by the desktop week strip and the siddur archive list (`SiddurArchivePage`)
+ * — previously the week chip rendered `he.phase[w.phase]` as plain text.
+ */
+const WEEK_PHASE_META: Record<WeekPhase, StatusMeta> = {
+  open: { icon: Inbox, label: he.phase.open, colorClass: TONE.neutral },
+  solving: { icon: Wrench, label: he.phase.solving, colorClass: TONE.amber },
+  published: { icon: CheckCircle2, label: he.phase.published, colorClass: TONE.booked },
+  live: { icon: SendHorizontal, label: he.phase.live, colorClass: TONE.available },
+  archived: { icon: Archive, label: he.phase.archived, colorClass: TONE.neutral },
+};
+
 const INVITE_ROW_STATUS_META: Record<InviteRowStatus, StatusMeta> = {
   new: { icon: UserPlus, label: he.adminMembers.importRowNew, colorClass: TONE.available },
   existing: { icon: Users, label: he.adminMembers.importRowExisting, colorClass: TONE.neutral },
@@ -157,12 +173,13 @@ type StatusBadgeProps =
   | { kind: "proposal"; status: ProposalStatus; className?: string }
   | { kind: "ride"; status: RideStatus; className?: string }
   | { kind: "car"; status: CarStatus; className?: string }
+  | { kind: "week"; status: WeekPhase; className?: string }
   | { kind: "inviteRow"; status: InviteRowStatus; className?: string };
 
 /**
  * Color + icon + Hebrew text, never color alone (UX_FLOWS.md §7.3/§7.4).
  * `kind` picks which status domain `status` belongs to: `request`/`ride`/
- * `proposal` (DB enums), `car` (DB enum, admin fleet screen) or `inviteRow`
+ * `proposal`/`car`/`week` (DB enums; `week` = `weeks.phase`) or `inviteRow`
  * (the bulk member-invite preview's plain-TS-union row status, admin
  * members screen).
  */
@@ -176,6 +193,8 @@ function metaFor(props: StatusBadgeProps): StatusMeta {
       return RIDE_STATUS_META[props.status];
     case "car":
       return CAR_STATUS_META[props.status];
+    case "week":
+      return WEEK_PHASE_META[props.status];
     case "inviteRow":
       return INVITE_ROW_STATUS_META[props.status];
   }
@@ -195,4 +214,4 @@ export function StatusBadge(props: StatusBadgeProps) {
   );
 }
 
-export { REQUEST_STATUS_META, PROPOSAL_STATUS_META, RIDE_STATUS_META, CAR_STATUS_META, INVITE_ROW_STATUS_META };
+export { REQUEST_STATUS_META, PROPOSAL_STATUS_META, RIDE_STATUS_META, CAR_STATUS_META, WEEK_PHASE_META, INVITE_ROW_STATUS_META };

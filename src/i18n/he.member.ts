@@ -101,6 +101,10 @@ export const heMember = {
     nextWeek: "שבוע הבא",
     waitlistForDay: "רשימת המתנה ליום {{day}}",
     displayMenu: "תצוגה",
+    archive: "ארכיון",
+    archiveTitle: "ארכיון סידורים",
+    archiveEmpty: "אין עדיין סידורים בארכיון",
+    archivedWeekHint: "סידור מהארכיון (לצפייה בלבד)",
   },
   rideDetail: {
     title: "פרטי הנסיעה",

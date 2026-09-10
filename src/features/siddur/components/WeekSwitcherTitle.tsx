@@ -1,13 +1,14 @@
-import { ChevronDown } from "lucide-react";
+import { Archive, ChevronDown } from "lucide-react";
 
 import { formatWeekRangeLabel } from "@/components/DateField";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { t } from "@/i18n/he";
+import { he, t } from "@/i18n/he";
 
 import type { ThisNextWeekResolution } from "../thisNextWeek";
 import type { Week } from "../api";
@@ -16,6 +17,8 @@ interface WeekSwitcherTitleProps {
   resolution: ThisNextWeekResolution<Week>;
   activeWeekStart: string | undefined;
   onSelect: (weekStart: string) => void;
+  /** Navigates to `/siddur/:dept/archive` (Archive of past siddurim, 2026-09-10). */
+  onArchive: () => void;
 }
 
 /**
@@ -25,7 +28,7 @@ interface WeekSwitcherTitleProps {
  * disabled rather than hidden, so the two options are always in the same
  * place. Hidden `>= md` — desktop keeps the plain title + week-chip strip.
  */
-export function WeekSwitcherTitle({ resolution, activeWeekStart, onSelect }: WeekSwitcherTitleProps) {
+export function WeekSwitcherTitle({ resolution, activeWeekStart, onSelect, onArchive }: WeekSwitcherTitleProps) {
   const { thisWeekStart, nextWeekStart, thisWeek, nextWeek } = resolution;
   const label =
     activeWeekStart === thisWeekStart ? t("siddur.thisWeek")
@@ -68,6 +71,13 @@ export function WeekSwitcherTitle({ resolution, activeWeekStart, onSelect }: Wee
           <span className="flex flex-col">
             <span>{t("siddur.nextWeek")}</span>
             <span className="text-xs text-muted-foreground" dir="ltr">{formatWeekRangeLabel(nextWeekStart)}</span>
+          </span>
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem data-testid="siddur-week-option-archive" onSelect={onArchive}>
+          <span className="flex items-center gap-2">
+            <Archive className="size-4 text-muted-foreground" aria-hidden="true" />
+            {he.siddur.archive}
           </span>
         </DropdownMenuItem>
       </DropdownMenuContent>

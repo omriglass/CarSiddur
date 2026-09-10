@@ -202,3 +202,17 @@ export async function fetchCarLocations(departmentId: string, weekStart: string)
   if (error) throw toAppError(error);
   return data ?? [];
 }
+
+/**
+ * Car id→name for the member-facing archive export (`MemberWeekExportButton`,
+ * `src/features/siddur/export/`). `cars_select` is `is_approved()`-only (no
+ * department/role gate), so any approved member may read this — including
+ * retired cars, so an old archived week's export still shows real names
+ * instead of raw ids (mirrors `fetchExportCars` in `sadran/export/api.ts`,
+ * the Sadran-only equivalent).
+ */
+export async function fetchExportCarNames(departmentId: string): Promise<{ id: string; name: string }[]> {
+  const { data, error } = await supabase.from("cars").select("id, name").eq("department_id", departmentId);
+  if (error) throw toAppError(error);
+  return data ?? [];
+}

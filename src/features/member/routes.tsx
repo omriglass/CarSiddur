@@ -3,6 +3,7 @@ import type { RouteObject } from "react-router-dom";
 import { CarPage } from "@/pages/CarPage";
 import { EditRequestPage } from "@/pages/EditRequestPage";
 import { RequestsListPage } from "@/pages/RequestsListPage";
+import { SiddurArchivePage } from "@/pages/SiddurArchivePage";
 import { SiddurPage } from "@/pages/SiddurPage";
 
 /**
@@ -17,6 +18,7 @@ export const memberRoutes: RouteObject[] = [
   { path: "/requests", element: <RequestsListPage /> },
   { path: "/requests/:id/edit", element: <EditRequestPage /> },
   { path: "/siddur/:dept", element: <SiddurPage /> },
+  { path: "/siddur/:dept/archive", element: <SiddurArchivePage /> },
   { path: "/siddur/:dept/:week", element: <SiddurPage /> },
   { path: "/cars/:carId", element: <CarPage /> },
 ];

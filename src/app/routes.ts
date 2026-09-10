@@ -47,6 +47,13 @@ export const paths = {
     return withQuery(path, { ride: rideId });
   },
 
+  /**
+   * `/siddur/:dept/archive` — read-only list of past siddurim (Archive of past
+   * siddurim, owner decision 2026-09-10): past weeks disappear from the
+   * regular week switcher/strip and live only here.
+   */
+  siddurArchive: (departmentId: string): string => `/siddur/${departmentId}/archive`,
+
   requests: {
     /**
      * `/requests`. `focusId` is accepted for forward compatibility with a

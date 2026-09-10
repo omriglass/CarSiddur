@@ -22,6 +22,7 @@ const ROUTE_PATTERNS = [
   "/siddur",
   "/siddur/:dept",
   "/siddur/:dept/:week",
+  "/siddur/:dept/archive",
   "/requests",
   "/requests/new",
   "/requests/:id/edit",
@@ -75,6 +76,13 @@ describe("paths.siddur", () => {
 
   it("appends ?ride= when rideId is given", () => {
     expect(paths.siddur({ dept: "d", rideId: "r1" })).toBe("/siddur/d?ride=r1");
+  });
+});
+
+describe("paths.siddurArchive", () => {
+  it("matches /siddur/:dept/archive", () => {
+    expectRoutable(paths.siddurArchive("dept-1"));
+    expect(paths.siddurArchive("dept-1")).toBe("/siddur/dept-1/archive");
   });
 });
 

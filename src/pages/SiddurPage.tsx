@@ -12,6 +12,7 @@ import { formatWeekRangeLabel, todayInJerusalem } from "@/components/DateField";
 import { EmptyState } from "@/components/EmptyState";
 import { PageHeader } from "@/components/PageHeader";
 import { RideCard, type RideCardData } from "@/components/RideCard";
+import { StatusBadge } from "@/components/StatusBadge";
 import { RideTypeLegend } from "@/components/RideTypeLegend";
 import { CardListSkeleton } from "@/components/skeletons/CardListSkeleton";
 import { Button } from "@/components/ui/button";
@@ -56,6 +57,7 @@ import {
   useClaimRideDriverMutation,
 } from "@/features/siddur/hooks";
 import { useDayFreeWindows, type DayFreeWindowsAway, type DayFreeWindowsCar } from "@/features/siddur/useDayFreeWindows";
+import { isPastWeek } from "@/features/siddur/pastWeeks";
 import { useSiddurDisplayPrefs } from "@/features/siddur/useSiddurDisplayPrefs";
 import { resolveThisNextWeek } from "@/features/siddur/thisNextWeek";
 import { WeekSwitcherTitle } from "@/features/siddur/components/WeekSwitcherTitle";
@@ -70,12 +72,18 @@ import { weekdayLabel } from "@/lib/dayLabels";
 import { cn } from "@/lib/utils";
 import { paths } from "@/app/routes";
 
-/** Live > Published/Archived > soonest Open (UX_FLOWS §3.5: the siddur opens on the relevant week). */
+/**
+ * Live > Published > soonest Open (UX_FLOWS §3.5: the siddur opens on the
+ * relevant week). `archived` is deliberately excluded from the "published"
+ * bucket (Archive of past siddurim, owner decision 2026-09-10): an archived
+ * week is always past, and this default must never land on a past week —
+ * opening one is only ever explicit, either by URL or from `/siddur/:dept/archive`.
+ */
 function resolveSiddurWeek(weeks: readonly Week[]): Week | null {
   const live = weeks.find((w) => w.phase === "live");
   if (live) return live;
   const published = [...weeks]
-    .filter((w) => w.phase === "published" || w.phase === "archived")
+    .filter((w) => w.phase === "published")
     .sort((a, b) => (a.week_start < b.week_start ? 1 : -1))[0];
   if (published) return published;
   const open = [...weeks].filter((w) => w.phase === "open").sort((a, b) => (a.week_start < b.week_start ? -1 : 1))[0];
@@ -368,6 +376,15 @@ export function SiddurPage() {
 
   const dayCounts = dayGroups.map((g) => ({ rides: g.items.length, unmet: 0 }));
   const thisNextWeek = resolveThisNextWeek(weeks, today);
+  // Archive of past siddurim (owner decision, 2026-09-10): the regular week
+  // switcher/strip only ever offers this week onward; a past week is only
+  // reachable explicitly (by URL, or from `/siddur/:dept/archive`), and when
+  // it is opened this way the page says so next to the title.
+  const currentWeeks = weeks.filter((w) => !isPastWeek(w, today));
+  const viewingArchivedWeek = !!resolvedWeek && isPastWeek(resolvedWeek, today);
+  function goToArchive() {
+    if (departmentId) navigate(paths.siddurArchive(departmentId));
+  }
   const departmentSwitcher = (myDepartmentsQuery.data?.length ?? 0) > 1 ? (
     <Select
       value={departmentId}
@@ -396,7 +413,7 @@ export function SiddurPage() {
             navigation-by-heading checks) even though the visible title text now switches
             between "השבוע"/"שבוע הבא" as the week switcher itself. */}
         <h1 className="sr-only">{t("screen.siddur.title")}</h1>
-        <WeekSwitcherTitle resolution={thisNextWeek} activeWeekStart={weekStart} onSelect={(next) => goTo(departmentId as string, next)} />
+        <WeekSwitcherTitle resolution={thisNextWeek} activeWeekStart={weekStart} onSelect={(next) => goTo(departmentId as string, next)} onArchive={goToArchive} />
         <SiddurDisplayMenu
           table={tableView}
           onTableChange={setTableView}
@@ -417,22 +434,34 @@ export function SiddurPage() {
       </div>
 
       {!isMyDepartment ? <p className="text-xs text-muted-foreground">{he.siddur.otherDeptNote}</p> : null}
+      {viewingArchivedWeek ? <p className="text-xs text-muted-foreground">{he.siddur.archivedWeekHint}</p> : null}
 
-      {weeks.length > 1 ? (
+      {departmentId ? (
         <div className="hidden items-center gap-2 overflow-x-auto md:flex">
-          {weeks.map((w) => (
+          {currentWeeks.map((w) => (
             <button
               key={w.week_start}
               type="button"
               onClick={() => goTo(departmentId as string, w.week_start)}
               className={
-                "shrink-0 rounded-md border px-2 py-1 text-xs " +
+                "flex shrink-0 items-center gap-1 rounded-md border px-2 py-1 text-xs " +
                 (w.week_start === weekStart ? "border-primary bg-primary/10" : "border-input")
               }
             >
-              <span dir="ltr">{formatWeekRangeLabel(w.week_start)}</span> · {he.phase[w.phase]}
+              <span dir="ltr">{formatWeekRangeLabel(w.week_start)}</span>
+              <StatusBadge kind="week" status={w.phase} className="h-5 px-1.5 py-0 text-[10px]" />
             </button>
           ))}
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="ms-auto shrink-0"
+            onClick={goToArchive}
+            data-testid="siddur-archive-link"
+          >
+            {he.siddur.archive}
+          </Button>
         </div>
       ) : null}
 

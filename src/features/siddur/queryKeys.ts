@@ -14,4 +14,6 @@ export const siddurKeys = {
     ["siddur", "myUpcomingRides", profileId, departmentId] as const,
   rideChanges: (userId: string | undefined, departmentId: string | undefined, weekStart: string | undefined) =>
     ["siddur", "rideChanges", userId, departmentId, weekStart] as const,
+  weekExport: (departmentId: string, weekStart: string) =>
+    ["siddur", "weekExport", departmentId, weekStart] as const,
 };
