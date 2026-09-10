@@ -557,6 +557,8 @@ export interface ApplySolverResultSummary {
   deleted: number;
   unchanged: number;
   unassigned_requests: string[];
+  /** Multi-day requests ("series", REQ §13.77) skipped because no car was free for the whole span. */
+  skippedSeries?: { series_id: string; reason: string }[];
 }
 
 /** One ride a `'full'` re-solve would change or remove, for the confirm dialog's "by label" listing. */

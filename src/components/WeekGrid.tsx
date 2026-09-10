@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { nextZoom } from "@/components/pinchZoom";
 import { formatMinutes } from "@/components/TimeField15";
-import { he } from "@/i18n/he";
+import { he, tv } from "@/i18n/he";
 import { rideTypeColorClasses } from "@/lib/rideTypeColors";
 import { cn } from "@/lib/utils";
 
@@ -59,6 +59,9 @@ export interface WeekGridRide {
   tightSchedule?: boolean;
   /** `ride_types.code` of the ride's driver request (falls back to any served request, then `"other"`) — tints the block (visual pass, `src/lib/rideTypeColors.ts`). */
   rideTypeCode?: string | null;
+  /** Multi-day request leg (REQ §13.77, UX_FLOWS.md §4.2) — 1-based position and total leg count; shows a "יום {{index}}/{{count}}" marker on the block when `seriesCount` is above 1. */
+  seriesIndex?: number | null;
+  seriesCount?: number | null;
 }
 
 export interface WeekGridBlock {
@@ -192,6 +195,9 @@ function defaultRenderRide(ride: WeekGridRide) {
   return (
     <span className="flex w-full flex-col items-start overflow-hidden px-1.5 py-1 text-start text-xs font-medium text-foreground">
       <span className={cn("w-full whitespace-normal break-words leading-snug", ride.isMine && "font-bold")}>{ride.label}</span>
+      {ride.seriesCount && ride.seriesCount > 1 ? (
+        <span className="w-full truncate text-xs opacity-90">{tv("ride.seriesDay", { index: String(ride.seriesIndex ?? 1), count: String(ride.seriesCount) })}</span>
+      ) : null}
       {ride.passengerSummary ? <span className="w-full whitespace-normal break-words text-xs" title={ride.passengerSummary}>{ride.passengerSummary}</span> : null}
       {ride.description ? <span className="line-clamp-2 w-full whitespace-pre-wrap break-words text-xs" title={ride.description}>{ride.description}</span> : null}
       {ride.coordinatorNotes ? <span className="line-clamp-2 w-full whitespace-pre-wrap break-words text-xs" title={`${he.field.notes}: ${ride.coordinatorNotes}`}>{he.field.notes}: {ride.coordinatorNotes}</span> : null}

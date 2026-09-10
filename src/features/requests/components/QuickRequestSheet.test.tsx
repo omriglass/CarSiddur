@@ -8,6 +8,7 @@ import { QuickRequestSheet } from "./QuickRequestSheet";
 const mocks = vi.hoisted(() => ({ submit: vi.fn(), setCompanions: vi.fn(), setChildren: vi.fn(), success: vi.fn() }));
 vi.mock("../hooks", () => ({
   useSubmitRequestMutation: () => ({ mutateAsync: mocks.submit, isPending: false }),
+  useSubmitSeriesRequestMutation: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useMyRequests: () => ({ data: [] }),
   useRequestCompanionsQuery: () => ({ data: [], isSuccess: true }),
   useRequestChildrenQuery: () => ({ data: [], isSuccess: true }),

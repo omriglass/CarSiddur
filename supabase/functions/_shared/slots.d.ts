@@ -47,10 +47,46 @@ export interface Warning {
 export declare function roundTripOutLeg(nr: NormalizedRequest, home: string): NormalizedLeg;
 /** The independent return-leg of a round trip. */
 export declare function roundTripReturnLeg(nr: NormalizedRequest, home: string): NormalizedLeg;
+/**
+ * One in-week leg of a multi-day series request (docs/SOLVER.md §3.x). The
+ * DB stores one request row per calendar day sharing `seriesId`; the solver
+ * only ever sees the legs that fall inside the week being solved.
+ * `originId`/`destinationId` are the *car's* location at the start/end of
+ * this leg — home only at the true start/end of the whole series (global
+ * `seriesIndex === 1` / `=== seriesCount`), the series' own destination in
+ * between (the car is parked there overnight). `flexDep`/`flexRet` are only
+ * ever non-degenerate on the leg that is also the true global first/last
+ * leg — every other leg's day-boundary timestamp (00:00 / 23:59) is fixed.
+ */
+export interface SeriesLeg {
+    requestId: string;
+    request: Request;
+    seriesIndex: number;
+    window: Window;
+    originId: string;
+    destinationId: string;
+    passengers: Passengers;
+    luggage: boolean;
+    dayIndex: number;
+    flexDep: [number, number];
+    flexRet: [number, number];
+}
+export interface SeriesUnit {
+    seriesId: string;
+    seriesCount: number;
+    destinationId: string;
+    /** sorted by seriesIndex ascending; only the legs present in this week's input */
+    legs: SeriesLeg[];
+    /** built from the first in-week leg's own request row via the ordinary round-trip
+     *  normalization, so the policy engine can score it exactly like any other request
+     *  (SOLVER §3.x: "the series unit is ranked by the first leg's score") */
+    scoreProxy: NormalizedRequest;
+}
 export interface NormalizeResult {
     normalized: NormalizedRequest[];
     servedByFixed: Set<string>;
     warnings: Warning[];
+    seriesUnits: SeriesUnit[];
 }
 export declare function normalize(input: SolverInput): NormalizeResult;
 /** Total-order request id comparator used everywhere as the final tie-break (determinism). */

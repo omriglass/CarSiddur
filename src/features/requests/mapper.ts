@@ -71,9 +71,12 @@ export function toSubmitRequestPayload(
     preferred_car_id: values.preferredCarId || null,
     trip_shape: values.tripShape,
     depart_at: needsDepart && values.departTime ? toInstant(values.day, values.departTime, false) : undefined,
+    // Multi-day request (REQ §13.77): `returnDay` (when set and later than `day`) puts the
+    // return instant on that later calendar day instead — the same shape `submit_series_request`
+    // expects for its own `depart_at`/`return_at` span (`RequestForm.tsx` picks the RPC).
     return_at:
       needsReturn && values.returnTime
-        ? toInstant(values.day, values.returnTime, false)
+        ? toInstant(values.returnDay || values.day, values.returnTime, false)
         : undefined,
     adults: values.adults,
     child_seats: values.childSeats,

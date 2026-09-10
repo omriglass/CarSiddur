@@ -50,6 +50,15 @@ export const requestFormSchema = z
     day: z.string().min(1),
     /** 0 (Sunday) .. 6 (Saturday) — the index of `day` within the target week. */
     dayIndex: z.number().int().min(0).max(6),
+    /**
+     * Multi-day request ("series", REQ §13.77, UX_FLOWS.md §3.4) — `yyyy-MM-dd`, weekly
+     * variant + new mode + round trip only. `undefined`/equal to `day` means an ordinary
+     * same-day request; a LATER date routes the submit through `submit_series_request`
+     * instead of `submit_request` (`RequestForm.tsx`). Left optional (rather than mirroring
+     * `day`'s own required+default treatment) so every existing caller/test that never heard
+     * of multi-day requests keeps working unchanged.
+     */
+    returnDay: z.string().optional(),
     destination: destinationValueSchema,
     rideTypeId: z.string().min(1, he.request.rideTypeRequired),
     preferredCarId: z.string().optional(),
@@ -99,6 +108,10 @@ export const requestFormSchema = z
   .superRefine((value, ctx) => {
     const needsDepart = value.tripShape !== "one_way_from";
     const needsReturn = value.tripShape !== "one_way_to";
+    // A multi-day span's return time is on a later calendar day, so the plain
+    // minutes-of-day comparison below (meant to catch same-day return-before-departure
+    // typos) does not apply — the RPC itself is the arbiter of the actual span.
+    const isMultiDay = value.tripShape === "round_trip" && !!value.returnDay && value.returnDay !== value.day;
 
     if (value.tripShape !== "round_trip" && !value.oneWayCarMode) {
       ctx.addIssue({
@@ -115,7 +128,7 @@ export const requestFormSchema = z
       ctx.addIssue({ path: ["returnTime"], code: z.ZodIssueCode.custom, message: he.field.return });
     }
 
-    if (needsDepart && needsReturn && value.departTime && value.returnTime) {
+    if (needsDepart && needsReturn && !isMultiDay && value.departTime && value.returnTime) {
       const departMinutes = timeToMinutes(value.departTime);
       const returnMinutes = timeToMinutes(value.returnTime);
       if (returnMinutes <= departMinutes) {

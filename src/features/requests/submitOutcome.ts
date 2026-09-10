@@ -2,7 +2,7 @@ import { toast } from "sonner";
 
 import { t, tv } from "@/i18n/he";
 
-import type { SubmitRequestResult } from "./api";
+import type { SubmitRequestResult, SubmitSeriesRequestResult } from "./api";
 
 export interface SubmitOutcomeContext {
   /** Resolves a `cars.id` to its display name (both variants already have `carsQuery.data`). */
@@ -49,5 +49,23 @@ export function toastSubmitOutcome(result: SubmitRequestResult | null | undefine
     toast(t("quickRequest.waitlisted"), {
       action: ctx.onViewRequests ? { label: t("quickRequest.waitlistedLink"), onClick: ctx.onViewRequests } : undefined,
     });
+  }
+}
+
+/**
+ * `submit_series_request`'s outcome toast (multi-day request, REQ §13.77, UX_FLOWS.md §3.4).
+ * Same "falls through silently against an open/solving week" shape as `toastSubmitOutcome`
+ * above — `status` is only present once `try_auto_approve_series()` actually ran.
+ */
+export function toastSeriesSubmitOutcome(result: SubmitSeriesRequestResult | null | undefined): void {
+  if (!result) return;
+
+  if (result.status === "assigned") {
+    toast.success(t("request.seriesAssigned"));
+    return;
+  }
+
+  if (result.status === "waitlisted") {
+    toast(t("request.seriesWaitlisted"));
   }
 }

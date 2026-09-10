@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { he } from "@/i18n/he";
+import { he, tv } from "@/i18n/he";
 import { RequestsListPage } from "@/pages/RequestsListPage";
 import type { MyRequestRow } from "../api";
 
@@ -32,6 +32,7 @@ function request(overrides: Partial<MyRequestRow> = {}): MyRequestRow {
     returnAt: "2026-09-15T12:00:00+03:00", tripShape: "round_trip", destination: "Destination",
     rideTypeId: "type-1", rideTypeName: "Type", rideTypeCode: null, needsCarAtDestination: true,
     version: 1, freedSlotOptOut: false, ride: null, pendingProposal: null, templateId: null,
+    seriesId: null, seriesIndex: null, seriesCount: null,
     window: { phase: "open", open_at: "2026-09-01T00:00:00Z", close_at: "2026-09-12T23:00:00Z" },
     ...overrides,
   };
@@ -117,5 +118,35 @@ describe("member request editing", () => {
     show();
     expect(screen.queryByRole("button", { name: he.request.makeRepeating })).not.toBeInTheDocument();
     expect(screen.getByText(he.request.repeating)).toBeVisible();
+  });
+
+  it("groups a multi-day request's legs into one card spanning the first depart to the last return", () => {
+    mocks.rows = [
+      request({
+        id: "leg-1", seriesId: "series-1", seriesIndex: 1, seriesCount: 3,
+        departAt: "2026-09-15T08:00:00+03:00", returnAt: "2026-09-15T23:59:00+03:00",
+      }),
+      request({
+        id: "leg-2", seriesId: "series-1", seriesIndex: 2, seriesCount: 3,
+        departAt: "2026-09-16T00:00:00+03:00", returnAt: "2026-09-16T23:59:00+03:00",
+      }),
+      request({
+        id: "leg-3", seriesId: "series-1", seriesIndex: 3, seriesCount: 3,
+        departAt: "2026-09-17T00:00:00+03:00", returnAt: "2026-09-17T12:00:00+03:00",
+      }),
+    ];
+    show();
+    expect(screen.getAllByText(he.status.submitted)).toHaveLength(1);
+    expect(screen.getByText(tv("request.multiDayBadge", { count: "3" }))).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: he.requestsList.edit })).not.toBeInTheDocument();
+  });
+
+  it("hides make-repeating for a multi-day request's card", () => {
+    mocks.rows = [
+      request({ id: "leg-1", seriesId: "series-1", seriesIndex: 1, seriesCount: 2, status: "submitted", templateId: null }),
+      request({ id: "leg-2", seriesId: "series-1", seriesIndex: 2, seriesCount: 2, status: "submitted", templateId: null }),
+    ];
+    show();
+    expect(screen.queryByRole("button", { name: he.request.makeRepeating })).not.toBeInTheDocument();
   });
 });

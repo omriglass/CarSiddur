@@ -44,5 +44,6 @@ export function myRideCard(
     driverName: ride.driver_name, carName: ride.car_name, carId: ride.car_id, carType: ride.car_type ?? undefined,
     isChauffeur: chauffeur, needsDriver: !!ride.needs_driver, isMine: true,
     rideTypeCode: ownRequest?.rideTypeCode ?? served[0]?.ride_type,
+    seriesIndex: ride.series_index, seriesCount: ride.series_count,
   };
 }

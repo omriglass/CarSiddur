@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { useQuery } from "@tanstack/react-query";
 
 import { datesOfWeek, formatWeekRangeLabel, todayInJerusalem } from "@/components/DateField";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { PageHeader } from "@/components/PageHeader";
@@ -153,6 +154,10 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
   const [mergePrefill, setMergePrefill] = useState<Parameters<typeof goToComposer>[0] | null>(null);
   const [selectedUnmetId, setSelectedUnmetId] = useState<string | null>(null);
   const [reservation, setReservation] = useState<{ carId: string; start: string; end: string; notes: string } | null>(null);
+  // Multi-day request ("series") car-change confirmation (REQ §13.77, UX_FLOWS.md §4.2):
+  // dragging a series leg onto a different car moves every day of the span — confirm first,
+  // since a car free on this day only is not necessarily free for the whole series (MDR03).
+  const [seriesMoveConfirm, setSeriesMoveConfirm] = useState<{ carName: string; index: number; count: number; run: () => Promise<void> } | null>(null);
   const applySolverResultMutation = useApplySolverResultMutation();
   const undoStack = useUndoStack<void>();
   const undoVersions = useRef(new Map<string, number>());
@@ -325,6 +330,9 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
           unassigned: String(summary.unassigned_requests.length),
         }),
       );
+      if (summary.skippedSeries?.length) {
+        toast(tv("sadranBoard.skippedSeries", { count: String(summary.skippedSeries.length) }));
+      }
     } catch {
       // toast already shown by the mutation, or silently a no-op if nothing was open
     } finally {
@@ -504,6 +512,8 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
       highlighted: focusedConflict?.id === r.id,
       pendingConsent: pendingConsentRideIds.has(r.id as string),
       rideTypeCode: representativeRideTypeCode(servedOf(r)),
+      seriesIndex: r.series_index,
+      seriesCount: r.series_count,
     }));
 
   for (const merge of pendingMerges) {
@@ -907,31 +917,46 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
         allow_conflict: true,
         pin_reason: prevInput.pin_reason ?? "SADRAN_MANUAL",
       };
-      try {
-        await editRideMutation.mutateAsync({ input: nextInput, expectedVersion: planningChange?.expected_version ?? ride.version ?? undefined, departmentId, weekStart });
-        if (hasCollision && ride.status !== "draft") { toast.success(he.boardCoordination.planningSaved); return; }
-        undoVersions.current.set(rideId, (ride.version ?? 0) + 1);
-        toast.success(he.sadranBoard.dragAppliedToast);
-        undoStack.push({
-          label: ride.destination_name ?? ride.id,
-          run: async () => {
-            const expectedVersion = undoVersions.current.get(rideId) ?? (ride.version ?? 0) + 1;
-            await editRideMutation.mutateAsync({ input: prevInput, expectedVersion, departmentId, weekStart });
-            undoVersions.current.set(rideId, expectedVersion + 1);
-          },
-          // Redo: re-apply the same drag/resize/save edit that was just
-          // reverted, symmetric to `run()` above (both read/write the same
-          // `undoVersions` map so a redo followed by another undo keeps
-          // using the right `expected_version`).
-          redo: async () => {
-            const expectedVersion = undoVersions.current.get(rideId) ?? (ride.version ?? 0) + 1;
-            await editRideMutation.mutateAsync({ input: nextInput, expectedVersion, departmentId, weekStart });
-            undoVersions.current.set(rideId, expectedVersion + 1);
-          },
-        });
-      } catch {
-        // toast already shown by the mutation
+      // Captured outside `applyMove` (a closure): TS's property-narrowing from the early
+      // `!ride?.id` guard above does not carry into a nested function body.
+      const undoLabel = ride.destination_name ?? ride.id;
+      const applyMove = async () => {
+        try {
+          await editRideMutation.mutateAsync({ input: nextInput, expectedVersion: planningChange?.expected_version ?? ride.version ?? undefined, departmentId, weekStart });
+          if (hasCollision && ride.status !== "draft") { toast.success(he.boardCoordination.planningSaved); return; }
+          undoVersions.current.set(rideId, (ride.version ?? 0) + 1);
+          toast.success(he.sadranBoard.dragAppliedToast);
+          undoStack.push({
+            label: undoLabel,
+            run: async () => {
+              const expectedVersion = undoVersions.current.get(rideId) ?? (ride.version ?? 0) + 1;
+              await editRideMutation.mutateAsync({ input: prevInput, expectedVersion, departmentId, weekStart });
+              undoVersions.current.set(rideId, expectedVersion + 1);
+            },
+            // Redo: re-apply the same drag/resize/save edit that was just
+            // reverted, symmetric to `run()` above (both read/write the same
+            // `undoVersions` map so a redo followed by another undo keeps
+            // using the right `expected_version`).
+            redo: async () => {
+              const expectedVersion = undoVersions.current.get(rideId) ?? (ride.version ?? 0) + 1;
+              await editRideMutation.mutateAsync({ input: nextInput, expectedVersion, departmentId, weekStart });
+              undoVersions.current.set(rideId, expectedVersion + 1);
+            },
+          });
+        } catch {
+          // toast already shown by the mutation (e.g. MDR03 "series_car_unavailable")
+        }
+      };
+      // Multi-day request ("series", REQ §13.77): a car change drags every leg of the span
+      // along (`edit_ride` calls `move_series` server-side) — confirm before dragging days
+      // the Sadran cannot currently see. A time-only drag (same car) needs no extra
+      // confirmation; the server's own MDR02 error explains a disallowed middle-leg time move.
+      if (ride.series_id && carId !== ride.car_id) {
+        const carName = (carsQuery.data ?? []).find((c) => c.id === carId)?.name ?? "";
+        setSeriesMoveConfirm({ carName, index: ride.series_index ?? 1, count: ride.series_count ?? 1, run: applyMove });
+        return;
       }
+      await applyMove();
     } else if (driverRequest) {
       toast(he.sadranBoard.dragBeyondFlexToast);
       goToComposer({
@@ -1285,6 +1310,21 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
           </> : null}
         </PortalDialogContent>
       </Dialog>
+      <ConfirmDialog
+        open={!!seriesMoveConfirm}
+        onOpenChange={(open) => { if (!open) setSeriesMoveConfirm(null); }}
+        title={he.sadranBoard.seriesMoveTitle}
+        description={
+          seriesMoveConfirm
+            ? tv("sadranBoard.seriesMoveBody", { index: String(seriesMoveConfirm.index), count: String(seriesMoveConfirm.count), car: seriesMoveConfirm.carName })
+            : undefined
+        }
+        onConfirm={() => {
+          const confirmed = seriesMoveConfirm;
+          setSeriesMoveConfirm(null);
+          if (confirmed) void confirmed.run();
+        }}
+      />
       <RideSheet
         key={selectedPlanningChange?.id ?? selectedRide?.id ?? "no-ride"}
         ride={selectedRide && selectedPlanningChange ? { ...selectedRide, car_id: selectedPlanningChange.car_id, starts_at: selectedPlanningChange.starts_at, ends_at: selectedPlanningChange.ends_at } : selectedRide}

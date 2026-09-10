@@ -110,6 +110,19 @@ it("persists an optional preferred car and explicitly clears it when removed", (
   expect(toSubmitRequestPayload(baseValues({ preferredCarId: "" }), { requestId: "request-1", expectedVersion: 2 }).preferred_car_id).toBeNull();
 });
 
+describe("multi-day (series) requests", () => {
+  it("puts return_at on returnDay instead of day when it is set and later", () => {
+    const payload = toSubmitRequestPayload(baseValues({ returnDay: "2026-09-17", returnTime: "12:00" }));
+    expect(payload.depart_at).toBe("2026-09-15T05:00:00.000Z");
+    expect(payload.return_at).toBe("2026-09-17T09:00:00.000Z");
+  });
+
+  it("ignores returnDay when it equals day (an ordinary same-day request)", () => {
+    const payload = toSubmitRequestPayload(baseValues({ returnDay: "2026-09-15" }));
+    expect(payload.return_at).toBe("2026-09-15T09:00:00.000Z");
+  });
+});
+
 describe("quick-variant options", () => {
   it("includes guest passenger names only when there are any", () => {
     expect(toSubmitRequestPayload(baseValues(), { guestPassengerNames: ["Guest One"] }).guest_passenger_names).toEqual(["Guest One"]);

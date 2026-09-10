@@ -8,6 +8,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { SheetPortalContext } from "@/components/SheetPortalContext";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
@@ -34,7 +35,7 @@ import { dateKey, formatTime, weekdayIndex } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { fits, type Car as SolverCar } from "@/solver";
 
-import type { RequestEditRow, SubmitRequestResult, TemplateSuggestion } from "../api";
+import type { RequestEditRow, SubmitRequestResult, SubmitSeriesRequestResult, TemplateSuggestion } from "../api";
 import { CAR_NOW_DEFAULT_HOURS, CAR_NOW_HOURS_OPTIONS } from "../carNow";
 import { findOverlappingRequest } from "../duplicate";
 import { QUICK_REQUEST_DURATION_HOURS, endTimeForDuration, shiftReturnByDepartureDelta } from "../duration";
@@ -48,11 +49,13 @@ import {
   useRequestChildrenQuery,
   useStopTemplateMutation,
   useSubmitRequestMutation,
+  useSubmitSeriesRequestMutation,
 } from "../hooks";
 import { fetchChildren } from "../children";
 import { intervalToFlexValue, toInstant, toSubmitRequestPayload } from "../mapper";
 import { requestFormSchema, type RequestFormValues } from "../schema";
-import { toastSubmitOutcome } from "../submitOutcome";
+import { seriesSpanDays } from "../series";
+import { toastSeriesSubmitOutcome, toastSubmitOutcome } from "../submitOutcome";
 import { suggestionToFormValues } from "../templatePrefill";
 
 export interface JoinRidePrefill {
@@ -166,6 +169,9 @@ function emptyValues(
     weekStart,
     day,
     dayIndex: Math.max(dates.indexOf(day), 0),
+    // Defaults to a same-day request; the weekly/new-mode return-day picker below can move
+    // it later (REQ §13.77).
+    returnDay: day,
     destination: { freeText: "" },
     rideTypeId,
     preferredCarId,
@@ -230,6 +236,9 @@ function mapEditRowToValues(row: RequestEditRow, weekStart: string, companions: 
     weekStart,
     day,
     dayIndex: Math.max(dates.indexOf(day), 0),
+    // Editing an existing (single-day) request never shows the return-day picker
+    // (multi-day editing is not supported in v1, REQ §13.77) — kept equal to `day`.
+    returnDay: day,
     destination: row.destinationId
       ? { presetId: row.destinationId, name: row.destinationName ?? "" }
       : { freeText: row.destinationText ?? "" },
@@ -299,6 +308,7 @@ export function RequestForm({
   const weekRowQuery = useWeekRow(departmentId, weekStart);
 
   const submitMutation = useSubmitRequestMutation();
+  const submitSeriesMutation = useSubmitSeriesRequestMutation();
   const setCompanionsMutation = useSetRequestCompanionsMutation();
   const setChildrenMutation = useSetRequestChildrenMutation();
   const suggestDestinationMutation = useSuggestDestinationMutation(departmentId);
@@ -397,6 +407,13 @@ export function RequestForm({
     }
   }
   const day = values.day ?? weekStart;
+  // Multi-day ("series") request (REQ §13.77, UX_FLOWS.md §3.4): the return-day picker only
+  // makes sense for a brand-new weekly round trip — editing a series is not supported in v1,
+  // and the quick/carNow variants are always about a single live day.
+  const showReturnDayPicker = variant === "weekly" && mode === "new" && tripShape === "round_trip";
+  const returnDayValue = values.returnDay ?? day;
+  const isMultiDay = showReturnDayPicker && returnDayValue !== day;
+  const multiDaySpan = isMultiDay ? seriesSpanDays(day, returnDayValue) : null;
   const childReferenceYear = Number(day.slice(0, 4));
   const childrenQuery = useQuery({ queryKey: ["children", departmentId, session?.user.id, childReferenceYear], queryFn: () => fetchChildren(departmentId, session!.user.id, childReferenceYear), enabled: !!session?.user.id });
   const guests = guestPassengerNames(values.guestNames ?? "");
@@ -478,10 +495,26 @@ export function RequestForm({
   const invalidTime = !!quickContext && (endMs <= startMs || outsideDay);
 
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // >7-day multi-day span (REQ §13.77, UX_FLOWS.md §3.4): holds the just-validated form
+  // values while the "לשמור רכב ליותר משבוע?" confirmation is open; `performSubmit` runs
+  // either straight from `onSubmit` (span ≤ 7 days) or from the dialog's own confirm.
+  const [pendingSeriesSubmit, setPendingSeriesSubmit] = useState<RequestFormValues | null>(null);
 
-  async function onSubmit(formValues: RequestFormValues) {
+  function onSubmit(formValues: RequestFormValues) {
+    const returnDay = formValues.returnDay;
+    const multiDay = showReturnDayPicker && !!returnDay && returnDay !== formValues.day;
+    if (multiDay && seriesSpanDays(formValues.day, returnDay!) > 7) {
+      setPendingSeriesSubmit(formValues);
+      return;
+    }
+    void performSubmit(formValues);
+  }
+
+  async function performSubmit(formValues: RequestFormValues) {
     if (quickContext && (isPast || invalidTime)) return;
     setSubmitError(null);
+    const returnDay = formValues.returnDay;
+    const isSeriesRequest = showReturnDayPicker && !!returnDay && returnDay !== formValues.day;
     const selected = (childrenQuery.data ?? []).filter((child) => formValues.children.includes(child.id));
     const childAdults = selected.filter((child) => child.isAdultPassenger).length;
     const childSeatsCount = selected.filter((child) => !child.isAdultPassenger).length;
@@ -515,6 +548,25 @@ export function RequestForm({
     const existingTemplateId = mode === "edit" ? (initial?.templateId ?? undefined) : templateSuggestion?.templateId;
 
     try {
+      if (isSeriesRequest) {
+        // Multi-day request (REQ §13.77): `submit_series_request` returns one `request_id`
+        // per calendar day of the span — passengers/children apply to every leg so they show
+        // on each day's ride, not just the first.
+        const raw = await submitSeriesMutation.mutateAsync(payload);
+        const seriesResult = raw as unknown as SubmitSeriesRequestResult | null;
+        for (const requestId of seriesResult?.request_ids ?? []) {
+          await setCompanionsMutation.mutateAsync({ requestId, profileIds: formValues.companions });
+          await setChildrenMutation.mutateAsync({ requestId, childIds: formValues.children });
+        }
+        if ("freeText" in formValues.destination && formValues.destination.freeText.trim()) {
+          suggestDestinationMutation.mutate({ name: formValues.destination.freeText.trim() });
+        }
+        toastSeriesSubmitOutcome(seriesResult);
+        if (onDone) onDone(null);
+        else navigate("/requests");
+        return;
+      }
+
       const raw = await submitMutation.mutateAsync(payload);
       const result = raw as unknown as SubmitRequestResult | null;
       const requestId = result?.request_id ?? initial?.id;
@@ -578,6 +630,7 @@ export function RequestForm({
   }
 
   return (
+    <>
     <form
       onSubmit={form.handleSubmit(onSubmit)}
       className={cn("mx-auto flex max-w-2xl flex-col gap-5 p-4", insideModalSheet ? "pb-20" : "pb-28")}
@@ -710,6 +763,12 @@ export function RequestForm({
                 onChange={(next) => {
                   field.onChange(next);
                   form.setValue("dayIndex", Math.max(datesOfWeek(weekStart).indexOf(next), 0));
+                  // Keep the return day a valid same-day-or-later value if the departure day
+                  // moved past it (REQ §13.77 — a series' return is always on a later day).
+                  const currentReturnDay = form.getValues("returnDay");
+                  if (currentReturnDay && currentReturnDay < next) {
+                    form.setValue("returnDay", next, { shouldDirty: true });
+                  }
                 }}
               />
             )}
@@ -717,7 +776,32 @@ export function RequestForm({
         </FormItem>
       ) : null}
 
-      {variant !== "carNow" ? (
+      {showReturnDayPicker ? (
+        <FormItem>
+          <Label>{t("request.returnDay")}</Label>
+          <Controller
+            control={form.control}
+            name="returnDay"
+            render={({ field }) => (
+              <DateField
+                weekStart={day}
+                value={field.value ?? day}
+                onChange={field.onChange}
+                dayCount={14}
+                ariaLabel={t("request.returnDay")}
+              />
+            )}
+          />
+        </FormItem>
+      ) : null}
+      {isMultiDay ? (
+        <div className="space-y-1 rounded-md border-s-4 border-primary bg-primary/5 p-3 text-sm">
+          <p>{t("request.multiDayHint")}</p>
+          {multiDaySpan ? <p className="text-xs text-muted-foreground">{tv("request.multiDayBadge", { count: String(multiDaySpan) })}</p> : null}
+        </div>
+      ) : null}
+
+      {variant !== "carNow" && !isMultiDay ? (
         <>
           <Controller
             control={form.control}
@@ -887,7 +971,7 @@ export function RequestForm({
         )}
       />
 
-      {variant !== "carNow" && tripShape !== "one_way_from" ? (
+      {variant !== "carNow" && !isMultiDay && tripShape !== "one_way_from" ? (
         <FormItem>
           <Label>{t("field.flexDepart")}</Label>
           <FlexibilityRange
@@ -900,7 +984,7 @@ export function RequestForm({
           />
         </FormItem>
       ) : null}
-      {variant !== "carNow" && tripShape !== "one_way_to" ? (
+      {variant !== "carNow" && !isMultiDay && tripShape !== "one_way_to" ? (
         <FormItem>
           <Label>{t("field.flexReturn")}</Label>
           <FlexibilityRange
@@ -929,7 +1013,7 @@ export function RequestForm({
         <Controller control={form.control} name="notes" render={({ field }) => <Textarea {...field} id="request-notes" rows={2} />} />
       </FormItem>
 
-      {variant === "weekly" ? (
+      {variant === "weekly" && !isMultiDay ? (
         <Controller
           control={form.control}
           name="repeatWeekly"
@@ -967,7 +1051,7 @@ export function RequestForm({
             type="submit"
             className="w-full"
             size="lg"
-            disabled={submitMutation.isPending || (!!quickContext && (isPast || invalidTime))}
+            disabled={submitMutation.isPending || submitSeriesMutation.isPending || (!!quickContext && (isPast || invalidTime))}
             title={quickContext && isPast ? t("quickRequest.pastSlotTooltip") : undefined}
           >
             {mode === "edit"
@@ -982,5 +1066,24 @@ export function RequestForm({
         </div>
       </div>
     </form>
+    <ConfirmDialog
+      open={!!pendingSeriesSubmit}
+      onOpenChange={(open) => { if (!open) setPendingSeriesSubmit(null); }}
+      title={t("request.multiDayLongTitle")}
+      description={
+        pendingSeriesSubmit
+          ? tv("request.multiDayLongBody", {
+              days: String(seriesSpanDays(pendingSeriesSubmit.day, pendingSeriesSubmit.returnDay ?? pendingSeriesSubmit.day)),
+            })
+          : undefined
+      }
+      loading={submitSeriesMutation.isPending}
+      onConfirm={() => {
+        const values = pendingSeriesSubmit;
+        setPendingSeriesSubmit(null);
+        if (values) void performSubmit(values);
+      }}
+    />
+    </>
   );
 }

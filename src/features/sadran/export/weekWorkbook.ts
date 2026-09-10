@@ -34,13 +34,16 @@ export function buildBoardSheet(rides: readonly BoardRide[], carNames: ReadonlyM
     .sort((a, b) => (a.starts_at ?? "").localeCompare(b.starts_at ?? "") || (a.id ?? "").localeCompare(b.id ?? ""));
   return { name: copy.boardSheet, rows: [
     [copy.rideId, copy.car, copy.driver, copy.needsDriver, copy.startsAt, copy.endsAt, copy.blockedUntil, copy.status,
-      copy.destination, copy.origin, copy.carEnd, copy.requestId, copy.passengers, copy.notes, copy.week, copy.department],
+      copy.destination, copy.origin, copy.carEnd, copy.requestId, copy.passengers, copy.notes, copy.week, copy.department, copy.seriesDay],
     ...sortedRides.map((ride) => {
       const served = servedOf(ride);
+      // Multi-day request leg (REQ §13.77) — "index/count", blank for an ordinary ride.
+      const seriesDay = "series_index" in ride && "series_count" in ride && ride.series_index && ride.series_count
+        ? `${ride.series_index}/${ride.series_count}` : "";
       return [ride.id, carNames.get(ride.car_id ?? "") ?? ride.car_id, ride.driver_name ?? copy.noDriver, (("needs_driver" in ride && ride.needs_driver === true) || !ride.driver_id) ? copy.yes : copy.no,
         jerusalemExcelDate(ride.starts_at), jerusalemExcelDate(ride.ends_at), jerusalemExcelDate(ride.blocked_until), ride.status ? he.rideStatus[ride.status] : "",
         [...new Set(served.map((entry) => entry.destination).filter(Boolean))].join(" · "), ride.origin_name, ride.destination_name,
-        served.map((entry) => entry.request_id).join("\n"), served.map((entry) => entry.requester ?? "").filter(Boolean).join("\n"), ride.notes, weekStart, departmentId];
+        served.map((entry) => entry.request_id).join("\n"), served.map((entry) => entry.requester ?? "").filter(Boolean).join("\n"), ride.notes, weekStart, departmentId, seriesDay];
     }),
   ] };
 }

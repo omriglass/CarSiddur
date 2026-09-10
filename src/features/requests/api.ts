@@ -82,12 +82,18 @@ export interface MyRequestRow {
   pendingProposal: MyRequestPendingProposal | null;
   /** Links to `request_templates` (DATA_MODEL §3.6) when this request came from — or was marked as — a repeating request. */
   templateId: string | null;
+  /** Multi-day request ("series", REQ §13.77) — `null` for an ordinary single-day request. */
+  seriesId: string | null;
+  /** 1-based position of this leg within its series. */
+  seriesIndex: number | null;
+  /** Total number of legs (calendar days) in this leg's series. */
+  seriesCount: number | null;
 }
 
 const SELECT = `
   id, department_id, week_start, status, status_reason, is_late, changed_since_solve,
   depart_at, return_at, trip_shape, needs_car_at_destination, destination_text, version, ride_type_id,
-  freed_slot_opt_out, preferred_car_id, template_id,
+  freed_slot_opt_out, preferred_car_id, template_id, series_id, series_index, series_count,
   preferred_car:cars!requests_preferred_car_id_fkey(name),
   window:weeks(phase, open_at, close_at),
   destination:destinations(name),
@@ -126,6 +132,9 @@ interface RawRequestRow {
   freed_slot_opt_out: boolean;
   ride_type_id: string;
   template_id: string | null;
+  series_id: string | null;
+  series_index: number | null;
+  series_count: number | null;
   destination: { name: string } | null;
   ride_type: { code: string; name_he: string } | null;
   ride_requests: {
@@ -185,6 +194,9 @@ function mapRow(row: RawRequestRow): MyRequestRow {
     version: row.version,
     freedSlotOptOut: row.freed_slot_opt_out,
     templateId: row.template_id,
+    seriesId: row.series_id,
+    seriesIndex: row.series_index,
+    seriesCount: row.series_count,
     ride:
       ride && legWithRide
         ? {
@@ -425,6 +437,35 @@ export interface SubmitRequestResult {
 export async function submitRequest(payload: SubmitRequestPayload): Promise<Json> {
   if (payload.waitlist) return rpc("enter_waiting_list", { p_payload: payload as unknown as Json });
   return rpc("submit_request", { payload: payload as unknown as Json });
+}
+
+/**
+ * `submit_series_request`'s response (REQ §13.77): always `series_id`/`request_ids`/
+ * `warnings` (one request per calendar day of the span); `status`/`reason`/`car_id`/
+ * `ride_ids`/`weeks` are only present when the first day's week is already
+ * published/live (`try_auto_approve_series()` ran) — `status` is `"assigned"` (reason
+ * `SERIES_PLACED`) or `"waitlisted"` (reason `WAITLISTED_SERIES_NO_CAR`).
+ */
+export interface SubmitSeriesRequestResult {
+  series_id: string;
+  request_ids: string[];
+  warnings: string[];
+  status?: "assigned" | "waitlisted";
+  reason?: string;
+  car_id?: string;
+  ride_ids?: string[];
+  weeks?: string[];
+}
+
+/**
+ * `submit_series_request(payload jsonb)` — the only write path for a multi-day request
+ * (REQ §13.77): same payload shape as `submit_request`, except `return_at` is on a LATER
+ * Jerusalem date than `depart_at` (`mapper.ts`'s `returnDay`-aware `return_at`). Never send
+ * `request_id`/`expected_version` — editing a series is not supported in v1 (`series_edit_
+ * not_supported`, MDR02); cancel and resubmit instead.
+ */
+export async function submitSeriesRequest(payload: SubmitRequestPayload): Promise<Json> {
+  return rpc("submit_series_request", { payload: payload as unknown as Json });
 }
 
 export async function withdrawRequest(requestId: string, expectedVersion: number): Promise<void> {

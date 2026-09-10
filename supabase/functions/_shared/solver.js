@@ -116,6 +116,123 @@ function roundTripReturnLeg(nr, home) {
     window: { start: R - nr.travelSlots, end: R }
   };
 }
+function buildRoundTripNormalized(request, input, home, D, R, travelSlots) {
+  const day = dayBoundsForSlot(input.week.days, D);
+  const dayWindow = requestDayWindow(request, day, input.week.startMs);
+  const flexDep = [
+    resolveFlexBound(D, request.flexDeparture.earlierMin, "earlier", day),
+    resolveFlexBound(D, request.flexDeparture.laterMin, "later", day)
+  ];
+  const flexRet = [
+    resolveFlexBound(R, request.flexReturn.earlierMin, "earlier", day),
+    resolveFlexBound(R, request.flexReturn.laterMin, "later", day)
+  ];
+  return {
+    id: request.id,
+    request,
+    legs: [buildKeepLeg(home, D, R)],
+    window: { start: D, end: R },
+    minDurationSlots: Math.max(1, R - D),
+    flexDep: boundedFlex(flexDep, { ...dayWindow, end: day.endSlot - 1 }),
+    flexRet: boundedFlex(flexRet, dayWindow),
+    durationFixed: false,
+    travelSlots,
+    passengers: request.passengers,
+    luggage: request.luggage,
+    destinationId: request.destinationId,
+    dayIndex: day.dayIndex,
+    dayWindow,
+    isPassengerOnly: false
+  };
+}
+function buildSeriesUnits(seriesRequests, input, warnings) {
+  const home = input.homeLocationId;
+  const groups = /* @__PURE__ */ new Map();
+  for (const request of seriesRequests) {
+    const list = groups.get(request.seriesId) ?? [];
+    list.push(request);
+    groups.set(request.seriesId, list);
+  }
+  const seriesUnits = [];
+  for (const seriesId of [...groups.keys()].sort()) {
+    const group = [...groups.get(seriesId) ?? []].sort(
+      (a, b) => (a.seriesIndex ?? 0) - (b.seriesIndex ?? 0) || byId(a, b)
+    );
+    const seriesCount = group[0]?.seriesCount ?? group.length;
+    const legs = [];
+    for (const request of group) {
+      if (input.cars.length > 0 && !input.cars.some((c) => fits(c, request.passengers))) {
+        warnings.push({ code: "NO_CAR_FITS_SEATS", message: "WARN_NO_CAR_FITS_SEATS", requestId: request.id });
+      }
+      const seriesIndex = request.seriesIndex ?? 0;
+      const isGlobalFirst = seriesIndex === 1;
+      const isGlobalLast = seriesIndex === seriesCount;
+      if (request.departureMs === void 0 || request.returnMs === void 0) {
+        warnings.push({ code: "TIME_NOT_ALIGNED", message: "WARN_TIME_NOT_ALIGNED", requestId: request.id });
+        legs.push({
+          requestId: request.id,
+          request,
+          seriesIndex,
+          window: { start: 0, end: 0 },
+          originId: isGlobalFirst ? home : request.destinationId,
+          destinationId: isGlobalLast ? home : request.destinationId,
+          passengers: request.passengers,
+          luggage: request.luggage,
+          dayIndex: 0,
+          flexDep: [0, 0],
+          flexRet: [0, 0]
+        });
+        continue;
+      }
+      if (!isAligned(request.departureMs, input.week.startMs) || !isAligned(request.returnMs, input.week.startMs)) {
+        warnings.push({ code: "TIME_NOT_ALIGNED", message: "WARN_TIME_NOT_ALIGNED", requestId: request.id });
+      }
+      const D = toSlotFloor(request.departureMs, input.week.startMs);
+      const R = toSlotCeil(request.returnMs, input.week.startMs);
+      const day = dayBoundsForSlot(input.week.days, D);
+      const dayWindow = requestDayWindow(request, day, input.week.startMs);
+      const flexDep = isGlobalFirst ? boundedFlex(
+        [
+          resolveFlexBound(D, request.flexDeparture.earlierMin, "earlier", day),
+          resolveFlexBound(D, request.flexDeparture.laterMin, "later", day)
+        ],
+        { ...dayWindow, end: day.endSlot - 1 }
+      ) : [D, D];
+      const flexRet = isGlobalLast ? boundedFlex(
+        [
+          resolveFlexBound(R, request.flexReturn.earlierMin, "earlier", day),
+          resolveFlexBound(R, request.flexReturn.laterMin, "later", day)
+        ],
+        dayWindow
+      ) : [R, R];
+      legs.push({
+        requestId: request.id,
+        request,
+        seriesIndex,
+        window: { start: D, end: R },
+        originId: isGlobalFirst ? home : request.destinationId,
+        destinationId: isGlobalLast ? home : request.destinationId,
+        passengers: request.passengers,
+        luggage: request.luggage,
+        dayIndex: day.dayIndex,
+        flexDep,
+        flexRet
+      });
+    }
+    legs.sort((a, b) => a.seriesIndex - b.seriesIndex);
+    const first = legs[0];
+    if (!first) continue;
+    const travelSlots = travelSlotsFor(destinationOf(input, first.request.destinationId), input.config);
+    seriesUnits.push({
+      seriesId,
+      seriesCount,
+      destinationId: first.request.destinationId,
+      legs,
+      scoreProxy: buildRoundTripNormalized(first.request, input, home, first.window.start, first.window.end, travelSlots)
+    });
+  }
+  return seriesUnits;
+}
 function normalize(input) {
   const warnings = [];
   const servedByFixed = /* @__PURE__ */ new Set();
@@ -125,8 +242,13 @@ function normalize(input) {
   const home = input.homeLocationId;
   const sortedRequests = [...input.requests].sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
   const normalized = [];
+  const seriesRequests = [];
   for (const request of sortedRequests) {
     if (servedByFixed.has(request.id)) continue;
+    if (request.seriesId !== void 0) {
+      seriesRequests.push(request);
+      continue;
+    }
     const destination = destinationOf(input, request.destinationId);
     const travelSlots = travelSlotsFor(destination, input.config);
     if (input.cars.length > 0 && !input.cars.some((c) => fits(c, request.passengers))) {
@@ -238,7 +360,8 @@ function normalize(input) {
       isPassengerOnly: mode === "passenger"
     });
   }
-  return { normalized, servedByFixed, warnings };
+  const seriesUnits = buildSeriesUnits(seriesRequests, input, warnings);
+  return { normalized, servedByFixed, warnings, seriesUnits };
 }
 function byId(a, b) {
   return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
@@ -322,6 +445,7 @@ var TEMPLATES = {
   PLACED_SHIFTED: "\u05E9\u05D5\u05D1\u05E5 \u05DC{car} \u05E2\u05DD \u05D4\u05D6\u05D6\u05D4 \u05E9\u05DC {dep} \u05D1\u05D9\u05E6\u05D9\u05D0\u05D4 \u05D5-{ret} \u05D1\u05D7\u05D6\u05E8\u05D4, \u05D1\u05EA\u05D5\u05DA \u05D4\u05D2\u05DE\u05D9\u05E9\u05D5\u05EA \u05E9\u05D4\u05D5\u05E6\u05D4\u05E8\u05D4",
   PLACED_RELAY_PAIR: "\u05E9\u05D5\u05D1\u05E5 \u05DC{car}: {member} \u05E0\u05D5\u05D4\u05D2/\u05EA \u05DC{dest} \u05D1-{dep} \u05D5\u05DE\u05E9\u05D0\u05D9\u05E8/\u05D4 \u05D0\u05EA \u05D4\u05E8\u05DB\u05D1; {partner} \u05DE\u05D7\u05D6\u05D9\u05E8/\u05D4 \u05D0\u05D5\u05EA\u05D5 \u05D1-{ret}",
   PLACED_FIXED: "\u05E0\u05E1\u05D9\u05E2\u05D4 \u05E7\u05D1\u05D5\u05E2\u05D4 \u05E9\u05E0\u05E7\u05D1\u05E2\u05D4 \u05DE\u05E8\u05D0\u05E9",
+  PLACED_SERIES: "\u05E9\u05D5\u05D1\u05E5/\u05D4 \u05DB\u05D7\u05DC\u05E7 \u05DE\u05D1\u05E7\u05E9\u05D4 \u05E8\u05D1-\u05D9\u05D5\u05DE\u05D9\u05EA \u05DC{car} ({index}/{count})",
   RELOCATED_FOR: "\u05D4\u05D5\u05E2\u05D1\u05E8 \u05DC{car} \u05DB\u05D3\u05D9 \u05DC\u05E4\u05E0\u05D5\u05EA \u05DE\u05E7\u05D5\u05DD \u05DC\u05D1\u05E7\u05E9\u05D4 \u05E9\u05DC {member}",
   RELOCATED_FOR_SHIFT: "\u05D4\u05D5\u05D6\u05D6 \u05D1-{minutes} \u05D3\u05E7\u05D5\u05EA \u05DB\u05D3\u05D9 \u05DC\u05E4\u05E0\u05D5\u05EA \u05DE\u05E7\u05D5\u05DD \u05DC\u05D1\u05E7\u05E9\u05D4 \u05E9\u05DC {member}",
   // Unmet reasons
@@ -329,6 +453,8 @@ var TEMPLATES = {
   UNMET_NO_RELAY_PARTNER: "\u05D0\u05D9\u05DF \u05DE\u05D9 \u05E9\u05D9\u05D7\u05D6\u05D9\u05E8/\u05D9\u05D1\u05D9\u05D0 \u05D0\u05EA \u05D4\u05E8\u05DB\u05D1 \u05DE{dest} \u05D1\u05D0\u05D5\u05EA\u05D5 \u05D9\u05D5\u05DD; \u05D4\u05E8\u05DB\u05D1 \u05D7\u05D9\u05D9\u05D1 \u05DC\u05D7\u05D6\u05D5\u05E8 \u05D4\u05D1\u05D9\u05EA\u05D4 \u05E2\u05D3 {dayEnd}",
   UNMET_NEEDS_DRIVER: "\u05D0\u05D9\u05DF \u05E0\u05E1\u05D9\u05E2\u05D4 \u05DE\u05EA\u05D0\u05D9\u05DE\u05D4 \u05DC\u05D4\u05E6\u05D8\u05E8\u05E3 \u05D0\u05DC\u05D9\u05D4; \u05D3\u05E8\u05D5\u05E9/\u05D4 \u05E0\u05D4\u05D2/\u05EA \u05DE\u05EA\u05E0\u05D3\u05D1/\u05EA \u05DC\u05D4\u05E1\u05E2\u05D4 \u05DC{dest} \u05D1-{dep}",
   UNMET_CAR_AWAY: "{car} \u05E0\u05DE\u05E6\u05D0/\u05EA \u05D1{location} \u05D1\u05E9\u05E2\u05D5\u05EA \u05D4\u05D0\u05DC\u05D4 \u05D5\u05DC\u05D0 \u05D6\u05DE\u05D9\u05DF/\u05D4 \u05DE\u05D4\u05D1\u05D9\u05EA",
+  UNMET_SERIES_NO_CAR: "\u05D0\u05D9\u05DF \u05E8\u05DB\u05D1 \u05E4\u05E0\u05D5\u05D9 \u05DC\u05DB\u05DC \u05D9\u05DE\u05D9 \u05D4\u05D1\u05E7\u05E9\u05D4 \u05D4\u05E8\u05D1-\u05D9\u05D5\u05DE\u05D9\u05EA ({index}/{count})",
+  UNMET_SERIES_PARTIAL_WEEK: "\u05D4\u05D1\u05E7\u05E9\u05D4 \u05D4\u05E8\u05D1-\u05D9\u05D5\u05DE\u05D9\u05EA \u05DE\u05DE\u05E9\u05D9\u05DB\u05D4 \u05DE\u05E9\u05D1\u05D5\u05E2 \u05D0\u05D7\u05E8 \u05D5\u05DC\u05D0 \u05E0\u05D9\u05EA\u05DF \u05DC\u05E9\u05D1\u05E5 \u05D0\u05EA \u05DB\u05DC \u05D9\u05DE\u05D9\u05D4 \u05D1\u05E9\u05D1\u05D5\u05E2 \u05D6\u05D4",
   // Suggestions
   SUGGEST_SHIFT_WITHIN_FLEX: "\u05D4\u05D6\u05D6\u05D4 \u05DC{car} \u05D1\u05EA\u05D5\u05DA \u05D4\u05D2\u05DE\u05D9\u05E9\u05D5\u05EA \u05E9\u05D4\u05D5\u05E6\u05D4\u05E8\u05D4, \u05DC\u05DC\u05D0 \u05E6\u05D5\u05E8\u05DA \u05D1\u05D4\u05E1\u05DB\u05DE\u05D4 \u05E0\u05D5\u05E1\u05E4\u05EA",
   SUGGEST_MERGE: "\u05D4\u05E6\u05D8\u05E8\u05E4\u05D5\u05EA \u05DC\u05E0\u05E1\u05D9\u05E2\u05D4 \u05E9\u05DC {host} \u05DC{dest} \u05D1\u05D9\u05E6\u05D9\u05D0\u05D4 {dep} \u05D5\u05D1\u05D7\u05D6\u05E8\u05D4 {ret}, \u05DC\u05DC\u05D0 \u05E1\u05D8\u05D9\u05D9\u05D4",
@@ -386,7 +512,7 @@ function ruleDescription(code) {
 var reasonCodes = Object.keys(ALL);
 
 // src/solver/greedy.ts
-function buildUnits(roundTrips, pairs, byRequestId, scores) {
+function buildUnits(roundTrips, pairs, byRequestId, scores, seriesUnits = []) {
   const units = [];
   for (const nr of roundTrips) {
     units.push({
@@ -409,6 +535,17 @@ function buildUnits(roundTrips, pairs, byRequestId, scores) {
       score: Math.max(outScore, retScore),
       submittedAtMs: Math.min(outNr.request.submittedAtMs, retNr.request.submittedAtMs),
       pair: { pair, outNr, retNr }
+    });
+  }
+  for (const su of seriesUnits) {
+    const first = su.legs[0];
+    if (!first) continue;
+    units.push({
+      kind: "series",
+      id: su.seriesId,
+      score: scores.get(su.scoreProxy.id)?.total ?? 0,
+      submittedAtMs: first.request.submittedAtMs,
+      series: su
     });
   }
   return units;
@@ -444,6 +581,44 @@ function compareKey(a, b) {
 }
 function homeSlack(car, nr) {
   return slack(car, nr.passengers) ?? Number.POSITIVE_INFINITY;
+}
+function candidatesByDistance(bounds, preferred) {
+  const [lo, hi] = bounds;
+  if (lo > hi) return [preferred];
+  const out = [];
+  for (let s = lo; s <= hi; s++) out.push(s);
+  out.sort((a, b) => Math.abs(a - preferred) - Math.abs(b - preferred) || a - b);
+  return out;
+}
+function trySeriesOnCar(tl, legs, seriesCount) {
+  const first = legs[0];
+  const last = legs[legs.length - 1];
+  if (!first || !last) return null;
+  const canFlexDep = first.seriesIndex === 1;
+  const canFlexRet = last.seriesIndex === seriesCount;
+  const depCandidates = canFlexDep ? candidatesByDistance(first.flexDep, first.window.start) : [first.window.start];
+  const retCandidates = canFlexRet ? candidatesByDistance(last.flexRet, last.window.end) : [last.window.end];
+  let best = null;
+  for (const D of depCandidates) {
+    for (const R of retCandidates) {
+      if (R <= D) continue;
+      if (!tl.isFree({ start: D, end: R }, first.originId)) continue;
+      const shiftCost = Math.abs(D - first.window.start) * 15 + Math.abs(R - last.window.end) * 15;
+      if (!best || shiftCost < best.shiftCost) {
+        best = {
+          firstWindow: { start: D, end: first.window.end },
+          lastWindow: { start: last.window.start, end: R },
+          shiftCost
+        };
+      }
+    }
+  }
+  return best;
+}
+function seriesLegWindow(leg, legs, placement) {
+  if (leg === legs[0]) return placement.firstWindow;
+  if (leg === legs[legs.length - 1]) return placement.lastWindow;
+  return leg.window;
 }
 function runGreedy(units, timelines, input) {
   const sharedCars = [...input.cars].filter((c) => c.type === "shared").sort((a, b) => a.id < b.id ? -1 : 1);
@@ -565,6 +740,48 @@ function runGreedy(units, timelines, input) {
       placed.push({ kind: "pair", pair, outNr, retNr, carId: best.car.id });
       continue;
     }
+    if (unit.kind === "series" && unit.series) {
+      const su = unit.series;
+      const legs = su.legs;
+      let best = null;
+      for (const car2 of sharedCars) {
+        if (!legs.every((leg) => fits(car2, leg.passengers) && luggageFits(car2, leg.luggage ? 1 : 0))) continue;
+        const tl2 = timelines.get(car2.id);
+        if (!tl2) continue;
+        const placement2 = trySeriesOnCar(tl2, legs, su.seriesCount);
+        if (!placement2) continue;
+        const slackVal = legs.reduce((max, leg) => Math.max(max, slack(car2, leg.passengers) ?? Number.POSITIVE_INFINITY), 0);
+        const continuity = legs.reduce(
+          (min, leg) => Math.min(min, continuityRank(car2.id, leg.requestId, leg.request.memberId, input)),
+          2
+        );
+        const fragmentation = fragmentationFor(tl2, { start: placement2.firstWindow.start, end: placement2.lastWindow.end });
+        const preference = carPreferenceRank(car2.id, legs.map((leg) => leg.request.preferredCarId));
+        const key = { shiftCost: placement2.shiftCost, preference, slackVal, continuity, fragmentation, carId: car2.id };
+        if (!best || compareKey(key, best.key) < 0) best = { car: car2, placement: placement2, key };
+      }
+      if (!best || !best.placement) {
+        unmetUnits.push(unit);
+        continue;
+      }
+      const { car, placement } = best;
+      const tl = timelines.get(car.id);
+      for (const leg of legs) {
+        const window = seriesLegWindow(leg, legs, placement);
+        tl?.add({
+          rideId: `ride:${leg.requestId}`,
+          window,
+          startLocationId: leg.originId,
+          endLocationId: leg.destinationId,
+          // A series leg legitimately leaves the car away overnight at the
+          // destination between legs — never a day-end violation.
+          overnightAck: true,
+          seriesId: su.seriesId
+        });
+      }
+      placed.push({ kind: "series", series: su, carId: car.id, firstWindow: placement.firstWindow, lastWindow: placement.lastWindow });
+      continue;
+    }
     unmetUnits.push(unit);
   }
   return { placed, unmetUnits };
@@ -610,7 +827,7 @@ function toAssignments(placed, input, carsById) {
         reasonCode: code,
         reason: text
       });
-    } else {
+    } else if (p.kind === "pair") {
       const { pair, outNr, retNr, carId } = p;
       const car = carsById.get(carId);
       const dayOut = dayBoundsForSlot(input.week.days, pair.outWindow.start);
@@ -681,6 +898,41 @@ function toAssignments(placed, input, carsById) {
         reasonCode: "PLACED_RELAY_PAIR",
         reason: text
       });
+    } else {
+      const { series, carId, firstWindow, lastWindow } = p;
+      const car = carsById.get(carId);
+      const legs = series.legs;
+      for (const leg of legs) {
+        const window = seriesLegWindow(leg, legs, { firstWindow, lastWindow, shiftCost: 0 });
+        const shift = leg === legs[0] ? { departureMin: (window.start - leg.window.start) * 15, returnMin: 0 } : leg === legs[legs.length - 1] ? { departureMin: 0, returnMin: (window.end - leg.window.end) * 15 } : { departureMin: 0, returnMin: 0 };
+        out.push({
+          rideId: `ride:${leg.requestId}`,
+          carId,
+          window,
+          originId: leg.originId,
+          destinationId: leg.destinationId,
+          driverRequestId: leg.requestId,
+          driverMemberId: leg.request.memberId,
+          legs: [
+            {
+              requestId: leg.requestId,
+              leg: "both",
+              carMode: "keep",
+              originId: leg.originId,
+              destinationId: leg.destinationId,
+              role: "driver"
+            }
+          ],
+          servedRequestIds: [leg.requestId],
+          passengers: leg.passengers,
+          luggageCount: leg.luggage ? 1 : 0,
+          shift,
+          seriesId: series.seriesId,
+          source: "solver",
+          reasonCode: "PLACED_SERIES",
+          reason: reason("PLACED_SERIES", { car: car?.name ?? carId, index: leg.seriesIndex, count: series.seriesCount })
+        });
+      }
     }
   }
   return out;
@@ -976,9 +1228,11 @@ var CarTimeline = class {
     }
     return location;
   }
-  overlapsAnything(start, end, fixed) {
+  overlapsAnything(start, end, fixed, seriesId) {
     for (const b of this.blocks) {
-      if (fixed && this.fixedRideIds.has(b.rideId)) {
+      if (seriesId !== void 0 && b.seriesId === seriesId) {
+        if (tooClose(start, end, b.window.start, b.window.end, 0)) return true;
+      } else if (fixed && this.fixedRideIds.has(b.rideId)) {
         const approved = (slots) => slots != null && Number.isFinite(slots) ? Math.max(0, Math.min(this.bufferSlots, slots)) : this.bufferSlots;
         if (start < b.window.end + approved(b.approvedBufferAfterSlots) && b.window.start < end + approved(fixed.approvedBufferAfterSlots)) return true;
       } else if (tooClose(start, end, b.window.start, b.window.end, this.bufferSlots)) return true;
@@ -1002,7 +1256,7 @@ var CarTimeline = class {
         `CarTimeline.add: block ${b.rideId} starts at ${b.startLocationId} but car ${this.car.id} is at ${actual}`
       );
     }
-    if (this.overlapsAnything(b.window.start, b.window.end)) {
+    if (this.overlapsAnything(b.window.start, b.window.end, void 0, b.seriesId)) {
       throw new Error(`CarTimeline.add: block ${b.rideId} overlaps an existing block/maintenance on car ${this.car.id}`);
     }
     const idx = this.blocks.findIndex((x) => x.window.start > b.window.start);
@@ -1180,8 +1434,9 @@ function assertInvariants(input, output) {
           window: a.window,
           startLocationId: a.originId,
           endLocationId: a.destinationId,
-          overnightAck: overnightAckByRideId.get(a.rideId) ?? false,
-          approvedBufferAfterSlots: approvedBufferByRideId.get(a.rideId)
+          overnightAck: overnightAckByRideId.get(a.rideId) ?? Boolean(a.seriesId),
+          approvedBufferAfterSlots: approvedBufferByRideId.get(a.rideId),
+          seriesId: a.seriesId
         };
         if (a.source === "fixed") tl.forceAdd(block);
         else tl.add(block);
@@ -1240,6 +1495,34 @@ function assertInvariants(input, output) {
       }
     }
   }
+  const bySeriesId = /* @__PURE__ */ new Map();
+  for (const a of output.assignments) {
+    if (!a.seriesId) continue;
+    const list = bySeriesId.get(a.seriesId) ?? [];
+    list.push(a);
+    bySeriesId.set(a.seriesId, list);
+  }
+  for (const [seriesId, list] of bySeriesId) {
+    const sorted = [...list].sort((a, b) => a.window.start - b.window.start);
+    const carId = sorted[0]?.carId;
+    for (let i = 0; i < sorted.length; i++) {
+      const a = sorted[i];
+      if (!a) continue;
+      if (a.carId !== carId) {
+        throw new SolverInvariantError(`series ${seriesId} spans more than one car`, "SERIES_MULTI_CAR");
+      }
+      if (i > 0) {
+        const prev = sorted[i - 1];
+        if (!prev) continue;
+        if (prev.window.end !== a.window.start) {
+          throw new SolverInvariantError(`series ${seriesId} legs are not contiguous`, "SERIES_NOT_CONTIGUOUS");
+        }
+        if (prev.destinationId !== a.originId) {
+          throw new SolverInvariantError(`series ${seriesId} location chain is broken`, "SERIES_LOCATION_BROKEN");
+        }
+      }
+    }
+  }
 }
 
 // src/solver/merge.ts
@@ -1247,6 +1530,7 @@ var ZONE_PENALTY_MINUTES = 10;
 function buildHostRides(assignments, cars) {
   const hosts2 = [];
   for (const a of assignments) {
+    if (a.seriesId) continue;
     const driverLeg = a.legs.find((l) => l.role === "driver");
     if (!driverLeg || !a.driverRequestId) continue;
     const car = cars.get(a.carId);
@@ -2124,7 +2408,7 @@ function matchFreedSlot(input) {
     week: input.week,
     homeLocationId: input.homeLocationId,
     cars: [input.car],
-    requests: input.candidates,
+    requests: input.candidates.filter((r) => r.seriesId === void 0),
     fixedRides: [],
     destinations: input.destinations,
     policy: input.policy,
@@ -2167,6 +2451,7 @@ function matchFreedSlot(input) {
 }
 function tryAutoApprove(input) {
   if (input.request.tripShape !== "round_trip") return null;
+  if (input.request.seriesId !== void 0) return null;
   const pseudoInput = {
     week: input.week,
     homeLocationId: input.homeLocationId,
@@ -2247,7 +2532,7 @@ function computeBlockers(nr, timelines, cars) {
 function solve(input) {
   const startedAt = input.now?.();
   const warnings = [];
-  const { normalized, warnings: normalizeWarnings } = normalize(input);
+  const { normalized, warnings: normalizeWarnings, seriesUnits } = normalize(input);
   warnings.push(...normalizeWarnings.map((w) => ({ code: w.code, message: w.message, requestId: w.requestId })));
   const bufferSlots = minutesToSlots(input.config.bufferMinutes);
   const weekSlots = input.week.days.reduce((max, d) => Math.max(max, d.endSlot), 0);
@@ -2310,10 +2595,11 @@ function solve(input) {
     relayPairPeople.set(out.id, combined);
     relayPairPeople.set(ret.id, combined);
   }
-  const { scores, warnings: scoreWarnings } = scoreRequests(input, normalized, relayPairPeople);
+  const scoringBatch = [...normalized, ...seriesUnits.map((su) => su.scoreProxy)];
+  const { scores, warnings: scoreWarnings } = scoreRequests(input, scoringBatch, relayPairPeople);
   warnings.push(...scoreWarnings.map((w) => ({ code: w.code, message: w.message, requestId: w.requestId })));
   const byRequestId = new Map(normalized.map((nr) => [nr.id, nr]));
-  const units = buildUnits(roundTrips, pairs, byRequestId, scores);
+  const units = buildUnits(roundTrips, pairs, byRequestId, scores, seriesUnits);
   const { placed, unmetUnits } = runGreedy(units, timelines, input);
   const placedSingles = placed.filter((p) => p.kind === "single");
   const improveResult = runImprove(unmetUnits, placedSingles, timelines, input, scores);
@@ -2323,6 +2609,7 @@ function solve(input) {
   const servedRequestIds = /* @__PURE__ */ new Set();
   for (const a of assignments) for (const rid of a.servedRequestIds) servedRequestIds.add(rid);
   const unmetIds = /* @__PURE__ */ new Map();
+  const unmetSeriesUnits = improveResult.stillUnmetUnits.filter((u) => u.kind === "series" && u.series);
   for (const u of improveResult.stillUnmetUnits) {
     if (u.kind === "single" && u.single) unmetIds.set(u.single.id, u.single);
     else if (u.kind === "pair" && u.pair) {
@@ -2360,6 +2647,22 @@ function solve(input) {
       reason: reasonText
     };
   });
+  for (const u of unmetSeriesUnits) {
+    const su = u.series;
+    if (!su) continue;
+    const seriesScore = scores.get(su.scoreProxy.id)?.total ?? 0;
+    for (const leg of su.legs) {
+      unmet.push({
+        requestId: leg.requestId,
+        score: seriesScore,
+        blockers: [],
+        suggestions: [],
+        reasonCode: "UNMET_SERIES_NO_CAR",
+        reason: reason("UNMET_SERIES_NO_CAR", { index: leg.seriesIndex, count: su.seriesCount })
+      });
+    }
+  }
+  unmet.sort((a, b) => byId({ id: a.requestId }, { id: b.requestId }));
   const mergeOpportunities = [];
   const solverHosts = hosts2.filter((h) => !h.isFixed);
   for (const guestHost of solverHosts) {

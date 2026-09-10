@@ -4,9 +4,15 @@ export interface Block {
     window: Window;
     startLocationId: string;
     endLocationId: string;
-    /** true only for a fixed ride the Sadran explicitly acknowledged may leave the car away overnight */
+    /** true only for a fixed ride the Sadran explicitly acknowledged may leave the car away overnight
+     *  (or, generically, for any leg of a multi-day series that leaves the car parked away between legs
+     *  — SOLVER §3.x "Multi-day series") */
     overnightAck: boolean;
     approvedBufferAfterSlots?: number;
+    /** set for legs of a multi-day series (docs/SOLVER.md §3.x): consecutive legs sharing the same
+     *  seriesId are contiguous by construction and need no buffer between them, even though the
+     *  ordinary buffer rule still applies against every other block/maintenance entry. */
+    seriesId?: string;
 }
 export interface Gap {
     window: Window;

@@ -163,6 +163,11 @@ export const heSadran = {
     redo: "בצע/י שוב",
     redoToast: "בוצע שוב: {{label}}",
     redoNothing: "אין מה לבצע שוב",
+    /** Multi-day request ("series") board handling (REQ §13.77, UX_FLOWS.md §4.2, 2026-09-10). */
+    seriesMoveTitle: "להעביר את כל ימי הבקשה הרב-יומית?",
+    seriesMoveBody: "הנסיעה היא יום {{index}} מתוך {{count}}. כל הימים יועברו ל{{car}} אם הוא פנוי בכולם.",
+    seriesUnassignHint: "בקשה רב-יומית: אפשר לבטל את כל הימים או להעביר לרכב אחר",
+    skippedSeries: "{{count}} בקשות רב-יומיות לא שובצו (אין רכב פנוי לכל הימים)",
   },
   sadranRideSheet: {
     title: "פרטי הנסיעה",
@@ -179,6 +184,8 @@ export const heSadran = {
     cancelled: "הנסיעה בוטלה",
     removeAssignment: "הסר שיבוץ",
     removeAssignmentReason: "הוסר שיבוץ מהלוח (נגרר לרשימת הלא-משובצים)",
+    /** Multi-day request leg (REQ §13.77, UX_FLOWS.md §4.2). */
+    seriesLine: "בקשה רב-יומית · יום {{index}} מתוך {{count}}",
   },
   sadranProposal: {
     close: "סגירת ההצעה וחזרה למסך הקודם",

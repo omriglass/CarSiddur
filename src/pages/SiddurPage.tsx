@@ -381,6 +381,8 @@ export function SiddurPage() {
       needsDriver: !!r.needs_driver,
       isMine: isMyRide(r),
       tightSchedule: tightRideIds.has(r.id as string),
+      seriesIndex: r.series_index,
+      seriesCount: r.series_count,
     }));
   for (const change of pendingChanges) {
     if (dateKey(change.starts_at) !== activeDay) continue;
@@ -576,6 +578,8 @@ export function SiddurPage() {
                     carId: r.car_id,
                     carType: (carsQuery.data ?? []).find((c) => c.id === r.car_id)?.type,
                     rideTypeCode: representativeRideTypeCode(servedOf(r)),
+                    seriesIndex: r.series_index,
+                    seriesCount: r.series_count,
                   };
                   return (
                     <div

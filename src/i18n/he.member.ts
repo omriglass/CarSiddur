@@ -20,6 +20,8 @@ export const heMember = {
     policy: "מדיניות", policyVersion: "מזהה גרסת מדיניות", profile: "חבר/ה", score: "ניקוד", served: "שובצה בפרסום", publishedAt: "פורסם — שעון ישראל",
     ruleBreakdown: "פירוט כללים", week: "תחילת שבוע", department: "מזהה מחלקה", noDriver: "ללא נהג/ת", selectedPolicy: "המדיניות שנבחרה בפרסום",
     noScores: "אין ניקוד שמור לפרסום בשבוע הזה", yes: "כן", no: "לא",
+    /** Multi-day request leg index/count column (REQ §13.77, UX_FLOWS.md §4.2). */
+    seriesDay: "יום ברב-יומי",
   },
   request: {
     namedPassengerCount: "נוסעים מבוגרים: {{count}} (כולל אותך)",
@@ -79,6 +81,25 @@ export const heMember = {
     stopped: "הבקשה החוזרת הופסקה",
     makeRepeating: "הפוך/י לחוזר",
     repeating: "חוזר כל שבוע",
+    /**
+     * Multi-day requests ("series", REQ §13.77, UX_FLOWS.md §3.4/§3.3, built 2026-09-10):
+     * the return-day picker (new mode, weekly variant, round trip only), the resulting
+     * span's hint/confirmation and outcome toasts, and the "one card per series" list.
+     */
+    // "תאריך" rather than "יום" deliberately: the ordinary departure-day picker's own
+    // radiogroup is already labelled "יום" (`he.field.day`) — Playwright's `getByRole`
+    // matches accessible names by substring by default, so a label containing "יום" here
+    // would make e2e's plain `radiogroup name: "יום"` selectors (auto-approve.spec.ts,
+    // member.spec.ts, quick-request.spec.ts) resolve to two elements once this second
+    // radiogroup renders (weekly + new mode + round trip).
+    returnDay: "תאריך החזרה",
+    multiDayHint: "הרכב שמור לך מהיציאה ועד החזרה, כולל הלילות. כל הימים באותו רכב.",
+    multiDayLongTitle: "לשמור רכב ליותר משבוע?",
+    multiDayLongBody: "הבקשה תופסת רכב משותף ל{{days}} ימים. להמשיך?",
+    seriesAssigned: "הרכב שמור לך לכל הימים",
+    seriesWaitlisted: "אין רכב פנוי לכל הימים — נכנסת לרשימת ההמתנה",
+    multiDayBadge: "{{count}} ימים",
+    seriesCancelBody: "הביטול חל על כל ימי הבקשה הרב-יומית.",
   },
   requestsList: {
     withdrawAll: "הסר את כל הבקשות",
@@ -133,6 +154,8 @@ export const heMember = {
     askToJoinConfirmShared: "בקשת ההצטרפות תישלח לסדרן/ית, שיהפכו אותה להצעת איחוד לנהג/ת.",
     askToJoinConfirmTemp: "בקשת ההצטרפות תישלח ישירות לבעל/ת הרכב הפרטי.",
     locationBadge: "ב{{location}}",
+    /** Multi-day request leg (REQ §13.77, UX_FLOWS.md §3.5). */
+    seriesLine: "חלק מבקשה רב-יומית, יום {{index}} מתוך {{count}}",
   },
   proposalScreen: {
     loading: "טוען הצעה…",

@@ -7,6 +7,6 @@ export { fits, dominates, slack, sum, luggageFits, chauffeurLoad } from './seatF
 export { ruleRegistry, type RuleType } from './rules/index';
 export { matchFreedSlot, tryAutoApprove } from './live';
 export { CarTimeline, buildTimelines } from './timeline';
-export type { NormalizedRequest, NormalizedLeg } from './slots';
+export type { NormalizedRequest, NormalizedLeg, SeriesLeg, SeriesUnit } from './slots';
 export declare function solve(input: SolverInput): SolverOutput;
 export { sortUnits };

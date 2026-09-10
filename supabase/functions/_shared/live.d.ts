@@ -23,7 +23,12 @@ export interface FreedSlotCandidate {
     score: number;
     reason: string;
 }
-/** One-way requests are never freed-slot candidates (REQUIREMENTS §13.64) — they need a partner, host or driver. */
+/**
+ * One-way requests are never freed-slot candidates (REQUIREMENTS §13.64) —
+ * they need a partner, host or driver. Multi-day series legs are excluded
+ * too (SOLVER §3.x): they are immovable and placed all-or-nothing across
+ * every leg's own day, never into a single freed slot.
+ */
 export declare function matchFreedSlot(input: FreedSlotInput): FreedSlotCandidate[];
 export interface AutoApproveInput {
     request: Request;
@@ -34,5 +39,11 @@ export interface AutoApproveInput {
     week: SolverInput['week'];
     homeLocationId: string;
 }
-/** Places a round-trip request only at its preferred time on a shared car free and at home; null otherwise. One-way requests always return null. */
+/**
+ * Places a round-trip request only at its preferred time on a shared car free
+ * and at home; null otherwise. One-way requests always return null. Multi-day
+ * series legs always return null too — SQL's `try_auto_approve_series`
+ * handles them, since all-or-nothing placement across every leg's day needs
+ * the whole-series view the live/freed-slot helpers deliberately don't have.
+ */
 export declare function tryAutoApprove(input: AutoApproveInput): Assignment | null;

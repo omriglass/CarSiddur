@@ -80,6 +80,9 @@ export function FullResolveAction({ departmentId, weekStart, homeDestinationId, 
     try {
       const summary = await applyMutation.mutateAsync({ departmentId, weekStart, payload: preview.payload as unknown as Json });
       toast.success(tv("sadranDashboard.appliedSummary", { inserted: String(summary.inserted), deleted: String(summary.deleted), unassigned: String(summary.unassigned_requests.length) }));
+      if (summary.skippedSeries?.length) {
+        toast(tv("sadranBoard.skippedSeries", { count: String(summary.skippedSeries.length) }));
+      }
       setPreview(null);
     } catch { /* The mutation reports validation/staleness errors. */ }
   }

@@ -3,7 +3,7 @@ import { formatInTimeZone } from "date-fns-tz";
 
 import { Card, CardContent } from "@/components/ui/card";
 import { CarNameWithReport } from "@/features/carCare/components/CarNameWithReport";
-import { he } from "@/i18n/he";
+import { he, tv } from "@/i18n/he";
 import { weekdayLabel } from "@/lib/dayLabels";
 import { rideTypeColorClasses } from "@/lib/rideTypeColors";
 import { dateKey, formatTime, TZ } from "@/lib/time";
@@ -48,6 +48,9 @@ export interface RideCardData {
   freeSeats?: number;
   /** `ride_types.code` — tints the icon chip to match the board/siddur grid (visual pass, `src/lib/rideTypeColors.ts`). */
   rideTypeCode?: string | null;
+  /** Multi-day request leg (REQ §13.77, UX_FLOWS.md §3.3/§3.5) — 1-based position and total leg count; shows a "יום {{index}}/{{count}}" marker when `seriesCount` is above 1. */
+  seriesIndex?: number | null;
+  seriesCount?: number | null;
 }
 
 interface RideCardProps {
@@ -102,6 +105,11 @@ export function RideCard({ ride, onClick }: RideCardProps) {
           </div>
 
           {ride.isMine ? <span className={cn("flex items-center gap-1 text-xs font-bold", ride.needsDriver ? "text-destructive" : "text-primary")}><Star className="size-3 fill-current" aria-hidden="true" />{he.siddur.myRide}</span> : null}
+          {ride.seriesCount && ride.seriesCount > 1 ? (
+            <span className="text-xs text-muted-foreground">
+              {tv("ride.seriesDay", { index: String(ride.seriesIndex ?? 1), count: String(ride.seriesCount) })}
+            </span>
+          ) : null}
           <div className={cn("flex items-center gap-1", ride.isMine ? "font-bold" : "font-medium")}>
             {ride.label ? (
               <span className="flex min-w-0 items-center gap-1">

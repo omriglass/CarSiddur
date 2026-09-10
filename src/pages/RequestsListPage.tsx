@@ -5,6 +5,7 @@ import { toast } from "sonner";
 
 import { formatWeekRangeLabel } from "@/components/DateField";
 import { EmptyState } from "@/components/EmptyState";
+import { Badge } from "@/components/ui/badge";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { PageHeader } from "@/components/PageHeader";
 import { CardListSkeleton } from "@/components/skeletons/CardListSkeleton";
@@ -12,6 +13,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { TripSummary } from "@/components/TripSummary";
 import { Button } from "@/components/ui/button";
 import type { MyRequestRow } from "@/features/requests/api";
+import { groupSeries } from "@/features/requests/series";
 import { canEditRequest } from "@/features/requests/window";
 import { OpenProposalButton } from "@/features/proposals/components/OpenProposalButton";
 import { OpenWaitlistGroupButton } from "@/features/waitlist/components/OpenWaitlistGroupButton";
@@ -46,8 +48,8 @@ function requestStart(row: MyRequestRow): number {
   return instant ? new Date(instant).getTime() : Number.POSITIVE_INFINITY;
 }
 
-function groupByWeek(rows: MyRequestRow[]): { weekStart: string; departmentId: string; rows: MyRequestRow[] }[] {
-  const byWeek = new Map<string, MyRequestRow[]>();
+function groupByWeek(rows: DisplayRow[]): { weekStart: string; departmentId: string; rows: DisplayRow[] }[] {
+  const byWeek = new Map<string, DisplayRow[]>();
   for (const row of rows) {
     const key = `${row.weekStart}:${row.departmentId}`;
     const list = byWeek.get(key) ?? [];
@@ -63,9 +65,42 @@ function groupByWeek(rows: MyRequestRow[]): { weekStart: string; departmentId: s
     }));
 }
 
+/**
+ * One "card" per multi-day request ("series", REQ §13.77) — every other leg's fields fold
+ * into the first leg's: `returnAt` becomes the LAST leg's return (the full span), `ride`
+ * prefers whichever leg is actually assigned (all legs share one car and status once placed,
+ * but a fresh submission's legs may not have resolved yet). `seriesLegs` (all legs, day order)
+ * marks a display row as a series; withdraw/cancel act on the first leg's id/ride — the
+ * server cascades to every day (`withdraw_request`/`cancel_ride`).
+ */
+interface DisplayRow extends MyRequestRow {
+  seriesLegs?: MyRequestRow[];
+}
+
+function toDisplayRows(rows: MyRequestRow[]): DisplayRow[] {
+  return groupSeries(rows).map((legs): DisplayRow => {
+    const first = legs[0]!;
+    if (legs.length === 1) return first;
+    const last = legs[legs.length - 1]!;
+    return {
+      ...first,
+      returnAt: last.returnAt ?? last.departAt,
+      ride: legs.find((leg) => leg.ride)?.ride ?? null,
+      seriesLegs: legs,
+    };
+  });
+}
+
+function confirmDialogDescription(action: ConfirmAction | null): string {
+  if (!action) return "";
+  if (action.kind === "withdrawAll") return he.requestsList.withdrawAllBody;
+  const base = action.kind === "withdraw" ? he.request.withdrawConfirmBody : he.rideCoordination.cancelHelp;
+  return action.row.seriesLegs ? `${base} ${he.request.seriesCancelBody}` : base;
+}
+
 type ConfirmAction =
-  | { kind: "withdraw"; row: MyRequestRow }
-  | { kind: "cancel"; row: MyRequestRow }
+  | { kind: "withdraw"; row: DisplayRow }
+  | { kind: "cancel"; row: DisplayRow }
   | { kind: "withdrawAll"; departmentId: string; weekStart: string };
 
 /** `/requests` — My requests, grouped by week (UX_FLOWS.md §3.3 extended into its own list route). */
@@ -93,7 +128,7 @@ export function RequestsListPage() {
   }, [focusedId]);
 
   const rows = requestsQuery.data ?? [];
-  const groups = groupByWeek(rows);
+  const groups = groupByWeek(toDisplayRows(rows));
   const openOffers = (freedOffersQuery.data ?? []).filter(
     (o) => o.offerStatus === "open" && (o.claimStatus === "offered" || o.claimStatus === "claimed"),
   );
@@ -188,7 +223,10 @@ export function RequestsListPage() {
                       departAt={row.ride?.startsAt ?? row.departAt}
                       returnAt={row.ride?.endsAt ?? row.returnAt}
                     />
-                    <StatusBadge kind="request" status={row.status} />
+                    <div className="flex shrink-0 items-center gap-2">
+                      {row.seriesLegs ? <Badge variant="outline">{tv("request.multiDayBadge", { count: String(row.seriesLegs.length) })}</Badge> : null}
+                      <StatusBadge kind="request" status={row.status} />
+                    </div>
                   </div>
                   {row.ride?.needsDriver ? <p className="text-sm font-medium text-destructive">{he.rideCoordination.missingDriver}</p> : null}
                   {row.preferredCarName ? <p className="text-xs text-muted-foreground">{he.request.preferredCar}: {row.preferredCarName}</p> : null}
@@ -227,7 +265,7 @@ export function RequestsListPage() {
                         day={(row.departAt ?? row.returnAt) as string}
                       />
                     ) : null}
-                    {canEditRequest(row) ? (
+                    {canEditRequest(row) && !row.seriesLegs ? (
                       <Button asChild size="sm" variant="outline">
                         <Link to={paths.requests.edit(row.id)}>{he.requestsList.edit}</Link>
                       </Button>
@@ -242,7 +280,7 @@ export function RequestsListPage() {
                         {he.requestsList.cancelRide}
                       </Button>
                     ) : null}
-                    {!row.templateId && MAKE_REPEATING_STATUSES.has(row.status) ? (
+                    {!row.templateId && !row.seriesLegs && MAKE_REPEATING_STATUSES.has(row.status) ? (
                       <Button
                         size="sm"
                         variant="outline"
@@ -265,9 +303,7 @@ export function RequestsListPage() {
         open={!!confirmAction}
         onOpenChange={(open) => !open && setConfirmAction(null)}
         title={confirmAction?.kind === "withdrawAll" ? he.requestsList.withdrawAllTitle : confirmAction?.kind === "withdraw" ? he.request.withdrawConfirmTitle : he.request.cancelConfirmTitle}
-        description={confirmAction?.kind === "withdrawAll" ? he.requestsList.withdrawAllBody : confirmAction?.kind === "withdraw"
-          ? he.request.withdrawConfirmBody
-          : he.rideCoordination.cancelHelp}
+        description={confirmDialogDescription(confirmAction)}
         confirmLabel={confirmAction?.kind === "withdrawAll" ? he.requestsList.withdrawAll : confirmAction?.kind === "withdraw" ? he.requestsList.withdraw : he.requestsList.cancelRide}
         destructive
         loading={withdrawMutation.isPending || cancelMutation.isPending || withdrawAllMutation.isPending}

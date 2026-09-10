@@ -489,6 +489,8 @@ export const he = {
     conflict: "התנגשות",
     driver: "נהג/ת",
     chauffeur: "הסעה · מסיע/ה",
+    /** Multi-day request leg marker (REQ §13.77, UX_FLOWS.md §3.5/§4.2), `tv()`. */
+    seriesDay: "יום {{index}}/{{count}}",
   },
   // `ride_status` enum labels (StatusBadge kind: 'ride'); distinct from the
   // pin/conflict UI flags above, which overlay board blocks regardless of

@@ -17,7 +17,7 @@ import { PortalSheetContent } from "@/components/PortalSheetContent";
 import { Textarea } from "@/components/ui/textarea";
 import { formatMinutes, parseHHMM } from "@/components/TimeField15";
 import { TimeField15 } from "@/components/TimeField15";
-import { he, t } from "@/i18n/he";
+import { he, t, tv } from "@/i18n/he";
 import { TZ, dateKey, formatTime } from "@/lib/time";
 
 import { rideBlockLabel } from "../rideLabel";
@@ -121,6 +121,9 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
                 {onClaimDriver ? <Button disabled={saving} onClick={onClaimDriver}>{he.boardCoordination.claimDriver}</Button> : null}
               </div> : null}
               {tightSchedule ? <p className="text-xs text-amber-700">{he.boardCoordination.tight} · {he.boardCoordination.tightHelp}</p> : null}
+              {ride.series_count && ride.series_count > 1 ? (
+                <p className="text-muted-foreground">{tv("sadranRideSheet.seriesLine", { index: String(ride.series_index ?? 1), count: String(ride.series_count) })}</p>
+              ) : null}
               <p className="whitespace-pre-wrap break-words">{ridePassengerSummary(servedEntries, ride.needs_driver ? null : driverName ?? ride.driver_name)}</p>
               {ridePublicDetails(servedEntries, { includeCompanions: false }) ? <p className="whitespace-pre-wrap break-words">{ridePublicDetails(servedEntries, { includeCompanions: false })}</p> : null}
               {coordinatorNotes ? <div className="whitespace-pre-wrap break-words text-muted-foreground"><span className="font-medium">{he.field.notes}: </span>{coordinatorNotes}</div> : null}
@@ -178,12 +181,15 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
                 >
                   {ride.is_pinned ? t("action.unpin") : t("action.pin")}
                 </Button> : null}
-                {onUnassign && !isPlanning ? (
+                {onUnassign && !isPlanning && !ride.series_id ? (
                   <Button variant="outline" className="flex-1" onClick={onUnassign} disabled={saving}>
                     {he.sadranRideSheet.removeAssignment}
                   </Button>
                 ) : null}
               </div>
+              {onUnassign && !isPlanning && ride.series_id ? (
+                <p className="text-xs text-muted-foreground">{he.sadranBoard.seriesUnassignHint}</p>
+              ) : null}
 
               {isPlanning ? <Button variant="outline" onClick={() => onCancel("")} disabled={saving}>{he.boardCoordination.cancelPlanning}</Button> : showCancelForm ? (
                 <div className="space-y-2 rounded-md border border-destructive/40 p-3">

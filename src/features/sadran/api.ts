@@ -310,6 +310,13 @@ export interface ApplySolverResultResponse {
   deleted: number;
   unchanged: number;
   unassigned_requests: string[];
+  /**
+   * Multi-day requests ("series", REQ §13.77) this apply could not place on the car the
+   * solver chose for the whole span — their legs return to `submitted`/`SERIES_CAR_
+   * UNAVAILABLE`; the rest of the solve still applied (20260910093500_apply_solver_result_
+   * series.sql).
+   */
+  skippedSeries?: { series_id: string; reason: string }[];
 }
 
 export async function applySolverResult(

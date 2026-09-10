@@ -101,6 +101,12 @@ export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = 
                 <span>{headerLabel(ride, served, homeDestinationId)}</span>
               </div>
 
+              {ride.series_count && ride.series_count > 1 ? (
+                <p className="text-sm text-muted-foreground">
+                  {tv("rideDetail.seriesLine", { index: String(ride.series_index ?? 1), count: String(ride.series_count) })}
+                </p>
+              ) : null}
+
               <p className="text-muted-foreground">{carModeLabel(ride)}</p>
               {canEditPublicNotes && ride.id && ride.version != null ? (
                 <RidePublicNotesEditor key={`${ride.id}:${ride.version}`} rideId={ride.id} expectedVersion={ride.version} initialNotes={ride.notes} />

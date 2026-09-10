@@ -27,6 +27,7 @@ import {
   snoozeRequestTemplate,
   stopRequestTemplate,
   submitRequest,
+  submitSeriesRequest,
   withdrawFreedSlotClaim,
   withdrawRequest,
   withdrawAllRequests,
@@ -61,6 +62,29 @@ export function useSubmitRequestMutation() {
       queryClient.invalidateQueries({ queryKey: sadranKeys.week(payload.department_id, payload.week_start) });
       queryClient.invalidateQueries({ queryKey: siddurKeys.boardRides(payload.department_id, payload.week_start) });
       queryClient.invalidateQueries({ queryKey: siddurKeys.carLocations(payload.department_id, payload.week_start) });
+    },
+    onError: showErrorToast,
+  });
+}
+
+/**
+ * `submit_series_request` (REQ §13.77) — a multi-day request's own legs can land in more than
+ * one week/department view at once (the first day's week, any later week the span reaches),
+ * so this invalidates broadly (`requests`/`siddur`/`sadran` root keys) rather than the single
+ * `(department_id, week_start)` pair `useSubmitRequestMutation` targets.
+ */
+export function useSubmitSeriesRequestMutation() {
+  const { session } = useSession();
+  const profileId = session?.user.id;
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (payload: SubmitRequestPayload) => submitSeriesRequest(payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: requestsKeys.all });
+      queryClient.invalidateQueries({ queryKey: siddurKeys.all });
+      queryClient.invalidateQueries({ queryKey: sadranKeys.all });
+      queryClient.invalidateQueries({ queryKey: siddurKeys.myUpcomingRides(profileId, undefined).slice(0, 2) });
     },
     onError: showErrorToast,
   });

@@ -1,9 +1,9 @@
 import type { RelayPair } from './relay';
-import { type NormalizedRequest } from './slots';
+import { type NormalizedRequest, type SeriesUnit } from './slots';
 import { CarTimeline } from './timeline';
 import type { Assignment, Car, SolverInput, Window } from './types';
 export interface Unit {
-    kind: 'single' | 'pair';
+    kind: 'single' | 'pair' | 'series';
     id: string;
     score: number;
     submittedAtMs: number;
@@ -13,10 +13,11 @@ export interface Unit {
         outNr: NormalizedRequest;
         retNr: NormalizedRequest;
     };
+    series?: SeriesUnit;
 }
 export declare function buildUnits(roundTrips: NormalizedRequest[], pairs: RelayPair[], byRequestId: Map<string, NormalizedRequest>, scores: Map<string, {
     total: number;
-}>): Unit[];
+}>, seriesUnits?: SeriesUnit[]): Unit[];
 export declare function sortUnits(units: Unit[]): Unit[];
 export interface PlacedSingle {
     kind: 'single';
@@ -35,7 +36,15 @@ export interface PlacedPair {
     retNr: NormalizedRequest;
     carId: string;
 }
-export type Placed = PlacedSingle | PlacedPair;
+export interface PlacedSeries {
+    kind: 'series';
+    series: SeriesUnit;
+    carId: string;
+    /** the first/last in-week leg's actual window after any within-flex shift; other legs use their own window */
+    firstWindow: Window;
+    lastWindow: Window;
+}
+export type Placed = PlacedSingle | PlacedPair | PlacedSeries;
 export interface GreedyResult {
     placed: Placed[];
     unmetUnits: Unit[];

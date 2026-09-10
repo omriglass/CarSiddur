@@ -1,12 +1,18 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { tv } from "@/i18n/he";
 
 const mocks = vi.hoisted(() => ({ toast: vi.fn(), success: vi.fn() }));
 vi.mock("sonner", () => ({ toast: Object.assign(mocks.toast, { success: mocks.success }) }));
 
-import { toastSubmitOutcome } from "./submitOutcome";
-import type { SubmitRequestResult } from "./api";
+import { toastSeriesSubmitOutcome, toastSubmitOutcome } from "./submitOutcome";
+import type { SubmitRequestResult, SubmitSeriesRequestResult } from "./api";
+import { t } from "@/i18n/he";
+
+beforeEach(() => {
+  mocks.toast.mockClear();
+  mocks.success.mockClear();
+});
 
 const CAR_NAME = (id: string | null | undefined) => (id === "car" ? "Car" : id === "preferred" ? "Preferred" : "");
 
@@ -61,5 +67,32 @@ describe("toastSubmitOutcome", () => {
       expect.any(String),
       expect.objectContaining({ action: expect.objectContaining({ onClick: onViewRequests }) }),
     );
+  });
+});
+
+describe("toastSeriesSubmitOutcome", () => {
+  it("stays silent for a plain series submission with no resolved outcome", () => {
+    toastSeriesSubmitOutcome({ series_id: "s", request_ids: ["a", "b"], warnings: [] });
+    expect(mocks.toast).not.toHaveBeenCalled();
+    expect(mocks.success).not.toHaveBeenCalled();
+  });
+
+  it("stays silent for a null/undefined result", () => {
+    toastSeriesSubmitOutcome(null);
+    toastSeriesSubmitOutcome(undefined);
+    expect(mocks.toast).not.toHaveBeenCalled();
+    expect(mocks.success).not.toHaveBeenCalled();
+  });
+
+  it("shows the series-assigned toast once a car took the whole span", () => {
+    const result: SubmitSeriesRequestResult = { series_id: "s", request_ids: ["a", "b"], warnings: [], status: "assigned", reason: "SERIES_PLACED", car_id: "car" };
+    toastSeriesSubmitOutcome(result);
+    expect(mocks.success).toHaveBeenCalledWith(t("request.seriesAssigned"));
+  });
+
+  it("shows the series-waitlisted toast when no car could take the whole span", () => {
+    const result: SubmitSeriesRequestResult = { series_id: "s", request_ids: ["a", "b"], warnings: [], status: "waitlisted", reason: "WAITLISTED_SERIES_NO_CAR" };
+    toastSeriesSubmitOutcome(result);
+    expect(mocks.toast).toHaveBeenCalledWith(t("request.seriesWaitlisted"));
   });
 });
