@@ -128,19 +128,26 @@ e2e/
   auto-approve.spec.ts           auto-approve on a free car (live week)
   board.spec.ts                  board regression pass (fake-week data)
   board-coordination.spec.ts     one-way drop, tight edits, merge consent coordination
+  board-mobile.spec.ts           board mobile header: title/week switcher, eye menu, kebab menu, undo/redo, policy chip
+  car-care.spec.ts               report/tire-fill/wash, responsible person sees it in History, export
   department-context.spec.ts     department selector; catalogs/Maps estimates; read-only department switching
   device-setup.spec.ts           home-screen install prompt / push-permission dismissal
   export.spec.ts                 Sadran downloads the week as a Hebrew Excel workbook
   freed-slot.spec.ts             freed slot, live week, single candidate
   member.spec.ts                 member area flows
+  multi-day.spec.ts              multi-day ("series") request: one card/badge, linked legs, cascading withdraw, board day markers
   one-way-consent.spec.ts        combined one-way consent; orphaned passenger; volunteering
   proposal.spec.ts               proposal round trip
   proposal-retry.spec.ts         resend/replace a sent proposal's token; retry a failed send
   quick-one-way.spec.ts          quick round-trip/one-way metadata persists on reopen/save
   quick-request.spec.ts          quick request from an empty slot (live week)
+  repeating-requests.spec.ts     repeat-weekly template: suggestion card, snooze, use, stop repeating
   ride-editing.spec.ts           member resizes owned rides; shadow-collision driver consent
   sadran.spec.ts                 sadran flows
+  siddur-mobile.spec.ts          siddur mobile header: title/week switcher, eye menu, car-now, waitlist button, archive
   smoke.spec.ts                  shell loads, RTL/Hebrew wired end to end
+  upcoming-week.spec.ts          a series reaching 2 weeks out materializes an `upcoming` week; member/Sadran visibility split
+  waitlist-groups.spec.ts        contested waiting-list "בדיון" block: resolve into one ride; non-participant read-only hint
   weekly-permissions.spec.ts     weekly-assigned member vs permanent Sadran board access
 scripts/
   bundle-solver.mjs            esbuild solver for edge functions

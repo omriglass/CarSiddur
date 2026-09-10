@@ -83,10 +83,10 @@ describe("TemplateSuggestions", () => {
     expect(screen.getByText("עפולה")).toBeVisible();
   });
 
-  it("links the primary action to the prefilled new-request route", () => {
+  it("links the primary action to the prefilled new-request route, pinned to the suggestion's own week", () => {
     show([row()]);
     const link = screen.getByRole("link", { name: he.request.useSuggestion });
-    expect(link).toHaveAttribute("href", "/requests/new?template=template-1");
+    expect(link).toHaveAttribute("href", "/requests/new?week=2027-01-10&template=template-1");
   });
 
   it("calls the snooze mutation with the row's template and week", () => {

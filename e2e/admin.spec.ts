@@ -90,8 +90,11 @@ test.describe("admin", () => {
     await page.getByRole("checkbox", { name: he.adminCars.fieldIsReplaced }).check();
     await page.getByLabel(he.adminCars.fieldReplacementCode, { exact: true }).fill("0567");
     await page.getByRole("button", { name: he.adminCommon.save, exact: true }).click();
+    await expect(page.getByRole("dialog")).not.toBeVisible();
     const carRow = page.getByRole("row").filter({ hasText: carName });
-    await expect(carRow.getByText(he.adminCars.replacedBadge, { exact: true })).toBeVisible();
+    // The list refetch after the update's cache invalidation is occasionally slower than the
+    // default 5s assertion timeout under load — widen it rather than assume a hang.
+    await expect(carRow.getByText(he.adminCars.replacedBadge, { exact: true })).toBeVisible({ timeout: 15_000 });
     await carRow.click();
     await expect(page.getByLabel(he.adminCars.fieldReplacementCode, { exact: true })).toHaveValue("0567");
     await page.getByRole("checkbox", { name: he.adminCars.fieldIsReplaced }).uncheck();

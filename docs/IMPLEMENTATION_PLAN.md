@@ -166,5 +166,24 @@ Implements REQUIREMENTS §6.6/§13.69–73: every car may have a `responsible_id
 ### Open
 
 - **Photo upload**: `car_issues.photo_path` and the RPC's `_photo_path` param exist; there is no Supabase Storage bucket, upload UI, or `storage.*` RLS policy anywhere in the app yet. REQUIREMENTS §6.6's "optional photo" stays unimplemented until that lands (needs its own `/add-migration` pass for the bucket/policy plus a `ui-dev` upload control).
-- **Playwright coverage**: no e2e spec exists for the car care portal (report → notification → responsible person sees it in History → export). Recommended for `e2e-tester`: report-a-problem as member A → sign in as the responsible member B → `/cars/:carId` shows it in History and the export downloads; admin fallback path (car with no `responsible_id`) also exercised via the seed data.
+- **Playwright coverage**: done — `e2e/car-care.spec.ts` covers report → notification → responsible person sees it in History → export (see "E2E pass — 2026-09-10" below).
 - `npm run db:reset && npm run db:types && npm run db:test` have not been re-run against a live local database after this feature's migrations (per the standing note above for the 2026-09-09 migration batch generally) — do so before deploying.
+
+## E2E pass — 2026-09-10
+
+`e2e-tester` ran the full Playwright suite against a disposable Supabase stack (ports shifted +2000, never the owner's dev stack), fixed the failures the same day's UI changes caused, and added coverage for the newer features (waiting-list groups, repeating requests, multi-day/series requests, the `upcoming` week phase, and the redesigned mobile board/siddur headers).
+
+**Playwright config correction:** `playwright.config.ts` defines exactly one project (`chromium`, default Desktop Chrome viewport) — there are no separate `mobile`/`desktop` projects. Specs that need a phone-width layout set it explicitly (`test.use({ viewport: { width: 390, height: 844 } })`), matching the existing `auth.spec.ts`/`member.spec.ts` pattern.
+
+**App bugs found and fixed (one-line, in-scope for e2e-tester per this pass's brief):**
+- `BoardScreen.tsx`'s unmet-list side panel had no `max-h`/`overflow-auto` (unlike `WeekGrid`'s own scroll container it sits beside), so a long list forced a page-level scroll that also pushed the grid itself off-screen — broke `UnmetList`'s drag-to-place and the general "board and unmet list scroll independently" UX (UX_FLOWS §20). Added the same `max-h-[70dvh] overflow-auto` `WeekGrid` already uses.
+- `DepartmentContextSelector.tsx` built its department list from `useMyDepartments()` (memberships only) instead of `useActiveDepartment().departments` (all active departments) — the switcher never offered a department the member could view read-only, contradicting REQ §13.52/UX_FLOWS §3.5 ("also lists departments the member does not belong to"). Switched to the all-departments list; `canSubmit` still gates write access correctly.
+- `TemplateSuggestions.tsx`'s "הגש/י" link omitted `?week=`, so using a suggestion for any week other than the earliest open one silently resubmitted into the wrong (already-filed) week. Added `week: row.weekStart` to the link.
+
+**New specs** (`e2e/siddur-mobile.spec.ts`, `board-mobile.spec.ts`, `waitlist-groups.spec.ts`, `repeating-requests.spec.ts`, `multi-day.spec.ts`, `upcoming-week.spec.ts` — one line each in CLAUDE.md's folder map). Notable fixture findings, for whoever writes the next batch:
+- `weeks`/`siddur_versions` rows are never deletable once published (`forbid_mutation()`); a repeatable fixture needs a fresh `week_start` per run (or to `update` an existing row's `phase`), never delete-and-reinsert the same one.
+- `resolve_waitlist_group()`'s car fallback is `order by c.id limit 1` with no maintenance-block filter in the query itself (only the ride insert rejects a blocked car) — a "leave one car free" fixture must free whichever car actually sorts first by id, not an arbitrarily-ordered "first" row from an unordered `select`.
+- `place_series()` has `EXECUTE` revoked from `public`/`anon`/`authenticated` entirely (service-role-only, meant to be called from other `SECURITY DEFINER` functions) — call it via `serviceRoleClient()`, not a signed-in actor.
+- Two Radix-dialog UI patterns worth knowing before writing more specs: (a) a `ConfirmDialog` invoked without its own `confirmLabel` renders the default "אישור" (`he.common.confirm`), not the trigger's own label — check the call site's props before assuming `.last()` on the trigger's label finds it; (b) when a nested modal opens over a non-modal sheet with the *same* button label, Radix marks the sheet's own button `aria-hidden`, so re-querying the *same* locator (not `.first()`/`.last()` on a 2-count) after the dialog opens correctly re-resolves to the dialog's button.
+
+Final counts (fresh `db:reset`, full suite, all 27 spec files): see the agent's own report for the exact pass/fail tally and any `test.fixme`s left for `ui-dev`/`db-migrator`.

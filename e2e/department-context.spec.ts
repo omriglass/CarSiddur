@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import { he } from '../src/i18n/he';
 import { NEVO_DEPARTMENT_ID, SEEDED_USERS, serviceRoleClient, signIn } from './helpers';
 
-async function departmentFixture() {
+async function departmentFixture(options: { member?: { profileId: string; role: string } } = {}) {
   const service = serviceRoleClient();
   const suffix = Date.now();
   const { data: department, error } = await service.from('departments')
@@ -12,6 +12,15 @@ async function departmentFixture() {
     .insert({ department_id: department.id, name: `Context destination ${suffix}`, is_approved: true, distance_km: 4, travel_minutes: 8 })
     .select('id,name').single();
   if (destinationError || !destination) throw destinationError ?? new Error('Missing destination fixture');
+  // The department switcher only lists departments the signed-in profile actually belongs to
+  // (`useMyDepartments` reads `department_members` directly — admins get no implicit access;
+  // see e2e/admin-department.spec.ts, "administrator can join a department through their member
+  // editor"). Callers that need the switcher to already offer this department join here.
+  if (options.member) {
+    const { error: memberError } = await service.from('department_members')
+      .insert({ department_id: department.id, profile_id: options.member.profileId, role: options.member.role });
+    if (memberError) throw memberError;
+  }
   return { service, department, destination };
 }
 async function cleanupDepartment(id: string) {
@@ -25,7 +34,9 @@ async function cleanupDepartment(id: string) {
 }
 
 test('department selector scopes catalogs and Maps estimates require explicit save', async ({ page }) => {
-  const fixture = await departmentFixture();
+  // The signed-in admin must actually belong to the department to see it in the switcher —
+  // admin power is global (`profiles.is_admin`), department membership is separate.
+  const fixture = await departmentFixture({ member: { profileId: '00000000-0000-0000-0000-000000000101', role: 'member' } });
   try {
     await signIn(page, SEEDED_USERS.admin);
     await page.goto('/admin/destinations');

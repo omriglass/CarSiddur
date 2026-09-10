@@ -1256,7 +1256,11 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
         </div>
 
         <div
-          className={tableView ? "min-w-0" : "hidden min-w-0 lg:block"}
+          // Bounded and independently scrollable, matching `WeekGrid`'s own `max-h-[70dvh]
+          // overflow-auto` side-by-side (UX_FLOWS.md §20) — without this the panel grows with
+          // the page, forcing a page-level scroll to reach lower unmet cards that also pushes
+          // the grid itself off-screen.
+          className={tableView ? "min-w-0" : "hidden min-w-0 lg:block lg:max-h-[70dvh] lg:overflow-auto"}
           {...{ [UNMET_DROP_ZONE_ATTR]: "true" }}
         >
           <h2 className="mb-2 font-semibold">{tv("sadranBoard.unmetTitle", { count: String(unmetItems.length) })}</h2>

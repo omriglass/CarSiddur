@@ -70,7 +70,11 @@ export function TemplateSuggestions({ weekStart }: TemplateSuggestionsProps) {
                 />
                 <div className="flex flex-wrap gap-2 pt-1">
                   <Button asChild size="sm">
-                    <Link to={paths.requests.new({ template: row.templateId })}>{he.request.useSuggestion}</Link>
+                    {/* `week` pins the submission to the week this suggestion was actually
+                        shown for — without it, `resolveWeekStart` silently falls back to the
+                        earliest open week, which duplicates an existing request there once a
+                        member has suggestions across more than one open week. */}
+                    <Link to={paths.requests.new({ template: row.templateId, week: row.weekStart })}>{he.request.useSuggestion}</Link>
                   </Button>
                   <Button
                     size="sm"
