@@ -97,6 +97,10 @@ export const heMember = {
     gridView: "תצוגת לוח",
     listView: "תצוגת רשימה",
     noRides: "אין נסיעות ביום הזה.",
+    thisWeek: "השבוע",
+    nextWeek: "שבוע הבא",
+    waitlistForDay: "רשימת המתנה ליום {{day}}",
+    displayMenu: "תצוגה",
   },
   rideDetail: {
     title: "פרטי הנסיעה",
@@ -221,6 +225,10 @@ export const heMember = {
     carPickerLabel: "רכב",
     nextFreeAt: "פנוי מ-{{time}}",
     homeCardSubtitle: "{{car}} פנוי עכשיו",
+    /** `RequestForm` `variant="carNow"` duration-hours select (UX_FLOWS.md §18/Home §3.3). */
+    durationHours: "לכמה שעות?",
+    hoursOption: "{{n}} שעות",
+    hoursOptionOne: "שעה אחת",
   },
   memberErrors: {
     requestOutsideWeek: "הנסיעה יוצאת מגבולות השבוע — פנה/י לסדרן/ית",

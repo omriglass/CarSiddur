@@ -2,6 +2,7 @@ import { CarFront, Pin, Clock3, UserRoundX, Star } from "lucide-react";
 import type { MouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { nextZoom } from "@/components/pinchZoom";
 import { formatMinutes } from "@/components/TimeField15";
 import { he } from "@/i18n/he";
 import { rideTypeColorClasses } from "@/lib/rideTypeColors";
@@ -114,6 +115,12 @@ export interface WeekGridProps {
   /** When supplied, initially position the grid so this time is the first visible hour below the car headers. */
   initialScrollMinutes?: number | null;
   zoom?: number;
+  /**
+   * Two-finger pinch on the grid's own scroll container calls this with the live zoom
+   * (`components/pinchZoom.ts`, clamped 0.5–1.5). Omit to leave pinch disabled (e.g. the
+   * Sadran board, which has no pinch requirement) — the ± buttons keep working either way.
+   */
+  onZoomChange?: (zoom: number) => void;
 }
 
 /** Any drop target carrying this attribute (e.g. the board's `UnmetList`/drawer) accepts a ride dragged out of the grid — see `onRideDropOnUnmet`. */
@@ -237,6 +244,7 @@ export function WeekGrid({
   nowMinutes = null,
   initialScrollMinutes = null,
   zoom = 1,
+  onZoomChange,
 }: WeekGridProps) {
   const hours = Array.from(
     { length: Math.ceil((dayEndMinutes - dayStartMinutes) / 60) },
@@ -269,6 +277,60 @@ export function WeekGrid({
     lastInitialScroll.current = target;
     scrollViewportRef.current.scrollTop = ((target - dayStartMinutes) / 60) * HOUR_ROW_HEIGHT_PX * zoom;
   }, [dayEndMinutes, dayStartMinutes, initialScrollMinutes, zoom]);
+
+  // Two-finger pinch-to-zoom (UX_FLOWS.md member siddur "pinch to zoom"). Registered once as
+  // native listeners (never React's synthetic touch handlers, which Chromium treats as
+  // passive by default, silently ignoring `preventDefault()`) so `touchmove` can suppress the
+  // browser's own page-pinch while two fingers are down without fighting normal one-finger
+  // panning (`touchAction: "pan-x pan-y"` below). Reads `zoom`/`onZoomChange` off refs kept
+  // fresh every render instead of depending on them directly — depending on `zoom` would tear
+  // down and rebuild the listeners (losing the in-progress pinch anchor) on every frame of the
+  // very gesture they're driving, since each `onZoomChange` call re-renders this component with
+  // a new `zoom` prop.
+  const zoomRef = useRef(zoom);
+  useEffect(() => { zoomRef.current = zoom; }, [zoom]);
+  const onZoomChangeRef = useRef(onZoomChange);
+  useEffect(() => { onZoomChangeRef.current = onZoomChange; }, [onZoomChange]);
+  useEffect(() => {
+    const el = scrollViewportRef.current;
+    if (!el) return;
+    let pinch: { startDist: number; startZoom: number } | null = null;
+    let rafId = 0;
+
+    function touchDistance(touches: TouchList): number {
+      const a = touches.item(0);
+      const b = touches.item(1);
+      if (!a || !b) return 0;
+      return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+    }
+    function handleTouchStart(e: TouchEvent) {
+      if (e.touches.length === 2) pinch = { startDist: touchDistance(e.touches), startZoom: zoomRef.current };
+    }
+    function handleTouchMove(e: TouchEvent) {
+      if (e.touches.length !== 2 || !pinch || !onZoomChangeRef.current) return;
+      e.preventDefault();
+      const dist = touchDistance(e.touches);
+      cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
+        if (pinch) onZoomChangeRef.current?.(nextZoom(pinch.startZoom, pinch.startDist, dist));
+      });
+    }
+    function handleTouchEnd(e: TouchEvent) {
+      if (e.touches.length < 2) pinch = null;
+    }
+
+    el.addEventListener("touchstart", handleTouchStart, { passive: true });
+    el.addEventListener("touchmove", handleTouchMove, { passive: false });
+    el.addEventListener("touchend", handleTouchEnd, { passive: true });
+    el.addEventListener("touchcancel", handleTouchEnd, { passive: true });
+    return () => {
+      cancelAnimationFrame(rafId);
+      el.removeEventListener("touchstart", handleTouchStart);
+      el.removeEventListener("touchmove", handleTouchMove);
+      el.removeEventListener("touchend", handleTouchEnd);
+      el.removeEventListener("touchcancel", handleTouchEnd);
+    };
+  }, []);
 
   function ridesFor(carId: string) {
     return rides.filter((r) => r.carId === carId);
@@ -607,7 +669,12 @@ export function WeekGrid({
   }
 
   return (
-    <div ref={scrollViewportRef} className="min-w-0 max-h-[70dvh] overflow-auto rounded-md border shadow-card" data-week-grid-scroll-viewport>
+    <div
+      ref={scrollViewportRef}
+      className="min-w-0 max-h-[70dvh] overflow-auto rounded-md border shadow-card"
+      style={{ touchAction: "pan-x pan-y" }}
+      data-week-grid-scroll-viewport
+    >
       <div className="grid" style={{ zoom, gridTemplateColumns, gridTemplateRows, minWidth: HOUR_COL_WIDTH_PX + allCars.length * CAR_COL_WIDTH_PX }}>
         <div className="sticky start-0 top-0 z-30 border-b border-e bg-muted/70 shadow-[0_2px_6px_-2px_hsl(var(--foreground)/0.12)]" style={{ gridColumn: 1, gridRow: 1 }} />
         {allCars.map((car, i) => (

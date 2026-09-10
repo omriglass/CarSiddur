@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from "react";
 import { List, RotateCw, Table2, ZoomIn, ZoomOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useLandscapeToggle } from "@/components/useLandscapeToggle";
 import { he } from "@/i18n/he";
 
 interface Props {
@@ -10,60 +10,14 @@ interface Props {
   onZoomChange: (zoom: number) => void;
 }
 
-/** Fullscreen the document so sheets and page scrolling keep working. */
+/**
+ * Desktop-inline cards/table + zoom + landscape row (`hidden` below `md` —
+ * `SiddurDisplayMenu` is the mobile equivalent of the same options, sharing
+ * `useLandscapeToggle` so the fullscreen/orientation-lock logic isn't
+ * duplicated between the two renderings).
+ */
 export function TableViewControls({ table, onTableChange, zoom, onZoomChange }: Props) {
-  const [landscape, setLandscape] = useState(false);
-  const [rotateHint, setRotateHint] = useState(false);
-  const ownsFullscreen = useRef(false);
-  useEffect(() => {
-    const changed = () => {
-      if (!document.fullscreenElement) {
-        ownsFullscreen.current = false;
-        setLandscape(false);
-      }
-    };
-    document.addEventListener("fullscreenchange", changed);
-    return () => {
-      document.removeEventListener("fullscreenchange", changed);
-      if (ownsFullscreen.current) {
-        screen.orientation?.unlock?.();
-        void document.exitFullscreen().catch(() => undefined);
-      }
-    };
-  }, []);
-
-  async function exitLandscape() {
-    if (ownsFullscreen.current) {
-      screen.orientation?.unlock?.();
-      if (document.fullscreenElement) await document.exitFullscreen().catch(() => undefined);
-      ownsFullscreen.current = false;
-    }
-    setLandscape(false);
-    setRotateHint(false);
-  }
-
-  async function enterLandscape() {
-    onTableChange(true);
-    setLandscape(true);
-    // Orientation lock is optional (not supported by every phone browser).
-    const orientation = screen.orientation as ScreenOrientation & { lock?: (value: "landscape") => Promise<void> };
-    try {
-      if (!orientation?.lock || !document.documentElement.requestFullscreen) throw new Error("unsupported");
-      if (!document.fullscreenElement) {
-        await document.documentElement.requestFullscreen();
-        ownsFullscreen.current = true;
-      }
-      await orientation.lock("landscape");
-      setRotateHint(false);
-    } catch {
-      if (ownsFullscreen.current && document.fullscreenElement) {
-        await document.exitFullscreen().catch(() => undefined);
-        ownsFullscreen.current = false;
-      }
-      setLandscape(true);
-      setRotateHint(true);
-    }
-  }
+  const { landscape, rotateHint, enterLandscape, exitLandscape } = useLandscapeToggle(onTableChange);
 
   return <div className={landscape ? "space-y-2" : "space-y-2 lg:hidden"}>
     <div className="flex flex-wrap items-center gap-2" role="group" aria-label={he.tableView.label}>

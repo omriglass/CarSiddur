@@ -33,6 +33,7 @@ import { useMyRequests, useCancelRideMutation } from "@/features/requests/hooks"
 import { CarNameWithReport } from "@/features/carCare/components/CarNameWithReport";
 import { useCars, useRideTypes, useMaintenanceBlocks, useCarSeatConfigs } from "@/features/fleet/hooks";
 import { AddRideFab } from "@/features/requests/components/AddRideFab";
+import { CarNowButton } from "@/features/requests/components/CarNowButton";
 import { QuickRequestSheet } from "@/features/requests/components/QuickRequestSheet";
 import { ridePublicDetails } from "@/lib/ridePublicDetails";
 import { ridePassengerSummary } from "@/lib/ridePassengerSummary";
@@ -44,7 +45,7 @@ import { conflictingRides, moveOnRideDay } from "@/features/siddur/rideEditing";
 import { tightScheduleRideIds } from "@/features/sadran/board/geometry";
 import { useEditRideMutation, useDepartmentSettings, useWeekRequestsWithNames } from "@/features/sadran/hooks";
 import { groupByDay } from "@/features/siddur/dayGrouping";
-import { firstCarFreeNow, roundUpToQuarterHour } from "@/features/siddur/freeWindows";
+import { type CarFreeWindow } from "@/features/siddur/freeWindows";
 import {
   useBoardRides,
   useCarLocations,
@@ -54,13 +55,18 @@ import {
   useRequestRideChangeMutation,
   useClaimRideDriverMutation,
 } from "@/features/siddur/hooks";
-import { useDayFreeWindows } from "@/features/siddur/useDayFreeWindows";
+import { useDayFreeWindows, type DayFreeWindowsAway, type DayFreeWindowsCar } from "@/features/siddur/useDayFreeWindows";
+import { useSiddurDisplayPrefs } from "@/features/siddur/useSiddurDisplayPrefs";
+import { resolveThisNextWeek } from "@/features/siddur/thisNextWeek";
+import { WeekSwitcherTitle } from "@/features/siddur/components/WeekSwitcherTitle";
+import { SiddurDisplayMenu } from "@/features/siddur/components/SiddurDisplayMenu";
 import { siddurKeys } from "@/features/siddur/queryKeys";
 import type { Week, RideMove, BoardRide } from "@/features/siddur/api";
 import { representativeRideTypeCode, servedOf } from "@/features/sadran/solverRun";
 import { rideBlockLabel, resolveRideRealDestination } from "@/lib/rideLabel";
 import { he, t, tv } from "@/i18n/he";
 import { dateKey, formatTime } from "@/lib/time";
+import { weekdayLabel } from "@/lib/dayLabels";
 import { cn } from "@/lib/utils";
 import { paths } from "@/app/routes";
 
@@ -133,13 +139,16 @@ export function SiddurPage() {
   const [quickRequestSlot, setQuickRequestSlot] = useState<{
     carId: string;
     day: string;
+    weekStart: string;
     time: string;
     showCarPicker?: boolean;
+    cars: DayFreeWindowsCar[];
+    freeWindows: CarFreeWindow[];
+    awayWindows: DayFreeWindowsAway[];
   } | null>(null);
-  // Show the usual riding day first; early hours remain expandable.
-  const [tableView, setTableView] = useState(false);
-  const [tableZoom, setTableZoom] = useState(1);
-  const [showEarlyHours, setShowEarlyHours] = useState(false);
+  // Per-device display preferences (cards/table, zoom, early hours) — UX_FLOWS.md member
+  // siddur "display" menu, persisted in `localStorage` (`useSiddurDisplayPrefs`).
+  const { tableView, setTableView, tableZoom, setTableZoom, showEarlyHours, setShowEarlyHours } = useSiddurDisplayPrefs();
   const boardStartMinutes = settingsQuery.data?.board_start_time
     ? parseTimeToMinutes(settingsQuery.data.board_start_time) : 6 * 60;
   const dayStartMinutes = showEarlyHours ? 0 : boardStartMinutes;
@@ -205,19 +214,13 @@ export function SiddurPage() {
     if (!weekStart || !activeDay) return;
     const time = formatMinutes(minutes);
     if (isLiveDay) {
-      setQuickRequestSlot({ carId, day: activeDay, time });
+      setQuickRequestSlot({
+        carId, day: activeDay, weekStart, time,
+        cars: dayFreeWindows.cars, freeWindows: dayFreeWindows.freeWindows, awayWindows: dayFreeWindows.awayWindows,
+      });
     } else {
       navigate(paths.requests.new({ week: weekStart, day: activeDay, time }));
     }
-  }
-
-  function handleTakeCarNow() {
-    if (!activeDay) return;
-    const nowRounded = roundUpToQuarterHour(now.getTime());
-    const time = formatTime(new Date(nowRounded));
-    const carId = firstCarFreeNow(dayFreeWindows.freeWindows, now.getTime())?.carId ?? dayFreeWindows.cars[0]?.id;
-    if (!carId) return;
-    setQuickRequestSlot({ carId, day: activeDay, time, showCarPicker: true });
   }
 
   /** Free gaps ≥ 1h per car, tappable rows in the phone day list (UX_FLOWS.md §18). */
@@ -364,37 +367,59 @@ export function SiddurPage() {
   }
 
   const dayCounts = dayGroups.map((g) => ({ rides: g.items.length, unmet: 0 }));
+  const thisNextWeek = resolveThisNextWeek(weeks, today);
+  const departmentSwitcher = (myDepartmentsQuery.data?.length ?? 0) > 1 ? (
+    <Select
+      value={departmentId}
+      onValueChange={(next) => { active.setDepartmentId(next); goTo(next, undefined); }}
+    >
+      <SelectTrigger className="w-40">
+        <SelectValue placeholder={he.siddur.departmentSwitcher} />
+      </SelectTrigger>
+      <SelectContent>
+        {(myDepartmentsQuery.data ?? []).map((membership) => (
+          <SelectItem key={membership.department_id} value={membership.department_id}>
+            {membership.department.name}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  ) : null;
 
   return (
     <div className="mx-auto max-w-5xl space-y-4 p-4 pb-24">
-      <PageHeader
-        title={t("screen.siddur.title")}
-        subtitle={weekStart ? formatWeekRangeLabel(weekStart) : undefined}
-        actions={
-          (myDepartmentsQuery.data?.length ?? 0) > 1 ? (
-            <Select
-              value={departmentId}
-              onValueChange={(next) => { active.setDepartmentId(next); goTo(next, undefined); }}
-            >
-              <SelectTrigger className="w-40">
-                <SelectValue placeholder={he.siddur.departmentSwitcher} />
-              </SelectTrigger>
-              <SelectContent>
-                {(myDepartmentsQuery.data ?? []).map((membership) => (
-                  <SelectItem key={membership.department_id} value={membership.department_id}>
-                    {membership.department.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          ) : undefined
-        }
-      />
+      {/* Mobile header (below `md`): the title is itself the this-week/next-week switcher; the
+          eye icon collapses every `TableViewControls` option plus "show early hours" into one
+          menu (UX_FLOWS.md member siddur "mobile header"). */}
+      <div className="flex items-center justify-between gap-2 py-2 md:hidden">
+        {/* Keeps a stable, discoverable page heading for assistive tech (and existing
+            navigation-by-heading checks) even though the visible title text now switches
+            between "השבוע"/"שבוע הבא" as the week switcher itself. */}
+        <h1 className="sr-only">{t("screen.siddur.title")}</h1>
+        <WeekSwitcherTitle resolution={thisNextWeek} activeWeekStart={weekStart} onSelect={(next) => goTo(departmentId as string, next)} />
+        <SiddurDisplayMenu
+          table={tableView}
+          onTableChange={setTableView}
+          zoom={tableZoom}
+          onZoomChange={setTableZoom}
+          showEarlyHours={showEarlyHours}
+          onShowEarlyHoursChange={setShowEarlyHours}
+        />
+      </div>
+      {departmentSwitcher ? <div className="md:hidden">{departmentSwitcher}</div> : null}
+
+      <div className="hidden md:block">
+        <PageHeader
+          title={t("screen.siddur.title")}
+          subtitle={weekStart ? formatWeekRangeLabel(weekStart) : undefined}
+          actions={departmentSwitcher ?? undefined}
+        />
+      </div>
 
       {!isMyDepartment ? <p className="text-xs text-muted-foreground">{he.siddur.otherDeptNote}</p> : null}
 
       {weeks.length > 1 ? (
-        <div className="flex items-center gap-2 overflow-x-auto">
+        <div className="hidden items-center gap-2 overflow-x-auto md:flex">
           {weeks.map((w) => (
             <button
               key={w.week_start}
@@ -426,19 +451,21 @@ export function SiddurPage() {
       ) : (
         <>
           {!activeDayPublished ? <p className="rounded-md border bg-muted/40 p-3 text-sm">{he.publicationFlow.dayUnpublished}</p> : null}
-          <TableViewControls table={tableView} onTableChange={setTableView} zoom={tableZoom} onZoomChange={setTableZoom} />
+          <div className="hidden md:block">
+            <TableViewControls table={tableView} onTableChange={setTableView} zoom={tableZoom} onZoomChange={setTableZoom} />
+          </div>
           <div className={tableView ? "hidden" : "lg:hidden"}>
             <WeekStrip weekStart={weekStart as string} counts={dayCounts} selected={activeDay ?? ""} onSelect={setSelectedDay} />
             <div className="mt-3 space-y-2">
-              {isMyDepartment && isLiveDay ? (
-                <Button type="button" variant="outline" className="w-full" onClick={handleTakeCarNow} disabled={!firstCarFreeNow(dayFreeWindows.freeWindows, now.getTime())}>
-                  {firstCarFreeNow(dayFreeWindows.freeWindows, now.getTime()) ? t("quickRequest.takeCarNow") : t("quickRequest.noCarNow")}
-                </Button>
-              ) : null}
-              {isMyDepartment && activeDayPublished && (resolvedWeek?.phase === "published" || isLiveWeek) && weekStart && activeDay ? (
-                <Button type="button" variant="outline" className="w-full" onClick={() => navigate(paths.requests.new({ week: weekStart, day: activeDay, waitlist: true }))}>
-                  {t("action.enterWaitingList")}
-                </Button>
+              {isMyDepartment ? (
+                <div className="grid grid-cols-2 gap-2">
+                  {departmentId ? <CarNowButton departmentId={departmentId} className="w-full" /> : null}
+                  {activeDayPublished && (resolvedWeek?.phase === "published" || isLiveWeek) && weekStart && activeDay ? (
+                    <Button type="button" variant="outline" className="w-full" onClick={() => navigate(paths.requests.new({ week: weekStart, day: activeDay, waitlist: true }))}>
+                      {tv("siddur.waitlistForDay", { day: weekdayLabel(`${activeDay}T12:00:00Z`, "short") })}
+                    </Button>
+                  ) : null}
+                </div>
               ) : null}
               {boardRidesQuery.isLoading ? (
                 <CardListSkeleton />
@@ -505,7 +532,10 @@ export function SiddurPage() {
                       key={`${gap.carId}-${gap.start}`}
                       type="button"
                       className="w-full rounded-md border border-dashed p-3 text-start text-sm text-muted-foreground hover:bg-accent/40"
-                      onClick={() => setQuickRequestSlot({ carId: gap.carId, day: activeDay as string, time: gap.startTime })}
+                      onClick={() => setQuickRequestSlot({
+                        carId: gap.carId, day: activeDay as string, weekStart: weekStart as string, time: gap.startTime,
+                        cars: dayFreeWindows.cars, freeWindows: dayFreeWindows.freeWindows, awayWindows: dayFreeWindows.awayWindows,
+                      })}
                     >
                       <span dir="ltr">{tv("quickRequest.freeGapRow", { start: gap.startTime, end: gap.endTime })}</span>
                       {" · "}
@@ -519,7 +549,7 @@ export function SiddurPage() {
           <div className={tableView ? "min-w-0" : "hidden lg:block"}>
             <div className="flex items-center justify-between gap-2">
               <WeekStrip weekStart={weekStart as string} counts={dayCounts} selected={activeDay ?? ""} onSelect={setSelectedDay} />
-              <Button variant="ghost" size="sm" className="shrink-0" onClick={() => setShowEarlyHours((v) => !v)}>
+              <Button variant="ghost" size="sm" className="shrink-0" onClick={() => setShowEarlyHours(!showEarlyHours)}>
                 {showEarlyHours ? he.board.hideEarlyHours : he.board.showEarlyHours}
               </Button>
             </div>
@@ -529,6 +559,7 @@ export function SiddurPage() {
             <div className="mt-3">
               <WeekGrid
                 zoom={tableZoom}
+                onZoomChange={setTableZoom}
                 cars={weekGridCars}
                 rides={weekGridRides}
                 dayStartMinutes={dayStartMinutes}
@@ -594,22 +625,22 @@ export function SiddurPage() {
       />
 
       {isMyDepartment ? (
-        <AddRideFab isLiveWeek={isLiveWeek} onQuickRequest={handleTakeCarNow} />
+        <AddRideFab />
       ) : null}
 
-      {quickRequestSlot && weekStart ? (
+      {quickRequestSlot ? (
         <QuickRequestSheet
           open={!!quickRequestSlot}
           onOpenChange={(open) => !open && setQuickRequestSlot(null)}
           departmentId={departmentId as string}
-          weekStart={weekStart}
+          weekStart={quickRequestSlot.weekStart}
           day={quickRequestSlot.day}
           initialStartTime={quickRequestSlot.time}
           initialCarId={quickRequestSlot.carId}
           showCarPicker={quickRequestSlot.showCarPicker}
-          cars={dayFreeWindows.cars}
-          freeWindows={dayFreeWindows.freeWindows}
-          awayWindows={dayFreeWindows.awayWindows}
+          cars={quickRequestSlot.cars}
+          freeWindows={quickRequestSlot.freeWindows}
+          awayWindows={quickRequestSlot.awayWindows}
           now={now}
         />
       ) : null}

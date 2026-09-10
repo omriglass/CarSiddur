@@ -1,11 +1,12 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { format, getDay, parseISO } from "date-fns";
-import { useMemo, useState } from "react";
+import { useContext, useMemo, useState } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { Button } from "@/components/ui/button";
+import { SheetPortalContext } from "@/components/SheetPortalContext";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -27,9 +28,11 @@ import { isSlotFree, type CarFreeWindow } from "@/features/siddur/freeWindows";
 import { siddurKeys } from "@/features/siddur/queryKeys";
 import { he, t, tv } from "@/i18n/he";
 import { dateKey, formatTime, weekdayIndex } from "@/lib/time";
+import { cn } from "@/lib/utils";
 import { fits, type Car as SolverCar } from "@/solver";
 
 import type { RequestEditRow, SubmitRequestResult } from "../api";
+import { CAR_NOW_DEFAULT_HOURS, CAR_NOW_HOURS_OPTIONS } from "../carNow";
 import { findOverlappingRequest } from "../duplicate";
 import { QUICK_REQUEST_DURATION_HOURS, endTimeForDuration, shiftReturnByDepartureDelta } from "../duration";
 import { guestPassengerNames, quickVehicleWindow } from "../quickRequest";
@@ -85,12 +88,16 @@ interface RequestFormProps {
   mode: "new" | "edit";
   /**
    * "weekly" (default) is the full new/edit request form (UX_FLOWS.md §3.4). "quick" is the
-   * live-week "I want a car now" flow (§18) — the same fields, form and submit path, just
-   * pre-filled to now/a default duration and with the free-window-aware car picker/hint
-   * (`quickContext`) turned on. Every other field lives in exactly one component, so a field
-   * added to one variant automatically appears in the other.
+   * empty-grid-slot quick request on an Open/Solving/Published/live siddur day (§18) — the
+   * same fields, form and submit path, just pre-filled to a slot's day/time/car and with the
+   * free-window-aware car picker/hint (`quickContext`) turned on. "carNow" is the simplified
+   * always-about-today "רוצה רכב עכשיו!" flow (`CarNowButton`, Home §3.3): day/depart are
+   * preset and hidden (today, now rounded up to the next 15 minutes), there is no day picker,
+   * trip-shape, flexibility or return-time field, and a `durationHours` select (1–12h,
+   * `../carNow.ts`) drives the return time instead. Every field lives in exactly one
+   * component, so a field added to one variant automatically appears in the others.
    */
-  variant?: "weekly" | "quick";
+  variant?: "weekly" | "quick" | "carNow";
   departmentId: string;
   weekStart: string;
   /** Edit mode only. */
@@ -138,6 +145,7 @@ function emptyValues(
   departTime = "08:00",
   returnTime = "12:00",
   preferredCarId = "",
+  durationHours?: number,
 ): RequestFormValues {
   const dates = datesOfWeek(weekStart);
   return {
@@ -168,6 +176,7 @@ function emptyValues(
     notes: "",
     rideDescription: "",
     guestNames: "",
+    durationHours,
   };
 }
 
@@ -288,7 +297,12 @@ export function RequestForm({
     if (joinRide) return buildJoinRideValues(departmentId, weekStart, defaultRideTypeId, joinRide);
     if (slotPrefill) {
       const returnTime =
-        slotPrefill.returnTime ?? (variant === "quick" ? endTimeForDuration(slotPrefill.departTime, QUICK_REQUEST_DURATION_HOURS).time : undefined);
+        slotPrefill.returnTime ??
+        (variant === "quick"
+          ? endTimeForDuration(slotPrefill.departTime, QUICK_REQUEST_DURATION_HOURS).time
+          : variant === "carNow"
+            ? endTimeForDuration(slotPrefill.departTime, CAR_NOW_DEFAULT_HOURS).time
+            : undefined);
       return emptyValues(
         departmentId,
         weekStart,
@@ -297,6 +311,7 @@ export function RequestForm({
         slotPrefill.departTime,
         returnTime,
         slotPrefill.carId ?? "",
+        variant === "carNow" ? CAR_NOW_DEFAULT_HOURS : undefined,
       );
     }
     return emptyValues(
@@ -325,6 +340,9 @@ export function RequestForm({
   // `react-hooks/set-state-in-effect` lint rule (calling `setState` inside an effect
   // body is flagged; adjusting state for freshly-arrived props during render is not).
   const [resetKey, setResetKey] = useState<string | null>(null);
+  // Set only by `PortalSheetContent`/`PortalDialogContent` (`QuickRequestSheet`'s host) — reused
+  // here to tell the fixed submit bar it has no app tab bar to clear (SheetPortalContext.ts).
+  const insideModalSheet = useContext(SheetPortalContext) !== null;
   if (mode === "edit" && initial && companionsQuery.isSuccess && requestChildrenQuery.isSuccess) {
     const nextResetKey = `${initial.id}:${initial.version}`;
     if (nextResetKey !== resetKey) {
@@ -347,6 +365,17 @@ export function RequestForm({
   // `form.getValues` reads the authoritative store directly, so it converges after one call.
   if (quickContext && oneWay && form.getValues("oneWayCarMode") !== "passenger") {
     form.setValue("oneWayCarMode", "passenger", { shouldValidate: true });
+  }
+  // carNow has no return-time picker — `returnTime` tracks the fixed (preset, hidden)
+  // `departTime` plus the visible `durationHours` select instead. Its own `Controller` below
+  // stays mounted (rendering `null`) specifically so this write reaches `useWatch`'s `values`
+  // snapshot, used by the free-car/duplicate checks further down — see the `oneWayCarMode`
+  // comment above for why an unmounted `Controller` would freeze it at a stale value instead.
+  if (variant === "carNow" && values.departTime) {
+    const computedReturn = endTimeForDuration(values.departTime, values.durationHours ?? CAR_NOW_DEFAULT_HOURS).time;
+    if (form.getValues("returnTime") !== computedReturn) {
+      form.setValue("returnTime", computedReturn, { shouldValidate: true });
+    }
   }
   const day = values.day ?? weekStart;
   const childReferenceYear = Number(day.slice(0, 4));
@@ -470,7 +499,7 @@ export function RequestForm({
         suggestDestinationMutation.mutate({ name: formValues.destination.freeText.trim() });
       }
 
-      if (variant === "quick" && quickContext) {
+      if ((variant === "quick" || variant === "carNow") && quickContext) {
         queryClient.invalidateQueries({ queryKey: siddurKeys.boardRides(departmentId, weekStart) });
         queryClient.invalidateQueries({ queryKey: siddurKeys.carLocations(departmentId, weekStart) });
       }
@@ -491,7 +520,7 @@ export function RequestForm({
       if (onDone) onDone(result);
       else navigate("/requests");
     } catch {
-      setSubmitError(variant === "quick" ? t("quickRequest.submitError") : t("request.submitError"));
+      setSubmitError(variant === "quick" || variant === "carNow" ? t("quickRequest.submitError") : t("request.submitError"));
     }
   }
 
@@ -508,7 +537,10 @@ export function RequestForm({
   }
 
   return (
-    <form onSubmit={form.handleSubmit(onSubmit)} className="mx-auto flex max-w-2xl flex-col gap-5 p-4 pb-28">
+    <form
+      onSubmit={form.handleSubmit(onSubmit)}
+      className={cn("mx-auto flex max-w-2xl flex-col gap-5 p-4", insideModalSheet ? "pb-20" : "pb-28")}
+    >
       {quickContext ? (
         <p className="text-base font-semibold">
           {oneWay
@@ -548,7 +580,7 @@ export function RequestForm({
               }))}
               value={field.value as DestinationValue}
               onChange={field.onChange}
-              autoFocus={variant === "quick"}
+              autoFocus={variant === "quick" || variant === "carNow"}
             />
           )}
         />
@@ -570,6 +602,28 @@ export function RequestForm({
         />
         <FieldError message={form.formState.errors.rideTypeId?.message} />
       </FormItem>
+
+      {variant === "carNow" ? (
+        <FormItem>
+          <Label htmlFor="request-duration-hours">{t("quickRequest.durationHours")}</Label>
+          <Controller
+            control={form.control}
+            name="durationHours"
+            render={({ field }) => (
+              <Select value={String(field.value ?? CAR_NOW_DEFAULT_HOURS)} onValueChange={(value) => field.onChange(Number(value))}>
+                <SelectTrigger id="request-duration-hours"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {CAR_NOW_HOURS_OPTIONS.map((hours) => (
+                    <SelectItem key={hours} value={String(hours)}>
+                      {hours === 1 ? he.quickRequest.hoursOptionOne : tv("quickRequest.hoursOption", { n: String(hours) })}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          />
+        </FormItem>
+      ) : null}
 
       {!quickContext ? (
         <FormItem>
@@ -602,49 +656,55 @@ export function RequestForm({
         </FormItem>
       ) : null}
 
-      <FormItem>
-        <Label>{t("field.day")}</Label>
-        <Controller
-          control={form.control}
-          name="day"
-          render={({ field }) => (
-            <DateField
-              weekStart={weekStart}
-              value={field.value}
-              onChange={(next) => {
-                field.onChange(next);
-                form.setValue("dayIndex", Math.max(datesOfWeek(weekStart).indexOf(next), 0));
-              }}
-            />
-          )}
-        />
-      </FormItem>
-
-      <Controller
-        control={form.control}
-        name="tripShape"
-        render={({ field }) => (
-          <TripShapeControl
-            value={field.value}
-            onChange={(next) => {
-              const previousShape = field.value;
-              field.onChange(next);
-              // `departTime`/`returnTime` are two independent fields, but only one is ever
-              // shown for a one-way shape — carry the visible value across so switching shape
-              // doesn't silently swap in the other field's own (possibly stale) value.
-              if (next === "one_way_from" && previousShape !== "one_way_from") {
-                form.setValue("returnTime", form.getValues("departTime"), { shouldDirty: true });
-              } else if (previousShape === "one_way_from" && next !== "one_way_from") {
-                form.setValue("departTime", form.getValues("returnTime"), { shouldDirty: true });
-              }
-            }}
+      {variant !== "carNow" ? (
+        <FormItem>
+          <Label>{t("field.day")}</Label>
+          <Controller
+            control={form.control}
+            name="day"
+            render={({ field }) => (
+              <DateField
+                weekStart={weekStart}
+                value={field.value}
+                onChange={(next) => {
+                  field.onChange(next);
+                  form.setValue("dayIndex", Math.max(datesOfWeek(weekStart).indexOf(next), 0));
+                }}
+              />
+            )}
           />
-        )}
-      />
-      {quickContext && oneWay ? <p className="text-sm text-destructive">{t("quickRequest.oneWayHelp")}</p> : null}
+        </FormItem>
+      ) : null}
+
+      {variant !== "carNow" ? (
+        <>
+          <Controller
+            control={form.control}
+            name="tripShape"
+            render={({ field }) => (
+              <TripShapeControl
+                value={field.value}
+                onChange={(next) => {
+                  const previousShape = field.value;
+                  field.onChange(next);
+                  // `departTime`/`returnTime` are two independent fields, but only one is ever
+                  // shown for a one-way shape — carry the visible value across so switching shape
+                  // doesn't silently swap in the other field's own (possibly stale) value.
+                  if (next === "one_way_from" && previousShape !== "one_way_from") {
+                    form.setValue("returnTime", form.getValues("departTime"), { shouldDirty: true });
+                  } else if (previousShape === "one_way_from" && next !== "one_way_from") {
+                    form.setValue("departTime", form.getValues("returnTime"), { shouldDirty: true });
+                  }
+                }}
+              />
+            )}
+          />
+          {quickContext && oneWay ? <p className="text-sm text-destructive">{t("quickRequest.oneWayHelp")}</p> : null}
+        </>
+      ) : null}
 
       <div className="flex gap-4">
-        {tripShape !== "one_way_from" ? (
+        {variant !== "carNow" && tripShape !== "one_way_from" ? (
           <FormItem className="flex-1">
             <Label>{t("field.depart")}</Label>
             <Controller
@@ -669,22 +729,26 @@ export function RequestForm({
           </FormItem>
         ) : null}
         {tripShape !== "one_way_to" ? (
-          <FormItem className="flex-1">
-            <Label>{tripShape === "one_way_from" ? t("request.departArrival") : t("field.return")}</Label>
-            <Controller
-              control={form.control}
-              name="returnTime"
-              render={({ field }) => (
-                <TimeField15 min="06:00" max="23:59" value={field.value ?? "12:00"} onChange={field.onChange} aria-label={t("field.return")} />
-              )}
-            />
-            <FieldError message={form.formState.errors.returnTime?.message} />
-          </FormItem>
+          <Controller
+            control={form.control}
+            name="returnTime"
+            render={({ field }) =>
+              variant === "carNow" ? (
+                <></>
+              ) : (
+                <FormItem className="flex-1">
+                  <Label>{tripShape === "one_way_from" ? t("request.departArrival") : t("field.return")}</Label>
+                  <TimeField15 min="06:00" max="23:59" value={field.value ?? "12:00"} onChange={field.onChange} aria-label={t("field.return")} />
+                  <FieldError message={form.formState.errors.returnTime?.message} />
+                </FormItem>
+              )
+            }
+          />
         ) : null}
       </div>
 
-      {quickContext && tripShape === "one_way_from" ? <p className="text-xs text-muted-foreground">{t("quickRequest.arrivalHomeHelp")}</p> : null}
-      {quickContext && oneWay ? <p className="text-xs text-muted-foreground">{tv("quickRequest.vehicleWindow", { start: formatTime(new Date(startMs)), end: formatTime(new Date(endMs)) })}</p> : null}
+      {variant !== "carNow" && quickContext && tripShape === "one_way_from" ? <p className="text-xs text-muted-foreground">{t("quickRequest.arrivalHomeHelp")}</p> : null}
+      {variant !== "carNow" && quickContext && oneWay ? <p className="text-xs text-muted-foreground">{tv("quickRequest.vehicleWindow", { start: formatTime(new Date(startMs)), end: formatTime(new Date(endMs)) })}</p> : null}
 
       {quickContext && !carIsFree ? (
         <div className="space-y-1.5 rounded-md border-s-4 border-amber-500 bg-amber-50 p-3 text-sm text-amber-900">
@@ -704,7 +768,7 @@ export function RequestForm({
         </div>
       ) : null}
 
-      {tripShape === "round_trip" ? (
+      {tripShape === "round_trip" && variant !== "carNow" ? (
         <Controller
           control={form.control}
           name="needsCarAtDestination"
@@ -782,7 +846,7 @@ export function RequestForm({
         )}
       />
 
-      {tripShape !== "one_way_from" ? (
+      {variant !== "carNow" && tripShape !== "one_way_from" ? (
         <FormItem>
           <Label>{t("field.flexDepart")}</Label>
           <FlexibilityRange
@@ -795,7 +859,7 @@ export function RequestForm({
           />
         </FormItem>
       ) : null}
-      {tripShape !== "one_way_to" ? (
+      {variant !== "carNow" && tripShape !== "one_way_to" ? (
         <FormItem>
           <Label>{t("field.flexReturn")}</Label>
           <FlexibilityRange
@@ -810,19 +874,26 @@ export function RequestForm({
         </FormItem>
       ) : null}
 
-      <FormItem>
-        <Label htmlFor="request-description">{t("quickRequest.rideDescription")}</Label>
-        <Controller control={form.control} name="rideDescription" render={({ field }) => <Textarea {...field} id="request-description" rows={2} maxLength={1000} aria-describedby="request-description-help" />} />
-        <p id="request-description-help" className="text-xs text-muted-foreground">{t("quickRequest.rideDescriptionHelp")}</p>
-        <FieldError message={form.formState.errors.rideDescription?.message} />
-      </FormItem>
+      {variant !== "carNow" ? (
+        <FormItem>
+          <Label htmlFor="request-description">{t("quickRequest.rideDescription")}</Label>
+          <Controller control={form.control} name="rideDescription" render={({ field }) => <Textarea {...field} id="request-description" rows={2} maxLength={1000} aria-describedby="request-description-help" />} />
+          <p id="request-description-help" className="text-xs text-muted-foreground">{t("quickRequest.rideDescriptionHelp")}</p>
+          <FieldError message={form.formState.errors.rideDescription?.message} />
+        </FormItem>
+      ) : null}
 
       <FormItem>
         <Label htmlFor="request-notes">{t("field.notes")}</Label>
         <Controller control={form.control} name="notes" render={({ field }) => <Textarea {...field} id="request-notes" rows={2} />} />
       </FormItem>
 
-      <div className="fixed inset-x-0 bottom-16 z-30 border-t bg-background p-3 md:bottom-0">
+      <div
+        className={cn(
+          "fixed inset-x-0 z-30 border-t bg-background p-3",
+          insideModalSheet ? "bottom-0" : "bottom-16 md:bottom-0",
+        )}
+      >
         <div className="mx-auto max-w-2xl space-y-2">
           {seatFitWarning ? <p className="text-sm text-amber-700">⚠ {t("request.seatFitWarning")}</p> : null}
           {duplicate ? <p className="text-sm text-amber-700">{t("request.duplicateWarning")}</p> : null}
@@ -845,7 +916,7 @@ export function RequestForm({
             {mode === "edit"
               ? t("action.saveRequest")
               : waitlist
-                ? t("action.enterWaitingList")
+                ? t("action.submitWaitlist")
                 : quickContext
                   ? oneWay ? t("quickRequest.submitOneWay") : t("quickRequest.submit")
                   : t("action.submitRequest")}

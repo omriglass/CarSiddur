@@ -81,6 +81,13 @@ export const requestFormSchema = z
      * and sent as `guest_passenger_names` alongside `companions`/`children`.
      */
     guestNames: z.string(),
+    /**
+     * Car-now-variant-only (`RequestForm` `variant="carNow"`, UX_FLOWS.md §18): whole hours,
+     * 1–12, default 2 (`../carNow.ts`). Drives `returnTime` (`departTime` + this many hours,
+     * capped at 23:59) client-side only — never sent to `submit_request` (`../mapper.ts` only
+     * maps `departTime`/`returnTime`), so it needs no SQL counterpart.
+     */
+    durationHours: z.number().int().min(1).max(12).optional(),
   })
   .superRefine((value, ctx) => {
     const needsDepart = value.tripShape !== "one_way_from";

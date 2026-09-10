@@ -28,6 +28,8 @@ export interface QuickRequestSheetProps {
   /** Raw away-from-home windows, for the more specific "away" warning (a subset of what's already excluded from `freeWindows`). */
   awayWindows?: readonly QuickRequestAwayWindow[];
   now: Date;
+  /** `RequestForm`'s own `variant` (default `"quick"`, the empty-grid-slot flow); `CarNowButton` passes `"carNow"`. */
+  variant?: "quick" | "carNow";
 }
 
 /**
@@ -58,6 +60,7 @@ export function QuickRequestSheet({
   freeWindows,
   awayWindows = [],
   now,
+  variant = "quick",
 }: QuickRequestSheetProps) {
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -68,7 +71,7 @@ export function QuickRequestSheet({
         <RequestForm
           key={`${initialCarId}:${day}:${initialStartTime}`}
           mode="new"
-          variant="quick"
+          variant={variant}
           departmentId={departmentId}
           weekStart={weekStart}
           slotPrefill={{ day, departTime: initialStartTime, carId: initialCarId }}

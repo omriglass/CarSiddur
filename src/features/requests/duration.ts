@@ -27,8 +27,12 @@ export interface DurationEnd {
   nextDay: boolean;
 }
 
-/** `start` + duration, capped at the last minute of that day. */
-export function endTimeForDuration(start: string, hours: QuickRequestDurationHours): DurationEnd {
+/**
+ * `start` + duration, capped at the last minute of that day. `hours` is typed as a plain
+ * `number` (not `QuickRequestDurationHours`) so `../carNow.ts`'s 1–12-hour car-now duration
+ * select can reuse it too, without widening the quick variant's own 1–4-hour default.
+ */
+export function endTimeForDuration(start: string, hours: number): DurationEnd {
   const totalMinutes = timeToMinutes(start) + hours * 60;
   return { time: minutesToTime(Math.min(totalMinutes, MINUTES_PER_DAY - 1)), nextDay: false };
 }

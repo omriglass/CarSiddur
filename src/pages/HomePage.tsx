@@ -10,20 +10,18 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { PageHeader } from "@/components/PageHeader";
-import { datesOfWeek } from "@/components/DateField";
 import { RideCard } from "@/components/RideCard";
 import { CardListSkeleton } from "@/components/skeletons/CardListSkeleton";
 import { StatusBadge } from "@/components/StatusBadge";
-import { formatWeekRangeLabel, todayInJerusalem } from "@/components/DateField";
+import { formatWeekRangeLabel } from "@/components/DateField";
 import { useProfile } from "@/features/auth/useProfile";
 import { DeviceSetupPrompts } from "@/features/member/components/DeviceSetupPrompts";
 import { useMyResponsibleCarsQuery } from "@/features/cars/hooks";
 import { useCars, useRideTypes } from "@/features/fleet/hooks";
 import { AddRideFab } from "@/features/requests/components/AddRideFab";
-import { QuickRequestSheet } from "@/features/requests/components/QuickRequestSheet";
+import { CarNowButton } from "@/features/requests/components/CarNowButton";
 import { useMyRequests, useCancelRideMutation } from "@/features/requests/hooks";
 import type { MyRequestRow } from "@/features/requests/api";
-import { firstCarFreeNow, roundUpToQuarterHour } from "@/features/siddur/freeWindows";
 import { useBoardRides, useRideChanges, useWeeks, useMyUpcomingRides, useRequestRideChangeMutation } from "@/features/siddur/hooks";
 import { RideDetailSheet } from "@/features/siddur/components/RideDetailSheet";
 import { MemberRideEditor } from "@/features/siddur/components/MemberRideEditor";
@@ -31,12 +29,11 @@ import type { BoardRide, RideMove } from "@/features/siddur/api";
 import { myRideCard } from "@/features/siddur/myRideCard";
 import { conflictingRides } from "@/features/siddur/rideEditing";
 import { TripSummary } from "@/components/TripSummary";
-import { useDayFreeWindows } from "@/features/siddur/useDayFreeWindows";
 import { useDepartmentSettings, useEditRideMutation } from "@/features/sadran/hooks";
 import { servedOf } from "@/features/sadran/solverRun";
+import { OpenProposalButton } from "@/features/proposals/components/OpenProposalButton";
 import { he, t, tv } from "@/i18n/he";
 import { describeStatusReason } from "@/lib/statusReason";
-import { formatTime } from "@/lib/time";
 import { paths } from "@/app/routes";
 
 import { hasRideTodayOrTomorrow, resolveHomeWeek } from "./homeWeek";
@@ -73,13 +70,6 @@ export function HomePage() {
   // coordinator rather than auto-approved; hiding the entry point entirely
   // made an available car look unavailable.
   const now = new Date();
-  const today = todayInJerusalem();
-  const currentWeek = (weeksQuery.data ?? []).find((w) => datesOfWeek(w.week_start).includes(today));
-  const currentWeekStart = currentWeek?.week_start;
-  const dayFreeWindows = useDayFreeWindows(defaultDepartmentId, currentWeekStart, currentWeekStart ? today : undefined, now);
-  const freeCarNow = firstCarFreeNow(dayFreeWindows.freeWindows, now.getTime());
-  const quickCarId = freeCarNow?.carId ?? dayFreeWindows.cars[0]?.id;
-  const [quickRequestOpen, setQuickRequestOpen] = useState(false);
   const [selectedMyRide, setSelectedMyRide] = useState<BoardRide | null>(null);
   const [collisionMove, setCollisionMove] = useState<RideMove | null>(null);
   const cancelRideMutation = useCancelRideMutation();
@@ -208,32 +198,20 @@ export function HomePage() {
         </section>
       ) : null}
 
-      {active.canSubmit && currentWeekStart ? (
-        <Card
-          role={freeCarNow ? "button" : undefined}
-          tabIndex={freeCarNow ? 0 : undefined}
-          className={freeCarNow ? "cursor-pointer bg-gradient-card shadow-card transition-smooth hover:shadow-elegant" : "bg-muted/50 shadow-card"}
-          onClick={() => freeCarNow && setQuickRequestOpen(true)}
-        >
-          <CardContent className="flex items-center justify-between gap-2 p-4 text-sm">
-            <div className="flex items-center gap-3">
-              <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-available/10 text-available">
-                <CarFront className="size-5" aria-hidden="true" />
-              </span>
-              <div>
-                <p className="font-medium">{freeCarNow ? t("quickRequest.takeCarNow") : t("quickRequest.noCarNow")}</p>
-                {freeCarNow ? <p className="text-xs text-muted-foreground">{tv("quickRequest.homeCardSubtitle", { car: dayFreeWindows.cars.find((c) => c.id === freeCarNow.carId)?.name ?? "" })}</p> : null}
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      ) : null}
+      {active.canSubmit && defaultDepartmentId ? <CarNowButton departmentId={defaultDepartmentId} /> : null}
 
-      {nextAction ? (
-        <div className="rounded-md border-s-4 border-maintenance bg-maintenance/10 p-3 text-sm">
-          <p className="font-medium text-maintenance">{t("home.nextAction")}</p>
-          <p className="text-foreground/80">{reasonLine(nextAction)}</p>
-        </div>
+      {nextAction?.pendingProposal ? (
+        <OpenProposalButton
+          proposalId={nextAction.pendingProposal.id}
+          asChild
+          variant="ghost"
+          className="h-auto w-full justify-start rounded-md border-s-4 border-maintenance bg-maintenance/10 p-3 text-start text-sm font-normal text-inherit hover:bg-maintenance/10"
+        >
+          <div>
+            <p className="font-medium text-maintenance">{t("home.nextAction")}</p>
+            <p className="text-foreground/80">{reasonLine(nextAction)}</p>
+          </div>
+        </OpenProposalButton>
       ) : null}
 
       <section className="space-y-3">
@@ -317,28 +295,9 @@ export function HomePage() {
       ) : null}
 
       {active.canSubmit ? (
-        <AddRideFab
-          isLiveWeek={currentWeek?.phase === "live" && !!quickCarId}
-          onQuickRequest={() => setQuickRequestOpen(true)}
-        />
+        <AddRideFab />
       ) : null}
 
-      {quickRequestOpen && quickCarId && defaultDepartmentId && currentWeekStart ? (
-        <QuickRequestSheet
-          open={quickRequestOpen}
-          onOpenChange={setQuickRequestOpen}
-          departmentId={defaultDepartmentId}
-          weekStart={currentWeekStart}
-          day={today}
-          initialStartTime={formatTime(new Date(roundUpToQuarterHour(now.getTime())))}
-          initialCarId={quickCarId}
-          showCarPicker
-          cars={dayFreeWindows.cars}
-          freeWindows={dayFreeWindows.freeWindows}
-          awayWindows={dayFreeWindows.awayWindows}
-          now={now}
-        />
-      ) : null}
       <RideDetailSheet
         ride={selectedMyRide}
         car={selectedMyRide ? (carsQuery.data ?? []).find((car) => car.id === selectedMyRide.car_id) ?? null : null}

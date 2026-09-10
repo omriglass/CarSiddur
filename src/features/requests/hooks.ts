@@ -1,10 +1,15 @@
 import { useActiveDepartment } from "@/features/auth/useActiveDepartment";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { roundUpToQuarterHour } from "@/features/siddur/freeWindows";
 import { siddurKeys } from "@/features/siddur/queryKeys";
+import { useDayFreeWindows, type DayFreeWindowsAway, type DayFreeWindowsCar } from "@/features/siddur/useDayFreeWindows";
 import { sadranKeys } from "@/features/sadran/keys";
 import { useSession } from "@/features/auth/useSession";
 import { showErrorToast } from "@/lib/rpc";
+import { dateKey, weekStartFor } from "@/lib/time";
+
+import type { CarFreeWindow } from "@/features/siddur/freeWindows";
 
 import {
   cancelRide,
@@ -204,6 +209,50 @@ export function useWithdrawFreedSlotClaimMutation() {
     },
     onError: showErrorToast,
   });
+}
+
+export interface FreeCarsNowResult {
+  isLoading: boolean;
+  /** Today's `week_start` (Asia/Jerusalem) — the car-now flow is always about today's week. */
+  weekStart: string;
+  /** Today, `yyyy-MM-dd` (Asia/Jerusalem). */
+  day: string;
+  now: Date;
+  /** Every shared car in the department (`QuickRequestSheet`'s `cars` prop, for its picker). */
+  cars: DayFreeWindowsCar[];
+  /** The subset of `cars` free to take right now (rounded up to the next 15 minutes). */
+  freeCars: DayFreeWindowsCar[];
+  freeWindows: CarFreeWindow[];
+  awayWindows: DayFreeWindowsAway[];
+}
+
+/**
+ * `CarNowButton` (Home §3.3, UX_FLOWS.md §18): is a shared car free *right now*, in this
+ * department, today? Built on the same free-window pipeline the quick-request-from-slot flow
+ * uses (`features/siddur/useDayFreeWindows.ts`) rather than a new query, scoped to today's
+ * `week_start` (`weekStartFor`, CLAUDE.md hard rule 6) instead of a day/week the caller picks —
+ * the car-now flow is never about a selected day.
+ */
+export function useFreeCarsNowQuery(departmentId: string | undefined): FreeCarsNowResult {
+  const now = new Date();
+  const day = dateKey(now);
+  const weekStart = dateKey(weekStartFor(now));
+  const dayFreeWindows = useDayFreeWindows(departmentId, weekStart, day, now);
+  const nowRounded = roundUpToQuarterHour(now.getTime());
+  const freeCars = dayFreeWindows.cars.filter((car) =>
+    dayFreeWindows.freeWindows.some((w) => w.carId === car.id && w.start === nowRounded),
+  );
+
+  return {
+    isLoading: dayFreeWindows.isLoading,
+    weekStart,
+    day,
+    now,
+    cars: dayFreeWindows.cars,
+    freeCars,
+    freeWindows: dayFreeWindows.freeWindows,
+    awayWindows: dayFreeWindows.awayWindows,
+  };
 }
 
 export function useWithdrawAllRequestsMutation() {
