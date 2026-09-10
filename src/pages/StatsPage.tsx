@@ -11,10 +11,10 @@ import { StatsDateRangePicker } from "@/features/stats/components/StatsDateRange
 import { StatsDepartmentSwitcher } from "@/features/stats/components/StatsDepartmentSwitcher";
 import { StatTile } from "@/features/stats/components/StatTile";
 import { WeekdayBarList } from "@/features/stats/components/WeekdayBarList";
-import { formatDecimal, formatPercent } from "@/features/stats/format";
+import { formatDateDMY, formatDecimal, formatPercent } from "@/features/stats/format";
 import { useCanViewDepartmentStats, useDepartmentStatsQuery } from "@/features/stats/hooks";
 import { computePresetRange, DEFAULT_STATS_PRESET } from "@/features/stats/presets";
-import { he } from "@/i18n/he";
+import { he, tv } from "@/i18n/he";
 
 /**
  * `/stats/:dept` — usage statistics for admins and department Sadranim
@@ -26,9 +26,16 @@ export function StatsPage() {
   const { dept } = useParams<{ dept: string }>();
   const access = useCanViewDepartmentStats(dept);
   const defaultRange = useMemo(() => computePresetRange(DEFAULT_STATS_PRESET, todayInJerusalem()), []);
-  const [range, setRange] = useState(defaultRange);
+  // The range the user asked for (drives the query key); the RPC clamps `from`/`to` server-side
+  // (never before the department's `earliest` data, never after today) and is the single source
+  // of truth for the *effective* range shown in the inputs — see `displayedRange` below, computed
+  // straight from the response with no extra state/effect (owner feedback, UX_FLOWS.md §5.12).
+  const [requestedRange, setRequestedRange] = useState(defaultRange);
 
-  const statsQuery = useDepartmentStatsQuery(dept, range.from, range.to);
+  const statsQuery = useDepartmentStatsQuery(dept, requestedRange.from, requestedRange.to);
+  const stats = statsQuery.data;
+  const earliest = stats?.earliest;
+  const displayedRange = stats ? { from: stats.from, to: stats.to } : requestedRange;
 
   if (access.isLoading) {
     return (
@@ -47,8 +54,6 @@ export function StatsPage() {
     );
   }
 
-  const stats = statsQuery.data;
-
   return (
     <div className="mx-auto max-w-4xl space-y-4 p-4 pb-24">
       <PageHeader
@@ -61,7 +66,7 @@ export function StatsPage() {
         }
       />
 
-      <StatsDateRangePicker value={range} onChange={setRange} />
+      <StatsDateRangePicker value={displayedRange} onChange={setRequestedRange} earliest={earliest} />
 
       {statsQuery.isLoading ? (
         <CardListSkeleton count={4} />
@@ -84,6 +89,7 @@ export function StatsPage() {
                 </>
               }
               help={he.stats.tiles.utilization.help}
+              footnote={he.stats.capacityFormula}
             />
             <StatTile
               testId="stats-tile-unmet"
@@ -123,6 +129,14 @@ export function StatsPage() {
               help={he.stats.tiles.policyScore.help}
             />
           </div>
+
+          <p className="text-xs text-muted-foreground" data-testid="stats-effective-range">
+            {tv("stats.effectiveRange", {
+              from: formatDateDMY(stats.from),
+              to: formatDateDMY(stats.to),
+              days: String(stats.days),
+            })}
+          </p>
 
           <WeekdayBarList days={stats.byWeekday} />
         </>

@@ -18,6 +18,11 @@ export const weekdayStatSchema = z.object({
 export const departmentStatsSchema = z.object({
   from: z.string(),
   to: z.string(),
+  // `yyyy-MM-dd` earliest date with data for the department, or `null` when the RPC can't
+  // determine one (e.g. no rows at all); `from`/`to` above are already server-clamped to
+  // `[earliest, today]` (owner feedback, UX_FLOWS.md §5.12) — the UI reflects those back,
+  // never re-derives them.
+  earliest: z.string().nullable().optional(),
   days: z.number(),
   sharedCars: z.number(),
   utilization: z.object({

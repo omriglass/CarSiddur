@@ -3,8 +3,9 @@
 -- repeatedly against a seeded local database. Uses the seeded נבו department (…0001,
 -- home …0010), admin …0101, Sadran …0102, members …0103/…0104, shared cars
 -- …0040/…0041/…0042, temporary car …0043 (owner …0104), destination חיפה …0011,
--- ride type …0021, on a far-future week so nothing collides with the demo data or the
--- other suites.
+-- ride type …0021, on a far-past week so nothing collides with the demo data or the
+-- other suites (far-past, not far-future, so the range is not entirely clamped away by
+-- the "to" is-not-after-today rule added in 20260910098100).
 begin;
 
 do $$
@@ -21,7 +22,7 @@ declare
   car_b uuid := '00000000-0000-0000-0000-000000000041';
   car_c uuid := '00000000-0000-0000-0000-000000000042';
   car_priv uuid := '00000000-0000-0000-0000-000000000043';
-  w date := public.current_week_start() + 700;   -- far-future Sunday
+  w date := public.current_week_start() - 700;   -- far-past Sunday
   w2 date := w + 7;
   day1 date := w + 1;   -- Monday
   day2 date := w + 2;   -- Tuesday
@@ -34,6 +35,10 @@ declare
   result jsonb; wd jsonb;
   mon jsonb; tue jsonb; wed jsonb;
   other_dept uuid;
+  clamp_dept uuid; clamp_week date;
+  future_dept uuid; future_week date;
+  today_j date;
+  result2 jsonb;
 begin
   insert into public.weeks(department_id, week_start, phase, open_at, close_at, publish_at)
     values (dept, w, 'solving', now() - interval '2 days', now() - interval '1 day', now() + interval '1 day');
@@ -148,6 +153,12 @@ begin
   assert (result ->> 'from') = p_from::text, '(a) from mismatch';
   assert (result ->> 'to') = p_to::text, '(a) to mismatch';
   assert (result ->> 'days')::int = 14, '(a) days mismatch';
+  -- earliest = least(min(weeks.week_start), min(rides date), min(requests date)) over the
+  -- whole department: this fixture's own `weeks` row at w is earlier than every ride/request
+  -- date it inserts (day1 = w+1 at the earliest) and than every seeded row for this
+  -- department (current_week_start()/+7, far later than w), so it equals w exactly. p_from
+  -- (= w) is therefore not less than earliest, and no from-clamp fires here.
+  assert (result ->> 'earliest') = w::text, '(a) earliest mismatch';
   assert (result ->> 'sharedCars')::int = 3, '(a) sharedCars mismatch';
   assert (result -> 'utilization' ->> 'activeHours')::numeric = 5.0, '(a) activeHours: expected 2+1+2=5h, cancelled/private/out-of-window excluded';
   assert (result -> 'utilization' ->> 'capacityHours')::numeric = 3 * 14 * 16, '(a) capacityHours mismatch';
@@ -212,6 +223,7 @@ begin
   -- ... but does read their own department's (empty) stats fine.
   result := public.department_stats(other_dept, p_from, p_to);
   assert (result ->> 'sharedCars')::int = 0, '(d) the other department has no cars of its own';
+  assert (result -> 'earliest') = 'null'::jsonb, '(d) a department with no weeks/rides/requests at all has a null earliest';
 
   -- (e) invalid_range: to before from.
   perform set_config('request.jwt.claims', jsonb_build_object('sub', admin_id, 'role', 'authenticated')::text, true);
@@ -228,6 +240,51 @@ begin
 
   -- A 400-day span (inclusive) is still accepted.
   perform public.department_stats(dept, p_from, p_from + 399);
+
+  -- (f) from-clamp and to-clamp (20260910098100). A fresh department with exactly one
+  -- `weeks` row and no rides/requests: earliest is that row's week_start alone (the other
+  -- two LEAST() sources are null and ignored), so this isolates the clamp mechanics from
+  -- the (a) fixture's own data.
+  select id into clamp_dept from public.create_department('Stats clamp test', 'stats-clamp-test');
+  clamp_week := public.current_week_start() - 70;   -- Sunday-aligned, well before today
+  insert into public.weeks(department_id, week_start, phase, open_at, close_at, publish_at)
+  values (clamp_dept, clamp_week, 'archived', now() - interval '100 days', now() - interval '90 days', now() - interval '89 days');
+  select (now() at time zone 'Asia/Jerusalem')::date into today_j;
+
+  -- (f1) p_from before earliest is clamped up to earliest; p_to (still in the past) is untouched.
+  result2 := public.department_stats(clamp_dept, clamp_week - 10, clamp_week + 5);
+  assert (result2 ->> 'earliest') = clamp_week::text, '(f1) earliest mismatch';
+  assert (result2 ->> 'from') = clamp_week::text, '(f1) from must be clamped up to earliest, not the requested clamp_week-10';
+  assert (result2 ->> 'to') = (clamp_week + 5)::text, '(f1) to must be unchanged (still in the past)';
+  assert (result2 ->> 'days')::int = 6, '(f1) days mismatch: clamp_week..clamp_week+5 inclusive';
+  assert (result2 ->> 'sharedCars')::int = 0, '(f1) fresh department has no cars';
+
+  -- (f2) p_to after today is clamped down to today; p_from (== earliest) is untouched.
+  result2 := public.department_stats(clamp_dept, clamp_week, today_j + 50);
+  assert (result2 ->> 'from') = clamp_week::text, '(f2) from must be unchanged (equals earliest already)';
+  assert (result2 ->> 'to') = today_j::text, '(f2) to must be clamped down to today, not today_j+50';
+  assert (result2 ->> 'days')::int = (today_j - clamp_week + 1), '(f2) days mismatch';
+
+  -- (f3) both clamps apply together.
+  result2 := public.department_stats(clamp_dept, clamp_week - 10, today_j + 50);
+  assert (result2 ->> 'from') = clamp_week::text, '(f3) from must be clamped up to earliest';
+  assert (result2 ->> 'to') = today_j::text, '(f3) to must be clamped down to today';
+  assert (result2 ->> 'days')::int = (today_j - clamp_week + 1), '(f3) days mismatch';
+
+  -- (g) pathological case: a department whose only data is a future-dated week, so
+  -- earliest > today and the two clamps cross (from-clamp lands after to-clamp). Not an
+  -- error -- there is simply no in-range day to report, so days floors at 0 instead of
+  -- going negative, and from/to are returned exactly as clamped (from > to is expected here).
+  select id into future_dept from public.create_department('Stats future-only test', 'stats-future-only-test');
+  future_week := public.current_week_start() + 70;
+  insert into public.weeks(department_id, week_start, phase, open_at, close_at, publish_at)
+  values (future_dept, future_week, 'open', now() - interval '1 day', now() + interval '60 days', now() + interval '61 days');
+  result2 := public.department_stats(future_dept, public.current_week_start(), future_week + 5);
+  assert (result2 ->> 'earliest') = future_week::text, '(g) earliest mismatch';
+  assert (result2 ->> 'from') = future_week::text, '(g) from must be clamped up to earliest even though that lands after today';
+  assert (result2 ->> 'to') = today_j::text, '(g) to must be clamped down to today';
+  assert (result2 ->> 'days')::int = 0, '(g) days must floor at 0, not go negative, when the clamps cross';
+  assert (result2 ->> 'sharedCars')::int = 0, '(g) fresh department has no cars';
 end $$;
 
 reset role;

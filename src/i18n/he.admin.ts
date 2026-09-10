@@ -366,6 +366,12 @@ export const heAdmin = {
     navMenuItem: "סטטיסטיקה",
     dateFrom: "מתאריך",
     dateTo: "עד תאריך",
+    // `tv()` templates (owner feedback: the date range must not go before the department's
+    // first data or after today, UX_FLOWS.md §5.12).
+    clampedToEarliest: "הנתונים מתחילים ב-{{date}}",
+    clampedToToday: "לא ניתן לבחור תאריך עתידי",
+    effectiveRange: "מציג {{from}}–{{to}}, {{days}} ימים",
+    capacityFormula: "קיבולת = רכבים משותפים × ימים × 16 שעות (06:00–22:00)",
     presets: {
       last4Weeks: "4 שבועות אחרונים",
       last3Months: "3 חודשים",
