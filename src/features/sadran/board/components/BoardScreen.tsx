@@ -1069,7 +1069,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
           `PageHeader` + inline `BoardWeekSwitcher` selects from `lg` up; the
           policy chip, undo/redo icons, display ("eye") menu and actions
           (kebab) menu are identical at every width. */}
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex items-center gap-2">
         <div className="lg:hidden">
           {/* Kept in the accessibility tree only below `lg` — `PageHeader`'s own
               `<h1>` (hidden lg:block below) takes over at `lg+`, so there is
@@ -1084,6 +1084,16 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
         <div className="hidden lg:block">
           <PageHeader title={he.screen.board.title} subtitle={formatWeekRangeLabel(weekStart)} />
         </div>
+      </div>
+      <div className="hidden lg:block">
+        <BoardWeekSwitcher departmentId={departmentId} weekStart={weekStart} />
+      </div>
+
+      {/* Toolbar row (owner feedback 2026-09-10): publish on the start side; policy chip,
+          undo/redo, display ("eye") and actions (kebab) menus on the end side — never on
+          the title line. */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <PublishButton departmentId={departmentId} weekStart={weekStart} />
         <div className="flex shrink-0 items-center gap-2">
           <PolicyChip
             policyOptions={policyOptionsQuery.data ?? []}
@@ -1118,13 +1128,6 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
             autoSolving={autoSolving}
           />
         </div>
-      </div>
-      <div className="hidden lg:block">
-        <BoardWeekSwitcher departmentId={departmentId} weekStart={weekStart} />
-      </div>
-
-      <div className="flex items-center gap-2">
-        <PublishButton departmentId={departmentId} weekStart={weekStart} />
       </div>
 
       {conflictCount > 0 ? (

@@ -72,7 +72,7 @@ export const he = {
   },
   publicationFlow: {
     closeAndPublish: "סגירת בקשות ופרסום",
-    cancel: "ביטול",
+    cancel: "ביטול הפרסום",
     cancelTitle: "ביטול פרסום או פתיחת בקשות",
     reopen: "פתיחה מחדש לבקשות",
     unpublish: "ביטול פרסום בלבד",
