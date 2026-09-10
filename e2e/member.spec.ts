@@ -35,7 +35,7 @@ test.describe("member", () => {
     // Ride type: first chip (סוג נסיעה row).
     await page.getByRole("radiogroup", { name: "סוג נסיעה" }).getByRole("radio").first().click();
 
-    await page.getByRole("button", { name: "שלח/י בקשה" }).click();
+    await page.getByRole("button", { name: "הגש/י בקשה" }).click();
 
     await expect(page).toHaveURL(/\/requests$/);
     await expect(page.getByText("עפולה").first()).toBeVisible();

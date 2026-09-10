@@ -12,6 +12,7 @@ import { TripSummary } from "@/components/TripSummary";
 import { Button } from "@/components/ui/button";
 import type { MyRequestRow } from "@/features/requests/api";
 import { canEditRequest } from "@/features/requests/window";
+import { OpenProposalButton } from "@/features/proposals/components/OpenProposalButton";
 import {
   useCancelRideMutation,
   useClaimFreedSlotMutation,
@@ -201,6 +202,9 @@ export function RequestsListPage() {
                     </label>
                   ) : null}
                   <div className="flex flex-wrap gap-2 pt-1">
+                    {row.status === "proposed" && row.pendingProposal ? (
+                      <OpenProposalButton proposalId={row.pendingProposal.id} size="sm" />
+                    ) : null}
                     {canEditRequest(row) ? (
                       <Button asChild size="sm" variant="outline">
                         <Link to={paths.requests.edit(row.id)}>{he.requestsList.edit}</Link>

@@ -11,8 +11,8 @@ describe("renderTemplate", () => {
   });
 
   it("leaves an unmatched placeholder untouched instead of dropping it", () => {
-    const text = "עד {{expiresAt}}: {{link}}";
-    expect(renderTemplate(text, { link: "https://x/p/abc" })).toBe("עד {{expiresAt}}: https://x/p/abc");
+    const text = "עד {{unknownField}}: {{link}}";
+    expect(renderTemplate(text, { link: "https://x/p/abc" })).toBe("עד {{unknownField}}: https://x/p/abc");
   });
 
   it("fills the same placeholder repeated more than once", () => {

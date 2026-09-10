@@ -213,7 +213,7 @@ test("member logs car care (wash, tire fill, problem) and only the car's respons
 
       await rideSheet.getByTestId("car-name-report-trigger").click();
       await expect(reportDialog).toBeVisible();
-      await reportDialog.getByTestId("car-report-close").click();
+      await reportDialog.getByRole("button", { name: "סגור" }).click();
       await expect(reportDialog).not.toBeVisible();
 
       const [{ count: eventsAfter }, { count: issuesAfter }] = await Promise.all([

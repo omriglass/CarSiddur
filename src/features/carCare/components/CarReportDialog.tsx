@@ -1,12 +1,12 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { AlertTriangle, Droplets, Gauge, X } from "lucide-react";
+import { AlertTriangle, Droplets, Gauge } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 
 import { PortalDialogContent } from "@/components/PortalDialogContent";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogClose, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
@@ -107,17 +107,7 @@ export function CarReportDialog({ carId, carName, open, onOpenChange }: CarRepor
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <PortalDialogContent className="max-w-md">
-        <DialogClose asChild>
-          <button
-            type="button"
-            aria-label={he.carCare.close}
-            data-testid="car-report-close"
-            className="absolute start-3 top-3 flex size-8 items-center justify-center rounded-full bg-muted text-muted-foreground transition-smooth hover:bg-accent hover:text-foreground"
-          >
-            <X className="size-4" aria-hidden="true" />
-          </button>
-        </DialogClose>
-        <DialogHeader className="ps-9 pe-9">
+        <DialogHeader className="pe-9">
           <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
 

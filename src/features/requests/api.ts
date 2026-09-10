@@ -47,7 +47,8 @@ export interface MyRequestPendingProposal {
   id: string;
   type: ProposalType;
   reasonHe: string;
-  expiresAt: string;
+  /** No timer any more (20260910090000): null until the proposal's day is published or has passed. */
+  expiresAt: string | null;
 }
 
 export interface MyRequestRow {
@@ -141,7 +142,7 @@ interface RawRequestRow {
     id: string;
     type: ProposalType;
     reason_he: string;
-    expires_at: string;
+    expires_at: string | null;
     status: Database["public"]["Enums"]["proposal_status"];
   }[];
   request_children: { child: { full_name: string } | null }[];

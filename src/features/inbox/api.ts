@@ -44,3 +44,26 @@ export async function fetchUnreadNotificationCount(profileId: string): Promise<n
   if (error) throw toAppError(error);
   return count ?? 0;
 }
+
+/**
+ * Resolves a member's own `/p/:token` link for a pending proposal. The
+ * plaintext token is stored only on the `proposal_received` notification row
+ * that was created for them (`data.proposal_id` / `data.url`, both computed
+ * once by SQL's `notification_default_url()`, DATA_MODEL §3.11) — RLS scopes
+ * this to the caller's own notifications, so no `recipient_id` filter is
+ * needed here. Returns `null` if that notification can no longer be found
+ * (e.g. it was deleted), letting the caller fall back to the inbox.
+ */
+export async function fetchProposalLink(proposalId: string): Promise<string | null> {
+  const { data, error } = await supabase
+    .from("notifications")
+    .select("data")
+    .eq("event", "proposal_received")
+    .eq("data->>proposal_id", proposalId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw toAppError(error);
+  const url = (data?.data as { url?: string } | null)?.url;
+  return typeof url === "string" ? url : null;
+}

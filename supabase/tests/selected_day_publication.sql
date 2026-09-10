@@ -58,6 +58,10 @@ begin
     jsonb_build_object('depart_at',((w+2)+time '12:15') at time zone 'Asia/Jerusalem','return_at',((w+2)+time '14:15') at time zone 'Asia/Jerusalem'),'Pending publication fixture');
   perform public.send_proposal(prop);
   insert into publication_ids values('proposal',prop);
+  -- 20260910090000_expire_proposals_on_day_publication: no timer any more — a sent
+  -- proposal only expires once its own day is published or has passed.
+  perform public.expire_proposals();
+  assert (select status='sent' and expires_at is null from public.proposals where id=prop),'expire_proposals expired a proposal whose day is neither published nor passed';
   perform set_config('app.coordinator_planning','on',true);
   insert into public.rides(department_id,week_start,car_id,starts_at,ends_at,origin_id,destination_id,driver_id,notes,status,created_by)
   values(dept,w,'00000000-0000-0000-0000-000000000040',((w+2)+time '08:30') at time zone 'Asia/Jerusalem',
@@ -119,8 +123,11 @@ begin
     raise exception 'unanswered publication did not require acknowledgment';
   exception when raise_exception then if sqlerrm<>'publication_unanswered' then raise;end if;end;
   perform public.publish_siddur(dept,w,scores->'profiles',public.publish_scores_fingerprint(dept,w),scores->'policies',array[w+2],true);
-  assert (select status=before_prop.status and version=before_prop.version and expires_at=before_prop.expires_at from public.proposals where id=before_prop.id),'publication expired or answered pending proposal';
-  assert (select status='proposed' from public.requests where id=before_prop.request_id),'publication changed unanswered request';
+  -- Publishing the proposal's own day (Tuesday, forced through with p_allow_unanswered)
+  -- now expires it immediately (publish_siddur calls expire_proposals() at the end) —
+  -- there is no timer any more; once a day is published its proposals are settled.
+  assert (select status='expired' and version>before_prop.version from public.proposals where id=before_prop.id),'publishing the proposal''s day did not expire it';
+  assert (select status=before_prop.previous_status from public.requests where id=before_prop.request_id),'expired proposal did not fall back the request to its previous status';
   assert (select published_days=array[w+1,w+2] from public.weeks where department_id=dept and week_start=w),'incremental publication hid earlier day';
   begin
     perform public.publish_siddur(dept,w,scores->'profiles',public.publish_scores_fingerprint(dept,w),scores->'policies',array[w+3],false);
@@ -137,7 +144,7 @@ begin
   assert (select count(*)=ride_count from public.rides where department_id=dept and week_start=w),'unpublish deleted rides';
   assert (select count(*)=link_count from public.ride_requests rr join public.rides r on r.id=rr.ride_id where r.department_id=dept and r.week_start=w),'unpublish deleted assignments';
   assert (select count(*)=versions from public.siddur_versions where department_id=dept and week_start=w),'unpublish erased history';
-  assert (select status='sent' from public.proposals where id=before_prop.id),'unpublish changed pending proposal';
+  assert (select status='expired' from public.proposals where id=before_prop.id),'unpublishing revived an already-expired proposal';
   begin perform public.reopen_week(dept,w,'open',old_fingerprint);raise exception 'stale reopening accepted';
   exception when sqlstate 'P0409' then null;end;
   perform public.reopen_week(dept,w,'open',public.publish_scores_fingerprint(dept,w));

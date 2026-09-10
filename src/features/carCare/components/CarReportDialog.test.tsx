@@ -40,7 +40,7 @@ describe("CarReportDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: he.carCare.homeWashTitle }));
     expect(screen.getByRole("button", { name: he.carCare.washButton })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByTestId("car-report-close"));
+    fireEvent.click(screen.getByRole("button", { name: "סגור" }));
 
     expect(onOpenChange).toHaveBeenCalledWith(false);
     expect(mocks.logCarCare).not.toHaveBeenCalled();

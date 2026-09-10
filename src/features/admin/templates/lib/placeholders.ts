@@ -21,7 +21,6 @@ export const NOTIFICATION_PLACEHOLDERS = [
   "detourMin",
   "reason",
   "closeTime",
-  "expiresAt",
   "count",
   "link",
 ] as const;
@@ -52,7 +51,6 @@ export const PLACEHOLDER_SAMPLES: Record<NotificationPlaceholder, string> = {
   detourMin: "10",
   reason: "אין רכב פנוי בשעות אלה",
   closeTime: "יום ד׳ 12:00",
-  expiresAt: "מחר 20:00",
   count: "2",
   link: "https://nevo.example/p/xxxx",
 };

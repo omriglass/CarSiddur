@@ -34,7 +34,8 @@ export interface ProposalSummary {
   type: Database["public"]["Enums"]["proposal_type"];
   status: Database["public"]["Enums"]["proposal_status"];
   reasonHe: string;
-  expiresAt: string;
+  /** No timer any more (20260910090000): null until the proposal's day is published or has passed. */
+  expiresAt: string | null;
   payload: unknown;
   // The proposal's own week key (`answer-proposal/index.ts`'s `buildSummary()`), so
   // `ProposalTokenPage.tsx` can resolve the Sadran contact for the WhatsApp button

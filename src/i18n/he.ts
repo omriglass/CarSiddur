@@ -262,7 +262,8 @@ export const he = {
     firstRequest: "לבקשה הראשונה",
     enablePush: "אפשר התראות",
     newRequest: "בקשה חדשה",
-    submitRequest: "שלח/י בקשה",
+    submitRequest: "הגש/י בקשה",
+    submitWaitlist: "היכנס/י לרשימת המתנה",
     enterWaitingList: "הצטרפות לרשימת המתנה",
     saveRequest: "שמור/י שינויים",
     withdrawRequest: "הסר בקשה",
@@ -418,6 +419,10 @@ export const he = {
       accepted: "אישר/ה",
       declined: "דחה/תה",
     },
+    /** `OpenProposalButton` — Home's next-action card and "my requests"' proposed-status row. */
+    open: "פתח/י את ההצעה",
+    /** Shown when the member's `proposal_received` notification can no longer be found; the button then routes to the inbox instead of `/p/:token`. */
+    openFallback: "ההצעה נמצאת בתיבת ההודעות",
   },
   board: {
     unmet: "לא שובצו",

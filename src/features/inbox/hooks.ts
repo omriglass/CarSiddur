@@ -5,6 +5,7 @@ import { showErrorToast } from "@/lib/rpc";
 
 import {
   fetchNotifications,
+  fetchProposalLink,
   fetchUnreadNotificationCount,
   markAllNotificationsRead,
   markNotificationRead,
@@ -50,6 +51,18 @@ export function useMarkAllNotificationsReadMutation() {
       queryClient.invalidateQueries({ queryKey: inboxKeys.unreadCount(profileId) });
     },
     onError: showErrorToast,
+  });
+}
+
+/**
+ * Resolves a member's own `/p/:token` link for a pending proposal on demand
+ * (`OpenProposalButton`) — a one-off lookup rather than a cached query, since
+ * it's only ever needed right before navigating away.
+ */
+export function useProposalLinkMutation() {
+  return useMutation({
+    mutationKey: inboxKeys.proposalLink(),
+    mutationFn: (proposalId: string) => fetchProposalLink(proposalId),
   });
 }
 

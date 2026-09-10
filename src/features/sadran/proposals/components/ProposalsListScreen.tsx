@@ -91,9 +91,11 @@ export function ProposalsListScreen({ departmentId, weekStart }: ProposalsListSc
                     returnAt={request?.return_at ?? null}
                     hostDriverName={hostRide?.driver_name}
                   />
-                  <span className="whitespace-nowrap text-xs text-muted-foreground" dir="ltr">
-                    {tv("sadranProposal.expiresAtLabel", { when: formatTime(new Date(p.expires_at)) })}
-                  </span>
+                  {p.expires_at ? (
+                    <span className="whitespace-nowrap text-xs text-muted-foreground" dir="ltr">
+                      {tv("sadranProposal.expiresAtLabel", { when: formatTime(new Date(p.expires_at)) })}
+                    </span>
+                  ) : null}
                 </CardContent>
               </Card>
             );

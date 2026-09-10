@@ -218,7 +218,7 @@ stateDiagram-v2
   draft --> sent: Sadran taps "send" (wa.me opened, push queued, token issued)
   sent --> accepted: member accepts via /p/token, or Sadran records answer
   sent --> declined: member declines / Sadran records
-  sent --> expired: cron tick past expires_at
+  sent --> expired: its day is published or has passed (Asia/Jerusalem) — no timer (2026-09-10)
   draft --> withdrawn: Sadran withdraws
   sent --> withdrawn: Sadran withdraws (tokens die)
   accepted --> applied: apply_proposal (merge: only when every party accepted)
@@ -299,7 +299,7 @@ sequenceDiagram
   WA-->>M: message with deep link
   M->>B: opens /p/<token> (no sign-in needed; full UI if a session exists)
   B->>EF: POST /answer-proposal {token, answer, note?}
-  EF->>EF: sha256(token) → proposal party; check status = sent and now < expires_at
+  EF->>EF: sha256(token) → proposal party; check status = sent and (expires_at is null or now < expires_at) — no timer any more (2026-09-10), expires_at is normally null
   EF->>DB: rpc answer_proposal(token, accept, note, via => 'token') (service role)
   DB->>DB: party response recorded; when all accepted → apply_proposal: ride created/updated (pinned), request→assigned, Sadran notified (proposal_answered)
   EF-->>B: result
@@ -385,7 +385,7 @@ Principle: **the database is the last line of defence** (constraints, triggers, 
 | §5.3/§13.62 rides ending after Saturday are per-ride, no department setting | Sadran sets `overflow_allowed` in the `RideSheet`; members cannot | – | `rides_within_week` trigger allows only when `rides.overflow_allowed`; `requests_within_week` allows a request past Saturday only when `filed_by <> requester_id and can_manage_week()` |
 | §7.2 policy version recorded per run | – | – | `solver_runs.policy_version_id` NOT NULL |
 | §7.3 merge applied only when all parties accept | – | `answer-proposal` | party roll-up trigger; `apply_proposal` counts parties |
-| §7.3 proposal expiry → fall back status | – | – | `app.tick()` → `expire_proposals()`; `answer_proposal` refuses after `expires_at` |
+| §13.29 proposal expiry → fall back status, no timer | – | – | `expire_proposals()` (called from `app.tick()` and from the end of `publish_siddur()`) expires a `sent` proposal once its day is published or has passed; `answer_proposal` refuses only when `expires_at` is non-null and past (normally null, so never) |
 | §7.3 Sadran may record answer on behalf | – | – | `record_proposal_answer` checks `is_sadran(dept, week)`; `answered_via = 'sadran'` |
 | §7.3 ask to join a **shared-car** ride → merge proposal | "בקש/י להצטרף" prefills the form | – | `submit_request` stores `join_ride_id`; Sadran converts via `create_proposal(type merge)` |
 | §7.3/§13.43 ask to join a **temporary-car** ride → proposal goes straight to the owner | same form; owner answers like any driver | – | `submit_request` creates and sends the `merge` proposal directly to the ride's owner when `join_ride_id` resolves to a `temporary` car; the Sadran only sees it in the proposals list and gets `proposal_answered` — no Sadran action in between |
@@ -417,7 +417,7 @@ Principle: **the database is the last line of defence** (constraints, triggers, 
 
 - *Unguessable*: `send_proposal()` generates a random 128-bit secret per party (`gen_random_bytes(16)`, base64url); only `sha256(token)` is stored (`proposals.token_hash`, `proposal_parties.token_hash`). The clear token is returned to the Sadran's UI once for the WhatsApp text and the push payload.
 - *Single-purpose*: it can only view and answer that one proposal for that one party; it grants no session and no other read.
-- *Expiring*: unusable after `proposals.expires_at`; `answer_proposal()` re-checks this.
+- *Expiring*: unusable once the proposal itself is `expired` — its day published or passed (REQ §13.29), not a stored deadline; `proposals.expires_at` is normally null, and `answer_proposal()` re-checks `status = 'sent'`.
 - *Revocable*: re-sending regenerates the token (old hash replaced → old links die); withdrawing or applying the proposal ends its validity.
 - *Auditable*: the answer is recorded with `answered_via = 'token'` (`session` when the app had a JWT, `sadran` when recorded on behalf).
 
@@ -454,8 +454,8 @@ Realtime (optional, v1.x): the Sadran board may subscribe to `postgres_changes` 
 | | after the target week ends (first tick after Sun 00:00) | week → `archived` (read-only; fairness lookback reads it) |
 | `send_due_reminders()` | `closing_reminder_hours` before close (default 24 h and 2 h) | `window_closing` to members without a request |
 | | planned publish time (`publish_dow`/`publish_time`) passes while `weeks.phase = 'solving'` | `publish_reminder` to the Sadranim, once (`weeks.publish_reminder_sent_at`) |
-| | proposal unanswered and near expiry | WhatsApp reminder text offered to the Sadran (`wa.reminder`), no automatic push |
-| `expire_proposals()` | `sent` past `expires_at` | → `expired`, request falls back to `previous_status`, Sadran notified (`proposal_answered` with answer "expired") |
+| | proposal unanswered | WhatsApp reminder text offered to the Sadran (`wa.reminder`), no automatic push |
+| `expire_proposals()` | `sent` whose day (Asia/Jerusalem) is published (`is_day_public()`) or has passed — no timer (REQ §13.29) | → `expired`, request falls back to `previous_status`, Sadran notified (`proposal_answered` with answer "expired"); also called from the end of `publish_siddur()` so a publish settles that day's proposals immediately |
 | `drain_push_outbox()` | `push_outbox` rows `pending`/`failed` with `next_attempt_at <= now()` | pg_net → `push-dispatch`; `dead` after 24 h |
 | `housekeeping()` | every tick: freed-slot offers past `expires_at`; once per local day: `materialize_templates()`; 03:00 local: prunes | close stale offers; copy active `request_templates` into newly opened weeks; prune `notifications`, `push_outbox`, `client_errors`, `audit_log`, dead subscriptions, old `token_hash`es (DATA_MODEL §8) |
 

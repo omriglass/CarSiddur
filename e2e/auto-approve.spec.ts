@@ -32,7 +32,7 @@ test.describe("auto-approve on a free car (live week)", () => {
     // default 08:00–12:00 window regardless of what other specs already did to this week.
     await page.getByRole("radiogroup", { name: "יום" }).getByRole("radio").nth(4).click();
 
-    await page.getByRole("button", { name: "שלח/י בקשה" }).click();
+    await page.getByRole("button", { name: "הגש/י בקשה" }).click();
 
     await expect(page).toHaveURL(/\/requests$/);
     const requestCard = page.locator("div.rounded-md", { hasText: DESTINATION });

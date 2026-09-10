@@ -45,7 +45,8 @@ interface ProposalSummary {
   type: string;
   status: string;
   reasonHe: string;
-  expiresAt: string;
+  /** No timer any more (20260910090000): null until the proposal's day is published or has passed. */
+  expiresAt: string | null;
   payload: unknown;
   // The proposal's own week key — lets a signed-in member's token-answer screen resolve the
   // Sadran contact for the WhatsApp button (`useSadranContactQuery`, src/pages/ProposalTokenPage.tsx)
@@ -122,7 +123,7 @@ async function buildSummary(proposal: Record<string, unknown>, myProfileId: stri
     type: proposal.type as string,
     status: proposal.status as string,
     reasonHe: proposal.reason_he as string,
-    expiresAt: proposal.expires_at as string,
+    expiresAt: proposal.expires_at as string | null,
     payload: proposal.payload,
     departmentId: proposal.department_id as string | undefined,
     weekStart: proposal.week_start as string | undefined,

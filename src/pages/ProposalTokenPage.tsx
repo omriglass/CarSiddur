@@ -222,9 +222,11 @@ function ProposalAnswerBody({
         <p className="text-muted-foreground">{summary.reasonHe}</p>
       </div>
 
-      <p className="text-xs text-muted-foreground" dir="ltr">
-        {tv("proposalScreen.validUntil", { time: formatTime(new Date(summary.expiresAt)) })}
-      </p>
+      {summary.expiresAt ? (
+        <p className="text-xs text-muted-foreground" dir="ltr">
+          {tv("proposalScreen.validUntil", { time: formatTime(new Date(summary.expiresAt)) })}
+        </p>
+      ) : null}
 
       {isDenyVariant ? (
         <div className="space-y-3">

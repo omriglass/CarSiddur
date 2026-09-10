@@ -1412,7 +1412,7 @@ export type Database = {
           created_by: string
           created_via: string
           department_id: string
-          expires_at: string
+          expires_at: string | null
           id: string
           payload: Json
           previous_status: Database["public"]["Enums"]["request_status"]
@@ -1439,7 +1439,7 @@ export type Database = {
           created_by: string
           created_via?: string
           department_id: string
-          expires_at: string
+          expires_at?: string | null
           id?: string
           payload: Json
           previous_status: Database["public"]["Enums"]["request_status"]
@@ -1466,7 +1466,7 @@ export type Database = {
           created_by?: string
           created_via?: string
           department_id?: string
-          expires_at?: string
+          expires_at?: string | null
           id?: string
           payload?: Json
           previous_status?: Database["public"]["Enums"]["request_status"]

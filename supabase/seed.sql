@@ -237,18 +237,18 @@ select event, channel, variant, null, body, null, body from (values
     'היי {{firstName}}, זה/זו {{sadranName}} מסידור הרכב 🚗' || chr(10) ||
     'ביקשת רכב ל{{destination}} ב{{day}} {{date}}, {{depart}}–{{return}}.' || chr(10) ||
     'בשעות האלה אין רכב פנוי, אבל יש רכב אם יוצאים {{newDepart}} וחוזרים {{newReturn}}.' || chr(10) ||
-    'מתאים? אפשר לאשר או לדחות כאן (עד {{expiresAt}}):' || chr(10) || '{{link}}'),
+    'מתאים? אפשר לאשר או לדחות כאן:' || chr(10) || '{{link}}'),
   ('proposal_received', 'whatsapp', 'merge_passenger',
     'היי {{firstName}}, זה/זו {{sadranName}} מסידור הרכב 🚗' || chr(10) ||
     'ביקשת רכב ל{{destination}} ב{{day}} {{date}}.' || chr(10) ||
     '{{driverName}} נוסע/ת לשם באותו יום — יציאה {{newDepart}}, חזרה {{newReturn}} — ויש מקום ברכב.' || chr(10) ||
     'להצטרף לנסיעה כנוסע/ת? כך משתחרר רכב לחבר/ה אחר/ת.' || chr(10) ||
-    'תשובה כאן (עד {{expiresAt}}):' || chr(10) || '{{link}}'),
+    'תשובה כאן:' || chr(10) || '{{link}}'),
   ('proposal_received', 'whatsapp', 'merge_driver',
     'היי {{firstName}}, זה/זו {{sadranName}} מסידור הרכב 🚗' || chr(10) ||
     'בנסיעה שלך ל{{destination}} ב{{day}} {{date}} ({{depart}}–{{return}}) יש מקום פנוי.' || chr(10) ||
     '{{passengerName}} צריך/ה להגיע לאותו אזור. אפשר לצרף? התוספת בדרך: כ-{{detourMin}} דק׳.' || chr(10) ||
-    'תשובה כאן (עד {{expiresAt}}):' || chr(10) || '{{link}}'),
+    'תשובה כאן:' || chr(10) || '{{link}}'),
   ('proposal_received', 'whatsapp', 'deny',
     'היי {{firstName}}, זה/זו {{sadranName}} מסידור הרכב 🚗' || chr(10) ||
     'לצערי לא הצלחנו לשבץ רכב ל{{destination}} ב{{day}} {{date}} {{depart}}–{{return}}.' || chr(10) ||
@@ -258,7 +258,7 @@ select event, channel, variant, null, body, null, body from (values
   ('proposal_received', 'whatsapp', 'external',
     'היי {{firstName}}, זה/זו {{sadranName}} מסידור הרכב 🚗' || chr(10) ||
     'לצערי אין רכב פנוי ל{{destination}} ב{{day}} {{date}} {{depart}}–{{return}}, גם לא עם הזזה.' || chr(10) ||
-    'אפשר לענות כאן (עד {{expiresAt}}):' || chr(10) || '{{link}}' || chr(10) ||
+    'אפשר לענות כאן:' || chr(10) || '{{link}}' || chr(10) ||
     '(אסתדר/ת בעצמי, או להישאר ברשימת ההמתנה למקרה שיתפנה רכב)'),
   -- Stage 3 hardening fix #4: `wa.chauffeur` verbatim (UX_FLOWS.md §6.2); no composer action
   -- wires it yet (UX_FLOWS.md §15 item 6, a separate recorded gap), but the row exists for
@@ -267,9 +267,9 @@ select event, channel, variant, null, body, null, body from (values
     'היי {{firstName}}, זה/זו {{sadranName}} מסידור הרכב 🚗' || chr(10) ||
     '{{passengerName}} צריך/ה הסעה ל{{destination}} ב{{day}} {{date}} סביב {{depart}} ({{driverName}} לא נוהג/ת בעצמו/ה הפעם).' || chr(10) ||
     'אפשר/י להסיע ולהחזיר את הרכב הביתה? זה ייקח כ-{{detourMin}} דק׳.' || chr(10) ||
-    'תשובה כאן (עד {{expiresAt}}):' || chr(10) || '{{link}}'),
+    'תשובה כאן:' || chr(10) || '{{link}}'),
   ('proposal_received', 'whatsapp', 'reminder',
-    'היי {{firstName}}, תזכורת קטנה מ{{sadranName}} 🙂 ההצעה לגבי הנסיעה ל{{destination}} ב{{day}} מחכה לתשובה עד {{expiresAt}}: {{link}}')
+    'היי {{firstName}}, תזכורת קטנה מ{{sadranName}} 🙂 ההצעה לגבי הנסיעה ל{{destination}} ב{{day}} מחכה לתשובה: {{link}}')
 ) as w(event, channel, variant, body)
 on conflict (event, channel, coalesce(variant, '')) do nothing;
 
