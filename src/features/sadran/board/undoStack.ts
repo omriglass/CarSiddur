@@ -12,6 +12,14 @@ export interface UndoAction<T> {
   label: string;
   /** Performs the reverse of the original edit; returns whatever the caller wants surfaced (e.g. the reverted ride). */
   run: () => Promise<T> | T;
+  /**
+   * Re-applies the original edit `run()` just reverted, so `undo` followed by
+   * `redo` is a no-op on the data. Optional: an action pushed without a
+   * `redo` simply leaves nothing to redo once it's undone (the board only
+   * supplies one today, the drag/resize/save edit path) rather than the
+   * whole stack refusing to work.
+   */
+  redo?: () => Promise<T> | T;
 }
 
 export interface UndoResult<T> {
@@ -19,19 +27,30 @@ export interface UndoResult<T> {
   result: T;
 }
 
-/** Plain (non-React) undo stack — a bounded LIFO of reverse-actions. */
+/**
+ * Plain (non-React) undo stack — a bounded LIFO of reverse-actions, plus a
+ * redo stack of the forward actions `undo()` just reverted. Pushing a new
+ * action clears any pending redo (same convention as a text editor: once you
+ * make a fresh edit, the old "redo" branch is gone).
+ */
 export class UndoStack<T = void> {
   private stack: UndoAction<T>[] = [];
+  private redoStack: UndoAction<T>[] = [];
 
   constructor(private readonly limit = 50) {}
 
   push(action: UndoAction<T>): void {
     this.stack.push(action);
     if (this.stack.length > this.limit) this.stack.shift();
+    this.redoStack = [];
   }
 
   get canUndo(): boolean {
     return this.stack.length > 0;
+  }
+
+  get canRedo(): boolean {
+    return this.redoStack.length > 0;
   }
 
   get size(): number {
@@ -42,14 +61,31 @@ export class UndoStack<T = void> {
     return this.stack[this.stack.length - 1]?.label ?? null;
   }
 
+  peekRedoLabel(): string | null {
+    return this.redoStack[this.redoStack.length - 1]?.label ?? null;
+  }
+
   async undo(): Promise<UndoResult<T> | null> {
     const action = this.stack.pop();
     if (!action) return null;
     const result = await action.run();
+    if (action.redo) {
+      this.redoStack.push(action);
+      if (this.redoStack.length > this.limit) this.redoStack.shift();
+    }
+    return { label: action.label, result };
+  }
+
+  async redo(): Promise<UndoResult<T> | null> {
+    const action = this.redoStack.pop();
+    if (!action?.redo) return null;
+    const result = await action.redo();
+    this.stack.push(action);
     return { label: action.label, result };
   }
 
   clear(): void {
     this.stack = [];
+    this.redoStack = [];
   }
 }

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { formatInTimeZone } from "date-fns-tz";
 import { toast } from "sonner";
 
@@ -25,10 +25,17 @@ interface FullResolveActionProps {
   policy: ActivePolicy | null;
   onPolicyUsed?: (policyVersionId: string) => void;
   disabled?: boolean;
+  /**
+   * Custom trigger rendering (the board's kebab "actions" menu, UX_FLOWS.md
+   * §4.2): defaults to the original inline `Button`, so every other caller
+   * is unaffected. `onClick` still runs the same `prepare()` — the diff
+   * `Sheet` below is unchanged either way.
+   */
+  renderTrigger?: (props: { onClick: () => void; disabled: boolean; loading: boolean }) => ReactNode;
 }
 
 /** Full solving replaces unpinned placements only after reviewing the concrete diff. */
-export function FullResolveAction({ departmentId, weekStart, homeDestinationId, policy, onPolicyUsed, disabled }: FullResolveActionProps) {
+export function FullResolveAction({ departmentId, weekStart, homeDestinationId, policy, onPolicyUsed, disabled, renderTrigger }: FullResolveActionProps) {
   const weekQuery = useWeekRow(departmentId, weekStart);
   const rideTypesQuery = useRideTypes(departmentId);
   const applyMutation = useApplySolverResultMutation();
@@ -77,10 +84,13 @@ export function FullResolveAction({ departmentId, weekStart, homeDestinationId, 
     } catch { /* The mutation reports validation/staleness errors. */ }
   }
 
+  const triggerDisabled = disabled || loading || applyMutation.isPending || !policy || !homeDestinationId || weekQuery.data?.phase === "archived";
   return <>
-    <Button variant="outline" size="sm" disabled={disabled || loading || applyMutation.isPending || !policy || !homeDestinationId || weekQuery.data?.phase === "archived"} onClick={() => void prepare()}>
-      {loading ? he.sadranDashboard.fullResolveLoading : he.sadranDashboard.fullResolveButton}
-    </Button>
+    {renderTrigger ? renderTrigger({ onClick: () => void prepare(), disabled: triggerDisabled, loading }) : (
+      <Button variant="outline" size="sm" disabled={triggerDisabled} onClick={() => void prepare()}>
+        {loading ? he.sadranDashboard.fullResolveLoading : he.sadranDashboard.fullResolveButton}
+      </Button>
+    )}
     <Sheet open={!!preview} onOpenChange={(open) => !open && !applyMutation.isPending && setPreview(null)}>
       <SheetContent side="bottom" className="max-h-[85dvh] overflow-y-auto">
         <SheetHeader><SheetTitle>{he.sadranDashboard.fullResolveConfirmTitle}</SheetTitle></SheetHeader>

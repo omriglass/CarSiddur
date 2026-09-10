@@ -87,9 +87,15 @@ async function goToOpenWeek(page: Page): Promise<string> {
   return page.url().replace(/\/board$/, "");
 }
 
+/** "השלם אוטומטית" now lives in the board's kebab "actions" menu (UX_FLOWS.md §4.2, 2026-09-10) at every width. */
+async function openBoardActionsMenu(page: Page): Promise<void> {
+  await page.getByRole("button", { name: he.sadranBoard.actionsMenu, exact: true }).click();
+}
+
 async function fillRemaining(page: Page) {
   const applied = page.waitForResponse((response) => response.url().endsWith("/rest/v1/rpc/apply_solver_result") && response.request().method() === "POST");
-  await page.getByRole("button", { name: he.action.autoSolveRemaining, exact: true }).click();
+  await openBoardActionsMenu(page);
+  await page.getByRole("menuitem", { name: he.action.autoSolveRemaining, exact: true }).click();
   expect((await applied).ok()).toBe(true);
 }
 
@@ -478,7 +484,8 @@ test.describe.serial("board (bug-fix pass regression, fake-week data)", () => {
     const beforeIds = new Set((beforeRides ?? []).map((r) => r.id));
     expect(beforeIds.size).toBeGreaterThan(0);
 
-    await page.getByRole("button", { name: "השלם אוטומטית", exact: true }).click();
+    await openBoardActionsMenu(page);
+    await page.getByRole("menuitem", { name: "השלם אוטומטית", exact: true }).click();
     await page.waitForTimeout(2000);
 
     const { data: afterRides } = await admin
@@ -572,7 +579,10 @@ test.describe.serial("board (bug-fix pass regression, fake-week data)", () => {
     expect(cleanupError).toBeNull();
     await page.goto(`${weekUrl}/board`);
     await page.getByRole("radio").first().click();
-    await page.getByRole("button", { name: he.board.showEarlyHours, exact: true }).click();
+    // "show early hours" now lives only in the board's "eye" display menu (UX_FLOWS.md §4.2, 2026-09-10), at every width.
+    await page.getByRole("button", { name: he.sadranBoard.displayMenu, exact: true }).click();
+    await page.getByRole("menuitemcheckbox", { name: he.board.showEarlyHours, exact: true }).click();
+    await page.keyboard.press("Escape");
     const column = page.locator('[data-car-col-id]:not([data-car-col-id^="phantom:"]):visible').first();
     await column.evaluate((element) => {
       const scroller = element.closest<HTMLElement>(".overflow-auto");

@@ -7,8 +7,13 @@ import { sadranKeys } from "../keys";
 import { fetchWeekExport } from "./api";
 import { createWeekWorkbook } from "./weekWorkbook";
 
-/** Export current persisted week data on demand, independently of board/day filters. */
-export function WeekExcelExportButton({ departmentId, weekStart }: { departmentId: string; weekStart: string }) {
+/**
+ * Shared download logic, extracted so the board's kebab "actions" menu can
+ * trigger the exact same export as a `DropdownMenuItem` without duplicating
+ * the fetch/blob/anchor-click dance (CLAUDE.md Conventions: no duplicated
+ * logic between an inline control and its menu equivalent).
+ */
+export function useWeekExcelExport(departmentId: string, weekStart: string) {
   const exportQuery = useQuery({
     queryKey: sadranKeys.excelExport(departmentId, weekStart),
     queryFn: () => fetchWeekExport(departmentId, weekStart), enabled: false, retry: false,
@@ -29,7 +34,13 @@ export function WeekExcelExportButton({ departmentId, weekStart }: { departmentI
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (error) { showErrorToast(error); }
   }
-  return <Button variant="outline" size="sm" onClick={() => void download()} disabled={exportQuery.isFetching}>
-    <Download className="me-1 size-4" />{exportQuery.isFetching ? he.excelExport.loading : he.excelExport.button}
+  return { download, loading: exportQuery.isFetching };
+}
+
+/** Export current persisted week data on demand, independently of board/day filters. */
+export function WeekExcelExportButton({ departmentId, weekStart }: { departmentId: string; weekStart: string }) {
+  const { download, loading } = useWeekExcelExport(departmentId, weekStart);
+  return <Button variant="outline" size="sm" onClick={() => void download()} disabled={loading}>
+    <Download className="me-1 size-4" />{loading ? he.excelExport.loading : he.excelExport.button}
   </Button>;
 }

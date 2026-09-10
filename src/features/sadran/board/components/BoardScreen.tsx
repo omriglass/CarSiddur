@@ -1,5 +1,4 @@
 import { paths } from "@/app/routes";
-import { TableViewControls } from "@/components/TableViewControls";
 import { parseTimeToMinutes } from "@/features/solverBridge/buildSolverInput";
 import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
 import { useEffect, useRef, useState } from "react";
@@ -16,11 +15,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { PortalDialogContent } from "@/components/PortalDialogContent";
 import { TimeField15, parseHHMM } from "@/components/TimeField15";
 import { Textarea } from "@/components/ui/textarea";
-import { WeekExcelExportButton } from "@/features/sadran/export/WeekExcelExportButton";
-import { RequestDeviationsDialog } from "../../deviations/RequestDeviationsDialog";
 import { expandedMergeWindow } from "../mergeWindow";
 import { packPhantomLanes, requestStart, requestWindow, requestWithinFlex, standaloneChauffeurWindow } from "../phantomLanes";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -35,13 +31,14 @@ import { WeekStrip } from "@/components/WeekStrip";
 import { WaitlistGroupCard } from "@/features/waitlist/components/WaitlistGroupCard";
 import { WaitlistGroupSheet } from "@/features/waitlist/components/WaitlistGroupSheet";
 import { useWaitlistGroupsQuery } from "@/features/waitlist/hooks";
-import { CalendarDays } from "lucide-react";
+import { CalendarDays, Redo2, Undo2 } from "lucide-react";
 import { fetchCarSeatConfigs } from "@/features/fleet/api";
 import { useRideTypes } from "@/features/fleet/hooks";
 import { RideTypeLegend } from "@/components/RideTypeLegend";
 import { BoardGridSkeleton } from "@/components/skeletons/BoardGridSkeleton";
 import { useCarLocations, useDepartments, useRideChanges, useClaimRideDriverMutation, useCancelRideChangeMutation } from "@/features/siddur/hooks";
-import { BoardPublicationActions } from "../../publish/components/BoardPublicationActions";
+import { useMyDepartments } from "@/features/auth/useMyDepartments";
+import { PublishButton } from "../../publish/components/BoardPublicationActions";
 import { he, tv } from "@/i18n/he";
 import { weekdayLabel } from "@/lib/dayLabels";
 import { TZ, dateKey, formatTime } from "@/lib/time";
@@ -80,9 +77,13 @@ import {
   withChildNames,
 } from "../../solverRun";
 import { useUndoStack } from "../useUndoStack";
+import { useBoardDisplayPrefs } from "../useBoardDisplayPrefs";
+import { BoardActionsMenu } from "./BoardActionsMenu";
+import { BoardDisplayMenu } from "./BoardDisplayMenu";
 import { BoardListMode } from "./BoardListMode";
+import { BoardTitleSwitcher } from "./BoardTitleSwitcher";
 import { BoardWeekSwitcher } from "./BoardWeekSwitcher";
-import { FullResolveAction } from "./FullResolveAction";
+import { PolicyChip } from "./PolicyChip";
 import { RideSheet } from "./RideSheet";
 import { UnmetList, type UnmetListItem } from "./UnmetList";
 
@@ -103,6 +104,10 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
 
   const departmentsQuery = useDepartments();
   const department = (departmentsQuery.data ?? []).find((d) => d.id === departmentId);
+  // Mobile title switcher subtitle (UX_FLOWS.md §4.2): the department name only
+  // shows there when the Sadran actually manages more than one.
+  const myDepartmentsQuery = useMyDepartments();
+  const managesMultipleDepartments = (myDepartmentsQuery.data?.length ?? 0) > 1;
 
   const days = datesOfWeek(weekStart);
   const today = todayInJerusalem();
@@ -154,8 +159,12 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
   const [autoSolving, setAutoSolving] = useState(false);
 
   // Vertical-board redesign (UX_FLOWS.md §20 "owner feedback: visible range
-  // 06:00–24:00 by default; "הצג שעות מוקדמות" expands down to 00:00.
-  const [showEarlyHours, setShowEarlyHours] = useState(false);
+  // 06:00–24:00 by default; "הצג שעות מוקדמות" expands down to 00:00. Per-device
+  // display preferences (list/table, zoom, early hours, legend) now live only
+  // in the "eye" `BoardDisplayMenu`, at every width (owner correction,
+  // 2026-09-10) — the standalone toggle button and `TableViewControls` row
+  // are gone.
+  const { tableView, setTableView, tableZoom, setTableZoom, showEarlyHours, setShowEarlyHours, showLegend, setShowLegend } = useBoardDisplayPrefs();
   const boardStartMinutes = departmentSettingsQuery.data?.board_start_time
     ? parseTimeToMinutes(departmentSettingsQuery.data.board_start_time) : 6 * 60;
   const dayStartMinutes = showEarlyHours ? 0 : boardStartMinutes;
@@ -167,9 +176,6 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
   // grid only needs to know which car to highlight and whether the drop
   // would be valid right now.
   const [unmetDragHover, setUnmetDragHover] = useState<{ item: UnmetListItem; carId: string; minutes: number; hostRideId?: string } | null>(null);
-  /** Collapsible bottom drawer for the md–lg gap (UX_FLOWS §20) — the side panel only shows at `lg:`. */
-  const [tableView, setTableView] = useState(false);
-  const [tableZoom, setTableZoom] = useState(1);
 
   function computeDefaultDay(): string {
     if (days.includes(today)) return today;
@@ -206,7 +212,9 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
   // `react-hooks/set-state-in-effect` lint rule).
   const [policyVersionOverride, setPolicyVersionOverride] = useState<string | null>(readLastUsedPolicyVersion);
   const [preview, setPreview] = useState<{ output: SolverOutput; policyVersionId: string } | null>(null);
-  const [previewLoading, setPreviewLoading] = useState(false);
+  // No loading flag surfaced in the UI anymore: the preview now runs silently
+  // in the background (the automatic `useEffect` below), never blocking a
+  // button the Sadran clicked.
 
   // A policy saved on this device is only a default, never an entitlement: if
   // it is not offered by this department, fall back to its active policy.
@@ -224,11 +232,12 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
 
   /**
    * Populates the unmet list's per-request score/suggestions by running the
-   * pure solver client-side (SOLVER.md §2), without persisting anything —
-   * triggered by "הרץ פותר" (a click handler, not an effect: this board
-   * deliberately does not auto-run on mount, unlike the dashboard's result
-   * sheet flow, to keep every solver invocation an explicit Sadran action;
-   * see the stage 2b report).
+   * pure solver client-side (SOLVER.md §2), without persisting anything.
+   * Previously an explicit "הרץ פותר" click; now run automatically (owner
+   * spec 2026-09-10) by the debounced `useEffect` below, whenever the board's
+   * own data finishes loading, the effective policy version changes, or a
+   * mutation settles — the Sadran no longer has to remember to press it, and
+   * the button is gone from the header entirely.
    *
    * The ordinary preview matches remaining-only autofill. Full solving is
    * a separate FullResolveAction with an explicit replacement confirmation.
@@ -237,7 +246,6 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
     const chosen = (policyOptionsQuery.data ?? []).find((p) => p.policyVersionId === effectivePolicyVersionId);
     const policy = chosen ?? activePolicyQuery.data;
     if (!policy || !department?.home_destination_id) return;
-    setPreviewLoading(true);
     try {
       const context = await gatherSolverContext({
         departmentId,
@@ -256,8 +264,6 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
       setPreview({ output, policyVersionId: policy.policyVersionId });
     } catch {
       // Non-blocking: the board still works from persisted request/ride data alone.
-    } finally {
-      setPreviewLoading(false);
     }
   }
 
@@ -327,6 +333,24 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
   }
 
   const policyIsStale = !!preview && preview.policyVersionId !== effectivePolicyVersionId;
+
+  // Automatic solver preview (owner spec 2026-09-10, replaces the removed
+  // "הרץ פותר" button): a cheap fingerprint of what the solver actually
+  // reads (rides + requests content, not just their loading state, plus the
+  // effective policy) so the debounced effect only recomputes when
+  // something that could change the preview really changed, never on every
+  // render.
+  const solverInputFingerprint = [
+    effectivePolicyVersionId ?? "",
+    (ridesQuery.data ?? []).map((r) => `${r.id}:${r.car_id}:${r.starts_at}:${r.ends_at}:${r.status}:${r.version}`).join(","),
+    (requestsQuery.data ?? []).map((r) => `${r.id}:${r.status}:${r.depart_at}:${r.return_at}:${r.version}`).join(","),
+  ].join("|");
+  useEffect(() => {
+    if (requestsQuery.isLoading || ridesQuery.isLoading || policyOptionsQuery.isLoading || !effectivePolicyVersionId) return;
+    const timer = window.setTimeout(() => { void computePreview(); }, 300);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `solverInputFingerprint` already captures every input `computePreview` reads.
+  }, [solverInputFingerprint, requestsQuery.isLoading, ridesQuery.isLoading, policyOptionsQuery.isLoading, effectivePolicyVersionId]);
 
   const daySettings = departmentSettingsQuery.data;
   const rides = ridesQuery.data ?? [];
@@ -895,6 +919,15 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
             await editRideMutation.mutateAsync({ input: prevInput, expectedVersion, departmentId, weekStart });
             undoVersions.current.set(rideId, expectedVersion + 1);
           },
+          // Redo: re-apply the same drag/resize/save edit that was just
+          // reverted, symmetric to `run()` above (both read/write the same
+          // `undoVersions` map so a redo followed by another undo keeps
+          // using the right `expected_version`).
+          redo: async () => {
+            const expectedVersion = undoVersions.current.get(rideId) ?? (ride.version ?? 0) + 1;
+            await editRideMutation.mutateAsync({ input: nextInput, expectedVersion, departmentId, weekStart });
+            undoVersions.current.set(rideId, expectedVersion + 1);
+          },
         });
       } catch {
         // toast already shown by the mutation
@@ -971,6 +1004,14 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
     } catch { /* Version conflicts are reported by the mutation. */ }
   }
 
+  async function handleRedo() {
+    try {
+      const result = await undoStack.redo();
+      if (result) toast.success(tv("sadranBoard.redoToast", { label: result.label }));
+      else toast(he.sadranBoard.redoNothing);
+    } catch { /* Version conflicts are reported by the mutation. */ }
+  }
+
   if (requestsQuery.isError || ridesQuery.isError) {
     return <ErrorState onRetry={() => ridesQuery.refetch()} />;
   }
@@ -993,46 +1034,72 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
   const conflictCount = conflicts.length;
   const unmetPreview = unmetDragHover ? unmetPreviewWindow(unmetDragHover.item, unmetDragHover.carId, unmetDragHover.minutes, unmetDragHover.hostRideId) : null;
 
+  const currentPolicyForActions = (policyOptionsQuery.data ?? []).find((policy) => policy.policyVersionId === effectivePolicyVersionId)
+    ?? (activePolicyQuery.data?.policyVersionId === effectivePolicyVersionId ? activePolicyQuery.data ?? null : null);
+
   return (
     <div ref={boardRef} className="mx-auto max-w-6xl space-y-3 p-4 pb-24">
-      <PageHeader title={he.screen.board.title} subtitle={formatWeekRangeLabel(weekStart)} />
-      <BoardWeekSwitcher departmentId={departmentId} weekStart={weekStart} />
+      {/* Board header (UX_FLOWS.md §4.2, owner spec 2026-09-10): the title is the
+          department/week switcher below `lg` (tap to switch) and the plain
+          `PageHeader` + inline `BoardWeekSwitcher` selects from `lg` up; the
+          policy chip, undo/redo icons, display ("eye") menu and actions
+          (kebab) menu are identical at every width. */}
+      <div className="flex items-center justify-between gap-2">
+        <div className="lg:hidden">
+          {/* Kept in the accessibility tree only below `lg` — `PageHeader`'s own
+              `<h1>` (hidden lg:block below) takes over at `lg+`, so there is
+              always exactly one "לוח הסידור" heading, never two. */}
+          <h1 className="sr-only">{he.screen.board.title}</h1>
+          <BoardTitleSwitcher
+            departmentId={departmentId}
+            weekStart={weekStart}
+            departmentName={managesMultipleDepartments ? department?.name : undefined}
+          />
+        </div>
+        <div className="hidden lg:block">
+          <PageHeader title={he.screen.board.title} subtitle={formatWeekRangeLabel(weekStart)} />
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <PolicyChip
+            policyOptions={policyOptionsQuery.data ?? []}
+            activePolicy={activePolicyQuery.data ?? null}
+            value={effectivePolicyVersionId}
+            stale={policyIsStale}
+            onSelect={selectPolicyVersion}
+          />
+          <Button type="button" variant="outline" size="icon" aria-label={he.action.undo} disabled={!undoStack.canUndo} onClick={() => void handleUndo()}>
+            <Undo2 className="size-4 rtl:rotate-180" />
+          </Button>
+          <Button type="button" variant="outline" size="icon" aria-label={he.sadranBoard.redo} disabled={!undoStack.canRedo} onClick={() => void handleRedo()}>
+            <Redo2 className="size-4 rtl:rotate-180" />
+          </Button>
+          <BoardDisplayMenu
+            table={tableView}
+            onTableChange={setTableView}
+            zoom={tableZoom}
+            onZoomChange={setTableZoom}
+            showEarlyHours={showEarlyHours}
+            onShowEarlyHoursChange={setShowEarlyHours}
+            showLegend={showLegend}
+            onShowLegendChange={setShowLegend}
+          />
+          <BoardActionsMenu
+            departmentId={departmentId}
+            weekStart={weekStart}
+            homeDestinationId={department?.home_destination_id ?? null}
+            policy={currentPolicyForActions}
+            onPolicyUsed={rememberUsedPolicy}
+            onAutoSolveRemaining={handleAutoSolveRemaining}
+            autoSolving={autoSolving}
+          />
+        </div>
+      </div>
+      <div className="hidden lg:block">
+        <BoardWeekSwitcher departmentId={departmentId} weekStart={weekStart} />
+      </div>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <RequestDeviationsDialog departmentId={departmentId} weekStart={weekStart} />
-        <WeekExcelExportButton departmentId={departmentId} weekStart={weekStart} />
-        <Select value={effectivePolicyVersionId ?? undefined} onValueChange={selectPolicyVersion}>
-          <SelectTrigger className="w-48">
-            <SelectValue placeholder={he.board.policy} />
-          </SelectTrigger>
-          <SelectContent>
-            {(policyOptionsQuery.data ?? []).map((p) => (
-              <SelectItem key={p.policyVersionId} value={p.policyVersionId}>
-                {p.name} · {p.versionNo}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        {policyIsStale ? (
-          <Badge variant="outline" className="border-amber-500 text-amber-600">
-            {he.board.policyChanged}
-          </Badge>
-        ) : null}
-        <Button variant="outline" size="sm" onClick={() => void computePreview()} disabled={previewLoading}>
-          {previewLoading ? he.sadranDashboard.solving : he.action.runSolver}
-        </Button>
-        <Button variant="outline" size="sm" onClick={handleAutoSolveRemaining} disabled={autoSolving}>
-          {autoSolving ? he.sadranDashboard.solving : he.action.autoSolveRemaining}
-        </Button>
-        <FullResolveAction key={`${departmentId}:${weekStart}:${effectivePolicyVersionId}`} departmentId={departmentId} weekStart={weekStart}
-          homeDestinationId={department?.home_destination_id ?? null} disabled={autoSolving}
-          onPolicyUsed={rememberUsedPolicy}
-          policy={(policyOptionsQuery.data ?? []).find((policy) => policy.policyVersionId === effectivePolicyVersionId)
-            ?? (activePolicyQuery.data?.policyVersionId === effectivePolicyVersionId ? activePolicyQuery.data ?? null : null)} />
-        <Button variant="outline" size="sm" onClick={handleUndo} disabled={!undoStack.canUndo}>
-          {he.action.undo}
-        </Button>
-        <BoardPublicationActions departmentId={departmentId} weekStart={weekStart} />
+      <div className="flex items-center gap-2">
+        <PublishButton departmentId={departmentId} weekStart={weekStart} />
       </div>
 
       {conflictCount > 0 ? (
@@ -1050,20 +1117,17 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
         </button>
       ) : null}
 
-      <div className="flex items-center justify-between gap-2">
-        <WeekStrip weekStart={weekStart} counts={dayCounts} selected={selectedDay} onSelect={setSelectedDay} />
-        <Button variant="ghost" size="sm" className={tableView ? "shrink-0" : "hidden shrink-0 lg:inline-flex"} onClick={() => setShowEarlyHours((v) => !v)}>
-          {showEarlyHours ? he.board.hideEarlyHours : he.board.showEarlyHours}
-        </Button>
+      <WeekStrip weekStart={weekStart} counts={dayCounts} selected={selectedDay} onSelect={setSelectedDay} />
+
+      <div className={showLegend ? "" : "hidden lg:block"}>
+        <RideTypeLegend types={(rideTypesQuery.data ?? []).map((rt) => ({ code: rt.code, nameHe: rt.name_he }))} />
       </div>
 
-      <RideTypeLegend types={(rideTypesQuery.data ?? []).map((rt) => ({ code: rt.code, nameHe: rt.name_he }))} />
-
-      <TableViewControls table={tableView} onTableChange={setTableView} zoom={tableZoom} onZoomChange={setTableZoom} />
       <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_340px]">
         <div className={tableView ? "min-w-0" : "hidden min-w-0 lg:block"}>
           <WeekGrid
             zoom={tableZoom}
+            onZoomChange={setTableZoom}
             cars={weekGridCars}
             rides={weekGridRides}
             blocks={weekGridBlocks}

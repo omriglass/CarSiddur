@@ -70,7 +70,9 @@ test("combined one-way consent preserves an orphaned passenger and lets a member
     const coordinator = await newSignedInPage(browser, SEEDED_USERS.sadran);
     contexts.push(coordinator.context);
     await coordinator.page.goto(`/sadran/${NEVO_DEPARTMENT_ID}/${week}/board`);
-    await coordinator.page.getByRole("button", { name: he.deviations.title, exact: true }).click();
+    // The request-deviations dialog now opens from the board's kebab "actions" menu (UX_FLOWS.md §4.2, 2026-09-10).
+    await coordinator.page.getByRole("button", { name: he.sadranBoard.actionsMenu, exact: true }).click();
+    await coordinator.page.getByRole("menuitem", { name: he.deviations.title, exact: true }).click();
     const deviation = coordinator.page.locator(`[data-request-deviation="${requestIds[0]}"]`);
     const tripSummary = deviation.locator("[data-trip-summary]");
     await expect(tripSummary).toContainText(SEEDED_USERS.member1.fullName);

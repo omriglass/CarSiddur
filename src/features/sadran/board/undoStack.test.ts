@@ -53,4 +53,60 @@ describe("UndoStack", () => {
     stack.clear();
     expect(stack.canUndo).toBe(false);
   });
+
+  describe("redo", () => {
+    it("has nothing to redo before any undo", async () => {
+      const stack = new UndoStack();
+      expect(stack.canRedo).toBe(false);
+      expect(await stack.redo()).toBeNull();
+    });
+
+    it("re-applies the forward action after an undo", async () => {
+      const order: string[] = [];
+      const stack = new UndoStack();
+      stack.push({
+        label: "move",
+        run: () => void order.push("undo"),
+        redo: () => void order.push("redo"),
+      });
+      await stack.undo();
+      expect(stack.canRedo).toBe(true);
+      expect(stack.peekRedoLabel()).toBe("move");
+      const result = await stack.redo();
+      expect(result?.label).toBe("move");
+      expect(order).toEqual(["undo", "redo"]);
+      expect(stack.canRedo).toBe(false);
+      expect(stack.canUndo).toBe(true);
+    });
+
+    it("supports undo -> redo -> undo again", async () => {
+      const stack = new UndoStack();
+      let value = 0;
+      stack.push({ label: "inc", run: () => void (value = 0), redo: () => void (value = 1) });
+      value = 1;
+      await stack.undo();
+      expect(value).toBe(0);
+      await stack.redo();
+      expect(value).toBe(1);
+      await stack.undo();
+      expect(value).toBe(0);
+    });
+
+    it("does not push a redo entry when the undone action has no redo()", async () => {
+      const stack = new UndoStack();
+      stack.push({ label: "no-redo", run: () => undefined });
+      await stack.undo();
+      expect(stack.canRedo).toBe(false);
+      expect(await stack.redo()).toBeNull();
+    });
+
+    it("clears the redo stack once a new action is pushed", async () => {
+      const stack = new UndoStack();
+      stack.push({ label: "first", run: () => undefined, redo: () => undefined });
+      await stack.undo();
+      expect(stack.canRedo).toBe(true);
+      stack.push({ label: "second", run: () => undefined });
+      expect(stack.canRedo).toBe(false);
+    });
+  });
 });

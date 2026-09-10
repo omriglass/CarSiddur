@@ -32,9 +32,11 @@ test("Sadran downloads the entire current week as a Hebrew Excel workbook", asyn
   expect(rides!.length).toBeGreaterThan(0);
   await signIn(page, SEEDED_USERS.sadran);
   await page.goto(`/sadran/${NEVO_DEPARTMENT_ID}/${weekStart}/board`);
-  await expect(page.getByRole("button", { name: he.excelExport.button, exact: true })).toBeVisible();
+  // The export button now lives in the board's kebab "actions" menu (UX_FLOWS.md §4.2, 2026-09-10) at every width.
+  await page.getByRole("button", { name: he.sadranBoard.actionsMenu, exact: true }).click();
+  await expect(page.getByRole("menuitem", { name: he.excelExport.button, exact: true })).toBeVisible();
   const downloaded = page.waitForEvent("download");
-  await page.getByRole("button", { name: he.excelExport.button, exact: true }).click();
+  await page.getByRole("menuitem", { name: he.excelExport.button, exact: true }).click();
   const download = await downloaded;
   expect(download.suggestedFilename()).toBe(`siddur-${weekStart}-${NEVO_DEPARTMENT_ID}.xlsx`);
   const filePath = await download.path();

@@ -5,7 +5,9 @@ import { UndoStack, type UndoAction, type UndoResult } from "./undoStack";
 export interface UseUndoStackResult<T> {
   push: (action: UndoAction<T>) => void;
   undo: () => Promise<UndoResult<T> | null>;
+  redo: () => Promise<UndoResult<T> | null>;
   canUndo: boolean;
+  canRedo: boolean;
   peekLabel: string | null;
 }
 
@@ -20,13 +22,14 @@ export interface UseUndoStackResult<T> {
  */
 export function useUndoStack<T = void>(limit = 50): UseUndoStackResult<T> {
   const [stack] = useState(() => new UndoStack<T>(limit));
-  const [snapshot, setSnapshot] = useState<{ canUndo: boolean; peekLabel: string | null }>({
+  const [snapshot, setSnapshot] = useState<{ canUndo: boolean; canRedo: boolean; peekLabel: string | null }>({
     canUndo: false,
+    canRedo: false,
     peekLabel: null,
   });
 
   const sync = useCallback(() => {
-    setSnapshot({ canUndo: stack.canUndo, peekLabel: stack.peekLabel() });
+    setSnapshot({ canUndo: stack.canUndo, canRedo: stack.canRedo, peekLabel: stack.peekLabel() });
   }, [stack]);
 
   const push = useCallback(
@@ -43,5 +46,11 @@ export function useUndoStack<T = void>(limit = 50): UseUndoStackResult<T> {
     return result;
   }, [stack, sync]);
 
-  return { push, undo, canUndo: snapshot.canUndo, peekLabel: snapshot.peekLabel };
+  const redo = useCallback(async () => {
+    const result = await stack.redo();
+    sync();
+    return result;
+  }, [stack, sync]);
+
+  return { push, undo, redo, canUndo: snapshot.canUndo, canRedo: snapshot.canRedo, peekLabel: snapshot.peekLabel };
 }

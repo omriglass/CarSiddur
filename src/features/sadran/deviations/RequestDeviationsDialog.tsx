@@ -18,8 +18,24 @@ function timeLabel(instant: string) {
   return `${weekdayLabel(instant)} ${formatInTimeZone(instant, TZ, "d/M HH:mm")}`;
 }
 
-export function RequestDeviationsDialog({ departmentId, weekStart }: { departmentId: string; weekStart: string }) {
-  const [open, setOpen] = useState(false);
+interface RequestDeviationsDialogProps {
+  departmentId: string;
+  weekStart: string;
+  /**
+   * Controlled mode (the board's kebab "actions" menu, UX_FLOWS.md §4.2):
+   * when provided, the dialog's own trigger button is not rendered — the
+   * caller opens it (e.g. from a `DropdownMenuItem`). Omitted everywhere
+   * else, which keeps the original self-contained trigger+dialog.
+   */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+}
+
+export function RequestDeviationsDialog({ departmentId, weekStart, open: openProp, onOpenChange }: RequestDeviationsDialogProps) {
+  const [openState, setOpenState] = useState(false);
+  const controlled = openProp !== undefined;
+  const open = controlled ? openProp : openState;
+  const setOpen = controlled ? (onOpenChange ?? (() => undefined)) : setOpenState;
   const dept = open ? departmentId : undefined;
   const requests = useWeekRequestsWithNames(dept, weekStart);
   const rides = useAllWeekRides(dept, weekStart);
@@ -35,7 +51,7 @@ export function RequestDeviationsDialog({ departmentId, weekStart }: { departmen
     return raw;
   }
   return <Dialog open={open} onOpenChange={setOpen}>
-    <DialogTrigger asChild><Button variant="outline">{he.deviations.title}</Button></DialogTrigger>
+    {controlled ? null : <DialogTrigger asChild><Button variant="outline">{he.deviations.title}</Button></DialogTrigger>}
     <DialogContent className="max-h-[90dvh] max-w-3xl overflow-y-auto">
       <DialogHeader><DialogTitle>{he.deviations.title}</DialogTitle><DialogDescription>{he.deviations.help}</DialogDescription></DialogHeader>
       {loading ? <p>{he.common.loading}</p> : failed ? <p role="alert">{he.deviations.loadError}</p> : !rows.length ? <p>{he.deviations.empty}</p> : (

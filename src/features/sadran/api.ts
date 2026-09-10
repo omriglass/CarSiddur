@@ -180,6 +180,7 @@ export async function fetchMaintenanceBlocksForDepartment(departmentId: string):
 
 export interface ActivePolicy {
   policyId: string;
+  name: string;
   policyVersionId: string;
   versionNo: number;
   rules: unknown;
@@ -189,7 +190,7 @@ export interface ActivePolicy {
 export async function fetchActivePolicy(departmentId: string): Promise<ActivePolicy | null> {
   const deptRes = await supabase
     .from("policies")
-    .select("id, current_version_id")
+    .select("id, name, current_version_id")
     .eq("department_id", departmentId)
     .eq("is_active", true)
     .maybeSingle();
@@ -207,6 +208,7 @@ export async function fetchActivePolicy(departmentId: string): Promise<ActivePol
 
   return {
     policyId: policyRow.id,
+    name: policyRow.name,
     policyVersionId: versionRes.data.id,
     versionNo: versionRes.data.version_no,
     rules: versionRes.data.rules,
@@ -220,6 +222,10 @@ export interface PolicyOption {
   versionNo: number;
   rules: unknown;
   isActive: boolean;
+  /** `policy_versions.note` (board policy-versions dialog, UX_FLOWS.md §4.2) — free text, may be empty. */
+  note: string | null;
+  /** `policy_versions.created_at`, Asia/Jerusalem-formatted by the caller (`src/lib/time.ts`). */
+  createdAt: string;
 }
 
 /** Policies belonging to this department for the board switcher. */
@@ -250,6 +256,8 @@ export async function fetchPolicyOptions(departmentId: string): Promise<PolicyOp
         versionNo: version.version_no,
         rules: version.rules,
         isActive: p.is_active,
+        note: version.note,
+        createdAt: version.created_at,
       };
     });
 }

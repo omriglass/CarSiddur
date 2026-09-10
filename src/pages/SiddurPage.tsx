@@ -1,6 +1,5 @@
 import { useProfile } from "@/features/auth/useProfile";
 import { useActiveDepartment } from "@/features/auth/useActiveDepartment";
-import { TableViewControls } from "@/components/TableViewControls";
 import { parseTimeToMinutes } from "@/features/solverBridge/buildSolverInput";
 import { CalendarDays, Inbox } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -511,8 +510,16 @@ export function SiddurPage() {
       ) : (
         <>
           {!activeDayPublished ? <p className="rounded-md border bg-muted/40 p-3 text-sm">{he.publicationFlow.dayUnpublished}</p> : null}
-          <div className="hidden md:block">
-            <TableViewControls table={tableView} onTableChange={setTableView} zoom={tableZoom} onZoomChange={setTableZoom} />
+          {/* Desktop: the same display menu as mobile; "show early hours" lives only here. */}
+          <div className="hidden md:flex md:justify-end">
+            <SiddurDisplayMenu
+              table={tableView}
+              onTableChange={setTableView}
+              zoom={tableZoom}
+              onZoomChange={setTableZoom}
+              showEarlyHours={showEarlyHours}
+              onShowEarlyHoursChange={setShowEarlyHours}
+            />
           </div>
           <div className={tableView ? "hidden" : "lg:hidden"}>
             <WeekStrip weekStart={weekStart as string} counts={dayCounts} selected={activeDay ?? ""} onSelect={setSelectedDay} />
@@ -612,12 +619,7 @@ export function SiddurPage() {
           </div>
 
           <div className={tableView ? "min-w-0" : "hidden lg:block"}>
-            <div className="flex items-center justify-between gap-2">
-              <WeekStrip weekStart={weekStart as string} counts={dayCounts} selected={activeDay ?? ""} onSelect={setSelectedDay} />
-              <Button variant="ghost" size="sm" className="shrink-0" onClick={() => setShowEarlyHours(!showEarlyHours)}>
-                {showEarlyHours ? he.board.hideEarlyHours : he.board.showEarlyHours}
-              </Button>
-            </div>
+            <WeekStrip weekStart={weekStart as string} counts={dayCounts} selected={activeDay ?? ""} onSelect={setSelectedDay} />
             <RideTypeLegend
               types={(rideTypesQuery.data ?? []).map((rt) => ({ code: rt.code, nameHe: rt.name_he }))}
             />

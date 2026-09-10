@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -12,9 +12,33 @@ import { fetchPublishFingerprint } from "../../api";
 import { useReopenWeekMutation, useWeekRow } from "../../hooks";
 import { sadranKeys } from "../../keys";
 
-/** The board owns publication and its reversible request-window controls. */
-export function BoardPublicationActions({ departmentId, weekStart }: { departmentId: string; weekStart: string }) {
+/** The board's primary publish / close-and-publish button — always visible in the header, at every width. */
+export function PublishButton({ departmentId, weekStart }: { departmentId: string; weekStart: string }) {
   const navigate = useNavigate();
+  const weekQuery = useWeekRow(departmentId, weekStart);
+  const archived = weekQuery.data?.phase === "archived";
+  return (
+    <Button disabled={archived || weekQuery.isLoading} onClick={() => navigate(paths.sadran.publish(departmentId, weekStart))}>
+      {weekQuery.data?.phase === "open" ? he.publicationFlow.closeAndPublish : he.action.publish}
+    </Button>
+  );
+}
+
+interface CancelPublicationActionProps {
+  departmentId: string;
+  weekStart: string;
+  /**
+   * Custom trigger rendering (the board's kebab "actions" menu, UX_FLOWS.md
+   * §4.2): defaults to the original inline outline `Button`. Returns `null`
+   * entirely — same as before — once the week is `open` or `archived`
+   * (nothing to cancel), so the menu hides the item exactly as the old
+   * inline row hid the button.
+   */
+  renderTrigger?: (props: { onClick: () => void }) => ReactNode;
+}
+
+/** Reversible "cancel publication" (reopen for requests, or unpublish back to solving) with its confirm dialog. */
+export function CancelPublicationAction({ departmentId, weekStart, renderTrigger }: CancelPublicationActionProps) {
   const weekQuery = useWeekRow(departmentId, weekStart);
   const reopenMutation = useReopenWeekMutation();
   const [cancelOpen, setCancelOpen] = useState(false);
@@ -25,11 +49,10 @@ export function BoardPublicationActions({ departmentId, weekStart }: { departmen
     enabled: cancelOpen, staleTime: 0, refetchOnWindowFocus: false,
   });
   const archived = weekQuery.data?.phase === "archived";
+  if (!weekQuery.data || weekQuery.data.phase === "open" || archived) return null;
   return <>
-    <Button disabled={archived || weekQuery.isLoading} onClick={() => navigate(paths.sadran.publish(departmentId, weekStart))}>
-      {weekQuery.data?.phase === "open" ? he.publicationFlow.closeAndPublish : he.action.publish}
-    </Button>
-    {weekQuery.data && weekQuery.data.phase !== "open" && !archived ? <Button variant="outline" onClick={() => setCancelOpen(true)}>{he.publicationFlow.cancel}</Button> : null}
+    {renderTrigger ? renderTrigger({ onClick: () => setCancelOpen(true) })
+      : <Button variant="outline" onClick={() => setCancelOpen(true)}>{he.publicationFlow.cancel}</Button>}
     <ConfirmDialog
       open={cancelOpen}
       onOpenChange={setCancelOpen}

@@ -60,7 +60,9 @@ test("weekly member manages only their assigned board while permanent Sadran ret
       await expect(temporary.page.getByRole("heading", { name: he.screen.board.title })).toBeVisible();
       const applied = temporary.page.waitForResponse((response) =>
         response.url().endsWith("/rest/v1/rpc/apply_solver_result") && response.request().method() === "POST");
-      await temporary.page.getByRole("button", { name: he.action.autoSolveRemaining, exact: true }).click();
+      // "השלם אוטומטית" now lives in the board's kebab "actions" menu (UX_FLOWS.md §4.2, 2026-09-10) at every width.
+      await temporary.page.getByRole("button", { name: he.sadranBoard.actionsMenu, exact: true }).click();
+      await temporary.page.getByRole("menuitem", { name: he.action.autoSolveRemaining, exact: true }).click();
       expect((await applied).ok()).toBe(true);
       await temporary.page.goto(`/sadran/${NEVO_DEPARTMENT_ID}/${otherWeek}/board`);
       await expect(temporary.page).toHaveURL(new RegExp(`${boardPath}$`));

@@ -147,6 +147,22 @@ export const heSadran = {
     relayNeedsCoordination: "השיבוץ דורש תיאום של מסלול הרכב — נפתחת הצעה לשינוי השעות",
     dragInvalidLocationToast: "הרכב לא נמצא בבית בשעה הזו",
     unassignedToast: "השיבוץ הוסר — הבקשות חזרו ללא שיבוץ",
+    /**
+     * Mobile-friendly board header (2026-09-10): the eye/kebab icon menus that
+     * replace the old inline row of buttons (`he.action.runSolver` is now
+     * unused — the preview runs automatically), and the policy chip/dialog
+     * that replaces the plain policy `<Select>`.
+     */
+    displayMenu: "תצוגה",
+    actionsMenu: "פעולות",
+    showLegend: "הצג מקרא",
+    hideLegend: "הסתר מקרא",
+    policyChip: "{{name}} · גרסה {{version}}",
+    policyDialogTitle: "מדיניות הפותר",
+    policyVersionNote: "ללא הערות",
+    redo: "בצע/י שוב",
+    redoToast: "בוצע שוב: {{label}}",
+    redoNothing: "אין מה לבצע שוב",
   },
   sadranRideSheet: {
     title: "פרטי הנסיעה",
