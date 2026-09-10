@@ -22,7 +22,13 @@ begin
     (dept,w+7,'open',now()-interval '1 day',now()+interval '1 day',now()+interval '2 days');
   insert into public.siddur_versions(department_id,week_start,snapshot,published_by) values(dept,w,'{}',manager) returning id into v;
   perform set_config('app.in_publish','on',true);
-  update public.weeks set published_days=array(select week_start+i from generate_series(0,6) i),phase='published',published_version_id=v where department_id=dept and week_start=w;
+  -- Phase stays 'published' (board coordination — cancel_ride/claim_ride_driver/edit_ride —
+  -- is meant to keep working after publication), but day w+1 itself (where every fixture
+  -- request/ride below lives) is deliberately left out of published_days: 20260910098000
+  -- refuses create_proposal()/send_proposal() for a day that is_day_public(), and the
+  -- sadran-composed merge/shift proposals this file exercises are not the 'ask_to_join'
+  -- exemption, so this fixture must keep negotiating them on a day that is not yet public.
+  update public.weeks set published_days=array(select week_start+i from generate_series(0,6) i where i<>1),phase='published',published_version_id=v where department_id=dept and week_start=w;
   perform set_config('app.in_publish','off',true);
   perform set_config('request.jwt.claims',jsonb_build_object('sub',manager,'role','authenticated')::text,true);
   insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,depart_at,return_at,status)

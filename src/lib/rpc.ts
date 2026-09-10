@@ -41,6 +41,7 @@ export type ErrorCode =
   | "request_not_found"
   | "ride_not_found"
   | "proposal_not_found"
+  | "proposal_day_public"
   | "proposal_already_sent"
   | "proposal_not_draft"
   | "proposal_replacement_answered"
@@ -109,6 +110,7 @@ const MESSAGE_TO_CODE: Record<string, ErrorCode> = {
   request_not_found: "request_not_found",
   ride_not_found: "ride_not_found",
   proposal_not_found: "proposal_not_found",
+  proposal_day_public: "proposal_day_public",
   proposal_already_sent: "proposal_already_sent",
   proposal_not_draft: "proposal_not_draft",
   proposal_replacement_answered: "proposal_replacement_answered",
@@ -179,6 +181,7 @@ const CODE_TO_MESSAGE: Record<ErrorCode, string> = {
   request_not_found: he.errors.requestNotFound,
   ride_not_found: he.errors.rideNotFound,
   proposal_not_found: he.errors.proposalNotFound,
+  proposal_day_public: he.errors.proposalDayPublic,
   proposal_already_sent: he.sadranProposal.alreadySent,
   proposal_not_draft: he.sadranProposal.noLongerDraft,
   proposal_replacement_answered: he.sadranProposal.replacementAnswered,

@@ -218,4 +218,89 @@ begin
     'memberA had no status change and should get no outcome_changed notification';
 end $$;
 
+-- 20260910098000_reject_proposals_on_published_day: proposals are not a tool for a day
+-- that is already published — create_proposal()/send_proposal() both refuse it, except for
+-- "ask to join" (created_via='ask_to_join'), which is filed by submit_request() itself and
+-- must still reach the ride owner even on a published day.
+reset role;
+select set_config('request.jwt.claims','{"sub":"00000000-0000-0000-0000-000000000102","role":"authenticated"}',true);
+do $$
+declare dept uuid:='00000000-0000-0000-0000-000000000001'; manager uuid:='00000000-0000-0000-0000-000000000102';
+  memberA uuid:='00000000-0000-0000-0000-000000000103'; memberB uuid:='00000000-0000-0000-0000-000000000104';
+  w3 date:=public.current_week_start()+224; dtA timestamptz; dtB timestamptz; dtC timestamptz;
+  reqA uuid; reqB uuid; reqC uuid; propOpen uuid; propAsk uuid;
+begin
+  insert into public.weeks(department_id,week_start,phase,open_at,close_at,publish_at)
+    values(dept,w3,'open',now()-interval '1 day',now()+interval '1 day',now()+interval '2 days');
+
+  dtA:=((w3+1)+time '08:00') at time zone 'Asia/Jerusalem';
+  insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,trip_shape,
+    needs_car_at_destination,depart_at,return_at,status)
+  values(dept,w3,memberA,manager,'00000000-0000-0000-0000-000000000011','00000000-0000-0000-0000-000000000021',
+    'round_trip'::public.trip_shape,true,dtA,dtA+interval '2 hours','submitted'::public.request_status)
+  returning id into reqA;
+
+  dtB:=((w3+2)+time '08:00') at time zone 'Asia/Jerusalem';
+  insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,trip_shape,
+    needs_car_at_destination,depart_at,return_at,status)
+  values(dept,w3,memberA,manager,'00000000-0000-0000-0000-000000000011','00000000-0000-0000-0000-000000000021',
+    'round_trip'::public.trip_shape,true,dtB,dtB+interval '2 hours','submitted'::public.request_status)
+  returning id into reqB;
+
+  -- memberB's own request, "asked to join" against the (fictional, no ride needed for
+  -- this fixture) temporary car on the already-published day.
+  dtC:=((w3+1)+time '09:00') at time zone 'Asia/Jerusalem';
+  insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,trip_shape,
+    needs_car_at_destination,depart_at,return_at,status)
+  values(dept,w3,memberB,manager,'00000000-0000-0000-0000-000000000011','00000000-0000-0000-0000-000000000021',
+    'round_trip'::public.trip_shape,true,dtC,dtC+interval '2 hours','submitted'::public.request_status)
+  returning id into reqC;
+
+  insert into publication_ids values('gate_reqA',reqA),('gate_reqB',reqB),('gate_reqC',reqC);
+
+  -- Publish only w3+1 (allow_unanswered: these fixture requests carry no ride).
+  perform public.publish_siddur(dept,w3,'[]'::jsonb,public.publish_scores_fingerprint(dept,w3),'[]'::jsonb,array[w3+1],true);
+  assert (select public.is_day_public(dept,w3,w3+1)),'fixture day did not publish';
+  assert (select not public.is_day_public(dept,w3,w3+2)),'unrelated day published too';
+
+  -- Sadran-composed proposal ('shift' needs no ride/host) refuses an already-published day.
+  begin
+    perform public.create_proposal(reqA,null,'shift',
+      jsonb_build_object('depart_at',dtA+interval '1 hour','return_at',dtA+interval '3 hours'),'Published-day fixture');
+    raise exception 'create_proposal accepted a proposal for an already-published day';
+  exception when raise_exception then if sqlerrm<>'proposal_day_public' then raise;end if;end;
+
+  -- Same shape, unpublished day: creation still works.
+  propOpen:=public.create_proposal(reqB,null,'shift',
+    jsonb_build_object('depart_at',dtB+interval '1 hour','return_at',dtB+interval '3 hours'),'Unpublished-day fixture');
+  insert into publication_ids values('gate_propOpen',propOpen);
+
+  -- Publish the second day too. expire_proposals() (called by publish_siddur() at the end)
+  -- only expires status='sent' rows, so this never-sent draft is untouched — send_proposal()
+  -- alone has to catch that its day went public between draft and send.
+  perform public.publish_siddur(dept,w3,'[]'::jsonb,public.publish_scores_fingerprint(dept,w3),'[]'::jsonb,array[w3+2],true);
+  assert (select status='draft' from public.proposals where id=propOpen),'draft proposal was touched by publishing its own day';
+  begin
+    perform public.send_proposal(propOpen);
+    raise exception 'send_proposal sent a proposal whose day became public after the draft was created';
+  exception when raise_exception then if sqlerrm<>'proposal_day_public' then raise;end if;end;
+
+  -- "Ask to join" is exempt from both guards: a manager (or, per submit_request(), the
+  -- member themselves) can still create a merge/shift proposal for the requester's own
+  -- request on the already-published day (w3+1) — it still needs to reach the ride owner.
+  propAsk:=public.create_proposal(reqC,null,'shift',
+    jsonb_build_object('depart_at',dtC+interval '1 hour','return_at',dtC+interval '3 hours'),
+    'Ask-to-join fixture',array[]::uuid[],'ask_to_join');
+  insert into publication_ids values('gate_propAsk',propAsk);
+end $$;
+-- memberB (the requester) sends their own ask_to_join draft: still exempt at send time too.
+select set_config('request.jwt.claims','{"sub":"00000000-0000-0000-0000-000000000104","role":"authenticated"}',true);
+do $$
+declare propAsk uuid:=(select id from publication_ids where k='gate_propAsk');
+begin
+  perform public.send_proposal(propAsk);
+  assert (select status='sent' from public.proposals where id=propAsk),'ask_to_join send_proposal was blocked on a published day';
+end $$;
+reset role;
+
 rollback;

@@ -22,6 +22,12 @@ describe("proposal send errors", () => {
     expect(toAppError({ message: "proposal_not_draft" }).message).toBe(he.sadranProposal.noLongerDraft);
   });
 
+  it("explains a proposal refused because its day is already published (20260910098000)", () => {
+    expect(toAppError({ code: "P0001", message: "proposal_day_public" })).toMatchObject({
+      code: "proposal_day_public", message: he.errors.proposalDayPublic,
+    });
+  });
+
   it("classifies push-subscription failures into a copyable diagnostic code", () => {
     expect(toAppError(new Error("push_vapid_key_invalid"))).toMatchObject({
       code: "push_vapid_key_invalid", message: he.errors.pushVapidKeyInvalid,

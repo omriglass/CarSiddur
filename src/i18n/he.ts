@@ -556,6 +556,7 @@ export const he = {
     requestNotFound: "הבקשה לא נמצאה",
     rideNotFound: "הנסיעה לא נמצאה",
     proposalNotFound: "ההצעה לא נמצאה",
+    proposalDayPublic: "היום כבר פורסם — הצעות אינן רלוונטיות ליום שפורסם; מתאמים ישירות עם הנוסע/ת",
     carChainBroken: "לוח הזמנים של הרכב לא רציף",
     carAwayAtDayEnd: "הרכב לא חוזר הביתה בזמן",
     noHomeLocation: "לא הוגדר מיקום בית למחלקה",
