@@ -231,4 +231,9 @@ describe("approved tight turnarounds", () => {
     const ride = (id: string, start: number, end: number, car_id = "car") => ({ id, car_id, starts_at: iso(start * 3600_000), ends_at: iso(end * 3600_000) });
     expect([...tightScheduleRideIds([ride("b", 9.25, 10), ride("a", 8, 9), ride("c", 10.5, 11), ride("other", 9, 10, "other")], 30)].sort()).toEqual(["a", "b"]);
   });
+  it("does not flag consecutive legs of one multi-day series meeting at midnight", () => {
+    const leg = (id: string, start: number, end: number, series_id: string | null) => ({ id, car_id: "car", starts_at: iso(start * 3600_000), ends_at: iso(end * 3600_000), series_id });
+    // day 1 08:00→23:59, day 2 00:00→23:59 (same series) then an unrelated ride 10 minutes later
+    expect([...tightScheduleRideIds([leg("d1", 8, 23.983, "s"), leg("d2", 24, 47.983, "s"), leg("x", 48.15, 49, null)], 30)].sort()).toEqual(["d2", "x"]);
+  });
 });

@@ -412,7 +412,10 @@ export function RequestForm({
   // and the quick/carNow variants are always about a single live day.
   const showReturnDayPicker = variant === "weekly" && mode === "new" && tripShape === "round_trip";
   const returnDayValue = values.returnDay ?? day;
-  const isMultiDay = showReturnDayPicker && returnDayValue !== day;
+  // The return-day picker is collapsed behind a small "return another day" link because
+  // multi-day requests are rare; a later return day keeps it expanded (UX_FLOWS.md §3.4).
+  const [returnAnotherDay, setReturnAnotherDay] = useState(false);
+  const isMultiDay = showReturnDayPicker && returnAnotherDay && returnDayValue !== day;
   const multiDaySpan = isMultiDay ? seriesSpanDays(day, returnDayValue) : null;
   const childReferenceYear = Number(day.slice(0, 4));
   const childrenQuery = useQuery({ queryKey: ["children", departmentId, session?.user.id, childReferenceYear], queryFn: () => fetchChildren(departmentId, session!.user.id, childReferenceYear), enabled: !!session?.user.id });
@@ -776,9 +779,34 @@ export function RequestForm({
         </FormItem>
       ) : null}
 
-      {showReturnDayPicker ? (
+      {showReturnDayPicker && !returnAnotherDay ? (
+        <Button
+          type="button"
+          variant="link"
+          size="sm"
+          className="h-auto self-start px-0 text-xs"
+          onClick={() => setReturnAnotherDay(true)}
+        >
+          {t("request.returnAnotherDay")}
+        </Button>
+      ) : null}
+      {showReturnDayPicker && returnAnotherDay ? (
         <FormItem>
-          <Label>{t("request.returnDay")}</Label>
+          <div className="flex items-center justify-between gap-2">
+            <Label>{t("request.returnDay")}</Label>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-auto px-1 text-xs"
+              onClick={() => {
+                form.setValue("returnDay", day, { shouldDirty: true });
+                setReturnAnotherDay(false);
+              }}
+            >
+              {t("request.returnSameDay")}
+            </Button>
+          </div>
           <Controller
             control={form.control}
             name="returnDay"

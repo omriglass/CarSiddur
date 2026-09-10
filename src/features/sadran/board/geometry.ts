@@ -205,22 +205,26 @@ export function requestDayMismatchRideIds(
  * leave less than the usual turnaround. This is informational, not a collision.
  */
 export function tightScheduleRideIds(
-  rides: readonly { id: string | null; car_id: string | null; starts_at: string | null; ends_at: string | null }[],
+  rides: readonly { id: string | null; car_id: string | null; starts_at: string | null; ends_at: string | null; series_id?: string | null }[],
   bufferMinutes: number,
 ): Set<string> {
   const tight = new Set<string>();
-  const previousByCar = new Map<string, { id: string; end: number }>();
-  const ordered = rides.filter((ride): ride is { id: string; car_id: string; starts_at: string; ends_at: string } =>
+  const previousByCar = new Map<string, { id: string; end: number; seriesId: string | null }>();
+  const ordered = rides.filter((ride): ride is { id: string; car_id: string; starts_at: string; ends_at: string; series_id?: string | null } =>
     !!ride.id && !!ride.car_id && !!ride.starts_at && !!ride.ends_at)
     .sort((a, b) => Date.parse(a.starts_at) - Date.parse(b.starts_at) || a.id.localeCompare(b.id));
   for (const ride of ordered) {
     const previous = previousByCar.get(ride.car_id);
+    const seriesId = ride.series_id ?? null;
+    // Consecutive legs of one multi-day series meet at midnight by design (REQ §13.77);
+    // the car simply stays with the same member, so there is no turnaround to squeeze.
+    const sameSeries = !!previous && !!seriesId && previous.seriesId === seriesId;
     const gap = previous ? Date.parse(ride.starts_at) - previous.end : null;
-    if (previous && gap != null && gap >= 0 && gap < bufferMinutes * 60_000) {
+    if (previous && !sameSeries && gap != null && gap >= 0 && gap < bufferMinutes * 60_000) {
       tight.add(previous.id);
       tight.add(ride.id);
     }
-    previousByCar.set(ride.car_id, { id: ride.id, end: Date.parse(ride.ends_at) });
+    previousByCar.set(ride.car_id, { id: ride.id, end: Date.parse(ride.ends_at), seriesId });
   }
   return tight;
 }

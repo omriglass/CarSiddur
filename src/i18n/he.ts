@@ -288,7 +288,6 @@ export const he = {
     addOwnRide: "הוסף נסיעה",
     signOut: "התנתקות",
     closeWindow: "סגור חלון עכשיו",
-    runSolver: "הרץ פותר",
     openBoard: "פתח לוח",
     publish: "פרסם…",
     undo: "בטל",

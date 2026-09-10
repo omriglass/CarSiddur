@@ -93,6 +93,8 @@ export const heMember = {
     // member.spec.ts, quick-request.spec.ts) resolve to two elements once this second
     // radiogroup renders (weekly + new mode + round trip).
     returnDay: "תאריך החזרה",
+    returnAnotherDay: "חזרה ביום אחר?",
+    returnSameDay: "חזרה באותו יום",
     multiDayHint: "הרכב שמור לך מהיציאה ועד החזרה, כולל הלילות. כל הימים באותו רכב.",
     multiDayLongTitle: "לשמור רכב ליותר משבוע?",
     multiDayLongBody: "הבקשה תופסת רכב משותף ל{{days}} ימים. להמשיך?",

@@ -4,7 +4,7 @@
  * spread line there, per the stage 2b task split — same one-line-diff
  * reasoning as `he.admin.ts`/`he.member.ts`, UX_FLOWS.md §13 note 9). Many
  * generic sadran-adjacent keys already exist in the canonical `he.ts`
- * (`he.action.runSolver/openBoard/publish/undo/autoSolveRemaining/pin/unpin/
+ * (`he.action.openBoard/publish/undo/autoSolveRemaining/pin/unpin/
  * boost/…`, `he.board.*`, `he.proposal.type.*`, `he.proposalStatus.*`,
  * `he.phase.*`, `he.status.*`, `he.statusReason.*`, `he.errors.*`,
  * `he.screen.sadran/board/proposals/claims/publish/log`) — components use
@@ -149,7 +149,7 @@ export const heSadran = {
     unassignedToast: "השיבוץ הוסר — הבקשות חזרו ללא שיבוץ",
     /**
      * Mobile-friendly board header (2026-09-10): the eye/kebab icon menus that
-     * replace the old inline row of buttons (`he.action.runSolver` is now
+     * replace the old inline row of buttons (the former `he.action.runSolver` key was removed on 2026-09-10 —
      * unused — the preview runs automatically), and the policy chip/dialog
      * that replaces the plain policy `<Select>`.
      */
