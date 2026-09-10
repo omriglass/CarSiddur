@@ -69,8 +69,9 @@ export function assertInvariants(input: SolverInput, output: SolverOutput): void
           window: a.window,
           startLocationId: a.originId,
           endLocationId: a.destinationId,
-          overnightAck: overnightAckByRideId.get(a.rideId) ?? false,
+          overnightAck: overnightAckByRideId.get(a.rideId) ?? Boolean(a.seriesId),
           approvedBufferAfterSlots: approvedBufferByRideId.get(a.rideId),
+          seriesId: a.seriesId,
         };
         // Fixed rides are "still honoured" even if their recorded origin does
         // not chain from the previous ride (SOLVER §3.1) — only the solver's
@@ -137,6 +138,40 @@ export function assertInvariants(input: SolverInput, output: SolverOutput): void
       const partner = outputById.get(a.pairedRideId);
       if (!partner || partner.carId !== a.carId) {
         throw new SolverInvariantError(`relay ride ${a.rideId} pairing is broken`, 'RELAY_UNPAIRED');
+      }
+    }
+  }
+
+  // Multi-day series (SOLVER §3.x): every leg on one car, in seriesIndex
+  // order, contiguous (no foreign block or gap between two consecutive legs)
+  // and location-chained. The buffer/overlap check above already guarantees
+  // no *other* ride can be scheduled between two legs; this check confirms
+  // the series itself is coherent.
+  const bySeriesId = new Map<string, Assignment[]>();
+  for (const a of output.assignments) {
+    if (!a.seriesId) continue;
+    const list = bySeriesId.get(a.seriesId) ?? [];
+    list.push(a);
+    bySeriesId.set(a.seriesId, list);
+  }
+  for (const [seriesId, list] of bySeriesId) {
+    const sorted = [...list].sort((a, b) => a.window.start - b.window.start);
+    const carId = sorted[0]?.carId;
+    for (let i = 0; i < sorted.length; i++) {
+      const a = sorted[i];
+      if (!a) continue;
+      if (a.carId !== carId) {
+        throw new SolverInvariantError(`series ${seriesId} spans more than one car`, 'SERIES_MULTI_CAR');
+      }
+      if (i > 0) {
+        const prev = sorted[i - 1];
+        if (!prev) continue;
+        if (prev.window.end !== a.window.start) {
+          throw new SolverInvariantError(`series ${seriesId} legs are not contiguous`, 'SERIES_NOT_CONTIGUOUS');
+        }
+        if (prev.destinationId !== a.originId) {
+          throw new SolverInvariantError(`series ${seriesId} location chain is broken`, 'SERIES_LOCATION_BROKEN');
+        }
       }
     }
   }

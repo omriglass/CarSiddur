@@ -222,9 +222,22 @@ export function buildSolverInput(params: BuildSolverInputParams): SolverInput {
           r.manual_boost && r.manual_boost !== 0
             ? { value: r.manual_boost, reason: r.manual_boost_reason ?? "" }
             : undefined,
+        // Multi-day series (SOLVER.md §3.x): one request row per calendar day
+        // sharing series_id; the solver only sees the legs inside this week.
+        // Legs in another week are handled by SQL's place_series() after
+        // apply_solver_result — see DATA_MODEL.md for the column definitions.
+        seriesId: r.series_id ?? undefined,
+        seriesIndex: r.series_index ?? undefined,
+        seriesCount: r.series_count ?? undefined,
       } satisfies SolverRequest;
     });
 
+  // `startLocationId` (SOLVER.md §3.x, Car.startLocationId) is left undefined here: this mapper's
+  // BuildSolverInputParams has no "car's location before the week" input (no prior-ride lookup is
+  // wired through). A car defaults to home in that case (src/solver/timeline.ts) — safe because the
+  // hard guarantee that a continuing series' car is actually where the previous week's SQL
+  // `place_series()` left it is `assert_car_chain()` in SQL, not this mapper (see CLAUDE.md decision
+  // 14 and SOLVER.md §1.3.8). A future caller that has that lookup can pass it through here.
   const cars: SolverCar[] = params.cars.map((car) => ({
     id: car.id,
     name: car.name,

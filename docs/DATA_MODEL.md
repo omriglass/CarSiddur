@@ -455,6 +455,8 @@ PK `(department_id, week_start)`. CHECK `open_at < close_at and close_at <= publ
 | trip_shape | trip_shape | NN | 'round_trip' | §5.1, §5.4 |
 | depart_at | timestamptz | | | outbound leg leaves home; 15-min aligned (`is_quarter_hour()` CHECK); CHECK `(depart_at is not null) = (trip_shape <> 'one_way_from')` |
 | return_at | timestamptz | | | return leg arrives home; aligned; CHECK `(return_at is not null) = (trip_shape <> 'one_way_to')`; CHECK `depart_at is null or return_at is null or return_at > depart_at` |
+| series_id | uuid | | | Multi-day request (REQ §13.77): one linked round-trip request per calendar day shares this id. Index `requests_series_idx (series_id, series_index) where series_id is not null`. |
+| series_index / series_count | smallint | | | Position (1-based) and length of the series. CHECK: all three null, or all set with `series_count >= 2` and `1 <= series_index <= series_count`. |
 | preferred_car_id | uuid | | | Soft preference, FK cars ON DELETE SET NULL. New selections must be active shared cars in the same department; omitted RPC key preserves it, explicit null clears it. |
 | ride_description | text | | | Public ride context, trimmed, max 1000 characters; separate from private `notes`. |
 | guest_passenger_names | text[] | NN | {} | Public guest names, max 20 nonblank names of up to 100 characters; named people must fit the counted passengers. |
@@ -485,7 +487,7 @@ PK `(department_id, week_start)`. CHECK `open_at < close_at and close_at <= publ
 
 Indexes: `(department_id, week_start, status)`; `(requester_id, week_start desc)`; `(department_id, week_start) where status in ('waitlisted','denied') and not freed_slot_opt_out` (freed-slot candidates); GiST `(department_id, request_span(depart_at, return_at))` for duplicate/overlap detection, where `request_span(d, r) = tstzrange(coalesce(d, r), coalesce(r, d), '[]')` is an **immutable** helper (a one-way request spans a single instant; no interval arithmetic, so it may be indexed — see §5.1).
 
-**Write path.** Requests are created and edited **only** through the `submit_request(payload jsonb)` SECURITY DEFINER RPC (no direct INSERT/UPDATE policies, §4.3). Payload keys mirror the columns above plus `request_id` (edit), `requester_id` (Sadran/Admin filing on behalf) and `expected_version`. The RPC validates §5.3 (returns non-blocking `warnings[]` for seat fit and duplicate overlap; a `return_at` after Saturday is accepted only when filed by a Sadran/Admin on behalf — REQ §13.62), normalizes one-way shapes (`needs_car_at_destination = true`, `one_way_car_mode` required), sets `submitted_at`, computes `is_late` from `weeks.close_at`, bumps `version` and sets `changed_since_solve` when a solve-relevant column changes while `weeks.phase <> 'open'`, writes the audit row with reason, and in a `live` week calls `try_auto_approve()` (§8; round trips only — one-way shapes become `waitlisted`, REQ §13.64). When `join_ride_id` points at a ride on a **temporary car**, the RPC also calls `create_proposal` + `send_proposal` (type `merge`, `created_by = requester_id`, parties = owner + requester) so the owner decides directly (REQ §13.43). Members withdraw through `withdraw_request(request_id, expected_version)`; after publish `cancel_ride()` cancels the request together with its ride. Sadran boosts go through `set_manual_boost(request_id, value, reason)`.
+**Write path.** Requests are created and edited **only** through the `submit_request(payload jsonb)` SECURITY DEFINER RPC (no direct INSERT/UPDATE policies, §4.3). Payload keys mirror the columns above plus `request_id` (edit), `requester_id` (Sadran/Admin filing on behalf) and `expected_version`. The RPC validates §5.3 (returns non-blocking `warnings[]` for seat fit and duplicate overlap; a `return_at` after Saturday is accepted only when filed by a Sadran/Admin on behalf — REQ §13.62), normalizes one-way shapes (`needs_car_at_destination = true`, `one_way_car_mode` required), sets `submitted_at`, computes `is_late` from `weeks.close_at`, bumps `version` and sets `changed_since_solve` when a solve-relevant column changes while `weeks.phase <> 'open'`, writes the audit row with reason, and in a `live` week calls `try_auto_approve()` (§8; round trips only — one-way shapes become `waitlisted`, REQ §13.64). When `join_ride_id` points at a ride on a **temporary car**, the RPC also calls `create_proposal` + `send_proposal` (type `merge`, `created_by = requester_id`, parties = owner + requester) so the owner decides directly (REQ §13.43). Members withdraw through `withdraw_request(request_id, expected_version)`; after publish `cancel_ride()` cancels the request together with its ride. Sadran boosts go through `set_manual_boost(request_id, value, reason)`. A **multi-day** booking (`return_at` on a later Jerusalem date, REQ §13.77) goes through `submit_series_request(payload jsonb)` instead, which splits the span into one leg per calendar day and files each through `submit_request` with `series_id`/`series_index`/`series_count`; `submit_request` itself refuses to *edit* any request carrying a `series_id` (`series_edit_not_supported`, SQLSTATE `MDR02`).
 
 Triggers (last line of defence behind the RPCs): `requests_within_week` (§5 invariants), `requests_status_guard` (allowed transitions per §5.2 and who may perform them), `bump_version`, `audit_row`.
 
@@ -498,27 +500,68 @@ Triggers (last line of defence behind the RPCs): `requests_within_week` (§5 inv
 
 PK `(request_id, profile_id)`. CHECK via trigger: `profile_id <> requester_id`. A join table (not `uuid[]`) so FK integrity holds and RLS can ask "am I a companion" with an index.
 
-#### `request_templates` (§5.1 "Repeat weekly", should-have §12 — modelled now, UI later)
+#### `request_templates` (§5.1 "Repeat weekly", should-have §12 — schema/RPCs/view redesigned 2026-09-10, member-facing UI still pending)
+
+**Design (2026-09-10, reversed from the original auto-materializing design below): a repeating
+request is a member-dismissable *suggestion*, never an automatic submission.** A member marks
+a request as repeating (`save_request_template(request_id)`, from the request form or later from
+an existing request) and the template captures every repeatable field verbatim. While a week is
+`open`, `v_request_template_suggestions` surfaces one suggestion row per active template that
+does not already have a linked request in that week; the member taps it to prefill the request
+form and still submits manually — nothing is ever auto-submitted. Per suggestion the member may
+**snooze for this week** (`snooze_request_template`) or **stop repeating**
+(`stop_request_template`, reversible via `resume_request_template`). `materialize_templates()` is
+kept as a no-op (same signature, so `housekeeping()`'s call site needs no change) instead of being
+dropped, documenting the reversal in place; it is the sole use of `paused_until` /
+`last_materialized_week` below, both now unused and deprecated.
 
 | column | type | null | default | notes |
 |---|---|---|---|---|
 | id | uuid | NN | | PK |
-| requester_id | uuid | NN | | FK profiles |
+| requester_id | uuid | NN | | FK profiles — owner; `save_request_template`/`snooze_request_template`/`stop_request_template`/`resume_request_template` all require `requester_id = auth.uid()` |
 | department_id | uuid | NN | | FK departments |
 | destination_id / destination_text | uuid / text | | | same CHECK as requests |
-| preferred_car_id | uuid | | | Same optional soft preference as requests; materialization copies an active preference and drops a retired one. |
-| ride_description / guest_passenger_names | text / text[] | / NN | / {} | Same public details as requests, copied during materialization. |
-| companion_ids | uuid[] | NN | {} | Selected approved members of the template’s department, excluding its requester; copied into request_companions while still eligible. |
+| preferred_car_id | uuid | | | Same optional soft preference as requests; copied verbatim by `save_request_template`. |
+| ride_description / guest_passenger_names | text / text[] | / NN | / {} | Same public details as requests, copied verbatim. |
+| companion_ids | uuid[] | NN | {} | Named companions copied verbatim from `request_companions` of the source request (not re-validated against the template's department membership at suggestion time — the member re-confirms on submit via `submit_request`). |
+| child_ids | uuid[] | NN | {} | **New (2026-09-10).** Named children (`children.id`) copied verbatim from `request_children` of the source request; not re-validated here since `adults`/`child_seats` are copied from the request that already passed `set_request_children()`'s birth-year split. |
 | ride_type_id | uuid | NN | | |
 | trip_shape | trip_shape | NN | 'round_trip' | |
 | depart_dow / depart_time | smallint / time | | | 0..6, 15-min aligned; null iff `one_way_from` |
 | return_dow / return_time | smallint / time | | | null iff `one_way_to` |
 | one_way_car_mode | leg_car_mode | | | same CHECKs as requests |
 | needs_car_at_destination, adults, child_seats, boosters, has_luggage, flex_* , notes | | | | identical to requests |
-| is_active | boolean | NN | true | member "stops it" → false |
-| paused_until | date | | | skip weeks |
-| last_materialized_week | date | | | idempotency for `materialize_templates()` |
+| is_active | boolean | NN | true | member "stops it" → false (`stop_request_template`); `resume_request_template` sets it back to true |
+| paused_until | date | | | **Deprecated (2026-09-10).** Never written any more; superseded by `snoozed_until_week`/`stopped_at`. Kept, not dropped, to avoid an unnecessary types regen. |
+| last_materialized_week | date | | | **Deprecated (2026-09-10).** Never written any more — `materialize_templates()` is a no-op. |
+| source_request_id | uuid | | | **New (2026-09-10).** FK requests ON DELETE SET NULL. The request `save_request_template()` last captured this template from; `requests.template_id` is the primary link back to the *current* request (§3.6) — this is only the create-or-update lookup's fallback when a request's own `template_id` was cleared. |
+| snoozed_until_week | date | | | **New (2026-09-10).** CHECK Sunday. Suggestions for this template resume from this `week_start` onward; set to `p_week_start + 7` by `snooze_request_template(template_id, week_start)` ("snooze for this week" — the following week, being the next `open` week in practice, shows the suggestion again). |
+| stopped_at | timestamptz | | | **New (2026-09-10).** Set together with `is_active = false` by `stop_request_template`; cleared by `resume_request_template`. |
 | created_at / updated_at | timestamptz | NN | now() | |
+
+**Write path.** `save_request_template(p_request_id uuid) returns uuid` (SECURITY DEFINER,
+caller must own the request) creates a new template or updates the one already linked via
+`requests.template_id` (falling back to `source_request_id` if that link was cleared), setting
+`requests.template_id` to the result either way; calling it again on the same request updates the
+same template row rather than duplicating it, and reactivates a previously-stopped template.
+`snooze_request_template(template_id, week_start)`, `stop_request_template(template_id)` and
+`resume_request_template(template_id)` are single-column SECURITY DEFINER updates gated on
+`requester_id = auth.uid()`, raising `not_authorized` (no rows matched) otherwise — this doubles
+as the "template doesn't exist" case. There is no `upsert_request_template(payload)`: the UI calls
+`submit_request` first, then `save_request_template(request_id)`.
+
+**`v_request_template_suggestions`** (`security_invoker`, `select` to `authenticated`): one row
+per (active template of the calling member, `open` week of that template's department) where
+`snoozed_until_week is null or snoozed_until_week <= week_start`, and no request of that member in
+that week has this `template_id` with `status not in ('withdrawn','cancelled','draft')` — a
+submitted/assigned/etc. linked request suppresses the suggestion for that week only; withdrawing
+or cancelling it (or leaving a stray draft) lets the suggestion reappear. Columns: every template
+field above plus `week_start`, `department_id`, `destination_name` (`coalesce(destinations.name,
+destination_text)`), `ride_type_name`, and `depart_at`/`return_at` computed as
+`((week_start + depart_dow)::timestamp + depart_time) at time zone 'Asia/Jerusalem'` (null when the
+corresponding `*_dow` is null, i.e. a one-way template). Explicitly filtered to
+`requester_id = (select auth.uid())` in the view body — `request_templates_select`'s RLS also lets
+a Sadran read other members' templates, which is not what this "my own suggestions" view is for.
 
 ### 3.7 Solver output and rides (REQUIREMENTS §7.1, §7.4)
 
@@ -556,6 +599,7 @@ Index `(department_id, week_start, started_at desc)`.
 | driver_id | uuid | | | FK profiles. The driver request owner or a volunteer, who may already be a served passenger requester. Null for a reservation or a passenger booking awaiting a driver. |
 | needs_driver | boolean | NN | false | True means a pinned passenger booking without a driver. Requires passenger links and a null driver; ordinary empty reservations remain false. |
 | notes | text | | | Required for an empty driverless reservation. |
+| series_id | uuid | | | Multi-day request (REQ §13.77), denormalized from the served request at INSERT time by `place_series()`/`move_series()`/`apply_solver_result()` (plus an AFTER INSERT trigger on `ride_requests` as a backstop). `rides_before_write()` needs it before any `ride_requests` row exists. Index `rides_series_idx (series_id, starts_at) where series_id is not null`. |
 | turnaround_override_minutes | smallint | | | Coordinator-approved shortened preparation buffer. Null uses department/week settings; zero permits adjacent occupied windows. Never permits actual overlap. |
 | overflow_allowed | boolean | NN | false | Sadran-set: this ride may end after Saturday (REQ §5.3, §13.62); checked by `rides_within_week` |
 | overnight_ack_by / overnight_ack_at | uuid / timestamptz | | | Sadran acknowledged that this ride leaves the car away from home past `day_end_time` (overnight trip, REQ §5.4); CHECK both null or both set; read by `assert_car_chain()` |
@@ -1071,6 +1115,8 @@ Service role bypasses RLS and is used only for: the `push-dispatch` edge functio
 | 19 | Driver rows vs chauffeur rides | DB | Deferred trigger `ride_driver_row_check`: exactly one `driver` row per ride unless the ride has a `chauffeur` row, then none and `rides.driver_id` is the volunteer (≠ any served requester). CHECK `(role = 'driver') = (car_mode in ('keep','relay'))`. |
 | 19a | A request belongs to at most one **open** contested waiting-list group | DB | Partial unique index `waitlist_group_members (request_id) where chosen is null` (REQ §13.75). `resolve_waitlist_group()`/`cancel_waitlist_group()` fill `chosen` for every member, which releases the index for a later group. |
 | 19b | A contested group always has at least two open members while `status = 'open'` | Trigger | `waitlist_group_membership_sync()` (`after update of status on requests`) removes a member who leaves the waiting list and cancels the group when fewer than two remain, resetting the survivor to `WAITLISTED_NO_CAR`. |
+| 19c | **Multi-day series** (REQ §13.77): every leg of a `series_id` sits on the *same* car, the car is nobody else's for the whole span, and the series is placed all-or-nothing | RPC | `place_series()` / `move_series()` are the only writers. They refuse (`series_car_unavailable`, SQLSTATE `MDR03`) when the car is not shared+active, seats do not fit, another non-series ride overlaps `[first depart, last return + turnaround)`, a maintenance block overlaps, the car is not home when the span starts, or a leg is already parked on a different car. `edit_ride()` routes a car change on a series leg through `move_series()`, and refuses (`series_edit_not_supported`, `MDR02`) a time change on anything but the first leg's start / last leg's end, and hand-creating a ride for a series leg. |
+| 19d | Two consecutive legs of one series need no turnaround buffer, and the car may sleep away | DB | `rides_before_write()` skips `ride_turnaround_conflict` between two rides sharing a non-null `series_id` (the day-1 leg ends 23:59:00, the day-2 leg starts 00:00:00; the plain GIST exclusion on `(car_id, [starts_at, ends_at))` still applies). `assert_car_chain()` does not raise `car_away_at_day_end` for a leg whose series has another leg starting the next calendar day, and seeds the week's starting location from the last non-cancelled ride that *starts before* the week (home when there is none) instead of assuming "every car starts the week at home", so a Saturday→Sunday series carries over correctly. `ride_requests_leg_location()`'s "keep legs run home → home" rule is skipped for a series ride (the legs chain home → destination → … → home). |
 | 20 | One-way requests are never auto-approved after publish | RPC | `try_auto_approve()` returns null for `trip_shape <> 'round_trip'` (REQ §13.64) and requires the candidate car to be at home for the window (`car_location_at(car, starts_at) = home`, §7.5). |
 
 ### 5.1 Why `blocked_until` is a trigger-maintained column
@@ -1461,7 +1507,7 @@ Supabase Free: 500 MB. Estimated steady state at 2 departments × 300 requests/w
 | client_errors | 90 days | `housekeeping()` daily |
 | push_subscriptions | while valid | deleted on 404/410 from the push service (`push-dispatch`) or `failure_count >= 5`; subscriptions unused for 180 days (`housekeeping()`) |
 | audit_log | 3 years for `requests/rides/proposals/policies/weeks/siddur_versions` (§11 Auditability); 1 year for the rest | `housekeeping()` (monthly pass); before pruning, admin may export a year to Storage as JSONL |
-| request_templates | while `is_active` or paused; inactive ones deleted after 1 year | `housekeeping()` daily |
+| request_templates | while `is_active` (a "stop" sets it false but keeps the row, snoozed or not); inactive ones deleted after 1 year | `housekeeping()` daily |
 
 Backups: Supabase Free has no PITR; a weekly `pg_dump` via GitHub Actions to a private artifact (or Storage) is part of the ops doc. Upgrade triggers (§11 Cost): DB > 400 MB, or paused-project complaints, or > 5 departments.
 
@@ -1472,7 +1518,7 @@ Backups: Supabase Free has no PITR; a weekly `pg_dump` via GitHub Actions to a p
 | table | purpose | trigger to build it |
 |---|---|---|
 | `car_loans` | Cross-department car lending for a window (lifts `rides_car_same_department`); v1 uses a maintenance block "lent to X" + `external` on the borrowing side (§3.7, REQ §13.27). | A second department actually borrows cars regularly. |
-| `ride_templates` | **Standing pre-allocations** (REQ §12 should-have, §13.54): recurring pinned rides (car, dow, time window, driver, origin/destination) that `materialize_templates()` copies into each newly opened week as `is_pinned` rides, before members' requests are solved around them. Same shape as `request_templates` but produces rides, not requests. | The owner confirms the school-run use case for v1.x. |
+| `ride_templates` | **Standing pre-allocations** (REQ §12 should-have, §13.54): recurring pinned rides (car, dow, time window, driver, origin/destination) that a future materializer would copy into each newly opened week as `is_pinned` rides, before members' requests are solved around them. Same shape as `request_templates` but produces rides, not requests — and, unlike `request_templates` (2026-09-10: suggestions only, never auto-submitted, §3.6), this one genuinely is meant to auto-create rows, since a standing pre-allocation has no member to prompt. Needs its own function; `materialize_templates()` is `request_templates`-specific and is now a no-op (§3.6). | The owner confirms the school-run use case for v1.x. |
 | `chauffeur_volunteers` (or a `profiles` flag) | Members willing to drive chauffeur legs, so the Sadran can send "needs a driver" requests to a list (REQ §14 question 1). | Owner decision. |
 ## Owner TODO schema amendments — 2026-09-07
 
@@ -1706,3 +1752,133 @@ Design notes worth keeping:
 - `src/lib/enums.ts` still does not exist (same correction as the 2026-09-09 car-care pass): the new enum's Hebrew mirror went into the existing top-level `he.notif` dictionary, and the new `status_reason` codes into `STATUS_REASON_CODES` / `he.statusReason` in `src/i18n/he.ts`.
 
 Tests: new `supabase/tests/waitlist_groups.sql` (registered in `scripts/test-db.mjs`) covers publication with one free car (group formed, two member notifications + one Sadran notification, deep link), two free cars (both assigned, no group), a non-overlapping third request (auto-approved), a participant resolving in favour of everybody, the Sadran resolving in favour of one, re-resolving a closed group, a non-participant being refused, a stale `p_expected_version`, a withdrawal dissolving a two-member group, and the RLS shape of both tables (forced, SELECT-only, direct writes refused). `supabase/tests/notifications_semantics.sql` item 4 was updated: `enter_waiting_list()` at an already-full window now returns `WAITLISTED_CONTESTED` and forms a two-member group, which is the new intended behavior. `npm run db:test` (19 suites) passes.
+
+## Repeating requests are suggestions, not auto-submissions (2026-09-10)
+
+`20260910092000_request_templates_as_suggestions.sql` reverses `materialize_templates()`'s
+original design (§3.6 `request_templates` is rewritten in place above; this section is the
+migration log entry). Previously, every active template with an elapsed `paused_until` became a
+fully `submitted` request the moment its department's week opened (`housekeeping()`, once per
+local day). The owner's brief was the opposite: a member marks a request as repeating, and while
+a week is `open` sees it only as a dismissable suggestion that prefills the form — the member
+still taps submit. `requests.template_id` and `submit_request(payload)`'s `template_id` handling
+already existed (`20260907090700_requests.sql`; `20260907091500_rpc.sql` and every later patch of
+`submit_request` through `20260909093000_extend_auto_approve_and_waitlist.sql`) and needed no
+change.
+
+What this migration actually does:
+- `request_templates` gains `source_request_id` (FK requests, ON DELETE SET NULL),
+  `snoozed_until_week` (date, CHECK Sunday), `stopped_at` (timestamptz) and `child_ids` (uuid[],
+  mirroring `companion_ids` but for named children, copied from `request_children`). `paused_until`
+  and `last_materialized_week` are marked deprecated via `comment on column` rather than dropped.
+- `materialize_templates()` is redefined to `return 0;` — same signature, so `housekeeping()`'s
+  existing call site (§6 step 17) needed no change.
+- Four new SECURITY DEFINER RPCs, all gated on `requester_id = (select auth.uid())` (raising
+  `not_authorized` when no row matches, which doubles as "not found"): `save_request_template(p_request_id
+  uuid) returns uuid` (create-or-update from the caller's own request, computing `depart_dow`/`depart_time`
+  from `depart_at at time zone 'Asia/Jerusalem'` and copying every other field verbatim, including
+  `request_companions`/`request_children` into `companion_ids`/`child_ids`), `snooze_request_template(p_template_id
+  uuid, p_week_start date)` (sets `snoozed_until_week := p_week_start + 7`), `stop_request_template(p_template_id
+  uuid)` (`is_active := false, stopped_at := now()`), `resume_request_template(p_template_id uuid)`
+  (clears both). No `upsert_request_template(payload)` — the task brief said implement it only if
+  trivial; skipped, since the UI's flow is `submit_request` then `save_request_template(request_id)`,
+  making a payload-based variant redundant.
+- New view `v_request_template_suggestions` (§3.6 has the full column/filter list), `security_invoker`,
+  granted to `authenticated` only.
+- A missed index from when `requests.template_id` was first added: `requests_template_id_idx` (partial,
+  `where template_id is not null`) — both `save_request_template()`'s lookup and the suggestions view's
+  `not exists` filter on it.
+
+**Existing tests asserting the old auto-materialization behavior were updated, not just left to
+rot**: `supabase/tests/one_way_lifecycle.sql` and `supabase/tests/live_quick_one_way.sql` each had a
+`insert into request_templates(...); perform materialize_templates(); assert exists(select 1 from
+requests where template_id = ...)` block. Both were rewritten to assert `materialize_templates() = 0`
+and that no request was created, plus that the same fields (`preferred_car_id`; `ride_description`/
+`guest_passenger_names`/`companion_ids`) now surface through `v_request_template_suggestions` for the
+department's already-`open` week instead. `supabase/tests/department_catalogs.sql`'s two cross-department
+`request_templates` FK-violation checks needed no change (direct inserts, run as the migration
+superuser, unaffected by any of the new columns' defaults).
+
+New `supabase/tests/request_templates.sql` (registered in `scripts/test-db.mjs`) covers, on the
+seeded department's members: (a) `save_request_template` captures dow/time/destination/passengers/
+flex/preferred-car/notes from a submitted request, and resaving updates the same row rather than
+duplicating it; (b) the view suggests for an open week, not for the already-linked source week, and
+not for a published week; (c) `submit_request(..., template_id)` against an open week removes that
+week's suggestion; (d) `snooze_request_template` hides one week only — the next open week (`+7`)
+still suggests; (e) `stop_request_template`/`resume_request_template` hide/restore the suggestion in
+every week; (f) `materialize_templates()` returns 0 and the department's request count is unchanged
+even with an active template around; (g) another member's `save_request_template`/
+`snooze_request_template`/`stop_request_template` calls against the first member's own request/template
+all raise `not_authorized` and change nothing. `npm run db:test` (20 suites) passes; `npm run db:types`
+diff is exactly the new columns, the two new FK entries and the new view; `npm run typecheck && npm run
+test` pass (pre-existing, unrelated failures in `src/features/sadran/board/**`, owned by a concurrent
+change, are untouched by this migration).
+
+## Multi-day requests / "series" (2026-09-10, db-migrator)
+
+REQ §13.77. Eleven migrations, `20260910093000` … `20260910094000`:
+
+| file | contents |
+|---|---|
+| `20260910093000_add_request_series_columns.sql` | `requests.series_id/series_index/series_count` (+ CHECK, `requests_series_idx`); `rides.series_id` (+ `rides_series_idx`); `ride_requests_sync_series()` AFTER INSERT trigger as a backstop denormalizer. |
+| `20260910093100_series_aware_ride_constraints.sql` | `rides_before_write()` turnaround carve-out for same-series legs; `assert_car_chain()` seeds the week's starting location from the last ride before the week and skips `car_away_at_day_end` for a leg continued by the series the next day. |
+| `20260910093200_extend_submit_request_for_series.sql` | `submit_request()` stores the series columns, ignores same-series legs in the duplicate warning, skips per-leg auto-approve/waitlisting, notifies `late_request` once, and refuses to edit a series leg (`MDR02`). |
+| `20260910093300_place_series.sql` | `place_series()` and `try_auto_approve_series()` (both internal, revoked from `authenticated`). |
+| `20260910093400_submit_series_request.sql` | `submit_series_request(payload jsonb) returns jsonb` — the only member-facing write path for a multi-day booking. |
+| `20260910093500_apply_solver_result_series.sql` | the solve/apply hook + the new `skippedSeries` summary key. |
+| `20260910093600_move_series.sql` | `move_series()`; `edit_ride()` wrapped (old body renamed `edit_ride_before_series`). |
+| `20260910093700_series_cancellation_cascade.sql` | `withdraw_request()` and `cancel_ride()` cascade over the series (old `cancel_ride` body renamed `cancel_ride_before_series`). |
+| `20260910093800_exclude_series_from_single_day_matching.sql` | `form_waitlist_groups()`, `join_waitlist_group()`, `freed_slot_candidates()` gain `series_id is null`. |
+| `20260910093900_series_columns_in_views.sql` | `v_my_requests` + `v_board_rides` expose `series_id`/`series_index`/`series_count`. |
+| `20260910094000_series_leg_location_rule.sql` | `ride_requests_leg_location()` exempts a series ride from the "keep legs run home → home" rule. |
+
+**Storage.** A multi-day booking is *N* ordinary round-trip `requests` rows, one per calendar
+day, sharing `series_id` and numbered `series_index` of `series_count`. Day 1 runs
+`depart → 23:59:00`, middle days `00:00 → 23:59:00`, the last day `00:00 → return`. Every
+existing single-day invariant (`assert_same_day_window`, `requests_within_week`,
+`rides_within_week`, `assert_ride_request_day`) therefore still holds leg by leg, and a leg
+that falls in the next week is simply a request of that week. Fairness needed no change:
+`fairness_stats()` already sums `return_at - depart_at`, so the real hours of every day count.
+
+**RPCs.**
+
+| function | grant | notes |
+|---|---|---|
+| `submit_series_request(payload jsonb) returns jsonb` | `authenticated` | Payload = `submit_request`'s, with `return_at` on a later Jerusalem date than `depart_at` and `trip_shape = 'round_trip'`. Splits into legs, files each through `submit_request`, and (published/live first week) calls `try_auto_approve_series`. Returns `{series_id, request_ids[], warnings}` plus the auto-approve outcome. |
+| `place_series(p_series_id uuid, p_car_id uuid, p_pin boolean default false, p_pin_reason text default null) returns jsonb` | none (internal) | Idempotent all-or-nothing placement; returns `{series_id, car_id, ride_ids[], weeks[]}`. Legs in a week other than the first leg's are always pinned with `pin_reason = 'SERIES_CARRY_OVER'`; rides are `confirmed` in a published/live week, otherwise `draft`. |
+| `try_auto_approve_series(p_series_id uuid) returns jsonb` | none (internal) | Preferred car first, then every shared active car by id; first car that takes the whole span wins. Nothing free ⇒ every leg `waitlisted`/`WAITLISTED_SERIES_NO_CAR` and one `waitlisted_request` per Sadran (dedupe key `waitlisted_series:<series>:<profile>`). |
+| `move_series(p_series_id uuid, p_new_car_id uuid, p_expected_version int default null) returns jsonb` | `authenticated` | Requires `can_manage_week` for **every** touched week. Updates `car_id` on all the series' live rides in one statement, then `refresh_car_turnarounds` + `assert_car_chain` for the old and new car per week. `p_expected_version`, when given, is checked against the first leg's ride. |
+
+**New codes.** `status_reason`: `SERIES_PLACED`, `SERIES_CAR_UNAVAILABLE`,
+`WAITLISTED_SERIES_NO_CAR` (mirrored in `src/i18n/he.ts` `STATUS_REASON_CODES`/`he.statusReason`).
+`pin_reason`: `SERIES_CARRY_OVER`. `cancel_reason`: `SERIES_WITHDRAWN`, `SERIES_CANCELLED`.
+SQLSTATEs (mapped in `src/lib/rpc.ts`): `MDR01` `series_week_not_open`, `MDR02`
+`series_edit_not_supported`, `MDR03` `series_car_unavailable`. `submit_series_request` also raises
+the plain `P0001` message `invalid_series_request` for a non-round-trip or same-day span — a
+defensive guard the UI cannot reach, deliberately left to fall through to `he.errors.unknown`.
+
+**Solve/apply.** `apply_solver_result()` copies the served request's `series_id` onto each
+inserted ride, then calls `place_series(series, that car, false, null)` per series so the legs the
+solver never saw (other weeks) appear as pinned carry-over rides. A series the car cannot take for
+the whole span is rolled back on its own — this apply's rows for it are deleted, its legs return to
+`submitted`/`SERIES_CAR_UNAVAILABLE` — and listed in the summary's new `skippedSeries:
+[{series_id, reason}]`; the rest of the solve still applies. Full mode never deletes the pinned
+carry-over rides (they are pinned), so solving week *W+1* leaves a series that started in *W* alone.
+
+**Cascades and exclusions.** Withdrawing any leg withdraws every leg and cancels every ride of the
+series; cancelling any leg's ride cancels the whole series (the actor's own leg goes through the
+ordinary `cancel_ride` path, which sends the single notification; the rest are released quietly, so
+a 5-day booking produces one notice). A passenger removing only their own seat does not cascade.
+Series legs are excluded from contested waiting-list groups (`form_waitlist_groups`,
+`join_waitlist_group`) and from `freed_slot_candidates()`.
+
+**Tests.** `supabase/tests/multi_day_series.sql` (registered in `scripts/test-db.mjs`, 21 suites
+total): leg windows/weeks, no self-duplicate warning, edit refusal, `place_series` on a free car
+(one car, chain intact, no turnaround conflict at the midnight seams) and refusal on a car busy in
+the middle day, `move_series` success and refusal, cascade cancel, cascade withdraw, a
+Saturday→Sunday series pinned `SERIES_CARRY_OVER` and surviving the next week's full solve,
+exclusion from waiting-list grouping and freed slots, and `series_week_not_open`.
+
+**v1 limitations.** A series is never edited (cancel + resubmit), never proposed on, never grouped,
+never split across cars, and never offered a freed slot. The span may not reach past the last week
+the department has opened.

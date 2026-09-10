@@ -12,6 +12,7 @@ const TEMPLATES: Record<string, string> = {
   PLACED_SHIFTED: 'שובץ ל{car} עם הזזה של {dep} ביציאה ו-{ret} בחזרה, בתוך הגמישות שהוצהרה',
   PLACED_RELAY_PAIR: 'שובץ ל{car}: {member} נוהג/ת ל{dest} ב-{dep} ומשאיר/ה את הרכב; {partner} מחזיר/ה אותו ב-{ret}',
   PLACED_FIXED: 'נסיעה קבועה שנקבעה מראש',
+  PLACED_SERIES: 'שובץ/ה כחלק מבקשה רב-יומית ל{car} ({index}/{count})',
   RELOCATED_FOR: 'הועבר ל{car} כדי לפנות מקום לבקשה של {member}',
   RELOCATED_FOR_SHIFT: 'הוזז ב-{minutes} דקות כדי לפנות מקום לבקשה של {member}',
 
@@ -20,6 +21,8 @@ const TEMPLATES: Record<string, string> = {
   UNMET_NO_RELAY_PARTNER: 'אין מי שיחזיר/יביא את הרכב מ{dest} באותו יום; הרכב חייב לחזור הביתה עד {dayEnd}',
   UNMET_NEEDS_DRIVER: 'אין נסיעה מתאימה להצטרף אליה; דרוש/ה נהג/ת מתנדב/ת להסעה ל{dest} ב-{dep}',
   UNMET_CAR_AWAY: '{car} נמצא/ת ב{location} בשעות האלה ולא זמין/ה מהבית',
+  UNMET_SERIES_NO_CAR: 'אין רכב פנוי לכל ימי הבקשה הרב-יומית ({index}/{count})',
+  UNMET_SERIES_PARTIAL_WEEK: 'הבקשה הרב-יומית ממשיכה משבוע אחר ולא ניתן לשבץ את כל ימיה בשבוע זה',
 
   // Suggestions
   SUGGEST_SHIFT_WITHIN_FLEX: 'הזזה ל{car} בתוך הגמישות שהוצהרה, ללא צורך בהסכמה נוספת',

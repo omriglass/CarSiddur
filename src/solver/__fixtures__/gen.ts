@@ -109,6 +109,66 @@ export function makeRequest(overrides: Partial<Request> = {}): Request {
   };
 }
 
+/**
+ * Builds the in-week legs of a multi-day series request (docs/SOLVER.md
+ * §3.x): one Request row per calendar day sharing `seriesId`. `dayIndices`
+ * are 0-based week days for each in-week leg, ascending. Pass
+ * `globalFirstIndex > 1` to model a continuation whose earlier legs already
+ * happened in a previous week (the mapper sets the car's `startLocationId`
+ * to the series destination in that case — see makeCar's `startLocationId`).
+ */
+export function makeSeriesLegs(opts: {
+  seriesId: string;
+  seriesCount: number;
+  dayIndices: number[];
+  globalFirstIndex?: number;
+  destinationId?: string;
+  memberId?: string;
+  passengers?: Passengers;
+  departureSlotOfDay?: number;
+  returnSlotOfDay?: number;
+  flexDeparture?: Flexibility;
+  flexReturn?: Flexibility;
+}): Request[] {
+  const {
+    seriesId,
+    seriesCount,
+    dayIndices,
+    destinationId = 'destA',
+    memberId = 'member-series',
+    passengers: pax = passengers(1),
+    departureSlotOfDay = 32,
+    returnSlotOfDay = 48,
+    flexDeparture = noFlex(),
+    flexReturn = noFlex(),
+  } = opts;
+  const globalFirstIndex = opts.globalFirstIndex ?? 1;
+  const SLOT_MS_LOCAL = 15 * 60 * 1000;
+  return dayIndices.map((dayIndex, i) => {
+    const seriesIndex = globalFirstIndex + i;
+    const isGlobalFirst = seriesIndex === 1;
+    const isGlobalLast = seriesIndex === seriesCount;
+    const dayStart = dayIndex * 96;
+    const departureMs = isGlobalFirst ? slotMs(dayStart + departureSlotOfDay) : slotMs(dayStart);
+    const returnMs = isGlobalLast
+      ? slotMs(dayStart + returnSlotOfDay)
+      : WEEK_START_MS + (dayStart + 96) * SLOT_MS_LOCAL - 60_000; // exactly 23:59:00 that day
+    return makeRequest({
+      id: `${seriesId}-leg${seriesIndex}`,
+      memberId,
+      destinationId,
+      passengers: pax,
+      seriesId,
+      seriesIndex,
+      seriesCount,
+      departureMs,
+      returnMs,
+      flexDeparture: isGlobalFirst ? flexDeparture : noFlex(),
+      flexReturn: isGlobalLast ? flexReturn : noFlex(),
+    });
+  });
+}
+
 export function makeDestinations(): Record<string, Destination> {
   return {
     destA: { id: 'destA', zone: 'zoneA', distanceKm: 20, travelMinutes: 30, publicTransportScore: 0.2 },

@@ -29,6 +29,9 @@ export type ErrorCode =
   | "no_car_free"
   | "waitlist_group_closed"
   | "waitlist_selection_invalid"
+  | "series_week_not_open"
+  | "series_edit_not_supported"
+  | "series_car_unavailable"
   | "not_authorized"
   | "last_admin_required"
   | "week_not_open"
@@ -86,6 +89,12 @@ const SQLSTATE_TO_CODE: Record<string, ErrorCode> = {
   // Contested waiting-list groups: resolve_waitlist_group() found no shared car that can
   // take the whole chosen party for the whole window (20260910091400).
   WLG01: "no_car_free",
+  // Multi-day requests / "series" (REQ §13.77, 20260910093000..20260910094000):
+  // MDR01 the span reaches past the last open week, MDR02 a series leg/ride cannot be
+  // edited in v1, MDR03 no single car is free for the whole span.
+  MDR01: "series_week_not_open",
+  MDR02: "series_edit_not_supported",
+  MDR03: "series_car_unavailable",
 };
 
 const MESSAGE_TO_CODE: Record<string, ErrorCode> = {
@@ -142,6 +151,9 @@ const MESSAGE_TO_CODE: Record<string, ErrorCode> = {
   no_car_free: "no_car_free",
   waitlist_group_closed: "waitlist_group_closed",
   waitlist_selection_invalid: "waitlist_selection_invalid",
+  series_week_not_open: "series_week_not_open",
+  series_edit_not_supported: "series_edit_not_supported",
+  series_car_unavailable: "series_car_unavailable",
   push_unsupported: "push_unsupported",
   push_permission_denied: "push_permission_denied",
   push_vapid_key_invalid: "push_vapid_key_invalid",
@@ -199,6 +211,9 @@ const CODE_TO_MESSAGE: Record<ErrorCode, string> = {
   no_car_free: he.errors.noCarFree,
   waitlist_group_closed: he.errors.waitlistGroupClosed,
   waitlist_selection_invalid: he.errors.waitlistSelectionInvalid,
+  series_week_not_open: he.errors.seriesWeekNotOpen,
+  series_edit_not_supported: he.errors.seriesEditNotSupported,
+  series_car_unavailable: he.errors.seriesCarUnavailable,
   push_unsupported: he.errors.pushUnsupported,
   push_permission_denied: he.errors.pushPermissionDenied,
   push_vapid_key_invalid: he.errors.pushVapidKeyInvalid,

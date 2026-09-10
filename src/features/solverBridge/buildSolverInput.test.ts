@@ -287,3 +287,32 @@ it("only forwards a preference for an active shared car in the request's departm
     expect(input.requests[0]?.preferredCarId).toBe(car.department_id === DEPT && car.type === "shared" && car.status === "active" ? "car-1" : undefined);
   }
 });
+
+describe("multi-day series fields", () => {
+  it("passes series_id/series_index/series_count through to the solver Request (SOLVER.md §3.x)", () => {
+    const input = buildSolverInput({
+      weekStart: WEEK_START,
+      homeDestinationId: HOME,
+      departmentSettings: DEFAULT_SETTINGS,
+      requests: [
+        requestRow({ id: "leg-1", series_id: "series-abc", series_index: 2, series_count: 4 }),
+        requestRow({ id: "leg-2" }), // ordinary request: no series fields
+      ],
+      rideTypeCodesById: {},
+      cars: [],
+      seatConfigsByCarId: {},
+      destinations: [destRow()],
+      policy: { id: "p", version: 1, rules: [] },
+    });
+
+    const seriesLeg = input.requests.find((r) => r.id === "leg-1");
+    expect(seriesLeg?.seriesId).toBe("series-abc");
+    expect(seriesLeg?.seriesIndex).toBe(2);
+    expect(seriesLeg?.seriesCount).toBe(4);
+
+    const ordinary = input.requests.find((r) => r.id === "leg-2");
+    expect(ordinary?.seriesId).toBeUndefined();
+    expect(ordinary?.seriesIndex).toBeUndefined();
+    expect(ordinary?.seriesCount).toBeUndefined();
+  });
+});

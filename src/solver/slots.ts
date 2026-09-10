@@ -154,10 +154,196 @@ export function roundTripReturnLeg(nr: NormalizedRequest, home: string): Normali
   };
 }
 
+/**
+ * One in-week leg of a multi-day series request (docs/SOLVER.md §3.x). The
+ * DB stores one request row per calendar day sharing `seriesId`; the solver
+ * only ever sees the legs that fall inside the week being solved.
+ * `originId`/`destinationId` are the *car's* location at the start/end of
+ * this leg — home only at the true start/end of the whole series (global
+ * `seriesIndex === 1` / `=== seriesCount`), the series' own destination in
+ * between (the car is parked there overnight). `flexDep`/`flexRet` are only
+ * ever non-degenerate on the leg that is also the true global first/last
+ * leg — every other leg's day-boundary timestamp (00:00 / 23:59) is fixed.
+ */
+export interface SeriesLeg {
+  requestId: string;
+  request: Request;
+  seriesIndex: number;
+  window: Window;
+  originId: string;
+  destinationId: string;
+  passengers: Passengers;
+  luggage: boolean;
+  dayIndex: number;
+  flexDep: [number, number];
+  flexRet: [number, number];
+}
+
+export interface SeriesUnit {
+  seriesId: string;
+  seriesCount: number;
+  destinationId: string;
+  /** sorted by seriesIndex ascending; only the legs present in this week's input */
+  legs: SeriesLeg[];
+  /** built from the first in-week leg's own request row via the ordinary round-trip
+   *  normalization, so the policy engine can score it exactly like any other request
+   *  (SOLVER §3.x: "the series unit is ranked by the first leg's score") */
+  scoreProxy: NormalizedRequest;
+}
+
 export interface NormalizeResult {
   normalized: NormalizedRequest[];
   servedByFixed: Set<string>;
   warnings: Warning[];
+  seriesUnits: SeriesUnit[];
+}
+
+/** Builds the same NormalizedRequest shape the main loop's round_trip branch produces — factored out
+ *  so a multi-day series' first in-week leg can be scored by the ordinary policy engine (SOLVER §3.x). */
+function buildRoundTripNormalized(
+  request: Request,
+  input: SolverInput,
+  home: string,
+  D: number,
+  R: number,
+  travelSlots: number,
+): NormalizedRequest {
+  const day = dayBoundsForSlot(input.week.days, D);
+  const dayWindow = requestDayWindow(request, day, input.week.startMs);
+  const flexDep: [number, number] = [
+    resolveFlexBound(D, request.flexDeparture.earlierMin, 'earlier', day),
+    resolveFlexBound(D, request.flexDeparture.laterMin, 'later', day),
+  ];
+  const flexRet: [number, number] = [
+    resolveFlexBound(R, request.flexReturn.earlierMin, 'earlier', day),
+    resolveFlexBound(R, request.flexReturn.laterMin, 'later', day),
+  ];
+  return {
+    id: request.id,
+    request,
+    legs: [buildKeepLeg(home, D, R)],
+    window: { start: D, end: R },
+    minDurationSlots: Math.max(1, R - D),
+    flexDep: boundedFlex(flexDep, { ...dayWindow, end: day.endSlot - 1 }),
+    flexRet: boundedFlex(flexRet, dayWindow),
+    durationFixed: false,
+    travelSlots,
+    passengers: request.passengers,
+    luggage: request.luggage,
+    destinationId: request.destinationId,
+    dayIndex: day.dayIndex,
+    dayWindow,
+    isPassengerOnly: false,
+  };
+}
+
+/** Groups the week's in-week legs of every multi-day series request and builds their SeriesUnit
+ *  (docs/SOLVER.md §3.x). Never throws: a leg with unusable timestamps degenerates to a zero-length
+ *  window, which simply never fits any car and surfaces as UNMET_SERIES_NO_CAR. */
+function buildSeriesUnits(
+  seriesRequests: Request[],
+  input: SolverInput,
+  warnings: Warning[],
+): SeriesUnit[] {
+  const home = input.homeLocationId;
+  const groups = new Map<string, Request[]>();
+  for (const request of seriesRequests) {
+    const list = groups.get(request.seriesId as string) ?? [];
+    list.push(request);
+    groups.set(request.seriesId as string, list);
+  }
+
+  const seriesUnits: SeriesUnit[] = [];
+  for (const seriesId of [...groups.keys()].sort()) {
+    const group = [...(groups.get(seriesId) ?? [])].sort(
+      (a, b) => (a.seriesIndex ?? 0) - (b.seriesIndex ?? 0) || byId(a, b),
+    );
+    const seriesCount = group[0]?.seriesCount ?? group.length;
+    const legs: SeriesLeg[] = [];
+
+    for (const request of group) {
+      if (input.cars.length > 0 && !input.cars.some((c) => fits(c, request.passengers))) {
+        warnings.push({ code: 'NO_CAR_FITS_SEATS', message: 'WARN_NO_CAR_FITS_SEATS', requestId: request.id });
+      }
+      const seriesIndex = request.seriesIndex ?? 0;
+      const isGlobalFirst = seriesIndex === 1;
+      const isGlobalLast = seriesIndex === seriesCount;
+
+      if (request.departureMs === undefined || request.returnMs === undefined) {
+        warnings.push({ code: 'TIME_NOT_ALIGNED', message: 'WARN_TIME_NOT_ALIGNED', requestId: request.id });
+        legs.push({
+          requestId: request.id,
+          request,
+          seriesIndex,
+          window: { start: 0, end: 0 },
+          originId: isGlobalFirst ? home : request.destinationId,
+          destinationId: isGlobalLast ? home : request.destinationId,
+          passengers: request.passengers,
+          luggage: request.luggage,
+          dayIndex: 0,
+          flexDep: [0, 0],
+          flexRet: [0, 0],
+        });
+        continue;
+      }
+      if (!isAligned(request.departureMs, input.week.startMs) || !isAligned(request.returnMs, input.week.startMs)) {
+        warnings.push({ code: 'TIME_NOT_ALIGNED', message: 'WARN_TIME_NOT_ALIGNED', requestId: request.id });
+      }
+      const D = toSlotFloor(request.departureMs, input.week.startMs);
+      const R = toSlotCeil(request.returnMs, input.week.startMs);
+      const day = dayBoundsForSlot(input.week.days, D);
+      const dayWindow = requestDayWindow(request, day, input.week.startMs);
+
+      // Flexibility only ever applies to the leg that is also the true global
+      // first/last leg of the whole series (SOLVER §3.x); every other leg's
+      // day-boundary timestamp (00:00 / 23:59) is fixed.
+      const flexDep: [number, number] = isGlobalFirst
+        ? boundedFlex(
+            [
+              resolveFlexBound(D, request.flexDeparture.earlierMin, 'earlier', day),
+              resolveFlexBound(D, request.flexDeparture.laterMin, 'later', day),
+            ],
+            { ...dayWindow, end: day.endSlot - 1 },
+          )
+        : [D, D];
+      const flexRet: [number, number] = isGlobalLast
+        ? boundedFlex(
+            [
+              resolveFlexBound(R, request.flexReturn.earlierMin, 'earlier', day),
+              resolveFlexBound(R, request.flexReturn.laterMin, 'later', day),
+            ],
+            dayWindow,
+          )
+        : [R, R];
+
+      legs.push({
+        requestId: request.id,
+        request,
+        seriesIndex,
+        window: { start: D, end: R },
+        originId: isGlobalFirst ? home : request.destinationId,
+        destinationId: isGlobalLast ? home : request.destinationId,
+        passengers: request.passengers,
+        luggage: request.luggage,
+        dayIndex: day.dayIndex,
+        flexDep,
+        flexRet,
+      });
+    }
+
+    legs.sort((a, b) => a.seriesIndex - b.seriesIndex);
+    const first = legs[0];
+    if (!first) continue;
+    const travelSlots = travelSlotsFor(destinationOf(input, first.request.destinationId), input.config);
+    seriesUnits.push({
+      seriesId,
+      seriesCount,
+      destinationId: first.request.destinationId,
+      legs,
+      scoreProxy: buildRoundTripNormalized(first.request, input, home, first.window.start, first.window.end, travelSlots),
+    });
+  }
+  return seriesUnits;
 }
 
 export function normalize(input: SolverInput): NormalizeResult {
@@ -171,9 +357,14 @@ export function normalize(input: SolverInput): NormalizeResult {
   const sortedRequests = [...input.requests].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 
   const normalized: NormalizedRequest[] = [];
+  const seriesRequests: Request[] = [];
 
   for (const request of sortedRequests) {
     if (servedByFixed.has(request.id)) continue;
+    if (request.seriesId !== undefined) {
+      seriesRequests.push(request);
+      continue;
+    }
     const destination = destinationOf(input, request.destinationId);
     const travelSlots = travelSlotsFor(destination, input.config);
 
@@ -294,7 +485,9 @@ export function normalize(input: SolverInput): NormalizeResult {
     });
   }
 
-  return { normalized, servedByFixed, warnings };
+  const seriesUnits = buildSeriesUnits(seriesRequests, input, warnings);
+
+  return { normalized, servedByFixed, warnings, seriesUnits };
 }
 
 /** Total-order request id comparator used everywhere as the final tie-break (determinism). */

@@ -1946,6 +1946,9 @@ export type Database = {
           return_at: string | null
           ride_description: string | null
           ride_type_id: string
+          series_count: number | null
+          series_id: string | null
+          series_index: number | null
           status: Database["public"]["Enums"]["request_status"]
           status_reason: string | null
           submitted_at: string | null
@@ -1988,6 +1991,9 @@ export type Database = {
           return_at?: string | null
           ride_description?: string | null
           ride_type_id: string
+          series_count?: number | null
+          series_id?: string | null
+          series_index?: number | null
           status?: Database["public"]["Enums"]["request_status"]
           status_reason?: string | null
           submitted_at?: string | null
@@ -2030,6 +2036,9 @@ export type Database = {
           return_at?: string | null
           ride_description?: string | null
           ride_type_id?: string
+          series_count?: number | null
+          series_id?: string | null
+          series_index?: number | null
           status?: Database["public"]["Enums"]["request_status"]
           status_reason?: string | null
           submitted_at?: string | null
@@ -2455,6 +2464,7 @@ export type Database = {
           overnight_ack_by: string | null
           pin_reason: string | null
           planning_conflict: boolean
+          series_id: string | null
           starts_at: string
           status: Database["public"]["Enums"]["ride_status"]
           turnaround: string
@@ -2487,6 +2497,7 @@ export type Database = {
           overnight_ack_by?: string | null
           pin_reason?: string | null
           planning_conflict?: boolean
+          series_id?: string | null
           starts_at: string
           status?: Database["public"]["Enums"]["ride_status"]
           turnaround?: string
@@ -2519,6 +2530,7 @@ export type Database = {
           overnight_ack_by?: string | null
           pin_reason?: string | null
           planning_conflict?: boolean
+          series_id?: string | null
           starts_at?: string
           status?: Database["public"]["Enums"]["ride_status"]
           turnaround?: string
@@ -3074,6 +3086,9 @@ export type Database = {
           overnight_ack_by: string | null
           pin_reason: string | null
           planning_conflict: boolean | null
+          series_count: number | null
+          series_id: string | null
+          series_index: number | null
           served: Json | null
           starts_at: string | null
           status: Database["public"]["Enums"]["ride_status"] | null
@@ -3200,6 +3215,9 @@ export type Database = {
           ride_status: Database["public"]["Enums"]["ride_status"] | null
           ride_type_name: string | null
           role: Database["public"]["Enums"]["ride_role"] | null
+          series_count: number | null
+          series_id: string | null
+          series_index: number | null
           starts_at: string | null
           status: Database["public"]["Enums"]["request_status"] | null
           status_reason: string | null
@@ -3458,6 +3476,14 @@ export type Database = {
         }
         Returns: undefined
       }
+      cancel_ride_before_series: {
+        Args: {
+          p_expected_version?: number
+          p_reason: string
+          p_ride_id: string
+        }
+        Returns: undefined
+      }
       cancel_ride_change: { Args: { p_change_id: string }; Returns: undefined }
       cancel_ride_change_before_planning: {
         Args: { p_change_id: string }
@@ -3554,6 +3580,10 @@ export type Database = {
         Returns: string
       }
       edit_ride_before_planning: {
+        Args: { p_expected_version?: number; p_ride: Json }
+        Returns: string
+      }
+      edit_ride_before_series: {
         Args: { p_expected_version?: number; p_ride: Json }
         Returns: string
       }
@@ -3654,6 +3684,14 @@ export type Database = {
         Args: { p_request_id: string }
         Returns: string
       }
+      move_series: {
+        Args: {
+          p_expected_version?: number
+          p_new_car_id: string
+          p_series_id: string
+        }
+        Returns: Json
+      }
       notification_context: {
         Args: {
           _data: Json
@@ -3681,6 +3719,15 @@ export type Database = {
         Returns: string
       }
       phone_of: { Args: { _profile: string }; Returns: string }
+      place_series: {
+        Args: {
+          p_car_id: string
+          p_pin?: boolean
+          p_pin_reason?: string
+          p_series_id: string
+        }
+        Returns: Json
+      }
       prepare_manual_ride_window: {
         Args: {
           p_car_id: string
@@ -3899,11 +3946,13 @@ export type Database = {
         Returns: undefined
       }
       submit_request: { Args: { payload: Json }; Returns: Json }
+      submit_series_request: { Args: { payload: Json }; Returns: Json }
       suggest_destination: {
         Args: { p_department_id: string; p_name: string; p_zone?: string }
         Returns: string
       }
       try_auto_approve: { Args: { p_request_id: string }; Returns: Json }
+      try_auto_approve_series: { Args: { p_series_id: string }; Returns: Json }
       unassign_ride: {
         Args: { p_expected_version: number; p_ride_id: string }
         Returns: undefined

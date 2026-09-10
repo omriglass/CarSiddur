@@ -15,18 +15,19 @@ import { carPreferenceRank } from './carPreference';
 import { bestPlacementWithinFlex } from './flexibility';
 import type { RelayPair } from './relay';
 import { reason } from './reasons';
-import { dayBoundsForSlot, formatSlotTime, withinRequestDay, type NormalizedRequest } from './slots';
+import { dayBoundsForSlot, formatSlotTime, withinRequestDay, type NormalizedRequest, type SeriesLeg, type SeriesUnit } from './slots';
 import { fits, luggageFits, slack } from './seatFit';
 import { CarTimeline } from './timeline';
 import type { Assignment, Car, SolverInput, Window } from './types';
 
 export interface Unit {
-  kind: 'single' | 'pair';
+  kind: 'single' | 'pair' | 'series';
   id: string;
   score: number;
   submittedAtMs: number;
   single?: NormalizedRequest;
   pair?: { pair: RelayPair; outNr: NormalizedRequest; retNr: NormalizedRequest };
+  series?: SeriesUnit;
 }
 
 export function buildUnits(
@@ -34,6 +35,7 @@ export function buildUnits(
   pairs: RelayPair[],
   byRequestId: Map<string, NormalizedRequest>,
   scores: Map<string, { total: number }>,
+  seriesUnits: SeriesUnit[] = [],
 ): Unit[] {
   const units: Unit[] = [];
   for (const nr of roundTrips) {
@@ -57,6 +59,18 @@ export function buildUnits(
       score: Math.max(outScore, retScore),
       submittedAtMs: Math.min(outNr.request.submittedAtMs, retNr.request.submittedAtMs),
       pair: { pair, outNr, retNr },
+    });
+  }
+  // Multi-day series (SOLVER §3.x): ranked by the first in-week leg's own score.
+  for (const su of seriesUnits) {
+    const first = su.legs[0];
+    if (!first) continue;
+    units.push({
+      kind: 'series',
+      id: su.seriesId,
+      score: scores.get(su.scoreProxy.id)?.total ?? 0,
+      submittedAtMs: first.request.submittedAtMs,
+      series: su,
     });
   }
   return units;
@@ -118,7 +132,15 @@ export interface PlacedPair {
   retNr: NormalizedRequest;
   carId: string;
 }
-export type Placed = PlacedSingle | PlacedPair;
+export interface PlacedSeries {
+  kind: 'series';
+  series: SeriesUnit;
+  carId: string;
+  /** the first/last in-week leg's actual window after any within-flex shift; other legs use their own window */
+  firstWindow: Window;
+  lastWindow: Window;
+}
+export type Placed = PlacedSingle | PlacedPair | PlacedSeries;
 
 export interface GreedyResult {
   placed: Placed[];
@@ -127,6 +149,67 @@ export interface GreedyResult {
 
 function homeSlack(car: Car, nr: NormalizedRequest): number {
   return slack(car, nr.passengers) ?? Number.POSITIVE_INFINITY;
+}
+
+/** Slots in [lo, hi] ordered by absolute distance from `preferred` (ascending) — small ranges only
+ *  (declared flexibility caps at a day), so plain enumeration beats a smarter search here. */
+function candidatesByDistance(bounds: [number, number], preferred: number): number[] {
+  const [lo, hi] = bounds;
+  if (lo > hi) return [preferred];
+  const out: number[] = [];
+  for (let s = lo; s <= hi; s++) out.push(s);
+  out.sort((a, b) => Math.abs(a - preferred) - Math.abs(b - preferred) || a - b);
+  return out;
+}
+
+interface SeriesPlacement {
+  firstWindow: Window;
+  lastWindow: Window;
+  shiftCost: number;
+}
+
+/**
+ * Multi-day series placement on one car (docs/SOLVER.md §3.x). Only the leg
+ * that is also the true global first/last leg of the whole series may shift
+ * (independently, since every internal day-boundary seam is fixed); every
+ * other leg is placed at its exact window. Because nothing else can ever be
+ * scheduled between two legs of the same series (the whole in-week envelope
+ * is contiguous), checking the single composite window with the car's
+ * ordinary buffer rule at its outer edges is equivalent to checking every
+ * leg individually.
+ */
+function trySeriesOnCar(tl: CarTimeline, legs: SeriesLeg[], seriesCount: number): SeriesPlacement | null {
+  const first = legs[0];
+  const last = legs[legs.length - 1];
+  if (!first || !last) return null;
+  const canFlexDep = first.seriesIndex === 1;
+  const canFlexRet = last.seriesIndex === seriesCount;
+  const depCandidates = canFlexDep ? candidatesByDistance(first.flexDep, first.window.start) : [first.window.start];
+  const retCandidates = canFlexRet ? candidatesByDistance(last.flexRet, last.window.end) : [last.window.end];
+
+  let best: SeriesPlacement | null = null;
+  for (const D of depCandidates) {
+    for (const R of retCandidates) {
+      if (R <= D) continue;
+      if (!tl.isFree({ start: D, end: R }, first.originId)) continue;
+      const shiftCost = Math.abs(D - first.window.start) * 15 + Math.abs(R - last.window.end) * 15;
+      if (!best || shiftCost < best.shiftCost) {
+        best = {
+          firstWindow: { start: D, end: first.window.end },
+          lastWindow: { start: last.window.start, end: R },
+          shiftCost,
+        };
+      }
+    }
+  }
+  return best;
+}
+
+/** The actual window of `leg` after any within-flex shift of the outer boundary legs. */
+function seriesLegWindow(leg: SeriesLeg, legs: SeriesLeg[], placement: SeriesPlacement): Window {
+  if (leg === legs[0]) return placement.firstWindow;
+  if (leg === legs[legs.length - 1]) return placement.lastWindow;
+  return leg.window;
 }
 
 /** Runs the ordered greedy pass, mutating `timelines` in place for every unit it places. */
@@ -267,6 +350,49 @@ export function runGreedy(
       continue;
     }
 
+    if (unit.kind === 'series' && unit.series) {
+      const su = unit.series;
+      const legs = su.legs;
+      let best: { car: Car; placement: ReturnType<typeof trySeriesOnCar>; key: CarKey } | null = null;
+      for (const car of sharedCars) {
+        if (!legs.every((leg) => fits(car, leg.passengers) && luggageFits(car, leg.luggage ? 1 : 0))) continue;
+        const tl = timelines.get(car.id);
+        if (!tl) continue;
+        const placement = trySeriesOnCar(tl, legs, su.seriesCount);
+        if (!placement) continue;
+        const slackVal = legs.reduce((max, leg) => Math.max(max, slack(car, leg.passengers) ?? Number.POSITIVE_INFINITY), 0);
+        const continuity = legs.reduce(
+          (min, leg) => Math.min(min, continuityRank(car.id, leg.requestId, leg.request.memberId, input)),
+          2,
+        );
+        const fragmentation = fragmentationFor(tl, { start: placement.firstWindow.start, end: placement.lastWindow.end });
+        const preference = carPreferenceRank(car.id, legs.map((leg) => leg.request.preferredCarId));
+        const key: CarKey = { shiftCost: placement.shiftCost, preference, slackVal, continuity, fragmentation, carId: car.id };
+        if (!best || compareKey(key, best.key) < 0) best = { car, placement, key };
+      }
+      if (!best || !best.placement) {
+        unmetUnits.push(unit);
+        continue;
+      }
+      const { car, placement } = best;
+      const tl = timelines.get(car.id);
+      for (const leg of legs) {
+        const window = seriesLegWindow(leg, legs, placement);
+        tl?.add({
+          rideId: `ride:${leg.requestId}`,
+          window,
+          startLocationId: leg.originId,
+          endLocationId: leg.destinationId,
+          // A series leg legitimately leaves the car away overnight at the
+          // destination between legs — never a day-end violation.
+          overnightAck: true,
+          seriesId: su.seriesId,
+        });
+      }
+      placed.push({ kind: 'series', series: su, carId: car.id, firstWindow: placement.firstWindow, lastWindow: placement.lastWindow });
+      continue;
+    }
+
     unmetUnits.push(unit);
   }
 
@@ -319,7 +445,7 @@ export function toAssignments(placed: Placed[], input: SolverInput, carsById: Ma
         reasonCode: code,
         reason: text,
       });
-    } else {
+    } else if (p.kind === 'pair') {
       const { pair, outNr, retNr, carId } = p;
       const car = carsById.get(carId);
       const dayOut = dayBoundsForSlot(input.week.days, pair.outWindow.start);
@@ -390,6 +516,46 @@ export function toAssignments(placed: Placed[], input: SolverInput, carsById: Ma
         reasonCode: 'PLACED_RELAY_PAIR',
         reason: text,
       });
+    } else {
+      const { series, carId, firstWindow, lastWindow } = p;
+      const car = carsById.get(carId);
+      const legs = series.legs;
+      for (const leg of legs) {
+        const window = seriesLegWindow(leg, legs, { firstWindow, lastWindow, shiftCost: 0 });
+        const shift =
+          leg === legs[0]
+            ? { departureMin: (window.start - leg.window.start) * 15, returnMin: 0 }
+            : leg === legs[legs.length - 1]
+              ? { departureMin: 0, returnMin: (window.end - leg.window.end) * 15 }
+              : { departureMin: 0, returnMin: 0 };
+        out.push({
+          rideId: `ride:${leg.requestId}`,
+          carId,
+          window,
+          originId: leg.originId,
+          destinationId: leg.destinationId,
+          driverRequestId: leg.requestId,
+          driverMemberId: leg.request.memberId,
+          legs: [
+            {
+              requestId: leg.requestId,
+              leg: 'both',
+              carMode: 'keep',
+              originId: leg.originId,
+              destinationId: leg.destinationId,
+              role: 'driver',
+            },
+          ],
+          servedRequestIds: [leg.requestId],
+          passengers: leg.passengers,
+          luggageCount: leg.luggage ? 1 : 0,
+          shift,
+          seriesId: series.seriesId,
+          source: 'solver',
+          reasonCode: 'PLACED_SERIES',
+          reason: reason('PLACED_SERIES', { car: car?.name ?? carId, index: leg.seriesIndex, count: series.seriesCount }),
+        });
+      }
     }
   }
   return out;

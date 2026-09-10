@@ -166,11 +166,15 @@ Screen title **השבוע שלי**. The layout is four stacked sections. The fir
 └──────────────────────────────────────┘
 ```
 
-Each `RequestCard` shows: day + date, time range (a one-way leg shows a single time with an arrow: `09:00 →` / `→ 12:00`), destination + ride type — for a relay leg `origin → destination` and where the car stays ("הרכב נשאר בבנימינה"), `StatusBadge`, the one-line reason from REQUIREMENTS §5.2, and context (car name, companions, named children, driver; for a chauffeur ride "מסיע/ה: יואב"). **Correction (2026-09-09, doc-vs-code drift):** there is no `/requests/:id` route (`memberRoutes` only has `/requests` the list, and `/requests/:id/edit`) and no swipe/overflow menu — actions (ערוך / הסר בקשה before publish, בטל נסיעה after) render as plain buttons directly on each card in `/requests` (`RequestsListPage.tsx`), which also groups cards by week rather than showing a single flat list; a notification's `?focus=<request_id>` scrolls straight to one and ring-highlights it (§2.1). A `proposed` row's action buttons additionally start with **פתח/י את ההצעה**, opening the same `/p/:token` link as Home's next-action card (falls back to the inbox). Flags render as small chips: **מאוחרת** (late), **שונתה** (edited after solving started), **חוזרת** (weekly template, v1.x).
+Each `RequestCard` shows: day + date, time range (a one-way leg shows a single time with an arrow: `09:00 →` / `→ 12:00`), destination + ride type — for a relay leg `origin → destination` and where the car stays ("הרכב נשאר בבנימינה"), `StatusBadge`, the one-line reason from REQUIREMENTS §5.2, and context (car name, companions, named children, driver; for a chauffeur ride "מסיע/ה: יואב"). **Correction (2026-09-09, doc-vs-code drift):** there is no `/requests/:id` route (`memberRoutes` only has `/requests` the list, and `/requests/:id/edit`) and no swipe/overflow menu — actions (ערוך / הסר בקשה before publish, בטל נסיעה after) render as plain buttons directly on each card in `/requests` (`RequestsListPage.tsx`), which also groups cards by week rather than showing a single flat list; a notification's `?focus=<request_id>` scrolls straight to one and ring-highlights it (§2.1). A `proposed` row's action buttons additionally start with **פתח/י את ההצעה**, opening the same `/p/:token` link as Home's next-action card (falls back to the inbox). Flags render as small chips: **מאוחרת** (late), **שונתה** (edited after solving started). **Correction (2026-09-10):** a repeating request's own card does not get a "חוזרת" chip next to those two — it shows a small `Repeat` icon + "חוזר כל שבוע" line instead (below the child-names line, above the status-reason line), and a `submitted`/`assigned` card with no linked template yet additionally gets a **הפוך/י לחוזר** action button alongside ערוך/הסר בקשה/בטל נסיעה (REQ §76).
+
+**Repeating requests, built 2026-09-10 (ui-dev):** `v_request_template_suggestions` (DATA_MODEL §3.6) surfaces, for each `open` week the caller belongs to, one dismissable suggestion per active, non-snoozed template with no linked non-withdrawn/cancelled/draft request yet that week. `TemplateSuggestions` (`src/features/requests/components/TemplateSuggestions.tsx`) renders one `TripSummary` card per row — grouped by week when Home shows more than one open week at once — with three actions: **הגש/י** (`Link` to `paths.requests.new({ template: templateId })`), **לא השבוע** (`snooze_request_template`, toast "נדחה לשבוע הבא"), and **הפסק/י לחזור** (`stop_request_template` behind a `ConfirmDialog`, toast "הבקשה החוזרת הופסקה"; reversible via `resume_request_template`, not yet exposed in the UI). Shown on Home (§3.3) above the fold, right below the next-action card, only when there are rows; and at the top of `/requests/new` (§3.4) when `?template=` is absent, scoped to that page's own resolved week.
 
 ### 3.4 New / edit request (`/requests/new`)
 
 One scrolling screen, sticky footer with the primary button. No wizard, no modal-in-modal. Smart defaults: target week = next Open week, day = same weekday as the last request or Sunday, departure 08:00, return 4 hours later, trip shape = round trip (הלוך ושוב), car needed at destination = yes, adults = 1 (the driver), ride type = Other (אחר), department = default. New requests, including slot-prefilled and join-ride requests, start with Other; editing retains the saved type.
+
+**Repeat weekly, built 2026-09-10 (ui-dev):** a `Switch` ("בקשה חוזרת (כל שבוע)", weekly variant only — never shown on `quick`/`carNow`) sits right below the coordinator notes field. On a successful submit it calls `save_request_template(request_id)` (DATA_MODEL §3.6) when on — same "second round trip" pattern §16 item 8 already uses for companions, toast "הבקשה תוצע לך גם בשבועות הבאים" for a brand-new request — or `stop_request_template(template_id)` when off and the request was already linked to one; neither call blocks the submit outcome (each surfaces its own error toast on failure). `RequestFormValues.repeatWeekly` is a form-only field, never mapped into `submit_request`'s own payload (`../mapper.ts`), same pattern as the `carNow` variant's `durationHours`. Editing an existing request pre-checks the switch from `RequestEditRow.templateId`; from `/requests` a card with no template yet also gets its own **הפוך/י לחוזר** button (§3.3) for ticking it without opening the edit form.
 
 ```
 ┌──────────────────────────────────────┐
@@ -224,7 +228,7 @@ One scrolling screen, sticky footer with the primary button. No wizard, no modal
 │ הערות לסדרן/ית                        │
 │ [ למשל: תור קבוע, אי אפשר לאחר      ] │
 │                                      │
-│ [ ] חוזר כל שבוע   (v1.x, hidden in v1)│
+│ [x] בקשה חוזרת (כל שבוע)              │  ← Switch (repeatWeekly, form-only field)
 ├──────────────────────────────────────┤
 │ ⚠ 3 מבוגרים + 2 מושבים לא נכנסים    │  ← inline validation, non-blocking
 │   באף רכב במחלקה; הסדרן/ית יטפלו     │
@@ -243,6 +247,7 @@ Behaviour notes:
 - **Edit mode**: same screen, title **עריכת בקשה**; after solving started, a banner "השבוע כבר בהכנה — השינוי יסומן לסדרן/ית" (REQUIREMENTS §5.2 versioning). After publish for an assigned ride, saving shows the §8 warning if the new window is not free on the same car.
 - **On behalf of**: Sadran/Admin see an extra "מבקש/ת" member combobox at the top.
 - **Ask to join prefill** (`?ride=<id>`): destination, day, times and trip shape copied from the ride (a relay-out ride prefills הלוך בלבד + אני צריך/ה הסעה); a banner "בקשה להצטרף לנסיעה של יואב — הסדרן/ית יציעו לו את האיחוד", or, when the ride is on a **temporary car**, "בקשה להצטרף לנסיעה של יואב ברכב הפרטי שלו — ההצעה תישלח אליו ישירות" (§3.5, REQUIREMENTS §13.43).
+- **Repeating-suggestion prefill** (`?template=<id>`, built 2026-09-10): every field a template captures (destination, ride type, trip shape, day, depart/return times, one-way car mode, needs car at destination, passengers/companions/named children/guest names, luggage, flexibility, preferred car, ride description, notes) is copied in via `suggestionToFormValues` (`src/features/requests/templatePrefill.ts`), reading `v_request_template_suggestions`'s own `depart_at`/`return_at` (already anchored to the suggestion's week). The "repeat weekly" switch starts **on**; submitting sends `template_id` in the `submit_request` payload (so the suggestion disappears for this week regardless of the switch's final state) and still runs the same save/stop follow-up as any other submit.
 
 ### 3.5 Published siddur (`/siddur`, tab הסידור)
 
@@ -395,7 +400,7 @@ The collision count is a button. Each click advances through conflicting rides c
 
 ```
 ┌──────────────────────────────────────────────────┬─────────────────────────┐
-│ ‹ ג' 16.9 ›   א ב [ג] ד ה ו ש    [מדיניות ▾] [↶ בטל] [▶ השלם אוטומטית] [פרסם…] │ לא שובצו (5)  [סנן ▾]   │
+│ ‹ ג' 16.9 ›   א ב [ג] ד ה ו ש  [מדיניות רגילה·2] [↶] [↷] [👁] [⋮] [פרסם…]      │ לא שובצו (5)  [סנן ▾]   │
 │ ⚠ 1 התנגשות בלוח                                    │─────────────────────────│
 │        06   07   08   09   10   11   12   13   14 … │ ▲ 92  דנה · עפולה · בריאות │
 │ יונדאי 1 │████ חיפה·יואב ████│      │██ תל אביב·רון ██│ 09:00–13:00 · 2 מבוגרים  │
@@ -423,9 +428,10 @@ Interactions (all keyboard-reachable through the ride's context menu as well):
 | Drag unmet card onto a car row | Places it at the request's departure time; if it collides, the conflict highlight appears and a suggestion toast offers the nearest free window. |
 | Click block | `RideSheet`: details, passengers, pin toggle 🔒, boost with reason, split legs (when car not needed at destination), unassign, open request. |
 | Pin 🔒 | Solver will never move it (§7.1); pinned blocks show the lock. All manual edits auto-pin. |
-| ↶ בטל / Ctrl+Z | Undo stack (last 50 board actions in this session); each undo shows a toast naming the reverted action. |
-| ▶ השלם אוטומטית | Runs the solver only for requests without a pinned ride; existing pinned rides are constraints. |
-| מדיניות ▾ | Switch the department's policy (name + version); the button turns amber "המדיניות שונתה — הרץ שוב" until the solver is re-run. |
+| ↶ Undo icon | Undo stack (last 50 board actions in this session); each undo shows a toast naming the reverted action. |
+| ↷ Redo icon | Re-applies the edit an undo just reverted (drag/resize/car-change/save only — anything else pushed without a redo simply leaves the redo icon disabled once it's undone); each redo shows a toast naming the re-applied action. |
+| "השלם אוטומטית" (actions menu) | Runs the solver only for requests without a pinned ride; existing pinned rides are constraints. |
+| Policy chip | Tap the chip ("{{policy name}} · גרסה {{n}}") to open a dialog listing every one of the department's policies with its current version number, creation date and note, a check mark on the one in use; picking one applies it. The chip turns amber "המדיניות שונתה — הרץ שוב" when the preview was computed under a different policy than the one now selected — the preview itself re-runs automatically (see below), so this is now informational, not a prompt to click something. |
 | Conflict highlighting | Overlap on the same car (including turnaround buffer), seats overflow after a merge, or overlap with a maintenance block: red hatched outline on both blocks, red banner with count and "הבא" navigation. Publishing is blocked while conflicts exist. |
 | Late-request badge | Cards for requests filed after window close show **מאוחרת** in orange in the unmet list and as a corner mark on the block. |
 
@@ -434,6 +440,14 @@ The `UnmetList` orders requests by policy score (shown as ▲ score with a toolt
 **Contested waiting-list groups on the board (REQ §13.75).** Once a day is published, the grid also shows its open `v_waitlist_groups` rows as "בדיון" blocks in an unassigned lane, exactly like the member siddur (§3.5) — the Sadran can watch a discussion, settle it (`resolve_waitlist_group`, same sheet) or drop it (`cancel_waitlist_group`, Sadran-only; everybody then stays plainly waitlisted). Their members no longer appear in the `UnmetList` as separate unresolved requests; they are one item.
 
 **Phone fallback — list mode.** The board route on `< md` renders `BoardListMode`: segmented control רכבים / לא שובצו / הצעות. The רכבים view lists each car per day with its rides as cards; tapping a ride opens the same `RideSheet`, where time and car are changed with `TimeRangePicker15` and a car select instead of dragging. The לא שובצו view is the `UnmetList` full-screen. The הצעות tab navigates to `/proposals` (it is a link, not a segment, since that screen is a full route) and shows a small numeric badge counting proposals with `status = 'sent'` (awaiting an answer) whenever that count is above zero. Everything the grid can do is reachable; only drag/resize is absent.
+
+**Mobile-friendly header (2026-09-10).** The header row and controls above are now identical at every width — a phone reaches the exact same policy chip, undo/redo icons and "eye"/kebab menus as a tablet or desktop, only the department/week switcher differs:
+
+- **Title = week switcher, below `lg`.** Tapping the page title (`BoardTitleSwitcher`) opens a dropdown listing every non-archived week the Sadran can manage in this department (label = week range + a `StatusBadge kind="week"` phase pill), and — only when the Sadran manages more than one department — a "מחלקה" section to switch department (same "find the newest manageable week there" logic the desktop `BoardWeekSwitcher` selects already use). A chevron sits next to the title; a small subtitle line under it shows the week range and, when relevant, the current department name. From `lg` up the title is a plain heading and the original department/week `<Select>`s (`BoardWeekSwitcher`) render inline below it, unchanged.
+- **"Eye" display menu, every width.** One icon menu replaces the old always-visible `TableViewControls` row *and* the standalone "show early hours" toggle that used to sit next to `WeekStrip`: list/table view, zoom in/out/reset, "show early hours", and (new) "show/hide legend" (`RideTypeLegend` is toggleable below `lg`, default on; always shown from `lg` up regardless of the toggle). Preferences persist per device in `localStorage` (`board.display.v1`), separately from the member siddur's own `siddur.display.v1`.
+- **"Actions" kebab menu, every width.** Export the week (Excel), request deviations from the originally-filed times, "השלם אוטומטית" (autofill still-unmet requests only), "פתור מחדש את כל השבוע" (full re-solve, shows its diff sheet before applying), cancel publication (reopen for requests, or unpublish back to solving — hidden while the week is `open` or `archived`, same as before), and links to the change log and the proposals list. The primary publish / close-and-publish button stays outside this menu, always visible in the header.
+- **The solver preview is no longer a button.** "הרץ פותר" is gone; the same client-side preview now runs automatically (debounced ~300 ms) once the board's own data has loaded, whenever the effective policy version changes, and after any board mutation settles — the unmet list's scores/suggestions are always current without the Sadran having to remember to click anything.
+- **Undo/redo are icons**, not text buttons, next to the policy chip: back-arrow icon for undo, forward-arrow icon for redo (both disabled when their respective stack is empty). Redo only exists for the drag/resize/car-change/save edit path today (the one action type the undo stack records a matching forward action for); other undo-able actions simply leave nothing to redo once undone.
 
 ### 4.3 Proposal composer (`/sadran/:dept/:week/proposals/new`)
 
@@ -821,7 +835,8 @@ Contracts are one line; props in TypeScript-ish shorthand. All components are RT
 | `RequestCard` | `request, ride?, onOpen, actions?` — Home/unmet-list card with status, reason line, companions. |
 | `RideCard` | `ride, viewerId` — siddur list card: time, destination, driver, car, free seats, temp-car chip. |
 | `RequestStatusTimeline` | `events: AuditEvent[]` — vertical timeline for request detail. |
-| `RequestForm` | `mode: 'new'\|'edit'; variant?: 'weekly'\|'quick'\|'carNow'; departmentId; weekStart; initial?; joinRide?; slotPrefill?; waitlist?; quickContext?; onDone?` — composes the field components below; owns validation and duplicate check; §18's `QuickRequestSheet` renders it with `variant="quick"` (empty-grid-slot) or `variant="carNow"` (`CarNowButton`, 2026-09-10) instead of maintaining separate forms (corrected 2026-09-09; the previous `'onBehalf'\|'joinRide'` mode values never existed in code — "ask to join" is the separate `joinRide` prop, and there is no on-behalf-of-another-member mode). |
+| `RequestForm` | `mode: 'new'\|'edit'; variant?: 'weekly'\|'quick'\|'carNow'; departmentId; weekStart; initial?; joinRide?; slotPrefill?; waitlist?; templateSuggestion?; quickContext?; onDone?` — composes the field components below; owns validation and duplicate check; §18's `QuickRequestSheet` renders it with `variant="quick"` (empty-grid-slot) or `variant="carNow"` (`CarNowButton`, 2026-09-10) instead of maintaining separate forms (corrected 2026-09-09; the previous `'onBehalf'\|'joinRide'` mode values never existed in code — "ask to join" is the separate `joinRide` prop, and there is no on-behalf-of-another-member mode). `templateSuggestion` (weekly variant only, built 2026-09-10, REQ §76) prefills from a `v_request_template_suggestions` row (`/requests/new?template=<id>`) and pre-checks its own "repeat weekly" `Switch`, which otherwise defaults off (on except when editing an already-linked request). |
+| `TemplateSuggestions` | `weekStart?` — dismissable repeating-request suggestion cards (Home §3.3, unscoped/grouped-by-week; `/requests/new` §3.4, scoped to one week); "הגש/י" navigates to the prefilled new-request route, "לא השבוע" snoozes, "הפסק/י לחזור" stops behind a `ConfirmDialog` (`src/features/requests/components/TemplateSuggestions.tsx`; ✅ done 2026-09-10, REQ §76). |
 | `CarNowButton` | `departmentId; className?` — Home's "רוצה רכב עכשיו!" entry point (§3.3 item 3, §18 "Car-now variant", 2026-09-10); enabled only while `useFreeCarsNowQuery` finds a shared car free right now. |
 | `DestinationCombobox` | `value: {presetId?} \| {freeText}; mode: 'input'\|'filter'; onChange` — searches names/aliases/zones, always offers free-text row. |
 | `RideTypeChips` | `types, value, onChange` — single-select chips with icons. |
@@ -853,12 +868,16 @@ Contracts are one line; props in TypeScript-ish shorthand. All components are RT
 | `MemberWeekExportButton` | `departmentId, weekStart` — per-row Excel export on `SiddurArchivePage`, same workbook writer as the Sadran's `WeekExcelExportButton` but only the board sheet, built from member-readable data (`src/features/siddur/components/MemberWeekExportButton.tsx`; ✅ done 2026-09-10, §3.10). |
 | `GridRide` | `ride, conflict?, pinned?, pendingConsent?, late?` — one block; drag/resize handles; aria-label. |
 | `GridBlock` | Maintenance/blocked window rendering. |
-| `BoardToolbar` | Day tabs, policy switcher, undo, auto-solve, publish, conflict banner. |
+| `BoardTitleSwitcher` | `departmentId, weekStart, departmentName?` — mobile (below `lg`) board header title-as-switcher: every non-archived manageable week (label = range + `StatusBadge kind="week"`), plus a "מחלקה" section when the Sadran manages more than one department; shares `useBoardWeekSwitcher` with `BoardWeekSwitcher` (`src/features/sadran/board/components/BoardTitleSwitcher.tsx`; ✅ done 2026-09-10, §4.2 mobile header). |
+| `BoardWeekSwitcher` | `departmentId, weekStart` — `lg+` inline department/week `<Select>`s, unchanged in appearance; now backed by the shared `useBoardWeekSwitcher` hook (`src/features/sadran/board/components/BoardWeekSwitcher.tsx`; refactored 2026-09-10). |
+| `PolicyChip` | `policyOptions: PolicyOption[]; activePolicy; value; stale; onSelect` — the board's policy chip + versions dialog (name, version, Asia/Jerusalem creation date, note, check mark on the current one), replacing the plain policy `<Select>` at every width (`src/features/sadran/board/components/PolicyChip.tsx`; ✅ done 2026-09-10, §4.2). |
+| `BoardDisplayMenu` | `table, onTableChange, zoom, onZoomChange, showEarlyHours, onShowEarlyHoursChange, showLegend, onShowLegendChange` — board "eye" menu, every width: replaces `TableViewControls` and the standalone early-hours toggle entirely; persists `board.display.v1` via `useBoardDisplayPrefs` (`src/features/sadran/board/components/BoardDisplayMenu.tsx`, `useBoardDisplayPrefs.ts`; ✅ done 2026-09-10, §4.2). |
+| `BoardActionsMenu` | `departmentId, weekStart, homeDestinationId, policy, onPolicyUsed, onAutoSolveRemaining, autoSolving` — board kebab menu, every width: export, request deviations, auto-solve remaining, full re-solve, cancel publication, change-log/proposals links; hides items that don't apply, same as the old inline row (`src/features/sadran/board/components/BoardActionsMenu.tsx`; ✅ done 2026-09-10, §4.2). |
 | `UnmetList` | `requests: ScoredRequest[]; filters; onAction(requestId, suggestion)` — sorted by score with score tooltip. |
 | `SuggestionCard` | `suggestion: Suggestion` → icon, text, one action button (החל / הצע / סמן חיצוני / דחה). |
 | `RideSheet` | `ride` — details + actions (pin, boost, split legs, reassign via pickers, unassign, open request). |
 | `BoardListMode` | Phone replacement for `WeekGrid`: cars / unmet / proposals segments. |
-| `UndoStack` (hook) | `push(action), undo(), canUndo` with toast integration. |
+| `UndoStack` (hook) | `push(action): void; undo(): Promise<UndoResult\|null>; redo(): Promise<UndoResult\|null>; canUndo; canRedo; peekLabel` — pushed actions may include an optional `redo()` (the drag/resize/car-change/save path supplies one); pushing a new action clears any pending redo, same as a text editor (`src/features/sadran/board/undoStack.ts`, `useUndoStack.ts`; redo added 2026-09-10, §4.2). Toast integration lives in `BoardScreen`. |
 | `ProposalComposer` | `prefill?: {requestIds, type, change}; onSent` — recipients, type, change, expiry, preview, wa.me buttons, manual answer. |
 | `ProposalPreview` | `template, vars` → rendered Hebrew text, editable, char count, `toWaUrl(phone, text)`. |
 | `ProposalStatusChip` | Per-recipient sent/answered state. |
@@ -940,7 +959,19 @@ Screen titles, primary actions, statuses and navigation. Keys are the namespaced
 | `flex.earlier` / `flex.later` | מוקדם יותר / מאוחר יותר | |
 | `flex.0` `flex.15` `flex.30` `flex.60` `flex.120` `flex.anyTime` | 0 / ¼ שעה / ½ שעה / שעה / שעתיים / כל היום | |
 | `field.notes` | הערות לסדרן/ית | |
-| `field.repeatWeekly` | חוזר כל שבוע | v1.x |
+| `request.repeatWeekly` | בקשה חוזרת (כל שבוע) | `RequestForm`'s own switch label; **correction (2026-09-10):** lives under `request`, not `field` — kept in `he.member.ts` alongside every other request-form string, built REQ §76 |
+| `request.repeatWeeklyHint` | נציע לך את הבקשה הזאת בכל שבוע שנפתח; ההגשה עצמה נשארת בידיך | switch helper text |
+| `request.repeatSaved` | הבקשה תוצע לך גם בשבועות הבאים | toast, new-request submit with the switch on |
+| `request.suggestionsTitle` | בקשות חוזרות לשבוע שנפתח | `TemplateSuggestions` heading |
+| `request.useSuggestion` | הגש/י | primary action, `TemplateSuggestions` card |
+| `request.snoozeSuggestion` | לא השבוע | |
+| `request.snoozed` | נדחה לשבוע הבא | toast |
+| `request.stopSuggestion` | הפסק/י לחזור | also the `ConfirmDialog`'s own confirm action (default `common.confirm` label) |
+| `request.stopSuggestionConfirmTitle` | להפסיק לחזור על הבקשה הזו? | |
+| `request.stopSuggestionConfirmBody` | לא נציע לך יותר את הבקשה הזו בשבועות הבאים. אפשר להתחיל לחזור עליה מחדש מבקשה חדשה. | |
+| `request.stopped` | הבקשה החוזרת הופסקה | toast |
+| `request.makeRepeating` | הפוך/י לחוזר | `/requests` card action, no template yet |
+| `request.repeating` | חוזר כל שבוע | `/requests` card flag, template already linked |
 | `screen.siddur.title` | הסידור | also the mobile header's sr-only `<h1>` (§3.5) |
 | `siddur.filterDestination` | יעד | |
 | `siddur.thisWeek` / `siddur.nextWeek` | השבוע / שבוע הבא | mobile header week switcher (§3.5, 2026-09-10) |
@@ -972,16 +1003,25 @@ Screen titles, primary actions, statuses and navigation. Keys are the namespaced
 | `screen.sadran.home` | סדרן | |
 | `screen.sadran.dashboard` | סידור השבוע | |
 | `action.closeWindow` | סגור חלון עכשיו | |
-| `action.runSolver` | הרץ פותר | primary |
+| `action.runSolver` | הרץ פותר | **unused since 2026-09-10** — the preview now runs automatically (§4.2); key left in `he.ts` (out of this task's scope to remove) |
 | `action.openBoard` | פתח לוח | |
-| `action.publish` | פרסם… | |
-| `screen.board.title` | לוח הסידור | |
+| `action.publish` | פרסם… | primary, always visible in the board header (`PublishButton`) |
+| `screen.board.title` | לוח הסידור | also the mobile board header's sr-only `<h1>` (§4.2, 2026-09-10, same pattern as `screen.siddur.title`) |
 | `board.unmet` | לא שובצו | |
 | `board.conflicts` | התנגשות | |
-| `action.undo` | בטל | |
-| `action.autoSolveRemaining` | השלם אוטומטית | |
-| `board.policy` | מדיניות | |
-| `board.policyChanged` | המדיניות שונתה — הרץ שוב | |
+| `action.undo` | בטל | `Undo2` icon `aria-label`, board header, every width (2026-09-10) |
+| `sadranBoard.redo` | בצע/י שוב | `Redo2` icon `aria-label`, board header, every width (2026-09-10) |
+| `sadranBoard.redoToast` | בוצע שוב: {{label}} | `tv()` |
+| `sadranBoard.redoNothing` | אין מה לבצע שוב | |
+| `action.autoSolveRemaining` | השלם אוטומטית | board kebab "actions" menu item (2026-09-10) |
+| `board.policy` | מדיניות | fallback chip label before any policy loads |
+| `board.policyChanged` | המדיניות שונתה — הרץ שוב | amber badge next to the policy chip (2026-09-10) |
+| `sadranBoard.displayMenu` | תצוגה | board "eye" display-menu `aria-label`, every width (2026-09-10) |
+| `sadranBoard.actionsMenu` | פעולות | board kebab actions-menu `aria-label`, every width (2026-09-10) |
+| `sadranBoard.showLegend` / `.hideLegend` | הצג מקרא / הסתר מקרא | display-menu checkbox item (2026-09-10) |
+| `sadranBoard.policyChip` | {{name}} · גרסה {{version}} | `tv()`, the chip's own label (2026-09-10) |
+| `sadranBoard.policyDialogTitle` | מדיניות הפותר | policy-versions dialog title (2026-09-10) |
+| `sadranBoard.policyVersionNote` | ללא הערות | fallback when `policy_versions.note` is empty (2026-09-10) |
 | `action.apply` | החל | consent-free suggestion |
 | `action.propose` | הצע | |
 | `action.markExternal` | סמן כפתרון חיצוני | |

@@ -73,6 +73,19 @@ export interface Request {
   isLate: boolean;
   manualBoost?: { value: number; reason: string };
   preferredCarId?: string;
+  /**
+   * Multi-day series (SOLVER §3.x): one DB request row per calendar day,
+   * sharing `seriesId`; `seriesIndex` is 1-based over the whole series,
+   * `seriesCount` its total length. The solver only ever sees the legs that
+   * fall inside the week being solved — a series may start mid-week
+   * (`seriesIndex === 1` for the first in-week leg) or continue from a
+   * previous week (`seriesIndex > 1` for the first in-week leg, in which
+   * case the car is not at home at week start). All three are present
+   * together or not at all.
+   */
+  seriesId?: string;
+  seriesIndex?: number;
+  seriesCount?: number;
 }
 
 export interface Car {
@@ -182,6 +195,8 @@ export interface Assignment {
   shift: { departureMin: number; returnMin: number };
   /** the other leg of a relay pair */
   pairedRideId?: string;
+  /** set for a leg of a multi-day series (SOLVER §3.x); all legs of one series share this id and one carId */
+  seriesId?: string;
   source: 'fixed' | 'solver';
   reasonCode: string;
   /** Hebrew */

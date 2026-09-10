@@ -14,9 +14,15 @@ export interface Block {
   window: Window;
   startLocationId: string;
   endLocationId: string;
-  /** true only for a fixed ride the Sadran explicitly acknowledged may leave the car away overnight */
+  /** true only for a fixed ride the Sadran explicitly acknowledged may leave the car away overnight
+   *  (or, generically, for any leg of a multi-day series that leaves the car parked away between legs
+   *  — SOLVER §3.x "Multi-day series") */
   overnightAck: boolean;
   approvedBufferAfterSlots?: number;
+  /** set for legs of a multi-day series (docs/SOLVER.md §3.x): consecutive legs sharing the same
+   *  seriesId are contiguous by construction and need no buffer between them, even though the
+   *  ordinary buffer rule still applies against every other block/maintenance entry. */
+  seriesId?: string;
 }
 
 export interface Gap {
@@ -59,9 +65,13 @@ export class CarTimeline {
     return location;
   }
 
-  private overlapsAnything(start: number, end: number, fixed?: Block): boolean {
+  private overlapsAnything(start: number, end: number, fixed?: Block, seriesId?: string): boolean {
     for (const b of this.blocks) {
-      if (fixed && this.fixedRideIds.has(b.rideId)) {
+      if (seriesId !== undefined && b.seriesId === seriesId) {
+        // Contiguous siblings of the same multi-day series never need a
+        // buffer between them (SOLVER §3.x) — only a true overlap counts.
+        if (tooClose(start, end, b.window.start, b.window.end, 0)) return true;
+      } else if (fixed && this.fixedRideIds.has(b.rideId)) {
         const approved = (slots: number | undefined) => slots != null && Number.isFinite(slots) ? Math.max(0, Math.min(this.bufferSlots, slots)) : this.bufferSlots;
         if (start < b.window.end + approved(b.approvedBufferAfterSlots) && b.window.start < end + approved(fixed.approvedBufferAfterSlots)) return true;
       } else if (tooClose(start, end, b.window.start, b.window.end, this.bufferSlots)) return true;
@@ -87,7 +97,7 @@ export class CarTimeline {
         `CarTimeline.add: block ${b.rideId} starts at ${b.startLocationId} but car ${this.car.id} is at ${actual}`,
       );
     }
-    if (this.overlapsAnything(b.window.start, b.window.end)) {
+    if (this.overlapsAnything(b.window.start, b.window.end, undefined, b.seriesId)) {
       throw new Error(`CarTimeline.add: block ${b.rideId} overlaps an existing block/maintenance on car ${this.car.id}`);
     }
     const idx = this.blocks.findIndex((x) => x.window.start > b.window.start);

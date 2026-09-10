@@ -25,7 +25,7 @@ export { fits, dominates, slack, sum, luggageFits, chauffeurLoad } from './seatF
 export { ruleRegistry, type RuleType } from './rules/index';
 export { matchFreedSlot, tryAutoApprove } from './live';
 export { CarTimeline, buildTimelines } from './timeline';
-export type { NormalizedRequest, NormalizedLeg } from './slots';
+export type { NormalizedRequest, NormalizedLeg, SeriesLeg, SeriesUnit } from './slots';
 
 function peopleOf(nr: NormalizedRequest): number {
   return nr.passengers.adults + nr.passengers.childSeats + nr.passengers.boosters - 1;
@@ -56,7 +56,7 @@ export function solve(input: SolverInput): SolverOutput {
   const startedAt = input.now?.();
   const warnings: { code: string; message: string; requestId?: string }[] = [];
 
-  const { normalized, warnings: normalizeWarnings } = normalize(input);
+  const { normalized, warnings: normalizeWarnings, seriesUnits } = normalize(input);
   warnings.push(...normalizeWarnings.map((w) => ({ code: w.code, message: w.message, requestId: w.requestId })));
 
   const bufferSlots = minutesToSlots(input.config.bufferMinutes);
@@ -125,11 +125,15 @@ export function solve(input: SolverInput): SolverOutput {
     relayPairPeople.set(ret.id, combined);
   }
 
-  const { scores, warnings: scoreWarnings } = scoreRequests(input, normalized, relayPairPeople);
+  // Multi-day series (SOLVER §3.x) are scored via a proxy built from their first
+  // in-week leg, included in the same batch so minmax-normalized rules compare
+  // fairly against ordinary requests.
+  const scoringBatch = [...normalized, ...seriesUnits.map((su) => su.scoreProxy)];
+  const { scores, warnings: scoreWarnings } = scoreRequests(input, scoringBatch, relayPairPeople);
   warnings.push(...scoreWarnings.map((w) => ({ code: w.code, message: w.message, requestId: w.requestId })));
 
   const byRequestId = new Map(normalized.map((nr) => [nr.id, nr]));
-  const units = buildUnits(roundTrips, pairs, byRequestId, scores);
+  const units = buildUnits(roundTrips, pairs, byRequestId, scores, seriesUnits);
   const { placed, unmetUnits } = runGreedy(units, timelines, input);
 
   const placedSingles = placed.filter((p): p is PlacedSingle => p.kind === 'single');
@@ -143,7 +147,11 @@ export function solve(input: SolverInput): SolverOutput {
   for (const a of assignments) for (const rid of a.servedRequestIds) servedRequestIds.add(rid);
 
   // Build the final unmet pool: still-unmet greedy/improve units, unpaired relay legs, passenger-only requests.
+  // Multi-day series units are handled entirely separately below — they never
+  // get shift/merge/split/etc. suggestions (SOLVER §3.x): all-or-nothing, every
+  // leg becomes UNMET_SERIES_NO_CAR with no suggestions.
   const unmetIds = new Map<string, NormalizedRequest>();
+  const unmetSeriesUnits = improveResult.stillUnmetUnits.filter((u) => u.kind === 'series' && u.series);
   for (const u of improveResult.stillUnmetUnits) {
     if (u.kind === 'single' && u.single) unmetIds.set(u.single.id, u.single);
     else if (u.kind === 'pair' && u.pair) {
@@ -195,6 +203,26 @@ export function solve(input: SolverInput): SolverOutput {
         reason: reasonText,
       };
     });
+
+  // Multi-day series (SOLVER §3.x): all-or-nothing, no suggestions — every leg
+  // of a series that could not be placed on one car becomes its own
+  // UnmetRequest with an empty suggestions list.
+  for (const u of unmetSeriesUnits) {
+    const su = u.series;
+    if (!su) continue;
+    const seriesScore = scores.get(su.scoreProxy.id)?.total ?? 0;
+    for (const leg of su.legs) {
+      unmet.push({
+        requestId: leg.requestId,
+        score: seriesScore,
+        blockers: [],
+        suggestions: [],
+        reasonCode: 'UNMET_SERIES_NO_CAR',
+        reason: reason('UNMET_SERIES_NO_CAR', { index: leg.seriesIndex, count: su.seriesCount }),
+      });
+    }
+  }
+  unmet.sort((a, b) => byId({ id: a.requestId }, { id: b.requestId }));
 
   // Informational merge opportunities between already-assigned solver rides.
   const mergeOpportunities: SolverOutput['mergeOpportunities'] = [];

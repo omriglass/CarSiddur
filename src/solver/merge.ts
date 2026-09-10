@@ -37,6 +37,9 @@ export interface HostRide {
 export function buildHostRides(assignments: Assignment[], cars: Map<string, Car>): HostRide[] {
   const hosts: HostRide[] = [];
   for (const a of assignments) {
+    // Multi-day series legs are never merge hosts (SOLVER §3.x): immovable,
+    // and every gap around them is already fully occupied by the series itself.
+    if (a.seriesId) continue;
     const driverLeg = a.legs.find((l) => l.role === 'driver');
     if (!driverLeg || !a.driverRequestId) continue;
     const car = cars.get(a.carId);

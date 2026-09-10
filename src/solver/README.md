@@ -19,6 +19,19 @@ unmet (`suggestions.ts`, `merge.ts`, `splitLegs.ts`), asserts every hard
 constraint (`invariants.ts`), and returns a value; persistence is the
 caller's job. `live.ts` covers the two post-publish helpers.
 
+## Multi-day series
+
+A multi-day request arrives as several `Request` rows sharing `seriesId`
+(`seriesIndex`/`seriesCount`, docs/SOLVER.md §3.16) — one per calendar day in
+the week being solved. `slots.ts` groups them into a `SeriesUnit` instead of
+the ordinary `NormalizedRequest` pool (invisible to relay pairing, merge,
+split, improve and suggestions as a result); `greedy.ts` places every leg on
+one car, all-or-nothing, contiguous with no buffer between legs (only the
+outer boundary — the true first departure / last return of the whole series
+— may shift within its own declared flexibility); `live.ts`'s helpers and
+`merge.ts`'s host-building skip series legs entirely. See SOLVER.md §3.16 for
+the full contract.
+
 ## Purity rule
 
 Every function here is pure. Hebrew lives only in `reasons.ts`, keyed by
