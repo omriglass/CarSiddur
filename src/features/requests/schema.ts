@@ -1,8 +1,10 @@
 import { z } from "zod";
 
 import { he } from "@/i18n/he";
+import { TRIP_SHAPES } from "@/lib/enums";
 
 import type { DestinationValue } from "@/components/DestinationCombobox";
+import type { TripShape } from "@/lib/enums";
 
 /**
  * react-hook-form + zod schema for the new/edit request form (UX_FLOWS.md
@@ -12,9 +14,9 @@ import type { DestinationValue } from "@/components/DestinationCombobox";
  * arbiter (CLAUDE.md decision 8).
  */
 
-/** = SQL `trip_shape`. Kept as a local literal union (no `src/lib/enums.ts` yet in this repo). */
-export const REQUEST_TRIP_SHAPES = ["round_trip", "one_way_to", "one_way_from"] as const;
-export type RequestTripShape = (typeof REQUEST_TRIP_SHAPES)[number];
+/** = SQL `trip_shape` (`src/lib/enums.ts`). */
+export const REQUEST_TRIP_SHAPES = TRIP_SHAPES;
+export type RequestTripShape = TripShape;
 
 /** = SQL `leg_car_mode`, restricted to what a member may pick for a one-way leg. */
 export const ONE_WAY_CAR_MODES = ["relay", "passenger"] as const;

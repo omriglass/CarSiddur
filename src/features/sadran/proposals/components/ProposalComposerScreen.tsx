@@ -44,9 +44,7 @@ import {
 } from "../../hooks";
 
 import type { Json } from "@/integrations/supabase/types";
-import type { Database } from "@/integrations/supabase/types";
-
-type ProposalType = Database["public"]["Enums"]["proposal_type"];
+import type { ProposalType } from "@/lib/enums";
 
 // Keep freshly issued links available when the coordinator revisits a sent proposal.
 // Actor-scoped memory only: never localStorage or an unscoped cross-account lookup.

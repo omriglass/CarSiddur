@@ -18,6 +18,20 @@ import { TimeField15, parseHHMM } from "@/components/TimeField15";
 import { Textarea } from "@/components/ui/textarea";
 import { expandedMergeWindow } from "../mergeWindow";
 import { packPhantomLanes, requestStart, requestWindow, requestWithinFlex, standaloneChauffeurWindow } from "../phantomLanes";
+import {
+  isDropTargetValid,
+  isUnmetDropValid,
+  mergeCandidateForRide,
+  minutesIso,
+  passengersOf,
+  seatsFit,
+  unavailable,
+  unmetCandidateWindow,
+  unmetMergeHost,
+  unmetPreviewWindow,
+  unmetRequestPassengers,
+  type BoardDropContext,
+} from "../dropValidity";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -671,114 +685,21 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
     seatConfigsByCarId.set(sc.car_id, list);
   }
 
-  function passengersOf(ride: (typeof rides)[number]) {
-    const served = servedOf(ride);
-    return served.reduce(
-      (acc, s) => ({ adults: acc.adults + s.adults, childSeats: acc.childSeats + s.child_seats, boosters: acc.boosters + s.boosters }),
-      { adults: served.length && !served.some((entry) => entry.role === "driver") ? 1 : 0, childSeats: 0, boosters: 0 },
-    );
-  }
-
-  /** Does any of `carId`'s seat configurations fit `need`? No configs on record -> don't block (unknown, not invalid). */
-  function seatsFit(carId: string, need: { adults: number; childSeats: number; boosters: number }): boolean {
-    const configs = seatConfigsByCarId.get(carId) ?? [];
-    if (configs.length === 0) return true;
-    return configs.some((c) => c.adults >= need.adults && c.child_seats >= need.childSeats && c.boosters >= need.boosters);
-  }
-
-  function unavailable(carId: string, startsAt: string, endsAt: string): boolean {
-    if ((carsQuery.data ?? []).find((car) => car.id === carId)?.status !== "active") return true;
-    return wouldOverlap({ startsAt, endsAt }, (maintenanceQuery.data ?? []).filter((block) => block.car_id === carId)
-      .map((block) => ({ startsAt: block.starts_at, endsAt: block.ends_at })), 0);
-  }
-
-  function mergeCandidateForRide(rideId: string, carId: string, _startsAt: string, _endsAt: string, hostRideId?: string) {
-    const source = rides.find((ride) => ride.id === rideId);
-    if (!source?.needs_driver || !hostRideId) return null;
-    const host = rides.find((ride) => ride.id !== rideId && ride.car_id === carId && ride.starts_at && ride.ends_at
-      && ride.id === hostRideId && !!ride.driver_id && !ride.needs_driver);
-    const guest = source ? servedOf(source).find((entry) => entry.role === "driver") ?? servedOf(source)[0] : undefined;
-    if (!source?.starts_at || !source.ends_at || !host?.starts_at || !host.ends_at || !guest) return null;
-    const request = (requestsQuery.data ?? []).find((request) => request.id === guest.request_id);
-    const window = source.needs_driver && request ? requestWindow(request) : { startsAt: source.starts_at, endsAt: source.ends_at };
-    return window ? { host, source, request, window: expandedMergeWindow({ startsAt: host.starts_at, endsAt: host.ends_at }, window) } : null;
-  }
-
-  /** Validate the live preview window, including phantom requests dragged into real cars. */
-  function isDropTargetValid(rideId: string, carId: string, startMinutes: number, endMinutes: number, hostRideId?: string): boolean {
-    if (carId.startsWith("phantom:")) return !rideId.startsWith("request:");
-    if (rideId.startsWith("request:")) {
-      const item = unmetItems.find((item) => `request:${item.request.id}` === rideId);
-      return !!item && isUnmetDropValid(item, carId, startMinutes, hostRideId);
-    }
-    if (startMinutes < 0 || endMinutes > 1439 || endMinutes <= startMinutes || unavailable(carId, minutesIso(startMinutes), minutesIso(endMinutes))) return false;
-    const ride = rides.find((r) => r.id === rideId);
-    if (!ride?.starts_at || !ride.ends_at) return true;
-    const merge = mergeCandidateForRide(rideId, carId, minutesIso(startMinutes), minutesIso(endMinutes), hostRideId);
-    if (merge) {
-      if (!merge.host.driver_id || merge.host.needs_driver || !merge.request || unavailable(carId, merge.window.startsAt, merge.window.endsAt)) return false;
-      const hostNeed = passengersOf(merge.host);
-      if (!seatsFit(carId, { adults: hostNeed.adults + merge.request.adults, childSeats: hostNeed.childSeats + merge.request.child_seats, boosters: hostNeed.boosters + merge.request.boosters })) return false;
-      return !wouldOverlap(merge.window, rides.filter((other) => other.id !== rideId && other.id !== merge.host.id && other.car_id === carId && other.starts_at && other.ends_at)
-        .map((other) => ({ startsAt: other.starts_at!, endsAt: other.ends_at! })), 0);
-    }
-    if (!seatsFit(carId, passengersOf(ride))) return false;
-    return true;
-  }
-
-  function unmetRequestPassengers(r: WeekRequestRow) {
-    return { adults: r.adults + (r.trip_shape === "round_trip" ? 0 : 1), childSeats: r.child_seats, boosters: r.boosters };
-  }
-
-  /** Shared timestamp conversion for the current day and snapped preview/drop windows. */
-  function minutesIso(minutes: number): string {
-    const date = new Date(`${selectedDay}T12:00:00Z`);
-    date.setUTCDate(date.getUTCDate() + Math.floor(minutes / 1440));
-    const time = formatMinutes(((minutes % 1440) + 1440) % 1440);
-    return fromZonedTime(`${date.toISOString().slice(0, 10)}T${time}:00`, TZ).toISOString();
-  }
-
-  function unmetCandidateWindow(item: UnmetListItem, minutes: number, standalone = false): { startsAt: string; endsAt: string } | null {
-    const req = item.request;
-    const passenger = requestWindow(req);
-    const original = standalone ? standaloneChauffeurWindow(req, daySettings?.chauffeur_dwell_minutes ?? 10) : passenger;
-    if (!original || !passenger || !requestStart(req) || dateKey(new Date(requestStart(req)!)) !== selectedDay) return null;
-    const duration = (Date.parse(original.endsAt) - Date.parse(original.startsAt)) / 60_000;
-    const requestedMinutes = (Date.parse(passenger.startsAt) - Date.parse(dayStartIso(selectedDay))) / 60_000;
-    if (Math.abs(minutes - requestedMinutes) <= 15) minutes = requestedMinutes;
-    const start = minutes - (standalone && req.trip_shape === "one_way_from" ? (Date.parse(passenger.startsAt) - Date.parse(original.startsAt)) / 60_000 : 0);
-    if (start < 0 || start + duration > 1439) return null;
-    return { startsAt: minutesIso(start), endsAt: minutesIso(start + duration) };
-  }
-
-  function unmetMergeHost(item: UnmetListItem, carId: string, _minutes: number, hostRideId?: string) {
-    if (item.request.trip_shape === "round_trip" || !hostRideId) return undefined;
-    return rides.find((ride) => ride.id === hostRideId && ride.car_id === carId && !!ride.driver_id && !ride.needs_driver);
-  }
-
-  function unmetPreviewWindow(item: UnmetListItem, carId: string, minutes: number, hostRideId?: string) {
-    const host = unmetMergeHost(item, carId, minutes, hostRideId);
-    const passenger = requestWindow(item.request);
-    return host?.starts_at && host.ends_at && passenger
-      ? expandedMergeWindow({ startsAt: host.starts_at, endsAt: host.ends_at }, passenger)
-      : unmetCandidateWindow(item, minutes, true);
-  }
-
-  /** Includes the whole chauffeur return block or expanded host, using actual
-   * overlap rather than rejecting coordinator-approved short turnaround gaps. */
-  function isUnmetDropValid(item: UnmetListItem, carId: string, minutes: number, hostRideId?: string): boolean {
-    const window = unmetPreviewWindow(item, carId, minutes, hostRideId);
-    if (!window || carId.startsWith("phantom:") || unavailable(carId, window.startsAt, window.endsAt)) return false;
-    const host = unmetMergeHost(item, carId, minutes, hostRideId);
-    if (host && (!host.driver_id || host.needs_driver)) return false;
-    const need = host ? passengersOf(host) : { adults: 1, childSeats: 0, boosters: 0 };
-    if (!seatsFit(carId, host || item.request.trip_shape !== "round_trip"
-      ? { adults: need.adults + item.request.adults, childSeats: need.childSeats + item.request.child_seats, boosters: need.boosters + item.request.boosters }
-      : unmetRequestPassengers(item.request))) return false;
-    const others = rides.filter((ride) => ride.id !== host?.id && ride.car_id === carId && ride.starts_at && ride.ends_at)
-      .map((ride) => ({ startsAt: ride.starts_at!, endsAt: ride.ends_at! }));
-    return !host || !wouldOverlap(window, others, 0);
-  }
+  // Drag/drop validity (docs/REFACTOR_PLAN_2026-09-11.md seam E1(c)): the pure logic
+  // (`passengersOf`, `seatsFit`, `unavailable`, `mergeCandidateForRide`, `isDropTargetValid`,
+  // `unmetRequestPassengers`, `minutesIso`, `unmetCandidateWindow`, `unmetMergeHost`,
+  // `unmetPreviewWindow`, `isUnmetDropValid`) now lives in `../dropValidity.ts`; this is the
+  // one place that assembles the closure state those functions need.
+  const dropCtx: BoardDropContext = {
+    rides,
+    requests: requestsQuery.data ?? [],
+    cars: carsQuery.data ?? [],
+    maintenanceBlocks: maintenanceQuery.data ?? [],
+    seatConfigsByCarId,
+    unmetItems,
+    selectedDay,
+    chauffeurDwellMinutes: daySettings?.chauffeur_dwell_minutes ?? 10,
+  };
 
   /** Assign a request leg or prepare a proposal when sharing/relay coordination is required. */
   async function handlePlaceUnmetRequest(item: UnmetListItem, carId: string, minutes: number, droppedOnRideId?: string) {
@@ -788,15 +709,15 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
     if (!requestStart(req) || dateKey(new Date(requestStart(req)!)) !== selectedDay) {
       toast.error(he.sadranBoard.wrongDay); return;
     }
-    let window = unmetCandidateWindow(item, minutes);
+    let window = unmetCandidateWindow(dropCtx, item, minutes);
     if (!window || !department?.home_destination_id) {
       toast.error(he.sadranBoard.invalidWindow);
       return;
     }
-    const host = unmetMergeHost(item, carId, minutes, droppedOnRideId);
+    const host = unmetMergeHost(dropCtx, item, carId, minutes, droppedOnRideId);
     if (host?.id && host.starts_at && host.ends_at) {
       if (!host.driver_id || host.needs_driver) { toast.error(he.boardCoordination.mergeNeedsDriver); return; }
-      if (!isUnmetDropValid(item, carId, minutes, droppedOnRideId)) { toast.error(he.sadranBoard.dragInvalidOverlapToast); return; }
+      if (!isUnmetDropValid(dropCtx, item, carId, minutes, droppedOnRideId)) { toast.error(he.sadranBoard.dragInvalidOverlapToast); return; }
       const original = requestWindow(req)!;
       const expanded = expandedMergeWindow({ startsAt: host.starts_at, endsAt: host.ends_at }, original);
       setMergePrefill({ requestId: req.id, rideId: host.id, type: "merge", payload: { ride_id: host.id,
@@ -804,10 +725,10 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
         legs: [{ ride_id: host.id, role: "passenger", leg: req.trip_shape === "round_trip" ? "both" : req.trip_shape === "one_way_from" ? "return" : "out", car_mode: "passenger" }] } });
       return;
     }
-    window = unmetCandidateWindow(item, minutes, true);
+    window = unmetCandidateWindow(dropCtx, item, minutes, true);
     if (!window) { toast.error(he.sadranBoard.invalidWindow); return; }
-    if (unavailable(carId, window.startsAt, window.endsAt)) { toast.error(he.sadranBoard.maintenanceUnavailable); return; }
-    if (!seatsFit(carId, unmetRequestPassengers(req))) {
+    if (unavailable(dropCtx, carId, window.startsAt, window.endsAt)) { toast.error(he.sadranBoard.maintenanceUnavailable); return; }
+    if (!seatsFit(dropCtx, carId, unmetRequestPassengers(req))) {
       toast.error(he.sadranBoard.dragInvalidSeatsToast);
       return;
     }
@@ -933,9 +854,9 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
 
     const driverEntry = servedOf(ride).find((s) => s.role === "driver") ?? servedOf(ride)[0];
     const driverRequest = driverEntry ? (requestsQuery.data ?? []).find((r) => r.id === driverEntry.request_id) : undefined;
-    const newStartsAt = minutesIso(startMinutes);
-    const newEndsAt = minutesIso(newEndMinutes);
-    if (unavailable(carId, newStartsAt, newEndsAt)) { toast.error(he.sadranBoard.maintenanceUnavailable); return; }
+    const newStartsAt = minutesIso(dropCtx, startMinutes);
+    const newEndsAt = minutesIso(dropCtx, newEndMinutes);
+    if (unavailable(dropCtx, carId, newStartsAt, newEndsAt)) { toast.error(he.sadranBoard.maintenanceUnavailable); return; }
     const servedRequests = servedOf(ride).map((entry) => (requestsQuery.data ?? []).find((req) => req.id === entry.request_id)).filter((req): req is WeekRequestRow => !!req);
     const withinDepartFlex = servedRequests.every((req) => requestWithinFlex(req, newStartsAt, newEndsAt));
 
@@ -946,7 +867,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
     // inside `edit_ride` (`lib/rpc.ts`'s `car_chain_broken` -> `he.errors.
     // carChainBroken`); seat-fit and same-car overlap have no DB check at
     // all today, so they're validated here against the *real* dropped time.
-    if (carId !== ride.car_id && !seatsFit(carId, passengersOf(ride))) {
+    if (carId !== ride.car_id && !seatsFit(dropCtx, carId, passengersOf(ride))) {
       toast.error(he.sadranBoard.seatMismatchToast);
       return;
     }
@@ -1058,7 +979,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
     if (start == null || end == null || end <= start || !reservation.notes.trim()) { toast.error(he.sadranBoard.invalidWindow); return; }
     try {
       await editRideMutation.mutateAsync({ input: { department_id: departmentId, week_start: weekStart, car_id: reservation.carId,
-        starts_at: minutesIso(start), ends_at: minutesIso(end), origin_id: department.home_destination_id, destination_id: department.home_destination_id,
+        starts_at: minutesIso(dropCtx, start), ends_at: minutesIso(dropCtx, end), origin_id: department.home_destination_id, destination_id: department.home_destination_id,
         driver_id: null, served: [], notes: reservation.notes.trim(), is_pinned: true, pin_reason: "SADRAN_MANUAL" }, departmentId, weekStart });
       setReservation(null); toast.success(he.sadranBoard.reservationSaved);
     } catch { /* Mutation reports errors. */ }
@@ -1125,7 +1046,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
   }
 
   const conflictCount = conflicts.length;
-  const unmetPreview = unmetDragHover ? unmetPreviewWindow(unmetDragHover.item, unmetDragHover.carId, unmetDragHover.minutes, unmetDragHover.hostRideId) : null;
+  const unmetPreview = unmetDragHover ? unmetPreviewWindow(dropCtx, unmetDragHover.item, unmetDragHover.carId, unmetDragHover.minutes, unmetDragHover.hostRideId) : null;
 
   const currentPolicyForActions = (policyOptionsQuery.data ?? []).find((policy) => policy.policyVersionId === effectivePolicyVersionId)
     ?? (activePolicyQuery.data?.policyVersionId === effectivePolicyVersionId ? activePolicyQuery.data ?? null : null);
@@ -1237,12 +1158,12 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
             onRideClick={handleRideClick}
             onRideDrop={(rideId, carId, minutes, droppedOnRideId) => void handleRideDrop(rideId, carId, minutes, droppedOnRideId)}
             onRideResize={handleRideResize}
-            isDropTargetValid={isDropTargetValid}
+            isDropTargetValid={(rideId, carId, startMinutes, endMinutes, hostRideId) => isDropTargetValid(dropCtx, rideId, carId, startMinutes, endMinutes, hostRideId)}
             resolveDropPreview={(ride, carId, startMinutes, endMinutes, hostRideId) => {
               const item = unmetItems.find((item) => `request:${item.request.id}` === ride.id);
               if (carId.startsWith("phantom:")) return { startMinutes, endMinutes };
-              const window = item ? unmetPreviewWindow(item, carId, startMinutes, hostRideId)
-                : mergeCandidateForRide(ride.id, carId, minutesIso(startMinutes), minutesIso(endMinutes), hostRideId)?.window;
+              const window = item ? unmetPreviewWindow(dropCtx, item, carId, startMinutes, hostRideId)
+                : mergeCandidateForRide(dropCtx, ride.id, carId, minutesIso(dropCtx, startMinutes), minutesIso(dropCtx, endMinutes), hostRideId)?.window;
               return window ? { startMinutes: (Date.parse(window.startsAt) - Date.parse(dayStartIso(selectedDay))) / 60_000,
                 endMinutes: (Date.parse(window.endsAt) - Date.parse(dayStartIso(selectedDay))) / 60_000 } : { startMinutes, endMinutes };
             }}
@@ -1253,7 +1174,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
                     startMinutes: unmetPreview ? (Date.parse(unmetPreview.startsAt) - Date.parse(dayStartIso(selectedDay))) / 60_000 : unmetDragHover.minutes,
                     endMinutes: unmetPreview ? (Date.parse(unmetPreview.endsAt) - Date.parse(dayStartIso(selectedDay))) / 60_000 : unmetDragHover.minutes + 30,
                     label: `${unmetDragHover.item.request.requester_full_name ?? ""} · ${unmetDragHover.item.destinationName}`,
-                    valid: isUnmetDropValid(unmetDragHover.item, unmetDragHover.carId, unmetDragHover.minutes, unmetDragHover.hostRideId),
+                    valid: isUnmetDropValid(dropCtx, unmetDragHover.item, unmetDragHover.carId, unmetDragHover.minutes, unmetDragHover.hostRideId),
                   }
                 : null
             }
@@ -1435,7 +1356,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
           // downstream of this `mutateAsync` call caught the rejection, the
           // sheet was left stuck open with no clear feedback (reproduced
           // directly; `e2e/board.spec.ts`'s car-selector test caught it).
-          if (input.carId !== selectedRide.car_id && !seatsFit(input.carId, passengersOf(selectedRide))) {
+          if (input.carId !== selectedRide.car_id && !seatsFit(dropCtx, input.carId, passengersOf(selectedRide))) {
             toast.error(he.sadranBoard.seatMismatchToast);
             return;
           }

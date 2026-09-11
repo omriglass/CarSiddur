@@ -5,7 +5,19 @@ import { siddurCarName } from "@/lib/siddurCarName";
 
 import { templateSuggestionRowSchema, type TemplateSuggestionRow } from "./schema";
 
-import type { Database, Json } from "@/integrations/supabase/types";
+import type { Json } from "@/integrations/supabase/types";
+import type {
+  CarType,
+  FreedClaimStatus,
+  FreedOfferStatus,
+  LegCarMode,
+  ProposalStatus,
+  ProposalType,
+  RequestStatus,
+  RideRole,
+  RideStatus,
+  TripShape,
+} from "@/lib/enums";
 import type { RequestWindow } from "./window";
 
 /**
@@ -24,11 +36,7 @@ import type { RequestWindow } from "./window";
  * `.eq('requester_id', …)` instead. Flagged in the final report as a
  * data-layer finding, not fixed here (supabase/ is out of scope for stage 1c).
  */
-export type RequestStatus = Database["public"]["Enums"]["request_status"];
-export type TripShape = Database["public"]["Enums"]["trip_shape"];
-export type CarType = Database["public"]["Enums"]["car_type"];
-export type RideRole = Database["public"]["Enums"]["ride_role"];
-export type ProposalType = Database["public"]["Enums"]["proposal_type"];
+export type { RequestStatus, TripShape, CarType, RideRole, ProposalType };
 
 export interface MyRequestRide {
   needsDriver?: boolean;
@@ -36,7 +44,7 @@ export interface MyRequestRide {
   id: string;
   startsAt: string;
   endsAt: string;
-  status: Database["public"]["Enums"]["ride_status"];
+  status: RideStatus;
   originName: string;
   destinationName: string;
   carName: string | null;
@@ -146,7 +154,7 @@ interface RawRequestRow {
       id: string;
       starts_at: string;
       ends_at: string;
-      status: Database["public"]["Enums"]["ride_status"];
+      status: RideStatus;
       origin: { name: string } | null;
       destination: { name: string } | null;
       car: {
@@ -162,7 +170,7 @@ interface RawRequestRow {
     type: ProposalType;
     reason_he: string;
     expires_at: string | null;
-    status: Database["public"]["Enums"]["proposal_status"];
+    status: ProposalStatus;
   }[];
   request_children: { child: { full_name: string } | null }[];
 }
@@ -253,7 +261,7 @@ export interface RequestEditRow {
   tripShape: TripShape;
   departAt: string | null;
   returnAt: string | null;
-  oneWayCarMode: Database["public"]["Enums"]["leg_car_mode"] | null;
+  oneWayCarMode: LegCarMode | null;
   needsCarAtDestination: boolean;
   adults: number;
   childSeats: number;
@@ -303,7 +311,7 @@ export async function fetchRequestById(requestId: string, profileId: string): Pr
     trip_shape: TripShape;
     depart_at: string | null;
     return_at: string | null;
-    one_way_car_mode: Database["public"]["Enums"]["leg_car_mode"] | null;
+    one_way_car_mode: LegCarMode | null;
     needs_car_at_destination: boolean;
     adults: number;
     child_seats: number;
@@ -382,7 +390,7 @@ export interface SubmitRequestPayload {
   boosters: number;
   has_luggage?: boolean;
   needs_car_at_destination?: boolean;
-  one_way_car_mode?: Database["public"]["Enums"]["leg_car_mode"];
+  one_way_car_mode?: LegCarMode;
   flex_depart_early?: string;
   flex_depart_late?: string;
   flex_return_early?: string;
@@ -515,8 +523,8 @@ export async function setFreedSlotOptOut(requestId: string, optOut: boolean): Pr
 export interface MyFreedSlotOfferRow {
   offerId: string;
   requestId: string;
-  claimStatus: Database["public"]["Enums"]["freed_claim_status"];
-  offerStatus: Database["public"]["Enums"]["freed_offer_status"];
+  claimStatus: FreedClaimStatus;
+  offerStatus: FreedOfferStatus;
   carName: string;
   destinationName: string;
   startsAt: string;
@@ -539,11 +547,11 @@ export async function fetchMyFreedSlotOffers(profileId: string): Promise<MyFreed
   if (error) throw toAppError(error);
 
   interface Raw {
-    status: Database["public"]["Enums"]["freed_claim_status"];
+    status: FreedClaimStatus;
     request_id: string;
     offer: {
       id: string;
-      status: Database["public"]["Enums"]["freed_offer_status"];
+      status: FreedOfferStatus;
       starts_at: string;
       ends_at: string;
       expires_at: string;
@@ -613,7 +621,7 @@ export interface TemplateSuggestion {
   /** Already anchored to `weekStart` (computed in SQL from `departDow`/`departTime`). */
   departAt: string | null;
   returnAt: string | null;
-  oneWayCarMode: Database["public"]["Enums"]["leg_car_mode"] | null;
+  oneWayCarMode: LegCarMode | null;
   needsCarAtDestination: boolean;
   adults: number;
   childSeats: number;

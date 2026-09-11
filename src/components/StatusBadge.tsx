@@ -26,14 +26,7 @@ import { Badge } from "@/components/ui/badge";
 import { he } from "@/i18n/he";
 import { cn } from "@/lib/utils";
 
-import type { Database } from "@/integrations/supabase/types";
-
-type RequestStatus = Database["public"]["Enums"]["request_status"];
-type ProposalStatus = Database["public"]["Enums"]["proposal_status"];
-type RideStatus = Database["public"]["Enums"]["ride_status"];
-type CarStatus = Database["public"]["Enums"]["car_status"];
-type WeekPhase = Database["public"]["Enums"]["week_phase"];
-type CarIssueStatus = Database["public"]["Enums"]["car_issue_status"];
+import type { CarIssueStatus, CarStatus, ProposalStatus, RequestStatus, RideStatus, WeekPhase } from "@/lib/enums";
 /**
  * Mirrors `ParsedInviteRowStatus`
  * (`src/features/admin/members/lib/parseInviteLines.ts`) — a plain TS union,
@@ -71,7 +64,8 @@ const TONE = {
  * `Record<RequestStatus, StatusMeta>` — a plain TS object type, so a
  * request_status value missing from this map (or added to the enum and not
  * added here) fails `npm run typecheck`. That's the exhaustiveness check
- * against the generated `Database["public"]["Enums"]` the component owns;
+ * against `src/lib/enums.ts` (itself checked against the generated
+ * `Database["public"]["Enums"]` by `assertSameEnum`) the component owns;
  * `StatusBadge.test.tsx` additionally renders every literal value at
  * runtime as a belt-and-suspenders check. Colors/icons/labels per
  * UX_FLOWS.md §7.4.

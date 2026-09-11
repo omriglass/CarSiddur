@@ -1,7 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import { solve } from '../index';
-import { tryAutoApprove } from '../live';
-import { CarTimeline } from '../timeline';
 import { baseInput, makeCar, makeRequest, passengers, slotMs } from '../__fixtures__/gen';
 
 function preferredRequest(preferredCarId = 'preferred') {
@@ -31,15 +29,5 @@ describe('soft preferred car', () => {
     ] });
     expect(solve(input).assignments.find((a) => a.servedRequestIds.includes('high'))?.carId).toBe('preferred');
     expect(solve(input).assignments.find((a) => a.servedRequestIds.includes('low'))?.carId).toBe('a-default');
-  });
-
-  it('uses the same preference for live auto-approval and still falls back around blocked cars', () => {
-    const cars = [makeCar('a-default'), makeCar('preferred')];
-    const input = baseInput({ cars });
-    const timelines = Object.fromEntries(cars.map((car) => [car.id, new CarTimeline(car, 2, 96 * 7, input.homeLocationId)]));
-    const args = { request: preferredRequest(), cars, timelines, config: input.config, stats: input.stats, week: input.week, homeLocationId: input.homeLocationId };
-    expect(tryAutoApprove(args)?.carId).toBe('preferred');
-    timelines.preferred!.add({ rideId: 'busy', window: { start: 30, end: 50 }, startLocationId: input.homeLocationId, endLocationId: input.homeLocationId, overnightAck: false });
-    expect(tryAutoApprove(args)?.carId).toBe('a-default');
   });
 });

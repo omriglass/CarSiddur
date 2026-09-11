@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { rpc, toAppError } from "@/lib/rpc";
 
 import type { Database, Json } from "@/integrations/supabase/types";
+import type { LegCarMode, NotificationChannel, ProposalType, RideLeg, RideRole } from "@/lib/enums";
 
 /**
  * The only file in the `sadran` feature that calls `supabase.from`/`.rpc`
@@ -332,9 +333,9 @@ export async function applySolverResult(
 
 export interface EditRideServedLeg {
   request_id: string;
-  role: Database["public"]["Enums"]["ride_role"];
-  leg?: Database["public"]["Enums"]["ride_leg"];
-  car_mode: Database["public"]["Enums"]["leg_car_mode"];
+  role: RideRole;
+  leg?: RideLeg;
+  car_mode: LegCarMode;
   detour_minutes?: number;
 }
 
@@ -394,7 +395,7 @@ export async function fetchProposalParties(proposalId: string): Promise<Proposal
 export interface CreateProposalInput {
   requestId: string;
   rideId: string | null;
-  type: Database["public"]["Enums"]["proposal_type"];
+  type: ProposalType;
   payload: Json;
   reasonHe: string;
   partyProfileIds?: string[];
@@ -420,7 +421,7 @@ export interface SendProposalResult {
 
 export async function sendProposal(
   proposalId: string,
-  sentVia: Database["public"]["Enums"]["notification_channel"][] = [],
+  sentVia: NotificationChannel[] = [],
   replacement?: { id: string; version: number },
 ): Promise<SendProposalResult> {
   const result = await rpc("send_proposal", {

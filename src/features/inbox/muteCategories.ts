@@ -1,8 +1,5 @@
 import { he } from "@/i18n/he";
-
-import type { Database } from "@/integrations/supabase/types";
-
-type NotificationEvent = Database["public"]["Enums"]["notification_event"];
+import type { NotificationEvent } from "@/lib/enums";
 
 export interface MuteCategory {
   key: string;

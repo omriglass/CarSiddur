@@ -12,6 +12,8 @@ Kept separate from `IMPLEMENTATION_PLAN.md` so the owner can triage. Items move 
 
 ## Possible bugs (could not reproduce yet)
 
+- **Standalone unmet drop is not overlap-checked against other rides** (found 2026-09-11 while extracting `src/features/sadran/board/dropValidity.ts`, behaviour preserved as-is). `isUnmetDropValid()` returns `!host || !wouldOverlap(...)`: when the unmet request is dropped onto a car with no merge host, the `!host` branch short-circuits to valid, so only maintenance blocks (`unavailable()`) are checked, not existing rides on that car. `edit_ride`/`assert_car_chain` in SQL still reject a real overlap, so the effect is a misleading green drop target followed by an error toast, not a bad ride. Decide: check overlap client-side too (one extra `wouldOverlap` call) or accept.
+
 - **Chauffeur suggestion is not gated on a free shared car** (found 2026-09-11 while removing dead solver exports). `docs/SOLVER.md` §3.3, §3.11 item 5 and the §7.1 test-matrix row say a `chauffeur` suggestion appears only when a shared car is free at home for the chauffeur window and the load `sum(served) + (1, 0, 0)` fits — `chauffeurLoad()` in `src/solver/seatFit.ts` exists for exactly this, but `src/solver/suggestions.ts` emits `kind: 'chauffeur'` unconditionally in both places and nothing calls `chauffeurLoad` outside its unit test. Either wire the gate (solver-dev, plus a `suggestions.test.ts` row) or amend SOLVER.md; owner decides which. Plan item D12.
 
 - **"Blocked by <ride-id hash>" label on mobile** when viewing requests that were not auto-approved. Not found in the source (2026-09-09 grep for blocked/blockedBy). Owner: please capture a screenshot with the screen name.
@@ -36,10 +38,6 @@ Proposed design (not started, needs one migration):
 - UI: "+ נוסעים" button on `RideDetailSheet` and the board `RideSheet` (same component), reusing the request form's companion/children picker plus free-text names.
 - Also: ride cancellation already notifies passengers filed via requests (2026-09-09); extend the emitter to `ride_passengers` rows.
 - **Department switcher lists only own memberships** (found by e2e `department-context.spec.ts`, 2026-09-09, pre-existing). REQ §13.52 says approved members may view another department's public siddur; `DepartmentContextSelector` reads `useMyDepartments()` (membership rows only), so a non-member department is never selectable. Decide: implement view-only browsing (list all departments, gate submission on membership) or change REQ and the spec.
-
-## Convention decided — to implement
-
-- **`src/lib/enums.ts`** — decided 2026-09-11 (owner Q1, `docs/REFACTOR_PLAN_2026-09-11.md` E8): implement it as documented (CLAUDE.md Conventions "Statuses / enums shared between SQL and TS"), then migrate the ~38 ad hoc `Database["public"]["Enums"][...]` alias/exhaustive-map sites (`StatusBadge.tsx`, `sadran/applySolve.ts`, etc.) to it. Not yet started; CLAUDE.md's folder-map line for `lib/enums.ts` points here.
 
 ## To confirm
 

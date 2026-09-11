@@ -2,6 +2,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { rpc, toAppError } from "@/lib/rpc";
 
 import type { Database } from "@/integrations/supabase/types";
+import type { Role } from "@/lib/enums";
 
 /**
  * The only file in the `auth` feature that calls `supabase.from`/`.rpc`
@@ -51,7 +52,7 @@ export async function updateProfile(profileId: string, patch: ProfilePatch): Pro
 
 export interface DepartmentMembership {
   department_id: string;
-  role: Database["public"]["Enums"]["role"];
+  role: Role;
   department: { id: string; name: string; slug: string };
 }
 

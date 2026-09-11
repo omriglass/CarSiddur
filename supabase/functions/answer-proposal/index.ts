@@ -27,6 +27,7 @@
 
 import { corsHeaders, handleCorsPreflight } from '../_shared/cors.ts';
 import { errorResponse, jsonResponse, sha256Hex } from '../_shared/env.ts';
+import { bearerToken } from '../_shared/request.ts';
 import { checkRateLimit, clientIp } from '../_shared/rateLimit.ts';
 import { getServiceRoleClient, getUserFromJwt } from '../_shared/supabaseAdmin.ts';
 
@@ -185,9 +186,9 @@ Deno.serve(async (req) => {
     }
 
     let via: 'token' | 'session' = 'token';
-    const authHeader = req.headers.get('authorization');
-    if (authHeader?.startsWith('Bearer ')) {
-      const user = await getUserFromJwt(authHeader.slice('Bearer '.length));
+    const jwt = bearerToken(req);
+    if (jwt) {
+      const user = await getUserFromJwt(jwt);
       if (user) via = 'session';
     }
 

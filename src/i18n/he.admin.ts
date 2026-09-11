@@ -13,8 +13,8 @@
 // (`notificationEventLabels`, duplicating `he.notif` in `he.ts`,
 // docs/REFACTOR_BACKLOG.md §5.3) — deleted; the admin templates screen now
 // reads `he.notif` directly, which is typed
-// `Record<Database["public"]["Enums"]["notification_event"], string>` and
-// so is guaranteed to cover every event, including the two Sadran-only ones
+// `Record<NotificationEvent, string>` (`src/lib/enums.ts`) and so is
+// guaranteed to cover every event, including the two Sadran-only ones
 // this map used to add on top of the (then-incomplete) `he.notif`.
 
 export const heAdmin = {

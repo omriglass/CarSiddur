@@ -3,6 +3,7 @@ import { AppError, rpc, toAppError } from "@/lib/rpc";
 import { siddurCarName } from "@/lib/siddurCarName";
 
 import type { Database } from "@/integrations/supabase/types";
+import type { CarType } from "@/lib/enums";
 
 /**
  * The only file in the `siddur` feature that calls `supabase.from`/`.rpc`.
@@ -15,7 +16,7 @@ export type Week = Database["public"]["Tables"]["weeks"]["Row"];
 export type BoardRide = Database["public"]["Views"]["v_board_rides"]["Row"];
 export type MyUpcomingRide = BoardRide & {
   car_name: string | null;
-  car_type: Database["public"]["Enums"]["car_type"] | null;
+  car_type: CarType | null;
 };
 
 /**
@@ -56,7 +57,7 @@ export async function fetchMyUpcomingRides(profileId: string, departmentId?: str
   for (const ride of rideRows ?? []) if (ride.id) rides.set(ride.id, ride);
 
   const carIds = [...new Set([...rides.values()].flatMap((ride) => ride.car_id ? [ride.car_id] : []))];
-  const cars = new Map<string, { label: string; type: Database["public"]["Enums"]["car_type"] }>();
+  const cars = new Map<string, { label: string; type: CarType }>();
   if (carIds.length) {
     const { data: carRows, error: carError } = await supabase.from("cars")
       .select("id, name, type, codes:car_access_codes(access_code, is_replaced, replacement_code)")
@@ -199,7 +200,7 @@ export async function fetchBoardRideById(rideId: string): Promise<BoardRide | nu
 }
 
 /** Car type/owner for a ride's car — used to word the "ask to join" confirmation (REQ §13.43). */
-export async function fetchCarForRide(carId: string): Promise<{ type: Database["public"]["Enums"]["car_type"]; ownerId: string | null } | null> {
+export async function fetchCarForRide(carId: string): Promise<{ type: CarType; ownerId: string | null } | null> {
   const { data, error } = await supabase.from("cars").select("type, owner_id").eq("id", carId).maybeSingle();
   if (error) throw toAppError(error);
   return data ? { type: data.type, ownerId: data.owner_id } : null;

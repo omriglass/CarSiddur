@@ -6,9 +6,7 @@ import { parseTireStates, type TireStates } from "../lib/history";
 
 import type { CarCareEventWithReporter, CarIssueWithReporter } from "../api";
 
-import type { Database } from "@/integrations/supabase/types";
-
-type TireState = Database["public"]["Enums"]["tire_state"];
+import type { TireState } from "@/lib/enums";
 
 const copy = he.carPage;
 

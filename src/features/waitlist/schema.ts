@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { waitlistGroupStatusSchema } from "@/lib/enums";
+
 /**
  * `v_waitlist_groups.members` jsonb element (DATA_MODEL.md §7.4a): one
  * participant's denormalized request snapshot. `chosen` is `null` while the
@@ -26,7 +28,7 @@ export const waitlistGroupRowSchema = z.object({
   day: z.string(),
   starts_at: z.string(),
   ends_at: z.string(),
-  status: z.enum(["open", "resolved", "cancelled"]),
+  status: waitlistGroupStatusSchema,
   ride_id: z.string().nullable(),
   resolved_by: z.string().nullable(),
   resolved_at: z.string().nullable(),

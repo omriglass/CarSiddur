@@ -1,16 +1,19 @@
 import { z } from "zod";
 
 import { he } from "@/i18n/he";
+import { CAR_ISSUE_CATEGORIES, carIssueCategorySchema, TIRE_STATES, tireStateSchema } from "@/lib/enums";
+
+import type { CarIssueCategory, TireState } from "@/lib/enums";
 
 /**
- * = SQL `car_issue_category` (DATA_MODEL.md §3.2, REQUIREMENTS §6.6). Kept as
- * a local literal union — there is no `src/lib/enums.ts` mirror in this repo
- * (see `features/requests/schema.ts`'s own note); `Record<CarIssueCategory,
- * string>` labels live at `he.carCare.category` so a value missing its
- * Hebrew label fails `npm run typecheck`.
+ * = SQL `car_issue_category` (DATA_MODEL.md §3.2, REQUIREMENTS §6.6); value
+ * list/type live in `src/lib/enums.ts`, re-exported here so existing
+ * importers keep working. `Record<CarIssueCategory, string>` labels live at
+ * `he.carCare.category` so a value missing its Hebrew label fails
+ * `npm run typecheck`.
  */
-export const CAR_ISSUE_CATEGORIES = ["warning_light", "mechanical", "lighting", "physical_damage"] as const;
-export type CarIssueCategory = (typeof CAR_ISSUE_CATEGORIES)[number];
+export { CAR_ISSUE_CATEGORIES };
+export type { CarIssueCategory };
 
 /**
  * `category` is `.optional()` at the zod-type level only so the radio group
@@ -22,7 +25,7 @@ export type CarIssueCategory = (typeof CAR_ISSUE_CATEGORIES)[number];
  */
 export const carIssueReportSchema = z
   .object({
-    category: z.enum(CAR_ISSUE_CATEGORIES).optional(),
+    category: carIssueCategorySchema.optional(),
     description: z.string().trim().min(1, he.carCare.descriptionRequired).max(500, he.carCare.descriptionTooLong),
   })
   .superRefine((values, ctx) => {
@@ -32,9 +35,9 @@ export const carIssueReportSchema = z
   });
 export type CarIssueReportValues = z.infer<typeof carIssueReportSchema>;
 
-/** = SQL `tire_state` (DATA_MODEL.md §3.2). Green/yellow/red per REQUIREMENTS §13.72. */
-export const TIRE_STATES = ["ok", "low", "very_low"] as const;
-export type TireState = (typeof TIRE_STATES)[number];
+/** = SQL `tire_state` (DATA_MODEL.md §3.2, `src/lib/enums.ts`). Green/yellow/red per REQUIREMENTS §13.72. */
+export { TIRE_STATES };
+export type { TireState };
 
 /** The five tire positions every `log_car_care('tire_fill', …)` call must report. */
 export const TIRE_POSITIONS = ["front_left", "front_right", "rear_left", "rear_right", "spare"] as const;
@@ -56,8 +59,6 @@ export function cycleTireState(state: TireState): TireState {
   if (state === "low") return "very_low";
   return "ok";
 }
-
-const tireStateSchema = z.enum(TIRE_STATES);
 
 export const tireFillSchema = z.object({
   tires: z.object({

@@ -33,10 +33,7 @@ import { isPushSupported, subscribeToPush, unsubscribeFromPush } from "@/lib/pus
 import { showDiagnosticErrorToast } from "@/lib/rpc";
 import { supabase } from "@/integrations/supabase/client";
 
-import type { Database } from "@/integrations/supabase/types";
-
-type HomeWeekPreference = Database["public"]["Enums"]["home_week_preference"];
-type NotificationEvent = Database["public"]["Enums"]["notification_event"];
+import type { HomeWeekPreference, NotificationEvent } from "@/lib/enums";
 
 /**
  * `/profile` (UX_FLOWS.md §3.8). Departments, home-week preference, mute

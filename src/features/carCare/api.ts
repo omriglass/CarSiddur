@@ -1,7 +1,7 @@
 import { rpc } from "@/lib/rpc";
 
 import type { Json } from "@/integrations/supabase/types";
-import type { Database } from "@/integrations/supabase/types";
+import type { CarCareKind } from "@/lib/enums";
 
 import type { CarIssueCategory, TireStates } from "./schema";
 
@@ -12,7 +12,7 @@ import type { CarIssueCategory, TireStates } from "./schema";
  * (`car_care_recipients()`, REQUIREMENTS §6.6 / §13.70) is resolved
  * server-side, so the client only ever needs the car id.
  */
-export type CarCareKind = Database["public"]["Enums"]["car_care_kind"];
+export type { CarCareKind };
 
 /**
  * `report_car_issue(_car_id, _category, _description, _photo_path?)`.

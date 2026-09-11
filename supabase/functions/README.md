@@ -8,7 +8,8 @@ into `src/`.
 supabase/functions/
   _shared/
     cors.ts            shared CORS headers
-    env.ts              env helpers, JSON responses, timing-safe compare, sha256
+    env.ts              env helpers (Deno.env), JSON responses, timing-safe compare, sha256
+    request.ts          web-standard request helpers with no Deno globals (bearerToken); importable by Vitest-tested handlers
     supabaseAdmin.ts     service-role client factory, JWT verification helper
     rateLimit.ts         in-memory per-IP sliding-window limiter (answer-proposal)
     tz.ts                Asia/Jerusalem wall-clock <-> epoch-ms + week.days builder (on-ride-cancelled)

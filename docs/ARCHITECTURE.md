@@ -364,7 +364,7 @@ sequenceDiagram
   end
 ```
 
-The free-car search here is SQL inside `try_auto_approve()` (`tstzrange` overlap with the exclusion constraint on `rides(car_id, window)` as the final arbiter — it attempts the insert), so two simultaneous submissions cannot both grab the same slot. Seat fitting uses the SQL function `car_fits(car_id, adults, child_seats, boosters)` (DATA_MODEL §5.2), which mirrors the solver's `fits()` and is tested against the same fixtures; the solver's TS `tryAutoApprove()` is the reference implementation and powers the form's "will be approved immediately" preview.
+The free-car search here is SQL inside `try_auto_approve()` (`tstzrange` overlap with the exclusion constraint on `rides(car_id, window)` as the final arbiter — it attempts the insert), so two simultaneous submissions cannot both grab the same slot. Seat fitting uses the SQL function `car_fits(car_id, adults, child_seats, boosters)` (DATA_MODEL §5.2), which mirrors the solver's `fits()` and is tested against the same fixtures; auto-approve is SQL-only (`try_auto_approve`, SOLVER.md §5.2) — there is no TypeScript reference implementation. There is no pre-submit "will be approved immediately" preview either: the form shows the outcome as a toast once `submit_request` returns (`toastSubmitOutcome`, `src/features/requests/submitOutcome.ts`).
 
 ---
 
@@ -395,7 +395,7 @@ Principle: **the database is the last line of defence** (constraints, triggers, 
 | §7.3/§13.43 ask to join a **temporary-car** ride → proposal goes straight to the owner | same form; owner answers like any driver | – | `submit_request` creates and sends the `merge` proposal directly to the ride's owner when `join_ride_id` resolves to a `temporary` car; the Sadran only sees it in the proposals list and gets `proposal_answered` — no Sadran action in between |
 | §7.5 publish freezes version, notifies changed outcomes only | – | – | `publish_siddur` diffs against previous version |
 | §8 cancel → candidates, auto-assign if 1, contest if >1 | – | `on-ride-cancelled` (solver `matchFreedSlot`) | `cancel_ride`, `freed_slot_candidates`, `resolve_freed_offer`, `approve_claim`; exclusion constraint |
-| §8 new request on free car → auto-approve | form preview via solver `tryAutoApprove` | – | `submit_request` → `try_auto_approve()` in live phase |
+| §8 new request on free car → auto-approve | outcome toast via `submitOutcome.ts` (`toastSubmitOutcome`), no pre-submit preview | – | `submit_request` → `try_auto_approve()` in live phase |
 | §8 edit assigned ride: same car free → keep, else cancel+new (warn) | warning dialog | – | `submit_request` edit path with version check |
 | §8 car → maintenance flags rides, notifies | – | – | trigger `flag_rides_in_maintenance` on `car_maintenance_blocks` INSERT/UPDATE |
 | §8 Sadran edits → affected members notified with diff | – | – | trigger on `rides` UPDATE when `confirmed` |

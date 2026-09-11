@@ -14,9 +14,7 @@ import { heAdmin } from "./he.admin";
 import { heMember } from "./he.member";
 import { heSadran } from "./he.sadran";
 
-import type { Database } from "@/integrations/supabase/types";
-
-type NotificationEvent = Database["public"]["Enums"]["notification_event"];
+import type { NotificationEvent } from "@/lib/enums";
 
 // `requests.status_reason` is a free-text column (no SQL enum), so there is
 // no generated type to mirror. This TS-only list is grepped from every

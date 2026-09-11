@@ -100,7 +100,7 @@ src/
   lib/
     time.ts                    TZ = 'Asia/Jerusalem'; formatTime, dateKey, weekdayIndex, formatWeekLabel, toJerusalem, DayBounds
     dayLabels.ts                weekdayLabel(instant, style) — kept out of time.ts so it stays i18n-free
-    enums.ts                   decided 2026-09-11: to be implemented (docs/REFACTOR_PLAN_2026-09-11.md E8); until it lands, code uses `Database['public']['Enums']` directly
+    enums.ts                   single TS home for SQL enum value lists (hard rule 9): one `as const satisfies readonly Enums<'x'>[]` array + derived type + zod schema + `assertSameEnum<>()` per enum actually used in TS; `enums.test.ts` checks no duplicates and array/schema parity
     rpc.ts                     typed `rpc()` wrapper, `toAppError()` (SQLSTATE → `he.errors.*`), `showErrorToast()`
     push.ts                    push subscription helpers
     whatsapp.ts                wa.me link builder (no Hebrew; copy comes from DB)

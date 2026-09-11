@@ -1,9 +1,6 @@
 import { dateKey } from "@/lib/time";
 
-import type { Database } from "@/integrations/supabase/types";
-
-type HomeWeekPreference = Database["public"]["Enums"]["home_week_preference"];
-type WeekPhase = Database["public"]["Enums"]["week_phase"];
+import type { HomeWeekPreference, WeekPhase } from "@/lib/enums";
 
 export interface WeekPhaseRow {
   weekStart: string;

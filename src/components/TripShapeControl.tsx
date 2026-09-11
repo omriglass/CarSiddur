@@ -1,9 +1,12 @@
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { he } from "@/i18n/he";
+import { TRIP_SHAPES } from "@/lib/enums";
 
-/** = SQL `trip_shape` (Database["public"]["Enums"]["trip_shape"]). */
-export const TRIP_SHAPES = ["round_trip", "one_way_to", "one_way_from"] as const;
-export type TripShapeValue = (typeof TRIP_SHAPES)[number];
+import type { TripShape } from "@/lib/enums";
+
+/** = SQL `trip_shape` (`src/lib/enums.ts`). */
+export { TRIP_SHAPES };
+export type TripShapeValue = TripShape;
 
 const LABEL_BY_VALUE: Record<TripShapeValue, string> = {
   round_trip: he.request.tripShapeRoundTrip,

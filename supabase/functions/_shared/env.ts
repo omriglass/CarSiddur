@@ -42,7 +42,6 @@ export async function sha256Hex(text: string): Promise<string> {
     .map((b) => b.toString(16).padStart(2, '0'))
     .join('');
 }
-
 export function jsonResponse(body: unknown, init: ResponseInit & { headers?: Record<string, string> } = {}): Response {
   return new Response(JSON.stringify(body), {
     ...init,

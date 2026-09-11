@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { he } from "@/i18n/he";
+import { carStatusSchema } from "@/lib/enums";
 
 export const CAR_FEATURES = ["roof_rack", "large_trunk", "automatic", "awd"] as const;
 export type CarFeature = (typeof CAR_FEATURES)[number];
@@ -16,7 +17,7 @@ export const carSchema = z.object({
   // (owner decision 2026-09-10) — `createCar` always sends `type: "shared"`;
   // a temporary car (member-owned, `cars_temporary_owner_ck`) keeps whatever
   // type it already has because this form never submits the column at all.
-  status: z.enum(["active", "maintenance", "retired"]),
+  status: carStatusSchema,
   features: z.array(z.string()),
   notes: z.string().trim().nullable(),
   built_in_child_seats: z.number().int().min(0),

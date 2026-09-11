@@ -23,7 +23,7 @@ import type { Assignment, Car, SolverInput, SolverOutput, UnmetRequest } from '.
 export * from './types';
 export { fits, dominates, slack, sum, luggageFits, chauffeurLoad } from './seatFit';
 export { ruleRegistry, type RuleType } from './rules/index';
-export { matchFreedSlot, tryAutoApprove } from './live';
+export { matchFreedSlot } from './live';
 export { CarTimeline, buildTimelines } from './timeline';
 export type { NormalizedRequest, NormalizedLeg, SeriesLeg, SeriesUnit } from './slots';
 

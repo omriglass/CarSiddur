@@ -9,7 +9,8 @@ import * as api from "./api";
 import { sadranKeys } from "./keys";
 import { publishWithScores } from "./publish/publishWithScores";
 
-import type { Database, Json } from "@/integrations/supabase/types";
+import type { Json } from "@/integrations/supabase/types";
+import type { NotificationChannel } from "@/lib/enums";
 
 // ---------------------------------------------------------------------------
 // Week / phase
@@ -234,7 +235,7 @@ export function useSendProposalMutation() {
       replacement,
     }: {
       proposalId: string;
-      sentVia?: Database["public"]["Enums"]["notification_channel"][];
+      sentVia?: NotificationChannel[];
       replacement?: { id: string; version: number };
       departmentId: string;
       weekStart: string;

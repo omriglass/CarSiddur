@@ -2,14 +2,15 @@ import { env } from "@/lib/env";
 import { rpc } from "@/lib/rpc";
 import { supabase } from "@/integrations/supabase/client";
 
-import type { Database, Json } from "@/integrations/supabase/types";
+import type { Json } from "@/integrations/supabase/types";
+import type { AnswerChannel, ProposalStatus, ProposalType } from "@/lib/enums";
 
 /**
  * The only file in the `proposals` feature that calls `.rpc` — and, for the
  * `/p/:token` deep link (no session required, ARCHITECTURE §8), the
  * `answer-proposal` edge function directly via `fetch`.
  */
-export type AnswerChannel = Database["public"]["Enums"]["answer_channel"];
+export type { AnswerChannel };
 
 export interface ProposalPartySummary {
   profileId: string;
@@ -31,8 +32,8 @@ export interface ProposalRequestSummary {
 
 export interface ProposalSummary {
   proposalId: string;
-  type: Database["public"]["Enums"]["proposal_type"];
-  status: Database["public"]["Enums"]["proposal_status"];
+  type: ProposalType;
+  status: ProposalStatus;
   reasonHe: string;
   /** No timer any more (20260910090000): null until the proposal's day is published or has passed. */
   expiresAt: string | null;

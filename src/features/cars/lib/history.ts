@@ -2,11 +2,7 @@ import { dateKey } from "@/lib/time";
 
 import type { CarCareEventWithReporter, CarIssueWithReporter } from "../api";
 
-import type { Database } from "@/integrations/supabase/types";
-
-type CarIssueCategory = Database["public"]["Enums"]["car_issue_category"];
-type CarIssueStatus = Database["public"]["Enums"]["car_issue_status"];
-type TireState = Database["public"]["Enums"]["tire_state"];
+import type { CarIssueCategory, CarIssueStatus, TireState } from "@/lib/enums";
 
 export interface TireStates {
   front_left: TireState;

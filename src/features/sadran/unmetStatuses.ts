@@ -9,9 +9,7 @@
 // solved yet) showed an empty unmet list and an all-zero dashboard even
 // though nothing had been placed. Shared here so the board and dashboard
 // always report the same number.
-import type { Database } from "@/integrations/supabase/types";
-
-type RequestStatus = Database["public"]["Enums"]["request_status"];
+import type { RequestStatus } from "@/lib/enums";
 
 export const UNMET_REQUEST_STATUSES: ReadonlySet<RequestStatus> = new Set<RequestStatus>([
   "submitted",

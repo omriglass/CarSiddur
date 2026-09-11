@@ -1,4 +1,5 @@
 import { corsHeaders } from '../_shared/cors.ts';
+import { bearerToken } from '../_shared/request.ts';
 
 export interface RoutePlace { name: string; lat: number | null; lng: number | null }
 export interface RouteDependencies {
@@ -27,7 +28,7 @@ export async function handleDestinationRoute(req: Request, deps: RouteDependenci
   if (req.method === 'OPTIONS') return response({ ok: true });
   if (req.method !== 'POST') return failure('method_not_allowed', 405);
   try {
-    const jwt = /^Bearer\s+(.+)$/i.exec(req.headers.get('Authorization') ?? '')?.[1];
+    const jwt = bearerToken(req);
     if (!jwt || !(await deps.authenticate(jwt))) return failure('not_authorized', 401);
     let body: unknown;
     try { body = await req.json(); } catch { return failure('invalid_request', 400); }

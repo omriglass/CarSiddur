@@ -4,6 +4,7 @@ import { he } from "@/i18n/he";
 import { AppError, rpc, toAppError } from "@/lib/rpc";
 
 import type { Database } from "@/integrations/supabase/types";
+import type { Role } from "@/lib/enums";
 
 /**
  * The only file in `admin/members` that calls `supabase.from`/`.rpc`.
@@ -15,7 +16,7 @@ import type { Database } from "@/integrations/supabase/types";
 export type Profile = Database["public"]["Tables"]["profiles"]["Row"];
 export type DepartmentMember = Database["public"]["Tables"]["department_members"]["Row"];
 export type MemberInvite = Database["public"]["Tables"]["member_invites"]["Row"];
-export type Role = Database["public"]["Enums"]["role"];
+export type { Role };
 
 /**
  * `phone` is not directly selectable (RLS); fetched in bulk via `profile_phones()` and

@@ -18,6 +18,7 @@
 
 import { corsHeaders, handleCorsPreflight } from '../_shared/cors.ts';
 import { errorResponse, jsonResponse, optionalEnv, requireEnv, timingSafeEqual } from '../_shared/env.ts';
+import { bearerToken } from '../_shared/request.ts';
 import { getServiceRoleClient, getUserFromJwt } from '../_shared/supabaseAdmin.ts';
 // deno-lint-ignore no-explicit-any
 import webpush from 'npm:web-push@3';
@@ -48,9 +49,8 @@ async function authorize(req: Request): Promise<{ ok: true } | { ok: false; stat
     return { ok: true };
   }
 
-  const auth = req.headers.get('authorization');
-  if (auth?.startsWith('Bearer ')) {
-    const jwt = auth.slice('Bearer '.length);
+  const jwt = bearerToken(req);
+  if (jwt) {
     const user = await getUserFromJwt(jwt);
     if (user) {
       const client = getServiceRoleClient();

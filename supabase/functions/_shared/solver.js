@@ -2425,64 +2425,6 @@ function matchFreedSlot(input) {
   });
   return results;
 }
-function tryAutoApprove(input) {
-  if (input.request.tripShape !== "round_trip") return null;
-  if (input.request.seriesId !== void 0) return null;
-  const pseudoInput = {
-    week: input.week,
-    homeLocationId: input.homeLocationId,
-    cars: input.cars,
-    requests: [input.request],
-    fixedRides: [],
-    destinations: {},
-    policy: { id: "", version: 0, rules: [] },
-    stats: input.stats,
-    config: input.config
-  };
-  const { normalized } = normalize(pseudoInput);
-  const nr = normalized[0];
-  if (!nr || !withinRequestDay(nr, nr.window)) return null;
-  const sharedCars = input.cars.filter((c) => c.type === "shared").sort((a, b) => a.id < b.id ? -1 : 1);
-  let best = null;
-  for (const car of sharedCars) {
-    if (!fits(car, nr.passengers) || !luggageFits(car, nr.luggage ? 1 : 0)) continue;
-    const tl = input.timelines[car.id];
-    if (!tl) continue;
-    if (!tl.isFree(nr.window, input.homeLocationId)) continue;
-    const slackVal = slack(car, nr.passengers) ?? Number.POSITIVE_INFINITY;
-    const preference = carPreferenceRank(car.id, [input.request.preferredCarId]);
-    if (!best || preference < best.preference || preference === best.preference && (slackVal < best.slackVal || slackVal === best.slackVal && car.id < best.car.id)) {
-      best = { car, slackVal, preference };
-    }
-  }
-  if (!best) return null;
-  return {
-    rideId: `ride:${nr.id}`,
-    carId: best.car.id,
-    window: nr.window,
-    originId: input.homeLocationId,
-    destinationId: input.homeLocationId,
-    driverRequestId: nr.id,
-    driverMemberId: input.request.memberId,
-    legs: [
-      {
-        requestId: nr.id,
-        leg: "both",
-        carMode: "keep",
-        originId: input.homeLocationId,
-        destinationId: input.request.destinationId,
-        role: "driver"
-      }
-    ],
-    servedRequestIds: [nr.id],
-    passengers: nr.passengers,
-    luggageCount: nr.luggage ? 1 : 0,
-    shift: { departureMin: 0, returnMin: 0 },
-    source: "solver",
-    reasonCode: "PLACED_PREFERRED",
-    reason: reason("PLACED_PREFERRED", { car: best.car.name })
-  };
-}
 
 // src/solver/index.ts
 function peopleOf(nr) {
@@ -2709,6 +2651,5 @@ export {
   slack,
   solve,
   sortUnits,
-  sum,
-  tryAutoApprove
+  sum
 };

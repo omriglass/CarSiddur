@@ -1,7 +1,7 @@
-import type { Database } from "@/integrations/supabase/types";
+import type { RequestStatus, RideStatus, WeekPhase } from "@/lib/enums";
 
 export interface RequestWindow {
-  phase: Database["public"]["Enums"]["week_phase"];
+  phase: WeekPhase;
   open_at: string;
   close_at: string;
 }
@@ -13,10 +13,10 @@ export function isRequestWindowOpen(window: RequestWindow | null | undefined, no
 
 /** Draft solver placements remain editable until the submission deadline. */
 export function canEditRequest(request: {
-  status: Database["public"]["Enums"]["request_status"];
+  status: RequestStatus;
   window?: RequestWindow | null;
   hasPublishedRide?: boolean;
-  ride?: { status: Database["public"]["Enums"]["ride_status"] } | null;
+  ride?: { status: RideStatus } | null;
 }, now = Date.now()): boolean {
   return isRequestWindowOpen(request.window, now)
     && !["withdrawn", "cancelled"].includes(request.status)

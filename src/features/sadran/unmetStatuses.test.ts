@@ -2,31 +2,22 @@ import { describe, expect, it } from "vitest";
 
 import { isUnmetStatus, UNMET_REQUEST_STATUSES } from "./unmetStatuses";
 
-import type { Database } from "@/integrations/supabase/types";
+import { REQUEST_STATUSES } from "@/lib/enums";
 
-// Mirrors `Database["public"]["Enums"]["request_status"]` (generated,
-// src/integrations/supabase/types.ts) — every value must be classified one
-// way or the other; this is the runtime belt-and-suspenders check that a
-// newly added enum value does not silently fall through `isUnmetStatus`.
-const REQUEST_STATUSES: readonly Database["public"]["Enums"]["request_status"][] = [
-  "draft",
-  "submitted",
-  "proposed",
-  "assigned",
-  "merged",
-  "waitlisted",
-  "denied",
-  "external",
-  "withdrawn",
-  "cancelled",
-];
+import type { RequestStatus } from "@/lib/enums";
+
+// `REQUEST_STATUSES` (`src/lib/enums.ts`) is kept in sync with the generated
+// `Database["public"]["Enums"]["request_status"]` by `assertSameEnum`; every
+// value must be classified one way or the other here — this is the runtime
+// belt-and-suspenders check that a newly added enum value does not silently
+// fall through `isUnmetStatus`.
 
 // Per unmetStatuses.ts's header comment (owner bug report #1): "not yet
 // accepted" = still needs a ride and might still get one — submitted,
 // proposed, waitlisted, denied. Everything else is either not yet a real
 // request (draft), already placed (assigned/merged/external), or no longer
 // active (withdrawn/cancelled).
-const EXPECTED_UNMET: ReadonlySet<Database["public"]["Enums"]["request_status"]> = new Set([
+const EXPECTED_UNMET: ReadonlySet<RequestStatus> = new Set([
   "submitted",
   "proposed",
   "waitlisted",

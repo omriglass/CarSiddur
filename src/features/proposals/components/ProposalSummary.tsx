@@ -2,10 +2,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { TripSummary } from "@/components/TripSummary";
 import { he, tv } from "@/i18n/he";
 
-import type { Database } from "@/integrations/supabase/types";
-
-type ProposalType = Database["public"]["Enums"]["proposal_type"];
-type ProposalStatus = Database["public"]["Enums"]["proposal_status"];
+import type { ProposalStatus, ProposalType } from "@/lib/enums";
 
 interface ProposalSummaryProps {
   /** Omit to show only the trip line (e.g. an editable type selector already renders it elsewhere). */
