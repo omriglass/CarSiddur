@@ -1,7 +1,7 @@
 import { formatInTimeZone } from "date-fns-tz";
 import { describe, expect, it } from "vitest";
 
-import { TZ, dateKey, formatTime, roundTo15, weekStartFor, weekdayIndex } from "./time";
+import { TZ, dateKey, formatTime, weekStartFor, weekdayIndex } from "./time";
 
 function localTime(instant: Date): string {
   return formatInTimeZone(instant, TZ, "yyyy-MM-dd HH:mm");
@@ -31,30 +31,6 @@ describe("weekStartFor", () => {
 
     expect(localTime(weekStartFor(beforeTransition))).toBe("2027-10-31 00:00");
     expect(localTime(weekStartFor(afterTransition))).toBe("2027-10-31 00:00");
-  });
-});
-
-describe("roundTo15", () => {
-  it("rounds down when closer to the previous quarter hour", () => {
-    const instant = new Date("2027-01-13T10:06:00Z");
-    expect(localTime(roundTo15(instant))).toBe("2027-01-13 12:00");
-  });
-
-  it("rounds up when closer to the next quarter hour", () => {
-    const instant = new Date("2027-01-13T10:09:00Z");
-    expect(localTime(roundTo15(instant))).toBe("2027-01-13 12:15");
-  });
-
-  it("rounds correctly on both sides of the spring-forward transition", () => {
-    const beforeTransition = new Date("2027-03-25T23:53:00Z"); // 01:53 IST -> 02:00
-    const afterTransition = new Date("2027-03-26T00:07:00Z"); // 03:07 IDT -> 03:00
-
-    // 01:53 IST rounds up to the nominal wall-clock 02:00, but 02:00-03:00
-    // never occurs locally on transition day (clocks jump straight from
-    // 01:59:59 IST to 03:00:00 IDT), so the DST-safe result normalizes
-    // forward past the gap instead of producing an impossible local time.
-    expect(localTime(roundTo15(beforeTransition))).toBe("2027-03-26 03:00");
-    expect(localTime(roundTo15(afterTransition))).toBe("2027-03-26 03:00");
   });
 });
 

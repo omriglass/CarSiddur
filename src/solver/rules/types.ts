@@ -5,7 +5,7 @@
 // src/solver/reasons.ts via ruleDescription()/PolicyParamsError.
 
 import type { NormalizedRequest } from '../slots';
-import type { Destination, Policy, SolverStats } from '../types';
+import { PolicyParamsError, type Destination, type Policy, type SolverStats } from '../types';
 
 export interface RuleContext<P> {
   params: P;
@@ -32,4 +32,25 @@ export interface Rule<P = unknown> {
   describe(params: P): string;
   /** raw value, not yet normalized or weighted */
   score(ctx: RuleContext<P>, request: NormalizedRequest): number;
+}
+
+/**
+ * Shared `validateParams` building block for the (common) single-numeric-param
+ * rule shape: `raw` must be an object carrying a finite number at `key`,
+ * positive by default. Pass `{ allowZero: true }` for a rule whose param may
+ * legitimately be zero (e.g. `submissionTime`'s `latePenalty`). Throws
+ * `PolicyParamsError(errorCode)` — Hebrew text for `errorCode` lives in
+ * `reasons.ts` — on any other shape.
+ */
+export function validatePositiveNumberParam(
+  raw: unknown,
+  key: string,
+  errorCode: string,
+  options?: { allowZero?: boolean },
+): number {
+  if (typeof raw !== 'object' || raw === null || !(key in raw)) throw new PolicyParamsError(errorCode);
+  const value = (raw as Record<string, unknown>)[key];
+  const invalid = typeof value !== 'number' || !Number.isFinite(value) || (options?.allowZero ? value < 0 : value <= 0);
+  if (invalid) throw new PolicyParamsError(errorCode);
+  return value;
 }

@@ -1,6 +1,6 @@
 # carshare-nevo — Architecture
 
-Status: DRAFT v0.3 (2026-09-06) — reconciled per CLAUDE.md "Consistency decisions (2026-09-06)"; one-way/relay model, car location, `edit_ride`, the two Sadran cron events and per-ride `overflow_allowed` folded in.
+Status: DRAFT v0.3 (2026-09-06) — reconciled per CLAUDE.md "Consistency decisions (2026-09-06)"; one-way/relay model, car location, `edit_ride`, the two Sadran cron events and per-ride `overflow_allowed` folded in. Updated 2026-09-11: production host is the Cloudflare Worker `carsiddur` (was Vercel), CI deploys nothing (migrations/functions are manual), no keep-alive workflow exists (`docs/REFACTOR_PLAN_2026-09-11.md` A3).
 Derives from: `docs/REQUIREMENTS.md` v0.3 (source of truth). Details of tables, columns and RLS policies live in `DATA_MODEL.md`; solver algorithms and rule types in `SOLVER.md`; screens and interaction flows in `UX_FLOWS.md`. This document describes how the pieces fit, where each rule is enforced, and why the stack was chosen.
 
 ---
@@ -15,7 +15,7 @@ flowchart LR
   sadran([Sadran<br/>tablet / phone])
   admin([Admin])
 
-  subgraph vercel[Vercel Hobby]
+  subgraph cf["Cloudflare Worker (carsiddur)"]
     spa[SPA + service worker<br/>Vite / React / TS]
   end
 
@@ -117,7 +117,7 @@ Component responsibilities:
 ```
 carshare-nevo/
 ├─ src/
-│  ├─ app/                  Router (route *patterns*), `routes.ts` (the matching path *builders* — `paths.sadran.board(...)`, `paths.siddur(...)`, etc.; hand-built `` `/sadran/${dept}/${week}/board` `` template strings are forbidden outside it, REFACTOR_BACKLOG §6), providers (Query, Auth, Theme, RTL dir), layout shell, route guards
+│  ├─ app/                  Router (route *patterns*), `routes.ts` (the matching path *builders* — `paths.sadran.board(...)`, `paths.siddur(...)`, etc.; hand-built `` `/sadran/${dept}/${week}/board` `` template strings are forbidden outside it, REFACTOR_BACKLOG §6), providers (Query, Auth, Theme, RTL dir), layout shell, route guards, `ErrorScreen` (single `errorElement` wrapping every route, UX_FLOWS.md §2.3)
 │  ├─ pages/                Route-level components only; compose features, no business logic
 │  ├─ components/           Shared UI: shadcn/ui primitives (ui/), week grid, time pickers, empty states
 │  ├─ features/
@@ -431,6 +431,8 @@ Principle: **the database is the last line of defence** (constraints, triggers, 
 
 The residual risk — a forwarded message lets someone else answer — is accepted for a kibbutz-scale, low-stakes decision that the Sadran sees and can reverse. If the browser *does* have a session, the page shows the full UI (inbox link, my-week) in addition to the answer buttons; that full UI's "talk to the Sadran on WhatsApp" button is the only thing on `/p/<token>` that needs a phone number, so it calls `sadran_contact_of(department_id, week_start)` (`20260909095000_add_sadran_contact_rpc.sql`) — a session-only, `is_approved() and member_of(dept)` RPC — never the token-only response, which keeps excluding phones exactly as before.
 
+**Browser-side headers.** `public/_headers` (copied into `dist/`, applied by Cloudflare to every response) sets a restrictive Content-Security-Policy (self + Google Fonts + `*.supabase.co`), `X-Frame-Options: DENY`, `X-Content-Type-Options`, `Referrer-Policy` and `Permissions-Policy` — the app's only browser-side hardening layer, since there is no custom server to set headers from (`docs/FREE_DEPLOYMENT.md` §4).
+
 ---
 
 ## 9. Notifications
@@ -467,7 +469,7 @@ Realtime (optional, v1.x): the Sadran board may subscribe to `postgres_changes` 
 | `drain_push_outbox()` | `push_outbox` rows `pending`/`failed` with `next_attempt_at <= now()` | pg_net → `push-dispatch`; `dead` after 24 h |
 | `housekeeping()` | every tick: freed-slot offers past `expires_at`; once per local day: `materialize_templates()`; 03:00 local: prunes | close stale offers; `materialize_templates()` is a no-op (2026-09-10: repeating requests are member-dismissable suggestions via `v_request_template_suggestions`, never auto-submitted — DATA_MODEL §3.6; kept only so this call site needs no change); prune `notifications`, `push_outbox`, `client_errors`, `audit_log`, dead subscriptions, old `token_hash`es (DATA_MODEL §8) |
 
-Outside Postgres: a **daily GitHub Actions cron** (`GET /rest/v1/health` with the anon key) keeps the free Supabase project from pausing during quiet weeks.
+Outside Postgres: there is **no keep-alive workflow** (`.github/workflows/` has only `ci.yml`, which runs on push/PR/schedule for testing, not as a ping). The Supabase Free project pauses after 7 days with no API activity and is un-paused by hand in the dashboard — an accepted limitation for a small kibbutz-scale rollout (`docs/FREE_DEPLOYMENT.md` §9, "Free-plan limits").
 
 Each step is idempotent (`weeks.opened_notified_at` etc., dedupe keys on notifications) so a missed or doubled run is harmless. `app.tick(p_now)` accepts an explicit instant for tests (DST weeks).
 
@@ -503,7 +505,7 @@ Not part of the tick: `sadran_contact_of(department_id, week_start)` (§8) is a 
 
 | Where | Name | Purpose |
 |---|---|---|
-| Vercel / `.env.local` | `VITE_SUPABASE_URL` | Project URL |
+| Cloudflare Worker build vars / `.env.local` | `VITE_SUPABASE_URL` | Project URL |
 | | `VITE_SUPABASE_ANON_KEY` | Publishable key (RLS applies) |
 | | `VITE_VAPID_PUBLIC_KEY` | Push subscription (public, not a secret) |
 | | `VITE_APP_URL` | Absolute base for deep links in WhatsApp text |
@@ -512,8 +514,8 @@ Not part of the tick: `sadran_contact_of(department_id, week_start)` (§8) is a 
 | | `CRON_SECRET` | Shared header for pg_net → `push-dispatch`, `on-ride-cancelled` |
 | `public.app_secrets` table (RLS enabled + forced, no policies — `service_role`/`SECURITY DEFINER` only, DATA_MODEL.md §6.1 item 12) | `cron_secret` | Used by `dispatch_push_outbox_row()`/`cancel_ride()` for pg_net calls (deep-link tokens need no secret: random, stored hashed) |
 | `public.app_settings` table (`is_approved()` SELECT — non-secret only) | `push_dispatch_url`, `on_ride_cancelled_url`, `housekeeping_last_run` | URLs/watermarks pg_net and cron read; never credentials |
-| Supabase Auth | Google client ID/secret | Set in dashboard / `config.toml [auth.external.google]` for local |
-| CI (GitHub) | `SUPABASE_ACCESS_TOKEN`, `SUPABASE_DB_PASSWORD`, `SUPABASE_PROJECT_ID` | `supabase db push`, `functions deploy` |
+| Supabase Auth | Google client ID/secret | Set in dashboard / `config.toml [auth.external.google]` for local (never pushed to the hosted project — `supabase config push` is never run, `docs/FREE_DEPLOYMENT.md` §5/§2) |
+| Operator's own machine (not CI) | Supabase CLI session (`supabase login`), linked project ref | `supabase db push`, `supabase functions deploy <fn>` — both run by hand, never from CI (§14) |
 
 `.env.example` is committed; `.env*` are gitignored.
 
@@ -523,22 +525,20 @@ Not part of the tick: `sadran_contact_of(department_id, week_start)` (§8) is a 
 
 **Local**: `npm run db:start` (`supabase start` — Docker: Postgres, Auth, PostgREST, Edge runtime, Inbucket), `npm run db:reset` (`supabase db reset`) applies `supabase/migrations` then `supabase/seed.sql`, `npm run db:types` writes `src/integrations/supabase/types.ts`, `npm run dev` serves on `:8080`. Google OAuth locally uses a test client with `http://localhost:54321/auth/v1/callback`. Edge Functions run with `npm run functions:serve` (`supabase functions serve --env-file supabase/.env.local`). npm is the only package manager (no pnpm/bun); the command table is in `CLAUDE.md`.
 
-**Tests**: Vitest for `src/solver` (golden-file determinism tests, seat fitting, merge detection, freed-slot matching), `src/solver/rules/*` (policy scoring), and `src/lib` (time, week math, wa.me URL building). Playwright (`e2e/`) runs against the local stack with seeded users bypassing Google via `supabase.auth.admin.generateLink` in a fixture, covering: submit request; solve + publish; proposal accept via deep link; cancel → freed slot. CI runs unit tests on every push and e2e on PRs.
+**Tests**: Vitest for `src/solver` (golden-file determinism tests, seat fitting, merge detection, freed-slot matching), `src/solver/rules/*` (policy scoring), and `src/lib` (time, week math, wa.me URL building). Playwright (`e2e/`, 27 specs) runs against the local stack with seeded users bypassing Google via `supabase.auth.admin.generateLink` in a fixture. CI (`.github/workflows/ci.yml`) has three jobs: `check` (lint, typecheck, unit tests, solver-bundle-freshness check, production build) on every push; `database` (`supabase start` on a throwaway local stack, migrations + seed replay, generated-types-freshness check, `npm run db:test`) on every push; `e2e` nightly (03:00 Asia/Jerusalem) and on `workflow_dispatch` — not on every push or PR, since the suite is serial (`workers = 1`) and takes several minutes.
 
-**Deployment**:
+**Deployment**: the frontend and the backend deploy on separate, independent paths — there is no single pipeline that does both.
 
 ```mermaid
 flowchart LR
-  dev[git push to main] --> gh[GitHub Actions]
-  gh --> test[vitest + tsc + eslint]
-  test --> bundle[bundle-solver → _shared/solver.js]
-  bundle --> dbpush[supabase db push]
-  dbpush --> fndeploy[supabase functions deploy]
-  dev --> vercel[Vercel builds SPA<br/>vite build]
-  fndeploy -. after migrations .-> vercel
+  dev[git push to main] --> gh[GitHub Actions: CI]
+  gh --> checkjob[check + database jobs]
+  dev --> cf[Cloudflare builds the Worker<br/>npm run build + wrangler deploy]
+  op[Operator, by hand] --> dbpush[supabase db push]
+  op --> fndeploy[supabase functions deploy fn]
 ```
 
-Vercel deploys automatically from `main` (preview URLs per PR). Migrations are applied by CI before the new SPA goes live; the ordering rule is "additive migration first, UI second, destructive migration only after the UI no longer needs the column". Rollback of the SPA is instant on Vercel; DB migrations are forward-only (write a compensating migration).
+Cloudflare's Git integration rebuilds and redeploys the `carsiddur` Worker automatically on every push to the deploy branch (`npm run build`, `npx wrangler deploy`); this is unrelated to CI passing or failing. Database migrations and Edge Function deploys are **manual, separate steps** run from an operator's machine (`npx supabase db push`, `npx supabase functions deploy <fn>` — `docs/FREE_DEPLOYMENT.md` §§1–3, 8) — CI does not apply migrations or deploy functions. The ordering rule is "additive migration first, UI second, destructive migration only after the UI no longer needs the column" — so `db push` runs before the Cloudflare build that depends on it goes live, but nothing enforces that order automatically; the operator sequences it by hand per the checklist. Rollback of the SPA is a Cloudflare rollback to a previous deployment; DB migrations are forward-only (write a compensating migration).
 
 ---
 
@@ -546,12 +546,12 @@ Vercel deploys automatically from `main` (preview URLs per PR). Migrations are a
 
 | Item | Tier | Monthly cost | Limits that matter here |
 |---|---|---|---|
-| Supabase | Free | $0 | 500 MB database, 1 GB storage, 50k monthly active users, 500k Edge Function invocations, 2 projects; **project pauses after 7 days with no API activity** and must be un-paused manually in the dashboard |
-| Vercel | Hobby | $0 | 100 GB bandwidth, non-commercial use, 1 developer account |
+| Supabase | Free | $0 | 500 MB database, 1 GB storage, 50k monthly active users, 500k Edge Function invocations, 2 projects; **project pauses after 7 days with no API activity** and must be un-paused manually in the dashboard — there is no keep-alive workaround (`docs/FREE_DEPLOYMENT.md` §9) |
+| Cloudflare Workers/Pages | Free | $0 | Static assets served by the `carsiddur` Worker; Pages builds capped at 500/month — check current request/build limits before launch (`docs/FREE_DEPLOYMENT.md` "Free-plan limits") |
 | Google OAuth | – | $0 | Requires a Google Cloud project and verified consent screen (one-time setup) |
 | Web push (VAPID) | – | $0 | No third party; keys generated once |
 | GitHub | Free | $0 | 2,000 Actions minutes/month (ample) |
-| Domain (optional) | – | ~$1/mo equivalent | `sidur.nevo.example` on Vercel |
+| Domain (optional) | – | ~$1/mo equivalent | Custom domain on the Cloudflare Worker |
 
 Sizing: 300 requests/week ≈ 16k requests/year; with rides, proposals, notifications and audit rows the database grows roughly 30–60 MB per year, so 500 MB lasts many years. 50k MAU is two orders of magnitude above a kibbutz.
 
@@ -559,9 +559,9 @@ Upgrade triggers and path:
 
 | Trigger | Action | Cost |
 |---|---|---|
-| The project pauses during a quiet period (e.g. holidays) more than once, or the daily keep-alive is not acceptable | Supabase Pro: no pausing, 8 GB DB, 7-day point-in-time backups, email support | $25/mo |
-| Need for backups you can restore yourself before Pro | `supabase db dump` nightly from GitHub Actions to a private repo (free) | $0 |
-| Vercel flags the project as commercial or a second developer needs deploy access | Vercel Pro | $20/mo per seat |
+| The project pauses during a quiet period (e.g. holidays) more than once, or manual un-pausing is not acceptable | Supabase Pro: no pausing, 8 GB DB, 7-day point-in-time backups, email support | $25/mo |
+| Need for backups you can restore yourself before Pro | `npm run db:export` weekly by hand to off-site storage (free, `docs/FREE_DEPLOYMENT.md` §8) | $0 |
+| The Worker exceeds free-tier request/build limits, or a second developer needs deploy access | Cloudflare Workers Paid plan (check current pricing before upgrading) | see Cloudflare's current pricing |
 | Email channel (v1.x) | Resend free tier (3k emails/month) via an Edge Function | $0 until exceeded |
 
 Nothing in the architecture changes on upgrade; only the plan does.
@@ -590,7 +590,7 @@ Nothing in the architecture changes on upgrade; only the plan does.
 | 16 | Random, hashed, single-purpose deep-link token; **no sign-in to answer** | WhatsApp on iOS opens links in a browser that does not share the installed PWA's session; answering must work in two taps; the token expires with the proposal and is revoked on re-send; forwarding risk accepted at kibbutz scale (§8) | HMAC token bound to the signed-in user (safe if forwarded, but forces Google sign-in in a fresh browser — rejected 2026-09-06); plain `/proposals/<id>` (leaks id, no expiry) |
 | 17 | Optimistic concurrency via `version` + exclusion constraint | Two Sadranim or a member and a Sadran can edit safely without locks; §11 reliability | Pessimistic row locks (bad over HTTP); last-write-wins (data loss) |
 | 18 | Outbox table for push | Business transaction never fails because a push service is down; retries are cheap | Fire-and-forget from triggers (lost pushes); queue service (cost) |
-| 19 | Vercel Hobby + Supabase Free, documented upgrade | §11 cost requirement; upgrades are plan changes, not rewrites | Cloudflare Pages (fine, equivalent); self-hosting Supabase (ops burden) |
+| 19 | Cloudflare Worker (`carsiddur`, static assets) + Supabase Free, documented upgrade — **superseded 2026-09-11**: originally Vercel Hobby, moved to Cloudflare (both free, equivalent capability; §14/§15) | §11 cost requirement; upgrades are plan changes, not rewrites | Vercel Hobby (the original choice, dropped for no stated functional reason); self-hosting Supabase (ops burden) |
 | 20 | Single repo, feature folders, no monorepo | One deployable app plus one Supabase project; tooling stays simple | Turborepo with `packages/solver` (worth it only if a second app appears) |
 | 21 | Vitest + Playwright against local Supabase | Unit-test the pure core; e2e the four flows in §11 on a real database | Mock Supabase in e2e (misses RLS bugs); Cypress (slower, no parallel free tier) |
 | 22 | WhatsApp via `wa.me` links only | Free, one tap for the Sadran; API is out of scope (§12) | WhatsApp Business API (cost, approval); Twilio (cost) |

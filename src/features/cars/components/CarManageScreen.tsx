@@ -78,7 +78,7 @@ function historyRow(entry: CarHistoryEntry) {
             <>
               <p className="text-foreground/80">{entry.description}</p>
               <div className="flex gap-2">
-                <Badge variant="outline">{entry.status === "resolved" ? he.adminIssues.statusResolved : he.adminIssues.statusOpen}</Badge>
+                {entry.status ? <StatusBadge kind="carIssue" status={entry.status} /> : null}
                 {entry.isUnsafe ? <Badge variant="destructive">{he.adminIssues.unsafe}</Badge> : null}
               </div>
             </>

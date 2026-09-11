@@ -26,7 +26,8 @@
     "db:test": "node scripts/test-db.mjs",
     "functions:serve": "npx supabase functions serve --env-file supabase/functions/.env",
     "functions:bundle": "node scripts/bundle-solver.mjs && node supabase/tests/bundle_solver.test.mjs",
-    "db:fake": "node scripts/fake-week.mjs"
+    "db:fake": "node scripts/fake-week.mjs",
+    "db:export": "node scripts/db-export.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "5.9.1",

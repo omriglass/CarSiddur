@@ -24,7 +24,7 @@ REQ §4: timing is **configurable per department**; code holds only defaults and
 ### A. Change a default
 - [ ] Migration `YYYYMMDDHHMMSS_change_default_<setting>.sql`: `alter table public.department_settings alter column <col> set default <v>;` If existing departments should follow: explicit `update … where <col> = <old default>;` and say so in the header.
 - [ ] `supabase/seed.sql`: seeded `department_settings` rows.
-- [ ] `src/features/admin/settings/schema.ts` (department settings form) defaults/limits and `he.admin.settings.<field>` labels if the range changed.
+- [ ] `src/features/admin/departments/schema.ts` (department settings form, rendered by `DepartmentsScreen.tsx` — there is no separate `admin/settings/schema.ts`) defaults/limits and `he.admin.settings.<field>` labels if the range changed.
 - [ ] Docs: `docs/REQUIREMENTS.md` §4 "Default timing" (and §13.10 / §13.11 for buffer/detour); `docs/DATA_MODEL.md` `department_settings`.
 
 ### B. Change the scheduler
@@ -39,7 +39,7 @@ REQ §4: timing is **configurable per department**; code holds only defaults and
 
 ### D. Tests
 - [ ] SQL test for the tick: given settings and a fixed `p_now`, verify opening the right `week_start`, closing at the right instant, reminders exactly once, and a DST week (late March / late October) resolves to the correct wall-clock. Run twice → no duplicate rows.
-- [ ] `src/lib/week.test.ts` if TS week math changed.
+- [ ] `src/lib/time.test.ts` if TS week/date math changed (there is no separate `week.test.ts`; week-key helpers live in `src/lib/time.ts`).
 
 ### E. Docs
 - [ ] `docs/REQUIREMENTS.md` §4; `docs/ARCHITECTURE.md` §10 job table; `docs/DATA_MODEL.md` `department_settings`, `weeks`, §6 cron row; `docs/UX_FLOWS.md` §5.10 Settings (and §6.1 notification copy if reminder text changed).

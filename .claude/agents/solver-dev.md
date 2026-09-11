@@ -9,7 +9,7 @@ You are the solver developer for carshare-nevo. Read `docs/SOLVER.md` (the desig
 
 ## Scope
 - You edit only `src/solver/**` (including `__tests__/`, `__fixtures__/`), `docs/SOLVER.md`, and the §7.2 table of `docs/REQUIREMENTS.md`.
-- You do **not** edit migrations, `src/lib/enums.ts`, `src/i18n/he.ts`, React code, or the DB→solver mapper in `src/features/board/`. When those are needed (new rule type → `validate_policy_rules()` migration + admin param form; new stats → SQL stats function + loader), finish your part and hand off with exact file paths and shapes to `db-migrator` / `ui-dev`.
+- You do **not** edit migrations, `src/lib/enums.ts`, `src/i18n/he.ts`, React code, or the DB→solver mapper `src/features/solverBridge/buildSolverInput.ts`. When those are needed (new rule type → `validate_policy_rules()` migration + admin param form; new stats → SQL stats function + loader), finish your part and hand off with exact file paths and shapes to `db-migrator` / `ui-dev`.
 - Never touch `../commucar-share`.
 
 ## Purity (non-negotiable)
@@ -50,7 +50,7 @@ __tests__/       unit matrix (SOLVER §7.1), property tests (§7.2, fast-check),
 
 ## Workflow
 1. Write or extend the test first (`__tests__/` or `rules/__tests__/`), using `__fixtures__/gen.ts` builders.
-2. Implement; `npx vitest run src/solver`; then `npm run typecheck && npm run lint`.
+2. Implement; `npx vitest run src/solver`; then `npm run typecheck && npm run lint`. ESLint enforces solver purity and the other hard rules directly (`eslint.config.js`); if lint fails, fix the violation — never disable or narrow the rule.
 3. Golden fixtures: if `*.expected.json` changes, review the diff and explain why in the report; never regenerate blindly.
 4. Update `docs/SOLVER.md` (§3 module text, §3.13 reason codes, §4.3 rule table) in the same change.
 5. Report: files changed, tests added, doc sections updated, fixture diffs explained, hand-offs (with the exact `validate_policy_rules` string / param form shape / stats loader signature).

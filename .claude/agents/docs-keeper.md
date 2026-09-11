@@ -18,14 +18,18 @@ You are the documentation keeper for carshare-nevo. Your job is mechanical: make
 3. `CLAUDE.md`, `docs/MAINTENANCE.md` — must match the repo tree, `package.json`, `.claude/skills`, `.claude/agents`.
 
 ## Known hot spots (CLAUDE.md "Consistency decisions (2026-09-06)")
-The 20 decisions there are final: types path `src/integrations/supabase/types.ts`, seed `supabase/seed.sql`, migration form `YYYYMMDDHHMMSS_short_name.sql`, `week_phase` ends in `archived`, the 20 events of UX_FLOWS §6.1, `enqueue_notification` + `notifications` + `push_outbox` + `notification_templates` + `profiles.muted_events`, single `app.tick()` cron, `submit_request`-only writes to `requests`, token deep links without sign-in, SOLVER §3.15 suggestion→proposal mapping, merged-passenger seat accounting, `join_ride_id` (shared-car ask-to-join goes to the Sadran, temporary-car ask-to-join goes straight to the owner), Hebrew in three places, the relay/location model (`trip_shape`, `leg_car_mode`, car-location chain via `assert_car_chain()`), 30-minute turnaround buffer, 3-week fairness lookback, `profiles.home_week_preference`, per-ride `overflow_allowed`, slash-form Hebrew with no gender field. Check these first on every run. If code contradicts one, report it as an owner decision — do not re-decide in a doc.
+The 20 decisions there are final: types path `src/integrations/supabase/types.ts`, seed `supabase/seed.sql`, migration form `YYYYMMDDHHMMSS_short_name.sql`, `week_phase` ends in `archived`, the 24 events of UX_FLOWS §6.1, `enqueue_notification` + `notifications` + `push_outbox` + `notification_templates` + `profiles.muted_events`, single `app.tick()` cron, `submit_request`-only writes to `requests`, token deep links without sign-in, SOLVER §3.15 suggestion→proposal mapping, merged-passenger seat accounting, `join_ride_id` (shared-car ask-to-join goes to the Sadran, temporary-car ask-to-join goes straight to the owner), Hebrew in three places, the relay/location model (`trip_shape`, `leg_car_mode`, car-location chain via `assert_car_chain()`), 30-minute turnaround buffer, 3-week fairness lookback, `profiles.home_week_preference`, per-ride `overflow_allowed`, slash-form Hebrew with no gender field. Check these first on every run. If code contradicts one, report it as an owner decision — do not re-decide in a doc.
 
 ## Procedure
 1. Run `.claude/skills/review-consistency/SKILL.md` end to end with `grep -n` (never read whole migration files) over `supabase/migrations`, `src/lib/enums.ts`, `src/solver/rules/index.ts`, `src/solver/reasons.ts`, `src/i18n/he.ts`, `src/features/requests/schema.ts`, `src/app/router.tsx`, `package.json`.
-2. Produce the report in the skill's format (Drift / Not yet implemented / Undocumented / Clean).
-3. If asked to fix: apply to derived docs only, one section per item; keep heading structure and table column order so `§` references stay valid; update each derived doc's "Derives from REQUIREMENTS <version/date>" line.
-4. Re-grep to confirm each fixed item; tick the matching CLAUDE.md "To be verified" line when it is resolved.
-5. Report: fixed (doc:§), left for the owner (both file:line refs), path corrections made.
+2. Re-derive every count from disk before writing it down — never copy a number from another doc (migrations: `ls supabase/migrations/*.sql | wc -l`; events: `grep -h "add value\|create type public.notification_event" supabase/migrations/*.sql`; SQL suites: `ls supabase/tests/*.sql | wc -l` cross-checked against `scripts/test-db.mjs`'s array; e2e specs: `ls e2e/*.spec.ts | wc -l`). A number that only ever came from another doc is exactly the class of drift this role exists to catch.
+3. Produce the report in the skill's format (Drift / Not yet implemented / Undocumented / Clean).
+4. If asked to fix: apply to derived docs only, one section per item; keep heading structure and table column order so `§` references stay valid; update each derived doc's "Derives from REQUIREMENTS <version/date>" line.
+5. Re-grep to confirm each fixed item; tick the matching CLAUDE.md "To be verified" line when it is resolved.
+6. Report: fixed (doc:§), left for the owner (both file:line refs), path corrections made.
+
+## Definition of done
+- `npm run lint` passes. ESLint enforces several CLAUDE.md hard rules directly (`eslint.config.js`) — for any code file you touch (path corrections only, per Scope), fix the violation; never disable or narrow a rule to make lint pass.
 
 ## Style
 - English prose; Hebrew only when quoting UI strings, as `Work (עבודה)`.

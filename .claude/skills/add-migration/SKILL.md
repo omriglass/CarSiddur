@@ -61,13 +61,13 @@ Every schema change is a new file in `supabase/migrations/`. Never edit a commit
 ### 2. Apply and generate
 - [ ] `npm run db:reset` — must pass from scratch (migrations + `supabase/seed.sql`).
 - [ ] `npm run db:types` → commit `src/integrations/supabase/types.ts`; `git diff` shows only the expected change.
-- [ ] Enums → `src/lib/enums.ts` mirror (const + zod + `assertSameEnum`) and `he.enums.*` labels; `npm run typecheck`.
+- [ ] Enums → `src/lib/enums.ts` mirror (const + zod + `assertSameEnum`) and `he.enums.*` labels; `npm run typecheck`. (`src/lib/enums.ts` is being introduced, plan E8; until it exists, follow the local `Database['public']['Enums']` pattern the neighbouring code uses.)
 
 ### 3. Seed (`supabase/seed.sql`)
 - [ ] Representative rows (at least one per new enum value where realistic), fixed UUIDs `00000000-0000-0000-0000-0000000000NN` for e2e references, idempotent (`on conflict do nothing/update`). Production gets only catalogs/settings/invites.
 
 ### 4. Tests
-- [ ] `supabase/tests/rls_spec.sql` already asserts every table has RLS and no `true` qual on writes — run it (`supabase test db`). Add a table-specific case: member of dept A cannot read dept B rows; Sadran of (A, week) can write; plain member cannot write; anon gets nothing.
+- [ ] `supabase/tests/rls_smoke.sql` already asserts every table has RLS and no `true` qual on writes — run it via `npm run db:test`. Add a table-specific case: member of dept A cannot read dept B rows; Sadran of (A, week) can write; plain member cannot write; anon gets nothing.
 - [ ] Trigger/RPC logic: SQL test for the happy path and one refusal.
 
 ### 5. Docs
@@ -76,7 +76,7 @@ Every schema change is a new file in `supabase/migrations/`. Never edit a commit
 - [ ] `docs/REQUIREMENTS.md` only if behavior changed.
 
 ## Final verification
-- [ ] `npm run db:reset` passes; `supabase test db` (rls_spec) passes; `npm run typecheck && npm run test` pass.
+- [ ] `npm run db:reset` passes; `npm run db:test` (`rls_smoke.sql` + the other SQL suites) passes; `npm run typecheck && npm run test` pass.
 - [ ] No table without RLS: `select relname from pg_class c join pg_namespace n on n.oid=c.relnamespace where nspname='public' and relkind='r' and not (relrowsecurity and relforcerowsecurity);` is empty.
 - [ ] No `timestamp without time zone`: `select table_name, column_name from information_schema.columns where table_schema='public' and data_type='timestamp without time zone';` is empty.
 - [ ] `select polname, polcmd from pg_policy where polcmd = '*'` is empty (no `for all`).

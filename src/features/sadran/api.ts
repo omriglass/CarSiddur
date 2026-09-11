@@ -106,18 +106,6 @@ export async function fetchWeekRow(departmentId: string, weekStart: string): Pro
   return data;
 }
 
-export async function openWeek(departmentId: string, weekStart: string): Promise<string> {
-  return rpc("open_week", { p_department_id: departmentId, p_week_start: weekStart });
-}
-
-export async function setWeekPhase(
-  departmentId: string,
-  weekStart: string,
-  phase: Database["public"]["Enums"]["week_phase"],
-): Promise<void> {
-  await rpc("set_week_phase", { p_department_id: departmentId, p_week_start: weekStart, p_phase: phase });
-}
-
 // ---------------------------------------------------------------------------
 // Requests / board reads (rides come from `v_board_rides`, RLS already scopes
 // drafts to the Sadran/driver only — supabase/migrations/20260907091400_rls.sql

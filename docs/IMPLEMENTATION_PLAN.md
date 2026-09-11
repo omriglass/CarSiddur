@@ -99,7 +99,7 @@ One-line items blocked/deferred per design document:
 - [x] Sadran operational administration, notification interpolation and silent auto-approval.
 - [x] In-app WhatsApp composition with an explicit handoff.
 - [x] Recalculate and persist the final board against every applicable policy profile, including inactive profiles, with per-member/request breakdowns and publication freshness checks.
-- [ ] Excel export deferred to v1.x as permitted by the TODO; export requests and assignments without import (REQUIREMENTS owner amendments).
+- [x] Excel export — shipped (see "Owner continuation — completed 2026-09-07" below, `e2e/export.spec.ts`); this line was left unchecked after the fact, corrected 2026-09-11.
 
 Validation: 378 unit/component tests; 26 targeted browser scenarios covering board, member/admin, proposals, quick requests, automatic approval, publication and member collision consent; all three database suites; lint, typecheck, production build and generated solver smoke check. Browser and database regression fixtures ran on a separate disposable Supabase stack.
 

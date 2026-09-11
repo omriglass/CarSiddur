@@ -89,6 +89,14 @@ Badges: הודעות shows unread count; הבקשות שלי shows a dot when a 
 
 **Header** (all screens): screen title, week switcher where relevant (`‹ שבוע 14–20.9 ›` with phase badge), department switcher only for members of several departments.
 
+### 2.3 Error screen (`errorElement`, whole app)
+
+A single React Router `errorElement` sits on a pathless root layout route wrapping every route in `src/app/router.tsx` (`ErrorScreen`, `src/app/ErrorScreen.tsx`) — the router's own safety net for a render exception that would otherwise white-screen the PWA (no route path changes; a route that throws bubbles up to this one ancestor). It appears only when a route actually throws while rendering (not for ordinary loading/empty/inline-field errors, which stay §7.2's toasts/inline messages); a `404` (`isRouteErrorResponse` with `status === 404`) is not treated as this kind of failure and renders the existing Not-found screen (`NotFoundPage`, route table row `*`) instead, so its copy is not duplicated.
+
+Content: title "משהו השתבש", one line of body copy, and two actions — **רענן/י** (`window.location.reload()`) and **לדף הבית** (a link to `/`, same target as the Not-found screen's link home). Below the actions, a collapsed `<details>` labeled "פרטים לתמיכה" holds the raw error message/stack (untranslated, `dir="ltr"`) for a member to share with support; it stays closed by default so it never reads as scary technical noise on first glance.
+
+A global `unhandledrejection` listener (`src/main.tsx`) is the same idea for a rejected promise nothing else caught: an `Error`/`AppError` reason gets the normal Hebrew toast mapping (`showErrorToast`, `src/lib/rpc.ts`); anything else falls back to the generic `he.errors.unknown` toast. In practice this rarely fires — TanStack Query mutations already toast their own errors through `onError`.
+
 ---
 
 ## 3. Member screens

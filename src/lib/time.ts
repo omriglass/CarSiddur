@@ -8,8 +8,6 @@ import { formatInTimeZone, fromZonedTime, toZonedTime } from "date-fns-tz";
  */
 export const TZ = "Asia/Jerusalem";
 
-const MINUTES_15_MS = 15 * 60 * 1000;
-
 /**
  * Returns the instant (UTC) corresponding to local midnight on the Sunday
  * that starts the Asia/Jerusalem week containing `instant`. This is the
@@ -50,16 +48,4 @@ export function dateKey(instant: Date | string | number): string {
  */
 export function weekdayIndex(instant: Date | string | number): number {
   return Number(formatInTimeZone(instant, TZ, "i")) % 7;
-}
-
-/**
- * Rounds an instant to the nearest 15 minutes of Asia/Jerusalem wall-clock
- * time (the app's universal scheduling grid, ARCHITECTURE.md §11). Ties
- * round up. DST-safe for the same reason as `weekStartFor`: rounding happens
- * on the zoned representation, not on the raw UTC epoch.
- */
-export function roundTo15(instant: Date): Date {
-  const zoned = toZonedTime(instant, TZ);
-  const roundedMs = Math.round(zoned.getTime() / MINUTES_15_MS) * MINUTES_15_MS;
-  return fromZonedTime(new Date(roundedMs), TZ);
 }

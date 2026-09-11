@@ -446,20 +446,15 @@ var TEMPLATES = {
   PLACED_RELAY_PAIR: "\u05E9\u05D5\u05D1\u05E5 \u05DC{car}: {member} \u05E0\u05D5\u05D4\u05D2/\u05EA \u05DC{dest} \u05D1-{dep} \u05D5\u05DE\u05E9\u05D0\u05D9\u05E8/\u05D4 \u05D0\u05EA \u05D4\u05E8\u05DB\u05D1; {partner} \u05DE\u05D7\u05D6\u05D9\u05E8/\u05D4 \u05D0\u05D5\u05EA\u05D5 \u05D1-{ret}",
   PLACED_FIXED: "\u05E0\u05E1\u05D9\u05E2\u05D4 \u05E7\u05D1\u05D5\u05E2\u05D4 \u05E9\u05E0\u05E7\u05D1\u05E2\u05D4 \u05DE\u05E8\u05D0\u05E9",
   PLACED_SERIES: "\u05E9\u05D5\u05D1\u05E5/\u05D4 \u05DB\u05D7\u05DC\u05E7 \u05DE\u05D1\u05E7\u05E9\u05D4 \u05E8\u05D1-\u05D9\u05D5\u05DE\u05D9\u05EA \u05DC{car} ({index}/{count})",
-  RELOCATED_FOR: "\u05D4\u05D5\u05E2\u05D1\u05E8 \u05DC{car} \u05DB\u05D3\u05D9 \u05DC\u05E4\u05E0\u05D5\u05EA \u05DE\u05E7\u05D5\u05DD \u05DC\u05D1\u05E7\u05E9\u05D4 \u05E9\u05DC {member}",
-  RELOCATED_FOR_SHIFT: "\u05D4\u05D5\u05D6\u05D6 \u05D1-{minutes} \u05D3\u05E7\u05D5\u05EA \u05DB\u05D3\u05D9 \u05DC\u05E4\u05E0\u05D5\u05EA \u05DE\u05E7\u05D5\u05DD \u05DC\u05D1\u05E7\u05E9\u05D4 \u05E9\u05DC {member}",
   // Unmet reasons
   UNMET_NO_CAR: "\u05D0\u05D9\u05DF \u05E8\u05DB\u05D1 \u05E4\u05E0\u05D5\u05D9 \u05D1\u05D7\u05DC\u05D5\u05DF \u05D4\u05DE\u05D1\u05D5\u05E7\u05E9; \u05D7\u05D5\u05E1\u05DE\u05D9\u05DD: {blockers}",
   UNMET_NO_RELAY_PARTNER: "\u05D0\u05D9\u05DF \u05DE\u05D9 \u05E9\u05D9\u05D7\u05D6\u05D9\u05E8/\u05D9\u05D1\u05D9\u05D0 \u05D0\u05EA \u05D4\u05E8\u05DB\u05D1 \u05DE{dest} \u05D1\u05D0\u05D5\u05EA\u05D5 \u05D9\u05D5\u05DD; \u05D4\u05E8\u05DB\u05D1 \u05D7\u05D9\u05D9\u05D1 \u05DC\u05D7\u05D6\u05D5\u05E8 \u05D4\u05D1\u05D9\u05EA\u05D4 \u05E2\u05D3 {dayEnd}",
   UNMET_NEEDS_DRIVER: "\u05D0\u05D9\u05DF \u05E0\u05E1\u05D9\u05E2\u05D4 \u05DE\u05EA\u05D0\u05D9\u05DE\u05D4 \u05DC\u05D4\u05E6\u05D8\u05E8\u05E3 \u05D0\u05DC\u05D9\u05D4; \u05D3\u05E8\u05D5\u05E9/\u05D4 \u05E0\u05D4\u05D2/\u05EA \u05DE\u05EA\u05E0\u05D3\u05D1/\u05EA \u05DC\u05D4\u05E1\u05E2\u05D4 \u05DC{dest} \u05D1-{dep}",
-  UNMET_CAR_AWAY: "{car} \u05E0\u05DE\u05E6\u05D0/\u05EA \u05D1{location} \u05D1\u05E9\u05E2\u05D5\u05EA \u05D4\u05D0\u05DC\u05D4 \u05D5\u05DC\u05D0 \u05D6\u05DE\u05D9\u05DF/\u05D4 \u05DE\u05D4\u05D1\u05D9\u05EA",
   UNMET_SERIES_NO_CAR: "\u05D0\u05D9\u05DF \u05E8\u05DB\u05D1 \u05E4\u05E0\u05D5\u05D9 \u05DC\u05DB\u05DC \u05D9\u05DE\u05D9 \u05D4\u05D1\u05E7\u05E9\u05D4 \u05D4\u05E8\u05D1-\u05D9\u05D5\u05DE\u05D9\u05EA ({index}/{count})",
-  UNMET_SERIES_PARTIAL_WEEK: "\u05D4\u05D1\u05E7\u05E9\u05D4 \u05D4\u05E8\u05D1-\u05D9\u05D5\u05DE\u05D9\u05EA \u05DE\u05DE\u05E9\u05D9\u05DB\u05D4 \u05DE\u05E9\u05D1\u05D5\u05E2 \u05D0\u05D7\u05E8 \u05D5\u05DC\u05D0 \u05E0\u05D9\u05EA\u05DF \u05DC\u05E9\u05D1\u05E5 \u05D0\u05EA \u05DB\u05DC \u05D9\u05DE\u05D9\u05D4 \u05D1\u05E9\u05D1\u05D5\u05E2 \u05D6\u05D4",
   // Suggestions
   SUGGEST_SHIFT_WITHIN_FLEX: "\u05D4\u05D6\u05D6\u05D4 \u05DC{car} \u05D1\u05EA\u05D5\u05DA \u05D4\u05D2\u05DE\u05D9\u05E9\u05D5\u05EA \u05E9\u05D4\u05D5\u05E6\u05D4\u05E8\u05D4, \u05DC\u05DC\u05D0 \u05E6\u05D5\u05E8\u05DA \u05D1\u05D4\u05E1\u05DB\u05DE\u05D4 \u05E0\u05D5\u05E1\u05E4\u05EA",
   SUGGEST_MERGE: "\u05D4\u05E6\u05D8\u05E8\u05E4\u05D5\u05EA \u05DC\u05E0\u05E1\u05D9\u05E2\u05D4 \u05E9\u05DC {host} \u05DC{dest} \u05D1\u05D9\u05E6\u05D9\u05D0\u05D4 {dep} \u05D5\u05D1\u05D7\u05D6\u05E8\u05D4 {ret}, \u05DC\u05DC\u05D0 \u05E1\u05D8\u05D9\u05D9\u05D4",
   SUGGEST_MERGE_DETOUR: "\u05D4\u05E6\u05D8\u05E8\u05E4\u05D5\u05EA \u05DC\u05E0\u05E1\u05D9\u05E2\u05D4 \u05E9\u05DC {host} \u05DC{dest} \u05D1\u05D9\u05E6\u05D9\u05D0\u05D4 {dep} \u05D5\u05D1\u05D7\u05D6\u05E8\u05D4 {ret}, \u05E2\u05DD \u05E1\u05D8\u05D9\u05D9\u05D4 \u05E9\u05DC \u05DB-{minutes} \u05D3\u05E7\u05F3",
-  SUGGEST_MERGE_LEG: "\u05D4\u05E6\u05D8\u05E8\u05E4\u05D5\u05EA \u05DB\u05E0\u05D5\u05E1\u05E2/\u05EA \u05DC\u05E0\u05E1\u05D9\u05E2\u05D4 \u05E9\u05DC {host} {direction} {dest} \u05D1-{time}",
   SUGGEST_BEYOND_FLEX: "\u05D4\u05D6\u05D6\u05D4 \u05E9\u05DC {dep} \u05D3\u05E7' \u05DE\u05E2\u05D1\u05E8 \u05DC\u05D2\u05DE\u05D9\u05E9\u05D5\u05EA \u05E9\u05D4\u05D5\u05E6\u05D4\u05E8\u05D4 \u2014 \u05D3\u05D5\u05E8\u05E9 \u05D4\u05E1\u05DB\u05DE\u05D4",
   SUGGEST_SPLIT_LEGS: "\u05E4\u05D9\u05E6\u05D5\u05DC \u05D4\u05E0\u05E1\u05D9\u05E2\u05D4: \u05D4\u05DC\u05D5\u05DA {outbound} \u05D5\u05D7\u05D6\u05D5\u05E8 {return} \u05D1\u05E0\u05E4\u05E8\u05D3 \u2014 \u05D3\u05D5\u05E8\u05E9 \u05D4\u05E1\u05DB\u05DE\u05D4",
   SUGGEST_ROUND_TRIP: "\u05D1\u05DE\u05E7\u05D5\u05DD \u05DC\u05D4\u05E9\u05D0\u05D9\u05E8 \u05D0\u05EA \u05D4\u05E8\u05DB\u05D1 \u05D1{dest}: \u05DC\u05E7\u05D7\u05EA \u05D0\u05D5\u05EA\u05D5 \u05D4\u05DC\u05D5\u05DA \u05D5\u05E9\u05D5\u05D1 \u05D5\u05DC\u05D7\u05D6\u05D5\u05E8 \u05D1-{ret} \u2014 \u05D3\u05D5\u05E8\u05E9 \u05D4\u05E1\u05DB\u05DE\u05D4",
@@ -490,12 +485,10 @@ var PARAM_ERRORS = {
   RIDETYPE_WEIGHTS_INVALID: "\u05E4\u05E8\u05DE\u05D8\u05E8 weights \u05D7\u05E1\u05E8 \u05D0\u05D5 \u05E9\u05D2\u05D5\u05D9 \u05D1\u05DB\u05DC\u05DC rideType",
   RIDETYPE_DEFAULTWEIGHT_INVALID: "\u05E4\u05E8\u05DE\u05D8\u05E8 defaultWeight \u05E9\u05D2\u05D5\u05D9 \u05D1\u05DB\u05DC\u05DC rideType",
   DISTANCE_MAXKM_INVALID: "\u05E4\u05E8\u05DE\u05D8\u05E8 maxKm \u05D7\u05E1\u05E8 \u05D0\u05D5 \u05E9\u05D2\u05D5\u05D9 \u05D1\u05DB\u05DC\u05DC distance",
-  PUBLICTRANSPORT_PARAMS_INVALID: "\u05E4\u05E8\u05DE\u05D8\u05E8\u05D9\u05DD \u05E9\u05D2\u05D5\u05D9\u05D9\u05DD \u05D1\u05DB\u05DC\u05DC publicTransport",
   PEOPLESERVED_CAP_INVALID: "\u05E4\u05E8\u05DE\u05D8\u05E8 cap \u05D7\u05E1\u05E8 \u05D0\u05D5 \u05E9\u05D2\u05D5\u05D9 \u05D1\u05DB\u05DC\u05DC peopleServed",
   FAIRNESS_LOOKBACK_INVALID: "\u05E4\u05E8\u05DE\u05D8\u05E8 lookbackWeeks \u05D7\u05E1\u05E8 \u05D0\u05D5 \u05E9\u05D2\u05D5\u05D9 \u05D1\u05DB\u05DC\u05DC fairness",
   SUBMISSIONTIME_LATEPENALTY_INVALID: "\u05E4\u05E8\u05DE\u05D8\u05E8 latePenalty \u05D7\u05E1\u05E8 \u05D0\u05D5 \u05E9\u05D2\u05D5\u05D9 \u05D1\u05DB\u05DC\u05DC submissionTime",
-  FLEXIBILITYOFFERED_MINUTES_INVALID: "\u05E4\u05E8\u05DE\u05D8\u05E8 fullCreditMinutes \u05D7\u05E1\u05E8 \u05D0\u05D5 \u05E9\u05D2\u05D5\u05D9 \u05D1\u05DB\u05DC\u05DC flexibilityOffered",
-  MANUALBOOST_PARAMS_INVALID: "\u05E4\u05E8\u05DE\u05D8\u05E8\u05D9\u05DD \u05E9\u05D2\u05D5\u05D9\u05D9\u05DD \u05D1\u05DB\u05DC\u05DC manualBoost"
+  FLEXIBILITYOFFERED_MINUTES_INVALID: "\u05E4\u05E8\u05DE\u05D8\u05E8 fullCreditMinutes \u05D7\u05E1\u05E8 \u05D0\u05D5 \u05E9\u05D2\u05D5\u05D9 \u05D1\u05DB\u05DC\u05DC flexibilityOffered"
 };
 var ALL = { ...TEMPLATES, ...RULE_DESCRIPTIONS, ...PARAM_ERRORS };
 function reason(code, params = {}) {
@@ -550,12 +543,13 @@ function buildUnits(roundTrips, pairs, byRequestId, scores, seriesUnits = []) {
   }
   return units;
 }
+function compareUnitsByPriority(a, b) {
+  if (a.score !== b.score) return b.score - a.score;
+  if (a.submittedAtMs !== b.submittedAtMs) return a.submittedAtMs - b.submittedAtMs;
+  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+}
 function sortUnits(units) {
-  return [...units].sort((a, b) => {
-    if (a.score !== b.score) return b.score - a.score;
-    if (a.submittedAtMs !== b.submittedAtMs) return a.submittedAtMs - b.submittedAtMs;
-    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
-  });
+  return [...units].sort(compareUnitsByPriority);
 }
 function fragmentationFor(tl, window) {
   for (const gap of tl.gaps()) {
@@ -951,7 +945,7 @@ function runImprove(unmetUnits, placedSingles, timelines, input, scores) {
   const relocationsApplied = [];
   const ejectionSuggestions = /* @__PURE__ */ new Map();
   const stillUnmetUnits = [];
-  const singleUnits = [...unmetUnits].sort((a, b) => b.score - a.score);
+  const singleUnits = [...unmetUnits].sort(compareUnitsByPriority);
   for (const unit of singleUnits) {
     if (budgetState.exhausted) {
       stillUnmetUnits.push(unit);
@@ -1647,18 +1641,22 @@ function findMergeHosts(params) {
   return candidates;
 }
 
+// src/solver/rules/types.ts
+function validatePositiveNumberParam(raw, key, errorCode, options) {
+  if (typeof raw !== "object" || raw === null || !(key in raw)) throw new PolicyParamsError(errorCode);
+  const value = raw[key];
+  const invalid = typeof value !== "number" || !Number.isFinite(value) || (options?.allowZero ? value < 0 : value <= 0);
+  if (invalid) throw new PolicyParamsError(errorCode);
+  return value;
+}
+
 // src/solver/rules/distance.ts
 var distance = {
   type: "distance",
   normalization: "unit",
   defaultParams: { maxKm: 60 },
   validateParams(raw) {
-    if (typeof raw !== "object" || raw === null || !("maxKm" in raw)) throw new PolicyParamsError("DISTANCE_MAXKM_INVALID");
-    const maxKm = raw.maxKm;
-    if (typeof maxKm !== "number" || !Number.isFinite(maxKm) || maxKm <= 0) {
-      throw new PolicyParamsError("DISTANCE_MAXKM_INVALID");
-    }
-    return { maxKm };
+    return { maxKm: validatePositiveNumberParam(raw, "maxKm", "DISTANCE_MAXKM_INVALID") };
   },
   describe() {
     return ruleDescription("RULE_DISTANCE_DESC");
@@ -1677,14 +1675,7 @@ var fairness = {
   normalization: "unit",
   defaultParams: { lookbackWeeks: 3 },
   validateParams(raw) {
-    if (typeof raw !== "object" || raw === null || !("lookbackWeeks" in raw)) {
-      throw new PolicyParamsError("FAIRNESS_LOOKBACK_INVALID");
-    }
-    const lookbackWeeks = raw.lookbackWeeks;
-    if (typeof lookbackWeeks !== "number" || !Number.isFinite(lookbackWeeks) || lookbackWeeks <= 0) {
-      throw new PolicyParamsError("FAIRNESS_LOOKBACK_INVALID");
-    }
-    return { lookbackWeeks };
+    return { lookbackWeeks: validatePositiveNumberParam(raw, "lookbackWeeks", "FAIRNESS_LOOKBACK_INVALID") };
   },
   describe() {
     return ruleDescription("RULE_FAIRNESS_DESC");
@@ -1708,14 +1699,9 @@ var flexibilityOffered = {
   normalization: "unit",
   defaultParams: { fullCreditMinutes: 240 },
   validateParams(raw) {
-    if (typeof raw !== "object" || raw === null || !("fullCreditMinutes" in raw)) {
-      throw new PolicyParamsError("FLEXIBILITYOFFERED_MINUTES_INVALID");
-    }
-    const fullCreditMinutes = raw.fullCreditMinutes;
-    if (typeof fullCreditMinutes !== "number" || !Number.isFinite(fullCreditMinutes) || fullCreditMinutes <= 0) {
-      throw new PolicyParamsError("FLEXIBILITYOFFERED_MINUTES_INVALID");
-    }
-    return { fullCreditMinutes };
+    return {
+      fullCreditMinutes: validatePositiveNumberParam(raw, "fullCreditMinutes", "FLEXIBILITYOFFERED_MINUTES_INVALID")
+    };
   },
   describe() {
     return ruleDescription("RULE_FLEXIBILITYOFFERED_DESC");
@@ -1748,12 +1734,7 @@ var peopleServed = {
   normalization: "unit",
   defaultParams: { cap: 4 },
   validateParams(raw) {
-    if (typeof raw !== "object" || raw === null || !("cap" in raw)) throw new PolicyParamsError("PEOPLESERVED_CAP_INVALID");
-    const cap = raw.cap;
-    if (typeof cap !== "number" || !Number.isFinite(cap) || cap <= 0) {
-      throw new PolicyParamsError("PEOPLESERVED_CAP_INVALID");
-    }
-    return { cap };
+    return { cap: validatePositiveNumberParam(raw, "cap", "PEOPLESERVED_CAP_INVALID") };
   },
   describe() {
     return ruleDescription("RULE_PEOPLESERVED_DESC");
@@ -1834,14 +1815,9 @@ var submissionTime = {
   normalization: "unit",
   defaultParams: { latePenalty: 1 },
   validateParams(raw) {
-    if (typeof raw !== "object" || raw === null || !("latePenalty" in raw)) {
-      throw new PolicyParamsError("SUBMISSIONTIME_LATEPENALTY_INVALID");
-    }
-    const latePenalty = raw.latePenalty;
-    if (typeof latePenalty !== "number" || !Number.isFinite(latePenalty) || latePenalty < 0) {
-      throw new PolicyParamsError("SUBMISSIONTIME_LATEPENALTY_INVALID");
-    }
-    return { latePenalty };
+    return {
+      latePenalty: validatePositiveNumberParam(raw, "latePenalty", "SUBMISSIONTIME_LATEPENALTY_INVALID", { allowZero: true })
+    };
   },
   describe() {
     return ruleDescription("RULE_SUBMISSIONTIME_DESC");

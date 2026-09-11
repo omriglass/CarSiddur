@@ -8,8 +8,11 @@ Kept separate from `IMPLEMENTATION_PLAN.md` so the owner can triage. Items move 
 - **Multi-day request** (owner, 2026-09-09). Today a multi-day trip is filed as several single-day requests. Constraints to add: the same car on every day; nobody else uses that car in between (the car is held from the start time to midnight, and from midnight to the end time on the last day); moving one day to another car raises a "multi-day request" warning on the board and checks whether the new car is free for the whole span. Needs a `requests.group_id` (or a `request_groups` table) and solver/board awareness of the group.
 - **One-way rides: chauffeur availability** (owner, 2026-09-09). Members can mark time windows as "available to be a chauffeur". Riders can easily see when both a chauffeur and a car are available, so requesting a one-way ride is easy. Needs a `chauffeur_availability` table, a member screen to mark windows, and an availability overlay on the published siddur / request form.
 - **Repeating requests** (owner, 2026-09-09). A request can be marked as repeating. When a new week opens, repeating requests appear as suggestions; tapping one pre-fills the request form (the member still confirms and may change anything, e.g. shift departure by 30 minutes); a suggestion can be dismissed with "stop recurring" or "snooze this week". Needs `request_templates.recurring` (or a `recurring_requests` table) with per-week snooze state, and a suggestions strip on Home / My requests when the week opens.
+- **WhatsApp bot feasibility** — `docs/WHATSAPP_BOT_RESEARCH.md` (2026-09-10, research only, not a commitment).
 
 ## Possible bugs (could not reproduce yet)
+
+- **Chauffeur suggestion is not gated on a free shared car** (found 2026-09-11 while removing dead solver exports). `docs/SOLVER.md` §3.3, §3.11 item 5 and the §7.1 test-matrix row say a `chauffeur` suggestion appears only when a shared car is free at home for the chauffeur window and the load `sum(served) + (1, 0, 0)` fits — `chauffeurLoad()` in `src/solver/seatFit.ts` exists for exactly this, but `src/solver/suggestions.ts` emits `kind: 'chauffeur'` unconditionally in both places and nothing calls `chauffeurLoad` outside its unit test. Either wire the gate (solver-dev, plus a `suggestions.test.ts` row) or amend SOLVER.md; owner decides which. Plan item D12.
 
 - **"Blocked by <ride-id hash>" label on mobile** when viewing requests that were not auto-approved. Not found in the source (2026-09-09 grep for blocked/blockedBy). Owner: please capture a screenshot with the screen name.
 
@@ -22,7 +25,6 @@ Kept separate from `IMPLEMENTATION_PLAN.md` so the owner can triage. Items move 
 ## Low priority (2026-09-10 hardening audit, `docs/HARDENING_2026-09.md` §4)
 
 - Edge functions contain inline Hebrew error strings (hard rule 3) — move to a shared map.
-- `vercel.json` has no security headers (CSP, `X-Frame-Options`); add when convenient.
 
 ## Next feature (priority 3): add passengers to a ride by button
 
@@ -35,6 +37,10 @@ Proposed design (not started, needs one migration):
 - Also: ride cancellation already notifies passengers filed via requests (2026-09-09); extend the emitter to `ride_passengers` rows.
 - **Department switcher lists only own memberships** (found by e2e `department-context.spec.ts`, 2026-09-09, pre-existing). REQ §13.52 says approved members may view another department's public siddur; `DepartmentContextSelector` reads `useMyDepartments()` (membership rows only), so a non-member department is never selectable. Decide: implement view-only browsing (list all departments, gate submission on membership) or change REQ and the spec.
 
-## Convention decision needed
+## Convention decided — to implement
 
-- **`src/lib/enums.ts` does not exist** although CLAUDE.md hard rule 9, the Conventions section, DATA_MODEL and several skills describe it as the mandatory SQL↔TS enum mirror (`REQUEST_STATUSES`, `assertSameEnum`, `he.enums.*` typed records). Code imports `Database["public"]["Enums"][...]` directly and builds local exhaustive records (e.g. `StatusBadge.tsx`, `sadran/applySolve.ts`). Either implement the file as documented or retire the convention in CLAUDE.md, DATA_MODEL and the skills.
+- **`src/lib/enums.ts`** — decided 2026-09-11 (owner Q1, `docs/REFACTOR_PLAN_2026-09-11.md` E8): implement it as documented (CLAUDE.md Conventions "Statuses / enums shared between SQL and TS"), then migrate the ~38 ad hoc `Database["public"]["Enums"][...]` alias/exhaustive-map sites (`StatusBadge.tsx`, `sadran/applySolve.ts`, etc.) to it. Not yet started; CLAUDE.md's folder-map line for `lib/enums.ts` points here.
+
+## To confirm
+
+- **`supabase/config.toml` `[auth.external.google] skip_nonce_check = true`** has no justification comment in the file or elsewhere in the repo/docs (checked 2026-09-11). Confirm whether it is actually needed for Google sign-in via `supabase-js` PKCE, or remove it.

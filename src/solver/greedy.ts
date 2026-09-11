@@ -76,12 +76,21 @@ export function buildUnits(
   return units;
 }
 
+/**
+ * Total-order priority comparator shared by every place that ranks `Unit`s:
+ * score descending, then earliest submission first, then `id` ascending as
+ * the final deterministic tie-break (CLAUDE.md hard rule 5, docs/SOLVER.md
+ * §3.14). Used by the greedy pass (`sortUnits`) and by `improve.ts`'s
+ * unmet-unit retry order — both must rank identically.
+ */
+export function compareUnitsByPriority(a: Unit, b: Unit): number {
+  if (a.score !== b.score) return b.score - a.score;
+  if (a.submittedAtMs !== b.submittedAtMs) return a.submittedAtMs - b.submittedAtMs;
+  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+}
+
 export function sortUnits(units: Unit[]): Unit[] {
-  return [...units].sort((a, b) => {
-    if (a.score !== b.score) return b.score - a.score;
-    if (a.submittedAtMs !== b.submittedAtMs) return a.submittedAtMs - b.submittedAtMs;
-    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
-  });
+  return [...units].sort(compareUnitsByPriority);
 }
 
 function fragmentationFor(tl: CarTimeline, window: Window): number {

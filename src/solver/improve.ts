@@ -16,7 +16,7 @@
 
 import { carsByPreference } from './carPreference';
 import { bestPlacementWithinFlex } from './flexibility';
-import type { PlacedSingle, Unit } from './greedy';
+import { compareUnitsByPriority, type PlacedSingle, type Unit } from './greedy';
 import { fits, luggageFits } from './seatFit';
 import { reason } from './reasons';
 import type { CarTimeline } from './timeline';
@@ -56,7 +56,7 @@ export function runImprove(
   const ejectionSuggestions = new Map<string, Suggestion>();
   const stillUnmetUnits: Unit[] = [];
 
-  const singleUnits = [...unmetUnits].sort((a, b) => b.score - a.score);
+  const singleUnits = [...unmetUnits].sort(compareUnitsByPriority);
 
   for (const unit of singleUnits) {
     if (budgetState.exhausted) {

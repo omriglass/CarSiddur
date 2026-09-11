@@ -24,7 +24,7 @@ Check first: `add-priority-rule`, `add-request-field`, `add-notification-event`,
 - [ ] `npm run db:reset && npm run db:types`; commit types; seed rows for local/e2e.
 
 ## 3. Enums and types
-- [ ] SQL enum → `src/lib/enums.ts` mirror + zod + `assertSameEnum` → `he.enums.*`.
+- [ ] SQL enum → `src/lib/enums.ts` mirror + zod + `assertSameEnum` → `he.enums.*`. (`src/lib/enums.ts` is being introduced, plan E8; until it exists, follow the local `Database['public']['Enums']` pattern the neighbouring code uses.)
 - [ ] No status string literals outside `enums.ts` and SQL.
 
 ## 4. Solver (if touched)
@@ -34,9 +34,9 @@ Check first: `add-priority-rule`, `add-request-field`, `add-notification-event`,
 
 ## 5. UI
 - [ ] Feature folder `src/features/<f>/{components,hooks,api.ts,schema.ts,keys.ts}`; pages compose features.
-- [ ] TanStack Query only; mutations invalidate keys; `expected_version` on rides/requests/proposals with conflict toast via `lib/errors.ts`.
+- [ ] TanStack Query only; mutations invalidate keys; `expected_version` on rides/requests/proposals with conflict toast via `lib/rpc.ts` (`toAppError`/`showErrorToast`).
 - [ ] shadcn/ui; RTL logical utilities; mobile-first (360px), 44px tap targets; board usable on phone.
-- [ ] `useRole()` gating mirrors RLS. All strings via `useT()`. Time via `lib/time.ts`.
+- [ ] `useRole()` gating mirrors RLS. All strings via the `he` object or `t(key)`/`tv(key, vars)` from `src/i18n/he.ts` (there is no `useT()` hook). Time via `lib/time.ts`.
 
 ## 6. Notifications
 - [ ] Every state change visible to others emits the right event (REQ §8 table) — `/add-notification-event` for new ones.
@@ -44,8 +44,8 @@ Check first: `add-priority-rule`, `add-request-field`, `add-notification-event`,
 ## 7. Tests
 - [ ] Vitest: schemas, mappers, helpers, solver (`__tests__/`).
 - [ ] RLS case in `supabase/tests/` for new tables.
-- [ ] Playwright spec in `e2e/` for any **user-facing flow**; extend one of the four core specs if it belongs there.
-- [ ] `npm run lint && npm run typecheck && npm run test`; `npm run e2e -- <spec>`.
+- [ ] Playwright spec in `e2e/` for any **user-facing flow**; extend one of the 27 flat specs (`e2e/*.spec.ts`) if it belongs there.
+- [ ] `npm run lint && npm run typecheck && npm run test`; `npm run test:e2e -- <spec>`.
 
 ## 8. Housekeeping
 - [ ] `CLAUDE.md` folder map / conventions / task→skill table if you added a pattern, folder, command or skill; `docs/MAINTENANCE.md` if you added a skill or agent.

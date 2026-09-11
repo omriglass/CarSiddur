@@ -18,6 +18,9 @@ supabase/.temp/
 # diag-solve.mjs snapshots (local diagnostics, never committed)
 scripts/.diag-solve/
 
+# db-export.mjs output (contains member PII — never commit)
+backups/
+
 # tests
 coverage/
 test-results/
@@ -33,3 +36,6 @@ playwright/.cache/
 
 # typescript incremental build info
 *.tsbuildinfo
+
+# wrangler dev cache
+.wrangler/

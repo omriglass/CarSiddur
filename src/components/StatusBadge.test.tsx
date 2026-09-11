@@ -56,6 +56,8 @@ const WEEK_PHASES: readonly Database["public"]["Enums"]["week_phase"][] = [
   "archived",
 ];
 
+const CAR_ISSUE_STATUSES: readonly Database["public"]["Enums"]["car_issue_status"][] = ["open", "resolved"];
+
 // `ParsedInviteRowStatus` (src/features/admin/members/lib/parseInviteLines.ts)
 // mirrored here — a plain TS union, not a DB enum (see StatusBadge.tsx's
 // own `InviteRowStatus` type comment).
@@ -84,6 +86,11 @@ describe("StatusBadge", () => {
 
   it.each(WEEK_PHASES)("renders week phase '%s' with a non-empty label", (status) => {
     const { container } = render(<StatusBadge kind="week" status={status} />);
+    expect(container.textContent).toBeTruthy();
+  });
+
+  it.each(CAR_ISSUE_STATUSES)("renders car issue status '%s' with a non-empty label", (status) => {
+    const { container } = render(<StatusBadge kind="carIssue" status={status} />);
     expect(container.textContent).toBeTruthy();
   });
 

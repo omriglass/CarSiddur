@@ -1,0 +1,23 @@
+# Security headers for the production host (Cloudflare Worker `carsiddur`,
+# static assets from ./dist — wrangler.jsonc). Cloudflare applies this file to
+# every asset response; Vite copies it from public/ into dist/ unchanged.
+# docs/FREE_DEPLOYMENT.md §4 documents it; docs/REFACTOR_PLAN_2026-09-11.md A4.
+#
+# What the page needs (see dist/index.html after `npm run build`):
+#   scripts   only our own bundle + /registerSW.js            -> script-src 'self'
+#   styles    our CSS, Radix/Tailwind inline style attrs,      -> 'unsafe-inline'
+#             Google Fonts stylesheet (Heebo)                  -> fonts.googleapis.com
+#   fonts     fonts.gstatic.com
+#   data      the Supabase project (REST, Auth, Realtime, Edge Functions)
+#   images    own icons, data:/blob: for generated previews
+#   workers   the PWA service worker (/sw.mjs)
+# Sign-in with Google and WhatsApp links are top-level navigations, not
+# fetches, so they need no CSP entry. Do NOT add caching rules here for the
+# service worker or HTML (FREE_DEPLOYMENT §4: let the platform defaults serve).
+
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' https://*.supabase.co wss://*.supabase.co; worker-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'
+  X-Frame-Options: DENY
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()

@@ -13,7 +13,7 @@ Destinations are **data**, not code (DATA_MODEL §3.3 `destinations`, REQ §13.8
 ## Table (DATA_MODEL §3.3)
 `destinations`: `name` (unique, normalized by trigger), `aliases text[]` (GIN, typeahead), `zone text` default `'unknown'` (free vocabulary managed by admins: `north`, `haifa`, `tel_aviv`, …), `lat/lng`, `distance_km`, `travel_minutes`, `public_transport_score smallint 0..5` (5 = excellent → lower priority), `is_approved bool` (false = suggested from free text), `created_by`.
 
-Solver mapping (`src/features/board/solverInput.ts`): `publicTransportScore = score / 5` (solver uses 0..1), `zone` passed through; `'unknown'` never merges (SOLVER.md §3.8).
+Solver mapping (`src/features/solverBridge/buildSolverInput.ts`): `publicTransportScore = score / 5` (solver uses 0..1), `zone` passed through; `'unknown'` never merges (SOLVER.md §3.8).
 
 ## A. Add or change destinations in the seed
 - [ ] Edit the destinations block in `supabase/seed.sql`: `insert into public.destinations (id, name, aliases, zone, distance_km, travel_minutes, public_transport_score, is_approved) values (...) on conflict (name) do update set ...;` Keep alphabetical by Hebrew name; fixed UUIDs for rows referenced by `e2e/helpers.ts` (there is no `e2e/fixtures/` folder anymore).

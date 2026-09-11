@@ -72,6 +72,8 @@ npx supabase db push
 
 Confirm the linked project is the new hosted project before pushing. Use migrations for subsequent changes. Do not run database reset against production, and do not add `--include-seed`: this repository's `supabase/seed.sql` contains demo logins and rides.
 
+**Never run `npx supabase config push`.** The checked-in `supabase/config.toml` is the **local** stack's configuration (`[auth] site_url = "http://localhost:8080"`, local redirect URLs, local-only auth toggles). Pushing it would overwrite the hosted project's real Auth URL configuration. Production Auth settings (Site URL, redirect URLs, the Google provider's client id/secret) are set by hand in the Supabase dashboard — see §5 below.
+
 ## 3. Generate and configure notification credentials
 
 Generate one stable VAPID pair and a separate random secret:
@@ -138,7 +140,9 @@ VITE_APP_URL=https://PROJECT.pages.dev
 
 All `VITE_` values are public browser configuration. Private VAPID, Google client and service-role secrets belong in Supabase, not these build variables. Changing these variables requires a new frontend build.
 
-The existing deployment is the **Cloudflare Worker `carsiddur`**. Use the checked-in `wrangler.jsonc`, which enables `assets.not_found_handling = "single-page-application"`. Do not add `_redirects` rules to rewrite application routes to `index.html`: Workers' deployment validation rejects the previous rules as redirect loops. The native SPA fallback serves application navigation directly. For a separate Pages deployment, its default SPA behavior applies when there is no top-level `404.html`. Vercel deployments use `vercel.json`.
+The existing deployment is the **Cloudflare Worker `carsiddur`**. Use the checked-in `wrangler.jsonc`, which enables `assets.not_found_handling = "single-page-application"`. Do not add `_redirects` rules to rewrite application routes to `index.html`: Workers' deployment validation rejects the previous rules as redirect loops. The native SPA fallback serves application navigation directly. For a separate Pages deployment, its default SPA behavior applies when there is no top-level `404.html`. There is no Vercel configuration; the Worker is the only production host.
+
+**Security headers.** `public/_headers` (copied by Vite into `dist/`, applied by Cloudflare to every asset response) sets a Content-Security-Policy that allows scripts only from the app itself, styles and fonts from the app and Google Fonts (Heebo), and connections only to `*.supabase.co`, plus `X-Frame-Options: DENY`, `X-Content-Type-Options`, `Referrer-Policy` and a restrictive `Permissions-Policy`. If the Supabase project ever moves to a custom domain, or a new third-party origin is added (an image host, an analytics endpoint), update `connect-src`/`img-src` there in the same change, otherwise the browser blocks the request silently. Verify locally with `npm run build && npx wrangler dev` and `curl -I http://localhost:8787/`; in production check the response headers of `/` in the browser's network panel after each deploy. Do not add caching rules to that file (see the next paragraph).
 
 After redeploying, directly open and refresh `/my`, `/admin/members`, and `/p/TOKEN` in a private window, then check browser Back/Forward. These must load the application without a hosting 404, including before a service worker is installed. Avoid custom caching rules over the service worker or HTML. See [Pages SPA routing](https://developers.cloudflare.com/pages/configuration/serving-pages/) and [Workers SPA routing](https://developers.cloudflare.com/workers/static-assets/routing/single-page-application/).
 
@@ -183,7 +187,15 @@ Use two real member accounts and a coordinator to check Google sign-in, request 
 
 Frontend changes deploy through GitHub/Cloudflare. Database changes require a separate reviewed `supabase db push`; function changes require bundling and deploying the affected functions. Apply backward-compatible backend changes before frontend code that depends on them.
 
-Free Supabase does not include automatic database backups. Schedule regular CLI database exports to protected off-site storage and test restoration. Follow Supabase's backup instructions for schema, data, roles and any separately stored files; a code repository is not a backup of live bookings.
+Free Supabase does not include automatic database backups. Free tier has no scheduler for this, so the owner runs an export by hand weekly (put it on your calendar) with `npm run db:export -- --linked --yes-remote`, which writes `schema-<ts>.sql`, `data-<ts>.sql` and `roles-<ts>.sql` (Asia/Jerusalem timestamp) to `backups/` — contains member PII, never commit it or paste it into chat. Copy the three files to protected off-site storage (not the repo) and keep roughly the last 8 weekly sets, pruning older ones. To restore into an empty project:
+
+```sh
+psql "$DB_URL" -f backups/schema-<ts>.sql
+psql "$DB_URL" -f backups/data-<ts>.sql
+# roles-<ts>.sql only if the fresh cluster is missing expected Postgres roles
+```
+
+Test this restore procedure occasionally against a scratch project so it's proven before you actually need it.
 
 ## Free-plan limits and official references
 

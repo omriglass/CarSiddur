@@ -400,6 +400,20 @@ export const heMember = {
     cancelGroupBody: "כל המשתתפים/ות יישארו ברשימת ההמתנה.",
     openGroup: "לדיון",
   },
+  /**
+   * Full-screen fallback rendered by the router's `errorElement` when a
+   * route throws (`src/app/ErrorScreen.tsx`, CLAUDE.md hard rules 2/3,
+   * docs/UX_FLOWS.md §2.3). Deliberately minimal: a title, one line of body
+   * copy, a reload action and a link home; the raw error/stack goes in a
+   * collapsed `<details>` for support, not translated.
+   */
+  errorScreen: {
+    title: "משהו השתבש",
+    body: "אירעה שגיאה בלתי צפויה. הנתונים שלך שמורים — אפשר לנסות שוב.",
+    reload: "רענן/י",
+    backHome: "לדף הבית",
+    detailsSummary: "פרטים לתמיכה",
+  },
 } as const;
 
 export type HeMemberDictionary = typeof heMember;

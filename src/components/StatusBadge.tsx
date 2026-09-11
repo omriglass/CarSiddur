@@ -33,6 +33,7 @@ type ProposalStatus = Database["public"]["Enums"]["proposal_status"];
 type RideStatus = Database["public"]["Enums"]["ride_status"];
 type CarStatus = Database["public"]["Enums"]["car_status"];
 type WeekPhase = Database["public"]["Enums"]["week_phase"];
+type CarIssueStatus = Database["public"]["Enums"]["car_issue_status"];
 /**
  * Mirrors `ParsedInviteRowStatus`
  * (`src/features/admin/members/lib/parseInviteLines.ts`) — a plain TS union,
@@ -158,6 +159,12 @@ const WEEK_PHASE_META: Record<WeekPhase, StatusMeta> = {
   archived: { icon: Archive, label: he.phase.archived, colorClass: TONE.neutral },
 };
 
+/** `car_issues.status` (`he.adminIssues.statusOpen`/`statusResolved`) — used by the car detail history list and the admin issues screen. */
+const CAR_ISSUE_STATUS_META: Record<CarIssueStatus, StatusMeta> = {
+  open: { icon: AlertTriangle, label: he.adminIssues.statusOpen, colorClass: TONE.amber },
+  resolved: { icon: CheckCircle2, label: he.adminIssues.statusResolved, colorClass: TONE.available },
+};
+
 const INVITE_ROW_STATUS_META: Record<InviteRowStatus, StatusMeta> = {
   new: { icon: UserPlus, label: he.adminMembers.importRowNew, colorClass: TONE.available },
   existing: { icon: Users, label: he.adminMembers.importRowExisting, colorClass: TONE.neutral },
@@ -175,14 +182,15 @@ type StatusBadgeProps =
   | { kind: "ride"; status: RideStatus; className?: string }
   | { kind: "car"; status: CarStatus; className?: string }
   | { kind: "week"; status: WeekPhase; className?: string }
+  | { kind: "carIssue"; status: CarIssueStatus; className?: string }
   | { kind: "inviteRow"; status: InviteRowStatus; className?: string };
 
 /**
  * Color + icon + Hebrew text, never color alone (UX_FLOWS.md §7.3/§7.4).
  * `kind` picks which status domain `status` belongs to: `request`/`ride`/
- * `proposal`/`car`/`week` (DB enums; `week` = `weeks.phase`) or `inviteRow`
- * (the bulk member-invite preview's plain-TS-union row status, admin
- * members screen).
+ * `proposal`/`car`/`week`/`carIssue` (DB enums; `week` = `weeks.phase`,
+ * `carIssue` = `car_issues.status`) or `inviteRow` (the bulk member-invite
+ * preview's plain-TS-union row status, admin members screen).
  */
 function metaFor(props: StatusBadgeProps): StatusMeta {
   switch (props.kind) {
@@ -196,6 +204,8 @@ function metaFor(props: StatusBadgeProps): StatusMeta {
       return CAR_STATUS_META[props.status];
     case "week":
       return WEEK_PHASE_META[props.status];
+    case "carIssue":
+      return CAR_ISSUE_STATUS_META[props.status];
     case "inviteRow":
       return INVITE_ROW_STATUS_META[props.status];
   }
@@ -215,4 +225,12 @@ export function StatusBadge(props: StatusBadgeProps) {
   );
 }
 
-export { REQUEST_STATUS_META, PROPOSAL_STATUS_META, RIDE_STATUS_META, CAR_STATUS_META, WEEK_PHASE_META, INVITE_ROW_STATUS_META };
+export {
+  REQUEST_STATUS_META,
+  PROPOSAL_STATUS_META,
+  RIDE_STATUS_META,
+  CAR_STATUS_META,
+  WEEK_PHASE_META,
+  CAR_ISSUE_STATUS_META,
+  INVITE_ROW_STATUS_META,
+};

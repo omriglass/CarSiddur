@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import { createBrowserRouter, Navigate, Outlet } from "react-router-dom";
 
 import { AppShell } from "@/app/AppShell";
+import { ErrorScreen } from "@/app/ErrorScreen";
 import {
   GuardLoading,
   RequireAdmin,
@@ -29,42 +30,55 @@ import { SiddurPage } from "@/pages/SiddurPage";
 // RequireAuth (no session -> /login) > RequireApproved (not approved -> /pending) >
 // [ /onboarding, unguarded further ] and [ RequireOnboarded (no phone -> /onboarding) > AppShell ].
 // `/login`, `/pending` and `/p/:token` render outside every guard (no-session/no-approval screens).
+//
+// The outermost entry is a single pathless layout route whose only job is
+// `errorElement` (UX_FLOWS.md §2.3): any render exception thrown by a
+// descendant route bubbles up to the nearest ancestor route that declares
+// one, so one `errorElement` here catches every route below without
+// duplicating it per branch. It has no `element` of its own beyond
+// `<Outlet />` so every path/pattern below is unchanged.
 export const router = createBrowserRouter([
   {
-    element: <RequireAuth />,
+    errorElement: <ErrorScreen />,
+    element: <Outlet />,
     children: [
       {
-        element: <RequireApproved />,
+        element: <RequireAuth />,
         children: [
-          { path: "/onboarding", element: <OnboardingPage /> },
           {
-            element: <RequireOnboarded />,
+            element: <RequireApproved />,
             children: [
+              { path: "/onboarding", element: <OnboardingPage /> },
               {
-                element: <AppShell />,
+                element: <RequireOnboarded />,
                 children: [
-                  { path: "/", element: <Navigate to="/my" replace /> },
-                  { path: "/my", element: <HomePage /> },
-                  { path: "/requests/new", element: <NewRequestPage /> },
-                  { path: "/siddur", element: <SiddurPage /> },
-                  { path: "/inbox", element: <InboxPage /> },
-                  { path: "/profile", element: <ProfilePage /> },
-                  ...memberRoutes,
                   {
-                    element: <RequireSadran />,
-                    // One `<Suspense>` boundary for the whole lazily-loaded
-                    // Sadran area (board/proposals/publish/…, `sadranRoutes`
-                    // itself does the `React.lazy()` per page) rather than one
-                    // per route — docs/HARDENING_2026-09.md §3 item 2.
-                    children: [{ element: <Suspense fallback={<GuardLoading />}><Outlet /></Suspense>, children: [...sadranRoutes] }],
-                  },
-                  {
-                    element: <RequireOperations />,
-                    children: [{ element: <Suspense fallback={<GuardLoading />}><Outlet /></Suspense>, children: [...operationsRoutes] }],
-                  },
-                  {
-                    element: <RequireAdmin />,
-                    children: [{ element: <Suspense fallback={<GuardLoading />}><Outlet /></Suspense>, children: [...adminRoutes] }],
+                    element: <AppShell />,
+                    children: [
+                      { path: "/", element: <Navigate to="/my" replace /> },
+                      { path: "/my", element: <HomePage /> },
+                      { path: "/requests/new", element: <NewRequestPage /> },
+                      { path: "/siddur", element: <SiddurPage /> },
+                      { path: "/inbox", element: <InboxPage /> },
+                      { path: "/profile", element: <ProfilePage /> },
+                      ...memberRoutes,
+                      {
+                        element: <RequireSadran />,
+                        // One `<Suspense>` boundary for the whole lazily-loaded
+                        // Sadran area (board/proposals/publish/…, `sadranRoutes`
+                        // itself does the `React.lazy()` per page) rather than one
+                        // per route — docs/HARDENING_2026-09.md §3 item 2.
+                        children: [{ element: <Suspense fallback={<GuardLoading />}><Outlet /></Suspense>, children: [...sadranRoutes] }],
+                      },
+                      {
+                        element: <RequireOperations />,
+                        children: [{ element: <Suspense fallback={<GuardLoading />}><Outlet /></Suspense>, children: [...operationsRoutes] }],
+                      },
+                      {
+                        element: <RequireAdmin />,
+                        children: [{ element: <Suspense fallback={<GuardLoading />}><Outlet /></Suspense>, children: [...adminRoutes] }],
+                      },
+                    ],
                   },
                 ],
               },
@@ -72,10 +86,10 @@ export const router = createBrowserRouter([
           },
         ],
       },
+      { path: "/login", element: <LoginPage /> },
+      { path: "/pending", element: <PendingPage /> },
+      { path: "/p/:token", element: <ProposalTokenPage /> },
+      { path: "*", element: <NotFoundPage /> },
     ],
   },
-  { path: "/login", element: <LoginPage /> },
-  { path: "/pending", element: <PendingPage /> },
-  { path: "/p/:token", element: <ProposalTokenPage /> },
-  { path: "*", element: <NotFoundPage /> },
 ]);

@@ -1,7 +1,7 @@
 // src/solver/rules/submissionTime.ts
 import { ruleDescription } from '../reasons';
-import { PolicyParamsError } from '../types';
 import type { Rule } from './types';
+import { validatePositiveNumberParam } from './types';
 
 export interface SubmissionTimeParams {
   latePenalty: number;
@@ -12,14 +12,10 @@ export const submissionTime: Rule<SubmissionTimeParams> = {
   normalization: 'unit',
   defaultParams: { latePenalty: 1 },
   validateParams(raw) {
-    if (typeof raw !== 'object' || raw === null || !('latePenalty' in raw)) {
-      throw new PolicyParamsError('SUBMISSIONTIME_LATEPENALTY_INVALID');
-    }
-    const latePenalty = (raw as { latePenalty: unknown }).latePenalty;
-    if (typeof latePenalty !== 'number' || !Number.isFinite(latePenalty) || latePenalty < 0) {
-      throw new PolicyParamsError('SUBMISSIONTIME_LATEPENALTY_INVALID');
-    }
-    return { latePenalty };
+    // latePenalty may legitimately be 0 (late submissions score like on-time ones).
+    return {
+      latePenalty: validatePositiveNumberParam(raw, 'latePenalty', 'SUBMISSIONTIME_LATEPENALTY_INVALID', { allowZero: true }),
+    };
   },
   describe() {
     return ruleDescription('RULE_SUBMISSIONTIME_DESC');

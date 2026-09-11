@@ -7,6 +7,18 @@ description: Review the five docs (REQUIREMENTS, ARCHITECTURE, DATA_MODEL, SOLVE
 
 Output: a **checklist of drift items**, each with file:line (or §) on both sides and a one-line fix. Report first; fix only if asked. Where code is absent, report "not yet implemented", not drift.
 
+## 0. Re-derive numeric counts from disk
+
+Never copy a count ("N migrations", "N events", "N specs", "N tests") from another doc or from memory — every stale-count drift found in this repo came from one doc quoting a number another doc had already gotten wrong. Recompute each with the exact commands below before writing the report:
+
+- [ ] Migrations: `ls supabase/migrations/*.sql | wc -l`; range: `ls supabase/migrations/*.sql | sort | sed -n '1p;$p'`.
+- [ ] Notification events: `grep -h "add value\|create type public.notification_event" supabase/migrations/*.sql` — count every quoted value across the `create type (...)` list plus each `add value` line.
+- [ ] SQL test suites: `ls supabase/tests/*.sql | wc -l`, and cross-check against the exact filename array in `scripts/test-db.mjs` (the file actually run by `npm run db:test`) — a file present in `supabase/tests/` but missing from that array never runs.
+- [ ] e2e specs: `ls e2e/*.spec.ts | wc -l`.
+- [ ] Unit tests: last line of `npm run test` output ("N passed" / "N files") — do not hand-count.
+- [ ] Feature folders: `ls src/features`.
+- [ ] Any other cited count (rule types, admin screens, edge functions, migrations since a given date) gets its own one-line `ls`/`grep -c` before it goes in the report.
+
 ## 1. Gather canonical lists
 
 Docs:
@@ -21,7 +33,7 @@ Code (grep, do not read whole files):
 - [ ] Tables/columns: `grep -n "create table\|add column\|drop column\|rename" supabase/migrations/*.sql`; views in `20260907091700_views.sql` and later.
 - [ ] RLS: per table `enable row level security`, `force row level security`, `create policy … for <cmd>`; `grep -n "for all\|using (true)" supabase/migrations`.
 - [ ] Known rule set in SQL: body of `validate_policy_rules` (latest definition wins).
-- [ ] TS: `src/lib/enums.ts` arrays; `ruleRegistry` keys in `src/solver/rules/index.ts`; files in `src/solver/rules/*.ts`; reason codes in `src/solver/reasons.ts`; `he.enums.*`, `he.notif.*`, `he.admin.policies.rules.*` keys in `src/i18n/he.ts`; `src/features/requests/schema.ts` keys; routes in `src/app/router.tsx`; `package.json` scripts.
+- [ ] TS: `src/lib/enums.ts` arrays (being introduced, plan E8; until it exists, grep the local `Database['public']['Enums'][…]` aliases the neighbouring code uses instead); `ruleRegistry` keys in `src/solver/rules/index.ts`; files in `src/solver/rules/*.ts`; reason codes in `src/solver/reasons.ts`; `he.enums.*`, `he.notif.*`, `he.admin.policies.rules.*` keys in `src/i18n/he.ts`; `src/features/requests/schema.ts` keys; routes in `src/app/router.tsx`; `package.json` scripts.
 - [ ] Emitters: `grep -rn "enqueue_notification(" supabase` (any `insert into notifications`/`push_outbox` outside that function is drift); cron: `grep -rn "cron.schedule" supabase/migrations` (must be exactly one live entry, `app_tick`); edge functions: `ls supabase/functions` ⇔ `push-dispatch, answer-proposal, on-ride-cancelled, destination-route` (there is no `solve` function — the solver runs inside RPCs via the bundled `_shared/solver.js`).
 
 ## 2. Cross-checks (one report line each)
@@ -33,17 +45,17 @@ Car location / relay model:
 - [ ] REQ §5.4, §13.57 ⇔ DATA_MODEL §5 (`rides.origin_id`/`destination_id`, `departments.home_destination_id`, `department_settings.day_end_time`/`chauffeur_dwell_minutes`) ⇔ SOLVER §1.2–1.3, §3.2, §3.6.1 (`CarTimeline`, relay pairing) ⇔ `assert_car_chain()` called at the end of every ride-writing RPC (`apply_solver_result`, `edit_ride`, `apply_proposal`, `try_auto_approve`, `resolve_freed_offer`, `approve_claim`) ⇔ ARCHITECTURE §7 location-chain / day-end rows. Flag any ride-writing RPC that skips the call, and any leftover `one_way` boolean / `leg_direction` column.
 
 Rule types:
-- [ ] REQ §7.2 rows ⇔ SOLVER §4.3 rows ⇔ `ruleRegistry` keys ⇔ `rules/*.ts` files ⇔ `validate_policy_rules()` set ⇔ `he.admin.policies.rules` keys ⇔ `ruleParamForms/index.ts` keys. Param names in SOLVER §4.3 ⇔ each rule's `defaultParams`.
+- [ ] REQ §7.2 rows ⇔ SOLVER §4.3 rows ⇔ `ruleRegistry` keys ⇔ `rules/*.ts` files ⇔ `validate_policy_rules()` set ⇔ `he.admin.policies.rules` keys ⇔ `src/features/admin/policy/components/RuleParamsEditor.tsx` (the single file that renders every rule type's param form; there is no per-rule `ruleParamForms/` directory). Param names in SOLVER §4.3 ⇔ each rule's `defaultParams`.
 - [ ] SOLVER §4.4 default policy ⇔ seeded `policy_versions.rules`.
 
 Request fields:
 - [ ] REQ §5.1 ⇔ DATA_MODEL `requests` (and `request_templates` mirror) ⇔ `schema.ts` ⇔ `he.requests.fields` ⇔ UX_FLOWS form ⇔ SOLVER §2 `Request`. Flag required/nullable mismatches and flexibility step lists (0/15/30/60/120/'day').
 
 Notifications:
-- [ ] UX_FLOWS §6.1 (canonical, 22 rows, incl. the Sadran-only `window_closed_solve_now`/`publish_reminder` and `status_changed`) ⇔ DATA_MODEL §2 `notification_event` (value = snake_case of the `notif.*` suffix) ⇔ ARCHITECTURE §9 list ⇔ SQL ⇔ `he.notif.*` ⇔ an emitter per event ⇔ `inbox` + `push` template rows per event in the seed (+ seven `whatsapp` variants: shift, merge_passenger, merge_driver, deny, external, chauffeur, reminder). REQ §9 prose names nothing outside the list. Names: `enqueue_notification`, `notifications`, `push_outbox`, `notification_templates`, `profiles.muted_events` (anything else — `notify`, `notification_prefs`, templates in `app_settings` — is drift).
+- [ ] UX_FLOWS §6.1 (canonical, 24 rows, incl. the Sadran-only `window_closed_solve_now`/`publish_reminder`, `status_changed`, `car_care`, `waitlist_contested`, `waitlist_resolved`) ⇔ DATA_MODEL §2 `notification_event` (value = snake_case of the `notif.*` suffix) ⇔ ARCHITECTURE §9 list ⇔ SQL ⇔ `he.notif.*` ⇔ an emitter per event ⇔ `inbox` + `push` template rows per event in the seed (+ seven `whatsapp` variants: shift, merge_passenger, merge_driver, deny, external, chauffeur, reminder). REQ §9 prose names nothing outside the list. Names: `enqueue_notification`, `notifications`, `push_outbox`, `notification_templates`, `profiles.muted_events` (anything else — `notify`, `notification_prefs`, templates in `app_settings` — is drift).
 
 Weekly cycle:
-- [ ] REQ §4 defaults ⇔ `department_settings` column defaults ⇔ seed ⇔ ARCHITECTURE §10. Exactly one `cron.schedule` (`app_tick`, `*/15 * * * *`, `app.tick()`) ⇔ DATA_MODEL §6 step 17 ⇔ ARCHITECTURE §10; tick sub-functions `advance_week_phases`, `send_due_reminders`, `expire_proposals`, `drain_push_outbox`, `housekeeping` exist. `week_phase` = `open, solving, published, live, archived`.
+- [ ] REQ §4 defaults ⇔ `department_settings` column defaults ⇔ seed ⇔ ARCHITECTURE §10. Exactly one `cron.schedule` (`app_tick`, `*/15 * * * *`, `app.tick()`) ⇔ DATA_MODEL §6 step 17 ⇔ ARCHITECTURE §10; tick sub-functions `advance_week_phases`, `send_due_reminders`, `expire_proposals`, `drain_push_outbox`, `housekeeping` exist. `week_phase` = `upcoming, open, solving, published, live, archived`.
 
 Requests write path:
 - [ ] `pg_policy` has no INSERT/UPDATE policy on `requests`; `submit_request(payload jsonb)`, `withdraw_request`, `set_manual_boost`, `try_auto_approve` exist (DATA_MODEL §3.6, ARCHITECTURE §6.1).

@@ -1,8 +1,8 @@
 // src/solver/rules/flexibilityOffered.ts
 import { ruleDescription } from '../reasons';
-import { PolicyParamsError } from '../types';
 import type { Flexibility } from '../types';
 import type { Rule } from './types';
+import { validatePositiveNumberParam } from './types';
 
 export interface FlexibilityOfferedParams {
   fullCreditMinutes: number;
@@ -23,14 +23,9 @@ export const flexibilityOffered: Rule<FlexibilityOfferedParams> = {
   normalization: 'unit',
   defaultParams: { fullCreditMinutes: 240 },
   validateParams(raw) {
-    if (typeof raw !== 'object' || raw === null || !('fullCreditMinutes' in raw)) {
-      throw new PolicyParamsError('FLEXIBILITYOFFERED_MINUTES_INVALID');
-    }
-    const fullCreditMinutes = (raw as { fullCreditMinutes: unknown }).fullCreditMinutes;
-    if (typeof fullCreditMinutes !== 'number' || !Number.isFinite(fullCreditMinutes) || fullCreditMinutes <= 0) {
-      throw new PolicyParamsError('FLEXIBILITYOFFERED_MINUTES_INVALID');
-    }
-    return { fullCreditMinutes };
+    return {
+      fullCreditMinutes: validatePositiveNumberParam(raw, 'fullCreditMinutes', 'FLEXIBILITYOFFERED_MINUTES_INVALID'),
+    };
   },
   describe() {
     return ruleDescription('RULE_FLEXIBILITYOFFERED_DESC');

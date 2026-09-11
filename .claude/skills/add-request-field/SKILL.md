@@ -30,34 +30,34 @@ Tables: `requests` (DATA_MODEL §3.6) and its mirror `request_templates` (repeat
 - [ ] `npm run db:reset && npm run db:types`; commit `src/integrations/supabase/types.ts`.
 
 ### 2. TS enums (only if enum)
-- [ ] `src/lib/enums.ts`: const array + zod + `assertSameEnum`; `he.enums.<enumName>` labels.
+- [ ] `src/lib/enums.ts`: const array + zod + `assertSameEnum`; `he.enums.<enumName>` labels. (`src/lib/enums.ts` is being introduced, plan E8; until it exists, follow the local `Database['public']['Enums']` pattern the neighbouring code uses.)
 
 ### 3. Schema, API, form (`src/features/requests/`)
 - [ ] `schema.ts`: add to the request zod schema; defaults match SQL; refinements for cross-field rules.
 - [ ] `api.ts`: map form ↔ column in create/update and in `toFormValues` (via `Tables<'requests'>` types).
-- [ ] `components/RequestForm.tsx`: add the control in the right group (destination / times / passengers / flexibility / notes). shadcn `FormField`, labels via `useT()`, full width, 44px tap targets.
-- [ ] Sadran-only: render in the board's request drawer (`src/features/board/components/RequestDrawer.tsx`) guarded by `useRole().isSadranFor(dept, weekStart)`, not in the member form.
-- [ ] Repeat-weekly template form (`src/features/requests/components/TemplateForm.tsx`, if it exists): same control.
+- [ ] `components/RequestForm.tsx`: add the control in the right group (destination / times / passengers / flexibility / notes). shadcn `FormField`, labels via the `he` object or `t(key)`/`tv(key, vars)` from `src/i18n/he.ts` (there is no `useT()` hook), full width, 44px tap targets.
+- [ ] Sadran-only: render in the board's ride sheet (`src/features/sadran/board/components/RideSheet.tsx`) guarded by `useRole().isSadranFor(dept, weekStart)`, not in the member form.
+- [ ] Repeat-weekly: there is no separate template form — `RequestForm.tsx`'s `repeatWeekly` switch (`schema.ts`) covers it; add the control there.
 
 ### 4. i18n (`src/i18n/he.ts`)
 - [ ] `he.requests.fields.<field>.label` (+ `.help`, `.placeholder`); enum labels under `he.enums`.
-- [ ] If shown in proposal WhatsApp text: add a placeholder to the `whatsapp` rows of `notification_templates` (seed + data migration) and pass it from the composer's vars (`src/lib/whatsapp.ts` only builds the `wa.me` URL; the Hebrew lives in the DB rows).
+- [ ] If shown in proposal WhatsApp text: add a placeholder to the `whatsapp` rows of `notification_templates` (seed + data migration) and pass it from the composer's vars (`src/features/sadran/proposals/waLink.ts` only builds the `wa.me` URL; the Hebrew lives in the DB rows).
 
 ### 5. Solver input (only if the solver uses it)
 - [ ] `src/solver/types.ts` `Request`: add the field (plain type, no DB import).
-- [ ] `src/solver/normalize.ts`: default/derive it on `NormalizedRequest`.
+- [ ] `src/solver/slots.ts` (where `NormalizedRequest` is built, not a separate `normalize.ts`): default/derive it on `NormalizedRequest`.
 - [ ] Use it in the relevant module (`seats.ts`, `merge.ts`, `assign.ts` `canPlace`, a rule in `rules/`, or `suggest.ts`).
-- [ ] DB→solver mapper in `src/features/board/solverInput.ts` (and `supabase/functions/_shared` mapper if the edge `solve`/`on-ride-cancelled` functions build inputs).
+- [ ] DB→solver mapper in `src/features/solverBridge/buildSolverInput.ts` (and `supabase/functions/_shared` mapper if the edge `solve`/`on-ride-cancelled` functions build inputs).
 - [ ] `src/solver/__fixtures__/gen.ts`: default for the new field so golden fixtures still load.
 
 ### 6. Display
-- [ ] `src/features/requests/components/RequestCard.tsx` (my requests) if meaningful to the member.
-- [ ] Board: `RequestDrawer.tsx`, unmet list row, ride tooltip (e.g. an icon like luggage).
+- [ ] `src/components/RideCard.tsx` (used by Home/siddur for "my requests" too) if meaningful to the member.
+- [ ] Board: `RideSheet.tsx`, unmet list row, ride tooltip (e.g. an icon like luggage).
 - [ ] `src/features/siddur/` published view if it affects how a ride is described.
 
 ### 7. Tests
 - [ ] `src/features/requests/schema.test.ts`: valid/invalid values, default, refinements.
-- [ ] `src/features/board/solverInput.test.ts`: mapping set/null (if step 5).
+- [ ] `src/features/solverBridge/buildSolverInput.test.ts`: mapping set/null (if step 5).
 - [ ] Solver tests for the behavior change (if step 5), in `src/solver/__tests__/`.
 - [ ] `e2e/quick-request.spec.ts` (or another member-flow spec, e.g. `member.spec.ts` — `e2e/submit-request.spec.ts` no longer exists): fill the field, assert it on the card (if member-visible).
 

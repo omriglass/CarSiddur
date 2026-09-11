@@ -24,53 +24,13 @@ export function useWeekRow(departmentId: string | undefined, weekStart: string |
   });
 }
 
-export function useOpenWeekMutation() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({ departmentId, weekStart }: { departmentId: string; weekStart: string }) =>
-      api.openWeek(departmentId, weekStart),
-    onSuccess: (_data, { departmentId, weekStart }) => {
-      queryClient.invalidateQueries({ queryKey: sadranKeys.weekRow(departmentId, weekStart) });
-    },
-    onError: showErrorToast,
-  });
-}
-
-export function useSetWeekPhaseMutation() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({
-      departmentId,
-      weekStart,
-      phase,
-    }: {
-      departmentId: string;
-      weekStart: string;
-      phase: Database["public"]["Enums"]["week_phase"];
-    }) => api.setWeekPhase(departmentId, weekStart, phase),
-    onSuccess: (_data, { departmentId, weekStart }) => {
-      queryClient.invalidateQueries({ queryKey: sadranKeys.weekRow(departmentId, weekStart) });
-    },
-    onError: showErrorToast,
-  });
-}
-
 // ---------------------------------------------------------------------------
 // Requests / board reads
 // ---------------------------------------------------------------------------
 
-export function useWeekRequests(departmentId: string | undefined, weekStart: string | undefined) {
-  return useQuery({
-    queryKey: sadranKeys.weekRequests(departmentId ?? "", weekStart ?? ""),
-    queryFn: () => api.fetchWeekRequests(departmentId as string, weekStart as string),
-    enabled: !!departmentId && !!weekStart,
-    staleTime: 10_000,
-  });
-}
-
 /**
- * `useWeekRequests` plus requester/destination/ride-type names (bug #1: the
- * board's `UnmetList` and the dashboard's counters need to show *which*
+ * `api.fetchWeekRequests` plus requester/destination/ride-type names (bug #1:
+ * the board's `UnmetList` and the dashboard's counters need to show *which*
  * request is unmet straight from the DB, not only from a solver run).
  */
 export function useWeekRequestsWithNames(departmentId: string | undefined, weekStart: string | undefined) {

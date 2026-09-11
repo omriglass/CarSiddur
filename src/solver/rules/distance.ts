@@ -1,7 +1,7 @@
 // src/solver/rules/distance.ts
 import { ruleDescription } from '../reasons';
-import { PolicyParamsError } from '../types';
 import type { Rule } from './types';
+import { validatePositiveNumberParam } from './types';
 
 export interface DistanceParams {
   maxKm: number;
@@ -12,12 +12,7 @@ export const distance: Rule<DistanceParams> = {
   normalization: 'unit',
   defaultParams: { maxKm: 60 },
   validateParams(raw) {
-    if (typeof raw !== 'object' || raw === null || !('maxKm' in raw)) throw new PolicyParamsError('DISTANCE_MAXKM_INVALID');
-    const maxKm = (raw as { maxKm: unknown }).maxKm;
-    if (typeof maxKm !== 'number' || !Number.isFinite(maxKm) || maxKm <= 0) {
-      throw new PolicyParamsError('DISTANCE_MAXKM_INVALID');
-    }
-    return { maxKm };
+    return { maxKm: validatePositiveNumberParam(raw, 'maxKm', 'DISTANCE_MAXKM_INVALID') };
   },
   describe() {
     return ruleDescription('RULE_DISTANCE_DESC');

@@ -6,7 +6,7 @@ Guidance for Claude Code working in this repository.
 
 - Hebrew, mobile-first PWA for Kibbutz Nevo's shared car fleet: members file weekly ride requests, a Sadran (coordinator) solves, negotiates leftovers via proposals, and publishes the weekly "siddur" (סידור רכב).
 - The app **proposes**; a human always decides. The solver ranks requests with a data-driven, admin-editable priority policy.
-- Stack: Vite + React 18 + TypeScript strict + shadcn/ui + Tailwind + TanStack Query + react-router; Supabase (Postgres, Google Auth, RLS, Edge Functions, pg_cron); Vitest + Playwright; Vercel Hobby. Free tiers only.
+- Stack: Vite + React 18 + TypeScript strict + shadcn/ui + Tailwind + TanStack Query + react-router; Supabase (Postgres, Google Auth, RLS, Edge Functions, pg_cron); Vitest + Playwright; Cloudflare Worker (`carsiddur`, static assets) + Supabase Free. Free tiers only.
 - `docs/REQUIREMENTS.md` is the source of truth for *what*; `ARCHITECTURE.md`, `DATA_MODEL.md`, `SOLVER.md`, `UX_FLOWS.md` derive from it and must never contradict it.
 - **Status: implemented application.** See `docs/IMPLEMENTATION_PLAN.md` for completed work, validation and deferred items.
 
@@ -21,6 +21,7 @@ Guidance for Claude Code working in this repository.
 7. **Before declaring anything done:** `npm run check` (lint, typecheck, unit tests) passes. Schema changes also need `npm run db:reset && npm run db:types` with the regenerated types committed, and `npm run db:test`. Solver changes also need `npm run functions:bundle` (CI diff-checks the bundle). User-facing flows run the relevant Playwright spec; `npm run check:full` runs everything (needs the local stack). CI (`.github/workflows/ci.yml`) runs `check` + bundle freshness + build and the database job (migrations replay, types freshness, SQL suites) on every push, and e2e nightly / on demand.
 8. **Never hand-edit generated files:** `src/integrations/supabase/types.ts`, `src/components/ui/*` (shadcn CLI), `supabase/functions/_shared/solver.js` (built by `scripts/bundle-solver`).
 9. **Enums are defined once, in SQL**, mirrored into `src/lib/enums.ts` (see Conventions). Priority **rule types are the exception**: they are a TS registry (`src/solver/rules/index.ts`) mirrored into the SQL `validate_policy_rules()` known set.
+10. **`supabase/config.toml` is the local stack's config only** (`site_url = "http://localhost:8080"` etc.) — never run `supabase config push` against the hosted project; production Auth URLs (Site URL, redirect URLs, Google provider) are set by hand in the Supabase dashboard (`docs/FREE_DEPLOYMENT.md` §5).
 
 ## Commands
 
@@ -39,6 +40,7 @@ Guidance for Claude Code working in this repository.
 | `npm run db:start` / `db:stop` | `supabase start` / `supabase stop` (Docker required) |
 | `npm run db:reset` | `supabase db reset` — replays migrations + seed.sql from scratch |
 | `npm run db:fake` | `node scripts/fake-week.mjs` — generates fake members/requests through `submit_request` for manual local testing (local Supabase only) |
+| `npm run db:export` | `node scripts/db-export.mjs [--local\|--linked] [--out <dir>]` — schema/data/roles dump via `supabase db dump`; `--linked` requires `--yes-remote` (FREE_DEPLOYMENT.md §8) |
 | `npm run db:types` | `supabase gen types typescript --local > src/integrations/supabase/types.ts` |
 | `npm run db:new` | `supabase migration new <name>` → `supabase/migrations/YYYYMMDDHHMMSS_<name>.sql` (CLI will prompt for name) |
 | `npm run db:push` | `supabase db push` — sync pending local migrations to the remote project (after linking) |
@@ -62,8 +64,12 @@ src/
     inbox/                     notifications list, mute preferences, deep-link answering
     member/                    profile, temporary car, push subscription; routes spread in app/router
     admin/                     departments, members, roster, cars, maintenance, destinations, ride types, policies, templates, settings
-    sadran/                    board (grid + drag/drop + unmet list + suggestions; the week's home screen — the old standalone dashboard was deleted, `/sadran/:dept/:week` now redirects straight to `/board`), proposals (status/list-only, no composer entry point), change log, publish; routes spread in app/router
+    sadran/                    board (grid + drag/drop + unmet list + suggestions; the week's home screen — the old standalone dashboard was deleted, `/sadran/:dept/:week` now redirects straight to `/board`), proposals (status/list-only, no composer entry point), change log, publish; routes spread in app/router. `sadran/{board,publish,proposals,claims,log}` share the parent `sadran/api.ts`/`hooks.ts`/`keys.ts` by design — they are not separate feature folders.
     fleet/                     car status / issues (for admin)
+    carCare/                   member-facing car care: report an issue, tire-fill/wash logging, only file in the feature calling `.rpc()` (`report_car_issue`, `log_car_care`)
+    cars/                      member-facing single-car page (`/cars/:carId`): car details + issue/care history; reuses `features/admin/cars` forms for writes
+    stats/                     department statistics dashboard; `department_stats` RPC, zod-parsed at the api boundary (no generated row type for its jsonb return)
+    waitlist/                  contested waiting-list groups (`v_waitlist_groups`, `resolve_waitlist_group`, `cancel_waitlist_group`)
     solverBridge/              buildSolverInput() (DB→solver mapper for board & admin policy preview)
     <feature>/components/      React components (shadcn + business logic)
     <feature>/hooks/           TanStack Query: use<X>Query, use<X>Mutation
@@ -94,7 +100,7 @@ src/
   lib/
     time.ts                    TZ = 'Asia/Jerusalem'; formatTime, dateKey, weekdayIndex, formatWeekLabel, toJerusalem, DayBounds
     dayLabels.ts                weekdayLabel(instant, style) — kept out of time.ts so it stays i18n-free
-    enums.ts                   DOCUMENTED, NOT PRESENT (2026-09-09): code imports Database['public']['Enums'] directly; owner decides (docs/TODO.md)
+    enums.ts                   decided 2026-09-11: to be implemented (docs/REFACTOR_PLAN_2026-09-11.md E8); until it lands, code uses `Database['public']['Enums']` directly
     rpc.ts                     typed `rpc()` wrapper, `toAppError()` (SQLSTATE → `he.errors.*`), `showErrorToast()`
     push.ts                    push subscription helpers
     whatsapp.ts                wa.me link builder (no Hebrew; copy comes from DB)
@@ -102,14 +108,21 @@ src/
   types/                       domain types shared by UI and solver (not DB rows)
   main.tsx sw.ts index.css     PWA service worker, entry point, global styles
 supabase/
-  migrations/                  150 additive migrations, `20260907090000` through `20260910100200` (includes the 13-migration production-hardening pass, `20260910099000`–`20260910100200` — see docs/HARDENING_2026-09.md)
+  migrations/                  152 additive migrations, `20260907090000` through `20260910100400` (includes the 13-migration production-hardening pass, `20260910099000`–`20260910100200` — see docs/HARDENING_2026-09.md)
   seed.sql                     demo data: departments, ride types, destinations, default policy, templates, member invites, demo auth users (local/e2e only)
-  tests/
+  tests/                       24 SQL suites, run via `npm run db:test`
     rls_smoke.sql              assertions: every table has forced RLS, no `using (true)` on writes, no `for all` policies
     solve_semantics.sql        solver persistence and assignment behavior
     todo_board_semantics.sql   ownership, consent, operational permissions and publication scores
     one_way_lifecycle.sql      orphan retention, volunteering, expanded merge consent and tight schedules
     notifications_semantics.sql  notification_default_url, proposal_answered recipient, ride-cancellation passenger notices, waiting-list placement
+    car_care_semantics.sql     car care portal: report/tire-fill/wash, responsible-person/admin recipients
+    department_stats.sql       `department_stats()` RPC figures against seeded fixtures
+    hardening_semantics.sql    withdraw/confirmed-ride guard, one live freed-slot offer, stranded-request reset, closed internal functions
+    multi_day_series.sql       multi-day ("series") requests: same car held across days, cascading withdraw
+    request_templates.sql      repeating requests are dismissable suggestions, never auto-submitted
+    upcoming_weeks.sql         `upcoming` week phase materialization and promotion to `open`
+    waitlist_groups.sql        contested waiting-list groups: clustering, resolution, cancellation
     bundle_solver.test.mjs     verify bundled solver output runs in Deno
     (+ 12 more scenario suites: admin_department_membership, admin_member_fixes, coordinator_planning, department_catalogs, live_quick_one_way, member_identity, proposal_day_boundary, proposal_replacement, selected_day_publication, status_notifications, week_opening, weekly_sadran_permissions)
   functions/
@@ -179,7 +192,7 @@ scripts/
    assertSameEnum<RequestStatus, Enums<'request_status'>>();   // compile-time, both directions
    ```
 4. Hebrew labels at `he.enums.requestStatus` typed `Record<RequestStatus, string>` — a missing label fails typecheck.
-5. The solver has its own plain types (`src/solver/types.ts`); the DB→solver mapping lives in the board feature (`features/board/solverInput.ts`), never inside `src/solver`.
+5. The solver has its own plain types (`src/solver/types.ts`); the DB→solver mapping lives in `src/features/solverBridge/buildSolverInput.ts`, never inside `src/solver`.
 6. Rule types: `RuleType = keyof typeof ruleRegistry`; SQL `validate_policy_rules()` lists the same strings; `/review-consistency` checks they match.
 
 **Database (DATA_MODEL.md §0, §4)**
@@ -231,15 +244,16 @@ scripts/
 | Docs vs code drift | `/review-consistency` | docs-keeper |
 | Playwright coverage | — | e2e-tester |
 
-## Verified 2026-09-06
+## Verified 2026-09-11
 
-Confirmed against the code:
-- Package.json scripts (Commands table): 15 npm commands, all present and working (`db:fake` added later — see "Verified 2026-09-09")
-- Folder structure: all features, pages, solver modules, i18n files exist with correct names
-- Solver: ruleRegistry in rules/index.ts, 8 rule types, reasons.ts with templates, __tests__ per rule and golden fixtures in __fixtures__
-- Skills: all 8 skills have correct file paths verified against actual layout (add-migration, add-priority-rule, add-request-field, add-notification-event, change-weekly-cycle-defaults, manage-destinations, review-consistency, new-feature-checklist)
-- Database: 61 additive migrations from 20260907090000 through 20260907100000; seed.sql with demo data; supabase/tests/rls_smoke.sql in place
-- e2e: 6 core specs (submit-request, solve-and-publish, proposal-accept-deeplink, cancel-freed-slot, auto-approve, publish), fixtures with auth/time/db helpers
+Refactor/launch-readiness audit pass (`docs/REFACTOR_PLAN_2026-09-11.md`); confirmed against the code:
+- Hard rules 3/5/6 are lint-enforced (`eslint.config.js`): Hebrew-literal ban outside the three allowed locations (plus documented file exceptions), solver purity (`no-restricted-imports`/`-globals`/`-syntax` on `src/solver/**`), and a wall-clock-method ban outside `lib/time.ts`/`dayLabels.ts`.
+- CI (`.github/workflows/ci.yml`) has three jobs: `check` (lint, typecheck, unit tests, solver-bundle-freshness diff, build) on every push; `database` (local Supabase start, generated-types-freshness diff, `db:test`) on every push; `e2e` nightly (03:00 Asia/Jerusalem) and on `workflow_dispatch`.
+- Production host is the Cloudflare Worker `carsiddur` (`wrangler.jsonc`, static assets from `dist/`); `vercel.json` is gone; security headers ship from `public/_headers`.
+- Measured counts: 152 migrations (`20260907090000`–`20260910100400`), 24 SQL suites, 45 tables, 14 `src/features/*` folders, 4 edge functions, 120 Vitest files / 763 tests, 27 Playwright specs.
+- A root `src/app/ErrorScreen.tsx` catches render exceptions (`errorElement`) and an `unhandledrejection` handler toasts via `showErrorToast` (UX_FLOWS.md "Error screen").
+- `npm run db:export` (`scripts/db-export.mjs`) backs up the hosted project (schema/data/roles dumps with a remote guard); `npm run check:full` = `check && functions:bundle && db:test && test:e2e`.
+- Plan / audit trail: `docs/REFACTOR_PLAN_2026-09-11.md` (owner decisions, open questions, remaining items).
 
 ## Verified 2026-09-09
 
@@ -262,7 +276,7 @@ Final; applied across all docs, skills and agents. Do not relitigate — if code
 4. `week_phase` = `upcoming, open, solving, published, live, archived`; after the target week ends the week is `archived` (read-only, kept for fairness stats). No `closed`. `upcoming` (2026-09-10, REQ §13.77) is a `weeks` row materialized early — by `ensure_upcoming_week()` from `submit_series_request()` — for a week beyond the department's normal opening horizon that a multi-day series leg needs; it is invisible to members, closed to ordinary requests, and promoted to `open` automatically at its normal opening time.
 5. One canonical `notification_event` list: the 24 events of UX_FLOWS §6.1 (incl. `car_care`, 2026-09-09; `waitlist_contested` + `waitlist_resolved`, 2026-09-10) (enum value = snake_case of the `notif.*` key suffix); DATA_MODEL §2 and ARCHITECTURE §9 list exactly those; REQ §9 prose names nothing outside it.
 6. Notification plumbing: `enqueue_notification(...)` writes one `notifications` row (inbox) plus one `push_outbox` row per active push subscription; pg_net/`drain_push_outbox()` deliver via the `push-dispatch` edge function with retries and 404/410 pruning; mutes in `profiles.muted_events notification_event[]` (Sadran-role events unmutable while assigned, enforced in enqueue); copy in the admin-editable `notification_templates` table (event, channel, variant, title, body) seeded from UX_FLOWS §6. No `notification_prefs`, no templates in `app_settings`.
-7. Exactly one pg_cron entry: `app.tick()` every 15 minutes computes Asia/Jerusalem time and calls `advance_week_phases()`, `send_due_reminders()`, `expire_proposals()`, `drain_push_outbox()`, `housekeeping()`; the daily GitHub Actions keep-alive stays.
+7. Exactly one pg_cron entry: `app.tick()` every 15 minutes computes Asia/Jerusalem time and calls `advance_week_phases()`, `send_due_reminders()`, `expire_proposals()`, `drain_push_outbox()`, `housekeeping()`; there is no keep-alive workflow — `docs/FREE_DEPLOYMENT.md` §9 explicitly says not to rely on one, and the Supabase Free project may pause after a week of API inactivity (owner-accepted, un-pause manually in the dashboard).
 8. Requests are created/edited only via the `submit_request(payload jsonb)` SECURITY DEFINER RPC (validates §5.3, computes `is_late`, duplicate warning, versioning, audit; in `live` weeks calls `try_auto_approve`). Members SELECT own requests directly; no direct INSERT/UPDATE policies on `requests`.
 9. `/p/<token>` answering needs no sign-in: random 128-bit secret stored hashed on `proposals`/`proposal_parties`, single-purpose, expires with the proposal, revocable; `answer-proposal` verifies it and records `answered_via = 'token'`; with a session the full UI shows too. Rationale in ARCHITECTURE §8 (WhatsApp on iOS does not share the PWA session). The HMAC/person-bound design is gone.
 10. Suggestion kind → proposal type mapping lives once in SOLVER §3.15 (shiftWithinFlex → none/applied; shiftBeyondFlex → `shift`; merge and splitLegs → `merge` with two legs; externalHint → `external`; deny → `deny`), referenced by DATA_MODEL and UX_FLOWS.

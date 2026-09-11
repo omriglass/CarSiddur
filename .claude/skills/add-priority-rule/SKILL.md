@@ -23,7 +23,7 @@ Reference: `docs/SOLVER.md` §4.1 (interface), §4.3 (shipped types), §4.5 (thi
 - [ ] a. Create `src/solver/rules/<type>.ts`:
   ```ts
   import type { Rule, RuleContext } from './types';
-  import type { NormalizedRequest } from '../normalize';
+  import type { NormalizedRequest } from '../slots';
   import { ruleDescription, PolicyParamsError } from '../reasons';   // the only Hebrew source in src/solver
 
   export interface <Type>Params { /* ... */ }
@@ -39,7 +39,7 @@ Reference: `docs/SOLVER.md` §4.1 (interface), §4.3 (shipped types), §4.5 (thi
   ```
   Add `RULE_<TYPE>_DESC` (and the param-error template) to `src/solver/reasons.ts` — the rule file itself contains no Hebrew (CLAUDE.md hard rule 3).
 - [ ] b. Register: add `<type>` to `ruleRegistry` in `src/solver/rules/index.ts`. `RuleType` widens automatically; the engine, sort and breakdown pick it up.
-- [ ] c. Only if new input data is needed: extend `SolverStats` (per-member data) or `Request`/`Destination` in `src/solver/types.ts`, give it a default in `normalize.ts`, and extend the caller's loader in `src/features/board/` (grep `SolverInput`) — typically a SQL function like `fairness_stats()` exposed to Sadran/admin only (DATA_MODEL §7.3 pattern).
+- [ ] c. Only if new input data is needed: extend `SolverStats` (per-member data) or `Request`/`Destination` in `src/solver/types.ts`, give it a default where `NormalizedRequest` is built (`slots.ts`), and extend the caller's loader in `src/features/solverBridge/buildSolverInput.ts` (grep `SolverInput`) — typically a SQL function like `fairness_stats()` exposed to Sadran/admin only (DATA_MODEL §7.3 pattern).
 - [ ] d. New reason code? Add to `src/solver/reasons.ts` (Hebrew template) and list it in SOLVER.md §3.13.
 
 ### 2. Database
@@ -57,7 +57,7 @@ Reference: `docs/SOLVER.md` §4.1 (interface), §4.3 (shipped types), §4.5 (thi
 - [ ] `validateParams`: accepts `defaultParams`; rejects a malformed object with `PolicyParamsError`.
 - [ ] Ordering: a 2-request/1-car fixture where raising this rule's weight flips who is served (greedy order changes).
 - [ ] Determinism: same input twice → identical value.
-- [ ] Registry test (`src/solver/rules/__tests__/registry.test.ts`): every entry has `type === key`; extend, do not duplicate.
+- [ ] Registry test: there is no `registry.test.ts` yet — create `src/solver/rules/__tests__/registry.test.ts` asserting every `ruleRegistry` entry has `type === key`, or add the assertion to an existing rules test if one already covers the whole registry; do not duplicate.
 - [ ] If step 1c changed `SolverStats`/`Request`: update `__fixtures__/gen.ts` and re-generate golden `*.expected.json` only if outputs legitimately changed (review the diff; do not blindly overwrite).
 
 ### 5. Docs

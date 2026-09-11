@@ -1,6 +1,9 @@
 import { useActiveDepartment } from "@/features/auth/useActiveDepartment";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSession } from "@/features/auth/useSession";
+import { inboxKeys } from "@/features/inbox/queryKeys";
+import { requestsKeys } from "@/features/requests/queryKeys";
+import { sadranKeys } from "@/features/sadran/keys";
 import { showErrorToast } from "@/lib/rpc";
 
 import {
@@ -41,7 +44,7 @@ export function useUpdateRidePublicNotesMutation() {
     mutationFn: ({ rideId, expectedVersion, notes }: { rideId: string; expectedVersion: number; notes: string | null }) =>
       updateRidePublicNotes(rideId, expectedVersion, notes),
     onSuccess: () => {
-      for (const key of ["siddur", "sadran", "requests"]) void client.invalidateQueries({ queryKey: [key] });
+      for (const key of [siddurKeys.all, sadranKeys.all, requestsKeys.all]) void client.invalidateQueries({ queryKey: key });
     },
     onError: showErrorToast,
   });
@@ -52,7 +55,8 @@ export function useClaimRideDriverMutation() {
   return useMutation({
     mutationFn: ({ rideId, expectedVersion }: { rideId: string; expectedVersion: number }) => claimRideDriver(rideId, expectedVersion),
     onSuccess: () => {
-      for (const key of ["siddur", "sadran", "requests", "inbox"]) void client.invalidateQueries({ queryKey: [key] });
+      for (const key of [siddurKeys.all, sadranKeys.all, requestsKeys.all, inboxKeys.all])
+        void client.invalidateQueries({ queryKey: key });
     },
     onError: showErrorToast,
   });
@@ -82,7 +86,8 @@ export function useRespondRideChangeMutation() {
   return useMutation({
     mutationFn: ({ changeId, accept }: { changeId: string; accept: boolean }) => respondRideChange(changeId, accept),
     onSuccess: () => {
-      for (const key of ["siddur", "sadran", "requests", "inbox"]) void client.invalidateQueries({ queryKey: [key] });
+      for (const key of [siddurKeys.all, sadranKeys.all, requestsKeys.all, inboxKeys.all])
+        void client.invalidateQueries({ queryKey: key });
     },
     onError: showErrorToast,
   });
@@ -93,7 +98,7 @@ export function useCancelRideChangeMutation() {
   return useMutation({
     mutationFn: cancelRideChange,
     onSuccess: () => {
-      for (const key of ["siddur", "sadran", "inbox"]) void client.invalidateQueries({ queryKey: [key] });
+      for (const key of [siddurKeys.all, sadranKeys.all, inboxKeys.all]) void client.invalidateQueries({ queryKey: key });
     },
     onError: showErrorToast,
   });

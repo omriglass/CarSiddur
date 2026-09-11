@@ -1,7 +1,7 @@
 // src/solver/rules/fairness.ts
 import { ruleDescription } from '../reasons';
-import { PolicyParamsError } from '../types';
 import type { Rule } from './types';
+import { validatePositiveNumberParam } from './types';
 
 export interface FairnessParams {
   lookbackWeeks: number;
@@ -12,14 +12,7 @@ export const fairness: Rule<FairnessParams> = {
   normalization: 'unit',
   defaultParams: { lookbackWeeks: 3 },
   validateParams(raw) {
-    if (typeof raw !== 'object' || raw === null || !('lookbackWeeks' in raw)) {
-      throw new PolicyParamsError('FAIRNESS_LOOKBACK_INVALID');
-    }
-    const lookbackWeeks = (raw as { lookbackWeeks: unknown }).lookbackWeeks;
-    if (typeof lookbackWeeks !== 'number' || !Number.isFinite(lookbackWeeks) || lookbackWeeks <= 0) {
-      throw new PolicyParamsError('FAIRNESS_LOOKBACK_INVALID');
-    }
-    return { lookbackWeeks };
+    return { lookbackWeeks: validatePositiveNumberParam(raw, 'lookbackWeeks', 'FAIRNESS_LOOKBACK_INVALID') };
   },
   describe() {
     return ruleDescription('RULE_FAIRNESS_DESC');

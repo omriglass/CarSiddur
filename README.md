@@ -4,13 +4,13 @@ Weekly car-sharing scheduler for Kibbutz Nevo. Members request rides, the coordi
 
 ## What exists
 
-Complete implementation through **Stage 3 (E2E testing)**:
-- **Database**: 31 migrations with RLS-enforced Postgres schema, 33 tables, ~30 RPCs, cron scheduler, seed data
-- **Solver**: pure TypeScript scheduling engine with 8 priority rules, seat fitting, merge/split detection, relay pairing, live helpers — 126 tests, <0.2s on 300×15 requests
-- **UI**: React 18 + TypeScript + shadcn/ui + Tailwind, RTL Hebrew PWA; member (request, siddur, inbox, profile), Sadran (board, dashboard, proposals, publish), admin (all settings) — 296 unit tests
-- **e2e**: 6 Playwright specs (request submit, solve+publish, proposal via token, freed-slot, auto-approve, publish) — 15/15 pass
-- **Edge functions**: push-dispatch (notifications), answer-proposal (token validation), on-ride-cancelled (freed-slot matching)
-- **i18n**: Hebrew centralized in `src/i18n/*.ts`; UI via `useT()`, solver reasons via `reasons.ts`, notification/template copy seeded in DB
+Complete implementation, in ongoing maintenance (see `npm run check` for current pass/fail):
+- **Database**: 152 migrations with RLS-enforced Postgres schema, 45 tables, cron scheduler, seed data (`supabase/migrations`, `supabase/seed.sql`)
+- **Solver**: pure TypeScript scheduling engine with 8 priority rules, seat fitting, merge/split detection, relay pairing, live helpers
+- **UI**: React 18 + TypeScript + shadcn/ui + Tailwind, RTL Hebrew PWA; member (request, siddur, inbox, profile, car care), Sadran (board, proposals, publish), admin (all settings), statistics
+- **e2e**: 27 Playwright specs (`e2e/*.spec.ts`) covering the flows above
+- **Edge functions**: `push-dispatch` (notifications), `answer-proposal` (token validation), `on-ride-cancelled` (freed-slot matching), `destination-route` (Google Maps route/distance estimate)
+- **i18n**: Hebrew centralized in `src/i18n/*.ts`; UI via the `he` object / `t(key)`/`tv(key, vars)`, solver reasons via `reasons.ts`, notification/template copy seeded in DB
 
 ## Local quick start
 
@@ -51,7 +51,7 @@ npm run functions:bundle             # Bundle src/solver into supabase/functions
 npm run build                        # Production build
 ```
 
-Current counts: 296 unit tests, 9 RLS/behavior assertions, 15 e2e tests, all passing on a fresh seed.
+Current counts: see `npm run check` (unit tests) and `npm run db:test` (24 SQL suites) — the exact numbers change often; do not hardcode them here.
 
 ### Fake data for manual testing
 

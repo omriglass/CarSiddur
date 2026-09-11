@@ -1,6 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { useSession } from "@/features/auth/useSession";
+import { requestsKeys } from "@/features/requests/queryKeys";
+import { sadranKeys } from "@/features/sadran/keys";
+import { siddurKeys } from "@/features/siddur/queryKeys";
 import { showErrorToast } from "@/lib/rpc";
 
 import {
@@ -17,7 +20,10 @@ export function useAnswerProposalMutation() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (input: AnswerProposalInput) => answerProposal(input),
-    onSettled: () => Promise.all(["sadran", "siddur", "requests"].map((key) => queryClient.invalidateQueries({ queryKey: [key] }))),
+    onSettled: () =>
+      Promise.all(
+        [sadranKeys.all, siddurKeys.all, requestsKeys.all].map((key) => queryClient.invalidateQueries({ queryKey: key })),
+      ),
     onError: showErrorToast,
   });
 }
@@ -66,6 +72,9 @@ export function useAnswerProposalViaTokenMutation() {
       note?: string;
       optOut?: boolean;
     }) => answerProposalViaToken(token, answer, note, optOut),
-    onSettled: () => Promise.all(["sadran", "siddur", "requests"].map((key) => queryClient.invalidateQueries({ queryKey: [key] }))),
+    onSettled: () =>
+      Promise.all(
+        [sadranKeys.all, siddurKeys.all, requestsKeys.all].map((key) => queryClient.invalidateQueries({ queryKey: key })),
+      ),
   });
 }

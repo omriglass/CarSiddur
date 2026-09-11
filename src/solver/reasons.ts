@@ -13,22 +13,17 @@ const TEMPLATES: Record<string, string> = {
   PLACED_RELAY_PAIR: 'שובץ ל{car}: {member} נוהג/ת ל{dest} ב-{dep} ומשאיר/ה את הרכב; {partner} מחזיר/ה אותו ב-{ret}',
   PLACED_FIXED: 'נסיעה קבועה שנקבעה מראש',
   PLACED_SERIES: 'שובץ/ה כחלק מבקשה רב-יומית ל{car} ({index}/{count})',
-  RELOCATED_FOR: 'הועבר ל{car} כדי לפנות מקום לבקשה של {member}',
-  RELOCATED_FOR_SHIFT: 'הוזז ב-{minutes} דקות כדי לפנות מקום לבקשה של {member}',
 
   // Unmet reasons
   UNMET_NO_CAR: 'אין רכב פנוי בחלון המבוקש; חוסמים: {blockers}',
   UNMET_NO_RELAY_PARTNER: 'אין מי שיחזיר/יביא את הרכב מ{dest} באותו יום; הרכב חייב לחזור הביתה עד {dayEnd}',
   UNMET_NEEDS_DRIVER: 'אין נסיעה מתאימה להצטרף אליה; דרוש/ה נהג/ת מתנדב/ת להסעה ל{dest} ב-{dep}',
-  UNMET_CAR_AWAY: '{car} נמצא/ת ב{location} בשעות האלה ולא זמין/ה מהבית',
   UNMET_SERIES_NO_CAR: 'אין רכב פנוי לכל ימי הבקשה הרב-יומית ({index}/{count})',
-  UNMET_SERIES_PARTIAL_WEEK: 'הבקשה הרב-יומית ממשיכה משבוע אחר ולא ניתן לשבץ את כל ימיה בשבוע זה',
 
   // Suggestions
   SUGGEST_SHIFT_WITHIN_FLEX: 'הזזה ל{car} בתוך הגמישות שהוצהרה, ללא צורך בהסכמה נוספת',
   SUGGEST_MERGE: 'הצטרפות לנסיעה של {host} ל{dest} ביציאה {dep} ובחזרה {ret}, ללא סטייה',
   SUGGEST_MERGE_DETOUR: 'הצטרפות לנסיעה של {host} ל{dest} ביציאה {dep} ובחזרה {ret}, עם סטייה של כ-{minutes} דק׳',
-  SUGGEST_MERGE_LEG: 'הצטרפות כנוסע/ת לנסיעה של {host} {direction} {dest} ב-{time}',
   SUGGEST_BEYOND_FLEX: "הזזה של {dep} דק' מעבר לגמישות שהוצהרה — דורש הסכמה",
   SUGGEST_SPLIT_LEGS: 'פיצול הנסיעה: הלוך {outbound} וחזור {return} בנפרד — דורש הסכמה',
   SUGGEST_ROUND_TRIP: 'במקום להשאיר את הרכב ב{dest}: לקחת אותו הלוך ושוב ולחזור ב-{ret} — דורש הסכמה',
@@ -64,12 +59,10 @@ const PARAM_ERRORS: Record<string, string> = {
   RIDETYPE_WEIGHTS_INVALID: 'פרמטר weights חסר או שגוי בכלל rideType',
   RIDETYPE_DEFAULTWEIGHT_INVALID: 'פרמטר defaultWeight שגוי בכלל rideType',
   DISTANCE_MAXKM_INVALID: 'פרמטר maxKm חסר או שגוי בכלל distance',
-  PUBLICTRANSPORT_PARAMS_INVALID: 'פרמטרים שגויים בכלל publicTransport',
   PEOPLESERVED_CAP_INVALID: 'פרמטר cap חסר או שגוי בכלל peopleServed',
   FAIRNESS_LOOKBACK_INVALID: 'פרמטר lookbackWeeks חסר או שגוי בכלל fairness',
   SUBMISSIONTIME_LATEPENALTY_INVALID: 'פרמטר latePenalty חסר או שגוי בכלל submissionTime',
   FLEXIBILITYOFFERED_MINUTES_INVALID: 'פרמטר fullCreditMinutes חסר או שגוי בכלל flexibilityOffered',
-  MANUALBOOST_PARAMS_INVALID: 'פרמטרים שגויים בכלל manualBoost',
 };
 
 const ALL: Record<string, string> = { ...TEMPLATES, ...RULE_DESCRIPTIONS, ...PARAM_ERRORS };

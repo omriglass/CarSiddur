@@ -9,7 +9,8 @@ Status: v0.3 + verified 2026-09-06 (all paths tested against actual code layout;
 - `docs/REQUIREMENTS.md` is the source of truth; docs are updated in the same change as code.
 - Hebrew text lives only in `src/i18n/he.ts` (UI), `src/solver/reasons.ts` (solver explanations) and seeded data (ride types, destinations, notification templates).
 - Every table has row-level security. The solver is pure code with tests.
-- Nothing is "done" until `npm run lint && npm run typecheck && npm run test` pass.
+- Nothing is "done" until `npm run check` (lint, typecheck, unit tests) passes; `npm run check:full` additionally runs `functions:bundle`, `db:test` and the full Playwright suite (needs the local stack) and is the pre-launch/pre-squash gate.
+- Several hard rules are lint-enforced, not just documented: `eslint.config.js` bans Hebrew literals outside the three allowed locations, forbids non-pure imports/`Date.now()`/`Math.random()` in `src/solver/**`, and bans wall-clock methods (`getHours`, `getDay`, `toLocale*`, …) outside `lib/time.ts`/`dayLabels.ts`. CI (`.github/workflows/ci.yml`) also fails if `supabase/functions/_shared/solver.js` or `src/integrations/supabase/types.ts` is stale.
 - Need realistic requests to click through manually? `npm run db:fake -- --count 40 --clear` (local stack only, see README "Fake data for manual testing").
 - The reference project `../commucar-share` is never modified.
 
@@ -46,10 +47,7 @@ Status: v0.3 + verified 2026-09-06 (all paths tested against actual code layout;
 
 ## Before go-live
 
-- `app_settings.push_dispatch_url` and `app_settings.on_ride_cancelled_url` point at the deployed edge-function URLs — otherwise pushes leave only via the 15-minute `drain_push_outbox()` and freed-slot matching never fires.
-- `app_secrets.cron_secret` is set and equal to the edge functions' `CRON_SECRET` env var.
-- After `npm run db:push`, run the RLS smoke test (`supabase/tests/rls_smoke.sql`, `npm run db:test`) before trusting the deployed schema.
-- Every migration that adds an RPC the browser calls must grant it explicitly (`grant execute on function … to authenticated`) — functions have no default grants (`docs/HARDENING_2026-09.md` §1.1, DATA_MODEL §4.2 "Function grants").
+`docs/FREE_DEPLOYMENT.md` is the single launch checklist (GitHub → hosted Supabase → notification credentials → Cloudflare Worker → Google sign-in → real data → hosted verification) — follow it end to end rather than a separate list here. Once live, run `npm run db:export -- --linked --yes-remote` weekly by hand (Free tier has no automatic backups, FREE_DEPLOYMENT §8) and keep roughly the last 8 weekly sets off-site.
 
 ## Tips for writing prompts
 

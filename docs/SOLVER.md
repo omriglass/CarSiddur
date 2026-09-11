@@ -372,7 +372,7 @@ Goal: serve an unmet unit by **relocating** already-placed solver rides within t
 
 ```
 budget = config.improvementBudget
-for u in unmet sorted by score desc:
+for u in unmet sorted by compareUnitsByPriority (score desc, then submittedAtMs asc, then id — same comparator as the greedy pass, §3.6):
   perReq = config.perRequestBudget
   for car in cars fitting u.passengers, sorted by id:
     blockers = rides on car overlapping u's flexible envelope (fixed → skip car)
@@ -385,7 +385,7 @@ for u in unmet sorted by score desc:
         if budget == 0 or perReq == 0: stop
 ```
 
-The search is depth ≤ 2, at most 2 blockers, and hard-capped by two counters; `stats.budgetExhausted` reports when a cap was hit. Relocations are recorded on the moved assignment (`reasonCode: RELOCATED_FOR`, Hebrew reason names the beneficiary). **Displacement** — ejecting a lower-priority placed ride to serve a higher-priority one — is never done automatically (REQUIREMENTS §7.1, §13.19); the greedy order already serves higher scores first, and when the improvement pass finds a solution only by ejecting, it emits it as a `shiftWithinFlex` suggestion with non-empty `relocations` (the ejected ride listed with `toCarId = ''`) for the Sadran to decide **before publish**. After publish `solve()` is never run automatically and the live helpers (§5.2) never relocate or eject anything.
+The search is depth ≤ 2, at most 2 blockers, and hard-capped by two counters; `stats.budgetExhausted` reports when a cap was hit. A relocated blocker's final `reasonCode`/`reason` is recomputed from its new `shift` exactly like any other placement (`PLACED_PREFERRED`/`PLACED_SHIFTED`, §3.13) — the Hebrew text does not name the beneficiary; `stats.relocations` counts how many placements were moved this way. **Displacement** — ejecting a lower-priority placed ride to serve a higher-priority one — is never done automatically (REQUIREMENTS §7.1, §13.19); the greedy order already serves higher scores first, and when the improvement pass finds a solution only by ejecting, it emits it as a `shiftWithinFlex` suggestion with non-empty `relocations` (the ejected ride listed with `toCarId = ''`) for the Sadran to decide **before publish**. After publish `solve()` is never run automatically and the live helpers (§5.2) never relocate or eject anything.
 
 ### 3.11 Suggestion generation (`suggest.ts`)
 
@@ -413,16 +413,13 @@ Every assignment, unmet record and suggestion has a `reasonCode` and a Hebrew `r
 |---|---|
 | `PLACED_PREFERRED` | `שובץ ל{car} בזמן המבוקש` |
 | `PLACED_SHIFTED` | `שובץ ל{car} עם הזזה של {dep} דק' ביציאה ו-{ret} דק' בחזרה, בתוך הגמישות שהוצהרה` |
-| `RELOCATED_FOR` | `הועבר ל{car} כדי לפנות מקום לבקשה של {member}` |
 | `PLACED_RELAY_PAIR` | `שובץ ל{car}: {member} נוהג/ת ל{dest} ב-{dep} ומשאיר/ה את הרכב; {partner} מחזיר/ה אותו ב-{ret}` |
 | `PLACED_SERIES` | `שובץ/ה כחלק מבקשה רב-יומית ל{car} ({index}/{count})` |
 | `UNMET_NO_CAR` | `אין רכב פנוי בחלון המבוקש; חוסמים: {blockers}` |
 | `UNMET_SERIES_NO_CAR` | `אין רכב פנוי לכל ימי הבקשה הרב-יומית ({index}/{count})` |
 | `UNMET_NO_RELAY_PARTNER` | `אין מי שיחזיר/יביא את הרכב מ{dest} באותו יום; הרכב חייב לחזור הביתה עד {dayEnd}` |
 | `UNMET_NEEDS_DRIVER` | `אין נסיעה מתאימה להצטרף אליה; דרוש/ה נהג/ת מתנדב/ת להסעה ל{dest} ב-{dep}` |
-| `UNMET_CAR_AWAY` | `{car} נמצא/ת ב{location} בשעות האלה ולא זמין/ה מהבית` |
 | `SUGGEST_MERGE` | `הצטרפות לנסיעה של {host} ל{dest} ביציאה {dep} ובחזרה {ret}, ללא סטייה` |
-| `SUGGEST_MERGE_LEG` | `הצטרפות כנוסע/ת לנסיעה של {host} {direction} {dest} ב-{time}` |
 | `SUGGEST_BEYOND_FLEX` | `הזזה של {dep} דק' מעבר לגמישות שהוצהרה — דורש הסכמה` |
 | `SUGGEST_ROUND_TRIP` | `במקום להשאיר את הרכב ב{dest}: לקחת אותו הלוך ושוב ולחזור ב-{ret} — דורש הסכמה` |
 | `SUGGEST_CHAUFFEUR` | `הסעה: נהג/ת מתנדב/ת מסיע/ה ל{dest} ב-{dep} וחוזר/ת עם הרכב (כ-{minutes} דק'); הסדרן/ית משבץ/ת נהג/ת` |
@@ -492,6 +489,8 @@ export const ruleRegistry = {
 } as const satisfies Record<string, Rule<any>>;
 export type RuleType = keyof typeof ruleRegistry;
 ```
+
+Five rule types (`distance`, `fairness`, `peopleServed`, `submissionTime`, `flexibilityOffered`) share the same single-numeric-param shape; their `validateParams` calls `validatePositiveNumberParam(raw, key, errorCode, { allowZero? })` (`rules/types.ts`) instead of repeating the object/finite/positive checks — `allowZero` is only set for `submissionTime`'s `latePenalty`, which may legitimately be 0.
 
 ### 4.2 Scoring
 
@@ -618,7 +617,7 @@ Data structures: sorted interval arrays per car (`CarTimeline`, each block with 
 | `timeline.ts` | ride ending exactly at next start fails with buffer 30, passes with buffer 0; ride abutting maintenance needs buffer; gaps at week start/end; remove then re-add; **location**: after a relay-out block `locationAt` = destination, `isFree(w, home)` is false during the away gap and `isFree(w, dest)` is true; `add` rejects a block whose start location mismatches; `awayWindows()` reports the away gap |
 | Seats (chauffeur) | chauffeur ride load = requests + (1,0,0): a 4-adult family fits a 5-seater as `keep` but not as `chauffeur`; per-leg check on a relay pair |
 | Relay pairing | out 09:00 + back 12:00 same destination pair on one car and both are served; different `destination_id` (same zone) do **not** pair; back-leg earlier than out-leg end does not pair; back-leg on the next day does not pair (day end); unpaired out-leg is unmet with `UNMET_NO_RELAY_PARTNER` and suggestions `convertToRoundTrip`, `chauffeur`, …; pair ranked by the higher score; a round trip with `needsCarAtDestination=false` self-pairs when `keep` does not fit and leaves the car free at the destination for a third request's relay-back |
-| Location / day end | a home-origin request cannot use a car parked away (`UNMET_CAR_AWAY` blocker); a relay-out whose only partner is on the next day is rejected; fixed ride with `overnightAck` away at day end passes invariants, without it emits `CAR_AWAY_AT_DAY_END`; temporary car never gets a relay leg |
+| Location / day end | a home-origin request cannot use a car parked away (rejected via `UNMET_NO_CAR`, the away car listed among the blockers); a relay-out whose only partner is on the next day is rejected; fixed ride with `overnightAck` away at day end passes invariants, without it emits `CAR_AWAY_AT_DAY_END`; temporary car never gets a relay leg |
 | Chauffeur | occupancy = 2·travel + dwell (45 min travel, dwell 10 → 100 min → 7 slots); suggestion appears only when a shared car is free at home for that window; `stats.needsDriver` counts it; passenger one-way with no host gets `chauffeur` before `externalHint` |
 | DST | week fixture containing the March/October transition day with 92/100 slots: a "day" flexibility resolves to the correct bounds; no slot arithmetic crosses days incorrectly; `dayEndSlot` correct on both transition days |
 | Flexibility | asymmetric windows (−0/+60): shift only later; return flex without departure flex; `minDurationSlots` rejects clamp results that collapse the ride; earliest minimal shift wins ties; a pair's back-leg shifts later within flex to meet the out-leg |
@@ -706,7 +705,7 @@ Units in greedy order: R1, R4, R8, **P** (score of its stronger leg, R7 = 1.768)
 **Improvement pass** (unmet by score: R2, then R5):
 
 - R2: on C1 the blockers R1 and R4 have flex 0 — R1 could move to C2 at its exact time, but R4 fits nowhere else (C2 has R8, C3 is blocked, C4 has R6); on C2 the blocker R8 cannot leave (C1: R4 from 13:00; C3: block; C4: R6); on C3 the block is fixed (car skipped); on C4 R6 fits no other car. 6 evaluations, no solution.
-- R5: blocker on C2 is R8 (12:30–14:30, flex ±30). Relocating R8 to C1 fails (R1 until 12:30, R4 from 13:00). Relocating R8 **within C2** to 12:00–14:00 (−30/−30, inside its flexibility) frees C2 from 14:30; R5 fits at 14:30–16:00 (departure +60, return +60, both within declared flexibility). Applied: R8 → C2 12:00–14:00 (`RELOCATED_FOR`, "הוזז ב-30 דקות מוקדם יותר כדי לפנות מקום לבקשה של מיכל"), R5 → C2 14:30–16:00 (`PLACED_SHIFTED`).
+- R5: blocker on C2 is R8 (12:30–14:30, flex ±30). Relocating R8 to C1 fails (R1 until 12:30, R4 from 13:00). Relocating R8 **within C2** to 12:00–14:00 (−30/−30, inside its flexibility) frees C2 from 14:30; R5 fits at 14:30–16:00 (departure +60, return +60, both within declared flexibility). Applied: R8 → C2 12:00–14:00 (its final shift is −30/−30, so its assignment is recomputed as `PLACED_SHIFTED`, "שובץ לC2 עם הזזה של 30 דק' ביציאה ו-30 דק' בחזרה, בתוך הגמישות שהוצהרה" — the Hebrew does not name R5 as the beneficiary), R5 → C2 14:30–16:00 (`PLACED_SHIFTED`).
 
 **Resulting assignments**
 
