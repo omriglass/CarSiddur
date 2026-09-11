@@ -12,12 +12,8 @@ supabase/functions/
     supabaseAdmin.ts     service-role client factory, JWT verification helper
     rateLimit.ts         in-memory per-IP sliding-window limiter (answer-proposal)
     tz.ts                Asia/Jerusalem wall-clock <-> epoch-ms + week.days builder (on-ride-cancelled)
-    solver.js             GENERATED — bundled src/solver, no external imports (do not hand-edit)
-    solver.d.ts + *.d.ts  GENERATED — best-effort type mirror of src/solver, Node/editor tooling only;
-                          never import it from an Edge Function (see on-ride-cancelled/index.ts's own
-                          comment — Deno's module resolver cannot load its extensionless relative
-                          imports at runtime, even for `import type`; it boot-fails with
-                          "Module not found .../greedy")
+    solver.js             GENERATED — bundled src/solver, no external imports (do not hand-edit); the only
+                          generated file — Edge Functions mirror the few solver types they need inline
   push-dispatch/index.ts
   answer-proposal/index.ts
   on-ride-cancelled/index.ts

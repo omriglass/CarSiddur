@@ -14,11 +14,11 @@ Guidance for Claude Code working in this repository.
 
 1. **Never modify `../commucar-share`.** Read-only reference. Do not import from it, copy files from it, or run commands inside it.
 2. **Docs are the source of truth and move with the code.** Any change to behavior, schema, states, enums, rule types, notifications or screens updates the relevant `docs/*.md` **in the same change**. If REQUIREMENTS.md does not cover it, add it there first (the owner reviews requirements, not code).
-3. **Hebrew lives in exactly three places.** (a) `src/i18n/he*.ts` — all UI strings keyed by namespace (he.ts is canonical, merged from he.admin.ts, he.member.ts, he.sadran.ts), accessed via the `he` object or `t(key)`/`tv(key, vars)` from `src/i18n/he.ts` (there is no `useT()` hook); (b) `src/solver/reasons.ts` — solver reason templates keyed by `reasonCode` (reason codes, rule descriptions `RULE_<TYPE>_DESC`, `PolicyParamsError` messages), so the bundled solver is self-contained and rule files have no Hebrew; (c) seeded data in `supabase/seed.sql` — `notification_templates` table (push/inbox/WhatsApp title/body), `ride_types.name_he`, `destinations.name` (Hebrew place names), `weekday_labels` (Hebrew weekday letters/names used by SQL notification vars). Never inline Hebrew in components, hooks, rule files, SQL logic, or edge functions. Identifiers, comments and docs are English.
+3. **Hebrew lives in exactly three places.** (a) `src/i18n/he*.ts` — all UI strings keyed by namespace (he.ts is canonical, merged from he.admin.ts, he.member.ts, he.sadran.ts), accessed via the `he` object or `t(key)`/`tv(key, vars)` from `src/i18n/he.ts` (there is no `useT()` hook); (b) `src/solver/reasons.ts` — solver reason templates keyed by `reasonCode` (reason codes, rule descriptions `RULE_<TYPE>_DESC`, `PolicyParamsError` messages), so the bundled solver is self-contained and rule files have no Hebrew; (c) seeded data in `supabase/seed.sql` — `notification_templates` table (push/inbox/WhatsApp title/body), `ride_types.name_he`, `destinations.name` (Hebrew place names), `weekday_labels` (Hebrew weekday letters/names used by SQL notification vars). Never inline Hebrew in components, hooks, rule files, SQL logic, or edge functions. Identifiers, comments and docs are English. **Enforced by `eslint.config.js`** (`no-restricted-syntax`, Hebrew literal/template/JSX text) with four documented file exceptions listed there (`src/sw.ts`, `parseInviteLines.ts`, `templates/lib/placeholders.ts`, generated `src/components/ui/**`); a new exception needs a comment in the file and an entry in that config.
 4. **RLS on every table**, `enable` + `force`, policies per command (never `for all`), written with the helper functions in `DATA_MODEL.md` §4.2 (`is_approved()`, `is_admin()`, `member_of(dept)`, `is_sadran(dept, week_start)`, `is_sadran_any(dept)`, `can_manage_week(dept, week_start)`, `is_week_public(dept, week_start)`). Multi-row state changes go through `SECURITY DEFINER` RPCs. `anon` has no grants. Service-role keys never reach the browser. Functions have no default grants either: a migration that adds a browser-facing RPC must `grant execute … to authenticated` explicitly, everything else (internal/cron/helpers not referenced by RLS) stays closed — `rls_smoke.sql` TEST 14 enforces it.
-5. **The solver stays pure.** `src/solver/**` imports nothing from React, Supabase, the DOM, `Date.now()`, `Math.random()`, or `src/i18n`. `solve(input)` returns a value; persistence is the caller's job (`apply_solver_result` RPC). Deterministic: every sort ends in an `id` tie-break.
-6. **All timestamps are Asia/Jerusalem-aware.** Postgres: `timestamptz` only; `week_start date` (the Sunday) keys a week; wall-clock settings are stored as `(dow, time)` and converted inside SQL with `at time zone 'Asia/Jerusalem'`. TS: `src/lib/time.ts` (`TZ = 'Asia/Jerusalem'`, date-fns-tz); never `getHours()`/`getDay()`/`toLocale*` without it. The solver never does wall-clock arithmetic — it gets epoch ms and per-day slot bounds.
-7. **Before declaring anything done:** `npm run lint && npm run typecheck && npm run test` pass. Schema changes also need `npm run db:reset && npm run db:types` with the regenerated types committed. User-facing flows run the relevant Playwright spec.
+5. **The solver stays pure.** `src/solver/**` imports nothing from React, Supabase, the DOM, `Date.now()`, `Math.random()`, or `src/i18n`. `solve(input)` returns a value; persistence is the caller's job (`apply_solver_result` RPC). Deterministic: every sort ends in an `id` tie-break. Enforced by `eslint.config.js` (`no-restricted-imports`/`-globals`/`-syntax` on `src/solver/**`) and `src/solver/__tests__/purity.test.ts`; CI fails if `supabase/functions/_shared/solver.js` is stale relative to `src/solver`.
+6. **All timestamps are Asia/Jerusalem-aware.** Postgres: `timestamptz` only; `week_start date` (the Sunday) keys a week; wall-clock settings are stored as `(dow, time)` and converted inside SQL with `at time zone 'Asia/Jerusalem'`. TS: `src/lib/time.ts` (`TZ = 'Asia/Jerusalem'`, date-fns-tz); never `getHours()`/`getDay()`/`toLocale*` without it (lint error outside `time.ts`/`dayLabels.ts`). The solver never does wall-clock arithmetic — it gets epoch ms and per-day slot bounds.
+7. **Before declaring anything done:** `npm run check` (lint, typecheck, unit tests) passes. Schema changes also need `npm run db:reset && npm run db:types` with the regenerated types committed, and `npm run db:test`. Solver changes also need `npm run functions:bundle` (CI diff-checks the bundle). User-facing flows run the relevant Playwright spec; `npm run check:full` runs everything (needs the local stack). CI (`.github/workflows/ci.yml`) runs `check` + bundle freshness + build and the database job (migrations replay, types freshness, SQL suites) on every push, and e2e nightly / on demand.
 8. **Never hand-edit generated files:** `src/integrations/supabase/types.ts`, `src/components/ui/*` (shadcn CLI), `supabase/functions/_shared/solver.js` (built by `scripts/bundle-solver`).
 9. **Enums are defined once, in SQL**, mirrored into `src/lib/enums.ts` (see Conventions). Priority **rule types are the exception**: they are a TS registry (`src/solver/rules/index.ts`) mirrored into the SQL `validate_policy_rules()` known set.
 
@@ -34,7 +34,8 @@ Guidance for Claude Code working in this repository.
 | `npm run test` | `vitest run` — run tests once |
 | `npm run test:watch` | `vitest` — watch mode |
 | `npm run test:e2e` | `playwright test` (needs `supabase start`, `db:reset`, and `npm run dev`) |
-| `npm run check` | `lint && typecheck && test` — the definition-of-done gate |
+| `npm run check` | `lint && typecheck && test` — the fast definition-of-done gate |
+| `npm run check:full` | `check` + `functions:bundle` + `db:test` + `test:e2e` — everything, needs `supabase start` |
 | `npm run db:start` / `db:stop` | `supabase start` / `supabase stop` (Docker required) |
 | `npm run db:reset` | `supabase db reset` — replays migrations + seed.sql from scratch |
 | `npm run db:fake` | `node scripts/fake-week.mjs` — generates fake members/requests through `submit_request` for manual local testing (local Supabase only) |
@@ -43,7 +44,7 @@ Guidance for Claude Code working in this repository.
 | `npm run db:push` | `supabase db push` — sync pending local migrations to the remote project (after linking) |
 | `npm run db:test` | Run RLS, solver persistence and TODO regression suites in the configured local Docker container; `SUPABASE_DB_CONTAINER` selects a disposable test container |
 | `npm run functions:serve` | `supabase functions serve --env-file supabase/functions/.env` |
-| `npm run functions:bundle` | Bundle the solver for edge functions and run the bundle test |
+| `npm run functions:bundle` | Bundle `src/solver` into `supabase/functions/_shared/solver.js` (the only generated file there) and run the bundle test |
 
 ## Folder map
 
@@ -66,7 +67,7 @@ src/
     solverBridge/              buildSolverInput() (DB→solver mapper for board & admin policy preview)
     <feature>/components/      React components (shadcn + business logic)
     <feature>/hooks/           TanStack Query: use<X>Query, use<X>Mutation
-    <feature>/api.ts           only place feature calls supabase.from() / .rpc()
+    <feature>/api.ts           only place feature calls supabase.from() / .rpc() (lint-enforced; `src/lib/rpc.ts` is the typed wrapper)
     <feature>/schema.ts        zod schemas + inferred form types
     <feature>/keys.ts          TanStack Query key definitions
   solver/                      PURE TypeScript (no React, Supabase, i18n imports)

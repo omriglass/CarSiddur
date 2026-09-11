@@ -1,5 +1,4 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { format, getDay, parseISO } from "date-fns";
 import { useContext, useMemo, useRef, useState } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
 import { useNavigate } from "react-router-dom";
@@ -37,7 +36,9 @@ import { dateKey, formatTime, weekdayIndex } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { fits, type Car as SolverCar } from "@/solver";
 
+import { fetchChildren } from "../api";
 import type { RequestEditRow, SubmitRequestResult, SubmitSeriesRequestResult, TemplateSuggestion } from "../api";
+import { dayLabel } from "../dayLabel";
 import { CAR_NOW_DEFAULT_HOURS, CAR_NOW_HOURS_OPTIONS } from "../carNow";
 import { findOverlappingRequest } from "../duplicate";
 import { QUICK_REQUEST_DURATION_HOURS, endTimeForDuration, shiftReturnByDepartureDelta } from "../duration";
@@ -53,7 +54,6 @@ import {
   useSubmitRequestMutation,
   useSubmitSeriesRequestMutation,
 } from "../hooks";
-import { fetchChildren } from "../children";
 import { intervalToFlexValue, toInstant, toSubmitRequestPayload } from "../mapper";
 import { requestFormSchema, type RequestFormValues } from "../schema";
 import { seriesSpanDays } from "../series";
@@ -143,11 +143,6 @@ function dayFromInstant(instant: string): string {
 function timeFromInstant(instant: string): string {
   return formatTime(new Date(instant));
 }
-function dayLabel(dateStr: string): string {
-  const parsed = parseISO(dateStr);
-  return `${he.days.short[getDay(parsed)]} ${format(parsed, "dd.MM")}`;
-}
-
 function buildDefaultDay(weekStart: string, lastDepartAt: string | null | undefined): string {
   if (!lastDepartAt) return weekStart; // datesOfWeek(weekStart)[0] === weekStart (the Sunday itself)
   const dates = datesOfWeek(weekStart);

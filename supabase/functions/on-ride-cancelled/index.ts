@@ -25,15 +25,10 @@ import { buildTimelines, matchFreedSlot } from '../_shared/solver.js';
 // NOTE: types below are a hand-written, intentionally minimal mirror of the
 // subset of src/solver/types.ts this function constructs (Car, Destination,
 // Policy, SolverConfig, SolverStats, FreedSlotInput/Request as used by
-// matchFreedSlot — SOLVER.md §2, §5.2). They are duplicated here rather than
-// imported from the generated `_shared/solver.d.ts` because that file's
-// declarations use extensionless relative imports (`from './greedy'`, as
-// emitted by `tsc`), which Deno's strict module resolver cannot load at
-// runtime even for a type-only import — confirmed by a `worker boot error:
-// Module not found ".../_shared/greedy"` when this file imported types from
-// solver.d.ts. `solver.d.ts` is still generated (useful for Node/editor
-// tooling, e.g. the bundle test) but must never be imported from an actual
-// Edge Function. If src/solver/types.ts changes, update this block to match.
+// matchFreedSlot — SOLVER.md §2, §5.2). The bundle step emits only
+// `_shared/solver.js` (no declaration files: Deno's strict resolver cannot
+// load a tsc-emitted .d.ts tree, and nothing else needed them). If
+// src/solver/types.ts changes, update this block to match.
 interface Passengers {
   adults: number;
   childSeats: number;

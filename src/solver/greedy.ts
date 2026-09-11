@@ -416,8 +416,8 @@ export function toAssignments(placed: Placed[], input: SolverInput, carsById: Ma
           ? reason('PLACED_PREFERRED', { car: car?.name ?? carId })
           : reason('PLACED_SHIFTED', {
               car: car?.name ?? carId,
-              dep: `${Math.abs(shift.departureMin)} דק'`,
-              ret: `${Math.abs(shift.returnMin)} דק'`,
+              dep: String(Math.abs(shift.departureMin)),
+              ret: String(Math.abs(shift.returnMin)),
             });
       out.push({
         rideId: `ride:${nr.id}`,

@@ -4,16 +4,27 @@ on:
   push:
     branches: [main]
   pull_request:
+  schedule:
+    # Nightly full run (e2e) at 03:00 Asia/Jerusalem ≈ 00:00 UTC.
+    - cron: "0 0 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build:
+  # Fast gate — mirrors `npm run check` plus the two "generated file is fresh"
+  # checks (docs/REFACTOR_PLAN_2026-09-11.md B2): the solver bundle the Edge
+  # Functions run must match src/solver, and the bundle must never be hand-edited.
+  check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version-file: .nvmrc
           cache: npm
 
       - name: Install dependencies
@@ -28,5 +39,108 @@ jobs:
       - name: Unit tests
         run: npm run test
 
+      - name: Solver bundle is fresh
+        run: |
+          npm run functions:bundle
+          git diff --exit-code -- supabase/functions/_shared/ \
+            || { echo "::error::supabase/functions/_shared/solver.js is stale — run 'npm run functions:bundle' and commit"; exit 1; }
+
       - name: Build
         run: npm run build
+
+  # Database gate (B3): replay every migration + seed on a throwaway local
+  # Supabase stack, verify the committed generated types match the schema,
+  # and run the SQL regression suites (RLS smoke, solver persistence, …).
+  database:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Start local Supabase (applies migrations + seed)
+        run: supabase start -x studio,imgproxy,logflare,vector
+
+      - name: Generated types are fresh
+        run: |
+          npm run db:types
+          git diff --exit-code -- src/integrations/supabase/types.ts \
+            || { echo "::error::src/integrations/supabase/types.ts is stale — run 'npm run db:types' and commit"; exit 1; }
+
+      - name: SQL regression suites
+        run: npm run db:test
+
+      - name: Stop Supabase
+        if: always()
+        run: supabase stop --no-backup
+
+  # Browser end-to-end suite (B3). Runs nightly and on demand, not on every
+  # push: the suite is serial (workers=1, see playwright.config.ts) and takes
+  # several minutes. Uses the local stack's well-known development keys.
+  e2e:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Start local Supabase
+        run: |
+          # Edge Functions read their secrets from this file (npm run functions:serve).
+          : > supabase/functions/.env
+          supabase start -x studio,imgproxy,logflare,vector
+
+      - name: Write .env from the local stack
+        run: |
+          supabase status -o env > /tmp/supabase.env
+          . /tmp/supabase.env
+          {
+            echo "VITE_SUPABASE_URL=$API_URL"
+            echo "VITE_SUPABASE_ANON_KEY=$ANON_KEY"
+            echo "VITE_VAPID_PUBLIC_KEY=ci-vapid-public-key"
+            echo "VITE_APP_URL=http://localhost:8080"
+          } > .env.local
+          echo "SUPABASE_SERVICE_ROLE_KEY=$SERVICE_ROLE_KEY" >> "$GITHUB_ENV"
+          echo "VITE_SUPABASE_URL=$API_URL" >> "$GITHUB_ENV"
+          echo "VITE_SUPABASE_ANON_KEY=$ANON_KEY" >> "$GITHUB_ENV"
+
+      - name: Playwright
+        run: npm run test:e2e
+        env:
+          CI: "true"
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
+
+      - name: Stop Supabase
+        if: always()
+        run: supabase stop --no-backup

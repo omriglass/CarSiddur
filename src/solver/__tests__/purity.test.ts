@@ -87,4 +87,34 @@ describe('src/solver purity', () => {
     }
     expect(offenders).toEqual([]);
   });
+
+  it('contains Hebrew only in reasons.ts (CLAUDE.md hard rule 3)', () => {
+    // Hebrew (incl. Hebrew punctuation like geresh/gershayim) lives in the
+    // Unicode block U+0590-U+05FF; rule files must call ruleDescription() /
+    // throw PolicyParamsError(code) and never inline Hebrew themselves.
+    const HEBREW_BLOCK = /[֐-׿]/;
+    const offenders: string[] = [];
+
+    function walk(dir: string): string[] {
+      const out: string[] = [];
+      for (const entry of readdirSync(dir)) {
+        const full = join(dir, entry);
+        if (entry === '__tests__' || entry === '__fixtures__') continue;
+        const stat = statSync(full);
+        if (stat.isDirectory()) {
+          out.push(...walk(full));
+        } else if (/\.tsx?$/.test(entry)) {
+          out.push(full);
+        }
+      }
+      return out;
+    }
+
+    for (const file of walk(SOLVER_DIR)) {
+      if (file.endsWith(join('src', 'solver', 'reasons.ts'))) continue;
+      const content = readFileSync(file, 'utf8');
+      if (HEBREW_BLOCK.test(content)) offenders.push(file);
+    }
+    expect(offenders).toEqual([]);
+  });
 });

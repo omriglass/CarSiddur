@@ -412,7 +412,7 @@ Every assignment, unmet record and suggestion has a `reasonCode` and a Hebrew `r
 | Code | Hebrew template |
 |---|---|
 | `PLACED_PREFERRED` | `שובץ ל{car} בזמן המבוקש` |
-| `PLACED_SHIFTED` | `שובץ ל{car} עם הזזה של {dep} ביציאה ו-{ret} בחזרה, בתוך הגמישות שהוצהרה` |
+| `PLACED_SHIFTED` | `שובץ ל{car} עם הזזה של {dep} דק' ביציאה ו-{ret} דק' בחזרה, בתוך הגמישות שהוצהרה` |
 | `RELOCATED_FOR` | `הועבר ל{car} כדי לפנות מקום לבקשה של {member}` |
 | `PLACED_RELAY_PAIR` | `שובץ ל{car}: {member} נוהג/ת ל{dest} ב-{dep} ומשאיר/ה את הרכב; {partner} מחזיר/ה אותו ב-{ret}` |
 | `PLACED_SERIES` | `שובץ/ה כחלק מבקשה רב-יומית ל{car} ({index}/{count})` |
@@ -423,7 +423,7 @@ Every assignment, unmet record and suggestion has a `reasonCode` and a Hebrew `r
 | `UNMET_CAR_AWAY` | `{car} נמצא/ת ב{location} בשעות האלה ולא זמין/ה מהבית` |
 | `SUGGEST_MERGE` | `הצטרפות לנסיעה של {host} ל{dest} ביציאה {dep} ובחזרה {ret}, ללא סטייה` |
 | `SUGGEST_MERGE_LEG` | `הצטרפות כנוסע/ת לנסיעה של {host} {direction} {dest} ב-{time}` |
-| `SUGGEST_BEYOND_FLEX` | `הזזה של {dep} מעבר לגמישות שהוצהרה — דורש הסכמה` |
+| `SUGGEST_BEYOND_FLEX` | `הזזה של {dep} דק' מעבר לגמישות שהוצהרה — דורש הסכמה` |
 | `SUGGEST_ROUND_TRIP` | `במקום להשאיר את הרכב ב{dest}: לקחת אותו הלוך ושוב ולחזור ב-{ret} — דורש הסכמה` |
 | `SUGGEST_CHAUFFEUR` | `הסעה: נהג/ת מתנדב/ת מסיע/ה ל{dest} ב-{dep} וחוזר/ת עם הרכב (כ-{minutes} דק'); הסדרן/ית משבץ/ת נהג/ת` |
 | `SUGGEST_DENY` | `לא נמצא פתרון; ניתן לדחות עם הסבר` |

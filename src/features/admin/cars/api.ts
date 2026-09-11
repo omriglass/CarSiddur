@@ -1,4 +1,4 @@
-import { fetchOperationalDepartments } from "@/features/admin/operationsApi";
+import { fetchOperationalDepartments } from "@/features/admin/api";
 import { supabase } from "@/integrations/supabase/client";
 import { rpc, toAppError } from "@/lib/rpc";
 

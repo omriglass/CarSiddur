@@ -21,7 +21,7 @@
 //
 // Pure/no React, no Supabase — unit tested directly (rideLabel.test.ts).
 
-import { tv } from "@/i18n/he";
+import { he, tv } from "@/i18n/he";
 
 export interface RideLabelServedEntry {
   role: "driver" | "passenger";
@@ -56,7 +56,7 @@ function hebrewList(names: readonly string[]): string {
   if (clean.length === 0) return "";
   const last = clean[clean.length - 1] as string;
   if (clean.length === 1) return last;
-  return `${clean.slice(0, -1).join(", ")} ו${last}`;
+  return `${clean.slice(0, -1).join(", ")} ${he.rideLabel.and}${last}`;
 }
 
 /** The designated driver may have no request of their own (a volunteer). */
@@ -86,23 +86,23 @@ export function chauffeurRideLabel(driverName: string | null, passengers: readon
  * list-mode `RideCard`s, which show origin/destination as two separate
  * fields rather than one composed string).
  */
-function resolveDirection(input: RideLabelInput): { prefix: "ל" | "מ"; place: string } {
+function resolveDirection(input: RideLabelInput): { kind: "to" | "from"; place: string } {
   const isHomeOrigin = input.originId === input.homeDestinationId;
   const isHomeDestination = input.destinationId === input.homeDestinationId;
 
   if (isHomeOrigin && !isHomeDestination) {
     // one-way-to: leaving home for the destination.
-    return { prefix: "ל", place: input.destinationName };
+    return { kind: "to", place: input.destinationName };
   }
   if (!isHomeOrigin && isHomeDestination) {
     // one-way-from: arriving home from wherever it started.
-    return { prefix: "מ", place: input.originName };
+    return { kind: "from", place: input.originName };
   }
   // Round trip (origin === destination, normally home): the real
   // destination only exists on the served requests.
   const driver = input.served.find((s) => s.role === "driver");
   const passenger = input.served.find((s) => s.role === "passenger" && s.destination);
-  return { prefix: "ל", place: driver?.destination ?? passenger?.destination ?? input.destinationName };
+  return { kind: "to", place: driver?.destination ?? passenger?.destination ?? input.destinationName };
 }
 
 /**
@@ -120,7 +120,7 @@ export function rideBlockLabel(input: RideLabelInput): string {
     const label = chauffeurRideLabel(input.needsDriver ? null : input.driverName ?? driver?.requester ?? null, passengers.map((passenger) => ({
       ...passenger,
       destination: passenger.destination ?? direction.place,
-      leg: passenger.leg ?? (direction.prefix === "מ" ? "return" : "out"),
+      leg: passenger.leg ?? (direction.kind === "from" ? "return" : "out"),
     })));
     // A merged passenger leg must not hide the host's separate destination.
     if (driver?.destination && !passengers.some((passenger) => passenger.destination === driver.destination)) {
@@ -143,7 +143,8 @@ export function rideBlockLabel(input: RideLabelInput): string {
     .filter((n): n is string => !!n);
   const who = hebrewList(names);
 
-  const { prefix, place } = resolveDirection(input);
+  const { kind, place } = resolveDirection(input);
+  const prefix = he.rideLabel[kind];
   return who ? `${who} ${prefix}${place}` : `${prefix}${place}`;
 }
 

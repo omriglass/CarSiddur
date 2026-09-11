@@ -1,7 +1,7 @@
 import { useActiveDepartment } from "@/features/auth/useActiveDepartment";
 import { useQuery } from "@tanstack/react-query";
 import { useSession } from "@/features/auth/useSession";
-import { fetchCanManageOperations, fetchOperationalDepartments } from "./operationsApi";
+import { fetchCanManageOperations, fetchOperationalDepartments } from "./api";
 import { operationsKeys } from "./queryKeys";
 
 export function useCanManageOperations(departmentOverride?: string) {

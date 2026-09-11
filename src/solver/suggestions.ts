@@ -154,7 +154,7 @@ function shiftBeyondFlexSuggestion(nr: NormalizedRequest, ctx: SuggestionContext
     shift: best.placement.shift,
     reasonCode: 'SUGGEST_BEYOND_FLEX',
     reason: reason('SUGGEST_BEYOND_FLEX', {
-      dep: `${Math.abs(best.placement.shift.departureMin)} דק'`,
+      dep: String(Math.abs(best.placement.shift.departureMin)),
     }),
     cost: best.placement.cost,
     confidence: Math.max(0, 0.5 - best.placement.cost / 480),

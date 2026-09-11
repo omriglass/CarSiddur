@@ -9,6 +9,15 @@
  * reasons.ts, and seeded DB data).
  */
 export const heMember = {
+  /** Glue used by `src/lib/rideLabel.ts` to compose "<who> ל<place>" / "<who> מ<place>" and Hebrew lists. */
+  rideLabel: {
+    /** Conjunction prefixed to the last list item: "א, ב וג". */
+    and: "ו",
+    /** Direction prefix for a leg that ends at the named place. */
+    to: "ל",
+    /** Direction prefix for a leg that starts at the named place (one-way-from). */
+    from: "מ",
+  },
   excelExport: {
     button: "ייצוא לאקסל", loading: "מכין קובץ…", requestsSheet: "בקשות", boardSheet: "סידור", scoresSheet: "ניקוד בפרסום",
     requestId: "מזהה בקשה", rideId: "מזהה נסיעה", requester: "מבקש/ת", status: "מצב", destination: "יעד הבקשה",

@@ -30,3 +30,6 @@ playwright/.cache/
 !.vscode/extensions.json
 .idea/
 *.log
+
+# typescript incremental build info
+*.tsbuildinfo
