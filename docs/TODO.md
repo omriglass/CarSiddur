@@ -48,7 +48,7 @@ Ordered: bug first, then small features, then the statistics group, then the lar
 
 ### ~~F1~~ ✅ done 2026-09-14 — Siddur: hide a private car on days it has no rides
 
-- Done 2026-09-14: `features/siddur/visibleCars.ts` filters the siddur `WeekGrid` rows (REQ §13.80, UX_FLOWS §3.5); the board is unaffected; the phone day list never had car rows.
+- Done 2026-09-14: `components/weekGridCars.ts` (`hideIdleTemporaryCars`) filters the `WeekGrid` rows on the siddur and, since the owner's follow-up the same day, on the board (REQ §13.80); the phone lists never had car rows.
 - **Q1.** "No future rides the same day" — hide the car only on days with zero rides (my reading), or also hide it *after its last ride of today has ended*? The second reading makes the siddur change during the day.
   **A1.** Only on days with zero rides.
 

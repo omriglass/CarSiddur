@@ -41,6 +41,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { hideIdleTemporaryCars } from "@/components/weekGridCars";
 import { UNMET_DROP_ZONE_ATTR, WeekGrid, type WeekGridBlock, type WeekGridCar, type WeekGridDiscussionBlock, type WeekGridRide } from "@/components/WeekGrid";
 import { WeekStrip } from "@/components/WeekStrip";
 import { WaitlistGroupCard } from "@/features/waitlist/components/WaitlistGroupCard";
@@ -1200,7 +1201,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
           <WeekGrid
             zoom={tableZoom}
             onZoomChange={setTableZoom}
-            cars={weekGridCars}
+            cars={hideIdleTemporaryCars(weekGridCars, weekGridRides)}
             rides={weekGridRides}
             blocks={weekGridBlocks}
             dayStartMinutes={dayStartMinutes}

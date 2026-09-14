@@ -48,7 +48,7 @@ import { conflictingRides, moveOnRideDay } from "@/features/siddur/rideEditing";
 import { tightScheduleRideIds } from "@/features/sadran/board/geometry";
 import { useEditRideMutation, useDepartmentSettings, useWeekRequestsWithNames } from "@/features/sadran/hooks";
 import { groupByDay } from "@/features/siddur/dayGrouping";
-import { visibleSiddurCars } from "@/features/siddur/visibleCars";
+import { hideIdleTemporaryCars } from "@/components/weekGridCars";
 import { type CarFreeWindow } from "@/features/siddur/freeWindows";
 import {
   useBoardRides,
@@ -402,7 +402,7 @@ export function SiddurPage() {
   }
 
   // A private (temporary) car is shown only on days it has a ride (REQ §13.80, owner 2026-09-14).
-  const weekGridVisibleCars = visibleSiddurCars(weekGridCars, weekGridRides);
+  const weekGridVisibleCars = hideIdleTemporaryCars(weekGridCars, weekGridRides);
 
   const weekGridDiscussionBlocks: WeekGridDiscussionBlock[] = activeDayWaitlistGroups.map((group) => ({
     id: group.id,

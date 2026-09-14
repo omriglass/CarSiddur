@@ -251,7 +251,7 @@ scripts/
 ## Owner batch 2026-09-14 (REQ §13.77 bullet, §13.78 "Extended 2026-09-14", §13.80–§13.84)
 
 - Bug fix: a single-day request is filed as a multi-day series only when the return-day picker is open and holds a later day (`features/requests/series.ts` `isSeriesSubmission`/`returnDayAfterDayChange`).
-- Siddur hides a temporary (private) car on days it has no ride (`features/siddur/visibleCars.ts`); the board is unaffected.
+- Siddur and Sadran board hide a temporary (private) car on days it has no ride (`components/weekGridCars.ts`, shared `WeekGrid` helper; board added on the owner's same-day follow-up).
 - Sadran sets a per-week request closing time (`set_week_close_at`, board kebab menu), members get `window_changed`; the "בקשה חדשה" entry point is one `NewRequestButton` with four states (`features/requests/newRequestButton.ts`).
 - Statistics: utilization includes the turnaround buffer; `sharing` (people utilization, fragmentation, one-way fulfilment — no combined score), `cancellations` (same-day rate), `requestsByHour`.
 - `ride_passengers` + `set_ride_passengers`: a board reservation ("שמירת זמן") can name people (first = driver); they see it on Home/siddur and are notified. Same table is the base for the future "+ נוסעים" button.
