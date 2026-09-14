@@ -43,7 +43,9 @@ export const heMember = {
    * (owner decision 2026-09-14, same day as the original three/four-state change).
    */
   newRequestButton: {
-    nextWeek: "בקשה לשבוע הבא",
+    // Owner 2026-09-14 (second revision): the open state reads plainly "בקשה חדשה"; the
+    // button still always refers to next week.
+    nextWeek: "בקשה חדשה",
     preparing: "סידור בהכנה...",
     waitlistNextWeek: "רשימת המתנה לשבוע הבא",
   },
