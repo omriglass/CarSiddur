@@ -22,6 +22,11 @@ async function dragRequest(page: Page, requestId: string, carId: string, minutes
 }
 
 test("one-way drop persists a missing-driver ride, tight edits remain publishable, and merge awaits consent", async ({ browser }) => {
+  // docs/TODO.md "Flaky / time-dependent e2e specs" (found 2026-09-11): this is the longest
+  // single test in the suite (fixture setup + two drag/edit rounds + a publish-page visit + a
+  // proposal send) and was timing out under the global 60 s budget even on the pre-refactor
+  // commit — not a regression. Give it 3x headroom before deciding it's a real app bug.
+  test.slow();
   const service = serviceRoleClient();
   const week = "2042-01-05";
   const members = ["00000000-0000-0000-0000-000000000103", "00000000-0000-0000-0000-000000000104"];

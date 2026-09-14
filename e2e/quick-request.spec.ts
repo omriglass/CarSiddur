@@ -1,4 +1,5 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
+import { fromZonedTime } from "date-fns-tz";
 
 import { getWeekStart, NEVO_DEPARTMENT_ID, SEEDED_USERS, serviceRoleClient, signIn } from "./helpers";
 
@@ -23,10 +24,30 @@ const VAN_NAME = "ואן 7 מקומות";
 const FRIDAY_INDEX = 5;
 const DAY_START_MINUTES = 6 * 60;
 const DAY_END_MINUTES = 24 * 60;
+const TZ = "Asia/Jerusalem";
 
 /** Physical y offset (px) for a given minutes-since-midnight, matching `WeekGrid`'s own `clampRideVertical`. */
 function yForMinutes(minutes: number, colHeight: number): number {
   return ((minutes - DAY_START_MINUTES) / (DAY_END_MINUTES - DAY_START_MINUTES)) * colHeight;
+}
+
+/**
+ * The RequestForm's quick variant disables submission for any slot before `quickContext.now`
+ * (`new Date()`, computed live in `SiddurPage`), which real wall-clock time eventually catches
+ * up to for a spec that always targets Friday 10:00–12:15 of the *live* week (docs/TODO.md
+ * "Flaky / time-dependent e2e specs", found 2026-09-11: fails every Friday after 10:00 Jerusalem
+ * time, and all day Saturday). Freezing the page's clock (`page.clock.setFixedTime`, which only
+ * pins `Date`/`Date.now()` and leaves real timers such as TanStack Query polling running) to a
+ * fixed Wednesday morning of that same week makes the "now" the form checks against always fall
+ * safely before both Friday slots below, regardless of when the suite actually runs.
+ */
+async function freezeToWednesdayMorning(page: Page, weekStart: string): Promise<void> {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(weekStart);
+  if (!match) throw new Error(`week start is not yyyy-MM-dd: ${weekStart}`);
+  const [y, m, d] = [Number(match[1]), Number(match[2]), Number(match[3])];
+  const wednesday = new Date(Date.UTC(y, m - 1, d + 3)).toISOString().slice(0, 10);
+  const frozenInstant = fromZonedTime(`${wednesday} 08:00:00`, TZ);
+  await page.clock.setFixedTime(frozenInstant);
 }
 
 test.describe.serial("quick request from an empty slot (live week)", () => {
@@ -46,6 +67,7 @@ test.describe.serial("quick request from an empty slot (live week)", () => {
     const van = cars?.find((c) => c.name === VAN_NAME);
     expect(van).toBeTruthy();
 
+    await freezeToWednesdayMorning(page, liveWeekStart);
     await page.goto(`/siddur/${NEVO_DEPARTMENT_ID}/${liveWeekStart}`);
     const dayRadios = page.getByRole("radiogroup", { name: "יום" });
     // Two WeekStrip instances exist (phone + desktop, only one visible per viewport) — the
@@ -98,6 +120,7 @@ test.describe.serial("quick request from an empty slot (live week)", () => {
     const van = cars?.find((c) => c.name === VAN_NAME);
     expect(van).toBeTruthy();
 
+    await freezeToWednesdayMorning(page, liveWeekStart);
     await page.goto(`/siddur/${NEVO_DEPARTMENT_ID}/${liveWeekStart}`);
     const dayRadios = page.getByRole("radiogroup", { name: "יום" });
     await dayRadios.last().getByRole("radio").nth(FRIDAY_INDEX).click();

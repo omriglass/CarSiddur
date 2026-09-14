@@ -37,7 +37,9 @@ export default defineConfig({
   // First navigation after a db reset can take >30 s while Vite cold-compiles
   // and the Supabase containers settle; 60 s keeps that from reading as a failure.
   timeout: 60_000,
-  reporter: "html",
+  // CI: `github` adds one annotation per failed test to the run summary (readable
+  // without downloading logs); `html` is still uploaded as an artifact on failure.
+  reporter: process.env.CI ? [["github"], ["html", { open: "never" }]] : "html",
   use: {
     baseURL,
     navigationTimeout: 45_000,

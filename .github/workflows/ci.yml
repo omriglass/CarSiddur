@@ -109,11 +109,26 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
 
-      - name: Start local Supabase
+      - name: Write Edge Function secrets for the local stack
+        # e2e/helpers.ts reads CRON_SECRET from this gitignored file and wires
+        # app_settings/app_secrets so cancel_ride()'s pg_net call reaches the local
+        # on-ride-cancelled function; the edge runtime container loads the same file.
+        # VAPID keys are a throwaway P-256 pair so push subscription code paths run.
         run: |
-          # Edge Functions read their secrets from this file (npm run functions:serve).
-          : > supabase/functions/.env
-          supabase start -x studio,imgproxy,logflare,vector
+          node -e '
+            const { generateKeyPairSync } = require("node:crypto");
+            const fs = require("node:fs");
+            const { publicKey, privateKey } = generateKeyPairSync("ec", { namedCurve: "prime256v1" });
+            const pubJwk = publicKey.export({ format: "jwk" });
+            // Web Push wants the raw uncompressed P-256 point (0x04 || X || Y) as base64url.
+            const pub = Buffer.concat([Buffer.from([4]), Buffer.from(pubJwk.x, "base64url"), Buffer.from(pubJwk.y, "base64url")]).toString("base64url");
+            const priv = privateKey.export({ format: "jwk" }).d;
+            fs.writeFileSync("supabase/functions/.env", `VAPID_PUBLIC_KEY=${pub}\nVAPID_PRIVATE_KEY=${priv}\nVAPID_SUBJECT=mailto:ci@example.invalid\nCRON_SECRET=ci-cron-secret-${Date.now()}\n`);
+            fs.appendFileSync(process.env.GITHUB_ENV, `VITE_VAPID_PUBLIC_KEY=${pub}\n`);
+          '
+
+      - name: Start local Supabase
+        run: supabase start -x studio,imgproxy,logflare,vector
 
       - name: Write .env from the local stack
         run: |
@@ -122,7 +137,7 @@ jobs:
           {
             echo "VITE_SUPABASE_URL=$API_URL"
             echo "VITE_SUPABASE_ANON_KEY=$ANON_KEY"
-            echo "VITE_VAPID_PUBLIC_KEY=ci-vapid-public-key"
+            echo "VITE_VAPID_PUBLIC_KEY=$VITE_VAPID_PUBLIC_KEY"
             echo "VITE_APP_URL=http://localhost:8080"
           } > .env.local
           echo "SUPABASE_SERVICE_ROLE_KEY=$SERVICE_ROLE_KEY" >> "$GITHUB_ENV"
