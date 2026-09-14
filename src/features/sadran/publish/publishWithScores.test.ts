@@ -32,10 +32,14 @@ describe("publishWithScores", () => {
   });
 
   it("publishes with empty score snapshots when retrospective scoring cannot run", async () => {
+    // The per-policy failure is logged on purpose (never silent) — keep it out of the test output.
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     mocks.gatherSolverContext.mockRejectedValue(new Error("legacy request cannot be scored"));
 
     await expect(publishWithScores("dept", "2026-09-13")).resolves.toBe("published-version");
     expect(mocks.publishSiddur).toHaveBeenCalledWith("dept", "2026-09-13", [], "unchanged", [], {});
+    expect(errorSpy).toHaveBeenCalled();
+    errorSpy.mockRestore();
   });
 
   it("keeps a working policy's score when a sibling policy fails to score, and logs the failure", async () => {

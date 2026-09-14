@@ -1,6 +1,6 @@
 import { ChevronDown } from "lucide-react";
 
-import { formatWeekRangeLabel } from "@/components/DateField";
+import { formatWeekRangeLabel } from "@/components/dateFieldDates";
 import { StatusBadge } from "@/components/StatusBadge";
 import {
   DropdownMenu,

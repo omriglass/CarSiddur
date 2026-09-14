@@ -13,7 +13,7 @@ export const DEFAULT_STATS_PRESET: StatsPresetKey = "last4Weeks";
 
 /**
  * Pure calendar-day arithmetic on `today` — a `yyyy-MM-dd` string the caller
- * already computed via `todayInJerusalem()` (`src/components/DateField.tsx`),
+ * already computed via `todayInJerusalem()` (`src/components/dateFieldDates.ts`),
  * so this module never reads the clock or a device time zone itself
  * (CLAUDE.md hard rule 6). `to` is always `today`; only `from` varies.
  *

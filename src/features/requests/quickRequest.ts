@@ -1,4 +1,4 @@
-import type { PassengerCounts } from "@/components/PassengerStepper";
+import type { PassengerCounts } from "@/components/passengerStepperBounds";
 import type { TripShapeValue } from "@/components/TripShapeControl";
 
 /** Count seats including the requester. Names do not silently replace unnamed passengers. */

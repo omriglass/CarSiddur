@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { isToday } from "./WeekStrip";
+import { isToday } from "./weekStripToday";
 
 describe("isToday", () => {
   it("is true only for the given 'today' reference", () => {

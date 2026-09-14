@@ -2,7 +2,8 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { SheetPortalContext } from "./SheetPortalContext";
-import { TimeField15, formatMinutes, parseHHMM, snapToQuarterHour } from "./TimeField15";
+import { TimeField15 } from "./TimeField15";
+import { formatMinutes, parseHHMM, snapToQuarterHour } from "./timeField15Format";
 
 describe("parseHHMM", () => {
   it("parses well-formed HH:MM", () => {

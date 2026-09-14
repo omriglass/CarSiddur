@@ -16,15 +16,11 @@ import { adminRoutes, operationsRoutes } from "@/features/admin/routes";
 import { memberRoutes } from "@/features/member/routes";
 import { sadranRoutes } from "@/features/sadran/routes";
 import { HomePage } from "@/pages/HomePage";
-import { InboxPage } from "@/pages/InboxPage";
 import { LoginPage } from "@/pages/LoginPage";
-import { NewRequestPage } from "@/pages/NewRequestPage";
 import { NotFoundPage } from "@/pages/NotFoundPage";
 import { OnboardingPage } from "@/pages/OnboardingPage";
 import { PendingPage } from "@/pages/PendingPage";
-import { ProfilePage } from "@/pages/ProfilePage";
-import { ProposalTokenPage } from "@/pages/ProposalTokenPage";
-import { SiddurPage } from "@/pages/SiddurPage";
+import { InboxPage, NewRequestPage, ProfilePage, ProposalTokenPage, SiddurPage } from "./lazyPages";
 
 // Route list from UX_FLOWS.md §2.1, nested under the auth guards (features/auth/guards.tsx):
 // RequireAuth (no session -> /login) > RequireApproved (not approved -> /pending) >
@@ -57,10 +53,10 @@ export const router = createBrowserRouter([
                     children: [
                       { path: "/", element: <Navigate to="/my" replace /> },
                       { path: "/my", element: <HomePage /> },
-                      { path: "/requests/new", element: <NewRequestPage /> },
-                      { path: "/siddur", element: <SiddurPage /> },
-                      { path: "/inbox", element: <InboxPage /> },
-                      { path: "/profile", element: <ProfilePage /> },
+                      { path: "/requests/new", element: <Suspense fallback={<GuardLoading />}><NewRequestPage /></Suspense> },
+                      { path: "/siddur", element: <Suspense fallback={<GuardLoading />}><SiddurPage /></Suspense> },
+                      { path: "/inbox", element: <Suspense fallback={<GuardLoading />}><InboxPage /></Suspense> },
+                      { path: "/profile", element: <Suspense fallback={<GuardLoading />}><ProfilePage /></Suspense> },
                       ...memberRoutes,
                       {
                         element: <RequireSadran />,
@@ -88,7 +84,7 @@ export const router = createBrowserRouter([
       },
       { path: "/login", element: <LoginPage /> },
       { path: "/pending", element: <PendingPage /> },
-      { path: "/p/:token", element: <ProposalTokenPage /> },
+      { path: "/p/:token", element: <Suspense fallback={<GuardLoading />}><ProposalTokenPage /></Suspense> },
       { path: "*", element: <NotFoundPage /> },
     ],
   },

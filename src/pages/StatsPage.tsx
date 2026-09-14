@@ -2,7 +2,7 @@ import { BarChart3 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 
-import { todayInJerusalem } from "@/components/DateField";
+import { todayInJerusalem } from "@/components/dateFieldDates";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { PageHeader } from "@/components/PageHeader";

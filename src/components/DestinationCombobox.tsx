@@ -14,6 +14,7 @@ import {
 import { SheetPortalContext } from "@/components/SheetPortalContext";
 import { t } from "@/i18n/he";
 import { cn } from "@/lib/utils";
+import { filterDestinations } from "./destinationFilter";
 
 // Raw Radix primitives rather than the shared `components/ui/popover.tsx` (component inventory,
 // same reasoning as `TimeField15`): its `PopoverContent` always portals to `document.body` with
@@ -30,19 +31,6 @@ export interface DestinationPreset {
 }
 
 export type DestinationValue = { presetId: string; name: string } | { freeText: string };
-
-/** Matches presets by name, alias or zone (UX_FLOWS.md §3.4 "DestinationCombobox searches presets by name and aliases"). */
-export function filterDestinations(
-  destinations: readonly DestinationPreset[],
-  query: string,
-): DestinationPreset[] {
-  const normalized = query.trim().toLowerCase();
-  if (!normalized) return [...destinations];
-  return destinations.filter((dest) => {
-    const haystacks = [dest.name, dest.zone ?? "", ...dest.aliases];
-    return haystacks.some((h) => h.toLowerCase().includes(normalized));
-  });
-}
 
 interface DestinationComboboxProps {
   destinations: readonly DestinationPreset[];

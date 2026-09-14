@@ -1,11 +1,9 @@
+import { Suspense } from "react";
 import type { RouteObject } from "react-router-dom";
 
-import { CarPage } from "@/pages/CarPage";
-import { EditRequestPage } from "@/pages/EditRequestPage";
-import { RequestsListPage } from "@/pages/RequestsListPage";
-import { SiddurArchivePage } from "@/pages/SiddurArchivePage";
-import { SiddurPage } from "@/pages/SiddurPage";
-import { StatsPage } from "@/pages/StatsPage";
+import { GuardLoading } from "@/features/auth/guards";
+import { CarPage, EditRequestPage, RequestsListPage, SiddurArchivePage, SiddurPage, StatsPage } from "./lazyPages";
+
 
 /**
  * Member-facing routes added in stage 2a, beyond the pre-existing literal
@@ -16,11 +14,11 @@ import { StatsPage } from "@/pages/StatsPage";
  * one line, not a restructured route tree (stage 2a coordination note).
  */
 export const memberRoutes: RouteObject[] = [
-  { path: "/requests", element: <RequestsListPage /> },
-  { path: "/requests/:id/edit", element: <EditRequestPage /> },
-  { path: "/siddur/:dept", element: <SiddurPage /> },
-  { path: "/siddur/:dept/archive", element: <SiddurArchivePage /> },
-  { path: "/siddur/:dept/:week", element: <SiddurPage /> },
-  { path: "/cars/:carId", element: <CarPage /> },
-  { path: "/stats/:dept", element: <StatsPage /> },
+  { path: "/requests", element: <Suspense fallback={<GuardLoading />}><RequestsListPage /></Suspense> },
+  { path: "/requests/:id/edit", element: <Suspense fallback={<GuardLoading />}><EditRequestPage /></Suspense> },
+  { path: "/siddur/:dept", element: <Suspense fallback={<GuardLoading />}><SiddurPage /></Suspense> },
+  { path: "/siddur/:dept/archive", element: <Suspense fallback={<GuardLoading />}><SiddurArchivePage /></Suspense> },
+  { path: "/siddur/:dept/:week", element: <Suspense fallback={<GuardLoading />}><SiddurPage /></Suspense> },
+  { path: "/cars/:carId", element: <Suspense fallback={<GuardLoading />}><CarPage /></Suspense> },
+  { path: "/stats/:dept", element: <Suspense fallback={<GuardLoading />}><StatsPage /></Suspense> },
 ];

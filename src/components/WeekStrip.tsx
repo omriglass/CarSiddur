@@ -1,6 +1,7 @@
-import { datesOfWeek, todayInJerusalem } from "@/components/DateField";
+import { datesOfWeek } from "@/components/dateFieldDates";
 import { he } from "@/i18n/he";
 import { cn } from "@/lib/utils";
+import { isToday } from "./weekStripToday";
 
 export interface WeekStripDayCounts {
   rides: number;
@@ -14,11 +15,6 @@ interface WeekStripProps {
   counts?: readonly WeekStripDayCounts[];
   selected: string;
   onSelect: (date: string) => void;
-}
-
-/** True when `date` (`yyyy-MM-dd`) is today in Asia/Jerusalem. */
-export function isToday(date: string, today = todayInJerusalem()): boolean {
-  return date === today;
 }
 
 /**

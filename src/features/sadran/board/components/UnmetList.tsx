@@ -1,7 +1,8 @@
 import { GripVertical } from "lucide-react";
 import { useRef, useState } from "react";
 
-import { CAR_COLUMN_ATTR, minutesFromClientY } from "@/components/WeekGrid";
+import { CAR_COLUMN_ATTR } from "@/components/WeekGrid";
+import { minutesFromClientY } from "@/components/weekGridGeometry";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";

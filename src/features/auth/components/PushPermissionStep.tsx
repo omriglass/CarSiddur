@@ -1,7 +1,8 @@
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import { InstallHint, isStandalonePwa } from "@/components/InstallHint";
+import { InstallHint } from "@/components/InstallHint";
+import { isStandalonePwa } from "@/lib/pwaPlatform";
 import { t } from "@/i18n/he";
 
 interface PushPermissionStepProps {

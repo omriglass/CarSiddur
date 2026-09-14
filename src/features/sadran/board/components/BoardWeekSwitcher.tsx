@@ -1,7 +1,7 @@
 import { useNavigate } from "react-router-dom";
 
 import { paths } from "@/app/routes";
-import { formatWeekRangeLabel } from "@/components/DateField";
+import { formatWeekRangeLabel } from "@/components/dateFieldDates";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { he, tv } from "@/i18n/he";
 

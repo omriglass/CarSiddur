@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { clampPassengerField } from "./PassengerStepper";
+import { clampPassengerField } from "./passengerStepperBounds";
 
 describe("clampPassengerField", () => {
   it("keeps adults at 1 or above (the driver always counts)", () => {

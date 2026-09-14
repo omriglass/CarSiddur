@@ -1,15 +1,8 @@
-import { createContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { Session } from "@supabase/supabase-js";
 
 import { supabase } from "@/integrations/supabase/client";
-
-export interface SessionContextValue {
-  session: Session | null;
-  /** True until the first `getSession()`/`onAuthStateChange` resolves. */
-  isLoading: boolean;
-}
-
-export const SessionContext = createContext<SessionContextValue | undefined>(undefined);
+import { SessionContext, type SessionContextValue } from "./SessionContext";
 
 /**
  * Wraps the app once (in `main.tsx`) and tracks the Supabase auth session via

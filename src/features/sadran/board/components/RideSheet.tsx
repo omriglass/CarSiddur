@@ -17,8 +17,8 @@ import {
 import { Sheet, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { PortalSheetContent } from "@/components/PortalSheetContent";
 import { Textarea } from "@/components/ui/textarea";
-import { formatMinutes, parseHHMM } from "@/components/TimeField15";
 import { TimeField15 } from "@/components/TimeField15";
+import { formatMinutes, parseHHMM } from "@/components/timeField15Format";
 import { he, t, tv } from "@/i18n/he";
 import { TZ, dateKey, formatTime } from "@/lib/time";
 

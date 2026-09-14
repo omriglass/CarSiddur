@@ -1,7 +1,7 @@
 import { Archive } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 
-import { formatWeekRangeLabel, todayInJerusalem } from "@/components/DateField";
+import { formatWeekRangeLabel, todayInJerusalem } from "@/components/dateFieldDates";
 import { EmptyState } from "@/components/EmptyState";
 import { PageHeader } from "@/components/PageHeader";
 import { StatusBadge } from "@/components/StatusBadge";

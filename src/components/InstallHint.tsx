@@ -3,17 +3,6 @@ import { detectPlatform } from "@/lib/pwaPlatform";
 
 type Platform = "ios" | "android" | "desktop";
 
-/** True once the PWA is launched from the home-screen icon, not a browser tab. */
-export function isStandalonePwa(): boolean {
-  if (typeof window === "undefined") return false;
-  return (
-    window.matchMedia?.("(display-mode: standalone)").matches ||
-    // iOS Safari's legacy flag (no `display-mode` media query support there
-    // before recent versions).
-    (window.navigator as Navigator & { standalone?: boolean }).standalone === true
-  );
-}
-
 const COPY_BY_PLATFORM: Record<Platform, string> = {
   ios: t("installHint.ios"),
   android: t("installHint.android"),

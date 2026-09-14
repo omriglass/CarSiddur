@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { RequestDeviationsDialog } from "../../deviations/RequestDeviationsDialog";
-import { useWeekExcelExport } from "../../export/WeekExcelExportButton";
+import { useWeekExcelExport } from "../../export/useWeekExcelExport";
 import { CancelPublicationAction } from "../../publish/components/BoardPublicationActions";
 import { he } from "@/i18n/he";
 

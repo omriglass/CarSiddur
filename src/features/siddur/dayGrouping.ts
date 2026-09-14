@@ -1,4 +1,4 @@
-import { datesOfWeek } from "@/components/DateField";
+import { datesOfWeek } from "@/components/dateFieldDates";
 import { dateKey } from "@/lib/time";
 
 /** One day's bucket for the phone `DayList` (UX_FLOWS.md §3.5): sticky day tabs, rides sorted by departure. */

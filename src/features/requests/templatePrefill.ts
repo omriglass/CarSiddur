@@ -1,4 +1,4 @@
-import { datesOfWeek } from "@/components/DateField";
+import { datesOfWeek } from "@/components/dateFieldDates";
 import { dateKey, formatTime } from "@/lib/time";
 
 import { intervalToFlexValue, type FlexValue } from "./mapper";

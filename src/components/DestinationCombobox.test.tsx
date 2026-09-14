@@ -2,7 +2,8 @@ import { render } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { SheetPortalContext } from "./SheetPortalContext";
-import { DestinationCombobox, filterDestinations, type DestinationPreset } from "./DestinationCombobox";
+import { DestinationCombobox, type DestinationPreset } from "./DestinationCombobox";
+import { filterDestinations } from "./destinationFilter";
 
 // jsdom has no `Element.scrollIntoView` (`cmdk`'s own item-selection layout effect calls it as
 // soon as the command list mounts); same jsdom-gap pattern as `src/test/setup.ts`'s

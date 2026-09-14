@@ -1,7 +1,8 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import { FLEX_VALUES, FlexibilityRange, FlexibilitySegmented, type FlexValue } from "./FlexibilitySegmented";
+import { FlexibilityRange, FlexibilitySegmented } from "./FlexibilitySegmented";
+import { FLEX_VALUES, type FlexValue } from "./flexibilityValues";
 import { he } from "@/i18n/he";
 
 describe("FLEX_VALUES", () => {

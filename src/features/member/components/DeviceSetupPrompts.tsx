@@ -2,7 +2,8 @@ import { useQuery } from "@tanstack/react-query";
 import { Bell, Smartphone } from "lucide-react";
 import { useEffect, useState } from "react";
 
-import { InstallHint, isStandalonePwa } from "@/components/InstallHint";
+import { InstallHint } from "@/components/InstallHint";
+import { isStandalonePwa } from "@/lib/pwaPlatform";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { usePushSubscriptionStatus } from "@/features/auth/usePushSubscriptionStatus";

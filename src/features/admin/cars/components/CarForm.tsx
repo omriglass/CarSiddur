@@ -16,16 +16,10 @@ import { showErrorToast } from "@/lib/rpc";
 import { useReplaceSeatConfigsMutation, useSeatConfigs, useUpdateCarMutation, useCreateCarMutation } from "../hooks";
 import { CAR_FEATURES, carSchema, type CarFormValues } from "../schema";
 import { SeatConfigEditor } from "./SeatConfigEditor";
+import { FEATURE_LABEL } from "./carFeatureLabels";
 import type { Car } from "../api";
 
 import type { Passengers } from "@/solver";
-
-export const FEATURE_LABEL: Record<(typeof CAR_FEATURES)[number], string> = {
-  roof_rack: he.adminCars.featureRoofRack,
-  large_trunk: he.adminCars.featureLargeTrunk,
-  automatic: he.adminCars.featureAutomatic,
-  awd: he.adminCars.featureAwd,
-};
 
 export interface ResponsibleOption {
   id: string;

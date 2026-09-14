@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { clampRideVertical, minutesFromClientY, snapTimeShift } from "./WeekGrid";
+import { clampRideVertical, minutesFromClientY, snapTimeShift } from "./weekGridGeometry";
 
 // Vertical-board redesign (UX_FLOWS.md §20 "owner feedback: flip the
 // grid" — cars as columns, hours as rows, time flows top→bottom). The old

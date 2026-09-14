@@ -16,7 +16,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { FormItem } from "@/components/ui/form";
 import { CarAtDestinationToggle } from "@/components/CarAtDestinationToggle";
 import { CompanionPicker } from "@/components/CompanionPicker";
-import { DateField, datesOfWeek } from "@/components/DateField";
+import { DateField } from "@/components/DateField";
+import { datesOfWeek } from "@/components/dateFieldDates";
 import { DestinationCombobox, type DestinationValue } from "@/components/DestinationCombobox";
 import { FieldAnchor } from "@/components/FieldAnchor";
 import { FlexibilityRange } from "@/components/FlexibilitySegmented";
@@ -38,7 +39,10 @@ import { siddurKeys } from "@/features/siddur/queryKeys";
 import { he, t, tv } from "@/i18n/he";
 import { dateKey, formatTime, weekdayIndex } from "@/lib/time";
 import { cn } from "@/lib/utils";
-import { fits, type Car as SolverCar } from "@/solver";
+// Import the seat-fit helper from its own module, not the `@/solver` barrel: the barrel pulls
+// the entire solver into the eager member bundle (owner, 2026-09-14 bundle-size cleanup).
+import { fits } from "@/solver/seatFit";
+import type { Car as SolverCar } from "@/solver/types";
 
 import { fetchChildren, fetchRequestVersion } from "../api";
 import type { JoinableRideRow, RequestEditRow, SubmitRequestResult, SubmitSeriesRequestResult, TemplateSuggestion } from "../api";

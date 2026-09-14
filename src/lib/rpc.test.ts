@@ -56,7 +56,9 @@ describe("unmapped database errors (owner decision 2026-09-10)", () => {
   });
 
   it("falls back to the hint when there is no details, and leaves description unset when neither is present", () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     expect(toAppError({ code: "99999", message: "x", hint: "try again later" }).description).toBe("try again later");
     expect(toAppError({ code: "99999", message: "x" }).description).toBeUndefined();
+    expect(spy).toHaveBeenCalledTimes(2);
   });
 });

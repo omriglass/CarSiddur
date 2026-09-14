@@ -1,11 +1,7 @@
 import { useState } from "react";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { he } from "@/i18n/he";
-
-/** The six flexibility values every request field offers (REQUIREMENTS §5.3, UX_FLOWS.md §3.4). */
-export const FLEX_VALUES = [0, 15, 30, 60, 120, "any"] as const;
-
-export type FlexValue = (typeof FLEX_VALUES)[number];
+import { FLEX_VALUES, type FlexValue } from "./flexibilityValues";
 
 const LABEL_BY_VALUE: Record<FlexValue, string> = {
   0: he.flex["0"],

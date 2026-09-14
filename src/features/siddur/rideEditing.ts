@@ -1,5 +1,5 @@
 import { fromZonedTime } from "date-fns-tz";
-import { formatMinutes } from "@/components/TimeField15";
+import { formatMinutes } from "@/components/timeField15Format";
 import { TZ, dateKey } from "@/lib/time";
 import type { BoardRide, RideMove } from "./api";
 

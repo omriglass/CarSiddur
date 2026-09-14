@@ -7,7 +7,7 @@ import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 
-import { formatWeekRangeLabel, todayInJerusalem } from "@/components/DateField";
+import { formatWeekRangeLabel, todayInJerusalem } from "@/components/dateFieldDates";
 import { EmptyState } from "@/components/EmptyState";
 import { PageHeader } from "@/components/PageHeader";
 import { RideCard, type RideCardData } from "@/components/RideCard";
@@ -23,7 +23,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { formatMinutes } from "@/components/TimeField15";
+import { formatMinutes } from "@/components/timeField15Format";
 import { WeekGrid, type WeekGridCar, type WeekGridDiscussionBlock, type WeekGridRide } from "@/components/WeekGrid";
 import { WeekStrip } from "@/components/WeekStrip";
 import { WaitlistGroupCard } from "@/features/waitlist/components/WaitlistGroupCard";
@@ -67,7 +67,7 @@ import { WeekSwitcherTitle } from "@/features/siddur/components/WeekSwitcherTitl
 import { SiddurDisplayMenu } from "@/features/siddur/components/SiddurDisplayMenu";
 import { siddurKeys } from "@/features/siddur/queryKeys";
 import type { Week, RideMove, BoardRide } from "@/features/siddur/api";
-import { namedPassengersOf, representativeRideTypeCode, servedOf } from "@/features/sadran/solverRun";
+import { namedPassengersOf, representativeRideTypeCode, servedOf } from "@/features/sadran/servedOf";
 import { peopleOf } from "@/features/siddur/ridePeople";
 import { rideBlockLabel, resolveRideRealDestination } from "@/lib/rideLabel";
 import { he, t, tv } from "@/i18n/he";

@@ -11,7 +11,7 @@ import { ridePublicDetails } from "@/lib/ridePublicDetails";
 import { he, t, tv } from "@/i18n/he";
 import { formatTime } from "@/lib/time";
 import type { Car } from "@/features/fleet/api";
-import { servedOf, type ServedEntry } from "@/features/sadran/solverRun";
+import { servedOf, type ServedEntry } from "@/features/sadran/servedOf";
 
 import type { BoardRide } from "../api";
 import { AddPassengersDialog } from "./AddPassengersDialog";

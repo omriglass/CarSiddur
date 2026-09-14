@@ -3,7 +3,7 @@ import { toast } from "sonner";
 
 import { paths } from "@/app/routes";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { formatWeekRangeLabel } from "@/components/DateField";
+import { formatWeekRangeLabel } from "@/components/dateFieldDates";
 import { TripSummary } from "@/components/TripSummary";
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";

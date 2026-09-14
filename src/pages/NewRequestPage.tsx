@@ -1,7 +1,7 @@
 import { useActiveDepartment } from "@/features/auth/useActiveDepartment";
 import { useSearchParams } from "react-router-dom";
 
-import { formatWeekRangeLabel } from "@/components/DateField";
+import { formatWeekRangeLabel } from "@/components/dateFieldDates";
 import { PageHeader } from "@/components/PageHeader";
 import { useMyDepartments } from "@/features/auth/useMyDepartments";
 import { useProfile } from "@/features/auth/useProfile";

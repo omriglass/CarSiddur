@@ -3,7 +3,7 @@ import type { MyRequestRow } from "@/features/requests/api";
 import { chauffeurRideLabel } from "@/lib/rideLabel";
 import { ridePublicDetails } from "@/lib/ridePublicDetails";
 import { tv } from "@/i18n/he";
-import { servedOf } from "@/features/sadran/solverRun";
+import { servedOf } from "@/features/sadran/servedOf";
 import { peopleOf } from "./ridePeople";
 import type { BoardRide } from "./api";
 

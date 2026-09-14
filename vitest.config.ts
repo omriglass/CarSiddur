@@ -16,8 +16,6 @@ export default defineConfig({
   },
   test: {
     globals: false,
-    environment: "node",
-    environmentMatchGlobs: [["**/*.test.tsx", "jsdom"]],
     setupFiles: ["./src/test/setup.ts"],
     css: false,
     // Playwright specs live under e2e/ and are run by `npm run test:e2e`,
@@ -25,6 +23,30 @@ export default defineConfig({
     // by `npm run functions:bundle` (assert-based, no describe/it) — Vitest's
     // default glob otherwise picks them up and fails with "no test suite".
     exclude: ["**/node_modules/**", "**/dist/**", "e2e/**", "supabase/**"],
+    // Two inline projects replace the deprecated `environmentMatchGlobs`
+    // (Vitest 3.2): plain *.test.ts / *.test.mjs run under node (solver, lib,
+    // scripts — faster and closest to how the edge functions execute);
+    // *.test.tsx component tests run under jsdom with the jest-dom matchers
+    // from the shared setup file. `extends: true` inherits plugins, alias,
+    // setupFiles and exclude from this root config.
+    projects: [
+      {
+        extends: true,
+        test: {
+          name: "node",
+          environment: "node",
+          include: ["**/*.test.?(c|m)[jt]s"],
+        },
+      },
+      {
+        extends: true,
+        test: {
+          name: "jsdom",
+          environment: "jsdom",
+          include: ["**/*.test.tsx"],
+        },
+      },
+    ],
     coverage: {
       provider: "v8",
       reporter: ["text", "html"],

@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 
-import { formatWeekRangeLabel } from "@/components/DateField";
+import { formatWeekRangeLabel } from "@/components/dateFieldDates";
 import { EmptyState } from "@/components/EmptyState";
 import { Badge } from "@/components/ui/badge";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
