@@ -6,7 +6,6 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { toast } from "sonner";
 
-import { paths } from "@/app/routes";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { SheetPortalContext } from "@/components/SheetPortalContext";
@@ -27,22 +26,27 @@ import { TimeField15 } from "@/components/TimeField15";
 import { TripShapeControl } from "@/components/TripShapeControl";
 import { useScrollToFirstError } from "@/components/useScrollToFirstError";
 import { useDepartmentMembers } from "@/features/auth/useDepartmentMembers";
+import { useProfile } from "@/features/auth/useProfile";
 import { useSession } from "@/features/auth/useSession";
 import { useCars, useCarSeatConfigs, useDestinations, useRideTypes, useSuggestDestinationMutation } from "@/features/fleet/hooks";
 import { useDepartmentSettings, useWeekRow } from "@/features/sadran/hooks";
 import { isSlotFree, type CarFreeWindow } from "@/features/siddur/freeWindows";
+import { buildAddPassengerInputs } from "@/features/siddur/addPassengers";
+import { fetchBoardRideById, type RidePassengerInput } from "@/features/siddur/api";
+import { useAddRidePassengersMutation } from "@/features/siddur/hooks";
 import { siddurKeys } from "@/features/siddur/queryKeys";
 import { he, t, tv } from "@/i18n/he";
 import { dateKey, formatTime, weekdayIndex } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { fits, type Car as SolverCar } from "@/solver";
 
-import { fetchChildren } from "../api";
+import { fetchChildren, fetchRequestVersion } from "../api";
 import type { JoinableRideRow, RequestEditRow, SubmitRequestResult, SubmitSeriesRequestResult, TemplateSuggestion } from "../api";
 import { dayLabel } from "../dayLabel";
 import { CAR_NOW_DEFAULT_HOURS, CAR_NOW_HOURS_OPTIONS } from "../carNow";
 import { findOverlappingRequest } from "../duplicate";
 import { QUICK_REQUEST_DURATION_HOURS, endTimeForDuration, shiftReturnByDepartureDelta } from "../duration";
+import { joinableRideDriverLabel } from "../joinableRides";
 import { guestPassengerNames, quickVehicleWindow } from "../quickRequest";
 import {
   useJoinableRidesMutation,
@@ -55,6 +59,7 @@ import {
   useStopTemplateMutation,
   useSubmitRequestMutation,
   useSubmitSeriesRequestMutation,
+  useWithdrawRequestMutation,
 } from "../hooks";
 import { intervalToFlexValue, toInstant, toSubmitRequestPayload } from "../mapper";
 import { requestFormSchema, type RequestFormValues } from "../schema";
@@ -302,6 +307,7 @@ export function RequestForm({
   const myRequestsQuery = useMyRequests();
   const membersQuery = useDepartmentMembers(departmentId);
   const { session } = useSession();
+  const profileQuery = useProfile();
   const companionsQuery = useRequestCompanionsQuery(initial?.id);
   const requestChildrenQuery = useRequestChildrenQuery(initial?.id);
   const settingsQuery = useDepartmentSettings(departmentId);
@@ -315,6 +321,11 @@ export function RequestForm({
   const suggestDestinationMutation = useSuggestDestinationMutation(departmentId);
   const saveTemplateMutation = useSaveRequestTemplateMutation();
   const stopTemplateMutation = useStopTemplateMutation();
+  // Joinable-rides dialog "הצטרפות לנסיעה" (REQ §13.85, owner decision 2026-09-14): joins the
+  // chosen ride directly via `add_ride_passengers()` with the just-filed request's own people,
+  // then withdraws that now-redundant waitlisted request — see `performSubmit`/`joinNow` below.
+  const addRidePassengersMutation = useAddRidePassengersMutation();
+  const withdrawMutation = useWithdrawRequestMutation();
 
   const lastRequest = [...(myRequestsQuery.data ?? [])]
     .filter((r) => r.departAt)
@@ -512,6 +523,10 @@ export function RequestForm({
   // handler and read from another, never during render.
   const [joinableRides, setJoinableRides] = useState<JoinableRideRow[] | null>(null);
   const [afterJoinableDialog, setAfterJoinableDialog] = useState<() => void>(() => () => {});
+  // The just-filed (now waitlisted) request's own people, captured at submit time so
+  // "הצטרפות לנסיעה" can add them straight onto the chosen ride (item 4, REQ §13.85) without
+  // re-deriving them from form state a second time later.
+  const [joinRequestContext, setJoinRequestContext] = useState<{ requestId: string; peopleInputs: RidePassengerInput[] } | null>(null);
 
   /** Same gate as `isMultiDay` above, so the hint and the filed request never disagree (B1). */
   function isSeriesSubmit(formValues: RequestFormValues): boolean {
@@ -641,7 +656,15 @@ export function RequestForm({
         try {
           const rides = await joinableRidesMutation.mutateAsync(requestId);
           if (rides.length > 0) {
+            const selfId = session?.user.id;
             setAfterJoinableDialog(() => proceed);
+            setJoinRequestContext({
+              requestId,
+              peopleInputs: [
+                ...(selfId ? [{ person_id: selfId, display_name: profileQuery.data?.full_name ?? "", seat_kind: "adult" as const }] : []),
+                ...buildAddPassengerInputs(formValues.companions, formValues.children, formValues.guestNames, membersQuery.data ?? [], childrenQuery.data ?? []),
+              ],
+            });
             setJoinableRides(rides);
             return;
           }
@@ -651,6 +674,42 @@ export function RequestForm({
       proceed();
     } catch {
       setSubmitError(variant === "quick" || variant === "carNow" ? t("quickRequest.submitError") : t("request.submitError"));
+    }
+  }
+
+  /**
+   * "הצטרפות לנסיעה" (item 4, REQ §13.85, owner decision 2026-09-14): joins the chosen
+   * joinable ride directly via `add_ride_passengers()` with the just-filed request's own
+   * people (self + companions + children + guests, captured in `joinRequestContext` at
+   * submit time), then withdraws that now-redundant waitlisted request. `add_ride_passengers`
+   * needs the ride's current `version` — `fetchJoinableRides`'s row carries none, so this
+   * re-reads the ride fresh (`fetchBoardRideById`) right before the call; likewise the
+   * request's version is re-read (`fetchRequestVersion`) rather than assumed, since it may
+   * have been edited since `submit_request` returned. On `ride_seats_exceeded` (or any other
+   * failure) the mutation's own `onError` already toasted it — the dialog stays open and the
+   * waitlisted request is left untouched (withdraw never runs unless the add succeeded).
+   */
+  async function joinNow(rideId: string) {
+    const context = joinRequestContext;
+    if (!context) return;
+    try {
+      const ride = await fetchBoardRideById(rideId);
+      if (!ride?.id || ride.version == null) throw new Error("ride_not_found");
+      await addRidePassengersMutation.mutateAsync({ rideId: ride.id, expectedVersion: ride.version, passengers: context.peopleInputs });
+
+      const requestVersion = await fetchRequestVersion(context.requestId);
+      if (requestVersion != null) {
+        await withdrawMutation.mutateAsync({ requestId: context.requestId, expectedVersion: requestVersion });
+      }
+
+      const joined = joinableRides?.find((r) => r.rideId === rideId);
+      toast.success(tv("joinableRides.joined", { driver: joined ? joinableRideDriverLabel(joined) : "" }));
+      setJoinableRides(null);
+      setJoinRequestContext(null);
+      afterJoinableDialog();
+    } catch {
+      /* add_ride_passengers/withdraw already toasted its own error — keep the dialog open and
+         the waitlisted request untouched. */
     }
   }
 
@@ -1165,15 +1224,13 @@ export function RequestForm({
     />
     <JoinableRidesDialog
       open={!!joinableRides}
-      onOpenChange={(open) => { if (!open) { setJoinableRides(null); afterJoinableDialog(); } }}
+      onOpenChange={(open) => { if (!open) { setJoinableRides(null); setJoinRequestContext(null); afterJoinableDialog(); } }}
       rides={joinableRides ?? []}
       radiusKm={settingsQuery.data?.join_radius_km ?? 10}
-      onAskToJoin={(rideId) => {
-        setJoinableRides(null);
-        navigate(paths.requests.new({ ride: rideId, week: weekStart }));
-      }}
+      onAskToJoin={(rideId) => void joinNow(rideId)}
       onStay={() => {
         setJoinableRides(null);
+        setJoinRequestContext(null);
         afterJoinableDialog();
       }}
     />

@@ -23,4 +23,15 @@ describe("public ride details", () => {
     const result = ridePublicDetails([{ companions: [{ profile_id: "m", name: "Adi Cohen" }], childNames: ["Noa Cohen"] }]);
     expect(result).toContain("Adi Cohen, Noa Cohen");
   });
+
+  it("appends directly add_ride_passengers()-added names as a trailing line", () => {
+    const result = ridePublicDetails([{ requester: "Adi", ride_description: "Gate" }], { addedNames: ["Guest One"] });
+    expect(result).toContain("Gate");
+    expect(result).toContain("Guest One");
+  });
+
+  it("omits the added-names line when includeCompanions is false", () => {
+    const result = ridePublicDetails([{ ride_description: "Gate" }], { includeCompanions: false, addedNames: ["Guest One"] });
+    expect(result).not.toContain("Guest One");
+  });
 });

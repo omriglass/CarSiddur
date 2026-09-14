@@ -536,6 +536,18 @@ export async function withdrawRequest(requestId: string, expectedVersion: number
   await rpc("withdraw_request", { p_request_id: requestId, p_expected_version: expectedVersion });
 }
 
+/**
+ * `requests.version` right now — used right before `withdrawRequest()` when the caller
+ * (`JoinableRidesDialog`'s "join now" flow, `RequestForm.tsx`) doesn't already hold a
+ * known-fresh version: `submit_request`'s own result carries no `version` field, and by the
+ * time the member picks a joinable ride the request may already be a moment old.
+ */
+export async function fetchRequestVersion(requestId: string): Promise<number | null> {
+  const { data, error } = await supabase.from("requests").select("version").eq("id", requestId).maybeSingle();
+  if (error) throw toAppError(error);
+  return data?.version ?? null;
+}
+
 /** Member cancels their own ride (or a Sadran/Admin, `can_manage_week`); frees the slot (REQ §8). */
 export async function cancelRide(
   rideId: string,

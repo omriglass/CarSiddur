@@ -33,12 +33,15 @@ export interface JoinableRidesDialogProps {
  * outcome (published/live week only), before `RequestForm.performSubmit` navigates away —
  * "you are on the waiting list, HOWEVER here is another option instead of just waiting". Each
  * row is an existing ride the same day, going somewhere close (`joinable_rides_for_request`),
- * with a one-tap "ask to join" (the existing `join_ride_id` flow, `paths.requests.new({ ride })`)
- * — that request is still the only thing that actually seats you, answered by the driver like
- * any other. On top of it, a WhatsApp icon button opens a prefilled `wa.me` chat to the driver
- * directly (owner amendment 2026-09-14, REQ §10/§13.83: department members' phone numbers are
- * not treated as secrets); hidden when `driver_phone` is null (no phone on file, or the ride
- * has no driver yet).
+ * with a one-tap "הצטרפות לנסיעה" — `RequestForm`'s `joinNow()` calls `add_ride_passengers()`
+ * directly with the just-filed request's own people (self/companions/children/guests) and
+ * withdraws that now-redundant waitlisted request (owner decision 2026-09-14, REQ §13.85;
+ * previously this navigated to a second, `join_ride_id`-prefilled request form — that path
+ * still exists for other entry points, e.g. the siddur's "+ נוסעים" self-add, but is no longer
+ * how this dialog itself joins). On top of it, a WhatsApp icon button opens a prefilled
+ * `wa.me` chat to the driver directly (owner amendment 2026-09-14, REQ §10/§13.83: department
+ * members' phone numbers are not treated as secrets); hidden when `driver_phone` is null (no
+ * phone on file, or the ride has no driver yet).
  */
 export function JoinableRidesDialog({ open, onOpenChange, rides, radiusKm, onAskToJoin, onStay }: JoinableRidesDialogProps) {
   return (

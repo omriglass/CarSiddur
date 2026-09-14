@@ -13,18 +13,22 @@ export async function publishWithScores(departmentId: string, weekStart: string,
   // Policy-score snapshots are reporting data, not a publication precondition.
   // A week may contain legacy or incomplete requests that cannot be scored
   // today; the schedule must still be publishable and can be scored later.
+  // Each policy is scored independently: one policy failing (e.g. a stale/removed rule
+  // type) must not blank out every other policy's snapshot, so the try/catch is per
+  // policy, not around the whole loop -- and a failure is logged, never silent.
   let policyScores: ReturnType<typeof summarizePolicyScore>[] = [];
   if (activePolicy && policies.length && homeDestinationId) {
-    try {
-      policyScores = await Promise.all(policies.map(async (policy) => {
+    const settled = await Promise.all(policies.map(async (policy) => {
+      try {
         const context = await gatherSolverContext({ departmentId, weekStart, homeDestinationId, policy, mode: "remaining", forScoring: true });
         const served = new Set(context.boardRides.filter((r) => r.status !== "cancelled" && !r.needs_driver).flatMap((r) => servedOf(r).map((s) => s.request_id!)));
         return summarizePolicyScore(policy, calculateProfileScores(context.input, served));
-      }));
-    } catch {
-      // Persist an empty score snapshot rather than blocking the schedule.
-      policyScores = [];
-    }
+      } catch (error) {
+        console.error(`[publishWithScores] policy ${policy.policyId} failed to score; omitting it from this snapshot`, error);
+        return null;
+      }
+    }));
+    policyScores = settled.filter((score): score is ReturnType<typeof summarizePolicyScore> => score !== null);
   }
   const activeScores = activePolicy
     ? policyScores.find((p) => p.policy_version_id === activePolicy.policyVersionId)?.profiles ?? []

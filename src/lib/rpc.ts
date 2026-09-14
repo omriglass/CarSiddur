@@ -79,6 +79,8 @@ export type ErrorCode =
   | "quick_ride_unavailable"
   | "ride_seats_exceeded"
   | "invalid_ride_passenger"
+  | "ride_driver_not_removable"
+  | "ride_week_not_public"
   | "push_unsupported"
   | "push_permission_denied"
   | "push_vapid_key_invalid"
@@ -167,6 +169,8 @@ const MESSAGE_TO_CODE: Record<string, ErrorCode> = {
   invalid_quick_reservation: "quick_ride_unavailable",
   ride_seats_exceeded: "ride_seats_exceeded",
   invalid_ride_passenger: "invalid_ride_passenger",
+  ride_driver_not_removable: "ride_driver_not_removable",
+  ride_week_not_public: "ride_week_not_public",
   no_car_free: "no_car_free",
   waitlist_group_closed: "waitlist_group_closed",
   waitlist_selection_invalid: "waitlist_selection_invalid",
@@ -248,6 +252,8 @@ const CODE_TO_MESSAGE: Record<ErrorCode, string> = {
   push_subscription_failed: he.errors.pushSubscriptionFailed,
   ride_seats_exceeded: he.errors.rideSeatsExceeded,
   invalid_ride_passenger: he.errors.invalidRidePassenger,
+  ride_driver_not_removable: he.errors.rideDriverNotRemovable,
+  ride_week_not_public: he.errors.rideWeekNotPublic,
   constraint_violation: he.errors.constraintViolation,
   duplicate_value: he.errors.duplicateValue,
   network: he.errors.network,

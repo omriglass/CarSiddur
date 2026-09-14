@@ -17,6 +17,7 @@ vi.mock("../hooks", () => ({
   useSaveRequestTemplateMutation: () => ({ mutateAsync: vi.fn() }),
   useStopTemplateMutation: () => ({ mutateAsync: vi.fn() }),
   useJoinableRidesMutation: () => ({ mutateAsync: vi.fn().mockResolvedValue([]) }),
+  useWithdrawRequestMutation: () => ({ mutateAsync: vi.fn() }),
 }));
 vi.mock("@/features/auth/useDepartmentMembers", () => ({ useDepartmentMembers: () => ({ data: [{ id: "member", name: "Member" }] }) }));
 vi.mock("@/features/auth/useSession", () => ({ useSession: () => ({ session: null }) }));

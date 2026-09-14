@@ -311,8 +311,6 @@ export function HomePage() {
         car={selectedMyRide ? (carsQuery.data ?? []).find((car) => car.id === selectedMyRide.car_id) ?? null : null}
         locationBadge={null}
         onOpenChange={(open) => !open && setSelectedMyRide(null)}
-        onAskToJoin={() => undefined}
-        showAskToJoin={false}
         // "+ נוסעים" (REQ §13.85): `fetchMyUpcomingRides` only returns non-cancelled,
         // still-upcoming rides — in practice always in a published/live week (rides exist
         // once solved/published, before that only draft/manual-reservation pins do); the

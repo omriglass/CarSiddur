@@ -731,6 +731,137 @@ begin
     select item into hour_row from jsonb_array_elements(hour_arr) item where (item ->> 'hour')::int = 17;
     assert (hour_row ->> 'count')::int = 0, '(l) hour 17 must stay 0 -- ow_req3 has no depart_at to bucket by (one_way_from)';
   end;
+
+  -- ---------------------------------------------------------------------------
+  -- (m) Unified ride-people model (20260914190000_unified_ride_people.sql): a directly-added
+  -- `ride_passengers` row (the "+ נוסעים" button / a named reservation passenger) must count
+  -- toward `distinctPeople` and `sharing.peopleUtilization` exactly like a served request's
+  -- requester/companion does -- not only requests. A dedicated department (same technique as
+  -- (k)/(l)) keeps this independent of every other fixture's precisely tuned numbers.
+  -- ---------------------------------------------------------------------------
+  declare
+    up_dept uuid;
+    up_week date := public.current_week_start() - 490;   -- far-past, distinct from every other offset in this file
+    up_home uuid;
+    up_ride_type uuid;
+    up_car uuid;
+    up_day date := up_week + 1;
+    up_ride_id uuid;
+    up_req_id uuid;
+    up_result jsonb;
+  begin
+    execute 'set local role authenticated';
+    perform set_config('request.jwt.claims', jsonb_build_object('sub', admin_id, 'role', 'authenticated')::text, true);
+    select id into up_dept from public.create_department('Unified people test', 'unified-people-test', dept);
+    select home_destination_id into up_home from public.departments where id = up_dept;
+    select id into up_ride_type from public.ride_types where department_id = up_dept and code = 'work';
+    execute 'reset role';
+
+    insert into public.weeks(department_id, week_start, phase, open_at, close_at, publish_at)
+    values (up_dept, up_week, 'archived', now() - interval '400 days', now() - interval '399 days', now() - interval '398 days');
+
+    insert into public.cars (department_id, name, license_plate, type, status)
+    values (up_dept, 'Unified people test car', 'UP-STATS-01', 'shared', 'active')
+    returning id into up_car;
+    -- Max total seats over this car's one config = 4.
+    insert into public.car_seat_configs (car_id, adults, child_seats, boosters) values (up_car, 4, 0, 0);
+
+    -- req_id: member1 both drives and is served (adults=2 -> 2 "people" on the ride, and one
+    -- distinct profile, member1, exactly like the main fixture's driver-serves-own-request
+    -- convention above).
+    insert into public.requests (id, department_id, week_start, requester_id, filed_by, destination_id,
+      ride_type_id, trip_shape, depart_at, return_at, adults, submitted_at, status)
+    values (gen_random_uuid(), up_dept, up_week, member1, member1, up_home, up_ride_type, 'round_trip',
+      (up_day + time '09:00') at time zone 'Asia/Jerusalem', (up_day + time '11:00') at time zone 'Asia/Jerusalem',
+      2, now(), 'assigned')
+    returning id into up_req_id;
+
+    insert into public.rides (id, department_id, week_start, car_id, starts_at, ends_at, origin_id,
+      destination_id, driver_id, status, created_by)
+    values (gen_random_uuid(), up_dept, up_week, up_car, (up_day + time '09:00') at time zone 'Asia/Jerusalem',
+      (up_day + time '11:00') at time zone 'Asia/Jerusalem', up_home, up_home, member1, 'confirmed', sadran_id)
+    returning id into up_ride_id;
+    insert into public.ride_requests (ride_id, request_id, role, leg, car_mode)
+    values (up_ride_id, up_req_id, 'driver', 'both', 'keep');
+
+    -- The directly-added passenger: member2, one more occupied seat with no request of its
+    -- own -- must still show up as one more "person" (3/4 seats) and one more distinct
+    -- profile (member1 + member2 = 2), not just the 2 served by up_req_id.
+    insert into public.ride_passengers (ride_id, department_id, week_start, person_id, display_name, seat_kind, added_by)
+    values (up_ride_id, up_dept, up_week, member2, 'Added passenger', 'adult', sadran_id);
+
+    execute 'set local role authenticated';
+    perform set_config('request.jwt.claims', jsonb_build_object('sub', admin_id, 'role', 'authenticated')::text, true);
+    up_result := public.department_stats(up_dept, up_week, up_week + 6);
+
+    assert (up_result ->> 'distinctPeople')::int = 2,
+      format('(m) distinctPeople must include the ride_passengers person (member1 + member2), got %s', up_result ->> 'distinctPeople');
+    assert ((up_result -> 'sharing') ->> 'peopleUtilization')::numeric = round(3.0 / 4, 4),
+      format('(m) sharing.peopleUtilization must add the ride_passengers row (2 served + 1 added = 3) over 4 seats, got %s', (up_result -> 'sharing') ->> 'peopleUtilization');
+  end;
+
+  -- ---------------------------------------------------------------------------
+  -- (n) Bug fix (20260914200000): policyScore selects siddur_versions by TARGET WEEK
+  -- overlap with [p_from, p_to], not by published_at. Two weeks, opposite of each other:
+  -- ps_week_in's week_start is inside the queried range but its siddur was published
+  -- days before p_from (the owner's exact "published the Wednesday before" report) --
+  -- must still be counted. ps_week_out's week_start is entirely outside the queried
+  -- range, but its siddur happens to have been published inside it -- must NOT be
+  -- counted, even though the old published_at filter would have picked it up. A
+  -- dedicated department (same technique as (k)/(l)/(m)) isolates this from every other
+  -- fixture's precisely tuned policyScore numbers above.
+  -- ---------------------------------------------------------------------------
+  declare
+    ps_dept uuid;
+    ps_week_in date := public.current_week_start() - 560;   -- far-past, distinct from every other offset in this file
+    ps_week_out date := ps_week_in + 21;                    -- 3 weeks later: outside the query range below
+    ps_from date := ps_week_in;
+    ps_to date := ps_week_in + 13;                          -- covers only ps_week_in's span, not ps_week_out's
+    ps_policy_id uuid; ps_policy_version_id uuid;
+    ps_result jsonb;
+  begin
+    execute 'set local role authenticated';
+    perform set_config('request.jwt.claims', jsonb_build_object('sub', admin_id, 'role', 'authenticated')::text, true);
+    select id into ps_dept from public.create_department('Policy score week overlap test', 'policy-score-week-overlap-test', dept);
+    select id, current_version_id into ps_policy_id, ps_policy_version_id
+      from public.policies where department_id = ps_dept and is_active limit 1;
+    assert ps_policy_id is not null, '(n) fixture department has no active policy to score against';
+    execute 'reset role';
+
+    insert into public.weeks(department_id, week_start, phase, open_at, close_at, publish_at)
+    values (ps_dept, ps_week_in, 'archived', now() - interval '400 days', now() - interval '399 days', now() - interval '398 days');
+    insert into public.weeks(department_id, week_start, phase, open_at, close_at, publish_at)
+    values (ps_dept, ps_week_out, 'archived', now() - interval '379 days', now() - interval '378 days', now() - interval '377 days');
+
+    -- ps_week_in: week_start overlaps [ps_from, ps_to] (it *is* ps_from), but published 4
+    -- days before ps_from -- outside the queried date range under the old published_at
+    -- filter. Must still be counted.
+    insert into public.siddur_versions (department_id, week_start, snapshot, published_by, published_at)
+    values (ps_dept, ps_week_in, jsonb_build_object(
+        'policy_version_id', ps_policy_version_id,
+        'policy_scores', jsonb_build_array(jsonb_build_object(
+          'policy_id', ps_policy_id, 'policy_version_id', ps_policy_version_id, 'alignment_ratio', 0.75))),
+      sadran_id, (ps_from - 4 + time '09:00') at time zone 'Asia/Jerusalem');
+
+    -- ps_week_out: week_start (and its whole Sun-Sat span) is entirely after ps_to, so it
+    -- does not overlap the queried range at all -- but its siddur was published inside
+    -- [ps_from, ps_to]. Must NOT be counted; only week_start overlap decides membership.
+    insert into public.siddur_versions (department_id, week_start, snapshot, published_by, published_at)
+    values (ps_dept, ps_week_out, jsonb_build_object(
+        'policy_version_id', ps_policy_version_id,
+        'policy_scores', jsonb_build_array(jsonb_build_object(
+          'policy_id', ps_policy_id, 'policy_version_id', ps_policy_version_id, 'alignment_ratio', 0.9))),
+      sadran_id, (ps_to - 2 + time '09:00') at time zone 'Asia/Jerusalem');
+
+    execute 'set local role authenticated';
+    perform set_config('request.jwt.claims', jsonb_build_object('sub', admin_id, 'role', 'authenticated')::text, true);
+    ps_result := public.department_stats(ps_dept, ps_from, ps_to);
+
+    assert (ps_result -> 'policyScore' ->> 'weeks')::int = 1,
+      format('(n) policyScore.weeks must count only ps_week_in (week_start overlap), got %s', ps_result -> 'policyScore' ->> 'weeks');
+    assert (ps_result -> 'policyScore' ->> 'average')::numeric = 0.75,
+      format('(n) policyScore.average must be ps_week_in''s 0.75, ignoring ps_week_out despite its in-range publish date, got %s', ps_result -> 'policyScore' ->> 'average');
+  end;
 end $$;
 
 reset role;

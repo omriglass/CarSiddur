@@ -68,6 +68,7 @@ import { SiddurDisplayMenu } from "@/features/siddur/components/SiddurDisplayMen
 import { siddurKeys } from "@/features/siddur/queryKeys";
 import type { Week, RideMove, BoardRide } from "@/features/siddur/api";
 import { namedPassengersOf, representativeRideTypeCode, servedOf } from "@/features/sadran/solverRun";
+import { peopleOf } from "@/features/siddur/ridePeople";
 import { rideBlockLabel, resolveRideRealDestination } from "@/lib/rideLabel";
 import { he, t, tv } from "@/i18n/he";
 import { dateKey, formatTime } from "@/lib/time";
@@ -91,6 +92,13 @@ function resolveSiddurWeek(weeks: readonly Week[]): Week | null {
   if (published) return published;
   const open = [...weeks].filter((w) => w.phase === "open").sort((a, b) => (a.week_start < b.week_start ? -1 : 1))[0];
   return open ?? null;
+}
+
+/** Directly `add_ride_passengers()`-added names (`people`, `source: 'added'`) — not tied to
+ * any one served request, so `ridePassengerSummary`/`ridePublicDetails` take them as a
+ * separate list rather than folding them into a particular requester's companions. */
+function addedNamesOf(ride: BoardRide): string[] {
+  return peopleOf(ride).filter((person) => person.source === "added").map((person) => person.display_name);
 }
 
 function minutesSinceMidnight(instant: string): number {
@@ -380,8 +388,8 @@ export function SiddurPage() {
             })
           : (r.destination_name ?? "")),
       rideTypeCode: representativeRideTypeCode(servedOf(r)),
-      description: [servedOf(r).length ? r.notes : null, ridePublicDetails(servedOf(r), { includeCompanions: !isSadran })].filter(Boolean).join("\n"),
-      passengerSummary: isSadran ? ridePassengerSummary(servedOf(r), r.needs_driver ? null : r.driver_name) : undefined,
+      description: [servedOf(r).length ? r.notes : null, ridePublicDetails(servedOf(r), { includeCompanions: !isSadran, addedNames: addedNamesOf(r) })].filter(Boolean).join("\n"),
+      passengerSummary: isSadran ? ridePassengerSummary(servedOf(r), r.needs_driver ? null : r.driver_name, { addedNames: addedNamesOf(r) }) : undefined,
       coordinatorNotes: rideCoordinatorNotes(servedOf(r), coordinatorRequests),
       shadowed: shadowedRideIds.has(r.id as string),
       needsDriver: !!r.needs_driver,
@@ -577,8 +585,8 @@ export function SiddurPage() {
                     originName: r.origin_name ?? "",
                     destinationName,
                     label: weekGridRides.find((item) => item.id === r.id)?.label,
-                    description: [servedOf(r).length ? r.notes : null, ridePublicDetails(servedOf(r), { includeCompanions: !isSadran })].filter(Boolean).join("\n"),
-                    passengerSummary: isSadran ? ridePassengerSummary(servedOf(r), r.needs_driver ? null : r.driver_name) : undefined,
+                    description: [servedOf(r).length ? r.notes : null, ridePublicDetails(servedOf(r), { includeCompanions: !isSadran, addedNames: addedNamesOf(r) })].filter(Boolean).join("\n"),
+                    passengerSummary: isSadran ? ridePassengerSummary(servedOf(r), r.needs_driver ? null : r.driver_name, { addedNames: addedNamesOf(r) }) : undefined,
                     coordinatorNotes: rideCoordinatorNotes(servedOf(r), coordinatorRequests),
                     driverName: r.driver_name,
                     isChauffeur: !!r.is_chauffeur,
@@ -672,14 +680,11 @@ export function SiddurPage() {
         coordinatorNotes={selectedRide ? rideCoordinatorNotes(servedOf(selectedRide), coordinatorRequests) : undefined}
         canEditPublicNotes={canEditPublicNotes}
         showAddPassengers={!!selectedRide && selectedRide.status !== "cancelled" && weekIsPublic}
-        canManageWeek={isSadran}
-        passengerSummary={isSadran && selectedRide ? ridePassengerSummary(servedOf(selectedRide), selectedRide.needs_driver ? null : selectedRide.driver_name) : undefined}
+        passengerSummary={isSadran && selectedRide ? ridePassengerSummary(servedOf(selectedRide), selectedRide.needs_driver ? null : selectedRide.driver_name, { addedNames: addedNamesOf(selectedRide) }) : undefined}
         car={selectedCar}
         locationBadge={selectedLocation}
         homeDestinationId={homeDestinationId}
         onOpenChange={(open) => !open && setSelectedRideId(null)}
-        onAskToJoin={() => selectedRide?.id && navigate(paths.requests.new({ ride: selectedRide.id }))}
-        showAskToJoin={!!selectedRide && activeDayPublished && !selectedRide.needs_driver && isMyDepartment && selectedRide.driver_id !== profileId}
         onRemoveOwnRide={selectedRide?.id && ownsSelectedRide && selectedRide.version != null ? () => cancelRideMutation.mutate({ rideId: selectedRide.id!, expectedVersion: selectedRide.version!, reason: "CANCELLED_BY_MEMBER" }, { onSuccess: () => setSelectedRideId(null) }) : undefined}
         removingOwnRide={cancelRideMutation.isPending}
         editor={selectedRide?.needs_driver && canEditWeek && selectedRide.ends_at && Date.parse(selectedRide.ends_at) > now.getTime() ? (

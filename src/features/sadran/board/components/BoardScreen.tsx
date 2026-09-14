@@ -98,6 +98,7 @@ import {
 } from "../../solverRun";
 import { useUndoStack } from "../useUndoStack";
 import { useBoardDisplayPrefs } from "../useBoardDisplayPrefs";
+import { useBoardPolicyScores } from "../useBoardPolicyScores";
 import { BoardActionsMenu } from "./BoardActionsMenu";
 import { BoardDisplayMenu } from "./BoardDisplayMenu";
 import { BoardListMode } from "./BoardListMode";
@@ -114,6 +115,7 @@ import { fetchChildren } from "@/features/requests/api";
 import { buildRidePassengerInputs, splitReservationDriverAndPassengers } from "../reservationPeople";
 
 import type { EditRideInput, RidePassengerInput, WeekRequestRow } from "../../api";
+import type { SolverContextRows } from "../../solverRun";
 import type { Json } from "@/integrations/supabase/types";
 import type { Suggestion, SolverOutput } from "@/solver";
 
@@ -436,6 +438,46 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
   }
 
   const policyIsStale = !!preview && preview.policyVersionId !== effectivePolicyVersionId;
+
+  // Live board policy score (owner request, 2026-09-14): the same
+  // weighted-coverage / `alignment_ratio` figure `publishWithScores.ts`
+  // otherwise only computes at publish time (DATA_MODEL.md §3.9), shown next
+  // to the policy chip and per policy row in its dialog. Purely
+  // informational — reads the same already-loaded query data `computePreview`
+  // above does, one `SolverContextRows` bundle shared by every policy option
+  // (`useBoardPolicyScores` builds each policy's own `SolverInput` from it).
+  const boardScoreRowsLoading =
+    requestsQuery.isLoading ||
+    ridesQuery.isLoading ||
+    carsQuery.isLoading ||
+    rideTypesQuery.isLoading ||
+    maintenanceQuery.isLoading ||
+    destinationsQuery.isLoading ||
+    fairnessStatsQuery.isLoading ||
+    mileageStatsQuery.isLoading ||
+    seatConfigsQuery.isLoading;
+  const boardScoreRows: SolverContextRows | null =
+    boardScoreRowsLoading || !departmentSettingsQuery.data
+      ? null
+      : {
+          departmentSettings: departmentSettingsQuery.data,
+          allRequests: requestsQuery.data ?? [],
+          cars: carsQuery.data ?? [],
+          destinations: destinationsQuery.data ?? [],
+          rideTypes: rideTypesQuery.data ?? [],
+          maintenanceBlocks: maintenanceQuery.data ?? [],
+          boardRides: ridesQuery.data ?? [],
+          seatConfigsFlat: seatConfigsQuery.data ?? [],
+          fairness: fairnessStatsQuery.data ?? [],
+          mileageKmByCarId: mileageStatsQuery.data ?? {},
+        };
+  const boardPolicyScores = useBoardPolicyScores({
+    departmentId,
+    weekStart,
+    homeDestinationId: department?.home_destination_id ?? null,
+    policyOptions: policyOptionsQuery.data ?? [],
+    rows: boardScoreRows,
+  });
 
   // Automatic solver preview (owner spec 2026-09-10, replaces the removed
   // "הרץ פותר" button): a cheap fingerprint of what the solver actually
@@ -1146,6 +1188,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
             value={effectivePolicyVersionId}
             stale={policyIsStale}
             onSelect={selectPolicyVersion}
+            scores={boardPolicyScores}
           />
           <Button type="button" variant="outline" size="icon" aria-label={he.action.undo} disabled={!undoStack.canUndo} onClick={() => void handleUndo()}>
             <Undo2 className="size-4 rtl:rotate-180" />

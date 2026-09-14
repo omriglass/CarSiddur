@@ -3313,6 +3313,7 @@ export type Database = {
           overflow_allowed: boolean | null
           overnight_ack_by: string | null
           passengers: Json | null
+          people: Json | null
           pin_reason: string | null
           planning_conflict: boolean | null
           series_count: number | null
@@ -4106,8 +4107,8 @@ export type Database = {
         Args: { p_request_id: string }
         Returns: undefined
       }
-      remove_ride_passenger: {
-        Args: { p_expected_version: number; p_ride_passenger_id: string }
+      remove_ride_person: {
+        Args: { p_expected_version: number; p_key: string; p_ride_id: string }
         Returns: undefined
       }
       render_notification_text: {

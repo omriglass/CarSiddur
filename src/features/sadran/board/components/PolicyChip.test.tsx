@@ -82,4 +82,47 @@ describe("PolicyChip", () => {
     expect(screen.getByTestId("board-policy-chip")).toHaveTextContent("מדיניות פעילה");
     expect(screen.getByTestId("board-policy-chip")).toHaveTextContent("9");
   });
+
+  it("appends the live policy score to the chip label and sets the score hint as its title", () => {
+    render(
+      <PolicyChip
+        policyOptions={[option()]}
+        activePolicy={null}
+        value="version-1"
+        stale={false}
+        onSelect={vi.fn()}
+        scores={{ "version-1": 0.873 }}
+      />,
+    );
+    const chip = screen.getByTestId("board-policy-chip");
+    expect(chip).toHaveTextContent("87%");
+    expect(chip).toHaveAttribute("title", he.sadranBoard.policyChipScoreHint);
+  });
+
+  it("shows no score suffix or title on the chip when no score is available for the selected policy", () => {
+    render(
+      <PolicyChip policyOptions={[option()]} activePolicy={null} value="version-1" stale={false} onSelect={vi.fn()} />,
+    );
+    const chip = screen.getByTestId("board-policy-chip");
+    expect(chip).not.toHaveTextContent("%");
+    expect(chip).not.toHaveAttribute("title");
+  });
+
+  it("shows each policy's own score (or the placeholder when null/missing) in the versions dialog", () => {
+    const withNote = option({ policyVersionId: "version-2", policyId: "policy-2", name: "מדיניות מיוחדת", note: "לשבועות חג" });
+    const withoutNote = option();
+    render(
+      <PolicyChip
+        policyOptions={[withNote, withoutNote]}
+        activePolicy={null}
+        value="version-2"
+        stale={false}
+        onSelect={vi.fn()}
+        scores={{ "version-2": 0.5, "version-1": null }}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("board-policy-chip"));
+    expect(screen.getByTestId("board-policy-option-score-version-2")).toHaveTextContent("50%");
+    expect(screen.getByTestId("board-policy-option-score-version-1")).toHaveTextContent(he.sadranBoard.policyRowNoScore);
+  });
 });

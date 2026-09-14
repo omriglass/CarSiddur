@@ -10,8 +10,17 @@ export interface RidePublicEntry {
 }
 
 /** Only explicitly public request fields belong on the shared siddur. */
-export function ridePublicDetails(entries: readonly RidePublicEntry[], options: { includeCompanions?: boolean } = {}): string {
-  return entries.flatMap((entry) => {
+export function ridePublicDetails(
+  entries: readonly RidePublicEntry[],
+  options: {
+    includeCompanions?: boolean;
+    /** Directly `add_ride_passengers()`-added names (`v_board_rides.people`, `source: 'added'`,
+     * REQ §13.85) — not tied to any one served request, so listed as one trailing line rather
+     * than folded into a particular requester's companions. */
+    addedNames?: readonly string[];
+  } = {},
+): string {
+  const lines = entries.flatMap((entry) => {
     const names = [
       ...(entry.companions ?? []).map((person) => person.name),
       ...(entry.guest_passenger_names ?? []),
@@ -20,5 +29,8 @@ export function ridePublicDetails(entries: readonly RidePublicEntry[], options: 
     const lines = [entry.ride_description?.trim(), names.length && options.includeCompanions !== false ? tv("ridePublicDetails.companions", { names: names.join(", ") }) : ""].filter(Boolean);
     if (lines.length && entries.length > 1 && entry.requester) lines.unshift(`${entry.requester}:`);
     return lines;
-  }).join("\n");
+  });
+  const added = (options.addedNames ?? []).map((name) => name?.trim()).filter((name): name is string => !!name);
+  if (added.length && options.includeCompanions !== false) lines.push(tv("ridePublicDetails.companions", { names: added.join(", ") }));
+  return lines.join("\n");
 }

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { baseInput, makeRequest, makeCar, slotMs } from "@/solver/__fixtures__/gen";
 import { calculateProfileScores, summarizePolicyScore } from "./profileScores";
 
@@ -22,8 +22,13 @@ describe("publication policy scores", () => {
     const actual = calculateProfileScores({ ...input, requests: [r2, r1], fixedRides: [{ id: "fixed", servedRequestIds: ["r1"] } as never] }, new Set(["r1"]));
     expect(actual).toEqual(expected);
   });
-  it("rejects malformed or unknown rules instead of saving partial scores", () => {
-    expect(() => calculateProfileScores({ ...input, policy: { ...input.policy, rules: [{ type: "futureRule", weight: 1, params: {} }] } }, new Set())).toThrow();
+  it("tolerates an unknown or malformed rule instead of throwing, warning to the console", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const profiles = calculateProfileScores({ ...input, policy: { ...input.policy, rules: [{ type: "futureRule", weight: 1, params: {} }] } }, new Set());
+    expect(profiles).toHaveLength(1);
+    expect(profiles[0]?.request_count).toBe(2);
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("policy"), expect.anything());
+    warnSpy.mockRestore();
   });
   it("compares the same manual board against different policy profiles", () => {
     const assigned = new Set(["r1"]);

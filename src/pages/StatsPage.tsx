@@ -9,7 +9,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { CardListSkeleton } from "@/components/skeletons/CardListSkeleton";
 import { HourBarList } from "@/features/stats/components/HourBarList";
 import { RideTypePie } from "@/features/stats/components/RideTypePie";
-import { SharingTile } from "@/features/stats/components/SharingTile";
+import { SharingTiles } from "@/features/stats/components/SharingTile";
 import { StatsDateRangePicker } from "@/features/stats/components/StatsDateRangePicker";
 import { StatsDepartmentSwitcher } from "@/features/stats/components/StatsDepartmentSwitcher";
 import { StatTile } from "@/features/stats/components/StatTile";
@@ -186,6 +186,7 @@ export function StatsPage() {
                 help={he.stats.cancellations.help}
               />
             ) : null}
+            {stats.sharing !== undefined ? <SharingTiles sharing={stats.sharing} /> : null}
           </div>
 
           <p className="text-xs text-muted-foreground" data-testid="stats-effective-range">
@@ -195,8 +196,6 @@ export function StatsPage() {
               days: String(stats.days),
             })}
           </p>
-
-          {stats.sharing !== undefined ? <SharingTile sharing={stats.sharing} /> : null}
 
           <WeekdayBarList days={stats.byWeekday} />
 

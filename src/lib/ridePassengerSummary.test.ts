@@ -19,4 +19,16 @@ describe("ride passenger summary", () => {
     expect(result).toContain("Noa");
     expect(result).toContain("ילד/ה 1");
   });
+
+  it("lists directly add_ride_passengers()-added names alongside request-derived ones", () => {
+    const result = ridePassengerSummary([{ requester: "Adi", adults: 1, child_seats: 0, boosters: 0 }], null, { addedNames: ["Guest One"] });
+    expect(result).toContain("Adi");
+    expect(result).toContain("Guest One");
+  });
+
+  it("drops blank added names", () => {
+    const result = ridePassengerSummary([], null, { addedNames: ["  ", "Guest One"] });
+    expect(result).not.toContain("  ");
+    expect(result).toContain("Guest One");
+  });
 });

@@ -166,6 +166,16 @@ export const heSadran = {
     policyChip: "{{name}} · גרסה {{version}}",
     policyDialogTitle: "מדיניות הפותר",
     policyVersionNote: "ללא הערות",
+    /**
+     * Live board policy score (owner request, 2026-09-14): the same
+     * weighted-coverage / `alignment_ratio` figure `publishWithScores.ts`
+     * records at publish time (DATA_MODEL.md §3.9), shown next to the chip
+     * and per policy row in its dialog — `src/features/sadran/board/
+     * policyScore.ts`/`useBoardPolicyScores.ts`, `PolicyChip.tsx`.
+     */
+    policyChipScoreHint: "ציון מדיניות: חלק העדיפות המשוקללת שסופק על הלוח הנוכחי",
+    policyRowScore: "{{pct}}%",
+    policyRowNoScore: "—",
     redo: "בצע/י שוב",
     redoToast: "בוצע שוב: {{label}}",
     redoNothing: "אין מה לבצע שוב",

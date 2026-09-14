@@ -196,9 +196,12 @@ export const heMember = {
     submit: "הוספה",
     added: "הנוסעים נוספו לנסיעה",
     removed: "הנוסע/ת הוסר/ה מהנסיעה",
-    listTitle: "נוסעים נוספים",
     removeAriaLabel: "הסרת {{name}}",
     weekNotPublicHint: "אפשר להוסיף נוסעים רק לנסיעה מפורסמת",
+    /** First checkbox in the dialog (owner decision 2026-09-14): the signed-in member joining
+     * the ride themself — replaces the siddur's old "ask to join" button on a published week. */
+    self: "אני",
+    selfAlreadyOn: "כבר רשומ/ה על הנסיעה הזו",
   },
   proposalScreen: {
     loading: "טוען הצעה…",
@@ -441,9 +444,13 @@ export const heMember = {
    */
   joinableRides: {
     title: "נכנסת לרשימת ההמתנה — אבל יש אפשרות נוספת",
-    body: 'יש נסיעות באותו יום ליעדים קרובים (עד {{radius}} ק"מ). אפשר לבקש להצטרף לאחת מהן:',
+    body: 'יש נסיעות באותו יום ליעדים קרובים (עד {{radius}} ק"מ). אפשר להצטרף ישירות לאחת מהן:',
     distance: 'כ-{{km}} ק"מ מהיעד שלך',
-    askToJoin: "בקש/י להצטרף",
+    /** Joins the chosen ride directly (`add_ride_passengers()`) and withdraws the waitlisted
+     * request — replaces the old "בקש/י להצטרף" (which navigated to a new request form),
+     * owner decision 2026-09-14. */
+    askToJoin: "הצטרפות לנסיעה",
+    joined: "הצטרפת לנסיעה של {{driver}}",
     /** WhatsApp quick-link button (2026-09-14 owner amendment, REQ §10/§13.83): department phone numbers are not secrets. */
     whatsapp: "וואטסאפ",
     whatsappText: "היי {{driver}}, ראיתי שאת/ה נוסע/ת ל{{destination}} ביום {{day}} בשעה {{time}} — אפשר להצטרף לנסיעה?",

@@ -10,7 +10,19 @@ interface PassengerEntry extends RidePublicEntry {
 }
 
 /** Named people occupy adult places first, matching the request form's seat accounting. */
-export function ridePassengerSummary(entries: readonly PassengerEntry[], driverName?: string | null): string {
+export function ridePassengerSummary(
+  entries: readonly PassengerEntry[],
+  driverName?: string | null,
+  options: {
+    /**
+     * Directly `add_ride_passengers()`-added names (`v_board_rides.people`, `source: 'added'`,
+     * REQ §13.85) — these have no backing request, so unlike `entries` above they carry no
+     * `adults`/`child_seats` count to reconcile against; just named people to list alongside
+     * everyone else.
+     */
+    addedNames?: readonly string[];
+  } = {},
+): string {
   const names: string[] = [];
   let adults = 0;
   let children = 0;
@@ -27,6 +39,7 @@ export function ridePassengerSummary(entries: readonly PassengerEntry[], driverN
     adults += Math.max(0, entry.adults - named.length);
     children += Math.max(0, entry.child_seats + entry.boosters - Math.max(0, named.length - entry.adults) - namedChildren.length);
   }
+  names.push(...(options.addedNames ?? []).map((name) => name?.trim()).filter((name): name is string => !!name));
   const parts = [...names];
   if (adults) parts.push(tv(adults === 1 ? "ridePublicDetails.unnamedAdult" : "ridePublicDetails.unnamedAdults", { count: String(adults) }));
   if (children) parts.push(tv(children === 1 ? "ridePublicDetails.unnamedChild" : "ridePublicDetails.unnamedChildren", { count: String(children) }));

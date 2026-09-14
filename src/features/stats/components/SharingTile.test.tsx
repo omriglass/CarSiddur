@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { he, tv } from "@/i18n/he";
 
 import type { SharingStat } from "../types";
-import { SharingTile } from "./SharingTile";
+import { SharingTiles } from "./SharingTile";
 
 const sharing: SharingStat = {
   peopleUtilization: 0.6,
@@ -18,7 +18,7 @@ const sharing: SharingStat = {
 
 describe("SharingTile", () => {
   it("renders all three numbers with their captions and raw-count subtitles", () => {
-    render(<SharingTile sharing={sharing} />);
+    render(<SharingTiles sharing={sharing} />);
     expect(screen.getByTestId("stats-sharing-people-utilization")).toHaveTextContent("60.0%");
     expect(screen.getByTestId("stats-sharing-people-utilization")).toHaveTextContent(he.stats.sharing.peopleUtilization);
 

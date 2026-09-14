@@ -52,7 +52,15 @@ export function calculateProfileScores(input: SolverInput, servedRequestIds: Rea
     for (const r of requests) if (r) pairPeople.set(r.id, people);
   }
   const { scores, warnings } = scoreRequests(scoringInput, normalized, pairPeople);
-  if (warnings.length || scores.size !== input.requests.length) throw new Error("invalid_publication_scores");
+  // Warnings (UNKNOWN_RULE_TYPE, a rule-param error) are tolerated: scoreRequests still
+  // produces a total for every request by skipping just the offending rule, and a
+  // policy-score snapshot is reporting data, not a publication precondition (DATA_MODEL
+  // §3.9). Log so a stale/misconfigured rule is visible without blocking the schedule.
+  if (warnings.length) {
+    console.warn(`[profileScores] policy ${input.policy.id} scoring warnings:`, warnings);
+  }
+  // The one hard failure left: scoring must still cover every request in the batch.
+  if (scores.size !== input.requests.length) throw new Error("invalid_publication_scores");
   const profiles = new Map<string, ProfileScore>();
   for (const request of [...input.requests].sort((a, b) => a.id.localeCompare(b.id))) {
     const score = scores.get(request.id)!;

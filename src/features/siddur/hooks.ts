@@ -17,7 +17,7 @@ import {
   fetchDepartments,
   fetchWeeks,
   fetchRideChanges,
-  removeRidePassenger,
+  removeRidePerson,
   requestRideChange,
   respondRideChange,
   cancelRideChange,
@@ -57,7 +57,7 @@ export function useUpdateRidePublicNotesMutation() {
  * The "+ נוסעים" button — appends named passengers to a published ride (siddur
  * `RideDetailSheet` and, reused, the board's `RideSheet`). Invalidates the same three
  * feature roots as `useUpdateRidePublicNotesMutation` above: the ride's own passenger list
- * lives on `v_board_rides.passengers`, read by both the siddur and the board.
+ * lives on `v_board_rides.people`, read by both the siddur and the board.
  */
 export function useAddRidePassengersMutation() {
   const client = useQueryClient();
@@ -74,8 +74,8 @@ export function useAddRidePassengersMutation() {
 export function useRemoveRidePassengerMutation() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: ({ ridePassengerId, expectedVersion }: { ridePassengerId: string; expectedVersion: number }) =>
-      removeRidePassenger(ridePassengerId, expectedVersion),
+    mutationFn: ({ rideId, expectedVersion, key }: { rideId: string; expectedVersion: number; key: string }) =>
+      removeRidePerson(rideId, expectedVersion, key),
     onSuccess: () => {
       for (const key of [siddurKeys.all, sadranKeys.all, requestsKeys.all]) void client.invalidateQueries({ queryKey: key });
     },

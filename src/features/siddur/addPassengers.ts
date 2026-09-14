@@ -36,19 +36,3 @@ export function buildAddPassengerInputs(
     ...guestPassengerNames(guestNamesText).map((name): RidePassengerInput => ({ display_name: name, seat_kind: "adult" })),
   ];
 }
-
-/** Whether the current user may remove a named passenger row (mirrors `remove_ride_passenger()`'s server-side check). */
-export function canRemoveRidePassenger(
-  passenger: { person_id: string | null; added_by: string | null },
-  currentUserId: string | undefined,
-  driverId: string | null | undefined,
-  canManageWeek: boolean,
-): boolean {
-  if (!currentUserId) return canManageWeek;
-  return (
-    canManageWeek ||
-    passenger.added_by === currentUserId ||
-    passenger.person_id === currentUserId ||
-    driverId === currentUserId
-  );
-}

@@ -250,11 +250,12 @@ export async function fetchExportCarNames(departmentId: string): Promise<{ id: s
 
 /**
  * A named passenger/child appended to a published ride with no `requests` row behind them
- * (the "+ נוסעים" button, `add_ride_passengers()`/`remove_ride_passenger()`,
- * 20260914170000_add_ride_passengers_rpc.sql; REQ §13.85). Same row shape as
- * `features/sadran/api.ts`'s `RidePassengerInput` (the Sadran board's `set_ride_passengers()`
- * *replace* editor) — kept as a separate local type rather than a cross-feature import so
- * this feature's `api.ts` stays the only place it calls `.rpc()` for its own inputs.
+ * (the "+ נוסעים" button, `add_ride_passengers()`/`remove_ride_person()`,
+ * 20260914170000_add_ride_passengers_rpc.sql + 20260914190000_unified_ride_people.sql;
+ * REQ §13.85). Same row shape as `features/sadran/api.ts`'s `RidePassengerInput` (the Sadran
+ * board's `set_ride_passengers()` *replace* editor) — kept as a separate local type rather
+ * than a cross-feature import so this feature's `api.ts` stays the only place it calls
+ * `.rpc()` for its own inputs.
  */
 export interface RidePassengerInput {
   person_id?: string;
@@ -268,7 +269,15 @@ export async function addRidePassengers(rideId: string, expectedVersion: number,
   await rpc("add_ride_passengers", { p_ride_id: rideId, p_expected_version: expectedVersion, p_passengers: passengers as unknown as Json });
 }
 
-/** Removes exactly one named passenger row — allowed for whoever added it, the named person themself, the ride's driver, or a week manager. */
-export async function removeRidePassenger(ridePassengerId: string, expectedVersion: number): Promise<void> {
-  await rpc("remove_ride_passenger", { p_ride_passenger_id: ridePassengerId, p_expected_version: expectedVersion });
+/**
+ * Removes exactly one person from a ride's unified `v_board_rides.people` list, addressed by
+ * that entry's `key` — any of `driver:`/`req:`/`comp:`/`child:`/`guest:`/`added:`, though the
+ * driver's own entry always has `removable: false` and is never offered a remove control
+ * (`RidePassengersList`/`ridePeople.ts`'s `canRemoveRidePerson`). 20260914190000_unified_
+ * ride_people.sql replaced the narrower `remove_ride_passenger(uuid, int)`, which only took a
+ * `ride_passengers.id`, with this key-based, ride-scoped RPC open to any approved department
+ * member on a published/live week (or a Sadran/admin who manages it).
+ */
+export async function removeRidePerson(rideId: string, expectedVersion: number, key: string): Promise<void> {
+  await rpc("remove_ride_person", { p_ride_id: rideId, p_expected_version: expectedVersion, p_key: key });
 }

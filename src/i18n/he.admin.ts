@@ -455,13 +455,14 @@ export const heAdmin = {
     // S2 same-day sharing indicators tile (owner request 2026-09-14, docs/TODO.md "S --
     // Statistics group": no combined score, three numbers only).
     sharing: {
-      title: "שיתוף באותו יום",
       peopleUtilization: "ניצול מקומות",
       fragmentation: "נסיעות לרכב ליום",
       oneWayFulfilment: "מענה לנסיעות בכיוון אחד",
       fragmentationSub: "{{rides}} נסיעות מתוך {{days}} ימי רכב פעילים",
       oneWaySub: "{{served}} מתוך {{total}}",
-      help: "ניצול מקומות בפועל, כמה נסיעות מבצע כל רכב ביום פעיל, וכמה מהבקשות בכיוון אחד קיבלו מענה — בטווח שנבחר.",
+      peopleUtilizationHelp: "כמה מהמקומות ברכב היו תפוסים בפועל בנסיעות של הטווח שנבחר — נוסעים חלקי מקומות זמינים.",
+      fragmentationHelp: "כמה נסיעות שונות ביצע כל רכב ביום שבו יצא לדרך, בממוצע. 1 = נסיעה אחת ליום; גבוה יותר = הרכב שימש יותר אנשים באותו יום.",
+      oneWayHelp: "כמה מהבקשות לנסיעה בכיוון אחד בטווח שנבחר קיבלו מענה (שובצו או אוחדו).",
     },
     // S3 same-day cancellation rate (owner: cancelling is fine, cancelling ברגע האחרון זו הבעיה
     // -- caption stays neutral).

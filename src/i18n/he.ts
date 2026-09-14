@@ -567,6 +567,8 @@ export const he = {
     seriesCarUnavailable: "הרכב לא פנוי לכל ימי הבקשה הרב-יומית",
     rideSeatsExceeded: "אין מספיק מקום ברכב לכל האנשים שנבחרו",
     invalidRidePassenger: "פרטי הנוסע/ת אינם תקינים",
+    rideDriverNotRemovable: "לא ניתן להסיר את הנהג/ת מהנסיעה — יש לבטל את הנסיעה במקום זאת",
+    rideWeekNotPublic: "אפשר להוסיף או להסיר נוסעים רק בשבוע שפורסם",
     network: "אין חיבור לרשת — נסה/י שוב",
     unknown: "אירעה שגיאה. נסה/י שוב",
     constraintViolation: "הנתונים לא עומדים בכללי המערכת — בדוק/י את השדות",

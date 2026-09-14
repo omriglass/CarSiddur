@@ -17,7 +17,7 @@ import type { BoardRide } from "../api";
 import { AddPassengersDialog } from "./AddPassengersDialog";
 import { RidePassengersList } from "./RidePassengersList";
 import { RidePublicNotesEditor } from "./RidePublicNotesEditor";
-import { namedPassengersOf } from "@/features/sadran/applySolve";
+import { peopleOf } from "../ridePeople";
 
 /**
  * "<driver> ו<passengers> ל/מ<real destination>" (UX_FLOWS.md §20 — the
@@ -60,9 +60,6 @@ interface RideDetailSheetProps {
   /** The department's home location — for composing the real destination on a round trip (bug fix, see `headerLabel` above). */
   homeDestinationId?: string | null;
   onOpenChange: (open: boolean) => void;
-  onAskToJoin: () => void;
-  /** Own rides don't show "ask to join"; other-department rides never do (REQ §13.52). */
-  showAskToJoin: boolean;
   editor?: ReactNode;
   coordinatorNotes?: string;
   canEditPublicNotes?: boolean;
@@ -70,17 +67,31 @@ interface RideDetailSheetProps {
   /** Available only when the signed-in member has a request served by this ride. */
   onRemoveOwnRide?: () => void;
   removingOwnRide?: boolean;
-  /** The "+ נוסעים" button (REQ §13.85): true once the ride's week is public (or the caller manages it) and the ride itself isn't cancelled — the caller already tracks week phase for `showAskToJoin`/`canEditWeek`, so it computes this instead of this sheet guessing at week state. */
+  /**
+   * The "+ נוסעים" button and the unified people list's remove (×) affordance (REQ §13.85):
+   * true once the ride's week is public (or the caller manages it) and the ride itself isn't
+   * cancelled — the caller already tracks week phase for `canEditWeek`, so it computes this
+   * instead of this sheet guessing at week state. Also gates `RidePassengersList`'s removal —
+   * same authorization `add_ride_passengers()`/`remove_ride_person()` share.
+   */
   showAddPassengers?: boolean;
-  /** Lets a Sadran/admin remove any named passenger row, not just their own — mirrors `remove_ride_passenger()`'s `can_manage_week` escape hatch. */
-  canManageWeek?: boolean;
 }
 
-/** Ride detail sheet (UX_FLOWS.md §3.5 "Ride detail"): driver, passengers, car, origin→destination, "ask to join". */
-export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = null, onOpenChange, onAskToJoin, showAskToJoin, editor, coordinatorNotes, canEditPublicNotes, passengerSummary, onRemoveOwnRide, removingOwnRide = false, showAddPassengers = false, canManageWeek = false }: RideDetailSheetProps) {
+/**
+ * Ride detail sheet (UX_FLOWS.md §3.5 "Ride detail"): one unified people list (driver first,
+ * then everyone else, each removable per `remove_ride_person()`'s own rules), car,
+ * origin→destination. Owner decision 2026-09-14: on a published week "+ נוסעים" is the way to
+ * join a ride — there is no separate "ask to join" button here any more (superseded, REQ
+ * §13.85; the `/requests/new?ride=` prefill path itself is untouched, still reachable from the
+ * joinable-rides dialog after a waiting-list outcome).
+ */
+export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = null, onOpenChange, editor, coordinatorNotes, canEditPublicNotes, passengerSummary, onRemoveOwnRide, removingOwnRide = false, showAddPassengers = false }: RideDetailSheetProps) {
   // `servedOf()` already maps `v_board_rides.served[].child_names` onto each entry's
   // `childNames` (`applySolve.ts`) — no more hand-rolled mapping needed here.
   const served: ServedEntry[] = ride ? servedOf(ride) : [];
+  // Directly `add_ride_passengers()`-added names (`people`, `source: 'added'`) — not tied to
+  // any served request, so `ridePublicDetails` takes them as a trailing line of their own.
+  const addedNames: string[] = ride ? peopleOf(ride).filter((person) => person.source === "added").map((person) => person.display_name) : [];
 
   return (
     <Sheet open={!!ride} onOpenChange={onOpenChange}>
@@ -119,7 +130,7 @@ export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = 
                 <RidePublicNotesEditor key={`${ride.id}:${ride.version}`} rideId={ride.id} expectedVersion={ride.version} initialNotes={ride.notes} />
               ) : ride.notes ? <p className="whitespace-pre-wrap break-words">{ride.notes}</p> : null}
               {passengerSummary ? <p className="whitespace-pre-wrap break-words">{passengerSummary}</p> : null}
-              {ridePublicDetails(served, { includeCompanions: !passengerSummary }) ? <p className="whitespace-pre-wrap break-words">{ridePublicDetails(served, { includeCompanions: !passengerSummary })}</p> : null}
+              {ridePublicDetails(served, { includeCompanions: !passengerSummary, addedNames }) ? <p className="whitespace-pre-wrap break-words">{ridePublicDetails(served, { includeCompanions: !passengerSummary, addedNames })}</p> : null}
               {coordinatorNotes ? <div className="whitespace-pre-wrap break-words text-muted-foreground"><span className="font-medium">{he.field.notes}: </span>{coordinatorNotes}</div> : null}
               {editor}
 
@@ -140,24 +151,12 @@ export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = 
                 </div>
               ) : null}
 
-              {served.length > 0 ? (
-                <div className="space-y-1">
-                  <span className="font-medium">{he.rideDetail.passengers}</span>
-                  <ul className="space-y-0.5">
-                    {served.map((entry, i) => (
-                      <li key={entry.request_id ?? i}>
-                        {entry.requester} — {entry.role === "driver" ? he.ride.driver : he.rideDetail.passengers}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-
               <RidePassengersList
+                rideId={ride.id}
                 expectedVersion={ride.version}
-                passengers={namedPassengersOf(ride)}
-                driverId={ride.driver_id}
-                canManageWeek={canManageWeek}
+                people={peopleOf(ride)}
+                canManagePeople={showAddPassengers}
+                rideCancelled={ride.status === "cancelled"}
               />
 
               {showAddPassengers && ride.id && ride.version != null ? (
@@ -167,14 +166,10 @@ export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = 
                   expectedVersion={ride.version}
                   departmentId={ride.department_id ?? ""}
                   weekStart={ride.week_start ?? ""}
+                  people={peopleOf(ride)}
                 />
               ) : null}
 
-              {showAskToJoin ? (
-                <Button className="w-full" size="lg" onClick={onAskToJoin}>
-                  {t("rideDetail.askToJoin")}
-                </Button>
-              ) : null}
               {onRemoveOwnRide ? (
                 <Button className="w-full" size="lg" variant="destructive" disabled={removingOwnRide} onClick={onRemoveOwnRide}>
                   {t("action.cancelRide")}

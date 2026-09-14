@@ -24,6 +24,7 @@ import { TZ, dateKey, formatTime } from "@/lib/time";
 
 import { rideBlockLabel } from "../rideLabel";
 import { namedPassengersOf, servedOf, withChildNames } from "../../solverRun";
+import { peopleOf } from "@/features/siddur/ridePeople";
 import { RidePassengersEditor } from "./RidePassengersEditor";
 
 import type { BoardRide, WeekRequestRow } from "../../api";
@@ -112,6 +113,9 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
   }
 
   const servedEntries = ride ? withChildNames(servedOf(ride), requests) : [];
+  // Directly `add_ride_passengers()`-added names (`people`, `source: 'added'`) — not tied to
+  // any served request, so the summary/details lines take them as an extra list of their own.
+  const addedNames = ride ? peopleOf(ride).filter((person) => person.source === "added").map((person) => person.display_name) : [];
 
   return (
     <Sheet open={!!ride} onOpenChange={onOpenChange}>
@@ -130,7 +134,9 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
               {ride.series_count && ride.series_count > 1 ? (
                 <p className="text-muted-foreground">{tv("sadranRideSheet.seriesLine", { index: String(ride.series_index ?? 1), count: String(ride.series_count) })}</p>
               ) : null}
-              <p className="whitespace-pre-wrap break-words">{ridePassengerSummary(servedEntries, ride.needs_driver ? null : driverName ?? ride.driver_name)}</p>
+              <p className="whitespace-pre-wrap break-words">{ridePassengerSummary(servedEntries, ride.needs_driver ? null : driverName ?? ride.driver_name, { addedNames })}</p>
+              {/* `includeCompanions: false` here — the summary line above already lists every
+                  named person, added ones included; this is only the free-text description. */}
               {ridePublicDetails(servedEntries, { includeCompanions: false }) ? <p className="whitespace-pre-wrap break-words">{ridePublicDetails(servedEntries, { includeCompanions: false })}</p> : null}
               {coordinatorNotes ? <div className="whitespace-pre-wrap break-words text-muted-foreground"><span className="font-medium">{he.field.notes}: </span>{coordinatorNotes}</div> : null}
               <p className="text-muted-foreground">
@@ -193,8 +199,15 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
               {/* "+ נוסעים" (REQ §13.85): unlike `RidePassengersEditor` above (a Sadran
                   reservation's *replace* editor, manual reservations only), this appends and
                   works on any confirmed, uncancelled ride — the board's own authorized
-                  viewer always satisfies `can_manage_week` for this week. */}
-              <RidePassengersList expectedVersion={ride.version} passengers={namedPassengersOf(ride)} driverId={ride.driver_id} canManageWeek />
+                  viewer always satisfies `can_manage_week` for this week. Same unified
+                  `people` list the siddur's `RideDetailSheet` renders (REQ §13.85). */}
+              <RidePassengersList
+                rideId={ride.id}
+                expectedVersion={ride.version}
+                people={peopleOf(ride)}
+                canManagePeople={!isPlanning}
+                rideCancelled={ride.status === "cancelled"}
+              />
               {!isPlanning && ride.id && ride.version != null && ride.status !== "cancelled" && departmentId && weekStart ? (
                 <AddPassengersDialog
                   key={`${ride.id}:${ride.version}:add-passengers`}
@@ -202,6 +215,7 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
                   expectedVersion={ride.version}
                   departmentId={departmentId}
                   weekStart={weekStart}
+                  people={peopleOf(ride)}
                 />
               ) : null}
 

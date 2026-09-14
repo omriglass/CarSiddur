@@ -2,6 +2,7 @@ import { formatInTimeZone } from "date-fns-tz";
 import { he } from "@/i18n/he";
 import { TZ } from "@/lib/time";
 import { servedOf } from "../applySolve";
+import { peopleOf } from "@/features/siddur/ridePeople";
 import type { BoardRide } from "../api";
 import type { WeekExportData } from "./api";
 import { createXlsx, type ExcelCell, type ExcelSheet } from "./xlsx";
@@ -40,10 +41,14 @@ export function buildBoardSheet(rides: readonly BoardRide[], carNames: ReadonlyM
       // Multi-day request leg (REQ §13.77) — "index/count", blank for an ordinary ride.
       const seriesDay = "series_index" in ride && "series_count" in ride && ride.series_index && ride.series_count
         ? `${ride.series_index}/${ride.series_count}` : "";
+      // Passengers column: every named person on the ride (unified `people`, REQ §13.85) —
+      // not just each served request's requester, so a directly `add_ride_passengers()`-added
+      // person is not invisible to this export either.
+      const passengerNames = peopleOf(ride).filter((person) => person.source !== "driver").map((person) => person.display_name);
       return [ride.id, carNames.get(ride.car_id ?? "") ?? ride.car_id, ride.driver_name ?? copy.noDriver, (("needs_driver" in ride && ride.needs_driver === true) || !ride.driver_id) ? copy.yes : copy.no,
         jerusalemExcelDate(ride.starts_at), jerusalemExcelDate(ride.ends_at), jerusalemExcelDate(ride.blocked_until), ride.status ? he.rideStatus[ride.status] : "",
         [...new Set(served.map((entry) => entry.destination).filter(Boolean))].join(" · "), ride.origin_name, ride.destination_name,
-        served.map((entry) => entry.request_id).join("\n"), served.map((entry) => entry.requester ?? "").filter(Boolean).join("\n"), ride.notes, weekStart, departmentId, seriesDay];
+        served.map((entry) => entry.request_id).join("\n"), passengerNames.join("\n"), ride.notes, weekStart, departmentId, seriesDay];
     }),
   ] };
 }
