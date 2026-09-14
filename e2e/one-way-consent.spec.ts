@@ -1,6 +1,7 @@
+import { createClient } from "@supabase/supabase-js";
 import { expect, test } from "@playwright/test";
 import { he } from "../src/i18n/he";
-import { NEVO_DEPARTMENT_ID, newSignedInPage, SEEDED_USERS, serviceRoleClient } from "./helpers";
+import { NEVO_DEPARTMENT_ID, newSignedInPage, SEEDED_USERS, serviceRoleClient, SUPABASE_ANON_KEY, SUPABASE_URL } from "./helpers";
 import { publishedFixtureWeek } from "./published-week";
 
 test.use({ actionTimeout: 15_000 });
@@ -8,7 +9,6 @@ test.use({ actionTimeout: 15_000 });
 test("combined one-way consent preserves an orphaned passenger and lets a member volunteer", async ({ browser }) => {
   const service = serviceRoleClient();
   const week = "2041-01-13";
-  const admin = await publishedFixtureWeek(week);
   const memberIds = ["00000000-0000-0000-0000-000000000103", "00000000-0000-0000-0000-000000000104"];
   const requestIds: string[] = [];
   const contexts: { close: () => Promise<void> }[] = [];
@@ -22,6 +22,29 @@ test("combined one-way consent preserves an orphaned passenger and lets a member
     await service.from("notifications").delete().eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", week);
   }
   await cleanupFixture();
+  // The week stays `solving` (not published) through the merge-proposal negotiation below — a
+  // Sadran-composed proposal (`created_via: 'sadran'`) is refused once the day is public
+  // (20260910098000_reject_proposals_on_published_day.sql, `proposal_day_public`; the only
+  // exemption is `ask_to_join`). `create_proposal`/`send_proposal` below go through an admin
+  // actor (`can_manage_week()` bypasses `is_day_public()` anyway), so nothing here needs the
+  // week public yet — only the later "member volunteers to drive the orphaned ride" step does,
+  // once negotiation has actually settled, which is when this test publishes for real (bug
+  // found 2026-09-14 auditing this spec against `board-coordination.spec.ts`'s own
+  // `proposal_day_public` diagnosis: the old `publishedFixtureWeek(week)` call here published
+  // the whole week up front, before the merge proposal existed, which the current schema
+  // deterministically refuses).
+  const { data: existingWeek } = await service.from("weeks").select("phase").eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", week).maybeSingle();
+  if (!existingWeek) {
+    const at = (daysBefore: number) => new Date(Date.parse(`${week}T00:00:00Z`) - daysBefore * 86400000).toISOString();
+    const { error } = await service.from("weeks").insert({ department_id: NEVO_DEPARTMENT_ID, week_start: week, phase: "solving", open_at: at(7), close_at: at(3), publish_at: at(2) });
+    if (error) throw error;
+  } else if (existingWeek.phase !== "solving" && existingWeek.phase !== "open") {
+    const { error } = await service.from("weeks").update({ phase: "solving" }).eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", week);
+    if (error) throw error;
+  }
+  const admin = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { persistSession: false } });
+  const { error: authError } = await admin.auth.signInWithPassword(SEEDED_USERS.admin);
+  if (authError) throw authError;
   try {
     const { data: department } = await service.from("departments").select("home_destination_id").eq("id", NEVO_DEPARTMENT_ID).single();
     const { data: car } = await service.from("cars").select("id").eq("department_id", NEVO_DEPARTMENT_ID).eq("type", "shared").eq("status", "active").limit(1).single();
@@ -96,6 +119,11 @@ test("combined one-way consent preserves an orphaned passenger and lets a member
     expect(orphan!.status).not.toBe("cancelled");
     const { data: surviving } = await service.from("ride_requests").select("request_id").eq("ride_id", rideId);
     expect(surviving).toEqual([{ request_id: requestIds[1] }]);
+
+    // Negotiation has settled (merge applied, orphaned ride confirmed) — publish the week for
+    // real so the next step (a non-party, non-Sadran member viewing/volunteering for this ride
+    // on the siddur) has a public day to read (`is_day_public()`).
+    await publishedFixtureWeek(week);
 
     await passenger.page.setViewportSize({ width: 390, height: 844 });
     await passenger.page.goto(`/siddur/${NEVO_DEPARTMENT_ID}/${week}`);

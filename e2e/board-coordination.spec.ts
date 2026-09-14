@@ -1,7 +1,33 @@
 import { expect, test, type Page } from "@playwright/test";
 import { he } from "../src/i18n/he";
 import { newSignedInPage, NEVO_DEPARTMENT_ID, SEEDED_USERS, serviceRoleClient } from "./helpers";
-import { publishedFixtureWeek } from "./published-week";
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+/**
+ * Ensures the fixture week exists but is **not yet public** (docs/TODO.md "Flaky /
+ * time-dependent e2e specs", diagnosed 2026-09-14): this spec used to build its fixture with
+ * `publishedFixtureWeek()`, which publishes the *entire* week up front, then dragged a request
+ * onto a ride to create a Sadran-composed (`created_via: 'sadran'`) merge proposal on that same
+ * now-public day — exactly what `20260910098000_reject_proposals_on_published_day.sql`'s
+ * `proposal_day_public` guard forbids (the only exemption is `ask_to_join`). The board itself
+ * needs no publication at all: every board/drag/edit action here goes through `can_manage_week()`
+ * (the Sadran), which bypasses `is_day_public()` entirely, and `/publish`'s own readiness
+ * preview is meant to be visited *before* publishing. So this fixture stays `solving` for the
+ * whole test — publication was never actually required.
+ */
+async function ensureUnpublishedWeek(service: SupabaseClient, week: string): Promise<void> {
+  const { data: existing } = await service.from("weeks").select("phase").eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", week).maybeSingle();
+  if (!existing) {
+    const at = (daysBefore: number) => new Date(Date.parse(`${week}T00:00:00Z`) - daysBefore * 86400000).toISOString();
+    const { error } = await service.from("weeks").insert({ department_id: NEVO_DEPARTMENT_ID, week_start: week, phase: "solving", open_at: at(7), close_at: at(3), publish_at: at(2) });
+    if (error) throw error;
+  } else if (existing.phase !== "solving" && existing.phase !== "open") {
+    // A local rerun with E2E_SKIP_RESET=1 may have left this week further along than "solving"
+    // from a previous pass — force it back so the merge-proposal step below is never blocked.
+    const { error } = await service.from("weeks").update({ phase: "solving" }).eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", week);
+    if (error) throw error;
+  }
+}
 
 async function dragRequest(page: Page, requestId: string, carId: string, minutes: number) {
   const grip = page.locator(`[data-request-id="${requestId}"]:visible`).getByRole("button", { name: he.sadranBoard.dragHandleLabel });
@@ -33,8 +59,7 @@ test("one-way drop persists a missing-driver ride, tight edits remain publishabl
   const { data: department } = await service.from("departments").select("home_destination_id").eq("id", NEVO_DEPARTMENT_ID).single();
   const { data: cars } = await service.from("cars").select("id").eq("department_id", NEVO_DEPARTMENT_ID).eq("type", "shared").eq("status", "active").limit(2);
   const { data: settings } = await service.from("department_settings").select("chauffeur_dwell_minutes").eq("department_id", NEVO_DEPARTMENT_ID).single();
-  const admin = await publishedFixtureWeek(week);
-  await admin.auth.signOut();
+  await ensureUnpublishedWeek(service, week);
   const contexts: { close: () => Promise<void> }[] = [];
   const at = (time: string) => `${week}T${time}:00+02:00`;
   const boardUrl = `/sadran/${NEVO_DEPARTMENT_ID}/${week}/board`;

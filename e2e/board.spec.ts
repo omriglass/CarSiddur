@@ -23,11 +23,18 @@ function yForMinutes(minutes: number, colHeight: number): number {
   return ((clamped - GRID_START_MINUTES) / (GRID_END_MINUTES - GRID_START_MINUTES)) * colHeight;
 }
 
-/** Selects the day tab (desktop `WeekStrip`) matching a given ISO instant's Jerusalem-local day. */
+/**
+ * Selects the day tab (desktop `WeekStrip`) matching a given ISO instant's Jerusalem-local day.
+ * Waits for the radio's own `aria-checked` to flip rather than a fixed sleep (docs/TODO.md
+ * "Flaky / time-dependent e2e specs" — this helper backs both of the two board.spec.ts tests
+ * flagged as load-flaky) — a real signal that the click actually registered before the caller
+ * goes on to read positions/board state that depend on the newly-selected day having rendered.
+ */
 async function selectDayFor(page: Page, iso: string): Promise<void> {
   const dayIndex = Number(formatInTimeZone(new Date(iso), TZ, "i")) % 7; // ISO 1=Mon..7=Sun -> 0=Sun..6=Sat
-  await page.getByRole("radio").nth(dayIndex).click();
-  await page.waitForTimeout(300);
+  const radio = page.getByRole("radio").nth(dayIndex);
+  await radio.click();
+  await expect(radio).toHaveAttribute("aria-checked", "true");
 }
 
 /**
@@ -335,11 +342,14 @@ test.describe.serial("board (bug-fix pass regression, fake-week data)", () => {
     expect(chosenCar).toBeTruthy();
 
     const rideLocator = page.locator(`button[data-ride-id="${chosenRide?.id}"]:visible`);
-    // The chosen ride may be on a different day than the board's default — walk day tabs until it's visible.
+    // The chosen ride may be on a different day than the board's default — walk day tabs until
+    // it's visible. Wait for each tab's own `aria-checked` to flip (a real signal the day
+    // actually switched) instead of a fixed sleep — docs/TODO.md flags this test as load-flaky.
     for (const dayIndex of [0, 1, 2, 3, 4, 5, 6]) {
       if (await rideLocator.isVisible()) break;
-      await page.getByRole("radio").nth(dayIndex).click();
-      await page.waitForTimeout(300);
+      const radio = page.getByRole("radio").nth(dayIndex);
+      await radio.click();
+      await expect(radio).toHaveAttribute("aria-checked", "true");
     }
     await expect(rideLocator).toBeVisible({ timeout: 10_000 });
     await rideLocator.click();
@@ -484,9 +494,10 @@ test.describe.serial("board (bug-fix pass regression, fake-week data)", () => {
     const beforeIds = new Set((beforeRides ?? []).map((r) => r.id));
     expect(beforeIds.size).toBeGreaterThan(0);
 
+    const applied = page.waitForResponse((response) => response.url().endsWith("/rest/v1/rpc/apply_solver_result") && response.request().method() === "POST");
     await openBoardActionsMenu(page);
     await page.getByRole("menuitem", { name: "השלם אוטומטית", exact: true }).click();
-    await page.waitForTimeout(2000);
+    expect((await applied).ok()).toBe(true);
 
     const { data: afterRides } = await admin
       .from("rides")
