@@ -373,7 +373,8 @@ export function RequestForm({
   // body is flagged; adjusting state for freshly-arrived props during render is not).
   const [resetKey, setResetKey] = useState<string | null>(null);
   // Set only by `PortalSheetContent`/`PortalDialogContent` (`QuickRequestSheet`'s host) — reused
-  // here to tell the fixed submit bar it has no app tab bar to clear (SheetPortalContext.ts).
+  // here to tell the submit bar it is inside a sheet: sticky within the sheet's scroll container,
+  // no app tab bar to clear (SheetPortalContext.ts).
   const insideModalSheet = useContext(SheetPortalContext) !== null;
   if (mode === "edit" && initial && companionsQuery.isSuccess && requestChildrenQuery.isSuccess) {
     const nextResetKey = `${initial.id}:${initial.version}`;
@@ -670,7 +671,7 @@ export function RequestForm({
     <form
       ref={formRef}
       onSubmit={form.handleSubmit(onSubmit, onInvalid)}
-      className={cn("mx-auto flex max-w-2xl flex-col gap-5 p-4", insideModalSheet ? "pb-20" : "pb-28")}
+      className={cn("mx-auto flex max-w-2xl flex-col gap-5 p-4", insideModalSheet ? "" : "pb-28")}
     >
       {quickContext ? (
         <p className="text-base font-semibold">
@@ -1021,23 +1022,27 @@ export function RequestForm({
         <FieldError message={form.formState.errors.guestNames?.message} />
       </FormItem>
 
-      <Controller
-        control={form.control}
-        name="luggage"
-        render={({ field }) => (
-          <label className="flex items-center gap-2 text-sm" data-field="luggage">
-            <input
-              type="checkbox"
-              checked={field.value}
-              onChange={(e) => field.onChange(e.target.checked)}
-              className="size-4"
-            />
-            {t("field.luggage")}
-          </label>
-        )}
-      />
+      {/* Luggage, flexibility and the note to the Sadran are weekly-solver inputs; a same-day
+          quick/car-now request is placed immediately with nobody reading them (owner, 2026-09-14). */}
+      {variant === "weekly" ? (
+        <Controller
+          control={form.control}
+          name="luggage"
+          render={({ field }) => (
+            <label className="flex items-center gap-2 text-sm" data-field="luggage">
+              <input
+                type="checkbox"
+                checked={field.value}
+                onChange={(e) => field.onChange(e.target.checked)}
+                className="size-4"
+              />
+              {t("field.luggage")}
+            </label>
+          )}
+        />
+      ) : null}
 
-      {variant !== "carNow" && !isMultiDay && tripShape !== "one_way_from" ? (
+      {variant === "weekly" && !isMultiDay && tripShape !== "one_way_from" ? (
         <FormItem data-field="flexDepartEarly">
           <Label>{t("field.flexDepart")}</Label>
           <FlexibilityRange
@@ -1050,7 +1055,7 @@ export function RequestForm({
           />
         </FormItem>
       ) : null}
-      {variant !== "carNow" && !isMultiDay && tripShape !== "one_way_to" ? (
+      {variant === "weekly" && !isMultiDay && tripShape !== "one_way_to" ? (
         <FormItem data-field="flexReturnEarly">
           <Label>{t("field.flexReturn")}</Label>
           <FlexibilityRange
@@ -1074,10 +1079,12 @@ export function RequestForm({
         </FormItem>
       ) : null}
 
-      <FormItem data-field="notes">
-        <Label htmlFor="request-notes">{t("field.notes")}</Label>
-        <Controller control={form.control} name="notes" render={({ field }) => <Textarea {...field} id="request-notes" rows={2} />} />
-      </FormItem>
+      {variant === "weekly" ? (
+        <FormItem data-field="notes">
+          <Label htmlFor="request-notes">{t("field.notes")}</Label>
+          <Controller control={form.control} name="notes" render={({ field }) => <Textarea {...field} id="request-notes" rows={2} />} />
+        </FormItem>
+      ) : null}
 
       {variant === "weekly" && !isMultiDay ? (
         <Controller
@@ -1097,8 +1104,14 @@ export function RequestForm({
 
       <div
         className={cn(
-          "fixed inset-x-0 z-30 border-t bg-background p-3",
-          insideModalSheet ? "bottom-0" : "bottom-16 md:bottom-0",
+          "z-30 border-t bg-background p-3",
+          // Inside the quick-request sheet the bar is `sticky` at the bottom of the sheet's own
+          // scroll container (`max-h-[85dvh] overflow-y-auto`), not `fixed`: the sheet content is
+          // transformed by its slide-in animation (and `-translate-x-1/2` on md), which makes it
+          // the containing block for `fixed` descendants — Safari then kept the bar wherever it
+          // first rendered and scrolled it away with the form (owner, 2026-09-14). The negative
+          // margins cancel the form's own `p-4` so the bar spans the sheet's content width.
+          insideModalSheet ? "sticky bottom-0 -mx-4 -mb-4" : "fixed inset-x-0 bottom-16 md:bottom-0",
         )}
       >
         <div className="mx-auto max-w-2xl space-y-2">

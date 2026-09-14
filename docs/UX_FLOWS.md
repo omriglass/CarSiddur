@@ -1447,6 +1447,8 @@ Live-week quick requests (empty-slot click, `CarNowButton`) are unaffected (owne
 
 ---
 
+**Fields omitted in the quick / car-now sheet (owner, 2026-09-14).** The sheet reuses `RequestForm` with `variant: 'quick' | 'carNow'`, but hides four weekly-solver inputs nobody reads for a same-day placement: מטען גדול, גמישות ביציאה, גמישות בחזרה and הערות לסדרן (`variant === "weekly"` gates in `RequestForm.tsx`; the values submit as their defaults — no luggage, zero flexibility, empty notes). The public ride description (תיאור הנסיעה), passengers and the car-mode toggle stay. The sheet's submit bar is `sticky` at the bottom of the sheet's own scroll container rather than `fixed`: the sheet content is transformed by its slide-in animation, which made Safari pin a `fixed` bar to wherever it first rendered and scroll it away with the form (owner bug, 2026-09-14).
+
 ## 19. Solve/apply semantics after owner testing (2026-09-07, MAJOR BUG)
 
 Owner report, verbatim, after §17 item 5's fix shipped: *"When clicking Solve and Autofill it STILL sometimes makes certain rides disappear."* Reproduced directly: Solve → Apply, then Solve → Apply again with **no changes in between** ("full" mode both times, the dashboard's "הרץ פותר") made every ride the first solve placed vanish on the second apply, while the requests they served stayed stuck at `assigned`/`merged` with no ride at all.
