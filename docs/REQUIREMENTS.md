@@ -210,7 +210,7 @@ Input: all non-final requests of one department and target week, active cars, ma
   2. Merge into ride X as passenger (consent of both).
   3. Shift beyond declared flexibility by up to 2h (consent).
   4. Split legs (when *car needed at destination* is no): outbound with ride X, return with ride Y — each leg as passenger or relay.
-  5. One-way legs without a host or partner: convert to a round trip with the car (`keep`) when capacity allows (consent), or **chauffeur** — a volunteer drives and brings the car back; the request shows as "needs a driver" and the Sadran assigns one (optionally asking a volunteer via a merge proposal).
+  5. One-way legs without a host or partner: convert to a round trip with the car (`keep`) when capacity allows (consent), or **chauffeur** — a volunteer drives and brings the car back; offered only when it is actually possible (owner, 2026-09-14): a shared car is free at home for the chauffeur window and fits the load of the requester's passengers plus the volunteer, otherwise the suggestion is not offered; when it is, the request shows as "needs a driver" and the Sadran assigns one (optionally asking a volunteer via a merge proposal).
   6. Stop-gap hints: short/one-way rides that look cab-eligible, or "rental" for very long blocks — display only, solved outside the app (→ `external`).
   7. Deny.
 - Runs in well under 10 seconds for 300 requests and 15 cars, in the browser or an edge function.

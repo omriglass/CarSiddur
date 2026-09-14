@@ -2197,6 +2197,23 @@ function volunteerCandidates(input, window) {
   }
   return [...driversToday].sort();
 }
+function chauffeurWindow(side, point, travelSlots, dwellSlots) {
+  const total = travelSlots * 2 + dwellSlots;
+  return side === "out" ? { start: point, end: point + total } : { start: point - total, end: point };
+}
+function findChauffeurCar(nr, side, point, ctx) {
+  const dwellSlots = minutesToSlots(ctx.input.config.chauffeurDwellMinutes);
+  const window = chauffeurWindow(side, point, nr.travelSlots, dwellSlots);
+  const load = chauffeurLoad(nr.passengers);
+  const sharedCars = ctx.input.cars.filter((c) => c.type === "shared").sort((a, b) => a.id < b.id ? -1 : 1);
+  for (const car of sharedCars) {
+    if (!fits(car, load) || !luggageFits(car, nr.luggage ? 1 : 0)) continue;
+    const tl = ctx.timelines.get(car.id);
+    if (!tl || !tl.isFree(window, ctx.input.homeLocationId)) continue;
+    return { carId: car.id, window };
+  }
+  return null;
+}
 function externalHints(nr, destination, config) {
   const out = [];
   const occupancyMinutes = nr.travelSlots * 15 + (nr.request.tripShape === "round_trip" ? (nr.window.end - nr.window.start) * 15 - nr.travelSlots * 15 * 2 : 0);
@@ -2366,27 +2383,31 @@ function buildSuggestions(nr, ctx, blockerCarIds) {
     const merges = mergeSuggestions(nr, side, ctx, hosts2);
     suggestions.push(...merges);
     if (merges.length === 0) {
-      const day = dayBoundsForSlot(ctx.input.week.days, nr.window.start || nr.window.end);
-      suggestions.push({
-        kind: "chauffeur",
-        requestId: nr.id,
-        leg: side,
-        carId: "",
-        window: nr.window,
-        volunteerCandidateMemberIds: volunteerCandidates(ctx.input, nr.window),
-        reasonCode: "SUGGEST_CHAUFFEUR",
-        reason: reason("SUGGEST_CHAUFFEUR", {
-          dest: nr.destinationId,
-          dep: formatSlotTime(nr.window.start, day),
-          minutes: nr.travelSlots * 15 * 2 + ctx.input.config.chauffeurDwellMinutes
-        }),
-        cost: 0,
-        confidence: 0.5
-      });
+      const point = side === "out" ? nr.window.start : nr.window.end;
+      const candidate = findChauffeurCar(nr, side, point, ctx);
+      if (candidate) {
+        const day = dayBoundsForSlot(ctx.input.week.days, nr.window.start || nr.window.end);
+        suggestions.push({
+          kind: "chauffeur",
+          requestId: nr.id,
+          leg: side,
+          carId: candidate.carId,
+          window: candidate.window,
+          volunteerCandidateMemberIds: volunteerCandidates(ctx.input, candidate.window),
+          reasonCode: "SUGGEST_CHAUFFEUR",
+          reason: reason("SUGGEST_CHAUFFEUR", {
+            dest: nr.destinationId,
+            dep: formatSlotTime(nr.window.start, day),
+            minutes: nr.travelSlots * 15 * 2 + ctx.input.config.chauffeurDwellMinutes
+          }),
+          cost: 0,
+          confidence: 0.5
+        });
+      }
     }
   } else if (isRelay(nr)) {
     if (leg?.side === "out") {
-      const day2 = dayBoundsForSlot(ctx.input.week.days, leg.window.start);
+      const day = dayBoundsForSlot(ctx.input.week.days, leg.window.start);
       const sharedCars = ctx.input.cars.filter((c) => c.type === "shared").sort((a, b) => a.id < b.id ? -1 : 1);
       for (const car of sharedCars) {
         if (!fits(car, nr.passengers) || !luggageFits(car, nr.luggage ? 1 : 0)) continue;
@@ -2410,7 +2431,7 @@ function buildSuggestions(nr, ctx, blockerCarIds) {
             window: { start: leg.window.start, end: latestReturn },
             returnSlot: latestReturn,
             reasonCode: "SUGGEST_ROUND_TRIP",
-            reason: reason("SUGGEST_ROUND_TRIP", { dest: nr.destinationId, ret: formatSlotTime(latestReturn, day2) }),
+            reason: reason("SUGGEST_ROUND_TRIP", { dest: nr.destinationId, ret: formatSlotTime(latestReturn, day) }),
             cost: 0,
             confidence: 0.4
           });
@@ -2418,23 +2439,30 @@ function buildSuggestions(nr, ctx, blockerCarIds) {
         }
       }
     }
-    const day = dayBoundsForSlot(ctx.input.week.days, leg?.window.start ?? 0);
-    suggestions.push({
-      kind: "chauffeur",
-      requestId: nr.id,
-      leg: leg?.side === "return" ? "return" : "out",
-      carId: "",
-      window: nr.window,
-      volunteerCandidateMemberIds: volunteerCandidates(ctx.input, nr.window),
-      reasonCode: "SUGGEST_CHAUFFEUR",
-      reason: reason("SUGGEST_CHAUFFEUR", {
-        dest: nr.destinationId,
-        dep: formatSlotTime(nr.window.start, day),
-        minutes: nr.travelSlots * 15 * 2 + ctx.input.config.chauffeurDwellMinutes
-      }),
-      cost: 0,
-      confidence: 0.5
-    });
+    {
+      const side = leg?.side === "return" ? "return" : "out";
+      const point = side === "out" ? leg?.window.start ?? 0 : leg?.window.end ?? 0;
+      const candidate = findChauffeurCar(nr, side, point, ctx);
+      if (candidate) {
+        const day = dayBoundsForSlot(ctx.input.week.days, leg?.window.start ?? 0);
+        suggestions.push({
+          kind: "chauffeur",
+          requestId: nr.id,
+          leg: side,
+          carId: candidate.carId,
+          window: candidate.window,
+          volunteerCandidateMemberIds: volunteerCandidates(ctx.input, candidate.window),
+          reasonCode: "SUGGEST_CHAUFFEUR",
+          reason: reason("SUGGEST_CHAUFFEUR", {
+            dest: nr.destinationId,
+            dep: formatSlotTime(nr.window.start, day),
+            minutes: nr.travelSlots * 15 * 2 + ctx.input.config.chauffeurDwellMinutes
+          }),
+          cost: 0,
+          confidence: 0.5
+        });
+      }
+    }
   }
   const destination = ctx.input.destinations[nr.destinationId];
   suggestions.push(...externalHints(nr, destination, ctx.input.config));
