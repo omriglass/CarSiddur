@@ -108,6 +108,12 @@ test("combined one-way consent preserves an orphaned passenger and lets a member
     await expect(deviation).toContainText("07:00");
     await coordinator.page.keyboard.press("Escape");
 
+    // Negotiation has settled (merge applied) — publish the week for real now: the driver's
+    // "בטל נסיעה" below exists only for a published ride, and the later step (a non-party,
+    // non-Sadran member viewing/volunteering for this ride on the siddur) needs a public day
+    // (`is_day_public()`). Publishing after the merge keeps `proposal_day_public` satisfied.
+    await publishedFixtureWeek(week);
+
     await driver.page.goto("/requests");
     const ownCard = driver.page.locator(`[data-request-id="${requestIds[0]}"]`);
     await ownCard.getByRole("button", { name: he.requestsList.cancelRide, exact: true }).click();
@@ -119,11 +125,6 @@ test("combined one-way consent preserves an orphaned passenger and lets a member
     expect(orphan!.status).not.toBe("cancelled");
     const { data: surviving } = await service.from("ride_requests").select("request_id").eq("ride_id", rideId);
     expect(surviving).toEqual([{ request_id: requestIds[1] }]);
-
-    // Negotiation has settled (merge applied, orphaned ride confirmed) — publish the week for
-    // real so the next step (a non-party, non-Sadran member viewing/volunteering for this ride
-    // on the siddur) has a public day to read (`is_day_public()`).
-    await publishedFixtureWeek(week);
 
     await passenger.page.setViewportSize({ width: 390, height: 844 });
     await passenger.page.goto(`/siddur/${NEVO_DEPARTMENT_ID}/${week}`);

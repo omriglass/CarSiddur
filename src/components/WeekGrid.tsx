@@ -619,7 +619,7 @@ export function WeekGrid({
               data-my-ride={ride.isMine || undefined}
               data-tight-schedule={ride.tightSchedule || undefined}
               className={cn(
-                "absolute inset-x-1 flex flex-col overflow-hidden rounded-sm border-s-4 text-start text-foreground shadow-sm transition-smooth",
+                "absolute inset-x-1 flex flex-col overflow-clip rounded-sm border-s-4 text-start text-foreground shadow-sm transition-smooth",
                 typeColors.bg,
                 typeColors.border,
                 // Conflict/pinned styling always wins over the ride-type tint (kept last so `cn`/tailwind-merge overrides it).
@@ -650,6 +650,14 @@ export function WeekGrid({
               }}
               aria-label={ride.isMine ? `${he.siddur.myRide} · ${ride.label}` : ride.label}
             >
+              {/* Sliding label (owner, 2026-09-14): everything readable in the block — badges, clamped-start
+                  hint and the label itself — sits in one `sticky` wrapper offset by the header row, so on a
+                  long ride (06:00–18:00) the text follows the reader down the block and stops at the block's
+                  own bottom edge (the button is the containing block). Works because the grid's scroll
+                  viewport is the nearest scroll container: the button clips with `overflow-clip`, which,
+                  unlike `overflow-hidden`, does not create a new scroll container. Resize handles stay
+                  absolutely positioned outside the wrapper. */}
+              <div className="sticky z-[1] flex w-full flex-col" style={{ top: HEADER_ROW_HEIGHT_PX }}>
               {(ride.isMine || ride.needsDriver || ride.tightSchedule) ? <span className="flex w-full flex-wrap gap-1 px-1.5 pt-1 text-[10px] leading-tight">
                 {ride.isMine ? <span className={cn("flex items-center gap-1 font-bold", ride.needsDriver ? "text-destructive" : "text-foreground")}><Star className="size-3 shrink-0 fill-current" aria-hidden="true" />{he.siddur.myRide}</span> : null}
                 {ride.needsDriver ? <span className="flex items-center gap-1 font-semibold text-destructive"><UserRoundX className="size-3 shrink-0" aria-hidden="true" />{he.boardCoordination.needsDriver}</span> : null}
@@ -678,6 +686,7 @@ export function WeekGrid({
                 />
               ) : null}
               {renderRide ? renderRide(ride) : defaultRenderRide(ride)}
+              </div>
               {resizeEnabled && (canDragRide?.(ride) ?? true) && (canResizeRide?.(ride) ?? true) ? (
                 <span
                   className="absolute inset-x-0 bottom-0 z-20 h-2.5 cursor-ns-resize touch-none border-y border-foreground/20 bg-foreground/10"

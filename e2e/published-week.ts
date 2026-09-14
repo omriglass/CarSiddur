@@ -17,15 +17,15 @@ export async function publishedFixtureWeek(week: string) {
     if (error) throw error;
   }
   if (existing?.phase !== "published") {
-    const { data: policies, error: policyError } = await service.from("policies").select("id,current_version_id,name")
-      .or(`department_id.eq.${NEVO_DEPARTMENT_ID},department_id.is.null`).not("current_version_id", "is", null);
-    if (policyError) throw policyError;
+    // Scores are a reporting snapshot, never a publication precondition (publish_siddur:
+    // "a missing or unavailable score calculation must never prevent publication"). Pass NO
+    // score arrays: a policy entry with an empty `profiles` list is rejected by
+    // `assert_publication_scores` as soon as the week has any open request (found 2026-09-14
+    // when one-way-consent started publishing after its requests exist).
     const args = { p_department_id: NEVO_DEPARTMENT_ID, p_week_start: week };
     const { data: fingerprint, error: fingerprintError } = await admin.rpc("publish_scores_fingerprint", args);
     if (fingerprintError) throw fingerprintError;
-    const { error } = await admin.rpc("publish_siddur", { ...args, p_expected_fingerprint: fingerprint, p_profile_scores: [],
-      p_policy_scores: policies!.map((policy) => ({ policy_id: policy.id, policy_version_id: policy.current_version_id, policy_name: policy.name,
-        request_count: 0, served_count: 0, priority_total: 0, served_priority_total: 0, alignment_ratio: null, profiles: [] })) });
+    const { error } = await admin.rpc("publish_siddur", { ...args, p_expected_fingerprint: fingerprint, p_profile_scores: [], p_policy_scores: [] });
     if (error) throw error;
   }
   return admin;

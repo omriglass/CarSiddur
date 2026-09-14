@@ -85,7 +85,10 @@ test.describe("admin", () => {
     await expect(page.getByRole("cell", { name: carName })).toBeVisible();
 
     // Codes remain text across editing, and ending a replacement clears its old code.
-    await page.getByRole("cell", { name: carName, exact: true }).click();
+    // The name cell is a link to the car's own page (`/cars/:carId`, `stopPropagation`), so open
+    // the edit sheet from the plate cell instead — clicking the name navigated away and made this
+    // test flaky (2026-09-14 e2e audit follow-up).
+    await page.getByRole("row").filter({ hasText: carName }).getByRole("cell").nth(1).click();
     await expect(page.getByLabel(he.adminCars.fieldAccessCode, { exact: true })).toHaveValue("01234");
     await page.getByRole("checkbox", { name: he.adminCars.fieldIsReplaced }).check();
     await page.getByLabel(he.adminCars.fieldReplacementCode, { exact: true }).fill("0567");
