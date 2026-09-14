@@ -39,3 +39,4 @@ playwright/.cache/
 
 # wrangler dev cache
 .wrangler/
+user-guides/
