@@ -13,6 +13,7 @@ declare
   target_policy uuid;
   suggestion uuid;
   affected int;
+  new_version_id uuid;
 begin
   perform set_config('request.jwt.claims',jsonb_build_object('sub',admin_id,'role','authenticated')::text,true);
   execute 'set local role authenticated';
@@ -27,6 +28,19 @@ begin
   select id into target_policy from public.policies where department_id=target.id and is_active;
   assert target_policy is not null,'no usable active policy copied';
   assert (select current_version_id is not null from public.policies where id=target_policy),'no copied policy version';
+  assert (select settings from public.policy_versions where id=(select current_version_id from public.policies where id=target_policy))='{}'::jsonb,'copied policy version settings not default {}';
+
+  -- carChoice option (owner, 2026-09-14; SOLVER.md §3.6/§3.6.2, REQ §13.84): p_settings persists,
+  -- omitted defaults to {} (= spread), invalid values are rejected by the check constraint.
+  new_version_id:=public.create_policy_version(target_policy,'[]'::jsonb,'car choice: pack',jsonb_build_object('carChoice','pack'));
+  assert (select settings->>'carChoice' from public.policy_versions where id=new_version_id)='pack','carChoice pack not persisted';
+  new_version_id:=public.create_policy_version(target_policy,'[]'::jsonb,'car choice: default');
+  assert (select settings from public.policy_versions where id=new_version_id)='{}'::jsonb,'omitted p_settings did not default to {}';
+  begin
+    perform public.create_policy_version(target_policy,'[]'::jsonb,null,jsonb_build_object('carChoice','bogus'));
+    raise exception 'invalid carChoice accepted';
+  exception when check_violation then null; end;
+
   update public.destinations set travel_minutes=999 where id=target_destination;
   assert not exists(select 1 from public.destinations where department_id=source_dept and travel_minutes=999),'editing copy changed source';
   begin

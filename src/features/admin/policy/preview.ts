@@ -43,8 +43,12 @@ export async function runPolicyPreview(params: {
   homeDestinationId: string;
   oldRules: PolicyRuleConfig[];
   newRules: PolicyRuleConfig[];
+  /** `policy_versions.settings` (owner, 2026-09-14; SOLVER.md §3.6/§3.6.2, REQ §13.84) — the saved
+   * version's settings vs the editor's unsaved draft settings. Omit for `{}` (spread) on either side. */
+  oldSettings?: { carChoice?: "pack" | "spread" };
+  newSettings?: { carChoice?: "pack" | "spread" };
 }): Promise<PolicyPreviewResult | null> {
-  const { departmentId, homeDestinationId, oldRules, newRules } = params;
+  const { departmentId, homeDestinationId, oldRules, newRules, oldSettings, newSettings } = params;
 
   const weekStart = await fetchLastTestableWeek(departmentId);
   if (!weekStart) return null;
@@ -70,8 +74,8 @@ export async function runPolicyPreview(params: {
     fetchFairnessStats(departmentId, weekStart, lookbackWeeksOf(newRules)),
   ]);
 
-  const oldPolicy: Policy = { id: "current", version: 0, rules: oldRules };
-  const newPolicy: Policy = { id: "draft", version: 0, rules: newRules };
+  const oldPolicy: Policy = { id: "current", version: 0, rules: oldRules, carChoice: oldSettings?.carChoice ?? "spread" };
+  const newPolicy: Policy = { id: "draft", version: 0, rules: newRules, carChoice: newSettings?.carChoice ?? "spread" };
 
   const baseArgs = {
     weekStart,

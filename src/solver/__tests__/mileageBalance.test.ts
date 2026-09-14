@@ -7,7 +7,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { solve } from '../index';
-import { baseInput, defaultConfig, makeCar, makeRequest, slotMs } from '../__fixtures__/gen';
+import { baseInput, defaultConfig, defaultPolicy, makeCar, makeRequest, slotMs } from '../__fixtures__/gen';
 import type { SolverInput } from '../types';
 
 describe('F5 mileage balancing (docs/SOLVER.md §3.6.2)', () => {
@@ -132,6 +132,72 @@ describe('F5 mileage balancing (docs/SOLVER.md §3.6.2)', () => {
     expect(sun?.reasonCode).toBe('PLACED_PREFERRED');
     // Friday: C1 now carries Sunday's round trip in its running total, so the
     // less-driven C2 is preferred, and the reason says so.
+    expect(fri?.carId).toBe('C2');
+    expect(fri?.reasonCode).toBe('CAR_BALANCED_MILEAGE');
+  });
+
+  it('"pack": packs a second request onto the same, already-used car when best-fit favours it, even though mileage favors the other car', () => {
+    // C1 gets request A directly (preferredCarId, ranks above both mileage and
+    // fragmentation) despite carrying far more baseline mileage — this isolates
+    // the pack/spread divergence to request B, which has no preference of its
+    // own. A's ride [0,30) on C1 leaves a smaller remaining gap around B's
+    // window [40,56) than C2's still-fully-free day, so best-fit favours C1
+    // (packing) while mileage (100+ on C1 vs 0 on C2) favours C2.
+    const cars = [makeCar('C1', { mileageKm: 100 }), makeCar('C2', { mileageKm: 0 })];
+    const requests = [
+      makeRequest({ id: 'A', departureMs: slotMs(0), returnMs: slotMs(30), preferredCarId: 'C1' }),
+      makeRequest({ id: 'B', departureMs: slotMs(40), returnMs: slotMs(56) }),
+    ];
+    const policy = { ...defaultPolicy(), carChoice: 'pack' as const };
+    const input = baseInput({ cars, requests, config: defaultConfig(), policy });
+
+    const output = solve(input);
+    const a = output.assignments.find((x) => x.servedRequestIds.includes('A'));
+    const b = output.assignments.find((x) => x.servedRequestIds.includes('B'));
+    expect(a?.carId).toBe('C1');
+    expect(b?.carId).toBe('C1');
+    // Fragmentation, not mileage, decided B's car — never tagged CAR_BALANCED_MILEAGE.
+    expect(b?.reasonCode).not.toBe('CAR_BALANCED_MILEAGE');
+  });
+
+  it('"spread" (explicit, same as default): the same scenario lands the two requests on different cars', () => {
+    const cars = [makeCar('C1', { mileageKm: 100 }), makeCar('C2', { mileageKm: 0 })];
+    const requests = [
+      makeRequest({ id: 'A', departureMs: slotMs(0), returnMs: slotMs(30), preferredCarId: 'C1' }),
+      makeRequest({ id: 'B', departureMs: slotMs(40), returnMs: slotMs(56) }),
+    ];
+    const policy = { ...defaultPolicy(), carChoice: 'spread' as const };
+    const input = baseInput({ cars, requests, config: defaultConfig(), policy });
+
+    const output = solve(input);
+    const a = output.assignments.find((x) => x.servedRequestIds.includes('A'));
+    const b = output.assignments.find((x) => x.servedRequestIds.includes('B'));
+    expect(a?.carId).toBe('C1');
+    expect(b?.carId).toBe('C2');
+    expect(b?.reasonCode).toBe('CAR_BALANCED_MILEAGE');
+  });
+
+  it('"pack" still uses mileage as the tie-break once fragmentation itself ties', () => {
+    // Same maintenance-divider setup as the "in-solve accumulation" case above
+    // (both cars' fragmentation around each request is identical), now under
+    // 'pack' — fragmentation ties so mileage decides Friday's car exactly as
+    // it does under 'spread'.
+    const divider = { start: 288 + 40, end: 288 + 56 }; // mid-Wednesday
+    const cars = [
+      makeCar('C1', { maintenance: [divider], mileageKm: 0 }),
+      makeCar('C2', { maintenance: [divider], mileageKm: 0 }),
+    ];
+    const requests = [
+      makeRequest({ id: 'A_SUN', departureMs: slotMs(32), returnMs: slotMs(48) }),
+      makeRequest({ id: 'B_FRI', departureMs: slotMs(5 * 96 + 32), returnMs: slotMs(5 * 96 + 48) }),
+    ];
+    const policy = { ...defaultPolicy(), carChoice: 'pack' as const };
+    const input = baseInput({ cars, requests, config: defaultConfig(), policy });
+
+    const output = solve(input);
+    const sun = output.assignments.find((x) => x.servedRequestIds.includes('A_SUN'));
+    const fri = output.assignments.find((x) => x.servedRequestIds.includes('B_FRI'));
+    expect(sun?.carId).toBe('C1');
     expect(fri?.carId).toBe('C2');
     expect(fri?.reasonCode).toBe('CAR_BALANCED_MILEAGE');
   });

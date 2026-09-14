@@ -123,30 +123,43 @@ interface CarKey {
   carId: string;
 }
 
-function compareKey(a: CarKey, b: CarKey): number {
+/** `'pack' | 'spread'` (docs/SOLVER.md §3.6, REQUIREMENTS §13.84; `Policy.carChoice`, absent = `'spread'`). */
+export type CarChoiceMode = 'pack' | 'spread';
+
+function compareKey(a: CarKey, b: CarKey, carChoice: CarChoiceMode): number {
   if (a.shiftCost !== b.shiftCost) return a.shiftCost - b.shiftCost;
   if (a.preference !== b.preference) return a.preference - b.preference;
   if (a.slackVal !== b.slackVal) return a.slackVal - b.slackVal;
   if (a.continuity !== b.continuity) return a.continuity - b.continuity;
-  // Mileage ranks ABOVE the best-fit packing heuristic (owner, 2026-09-14): across days,
-  // best-fit always prefers the car whose remaining free window is already shorter — i.e.
-  // the car that drove yesterday — which is exactly the piling-up mileage balance exists
-  // to undo. Preferred car, seat fit, shift cost and the member's usual car still win.
-  if (a.mileageVal !== b.mileageVal) return a.mileageVal - b.mileageVal;
-  if (a.fragmentation !== b.fragmentation) return a.fragmentation - b.fragmentation;
+  if (carChoice === 'spread') {
+    // Default (owner, 2026-09-14): mileage ranks ABOVE the best-fit packing heuristic —
+    // across days, best-fit always prefers the car whose remaining free window is already
+    // shorter — i.e. the car that drove yesterday — which is exactly the piling-up
+    // mileage balance exists to undo. Preferred car, seat fit, shift cost and the
+    // member's usual car still win.
+    if (a.mileageVal !== b.mileageVal) return a.mileageVal - b.mileageVal;
+    if (a.fragmentation !== b.fragmentation) return a.fragmentation - b.fragmentation;
+  } else {
+    // 'pack' (owner, 2026-09-14): best-fit packing ranks above mileage — rides pile
+    // onto already-used cars, keeping whole cars free ("more available resources").
+    // Mileage still decides a genuine tie once packing has too.
+    if (a.fragmentation !== b.fragmentation) return a.fragmentation - b.fragmentation;
+    if (a.mileageVal !== b.mileageVal) return a.mileageVal - b.mileageVal;
+  }
   return a.carId < b.carId ? -1 : a.carId > b.carId ? 1 : 0;
 }
 
-/** True when every field ranked above `mileageVal` matches — i.e. two cars are
- *  otherwise equally acceptable and mileage (then fragmentation, then id) decides
- *  (F5, docs/SOLVER.md §3.6.2). */
-function coreKeyEqual(a: CarKey, b: CarKey): boolean {
-  return (
+/** True when every field ranked above the mileage/fragmentation pair matches — i.e. two
+ *  cars are otherwise equally acceptable and mileage (then fragmentation, then id) decides
+ *  (F5, docs/SOLVER.md §3.6.2). In `'pack'` mode, fragmentation ranks above mileage, so it
+ *  must also tie before mileage can be said to have truly decided the winner. */
+function coreKeyEqual(a: CarKey, b: CarKey, carChoice: CarChoiceMode): boolean {
+  const base =
     a.shiftCost === b.shiftCost &&
     a.preference === b.preference &&
     a.slackVal === b.slackVal &&
-    a.continuity === b.continuity
-  );
+    a.continuity === b.continuity;
+  return carChoice === 'pack' ? base && a.fragmentation === b.fragmentation : base;
 }
 
 /** Distance of a request's destination (0 for unknown/free-text), F5 §3.6.2. */
@@ -181,12 +194,14 @@ function addAssignedKm(assignedKmByCar: Map<string, number>, carId: string, km: 
 class MileageDecisionTracker {
   private decided = false;
 
+  constructor(private readonly carChoice: CarChoiceMode) {}
+
   /** Call once per candidate, with the key that is (or was, before this
    *  candidate) the current best. `bestKey` is undefined for the very first
    *  candidate (nothing to compare against yet). */
   consider(candidateKey: CarKey, bestKey: CarKey | undefined, replaced: boolean): void {
     if (!bestKey) return;
-    const coreTied = coreKeyEqual(candidateKey, bestKey);
+    const coreTied = coreKeyEqual(candidateKey, bestKey, this.carChoice);
     if (coreTied && candidateKey.mileageVal !== bestKey.mileageVal) {
       this.decided = true;
     } else if (replaced && !coreTied) {
@@ -319,6 +334,9 @@ export function runGreedy(
   const trackKm = (carId: string, km: number): void => {
     if (mileageEnabled) addAssignedKm(assignedKmByCar, carId, km);
   };
+  // Car-choice mode (owner, 2026-09-14; docs/SOLVER.md §3.6, REQUIREMENTS §13.84):
+  // absent policy.carChoice = 'spread' (today's behavior, unchanged).
+  const carChoice: CarChoiceMode = input.policy.carChoice ?? 'spread';
 
   for (const unit of sortUnits(units)) {
     if (unit.kind === 'single' && unit.single) {
@@ -332,7 +350,7 @@ export function runGreedy(
         null;
       // F5 (docs/SOLVER.md §3.6.2): tracks whether mileage (rather than an
       // earlier, more important consideration) actually decided the winner.
-      const mileageDecision = new MileageDecisionTracker();
+      const mileageDecision = new MileageDecisionTracker(carChoice);
 
       // Phase 1: preferred time on every car.
       for (const car of sharedCars) {
@@ -349,7 +367,7 @@ export function runGreedy(
             mileageVal: mileageValue(car, assignedKmByCar),
             carId: car.id,
           };
-          const replaced = !best || compareKey(key, best.key) < 0;
+          const replaced = !best || compareKey(key, best.key, carChoice) < 0;
           mileageDecision.consider(key, best?.key, replaced);
           if (replaced) {
             best = { car, window: nr.window, shift: { departureMin: 0, returnMin: 0 }, key };
@@ -374,7 +392,7 @@ export function runGreedy(
             mileageVal: mileageValue(car, assignedKmByCar),
             carId: car.id,
           };
-          const replaced = !best || compareKey(key, best.key) < 0;
+          const replaced = !best || compareKey(key, best.key, carChoice) < 0;
           mileageDecision.consider(key, best?.key, replaced);
           if (replaced) {
             best = { car, window: placement.window, shift: placement.shift, key };
@@ -446,7 +464,7 @@ export function runGreedy(
         // constrained to the one car both legs happen to fit); `mileageVal`
         // is a constant 0 here so it never affects this comparison.
         const key: CarKey = { shiftCost, preference, slackVal, continuity, fragmentation, mileageVal: 0, carId: car.id };
-        if (!best || compareKey(key, best.key) < 0) best = { car, key };
+        if (!best || compareKey(key, best.key, carChoice) < 0) best = { car, key };
       }
       if (!best) {
         unmetUnits.push(unit);
@@ -497,7 +515,7 @@ export function runGreedy(
         // (all-or-nothing placement, §3.16) — constant 0 so it never affects
         // this comparison.
         const key: CarKey = { shiftCost: placement.shiftCost, preference, slackVal, continuity, fragmentation, mileageVal: 0, carId: car.id };
-        if (!best || compareKey(key, best.key) < 0) best = { car, placement, key };
+        if (!best || compareKey(key, best.key, carChoice) < 0) best = { car, placement, key };
       }
       if (!best || !best.placement) {
         unmetUnits.push(unit);

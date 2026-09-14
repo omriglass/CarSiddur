@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { he } from "@/i18n/he";
-import { TRIP_SHAPES } from "@/lib/enums";
+import { carTypeSchema, TRIP_SHAPES } from "@/lib/enums";
 
 import type { DestinationValue } from "@/components/DestinationCombobox";
 import type { TripShape } from "@/lib/enums";
@@ -232,3 +232,26 @@ export const templateSuggestionRowSchema = z.object({
 });
 
 export type TemplateSuggestionRow = z.infer<typeof templateSuggestionRowSchema>;
+
+/**
+ * `joinable_rides_for_request(request_id)` row (REQ §13.83, `supabase/migrations/
+ * 20260914130000_join_radius_and_joinable_rides.sql`, extended with `driver_phone` by
+ * `20260914160000_joinable_rides_driver_phone.sql`), validated at the `requests/api.ts`
+ * boundary — the generated return type does not mark the left-joined driver columns
+ * nullable, but a still-unclaimed chauffeur ride has no driver row at all.
+ */
+export const joinableRideRowSchema = z.object({
+  ride_id: z.string(),
+  starts_at: z.string(),
+  ends_at: z.string(),
+  car_name: z.string(),
+  car_type: carTypeSchema,
+  destination_name: z.string(),
+  driver_name: z.string(),
+  distance_km: z.number(),
+  free_seats: z.number(),
+  /** `profiles.phone`, null when the driver has none or the ride has no driver yet. */
+  driver_phone: z.string().nullable(),
+});
+
+export type JoinableRideRowRaw = z.infer<typeof joinableRideRowSchema>;

@@ -120,4 +120,22 @@ describe("isUnmetDropValid", () => {
     const ctx = baseContext({ rides: [host] });
     expect(isUnmetDropValid(ctx, unmetItem(req), "car1", 495, "host1")).toBe(true);
   });
+
+  it("rejects a no-host drop whose standalone window overlaps an existing ride on the target car", () => {
+    // No `hostRideId` -> no merge host; the target car already has a ride sitting inside the
+    // standalone chauffeur window this request would need.
+    const existing = ride({ id: "existing1", car_id: "car1", driver_id: "driver1", needs_driver: false,
+      starts_at: "2026-09-13T08:00:00.000Z", ends_at: "2026-09-13T09:00:00.000Z", served: [] });
+    const req = request({ id: "r1", trip_shape: "one_way_to", depart_at: "2026-09-13T08:00:00.000Z", destination_travel_minutes: 30 });
+    const ctx = baseContext({ rides: [existing] });
+    expect(isUnmetDropValid(ctx, unmetItem(req), "car1", 660)).toBe(false);
+  });
+
+  it("accepts a no-host drop onto a car with a free window (no overlap)", () => {
+    const existing = ride({ id: "existing1", car_id: "car1", driver_id: "driver1", needs_driver: false,
+      starts_at: "2026-09-13T06:00:00.000Z", ends_at: "2026-09-13T07:00:00.000Z", served: [] });
+    const req = request({ id: "r1", trip_shape: "one_way_to", depart_at: "2026-09-13T08:00:00.000Z", destination_travel_minutes: 30 });
+    const ctx = baseContext({ rides: [existing] });
+    expect(isUnmetDropValid(ctx, unmetItem(req), "car1", 660)).toBe(true);
+  });
 });

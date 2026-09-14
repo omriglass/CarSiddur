@@ -63,11 +63,23 @@ export async function fetchPolicyVersions(policyId: string): Promise<PolicyVersi
   return data ?? [];
 }
 
-export async function createPolicyVersion(policyId: string, rules: PolicyRuleConfig[], note: string | null): Promise<string> {
+/** `policy_versions.settings` (owner, 2026-09-14; SOLVER.md §3.6/§3.6.2, REQ §13.84): admin-editable
+ * per version, immutable history like `rules`. Absent/omitted `carChoice` = `'spread'` (today's behaviour). */
+export interface PolicySettings {
+  carChoice?: "pack" | "spread";
+}
+
+export async function createPolicyVersion(
+  policyId: string,
+  rules: PolicyRuleConfig[],
+  note: string | null,
+  settings: PolicySettings = {},
+): Promise<string> {
   return rpc("create_policy_version", {
     p_policy_id: policyId,
     p_rules: rules as unknown as Json,
     p_note: note ?? undefined,
+    p_settings: settings as unknown as Json,
   });
 }
 

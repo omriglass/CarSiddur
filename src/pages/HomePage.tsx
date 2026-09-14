@@ -313,6 +313,11 @@ export function HomePage() {
         onOpenChange={(open) => !open && setSelectedMyRide(null)}
         onAskToJoin={() => undefined}
         showAskToJoin={false}
+        // "+ נוסעים" (REQ §13.85): `fetchMyUpcomingRides` only returns non-cancelled,
+        // still-upcoming rides — in practice always in a published/live week (rides exist
+        // once solved/published, before that only draft/manual-reservation pins do); the
+        // RPC itself is the real gate (`week_archived`/`not_authorized` surface as toasts).
+        showAddPassengers={!!selectedMyRide && selectedMyRide.status !== "cancelled"}
         onRemoveOwnRide={selectedMyRide?.id && selectedMyRide.version != null ? () => cancelRideMutation.mutate({ rideId: selectedMyRide.id!, expectedVersion: selectedMyRide.version!, reason: "CANCELLED_BY_MEMBER" }, { onSuccess: () => setSelectedMyRide(null) }) : undefined}
         removingOwnRide={cancelRideMutation.isPending}
         editor={editableRide && ownsEditableRide ? (

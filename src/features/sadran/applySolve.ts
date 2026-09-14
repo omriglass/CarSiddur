@@ -124,6 +124,8 @@ export interface RidePassengerEntry {
   child_id: string | null;
   display_name: string;
   seat_kind: "adult" | "child_seat" | "booster";
+  /** Who added this row — the "+ נוסעים" button, 20260914170000_add_ride_passengers_rpc.sql; lets the UI show a remove (×) to the adder, not just the driver/named person/week manager. */
+  added_by: string | null;
 }
 
 /** Reads `v_board_rides.passengers` (a jsonb aggregate, same idiom as `servedOf()`) into typed rows. */
@@ -236,6 +238,9 @@ export interface PolicyChoice {
   policyVersionId: string;
   versionNo: number;
   rules: unknown;
+  /** `policy_versions.settings` (owner, 2026-09-14; SOLVER.md §3.6/§3.6.2, REQ §13.84).
+   * Optional/absent = `{}` (spread) — every caller that predates this field keeps working. */
+  settings?: unknown;
 }
 
 export interface GatherSolverContextParams {
@@ -336,6 +341,12 @@ export function policyLookbackWeeks(policy: PolicyChoice): number {
   return (fairnessRule?.params as { lookbackWeeks?: number } | undefined)?.lookbackWeeks ?? 3;
 }
 
+/** `policy.settings.carChoice`, defaulting to `'spread'` (owner, 2026-09-14; SOLVER.md §3.6/§3.6.2, REQ §13.84). */
+export function policyCarChoice(policy: PolicyChoice): Policy["carChoice"] {
+  const raw = (policy.settings as { carChoice?: unknown } | null)?.carChoice;
+  return raw === "pack" ? "pack" : "spread";
+}
+
 /**
  * Pure mapping from already-loaded rows to a `SolverContext` — the actual
  * `buildSolverInput` shaping `gatherSolverContext` used to do inline, right
@@ -382,7 +393,12 @@ export function buildSolverContextFromData(params: GatherSolverContextParams, ro
   const rawRules = (params.policy.rules as { type: string; weight: number; params?: unknown }[] | null) ?? [];
   const rules: Policy["rules"] = rawRules.map((r) => ({ type: r.type, weight: r.weight, params: r.params ?? {} }));
 
-  const policy: Policy = { id: params.policy.policyId, version: params.policy.versionNo, rules };
+  const policy: Policy = {
+    id: params.policy.policyId,
+    version: params.policy.versionNo,
+    rules,
+    carChoice: policyCarChoice(params.policy),
+  };
 
   const input = buildSolverInput({
     weekStart: params.weekStart,

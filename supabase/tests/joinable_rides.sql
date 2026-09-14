@@ -28,6 +28,7 @@ declare
   req_anchor uuid;   -- the waitlisted request joinable_rides_for_request() is called for
   req_free_text uuid;
   req_near uuid; req_far uuid; req_wrongday uuid; req_full uuid;
+  v_expected_driver_phone text; -- profiles.phone for member2, captured before switching to role `authenticated` below
   ride_near uuid; ride_far uuid; ride_wrongday uuid; ride_full uuid;
   n int;
 begin
@@ -123,6 +124,10 @@ begin
   returning id into ride_full;
   insert into public.ride_requests (ride_id, request_id, role, leg, car_mode) values (ride_full, req_full, 'driver', 'both', 'keep');
 
+  -- Captured while still the original (RLS-bypassing) role — `authenticated` below cannot
+  -- select public.profiles directly, only through security-definer helpers like phone_of().
+  select phone into v_expected_driver_phone from public.profiles where id = member2;
+
   -- ---------------------------------------------------------------------------
   -- Caller: the requester (member1) themselves, via the real `authenticated` grant.
   -- ---------------------------------------------------------------------------
@@ -131,6 +136,18 @@ begin
 
   select count(*) into n from public.joinable_rides_for_request(req_anchor) where ride_id = ride_near;
   assert n = 1, 'within-radius ride with a free seat must be returned';
+
+  -- driver_phone (20260914160000_joinable_rides_driver_phone.sql, REQ §10/§13.83 amendment):
+  -- read directly from profiles.phone (not gated by phone_of()'s own-department/shares-ride
+  -- predicate, which member1 would not satisfy here — that gate is deliberately not applied
+  -- to this already-authorized RPC).
+  declare
+    v_driver_phone text;
+  begin
+    select driver_phone into v_driver_phone from public.joinable_rides_for_request(req_anchor) where ride_id = ride_near;
+    assert v_driver_phone = v_expected_driver_phone,
+      format('driver_phone must match the seeded driver''s profiles.phone, got %L expected %L', v_driver_phone, v_expected_driver_phone);
+  end;
 
   select count(*) into n from public.joinable_rides_for_request(req_anchor) where ride_id = ride_far;
   assert n = 0, 'out-of-radius ride must be excluded';

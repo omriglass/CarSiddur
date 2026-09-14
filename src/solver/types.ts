@@ -149,6 +149,14 @@ export interface Policy {
   id: string;
   version: number;
   rules: PolicyRuleConfig[];
+  /**
+   * Car-choice mode (owner, 2026-09-14; docs/SOLVER.md §3.6/§3.6.2, REQUIREMENTS §13.84):
+   * `'spread'` (default, absent = `'spread'`) ranks mileage balance above the best-fit
+   * packing heuristic (`fragmentation`) in the car-choice key, spreading mileage across
+   * cars; `'pack'` ranks packing above mileage, keeping whole cars free — mileage stays
+   * as the tie-break just before `car.id`. Everything else in the key is unaffected.
+   */
+  carChoice?: 'pack' | 'spread';
 }
 
 export interface SolverStats {

@@ -9,6 +9,7 @@ import {
   setPolicyActive,
   updatePolicyName,
   type PolicyRuleConfig,
+  type PolicySettings,
 } from "./api";
 
 const policyKeys = {
@@ -41,8 +42,17 @@ export function useCreatePolicyMutation() {
 export function useCreatePolicyVersionMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ policyId, rules, note }: { policyId: string; rules: PolicyRuleConfig[]; note: string | null }) =>
-      createPolicyVersion(policyId, rules, note),
+    mutationFn: ({
+      policyId,
+      rules,
+      note,
+      settings,
+    }: {
+      policyId: string;
+      rules: PolicyRuleConfig[];
+      note: string | null;
+      settings?: PolicySettings;
+    }) => createPolicyVersion(policyId, rules, note, settings),
     onSuccess: (_data, variables) => {
       void queryClient.invalidateQueries({ queryKey: policyKeys.versions(variables.policyId) });
       void queryClient.invalidateQueries({ queryKey: policyKeys.list() });

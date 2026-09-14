@@ -60,6 +60,21 @@ export interface FlipRow {
   direction: "servedToUnmet" | "unmetToServed";
 }
 
+/** `policy_versions.settings.carChoice` (owner, 2026-09-14; SOLVER.md §3.6/§3.6.2, REQ §13.84),
+ * defaulting to `'spread'` for `{}`/absent — same default the solver itself applies. */
+export function carChoiceOf(settings: unknown): "pack" | "spread" {
+  const raw = (settings as { carChoice?: unknown } | null)?.carChoice;
+  return raw === "pack" ? "pack" : "spread";
+}
+
+/** `null` when the two versions' `carChoice` are the same (nothing to show in the version-history
+ * diff); otherwise the previous and next values, for a one-line "carChoice: X → Y" row. */
+export function carChoiceDiff(previousSettings: unknown, nextSettings: unknown): { from: "pack" | "spread"; to: "pack" | "spread" } | null {
+  const from = carChoiceOf(previousSettings);
+  const to = carChoiceOf(nextSettings);
+  return from === to ? null : { from, to };
+}
+
 /** Requests whose served/unmet outcome differs between the two solver runs. */
 export function computeFlips(currentServedIds: ReadonlySet<string>, newServedIds: ReadonlySet<string>): FlipRow[] {
   const flips: FlipRow[] = [];

@@ -13,7 +13,9 @@ const LABEL_KEY = {
   nextWeek: "newRequestButton.nextWeek",
   preparing: "newRequestButton.preparing",
   waitlistNextWeek: "newRequestButton.waitlistNextWeek",
-  waitlistThisWeek: "newRequestButton.waitlistThisWeek",
+  // Same label as the enabled `nextWeek` state — the button always reads as being about next
+  // week, whether or not that week is open to request against yet (owner decision 2026-09-14).
+  nextWeekNotOpenYet: "newRequestButton.nextWeek",
 } as const;
 
 interface NewRequestButtonProps {
@@ -37,7 +39,7 @@ export function NewRequestButton({ variant, className }: NewRequestButtonProps) 
 
   const fabClassName = cn("fixed bottom-20 end-4 z-30 gap-1.5 rounded-full shadow-lg md:bottom-6", className);
 
-  if (state.kind === "preparing") {
+  if (state.kind === "preparing" || state.kind === "nextWeekNotOpenYet") {
     return (
       <Button
         type="button"
@@ -58,7 +60,7 @@ export function NewRequestButton({ variant, className }: NewRequestButtonProps) 
   // only decides whether RequestForm shows the waiting-list banner up front.
   const to = paths.requests.new({
     week: state.weekStart,
-    waitlist: state.kind === "waitlistNextWeek" || state.kind === "waitlistThisWeek" ? true : undefined,
+    waitlist: state.kind === "waitlistNextWeek" ? true : undefined,
   });
 
   return (

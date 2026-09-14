@@ -172,6 +172,10 @@ export default tseslint.config(
       // Deno edge functions use remote URL imports; not resolvable by the
       // browser tsconfig project used for linting.
       "@typescript-eslint/no-unused-vars": "off",
+      // Hard rule 3: Hebrew belongs in src/i18n/he*.ts, src/solver/reasons.ts, or
+      // seeded DB data — not in edge functions (HARDENING_2026-09.md §4). The
+      // generated `_shared/solver.js` bundle is excluded globally (top `ignores`).
+      "no-restricted-syntax": ["error", ...HEBREW_SELECTORS],
     },
   },
 );

@@ -241,6 +241,9 @@ export function SiddurPage() {
   const activeDayPublished = !!activeDay && (resolvedWeek?.published_days?.includes(activeDay) ?? true);
   const isLiveDay = isLiveWeek && activeDayPublished;
   const canEditWeek = isMyDepartment && activeDayPublished && (isLiveWeek || resolvedWeek?.phase === "published");
+  // "+ נוסעים" (REQ §13.85): mirrors `is_week_public()` (DATA_MODEL §4.2) — week-level, not
+  // per-day, since `add_ride_passengers()`'s own authorization checks the week's phase only.
+  const weekIsPublic = !!resolvedWeek && (resolvedWeek.phase === "published" || resolvedWeek.phase === "live" || resolvedWeek.phase === "archived");
   const now = new Date();
   const dayFreeWindows = useDayFreeWindows(departmentId, isLiveDay ? weekStart : undefined, isLiveDay ? (activeDay ?? undefined) : undefined, now);
 
@@ -668,6 +671,8 @@ export function SiddurPage() {
         ride={selectedRide}
         coordinatorNotes={selectedRide ? rideCoordinatorNotes(servedOf(selectedRide), coordinatorRequests) : undefined}
         canEditPublicNotes={canEditPublicNotes}
+        showAddPassengers={!!selectedRide && selectedRide.status !== "cancelled" && weekIsPublic}
+        canManageWeek={isSadran}
         passengerSummary={isSadran && selectedRide ? ridePassengerSummary(servedOf(selectedRide), selectedRide.needs_driver ? null : selectedRide.driver_name) : undefined}
         car={selectedCar}
         locationBadge={selectedLocation}

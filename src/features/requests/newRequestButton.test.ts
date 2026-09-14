@@ -27,17 +27,17 @@ describe("newRequestButtonState", () => {
     expect(newRequestButtonState(weeks)).toEqual({ kind: "waitlistNextWeek", weekStart: "2026-09-13" });
   });
 
-  it("state 4 (edge): only a live week exists, nothing newer yet -> waitlistThisWeek", () => {
+  it("state 4 (edge): only a live week exists, nothing newer yet -> disabled nextWeekNotOpenYet (never 'this week')", () => {
     const weeks = [{ week_start: "2026-09-06", phase: "live" }];
-    expect(newRequestButtonState(weeks)).toEqual({ kind: "waitlistThisWeek", weekStart: "2026-09-06" });
+    expect(newRequestButtonState(weeks)).toEqual({ kind: "nextWeekNotOpenYet" });
   });
 
-  it("an `upcoming` next week (materialized early for a multi-day series) is not a real target — falls back to the live week", () => {
+  it("an `upcoming` next week (materialized early for a multi-day series) is not a real target — falls back to nextWeekNotOpenYet", () => {
     const weeks = [
       { week_start: "2026-09-06", phase: "live" },
       { week_start: "2026-09-20", phase: "upcoming" },
     ];
-    expect(newRequestButtonState(weeks)).toEqual({ kind: "waitlistThisWeek", weekStart: "2026-09-06" });
+    expect(newRequestButtonState(weeks)).toEqual({ kind: "nextWeekNotOpenYet" });
   });
 
   it("ignores archived weeks entirely", () => {
@@ -45,7 +45,7 @@ describe("newRequestButtonState", () => {
       { week_start: "2026-08-30", phase: "archived" },
       { week_start: "2026-09-06", phase: "live" },
     ];
-    expect(newRequestButtonState(weeks)).toEqual({ kind: "waitlistThisWeek", weekStart: "2026-09-06" });
+    expect(newRequestButtonState(weeks)).toEqual({ kind: "nextWeekNotOpenYet" });
   });
 
   it("no weeks at all -> preparing (nothing to link to)", () => {

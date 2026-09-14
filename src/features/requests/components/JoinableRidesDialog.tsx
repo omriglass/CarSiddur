@@ -1,3 +1,5 @@
+import { MessageCircle } from "lucide-react";
+
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -7,7 +9,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { buildWaUrl } from "@/features/sadran/proposals/waLink";
 import { he, tv } from "@/i18n/he";
+import { weekdayLabel } from "@/lib/dayLabels";
 import { formatTime } from "@/lib/time";
 
 import type { JoinableRideRow } from "../api";
@@ -30,8 +34,11 @@ export interface JoinableRidesDialogProps {
  * "you are on the waiting list, HOWEVER here is another option instead of just waiting". Each
  * row is an existing ride the same day, going somewhere close (`joinable_rides_for_request`),
  * with a one-tap "ask to join" (the existing `join_ride_id` flow, `paths.requests.new({ ride })`)
- * — never a phone number (REQ §10); "talk to them" is the ask-to-join request itself, answered
- * by the driver like any other.
+ * — that request is still the only thing that actually seats you, answered by the driver like
+ * any other. On top of it, a WhatsApp icon button opens a prefilled `wa.me` chat to the driver
+ * directly (owner amendment 2026-09-14, REQ §10/§13.83: department members' phone numbers are
+ * not treated as secrets); hidden when `driver_phone` is null (no phone on file, or the ride
+ * has no driver yet).
  */
 export function JoinableRidesDialog({ open, onOpenChange, rides, radiusKm, onAskToJoin, onStay }: JoinableRidesDialogProps) {
   return (
@@ -54,9 +61,30 @@ export function JoinableRidesDialog({ open, onOpenChange, rides, radiusKm, onAsk
                   {tv("siddur.freeSeats", { count: String(ride.freeSeats) })}
                 </span>
               </div>
-              <Button type="button" size="sm" onClick={() => onAskToJoin(ride.rideId)}>
-                {he.joinableRides.askToJoin}
-              </Button>
+              <div className="flex items-center gap-2">
+                {ride.driverPhone ? (
+                  <Button asChild type="button" variant="outline" size="icon" aria-label={he.joinableRides.whatsapp}>
+                    <a
+                      href={buildWaUrl(
+                        ride.driverPhone,
+                        tv("joinableRides.whatsappText", {
+                          driver: joinableRideDriverLabel(ride),
+                          destination: ride.destinationName,
+                          day: weekdayLabel(ride.startsAt),
+                          time: formatTime(new Date(ride.startsAt)),
+                        }),
+                      )}
+                      target="_blank"
+                      rel="noopener"
+                    >
+                      <MessageCircle className="size-4" />
+                    </a>
+                  </Button>
+                ) : null}
+                <Button type="button" size="sm" onClick={() => onAskToJoin(ride.rideId)}>
+                  {he.joinableRides.askToJoin}
+                </Button>
+              </div>
             </li>
           ))}
         </ul>

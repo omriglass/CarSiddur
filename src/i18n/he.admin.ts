@@ -339,6 +339,15 @@ export const heAdmin = {
     activateConfirmTitle: "להפוך לפעילה במחלקה {{dept}}?",
     ruleTypeUnknownWarning: "סוג כלל לא מוכר: {{type}}",
     paramsInvalid: "פרמטרים לא תקינים לכלל זה",
+    // Car-choice option (owner, 2026-09-14; SOLVER.md §3.6/§3.6.2, REQ §13.84): admin-editable
+    // per policy version, default 'spread' (today's behaviour).
+    carChoiceTitle: "בחירת רכב",
+    carChoiceSpreadLabel: "פיזור",
+    carChoiceSpreadDescription: "מאזן קילומטראז' בין הרכבים",
+    carChoicePackLabel: "צפיפות",
+    carChoicePackDescription: "ממלא רכב אחד ומשאיר רכבים פנויים",
+    carChoiceColumn: "בחירת רכב",
+    carChoiceChanged: "בחירת רכב: {{from}} ← {{to}}",
   },
   adminTemplates: {
     title: "תבניות הודעות",

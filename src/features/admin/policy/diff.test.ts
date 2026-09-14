@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { computeFlips, computeRankingDelta } from "./diff";
+import { carChoiceDiff, carChoiceOf, computeFlips, computeRankingDelta } from "./diff";
 
 describe("computeRankingDelta", () => {
   it("ranks descending by score, ties broken by id ascending", () => {
@@ -78,5 +78,32 @@ describe("computeFlips", () => {
 
   it("returns an empty array when nothing changes", () => {
     expect(computeFlips(new Set(["a"]), new Set(["a"]))).toEqual([]);
+  });
+});
+
+describe("carChoiceOf", () => {
+  it("defaults to 'spread' for {}, null, and an absent/unknown value", () => {
+    expect(carChoiceOf({})).toBe("spread");
+    expect(carChoiceOf(null)).toBe("spread");
+    expect(carChoiceOf({ carChoice: "bogus" })).toBe("spread");
+  });
+
+  it("reads 'pack' when set", () => {
+    expect(carChoiceOf({ carChoice: "pack" })).toBe("pack");
+  });
+});
+
+describe("carChoiceDiff", () => {
+  it("is null when both versions resolve to the same carChoice (including two absent settings)", () => {
+    expect(carChoiceDiff({}, {})).toBeNull();
+    expect(carChoiceDiff({ carChoice: "pack" }, { carChoice: "pack" })).toBeNull();
+  });
+
+  it("reports the change from spread to pack", () => {
+    expect(carChoiceDiff({}, { carChoice: "pack" })).toEqual({ from: "spread", to: "pack" });
+  });
+
+  it("reports the change from pack back to spread", () => {
+    expect(carChoiceDiff({ carChoice: "pack" }, {})).toEqual({ from: "pack", to: "spread" });
   });
 });

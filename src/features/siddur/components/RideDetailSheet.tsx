@@ -14,7 +14,10 @@ import type { Car } from "@/features/fleet/api";
 import { servedOf, type ServedEntry } from "@/features/sadran/solverRun";
 
 import type { BoardRide } from "../api";
+import { AddPassengersDialog } from "./AddPassengersDialog";
+import { RidePassengersList } from "./RidePassengersList";
 import { RidePublicNotesEditor } from "./RidePublicNotesEditor";
+import { namedPassengersOf } from "@/features/sadran/applySolve";
 
 /**
  * "<driver> ו<passengers> ל/מ<real destination>" (UX_FLOWS.md §20 — the
@@ -67,10 +70,14 @@ interface RideDetailSheetProps {
   /** Available only when the signed-in member has a request served by this ride. */
   onRemoveOwnRide?: () => void;
   removingOwnRide?: boolean;
+  /** The "+ נוסעים" button (REQ §13.85): true once the ride's week is public (or the caller manages it) and the ride itself isn't cancelled — the caller already tracks week phase for `showAskToJoin`/`canEditWeek`, so it computes this instead of this sheet guessing at week state. */
+  showAddPassengers?: boolean;
+  /** Lets a Sadran/admin remove any named passenger row, not just their own — mirrors `remove_ride_passenger()`'s `can_manage_week` escape hatch. */
+  canManageWeek?: boolean;
 }
 
 /** Ride detail sheet (UX_FLOWS.md §3.5 "Ride detail"): driver, passengers, car, origin→destination, "ask to join". */
-export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = null, onOpenChange, onAskToJoin, showAskToJoin, editor, coordinatorNotes, canEditPublicNotes, passengerSummary, onRemoveOwnRide, removingOwnRide = false }: RideDetailSheetProps) {
+export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = null, onOpenChange, onAskToJoin, showAskToJoin, editor, coordinatorNotes, canEditPublicNotes, passengerSummary, onRemoveOwnRide, removingOwnRide = false, showAddPassengers = false, canManageWeek = false }: RideDetailSheetProps) {
   // `servedOf()` already maps `v_board_rides.served[].child_names` onto each entry's
   // `childNames` (`applySolve.ts`) — no more hand-rolled mapping needed here.
   const served: ServedEntry[] = ride ? servedOf(ride) : [];
@@ -144,6 +151,23 @@ export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = 
                     ))}
                   </ul>
                 </div>
+              ) : null}
+
+              <RidePassengersList
+                expectedVersion={ride.version}
+                passengers={namedPassengersOf(ride)}
+                driverId={ride.driver_id}
+                canManageWeek={canManageWeek}
+              />
+
+              {showAddPassengers && ride.id && ride.version != null ? (
+                <AddPassengersDialog
+                  key={`${ride.id}:${ride.version}:add-passengers`}
+                  rideId={ride.id}
+                  expectedVersion={ride.version}
+                  departmentId={ride.department_id ?? ""}
+                  weekStart={ride.week_start ?? ""}
+                />
               ) : null}
 
               {showAskToJoin ? (

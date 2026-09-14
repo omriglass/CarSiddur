@@ -7,6 +7,7 @@ import { sadranKeys } from "@/features/sadran/keys";
 import { showErrorToast } from "@/lib/rpc";
 
 import {
+  addRidePassengers,
   fetchBoardRideById,
   fetchMyUpcomingRides,
   fetchBoardRides,
@@ -16,12 +17,14 @@ import {
   fetchDepartments,
   fetchWeeks,
   fetchRideChanges,
+  removeRidePassenger,
   requestRideChange,
   respondRideChange,
   cancelRideChange,
   claimRideDriver,
   updateRidePublicNotes,
   type RideMove,
+  type RidePassengerInput,
 } from "./api";
 import { siddurKeys } from "./queryKeys";
 
@@ -43,6 +46,36 @@ export function useUpdateRidePublicNotesMutation() {
   return useMutation({
     mutationFn: ({ rideId, expectedVersion, notes }: { rideId: string; expectedVersion: number; notes: string | null }) =>
       updateRidePublicNotes(rideId, expectedVersion, notes),
+    onSuccess: () => {
+      for (const key of [siddurKeys.all, sadranKeys.all, requestsKeys.all]) void client.invalidateQueries({ queryKey: key });
+    },
+    onError: showErrorToast,
+  });
+}
+
+/**
+ * The "+ נוסעים" button — appends named passengers to a published ride (siddur
+ * `RideDetailSheet` and, reused, the board's `RideSheet`). Invalidates the same three
+ * feature roots as `useUpdateRidePublicNotesMutation` above: the ride's own passenger list
+ * lives on `v_board_rides.passengers`, read by both the siddur and the board.
+ */
+export function useAddRidePassengersMutation() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ rideId, expectedVersion, passengers }: { rideId: string; expectedVersion: number; passengers: RidePassengerInput[] }) =>
+      addRidePassengers(rideId, expectedVersion, passengers),
+    onSuccess: () => {
+      for (const key of [siddurKeys.all, sadranKeys.all, requestsKeys.all]) void client.invalidateQueries({ queryKey: key });
+    },
+    onError: showErrorToast,
+  });
+}
+
+export function useRemoveRidePassengerMutation() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ ridePassengerId, expectedVersion }: { ridePassengerId: string; expectedVersion: number }) =>
+      removeRidePassenger(ridePassengerId, expectedVersion),
     onSuccess: () => {
       for (const key of [siddurKeys.all, sadranKeys.all, requestsKeys.all]) void client.invalidateQueries({ queryKey: key });
     },

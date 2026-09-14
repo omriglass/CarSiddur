@@ -2,7 +2,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { AppError, rpc, toAppError } from "@/lib/rpc";
 import { siddurCarName } from "@/lib/siddurCarName";
 
-import type { Database } from "@/integrations/supabase/types";
+import type { Database, Json } from "@/integrations/supabase/types";
 import type { CarType } from "@/lib/enums";
 
 /**
@@ -246,4 +246,29 @@ export async function fetchExportCarNames(departmentId: string): Promise<{ id: s
   const { data, error } = await supabase.from("cars").select("id, name").eq("department_id", departmentId);
   if (error) throw toAppError(error);
   return data ?? [];
+}
+
+/**
+ * A named passenger/child appended to a published ride with no `requests` row behind them
+ * (the "+ נוסעים" button, `add_ride_passengers()`/`remove_ride_passenger()`,
+ * 20260914170000_add_ride_passengers_rpc.sql; REQ §13.85). Same row shape as
+ * `features/sadran/api.ts`'s `RidePassengerInput` (the Sadran board's `set_ride_passengers()`
+ * *replace* editor) — kept as a separate local type rather than a cross-feature import so
+ * this feature's `api.ts` stays the only place it calls `.rpc()` for its own inputs.
+ */
+export interface RidePassengerInput {
+  person_id?: string;
+  child_id?: string;
+  display_name: string;
+  seat_kind: "adult" | "child_seat" | "booster";
+}
+
+/** Appends named passengers to a ride's existing list (never replaces it); duplicates already on the ride or already served are silently skipped by the RPC. */
+export async function addRidePassengers(rideId: string, expectedVersion: number, passengers: RidePassengerInput[]): Promise<void> {
+  await rpc("add_ride_passengers", { p_ride_id: rideId, p_expected_version: expectedVersion, p_passengers: passengers as unknown as Json });
+}
+
+/** Removes exactly one named passenger row — allowed for whoever added it, the named person themself, the ride's driver, or a week manager. */
+export async function removeRidePassenger(ridePassengerId: string, expectedVersion: number): Promise<void> {
+  await rpc("remove_ride_passenger", { p_ride_passenger_id: ridePassengerId, p_expected_version: expectedVersion });
 }

@@ -37,12 +37,15 @@ export const heMember = {
    * (`src/features/requests/newRequestButton.ts` / `NewRequestButton`) — `he.action.newRequest`
    * stays for anything still using the old always-on label (none left after this change, kept
    * per the task's "keep the old key if anything else uses it").
+   *
+   * The 4th state (only the live week exists, nothing newer open yet) reuses `nextWeek`'s own
+   * label, disabled — the button always reads as being about *next* week, never "this week"
+   * (owner decision 2026-09-14, same day as the original three/four-state change).
    */
   newRequestButton: {
     nextWeek: "בקשה לשבוע הבא",
     preparing: "סידור בהכנה...",
     waitlistNextWeek: "רשימת המתנה לשבוע הבא",
-    waitlistThisWeek: "רשימת המתנה לשבוע הזה",
   },
   request: {
     namedPassengerCount: "נוסעים מבוגרים: {{count}} (כולל אותך)",
@@ -179,6 +182,21 @@ export const heMember = {
     locationBadge: "ב{{location}}",
     /** Multi-day request leg (REQ §13.77, UX_FLOWS.md §3.5). */
     seriesLine: "חלק מבקשה רב-יומית, יום {{index}} מתוך {{count}}",
+  },
+  /**
+   * The "+ נוסעים" button (siddur `RideDetailSheet` and the board's `RideSheet`, REQ §13.85):
+   * anyone in the department may add named passengers to any published ride.
+   * `add_ride_passengers()`/`remove_ride_passenger()`, 20260914170000_add_ride_passengers_rpc.sql.
+   */
+  addPassengers: {
+    button: "+ נוסעים",
+    title: "הוספת נוסעים לנסיעה",
+    submit: "הוספה",
+    added: "הנוסעים נוספו לנסיעה",
+    removed: "הנוסע/ת הוסר/ה מהנסיעה",
+    listTitle: "נוסעים נוספים",
+    removeAriaLabel: "הסרת {{name}}",
+    weekNotPublicHint: "אפשר להוסיף נוסעים רק לנסיעה מפורסמת",
   },
   proposalScreen: {
     loading: "טוען הצעה…",
@@ -424,6 +442,9 @@ export const heMember = {
     body: 'יש נסיעות באותו יום ליעדים קרובים (עד {{radius}} ק"מ). אפשר לבקש להצטרף לאחת מהן:',
     distance: 'כ-{{km}} ק"מ מהיעד שלך',
     askToJoin: "בקש/י להצטרף",
+    /** WhatsApp quick-link button (2026-09-14 owner amendment, REQ §10/§13.83): department phone numbers are not secrets. */
+    whatsapp: "וואטסאפ",
+    whatsappText: "היי {{driver}}, ראיתי שאת/ה נוסע/ת ל{{destination}} ביום {{day}} בשעה {{time}} — אפשר להצטרף לנסיעה?",
     stay: "להישאר ברשימת ההמתנה",
   },
   /**

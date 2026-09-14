@@ -155,7 +155,11 @@ export function isUnmetDropValid(ctx: BoardDropContext, item: UnmetListItem, car
   if (!seatsFit(ctx, carId, host || item.request.trip_shape !== "round_trip"
     ? { adults: need.adults + item.request.adults, childSeats: need.childSeats + item.request.child_seats, boosters: need.boosters + item.request.boosters }
     : unmetRequestPassengers(item.request))) return false;
+  // Without a merge host, `others` is every ride already on the target car — a plain drop
+  // still needs to fit into that car's existing schedule, not just clear maintenance blocks
+  // (previously this branch short-circuited to valid and let the SQL reject the overlap,
+  // showing a green target followed by an error toast).
   const others = ctx.rides.filter((ride) => ride.id !== host?.id && ride.car_id === carId && ride.starts_at && ride.ends_at)
     .map((ride) => ({ startsAt: ride.starts_at!, endsAt: ride.ends_at! }));
-  return !host || !wouldOverlap(window, others, 0);
+  return !wouldOverlap(window, others, 0);
 }

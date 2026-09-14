@@ -147,21 +147,21 @@ interface OfferRow {
 Deno.serve(async (req) => {
   const preflight = handleCorsPreflight(req);
   if (preflight) return preflight;
-  if (req.method !== 'POST') return errorResponse(405, 'method_not_allowed', 'שיטה לא נתמכת', corsHeaders);
+  if (req.method !== 'POST') return errorResponse(405, 'method_not_allowed', corsHeaders);
 
   const cronSecret = optionalEnv('CRON_SECRET');
   const headerSecret = req.headers.get('x-cron-secret') ?? '';
   if (!cronSecret || !timingSafeEqual(headerSecret, cronSecret)) {
-    return errorResponse(401, 'not_authorized', 'לא מורשה', corsHeaders);
+    return errorResponse(401, 'not_authorized', corsHeaders);
   }
 
   let body: { offer_id?: string };
   try {
     body = await req.json();
   } catch {
-    return errorResponse(400, 'invalid_body', 'גוף בקשה לא תקין', corsHeaders);
+    return errorResponse(400, 'invalid_body', corsHeaders);
   }
-  if (!body.offer_id) return errorResponse(400, 'invalid_body', 'חסר offer_id', corsHeaders);
+  if (!body.offer_id) return errorResponse(400, 'missing_offer_id', corsHeaders);
 
   const client = getServiceRoleClient();
 
@@ -170,8 +170,11 @@ Deno.serve(async (req) => {
     .select('id, department_id, week_start, car_id, cancelled_ride_id, starts_at, ends_at, status')
     .eq('id', body.offer_id)
     .maybeSingle<OfferRow>();
-  if (offerError) return errorResponse(500, 'db_error', offerError.message, corsHeaders);
-  if (!offer) return errorResponse(404, 'offer_not_found', 'ההצעה לא נמצאה', corsHeaders);
+  if (offerError) {
+    console.error('on-ride-cancelled db_error', offerError.message);
+    return errorResponse(500, 'db_error', corsHeaders);
+  }
+  if (!offer) return errorResponse(404, 'offer_not_found', corsHeaders);
   if (offer.status !== 'open') {
     // Idempotent: a retried pg_net delivery or a Sadran action may have resolved this already.
     return jsonResponse({ skipped: true, reason: 'offer_not_open', status: offer.status }, { headers: corsHeaders });
@@ -189,7 +192,10 @@ Deno.serve(async (req) => {
   const { data: candidateRows, error: candidatesError } = await client.rpc('freed_slot_candidates', {
     _offer: offer.id,
   });
-  if (candidatesError) return errorResponse(500, 'db_error', candidatesError.message, corsHeaders);
+  if (candidatesError) {
+    console.error('on-ride-cancelled db_error', candidatesError.message);
+    return errorResponse(500, 'db_error', corsHeaders);
+  }
 
   const candidates = (candidateRows ?? []) as { request_id: string; requester_id: string; fits: boolean; slack: string }[];
 
@@ -241,7 +247,7 @@ Deno.serve(async (req) => {
     ]);
 
   if (!carRow || !department || !settings) {
-    return errorResponse(500, 'missing_reference_data', 'חסרים נתוני רכב/מחלקה/הגדרות', corsHeaders);
+    return errorResponse(500, 'missing_reference_data', corsHeaders);
   }
 
   const homeLocationId = department.home_destination_id as string;
@@ -253,7 +259,7 @@ Deno.serve(async (req) => {
   if (!policyRow) {
     policyRow = (await client.from('policies').select('id, current_version_id').is('department_id', null).eq('is_active', true).maybeSingle()).data;
   }
-  if (!policyRow?.current_version_id) return errorResponse(500, 'no_active_policy', 'לא נמצאה מדיניות פעילה', corsHeaders);
+  if (!policyRow?.current_version_id) return errorResponse(500, 'no_active_policy', corsHeaders);
   const { data: policyVersion } = await client
     .from('policy_versions')
     .select('version_no, rules')

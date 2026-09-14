@@ -340,6 +340,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
             policyVersionId: policy.policyVersionId,
             versionNo: policy.versionNo,
             rules: policy.rules,
+            settings: policy.settings,
           },
           mode: "remaining",
         },
@@ -386,6 +387,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
           policyVersionId: policy.policyVersionId,
           versionNo: policy.versionNo,
           rules: policy.rules,
+          settings: policy.settings,
         },
         mode: "remaining",
       });

@@ -157,16 +157,16 @@ Deno.serve(async (req) => {
 
   const ip = clientIp(req);
   if (!checkRateLimit(`answer-proposal:${ip}`, RATE_LIMIT_MAX, RATE_LIMIT_WINDOW_MS)) {
-    return errorResponse(429, 'rate_limited', 'יותר מדי בקשות, נסו שוב בעוד דקה', corsHeaders);
+    return errorResponse(429, 'rate_limited', corsHeaders);
   }
 
   if (req.method === 'GET') {
     const url = new URL(req.url);
     const token = url.searchParams.get('token');
-    if (!token) return errorResponse(400, 'missing_token', 'חסר טוקן', corsHeaders);
+    if (!token) return errorResponse(400, 'missing_token', corsHeaders);
 
     const found = await findByToken(token);
-    if (!found) return errorResponse(404, 'invalid_token', 'הקישור אינו תקין', corsHeaders);
+    if (!found) return errorResponse(404, 'invalid_token', corsHeaders);
 
     const summary = await buildSummary(found.proposal, found.myProfileId);
     return jsonResponse(summary, { headers: corsHeaders });
@@ -177,12 +177,12 @@ Deno.serve(async (req) => {
     try {
       body = await req.json();
     } catch {
-      return errorResponse(400, 'invalid_body', 'גוף בקשה לא תקין', corsHeaders);
+      return errorResponse(400, 'invalid_body', corsHeaders);
     }
 
     const { token, answer, note, optOut } = body;
     if (!token || (answer !== 'accepted' && answer !== 'declined')) {
-      return errorResponse(400, 'invalid_body', 'חסרים שדות חובה', corsHeaders);
+      return errorResponse(400, 'missing_answer_fields', corsHeaders);
     }
 
     let via: 'token' | 'session' = 'token';
@@ -202,12 +202,12 @@ Deno.serve(async (req) => {
 
     if (error) {
       const code = error.message ?? 'unknown_error';
-      if (code.includes('invalid_token')) return errorResponse(404, 'invalid_token', 'הקישור אינו תקין', corsHeaders);
-      if (code.includes('proposal_expired')) return errorResponse(410, 'proposal_expired', 'ההצעה פגה', corsHeaders);
+      if (code.includes('invalid_token')) return errorResponse(404, 'invalid_token', corsHeaders);
+      if (code.includes('proposal_expired')) return errorResponse(410, 'proposal_expired', corsHeaders);
       if (code.includes('proposal_not_answerable')) {
-        return errorResponse(409, 'proposal_not_answerable', 'ההצעה כבר נענתה או אינה זמינה', corsHeaders);
+        return errorResponse(409, 'proposal_not_answerable', corsHeaders);
       }
-      return errorResponse(500, 'db_error', 'שגיאה בשמירת התשובה', corsHeaders);
+      return errorResponse(500, 'db_error', corsHeaders);
     }
 
     if (typeof optOut === 'boolean') {
@@ -225,5 +225,5 @@ Deno.serve(async (req) => {
     return jsonResponse(data, { headers: corsHeaders });
   }
 
-  return errorResponse(405, 'method_not_allowed', 'שיטה לא נתמכת', corsHeaders);
+  return errorResponse(405, 'method_not_allowed', corsHeaders);
 });

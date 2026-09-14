@@ -566,17 +566,23 @@ function continuityRank(carId, requestId, memberId, input) {
   if (input.stats.usualCarId[memberId] === carId) return 1;
   return 2;
 }
-function compareKey(a, b) {
+function compareKey(a, b, carChoice) {
   if (a.shiftCost !== b.shiftCost) return a.shiftCost - b.shiftCost;
   if (a.preference !== b.preference) return a.preference - b.preference;
   if (a.slackVal !== b.slackVal) return a.slackVal - b.slackVal;
   if (a.continuity !== b.continuity) return a.continuity - b.continuity;
-  if (a.mileageVal !== b.mileageVal) return a.mileageVal - b.mileageVal;
-  if (a.fragmentation !== b.fragmentation) return a.fragmentation - b.fragmentation;
+  if (carChoice === "spread") {
+    if (a.mileageVal !== b.mileageVal) return a.mileageVal - b.mileageVal;
+    if (a.fragmentation !== b.fragmentation) return a.fragmentation - b.fragmentation;
+  } else {
+    if (a.fragmentation !== b.fragmentation) return a.fragmentation - b.fragmentation;
+    if (a.mileageVal !== b.mileageVal) return a.mileageVal - b.mileageVal;
+  }
   return a.carId < b.carId ? -1 : a.carId > b.carId ? 1 : 0;
 }
-function coreKeyEqual(a, b) {
-  return a.shiftCost === b.shiftCost && a.preference === b.preference && a.slackVal === b.slackVal && a.continuity === b.continuity;
+function coreKeyEqual(a, b, carChoice) {
+  const base = a.shiftCost === b.shiftCost && a.preference === b.preference && a.slackVal === b.slackVal && a.continuity === b.continuity;
+  return carChoice === "pack" ? base && a.fragmentation === b.fragmentation : base;
 }
 function destinationKm(input, destinationId) {
   return input.destinations[destinationId]?.distanceKm ?? 0;
@@ -589,13 +595,16 @@ function addAssignedKm(assignedKmByCar, carId, km) {
   assignedKmByCar.set(carId, (assignedKmByCar.get(carId) ?? 0) + km);
 }
 var MileageDecisionTracker = class {
+  constructor(carChoice) {
+    this.carChoice = carChoice;
+  }
   decided = false;
   /** Call once per candidate, with the key that is (or was, before this
    *  candidate) the current best. `bestKey` is undefined for the very first
    *  candidate (nothing to compare against yet). */
   consider(candidateKey, bestKey, replaced) {
     if (!bestKey) return;
-    const coreTied = coreKeyEqual(candidateKey, bestKey);
+    const coreTied = coreKeyEqual(candidateKey, bestKey, this.carChoice);
     if (coreTied && candidateKey.mileageVal !== bestKey.mileageVal) {
       this.decided = true;
     } else if (replaced && !coreTied) {
@@ -656,6 +665,7 @@ function runGreedy(units, timelines, input) {
   const trackKm = (carId, km) => {
     if (mileageEnabled) addAssignedKm(assignedKmByCar, carId, km);
   };
+  const carChoice = input.policy.carChoice ?? "spread";
   for (const unit of sortUnits(units)) {
     if (unit.kind === "single" && unit.single) {
       const nr = unit.single;
@@ -665,7 +675,7 @@ function runGreedy(units, timelines, input) {
         continue;
       }
       let best = null;
-      const mileageDecision = new MileageDecisionTracker();
+      const mileageDecision = new MileageDecisionTracker(carChoice);
       for (const car of sharedCars) {
         if (!fits(car, nr.passengers) || !luggageFits(car, nr.luggage ? 1 : 0)) continue;
         const tl2 = timelines.get(car.id);
@@ -680,7 +690,7 @@ function runGreedy(units, timelines, input) {
             mileageVal: mileageValue(car, assignedKmByCar),
             carId: car.id
           };
-          const replaced = !best || compareKey(key, best.key) < 0;
+          const replaced = !best || compareKey(key, best.key, carChoice) < 0;
           mileageDecision.consider(key, best?.key, replaced);
           if (replaced) {
             best = { car, window: nr.window, shift: { departureMin: 0, returnMin: 0 }, key };
@@ -703,7 +713,7 @@ function runGreedy(units, timelines, input) {
             mileageVal: mileageValue(car, assignedKmByCar),
             carId: car.id
           };
-          const replaced = !best || compareKey(key, best.key) < 0;
+          const replaced = !best || compareKey(key, best.key, carChoice) < 0;
           mileageDecision.consider(key, best?.key, replaced);
           if (replaced) {
             best = { car, window: placement.window, shift: placement.shift, key };
@@ -763,7 +773,7 @@ function runGreedy(units, timelines, input) {
         const fragmentation = fragmentationFor(tl2, { start: pair.outWindow.start, end: pair.returnWindow.end });
         const preference = carPreferenceRank(car.id, [outNr.request.preferredCarId, retNr.request.preferredCarId]);
         const key = { shiftCost, preference, slackVal, continuity, fragmentation, mileageVal: 0, carId: car.id };
-        if (!best || compareKey(key, best.key) < 0) best = { car, key };
+        if (!best || compareKey(key, best.key, carChoice) < 0) best = { car, key };
       }
       if (!best) {
         unmetUnits.push(unit);
@@ -806,7 +816,7 @@ function runGreedy(units, timelines, input) {
         const fragmentation = fragmentationFor(tl2, { start: placement2.firstWindow.start, end: placement2.lastWindow.end });
         const preference = carPreferenceRank(car2.id, legs.map((leg) => leg.request.preferredCarId));
         const key = { shiftCost: placement2.shiftCost, preference, slackVal, continuity, fragmentation, mileageVal: 0, carId: car2.id };
-        if (!best || compareKey(key, best.key) < 0) best = { car: car2, placement: placement2, key };
+        if (!best || compareKey(key, best.key, carChoice) < 0) best = { car: car2, placement: placement2, key };
       }
       if (!best || !best.placement) {
         unmetUnits.push(unit);

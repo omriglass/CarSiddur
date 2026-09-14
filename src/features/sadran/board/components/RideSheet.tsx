@@ -2,6 +2,8 @@ import { fromZonedTime } from "date-fns-tz";
 import { useState } from "react";
 import { ridePublicDetails } from "@/lib/ridePublicDetails";
 import { ridePassengerSummary } from "@/lib/ridePassengerSummary";
+import { AddPassengersDialog } from "@/features/siddur/components/AddPassengersDialog";
+import { RidePassengersList } from "@/features/siddur/components/RidePassengersList";
 import { RidePublicNotesEditor } from "@/features/siddur/components/RidePublicNotesEditor";
 
 import { Button } from "@/components/ui/button";
@@ -185,6 +187,21 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
                   departmentId={departmentId}
                   weekStart={weekStart}
                   initialPassengers={namedPassengersOf(ride)}
+                />
+              ) : null}
+
+              {/* "+ נוסעים" (REQ §13.85): unlike `RidePassengersEditor` above (a Sadran
+                  reservation's *replace* editor, manual reservations only), this appends and
+                  works on any confirmed, uncancelled ride — the board's own authorized
+                  viewer always satisfies `can_manage_week` for this week. */}
+              <RidePassengersList expectedVersion={ride.version} passengers={namedPassengersOf(ride)} driverId={ride.driver_id} canManageWeek />
+              {!isPlanning && ride.id && ride.version != null && ride.status !== "cancelled" && departmentId && weekStart ? (
+                <AddPassengersDialog
+                  key={`${ride.id}:${ride.version}:add-passengers`}
+                  rideId={ride.id}
+                  expectedVersion={ride.version}
+                  departmentId={departmentId}
+                  weekStart={weekStart}
                 />
               ) : null}
 

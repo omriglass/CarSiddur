@@ -3,7 +3,7 @@ import { ageFromBirthYear, isAdultPassenger } from "@/lib/childAge";
 import { rpc, toAppError } from "@/lib/rpc";
 import { siddurCarName } from "@/lib/siddurCarName";
 
-import { templateSuggestionRowSchema, type TemplateSuggestionRow } from "./schema";
+import { joinableRideRowSchema, templateSuggestionRowSchema, type TemplateSuggestionRow } from "./schema";
 
 import type { Json } from "@/integrations/supabase/types";
 import type {
@@ -501,25 +501,35 @@ export interface JoinableRideRow {
   carName: string;
   carType: CarType;
   destinationName: string;
-  /** Empty when the ride has no assigned driver yet. Never a phone number (REQ §10). */
+  /** Empty when the ride has no assigned driver yet. */
   driverName: string;
   distanceKm: number;
   freeSeats: number;
+  /**
+   * `profiles.phone`, null when the driver has none or the ride has no driver yet (REQ §10
+   * amendment, 2026-09-14: department members' phones are not secrets — `JoinableRidesDialog`
+   * uses this for a WhatsApp quick link alongside the in-app "ask to join" button).
+   */
+  driverPhone: string | null;
 }
 
 export async function fetchJoinableRides(requestId: string): Promise<JoinableRideRow[]> {
   const rows = await rpc("joinable_rides_for_request", { p_request_id: requestId });
-  return (rows ?? []).map((row) => ({
-    rideId: row.ride_id,
-    startsAt: row.starts_at,
-    endsAt: row.ends_at,
-    carName: row.car_name,
-    carType: row.car_type,
-    destinationName: row.destination_name,
-    driverName: row.driver_name,
-    distanceKm: row.distance_km,
-    freeSeats: row.free_seats,
-  }));
+  return (rows ?? []).map((row) => {
+    const parsed = joinableRideRowSchema.parse(row);
+    return {
+      rideId: parsed.ride_id,
+      startsAt: parsed.starts_at,
+      endsAt: parsed.ends_at,
+      carName: parsed.car_name,
+      carType: parsed.car_type,
+      destinationName: parsed.destination_name,
+      driverName: parsed.driver_name,
+      distanceKm: parsed.distance_km,
+      freeSeats: parsed.free_seats,
+      driverPhone: parsed.driver_phone,
+    };
+  });
 }
 
 export async function withdrawRequest(requestId: string, expectedVersion: number): Promise<void> {

@@ -84,7 +84,7 @@ src/
     rules/index.ts             ruleRegistry (exported const object)
     rules/types.ts             Rule<P> interface, RuleContext<P>
     rules/<type>.ts            one rule per type: distance, fairness, rideType, publicTransport, peopleServed, flexibilityOffered, submissionTime, manualBoost
-    greedy.ts                  placement + car-choice key (shift → preference → slack → continuity → mileage (F5, opt-in via Car.mileageKm) → best-fit → id)
+    greedy.ts                  placement + car-choice key (shift → preference → slack → continuity → then mileage/best-fit in the order set by Policy.carChoice ('spread' default: mileage first; 'pack': best-fit first) → id)
     rules/__tests__/           Vitest unit tests per rule type + registry test
     reasons.ts                 Hebrew reason templates keyed by reasonCode (sole Hebrew in solver)
     __fixtures__/              golden test fixtures (input.json, expected.json), gen.ts (fixture generator)
@@ -109,7 +109,7 @@ src/
   types/                       domain types shared by UI and solver (not DB rows)
   main.tsx sw.ts index.css     PWA service worker, entry point, global styles
 supabase/
-  migrations/                  159 additive migrations, `20260907090000` through `20260914150000` (includes the 13-migration production-hardening pass, `20260910099000`–`20260910100200` — see docs/HARDENING_2026-09.md — and the 2026-09-14 owner batch `20260914100100`–`20260914150000`: `window_changed` event + `set_week_close_at`, stats sharing indicators, `ride_passengers`, `join_radius_km` + `joinable_rides_for_request`, `car_mileage_totals`, seeded destination coordinates)
+  migrations/                  162 additive migrations, `20260907090000` through `20260914180000` (includes the 13-migration production-hardening pass, `20260910099000`–`20260910100200` — see docs/HARDENING_2026-09.md — and the 2026-09-14 owner batch `20260914100100`–`20260914150000`: `window_changed` event + `set_week_close_at`, stats sharing indicators, `ride_passengers`, `join_radius_km` + `joinable_rides_for_request`, `car_mileage_totals`, seeded destination coordinates, `driver_phone` on joinable rides, `add_ride_passengers`/`remove_ride_passenger`, `policy_versions.settings.carChoice`)
   seed.sql                     demo data: departments, ride types, destinations, default policy, templates, member invites, demo auth users (local/e2e only)
   tests/                       27 SQL suites, run via `npm run db:test` (all transactional: begin … rollback)
     rls_smoke.sql              assertions: every table has forced RLS, no `using (true)` on writes, no `for all` policies
@@ -256,7 +256,8 @@ scripts/
 - Statistics: utilization includes the turnaround buffer; `sharing` (people utilization, fragmentation, one-way fulfilment — no combined score), `cancellations` (same-day rate), `requestsByHour`.
 - `ride_passengers` + `set_ride_passengers`: a board reservation ("שמירת זמן") can name people (first = driver); they see it on Home/siddur and are notified. Same table is the base for the future "+ נוסעים" button.
 - Joinable rides before the waiting list: `joinable_rides_for_request` (haversine within `department_settings.join_radius_km`, ±120 min, preset destinations only, free seat), `JoinableRidesDialog` after a `waitlisted` submit.
-- Solver mileage balance: `Car.mileageKm` from `car_mileage_totals` (4-week rolling window), ranked above best-fit packing, reason `CAR_BALANCED_MILEAGE`; inert when no car carries `mileageKm`.
+- Solver mileage balance: `Car.mileageKm` from `car_mileage_totals` (4-week rolling window), reason `CAR_BALANCED_MILEAGE`; inert when no car carries `mileageKm`. Its rank against best-fit packing is the policy option `policy_versions.settings.carChoice` (`spread` default = mileage above packing, `pack` = packing above mileage), set in the admin policy editor ("בחירת רכב").
+- "+ נוסעים" on the siddur and board ride sheets (`add_ride_passengers`/`remove_ride_passenger`, REQ §13.85); joinable-rides dialog shows a WhatsApp quick link (REQ §10 amended: department phones are not secrets); the new-request button is greyed with "בקשה לשבוע הבא" while next week is not open yet; edge functions return machine codes only (Hebrew-literal lint now covers `supabase/functions/**`).
 - Open points for the owner are listed at the end of `docs/TODO.md`.
 
 ## Verified 2026-09-11

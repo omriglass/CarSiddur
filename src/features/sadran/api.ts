@@ -173,6 +173,8 @@ export interface ActivePolicy {
   policyVersionId: string;
   versionNo: number;
   rules: unknown;
+  /** `policy_versions.settings` (owner, 2026-09-14; SOLVER.md §3.6/§3.6.2, REQ §13.84) — `{ carChoice?: 'pack' | 'spread' }`, absent/`{}` = spread. */
+  settings: unknown;
 }
 
 interface ActivePolicyJoinRow {
@@ -207,6 +209,7 @@ export async function fetchActivePolicy(departmentId: string): Promise<ActivePol
     policyVersionId: version.id,
     versionNo: version.version_no,
     rules: version.rules,
+    settings: version.settings,
   };
 }
 
@@ -221,6 +224,8 @@ export interface PolicyOption {
   note: string | null;
   /** `policy_versions.created_at`, Asia/Jerusalem-formatted by the caller (`src/lib/time.ts`). */
   createdAt: string;
+  /** `policy_versions.settings` (owner, 2026-09-14; SOLVER.md §3.6/§3.6.2, REQ §13.84). */
+  settings: unknown;
 }
 
 /** Policies belonging to this department for the board switcher. */
@@ -253,6 +258,7 @@ export async function fetchPolicyOptions(departmentId: string): Promise<PolicyOp
         isActive: p.is_active,
         note: version.note,
         createdAt: version.created_at,
+        settings: version.settings,
       };
     });
 }

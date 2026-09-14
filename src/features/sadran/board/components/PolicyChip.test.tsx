@@ -16,6 +16,7 @@ function option(overrides: Partial<PolicyOption> = {}): PolicyOption {
     isActive: true,
     note: null,
     createdAt: "2026-09-01T10:00:00Z",
+    settings: {},
     ...overrides,
   };
 }
@@ -72,7 +73,7 @@ describe("PolicyChip", () => {
     render(
       <PolicyChip
         policyOptions={[]}
-        activePolicy={{ policyId: "p", name: "מדיניות פעילה", policyVersionId: "v9", versionNo: 9, rules: [] }}
+        activePolicy={{ policyId: "p", name: "מדיניות פעילה", policyVersionId: "v9", versionNo: 9, rules: [], settings: {} }}
         value="v9"
         stale={false}
         onSelect={vi.fn()}

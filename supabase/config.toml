@@ -330,6 +330,9 @@ client_id = "env(SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID)"
 secret = "env(SUPABASE_AUTH_EXTERNAL_GOOGLE_SECRET)"
 redirect_uri = ""
 url = ""
+# Required for local sign-in with Google through supabase-js PKCE (the Supabase CLI template says the
+# same for the generic OIDC provider below); the hosted project sets its own Auth settings by hand
+# (docs/FREE_DEPLOYMENT.md §5), so this only affects the local stack. Reviewed 2026-09-14.
 skip_nonce_check = true
 
 [auth.external.apple]

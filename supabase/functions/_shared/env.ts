@@ -52,6 +52,13 @@ export function jsonResponse(body: unknown, init: ResponseInit & { headers?: Rec
   });
 }
 
-export function errorResponse(status: number, code: string, message_he: string, headers: Record<string, string> = {}): Response {
-  return jsonResponse({ error: { code, message_he } }, { status, headers });
+/**
+ * `{ error: { code } }` shape (matches `destination-route/handler.ts`'s `failure()`).
+ * `code` is a stable machine-readable identifier, never Hebrew (CLAUDE.md hard rule 3 —
+ * Hebrew lives only in src/i18n/he*.ts, src/solver/reasons.ts, and seeded DB data; edge
+ * functions are not one of those three places). Callers with a UI reader map the code to
+ * Hebrew client-side (see src/features/proposals/api.ts, src/features/admin/destinations/api.ts).
+ */
+export function errorResponse(status: number, code: string, headers: Record<string, string> = {}): Response {
+  return jsonResponse({ error: { code } }, { status, headers });
 }

@@ -1245,6 +1245,7 @@ export type Database = {
           note: string | null
           policy_id: string
           rules: Json
+          settings: Json
           version_no: number
         }
         Insert: {
@@ -1254,6 +1255,7 @@ export type Database = {
           note?: string | null
           policy_id: string
           rules: Json
+          settings?: Json
           version_no: number
         }
         Update: {
@@ -1263,6 +1265,7 @@ export type Database = {
           note?: string | null
           policy_id?: string
           rules?: Json
+          settings?: Json
           version_no?: number
         }
         Relationships: [
@@ -3629,6 +3632,14 @@ export type Database = {
       }
     }
     Functions: {
+      add_ride_passengers: {
+        Args: {
+          p_expected_version: number
+          p_passengers: Json
+          p_ride_id: string
+        }
+        Returns: undefined
+      }
       admin_approve_member: {
         Args: { p_department_id: string; p_profile_id: string }
         Returns: undefined
@@ -3793,7 +3804,12 @@ export type Database = {
         }
       }
       create_policy_version: {
-        Args: { p_note?: string; p_policy_id: string; p_rules: Json }
+        Args: {
+          p_note?: string
+          p_policy_id: string
+          p_rules: Json
+          p_settings?: Json
+        }
         Returns: string
       }
       create_proposal: {
@@ -3926,6 +3942,7 @@ export type Database = {
           destination_name: string
           distance_km: number
           driver_name: string
+          driver_phone: string
           ends_at: string
           free_seats: number
           ride_id: string
@@ -4087,6 +4104,10 @@ export type Database = {
       }
       release_request_draft_rides: {
         Args: { p_request_id: string }
+        Returns: undefined
+      }
+      remove_ride_passenger: {
+        Args: { p_expected_version: number; p_ride_passenger_id: string }
         Returns: undefined
       }
       render_notification_text: {

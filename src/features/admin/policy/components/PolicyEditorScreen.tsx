@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Slider } from "@/components/ui/slider";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -20,6 +21,7 @@ import { Info } from "lucide-react";
 
 import { useRideTypesAdmin } from "../../rideTypes/hooks";
 import type { PolicyRuleConfig } from "../api";
+import { carChoiceDiff, carChoiceOf } from "../diff";
 import {
   useCreatePolicyVersionMutation,
   usePoliciesAdmin,
@@ -96,10 +98,14 @@ function PolicyEditorInner({ policyId }: { policyId: string }) {
   const [draft, setDraft] = useState<DraftRule[]>(() =>
     buildDraft((latestVersion?.rules as unknown as PolicyRuleConfig[]) ?? [], rideTypeCodes),
   );
+  // Car-choice option (owner, 2026-09-14; SOLVER.md §3.6/§3.6.2, REQ §13.84): draft state for the
+  // segmented control below, seeded from (and re-synced with) the latest saved version, same as `draft`.
+  const [carChoice, setCarChoice] = useState<"pack" | "spread">(() => carChoiceOf(latestVersion?.settings));
   const [initializedFor, setInitializedFor] = useState<string | undefined>(latestVersion?.id);
   if (versionsQuery.data && latestVersion?.id !== initializedFor && !versionsQuery.isFetching) {
     setInitializedFor(latestVersion?.id);
     setDraft(buildDraft((latestVersion?.rules as unknown as PolicyRuleConfig[]) ?? [], rideTypeCodes));
+    setCarChoice(carChoiceOf(latestVersion?.settings));
   }
 
   // Ride types load asynchronously (and may change while the editor is open); once loaded, make sure
@@ -137,7 +143,12 @@ function PolicyEditorInner({ policyId }: { policyId: string }) {
   async function handleSave() {
     if (!policy) return;
     try {
-      await createVersionMutation.mutateAsync({ policyId: policy.id, rules: toRuleConfigs(draft), note: note || null });
+      await createVersionMutation.mutateAsync({
+        policyId: policy.id,
+        rules: toRuleConfigs(draft),
+        note: note || null,
+        settings: { carChoice },
+      });
       toast.success(he.adminCommon.savedToast);
       setNote("");
     } catch (error) {
@@ -176,6 +187,8 @@ function PolicyEditorInner({ policyId }: { policyId: string }) {
         homeDestinationId: department.home_destination_id,
         oldRules,
         newRules: toRuleConfigs(draft),
+        oldSettings: { carChoice: carChoiceOf(latestVersion?.settings) },
+        newSettings: { carChoice },
       });
       setPreview(result);
       if (!result) toast.error(he.adminPolicy.noPreviousWeek);
@@ -222,6 +235,26 @@ function PolicyEditorInner({ policyId }: { policyId: string }) {
               {he.adminPolicy.saveName}
             </Button>
           </div>
+          <div className="flex flex-col gap-2 rounded-md border p-3">
+            <span className="font-medium">{he.adminPolicy.carChoiceTitle}</span>
+            <RadioGroup value={carChoice} onValueChange={(v) => setCarChoice(v as "pack" | "spread")} className="gap-2">
+              <label className="flex min-h-11 items-center gap-2 rounded-md border p-2 text-sm">
+                <RadioGroupItem value="spread" />
+                <span className="flex flex-col">
+                  <span>{he.adminPolicy.carChoiceSpreadLabel}</span>
+                  <span className="text-xs text-muted-foreground">{he.adminPolicy.carChoiceSpreadDescription}</span>
+                </span>
+              </label>
+              <label className="flex min-h-11 items-center gap-2 rounded-md border p-2 text-sm">
+                <RadioGroupItem value="pack" />
+                <span className="flex flex-col">
+                  <span>{he.adminPolicy.carChoicePackLabel}</span>
+                  <span className="text-xs text-muted-foreground">{he.adminPolicy.carChoicePackDescription}</span>
+                </span>
+              </label>
+            </RadioGroup>
+          </div>
+
           {draft.map((row) => (
             <div key={row.type} className="flex flex-col gap-2 rounded-md border p-3">
               <div className="flex flex-wrap items-center gap-4">
@@ -367,16 +400,38 @@ function PolicyEditorInner({ policyId }: { policyId: string }) {
             <TableHeader>
               <TableRow>
                 <TableHead>{he.adminPolicy.versionColumn}</TableHead>
+                <TableHead>{he.adminPolicy.carChoiceColumn}</TableHead>
                 <TableHead>{he.adminPolicy.versionNote}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {(versionsQuery.data ?? []).map((v) => (
-                <TableRow key={v.id}>
-                  <TableCell dir="ltr">{v.version_no}</TableCell>
-                  <TableCell>{v.note ?? "—"}</TableCell>
-                </TableRow>
-              ))}
+              {(versionsQuery.data ?? []).map((v, i) => {
+                // Versions are fetched newest-first (usePolicyVersions), so the "previous"
+                // version for the diff badge is the next row down.
+                const previous = (versionsQuery.data ?? [])[i + 1];
+                const changed = previous ? carChoiceDiff(previous.settings, v.settings) : null;
+                const label =
+                  carChoiceOf(v.settings) === "pack" ? he.adminPolicy.carChoicePackLabel : he.adminPolicy.carChoiceSpreadLabel;
+                return (
+                  <TableRow key={v.id}>
+                    <TableCell dir="ltr">{v.version_no}</TableCell>
+                    <TableCell>
+                      {label}
+                      {changed ? (
+                        <span className="ms-2 text-xs text-muted-foreground">
+                          (
+                          {tv("adminPolicy.carChoiceChanged", {
+                            from: changed.from === "pack" ? he.adminPolicy.carChoicePackLabel : he.adminPolicy.carChoiceSpreadLabel,
+                            to: changed.to === "pack" ? he.adminPolicy.carChoicePackLabel : he.adminPolicy.carChoiceSpreadLabel,
+                          })}
+                          )
+                        </span>
+                      ) : null}
+                    </TableCell>
+                    <TableCell>{v.note ?? "—"}</TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
         </TabsContent>

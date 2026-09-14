@@ -42,7 +42,7 @@ function backoffMinutesFor(attempts: number): number {
   return BACKOFF_MINUTES[Math.min(attempts, BACKOFF_MINUTES.length - 1)];
 }
 
-async function authorize(req: Request): Promise<{ ok: true } | { ok: false; status: number; code: string; message: string }> {
+async function authorize(req: Request): Promise<{ ok: true } | { ok: false; status: number; code: string }> {
   const cronSecret = optionalEnv('CRON_SECRET');
   const headerSecret = req.headers.get('x-cron-secret') ?? '';
   if (cronSecret && timingSafeEqual(headerSecret, cronSecret)) {
@@ -59,7 +59,9 @@ async function authorize(req: Request): Promise<{ ok: true } | { ok: false; stat
     }
   }
 
-  return { ok: false, status: 401, code: 'not_authorized', message: 'לא מורשה' };
+  // No UI reads this function's responses (ARCHITECTURE.md §9: called by pg_net/cron or an
+  // admin flush action) — plain English is fine (CLAUDE.md hard rule 3).
+  return { ok: false, status: 401, code: 'not_authorized' };
 }
 
 async function fetchRows(client: ReturnType<typeof getServiceRoleClient>, filter: (q: ReturnType<typeof client.from>) => unknown) {
@@ -119,10 +121,10 @@ async function dispatchRow(
 Deno.serve(async (req) => {
   const preflight = handleCorsPreflight(req);
   if (preflight) return preflight;
-  if (req.method !== 'POST') return errorResponse(405, 'method_not_allowed', 'שיטה לא נתמכת', corsHeaders);
+  if (req.method !== 'POST') return errorResponse(405, 'method_not_allowed', corsHeaders);
 
   const auth = await authorize(req);
-  if (!auth.ok) return errorResponse(auth.status, auth.code, auth.message, corsHeaders);
+  if (!auth.ok) return errorResponse(auth.status, auth.code, corsHeaders);
 
   webpush.setVapidDetails(requireEnv('VAPID_SUBJECT'), requireEnv('VAPID_PUBLIC_KEY'), requireEnv('VAPID_PRIVATE_KEY'));
 
@@ -131,7 +133,7 @@ Deno.serve(async (req) => {
     const text = await req.text();
     if (text) body = JSON.parse(text);
   } catch {
-    return errorResponse(400, 'invalid_body', 'גוף בקשה לא תקין', corsHeaders);
+    return errorResponse(400, 'invalid_body', corsHeaders);
   }
 
   const client = getServiceRoleClient();
@@ -140,19 +142,28 @@ Deno.serve(async (req) => {
 
   if (typeof body.outbox_id === 'number') {
     const { data, error } = await fetchRows(client, (q) => q.eq('id', body.outbox_id!).limit(1));
-    if (error) return errorResponse(500, 'db_error', error.message, corsHeaders);
+    if (error) {
+      console.error('push-dispatch db_error', error.message);
+      return errorResponse(500, 'db_error', corsHeaders);
+    }
     rows = data ?? [];
   } else if (Array.isArray(body.notificationIds) && body.notificationIds.length > 0) {
     const { data, error } = await fetchRows(client, (q) =>
       q.in('notification_id', body.notificationIds!).in('status', ['pending', 'failed']).limit(BATCH_LIMIT),
     );
-    if (error) return errorResponse(500, 'db_error', error.message, corsHeaders);
+    if (error) {
+      console.error('push-dispatch db_error', error.message);
+      return errorResponse(500, 'db_error', corsHeaders);
+    }
     rows = data ?? [];
   } else {
     const { data, error } = await fetchRows(client, (q) =>
       q.in('status', ['pending', 'failed']).lte('next_attempt_at', now.toISOString()).limit(BATCH_LIMIT),
     );
-    if (error) return errorResponse(500, 'db_error', error.message, corsHeaders);
+    if (error) {
+      console.error('push-dispatch db_error', error.message);
+      return errorResponse(500, 'db_error', corsHeaders);
+    }
     rows = data ?? [];
   }
 
