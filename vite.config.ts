@@ -1,11 +1,33 @@
+import { execSync } from "node:child_process";
 import { fileURLToPath, URL } from "node:url";
 
 import react from "@vitejs/plugin-react-swc";
 import { defineConfig } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
 
+// In-app version footer (docs/RUNBOOK_ROLLBACK.md, CLAUDE.md release tooling,
+// owner decision 2026-09-14 #5): baked in at build time so the profile screen
+// can show which release tag/commit is actually live. Prefers a real git
+// describe (works for a full local/CI checkout with tags); Cloudflare's Git
+// integration does a shallow clone with no tags, so it falls back to the
+// commit SHA Cloudflare exposes as a build env var, and finally "dev" for a
+// plain local `npm run dev`/build with neither available.
+function appVersion(): string {
+  try {
+    return execSync("git describe --tags --always --dirty", { stdio: ["ignore", "pipe", "ignore"] })
+      .toString()
+      .trim();
+  } catch {
+    const sha = process.env.WORKERS_CI_COMMIT_SHA ?? process.env.CF_PAGES_COMMIT_SHA;
+    return sha ? sha.slice(0, 8) : "dev";
+  }
+}
+
 // https://vitejs.dev/config/
 export default defineConfig({
+  define: {
+    __APP_VERSION__: JSON.stringify(appVersion()),
+  },
   server: {
     host: true,
     port: 8080,

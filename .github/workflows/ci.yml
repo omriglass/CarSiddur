@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches: [main]
+    tags: ["v*"]
   pull_request:
   schedule:
     # Nightly full run (e2e) at 03:00 Asia/Jerusalem ≈ 00:00 UTC.
@@ -54,6 +55,14 @@ jobs:
       - name: Change impact (docs/TEST_MAP.md) — informational, fails only on unmapped files
         run: npm run impact -- --strict origin/main
 
+      - name: Migration guard (docs/RUNBOOK_ROLLBACK.md, supabase/rollback/README.md)
+        # Flags a new migration that drops/renames without a matching tested
+        # down script — forward-fix rule, owner decision 2026-09-14 #4. Same
+        # base ref as the impact step above; on a release tag (release.mjs
+        # only tags a commit that is already on origin/main) this is an empty,
+        # harmless diff.
+        run: node scripts/check-migrations.mjs origin/main
+
   # Database gate (B3): replay every migration + seed on a throwaway local
   # Supabase stack, verify the committed generated types match the schema,
   # and run the SQL regression suites (RLS smoke, solver persistence, …).
@@ -89,6 +98,48 @@ jobs:
       - name: Stop Supabase
         if: always()
         run: supabase stop --no-backup
+
+  # Gated frontend promotion (docs/RUNBOOK_ROLLBACK.md, owner decisions
+  # 2026-09-14 #1/#2). Only runs for a `vYYYY.MM.DD-n` release tag pushed by
+  # `npm run release`, and only after `check` + `database` both pass. The
+  # `production` environment requires the owner as a reviewer (set up once,
+  # by hand, in GitHub → Settings → Environments → production → Required
+  # reviewers — see docs/FREE_DEPLOYMENT.md "One-time setup for the gated
+  # flow"): the job pauses here until they click Approve. THAT CLICK is the
+  # one and only "deploy frontend" action — nothing reaches Cloudflare before
+  # it. Approving fast-forwards `production`, which is the only branch
+  # Cloudflare builds the `carsiddur` Worker from.
+  promote:
+    needs: [check, database]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify the tag is on origin/main
+        # A release tag must point at a commit origin/main already has —
+        # release.mjs only tags after confirming the local tree matches
+        # origin/main (step 1). This is a second, independent check here in
+        # CI: refuse to promote a tag created any other way (e.g. tagged from
+        # a stale or divergent local branch).
+        run: |
+          git fetch origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::Tag commit $GITHUB_SHA is not an ancestor of origin/main — refusing to promote. See docs/RUNBOOK_ROLLBACK.md."
+            exit 1
+          fi
+
+      - name: Fast-forward production to this tag
+        run: |
+          if ! git push origin "$GITHUB_SHA:production"; then
+            echo "::error::Fast-forward push to 'production' failed — it is likely not a fast-forward (production has commits this tag doesn't). Never force-push here; see the decision tree in docs/RUNBOOK_ROLLBACK.md."
+            exit 1
+          fi
 
   # Browser end-to-end suite (B3). Runs nightly and on demand, not on every
   # push: the suite is serial (workers=1, see playwright.config.ts) and takes

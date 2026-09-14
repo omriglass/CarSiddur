@@ -52,6 +52,7 @@ Check first: `add-priority-rule`, `add-request-field`, `add-notification-event`,
 - [ ] `CLAUDE.md` folder map / conventions / task→skill table if you added a pattern, folder, command or skill; `docs/MAINTENANCE.md` if you added a skill or agent.
 - [ ] Audit: every state change of requests, rides, proposals, policies, weeks is logged (REQ §11).
 - [ ] Free tier: no paid service; note any usage approaching Supabase Free limits in `ARCHITECTURE.md` §15.
+- [ ] Deploying this: hand the owner `npm run release` (`--dry-run` first to preview) and remind them nothing goes live until they approve the `promote` job's `production` environment in GitHub — this skill never runs `npm run release`, `supabase db push`, `supabase functions deploy`, or pushes tags itself (`docs/FREE_DEPLOYMENT.md` §8, `docs/RUNBOOK_ROLLBACK.md`).
 
 ## Final verification
 - [ ] Re-read the cited REQ section; implementation matches or REQ was updated.

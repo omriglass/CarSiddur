@@ -106,12 +106,14 @@ Fix: <file(s) touched, one sentence per file>
 Regression test: added <file> | proposed <file/pattern> (not added because <reason>)
 Impact: <areas from docs/TEST_MAP.md or npm run impact output, if present; otherwise the feature folders/suites touched> — risk: low/medium/high
 Deploy steps (owner runs these — this skill does not deploy, commit, or touch production):
-  1. npm run db:export -- --linked --yes-remote   (backup first — Free tier has no rollback window)
-  2. npx supabase db push --dry-run               (only if a migration was added; review, then)
-     npx supabase db push
-  3. npx supabase functions deploy <fn>            (only if that edge function or the solver bundle changed)
-  4. git push origin main                          (Cloudflare Worker `carsiddur` rebuilds from GitHub)
+  1. Commit this fix on main (this skill does not commit).
+  2. `npm run release` (add `--dry-run` first to preview) — runs check, backup, pending migrations,
+     changed edge functions, and pushes the release tag. Refuses to touch anything remote without
+     `--yes-remote` (scripts/release.mjs).
+  3. The tag only triggers CI — nothing deploys until the owner approves the `promote` job's
+     `production` environment in GitHub. THAT CLICK is the one and only "deploy frontend" action.
+  4. Post-release: run the smoke checklist in `docs/RUNBOOK_ROLLBACK.md`.
 ```
 
-- [ ] Every deploy step is **listed**, never executed, by this skill — even if asked, hand the commands to the user instead of running them, and say why (no rollback window on Supabase Free, per `docs/FREE_DEPLOYMENT.md` §8).
+- [ ] Every deploy step is **listed**, never executed, by this skill — even if asked, hand the commands to the user instead of running them, and say why (releases are gated and owner-approved by design, `docs/FREE_DEPLOYMENT.md` §8, `docs/RUNBOOK_ROLLBACK.md`).
 - [ ] Do not commit. Leave the working tree as-is for the user to review and commit.

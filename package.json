@@ -28,7 +28,8 @@
     "functions:bundle": "node scripts/bundle-solver.mjs && node supabase/tests/bundle_solver.test.mjs",
     "db:fake": "node scripts/fake-week.mjs",
     "db:export": "node scripts/db-export.mjs",
-    "impact": "node scripts/impact.mjs"
+    "impact": "node scripts/impact.mjs",
+    "release": "node scripts/release.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "5.9.1",

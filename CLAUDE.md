@@ -21,7 +21,7 @@ Guidance for Claude Code working in this repository.
 7. **Before declaring anything done:** `npm run check` (lint, typecheck, unit tests) passes. Schema changes also need `npm run db:reset && npm run db:types` with the regenerated types committed, and `npm run db:test`. Solver changes also need `npm run functions:bundle` (CI diff-checks the bundle). User-facing flows run the relevant Playwright spec; `npm run check:full` runs everything (needs the local stack). CI (`.github/workflows/ci.yml`) runs `check` + bundle freshness + build and the database job (migrations replay, types freshness, SQL suites) on every push, and e2e nightly / on demand. A change to a mapped path updates `docs/TEST_MAP.md`/`test-map.json` in the same change when it adds a screen, flow or suite; `npm run impact` tells you what to run and what to hand QA.
 8. **Never hand-edit generated files:** `src/integrations/supabase/types.ts`, `src/components/ui/*` (shadcn CLI), `supabase/functions/_shared/solver.js` (built by `scripts/bundle-solver`).
 9. **Enums are defined once, in SQL**, mirrored into `src/lib/enums.ts` (see Conventions). Priority **rule types are the exception**: they are a TS registry (`src/solver/rules/index.ts`) mirrored into the SQL `validate_policy_rules()` known set.
-10. **`supabase/config.toml` is the local stack's config only** (`site_url = "http://localhost:8080"` etc.) — never run `supabase config push` against the hosted project; production Auth URLs (Site URL, redirect URLs, Google provider) are set by hand in the Supabase dashboard (`docs/FREE_DEPLOYMENT.md` §5).
+10. **`supabase/config.toml` is the local stack's config only** (`site_url = "http://localhost:8080"` etc.) — never run `supabase config push` against the hosted project; production Auth URLs (Site URL, redirect URLs, Google provider) are set by hand in the Supabase dashboard (`docs/FREE_DEPLOYMENT.md` §5). The `production` branch is what Cloudflare's `carsiddur` Worker builds from — `main` is not; it only advances via the gated `promote` CI job after the owner approves the GitHub `production` environment (`npm run release`, `docs/RUNBOOK_ROLLBACK.md`), never a direct push.
 
 ## Commands
 
@@ -48,12 +48,14 @@ Guidance for Claude Code working in this repository.
 | `npm run db:test` | Run RLS, solver persistence and TODO regression suites in the configured local Docker container; `SUPABASE_DB_CONTAINER` selects a disposable test container |
 | `npm run functions:serve` | `supabase functions serve --env-file supabase/functions/.env` |
 | `npm run functions:bundle` | Bundle `src/solver` into `supabase/functions/_shared/solver.js` (the only generated file there) and run the bundle test |
+| `npm run release` | `node scripts/release.mjs [--dry-run\|--yes-remote\|--yes\|--skip-check\|--status]` — the one path from checked-in `main` to a pushed `vYYYY.MM.DD-n` release tag: preflight, `check`, bundle freshness, backup, migrations, changed edge functions, tag + push. Refuses to touch the hosted project without `--yes-remote`; `--dry-run` only prints the plan. Pushing the tag triggers CI; it does **not** deploy the frontend — that needs the owner's approval on CI's `promote` job (`docs/FREE_DEPLOYMENT.md` §8, `docs/RUNBOOK_ROLLBACK.md`) |
+| `node scripts/check-migrations.mjs <base-ref>` | Flags a new migration (since `<base-ref>`) that drops/renames without a matching tested `supabase/rollback/<ts>_down.sql` — CI's `check` job and `npm run release` both run it (forward-fix rule, owner decision 2026-09-14 #4) |
 
 ## Folder map
 
 ```
 test-map.json                  machine-readable twin of docs/TEST_MAP.md (same area ids); consumed by scripts/impact.mjs (`npm run impact`)
-docs/                          REQUIREMENTS, ARCHITECTURE, DATA_MODEL, SOLVER, UX_FLOWS, MAINTENANCE, TEST_MAP (change→tests→QA impact map, by area not feature folder), TODO (owner backlog), REFACTOR_BACKLOG (code-audit findings), HARDENING_2026-09 (production hardening audit trail)
+docs/                          REQUIREMENTS, ARCHITECTURE, DATA_MODEL, SOLVER, UX_FLOWS, MAINTENANCE, TEST_MAP (change→tests→QA impact map, by area not feature folder), TODO (owner backlog), REFACTOR_BACKLOG (code-audit findings), HARDENING_2026-09 (production hardening audit trail), RELEASES (release notes / incident log, newest first), RUNBOOK_ROLLBACK (per-layer rollback decision tree + commands)
 src/
   app/                         router.tsx (route patterns, all routes), routes.ts (matching path builders — `paths.sadran.*`/`paths.siddur`/`paths.requests.*`; routes.test.ts checks them against the real patterns), providers (Query, Auth, RTL), shell
   pages/                       route-level components (member, sadran, admin sections)
@@ -113,6 +115,7 @@ src/
 supabase/
   migrations/                  164 additive migrations, `20260907090000` through `20260914200000` (includes the 13-migration production-hardening pass, `20260910099000`–`20260910100200` — see docs/HARDENING_2026-09.md — and the 2026-09-14 owner batch `20260914100100`–`20260914150000`: `window_changed` event + `set_week_close_at`, stats sharing indicators, `ride_passengers`, `join_radius_km` + `joinable_rides_for_request`, `car_mileage_totals`, seeded destination coordinates, `driver_phone` on joinable rides, `add_ride_passengers`/`remove_ride_person`, `policy_versions.settings.carChoice`, `v_board_rides.people`, policy score by target week)
   seed.sql                     demo data: departments, ride types, destinations, default policy, templates, member invites, demo auth users (local/e2e only)
+  rollback/                    tested down scripts for non-additive migrations, `<same timestamp>_down.sql` (README.md has the convention); enforced by scripts/check-migrations.mjs
   tests/                       27 SQL suites, run via `npm run db:test` (all transactional: begin … rollback)
     rls_smoke.sql              assertions: every table has forced RLS, no `using (true)` on writes, no `for all` policies
     solve_semantics.sql        solver persistence and assignment behavior
@@ -174,6 +177,8 @@ scripts/
   test-db.mjs                  SQL regression runner with explicit database-container selection
   fake-week.mjs                `npm run db:fake` — generates fake members/requests via submit_request for manual local testing
   impact.mjs                   `npm run impact` — change→tests→QA impact tool; matches `git diff` paths against test-map.json's per-area globs (hand-rolled `**`/`*` matcher, no new dependency)
+  release.mjs                  `npm run release` — preflight, check, backup, migrations, edge functions, release tag; refuses remote/destructive steps without `--yes-remote`
+  check-migrations.mjs         `node scripts/check-migrations.mjs <base-ref>` — flags a new migration that drops/renames without a matching `supabase/rollback/<ts>_down.sql`
   impact.test.mjs              Vitest: the glob matcher, migrationContentRules, and test-map.json/docs/TEST_MAP.md area-id consistency
 .claude/
   skills/                      9 routine-change playbooks with exact steps and file paths

@@ -300,6 +300,10 @@ export function ProfilePage() {
           {he.action.signOut}
         </Button>
       </div>
+
+      <footer className="pt-2 text-center text-xs text-muted-foreground">
+        {he.profileExtra.version} <span dir="ltr">{__APP_VERSION__}</span>
+      </footer>
     </div>
   );
 }

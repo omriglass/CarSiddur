@@ -273,6 +273,8 @@ export const heMember = {
     themeLight: "בהיר",
     themeDark: "כהה",
     themeSystem: "לפי המכשיר",
+    /** Version footer label (docs/RUNBOOK_ROLLBACK.md); the release tag/short commit itself is rendered separately, `dir="ltr"`. */
+    version: "גרסה",
   },
   freedSlot: {
     title: "רכב שהתפנה",

@@ -76,7 +76,22 @@ Workflow:
 
 ## Before go-live
 
-`docs/FREE_DEPLOYMENT.md` is the single launch checklist (GitHub → hosted Supabase → notification credentials → Cloudflare Worker → Google sign-in → real data → hosted verification) — follow it end to end rather than a separate list here. Once live, run `npm run db:export -- --linked --yes-remote` weekly by hand (Free tier has no automatic backups, FREE_DEPLOYMENT §8) and keep roughly the last 8 weekly sets off-site.
+`docs/FREE_DEPLOYMENT.md` is the single launch checklist (GitHub → hosted Supabase → notification credentials → Cloudflare Worker → Google sign-in → real data → hosted verification) — follow it end to end rather than a separate list here. Once live, releases go through `npm run release` (below), which takes the weekly backup as part of every release; run `npm run db:export -- --linked --yes-remote` by hand on any week without a release (Free tier has no automatic backups, FREE_DEPLOYMENT §8) and copy the files to Google Drive, keeping roughly the last 8 weekly sets.
+
+## Release
+
+Once the go-live checklist's gated flow is set up (`docs/FREE_DEPLOYMENT.md` "One-time setup for the gated flow"), shipping a release is always the same eight steps, run by `npm run release` (`scripts/release.mjs`) — never by hand:
+
+1. Preflight: clean tree, on `main`, matches `origin/main`.
+2. `npm run check` (lint, typecheck, unit tests).
+3. Verify the solver bundle is fresh.
+4. Back up the hosted database (`scripts/db-export.mjs --linked --yes-remote`); copy the three files to Google Drive.
+5. Push pending migrations (`supabase db push`, after a dry-run review).
+6. Deploy whichever edge functions changed since the last release tag.
+7. Create and push the annotated `vYYYY.MM.DD-n` tag.
+8. Print what happens next — the tag only triggers CI; nothing deploys until the owner approves the `production` environment in GitHub (`docs/RUNBOOK_ROLLBACK.md` has the post-release smoke checklist and what to do if it goes wrong).
+
+`npm run release -- --dry-run` prints this plan without touching anything; `--status` shows the last tag, commits since, and pending migrations/functions. `node scripts/check-migrations.mjs <base-ref>` (also run in CI) is the forward-fix guard: a new migration that drops or renames without a tested `supabase/rollback/<ts>_down.sql` fails the build.
 
 ## Tips for writing prompts
 
