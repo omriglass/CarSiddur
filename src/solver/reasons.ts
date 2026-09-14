@@ -13,6 +13,7 @@ const TEMPLATES: Record<string, string> = {
   PLACED_RELAY_PAIR: 'שובץ ל{car}: {member} נוהג/ת ל{dest} ב-{dep} ומשאיר/ה את הרכב; {partner} מחזיר/ה אותו ב-{ret}',
   PLACED_FIXED: 'נסיעה קבועה שנקבעה מראש',
   PLACED_SERIES: 'שובץ/ה כחלק מבקשה רב-יומית ל{car} ({index}/{count})',
+  CAR_BALANCED_MILEAGE: 'נבחר {car} לאיזון קילומטראז׳ בין הרכבים',
 
   // Unmet reasons
   UNMET_NO_CAR: 'אין רכב פנוי בחלון המבוקש; חוסמים: {blockers}',

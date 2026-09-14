@@ -204,9 +204,14 @@ begin
   -- (= w) is therefore not less than earliest, and no from-clamp fires here.
   assert (result ->> 'earliest') = w::text, '(a) earliest mismatch';
   assert (result ->> 'sharedCars')::int = 3, '(a) sharedCars mismatch';
-  assert (result -> 'utilization' ->> 'activeHours')::numeric = 5.0, '(a) activeHours: expected 2+1+2=5h, cancelled/private/out-of-window excluded';
-  assert (result -> 'utilization' ->> 'capacityHours')::numeric = 3 * 14 * 16, '(a) capacityHours mismatch';
-  assert (result -> 'utilization' ->> 'rate')::numeric = round(5.0 / (3*14*16), 4), '(a) utilization rate mismatch';
+  -- S1 (20260914110000): each ride's occupied span now includes the department's turnaround
+  -- buffer (default 30 min), capped at the same [06:00,22:00) window. Ride A (05:00-08:00)
+  -- gains 30 min (08:00 -> 08:30, still short of 22:00): 2h -> 2.5h. Ride B (21:00-23:30) and
+  -- ride C (20:00-23:00) already clip at 22:00 before the buffer would matter, so they are
+  -- unchanged at 1h and 2h. Total: 2.5+1+2=5.5h (was 5.0h before this migration).
+  assert (result -> 'utilization' ->> 'activeHours')::numeric = 5.5, '(a) activeHours: expected 2.5+1+2=5.5h (S1 turnaround buffer), cancelled/private/out-of-window excluded';
+  assert (result -> 'utilization' ->> 'capacityHours')::numeric = 3 * 14 * 16, '(a) capacityHours mismatch (unaffected by S1 -- fixed cars x days x 16 denominator)';
+  assert (result -> 'utilization' ->> 'rate')::numeric = round(5.5 / (3*14*16), 4), '(a) utilization rate mismatch';
 
   assert (result -> 'requests' ->> 'total')::int = 8, '(a) requests.total mismatch';
   assert (result -> 'requests' ->> 'granted')::int = 3, '(a) requests.granted mismatch';
@@ -253,9 +258,11 @@ begin
   select item into wed from jsonb_array_elements(result -> 'byWeekday') item where (item ->> 'dow')::int = extract(dow from day3)::int;
 
   assert (mon ->> 'occurrences')::int = 2, '(a) Monday occurrences over 14 days must be 2';
-  assert (mon ->> 'avgActiveHours')::numeric = 1.5, '(a) Monday avgActiveHours: (2h+1h)/2 occurrences';
+  -- S1: ride A gains the 30-min turnaround buffer (2h -> 2.5h), ride B is unchanged (1h) ->
+  -- (2.5h+1h)/2 occurrences = 1.75 (was 1.5 before this migration).
+  assert (mon ->> 'avgActiveHours')::numeric = 1.75, '(a) Monday avgActiveHours: (2.5h+1h)/2 occurrences (S1 turnaround buffer)';
   assert (mon ->> 'avgRides')::numeric = 1.0, '(a) Monday avgRides: 2 rides start on the one Monday with data / 2 occurrences';
-  assert (mon ->> 'utilizationRate')::numeric = round(1.5/(3*16), 4), '(a) Monday utilizationRate mismatch';
+  assert (mon ->> 'utilizationRate')::numeric = round(1.75/(3*16), 4), '(a) Monday utilizationRate mismatch';
 
   assert (tue ->> 'occurrences')::int = 2, '(a) Tuesday occurrences must be 2';
   assert (tue ->> 'avgActiveHours')::numeric = 1.0, '(a) Tuesday avgActiveHours: 2h / 2 occurrences';
@@ -544,8 +551,11 @@ begin
 
     assert (rc_result ->> 'sharedCars')::int = 1,
       '(k) sharedCars must exclude the car retired before the range, counting only the active one';
-    assert (rc_result -> 'utilization' ->> 'activeHours')::numeric = 2.0,
-      '(k) activeHours must still include the retired car''s ride (2h)';
+    -- S1 (20260914110000): 09:00-11:00 + the 30-min turnaround buffer (11:00 -> 11:30, still
+    -- short of the 22:00 window) -> 2.5h, not 2.0h. compute_week_stats()'s own cached
+    -- active_hours above is deliberately unaffected (S1 is scoped to department_stats() only).
+    assert (rc_result -> 'utilization' ->> 'activeHours')::numeric = 2.5,
+      '(k) activeHours must still include the retired car''s ride, plus the S1 turnaround buffer (2.5h)';
     assert (rc_result -> 'utilization' ->> 'capacityHours')::numeric = (1 * 7 * 16)::numeric,
       '(k) capacityHours must reflect only the one active car';
     assert (rc_result ->> 'rides')::int = 1,
@@ -559,6 +569,167 @@ begin
     assert rc_by_type is not null, '(k) byRideType must include the retired car''s ride type';
     assert (rc_by_type ->> 'rides')::int = 1, '(k) byRideType healthcare rides mismatch';
     assert (rc_by_type ->> 'hours')::numeric = 2.0, '(k) byRideType healthcare hours mismatch';
+  end;
+
+  -- ---------------------------------------------------------------------------
+  -- (l) Statistics group S2-S4 (owner request, 2026-09-14; docs/TODO.md "S -- Statistics
+  -- group", REQ item 78 "Extended (2026-09-14)", DATA_MODEL §7.6, `20260914110000
+  -- _department_stats_sharing_indicators.sql`): the `sharing` object (peopleUtilization,
+  -- fragmentation, oneWayFulfilment), `cancellations` (same-day rate) and `requestsByHour`.
+  -- A dedicated department (catalogs copied from the main fixture's, same technique as (k))
+  -- keeps this independent of the main fixture's precisely tuned numbers above. (S1's
+  -- turnaround-buffer change is exercised in (a) and (k) above, not repeated here.)
+  -- ---------------------------------------------------------------------------
+  declare
+    sh_dept uuid;
+    sh_week date := public.current_week_start() - 483;   -- Sunday-aligned, far-past, distinct from every other offset in this file
+    sh_from date := sh_week;
+    sh_to date := sh_week + 6;
+    sh_home uuid;
+    sh_ride_type uuid;
+    car_x uuid;
+    day_a date := sh_week + 1;             -- Monday: two rides on car_x (fragmentation, peopleUtilization)
+    day_b date := sh_week + 2;             -- Tuesday: one ride on car_x
+    day_cancel_same date := sh_week + 3;   -- Wednesday: cancelled the same calendar day it started
+    day_cancel_diff date := sh_week + 4;   -- Thursday: cancelled two days in advance (not same day)
+    ride1_id uuid; ride3_id uuid;
+    sh_req1_id uuid; sh_req2_id uuid;
+    ow_req1 uuid; ow_req2 uuid; ow_req3 uuid;
+    sh_result jsonb;
+    sharing_obj jsonb; cancel_obj jsonb; hour_arr jsonb;
+    hour_row jsonb;
+  begin
+    execute 'set local role authenticated';
+    perform set_config('request.jwt.claims', jsonb_build_object('sub', admin_id, 'role', 'authenticated')::text, true);
+    select id into sh_dept from public.create_department('Stats sharing test', 'stats-sharing-test', dept);
+    select home_destination_id into sh_home from public.departments where id = sh_dept;
+    select id into sh_ride_type from public.ride_types where department_id = sh_dept and code = 'work';
+
+    -- weeks/cars/rides/requests/ride_requests are RPC-only (no direct write policy,
+    -- 20260910099300); seed the fixture rows as the table owner, same technique as (f)/(g)/
+    -- (h)/(k) above.
+    execute 'reset role';
+
+    insert into public.weeks(department_id, week_start, phase, open_at, close_at, publish_at)
+    values (sh_dept, sh_week, 'archived', now() - interval '400 days', now() - interval '399 days', now() - interval '398 days');
+
+    insert into public.cars (department_id, name, license_plate, type, status)
+    values (sh_dept, 'Sharing test car', 'SH-STATS-01', 'shared', 'active')
+    returning id into car_x;
+    -- Max total seats over this car's configs = 5 (one config, adults=5).
+    insert into public.car_seat_configs (car_id, adults, child_seats, boosters) values (car_x, 5, 0, 0);
+
+    -- peopleUtilization fixture: req1 served on ride1 (adults=2,child_seats=1 -> 3 people);
+    -- ride2 (below) has a driver but no served request at all -> 1 person (fallback rule,
+    -- same convention `distinctPeople` uses for a bare `rides.driver_id`); req2 served on
+    -- ride3 (adults=4,boosters=1 -> 5 people). Total people = 3+1+5 = 9; seats = 5 (car_x) x 3
+    -- rides = 15; peopleUtilization = 9/15 = 0.6.
+    insert into public.requests (id, department_id, week_start, requester_id, filed_by, destination_id,
+      ride_type_id, trip_shape, depart_at, return_at, adults, child_seats, boosters, submitted_at, status)
+    values (gen_random_uuid(), sh_dept, sh_week, member1, member1, sh_home, sh_ride_type, 'round_trip',
+      (day_a + time '09:00') at time zone 'Asia/Jerusalem', (day_a + time '11:00') at time zone 'Asia/Jerusalem',
+      2, 1, 0, now(), 'assigned')
+    returning id into sh_req1_id;
+    insert into public.requests (id, department_id, week_start, requester_id, filed_by, destination_id,
+      ride_type_id, trip_shape, depart_at, return_at, adults, child_seats, boosters, submitted_at, status)
+    values (gen_random_uuid(), sh_dept, sh_week, member2, member2, sh_home, sh_ride_type, 'round_trip',
+      (day_b + time '09:00') at time zone 'Asia/Jerusalem', (day_b + time '11:00') at time zone 'Asia/Jerusalem',
+      4, 0, 1, now(), 'assigned')
+    returning id into sh_req2_id;
+
+    -- Fragmentation fixture: 2 rides on day_a (one car-day, 2 rides) + 1 ride on day_b (one
+    -- car-day, 1 ride) = 3 rides / 2 active car-days = 1.5.
+    insert into public.rides (id, department_id, week_start, car_id, starts_at, ends_at, origin_id,
+      destination_id, driver_id, status, created_by)
+    values (gen_random_uuid(), sh_dept, sh_week, car_x, (day_a + time '09:00') at time zone 'Asia/Jerusalem',
+      (day_a + time '11:00') at time zone 'Asia/Jerusalem', sh_home, sh_home, member1, 'confirmed', sadran_id)
+    returning id into ride1_id;
+    insert into public.ride_requests (ride_id, request_id, role, leg, car_mode)
+    values (ride1_id, sh_req1_id, 'driver', 'both', 'keep');
+
+    insert into public.rides (department_id, week_start, car_id, starts_at, ends_at, origin_id,
+      destination_id, driver_id, status, created_by)
+    values (sh_dept, sh_week, car_x, (day_a + time '13:00') at time zone 'Asia/Jerusalem',
+      (day_a + time '14:00') at time zone 'Asia/Jerusalem', sh_home, sh_home, sadran_id, 'confirmed', sadran_id);
+    -- ^ intentionally has no ride_requests row -> "driver but no served request" -> 1 person.
+
+    insert into public.rides (id, department_id, week_start, car_id, starts_at, ends_at, origin_id,
+      destination_id, driver_id, status, created_by)
+    values (gen_random_uuid(), sh_dept, sh_week, car_x, (day_b + time '09:00') at time zone 'Asia/Jerusalem',
+      (day_b + time '11:00') at time zone 'Asia/Jerusalem', sh_home, sh_home, member2, 'confirmed', sadran_id)
+    returning id into ride3_id;
+    insert into public.ride_requests (ride_id, request_id, role, leg, car_mode)
+    values (ride3_id, sh_req2_id, 'driver', 'both', 'keep');
+
+    -- Cancellations fixture: one ride cancelled the same calendar day it started, one
+    -- cancelled two days in advance (not the same day) -> total=2, sameDay=1, rate=0.5.
+    insert into public.rides (department_id, week_start, car_id, starts_at, ends_at, origin_id,
+      destination_id, driver_id, status, cancelled_at, cancelled_by, cancel_reason, created_by)
+    values (sh_dept, sh_week, car_x, (day_cancel_same + time '10:00') at time zone 'Asia/Jerusalem',
+      (day_cancel_same + time '12:00') at time zone 'Asia/Jerusalem', sh_home, sh_home, member1, 'cancelled',
+      (day_cancel_same + time '08:00') at time zone 'Asia/Jerusalem', sadran_id, 'same-day test cancel', sadran_id);
+    insert into public.rides (department_id, week_start, car_id, starts_at, ends_at, origin_id,
+      destination_id, driver_id, status, cancelled_at, cancelled_by, cancel_reason, created_by)
+    values (sh_dept, sh_week, car_x, (day_cancel_diff + time '10:00') at time zone 'Asia/Jerusalem',
+      (day_cancel_diff + time '12:00') at time zone 'Asia/Jerusalem', sh_home, sh_home, member1, 'cancelled',
+      (day_b + time '08:00') at time zone 'Asia/Jerusalem', sadran_id, 'advance-notice test cancel', sadran_id);
+
+    -- One-way fulfilment fixture: 2 served (assigned/merged), 1 unserved (waitlisted); a
+    -- draft is excluded entirely. 'one_way_to' carries depart_at, 'one_way_from' carries only
+    -- return_at (also exercises requestsByHour's "no depart_at -> not counted" rule below).
+    insert into public.requests (id, department_id, week_start, requester_id, filed_by, destination_id,
+      ride_type_id, trip_shape, depart_at, return_at, one_way_car_mode, adults, submitted_at, status)
+    values (gen_random_uuid(), sh_dept, sh_week, member1, member1, sh_home, sh_ride_type, 'one_way_to',
+      (day_a + time '08:00') at time zone 'Asia/Jerusalem', null, 'relay', 1, now(), 'assigned')
+    returning id into ow_req1;
+    insert into public.requests (id, department_id, week_start, requester_id, filed_by, destination_id,
+      ride_type_id, trip_shape, depart_at, return_at, one_way_car_mode, adults, submitted_at, status)
+    values (gen_random_uuid(), sh_dept, sh_week, member2, member2, sh_home, sh_ride_type, 'one_way_to',
+      (day_a + time '14:00') at time zone 'Asia/Jerusalem', null, 'relay', 1, now(), 'merged')
+    returning id into ow_req2;
+    insert into public.requests (id, department_id, week_start, requester_id, filed_by, destination_id,
+      ride_type_id, trip_shape, depart_at, return_at, one_way_car_mode, adults, submitted_at, status)
+    values (gen_random_uuid(), sh_dept, sh_week, member1, member1, sh_home, sh_ride_type, 'one_way_from',
+      null, (day_b + time '17:00') at time zone 'Asia/Jerusalem', 'relay', 1, now(), 'waitlisted')
+    returning id into ow_req3;
+    -- Draft one-way request at 10:00 on day_a: must be excluded from oneWayFulfilment AND
+    -- from requestsByHour (non-draft/non-withdrawn filter on both).
+    insert into public.requests (department_id, week_start, requester_id, filed_by, destination_id,
+      ride_type_id, trip_shape, depart_at, return_at, one_way_car_mode, adults, submitted_at, status)
+    values (sh_dept, sh_week, member1, member1, sh_home, sh_ride_type, 'one_way_to',
+      (day_a + time '10:00') at time zone 'Asia/Jerusalem', null, 'relay', 1, now(), 'draft');
+
+    execute 'set local role authenticated';
+    perform set_config('request.jwt.claims', jsonb_build_object('sub', admin_id, 'role', 'authenticated')::text, true);
+    sh_result := public.department_stats(sh_dept, sh_from, sh_to);
+
+    sharing_obj := sh_result -> 'sharing';
+    assert (sharing_obj ->> 'peopleUtilization')::numeric = 0.6, '(l) sharing.peopleUtilization mismatch';
+    assert (sharing_obj ->> 'fragmentation')::numeric = 1.5, '(l) sharing.fragmentation mismatch';
+    assert (sharing_obj ->> 'fragmentationRideCount')::int = 3, '(l) sharing.fragmentationRideCount mismatch';
+    assert (sharing_obj ->> 'activeCarDays')::int = 2, '(l) sharing.activeCarDays mismatch';
+    assert (sharing_obj ->> 'oneWayTotal')::int = 3, '(l) sharing.oneWayTotal mismatch (draft excluded)';
+    assert (sharing_obj ->> 'oneWayServed')::int = 2, '(l) sharing.oneWayServed mismatch';
+    assert (sharing_obj ->> 'oneWayFulfilment')::numeric = round(2.0/3, 4), '(l) sharing.oneWayFulfilment mismatch';
+
+    cancel_obj := sh_result -> 'cancellations';
+    assert (cancel_obj ->> 'total')::int = 2, '(l) cancellations.total mismatch';
+    assert (cancel_obj ->> 'sameDay')::int = 1, '(l) cancellations.sameDay mismatch';
+    assert (cancel_obj ->> 'sameDayRate')::numeric = 0.5, '(l) cancellations.sameDayRate mismatch';
+
+    hour_arr := sh_result -> 'requestsByHour';
+    assert jsonb_array_length(hour_arr) = 24, '(l) requestsByHour must always have 24 entries';
+
+    select item into hour_row from jsonb_array_elements(hour_arr) item where (item ->> 'hour')::int = 8;
+    assert (hour_row ->> 'count')::int = 1, '(l) hour 8 count mismatch (ow_req1)';
+    select item into hour_row from jsonb_array_elements(hour_arr) item where (item ->> 'hour')::int = 9;
+    assert (hour_row ->> 'count')::int = 2, '(l) hour 9 count mismatch (req1 + req2)';
+    select item into hour_row from jsonb_array_elements(hour_arr) item where (item ->> 'hour')::int = 14;
+    assert (hour_row ->> 'count')::int = 1, '(l) hour 14 count mismatch (ow_req2)';
+    select item into hour_row from jsonb_array_elements(hour_arr) item where (item ->> 'hour')::int = 10;
+    assert (hour_row ->> 'count')::int = 0, '(l) hour 10 must stay 0 -- the only request there is a draft';
+    select item into hour_row from jsonb_array_elements(hour_arr) item where (item ->> 'hour')::int = 17;
+    assert (hour_row ->> 'count')::int = 0, '(l) hour 17 must stay 0 -- ow_req3 has no depart_at to bucket by (one_way_from)';
   end;
 end $$;
 

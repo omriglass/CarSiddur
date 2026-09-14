@@ -6,6 +6,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { toast } from "sonner";
 
+import { paths } from "@/app/routes";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { SheetPortalContext } from "@/components/SheetPortalContext";
@@ -37,13 +38,14 @@ import { cn } from "@/lib/utils";
 import { fits, type Car as SolverCar } from "@/solver";
 
 import { fetchChildren } from "../api";
-import type { RequestEditRow, SubmitRequestResult, SubmitSeriesRequestResult, TemplateSuggestion } from "../api";
+import type { JoinableRideRow, RequestEditRow, SubmitRequestResult, SubmitSeriesRequestResult, TemplateSuggestion } from "../api";
 import { dayLabel } from "../dayLabel";
 import { CAR_NOW_DEFAULT_HOURS, CAR_NOW_HOURS_OPTIONS } from "../carNow";
 import { findOverlappingRequest } from "../duplicate";
 import { QUICK_REQUEST_DURATION_HOURS, endTimeForDuration, shiftReturnByDepartureDelta } from "../duration";
 import { guestPassengerNames, quickVehicleWindow } from "../quickRequest";
 import {
+  useJoinableRidesMutation,
   useMyRequests,
   useRequestCompanionsQuery,
   useSaveRequestTemplateMutation,
@@ -56,9 +58,10 @@ import {
 } from "../hooks";
 import { intervalToFlexValue, toInstant, toSubmitRequestPayload } from "../mapper";
 import { requestFormSchema, type RequestFormValues } from "../schema";
-import { seriesSpanDays } from "../series";
-import { toastSeriesSubmitOutcome, toastSubmitOutcome } from "../submitOutcome";
+import { isSeriesSubmission, returnDayAfterDayChange, seriesSpanDays } from "../series";
+import { shouldOfferJoinableRides, toastSeriesSubmitOutcome, toastSubmitOutcome } from "../submitOutcome";
 import { suggestionToFormValues } from "../templatePrefill";
+import { JoinableRidesDialog } from "./JoinableRidesDialog";
 
 export interface JoinRidePrefill {
   rideId: string;
@@ -306,6 +309,7 @@ export function RequestForm({
 
   const submitMutation = useSubmitRequestMutation();
   const submitSeriesMutation = useSubmitSeriesRequestMutation();
+  const joinableRidesMutation = useJoinableRidesMutation();
   const setCompanionsMutation = useSetRequestCompanionsMutation();
   const setChildrenMutation = useSetRequestChildrenMutation();
   const suggestDestinationMutation = useSuggestDestinationMutation(departmentId);
@@ -501,10 +505,21 @@ export function RequestForm({
   // values while the "לשמור רכב ליותר משבוע?" confirmation is open; `performSubmit` runs
   // either straight from `onSubmit` (span ≤ 7 days) or from the dialog's own confirm.
   const [pendingSeriesSubmit, setPendingSeriesSubmit] = useState<RequestFormValues | null>(null);
+  // F4 (docs/TODO.md, owner A8-A10): a `waitlisted` outcome with nearby joinable rides holds off
+  // the normal onDone/navigate — `afterJoinableDialog` runs it once the member picks "ask to
+  // join" or "stay on the waiting list". State (not a ref): it's only ever set from an event
+  // handler and read from another, never during render.
+  const [joinableRides, setJoinableRides] = useState<JoinableRideRow[] | null>(null);
+  const [afterJoinableDialog, setAfterJoinableDialog] = useState<() => void>(() => () => {});
+
+  /** Same gate as `isMultiDay` above, so the hint and the filed request never disagree (B1). */
+  function isSeriesSubmit(formValues: RequestFormValues): boolean {
+    return isSeriesSubmission({ pickerShown: showReturnDayPicker, pickerOpen: returnAnotherDay, day: formValues.day, returnDay: formValues.returnDay });
+  }
 
   function onSubmit(formValues: RequestFormValues) {
     const returnDay = formValues.returnDay;
-    const multiDay = showReturnDayPicker && !!returnDay && returnDay !== formValues.day;
+    const multiDay = isSeriesSubmit(formValues);
     if (multiDay && seriesSpanDays(formValues.day, returnDay!) > 7) {
       setPendingSeriesSubmit(formValues);
       return;
@@ -515,8 +530,7 @@ export function RequestForm({
   async function performSubmit(formValues: RequestFormValues) {
     if (quickContext && (isPast || invalidTime)) return;
     setSubmitError(null);
-    const returnDay = formValues.returnDay;
-    const isSeriesRequest = showReturnDayPicker && !!returnDay && returnDay !== formValues.day;
+    const isSeriesRequest = isSeriesSubmit(formValues);
     const selected = (childrenQuery.data ?? []).filter((child) => formValues.children.includes(child.id));
     const childAdults = selected.filter((child) => child.isAdultPassenger).length;
     const childSeatsCount = selected.filter((child) => !child.isAdultPassenger).length;
@@ -612,8 +626,28 @@ export function RequestForm({
         onViewRequests: () => navigate("/requests"),
       });
 
-      if (onDone) onDone(result);
-      else navigate("/requests");
+      const proceed = () => {
+        if (onDone) onDone(result);
+        else navigate("/requests");
+      };
+
+      // F4 (docs/TODO.md, owner A8-A10): a waitlisted outcome only ever happens against a
+      // published/live week (try_auto_approve()/enter_waiting_list() already ran, same gate
+      // `toastSubmitOutcome`'s `waitlisted` branch uses) — offer nearby joinable rides before
+      // leaving the member to just wait. Best-effort: a failed lookup never blocks the normal
+      // outcome.
+      if (shouldOfferJoinableRides(result) && requestId) {
+        try {
+          const rides = await joinableRidesMutation.mutateAsync(requestId);
+          if (rides.length > 0) {
+            setAfterJoinableDialog(() => proceed);
+            setJoinableRides(rides);
+            return;
+          }
+        } catch { /* non-fatal — fall through to the normal outcome */ }
+      }
+
+      proceed();
     } catch {
       setSubmitError(variant === "quick" || variant === "carNow" ? t("quickRequest.submitError") : t("request.submitError"));
     }
@@ -766,11 +800,13 @@ export function RequestForm({
                 onChange={(next) => {
                   field.onChange(next);
                   form.setValue("dayIndex", Math.max(datesOfWeek(weekStart).indexOf(next), 0));
-                  // Keep the return day a valid same-day-or-later value if the departure day
-                  // moved past it (REQ §13.77 — a series' return is always on a later day).
-                  const currentReturnDay = form.getValues("returnDay");
-                  if (currentReturnDay && currentReturnDay < next) {
-                    form.setValue("returnDay", next, { shouldDirty: true });
+                  // The return day follows the departure day unless the member opened the
+                  // "return another day" picker (`returnDayAfterDayChange`, TODO B1 2026-09-14).
+                  const nextReturnDay = returnDayAfterDayChange({
+                    pickerOpen: returnAnotherDay, currentReturnDay: form.getValues("returnDay"), nextDay: next,
+                  });
+                  if (nextReturnDay !== form.getValues("returnDay")) {
+                    form.setValue("returnDay", nextReturnDay, { shouldDirty: true });
                   }
                 }}
               />
@@ -1112,6 +1148,20 @@ export function RequestForm({
         const values = pendingSeriesSubmit;
         setPendingSeriesSubmit(null);
         if (values) void performSubmit(values);
+      }}
+    />
+    <JoinableRidesDialog
+      open={!!joinableRides}
+      onOpenChange={(open) => { if (!open) { setJoinableRides(null); afterJoinableDialog(); } }}
+      rides={joinableRides ?? []}
+      radiusKm={settingsQuery.data?.join_radius_km ?? 10}
+      onAskToJoin={(rideId) => {
+        setJoinableRides(null);
+        navigate(paths.requests.new({ ride: rideId, week: weekStart }));
+      }}
+      onStay={() => {
+        setJoinableRides(null);
+        afterJoinableDialog();
       }}
     />
     </>

@@ -53,6 +53,35 @@ describe("departmentStatsSchema", () => {
     expect(parsed.distinctDrivers).toBeUndefined();
     expect(parsed.byRideType).toBeUndefined();
     expect(parsed.weekly).toBeUndefined();
+    expect(parsed.sharing).toBeUndefined();
+    expect(parsed.cancellations).toBeUndefined();
+    expect(parsed.requestsByHour).toBeUndefined();
+  });
+
+  it("parses the S1-S4 statistics-group fields (sharing/cancellations/requestsByHour) when the RPC provides them", () => {
+    const withStatsGroup = {
+      ...stats,
+      sharing: {
+        peopleUtilization: 0.6,
+        fragmentation: 1.5,
+        fragmentationRideCount: 3,
+        activeCarDays: 2,
+        oneWayFulfilment: 0.6667,
+        oneWayServed: 2,
+        oneWayTotal: 3,
+      },
+      cancellations: { total: 2, sameDay: 1, sameDayRate: 0.5 },
+      requestsByHour: Array.from({ length: 24 }, (_, hour) => ({ hour, count: hour === 8 ? 3 : 0 })),
+    };
+    const parsed = departmentStatsSchema.parse(withStatsGroup);
+    expect(parsed.sharing?.peopleUtilization).toBe(0.6);
+    expect(parsed.cancellations?.sameDayRate).toBe(0.5);
+    expect(parsed.requestsByHour).toHaveLength(24);
+  });
+
+  it("rejects a requestsByHour entry with an hour outside 0..23", () => {
+    const bad = { ...stats, requestsByHour: [{ hour: 24, count: 0 }] };
+    expect(() => departmentStatsSchema.parse(bad)).toThrow();
   });
 
   it("parses the new optional fields when the RPC provides them", () => {

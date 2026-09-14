@@ -99,6 +99,15 @@ export interface Car {
   maintenance: Window[];
   /** where the car is at week start; default = home */
   startLocationId?: string;
+  /**
+   * Kilometres this car drove in the rolling window before this week (F5,
+   * docs/SOLVER.md §3.6.2; from the `car_mileage_totals` SQL RPC via
+   * `buildSolverInput`). Optional and opt-in: when every car omits it, car
+   * choice is byte-for-byte identical to before this field existed — it only
+   * ever acts as the last tie-break before `car.id`, after every other
+   * consideration (preferred car, seat fit, continuity, fragmentation).
+   */
+  mileageKm?: number;
 }
 
 export interface AssignmentLeg {

@@ -29,5 +29,6 @@ export const departmentSettingsSchema = z.object({
   closing_reminder_hours: z.array(z.number().int().min(0)),
   auto_apply_accepted_proposals: z.boolean(),
   board_start_time: z.string(),
+  join_radius_km: z.number().min(0).max(100),
 });
 export type DepartmentSettingsFormValues = z.infer<typeof departmentSettingsSchema>;

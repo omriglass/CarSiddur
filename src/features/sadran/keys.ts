@@ -17,6 +17,9 @@ export const sadranKeys = {
   destinations: () => [...sadranKeys.all, "destinations"] as const,
   fairnessStats: (departmentId: string, weekStart: string, lookbackWeeks: number) =>
     [...sadranKeys.week(departmentId, weekStart), "fairnessStats", lookbackWeeks] as const,
+  /** F5 (docs/SOLVER.md §3.6.2): `car_mileage_totals()`, rolling window fixed at 4 weeks. */
+  mileageTotals: (departmentId: string, weekStart: string) =>
+    [...sadranKeys.week(departmentId, weekStart), "mileageTotals"] as const,
   rideTypes: () => [...sadranKeys.all, "rideTypes"] as const,
   departmentSettings: (departmentId: string) => [...sadranKeys.all, departmentId, "settings"] as const,
   activePolicy: (departmentId: string) => [...sadranKeys.all, departmentId, "activePolicy"] as const,

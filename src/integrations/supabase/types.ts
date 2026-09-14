@@ -661,6 +661,7 @@ export type Database = {
           department_id: string
           detour_limit_km: number
           detour_limit_minutes: number
+          join_radius_km: number
           open_dow: number
           open_time: string
           overrides: Json
@@ -684,6 +685,7 @@ export type Database = {
           department_id: string
           detour_limit_km?: number
           detour_limit_minutes?: number
+          join_radius_km?: number
           open_dow?: number
           open_time?: string
           overrides?: Json
@@ -707,6 +709,7 @@ export type Database = {
           department_id?: string
           detour_limit_km?: number
           detour_limit_minutes?: number
+          join_radius_km?: number
           open_dow?: number
           open_time?: string
           overrides?: Json
@@ -2361,6 +2364,112 @@ export type Database = {
           },
         ]
       }
+      ride_passengers: {
+        Row: {
+          added_by: string
+          child_id: string | null
+          created_at: string
+          department_id: string
+          display_name: string
+          id: string
+          person_id: string | null
+          ride_id: string
+          seat_kind: string
+          updated_at: string
+          week_start: string
+        }
+        Insert: {
+          added_by: string
+          child_id?: string | null
+          created_at?: string
+          department_id: string
+          display_name: string
+          id?: string
+          person_id?: string | null
+          ride_id: string
+          seat_kind: string
+          updated_at?: string
+          week_start: string
+        }
+        Update: {
+          added_by?: string
+          child_id?: string | null
+          created_at?: string
+          department_id?: string
+          display_name?: string
+          id?: string
+          person_id?: string | null
+          ride_id?: string
+          seat_kind?: string
+          updated_at?: string
+          week_start?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ride_passengers_added_by_fkey"
+            columns: ["added_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ride_passengers_child_id_fkey"
+            columns: ["child_id"]
+            isOneToOne: false
+            referencedRelation: "children"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ride_passengers_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ride_passengers_person_id_fkey"
+            columns: ["person_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ride_passengers_ride_id_fkey"
+            columns: ["ride_id"]
+            isOneToOne: false
+            referencedRelation: "rides"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ride_passengers_ride_id_fkey"
+            columns: ["ride_id"]
+            isOneToOne: false
+            referencedRelation: "v_board_rides"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ride_passengers_ride_id_fkey"
+            columns: ["ride_id"]
+            isOneToOne: false
+            referencedRelation: "v_car_locations"
+            referencedColumns: ["leaving_ride_id"]
+          },
+          {
+            foreignKeyName: "ride_passengers_ride_id_fkey"
+            columns: ["ride_id"]
+            isOneToOne: false
+            referencedRelation: "v_my_requests"
+            referencedColumns: ["ride_id"]
+          },
+          {
+            foreignKeyName: "ride_passengers_week_fk"
+            columns: ["department_id", "week_start"]
+            isOneToOne: false
+            referencedRelation: "weeks"
+            referencedColumns: ["department_id", "week_start"]
+          },
+        ]
+      }
       ride_requests: {
         Row: {
           car_mode: Database["public"]["Enums"]["leg_car_mode"]
@@ -3200,6 +3309,7 @@ export type Database = {
           origin_name: string | null
           overflow_allowed: boolean | null
           overnight_ack_by: string | null
+          passengers: Json | null
           pin_reason: string | null
           planning_conflict: boolean | null
           series_count: number | null
@@ -3636,6 +3746,17 @@ export type Database = {
         Returns: boolean
       }
       car_location_at: { Args: { _at: string; _car: string }; Returns: string }
+      car_mileage_totals: {
+        Args: {
+          p_department_id: string
+          p_week_start: string
+          p_weeks?: number
+        }
+        Returns: {
+          car_id: string
+          km: number
+        }[]
+      }
       claim_freed_slot: {
         Args: { p_offer_id: string; p_request_id: string }
         Returns: undefined
@@ -3770,6 +3891,10 @@ export type Database = {
       gen_salt: { Args: { type: string }; Returns: string }
       generate_token: { Args: never; Returns: string }
       grant_admin: { Args: { p_profile_id: string }; Returns: undefined }
+      haversine_km: {
+        Args: { lat1: number; lat2: number; lng1: number; lng2: number }
+        Returns: number
+      }
       housekeeping: { Args: { p_now?: string }; Returns: undefined }
       initialize_department_catalogs: {
         Args: { p_department_id: string; p_source_department_id: string }
@@ -3793,6 +3918,20 @@ export type Database = {
         Returns: boolean
       }
       join_waitlist_group: { Args: { p_request_id: string }; Returns: string }
+      joinable_rides_for_request: {
+        Args: { p_request_id: string }
+        Returns: {
+          car_name: string
+          car_type: Database["public"]["Enums"]["car_type"]
+          destination_name: string
+          distance_km: number
+          driver_name: string
+          ends_at: string
+          free_seats: number
+          ride_id: string
+          starts_at: string
+        }[]
+      }
       log_car_care: {
         Args: {
           _car_id: string
@@ -4066,6 +4205,22 @@ export type Database = {
         Args: { p_profile_ids: string[]; p_request_id: string }
         Returns: undefined
       }
+      set_ride_passengers: {
+        Args: {
+          p_expected_version: number
+          p_passengers: Json
+          p_ride_id: string
+        }
+        Returns: undefined
+      }
+      set_week_close_at: {
+        Args: {
+          p_close_at: string
+          p_department_id: string
+          p_week_start: string
+        }
+        Returns: undefined
+      }
       set_week_phase: {
         Args: {
           p_department_id: string
@@ -4200,6 +4355,7 @@ export type Database = {
         | "car_care"
         | "waitlist_contested"
         | "waitlist_resolved"
+        | "window_changed"
       party_response: "pending" | "accepted" | "declined"
       proposal_status:
         | "draft"
@@ -4423,6 +4579,7 @@ export const Constants = {
         "car_care",
         "waitlist_contested",
         "waitlist_resolved",
+        "window_changed",
       ],
       party_response: ["pending", "accepted", "declined"],
       proposal_status: [

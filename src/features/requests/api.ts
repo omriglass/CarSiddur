@@ -486,6 +486,42 @@ export async function submitSeriesRequest(payload: SubmitRequestPayload): Promis
   return rpc("submit_series_request", { payload: payload as unknown as Json });
 }
 
+/**
+ * `joinable_rides_for_request(request_id)` (F4, docs/TODO.md, owner answers A8-A10): existing
+ * rides the same day, within the department's `join_radius_km`, offered right after a
+ * `waitlisted` outcome instead of just leaving the member to wait — see `JoinableRidesDialog`.
+ * Purely a read: never called by `submitRequest`/`submitSeriesRequest` itself, so it can never
+ * change placement. Empty for a free-text request, an open/solving week, or when nothing
+ * nearby has a free seat that day — the caller treats an empty array as "nothing to offer".
+ */
+export interface JoinableRideRow {
+  rideId: string;
+  startsAt: string;
+  endsAt: string;
+  carName: string;
+  carType: CarType;
+  destinationName: string;
+  /** Empty when the ride has no assigned driver yet. Never a phone number (REQ §10). */
+  driverName: string;
+  distanceKm: number;
+  freeSeats: number;
+}
+
+export async function fetchJoinableRides(requestId: string): Promise<JoinableRideRow[]> {
+  const rows = await rpc("joinable_rides_for_request", { p_request_id: requestId });
+  return (rows ?? []).map((row) => ({
+    rideId: row.ride_id,
+    startsAt: row.starts_at,
+    endsAt: row.ends_at,
+    carName: row.car_name,
+    carType: row.car_type,
+    destinationName: row.destination_name,
+    driverName: row.driver_name,
+    distanceKm: row.distance_km,
+    freeSeats: row.free_seats,
+  }));
+}
+
 export async function withdrawRequest(requestId: string, expectedVersion: number): Promise<void> {
   await rpc("withdraw_request", { p_request_id: requestId, p_expected_version: expectedVersion });
 }

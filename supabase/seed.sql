@@ -33,18 +33,18 @@ insert into public.departments (id, name, slug)
 values ('00000000-0000-0000-0000-000000000001', 'נבו', 'nevo')
 on conflict (id) do nothing;
 
-insert into public.destinations (id, department_id, name, zone, distance_km, travel_minutes, public_transport_score, is_approved)
+insert into public.destinations (id, department_id, name, zone, distance_km, travel_minutes, public_transport_score, is_approved, lat, lng)
 values
-  ('00000000-0000-0000-0000-000000000010', '00000000-0000-0000-0000-000000000001', 'נבו', 'home', 0, 0, null, true),
-  ('00000000-0000-0000-0000-000000000011', '00000000-0000-0000-0000-000000000001', 'חיפה', 'haifa', 12.0, 20, 4, true),
-  ('00000000-0000-0000-0000-000000000012', '00000000-0000-0000-0000-000000000001', 'בנימינה', 'north', 6.5, 10, 3, true),
-  ('00000000-0000-0000-0000-000000000013', '00000000-0000-0000-0000-000000000001', 'זכרון יעקב', 'north', 8.0, 12, 2, true),
-  ('00000000-0000-0000-0000-000000000014', '00000000-0000-0000-0000-000000000001', 'קיסריה', 'north', 15.0, 18, 1, true),
-  ('00000000-0000-0000-0000-000000000015', '00000000-0000-0000-0000-000000000001', 'תל אביב', 'tel_aviv', 55.0, 55, 5, true),
-  ('00000000-0000-0000-0000-000000000016', '00000000-0000-0000-0000-000000000001', 'עפולה', 'north', 30.0, 35, 2, true),
-  ('00000000-0000-0000-0000-000000000017', '00000000-0000-0000-0000-000000000001', 'פרדס חנה', 'north', 4.0, 8, 2, true),
-  ('00000000-0000-0000-0000-000000000018', '00000000-0000-0000-0000-000000000001', 'נתניה', 'sharon', 40.0, 40, 3, true),
-  ('00000000-0000-0000-0000-000000000019', '00000000-0000-0000-0000-000000000001', 'ירושלים', 'jerusalem', 110.0, 100, 3, true)
+  ('00000000-0000-0000-0000-000000000010', '00000000-0000-0000-0000-000000000001', 'נבו', 'home', 0, 0, null, true, 32.4700, 34.9700),
+  ('00000000-0000-0000-0000-000000000011', '00000000-0000-0000-0000-000000000001', 'חיפה', 'haifa', 12.0, 20, 4, true, 32.7940, 34.9896),
+  ('00000000-0000-0000-0000-000000000012', '00000000-0000-0000-0000-000000000001', 'בנימינה', 'north', 6.5, 10, 3, true, 32.5195, 34.9494),
+  ('00000000-0000-0000-0000-000000000013', '00000000-0000-0000-0000-000000000001', 'זכרון יעקב', 'north', 8.0, 12, 2, true, 32.5723, 34.9526),
+  ('00000000-0000-0000-0000-000000000014', '00000000-0000-0000-0000-000000000001', 'קיסריה', 'north', 15.0, 18, 1, true, 32.5183, 34.9046),
+  ('00000000-0000-0000-0000-000000000015', '00000000-0000-0000-0000-000000000001', 'תל אביב', 'tel_aviv', 55.0, 55, 5, true, 32.0853, 34.7818),
+  ('00000000-0000-0000-0000-000000000016', '00000000-0000-0000-0000-000000000001', 'עפולה', 'north', 30.0, 35, 2, true, 32.6078, 35.2897),
+  ('00000000-0000-0000-0000-000000000017', '00000000-0000-0000-0000-000000000001', 'פרדס חנה', 'north', 4.0, 8, 2, true, 32.4740, 34.9676),
+  ('00000000-0000-0000-0000-000000000018', '00000000-0000-0000-0000-000000000001', 'נתניה', 'sharon', 40.0, 40, 3, true, 32.3215, 34.8532),
+  ('00000000-0000-0000-0000-000000000019', '00000000-0000-0000-0000-000000000001', 'ירושלים', 'jerusalem', 110.0, 100, 3, true, 31.7683, 35.2137)
 on conflict (id) do nothing;
 
 update public.departments set home_destination_id='00000000-0000-0000-0000-000000000010'
@@ -202,6 +202,7 @@ select t.event::public.notification_event, ch, null, t.title, t.body, t.title, t
 from (values
   ('window_open', 'הבקשות לשבוע {{weekLabel}} נפתחו', 'אפשר להגיש בקשות עד {{closeTime}}.'),
   ('window_closing', 'עוד {{count}} שעות לסגירת הבקשות', 'עדיין לא הגשת בקשה לשבוע {{weekLabel}}? זה הזמן.'),
+  ('window_changed', 'מועד סגירת הבקשות השתנה', 'הבקשות לשבוע {{weekLabel}} נסגרות ביום {{closeDay}} בשעה {{closeTime}}.'),
   ('window_closed_solve_now', 'חלון הבקשות נסגר', 'השבוע {{weekLabel}} מוכן לשיבוץ.'),
   ('publish_reminder', 'תזכורת לפרסום הסידור', 'השבוע {{weekLabel}} עדיין לא פורסם.'),
   ('published', 'הסידור פורסם לימים {{days}}', '{{outcomeLine}}'),
@@ -468,6 +469,17 @@ select 'outcome_changed',channel,'ride_cancelled',
   '{{day}} {{depart}}–{{return}}, {{car}} ל{{destination}}.',
   '{{byName}} ביטל/ה נסיעה שהיית בה',
   '{{day}} {{depart}}–{{return}}, {{car}} ל{{destination}}.'
+from unnest(array['inbox','push']::public.notification_channel[]) channel
+on conflict (event,channel,(coalesce(variant,''))) do update set title=excluded.title,body=excluded.body,default_title=excluded.default_title,default_body=excluded.default_body;
+
+-- Named reservation passengers (F3, 20260914120000_ride_passengers.sql): a Sadran-picked
+-- reservation passenger (or, later, anyone added via "+ נוסעים") is notified once.
+insert into public.notification_templates(event,channel,variant,title,body,default_title,default_body)
+select 'outcome_changed',channel,'reservation_added',
+  'נשמר לך מקום ברכב',
+  '{{byName}} שמר/ה לך מקום ברכב {{car}} ביום {{day}} ({{notes}})',
+  'נשמר לך מקום ברכב',
+  '{{byName}} שמר/ה לך מקום ברכב {{car}} ביום {{day}} ({{notes}})'
 from unnest(array['inbox','push']::public.notification_channel[]) channel
 on conflict (event,channel,(coalesce(variant,''))) do update set title=excluded.title,body=excluded.body,default_title=excluded.default_title,default_body=excluded.default_body;
 

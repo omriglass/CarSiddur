@@ -21,17 +21,20 @@ export type MyUpcomingRide = BoardRide & {
 
 /**
  * Every upcoming/ongoing requested leg, plus designated-driver rides without
- * an own request. Three calls, none of them a client-side paging loop
- * (docs/HARDENING_2026-09.md §3 item 5): (1) one embedded `ride_requests`
- * query for the ride ids a request of mine reaches, restricted to
- * upcoming public-status rides before the id list is ever built; (2) one
- * `v_board_rides` read for those ids plus every ride I drive — kept as a
- * second call because the view carries the joined display fields
- * (`served`, names, …) a plain FK embed on `rides` cannot reach and, being a
- * view, offers no FK embed of its own; (3) one `cars` lookup for the
- * resulting car ids. A member's upcoming-ride set is always small enough for
- * a single `.in()`/`.or()` each — the old 500/100-row loops guarded against
- * an unbounded id list that never actually occurs here.
+ * an own request, plus rides I'm named on as a `ride_passengers.person_id`
+ * (F3, 20260914120000_ride_passengers.sql — a Sadran-made reservation with no
+ * request behind it, e.g.). Four calls, none of them a client-side paging
+ * loop (docs/HARDENING_2026-09.md §3 item 5): (1) one embedded
+ * `ride_requests` query for the ride ids a request of mine reaches,
+ * restricted to upcoming public-status rides before the id list is ever
+ * built; (1b) the same, for `ride_passengers`; (2) one `v_board_rides` read
+ * for those ids plus every ride I drive — kept as a second call because the
+ * view carries the joined display fields (`served`, names, …) a plain FK
+ * embed on `rides` cannot reach and, being a view, offers no FK embed of its
+ * own; (3) one `cars` lookup for the resulting car ids. A member's
+ * upcoming-ride set is always small enough for a single `.in()`/`.or()`
+ * each — the old 500/100-row loops guarded against an unbounded id list
+ * that never actually occurs here.
  */
 export async function fetchMyUpcomingRides(profileId: string, departmentId?: string): Promise<MyUpcomingRide[]> {
   const now = new Date().toISOString();
@@ -43,7 +46,19 @@ export async function fetchMyUpcomingRides(profileId: string, departmentId?: str
     .gt("ride.ends_at", now)
     .in("ride.status", ["confirmed", "flagged"]);
   if (passengerError) throw toAppError(passengerError);
-  const passengerRideIds = [...new Set((passengerRows ?? []).map((row) => row.ride_id))];
+
+  const { data: namedPassengerRows, error: namedPassengerError } = await supabase
+    .from("ride_passengers")
+    .select("ride_id, ride:rides!ride_passengers_ride_id_fkey!inner(ends_at, status)")
+    .eq("person_id", profileId)
+    .gt("ride.ends_at", now)
+    .in("ride.status", ["confirmed", "flagged"]);
+  if (namedPassengerError) throw toAppError(namedPassengerError);
+
+  const passengerRideIds = [...new Set([
+    ...(passengerRows ?? []).map((row) => row.ride_id),
+    ...(namedPassengerRows ?? []).map((row) => row.ride_id),
+  ])];
 
   let boardQuery = supabase.from("v_board_rides").select("*")
     .in("status", ["confirmed", "flagged"]).gt("ends_at", now)

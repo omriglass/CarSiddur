@@ -115,6 +115,11 @@ interface CarKey {
   slackVal: number;
   continuity: number;
   fragmentation: number;
+  /** F5 (docs/SOLVER.md §3.6.2): mileageKm + km already assigned to this car
+   *  earlier in this same solve. Ranked above `fragmentation`. Always 0 when no
+   *  car in this solve carries `mileageKm` (see `mileageValue`), so this field
+   *  never changes behavior unless the feature is opted into. */
+  mileageVal: number;
   carId: string;
 }
 
@@ -123,8 +128,77 @@ function compareKey(a: CarKey, b: CarKey): number {
   if (a.preference !== b.preference) return a.preference - b.preference;
   if (a.slackVal !== b.slackVal) return a.slackVal - b.slackVal;
   if (a.continuity !== b.continuity) return a.continuity - b.continuity;
+  // Mileage ranks ABOVE the best-fit packing heuristic (owner, 2026-09-14): across days,
+  // best-fit always prefers the car whose remaining free window is already shorter — i.e.
+  // the car that drove yesterday — which is exactly the piling-up mileage balance exists
+  // to undo. Preferred car, seat fit, shift cost and the member's usual car still win.
+  if (a.mileageVal !== b.mileageVal) return a.mileageVal - b.mileageVal;
   if (a.fragmentation !== b.fragmentation) return a.fragmentation - b.fragmentation;
   return a.carId < b.carId ? -1 : a.carId > b.carId ? 1 : 0;
+}
+
+/** True when every field ranked above `mileageVal` matches — i.e. two cars are
+ *  otherwise equally acceptable and mileage (then fragmentation, then id) decides
+ *  (F5, docs/SOLVER.md §3.6.2). */
+function coreKeyEqual(a: CarKey, b: CarKey): boolean {
+  return (
+    a.shiftCost === b.shiftCost &&
+    a.preference === b.preference &&
+    a.slackVal === b.slackVal &&
+    a.continuity === b.continuity
+  );
+}
+
+/** Distance of a request's destination (0 for unknown/free-text), F5 §3.6.2. */
+function destinationKm(input: SolverInput, destinationId: string): number {
+  return input.destinations[destinationId]?.distanceKm ?? 0;
+}
+
+/** `car.mileageKm` (0 if absent) plus whatever this same solve has already
+ *  assigned to it (F5, docs/SOLVER.md §3.6.2 "in-solve accumulation"). 0 for
+ *  every car when nothing carries `mileageKm` and nothing has been assigned
+ *  yet, so the mileage tie-break never activates unless the feature opts in. */
+function mileageValue(car: Car, assignedKmByCar: Map<string, number>): number {
+  return (car.mileageKm ?? 0) + (assignedKmByCar.get(car.id) ?? 0);
+}
+
+/** Adds `km` to `carId`'s running in-solve total (F5 §3.6.2), for later single
+ *  placements in the same solve to weigh against. */
+function addAssignedKm(assignedKmByCar: Map<string, number>, carId: string, km: number): void {
+  if (km === 0) return;
+  assignedKmByCar.set(carId, (assignedKmByCar.get(carId) ?? 0) + km);
+}
+
+/**
+ * Tracks, across a sequence of `compareKey`-ranked candidates, whether the
+ * final winner was actually decided by `mileageVal` (F5, docs/SOLVER.md
+ * §3.6.2): true only when some competing car tied on every earlier
+ * consideration (preferred car, seat fit, slack, continuity) and
+ * differed on mileage — never when a strictly better/worse non-mileage field
+ * decided instead, and never for a plain `car.id` tie-break with equal
+ * mileage on both sides.
+ */
+class MileageDecisionTracker {
+  private decided = false;
+
+  /** Call once per candidate, with the key that is (or was, before this
+   *  candidate) the current best. `bestKey` is undefined for the very first
+   *  candidate (nothing to compare against yet). */
+  consider(candidateKey: CarKey, bestKey: CarKey | undefined, replaced: boolean): void {
+    if (!bestKey) return;
+    const coreTied = coreKeyEqual(candidateKey, bestKey);
+    if (coreTied && candidateKey.mileageVal !== bestKey.mileageVal) {
+      this.decided = true;
+    } else if (replaced && !coreTied) {
+      // A strictly better non-mileage-tied candidate won outright — whatever
+      // this solve thought mileage had decided earlier no longer holds.
+      this.decided = false;
+    }
+  }
+
+  get value(): boolean {
+    return this.decided;
+  }
 }
 
 export interface PlacedSingle {
@@ -133,6 +207,9 @@ export interface PlacedSingle {
   carId: string;
   window: Window;
   shift: { departureMin: number; returnMin: number };
+  /** F5 (docs/SOLVER.md §3.6.2): the mileage tie-break, not an earlier
+   *  consideration, is what chose `carId` over an otherwise-equal car. */
+  balancedMileage?: boolean;
 }
 export interface PlacedPair {
   kind: 'pair';
@@ -230,6 +307,18 @@ export function runGreedy(
   const sharedCars = [...input.cars].filter((c) => c.type === 'shared').sort((a, b) => (a.id < b.id ? -1 : 1));
   const placed: Placed[] = [];
   const unmetUnits: Unit[] = [];
+  // F5 (docs/SOLVER.md §3.6.2): km assigned to each car so far in this solve,
+  // on top of its `mileageKm` baseline — read/written across every unit kind
+  // below so a later single request's mileage tie-break sees what an earlier
+  // pair/series placement already put on a car this same run.
+  const assignedKmByCar = new Map<string, number>();
+  // Opt-in contract (docs/SOLVER.md §3.6.2): the in-solve accumulation only runs when some car
+  // actually carries `mileageKm`; otherwise `mileageVal` stays 0 for every car and the output
+  // is byte-for-byte what it was before F5 (golden fixtures carry no mileage).
+  const mileageEnabled = input.cars.some((car) => car.mileageKm !== undefined);
+  const trackKm = (carId: string, km: number): void => {
+    if (mileageEnabled) addAssignedKm(assignedKmByCar, carId, km);
+  };
 
   for (const unit of sortUnits(units)) {
     if (unit.kind === 'single' && unit.single) {
@@ -241,6 +330,9 @@ export function runGreedy(
       }
       let best: { car: Car; window: Window; shift: { departureMin: number; returnMin: number }; key: CarKey } | null =
         null;
+      // F5 (docs/SOLVER.md §3.6.2): tracks whether mileage (rather than an
+      // earlier, more important consideration) actually decided the winner.
+      const mileageDecision = new MileageDecisionTracker();
 
       // Phase 1: preferred time on every car.
       for (const car of sharedCars) {
@@ -254,9 +346,12 @@ export function runGreedy(
             slackVal: homeSlack(car, nr),
             continuity: continuityRank(car.id, nr.id, nr.request.memberId, input),
             fragmentation: fragmentationFor(tl, nr.window),
+            mileageVal: mileageValue(car, assignedKmByCar),
             carId: car.id,
           };
-          if (!best || compareKey(key, best.key) < 0) {
+          const replaced = !best || compareKey(key, best.key) < 0;
+          mileageDecision.consider(key, best?.key, replaced);
+          if (replaced) {
             best = { car, window: nr.window, shift: { departureMin: 0, returnMin: 0 }, key };
           }
         }
@@ -276,9 +371,12 @@ export function runGreedy(
             slackVal: homeSlack(car, nr),
             continuity: continuityRank(car.id, nr.id, nr.request.memberId, input),
             fragmentation: fragmentationFor(tl, placement.window),
+            mileageVal: mileageValue(car, assignedKmByCar),
             carId: car.id,
           };
-          if (!best || compareKey(key, best.key) < 0) {
+          const replaced = !best || compareKey(key, best.key) < 0;
+          mileageDecision.consider(key, best?.key, replaced);
+          if (replaced) {
             best = { car, window: placement.window, shift: placement.shift, key };
           }
         }
@@ -296,7 +394,17 @@ export function runGreedy(
         endLocationId: leg.destinationId,
         overnightAck: false,
       });
-      placed.push({ kind: 'single', nr, carId: best.car.id, window: best.window, shift: best.shift });
+      // F5 (docs/SOLVER.md §3.6.2): a round trip counts 2x its destination's
+      // distance toward this car's running in-solve total.
+      trackKm(best.car.id, destinationKm(input, nr.destinationId) * 2);
+      placed.push({
+        kind: 'single',
+        nr,
+        carId: best.car.id,
+        window: best.window,
+        shift: best.shift,
+        balancedMileage: mileageDecision.value,
+      });
       continue;
     }
 
@@ -333,7 +441,11 @@ export function runGreedy(
         );
         const fragmentation = fragmentationFor(tl, { start: pair.outWindow.start, end: pair.returnWindow.end });
         const preference = carPreferenceRank(car.id, [outNr.request.preferredCarId, retNr.request.preferredCarId]);
-        const key: CarKey = { shiftCost, preference, slackVal, continuity, fragmentation, carId: car.id };
+        // F5 (docs/SOLVER.md §3.6.2): the mileage tie-break is scoped to
+        // single round-trip placement only (relay-pair car choice is already
+        // constrained to the one car both legs happen to fit); `mileageVal`
+        // is a constant 0 here so it never affects this comparison.
+        const key: CarKey = { shiftCost, preference, slackVal, continuity, fragmentation, mileageVal: 0, carId: car.id };
         if (!best || compareKey(key, best.key) < 0) best = { car, key };
       }
       if (!best) {
@@ -355,6 +467,11 @@ export function runGreedy(
         endLocationId: input.homeLocationId,
         overnightAck: false,
       });
+      // F5 (docs/SOLVER.md §3.6.2): a relay pair puts one leg's distance on
+      // this car twice over (out + return), the same total a round trip to
+      // the same place would — so a later single request's mileage
+      // tie-break sees it too.
+      trackKm(best.car.id, destinationKm(input, pair.destinationId) * 2);
       placed.push({ kind: 'pair', pair, outNr, retNr, carId: best.car.id });
       continue;
     }
@@ -376,7 +493,10 @@ export function runGreedy(
         );
         const fragmentation = fragmentationFor(tl, { start: placement.firstWindow.start, end: placement.lastWindow.end });
         const preference = carPreferenceRank(car.id, legs.map((leg) => leg.request.preferredCarId));
-        const key: CarKey = { shiftCost: placement.shiftCost, preference, slackVal, continuity, fragmentation, carId: car.id };
+        // F5 (docs/SOLVER.md §3.6.2): out of scope for a multi-day series
+        // (all-or-nothing placement, §3.16) — constant 0 so it never affects
+        // this comparison.
+        const key: CarKey = { shiftCost: placement.shiftCost, preference, slackVal, continuity, fragmentation, mileageVal: 0, carId: car.id };
         if (!best || compareKey(key, best.key) < 0) best = { car, placement, key };
       }
       if (!best || !best.placement) {
@@ -398,6 +518,15 @@ export function runGreedy(
           seriesId: su.seriesId,
         });
       }
+      // F5 (docs/SOLVER.md §3.6.2): a multi-day series' in-week legs are not
+      // added to `assignedKmByCar` — a middle day's own "ride" block has the
+      // car parked away with no travel that day (`originId === destinationId`
+      // there means "stationary at the far point", unlike an ordinary
+      // same-day round trip where it means "out and back"), so getting its
+      // per-leg multiplier right would need series-specific bookkeeping this
+      // feature's v1 scope does not need (series placement is all-or-nothing
+      // on one car already, §3.16, so there is nothing here for the mileage
+      // tie-break to decide between).
       placed.push({ kind: 'series', series: su, carId: car.id, firstWindow: placement.firstWindow, lastWindow: placement.lastWindow });
       continue;
     }
@@ -419,15 +548,21 @@ export function toAssignments(placed: Placed[], input: SolverInput, carsById: Ma
     if (p.kind === 'single') {
       const { nr, carId, window, shift } = p;
       const car = carsById.get(carId);
-      const code = shiftReasonCode(shift);
+      // F5 (docs/SOLVER.md §3.6.2): when the mileage tie-break actually chose
+      // `carId` over an otherwise-equal car, that overrides the ordinary
+      // PLACED_PREFERRED/PLACED_SHIFTED reason (shift, if any, still applied —
+      // the Hebrew just explains the car choice instead).
+      const code = p.balancedMileage ? 'CAR_BALANCED_MILEAGE' : shiftReasonCode(shift);
       const text =
-        code === 'PLACED_PREFERRED'
-          ? reason('PLACED_PREFERRED', { car: car?.name ?? carId })
-          : reason('PLACED_SHIFTED', {
-              car: car?.name ?? carId,
-              dep: String(Math.abs(shift.departureMin)),
-              ret: String(Math.abs(shift.returnMin)),
-            });
+        code === 'CAR_BALANCED_MILEAGE'
+          ? reason('CAR_BALANCED_MILEAGE', { car: car?.name ?? carId })
+          : code === 'PLACED_PREFERRED'
+            ? reason('PLACED_PREFERRED', { car: car?.name ?? carId })
+            : reason('PLACED_SHIFTED', {
+                car: car?.name ?? carId,
+                dep: String(Math.abs(shift.departureMin)),
+                ret: String(Math.abs(shift.returnMin)),
+              });
       out.push({
         rideId: `ride:${nr.id}`,
         carId,

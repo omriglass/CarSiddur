@@ -45,3 +45,36 @@ export function groupSeries<T extends SeriesLike>(rows: readonly T[]): T[][] {
 export function seriesSpanDays(departDay: string, returnDay: string): number {
   return differenceInCalendarDays(parseISO(returnDay), parseISO(departDay)) + 1;
 }
+
+/**
+ * Whether the request form's current values describe a multi-day series (REQ §13.77) rather
+ * than an ordinary single-day request. All three must hold: the return-day picker exists for
+ * this form variant (`pickerShown`: weekly + new + round trip), the member actually opened it
+ * ("חזרה ביום אחר?", `pickerOpen`), and it holds a day other than the departure day. Gating on
+ * `pickerOpen` keeps what the member sees (the multi-day hint) and what is filed identical —
+ * before 2026-09-14 the submit path skipped that check, so a stale later `returnDay` (see
+ * `returnDayAfterDayChange`) silently filed a half-hour request as a 7-day series (TODO B1).
+ */
+export function isSeriesSubmission(input: {
+  pickerShown: boolean;
+  pickerOpen: boolean;
+  day: string;
+  returnDay: string | null | undefined;
+}): boolean {
+  return input.pickerShown && input.pickerOpen && !!input.returnDay && input.returnDay !== input.day;
+}
+
+/**
+ * The `returnDay` the form should hold after the departure day changes to `nextDay`. While the
+ * return-day picker is closed the return day simply follows the departure day; while it is open
+ * a later return day is kept and only an earlier one (now invalid — a series returns on a later
+ * day) is pulled up to `nextDay`.
+ */
+export function returnDayAfterDayChange(input: {
+  pickerOpen: boolean;
+  currentReturnDay: string | null | undefined;
+  nextDay: string;
+}): string {
+  if (!input.pickerOpen || !input.currentReturnDay || input.currentReturnDay < input.nextDay) return input.nextDay;
+  return input.currentReturnDay;
+}

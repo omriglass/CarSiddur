@@ -4,7 +4,6 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
 
-import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { EmptyState } from "@/components/EmptyState";
@@ -20,6 +19,7 @@ import { useMyResponsibleCarsQuery } from "@/features/cars/hooks";
 import { useCars, useRideTypes } from "@/features/fleet/hooks";
 import { AddRideFab } from "@/features/requests/components/AddRideFab";
 import { CarNowButton } from "@/features/requests/components/CarNowButton";
+import { NewRequestButton } from "@/features/requests/components/NewRequestButton";
 import { TemplateSuggestions } from "@/features/requests/components/TemplateSuggestions";
 import { useMyRequests, useCancelRideMutation } from "@/features/requests/hooks";
 import type { MyRequestRow } from "@/features/requests/api";
@@ -285,11 +285,7 @@ export function HomePage() {
                       weekLabel: formatWeekRangeLabel(homeWeek.weekStart),
                     })
               }
-              action={active.canSubmit &&
-                <Button asChild size="sm">
-                  <Link to={paths.requests.new()}>{t("action.newRequest")}</Link>
-                </Button>
-              }
+              action={active.canSubmit && <NewRequestButton variant="inline" />}
             />
           ) : (
             <div className="space-y-2">

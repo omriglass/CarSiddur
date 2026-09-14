@@ -271,6 +271,23 @@ export async function fetchFairnessStats(
   return data ?? [];
 }
 
+/**
+ * `car_mileage_totals()` (F5, docs/SOLVER.md §3.6.2): rolling-window km per
+ * shared car, fed into `buildSolverInput`'s `mileageKmByCarId` so the solver
+ * can prefer the less-driven car among otherwise-equally-acceptable ones.
+ * The window is a fixed 4 weeks in v1 (no department setting, REQUIREMENTS
+ * §13.84) — unlike `fairness_stats`, callable by any department member.
+ */
+export async function fetchCarMileageTotals(departmentId: string, weekStart: string): Promise<Record<string, number>> {
+  const { data, error } = await supabase.rpc("car_mileage_totals", {
+    p_department_id: departmentId,
+    p_week_start: weekStart,
+    p_weeks: 4,
+  });
+  if (error) throw toAppError(error);
+  return Object.fromEntries((data ?? []).map((row) => [row.car_id, Number(row.km)]));
+}
+
 // ---------------------------------------------------------------------------
 // Solver runs (Run solver / record preview / apply draft)
 // ---------------------------------------------------------------------------
@@ -369,6 +386,23 @@ export async function cancelRide(rideId: string, reason: string, expectedVersion
 
 export async function unassignRide(rideId: string, expectedVersion: number): Promise<void> {
   await rpc("unassign_ride", { p_ride_id: rideId, p_expected_version: expectedVersion });
+}
+
+/**
+ * A named person or child on a ride with no `requests` row behind them (F3,
+ * 20260914120000_ride_passengers.sql). The reusable base for both the board reservation
+ * dialog's optional people picker and the not-yet-built "+ נוסעים" button (docs/TODO.md).
+ */
+export interface RidePassengerInput {
+  person_id?: string;
+  child_id?: string;
+  display_name: string;
+  seat_kind: "adult" | "child_seat" | "booster";
+}
+
+/** Replaces a ride's named-passenger list in one transaction; see `set_ride_passengers()`. */
+export async function setRidePassengers(rideId: string, expectedVersion: number, passengers: RidePassengerInput[]): Promise<void> {
+  await rpc("set_ride_passengers", { p_ride_id: rideId, p_expected_version: expectedVersion, p_passengers: passengers as unknown as Json });
 }
 
 // ---------------------------------------------------------------------------
@@ -541,6 +575,17 @@ export async function fetchPublicationReadiness(departmentId: string, weekStart:
 
 export async function reopenWeek(departmentId: string, weekStart: string, phase: "open" | "solving", expectedFingerprint: string): Promise<void> {
   await rpc("reopen_week", { p_department_id: departmentId, p_week_start: weekStart, p_phase: phase, p_expected_fingerprint: expectedFingerprint });
+}
+
+/**
+ * F2 (docs/TODO.md 2026-09-14): Sadran-only "change this week's request-closing time"
+ * action, reached from the board's kebab menu (`SetWeekCloseAction`). `closeAt` is an ISO
+ * instant already snapped to the 15-minute grid in Asia/Jerusalem; the RPC re-validates the
+ * range and grid server-side and flips `open`/`solving` to match, same as
+ * `advance_week_phases()` would once the deadline elapses.
+ */
+export async function setWeekCloseAt(departmentId: string, weekStart: string, closeAt: string): Promise<void> {
+  await rpc("set_week_close_at", { p_department_id: departmentId, p_week_start: weekStart, p_close_at: closeAt });
 }
 
 export async function publishSiddur(departmentId: string, weekStart: string, scores: Json, fingerprint: string, policyScores: Json, options: PublicationOptions = {}): Promise<string> {

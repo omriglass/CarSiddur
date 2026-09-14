@@ -80,6 +80,8 @@ export const heAdmin = {
     fieldClosingReminders: "תזכורות סגירה (שעות לפני, מופרד בפסיקים)",
     fieldAutoApply: "החל אוטומטית הצעות שאושרו על ידי כולם",
     fieldBoardStart: "שעת התחלת לוח",
+    fieldJoinRadiusKm: 'רדיוס להצעת הצטרפות (ק"מ)',
+    fieldJoinRadiusKmHelp: 'לפני כניסה לרשימת המתנה, מוצעות נסיעות קיימות באותו יום ליעד במרחק זה או פחות.',
   },
   adminMembers: {
     googleName: "שם מחשבון Google",
@@ -441,6 +443,30 @@ export const heAdmin = {
     weeklyProvisional: "שבועות שעדיין לא הסתיימו — נתונים חלקיים",
     weeklyBarDetail: "{{unmet}} מתוך {{total}} ({{pct}}%)",
     weeklyNoRequests: "—",
+    // S2 same-day sharing indicators tile (owner request 2026-09-14, docs/TODO.md "S --
+    // Statistics group": no combined score, three numbers only).
+    sharing: {
+      title: "שיתוף באותו יום",
+      peopleUtilization: "ניצול מקומות",
+      fragmentation: "נסיעות לרכב ליום",
+      oneWayFulfilment: "מענה לנסיעות בכיוון אחד",
+      fragmentationSub: "{{rides}} נסיעות מתוך {{days}} ימי רכב פעילים",
+      oneWaySub: "{{served}} מתוך {{total}}",
+      help: "ניצול מקומות בפועל, כמה נסיעות מבצע כל רכב ביום פעיל, וכמה מהבקשות בכיוון אחד קיבלו מענה — בטווח שנבחר.",
+    },
+    // S3 same-day cancellation rate (owner: cancelling is fine, cancelling ברגע האחרון זו הבעיה
+    // -- caption stays neutral).
+    cancellations: {
+      title: "ביטולים באותו יום",
+      sub: "{{sameDay}} מתוך {{total}} ביטולים",
+      help: "אחוז הביטולים שבוצעו באותו יום שבו הייתה אמורה הנסיעה לצאת, מתוך כלל הביטולים בטווח שנבחר.",
+      noCancellations: "אין ביטולים בטווח שנבחר",
+    },
+    // S4 requests-per-hour histogram.
+    requestsByHour: {
+      title: "בקשות לפי שעה ביום",
+      help: "כמות הבקשות שהוגשו, לפי שעת היציאה המבוקשת (שעון ישראל).",
+    },
     empty: "אין נתונים לטווח התאריכים שנבחר",
   },
 } as const;

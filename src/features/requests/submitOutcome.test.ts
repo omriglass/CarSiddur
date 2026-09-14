@@ -5,7 +5,7 @@ import { tv } from "@/i18n/he";
 const mocks = vi.hoisted(() => ({ toast: vi.fn(), success: vi.fn() }));
 vi.mock("sonner", () => ({ toast: Object.assign(mocks.toast, { success: mocks.success }) }));
 
-import { toastSeriesSubmitOutcome, toastSubmitOutcome } from "./submitOutcome";
+import { shouldOfferJoinableRides, toastSeriesSubmitOutcome, toastSubmitOutcome } from "./submitOutcome";
 import type { SubmitRequestResult, SubmitSeriesRequestResult } from "./api";
 import { t } from "@/i18n/he";
 
@@ -94,5 +94,24 @@ describe("toastSeriesSubmitOutcome", () => {
     const result: SubmitSeriesRequestResult = { series_id: "s", request_ids: ["a", "b"], warnings: [], status: "waitlisted", reason: "WAITLISTED_SERIES_NO_CAR" };
     toastSeriesSubmitOutcome(result);
     expect(mocks.toast).toHaveBeenCalledWith(t("request.seriesWaitlisted"));
+  });
+});
+
+describe("shouldOfferJoinableRides", () => {
+  it("is true only for a waitlisted outcome", () => {
+    expect(shouldOfferJoinableRides({ request_id: "r", is_late: false, warnings: [], status: "waitlisted" })).toBe(true);
+  });
+
+  it("is false for an assigned outcome", () => {
+    expect(shouldOfferJoinableRides({ request_id: "r", is_late: false, warnings: [], status: "assigned", car_id: "car" })).toBe(false);
+  });
+
+  it("is false when there is no resolved outcome yet (open/solving week)", () => {
+    expect(shouldOfferJoinableRides({ request_id: "r", is_late: false, warnings: [] })).toBe(false);
+  });
+
+  it("is false for a null/undefined result", () => {
+    expect(shouldOfferJoinableRides(null)).toBe(false);
+    expect(shouldOfferJoinableRides(undefined)).toBe(false);
   });
 });

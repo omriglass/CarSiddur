@@ -286,6 +286,11 @@ function tryRelocateSetAndPlace(
           departureMin: (t.window.start - t.blocker.nr.window.start) * 15,
           returnMin: (t.window.end - t.blocker.nr.window.end) * 15,
         };
+        // F5 (docs/SOLVER.md §3.6.2): this relocation moved the blocker to make
+        // room for a higher-priority request, never for mileage balance — clear
+        // a stale `balancedMileage` from its original greedy placement so the
+        // reason recomputed for it below reflects the actual reason it moved.
+        t.blocker.balancedMileage = false;
       }
       return {
         relocations: newTargets.map((t) => ({

@@ -318,8 +318,9 @@ Preferred time is always tried first on every car; flexibility is used only when
 2. soft preferred-car rank: zero when no preference was supplied or this is the preferred car, otherwise one; for a relay pair sum the two members' mismatch ranks. This only ranks feasible cars and never alters request priority or the time-first search.
 3. `slack(car, passengers)` — tightest seat fit, keeps large cars for large groups (for a pair: the max over the two legs)
 4. continuity: `0` if `car.id === previousAssignment(r).carId`, else `1` if `car.id === stats.usualCarId[member]`, else `2` (for a pair: the min over both members)
-5. fragmentation: leftover of the gap the ride lands in (`gap.length − ride.length`, best-fit) — avoids splitting a long free window (for a pair: the gap is `[out.start, back.end)`)
-6. `car.id`
+5. mileage balance (single round trips only, §3.6.2, F5): `(car.mileageKm ?? 0) + kmAssignedToThisCarSoFarInThisSolve` — `0` for every car, hence inert, unless the input actually carries `mileageKm`. Ranked above best-fit on purpose (owner, 2026-09-14): across days best-fit prefers the car whose remaining window is already shorter, i.e. the car that drove yesterday, which is the piling-up mileage balance exists to undo.
+6. fragmentation: leftover of the gap the ride lands in (`gap.length − ride.length`, best-fit) — avoids splitting a long free window (for a pair: the gap is `[out.start, back.end)`)
+7. `car.id`
 
 #### 3.6.1 Relay pairing (`relay.ts`)
 
@@ -336,6 +337,20 @@ Input: every request with a `relay` leg — `out` legs (`one_way_to` + `relay`, 
 - each leg's own passengers fit some shared car — the pair is later placed on one car, so `fits` is checked per leg against the car (§3.3).
 
 Greedy matching: candidate pairs sorted by `(idleSlots + shiftCost, outId, returnId)` — no scores, because pairing runs before scoring (§3.5); each request joins at most one pair. `idleSlots = b.start − o.end` is the time the car sits at the destination. A request whose round trip was split into two relay legs pairs **with itself** (car parked at the destination in between, free for third parties there) — this is the `relay+relay` resolution of §3.9 and is tried only when the fused `keep` block does not fit. Unpaired relay requests stay single units: a lone `relay` out-leg or back-leg can never be placed (the car would end the day away, §1.3.9) and goes straight to `unmet` with the suggestions of §3.11 item 5. Pairs whose match needs a shift beyond declared flexibility (≤ 2 h) are not formed but remembered, and surface as `shiftBeyondFlex` suggestions with `pairsWithRequestId` on the leg that would have to move.
+
+#### 3.6.2 Mileage balancing across shared cars (F5, REQUIREMENTS §13.84)
+
+Optional, opt-in, and third-to-last in the car-choice key (§3.6 item 5, just before best-fit `fragmentation` and `car.id`): `Car.mileageKm?: number` is kilometres this car drove in a rolling window before this week (v1: 4 weeks, fixed — no department setting), fed in by `buildSolverInput` from the SQL `car_mileage_totals()` RPC. It only ever breaks a genuine tie among cars that are otherwise **equally acceptable** — identical `shiftCost`, preferred-car rank, seat slack and continuity — never overriding preferred car, seat fit, availability or continuity (those are checked first, unchanged). It does rank above the best-fit packing heuristic (`fragmentation`), which now only separates cars with equal mileage.
+
+```
+mileageVal(car) = (car.mileageKm ?? 0) + kmAssignedToThisCarSoFarInThisSolve(car)
+```
+
+`kmAssignedToThisCarSoFarInThisSolve` is a running per-car total the greedy pass accumulates as it places round trips and relay pairs (never reset mid-solve): a round trip adds `2 × destination.distanceKm` (there and back, both ends at home); a relay pair's two legs each add `1 × destination.distanceKm` on their own ride row, totalling the same `2×` as a round trip to the same place. A destination with no `distanceKm` (unknown/free-text) contributes `0`. This is why, given two requests to the same destination on different days with two otherwise-interchangeable cars, the *first* is an ordinary tie (both cars start level) but the *second* can end up on the other car — whichever is now less loaded. Multi-day series placement (§3.16) does not use or update this total: it is all-or-nothing on one car already, so there is nothing left for a tie-break to decide between, and a "day" leg's `originId === destinationId` means "parked away between legs", not "round trip", so the same `2×`/`1×` reasoning does not apply there.
+
+When `mileageVal` genuinely was the deciding factor — every earlier key field tied and mileage (or the in-solve total derived from it) did not — the assignment's `reasonCode` is `CAR_BALANCED_MILEAGE` instead of the ordinary `PLACED_PREFERRED`/`PLACED_SHIFTED` (§3.13); when a car's mileage lost only to some earlier field (a real shift-cost or continuity difference, say), the ordinary reason still applies — the Sadran only ever sees "balanced for mileage" when that is genuinely why this car was picked. The bounded improvement pass (§3.10) never treats mileage as a reason to relocate anything (it only relocates to satisfy a higher-priority unmet request) and clears a relocated ride's stale `CAR_BALANCED_MILEAGE` flag if the relocation moves it to a different car, since that move was decided for capacity, not mileage.
+
+When no car in the input carries `mileageKm` (the common case until `car_mileage_totals` is wired up for a department, or any input built without it), `mileageVal` is `0` for every car and the key behaves exactly as it did before this field existed — golden fixtures are unaffected. The owner's decision (A12, 2026-09-14): this is a visible reason only, never a coercion — moving a mileage-balanced ride to a different car on the board triggers no extra confirmation.
 
 ### 3.7 Flexibility search (`flex.ts`)
 
@@ -415,6 +430,7 @@ Every assignment, unmet record and suggestion has a `reasonCode` and a Hebrew `r
 | `PLACED_SHIFTED` | `שובץ ל{car} עם הזזה של {dep} דק' ביציאה ו-{ret} דק' בחזרה, בתוך הגמישות שהוצהרה` |
 | `PLACED_RELAY_PAIR` | `שובץ ל{car}: {member} נוהג/ת ל{dest} ב-{dep} ומשאיר/ה את הרכב; {partner} מחזיר/ה אותו ב-{ret}` |
 | `PLACED_SERIES` | `שובץ/ה כחלק מבקשה רב-יומית ל{car} ({index}/{count})` |
+| `CAR_BALANCED_MILEAGE` | `נבחר {car} לאיזון קילומטראז' בין הרכבים` (§3.6.2 — only when mileage genuinely decided the car) |
 | `UNMET_NO_CAR` | `אין רכב פנוי בחלון המבוקש; חוסמים: {blockers}` |
 | `UNMET_SERIES_NO_CAR` | `אין רכב פנוי לכל ימי הבקשה הרב-יומית ({index}/{count})` |
 | `UNMET_NO_RELAY_PARTNER` | `אין מי שיחזיר/יביא את הרכב מ{dest} באותו יום; הרכב חייב לחזור הביתה עד {dayEnd}` |

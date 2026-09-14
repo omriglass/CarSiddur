@@ -30,6 +30,8 @@ export type ErrorCode =
   | "no_car_free"
   | "waitlist_group_closed"
   | "waitlist_selection_invalid"
+  | "week_close_not_editable"
+  | "week_close_out_of_range"
   | "series_week_not_open"
   | "series_edit_not_supported"
   | "series_car_unavailable"
@@ -75,6 +77,8 @@ export type ErrorCode =
   | "companions_invalid"
   | "passenger_count_mismatch"
   | "quick_ride_unavailable"
+  | "ride_seats_exceeded"
+  | "invalid_ride_passenger"
   | "push_unsupported"
   | "push_permission_denied"
   | "push_vapid_key_invalid"
@@ -161,9 +165,13 @@ const MESSAGE_TO_CODE: Record<string, ErrorCode> = {
   invalid_companions: "companions_invalid",
   passenger_names_exceed_seats: "passenger_count_mismatch",
   invalid_quick_reservation: "quick_ride_unavailable",
+  ride_seats_exceeded: "ride_seats_exceeded",
+  invalid_ride_passenger: "invalid_ride_passenger",
   no_car_free: "no_car_free",
   waitlist_group_closed: "waitlist_group_closed",
   waitlist_selection_invalid: "waitlist_selection_invalid",
+  week_close_not_editable: "week_close_not_editable",
+  week_close_out_of_range: "week_close_out_of_range",
   series_week_not_open: "series_week_not_open",
   series_edit_not_supported: "series_edit_not_supported",
   series_car_unavailable: "series_car_unavailable",
@@ -227,6 +235,8 @@ const CODE_TO_MESSAGE: Record<ErrorCode, string> = {
   no_car_free: he.errors.noCarFree,
   waitlist_group_closed: he.errors.waitlistGroupClosed,
   waitlist_selection_invalid: he.errors.waitlistSelectionInvalid,
+  week_close_not_editable: he.weekClose.notEditable,
+  week_close_out_of_range: he.weekClose.outOfRange,
   series_week_not_open: he.errors.seriesWeekNotOpen,
   series_edit_not_supported: he.errors.seriesEditNotSupported,
   series_car_unavailable: he.errors.seriesCarUnavailable,
@@ -236,6 +246,8 @@ const CODE_TO_MESSAGE: Record<ErrorCode, string> = {
   push_service_worker_timeout: he.errors.pushServiceWorkerTimeout,
   push_subscription_incomplete: he.errors.pushSubscriptionIncomplete,
   push_subscription_failed: he.errors.pushSubscriptionFailed,
+  ride_seats_exceeded: he.errors.rideSeatsExceeded,
+  invalid_ride_passenger: he.errors.invalidRidePassenger,
   constraint_violation: he.errors.constraintViolation,
   duplicate_value: he.errors.duplicateValue,
   network: he.errors.network,

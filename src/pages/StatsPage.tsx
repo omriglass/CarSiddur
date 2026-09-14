@@ -7,7 +7,9 @@ import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { PageHeader } from "@/components/PageHeader";
 import { CardListSkeleton } from "@/components/skeletons/CardListSkeleton";
+import { HourBarList } from "@/features/stats/components/HourBarList";
 import { RideTypePie } from "@/features/stats/components/RideTypePie";
+import { SharingTile } from "@/features/stats/components/SharingTile";
 import { StatsDateRangePicker } from "@/features/stats/components/StatsDateRangePicker";
 import { StatsDepartmentSwitcher } from "@/features/stats/components/StatsDepartmentSwitcher";
 import { StatTile } from "@/features/stats/components/StatTile";
@@ -162,6 +164,28 @@ export function StatsPage() {
               }
               help={he.stats.tiles.policyScore.help}
             />
+            {stats.cancellations !== undefined ? (
+              <StatTile
+                testId="stats-tile-cancellations"
+                label={he.stats.cancellations.title}
+                value={
+                  stats.cancellations.total === 0 ? (
+                    he.stats.cancellations.noCancellations
+                  ) : (
+                    <span dir="ltr">{formatPercent(stats.cancellations.sameDayRate)}</span>
+                  )
+                }
+                sub={
+                  stats.cancellations.total === 0 ? undefined : (
+                    tv("stats.cancellations.sub", {
+                      sameDay: String(stats.cancellations.sameDay),
+                      total: String(stats.cancellations.total),
+                    })
+                  )
+                }
+                help={he.stats.cancellations.help}
+              />
+            ) : null}
           </div>
 
           <p className="text-xs text-muted-foreground" data-testid="stats-effective-range">
@@ -172,9 +196,15 @@ export function StatsPage() {
             })}
           </p>
 
+          {stats.sharing !== undefined ? <SharingTile sharing={stats.sharing} /> : null}
+
           <WeekdayBarList days={stats.byWeekday} />
 
           {stats.byRideType !== undefined ? <RideTypePie data={stats.byRideType} /> : null}
+
+          {stats.requestsByHour && stats.requestsByHour.length > 0 ? (
+            <HourBarList hours={stats.requestsByHour} />
+          ) : null}
 
           {stats.weekly && stats.weekly.length > 0 ? <WeeklyUnmetChart weekly={stats.weekly} /> : null}
         </>

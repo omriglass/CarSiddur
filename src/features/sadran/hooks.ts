@@ -147,6 +147,32 @@ export function useEditRideMutation() {
   });
 }
 
+/**
+ * `set_ride_passengers()` — reservation dialog people picker (F3) and, later, the "+
+ * נוסעים" button on any ride (docs/TODO.md). Callers handle `onError` themselves when they
+ * need to distinguish "the ride itself failed to save" from "the ride saved but the
+ * passenger list didn't" (e.g. the board reservation dialog); `showErrorToast` still runs
+ * first so the specific reason (`ride_seats_exceeded`, `stale_version`, …) is always shown.
+ */
+export function useSetRidePassengersMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      rideId,
+      expectedVersion,
+      passengers,
+    }: {
+      rideId: string;
+      expectedVersion: number;
+      passengers: api.RidePassengerInput[];
+      departmentId: string;
+      weekStart: string;
+    }) => api.setRidePassengers(rideId, expectedVersion, passengers),
+    onSuccess: (_data, { departmentId, weekStart }) => invalidateBoard(queryClient, departmentId, weekStart),
+    onError: showErrorToast,
+  });
+}
+
 export function useCancelRideMutation() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -377,6 +403,17 @@ export function useReopenWeekMutation() {
   return useMutation({
     mutationFn: ({ departmentId, weekStart, phase, expectedFingerprint }: { departmentId: string; weekStart: string; phase: "open" | "solving"; expectedFingerprint: string }) =>
       api.reopenWeek(departmentId, weekStart, phase, expectedFingerprint),
+    onSuccess: (_data, { departmentId, weekStart }) => invalidateBoard(queryClient, departmentId, weekStart),
+    onError: showErrorToast,
+  });
+}
+
+/** F2: change this week's request-closing time (`SetWeekCloseAction`, board kebab menu). */
+export function useSetWeekCloseAtMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ departmentId, weekStart, closeAt }: { departmentId: string; weekStart: string; closeAt: string }) =>
+      api.setWeekCloseAt(departmentId, weekStart, closeAt),
     onSuccess: (_data, { departmentId, weekStart }) => invalidateBoard(queryClient, departmentId, weekStart),
     onError: showErrorToast,
   });

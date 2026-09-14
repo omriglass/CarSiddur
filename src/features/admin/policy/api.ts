@@ -106,3 +106,8 @@ export async function fetchWeekRequests(departmentId: string, weekStart: string)
 // to each keep their own independent `supabase.rpc("fairness_stats", ...)` —
 // defined once there now, imported here instead (REFACTOR_BACKLOG.md 1.5).
 export { fetchFairnessStats } from "@/features/sadran/api";
+
+// Same reuse for F5's mileage-balance tie-break (docs/SOLVER.md §3.6.2):
+// the "test on last week" preview needs a car's rolling-window mileage same
+// as the board does.
+export { fetchCarMileageTotals } from "@/features/sadran/api";

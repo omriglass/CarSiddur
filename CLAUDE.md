@@ -84,6 +84,7 @@ src/
     rules/index.ts             ruleRegistry (exported const object)
     rules/types.ts             Rule<P> interface, RuleContext<P>
     rules/<type>.ts            one rule per type: distance, fairness, rideType, publicTransport, peopleServed, flexibilityOffered, submissionTime, manualBoost
+    greedy.ts                  placement + car-choice key (shift → preference → slack → continuity → mileage (F5, opt-in via Car.mileageKm) → best-fit → id)
     rules/__tests__/           Vitest unit tests per rule type + registry test
     reasons.ts                 Hebrew reason templates keyed by reasonCode (sole Hebrew in solver)
     __fixtures__/              golden test fixtures (input.json, expected.json), gen.ts (fixture generator)
@@ -108,9 +109,9 @@ src/
   types/                       domain types shared by UI and solver (not DB rows)
   main.tsx sw.ts index.css     PWA service worker, entry point, global styles
 supabase/
-  migrations/                  152 additive migrations, `20260907090000` through `20260910100400` (includes the 13-migration production-hardening pass, `20260910099000`–`20260910100200` — see docs/HARDENING_2026-09.md)
+  migrations/                  159 additive migrations, `20260907090000` through `20260914150000` (includes the 13-migration production-hardening pass, `20260910099000`–`20260910100200` — see docs/HARDENING_2026-09.md — and the 2026-09-14 owner batch `20260914100100`–`20260914150000`: `window_changed` event + `set_week_close_at`, stats sharing indicators, `ride_passengers`, `join_radius_km` + `joinable_rides_for_request`, `car_mileage_totals`, seeded destination coordinates)
   seed.sql                     demo data: departments, ride types, destinations, default policy, templates, member invites, demo auth users (local/e2e only)
-  tests/                       24 SQL suites, run via `npm run db:test`
+  tests/                       27 SQL suites, run via `npm run db:test` (all transactional: begin … rollback)
     rls_smoke.sql              assertions: every table has forced RLS, no `using (true)` on writes, no `for all` policies
     solve_semantics.sql        solver persistence and assignment behavior
     todo_board_semantics.sql   ownership, consent, operational permissions and publication scores
@@ -124,6 +125,9 @@ supabase/
     upcoming_weeks.sql         `upcoming` week phase materialization and promotion to `open`
     waitlist_groups.sql        contested waiting-list groups: clustering, resolution, cancellation
     bundle_solver.test.mjs     verify bundled solver output runs in Deno
+    ride_passengers.sql        named people on a Sadran reservation: RLS, seat capacity, version bump, notices
+    joinable_rides.sql         `joinable_rides_for_request`: radius, day, free seat, free-text → empty, authorization
+    car_mileage.sql            `car_mileage_totals`: rolling window, 2×/1× rule, cancelled/temporary exclusions
     (+ 12 more scenario suites: admin_department_membership, admin_member_fixes, coordinator_planning, department_catalogs, live_quick_one_way, member_identity, proposal_day_boundary, proposal_replacement, selected_day_publication, status_notifications, week_opening, weekly_sadran_permissions)
   functions/
     push-dispatch/             send push notifications via browser API
@@ -223,7 +227,7 @@ scripts/
 | Tables, enums, RLS matrix, migration plan | `docs/DATA_MODEL.md` §2, §3, §4.3, §6 |
 | Request / proposal / week / ride states | REQ §5.2, §7.3, §4; `ARCHITECTURE.md` §5; `src/lib/enums.ts` |
 | Rule types, scoring, suggestion order | `docs/SOLVER.md` §4.3, §3.11; `src/solver/rules/` |
-| Notification events (canonical list + copy), pipeline, templates | `UX_FLOWS.md` §6 (canonical 24 events); `ARCHITECTURE.md` §9; `DATA_MODEL.md` §3.11 (`enqueue_notification`, `notifications`, `push_outbox`, `notification_templates`); REQ §9 |
+| Notification events (canonical list + copy), pipeline, templates | `UX_FLOWS.md` §6 (canonical 25 events); `ARCHITECTURE.md` §9; `DATA_MODEL.md` §3.11 (`enqueue_notification`, `notifications`, `push_outbox`, `notification_templates`); REQ §9 |
 | Weekly cycle, cron | REQ §4; `ARCHITECTURE.md` §10 (`app.tick()`); `DATA_MODEL.md` `department_settings`, `weeks`, §6 step 17 `20260907091600_cron.sql` |
 | Suggestion kind → proposal type | `SOLVER.md` §3.15 |
 | Screens, routes, Hebrew copy, i18n key plan | `docs/UX_FLOWS.md` §2.1 routes, §3–5 screens, §6 notification/WhatsApp copy, §10 i18n keys; `src/i18n/he.ts` |
@@ -243,6 +247,17 @@ scripts/
 | Anything else / pre-merge audit | `/new-feature-checklist` | (plan first) |
 | Docs vs code drift | `/review-consistency` | docs-keeper |
 | Playwright coverage | — | e2e-tester |
+
+## Owner batch 2026-09-14 (REQ §13.77 bullet, §13.78 "Extended 2026-09-14", §13.80–§13.84)
+
+- Bug fix: a single-day request is filed as a multi-day series only when the return-day picker is open and holds a later day (`features/requests/series.ts` `isSeriesSubmission`/`returnDayAfterDayChange`).
+- Siddur hides a temporary (private) car on days it has no ride (`features/siddur/visibleCars.ts`); the board is unaffected.
+- Sadran sets a per-week request closing time (`set_week_close_at`, board kebab menu), members get `window_changed`; the "בקשה חדשה" entry point is one `NewRequestButton` with four states (`features/requests/newRequestButton.ts`).
+- Statistics: utilization includes the turnaround buffer; `sharing` (people utilization, fragmentation, one-way fulfilment — no combined score), `cancellations` (same-day rate), `requestsByHour`.
+- `ride_passengers` + `set_ride_passengers`: a board reservation ("שמירת זמן") can name people (first = driver); they see it on Home/siddur and are notified. Same table is the base for the future "+ נוסעים" button.
+- Joinable rides before the waiting list: `joinable_rides_for_request` (haversine within `department_settings.join_radius_km`, ±120 min, preset destinations only, free seat), `JoinableRidesDialog` after a `waitlisted` submit.
+- Solver mileage balance: `Car.mileageKm` from `car_mileage_totals` (4-week rolling window), ranked above best-fit packing, reason `CAR_BALANCED_MILEAGE`; inert when no car carries `mileageKm`.
+- Open points for the owner are listed at the end of `docs/TODO.md`.
 
 ## Verified 2026-09-11
 
@@ -274,7 +289,7 @@ Final; applied across all docs, skills and agents. Do not relitigate — if code
 2. Seed file is `supabase/seed.sql` (Supabase CLI default); demo seed data is described in DATA_MODEL §6.
 3. Migrations use the Supabase CLI form `YYYYMMDDHHMMSS_short_name.sql`; the 18-step initial plan starts at `20260907090000_extensions_and_enums.sql` (DATA_MODEL §6).
 4. `week_phase` = `upcoming, open, solving, published, live, archived`; after the target week ends the week is `archived` (read-only, kept for fairness stats). No `closed`. `upcoming` (2026-09-10, REQ §13.77) is a `weeks` row materialized early — by `ensure_upcoming_week()` from `submit_series_request()` — for a week beyond the department's normal opening horizon that a multi-day series leg needs; it is invisible to members, closed to ordinary requests, and promoted to `open` automatically at its normal opening time.
-5. One canonical `notification_event` list: the 24 events of UX_FLOWS §6.1 (incl. `car_care`, 2026-09-09; `waitlist_contested` + `waitlist_resolved`, 2026-09-10) (enum value = snake_case of the `notif.*` key suffix); DATA_MODEL §2 and ARCHITECTURE §9 list exactly those; REQ §9 prose names nothing outside it.
+5. One canonical `notification_event` list: the 25 events of UX_FLOWS §6.1 (incl. `car_care`, 2026-09-09; `waitlist_contested` + `waitlist_resolved`, 2026-09-10; `window_changed`, 2026-09-14) (enum value = snake_case of the `notif.*` key suffix); DATA_MODEL §2 and ARCHITECTURE §9 list exactly those; REQ §9 prose names nothing outside it.
 6. Notification plumbing: `enqueue_notification(...)` writes one `notifications` row (inbox) plus one `push_outbox` row per active push subscription; pg_net/`drain_push_outbox()` deliver via the `push-dispatch` edge function with retries and 404/410 pruning; mutes in `profiles.muted_events notification_event[]` (Sadran-role events unmutable while assigned, enforced in enqueue); copy in the admin-editable `notification_templates` table (event, channel, variant, title, body) seeded from UX_FLOWS §6. No `notification_prefs`, no templates in `app_settings`.
 7. Exactly one pg_cron entry: `app.tick()` every 15 minutes computes Asia/Jerusalem time and calls `advance_week_phases()`, `send_due_reminders()`, `expire_proposals()`, `drain_push_outbox()`, `housekeeping()`; there is no keep-alive workflow — `docs/FREE_DEPLOYMENT.md` §9 explicitly says not to rely on one, and the Supabase Free project may pause after a week of API inactivity (owner-accepted, un-pause manually in the dashboard).
 8. Requests are created/edited only via the `submit_request(payload jsonb)` SECURITY DEFINER RPC (validates §5.3, computes `is_late`, duplicate warning, versioning, audit; in `live` weeks calls `try_auto_approve`). Members SELECT own requests directly; no direct INSERT/UPDATE policies on `requests`.

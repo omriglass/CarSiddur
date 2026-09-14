@@ -14,7 +14,7 @@ export interface MuteCategory {
  * in `enqueue_notification()`, DATA_MODEL §3.11).
  */
 export const MUTE_CATEGORIES: readonly MuteCategory[] = [
-  { key: "window", label: he.profileExtra.muteWindow, events: ["window_open", "window_closing"] },
+  { key: "window", label: he.profileExtra.muteWindow, events: ["window_open", "window_closing", "window_changed"] },
   { key: "siddur", label: he.profileExtra.muteSiddur, events: ["published", "outcome_changed"] },
   { key: "proposals", label: he.profileExtra.muteProposals, events: ["proposal_received"] },
   {

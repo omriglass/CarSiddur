@@ -53,6 +53,18 @@ export function toastSubmitOutcome(result: SubmitRequestResult | null | undefine
 }
 
 /**
+ * F4 (docs/TODO.md, owner answers A8-A10, 2026-09-14): should `RequestForm.performSubmit` even
+ * bother calling `joinable_rides_for_request`? Only for a genuine waiting-list outcome — the
+ * same field `toastSubmitOutcome`'s own `waitlisted` branch reads (present only once
+ * `try_auto_approve()`/`enter_waiting_list()` has actually run, i.e. a published/live week), so
+ * this can never fire when `toastSubmitOutcome` stayed silent (open/solving week) or reported a
+ * different outcome (assigned, needs-driver, car-was-free).
+ */
+export function shouldOfferJoinableRides(result: SubmitRequestResult | null | undefined): boolean {
+  return result?.status === "waitlisted";
+}
+
+/**
  * `submit_series_request`'s outcome toast (multi-day request, REQ §13.77, UX_FLOWS.md §3.4).
  * Same "falls through silently against an open/solving week" shape as `toastSubmitOutcome`
  * above — `status` is only present once `try_auto_approve_series()` actually ran.

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { groupSeries, seriesSpanDays } from "./series";
+import { groupSeries, isSeriesSubmission, returnDayAfterDayChange, seriesSpanDays } from "./series";
 
 describe("groupSeries", () => {
   it("groups legs sharing a seriesId, sorted by seriesIndex", () => {
@@ -53,5 +53,34 @@ describe("seriesSpanDays", () => {
 
   it("matches submit_series_request's own (last_date - first_date) + 1 for a >7 day span", () => {
     expect(seriesSpanDays("2026-09-13", "2026-09-21")).toBe(9);
+  });
+});
+
+describe("isSeriesSubmission (TODO B1 regression)", () => {
+  const base = { pickerShown: true, pickerOpen: true, day: "2026-09-13", returnDay: "2026-09-16" };
+
+  it("is a series only when the picker is shown, open and holds a later day", () => {
+    expect(isSeriesSubmission(base)).toBe(true);
+    expect(isSeriesSubmission({ ...base, returnDay: base.day })).toBe(false);
+    expect(isSeriesSubmission({ ...base, returnDay: undefined })).toBe(false);
+    expect(isSeriesSubmission({ ...base, pickerShown: false })).toBe(false);
+  });
+
+  it("never files a series from a stale return day while the picker is closed (the bug)", () => {
+    // Default day = Saturday (last request's weekday), member picks Sunday, never opens the picker.
+    expect(isSeriesSubmission({ pickerShown: true, pickerOpen: false, day: "2026-09-13", returnDay: "2026-09-19" })).toBe(false);
+  });
+});
+
+describe("returnDayAfterDayChange", () => {
+  it("follows the departure day while the picker is closed, even backwards", () => {
+    expect(returnDayAfterDayChange({ pickerOpen: false, currentReturnDay: "2026-09-19", nextDay: "2026-09-13" })).toBe("2026-09-13");
+    expect(returnDayAfterDayChange({ pickerOpen: false, currentReturnDay: "2026-09-13", nextDay: "2026-09-15" })).toBe("2026-09-15");
+  });
+
+  it("keeps a later return day while the picker is open, pulling up only an earlier one", () => {
+    expect(returnDayAfterDayChange({ pickerOpen: true, currentReturnDay: "2026-09-19", nextDay: "2026-09-13" })).toBe("2026-09-19");
+    expect(returnDayAfterDayChange({ pickerOpen: true, currentReturnDay: "2026-09-13", nextDay: "2026-09-15" })).toBe("2026-09-15");
+    expect(returnDayAfterDayChange({ pickerOpen: true, currentReturnDay: undefined, nextDay: "2026-09-15" })).toBe("2026-09-15");
   });
 });

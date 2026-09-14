@@ -105,6 +105,12 @@ export const heSadran = {
     reservationNotes: "תיאור השמירה — יוצג בלוח",
     reservationSaved: "הזמן נשמר בלוח",
     estimatedDuration: "משך נסיעה משוער",
+    // F3 (docs/TODO.md, owner A5 2026-09-14): the reservation dialog's optional people
+    // picker — reuses CompanionPicker (members) + the request form's children picker.
+    reservationPeople: "אנשים בשמירה (אופציונלי)",
+    reservationPeopleHint: "הראשון/ה שנבחר/ה = נהג/ת",
+    reservationChildren: "ילדים בשמירה",
+    reservationPeopleSaveFailed: "השמירה נוצרה, אבל שיוך האנשים נכשל — אפשר לנסות שוב מתוך פרטי הנסיעה",
 
     filterAll: "הכול",
     filterLate: "מאוחרות",
@@ -168,6 +174,24 @@ export const heSadran = {
     seriesMoveBody: "הנסיעה היא יום {{index}} מתוך {{count}}. כל הימים יועברו ל{{car}} אם הוא פנוי בכולם.",
     seriesUnassignHint: "בקשה רב-יומית: אפשר לבטל את כל הימים או להעביר לרכב אחר",
     skippedSeries: "{{count}} בקשות רב-יומיות לא שובצו (אין רכב פנוי לכל הימים)",
+  },
+  /**
+   * F2 (docs/TODO.md 2026-09-14): per-week custom request-closing time,
+   * `SetWeekCloseAction` (board kebab menu item + `FormDialog`). Errors here
+   * are also referenced directly by `src/lib/rpc.ts`'s `CODE_TO_MESSAGE` map
+   * (`week_close_not_editable`/`week_close_out_of_range`).
+   */
+  weekClose: {
+    menuItem: "שינוי מועד סגירת הבקשות",
+    dialogTitle: "מועד סגירת הבקשות",
+    dialogDescription: "אפשר לקבוע מועד סגירה אחר לשבוע הזה בלבד — מוקדם או מאוחר יותר מברירת המחדל של המחלקה.",
+    dayLabel: "יום סגירה",
+    timeLabel: "שעת סגירה",
+    defaultHint: "ברירת המחדל של המחלקה: {{day}} {{time}}",
+    confirm: "עדכון מועד הסגירה",
+    saved: "מועד סגירת הבקשות עודכן",
+    notEditable: "אי אפשר לשנות את מועד הסגירה בשלב הזה של השבוע",
+    outOfRange: "מועד הסגירה חייב להיות בין פתיחת השבוע לפרסום שלו, ברבעי שעה עגולים",
   },
   sadranRideSheet: {
     title: "פרטי הנסיעה",

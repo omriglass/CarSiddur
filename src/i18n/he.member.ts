@@ -32,6 +32,18 @@ export const heMember = {
     /** Multi-day request leg index/count column (REQ §13.77, UX_FLOWS.md §4.2). */
     seriesDay: "יום ברב-יומי",
   },
+  /**
+   * F2 (docs/TODO.md 2026-09-14): the shared three/four-state "בקשה חדשה" button
+   * (`src/features/requests/newRequestButton.ts` / `NewRequestButton`) — `he.action.newRequest`
+   * stays for anything still using the old always-on label (none left after this change, kept
+   * per the task's "keep the old key if anything else uses it").
+   */
+  newRequestButton: {
+    nextWeek: "בקשה לשבוע הבא",
+    preparing: "סידור בהכנה...",
+    waitlistNextWeek: "רשימת המתנה לשבוע הבא",
+    waitlistThisWeek: "רשימת המתנה לשבוע הזה",
+  },
   request: {
     namedPassengerCount: "נוסעים מבוגרים: {{count}} (כולל אותך)",
     namedChildCount: "ילדים: {{count}}",
@@ -399,6 +411,20 @@ export const heMember = {
     cancelGroup: "בטל/י את הדיון",
     cancelGroupBody: "כל המשתתפים/ות יישארו ברשימת ההמתנה.",
     openGroup: "לדיון",
+  },
+  /**
+   * F4 (docs/TODO.md, owner answers A8-A10, 2026-09-14): after a waiting-list outcome
+   * (published/live week), a second dialog offering existing rides that day going somewhere
+   * close by, before the member just walks away to wait — `JoinableRidesDialog`
+   * (`src/features/requests/components/`), shown by both `RequestForm` variants. The contact
+   * channel is the existing "ask to join" flow; no phone numbers here (REQ §10).
+   */
+  joinableRides: {
+    title: "נכנסת לרשימת ההמתנה — אבל יש אפשרות נוספת",
+    body: 'יש נסיעות באותו יום ליעדים קרובים (עד {{radius}} ק"מ). אפשר לבקש להצטרף לאחת מהן:',
+    distance: 'כ-{{km}} ק"מ מהיעד שלך',
+    askToJoin: "בקש/י להצטרף",
+    stay: "להישאר ברשימת ההמתנה",
   },
   /**
    * Full-screen fallback rendered by the router's `errorElement` when a

@@ -123,6 +123,13 @@ export interface BuildSolverInputParams {
   /** `fairness_stats()` rows for the policy's `lookbackWeeks`; omit for an all-0.5 default. */
   fairness?: FairnessRow[];
   companionsByRequestId?: Record<string, string[]>;
+  /**
+   * `car_mileage_totals()` rows (F5, docs/SOLVER.md §3.6.2): rolling-window
+   * km per car, keyed by `car_id`. Omit entirely (or pass `{}`) to leave
+   * every car's `mileageKm` undefined — car choice is then identical to
+   * before this feature existed (docs/SOLVER.md §3.6.2 "opt-in").
+   */
+  mileageKmByCarId?: Record<string, number>;
   now?: () => number;
   /**
    * Already-placed rides to seed as constraints (pinned rides, accepted
@@ -253,6 +260,7 @@ export function buildSolverInput(params: BuildSolverInputParams): SolverInput {
     maintenance: (params.maintenanceBlocksByCarId?.[car.id] ?? []).map((b) =>
       toWindow(b.starts_at, b.ends_at, weekStartMs),
     ),
+    mileageKm: params.mileageKmByCarId?.[car.id],
   }));
 
   const fairness: SolverStats["fairness"] = fairnessDeficits(params.fairness ?? []);

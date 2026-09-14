@@ -329,7 +329,7 @@ export const notificationChannelSchema = z.enum(NOTIFICATION_CHANNELS);
 assertSameEnum<NotificationChannel, Enums<"notification_channel">>();
 
 // ---------------------------------------------------------------------------
-// notification_event (24 canonical events, UX_FLOWS.md §6.1; the last four
+// notification_event (25 canonical events, UX_FLOWS.md §6.1; the last five
 // were added by `alter type … add value` migrations after the base 20)
 // ---------------------------------------------------------------------------
 export const NOTIFICATION_EVENTS = [
@@ -357,6 +357,7 @@ export const NOTIFICATION_EVENTS = [
   "car_care",
   "waitlist_contested",
   "waitlist_resolved",
+  "window_changed",
 ] as const satisfies readonly Enums<"notification_event">[];
 export type NotificationEvent = (typeof NOTIFICATION_EVENTS)[number];
 export const notificationEventSchema = z.enum(NOTIFICATION_EVENTS);

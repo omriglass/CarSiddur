@@ -21,7 +21,8 @@ import { he, t, tv } from "@/i18n/he";
 import { TZ, dateKey, formatTime } from "@/lib/time";
 
 import { rideBlockLabel } from "../rideLabel";
-import { servedOf, withChildNames } from "../../solverRun";
+import { namedPassengersOf, servedOf, withChildNames } from "../../solverRun";
+import { RidePassengersEditor } from "./RidePassengersEditor";
 
 import type { BoardRide, WeekRequestRow } from "../../api";
 import type { Car } from "@/features/fleet/api";
@@ -52,6 +53,9 @@ interface RideSheetProps {
   isPlanning?: boolean;
   /** Every request in the week (not just this ride's) — used to attach named children (`childNames`) to `servedOf(ride)`, since `v_board_rides.served[]` itself has no child-name field yet. */
   requests?: readonly WeekRequestRow[];
+  /** For `RidePassengersEditor` (F3) — only rendered for a manual reservation, which always belongs to exactly one department/week. */
+  departmentId?: string;
+  weekStart?: string;
 }
 
 /**
@@ -60,7 +64,7 @@ interface RideSheetProps {
  * fallback for reassigning a car via the "העבר לרכב" select below instead of
  * dragging.
  */
-export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenChange, onSave, onTogglePin, onCancel, onUnassign, saving, tightSchedule, onClaimDriver, coordinatorNotes, isPlanning, requests = [] }: RideSheetProps) {
+export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenChange, onSave, onTogglePin, onCancel, onUnassign, saving, tightSchedule, onClaimDriver, coordinatorNotes, isPlanning, requests = [], departmentId, weekStart }: RideSheetProps) {
   // Bug-fix pass (owner bug #2): the previous re-sync condition compared
   // `ride.car_id !== carId` to detect "a different ride opened" — but that's
   // exactly as true the moment the Sadran picks a *different* car for the
@@ -168,6 +172,21 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
               {isPlanning ? <p className="text-destructive">{he.boardCoordination.planning}</p> : ride.id && ride.version != null && ride.status !== "cancelled" && ride.ends_at && Date.parse(ride.ends_at) > nowMs ? (
                 <RidePublicNotesEditor key={`${ride.id}:${ride.version}`} rideId={ride.id} expectedVersion={ride.version} initialNotes={ride.notes} />
               ) : ride.notes ? <p className="whitespace-pre-wrap break-words">{ride.notes}</p> : null}
+
+              {/* F3 (20260914120000_ride_passengers.sql): editing named people on an
+                  existing manual reservation, same editability gate as the notes editor
+                  above (not planning, not cancelled, still in the future). */}
+              {!isPlanning && ride.pin_reason === "SADRAN_MANUAL" && ride.id && ride.version != null
+                && ride.status !== "cancelled" && ride.ends_at && Date.parse(ride.ends_at) > nowMs && departmentId && weekStart ? (
+                <RidePassengersEditor
+                  key={`${ride.id}:${ride.version}:passengers`}
+                  rideId={ride.id}
+                  expectedVersion={ride.version}
+                  departmentId={departmentId}
+                  weekStart={weekStart}
+                  initialPassengers={namedPassengersOf(ride)}
+                />
+              ) : null}
 
               <Button className="w-full" onClick={handleSave} disabled={saving}>
                 {he.sadranRideSheet.save}

@@ -14,6 +14,7 @@ import type { CarFreeWindow } from "@/features/siddur/freeWindows";
 import {
   cancelRide,
   claimFreedSlot,
+  fetchJoinableRides,
   fetchMyFreedSlotOffers,
   fetchMyRequests,
   fetchRequestById,
@@ -31,6 +32,7 @@ import {
   withdrawFreedSlotClaim,
   withdrawRequest,
   withdrawAllRequests,
+  type JoinableRideRow,
   type SubmitRequestPayload,
 } from "./api";
 import { requestsKeys } from "./queryKeys";
@@ -87,6 +89,19 @@ export function useSubmitSeriesRequestMutation() {
       queryClient.invalidateQueries({ queryKey: siddurKeys.myUpcomingRides(profileId, undefined).slice(0, 2) });
     },
     onError: showErrorToast,
+  });
+}
+
+/**
+ * `joinable_rides_for_request` (F4): fetched imperatively right after a `waitlisted` submit
+ * outcome, not as a cached query — `RequestForm.performSubmit` awaits `mutateAsync` once per
+ * submission, so there is no query key to invalidate. The department's `join_radius_km` for the
+ * dialog's body text comes from the form's own `useDepartmentSettings` (`features/sadran/hooks`),
+ * already loaded there — no second settings fetch.
+ */
+export function useJoinableRidesMutation() {
+  return useMutation({
+    mutationFn: (requestId: string): Promise<JoinableRideRow[]> => fetchJoinableRides(requestId),
   });
 }
 

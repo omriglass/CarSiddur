@@ -16,7 +16,7 @@ import { fetchDepartmentSettings } from "../departments/api";
 import { fetchAllDestinations } from "../destinations/api";
 import { fetchAllRideTypes } from "../rideTypes/api";
 import { computeFlips, computeRankingDelta, type FlipRow, type RankingRow } from "./diff";
-import { fetchFairnessStats, fetchLastTestableWeek, fetchWeekRequests, type PolicyRuleConfig } from "./api";
+import { fetchCarMileageTotals, fetchFairnessStats, fetchLastTestableWeek, fetchWeekRequests, type PolicyRuleConfig } from "./api";
 
 import { buildSolverInput } from "@/features/solverBridge/buildSolverInput";
 import { scoreRequests } from "@/solver/policy/engine";
@@ -49,12 +49,16 @@ export async function runPolicyPreview(params: {
   const weekStart = await fetchLastTestableWeek(departmentId);
   if (!weekStart) return null;
 
-  const [departmentSettings, requests, allCars, destinations, rideTypes] = await Promise.all([
+  const [departmentSettings, requests, allCars, destinations, rideTypes, mileageKmByCarId] = await Promise.all([
     fetchDepartmentSettings(departmentId),
     fetchWeekRequests(departmentId, weekStart),
     fetchCarsAll(),
     fetchAllDestinations(departmentId),
     fetchAllRideTypes(departmentId),
+    // F5 (docs/SOLVER.md §3.6.2): fixed 4-week window, same for both policies
+    // being compared (unlike fairness, which depends on each policy's own
+    // `lookbackWeeks` param) — fetched once, reused for both solves.
+    fetchCarMileageTotals(departmentId, weekStart),
   ]);
 
   const cars = allCars.filter((c) => c.department_id === departmentId && c.status !== "retired");
@@ -78,6 +82,7 @@ export async function runPolicyPreview(params: {
     cars,
     seatConfigsByCarId,
     destinations,
+    mileageKmByCarId,
   };
 
   const inputOld = buildSolverInput({ ...baseArgs, policy: oldPolicy, fairness: fairnessOld });

@@ -48,6 +48,7 @@ import { conflictingRides, moveOnRideDay } from "@/features/siddur/rideEditing";
 import { tightScheduleRideIds } from "@/features/sadran/board/geometry";
 import { useEditRideMutation, useDepartmentSettings, useWeekRequestsWithNames } from "@/features/sadran/hooks";
 import { groupByDay } from "@/features/siddur/dayGrouping";
+import { visibleSiddurCars } from "@/features/siddur/visibleCars";
 import { type CarFreeWindow } from "@/features/siddur/freeWindows";
 import {
   useBoardRides,
@@ -66,7 +67,7 @@ import { WeekSwitcherTitle } from "@/features/siddur/components/WeekSwitcherTitl
 import { SiddurDisplayMenu } from "@/features/siddur/components/SiddurDisplayMenu";
 import { siddurKeys } from "@/features/siddur/queryKeys";
 import type { Week, RideMove, BoardRide } from "@/features/siddur/api";
-import { representativeRideTypeCode, servedOf } from "@/features/sadran/solverRun";
+import { namedPassengersOf, representativeRideTypeCode, servedOf } from "@/features/sadran/solverRun";
 import { rideBlockLabel, resolveRideRealDestination } from "@/lib/rideLabel";
 import { he, t, tv } from "@/i18n/he";
 import { dateKey, formatTime } from "@/lib/time";
@@ -173,7 +174,9 @@ export function SiddurPage() {
   const myRequestIds = new Set((myRequestsQuery.data ?? []).map((request) => request.id));
   function isMyRide(ride: BoardRide): boolean {
     return !!profileId && (ride.driver_id === profileId ||
-      servedOf(ride).some((entry) => !!entry.request_id && myRequestIds.has(entry.request_id)));
+      servedOf(ride).some((entry) => !!entry.request_id && myRequestIds.has(entry.request_id)) ||
+      // F3 (20260914120000_ride_passengers.sql): named on a reservation with no request of my own.
+      namedPassengersOf(ride).some((entry) => entry.person_id === profileId));
   }
 
   // `?ride=<id>` (notification deep link, `notification_default_url`'s
@@ -394,6 +397,9 @@ export function SiddurPage() {
       pendingConsent: true, rideTypeCode: original?.rideTypeCode,
       isMine: original?.isMine, needsDriver: original?.needsDriver });
   }
+
+  // A private (temporary) car is shown only on days it has a ride (REQ §13.80, owner 2026-09-14).
+  const weekGridVisibleCars = visibleSiddurCars(weekGridCars, weekGridRides);
 
   const weekGridDiscussionBlocks: WeekGridDiscussionBlock[] = activeDayWaitlistGroups.map((group) => ({
     id: group.id,
@@ -633,7 +639,7 @@ export function SiddurPage() {
               <WeekGrid
                 zoom={tableZoom}
                 onZoomChange={setTableZoom}
-                cars={weekGridCars}
+                cars={weekGridVisibleCars}
                 rides={weekGridRides}
                 dayStartMinutes={dayStartMinutes}
                 dayEndMinutes={dayEndMinutes}

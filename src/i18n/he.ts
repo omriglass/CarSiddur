@@ -565,6 +565,8 @@ export const he = {
     seriesWeekNotOpen: "אפשר לשמור רכב עד שישה שבועות קדימה, ולא לימים שכבר עברו",
     seriesEditNotSupported: "בקשה רב-יומית אפשר לבטל ולהגיש מחדש, לא לערוך",
     seriesCarUnavailable: "הרכב לא פנוי לכל ימי הבקשה הרב-יומית",
+    rideSeatsExceeded: "אין מספיק מקום ברכב לכל האנשים שנבחרו",
+    invalidRidePassenger: "פרטי הנוסע/ת אינם תקינים",
     network: "אין חיבור לרשת — נסה/י שוב",
     unknown: "אירעה שגיאה. נסה/י שוב",
     constraintViolation: "הנתונים לא עומדים בכללי המערכת — בדוק/י את השדות",
@@ -629,6 +631,7 @@ export const he = {
     car_care: "טיפול ברכב",
     waitlist_contested: "רשימת המתנה משותפת",
     waitlist_resolved: "רשימת ההמתנה הוסדרה",
+    window_changed: "מועד סגירת הבקשות השתנה",
   } satisfies Record<NotificationEvent, string>,
   car: {
     status: {

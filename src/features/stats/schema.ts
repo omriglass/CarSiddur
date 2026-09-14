@@ -44,6 +44,43 @@ export const weeklyStatSchema = z.object({
   provisional: z.boolean(),
 });
 
+/**
+ * `sharing` (S2, owner request 2026-09-14, docs/TODO.md "S -- Statistics group",
+ * `20260914110000_department_stats_sharing_indicators.sql`): same-day sharing indicators,
+ * three independent numbers -- owner: no combined score for now. `peopleUtilization` and
+ * `oneWayFulfilment` are 0..1 rates (formatted like the existing utilization tile);
+ * `fragmentation` is an average rides-per-active-car-day (>= 1 by construction), with its raw
+ * numerator/denominator (`fragmentationRideCount`/`activeCarDays`) and the one-way raw counts
+ * (`oneWayServed`/`oneWayTotal`) returned alongside for the tile's subtitle.
+ */
+export const sharingStatSchema = z.object({
+  peopleUtilization: z.number(),
+  fragmentation: z.number(),
+  fragmentationRideCount: z.number(),
+  activeCarDays: z.number(),
+  oneWayFulfilment: z.number(),
+  oneWayServed: z.number(),
+  oneWayTotal: z.number(),
+});
+
+/**
+ * `cancellations` (S3, owner request 2026-09-14): same-day cancellation rate over shared-car
+ * rides that started in range. `sameDayRate = sameDay / total` (0 when `total = 0` -- the
+ * denominator is cancellations, not all rides: cancelling is fine, cancelling at the last
+ * minute is the problem).
+ */
+export const cancellationsStatSchema = z.object({
+  total: z.number(),
+  sameDay: z.number(),
+  sameDayRate: z.number(),
+});
+
+/** One `requestsByHour` entry (S4, owner request 2026-09-14): `hour` is 0..23 (Asia/Jerusalem). */
+export const hourStatSchema = z.object({
+  hour: z.number().int().min(0).max(23),
+  count: z.number(),
+});
+
 /** `department_stats` jsonb return shape, validated at the `stats/api.ts` boundary before it reaches the UI. */
 export const departmentStatsSchema = z.object({
   from: z.string(),
@@ -86,4 +123,10 @@ export const departmentStatsSchema = z.object({
   // concurrent work); the screen hides the corresponding section when absent or empty.
   byRideType: z.array(rideTypeStatSchema).optional(),
   weekly: z.array(weeklyStatSchema).optional(),
+  // S2/S3/S4 (`20260914110000_department_stats_sharing_indicators.sql`) -- optional for the
+  // same "migration in flight" reason as `byRideType`/`weekly` above; the screen hides each
+  // tile/chart when its field is absent.
+  sharing: sharingStatSchema.optional(),
+  cancellations: cancellationsStatSchema.optional(),
+  requestsByHour: z.array(hourStatSchema).optional(),
 });

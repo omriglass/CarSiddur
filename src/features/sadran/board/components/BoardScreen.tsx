@@ -48,7 +48,7 @@ import { WaitlistGroupSheet } from "@/features/waitlist/components/WaitlistGroup
 import { useWaitlistGroupsQuery } from "@/features/waitlist/hooks";
 import { CalendarDays, Redo2, Undo2 } from "lucide-react";
 import { fetchCarSeatConfigs } from "@/features/fleet/api";
-import { fetchFairnessStats } from "../../api";
+import { fetchCarMileageTotals, fetchFairnessStats } from "../../api";
 import { useDestinations, useRideTypes } from "@/features/fleet/hooks";
 import { RideTypeLegend } from "@/components/RideTypeLegend";
 import { BoardGridSkeleton } from "@/components/skeletons/BoardGridSkeleton";
@@ -76,6 +76,7 @@ import {
   useDepartmentSettings,
   useEditRideMutation,
   useMaintenanceBlocks,
+  useSetRidePassengersMutation,
   useUnassignRideMutation,
   usePolicyOptions,
   useProposalsForWeek,
@@ -105,7 +106,13 @@ import { PolicyChip } from "./PolicyChip";
 import { RideSheet } from "./RideSheet";
 import { UnmetList, type UnmetListItem } from "./UnmetList";
 
-import type { EditRideInput, WeekRequestRow } from "../../api";
+import { CompanionPicker } from "@/components/CompanionPicker";
+import { useSession } from "@/features/auth/useSession";
+import { useDepartmentMembers } from "@/features/auth/useDepartmentMembers";
+import { fetchChildren } from "@/features/requests/api";
+import { buildRidePassengerInputs, splitReservationDriverAndPassengers } from "../reservationPeople";
+
+import type { EditRideInput, RidePassengerInput, WeekRequestRow } from "../../api";
 import type { Json } from "@/integrations/supabase/types";
 import type { Suggestion, SolverOutput } from "@/solver";
 
@@ -169,14 +176,31 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
   // §3 item 1).
   const destinationsQuery = useDestinations(departmentId);
 
+  // Reservation dialog's optional people picker (F3, docs/TODO.md, owner A5 2026-09-14):
+  // department members (first picked = driver) + the department's children, same source
+  // queries `RequestForm`'s own companions/children pickers use.
+  const { session } = useSession();
+  const profileId = session?.user.id;
+  const reservationMembersQuery = useDepartmentMembers(departmentId);
+  const reservationReferenceYear = Number((days[0] ?? weekStart).slice(0, 4));
+  const reservationChildrenQuery = useQuery({
+    queryKey: ["children", departmentId, profileId, reservationReferenceYear],
+    queryFn: () => fetchChildren(departmentId, profileId as string, reservationReferenceYear),
+    enabled: !!departmentId && !!profileId,
+  });
+
   const editRideMutation = useEditRideMutation();
+  const setRidePassengersMutation = useSetRidePassengersMutation();
   const claimDriverMutation = useClaimRideDriverMutation();
   const cancelRideChangeMutation = useCancelRideChangeMutation();
   const cancelRideMutation = useCancelRideMutation();
   const unassignRideMutation = useUnassignRideMutation();
   const [mergePrefill, setMergePrefill] = useState<Parameters<typeof goToComposer>[0] | null>(null);
   const [selectedUnmetId, setSelectedUnmetId] = useState<string | null>(null);
-  const [reservation, setReservation] = useState<{ carId: string; start: string; end: string; notes: string } | null>(null);
+  // memberIds: department members picked for the reservation, in pick order — the first
+  // becomes the ride's driver (owner A5, 2026-09-14); the rest (plus childIds) become
+  // `ride_passengers` rows via set_ride_passengers() once the ride itself is saved.
+  const [reservation, setReservation] = useState<{ carId: string; start: string; end: string; notes: string; memberIds: string[]; childIds: string[] } | null>(null);
   // Multi-day request ("series") car-change confirmation (REQ §13.77, UX_FLOWS.md §4.2):
   // dragging a series leg onto a different car moves every day of the span — confirm first,
   // since a car free on this day only is not necessarily free for the whole series (MDR03).
@@ -261,6 +285,15 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
     enabled: !!departmentId,
     staleTime: 60_000,
   });
+  // F5 (docs/SOLVER.md §3.6.2): rolling-window km per car, also preview-only
+  // and cached (60s) like fairness above — the window is a fixed 4 weeks in
+  // v1, no policy param to key on (REQUIREMENTS §13.84).
+  const mileageStatsQuery = useQuery({
+    queryKey: sadranKeys.mileageTotals(departmentId, weekStart),
+    queryFn: () => fetchCarMileageTotals(departmentId, weekStart),
+    enabled: !!departmentId,
+    staleTime: 60_000,
+  });
 
   function selectPolicyVersion(policyVersionId: string) {
     setPolicyVersionOverride(policyVersionId);
@@ -290,7 +323,8 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
       !department?.home_destination_id ||
       !departmentSettingsQuery.data ||
       destinationsQuery.isLoading ||
-      fairnessStatsQuery.isLoading
+      fairnessStatsQuery.isLoading ||
+      mileageStatsQuery.isLoading
     ) return;
     try {
       // Reads straight from this screen's own already-loaded query hooks
@@ -319,6 +353,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
           boardRides: ridesQuery.data ?? [],
           seatConfigsFlat: seatConfigsQuery.data ?? [],
           fairness: fairnessStatsQuery.data ?? [],
+          mileageKmByCarId: mileageStatsQuery.data ?? {},
         },
       );
       const output = runSolve(context.input);
@@ -421,6 +456,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
       departmentSettingsQuery.isLoading ||
       destinationsQuery.isLoading ||
       fairnessStatsQuery.isLoading ||
+      mileageStatsQuery.isLoading ||
       seatConfigsQuery.isLoading ||
       !effectivePolicyVersionId
     ) return;
@@ -438,6 +474,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
     departmentSettingsQuery.isLoading,
     destinationsQuery.isLoading,
     fairnessStatsQuery.isLoading,
+    mileageStatsQuery.isLoading,
     seatConfigsQuery.isLoading,
     effectivePolicyVersionId,
   ]);
@@ -977,10 +1014,26 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
     const start = parseHHMM(reservation.start);
     const end = parseHHMM(reservation.end);
     if (start == null || end == null || end <= start || !reservation.notes.trim()) { toast.error(he.sadranBoard.invalidWindow); return; }
+    // First picked member = driver (owner A5, 2026-09-14); everyone else picked, plus any
+    // picked children, become named `ride_passengers` once the ride itself exists.
+    const { driverId, passengerMemberIds } = splitReservationDriverAndPassengers(reservation.memberIds);
     try {
-      await editRideMutation.mutateAsync({ input: { department_id: departmentId, week_start: weekStart, car_id: reservation.carId,
+      const rideId = await editRideMutation.mutateAsync({ input: { department_id: departmentId, week_start: weekStart, car_id: reservation.carId,
         starts_at: minutesIso(dropCtx, start), ends_at: minutesIso(dropCtx, end), origin_id: department.home_destination_id, destination_id: department.home_destination_id,
-        driver_id: null, served: [], notes: reservation.notes.trim(), is_pinned: true, pin_reason: "SADRAN_MANUAL" }, departmentId, weekStart });
+        driver_id: driverId, served: [], notes: reservation.notes.trim(), is_pinned: true, pin_reason: "SADRAN_MANUAL" }, departmentId, weekStart });
+      if (passengerMemberIds.length || reservation.childIds.length) {
+        const passengers: RidePassengerInput[] = buildRidePassengerInputs(
+          passengerMemberIds, reservation.childIds,
+          reservationMembersQuery.data ?? [], reservationChildrenQuery.data ?? [],
+        );
+        try {
+          // A brand-new ride's version always starts at 1 (`rides.version` default —
+          // edit_ride()'s insert branch never touches it).
+          await setRidePassengersMutation.mutateAsync({ rideId, expectedVersion: 1, passengers, departmentId, weekStart });
+        } catch {
+          toast.error(he.sadranBoard.reservationPeopleSaveFailed);
+        }
+      }
       setReservation(null); toast.success(he.sadranBoard.reservationSaved);
     } catch { /* Mutation reports errors. */ }
   }
@@ -1154,7 +1207,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
             draggable
             canDragRide={(ride) => !ride.id.startsWith("merge:") && (!ride.id.startsWith("change:") || !!(rideChangesQuery.data ?? []).find((change) => change.is_planning && `change:${change.id}` === ride.id))}
             canResizeRide={(ride) => !ride.id.startsWith("request:") && !ride.id.startsWith("change:") && !ride.id.startsWith("merge:")}
-            onSlotClick={(carId, minutes) => !carId.startsWith("phantom:") && setReservation({ carId, start: formatMinutes(minutes), end: formatMinutes(Math.min(1439, minutes + 60)), notes: "" })}
+            onSlotClick={(carId, minutes) => !carId.startsWith("phantom:") && setReservation({ carId, start: formatMinutes(minutes), end: formatMinutes(Math.min(1439, minutes + 60)), notes: "", memberIds: [], childIds: [] })}
             onRideClick={handleRideClick}
             onRideDrop={(rideId, carId, minutes, droppedOnRideId) => void handleRideDrop(rideId, carId, minutes, droppedOnRideId)}
             onRideResize={handleRideResize}
@@ -1302,7 +1355,27 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
             <Select value={reservation.carId} onValueChange={(carId) => setReservation({ ...reservation, carId })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{(carsQuery.data ?? []).map((car) => <SelectItem key={car.id} value={car.id}>{car.name}</SelectItem>)}</SelectContent></Select>
             <div className="flex gap-2"><TimeField15 min="00:00" aria-label={he.sadranRideSheet.depart} value={reservation.start} onChange={(start) => setReservation({ ...reservation, start })} /><TimeField15 min="00:00" max="23:59" aria-label={he.sadranRideSheet.return} value={reservation.end} onChange={(end) => setReservation({ ...reservation, end })} /></div>
             <Textarea aria-label={he.sadranBoard.reservationNotes} placeholder={he.sadranBoard.reservationNotes} value={reservation.notes} onChange={(event) => setReservation({ ...reservation, notes: event.target.value })} />
-            <Button disabled={editRideMutation.isPending || !reservation.notes.trim() || !reservation.carId} onClick={() => void saveReservation()}>{he.common.save}</Button>
+            <div className="space-y-1">
+              <p className="text-sm font-medium">{he.sadranBoard.reservationPeople}</p>
+              <p className="text-xs text-muted-foreground">{he.sadranBoard.reservationPeopleHint}</p>
+              <CompanionPicker
+                members={(reservationMembersQuery.data ?? []).map((m) => ({ id: m.id, name: m.name }))}
+                value={reservation.memberIds}
+                onChange={(memberIds) => setReservation({ ...reservation, memberIds })}
+              />
+            </div>
+            <div className="space-y-1">
+              <CompanionPicker
+                members={(reservationChildrenQuery.data ?? []).map((child) => ({
+                  id: child.id,
+                  name: child.age == null ? child.name : `${child.name} · ${child.age}`,
+                }))}
+                value={reservation.childIds}
+                onChange={(childIds) => setReservation({ ...reservation, childIds })}
+                label={he.sadranBoard.reservationChildren}
+              />
+            </div>
+            <Button disabled={editRideMutation.isPending || setRidePassengersMutation.isPending || !reservation.notes.trim() || !reservation.carId} onClick={() => void saveReservation()}>{he.common.save}</Button>
           </> : null}
         </PortalDialogContent>
       </Dialog>
@@ -1327,6 +1400,8 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
         isPlanning={!!selectedPlanningChange}
         coordinatorNotes={selectedRide ? rideCoordinatorNotes(servedOf(selectedRide), requestsQuery.data ?? []) : undefined}
         requests={requestsQuery.data ?? []}
+        departmentId={departmentId}
+        weekStart={weekStart}
         cars={carsQuery.data ?? []}
         driverName={selectedRideDriverName}
         homeDestinationId={department?.home_destination_id ?? null}

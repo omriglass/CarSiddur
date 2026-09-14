@@ -446,6 +446,7 @@ var TEMPLATES = {
   PLACED_RELAY_PAIR: "\u05E9\u05D5\u05D1\u05E5 \u05DC{car}: {member} \u05E0\u05D5\u05D4\u05D2/\u05EA \u05DC{dest} \u05D1-{dep} \u05D5\u05DE\u05E9\u05D0\u05D9\u05E8/\u05D4 \u05D0\u05EA \u05D4\u05E8\u05DB\u05D1; {partner} \u05DE\u05D7\u05D6\u05D9\u05E8/\u05D4 \u05D0\u05D5\u05EA\u05D5 \u05D1-{ret}",
   PLACED_FIXED: "\u05E0\u05E1\u05D9\u05E2\u05D4 \u05E7\u05D1\u05D5\u05E2\u05D4 \u05E9\u05E0\u05E7\u05D1\u05E2\u05D4 \u05DE\u05E8\u05D0\u05E9",
   PLACED_SERIES: "\u05E9\u05D5\u05D1\u05E5/\u05D4 \u05DB\u05D7\u05DC\u05E7 \u05DE\u05D1\u05E7\u05E9\u05D4 \u05E8\u05D1-\u05D9\u05D5\u05DE\u05D9\u05EA \u05DC{car} ({index}/{count})",
+  CAR_BALANCED_MILEAGE: "\u05E0\u05D1\u05D7\u05E8 {car} \u05DC\u05D0\u05D9\u05D6\u05D5\u05DF \u05E7\u05D9\u05DC\u05D5\u05DE\u05D8\u05E8\u05D0\u05D6\u05F3 \u05D1\u05D9\u05DF \u05D4\u05E8\u05DB\u05D1\u05D9\u05DD",
   // Unmet reasons
   UNMET_NO_CAR: "\u05D0\u05D9\u05DF \u05E8\u05DB\u05D1 \u05E4\u05E0\u05D5\u05D9 \u05D1\u05D7\u05DC\u05D5\u05DF \u05D4\u05DE\u05D1\u05D5\u05E7\u05E9; \u05D7\u05D5\u05E1\u05DE\u05D9\u05DD: {blockers}",
   UNMET_NO_RELAY_PARTNER: "\u05D0\u05D9\u05DF \u05DE\u05D9 \u05E9\u05D9\u05D7\u05D6\u05D9\u05E8/\u05D9\u05D1\u05D9\u05D0 \u05D0\u05EA \u05D4\u05E8\u05DB\u05D1 \u05DE{dest} \u05D1\u05D0\u05D5\u05EA\u05D5 \u05D9\u05D5\u05DD; \u05D4\u05E8\u05DB\u05D1 \u05D7\u05D9\u05D9\u05D1 \u05DC\u05D7\u05D6\u05D5\u05E8 \u05D4\u05D1\u05D9\u05EA\u05D4 \u05E2\u05D3 {dayEnd}",
@@ -570,9 +571,41 @@ function compareKey(a, b) {
   if (a.preference !== b.preference) return a.preference - b.preference;
   if (a.slackVal !== b.slackVal) return a.slackVal - b.slackVal;
   if (a.continuity !== b.continuity) return a.continuity - b.continuity;
+  if (a.mileageVal !== b.mileageVal) return a.mileageVal - b.mileageVal;
   if (a.fragmentation !== b.fragmentation) return a.fragmentation - b.fragmentation;
   return a.carId < b.carId ? -1 : a.carId > b.carId ? 1 : 0;
 }
+function coreKeyEqual(a, b) {
+  return a.shiftCost === b.shiftCost && a.preference === b.preference && a.slackVal === b.slackVal && a.continuity === b.continuity;
+}
+function destinationKm(input, destinationId) {
+  return input.destinations[destinationId]?.distanceKm ?? 0;
+}
+function mileageValue(car, assignedKmByCar) {
+  return (car.mileageKm ?? 0) + (assignedKmByCar.get(car.id) ?? 0);
+}
+function addAssignedKm(assignedKmByCar, carId, km) {
+  if (km === 0) return;
+  assignedKmByCar.set(carId, (assignedKmByCar.get(carId) ?? 0) + km);
+}
+var MileageDecisionTracker = class {
+  decided = false;
+  /** Call once per candidate, with the key that is (or was, before this
+   *  candidate) the current best. `bestKey` is undefined for the very first
+   *  candidate (nothing to compare against yet). */
+  consider(candidateKey, bestKey, replaced) {
+    if (!bestKey) return;
+    const coreTied = coreKeyEqual(candidateKey, bestKey);
+    if (coreTied && candidateKey.mileageVal !== bestKey.mileageVal) {
+      this.decided = true;
+    } else if (replaced && !coreTied) {
+      this.decided = false;
+    }
+  }
+  get value() {
+    return this.decided;
+  }
+};
 function homeSlack(car, nr) {
   return slack(car, nr.passengers) ?? Number.POSITIVE_INFINITY;
 }
@@ -618,6 +651,11 @@ function runGreedy(units, timelines, input) {
   const sharedCars = [...input.cars].filter((c) => c.type === "shared").sort((a, b) => a.id < b.id ? -1 : 1);
   const placed = [];
   const unmetUnits = [];
+  const assignedKmByCar = /* @__PURE__ */ new Map();
+  const mileageEnabled = input.cars.some((car) => car.mileageKm !== void 0);
+  const trackKm = (carId, km) => {
+    if (mileageEnabled) addAssignedKm(assignedKmByCar, carId, km);
+  };
   for (const unit of sortUnits(units)) {
     if (unit.kind === "single" && unit.single) {
       const nr = unit.single;
@@ -627,6 +665,7 @@ function runGreedy(units, timelines, input) {
         continue;
       }
       let best = null;
+      const mileageDecision = new MileageDecisionTracker();
       for (const car of sharedCars) {
         if (!fits(car, nr.passengers) || !luggageFits(car, nr.luggage ? 1 : 0)) continue;
         const tl2 = timelines.get(car.id);
@@ -638,9 +677,12 @@ function runGreedy(units, timelines, input) {
             slackVal: homeSlack(car, nr),
             continuity: continuityRank(car.id, nr.id, nr.request.memberId, input),
             fragmentation: fragmentationFor(tl2, nr.window),
+            mileageVal: mileageValue(car, assignedKmByCar),
             carId: car.id
           };
-          if (!best || compareKey(key, best.key) < 0) {
+          const replaced = !best || compareKey(key, best.key) < 0;
+          mileageDecision.consider(key, best?.key, replaced);
+          if (replaced) {
             best = { car, window: nr.window, shift: { departureMin: 0, returnMin: 0 }, key };
           }
         }
@@ -658,9 +700,12 @@ function runGreedy(units, timelines, input) {
             slackVal: homeSlack(car, nr),
             continuity: continuityRank(car.id, nr.id, nr.request.memberId, input),
             fragmentation: fragmentationFor(tl2, placement.window),
+            mileageVal: mileageValue(car, assignedKmByCar),
             carId: car.id
           };
-          if (!best || compareKey(key, best.key) < 0) {
+          const replaced = !best || compareKey(key, best.key) < 0;
+          mileageDecision.consider(key, best?.key, replaced);
+          if (replaced) {
             best = { car, window: placement.window, shift: placement.shift, key };
           }
         }
@@ -677,7 +722,15 @@ function runGreedy(units, timelines, input) {
         endLocationId: leg.destinationId,
         overnightAck: false
       });
-      placed.push({ kind: "single", nr, carId: best.car.id, window: best.window, shift: best.shift });
+      trackKm(best.car.id, destinationKm(input, nr.destinationId) * 2);
+      placed.push({
+        kind: "single",
+        nr,
+        carId: best.car.id,
+        window: best.window,
+        shift: best.shift,
+        balancedMileage: mileageDecision.value
+      });
       continue;
     }
     if (unit.kind === "pair" && unit.pair) {
@@ -709,7 +762,7 @@ function runGreedy(units, timelines, input) {
         );
         const fragmentation = fragmentationFor(tl2, { start: pair.outWindow.start, end: pair.returnWindow.end });
         const preference = carPreferenceRank(car.id, [outNr.request.preferredCarId, retNr.request.preferredCarId]);
-        const key = { shiftCost, preference, slackVal, continuity, fragmentation, carId: car.id };
+        const key = { shiftCost, preference, slackVal, continuity, fragmentation, mileageVal: 0, carId: car.id };
         if (!best || compareKey(key, best.key) < 0) best = { car, key };
       }
       if (!best) {
@@ -731,6 +784,7 @@ function runGreedy(units, timelines, input) {
         endLocationId: input.homeLocationId,
         overnightAck: false
       });
+      trackKm(best.car.id, destinationKm(input, pair.destinationId) * 2);
       placed.push({ kind: "pair", pair, outNr, retNr, carId: best.car.id });
       continue;
     }
@@ -751,7 +805,7 @@ function runGreedy(units, timelines, input) {
         );
         const fragmentation = fragmentationFor(tl2, { start: placement2.firstWindow.start, end: placement2.lastWindow.end });
         const preference = carPreferenceRank(car2.id, legs.map((leg) => leg.request.preferredCarId));
-        const key = { shiftCost: placement2.shiftCost, preference, slackVal, continuity, fragmentation, carId: car2.id };
+        const key = { shiftCost: placement2.shiftCost, preference, slackVal, continuity, fragmentation, mileageVal: 0, carId: car2.id };
         if (!best || compareKey(key, best.key) < 0) best = { car: car2, placement: placement2, key };
       }
       if (!best || !best.placement) {
@@ -789,8 +843,8 @@ function toAssignments(placed, input, carsById) {
     if (p.kind === "single") {
       const { nr, carId, window, shift } = p;
       const car = carsById.get(carId);
-      const code = shiftReasonCode(shift);
-      const text = code === "PLACED_PREFERRED" ? reason("PLACED_PREFERRED", { car: car?.name ?? carId }) : reason("PLACED_SHIFTED", {
+      const code = p.balancedMileage ? "CAR_BALANCED_MILEAGE" : shiftReasonCode(shift);
+      const text = code === "CAR_BALANCED_MILEAGE" ? reason("CAR_BALANCED_MILEAGE", { car: car?.name ?? carId }) : code === "PLACED_PREFERRED" ? reason("PLACED_PREFERRED", { car: car?.name ?? carId }) : reason("PLACED_SHIFTED", {
         car: car?.name ?? carId,
         dep: String(Math.abs(shift.departureMin)),
         ret: String(Math.abs(shift.returnMin))
@@ -1126,6 +1180,7 @@ function tryRelocateSetAndPlace(nr, car, blockers, sharedCars, timelines, input,
           departureMin: (t.window.start - t.blocker.nr.window.start) * 15,
           returnMin: (t.window.end - t.blocker.nr.window.end) * 15
         };
+        t.blocker.balancedMileage = false;
       }
       return {
         relocations: newTargets.map((t) => ({
