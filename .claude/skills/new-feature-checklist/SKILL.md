@@ -46,6 +46,7 @@ Check first: `add-priority-rule`, `add-request-field`, `add-notification-event`,
 - [ ] RLS case in `supabase/tests/` for new tables.
 - [ ] Playwright spec in `e2e/` for any **user-facing flow**; extend one of the 27 flat specs (`e2e/*.spec.ts`) if it belongs there.
 - [ ] `npm run lint && npm run typecheck && npm run test`; `npm run test:e2e -- <spec>`.
+- [ ] Run `npm run impact` (or `npm run impact -- --staged`); if it flags a changed file matching no area, add a glob to the right area (or a new one) in `test-map.json`/`docs/TEST_MAP.md` in this same change; paste the printed QA checklist into the PR/report.
 
 ## 8. Housekeeping
 - [ ] `CLAUDE.md` folder map / conventions / task→skill table if you added a pattern, folder, command or skill; `docs/MAINTENANCE.md` if you added a skill or agent.

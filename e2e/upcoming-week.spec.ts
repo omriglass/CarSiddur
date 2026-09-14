@@ -20,7 +20,7 @@ import { paths } from "../src/app/routes";
 // and manage it ahead of time.
 const DESTINATION = "E2E upcoming-week destination";
 
-test.describe("upcoming week phase", () => {
+test.describe("upcoming week phase", { tag: ["@request-form", "@new-request-window"] }, () => {
   test("a series reaching two weeks out materializes an upcoming week, hidden from members but visible to the Sadran", async ({ page, browser }) => {
     const service = serviceRoleClient();
     const openWeekStart = await getWeekStart("open");

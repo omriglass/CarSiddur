@@ -13,7 +13,7 @@ import {
 // here raced with test order. This spec owns its own week end-to-end instead.
 const WEEK = "2043-02-15";
 
-test("weekly member manages only their assigned board while permanent Sadran retains access", async ({ browser }) => {
+test("weekly member manages only their assigned board while permanent Sadran retains access", { tag: ["@board", "@auth"] }, async ({ browser }) => {
   const database = serviceRoleClient();
   const admin = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     auth: { persistSession: false, autoRefreshToken: false },

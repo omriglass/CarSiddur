@@ -15,7 +15,7 @@ import { newSignedInPage, SEEDED_USERS, signIn } from "./helpers";
 const PROPOSAL_REQUEST_ID = "00000000-0000-0000-0000-000000000213";
 const PROPOSAL_REQUEST_LABEL = "בדיקת הצעה (בדיקה)";
 
-test.describe("proposal round trip", () => {
+test.describe("proposal round trip", { tag: ["@proposals"] }, () => {
   test("sadran sends a shift proposal, member accepts via token with no session, sadran applies it", async ({
     page,
     browser,

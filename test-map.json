@@ -1,0 +1,768 @@
+{
+  "$schemaNote": "Machine-readable twin of docs/TEST_MAP.md. Area ids here MUST match the section ids in TEST_MAP.md — scripts/impact.mjs and scripts/impact.test.mjs enforce this. Glob syntax: '**' matches any number of path segments (including zero), '*' matches within one segment. A path may legitimately appear under more than one area (shared fan-out: RequestForm.tsx, WeekGrid.tsx, src/solver/**, i18n files) — that is intentional, not a bug.",
+  "ignorePaths": [
+    "docs/**/*.md",
+    "CLAUDE.md",
+    "README.md",
+    ".claude/**",
+    ".github/**",
+    "package.json",
+    "package-lock.json",
+    "tsconfig*.json",
+    "vite.config.ts",
+    "vitest.config.ts",
+    "playwright.config.ts",
+    "scripts/impact.mjs",
+    "scripts/impact.test.mjs",
+    "test-map.json",
+    "e2e/helpers.ts",
+    "e2e/global-setup.ts",
+    "e2e/published-week.ts",
+    "src/test/setup.ts"
+  ],
+  "areas": [
+    {
+      "id": "request-form",
+      "title": "Request form & multi-day (series) requests",
+      "paths": [
+        "src/features/requests/components/RequestForm.tsx",
+        "src/features/requests/components/RequestForm.oneWaySync.test.tsx",
+        "src/features/requests/components/TemplateSuggestions.tsx",
+        "src/features/requests/components/TemplateSuggestions.test.tsx",
+        "src/features/requests/components/RequestsListPage.test.tsx",
+        "src/features/requests/series.ts",
+        "src/features/requests/series.test.ts",
+        "src/features/requests/templatePrefill.ts",
+        "src/features/requests/templatePrefill.test.ts",
+        "src/features/requests/duplicate.ts",
+        "src/features/requests/duplicate.test.ts",
+        "src/features/requests/mapper.ts",
+        "src/features/requests/mapper.test.ts",
+        "src/features/requests/duration.ts",
+        "src/features/requests/duration.test.ts",
+        "src/features/requests/dayLabel.ts",
+        "src/features/requests/dayLabel.test.ts",
+        "src/features/requests/schema.ts",
+        "src/features/requests/schema.test.ts",
+        "src/features/requests/submitOutcome.ts",
+        "src/features/requests/submitOutcome.test.ts",
+        "src/features/requests/api.ts",
+        "src/features/requests/hooks.ts",
+        "src/features/requests/queryKeys.ts",
+        "src/i18n/he.member.ts",
+        "supabase/migrations/**/*request_template*",
+        "supabase/migrations/**/*series*",
+        "supabase/migrations/**/*requests.sql",
+        "supabase/migrations/**/*request_edit*",
+        "supabase/migrations/**/*bulk_request_withdrawal*",
+        "supabase/migrations/**/*child*",
+        "supabase/tests/request_templates.sql",
+        "supabase/tests/multi_day_series.sql",
+        "e2e/multi-day.spec.ts",
+        "e2e/repeating-requests.spec.ts",
+        "e2e/member.spec.ts",
+        "e2e/auto-approve.spec.ts",
+        "e2e/upcoming-week.spec.ts"
+      ],
+      "vitest": [
+        "src/features/requests"
+      ],
+      "sql": [
+        "request_templates.sql",
+        "multi_day_series.sql",
+        "upcoming_weeks.sql"
+      ],
+      "playwrightTags": [
+        "@request-form"
+      ],
+      "reqRefs": [
+        "13.28",
+        "13.45",
+        "13.76",
+        "13.77"
+      ],
+      "qaChecklist": [
+        "Submit a multi-day series via the \"return another day?\" toggle; confirm one card, 3 linked legs (REQ §13.77)",
+        "Withdraw a series request; confirm cascading withdraw of all legs (REQ §13.77)",
+        "Submit with repeat-weekly on; confirm next-week suggestion, snooze, stop repeating (REQ §13.76)",
+        "Submit a late single-day request; confirm accepted but flagged (REQ §13.6)"
+      ]
+    },
+    {
+      "id": "quick-request",
+      "title": "Quick / car-now request",
+      "paths": [
+        "src/features/requests/quickRequest.ts",
+        "src/features/requests/quickRequest.test.ts",
+        "src/features/requests/carNow.ts",
+        "src/features/requests/carNow.test.ts",
+        "src/features/requests/components/QuickRequestSheet.tsx",
+        "src/features/requests/components/QuickRequestSheet.test.tsx",
+        "src/features/requests/components/CarNowButton.tsx",
+        "src/features/requests/components/CarNowButton.test.tsx",
+        "src/features/requests/components/RequestForm.tsx",
+        "src/i18n/he.member.ts",
+        "supabase/migrations/**/*quick_request*",
+        "supabase/tests/live_quick_one_way.sql",
+        "e2e/quick-request.spec.ts",
+        "e2e/quick-one-way.spec.ts"
+      ],
+      "vitest": [
+        "src/features/requests/quickRequest.test.ts",
+        "src/features/requests/carNow.test.ts",
+        "src/features/requests/components/QuickRequestSheet.test.tsx",
+        "src/features/requests/components/CarNowButton.test.tsx"
+      ],
+      "sql": [
+        "live_quick_one_way.sql"
+      ],
+      "playwrightTags": [
+        "@quick-request"
+      ],
+      "reqRefs": [
+        "13.74"
+      ],
+      "qaChecklist": [
+        "Tap the car-now button on a free shared car; confirm the simplified sheet fields (REQ §13.74)",
+        "Submit car-now; confirm same auto-approve as a round trip on a free car (REQ §13.74)"
+      ]
+    },
+    {
+      "id": "waitlist",
+      "title": "Waiting list & joinable rides",
+      "paths": [
+        "src/features/waitlist/**",
+        "src/features/requests/joinableRides.ts",
+        "src/features/requests/joinableRides.test.ts",
+        "src/features/requests/components/JoinableRidesDialog.tsx",
+        "src/features/requests/components/RequestForm.tsx",
+        "src/i18n/he.member.ts",
+        "src/i18n/he.sadran.ts",
+        "supabase/migrations/**/*waitlist*",
+        "supabase/migrations/**/*freed_slot*",
+        "supabase/migrations/**/*joinable_rides*",
+        "supabase/migrations/**/*join_radius*",
+        "supabase/tests/waitlist_groups.sql",
+        "supabase/tests/joinable_rides.sql",
+        "e2e/waitlist-groups.spec.ts",
+        "e2e/freed-slot.spec.ts"
+      ],
+      "vitest": [
+        "src/features/waitlist",
+        "src/features/requests/joinableRides.test.ts"
+      ],
+      "sql": [
+        "waitlist_groups.sql",
+        "joinable_rides.sql"
+      ],
+      "playwrightTags": [
+        "@waitlist"
+      ],
+      "reqRefs": [
+        "13.7",
+        "13.33",
+        "13.66",
+        "13.75",
+        "13.83"
+      ],
+      "qaChecklist": [
+        "Submit against a published day with no free car; confirm waitlist + joinable-rides dialog (REQ §13.83)",
+        "Tap the join-ride button; confirm it joins the ride and withdraws the waitlisted request (REQ §13.83)",
+        "Cancel a live-week ride; confirm an overlapping waitlisted request auto-assigns (REQ §13.66)",
+        "Create two overlapping unresolvable requests; confirm one contested discussion group (REQ §13.75)"
+      ]
+    },
+    {
+      "id": "new-request-window",
+      "title": "New-request button & week window (incl. Sadran closing time)",
+      "paths": [
+        "src/features/requests/window.ts",
+        "src/features/requests/window.test.ts",
+        "src/features/requests/resolveWeekStart.ts",
+        "src/features/requests/resolveWeekStart.test.ts",
+        "src/features/requests/newRequestButton.ts",
+        "src/features/requests/newRequestButton.test.ts",
+        "src/features/requests/components/NewRequestButton.tsx",
+        "src/features/requests/components/AddRideFab.tsx",
+        "src/i18n/he.member.ts",
+        "supabase/migrations/**/*upcoming*",
+        "supabase/migrations/**/*week_opening*",
+        "supabase/migrations/**/*window_changed*",
+        "supabase/migrations/**/*week_close_at*",
+        "supabase/tests/week_opening.sql",
+        "supabase/tests/upcoming_weeks.sql",
+        "e2e/upcoming-week.spec.ts"
+      ],
+      "vitest": [
+        "src/features/requests/window.test.ts",
+        "src/features/requests/resolveWeekStart.test.ts",
+        "src/features/requests/newRequestButton.test.ts"
+      ],
+      "sql": [
+        "week_opening.sql",
+        "upcoming_weeks.sql"
+      ],
+      "playwrightTags": [
+        "@new-request-window"
+      ],
+      "reqRefs": [
+        "13.74",
+        "13.81"
+      ],
+      "qaChecklist": [
+        "With no open week, tap the floating add button; confirm it targets the next solving/published week (REQ §13.74)",
+        "Change a week's close time from the board kebab; confirm window_changed notice (REQ §13.81)",
+        "Confirm the new-request entry point's label/state matches its target week's phase (REQ §13.81)"
+      ]
+    },
+    {
+      "id": "siddur",
+      "title": "Siddur (member week view)",
+      "paths": [
+        "src/features/siddur/**",
+        "src/components/WeekGrid.tsx",
+        "src/components/WeekGrid.test.ts",
+        "src/components/WeekGrid.gestures.test.tsx",
+        "src/components/weekGridCars.ts",
+        "src/components/weekGridCars.test.ts",
+        "src/components/WeekStrip.test.tsx",
+        "src/pages/SiddurPage.tsx",
+        "src/i18n/he.member.ts",
+        "supabase/migrations/**/*public_request*",
+        "supabase/migrations/**/*public_notes*",
+        "supabase/migrations/**/*v_board_rides*",
+        "e2e/siddur-mobile.spec.ts",
+        "e2e/ride-editing.spec.ts",
+        "e2e/member.spec.ts"
+      ],
+      "vitest": [
+        "src/features/siddur",
+        "src/components/WeekGrid.test.ts",
+        "src/components/WeekGrid.gestures.test.tsx",
+        "src/components/weekGridCars.test.ts"
+      ],
+      "sql": [
+        "selected_day_publication.sql"
+      ],
+      "playwrightTags": [
+        "@siddur"
+      ],
+      "reqRefs": [
+        "13.42",
+        "13.56",
+        "13.80"
+      ],
+      "qaChecklist": [
+        "Switch weeks/toggle table view/open the archive on the siddur (REQ §13.42)",
+        "Confirm a private car's row appears only on days it has a ride (REQ §13.80)",
+        "View another department's published siddur; confirm read-only, no lockbox code (REQ §13.52)",
+        "Resize an owned ride and confirm shadow-collision requires explicit driver consent (REQ §13.42)"
+      ]
+    },
+    {
+      "id": "board",
+      "title": "Board (Sadran) — drag/drop, reservations, policy chip/score",
+      "paths": [
+        "src/features/sadran/board/**",
+        "src/features/sadran/applySolve.ts",
+        "src/features/sadran/applySolve.test.ts",
+        "src/features/sadran/unmetStatuses.ts",
+        "src/features/sadran/unmetStatuses.test.ts",
+        "src/features/sadran/deviations/**",
+        "src/features/sadran/export/**",
+        "src/features/sadran/api.ts",
+        "src/features/sadran/hooks.ts",
+        "src/features/sadran/keys.ts",
+        "src/components/WeekGrid.tsx",
+        "src/components/weekGridCars.ts",
+        "src/solver/**",
+        "src/i18n/he.sadran.ts",
+        "supabase/migrations/**/*board*",
+        "supabase/migrations/**/*coordinator*",
+        "supabase/migrations/**/*ride_edit*",
+        "supabase/migrations/**/*day_readiness*",
+        "supabase/tests/todo_board_semantics.sql",
+        "supabase/tests/coordinator_planning.sql",
+        "supabase/tests/solve_semantics.sql",
+        "e2e/board.spec.ts",
+        "e2e/board-mobile.spec.ts",
+        "e2e/board-coordination.spec.ts",
+        "e2e/export.spec.ts",
+        "e2e/weekly-permissions.spec.ts",
+        "e2e/ride-editing.spec.ts"
+      ],
+      "vitest": [
+        "src/features/sadran/board",
+        "src/features/sadran/applySolve.test.ts",
+        "src/features/sadran/unmetStatuses.test.ts",
+        "src/features/sadran/deviations",
+        "src/features/sadran/export"
+      ],
+      "sql": [
+        "todo_board_semantics.sql",
+        "coordinator_planning.sql",
+        "solve_semantics.sql"
+      ],
+      "playwrightTags": [
+        "@board"
+      ],
+      "reqRefs": [
+        "13.42",
+        "13.80",
+        "13.84"
+      ],
+      "qaChecklist": [
+        "Drag an unmet request onto a car column; confirm a ride is created (REQ §13.42)",
+        "Run auto-solve; confirm the policy chip shows name/version/score (REQ §13.84)",
+        "Move a ride via the sheet's car selector; confirm it persists (REQ §13.42)",
+        "Confirm a private car's board row is hidden on days with no ride (REQ §13.80)",
+        "Confirm a weekly-assigned member sees only their assigned week (REQ §13.42)"
+      ]
+    },
+    {
+      "id": "proposals",
+      "title": "Proposals & /p/:token",
+      "paths": [
+        "src/features/proposals/**",
+        "src/features/sadran/proposals/**",
+        "supabase/functions/answer-proposal/**",
+        "src/i18n/he.sadran.ts",
+        "src/i18n/he.member.ts",
+        "supabase/migrations/**/*proposal*",
+        "supabase/tests/proposal_day_boundary.sql",
+        "supabase/tests/proposal_replacement.sql",
+        "e2e/proposal.spec.ts",
+        "e2e/proposal-retry.spec.ts",
+        "e2e/board-coordination.spec.ts",
+        "e2e/one-way-consent.spec.ts",
+        "e2e/sadran.spec.ts"
+      ],
+      "vitest": [
+        "src/features/proposals",
+        "src/features/sadran/proposals"
+      ],
+      "sql": [
+        "proposal_day_boundary.sql",
+        "proposal_replacement.sql"
+      ],
+      "playwrightTags": [
+        "@proposals"
+      ],
+      "reqRefs": [
+        "13.24",
+        "13.29",
+        "13.46",
+        "13.67"
+      ],
+      "qaChecklist": [
+        "Drag beyond flexibility to create a shift proposal; confirm WhatsApp deep link (REQ §13.24)",
+        "Answer the token link with no session; confirm binary accept/decline only (REQ §13.46)",
+        "Decline as found-another-solution; confirm freed-slot opt-out (REQ §13.46)",
+        "Attempt a Sadran proposal on a published day; confirm it is refused (REQ §13.29)",
+        "Confirm proposal_answered reaches only the sending Sadran (REQ §13.67)"
+      ]
+    },
+    {
+      "id": "ride-passengers",
+      "title": "Ride passengers (one list per ride)",
+      "paths": [
+        "src/lib/ridePassengerSummary.ts",
+        "src/lib/ridePassengerSummary.test.ts",
+        "src/lib/ridePublicDetails.ts",
+        "src/lib/ridePublicDetails.test.ts",
+        "src/features/siddur/ridePeople.ts",
+        "src/features/siddur/ridePeople.test.ts",
+        "src/features/siddur/addPassengers.ts",
+        "src/features/siddur/addPassengers.test.ts",
+        "src/features/siddur/components/AddPassengersDialog.tsx",
+        "src/features/siddur/components/RideDetailSheet.tsx",
+        "src/features/siddur/components/RidePassengersList.tsx",
+        "src/features/sadran/board/reservationPeople.ts",
+        "src/features/sadran/board/reservationPeople.test.ts",
+        "src/features/sadran/board/components/RidePassengersEditor.tsx",
+        "src/features/sadran/board/components/RideSheet.tsx",
+        "src/features/requests/components/JoinableRidesDialog.tsx",
+        "src/i18n/he.member.ts",
+        "src/i18n/he.sadran.ts",
+        "supabase/migrations/**/*ride_passenger*",
+        "supabase/migrations/**/*ride_people*",
+        "supabase/migrations/**/*unified_ride_people*",
+        "supabase/tests/ride_passengers.sql",
+        "e2e/board.spec.ts"
+      ],
+      "vitest": [
+        "src/lib/ridePassengerSummary.test.ts",
+        "src/lib/ridePublicDetails.test.ts",
+        "src/features/siddur/ridePeople.test.ts",
+        "src/features/siddur/addPassengers.test.ts",
+        "src/features/sadran/board/reservationPeople.test.ts"
+      ],
+      "sql": [
+        "ride_passengers.sql"
+      ],
+      "playwrightTags": [
+        "@ride-passengers"
+      ],
+      "reqRefs": [
+        "13.82",
+        "13.85"
+      ],
+      "qaChecklist": [
+        "Name a member and a child on a manual reservation; confirm first named becomes driver (REQ §13.82)",
+        "Open a ride's people list; confirm one unified list, driver-first (REQ §13.85)",
+        "Cancel a ride with several people; confirm each gets notified individually (REQ §13.68)"
+      ]
+    },
+    {
+      "id": "publication",
+      "title": "Publication & scores",
+      "paths": [
+        "src/features/sadran/publish/**",
+        "src/features/sadran/lastUsedPolicy.ts",
+        "src/features/sadran/lastUsedPolicy.test.ts",
+        "src/solver/**",
+        "src/i18n/he.sadran.ts",
+        "supabase/migrations/**/*publish*",
+        "supabase/migrations/**/*siddur_version*",
+        "supabase/migrations/**/*publication*",
+        "supabase/tests/selected_day_publication.sql",
+        "e2e/sadran.spec.ts",
+        "e2e/waitlist-groups.spec.ts",
+        "e2e/export.spec.ts"
+      ],
+      "vitest": [
+        "src/features/sadran/publish",
+        "src/features/sadran/lastUsedPolicy.test.ts"
+      ],
+      "sql": [
+        "selected_day_publication.sql"
+      ],
+      "playwrightTags": [
+        "@publication"
+      ],
+      "reqRefs": [
+        "13.47",
+        "13.66",
+        "13.75"
+      ],
+      "qaChecklist": [
+        "Publish a solving week with unanswered proposals; confirm confirmation vs hard block (REQ §13.47)",
+        "Publish selected days only; confirm only those days go public (REQ §13.47)",
+        "Confirm publication settles leftovers via contested waiting-list groups (REQ §13.75)"
+      ]
+    },
+    {
+      "id": "solver",
+      "title": "Solver (placement, mileage/carChoice, suggestions)",
+      "paths": [
+        "src/solver/**",
+        "src/features/solverBridge/**",
+        "supabase/functions/on-ride-cancelled/**",
+        "supabase/migrations/**/*polic*",
+        "supabase/migrations/**/*fairness*",
+        "supabase/migrations/**/*mileage*",
+        "supabase/tests/solve_semantics.sql",
+        "supabase/tests/car_mileage.sql",
+        "e2e/auto-approve.spec.ts",
+        "e2e/freed-slot.spec.ts",
+        "e2e/board.spec.ts"
+      ],
+      "vitest": [
+        "src/solver",
+        "src/features/solverBridge"
+      ],
+      "sql": [
+        "solve_semantics.sql",
+        "car_mileage.sql"
+      ],
+      "playwrightTags": [
+        "@solver"
+      ],
+      "reqRefs": [
+        "13.5",
+        "13.14",
+        "13.16",
+        "13.17",
+        "13.18",
+        "13.19",
+        "13.20",
+        "13.21",
+        "13.22",
+        "13.23",
+        "13.24",
+        "13.58",
+        "13.63",
+        "13.64",
+        "13.65",
+        "13.84"
+      ],
+      "qaChecklist": [
+        "Change policy weights; confirm resulting order changes on the board (REQ §13.19)",
+        "Confirm mileage/carChoice balancing only breaks true ties, never forces a manual move (REQ §13.84)",
+        "Confirm relay/merge/split-legs suggestions map to the right proposal type (REQ §13.24)",
+        "Confirm the solver never auto-displaces an already-placed ride (REQ §13.19)"
+      ]
+    },
+    {
+      "id": "notifications",
+      "title": "Notifications & push",
+      "paths": [
+        "src/features/inbox/**",
+        "src/lib/push.ts",
+        "src/sw.ts",
+        "supabase/functions/push-dispatch/**",
+        "src/i18n/he.member.ts",
+        "supabase/migrations/**/*notification*",
+        "supabase/migrations/**/*notify_*",
+        "supabase/tests/notifications_semantics.sql",
+        "supabase/tests/status_notifications.sql",
+        "e2e/device-setup.spec.ts"
+      ],
+      "vitest": [
+        "src/features/inbox"
+      ],
+      "sql": [
+        "notifications_semantics.sql",
+        "status_notifications.sql"
+      ],
+      "playwrightTags": [
+        "@notifications"
+      ],
+      "reqRefs": [
+        "13.30",
+        "13.41",
+        "13.61",
+        "13.67",
+        "13.68"
+      ],
+      "qaChecklist": [
+        "Trigger a canonical event; confirm inbox row matches the seeded template and deep link (REQ §13.41)",
+        "Mute a category; confirm no further inbox rows for it (REQ §13.41)",
+        "Cancel a shared ride; confirm every served member is notified individually (REQ §13.68)"
+      ]
+    },
+    {
+      "id": "stats",
+      "title": "Statistics",
+      "paths": [
+        "src/features/stats/**",
+        "src/i18n/he.admin.ts",
+        "src/i18n/he.sadran.ts",
+        "supabase/migrations/**/*stats*",
+        "supabase/tests/department_stats.sql"
+      ],
+      "vitest": [
+        "src/features/stats"
+      ],
+      "sql": [
+        "department_stats.sql"
+      ],
+      "playwrightTags": [
+        "@stats"
+      ],
+      "reqRefs": [
+        "13.78"
+      ],
+      "qaChecklist": [
+        "Open the statistics screen and pick a date range; confirm the five metrics render (REQ §13.78)",
+        "Cross-check the ride-type pie / weekly-unmet chart against seeded data (REQ §13.78)"
+      ]
+    },
+    {
+      "id": "admin",
+      "title": "Admin catalogs (cars, destinations, ride types, policies, settings, members, departments)",
+      "paths": [
+        "src/features/admin/**",
+        "src/features/fleet/**",
+        "supabase/functions/destination-route/**",
+        "src/i18n/he.admin.ts",
+        "supabase/migrations/**/*admin*",
+        "supabase/migrations/**/*catalog*",
+        "supabase/migrations/**/*member_identity*",
+        "supabase/migrations/**/*department_membership*",
+        "supabase/tests/admin_member_fixes.sql",
+        "supabase/tests/admin_department_membership.sql",
+        "supabase/tests/department_catalogs.sql",
+        "supabase/tests/member_identity.sql",
+        "e2e/admin.spec.ts",
+        "e2e/admin-department.spec.ts",
+        "e2e/department-context.spec.ts"
+      ],
+      "vitest": [
+        "src/features/admin",
+        "src/features/fleet"
+      ],
+      "sql": [
+        "admin_member_fixes.sql",
+        "admin_department_membership.sql",
+        "department_catalogs.sql",
+        "member_identity.sql"
+      ],
+      "playwrightTags": [
+        "@admin"
+      ],
+      "reqRefs": [
+        "13.2",
+        "13.8",
+        "13.25"
+      ],
+      "qaChecklist": [
+        "Create a car, destination and policy version; confirm each appears in its list/history (REQ §13.2)",
+        "Assign a weekly (non-permanent) Sadran; confirm scoped permissions (REQ §13.8)",
+        "Switch department context to one you don't belong to; confirm read-only (REQ §13.25)"
+      ]
+    },
+    {
+      "id": "car-care",
+      "title": "Car care",
+      "paths": [
+        "src/features/carCare/**",
+        "src/features/cars/**",
+        "src/i18n/he.member.ts",
+        "src/i18n/he.admin.ts",
+        "supabase/migrations/**/*car_care*",
+        "supabase/migrations/**/*car_issue*",
+        "supabase/migrations/**/*car_responsible*",
+        "supabase/tests/car_care_semantics.sql",
+        "e2e/car-care.spec.ts"
+      ],
+      "vitest": [
+        "src/features/carCare",
+        "src/features/cars"
+      ],
+      "sql": [
+        "car_care_semantics.sql"
+      ],
+      "playwrightTags": [
+        "@car-care"
+      ],
+      "reqRefs": [
+        "13.69",
+        "13.70",
+        "13.71",
+        "13.72",
+        "13.73"
+      ],
+      "qaChecklist": [
+        "Report a car problem with a category; confirm the responsible person/admin sees it (REQ §13.69)",
+        "Log a tire fill across all five positions; confirm all required (REQ §13.72)",
+        "Export car-care history by date range to Excel (REQ §13.73)"
+      ]
+    },
+    {
+      "id": "auth",
+      "title": "Auth / onboarding / roles",
+      "paths": [
+        "src/features/auth/**",
+        "src/i18n/he.member.ts",
+        "supabase/migrations/**/*identity*",
+        "supabase/migrations/**/*weekly_sadran_permissions*",
+        "supabase/tests/weekly_sadran_permissions.sql",
+        "e2e/auth.spec.ts",
+        "e2e/device-setup.spec.ts",
+        "e2e/weekly-permissions.spec.ts",
+        "e2e/smoke.spec.ts"
+      ],
+      "vitest": [
+        "src/features/auth"
+      ],
+      "sql": [
+        "weekly_sadran_permissions.sql"
+      ],
+      "playwrightTags": [
+        "@auth"
+      ],
+      "reqRefs": [
+        "13.13",
+        "13.25"
+      ],
+      "qaChecklist": [
+        "Sign in as a seeded member; confirm Home + four bottom tabs, plus Sadran tab if assigned (REQ §13.13)",
+        "Sign in with a non-allow-listed email; confirm the pending-approval page (REQ §13.13)"
+      ]
+    },
+    {
+      "id": "edge-functions",
+      "title": "Edge functions",
+      "paths": [
+        "supabase/functions/**"
+      ],
+      "vitest": [],
+      "sql": [
+        "bundle_solver.test.mjs"
+      ],
+      "playwrightTags": [],
+      "reqRefs": [
+        "13.35",
+        "13.36",
+        "13.37"
+      ],
+      "qaChecklist": [
+        "Smoke-test the changed function's one flow via functions:serve (REQ §13.36)",
+        "Confirm token-link answering still needs no sign-in (REQ §13.36)"
+      ]
+    },
+    {
+      "id": "rls-security",
+      "title": "RLS / security",
+      "paths": [
+        "supabase/migrations/**/*rls*",
+        "supabase/migrations/**/*helpers*",
+        "supabase/migrations/**/*secure*",
+        "supabase/migrations/**/*grant*",
+        "supabase/migrations/**/*protect*",
+        "supabase/migrations/**/*guard*",
+        "supabase/migrations/**/*access_code*",
+        "supabase/migrations/**/*permission*",
+        "supabase/migrations/**/*revoke*",
+        "eslint.config.js",
+        "supabase/tests/rls_smoke.sql",
+        "supabase/tests/hardening_semantics.sql"
+      ],
+      "vitest": [],
+      "sql": [
+        "rls_smoke.sql",
+        "hardening_semantics.sql"
+      ],
+      "playwrightTags": [],
+      "reqRefs": [
+        "13.4",
+        "13.79"
+      ],
+      "qaChecklist": [
+        "Run db:test and check rls_smoke.sql / hardening_semantics.sql output (REQ §13.4)",
+        "Confirm cross-department reads stay scoped to published data only (REQ §13.52)",
+        "Confirm phone numbers only reach the client via phone_of()/profile_phones() (REQ §13.79)"
+      ]
+    }
+  ],
+  "migrationContentRules": [
+    {
+      "match": "v_board_rides",
+      "note": "view read by the board grid, the siddur grid and ride-passengers",
+      "areas": [
+        "board",
+        "siddur",
+        "ride-passengers",
+        "publication"
+      ]
+    },
+    {
+      "match": "enqueue_notification",
+      "note": "single notification-emitting function; any change ripples to every screen that surfaces an inbox/push/WhatsApp copy change",
+      "areas": [
+        "notifications"
+      ]
+    },
+    {
+      "match": "publish_siddur",
+      "note": "publication entry point read by the board, the siddur and waiting-list settlement",
+      "areas": [
+        "publication",
+        "board",
+        "siddur",
+        "waitlist"
+      ]
+    }
+  ]
+}

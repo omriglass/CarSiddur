@@ -10,7 +10,7 @@ import { paths } from "../src/app/routes";
 // any more — solving happens via the kebab's "auto-fill"/"full re-solve" actions.
 test.use({ viewport: { width: 390, height: 844 } });
 
-test.describe("board mobile header", () => {
+test.describe("board mobile header", { tag: ["@board"] }, () => {
   test.beforeEach(async ({ page }) => {
     await signIn(page, SEEDED_USERS.sadran);
   });

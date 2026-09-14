@@ -59,6 +59,7 @@ Reference: `docs/SOLVER.md` §4.1 (interface), §4.3 (shipped types), §4.5 (thi
 - [ ] Determinism: same input twice → identical value.
 - [ ] Registry test: there is no `registry.test.ts` yet — create `src/solver/rules/__tests__/registry.test.ts` asserting every `ruleRegistry` entry has `type === key`, or add the assertion to an existing rules test if one already covers the whole registry; do not duplicate.
 - [ ] If step 1c changed `SolverStats`/`Request`: update `__fixtures__/gen.ts` and re-generate golden `*.expected.json` only if outputs legitimately changed (review the diff; do not blindly overwrite).
+- [ ] Run `npm run impact`; the **solver** area in `docs/TEST_MAP.md`/`test-map.json` already covers `src/solver/**` — paste the printed QA checklist into the PR/report.
 
 ### 5. Docs
 - [ ] `docs/SOLVER.md` §4.3 table: `type`, params, raw value definition (what gives 0/1, unknown data → ?). §4.4 example only if the owner wants it in the default policy.

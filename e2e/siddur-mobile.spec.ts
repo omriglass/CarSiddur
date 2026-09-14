@@ -10,7 +10,7 @@ import { paths } from "../src/app/routes";
 // mobile-only (`md:hidden`).
 test.use({ viewport: { width: 390, height: 844 } });
 
-test.describe("siddur mobile header", () => {
+test.describe("siddur mobile header", { tag: ["@siddur"] }, () => {
   test.beforeEach(async ({ page }) => {
     await signIn(page, SEEDED_USERS.member1);
   });

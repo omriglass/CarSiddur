@@ -26,6 +26,7 @@ Status: v0.3 + verified 2026-09-06 (all paths tested against actual code layout;
 | `/change-weekly-cycle-defaults` | Change when requests open/close, publish target, reminders, buffers. | `/change-weekly-cycle-defaults close the request window on Tuesday 20:00 by default and send the closing reminder 3 hours before` |
 | `/new-feature-checklist` | Anything else; also a pre-merge audit. | `/new-feature-checklist let members export their week's rides as an image for the family WhatsApp group` |
 | `/review-consistency` | Check that docs and code (and the docs among themselves) still agree. | `/review-consistency` — add `and fix the derived docs` to let it apply fixes |
+| `/bugfixer` | Triage, locate, fix and regression-test a small bug report (not a new feature). | `/bugfixer the return-day of a multi-day request shows as a separate, unlinked ride` |
 
 ## Agents (Claude picks them automatically; you can also name them)
 
@@ -44,6 +45,34 @@ Status: v0.3 + verified 2026-09-06 (all paths tested against actual code layout;
 **Add a field members fill in** — `/add-request-field …`. Migration (`requests` + `request_templates` + views) → types → zod schema → form → labels → card/board display → docs. Say in the prompt if the solver should use the field.
 
 **Something is off between docs and app** — `/review-consistency`, read the checklist, then `/review-consistency and fix the derived docs` or hand specific items to the right agent. The first run should be done as soon as the first migrations exist, to confirm the code follows the "Consistency decisions (2026-09-06)" in `CLAUDE.md` and to tick the "To be verified" items.
+
+## Which tests for which change
+
+Owner decision, 2026-09-14: for any change, know which automated suites already prove it and hand
+QA a precise, minimal checklist instead of "please re-test everything." `docs/TEST_MAP.md` splits
+the app into ~17 **impact areas** (request form, board, siddur, solver, notifications, …) — by
+coupling, not by `src/features/*` folder, since a few shared pieces (`RequestForm`, `WeekGrid`,
+`v_board_rides`, the solver, the notification pipeline) cut across feature folders. Each area lists
+its code paths, the Vitest folders/SQL suites/Playwright `@tag`s that prove it, a numbered manual
+QA script (exact Hebrew labels, seeded user, expected result), and the `REQUIREMENTS.md` §13 items
+it implements. `test-map.json` is the same data, machine-readable.
+
+Workflow:
+1. After making a change, run `npm run impact` (optionally `npm run impact -- <base-ref>`,
+   `--staged`, or `--files a b c`). It diffs the changed files against `test-map.json`'s globs and
+   prints: the affected areas, the exact `npx vitest run …` / `npm run db:test` / `npx playwright
+   test --grep "@…"` commands, and the QA checklist for those areas, ready to paste into a PR or
+   hand to a tester.
+2. If it lists a changed file matching **no** area, either it's generic (docs/tooling — already
+   ignored via `test-map.json`'s `ignorePaths`) or the map is missing a glob: add one to the right
+   area (or a new area) in `test-map.json` **and** `docs/TEST_MAP.md` in the same change — CLAUDE.md
+   hard rule 7. `npm run impact -- --strict origin/main` fails (exit 2) on any real gap; CI runs it
+   on every push/PR as an informational + gap-catching step in the `check` job.
+3. Automated suites are still a **full hard gate before every deploy** (`npm run check:full`) —
+   this tool narrows QA *effort* and speeds up local iteration, it never replaces the gate.
+4. Adding a new screen, flow, or test suite? Update `docs/TEST_MAP.md` / `test-map.json` in the
+   same change (new area, or new paths/suite/tag on an existing one) so the map never drifts from
+   the code it describes.
 
 ## Before go-live
 

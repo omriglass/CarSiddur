@@ -40,6 +40,7 @@ REQ §4: timing is **configurable per department**; code holds only defaults and
 ### D. Tests
 - [ ] SQL test for the tick: given settings and a fixed `p_now`, verify opening the right `week_start`, closing at the right instant, reminders exactly once, and a DST week (late March / late October) resolves to the correct wall-clock. Run twice → no duplicate rows.
 - [ ] `src/lib/time.test.ts` if TS week/date math changed (there is no separate `week.test.ts`; week-key helpers live in `src/lib/time.ts`).
+- [ ] Run `npm run impact`; this usually touches the **new-request-window** area (and **publication**/**board** if publish/close timing changed) in `docs/TEST_MAP.md`/`test-map.json` — paste the printed QA checklist into the PR/report.
 
 ### E. Docs
 - [ ] `docs/REQUIREMENTS.md` §4; `docs/ARCHITECTURE.md` §10 job table; `docs/DATA_MODEL.md` `department_settings`, `weeks`, §6 cron row; `docs/UX_FLOWS.md` §5.10 Settings (and §6.1 notification copy if reminder text changed).

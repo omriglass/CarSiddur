@@ -68,7 +68,7 @@ async function leaveOneSharedCarFree(departmentId: string, day: string): Promise
   return { freeCarId: freeCar!.id };
 }
 
-test.describe("waitlist groups", () => {
+test.describe("waitlist groups", { tag: ["@waitlist", "@publication"] }, () => {
   test("two overlapping requests on a single-car day form a discussion block; resolving merges them into one ride", async ({ browser }) => {
     const service = serviceRoleClient();
     const { weekStart, day } = uniqueFutureWeek(1);

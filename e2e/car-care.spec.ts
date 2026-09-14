@@ -18,7 +18,7 @@ import { getWeekStart, NEVO_DEPARTMENT_ID, newSignedInPage, SEEDED_USERS, servic
 
 const service = serviceRoleClient();
 
-test("member logs car care (wash, tire fill, problem) and only the car's responsible / admin can view its history", async ({ page, browser }) => {
+test("member logs car care (wash, tire fill, problem) and only the car's responsible / admin can view its history", { tag: ["@car-care"] }, async ({ page, browser }) => {
   // Several test.step blocks, three of them spinning up a fresh signed-in browser context
   // (mirrors freed-slot.spec.ts's multi-context flow) — comfortably under 60s in practice,
   // but the default test timeout leaves little margin.

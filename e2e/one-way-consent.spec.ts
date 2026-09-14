@@ -6,7 +6,7 @@ import { publishedFixtureWeek } from "./published-week";
 
 test.use({ actionTimeout: 15_000 });
 
-test("combined one-way consent preserves an orphaned passenger and lets a member volunteer", async ({ browser }) => {
+test("combined one-way consent preserves an orphaned passenger and lets a member volunteer", { tag: ["@proposals"] }, async ({ browser }) => {
   const service = serviceRoleClient();
   const week = "2041-01-13";
   const memberIds = ["00000000-0000-0000-0000-000000000103", "00000000-0000-0000-0000-000000000104"];

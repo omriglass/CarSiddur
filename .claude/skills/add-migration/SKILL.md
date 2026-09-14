@@ -69,6 +69,7 @@ Every schema change is a new file in `supabase/migrations/`. Never edit a commit
 ### 4. Tests
 - [ ] `supabase/tests/rls_smoke.sql` already asserts every table has RLS and no `true` qual on writes — run it via `npm run db:test`. Add a table-specific case: member of dept A cannot read dept B rows; Sadran of (A, week) can write; plain member cannot write; anon gets nothing.
 - [ ] Trigger/RPC logic: SQL test for the happy path and one refusal.
+- [ ] Run `npm run impact` (or `npm run impact -- --staged`); if a new area/glob is needed, update `test-map.json`/`docs/TEST_MAP.md` in this change, then paste the printed QA checklist into the PR/report.
 
 ### 5. Docs
 - [ ] `docs/DATA_MODEL.md`: table section (columns/types/defaults/meaning), §2 enum values, §4.3 policy-matrix row, §5 invariants if you added a constraint/trigger, §6 migration table row, §8 retention row.

@@ -53,6 +53,7 @@ The canonical event list is UX_FLOWS §6.1 (24 events). Enum value = snake_case 
 - [ ] If you added TS-side `data` validation (step 2), test it alongside the code that reads it — there is no standalone `payloads.test.ts` registry.
 - [ ] `src/lib/enums.test.ts` (once `src/lib/enums.ts` lands, plan E8): every `NOTIFICATION_EVENTS` value has a Hebrew label; until then, extend whatever existing test loops over `Database['public']['Enums']['notification_event']` (e.g. near `muteCategories.ts`) to cover the new value.
 - [ ] `e2e/`: only if part of a core flow (e.g. `proposal_answered` in `proposal.spec.ts` / `proposal-retry.spec.ts`).
+- [ ] Run `npm run impact`; a new event usually falls under the **notifications** area in `docs/TEST_MAP.md`/`test-map.json` already (`src/features/inbox/**`, migrations matching `*notification*`/`*notify_*`) — if not, add it, then paste the printed QA checklist into the PR/report.
 
 ### 7. Docs
 - [ ] `docs/UX_FLOWS.md` §6.1 (the **canonical** list): key, enum value, event/recipient, Hebrew title/body; add it to a mute category in the paragraph below the table. §5.9 if the admin template editor needs a new placeholder.

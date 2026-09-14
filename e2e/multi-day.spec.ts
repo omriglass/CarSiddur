@@ -14,7 +14,7 @@ const TZ = "Asia/Jerusalem";
 
 test.use({ viewport: { width: 390, height: 844 } });
 
-test.describe("multi-day requests", () => {
+test.describe("multi-day requests", { tag: ["@request-form"] }, () => {
   test("submitting a 3-day series shows one card, three linked legs, and cascading withdraw", async ({ page }) => {
     const service = serviceRoleClient();
     await service.from("requests").delete().eq("department_id", NEVO_DEPARTMENT_ID).eq("destination_text", DESTINATION);

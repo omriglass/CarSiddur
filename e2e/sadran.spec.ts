@@ -46,7 +46,7 @@ async function signIn(page: import("@playwright/test").Page) {
   await expect(page).toHaveURL(/\/my$/);
 }
 
-test.describe("sadran", () => {
+test.describe("sadran", { tag: ["@proposals", "@publication"] }, () => {
   test("opens the board directly and fills the remaining requests", async ({ page }) => {
     await signIn(page);
 

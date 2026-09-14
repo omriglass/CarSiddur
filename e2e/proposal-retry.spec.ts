@@ -10,7 +10,7 @@ for (const scenario of [
   { type: "external", week: "2043-01-25", reason: "   ", expectedReason: he.sadranProposal.defaultReason },
   { type: "external", week: "2043-02-01", reason: "Custom coordinator explanation", expectedReason: "Custom coordinator explanation" },
 ] as const) {
-  test(`optional proposal reason: ${scenario.type} ${scenario.reason.trim() ? "custom" : "default"}`, async ({ browser }) => {
+  test(`optional proposal reason: ${scenario.type} ${scenario.reason.trim() ? "custom" : "default"}`, { tag: ["@proposals"] }, async ({ browser }) => {
     const fixture = await proposalFixture(scenario.week, `E2E optional reason ${scenario.type}`);
     const coordinator = await newSignedInPage(browser, SEEDED_USERS.sadran);
     const page = coordinator.page;

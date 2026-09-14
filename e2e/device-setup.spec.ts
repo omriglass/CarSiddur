@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 import { t } from "../src/i18n/he";
 import { SEEDED_USERS, signIn } from "./helpers";
 
-test("home suggests device setup and remembers dismissal across refresh", async ({ page }) => {
+test("home suggests device setup and remembers dismissal across refresh", { tag: ["@notifications", "@auth"] }, async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await signIn(page, SEEDED_USERS.member1);
   const install = page.getByTestId("install-suggestion");
@@ -14,7 +14,7 @@ test("home suggests device setup and remembers dismissal across refresh", async 
   await expect(install).toHaveCount(0);
 });
 
-test("iOS browser suggests home-screen installation before notifications", async ({ browser }) => {
+test("iOS browser suggests home-screen installation before notifications", { tag: ["@notifications", "@auth"] }, async ({ browser }) => {
   const context = await browser.newContext({
     userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1",
     viewport: { width: 390, height: 844 },

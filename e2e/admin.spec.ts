@@ -11,7 +11,7 @@ const ADMIN_EMAIL = "admin@nevo.local";
 const ADMIN_PASSWORD = "nevo-demo-1234";
 const DEPARTMENT_NAME = "נבו"; // supabase/seed.sql
 
-test.describe("admin", () => {
+test.describe("admin", { tag: ["@admin"] }, () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/login");
     await page.getByLabel("אימייל").fill(ADMIN_EMAIL);

@@ -47,7 +47,7 @@ async function dragRequest(page: Page, requestId: string, carId: string, minutes
   await page.mouse.up();
 }
 
-test("one-way drop persists a missing-driver ride, tight edits remain publishable, and merge awaits consent", async ({ browser }) => {
+test("one-way drop persists a missing-driver ride, tight edits remain publishable, and merge awaits consent", { tag: ["@board", "@proposals"] }, async ({ browser }) => {
   // docs/TODO.md "Flaky / time-dependent e2e specs" (found 2026-09-11): this is the longest
   // single test in the suite (fixture setup + two drag/edit rounds + a publish-page visit + a
   // proposal send) and was timing out under the global 60 s budget even on the pre-refactor

@@ -33,7 +33,7 @@ async function cleanupDepartment(id: string) {
   }
 }
 
-test('department selector scopes catalogs and Maps estimates require explicit save', async ({ page }) => {
+test('department selector scopes catalogs and Maps estimates require explicit save', { tag: ["@admin"] }, async ({ page }) => {
   // The signed-in admin must actually belong to the department to see it in the switcher —
   // admin power is global (`profiles.is_admin`), department membership is separate.
   const fixture = await departmentFixture({ member: { profileId: '00000000-0000-0000-0000-000000000101', role: 'member' } });
@@ -76,7 +76,7 @@ test('department selector scopes catalogs and Maps estimates require explicit sa
   }
 });
 
-test('member can switch to another department for read-only viewing', async ({ page }) => {
+test('member can switch to another department for read-only viewing', { tag: ["@admin"] }, async ({ page }) => {
   const fixture = await departmentFixture();
   try {
     await signIn(page, SEEDED_USERS.member1);

@@ -5,7 +5,7 @@ import { NEVO_DEPARTMENT_ID, newSignedInPage, SEEDED_USERS, serviceRoleClient } 
 
 test.use({ actionTimeout: 15_000 });
 
-test("members resize owned rides and resolve a shadow collision through explicit driver consent", async ({ browser }) => {
+test("members resize owned rides and resolve a shadow collision through explicit driver consent", { tag: ["@siddur", "@board"] }, async ({ browser }) => {
   const service = serviceRoleClient();
   const week = "2041-01-06";
   const members = ["00000000-0000-0000-0000-000000000103", "00000000-0000-0000-0000-000000000104"];

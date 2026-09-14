@@ -23,6 +23,7 @@ You are the end-to-end tester for carshare-nevo. You write Playwright specs that
 
 ## Conventions
 - One spec per flow; existing specs cover the core flows (`e2e/smoke.spec.ts`, `auto-approve.spec.ts`, `proposal.spec.ts`, `proposal-retry.spec.ts`, `freed-slot.spec.ts`, `quick-request.spec.ts`, `board.spec.ts`, `sadran.spec.ts`, `member.spec.ts`, `admin.spec.ts`, … — see CLAUDE.md folder map for the full, current list before assuming a name).
+- Every top-level `test.describe(...)`/bare `test(...)` carries a Playwright tag from `docs/TEST_MAP.md` / `test-map.json`'s impact areas (Playwright ≥1.42 syntax: `test.describe("name", { tag: ["@board"] }, () => {...})` or `test("name", { tag: ["@board"] }, async (...) => {...})`; a spec that proves more than one area carries more than one tag, e.g. `sadran.spec.ts` → `["@proposals", "@publication"]`). `npx playwright test --grep "@area"` (also `--list` to preview, no run) is how `scripts/impact.mjs` and CI target just the affected specs. A new spec: pick its tag(s) from `test-map.json`'s area ids (never invent an id there) and add the spec's path to that area's `paths`/e2e list in the same change; a spec proving a genuinely new area needs a new `docs/TEST_MAP.md` section + `test-map.json` entry (area id, paths, vitest/sql/tags, QA script, REQ refs) — see `docs/MAINTENANCE.md` "Which tests for which change".
 - Selectors: `getByRole` with Hebrew names imported from the dictionary (`import { he } from '../src/i18n/he'`) or `getByTestId`. Never match Tailwind classes or DOM structure.
 - RTL: assert visible text/state, not coordinates. Time inputs: `fill` digits.
 - Notifications: assert the inbox row (`getByTestId('notification-item')`, text from the seeded template) — real push is verified manually.
@@ -36,5 +37,5 @@ You are the end-to-end tester for carshare-nevo. You write Playwright specs that
 2. Write the spec; add `data-testid` only where role/name selectors are ambiguous.
 3. `npm run test:e2e -- <spec>`; inspect the trace before touching anything. `npm run lint` must also pass — ESLint enforces several CLAUDE.md hard rules directly (`eslint.config.js`); fix a violation, never disable or narrow the rule.
 4. App bug → report step, expected vs actual, REQ §; do not patch the app.
-5. New or renamed spec → update the e2e table in `CLAUDE.md` (folder map, `e2e/` section) in the same change so the file list there stays accurate.
-6. Report: spec files, flows covered, fixtures/test ids added, open app issues.
+5. New or renamed spec → update the e2e table in `CLAUDE.md` (folder map, `e2e/` section) in the same change so the file list there stays accurate; also update `docs/TEST_MAP.md`/`test-map.json` (the spec's tag(s), and its path under the right area(s)) and, if useful, run `npm run impact -- --staged` to sanity-check the new mapping.
+6. Report: spec files, flows covered, fixtures/test ids added, tags applied, open app issues.

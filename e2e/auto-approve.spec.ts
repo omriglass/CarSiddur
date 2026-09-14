@@ -10,7 +10,7 @@ import { getWeekStart, SEEDED_USERS, signIn, serviceRoleClient } from "./helpers
 // the page's smart-default week resolution.
 const DESTINATION = "בדיקת אישור אוטומטי";
 
-test.describe("auto-approve on a free car (live week)", () => {
+test.describe("auto-approve on a free car (live week)", { tag: ["@request-form", "@solver"] }, () => {
   test("member2 submits a new request and it is assigned immediately without notifications", async ({
     page,
   }) => {

@@ -20,7 +20,7 @@ async function signIn(page: import("@playwright/test").Page) {
   await expect(page).toHaveURL(/\/my$/);
 }
 
-test.describe("member", () => {
+test.describe("member", { tag: ["@request-form", "@siddur"] }, () => {
   test("submits a request for the open week and sees it in /requests as submitted", async ({ page }) => {
     await signIn(page);
 

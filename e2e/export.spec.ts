@@ -19,7 +19,7 @@ function readStoredEntries(bytes: Buffer): Map<string, string> {
   return files;
 }
 
-test("Sadran downloads the entire current week as a Hebrew Excel workbook", async ({ page }) => {
+test("Sadran downloads the entire current week as a Hebrew Excel workbook", { tag: ["@board", "@publication"] }, async ({ page }) => {
   const weekStart = await getWeekStart("live");
   const service = serviceRoleClient();
   const [{ data: requests, error: requestError }, { data: rides, error: rideError }] = await Promise.all([

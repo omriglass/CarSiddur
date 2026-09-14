@@ -21,6 +21,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # impact.mjs diffs against origin/main (docs/TEST_MAP.md); needs real history.
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -47,6 +50,9 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      - name: Change impact (docs/TEST_MAP.md) — informational, fails only on unmapped files
+        run: npm run impact -- --strict origin/main
 
   # Database gate (B3): replay every migration + seed on a throwaway local
   # Supabase stack, verify the committed generated types match the schema,

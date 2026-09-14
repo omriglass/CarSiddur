@@ -46,7 +46,7 @@ async function withOpenWeek<T>(weekStart: string, run: () => Promise<T>): Promis
   }
 }
 
-test.describe("repeating requests", () => {
+test.describe("repeating requests", { tag: ["@request-form"] }, () => {
   test("submit with repeat on creates a template; the next open week suggests it; snooze, use and stop all work", async ({ page }) => {
     const service = serviceRoleClient();
     const openWeekStart = await getWeekStart("open");

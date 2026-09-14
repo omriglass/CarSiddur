@@ -18,7 +18,7 @@ Guidance for Claude Code working in this repository.
 4. **RLS on every table**, `enable` + `force`, policies per command (never `for all`), written with the helper functions in `DATA_MODEL.md` §4.2 (`is_approved()`, `is_admin()`, `member_of(dept)`, `is_sadran(dept, week_start)`, `is_sadran_any(dept)`, `can_manage_week(dept, week_start)`, `is_week_public(dept, week_start)`). Multi-row state changes go through `SECURITY DEFINER` RPCs. `anon` has no grants. Service-role keys never reach the browser. Functions have no default grants either: a migration that adds a browser-facing RPC must `grant execute … to authenticated` explicitly, everything else (internal/cron/helpers not referenced by RLS) stays closed — `rls_smoke.sql` TEST 14 enforces it.
 5. **The solver stays pure.** `src/solver/**` imports nothing from React, Supabase, the DOM, `Date.now()`, `Math.random()`, or `src/i18n`. `solve(input)` returns a value; persistence is the caller's job (`apply_solver_result` RPC). Deterministic: every sort ends in an `id` tie-break. Enforced by `eslint.config.js` (`no-restricted-imports`/`-globals`/`-syntax` on `src/solver/**`) and `src/solver/__tests__/purity.test.ts`; CI fails if `supabase/functions/_shared/solver.js` is stale relative to `src/solver`.
 6. **All timestamps are Asia/Jerusalem-aware.** Postgres: `timestamptz` only; `week_start date` (the Sunday) keys a week; wall-clock settings are stored as `(dow, time)` and converted inside SQL with `at time zone 'Asia/Jerusalem'`. TS: `src/lib/time.ts` (`TZ = 'Asia/Jerusalem'`, date-fns-tz); never `getHours()`/`getDay()`/`toLocale*` without it (lint error outside `time.ts`/`dayLabels.ts`). The solver never does wall-clock arithmetic — it gets epoch ms and per-day slot bounds.
-7. **Before declaring anything done:** `npm run check` (lint, typecheck, unit tests) passes. Schema changes also need `npm run db:reset && npm run db:types` with the regenerated types committed, and `npm run db:test`. Solver changes also need `npm run functions:bundle` (CI diff-checks the bundle). User-facing flows run the relevant Playwright spec; `npm run check:full` runs everything (needs the local stack). CI (`.github/workflows/ci.yml`) runs `check` + bundle freshness + build and the database job (migrations replay, types freshness, SQL suites) on every push, and e2e nightly / on demand.
+7. **Before declaring anything done:** `npm run check` (lint, typecheck, unit tests) passes. Schema changes also need `npm run db:reset && npm run db:types` with the regenerated types committed, and `npm run db:test`. Solver changes also need `npm run functions:bundle` (CI diff-checks the bundle). User-facing flows run the relevant Playwright spec; `npm run check:full` runs everything (needs the local stack). CI (`.github/workflows/ci.yml`) runs `check` + bundle freshness + build and the database job (migrations replay, types freshness, SQL suites) on every push, and e2e nightly / on demand. A change to a mapped path updates `docs/TEST_MAP.md`/`test-map.json` in the same change when it adds a screen, flow or suite; `npm run impact` tells you what to run and what to hand QA.
 8. **Never hand-edit generated files:** `src/integrations/supabase/types.ts`, `src/components/ui/*` (shadcn CLI), `supabase/functions/_shared/solver.js` (built by `scripts/bundle-solver`).
 9. **Enums are defined once, in SQL**, mirrored into `src/lib/enums.ts` (see Conventions). Priority **rule types are the exception**: they are a TS registry (`src/solver/rules/index.ts`) mirrored into the SQL `validate_policy_rules()` known set.
 10. **`supabase/config.toml` is the local stack's config only** (`site_url = "http://localhost:8080"` etc.) — never run `supabase config push` against the hosted project; production Auth URLs (Site URL, redirect URLs, Google provider) are set by hand in the Supabase dashboard (`docs/FREE_DEPLOYMENT.md` §5).
@@ -35,6 +35,7 @@ Guidance for Claude Code working in this repository.
 | `npm run test` | `vitest run` — run tests once |
 | `npm run test:watch` | `vitest` — watch mode |
 | `npm run test:e2e` | `playwright test` (needs `supabase start`, `db:reset`, and `npm run dev`) |
+| `npm run impact -- [<base-ref>]` | Change→tests→QA impact: diffs against `<base-ref>` (default `origin/main`; also `--staged`, `--files <path...>`, `--strict`), prints the affected `docs/TEST_MAP.md` areas, the exact Vitest/`db:test`/Playwright `--grep` commands, and a ready-to-paste QA checklist; `--strict` exits 2 on any changed file matching no area |
 | `npm run check` | `lint && typecheck && test` — the fast definition-of-done gate |
 | `npm run check:full` | `check` + `functions:bundle` + `db:test` + `test:e2e` — everything, needs `supabase start` |
 | `npm run db:start` / `db:stop` | `supabase start` / `supabase stop` (Docker required) |
@@ -51,7 +52,8 @@ Guidance for Claude Code working in this repository.
 ## Folder map
 
 ```
-docs/                          REQUIREMENTS, ARCHITECTURE, DATA_MODEL, SOLVER, UX_FLOWS, MAINTENANCE, TODO (owner backlog), REFACTOR_BACKLOG (code-audit findings), HARDENING_2026-09 (production hardening audit trail)
+test-map.json                  machine-readable twin of docs/TEST_MAP.md (same area ids); consumed by scripts/impact.mjs (`npm run impact`)
+docs/                          REQUIREMENTS, ARCHITECTURE, DATA_MODEL, SOLVER, UX_FLOWS, MAINTENANCE, TEST_MAP (change→tests→QA impact map, by area not feature folder), TODO (owner backlog), REFACTOR_BACKLOG (code-audit findings), HARDENING_2026-09 (production hardening audit trail)
 src/
   app/                         router.tsx (route patterns, all routes), routes.ts (matching path builders — `paths.sadran.*`/`paths.siddur`/`paths.requests.*`; routes.test.ts checks them against the real patterns), providers (Query, Auth, RTL), shell
   pages/                       route-level components (member, sadran, admin sections)
@@ -171,8 +173,10 @@ scripts/
   bundle-solver.mjs            esbuild solver for edge functions
   test-db.mjs                  SQL regression runner with explicit database-container selection
   fake-week.mjs                `npm run db:fake` — generates fake members/requests via submit_request for manual local testing
+  impact.mjs                   `npm run impact` — change→tests→QA impact tool; matches `git diff` paths against test-map.json's per-area globs (hand-rolled `**`/`*` matcher, no new dependency)
+  impact.test.mjs              Vitest: the glob matcher, migrationContentRules, and test-map.json/docs/TEST_MAP.md area-id consistency
 .claude/
-  skills/                      8 routine-change playbooks with exact steps and file paths
+  skills/                      9 routine-change playbooks with exact steps and file paths
   agents/                      5 specialized agents: solver-dev, db-migrator, ui-dev, docs-keeper, e2e-tester
 ```
 
@@ -246,6 +250,7 @@ scripts/
 | Change cycle defaults, cron, reminders | `/change-weekly-cycle-defaults` | db-migrator |
 | Anything else / pre-merge audit | `/new-feature-checklist` | (plan first) |
 | Docs vs code drift | `/review-consistency` | docs-keeper |
+| Small bug report / regression | `/bugfixer` | none (or a cheap model) |
 | Playwright coverage | — | e2e-tester |
 
 ## Owner batch 2026-09-14 (REQ §13.77 bullet, §13.78 "Extended 2026-09-14", §13.80–§13.84)

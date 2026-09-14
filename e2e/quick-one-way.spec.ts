@@ -66,7 +66,7 @@ async function fillPublicDetails(page: Page, destinationName: string, descriptio
 }
 
 for (const [index, shape] of (["one_way_to", "one_way_from"] as const).entries()) {
-  test(`live quick ${shape} keeps the requested endpoint and public passenger details through a driver claim`, async ({ browser }) => {
+  test(`live quick ${shape} keeps the requested endpoint and public passenger details through a driver claim`, { tag: ["@quick-request"] }, async ({ browser }) => {
     const week = index ? "2044-01-10" : "2044-01-03";
     const fixture = await quickFixture(week);
     const description = `E2E ${shape} community outing`;

@@ -110,7 +110,7 @@ function unmetCountFromHeading(text: string | null): number {
   return Number(text?.match(/\((\d+)\)/)?.[1] ?? -1);
 }
 
-test.describe.serial("board (bug-fix pass regression, fake-week data)", () => {
+test.describe.serial("board (bug-fix pass regression, fake-week data)", { tag: ["@board", "@ride-passengers", "@solver"] }, () => {
   test.beforeAll(() => {
     execSync("node scripts/fake-week.mjs --count 40 --clear --seed 42", { stdio: "inherit" });
   });

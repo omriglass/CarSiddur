@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 import { he } from "../src/i18n/he";
 import { SEEDED_USERS, serviceRoleClient, signIn } from "./helpers";
 
-test("administrator can join a department through their member editor", async ({ page }) => {
+test("administrator can join a department through their member editor", { tag: ["@admin"] }, async ({ page }) => {
   const service = serviceRoleClient();
   const suffix = Date.now();
   const { data: department, error } = await service.from("departments")
@@ -44,7 +44,7 @@ test("administrator can join a department through their member editor", async ({
   if (cleanupError) throw cleanupError;
 });
 
-test('administrator sets and clears a display name while keeping the Google name', async ({ page }) => {
+test('administrator sets and clears a display name while keeping the Google name', { tag: ["@admin"] }, async ({ page }) => {
   const service = serviceRoleClient();
   const { data: original, error } = await service.from('profiles').select('id,google_name,display_name')
     .eq('email', SEEDED_USERS.member2.email).single();

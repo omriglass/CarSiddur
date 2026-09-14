@@ -20,7 +20,7 @@ import {
 const CANCELLED_RIDE_ID = "00000000-0000-0000-0000-000000000301";
 const CANDIDATE_REQUEST_ID = "00000000-0000-0000-0000-000000000204";
 
-test.describe("freed slot (live week, single candidate)", () => {
+test.describe("freed slot (live week, single candidate)", { tag: ["@waitlist", "@solver"] }, () => {
   test("member1 cancels an assigned ride and member2's overlapping waitlisted request is auto-assigned", async ({
     browser,
   }) => {

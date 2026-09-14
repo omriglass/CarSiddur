@@ -50,7 +50,7 @@ async function freezeToWednesdayMorning(page: Page, weekStart: string): Promise<
   await page.clock.setFixedTime(frozenInstant);
 }
 
-test.describe.serial("quick request from an empty slot (live week)", () => {
+test.describe.serial("quick request from an empty slot (live week)", { tag: ["@quick-request"] }, () => {
   test.beforeEach(async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await signIn(page, SEEDED_USERS.member2);

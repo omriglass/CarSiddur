@@ -44,7 +44,7 @@ async function ensurePendingUserExists() {
 // that's actually visible, matching UX_FLOWS.md §2.2's phone-first layout.
 test.use({ viewport: { width: 390, height: 844 } });
 
-test.describe("auth", () => {
+test.describe("auth", { tag: ["@auth"] }, () => {
   test("member signs in via the dev email form and reaches Home with the bottom tabs", async ({
     page,
   }) => {
