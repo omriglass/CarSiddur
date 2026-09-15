@@ -57,7 +57,7 @@ import { useCarLocations, useDepartments, useRideChanges, useClaimRideDriverMuta
 import { useMyDepartments } from "@/features/auth/useMyDepartments";
 import { PublishButton } from "../../publish/components/BoardPublicationActions";
 import { he, tv } from "@/i18n/he";
-import { weekdayLabel } from "@/lib/dayLabels";
+import { formatDayDate } from "@/lib/dayLabels";
 import { TZ, dateKey, formatTime } from "@/lib/time";
 import { ridePublicDetails } from "@/lib/ridePublicDetails";
 import { ridePassengerSummary } from "@/lib/ridePassengerSummary";
@@ -1225,8 +1225,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
           <span className="ms-2 text-xs">{he.sadranBoard.nextConflict}</span>
           {focusedConflict ? <span aria-live="polite" className="mt-1 block font-semibold">{tv("sadranBoard.conflictLocation", {
             index: String(focusedConflictIndex + 1), count: String(conflictCount),
-            day: weekdayLabel(focusedConflict.starts_at),
-            date: formatInTimeZone(focusedConflict.starts_at, TZ, "d/M/yyyy"),
+            date: formatDayDate(focusedConflict.starts_at),
             time: `${formatTime(new Date(focusedConflict.starts_at))}–${formatTime(new Date(focusedConflict.ends_at))}`,
             car: carsQuery.data?.find((car) => car.id === focusedConflict.car_id)?.name ?? "",
           })}</span> : null}

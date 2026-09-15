@@ -68,6 +68,8 @@ import {
 import { intervalToFlexValue, toInstant, toSubmitRequestPayload } from "../mapper";
 import { requestFormSchema, type RequestFormValues } from "../schema";
 import { isSeriesSubmission, returnDayAfterDayChange, seriesSpanDays } from "../series";
+import { destinationLabelKey } from "../destinationLabel";
+import { payloadSeatCounts } from "../seatCounts";
 import { shouldOfferJoinableRides, toastSeriesSubmitOutcome, toastSubmitOutcome } from "../submitOutcome";
 import { suggestionToFormValues } from "../templatePrefill";
 import { JoinableRidesDialog } from "./JoinableRidesDialog";
@@ -551,18 +553,21 @@ export function RequestForm({
     if (quickContext && (isPast || invalidTime)) return;
     setSubmitError(null);
     const isSeriesRequest = isSeriesSubmit(formValues);
-    const selected = (childrenQuery.data ?? []).filter((child) => formValues.children.includes(child.id));
-    const childAdults = selected.filter((child) => child.isAdultPassenger).length;
-    const childSeatsCount = selected.filter((child) => !child.isAdultPassenger).length;
     const guestNamesList = guestPassengerNames(formValues.guestNames);
     const isOneWay = formValues.tripShape !== "round_trip";
+    // Seat counts exclude the *selected* children on purpose — `set_request_children()` (called
+    // right after) adds them, re-classified by birth year, and subtracts the children the
+    // request had before; see `payloadSeatCounts` for the contract and the double-count bug.
+    const previousChildIds = new Set(mode === "edit" ? (requestChildrenQuery.data ?? []) : []);
+    const seatCounts = payloadSeatCounts({
+      companionsCount: formValues.companions.length,
+      guestsCount: guestNamesList.length,
+      legacyChildSeats: formValues.legacyChildSeats,
+      previousChildren: (childrenQuery.data ?? []).filter((child) => previousChildIds.has(child.id)),
+    });
     const payload = {
       ...toSubmitRequestPayload(
-        {
-          ...formValues,
-          adults: 1 + formValues.companions.length + childAdults + guestNamesList.length,
-          childSeats: Math.max(childSeatsCount, formValues.legacyChildSeats),
-        },
+        { ...formValues, adults: seatCounts.adults, childSeats: seatCounts.childSeats },
         {
           requestId: initial?.id,
           expectedVersion: initial?.version,
@@ -761,7 +766,7 @@ export function RequestForm({
       {waitlist ? <div className="rounded-md border-s-4 border-amber-500 bg-amber-50 p-3 text-sm text-amber-900">{t("request.waitlistBanner")}</div> : null}
 
       <FormItem data-field="destination">
-        <Label>{t("field.destination")}</Label>
+        <Label>{t(destinationLabelKey(tripShape))}</Label>
         <Controller
           control={form.control}
           name="destination"

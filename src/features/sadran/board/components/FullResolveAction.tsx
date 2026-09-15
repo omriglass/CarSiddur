@@ -1,15 +1,14 @@
 import { useState, type ReactNode } from "react";
-import { formatInTimeZone } from "date-fns-tz";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { useRideTypes } from "@/features/fleet/hooks";
 import { he, tv } from "@/i18n/he";
-import { weekdayLabel } from "@/lib/dayLabels";
+import { formatDayDate } from "@/lib/dayLabels";
 import { rideBlockLabel } from "@/lib/rideLabel";
 import { showErrorToast } from "@/lib/rpc";
-import { TZ, formatTime } from "@/lib/time";
+import { formatTime } from "@/lib/time";
 import type { Json } from "@/integrations/supabase/types";
 import type { ActivePolicy } from "../../api";
 import { useApplySolverResultMutation, useWeekRow } from "../../hooks";
@@ -63,9 +62,8 @@ export function FullResolveAction({ departmentId, weekStart, homeDestinationId, 
           isChauffeur: !!ride.is_chauffeur, needsDriver: !!ride.needs_driver,
         });
         const car = context.input.cars.find((car) => car.id === item.carId)?.name ?? "";
-        const weekday = weekdayLabel(item.startsAt);
         const purposes = [...new Set(servedOf(ride).map((entry) => rideTypesQuery.data?.find((type) => type.code === entry.ride_type)?.name_he).filter(Boolean))].join(" / ");
-        item.label = `${label} · ${car} · ${weekday} ${formatInTimeZone(item.startsAt, TZ, "dd/MM HH:mm")}–${formatTime(new Date(item.endsAt))}${purposes ? ` · ${purposes}` : ""}`;
+        item.label = `${label} · ${car} · ${formatDayDate(item.startsAt)} ${formatTime(new Date(item.startsAt))}–${formatTime(new Date(item.endsAt))}${purposes ? ` · ${purposes}` : ""}`;
       }
       setPreview({ diff, payload: buildApplyPayload({ output, weekStartMs: context.weekStartMs,
         policyVersionId: context.policyVersionId, startedAtMs, finishedAtMs,

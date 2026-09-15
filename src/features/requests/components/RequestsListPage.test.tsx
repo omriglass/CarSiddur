@@ -58,9 +58,9 @@ describe("member request editing", () => {
     const { container } = show();
     const summaries = [...container.querySelectorAll("[data-trip-summary]")];
     expect(summaries.map((summary) => summary.querySelector("p")?.textContent)).toEqual(["Tuesday pickup", "Wednesday request", "Moved ride"]);
-    expect(summaries[0]).toHaveTextContent("15/9/2026");
+    expect(summaries[0]).toHaveTextContent(`${he.days.short[2]}${he.days.geresh} 15.9`);
     expect(summaries[0]).toHaveTextContent("09:00");
-    expect(summaries[2]).toHaveTextContent(`${he.days.long[4]} 17/9/2026`);
+    expect(summaries[2]).toHaveTextContent(`${he.days.short[4]}${he.days.geresh} 17.9`);
     expect(summaries[2]).toHaveTextContent("10:00–15:00");
     expect(summaries[2]).toHaveTextContent("Errands");
   });

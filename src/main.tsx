@@ -1,3 +1,4 @@
+import { DirectionProvider } from "@radix-ui/react-direction";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
@@ -48,13 +49,20 @@ if (!rootElement) {
   throw new Error("Root element #root not found");
 }
 
+// Radix primitives (Select, ToggleGroup, DropdownMenu, Tabs, …) resolve their direction
+// with `useDirection()`, which falls back to `ltr` when no provider is mounted — each of
+// them then stamps `dir="ltr"` on its own DOM root, overriding the ambient
+// `<html dir="rtl">` (owner bug report 2026-09-14: ride-type chips and the preferred-car
+// select rendered left-to-right). One provider here fixes every primitive app-wide.
 createRoot(rootElement).render(
   <StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <SessionProvider>
-        <RouterProvider router={router} />
-        <Toaster />
-      </SessionProvider>
-    </QueryClientProvider>
+    <DirectionProvider dir="rtl">
+      <QueryClientProvider client={queryClient}>
+        <SessionProvider>
+          <RouterProvider router={router} />
+          <Toaster />
+        </SessionProvider>
+      </QueryClientProvider>
+    </DirectionProvider>
   </StrictMode>,
 );

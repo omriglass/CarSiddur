@@ -324,6 +324,7 @@ export const he = {
     phone: "טלפון",
     fullName: "שם",
     destination: "לאן?",
+    destinationFrom: "מאיפה?",
     destinationFreeText: "יעד חופשי",
     rideType: "סוג נסיעה",
     day: "יום",
@@ -648,6 +649,9 @@ export const he = {
   },
   days: {
     short: ["א", "ב", "ג", "ד", "ה", "ו", "ש"] as readonly string[],
+    /** Geresh (U+05F3) appended after a short weekday letter, e.g. "ד׳" — kept
+     * here so `formatDayDate` (`src/lib/dayLabels.ts`) never inlines Hebrew. */
+    geresh: "׳",
     long: [
       "ראשון",
       "שני",

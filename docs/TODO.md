@@ -116,3 +116,65 @@ Ordered: bug first, then small features, then the statistics group, then the lar
 - **Stats:** the three same-day sharing indicators are three plain tiles in the grid (owner: the combined card read as one muddled figure).
 - **E2E audit + run (2026-09-14):** `docs/E2E_AUDIT_2026-09-14.md` (24 valid, 3 updated). Full run on a reseeded local stack: 64–65 passed; the remaining failures were spec/fixture problems, all fixed and re-verified standalone — `published-week.ts` sent zero-count policy entries that `assert_publication_scores` rejects once a week has requests (now sends no score arrays, which `publish_siddur` allows), `one-way-consent` published one step too late (the driver's "בטל נסיעה" needs a published ride), and `admin.spec` clicked the car-name cell, which is a link to `/cars/:carId`. No product bug surfaced. Note: `e2e/global-setup.ts` resets the local database by itself.
 - **Sliding ride labels on the grid (owner, 2026-09-14):** built — the readable part of a ride block is `position: sticky` under the header, capped by the block's bottom (`WeekGrid.tsx`, UX_FLOWS §3.5); verified with an 8-hour seeded ride.
+
+## Owner dump 2026-09-14 (evening, "version 1.2") — triaged 2026-09-15, owner answered Q1–Q9 the same day; **bugs B2–B5 built 2026-09-15, features F6/F7 on hold by owner decision ("only fix the bugs") — answers kept below for when they are picked up**
+
+Order once approved: bugs B2–B5 first (small, one afternoon), then F6, then F7. Every item links the doc section that governs it; F6/F7 get their REQ §13 item written first for owner review.
+
+### ~~B2~~ ✅ done 2026-09-15 — Bug: "סוג נסיעה" chips and "רכב מועדף" select render left-to-right in the request form
+
+- Root cause (confirmed in code): the Radix primitives behind `RideTypeChips` (`ToggleGroup`) and `Select` resolve their direction with `useDirection()`, which falls back to **`ltr`** when the app mounts no `DirectionProvider` — each of them then stamps `dir="ltr"` on its own DOM root, overriding the ambient `<html dir="rtl">`. `RideTypeChips` even says `justify-start`, which under that forced `ltr` means *left*.
+- Fix: mount `<DirectionProvider dir="rtl">` (from `@radix-ui/react-direction`, already a transitive dependency) once around the tree in `src/main.tsx`. One-line, app-wide — it also corrects every other Radix primitive (dropdown/kebab menus, tabs, sliders, other selects) that today silently runs `ltr`. Needs one visual pass over board kebab/eye menus and the admin selects after the change. UX_FLOWS §1 gets one sentence ("RTL: `<html dir>` + Radix `DirectionProvider`").
+- Regression test: a Vitest render of `RideTypeChips` inside the provider asserting `dir="rtl"` on the group.
+
+### ~~B3~~ ✅ done 2026-09-15 — Bug: "לאן?" should read "מאיפה?" when the trip shape is "חזור בלבד"
+
+- `RequestForm.tsx` labels the destination field with `field.destination` ("לאן?") regardless of `tripShape`. Add `field.destinationFrom` ("מאיפה?") and pick it when `tripShape === "one_way_from"`. Form-only, no behaviour change (the stored field is still the destination). UX_FLOWS §3.4 mockup note + §10 key table row.
+- Regression test: extend `RequestForm.oneWaySync.test.tsx` (label flips with the trip-shape control).
+
+### ~~B4~~ ✅ done 2026-09-15 — Bug: a single date must always carry its weekday (e.g. "16.9 יום ד'")
+
+Inventory of places that print a date with no weekday today:
+- **SQL notification vars** (`notification_context`, `20260907093700`): `day` = `DD/MM` and `date` = `DD/MM/YY`. So every inbox/push body built from `{{day}}` reads "16/09 08:00–12:00" — no weekday at all — and a WhatsApp template rendered server-side ("ב{{day}} {{date}}") would read "ב16/09 16/09/26". (The Sadran's composer builds its own vars client-side, where `day` is "רביעי" and `date` is "16.9", which is why the proposal WhatsApp text looks right while notifications don't.)
+- `ride_change` template (seed, "בקשה לרכב ב־{{date}} …") uses `date` only.
+- `publish_siddur` grouped notice lines (`20260910096000`): `DD/MM HH:MI`.
+- TS: `RideChangeAnswers.tsx` ("d/M/yy HH:mm"), `ProposalComposerScreen.tsx` combined-window line, `BoardScreen.tsx` conflict dialog `date`, `InboxPage.tsx` received-at stamp. Also three different numeric styles coexist (`d/M/yyyy`, `dd.MM`, `d.M`).
+- Fix plan: one canonical helper on each side — TS `formatDayDate(instant)` in `src/lib/dayLabels.ts` (next to `weekdayLabel`), SQL `day_date_label(timestamptz)` built on the seeded `weekday_labels` table (new migration; `notification_context.day` switches to it; `date` keeps the numeric form for templates that want both). Seed: `ride_change` body "ב{{day}}". **Production templates are admin-editable DB rows**, so the migration updates only rows whose `body` still equals `default_body` (untouched ones) and leaves owner-edited copy alone. Replace the TS call sites above with the helper; `dayLabel.ts` (request cards, "ד' 16.09") adopts the same format.
+- Regression test: `dayLabels.test.ts` for the helper; one assertion in `notifications_semantics.sql` that `day` contains a Hebrew weekday letter.
+- **Q1 (format).** Owner's example puts the date first: **"16.9 יום ד'"**. The app's existing card format is weekday first ("ד' 16.09" on request cards, "רביעי · 16/9/2026" on ride cards). Pick one for everywhere: (a) "יום ד' 16.9" (b) "16.9 יום ד'" (c) "ד' 16.9". I'd take (a): reads naturally in a sentence ("ביום ד' 16.9 בשעה 08:00") and on a card.
+  **A1.** (c) "ד׳ 16.9" — weekday letter + geresh, then `d.M`.
+
+### ~~B5~~ ✅ done 2026-09-15 — Bug: a named child is counted twice in the ride details ("X, Y ו ילד/ה 1")
+
+- Where the text comes from: `src/lib/ridePassengerSummary.ts` (Sadran-only "נוסעים:" line on the siddur ride sheet, board ride sheet, unmet list). It lists names and then *reconciles* the request's seat counts (`adults`, `child_seats`, `boosters`) against the names it recognises — names come from three sources (`served` json, `childNames`, `people`/`added`), and any child name that reaches the list through a source the count logic doesn't subtract yields a leftover "ילד/ה 1". Exact path still to reproduce on the owner's data (which sheet, was Y picked as a child with a child seat or a booster) — first step of the fix.
+- **Actual root cause (found 2026-09-15):** not the display code — the *data*. The form sent `child_seats` already including the selected named children, and `set_request_children()` (contract: "the row's counts include the currently linked children; subtract those, add the new selection") added them again, so every request with one named child under eight had `child_seats = 2`. Fixed client-side in `src/features/requests/seatCounts.ts` (`payloadSeatCounts`, unit-tested against the RPC's arithmetic); re-saving a request heals an already doubled row. The display code (`ridePassengerSummary`) was right all along and is unchanged; named people were already listed without a child marker.
+- Original plan (superseded): **the final result never says who is a child**. Rebuild the summary from the one unified `people` list (`v_board_rides.people`, REQ §13.85 — driver first, then requesters/companions/children/guests/added, deduplicated by `key`), plain names only. Seat-kind stays in the data (needed for seat capacity, `peopleSeatLoad`/`freeSeats`) but is not rendered. `ridePublicDetails` (member view) likewise lists child names plainly (it already does). REQ §13.85 gets one dated sentence; `ridePublicDetails.unnamedChild*` keys are retired.
+- **Q2 (unnamed seats).** A request can still carry seats with no name behind them (e.g. "2 adults", only the requester named). Today those print as "מבוגר/ת 1" / "ילד/ה 1". Proposal: one neutral placeholder, "ועוד 1" / "ועוד {{n}} נוסעים", no adult/child split. OK?
+  **A2.** No — unnamed seats keep the adult/child split ("מבוגר/ת 1" / "ילד/ה 1"); only *named* people lose the child marker.
+- Regression test: `ridePassengerSummary.test.ts` case "named child + requester → exactly two names, no count".
+
+### F6 — Feature (v1.2, **on hold**, owner 2026-09-15): "תכנון קדימה" — see the next two months and request a far week (weekends)
+
+Not in REQ today: members can only file for a week in phase `open` (REQ §4; the `upcoming` phase, §13.77, is materialized only for a multi-day series leg, invisible to members and closed to ordinary requests; a series may reach 6 weeks out). Needs a REQ §13 item first.
+- **Screen:** entry in the siddur context (kebab) menu → "תכנון קדימה": a compact 2-month calendar (9 weeks, Sunday-first, Asia/Jerusalem) showing per day the number of requests already filed (all statuses except withdrawn/cancelled/denied) and, lightly, how many shared cars the department has that day; tapping a day opens the request form for that week/day.
+- **Data:** one read RPC `planning_calendar(department_id, from_date, to_date)` (SECURITY DEFINER, `member_of`) returning `{day, requests, rides, shared_cars}` rows; no new table. Requests beyond the open horizon land in an `upcoming` week (reuse `ensure_upcoming_week()`), status `submitted`, editable/withdrawable like any open-week request, solved when the week reaches `open`→`solving` as usual. Members see `upcoming` weeks only through this calendar and their own request cards (the siddur/week switcher stays as is).
+- **Q3 (horizon).** Two months ≈ 9 weeks. Raise the series ceiling (6 weeks, MDR01) to the same 9 so a weekend series can be filed from the calendar too?
+  **A3.** Yes — the series ceiling follows the planning horizon (9 weeks).
+- **Q4 (which days).** Owner text says weekends. Show counts for every day but allow far requests only Thu–Sat? Or allow any day (simpler, one rule)? I'd allow any day.
+  **A4.** Any day; limiting the allowed days is an admin knob (department settings).
+- **Q5 (what the count means).** Requests filed for that day, or *people* (requests + passengers)? And is it per department only (yes, I assume)?
+  **A5.** Requests.
+- **Q6 (priority).** Filing 8 weeks early is a submission-time advantage (`submissionTime` rule) — fine as intended ("less busy week wins"), or cap the rule so early birds don't always beat later-but-needier requests?
+  **A6.** A policy decision: the submission-time rule gets params to cap the counted lead time on both ends (e.g. "only reward more than 7 days ahead", "nothing beyond N days").
+- **Q7 (notifications).** No new event: the far request gets the normal `published`/`outcome_changed` when its week is published; the Sadran of that future week sees it on the board when the week opens. Confirm no "someone requested 6 weeks ahead" notice is wanted.
+  **A7.** Confirmed, no new event.
+
+### F7 — Feature (v1.2, **on hold**, owner 2026-09-15): multiple destinations on one request ("drop the kid at X, then drive to work at Y")
+
+Not in REQ today: one destination per request (`requests.destination_id | destination_text`, REQ §5.1), and rides chain the *car's* location (`rides.origin_id/destination_id`, §13.57). Needs a REQ §13 item first.
+- **Model:** `request_stops` (ordered stops per request, preset or free-text, optional minutes-at-stop), shown on the request card and the siddur as "X → Y". The request's existing `destination` stays the **final** destination (distance, zone, relay/car-location logic, mileage — all unchanged); stops are extra information plus matching input: joinable-rides / merge candidates (REQ §13.83) match against every stop's coordinates, so someone going to X can join. Templates (repeating requests) capture stops too. Excel export lists them.
+- **Solver:** the trip stays one occupancy block (round trip, "car stays with me"); the solver does not route between stops in v1.2. One-way/passenger shapes: stops allowed only as information, no per-stop legs.
+- **Q8 (scope).** Is "informational + matching" enough for v1.2, i.e. the solver treats the trip as one block to the final destination and never splits it at a stop? (Splitting would need per-stop legs in the timeline — much bigger.)
+  **A8.** Yes — informational + matching; the solver keeps one block to the final destination.
+- **Q9 (limits/return).** Cap at 3 stops? Do stops also apply on the way back (pick the kid up), i.e. separate outbound/return stop lists, or one ordered list marked "on the way there / on the way back"?
+  **A9.** One ordered list, no cap, a tiny "add stop" button. No separate return list.

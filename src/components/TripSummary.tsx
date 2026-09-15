@@ -1,7 +1,6 @@
-import { formatInTimeZone } from "date-fns-tz";
 import { he } from "@/i18n/he";
-import { weekdayLabel } from "@/lib/dayLabels";
-import { dateKey, formatTime, TZ } from "@/lib/time";
+import { formatDayDate } from "@/lib/dayLabels";
+import { dateKey, formatTime } from "@/lib/time";
 
 interface TripSummaryProps {
   name?: string | null;
@@ -14,7 +13,7 @@ interface TripSummaryProps {
 /** Identifies the requested trip independently of the changes listed below it. */
 export function TripSummary({ name, destination, purpose, departAt, returnAt }: TripSummaryProps) {
   function dateLabel(instant: string) {
-    return `${weekdayLabel(instant)} ${formatInTimeZone(instant, TZ, "d/M/yyyy")}`;
+    return formatDayDate(instant);
   }
   const anchor = departAt ?? returnAt;
   const crossesDate = departAt && returnAt && dateKey(departAt) !== dateKey(returnAt);

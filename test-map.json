@@ -67,7 +67,13 @@
         "e2e/repeating-requests.spec.ts",
         "e2e/member.spec.ts",
         "e2e/auto-approve.spec.ts",
-        "e2e/upcoming-week.spec.ts"
+        "e2e/upcoming-week.spec.ts",
+        "src/features/requests/destinationLabel.ts",
+        "src/features/requests/destinationLabel.test.ts",
+        "src/features/requests/seatCounts.ts",
+        "src/features/requests/seatCounts.test.ts",
+        "src/components/RideTypeChips.tsx",
+        "src/components/RideTypeChips.test.tsx"
       ],
       "vitest": [
         "src/features/requests"

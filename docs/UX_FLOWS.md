@@ -2,11 +2,13 @@
 
 Status: **DRAFT v0.3** (2026-09-06, owner answers applied; trip shape / car mode form, car location on the board, home-week preference, two Sadran events, `wa.external`; ride_passengers notifications and board UI added 2026-09-14; "+ נוסעים" — adding passengers to any published ride — added 2026-09-14; unified ride-people model — one people list per ride, "אני" self-add, ride detail's old "ask to join" button superseded by "+ נוסעים", joinable-rides dialog joins directly instead of navigating — added 2026-09-14). Derives from `docs/REQUIREMENTS.md` v0.3 (source of truth); where this document and REQUIREMENTS disagree, REQUIREMENTS wins.
 
-Fixed decisions this document builds on: shadcn/ui + Tailwind; `react-router-dom` routes; Hebrew UI, RTL, mobile-first PWA; all strings centralized under i18n keys (see §10 glossary); 15-minute time granularity everywhere; bottom tab navigation on phones for members; Sadran board optimized for tablet/desktop with a list-mode fallback on phones; proposals reachable by deep link `/p/<token>`.
+Fixed decisions this document builds on: shadcn/ui + Tailwind; `react-router-dom` routes; Hebrew UI, RTL (`<html dir="rtl">` plus one Radix `DirectionProvider dir="rtl"` in `src/main.tsx` — without it Radix primitives such as Select/ToggleGroup default to `ltr` and render left-aligned; fixed 2026-09-15), mobile-first PWA; all strings centralized under i18n keys (see §10 glossary); 15-minute time granularity everywhere; bottom tab navigation on phones for members; Sadran board optimized for tablet/desktop with a list-mode fallback on phones; proposals reachable by deep link `/p/<token>`.
 
 Lessons taken from the reference app (`commucar-share`): keep its familiar vocabulary (הסידור, בקשה, יעד, סדרן, "הסידור בהכנה", day names ראשון–שבת), but avoid its three main pain points — one 4,000-line grid component that also owns every dialog, admin/Sadran tools hidden inside a "הגדרות" tab, and time selection through 30-minute `Select` popovers with 36 options. Here the grid is split into small components (§9), the Sadran and Admin areas are first-class navigation destinations, and time is entered with a dedicated 15-minute picker.
 
 Wireframe convention: boxes are drawn left-to-right so they stay readable in code editors. **In the product everything is mirrored**: the leading edge is the right edge, back arrows point right, the first bottom tab is the rightmost one.
+
+Single dates render as **ד׳ 16.9** (short weekday letter + geresh + `d.M`, no leading zeros) via `formatDayDate` (`src/lib/dayLabels.ts`) — no date is ever shown without its weekday (TODO.md B4).
 
 ---
 
@@ -209,7 +211,7 @@ One scrolling screen, sticky footer with the primary button. No wizard, no modal
 │ יציאה           חזרה                  │
 │ ┌──────────┐    ┌──────────┐          │
 │ │ 09 : 00  │    │ 13 : 00  │  ← TimeField15: hour wheel + 00/15/30/45
-│ └──────────┘    └──────────┘          │  "הלוך בלבד" hides חזרה; "חזור בלבד" hides יציאה and labels חזרה "הגעה הביתה"
+│ └──────────┘    └──────────┘          │  "הלוך בלבד" hides חזרה; "חזור בלבד" hides יציאה, labels חזרה "הגעה הביתה" and relabels לאן? as מאיפה? (`destinationLabelKey`, 2026-09-15)
 │                                      │
 │ ── round trip only ──────────────────│
 │ [x] הרכב נשאר איתי ביעד   ⓘ          │
@@ -408,6 +410,8 @@ This route no longer renders a standalone screen. It resolves the Sadran's depar
 Passenger summaries show requester, named members/guests and the remaining unnamed adults/children instead of silently omitting unnamed passengers. Example: `נוסעים: ג׳וני, שרה וילד/ה 1` (when the child isn't a named, registered `children` row) or `נוסעים: ג׳וני, שרה ונועה` (when it is). They appear in ride blocks, the phone list, ride details and unmet requests, and also when the week's Sadran views the published siddur. The requester is already included in the adult total; a volunteer driver is added once only when not represented by a driver request. A named child has an optional birth year: for the ride's calendar year, age 8 and above consumes an ordinary adult seat; younger children (and children without a recorded birth year) consume a child-seat position. Unnamed child/booster counts remain as entered. Repeated legs of one request do not duplicate their passengers.
 
 **Bugfix + known gap (2026-09-09).** A named child's name never actually reached any of the summaries above — `src/features/sadran/api.ts`'s request query and `src/features/siddur/api.ts`'s served-ride view (`v_board_rides.served[]`, `v_my_requests`) both aggregate `request_companions` (adult members with profiles) into the summary but never joined `request_children` → `children.full_name`, so every named child fell back to the unnamed-count placeholder unconditionally, everywhere. Fixed for the **Sadran's own board** (`UnmetList`, board ride cards, `RideSheet`): `features/sadran/api.ts`'s request query now also embeds `request_children`, and `ridePassengerSummary`/`ridePublicDetails` (`src/lib/*`) accept the resulting `childNames` and use them ahead of the placeholder. **Migration shipped (`20260909094000_add_child_names_to_published_views.sql`), and now wired through on member surfaces too (2026-09-09):** `v_board_rides.served[]` entries and `v_my_requests` rows carry a `child_names text[]` (ordered by name, same treatment `request_companions` already got via `companions`), and `request_children_published_select` mirrors `request_companions_published_select` so an ordinary department member reading a published week's ride can actually select those rows (the pre-existing `request_children_select` only covered the requester or the week's manager). `servedOf()` (`src/features/sadran/applySolve.ts`) maps `child_names` onto `childNames`, so `RideDetailSheet.tsx`, `SiddurPage.tsx` and `myRideCard.ts` (Home's upcoming-rides cards) all get named children from the same mapping (the interim `servedWithChildNames()` helper was removed the same day). `/requests` (`RequestsListPage.tsx`) also shows named children on a member's own request card, joining `request_children(child:children(full_name))` directly onto `fetchMyRequests`'s existing base-`requests`-table query (which does not use `v_my_requests`, see its own top-of-file comment) since RLS already lets a requester read their own `request_children` rows.
+
+**Bugfix (2026-09-15, owner report "kids are counted twice").** A request filed with one named child under eight ended up with `child_seats = 2`, so its ride details read "X, Y וילד/ה 1": the form sent `child_seats` already including the selected children, and `set_request_children()` (whose contract is "the row's counts include the *currently linked* children — subtract those, add the new selection re-classified by birth year") added them a second time. `payloadSeatCounts` (`src/features/requests/seatCounts.ts`, unit-tested against the RPC's arithmetic) now sends the requester + companions + guests + unnamed seats **plus the request's previous children only**, never the newly selected ones; re-saving a request through the form heals an already doubled row. Named people — adults or children — are listed by name only; the adult/child placeholders remain solely for unnamed seats (owner, 2026-09-15).
 
 The collision count is a button. Each click advances through conflicting rides chronologically, wraps after the last, selects the affected day and scrolls/focuses the highlighted ride (including horizontal car scrolling and revealing early hours). The banner identifies the selected collision's index, weekday, date, time window and car. On phones it switches to the car list before focusing the card. Navigation does not edit rides.
 
@@ -673,7 +677,7 @@ Open to admins **and** department Sadranim (a permanent `department_members.role
 
 ## 6. Notification copy
 
-Placeholders: `{{firstName}}`, `{{sadranName}}`, `{{dept}}`, `{{weekLabel}}` (e.g. "14–20.9"), `{{day}}` (e.g. "יום ג'"), `{{date}}`, `{{destination}}`, `{{depart}}`, `{{return}}`, `{{newDepart}}`, `{{newReturn}}`, `{{car}}`, `{{driverName}}`, `{{passengerName}}`, `{{detourMin}}`, `{{reason}}`, `{{closeTime}}`, `{{count}}`, `{{link}}`. Push title ≤ 40 characters, body ≤ 120; the in-app inbox shows the same text.
+Placeholders: `{{firstName}}`, `{{sadranName}}`, `{{dept}}`, `{{weekLabel}}` (e.g. "14–20.9"), `{{day}}` (weekday + date, e.g. "ד׳ 16.9" — `day_date_label()`, 2026-09-15, DATA_MODEL §3.11), `{{date}}` (`DD/MM/YY`, unchanged), `{{destination}}`, `{{depart}}`, `{{return}}`, `{{newDepart}}`, `{{newReturn}}`, `{{car}}`, `{{driverName}}`, `{{passengerName}}`, `{{detourMin}}`, `{{reason}}`, `{{closeTime}}`, `{{count}}`, `{{link}}`. Push title ≤ 40 characters, body ≤ 120; the in-app inbox shows the same text.
 
 ### 6.1 Push / inbox events (REQUIREMENTS §9) — the canonical event list
 
@@ -744,7 +748,7 @@ Stored as `notification_templates` rows with `channel = 'whatsapp'`, `event = 'p
 **`wa.shift` — shift hours**
 ```
 היי {{firstName}}, זה/זו {{sadranName}} מסידור הרכב 🚗
-ביקשת רכב ל{{destination}} ב{{day}} {{date}}, {{depart}}–{{return}}.
+ביקשת רכב ל{{destination}} ב{{day}}, {{depart}}–{{return}}.
 בשעות האלה אין רכב פנוי, אבל יש רכב אם יוצאים {{newDepart}} וחוזרים {{newReturn}}.
 מתאים? אפשר לאשר או לדחות כאן:
 {{link}}
@@ -753,7 +757,7 @@ Stored as `notification_templates` rows with `channel = 'whatsapp'`, `event = 'p
 **`wa.mergePassenger` — merge, to the person who would ride along**
 ```
 היי {{firstName}}, זה/זו {{sadranName}} מסידור הרכב 🚗
-ביקשת רכב ל{{destination}} ב{{day}} {{date}}.
+ביקשת רכב ל{{destination}} ב{{day}}.
 {{driverName}} נוסע/ת לשם באותו יום — יציאה {{newDepart}}, חזרה {{newReturn}} — ויש מקום ברכב.
 להצטרף לנסיעה כנוסע/ת? כך משתחרר רכב לחבר/ה אחר/ת.
 תשובה כאן:
@@ -763,7 +767,7 @@ Stored as `notification_templates` rows with `channel = 'whatsapp'`, `event = 'p
 **`wa.mergeDriver` — merge, to the driver**
 ```
 היי {{firstName}}, זה/זו {{sadranName}} מסידור הרכב 🚗
-בנסיעה שלך ל{{destination}} ב{{day}} {{date}} ({{depart}}–{{return}}) יש מקום פנוי.
+בנסיעה שלך ל{{destination}} ב{{day}} ({{depart}}–{{return}}) יש מקום פנוי.
 {{passengerName}} צריך/ה להגיע לאותו אזור. אפשר לצרף? התוספת בדרך: כ-{{detourMin}} דק'.
 תשובה כאן:
 {{link}}
@@ -772,7 +776,7 @@ Stored as `notification_templates` rows with `channel = 'whatsapp'`, `event = 'p
 **`wa.deny` — deny**
 ```
 היי {{firstName}}, זה/זו {{sadranName}} מסידור הרכב 🚗
-לצערי לא הצלחנו לשבץ רכב ל{{destination}} ב{{day}} {{date}} {{depart}}–{{return}}.
+לצערי לא הצלחנו לשבץ רכב ל{{destination}} ב{{day}} {{depart}}–{{return}}.
 הסיבה: {{reason}}.
 אם יתפנה רכב מתאים במהלך השבוע תקבל/י הודעה אוטומטית. פרטים ואפשרויות:
 {{link}}
@@ -781,7 +785,7 @@ Stored as `notification_templates` rows with `channel = 'whatsapp'`, `event = 'p
 **`wa.external` — no car available, external solution (REQUIREMENTS §13.59)**
 ```
 היי {{firstName}}, זה/זו {{sadranName}} מסידור הרכב 🚗
-לצערי אין רכב פנוי ל{{destination}} ב{{day}} {{date}} {{depart}}–{{return}}, גם לא עם הזזה.
+לצערי אין רכב פנוי ל{{destination}} ב{{day}} {{depart}}–{{return}}, גם לא עם הזזה.
 אפשר לענות כאן:
 {{link}}
 (אסתדר/ת בעצמי, או להישאר ברשימת ההמתנה למקרה שיתפנה רכב)
@@ -790,7 +794,7 @@ Stored as `notification_templates` rows with `channel = 'whatsapp'`, `event = 'p
 **`wa.chauffeur` — asking a volunteer to drive (optional `merge` proposal, `role: 'driver'`)**
 ```
 היי {{firstName}}, זה/זו {{sadranName}} מסידור הרכב 🚗
-{{passengerName}} צריך/ה הסעה ל{{destination}} ב{{day}} {{date}} סביב {{depart}} ({{driverName}} לא נוהג/ת בעצמו/ה הפעם).
+{{passengerName}} צריך/ה הסעה ל{{destination}} ב{{day}} סביב {{depart}} ({{driverName}} לא נוהג/ת בעצמו/ה הפעם).
 אפשר/י להסיע ולהחזיר את הרכב הביתה? זה ייקח כ-{{detourMin}} דק'.
 תשובה כאן:
 {{link}}
@@ -1024,6 +1028,7 @@ Screen titles, primary actions, statuses and navigation. Keys are the namespaced
 | `action.withdrawRequest` | הסר בקשה | before publish |
 | `action.cancelRide` | בטל נסיעה | after publish |
 | `field.destination` | לאן? | |
+| `field.destinationFrom` | מאיפה? | destination label while trip shape is "חזור בלבד" (form copy only, 2026-09-15) |
 | `field.destination.freeText` | יעד חופשי | |
 | `field.rideType` | סוג נסיעה | |
 | `field.day` | יום | |

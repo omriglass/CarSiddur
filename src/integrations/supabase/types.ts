@@ -3836,6 +3836,9 @@ export type Database = {
       }
       crypt: { Args: { password: string; salt: string }; Returns: string }
       current_week_start: { Args: never; Returns: string }
+      day_date_label:
+        | { Args: { _at: string }; Returns: string }
+        | { Args: { _d: string }; Returns: string }
       department_stats: {
         Args: { p_department_id: string; p_from: string; p_to: string }
         Returns: Json

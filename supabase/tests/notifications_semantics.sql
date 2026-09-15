@@ -249,4 +249,45 @@ begin
   end;
 end $$;
 
+-- ---------------------------------------------------------------------------
+-- Item 8 (2026-09-15, day_date_label): notification_context()'s `day` var, and
+-- day_date_label() itself, render weekday + leading-zero-free date — "ד׳ 16.9" for
+-- 2026-09-16 — instead of the old bare `DD/MM`. Compared against weekday_short_label()
+-- rather than a Hebrew literal, so this test file stays Hebrew-free (hard rule 3).
+-- ---------------------------------------------------------------------------
+do $$
+declare
+  dept uuid := '00000000-0000-0000-0000-000000000001';
+  member uuid := '00000000-0000-0000-0000-000000000104';
+  dest uuid := '00000000-0000-0000-0000-000000000011';
+  typ uuid := '00000000-0000-0000-0000-000000000021';
+  w date := '2026-09-13'; -- Sunday of the fixed calendar week containing 2026-09-16 (Wednesday)
+  depart timestamptz := '2026-09-16 10:00:00+03'::timestamptz;
+  req_id uuid;
+  ctx jsonb;
+  expected_day text;
+begin
+  insert into public.weeks(department_id,week_start,phase,open_at,close_at,publish_at)
+  values(dept, w, 'archived', depart - interval '10 days', depart - interval '9 days', depart - interval '8 days')
+  on conflict (department_id, week_start) do nothing;
+
+  insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,depart_at,return_at,status)
+  values(dept, w, member, member, dest, typ, depart, depart+interval '2 hours', 'submitted')
+  returning id into req_id;
+
+  expected_day := public.weekday_short_label('2026-09-16'::date) || ' ' || '16.9';
+  assert public.day_date_label(depart) = expected_day,
+    format('day_date_label(2026-09-16 10:00+03) should be %L, got %L', expected_day, public.day_date_label(depart));
+  assert public.day_date_label(depart) like '% 16.9',
+    'day_date_label() should end with the leading-zero-free D.M date';
+  assert public.day_date_label('2026-09-16'::date) = expected_day,
+    'the date overload of day_date_label() should agree with the timestamptz one';
+
+  ctx := public.notification_context(member, dept, w, jsonb_build_object('request_id', req_id));
+  assert ctx->>'day' = expected_day,
+    format('notification_context() day var should be %L, got %L', expected_day, ctx->>'day');
+  assert ctx->>'date' = to_char(depart at time zone 'Asia/Jerusalem','DD/MM/YY'),
+    'notification_context() date var (DD/MM/YY) should be unchanged';
+end $$;
+
 rollback;

@@ -118,7 +118,7 @@ export const heSadran = {
     filterMerge: "בקשו להצטרף",
     conflictBanner: "{{count}} התנגשויות בלוח",
     nextConflict: "מעבר להתנגשות הבאה",
-    conflictLocation: "התנגשות {{index}} מתוך {{count}} · יום {{day}}, {{date}} · {{time}} · {{car}}",
+    conflictLocation: "התנגשות {{index}} מתוך {{count}} · {{date}} · {{time}} · {{car}}",
     unmetTitle: "לא שובצו ({{count}})",
     preferredCar: "ביקש/ה רכב מסוים: {{car}}",
     scoreLabel: "ניקוד",

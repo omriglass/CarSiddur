@@ -25,7 +25,7 @@ import { he, t, tv } from "@/i18n/he";
 import { sadranKeys } from "../../keys";
 import { servedOf } from "../../solverRun";
 import { env } from "@/lib/env";
-import { weekdayLabel } from "@/lib/dayLabels";
+import { formatDayDate } from "@/lib/dayLabels";
 import { TZ, dateKey, formatTime } from "@/lib/time";
 import { useQuery } from "@tanstack/react-query";
 
@@ -188,10 +188,12 @@ export function ProposalComposerScreen({ departmentId, weekStart }: ProposalComp
     const requester = contactsQuery.data?.find((c) => c.id === requesterId);
     // Stage 3 hardening bug fix (found while writing e2e/proposal.spec.ts): date-fns'
     // "EEEE" token has no locale here, so this previously rendered the *English* weekday
-    // name ("Friday") into an otherwise all-Hebrew WhatsApp message. `weekdayLabel` (the
-    // single source for `he.days.long` indexed by the Asia/Jerusalem zoned day-of-week,
-    // hard rule 6 — never a raw, unzoned `getDay()`) is correct.
-    const day = request?.depart_at ? weekdayLabel(request.depart_at) : "";
+    // name ("Friday") into an otherwise all-Hebrew WhatsApp message. `formatDayDate` (the
+    // single canonical weekday+date renderer, Asia/Jerusalem-zoned, hard rule 6 — never a
+    // raw, unzoned `getDay()`) is correct. `day` now carries the full "ד׳ 16.9" label
+    // (templates are moving to `{{day}}` alone); `date` stays plain "d.M" for any template
+    // still combining the two.
+    const day = request?.depart_at ? formatDayDate(request.depart_at) : "";
     const date = request?.depart_at ? formatInTimeZone(new Date(request.depart_at), TZ, "d.M") : "";
     return {
       firstName: firstNameOf(requester?.full_name),
@@ -343,7 +345,7 @@ export function ProposalComposerScreen({ departmentId, weekStart }: ProposalComp
         <CardContent className="space-y-3 p-4 text-sm">
           {type === "merge" && combinedStart && combinedEnd ? <div className="space-y-1 rounded-md border border-primary/40 p-3">
             <h2 className="font-medium">{he.rideCoordination.combinedWindow}</h2>
-            <p dir="ltr" className="font-semibold tabular-nums">{formatInTimeZone(combinedStart, TZ, "d/M/yy HH:mm")}–{formatTime(new Date(combinedEnd))}</p>
+            <p className="font-semibold"><span className="tabular-nums">{formatDayDate(combinedStart)}</span> <span dir="ltr" className="tabular-nums">{formatTime(new Date(combinedStart))}–{formatTime(new Date(combinedEnd))}</span></p>
             <p>{combinedSummary}</p>
             <p className="text-muted-foreground">{he.rideCoordination.combinedConsent}</p>
           </div> : null}

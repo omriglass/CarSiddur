@@ -14,8 +14,8 @@ import {
   useNotifications,
 } from "@/features/inbox/hooks";
 import { he, t } from "@/i18n/he";
-import { formatInTimeZone } from "date-fns-tz";
-import { formatTime, TZ } from "@/lib/time";
+import { formatDayDate } from "@/lib/dayLabels";
+import { formatTime } from "@/lib/time";
 import { RideChangeAnswers } from "@/features/siddur/components/RideChangeAnswers";
 
 type Filter = "all" | "proposals" | "siddur" | "freedSlot" | "system";
@@ -67,7 +67,7 @@ function deepLinkFor(n: Notification): string {
 }
 
 function dayLabel(instant: string): string {
-  return formatInTimeZone(new Date(instant), TZ, "d.M.yyyy");
+  return formatDayDate(instant);
 }
 
 /** `/inbox` (UX_FLOWS.md §3.7): grouped by day, read state, category filter, mark-all-read. */

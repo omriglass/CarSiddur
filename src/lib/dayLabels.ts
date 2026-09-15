@@ -1,5 +1,6 @@
 import { he } from "@/i18n/he";
-import { weekdayIndex } from "@/lib/time";
+import { TZ, weekdayIndex } from "@/lib/time";
+import { formatInTimeZone } from "date-fns-tz";
 
 /**
  * Hebrew weekday name for an instant, Asia/Jerusalem-zoned. Single source for
@@ -11,4 +12,13 @@ import { weekdayIndex } from "@/lib/time";
  */
 export function weekdayLabel(instant: Date | string | number, style: "long" | "short" = "long"): string {
   return he.days[style][weekdayIndex(instant)] ?? "";
+}
+
+/**
+ * Canonical single-date rendering: short weekday letter + geresh + `d.M` in
+ * Asia/Jerusalem local time, e.g. "ד׳ 16.9" (CLAUDE.md hard rule 6; no date
+ * is ever shown without its weekday, UX_FLOWS.md §1 / TODO.md B4).
+ */
+export function formatDayDate(instant: Date | string | number): string {
+  return `${weekdayLabel(instant, "short")}${he.days.geresh} ${formatInTimeZone(instant, TZ, "d.M")}`;
 }

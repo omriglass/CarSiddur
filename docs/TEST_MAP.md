@@ -51,8 +51,8 @@ Hebrew strings quoted below are copied verbatim from `src/i18n/he.member.ts` / `
 **Paths**: `src/features/requests/components/RequestForm.tsx` (+ `.oneWaySync.test.tsx`),
 `TemplateSuggestions.tsx`(+test), `RequestsListPage.test.tsx`, `series.ts`(+test),
 `templatePrefill.ts`(+test), `duplicate.ts`(+test), `mapper.ts`(+test), `duration.ts`(+test),
-`dayLabel.ts`(+test), `schema.ts`(+test), `submitOutcome.ts`(+test), `api.ts`, `hooks.ts`,
-`queryKeys.ts` (all under `src/features/requests/`); `src/i18n/he.member.ts`; migrations matching
+`dayLabel.ts`(+test), `destinationLabel.ts`(+test), `seatCounts.ts`(+test), `schema.ts`(+test), `submitOutcome.ts`(+test), `api.ts`, `hooks.ts`,
+`queryKeys.ts` (all under `src/features/requests/`); `src/components/RideTypeChips.tsx`(+test); `src/i18n/he.member.ts`; migrations matching
 `*request_template*`, `*series*`, `*requests.sql`, `*request_edit*`, `*bulk_request_withdrawal*`,
 `*child*`; `e2e/multi-day.spec.ts`, `repeating-requests.spec.ts`, `member.spec.ts`,
 `auto-approve.spec.ts`, `upcoming-week.spec.ts`.

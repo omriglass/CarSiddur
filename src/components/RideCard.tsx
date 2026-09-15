@@ -1,12 +1,11 @@
 import { ArrowLeft, CarFront, MapPin, Star } from "lucide-react";
-import { formatInTimeZone } from "date-fns-tz";
 
 import { Card, CardContent } from "@/components/ui/card";
 import { CarNameWithReport } from "@/features/carCare/components/CarNameWithReport";
 import { he, tv } from "@/i18n/he";
-import { weekdayLabel } from "@/lib/dayLabels";
+import { formatDayDate } from "@/lib/dayLabels";
 import { rideTypeColorClasses } from "@/lib/rideTypeColors";
-import { dateKey, formatTime, TZ } from "@/lib/time";
+import { dateKey, formatTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
 /**
@@ -64,7 +63,7 @@ export function RideCard({ ride, onClick }: RideCardProps) {
   const start = new Date(ride.startsAt);
   const end = ride.endsAt ? new Date(ride.endsAt) : null;
   const typeColors = rideTypeColorClasses(ride.rideTypeCode);
-  const dayLabel = (date: Date) => `${weekdayLabel(date)} · ${formatInTimeZone(date, TZ, "d/M/yyyy")}`;
+  const dayLabel = (date: Date) => formatDayDate(date);
   const endsOnAnotherDay = end && dateKey(start) !== dateKey(end);
 
   return (

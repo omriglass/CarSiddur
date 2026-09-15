@@ -10,11 +10,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ErrorState } from "@/components/ErrorState";
-import { formatInTimeZone } from "date-fns-tz";
 import { useState } from "react";
 import { he, tv } from "@/i18n/he";
-import { weekdayLabel } from "@/lib/dayLabels";
-import { TZ, dateKey, formatTime } from "@/lib/time";
+import { formatDayDate } from "@/lib/dayLabels";
+import { dateKey, formatTime } from "@/lib/time";
 
 import { computeDiffSummary } from "../diffSummary";
 import {
@@ -61,7 +60,7 @@ export function PublishScreen({ departmentId, weekStart }: PublishScreenProps) {
   });
   const previewQueries = [requestsQuery, ridesQuery, versionsQuery];
   const unavailable = readinessQuery.isLoading || readinessQuery.isError || !readiness.length || publishMutation.isPending || previewQueries.some((query) => query.isLoading || query.isError);
-  const dateLabel = (day: string) => `${weekdayLabel(`${day}T12:00:00Z`)} · ${formatInTimeZone(`${day}T12:00:00Z`, TZ, "d/M/yyyy")}`;
+  const dateLabel = (day: string) => formatDayDate(`${day}T12:00:00Z`);
 
   const previousSnapshot = previousVersion?.snapshot as
     | { published_days?: string[]; rides?: { id: string; starts_at: string; ends_at: string; car_id: string; status: string }[]; requests?: { id: string; status: string; status_reason: string | null }[] }

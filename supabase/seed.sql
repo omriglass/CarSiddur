@@ -286,29 +286,29 @@ insert into public.notification_templates (event, channel, variant, title, body,
 select event, channel, variant, null, body, null, body from (values
   ('proposal_received'::public.notification_event, 'whatsapp'::public.notification_channel, 'shift',
     'היי {{firstName}}, זה/זו {{sadranName}} מסידור הרכב 🚗' || chr(10) ||
-    'ביקשת רכב ל{{destination}} ב{{day}} {{date}}, {{depart}}–{{return}}.' || chr(10) ||
+    'ביקשת רכב ל{{destination}} ב{{day}}, {{depart}}–{{return}}.' || chr(10) ||
     'בשעות האלה אין רכב פנוי, אבל יש רכב אם יוצאים {{newDepart}} וחוזרים {{newReturn}}.' || chr(10) ||
     'מתאים? אפשר לאשר או לדחות כאן:' || chr(10) || '{{link}}'),
   ('proposal_received', 'whatsapp', 'merge_passenger',
     'היי {{firstName}}, זה/זו {{sadranName}} מסידור הרכב 🚗' || chr(10) ||
-    'ביקשת רכב ל{{destination}} ב{{day}} {{date}}.' || chr(10) ||
+    'ביקשת רכב ל{{destination}} ב{{day}}.' || chr(10) ||
     '{{driverName}} נוסע/ת לשם באותו יום — יציאה {{newDepart}}, חזרה {{newReturn}} — ויש מקום ברכב.' || chr(10) ||
     'להצטרף לנסיעה כנוסע/ת? כך משתחרר רכב לחבר/ה אחר/ת.' || chr(10) ||
     'תשובה כאן:' || chr(10) || '{{link}}'),
   ('proposal_received', 'whatsapp', 'merge_driver',
     'היי {{firstName}}, זה/זו {{sadranName}} מסידור הרכב 🚗' || chr(10) ||
-    'בנסיעה שלך ל{{destination}} ב{{day}} {{date}} ({{depart}}–{{return}}) יש מקום פנוי.' || chr(10) ||
+    'בנסיעה שלך ל{{destination}} ב{{day}} ({{depart}}–{{return}}) יש מקום פנוי.' || chr(10) ||
     '{{passengerName}} צריך/ה להגיע לאותו אזור. אפשר לצרף? התוספת בדרך: כ-{{detourMin}} דק׳.' || chr(10) ||
     'תשובה כאן:' || chr(10) || '{{link}}'),
   ('proposal_received', 'whatsapp', 'deny',
     'היי {{firstName}}, זה/זו {{sadranName}} מסידור הרכב 🚗' || chr(10) ||
-    'לצערי לא הצלחנו לשבץ רכב ל{{destination}} ב{{day}} {{date}} {{depart}}–{{return}}.' || chr(10) ||
+    'לצערי לא הצלחנו לשבץ רכב ל{{destination}} ב{{day}} {{depart}}–{{return}}.' || chr(10) ||
     'הסיבה: {{reason}}.' || chr(10) ||
     'אם יתפנה רכב מתאים במהלך השבוע תקבל/י הודעה אוטומטית. פרטים ואפשרויות:' || chr(10) || '{{link}}'),
   -- Stage 3 hardening fix #4 (DATA_MODEL.md §6.1 item 19, UX_FLOWS.md §6.2 `wa.external` verbatim).
   ('proposal_received', 'whatsapp', 'external',
     'היי {{firstName}}, זה/זו {{sadranName}} מסידור הרכב 🚗' || chr(10) ||
-    'לצערי אין רכב פנוי ל{{destination}} ב{{day}} {{date}} {{depart}}–{{return}}, גם לא עם הזזה.' || chr(10) ||
+    'לצערי אין רכב פנוי ל{{destination}} ב{{day}} {{depart}}–{{return}}, גם לא עם הזזה.' || chr(10) ||
     'אפשר לענות כאן:' || chr(10) || '{{link}}' || chr(10) ||
     '(אסתדר/ת בעצמי, או להישאר ברשימת ההמתנה למקרה שיתפנה רכב)'),
   -- Stage 3 hardening fix #4: `wa.chauffeur` verbatim (UX_FLOWS.md §6.2); no composer action
@@ -316,7 +316,7 @@ select event, channel, variant, null, body, null, body from (values
   -- whenever that UI ships.
   ('proposal_received', 'whatsapp', 'chauffeur',
     'היי {{firstName}}, זה/זו {{sadranName}} מסידור הרכב 🚗' || chr(10) ||
-    '{{passengerName}} צריך/ה הסעה ל{{destination}} ב{{day}} {{date}} סביב {{depart}} ({{driverName}} לא נוהג/ת בעצמו/ה הפעם).' || chr(10) ||
+    '{{passengerName}} צריך/ה הסעה ל{{destination}} ב{{day}} סביב {{depart}} ({{driverName}} לא נוהג/ת בעצמו/ה הפעם).' || chr(10) ||
     'אפשר/י להסיע ולהחזיר את הרכב הביתה? זה ייקח כ-{{detourMin}} דק׳.' || chr(10) ||
     'תשובה כאן:' || chr(10) || '{{link}}'),
   ('proposal_received', 'whatsapp', 'reminder',
@@ -455,9 +455,9 @@ commit;
 insert into public.notification_templates(event,channel,variant,title,body,default_title,default_body)
 select 'proposal_received',channel,'ride_change',
   '{{requesterName}} ביקש/ה לבטל את הנסיעה שלך',
-  'בקשה לרכב ב־{{date}} {{depart}}–{{return}}. האם לאשר את ביטול הנסיעה שלך?',
+  'בקשה לרכב ב{{day}} {{depart}}–{{return}}. האם לאשר את ביטול הנסיעה שלך?',
   '{{requesterName}} ביקש/ה לבטל את הנסיעה שלך',
-  'בקשה לרכב ב־{{date}} {{depart}}–{{return}}. האם לאשר את ביטול הנסיעה שלך?'
+  'בקשה לרכב ב{{day}} {{depart}}–{{return}}. האם לאשר את ביטול הנסיעה שלך?'
 from unnest(array['inbox','push']::public.notification_channel[]) channel
 on conflict (event,channel,(coalesce(variant,''))) do update set title=excluded.title,body=excluded.body,default_title=excluded.default_title,default_body=excluded.default_body;
 

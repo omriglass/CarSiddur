@@ -215,13 +215,13 @@ scripts/
 - Immutable history: `policy_versions`, `siddur_versions` (`forbid_mutation()`).
 
 **React / UI**
-- `<html dir="rtl" lang="he">`. Logical Tailwind utilities only (`ms-/me-/ps-/pe-/text-start`); directional icons `rtl:rotate-180`; numbers/times in `<span dir="ltr">`.
+- `<html dir="rtl" lang="he">` plus a single Radix `<DirectionProvider dir="rtl">` in `src/main.tsx` (Radix primitives default to `ltr` without it — never set `dir` per component). Logical Tailwind utilities only (`ms-/me-/ps-/pe-/text-start`); directional icons `rtl:rotate-180`; numbers/times in `<span dir="ltr">`.
 - Forms: react-hook-form + zod from `features/<f>/schema.ts`; enum options iterate `src/lib/enums.ts`, labels from `he.enums.*`.
 - Data: TanStack Query only; mutations pass `expected_version` for rides/requests/proposals and surface `stale_version` conflicts via `lib/rpc.ts` (`toAppError`/`showErrorToast`).
 - Role gating via `useRole()` mirrors RLS; RLS is the guarantee.
 - Confirmations and add/edit forms rendered in a dialog go through `ConfirmDialog`/`FormDialog` (`src/components/`); every status pill (request/ride/proposal/week/car) goes through `StatusBadge` — never a hand-rolled `Dialog`+`DialogFooter` or a bare `<Badge>` for a status enum. Proposal summaries render via `ProposalSummary`.
 - Navigation: build URLs with `paths.*` from `src/app/routes.ts` (`paths.sadran.board(dept, week)`, `paths.siddur(...)`, `paths.requests.new(...)`, …), never a hand-built `` `/sadran/${dept}/${week}/board` `` template string — `src/app/routes.test.ts` checks every builder against the real router patterns.
-- Weekday label/date-key: use `dateKey(instant)` and `weekdayLabel(instant, style?)` (`src/lib/time.ts` / `src/lib/dayLabels.ts`) instead of hand-writing `formatInTimeZone(x, TZ, "yyyy-MM-dd"/"i")` or indexing `he.days.long` directly.
+- Weekday label/date-key: use `dateKey(instant)`, `weekdayLabel(instant, style?)` and `formatDayDate(instant)` (`src/lib/time.ts` / `src/lib/dayLabels.ts`) instead of hand-writing `formatInTimeZone(x, TZ, "yyyy-MM-dd"/"i")` or indexing `he.days.long` directly. `formatDayDate` is the canonical single-date renderer — short weekday letter + geresh + `d.M`, e.g. `ד׳ 16.9` — no date is ever shown without its weekday.
 - Forms: pass `useScrollToFirstError`'s `onInvalid` to `handleSubmit` (`form.handleSubmit(onSubmit, onInvalid)`, `<form ref={formRef}>`) so an invalid submit scrolls to and focuses the first bad field; custom controls carry `data-field=<rhf name>` (`src/components/useScrollToFirstError.ts`, UX_FLOWS.md §9).
 
 **Solver (SOLVER.md §4)**

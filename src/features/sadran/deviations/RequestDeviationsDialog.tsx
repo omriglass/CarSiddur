@@ -1,13 +1,12 @@
 import { useState } from "react";
-import { formatInTimeZone } from "date-fns-tz";
 import { Button } from "@/components/ui/button";
 import { TripSummary } from "@/components/TripSummary";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useAllWeekRides, useCarsForDepartment, useWeekRequestsWithNames } from "../hooks";
 import { requestDeviations, type DeviationKind } from "./requestDeviations";
 import { he } from "@/i18n/he";
-import { weekdayLabel } from "@/lib/dayLabels";
-import { TZ } from "@/lib/time";
+import { formatDayDate } from "@/lib/dayLabels";
+import { formatTime } from "@/lib/time";
 
 const LABELS: Record<DeviationKind, string> = {
   depart: he.deviations.depart, arrival: he.deviations.arrival, preferredCar: he.deviations.preferredCar,
@@ -15,7 +14,7 @@ const LABELS: Record<DeviationKind, string> = {
   unassigned: he.deviations.unassigned, status: he.deviations.reason,
 };
 function timeLabel(instant: string) {
-  return `${weekdayLabel(instant)} ${formatInTimeZone(instant, TZ, "d/M HH:mm")}`;
+  return `${formatDayDate(instant)} ${formatTime(new Date(instant))}`;
 }
 
 interface RequestDeviationsDialogProps {
