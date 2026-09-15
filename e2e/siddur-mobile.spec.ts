@@ -71,6 +71,23 @@ test.describe("siddur mobile header", { tag: ["@siddur"] }, () => {
     const roundToQuarterHour = (ms: number) => Math.round(ms / 900_000) * 900_000;
     const blockStart = new Date(roundToQuarterHour(now.getTime() - 2 * 3600_000)).toISOString();
     const blockEnd = new Date(roundToQuarterHour(now.getTime() + 2 * 3600_000)).toISOString();
+    // The seed puts real rides on the live week relative to `now()`; whenever one of them
+    // overlaps the ±2h block (plus the 30-minute turnaround) the insert below hits the
+    // `ride_turnaround_conflict` guard — a time-of-day failure (2026-09-15, 09:50 run). Park
+    // such rides as `cancelled` (ignored by the constraint and by the free-window query) for the
+    // duration of the test and restore them afterwards.
+    const { data: overlapping } = await service.from("rides").select("id, status")
+      .in("car_id", carIds).neq("status", "cancelled")
+      .lt("starts_at", new Date(Date.parse(blockEnd) + 30 * 60_000).toISOString())
+      .gt("ends_at", new Date(Date.parse(blockStart) - 30 * 60_000).toISOString());
+    const parked = overlapping ?? [];
+    if (parked.length) {
+      // `rides_cancel_consistency_ck`: a cancelled ride carries all three cancel columns.
+      const park = await service.from("rides").update({
+        status: "cancelled", cancelled_at: now.toISOString(), cancelled_by: "00000000-0000-0000-0000-000000000102", cancel_reason: "e2e_car_now_fixture",
+      }).in("id", parked.map((r) => r.id));
+      if (park.error) throw park.error;
+    }
     const inserted = await service.from("rides").insert(carIds.map((carId) => ({
       department_id: NEVO_DEPARTMENT_ID, week_start: liveWeekStart, car_id: carId,
       driver_id: "00000000-0000-0000-0000-000000000102", created_by: "00000000-0000-0000-0000-000000000102",
@@ -89,6 +106,9 @@ test.describe("siddur mobile header", { tag: ["@siddur"] }, () => {
       await expect(page.getByText(he.quickRequest.takeCarNow, { exact: true })).toBeVisible();
     } finally {
       await service.from("rides").delete().in("id", inserted.data!.map((r) => r.id));
+      for (const ride of parked) {
+        await service.from("rides").update({ status: ride.status, cancelled_at: null, cancelled_by: null, cancel_reason: null }).eq("id", ride.id);
+      }
     }
   });
 

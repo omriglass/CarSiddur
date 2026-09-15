@@ -99,8 +99,8 @@ test("combined one-way consent preserves an orphaned passenger and lets a member
     const deviation = coordinator.page.locator(`[data-request-deviation="${requestIds[0]}"]`);
     const tripSummary = deviation.locator("[data-trip-summary]");
     await expect(tripSummary).toContainText(SEEDED_USERS.member1.fullName);
-    await expect(tripSummary).toContainText("13/1/2041");
-    await expect(tripSummary).toContainText(he.days.long[0]!);
+    // Single dates render as "א׳ 13.1" (`formatDayDate`, CLAUDE.md conventions, 2026-09-15).
+    await expect(tripSummary).toContainText(`${he.days.short[0]!}${he.days.geresh} 13.1`);
     await expect(tripSummary).toContainText("07:15–10:00");
     const { data: rideType } = await service.from("ride_types").select("name_he").eq("id", "00000000-0000-0000-0000-000000000021").single();
     await expect(tripSummary).toContainText(rideType!.name_he);

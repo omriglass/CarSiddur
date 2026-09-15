@@ -24,8 +24,8 @@ for (const scenario of [
       const tripSummary = page.locator("[data-trip-summary]");
       await expect(tripSummary).toContainText(SEEDED_USERS.member1.fullName);
       await expect(tripSummary).toContainText(`E2E optional reason ${scenario.type}`);
-      await expect(tripSummary).toContainText(he.days.long[0]!);
-      await expect(tripSummary).toContainText(`${Number(scenario.week.slice(8))}/${Number(scenario.week.slice(5, 7))}/2043`);
+      // Single dates render as "א׳ 25.1" (`formatDayDate`, CLAUDE.md conventions, 2026-09-15).
+      await expect(tripSummary).toContainText(`${he.days.short[0]!}${he.days.geresh} ${Number(scenario.week.slice(8))}.${Number(scenario.week.slice(5, 7))}`);
       await expect(tripSummary).toContainText("08:00–10:00");
       const { data: rideType } = await fixture.service.from("ride_types").select("name_he").eq("id", "00000000-0000-0000-0000-000000000021").single();
       await expect(tripSummary).toContainText(rideType!.name_he);

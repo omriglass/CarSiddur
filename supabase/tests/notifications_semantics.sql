@@ -267,6 +267,9 @@ declare
   ctx jsonb;
   expected_day text;
 begin
+  -- Item 7 leaves the session impersonating a non-existent user; the inserts below are
+  -- audited (audit_row → audit_log.actor_id FK), so act as a real seeded member again.
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', member, 'role', 'authenticated')::text, true);
   insert into public.weeks(department_id,week_start,phase,open_at,close_at,publish_at)
   values(dept, w, 'archived', depart - interval '10 days', depart - interval '9 days', depart - interval '8 days')
   on conflict (department_id, week_start) do nothing;
