@@ -9,7 +9,7 @@
 //
 // Usage:
 //   node scripts/release.mjs [--dry-run] [--yes-remote] [--yes]
-//                             [--skip-check] [--status]
+//                             [--skip-check] [--status] [--tag <name>]
 //
 //   --dry-run      Print the plan (computed tag, pending migrations, edge
 //                   functions that would deploy, …) and exit. Never runs a
@@ -25,6 +25,16 @@
 //   --status       Print last tag, commits since, pending migrations (needs
 //                   --yes-remote) and edge functions changed since the tag,
 //                   then exit. Does not run the release steps.
+//   --tag <name>   Also give the release a name of your own (e.g. --tag v1.2,
+//                   owner 2026-09-15). The automatic vYYYY.MM.DD-n tag is still
+//                   created and pushed first — it stays the release's identity
+//                   for this script and for CI — and the alias is created and
+//                   pushed AFTER it, on the same commit, so `git describe`
+//                   (the /profile version footer) prefers the alias. Must start
+//                   with "v", may not look like an automatic tag, and may not
+//                   exist yet locally or on origin. Aliases do not trigger CI
+//                   (.github/workflows/ci.yml only listens to the automatic
+//                   pattern), so one release still means one approval.
 //
 // Steps (see docs/RUNBOOK_ROLLBACK.md for what each one means to roll back):
 //   1. clean tree on main, up to date with origin/main
@@ -33,7 +43,7 @@
 //   4. backup (scripts/db-export.mjs --linked --yes-remote) + Google Drive reminder
 //   5. supabase db push --dry-run, confirm, supabase db push (only if pending)
 //   6. detect + deploy changed edge functions since the last release tag
-//   7. create + push the vYYYY.MM.DD-n release tag
+//   7. create + push the vYYYY.MM.DD-n release tag (then the --tag alias, if any)
 //   8. print what happens next + the post-release smoke checklist
 //
 // Never touches ../commucar-share.
@@ -49,6 +59,8 @@ const ROOT = path.resolve(__dirname, "..");
 const TZ = "Asia/Jerusalem";
 const EDGE_FUNCTIONS = ["push-dispatch", "answer-proposal", "on-ride-cancelled", "destination-route"];
 const TAG_RE = /^v(\d{4})\.(\d{2})\.(\d{2})-(\d+)$/;
+/** A `--tag` alias: "v" + a git-friendly name (letters, digits, . _ -), e.g. `v1.2`. */
+const ALIAS_TAG_RE = /^v[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 
 // ---------------------------------------------------------------------------
 // Small helpers
@@ -88,8 +100,14 @@ function jerusalemDate(now = new Date()) {
 }
 
 function parseArgs(argv) {
-  const args = { dryRun: false, yesRemote: false, yes: false, skipCheck: false, status: false };
-  for (const a of argv) {
+  const args = { dryRun: false, yesRemote: false, yes: false, skipCheck: false, status: false, alias: null };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === "--tag" || a.startsWith("--tag=")) {
+      const value = a === "--tag" ? argv[++i] : a.slice("--tag=".length);
+      args.alias = validateAlias(value);
+      continue;
+    }
     switch (a) {
       case "--dry-run":
         args.dryRun = true;
@@ -118,14 +136,35 @@ function parseArgs(argv) {
   return args;
 }
 
+/** `--tag` value → validated alias name, or exit 1 with a reason (nothing has run yet). */
+function validateAlias(value) {
+  let problem = null;
+  if (!value || value.startsWith("--")) problem = "--tag needs a value, e.g. --tag v1.2";
+  else if (!ALIAS_TAG_RE.test(value)) problem = `"${value}" must start with "v" and use only letters, digits, ".", "_" or "-" (e.g. v1.2)`;
+  else if (TAG_RE.test(value)) problem = `"${value}" looks like an automatic vYYYY.MM.DD-n tag — those are computed, pick a different name`;
+  if (problem) {
+    console.error(`release: ${problem}`);
+    process.exit(1);
+  }
+  return value;
+}
+
+/** Where an alias already exists: "local", "origin", or null. Only the real run asks origin. */
+function aliasExists(alias, { askOrigin }) {
+  if (tryGit(["rev-parse", "-q", "--verify", `refs/tags/${alias}`])) return "local";
+  if (askOrigin && (tryGit(["ls-remote", "--tags", "origin", `refs/tags/${alias}`]) ?? "").trim()) return "origin";
+  return null;
+}
+
 function printUsage() {
-  console.log(`Usage: node scripts/release.mjs [--dry-run] [--yes-remote] [--yes] [--skip-check] [--status]
+  console.log(`Usage: node scripts/release.mjs [--dry-run] [--yes-remote] [--yes] [--skip-check] [--status] [--tag <name>]
 
   --dry-run      Print the plan only; touches nothing remote or destructive.
   --yes-remote   Confirms this run may touch the hosted Supabase project and push the release tag.
   --yes          Skip y/N confirmation prompts (still requires --yes-remote for a real run).
   --skip-check   Skip 'npm run check' (discouraged).
-  --status       Print last tag / commits since / pending migrations / changed functions, then exit.`);
+  --status       Print last tag / commits since / pending migrations / changed functions, then exit.
+  --tag <name>   Also create an alias tag of your own (e.g. v1.2) on the same commit, AFTER the automatic tag.`);
 }
 
 async function confirm(question, { yes }) {
@@ -254,6 +293,10 @@ function printPlan(args = {}) {
   console.log(`Working tree: ${status.trim() ? "NOT clean (would abort at step 1)" : "clean"}`);
   console.log(`Last release tag: ${tag ?? "(none yet)"}`);
   console.log(`Next release tag would be: ${tagName}`);
+  if (args.alias) {
+    const where = aliasExists(args.alias, { askOrigin: false });
+    console.log(`Alias tag (--tag): ${args.alias}${where ? ` — ALREADY EXISTS ${where === "local" ? "locally" : "on origin"} (would abort at step 1)` : ""}`);
+  }
   console.log("\nSteps this would run for real (in order):");
   console.log("  1. Verify clean tree on main, up to date with origin/main");
   console.log("  2. npm run check" + (args.skipCheck ? " (skipped: --skip-check)" : ""));
@@ -265,7 +308,10 @@ function printPlan(args = {}) {
       (functions.length > 0 ? functions.join(", ") : "none") +
       (reason ? ` (${reason})` : ""),
   );
-  console.log(`  7. Tag ${tagName}, annotated with the impact summary, and push it to origin`);
+  console.log(
+    `  7. Tag ${tagName}, annotated with the impact summary, and push it to origin` +
+      (args.alias ? `; then tag the same commit ${args.alias} (alias, created and pushed after ${tagName})` : ""),
+  );
   console.log(
     "  8. Print next steps: the tag triggers CI; the owner approves the 'promote' job's " +
       "'production' environment in GitHub; production fast-forwards; Cloudflare builds the Worker.",
@@ -294,7 +340,8 @@ async function main() {
     console.error(
       "release refuses to run without --yes-remote: it would touch the hosted Supabase project and " +
         "push a release tag that triggers CI. Nothing has been touched. Re-run with --dry-run to see " +
-        "the plan, or add --yes-remote to run for real.",
+        "the plan, or add --yes-remote to run for real. Through npm the flags need the separator: " +
+        "npm run release -- --yes-remote [--tag <name>] (without the '--', npm keeps the flags for itself).",
     );
     printPlan(args);
     process.exitCode = 1;
@@ -309,7 +356,7 @@ async function main() {
     "4. backup (scripts/db-export.mjs --linked --yes-remote)",
     "5. supabase db push",
     "6. deploy changed edge functions",
-    "7. create + push the release tag",
+    "7. create + push the release tag" + (args.alias ? ` (then the ${args.alias} alias)` : ""),
     "8. print what happens next",
   ];
 
@@ -342,6 +389,12 @@ async function main() {
     return fail(
       `local main (${localSha.slice(0, 8)}) is not the same commit as origin/main (${remoteSha.slice(0, 8)}) — pull or push first.`,
     );
+  }
+  if (args.alias) {
+    // Checked here, before anything remote runs, so a taken name never leaves a half-done release.
+    const where = aliasExists(args.alias, { askOrigin: true });
+    if (where) return fail(`alias tag ${args.alias} already exists ${where === "local" ? "locally" : "on origin"} — pick another --tag name.`);
+    console.log(`OK: alias tag ${args.alias} is free locally and on origin.`);
   }
   console.log("OK: clean, on main, matches origin/main.");
   stepDone("preflight");
@@ -468,12 +521,26 @@ async function main() {
   } catch (err) {
     return fail(`tagging/pushing failed: ${err.message}`);
   }
+  if (args.alias) {
+    // The owner's own name for this release (--tag), created and pushed AFTER the automatic
+    // tag on purpose: `git describe --tags` prefers the newest annotated tag on a commit, so
+    // the /profile version footer shows the alias, while vYYYY.MM.DD-n stays the release's
+    // identity for this script (lastTag/changedFunctionsSince) and for CI, whose tag filter
+    // ignores aliases so one release still means one pipeline and one approval.
+    try {
+      run("git", ["tag", "-a", args.alias, "-m", `Release ${args.alias} — alias of ${tagName} (same commit)`]);
+      run("git", ["push", "origin", args.alias]);
+    } catch (err) {
+      return fail(`${tagName} is pushed, but creating/pushing the alias ${args.alias} failed: ${err.message}. Re-run just the alias by hand: git tag -a ${args.alias} ${tagName}^{} -m "Release ${args.alias}" && git push origin ${args.alias}`);
+    }
+    console.log(`Alias ${args.alias} → ${tagName} pushed.`);
+  }
   stepDone("tag");
 
   // Step 8 — what happens next.
   console.log("\n=== Step 8/8: what happens next ===");
   console.log(`
-Tag ${tagName} is pushed. From here:
+Tag ${tagName} is pushed${args.alias ? ` (alias ${args.alias} points at the same commit)` : ""}. From here:
   1. CI runs 'check' + 'database' on the tag; if both pass, 'promote' waits for approval.
   2. The owner opens the GitHub Actions run and clicks "Approve" on the 'production' environment.
      THIS CLICK is the one and only "deploy frontend" action — nothing goes live before it.
@@ -481,7 +548,7 @@ Tag ${tagName} is pushed. From here:
 
 Post-release smoke checklist (docs/RUNBOOK_ROLLBACK.md):
   - Sign in; siddur, board and stats pages load.
-  - Version footer on /profile shows ${tagName}.
+  - Version footer on /profile shows ${args.alias ?? tagName}.
   - Supabase Edge Function logs are clean.
   - 'npx supabase migration list --linked' matches what was just pushed.
 `);

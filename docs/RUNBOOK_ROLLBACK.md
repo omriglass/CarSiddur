@@ -153,7 +153,10 @@ live site matches what you expect:
 - [ ] Board loads for a Sadran account.
 - [ ] Department statistics page loads.
 - [ ] The version footer on `/profile` shows the tag you expect (the new
-      release tag, or the previous tag if you just rolled back).
+      release tag — or its `--tag` alias, e.g. `v1.2`, when one was given — or
+      the previous tag if you just rolled back). An alias is only a second name
+      for the same commit: rolling back never needs to touch it, and
+      `<previous-good-tag>` in the commands above may be either name.
 - [ ] Supabase → Edge Functions → Logs show no new errors for the four
       functions.
 - [ ] `npx supabase migration list --linked` matches the migration history

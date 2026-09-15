@@ -159,7 +159,7 @@ Once the one-time setup below is done, the only supported way to ship a
 release is:
 
 ```sh
-npm run release            # add --dry-run first to preview, --status to check where things stand
+npm run release -- --yes-remote   # flags go after "--" or npm swallows them; add --dry-run first to preview, --status to check where things stand
 ```
 
 `scripts/release.mjs` runs the full sequence — clean-tree check, `npm run
@@ -170,6 +170,16 @@ keep roughly the last 8), pending migrations (`supabase db push`), changed
 edge functions, and finally an annotated `vYYYY.MM.DD-n` tag pushed to
 `origin`. It refuses to touch the hosted project or push anything without an
 explicit `--yes-remote`, mirroring `scripts/db-export.mjs`'s guard.
+
+**Your own release name (`--tag`, owner 2026-09-15).** `npm run release -- --tag v1.2`
+also creates an annotated alias tag `v1.2` on the same commit, *after* the automatic
+tag, and pushes it. The automatic tag stays the release's identity (it is what the
+script and CI key on); the alias is for people — `git checkout v1.2`, the `/profile`
+version footer (`git describe` prefers the newest annotated tag on the commit), the
+release notes. CI's tag trigger matches only the automatic pattern, so an alias never
+starts a second pipeline or a second `promote` approval. The name must start with `v`,
+may not look like `vYYYY.MM.DD-n`, and must not already exist locally or on `origin`
+(checked in preflight, before anything remote runs).
 
 **Pushing the tag does not deploy the frontend.** It triggers CI
 (`.github/workflows/ci.yml`): `check` and `database` run against the tag,

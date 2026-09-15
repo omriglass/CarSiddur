@@ -3,7 +3,10 @@ name: CI
 on:
   push:
     branches: [main]
-    tags: ["v*"]
+    # Only the automatic vYYYY.MM.DD-n release tags start a pipeline. An owner alias
+    # created by `npm run release --tag v1.2` (scripts/release.mjs) points at the same
+    # commit and must NOT start a second run with a second `promote` approval.
+    tags: ["v[0-9][0-9][0-9][0-9].[0-9][0-9].[0-9][0-9]-*"]
   pull_request:
   schedule:
     # Nightly full run (e2e) at 03:00 Asia/Jerusalem ≈ 00:00 UTC.
