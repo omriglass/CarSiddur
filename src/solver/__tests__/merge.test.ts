@@ -129,7 +129,10 @@ describe('findMergeHosts', () => {
     });
     const hosts = buildHostRides([keepHost, relayOutHost, returnOnlyHost], new Map(cars.map((c) => [c.id, c])));
 
-    const guest = guestNr({ tripShape: 'one_way_to', oneWayCarMode: 'passenger', destinationId: 'destA', departureMs: slotMs(32) });
+    // canDrive: false (REQUIREMENTS §13.88, rule made precise 2026-09-16): a
+    // stored oneWayCarMode no longer forces passenger for a driver — only the
+    // absence of an eligible driver on board does.
+    const guest = guestNr({ tripShape: 'one_way_to', canDrive: false, destinationId: 'destA', departureMs: slotMs(32) });
     const candidates = findMergeHosts({ guest, leg: 'out', hosts, ...commonParams(cars) });
     const hostIds = candidates.map((c) => c.hostRideId);
     expect(hostIds).toContain('host-ride');

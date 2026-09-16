@@ -49,7 +49,8 @@ Hebrew strings quoted below are copied verbatim from `src/i18n/he.member.ts` / `
 ### request-form — Request form & multi-day (series) requests
 
 **Paths**: `src/features/requests/components/RequestForm.tsx`,
-`TemplateSuggestions.tsx`(+test), `RequestsListPage.test.tsx`, `series.ts`(+test),
+`TemplateSuggestions.tsx`(+test), `RequestRow.tsx`(+test), `myRequestsRows.ts`(+test), `upcoming.ts`(+test), `series.ts`(+test),
+`src/pages/HomePage.tsx`, `MyHistoryPage.tsx`, `RequestsRedirect.tsx` (the one "my rides" screen, REQ §13.91),
 `templatePrefill.ts`(+test), `duplicate.ts`(+test), `mapper.ts`(+test), `duration.ts`(+test),
 `dayLabel.ts`(+test), `destinationLabel.ts`(+test), `seatCounts.ts`(+test), `schema.ts`(+test), `submitOutcome.ts`(+test), `api.ts`, `hooks.ts`,
 `queryKeys.ts` (all under `src/features/requests/`); `src/components/RideTypeChips.tsx`(+test); `src/i18n/he.member.ts`; migrations matching
@@ -112,7 +113,7 @@ Hebrew strings quoted below are copied verbatim from `src/i18n/he.member.ts` / `
 
 **Automated**:
 - Vitest: `npx vitest run src/features/waitlist src/features/requests/joinableRides.test.ts`
-- SQL: `waitlist_groups.sql`, `joinable_rides.sql`
+- SQL: `waitlist_groups.sql`, `joinable_rides.sql`, `withdraw_settles.sql`
 - Playwright: `npx playwright test --grep "@waitlist"`
 
 **QA script**:
@@ -203,7 +204,7 @@ grid (item 2) — `hideIdleTemporaryCars()` is unit-tested in `weekGridCars.test
 
 **Automated**:
 - Vitest: `npx vitest run src/features/sadran/board src/features/sadran/applySolve.test.ts src/features/sadran/unmetStatuses.test.ts src/features/sadran/deviations src/features/sadran/export`
-- SQL: `todo_board_semantics.sql`, `coordinator_planning.sql`, `solve_semantics.sql`, `car_chain_relocation.sql`
+- SQL: `todo_board_semantics.sql`, `coordinator_planning.sql`, `solve_semantics.sql`, `car_chain_healing.sql`
 - Playwright: `npx playwright test --grep "@board"`
 
 **QA script**:
@@ -234,7 +235,7 @@ matching `*proposal*`; `e2e/proposal.spec.ts`, `proposal-retry.spec.ts`, `board-
 
 **Automated**:
 - Vitest: `npx vitest run src/features/proposals src/features/sadran/proposals`
-- SQL: `proposal_day_boundary.sql`, `proposal_replacement.sql`
+- SQL: `proposal_day_boundary.sql`, `proposal_replacement.sql`, `withdraw_settles.sql`
 - Playwright: `npx playwright test --grep "@proposals"`
 
 **QA script**:
@@ -441,7 +442,7 @@ migrations matching `*polic*`, `*fairness*`, `*mileage*`; `e2e/auto-approve.spec
 ### auth — Auth / onboarding / roles
 
 **Paths**: `src/features/auth/**`; the shell and landing (`src/app/router.tsx`, `AppShell.tsx`,
-`landing.ts`(+test), `LandingRedirect.tsx`, `src/pages/LoginPage.tsx` — REQ §13.87); migrations matching `*identity*`,
+`landing.ts`(+test), `LandingRedirect.tsx`, `routes.ts`(+test), `src/features/member/routes.tsx`, `lazyPages.ts`, `src/pages/LoginPage.tsx` — REQ §13.87/§13.91); migrations matching `*identity*`,
 `*weekly_sadran_permissions*`; `e2e/auth.spec.ts`, `device-setup.spec.ts`,
 `weekly-permissions.spec.ts`, `smoke.spec.ts`.
 

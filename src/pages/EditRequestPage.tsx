@@ -1,5 +1,6 @@
 import { Link, useParams } from "react-router-dom";
 
+import { paths } from "@/app/routes";
 import { canEditRequest } from "@/features/requests/window";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/PageHeader";
@@ -27,7 +28,7 @@ export function EditRequestPage() {
       ) : !canEditRequest(requestQuery.data) ? (
         <div className="space-y-3 p-4">
           <p>{he.request.editWindowClosed}</p>
-          <Button asChild variant="outline"><Link to="/requests">{he.requestsList.title}</Link></Button>
+          <Button asChild variant="outline"><Link to={paths.my()}>{he.requestsList.title}</Link></Button>
         </div>
       ) : (
         <RequestForm

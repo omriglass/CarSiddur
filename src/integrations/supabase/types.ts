@@ -3867,6 +3867,7 @@ export type Database = {
         Args: { p_expected_version?: number; p_ride: Json }
         Returns: string
       }
+      eligible_leg_driver: { Args: { p_request_id: string }; Returns: string }
       enqueue_notification: {
         Args: {
           _data?: Json
@@ -4020,6 +4021,10 @@ export type Database = {
       open_week: {
         Args: { p_department_id: string; p_week_start: string }
         Returns: string
+      }
+      pair_one_way_legs: {
+        Args: { p_dept: string; p_week: string }
+        Returns: undefined
       }
       phone_of: { Args: { _profile: string }; Returns: string }
       place_series: {
@@ -4270,6 +4275,10 @@ export type Database = {
         }
         Returns: number
       }
+      settle_waitlist_group: {
+        Args: { p_actor: string; p_group_id: string; p_request_ids: string[] }
+        Returns: Json
+      }
       shares_ride_with: { Args: { _profile: string }; Returns: boolean }
       snooze_request_template: {
         Args: { p_template_id: string; p_week_start: string }
@@ -4287,6 +4296,18 @@ export type Database = {
       }
       try_auto_approve: { Args: { p_request_id: string }; Returns: Json }
       try_auto_approve_series: { Args: { p_series_id: string }; Returns: Json }
+      try_widen_one_way_leg: {
+        Args: {
+          p_car: string
+          p_dept: string
+          p_direction: string
+          p_home: string
+          p_ride_id: string
+          p_turnaround: string
+          p_week: string
+        }
+        Returns: string
+      }
       unassign_ride: {
         Args: { p_expected_version: number; p_ride_id: string }
         Returns: undefined

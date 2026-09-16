@@ -57,10 +57,11 @@ export interface Request {
   rideType: string;
   tripShape: TripShape;
   /**
-   * Optional and non-binding (REQUIREMENTS §13.88, owner 2026-09-15): the member
-   * no longer picks a mode on the form. When present (Sadran/legacy data), it is
-   * honoured unless `canDrive === false` forces `passenger`. When absent, the
-   * solver decides — see `canDrive`.
+   * Deprecated input (REQUIREMENTS §13.88, rule made precise 2026-09-16): the
+   * member never chose this on the form, and the stored value is now *ignored
+   * entirely*, for drivers and non-drivers alike — pairing decides the mode,
+   * not the member (§1.3.10a). The field stays in the type only so legacy/DB
+   * rows deserialize without error; nothing in `src/solver` reads it anymore.
    */
   oneWayCarMode?: 'relay' | 'passenger';
   /** epoch ms, 15-min aligned; absent for one_way_from */
@@ -80,16 +81,26 @@ export interface Request {
   preferredCarId?: string;
   /**
    * Whether this member may be given a driver role (REQUIREMENTS §13.88, owner
-   * 2026-09-15; `profiles.does_not_drive`, self-service/admin-editable). Default
-   * `true` ("everyone can drive unless they say otherwise"). `false`: never a
-   * `keep` round trip driven by this requester and never a `relay` leg driven by
-   * them, regardless of a stated `oneWayCarMode` — a round trip that would
-   * otherwise be `keep` is placed as a driverless assignment (`PLACED_NEEDS_DRIVER`)
-   * or merged as a passenger into a same-way ride (suggestion only, never
-   * auto-applied); a one-way leg resolves to `passenger`, falling back to
-   * `chauffeur` (§3.11 item 5) when no host exists.
+   * 2026-09-15/16; `profiles.does_not_drive`, self-service/admin-editable).
+   * Default `true` ("everyone can drive unless they say otherwise"). `false`:
+   * never a `keep` round trip driven by this requester and never a `relay` leg
+   * driven by them — a round trip that would otherwise be `keep` is placed as
+   * a driverless assignment (`PLACED_NEEDS_DRIVER`) or merged as a passenger
+   * into a same-way ride (suggestion only, never auto-applied); a one-way leg
+   * with no eligible driver on board (see `drivingCompanionIds`) resolves to
+   * `passenger`, falling back to `chauffeur` (§3.11 item 5) when no host exists.
    */
   canDrive?: boolean;
+  /**
+   * Ids of named companions on this request who can drive (REQUIREMENTS §13.88,
+   * owner 2026-09-16: "a driving companion becomes the driver automatically").
+   * Only matters when `canDrive === false`: the leg then still has "an eligible
+   * driver on board" (§1.3.10a) if this list is non-empty, and the solver names
+   * the lexicographically-first id as `Assignment.driverMemberId`/
+   * `AssignmentLeg`'s implied driver instead of the (non-driving) requester.
+   * Absent/empty = no driving companion. Irrelevant when `canDrive !== false`.
+   */
+  drivingCompanionIds?: string[];
   /**
    * Multi-day series (SOLVER §3.x): one DB request row per calendar day,
    * sharing `seriesId`; `seriesIndex` is 1-based over the whole series,
@@ -217,9 +228,15 @@ export interface Assignment {
   /** where the *car* is at ride start / end (= rides.origin_id / destination_id); both home unless a relay leg */
   originId: string;
   destinationId: string;
-  /** undefined for chauffeur rides */
+  /** undefined for a chauffeur ride (REQUIREMENTS §13.88: nobody claims the driver role yet) */
   driverRequestId?: string;
-  /** set by the Sadran for chauffeur rides; the solver leaves it undefined */
+  /**
+   * The member who actually drives: the driver request's own `memberId`
+   * unless that request's requester `canDrive === false`, in which case this
+   * is the lexicographically-first id of its `drivingCompanionIds` (REQUIREMENTS
+   * §13.88, owner 2026-09-16 — "a driving companion becomes the driver
+   * automatically"). Set by the Sadran, not the solver, for chauffeur rides.
+   */
   driverMemberId?: string;
   legs: AssignmentLeg[];
   servedRequestIds: string[];
@@ -227,12 +244,10 @@ export interface Assignment {
   luggageCount: number;
   /** signed, 0 if at preferred */
   shift: { departureMin: number; returnMin: number };
-  /**
-   * The other leg of a relay pair, OR (REQUIREMENTS §13.89) the counterpart of a
-   * solo relay leg and its auto-generated needs-driver relocation ride: a lone
-   * relay leg's ride points at its healing relocation, and the relocation ride
-   * (no driver, no served requests) points back at it.
-   */
+  /** The other leg of a relay pair — a solo (unpaired) relay leg is never placed as
+   *  `relay` anymore (REQUIREMENTS §13.88/§13.89, rule made precise 2026-09-16): it
+   *  becomes a standalone `chauffeur` placement instead (§3.6.1a), which has no
+   *  partner and leaves this undefined. */
   pairedRideId?: string;
   /** set for a leg of a multi-day series (SOLVER §3.x); all legs of one series share this id and one carId */
   seriesId?: string;

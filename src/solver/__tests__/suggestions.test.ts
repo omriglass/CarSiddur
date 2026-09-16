@@ -40,11 +40,14 @@ function chauffeurOf(suggestions: Suggestion[]) {
 // (defaultConfig, via baseInput/makeDestinations). Standalone chauffeur window width
 // = 2*2 + 1 = 5 slots.
 
-describe('chauffeur suggestion gating — isPassengerOnly (one_way_to, mode passenger)', () => {
+describe('chauffeur suggestion gating — isPassengerOnly (one_way_to, no eligible driver)', () => {
+  // canDrive: false (REQUIREMENTS §13.88, rule made precise 2026-09-16): a
+  // stored oneWayCarMode no longer forces passenger for a driver — only the
+  // absence of an eligible driver on board does.
   function passengerOutRequest(overrides: Parameters<typeof makeRequest>[0] = {}) {
     return {
       tripShape: 'one_way_to' as const,
-      oneWayCarMode: 'passenger' as const,
+      canDrive: false,
       departureMs: slotMs(40),
       destinationId: 'destA',
       passengers: passengers(1),
@@ -94,12 +97,12 @@ describe('chauffeur suggestion gating — isPassengerOnly (one_way_to, mode pass
   });
 });
 
-describe('chauffeur suggestion gating — isPassengerOnly (one_way_from, mode passenger)', () => {
+describe('chauffeur suggestion gating — isPassengerOnly (one_way_from, no eligible driver)', () => {
   it('a free, seat-fitting shared car -> chauffeur suggested for the return leg', () => {
     const car = makeCar('C1', { seatConfigs: [passengers(4)] });
     const { ctx, nr } = ctxFor([car], {
       tripShape: 'one_way_from',
-      oneWayCarMode: 'passenger',
+      canDrive: false,
       returnMs: slotMs(80),
       destinationId: 'destA',
       passengers: passengers(1),
@@ -113,11 +116,14 @@ describe('chauffeur suggestion gating — isPassengerOnly (one_way_from, mode pa
   });
 });
 
-describe('chauffeur suggestion gating — unpaired relay leg (one_way_from, mode relay)', () => {
+describe('chauffeur suggestion gating — unpaired relay leg (one_way_from, eligible driver, no partner)', () => {
+  // canDrive defaults to true, so this is a relay candidate (REQUIREMENTS
+  // §13.88) with no partner in this fixture — the same case `chauffeurUnpairedRelayLegs`
+  // (relay.ts) would normally heal; this test exercises the fallback
+  // suggestion ladder directly via `buildSuggestions`.
   function relayReturnRequest(overrides: Parameters<typeof makeRequest>[0] = {}) {
     return {
       tripShape: 'one_way_from' as const,
-      oneWayCarMode: 'relay' as const,
       returnMs: slotMs(80),
       destinationId: 'destA',
       passengers: passengers(1),

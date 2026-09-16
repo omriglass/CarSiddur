@@ -1,10 +1,11 @@
 import { useActiveDepartment } from "@/features/auth/useActiveDepartment";
-import { CalendarClock, CarFront, Inbox, MessageCircleQuestion } from "lucide-react";
-import { useState } from "react";
-import { Link } from "react-router-dom";
+import { CalendarClock, Inbox, MessageCircleQuestion, CarFront } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 
 import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
@@ -20,9 +21,31 @@ import { useCars, useRideTypes } from "@/features/fleet/hooks";
 import { AddRideFab } from "@/features/requests/components/AddRideFab";
 import { CarNowButton } from "@/features/requests/components/CarNowButton";
 import { NewRequestButton } from "@/features/requests/components/NewRequestButton";
+import { RequestRow } from "@/features/requests/components/RequestRow";
 import { TemplateSuggestions } from "@/features/requests/components/TemplateSuggestions";
-import { useMyRequests, useCancelRideMutation } from "@/features/requests/hooks";
+import {
+  useCancelRideMutation,
+  useClaimFreedSlotMutation,
+  useMyFreedSlotOffers,
+  useMyRequests,
+  useSaveRequestTemplateMutation,
+  useSetFreedSlotOptOutMutation,
+  useWithdrawAllRequestsMutation,
+  useWithdrawFreedSlotClaimMutation,
+  useWithdrawRequestMutation,
+} from "@/features/requests/hooks";
 import type { MyRequestRow } from "@/features/requests/api";
+import { canEditRequest } from "@/features/requests/window";
+import {
+  confirmDialogDescription,
+  confirmDialogLabel,
+  confirmDialogTitle,
+  groupByWeek,
+  requestStart,
+  toDisplayRows,
+  type ConfirmAction,
+} from "@/features/requests/myRequestsRows";
+import { isTodayOrLater } from "@/features/requests/upcoming";
 import { useBoardRides, useRideChanges, useWeeks, useMyUpcomingRides, useRequestRideChangeMutation } from "@/features/siddur/hooks";
 import { RideDetailSheet } from "@/features/siddur/components/RideDetailSheet";
 import { MemberRideEditor } from "@/features/siddur/components/MemberRideEditor";
@@ -36,6 +59,7 @@ import { OpenProposalButton } from "@/features/proposals/components/OpenProposal
 import { OpenWaitlistGroupButton } from "@/features/waitlist/components/OpenWaitlistGroupButton";
 import { he, t, tv } from "@/i18n/he";
 import { describeStatusReason } from "@/lib/statusReason";
+import { formatTime } from "@/lib/time";
 import { paths } from "@/app/routes";
 
 import { hasRideTodayOrTomorrow, resolveHomeWeek } from "./homeWeek";
@@ -47,11 +71,21 @@ function reasonLine(row: MyRequestRow): string | null {
   return describeStatusReason(row.statusReason);
 }
 
+/** The request/ride's own calendar day — same field priority as `requestStart` (an assigned
+ * ride's actual start, falling back to the requested depart/return time). */
+function rowDay(row: MyRequestRow): string | null {
+  return row.ride?.startsAt ?? row.departAt ?? row.returnAt;
+}
+
 /**
- * `/my` — Home, "השבוע שלי" (UX_FLOWS.md §3.3). Above the fold, spanning all
- * weeks: next action (a proposal awaiting my answer), my upcoming rides and
- * my unserved requests with reason. Below: the week chosen by
- * `profiles.home_week_preference` and that week's requests.
+ * `/my` — Home, "השבוע שלי" (UX_FLOWS.md §3.3) — the one member request/ride list (REQ §13
+ * item 91, owner 2026-09-16, E3). Above the fold, spanning all weeks: next action (a proposal
+ * awaiting my answer), my upcoming rides and my unserved requests with reason. Below: the week
+ * chosen by `profiles.home_week_preference` and that week's requests, with the row actions
+ * (edit / withdraw / cancel ride / make-repeating, each behind a confirmation, and edit / freed-
+ * slot claim actions) that used to live on the separate `/requests` list. Only what lies ahead
+ * shows here — a request/ride whose day has already passed is history, reachable only from the
+ * "היסטוריה" link at the bottom (`/my/history`).
  */
 export function HomePage() {
   const profileQuery = useProfile();
@@ -60,6 +94,7 @@ export function HomePage() {
   const upcomingRidesQuery = useMyUpcomingRides();
   const rideTypesQuery = useRideTypes();
   const myCarsQuery = useMyResponsibleCarsQuery();
+  const freedOffersQuery = useMyFreedSlotOffers();
 
   const defaultDepartmentId =
     active.departmentId;
@@ -74,12 +109,28 @@ export function HomePage() {
   const now = new Date();
   const [selectedMyRide, setSelectedMyRide] = useState<BoardRide | null>(null);
   const [collisionMove, setCollisionMove] = useState<RideMove | null>(null);
+  const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
   const cancelRideMutation = useCancelRideMutation();
   const editMutation = useEditRideMutation();
   const changeMutation = useRequestRideChangeMutation();
+  const withdrawMutation = useWithdrawRequestMutation();
+  const withdrawAllMutation = useWithdrawAllRequestsMutation();
+  const claimMutation = useClaimFreedSlotMutation();
+  const withdrawClaimMutation = useWithdrawFreedSlotClaimMutation();
+  const optOutMutation = useSetFreedSlotOptOutMutation();
+  const saveTemplateMutation = useSaveRequestTemplateMutation();
   const selectedRideWeekStart = selectedMyRide?.week_start ?? undefined;
   const selectedRideWeekQuery = useBoardRides(defaultDepartmentId, selectedRideWeekStart);
   const selectedRideChangesQuery = useRideChanges(defaultDepartmentId, selectedRideWeekStart);
+
+  // `?focus=<request_id>` (notification deep link, `notification_default_url`'s `/my?focus=<id>`
+  // case, formerly `/requests?focus=`): scroll the matching card into view and ring-highlight it.
+  const [searchParams] = useSearchParams();
+  const focusedId = searchParams.get("focus");
+  const highlightedRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (focusedId) highlightedRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [focusedId]);
 
   const isLoading = active.isLoading || profileQuery.isLoading || requestsQuery.isLoading || upcomingRidesQuery.isLoading || weeksQuery.isLoading;
 
@@ -93,13 +144,14 @@ export function HomePage() {
     );
   }
 
-  const requests = [...(requestsQuery.data ?? [])].sort((a, b) => {
-    const start = (row: MyRequestRow) => {
-      const instant = row.ride?.startsAt ?? row.departAt ?? row.returnAt;
-      return instant ? Date.parse(instant) : Infinity;
-    };
-    return start(a) - start(b) || a.id.localeCompare(b.id);
-  });
+  // Only what lies ahead (REQ §13 item 91): a request/ride whose day has already passed never
+  // shows on `/my`, in any of the sections below — it belongs to `/my/history` instead.
+  const requests = (requestsQuery.data ?? [])
+    .filter((row) => {
+      const day = rowDay(row);
+      return !day || isTodayOrLater(day, now);
+    })
+    .sort((a, b) => requestStart(a) - requestStart(b) || a.id.localeCompare(b.id));
 
   const upcomingRides = upcomingRidesQuery.data ?? [];
 
@@ -117,7 +169,14 @@ export function HomePage() {
       now,
     ),
   );
-  const weekRequests = homeWeek ? requests.filter((r) => r.weekStart === homeWeek.weekStart) : [];
+  // REQ §13.91: the ONE "my rides" list — every upcoming request, grouped by week (today
+  // onward, already filtered above). `homeWeek` still decides which week the empty-state copy
+  // and the new-request entry point talk about.
+  const upcomingWeeks = groupByWeek(toDisplayRows(requests)).sort((a, b) => a.weekStart.localeCompare(b.weekStart));
+  const phaseOf = (weekStart: string) => weeks.find((w) => w.weekStart === weekStart)?.phase;
+  const openOffers = (freedOffersQuery.data ?? []).filter(
+    (o) => o.offerStatus === "open" && (o.claimStatus === "offered" || o.claimStatus === "claimed"),
+  );
   // Fetch the selected ride's complete week before editing. The Home card is
   // intentionally small, but the same conflict and pending-change safeguards
   // as the Siddur must still apply.
@@ -158,6 +217,26 @@ export function HomePage() {
       setSelectedMyRide(null);
       toast.success(he.rideEditing.saved);
     } catch { /* The mutation presents the database validation error. */ }
+  }
+
+  async function runConfirmAction() {
+    if (!confirmAction) return;
+    try {
+      if (confirmAction.kind === "withdrawAll") {
+        await withdrawAllMutation.mutateAsync(confirmAction);
+      } else if (confirmAction.kind === "withdraw") {
+        await withdrawMutation.mutateAsync({ requestId: confirmAction.row.id, expectedVersion: confirmAction.row.version });
+      } else if (confirmAction.kind === "withdrawFreedClaim") {
+        await withdrawClaimMutation.mutateAsync({ offerId: confirmAction.offerId, requestId: confirmAction.requestId });
+      } else if (confirmAction.row.ride) {
+        await cancelRideMutation.mutateAsync({
+          rideId: confirmAction.row.ride.id,
+          reason: "CANCELLED_BY_MEMBER",
+          expectedVersion: confirmAction.row.ride.version,
+        });
+      }
+      setConfirmAction(null);
+    } catch { /* Mutation shows a localized error; keep confirmation open for retry. */ }
   }
 
   return (
@@ -266,41 +345,97 @@ export function HomePage() {
         )}
       </section>
 
-      {homeWeek ? (
-        <section className="space-y-3 border-t pt-4">
-          <div className="flex items-center justify-between">
-            <span className="font-medium" dir="ltr">
-              {formatWeekRangeLabel(homeWeek.weekStart)}
-            </span>
-            <span className="text-sm text-muted-foreground">{he.phase[homeWeek.phase]}</span>
-          </div>
-          <p className="text-sm text-muted-foreground">{t("home.weekRequests")}</p>
-          {weekRequests.length === 0 ? (
-            <EmptyState
-              icon={Inbox}
-              message={
-                homeWeek.phase === "published" || homeWeek.phase === "live"
-                  ? t("home.emptyRequestsPublished")
-                  : tv("home.emptyRequestsOpen", {
-                      weekLabel: formatWeekRangeLabel(homeWeek.weekStart),
-                    })
-              }
-              action={active.canSubmit && <NewRequestButton variant="inline" />}
-            />
-          ) : (
-            <div className="space-y-2">
-              {weekRequests.map((row) => (
-                <Card key={row.id} className="bg-gradient-card shadow-card">
-                  <CardContent className="flex items-center justify-between gap-2 p-3 text-sm">
-                    <TripSummary destination={row.destination} purpose={row.rideTypeName} departAt={row.ride?.startsAt ?? row.departAt} returnAt={row.ride?.endsAt ?? row.returnAt} />
-                    <StatusBadge kind="request" status={row.status} />
-                  </CardContent>
-                </Card>
-              ))}
+      {openOffers.length > 0 ? (
+        <section className="space-y-2">
+          <h2 className="text-sm font-semibold text-muted-foreground">{he.freedSlot.title}</h2>
+          {openOffers.map((offer) => (
+            <div key={offer.offerId} className="space-y-2 rounded-md border border-maintenance/40 bg-maintenance/10 p-3 text-sm">
+              <p>
+                {tv("requestsList.freedSlotOffer", {
+                  car: offer.carName,
+                  day: "",
+                  depart: formatTime(new Date(offer.startsAt)),
+                  return: formatTime(new Date(offer.endsAt)),
+                })}
+              </p>
+              {offer.claimStatus === "offered" ? (
+                <Button size="sm" onClick={() => claimMutation.mutate({ offerId: offer.offerId, requestId: offer.requestId })}>
+                  {t("action.stillWant")}
+                </Button>
+              ) : (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setConfirmAction({ kind: "withdrawFreedClaim", offerId: offer.offerId, requestId: offer.requestId })}
+                >
+                  {he.requestsList.withdrawClaim}
+                </Button>
+              )}
             </div>
-          )}
+          ))}
         </section>
       ) : null}
+
+      <section className="space-y-3 border-t pt-4">
+        <p className="text-sm text-muted-foreground">{t("home.weekRequests")}</p>
+        {upcomingWeeks.length === 0 ? (
+          <EmptyState
+            icon={Inbox}
+            message={
+              !homeWeek || homeWeek.phase === "published" || homeWeek.phase === "live"
+                ? t("home.emptyRequestsPublished")
+                : tv("home.emptyRequestsOpen", {
+                    weekLabel: formatWeekRangeLabel(homeWeek.weekStart),
+                  })
+            }
+            action={active.canSubmit && <NewRequestButton variant="inline" />}
+          />
+        ) : (
+          upcomingWeeks.map((group) => {
+            const phase = phaseOf(group.weekStart);
+            return (
+              <div key={`${group.weekStart}:${group.departmentId}`} className="space-y-2" data-week-start={group.weekStart}>
+                <div className="flex items-center justify-between">
+                  <span className="font-medium" dir="ltr">
+                    {formatWeekRangeLabel(group.weekStart)}
+                  </span>
+                  {phase ? <span className="text-sm text-muted-foreground">{he.phase[phase]}</span> : null}
+                </div>
+                {group.rows.some((row) => canEditRequest(row)) ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setConfirmAction({ kind: "withdrawAll", departmentId: group.departmentId, weekStart: group.weekStart })}
+                  >
+                    {he.requestsList.withdrawAll}
+                  </Button>
+                ) : null}
+                {group.rows.map((row) => (
+                  <RequestRow
+                    key={row.id}
+                    row={row}
+                    highlighted={row.id === focusedId}
+                    rowRef={row.id === focusedId ? highlightedRef : undefined}
+                    onWithdraw={(target) => setConfirmAction({ kind: "withdraw", row: target })}
+                    onCancelRide={(target) => setConfirmAction({ kind: "cancel", row: target })}
+                    onMakeRepeating={(target) =>
+                      saveTemplateMutation.mutate(target.id, { onSuccess: () => toast.success(he.request.repeatSaved) })
+                    }
+                    makeRepeatingPending={saveTemplateMutation.isPending}
+                    onOptOutChange={(target, optOut) => optOutMutation.mutate({ requestId: target.id, optOut })}
+                  />
+                ))}
+              </div>
+            );
+          })
+        )}
+      </section>
+
+      <div className="border-t pt-4 text-center">
+        <Link to={paths.myHistory()} className="text-sm font-medium text-primary underline">
+          {he.myHistory.link}
+        </Link>
+      </div>
 
       {active.canSubmit ? (
         <AddRideFab />
@@ -343,6 +478,16 @@ export function HomePage() {
             toast.success(he.rideEditing.requested);
           } });
         }}
+      />
+      <ConfirmDialog
+        open={!!confirmAction}
+        onOpenChange={(open) => !open && setConfirmAction(null)}
+        title={confirmDialogTitle(confirmAction)}
+        description={confirmDialogDescription(confirmAction)}
+        confirmLabel={confirmDialogLabel(confirmAction)}
+        destructive
+        loading={withdrawMutation.isPending || cancelRideMutation.isPending || withdrawAllMutation.isPending || withdrawClaimMutation.isPending}
+        onConfirm={() => void runConfirmAction()}
       />
     </div>
   );

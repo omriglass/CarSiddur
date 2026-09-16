@@ -114,13 +114,16 @@ export interface BuildSolverInputParams {
   >;
   /**
    * Plain `requests` rows, optionally carrying `requester_does_not_drive` — REQ §88 (owner
-   * 2026-09-15): `Request.canDrive = !requester_does_not_drive`. Both callers that feed the
-   * real solver/board preview embed it (`sadran/api.ts`'s `fetchWeekRequests` and
-   * `fetchWeekRequestsWithNames`); callers that don't (e.g. the admin policy preview's own
-   * plain `requests` fetch) simply leave every request driving, same as before this field
-   * existed.
+   * 2026-09-15): `Request.canDrive = !requester_does_not_drive` — and `driving_companion_ids`,
+   * the ids of this request's named companions (`request_companions`) who are eligible
+   * drivers, i.e. `!profile.does_not_drive` (REQ §13.88, owner 2026-09-16, E1: "a driving
+   * companion becomes the driver automatically" — mapped straight onto the solver's
+   * `Request.drivingCompanionIds`). Both callers that feed the real solver/board preview embed
+   * both (`sadran/api.ts`'s `fetchWeekRequests` and `fetchWeekRequestsWithNames`); callers that
+   * don't (e.g. the admin policy preview's own plain `requests` fetch) simply leave every
+   * request driving with no driving companions, same as before either field existed.
    */
-  requests: (RequestRow & { requester_does_not_drive?: boolean })[];
+  requests: (RequestRow & { requester_does_not_drive?: boolean; driving_companion_ids?: string[] })[];
   /** `ride_type_id -> code` (policy `rideType` rule params are keyed by `ride_types.code`, SOLVER.md §4.3). */
   rideTypeCodesById: Record<string, string>;
   cars: CarRow[];
@@ -225,6 +228,7 @@ export function buildSolverInput(params: BuildSolverInputParams): SolverInput {
         // profile; `undefined` here (field not selected by this particular caller) also means
         // "can drive" — see `canDrive?: boolean`'s own doc comment in `src/solver/types.ts`.
         canDrive: r.requester_does_not_drive ? false : undefined,
+        drivingCompanionIds: r.driving_companion_ids?.length ? r.driving_companion_ids : undefined,
         departureMs: epochMs(r.depart_at),
         returnMs: epochMs(r.return_at),
         flexDeparture: flexOf(r.flex_depart_early, r.flex_depart_late),

@@ -6,16 +6,25 @@
 // bestPlacementWithinFlex. Car choice is a 6-part deterministic key including a soft vehicle preference.
 //
 // Simplification (documented in docs/SOLVER.md §9): unpaired one-way relay
-// requests and one-way passenger requests never enter this loop (a lone
-// relay leg cannot be placed — the car would end the day away, §1.3.9; a
+// requests and one-way passenger requests never enter this loop (an unpaired
+// relay candidate is healed as a standalone chauffeur placement by
+// `relay.ts`'s `chauffeurUnpairedRelayLegs` instead, run after this pass; a
 // passenger leg has no car of its own) — they go straight to the unmet pool
-// for suggestion generation.
+// for suggestion generation until then.
 
 import { carPreferenceRank } from './carPreference';
 import { bestPlacementWithinFlex } from './flexibility';
 import type { RelayPair } from './relay';
 import { reason } from './reasons';
-import { dayBoundsForSlot, formatSlotTime, withinRequestDay, type NormalizedRequest, type SeriesLeg, type SeriesUnit } from './slots';
+import {
+  dayBoundsForSlot,
+  eligibleDriverMemberId,
+  formatSlotTime,
+  withinRequestDay,
+  type NormalizedRequest,
+  type SeriesLeg,
+  type SeriesUnit,
+} from './slots';
 import { fits, luggageFits, slack } from './seatFit';
 import { CarTimeline } from './timeline';
 import type { Assignment, Car, SolverInput, Window } from './types';
@@ -619,12 +628,17 @@ export function toAssignments(placed: Placed[], input: SolverInput, carsById: Ma
       const car = carsById.get(carId);
       const dayOut = dayBoundsForSlot(input.week.days, pair.outWindow.start);
       const dayRet = dayBoundsForSlot(input.week.days, pair.returnWindow.end);
+      // REQUIREMENTS §13.88 (owner 2026-09-16): the driver of each relay leg is
+      // the requester when they can drive, else a driving companion (never the
+      // requester themself — their own leg then reads `role: 'passenger'`).
+      const outDriverMemberId = eligibleDriverMemberId(outNr.request);
+      const retDriverMemberId = eligibleDriverMemberId(retNr.request);
       const text = reason('PLACED_RELAY_PAIR', {
         car: car?.name ?? carId,
-        member: outNr.request.memberId,
+        member: outDriverMemberId ?? outNr.request.memberId,
         dest: pair.destinationId,
         dep: formatSlotTime(pair.outWindow.start, dayOut),
-        partner: retNr.request.memberId,
+        partner: retDriverMemberId ?? retNr.request.memberId,
         ret: formatSlotTime(pair.returnWindow.end, dayRet),
       });
       const outShift = { departureMin: (pair.outWindow.start - outNr.window.start) * 15, returnMin: 0 };
@@ -638,7 +652,7 @@ export function toAssignments(placed: Placed[], input: SolverInput, carsById: Ma
         originId: input.homeLocationId,
         destinationId: pair.destinationId,
         driverRequestId: outNr.id,
-        driverMemberId: outNr.request.memberId,
+        driverMemberId: outDriverMemberId,
         legs: [
           {
             requestId: outNr.id,
@@ -646,7 +660,7 @@ export function toAssignments(placed: Placed[], input: SolverInput, carsById: Ma
             carMode: 'relay',
             originId: input.homeLocationId,
             destinationId: pair.destinationId,
-            role: 'driver',
+            role: outDriverMemberId === outNr.request.memberId ? 'driver' : 'passenger',
           },
         ],
         servedRequestIds: [outNr.id],
@@ -665,7 +679,7 @@ export function toAssignments(placed: Placed[], input: SolverInput, carsById: Ma
         originId: pair.destinationId,
         destinationId: input.homeLocationId,
         driverRequestId: retNr.id,
-        driverMemberId: retNr.request.memberId,
+        driverMemberId: retDriverMemberId,
         legs: [
           {
             requestId: retNr.id,
@@ -673,7 +687,7 @@ export function toAssignments(placed: Placed[], input: SolverInput, carsById: Ma
             carMode: 'relay',
             originId: pair.destinationId,
             destinationId: input.homeLocationId,
-            role: 'driver',
+            role: retDriverMemberId === retNr.request.memberId ? 'driver' : 'passenger',
           },
         ],
         servedRequestIds: [retNr.id],

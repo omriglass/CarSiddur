@@ -131,18 +131,43 @@ function buildKeepLeg(home: string, D: number, R: number): NormalizedLeg {
 }
 
 /**
- * Effective one-way car mode (REQUIREMENTS §13.88, owner 2026-09-15): the member
- * no longer chooses a mode on the request form — only "I need to get to X" /
- * "back from X". A non-driver (`canDrive === false`) is never given a driver
- * role, so `relay` is downgraded to `passenger` regardless of what is stored
- * (Sadran/legacy data may still set `oneWayCarMode` explicitly, honoured only
- * for a member who can drive). When absent, the solver decides: `relay` for a
- * member who can drive, `passenger` (a seat in someone else's ride, falling
- * back to `chauffeur`, §3.11 item 5) for one who cannot.
+ * Whether this request has an eligible driver on board (REQUIREMENTS §13.88,
+ * rule made precise 2026-09-16): the requester themself when they can drive,
+ * or a named companion who can drive when the requester cannot. This is a
+ * per-request fact, independent of whether the leg ends up paired.
+ */
+export function hasEligibleDriver(request: Request): boolean {
+  return request.canDrive !== false || (request.drivingCompanionIds?.length ?? 0) > 0;
+}
+
+/**
+ * The member who would actually drive, if this request supplies a leg's
+ * driver: the requester when they can drive, else the lexicographically-first
+ * driving companion (deterministic, REQUIREMENTS §13.88 owner 2026-09-16 —
+ * "a driving companion becomes the driver automatically"). `undefined` when
+ * `hasEligibleDriver(request)` is false.
+ */
+export function eligibleDriverMemberId(request: Request): string | undefined {
+  if (request.canDrive !== false) return request.memberId;
+  const companions = request.drivingCompanionIds;
+  if (!companions || companions.length === 0) return undefined;
+  return [...companions].sort()[0];
+}
+
+/**
+ * A one-way leg's *candidate* mode (REQUIREMENTS §13.88, rule made precise
+ * 2026-09-16): the member never chooses this on the form, and the stored
+ * `oneWayCarMode` is now ignored entirely — pairing decides the mode, not the
+ * member. A leg with an eligible driver on board (see `hasEligibleDriver`) is
+ * a **relay candidate**: `relay.ts`'s pairing either confirms it as a real
+ * `relay` leg (a matching leg at the same destination) or it is placed as a
+ * standalone `chauffeur` ride when no match exists (§3.6.1a) — never left
+ * waiting at the destination. A leg with no eligible driver on board is
+ * `passenger` unconditionally (a seat in someone else's ride, falling back to
+ * `chauffeur`, §3.11 item 5, when no host exists).
  */
 export function resolveOneWayMode(request: Request): 'relay' | 'passenger' {
-  if (request.canDrive === false) return 'passenger';
-  return request.oneWayCarMode ?? 'relay';
+  return hasEligibleDriver(request) ? 'relay' : 'passenger';
 }
 
 /** The independent out-leg of a round trip (used by relay pairing / splitLegs when needsCarAtDestination = false). */
@@ -429,9 +454,10 @@ export function normalize(input: SolverInput): NormalizeResult {
     }
 
     // One-way shapes: durationFixed = true (single shift dimension). The member
-    // no longer states a mode on the form (REQUIREMENTS §13.88) — an absent
-    // `oneWayCarMode` is the normal case, resolved by `resolveOneWayMode`, not a
-    // warning-worthy data problem.
+    // never states a mode on the form (REQUIREMENTS §13.88) and any stored
+    // `oneWayCarMode` is ignored — `resolveOneWayMode` returns the *candidate*
+    // mode (relay-eligible vs. definite passenger); pairing (`relay.ts`) decides
+    // whether a relay candidate ends up a real relay leg or a chauffeur ride.
     const mode = resolveOneWayMode(request);
 
     if (request.tripShape === 'one_way_to') {

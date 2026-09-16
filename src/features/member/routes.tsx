@@ -2,7 +2,8 @@ import { Suspense } from "react";
 import type { RouteObject } from "react-router-dom";
 
 import { GuardLoading } from "@/features/auth/guards";
-import { CarPage, EditRequestPage, RequestsListPage, SiddurArchivePage, SiddurPage, StatsPage } from "./lazyPages";
+import { RequestsRedirect } from "@/pages/RequestsRedirect";
+import { CarPage, EditRequestPage, MyHistoryPage, SiddurArchivePage, SiddurPage, StatsPage } from "./lazyPages";
 
 
 /**
@@ -12,10 +13,15 @@ import { CarPage, EditRequestPage, RequestsListPage, SiddurArchivePage, SiddurPa
  * `...memberRoutes` line inside the `AppShell` route's `children` array so a
  * concurrent admin-screens stage editing the same file only collides with
  * one line, not a restructured route tree (stage 2a coordination note).
+ *
+ * `/requests` used to render the standalone requests list (`RequestsListPage`); that screen
+ * was folded into `/my` (Home) as its one "my rides" list (REQ §13 item 91, owner 2026-09-16,
+ * E3) — the route now just redirects there, preserving `?focus=`.
  */
 export const memberRoutes: RouteObject[] = [
-  { path: "/requests", element: <Suspense fallback={<GuardLoading />}><RequestsListPage /></Suspense> },
+  { path: "/requests", element: <RequestsRedirect /> },
   { path: "/requests/:id/edit", element: <Suspense fallback={<GuardLoading />}><EditRequestPage /></Suspense> },
+  { path: "/my/history", element: <Suspense fallback={<GuardLoading />}><MyHistoryPage /></Suspense> },
   { path: "/siddur/:dept", element: <Suspense fallback={<GuardLoading />}><SiddurPage /></Suspense> },
   { path: "/siddur/:dept/archive", element: <Suspense fallback={<GuardLoading />}><SiddurArchivePage /></Suspense> },
   { path: "/siddur/:dept/:week", element: <Suspense fallback={<GuardLoading />}><SiddurPage /></Suspense> },

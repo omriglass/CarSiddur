@@ -15,8 +15,8 @@ const TEMPLATES: Record<string, string> = {
   PLACED_SERIES: 'שובץ/ה כחלק מבקשה רב-יומית ל{car} ({index}/{count})',
   CAR_BALANCED_MILEAGE: 'נבחר {car} לאיזון קילומטראז׳ בין הרכבים',
   PLACED_NEEDS_DRIVER: 'שובץ ל{car} ללא נהג/ת קבוע/ה; דרוש/ה מתנדב/ת או אורח/ת שיסיע/תסיע',
-  PLACED_RELAY_SOLO:
-    'שובץ ל{car}: {member} נוסע/ת ל{dest} בנסיעת כיוון אחד ({dep}–{ret}); דרוש/ה נהג/ת מתנדב/ת להשלמת הכיוון השני',
+  PLACED_CHAUFFEUR_NO_RETURNER:
+    'שובץ ל{car} כהסעה ל{dest} ({dep}–{ret}): לא נמצא/ה מי שמחזיר/ה את הרכב; דרוש/ה נהג/ת מתנדב/ת',
 
   // Unmet reasons
   UNMET_NO_CAR: 'אין רכב פנוי בחלון המבוקש; חוסמים: {blockers}',

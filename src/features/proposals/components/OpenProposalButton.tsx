@@ -19,7 +19,7 @@ interface OpenProposalButtonProps {
 
 /**
  * Opens a member's own pending proposal at `/p/:token` (Home's next-action
- * card, `RequestsListPage`'s `proposed`-status rows — UX_FLOWS.md §3.3). The
+ * card, `RequestRow`'s `proposed`-status rows on `/my` — UX_FLOWS.md §3.3). The
  * plaintext token lives only on the member's own `proposal_received`
  * notification row (`data.url`, computed once by SQL's
  * `notification_default_url()`, DATA_MODEL §3.11), so it's resolved on click

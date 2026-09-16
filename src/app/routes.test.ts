@@ -23,6 +23,8 @@ const ROUTE_PATTERNS = [
   "/siddur/:dept",
   "/siddur/:dept/:week",
   "/siddur/:dept/archive",
+  "/my",
+  "/my/history",
   "/requests",
   "/requests/new",
   "/requests/:id/edit",
@@ -89,6 +91,22 @@ describe("paths.siddurArchive", () => {
   it("matches /siddur/:dept/archive", () => {
     expectRoutable(paths.siddurArchive("dept-1"));
     expect(paths.siddurArchive("dept-1")).toBe("/siddur/dept-1/archive");
+  });
+});
+
+describe("paths.my", () => {
+  it("matches /my with and without ?focus=", () => {
+    expectRoutable(paths.my());
+    expectRoutable(paths.my("req-1"));
+    expect(paths.my("req-1")).toBe("/my?focus=req-1");
+    expect(paths.my()).toBe("/my");
+  });
+});
+
+describe("paths.myHistory", () => {
+  it("matches /my/history", () => {
+    expectRoutable(paths.myHistory());
+    expect(paths.myHistory()).toBe("/my/history");
   });
 });
 

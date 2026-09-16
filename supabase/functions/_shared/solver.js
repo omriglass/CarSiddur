@@ -96,9 +96,17 @@ function destinationOf(input, id) {
 function buildKeepLeg(home, D, R) {
   return { side: "both", preferredMode: "keep", originId: home, destinationId: home, window: { start: D, end: R } };
 }
+function hasEligibleDriver(request) {
+  return request.canDrive !== false || (request.drivingCompanionIds?.length ?? 0) > 0;
+}
+function eligibleDriverMemberId(request) {
+  if (request.canDrive !== false) return request.memberId;
+  const companions = request.drivingCompanionIds;
+  if (!companions || companions.length === 0) return void 0;
+  return [...companions].sort()[0];
+}
 function resolveOneWayMode(request) {
-  if (request.canDrive === false) return "passenger";
-  return request.oneWayCarMode ?? "relay";
+  return hasEligibleDriver(request) ? "relay" : "passenger";
 }
 function roundTripOutLeg(nr, home) {
   const D = nr.window.start;
@@ -448,7 +456,7 @@ var TEMPLATES = {
   PLACED_SERIES: "\u05E9\u05D5\u05D1\u05E5/\u05D4 \u05DB\u05D7\u05DC\u05E7 \u05DE\u05D1\u05E7\u05E9\u05D4 \u05E8\u05D1-\u05D9\u05D5\u05DE\u05D9\u05EA \u05DC{car} ({index}/{count})",
   CAR_BALANCED_MILEAGE: "\u05E0\u05D1\u05D7\u05E8 {car} \u05DC\u05D0\u05D9\u05D6\u05D5\u05DF \u05E7\u05D9\u05DC\u05D5\u05DE\u05D8\u05E8\u05D0\u05D6\u05F3 \u05D1\u05D9\u05DF \u05D4\u05E8\u05DB\u05D1\u05D9\u05DD",
   PLACED_NEEDS_DRIVER: "\u05E9\u05D5\u05D1\u05E5 \u05DC{car} \u05DC\u05DC\u05D0 \u05E0\u05D4\u05D2/\u05EA \u05E7\u05D1\u05D5\u05E2/\u05D4; \u05D3\u05E8\u05D5\u05E9/\u05D4 \u05DE\u05EA\u05E0\u05D3\u05D1/\u05EA \u05D0\u05D5 \u05D0\u05D5\u05E8\u05D7/\u05EA \u05E9\u05D9\u05E1\u05D9\u05E2/\u05EA\u05E1\u05D9\u05E2",
-  PLACED_RELAY_SOLO: "\u05E9\u05D5\u05D1\u05E5 \u05DC{car}: {member} \u05E0\u05D5\u05E1\u05E2/\u05EA \u05DC{dest} \u05D1\u05E0\u05E1\u05D9\u05E2\u05EA \u05DB\u05D9\u05D5\u05D5\u05DF \u05D0\u05D7\u05D3 ({dep}\u2013{ret}); \u05D3\u05E8\u05D5\u05E9/\u05D4 \u05E0\u05D4\u05D2/\u05EA \u05DE\u05EA\u05E0\u05D3\u05D1/\u05EA \u05DC\u05D4\u05E9\u05DC\u05DE\u05EA \u05D4\u05DB\u05D9\u05D5\u05D5\u05DF \u05D4\u05E9\u05E0\u05D9",
+  PLACED_CHAUFFEUR_NO_RETURNER: "\u05E9\u05D5\u05D1\u05E5 \u05DC{car} \u05DB\u05D4\u05E1\u05E2\u05D4 \u05DC{dest} ({dep}\u2013{ret}): \u05DC\u05D0 \u05E0\u05DE\u05E6\u05D0/\u05D4 \u05DE\u05D9 \u05E9\u05DE\u05D7\u05D6\u05D9\u05E8/\u05D4 \u05D0\u05EA \u05D4\u05E8\u05DB\u05D1; \u05D3\u05E8\u05D5\u05E9/\u05D4 \u05E0\u05D4\u05D2/\u05EA \u05DE\u05EA\u05E0\u05D3\u05D1/\u05EA",
   // Unmet reasons
   UNMET_NO_CAR: "\u05D0\u05D9\u05DF \u05E8\u05DB\u05D1 \u05E4\u05E0\u05D5\u05D9 \u05D1\u05D7\u05DC\u05D5\u05DF \u05D4\u05DE\u05D1\u05D5\u05E7\u05E9; \u05D7\u05D5\u05E1\u05DE\u05D9\u05DD: {blockers}",
   UNMET_NO_RELAY_PARTNER: "\u05D0\u05D9\u05DF \u05DE\u05D9 \u05E9\u05D9\u05D7\u05D6\u05D9\u05E8/\u05D9\u05D1\u05D9\u05D0 \u05D0\u05EA \u05D4\u05E8\u05DB\u05D1 \u05DE{dest} \u05D1\u05D0\u05D5\u05EA\u05D5 \u05D9\u05D5\u05DD; \u05D4\u05E8\u05DB\u05D1 \u05D7\u05D9\u05D9\u05D1 \u05DC\u05D7\u05D6\u05D5\u05E8 \u05D4\u05D1\u05D9\u05EA\u05D4 \u05E2\u05D3 {dayEnd}",
@@ -892,12 +900,14 @@ function toAssignments(placed, input, carsById) {
       const car = carsById.get(carId);
       const dayOut = dayBoundsForSlot(input.week.days, pair.outWindow.start);
       const dayRet = dayBoundsForSlot(input.week.days, pair.returnWindow.end);
+      const outDriverMemberId = eligibleDriverMemberId(outNr.request);
+      const retDriverMemberId = eligibleDriverMemberId(retNr.request);
       const text = reason("PLACED_RELAY_PAIR", {
         car: car?.name ?? carId,
-        member: outNr.request.memberId,
+        member: outDriverMemberId ?? outNr.request.memberId,
         dest: pair.destinationId,
         dep: formatSlotTime(pair.outWindow.start, dayOut),
-        partner: retNr.request.memberId,
+        partner: retDriverMemberId ?? retNr.request.memberId,
         ret: formatSlotTime(pair.returnWindow.end, dayRet)
       });
       const outShift = { departureMin: (pair.outWindow.start - outNr.window.start) * 15, returnMin: 0 };
@@ -911,7 +921,7 @@ function toAssignments(placed, input, carsById) {
         originId: input.homeLocationId,
         destinationId: pair.destinationId,
         driverRequestId: outNr.id,
-        driverMemberId: outNr.request.memberId,
+        driverMemberId: outDriverMemberId,
         legs: [
           {
             requestId: outNr.id,
@@ -919,7 +929,7 @@ function toAssignments(placed, input, carsById) {
             carMode: "relay",
             originId: input.homeLocationId,
             destinationId: pair.destinationId,
-            role: "driver"
+            role: outDriverMemberId === outNr.request.memberId ? "driver" : "passenger"
           }
         ],
         servedRequestIds: [outNr.id],
@@ -938,7 +948,7 @@ function toAssignments(placed, input, carsById) {
         originId: pair.destinationId,
         destinationId: input.homeLocationId,
         driverRequestId: retNr.id,
-        driverMemberId: retNr.request.memberId,
+        driverMemberId: retDriverMemberId,
         legs: [
           {
             requestId: retNr.id,
@@ -946,7 +956,7 @@ function toAssignments(placed, input, carsById) {
             carMode: "relay",
             originId: pair.destinationId,
             destinationId: input.homeLocationId,
-            role: "driver"
+            role: retDriverMemberId === retNr.request.memberId ? "driver" : "passenger"
           }
         ],
         servedRequestIds: [retNr.id],
@@ -2066,10 +2076,14 @@ function pairRelays(requests, cars) {
   const unpaired = requests.filter((nr) => isRelayOut(nr) && !usedOut.has(nr.id) || isRelayReturn(nr) && !usedRet.has(nr.id));
   return { pairs, unpaired };
 }
-function healLoneRelayLegs(unpaired, timelines, input, carsById, scores) {
+function chauffeurWindow(side, point, travelSlots, dwellSlots) {
+  const total = travelSlots * 2 + dwellSlots;
+  return side === "out" ? { start: point, end: point + total } : { start: point - total, end: point };
+}
+function chauffeurUnpairedRelayLegs(unpaired, timelines, input, carsById, scores) {
   const healed = [];
   const healedIds = /* @__PURE__ */ new Set();
-  const bufferSlots = minutesToSlots(input.config.bufferMinutes);
+  const dwellSlots = minutesToSlots(input.config.chauffeurDwellMinutes);
   const home = input.homeLocationId;
   const sharedCars = input.cars.filter((c) => c.type === "shared").sort((a, b) => byId({ id: a.id }, { id: b.id }));
   const sorted = [...unpaired].sort((a, b) => {
@@ -2082,91 +2096,58 @@ function healLoneRelayLegs(unpaired, timelines, input, carsById, scores) {
   for (const nr of sorted) {
     const leg = nr.legs[0];
     if (!leg || leg.side === "both") continue;
-    const day = dayBoundsForSlot(input.week.days, leg.side === "out" ? leg.window.start : leg.window.end);
-    let placement = null;
+    const side = leg.side === "out" ? "out" : "return";
+    const point = side === "out" ? leg.window.start : leg.window.end;
+    const window = chauffeurWindow(side, point, nr.travelSlots, dwellSlots);
+    const day = dayBoundsForSlot(input.week.days, point);
+    if (window.start < day.startSlot || window.end > day.endSlot) continue;
+    const load = chauffeurLoad(nr.passengers);
+    const luggageCount = nr.luggage ? 1 : 0;
+    let carId = null;
     for (const car2 of sharedCars) {
-      if (!fits(car2, nr.passengers) || !luggageFits(car2, nr.luggage ? 1 : 0)) continue;
+      if (!fits(car2, load) || !luggageFits(car2, luggageCount)) continue;
       const tl2 = timelines.get(car2.id);
-      if (!tl2) continue;
-      const probeId = `heal-probe:${nr.id}`;
-      if (leg.side === "out") {
-        if (!tl2.isFree(leg.window, leg.originId)) continue;
-        const healWindow = { start: day.dayEndSlot - nr.travelSlots, end: day.dayEndSlot };
-        if (leg.window.end + bufferSlots > healWindow.start) continue;
-        tl2.add({ rideId: probeId, window: leg.window, startLocationId: leg.originId, endLocationId: leg.destinationId, overnightAck: false });
-        const healFree = tl2.isFree(healWindow, leg.destinationId);
-        tl2.remove(probeId);
-        if (!healFree) continue;
-        placement = { carId: car2.id, healWindow, healOriginId: leg.destinationId, healDestinationId: home };
-      } else {
-        const healWindow = { start: leg.window.start - bufferSlots - nr.travelSlots, end: leg.window.start - bufferSlots };
-        if (healWindow.start < day.startSlot) continue;
-        if (!tl2.isFree(healWindow, home)) continue;
-        tl2.add({ rideId: probeId, window: healWindow, startLocationId: home, endLocationId: leg.originId, overnightAck: false });
-        const legFree = tl2.isFree(leg.window, leg.originId);
-        tl2.remove(probeId);
-        if (!legFree) continue;
-        placement = { carId: car2.id, healWindow, healOriginId: home, healDestinationId: leg.originId };
-      }
+      if (!tl2 || !tl2.isFree(window, home)) continue;
+      carId = car2.id;
       break;
     }
-    if (!placement) continue;
-    const tl = timelines.get(placement.carId);
+    if (!carId) continue;
+    const tl = timelines.get(carId);
     if (!tl) continue;
-    const car = carsById.get(placement.carId);
-    const legRideId = `ride:${nr.id}`;
-    const relocRideId = `reloc:${nr.id}`;
-    if (leg.side === "out") {
-      tl.add({ rideId: legRideId, window: leg.window, startLocationId: leg.originId, endLocationId: leg.destinationId, overnightAck: false });
-      tl.add({ rideId: relocRideId, window: placement.healWindow, startLocationId: placement.healOriginId, endLocationId: placement.healDestinationId, overnightAck: false });
-    } else {
-      tl.add({ rideId: relocRideId, window: placement.healWindow, startLocationId: placement.healOriginId, endLocationId: placement.healDestinationId, overnightAck: false });
-      tl.add({ rideId: legRideId, window: leg.window, startLocationId: leg.originId, endLocationId: leg.destinationId, overnightAck: false });
-    }
-    const depSlot = leg.side === "out" ? leg.window.start : placement.healWindow.start;
-    const retSlot = leg.side === "out" ? placement.healWindow.end : leg.window.end;
-    const legText = reason("PLACED_RELAY_SOLO", {
-      car: car?.name ?? placement.carId,
-      member: nr.request.memberId,
+    const car = carsById.get(carId);
+    const rideId = `ride:${nr.id}`;
+    tl.add({ rideId, window, startLocationId: home, endLocationId: home, overnightAck: false });
+    const text = reason("PLACED_CHAUFFEUR_NO_RETURNER", {
+      car: car?.name ?? carId,
       dest: nr.destinationId,
-      dep: formatSlotTime(depSlot, day),
-      ret: formatSlotTime(retSlot, day)
+      dep: formatSlotTime(window.start, day),
+      ret: formatSlotTime(window.end, day)
     });
     healed.push({
-      rideId: legRideId,
-      carId: placement.carId,
-      window: leg.window,
-      originId: leg.originId,
-      destinationId: leg.destinationId,
-      driverRequestId: nr.id,
-      driverMemberId: nr.request.memberId,
-      legs: [{ requestId: nr.id, leg: leg.side, carMode: "relay", originId: leg.originId, destinationId: leg.destinationId, role: "driver" }],
-      servedRequestIds: [nr.id],
-      passengers: nr.passengers,
-      luggageCount: nr.luggage ? 1 : 0,
-      shift: { departureMin: 0, returnMin: 0 },
-      pairedRideId: relocRideId,
-      source: "solver",
-      reasonCode: "PLACED_RELAY_SOLO",
-      reason: legText
-    });
-    healed.push({
-      rideId: relocRideId,
-      carId: placement.carId,
-      window: placement.healWindow,
-      originId: placement.healOriginId,
-      destinationId: placement.healDestinationId,
+      rideId,
+      carId,
+      window,
+      originId: home,
+      destinationId: home,
       driverRequestId: void 0,
       driverMemberId: void 0,
-      legs: [],
-      servedRequestIds: [],
-      passengers: { adults: 0, childSeats: 0, boosters: 0 },
-      luggageCount: 0,
+      legs: [
+        {
+          requestId: nr.id,
+          leg: leg.side,
+          carMode: "chauffeur",
+          originId: leg.originId,
+          destinationId: leg.destinationId,
+          role: "passenger"
+        }
+      ],
+      servedRequestIds: [nr.id],
+      passengers: nr.passengers,
+      luggageCount,
       shift: { departureMin: 0, returnMin: 0 },
-      pairedRideId: legRideId,
       source: "solver",
-      reasonCode: "PLACED_NEEDS_DRIVER",
-      reason: reason("PLACED_NEEDS_DRIVER", { car: car?.name ?? placement.carId })
+      reasonCode: "PLACED_CHAUFFEUR_NO_RETURNER",
+      reason: text
     });
     healedIds.add(nr.id);
   }
@@ -2308,13 +2289,13 @@ function volunteerCandidates(input, window) {
   }
   return [...driversToday].sort();
 }
-function chauffeurWindow(side, point, travelSlots, dwellSlots) {
+function chauffeurWindow2(side, point, travelSlots, dwellSlots) {
   const total = travelSlots * 2 + dwellSlots;
   return side === "out" ? { start: point, end: point + total } : { start: point - total, end: point };
 }
 function findChauffeurCar(nr, side, point, ctx) {
   const dwellSlots = minutesToSlots(ctx.input.config.chauffeurDwellMinutes);
-  const window = chauffeurWindow(side, point, nr.travelSlots, dwellSlots);
+  const window = chauffeurWindow2(side, point, nr.travelSlots, dwellSlots);
   const load = chauffeurLoad(nr.passengers);
   const sharedCars = ctx.input.cars.filter((c) => c.type === "shared").sort((a, b) => a.id < b.id ? -1 : 1);
   for (const car of sharedCars) {
@@ -2727,7 +2708,7 @@ function solve(input) {
   const improveResult = runImprove(unmetUnits, placedSingles, timelines, input, scores);
   const finalPlaced = [...placed, ...improveResult.newlyPlaced];
   const solverAssignments = toAssignments(finalPlaced, input, carsMap);
-  const { healed, healedIds } = healLoneRelayLegs(unpaired, timelines, input, carsMap, scores);
+  const { healed, healedIds } = chauffeurUnpairedRelayLegs(unpaired, timelines, input, carsMap, scores);
   const stillUnpairedRelay = unpaired.filter((nr) => !healedIds.has(nr.id));
   const assignments = [...fixedAssignments, ...solverAssignments, ...healed].sort((a, b) => byId({ id: a.rideId }, { id: b.rideId }));
   const servedRequestIds = /* @__PURE__ */ new Set();

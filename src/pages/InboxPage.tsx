@@ -47,9 +47,8 @@ const SADRAN_EVENTS = new Set([
  * Prefers an explicit `data.url` (the DB is starting to populate this on
  * more event rows) or a bare `data.token` (`/p/<token>`, the deep-link
  * secret itself); falls back to id-based routing for older/other rows.
- * `request_id`/`offer_id` still land on a plain `/requests` (no `?focus=`,
- * `RequestsListPage.tsx` has no such param today — reported, not added here,
- * `src/features/requests` is out of this agent's scope).
+ * `request_id` lands on `/my?focus=<id>` (`HomePage` scrolls to and ring-highlights that
+ * card); `offer_id` has no matching card on `/my` today, so it lands on the plain list.
  */
 function deepLinkFor(n: Notification): string {
   const data = (n.data as Record<string, unknown>) ?? {};
@@ -59,7 +58,8 @@ function deepLinkFor(n: Notification): string {
   if (typeof data.proposal_id === "string" && n.department_id && n.week_start) {
     return paths.sadran.proposals(n.department_id, n.week_start, data.proposal_id);
   }
-  if (typeof data.request_id === "string" || typeof data.offer_id === "string") return paths.requests.list();
+  if (typeof data.request_id === "string") return paths.my(data.request_id);
+  if (typeof data.offer_id === "string") return paths.my();
   if (typeof data.ride_id === "string") return paths.siddur();
   // `car_care` (REQUIREMENTS §6.6, UX_FLOWS §6.1): `notification_default_url()`'s `car_id` branch.
   if (typeof data.car_id === "string") return paths.car(data.car_id);

@@ -36,7 +36,9 @@ test.describe("multi-day requests", { tag: ["@request-form"] }, () => {
     await expect(page.getByText(tv("request.multiDayBadge", { count: "3" }))).toBeVisible();
 
     await page.getByRole("button", { name: t("action.submitRequest"), exact: true }).click();
-    await expect(page).toHaveURL(/\/requests$/);
+    // Post-submit navigates to `/my` (2026-09-16, REQ §13 item 91) instead of the old
+    // `/requests` list.
+    await expect(page).toHaveURL(/\/my$/);
 
     const { data: legs, error } = await service.from("requests").select("id, series_id, series_index, series_count, depart_at, return_at")
       .eq("department_id", NEVO_DEPARTMENT_ID).eq("destination_text", DESTINATION).order("series_index", { ascending: true });
@@ -56,7 +58,7 @@ test.describe("multi-day requests", { tag: ["@request-form"] }, () => {
     expect(localTime(leg2!.return_at)).toBe("23:59:00");
     expect(localTime(leg3!.depart_at)).toBe("00:00:00");
 
-    // Exactly one card on /requests, badged "3 ימים".
+    // Exactly one card on /my, badged "3 ימים".
     const card = page.locator("[data-request-id]").filter({ hasText: DESTINATION });
     await expect(card).toHaveCount(1);
     await expect(card.getByText(tv("request.multiDayBadge", { count: "3" }))).toBeVisible();

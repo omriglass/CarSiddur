@@ -58,12 +58,21 @@ export const paths = {
    */
   siddurArchive: (departmentId: string): string => `/siddur/${departmentId}/archive`,
 
+  /**
+   * `/my` — Home, the one member request/ride list (REQ §13 item 91, owner 2026-09-16, E3).
+   * `focusId` maps to `?focus=<request_id>` (notification deep link, `notification_default_url`),
+   * scrolled to and ring-highlighted by `HomePage`.
+   */
+  my: (focusId?: string): string => withQuery("/my", { focus: focusId }),
+
+  /** `/my/history` — read-only list of past requests/rides (REQ §13 item 91). */
+  myHistory: (): string => "/my/history",
+
   requests: {
     /**
-     * `/requests`. `focusId` is accepted for forward compatibility with a
-     * `?focus=<requestId>` deep link — `RequestsListPage` does not read it
-     * yet (see `InboxPage.tsx`'s `deepLinkFor` comment); passing it today is
-     * a harmless no-op until that screen adds the param.
+     * `/requests` — redirects to `.my()`, preserving `?focus=`
+     * (`RequestsRedirect`, REQ §13 item 91). Kept for old links/deep-link
+     * compatibility; new code should call `paths.my()` directly.
      */
     list: (focusId?: string) => withQuery("/requests", { focus: focusId }),
     /**

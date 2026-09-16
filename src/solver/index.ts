@@ -12,7 +12,7 @@ import { assertInvariants } from './invariants';
 import { fits, luggageFits } from './seatFit';
 import { buildHostRides, findMergeHosts } from './merge';
 import { scoreRequests } from './policy/engine';
-import { healLoneRelayLegs, pairRelays } from './relay';
+import { chauffeurUnpairedRelayLegs, pairRelays } from './relay';
 import { reason } from './reasons';
 import { byId, normalize, type NormalizedRequest } from './slots';
 import { buildSuggestions, type SuggestionContext } from './suggestions';
@@ -142,11 +142,12 @@ export function solve(input: SolverInput): SolverOutput {
   const finalPlaced: Placed[] = [...placed, ...improveResult.newlyPlaced];
   const solverAssignments = toAssignments(finalPlaced, input, carsMap);
 
-  // REQUIREMENTS §13.89: a lone relay leg with no paired return no longer makes
-  // the placement infeasible — place it and auto-generate a driverless
-  // needs-driver relocation ride that closes the day-end loop (SOLVER §3.6.1a).
-  // Legs this cannot heal (no room on any car) keep the old UNMET_NO_RELAY_PARTNER path.
-  const { healed, healedIds } = healLoneRelayLegs(unpaired, timelines, input, carsMap, scores);
+  // REQUIREMENTS §13.88/§13.89 (rule made precise 2026-09-16): an unpaired relay
+  // candidate is never placed as a lone relay leg (that would leave the car
+  // waiting at the destination) — it becomes a standalone chauffeur placement
+  // instead (SOLVER §3.6.1a). Legs this cannot heal (no car has room for the
+  // whole chauffeur window) keep the old UNMET_NO_RELAY_PARTNER path.
+  const { healed, healedIds } = chauffeurUnpairedRelayLegs(unpaired, timelines, input, carsMap, scores);
   const stillUnpairedRelay = unpaired.filter((nr) => !healedIds.has(nr.id));
 
   const assignments = [...fixedAssignments, ...solverAssignments, ...healed].sort((a, b) => byId({ id: a.rideId }, { id: b.rideId }));
@@ -272,8 +273,8 @@ export function solve(input: SolverInput): SolverOutput {
 
   // REQUIREMENTS §13.88/§13.89: counts both still-unplaced legs that only have a
   // chauffeur suggestion, and solver-placed rides that already need a driver —
-  // a non-driver's driverless round trip (PLACED_NEEDS_DRIVER) and a solo relay
-  // leg's needs-driver relocation ride (also PLACED_NEEDS_DRIVER).
+  // a non-driver's driverless round trip (PLACED_NEEDS_DRIVER) and an unpaired
+  // relay candidate's standalone chauffeur placement (PLACED_CHAUFFEUR_NO_RETURNER).
   const needsDriverUnmet = unmet.filter((u) => u.suggestions.some((s) => s.kind === 'chauffeur')).length;
   const needsDriverAssignments = assignments.filter((a) => a.source === 'solver' && !a.driverRequestId && !a.driverMemberId).length;
   const needsDriver = needsDriverUnmet + needsDriverAssignments;

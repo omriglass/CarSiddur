@@ -3,7 +3,7 @@ import { differenceInCalendarDays, parseISO } from "date-fns";
 /**
  * Multi-day ("series") request helpers (REQ §13.77, UX_FLOWS.md §3.3/§3.4). Pure — no
  * supabase/React imports — so `groupSeries`/`seriesSpanDays` are unit-testable on plain
- * objects; callers (`RequestsListPage.tsx`, `RequestForm.tsx`) supply the real row shape.
+ * objects; callers (`myRequestsRows.ts`'s `toDisplayRows`, `RequestForm.tsx`) supply the real row shape.
  */
 
 export interface SeriesLike {

@@ -116,7 +116,11 @@ test.describe("proposal round trip", { tag: ["@proposals"] }, () => {
     // status reason.
     const member1 = await newSignedInPage(browser, SEEDED_USERS.member1);
     try {
-      await member1.page.goto("/requests");
+      // `/requests` now redirects to `/my` (2026-09-16, REQ §13 item 91); request 213 is filed
+      // on the seeded open week, which is the week `/my`'s week-list section shows for member1
+      // under the default `auto` home-week preference (unless a live-week ride today/tomorrow
+      // makes it pick the live week instead — same timing assumption other specs already make).
+      await member1.page.goto("/my");
       const requestCard = member1.page.locator("div.rounded-md", { hasText: PROPOSAL_REQUEST_LABEL });
       await expect(requestCard.getByText("ההצעה אושרה, ממתין לשיבוץ רכב")).toBeVisible({ timeout: 10_000 });
     } finally {

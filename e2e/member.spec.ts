@@ -22,7 +22,7 @@ async function signIn(page: import("@playwright/test").Page) {
 }
 
 test.describe("member", { tag: ["@request-form", "@siddur"] }, () => {
-  test("submits a request for the open week and sees it in /requests as submitted", async ({ page }) => {
+  test("submits a request for the open week and sees it in /my as submitted", async ({ page }) => {
     await signIn(page);
 
     await page.goto("/requests/new");
@@ -38,7 +38,9 @@ test.describe("member", { tag: ["@request-form", "@siddur"] }, () => {
 
     await page.getByRole("button", { name: "הגש/י בקשה" }).click();
 
-    await expect(page).toHaveURL(/\/requests$/);
+    // Post-submit navigates to `/my` (2026-09-16, REQ §13 item 91) instead of the old
+    // `/requests` list; the open week just submitted into is `/my`'s currently displayed week.
+    await expect(page).toHaveURL(/\/my$/);
     await expect(page.getByText("עפולה").first()).toBeVisible();
     await expect(page.getByText("נשלחה").first()).toBeVisible();
   });
@@ -153,7 +155,8 @@ test("member edits own request, saves directional flexibility, and confirms scop
     await page.getByRole("option", { name: car!.name, exact: true }).click();
     await page.getByLabel(he.field.notes, { exact: true }).fill("Updated through member request form");
     await page.getByRole("button", { name: he.action.saveRequest }).click();
-    await expect(page).toHaveURL(/\/requests$/);
+    // Post-save navigates to `/my` (2026-09-16, REQ §13 item 91).
+    await expect(page).toHaveURL(/\/my$/);
     const { data: edited } = await service.from("requests").select("notes, flex_depart_early, flex_depart_late, preferred_car_id").eq("id", mine[0]!.id).single();
     expect(edited).toMatchObject({ notes: "Updated through member request form", preferred_car_id: car!.id, flex_depart_early: "00:00:00", flex_depart_late: "00:30:00" });
     const { data: released } = await service.from("rides").select("status").eq("id", draftIds[0]).single();
@@ -164,14 +167,16 @@ test("member edits own request, saves directional flexibility, and confirms scop
     await page.getByLabel(he.request.preferredCar, { exact: true }).click();
     await page.getByRole("option", { name: he.request.noPreferredCar, exact: true }).click();
     await page.getByRole("button", { name: he.action.saveRequest }).click();
-    await expect(page).toHaveURL(/\/requests$/);
+    await expect(page).toHaveURL(/\/my$/);
     const { data: cleared } = await service.from("requests").select("preferred_car_id").eq("id", mine[0]!.id).single();
     expect(cleared?.preferred_car_id).toBeNull();
 
     await page.goto(`/requests/${other.id}/edit`);
     await expect(page.getByText(he.request.notFound)).toBeVisible();
-    await page.goto("/requests");
-    const weekSection = page.locator("section").filter({ has: page.getByText("E2E editable request", { exact: true }) });
+    // `/requests` redirects to `/my`, which lists EVERY upcoming request grouped by week (REQ §13.91).
+    await page.goto("/my");
+    // `/my` renders every upcoming week inside one section; scope to this week's group.
+    const weekSection = page.locator("[data-week-start]").filter({ has: page.getByText("E2E editable request", { exact: true }) });
     await weekSection.getByRole("button", { name: he.requestsList.withdrawAll }).click();
     await page.getByRole("dialog").getByRole("button", { name: he.common.cancel }).click();
     const { data: untouched } = await service.from("requests").select("status").eq("id", mine[0]!.id).single();

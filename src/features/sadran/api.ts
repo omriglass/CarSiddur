@@ -53,6 +53,8 @@ export interface WeekRequestRow extends RequestRow {
   requester_full_name: string | null;
   /** REQ §88 (owner 2026-09-15): `profiles.does_not_drive` for the requester. */
   requester_does_not_drive: boolean;
+  /** REQ §13.88 (owner 2026-09-16, E1): ids of named companions (`request_companions`) who are eligible drivers. */
+  driving_companion_ids: string[];
   destination_resolved_name: string | null;
   destination_travel_minutes: number | null;
   ride_type_code: string | null;
@@ -66,16 +68,21 @@ const WEEK_REQUEST_SELECT = `*,
   destination:destinations(name, travel_minutes),
   ride_type:ride_types(code, name_he),
   preferred_car:cars!requests_preferred_car_id_fkey(name),
-  companions:request_companions(profile_id, profile:profiles!request_companions_profile_id_fkey(full_name)),
+  companions:request_companions(profile_id, profile:profiles!request_companions_profile_id_fkey(full_name, does_not_drive)),
   request_children(child:children(full_name))`;
 
 interface WeekRequestJoinRow extends RequestRow {
-  companions: { profile_id: string; profile: { full_name: string } | null }[];
+  companions: { profile_id: string; profile: { full_name: string; does_not_drive: boolean } | null }[];
   request_children: { child: { full_name: string } | null }[];
   requester: { full_name: string; does_not_drive: boolean } | null;
   destination: { name: string; travel_minutes: number | null } | null;
   ride_type: { code: string; name_he: string } | null;
   preferred_car: { name: string } | null;
+}
+
+/** Ids of `companions` whose profile is an eligible driver (`!does_not_drive`), REQ §13.88. */
+function drivingCompanionIdsOf(companions: { profile_id: string; profile: { does_not_drive: boolean } | null }[]): string[] {
+  return companions.flatMap((person) => person.profile && !person.profile.does_not_drive ? [person.profile_id] : []);
 }
 
 function flattenWeekRequest(row: WeekRequestJoinRow): WeekRequestRow {
@@ -85,6 +92,8 @@ function flattenWeekRequest(row: WeekRequestJoinRow): WeekRequestRow {
     requester_full_name: requester?.full_name ?? null,
     /** REQ §88: `Request.canDrive = !requester.does_not_drive` (solverBridge/buildSolverInput.ts). */
     requester_does_not_drive: requester?.does_not_drive ?? false,
+    /** REQ §13.88 (owner 2026-09-16, E1): -> solver `Request.drivingCompanionIds`. */
+    driving_companion_ids: drivingCompanionIdsOf(companions ?? []),
     companions: (companions ?? []).flatMap((person) => person.profile ? [{ profile_id: person.profile_id, name: person.profile.full_name }] : []),
     childNames: (request_children ?? []).flatMap((entry) => entry.child?.full_name ? [entry.child.full_name] : []),
     destination_resolved_name: destination?.name ?? rest.destination_text ?? null,
@@ -119,22 +128,34 @@ export async function fetchWeekRow(departmentId: string, weekStart: string): Pro
 
 /**
  * Solver-bridge feeder (`buildSolverInput`'s `requests` param, `applySolve.ts`): plain
- * `requests` columns plus the single extra field the solver needs from `profiles`
- * (`requester_does_not_drive`, REQ §88 — `Request.canDrive = !requester.does_not_drive`).
- * Kept as a light, single-column embed rather than `WEEK_REQUEST_SELECT`'s full join set
- * (names/destinations/companions/children) since this runs on every solve.
+ * `requests` columns plus the two extra fields the solver needs from `profiles`/
+ * `request_companions` — `requester_does_not_drive` (REQ §88 — `Request.canDrive =
+ * !requester.does_not_drive`) and `driving_companion_ids` (REQ §13.88, owner 2026-09-16, E1 —
+ * ids of this request's named companions who are eligible drivers, mapped straight onto
+ * `Request.drivingCompanionIds`). Kept as a light embed (just the two ids/flags it needs)
+ * rather than `WEEK_REQUEST_SELECT`'s full join set (names/destinations/children) since this
+ * runs on every solve.
  */
-export type RequestRowWithDriverFlag = RequestRow & { requester_does_not_drive: boolean };
+export type RequestRowWithDriverFlag = RequestRow & { requester_does_not_drive: boolean; driving_companion_ids: string[] };
 
 export async function fetchWeekRequests(departmentId: string, weekStart: string): Promise<RequestRowWithDriverFlag[]> {
   const { data, error } = await supabase
     .from("requests")
-    .select("*, requester:profiles!requests_requester_id_fkey(does_not_drive)")
+    .select(`*,
+      requester:profiles!requests_requester_id_fkey(does_not_drive),
+      companions:request_companions(profile_id, profile:profiles!request_companions_profile_id_fkey(does_not_drive))`)
     .eq("department_id", departmentId)
     .eq("week_start", weekStart);
   if (error) throw toAppError(error);
-  return ((data ?? []) as unknown as (RequestRow & { requester: { does_not_drive: boolean } | null })[]).map(
-    ({ requester, ...rest }) => ({ ...rest, requester_does_not_drive: requester?.does_not_drive ?? false }),
+  return ((data ?? []) as unknown as (RequestRow & {
+    requester: { does_not_drive: boolean } | null;
+    companions: { profile_id: string; profile: { does_not_drive: boolean } | null }[];
+  })[]).map(
+    ({ requester, companions, ...rest }) => ({
+      ...rest,
+      requester_does_not_drive: requester?.does_not_drive ?? false,
+      driving_companion_ids: drivingCompanionIdsOf(companions ?? []),
+    }),
   );
 }
 

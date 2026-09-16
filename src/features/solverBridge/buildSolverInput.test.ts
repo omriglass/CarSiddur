@@ -197,6 +197,29 @@ describe("buildSolverInput", () => {
     expect(byId.get("non-driver")!.canDrive).toBe(false);
   });
 
+  it("maps driving_companion_ids straight onto Request.drivingCompanionIds, undefined when empty/absent (REQ §13.88)", () => {
+    const input = buildSolverInput({
+      weekStart: WEEK_START,
+      homeDestinationId: HOME,
+      departmentSettings: DEFAULT_SETTINGS,
+      requests: [
+        { ...requestRow({ id: "non-driver-with-driving-companion" }), requester_does_not_drive: true, driving_companion_ids: ["companion-1"] },
+        { ...requestRow({ id: "non-driver-no-driving-companion" }), requester_does_not_drive: true, driving_companion_ids: [] },
+        requestRow({ id: "driver-field-absent" }),
+      ],
+      rideTypeCodesById: {},
+      cars: [],
+      seatConfigsByCarId: {},
+      destinations: [destRow()],
+      policy: { id: "p1", version: 1, rules: [] },
+    });
+
+    const byId = new Map(input.requests.map((r) => [r.id, r]));
+    expect(byId.get("non-driver-with-driving-companion")!.drivingCompanionIds).toEqual(["companion-1"]);
+    expect(byId.get("non-driver-no-driving-companion")!.drivingCompanionIds).toBeUndefined();
+    expect(byId.get("driver-field-absent")!.drivingCompanionIds).toBeUndefined();
+  });
+
   it("excludes draft requests and falls back free-text destinations to the sentinel", () => {
     const input = buildSolverInput({
       weekStart: WEEK_START,

@@ -1,4 +1,7 @@
 import { expect, test } from "@playwright/test";
+import { formatInTimeZone } from "date-fns-tz";
+
+import { TZ } from "../src/lib/time";
 
 import {
   NEVO_DEPARTMENT_ID,
@@ -19,6 +22,8 @@ import {
 // auto-assigned and notified").
 const CANCELLED_RIDE_ID = "00000000-0000-0000-0000-000000000301";
 const CANDIDATE_REQUEST_ID = "00000000-0000-0000-0000-000000000204";
+/** The seeded request served by ride ...301 (`supabase/seed.sql`). */
+const FIXTURE_REQUEST_ID = "00000000-0000-0000-0000-000000000201";
 
 test.describe("freed slot (live week, single candidate)", { tag: ["@waitlist", "@solver"] }, () => {
   test("member1 cancels an assigned ride and member2's overlapping waitlisted request is auto-assigned", async ({
@@ -38,18 +43,48 @@ test.describe("freed slot (live week, single candidate)", { tag: ["@waitlist", "
 
     const client = serviceRoleClient();
 
+    // `/my` shows requests from today onward only (REQ §13.91). The seeded fixture — ride
+    // ...301 with request ...201 and member2's overlapping waitlisted request ...204 — sits on
+    // Tuesday of the live week, so from Wednesday on it would be hidden. Shift the three rows
+    // to today (or tomorrow once today's window is nearly over), keeping their 08:00–16:00
+    // Jerusalem window; skip when that would leave the live week.
+    const now = new Date();
+    const jerusalemHour = Number(formatInTimeZone(now, TZ, "H"));
+    const targetDay = new Date(now.getTime() + (jerusalemHour >= 15 ? 24 : 0) * 3600_000);
+    const targetKey = formatInTimeZone(targetDay, TZ, "yyyy-MM-dd");
+    const { data: fixtureRide } = await client.from("rides").select("starts_at, week_start").eq("id", CANCELLED_RIDE_ID).single();
+    const seededKey = formatInTimeZone(fixtureRide!.starts_at, TZ, "yyyy-MM-dd");
+    const weekEnd = new Date(Date.parse(`${fixtureRide!.week_start}T00:00:00Z`) + 6 * 86_400_000).toISOString().slice(0, 10);
+    test.skip(targetKey > weekEnd, "the freed-slot fixture cannot be moved to a day inside the live week today");
+    if (seededKey !== targetKey) {
+      const shiftMs = Date.parse(`${targetKey}T00:00:00Z`) - Date.parse(`${seededKey}T00:00:00Z`);
+      const shift = (iso: string) => new Date(Date.parse(iso) + shiftMs).toISOString();
+      const { data: rows } = await client.from("requests").select("id, depart_at, return_at").in("id", [FIXTURE_REQUEST_ID, CANDIDATE_REQUEST_ID]);
+      for (const row of rows ?? []) {
+        const { error } = await client.from("requests").update({ depart_at: shift(row.depart_at!), return_at: shift(row.return_at!) }).eq("id", row.id);
+        if (error) throw error;
+      }
+      const { data: ride } = await client.from("rides").select("starts_at, ends_at").eq("id", CANCELLED_RIDE_ID).single();
+      const { error } = await client.from("rides").update({ starts_at: shift(ride!.starts_at), ends_at: shift(ride!.ends_at) }).eq("id", CANCELLED_RIDE_ID);
+      if (error) throw error;
+    }
+
     // Two separate browser contexts (Stage 3 hardening fix, e2e/helpers.ts `newSignedInPage`):
     // reusing one `page` across two identities is unreliable, since `/login` redirects an
     // already-authenticated session straight back to wherever it came from rather than
     // showing the sign-in form again.
     const member1 = await newSignedInPage(browser, SEEDED_USERS.member1);
-    await member1.page.goto("/requests");
+    // `/requests` now redirects to `/my` (2026-09-16, REQ §13 item 91); the cancelled ride is
+    // on the seeded Live week, which `/my`'s week-list section shows under the default `auto`
+    // home-week preference (a ride today/tomorrow picks the live week).
+    await member1.page.goto("/my");
 
     await member1.page.getByRole("button", { name: "בטל נסיעה" }).first().click();
     await expect(member1.page.getByRole("heading", { name: "לבטל את הנסיעה?" })).toBeVisible();
     await member1.page.getByRole("dialog").getByRole("button", { name: "בטל נסיעה" }).click();
 
-    // `runConfirm()` (RequestsListPage.tsx) closes the dialog synchronously and fires the
+    // `runConfirmAction()` (`HomePage.tsx`, moved from the deleted `RequestsListPage.tsx`) closes
+    // the dialog synchronously and fires the
     // `cancel_ride` mutation in the background (fire-and-forget from the component's own
     // perspective) — the dialog closing is not proof the RPC call has actually reached the
     // server yet, so wait for the real DB effect before tearing down this context (closing it

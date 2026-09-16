@@ -278,6 +278,18 @@ export const heMember = {
   freedSlot: {
     title: "רכב שהתפנה",
     body: "{{car}}, {{day}} {{depart}}–{{return}}. עדיין רלוונטי?",
+    withdrawClaimTitle: "לבטל את בקשת ההצטרפות?",
+    withdrawClaimBody: "הבקשה שלך לרכב שהתפנה תבוטל.",
+  },
+  /**
+   * `/my/history` (REQ §13 item 91, owner 2026-09-16, E3): a small, lazily loaded, read-only
+   * list of past requests/rides — reachable only from a link at the bottom of `/my`, "not
+   * important, must not slow anything" (owner A4).
+   */
+  myHistory: {
+    link: "היסטוריה",
+    title: "היסטוריה",
+    empty: "אין עדיין היסטוריה.",
   },
   quickRequest: {
     oneWayHeader: "בקשת הסעה ביום {{day}} {{start}}",

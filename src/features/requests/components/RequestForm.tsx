@@ -35,6 +35,7 @@ import { buildAddPassengerInputs } from "@/features/siddur/addPassengers";
 import { fetchBoardRideById, type RidePassengerInput } from "@/features/siddur/api";
 import { useAddRidePassengersMutation } from "@/features/siddur/hooks";
 import { siddurKeys } from "@/features/siddur/queryKeys";
+import { paths } from "@/app/routes";
 import { he, t, tv } from "@/i18n/he";
 import { dateKey, formatTime, weekdayIndex } from "@/lib/time";
 import { cn } from "@/lib/utils";
@@ -146,7 +147,7 @@ interface RequestFormProps {
   templateSuggestion?: TemplateSuggestion;
   /** Quick-variant-only context — free-window aware car targeting (UX_FLOWS.md §18). */
   quickContext?: QuickRequestContext;
-  /** Called after a successful submit instead of the default `navigate('/requests')`. */
+  /** Called after a successful submit instead of the default `navigate(paths.my())`. */
   onDone?: (result: SubmitRequestResult | null) => void;
 }
 
@@ -592,7 +593,7 @@ export function RequestForm({
         }
         toastSeriesSubmitOutcome(seriesResult);
         if (onDone) onDone(null);
-        else navigate("/requests");
+        else navigate(paths.my());
         return;
       }
 
@@ -636,12 +637,12 @@ export function RequestForm({
         preferredCarId: formValues.preferredCarId,
         departTime: formValues.departTime,
         returnTime: formValues.returnTime,
-        onViewRequests: () => navigate("/requests"),
+        onViewRequests: () => navigate(paths.my()),
       });
 
       const proceed = () => {
         if (onDone) onDone(result);
-        else navigate("/requests");
+        else navigate(paths.my());
       };
 
       // F4 (docs/TODO.md, owner A8-A10): a waitlisted outcome only ever happens against a

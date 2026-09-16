@@ -1,13 +1,18 @@
 // Non-driver members and mode-less one-way requests (REQUIREMENTS §13.88,
-// §13.89; docs/SOLVER.md §1.3.8-9, §3.6.1a). Covers:
+// rule made precise 2026-09-16; docs/SOLVER.md §1.3.8-9, §3.6.1a). Covers:
 //  (a) a non-driver round trip is placed driverless, or offered as a merge
 //      suggestion into a same-way ride when it cannot be placed on its own;
-//  (b) an absent oneWayCarMode resolves to relay for a driver, passenger
-//      (then chauffeur) for a non-driver;
-//  (c) a lone relay leg is healed with an auto-generated needs-driver
-//      relocation ride instead of being left unmet;
-//  (d) an explicit legacy oneWayCarMode is still honoured for a driver, and
-//      still downgraded to passenger for a non-driver.
+//  (b) a one-way leg's mode is decided by pairing, not the member: an
+//      eligible-driver leg is a relay *candidate*, resolved to a real relay
+//      leg when paired, a standalone chauffeur ride when not; a no-driver
+//      leg is passenger unconditionally;
+//  (c) an unpaired relay candidate is healed as a standalone chauffeur
+//      placement instead of being left unmet, and never leaves the car
+//      waiting at the destination;
+//  (d) a driving companion becomes the leg's driver when the requester
+//      cannot drive;
+//  (e) the stored (legacy) `oneWayCarMode` is ignored entirely, for drivers
+//      and non-drivers alike.
 
 import { describe, expect, it } from 'vitest';
 import { solve } from '../index';
@@ -67,7 +72,7 @@ describe('canDrive === false: round trips (REQUIREMENTS §13.88)', () => {
 });
 
 describe('one-way requests without a stated mode (REQUIREMENTS §13.88)', () => {
-  it('a driver defaults to relay (and gets placed/healed, never left as a warning)', () => {
+  it('a driver defaults to a relay candidate — placed as a real relay leg only when paired, chauffeured otherwise', () => {
     const input = baseInput({
       cars: [makeCar('C1')],
       requests: [makeRequest({ id: 'R1', tripShape: 'one_way_to', departureMs: slotMs(32) })],
@@ -75,10 +80,18 @@ describe('one-way requests without a stated mode (REQUIREMENTS §13.88)', () => 
     const nr = normalize(input).normalized[0]!;
     expect(nr.legs[0]?.preferredMode).toBe('relay');
 
+    // No partner exists in this fixture, so the candidate is healed as a
+    // standalone chauffeur ride (§3.6.1a), never left as a warning and never
+    // placed as a lone `relay` leg (that would leave the car at the destination).
     const output = solve(input);
+    expect(output.unmet).toHaveLength(0);
     const ride = output.assignments.find((a) => a.servedRequestIds.includes('R1'));
-    expect(ride?.legs[0]?.carMode).toBe('relay');
-    expect(ride?.legs[0]?.role).toBe('driver');
+    expect(ride?.legs[0]?.carMode).toBe('chauffeur');
+    expect(ride?.legs[0]?.role).toBe('passenger');
+    expect(ride?.driverRequestId).toBeUndefined();
+    expect(ride?.driverMemberId).toBeUndefined();
+    expect(ride?.reasonCode).toBe('PLACED_CHAUFFEUR_NO_RETURNER');
+    expect(output.stats.needsDriver).toBe(1);
   });
 
   it('a non-driver defaults to passenger and merges into a same-way host', () => {
@@ -113,84 +126,123 @@ describe('one-way requests without a stated mode (REQUIREMENTS §13.88)', () => 
   });
 });
 
-describe('a lone relay leg heals with a needs-driver relocation ride (REQUIREMENTS §13.89)', () => {
-  it('a lone relay out-leg is placed, and a driverless return relocation closes the day-end loop', () => {
+describe('an unpaired relay candidate becomes a standalone chauffeur placement (REQUIREMENTS §13.88/§13.89)', () => {
+  it('a lone relay out-leg is placed as a chauffeur ride — never as a lone relay leg, no relocation', () => {
     const input = baseInput({
       cars: [makeCar('C1')],
-      requests: [makeRequest({ id: 'R1', tripShape: 'one_way_to', oneWayCarMode: 'relay', departureMs: slotMs(80) })],
+      requests: [makeRequest({ id: 'R1', tripShape: 'one_way_to', departureMs: slotMs(80) })],
     });
     const output = solve(input);
 
     expect(output.unmet).toHaveLength(0);
+    expect(output.assignments).toHaveLength(1); // no separate relocation ride
     const ride = output.assignments.find((a) => a.servedRequestIds.includes('R1'));
     expect(ride).toBeDefined();
     expect(ride?.carId).toBe('C1');
-    expect(ride?.legs[0]?.carMode).toBe('relay');
-    expect(ride?.legs[0]?.role).toBe('driver');
+    expect(ride?.legs[0]?.carMode).toBe('chauffeur');
+    expect(ride?.legs[0]?.role).toBe('passenger');
+    expect(ride?.legs[0]?.originId).toBe('home');
+    expect(ride?.legs[0]?.destinationId).toBe('destA');
+    expect(ride?.driverRequestId).toBeUndefined();
+    expect(ride?.driverMemberId).toBeUndefined();
+    expect(ride?.pairedRideId).toBeUndefined();
+    // home round trip wrapped around the leg: [D, D + 2*travel(2) + dwell(1)) = [80, 85)
     expect(ride?.originId).toBe('home');
-    expect(ride?.destinationId).toBe('destA');
-    expect(ride?.window).toEqual({ start: 80, end: 82 }); // travelSlots(destA) = 2
-
-    const reloc = output.assignments.find((a) => a.rideId === ride?.pairedRideId);
-    expect(reloc).toBeDefined();
-    expect(reloc?.carId).toBe('C1');
-    expect(reloc?.driverRequestId).toBeUndefined();
-    expect(reloc?.driverMemberId).toBeUndefined();
-    expect(reloc?.servedRequestIds).toEqual([]);
-    expect(reloc?.originId).toBe('destA');
-    expect(reloc?.destinationId).toBe('home');
-    expect(reloc?.window).toEqual({ start: 93, end: 95 }); // [dayEnd(95) - travelSlots(2), dayEnd)
-    expect(reloc?.reasonCode).toBe('PLACED_NEEDS_DRIVER');
-    expect(reloc?.pairedRideId).toBe(ride?.rideId);
+    expect(ride?.destinationId).toBe('home');
+    expect(ride?.window).toEqual({ start: 80, end: 85 });
+    expect(ride?.reasonCode).toBe('PLACED_CHAUFFEUR_NO_RETURNER');
 
     expect(output.stats.needsDriver).toBe(1);
   });
 
-  it('a lone relay return-leg (one_way_from) heals with a driverless out relocation right before it', () => {
+  it('a lone relay return-leg (one_way_from) is placed as a chauffeur pick-up ride', () => {
     const input = baseInput({
       cars: [makeCar('C1')],
-      requests: [makeRequest({ id: 'R1', tripShape: 'one_way_from', oneWayCarMode: 'relay', returnMs: slotMs(20) })],
+      requests: [makeRequest({ id: 'R1', tripShape: 'one_way_from', returnMs: slotMs(20) })],
     });
     const output = solve(input);
 
     expect(output.unmet).toHaveLength(0);
+    expect(output.assignments).toHaveLength(1);
     const ride = output.assignments.find((a) => a.servedRequestIds.includes('R1'));
     expect(ride).toBeDefined();
-    expect(ride?.legs[0]?.carMode).toBe('relay');
-    expect(ride?.originId).toBe('destA');
+    expect(ride?.legs[0]?.carMode).toBe('chauffeur');
+    expect(ride?.legs[0]?.role).toBe('passenger');
+    expect(ride?.legs[0]?.originId).toBe('destA');
+    expect(ride?.legs[0]?.destinationId).toBe('home');
+    expect(ride?.driverRequestId).toBeUndefined();
+    expect(ride?.driverMemberId).toBeUndefined();
+    expect(ride?.pairedRideId).toBeUndefined();
+    // [R - 2*travel(2) - dwell(1), R) = [20-5, 20) = [15, 20)
+    expect(ride?.originId).toBe('home');
     expect(ride?.destinationId).toBe('home');
-    expect(ride?.window).toEqual({ start: 18, end: 20 }); // travelSlots = 2
-
-    const reloc = output.assignments.find((a) => a.rideId === ride?.pairedRideId);
-    expect(reloc).toBeDefined();
-    expect(reloc?.driverRequestId).toBeUndefined();
-    expect(reloc?.originId).toBe('home');
-    expect(reloc?.destinationId).toBe('destA');
-    // right before the leg, minus the standard buffer (30 min = 2 slots): [18-2-2, 18-2) = [14, 16)
-    expect(reloc?.window).toEqual({ start: 14, end: 16 });
+    expect(ride?.window).toEqual({ start: 15, end: 20 });
 
     expect(output.stats.needsDriver).toBe(1);
   });
 
-  it('still falls back to UNMET_NO_RELAY_PARTNER when no car has room for the healing leg', () => {
+  it('still falls back to UNMET_NO_RELAY_PARTNER when no car has room for the whole chauffeur window', () => {
     const input = baseInput({
       cars: [makeCar('C1')],
       requests: [
-        // occupies the car almost the entire day so the healing return has no room at day end
+        // occupies the car almost the entire day so no room exists for the chauffeur window either
         makeRequest({ id: 'blocker', departureMs: slotMs(0), returnMs: slotMs(94) }),
-        makeRequest({ id: 'R1', tripShape: 'one_way_to', oneWayCarMode: 'relay', departureMs: slotMs(20) }),
+        makeRequest({ id: 'R1', tripShape: 'one_way_to', departureMs: slotMs(20) }),
       ],
     });
     const output = solve(input);
     const unmet = output.unmet.find((u) => u.requestId === 'R1');
     // the out-leg cannot even start (car busy with the blocker) — a genuine
-    // UNMET_NO_CAR, not something the heal pass ever gets a chance to see.
+    // UNMET_NO_CAR, not something the chauffeur heal pass ever gets a chance to see.
     expect(unmet).toBeDefined();
   });
 });
 
-describe('explicit legacy oneWayCarMode is still honoured (REQUIREMENTS §13.88)', () => {
-  it('a driver explicitly requesting passenger mode is not switched to relay', () => {
+describe('driving companions (REQUIREMENTS §13.88, owner 2026-09-16)', () => {
+  it('a non-driver requester paired with a driver return-leg makes a relay pair, the companion driving', () => {
+    const input = baseInput({
+      cars: [makeCar('C1')],
+      requests: [
+        makeRequest({
+          id: 'O1',
+          memberId: 'non-driver',
+          tripShape: 'one_way_to',
+          canDrive: false,
+          drivingCompanionIds: ['comp-1'],
+          departureMs: slotMs(36),
+        }),
+        makeRequest({ id: 'R1', memberId: 'driver-member', tripShape: 'one_way_from', returnMs: slotMs(48) }),
+      ],
+    });
+    const output = solve(input);
+    expect(output.unmet).toHaveLength(0);
+
+    const outRide = output.assignments.find((a) => a.servedRequestIds.includes('O1'));
+    expect(outRide?.legs[0]?.carMode).toBe('relay');
+    expect(outRide?.legs[0]?.role).toBe('passenger'); // the requester themself never drives
+    expect(outRide?.driverRequestId).toBe('O1'); // still "O1's leg" — the driver is named separately
+    expect(outRide?.driverMemberId).toBe('comp-1');
+
+    const retRide = output.assignments.find((a) => a.servedRequestIds.includes('R1'));
+    expect(retRide?.legs[0]?.role).toBe('driver');
+    expect(retRide?.driverMemberId).toBe('driver-member');
+    expect(retRide?.carId).toBe(outRide?.carId);
+    expect(outRide?.pairedRideId).toBe(retRide?.rideId);
+  });
+
+  it('a non-driver requester with no driving companion is a passenger candidate, never a relay leg', () => {
+    const input = baseInput({
+      cars: [makeCar('C1')],
+      requests: [makeRequest({ id: 'O1', tripShape: 'one_way_to', canDrive: false, departureMs: slotMs(36) })],
+    });
+    const nr = normalize(input).normalized[0]!;
+    expect(nr.isPassengerOnly).toBe(true);
+    expect(nr.legs[0]?.preferredMode).toBe('passenger');
+  });
+});
+
+describe('stored (legacy) oneWayCarMode is ignored entirely (REQUIREMENTS §13.88, rule made precise 2026-09-16)', () => {
+  it('a driver explicitly requesting passenger mode is ignored — still a relay candidate', () => {
     const input = baseInput({
       cars: [makeCar('C1')],
       requests: [
@@ -199,11 +251,23 @@ describe('explicit legacy oneWayCarMode is still honoured (REQUIREMENTS §13.88)
       ],
     });
     const nr = normalize(input).normalized.find((r) => r.id === 'guest')!;
-    expect(nr.isPassengerOnly).toBe(true);
-    expect(nr.legs[0]?.preferredMode).toBe('passenger');
+    expect(nr.isPassengerOnly).toBe(false);
+    expect(nr.legs[0]?.preferredMode).toBe('relay');
   });
 
-  it('a non-driver is downgraded to passenger even if oneWayCarMode explicitly says relay', () => {
+  it('a driver with a stored passenger mode and no partner is chauffeured, not merged as a passenger', () => {
+    const input = baseInput({
+      cars: [makeCar('C1', { seatConfigs: [passengers(4)] })],
+      requests: [makeRequest({ id: 'R1', tripShape: 'one_way_to', oneWayCarMode: 'passenger', departureMs: slotMs(40) })],
+    });
+    const output = solve(input);
+    expect(output.unmet).toHaveLength(0);
+    const ride = output.assignments.find((a) => a.servedRequestIds.includes('R1'));
+    expect(ride?.legs[0]?.carMode).toBe('chauffeur');
+    expect(ride?.reasonCode).toBe('PLACED_CHAUFFEUR_NO_RETURNER');
+  });
+
+  it('a non-driver is passenger regardless of an explicit legacy oneWayCarMode: relay', () => {
     const input = baseInput({
       cars: [makeCar('C1')],
       requests: [makeRequest({ id: 'R1', tripShape: 'one_way_to', oneWayCarMode: 'relay', canDrive: false, departureMs: slotMs(32) })],
@@ -211,5 +275,43 @@ describe('explicit legacy oneWayCarMode is still honoured (REQUIREMENTS §13.88)
     const nr = normalize(input).normalized[0]!;
     expect(nr.isPassengerOnly).toBe(true);
     expect(nr.legs[0]?.preferredMode).toBe('passenger');
+  });
+});
+
+describe('two eligible-driver legs at the same destination pair into one relay pair (REQUIREMENTS §13.88)', () => {
+  it('places two relay legs on one car, away at the destination in between — never two chauffeur rides', () => {
+    const input = baseInput({
+      cars: [makeCar('C1')],
+      requests: [
+        makeRequest({ id: 'O1', tripShape: 'one_way_to', departureMs: slotMs(36) }),
+        makeRequest({ id: 'R1', tripShape: 'one_way_from', returnMs: slotMs(48) }),
+      ],
+    });
+    const output = solve(input);
+    expect(output.unmet).toHaveLength(0);
+
+    const outRide = output.assignments.find((a) => a.servedRequestIds.includes('O1'));
+    const retRide = output.assignments.find((a) => a.servedRequestIds.includes('R1'));
+    expect(outRide?.legs[0]?.carMode).toBe('relay');
+    expect(retRide?.legs[0]?.carMode).toBe('relay');
+    expect(outRide?.carId).toBe(retRide?.carId);
+    expect(outRide?.pairedRideId).toBe(retRide?.rideId);
+    expect(output.carsAway.some((a) => a.carId === outRide?.carId && a.locationId === 'destA')).toBe(true);
+    expect(output.stats.needsDriver).toBe(0);
+  });
+});
+
+describe('a chauffeur window that would cross midnight never becomes a placement (day-boundary guard)', () => {
+  it('a departure late enough that [D, D+2*travel+dwell) spills past day end falls back to unmet, never throws', () => {
+    const input = baseInput({
+      cars: [makeCar('C1')],
+      requests: [makeRequest({ id: 'R1', tripShape: 'one_way_to', departureMs: slotMs(94) })], // day has 96 slots
+    });
+    expect(() => solve(input)).not.toThrow();
+    const output = solve(input);
+    expect(output.assignments.some((a) => a.servedRequestIds.includes('R1'))).toBe(false);
+    const unmet = output.unmet.find((u) => u.requestId === 'R1');
+    expect(unmet).toBeDefined();
+    expect(unmet?.reasonCode).toBe('UNMET_NO_RELAY_PARTNER');
   });
 });

@@ -33,7 +33,6 @@
         "src/features/requests/components/RequestForm.tsx",
         "src/features/requests/components/TemplateSuggestions.tsx",
         "src/features/requests/components/TemplateSuggestions.test.tsx",
-        "src/features/requests/components/RequestsListPage.test.tsx",
         "src/features/requests/series.ts",
         "src/features/requests/series.test.ts",
         "src/features/requests/templatePrefill.ts",
@@ -72,7 +71,16 @@
         "src/features/requests/seatCounts.ts",
         "src/features/requests/seatCounts.test.ts",
         "src/components/RideTypeChips.tsx",
-        "src/components/RideTypeChips.test.tsx"
+        "src/components/RideTypeChips.test.tsx",
+        "src/features/requests/upcoming.ts",
+        "src/features/requests/upcoming.test.ts",
+        "src/features/requests/myRequestsRows.ts",
+        "src/features/requests/myRequestsRows.test.ts",
+        "src/features/requests/components/RequestRow.tsx",
+        "src/features/requests/components/RequestRow.test.tsx",
+        "src/pages/HomePage.tsx",
+        "src/pages/MyHistoryPage.tsx",
+        "src/pages/RequestsRedirect.tsx"
       ],
       "vitest": [
         "src/features/requests"
@@ -154,6 +162,7 @@
         "supabase/migrations/**/*join_radius*",
         "supabase/tests/waitlist_groups.sql",
         "supabase/tests/joinable_rides.sql",
+        "supabase/tests/withdraw_settles.sql",
         "e2e/waitlist-groups.spec.ts",
         "e2e/freed-slot.spec.ts"
       ],
@@ -163,7 +172,8 @@
       ],
       "sql": [
         "waitlist_groups.sql",
-        "joinable_rides.sql"
+        "joinable_rides.sql",
+        "withdraw_settles.sql"
       ],
       "playwrightTags": [
         "@waitlist"
@@ -173,7 +183,8 @@
         "13.33",
         "13.66",
         "13.75",
-        "13.83"
+        "13.83",
+        "13.90"
       ],
       "qaChecklist": [
         "Submit against a published day with no free car; confirm waitlist + joinable-rides dialog (REQ §13.83)",
@@ -295,7 +306,7 @@
         "supabase/tests/todo_board_semantics.sql",
         "supabase/tests/coordinator_planning.sql",
         "supabase/tests/solve_semantics.sql",
-        "supabase/tests/car_chain_relocation.sql",
+        "supabase/tests/car_chain_healing.sql",
         "e2e/board.spec.ts",
         "e2e/board-mobile.spec.ts",
         "e2e/board-coordination.spec.ts",
@@ -313,7 +324,7 @@
       "sql": [
         "todo_board_semantics.sql",
         "coordinator_planning.sql",
-        "car_chain_relocation.sql",
+        "car_chain_healing.sql",
         "solve_semantics.sql"
       ],
       "playwrightTags": [
@@ -346,6 +357,7 @@
         "supabase/migrations/**/*proposal*",
         "supabase/tests/proposal_day_boundary.sql",
         "supabase/tests/proposal_replacement.sql",
+        "supabase/tests/withdraw_settles.sql",
         "e2e/proposal.spec.ts",
         "e2e/proposal-retry.spec.ts",
         "e2e/board-coordination.spec.ts",
@@ -358,7 +370,8 @@
       ],
       "sql": [
         "proposal_day_boundary.sql",
-        "proposal_replacement.sql"
+        "proposal_replacement.sql",
+        "withdraw_settles.sql"
       ],
       "playwrightTags": [
         "@proposals"
@@ -367,7 +380,8 @@
         "13.24",
         "13.29",
         "13.46",
-        "13.67"
+        "13.67",
+        "13.90"
       ],
       "qaChecklist": [
         "Drag beyond flexibility to create a shift proposal; confirm WhatsApp deep link (REQ §13.24)",
@@ -683,7 +697,11 @@
         "src/app/LandingRedirect.tsx",
         "src/app/router.tsx",
         "src/app/AppShell.tsx",
-        "src/pages/LoginPage.tsx"
+        "src/pages/LoginPage.tsx",
+        "src/app/routes.ts",
+        "src/app/routes.test.ts",
+        "src/features/member/routes.tsx",
+        "src/features/member/lazyPages.ts"
       ],
       "vitest": [
         "src/features/auth",

@@ -286,7 +286,9 @@ exception when others then
 end $$;
 
 -- ---------------------------------------------------------------------------
--- (f) A participant leaving the waiting list dissolves a two-member group.
+-- (f) A participant leaving the waiting list auto-resolves a two-member group onto the
+-- one member left (REQ §13.90 extends this: no longer just dissolves to an ordinary
+-- waiting-list entry — owner A3 "assign immediately").
 -- ---------------------------------------------------------------------------
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000104","role":"authenticated"}', true);
 
@@ -295,8 +297,8 @@ declare g uuid := (select id from waitlist_ids where k = 'g4');
   a uuid := (select id from waitlist_ids where k = 'd4a');
 begin
   perform public.withdraw_request(a, (select version from public.requests where id = a));
-  assert (select status = 'cancelled' from public.waitlist_groups where id = g),
-    '(f) a group with fewer than two open members must be cancelled';
+  assert (select status = 'resolved' from public.waitlist_groups where id = g),
+    '(f) a group with exactly one member left must auto-resolve onto that member';
   assert not exists(select 1 from public.waitlist_group_members where group_id = g and request_id = a),
     '(f) the withdrawn member row is removed';
 end $$;
@@ -306,10 +308,17 @@ reset role;
 -- The survivor's own row is checked outside the member session: an unserved waitlisted
 -- request of *another* member is deliberately invisible under `requests` RLS.
 do $$
-declare b uuid := (select id from waitlist_ids where k = 'd4b');
+declare b uuid := (select id from waitlist_ids where k = 'd4b'); g uuid := (select id from waitlist_ids where k = 'g4');
 begin
-  assert (select status = 'waitlisted' and status_reason = 'WAITLISTED_NO_CAR' from public.requests where id = b),
-    '(f) the survivor goes back to being an ordinary waiting-list entry';
+  assert (select status = 'assigned' and status_reason = 'WAITLIST_RESOLVED_DRIVER' from public.requests where id = b),
+    '(f) the survivor is assigned as driver instead of staying an ordinary waiting-list entry';
+  assert exists(select 1 from public.rides r join public.ride_requests rr on rr.ride_id = r.id
+    where rr.request_id = b and r.status <> 'cancelled'),
+    '(f) the survivor must get a real ride';
+  assert exists(select 1 from public.notifications where event = 'waitlist_resolved'
+    and (data->>'group_id')::uuid = g and recipient_id = (select id from waitlist_ids where k = 'member3')
+    and data->>'variant' = 'driver'),
+    '(f) the survivor must be notified waitlist_resolved as driver';
 end $$;
 
 -- ---------------------------------------------------------------------------

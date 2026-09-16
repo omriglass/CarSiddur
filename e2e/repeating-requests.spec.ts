@@ -76,7 +76,7 @@ test.describe("repeating requests", { tag: ["@request-form"] }, () => {
         await page.getByRole("radiogroup", { name: "סוג נסיעה" }).getByRole("radio").first().click();
         await page.getByRole("switch", { name: t("request.repeatWeekly") }).click();
         await page.getByRole("button", { name: "הגש/י בקשה" }).click();
-        await expect(page).toHaveURL(/\/requests$/);
+        await expect(page).toHaveURL(/\/my$/);
 
         const { data } = await service.from("request_templates").select("id, is_active")
           .eq("requester_id", MEMBER_ID).eq("destination_text", DESTINATION).maybeSingle();
@@ -109,7 +109,7 @@ test.describe("repeating requests", { tag: ["@request-form"] }, () => {
         await expect(page).toHaveURL(/\/requests\/new\?.*template=/);
         await expect(page.getByText(DESTINATION)).toBeVisible();
         await page.getByRole("button", { name: "הגש/י בקשה" }).click();
-        await expect(page).toHaveURL(/\/requests$/);
+        await expect(page).toHaveURL(/\/my$/);
 
         await page.goto("/my");
         await expect(page.getByTestId("template-suggestions")).toHaveCount(0);

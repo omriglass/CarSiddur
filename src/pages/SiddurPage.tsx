@@ -524,7 +524,7 @@ export function SiddurPage() {
           icon={Inbox}
           message={tv("siddur.notPublishedYet", { weekLabel: formatWeekRangeLabel(resolvedWeek.week_start) })}
           action={
-            <a href="/requests" className="text-sm font-medium text-primary underline">
+            <a href={paths.my()} className="text-sm font-medium text-primary underline">
               {he.siddur.notPublishedAction}
             </a>
           }

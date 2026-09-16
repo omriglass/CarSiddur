@@ -47,8 +47,11 @@ begin
   assert not exists(select 1 from public.ride_requests where request_id=(second->>'request_id')::uuid),'no-fit request created a booking';
   second:=public.submit_request((payload-array['guest_passenger_names','companion_ids','reserve_missing_driver'])||jsonb_build_object('depart_at',dt+interval '4 hours','adults',1));
   assert second->>'reason'='WAITLISTED_ONE_WAY' and not(second ? 'ride_id'),'ordinary one-way path changed';
-  begin perform public.submit_request(payload||jsonb_build_object('one_way_car_mode','relay'));raise exception 'relay quick reservation accepted';
-  exception when raise_exception then if sqlerrm<>'invalid_quick_reservation' then raise;end if;end;
+  -- REQ §13.88 (2026-09-16): the member no longer chooses a car mode, so the quick
+  -- reservation must accept any/no `one_way_car_mode` — the DB decides later whether a
+  -- returner pairs it into a relay leg (car_chain_healing.sql covers that mechanism).
+  second:=public.submit_request((payload-array['guest_passenger_names','companion_ids'])||jsonb_build_object('one_way_car_mode','relay','depart_at',dt+interval '12 hours','adults',1));
+  assert (second->>'needs_driver')::boolean,'a relay-tagged quick reservation must still be accepted and await a pairing volunteer until a returner appears';
   begin perform public.submit_request(payload||jsonb_build_object('week_start',w+7,'depart_at',dt+interval '7 days'));raise exception 'nonlive quick reservation accepted';
   exception when raise_exception then if sqlerrm<>'invalid_quick_reservation' then raise;end if;end;
   begin perform public.submit_request(payload||jsonb_build_object('trip_shape','round_trip','return_at',dt+interval '2 hours','one_way_car_mode',null));raise exception 'roundtrip quick driver vacancy accepted';

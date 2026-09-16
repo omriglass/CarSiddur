@@ -34,7 +34,10 @@ test.describe("auto-approve on a free car (live week)", { tag: ["@request-form",
 
     await page.getByRole("button", { name: "הגש/י בקשה" }).click();
 
-    await expect(page).toHaveURL(/\/requests$/);
+    // Post-submit navigates to `/my` (2026-09-16, REQ §13 item 91: one "my rides" screen,
+    // `RequestForm` now calls `navigate(paths.my())` instead of the old `/requests` list).
+    // `/requests` redirects to `/my`, which lists EVERY upcoming request grouped by week (REQ §13.91).
+    await expect(page).toHaveURL(/\/my$/);
     const requestCard = page.locator("div.rounded-md", { hasText: DESTINATION });
     await expect(requestCard.getByText("שובצה")).toBeVisible({ timeout: 10_000 });
 
