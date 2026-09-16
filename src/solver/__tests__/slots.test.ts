@@ -48,13 +48,33 @@ describe('normalize()', () => {
     expect(warnings.some((w) => w.code === 'NO_CAR_FITS_SEATS')).toBe(true);
   });
 
-  it('defaults a missing one-way car mode to passenger with a warning', () => {
+  it('defaults a missing one-way car mode to relay for a member who can drive, no warning (REQUIREMENTS §13.88)', () => {
     const input = baseInput({
       cars: [makeCar('C1')],
       requests: [makeRequest({ id: 'R1', tripShape: 'one_way_to', departureMs: slotMs(32) })],
     });
     const { warnings, normalized } = normalize(input);
-    expect(warnings.some((w) => w.code === 'ONE_WAY_MODE_MISSING')).toBe(true);
+    expect(warnings.some((w) => w.code === 'ONE_WAY_MODE_MISSING')).toBe(false);
+    expect(normalized[0]?.isPassengerOnly).toBe(false);
+    expect(normalized[0]?.legs[0]?.preferredMode).toBe('relay');
+  });
+
+  it('defaults a missing one-way car mode to passenger for a non-driver (REQUIREMENTS §13.88)', () => {
+    const input = baseInput({
+      cars: [makeCar('C1')],
+      requests: [makeRequest({ id: 'R1', tripShape: 'one_way_to', departureMs: slotMs(32), canDrive: false })],
+    });
+    const { normalized } = normalize(input);
+    expect(normalized[0]?.isPassengerOnly).toBe(true);
+    expect(normalized[0]?.legs[0]?.preferredMode).toBe('passenger');
+  });
+
+  it('a non-driver never gets relay even with an explicit legacy oneWayCarMode', () => {
+    const input = baseInput({
+      cars: [makeCar('C1')],
+      requests: [makeRequest({ id: 'R1', tripShape: 'one_way_to', oneWayCarMode: 'relay', departureMs: slotMs(32), canDrive: false })],
+    });
+    const { normalized } = normalize(input);
     expect(normalized[0]?.isPassengerOnly).toBe(true);
   });
 

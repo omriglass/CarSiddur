@@ -130,7 +130,7 @@ Order once approved: bugs B2–B5 first (small, one afternoon), then F6, then F7
 ### ~~B3~~ ✅ done 2026-09-15 — Bug: "לאן?" should read "מאיפה?" when the trip shape is "חזור בלבד"
 
 - `RequestForm.tsx` labels the destination field with `field.destination` ("לאן?") regardless of `tripShape`. Add `field.destinationFrom` ("מאיפה?") and pick it when `tripShape === "one_way_from"`. Form-only, no behaviour change (the stored field is still the destination). UX_FLOWS §3.4 mockup note + §10 key table row.
-- Regression test: extend `RequestForm.oneWaySync.test.tsx` (label flips with the trip-shape control).
+- Regression test: `destinationLabel.test.ts` (pure key choice per trip shape).
 
 ### ~~B4~~ ✅ done 2026-09-15 — Bug: a single date must always carry its weekday (e.g. "16.9 יום ד'")
 
@@ -179,3 +179,71 @@ Not in REQ today: one destination per request (`requests.destination_id | destin
   **A8.** Yes — informational + matching; the solver keeps one block to the final destination.
 - **Q9 (limits/return).** Cap at 3 stops? Do stops also apply on the way back (pick the kid up), i.e. separate outbound/return stop lists, or one ordered list marked "on the way there / on the way back"?
   **A9.** One ordered list, no cap, a tiny "add stop" button. No separate return list.
+
+## Owner dump 2026-09-15 (13:38–14:54) — triaged 2026-09-15, owner answered Q1–Q9 the same afternoon — **building 2026-09-15**; D5 parked by the owner ("backburner") until the toast text is available
+
+Order once approved: D1 → D6 → D5 → D4 → D3 (bugs, smallest first) → D2 (a REQ change: the one-way car-mode model). Every hypothesis below is marked as such — none has been reproduced yet.
+
+### ~~D1~~ ✅ done 2026-09-15 — Bug: the default page must be the same for a Sadran and for a member (REQ §13.87: `/` and a fresh sign-in open the last opened main page — siddur or my rides — siddur by default; `src/app/landing.ts`, `LandingRedirect`, remembered per device)
+
+- What the code says today: `/` redirects everyone to `/my` (`router.tsx`); the only role difference in the shell is the extra **סדרן** tab (`AppShell.tsx`), and `guards.tsx` only redirects non-Sadranim *away* from `/sadran/*`. So the difference the owner sees is not an explicit role branch — candidates: Home's week choice (`home_week_preference`, `homeWeek.ts`), the PWA start URL, or a remembered last route.
+- **Q1.** What did you land on as Sadran vs as a member (which screen / which week), and after which action (fresh open, sign-in, tapping the app icon)?
+  **A1.** Everyone — members, Sadranim, admins — lands on the *main* screen. Best: the last opened of the two main pages (siddur / my rides), because most people just want to see which car is available.
+
+### ~~D6~~ ✅ done 2026-09-16 — Bug: dragging one leg back to the unmet lane shows the request twice (server: only that leg's request goes to the unmet list, the chain heals with an automatic relocation ride — REQ §13.89, `20260915110000_car_chain_relocation_rides.sql`; client: board refetches rides + car locations after unassign/cancel/edit) (on the remaining ride and in the unmet list)
+
+- Hypothesis: the unmet lane calls `unassign_ride(ride)` (`20260907093500`), which cancels *that leg's* ride and sets the request `waitlisted` only when no other live ride serves it. With a two-leg (relay/passenger) assignment the other leg's ride survives, the request stays `assigned`, and the board lists it both on that ride and in the unmet list as an *incomplete assignment* (REQ §13.75 `incompleteAssignments`) — correct data, confusing display.
+- **Q9.** Expected: dragging either leg to the unmet lane unassigns the **whole request** (both legs, one card in the unmet list), or only that leg, with the request shown once and marked "חסרה רגל" instead of appearing on the ride too?
+  **A9.** Only that leg's card goes to the unmet list. The *other* leg's ride turns into a one-way ride with **"missing driver"** (the car is left away; see D4).
+
+### D5 — Bug: a proposal about one leg — accepting changes nothing, and a toast shows "missing id … <hash>"
+
+- Hypothesis: `maybe_apply_accepted_proposal` (`20260907092000`) applies a `shift` through `edit_ride` on the request's ride, and a `merge` by inserting `ride_requests(ride_id …)` from the proposal payload. For a request served by two leg rides it picks one ride (or a leg whose ride was since cancelled), so the insert fails on the `ride_requests.ride_id` foreign key and the raw Postgres detail — "Key (ride_id)=(<uuid>) is not present" — reaches the toast unmapped. The proposal then stays `accepted`, never `applied`.
+- **Q8.** Paste the exact toast text, and say which proposal kind it was (הזזה / הצטרפות / other) and which leg (הלוך / חזור).
+  **A8.** Not available now (it happened right after the double-card episode). Parked on the backburner.
+
+### ~~D4~~ ✅ done 2026-09-16 — Bug: once two one-way rides exist you cannot change either (root cause was not a stale version but `assert_car_chain` refusing any state that leaves the car away: `car_away_at_day_end`; it now heals with a missing-driver relocation ride instead, reusing the removed leg's original times — REQ §13.89; `supabase/tests/car_chain_relocation.sql`) — every edit fails with "מישהו אחר שינה את זה" — and a one-way ride without its return leg should become "missing driver"
+
+- Hypothesis: editing leg A (`edit_ride` → `assert_car_chain`) also rewrites leg B's row (car chain / location), so `bump_version` raises B's version while the open ride sheet still holds the old one; the board's query is not refreshed between the two edits, so the next edit on B (and, symmetrically, on A) is refused as stale. Needs a reproduction with two relay legs on one car.
+- Owner rule to encode (REQ §5.4 addition): **a relay out-leg with no return leg is not a complete plan** — the car would be stranded at the destination. Removing/cancelling the return leg turns it into a **missing-driver return ride** (`needs_driver`, `one_way_from` the out-leg's destination, so a volunteer can take it) instead of leaving the car "free" there; a return leg must always start where the previous leg left the car (already REQ §13.58 "same destination", now enforced when editing too).
+- **Q6.** When the *out* leg is removed instead, the return leg has no car at the destination — cancel it, or keep it as a missing-driver ride too?
+  **A6.** Keep it as a missing-driver ride; when someone returns the car (volunteers / is paired) it automatically becomes an ordinary one-way leg.
+- **Q7.** What time window does the auto-created missing-driver return ride get — the removed leg's original times, or "until `day_end_time`" (23:59) as the latest the car must be home?
+  **A7.** The original times.
+
+### ~~D3~~ ✅ done 2026-09-16 — Bug: a car taken out in the morning and returned by someone else in the evening must never look vacant in between (board grid shows an "away" band between the legs; the automatic return relocation ride shows as missing-driver; REQ §13.89)
+
+- The model already has "away" windows: `freeWindows.awayWindows` (quick requests / car-now), the board's location badge (`geometry.ts awayByCarId`), and the solver's `carsAway`. Something still shows the car as free — to check after Q5: the siddur/board grid's empty space (no block drawn while the car sits at the destination), `try_auto_approve()` for a round trip filed against the published/live week (does it check car *location*, or only time overlap?), and the joinable-rides / waiting-list placement.
+- Proposal: draw an explicit "away" block on the grid ("הרכב בבנימינה", non-interactive) for the whole gap between the out-leg and the return leg, and make every SQL placement path (`try_auto_approve`, `resolve_waitlist_group`, `enter_waiting_list`) refuse a keep ride that starts at home while the car is away.
+- **Q5.** Where did you see it as vacant — siddur grid, board grid, car-now button, or a request that actually got auto-approved onto the away car?
+  **A5.** On the Sadran board.
+
+### ~~D2~~ ✅ done 2026-09-16 — Change (REQ §13.88): no "הרכב נשאר איתי" vs "צריך הסעה" choice on one-way rides (`profiles.does_not_drive` + profile switch + admin editor; `submit_request` defaults the mode; solver `Request.canDrive`, `PLACED_NEEDS_DRIVER`/`PLACED_RELAY_SOLO`; `non_driver_cannot_drive` guard in `assert_ride_driver`) — everyone can drive unless they say otherwise
+
+- Today a one-way request carries `one_way_car_mode` (`relay` — I drive and leave the car there / `passenger` — I need a lift), chosen by the member. Owner rule: drop the question; assume every member can drive, and let members who do not drive say so **once, in their profile** (new `profiles.does_not_drive`, admin-editable too). The solver then decides per leg: `relay` when a car can go/come back (pairing legs to the same destination), else `passenger` in a ride going the same way, else `chauffeur` — exactly today's fallback chain, just without the member's preference. A non-driver is never placed as driver/relay (solver `Request.canDrive`, `assert`ed in `apply_solver_result`/`edit_ride`), and never gets the volunteer "missing driver" prompts.
+- Scope: REQ §5.1 row + §5.4 + new §13 item; migration (profile flag, `submit_request` accepts a missing mode and defaults it, `one_way_car_mode` stays in the schema as the solver's decision); request form loses the control (and `templates` capture); solver reads `canDrive`; profile screen switch "אני לא נוהג/ת"; admin member editor; docs/tests.
+- **Q2.** Keep the stored `one_way_car_mode` as the *solver's* decision (visible to the Sadran on the board) — yes?
+  **A2.** Everyone should still *see* whether a car is driven somewhere to stay there or it is a short ride with another driver — the mode stays visible as the outcome, the member just does not choose it. Rule: "I asked to get to X with a car and nobody can take it back" ⇒ effectively a one-way (relay, car stays at X). "I asked one-way but someone can return it" ⇒ unless I am a non-driver, a two-leg ride (I drive out, someone drives it back).
+- **Q3.** The non-driver flag: member self-service in the profile *and* admin-editable, default "drives"?
+  **A3.** Yes.
+- **Q4.** Does it apply to round trips too — a non-driver's round trip is forced to "car not needed at destination" (served as passenger/chauffeur legs), and the Sadran sees why?
+  **A4.** Yes. A non-driver who asks for a car gets one **without a driver** (they may bring their own guest driver) or is assigned to other people's rides.
+
+## Owner notes 2026-09-16 (morning) — code freeze for the current version: bugs only, features parked
+
+### N1 — Bug: notification day reads "ה׳ 16.9"; it should read "יום ה׳ 16.9"
+
+- The `{{day}}` var is "ה׳ 16.9" (B4). In running text that needs the word "יום": "ביום ה׳ 16.9", "יום ה׳ 16.9 08:00–12:00". Fix in the **templates** (the Hebrew place), not in SQL logic: every seeded template that renders `{{day}}` gets the prefix (`ב{{day}}` → `ביום {{day}}`, bare `{{day}}` → `יום {{day}}`; `ביום/ליום {{day}}` already right), in `supabase/seed.sql` and, for production, a migration that rewrites only rows the admin never edited (`body = default_body`). The UI keeps "ה׳ 16.9" on cards (owner's format choice A1 of 2026-09-15). **Built 2026-09-16**, `20260915130000_notification_day_prefix_and_proposal_link.sql`.
+
+### N3 — Bug: a sent notification shows the literal `{{link}}`
+
+- Root cause: the proposal composer stores the whole WhatsApp text — including the `{{link}}` token it deliberately leaves unrendered until send time — as `proposals.reason_he`; `notification_context()` exposes that as `{{proposalShort}}`, and the inbox/push `proposal_received` template prints it verbatim. Fix: `notification_context()` renders `reason_he` with `link` = the notification's own deep link (`_data.url`, computed by `notification_default_url()` before the context is built) — so the inbox text carries a working link and never a raw token. **Built 2026-09-16**, same migration as N1.
+
+### N4 — Bug (parked with D5; one likely cause fixed 2026-09-16): the "hashed" toast, now seen when re-solving the week after manual request changes
+
+- **Found and fixed one concrete instance (2026-09-16, `20260915140000`):** `apply_solver_result` cast the payload's `driver_id` straight to uuid and the client sent `""` for a driverless ride, so a re-solve that produced any driverless placement failed with "invalid input syntax for type uuid" (a 400 whose detail line reads like a hash); the deferred `rides_location_ends` trigger also rejected the solver's relocation ride at commit. Both fixed; `e2e/board.spec.ts` "bug #4" now prints the response body on failure. The proposal-apply variant (D5) is still unreproduced.
+- Same family as D5. Nothing in the local Postgres log for it (PostgREST-side errors are not logged at the default level). Hypothesis: `apply_solver_result` in full mode deletes unpinned rides and re-inserts the solver's output; a solver `hostRideId`/leg `ride_id` that points at a ride deleted in that same run fails the `ride_requests.ride_id` foreign key, and the toast's "unknown error" fallback shows the Postgres detail "Key (ride_id)=(<uuid>) is not present". Next time: copy the toast's small grey description line (it is the Postgres detail) — that names the table and column. Not touched under the freeze.
+
+### N2 — Feature (parked, code freeze): לשון פנייה (form of address) in the profile
+
+- Would add `profiles.address_form` (e.g. `neutral | masculine | feminine`, default neutral = today's slash forms) and gendered variants of every template and UI string that addresses the member (נהג/ת, אישר/ה, שובצת …). Notification templates would need a variant per form (or a `{{gender:נהג|נהגת}}` mini-syntax in `render_notification_text`), and the UI dictionary a parallel set — a copy-wide change. **Reverses consistency decision 20 / REQ §13.49** ("slash forms only, no per-member gender field — final"), so it needs an explicit owner decision in REQ first. Estimate: medium-large; not for this version.

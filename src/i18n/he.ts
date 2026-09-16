@@ -551,6 +551,8 @@ export const he = {
     lastAdminRequired: "לא ניתן להסיר את ההרשאות של המנהל/ת האחרון/ה במערכת",
     weekNotOpen: "השבוע הזה סגור להגשת בקשות",
     oneWayCarModeRequired: "יש לבחור אופן נסיעה בכיוון אחד",
+    /** REQ §88 (owner 2026-09-15): server-side guard — a member who marked "אני לא נוהג/ת" was placed as a driver/relay. */
+    nonDriverCannotDrive: "חבר/ה שסימן/ה 'לא נוהג/ת' לא יכול/ה להיות נהג/ת",
     manualBoostRequiresReason: "יש לציין סיבה להעדפה ידנית",
     requestNotFound: "הבקשה לא נמצאה",
     requestHasRide: "הבקשה כבר משובצת לנסיעה — יש לבטל את הנסיעה במקום למשוך את הבקשה",

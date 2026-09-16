@@ -130,12 +130,27 @@ function buildKeepLeg(home: string, D: number, R: number): NormalizedLeg {
   return { side: 'both', preferredMode: 'keep', originId: home, destinationId: home, window: { start: D, end: R } };
 }
 
+/**
+ * Effective one-way car mode (REQUIREMENTS §13.88, owner 2026-09-15): the member
+ * no longer chooses a mode on the request form — only "I need to get to X" /
+ * "back from X". A non-driver (`canDrive === false`) is never given a driver
+ * role, so `relay` is downgraded to `passenger` regardless of what is stored
+ * (Sadran/legacy data may still set `oneWayCarMode` explicitly, honoured only
+ * for a member who can drive). When absent, the solver decides: `relay` for a
+ * member who can drive, `passenger` (a seat in someone else's ride, falling
+ * back to `chauffeur`, §3.11 item 5) for one who cannot.
+ */
+export function resolveOneWayMode(request: Request): 'relay' | 'passenger' {
+  if (request.canDrive === false) return 'passenger';
+  return request.oneWayCarMode ?? 'relay';
+}
+
 /** The independent out-leg of a round trip (used by relay pairing / splitLegs when needsCarAtDestination = false). */
 export function roundTripOutLeg(nr: NormalizedRequest, home: string): NormalizedLeg {
   const D = nr.window.start;
   return {
     side: 'out',
-    preferredMode: nr.request.oneWayCarMode ?? 'relay',
+    preferredMode: resolveOneWayMode(nr.request),
     originId: home,
     destinationId: nr.destinationId,
     window: { start: D, end: D + nr.travelSlots },
@@ -147,7 +162,7 @@ export function roundTripReturnLeg(nr: NormalizedRequest, home: string): Normali
   const R = nr.window.end;
   return {
     side: 'return',
-    preferredMode: nr.request.oneWayCarMode ?? 'relay',
+    preferredMode: resolveOneWayMode(nr.request),
     originId: nr.destinationId,
     destinationId: home,
     window: { start: R - nr.travelSlots, end: R },
@@ -413,12 +428,11 @@ export function normalize(input: SolverInput): NormalizeResult {
       continue;
     }
 
-    // One-way shapes: durationFixed = true (single shift dimension).
-    let mode = request.oneWayCarMode;
-    if (mode === undefined) {
-      warnings.push({ code: 'ONE_WAY_MODE_MISSING', message: 'WARN_ONE_WAY_MODE_MISSING', requestId: request.id });
-      mode = 'passenger';
-    }
+    // One-way shapes: durationFixed = true (single shift dimension). The member
+    // no longer states a mode on the form (REQUIREMENTS §13.88) — an absent
+    // `oneWayCarMode` is the normal case, resolved by `resolveOneWayMode`, not a
+    // warning-worthy data problem.
+    const mode = resolveOneWayMode(request);
 
     if (request.tripShape === 'one_way_to') {
       if (request.departureMs === undefined) continue;

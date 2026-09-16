@@ -51,6 +51,8 @@ export interface WeekRequestRow extends RequestRow {
   /** Named children (`request_children` → `children.full_name`), distinct from the guessed "unnamed child" fallback (`he.ridePublicDetails.unnamedChild`). */
   childNames?: string[];
   requester_full_name: string | null;
+  /** REQ §88 (owner 2026-09-15): `profiles.does_not_drive` for the requester. */
+  requester_does_not_drive: boolean;
   destination_resolved_name: string | null;
   destination_travel_minutes: number | null;
   ride_type_code: string | null;
@@ -60,7 +62,7 @@ export interface WeekRequestRow extends RequestRow {
 }
 
 const WEEK_REQUEST_SELECT = `*,
-  requester:profiles!requests_requester_id_fkey(full_name),
+  requester:profiles!requests_requester_id_fkey(full_name, does_not_drive),
   destination:destinations(name, travel_minutes),
   ride_type:ride_types(code, name_he),
   preferred_car:cars!requests_preferred_car_id_fkey(name),
@@ -70,7 +72,7 @@ const WEEK_REQUEST_SELECT = `*,
 interface WeekRequestJoinRow extends RequestRow {
   companions: { profile_id: string; profile: { full_name: string } | null }[];
   request_children: { child: { full_name: string } | null }[];
-  requester: { full_name: string } | null;
+  requester: { full_name: string; does_not_drive: boolean } | null;
   destination: { name: string; travel_minutes: number | null } | null;
   ride_type: { code: string; name_he: string } | null;
   preferred_car: { name: string } | null;
@@ -81,6 +83,8 @@ function flattenWeekRequest(row: WeekRequestJoinRow): WeekRequestRow {
   return {
     ...rest,
     requester_full_name: requester?.full_name ?? null,
+    /** REQ §88: `Request.canDrive = !requester.does_not_drive` (solverBridge/buildSolverInput.ts). */
+    requester_does_not_drive: requester?.does_not_drive ?? false,
     companions: (companions ?? []).flatMap((person) => person.profile ? [{ profile_id: person.profile_id, name: person.profile.full_name }] : []),
     childNames: (request_children ?? []).flatMap((entry) => entry.child?.full_name ? [entry.child.full_name] : []),
     destination_resolved_name: destination?.name ?? rest.destination_text ?? null,
@@ -113,14 +117,25 @@ export async function fetchWeekRow(departmentId: string, weekStart: string): Pro
 // `rides_select` — so this is safe to reuse from a signed-in Sadran session)
 // ---------------------------------------------------------------------------
 
-export async function fetchWeekRequests(departmentId: string, weekStart: string): Promise<RequestRow[]> {
+/**
+ * Solver-bridge feeder (`buildSolverInput`'s `requests` param, `applySolve.ts`): plain
+ * `requests` columns plus the single extra field the solver needs from `profiles`
+ * (`requester_does_not_drive`, REQ §88 — `Request.canDrive = !requester.does_not_drive`).
+ * Kept as a light, single-column embed rather than `WEEK_REQUEST_SELECT`'s full join set
+ * (names/destinations/companions/children) since this runs on every solve.
+ */
+export type RequestRowWithDriverFlag = RequestRow & { requester_does_not_drive: boolean };
+
+export async function fetchWeekRequests(departmentId: string, weekStart: string): Promise<RequestRowWithDriverFlag[]> {
   const { data, error } = await supabase
     .from("requests")
-    .select("*")
+    .select("*, requester:profiles!requests_requester_id_fkey(does_not_drive)")
     .eq("department_id", departmentId)
     .eq("week_start", weekStart);
   if (error) throw toAppError(error);
-  return data ?? [];
+  return ((data ?? []) as unknown as (RequestRow & { requester: { does_not_drive: boolean } | null })[]).map(
+    ({ requester, ...rest }) => ({ ...rest, requester_does_not_drive: requester?.does_not_drive ?? false }),
+  );
 }
 
 /**

@@ -7,6 +7,14 @@ const TLV = "tlv-dest";
 const HAIFA = "haifa-dest";
 
 describe("rideBlockLabel", () => {
+  it("shows the fixed missing-driver relocation label regardless of served (REQ §89)", () => {
+    const label = rideBlockLabel({
+      originId: HAIFA, destinationId: HOME, originName: "חיפה", destinationName: "נבו",
+      homeDestinationId: HOME, served: [], autoRelocation: true,
+    });
+    expect(label).toBe("החזרת רכב — חסר/ה נהג/ת");
+  });
+
   it("keeps different passenger destinations visible on one combined booking", () => {
     const input = { originId: HOME, destinationId: HOME, originName: "home", destinationName: "home", homeDestinationId: HOME,
       served: [

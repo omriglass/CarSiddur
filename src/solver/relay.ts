@@ -10,10 +10,12 @@
 // unmet, its legs are resolved independently (including the relay+relay
 // self-pair) by splitLegs.ts.
 
+import { reason } from './reasons';
 import type { NormalizedRequest } from './slots';
-import { byId, withinRequestDay } from './slots';
-import type { Car, Window } from './types';
-import { fits } from './seatFit';
+import { byId, dayBoundsForSlot, formatSlotTime, minutesToSlots, withinRequestDay } from './slots';
+import type { CarTimeline } from './timeline';
+import type { Assignment, Car, SolverInput, Window } from './types';
+import { fits, luggageFits } from './seatFit';
 
 export interface RelayPair {
   id: string;
@@ -141,4 +143,151 @@ export function pairRelays(requests: NormalizedRequest[], cars: Car[]): PairRela
   const unpaired = requests.filter((nr) => (isRelayOut(nr) && !usedOut.has(nr.id)) || (isRelayReturn(nr) && !usedRet.has(nr.id)));
 
   return { pairs, unpaired };
+}
+
+export interface HealResult {
+  /** the solo relay leg's own ride, plus its driverless needs-driver relocation ride */
+  healed: Assignment[];
+  /** ids of requests that were healed (no longer unmet) */
+  healedIds: Set<string>;
+}
+
+/**
+ * Heals a lone (unpaired) relay leg by placing it on a free shared car and
+ * auto-generating a driverless "needs a driver" relocation ride that closes
+ * the day-end loop (REQUIREMENTS §13.89, docs/SOLVER.md §3.6.1a): a lone
+ * relay **out** leg gets a `dest -> home` relocation at
+ * `[dayEnd - travel, dayEnd)`; a lone relay **return** leg gets a symmetric
+ * `home -> dest` relocation immediately before it. Mutates `timelines` (adds
+ * both blocks on the chosen car) exactly like the greedy pass does.
+ *
+ * Simplification (documented, in the style of docs/SOLVER.md §9.1): only the
+ * leg's own preferred window is tried, on the first shared car (by id) whose
+ * whole pair of windows (leg + relocation) is free — no flexibility search.
+ * A car that cannot fit both windows is skipped; if none can, the leg is left
+ * for the ordinary UNMET_NO_RELAY_PARTNER path unchanged.
+ */
+export function healLoneRelayLegs(
+  unpaired: NormalizedRequest[],
+  timelines: Map<string, CarTimeline>,
+  input: SolverInput,
+  carsById: Map<string, Car>,
+  scores: Map<string, { total: number }>,
+): HealResult {
+  const healed: Assignment[] = [];
+  const healedIds = new Set<string>();
+  const bufferSlots = minutesToSlots(input.config.bufferMinutes);
+  const home = input.homeLocationId;
+  const sharedCars = input.cars.filter((c) => c.type === 'shared').sort((a, b) => byId({ id: a.id }, { id: b.id }));
+
+  const sorted = [...unpaired].sort((a, b) => {
+    const sa = scores.get(a.id)?.total ?? 0;
+    const sb = scores.get(b.id)?.total ?? 0;
+    if (sa !== sb) return sb - sa;
+    if (a.request.submittedAtMs !== b.request.submittedAtMs) return a.request.submittedAtMs - b.request.submittedAtMs;
+    return byId(a, b);
+  });
+
+  for (const nr of sorted) {
+    const leg = nr.legs[0];
+    if (!leg || leg.side === 'both') continue; // defensive: unpaired only ever holds one-way relay legs
+    const day = dayBoundsForSlot(input.week.days, leg.side === 'out' ? leg.window.start : leg.window.end);
+
+    let placement: { carId: string; healWindow: Window; healOriginId: string; healDestinationId: string } | null = null;
+    for (const car of sharedCars) {
+      if (!fits(car, nr.passengers) || !luggageFits(car, nr.luggage ? 1 : 0)) continue;
+      const tl = timelines.get(car.id);
+      if (!tl) continue;
+      const probeId = `heal-probe:${nr.id}`;
+
+      if (leg.side === 'out') {
+        if (!tl.isFree(leg.window, leg.originId)) continue;
+        const healWindow = { start: day.dayEndSlot - nr.travelSlots, end: day.dayEndSlot };
+        if (leg.window.end + bufferSlots > healWindow.start) continue;
+        tl.add({ rideId: probeId, window: leg.window, startLocationId: leg.originId, endLocationId: leg.destinationId, overnightAck: false });
+        const healFree = tl.isFree(healWindow, leg.destinationId);
+        tl.remove(probeId);
+        if (!healFree) continue;
+        placement = { carId: car.id, healWindow, healOriginId: leg.destinationId, healDestinationId: home };
+      } else {
+        const healWindow = { start: leg.window.start - bufferSlots - nr.travelSlots, end: leg.window.start - bufferSlots };
+        if (healWindow.start < day.startSlot) continue;
+        if (!tl.isFree(healWindow, home)) continue;
+        tl.add({ rideId: probeId, window: healWindow, startLocationId: home, endLocationId: leg.originId, overnightAck: false });
+        const legFree = tl.isFree(leg.window, leg.originId);
+        tl.remove(probeId);
+        if (!legFree) continue;
+        placement = { carId: car.id, healWindow, healOriginId: home, healDestinationId: leg.originId };
+      }
+      break;
+    }
+
+    if (!placement) continue;
+
+    const tl = timelines.get(placement.carId);
+    if (!tl) continue;
+    const car = carsById.get(placement.carId);
+    const legRideId = `ride:${nr.id}`;
+    const relocRideId = `reloc:${nr.id}`;
+
+    if (leg.side === 'out') {
+      tl.add({ rideId: legRideId, window: leg.window, startLocationId: leg.originId, endLocationId: leg.destinationId, overnightAck: false });
+      tl.add({ rideId: relocRideId, window: placement.healWindow, startLocationId: placement.healOriginId, endLocationId: placement.healDestinationId, overnightAck: false });
+    } else {
+      tl.add({ rideId: relocRideId, window: placement.healWindow, startLocationId: placement.healOriginId, endLocationId: placement.healDestinationId, overnightAck: false });
+      tl.add({ rideId: legRideId, window: leg.window, startLocationId: leg.originId, endLocationId: leg.destinationId, overnightAck: false });
+    }
+
+    const depSlot = leg.side === 'out' ? leg.window.start : placement.healWindow.start;
+    const retSlot = leg.side === 'out' ? placement.healWindow.end : leg.window.end;
+    const legText = reason('PLACED_RELAY_SOLO', {
+      car: car?.name ?? placement.carId,
+      member: nr.request.memberId,
+      dest: nr.destinationId,
+      dep: formatSlotTime(depSlot, day),
+      ret: formatSlotTime(retSlot, day),
+    });
+
+    healed.push({
+      rideId: legRideId,
+      carId: placement.carId,
+      window: leg.window,
+      originId: leg.originId,
+      destinationId: leg.destinationId,
+      driverRequestId: nr.id,
+      driverMemberId: nr.request.memberId,
+      legs: [{ requestId: nr.id, leg: leg.side, carMode: 'relay', originId: leg.originId, destinationId: leg.destinationId, role: 'driver' }],
+      servedRequestIds: [nr.id],
+      passengers: nr.passengers,
+      luggageCount: nr.luggage ? 1 : 0,
+      shift: { departureMin: 0, returnMin: 0 },
+      pairedRideId: relocRideId,
+      source: 'solver',
+      reasonCode: 'PLACED_RELAY_SOLO',
+      reason: legText,
+    });
+
+    healed.push({
+      rideId: relocRideId,
+      carId: placement.carId,
+      window: placement.healWindow,
+      originId: placement.healOriginId,
+      destinationId: placement.healDestinationId,
+      driverRequestId: undefined,
+      driverMemberId: undefined,
+      legs: [],
+      servedRequestIds: [],
+      passengers: { adults: 0, childSeats: 0, boosters: 0 },
+      luggageCount: 0,
+      shift: { departureMin: 0, returnMin: 0 },
+      pairedRideId: legRideId,
+      source: 'solver',
+      reasonCode: 'PLACED_NEEDS_DRIVER',
+      reason: reason('PLACED_NEEDS_DRIVER', { car: car?.name ?? placement.carId }),
+    });
+
+    healedIds.add(nr.id);
+  }
+
+  return { healed, healedIds };
 }

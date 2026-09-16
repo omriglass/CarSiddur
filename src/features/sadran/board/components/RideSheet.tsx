@@ -151,6 +151,7 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
                       driverName: driverName ?? ride.driver_name,
                       isChauffeur: !!ride.is_chauffeur,
                       needsDriver: !!ride.needs_driver,
+                      autoRelocation: !!ride.auto_relocation,
                     })
                   : `${ride.origin_name} → ${ride.destination_name} · ${driverName ?? ride.driver_name}`}
               </p>

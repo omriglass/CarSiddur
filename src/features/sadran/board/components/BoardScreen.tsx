@@ -65,7 +65,7 @@ import { rideCoordinatorNotes } from "@/lib/rideCoordinatorNotes";
 import { readLastUsedPolicyVersion, rememberLastUsedPolicyVersion } from "../../lastUsedPolicy";
 import { sadranKeys } from "../../keys";
 
-import { scanBoardConflicts, wouldOverlap, requestDayMismatchRideIds, tightScheduleRideIds } from "../geometry";
+import { scanBoardConflicts, slotToIso, wouldOverlap, requestDayMismatchRideIds, tightScheduleRideIds } from "../geometry";
 import { rideBlockLabel, resolveRideRealDestination } from "../rideLabel";
 import { isUnmetStatus } from "../../unmetStatuses";
 import {
@@ -117,7 +117,7 @@ import { buildRidePassengerInputs, splitReservationDriverAndPassengers } from ".
 import type { EditRideInput, RidePassengerInput, WeekRequestRow } from "../../api";
 import type { SolverContextRows } from "../../solverRun";
 import type { Json } from "@/integrations/supabase/types";
-import type { Suggestion, SolverOutput } from "@/solver";
+import type { Suggestion, SolverOutput, Window } from "@/solver";
 
 
 interface BoardScreenProps {
@@ -531,6 +531,8 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
     (r) => r.starts_at && dateKey(new Date(r.starts_at)) === selectedDay,
   );
 
+  const weekStartMs = fromZonedTime(`${weekStart}T00:00:00`, TZ).getTime();
+
   const conflictScan =
     daySettings && department?.home_destination_id
       ? (() => {
@@ -538,7 +540,6 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
             (r): r is typeof r & { id: string; car_id: string; starts_at: string; ends_at: string; origin_id: string; destination_id: string } =>
               !!r.id && !!r.car_id && !!r.starts_at && !!r.ends_at && !!r.origin_id && !!r.destination_id,
           );
-          const weekStartMs = fromZonedTime(`${weekStart}T00:00:00`, TZ).getTime();
           const days96 = Array.from({ length: 7 }, (_, i) => ({
             dayIndex: i as 0 | 1 | 2 | 3 | 4 | 5 | 6,
             startSlot: i * 96,
@@ -666,6 +667,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
               driverName: r.driver_name,
               isChauffeur: !!r.is_chauffeur,
               needsDriver: !!r.needs_driver,
+              autoRelocation: !!r.auto_relocation,
             })
           : (r.destination_name ?? "")),
       pinned: !!r.is_pinned,
@@ -704,8 +706,26 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
   const weekGridBlocks: WeekGridBlock[] = (maintenanceQuery.data ?? []).flatMap((block) => {
     const startMinutes = (Date.parse(block.starts_at) - Date.parse(dayStartIso(selectedDay))) / 60_000;
     const endMinutes = (Date.parse(block.ends_at) - Date.parse(dayStartIso(selectedDay))) / 60_000;
-    return startMinutes < 1440 && endMinutes > 0 ? [{ id: block.id, carId: block.car_id, startMinutes, endMinutes }] : [];
+    return startMinutes < 1440 && endMinutes > 0 ? [{ id: block.id, carId: block.car_id, startMinutes, endMinutes, kind: "maintenance" as const }] : [];
   });
+
+  // REQ §89 (owner 2026-09-15): the car is away at a destination between a relay out-leg and
+  // its return — draw an explicit, non-interactive "away" band instead of leaving that gap
+  // looking like a free/vacant column (`conflictScan.awayByCarId`, computed by the same
+  // solver `CarTimeline` the conflict scan already reuses).
+  const destinationNameById = new Map((destinationsQuery.data ?? []).map((d) => [d.id, d.name]));
+  const awayByCarId: Map<string, { locationId: string; window: Window }[]> = conflictScan?.awayByCarId ?? new Map();
+  const awayWeekGridBlocks: WeekGridBlock[] = [...awayByCarId].flatMap(([carId, windows]) =>
+    windows.flatMap((away, index) => {
+      const startsAt = slotToIso(away.window.start, weekStartMs);
+      const endsAt = slotToIso(away.window.end, weekStartMs);
+      const startMinutes = (Date.parse(startsAt) - Date.parse(dayStartIso(selectedDay))) / 60_000;
+      const endMinutes = (Date.parse(endsAt) - Date.parse(dayStartIso(selectedDay))) / 60_000;
+      if (startMinutes >= 1440 || endMinutes <= 0) return [];
+      const place = destinationNameById.get(away.locationId) ?? "";
+      return [{ id: `away:${carId}:${index}`, carId, startMinutes, endMinutes, kind: "away" as const, label: tv("sadranBoard.awayBand", { place }) }];
+    }),
+  );
 
   // Contested waiting-list groups (REQ §13.75, UX_FLOWS.md §4.2): once a day is published, its
   // open groups no longer show as separate `UnmetList` items — they render as one "בדיון" lane
@@ -781,6 +801,8 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
     unmetItems,
     selectedDay,
     chauffeurDwellMinutes: daySettings?.chauffeur_dwell_minutes ?? 10,
+    awayByCarId: conflictScan?.awayByCarId,
+    weekStartMs,
   };
 
   /** Assign a request leg or prepare a proposal when sharing/relay coordination is required. */
@@ -1245,7 +1267,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
             onZoomChange={setTableZoom}
             cars={hideIdleTemporaryCars(weekGridCars, weekGridRides)}
             rides={weekGridRides}
-            blocks={weekGridBlocks}
+            blocks={[...weekGridBlocks, ...awayWeekGridBlocks]}
             dayStartMinutes={dayStartMinutes}
             dayEndMinutes={dayEndMinutes}
             readOnly={false}

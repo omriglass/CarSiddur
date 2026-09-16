@@ -55,26 +55,23 @@ describe("requestFormSchema", () => {
     expect(requestFormSchema.safeParse(baseValues({ returnTime: "23:58" })).success).toBe(false);
   });
 
-  it("requires oneWayCarMode for a one-way trip shape", () => {
+  it("accepts a one-way trip shape with no car mode at all (REQ §88 — the member no longer chooses it)", () => {
     const result = requestFormSchema.safeParse(
       baseValues({ tripShape: "one_way_to", departTime: "08:00", returnTime: undefined, oneWayCarMode: undefined }),
-    );
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      expect(result.error.issues.some((i) => i.path.join(".") === "oneWayCarMode")).toBe(true);
-    }
-  });
-
-  it("accepts one_way_to with a car mode and no return time", () => {
-    const result = requestFormSchema.safeParse(
-      baseValues({ tripShape: "one_way_to", departTime: "08:00", returnTime: undefined, oneWayCarMode: "relay" }),
     );
     expect(result.success).toBe(true);
   });
 
-  it("accepts one_way_from with a car mode and no depart time", () => {
+  it("accepts one_way_to with no return time", () => {
     const result = requestFormSchema.safeParse(
-      baseValues({ tripShape: "one_way_from", departTime: undefined, returnTime: "12:00", oneWayCarMode: "passenger" }),
+      baseValues({ tripShape: "one_way_to", departTime: "08:00", returnTime: undefined }),
+    );
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts one_way_from with no depart time", () => {
+    const result = requestFormSchema.safeParse(
+      baseValues({ tripShape: "one_way_from", departTime: undefined, returnTime: "12:00" }),
     );
     expect(result.success).toBe(true);
   });

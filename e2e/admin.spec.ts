@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import { he } from "../src/i18n/he";
-import { SEEDED_USERS, signIn } from "./helpers";
+import { SEEDED_USERS, signIn, primeLanding } from "./helpers";
 
 // Admin screens smoke test (stage 2c, docs/UX_FLOWS.md §5): the seeded demo
 // admin (supabase/seed.sql) creates a car with a seat config, a destination
@@ -13,6 +13,7 @@ const DEPARTMENT_NAME = "נבו"; // supabase/seed.sql
 
 test.describe("admin", { tag: ["@admin"] }, () => {
   test.beforeEach(async ({ page }) => {
+    await primeLanding(page);
     await page.goto("/login");
     await page.getByLabel("אימייל").fill(ADMIN_EMAIL);
     await page.getByLabel("סיסמה").fill(ADMIN_PASSWORD);

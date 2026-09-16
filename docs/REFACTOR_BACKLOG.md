@@ -494,7 +494,7 @@ remaining Hebrew characters outside `i18n/`, `solver/reasons.ts` and test
 files** (per this pass's brief) beyond the four items above: everything else
 is either a code comment quoting UX_FLOWS.md copy (`AppShell.tsx`,
 `CarAtDestinationToggle.tsx`, `CompanionPicker.tsx`, `DateField.tsx`,
-`OneWayCarModeControl.tsx`, `TripShapeControl.tsx`, `WeekGrid.tsx`,
+`TripShapeControl.tsx`, `WeekGrid.tsx`, (`OneWayCarModeControl.tsx` removed 2026-09-16, REQ §13.88),
 `PhoneStep.tsx`, `PushPermissionStep.tsx`, `useIsSadran.ts`, `fleet/api.ts`,
 board/undoStack.ts, unmetStatuses.ts, push.ts and several `BoardScreen.tsx`/
 `BoardListMode.tsx`/`RideSheet.tsx`/`UnmetList.tsx` comments), the

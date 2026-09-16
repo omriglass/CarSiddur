@@ -21,7 +21,6 @@ import { datesOfWeek } from "@/components/dateFieldDates";
 import { DestinationCombobox, type DestinationValue } from "@/components/DestinationCombobox";
 import { FieldAnchor } from "@/components/FieldAnchor";
 import { FlexibilityRange } from "@/components/FlexibilitySegmented";
-import { OneWayCarModeControl } from "@/components/OneWayCarModeControl";
 import { RideTypeChips } from "@/components/RideTypeChips";
 import { TimeField15 } from "@/components/TimeField15";
 import { TripShapeControl } from "@/components/TripShapeControl";
@@ -405,22 +404,11 @@ export function RequestForm({
   const values = useWatch({ control: form.control });
   const tripShape = values.tripShape ?? "round_trip";
   const oneWay = tripShape !== "round_trip";
-  // Quick one-way requests are always "reserve the car, look for a volunteer driver"
-  // (UX_FLOWS.md §18) — unlike the weekly form there is no relay-vs-passenger choice to make.
-  // `oneWayCarMode`'s own `Controller` (`OneWayCarModeControl` below) only mounts when
-  // `!quickContext`, so it is never a registered field in the quick variant — `useWatch`'s
-  // all-fields snapshot (`values`) only reflects *registered* fields and would permanently
-  // read `undefined` here regardless of `setValue`, turning this render-phase sync into an
-  // infinite loop (every render re-observes the stale `undefined` and calls `setValue` again).
-  // `form.getValues` reads the authoritative store directly, so it converges after one call.
-  if (quickContext && oneWay && form.getValues("oneWayCarMode") !== "passenger") {
-    form.setValue("oneWayCarMode", "passenger", { shouldValidate: true });
-  }
   // carNow has no return-time picker — `returnTime` tracks the fixed (preset, hidden)
   // `departTime` plus the visible `durationHours` select instead. Its own `Controller` below
   // stays mounted (rendering `null`) specifically so this write reaches `useWatch`'s `values`
-  // snapshot, used by the free-car/duplicate checks further down — see the `oneWayCarMode`
-  // comment above for why an unmounted `Controller` would freeze it at a stale value instead.
+  // snapshot, used by the free-car/duplicate checks further down: an unmounted `Controller`
+  // would leave `values` reading a permanently stale value instead of the live write.
   if (variant === "carNow" && values.departTime) {
     const computedReturn = endTimeForDuration(values.departTime, values.durationHours ?? CAR_NOW_DEFAULT_HOURS).time;
     if (form.getValues("returnTime") !== computedReturn) {
@@ -1026,28 +1014,15 @@ export function RequestForm({
         </div>
       ) : null}
 
-      <FieldAnchor name="oneWayCarMode">
-        {tripShape === "round_trip" && variant !== "carNow" ? (
+      {tripShape === "round_trip" && variant !== "carNow" ? (
+        <FieldAnchor name="needsCarAtDestination">
           <Controller
             control={form.control}
             name="needsCarAtDestination"
             render={({ field }) => <CarAtDestinationToggle checked={field.value} onChange={field.onChange} />}
           />
-        ) : !quickContext ? (
-          <Controller
-            control={form.control}
-            name="oneWayCarMode"
-            render={({ field }) => (
-              <OneWayCarModeControl
-                value={field.value ?? null}
-                tripShape={tripShape === "one_way_from" ? "one_way_from" : "one_way_to"}
-                onChange={field.onChange}
-              />
-            )}
-          />
-        ) : null}
-        {!quickContext ? <FieldError message={form.formState.errors.oneWayCarMode?.message} /> : null}
-      </FieldAnchor>
+        </FieldAnchor>
+      ) : null}
 
       <FormItem data-field="companions">
         <Label>{t("field.companions")}</Label>

@@ -92,6 +92,9 @@ export const heAdmin = {
     keepDepartments: "ללא הוספה",
     departmentMembershipHelp: "גם מנהל/ת יכול/ה להצטרף למחלקה כחבר/ה ולהגיש בקשות. הרשאות הניהול נשמרות.",
     editDetails: "עריכת פרטי משתמש",
+    /** REQ §88 (owner 2026-09-15): admin-editable mirror of the member's own profile switch. */
+    doesNotDrive: "לא נוהג/ת",
+    doesNotDriveHelp: "החבר/ה לא ישובץ/תשובץ כנהג/ת; אפשר להביא נהג/ת אורח/ת",
     title: "חברים",
     tabMembers: "חברים",
     tabPending: "ממתינים לאישור",

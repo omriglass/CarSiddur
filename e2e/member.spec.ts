@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import { he } from "../src/i18n/he";
-import { NEVO_DEPARTMENT_ID, serviceRoleClient } from "./helpers";
+import { NEVO_DEPARTMENT_ID, serviceRoleClient, primeLanding } from "./helpers";
 
 // Member-facing flows (stage 2a), on top of the seeded local stack
 // (supabase/seed.sql: member1@nevo.local is a member of department "נבו",
@@ -13,6 +13,7 @@ const MEMBER_PASSWORD = "nevo-demo-1234";
 test.use({ viewport: { width: 390, height: 844 } });
 
 async function signIn(page: import("@playwright/test").Page) {
+  await primeLanding(page);
   await page.goto("/login");
   await page.getByLabel("אימייל").fill(MEMBER_EMAIL);
   await page.getByLabel("סיסמה").fill(MEMBER_PASSWORD);

@@ -1296,6 +1296,7 @@ export type Database = {
           default_child_seats: number
           default_department_id: string | null
           display_name: string | null
+          does_not_drive: boolean
           email: string
           full_name: string
           google_name: string
@@ -1316,6 +1317,7 @@ export type Database = {
           default_child_seats?: number
           default_department_id?: string | null
           display_name?: string | null
+          does_not_drive?: boolean
           email: string
           full_name?: string
           google_name?: string
@@ -1336,6 +1338,7 @@ export type Database = {
           default_child_seats?: number
           default_department_id?: string | null
           display_name?: string | null
+          does_not_drive?: boolean
           email?: string
           full_name?: string
           google_name?: string
@@ -2589,6 +2592,7 @@ export type Database = {
       }
       rides: {
         Row: {
+          auto_relocation: boolean
           blocked_until: string
           cancel_reason: string | null
           cancelled_at: string | null
@@ -2622,6 +2626,7 @@ export type Database = {
           week_start: string
         }
         Insert: {
+          auto_relocation?: boolean
           blocked_until: string
           cancel_reason?: string | null
           cancelled_at?: string | null
@@ -2655,6 +2660,7 @@ export type Database = {
           week_start: string
         }
         Update: {
+          auto_relocation?: boolean
           blocked_until?: string
           cancel_reason?: string | null
           cancelled_at?: string | null
@@ -3295,6 +3301,7 @@ export type Database = {
     Views: {
       v_board_rides: {
         Row: {
+          auto_relocation: boolean | null
           blocked_until: string | null
           car_id: string | null
           department_id: string | null

@@ -70,11 +70,6 @@ export const heMember = {
     tripShapeOneWayTo: "הלוך בלבד",
     tripShapeOneWayFrom: "חזור בלבד",
     departArrival: "הגעה הביתה",
-    oneWayModeRelayTo: "אני נוהג/ת ומשאיר/ה את הרכב שם",
-    oneWayModeRelayFrom: "אני נוהג/ת ברכב שנמצא שם ומחזיר/ה הביתה",
-    oneWayModePassenger: "אני צריך/ה הסעה",
-    oneWayModeHelper:
-      "השארת רכב ביעד אפשרית רק אם מישהו/י מחזיר/ה אותו באותו יום; אחרת הסדרן/ית יציע/תציע נסיעה הלוך ושוב או הסעה.",
     carAtDestinationHelper:
       "אם תכבו: הרכב יחזור לקיבוץ ויוכל לשמש אחרים. ייתכן שתיסע/י כנוסע/ת אצל מישהו, או שתנהג/י ותשאיר/י את הרכב שם למי שחוזר/ת.",
     returnNextDay: "למחרת",
@@ -266,6 +261,10 @@ export const heMember = {
     tempCarActiveUntil: "פעיל עד",
     tempCarNone: "עדיין לא נרשם רכב פרטי.",
     tempCarRevoked: "הוצא משימוש על ידי המנהל/ת",
+    /** REQ §88 (owner 2026-09-15): a member marks themselves as never driving; the solver
+     * and Sadran then place them only as a passenger/chauffeur, never as a driver. */
+    doesNotDriveLabel: "אני לא נוהג/ת",
+    doesNotDriveHelp: "לא אשובץ/אשובץ כנהג/ת; אפשר להביא נהג/ת אורח/ת",
     historyLink: "היסטוריה וסטטיסטיקה",
     managementTitle: "ניהול",
     themeTitle: "מראה",

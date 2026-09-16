@@ -71,6 +71,15 @@ export interface WeekGridBlock {
   startMinutes: number;
   endMinutes: number;
   label?: string;
+  /**
+   * `"maintenance"` (default, unchanged styling: hatched maintenance-color band, label only as
+   * a tooltip) or `"away"` (REQ §89, owner 2026-09-15: the car is away at a destination between
+   * a relay out-leg and its return — a hatched, muted band with the label drawn on the block
+   * itself, not just a tooltip, so the grid never shows the gap as an empty/vacant column).
+   * Both kinds are equally non-interactive and an equally invalid drop target
+   * (`board/dropValidity.ts`).
+   */
+  kind?: "maintenance" | "away";
 }
 
 /**
@@ -560,13 +569,22 @@ export function WeekGrid({
         ))}
         {blocksFor(car.id).map((b) => {
           const rect = clampRideVertical(b.startMinutes, b.endMinutes, dayStartMinutes, dayEndMinutes);
+          const isAway = b.kind === "away";
           return (
             <div
               key={b.id}
-              className="absolute inset-x-1 rounded-sm border border-maintenance/60 bg-[repeating-linear-gradient(45deg,hsl(var(--maintenance)/0.35),hsl(var(--maintenance)/0.35)_4px,hsl(var(--maintenance)/0.12)_4px,hsl(var(--maintenance)/0.12)_8px)]"
+              data-block-kind={b.kind ?? "maintenance"}
+              className={cn(
+                "absolute inset-x-1 flex items-start overflow-clip rounded-sm border p-1 text-xs",
+                isAway
+                  ? "border-muted-foreground/50 bg-[repeating-linear-gradient(45deg,hsl(var(--muted-foreground)/0.25),hsl(var(--muted-foreground)/0.25)_4px,hsl(var(--muted-foreground)/0.08)_4px,hsl(var(--muted-foreground)/0.08)_8px)] text-muted-foreground"
+                  : "border-maintenance/60 bg-[repeating-linear-gradient(45deg,hsl(var(--maintenance)/0.35),hsl(var(--maintenance)/0.35)_4px,hsl(var(--maintenance)/0.12)_4px,hsl(var(--maintenance)/0.12)_8px)]",
+              )}
               style={{ top: rect.top, height: rect.height }}
               title={b.label}
-            />
+            >
+              {isAway ? <span className="whitespace-normal break-words">{b.label}</span> : null}
+            </div>
           );
         })}
         {preview?.carId === car.id ? (

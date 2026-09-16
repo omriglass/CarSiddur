@@ -293,4 +293,32 @@ begin
     'notification_context() date var (DD/MM/YY) should be unchanged';
 end $$;
 
+-- ---------------------------------------------------------------------------
+-- Item 9 (2026-09-16, TODO N3): the Sadran's composer stores the whole WhatsApp text —
+-- with its `{{link}}` token left for send time — as proposals.reason_he, and the inbox/push
+-- `proposal_received` body prints it as {{proposalShort}}. notification_context() must
+-- render that text so no raw token ever reaches a member.
+-- ---------------------------------------------------------------------------
+do $$
+declare
+  dept uuid := '00000000-0000-0000-0000-000000000001';
+  member uuid := '00000000-0000-0000-0000-000000000104';
+  sadran uuid := '00000000-0000-0000-0000-000000000102';
+  w date := public.current_week_start();
+  q uuid; p uuid; ctx jsonb;
+begin
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', member, 'role', 'authenticated')::text, true);
+  insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,depart_at,return_at,status)
+  values(dept, w, member, member, '00000000-0000-0000-0000-000000000011', '00000000-0000-0000-0000-000000000021',
+         ((w+3)+time '09:00') at time zone 'Asia/Jerusalem', ((w+3)+time '12:00') at time zone 'Asia/Jerusalem', 'submitted')
+  returning id into q;
+  insert into public.proposals(department_id,week_start,request_id,type,status,previous_status,created_by,reason_he,payload,expires_at,token_hash)
+  values(dept, w, q, 'deny', 'draft', 'submitted', sadran, 'line one' || chr(10) || 'answer here:' || chr(10) || '{{link}}', jsonb_build_object('reason','test'), now() + interval '1 day', md5(random()::text))
+  returning id into p;
+  ctx := public.notification_context(member, dept, w, jsonb_build_object('proposal_id', p));
+  assert position('{{' in coalesce(ctx->>'proposalShort', '')) = 0,
+    'proposalShort still carries a raw template token: ' || coalesce(ctx->>'proposalShort', '<null>');
+  assert (ctx->>'proposalShort') like 'line one%', 'proposalShort lost the composer text';
+end $$;
+
 rollback;

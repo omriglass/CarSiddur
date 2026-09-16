@@ -4,8 +4,10 @@ import {
   isDropTargetValid,
   isUnmetDropValid,
   seatsFit,
+  unavailable,
   type BoardDropContext,
 } from "./dropValidity";
+import { slotToIso } from "./geometry";
 import type { UnmetListItem } from "./components/UnmetList";
 import type { BoardRide, MaintenanceBlockRow, WeekRequestRow } from "../api";
 import type { Car } from "@/features/fleet/api";
@@ -56,6 +58,32 @@ describe("seatsFit", () => {
       seatConfigsByCarId: new Map([["car1", [{ adults: 2, child_seats: 0, boosters: 0 }, { adults: 6, child_seats: 2, boosters: 2 }]]]),
     });
     expect(seatsFit(ctx, "car1", { adults: 5, childSeats: 1, boosters: 1 })).toBe(true);
+  });
+});
+
+describe("unavailable (away band, REQ §89)", () => {
+  const WEEK_START_MS = Date.parse("2026-09-13T00:00:00.000Z");
+
+  it("treats a candidate window inside the car's away window like a maintenance block", () => {
+    const ctx = baseContext({
+      awayByCarId: new Map([["car1", [{ locationId: "away-dest", window: { start: 32, end: 48 } }]]]),
+      weekStartMs: WEEK_START_MS,
+    });
+    // Slots 32..48 = away; a candidate fully inside it must be rejected.
+    expect(unavailable(ctx, "car1", slotToIso(36, WEEK_START_MS), slotToIso(40, WEEK_START_MS))).toBe(true);
+  });
+
+  it("allows a candidate window outside the car's away window", () => {
+    const ctx = baseContext({
+      awayByCarId: new Map([["car1", [{ locationId: "away-dest", window: { start: 32, end: 48 } }]]]),
+      weekStartMs: WEEK_START_MS,
+    });
+    expect(unavailable(ctx, "car1", slotToIso(60, WEEK_START_MS), slotToIso(64, WEEK_START_MS))).toBe(false);
+  });
+
+  it("is a no-op when weekStartMs/awayByCarId are omitted (callers that never built a conflict scan)", () => {
+    const ctx = baseContext();
+    expect(unavailable(ctx, "car1", "2026-09-13T06:00:00.000Z", "2026-09-13T07:00:00.000Z")).toBe(false);
   });
 });
 

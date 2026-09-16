@@ -566,29 +566,36 @@ export function toAssignments(placed: Placed[], input: SolverInput, carsById: Ma
     if (p.kind === 'single') {
       const { nr, carId, window, shift } = p;
       const car = carsById.get(carId);
+      // REQUIREMENTS §13.88: a non-driver is never given a driver role — this
+      // round trip is placed exactly like any other `keep` ride, but driverless
+      // (the requester's own leg is `role: 'passenger'`); overrides the ordinary
+      // shift/mileage reason since "needs a driver" is the more salient fact.
+      const canDrive = nr.request.canDrive ?? true;
       // F5 (docs/SOLVER.md §3.6.2): when the mileage tie-break actually chose
       // `carId` over an otherwise-equal car, that overrides the ordinary
       // PLACED_PREFERRED/PLACED_SHIFTED reason (shift, if any, still applied —
       // the Hebrew just explains the car choice instead).
-      const code = p.balancedMileage ? 'CAR_BALANCED_MILEAGE' : shiftReasonCode(shift);
+      const code = !canDrive ? 'PLACED_NEEDS_DRIVER' : p.balancedMileage ? 'CAR_BALANCED_MILEAGE' : shiftReasonCode(shift);
       const text =
-        code === 'CAR_BALANCED_MILEAGE'
-          ? reason('CAR_BALANCED_MILEAGE', { car: car?.name ?? carId })
-          : code === 'PLACED_PREFERRED'
-            ? reason('PLACED_PREFERRED', { car: car?.name ?? carId })
-            : reason('PLACED_SHIFTED', {
-                car: car?.name ?? carId,
-                dep: String(Math.abs(shift.departureMin)),
-                ret: String(Math.abs(shift.returnMin)),
-              });
+        code === 'PLACED_NEEDS_DRIVER'
+          ? reason('PLACED_NEEDS_DRIVER', { car: car?.name ?? carId })
+          : code === 'CAR_BALANCED_MILEAGE'
+            ? reason('CAR_BALANCED_MILEAGE', { car: car?.name ?? carId })
+            : code === 'PLACED_PREFERRED'
+              ? reason('PLACED_PREFERRED', { car: car?.name ?? carId })
+              : reason('PLACED_SHIFTED', {
+                  car: car?.name ?? carId,
+                  dep: String(Math.abs(shift.departureMin)),
+                  ret: String(Math.abs(shift.returnMin)),
+                });
       out.push({
         rideId: `ride:${nr.id}`,
         carId,
         window,
         originId: input.homeLocationId,
         destinationId: input.homeLocationId,
-        driverRequestId: nr.id,
-        driverMemberId: nr.request.memberId,
+        driverRequestId: canDrive ? nr.id : undefined,
+        driverMemberId: canDrive ? nr.request.memberId : undefined,
         legs: [
           {
             requestId: nr.id,
@@ -596,7 +603,7 @@ export function toAssignments(placed: Placed[], input: SolverInput, carsById: Ma
             carMode: 'keep',
             originId: input.homeLocationId,
             destinationId: nr.destinationId,
-            role: 'driver',
+            role: canDrive ? 'driver' : 'passenger',
           },
         ],
         servedRequestIds: [nr.id],

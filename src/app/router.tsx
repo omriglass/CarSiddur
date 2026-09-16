@@ -1,5 +1,7 @@
 import { Suspense } from "react";
-import { createBrowserRouter, Navigate, Outlet } from "react-router-dom";
+import { createBrowserRouter, Outlet } from "react-router-dom";
+
+import { LandingRedirect } from "./LandingRedirect";
 
 import { AppShell } from "@/app/AppShell";
 import { ErrorScreen } from "@/app/ErrorScreen";
@@ -51,7 +53,7 @@ export const router = createBrowserRouter([
                   {
                     element: <AppShell />,
                     children: [
-                      { path: "/", element: <Navigate to="/my" replace /> },
+                      { path: "/", element: <LandingRedirect /> },
                       { path: "/my", element: <HomePage /> },
                       { path: "/requests/new", element: <Suspense fallback={<GuardLoading />}><NewRequestPage /></Suspense> },
                       { path: "/siddur", element: <Suspense fallback={<GuardLoading />}><SiddurPage /></Suspense> },

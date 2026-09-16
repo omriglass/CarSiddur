@@ -43,6 +43,13 @@ export interface RideLabelInput {
   driverName?: string | null;
   isChauffeur?: boolean;
   needsDriver?: boolean;
+  /**
+   * REQ §89 (owner 2026-09-15): an automatic missing-driver relocation ride (`rides.
+   * auto_relocation`, DB-inserted to heal the car chain, `served` empty until someone
+   * volunteers) — shown as a fixed label rather than the usual driver/passenger names, on
+   * both the board and the siddur (this function is shared between the two).
+   */
+  autoRelocation?: boolean;
 }
 
 function firstName(fullName: string): string {
@@ -113,6 +120,7 @@ function resolveDirection(input: RideLabelInput): { kind: "to" | "from"; place: 
  * happen for a real ride, but keeps this total).
  */
 export function rideBlockLabel(input: RideLabelInput): string {
+  if (input.autoRelocation) return he.sadranBoard.autoRelocation;
   const driver = input.served.find((s) => s.role === "driver");
   const passengers = input.served.filter((s) => s.role === "passenger");
   if (passengers.length && (input.isChauffeur || input.needsDriver || passengers.some((s) => s.car_mode === "chauffeur"))) {

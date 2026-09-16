@@ -385,6 +385,7 @@ export function SiddurPage() {
               driverName: r.driver_name,
               isChauffeur: !!r.is_chauffeur,
               needsDriver: !!r.needs_driver,
+              autoRelocation: !!r.auto_relocation,
             })
           : (r.destination_name ?? "")),
       rideTypeCode: representativeRideTypeCode(servedOf(r)),

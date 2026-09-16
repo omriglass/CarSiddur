@@ -1,6 +1,6 @@
 import { Bell, CalendarDays, ClipboardList, Settings, User, Users } from "lucide-react";
-import type { ComponentType } from "react";
-import { Link, NavLink, Outlet } from "react-router-dom";
+import { type ComponentType, useEffect } from "react";
+import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 
 import { DepartmentContextSelector } from "@/components/DepartmentContextSelector";
 import { useActiveDepartment } from "@/features/auth/useActiveDepartment";
@@ -10,6 +10,8 @@ import { useIsSadranAnywhere } from "@/features/auth/useIsSadran";
 import { useCanManageOperations } from "@/features/admin/useOperations";
 import { Button } from "@/components/ui/button";
 import { useUnreadCount } from "@/features/inbox/hooks";
+
+import { rememberMainPage } from "./landing";
 import { he } from "@/i18n/he";
 import { cn } from "@/lib/utils";
 
@@ -95,6 +97,9 @@ export function AppShell() {
   const { isSadran } = useIsSadranAnywhere();
   const canManageOperations = !!useCanManageOperations().data;
   const unreadCount = useUnreadCount();
+  const { pathname } = useLocation();
+  // `/` opens the last main page opened on this device (REQ §13.87).
+  useEffect(() => rememberMainPage(pathname), [pathname]);
 
   const navItems: NavItem[] = [
     ...BASE_NAV_ITEMS.map((item) => (item.to === "/inbox" ? { ...item, badge: unreadCount } : item)),

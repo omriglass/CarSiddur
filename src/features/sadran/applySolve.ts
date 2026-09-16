@@ -111,6 +111,13 @@ export function boardRideToFixedRide(ride: BoardRide, weekStartMs: number): Fixe
   ) {
     return null;
   }
+  // REQ §89 (owner 2026-09-15): an unclaimed automatic relocation ride is the DB's own
+  // chain-healing placeholder, not a real plan — it disappears the moment a real leg covers
+  // the gap, so the solver must never pin it as a constraint. A *claimed* one (`driver_id`
+  // set) is an ordinary one-way leg and stays fixed like any other ride.
+  if (ride.auto_relocation && !ride.driver_id) {
+    return null;
+  }
   const served = servedOf(ride);
   const legs: AssignmentLeg[] = served.map((s) => ({
     requestId: s.request_id as string,
@@ -428,7 +435,10 @@ export interface ApplyPayloadRide {
   ends_at: string;
   origin_id: string;
   destination_id: string;
-  driver_id: string;
+  /** `null` = a driverless ride (`needs_driver`): a non-driver's own car, or an automatic relocation (REQ §13.88/§13.89). */
+  driver_id: string | null;
+  /** The solver's healing ride next to a lone relay leg — serves nobody, moves the car; `assert_car_chain()` owns its lifecycle. */
+  auto_relocation?: boolean;
   is_pinned: boolean;
   pin_reason: string | null;
   served: ApplyPayloadServed[];
@@ -497,8 +507,11 @@ export function buildApplyPayload(params: {
 
   const solverAssignments = output.assignments.filter((a) => a.source === "solver");
   const rides: ApplyPayloadRide[] = solverAssignments.map((a) => {
+    // `null`, never "" — apply_solver_result casts the value to uuid; a driverless ride
+    // (non-driver requester, or the solver's relocation next to a lone relay leg) becomes
+    // `needs_driver` server-side.
     const driverMemberId =
-      a.driverMemberId ?? (a.driverRequestId ? requestsById.get(a.driverRequestId)?.requester_id : undefined) ?? "";
+      a.driverMemberId ?? (a.driverRequestId ? requestsById.get(a.driverRequestId)?.requester_id : undefined) ?? null;
     const roundedEnd = slotToIso(a.window.end, weekStartMs);
     const exactEnd = a.legs.filter((leg) => leg.leg === "return" || leg.leg === "both")
       .map((leg) => requestsById.get(leg.requestId)?.return_at)
@@ -510,6 +523,7 @@ export function buildApplyPayload(params: {
       origin_id: a.originId,
       destination_id: a.destinationId,
       driver_id: driverMemberId,
+      ...(driverMemberId === null && a.legs.length === 0 ? { auto_relocation: true } : {}),
       is_pinned: false,
       pin_reason: null,
       served: a.legs.map((l) => ({ request_id: l.requestId, role: l.role, leg: l.leg, car_mode: l.carMode })),

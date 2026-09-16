@@ -43,6 +43,7 @@ function headerLabel(ride: BoardRide, served: readonly ServedEntry[], homeDestin
     driverName: ride.driver_name,
     isChauffeur: !!ride.is_chauffeur,
     needsDriver: !!ride.needs_driver,
+    autoRelocation: !!ride.auto_relocation,
   });
 }
 

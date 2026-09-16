@@ -31,7 +31,6 @@
       "title": "Request form & multi-day (series) requests",
       "paths": [
         "src/features/requests/components/RequestForm.tsx",
-        "src/features/requests/components/RequestForm.oneWaySync.test.tsx",
         "src/features/requests/components/TemplateSuggestions.tsx",
         "src/features/requests/components/TemplateSuggestions.test.tsx",
         "src/features/requests/components/RequestsListPage.test.tsx",
@@ -292,9 +291,11 @@
         "supabase/migrations/**/*coordinator*",
         "supabase/migrations/**/*ride_edit*",
         "supabase/migrations/**/*day_readiness*",
+        "supabase/migrations/**/*car_chain*",
         "supabase/tests/todo_board_semantics.sql",
         "supabase/tests/coordinator_planning.sql",
         "supabase/tests/solve_semantics.sql",
+        "supabase/tests/car_chain_relocation.sql",
         "e2e/board.spec.ts",
         "e2e/board-mobile.spec.ts",
         "e2e/board-coordination.spec.ts",
@@ -312,6 +313,7 @@
       "sql": [
         "todo_board_semantics.sql",
         "coordinator_planning.sql",
+        "car_chain_relocation.sql",
         "solve_semantics.sql"
       ],
       "playwrightTags": [
@@ -320,14 +322,16 @@
       "reqRefs": [
         "13.42",
         "13.80",
-        "13.84"
+        "13.84",
+        "13.89"
       ],
       "qaChecklist": [
         "Drag an unmet request onto a car column; confirm a ride is created (REQ §13.42)",
         "Run auto-solve; confirm the policy chip shows name/version/score (REQ §13.84)",
         "Move a ride via the sheet's car selector; confirm it persists (REQ §13.42)",
         "Confirm a private car's board row is hidden on days with no ride (REQ §13.80)",
-        "Confirm a weekly-assigned member sees only their assigned week (REQ §13.42)"
+        "Confirm a weekly-assigned member sees only their assigned week (REQ §13.42)",
+        "Remove the return leg of a relay pair; confirm a missing-driver relocation ride appears instead of an error (REQ §13.89)"
       ]
     },
     {
@@ -673,10 +677,17 @@
         "e2e/auth.spec.ts",
         "e2e/device-setup.spec.ts",
         "e2e/weekly-permissions.spec.ts",
-        "e2e/smoke.spec.ts"
+        "e2e/smoke.spec.ts",
+        "src/app/landing.ts",
+        "src/app/landing.test.ts",
+        "src/app/LandingRedirect.tsx",
+        "src/app/router.tsx",
+        "src/app/AppShell.tsx",
+        "src/pages/LoginPage.tsx"
       ],
       "vitest": [
-        "src/features/auth"
+        "src/features/auth",
+        "src/app"
       ],
       "sql": [
         "weekly_sadran_permissions.sql"

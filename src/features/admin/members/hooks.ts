@@ -112,8 +112,8 @@ export function useImportAllowListMutation() {
 export function useUpdateMemberDetailsMutation() {
   const invalidate = useInvalidateMembers();
   return useMutation({
-    mutationFn: ({ profileId, fullName, phone, departmentId, displayName, removedDepartmentIds }: { profileId: string; fullName: string; phone: string; departmentId?: string; displayName?: string; removedDepartmentIds?: string[] }) =>
-      updateMemberDetails(profileId, fullName, phone, departmentId, displayName, removedDepartmentIds),
+    mutationFn: ({ profileId, fullName, phone, departmentId, displayName, removedDepartmentIds, doesNotDrive }: { profileId: string; fullName: string; phone: string; departmentId?: string; displayName?: string; removedDepartmentIds?: string[]; doesNotDrive?: boolean }) =>
+      updateMemberDetails(profileId, fullName, phone, departmentId, displayName, removedDepartmentIds, doesNotDrive),
     onSuccess: invalidate,
   });
 }

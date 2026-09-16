@@ -83,7 +83,12 @@ export function toSubmitRequestPayload(
     boosters: values.boosters,
     has_luggage: values.luggage,
     needs_car_at_destination: isRoundTrip ? values.needsCarAtDestination : undefined,
-    one_way_car_mode: !isRoundTrip ? values.oneWayCarMode : undefined,
+    // REQ §88: the member no longer chooses a one-way car mode — `submit_request`
+    // defaults it server-side from the requester's `does_not_drive` flag. The one
+    // exception is the live-week quick one-way reservation (UX_FLOWS §18): it books a
+    // missing-driver ride for the member, so it is a `passenger` leg by definition and
+    // `submit_request` refuses `reserve_missing_driver` with any other mode.
+    one_way_car_mode: options.reserveMissingDriver && !isRoundTrip ? "passenger" : undefined,
     flex_depart_early: flexValueToInterval(values.flexDepartEarly as FlexValue),
     flex_depart_late: flexValueToInterval(values.flexDepartLate as FlexValue),
     flex_return_early: flexValueToInterval(values.flexReturnEarly as FlexValue),

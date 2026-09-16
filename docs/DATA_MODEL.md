@@ -226,9 +226,10 @@ Same key/value shape as `app_settings`, for values a SECURITY DEFINER function p
 | home_week_preference | home_week_preference | NN | 'auto' | which week Home opens on (REQ §5.5): `auto` = live week if I have a ride today/tomorrow else the open week; `live`; `open`. Upcoming rides and unserved requests are always shown regardless |
 | muted_events | notification_event[] | NN | '{}' | §9 "Members can mute categories" — the UI toggles categories, each writing a set of events. `enqueue_notification()` ignores mutes for Sadran-role events while the recipient is a Sadran of the week (§2 notes) |
 | avatar_url | text | | | from Google |
+| does_not_drive | boolean | NN | false | REQ §13.88 (owner 2026-09-15): "אני לא נוהג/ת" — self-service and admin-editable (`admin_update_member`); default drives. `assert_ride_driver()` (§5 invariants) refuses this profile as any ride's `driver_id` or `ride_requests.role='driver'` row, no exception. `submit_request()` defaults an omitted `one_way_car_mode` to `passenger` for this profile, `relay` otherwise |
 | created_at / updated_at | timestamptz | NN | now() | |
 
-Column-level privilege: `REVOKE SELECT (phone) ON profiles FROM authenticated`; phone is read through `phone_of(uuid)` (§4.2) which enforces §10. `sadran_contact_of(department_id uuid, week_start date) returns table(person_id uuid, full_name text, phone text)` (`20260909095000_add_sadran_contact_rpc.sql`) is a second, narrower phone-reading RPC for the one case `phone_of()` doesn't cover: an ordinary member wants their week's Sadran's number (`/p/<token>`'s "talk to the Sadran on WhatsApp" button, ARCHITECTURE §8). SECURITY DEFINER, `stable`, raises `not_authorized` unless `is_approved() and member_of(department_id)`; returns every row of `sadranim_of(department_id, week_start)` joined to `profiles`. Requires a session — never called from the token-only `/p/<token>` response path.
+Since `20260910100000_profiles_phone_column_grant.sql`, `authenticated`'s SELECT on `profiles` is an explicit column list (not table-level), so a new column is invisible to `select *`/named-select alike until its own `grant select (<col>) on public.profiles to authenticated` is added in the same migration (`does_not_drive` did this in `20260915120000_non_driver_profiles.sql`) — column grants accumulate, so this never needs to repeat the whole list. Column-level privilege: `REVOKE SELECT (phone) ON profiles FROM authenticated`; phone is read through `phone_of(uuid)` (§4.2) which enforces §10. `sadran_contact_of(department_id uuid, week_start date) returns table(person_id uuid, full_name text, phone text)` (`20260909095000_add_sadran_contact_rpc.sql`) is a second, narrower phone-reading RPC for the one case `phone_of()` doesn't cover: an ordinary member wants their week's Sadran's number (`/p/<token>`'s "talk to the Sadran on WhatsApp" button, ARCHITECTURE §8). SECURITY DEFINER, `stable`, raises `not_authorized` unless `is_approved() and member_of(department_id)`; returns every row of `sadranim_of(department_id, week_start)` joined to `profiles`. Requires a session — never called from the token-only `/p/<token>` response path.
 
 #### `member_invites` (§11 allow-list, §13.13)
 Admin pre-loaded allow-list. When a Google account signs in with a matching email, `handle_new_user()` marks the profile approved and creates the memberships.
@@ -513,7 +514,7 @@ PK `(department_id, week_start)`. CHECK `open_at < close_at and close_at <= publ
 
 Indexes: `(department_id, week_start, status)`; `(requester_id, week_start desc)`; `(department_id, week_start) where status in ('waitlisted','denied') and not freed_slot_opt_out` (freed-slot candidates); GiST `(department_id, request_span(depart_at, return_at))` for duplicate/overlap detection, where `request_span(d, r) = tstzrange(coalesce(d, r), coalesce(r, d), '[]')` is an **immutable** helper (a one-way request spans a single instant; no interval arithmetic, so it may be indexed — see §5.1).
 
-**Write path.** Requests are created and edited **only** through the `submit_request(payload jsonb)` SECURITY DEFINER RPC (no direct INSERT/UPDATE policies, §4.3). Payload keys mirror the columns above plus `request_id` (edit), `requester_id` (Sadran/Admin filing on behalf) and `expected_version`. The RPC validates §5.3 (returns non-blocking `warnings[]` for seat fit and duplicate overlap; a `return_at` after Saturday is accepted only when filed by a Sadran/Admin on behalf — REQ §13.62), normalizes one-way shapes (`needs_car_at_destination = true`, `one_way_car_mode` required), sets `submitted_at`, computes `is_late` from `weeks.close_at`, bumps `version` and sets `changed_since_solve` when a solve-relevant column changes while `weeks.phase <> 'open'`, writes the audit row with reason, and in a `live` week calls `try_auto_approve()` (§8; round trips only — one-way shapes become `waitlisted`, REQ §13.64). When `join_ride_id` points at a ride on a **temporary car**, the RPC also calls `create_proposal` + `send_proposal` (type `merge`, `created_by = requester_id`, parties = owner + requester) so the owner decides directly (REQ §13.43). Members withdraw through `withdraw_request(request_id, expected_version)`; after publish `cancel_ride()` cancels the request together with its ride. Sadran boosts go through `set_manual_boost(request_id, value, reason)`. A **multi-day** booking (`return_at` on a later Jerusalem date, REQ §13.77) goes through `submit_series_request(payload jsonb)` instead, which splits the span into one leg per calendar day and files each through `submit_request` with `series_id`/`series_index`/`series_count`; `submit_request` itself refuses to *edit* any request carrying a `series_id` (`series_edit_not_supported`, SQLSTATE `MDR02`).
+**Write path.** Requests are created and edited **only** through the `submit_request(payload jsonb)` SECURITY DEFINER RPC (no direct INSERT/UPDATE policies, §4.3). Payload keys mirror the columns above plus `request_id` (edit), `requester_id` (Sadran/Admin filing on behalf) and `expected_version`. The RPC validates §5.3 (returns non-blocking `warnings[]` for seat fit and duplicate overlap; a `return_at` after Saturday is accepted only when filed by a Sadran/Admin on behalf — REQ §13.62), normalizes one-way shapes (`needs_car_at_destination = true`; `one_way_car_mode` is optional since REQ §13.88 — an omitted value defaults to `passenger` for a `profiles.does_not_drive` requester, `relay` otherwise; an explicit value from the Sadran/board or an older client is kept as-is), sets `submitted_at`, computes `is_late` from `weeks.close_at`, bumps `version` and sets `changed_since_solve` when a solve-relevant column changes while `weeks.phase <> 'open'`, writes the audit row with reason, and in a `live` week calls `try_auto_approve()` (§8; round trips only — one-way shapes become `waitlisted`, REQ §13.64). When `join_ride_id` points at a ride on a **temporary car**, the RPC also calls `create_proposal` + `send_proposal` (type `merge`, `created_by = requester_id`, parties = owner + requester) so the owner decides directly (REQ §13.43). Members withdraw through `withdraw_request(request_id, expected_version)`; after publish `cancel_ride()` cancels the request together with its ride. Sadran boosts go through `set_manual_boost(request_id, value, reason)`. A **multi-day** booking (`return_at` on a later Jerusalem date, REQ §13.77) goes through `submit_series_request(payload jsonb)` instead, which splits the span into one leg per calendar day and files each through `submit_request` with `series_id`/`series_index`/`series_count`; `submit_request` itself refuses to *edit* any request carrying a `series_id` (`series_edit_not_supported`, SQLSTATE `MDR02`).
 
 Triggers (last line of defence behind the RPCs): `requests_within_week` (§5 invariants), `requests_status_guard` (allowed transitions per §5.2 and who may perform them), `bump_version`, `audit_row`.
 
@@ -623,8 +624,9 @@ Index `(department_id, week_start, started_at desc)`.
 | turnaround | interval | NN | | `make_interval(mins => turnaround_minutes)` from department/week settings by trigger at insert |
 | blocked_until | timestamptz | NN | | trigger-maintained `= ends_at + turnaround` (see §5.1 for why not a generated column) |
 | driver_id | uuid | | | FK profiles. The driver request owner or a volunteer, who may already be a served passenger requester. Null for a reservation or a passenger booking awaiting a driver. |
-| needs_driver | boolean | NN | false | True means a pinned passenger booking without a driver. Requires passenger links and a null driver; ordinary empty reservations remain false. |
-| notes | text | | | Required for an empty driverless reservation. |
+| needs_driver | boolean | NN | false | True means a pinned passenger booking without a driver, **or** an automatic car-chain relocation (`auto_relocation`) awaiting a volunteer. Requires either passenger links or `auto_relocation`, and a null driver; ordinary empty reservations remain false. |
+| auto_relocation | boolean | NN | false | REQ §13.89: this ride was inserted by `assert_car_chain()` to move an otherwise-stranded shared car, not filed by anyone. Always `needs_driver = true, driver_id = null` until a member volunteers via `claim_ride_driver()`, after which it is an ordinary one-way leg (the flag stays, for history/audit). Never serves a request (`ride_requests` for it is always empty). Cancelled automatically (`cancel_reason = 'AUTO_RELOCATION_OBSOLETE'`) once a real ride makes it unnecessary. |
+| notes | text | | | Required only when `driver_id` is null **and** `needs_driver` is false (a plain reservation, "שמירת זמן"); any `needs_driver` row — a passenger booking awaiting a driver or an `auto_relocation` — needs neither notes nor served passengers (`rides_reservation_notes_ck`). |
 | series_id | uuid | | | Multi-day request (REQ §13.77), denormalized from the served request at INSERT time by `place_series()`/`move_series()`/`apply_solver_result()` (plus an AFTER INSERT trigger on `ride_requests` as a backstop). `rides_before_write()` needs it before any `ride_requests` row exists. Index `rides_series_idx (series_id, starts_at) where series_id is not null`. |
 | turnaround_override_minutes | smallint | | | Coordinator-approved shortened preparation buffer. Null uses department/week settings; zero permits adjacent occupied windows. Never permits actual overlap. |
 | overflow_allowed | boolean | NN | false | Sadran-set: this ride may end after Saturday (REQ §5.3, §13.62); checked by `rides_within_week` |
@@ -847,7 +849,7 @@ New `requests.status_reason` codes: `WAITLISTED_CONTESTED`, `WAITLISTED_NOT_CHOS
 
 One entry point: `enqueue_notification(_recipient uuid, _event notification_event, _department_id uuid, _week_start date, _vars jsonb, _data jsonb, _dedupe_key text default null)` — SECURITY DEFINER. It (0) fills `_data.url` from `notification_default_url(_event, _data, _department_id, _week_start)` whenever the caller didn't already set one (most callers don't — only the `proposal_received` emitters build a token URL themselves); (1) drops the call if `_event` is in `profiles.muted_events`, **unless** the event is a Sadran-role event (§2 notes) and the recipient is in `sadranim_of(_department_id, _week_start)`; (2) renders `title_he`/`body_he` from `notification_templates` (channel `inbox`, `variant` selected from `coalesce(_data->>'variant', ride_change_id ? 'ride_change' : null)`) with `_vars` placeholders (`{{firstName}}`, `{{destination}}`, … — UX_FLOWS §6); (3) inserts one `notifications` row (the inbox) with the now-url-complete `_data`, honouring `dedupe_key`; (4) inserts one `push_outbox` row per active `push_subscriptions` row of the recipient, rendered from the `push` channel template, `payload.url` copied from the same `_data.url` so both channels agree. Nothing else writes to these tables.
 
-`notification_context()`'s `day` var (used by most single-request templates, and by `publish_siddur()`'s grouped `outcomeLine`/`diffLine`) is `day_date_label(dt)` — `weekday_short_label` + a leading-zero-free `D.M` date, e.g. `'ד׳ 16.9'` (`20260915100000_day_date_label.sql`, owner dump 2026-09-14/15 bug B4: every date shown to members carries its weekday) — instead of a bare `to_char(dt,'DD/MM')`; `date` (`DD/MM/YY`) is unchanged.
+`notification_context()`'s `day` var (used by most single-request templates, and by `publish_siddur()`'s grouped `outcomeLine`/`diffLine`) is `day_date_label(dt)` — `weekday_short_label` + a leading-zero-free `D.M` date, e.g. `'ד׳ 16.9'` (`20260915100000_day_date_label.sql`, owner dump 2026-09-14/15 bug B4: every date shown to members carries its weekday) — instead of a bare `to_char(dt,'DD/MM')`; `date` (`DD/MM/YY`) is unchanged. The word "יום" in front of it is *copy*, so it lives in the templates (`ביום {{day}}`, `יום {{day}} {{depart}}–{{return}}` — `20260915130000_notification_day_prefix_and_proposal_link.sql` rewrote every row's body/title and defaults, admin-edited or not, since the var's meaning changed), never in SQL logic. The same migration renders `proposalShort` (`proposals.reason_he`, the composer's full WhatsApp text that keeps `{{link}}` for send time) through `render_notification_text(..., {link: ''})`, so a member's inbox/push never shows a raw token (TODO N1/N3, 2026-09-16).
 
 `notification_default_url(_event, _data, _department_id, _week_start) returns text` (`stable`, `20260909090000_add_notification_default_url.sql`, extended by `20260909099500_extend_notification_default_url_car_id.sql`, `20260910091600_extend_notification_default_url_waitlist.sql` and `20260914100200_set_week_close_at.sql`) — first match wins: `_data.token` → `/p/<token>`; `_data.proposal_id` → `/sadran/<dept>/<week>/proposals?proposal=<id>` (the token-less Sadran list, e.g. for `proposal_answered`); `_data.group_id` together with `_data.day` → `/siddur/<dept>/<week>?day=<day>&group=<id>` (REQ §13.75, `waitlist_contested`/`waitlist_resolved`; deliberately ahead of the `request_id` branch, since those notifications carry the recipient's own request id too); `_data.ride_change_id` → `/inbox?change=<id>`; `_data.request_id` or `_data.offer_id` → `/requests?focus=<id>`; `_data.ride_id` → `/siddur/<dept>/<week>?ride=<id>`; `_data.car_id` → `/cars/<car_id>` (§6.6, `car_care`); else, for the week-scoped events `published`/`window_open`/`window_closing`/`window_closed_solve_now`/`publish_reminder`/`window_changed` (F2, 2026-09-14), the Sadran dashboard (`/sadran/<dept>/<week>`) for Sadran-role events (or the `window_open` `variant='sadran'` copy) or the published siddur (`/siddur/<dept>/<week>`) otherwise — `window_changed` has no Sadran variant, so it always resolves to the siddur; otherwise `/inbox`.
 
@@ -1188,7 +1190,7 @@ Service role bypasses RLS and is used only for: the `push-dispatch` edge functio
 | 14 | Approved profile has a phone | DB | Trigger on `profiles` (admin may override for e.g. a shared family account). |
 | 15 | Policy versions are append-only; runs reference versions | DB | `forbid_mutation()`, FK `solver_runs.policy_version_id ... on delete restrict`. |
 | 16 | Solver never corrupts the draft | RPC | `apply_solver_result()` is one transaction: verifies `input_hash` still matches current inputs (re-computed server side from the same canonicalization, else `raise 'stale_input'`), deletes unpinned draft rides of the week, inserts new rides + ride_requests, updates request statuses/reasons, inserts the `solver_runs` row, then runs `assert_car_chain()` for every touched car. Any failure rolls everything back. |
-| 17 | **Car location chain** (REQ §5.4, §13.57): per car, the non-cancelled rides ordered by `starts_at` chain (`destination_id` of ride *n* = `origin_id` of ride *n+1*, the first ride starts at home); a ride that leaves the car away from home is followed by a ride starting before that local day's `day_end_time`, unless `overnight_ack_by` is set | RPC (not a constraint) | `assert_car_chain(_car, _week)` (§5.3) is called at the end of **every** ride-writing RPC: `apply_solver_result`, `edit_ride` (the two primary sites), `apply_proposal`, `try_auto_approve` (inside `submit_request`), `resolve_freed_offer`, `approve_claim`. It raises `car_chain_broken` / `car_away_at_day_end` (SQLSTATE `P0410`/`P0411`, mapped to Hebrew by `lib/errors.ts`). An exclusion constraint cannot express "the car is somewhere else in the gap", which is why this is procedural; `rides` therefore has no direct INSERT/UPDATE policy (§4.3). `cancel_ride` does not run the check — cancelling a relay leg instead flags the partner leg (`flagged`, `flag_reason = 'relay_pair_cancelled'`) and opens no freed-slot offer (REQ §13.63). |
+| 17 | **Car location chain heals instead of refusing** (REQ §5.4, §13.57, §13.89, owner 2026-09-15): per car, the non-cancelled + non-`auto_relocation`-tentative rides ordered by `starts_at` chain (`destination_id` of ride *n* = `origin_id` of ride *n+1*, the week starts from wherever the previous week's last ride left the car); a ride that leaves the car away from home is followed by a ride starting before that local day's `day_end_time`, unless `overnight_ack_by` is set | RPC (not a constraint) | `assert_car_chain(_car, _week)` (§5.3, `20260915110000_car_chain_relocation_rides.sql`) is called at the end of **every** ride-writing RPC: `apply_solver_result`, `edit_ride`, `unassign_ride`, `cancel_ride` (→ `cancel_ride_without_passengers`), `apply_proposal`, `try_auto_approve` (inside `submit_request`), `resolve_freed_offer`, `approve_claim`, `move_series`, `resolve_waitlist_group`. Instead of raising, it **heals**: wherever the chain has a gap it inserts an automatic missing-driver relocation ride (`rides.auto_relocation`, `needs_driver`, no `driver_id`) any member can claim via `claim_ride_driver()` exactly like today's missing-driver rides — once claimed it is an ordinary leg and is left alone on later walks. A relocation no longer needed (a real ride now bridges the gap) is cancelled (`cancel_reason = 'AUTO_RELOCATION_OBSOLETE'`). `unassign_ride()`/`cancel_ride_without_passengers()` set a session hint (`app.chain_hint`, the removed ride's own origin/destination/times, consumed once) so the healing relocation reuses those exact times (owner A7) instead of the day-end formula. Only `no_home_location` (SQLSTATE `P0412`, a car whose department has no home destination) still raises — genuinely unhealable. An exclusion constraint cannot express "the car is somewhere else in the gap", which is why this is procedural; `rides` therefore has no direct INSERT/UPDATE policy (§4.3). Cancelling a relay leg still flags the partner leg (`flagged`, `flag_reason = 'relay_pair_cancelled'`) for the Sadran's attention *and* now heals the chain via the same `assert_car_chain()` call — no freed-slot offer opens for a relay leg either way (REQ §13.63). |
 | 18 | Ride endpoints are real locations | DB | `rides.origin_id`/`destination_id` NN FK destinations; trigger `rides_location_ends` (each equals home or a served relay leg's destination); trigger `ride_requests_leg_location` (§3.7) ties each served leg's mode to the ride's endpoints. |
 | 19 | Driver rows vs chauffeur rides | DB | Deferred trigger `ride_driver_row_check`: exactly one `driver` row per ride unless the ride has a `chauffeur` row, then none and `rides.driver_id` is the volunteer (≠ any served requester). CHECK `(role = 'driver') = (car_mode in ('keep','relay'))`. |
 | 19a | A request belongs to at most one **open** contested waiting-list group | DB | Partial unique index `waitlist_group_members (request_id) where chosen is null` (REQ §13.75). `resolve_waitlist_group()`/`cancel_waitlist_group()` fill `chosen` for every member, which releases the index for a later group. |
@@ -1196,6 +1198,7 @@ Service role bypasses RLS and is used only for: the `push-dispatch` edge functio
 | 19c | **Multi-day series** (REQ §13.77): every leg of a `series_id` sits on the *same* car, the car is nobody else's for the whole span, and the series is placed all-or-nothing | RPC | `place_series()` / `move_series()` are the only writers. They refuse (`series_car_unavailable`, SQLSTATE `MDR03`) when the car is not shared+active, seats do not fit, another non-series ride overlaps `[first depart, last return + turnaround)`, a maintenance block overlaps, the car is not home when the span starts, or a leg is already parked on a different car. `edit_ride()` routes a car change on a series leg through `move_series()`, and refuses (`series_edit_not_supported`, `MDR02`) a time change on anything but the first leg's start / last leg's end, and hand-creating a ride for a series leg. |
 | 19d | Two consecutive legs of one series need no turnaround buffer, and the car may sleep away | DB | `rides_before_write()` skips `ride_turnaround_conflict` between two rides sharing a non-null `series_id` (the day-1 leg ends 23:59:00, the day-2 leg starts 00:00:00; the plain GIST exclusion on `(car_id, [starts_at, ends_at))` still applies). `assert_car_chain()` does not raise `car_away_at_day_end` for a leg whose series has another leg starting the next calendar day, and seeds the week's starting location from the last non-cancelled ride that *starts before* the week (home when there is none) instead of assuming "every car starts the week at home", so a Saturday→Sunday series carries over correctly. `ride_requests_leg_location()`'s "keep legs run home → home" rule is skipped for a series ride (the legs chain home → destination → … → home). |
 | 20 | One-way requests are never auto-approved after publish | RPC | `try_auto_approve()` returns null for `trip_shape <> 'round_trip'` (REQ §13.64) and requires the candidate car to be at home for the window (`car_location_at(car, starts_at) = home`, §7.5). |
+| 21 | A `profiles.does_not_drive` member is never a ride's driver (REQ §13.88, absolute — no exception for a temporary car's own owner) | RPC | `assert_ride_driver(p_ride_id)` (§3.7; deferred constraint trigger on `rides`/`ride_requests`, also called directly by `edit_ride`/`cancel_ride`/`claim_ride_driver`) raises `non_driver_cannot_drive` (SQLSTATE `P0001`) when `rides.driver_id` or any `ride_requests.role='driver'` row's requester has `does_not_drive`. |
 
 ### 5.1 Why `blocked_until` is a trigger-maintained column
 `timestamptz + interval` is `STABLE` in Postgres (DST-dependent), so it cannot appear in a generated column or an index expression. `rides_before_write` computes `ends_at + turnaround`, taking the smaller of the department/week buffer and an explicit `turnaround_override_minutes`. Authorized coordinator edits clip neighboring gaps and restore obsolete overrides when a ride moves away. The same helper applies to accepted coordinator shift/merge proposals; member-created proposals cannot shorten gaps. Changing a department's buffer does not rewrite existing rides (history stays valid); the admin UI offers "re-apply buffer to future draft rides". For the same reason `request_span(depart_at, return_at)` (§3.6) uses only `coalesce` — no interval arithmetic — so it can back the GiST index.
@@ -1257,49 +1260,19 @@ create constraint trigger ride_seat_fit_on_car_change
 ```
 **Seat accounting for merges** (same rule as `SOLVER.md` §3.3): a request's `adults` includes its own would-be driver. When a request is merged as passenger into a host ride, *all* of its `adults`, `child_seats` and `boosters` are added to the host ride's load — the guest's former driver simply becomes a passenger — and the host's driver is counted once, inside the host request's own `adults`. So the trigger's plain `sum()` over served requests is exactly the load to fit; nothing is subtracted anywhere. **Chauffeur rides** (REQ §13.65): the volunteer has no request, so the loop above adds `1` to `a` when the ride has no `driver` row (`not exists (select 1 from ride_requests where ride_id = v_ride and role = 'driver')`). Built-in seats: `car_seat_configs` rows already reflect them.
 
-### 5.3 Car location chain check (invariant #17)
-```sql
--- Raises if the rides of one car in one week do not chain, or leave the car away at day end without acknowledgement.
-create or replace function public.assert_car_chain(_car uuid, _week date) returns void
-language plpgsql security definer set search_path = public, pg_temp as $$
-declare
-  v_home uuid; v_day_end time; v_loc uuid; r record;
-begin
-  select d.home_destination_id, s.day_end_time into v_home, v_day_end
-  from public.cars c
-  join public.departments d on d.id = c.department_id
-  join public.department_settings s on s.department_id = d.id
-  where c.id = _car;
-  if v_home is null then raise exception 'no_home_location' using errcode = 'P0412'; end if;
+### 5.3 Car location chain check (invariant #17) — heals with missing-driver relocations
 
-  v_loc := v_home;                                   -- v1: every car starts the week at home
-  for r in
-    select id, origin_id, destination_id, starts_at, ends_at, overnight_ack_by
-    from public.rides
-    where car_id = _car and week_start = _week and status <> 'cancelled'
-    order by starts_at
-  loop
-    if r.origin_id <> v_loc then
-      raise exception 'car_chain_broken' using errcode = 'P0410',
-        detail = format('ride %s starts at %s but the car is at %s', r.id, r.origin_id, v_loc);
-    end if;
-    v_loc := r.destination_id;
+`assert_car_chain(_car, _week)` (latest: `20260915110000_car_chain_relocation_rides.sql`, REQ §13.89) walks a car's week the same way it always has, but where the old version raised `car_chain_broken` (P0410, origin ≠ current location) or `car_away_at_day_end` (P0411, no ride brings the car home by `day_end_time`) it now **inserts (or reuses) an automatic missing-driver relocation ride** bridging the gap, and cancels one that turned out unnecessary. Only `no_home_location` (P0412, the department has no home destination) still raises — nothing can heal a car with nowhere to go. In outline:
 
-    if r.destination_id <> v_home and r.overnight_ack_by is null then
-      -- the car must be brought home by a later ride that starts before this local day's day_end
-      if not exists (
-        select 1 from public.rides n
-        where n.car_id = _car and n.status <> 'cancelled' and n.starts_at > r.ends_at
-          and n.starts_at < (((r.ends_at at time zone 'Asia/Jerusalem')::date + v_day_end) at time zone 'Asia/Jerusalem')
-      ) then
-        raise exception 'car_away_at_day_end' using errcode = 'P0411',
-          detail = format('ride %s leaves car %s at %s past day end', r.id, _car, r.destination_id);
-      end if;
-    end if;
-  end loop;
-end $$;
-```
-Because a car with an ordinary week has only round trips (`home → home`), the loop is a cheap pass over a few dozen rows (`rides_car_chain_idx`). The solver's `assertInvariants()` performs the same check in TypeScript before `apply_solver_result` is even called (`SOLVER.md` §3.12).
+1. Read `home_destination_id`/`day_end_time` for the car's department; consume the session hint `app.chain_hint` (jsonb `{origin_id, destination_id, starts_at, ends_at}`) that `unassign_ride()`/`cancel_ride_without_passengers()` set right before calling this, describing the ride they just removed.
+2. Collect the car/week's existing *tentative* relocations (`auto_relocation and needs_driver and driver_id is null`) into a working set — reused below when a gap still needs them, cancelled at the end when none does. A *claimed* relocation (`driver_id` set) is treated as an ordinary ride throughout.
+3. Walk the real (+ claimed) rides in `starts_at` order, seeding the starting location from the last ride before the week (§19d), same as before:
+   - **Origin mismatch** (`r.origin_id <> v_loc`): reuse a matching tentative relocation from the working set, or insert one `v_loc → r.origin_id` — the session hint's exact times when they fit, else `[r.starts_at − turnaround − travel, r.starts_at − turnaround)` (`travel` = the non-home endpoint's `destinations.travel_minutes`, default 30), quarter-hour aligned.
+   - **Day-end gap** (`r.destination_id <> home`, no `overnight_ack_by`, no series continuation (§19d), no later same-day ride): reuse or insert a relocation `r.destination_id → home` — the hint's times when they fit, else `[day_end − travel, day_end)` on that calendar day, quarter-hour aligned, or right after the day's last ride if that would overlap it.
+   - A relocation is inserted with `needs_driver = true, driver_id = null, auto_relocation = true, is_pinned = false`, status `confirmed`/`draft` matching what a new Sadran ride gets in that week phase (`is_week_public()`).
+4. Any tentative relocation not reused above is cancelled (`cancel_reason = 'AUTO_RELOCATION_OBSOLETE'`) — a real ride now covers what it was for.
+
+Because a car with an ordinary week has only round trips (`home → home`), the walk is a cheap pass over a few dozen rows (`rides_car_chain_idx`); healing adds at most one relocation row per real gap. The solver's `assertInvariants()` performs the non-healing version of the same check in TypeScript before `apply_solver_result` is even called (`SOLVER.md` §3.12) — it never sees relocation rides, since `apply_solver_result` runs `assert_car_chain()` itself afterward.
 
 ---
 
@@ -2313,4 +2286,61 @@ Behavior changes:
 
 ## Retiring a car must not distort statistics (2026-09-10, owner decision, db-migrator)
 
+## Car chain heals with missing-driver relocation rides (REQ §13.89, 2026-09-15, db-migrator)
+
+Owner dump 2026-09-15 (D3/D4/D6): once a relay pair (an out-leg driven one way, a return leg
+driven back later) existed, editing or removing either leg was unworkable — `assert_car_chain()`
+raised `car_chain_broken`/`car_away_at_day_end` (P0410/P0411) the moment a write left the car
+away from home even for the instant between removing one leg and re-placing the other, so a
+relay out-leg with no return leg upfront could not be created at all, and a return leg, once
+created, could never be removed. `20260915110000_car_chain_relocation_rides.sql`:
+
+- `rides.auto_relocation boolean not null default false` — see §3.7's `rides` table.
+- `assert_car_chain(_car, _week)` redefined (same name/signature, so its ~30 existing call
+  sites are untouched) to heal instead of raise — full walk-through in §5.3 (invariant #17).
+- `unassign_ride()` and `cancel_ride_without_passengers()` (copied whole, only addition) set
+  `app.chain_hint` to the ride they are about to remove before calling `assert_car_chain()`,
+  so the relocation that heals the gap reuses that ride's exact origin/destination/times
+  (owner A7) instead of the `day_end`-anchored formula. `cancel_ride_without_passengers()`
+  did not call `assert_car_chain()` at all before this migration (a full cancellation never
+  checked the chain) — it now does, in addition to (not instead of) flagging a cancelled
+  relay leg's partner (`flagged`, `flag_reason = 'relay_pair_cancelled'`, REQ §13.63).
+- `assert_ride_driver(p_ride_id)` (§5 invariants, `rides_driver_check`/`ride_driver_row_check`
+  deferred constraint triggers): a `needs_driver` ride with **zero** served requests (a bare
+  relocation) used to trip the same "mismatch" guard meant to catch a `needs_driver` ride that
+  already has a driver row (`total = 0 or drivers <> 0`) — split into two conditions so only
+  `drivers <> 0` is still wrong; zero served requests is fine now that relocations exist.
+- `v_board_rides.auto_relocation` (wrap-and-append idiom, `20260914190000`'s technique) so the
+  board/siddur can render an away car / relocation card distinctly — left to `ui-dev`.
+
+**Cross-migration hazard (unresolved at the time of writing).** `20260915120000_non_driver_profiles.sql`
+(REQ §13.88, item 21) independently copies `assert_ride_driver()` whole and reproduces the
+pre-fix `total = 0 or drivers <> 0` condition verbatim, alongside its own new `does_not_drive`
+checks. Because it is timestamped *after* this migration, a from-scratch `db:reset` applies it
+second, silently reintroducing the `total = 0` bug on top of this one's fix — a bare relocation
+ride would then fail `assert_ride_driver()` at the writing RPC's commit (the check runs as a
+deferred constraint trigger, so this does not show up in a single-transaction test unless the
+test explicitly calls `assert_ride_driver()` directly, or forces `set constraints all
+immediate`, as `supabase/tests/car_chain_relocation.sql` does). Whichever of the two migrations
+ends up applying last needs to carry **both** fixes (drop `total = 0` **and** keep the
+`does_not_drive` checks). Not resolved in this change — flagged for the lead / whichever agent
+finishes second.
+
+**Scope note.** REQ §13.89 also describes an "away" block on the board/siddur grid between an
+out-leg and its return, and refusing every placement path (`try_auto_approve`,
+`resolve_waitlist_group`, `enter_waiting_list`, the solver) from starting a home-based ride on
+a car that is not home (D3). Neither is implemented here — this migration is the data-model/RPC
+layer (the healing mechanism and `v_board_rides.auto_relocation`); the grid rendering is
+`ui-dev`'s and the placement-path guards are `solver-dev`'s / a follow-up `db-migrator` pass.
+
+Tests: `supabase/tests/car_chain_relocation.sql` (registered in `scripts/test-db.mjs`, `board`
+area of `test-map.json`/`docs/TEST_MAP.md`) — a relay out-leg alone succeeds and yields exactly
+one relocation ending at `day_end_time`; a real return leg cancels it; unassigning a return leg
+re-creates a relocation with its exact original times; unassigning an out leg from under a
+standing return leg does the same in the other direction without disturbing the return leg;
+`claim_ride_driver()` turns a relocation into an ordinary ride that a later chain walk leaves
+alone; a car whose department has no home destination still raises `no_home_location`.
+
 Two migrations, `20260910100300_track_car_retired_at.sql` and `20260910100400_fix_department_stats_retired_cars.sql` — full description and the corrected definitions in §7.6 ("Retiring a car keeps its history in the statistics"). Short version: `cars.retired_at` (existed since `20260907090300_fleet.sql`, never set) now gets a value via a new `before insert or update` trigger, `cars_track_retired_at()`, the moment a car's `status` transitions into `'retired'` (cleared again on un-retirement); `department_stats()` and `compute_week_stats()` are redefined in place so every historical metric counts a shared car's rides regardless of current status, while only the capacity denominator (`sharedCars`/`capacityHours`/`utilizationRate`, plus the new `week_stats.capacity_hours numeric not null default 0` column) excludes a car retired before the range started. REQ item 78 gained one sentence recording the rule; `supabase/tests/department_stats.sql` gained case (k).
+
+`apply_solver_result()` (patched in place by `20260915140000_apply_solver_result_driverless_rides.sql`) accepts a ride with `driver_id` null or `""` and inserts it as `needs_driver`, carrying the payload's `auto_relocation` flag — the solver's driverless placements (`PLACED_NEEDS_DRIVER`, `PLACED_RELAY_SOLO`) and the client's `buildApplyPayload` (`driver_id: null`, `auto_relocation: true` for a serve-nobody driverless ride) rely on it. The same migration redefines the `rides_location_ends` deferred constraint trigger to judge the ride's *current* row (not the insert-time image), and to skip automatic relocations and cancelled rides — otherwise a relocation, or a leg cancelled in the same transaction that created it, failed at commit with `ride_location_ends_invalid`. `car_chain_relocation.sql` flushes deferred constraints (`set constraints all immediate`) at its end so this class of failure is caught inside a rolled-back suite.

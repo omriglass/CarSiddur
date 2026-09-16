@@ -69,6 +69,12 @@ export const requestFormSchema = z
     returnTime: z.union([timeStringSchema, z.literal("23:59")]).optional(),
     /** Kept for old callers; overnight values are rejected. No UI toggle. */
     returnNextDay: z.boolean(),
+    /**
+     * REQ §88 (owner 2026-09-15): the member no longer chooses this — the solver/Sadran
+     * decide relay vs. passenger per leg (`canDrive`), and `submit_request` defaults it
+     * server-side. Kept optional here only so `mapEditRowToValues` can still read the
+     * decided mode off an existing request row without widening `RequestFormValues`.
+     */
     oneWayCarMode: z.enum(ONE_WAY_CAR_MODES).optional(),
     needsCarAtDestination: z.boolean(),
     adults: z.number().int().min(1).max(8),
@@ -114,14 +120,6 @@ export const requestFormSchema = z
     // minutes-of-day comparison below (meant to catch same-day return-before-departure
     // typos) does not apply — the RPC itself is the arbiter of the actual span.
     const isMultiDay = value.tripShape === "round_trip" && !!value.returnDay && value.returnDay !== value.day;
-
-    if (value.tripShape !== "round_trip" && !value.oneWayCarMode) {
-      ctx.addIssue({
-        path: ["oneWayCarMode"],
-        code: z.ZodIssueCode.custom,
-        message: he.errors.oneWayCarModeRequired,
-      });
-    }
 
     if (needsDepart && !value.departTime) {
       ctx.addIssue({ path: ["departTime"], code: z.ZodIssueCode.custom, message: he.field.depart });

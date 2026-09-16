@@ -168,10 +168,15 @@ function passengerRelayCombo(nr: NormalizedRequest, ctx: SplitLegsContext): Spli
   };
 }
 
-/** Tries the four combinations in order; returns the first that succeeds, or null. */
+/** Tries the four combinations in order; returns the first that succeeds, or null.
+ *  REQUIREMENTS §13.88: a non-driver (`canDrive === false`) is never given a driver
+ *  role, so only the passenger/passenger combo (neither leg driven by the
+ *  requester) is tried for them — relayPassengerCombo, passengerRelayCombo and
+ *  selfPairCombo all require the requester to drive at least one relay leg. */
 export function trySplitLegs(nr: NormalizedRequest, ctx: SplitLegsContext): SplitLegResult | null {
   if (nr.request.tripShape !== 'round_trip' || nr.request.needsCarAtDestination) return null;
-  return (
-    passengerCombo(nr, ctx) ?? relayPassengerCombo(nr, ctx) ?? passengerRelayCombo(nr, ctx) ?? selfPairCombo(nr, ctx)
-  );
+  const passenger = passengerCombo(nr, ctx);
+  if (passenger) return passenger;
+  if (nr.request.canDrive === false) return null;
+  return relayPassengerCombo(nr, ctx) ?? passengerRelayCombo(nr, ctx) ?? selfPairCombo(nr, ctx);
 }

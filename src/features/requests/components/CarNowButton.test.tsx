@@ -7,8 +7,8 @@ import { CarNowButton } from "./CarNowButton";
 
 const mocks = vi.hoisted(() => ({ useFreeCarsNowQuery: vi.fn() }));
 vi.mock("../hooks", () => ({ useFreeCarsNowQuery: mocks.useFreeCarsNowQuery }));
-// The sheet itself is covered by QuickRequestSheet.test.tsx / RequestForm.oneWaySync.test.tsx;
-// this test only checks the button's own enabled/disabled rendering.
+// The sheet itself is covered by QuickRequestSheet.test.tsx; this test only checks the
+// button's own enabled/disabled rendering.
 vi.mock("./QuickRequestSheet", () => ({ QuickRequestSheet: () => null }));
 
 function baseResult(overrides: Partial<ReturnType<typeof mocks.useFreeCarsNowQuery>> = {}) {

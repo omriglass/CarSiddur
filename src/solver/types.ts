@@ -56,7 +56,12 @@ export interface Request {
   destinationId: string;
   rideType: string;
   tripShape: TripShape;
-  /** required when tripShape !== 'round_trip' */
+  /**
+   * Optional and non-binding (REQUIREMENTS §13.88, owner 2026-09-15): the member
+   * no longer picks a mode on the form. When present (Sadran/legacy data), it is
+   * honoured unless `canDrive === false` forces `passenger`. When absent, the
+   * solver decides — see `canDrive`.
+   */
   oneWayCarMode?: 'relay' | 'passenger';
   /** epoch ms, 15-min aligned; absent for one_way_from */
   departureMs?: number;
@@ -73,6 +78,18 @@ export interface Request {
   isLate: boolean;
   manualBoost?: { value: number; reason: string };
   preferredCarId?: string;
+  /**
+   * Whether this member may be given a driver role (REQUIREMENTS §13.88, owner
+   * 2026-09-15; `profiles.does_not_drive`, self-service/admin-editable). Default
+   * `true` ("everyone can drive unless they say otherwise"). `false`: never a
+   * `keep` round trip driven by this requester and never a `relay` leg driven by
+   * them, regardless of a stated `oneWayCarMode` — a round trip that would
+   * otherwise be `keep` is placed as a driverless assignment (`PLACED_NEEDS_DRIVER`)
+   * or merged as a passenger into a same-way ride (suggestion only, never
+   * auto-applied); a one-way leg resolves to `passenger`, falling back to
+   * `chauffeur` (§3.11 item 5) when no host exists.
+   */
+  canDrive?: boolean;
   /**
    * Multi-day series (SOLVER §3.x): one DB request row per calendar day,
    * sharing `seriesId`; `seriesIndex` is 1-based over the whole series,
@@ -210,7 +227,12 @@ export interface Assignment {
   luggageCount: number;
   /** signed, 0 if at preferred */
   shift: { departureMin: number; returnMin: number };
-  /** the other leg of a relay pair */
+  /**
+   * The other leg of a relay pair, OR (REQUIREMENTS §13.89) the counterpart of a
+   * solo relay leg and its auto-generated needs-driver relocation ride: a lone
+   * relay leg's ride points at its healing relocation, and the relocation ride
+   * (no driver, no served requests) points back at it.
+   */
   pairedRideId?: string;
   /** set for a leg of a multi-day series (SOLVER §3.x); all legs of one series share this id and one carId */
   seriesId?: string;

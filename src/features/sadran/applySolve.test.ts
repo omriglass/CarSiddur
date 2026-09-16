@@ -64,6 +64,29 @@ it("preserves a driverless reservation as a fixed constraint during subsequent s
   expect(result.assignments.some((r) => r.servedRequestIds.includes("request"))).toBe(false);
 });
 
+// REQ §89 (owner 2026-09-15): an unclaimed automatic relocation ride is the DB's own
+// chain-healing placeholder — it must never be pinned as a solver constraint, since the DB
+// cancels it the moment a real leg covers the gap. A *claimed* one (`driver_id` set) is an
+// ordinary one-way leg and stays fixed like any other ride.
+it("skips an unclaimed automatic relocation ride (auto_relocation, no driver) as a fixed constraint", () => {
+  const fixed = boardRideToFixedRide({
+    id: "relocation", car_id: "car", driver_id: null, auto_relocation: true,
+    starts_at: new Date(slotMs(32)).toISOString(), ends_at: new Date(slotMs(40)).toISOString(),
+    origin_id: "away", destination_id: "home", served: [],
+  } as unknown as BoardRide, WEEK_START_MS);
+  expect(fixed).toBeNull();
+});
+
+it("keeps a claimed automatic relocation ride (auto_relocation with a driver) as a fixed constraint", () => {
+  const fixed = boardRideToFixedRide({
+    id: "relocation-claimed", car_id: "car", driver_id: "member-1", auto_relocation: true,
+    starts_at: new Date(slotMs(32)).toISOString(), ends_at: new Date(slotMs(40)).toISOString(),
+    origin_id: "away", destination_id: "home", served: [],
+  } as unknown as BoardRide, WEEK_START_MS);
+  expect(fixed).not.toBeNull();
+  expect(fixed?.id).toBe("relocation-claimed");
+});
+
 it("solves around coordinator-approved adjacent fixed rides while retaining normal buffers for new rides", () => {
   const fixed = [
     { id: "late-id", start: 32, end: 40, turnaround: 0 },
@@ -129,6 +152,29 @@ function emptyOutput(overrides: Partial<SolverOutput> = {}): SolverOutput {
     ...overrides,
   };
 }
+
+describe("buildApplyPayload (driverless rides, REQ §13.88/§13.89)", () => {
+  const base = { weekStartMs: WEEK_START_MS, policyVersionId: "policy", startedAtMs: 0, finishedAtMs: 1, inputHash: "h", requestsById: new Map<string, RequestRow>() };
+  function assignment(overrides: Record<string, unknown>) {
+    return {
+      id: "a1", carId: "car", window: { start: 40, end: 44 }, originId: "home", destinationId: "home",
+      legs: [], servedRequestIds: [], passengers: { adults: 0, childSeats: 0, boosters: 0 }, luggageCount: 0,
+      source: "solver", reasonCode: "PLACED_NEEDS_DRIVER", reason: "", ...overrides,
+    } as unknown as SolverOutput["assignments"][number];
+  }
+
+  it("sends driver_id null (never \"\") and flags a serve-nobody driverless ride as an automatic relocation", () => {
+    const payload = buildApplyPayload({ ...base, output: emptyOutput({ assignments: [assignment({ originId: "dest", destinationId: "home" })] }) });
+    expect(payload.rides[0]!.driver_id).toBeNull();
+    expect(payload.rides[0]!.auto_relocation).toBe(true);
+  });
+
+  it("keeps a driven ride as is: driver_id set, no relocation flag", () => {
+    const payload = buildApplyPayload({ ...base, output: emptyOutput({ assignments: [assignment({ driverMemberId: "member-1" })] }) });
+    expect(payload.rides[0]!.driver_id).toBe("member-1");
+    expect(payload.rides[0]!.auto_relocation).toBeUndefined();
+  });
+});
 
 describe("buildApplyPayload (every reopened request lands in rides or request_statuses)", () => {
   it("marks every unmet request waitlisted, so a reopened-but-now-unplaceable request is never left dangling", () => {

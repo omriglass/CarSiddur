@@ -139,6 +139,17 @@ export function ProfilePage() {
               onBlur={(e) => updateProfileMutation.mutate({ phone: e.target.value })}
             />
           </div>
+          <div className="flex items-center justify-between border-t pt-3">
+            <div className="space-y-0.5">
+              <Label htmlFor="profile-does-not-drive">{he.profileExtra.doesNotDriveLabel}</Label>
+              <p className="text-xs text-muted-foreground">{he.profileExtra.doesNotDriveHelp}</p>
+            </div>
+            <Switch
+              id="profile-does-not-drive"
+              checked={profileQuery.data?.does_not_drive ?? false}
+              onCheckedChange={(checked) => updateProfileMutation.mutate({ does_not_drive: checked })}
+            />
+          </div>
         </CardContent>
       </Card>
 

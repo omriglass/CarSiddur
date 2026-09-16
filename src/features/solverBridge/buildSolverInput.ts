@@ -112,7 +112,15 @@ export interface BuildSolverInputParams {
     DepartmentSettingsRow,
     "turnaround_minutes" | "detour_limit_minutes" | "detour_limit_km" | "chauffeur_dwell_minutes" | "day_end_time"
   >;
-  requests: RequestRow[];
+  /**
+   * Plain `requests` rows, optionally carrying `requester_does_not_drive` — REQ §88 (owner
+   * 2026-09-15): `Request.canDrive = !requester_does_not_drive`. Both callers that feed the
+   * real solver/board preview embed it (`sadran/api.ts`'s `fetchWeekRequests` and
+   * `fetchWeekRequestsWithNames`); callers that don't (e.g. the admin policy preview's own
+   * plain `requests` fetch) simply leave every request driving, same as before this field
+   * existed.
+   */
+  requests: (RequestRow & { requester_does_not_drive?: boolean })[];
   /** `ride_type_id -> code` (policy `rideType` rule params are keyed by `ride_types.code`, SOLVER.md §4.3). */
   rideTypeCodesById: Record<string, string>;
   cars: CarRow[];
@@ -213,6 +221,10 @@ export function buildSolverInput(params: BuildSolverInputParams): SolverInput {
         rideType: params.rideTypeCodesById[r.ride_type_id] ?? "other",
         tripShape: r.trip_shape,
         oneWayCarMode,
+        // REQ §88 (owner 2026-09-15): everyone can drive unless they said otherwise in their
+        // profile; `undefined` here (field not selected by this particular caller) also means
+        // "can drive" — see `canDrive?: boolean`'s own doc comment in `src/solver/types.ts`.
+        canDrive: r.requester_does_not_drive ? false : undefined,
         departureMs: epochMs(r.depart_at),
         returnMs: epochMs(r.return_at),
         flexDeparture: flexOf(r.flex_depart_early, r.flex_depart_late),

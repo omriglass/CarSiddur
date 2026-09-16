@@ -27,6 +27,9 @@
 -- call and its assertions, mirroring rls_smoke.sql's own convention.
 
 begin;
+-- Fire deferred constraint triggers (rides_location_ends, rides_driver_check, …) inside this
+-- rolled-back transaction, exactly where a committing request would hit them.
+set constraints all immediate;
 
 do $$
 declare
@@ -335,6 +338,39 @@ begin
     'TEST 3 FAILED: passenger request must remain merged (not silently waitlisted/unassigned)';
 
   raise notice 'TEST 3 PASSED: a merged (passenger) request survives an empty remaining-mode apply, same as an assigned (driver) one';
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- Driverless solver rides (REQ §13.88/§13.89, 20260915140000): the solver may place a ride
+-- with no driver — a non-driver's own car, or an automatic relocation next to a lone relay
+-- leg. apply_solver_result() must accept `driver_id` null/"" and insert the ride as
+-- needs_driver, carrying the payload's auto_relocation flag.
+-- ---------------------------------------------------------------------------
+do $$
+declare
+  v_dept uuid := '00000000-0000-0000-0000-000000000001';
+  v_home uuid := '00000000-0000-0000-0000-000000000010';
+  v_car uuid := '00000000-0000-0000-0000-000000000040';
+  v_week date := public.current_week_start() + 14;
+  v_start timestamptz := ((v_week + 4) + time '05:00') at time zone 'Asia/Jerusalem';
+  v_ride record;
+begin
+  perform public.apply_solver_result(v_dept, v_week,
+    jsonb_build_object('mode', 'remaining', 'request_statuses', '[]'::jsonb,
+      'rides', jsonb_build_array(jsonb_build_object(
+        'car_id', v_car, 'starts_at', v_start, 'ends_at', v_start + interval '30 minutes',
+        'origin_id', v_home, 'destination_id', v_home, 'driver_id', '', 'is_pinned', false, 'pin_reason', null,
+        'served', '[]'::jsonb)),
+      'policy_version_id', '00000000-0000-0000-0000-000000000031', 'input_hash', 'test-hash-driverless',
+      'solver_version', 'test', 'started_at', now()::text, 'finished_at', now()::text, 'duration_ms', 0,
+      'summary', '{}'::jsonb));
+  select * into v_ride from public.rides
+  where department_id = v_dept and week_start = v_week and car_id = v_car and starts_at = v_start and status <> 'cancelled';
+  assert found, 'DRIVERLESS FAILED: the driverless ride was not inserted';
+  assert v_ride.driver_id is null and v_ride.needs_driver and not v_ride.auto_relocation,
+    'DRIVERLESS FAILED: expected driver_id null, needs_driver true, auto_relocation false';
+  perform public.assert_ride_driver(v_ride.id);
+  raise notice 'DRIVERLESS PASSED: apply_solver_result inserts a driverless ride as needs_driver';
 end $$;
 
 rollback;

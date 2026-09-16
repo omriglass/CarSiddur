@@ -176,6 +176,27 @@ describe("buildSolverInput", () => {
     expect(input.destinations["dest-a"]!.publicTransportScore).toBeCloseTo(0.4);
   });
 
+  it("maps requester_does_not_drive to canDrive: false (REQ §88); leaves canDrive undefined otherwise", () => {
+    const input = buildSolverInput({
+      weekStart: WEEK_START,
+      homeDestinationId: HOME,
+      departmentSettings: DEFAULT_SETTINGS,
+      requests: [
+        requestRow({ id: "drives" }),
+        { ...requestRow({ id: "non-driver" }), requester_does_not_drive: true },
+      ],
+      rideTypeCodesById: {},
+      cars: [],
+      seatConfigsByCarId: {},
+      destinations: [destRow()],
+      policy: { id: "p1", version: 1, rules: [] },
+    });
+
+    const byId = new Map(input.requests.map((r) => [r.id, r]));
+    expect(byId.get("drives")!.canDrive).toBeUndefined();
+    expect(byId.get("non-driver")!.canDrive).toBe(false);
+  });
+
   it("excludes draft requests and falls back free-text destinations to the sentinel", () => {
     const input = buildSolverInput({
       weekStart: WEEK_START,

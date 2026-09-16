@@ -89,7 +89,8 @@ describe("suggestionToFormValues", () => {
     );
     expect(values.returnTime).toBeUndefined();
     expect(values.departTime).toBe("08:00");
-    expect(values.oneWayCarMode).toBe("relay");
+    // REQ §88: the decided car mode is no longer copied into the form.
+    expect(values.oneWayCarMode).toBeUndefined();
   });
 
   it("falls back to weekStart's Sunday when neither leg has an instant", () => {

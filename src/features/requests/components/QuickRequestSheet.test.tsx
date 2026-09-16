@@ -76,7 +76,11 @@ describe("quick request sheet (RequestForm's variant=\"quick\")", () => {
     fireEvent.click(screen.getByRole("button", { name: he.quickRequest.submitOneWay }));
     await waitFor(() => expect(mocks.submit).toHaveBeenCalledOnce());
     const payload = mocks.submit.mock.calls[0]![0];
-    expect(payload).toMatchObject({ trip_shape: shape, one_way_car_mode: "passenger", reserve_missing_driver: true, ride_description: "Public route and pickup", guest_passenger_names: ["Guest"], adults: 3 });
+    expect(payload).toMatchObject({ trip_shape: shape, reserve_missing_driver: true, ride_description: "Public route and pickup", guest_passenger_names: ["Guest"], adults: 3 });
+    // A quick one-way reservation books a missing-driver ride for the member, so it is a
+    // `passenger` leg by definition — `submit_request` refuses `reserve_missing_driver` with any
+    // other mode (REQ §13.88 leaves the mode to the server everywhere else).
+    expect(payload.one_way_car_mode).toBe("passenger");
     expect(payload.notes).toBeUndefined();
     expect(payload[shape === "one_way_to" ? "depart_at" : "return_at"]).toBe("2044-01-03T10:00:00.000Z");
     expect(payload[shape === "one_way_to" ? "return_at" : "depart_at"]).toBeUndefined();

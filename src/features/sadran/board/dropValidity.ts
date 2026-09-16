@@ -13,12 +13,13 @@ import { TZ, dateKey } from "@/lib/time";
 import type { Car } from "@/features/fleet/api";
 
 import { servedOf } from "../applySolve";
-import { wouldOverlap } from "./geometry";
+import { slotToIso, wouldOverlap } from "./geometry";
 import { expandedMergeWindow } from "./mergeWindow";
 import { requestStart, requestWindow, standaloneChauffeurWindow } from "./phantomLanes";
 import type { UnmetListItem } from "./components/UnmetList";
 
 import type { BoardRide, MaintenanceBlockRow, WeekRequestRow } from "../api";
+import type { Window } from "@/solver";
 
 export interface SeatConfig {
   adults: number;
@@ -42,6 +43,14 @@ export interface BoardDropContext {
   unmetItems: UnmetListItem[];
   selectedDay: string;
   chauffeurDwellMinutes: number;
+  /**
+   * Per car, windows where the car is away from home (REQ §89, owner 2026-09-15;
+   * `board/geometry.ts`'s `scanBoardConflicts` — same data the grid's "away" band draws).
+   * Omit to skip the away check (e.g. a context built before `conflictScan` is ready).
+   */
+  awayByCarId?: Map<string, { locationId: string; window: Window }[]>;
+  /** Needed to convert `awayByCarId`'s slot-index windows into the ISO timestamps `unavailable` compares against. */
+  weekStartMs?: number;
 }
 
 export function passengersOf(ride: BoardRide): SeatNeed {
@@ -61,8 +70,19 @@ export function seatsFit(ctx: BoardDropContext, carId: string, need: SeatNeed): 
 
 export function unavailable(ctx: BoardDropContext, carId: string, startsAt: string, endsAt: string): boolean {
   if (ctx.cars.find((car) => car.id === carId)?.status !== "active") return true;
-  return wouldOverlap({ startsAt, endsAt }, ctx.maintenanceBlocks.filter((block) => block.car_id === carId)
-    .map((block) => ({ startsAt: block.starts_at, endsAt: block.ends_at })), 0);
+  if (wouldOverlap({ startsAt, endsAt }, ctx.maintenanceBlocks.filter((block) => block.car_id === carId)
+    .map((block) => ({ startsAt: block.starts_at, endsAt: block.ends_at })), 0)) return true;
+  // REQ §89: a home-start ride can never be dropped while the car is away at a destination
+  // (the same rule `try_auto_approve`/`resolve_waitlist_group`/the solver already enforce
+  // server-side) — treated exactly like a maintenance block on the client.
+  if (ctx.weekStartMs != null) {
+    const away = (ctx.awayByCarId?.get(carId) ?? []).map((a) => ({
+      startsAt: slotToIso(a.window.start, ctx.weekStartMs as number),
+      endsAt: slotToIso(a.window.end, ctx.weekStartMs as number),
+    }));
+    if (wouldOverlap({ startsAt, endsAt }, away, 0)) return true;
+  }
+  return false;
 }
 
 export function mergeCandidateForRide(ctx: BoardDropContext, rideId: string, carId: string, _startsAt: string, _endsAt: string, hostRideId?: string) {

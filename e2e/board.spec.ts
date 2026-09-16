@@ -3,7 +3,7 @@ import { execSync } from "node:child_process";
 import { formatInTimeZone } from "date-fns-tz";
 import { expect, test, type Page } from "@playwright/test";
 
-import { NEVO_DEPARTMENT_ID, serviceRoleClient } from "./helpers";
+import { NEVO_DEPARTMENT_ID, serviceRoleClient, primeLanding } from "./helpers";
 import resetDatabase from "./global-setup";
 import { he } from "../src/i18n/he";
 
@@ -81,6 +81,7 @@ const SADRAN_EMAIL = "sadran@nevo.local";
 const SADRAN_PASSWORD = "nevo-demo-1234";
 
 async function signIn(page: Page): Promise<void> {
+  await primeLanding(page);
   await page.goto("/login");
   await page.getByLabel("אימייל").fill(SADRAN_EMAIL);
   await page.getByLabel("סיסמה").fill(SADRAN_PASSWORD);
@@ -103,7 +104,9 @@ async function fillRemaining(page: Page) {
   const applied = page.waitForResponse((response) => response.url().endsWith("/rest/v1/rpc/apply_solver_result") && response.request().method() === "POST");
   await openBoardActionsMenu(page);
   await page.getByRole("menuitem", { name: he.action.autoSolveRemaining, exact: true }).click();
-  expect((await applied).ok()).toBe(true);
+  const response = await applied;
+  // On failure surface the PostgREST/Postgres error body instead of a bare `false`.
+  expect(response.ok(), `apply_solver_result ${response.status()}: ${await response.text()}`).toBe(true);
 }
 
 function unmetCountFromHeading(text: string | null): number {

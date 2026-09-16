@@ -12,7 +12,7 @@ import { assertInvariants } from './invariants';
 import { fits, luggageFits } from './seatFit';
 import { buildHostRides, findMergeHosts } from './merge';
 import { scoreRequests } from './policy/engine';
-import { pairRelays } from './relay';
+import { healLoneRelayLegs, pairRelays } from './relay';
 import { reason } from './reasons';
 import { byId, normalize, type NormalizedRequest } from './slots';
 import { buildSuggestions, type SuggestionContext } from './suggestions';
@@ -141,7 +141,15 @@ export function solve(input: SolverInput): SolverOutput {
 
   const finalPlaced: Placed[] = [...placed, ...improveResult.newlyPlaced];
   const solverAssignments = toAssignments(finalPlaced, input, carsMap);
-  const assignments = [...fixedAssignments, ...solverAssignments].sort((a, b) => byId({ id: a.rideId }, { id: b.rideId }));
+
+  // REQUIREMENTS §13.89: a lone relay leg with no paired return no longer makes
+  // the placement infeasible — place it and auto-generate a driverless
+  // needs-driver relocation ride that closes the day-end loop (SOLVER §3.6.1a).
+  // Legs this cannot heal (no room on any car) keep the old UNMET_NO_RELAY_PARTNER path.
+  const { healed, healedIds } = healLoneRelayLegs(unpaired, timelines, input, carsMap, scores);
+  const stillUnpairedRelay = unpaired.filter((nr) => !healedIds.has(nr.id));
+
+  const assignments = [...fixedAssignments, ...solverAssignments, ...healed].sort((a, b) => byId({ id: a.rideId }, { id: b.rideId }));
 
   const servedRequestIds = new Set<string>();
   for (const a of assignments) for (const rid of a.servedRequestIds) servedRequestIds.add(rid);
@@ -159,7 +167,7 @@ export function solve(input: SolverInput): SolverOutput {
       unmetIds.set(u.pair.retNr.id, u.pair.retNr);
     }
   }
-  for (const nr of unpaired) unmetIds.set(nr.id, nr);
+  for (const nr of stillUnpairedRelay) unmetIds.set(nr.id, nr);
   for (const nr of passengerOnly) unmetIds.set(nr.id, nr);
   // Anything normalized but not served and not otherwise captured (defensive).
   for (const nr of normalized) if (!servedRequestIds.has(nr.id)) unmetIds.set(nr.id, unmetIds.get(nr.id) ?? nr);
@@ -170,7 +178,7 @@ export function solve(input: SolverInput): SolverOutput {
     assignments,
     timelines,
     hostDriverRequests: byRequestId,
-    unpairedRelay: unpaired,
+    unpairedRelay: stillUnpairedRelay,
     ejectionSuggestions: improveResult.ejectionSuggestions,
   };
 
@@ -185,7 +193,7 @@ export function solve(input: SolverInput): SolverOutput {
       );
       const reasonCode = passengerOnly.includes(nr)
         ? 'UNMET_PASSENGER_NO_HOST'
-        : unpaired.includes(nr)
+        : stillUnpairedRelay.includes(nr)
           ? 'UNMET_NO_RELAY_PARTNER'
           : 'UNMET_NO_CAR';
       const reasonText =
@@ -262,7 +270,13 @@ export function solve(input: SolverInput): SolverOutput {
     }
   }
 
-  const needsDriver = unmet.filter((u) => u.suggestions.some((s) => s.kind === 'chauffeur')).length;
+  // REQUIREMENTS §13.88/§13.89: counts both still-unplaced legs that only have a
+  // chauffeur suggestion, and solver-placed rides that already need a driver —
+  // a non-driver's driverless round trip (PLACED_NEEDS_DRIVER) and a solo relay
+  // leg's needs-driver relocation ride (also PLACED_NEEDS_DRIVER).
+  const needsDriverUnmet = unmet.filter((u) => u.suggestions.some((s) => s.kind === 'chauffeur')).length;
+  const needsDriverAssignments = assignments.filter((a) => a.source === 'solver' && !a.driverRequestId && !a.driverMemberId).length;
+  const needsDriver = needsDriverUnmet + needsDriverAssignments;
 
   const output: SolverOutput = {
     policyId: input.policy.id,

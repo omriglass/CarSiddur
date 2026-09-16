@@ -77,12 +77,12 @@ describe("toSubmitRequestPayload", () => {
     expect(payload.needs_car_at_destination).toBe(true);
   });
 
-  it("omits needs_car_at_destination's opposite fields for a one-way shape and includes the car mode", () => {
+  it("omits needs_car_at_destination's opposite fields for a one-way shape and never sends a car mode (REQ §88 — the server decides it)", () => {
     const payload = toSubmitRequestPayload(
       baseValues({ tripShape: "one_way_to", departTime: "08:00", returnTime: undefined, oneWayCarMode: "relay" }),
     );
     expect(payload.trip_shape).toBe("one_way_to");
-    expect(payload.one_way_car_mode).toBe("relay");
+    expect(payload.one_way_car_mode).toBeUndefined();
     expect(payload.return_at).toBeUndefined();
   });
 
@@ -132,6 +132,12 @@ describe("quick-variant options", () => {
 
   it("sets reserve_missing_driver only when requested", () => {
     expect(toSubmitRequestPayload(baseValues(), { reserveMissingDriver: true }).reserve_missing_driver).toBe(true);
+  });
+
+  it("a quick one-way reservation is always a passenger leg (submit_request refuses any other mode)", () => {
+    const oneWay = { ...baseValues(), tripShape: "one_way_to" as const };
+    expect(toSubmitRequestPayload(oneWay, { reserveMissingDriver: true }).one_way_car_mode).toBe("passenger");
+    expect(toSubmitRequestPayload(oneWay, {}).one_way_car_mode).toBeUndefined();
     expect(toSubmitRequestPayload(baseValues()).reserve_missing_driver).toBeUndefined();
   });
 });

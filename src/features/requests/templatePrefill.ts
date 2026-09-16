@@ -41,7 +41,8 @@ export function suggestionToFormValues(row: TemplateSuggestion, weekStart: strin
     departTime,
     returnTime,
     returnNextDay: false,
-    oneWayCarMode: (row.oneWayCarMode ?? undefined) as "relay" | "passenger" | undefined,
+    // REQ §88: the decided car mode is no longer copied into the form — the member never
+    // chooses it, and `submit_request` re-derives it server-side on every submission.
     needsCarAtDestination: row.needsCarAtDestination,
     adults: row.adults,
     childSeats: row.childIds.length,

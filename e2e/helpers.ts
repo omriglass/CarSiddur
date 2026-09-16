@@ -33,8 +33,20 @@ export const SEEDED_USERS = {
 
 export const NEVO_DEPARTMENT_ID = "00000000-0000-0000-0000-000000000001";
 
+/**
+ * `/` and a fresh sign-in open the *last opened main page*, siddur by default (REQ §13.87).
+ * Specs were written against Home, so pin the remembered page to `/my` before signing in;
+ * `auth.spec.ts` covers the default and the "last opened" behaviour explicitly.
+ */
+export async function primeLanding(page: Page, main: "/my" | "/siddur" = "/my"): Promise<void> {
+  await page.addInitScript((value) => {
+    try { window.localStorage.setItem("landing.lastMain", value); } catch { /* ignore */ }
+  }, main);
+}
+
 /** Same sign-in steps every spec's own inline `signIn()` already used (dev email/password form). */
 export async function signIn(page: Page, user: { email: string; password: string }): Promise<void> {
+  await primeLanding(page);
   await page.goto("/login");
   await page.getByLabel("אימייל").fill(user.email);
   await page.getByLabel("סיסמה").fill(user.password);

@@ -42,7 +42,8 @@ export function LoginPage() {
 
   if (!isLoading && session) {
     const from = (location.state as { from?: { pathname: string } } | null)?.from;
-    return <Navigate to={from?.pathname ?? "/my"} replace />;
+    // No `from`: land like `/` does — the last opened main page, same for every role (REQ §13.87).
+    return <Navigate to={from?.pathname ?? "/"} replace />;
   }
 
   async function handleGoogleSignIn() {

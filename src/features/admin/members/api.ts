@@ -23,7 +23,7 @@ export type { Role };
  * merged back onto the rows so `Profile` (which still declares `phone`) stays satisfied.
  */
 const PROFILE_COLUMNS_WITHOUT_PHONE =
-  "approval_status, approved_at, approved_by, avatar_url, created_at, default_boosters, default_child_seats, default_department_id, display_name, email, full_name, google_name, home_week_preference, id, is_admin, muted_events, updated_at";
+  "approval_status, approved_at, approved_by, avatar_url, created_at, default_boosters, default_child_seats, default_department_id, display_name, does_not_drive, email, full_name, google_name, home_week_preference, id, is_admin, muted_events, updated_at";
 
 export async function fetchAllProfiles(): Promise<Profile[]> {
   const { data, error } = await supabase
@@ -99,7 +99,7 @@ export async function approveMember(profileId: string, departmentId: string): Pr
   await rpc("admin_approve_member", { p_profile_id: profileId, p_department_id: departmentId });
 }
 
-export async function updateMemberDetails(profileId: string, fullName: string, phone: string, departmentId?: string, displayName?: string, removedDepartmentIds: string[] = []): Promise<void> {
+export async function updateMemberDetails(profileId: string, fullName: string, phone: string, departmentId?: string, displayName?: string, removedDepartmentIds: string[] = [], doesNotDrive?: boolean): Promise<void> {
   let normalizedPhone = phone.trim();
   if (normalizedPhone && !/^\+[1-9][0-9]{7,14}$/.test(normalizedPhone)) {
     const parsed = phoneSchema.safeParse(normalizedPhone);
@@ -107,7 +107,7 @@ export async function updateMemberDetails(profileId: string, fullName: string, p
     normalizedPhone = parsed.data;
   }
   await rpc("admin_update_member", { p_profile_id: profileId, p_details: {
-    full_name: fullName, phone: normalizedPhone, ...(displayName !== undefined ? { display_name: displayName } : {}), removed_department_ids: removedDepartmentIds, ...(departmentId ? { department_id: departmentId } : {}),
+    full_name: fullName, phone: normalizedPhone, ...(displayName !== undefined ? { display_name: displayName } : {}), removed_department_ids: removedDepartmentIds, ...(departmentId ? { department_id: departmentId } : {}), ...(doesNotDrive !== undefined ? { does_not_drive: doesNotDrive } : {}),
   } });
 }
 

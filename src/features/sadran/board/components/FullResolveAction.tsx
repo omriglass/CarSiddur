@@ -60,6 +60,7 @@ export function FullResolveAction({ departmentId, weekStart, homeDestinationId, 
           originName: ride.origin_name ?? "", destinationName: ride.destination_name ?? "",
           homeDestinationId, served: servedOf(ride), driverName: ride.driver_name,
           isChauffeur: !!ride.is_chauffeur, needsDriver: !!ride.needs_driver,
+          autoRelocation: !!ride.auto_relocation,
         });
         const car = context.input.cars.find((car) => car.id === item.carId)?.name ?? "";
         const purposes = [...new Set(servedOf(ride).map((entry) => rideTypesQuery.data?.find((type) => type.code === entry.ride_type)?.name_he).filter(Boolean))].join(" / ");

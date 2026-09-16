@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { serviceRoleClient, NEVO_DEPARTMENT_ID } from "./helpers";
+import { serviceRoleClient, NEVO_DEPARTMENT_ID, primeLanding } from "./helpers";
 import { he } from "../src/i18n/he";
 
 /**
@@ -39,6 +39,7 @@ const SADRAN_EMAIL = "sadran@nevo.local";
 const SADRAN_PASSWORD = "nevo-demo-1234";
 
 async function signIn(page: import("@playwright/test").Page) {
+  await primeLanding(page);
   await page.goto("/login");
   await page.getByLabel("אימייל").fill(SADRAN_EMAIL);
   await page.getByLabel("סיסמה").fill(SADRAN_PASSWORD);

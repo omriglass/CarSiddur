@@ -48,7 +48,7 @@ Hebrew strings quoted below are copied verbatim from `src/i18n/he.member.ts` / `
 
 ### request-form — Request form & multi-day (series) requests
 
-**Paths**: `src/features/requests/components/RequestForm.tsx` (+ `.oneWaySync.test.tsx`),
+**Paths**: `src/features/requests/components/RequestForm.tsx`,
 `TemplateSuggestions.tsx`(+test), `RequestsListPage.test.tsx`, `series.ts`(+test),
 `templatePrefill.ts`(+test), `duplicate.ts`(+test), `mapper.ts`(+test), `duration.ts`(+test),
 `dayLabel.ts`(+test), `destinationLabel.ts`(+test), `seatCounts.ts`(+test), `schema.ts`(+test), `submitOutcome.ts`(+test), `api.ts`, `hooks.ts`,
@@ -197,13 +197,13 @@ grid (item 2) — `hideIdleTemporaryCars()` is unit-tested in `weekGridCars.test
 **Paths**: `src/features/sadran/board/**`, `applySolve.ts`(+test), `unmetStatuses.ts`(+test),
 `deviations/**`, `export/**`, `api.ts`, `hooks.ts`, `keys.ts`; `src/components/WeekGrid.tsx`,
 `weekGridCars.ts`; `src/solver/**` (shared fan-out); `src/i18n/he.sadran.ts`; migrations matching
-`*board*`, `*coordinator*`, `*ride_edit*`, `*day_readiness*`, or content-matching `v_board_rides`/
-`publish_siddur`; `e2e/board.spec.ts`, `board-mobile.spec.ts`, `board-coordination.spec.ts`,
-`export.spec.ts`, `weekly-permissions.spec.ts`, `ride-editing.spec.ts`.
+`*board*`, `*coordinator*`, `*ride_edit*`, `*day_readiness*`, `*car_chain*`, or content-matching
+`v_board_rides`/`publish_siddur`; `e2e/board.spec.ts`, `board-mobile.spec.ts`,
+`board-coordination.spec.ts`, `export.spec.ts`, `weekly-permissions.spec.ts`, `ride-editing.spec.ts`.
 
 **Automated**:
 - Vitest: `npx vitest run src/features/sadran/board src/features/sadran/applySolve.test.ts src/features/sadran/unmetStatuses.test.ts src/features/sadran/deviations src/features/sadran/export`
-- SQL: `todo_board_semantics.sql`, `coordinator_planning.sql`, `solve_semantics.sql`
+- SQL: `todo_board_semantics.sql`, `coordinator_planning.sql`, `solve_semantics.sql`, `car_chain_relocation.sql`
 - Playwright: `npx playwright test --grep "@board"`
 
 **QA script**:
@@ -218,8 +218,12 @@ grid (item 2) — `hideIdleTemporaryCars()` is unit-tested in `weekGridCars.test
    assigned week only; a permanent Sadran retains access to all weeks.
 6. Download the week as an Excel workbook from the kebab menu; confirm the three sheets (בקשות /
    סידור / ניקוד בפרסום).
+7. Remove the return leg of a relay pair (or the out leg from under a standing return leg);
+   confirm the edit succeeds and a missing-driver relocation ride appears bridging the gap
+   instead of an error (REQ §13.89). Claim it as a volunteer; confirm it becomes an ordinary
+   one-way leg.
 
-**REQ**: §13.42, §13.80, §13.84.
+**REQ**: §13.42, §13.80, §13.84, §13.89.
 
 ### proposals — Proposals & /p/:token
 
@@ -436,18 +440,20 @@ migrations matching `*polic*`, `*fairness*`, `*mileage*`; `e2e/auto-approve.spec
 
 ### auth — Auth / onboarding / roles
 
-**Paths**: `src/features/auth/**`; migrations matching `*identity*`,
+**Paths**: `src/features/auth/**`; the shell and landing (`src/app/router.tsx`, `AppShell.tsx`,
+`landing.ts`(+test), `LandingRedirect.tsx`, `src/pages/LoginPage.tsx` — REQ §13.87); migrations matching `*identity*`,
 `*weekly_sadran_permissions*`; `e2e/auth.spec.ts`, `device-setup.spec.ts`,
 `weekly-permissions.spec.ts`, `smoke.spec.ts`.
 
 **Automated**:
-- Vitest: `npx vitest run src/features/auth`
+- Vitest: `npx vitest run src/features/auth src/app`
 - SQL: `weekly_sadran_permissions.sql`
 - Playwright: `npx playwright test --grep "@auth"`
 
 **QA script**:
 1. Sign in via "התחברות עם Google" (or the local dev email/password form) as a seeded member;
-   confirm Home loads with the four bottom tabs (הסידור / הבקשות שלי / הודעות / פרופיל), plus a
+   confirm the landing is the published siddur on a first visit (and the last opened of siddur /
+   my rides afterwards — same for a Sadran/admin, REQ §13.87) with the four bottom tabs (הסידור / הבקשות שלי / הודעות / פרופיל), plus a
    fifth Sadran tab while assigned.
 2. Attempt sign-in with an email not on the `member_invites` allow-list; confirm the "ממתין לאישור"
    page appears, promising no email — check back or ask the Sadran (REQ §13.13/§60).

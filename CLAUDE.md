@@ -113,10 +113,10 @@ src/
   types/                       domain types shared by UI and solver (not DB rows)
   main.tsx sw.ts index.css     PWA service worker, entry point, global styles
 supabase/
-  migrations/                  164 additive migrations, `20260907090000` through `20260914200000` (includes the 13-migration production-hardening pass, `20260910099000`–`20260910100200` — see docs/HARDENING_2026-09.md — and the 2026-09-14 owner batch `20260914100100`–`20260914150000`: `window_changed` event + `set_week_close_at`, stats sharing indicators, `ride_passengers`, `join_radius_km` + `joinable_rides_for_request`, `car_mileage_totals`, seeded destination coordinates, `driver_phone` on joinable rides, `add_ride_passengers`/`remove_ride_person`, `policy_versions.settings.carChoice`, `v_board_rides.people`, policy score by target week)
+  migrations/                  169 additive migrations, `20260907090000` through `20260915140000` (2026-09-15/16: `day_date_label`, car-chain relocation rides, non-driver profiles, notification day prefix + proposal link, driverless solver rides) (includes the 13-migration production-hardening pass, `20260910099000`–`20260910100200` — see docs/HARDENING_2026-09.md — and the 2026-09-14 owner batch `20260914100100`–`20260914150000`: `window_changed` event + `set_week_close_at`, stats sharing indicators, `ride_passengers`, `join_radius_km` + `joinable_rides_for_request`, `car_mileage_totals`, seeded destination coordinates, `driver_phone` on joinable rides, `add_ride_passengers`/`remove_ride_person`, `policy_versions.settings.carChoice`, `v_board_rides.people`, policy score by target week)
   seed.sql                     demo data: departments, ride types, destinations, default policy, templates, member invites, demo auth users (local/e2e only)
   rollback/                    tested down scripts for non-additive migrations, `<same timestamp>_down.sql` (README.md has the convention); enforced by scripts/check-migrations.mjs
-  tests/                       27 SQL suites, run via `npm run db:test` (all transactional: begin … rollback)
+  tests/                       28 SQL suites, run via `npm run db:test` (all transactional: begin … rollback)
     rls_smoke.sql              assertions: every table has forced RLS, no `using (true)` on writes, no `for all` policies
     solve_semantics.sql        solver persistence and assignment behavior
     todo_board_semantics.sql   ownership, consent, operational permissions and publication scores
@@ -133,6 +133,7 @@ supabase/
     ride_passengers.sql        named people on a Sadran reservation: RLS, seat capacity, version bump, notices
     joinable_rides.sql         `joinable_rides_for_request`: radius, day, free seat, free-text → empty, authorization
     car_mileage.sql            `car_mileage_totals`: rolling window, 2×/1× rule, cancelled/temporary exclusions
+    car_chain_relocation.sql   `assert_car_chain` heals gaps with automatic missing-driver relocation rides (REQ §13.89): lone relay leg, removed return/out leg, claim, obsolete cleanup
     (+ 12 more scenario suites: admin_department_membership, admin_member_fixes, coordinator_planning, department_catalogs, live_quick_one_way, member_identity, proposal_day_boundary, proposal_replacement, selected_day_publication, status_notifications, week_opening, weekly_sadran_permissions)
   functions/
     push-dispatch/             send push notifications via browser API
@@ -257,6 +258,14 @@ scripts/
 | Docs vs code drift | `/review-consistency` | docs-keeper |
 | Small bug report / regression | `/bugfixer` | none (or a cheap model) |
 | Playwright coverage | — | e2e-tester |
+
+## Owner batch 2026-09-15/16 (REQ §13.86–§13.89; docs/TODO.md "Owner dump 2026-09-14 (evening)", "Owner dump 2026-09-15", "Owner notes 2026-09-16")
+
+- Bugs: Radix `DirectionProvider dir="rtl"` in `src/main.tsx` (chips/selects rendered LTR); "מאיפה?" label for return-only requests; named children counted once (`features/requests/seatCounts.ts` — the form sends seat counts *excluding* the selected children, `set_request_children()` adds them); every single date carries its weekday — TS `formatDayDate` ("ד׳ 16.9"), SQL `day_date_label()`; notification copy says "ביום ה׳ 16.9" (the word "יום" lives in the templates, `20260915130000`), and `proposalShort` never shows a raw `{{link}}`.
+- One landing page for everyone: `/` and a fresh sign-in open the last opened main page (siddur or `/my`, siddur by default; `src/app/landing.ts`).
+- One-way rides ask no car mode (REQ §13.88): `profiles.does_not_drive` (profile switch + admin editor; new `profiles` columns need an explicit column `grant select`), `submit_request` defaults `one_way_car_mode` (relay for a driver, passenger otherwise), solver `Request.canDrive` (`PLACED_NEEDS_DRIVER`, `PLACED_RELAY_SOLO`), `non_driver_cannot_drive` guard.
+- The car chain heals instead of refusing (REQ §13.89): `assert_car_chain` inserts/cancels automatic missing-driver relocation rides (`rides.auto_relocation`, `app.chain_hint` for the removed leg's times); unclaimed relocations are skipped by the solver bridge; the board shows an "away" band between legs. `npm run release -- --tag <name>` adds an owner alias tag after the automatic one.
+- Parked (code freeze): planning-ahead calendar (F6), multi-destination stops (F7), לשון פנייה (N2), the "hashed" toast on proposal apply / re-solve (D5/N4 — needs the toast's detail line).
 
 ## Owner batch 2026-09-14 (REQ §13.77 bullet, §13.78 "Extended 2026-09-14", §13.80–§13.84)
 

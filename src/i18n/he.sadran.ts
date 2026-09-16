@@ -95,6 +95,11 @@ export const heSadran = {
     phantomCar: "רכב חסר {{number}}",
     wrongDay: "יש לשבץ את הבקשה ביום המקורי שלה",
     maintenanceUnavailable: "הרכב אינו זמין או נמצא בטיפול בשעות שנבחרו",
+    /** REQ §89 (owner 2026-09-15): an automatic missing-driver relocation ride's block/card
+     * label (shared with the siddur via `src/lib/rideLabel.ts`). */
+    autoRelocation: "החזרת רכב — חסר/ה נהג/ת",
+    /** The board's "away" band between a relay out-leg and its return (REQ §89). */
+    awayBand: "הרכב ב{{place}}",
     invalidWindow: "יש לבחור טווח שעות תקין באותו יום",
     mergeConfirm: "לאחד את שתי הנסיעות?",
     mergeDescription: "תוכן הצעת איחוד שתוכלו לערוך לפני השליחה.",

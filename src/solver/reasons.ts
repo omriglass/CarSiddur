@@ -14,6 +14,9 @@ const TEMPLATES: Record<string, string> = {
   PLACED_FIXED: 'נסיעה קבועה שנקבעה מראש',
   PLACED_SERIES: 'שובץ/ה כחלק מבקשה רב-יומית ל{car} ({index}/{count})',
   CAR_BALANCED_MILEAGE: 'נבחר {car} לאיזון קילומטראז׳ בין הרכבים',
+  PLACED_NEEDS_DRIVER: 'שובץ ל{car} ללא נהג/ת קבוע/ה; דרוש/ה מתנדב/ת או אורח/ת שיסיע/תסיע',
+  PLACED_RELAY_SOLO:
+    'שובץ ל{car}: {member} נוסע/ת ל{dest} בנסיעת כיוון אחד ({dep}–{ret}); דרוש/ה נהג/ת מתנדב/ת להשלמת הכיוון השני',
 
   // Unmet reasons
   UNMET_NO_CAR: 'אין רכב פנוי בחלון המבוקש; חוסמים: {blockers}',
@@ -37,7 +40,6 @@ const TEMPLATES: Record<string, string> = {
   // Normalization warnings (message text; code stays the machine key)
   WARN_TIME_NOT_ALIGNED: 'זמן הבקשה אינו מיושר לרבע שעה',
   WARN_NO_CAR_FITS_SEATS: 'אין רכב פעיל שמתאים למספר הנוסעים המבוקש',
-  WARN_ONE_WAY_MODE_MISSING: 'לא הוגדר אופן רכב לנסיעת כיוון אחד; הוגדר כברירת מחדל כנוסע/ת',
   WARN_FIXED_RIDE_LOCATION_MISMATCH: 'מיקום הרכב בתחילת הנסיעה הקבועה אינו תואם את מיקומו בפועל',
   WARN_CAR_AWAY_AT_DAY_END: 'הרכב אינו חוזר הביתה עד סוף היום ולא אושרה השארה למחר',
   WARN_UNKNOWN_RULE_TYPE: 'סוג כלל מדיניות לא מוכר; הכלל דולג',

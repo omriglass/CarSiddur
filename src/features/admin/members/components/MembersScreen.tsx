@@ -6,9 +6,11 @@ import { FormDialog } from "@/components/FormDialog";
 import { PageHeader } from "@/components/PageHeader";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
@@ -54,7 +56,7 @@ function MembersTab() {
   const revokeAdminMutation = useRevokeAdminMutation();
   const setRoleMutation = useSetMemberRoleMutation();
   const updateDetailsMutation = useUpdateMemberDetailsMutation();
-  const [editing, setEditing] = useState<{ profileId: string; fullName: string; displayName: string; removedDepartmentIds: string[]; phone: string; departmentId?: string } | null>(null);
+  const [editing, setEditing] = useState<{ profileId: string; fullName: string; displayName: string; removedDepartmentIds: string[]; phone: string; departmentId?: string; doesNotDrive: boolean } | null>(null);
 
   const approvedProfiles = (profilesQuery.data ?? []).filter((p) => p.approval_status !== "pending");
   const profileIds = approvedProfiles.map((p) => p.id);
@@ -110,7 +112,7 @@ function MembersTab() {
             <TableRow key={profile.id}>
               <TableCell>
                 <Button variant="link" className="h-auto p-0" onClick={() => setEditing({
-                  profileId: profile.id, fullName: profile.google_name, displayName: profile.display_name ?? "", removedDepartmentIds: [], phone: phonesQuery.data?.[profile.id] ?? "",
+                  profileId: profile.id, fullName: profile.google_name, displayName: profile.display_name ?? "", removedDepartmentIds: [], phone: phonesQuery.data?.[profile.id] ?? "", doesNotDrive: profile.does_not_drive,
                 })} disabled={phonesQuery.isPending || phonesQuery.isError}>{profile.full_name}</Button>
               </TableCell>
               <TableCell dir="ltr">{profile.email}</TableCell>
@@ -180,6 +182,17 @@ function MembersTab() {
         <label className="grid gap-2">{he.adminMembers.columnPhone}
           <Input type="tel" dir="ltr" value={editing?.phone ?? ""} onChange={(e) => setEditing((old) => old && ({ ...old, phone: e.target.value }))} />
         </label>
+        <div className="flex items-center justify-between gap-2">
+          <div className="space-y-0.5">
+            <Label htmlFor="admin-member-does-not-drive">{he.adminMembers.doesNotDrive}</Label>
+            <p className="text-sm text-muted-foreground">{he.adminMembers.doesNotDriveHelp}</p>
+          </div>
+          <Switch
+            id="admin-member-does-not-drive"
+            checked={editing?.doesNotDrive ?? false}
+            onCheckedChange={(checked) => setEditing((old) => old && ({ ...old, doesNotDrive: checked }))}
+          />
+        </div>
         <div className="grid gap-2">
           <span>{he.adminMembers.columnDepartments}</span>
           {(membershipsByProfile.get(editing?.profileId ?? "") ?? []).map((membership) => {

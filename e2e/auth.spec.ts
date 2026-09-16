@@ -45,7 +45,7 @@ async function ensurePendingUserExists() {
 test.use({ viewport: { width: 390, height: 844 } });
 
 test.describe("auth", { tag: ["@auth"] }, () => {
-  test("member signs in via the dev email form and reaches Home with the bottom tabs", async ({
+  test("member signs in via the dev email form, lands on the siddur (first visit) and sees the bottom tabs", async ({
     page,
   }) => {
     await page.goto("/login");
@@ -54,9 +54,16 @@ test.describe("auth", { tag: ["@auth"] }, () => {
     await page.getByLabel("סיסמה").fill(MEMBER_PASSWORD);
     await page.getByRole("button", { name: "התחברות", exact: true }).click();
 
-    await expect(page).toHaveURL(/\/my$/);
+    // REQ §13.87: everyone lands on the same main screen; with nothing remembered on this
+    // device that is the published siddur ("which car is available"), not Home.
+    await expect(page).toHaveURL(/\/siddur(\/|$)/);
+
+    // The last opened main page is remembered: open Home, then `/` must return to it.
+    await page.goto("/my");
     await expect(page.getByText("השבוע שלי")).toBeVisible();
     await expect(page.getByText(MEMBER_NAME).first()).toBeVisible();
+    await page.goto("/");
+    await expect(page).toHaveURL(/\/my$/);
 
     const bottomNav = page.getByRole("navigation").last();
     await expect(bottomNav.getByText("הסידור")).toBeVisible();
