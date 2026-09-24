@@ -517,3 +517,13 @@ select 'window_open',ch,'sadran',t.title,t.body,t.title,t.body from (values
   ('תזכורת לסדרן לשבוע {{weekLabel}}','את/ה הסדרן לשבוע {{weekLabel}}. חלון הבקשות נסגר אוטומטית ב־{{closeTime}}. יש לפרסם את הסידור עד {{publishTime}}.')
 ) t(title,body) cross join unnest(array['inbox','push']::public.notification_channel[]) ch
 on conflict(event,channel,coalesce(variant,'')) do nothing;
+
+-- REQ §13.92 (owner 2026-09-24, A5): car swapped on a day — dedicated event, every driver
+-- and passenger on a moved ride except the swapper. Mirrors the production migration
+-- 20260924100200_notification_templates_car_swapped.sql.
+insert into public.notification_templates(event,channel,variant,title,body,default_title,default_body)
+select 'car_swapped'::public.notification_event, ch, null,
+  'הרכב שלך הוחלף', 'הנסיעה שלך ביום {{day}} {{depart}}–{{return}} עברה מ{{fromCar}} ל{{car}}.',
+  'הרכב שלך הוחלף', 'הנסיעה שלך ביום {{day}} {{depart}}–{{return}} עברה מ{{fromCar}} ל{{car}}.'
+from unnest(array['inbox','push']::public.notification_channel[]) ch
+on conflict(event,channel,coalesce(variant,'')) do nothing;

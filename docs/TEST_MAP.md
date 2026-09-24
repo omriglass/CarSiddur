@@ -168,12 +168,13 @@ gap is closed.
 
 **Paths**: `src/features/siddur/**`, `src/components/WeekGrid.tsx`(+tests), `weekGridCars.ts`(+test),
 `WeekStrip.test.tsx`, `src/pages/SiddurPage.tsx`; `src/i18n/he.member.ts`; migrations matching
-`*public_request*`, `*public_notes*`, or whose content defines `v_board_rides`;
-`e2e/siddur-mobile.spec.ts`, `ride-editing.spec.ts`, `member.spec.ts`.
+`*public_request*`, `*public_notes*`, `*car_swap*`, or whose content defines `v_board_rides`;
+`src/components/CarSwapDialog.tsx`(+test), `WeekGrid.carSwap.test.tsx`, `src/features/carSwap/**`;
+`e2e/siddur-mobile.spec.ts`, `ride-editing.spec.ts`, `member.spec.ts`, `car-swap.spec.ts`.
 
 **Automated**:
 - Vitest: `npx vitest run src/features/siddur src/components/WeekGrid.test.ts src/components/WeekGrid.gestures.test.tsx src/components/weekGridCars.test.ts`
-- SQL: `selected_day_publication.sql`
+- SQL: `selected_day_publication.sql`, `day_car_swap.sql`
 - Playwright: `npx playwright test --grep "@siddur"`
 
 **QA script**:
@@ -187,24 +188,27 @@ gap is closed.
    §13.52), confirm car names show but no lockbox code (§13.79), and no draft/unpublished data.
 5. Resize an owned ride on an already-published day; confirm a shadow-collision prompts explicit
    driver consent rather than silently overwriting another ride.
+   dialog lists what moves, the swap succeeds, and everyone but you gets notified (REQ §13.92).
 
 **Coverage gap**: no spec directly asserts the private-car-hidden-on-idle-days behavior on either
 grid (item 2) — `hideIdleTemporaryCars()` is unit-tested in `weekGridCars.test.ts` but not via e2e.
 
-**REQ**: §13.42, §13.56, §13.80.
+**REQ**: §13.42, §13.56, §13.80, §13.92.
 
 ### board — Board (Sadran): drag/drop, reservations, policy chip/score
 
 **Paths**: `src/features/sadran/board/**`, `applySolve.ts`(+test), `unmetStatuses.ts`(+test),
 `deviations/**`, `export/**`, `api.ts`, `hooks.ts`, `keys.ts`; `src/components/WeekGrid.tsx`,
 `weekGridCars.ts`; `src/solver/**` (shared fan-out); `src/i18n/he.sadran.ts`; migrations matching
-`*board*`, `*coordinator*`, `*ride_edit*`, `*day_readiness*`, `*car_chain*`, or content-matching
-`v_board_rides`/`publish_siddur`; `e2e/board.spec.ts`, `board-mobile.spec.ts`,
-`board-coordination.spec.ts`, `export.spec.ts`, `weekly-permissions.spec.ts`, `ride-editing.spec.ts`.
+`*board*`, `*coordinator*`, `*ride_edit*`, `*day_readiness*`, `*car_chain*`, `*car_swap*`, or
+content-matching `v_board_rides`/`publish_siddur`; `src/components/CarSwapDialog.tsx`(+test),
+`WeekGrid.carSwap.test.tsx`, `src/features/carSwap/**`; `e2e/board.spec.ts`, `board-mobile.spec.ts`,
+`board-coordination.spec.ts`, `export.spec.ts`, `weekly-permissions.spec.ts`, `ride-editing.spec.ts`,
+`car-swap.spec.ts`.
 
 **Automated**:
 - Vitest: `npx vitest run src/features/sadran/board src/features/sadran/applySolve.test.ts src/features/sadran/unmetStatuses.test.ts src/features/sadran/deviations src/features/sadran/export`
-- SQL: `todo_board_semantics.sql`, `coordinator_planning.sql`, `solve_semantics.sql`, `car_chain_healing.sql`
+- SQL: `todo_board_semantics.sql`, `coordinator_planning.sql`, `solve_semantics.sql`, `car_chain_healing.sql`, `day_car_swap.sql`
 - Playwright: `npx playwright test --grep "@board"`
 
 **QA script**:
@@ -223,8 +227,10 @@ grid (item 2) — `hideIdleTemporaryCars()` is unit-tested in `weekGridCars.test
    confirm the edit succeeds and a missing-driver relocation ride appears bridging the gap
    instead of an error (REQ §13.89). Claim it as a volunteer; confirm it becomes an ordinary
    one-way leg.
+8. As the Sadran, drag one car's header onto another's on an unpublished day; confirm the swap
+   this day" (REQ §13.92).
 
-**REQ**: §13.42, §13.80, §13.84, §13.89.
+**REQ**: §13.42, §13.80, §13.84, §13.89, §13.92.
 
 ### proposals — Proposals & /p/:token
 

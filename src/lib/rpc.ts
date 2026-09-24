@@ -30,6 +30,7 @@ export type ErrorCode =
   | "no_car_free"
   | "waitlist_group_closed"
   | "waitlist_selection_invalid"
+  | "day_car_swap_blocked"
   | "week_close_not_editable"
   | "week_close_out_of_range"
   | "series_week_not_open"
@@ -176,6 +177,10 @@ const MESSAGE_TO_CODE: Record<string, ErrorCode> = {
   no_car_free: "no_car_free",
   waitlist_group_closed: "waitlist_group_closed",
   waitlist_selection_invalid: "waitlist_selection_invalid",
+  // Car swap (REQ §13.92, owner batch 2026-09-24 S1): `swap_day_cars()` re-checks everything
+  // `preview_day_car_swap()` already showed and can still lose the race (someone else edited a
+  // ride in between) — DETAIL carries the same blocker code/ride detail the preview surfaced.
+  day_car_swap_blocked: "day_car_swap_blocked",
   week_close_not_editable: "week_close_not_editable",
   week_close_out_of_range: "week_close_out_of_range",
   series_week_not_open: "series_week_not_open",
@@ -242,6 +247,7 @@ const CODE_TO_MESSAGE: Record<ErrorCode, string> = {
   no_car_free: he.errors.noCarFree,
   waitlist_group_closed: he.errors.waitlistGroupClosed,
   waitlist_selection_invalid: he.errors.waitlistSelectionInvalid,
+  day_car_swap_blocked: he.errors.dayCarSwapBlocked,
   week_close_not_editable: he.weekClose.notEditable,
   week_close_out_of_range: he.weekClose.outOfRange,
   series_week_not_open: he.errors.seriesWeekNotOpen,

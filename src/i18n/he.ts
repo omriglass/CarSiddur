@@ -104,6 +104,35 @@ export const he = {
     withCode: "{{name}} · {{code}}",
     withoutCode: "{{name}} · קוד לא הוזן",
   },
+  /**
+   * Swap cars on a day by dragging car names (REQ §13.92, owner batch
+   * 2026-09-24 S1). Shared by the Sadran board and the member siddur grid —
+   * `CarSwapDialog` (`src/components/`) and the `WeekGrid` car-header
+   * drag/menu affordance both read from here.
+   */
+  carSwap: {
+    swapMenuLabel: "החלף רכב",
+    swapWithCar: "החלפה עם {{car}}",
+    dialogTitle: "החלפת {{carA}} ו{{carB}}",
+    dialogDay: "ביום {{day}}",
+    movedCount: "יועברו {{count}} נסיעות",
+    noRidesToMove: "אין נסיעות להעברה",
+    fromCarHeading: "מ{{car}}",
+    unknownRide: "הנסיעה",
+    blockersTitle: "לא ניתן להחליף",
+    blockerSeats: "הנסיעה {{ride}} לא נכנסת לרכב {{car}} (מקומות/מטען)",
+    blockerMaintenance: "לרכב {{car}} מתוכנן טיפול בזמן הנסיעה {{ride}}",
+    blockerPrivateCar: "רכב פרטי — רק הבעלים יכול/ה להחליף",
+    blockerPast: "הנסיעה {{ride}} כבר עברה",
+    blockerNotAllowedRide: "לא ניתן להחליף את הנסיעה {{ride}}",
+    blockerNotAllowedGeneric: "לא ניתן להחליף את הרכבים האלה ביום זה",
+    seriesQuestion: "הנסיעה היא חלק מבקשה רב-יומית",
+    seriesWhole: "כל ימי הנסיעה ({{range}})",
+    seriesDayOnly: "רק היום (הנסיעה תפוצל)",
+    noticeEndsAway: "שים/י לב: {{car}} מסיים/ת את היום ב{{place}}",
+    successToast: "הרכבים הוחלפו",
+    notifiedToast: "נשלחו {{count}} הודעות",
+  },
   ...heMember,
   ...heAdmin,
   ...heSadran,
@@ -572,6 +601,7 @@ export const he = {
     invalidRidePassenger: "פרטי הנוסע/ת אינם תקינים",
     rideDriverNotRemovable: "לא ניתן להסיר את הנהג/ת מהנסיעה — יש לבטל את הנסיעה במקום זאת",
     rideWeekNotPublic: "אפשר להוסיף או להסיר נוסעים רק בשבוע שפורסם",
+    dayCarSwapBlocked: "החילוף נחסם — נתוני היום השתנו בינתיים, יש לפתוח את החלון הזה מחדש",
     network: "אין חיבור לרשת — נסה/י שוב",
     unknown: "אירעה שגיאה. נסה/י שוב",
     constraintViolation: "הנתונים לא עומדים בכללי המערכת — בדוק/י את השדות",
@@ -637,6 +667,7 @@ export const he = {
     waitlist_contested: "רשימת המתנה משותפת",
     waitlist_resolved: "רשימת ההמתנה הוסדרה",
     window_changed: "מועד סגירת הבקשות השתנה",
+    car_swapped: "הרכב שלך הוחלף",
   } satisfies Record<NotificationEvent, string>,
   car: {
     status: {

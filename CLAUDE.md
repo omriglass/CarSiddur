@@ -135,6 +135,7 @@ supabase/
     car_mileage.sql            `car_mileage_totals`: rolling window, 2×/1× rule, cancelled/temporary exclusions
     car_chain_healing.sql      `assert_car_chain` (REQ §13.88/§13.89): a lone one-way leg widens into a chauffeur ride, a matching leg at X pairs both into relay legs, a driving companion drives, non-one-way gaps still get a relocation ride
     withdraw_settles.sql       REQ §13.90: re-solve withdraws pending proposals on replaced rides, `withdraw_request` settles proposals, a 1-member contested group auto-resolves
+    day_car_swap.sql           REQ §13.92 day car swap
     (+ 12 more scenario suites: admin_department_membership, admin_member_fixes, coordinator_planning, department_catalogs, live_quick_one_way, member_identity, proposal_day_boundary, proposal_replacement, selected_day_publication, status_notifications, week_opening, weekly_sadran_permissions)
   functions/
     push-dispatch/             send push notifications via browser API
@@ -155,6 +156,7 @@ e2e/
   board-coordination.spec.ts     one-way drop, tight edits, merge consent coordination
   board-mobile.spec.ts           board mobile header: title/week switcher, eye menu, kebab menu, undo/redo, policy chip
   car-care.spec.ts               report/tire-fill/wash, responsible person sees it in History, export
+  car-swap.spec.ts               swap two cars' rides for a day: siddur header menu (member), board drag (Sadran), seats blocker
   department-context.spec.ts     department selector; catalogs/Maps estimates; read-only department switching
   device-setup.spec.ts           home-screen install prompt / push-permission dismissal
   export.spec.ts                 Sadran downloads the week as a Hebrew Excel workbook
@@ -311,7 +313,7 @@ Final; applied across all docs, skills and agents. Do not relitigate — if code
 2. Seed file is `supabase/seed.sql` (Supabase CLI default); demo seed data is described in DATA_MODEL §6.
 3. Migrations use the Supabase CLI form `YYYYMMDDHHMMSS_short_name.sql`; the 18-step initial plan starts at `20260907090000_extensions_and_enums.sql` (DATA_MODEL §6).
 4. `week_phase` = `upcoming, open, solving, published, live, archived`; after the target week ends the week is `archived` (read-only, kept for fairness stats). No `closed`. `upcoming` (2026-09-10, REQ §13.77) is a `weeks` row materialized early — by `ensure_upcoming_week()` from `submit_series_request()` — for a week beyond the department's normal opening horizon that a multi-day series leg needs; it is invisible to members, closed to ordinary requests, and promoted to `open` automatically at its normal opening time.
-5. One canonical `notification_event` list: the 25 events of UX_FLOWS §6.1 (incl. `car_care`, 2026-09-09; `waitlist_contested` + `waitlist_resolved`, 2026-09-10; `window_changed`, 2026-09-14) (enum value = snake_case of the `notif.*` key suffix); DATA_MODEL §2 and ARCHITECTURE §9 list exactly those; REQ §9 prose names nothing outside it.
+5. One canonical `notification_event` list: the 26 events of UX_FLOWS §6.1 (incl. `car_care`, 2026-09-09; `waitlist_contested` + `waitlist_resolved`, 2026-09-10; `window_changed`, 2026-09-14; `car_swapped`, 2026-09-24) (enum value = snake_case of the `notif.*` key suffix); DATA_MODEL §2 and ARCHITECTURE §9 list exactly those; REQ §9 prose names nothing outside it.
 6. Notification plumbing: `enqueue_notification(...)` writes one `notifications` row (inbox) plus one `push_outbox` row per active push subscription; pg_net/`drain_push_outbox()` deliver via the `push-dispatch` edge function with retries and 404/410 pruning; mutes in `profiles.muted_events notification_event[]` (Sadran-role events unmutable while assigned, enforced in enqueue); copy in the admin-editable `notification_templates` table (event, channel, variant, title, body) seeded from UX_FLOWS §6. No `notification_prefs`, no templates in `app_settings`.
 7. Exactly one pg_cron entry: `app.tick()` every 15 minutes computes Asia/Jerusalem time and calls `advance_week_phases()`, `send_due_reminders()`, `expire_proposals()`, `drain_push_outbox()`, `housekeeping()`; there is no keep-alive workflow — `docs/FREE_DEPLOYMENT.md` §9 explicitly says not to rely on one, and the Supabase Free project may pause after a week of API inactivity (owner-accepted, un-pause manually in the dashboard).
 8. Requests are created/edited only via the `submit_request(payload jsonb)` SECURITY DEFINER RPC (validates §5.3, computes `is_late`, duplicate warning, versioning, audit; in `live` weeks calls `try_auto_approve`). Members SELECT own requests directly; no direct INSERT/UPDATE policies on `requests`.

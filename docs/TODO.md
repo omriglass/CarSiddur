@@ -272,3 +272,24 @@ Order once approved: D1 → D6 → D5 → D4 → D3 (bugs, smallest first) → D
 - Plan: `/my` gets the row actions of `RequestsListPage` (withdraw / cancel ride / edit / repeat-weekly, each behind `ConfirmDialog`, never a bare tap); the form and every "הבקשות שלי" link navigate to `/my`; `/requests` redirects to `/my` (deep links keep working: `/requests?focus=<id>` → `/my?focus=<id>`, `/requests/new` and `/requests/:id/edit` unchanged); requests/rides whose day is before today (Asia/Jerusalem) are hidden on `/my` for every week; the week's request list on Home is the only list. UX_FLOWS §3.3 rewritten, REQ §5.5 one sentence, `RequestsListPage.tsx` deleted (its tests moved to Home's).
 - **Q4.** Where should past requests remain reachable — nowhere in the app (the siddur archive shows past weeks' rides already), or a small "היסטוריה" link at the bottom of `/my`?
   **A4.** A "היסטוריה" link, lazily loaded (not important, must not slow anything).
+## Owner request 2026-09-24 — v1.0 feature: swap cars on a published day (triaged; owner answered Q1–Q7 the same day — **building 2026-09-24**, REQ §13.92)
+
+### ~~S1~~ ✅ done 2026-09-24 — Drag a car name onto another car name to swap the two cars' rides for that day (REQ §13.92; `preview_day_car_swap`/`swap_day_cars`, `car_swapped` event, `CarSwapDialog`, `day_car_swap.sql`, `e2e/car-swap.spec.ts`)
+
+- Owner: on the Sadran board and on the member siddur grid, drag car X's header onto car Y's header → all of X's rides that day move to Y and vice versa. Any member may do it on a published day that has not passed; everyone affected is notified. Refused when it would break a restriction (today: multi-day series rides).
+- Sketch: one RPC `swap_day_cars(dept, week, day, car_a, car_b, expected_versions)` (SECURITY DEFINER, member of the department, day published or managed by a Sadran, not archived/past) that swaps `car_id` on both cars' non-cancelled rides of that day in one transaction, re-checks everything the ride writers check (turnaround, maintenance blocks, seat configurations, temporary-car rules, `assert_car_chain`), bumps versions, audits, and notifies. Grid: car headers become drag sources/targets (`WeekGrid`, both screens) with a `ConfirmDialog` listing what moves. REQ §13 item, UX_FLOWS §3.5/§4.2, DATA_MODEL, SQL suite, Playwright spec.
+- **Q1.** Scope is one **day** (the day selected on the grid), both cars' rides that day — not the whole week. Correct?
+  **A1.** Per day — except a multi-day ride on that day: ask whether to swap its **whole span** (all its days) or **only this day**; "only this day" splits the series into up to three: the days before (still car A, renumbered 1/2, 2/2), this day (car B), the days after (car A).
+- **Q2.** Dragging onto a car with **no rides** that day = move all of X's rides to Y (a one-way "swap"). Allowed?
+  **A2.** Yes.
+- **Q3.** A day already in progress (today, some rides already started/ended): swap only the rides that have not started yet, or refuse the swap for today once any ride on either car has started?
+  **A3.** Swap the whole day, started rides included (typical use: someone took the wrong car).
+- **Q4.** Other restrictions besides multi-day series — refuse the swap when: a ride no longer fits the other car's seats/luggage; the target car has a maintenance block then; a **temporary (private) car** is involved (only its owner drives it); the car is away from home that day (a relay pair leaves it at X — swapping moves "the car at X" too). I'd refuse in all four cases with a clear message. OK?
+  **A4.** Refuse on seats/luggage and maintenance, with a clear message naming the ride. Private car: refused, UNLESS the owner does the swap (they may lend their car while taking a bigger one). A car ending the day away from home is NOT a blocker — show a notice after the swap ("שים/י לב: רכב B מסיים את היום ב-X").
+- **Q5.** Notifications: reuse the existing `outcome_changed` event ("שינוי בסידור שלך…", diff line "רכב: X → Y"), sent to every driver and passenger on the moved rides (not to the person who swapped), or a new dedicated event "הרכב שלך לנסיעה ביום … הוחלף ל־Y" (new enum value, own mute toggle)? I'd add the dedicated event — it reads clearer and members may want to mute it separately.
+  **A5.** Dedicated event.
+- **Q6.** Unpublished days on the Sadran board: allow the same drag there too (Sadran only, no notifications — it is planning)?
+  **A6.** Yes, unpublished days on the board: Sadran only, no notifications.
+- **Q7.** Should the swapper be able to undo it (e.g. a toast "בוטל" button for a few seconds that swaps back and sends a follow-up "cancelled" notice), or is the confirmation dialog enough?
+  **A7.** Confirmation is enough; no undo. (Future, not this version: debounce/merge queued notifications.)
+

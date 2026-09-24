@@ -1078,6 +1078,36 @@ export type Database = {
           },
         ]
       }
+      notification_event_meta: {
+        Row: {
+          category: string
+          created_at: string
+          event: Database["public"]["Enums"]["notification_event"]
+          member_mutable: boolean
+          sadran_role: boolean
+          updated_at: string
+          week_scoped: boolean
+        }
+        Insert: {
+          category: string
+          created_at?: string
+          event: Database["public"]["Enums"]["notification_event"]
+          member_mutable?: boolean
+          sadran_role?: boolean
+          updated_at?: string
+          week_scoped?: boolean
+        }
+        Update: {
+          category?: string
+          created_at?: string
+          event?: Database["public"]["Enums"]["notification_event"]
+          member_mutable?: boolean
+          sadran_role?: boolean
+          updated_at?: string
+          week_scoped?: boolean
+        }
+        Relationships: []
+      }
       notification_templates: {
         Row: {
           body: string
@@ -3640,6 +3670,68 @@ export type Database = {
       }
     }
     Functions: {
+      _day_car_swap_authorize: {
+        Args: {
+          p_actor: string
+          p_car_a: string
+          p_car_b: string
+          p_day: string
+          p_department_id: string
+          p_week_start: string
+        }
+        Returns: Json
+      }
+      _day_car_swap_day_ride_ids: {
+        Args: {
+          p_car_a: string
+          p_car_b: string
+          p_day: string
+          p_department_id: string
+          p_week_start: string
+        }
+        Returns: string[]
+      }
+      _day_car_swap_expand_whole: {
+        Args: { p_ride_ids: string[] }
+        Returns: string[]
+      }
+      _day_car_swap_fingerprint: {
+        Args: { p_ride_ids: string[] }
+        Returns: string
+      }
+      _day_car_swap_notices: {
+        Args: {
+          p_car_a: string
+          p_car_b: string
+          p_day: string
+          p_day_ride_ids: string[]
+        }
+        Returns: Json
+      }
+      _day_car_swap_physical_blockers: {
+        Args: { p_car_a: string; p_car_b: string; p_ride_ids: string[] }
+        Returns: Json
+      }
+      _day_car_swap_private_car_blockers: {
+        Args: { p_actor: string; p_car_a: string; p_car_b: string }
+        Returns: Json
+      }
+      _day_car_swap_rides_json: {
+        Args: { p_ride_ids: string[] }
+        Returns: Json
+      }
+      _day_car_swap_series_ids: {
+        Args: { p_ride_ids: string[] }
+        Returns: string[]
+      }
+      _day_car_swap_series_json: {
+        Args: { p_series_ids: string[] }
+        Returns: Json
+      }
+      _day_car_swap_split_series: {
+        Args: { p_day: string; p_series_id: string }
+        Returns: undefined
+      }
       add_ride_passengers: {
         Args: {
           p_expected_version: number
@@ -4056,6 +4148,16 @@ export type Database = {
         }
         Returns: number
       }
+      preview_day_car_swap: {
+        Args: {
+          p_car_a: string
+          p_car_b: string
+          p_day: string
+          p_department_id: string
+          p_week_start: string
+        }
+        Returns: Json
+      }
       profile_phones: {
         Args: { p_ids: string[] }
         Returns: {
@@ -4294,6 +4396,18 @@ export type Database = {
         Args: { p_department_id: string; p_name: string; p_zone?: string }
         Returns: string
       }
+      swap_day_cars: {
+        Args: {
+          p_car_a: string
+          p_car_b: string
+          p_day: string
+          p_department_id: string
+          p_expected_fingerprint: string
+          p_series_mode?: string
+          p_week_start: string
+        }
+        Returns: Json
+      }
       try_auto_approve: { Args: { p_request_id: string }; Returns: Json }
       try_auto_approve_series: { Args: { p_series_id: string }; Returns: Json }
       try_widen_one_way_leg: {
@@ -4409,6 +4523,7 @@ export type Database = {
         | "waitlist_contested"
         | "waitlist_resolved"
         | "window_changed"
+        | "car_swapped"
       party_response: "pending" | "accepted" | "declined"
       proposal_status:
         | "draft"
@@ -4633,6 +4748,7 @@ export const Constants = {
         "waitlist_contested",
         "waitlist_resolved",
         "window_changed",
+        "car_swapped",
       ],
       party_response: ["pending", "accepted", "declined"],
       proposal_status: [

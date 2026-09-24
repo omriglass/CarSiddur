@@ -1,9 +1,15 @@
-import { CarFront, Pin, Clock3, UserRoundX, Star } from "lucide-react";
+import { ArrowLeftRight, CarFront, Pin, Clock3, UserRoundX, Star } from "lucide-react";
 import type { MouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { nextZoom } from "@/components/pinchZoom";
 import { formatMinutes } from "@/components/timeField15Format";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { he, tv } from "@/i18n/he";
 import { rideTypeColorClasses } from "@/lib/rideTypeColors";
 import { cn } from "@/lib/utils";
@@ -153,6 +159,21 @@ export interface WeekGridProps {
   /** Contested waiting-list groups for the displayed day (REQ §13.75); omit/empty to hide the lane entirely. */
   discussionBlocks?: readonly WeekGridDiscussionBlock[];
   onDiscussionClick?: (id: string) => void;
+  /**
+   * Swap cars on a day by dragging car names (REQ §13.92, owner batch
+   * 2026-09-24 S1): car column headers become drag sources *and* drop
+   * targets, plus a small "החלף רכב" menu on each header for keyboard/touch
+   * users who never drag. `WeekGrid` always renders exactly one day (see the
+   * component doc above), so there is no per-day ambiguity here — the
+   * caller (`BoardScreen`'s selected day tab / `SiddurPage`'s active day)
+   * already knows which day this instance is showing and supplies it to the
+   * dialog it opens in response to `onCarSwap`. Applies to real (non-phantom)
+   * cars only; a phantom "candidate" lane is never a swap source or target.
+   * False/omitted leaves headers exactly as before (no drag, no menu).
+   */
+  canSwapCars?: boolean;
+  /** Header `carIdA` was dropped onto header `carIdB` (drag), or `carIdB` was chosen from `carIdA`'s own menu — the caller opens `CarSwapDialog` with these two ids. */
+  onCarSwap?: (carIdA: string, carIdB: string) => void;
 }
 
 /** Any drop target carrying this attribute (e.g. the board's `UnmetList`/drawer) accepts a ride dragged out of the grid — see `onRideDropOnUnmet`. */
@@ -170,6 +191,17 @@ const HOUR_ROW_HEIGHT_PX = 80;
 const RIDE_MIN_HEIGHT_PX = 26;
 /** Below this many pixels of movement, a pointerdown/up pair is a click, not a drag. */
 const DRAG_START_THRESHOLD_PX = 4;
+/**
+ * Car-header drag (REQ §13.92): same touch-vs-mouse gesture split as
+ * `UnmetList`'s own drag-and-drop (`sadran/board/components/UnmetList.tsx`)
+ * — a long-press on touch (so the header row still scrolls normally
+ * otherwise), immediate confirm-on-move for mouse/pen (nothing to scroll
+ * past). Duplicated locally rather than imported: `WeekGrid` stays
+ * layout-only and `UnmetList` is board-specific.
+ */
+const CAR_TOUCH_SCROLL_CANCEL_PX = 10;
+const CAR_LONG_PRESS_MS = 350;
+const CAR_MOUSE_DRAG_CONFIRM_PX = 6;
 
 function defaultRenderRide(ride: WeekGridRide) {
   return (
@@ -204,6 +236,18 @@ interface DragState {
   shiftMinutes: number;
   hoverCarId: string | null;
   overRideId: string | null;
+}
+
+/** One in-progress car-header drag (REQ §13.92) — see the const block above for the gesture split. */
+interface CarDragState {
+  carId: string;
+  pointerId: number;
+  pointerType: string;
+  clientX: number;
+  clientY: number;
+  confirmed: boolean;
+  /** Recomputed on every `pointermove` (an event handler, so reading `colRefs` there is fine) — never derived at render time, which would read a ref during render. */
+  hoverCarId: string | null;
 }
 
 /**
@@ -252,6 +296,8 @@ export function WeekGrid({
   onZoomChange,
   discussionBlocks = [],
   onDiscussionClick,
+  canSwapCars = false,
+  onCarSwap,
 }: WeekGridProps) {
   const hours = Array.from(
     { length: Math.ceil((dayEndMinutes - dayStartMinutes) / 60) },
@@ -269,6 +315,9 @@ export function WeekGrid({
   const lastInitialScroll = useRef<number | null>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
   const suppressClick = useRef(false);
+  const [carDrag, setCarDrag] = useState<CarDragState | null>(null);
+  const carDragRef = useRef<CarDragState | null>(null);
+  const carLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Keep the header visible while the hours scroll inside the grid. The target is
   // deliberately below the sticky header: at scrollTop=0 the first time row
@@ -374,6 +423,97 @@ export function WeekGrid({
 
   function unmetDropZoneAtPoint(clientX: number, clientY: number): boolean {
     return !!document.elementFromPoint(clientX, clientY)?.closest(`[${UNMET_DROP_ZONE_ATTR}]`);
+  }
+
+  /** A real (non-phantom) car, i.e. a valid car-swap source/target (REQ §13.92). */
+  function isSwappableCarId(carId: string | null): carId is string {
+    return !!carId && (allCars.find((c) => c.id === carId)?.group !== "phantom");
+  }
+
+  function clearCarLongPress() {
+    if (carLongPressTimer.current) {
+      clearTimeout(carLongPressTimer.current);
+      carLongPressTimer.current = null;
+    }
+  }
+
+  function endCarDrag(commit: boolean) {
+    const finished = carDragRef.current;
+    carDragRef.current = null;
+    setCarDrag(null);
+    window.removeEventListener("pointermove", handleCarWindowMove);
+    window.removeEventListener("pointerup", handleCarWindowUp);
+    window.removeEventListener("pointercancel", handleCarWindowCancel);
+    if (!finished?.confirmed || !commit) return;
+    if (isSwappableCarId(finished.hoverCarId) && finished.hoverCarId !== finished.carId) onCarSwap?.(finished.carId, finished.hoverCarId);
+  }
+
+  function handleCarWindowMove(event: PointerEvent) {
+    const current = carDragRef.current;
+    if (!current || event.pointerId !== current.pointerId) return;
+    const movedPx = Math.max(Math.abs(event.clientX - current.clientX), Math.abs(event.clientY - current.clientY));
+    if (!current.confirmed) {
+      if (current.pointerType === "touch") {
+        // Long-press not fired yet and the finger moved enough to be a scroll — cancel silently.
+        if (movedPx >= CAR_TOUCH_SCROLL_CANCEL_PX) {
+          clearCarLongPress();
+          carDragRef.current = null;
+          setCarDrag(null);
+          window.removeEventListener("pointermove", handleCarWindowMove);
+          window.removeEventListener("pointerup", handleCarWindowUp);
+          window.removeEventListener("pointercancel", handleCarWindowCancel);
+        }
+        return;
+      }
+      if (movedPx < CAR_MOUSE_DRAG_CONFIRM_PX) return;
+      current.confirmed = true;
+    }
+    const next = { ...current, clientX: event.clientX, clientY: event.clientY, hoverCarId: carIdAtClientX(event.clientX) };
+    carDragRef.current = next;
+    setCarDrag(next);
+    event.preventDefault();
+  }
+
+  function handleCarWindowUp(event: PointerEvent) {
+    if (carDragRef.current?.pointerId !== event.pointerId) return;
+    clearCarLongPress();
+    endCarDrag(true);
+  }
+
+  function handleCarWindowCancel(event: PointerEvent) {
+    if (carDragRef.current?.pointerId !== event.pointerId) return;
+    clearCarLongPress();
+    endCarDrag(false);
+  }
+
+  function beginCarPointerDown(carId: string, event: ReactPointerEvent<HTMLElement>) {
+    if (!canSwapCars || !onCarSwap) return;
+    event.stopPropagation();
+    const state: CarDragState = {
+      carId,
+      pointerId: event.pointerId,
+      pointerType: event.pointerType,
+      clientX: event.clientX,
+      clientY: event.clientY,
+      confirmed: false,
+      hoverCarId: carId,
+    };
+    carDragRef.current = state;
+    setCarDrag(state);
+    window.addEventListener("pointermove", handleCarWindowMove);
+    window.addEventListener("pointerup", handleCarWindowUp);
+    window.addEventListener("pointercancel", handleCarWindowCancel);
+    if (event.pointerType === "touch") {
+      clearCarLongPress();
+      carLongPressTimer.current = setTimeout(() => {
+        if (carDragRef.current?.pointerId === event.pointerId) {
+          carDragRef.current = { ...carDragRef.current, confirmed: true };
+          setCarDrag(carDragRef.current);
+        }
+      }, CAR_LONG_PRESS_MS);
+    } else {
+      event.preventDefault();
+    }
   }
 
   /**
@@ -508,6 +648,8 @@ export function WeekGrid({
   const preview = rawPreview && draggedRide && drag?.kind === "move" && resolveDropPreview
     ? { ...rawPreview, ...resolveDropPreview(draggedRide, rawPreview.carId, rawPreview.startMinutes, rawPreview.endMinutes, drag.overRideId ?? undefined) }
     : rawPreview;
+  /** Which car header the pointer is over, tracked on `carDrag` itself (never derived at render time — that would read the `colRefs` ref during render). */
+  const carDragHoverId = carDrag?.confirmed ? carDrag.hoverCarId : null;
   const hasDiscussionLane = discussionBlocks.length > 0;
   const discussionColIndex = allCars.length + 2;
   const gridTemplateRows = `minmax(${HEADER_ROW_HEIGHT_PX}px, auto) repeat(${hours.length}, ${HOUR_ROW_HEIGHT_PX}px)`;
@@ -704,15 +846,24 @@ export function WeekGrid({
     >
       <div className="grid" style={{ zoom, gridTemplateColumns, gridTemplateRows, minWidth: HOUR_COL_WIDTH_PX + (allCars.length + (hasDiscussionLane ? 1 : 0)) * CAR_COL_WIDTH_PX }}>
         <div className="sticky start-0 top-0 z-30 border-b border-e bg-muted/70 shadow-[0_2px_6px_-2px_hsl(var(--foreground)/0.12)]" style={{ gridColumn: 1, gridRow: 1 }} />
-        {allCars.map((car, i) => (
+        {allCars.map((car, i) => {
+          const swappable = canSwapCars && !!onCarSwap && car.group !== "phantom";
+          const isCarDragSource = swappable && carDrag?.confirmed && carDrag.carId === car.id;
+          const isCarDropHover = swappable && carDragHoverId === car.id && carDrag?.carId !== car.id;
+          return (
           <div
             key={`h-${car.id}`}
+            data-car-header-id={car.id}
             className={cn(
               "sticky top-0 z-20 flex flex-col justify-center gap-0.5 overflow-hidden border-b border-e bg-muted/70 px-2 py-1 text-sm shadow-[0_2px_6px_-2px_hsl(var(--foreground)/0.12)]",
               car.group === "temporary" && "bg-booked/10",
               i === sharedCars.length && temporaryCars.length > 0 && "border-s-2 border-s-border",
+              swappable && "touch-none",
+              isCarDragSource && "opacity-40",
+              isCarDropHover && "bg-primary/10 ring-2 ring-inset ring-primary",
             )}
             style={{ gridColumn: i + 2, gridRow: 1 }}
+            onPointerDown={swappable ? (e) => beginCarPointerDown(car.id, e) : undefined}
           >
             <span className="flex min-w-0 items-start gap-1 font-medium leading-tight">
               {renderCarName ? renderCarName(car) : (
@@ -721,11 +872,34 @@ export function WeekGrid({
                   <span className="min-w-0 whitespace-normal break-words">{car.name}</span>
                 </>
               )}
+              {swappable ? (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      className="ms-auto shrink-0 rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+                      aria-label={he.carSwap.swapMenuLabel}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <ArrowLeftRight className="size-3.5 rtl:rotate-180" aria-hidden="true" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start">
+                    {allCars.filter((other) => other.id !== car.id && other.group !== "phantom").map((other) => (
+                      <DropdownMenuItem key={other.id} onSelect={() => onCarSwap?.(car.id, other.id)}>
+                        {tv("carSwap.swapWithCar", { car: other.name })}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              ) : null}
             </span>
             {car.locationBadge ? <span className="truncate text-xs text-muted-foreground">{car.locationBadge}</span> : null}
             {car.group === "temporary" ? <span className="truncate text-[10px] text-booked">{he.car.type.temporary}</span> : null}
           </div>
-        ))}
+          );
+        })}
         {hasDiscussionLane ? (
           <div
             className="sticky top-0 z-20 flex items-center justify-center border-b border-s-2 border-s-border bg-maintenance/10 px-2 py-1 text-sm shadow-[0_2px_6px_-2px_hsl(var(--foreground)/0.12)]"
@@ -787,6 +961,15 @@ export function WeekGrid({
           </div>
         ) : null}
       </div>
+      {carDrag?.confirmed ? (
+        <div
+          data-car-swap-drag-preview
+          className="pointer-events-none fixed z-50 -translate-x-1/2 -translate-y-1/2 rounded-md border bg-popover px-3 py-1.5 text-xs font-medium opacity-80 shadow-lg"
+          style={{ left: carDrag.clientX, top: carDrag.clientY }}
+        >
+          {allCars.find((c) => c.id === carDrag.carId)?.name ?? ""}
+        </div>
+      ) : null}
     </div>
   );
 }

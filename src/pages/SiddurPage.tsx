@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { formatWeekRangeLabel, todayInJerusalem } from "@/components/dateFieldDates";
+import { CarSwapDialog } from "@/components/CarSwapDialog";
 import { EmptyState } from "@/components/EmptyState";
 import { PageHeader } from "@/components/PageHeader";
 import { RideCard, type RideCardData } from "@/components/RideCard";
@@ -157,6 +158,8 @@ export function SiddurPage() {
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [selectedRideId, setSelectedRideId] = useState<string | null>(null);
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
+  // Swap cars on a day by dragging car names (REQ §13.92, owner batch 2026-09-24 S1).
+  const [carSwapPair, setCarSwapPair] = useState<{ carA: string; carB: string } | null>(null);
   const [quickRequestSlot, setQuickRequestSlot] = useState<{
     carId: string;
     day: string;
@@ -249,6 +252,9 @@ export function SiddurPage() {
   const activeDayPublished = !!activeDay && (resolvedWeek?.published_days?.includes(activeDay) ?? true);
   const isLiveDay = isLiveWeek && activeDayPublished;
   const canEditWeek = isMyDepartment && activeDayPublished && (isLiveWeek || resolvedWeek?.phase === "published");
+  // REQ §13.92 "Who": any department member may drag-swap car headers on a published day that
+  // has not passed — the same publication gate `canEditWeek` already computes, plus "not past".
+  const canSwapCarsOnActiveDay = canEditWeek && !!weekStart && activeDay !== null && activeDay >= today;
   // "+ נוסעים" (REQ §13.85): mirrors `is_week_public()` (DATA_MODEL §4.2) — week-level, not
   // per-day, since `add_ride_passengers()`'s own authorization checks the week's phase only.
   const weekIsPublic = !!resolvedWeek && (resolvedWeek.phase === "published" || resolvedWeek.phase === "live" || resolvedWeek.phase === "archived");
@@ -670,12 +676,25 @@ export function SiddurPage() {
                 renderCarName={(car) => <CarNameWithReport carId={car.id} carName={car.name} className="min-w-0" />}
                 discussionBlocks={weekGridDiscussionBlocks}
                 onDiscussionClick={setSelectedGroupId}
+                canSwapCars={canSwapCarsOnActiveDay}
+                onCarSwap={(carA, carB) => setCarSwapPair({ carA, carB })}
               />
             </div>
           </div>
         </>
       )}
 
+      {carSwapPair && departmentId && weekStart && activeDay ? (
+        <CarSwapDialog
+          open
+          onOpenChange={(open) => !open && setCarSwapPair(null)}
+          departmentId={departmentId}
+          weekStart={weekStart}
+          day={activeDay}
+          carA={{ id: carSwapPair.carA, name: weekGridCars.find((c) => c.id === carSwapPair.carA)?.name ?? "" }}
+          carB={{ id: carSwapPair.carB, name: weekGridCars.find((c) => c.id === carSwapPair.carB)?.name ?? "" }}
+        />
+      ) : null}
       <RideDetailSheet
         ride={selectedRide}
         coordinatorNotes={selectedRide ? rideCoordinatorNotes(servedOf(selectedRide), coordinatorRequests) : undefined}

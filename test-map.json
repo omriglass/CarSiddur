@@ -263,7 +263,8 @@
         "src/components/weekGridCars.test.ts"
       ],
       "sql": [
-        "selected_day_publication.sql"
+        "selected_day_publication.sql",
+        "day_car_swap.sql"
       ],
       "playwrightTags": [
         "@siddur"
@@ -271,7 +272,8 @@
       "reqRefs": [
         "13.42",
         "13.56",
-        "13.80"
+        "13.80",
+        "13.92"
       ],
       "qaChecklist": [
         "Switch weeks/toggle table view/open the archive on the siddur (REQ §13.42)",
@@ -325,7 +327,8 @@
         "todo_board_semantics.sql",
         "coordinator_planning.sql",
         "car_chain_healing.sql",
-        "solve_semantics.sql"
+        "solve_semantics.sql",
+        "day_car_swap.sql"
       ],
       "playwrightTags": [
         "@board"
@@ -334,7 +337,8 @@
         "13.42",
         "13.80",
         "13.84",
-        "13.89"
+        "13.89",
+        "13.92"
       ],
       "qaChecklist": [
         "Drag an unmet request onto a car column; confirm a ride is created (REQ §13.42)",
