@@ -15,21 +15,21 @@ import {
 } from "@/features/inbox/hooks";
 import { he, t } from "@/i18n/he";
 import { formatDayDate } from "@/lib/dayLabels";
+import type { NotificationEvent } from "@/lib/enums";
+import { inboxTabOf } from "@/lib/notificationEvents";
 import { formatTime } from "@/lib/time";
 import { RideChangeAnswers } from "@/features/siddur/components/RideChangeAnswers";
 
 type Filter = "all" | "proposals" | "siddur" | "freedSlot" | "system";
 
-const PROPOSAL_EVENTS = new Set(["proposal_received", "proposal_answered"]);
-const SIDDUR_EVENTS = new Set(["published", "outcome_changed", "window_open", "window_closing"]);
-const FREED_SLOT_EVENTS = new Set(["freed_slot", "freed_slot_auto", "claim_approved", "claim_declined", "claim_contested"]);
-
+/**
+ * Tab assignment is derived from `NOTIFICATION_EVENT_META` (`src/lib/notificationEvents.ts`,
+ * docs/TODO.md R6/R3) instead of four hand-maintained event-name sets, so a new event or a
+ * category fix (e.g. `window_changed`/`waitlist_*`/`car_swapped`) only needs updating there.
+ */
 function matchesFilter(event: string, filter: Filter): boolean {
   if (filter === "all") return true;
-  if (filter === "proposals") return PROPOSAL_EVENTS.has(event);
-  if (filter === "siddur") return SIDDUR_EVENTS.has(event);
-  if (filter === "freedSlot") return FREED_SLOT_EVENTS.has(event);
-  return !PROPOSAL_EVENTS.has(event) && !SIDDUR_EVENTS.has(event) && !FREED_SLOT_EVENTS.has(event);
+  return inboxTabOf(event as NotificationEvent) === filter;
 }
 
 const SADRAN_EVENTS = new Set([

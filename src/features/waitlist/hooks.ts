@@ -1,12 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { QueryClient } from "@tanstack/react-query";
 
-import { requestsKeys } from "@/features/requests/queryKeys";
-import { sadranKeys } from "@/features/sadran/keys";
-import { siddurKeys } from "@/features/siddur/queryKeys";
 
 import { cancelWaitlistGroup, fetchWaitlistGroups, resolveWaitlistGroup } from "./api";
 import { waitlistKeys } from "./keys";
+import { invalidateWeekData } from "@/features/rides/invalidateWeek";
 
 /** Open contested waiting-list groups for a department/week (RLS: any approved member on a public week). */
 export function useWaitlistGroupsQuery(departmentId: string | undefined, weekStart: string | undefined) {
@@ -17,12 +15,18 @@ export function useWaitlistGroupsQuery(departmentId: string | undefined, weekSta
   });
 }
 
-/** A resolved/cancelled group turns into a new ride and changes several requests' statuses — invalidate everywhere those are read. */
-function invalidateAfterResolution(queryClient: QueryClient, departmentId: string, weekStart: string) {
+/**
+ * A resolved/cancelled group turns into a new ride and changes several requests' statuses,
+ * all within this one (departmentId, weekStart) — scoped to the board/siddur caches for that
+ * week plus the caller's own "my requests" list (they may be a group participant themselves).
+ */
+function invalidateAfterResolution(
+  queryClient: QueryClient,
+  departmentId: string,
+  weekStart: string,
+) {
   void queryClient.invalidateQueries({ queryKey: waitlistKeys.groups(departmentId, weekStart) });
-  void queryClient.invalidateQueries({ queryKey: siddurKeys.all });
-  void queryClient.invalidateQueries({ queryKey: sadranKeys.week(departmentId, weekStart) });
-  void queryClient.invalidateQueries({ queryKey: requestsKeys.all });
+  void invalidateWeekData(queryClient, departmentId, weekStart);
 }
 
 export function useResolveWaitlistGroupMutation(departmentId: string, weekStart: string) {

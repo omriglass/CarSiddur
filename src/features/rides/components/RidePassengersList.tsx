@@ -17,6 +17,9 @@ interface RidePassengersListProps {
    * reused here rather than recomputed. */
   canManagePeople?: boolean;
   rideCancelled?: boolean;
+  /** The ride's own `department_id`/`week_start` — scopes cache invalidation after a removal. */
+  departmentId?: string | null;
+  weekStart?: string | null;
 }
 
 /**
@@ -27,7 +30,7 @@ interface RidePassengersListProps {
  * `v_board_rides.people` (`../ridePeople.ts`). Replaces the previous `source: 'added'`-only
  * list this component used to render.
  */
-export function RidePassengersList({ rideId, expectedVersion, people, canManagePeople = false, rideCancelled = false }: RidePassengersListProps) {
+export function RidePassengersList({ rideId, expectedVersion, people, canManagePeople = false, rideCancelled = false, departmentId, weekStart }: RidePassengersListProps) {
   const mutation = useRemoveRidePassengerMutation();
   if (!people.length) return null;
 
@@ -55,7 +58,7 @@ export function RidePassengersList({ rideId, expectedVersion, people, canManageP
                   onClick={() => {
                     if (rideId == null || expectedVersion == null) return;
                     mutation.mutate(
-                      { rideId, expectedVersion, key: person.key },
+                      { rideId, expectedVersion, key: person.key, departmentId: departmentId ?? "", weekStart: weekStart ?? "" },
                       { onSuccess: () => toast.success(he.addPassengers.removed) },
                     );
                   }}

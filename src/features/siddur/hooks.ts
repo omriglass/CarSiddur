@@ -1,13 +1,8 @@
 import { useActiveDepartment } from "@/features/auth/useActiveDepartment";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useSession } from "@/features/auth/useSession";
-import { inboxKeys } from "@/features/inbox/queryKeys";
-import { requestsKeys } from "@/features/requests/queryKeys";
-import { sadranKeys } from "@/features/sadran/keys";
-import { showErrorToast } from "@/lib/rpc";
 
 import {
-  addRidePassengers,
   fetchBoardRideById,
   fetchMyUpcomingRides,
   fetchBoardRides,
@@ -16,17 +11,12 @@ import {
   fetchCurrentWeekStart,
   fetchDepartments,
   fetchWeeks,
-  fetchRideChanges,
-  removeRidePerson,
-  requestRideChange,
-  respondRideChange,
-  cancelRideChange,
-  claimRideDriver,
-  updateRidePublicNotes,
-  type RideMove,
-  type RidePassengerInput,
 } from "./api";
 import { siddurKeys } from "./queryKeys";
+
+// The ride-change/passenger-list/notes/driver-claim mutations (and `useRideChanges`) moved to
+// `src/features/rides/hooks.ts` along with their `api.ts` functions (R8: break the siddur ⇄
+// sadran import cycle) — they are shared by both the siddur and sadran board, not siddur-specific.
 
 export function useMyUpcomingRides() {
   const { departmentId } = useActiveDepartment();
@@ -38,102 +28,6 @@ export function useMyUpcomingRides() {
     enabled: !!profileId,
     staleTime: 30_000,
     refetchInterval: 30_000,
-  });
-}
-
-export function useUpdateRidePublicNotesMutation() {
-  const client = useQueryClient();
-  return useMutation({
-    mutationFn: ({ rideId, expectedVersion, notes }: { rideId: string; expectedVersion: number; notes: string | null }) =>
-      updateRidePublicNotes(rideId, expectedVersion, notes),
-    onSuccess: () => {
-      for (const key of [siddurKeys.all, sadranKeys.all, requestsKeys.all]) void client.invalidateQueries({ queryKey: key });
-    },
-    onError: showErrorToast,
-  });
-}
-
-/**
- * The "+ נוסעים" button — appends named passengers to a published ride (siddur
- * `RideDetailSheet` and, reused, the board's `RideSheet`). Invalidates the same three
- * feature roots as `useUpdateRidePublicNotesMutation` above: the ride's own passenger list
- * lives on `v_board_rides.people`, read by both the siddur and the board.
- */
-export function useAddRidePassengersMutation() {
-  const client = useQueryClient();
-  return useMutation({
-    mutationFn: ({ rideId, expectedVersion, passengers }: { rideId: string; expectedVersion: number; passengers: RidePassengerInput[] }) =>
-      addRidePassengers(rideId, expectedVersion, passengers),
-    onSuccess: () => {
-      for (const key of [siddurKeys.all, sadranKeys.all, requestsKeys.all]) void client.invalidateQueries({ queryKey: key });
-    },
-    onError: showErrorToast,
-  });
-}
-
-export function useRemoveRidePassengerMutation() {
-  const client = useQueryClient();
-  return useMutation({
-    mutationFn: ({ rideId, expectedVersion, key }: { rideId: string; expectedVersion: number; key: string }) =>
-      removeRidePerson(rideId, expectedVersion, key),
-    onSuccess: () => {
-      for (const key of [siddurKeys.all, sadranKeys.all, requestsKeys.all]) void client.invalidateQueries({ queryKey: key });
-    },
-    onError: showErrorToast,
-  });
-}
-
-export function useClaimRideDriverMutation() {
-  const client = useQueryClient();
-  return useMutation({
-    mutationFn: ({ rideId, expectedVersion }: { rideId: string; expectedVersion: number }) => claimRideDriver(rideId, expectedVersion),
-    onSuccess: () => {
-      for (const key of [siddurKeys.all, sadranKeys.all, requestsKeys.all, inboxKeys.all])
-        void client.invalidateQueries({ queryKey: key });
-    },
-    onError: showErrorToast,
-  });
-}
-
-export function useRideChanges(departmentId?: string, weekStart?: string) {
-  const { session } = useSession();
-  return useQuery({
-    queryKey: siddurKeys.rideChanges(session?.user.id, departmentId, weekStart),
-    queryFn: () => fetchRideChanges(departmentId, weekStart),
-    enabled: !!session,
-    refetchInterval: 15_000,
-  });
-}
-
-export function useRequestRideChangeMutation() {
-  const client = useQueryClient();
-  return useMutation({
-    mutationFn: (move: RideMove) => requestRideChange(move),
-    onSuccess: () => client.invalidateQueries({ queryKey: siddurKeys.all }),
-    onError: showErrorToast,
-  });
-}
-
-export function useRespondRideChangeMutation() {
-  const client = useQueryClient();
-  return useMutation({
-    mutationFn: ({ changeId, accept }: { changeId: string; accept: boolean }) => respondRideChange(changeId, accept),
-    onSuccess: () => {
-      for (const key of [siddurKeys.all, sadranKeys.all, requestsKeys.all, inboxKeys.all])
-        void client.invalidateQueries({ queryKey: key });
-    },
-    onError: showErrorToast,
-  });
-}
-
-export function useCancelRideChangeMutation() {
-  const client = useQueryClient();
-  return useMutation({
-    mutationFn: cancelRideChange,
-    onSuccess: () => {
-      for (const key of [siddurKeys.all, sadranKeys.all, inboxKeys.all]) void client.invalidateQueries({ queryKey: key });
-    },
-    onError: showErrorToast,
   });
 }
 

@@ -46,15 +46,17 @@ import {
   type ConfirmAction,
 } from "@/features/requests/myRequestsRows";
 import { isTodayOrLater } from "@/features/requests/upcoming";
-import { useBoardRides, useRideChanges, useWeeks, useMyUpcomingRides, useRequestRideChangeMutation } from "@/features/siddur/hooks";
+import { useBoardRides, useWeeks, useMyUpcomingRides } from "@/features/siddur/hooks";
+import { useRideChanges, useRequestRideChangeMutation } from "@/features/rides/hooks";
 import { RideDetailSheet } from "@/features/siddur/components/RideDetailSheet";
 import { MemberRideEditor } from "@/features/siddur/components/MemberRideEditor";
-import type { BoardRide, RideMove } from "@/features/siddur/api";
+import type { BoardRide } from "@/features/siddur/api";
+import type { RideMove } from "@/features/rides/api";
 import { myRideCard } from "@/features/siddur/myRideCard";
 import { conflictingRides } from "@/features/siddur/rideEditing";
 import { TripSummary } from "@/components/TripSummary";
 import { useDepartmentSettings, useEditRideMutation } from "@/features/sadran/hooks";
-import { servedOf } from "@/features/sadran/servedOf";
+import { servedOf } from "@/features/rides/servedOf";
 import { OpenProposalButton } from "@/features/proposals/components/OpenProposalButton";
 import { OpenWaitlistGroupButton } from "@/features/waitlist/components/OpenWaitlistGroupButton";
 import { he, t, tv } from "@/i18n/he";
@@ -108,7 +110,7 @@ export function HomePage() {
   // made an available car look unavailable.
   const now = new Date();
   const [selectedMyRide, setSelectedMyRide] = useState<BoardRide | null>(null);
-  const [collisionMove, setCollisionMove] = useState<RideMove | null>(null);
+  const [collisionMove, setCollisionMove] = useState<(RideMove & { departmentId: string; weekStart: string }) | null>(null);
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
   const cancelRideMutation = useCancelRideMutation();
   const editMutation = useEditRideMutation();
@@ -194,7 +196,7 @@ export function HomePage() {
   async function saveMyRideMove(move: RideMove) {
     if (!editableRide || !ownsEditableRide || !editableRide.department_id || !editableRide.week_start || !editableRide.origin_id || !editableRide.destination_id) return;
     if (conflictingRides(move, selectedRideWeekQuery.data ?? [], settingsQuery.data?.turnaround_minutes ?? 30).length) {
-      setCollisionMove(move);
+      setCollisionMove({ ...move, departmentId: editableRide.department_id, weekStart: editableRide.week_start });
       return;
     }
     try {

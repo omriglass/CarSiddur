@@ -9,21 +9,10 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { SheetPortalContext } from "@/components/SheetPortalContext";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { FormItem } from "@/components/ui/form";
-import { CarAtDestinationToggle } from "@/components/CarAtDestinationToggle";
-import { CompanionPicker } from "@/components/CompanionPicker";
-import { DateField } from "@/components/DateField";
 import { datesOfWeek } from "@/components/dateFieldDates";
-import { DestinationCombobox, type DestinationValue } from "@/components/DestinationCombobox";
-import { FieldAnchor } from "@/components/FieldAnchor";
-import { FlexibilityRange } from "@/components/FlexibilitySegmented";
-import { RideTypeChips } from "@/components/RideTypeChips";
-import { TimeField15 } from "@/components/TimeField15";
-import { TripShapeControl } from "@/components/TripShapeControl";
 import { useScrollToFirstError } from "@/components/useScrollToFirstError";
 import { useDepartmentMembers } from "@/features/auth/useDepartmentMembers";
 import { useProfile } from "@/features/auth/useProfile";
@@ -31,9 +20,10 @@ import { useSession } from "@/features/auth/useSession";
 import { useCars, useCarSeatConfigs, useDestinations, useRideTypes, useSuggestDestinationMutation } from "@/features/fleet/hooks";
 import { useDepartmentSettings, useWeekRow } from "@/features/sadran/hooks";
 import { isSlotFree, type CarFreeWindow } from "@/features/siddur/freeWindows";
-import { buildAddPassengerInputs } from "@/features/siddur/addPassengers";
-import { fetchBoardRideById, type RidePassengerInput } from "@/features/siddur/api";
-import { useAddRidePassengersMutation } from "@/features/siddur/hooks";
+import { buildAddPassengerInputs } from "@/features/rides/addPassengers";
+import { fetchBoardRideById } from "@/features/siddur/api";
+import type { RidePassengerInput } from "@/features/rides/api";
+import { useAddRidePassengersMutation } from "@/features/rides/hooks";
 import { siddurKeys } from "@/features/siddur/queryKeys";
 import { paths } from "@/app/routes";
 import { he, t, tv } from "@/i18n/he";
@@ -47,9 +37,9 @@ import type { Car as SolverCar } from "@/solver/types";
 import { fetchChildren, fetchRequestVersion } from "../api";
 import type { JoinableRideRow, RequestEditRow, SubmitRequestResult, SubmitSeriesRequestResult, TemplateSuggestion } from "../api";
 import { dayLabel } from "../dayLabel";
-import { CAR_NOW_DEFAULT_HOURS, CAR_NOW_HOURS_OPTIONS } from "../carNow";
+import { CAR_NOW_DEFAULT_HOURS } from "../carNow";
 import { findOverlappingRequest } from "../duplicate";
-import { QUICK_REQUEST_DURATION_HOURS, endTimeForDuration, shiftReturnByDepartureDelta } from "../duration";
+import { QUICK_REQUEST_DURATION_HOURS, endTimeForDuration } from "../duration";
 import { joinableRideDriverLabel } from "../joinableRides";
 import { guestPassengerNames, quickVehicleWindow } from "../quickRequest";
 import {
@@ -67,12 +57,18 @@ import {
 } from "../hooks";
 import { intervalToFlexValue, toInstant, toSubmitRequestPayload } from "../mapper";
 import { requestFormSchema, type RequestFormValues } from "../schema";
-import { isSeriesSubmission, returnDayAfterDayChange, seriesSpanDays } from "../series";
-import { destinationLabelKey } from "../destinationLabel";
+import { isSeriesSubmission, seriesSpanDays } from "../series";
 import { payloadSeatCounts } from "../seatCounts";
 import { shouldOfferJoinableRides, toastSeriesSubmitOutcome, toastSubmitOutcome } from "../submitOutcome";
 import { suggestionToFormValues } from "../templatePrefill";
 import { JoinableRidesDialog } from "./JoinableRidesDialog";
+import { CarPreferenceFields } from "./requestForm/CarPreferenceFields";
+import { DayAndTripShapeFields } from "./requestForm/DayAndTripShapeFields";
+import { DestinationRideTypeFields } from "./requestForm/DestinationRideTypeFields";
+import { FieldError } from "./requestForm/FieldError";
+import { FlexibilityFields, TimeFields } from "./requestForm/TimesFlexibilityFields";
+import { PassengersFields } from "./requestForm/PassengersFields";
+import { RepeatWeeklyField } from "./requestForm/RepeatWeeklyField";
 
 export interface JoinRidePrefill {
   rideId: string;
@@ -277,11 +273,6 @@ function mapEditRowToValues(row: RequestEditRow, weekStart: string, companions: 
     guestNames: (row.guestPassengerNames ?? []).join("\n"),
     repeatWeekly: !!row.templateId,
   };
-}
-
-function FieldError({ message }: { message?: string }) {
-  if (!message) return null;
-  return <p role="alert" className="text-sm font-medium text-destructive">{message}</p>;
 }
 
 /**
@@ -754,317 +745,62 @@ export function RequestForm({
       ) : null}
       {waitlist ? <div className="rounded-md border-s-4 border-amber-500 bg-amber-50 p-3 text-sm text-amber-900">{t("request.waitlistBanner")}</div> : null}
 
-      <FormItem data-field="destination">
-        <Label>{t(destinationLabelKey(tripShape))}</Label>
-        <Controller
-          control={form.control}
-          name="destination"
-          render={({ field }) => (
-            <DestinationCombobox
-              destinations={(destinationsQuery.data ?? []).map((d) => ({
-                id: d.id,
-                name: d.name,
-                aliases: d.aliases,
-                zone: d.zone,
-              }))}
-              value={field.value as DestinationValue}
-              onChange={field.onChange}
-              autoFocus={variant === "quick" || variant === "carNow"}
-            />
-          )}
-        />
-        <FieldError message={form.formState.errors.destination ? t("request.destinationRequired") : undefined} />
-      </FormItem>
+      <DestinationRideTypeFields
+        control={form.control}
+        destinations={destinationsQuery.data ?? []}
+        rideTypes={rideTypesQuery.data ?? []}
+        tripShape={tripShape}
+        variant={variant}
+        destinationHasError={!!form.formState.errors.destination}
+        rideTypeError={form.formState.errors.rideTypeId?.message}
+      />
 
-      <FormItem data-field="rideTypeId">
-        <Label>{t("field.rideType")}</Label>
-        <Controller
-          control={form.control}
-          name="rideTypeId"
-          render={({ field }) => (
-            <RideTypeChips
-              types={(rideTypesQuery.data ?? []).map((rt) => ({ id: rt.id, nameHe: rt.name_he }))}
-              value={field.value}
-              onChange={field.onChange}
-            />
-          )}
-        />
-        <FieldError message={form.formState.errors.rideTypeId?.message} />
-      </FormItem>
+      <CarPreferenceFields
+        control={form.control}
+        variant={variant}
+        preferredCars={preferredCars}
+        initialPreferredCarName={initial?.preferredCarName}
+        quickContext={quickContext ? { cars: quickContext.cars, showCarPicker: quickContext.showCarPicker } : undefined}
+      />
 
-      {variant === "carNow" ? (
-        <FormItem data-field="durationHours">
-          <Label htmlFor="request-duration-hours">{t("quickRequest.durationHours")}</Label>
-          <Controller
-            control={form.control}
-            name="durationHours"
-            render={({ field }) => (
-              <Select value={String(field.value ?? CAR_NOW_DEFAULT_HOURS)} onValueChange={(value) => field.onChange(Number(value))}>
-                <SelectTrigger id="request-duration-hours"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {CAR_NOW_HOURS_OPTIONS.map((hours) => (
-                    <SelectItem key={hours} value={String(hours)}>
-                      {hours === 1 ? he.quickRequest.hoursOptionOne : tv("quickRequest.hoursOption", { n: String(hours) })}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-          />
-        </FormItem>
-      ) : null}
+      <DayAndTripShapeFields
+        control={form.control}
+        form={form}
+        weekStart={weekStart}
+        variant={variant}
+        showReturnDayPicker={showReturnDayPicker}
+        returnAnotherDay={returnAnotherDay}
+        setReturnAnotherDay={setReturnAnotherDay}
+        day={day}
+        isMultiDay={isMultiDay}
+        multiDaySpan={multiDaySpan}
+        isQuickContext={!!quickContext}
+        oneWay={oneWay}
+      />
 
-      {!quickContext ? (
-        <FormItem data-field="preferredCarId">
-          <Label htmlFor="request-preferred-car">{t("request.preferredCar")}</Label>
-          <Controller control={form.control} name="preferredCarId" render={({ field }) => (
-            <Select value={field.value || "none"} onValueChange={(value) => field.onChange(value === "none" ? "" : value)}>
-              <SelectTrigger id="request-preferred-car"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">{t("request.noPreferredCar")}</SelectItem>
-                {field.value && !preferredCars.some((car) => car.id === field.value) ? (
-                  <SelectItem value={field.value} disabled>{initial?.preferredCarName ?? t("request.preferredCarUnavailable")}</SelectItem>
-                ) : null}
-                {preferredCars.map((car) => <SelectItem key={car.id} value={car.id}>{car.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          )} />
-          <p className="text-xs text-muted-foreground">{t("request.preferredCarHelper")}</p>
-        </FormItem>
-      ) : quickContext.showCarPicker ? (
-        <FormItem data-field="preferredCarId">
-          <Label htmlFor="request-preferred-car">{t("quickRequest.carPickerLabel")}</Label>
-          <Controller control={form.control} name="preferredCarId" render={({ field }) => (
-            <Select value={field.value || ""} onValueChange={field.onChange}>
-              <SelectTrigger id="request-preferred-car"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {quickContext.cars.map((car) => <SelectItem key={car.id} value={car.id}>{car.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          )} />
-        </FormItem>
-      ) : null}
+      <TimeFields
+        form={form}
+        variant={variant}
+        tripShape={tripShape}
+        isQuickContext={!!quickContext}
+        oneWay={oneWay}
+        startMs={startMs}
+        endMs={endMs}
+        carIsFree={carIsFree}
+        isAway={isAway}
+        otherFreeCar={otherFreeCar}
+        departTimeError={form.formState.errors.departTime?.message}
+        returnTimeError={form.formState.errors.returnTime?.message}
+      />
 
-      {variant !== "carNow" ? (
-        <FormItem data-field="day">
-          <Label>{t("field.day")}</Label>
-          <Controller
-            control={form.control}
-            name="day"
-            render={({ field }) => (
-              <DateField
-                weekStart={weekStart}
-                value={field.value}
-                onChange={(next) => {
-                  field.onChange(next);
-                  form.setValue("dayIndex", Math.max(datesOfWeek(weekStart).indexOf(next), 0));
-                  // The return day follows the departure day unless the member opened the
-                  // "return another day" picker (`returnDayAfterDayChange`, TODO B1 2026-09-14).
-                  const nextReturnDay = returnDayAfterDayChange({
-                    pickerOpen: returnAnotherDay, currentReturnDay: form.getValues("returnDay"), nextDay: next,
-                  });
-                  if (nextReturnDay !== form.getValues("returnDay")) {
-                    form.setValue("returnDay", nextReturnDay, { shouldDirty: true });
-                  }
-                }}
-              />
-            )}
-          />
-        </FormItem>
-      ) : null}
-
-      {showReturnDayPicker && !returnAnotherDay ? (
-        <Button
-          type="button"
-          variant="link"
-          size="sm"
-          className="h-auto self-start px-0 text-xs"
-          onClick={() => setReturnAnotherDay(true)}
-        >
-          {t("request.returnAnotherDay")}
-        </Button>
-      ) : null}
-      {showReturnDayPicker && returnAnotherDay ? (
-        <FormItem data-field="returnDay">
-          <div className="flex items-center justify-between gap-2">
-            <Label>{t("request.returnDay")}</Label>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="h-auto px-1 text-xs"
-              onClick={() => {
-                form.setValue("returnDay", day, { shouldDirty: true });
-                setReturnAnotherDay(false);
-              }}
-            >
-              {t("request.returnSameDay")}
-            </Button>
-          </div>
-          <Controller
-            control={form.control}
-            name="returnDay"
-            render={({ field }) => (
-              <DateField
-                weekStart={day}
-                value={field.value ?? day}
-                onChange={field.onChange}
-                dayCount={14}
-                ariaLabel={t("request.returnDay")}
-              />
-            )}
-          />
-        </FormItem>
-      ) : null}
-      {isMultiDay ? (
-        <div className="space-y-1 rounded-md border-s-4 border-primary bg-primary/5 p-3 text-sm">
-          <p>{t("request.multiDayHint")}</p>
-          {multiDaySpan ? <p className="text-xs text-muted-foreground">{tv("request.multiDayBadge", { count: String(multiDaySpan) })}</p> : null}
-        </div>
-      ) : null}
-
-      {variant !== "carNow" && !isMultiDay ? (
-        <FieldAnchor name="tripShape">
-          <Controller
-            control={form.control}
-            name="tripShape"
-            render={({ field }) => (
-              <TripShapeControl
-                value={field.value}
-                onChange={(next) => {
-                  const previousShape = field.value;
-                  field.onChange(next);
-                  // `departTime`/`returnTime` are two independent fields, but only one is ever
-                  // shown for a one-way shape — carry the visible value across so switching shape
-                  // doesn't silently swap in the other field's own (possibly stale) value.
-                  if (next === "one_way_from" && previousShape !== "one_way_from") {
-                    form.setValue("returnTime", form.getValues("departTime"), { shouldDirty: true });
-                  } else if (previousShape === "one_way_from" && next !== "one_way_from") {
-                    form.setValue("departTime", form.getValues("returnTime"), { shouldDirty: true });
-                  }
-                }}
-              />
-            )}
-          />
-          {quickContext && oneWay ? <p className="text-sm text-destructive">{t("quickRequest.oneWayHelp")}</p> : null}
-        </FieldAnchor>
-      ) : null}
-
-      <div className="flex gap-4">
-        {variant !== "carNow" && tripShape !== "one_way_from" ? (
-          <FormItem className="flex-1" data-field="departTime">
-            <Label>{t("field.depart")}</Label>
-            <Controller
-              control={form.control}
-              name="departTime"
-              render={({ field }) => (
-                <TimeField15
-                  min="06:00"
-                  value={field.value ?? "08:00"}
-                  onChange={(next) => {
-                    const previous = field.value ?? "08:00";
-                    field.onChange(next);
-                    const currentReturn = form.getValues("returnTime");
-                    const shifted = shiftReturnByDepartureDelta(previous, next, currentReturn);
-                    if (shifted !== currentReturn) form.setValue("returnTime", shifted, { shouldDirty: true, shouldValidate: true });
-                  }}
-                  aria-label={t("field.depart")}
-                />
-              )}
-            />
-            <FieldError message={form.formState.errors.departTime?.message} />
-          </FormItem>
-        ) : null}
-        {tripShape !== "one_way_to" ? (
-          <Controller
-            control={form.control}
-            name="returnTime"
-            render={({ field }) =>
-              variant === "carNow" ? (
-                <></>
-              ) : (
-                <FormItem className="flex-1" data-field="returnTime">
-                  <Label>{tripShape === "one_way_from" ? t("request.departArrival") : t("field.return")}</Label>
-                  <TimeField15 min="06:00" max="23:59" value={field.value ?? "12:00"} onChange={field.onChange} aria-label={t("field.return")} />
-                  <FieldError message={form.formState.errors.returnTime?.message} />
-                </FormItem>
-              )
-            }
-          />
-        ) : null}
-      </div>
-
-      {variant !== "carNow" && quickContext && tripShape === "one_way_from" ? <p className="text-xs text-muted-foreground">{t("quickRequest.arrivalHomeHelp")}</p> : null}
-      {variant !== "carNow" && quickContext && oneWay ? <p className="text-xs text-muted-foreground">{tv("quickRequest.vehicleWindow", { start: formatTime(new Date(startMs)), end: formatTime(new Date(endMs)) })}</p> : null}
-
-      {quickContext && !carIsFree ? (
-        <div className="space-y-1.5 rounded-md border-s-4 border-amber-500 bg-amber-50 p-3 text-sm text-amber-900">
-          <p>{isAway ? t("quickRequest.awayWarning") : t("quickRequest.overlapWarning")}</p>
-          {otherFreeCar ? (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => form.setValue("preferredCarId", otherFreeCar.id, { shouldDirty: true })}
-            >
-              {tv("quickRequest.overlapOfferOtherCar", { car: otherFreeCar.name })}
-            </Button>
-          ) : (
-            <p className="text-xs">{t("quickRequest.noCarFree")}</p>
-          )}
-        </div>
-      ) : null}
-
-      {tripShape === "round_trip" && variant !== "carNow" ? (
-        <FieldAnchor name="needsCarAtDestination">
-          <Controller
-            control={form.control}
-            name="needsCarAtDestination"
-            render={({ field }) => <CarAtDestinationToggle checked={field.value} onChange={field.onChange} />}
-          />
-        </FieldAnchor>
-      ) : null}
-
-      <FormItem data-field="companions">
-        <Label>{t("field.companions")}</Label>
-        <Controller
-          control={form.control}
-          name="companions"
-          render={({ field }) => (
-            <CompanionPicker
-              members={(membersQuery.data ?? []).map((m) => ({ id: m.id, name: m.name }))}
-              value={field.value}
-              onChange={field.onChange}
-            />
-          )}
-        />
-        <p className="text-sm text-muted-foreground">{tv("request.namedPassengerCount", { count: String(namedAdultCount) })}</p>
-      </FormItem>
-
-      <FormItem data-field="children">
-        <Label>{t("field.children")}</Label>
-        <Controller control={form.control} name="children" render={({ field }) => (
-          <CompanionPicker
-            members={(childrenQuery.data ?? []).map((child) => ({
-              ...child,
-              name: child.age == null ? child.name : `${child.name} · ${child.age}`,
-            }))}
-            value={field.value}
-            onChange={field.onChange}
-            label={t("field.children")}
-          />
-        )} />
-        <p className="text-sm text-muted-foreground">{tv("request.namedChildCount", { count: String(namedChildCount) })}</p>
-      </FormItem>
-
-      <FormItem data-field="guestNames">
-        <Label htmlFor="request-guest-names">{t("quickRequest.guestPassengers")}</Label>
-        <Controller control={form.control} name="guestNames" render={({ field }) => (
-          <Textarea id="request-guest-names" value={field.value} onChange={field.onChange} rows={2} />
-        )} />
-        <p className="text-xs text-muted-foreground">{t("quickRequest.guestPassengersHelp")}</p>
-        <FieldError message={form.formState.errors.guestNames?.message} />
-      </FormItem>
+      <PassengersFields
+        control={form.control}
+        members={membersQuery.data ?? []}
+        children={childrenQuery.data ?? []}
+        namedAdultCount={namedAdultCount}
+        namedChildCount={namedChildCount}
+        guestNamesError={form.formState.errors.guestNames?.message}
+      />
 
       {/* Luggage, flexibility and the note to the Sadran are weekly-solver inputs; a same-day
           quick/car-now request is placed immediately with nobody reading them (owner, 2026-09-14). */}
@@ -1086,33 +822,16 @@ export function RequestForm({
         />
       ) : null}
 
-      {variant === "weekly" && !isMultiDay && tripShape !== "one_way_from" ? (
-        <FormItem data-field="flexDepartEarly">
-          <Label>{t("field.flexDepart")}</Label>
-          <FlexibilityRange
-            early={values.flexDepartEarly ?? 0}
-            late={values.flexDepartLate ?? 0}
-            onChange={(early, late) => {
-              form.setValue("flexDepartEarly", early, { shouldDirty: true });
-              form.setValue("flexDepartLate", late, { shouldDirty: true });
-            }}
-          />
-        </FormItem>
-      ) : null}
-      {variant === "weekly" && !isMultiDay && tripShape !== "one_way_to" ? (
-        <FormItem data-field="flexReturnEarly">
-          <Label>{t("field.flexReturn")}</Label>
-          <FlexibilityRange
-            early={values.flexReturnEarly ?? 0}
-            late={values.flexReturnLate ?? 0}
-            onChange={(early, late) => {
-              form.setValue("flexReturnEarly", early, { shouldDirty: true });
-              form.setValue("flexReturnLate", late, { shouldDirty: true });
-            }}
-          />
-          <p className="text-xs text-muted-foreground">{t("request.flexibilityHelper")}</p>
-        </FormItem>
-      ) : null}
+      <FlexibilityFields
+        form={form}
+        variant={variant}
+        tripShape={tripShape}
+        isMultiDay={isMultiDay}
+        flexDepartEarly={values.flexDepartEarly ?? 0}
+        flexDepartLate={values.flexDepartLate ?? 0}
+        flexReturnEarly={values.flexReturnEarly ?? 0}
+        flexReturnLate={values.flexReturnLate ?? 0}
+      />
 
       {variant !== "carNow" ? (
         <FormItem data-field="rideDescription">
@@ -1130,21 +849,7 @@ export function RequestForm({
         </FormItem>
       ) : null}
 
-      {variant === "weekly" && !isMultiDay ? (
-        <Controller
-          control={form.control}
-          name="repeatWeekly"
-          render={({ field }) => (
-            <FormItem className="flex items-center justify-between gap-3 rounded-md border p-3" data-field="repeatWeekly">
-              <div className="space-y-0.5">
-                <Label htmlFor="request-repeat-weekly">{t("request.repeatWeekly")}</Label>
-                <p className="text-xs text-muted-foreground">{t("request.repeatWeeklyHint")}</p>
-              </div>
-              <Switch id="request-repeat-weekly" checked={field.value} onCheckedChange={field.onChange} />
-            </FormItem>
-          )}
-        />
-      ) : null}
+      {variant === "weekly" && !isMultiDay ? <RepeatWeeklyField control={form.control} /> : null}
 
       <div
         className={cn(

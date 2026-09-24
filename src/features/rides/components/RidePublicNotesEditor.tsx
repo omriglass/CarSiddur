@@ -8,10 +8,13 @@ import { he } from "@/i18n/he";
 import { useUpdateRidePublicNotesMutation } from "../hooks";
 
 /** Metadata can be saved independently of any proposed schedule changes. */
-export function RidePublicNotesEditor({ rideId, expectedVersion, initialNotes }: {
+export function RidePublicNotesEditor({ rideId, expectedVersion, initialNotes, departmentId, weekStart }: {
   rideId: string;
   expectedVersion: number;
   initialNotes: string | null;
+  /** The ride's own `department_id`/`week_start` — scopes cache invalidation after saving. */
+  departmentId: string;
+  weekStart: string;
 }) {
   const [notes, setNotes] = useState(initialNotes ?? "");
   const mutation = useUpdateRidePublicNotesMutation();
@@ -21,7 +24,7 @@ export function RidePublicNotesEditor({ rideId, expectedVersion, initialNotes }:
     <form className="space-y-2 rounded-md border p-3" onSubmit={(event) => {
       event.preventDefault();
       if (!changed || mutation.isPending) return;
-      mutation.mutate({ rideId, expectedVersion, notes: notes.trim() || null }, {
+      mutation.mutate({ rideId, expectedVersion, notes: notes.trim() || null, departmentId, weekStart }, {
         onSuccess: () => toast.success(he.ridePublicDetails.saved),
       });
     }}>

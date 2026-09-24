@@ -78,10 +78,10 @@ export function nowMs(): number {
   return Date.now();
 }
 
-import { servedOf, type ServedEntry } from "./servedOf";
+import { servedOf, type ServedEntry } from "@/features/rides/servedOf";
 
-export { servedOf, namedPassengersOf, withChildNames, representativeRideTypeCode } from "./servedOf";
-export type { ServedEntry, RidePassengerEntry } from "./servedOf";
+export { servedOf, namedPassengersOf, withChildNames, representativeRideTypeCode } from "@/features/rides/servedOf";
+export type { ServedEntry, RidePassengerEntry } from "@/features/rides/servedOf";
 
 
 /** `served` in the shape `edit_ride`'s payload expects, unchanged — for a board edit that only moves/reassigns a ride. */

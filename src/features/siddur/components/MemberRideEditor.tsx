@@ -7,7 +7,8 @@ import type { Car } from "@/features/fleet/api";
 import { he } from "@/i18n/he";
 import { dateKey, formatTime } from "@/lib/time";
 import { siddurCarName } from "@/lib/siddurCarName";
-import type { BoardRide, RideMove } from "../api";
+import type { BoardRide } from "../api";
+import type { RideMove } from "@/features/rides/api";
 import { moveOnRideDay } from "../rideEditing";
 
 export function MemberRideEditor({ ride, cars, saving, onSave }: {

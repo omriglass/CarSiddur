@@ -18,8 +18,8 @@ Guidance for Claude Code working in this repository.
 4. **RLS on every table**, `enable` + `force`, policies per command (never `for all`), written with the helper functions in `DATA_MODEL.md` §4.2 (`is_approved()`, `is_admin()`, `member_of(dept)`, `is_sadran(dept, week_start)`, `is_sadran_any(dept)`, `can_manage_week(dept, week_start)`, `is_week_public(dept, week_start)`). Multi-row state changes go through `SECURITY DEFINER` RPCs. `anon` has no grants. Service-role keys never reach the browser. Functions have no default grants either: a migration that adds a browser-facing RPC must `grant execute … to authenticated` explicitly, everything else (internal/cron/helpers not referenced by RLS) stays closed — `rls_smoke.sql` TEST 14 enforces it.
 5. **The solver stays pure.** `src/solver/**` imports nothing from React, Supabase, the DOM, `Date.now()`, `Math.random()`, or `src/i18n`. `solve(input)` returns a value; persistence is the caller's job (`apply_solver_result` RPC). Deterministic: every sort ends in an `id` tie-break. Enforced by `eslint.config.js` (`no-restricted-imports`/`-globals`/`-syntax` on `src/solver/**`) and `src/solver/__tests__/purity.test.ts`; CI fails if `supabase/functions/_shared/solver.js` is stale relative to `src/solver`.
 6. **All timestamps are Asia/Jerusalem-aware.** Postgres: `timestamptz` only; `week_start date` (the Sunday) keys a week; wall-clock settings are stored as `(dow, time)` and converted inside SQL with `at time zone 'Asia/Jerusalem'`. TS: `src/lib/time.ts` (`TZ = 'Asia/Jerusalem'`, date-fns-tz); never `getHours()`/`getDay()`/`toLocale*` without it (lint error outside `time.ts`/`dayLabels.ts`). The solver never does wall-clock arithmetic — it gets epoch ms and per-day slot bounds.
-7. **Before declaring anything done:** `npm run check` (lint, typecheck, unit tests) passes. Schema changes also need `npm run db:reset && npm run db:types` with the regenerated types committed, and `npm run db:test`. Solver changes also need `npm run functions:bundle` (CI diff-checks the bundle). User-facing flows run the relevant Playwright spec; `npm run check:full` runs everything (needs the local stack). CI (`.github/workflows/ci.yml`) runs `check` + bundle freshness + build and the database job (migrations replay, types freshness, SQL suites) on every push, and e2e nightly / on demand. A change to a mapped path updates `docs/TEST_MAP.md`/`test-map.json` in the same change when it adds a screen, flow or suite; `npm run impact` tells you what to run and what to hand QA.
-8. **Never hand-edit generated files:** `src/integrations/supabase/types.ts`, `src/components/ui/*` (shadcn CLI), `supabase/functions/_shared/solver.js` (built by `scripts/bundle-solver`).
+7. **Before declaring anything done:** `npm run check` (lint, typecheck, unit tests) passes. Schema changes also need `npm run db:reset && npm run db:types && npm run db:schema` with the regenerated `types.ts` and `supabase/schema-current.sql` committed, and `npm run db:test`. Solver changes also need `npm run functions:bundle` (CI diff-checks the bundle). User-facing flows run the relevant Playwright spec; `npm run check:full` runs everything (needs the local stack). CI (`.github/workflows/ci.yml`) runs `check` + bundle freshness + build and the database job (migrations replay, types + schema-dump freshness, SQL suites) on every push, and e2e nightly / on demand. A change to a mapped path updates `docs/TEST_MAP.md`/`test-map.json` in the same change when it adds a screen, flow or suite; `npm run impact` tells you what to run and what to hand QA.
+8. **Never hand-edit generated files:** `src/integrations/supabase/types.ts`, `src/components/ui/*` (shadcn CLI), `supabase/functions/_shared/solver.js` (built by `scripts/bundle-solver`), `supabase/schema-current.sql` (built by `npm run db:schema`). A migration that changes a function writes its full `create or replace` — never a `pg_get_functiondef` + string-replace patch; read the current definition of anything in `schema-current.sql`.
 9. **Enums are defined once, in SQL**, mirrored into `src/lib/enums.ts` (see Conventions). Priority **rule types are the exception**: they are a TS registry (`src/solver/rules/index.ts`) mirrored into the SQL `validate_policy_rules()` known set.
 10. **`supabase/config.toml` is the local stack's config only** (`site_url = "http://localhost:8080"` etc.) — never run `supabase config push` against the hosted project; production Auth URLs (Site URL, redirect URLs, Google provider) are set by hand in the Supabase dashboard (`docs/FREE_DEPLOYMENT.md` §5). The `production` branch is what Cloudflare's `carsiddur` Worker builds from — `main` is not; it only advances via the gated `promote` CI job after the owner approves the GitHub `production` environment (`npm run release`, `docs/RUNBOOK_ROLLBACK.md`), never a direct push.
 
@@ -35,6 +35,7 @@ Guidance for Claude Code working in this repository.
 | `npm run test` | `vitest run` — run tests once |
 | `npm run test:watch` | `vitest` — watch mode |
 | `npm run test:e2e` | `playwright test` (needs `supabase start`, `db:reset`, and `npm run dev`) |
+| `npm run e2e:isolated -- [--head] [--keep] [playwright args]` | Same suite from a frozen snapshot of the working tree (`--head`: committed code only) on its own Vite port (8091), so edits made during the run (another agent, the owner) cannot break it; resets the one local database like `test:e2e` (`scripts/e2e-isolated.mjs`) |
 | `npm run impact -- [<base-ref>]` | Change→tests→QA impact: diffs against `<base-ref>` (default `origin/main`; also `--staged`, `--files <path...>`, `--strict`), prints the affected `docs/TEST_MAP.md` areas, the exact Vitest/`db:test`/Playwright `--grep` commands, and a ready-to-paste QA checklist; `--strict` exits 2 on any changed file matching no area |
 | `npm run check` | `lint && typecheck && test` — the fast definition-of-done gate |
 | `npm run check:full` | `check` + `functions:bundle` + `db:test` + `test:e2e` — everything, needs `supabase start` |
@@ -43,6 +44,7 @@ Guidance for Claude Code working in this repository.
 | `npm run db:fake` | `node scripts/fake-week.mjs` — generates fake members/requests through `submit_request` for manual local testing (local Supabase only) |
 | `npm run db:export` | `node scripts/db-export.mjs [--local\|--linked] [--out <dir>]` — schema/data/roles dump via `supabase db dump`; `--linked` requires `--yes-remote` (FREE_DEPLOYMENT.md §8) |
 | `npm run db:types` | `supabase gen types typescript --local > src/integrations/supabase/types.ts` |
+| `npm run db:schema` | Regenerate `supabase/schema-current.sql` (schema-only dump of `public` from the local stack; generated, read-only reference — CI diff-checks it) |
 | `npm run db:new` | `supabase migration new <name>` → `supabase/migrations/YYYYMMDDHHMMSS_<name>.sql` (CLI will prompt for name) |
 | `npm run db:push` | `supabase db push` — sync pending local migrations to the remote project (after linking) |
 | `npm run db:test` | Run RLS, solver persistence and TODO regression suites in the configured local Docker container; `SUPABASE_DB_CONTAINER` selects a disposable test container |
@@ -74,6 +76,7 @@ src/
     cars/                      member-facing single-car page (`/cars/:carId`): car details + issue/care history; reuses `features/admin/cars` forms for writes
     stats/                     department statistics dashboard; `department_stats` RPC, zod-parsed at the api boundary (no generated row type for its jsonb return)
     waitlist/                  contested waiting-list groups (`v_waitlist_groups`, `resolve_waitlist_group`, `cancel_waitlist_group`)
+    rides/                     shared by siddur + sadran (R8, 2026-09-24): ridePeople, servedOf, addPassengers, passenger/notes components, ride-change + passenger RPCs (api/hooks/keys), export/weekWorkbook, invalidateWeek.ts (`invalidateWeekData()` — the one week-scoped cache refresh after a ride/request change). ESLint forbids sadran ⇄ siddur internals imports; sadran may use only siddur/api, hooks, queryKeys, RideChangeAnswers
     solverBridge/              buildSolverInput() (DB→solver mapper for board & admin policy preview)
     <feature>/components/      React components (shadcn + business logic)
     <feature>/hooks/           TanStack Query: use<X>Query, use<X>Mutation
@@ -109,14 +112,17 @@ src/
     rpc.ts                     typed `rpc()` wrapper, `toAppError()` (SQLSTATE → `he.errors.*`), `showErrorToast()`
     push.ts                    push subscription helpers
     whatsapp.ts                wa.me link builder (no Hebrew; copy comes from DB)
+    notificationEvents.ts      `NOTIFICATION_EVENT_META: Record<NotificationEvent, …>` (category, memberMutable, sadranRole, weekScoped) — TS mirror of the SQL `notification_event_meta` table; mute categories and inbox tabs derive from it
+    xlsx.ts                    generic workbook writer (moved from sadran/export)
   hooks/                       useTheme only; session/role/department hooks live in features/auth
   types/                       domain types shared by UI and solver (not DB rows)
   main.tsx sw.ts index.css     PWA service worker, entry point, global styles
 supabase/
-  migrations/                  171 additive migrations, `20260907090000` through `20260916110000` (2026-09-15/16: `day_date_label`, non-driver profiles, notification day prefix + proposal link, driverless solver rides, one-way chauffeur/relay healing, withdraw settles proposals)
+  migrations/                  179 additive migrations, `20260907090000` through `20260924110400` (2026-09-24: day car swap; code review — `apply_solver_result` department scope, `requests` status guard, `notification_event_meta`, proposal-guard system transition, cross-car one-way pairing)
   seed.sql                     demo data: departments, ride types, destinations, default policy, templates, member invites, demo auth users (local/e2e only)
   rollback/                    tested down scripts for non-additive migrations, `<same timestamp>_down.sql` (README.md has the convention); enforced by scripts/check-migrations.mjs
-  tests/                       29 SQL suites, run via `npm run db:test` (all transactional: begin … rollback)
+  schema-current.sql           GENERATED by `npm run db:schema`: the current `public` schema (read function definitions here, not in old migrations)
+  tests/                       31 SQL suites, run via `npm run db:test` (all transactional: begin … rollback)
     rls_smoke.sql              assertions: every table has forced RLS, no `using (true)` on writes, no `for all` policies
     solve_semantics.sql        solver persistence and assignment behavior
     todo_board_semantics.sql   ownership, consent, operational permissions and publication scores
@@ -136,6 +142,8 @@ supabase/
     car_chain_healing.sql      `assert_car_chain` (REQ §13.88/§13.89): a lone one-way leg widens into a chauffeur ride, a matching leg at X pairs both into relay legs, a driving companion drives, non-one-way gaps still get a relocation ride
     withdraw_settles.sql       REQ §13.90: re-solve withdraws pending proposals on replaced rides, `withdraw_request` settles proposals, a 1-member contested group auto-resolves
     day_car_swap.sql           REQ §13.92 day car swap
+    department_isolation.sql   every browser-facing SECURITY DEFINER RPC called as department A with department B's ids must refuse; completeness check fails on an unclassified new RPC; `requests` status guard incl. a second-party proposal decline
+    fixtures/one_way_pairing_cases.json  shared golden cases for one-way pairing, run against the solver (`src/solver/__tests__/oneWayPairingParity.test.ts`) and SQL (`scripts/test-pairing-parity.mjs`, the last step of `db:test`); `knownDivergence` cases are documented design differences
     (+ 12 more scenario suites: admin_department_membership, admin_member_fixes, coordinator_planning, department_catalogs, live_quick_one_way, member_identity, proposal_day_boundary, proposal_replacement, selected_day_publication, status_notifications, week_opening, weekly_sadran_permissions)
   functions/
     push-dispatch/             send push notifications via browser API
@@ -178,6 +186,9 @@ e2e/
   weekly-permissions.spec.ts     weekly-assigned member vs permanent Sadran board access
 scripts/
   bundle-solver.mjs            esbuild solver for edge functions
+  e2e-isolated.mjs             `npm run e2e:isolated` — snapshot the tree, run Playwright on :8091 with E2E_SUPABASE_WORKDIR at the snapshot
+  db-schema.mjs                `npm run db:schema` — writes supabase/schema-current.sql
+  test-pairing-parity.mjs      SQL side of the one-way pairing golden cases (called by test-db.mjs)
   test-db.mjs                  SQL regression runner with explicit database-container selection
   fake-week.mjs                `npm run db:fake` — generates fake members/requests via submit_request for manual local testing
   impact.mjs                   `npm run impact` — change→tests→QA impact tool; matches `git diff` paths against test-map.json's per-area globs (hand-rolled `**`/`*` matcher, no new dependency)
@@ -261,6 +272,12 @@ scripts/
 | Docs vs code drift | `/review-consistency` | docs-keeper |
 | Small bug report / regression | `/bugfixer` | none (or a cheap model) |
 | Playwright coverage | — | e2e-tester |
+
+## Code review 2026-09-24 (docs/TODO.md "Code review 2026-09-24 — follow-ups", R1–R14)
+
+- **Department separation is tested, not assumed.** `supabase/tests/department_isolation.sql` calls every browser-facing SECURITY DEFINER RPC cross-department and fails on any new RPC not classified as covered/exempt — a new RPC must be added there. `requests_status_guard()` now refuses a status/status_reason change unless it comes from the requester, `can_manage_week()` of the request's own week, a service/cron caller, or `app.system_status_transition = 'on'` — internal functions/triggers that move *someone else's* request (as a system step) must set that flag and restore the previous value. `rls_smoke.sql` TEST 18 pins every column of the tables readable across departments (`app_settings`, `car_seat_configs`, `cars`, `departments`, `notification_templates`, `notification_event_meta`, `profiles` grants, `ride_types`, `weekday_labels`): a new column there fails until classified or moved to a department-scoped table (precedent `car_access_codes`).
+- **Notification event properties live in one place per side:** SQL `notification_event_meta` (read by `enqueue_notification()` for mutes/Sadran bypass and by `notification_default_url()` for week links) and `src/lib/notificationEvents.ts`; a new event adds a row to both (`/add-notification-event`). Notification merging/digest is deliberately **not** built (owner 2026-09-24: not yet shown to be a problem).
+- Cache refresh after a ride/request change: `invalidateWeekData(queryClient, dept, week)` (`features/rides/invalidateWeek.ts`) — that week's board, all siddur queries except other weeks' rides, all requests keys. `admin/members/hooks.ts` stays fully unscoped on purpose.
 
 ## Owner batch 2026-09-15/16 (REQ §13.86–§13.91; docs/TODO.md "Owner dump 2026-09-14 (evening)", "Owner dump 2026-09-15", "Owner notes 2026-09-16")
 

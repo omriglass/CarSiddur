@@ -72,7 +72,7 @@ export function AddPassengersDialog({ rideId, expectedVersion, departmentId, wee
     ];
     if (!passengers.length) return;
     mutation.mutate(
-      { rideId, expectedVersion, passengers },
+      { rideId, expectedVersion, passengers, departmentId, weekStart },
       {
         onSuccess: () => {
           toast.success(he.addPassengers.added);

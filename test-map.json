@@ -23,7 +23,9 @@
     "e2e/helpers.ts",
     "e2e/global-setup.ts",
     "e2e/published-week.ts",
-    "src/test/setup.ts"
+    "src/test/setup.ts",
+    "scripts/db-schema.mjs",
+    "scripts/e2e-isolated.mjs"
   ],
   "areas": [
     {
@@ -80,7 +82,8 @@
         "src/features/requests/components/RequestRow.test.tsx",
         "src/pages/HomePage.tsx",
         "src/pages/MyHistoryPage.tsx",
-        "src/pages/RequestsRedirect.tsx"
+        "src/pages/RequestsRedirect.tsx",
+        "src/features/requests/components/requestForm/**"
       ],
       "vitest": [
         "src/features/requests"
@@ -254,7 +257,18 @@
         "supabase/migrations/**/*v_board_rides*",
         "e2e/siddur-mobile.spec.ts",
         "e2e/ride-editing.spec.ts",
-        "e2e/member.spec.ts"
+        "e2e/member.spec.ts",
+        "src/components/CarSwapDialog.tsx",
+        "src/components/CarSwapDialog.test.tsx",
+        "src/components/WeekGrid.carSwap.test.tsx",
+        "src/features/carSwap/**",
+        "supabase/migrations/**/*car_swap*",
+        "supabase/tests/day_car_swap.sql",
+        "e2e/car-swap.spec.ts",
+        "src/features/rides/invalidateWeek.ts",
+        "src/features/rides/invalidateWeek.test.ts",
+        "src/features/rides/hooks.ts",
+        "src/features/rides/export/**"
       ],
       "vitest": [
         "src/features/siddur",
@@ -314,7 +328,22 @@
         "e2e/board-coordination.spec.ts",
         "e2e/export.spec.ts",
         "e2e/weekly-permissions.spec.ts",
-        "e2e/ride-editing.spec.ts"
+        "e2e/ride-editing.spec.ts",
+        "src/components/CarSwapDialog.tsx",
+        "src/components/CarSwapDialog.test.tsx",
+        "src/components/WeekGrid.carSwap.test.tsx",
+        "src/features/carSwap/**",
+        "supabase/migrations/**/*car_swap*",
+        "supabase/tests/day_car_swap.sql",
+        "e2e/car-swap.spec.ts",
+        "src/features/rides/invalidateWeek.ts",
+        "src/features/rides/invalidateWeek.test.ts",
+        "src/features/rides/hooks.ts",
+        "src/features/rides/export/**",
+        "src/features/sadran/board/hooks/**",
+        "src/features/sadran/board/components/**",
+        "supabase/migrations/**/*pair_one_way_legs*",
+        "supabase/tests/fixtures/one_way_pairing_cases.json"
       ],
       "vitest": [
         "src/features/sadran/board",
@@ -366,7 +395,9 @@
         "e2e/proposal-retry.spec.ts",
         "e2e/board-coordination.spec.ts",
         "e2e/one-way-consent.spec.ts",
-        "e2e/sadran.spec.ts"
+        "e2e/sadran.spec.ts",
+        "src/pages/ProposalTokenPage.tsx",
+        "supabase/migrations/**/*proposals_status_guard*"
       ],
       "vitest": [
         "src/features/proposals",
@@ -403,13 +434,13 @@
         "src/lib/ridePassengerSummary.test.ts",
         "src/lib/ridePublicDetails.ts",
         "src/lib/ridePublicDetails.test.ts",
-        "src/features/siddur/ridePeople.ts",
-        "src/features/siddur/ridePeople.test.ts",
-        "src/features/siddur/addPassengers.ts",
-        "src/features/siddur/addPassengers.test.ts",
-        "src/features/siddur/components/AddPassengersDialog.tsx",
+        "src/features/rides/ridePeople.ts",
+        "src/features/rides/ridePeople.test.ts",
+        "src/features/rides/addPassengers.ts",
+        "src/features/rides/addPassengers.test.ts",
+        "src/features/rides/components/AddPassengersDialog.tsx",
         "src/features/siddur/components/RideDetailSheet.tsx",
-        "src/features/siddur/components/RidePassengersList.tsx",
+        "src/features/rides/components/RidePassengersList.tsx",
         "src/features/sadran/board/reservationPeople.ts",
         "src/features/sadran/board/reservationPeople.test.ts",
         "src/features/sadran/board/components/RidePassengersEditor.tsx",
@@ -421,7 +452,11 @@
         "supabase/migrations/**/*ride_people*",
         "supabase/migrations/**/*unified_ride_people*",
         "supabase/tests/ride_passengers.sql",
-        "e2e/board.spec.ts"
+        "e2e/board.spec.ts",
+        "src/features/rides/components/RidePublicNotesEditor.tsx",
+        "src/features/rides/api.ts",
+        "src/features/rides/hooks.ts",
+        "src/features/rides/keys.ts"
       ],
       "vitest": [
         "src/lib/ridePassengerSummary.test.ts",
@@ -498,7 +533,12 @@
         "supabase/tests/car_mileage.sql",
         "e2e/auto-approve.spec.ts",
         "e2e/freed-slot.spec.ts",
-        "e2e/board.spec.ts"
+        "e2e/board.spec.ts",
+        "supabase/tests/fixtures/one_way_pairing_cases.json",
+        "scripts/test-pairing-parity.mjs",
+        "src/solver/__tests__/oneWayPairingParity.test.ts",
+        "supabase/migrations/**/*apply_solver_result*",
+        "supabase/migrations/**/*pair_one_way_legs*"
       ],
       "vitest": [
         "src/solver",
@@ -550,7 +590,13 @@
         "supabase/migrations/**/*notify_*",
         "supabase/tests/notifications_semantics.sql",
         "supabase/tests/status_notifications.sql",
-        "e2e/device-setup.spec.ts"
+        "e2e/device-setup.spec.ts",
+        "src/i18n/he.ts",
+        "supabase/seed.sql",
+        "src/lib/notificationEvents.ts",
+        "src/lib/notificationEvents.test.ts",
+        "src/pages/InboxPage.tsx",
+        "supabase/migrations/**/*notification_event_meta*"
       ],
       "vitest": [
         "src/features/inbox"
@@ -762,7 +808,16 @@
         "supabase/migrations/**/*revoke*",
         "eslint.config.js",
         "supabase/tests/rls_smoke.sql",
-        "supabase/tests/hardening_semantics.sql"
+        "supabase/tests/hardening_semantics.sql",
+        "src/integrations/supabase/types.ts",
+        "scripts/test-db.mjs",
+        "src/lib/rpc.ts",
+        "src/lib/enums.ts",
+        "src/lib/enums.test.ts",
+        "supabase/tests/department_isolation.sql",
+        "supabase/migrations/**/*department_scope*",
+        "supabase/migrations/**/*status_department_guard*",
+        "supabase/schema-current.sql"
       ],
       "vitest": [],
       "sql": [

@@ -1,9 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { useSession } from "@/features/auth/useSession";
-import { requestsKeys } from "@/features/requests/queryKeys";
-import { sadranKeys } from "@/features/sadran/keys";
-import { siddurKeys } from "@/features/siddur/queryKeys";
 import { showErrorToast } from "@/lib/rpc";
 
 import {
@@ -14,16 +11,21 @@ import {
   type AnswerProposalInput,
 } from "./api";
 import { proposalsKeys } from "./queryKeys";
+import { invalidateWeekData } from "@/features/rides/invalidateWeek";
 
-/** In-app answer (a session exists) — `answer_proposal` RPC directly. */
+/**
+ * In-app answer (a session exists) — `answer_proposal` RPC directly. `departmentId`/`weekStart`
+ * on the input are unused by `answerProposal` itself — the caller (`ProposalTokenPage`) already
+ * has them from the proposal summary, and they scope the invalidation to that one board.
+ */
 export function useAnswerProposalMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (input: AnswerProposalInput) => answerProposal(input),
-    onSettled: () =>
-      Promise.all(
-        [sadranKeys.all, siddurKeys.all, requestsKeys.all].map((key) => queryClient.invalidateQueries({ queryKey: key })),
-      ),
+    mutationFn: (input: AnswerProposalInput & { departmentId: string; weekStart: string }) => answerProposal(input),
+    onSettled: (_data, _error, { departmentId, weekStart }) =>
+      Promise.all([
+        invalidateWeekData(queryClient, departmentId, weekStart),
+      ]),
     onError: showErrorToast,
   });
 }
@@ -71,10 +73,12 @@ export function useAnswerProposalViaTokenMutation() {
       answer: "accepted" | "declined";
       note?: string;
       optOut?: boolean;
+      departmentId: string;
+      weekStart: string;
     }) => answerProposalViaToken(token, answer, note, optOut),
-    onSettled: () =>
-      Promise.all(
-        [sadranKeys.all, siddurKeys.all, requestsKeys.all].map((key) => queryClient.invalidateQueries({ queryKey: key })),
-      ),
+    onSettled: (_data, _error, { departmentId, weekStart }) =>
+      Promise.all([
+        invalidateWeekData(queryClient, departmentId, weekStart),
+      ]),
   });
 }

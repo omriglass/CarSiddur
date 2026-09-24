@@ -56,10 +56,12 @@ import {
   useCarLocations,
   useDepartments,
   useWeeks,
+} from "@/features/siddur/hooks";
+import {
   useRideChanges,
   useRequestRideChangeMutation,
   useClaimRideDriverMutation,
-} from "@/features/siddur/hooks";
+} from "@/features/rides/hooks";
 import { useDayFreeWindows, type DayFreeWindowsAway, type DayFreeWindowsCar } from "@/features/siddur/useDayFreeWindows";
 import { isPastWeek } from "@/features/siddur/pastWeeks";
 import { useSiddurDisplayPrefs } from "@/features/siddur/useSiddurDisplayPrefs";
@@ -67,9 +69,10 @@ import { resolveThisNextWeek } from "@/features/siddur/thisNextWeek";
 import { WeekSwitcherTitle } from "@/features/siddur/components/WeekSwitcherTitle";
 import { SiddurDisplayMenu } from "@/features/siddur/components/SiddurDisplayMenu";
 import { siddurKeys } from "@/features/siddur/queryKeys";
-import type { Week, RideMove, BoardRide } from "@/features/siddur/api";
-import { namedPassengersOf, representativeRideTypeCode, servedOf } from "@/features/sadran/servedOf";
-import { peopleOf } from "@/features/siddur/ridePeople";
+import type { Week, BoardRide } from "@/features/siddur/api";
+import type { RideMove } from "@/features/rides/api";
+import { namedPassengersOf, representativeRideTypeCode, servedOf } from "@/features/rides/servedOf";
+import { peopleOf } from "@/features/rides/ridePeople";
 import { rideBlockLabel, resolveRideRealDestination } from "@/lib/rideLabel";
 import { he, t, tv } from "@/i18n/he";
 import { dateKey, formatTime } from "@/lib/time";
@@ -153,7 +156,7 @@ export function SiddurPage() {
   const editMutation = useEditRideMutation();
   const changeMutation = useRequestRideChangeMutation();
   const claimMutation = useClaimRideDriverMutation();
-  const [collisionMove, setCollisionMove] = useState<RideMove | null>(null);
+  const [collisionMove, setCollisionMove] = useState<(RideMove & { departmentId: string; weekStart: string }) | null>(null);
 
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [selectedRideId, setSelectedRideId] = useState<string | null>(null);
@@ -309,7 +312,7 @@ export function SiddurPage() {
     const ride = boardRidesQuery.data?.find((r) => r.id === move.rideId);
     if (!ride || !ownsEditableRide(move.rideId) || !departmentId || !weekStart || !ride.origin_id || !ride.destination_id) return;
     if (conflictingRides(move, boardRidesQuery.data ?? [], settingsQuery.data?.turnaround_minutes ?? 30).length) {
-      setCollisionMove(move);
+      setCollisionMove({ ...move, departmentId, weekStart });
       return;
     }
     try {
@@ -319,7 +322,8 @@ export function SiddurPage() {
           driver_id: ride.driver_id },
         expectedVersion: move.expectedVersion, departmentId, weekStart,
       });
-      await queryClient.invalidateQueries({ queryKey: siddurKeys.all });
+      await queryClient.invalidateQueries({ queryKey: siddurKeys.boardRides(departmentId, weekStart) });
+      await queryClient.invalidateQueries({ queryKey: siddurKeys.carLocations(departmentId, weekStart) });
       setSelectedRideId(null);
       toast.success(he.rideEditing.saved);
     } catch { /* Mutation displays the database validation error. */ }

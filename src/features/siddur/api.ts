@@ -2,7 +2,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { AppError, rpc, toAppError } from "@/lib/rpc";
 import { siddurCarName } from "@/lib/siddurCarName";
 
-import type { Database, Json } from "@/integrations/supabase/types";
+import type { Database } from "@/integrations/supabase/types";
 import type { CarType } from "@/lib/enums";
 
 /**
@@ -97,53 +97,9 @@ export async function fetchMyUpcomingRides(profileId: string, departmentId?: str
     .map((ride) => ({ ...ride, car_name: cars.get(ride.car_id ?? "")?.label ?? null, car_type: cars.get(ride.car_id ?? "")?.type ?? null }));
 }
 
-export type RideChange = Database["public"]["Tables"]["ride_change_requests"]["Row"] & {
-  requester: { full_name: string } | null;
-  parties: Database["public"]["Tables"]["ride_change_parties"]["Row"][];
-};
-
-export interface RideMove {
-  rideId: string;
-  carId: string;
-  startsAt: string;
-  endsAt: string;
-  expectedVersion: number;
-}
-
-export async function claimRideDriver(rideId: string, expectedVersion: number): Promise<void> {
-  await rpc("claim_ride_driver", { p_ride_id: rideId, p_expected_version: expectedVersion });
-}
-
-/** Public ride information only; does not modify scheduling, passengers or consent. */
-export async function updateRidePublicNotes(rideId: string, expectedVersion: number, notes: string | null): Promise<void> {
-  await rpc("update_ride_public_notes", { p_ride_id: rideId, p_expected_version: expectedVersion, p_notes: notes ?? "" });
-}
-
-export async function fetchRideChanges(departmentId?: string, weekStart?: string): Promise<RideChange[]> {
-  let query = supabase.from("ride_change_requests")
-    .select("*, requester:profiles!ride_change_requests_requester_id_fkey(full_name), parties:ride_change_parties(*)")
-    .eq("status", "pending");
-  if (departmentId) query = query.eq("department_id", departmentId);
-  if (weekStart) query = query.eq("week_start", weekStart);
-  const { data, error } = await query.order("created_at");
-  if (error) throw toAppError(error);
-  return (data ?? []) as RideChange[];
-}
-
-export async function requestRideChange(move: RideMove): Promise<string> {
-  return rpc("request_ride_change", {
-    p_ride_id: move.rideId, p_car_id: move.carId,
-    p_starts_at: move.startsAt, p_ends_at: move.endsAt, p_expected_version: move.expectedVersion,
-  });
-}
-
-export async function respondRideChange(changeId: string, accept: boolean): Promise<void> {
-  await rpc("respond_ride_change", { p_change_id: changeId, p_accept: accept });
-}
-
-export async function cancelRideChange(changeId: string): Promise<void> {
-  await rpc("cancel_ride_change", { p_change_id: changeId });
-}
+// `RideChange`, `RideMove` and the ride-change/passenger-list/notes RPCs moved to
+// `src/features/rides/api.ts` (REFACTOR_BACKLOG "R8: break the siddur ⇄ sadran import cycle") —
+// they are shared by both the siddur and sadran board, not siddur-specific.
 
 export async function fetchDepartments(): Promise<Department[]> {
   const { data, error } = await supabase.from("departments").select("*").eq("is_active", true);
@@ -248,36 +204,5 @@ export async function fetchExportCarNames(departmentId: string): Promise<{ id: s
   return data ?? [];
 }
 
-/**
- * A named passenger/child appended to a published ride with no `requests` row behind them
- * (the "+ נוסעים" button, `add_ride_passengers()`/`remove_ride_person()`,
- * 20260914170000_add_ride_passengers_rpc.sql + 20260914190000_unified_ride_people.sql;
- * REQ §13.85). Same row shape as `features/sadran/api.ts`'s `RidePassengerInput` (the Sadran
- * board's `set_ride_passengers()` *replace* editor) — kept as a separate local type rather
- * than a cross-feature import so this feature's `api.ts` stays the only place it calls
- * `.rpc()` for its own inputs.
- */
-export interface RidePassengerInput {
-  person_id?: string;
-  child_id?: string;
-  display_name: string;
-  seat_kind: "adult" | "child_seat" | "booster";
-}
-
-/** Appends named passengers to a ride's existing list (never replaces it); duplicates already on the ride or already served are silently skipped by the RPC. */
-export async function addRidePassengers(rideId: string, expectedVersion: number, passengers: RidePassengerInput[]): Promise<void> {
-  await rpc("add_ride_passengers", { p_ride_id: rideId, p_expected_version: expectedVersion, p_passengers: passengers as unknown as Json });
-}
-
-/**
- * Removes exactly one person from a ride's unified `v_board_rides.people` list, addressed by
- * that entry's `key` — any of `driver:`/`req:`/`comp:`/`child:`/`guest:`/`added:`, though the
- * driver's own entry always has `removable: false` and is never offered a remove control
- * (`RidePassengersList`/`ridePeople.ts`'s `canRemoveRidePerson`). 20260914190000_unified_
- * ride_people.sql replaced the narrower `remove_ride_passenger(uuid, int)`, which only took a
- * `ride_passengers.id`, with this key-based, ride-scoped RPC open to any approved department
- * member on a published/live week (or a Sadran/admin who manages it).
- */
-export async function removeRidePerson(rideId: string, expectedVersion: number, key: string): Promise<void> {
-  await rpc("remove_ride_person", { p_ride_id: rideId, p_expected_version: expectedVersion, p_key: key });
-}
+// `RidePassengerInput`, `addRidePassengers()`, `removeRidePerson()` moved to
+// `src/features/rides/api.ts` alongside `RideMove`/`RideChange` (R8, same reason).

@@ -62,6 +62,46 @@ const SOLVER_IMPORT_PATTERNS = {
 
 const LINT_TEST_FILES = ["**/*.test.{ts,tsx}", "**/__tests__/**", "**/__fixtures__/**"];
 
+// ---------------------------------------------------------------------------
+// R8 (REFACTOR_BACKLOG "break the siddur ⇄ sadran import cycle"): shared
+// ride-level pieces (ridePeople, servedOf, AddPassengersDialog/RidePassengersList/
+// RidePublicNotesEditor, the ride-change/passenger-list mutations, the shared
+// week-workbook board sheet) now live in `src/features/rides/**`. Neither
+// feature may deep-import the other's internals; each side keeps a short,
+// documented allow-list of the reads that are still legitimately one-directional.
+// ---------------------------------------------------------------------------
+const SADRAN_MAY_NOT_IMPORT_SIDDUR = {
+  patterns: [
+    {
+      group: [
+        "@/features/siddur/*",
+        "@/features/siddur/**",
+        // Allowed: `weeks`/`departments` reads and query keys (siddur owns that
+        // reference data, ARCHITECTURE.md §4) and the one shared inbox-adjacent
+        // component sadran's publish screen reuses as-is.
+        "!@/features/siddur/api",
+        "!@/features/siddur/hooks",
+        "!@/features/siddur/queryKeys",
+        // gitignore-style negation can't re-include a file under an excluded
+        // directory without also re-including the directory itself.
+        "!@/features/siddur/components",
+        "!@/features/siddur/components/RideChangeAnswers",
+      ],
+      message:
+        "sadran may only read siddur's api/hooks/queryKeys or RideChangeAnswers (documented exceptions, eslint.config.js). Shared ride-level pieces belong in @/features/rides — see CLAUDE.md folder map / R8.",
+    },
+  ],
+};
+const SIDDUR_MAY_NOT_IMPORT_SADRAN = {
+  patterns: [
+    {
+      group: ["@/features/sadran/*", "@/features/sadran/**"],
+      message:
+        "siddur must not import from sadran. Shared ride-level pieces belong in @/features/rides — see CLAUDE.md folder map / R8.",
+    },
+  ],
+};
+
 export default tseslint.config(
   { ignores: ["dist", "coverage", "playwright-report", "supabase/functions/_shared/solver.js"] },
   {
@@ -148,6 +188,19 @@ export default tseslint.config(
         { allowConstantExport: true, allowExportNames: ["adminRoutes", "operationsRoutes", "sadranRoutes", "memberRoutes"] },
       ],
     },
+  },
+
+  // R8 — the siddur ⇄ sadran import cycle boundary (see SADRAN_MAY_NOT_IMPORT_SIDDUR
+  // above for the allow-listed exceptions).
+  {
+    files: ["src/features/sadran/**/*.{ts,tsx}"],
+    ignores: LINT_TEST_FILES,
+    rules: { "no-restricted-imports": ["error", SADRAN_MAY_NOT_IMPORT_SIDDUR] },
+  },
+  {
+    files: ["src/features/siddur/**/*.{ts,tsx}"],
+    ignores: LINT_TEST_FILES,
+    rules: { "no-restricted-imports": ["error", SIDDUR_MAY_NOT_IMPORT_SADRAN] },
   },
 
   // Hard rule 5 — the solver stays pure and deterministic. `reasons.ts` is the

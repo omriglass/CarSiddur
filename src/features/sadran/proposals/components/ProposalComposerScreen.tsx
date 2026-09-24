@@ -284,6 +284,8 @@ export function ProposalComposerScreen({ departmentId, weekStart }: ProposalComp
         payload: payload as unknown as Json,
         reasonHe: previewText,
         partyProfileIds: extraPartyIds,
+        departmentId,
+        weekStart,
       });
       // Keep the successful creation even if sending fails. Retrying must send
       // this draft, rather than create a second proposal for the same request.

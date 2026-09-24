@@ -40,6 +40,8 @@ npx supabase db push
 
 Confirm the linked project is the new hosted project before pushing. Use migrations for subsequent changes. Do not run database reset against production, and do not add `--include-seed`: this repository's `supabase/seed.sql` contains demo logins and rides.
 
+Every schema change is authored and verified against the **local** stack, then regenerated and committed before it is pushed anywhere: `npm run db:reset` (replay), `npm run db:types` (TypeScript types) and `npm run db:schema` (`supabase/schema-current.sql`, a schema-only dump of `public` used to read the current definition of a table/function/policy without replaying every migration — CLAUDE.md hard rule 7). CI's `database` job fails if either generated file is stale relative to the migrations.
+
 **Never run `npx supabase config push`.** The checked-in `supabase/config.toml` is the **local** stack's configuration (`[auth] site_url = "http://localhost:8080"`, local redirect URLs, local-only auth toggles). Pushing it would overwrite the hosted project's real Auth URL configuration. Production Auth settings (Site URL, redirect URLs, the Google provider's client id/secret) are set by hand in the Supabase dashboard — see §5 below.
 
 ## 3. Generate and configure notification credentials

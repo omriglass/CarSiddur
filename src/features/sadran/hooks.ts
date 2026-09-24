@@ -1,8 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { fetchCars } from "@/features/fleet/api";
-import { siddurKeys } from "@/features/siddur/queryKeys";
-import { requestsKeys } from "@/features/requests/queryKeys";
 import { showErrorToast } from "@/lib/rpc";
 
 import * as api from "./api";
@@ -11,6 +9,7 @@ import { publishWithScores } from "./publish/publishWithScores";
 
 import type { Json } from "@/integrations/supabase/types";
 import type { NotificationChannel } from "@/lib/enums";
+import { invalidateWeekData } from "@/features/rides/invalidateWeek";
 
 // ---------------------------------------------------------------------------
 // Week / phase
@@ -102,10 +101,17 @@ export function useLatestSolverRun(departmentId: string | undefined, weekStart: 
   });
 }
 
-function invalidateBoard(queryClient: ReturnType<typeof useQueryClient>, departmentId: string, weekStart: string) {
-  queryClient.invalidateQueries({ queryKey: sadranKeys.week(departmentId, weekStart) });
-  queryClient.invalidateQueries({ queryKey: siddurKeys.all });
-  queryClient.invalidateQueries({ queryKey: requestsKeys.all });
+/**
+ * Board-affecting mutations only ever touch this one (departmentId, weekStart) plus the
+ * caller's own request/upcoming-rides caches (other members refresh their own client on their
+ * own navigation/polling, not through this session's cache).
+ */
+function invalidateBoard(
+  queryClient: ReturnType<typeof useQueryClient>,
+  departmentId: string,
+  weekStart: string,
+) {
+  invalidateWeekData(queryClient, departmentId, weekStart);
 }
 
 export function useRecordSolverPreviewMutation() {
@@ -243,11 +249,16 @@ export function useWhatsappTemplates() {
   });
 }
 
+/**
+ * `departmentId`/`weekStart` on the input are unused by `createProposal` itself — they only
+ * scope the cache invalidation to the one board the draft belongs to.
+ */
 export function useCreateProposalMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (input: api.CreateProposalInput) => api.createProposal(input),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: sadranKeys.all }),
+    mutationFn: (input: api.CreateProposalInput & { departmentId: string; weekStart: string }) => api.createProposal(input),
+    onSuccess: (_data, { departmentId, weekStart }) =>
+      queryClient.invalidateQueries({ queryKey: sadranKeys.week(departmentId, weekStart) }),
     onError: showErrorToast,
   });
 }
@@ -268,10 +279,8 @@ export function useSendProposalMutation() {
     }) => api.sendProposal(proposalId, sentVia, replacement),
     // Also refresh after failures: another coordinator may have sent/answered the
     // proposal, or the server may have committed before the connection dropped.
-    onSettled: () => Promise.all([
-      queryClient.invalidateQueries({ queryKey: sadranKeys.all }),
-      queryClient.invalidateQueries({ queryKey: siddurKeys.all }),
-      queryClient.invalidateQueries({ queryKey: requestsKeys.all }),
+    onSettled: (_data, _error, { departmentId, weekStart }) => Promise.all([
+      invalidateWeekData(queryClient, departmentId, weekStart),
     ]),
     onError: showErrorToast,
   });

@@ -4,7 +4,7 @@ import { useSession } from "@/features/auth/useSession";
 import { he, tv } from "@/i18n/he";
 import { formatDayDate } from "@/lib/dayLabels";
 import { formatTime } from "@/lib/time";
-import { useRideChanges, useRespondRideChangeMutation, useCancelRideChangeMutation } from "../hooks";
+import { useRideChanges, useRespondRideChangeMutation, useCancelRideChangeMutation } from "@/features/rides/hooks";
 
 export function RideChangeAnswers({ departmentId, weekStart, canManage = false }: { departmentId?: string; weekStart?: string; canManage?: boolean }) {
   const { session } = useSession();

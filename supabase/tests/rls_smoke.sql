@@ -587,4 +587,189 @@ begin
 end $$;
 reset role;
 
+-- ---------------------------------------------------------------------------
+-- 18) Columns readable across departments (DATA_MODEL.md §4.4, docs/TODO.md R14):
+--     a table whose SELECT policy grants read access to every approved member
+--     regardless of department (qual mentions `is_approved()` but none of
+--     member_of/is_sadran/can_manage/auth.uid/department_id) must have every
+--     one of its columns pinned here with a classification, so a new column
+--     does not silently become readable across departments without a
+--     deliberate decision. `profiles` is one such table, but the actual
+--     exposure there is narrowed by an explicit column grant (`20260910100000`)
+--     rather than by the row policy, so it is pinned by granted column, not by
+--     full column list (owner decision A2: email/is_admin/approval_status/
+--     muted_events are all intentionally "public" here). `ride_requests` looks
+--     department-agnostic (`exists (select 1 from rides r where r.id =
+--     ride_requests.ride_id)`) but is scoped transitively through `rides`'
+--     own RLS, so it does not match the detection query and is not pinned.
+-- ---------------------------------------------------------------------------
+do $$
+declare
+  v_offenders text;
+begin
+  create temporary table pinned_columns (
+    table_name text not null,
+    column_name text not null,
+    classification text not null check (classification in ('public')),
+    primary key (table_name, column_name)
+  ) on commit drop;
+
+  insert into pinned_columns (table_name, column_name, classification) values
+    ('app_settings', 'key', 'public'),
+    ('app_settings', 'value', 'public'),
+    ('app_settings', 'description', 'public'),
+    ('app_settings', 'updated_at', 'public'),
+    ('app_settings', 'updated_by', 'public'),
+    ('car_seat_configs', 'id', 'public'),
+    ('car_seat_configs', 'car_id', 'public'),
+    ('car_seat_configs', 'adults', 'public'),
+    ('car_seat_configs', 'child_seats', 'public'),
+    ('car_seat_configs', 'boosters', 'public'),
+    ('cars', 'id', 'public'),
+    ('cars', 'department_id', 'public'),
+    ('cars', 'name', 'public'),
+    ('cars', 'license_plate', 'public'),
+    ('cars', 'type', 'public'),
+    ('cars', 'status', 'public'),
+    ('cars', 'owner_id', 'public'),
+    ('cars', 'features', 'public'),
+    ('cars', 'notes', 'public'),
+    ('cars', 'built_in_child_seats', 'public'),
+    ('cars', 'built_in_boosters', 'public'),
+    ('cars', 'retired_at', 'public'),
+    ('cars', 'created_at', 'public'),
+    ('cars', 'updated_at', 'public'),
+    ('cars', 'responsible_id', 'public'),
+    ('departments', 'id', 'public'),
+    ('departments', 'name', 'public'),
+    ('departments', 'slug', 'public'),
+    ('departments', 'is_active', 'public'),
+    ('departments', 'home_destination_id', 'public'),
+    ('departments', 'created_at', 'public'),
+    ('departments', 'updated_at', 'public'),
+    ('notification_templates', 'id', 'public'),
+    ('notification_templates', 'event', 'public'),
+    ('notification_templates', 'channel', 'public'),
+    ('notification_templates', 'variant', 'public'),
+    ('notification_templates', 'title', 'public'),
+    ('notification_templates', 'body', 'public'),
+    ('notification_templates', 'updated_at', 'public'),
+    ('notification_templates', 'updated_by', 'public'),
+    ('notification_templates', 'default_title', 'public'),
+    ('notification_templates', 'default_body', 'public'),
+    ('ride_types', 'id', 'public'),
+    ('ride_types', 'code', 'public'),
+    ('ride_types', 'name_he', 'public'),
+    ('ride_types', 'sort_order', 'public'),
+    ('ride_types', 'is_active', 'public'),
+    ('ride_types', 'department_id', 'public'),
+    ('weekday_labels', 'dow', 'public'),
+    ('weekday_labels', 'short_he', 'public'),
+    ('weekday_labels', 'long_he', 'public'),
+    ('weekday_labels', 'created_at', 'public'),
+    ('weekday_labels', 'updated_at', 'public'),
+    ('notification_event_meta', 'event', 'public'),
+    ('notification_event_meta', 'category', 'public'),
+    ('notification_event_meta', 'member_mutable', 'public'),
+    ('notification_event_meta', 'sadran_role', 'public'),
+    ('notification_event_meta', 'week_scoped', 'public'),
+    ('notification_event_meta', 'created_at', 'public'),
+    ('notification_event_meta', 'updated_at', 'public'),
+    ('profiles', 'approval_status', 'public'),
+    ('profiles', 'approved_at', 'public'),
+    ('profiles', 'approved_by', 'public'),
+    ('profiles', 'avatar_url', 'public'),
+    ('profiles', 'created_at', 'public'),
+    ('profiles', 'default_boosters', 'public'),
+    ('profiles', 'default_child_seats', 'public'),
+    ('profiles', 'default_department_id', 'public'),
+    ('profiles', 'display_name', 'public'),
+    ('profiles', 'does_not_drive', 'public'),
+    ('profiles', 'email', 'public'),
+    ('profiles', 'full_name', 'public'),
+    ('profiles', 'google_name', 'public'),
+    ('profiles', 'home_week_preference', 'public'),
+    ('profiles', 'id', 'public'),
+    ('profiles', 'is_admin', 'public'),
+    ('profiles', 'muted_events', 'public'),
+    ('profiles', 'updated_at', 'public');
+
+  -- (a) a table becomes cross-department readable but has no pin list at all.
+  select string_agg(t.tablename, ', ') into v_offenders
+  from (
+    select tablename
+    from pg_policies
+    where schemaname = 'public' and cmd = 'SELECT'
+    group by tablename
+    having string_agg(coalesce(qual, ''), ' | ') ilike '%is_approved()%'
+       and string_agg(coalesce(qual, ''), ' | ') not ilike '%member_of(%'
+       and string_agg(coalesce(qual, ''), ' | ') not ilike '%is_sadran%'
+       and string_agg(coalesce(qual, ''), ' | ') not ilike '%can_manage%'
+       and string_agg(coalesce(qual, ''), ' | ') not ilike '%auth.uid%'
+       and string_agg(coalesce(qual, ''), ' | ') not ilike '%department_id%'
+  ) t
+  where not exists (select 1 from pinned_columns pc where pc.table_name = t.tablename);
+
+  assert v_offenders is null, format(
+    'TEST 18 FAILED: table(s) %s now have a SELECT policy readable by every approved '
+    'member across departments but no pin list in rls_smoke.sql TEST 18 -- add a '
+    '(table, column, ''public'') row per column, or move the sensitive ones to a '
+    'department-scoped table (precedent: car_access_codes, 20260910099900).', v_offenders);
+
+  -- (b) a column exists (or, for profiles, is granted SELECT to authenticated) that is
+  --     not pinned.
+  select string_agg(x.table_name || '.' || x.column_name, ', ') into v_offenders
+  from (
+    select c.table_name, c.column_name
+    from information_schema.columns c
+    where c.table_schema = 'public'
+      and c.table_name in ('app_settings', 'car_seat_configs', 'cars', 'departments',
+        'notification_templates', 'ride_types', 'weekday_labels')
+    union
+    select 'profiles', cp.column_name
+    from information_schema.column_privileges cp
+    where cp.table_schema = 'public' and cp.table_name = 'profiles'
+      and cp.grantee = 'authenticated' and cp.privilege_type = 'SELECT'
+  ) x
+  where not exists (
+    select 1 from pinned_columns pc
+    where pc.table_name = x.table_name and pc.column_name = x.column_name
+  );
+
+  assert v_offenders is null, format(
+    'TEST 18 FAILED: column(s) %s are readable across departments (SELECT policy or, '
+    'for profiles, an explicit column grant) but not pinned/classified in rls_smoke.sql '
+    'TEST 18 -- classify as ''public'' across departments, or move it to a '
+    'department-scoped table (precedent: car_access_codes, 20260910099900).', v_offenders);
+
+  -- (c) a pinned column no longer exists (dropped column, or, for profiles, a column
+  --     grant that was revoked).
+  select string_agg(z.tc, ', ') into v_offenders
+  from (
+    select pc.table_name || '.' || pc.column_name as tc
+    from pinned_columns pc
+    where pc.table_name <> 'profiles'
+      and not exists (
+        select 1 from information_schema.columns c
+        where c.table_schema = 'public' and c.table_name = pc.table_name
+          and c.column_name = pc.column_name)
+    union all
+    select pc.table_name || '.' || pc.column_name
+    from pinned_columns pc
+    where pc.table_name = 'profiles'
+      and not exists (
+        select 1 from information_schema.column_privileges cp
+        where cp.table_schema = 'public' and cp.table_name = 'profiles'
+          and cp.column_name = pc.column_name and cp.grantee = 'authenticated'
+          and cp.privilege_type = 'SELECT')
+  ) z;
+
+  assert v_offenders is null, format(
+    'TEST 18 FAILED: pinned column(s) %s no longer exist (or, for profiles, are no '
+    'longer granted SELECT) -- remove the stale row(s) from rls_smoke.sql TEST 18''s pin list.',
+    v_offenders);
+
+  raise notice 'TEST 18 PASSED: every column readable across departments is pinned and classified (DATA_MODEL.md §4.4)';
+end $$;
+
 rollback;

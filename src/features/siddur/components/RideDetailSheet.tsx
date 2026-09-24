@@ -11,13 +11,13 @@ import { ridePublicDetails } from "@/lib/ridePublicDetails";
 import { he, t, tv } from "@/i18n/he";
 import { formatTime } from "@/lib/time";
 import type { Car } from "@/features/fleet/api";
-import { servedOf, type ServedEntry } from "@/features/sadran/servedOf";
+import { servedOf, type ServedEntry } from "@/features/rides/servedOf";
 
 import type { BoardRide } from "../api";
-import { AddPassengersDialog } from "./AddPassengersDialog";
-import { RidePassengersList } from "./RidePassengersList";
-import { RidePublicNotesEditor } from "./RidePublicNotesEditor";
-import { peopleOf } from "../ridePeople";
+import { AddPassengersDialog } from "@/features/rides/components/AddPassengersDialog";
+import { RidePassengersList } from "@/features/rides/components/RidePassengersList";
+import { RidePublicNotesEditor } from "@/features/rides/components/RidePublicNotesEditor";
+import { peopleOf } from "@/features/rides/ridePeople";
 
 /**
  * "<driver> ו<passengers> ל/מ<real destination>" (UX_FLOWS.md §20 — the
@@ -128,7 +128,7 @@ export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = 
 
               <p className="text-muted-foreground">{carModeLabel(ride)}</p>
               {canEditPublicNotes && ride.id && ride.version != null ? (
-                <RidePublicNotesEditor key={`${ride.id}:${ride.version}`} rideId={ride.id} expectedVersion={ride.version} initialNotes={ride.notes} />
+                <RidePublicNotesEditor key={`${ride.id}:${ride.version}`} rideId={ride.id} expectedVersion={ride.version} initialNotes={ride.notes} departmentId={ride.department_id ?? ""} weekStart={ride.week_start ?? ""} />
               ) : ride.notes ? <p className="whitespace-pre-wrap break-words">{ride.notes}</p> : null}
               {passengerSummary ? <p className="whitespace-pre-wrap break-words">{passengerSummary}</p> : null}
               {ridePublicDetails(served, { includeCompanions: !passengerSummary, addedNames }) ? <p className="whitespace-pre-wrap break-words">{ridePublicDetails(served, { includeCompanions: !passengerSummary, addedNames })}</p> : null}
@@ -158,6 +158,8 @@ export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = 
                 people={peopleOf(ride)}
                 canManagePeople={showAddPassengers}
                 rideCancelled={ride.status === "cancelled"}
+                departmentId={ride.department_id}
+                weekStart={ride.week_start}
               />
 
               {showAddPassengers && ride.id && ride.version != null ? (

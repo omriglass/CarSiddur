@@ -272,6 +272,7 @@ Order once approved: D1 → D6 → D5 → D4 → D3 (bugs, smallest first) → D
 - Plan: `/my` gets the row actions of `RequestsListPage` (withdraw / cancel ride / edit / repeat-weekly, each behind `ConfirmDialog`, never a bare tap); the form and every "הבקשות שלי" link navigate to `/my`; `/requests` redirects to `/my` (deep links keep working: `/requests?focus=<id>` → `/my?focus=<id>`, `/requests/new` and `/requests/:id/edit` unchanged); requests/rides whose day is before today (Asia/Jerusalem) are hidden on `/my` for every week; the week's request list on Home is the only list. UX_FLOWS §3.3 rewritten, REQ §5.5 one sentence, `RequestsListPage.tsx` deleted (its tests moved to Home's).
 - **Q4.** Where should past requests remain reachable — nowhere in the app (the siddur archive shows past weeks' rides already), or a small "היסטוריה" link at the bottom of `/my`?
   **A4.** A "היסטוריה" link, lazily loaded (not important, must not slow anything).
+
 ## Owner request 2026-09-24 — v1.0 feature: swap cars on a published day (triaged; owner answered Q1–Q7 the same day — **building 2026-09-24**, REQ §13.92)
 
 ### ~~S1~~ ✅ done 2026-09-24 — Drag a car name onto another car name to swap the two cars' rides for that day (REQ §13.92; `preview_day_car_swap`/`swap_day_cars`, `car_swapped` event, `CarSwapDialog`, `day_car_swap.sql`, `e2e/car-swap.spec.ts`)
@@ -293,3 +294,84 @@ Order once approved: D1 → D6 → D5 → D4 → D3 (bugs, smallest first) → D
 - **Q7.** Should the swapper be able to undo it (e.g. a toast "בוטל" button for a few seconds that swaps back and sends a follow-up "cancelled" notice), or is the confirmation dialog enough?
   **A7.** Confirmation is enough; no undo. (Future, not this version: debounce/merge queued notifications.)
 
+## Code review 2026-09-24 — follow-ups (triaged; owner answered Q1–Q4 the same day — **built 2026-09-24**; new owner questions Q5–Q8 at the end)
+
+Scope set by the owner: level 1 (bugs), level 2 (refactors of existing behaviour), new tests, and a column checklist for tables readable across departments. **Out of scope:** notification merging/digest (owner: not yet shown to be a real problem). E2E baseline: `e95bfd1` passes all 67 specs on a clean tree; the 6 failures seen on 2026-09-24 came from files changing mid-run (see R5). Dropped from the review: "carCare/stats/proposals skip `toAppError`" — false, they go through the `rpc()` wrapper.
+
+### Level 1 — bugs
+
+#### ~~R1~~ ✅ done 2026-09-24 — Bug (department separation): `apply_solver_result` can rewrite another department's request statuses
+- The live function's `request_statuses` loop runs `update public.requests … where id = <payload id>` with no department/week filter; `can_manage_week(p_department_id, p_week_start)` is checked once at the top only, and `requests_status_guard()` only restricts the requester. A Sadran of department A calling the RPC directly can set department B's requests to `denied`/`cancelled`. Rides are safe (`rides_car_same_department`, `ride_requests_dept_week_match`).
+- Fix: add `and department_id = p_department_id and week_start = p_week_start` (new migration, full `create or replace`, see R10); regression assertion in the R12 suite.
+- Done: `20260924110000_apply_solver_result_department_scope.sql` (an out-of-scope id is ignored and never reported as unassigned).
+
+#### ~~R2~~ ✅ done 2026-09-24 (via R6) — Bug: members cannot mute waiting-list notifications
+- UX_FLOWS §6.1 puts `waitlist_contested`/`waitlist_resolved` in the "מקומות שמתפנים" mute category; `src/features/inbox/muteCategories.ts` omits them. Fix via R6 (or directly if R6 is not approved) + unit test.
+
+#### ~~R3~~ ✅ done 2026-09-24 (via R6) — Bug: inbox filter tabs misfile newer events
+- `src/pages/InboxPage.tsx` hard-codes the tab sets: `window_changed` is missing from the siddur tab, `waitlist_*` fall into "system" instead of freed slots; `car_swapped` (S1) will need a home too. Fix via R6.
+
+#### ~~R4~~ ✅ no change 2026-09-24 — approving/editing a member refetches every query in the app
+- `src/features/admin/members/hooks.ts` `useInvalidateMembers` calls `invalidateQueries()` with no key. Replace with the member/department keys actually affected.
+- Resolution: deliberate (commit de0321b, "display names and department isolation") — a member's name/role/membership shows on nearly every screen, admin actions are rare, only mounted queries refetch. Kept; explained in a comment.
+
+#### ~~R5~~ ✅ done 2026-09-24 — Tooling: e2e runs against the live working tree
+- Any concurrent edit (another agent, the owner) breaks page loads mid-run, and `board.spec.ts`'s mid-suite `db:reset` applies whatever half-written migrations are on disk. Add `npm run e2e:isolated`: `git archive HEAD` into a temp dir, symlink `node_modules`, own Vite port, `E2E_SUPABASE_WORKDIR` pointing there (both resets then replay committed migrations only). Document in CLAUDE.md commands + MAINTENANCE.
+- Done: `scripts/e2e-isolated.mjs` — default snapshots the working tree (tracked + untracked, not ignored) so uncommitted work is tested but later edits are not; `--head` = committed code only; `--keep` keeps the snapshot.
+
+### Level 2 — refactors (no behaviour change beyond R2/R3)
+
+#### ~~R6~~ ✅ done 2026-09-24 — One metadata source per notification event (`20260924110200_notification_event_meta.sql`, `src/lib/notificationEvents.ts`)
+- Today "which events are special" is hard-coded in five places: the Sadran mute-bypass and never-mutable lists in `enqueue_notification()`, the week-scoped branch of `notification_default_url()`, `muteCategories.ts`, the `InboxPage` tab sets.
+- Plan: SQL table `notification_event_meta(event pk, category, member_mutable, sadran_role, week_scoped)` read by both SQL functions; TS mirror `src/lib/notificationEvents.ts` typed `Record<NotificationEvent, Meta>` (a missing event fails typecheck) driving the mute list and inbox tabs; a SQL suite assertion that every enum value has a meta row; parity TS↔SQL added to `/review-consistency`. `/add-notification-event` skill updated to one place. No enum values merged or removed.
+
+#### ~~R7~~ ✅ done 2026-09-24 — Scoped cache invalidation (`features/rides/invalidateWeek.ts` `invalidateWeekData()`: that week's board, every siddur query except other weeks' rides, all requests keys — the requests keys are per-user anyway, so scoping them only risked stale `byId`/`companions`/`freedOffers`)
+- ~21 mutation `onSuccess` sites invalidate whole feature caches (`siddurKeys.all`, `requestsKeys.all`, e.g. `invalidateBoard` in `sadran/hooks.ts`). Replace with the `(department, week)` keys where the mutation is week-bound; keep `.all` only for genuinely cross-week mutations (series, admin catalogs). Verify each key factory carries dept/week first.
+
+#### ~~R8~~ ✅ done 2026-09-24 — Break the siddur ⇄ sadran import cycle (`src/features/rides/`, `src/lib/xlsx.ts`, ESLint boundary)
+- Each imports the other's internals (`ridePeople`, `servedOf`, `AddPassengersDialog`, `RidePassengersList`, `RidePublicNotesEditor`, `ensureDepartmentWeeks`, `sadranKeys`). Move the shared pieces to a neutral `src/features/rides/`; add an ESLint `no-restricted-imports` boundary so the cycle cannot come back; update the CLAUDE.md folder map.
+
+#### R9 — Split the two largest components (pure moves)
+- `BoardScreen.tsx` (1,579 lines) → container + `useBoardData`/`useBoardDnd` hooks + extracted dialogs; `RequestForm.tsx` (1,224 lines) → field-group subcomponents with narrow props. Gate: board + request-form Playwright specs. Done last (touches the same files as S1 and R8).
+
+#### ~~R10~~ ✅ done 2026-09-24 — The current SQL readable in one place (`npm run db:schema` → `supabase/schema-current.sql`, CI freshness diff with the CLI pinned to package.json's version)
+- Key functions are redefined many times (`submit_request` 8×, `v_board_rides` 11×) and recent migrations patch functions by string replace on `pg_get_functiondef`, so the current definition exists only in a running database. Add a generated, committed `supabase/schema-current.sql` (`npm run db:schema`, schema-only dump after `db:reset`), CI diff-checks it like `types.ts`. Convention from now on: a migration that changes a function writes the full `create or replace` (committed migrations are never edited).
+
+#### ~~R11~~ ✅ done 2026-09-24 — One-way pairing is implemented twice (`supabase/tests/fixtures/one_way_pairing_cases.json`, 10 cases; it found a real SQL bug, fixed in `20260924110400_pair_one_way_legs_cross_car_exclusion.sql` — two legs on different cars never paired; 4 remaining design differences → Q5–Q8)
+- SQL `pair_one_way_legs()`/`try_widen_one_way_leg()` inside `assert_car_chain` and the solver's relay/chauffeur logic decide the same thing independently. Shared golden cases (one JSON file) run by a Vitest test against the solver and by a node-driven `db:test` step against SQL, so the two cannot drift silently.
+
+### New tests
+
+#### ~~R12~~ ✅ done 2026-09-24 — Department isolation suite (`supabase/tests/department_isolation.sql`)
+- Two departments; as a Sadran/member of A, call every browser-facing SECURITY DEFINER RPC with B's ids (requests, rides, cars, members, children, groups, proposals) — each must raise or change nothing. The list of RPCs is checked against the functions granted to `authenticated` (like `rls_smoke.sql` TEST 14), so a new RPC fails the suite until it is covered.
+- Plus a guard trigger on `requests`: a status change must come from the requester's own allowed transitions, `can_manage_week(new.department_id, new.week_start)`, or the `app.system_status_transition` flag — the table-level twin of the rides triggers, so a future RPC that forgets the filter is still caught.
+
+#### ~~R13~~ ✅ done 2026-09-24 — Unit tests for untested load-bearing features (auth guards + `useActiveDepartment`, fleet api/keys: 47 tests; inbox mute/tab mapping with R6)
+- `features/auth` (guards; `useActiveDepartment` fallback chain route → per-user localStorage → profile default → first membership), `features/fleet` (api row mapping, hooks keys), `features/inbox` (every mutable event is in a mute category, tab mapping, deep links). `docs/TEST_MAP.md` + `test-map.json` updated.
+
+### Column checklist
+
+#### ~~R14~~ ✅ done 2026-09-24 — Pin the columns of tables readable across departments (`rls_smoke.sql` TEST 18, DATA_MODEL §4.4)
+- Live SELECT policies that only check `is_approved()`: `app_settings`, `car_seat_configs`, `cars`, `departments`, `notification_templates`, `profiles` (column grants), `ride_types`, `weekday_labels`. New `rls_smoke.sql` test: each such table's column list (and `profiles`' granted columns) is pinned with a classification; a new column fails `db:test` until it is classified "public across departments" or moved to a department-scoped table (precedent: `car_access_codes`). Checklist paragraph in DATA_MODEL §4 and a step in the `/add-migration` skill.
+- Found while listing: `profiles` exposes `email`, `is_admin`, `approval_status` and `muted_events` to every approved member of every department (see Q2).
+
+### Questions
+
+- **Q1.** R12 ("cross-department injection") is not classic SQL injection — it means calling an RPC with ids that belong to another department. It is the test that *proves* department separation, and R1 is exactly what it would have caught. Include R12 + the `requests` guard trigger? I'd include both.
+  **A1.** Yes — R12 and the `requests` guard trigger are in scope.
+- **Q2.** `profiles`: restrict `email` (and `muted_events`, `approval_status`) to the member themselves, their departments' Sadranim and admins, keeping name/avatar/`does_not_drive` public across departments? Needs a check of which screens read other members' email first.
+  **A2.** No change. `email` and `is_admin` are needed across departments; `approval_status` and `muted_events` do not matter. R14 classifies all four as "public across departments".
+- **Q3.** R10: OK to add the generated `schema-current.sql` + CI check and the "full `create or replace`" convention?
+  **A3.** Yes. Update the deployment docs (`FREE_DEPLOYMENT.md`, `RUNBOOK_ROLLBACK.md`, `scripts/release.mjs` notes) where the new file or CI check affects them.
+- **Q4.** R11 is the largest item (new cross-language test harness). Include now, or park it after the rest?
+  **A4.** Include now — it is a vital test.
+
+#### Found while building (2026-09-24)
+- The stricter `requests` guard (R12) broke a signed-in **second party declining a proposal** (`not_authorized`) — caught in review before any e2e run, fixed in `20260924110300_proposals_status_guard_system_transition.sql` with a regression test.
+- Follow-ups, not done: 7 RPCs are classified "inspected" rather than live-tested in `department_isolation.sql` (`move_series`, `swap_day_cars`, `preview_day_car_swap`, `report_car_issue_unsafe_to_maintenance`, `approve_claim`, `close_offer`, `claim_ride_driver`); `registerTemporaryCar` (member temporary car) can leave a car without a seat configuration if the second insert fails; SQL pairing reaches its final state only after repeated `assert_car_chain` calls in a cross-day case (the final answer is right, the intermediate state is call-order-dependent).
+
+#### New questions (from R11 — the solver and the SQL healing decide one-way pairing differently)
+- **Q5.** Two opposite one-way legs whose gap at X is **shorter than the turnaround** (default 30 min): SQL leaves both as separate chauffeur rides; the solver pairs them, then cannot place the pair, so **both stay unmet**. I'd make the solver behave like SQL (no pair → each leg gets its chauffeur ride). OK?
+- **Q6.** Solver bug: when the solver shifts two overlapping legs within their flexibility to pair them, it shifts by exactly the overlap, leaving 0 minutes at X — which the turnaround buffer then always rejects, so a shift-to-pair can never succeed. I'd shift by overlap + turnaround (still within each leg's flexibility). OK?
+- **Q7.** A one-way leg with **no eligible driver** (a non-driver alone): SQL creates a missing-driver chauffeur ride (REQ §13.88); the solver leaves the request unmet with no ride. I'd have the solver create the same missing-driver ride. OK?
+- **Q8.** When SQL consolidates two legs onto one car it does **not** check seats/luggage (the solver does). I'd add the seat check and keep the separate chauffeur rides when the car is too small. OK?

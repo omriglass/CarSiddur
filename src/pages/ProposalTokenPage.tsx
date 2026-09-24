@@ -110,9 +110,13 @@ export function ProposalTokenPage() {
    * update with the service role (`supabase/functions/answer-proposal/index.ts`).
    */
   async function submitAnswer(answer: "accepted" | "declined") {
-    if (!token) return;
+    if (!token || !summaryQuery.data) return;
+    // Optional on `ProposalSummary` (older cached responses/tests); fall back to an id that
+    // matches no real cache entry rather than widening the invalidation back to `.all`.
+    const departmentId = summaryQuery.data.departmentId ?? "";
+    const weekStart = summaryQuery.data.weekStart ?? "";
     if (session) {
-      await answerViaRpc.mutateAsync({ token, accept: answer === "accepted", via: "session" });
+      await answerViaRpc.mutateAsync({ token, accept: answer === "accepted", via: "session", departmentId, weekStart });
       if (isDenyVariant && state.kind === "answerable" && state.summary.request) {
         await optOutMutation.mutateAsync({ requestId: state.summary.request.id, optOut: optOutFreed });
       }
@@ -121,6 +125,8 @@ export function ProposalTokenPage() {
         token,
         answer,
         optOut: isDenyVariant ? optOutFreed : undefined,
+        departmentId,
+        weekStart,
       });
     }
     setJustAnswered(answer);

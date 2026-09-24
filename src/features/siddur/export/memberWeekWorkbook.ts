@@ -1,5 +1,5 @@
-import { buildBoardSheet } from "@/features/sadran/export/weekWorkbook";
-import { createXlsx, type ExcelSheet } from "@/features/sadran/export/xlsx";
+import { buildBoardSheet } from "@/features/rides/export/weekWorkbook";
+import { createXlsx, type ExcelSheet } from "@/lib/xlsx";
 
 import type { BoardRide } from "../api";
 

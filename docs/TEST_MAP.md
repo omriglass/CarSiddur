@@ -48,7 +48,7 @@ Hebrew strings quoted below are copied verbatim from `src/i18n/he.member.ts` / `
 
 ### request-form — Request form & multi-day (series) requests
 
-**Paths**: `src/features/requests/components/RequestForm.tsx`,
+**Paths**: `src/features/requests/components/RequestForm.tsx` + `requestForm/**` (its field groups),
 `TemplateSuggestions.tsx`(+test), `RequestRow.tsx`(+test), `myRequestsRows.ts`(+test), `upcoming.ts`(+test), `series.ts`(+test),
 `src/pages/HomePage.tsx`, `MyHistoryPage.tsx`, `RequestsRedirect.tsx` (the one "my rides" screen, REQ §13.91),
 `templatePrefill.ts`(+test), `duplicate.ts`(+test), `mapper.ts`(+test), `duration.ts`(+test),
@@ -188,6 +188,7 @@ gap is closed.
    §13.52), confirm car names show but no lockbox code (§13.79), and no draft/unpublished data.
 5. Resize an owned ride on an already-published day; confirm a shadow-collision prompts explicit
    driver consent rather than silently overwriting another ride.
+6. Drag one car's header onto another's for a published, non-past day; confirm the confirmation
    dialog lists what moves, the swap succeeds, and everyone but you gets notified (REQ §13.92).
 
 **Coverage gap**: no spec directly asserts the private-car-hidden-on-idle-days behavior on either
@@ -228,6 +229,7 @@ content-matching `v_board_rides`/`publish_siddur`; `src/components/CarSwapDialog
    instead of an error (REQ §13.89). Claim it as a volunteer; confirm it becomes an ordinary
    one-way leg.
 8. As the Sadran, drag one car's header onto another's on an unpublished day; confirm the swap
+   applies with no notifications, and that a multi-day series leg offers "whole ride" vs "only
    this day" (REQ §13.92).
 
 **REQ**: §13.42, §13.80, §13.84, §13.89, §13.92.
@@ -262,8 +264,9 @@ matching `*proposal*`; `e2e/proposal.spec.ts`, `proposal-retry.spec.ts`, `board-
 ### ride-passengers — Ride passengers (one list per ride)
 
 **Paths**: `src/lib/ridePassengerSummary.ts`(+test), `ridePublicDetails.ts`(+test),
-`src/features/siddur/ridePeople.ts`(+test), `addPassengers.ts`(+test),
-`components/AddPassengersDialog.tsx`, `RideDetailSheet.tsx`, `RidePassengersList.tsx`;
+`src/features/rides/ridePeople.ts`(+test), `addPassengers.ts`(+test), `api.ts`, `hooks.ts`, `keys.ts`,
+`components/AddPassengersDialog.tsx`, `RidePassengersList.tsx`, `RidePublicNotesEditor.tsx` (moved from siddur, R8);
+`src/features/siddur/components/RideDetailSheet.tsx`;
 `src/features/sadran/board/reservationPeople.ts`(+test), `components/RidePassengersEditor.tsx`,
 `RideSheet.tsx`; `src/features/requests/components/JoinableRidesDialog.tsx`; `src/i18n/he.member.ts`,
 `he.sadran.ts`; migrations matching `*ride_passenger*`, `*ride_people*`, `*unified_ride_people*`;
@@ -320,7 +323,10 @@ fan-out); `src/i18n/he.sadran.ts`; migrations matching `*publish*`, `*siddur_ver
 ### solver — Solver (placement, mileage/carChoice, suggestions)
 
 **Paths**: `src/solver/**`, `src/features/solverBridge/**`, `supabase/functions/on-ride-cancelled/**`;
-migrations matching `*polic*`, `*fairness*`, `*mileage*`; `e2e/auto-approve.spec.ts`,
+migrations matching `*polic*`, `*fairness*`, `*mileage*`, `*apply_solver_result*`, `*pair_one_way_legs*`;
+`supabase/tests/fixtures/one_way_pairing_cases.json` + `scripts/test-pairing-parity.mjs` +
+`src/solver/__tests__/oneWayPairingParity.test.ts` (one-way pairing golden cases, run against both the
+solver and SQL `pair_one_way_legs`; the SQL side is the last step of `db:test`); `e2e/auto-approve.spec.ts`,
 `freed-slot.spec.ts`, `board.spec.ts`.
 
 **Automated**:
@@ -348,7 +354,7 @@ migrations matching `*polic*`, `*fairness*`, `*mileage*`; `e2e/auto-approve.spec
 
 ### notifications — Notifications & push
 
-**Paths**: `src/features/inbox/**`, `src/lib/push.ts`, `src/sw.ts`,
+**Paths**: `src/features/inbox/**`, `src/pages/InboxPage.tsx`, `src/lib/notificationEvents.ts`(+test) (event metadata mirror of SQL `notification_event_meta`), `src/lib/push.ts`, `src/sw.ts`, `src/i18n/he.ts` and `supabase/seed.sql` (notification copy / template rows),
 `supabase/functions/push-dispatch/**`; `src/i18n/he.member.ts`; migrations matching
 `*notification*`, `*notify_*`, or content-matching `enqueue_notification`; `e2e/device-setup.spec.ts`.
 
@@ -496,20 +502,24 @@ migrations matching `*polic*`, `*fairness*`, `*mileage*`; `e2e/auto-approve.spec
 
 ### rls-security — RLS / security
 
-**Paths**: migrations matching `*rls*`, `*helpers*`, `*secure*`, `*grant*`, `*protect*`, `*guard*`,
-`*access_code*`, `*permission*`, `*revoke*`; `eslint.config.js`.
+**Paths**: `src/integrations/supabase/types.ts`, `src/lib/rpc.ts`, `src/lib/enums.ts`(+test), `scripts/test-db.mjs`; migrations matching `*rls*`, `*helpers*`, `*secure*`, `*grant*`, `*protect*`, `*guard*`,
+`*access_code*`, `*permission*`, `*revoke*`, `*department_scope*`, `*status_department_guard*`; `supabase/schema-current.sql` (generated); `eslint.config.js`.
 
 **Automated**:
 - Vitest: none directly (enforced by ESLint rules — `no-restricted-syntax`/`-imports`/`-globals` in
   `eslint.config.js`, covered by `npm run lint`).
 - SQL: `rls_smoke.sql` (every table has forced RLS, no `using (true)` on writes, no `for all`
-  policies, TEST 14 checks function grants), `hardening_semantics.sql`
+  policies, TEST 14 checks function grants, TEST 18 pins every column of the tables readable
+  across departments), `hardening_semantics.sql`, `department_isolation.sql` (every browser-facing
+  SECURITY DEFINER RPC called as department A with department B's ids must refuse; fails on an
+  unclassified new RPC; `requests` status guard incl. a signed-in second party declining a proposal)
 - Playwright: no dedicated tag — RLS gaps normally surface as a 403/permission-denied inside
   whichever area's own spec exercises the affected table/RPC.
 
 **QA script**:
-1. After any RLS/grant change, run `npm run db:test` and specifically watch `rls_smoke.sql` and
-   `hardening_semantics.sql` output.
+1. After any RLS/grant change, run `npm run db:test` and specifically watch `rls_smoke.sql`,
+   `hardening_semantics.sql` and `department_isolation.sql` output. A new RPC must be classified in
+   `department_isolation.sql`; a new column on a cross-department-readable table in TEST 18.
 2. As a member of a different department, confirm you cannot read another department's draft data,
    only its published siddur (read-only, REQ §13.52), and confirm lockbox codes stay
    department-scoped (REQ §13.79).

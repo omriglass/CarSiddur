@@ -79,9 +79,12 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
 
+      # Pinned to package.json's `supabase` devDependency: the freshness diffs below compare
+      # generated output (types.ts, schema-current.sql) with files produced locally by that
+      # version, and a different CLI can bring a different Postgres image and dump format.
       - uses: supabase/setup-cli@v1
         with:
-          version: latest
+          version: 2.116.0
 
       - name: Install dependencies
         run: npm ci
@@ -94,6 +97,12 @@ jobs:
           npm run db:types
           git diff --exit-code -- src/integrations/supabase/types.ts \
             || { echo "::error::src/integrations/supabase/types.ts is stale — run 'npm run db:types' and commit"; exit 1; }
+
+      - name: Generated schema dump is fresh
+        run: |
+          npm run db:schema
+          git diff --exit-code -- supabase/schema-current.sql \
+            || { echo "::error::supabase/schema-current.sql is stale — run 'npm run db:schema' and commit"; exit 1; }
 
       - name: SQL regression suites
         run: npm run db:test

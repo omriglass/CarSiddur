@@ -2,9 +2,9 @@ import { fromZonedTime } from "date-fns-tz";
 import { useState } from "react";
 import { ridePublicDetails } from "@/lib/ridePublicDetails";
 import { ridePassengerSummary } from "@/lib/ridePassengerSummary";
-import { AddPassengersDialog } from "@/features/siddur/components/AddPassengersDialog";
-import { RidePassengersList } from "@/features/siddur/components/RidePassengersList";
-import { RidePublicNotesEditor } from "@/features/siddur/components/RidePublicNotesEditor";
+import { AddPassengersDialog } from "@/features/rides/components/AddPassengersDialog";
+import { RidePassengersList } from "@/features/rides/components/RidePassengersList";
+import { RidePublicNotesEditor } from "@/features/rides/components/RidePublicNotesEditor";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -24,7 +24,7 @@ import { TZ, dateKey, formatTime } from "@/lib/time";
 
 import { rideBlockLabel } from "../rideLabel";
 import { namedPassengersOf, servedOf, withChildNames } from "../../solverRun";
-import { peopleOf } from "@/features/siddur/ridePeople";
+import { peopleOf } from "@/features/rides/ridePeople";
 import { RidePassengersEditor } from "./RidePassengersEditor";
 
 import type { BoardRide, WeekRequestRow } from "../../api";
@@ -178,8 +178,8 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
                 </Select>
               </div>
 
-              {isPlanning ? <p className="text-destructive">{he.boardCoordination.planning}</p> : ride.id && ride.version != null && ride.status !== "cancelled" && ride.ends_at && Date.parse(ride.ends_at) > nowMs ? (
-                <RidePublicNotesEditor key={`${ride.id}:${ride.version}`} rideId={ride.id} expectedVersion={ride.version} initialNotes={ride.notes} />
+              {isPlanning ? <p className="text-destructive">{he.boardCoordination.planning}</p> : ride.id && ride.version != null && ride.status !== "cancelled" && ride.ends_at && Date.parse(ride.ends_at) > nowMs && departmentId && weekStart ? (
+                <RidePublicNotesEditor key={`${ride.id}:${ride.version}`} rideId={ride.id} expectedVersion={ride.version} initialNotes={ride.notes} departmentId={departmentId} weekStart={weekStart} />
               ) : ride.notes ? <p className="whitespace-pre-wrap break-words">{ride.notes}</p> : null}
 
               {/* F3 (20260914120000_ride_passengers.sql): editing named people on an
@@ -208,6 +208,8 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
                 people={peopleOf(ride)}
                 canManagePeople={!isPlanning}
                 rideCancelled={ride.status === "cancelled"}
+                departmentId={departmentId}
+                weekStart={weekStart}
               />
               {!isPlanning && ride.id && ride.version != null && ride.status !== "cancelled" && departmentId && weekStart ? (
                 <AddPassengersDialog

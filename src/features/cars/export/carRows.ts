@@ -1,5 +1,5 @@
 import { jerusalemExcelDate } from "@/features/sadran/export/weekWorkbook";
-import type { ExcelCell, ExcelSheet } from "@/features/sadran/export/xlsx";
+import type { ExcelCell, ExcelSheet } from "@/lib/xlsx";
 import { he } from "@/i18n/he";
 
 import { parseTireStates, type TireStates } from "../lib/history";

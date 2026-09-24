@@ -321,4 +321,65 @@ begin
   assert (ctx->>'proposalShort') like 'line one%', 'proposalShort lost the composer text';
 end $$;
 
+-- ---------------------------------------------------------------------------
+-- Item 10 (2026-09-24, docs/TODO.md R6): `notification_event_meta` is the one metadata
+-- source `enqueue_notification()` and `notification_default_url()` now read instead of five
+-- hard-coded lists (R2/R3 fixed the two TS ones: waitlist_contested/waitlist_resolved join
+-- the freedSlot mute category; the inbox tabs get their own regression in
+-- src/features/inbox/*.test.ts). This section pins the SQL side.
+-- ---------------------------------------------------------------------------
+do $$
+declare v_missing text;
+begin
+  select string_agg(e.enumlabel, ', ') into v_missing
+  from pg_enum e
+  join pg_type t on t.oid = e.enumtypid and t.typname = 'notification_event'
+  where not exists (select 1 from public.notification_event_meta m where m.event = e.enumlabel::public.notification_event);
+  assert v_missing is null, format('notification_event_meta is missing a row for: %s', v_missing);
+end $$;
+
+-- A Sadran-role event (late_request) is suppressed by an ordinary member's mute, but still
+-- delivered while the recipient is a duty Sadran of that department/week (mute bypass).
+do $$
+declare
+  dept uuid := '00000000-0000-0000-0000-000000000001';
+  sadran uuid := '00000000-0000-0000-0000-000000000102';
+  w date := public.current_week_start();
+  had_muted_events public.notification_event[];
+  n_id uuid;
+begin
+  select muted_events into had_muted_events from public.profiles where id = sadran;
+  update public.profiles set muted_events = array['late_request']::public.notification_event[] where id = sadran;
+
+  n_id := public.enqueue_notification(sadran, 'late_request', dept, w,
+    jsonb_build_object('firstName','x'), '{}'::jsonb, 'test:late_request:sadran_bypass');
+  assert n_id is not null, 'a muted duty Sadran should still receive late_request (sadran-role bypass)';
+
+  update public.profiles set muted_events = had_muted_events where id = sadran;
+end $$;
+
+do $$
+declare
+  dept uuid := '00000000-0000-0000-0000-000000000001';
+  member uuid := '00000000-0000-0000-0000-000000000104';
+  w date := public.current_week_start();
+  had_muted_events public.notification_event[];
+  n_id uuid;
+begin
+  select muted_events into had_muted_events from public.profiles where id = member;
+  update public.profiles set muted_events = array['late_request']::public.notification_event[] where id = member;
+
+  n_id := public.enqueue_notification(member, 'late_request', dept, w,
+    jsonb_build_object('firstName','x'), '{}'::jsonb, 'test:late_request:member_muted');
+  assert n_id is null, 'late_request is a Sadran-role event: a muted plain member must not receive it';
+
+  -- Never-mutable: status_changed ignores muted_events entirely, even for a plain member.
+  update public.profiles set muted_events = array['status_changed']::public.notification_event[] where id = member;
+  n_id := public.enqueue_notification(member, 'status_changed', dept, w,
+    '{}'::jsonb, '{}'::jsonb, 'test:status_changed:never_mutable');
+  assert n_id is not null, 'status_changed must never be suppressed by muted_events';
+
+  update public.profiles set muted_events = had_muted_events where id = member;
+end $$;
+
 rollback;

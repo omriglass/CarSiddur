@@ -1,7 +1,8 @@
 import { fromZonedTime } from "date-fns-tz";
 import { formatMinutes } from "@/components/timeField15Format";
 import { TZ, dateKey } from "@/lib/time";
-import type { BoardRide, RideMove } from "./api";
+import type { BoardRide } from "./api";
+import type { RideMove } from "@/features/rides/api";
 
 /** Use the ride's original Jerusalem day, ending no later than 23:59. */
 export function moveOnRideDay(ride: BoardRide, carId: string, startMinutes: number, endMinutes: number): RideMove | null {

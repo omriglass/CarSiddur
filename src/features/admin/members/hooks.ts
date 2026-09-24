@@ -63,6 +63,9 @@ function useInvalidateMembers() {
   const queryClient = useQueryClient();
   return () => {
     void queryClient.invalidateQueries({ queryKey: memberAdminKeys.all });
+    // Deliberately unscoped: a member's name, role or department membership shows on nearly
+    // every screen (board, siddur, requests, auth guards). Admin actions are rare and only
+    // mounted queries refetch, so a full refresh beats listing every dependent key.
     void queryClient.invalidateQueries();
   };
 }
