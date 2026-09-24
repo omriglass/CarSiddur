@@ -23,6 +23,13 @@ export function assertInvariants(input: SolverInput, output: SolverOutput): void
   const weekSlots = weekSlotsOf(input);
   const overnightAckByRideId = new Map<string, boolean>(input.fixedRides.map((fr: FixedRide) => [fr.id, fr.overnightAck]));
   const approvedBufferByRideId = new Map(input.fixedRides.map((fr) => [fr.id, fr.approvedBufferAfterSlots]));
+  // Both legs of a solver relay pair share one id: no buffer between them (REQUIREMENTS §13.88).
+  const relayPairIdByRideId = new Map<string, string>();
+  for (const a of output.assignments) {
+    if (a.source !== 'solver' || !a.pairedRideId) continue;
+    const [first, second] = [a.rideId, a.pairedRideId].sort();
+    relayPairIdByRideId.set(a.rideId, `pair:${first}:${second}`);
+  }
 
   const timelines = new Map<string, CarTimeline>();
   for (const car of input.cars) timelines.set(car.id, new CarTimeline(car, bufferSlots, weekSlots, input.homeLocationId));
@@ -72,6 +79,7 @@ export function assertInvariants(input: SolverInput, output: SolverOutput): void
           overnightAck: overnightAckByRideId.get(a.rideId) ?? Boolean(a.seriesId),
           approvedBufferAfterSlots: approvedBufferByRideId.get(a.rideId),
           seriesId: a.seriesId,
+          relayPairId: relayPairIdByRideId.get(a.rideId),
         };
         // Fixed rides are "still honoured" even if their recorded origin does
         // not chain from the previous ride (SOLVER §3.1) — only the solver's

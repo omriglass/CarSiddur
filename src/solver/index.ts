@@ -149,8 +149,15 @@ export function solve(input: SolverInput): SolverOutput {
   // whole chauffeur window) keep the old UNMET_NO_RELAY_PARTNER path.
   const { healed, healedIds } = chauffeurUnpairedRelayLegs(unpaired, timelines, input, carsMap, scores);
   const stillUnpairedRelay = unpaired.filter((nr) => !healedIds.has(nr.id));
+  // REQUIREMENTS §13.88 (owner 2026-09-24, docs/TODO.md Q7): a one-way leg with no eligible
+  // driver on board gets the same missing-driver chauffeur ride the SQL healing gives it
+  // (`try_widen_one_way_leg`), instead of staying unmet; only when no car has room does it
+  // keep the UNMET_PASSENGER_NO_HOST path and its merge suggestions.
+  const { healed: healedNoDriver, healedIds: healedNoDriverIds } =
+    chauffeurUnpairedRelayLegs(passengerOnly, timelines, input, carsMap, scores, 'noDriver');
+  const stillPassengerOnly = passengerOnly.filter((nr) => !healedNoDriverIds.has(nr.id));
 
-  const assignments = [...fixedAssignments, ...solverAssignments, ...healed].sort((a, b) => byId({ id: a.rideId }, { id: b.rideId }));
+  const assignments = [...fixedAssignments, ...solverAssignments, ...healed, ...healedNoDriver].sort((a, b) => byId({ id: a.rideId }, { id: b.rideId }));
 
   const servedRequestIds = new Set<string>();
   for (const a of assignments) for (const rid of a.servedRequestIds) servedRequestIds.add(rid);
@@ -169,7 +176,7 @@ export function solve(input: SolverInput): SolverOutput {
     }
   }
   for (const nr of stillUnpairedRelay) unmetIds.set(nr.id, nr);
-  for (const nr of passengerOnly) unmetIds.set(nr.id, nr);
+  for (const nr of stillPassengerOnly) unmetIds.set(nr.id, nr);
   // Anything normalized but not served and not otherwise captured (defensive).
   for (const nr of normalized) if (!servedRequestIds.has(nr.id)) unmetIds.set(nr.id, unmetIds.get(nr.id) ?? nr);
 
@@ -192,7 +199,7 @@ export function solve(input: SolverInput): SolverOutput {
         suggestionCtx,
         blockers.map((b) => b.carId),
       );
-      const reasonCode = passengerOnly.includes(nr)
+      const reasonCode = stillPassengerOnly.includes(nr)
         ? 'UNMET_PASSENGER_NO_HOST'
         : stillUnpairedRelay.includes(nr)
           ? 'UNMET_NO_RELAY_PARTNER'

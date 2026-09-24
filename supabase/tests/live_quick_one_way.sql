@@ -36,9 +36,15 @@ begin
   assert q.status='waitlisted' and q.status_reason='UNMET_NEEDS_DRIVER','driver vacancy counted fulfilled';
   assert exists(select 1 from public.ride_requests where ride_id=ride.id and request_id=req and role='passenger' and leg='out' and car_mode='chauffeur'),'passenger leg missing';
   insert into quick_fixture_ids values('public_request',req),('public_ride',ride.id);
+  -- REQ §13.88 (owner 2026-09-24): this return leg (arriving 09:30 at X, leaving 09:30) would now
+  -- pair with the out-leg above — any non-overlapping gap pairs. Pairing is covered at the end of
+  -- this suite; here the requester is a non-driver for one step, so the leg cannot pair and the
+  -- busy-preferred-car fallback stays under test.
+  update public.profiles set does_not_drive=true where id=member;
   -- Same occupied window: arrival-only keeps its selected arrival and falls back to another car.
   second:=public.submit_request((payload-array['guest_passenger_names','companion_ids','ride_description','notes'])||jsonb_build_object(
     'trip_shape','one_way_from','depart_at',null,'return_at',dt+interval '1 hour','adults',1));
+  update public.profiles set does_not_drive=false where id=member;
   assert (second->>'needs_driver')::boolean and second->>'car_id'=car2::text,'busy preference did not fall back';
   assert (second->>'starts_at')::timestamptz=dt and (second->>'ends_at')::timestamptz=dt+interval '1 hour','arrival-only car window not anchored to arrival';
   assert exists(select 1 from public.ride_requests where ride_id=(second->>'ride_id')::uuid and leg='return'),'arrival-only leg incorrect';
@@ -133,4 +139,33 @@ do $$begin
   assert not exists(select 1 from public.request_companions where request_id=(select id from quick_fixture_ids where k='public_request')),'cancelled ride still exposed public companion names';
 end $$;
 reset role;
+-- REQ §13.88 (owner 2026-09-24): a quick return reservation that meets an earlier quick out-leg
+-- at the same X — even with 0 minutes between them — pairs both into driven relay legs on one
+-- car, and the reservation reports `assigned`/RELAY_PAIRED instead of a missing-driver vacancy.
+do $$
+declare
+  dept uuid:='00000000-0000-0000-0000-000000000001';
+  member uuid:='00000000-0000-0000-0000-000000000103'; other uuid:='00000000-0000-0000-0000-000000000104';
+  dest uuid:='00000000-0000-0000-0000-000000000011'; typ uuid:='00000000-0000-0000-0000-000000000021';
+  w date:=public.current_week_start()+112; dt timestamptz; first jsonb; second jsonb;
+begin
+  dt:=((w+3)+time '09:00') at time zone 'Asia/Jerusalem';  -- travel 20 min: arrives 09:30 (quarter hour)
+  perform set_config('request.jwt.claims',jsonb_build_object('sub',member,'role','authenticated')::text,true);
+  first:=public.submit_request(jsonb_build_object('department_id',dept,'week_start',w,'destination_id',dest,'ride_type_id',typ,
+    'trip_shape','one_way_to','depart_at',dt,'reserve_missing_driver',true,'adults',1));
+  assert (first->>'needs_driver')::boolean,'a lone quick out-leg is a missing-driver chauffeur ride';
+  perform set_config('request.jwt.claims',jsonb_build_object('sub',other,'role','authenticated')::text,true);
+  second:=public.submit_request(jsonb_build_object('department_id',dept,'week_start',w,'destination_id',dest,'ride_type_id',typ,
+    'trip_shape','one_way_from','return_at',dt+interval '1 hour','reserve_missing_driver',true,'adults',1));
+  assert second->>'status'='assigned' and second->>'reason'='RELAY_PAIRED' and not (second->>'needs_driver')::boolean,
+    format('a quick return leg that pairs must report assigned/RELAY_PAIRED, got %s', second);
+  assert (select bool_and(rr.car_mode='relay' and rr.role='driver') and count(distinct r.car_id)=1
+          from public.ride_requests rr join public.rides r on r.id=rr.ride_id
+          where rr.request_id in ((first->>'request_id')::uuid,(second->>'request_id')::uuid)),
+    'both quick legs must be driven relay legs on one car';
+  assert (select bool_and(status='assigned') from public.requests where id in ((first->>'request_id')::uuid,(second->>'request_id')::uuid)),
+    'both paired requests must be assigned';
+end $$;
+set constraints all immediate;
+set constraints all deferred;
 rollback;

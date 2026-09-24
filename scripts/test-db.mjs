@@ -12,3 +12,15 @@ for (const file of ["rls_smoke.sql", "admin_member_fixes.sql", "solve_semantics.
     stdio: ["pipe", "inherit", "inherit"],
   });
 }
+
+// One-way relay-pair-vs-chauffeur parity golden cases (docs/TODO.md "Code review
+// 2026-09-24" R11): exercises pair_one_way_legs()/assert_car_chain against a real
+// database, checked against the same fixture the TS solver's own parity test uses
+// (src/solver/__tests__/oneWayPairingParity.test.ts). Not one of the transactional
+// SQL suites above (it builds and runs its own script, and reports SKIP for cases
+// with a recorded knownDivergence instead of failing the whole run).
+console.log("Database checks: pairing parity (one-way relay vs chauffeur)");
+execFileSync(process.execPath, [new URL("./test-pairing-parity.mjs", import.meta.url).pathname], {
+  env: { ...process.env, SUPABASE_DB_CONTAINER: container },
+  stdio: "inherit",
+});

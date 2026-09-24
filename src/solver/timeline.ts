@@ -23,6 +23,10 @@ export interface Block {
    *  seriesId are contiguous by construction and need no buffer between them, even though the
    *  ordinary buffer rule still applies against every other block/maintenance entry. */
   seriesId?: string;
+  /** set on both legs of a one-way relay pair (REQUIREMENTS §13.88, owner 2026-09-24): the car
+   *  just waits at the destination between the two legs, so they need no buffer between them —
+   *  only a true overlap counts. The ordinary buffer still applies to every other block. */
+  relayPairId?: string;
 }
 
 export interface Gap {
@@ -65,11 +69,12 @@ export class CarTimeline {
     return location;
   }
 
-  private overlapsAnything(start: number, end: number, fixed?: Block, seriesId?: string): boolean {
+  private overlapsAnything(start: number, end: number, fixed?: Block, seriesId?: string, relayPairId?: string): boolean {
     for (const b of this.blocks) {
-      if (seriesId !== undefined && b.seriesId === seriesId) {
-        // Contiguous siblings of the same multi-day series never need a
-        // buffer between them (SOLVER §3.x) — only a true overlap counts.
+      if ((seriesId !== undefined && b.seriesId === seriesId) || (relayPairId !== undefined && b.relayPairId === relayPairId)) {
+        // Contiguous siblings of the same multi-day series, and the two legs of
+        // one relay pair, never need a buffer between them (SOLVER §3.x,
+        // §3.6.1) — only a true overlap counts.
         if (tooClose(start, end, b.window.start, b.window.end, 0)) return true;
       } else if (fixed && this.fixedRideIds.has(b.rideId)) {
         const approved = (slots: number | undefined) => slots != null && Number.isFinite(slots) ? Math.max(0, Math.min(this.bufferSlots, slots)) : this.bufferSlots;
@@ -83,9 +88,9 @@ export class CarTimeline {
   }
 
   /** Free AND the car is at `originId` when `w` starts. */
-  isFree(w: Window, originId: string): boolean {
+  isFree(w: Window, originId: string, relayPairId?: string): boolean {
     if (w.end <= w.start) return false;
-    if (this.overlapsAnything(w.start, w.end)) return false;
+    if (this.overlapsAnything(w.start, w.end, undefined, undefined, relayPairId)) return false;
     return this.locationAt(w.start) === originId;
   }
 
@@ -97,7 +102,7 @@ export class CarTimeline {
         `CarTimeline.add: block ${b.rideId} starts at ${b.startLocationId} but car ${this.car.id} is at ${actual}`,
       );
     }
-    if (this.overlapsAnything(b.window.start, b.window.end, undefined, b.seriesId)) {
+    if (this.overlapsAnything(b.window.start, b.window.end, undefined, b.seriesId, b.relayPairId)) {
       throw new Error(`CarTimeline.add: block ${b.rideId} overlaps an existing block/maintenance on car ${this.car.id}`);
     }
     const idx = this.blocks.findIndex((x) => x.window.start > b.window.start);

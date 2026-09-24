@@ -36,6 +36,21 @@ describe('CarTimeline', () => {
     expect(noBuffer.isFree({ start: 10, end: 20 }, HOME)).toBe(true);
   });
 
+  it('the two legs of one relay pair need no buffer between them, but still may not overlap (REQ §13.88, owner 2026-09-24)', () => {
+    const tl = bufferedTl(2); // 30 min
+    tl.add({ rideId: 'out', window: { start: 0, end: 10 }, startLocationId: HOME, endLocationId: 'X', overnightAck: false, relayPairId: 'p1' });
+    // Same pair: back-to-back at X is fine, an overlap is not.
+    expect(tl.isFree({ start: 10, end: 20 }, 'X', 'p1')).toBe(true);
+    expect(tl.isFree({ start: 9, end: 20 }, 'X', 'p1')).toBe(false);
+    // Anything else (another pair, or no pair) keeps the full buffer.
+    expect(tl.isFree({ start: 10, end: 20 }, 'X', 'p2')).toBe(false);
+    expect(tl.isFree({ start: 10, end: 20 }, 'X')).toBe(false);
+    tl.add({ rideId: 'ret', window: { start: 10, end: 20 }, startLocationId: 'X', endLocationId: HOME, overnightAck: false, relayPairId: 'p1' });
+    // After the pair, the next ride still needs the buffer.
+    expect(tl.isFree({ start: 20, end: 30 }, HOME)).toBe(false);
+    expect(tl.isFree({ start: 22, end: 30 }, HOME)).toBe(true);
+  });
+
   it('a ride abutting maintenance needs the buffer too', () => {
     const car = makeCar('C1', { maintenance: [{ start: 10, end: 20 }] });
     const tl = new CarTimeline(car, 2, WEEK_SLOTS, HOME);

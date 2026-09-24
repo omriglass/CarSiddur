@@ -112,17 +112,30 @@ describe('one-way requests without a stated mode (REQUIREMENTS §13.88)', () => 
     expect(merge).toBeDefined();
   });
 
-  it('a non-driver with no host falls back to a chauffeur suggestion', () => {
+  it('a lone non-driver one-way leg is placed as a missing-driver chauffeur ride (REQUIREMENTS §13.88, owner 2026-09-24)', () => {
     const input = baseInput({
       cars: [makeCar('C1', { seatConfigs: [passengers(4)] })],
       requests: [makeRequest({ id: 'R1', tripShape: 'one_way_to', canDrive: false, departureMs: slotMs(40) })],
     });
     const output = solve(input);
+    expect(output.unmet.find((u) => u.requestId === 'R1')).toBeUndefined();
+    const ride = output.assignments.find((a) => a.servedRequestIds.includes('R1'));
+    expect(ride?.reasonCode).toBe('PLACED_NEEDS_DRIVER');
+    expect(ride?.driverMemberId).toBeUndefined();
+    expect(ride?.originId).toBe('home');
+    expect(ride?.destinationId).toBe('home');
+    expect(ride?.legs[0]?.carMode).toBe('chauffeur');
+    expect(ride?.legs[0]?.role).toBe('passenger');
+  });
+
+  it('a non-driver one-way leg no car has room for stays unmet (UNMET_PASSENGER_NO_HOST)', () => {
+    const input = baseInput({
+      cars: [makeCar('C1', { seatConfigs: [passengers(4)], maintenance: [{ start: 0, end: 96 * 7 }] })],
+      requests: [makeRequest({ id: 'R1', tripShape: 'one_way_to', canDrive: false, departureMs: slotMs(40) })],
+    });
+    const output = solve(input);
     const unmet = output.unmet.find((u) => u.requestId === 'R1');
-    expect(unmet).toBeDefined();
-    const chauffeur = unmet?.suggestions.find((s) => s.kind === 'chauffeur');
-    expect(chauffeur).toBeDefined();
-    expect(unmet?.suggestions.some((s) => s.kind === 'merge')).toBe(false);
+    expect(unmet?.reasonCode).toBe('UNMET_PASSENGER_NO_HOST');
   });
 });
 

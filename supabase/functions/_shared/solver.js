@@ -635,6 +635,13 @@ function candidatesByDistance(bounds, preferred) {
   out.sort((a, b) => Math.abs(a - preferred) - Math.abs(b - preferred) || a - b);
   return out;
 }
+function relayPairIdOf(outRequestId, returnRequestId) {
+  return `relay:${outRequestId}:${returnRequestId}`;
+}
+function shortRelayGapMinutes(outWindow, returnWindow, bufferMinutes) {
+  const gapMinutes = slotsToMinutes(returnWindow.start - outWindow.end);
+  return gapMinutes < bufferMinutes ? Math.max(0, gapMinutes) : void 0;
+}
 function trySeriesOnCar(tl, legs, seriesCount) {
   const first = legs[0];
   const last = legs[legs.length - 1];
@@ -763,14 +770,16 @@ function runGreedy(units, timelines, input) {
         if (pair.outWindow.end > pair.returnWindow.start) continue;
         if (!tl2.isFree(pair.outWindow, input.homeLocationId)) continue;
         const outRideId = `ride:${outNr.id}`;
+        const relayPairId2 = relayPairIdOf(outNr.id, retNr.id);
         tl2.add({
           rideId: outRideId,
           window: pair.outWindow,
           startLocationId: input.homeLocationId,
           endLocationId: pair.destinationId,
-          overnightAck: false
+          overnightAck: false,
+          relayPairId: relayPairId2
         });
-        const returnOk = tl2.isFree(pair.returnWindow, pair.destinationId);
+        const returnOk = tl2.isFree(pair.returnWindow, pair.destinationId, relayPairId2);
         tl2.remove(outRideId);
         if (!returnOk) continue;
         const shiftCost = pair.shiftCost;
@@ -789,19 +798,22 @@ function runGreedy(units, timelines, input) {
         continue;
       }
       const tl = timelines.get(best.car.id);
+      const relayPairId = relayPairIdOf(outNr.id, retNr.id);
       tl?.add({
         rideId: `ride:${outNr.id}`,
         window: pair.outWindow,
         startLocationId: input.homeLocationId,
         endLocationId: pair.destinationId,
-        overnightAck: false
+        overnightAck: false,
+        relayPairId
       });
       tl?.add({
         rideId: `ride:${retNr.id}`,
         window: pair.returnWindow,
         startLocationId: pair.destinationId,
         endLocationId: input.homeLocationId,
-        overnightAck: false
+        overnightAck: false,
+        relayPairId
       });
       trackKm(best.car.id, destinationKm(input, pair.destinationId) * 2);
       placed.push({ kind: "pair", pair, outNr, retNr, carId: best.car.id });
@@ -937,6 +949,7 @@ function toAssignments(placed, input, carsById) {
         luggageCount: outNr.luggage ? 1 : 0,
         shift: outShift,
         pairedRideId: retRideId,
+        turnaroundAfterMinutes: shortRelayGapMinutes(pair.outWindow, pair.returnWindow, input.config.bufferMinutes),
         source: "solver",
         reasonCode: "PLACED_RELAY_PAIR",
         reason: text
@@ -1299,9 +1312,9 @@ var CarTimeline = class {
     }
     return location;
   }
-  overlapsAnything(start, end, fixed, seriesId) {
+  overlapsAnything(start, end, fixed, seriesId, relayPairId) {
     for (const b of this.blocks) {
-      if (seriesId !== void 0 && b.seriesId === seriesId) {
+      if (seriesId !== void 0 && b.seriesId === seriesId || relayPairId !== void 0 && b.relayPairId === relayPairId) {
         if (tooClose(start, end, b.window.start, b.window.end, 0)) return true;
       } else if (fixed && this.fixedRideIds.has(b.rideId)) {
         const approved = (slots) => slots != null && Number.isFinite(slots) ? Math.max(0, Math.min(this.bufferSlots, slots)) : this.bufferSlots;
@@ -1314,9 +1327,9 @@ var CarTimeline = class {
     return false;
   }
   /** Free AND the car is at `originId` when `w` starts. */
-  isFree(w, originId) {
+  isFree(w, originId, relayPairId) {
     if (w.end <= w.start) return false;
-    if (this.overlapsAnything(w.start, w.end)) return false;
+    if (this.overlapsAnything(w.start, w.end, void 0, void 0, relayPairId)) return false;
     return this.locationAt(w.start) === originId;
   }
   /** Inserts a block; rejects (throws) one whose start location mismatches the car's actual location. */
@@ -1327,7 +1340,7 @@ var CarTimeline = class {
         `CarTimeline.add: block ${b.rideId} starts at ${b.startLocationId} but car ${this.car.id} is at ${actual}`
       );
     }
-    if (this.overlapsAnything(b.window.start, b.window.end, void 0, b.seriesId)) {
+    if (this.overlapsAnything(b.window.start, b.window.end, void 0, b.seriesId, b.relayPairId)) {
       throw new Error(`CarTimeline.add: block ${b.rideId} overlaps an existing block/maintenance on car ${this.car.id}`);
     }
     const idx = this.blocks.findIndex((x) => x.window.start > b.window.start);
@@ -1465,6 +1478,12 @@ function assertInvariants(input, output) {
   const weekSlots = weekSlotsOf(input);
   const overnightAckByRideId = new Map(input.fixedRides.map((fr) => [fr.id, fr.overnightAck]));
   const approvedBufferByRideId = new Map(input.fixedRides.map((fr) => [fr.id, fr.approvedBufferAfterSlots]));
+  const relayPairIdByRideId = /* @__PURE__ */ new Map();
+  for (const a of output.assignments) {
+    if (a.source !== "solver" || !a.pairedRideId) continue;
+    const [first, second] = [a.rideId, a.pairedRideId].sort();
+    relayPairIdByRideId.set(a.rideId, `pair:${first}:${second}`);
+  }
   const timelines = /* @__PURE__ */ new Map();
   for (const car of input.cars) timelines.set(car.id, new CarTimeline(car, bufferSlots, weekSlots, input.homeLocationId));
   const byCar = /* @__PURE__ */ new Map();
@@ -1507,7 +1526,8 @@ function assertInvariants(input, output) {
           endLocationId: a.destinationId,
           overnightAck: overnightAckByRideId.get(a.rideId) ?? Boolean(a.seriesId),
           approvedBufferAfterSlots: approvedBufferByRideId.get(a.rideId),
-          seriesId: a.seriesId
+          seriesId: a.seriesId,
+          relayPairId: relayPairIdByRideId.get(a.rideId)
         };
         if (a.source === "fixed") tl.forceAdd(block);
         else tl.add(block);
@@ -2080,7 +2100,7 @@ function chauffeurWindow(side, point, travelSlots, dwellSlots) {
   const total = travelSlots * 2 + dwellSlots;
   return side === "out" ? { start: point, end: point + total } : { start: point - total, end: point };
 }
-function chauffeurUnpairedRelayLegs(unpaired, timelines, input, carsById, scores) {
+function chauffeurUnpairedRelayLegs(unpaired, timelines, input, carsById, scores, cause = "noReturner") {
   const healed = [];
   const healedIds = /* @__PURE__ */ new Set();
   const dwellSlots = minutesToSlots(input.config.chauffeurDwellMinutes);
@@ -2117,7 +2137,8 @@ function chauffeurUnpairedRelayLegs(unpaired, timelines, input, carsById, scores
     const car = carsById.get(carId);
     const rideId = `ride:${nr.id}`;
     tl.add({ rideId, window, startLocationId: home, endLocationId: home, overnightAck: false });
-    const text = reason("PLACED_CHAUFFEUR_NO_RETURNER", {
+    const reasonCode = cause === "noDriver" ? "PLACED_NEEDS_DRIVER" : "PLACED_CHAUFFEUR_NO_RETURNER";
+    const text = cause === "noDriver" ? reason("PLACED_NEEDS_DRIVER", { car: car?.name ?? carId }) : reason("PLACED_CHAUFFEUR_NO_RETURNER", {
       car: car?.name ?? carId,
       dest: nr.destinationId,
       dep: formatSlotTime(window.start, day),
@@ -2146,7 +2167,7 @@ function chauffeurUnpairedRelayLegs(unpaired, timelines, input, carsById, scores
       luggageCount,
       shift: { departureMin: 0, returnMin: 0 },
       source: "solver",
-      reasonCode: "PLACED_CHAUFFEUR_NO_RETURNER",
+      reasonCode,
       reason: text
     });
     healedIds.add(nr.id);
@@ -2710,7 +2731,9 @@ function solve(input) {
   const solverAssignments = toAssignments(finalPlaced, input, carsMap);
   const { healed, healedIds } = chauffeurUnpairedRelayLegs(unpaired, timelines, input, carsMap, scores);
   const stillUnpairedRelay = unpaired.filter((nr) => !healedIds.has(nr.id));
-  const assignments = [...fixedAssignments, ...solverAssignments, ...healed].sort((a, b) => byId({ id: a.rideId }, { id: b.rideId }));
+  const { healed: healedNoDriver, healedIds: healedNoDriverIds } = chauffeurUnpairedRelayLegs(passengerOnly, timelines, input, carsMap, scores, "noDriver");
+  const stillPassengerOnly = passengerOnly.filter((nr) => !healedNoDriverIds.has(nr.id));
+  const assignments = [...fixedAssignments, ...solverAssignments, ...healed, ...healedNoDriver].sort((a, b) => byId({ id: a.rideId }, { id: b.rideId }));
   const servedRequestIds = /* @__PURE__ */ new Set();
   for (const a of assignments) for (const rid of a.servedRequestIds) servedRequestIds.add(rid);
   const unmetIds = /* @__PURE__ */ new Map();
@@ -2723,7 +2746,7 @@ function solve(input) {
     }
   }
   for (const nr of stillUnpairedRelay) unmetIds.set(nr.id, nr);
-  for (const nr of passengerOnly) unmetIds.set(nr.id, nr);
+  for (const nr of stillPassengerOnly) unmetIds.set(nr.id, nr);
   for (const nr of normalized) if (!servedRequestIds.has(nr.id)) unmetIds.set(nr.id, unmetIds.get(nr.id) ?? nr);
   const hosts2 = buildHostRides(assignments, carsMap);
   const suggestionCtx = {
@@ -2741,7 +2764,7 @@ function solve(input) {
       suggestionCtx,
       blockers.map((b) => b.carId)
     );
-    const reasonCode = passengerOnly.includes(nr) ? "UNMET_PASSENGER_NO_HOST" : stillUnpairedRelay.includes(nr) ? "UNMET_NO_RELAY_PARTNER" : "UNMET_NO_CAR";
+    const reasonCode = stillPassengerOnly.includes(nr) ? "UNMET_PASSENGER_NO_HOST" : stillUnpairedRelay.includes(nr) ? "UNMET_NO_RELAY_PARTNER" : "UNMET_NO_CAR";
     const reasonText = reasonCode === "UNMET_NO_RELAY_PARTNER" ? reason("UNMET_NO_RELAY_PARTNER", { dest: nr.destinationId, dayEnd: "23:59" }) : reasonCode === "UNMET_PASSENGER_NO_HOST" ? reason("UNMET_NEEDS_DRIVER", { dest: nr.destinationId, dep: "" }) : reason("UNMET_NO_CAR", { blockers: blockers.map((b) => b.carId).join(", ") });
     return {
       requestId: nr.id,

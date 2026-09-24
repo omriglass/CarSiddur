@@ -439,6 +439,8 @@ export interface ApplyPayloadRide {
   driver_id: string | null;
   /** The solver's healing ride next to a lone relay leg — serves nobody, moves the car; `assert_car_chain()` owns its lifecycle. */
   auto_relocation?: boolean;
+  /** Out-leg of a relay pair with less than the turnaround at X (REQ §13.88, owner 2026-09-24): the actual gap, stored as `rides.turnaround_override_minutes`. */
+  turnaround_override_minutes?: number;
   is_pinned: boolean;
   pin_reason: string | null;
   served: ApplyPayloadServed[];
@@ -524,6 +526,7 @@ export function buildApplyPayload(params: {
       destination_id: a.destinationId,
       driver_id: driverMemberId,
       ...(driverMemberId === null && a.legs.length === 0 ? { auto_relocation: true } : {}),
+      ...(a.turnaroundAfterMinutes !== undefined ? { turnaround_override_minutes: a.turnaroundAfterMinutes } : {}),
       is_pinned: false,
       pin_reason: null,
       served: a.legs.map((l) => ({ request_id: l.requestId, role: l.role, leg: l.leg, car_mode: l.carMode })),

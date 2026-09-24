@@ -196,6 +196,10 @@ export function chauffeurUnpairedRelayLegs(
   input: SolverInput,
   carsById: Map<string, Car>,
   scores: Map<string, { total: number }>,
+  /** 'noReturner' (default): an unpaired relay candidate; 'noDriver': a lone one-way leg with no
+   *  eligible driver on board (REQUIREMENTS §13.88, owner 2026-09-24 — same chauffeur ride the SQL
+   *  healing creates, waiting for a volunteer driver). */
+  cause: 'noReturner' | 'noDriver' = 'noReturner',
 ): ChauffeurHealResult {
   const healed: Assignment[] = [];
   const healedIds = new Set<string>();
@@ -242,12 +246,15 @@ export function chauffeurUnpairedRelayLegs(
     const rideId = `ride:${nr.id}`;
     tl.add({ rideId, window, startLocationId: home, endLocationId: home, overnightAck: false });
 
-    const text = reason('PLACED_CHAUFFEUR_NO_RETURNER', {
-      car: car?.name ?? carId,
-      dest: nr.destinationId,
-      dep: formatSlotTime(window.start, day),
-      ret: formatSlotTime(window.end, day),
-    });
+    const reasonCode = cause === 'noDriver' ? 'PLACED_NEEDS_DRIVER' : 'PLACED_CHAUFFEUR_NO_RETURNER';
+    const text = cause === 'noDriver'
+      ? reason('PLACED_NEEDS_DRIVER', { car: car?.name ?? carId })
+      : reason('PLACED_CHAUFFEUR_NO_RETURNER', {
+          car: car?.name ?? carId,
+          dest: nr.destinationId,
+          dep: formatSlotTime(window.start, day),
+          ret: formatSlotTime(window.end, day),
+        });
 
     healed.push({
       rideId,
@@ -272,7 +279,7 @@ export function chauffeurUnpairedRelayLegs(
       luggageCount,
       shift: { departureMin: 0, returnMin: 0 },
       source: 'solver',
-      reasonCode: 'PLACED_CHAUFFEUR_NO_RETURNER',
+      reasonCode,
       reason: text,
     });
 

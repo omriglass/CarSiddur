@@ -1,0 +1,230 @@
+{
+  "_comment": "Shared golden cases for one-way relay-pair-vs-chauffeur healing (REQ §13.88/§13.89, rule made precise 2026-09-16). Consumed by both src/solver/__tests__/oneWayPairingParity.test.ts (maps each case into a minimal SolverInput and calls solve()) and scripts/test-pairing-parity.mjs (inserts matching requests/rides and calls assert_car_chain against a real local Supabase). Slots are absolute 15-minute indices from week start (0..671, 96 per day), the same convention src/solver/__fixtures__/gen.ts uses (slotMs(slot)). turnaroundMinutes/dwellMinutes/destinations.*.travelMinutes mirror src/solver/__fixtures__/gen.ts's defaultConfig()/makeDestinations() defaults and department_settings' defaults (20260907090100_identity.sql) so both sides do the same arithmetic.",
+  "config": {
+    "turnaroundMinutes": 30,
+    "dwellMinutes": 10,
+    "destinations": {
+      "destA": {
+        "travelMinutes": 30
+      },
+      "destB": {
+        "travelMinutes": 45
+      }
+    }
+  },
+  "cases": [
+    {
+      "id": "lone_leg_no_partner",
+      "description": "A single driver-eligible one-way out-leg with no matching return leg anywhere heals into a standalone chauffeur ride on both sides (REQ §13.88 base case).",
+      "destination": "destA",
+      "out": {
+        "departSlot": 40,
+        "canDrive": true
+      },
+      "return": null,
+      "expectedSql": {
+        "out": "chauffeur"
+      },
+      "expectedTs": {
+        "out": "chauffeur"
+      },
+      "knownDivergence": null
+    },
+    {
+      "id": "basic_relay_pair",
+      "description": "Out ends at slot 42, return starts at slot 45 (45 minutes at X, over the 30-minute turnaround). The two legs deliberately start on two different, otherwise-free shared cars (two independent live one-way reservations); both sides pair them onto one car. Regression for the cross-car exclusion bug fixed in 20260924110400.",
+      "destination": "destA",
+      "out": {
+        "departSlot": 40,
+        "canDrive": true
+      },
+      "return": {
+        "returnSlot": 47,
+        "canDrive": true
+      },
+      "expectedSql": {
+        "out": "relay_pair",
+        "return": "relay_pair"
+      },
+      "expectedTs": {
+        "out": "relay_pair",
+        "return": "relay_pair"
+      }
+    },
+    {
+      "id": "exact_turnaround_boundary",
+      "description": "The gap at X exactly equals the 30-minute turnaround, legs starting on different cars; both sides pair them (since Q5, 2026-09-24, any non-overlapping gap pairs).",
+      "destination": "destA",
+      "out": {
+        "departSlot": 40,
+        "canDrive": true
+      },
+      "return": {
+        "returnSlot": 46,
+        "canDrive": true
+      },
+      "expectedSql": {
+        "out": "relay_pair",
+        "return": "relay_pair"
+      },
+      "expectedTs": {
+        "out": "relay_pair",
+        "return": "relay_pair"
+      }
+    },
+    {
+      "id": "gap_zero_back_to_back",
+      "description": "Out ends exactly when the return leg starts (0 minutes at X). Owner 2026-09-24 (docs/TODO.md Q5): a relay pair shorter than the turnaround still pairs — the car just waits at X — so both sides form the pair; the out-leg stores the actual gap as its turnaround override.",
+      "destination": "destA",
+      "out": {
+        "departSlot": 40,
+        "canDrive": true
+      },
+      "return": {
+        "returnSlot": 44,
+        "canDrive": true
+      },
+      "expectedSql": {
+        "out": "relay_pair",
+        "return": "relay_pair"
+      },
+      "expectedTs": {
+        "out": "relay_pair",
+        "return": "relay_pair"
+      }
+    },
+    {
+      "id": "gap_15min_under_turnaround",
+      "description": "15 minutes at X, half the 30-minute turnaround. Same rule as gap_zero_back_to_back: still a relay pair on both sides (owner 2026-09-24, Q5).",
+      "destination": "destA",
+      "out": {
+        "departSlot": 40,
+        "canDrive": true
+      },
+      "return": {
+        "returnSlot": 45,
+        "canDrive": true
+      },
+      "expectedSql": {
+        "out": "relay_pair",
+        "return": "relay_pair"
+      },
+      "expectedTs": {
+        "out": "relay_pair",
+        "return": "relay_pair"
+      }
+    },
+    {
+      "id": "different_destination_no_pair",
+      "description": "Out leg to destA, return leg from destB -- times would otherwise be compatible (30min idle, meets turnaround) but the destinations differ, so neither side ever considers pairing. Both implementations agree.",
+      "out": {
+        "departSlot": 40,
+        "canDrive": true,
+        "destination": "destA"
+      },
+      "return": {
+        "returnSlot": 47,
+        "canDrive": true,
+        "destination": "destB"
+      },
+      "expectedSql": {
+        "out": "chauffeur",
+        "return": "chauffeur"
+      },
+      "expectedTs": {
+        "out": "chauffeur",
+        "return": "chauffeur"
+      },
+      "knownDivergence": null
+    },
+    {
+      "id": "different_day_no_pair",
+      "description": "Out leg on day 0, return leg on day 3 (huge idle gap by slot count, but a different calendar day). TS's tryPair explicitly rejects a dayIndex mismatch, so both legs are independently chauffeured directly. SQL's pair_one_way_legs itself has NO same-day check (empirically verified against a real local Supabase: called alone, it happily pairs a day-0 out-leg with a day-3 return-leg into relay legs) -- but the two ends up back at independent chauffeur rides anyway, because assert_car_chain's day-end/overnight-gap walk (which runs right after pairing, in the same call) immediately notices the freshly-paired out-leg's car is now away from home with no next same-day ride and calls try_widen_one_way_leg to convert it straight back to a chauffeur ride, then does the same for the return leg. Final persisted state agrees with TS, but by a completely different and more fragile mechanism (transient pair-then-unpair within one call, rather than never pairing) -- flagged in the report as a mechanism note, not a behavioural divergence.",
+      "destination": "destA",
+      "out": {
+        "departSlot": 40,
+        "canDrive": true
+      },
+      "return": {
+        "returnSlot": 300,
+        "canDrive": true
+      },
+      "expectedSql": {
+        "out": "chauffeur",
+        "return": "chauffeur"
+      },
+      "expectedTs": {
+        "out": "chauffeur",
+        "return": "chauffeur"
+      },
+      "knownDivergence": null
+    },
+    {
+      "id": "non_driver_leg",
+      "description": "The out leg's requester cannot drive and names no driving companion, so it has no eligible driver and never pairs. Both sides give it a missing-driver chauffeur ride (owner 2026-09-24, docs/TODO.md Q7); the return leg, left alone, is a chauffeur ride too.",
+      "destination": "destA",
+      "out": {
+        "departSlot": 40,
+        "canDrive": false
+      },
+      "return": {
+        "returnSlot": 47,
+        "canDrive": true
+      },
+      "expectedSql": {
+        "out": "chauffeur",
+        "return": "chauffeur"
+      },
+      "expectedTs": {
+        "out": "chauffeur",
+        "return": "chauffeur"
+      }
+    },
+    {
+      "id": "driving_companion_present",
+      "description": "The out leg's requester cannot drive but names a driving companion, who becomes the leg's driver (REQUIREMENTS §13.88). 45 minutes at X, legs starting on different cars; both sides pair them, driven by the companion.",
+      "destination": "destA",
+      "out": {
+        "departSlot": 40,
+        "canDrive": false,
+        "companionCanDrive": true
+      },
+      "return": {
+        "returnSlot": 47,
+        "canDrive": true
+      },
+      "expectedSql": {
+        "out": "relay_pair",
+        "return": "relay_pair"
+      },
+      "expectedTs": {
+        "out": "relay_pair",
+        "return": "relay_pair"
+      }
+    },
+    {
+      "id": "shift_required_for_overlap",
+      "description": "Raw times overlap (out ends at slot 44, the return's natural window starts at slot 42) but each side declares enough flexibility to close the overlap. The solver shifts within flexibility and now pairs them (the shift leaves 0 minutes at X, which a relay pair accepts since owner decision Q5, 2026-09-24).",
+      "destination": "destA",
+      "out": {
+        "departSlot": 42,
+        "canDrive": true,
+        "flexEarlierMin": 60
+      },
+      "return": {
+        "returnSlot": 44,
+        "canDrive": true,
+        "flexLaterMin": 60
+      },
+      "expectedSql": {
+        "out": "chauffeur",
+        "return": "chauffeur"
+      },
+      "expectedTs": {
+        "out": "relay_pair",
+        "return": "relay_pair"
+      },
+      "knownDivergence": "By design: SQL healing (pair_one_way_legs) works on the requests' stored times and never shifts a member's own request, so the raw overlap cannot pair and each leg heals into its own chauffeur ride; only the solver may shift within declared flexibility."
+    }
+  ]
+}

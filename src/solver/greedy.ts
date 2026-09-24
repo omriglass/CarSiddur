@@ -20,6 +20,7 @@ import {
   dayBoundsForSlot,
   eligibleDriverMemberId,
   formatSlotTime,
+  slotsToMinutes,
   withinRequestDay,
   type NormalizedRequest,
   type SeriesLeg,
@@ -278,6 +279,17 @@ interface SeriesPlacement {
   shiftCost: number;
 }
 
+/** Stable id shared by both legs of one relay pair (CarTimeline's no-buffer-between-them rule). */
+export function relayPairIdOf(outRequestId: string, returnRequestId: string): string {
+  return `relay:${outRequestId}:${returnRequestId}`;
+}
+
+/** The out-leg's gap at X in minutes when it is shorter than the buffer, else undefined. */
+function shortRelayGapMinutes(outWindow: Window, returnWindow: Window, bufferMinutes: number): number | undefined {
+  const gapMinutes = slotsToMinutes(returnWindow.start - outWindow.end);
+  return gapMinutes < bufferMinutes ? Math.max(0, gapMinutes) : undefined;
+}
+
 /**
  * Multi-day series placement on one car (docs/SOLVER.md §3.x). Only the leg
  * that is also the true global first/last leg of the whole series may shift
@@ -449,14 +461,18 @@ export function runGreedy(
         // block is added (SOLVER §3.6) — the car is then at destination, so try
         // it tentatively and roll back if the return leg does not fit.
         const outRideId = `ride:${outNr.id}`;
+        // The two legs of one relay pair need no buffer between them (REQUIREMENTS §13.88,
+        // owner 2026-09-24) — the car just waits at X — but still may not overlap.
+        const relayPairId = relayPairIdOf(outNr.id, retNr.id);
         tl.add({
           rideId: outRideId,
           window: pair.outWindow,
           startLocationId: input.homeLocationId,
           endLocationId: pair.destinationId,
           overnightAck: false,
+          relayPairId,
         });
-        const returnOk = tl.isFree(pair.returnWindow, pair.destinationId);
+        const returnOk = tl.isFree(pair.returnWindow, pair.destinationId, relayPairId);
         tl.remove(outRideId);
         if (!returnOk) continue;
 
@@ -480,12 +496,14 @@ export function runGreedy(
         continue;
       }
       const tl = timelines.get(best.car.id);
+      const relayPairId = relayPairIdOf(outNr.id, retNr.id);
       tl?.add({
         rideId: `ride:${outNr.id}`,
         window: pair.outWindow,
         startLocationId: input.homeLocationId,
         endLocationId: pair.destinationId,
         overnightAck: false,
+        relayPairId,
       });
       tl?.add({
         rideId: `ride:${retNr.id}`,
@@ -493,6 +511,7 @@ export function runGreedy(
         startLocationId: pair.destinationId,
         endLocationId: input.homeLocationId,
         overnightAck: false,
+        relayPairId,
       });
       // F5 (docs/SOLVER.md §3.6.2): a relay pair puts one leg's distance on
       // this car twice over (out + return), the same total a round trip to
@@ -668,6 +687,7 @@ export function toAssignments(placed: Placed[], input: SolverInput, carsById: Ma
         luggageCount: outNr.luggage ? 1 : 0,
         shift: outShift,
         pairedRideId: retRideId,
+        turnaroundAfterMinutes: shortRelayGapMinutes(pair.outWindow, pair.returnWindow, input.config.bufferMinutes),
         source: 'solver',
         reasonCode: 'PLACED_RELAY_PAIR',
         reason: text,

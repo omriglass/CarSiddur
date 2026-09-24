@@ -227,4 +227,73 @@ end $$;
 -- where a committing request would hit them; this suite never commits.
 set constraints all immediate;
 set constraints all deferred;
+-- Owner 2026-09-24 (docs/TODO.md Q8): pairing moves both legs onto one car only when that car
+-- fits each leg's own seats; otherwise both stay separate chauffeur rides. Q5: a short gap at X
+-- still pairs, the out-leg carrying the gap as its turnaround override.
+do $$
+declare
+  dept uuid:='00000000-0000-0000-0000-000000000001';
+  manager uuid:='00000000-0000-0000-0000-000000000102';
+  driver uuid:='00000000-0000-0000-0000-000000000103';
+  back uuid:='00000000-0000-0000-0000-000000000104';
+  home uuid:='00000000-0000-0000-0000-000000000010';
+  dest uuid:='00000000-0000-0000-0000-000000000011';
+  typ uuid:='00000000-0000-0000-0000-000000000021';
+  big uuid:='00000000-0000-0000-0000-000000000040';
+  small uuid;
+  w date:=public.current_week_start()+98;
+  travel int; dwell int; dep timestamptz; ret timestamptz;
+  qout uuid; qret uuid; rout uuid; rret uuid; blocker uuid;
+  pass int;
+begin
+  select greatest(coalesce(travel_minutes,30),0) into travel from public.destinations where id=dest;
+  select chauffeur_dwell_minutes into dwell from public.department_settings where department_id=dept;
+  insert into public.weeks(department_id,week_start,phase,open_at,close_at,publish_at)
+  values(dept,w,'solving',now()-interval '2 days',now()-interval '1 day',now()+interval '1 day');
+  insert into public.cars(department_id,name,license_plate,type,status) values(dept,'Seat-fit small car','SF-2','shared','active') returning id into small;
+  insert into public.car_seat_configs(car_id,adults,child_seats,boosters) values(small,2,0,0);
+  assert public.car_fits(big,3,0,0), 'fixture: the seeded car must seat three adults';
+  perform set_config('request.jwt.claims',jsonb_build_object('sub',manager,'role','authenticated')::text,true);
+
+  for pass in 1..2 loop
+    dep := ((w+pass)+time '08:00') at time zone 'Asia/Jerusalem';
+    ret := dep + make_interval(mins=>2*travel) + interval '3 hours';
+    ret := to_timestamp(ceil(extract(epoch from ret)/900)*900);
+    insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,depart_at,trip_shape,one_way_car_mode,needs_car_at_destination,adults,status)
+      values(dept,w,driver,manager,dest,typ,dep,'one_way_to','relay',false,3,'submitted') returning id into qout;
+    insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,return_at,trip_shape,one_way_car_mode,needs_car_at_destination,adults,status)
+      values(dept,w,back,manager,dest,typ,ret,'one_way_from','relay',false,1,'submitted') returning id into qret;
+    if pass = 2 then
+      -- The big car is busy during the return leg; the small car cannot seat the out-leg's three.
+      insert into public.rides(department_id,week_start,car_id,starts_at,ends_at,origin_id,destination_id,driver_id,status,is_pinned,pin_reason,created_by)
+        values(dept,w,big,ret-interval '1 hour',ret,home,home,manager,'draft',true,'SADRAN_MANUAL',manager) returning id into blocker;
+    end if;
+    rout:=public.edit_ride(jsonb_build_object('department_id',dept,'week_start',w,'car_id',big,'needs_driver',true,
+      'origin_id',home,'destination_id',home,'starts_at',dep,'ends_at',dep+make_interval(mins=>greatest(15,ceil((2*travel+dwell)/15.0)::int*15)),
+      'served',jsonb_build_array(jsonb_build_object('request_id',qout,'role','passenger','leg','out','car_mode','chauffeur'))));
+    rret:=public.edit_ride(jsonb_build_object('department_id',dept,'week_start',w,'car_id',small,'needs_driver',true,
+      'origin_id',home,'destination_id',home,'starts_at',ret-make_interval(mins=>greatest(15,ceil((2*travel+dwell)/15.0)::int*15)),'ends_at',ret,
+      'served',jsonb_build_array(jsonb_build_object('request_id',qret,'role','passenger','leg','return','car_mode','chauffeur'))));
+    perform public.assert_car_chain(big, w);
+    perform public.assert_car_chain(small, w);
+    set constraints all immediate;
+    set constraints all deferred;
+    if pass = 1 then
+      assert (select car_mode='relay' from public.ride_requests where request_id=qout)
+        and (select car_mode='relay' from public.ride_requests where request_id=qret),
+        'Q8: legs that fit the big car must pair';
+      assert (select count(distinct car_id)=1 and bool_and(car_id=big) from public.rides where id in (rout,rret)),
+        'Q8: the pair must land on the car that seats both legs';
+    else
+      assert (select car_mode='chauffeur' from public.ride_requests where request_id=qout)
+        and (select car_mode='chauffeur' from public.ride_requests where request_id=qret),
+        'Q8: legs must not pair onto a car that cannot seat the out-leg';
+      assert (select car_id=small from public.rides where id=rret), 'Q8: the return leg must stay on the small car';
+    end if;
+  end loop;
+  raise notice 'car_chain_healing.sql: relay pairing respects seat fit (Q8)';
+end $$;
+
+set constraints all immediate;
+set constraints all deferred;
 rollback;

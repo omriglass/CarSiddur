@@ -249,6 +249,11 @@ export interface Assignment {
    *  becomes a standalone `chauffeur` placement instead (§3.6.1a), which has no
    *  partner and leaves this undefined. */
   pairedRideId?: string;
+  /** Out-leg of a relay pair whose partner leaves X sooner than the buffer after this leg
+   *  arrives (REQUIREMENTS §13.88, owner 2026-09-24: a short gap still pairs): the actual gap in
+   *  minutes, persisted as `rides.turnaround_override_minutes` so the ride trigger accepts it.
+   *  Undefined when the gap is at least the buffer. */
+  turnaroundAfterMinutes?: number;
   /** set for a leg of a multi-day series (SOLVER §3.x); all legs of one series share this id and one carId */
   seriesId?: string;
   source: 'fixed' | 'solver';
