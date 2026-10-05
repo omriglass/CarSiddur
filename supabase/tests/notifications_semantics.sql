@@ -180,7 +180,10 @@ begin
 
   -- Three shared, active cars in the fixture department (040/041/042) — three identical
   -- round-trip requests at the same window auto-approve onto each of them in turn.
+  -- (REQ §13.100 QB8: one member's overlapping requests are never auto-approved onto a second car,
+  -- so each request is filed by a different member.)
   for i in 1..3 loop
+    perform set_config('request.jwt.claims', jsonb_build_object('sub', (array['00000000-0000-0000-0000-000000000103','00000000-0000-0000-0000-000000000104','00000000-0000-0000-0000-000000000101'])[i], 'role', 'authenticated')::text, true);
     payload := jsonb_build_object('department_id',dept,'week_start',w::text,'destination_id',dest,'ride_type_id',typ,
       'trip_shape','round_trip','depart_at',base::text,'return_at',(base+interval '2 hours')::text,'adults',1);
     result := public.submit_request(payload);
@@ -189,11 +192,13 @@ begin
   end loop;
 
   -- A fourth, identical request: every shared car is now busy — waitlisted, not bare 'submitted'.
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', sadran, 'role', 'authenticated')::text, true);
   payload := jsonb_build_object('department_id',dept,'week_start',w::text,'destination_id',dest,'ride_type_id',typ,
     'trip_shape','round_trip','depart_at',base::text,'return_at',(base+interval '2 hours')::text,'adults',1);
   result := public.submit_request(payload);
   assert result->>'status' = 'waitlisted' and result->>'reason' = 'WAITLISTED_NO_CAR',
     format('published-week round trip with no free car should waitlist, got %s', result::text);
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', member, 'role', 'authenticated')::text, true);
 
   -- enter_waiting_list(): a genuinely free slot is placed immediately and flagged
   -- car_was_free, never forced to 'waitlisted'.
@@ -203,6 +208,13 @@ begin
   assert result->>'status' = 'assigned' and (result->>'car_was_free') = 'true',
     format('enter_waiting_list should place a request onto a genuinely free car, got %s', result::text);
 
+  -- (QB8: members 101/103/104 already hold a booking at `base`, so a fifth member files the next one.)
+  perform set_config('request.jwt.claims', '', true);
+  insert into auth.users(id, email, raw_user_meta_data)
+    values ('00000000-0000-0000-0000-0000000000a5', 'qb8-member5@notifications.test', '{}');
+  update public.profiles set approval_status = 'approved', full_name = 'member5' where id = '00000000-0000-0000-0000-0000000000a5';
+  insert into public.department_members(department_id, profile_id, role) values (dept, '00000000-0000-0000-0000-0000000000a5', 'member');
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', '00000000-0000-0000-0000-0000000000a5', 'role', 'authenticated')::text, true);
   -- enter_waiting_list() at the already-full window: waitlisted, via submit_request's own
   -- try_auto_approve() outcome (not a second, different status_reason). Since 20260910091300
   -- (contested waiting-list groups, REQ §7.3) this is no longer a lonely wait: the request
@@ -221,7 +233,7 @@ begin
           where g.department_id = dept and g.week_start = w and g.status = 'open' and m.chosen is null) = 2,
     'both overlapping requests should be open members of the group';
   assert exists(select 1 from public.notifications n where n.event = 'waitlist_contested'
-          and n.recipient_id = member and n.week_start = w),
+          and n.recipient_id = '00000000-0000-0000-0000-0000000000a5' and n.week_start = w),
     'the contested members should be notified';
 end $$;
 

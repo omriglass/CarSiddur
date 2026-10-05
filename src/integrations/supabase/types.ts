@@ -4081,6 +4081,10 @@ export type Database = {
         Args: { p_function: string }
         Returns: undefined
       }
+      assert_private_car_owner_only: {
+        Args: { p_actor: string; p_car: string; p_requester: string }
+        Returns: undefined
+      }
       assert_publication_scores: {
         Args: { p_department_id: string; p_scores: Json; p_week_start: string }
         Returns: undefined
@@ -4152,6 +4156,10 @@ export type Database = {
         Returns: boolean
       }
       car_location_at: { Args: { _at: string; _car: string }; Returns: string }
+      car_location_excluding: {
+        Args: { _at: string; _car: string; _exclude: string }
+        Returns: string
+      }
       car_mileage_totals: {
         Args: {
           p_department_id: string
@@ -4174,6 +4182,13 @@ export type Database = {
           car_id: string
           location_id: string
         }[]
+      }
+      chauffeur_ride_minutes: {
+        Args: {
+          p_leg: Database["public"]["Enums"]["ride_leg"]
+          p_request_id: string
+        }
+        Returns: number
       }
       claim_freed_slot: {
         Args: { p_offer_id: string; p_request_id: string }
@@ -4417,6 +4432,7 @@ export type Database = {
         }
         Returns: Json
       }
+      notification_context_extra: { Args: { _data: Json }; Returns: Json }
       notification_default_url: {
         Args: {
           _data: Json
@@ -4515,6 +4531,10 @@ export type Database = {
           id: string
           phone: string
         }[]
+      }
+      proposal_system_withdraw: {
+        Args: { p_proposal_id: string; p_variant: string }
+        Returns: undefined
       }
       publication_conflicting_ride_ids: {
         Args: {
@@ -4639,6 +4659,7 @@ export type Database = {
           position: number
         }[]
       }
+      request_legs_covered: { Args: { p_request_id: string }; Returns: boolean }
       request_ride_change: {
         Args: {
           p_car_id: string
@@ -4712,6 +4733,7 @@ export type Database = {
         Returns: undefined
       }
       ride_is_reservation: { Args: { p_ride_id: string }; Returns: boolean }
+      ride_merge_fingerprint: { Args: { p_ride_id: string }; Returns: string }
       ride_route: {
         Args: { p_ride_id: string }
         Returns: {
@@ -4859,6 +4881,10 @@ export type Database = {
         }
         Returns: Json
       }
+      sync_request_coverage: {
+        Args: { p_request_id: string }
+        Returns: undefined
+      }
       try_auto_approve: { Args: { p_request_id: string }; Returns: Json }
       try_auto_approve_series: { Args: { p_series_id: string }; Returns: Json }
       try_widen_one_way_leg: {
@@ -4896,6 +4922,10 @@ export type Database = {
           _type: Database["public"]["Enums"]["proposal_type"]
         }
         Returns: boolean
+      }
+      waitlist_group_leave: {
+        Args: { p_request_id: string }
+        Returns: undefined
       }
       week_phase_timestamps: {
         Args: {

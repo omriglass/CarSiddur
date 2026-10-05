@@ -54,11 +54,9 @@ import type { BoardRide } from "@/features/siddur/api";
 import type { RideMove } from "@/features/rides/api";
 import { myRideCard } from "@/features/siddur/myRideCard";
 import { conflictingRides } from "@/features/siddur/rideEditing";
-import { TripSummary } from "@/components/TripSummary";
 import { useDepartmentSettings, useEditRideMutation } from "@/features/sadran/hooks";
 import { servedOf } from "@/features/rides/servedOf";
 import { OpenProposalButton } from "@/features/proposals/components/OpenProposalButton";
-import { OpenWaitlistGroupButton } from "@/features/waitlist/components/OpenWaitlistGroupButton";
 import { he, t, tv } from "@/i18n/he";
 import { describeStatusReason } from "@/lib/statusReason";
 import { formatTime } from "@/lib/time";
@@ -178,7 +176,9 @@ export function HomePage() {
   // REQ §13.91: the ONE "my rides" list — every upcoming request, grouped by week (today
   // onward, already filtered above). `homeWeek` still decides which week the empty-state copy
   // and the new-request entry point talk about.
-  const upcomingWeeks = groupByWeek(toDisplayRows(requests)).sort((a, b) => a.weekStart.localeCompare(b.weekStart));
+  // QB13: a request shown in the "unserved" section is not listed a second time below.
+  const unservedIds = new Set(unserved.map((r) => r.id));
+  const upcomingWeeks = groupByWeek(toDisplayRows(requests.filter((r) => !unservedIds.has(r.id)))).sort((a, b) => a.weekStart.localeCompare(b.weekStart));
   const phaseOf = (weekStart: string) => weeks.find((w) => w.weekStart === weekStart)?.phase;
   const openOffers = (freedOffersQuery.data ?? []).filter(
     (o) => o.offerStatus === "open" && (o.claimStatus === "offered" || o.claimStatus === "claimed"),
@@ -326,26 +326,16 @@ export function HomePage() {
         ) : (
           <div className="space-y-2">
             {unserved.map((row) => (
-              <Card key={row.id} className="bg-gradient-card shadow-card">
-                <CardContent className="space-y-1 p-3 text-sm">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="font-medium">{row.destination}</span>
-                    <StatusBadge kind="request" status={row.status} />
-                  </div>
-                  <TripSummary purpose={row.rideTypeName} departAt={row.ride?.startsAt ?? row.departAt} returnAt={row.ride?.endsAt ?? row.returnAt} />
-                  {reasonLine(row) ? (
-                    <p className="text-xs text-muted-foreground">{reasonLine(row)}</p>
-                  ) : null}
-                  {row.statusReason === "WAITLISTED_CONTESTED" && (row.departAt ?? row.returnAt) ? (
-                    <OpenWaitlistGroupButton
-                      departmentId={row.departmentId}
-                      weekStart={row.weekStart}
-                      requestId={row.id}
-                      day={(row.departAt ?? row.returnAt) as string}
-                    />
-                  ) : null}
-                </CardContent>
-              </Card>
+              <RequestRow
+                key={row.id}
+                row={row}
+                highlighted={row.id === focusedId}
+                rowRef={row.id === focusedId ? highlightedRef : undefined}
+                homeDestinationId={homeDestinationIds[row.departmentId]}
+                onWithdraw={(target) => setConfirmAction({ kind: "withdraw", row: target })}
+                onCancelRide={(target) => setConfirmAction({ kind: "cancel", row: target })}
+                onOptOutChange={(target, optOut) => optOutMutation.mutate({ requestId: target.id, optOut })}
+              />
             ))}
           </div>
         )}

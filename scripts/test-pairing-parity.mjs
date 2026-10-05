@@ -142,6 +142,9 @@ function caseSql(c, idx) {
   if (c.return) body.push(legSql('ret', c.return, c.destination));
 
   body.push(`
+  -- REQ §13.100 QB4: healing never moves a Sadran-placed (pinned) ride; the parity cases model the solver's
+  -- automatic placement, so the fixture rides (made through edit_ride, which pins) are unpinned here.
+  update public.rides set is_pinned = false where department_id = ${DEPT} and week_start = w;
   -- Two passes over both cars, alternating: assert_car_chain re-runs
   -- pair_one_way_legs (dept/week-scoped, not car-scoped) every time it is
   -- called, so a call for car A can re-pair legs that a call for car B just

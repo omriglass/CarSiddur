@@ -2,6 +2,7 @@
 // every query the board reads plus the pure derivation of the week-grid
 // data (cars/rides/blocks/unmet list/policy preview) that used to live in
 // the component's own body. Pure move — behaviour unchanged.
+import { withoutPrivateCarOffers } from "../privateCarOffers";
 import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -33,6 +34,7 @@ import { connectedPairRideIds, unmetItemId, unmetRequestViews, viewsOnDay } from
 import { isUnmetStatus } from "../../unmetStatuses";
 import { requestRouteLine } from "../requestRoute";
 import { resolveDraftPlacements } from "../draftOverlay";
+import { awayLocationAt } from "../geometry";
 import { packPhantomLanes, requestStart, requestWindow, standaloneChauffeurWindow, withRouteTravelMinutes } from "../phantomLanes";
 import type { BoardDropContext } from "../dropValidity";
 import {
@@ -274,7 +276,7 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
           proposals: proposalsQuery.data ?? [],
         },
       );
-      const output = runSolve(context.input);
+      const output = withoutPrivateCarOffers(runSolve(context.input), carsQuery.data ?? [], ridesQuery.data ?? [], requestsQuery.data ?? []);
       rememberUsedPolicy(policy.policyVersionId);
       setPreview({ output, policyVersionId: policy.policyVersionId });
     } catch {
@@ -597,7 +599,11 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
       id: c.id,
       name: c.name,
       group: c.type,
-      locationBadge: carLocationsQuery.data?.find((l) => l.car_id === c.id)?.location_name ?? undefined,
+      // QB21: where the car is at the START of the selected day (its away window containing that
+      // instant), not the week's first away interval; with no scan yet, the stored location.
+      locationBadge: conflictScan
+        ? awayLocationAt(conflictScan.awayByCarId.get(c.id), weekStartMs, dayStartIso(selectedDay), destinationNameById)
+        : carLocationsQuery.data?.find((l) => l.car_id === c.id)?.location_name ?? undefined,
       // REQUIREMENTS §13.93: the car's own base, shown only when it isn't the department home.
       baseBadge: base && base !== department?.home_destination_id
         ? tv("sadranBoard.carBase", { place: destinationNameById.get(base) ?? "" })
@@ -827,8 +833,10 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
   // `unmetRequestPassengers`, `minutesIso`, `unmetCandidateWindow`, `unmetMergeHost`,
   // `unmetPreviewWindow`, `isUnmetDropValid`) now lives in `../dropValidity.ts`; this is the
   // one place that assembles the closure state those functions need.
+  // QB19: a draft/pending merge or shift hides the joiner's old booking - the drop checks must
+  // ignore that booking too (it is replaced), or the next drop reports a phantom conflict.
   const dropCtx: BoardDropContext = {
-    rides,
+    rides: rides.filter((ride) => !(ride.id && (draftHiddenRideIds.has(ride.id) || mergeGuestRideIds.has(ride.id)))),
     requests: boardRequests,
     cars: carsQuery.data ?? [],
     maintenanceBlocks: maintenanceQuery.data ?? [],

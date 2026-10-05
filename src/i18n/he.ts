@@ -634,6 +634,7 @@ export const he = {
     requestHasRide: "הבקשה כבר משובצת לנסיעה — יש לבטל את הנסיעה במקום למשוך את הבקשה",
     rideNotFound: "הנסיעה לא נמצאה",
     proposalNotFound: "ההצעה לא נמצאה",
+    privateCarOwnerOnly: "רכב פרטי — רק הבעלים מוסיף/ה אליו בקשות (אפשר לבקש להצטרף אל הבעלים)", // TODO(he): owner to confirm wording
     proposalDayPublic: "היום כבר פורסם — הצעות אינן רלוונטיות ליום שפורסם; מתאמים ישירות עם הנוסע/ת",
     carChainBroken: "לוח הזמנים של הרכב לא רציף",
     carAwayAtDayEnd: "הרכב לא חוזר הביתה בזמן",

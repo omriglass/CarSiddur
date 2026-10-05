@@ -92,6 +92,7 @@ function solveExpanded(input: SolverInput): SolverOutput {
         overnightAck: fr.overnightAck,
         approvedBufferAfterSlots: fr.approvedBufferAfterSlots,
         locationNeutral: fr.locationNeutral,
+        seriesId: fr.seriesId,
       });
     }
     fixedAssignments.push({
@@ -108,6 +109,7 @@ function solveExpanded(input: SolverInput): SolverOutput {
       luggageCount: fr.luggageCount,
       shift: { departureMin: 0, returnMin: 0 },
       source: 'fixed',
+      ...(fr.seriesId ? { seriesId: fr.seriesId } : {}),
       reasonCode: 'PLACED_FIXED',
       reason: reason('PLACED_FIXED'),
     });
@@ -116,6 +118,11 @@ function solveExpanded(input: SolverInput): SolverOutput {
   // starts where the car actually is not still goes in (chain break,
   // recorded by `forceAdd`/`chainBreaks()` instead of a mismatch warning at
   // seed time); only ending the *week* away from its base is worth a warning.
+  for (const tl of timelines.values()) {
+    for (const rideId of tl.fixedConflicts()) {
+      warnings.push({ code: 'FIXED_RIDE_CONFLICT', message: reason('WARN_FIXED_RIDE_CONFLICT'), requestId: rideId });
+    }
+  }
   for (const car of input.cars.filter((c) => c.type === 'shared')) {
     const tl = timelines.get(car.id);
     if (!tl) continue;

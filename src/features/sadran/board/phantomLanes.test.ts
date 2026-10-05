@@ -39,6 +39,11 @@ describe("original request flexibility", () => {
     expect(requestWithinFlex(request, request.depart_at!, "2026-09-10T10:00:00Z")).toBe(true);
     expect(requestWithinFlex(request, request.depart_at!, "2026-09-10T10:15:00Z")).toBe(false);
   });
+  it("QB12: a pickup leg of a drop-off is checked against the return flexibility", () => {
+    const drop = { ...request, trip_type: "drop_off" as const, flex_depart_early: "00:00:00", flex_depart_late: "00:00:00", flex_return_late: "00:30:00" };
+    expect(requestWithinFlex(drop, "2026-09-10T09:15:00Z", "2026-09-10T10:00:00Z")).toBe(true);
+    expect(requestWithinFlex(drop, "2026-09-10T09:45:00Z", "2026-09-10T10:30:00Z")).toBe(false);
+  });
   it("validates arrival time for return-only requests", () => {
     expect(requestWithinFlex({ ...request, trip_shape: "one_way_from", depart_at: null }, "2026-09-10T09:15:00Z", "2026-09-10T10:00:00Z")).toBe(true);
   });

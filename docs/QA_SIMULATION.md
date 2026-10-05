@@ -50,6 +50,28 @@ All three tools run on the disposable stack only (API `http://127.0.0.1:57321`, 
 
 Known limits: `qa:sadran day` computes suggestions with a fresh solver preview, so if the solver itself throws on the week's data the day view still prints (with a "solver preview failed" line) but `autofill` fails the same way as the board's preview; `propose shift --car` mirrors the board's drop-beyond-flexibility payload (see `--no-places`).
 
+### Freed-slot offers on the disposable stack (QA run 1, QB7)
+
+`cancel_ride` only creates the `freed_slot_offers` row; the edge function `on-ride-cancelled` ranks the
+candidates and resolves it, and it is reached only through pg_net when `app_settings.on_ride_cancelled_url` and
+`app_secrets.cron_secret` are set. They are never seeded (supabase/functions/README.md), so on a fresh disposable stack
+offers stay `open` forever and nobody is offered the car. Before a QA run, with the stack's own Kong container name:
+
+```sql
+insert into public.app_settings (key, value) values
+  ('on_ride_cancelled_url', '{"value":"http://supabase_kong_<project_id>:8000/functions/v1/on-ride-cancelled"}'::jsonb),
+  ('push_dispatch_url',     '{"value":"http://supabase_kong_<project_id>:8000/functions/v1/push-dispatch"}'::jsonb)
+on conflict (key) do update set value = excluded.value;
+insert into public.app_secrets (key, value) values ('cron_secret', '{"value":"local-dev-cron-secret-change-me"}'::jsonb)
+on conflict (key) do update set value = excluded.value;
+```
+
+The secret must equal `CRON_SECRET` in `supabase/functions/.env`. The disposable workdir must carry the current
+`supabase/functions/` (including `_shared/solver.js`) and the edge runtime container must be restarted after copying it
+(`docker restart supabase_edge_runtime_<project_id>`); a stale copy fails with the QB1 `CarTimeline.forceAdd ... overlaps`
+error on weeks that contain series rides (fixed: the function now passes `series_id` to the timeline). Offers
+created before the settings existed can be resolved by POSTing `{"offer_id": ...}` with header `x-cron-secret`.
+
 ## 3. The run (`/qa-week`)
 1. **Ask the owner** which day(s) the QA Sadran works through the **UI** (the rest through the CLI) — always ask.
 2. Start/refresh the disposable stack, generate the week (seed given or random — record it), show the **summary checkpoint**, wait for go.

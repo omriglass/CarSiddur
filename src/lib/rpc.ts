@@ -34,6 +34,7 @@ export type ErrorCode =
   | "week_close_not_editable"
   | "week_close_out_of_range"
   | "series_week_not_open"
+  | "car_now_week_not_live"
   | "series_edit_not_supported"
   | "series_car_unavailable"
   | "not_authorized"
@@ -61,6 +62,7 @@ export type ErrorCode =
   | "ride_not_found"
   | "proposal_not_found"
   | "proposal_day_public"
+  | "private_car_owner_only"
   | "proposal_already_sent"
   | "proposal_not_draft"
   | "proposal_replacement_answered"
@@ -158,6 +160,7 @@ const MESSAGE_TO_CODE: Record<string, ErrorCode> = {
   ride_not_found: "ride_not_found",
   proposal_not_found: "proposal_not_found",
   proposal_day_public: "proposal_day_public",
+  private_car_owner_only: "private_car_owner_only",
   proposal_already_sent: "proposal_already_sent",
   proposal_not_draft: "proposal_not_draft",
   proposal_replacement_answered: "proposal_replacement_answered",
@@ -214,6 +217,8 @@ const MESSAGE_TO_CODE: Record<string, ErrorCode> = {
   week_close_not_editable: "week_close_not_editable",
   week_close_out_of_range: "week_close_out_of_range",
   series_week_not_open: "series_week_not_open",
+  // REQ §13.100 (QB16): "car now" outside a live/published week (submit_request).
+  car_now_week_not_live: "car_now_week_not_live",
   series_edit_not_supported: "series_edit_not_supported",
   series_car_unavailable: "series_car_unavailable",
   push_unsupported: "push_unsupported",
@@ -256,6 +261,7 @@ const CODE_TO_MESSAGE: Record<ErrorCode, string> = {
   ride_not_found: he.errors.rideNotFound,
   proposal_not_found: he.errors.proposalNotFound,
   proposal_day_public: he.errors.proposalDayPublic,
+  private_car_owner_only: he.errors.privateCarOwnerOnly,
   proposal_already_sent: he.sadranProposal.alreadySent,
   proposal_not_draft: he.sadranProposal.noLongerDraft,
   proposal_replacement_answered: he.sadranProposal.replacementAnswered,
@@ -296,6 +302,8 @@ const CODE_TO_MESSAGE: Record<ErrorCode, string> = {
   week_close_not_editable: he.weekClose.notEditable,
   week_close_out_of_range: he.weekClose.outOfRange,
   series_week_not_open: he.errors.seriesWeekNotOpen,
+  // Reuses the existing "week closed for requests" copy; a dedicated message needs owner-approved wording.
+  car_now_week_not_live: he.errors.weekNotOpen,
   series_edit_not_supported: he.errors.seriesEditNotSupported,
   series_car_unavailable: he.errors.seriesCarUnavailable,
   push_unsupported: he.errors.pushUnsupported,

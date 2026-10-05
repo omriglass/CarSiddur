@@ -127,8 +127,8 @@ begin
   -- Publishing the proposal's own day (Tuesday, forced through with p_allow_unanswered)
   -- now expires it immediately (publish_siddur calls expire_proposals() at the end) —
   -- there is no timer any more; once a day is published its proposals are settled.
-  assert (select status='expired' and version>before_prop.version from public.proposals where id=before_prop.id),'publishing the proposal''s day did not expire it';
-  assert (select status=before_prop.previous_status from public.requests where id=before_prop.request_id),'expired proposal did not fall back the request to its previous status';
+  -- REQ §13.100 b: a Sadran shift/merge proposal survives its day being published (it may still be answered).
+  assert (select status='sent' from public.proposals where id=before_prop.id),'publishing the proposal''s day must not expire a Sadran shift proposal';
   assert (select published_days=array[w+1,w+2] from public.weeks where department_id=dept and week_start=w),'incremental publication hid earlier day';
   begin
     perform public.publish_siddur(dept,w,scores->'profiles',public.publish_scores_fingerprint(dept,w),scores->'policies',array[w+3],false);
@@ -145,7 +145,7 @@ begin
   assert (select count(*)=ride_count from public.rides where department_id=dept and week_start=w),'unpublish deleted rides';
   assert (select count(*)=link_count from public.ride_requests rr join public.rides r on r.id=rr.ride_id where r.department_id=dept and r.week_start=w),'unpublish deleted assignments';
   assert (select count(*)=versions from public.siddur_versions where department_id=dept and week_start=w),'unpublish erased history';
-  assert (select status='expired' from public.proposals where id=before_prop.id),'unpublishing revived an already-expired proposal';
+  assert (select status='sent' from public.proposals where id=before_prop.id),'unpublishing changed a still-sent Sadran proposal';
   begin perform public.reopen_week(dept,w,'open',old_fingerprint);raise exception 'stale reopening accepted';
   exception when sqlstate 'P0409' then null;end;
   perform public.reopen_week(dept,w,'open',public.publish_scores_fingerprint(dept,w));
@@ -264,12 +264,15 @@ begin
   assert (select public.is_day_public(dept,w3,w3+1)),'fixture day did not publish';
   assert (select not public.is_day_public(dept,w3,w3+2)),'unrelated day published too';
 
-  -- Sadran-composed proposal ('shift' needs no ride/host) refuses an already-published day.
+  -- Sadran-composed proposals other than shift/merge refuse an already-published day.
   begin
-    perform public.create_proposal(reqA,null,'shift',
-      jsonb_build_object('depart_at',dtA+interval '1 hour','return_at',dtA+interval '3 hours'),'Published-day fixture');
+    perform public.create_proposal(reqA,null,'deny',
+      jsonb_build_object('reason','X'),'Published-day fixture');
     raise exception 'create_proposal accepted a proposal for an already-published day';
   exception when raise_exception then if sqlerrm<>'proposal_day_public' then raise;end if;end;
+  -- REQ §13.100 b: a Sadran shift proposal is allowed on a published day.
+  perform public.create_proposal(reqA,null,'shift',
+    jsonb_build_object('depart_at',dtA+interval '1 hour','return_at',dtA+interval '3 hours'),'Published-day shift allowed');
 
   -- Same shape, unpublished day: creation still works.
   propOpen:=public.create_proposal(reqB,null,'shift',

@@ -155,6 +155,7 @@ export function boardRideToFixedRide(ride: BoardRide, weekStartMs: number): Fixe
     // REQ §13.96: a reservation (no served requests, not an auto relocation ride) is location-neutral.
     ...(isReservation(ride) ? { locationNeutral: true } : {}),
     approvedBufferAfterSlots: ride.turnaround_override_minutes == null ? undefined : Math.ceil(ride.turnaround_override_minutes / 15),
+    ...(ride.series_id ? { seriesId: ride.series_id } : {}),
     kind: "pinned",
   };
 }

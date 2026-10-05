@@ -40,7 +40,14 @@ export function summarizePolicyScore(policy: { policyId: string; policyVersionId
 
 /** Re-score the original requests; final assignments only determine who was served. */
 export function calculateProfileScores(input: SolverInput, servedRequestIds: ReadonlySet<string>): ProfileScore[] {
-  const scoringInput = { ...input, fixedRides: [] };
+  // Every original request is scored (QB18): free-text origins and series legs are normalized
+  // as ordinary requests here (the solver itself never places the former and merges the latter
+  // into one unit), so `normalize()` yields exactly one entry per input request.
+  const scoringInput = {
+    ...input,
+    fixedRides: [],
+    requests: input.requests.map((r) => ({ ...r, originIsFreeText: false, seriesId: undefined })),
+  };
   const { normalized } = normalize(scoringInput);
   const relayEligible = normalized.filter((r) => r.legs[0]?.side !== "both" && !r.isPassengerOnly);
   const { pairs } = pairRelays(relayEligible, input.cars);
@@ -59,8 +66,12 @@ export function calculateProfileScores(input: SolverInput, servedRequestIds: Rea
   if (warnings.length) {
     console.warn(`[profileScores] policy ${input.policy.id} scoring warnings:`, warnings);
   }
-  // The one hard failure left: scoring must still cover every request in the batch.
-  if (scores.size !== input.requests.length) throw new Error("invalid_publication_scores");
+  // A request normalize() cannot window (e.g. no departure time) has nothing to rank: score it 0
+  // rather than failing the whole snapshot.
+  for (const request of input.requests) {
+    if (!scores.has(request.id)) scores.set(request.id, { total: 0, perRule: [] });
+  }
+  if (scores.size < input.requests.length) throw new Error("invalid_publication_scores");
   const profiles = new Map<string, ProfileScore>();
   for (const request of [...input.requests].sort((a, b) => a.id.localeCompare(b.id))) {
     const score = scores.get(request.id)!;

@@ -249,6 +249,8 @@ export function findMergeHosts(params: MergeSearchParams): MergeCandidate[] {
   const candidates: MergeCandidate[] = [];
 
   for (const host of hosts) {
+    // REQ §13.99: only a private car's owner puts requests on it — never merge anyone into a temporary car's ride.
+    if (host.isTemporary) continue;
     if (!legCompatible(leg, host.legSide)) continue;
     const car = cars.get(host.carId);
     if (!car) continue;

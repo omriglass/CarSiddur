@@ -285,6 +285,8 @@ begin
     rret:=public.edit_ride(jsonb_build_object('department_id',dept,'week_start',w,'car_id',small,'needs_driver',true,
       'origin_id',home,'destination_id',home,'starts_at',ret-make_interval(mins=>greatest(15,ceil((2*travel+dwell)/15.0)::int*15)),'ends_at',ret,
       'served',jsonb_build_array(jsonb_build_object('request_id',qret,'role','passenger','leg','return','car_mode','chauffeur'))));
+    -- REQ §13.100 QB4: only automatic (unpinned) rides move between cars to pair; Sadran-placed ones stay put.
+    update public.rides set is_pinned=false where id in (rout,rret);
     perform public.assert_car_chain(big, w);
     perform public.assert_car_chain(small, w);
     set constraints all immediate;

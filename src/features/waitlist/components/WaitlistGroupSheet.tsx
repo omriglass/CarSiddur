@@ -178,7 +178,7 @@ export function WaitlistGroupSheet({ group, departmentId, weekStart, profileId, 
         open={confirmResolve}
         onOpenChange={setConfirmResolve}
         title={he.waitlist.confirm}
-        description={tv("waitlist.confirmBody", { driver: driverName, names: otherNames || driverName })}
+        description={otherNames ? tv("waitlist.confirmBody", { driver: driverName, names: otherNames }) : tv("waitlist.confirmBodySolo", { driver: driverName })}
         confirmLabel={he.waitlist.confirm}
         loading={resolveMutation.isPending}
         onConfirm={() => void handleResolve()}

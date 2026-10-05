@@ -47,6 +47,7 @@ const TEMPLATES: Record<string, string> = {
   // the day-end rule (REQUIREMENTS §13.93) — superseded by WARN_CHAIN_BROKEN
   // (CarTimeline.chainBreaks()) and WARN_CAR_AWAY_AT_WEEK_END below.
   WARN_CHAIN_BROKEN: 'נסיעה קבועה מתחילה במקום שהרכב אינו נמצא בו בפועל',
+  WARN_FIXED_RIDE_CONFLICT: 'נסיעה קבועה חופפת או צמודה מדי לנסיעה קבועה אחרת באותו רכב',
   WARN_CAR_AWAY_AT_WEEK_END: '{car} מסיים/ת את השבוע ב{place} ולא בבסיסו/ה',
   WARN_UNKNOWN_RULE_TYPE: 'סוג כלל מדיניות לא מוכר; הכלל דולג',
 };

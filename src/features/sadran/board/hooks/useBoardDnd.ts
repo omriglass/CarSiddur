@@ -27,7 +27,10 @@ import {
   connectsOtherLeg,
   isUnmetDropValid,
   minutesIso,
+  originMismatch,
   passengersOf,
+  privateCarBlocks,
+  privateCarBlocksRide,
   seatsFit,
   unavailable,
   unmetCandidateWindow,
@@ -284,6 +287,7 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
     if (!requestStart(req) || dateKey(requestStart(req)!) !== selectedDay) {
       toast.error(he.sadranBoard.wrongDay); return;
     }
+    if (privateCarBlocks(dropCtx, carId, req.requester_id)) { toast.error(he.sadranBoard.privateCarNotTarget); return; }
     let window = unmetCandidateWindow(dropCtx, item, minutes);
     if (!window || !department?.home_destination_id) {
       toast.error(he.sadranBoard.invalidWindow);
@@ -306,6 +310,12 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
     if (!seatsFit(dropCtx, carId, connects ? { adults: req.adults, childSeats: req.child_seats, boosters: req.boosters } : unmetRequestPassengers(req))) {
       toast.error(he.sadranBoard.dragInvalidSeatsToast);
       return;
+    }
+    // QB23: the car must be at the request's origin when the window starts - refuse instead of
+    // offering a shift/placement onto a car parked elsewhere (a connected pair's own other leg is exempt).
+    const dropOrigin = req.origin_id ?? dropCtx.homeDestinationId;
+    if (!connects && dropOrigin && originMismatch(dropCtx, carId, dropOrigin, window.startsAt)) {
+      toast.error(he.sadranBoard.carNotAtOriginToast); return;
     }
     // Placement by the member-facing trip type and the request's own places (REQ §13.93).
     const placement = unmetPlacement(dropCtx, req, carId, window.startsAt);
@@ -390,6 +400,10 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
     const ride = rides.find((r) => r.id === rideId);
     if (!ride?.id || !ride.starts_at || !ride.ends_at || !ride.car_id || !ride.origin_id || !ride.destination_id) return;
 
+    if (privateCarBlocksRide(dropCtx, ride, carId) || (droppedOnRideId && droppedOnRideId !== rideId && ride.needs_driver
+      && privateCarBlocks(dropCtx, carId, servedOf(ride).map((e) => requestsData.find((r) => r.id === e.request_id)).find((r) => r)?.requester_id))) {
+      toast.error(he.sadranBoard.privateCarNotTarget); return;
+    }
     if (ride.needs_driver && droppedOnRideId && droppedOnRideId !== rideId && rides.some((other) => other.id === droppedOnRideId && !!other.driver_id && !other.needs_driver)) {
       const driverEntry = servedOf(ride).find((s) => s.role === "driver") ?? servedOf(ride)[0];
       if (driverEntry?.request_id) {

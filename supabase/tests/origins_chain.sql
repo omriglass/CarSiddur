@@ -142,13 +142,16 @@ begin
     'origin_id',haifa,'destination_id',zichron,'starts_at',(w+5+time '09:00') at time zone 'Asia/Jerusalem',
     'ends_at',(w+5+time '09:15') at time zone 'Asia/Jerusalem',
     'served',jsonb_build_array(jsonb_build_object('request_id',qid,'role','driver','leg','out','car_mode','relay'))));
+  -- REQ §13.100 QB4: a Sadran-placed (pinned) ride is never cancelled nor moved by healing; with no car
+  -- at either end it keeps its car and becomes a missing-driver ride (the request waits, the member is told).
+  -- (edit_ride already ran assert_car_chain once; the explicit call below is idempotent.)
   perform public.assert_car_chain(car1, w);
-  assert not exists(select 1 from public.rides where id = v_ride_id and status <> 'cancelled'),
-    '4) a drop_off leg with neither end at a car must have its placeholder ride cancelled';
-  assert (select status='submitted' and status_reason='UNMET_NO_CAR_AT_ORIGIN' from public.requests where id=qid),
-    '4) the request must go back to unmet (submitted/UNMET_NO_CAR_AT_ORIGIN)';
+  assert exists(select 1 from public.rides where id = v_ride_id and status <> 'cancelled' and car_id = car1 and needs_driver and driver_id is null),
+    '4) a pinned drop_off leg with neither end at a car must stay on its car as a missing-driver ride';
+  assert (select status='waitlisted' and status_reason='UNMET_NEEDS_DRIVER' from public.requests where id=qid),
+    '4) the request must wait for a driver (waitlisted/UNMET_NEEDS_DRIVER)';
   assert exists(select 1 from public.notifications where event='outcome_changed' and data->>'request_id' = qid::text),
-    '4) the requester must be notified (outcome_changed) that the leg became unmet';
+    '4) the requester must be notified (outcome_changed) that the leg now needs a driver';
 
   update public.cars set base_location_id = null where id in (car1, car2);
 

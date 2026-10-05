@@ -41,4 +41,11 @@ describe("publication policy scores", () => {
     expect(equal.alignment_ratio).toBe(0.5);
     expect(weighted.policy_version_id).toBe("v1");
   });
+  it("scores every original request: free-text origins and series legs included (QB18)", () => {
+    const free = makeRequest({ id: "free", memberId: "m2", departureMs: slotMs(32), returnMs: slotMs(40), originIsFreeText: true });
+    const s1 = makeRequest({ id: "s1", memberId: "m3", departureMs: slotMs(32), returnMs: slotMs(96), seriesId: "S", seriesIndex: 1, seriesCount: 2 });
+    const s2 = makeRequest({ id: "s2", memberId: "m3", departureMs: slotMs(96), returnMs: slotMs(120), seriesId: "S", seriesIndex: 2, seriesCount: 2 });
+    const profiles = calculateProfileScores({ ...input, requests: [r1, free, s1, s2] }, new Set(["r1"]));
+    expect(profiles.flatMap((p) => p.requests.map((q) => q.request_id)).sort()).toEqual(["free", "r1", "s1", "s2"]);
+  });
 });

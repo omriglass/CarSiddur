@@ -94,6 +94,8 @@ export const heSadran = {
     phantomCar: "רכב חסר {{number}}",
     wrongDay: "יש לשבץ את הבקשה ביום המקורי שלה",
     maintenanceUnavailable: "הרכב אינו זמין או נמצא בטיפול בשעות שנבחרו",
+    carNotAtOriginToast: "הרכב לא נמצא במקום היציאה בשעה הזו (הוא חונה במקום אחר)",
+    privateCarNotTarget: "רכב פרטי: רק הבעלים מציב/ה עליו בקשות. אפשר לשלוח לבעלים בקשה להצטרף",
     /** REQ §89 (owner 2026-09-15): an automatic missing-driver relocation ride's block/card
      * label (shared with the siddur via `src/lib/rideLabel.ts`). */
     autoRelocation: "החזרת רכב — חסר/ה נהג/ת",
@@ -248,6 +250,7 @@ export const heSadran = {
     recipients: "אל",
     expiry: "תפוגה",
     previewTitle: "תצוגה מקדימה (עריכה חופשית)",
+    linkPlaceholder: "‹הקישור האישי יתווסף בשליחה›",
     sendWhatsapp: "פתח בוואטסאפ — {{name}}",
     pushNote: "התראת פוש תישלח אוטומטית",
     statusLabel: "סטטוס",

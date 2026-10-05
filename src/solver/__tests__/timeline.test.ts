@@ -17,7 +17,9 @@ describe('CarTimeline', () => {
       const tl = bufferedTl(2);
       for (const block of blocks) tl.forceAdd(block);
       expect(tl.allBlocks()).toHaveLength(2);
-      expect(() => tl.forceAdd({ ...next, rideId: 'overlap', window: { start: 19, end: 22 } })).toThrow();
+      expect(tl.fixedConflicts()).toEqual([]);
+      tl.forceAdd({ ...next, rideId: 'overlap', window: { start: 19, end: 22 } });
+      expect(tl.fixedConflicts()).toEqual(['overlap']);
     }
     const tl = bufferedTl(2);
     tl.forceAdd(first);
@@ -241,5 +243,24 @@ describe('CarTimeline', () => {
     expect(() => tl.add(a)).toThrow(/starts at/);
     expect(() => tl.restore(removedA!)).not.toThrow();
     expect(tl.has('a')).toBe(true);
+  });
+});
+
+describe('forceAdd of fixed rides (QB1)', () => {
+  const car = { id: 'c', name: 'c', type: 'shared' as const, seatConfigs: [], features: [], luggageCapacity: 1, maintenance: [] };
+  const blk = (rideId: string, start: number, end: number, seriesId?: string) => ({
+    rideId, window: { start, end }, startLocationId: 'home', endLocationId: 'home', overnightAck: false, seriesId,
+  });
+  it('series pieces on consecutive days need no buffer between them', () => {
+    const tl = new CarTimeline(car, 2, 700, 'home');
+    tl.forceAdd(blk('a', 10, 96, 'S'));
+    tl.forceAdd(blk('b', 96, 150, 'S'));
+    expect(tl.fixedConflicts()).toEqual([]);
+  });
+  it('a buffer-only clash between fixed rides is recorded, never thrown', () => {
+    const tl = new CarTimeline(car, 2, 700, 'home');
+    tl.forceAdd(blk('a', 10, 50));
+    expect(() => tl.forceAdd(blk('b', 51, 70))).not.toThrow();
+    expect(tl.fixedConflicts()).toEqual(['b']);
   });
 });

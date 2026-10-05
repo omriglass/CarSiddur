@@ -44,6 +44,18 @@ export function withinFlex(
   return later === "day" || shiftMinutes <= later;
 }
 
+/** Name of the place a car is away at when `atIso` falls inside one of its away windows; `undefined` when it is at its base. */
+export function awayLocationAt(
+  windows: { locationId: string; window: Window }[] | undefined,
+  weekStartMs: number,
+  atIso: string,
+  names: ReadonlyMap<string, string>,
+): string | undefined {
+  const at = Date.parse(atIso);
+  const hit = (windows ?? []).find((w) => Date.parse(slotToIso(w.window.start, weekStartMs)) <= at && at < Date.parse(slotToIso(w.window.end, weekStartMs)));
+  return hit ? names.get(hit.locationId) : undefined;
+}
+
 export interface BoardRideForConflict {
   id: string;
   carId: string;

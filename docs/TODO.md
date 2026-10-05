@@ -443,3 +443,75 @@ Decisions (full text in REQ §13.93): explicit request origin (list place or fre
 - ~~**H8**~~ ✅ done 2026-10-05 — a one-way trip can always become a round trip: with no known return, it is set to departure + route + 2h (nearest quarter hour), return flexibility "any time that day" (REQ §13.98, `20261005190000`).
 - ~~**H9**~~ ✅ done 2026-10-05 — a request solved "outside" (`external`: public transport, cab…) is treated like `denied`: it stays on the waiting list / unmet list and gets freed-car offers unless the member opted out (owner; `20261005200000_external_like_denied.sql`, `unmetStatuses.ts`, `myRequestsRows.ts`).
 - ~~**H10**~~ ✅ done 2026-10-05 — auto-solve bug (owner report): a round trip from Haifa was never placed after a one-way left the car in Haifa, because round trips are placed before one-way legs and nothing was retried. `runGreedy` now repeats passes over the still-unmet requests until nothing more is placed (SOLVER §3.6.3); no 0-minute "shift" suggestions. The automatic turnaround buffer stays (owner: keep it; only manual placement waives it at a handover).
+
+## Owner rule 2026-10-05 (during QA run 1) — **to build after the run**, REQ §13.99
+- **P1 — Only a private car's owner puts requests on it.** Board: a private car's column/rides are not drop or merge targets for the Sadran (toast why); solver: no placement and no merge/changeOrigin suggestion targets a temporary car for anyone but its owner; SQL: `edit_ride`/placement/`create_proposal` (merge) refuse a request on a temporary car unless the actor is the owner (ask-to-join to the owner stays); QA CLI follows the same rule. Check what QA run 1 reports about where the app allowed it.
+
+## QA run 1 findings (2026-10-05, seed 7, week 11–17.10; QA Sadran = Opus, Wednesday via UI; QA user = Sonnet) — **owner triaged 2026-10-05: all bugs + P1 now; accepted features QM5 (published-day proposals) and QM1 (merge into needs-driver rides); QM9 → existing luggage field (confirm wording); copy (QB10, QU6–QU8) drafted for owner review first; every other UI change/feature only after one-by-one approval** (REQ §13.100)
+Merged and deduplicated from both agents' reports (S = QA Sadran, U = QA user). Evidence (ids, screenshots) in the run's scratchpad notes; every item names its repro.
+
+### Bugs (most significant first)
+- **QB1 — Solver crashes for the whole week after auto-fill** (S1): fixed series pieces are seeded without `seriesId`, so the turnaround buffer applies between one series' consecutive-day pieces → `CarTimeline.forceAdd … overlaps`; no suggestions, no remaining-mode auto-fill, no board preview for the rest of the run.
+- **QB2 — Applying a one-leg merge cancels the request's other, separately placed leg** (`MERGED_BY_CONSENT`), silently (S3: Avigail Mon, Shira Thu).
+- **QB3 — Merging into a connected הקפצה pair attaches the joiner to the out ride only**, even with "both ways"; the other leg's unmet card disappears while a one-leg draft/merge exists (S4: Noa Wed via UI, Ido).
+- **QB4 — Chain healing moves Sadran-placed rides to another car, pairs across an intervening ride, later cancels a pinned ride silently** and strands the car (S5: Yokneam, Mon).
+- **QB5 — A pickup placed on the same car as its drop-off gets a relay-length window but stays a chauffeur ride** → impossible 15–30-minute bookings (S6, several days).
+- **QB6 — Driver cancellation leaves the passenger on a ghost ride** ("_____ מסיע/ה…", no clear notice, Sadran not alerted, freed seat not offered) (U6).
+- **QB7 — Freed cars were never offered** after cancellations; live requests took them first-come-first-served (S9) — first verify the `on-ride-cancelled` edge function runs on the disposable stack.
+- **QB8 — A late request overlapping the member's own ride is auto-approved** onto a second car; the board shows no conflict although readiness counts it (U9, S8).
+- **QB9 — Proposals go stale silently**: a second merge into the same ride fails for its passenger with `stale_version`; a proposal whose ride was replaced fails with `ride_not_found`; an edit while a proposal is pending leaves old text; the Sadran is not told (U1, U2, S12).
+- **QB10 — Merge proposal text is wrong for both parties**: the host gets the joiner's message and times; pickup direction reversed; the earlier departure (§13.95) is never stated; empty "חזרה —"; an out-only merge shows the full window (U3, U4, S2).
+- **QB11 — Contested waiting-list groups include people who already have rides and unrelated destinations**; a group stays open after its member is placed; grammar "גם הילה מלכה מבקשים/ות" (U5, S10).
+- **QB12 — Resizing a pickup-leg ride is checked against the departure flexibility** → every resize is "beyond flexibility"; on a published day a dead end (S7).
+- **QB13 — Status confusion**: published needs-driver rides while the request looks served; a request "waitlisted" while holding a ride; /my duplicates a request and shows "ברשימת המתנה" next to its ride (U12, UI notes).
+- **QB14 — "+ נוסעים" (self-add) leaves the member's own request unresolved** (still contested/waitlisted, return leg uncovered), and the notification names the wrong destination (U13).
+- **QB15 — Answered/withdrawn proposals still look pending/unread**; the driver is not told when a passenger declines (U7, U8).
+- **QB16 — "Car now" goes nowhere when the current week is not live** (filed into the planning week, stays `submitted`, no answer) (U10, S14).
+- **QB17 — Multi-day series days show 00:00 times** in my rides, notifications and proposals; series proposals omit the return date (U11, S19).
+- **QB18 — Policy scoring fails** (`invalid_publication_scores` at publish; board policy chip errors) (S15).
+- **QB19 — A draft does not free the joiner's old booking for further planning** (drop check still counts it; needed `--force`, left a CONFLICT) (S16).
+- **QB20 — Private-car rule not enforced** (P1 above; S17: place/move/merge onto private cars accepted; misleading "car unavailable / seats" refusal for a non-owner drop).
+- **QB21 — Car column away badge is stale** (first away interval of the week, not the selected day) (S11).
+- **QB22 — A request stuck `submitted / PROPOSAL_APPLIED_PENDING_ASSIGNMENT`** although two live rides serve it after an edit-route shift (S13).
+- **QB23 — Dropping just below a connected out-leg offered a shift onto a car parked away** instead of refusing/merging (S18).
+- **QB24 — Copy/display**: "X הוסיף/ה את X" (U14); merge popup "משאיר/ה את הרכב בחריש לבועז", "08:15 במקום 08:15"; the return relay ride shows the out-stop; external composer preview shows a raw `{{link}}`; group-resolve "על שם אלון שגיא עם אלון שגיא"; proposal expiry at publish notifies the Sadran "בקשה חדשה…"; solver stats print "relocations"; the planning-week notification shows a past deadline/stale week (U16 — check whether it is a generator artifact).
+- QA tooling (not the app): `resolveCar` accepts only id prefixes while ids print as suffixes; `publish` label; no CLI command to assign a chauffeur driver, add passengers, ask to join or look up contacts; `qa:member proposals` shows a raw `{{link}}`.
+
+**Fix status (2026-10-05, migrations `20261006100000`–`…200800`; SQL suites `qa_run1_proposals.sql`, `qa_run1_cancel_waitlist.sql`):**
+- Fixed: QB1 (`FixedRide.seriesId`; `forceAdd` records `FIXED_RIDE_CONFLICT` instead of throwing; also in `on-ride-cancelled`), QB2, QB3 (server side: a "both ways" join into a connected pair becomes one leg per ride), QB4, QB5, QB6 (ride kept as missing-driver, passengers `driver_cancelled` with COPY_DRAFT §6 wording, Sadran `driver_cancelled_sadran`), QB8, QB9 (host fingerprint instead of version equality; withdrawals notify the Sadran), QB11 (REQ §13.100 a; singular grammar variant), QB12, QB13 (SQL `sync_request_coverage`; /my lists each request once), QB14, QB15, QB16 (`car_now_week_not_live`), QB18, QB19, QB20/P1 (SQL `private_car_owner_only` in placement/proposals/`edit_ride`/`add_ride_passengers`; board refuses; solver never merges into a temporary car; no freed-slot offer for a private car), QB21, QB22, QB23 (refuses a drop onto a car parked away from the request's origin), QB24 except below, QA tooling. Accepted features: QM5 (Sadran `shift`/`merge` on a published day), QM1 (merge into a needs-driver ride).
+- QB7: the SQL path works; the disposable stack needs `on_ride_cancelled_url`/`push_dispatch_url`/`cron_secret` set (docs/QA_SIMULATION.md).
+- Open: QB3's merge popup still previews only one ride for a connected pair; QB17 series return date not yet in any template (`seriesReturnDay` var exists; copy pending owner); QB24 "return relay ride shows the out-stop" (not reproduced); QB14 wrong destination (not reproduced). New copy awaiting owner review: `he.errors.privateCarOwnerOnly`, templates `withdrawn_ride`/`withdrawn_edit`/`declined_party`/`driver_cancelled_sadran`/`duplicate_overlap`, `he.errors.proposalDayPublic` (now only true for deny/external/origin), docs/COPY_DRAFT_2026-10.md.
+- **Owner answers 2026-10-05 (late):** (1) a large-luggage request **requires** a `large_trunk` car (REQ item 21 changes); relabel the field "ציוד רב — צריך תא מטען גדול" + hint. (2a) COPY_DRAFT texts approved (may change after beta). (2b) **No "use your own car" variant** — never suggest it (the private car may be in use by the household); external keeps two variants: no car in your town / every car taken. (2c) Other passengers are told **every time** someone joins (revert to driver-only if too noisy). (2d) Name the Sadran by **display name**, and never "זה/זו X, הסדרן/ית" — everyone knows each other; the opener is "פונה אליך בכובע של הסידור" style. (3) The live bug-fix texts and my four proposed texts approved (may change after beta). (4) Merge popup previews both rides of a connected pair. (5) Commit this batch on the branch once green.
+
+### UI changes
+- **QU1 — The board ignores screen width**: only ~6 of 13 car columns visible at 2000–2600px inside a ~770px scroller; no auto-scroll while dragging; a drag can turn into text selection (S, Wed).
+- **QU2 — The sticky time axis covers half of the next car column** after a horizontal scroll (S).
+- **QU3 — After sending a proposal the board returns to Sunday**, not the day being worked on (S).
+- **QU4 — Private cars are hidden on days without rides**, so the Sadran cannot see their availability (S).
+- **QU5 — The merge popup does not show the parties' flexibility** (S).
+- **QU6 — The "external" proposal is one generic text** for very different cases (no car in your town / use your own car / genuinely nothing) — needs distinct reasons (U).
+- **QU7 — Proposals should state old → new explicitly, per reader**; a driver's version should be short and their own (U, S).
+- **QU8 — "שינוי בסידור שלך" notifications say only "<car> · 12/10 11:45"** — need what changed, who changed it, and a button (U).
+- **QU9 — Joining a long (series) ride adds you for the whole day** — choose the leg/time (U).
+
+### Missing obvious features
+- **QM1 — Merge into a needs-driver chauffeur ride** (parallel school runs to the same place cannot be combined) (S).
+- **QM2 — The Sadran assigns a volunteer driver** to needs-driver rides (32 were published) — check what the board already offers (REQ §7 lists "assign a driver to a chauffeur leg") (S).
+- **QM3 — Duplicate detection for parent pairs filing the same child run** (S).
+- **QM4 — Sadran-side withdrawal of a duplicate request** (S).
+- **QM5 — A change after publication**: the member asks for a change / the Sadran records the member's OK on a published day (today: `request_window_closed` for the member, `proposal_day_public` for the Sadran) (U, S).
+- **QM6 — Notices**: passenger when the driver cancels (with a re-offer), driver when a passenger declines or withdraws (U).
+- **QM7 — Overlapping own request**: ask "cancel the other one?" instead of auto-approving (U; see QB8).
+- **QM8 — A one-tap "post this on your own car" for private-car owners** (fits §13.99) (S, U).
+- **QM9 — A "big car / equipment" request field** (three members asked) (S).
+
+### Additional features
+- **QF1 — Volunteer-driver matching** for driverless rides (push to members passing the same route) (U).
+- **QF2 — Route-aware contested groups** (cluster by destination/corridor, exclude people with rides) (U; see QB11).
+- **QF3 — Lend a car parked away** (e.g. in Zichron during a series) to members starting there (S).
+- **QF4 — Origin change with "pick me up to the car's base"** (S).
+- **QF5 — Partial-series counter-offers** ("2 days instead of 3") (S).
+- **QF6 — Series served by passenger legs, middle days marked covered** (S).
+- **QF7 — Freed-car offers prioritised to that day's contested group** (S).
+- **QF8 — Passenger "accept but ask for a time change" inside the proposal** (~15% negotiated by message) (U).
+- **QF9 — A "who is joining my car" view for private-car owners**, with an approve step (U).

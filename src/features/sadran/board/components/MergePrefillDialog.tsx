@@ -65,12 +65,12 @@ export function MergePrefillDialog({ prefill, hostLabel, hostStartsAt, hostEndsA
                   <span dir="ltr" className="tabular-nums">{formatTime(new Date(hostStartsAt))}–{formatTime(new Date(hostEndsAt))}</span>
                 </p>
               ) : null}
-              {preview?.valid && hostStartsAt && preview.startsAt !== hostStartsAt ? (
+              {preview?.valid && hostStartsAt && formatTime(new Date(preview.startsAt)) !== formatTime(new Date(hostStartsAt)) ? (
                 <p className="font-semibold text-maintenance" data-testid="merge-departs-earlier">
                   {tv("mergedRide.departsAt", { time: formatTime(new Date(preview.startsAt)), old: formatTime(new Date(hostStartsAt)) })}
                 </p>
               ) : null}
-              {preview?.valid && hostEndsAt && preview.endsAt !== hostEndsAt ? (
+              {preview?.valid && hostEndsAt && formatTime(new Date(preview.endsAt)) !== formatTime(new Date(hostEndsAt)) ? (
                 <p className="font-semibold text-maintenance" data-testid="merge-ends-later">
                   {tv("mergedRide.endsLater", { time: formatTime(new Date(preview.endsAt)), old: formatTime(new Date(hostEndsAt)) })}
                 </p>

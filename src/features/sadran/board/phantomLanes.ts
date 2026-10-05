@@ -48,6 +48,13 @@ export function packPhantomLanes<T extends { id: string; startMinutes: number; e
 export function requestWithinFlex(req: WeekRequestRow, startsAt: string, endsAt: string): boolean {
   const originalStart = requestStart(req);
   if (!originalStart) return false;
+  // QB12: a pickup (return) leg of a drop-off is judged by the return flexibility, not the departure one.
+  const pickupLeg = tripTypeOf(req) === "drop_off" && req.trip_shape === "round_trip" && !!req.return_at
+    && Math.abs(Date.parse(startsAt) - Date.parse(req.return_at)) < Math.abs(Date.parse(startsAt) - Date.parse(originalStart));
+  if (pickupLeg && req.return_at) {
+    return withinFlex((Date.parse(startsAt) - Date.parse(req.return_at)) / 60_000,
+      parseFlexInterval(req.flex_return_early), parseFlexInterval(req.flex_return_late));
+  }
   const returning = req.trip_shape === "one_way_from";
   const startShift = (Date.parse(returning ? endsAt : startsAt) - Date.parse(originalStart)) / 60_000;
   if (!withinFlex(startShift,

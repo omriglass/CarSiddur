@@ -372,8 +372,8 @@ export function ProposalComposerScreen({ departmentId, weekStart }: ProposalComp
             <>
               <label className="block text-xs text-muted-foreground">{he.sadranProposal.previewTitle}</label>
               <Textarea
-                value={previewText}
-                onChange={(e) => setEditedText(e.target.value)}
+                value={previewText.replaceAll("{{link}}", he.sadranProposal.linkPlaceholder)}
+                onChange={(e) => setEditedText(e.target.value.replaceAll(he.sadranProposal.linkPlaceholder, "{{link}}"))}
                 rows={6}
                 dir="rtl"
                 disabled={!!proposalId}

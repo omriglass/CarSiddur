@@ -221,15 +221,15 @@ from (values
   ('published', 'הסידור פורסם לימים {{days}}', '{{outcomeLine}}'),
   ('outcome_changed', 'שינוי בסידור שלך לימים {{days}}', '{{diffLine}}'),
   ('proposal_received', 'הצעה מ{{sadranName}} לגבי {{destination}}', 'יום {{day}} {{depart}}–{{return}} — {{proposalShort}}'),
-  ('proposal_answered', '{{firstName}} ענה/תה על ההצעה', '{{destination}}, יום {{day}} {{depart}}–{{return}}'),
-  ('freed_slot', 'התפנה רכב {{route}}', '{{car}}, יום {{day}} {{depart}}–{{return}}.'),
-  ('freed_slot_auto', 'שובצת לרכב שהתפנה', '{{car}}, יום {{day}} {{depart}}–{{return}} {{route}}.'),
-  ('claim_approved', 'הרכב שלך 🎉', 'הסדרן/ית אישר/ה: {{car}}, יום {{day}} {{depart}}–{{return}}.'),
+  ('proposal_answered', '{{firstName}} ענה/תה על ההצעה', '{{destination}}, יום {{day}} {{timeRange}}'),
+  ('freed_slot', 'התפנה רכב {{route}}', '{{car}}, יום {{day}} {{timeRange}}.'),
+  ('freed_slot_auto', 'שובצת לרכב שהתפנה', '{{car}}, יום {{day}} {{timeRange}} {{route}}.'),
+  ('claim_approved', 'הרכב שלך 🎉', 'הסדרן/ית אישר/ה: {{car}}, יום {{day}} {{timeRange}}.'),
   ('claim_declined', 'הרכב שהתפנה נמסר לאחר/ת', 'הבקשה {{route}} נשארת ברשימת ההמתנה.'),
-  ('claim_contested', '{{count}} חברים מבקשים את הרכב שהתפנה', '{{car}}, יום {{day}} {{depart}}–{{return}}.'),
+  ('claim_contested', '{{count}} חברים מבקשים את הרכב שהתפנה', '{{car}}, יום {{day}} {{timeRange}}.'),
   ('maintenance_affects', '{{car}} נכנס/ת לטיפול', 'הנסיעה שלך {{route}} ביום {{day}} תשובץ מחדש; נעדכן בהקדם.'),
-  ('late_request', 'בקשה מאוחרת מ{{firstName}}', '{{destination}}, יום {{day}} {{depart}}–{{return}} — התקבלה אחרי סגירת החלון.'),
-  ('waitlisted_request', 'בקשה חדשה מ{{firstName}} ללא רכב פנוי', '{{destination}}, יום {{day}} {{depart}}–{{return}}.'),
+  ('late_request', 'בקשה מאוחרת מ{{firstName}}', '{{destination}}, יום {{day}} {{timeRange}} — התקבלה אחרי סגירת החלון.'),
+  ('waitlisted_request', 'בקשה חדשה מ{{firstName}} ללא רכב פנוי', '{{destination}}, יום {{day}} {{timeRange}}.'),
   ('auto_approved', 'הבקשה אושרה אוטומטית', '{{car}}, יום {{day}} {{depart}}–{{return}} {{route}}.'),
   ('request_changed', '{{firstName}} שינה/תה בקשה', '{{destination}}, יום {{day}} — {{diffLine}}'),
   ('access_request', 'בקשת גישה חדשה', '{{email}} מבקש/ת להצטרף.'),
@@ -476,9 +476,9 @@ commit;
 insert into public.notification_templates(event,channel,variant,title,body,default_title,default_body)
 select 'proposal_received',channel,'ride_change',
   '{{requesterName}} ביקש/ה לבטל את הנסיעה שלך',
-  'בקשה לרכב ביום {{day}} {{depart}}–{{return}}. האם לאשר את ביטול הנסיעה שלך?',
+  'בקשה לרכב ביום {{day}} {{timeRange}}. האם לאשר את ביטול הנסיעה שלך?',
   '{{requesterName}} ביקש/ה לבטל את הנסיעה שלך',
-  'בקשה לרכב ביום {{day}} {{depart}}–{{return}}. האם לאשר את ביטול הנסיעה שלך?'
+  'בקשה לרכב ביום {{day}} {{timeRange}}. האם לאשר את ביטול הנסיעה שלך?'
 from unnest(array['inbox','push']::public.notification_channel[]) channel
 on conflict (event,channel,(coalesce(variant,''))) do update set title=excluded.title,body=excluded.body,default_title=excluded.default_title,default_body=excluded.default_body;
 
@@ -487,9 +487,9 @@ on conflict (event,channel,(coalesce(variant,''))) do update set title=excluded.
 insert into public.notification_templates(event,channel,variant,title,body,default_title,default_body)
 select 'outcome_changed',channel,'ride_cancelled',
   '{{byName}} ביטל/ה נסיעה שהיית בה',
-  'יום {{day}} {{depart}}–{{return}}, {{car}} {{route}}.',
+  'יום {{day}} {{timeRange}}, {{car}} {{route}}.',
   '{{byName}} ביטל/ה נסיעה שהיית בה',
-  'יום {{day}} {{depart}}–{{return}}, {{car}} {{route}}.'
+  'יום {{day}} {{timeRange}}, {{car}} {{route}}.'
 from unnest(array['inbox','push']::public.notification_channel[]) channel
 on conflict (event,channel,(coalesce(variant,''))) do update set title=excluded.title,body=excluded.body,default_title=excluded.default_title,default_body=excluded.default_body;
 
@@ -509,9 +509,9 @@ on conflict (event,channel,(coalesce(variant,''))) do update set title=excluded.
 insert into public.notification_templates(event,channel,variant,title,body,default_title,default_body)
 select 'proposal_answered', channel, t.variant, t.title, t.body, t.title, t.body
 from (values
-  ('accepted', '{{firstName}} אישר/ה את ההצעה', '{{destination}}, יום {{day}} {{depart}}–{{return}}'),
-  ('declined', '{{firstName}} דחה/תה את ההצעה', '{{destination}}, יום {{day}} {{depart}}–{{return}}'),
-  ('expired', 'ההצעה ל{{firstName}} פקעה', '{{destination}}, יום {{day}} {{depart}}–{{return}}')
+  ('accepted', '{{firstName}} אישר/ה את ההצעה', '{{destination}}, יום {{day}} {{timeRange}}'),
+  ('declined', '{{firstName}} דחה/תה את ההצעה', '{{destination}}, יום {{day}} {{timeRange}}'),
+  ('expired', 'ההצעה ל{{firstName}} פקעה', '{{destination}}, יום {{day}} {{timeRange}}')
 ) as t(variant, title, body)
 cross join unnest(array['inbox','push']::public.notification_channel[]) channel
 on conflict (event,channel,(coalesce(variant,''))) do update set title=excluded.title,body=excluded.body,default_title=excluded.default_title,default_body=excluded.default_body;
@@ -548,3 +548,22 @@ select 'car_swapped'::public.notification_event, ch, null,
   'הרכב שלך הוחלף', 'הנסיעה שלך ביום {{day}} {{depart}}–{{return}} עברה מ{{fromCar}} ל{{car}}.'
 from unnest(array['inbox','push']::public.notification_channel[]) ch
 on conflict(event,channel,coalesce(variant,'')) do nothing;
+
+-- REQ §13.100 (QA run 1): QB17 all-day fragment and the new notification variants; mirrors
+-- 20261006200200_notification_time_range_and_variants.sql (driver_cancelled copy: docs/COPY_DRAFT_2026-10.md §6).
+insert into public.text_fragments (key, body) values ('time.all_day', 'כל היום')
+on conflict (key) do nothing;
+insert into public.notification_templates (event, channel, variant, title, body, default_title, default_body)
+select t.event::public.notification_event, ch, t.variant, t.title, t.body, t.title, t.body
+from (values
+  ('outcome_changed', 'driver_cancelled', 'הנסיעה שלך בוטלה — {{driverName}} ביטל/ה',
+   '{{route}} · {{day}} {{timeRange}}. הבקשה חזרה לרשימת ההמתנה; נחפש רכב אחר.'),
+  ('outcome_changed', 'driver_cancelled_plain', 'הנסיעה שלך בוטלה — {{driverName}} ביטל/ה',
+   '{{route}} · {{day}} {{timeRange}}.'),
+  ('outcome_changed', 'passenger_joined', 'הצטרפות לנסיעה שלך',
+   '{{byName}} הצטרף/ה לנסיעה שלך ביום {{day}} {{route}}'),
+  ('waitlist_contested', 'single', 'רשימת המתנה משותפת ליום {{day}}',
+   'גם {{names}} מבקש/ת רכב בשעות חופפות ({{depart}}–{{return}}). אפשר להסתדר ביניכם/ן ולסמן מי נוסע/ת — או שהסדרן/ית יחליט/ו.')
+) as t(event, variant, title, body)
+cross join unnest(array['inbox', 'push']::public.notification_channel[]) as ch
+on conflict (event, channel, coalesce(variant, '')) do nothing;

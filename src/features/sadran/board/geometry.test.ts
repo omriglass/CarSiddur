@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  awayLocationAt,
   isHandoverPair,
   isoToMinutesSinceMidnight,
   isoToSlot,
@@ -320,5 +321,16 @@ describe("manual handover (REQ §13.94, G7)", () => {
     expect([...tightScheduleRideIds([ride("a", 8, 9, "home", "x"), ride("b", 9.1, 10, "x", "home")], 30, options)]).toEqual([]);
     expect([...tightScheduleRideIds([ride("a", 8, 9, "x", "home"), ride("b", 9.1, 10, "home", "x")], 30, options)].sort()).toEqual(["a", "b"]);
     expect([...tightScheduleRideIds([ride("a", 8, 9, "home", "x"), ride("b", 9.1, 10, "x", "home")], 30, { carBaseLocationId: new Map([["car", "x"]]) })].sort()).toEqual(["a", "b"]);
+  });
+});
+
+describe("awayLocationAt (QB21)", () => {
+  const weekStartMs = Date.parse("2026-10-11T00:00:00Z");
+  const windows = [{ locationId: "haris", window: { start: 96 * 2 + 8, end: 96 * 2 + 40 } }];
+  const names = new Map([["haris", "Haris"]]);
+  it("reports the place only on days the car is away at the day start", () => {
+    expect(awayLocationAt(windows, weekStartMs, "2026-10-13T06:00:00Z", names)).toBe("Haris");
+    expect(awayLocationAt(windows, weekStartMs, "2026-10-11T00:00:00Z", names)).toBeUndefined();
+    expect(awayLocationAt(undefined, weekStartMs, "2026-10-13T06:00:00Z", names)).toBeUndefined();
   });
 });

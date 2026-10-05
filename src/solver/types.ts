@@ -238,6 +238,9 @@ export interface FixedRide {
   approvedBufferAfterSlots?: number;
   /** A Sadran reservation (REQ §13.96): occupies the car's time but not its location. */
   locationNeutral?: boolean;
+  /** Multi-day series this ride belongs to: pieces of one series on consecutive days are contiguous
+   *  by construction and need no turnaround buffer between them (QB1). */
+  seriesId?: string;
   kind: 'pinned' | 'acceptedProposal' | 'temporaryOwner';
 }
 

@@ -181,7 +181,8 @@ export function rideBlockLabel(input: RideLabelInput): string {
       });
     }
     if (driver.trip_type === "drop_off") {
-      const partner = input.relayPartner;
+      // QB24: a partner who is the same person as this leg's own requester is not named ("leaves the car for himself").
+      const partner = input.relayPartner && driver.requester && firstName(input.relayPartner.name) === firstName(driver.requester) ? undefined : input.relayPartner;
       if (driver.leg === "return") {
         return partner
           ? tv("rideCoordination.relayWaitFrom", { place: input.originName, name: firstName(partner.name), time: formatTime(new Date(partner.at)) })

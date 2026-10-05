@@ -121,6 +121,7 @@ interface CarTimelineLike {
     startLocationId: string;
     endLocationId: string;
     overnightAck: boolean;
+    seriesId?: string;
   }): void;
 }
 interface FreedSlotInput {
@@ -270,7 +271,7 @@ Deno.serve(async (req) => {
         .maybeSingle(),
       client
         .from('rides')
-        .select('id, starts_at, ends_at, origin_id, destination_id, overnight_ack_by, auto_relocation, ride_requests(request_id)')
+        .select('id, series_id, starts_at, ends_at, origin_id, destination_id, overnight_ack_by, auto_relocation, ride_requests(request_id)')
         .eq('car_id', offer.car_id)
         .eq('week_start', offer.week_start)
         .neq('status', 'cancelled')
@@ -415,6 +416,8 @@ Deno.serve(async (req) => {
   for (const ride of otherRides ?? []) {
     timeline.forceAdd({
       rideId: ride.id as string,
+      // REQ §13.100 (QB1/QB7): a series' consecutive-day pieces are contiguous by construction (no buffer).
+      seriesId: (ride.series_id as string | null) ?? undefined,
       window: {
         start: toSlotFloor(Date.parse(ride.starts_at as string), weekStartMs),
         end: toSlotCeil(Date.parse(ride.ends_at as string), weekStartMs),

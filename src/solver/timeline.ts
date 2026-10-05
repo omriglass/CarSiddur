@@ -59,6 +59,7 @@ export interface ChainBreak {
 export class CarTimeline {
   private blocks: Block[] = [];
   private fixedRideIds = new Set<string>();
+  private conflicts: string[] = [];
   private maintenance: MaintenanceEntry[] = [];
   private readonly startLocation: string;
   private readonly baseLocation: string;
@@ -150,13 +151,20 @@ export class CarTimeline {
    * the fixed ride's own origin from there on.
    */
   forceAdd(b: Block): void {
-    if (this.overlapsAnything(b.window.start, b.window.end, b)) {
-      throw new Error(`CarTimeline.forceAdd: block ${b.rideId} overlaps an existing block/maintenance on car ${this.car.id}`);
+    // Fixed rides are facts (QB1): a clash (buffer-only or even a true overlap) is recorded,
+    // never thrown, so one bad pair cannot take the whole week's solve down.
+    if (this.overlapsAnything(b.window.start, b.window.end, b, b.seriesId, b.relayPairId)) {
+      this.conflicts.push(b.rideId);
     }
     const idx = this.blocks.findIndex((x) => x.window.start > b.window.start);
     if (idx === -1) this.blocks.push(b);
     else this.blocks.splice(idx, 0, b);
     this.fixedRideIds.add(b.rideId);
+  }
+
+  /** Ids of fixed rides that clashed (overlap/buffer) with something already on the timeline when seeded. */
+  fixedConflicts(): string[] {
+    return [...this.conflicts];
   }
 
   /**

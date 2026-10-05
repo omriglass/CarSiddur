@@ -592,6 +592,7 @@ var TEMPLATES = {
   // the day-end rule (REQUIREMENTS §13.93) — superseded by WARN_CHAIN_BROKEN
   // (CarTimeline.chainBreaks()) and WARN_CAR_AWAY_AT_WEEK_END below.
   WARN_CHAIN_BROKEN: "\u05E0\u05E1\u05D9\u05E2\u05D4 \u05E7\u05D1\u05D5\u05E2\u05D4 \u05DE\u05EA\u05D7\u05D9\u05DC\u05D4 \u05D1\u05DE\u05E7\u05D5\u05DD \u05E9\u05D4\u05E8\u05DB\u05D1 \u05D0\u05D9\u05E0\u05D5 \u05E0\u05DE\u05E6\u05D0 \u05D1\u05D5 \u05D1\u05E4\u05D5\u05E2\u05DC",
+  WARN_FIXED_RIDE_CONFLICT: "\u05E0\u05E1\u05D9\u05E2\u05D4 \u05E7\u05D1\u05D5\u05E2\u05D4 \u05D7\u05D5\u05E4\u05E4\u05EA \u05D0\u05D5 \u05E6\u05DE\u05D5\u05D3\u05D4 \u05DE\u05D3\u05D9 \u05DC\u05E0\u05E1\u05D9\u05E2\u05D4 \u05E7\u05D1\u05D5\u05E2\u05D4 \u05D0\u05D7\u05E8\u05EA \u05D1\u05D0\u05D5\u05EA\u05D5 \u05E8\u05DB\u05D1",
   WARN_CAR_AWAY_AT_WEEK_END: "{car} \u05DE\u05E1\u05D9\u05D9\u05DD/\u05EA \u05D0\u05EA \u05D4\u05E9\u05D1\u05D5\u05E2 \u05D1{place} \u05D5\u05DC\u05D0 \u05D1\u05D1\u05E1\u05D9\u05E1\u05D5/\u05D4",
   WARN_UNKNOWN_RULE_TYPE: "\u05E1\u05D5\u05D2 \u05DB\u05DC\u05DC \u05DE\u05D3\u05D9\u05E0\u05D9\u05D5\u05EA \u05DC\u05D0 \u05DE\u05D5\u05DB\u05E8; \u05D4\u05DB\u05DC\u05DC \u05D3\u05D5\u05DC\u05D2"
 };
@@ -1483,6 +1484,7 @@ var CarTimeline = class {
   }
   blocks = [];
   fixedRideIds = /* @__PURE__ */ new Set();
+  conflicts = [];
   maintenance = [];
   startLocation;
   baseLocation;
@@ -1553,13 +1555,17 @@ var CarTimeline = class {
    * the fixed ride's own origin from there on.
    */
   forceAdd(b) {
-    if (this.overlapsAnything(b.window.start, b.window.end, b)) {
-      throw new Error(`CarTimeline.forceAdd: block ${b.rideId} overlaps an existing block/maintenance on car ${this.car.id}`);
+    if (this.overlapsAnything(b.window.start, b.window.end, b, b.seriesId, b.relayPairId)) {
+      this.conflicts.push(b.rideId);
     }
     const idx = this.blocks.findIndex((x) => x.window.start > b.window.start);
     if (idx === -1) this.blocks.push(b);
     else this.blocks.splice(idx, 0, b);
     this.fixedRideIds.add(b.rideId);
+  }
+  /** Ids of fixed rides that clashed (overlap/buffer) with something already on the timeline when seeded. */
+  fixedConflicts() {
+    return [...this.conflicts];
   }
   /**
    * Blocks whose recorded origin does not match where the car is when they
@@ -1964,6 +1970,7 @@ function findMergeHosts(params) {
   const { guest, leg, hosts: hosts2, cars } = params;
   const candidates = [];
   for (const host of hosts2) {
+    if (host.isTemporary) continue;
     if (!legCompatible(leg, host.legSide)) continue;
     const car = cars.get(host.carId);
     if (!car) continue;
@@ -3162,7 +3169,8 @@ function solveExpanded(input) {
         endLocationId: fr.destinationId,
         overnightAck: fr.overnightAck,
         approvedBufferAfterSlots: fr.approvedBufferAfterSlots,
-        locationNeutral: fr.locationNeutral
+        locationNeutral: fr.locationNeutral,
+        seriesId: fr.seriesId
       });
     }
     fixedAssignments.push({
@@ -3179,9 +3187,15 @@ function solveExpanded(input) {
       luggageCount: fr.luggageCount,
       shift: { departureMin: 0, returnMin: 0 },
       source: "fixed",
+      ...fr.seriesId ? { seriesId: fr.seriesId } : {},
       reasonCode: "PLACED_FIXED",
       reason: reason("PLACED_FIXED")
     });
+  }
+  for (const tl of timelines.values()) {
+    for (const rideId of tl.fixedConflicts()) {
+      warnings.push({ code: "FIXED_RIDE_CONFLICT", message: reason("WARN_FIXED_RIDE_CONFLICT"), requestId: rideId });
+    }
   }
   for (const car of input.cars.filter((c) => c.type === "shared")) {
     const tl = timelines.get(car.id);

@@ -372,7 +372,9 @@ reset role;
 --     Car ...040 is busy the whole of day index 2 08:00-16:00 (seed ride ...301).
 -- ---------------------------------------------------------------------------
 set local role authenticated;
-select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000104","role":"authenticated"}', true);
+-- REQ §13.100 (QB8): member ...101 holds no booking on day 2; the seeded member ...104 does (waitlisted demo
+-- request ...204), and an overlapping own request is never auto-approved.
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000101","role":"authenticated"}', true);
 
 do $$
 declare

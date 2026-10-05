@@ -122,14 +122,14 @@ describe('findMergeHosts', () => {
     expect(withTrunk).toHaveLength(1);
   });
 
-  it('a temporary car appears as a host but is never a target for solver placement (assignment-level guarantee tested in invariants)', () => {
+  it('a temporary car appears as a host ride but is never a merge target (REQ §13.99)', () => {
     const cars = [makeCar('C1', { type: 'temporary', seatConfigs: [passengers(4)] })];
     const assignment = hostAssignment({ source: 'fixed' });
     const hosts = buildHostRides([assignment], new Map(cars.map((c) => [c.id, c])));
     expect(hosts[0]?.isTemporary).toBe(true);
     const guest = guestNr({ destinationId: 'destA' });
     const candidates = findMergeHosts({ guest, leg: 'both', hosts, ...commonParams(cars) });
-    expect(candidates).toHaveLength(1); // temporary cars are valid merge hosts (REQ §6.4)
+    expect(candidates).toHaveLength(0); // only the owner puts requests on a private car (REQ §13.99)
   });
 
   it('a fixed host never shifts even when the time is outside the guest flex', () => {
@@ -185,5 +185,25 @@ describe('findMergeHosts', () => {
 
     const otherOriginGuest = guestNr({ destinationId: 'destA', originId: 'HAIFA' });
     expect(findMergeHosts({ guest: otherOriginGuest, leg: 'both', hosts, ...commonParams(cars) })).toHaveLength(0);
+  });
+});
+
+describe('auto-fill never merges into a temporary car (REQ §13.99)', () => {
+  it('a request matching a private car\'s fixed ride stays unmet with no merge suggestion', async () => {
+    const { solve } = await import('../index');
+    const guest = makeRequest({ id: 'G', destinationId: 'destA', departureMs: slotMs(32), returnMs: slotMs(48) });
+    const input = baseInput({
+      cars: [makeCar('T1', { type: 'temporary', ownerMemberId: 'owner', seatConfigs: [passengers(4)] })],
+      requests: [guest],
+      fixedRides: [{
+        id: 'fx', carId: 'T1', window: { start: 32, end: 48 }, originId: 'home', destinationId: 'home',
+        driverMemberId: 'owner', legs: [], servedRequestIds: [], passengers: passengers(1), luggageCount: 0,
+        overnightAck: false, kind: 'temporaryOwner',
+      }],
+    });
+    const out = solve(input);
+    expect(out.assignments.filter((a) => a.source === 'solver')).toEqual([]);
+    expect(out.unmet.map((u) => u.requestId)).toEqual(['G']);
+    expect(out.unmet.flatMap((u) => u.suggestions).some((s) => s.kind === 'merge' || s.kind === 'splitLegs')).toBe(false);
   });
 });

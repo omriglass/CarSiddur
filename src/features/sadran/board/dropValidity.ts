@@ -88,6 +88,21 @@ export function carLocationAt(ctx: BoardDropContext, carId: string, atIso: strin
   return ctx.carBaseLocationId?.get(carId) ?? ctx.homeDestinationId ?? null;
 }
 
+/**
+ * REQ §13.99 (QB20/P1): only a private (temporary) car's owner puts requests on it. `true` when
+ * `carId` is a temporary car and `requesterId` is not its owner - the Sadran may not drop or
+ * merge that request onto it (ask-to-join goes to the owner instead).
+ */
+export function privateCarBlocks(ctx: Pick<BoardDropContext, "cars">, carId: string, requesterId: string | null | undefined): boolean {
+  const car = ctx.cars.find((c) => c.id === carId);
+  return !!car && car.type === "temporary" && (!requesterId || car.owner_id !== requesterId);
+}
+
+/** Same rule for a ride moved to another car: its driver must be the car's owner. */
+export function privateCarBlocksRide(ctx: Pick<BoardDropContext, "cars">, ride: Pick<BoardRide, "car_id" | "driver_id">, carId: string): boolean {
+  return ride.car_id !== carId && privateCarBlocks(ctx, carId, ride.driver_id);
+}
+
 export function passengersOf(ride: BoardRide): SeatNeed {
   const served = servedOf(ride);
   return served.reduce(
@@ -153,6 +168,7 @@ export function isDropTargetValid(ctx: BoardDropContext, rideId: string, carId: 
   }
   if (startMinutes < 0 || endMinutes > 1439 || endMinutes <= startMinutes || unavailable(ctx, carId, minutesIso(ctx, startMinutes), minutesIso(ctx, endMinutes))) return false;
   const ride = ctx.rides.find((r) => r.id === rideId);
+  if (ride && privateCarBlocksRide(ctx, ride, carId)) return false;
   if (!ride?.starts_at || !ride.ends_at) return true;
   const merge = mergeCandidateForRide(ctx, rideId, carId, minutesIso(ctx, startMinutes), minutesIso(ctx, endMinutes), hostRideId);
   if (merge) {
@@ -242,6 +258,7 @@ export function strandsNextRide(ctx: BoardDropContext, carId: string, endLocatio
  * overlap rather than rejecting coordinator-approved short turnaround gaps. */
 export function isUnmetDropValid(ctx: BoardDropContext, item: UnmetListItem, carId: string, minutes: number, hostRideId?: string): boolean {
   const window = unmetPreviewWindow(ctx, item, carId, minutes, hostRideId);
+  if (privateCarBlocks(ctx, carId, item.request.requester_id)) return false;
   if (!window || carId.startsWith("phantom:") || unavailable(ctx, carId, window.startsAt, window.endsAt)) return false;
   const host = unmetMergeHost(ctx, item, carId, minutes, hostRideId);
   // A merge boards the guest *en route* (REQ §13.94): where the car is and where it ends are the

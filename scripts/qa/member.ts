@@ -25,7 +25,7 @@ const instantAt = (day: string, hhmm: string): string => {
   if (m == null) throw new UsageError(`bad time ${hhmm} (want HH:MM)`);
   return fromZonedTime(`${day}T${formatMinutes(m)}:00`, TZ).toISOString();
 };
-const oneLine = (text: string): string => text.replace(/\s+/g, " ").trim();
+const oneLine = (text: string): string => text.replace(/\{\{\s*link\s*\}\}/g, "(link: use `answer <proposalId> accept|decline`)").replace(/\s+/g, " ").trim();
 const FLEX: Record<string, string> = { "0": "0", "15": "15 min", "30": "30 min", "60": "1 hour", "120": "2 hours", any: "1 day", day: "1 day" };
 const flex = (value: string | undefined): string | undefined => (value === undefined ? undefined : FLEX[value] ?? (() => { throw new UsageError(`flex must be one of ${Object.keys(FLEX).join(",")}`); })());
 const weekOf = (day: string): string => dateKey(weekStartFor(new Date(instantAt(day, "12:00"))));
@@ -207,6 +207,24 @@ async function cmdRequest(args: Args, forceToday = false): Promise<void> {
   console.log(`filed: ${result.request_ids ? `series ${short(result.series_id)} requests ${result.request_ids.map(short).join(",")}` : `request ${short(result.request_id)}`} late=${result.is_late ?? "-"} status=${result.status ?? "submitted"}${result.ride_id ? ` ride=${short(result.ride_id)}` : ""}${result.car_id ? ` car=${short(result.car_id)}` : ""}${result.reason ? ` reason=${result.reason}` : ""}${result.warnings?.length ? ` warnings=${result.warnings.join(",")}` : ""}`);
 }
 
+/** `ask-to-join <ride> [--adults N] [--notes T]` - files a normal request that joins that ride (`join_ride_id`). */
+async function cmdAskToJoin(args: Args): Promise<void> {
+  if (!SCOPE) throw new UsageError("department not found");
+  const day = need(flag(args, "day"), "--day <yyyy-mm-dd> (the ride's day)");
+  const rides = (await fetchBoardRides(SCOPE.departmentId, weekOf(day))).filter((r) => r.status !== "cancelled");
+  const ride = rides.find((r) => r.id === resolveId(need(args.pos[0], "<rideId>"), rides.flatMap((x) => (x.id ? [x.id] : [])), "ride"))!;
+  if (!ride.starts_at || !ride.ends_at || !ride.destination_id) throw new UsageError("ride lacks times/destination");
+  const rideTypes = await fetchRideTypes(SCOPE.departmentId);
+  const rideType = rideTypes.find((r) => r.code === "other") ?? rideTypes[0];
+  if (!rideType) throw new UsageError("no ride type available");
+  const result = await requests.submitRequest({
+    department_id: SCOPE.departmentId, week_start: ride.week_start ?? weekOf(day), destination_id: ride.destination_id, ride_type_id: rideType.id, trip_shape: "round_trip", trip_type: "round_trip",
+    depart_at: ride.starts_at, return_at: ride.ends_at, adults: Number(flag(args, "adults") ?? 1), child_seats: 0, boosters: 0,
+    flex_depart_early: "0", flex_depart_late: "0", flex_return_early: "0", flex_return_late: "0", notes: flag(args, "notes"), join_ride_id: ride.id as string,
+  }) as unknown as requests.SubmitRequestResult;
+  console.log(`asked to join ride ${short(ride.id)}: request ${short(result.request_id)} status=${result.status ?? "submitted"}${result.reason ? ` reason=${result.reason}` : ""}`);
+}
+
 async function cmdWithdraw(args: Args): Promise<void> {
   const rows = await requests.fetchMyRequests(ME);
   const row = rows.find((r) => r.id === resolveId(need(args.pos[0], "<requestId>"), rows.map((r) => r.id), "request"))!;
@@ -230,7 +248,7 @@ function usage(): void {
   request <day> --depart HH:MM [--return HH:MM] --dest <place|free:text> [--trip round_trip|one_way|drop_off] [--from] [--pickup] [--origin P] [--stop P]... [--return-stop P]...
           [--adults N --child-seats N --boosters N --luggage] [--flex 0|15|30|60|120|any | --flex-depart-early/-late/--flex-return-early/-late] [--return-day D] [--car ID] [--ride-type CODE] [--notes T] [--waitlist]
   edit <req> [--day D --depart HH:MM --return HH:MM --dest P --origin P --trip-type T [--from|--pickup] --adults N --flex X --notes T --stop P... --clear-stops]
-  withdraw <req> | cancel <req> [reason] | car-now --dest P [--hours N] [--adults N]`);
+  ask-to-join <ride> --day D [--adults N --notes T] | withdraw <req> | cancel <req> [reason] | car-now --dest P [--hours N] [--adults N]`);
 }
 
 run(async () => {
@@ -251,6 +269,7 @@ run(async () => {
     case "my-rides": return cmdMyRides();
     case "siddur": return cmdSiddur(args);
     case "edit": return cmdEdit(args);
+    case "ask-to-join": return cmdAskToJoin(args);
     case "withdraw": return cmdWithdraw(args);
     case "cancel": return cmdCancel(args);
     case "request": return cmdRequest(args);

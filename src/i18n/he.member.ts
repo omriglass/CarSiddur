@@ -482,6 +482,7 @@ export const heMember = {
     seatsLine: "{{adults}} מבוגרים/ות · {{childSeats}} כיסאות בטיחות · {{boosters}} בוסטרים",
     summary: "{{count}} נוסעים/ות, {{seats}} מקומות",
     confirm: "אשר/י נסיעה משותפת",
+    confirmBodySolo: "הנסיעה תירשם על שם {{driver}}. מי שלא סומן/ה נשאר/ת ברשימת ההמתנה.",
     confirmBody: "הנסיעה תירשם על שם {{driver}} עם {{names}}. מי שלא סומן/ה נשאר/ת ברשימת ההמתנה.",
     resolved: "הנסיעה נרשמה",
     readOnlyHint: "רק המשתתפים/ות או הסדרן/ית יכולים/ות להכריע",

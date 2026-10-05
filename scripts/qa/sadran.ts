@@ -22,6 +22,7 @@ import { requestStart, requestWithinFlex, tripTypeOf } from "@/features/sadran/b
 import { initialRouteEditValues, reservationRoutePlaces, routeEditChanged, routeEditPayload, type RouteEditValues } from "@/features/sadran/board/rideRouteEdit";
 import { isDropOffWithPickup, coveredLegs } from "@/features/sadran/board/unmetLegs";
 import { fetchWhatsappTemplates } from "@/features/sadran/api";
+import { addRidePassengers } from "@/features/rides/api";
 import { slotToIso } from "@/features/sadran/board/geometry";
 import { supabase } from "@/integrations/supabase/client";
 import type { DestinationValue } from "@/components/DestinationCombobox";
@@ -61,7 +62,7 @@ function seatsOfCar(board: Board, carId: string): string {
 }
 
 function resolveCar(board: Board, token: string) {
-  const exact = board.cars.filter((c) => c.id === token || c.name === token || c.id.startsWith(token));
+  const exact = board.cars.filter((c) => c.id === token || c.name === token || c.id.startsWith(token) || (token.length >= 4 && c.id.endsWith(token)));
   const found = exact.length ? exact : board.cars.filter((c) => c.name.toLowerCase().includes(token.toLowerCase()));
   if (found.length !== 1) throw new UsageError(`car '${token}' ${found.length ? "is ambiguous" : "not found"} (cars: ${board.cars.map((c) => `${c.name}=${short(c.id)}`).join(", ")})`);
   return found[0]!;
@@ -478,8 +479,66 @@ async function cmdReserve(board: Board, args: Args): Promise<void> {
 
 async function cmdPublish(board: Board, args: Args): Promise<void> {
   const days = flag(args, "days")?.split(",");
+  const publishedDays = async () => (await api.fetchPublicationReadiness(board.scope.departmentId, board.scope.weekStart)).filter((d) => d.published).map((d) => d.day);
+  const before = new Set(await publishedDays().catch(() => [] as string[]));
   const id = await publishWithScores(board.scope.departmentId, board.scope.weekStart, { days, allowUnanswered: has(args, "allow-unanswered") });
-  console.log(`published${days ? ` days ${days.join(",")}` : " (all ready days)"}: ${id}`);
+  // Report what was actually published (the RPC publishes every ready day when no --days is given), not what was asked for.
+  const after = await publishedDays().catch(() => null);
+  const newly = after ? after.filter((d) => !before.has(d)) : null;
+  console.log(`published ${newly ? (newly.length ? `days ${newly.join(",")}` : "no new days (nothing was ready)") : "(days unknown: readiness unavailable)"}${after ? ` | published now: ${after.join(",") || "-"}` : ""} | siddur version ${id}`);
+}
+
+/** Assign (or clear with `none`) the driver of a chauffeur / needs-driver ride, keeping everything else on it. */
+async function cmdAssignDriver(board: Board, args: Args): Promise<void> {
+  const ride = resolveRide(board, need(args.pos[0], "<rideId>"));
+  if (!ride.id || !ride.starts_at || !ride.ends_at || !ride.car_id || !ride.origin_id || !ride.destination_id) throw new UsageError("ride lacks times/car/places");
+  const who = need(args.pos[1], "<member name|email-prefix|id|none>");
+  const members = await loadMembers(board);
+  const driver = who === "none" ? null : pickMember(members, who);
+  await api.editRide({
+    id: ride.id, department_id: board.scope.departmentId, week_start: board.scope.weekStart, car_id: ride.car_id, starts_at: ride.starts_at, ends_at: ride.ends_at,
+    origin_id: ride.origin_id, destination_id: ride.destination_id, driver_id: driver?.id ?? null, needs_driver: !driver, notes: ride.notes ?? undefined,
+    is_pinned: true, allow_conflict: true, pin_reason: ride.pin_reason ?? "SADRAN_MANUAL", served: servedToEditRideLegs(servedOf(ride)),
+  }, ride.version ?? undefined);
+  console.log(`ride ${short(ride.id)} driver: ${driver ? `${driver.name} (${short(driver.id)})` : "(none, needs a driver)"}`);
+}
+
+/** `add-passengers <ride> <name>[:adult|child_seat|booster]...` - the siddur "+ נוסעים" action, as the Sadran. */
+async function cmdAddPassengers(board: Board, args: Args): Promise<void> {
+  const ride = resolveRide(board, need(args.pos[0], "<rideId>"));
+  if (!ride.id) throw new UsageError("ride has no id");
+  const names = args.pos.slice(1);
+  if (!names.length) throw new UsageError("add-passengers <ride> <name>[:adult|child_seat|booster]...");
+  const passengers = names.map((token) => {
+    const [name, kind] = token.split(":");
+    const seat = (kind ?? "adult") as "adult" | "child_seat" | "booster";
+    if (!["adult", "child_seat", "booster"].includes(seat)) throw new UsageError(`seat kind must be adult|child_seat|booster (got ${kind})`);
+    return { display_name: name!, seat_kind: seat };
+  });
+  await addRidePassengers(ride.id, ride.version ?? 0, passengers);
+  console.log(`added ${passengers.map((p) => `${p.display_name}(${p.seat_kind})`).join(", ")} to ride ${short(ride.id)}`);
+}
+
+interface MemberContact { id: string; name: string; phone: string | null; role: string }
+async function loadMembers(board: Board): Promise<MemberContact[]> {
+  const { data, error } = await supabase.from("department_members").select("profile_id, role").eq("department_id", board.scope.departmentId).is("removed_at", null);
+  if (error) throw new Error(error.message);
+  const profiles = await fetchProfilesByIds((data ?? []).map((m) => m.profile_id));
+  return profiles.map((p) => ({ id: p.id, name: p.full_name, phone: p.phone, role: (data ?? []).find((m) => m.profile_id === p.id)?.role ?? "member" }));
+}
+function pickMember(members: readonly MemberContact[], token: string): MemberContact {
+  const lower = token.toLowerCase();
+  const found = members.filter((m) => m.id === token || m.id.endsWith(token) || m.id.startsWith(token) || m.name.toLowerCase().includes(lower));
+  if (found.length !== 1) throw new UsageError(`member '${token}' ${found.length ? `is ambiguous (${found.slice(0, 5).map((m) => m.name).join(", ")})` : "not found"}`);
+  return found[0]!;
+}
+
+/** `contacts [<name filter>]` - the Sadran's contact list (name, phone, id) for WhatsApp follow-ups. */
+async function cmdContacts(board: Board, args: Args): Promise<void> {
+  const filter = args.pos[0]?.toLowerCase();
+  const members = (await loadMembers(board)).filter((m) => !filter || m.name.toLowerCase().includes(filter)).sort((a, b) => a.name.localeCompare(b.name));
+  for (const m of members) console.log(`${m.name} | ${m.phone ?? "no phone"} | ${m.role} | ${short(m.id)}`);
+  console.log(`(${members.length} members)`);
 }
 
 async function cmdAdvanceLive(board: Board): Promise<void> {
@@ -507,6 +566,7 @@ function usage(): void {
   send <proposal> | withdraw <proposal> | discard <proposal> | apply <proposal>
   unassign <ride> | cancel-ride <ride> [reason] | reserve <car> <day> <HH:MM-HH:MM> <note>
   message <memberEmail> <text> | messages [--new]
+  assign-driver <ride> <member|none> | add-passengers <ride> <name>[:adult|child_seat|booster]... | contacts [<name>]
   publish [--days d1,d2] [--allow-unanswered] | advance live`);
 }
 
@@ -535,6 +595,9 @@ run(async () => {
     case "unassign": { const r = resolveRide(board, need(args.pos[0], "<rideId>")); await api.unassignRide(r.id as string, r.version ?? 0); console.log(`ride ${short(r.id)} unassigned; its requests are unmet again`); return; }
     case "cancel-ride": { const r = resolveRide(board, need(args.pos[0], "<rideId>")); await api.cancelRide(r.id as string, args.pos.slice(1).join(" ") || "qa", r.version ?? undefined); console.log(`ride ${short(r.id)} cancelled`); return; }
     case "reserve": return cmdReserve(board, args);
+    case "assign-driver": return cmdAssignDriver(board, args);
+    case "add-passengers": return cmdAddPassengers(board, args);
+    case "contacts": return cmdContacts(board, args);
     case "message": {
       const to = need(args.pos[0], "<memberEmail>"); const text = args.pos.slice(1).join(" ");
       if (!text) throw new UsageError("message <memberEmail> <text>");
