@@ -270,7 +270,7 @@ Deno.serve(async (req) => {
         .maybeSingle(),
       client
         .from('rides')
-        .select('id, starts_at, ends_at, origin_id, destination_id, overnight_ack_by')
+        .select('id, starts_at, ends_at, origin_id, destination_id, overnight_ack_by, auto_relocation, ride_requests(request_id)')
         .eq('car_id', offer.car_id)
         .eq('week_start', offer.week_start)
         .neq('status', 'cancelled')
@@ -420,6 +420,8 @@ Deno.serve(async (req) => {
       startLocationId: ride.origin_id as string,
       endLocationId: ride.destination_id as string,
       overnightAck: ride.overnight_ack_by != null,
+      // REQ §13.96: a reservation (no served requests, not an auto relocation ride) is location-neutral.
+      locationNeutral: !ride.auto_relocation && ((ride.ride_requests as unknown[] | null) ?? []).length === 0,
     });
   }
 

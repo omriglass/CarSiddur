@@ -1,6 +1,7 @@
 -- REQ §13.94 (docs/BOARD_DRAFTS_PLAN_2026-10.md §2-§4), SQL side of "merging makes one ride":
 --   1) ride_route(): base route + boarding/alighting by cheapest insertion, ETAs, free text, v_board_rides.route
---   2) apply_proposal merge: host window = base window + added driving (never shortened)
+--   2) apply_proposal merge (REQ §13.95): the ride leaves earlier by the added out driving and ends later by the
+--      added return driving (quarter-hour grid, never shortened)
 --   3) unmerge_request(): shrink back, guest unmet + notified, refusals
 --   4) shift proposal with places/stops: validation, apply updates the request + re-places the ride;
 --      edit_ride changes a reservation's origin/destination directly
@@ -32,6 +33,8 @@ begin
     values(dept,w,'open',now()-interval '2 days',now()+interval '1 day',now()+interval '2 days');
   perform set_config('request.jwt.claims',jsonb_build_object('sub',manager,'role','authenticated')::text,true);
   d0:=((w+1)+time '08:00') at time zone 'Asia/Jerusalem';
+  -- Binyamina -> Haifa is a 40 km haversine estimate in the demo data; REQ §13.95 detour limits get room here.
+  update public.department_settings set detour_limit_minutes=60, detour_limit_km=60 where department_id=dept;
 
   -- Base: m1 home <-> Haifa, round trip 08:00-12:00 on car1. Guest: m2 Binyamina <-> Haifa on car2.
   insert into public.requests(department_id,week_start,requester_id,filed_by,origin_id,destination_id,ride_type_id,depart_at,return_at,trip_shape,status)
@@ -109,9 +112,10 @@ begin
   if (select status from public.proposals where id=prop)='accepted' then perform public.apply_proposal(prop); end if;
   assert (select status from public.proposals where id=prop)='applied', 'merge proposal applied';
   select * into r from public.rides where id=rA;
-  assert r.starts_at=d0, 'host start never moves';
-  assert r.ends_at=d0+interval '4 hours'+make_interval(mins=>(ceil(added/15.0)*15)::int),
-    format('host end = base end + ceil15(added=%s), got %s',added,r.ends_at);
+  assert r.starts_at=d0-make_interval(mins=>(ceil((added/2)/15.0)*15)::int),
+    format('host start = base start - ceil15(added out=%s), got %s',added/2,r.starts_at);
+  assert r.ends_at=d0+interval '4 hours'+make_interval(mins=>(ceil((added/2)/15.0)*15)::int),
+    format('host end = base end + ceil15(added return=%s), got %s',added/2,r.ends_at);
   assert (select status from public.rides where id=rB)='cancelled' and (select cancel_reason from public.rides where id=rB)='MERGED_BY_CONSENT',
     'guest own booking cancelled (MERGED_BY_CONSENT)';
   assert (select role='passenger' and leg='both' from public.ride_requests where ride_id=rA and request_id=qB), 'guest rides as passenger both ways';
@@ -133,7 +137,8 @@ begin
 
   perform public.unmerge_request(rA,qB,ver);
   select * into r from public.rides where id=rA;
-  assert r.ends_at=d0+interval '4 hours', format('host window shrinks back to the base route, got %s',r.ends_at);
+  assert r.ends_at=d0+interval '4 hours', format('host end shrinks back to the base route, got %s',r.ends_at);
+  assert r.starts_at=d0, format('host start moves back to the base departure, got %s',r.starts_at);
   assert r.version>ver, 'ride version bumped';
   assert not exists(select 1 from public.ride_requests where ride_id=rA and request_id=qB), 'guest rows removed';
   assert (select status from public.requests where id=qB)='submitted' and (select status_reason from public.requests where id=qB)='UNMERGED_BY_SADRAN',
@@ -234,7 +239,7 @@ declare
   car1 uuid:='00000000-0000-0000-0000-000000000040';
   car3 uuid:='00000000-0000-0000-0000-000000000042';
   w date:=public.current_week_start()+840;
-  q uuid; q2 uuid; rid uuid; r record; n int; msg text;
+  q uuid; q2 uuid; rid uuid; r record; n int; msg text; q3_later uuid; later_rid uuid;
 begin
   perform set_config('request.jwt.claims',jsonb_build_object('sub',manager,'role','authenticated')::text,true);
 
@@ -257,8 +262,12 @@ begin
     if sqlerrm<>'car_not_at_leg_origin' then raise; end if;
   end;
   -- the end check: a later ride on car3 starting at home blocks a one_way leg that would strand it in Haifa.
+  -- (the later ride serves a request: a ride serving none is a reservation, which never decides where a car is -- REQ §13.96)
+  insert into public.requests(department_id,week_start,requester_id,filed_by,origin_id,destination_id,ride_type_id,depart_at,return_at,trip_shape,trip_type,needs_car_at_destination,status)
+    values(dept,w,m2,manager,home,haifa,typ,(w+3+time '15:00') at time zone 'Asia/Jerusalem',(w+3+time '16:00') at time zone 'Asia/Jerusalem','round_trip','round_trip',true,'assigned') returning id into q3_later;
   insert into public.rides(department_id,week_start,car_id,starts_at,ends_at,origin_id,destination_id,driver_id,status,created_by)
-    values(dept,w,car3,(w+3+time '15:00') at time zone 'Asia/Jerusalem',(w+3+time '16:00') at time zone 'Asia/Jerusalem',home,home,m2,'draft',manager);
+    values(dept,w,car3,(w+3+time '15:00') at time zone 'Asia/Jerusalem',(w+3+time '16:00') at time zone 'Asia/Jerusalem',home,home,m2,'draft',manager) returning id into later_rid;
+  insert into public.ride_requests(ride_id,request_id,role,leg,car_mode) values(later_rid,q3_later,'driver','both','keep');
   begin
     perform pg_temp.shift_apply(q2,m1,jsonb_build_object('car_id',car3));
     raise exception 'next ride elsewhere must be refused';
@@ -284,7 +293,8 @@ begin
   assert r.origin_id=home and r.destination_id=home, format('pickup candidate rides home -> home, got %s -> %s car %s',r.origin_id,r.destination_id,r.car_id);
   assert r.ends_at>r.starts_at and r.starts_at<(w+4+time '14:00') at time zone 'Asia/Jerusalem' and r.ends_at>(w+4+time '14:00') at time zone 'Asia/Jerusalem', 'pickup wrap straddles the departure (car back at the pickup place t after it)';
 
-  -- drop_off with a pickup, driver named: two chauffeur legs.
+  -- drop_off with a pickup, driver named: two chauffeur legs (m2 does not drive: REQ §13.95 would connect a driver's legs).
+  update public.profiles set does_not_drive=true where id=m2;
   insert into public.requests(department_id,week_start,requester_id,filed_by,origin_id,destination_id,ride_type_id,depart_at,return_at,trip_shape,trip_type,needs_car_at_destination,status)
     values(dept,w,m2,manager,home,haifa,typ,(w+5+time '08:00') at time zone 'Asia/Jerusalem',(w+5+time '12:00') at time zone 'Asia/Jerusalem','round_trip','drop_off',false,'submitted') returning id into q;
   rid:=pg_temp.shift_apply(q,m2,jsonb_build_object('car_id',car3,'driver_id',m1));
@@ -307,6 +317,206 @@ begin
   exception when others then
     if sqlerrm<>'car_not_at_leg_place' then raise; end if;
   end;
+  update public.profiles set does_not_drive=false where id=m2;
   raise notice 'merged_rides.sql section 6: shift car placement by trip type passed';
 end $$;
+
+-- 7) REQ §13.95 H1: boarding before the base ride's end, detour limits, window moves earlier / later
+do $$
+declare
+  dept uuid:='00000000-0000-0000-0000-000000000001';
+  manager uuid:='00000000-0000-0000-0000-000000000102';
+  m1 uuid:='00000000-0000-0000-0000-000000000103';
+  m2 uuid:='00000000-0000-0000-0000-000000000104';
+  home uuid:='00000000-0000-0000-0000-000000000010';
+  haifa uuid:='00000000-0000-0000-0000-000000000011';
+  bin uuid:='00000000-0000-0000-0000-000000000012';
+  zich uuid:='00000000-0000-0000-0000-000000000013';
+  typ uuid:='00000000-0000-0000-0000-000000000021';
+  car1 uuid:='00000000-0000-0000-0000-000000000040';
+  w date:=public.current_week_start()+840;
+  d0 timestamptz; qA uuid; g1 uuid; g2 uuid; rA uuid; prop uuid; pv jsonb; r record; t int;
+begin
+  perform set_config('request.jwt.claims',jsonb_build_object('sub',manager,'role','authenticated')::text,true);
+  update public.department_settings set detour_limit_minutes=60, detour_limit_km=60 where department_id=dept;
+  d0:=((w+6)+time '09:00') at time zone 'Asia/Jerusalem';
+  insert into public.requests(department_id,week_start,requester_id,filed_by,origin_id,destination_id,ride_type_id,depart_at,return_at,trip_shape,status)
+    values(dept,w,m1,manager,home,haifa,typ,d0,d0+interval '4 hours','round_trip','assigned') returning id into qA;
+  insert into public.rides(department_id,week_start,car_id,starts_at,ends_at,origin_id,destination_id,driver_id,status,created_by)
+    values(dept,w,car1,d0,d0+interval '4 hours',home,home,m1,'draft',manager) returning id into rA;
+  insert into public.ride_requests(ride_id,request_id,role,leg,car_mode) values(rA,qA,'driver','both','keep');
+
+  -- g1: Haifa -> Zichron, one way: boards exactly where the base ride ends -> refused.
+  insert into public.requests(department_id,week_start,requester_id,filed_by,origin_id,destination_id,ride_type_id,depart_at,trip_shape,trip_type,needs_car_at_destination,one_way_car_mode,status)
+    values(dept,w,m2,manager,haifa,zich,typ,d0+interval '30 minutes','one_way_to','one_way',true,'relay','submitted') returning id into g1;
+  pv:=public.merge_preview(rA,g1,'out');
+  assert (pv->>'ok')::boolean=false and pv->>'error'='merge_boards_at_end', format('merge_preview must refuse boarding at the end, got %s',pv);
+  begin
+    perform public.create_proposal(g1,rA,'merge',jsonb_build_object('ride_id',rA,
+      'legs',jsonb_build_array(jsonb_build_object('ride_id',rA,'leg','out','car_mode','passenger'))),'x');
+    raise exception 'boarding at the end must be refused';
+  exception when others then if sqlerrm<>'merge_boards_at_end' then raise; end if; end;
+  assert not exists(select 1 from public.ride_route(rA) where request_id=g1), 'a refused guest is not on the displayed route';
+
+  -- g2: Binyamina -> Haifa one way: boards before the end, alights at the final destination.
+  insert into public.requests(department_id,week_start,requester_id,filed_by,origin_id,destination_id,ride_type_id,depart_at,trip_shape,trip_type,needs_car_at_destination,one_way_car_mode,status)
+    values(dept,w,m2,manager,bin,haifa,typ,d0,'one_way_to','one_way',true,'relay','submitted') returning id into g2;
+  select travel_minutes into t from public.place_travel(bin,haifa);
+  pv:=public.merge_preview(rA,g2,'out');
+  assert (pv->>'ok')::boolean, format('valid merge preview, got %s',pv);
+  assert (pv->>'added_out_minutes')::int=t-5 and (pv->>'added_return_minutes')::int=0,
+    format('added out driving = Bin->Haifa(%s) - 5 dwell, none on the return, got %s',t,pv);
+  assert (pv->>'new_starts_at')::timestamptz=d0-make_interval(mins=>(ceil((t-5)/15.0)*15)::int), 'ride leaves earlier by ceil15(added out)';
+  assert (pv->>'new_ends_at')::timestamptz=d0+interval '4 hours', 'return end unchanged for an out-only guest';
+  assert (pv->>'added_out_km')::numeric>0, 'added km reported';
+
+  -- detour limits (minutes, then km) refuse at create time ...
+  update public.department_settings set detour_limit_minutes=1 where department_id=dept;
+  begin
+    perform public.create_proposal(g2,rA,'merge',jsonb_build_object('ride_id',rA,
+      'legs',jsonb_build_array(jsonb_build_object('ride_id',rA,'leg','out','car_mode','passenger'))),'x');
+    raise exception 'minutes detour must be refused';
+  exception when others then if sqlerrm<>'merge_detour_too_long' then raise; end if; end;
+  update public.department_settings set detour_limit_minutes=60, detour_limit_km=0.1 where department_id=dept;
+  begin
+    perform public.create_proposal(g2,rA,'merge',jsonb_build_object('ride_id',rA,
+      'legs',jsonb_build_array(jsonb_build_object('ride_id',rA,'leg','out','car_mode','passenger'))),'x');
+    raise exception 'km detour must be refused';
+  exception when others then if sqlerrm<>'merge_detour_too_long' then raise; end if; end;
+  update public.department_settings set detour_limit_minutes=60, detour_limit_km=60 where department_id=dept;
+
+  -- ... and again at apply time (limits tightened before the last answer, which auto-applies the proposal).
+  prop:=public.create_proposal(g2,rA,'merge',jsonb_build_object('ride_id',rA,
+    'legs',jsonb_build_array(jsonb_build_object('ride_id',rA,'leg','out','car_mode','passenger'))),'detour merge');
+  perform public.send_proposal(prop,'{}');
+  perform public.record_answer_on_behalf(prop,m2,true);
+  update public.department_settings set detour_limit_minutes=1 where department_id=dept;
+  begin
+    perform public.record_answer_on_behalf(prop,m1,true);
+    raise exception 'apply must re-check the detour limit';
+  exception when others then if sqlerrm<>'merge_detour_too_long' then raise; end if; end;
+  update public.department_settings set detour_limit_minutes=60 where department_id=dept;
+  perform public.record_answer_on_behalf(prop,m1,true);
+  assert (select status from public.proposals where id=prop)='applied', 'merge applied once within the limits';
+  select * into r from public.rides where id=rA;
+  assert r.starts_at=d0-make_interval(mins=>(ceil((t-5)/15.0)*15)::int), format('applied: start earlier by ceil15(%s), got %s',t-5,r.starts_at);
+  assert r.ends_at=d0+interval '4 hours', 'applied: out-only guest leaves the end alone';
+  assert (select array_agg(kind order by "position") from public.ride_route(rA) where leg='out')=array['origin','board','destination'], 'merged route boards before the end';
+  assert (select eta from public.ride_route(rA) where leg='out' and kind='destination')<=d0+interval '20 minutes'+interval '1 minute'
+     or (select eta from public.ride_route(rA) where leg='out' and kind='destination')<=d0+interval '20 minutes'+make_interval(mins=>(ceil((t-5)/15.0)*15)::int-(t-5)),
+    'the base request keeps (about) its own arrival';
+  update public.department_settings set detour_limit_minutes=20, detour_limit_km=15 where department_id=dept;
+  raise notice 'merged_rides.sql section 7: merge validity, detour limits and window passed';
+end $$;
+
+-- 9) REQ §13.95 H2: a הקפצה's two legs on one car connect when the requester (or a companion) can drive
+do $$
+declare
+  dept uuid:='00000000-0000-0000-0000-000000000001';
+  manager uuid:='00000000-0000-0000-0000-000000000102';
+  m1 uuid:='00000000-0000-0000-0000-000000000103';
+  m2 uuid:='00000000-0000-0000-0000-000000000104';
+  home uuid:='00000000-0000-0000-0000-000000000010';
+  haifa uuid:='00000000-0000-0000-0000-000000000011';
+  typ uuid:='00000000-0000-0000-0000-000000000021';
+  car1 uuid:='00000000-0000-0000-0000-000000000040';
+  car2 uuid:='00000000-0000-0000-0000-000000000041';
+  car3 uuid:='00000000-0000-0000-0000-000000000042';
+  w date:=public.current_week_start()+840;
+  q uuid; q2 uuid; q3 uuid; rid uuid; ro uuid; rr uuid; r record; n int; v int;
+begin
+  perform set_config('request.jwt.claims',jsonb_build_object('sub',manager,'role','authenticated')::text,true);
+  -- driver requester, both legs on car3 through the shift placement -> connected relay pair
+  insert into public.requests(department_id,week_start,requester_id,filed_by,origin_id,destination_id,ride_type_id,depart_at,return_at,trip_shape,trip_type,needs_car_at_destination,status)
+    values(dept,w,m1,manager,home,haifa,typ,(w+0+time '08:00') at time zone 'Asia/Jerusalem',(w+0+time '12:00') at time zone 'Asia/Jerusalem','round_trip','drop_off',false,'submitted') returning id into q;
+  perform pg_temp.shift_apply(q,m1,jsonb_build_object('car_id',car3));
+  select count(*) into n from public.ride_requests x join public.rides d on d.id=x.ride_id
+    where x.request_id=q and d.status<>'cancelled' and x.car_mode='relay' and x.role='driver' and d.driver_id=m1 and not d.needs_driver and d.car_id=car3;
+  assert n=2, format('both legs are relay legs driven by the requester on one car, got %s',n);
+  select d.* into r from public.rides d join public.ride_requests x on x.ride_id=d.id where x.request_id=q and x.leg='out' and d.status<>'cancelled';
+  assert r.origin_id=home and r.destination_id=haifa and r.starts_at=(w+0+time '08:00') at time zone 'Asia/Jerusalem'
+     and r.ends_at=(w+0+time '08:30') at time zone 'Asia/Jerusalem', format('out ride home -> Haifa 08:00-08:30, got %s -> %s %s-%s',r.origin_id,r.destination_id,r.starts_at,r.ends_at);
+  select d.* into r from public.rides d join public.ride_requests x on x.ride_id=d.id where x.request_id=q and x.leg='return' and d.status<>'cancelled';
+  assert r.origin_id=haifa and r.destination_id=home and r.ends_at=(w+0+time '12:00') at time zone 'Asia/Jerusalem'
+     and r.starts_at=(w+0+time '11:30') at time zone 'Asia/Jerusalem', 'return ride Haifa -> home ending at the pickup time';
+  assert (select status from public.requests where id=q)='assigned', 'connected request is assigned';
+  -- idempotent
+  perform public.assert_car_chain(car3,w);
+  select count(*) into n from public.ride_requests x join public.rides d on d.id=x.ride_id where x.request_id=q and d.status<>'cancelled' and x.car_mode='relay';
+  assert n=2, 'a second healing pass keeps the connected pair';
+
+  -- a non-driver's legs stay chauffeur rides
+  update public.profiles set does_not_drive=true where id=m2;
+  insert into public.requests(department_id,week_start,requester_id,filed_by,origin_id,destination_id,ride_type_id,depart_at,return_at,trip_shape,trip_type,needs_car_at_destination,status)
+    values(dept,w,m2,manager,home,haifa,typ,(w+0+time '14:00') at time zone 'Asia/Jerusalem',(w+0+time '18:00') at time zone 'Asia/Jerusalem','round_trip','drop_off',false,'submitted') returning id into q2;
+  perform pg_temp.shift_apply(q2,m2,jsonb_build_object('car_id',car3,'driver_id',m1));
+  select count(*) into n from public.ride_requests x join public.rides d on d.id=x.ride_id where x.request_id=q2 and d.status<>'cancelled' and x.car_mode='chauffeur';
+  assert n=2 and not exists(select 1 from public.ride_requests x where x.request_id=q2 and x.car_mode='relay'), format('non-driver legs stay chauffeur rides, got %s',n);
+  update public.profiles set does_not_drive=false where id=m2;
+
+  -- legs on different cars are never connected; the Sadran then moving the return leg onto the first
+  -- leg's car (edit_ride -> assert_car_chain) connects them.
+  insert into public.requests(department_id,week_start,requester_id,filed_by,origin_id,destination_id,ride_type_id,depart_at,return_at,trip_shape,trip_type,needs_car_at_destination,status)
+    values(dept,w,m2,manager,home,haifa,typ,(w+0+time '19:00') at time zone 'Asia/Jerusalem',(w+0+time '22:00') at time zone 'Asia/Jerusalem','round_trip','drop_off',false,'assigned') returning id into q3;
+  insert into public.rides(department_id,week_start,car_id,starts_at,ends_at,origin_id,destination_id,needs_driver,status,created_by,is_pinned,pin_reason)
+    values(dept,w,car1,(w+0+time '19:00') at time zone 'Asia/Jerusalem',(w+0+time '20:00') at time zone 'Asia/Jerusalem',home,home,true,'draft',manager,true,'MISSING_DRIVER') returning id into ro;
+  insert into public.ride_requests(ride_id,request_id,role,leg,car_mode) values(ro,q3,'passenger','out','chauffeur');
+  insert into public.rides(department_id,week_start,car_id,starts_at,ends_at,origin_id,destination_id,needs_driver,status,created_by,is_pinned,pin_reason)
+    values(dept,w,car2,(w+0+time '21:00') at time zone 'Asia/Jerusalem',(w+0+time '22:00') at time zone 'Asia/Jerusalem',home,home,true,'draft',manager,true,'MISSING_DRIVER') returning id into rr;
+  insert into public.ride_requests(ride_id,request_id,role,leg,car_mode) values(rr,q3,'passenger','return','chauffeur');
+  perform public.assert_car_chain(car1,w); perform public.assert_car_chain(car2,w);
+  assert not exists(select 1 from public.ride_requests x where x.request_id=q3 and x.car_mode='relay'), 'legs on different cars stay chauffeur rides';
+  select version into v from public.rides where id=rr;
+  perform public.edit_ride(jsonb_build_object('id',rr,'department_id',dept,'week_start',w,'car_id',car1,
+    'starts_at',(w+0+time '21:00') at time zone 'Asia/Jerusalem','ends_at',(w+0+time '22:00') at time zone 'Asia/Jerusalem'),v);
+  select count(*) into n from public.ride_requests x join public.rides d on d.id=x.ride_id
+    where x.request_id=q3 and d.status<>'cancelled' and x.car_mode='relay' and d.car_id=car1 and d.driver_id=m2 and not d.needs_driver;
+  assert n=2, format('placing the return leg on the first leg car connects both, got %s',n);
+  raise notice 'merged_rides.sql section 9: connected drop-off legs passed';
+end $$;
+-- 10) joinable_rides_for_request applies the same validity (boarding before the end, detour limit)
+do $$
+declare
+  dept uuid:='00000000-0000-0000-0000-000000000001';
+  manager uuid:='00000000-0000-0000-0000-000000000102';
+  m1 uuid:='00000000-0000-0000-0000-000000000103';
+  m2 uuid:='00000000-0000-0000-0000-000000000104';
+  home uuid:='00000000-0000-0000-0000-000000000010';
+  bin uuid:='00000000-0000-0000-0000-000000000012';
+  zich uuid:='00000000-0000-0000-0000-000000000013';
+  typ uuid:='00000000-0000-0000-0000-000000000021';
+  car2 uuid:='00000000-0000-0000-0000-000000000041';
+  w date:=public.current_week_start()+840;
+  d0 timestamptz; version_id uuid; qH uuid; j1 uuid; j2 uuid; rH uuid; n int;
+begin
+  perform set_config('request.jwt.claims',jsonb_build_object('sub',manager,'role','authenticated')::text,true);
+  insert into public.siddur_versions (department_id, week_start, version_no, snapshot, published_by)
+  values (dept, w, 1, '{}'::jsonb, manager) returning id into version_id;
+  perform set_config('app.in_publish', 'on', true);
+  update public.weeks set phase='published', published_version_id=version_id where department_id=dept and week_start=w;
+  perform set_config('app.in_publish', 'off', true);
+  d0:=((w+6)+time '14:00') at time zone 'Asia/Jerusalem';
+  insert into public.requests(department_id,week_start,requester_id,filed_by,origin_id,destination_id,ride_type_id,depart_at,return_at,trip_shape,status)
+    values(dept,w,m1,manager,home,zich,typ,d0,d0+interval '3 hours','round_trip','assigned') returning id into qH;
+  insert into public.rides(department_id,week_start,car_id,starts_at,ends_at,origin_id,destination_id,driver_id,status,created_by)
+    values(dept,w,car2,d0,d0+interval '3 hours',home,home,m1,'confirmed',manager) returning id into rH;
+  insert into public.ride_requests(ride_id,request_id,role,leg,car_mode) values(rH,qH,'driver','both','keep');
+  -- j1: home -> Binyamina (near Zichron): boards at the start, alights before the end -> joinable
+  insert into public.requests(department_id,week_start,requester_id,filed_by,origin_id,destination_id,ride_type_id,depart_at,trip_shape,trip_type,needs_car_at_destination,one_way_car_mode,status)
+    values(dept,w,m2,manager,home,bin,typ,d0,'one_way_to','one_way',true,'relay','waitlisted') returning id into j1;
+  select count(*) into n from public.joinable_rides_for_request(j1) where ride_id=rH;
+  assert n=1, format('a valid boarding is joinable, got %s',n);
+  -- j2: Zichron -> Binyamina: boards where the host ride ends -> not joinable
+  insert into public.requests(department_id,week_start,requester_id,filed_by,origin_id,destination_id,ride_type_id,depart_at,trip_shape,trip_type,needs_car_at_destination,one_way_car_mode,status)
+    values(dept,w,m2,manager,zich,bin,typ,d0,'one_way_to','one_way',true,'relay','waitlisted') returning id into j2;
+  select count(*) into n from public.joinable_rides_for_request(j2) where ride_id=rH;
+  assert n=0, format('boarding at the ride end is not joinable, got %s',n);
+  -- the detour limit applies too
+  update public.department_settings set detour_limit_minutes=1 where department_id=dept;
+  select count(*) into n from public.joinable_rides_for_request(j1) where ride_id=rH;
+  assert n=0, format('a detour over the limit is not joinable, got %s',n);
+  update public.department_settings set detour_limit_minutes=20 where department_id=dept;
+  raise notice 'merged_rides.sql section 10: joinable rides validity passed';
+end $$;
+
 rollback;

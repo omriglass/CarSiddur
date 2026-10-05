@@ -90,3 +90,29 @@ export function viewsOnDay(views: readonly UnmetRequestView[], day: string, date
     return !!start && dateKeyOf(start) === day;
   });
 }
+
+/**
+ * REQ §13.95 (H2): rides that are the two halves of a connected הקפצה pair - the same request
+ * served on two rides of one car, one carrying its `out` leg and the other its `return` leg, both
+ * with a driver (the requester). The car waits at the destination between them (the board's away
+ * band). Returns the ids of both rides.
+ */
+export function connectedPairRideIds(rides: readonly BoardRide[]): Set<string> {
+  const byRequest = new Map<string, BoardRide[]>();
+  for (const ride of rides) {
+    if (!ride.id || !ride.car_id || ride.status === "cancelled" || ride.needs_driver || !ride.driver_id) continue;
+    for (const entry of servedOf(ride)) {
+      if (!entry.request_id || (entry.leg !== "out" && entry.leg !== "return")) continue;
+      byRequest.set(entry.request_id, [...(byRequest.get(entry.request_id) ?? []), ride]);
+    }
+  }
+  const ids = new Set<string>();
+  for (const [requestId, group] of byRequest) {
+    const legOf = (ride: BoardRide) => servedOf(ride).find((entry) => entry.request_id === requestId)?.leg;
+    for (const a of group) {
+      const b = group.find((other) => other.id !== a.id && other.car_id === a.car_id && legOf(other) !== legOf(a));
+      if (b) { ids.add(a.id as string); ids.add(b.id as string); }
+    }
+  }
+  return ids;
+}

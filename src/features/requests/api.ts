@@ -309,6 +309,8 @@ export interface RequestEditRow {
   tripType: TripType;
   departAt: string | null;
   returnAt: string | null;
+  /** REQ §3.4: the return time a one-way request keeps (`requests.kept_return_at`), so switching back restores it. */
+  keptReturnAt: string | null;
   oneWayCarMode: LegCarMode | null;
   needsCarAtDestination: boolean;
   adults: number;
@@ -329,7 +331,7 @@ export interface RequestEditRow {
 
 const EDIT_SELECT = `
   id, department_id, week_start, status, version, destination_id, destination_text, ride_type_id,
-  trip_shape, depart_at, return_at, one_way_car_mode, needs_car_at_destination,
+  trip_shape, depart_at, return_at, kept_return_at, one_way_car_mode, needs_car_at_destination,
   origin_id, origin_text, trip_type,
   adults, child_seats, boosters, has_luggage,
   flex_depart_early, flex_depart_late, flex_return_early, flex_return_late, notes, ride_description, guest_passenger_names, changed_since_solve, preferred_car_id, template_id,
@@ -351,6 +353,7 @@ export async function fetchRequestById(requestId: string, profileId: string): Pr
     preferred_car: { name: string } | null;
     window: RequestWindow | null;
     ride_requests: { ride: { status: string } | null }[];
+    kept_return_at: string | null;
     id: string;
     department_id: string;
     week_start: string;
@@ -415,6 +418,7 @@ export async function fetchRequestById(requestId: string, profileId: string): Pr
     tripType: row.trip_type,
     departAt: row.depart_at,
     returnAt: row.return_at,
+    keptReturnAt: row.kept_return_at ?? null,
     oneWayCarMode: row.one_way_car_mode,
     needsCarAtDestination: row.needs_car_at_destination,
     adults: row.adults,

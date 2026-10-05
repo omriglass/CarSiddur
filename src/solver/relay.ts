@@ -138,7 +138,12 @@ export function pairRelays(requests: NormalizedRequest[], cars: Car[]): PairRela
     }
   }
 
+  // REQUIREMENTS §13.95 (H2): the two halves of one drop-off-with-pickup (`splitFrom`) connect into one
+  // relay pair on one car — the requester (or a driving companion) drives both — before
+  // any cross pairing with another member's leg.
+  const own = (c: Candidate): number => (c.out.request.splitFrom !== undefined && c.out.request.splitFrom === c.ret.request.splitFrom ? 0 : 1);
   candidates.sort((a, b) => {
+    if (own(a) !== own(b)) return own(a) - own(b);
     const rankA = a.idleSlots + a.shiftCost;
     const rankB = b.idleSlots + b.shiftCost;
     if (rankA !== rankB) return rankA - rankB;

@@ -24,6 +24,7 @@ export function assertInvariants(input: SolverInput, output: SolverOutput): void
   const bufferSlots = minutesToSlots(input.config.bufferMinutes);
   const weekSlots = weekSlotsOf(input);
   const overnightAckByRideId = new Map<string, boolean>(input.fixedRides.map((fr: FixedRide) => [fr.id, fr.overnightAck]));
+  const neutralByRideId = new Map(input.fixedRides.map((fr) => [fr.id, fr.locationNeutral === true]));
   const approvedBufferByRideId = new Map(input.fixedRides.map((fr) => [fr.id, fr.approvedBufferAfterSlots]));
   // Both legs of a solver relay pair share one id: no buffer between them (REQUIREMENTS §13.88).
   const relayPairIdByRideId = new Map<string, string>();
@@ -84,6 +85,7 @@ export function assertInvariants(input: SolverInput, output: SolverOutput): void
           endLocationId: a.destinationId,
           overnightAck: overnightAckByRideId.get(a.rideId) ?? Boolean(a.seriesId),
           approvedBufferAfterSlots: approvedBufferByRideId.get(a.rideId),
+          locationNeutral: a.source === 'fixed' && neutralByRideId.get(a.rideId) === true ? true : undefined,
           seriesId: a.seriesId,
           relayPairId: relayPairIdByRideId.get(a.rideId),
         };

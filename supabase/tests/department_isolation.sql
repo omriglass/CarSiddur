@@ -179,6 +179,8 @@ begin
     format('select public.set_ride_passengers(%L, %L, %L::jsonb)', ride_b, ride_b_version, '[]'::text));
   perform pg_temp.expect_refused('rides.remove_ride_person', format('select public.remove_ride_person(%L, %L, %L)', ride_b, ride_b_version, 'req:' || req_b));
   perform pg_temp.expect_refused('rides.unmerge_request', format('select public.unmerge_request(%L, %L, %L)', ride_b, req_b, ride_b_version));
+  perform pg_temp.expect_refused('rides.merge_preview', format('select public.merge_preview(%L, %L)', ride_b, req_b));
+  perform pg_temp.expect_refused('requests.set_request_trip_type', format('select public.set_request_trip_type(%L, ''drop_off'', 1)', req_b));
   perform pg_temp.expect_refused('rides.ride_route', format('select * from public.ride_route(%L)', ride_b));
   perform pg_temp.expect_refused('rides.unassign_ride', format('select public.unassign_ride(%L, %L)', ride_b, ride_b_version));
   perform pg_temp.expect_refused('rides.cancel_ride', format('select public.cancel_ride(%L, %L, %L)', ride_b, 'attack', ride_b_version));
@@ -314,7 +316,7 @@ declare
   iso_covered text[] := array[
     'submit_request','withdraw_request','set_manual_boost','set_freed_slot_opt_out','set_request_children',
     'set_request_companions','withdraw_all_requests','submit_series_request','enter_waiting_list','apply_solver_result',
-    'edit_ride','cancel_ride','unassign_ride','unmerge_request','ride_route','request_ride_change','respond_ride_change','cancel_ride_change',
+    'edit_ride','cancel_ride','unassign_ride','unmerge_request','merge_preview','set_request_trip_type','ride_route','request_ride_change','respond_ride_change','cancel_ride_change',
     'update_ride_public_notes','add_ride_passengers','set_ride_passengers','remove_ride_person',
     'log_car_care','report_car_issue','merge_destination','suggest_destination','car_mileage_totals',
     'admin_approve_member','admin_update_member','admin_set_sadran_assignments',

@@ -24,7 +24,7 @@ async function ensureUnpublishedWeek(service: SupabaseClient, week: string): Pro
   }
 }
 
-async function dragRequest(page: Page, requestId: string, carId: string, minutes: number) {
+async function dragRequest(page: Page, requestId: string, carId: string, minutes: number, expectPreview = true) {
   const grip = page.locator(`[data-request-id="${requestId}"]:visible`).getByRole("button", { name: he.sadranBoard.dragHandleLabel });
   await grip.scrollIntoViewIfNeeded();
   const column = page.locator(`[data-car-col-id="${carId}"]`);
@@ -38,7 +38,7 @@ async function dragRequest(page: Page, requestId: string, carId: string, minutes
   await page.mouse.move(source.x + source.width / 2, source.y + source.height / 2);
   await page.mouse.down();
   await page.mouse.move(target.x + target.width / 2, target.y + (minutes - 360) / 1080 * target.height, { steps: 12 });
-  await expect(page.locator("[data-drag-preview]")).toBeVisible();
+  if (expectPreview) await expect(page.locator("[data-drag-preview]")).toBeVisible();
   await page.mouse.up();
 }
 
@@ -203,6 +203,114 @@ test("the sheet button \"הוצא מהנסיעה\" remains the fallback (phone l
     expect(request!.status).toBe("submitted");
     const { data: links } = await service.from("ride_requests").select("request_id").eq("ride_id", rideId);
     expect(links!.map((link) => link.request_id)).not.toContain(guestRequestId);
+  } finally {
+    for (const context of contexts) await context.close().catch(() => undefined);
+    await cleanup(service);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// REQ §13.95 (H1/H3) - merge validity, earlier departure, Sadran trip-type change. NOT RUN by the
+// author (written, not executed).
+// ---------------------------------------------------------------------------
+const HOME = "00000000-0000-0000-0000-000000000010";
+const HAIFA = "00000000-0000-0000-0000-000000000011";
+const BINYAMINA = "00000000-0000-0000-0000-000000000012";
+const AFULA = "00000000-0000-0000-0000-000000000016";
+
+/** A one-way home -> Haifa ride (host) and a one-way guest request between two preset places. */
+async function tripFixture(service: SupabaseClient, guest: { origin: string; destination: string }) {
+  const { data: cars } = await service.from("cars").select("id").eq("department_id", NEVO_DEPARTMENT_ID).eq("type", "shared").eq("status", "active").limit(1);
+  const base = { department_id: NEVO_DEPARTMENT_ID, week_start: WEEK, ride_type_id: "00000000-0000-0000-0000-000000000021" };
+  const { data: requests, error } = await service.from("requests").insert([
+    { ...base, requester_id: HOST_MEMBER, filed_by: HOST_MEMBER, destination_id: HAIFA, trip_shape: "one_way_to", trip_type: "one_way", one_way_car_mode: "relay", depart_at: at("07:15"), status: "assigned" },
+    { ...base, requester_id: GUEST_MEMBER, filed_by: GUEST_MEMBER, origin_id: guest.origin, destination_id: guest.destination, trip_shape: "one_way_to", trip_type: "one_way", one_way_car_mode: "passenger", depart_at: at("07:00"), status: "submitted" },
+  ]).select("id");
+  if (error) throw error;
+  const { data: ride, error: rideError } = await service.from("rides").insert({
+    department_id: NEVO_DEPARTMENT_ID, week_start: WEEK, car_id: cars![0]!.id, created_by: HOST_MEMBER, driver_id: HOST_MEMBER,
+    origin_id: HOME, destination_id: HAIFA, status: "confirmed", starts_at: at("07:15"), ends_at: at("08:15"), blocked_until: at("08:45"),
+  }).select("id").single();
+  if (rideError) throw rideError;
+  const { error: linkError } = await service.from("ride_requests").insert([{ ride_id: ride.id, request_id: requests![0]!.id, role: "driver", leg: "out", car_mode: "relay" }]);
+  if (linkError) throw linkError;
+  return { carId: cars![0]!.id, guestRequestId: requests![1]!.id, rideId: ride.id };
+}
+
+test("a guest who boards at the base's final destination cannot be merged (Haifa -> Afula onto home -> Haifa)", { tag: ["@board", "@proposals"] }, async ({ browser }) => {
+  test.slow();
+  const service = serviceRoleClient();
+  await ensureUnpublishedWeek(service, WEEK);
+  await cleanup(service);
+  const contexts: { close: () => Promise<void> }[] = [];
+  try {
+    const { carId, guestRequestId, rideId } = await tripFixture(service, { origin: HAIFA, destination: AFULA });
+    const sadran = await newSignedInPage(browser, SEEDED_USERS.sadran);
+    contexts.push(sadran.context);
+    const page = sadran.page;
+    await page.setViewportSize({ width: 1600, height: 1100 });
+    await page.goto(boardUrl);
+    await dragRequest(page, guestRequestId, carId, 450, false); // the drop target is refused, the preview may never show
+    // The popup never opens; the toast names the reason; nothing was proposed or merged.
+    await expect(page.getByText(he.mergedRide.invalid.boards_at_end)).toBeVisible();
+    await expect(page.getByTestId("merge-dialog")).toHaveCount(0);
+    const { data: proposals } = await service.from("proposals").select("id").eq("request_id", guestRequestId);
+    expect(proposals).toHaveLength(0);
+    await expect(page.locator(`button[data-ride-id="${rideId}"]:visible`)).toHaveCount(1);
+  } finally {
+    for (const context of contexts) await context.close().catch(() => undefined);
+    await cleanup(service);
+  }
+});
+
+test("a pickup on the way (Binyamina) makes the merged ride leave earlier - the popup says when", { tag: ["@board", "@proposals"] }, async ({ browser }) => {
+  test.slow();
+  const service = serviceRoleClient();
+  await ensureUnpublishedWeek(service, WEEK);
+  await cleanup(service);
+  const { data: settings } = await service.from("department_settings").select("detour_limit_minutes,detour_limit_km").eq("department_id", NEVO_DEPARTMENT_ID).single();
+  await service.from("department_settings").update({ detour_limit_minutes: 90, detour_limit_km: 200 }).eq("department_id", NEVO_DEPARTMENT_ID);
+  const contexts: { close: () => Promise<void> }[] = [];
+  try {
+    const { carId, guestRequestId } = await tripFixture(service, { origin: BINYAMINA, destination: HAIFA });
+    const sadran = await newSignedInPage(browser, SEEDED_USERS.sadran);
+    contexts.push(sadran.context);
+    const page = sadran.page;
+    await page.setViewportSize({ width: 1600, height: 1100 });
+    await page.goto(boardUrl);
+    await dragRequest(page, guestRequestId, carId, 450);
+    const dialog = page.getByTestId("merge-dialog");
+    await expect(dialog).toBeVisible();
+    // "הנסיעה תצא ב-HH:MM במקום 07:15"
+    await expect(dialog.getByTestId("merge-departs-earlier")).toContainText("07:15");
+    await expect(dialog.getByTestId("merge-eta")).toBeVisible();
+  } finally {
+    for (const context of contexts) await context.close().catch(() => undefined);
+    if (settings) await service.from("department_settings").update(settings).eq("department_id", NEVO_DEPARTMENT_ID);
+    await cleanup(service);
+  }
+});
+
+test("the Sadran changes an unmet request's trip type directly from its card (REQ §13.95 H3)", { tag: ["@board"] }, async ({ browser }) => {
+  test.slow();
+  const service = serviceRoleClient();
+  await ensureUnpublishedWeek(service, WEEK);
+  await cleanup(service);
+  const contexts: { close: () => Promise<void> }[] = [];
+  try {
+    const { guestRequestId } = await tripFixture(service, { origin: HOME, destination: HAIFA });
+    const sadran = await newSignedInPage(browser, SEEDED_USERS.sadran);
+    contexts.push(sadran.context);
+    const page = sadran.page;
+    await page.setViewportSize({ width: 1600, height: 1100 });
+    await page.goto(boardUrl);
+    const control = page.locator(`[data-testid="trip-type-change"][data-trip-request-id="${guestRequestId}"]:visible`);
+    await control.getByTestId("trip-type-select").click();
+    await page.getByTestId("trip-type-option-drop_off").click();
+    // Applied immediately - no draft, no proposal.
+    await expect.poll(async () => (await service.from("requests").select("trip_type").eq("id", guestRequestId).single()).data?.trip_type).toBe("drop_off");
+    const { data: proposals } = await service.from("proposals").select("id").eq("request_id", guestRequestId);
+    expect(proposals).toHaveLength(0);
   } finally {
     for (const context of contexts) await context.close().catch(() => undefined);
     await cleanup(service);

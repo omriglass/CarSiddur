@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { unmetItemId, unmetItemKey, unmetRequestViews, viewsOnDay } from "./unmetLegs";
+import { connectedPairRideIds, unmetItemId, unmetItemKey, unmetRequestViews, viewsOnDay } from "./unmetLegs";
 
 import type { BoardRide, WeekRequestRow } from "../api";
 
@@ -47,5 +47,17 @@ describe("unmetRequestViews", () => {
     const views = unmetRequestViews([request()], [], none);
     expect(viewsOnDay(views, "2026-10-11", (iso) => iso.slice(0, 10))).toHaveLength(2);
     expect(viewsOnDay(views, "2026-10-12", (iso) => iso.slice(0, 10))).toHaveLength(0);
+  });
+});
+
+describe("connectedPairRideIds (REQ §13.95 H2)", () => {
+  const driven = (id: string, leg: string, car = "c1") => ride(leg, { id, car_id: car, driver_id: "u1", needs_driver: false } as Partial<BoardRide>);
+  it("links the out and return rides of one request on one car, both driven", () => {
+    expect([...connectedPairRideIds([driven("a", "out"), driven("b", "return")])].sort()).toEqual(["a", "b"]);
+  });
+  it("ignores driverless rides, other cars and same-leg pairs", () => {
+    expect(connectedPairRideIds([driven("a", "out"), ride("return", { id: "b", car_id: "c1", needs_driver: true } as Partial<BoardRide>)]).size).toBe(0);
+    expect(connectedPairRideIds([driven("a", "out"), driven("b", "return", "c2")]).size).toBe(0);
+    expect(connectedPairRideIds([driven("a", "out"), driven("b", "out")]).size).toBe(0);
   });
 });

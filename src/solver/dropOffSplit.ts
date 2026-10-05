@@ -47,6 +47,7 @@ export function expandDropOffs(input: SolverInput): SplitResult {
     requests.push({
       ...r,
       id: r.id + OUT,
+      splitFrom: r.id,
       tripShape: 'one_way_to',
       tripType: 'drop_off',
       returnMs: undefined,
@@ -55,6 +56,7 @@ export function expandDropOffs(input: SolverInput): SplitResult {
     requests.push({
       ...r,
       id: r.id + RET,
+      splitFrom: r.id,
       tripShape: 'one_way_from',
       tripType: 'drop_off',
       departureMs: undefined,

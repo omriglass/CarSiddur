@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  connectsOtherLeg,
   isDropTargetValid,
   isUnmetDropValid,
   originMismatch,
@@ -15,12 +16,15 @@ import {
   type BoardDropContext,
 } from "./dropValidity";
 import { slotToIso } from "./geometry";
+import { mergedHostWindow } from "./dropValidity";
+import { mergeInvalidReason } from "./mergeProposal";
+import { makeHop } from "@/lib/rideRoute";
 import type { UnmetListItem } from "./components/UnmetList";
 import type { BoardRide, MaintenanceBlockRow, WeekRequestRow } from "../api";
 import type { Car } from "@/features/fleet/api";
 
 function ride(fields: Partial<BoardRide> & { id: string; car_id: string }): BoardRide {
-  return { needs_driver: false, served: [], starts_at: null, ends_at: null, driver_id: null, ...fields } as unknown as BoardRide;
+  return { needs_driver: false, served: [{ request_id: "r-default", role: "driver", leg: "both" }], starts_at: null, ends_at: null, driver_id: null, ...fields } as unknown as BoardRide;
 }
 
 function car(id: string, status: Car["status"] = "active"): Car {
@@ -116,6 +120,13 @@ describe("originMismatch (REQUIREMENTS §13.93)", () => {
   });
 });
 
+describe("strandsNextRide - reservations (REQ §13.96)", () => {
+  it("a following reservation labelled elsewhere never strands the ride", () => {
+    const ctx = { rides: [ride({ id: "res", car_id: "car1", starts_at: "2026-09-13T11:00:00.000Z", origin_id: "haifa", served: [] } as unknown as Partial<BoardRide> & { id: string; car_id: string })] } as unknown as BoardDropContext;
+    expect(strandsNextRide(ctx, "car1", "home", "2026-09-13T09:00:00.000Z")).toBe(false);
+  });
+});
+
 describe("strandsNextRide (REQUIREMENTS §13.93)", () => {
   it("rejects a one-way drop that would leave the car somewhere its next ride doesn't start", () => {
     const ctx = baseContext({
@@ -177,7 +188,7 @@ describe("isUnmetDropValid", () => {
 
   it("rejects a merge whose expanded window overlaps another ride on the same car", () => {
     const host = ride({ id: "host1", car_id: "car1", driver_id: "driver1", needs_driver: false,
-      starts_at: "2026-09-13T08:00:00.000Z", ends_at: "2026-09-13T09:00:00.000Z", served: [] });
+      starts_at: "2026-09-13T08:00:00.000Z", ends_at: "2026-09-13T09:00:00.000Z" });
     const other = ride({ id: "other1", car_id: "car1", driver_id: "driver2", needs_driver: false,
       starts_at: "2026-09-13T08:30:00.000Z", ends_at: "2026-09-13T09:30:00.000Z", served: [] });
     const req = request({ id: "r1", trip_shape: "one_way_to", depart_at: "2026-09-13T08:15:00.000Z", destination_travel_minutes: 30 });
@@ -272,5 +283,48 @@ describe("unmet placement by trip type (REQUIREMENTS §13.93)", () => {
     expect(unmetShiftPayload(oneWay, "car1", window, unmetPlacement(ctx, oneWay, "car1", departAt)!)).toEqual({ car_id: "car1", depart_at: departAt, origin_id: "kfar", destination_id: "haifa" });
     const drop = request({ ...base, trip_type: "drop_off", trip_shape: "one_way_to" });
     expect(unmetShiftPayload(drop, "car1", window, unmetPlacement(ctx, drop, "car1", departAt)!)).toEqual({ depart_at: departAt, origin_id: "kfar", destination_id: "haifa" });
+  });
+});
+
+describe("merge validity and connected legs (REQ §13.95)", () => {
+  const route = {
+    hop: makeHop([
+      { fromId: "H", toId: "D", travelMinutes: 60 },
+      { fromId: "H", toId: "T", travelMinutes: 20 },
+      { fromId: "T", toId: "D", travelMinutes: 45 },
+      { fromId: "H", toId: "AF", travelMinutes: 45 },
+      { fromId: "D", toId: "AF", travelMinutes: 40 },
+    ]),
+    stopMinutes: 5, homeId: "H", detourLimitMinutes: 20,
+  };
+  const host = ride({ id: "host1", car_id: "car1", driver_id: "driver1", needs_driver: false, origin_id: "H", destination_id: "D",
+    starts_at: "2026-09-13T04:15:00.000Z", ends_at: "2026-09-13T07:00:00.000Z", served: [] } as Partial<BoardRide> & { id: string; car_id: string });
+  const guest = (over: Partial<WeekRequestRow>) => request({ id: "g1", trip_type: "one_way", trip_shape: "one_way_to", depart_at: "2026-09-13T04:30:00.000Z", ...over } as Partial<WeekRequestRow> & { id: string });
+
+  it("a bus-station detour moves the merged window's start earlier", () => {
+    const ctx = baseContext({ rides: [host], route });
+    const window = mergedHostWindow(ctx, host, guest({ origin_id: "T", destination_id: "D" }), "out");
+    expect(window).toEqual({ startsAt: "2026-09-13T04:00:00.000Z", endsAt: "2026-09-13T07:00:00.000Z" });
+  });
+
+  it("a guest boarding at the base's final destination is not a valid merge target", () => {
+    const g = guest({ origin_id: "D", destination_id: "AF" });
+    expect(mergeInvalidReason(host, g, "out", route)).toBe("boards_at_end");
+    const ctx = baseContext({ rides: [host], route });
+    expect(isUnmetDropValid(ctx, { request: g, destinationName: "—" }, "car1", 495, "host1")).toBe(false);
+  });
+
+  it("a detour over the department limit is not a valid merge target", () => {
+    const g = guest({ origin_id: "AF", destination_id: "D" });
+    expect(mergeInvalidReason(host, g, "out", route)).toBe("detour_too_long");
+  });
+
+  it("recognises the car that already carries a הקפצה's other leg", () => {
+    const first = ride({ id: "r-out", car_id: "car1", driver_id: "u1", status: "confirmed",
+      served: [{ request_id: "g1", role: "driver", leg: "out", car_mode: "chauffeur", adults: 1, child_seats: 0, boosters: 0, luggage: false }] } as unknown as Partial<BoardRide> & { id: string; car_id: string });
+    const item = { request: guest({ trip_type: "drop_off", trip_shape: "one_way_from" }), leg: "return" as const, destinationName: "—" };
+    expect(connectsOtherLeg({ rides: [first] }, item, "car1")).toBe(true);
+    expect(connectsOtherLeg({ rides: [first] }, item, "car2")).toBe(false);
+    expect(connectsOtherLeg({ rides: [] }, item, "car1")).toBe(false);
   });
 });

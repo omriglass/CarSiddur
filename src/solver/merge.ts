@@ -6,20 +6,20 @@
 // coming back from there. Merges are never applied automatically — only
 // suggestions and informational mergeOpportunities are produced.
 //
-// Simplification (documented in docs/SOLVER.md §9): host-shift search is
-// implemented only for 'both' (keep) hosts, by clamping the host's own
-// window into the guest's declared flex and re-checking the host's own
-// flex bounds and car timeline (fixed hosts never shift, per §1.3.5).
-// hosts with no driverRequestId (an unassigned chauffeur ride) are skipped.
+// REQUIREMENTS §13.95 (H1): the guest's boarding and alighting places are
+// inserted into the host's leg route by cheapest insertion (boarding strictly
+// before the host's final destination, alighting at or before it, added driving
+// per leg within the detour limit); the host's window then starts earlier /
+// ends later by the added driving. A non-fixed 'both' host may additionally
+// shift within its own flexibility so the guest's time fits. Hosts with no
+// driverRequestId (an unassigned chauffeur ride) are skipped.
 
 import { fits, luggageFits, sum } from './seatFit';
 import type { NormalizedRequest } from './slots';
 import { slotsToMinutes } from './slots';
 import type { CarTimeline } from './timeline';
-import { legRoute, resolveStopMinutes, routeEtaAt, type TravelLookup } from './travel';
+import { legRoute, resolveStopMinutes, travelBetween, type RouteStop, type TravelLookup } from './travel';
 import type { Assignment, AssignmentLeg, Car, Destination, LegSide, Passengers, Request, SolverConfig, TravelEdge, Window } from './types';
-
-const ZONE_PENALTY_MINUTES = 10;
 
 export interface HostRide {
   rideId: string;
@@ -94,30 +94,6 @@ function legCompatible(guestLeg: LegSide, hostLeg: LegSide): boolean {
   return hostLeg === 'both' || hostLeg === 'return';
 }
 
-interface Detour {
-  minutes: number;
-  km: number;
-}
-
-function detourBetween(
-  hostDestId: string,
-  guestDestId: string,
-  destinations: Record<string, Destination>,
-  config: SolverConfig,
-): Detour | null {
-  if (hostDestId === guestDestId) return { minutes: 0, km: 0 };
-  const h = destinations[hostDestId];
-  const g = destinations[guestDestId];
-  if (!h || !g || h.zone === 'unknown' || g.zone === 'unknown') return null;
-  const travelH = h.travelMinutes ?? config.defaultTravelMinutes;
-  const travelG = g.travelMinutes ?? config.defaultTravelMinutes;
-  const km = Math.abs((h.distanceKm ?? 0) - (g.distanceKm ?? 0));
-  if (h.zone === g.zone) return { minutes: Math.abs(travelH - travelG), km };
-  const minutes = Math.abs(travelH - travelG) + ZONE_PENALTY_MINUTES;
-  if (minutes > config.detour.maxMinutes || km > config.detour.maxKm) return null;
-  return { minutes, km };
-}
-
 export interface MergeCandidate {
   hostRideId: string;
   carId: string;
@@ -128,9 +104,14 @@ export interface MergeCandidate {
   cost: number;
   confidence: number;
   proposedDriverRequestId: string;
-  /** Multi-stop rides (REQUIREMENTS §13.93, ORIGINS_PLAN §6.3): where the guest boards —
-   *  the host's own origin in the same-origin case, or one of its declared stops. */
+  /** Where the guest boards: a place already on the host's route, or an inserted stop. */
   boardAtLocationId?: string;
+  /** REQUIREMENTS §13.95 (H1): the host ride's window before the merge (`window` is the new one:
+   *  it starts earlier by `addedOutMinutes`, ends later by `addedReturnMinutes`). */
+  hostWindowBefore?: Window;
+  /** Added driving per leg (minutes, rounded up to slots in the window) — 0 when that leg is not merged. */
+  addedOutMinutes?: number;
+  addedReturnMinutes?: number;
 }
 
 export interface MergeSearchParams {
@@ -143,130 +124,128 @@ export interface MergeSearchParams {
   /** driver's own NormalizedRequest and timeline, for host-shift search (keyed by host rideId) */
   hostDriverRequests: Map<string, NormalizedRequest>;
   hostTimelines: Map<string, CarTimeline>;
-  /** REQUIREMENTS §13.93, ORIGINS_PLAN §6.3: for `legRoute()`/`travelBetween()` (an 'out'/
-   *  'return' guest leg's route-based join). Not needed for a 'both' guest leg (unchanged
-   *  same-origin + destination/zone detour heuristic, which never consults stops). */
+  /** For `legRoute()`/`travelBetween()` (cheapest insertion, REQUIREMENTS §13.95). */
   homeLocationId: string;
   travel?: TravelEdge[];
 }
 
-function hostTimeCompatible(host: HostRide, guest: NormalizedRequest, leg: LegSide): boolean {
-  if (leg === 'both') return host.window.start >= guest.flexDep[0] && host.window.start <= guest.flexDep[1] &&
-    host.window.end >= guest.flexRet[0] && host.window.end <= guest.flexRet[1];
-  if (leg === 'out') return host.window.start >= guest.flexDep[0] && host.window.start <= guest.flexDep[1];
-  return host.window.end >= guest.flexRet[0] && host.window.end <= guest.flexRet[1];
+// --- REQUIREMENTS §13.95 (H1): cheapest insertion of the guest's boarding/alighting ---
+
+interface Insertion {
+  addedMinutes: number;
+  /** undefined when any hop's distance is unknown */
+  addedKm: number | undefined;
+  /** minutes from the route start to arriving at the boarding node */
+  boardArrivalMinutes: number;
+  /** minutes from arriving at the alighting node to the route end */
+  alightTailMinutes: number;
 }
 
-function tryHostShift(
-  host: HostRide,
-  guest: NormalizedRequest,
-  hostNr: NormalizedRequest | undefined,
-  tl: CarTimeline | undefined,
-): { window: Window; shift: { departureMin: number; returnMin: number } } | null {
-  if (host.isFixed || host.legSide !== 'both' || !hostNr || !tl) return null;
-  const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi);
-  const newStart = clamp(host.window.start, guest.flexDep[0], guest.flexDep[1]);
-  const newEnd = clamp(host.window.end, guest.flexRet[0], guest.flexRet[1]);
-  if (newEnd - newStart < hostNr.minDurationSlots) return null;
-  if (newStart < hostNr.flexDep[0] || newStart > hostNr.flexDep[1]) return null;
-  if (newEnd < hostNr.flexRet[0] || newEnd > hostNr.flexRet[1]) return null;
-  if (newStart === host.window.start && newEnd === host.window.end) return null;
-  tl.remove(host.rideId);
-  const free = tl.isFree({ start: newStart, end: newEnd }, hostNr.legs[0]?.originId ?? '');
-  tl.add({
-    rideId: host.rideId,
-    window: host.window,
-    startLocationId: hostNr.legs[0]?.originId ?? '',
-    endLocationId: hostNr.legs[0]?.destinationId ?? '',
-    overnightAck: false,
-  });
-  if (!free) return null;
-  return {
-    window: { start: newStart, end: newEnd },
-    shift: {
-      departureMin: slotsToMinutes(newStart - host.window.start),
-      returnMin: slotsToMinutes(newEnd - host.window.end),
-    },
-  };
+interface RouteCost {
+  /** total minutes incl. dwell at every stop */
+  minutes: number;
+  km: number | undefined;
+  /** arrival[i] = minutes from the route start to arriving at node i */
+  arrival: number[];
+}
+
+function routeCost(lookup: TravelLookup, route: RouteStop[], stopMinutes: number): RouteCost {
+  let t = 0;
+  let km: number | undefined = 0;
+  const arrival: number[] = [0];
+  for (let i = 0; i < route.length - 1; i++) {
+    const x = route[i] as RouteStop;
+    const y = route[i + 1] as RouteStop;
+    if (!x.locationId || !y.locationId) {
+      t += lookup.config.defaultTravelMinutes;
+      km = undefined;
+    } else {
+      const hop = travelBetween(lookup, x.locationId, y.locationId);
+      t += hop.minutes;
+      km = km === undefined || hop.km === undefined ? undefined : km + hop.km;
+    }
+    arrival.push(t);
+    if (i + 1 < route.length - 1) t += stopMinutes;
+  }
+  return { minutes: t, km, arrival };
 }
 
 /**
- * Multi-stop rides (REQUIREMENTS §13.93 "Multi-stop rides", ORIGINS_PLAN
- * §6.3): tries to board the guest's `leg` ('out' or 'return' only — a 'both'
- * guest keeps the plain same-origin + detour heuristic below unchanged) at
- * any point on the host's own route for that direction, not just at its
- * origin. `a`/`b` are the guest's own boarding/alighting places (an 'out'
- * guest travels origin -> destination; a 'return' guest travels destination
- * -> origin); the host qualifies when both appear on its route with
- * `index(a) < index(b)` and the host's ETA at `a` (the relevant edge for the
- * matched direction) falls inside the guest's own declared flexibility.
- * Returns null when the host has no stops that help (a plain two-node route,
- * `[origin, destination]`) and the exact endpoints don't match either — the
- * caller then falls back to the pre-existing same-origin/detour heuristic,
- * so a same-zone-but-different-destination merge (no stops involved at all)
- * keeps working exactly as before.
+ * Cheapest insertion of boarding place `a` and alighting place `b` (in travel
+ * order) into the host's leg route. `a` must sit strictly before the route's
+ * final node; `b` after `a` and at or before the final node. A place already on
+ * the route is used as is (never duplicated), so a place equal to the final node
+ * can only be the alighting place. Null when impossible or over the detour limit
+ * (minutes always; km when every hop's distance is known).
  */
-function tryRouteMatch(
-  host: HostRide,
-  guest: NormalizedRequest,
-  leg: 'out' | 'return',
-  params: MergeSearchParams,
-  car: Car,
-): MergeCandidate | null {
-  const hostNr = params.hostDriverRequests.get(host.rideId);
-  const hostRequestLike: Pick<Request, 'originId' | 'destinationId' | 'stops'> = hostNr
-    ? hostNr.request
-    : { originId: host.originId, destinationId: host.requestDestinationId };
-  const lookup: TravelLookup = { travel: params.travel, homeLocationId: params.homeLocationId, destinations: params.destinations, config: params.config };
-  const stopMinutes = resolveStopMinutes(params.config);
-  const route = legRoute(lookup, hostRequestLike, leg);
-
-  const a = leg === 'out' ? guest.originId : guest.destinationId;
-  const b = leg === 'out' ? guest.destinationId : guest.originId;
+function cheapestInsertion(
+  lookup: TravelLookup,
+  route: RouteStop[],
+  a: string,
+  b: string,
+  stopMinutes: number,
+  limits: { maxMinutes: number; maxKm: number },
+): Insertion | null {
+  const last = route.length - 1;
+  const base = routeCost(lookup, route, stopMinutes);
   const idxA = route.findIndex((r) => r.locationId === a);
   const idxB = route.findIndex((r) => r.locationId === b);
-  if (idxA === -1 || idxB === -1 || idxA >= idxB) return null;
+  if (idxA === last) return null;
+  if (idxA !== -1 && idxB !== -1 && idxB <= idxA) return null;
+  let best: Insertion | null = null;
+  const boardEdges = idxA !== -1 ? [-1] : Array.from({ length: last }, (_, i) => i);
+  for (const be of boardEdges) {
+    const withA = be === -1 ? route : [...route.slice(0, be + 1), { locationId: a }, ...route.slice(be + 1)];
+    const aIdx = be === -1 ? idxA : be + 1;
+    const existingB = withA.findIndex((r) => r.locationId === b);
+    const alightEdges = existingB !== -1 ? [-1] : Array.from({ length: withA.length - 1 - aIdx }, (_, k) => aIdx + k);
+    for (const ae of alightEdges) {
+      const full = ae === -1 ? withA : [...withA.slice(0, ae + 1), { locationId: b }, ...withA.slice(ae + 1)];
+      const bIdx = ae === -1 ? existingB : ae + 1;
+      if (bIdx <= aIdx) continue;
+      const cost = routeCost(lookup, full, stopMinutes);
+      const added = Math.max(0, cost.minutes - base.minutes);
+      const addedKm = cost.km === undefined || base.km === undefined ? undefined : Math.max(0, cost.km - base.km);
+      if (added > limits.maxMinutes) continue;
+      if (addedKm !== undefined && addedKm > limits.maxKm) continue;
+      if (best && best.addedMinutes <= added) continue;
+      best = {
+        addedMinutes: added,
+        addedKm,
+        boardArrivalMinutes: cost.arrival[aIdx] as number,
+        alightTailMinutes: cost.minutes - (cost.arrival[bIdx] as number),
+      };
+    }
+  }
+  return best;
+}
 
-  const anchor = leg === 'out' ? host.window.start : host.window.end;
-  // The relevant time check mirrors the pre-existing hostTimeCompatible()
-  // convention (departure for 'out', arrival-at-own-origin for 'return'):
-  // the ETA at `a` for an out guest (they board and leave at their own
-  // declared departure flex), the ETA at `b` for a return guest (they care
-  // about arriving home within their declared return flex).
-  const checkLocationId = leg === 'out' ? a : b;
-  const checkSlot = routeEtaAt(lookup, hostRequestLike, leg, anchor, stopMinutes, checkLocationId);
-  if (checkSlot === undefined) return null;
-  const flexBound = leg === 'out' ? guest.flexDep : guest.flexRet;
-  if (checkSlot < flexBound[0] || checkSlot > flexBound[1]) return null;
+const slotsCeil = (minutes: number): number => (minutes <= 0 ? 0 : Math.ceil(minutes / 15));
 
-  const combinedPassengers = sum(host.passengers, guest.passengers);
-  const combinedLuggage = host.luggageCount + (guest.luggage ? 1 : 0);
-  if (!fits(car, combinedPassengers) || !luggageFits(car, combinedLuggage)) return null;
+/** One merged direction of a candidate. */
+interface Side {
+  insertion: Insertion;
+  addedSlots: number;
+}
 
-  const hostNeedsCar = hostNr?.request.needsCarAtDestination ?? true;
-  const guestNeedsCar = guest.request.needsCarAtDestination;
-  const proposedDriverRequestId = !hostNeedsCar && guestNeedsCar ? guest.id : host.driverRequestId;
-
-  const guestPreferred = leg === 'out' ? guest.window.start : guest.window.end;
-  const shiftCostGuest = slotsToMinutes(Math.abs(checkSlot - guestPreferred));
-  const confidence = Math.max(0, 1 - 0.1 * host.guestCount - shiftCostGuest / 480);
-
-  return {
-    hostRideId: host.rideId,
-    carId: host.carId,
-    window: host.window,
-    // The guest boards exactly on the host's own route — no physical detour.
-    detourMinutes: 0,
-    detourKm: 0,
-    cost: shiftCostGuest,
-    confidence,
-    proposedDriverRequestId,
-    boardAtLocationId: a,
-  };
+function sideFor(
+  params: MergeSearchParams,
+  hostRequest: Pick<Request, 'originId' | 'destinationId' | 'stops'>,
+  guest: NormalizedRequest,
+  dir: 'out' | 'return',
+): Side | null {
+  const lookup: TravelLookup = { travel: params.travel, homeLocationId: params.homeLocationId, destinations: params.destinations, config: params.config };
+  const route = legRoute(lookup, hostRequest, dir);
+  // the guest travels origin -> destination on 'out', destination -> origin on 'return'
+  const a = dir === 'out' ? guest.originId : guest.destinationId;
+  const b = dir === 'out' ? guest.destinationId : guest.originId;
+  const insertion = cheapestInsertion(lookup, route, a, b, resolveStopMinutes(params.config), params.config.detour);
+  if (!insertion) return null;
+  return { insertion, addedSlots: slotsCeil(insertion.addedMinutes) };
 }
 
 export function findMergeHosts(params: MergeSearchParams): MergeCandidate[] {
-  const { guest, leg, hosts, destinations, config, cars } = params;
+  const { guest, leg, hosts, cars } = params;
   const candidates: MergeCandidate[] = [];
 
   for (const host of hosts) {
@@ -274,39 +253,62 @@ export function findMergeHosts(params: MergeSearchParams): MergeCandidate[] {
     const car = cars.get(host.carId);
     if (!car) continue;
 
-    if (leg !== 'both') {
-      const routeCandidate = tryRouteMatch(host, guest, leg, params, car);
-      if (routeCandidate) {
-        candidates.push(routeCandidate);
-        continue;
-      }
-    }
-
-    // REQUIREMENTS §13.93, ORIGINS_PLAN §4 item 5: merges only between
-    // requests that share the same origin — a no-op filter for every
-    // legacy (home-origin) request, since every host/guest origin defaults
-    // to the same department home. The same-origin case is "boarding = host
-    // origin" (ORIGINS_PLAN §6.3), already covered by tryRouteMatch above for
-    // an 'out'/'return' guest leg; this is the remaining fallback — a 'both'
-    // guest leg (never routed), or an 'out'/'return' guest whose destination
-    // isn't literally on the host's route but is zone/detour-compatible.
-    if (host.originId !== guest.originId) continue;
-
-    const detour = detourBetween(host.destinationId, guest.destinationId, destinations, config);
-    if (!detour) continue;
-
     const combinedPassengers = sum(host.passengers, guest.passengers);
     const combinedLuggage = host.luggageCount + (guest.luggage ? 1 : 0);
     if (!fits(car, combinedPassengers) || !luggageFits(car, combinedLuggage)) continue;
 
     const hostNr = params.hostDriverRequests.get(host.rideId);
-    let window = host.window;
+    const hostRequest: Pick<Request, 'originId' | 'destinationId' | 'stops'> = hostNr
+      ? hostNr.request
+      : { originId: host.originId, destinationId: host.requestDestinationId };
+
+    const mergesOut = leg === 'out' || leg === 'both';
+    const mergesReturn = leg === 'return' || leg === 'both';
+    const out = mergesOut ? sideFor(params, hostRequest, guest, 'out') : null;
+    const ret = mergesReturn ? sideFor(params, hostRequest, guest, 'return') : null;
+    if ((mergesOut && !out) || (mergesReturn && !ret)) continue;
+    const addOut = out?.addedSlots ?? 0;
+    const addRet = ret?.addedSlots ?? 0;
+
+    // Guest-time check at the boarding ETA (out) / arrival at the guest's own place (return),
+    // anchored at the host's *new* window. Shift the host (non-fixed 'both' hosts only) when it misses.
+    const etaOutOf = (baseStart: number) => baseStart - addOut + Math.round((out?.insertion.boardArrivalMinutes ?? 0) / 15);
+    const etaRetOf = (baseEnd: number) => baseEnd + addRet - Math.round((ret?.insertion.alightTailMinutes ?? 0) / 15);
+    const okOut = !out || (etaOutOf(host.window.start) >= guest.flexDep[0] && etaOutOf(host.window.start) <= guest.flexDep[1]);
+    const okRet = !ret || (etaRetOf(host.window.end) >= guest.flexRet[0] && etaRetOf(host.window.end) <= guest.flexRet[1]);
+
+    let baseStart = host.window.start;
+    let baseEnd = host.window.end;
     let hostShift: { departureMin: number; returnMin: number } | undefined;
-    if (!hostTimeCompatible(host, guest, leg)) {
-      const shifted = tryHostShift(host, guest, hostNr, params.hostTimelines.get(host.carId));
-      if (!shifted) continue;
-      window = shifted.window;
-      hostShift = shifted.shift;
+    if (!okOut || !okRet) {
+      if (host.isFixed || host.legSide !== 'both' || !hostNr) continue;
+      const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi);
+      const bootOut = Math.round((out?.insertion.boardArrivalMinutes ?? 0) / 15);
+      const tailRet = Math.round((ret?.insertion.alightTailMinutes ?? 0) / 15);
+      if (out) baseStart = clamp(baseStart, guest.flexDep[0] + addOut - bootOut, guest.flexDep[1] + addOut - bootOut);
+      if (ret) baseEnd = clamp(baseEnd, guest.flexRet[0] - addRet + tailRet, guest.flexRet[1] - addRet + tailRet);
+      if (baseEnd - baseStart < hostNr.minDurationSlots) continue;
+      if (baseStart < hostNr.flexDep[0] || baseStart > hostNr.flexDep[1]) continue;
+      if (baseEnd < hostNr.flexRet[0] || baseEnd > hostNr.flexRet[1]) continue;
+      hostShift = {
+        departureMin: slotsToMinutes(baseStart - host.window.start),
+        returnMin: slotsToMinutes(baseEnd - host.window.end),
+      };
+    }
+    const window: Window = { start: baseStart - addOut, end: baseEnd + addRet };
+    if (window.start < 0) continue;
+
+    // the extended / shifted window must still be free on the host's car
+    if (window.start !== host.window.start || window.end !== host.window.end) {
+      const tl = params.hostTimelines.get(host.carId);
+      const block = tl?.allBlocks().find((x) => x.rideId === host.rideId);
+      if (tl && block) {
+        tl.remove(host.rideId);
+        const free = tl.isFree(window, block.startLocationId, block.relayPairId, block.endLocationId);
+        if (host.isFixed) tl.forceAdd(block);
+        else tl.add(block);
+        if (!free) continue;
+      }
     }
 
     // REQ §13.9 / SOLVER §3.8: if the host doesn't need the car at the destination
@@ -315,13 +317,21 @@ export function findMergeHosts(params: MergeSearchParams): MergeCandidate[] {
     const guestNeedsCar = guest.request.needsCarAtDestination;
     const proposedDriverRequestId = !hostNeedsCar && guestNeedsCar ? guest.id : host.driverRequestId;
 
-    const shiftCostGuest = slotsToMinutes(Math.abs(window.start - guest.window.start)) +
-      slotsToMinutes(Math.abs(window.end - guest.window.end));
+    const detourMinutes = Math.max(out?.insertion.addedMinutes ?? 0, ret?.insertion.addedMinutes ?? 0);
+    const kmOut = out?.insertion.addedKm;
+    const kmRet = ret?.insertion.addedKm;
+    const detourKm = Math.max(kmOut ?? 0, kmRet ?? 0);
+    const guestStartEta = out ? etaOutOf(baseStart) : undefined;
+    const guestEndEta = ret ? etaRetOf(baseEnd) : undefined;
+    const shiftCostGuest =
+      (guestStartEta === undefined ? 0 : slotsToMinutes(Math.abs(guestStartEta - guest.window.start))) +
+      (guestEndEta === undefined ? 0 : slotsToMinutes(Math.abs(guestEndEta - guest.window.end)));
     const shiftCostHost = hostShift ? Math.abs(hostShift.departureMin) + Math.abs(hostShift.returnMin) : 0;
-    const cost = detour.minutes + shiftCostGuest + shiftCostHost;
+    const addedTotal = (out?.insertion.addedMinutes ?? 0) + (ret?.insertion.addedMinutes ?? 0);
+    const cost = addedTotal + shiftCostGuest + shiftCostHost;
     const confidence = Math.max(
       0,
-      1 - 0.4 * (detour.minutes / Math.max(1, config.detour.maxMinutes)) - 0.1 * host.guestCount - shiftCostGuest / 480,
+      1 - 0.4 * (detourMinutes / Math.max(1, params.config.detour.maxMinutes)) - 0.1 * host.guestCount - shiftCostGuest / 480,
     );
 
     candidates.push({
@@ -329,12 +339,15 @@ export function findMergeHosts(params: MergeSearchParams): MergeCandidate[] {
       carId: host.carId,
       window,
       hostShift,
-      detourMinutes: detour.minutes,
-      detourKm: detour.km,
+      detourMinutes,
+      detourKm,
       cost,
       confidence,
-      boardAtLocationId: host.originId,
       proposedDriverRequestId,
+      boardAtLocationId: leg === 'return' ? guest.destinationId : guest.originId,
+      hostWindowBefore: window.start !== host.window.start || window.end !== host.window.end ? host.window : undefined,
+      addedOutMinutes: out && out.insertion.addedMinutes > 0 ? out.insertion.addedMinutes : undefined,
+      addedReturnMinutes: ret && ret.insertion.addedMinutes > 0 ? ret.insertion.addedMinutes : undefined,
     });
   }
 

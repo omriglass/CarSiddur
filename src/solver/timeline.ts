@@ -27,6 +27,11 @@ export interface Block {
    *  just waits at the destination between the two legs, so they need no buffer between them —
    *  only a true overlap counts. The ordinary buffer still applies to every other block. */
   relayPairId?: string;
+  /** a Sadran reservation (time reservation, REQ §13.96): occupies time (overlap, buffer) but is
+   *  location-neutral — the car's location before it equals the location after it, and its
+   *  start/end labels are ignored by `locationAt`, `chainBreaks`, `isFree`'s end-check,
+   *  `weekEndAway` and the away windows. */
+  locationNeutral?: boolean;
 }
 
 export interface Gap {
@@ -45,8 +50,10 @@ function tooClose(aStart: number, aEnd: number, bStart: number, bEnd: number, bu
 
 export interface ChainBreak {
   rideId: string;
-  expectedLocationId: string;
-  actualLocationId: string;
+  /** Where the car really is when the ride starts — the place the board's "car is not here, it is at X" warning names. */
+  carLocationId: string;
+  /** Where the ride itself says it starts. */
+  rideOriginId: string;
 }
 
 export class CarTimeline {
@@ -72,7 +79,7 @@ export class CarTimeline {
     let location = this.startLocation;
     for (const b of this.blocks) {
       if (b.window.start > slot) break;
-      location = b.endLocationId;
+      if (!b.locationNeutral) location = b.endLocationId;
     }
     return location;
   }
@@ -111,7 +118,7 @@ export class CarTimeline {
     if (this.locationAt(w.start) !== originId) return false;
     if (endLocationId !== undefined && endLocationId !== originId) {
       const next = this.blocks
-        .filter((b) => b.window.start >= w.end)
+        .filter((b) => b.window.start >= w.end && !b.locationNeutral)
         .sort((a, b) => a.window.start - b.window.start)[0];
       if (next && next.startLocationId !== endLocationId) return false;
     }
@@ -121,7 +128,7 @@ export class CarTimeline {
   /** Inserts a block; rejects (throws) one whose start location mismatches the car's actual location. */
   add(b: Block): void {
     const actual = this.locationAt(b.window.start);
-    if (actual !== b.startLocationId) {
+    if (!b.locationNeutral && actual !== b.startLocationId) {
       throw new Error(
         `CarTimeline.add: block ${b.rideId} starts at ${b.startLocationId} but car ${this.car.id} is at ${actual}`,
       );
@@ -162,8 +169,9 @@ export class CarTimeline {
     const breaks: ChainBreak[] = [];
     let location = this.startLocation;
     for (const b of this.blocks) {
+      if (b.locationNeutral) continue;
       if (b.startLocationId !== location) {
-        breaks.push({ rideId: b.rideId, expectedLocationId: location, actualLocationId: b.startLocationId });
+        breaks.push({ rideId: b.rideId, carLocationId: location, rideOriginId: b.startLocationId });
       }
       location = b.endLocationId;
     }
@@ -208,7 +216,7 @@ export class CarTimeline {
     // only real blocks change the carried location.
     type Obstacle = { start: number; end: number; endLocationId?: string };
     const obstacles: Obstacle[] = [
-      ...this.blocks.map((b) => ({ start: b.window.start, end: b.window.end, endLocationId: b.endLocationId })),
+      ...this.blocks.map((b) => ({ start: b.window.start, end: b.window.end, endLocationId: b.locationNeutral ? undefined : b.endLocationId })),
       ...this.maintenance.map((m) => ({ start: m.window.start, end: m.window.end })),
     ].sort((a, b) => a.start - b.start);
 
@@ -238,7 +246,9 @@ export class CarTimeline {
     let location = this.startLocation;
     type Obstacle = { start: number; end: number; endLocationId?: string };
     const obstacles: Obstacle[] = [
-      ...this.blocks.map((b) => ({ start: b.window.start, end: b.window.end, endLocationId: b.endLocationId })),
+      ...this.blocks
+        .filter((b) => !b.locationNeutral)
+        .map((b) => ({ start: b.window.start, end: b.window.end, endLocationId: b.endLocationId })),
       ...this.maintenance.map((m) => ({ start: m.window.start, end: m.window.end })),
     ].sort((a, b) => a.start - b.start);
 
@@ -276,7 +286,7 @@ export class CarTimeline {
       // find the block that produced this away window (the one whose endLocationId === spanning.locationId
       // and whose window.end <= spanning.window.start, i.e. immediately precedes it)
       const cause = [...this.blocks]
-        .filter((b) => b.window.end <= spanning.window.start && b.endLocationId === spanning.locationId)
+        .filter((b) => !b.locationNeutral && b.window.end <= spanning.window.start && b.endLocationId === spanning.locationId)
         .sort((a, b) => b.window.end - a.window.end)[0];
       if (!cause || !cause.overnightAck) {
         violations.push({ window: spanning.window, causeRideId: cause?.rideId });

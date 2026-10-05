@@ -92,9 +92,17 @@ begin
   -- that starts at home (not haifa) right after a fresh one_way window -- no car can take the
   -- new one_way leg without breaking that later ride, so it must stay waitlisted despite every
   -- car being idle during the window itself.
-  insert into public.rides(department_id,week_start,car_id,starts_at,ends_at,origin_id,destination_id,driver_id,status,is_pinned,pin_reason,created_by)
-  select dept, w, c.id, (w+3+time '14:00') at time zone 'Asia/Jerusalem', (w+3+time '16:00') at time zone 'Asia/Jerusalem', home, home, manager, 'confirmed', true, 'TEST_BLOCKER', manager
-  from public.cars c where c.department_id = dept and c.type = 'shared' and c.status = 'active';
+  -- (each blocker serves a request: a ride serving none is a reservation, which never decides where a car is -- REQ §13.96)
+  declare v_c record; v_bq uuid; v_br uuid;
+  begin
+    for v_c in select c.id from public.cars c where c.department_id = dept and c.type = 'shared' and c.status = 'active' loop
+      insert into public.requests(department_id,week_start,requester_id,filed_by,origin_id,destination_id,ride_type_id,depart_at,return_at,trip_shape,trip_type,needs_car_at_destination,status)
+        values(dept,w,manager,manager,home,haifa,ride_type,(w+3+time '14:00') at time zone 'Asia/Jerusalem',(w+3+time '16:00') at time zone 'Asia/Jerusalem','round_trip','round_trip',true,'assigned') returning id into v_bq;
+      insert into public.rides(department_id,week_start,car_id,starts_at,ends_at,origin_id,destination_id,driver_id,status,is_pinned,pin_reason,created_by)
+        values(dept,w,v_c.id,(w+3+time '14:00') at time zone 'Asia/Jerusalem',(w+3+time '16:00') at time zone 'Asia/Jerusalem',home,home,manager,'confirmed',true,'TEST_BLOCKER',manager) returning id into v_br;
+      insert into public.ride_requests(ride_id,request_id,role,leg,car_mode) values(v_br,v_bq,'driver','both','keep');
+    end loop;
+  end;
 
   v_result := public.submit_request(jsonb_build_object(
     'department_id', dept, 'week_start', w, 'requester_id', member2, 'destination_id', haifa, 'ride_type_id', ride_type,

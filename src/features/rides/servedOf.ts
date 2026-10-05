@@ -56,6 +56,15 @@ export function servedOf(ride: BoardRide): ServedEntry[] {
     .map((s) => (s.child_names?.length ? { ...s, childNames: s.child_names } : s));
 }
 
+/**
+ * REQ §13.96: a Sadran reservation ("שמירת זמן") is a ride with no served request that is not an
+ * automatic relocation ride. It holds the car for *time* only: its places carry no meaning, so it
+ * never changes where the car is.
+ */
+export function isReservation(ride: Pick<BoardRide, "served" | "auto_relocation">): boolean {
+  return !ride.auto_relocation && servedOf(ride as BoardRide).length === 0;
+}
+
 /** `v_board_rides.relay_partner` (REQUIREMENTS §13.93 "Display"): the paired relay leg (out ↔
  *  return) on the same car, same day — its ride id, driver (or first requester) name and time.
  *  Null when this ride carries no relay leg, or no matching ride was found yet. */

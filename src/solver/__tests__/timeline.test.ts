@@ -156,7 +156,7 @@ describe('CarTimeline', () => {
       tl.add({ rideId: 'out', window: { start: 10, end: 20 }, startLocationId: HOME, endLocationId: 'X', overnightAck: false });
       // The car is at X after `out`, but this fixed ride claims to start at HOME.
       tl.forceAdd({ rideId: 'fixed1', window: { start: 40, end: 50 }, startLocationId: HOME, endLocationId: HOME, overnightAck: false });
-      expect(tl.chainBreaks()).toEqual([{ rideId: 'fixed1', expectedLocationId: 'X', actualLocationId: HOME }]);
+      expect(tl.chainBreaks()).toEqual([{ rideId: 'fixed1', carLocationId: 'X', rideOriginId: HOME }]);
     });
 
     it('chainBreaks() is empty when every fixed ride chains correctly', () => {
@@ -187,6 +187,47 @@ describe('CarTimeline', () => {
     it('weekEndAway() is null for a Haifa-based car that starts and ends the week in Haifa', () => {
       const tl = new CarTimeline(makeCar('C1', { baseLocationId: 'HAIFA', startLocationId: 'HAIFA' }), 2, WEEK_SLOTS, HOME);
       expect(tl.weekEndAway()).toBeNull();
+    });
+  });
+  describe('location-neutral reservations (REQUIREMENTS §13.96)', () => {
+    const neutral = { rideId: 'res', window: { start: 30, end: 40 }, startLocationId: 'HAIFA', endLocationId: 'HAIFA', overnightAck: false, locationNeutral: true };
+    const real = (rideId: string, start: number, end: number, from = HOME, to = HOME) => ({ rideId, window: { start, end }, startLocationId: from, endLocationId: to, overnightAck: false });
+
+    it('still occupies time and buffer, but the car stays where it was', () => {
+      const tl = bufferedTl(2);
+      tl.add(real('a', 10, 20));
+      tl.forceAdd(neutral);
+      expect(tl.locationAt(45)).toBe(HOME);
+      expect(tl.isFree({ start: 35, end: 45 }, HOME)).toBe(false);
+      expect(tl.isFree({ start: 41, end: 50 }, HOME)).toBe(false); // buffer after the reservation
+      expect(tl.isFree({ start: 42, end: 50 }, HOME)).toBe(true);
+      expect(tl.isFree({ start: 42, end: 50 }, 'HAIFA')).toBe(false);
+    });
+
+    it('never produces a chain break, nor causes one for the next real ride', () => {
+      const tl = bufferedTl(2);
+      tl.forceAdd(real('a', 10, 20));
+      tl.forceAdd(neutral);
+      tl.forceAdd(real('b', 50, 60));
+      expect(tl.chainBreaks()).toEqual([]);
+      tl.forceAdd(real('c', 70, 80, 'X', HOME));
+      expect(tl.chainBreaks()).toEqual([{ rideId: 'c', carLocationId: HOME, rideOriginId: 'X' }]);
+    });
+
+    it('the isFree end-check skips a neutral next block', () => {
+      const tl = bufferedTl(2);
+      tl.forceAdd({ ...neutral, startLocationId: 'ELSEWHERE', endLocationId: 'ELSEWHERE' });
+      expect(tl.isFree({ start: 5, end: 15 }, HOME, undefined, 'X')).toBe(true);
+      tl.forceAdd(real('b', 60, 70, 'X', HOME));
+      expect(tl.isFree({ start: 5, end: 15 }, HOME, undefined, 'X')).toBe(true);
+      expect(tl.isFree({ start: 5, end: 15 }, HOME, undefined, 'Y')).toBe(false);
+    });
+
+    it('is ignored by weekEndAway() and awayWindows()', () => {
+      const tl = bufferedTl(2);
+      tl.forceAdd({ ...neutral, window: { start: 80, end: WEEK_SLOTS } });
+      expect(tl.weekEndAway()).toBeNull();
+      expect(tl.awayWindows()).toEqual([]);
     });
   });
 });

@@ -80,6 +80,28 @@ function iso(dayOffsetMs: number): string {
   return new Date(WEEK_START_MS + dayOffsetMs).toISOString();
 }
 
+describe("scanBoardConflicts - reservations (REQ §13.96)", () => {
+  const rides = [
+    { id: "a", carId: "c", startsAt: iso(8 * 3600_000), endsAt: iso(9 * 3600_000), originId: "home", destinationId: "home" },
+    { id: "res", carId: "c", startsAt: iso(10 * 3600_000), endsAt: iso(12 * 3600_000), originId: "haifa", destinationId: "haifa", locationNeutral: true },
+    { id: "b", carId: "c", startsAt: iso(13 * 3600_000), endsAt: iso(14 * 3600_000), originId: "home", destinationId: "home" },
+  ];
+  const scan = (r = rides) => scanBoardConflicts({ rides: r, carIds: ["c"], weekStartMs: WEEK_START_MS, bufferMinutes: 30, homeLocationId: "home", days: DAYS });
+
+  it("a reservation labelled Haifa between two home rides: no chain break, no away band, no conflict", () => {
+    const result = scan();
+    expect(result.conflictRideIds.size).toBe(0);
+    expect(result.chainBreaksByCarId.get("c")).toEqual([]);
+    expect(result.awayByCarId.get("c")).toEqual([]);
+    expect(result.weekEndAwayByCarId.get("c")).toBeNull();
+  });
+
+  it("still conflicts in time with a ride overlapping it", () => {
+    const result = scan([...rides, { id: "x", carId: "c", startsAt: iso(11 * 3600_000), endsAt: iso(12.5 * 3600_000), originId: "home", destinationId: "home" }]);
+    expect(result.conflictRideIds.has("res")).toBe(true);
+  });
+});
+
 describe("scanBoardConflicts", () => {
   it("flags two overlapping rides on the same car and leaves a non-overlapping ride clean", () => {
     const rides = [
@@ -163,7 +185,7 @@ describe("scanBoardConflicts", () => {
       days: DAYS,
     });
     expect(result.chainBreaksByCarId.get("car-1")).toEqual([
-      { rideId: "r1", expectedLocationId: "home", actualLocationId: "away" },
+      { rideId: "r1", carLocationId: "home", rideOriginId: "away" },
     ]);
   });
 

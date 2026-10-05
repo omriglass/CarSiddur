@@ -76,6 +76,8 @@ export interface Flexibility {
 }
 
 export interface Request {
+  /** Internal (dropOffSplit.ts, REQUIREMENTS §13.95 H2): id of the original request this half of a split drop-off-with-pickup came from. Never output. */
+  splitFrom?: string;
   id: string;
   memberId: string;
   /** Requester display name, used only in reason texts (SOLVER §3.13a). */
@@ -234,6 +236,8 @@ export interface FixedRide {
   overnightAck: boolean;
   /** Coordinator-approved buffer after this existing booking; never authorizes a new solver placement. */
   approvedBufferAfterSlots?: number;
+  /** A Sadran reservation (REQ §13.96): occupies the car's time but not its location. */
+  locationNeutral?: boolean;
   kind: 'pinned' | 'acceptedProposal' | 'temporaryOwner';
 }
 
@@ -400,6 +404,11 @@ export type Suggestion =
       hostShift?: { departureMin: number; returnMin: number };
       detourMinutes: number;
       detourKm: number;
+      /** REQUIREMENTS §13.95 (H1): the host ride's window before the merge (`window` is the new
+       *  one — earlier start by `addedOutMinutes`, later end by `addedReturnMinutes`). */
+      hostWindowBefore?: Window;
+      addedOutMinutes?: number;
+      addedReturnMinutes?: number;
       /**
        * Multi-stop rides (REQUIREMENTS §13.93, ORIGINS_PLAN §6.3): where the
        * guest boards the host's ride — the host's own origin in the

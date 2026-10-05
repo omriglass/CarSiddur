@@ -612,6 +612,8 @@ export const he = {
     nonDriverCannotDrive: "חבר/ה שסימן/ה 'לא נוהג/ת' לא יכול/ה להיות נהג/ת",
     /** REQ §13.93: a non-driver with no driving companion may only file a הקפצה. */
     nonDriverNeedsDropOff: "מי שלא נוהג/ת יכול/ה לבקש רק הקפצה",
+    /** REQ §13.95 (H3): `set_request_trip_type` — a round trip needs a return time. */
+    tripTypeNeedsReturn: "אי אפשר לעבור להלוך-חזור — לבקשה אין שעת חזרה",
     /** REQ §13.93/SOLVER §3.15: accepting a `changeOrigin` proposal found the car/window no longer free. */
     originChangeUnavailable: "הרכב כבר לא פנוי בנקודת היציאה הזו — יש להריץ הצעה חדשה",
     carNotAtLegOrigin: "הרכב לא נמצא בנקודת היציאה בשעה הזו",

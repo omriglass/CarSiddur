@@ -38,12 +38,12 @@ describe("resolveDraftPlacement", () => {
     const placement = resolveDraftPlacement(proposal({ type: "merge", ride_id: "ride1", payload: { starts_at: "2026-10-11T05:00:00.000Z", ends_at: "2026-10-11T11:00:00.000Z" } }), [request()], [ride()]);
     expect(placement).toMatchObject({ type: "merge", carId: "carA", hostRideId: "ride1", startsAt: "2026-10-11T05:00:00.000Z" });
   });
-  it("merge without a payload window keeps the host start and grows by the added driving", () => {
+  it("merge without a payload window leaves earlier by the added driving and keeps the end", () => {
     const hop = makeHop([{ fromId: "home", toId: "dest", travelMinutes: 60 }, { fromId: "home", toId: "stn", travelMinutes: 20 }, { fromId: "stn", toId: "dest", travelMinutes: 45 }]);
     const host = ride({ origin_id: "home", destination_id: "dest", route: [] as never, starts_at: "2026-10-11T06:00:00.000Z", ends_at: "2026-10-11T08:00:00.000Z" });
     const guest = request({ trip_shape: "one_way_to", origin_id: "stn", destination_id: "dest" });
     const placement = resolveDraftPlacement(proposal({ type: "merge", ride_id: "ride1", payload: { ride_id: "ride1", legs: [{ ride_id: "ride1", role: "passenger", leg: "out", car_mode: "passenger" }] } }), [guest], [host], "home", { hop, stopMinutes: 5 });
-    expect(placement).toMatchObject({ type: "merge", carId: "carA", startsAt: "2026-10-11T06:00:00.000Z", endsAt: "2026-10-11T08:15:00.000Z" });
+    expect(placement).toMatchObject({ type: "merge", carId: "carA", startsAt: "2026-10-11T05:45:00.000Z", endsAt: "2026-10-11T08:00:00.000Z" });
   });
   it("origin: the request's own window on the proposed car and place", () => {
     const placement = resolveDraftPlacement(proposal({ type: "origin", payload: { car_id: "carC", origin_id: "haifa" } }), [request()], []);

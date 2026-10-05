@@ -88,10 +88,29 @@ export function makeHop(
  */
 export function homeTravelEdges(
   homeId: string | null | undefined,
-  destinations: readonly { id: string; travel_minutes: number | null }[],
-): { fromId: string; toId: string; travelMinutes: number }[] {
+  destinations: readonly { id: string; travel_minutes: number | null; distance_km?: number | null }[],
+): { fromId: string; toId: string; travelMinutes: number; distanceKm?: number }[] {
   if (!homeId) return [];
-  return destinations.flatMap((d) => (d.id !== homeId && d.travel_minutes != null ? [{ fromId: homeId, toId: d.id, travelMinutes: d.travel_minutes }] : []));
+  return destinations.flatMap((d) => (d.id !== homeId && d.travel_minutes != null
+    ? [{ fromId: homeId, toId: d.id, travelMinutes: d.travel_minutes, ...(d.distance_km != null ? { distanceKm: d.distance_km } : {}) }] : []));
+}
+
+/** Kilometres between two places (`null` = unknown: free text, or no stored distance). */
+export type HopKm = (fromId: string | null, toId: string | null) => number | null;
+
+/** Symmetric km lookup over the same rows as `makeHop` (rows without `distanceKm` are unknown). */
+export function makeHopKm(travel: readonly { fromId: string; toId: string; distanceKm?: number }[]): HopKm {
+  const byPair = new Map<string, number>();
+  for (const edge of travel) {
+    if (edge.distanceKm == null) continue;
+    byPair.set(`${edge.fromId}|${edge.toId}`, edge.distanceKm);
+    if (!byPair.has(`${edge.toId}|${edge.fromId}`)) byPair.set(`${edge.toId}|${edge.fromId}`, edge.distanceKm);
+  }
+  return (fromId, toId) => {
+    if (!fromId || !toId) return null;
+    if (fromId === toId) return 0;
+    return byPair.get(`${fromId}|${toId}`) ?? null;
+  };
 }
 
 export interface RoutePassenger {
@@ -110,16 +129,16 @@ export interface RoutePassenger {
 type Draft = Omit<RoutePoint, "position" | "eta">;
 
 /** Mirror of SQL `_route_add_place`: `after` is the 1-based index the place must come after (0 = anywhere after the origin). */
-function addPlace(route: Draft[], place: Draft, after: number, hop: Hop): { index: number; route: Draft[] } {
+function addPlace(route: Draft[], place: Draft, after: number, hop: Hop, dedupeMax: number, insertMax: number): { index: number; route: Draft[] } | null {
   const n = route.length;
   if (place.placeId) {
-    for (let i = Math.max(after, 0) + 1; i <= n; i++) {
+    for (let i = Math.max(after, 0) + 1; i <= Math.min(n, dedupeMax); i++) {
       if (route[i - 1]!.placeId === place.placeId) return { index: i, route };
     }
   }
   let bestK = -1;
   let bestCost = Number.POSITIVE_INFINITY;
-  for (let k = Math.max(after + 1, 2); k <= n + 1; k++) {
+  for (let k = Math.max(after + 1, 2); k <= Math.min(n + 1, insertMax); k++) {
     const prev = route[k - 2]?.placeId ?? null;
     let cost: number;
     if (k <= n) {
@@ -130,7 +149,7 @@ function addPlace(route: Draft[], place: Draft, after: number, hop: Hop): { inde
     }
     if (cost < bestCost) { bestCost = cost; bestK = k; }
   }
-  if (bestK < 0) bestK = n + 1;
+  if (bestK < 0) return null;
   const next = [...route];
   next.splice(bestK - 1, 0, place);
   return { index: bestK, route: next };
@@ -184,12 +203,43 @@ export interface MergedRoute {
   /** ETA at the passenger's boarding point (first leg they join), or `null` when no leg of the host covers them. */
   boardEta: string | null;
   boardLeg: RouteLeg | null;
+  /** REQ §13.95 (H1): `false` when the merge is not allowed - see `invalid`. The route is then the host's own. */
+  valid: boolean;
+  invalid: MergeInvalid | null;
+  /** The host's own start (before the merge); `startsAt` is earlier by the added out-leg driving. */
+  originalStartsAt: string;
+  /** Added driving per leg (minutes). */
+  addedOutMinutes: number;
+  addedReturnMinutes: number;
+}
+
+/** Why a merge is refused: boards at/after the base's final destination, or the detour is over the limit. */
+export type MergeInvalid = "boards_at_end" | "detour_too_long";
+
+/** Quarter-hour floor (the start moves earlier, never later). */
+export function roundDownRideStart(startMs: number): number {
+  return Math.floor(startMs / 900_000) * 900_000;
+}
+
+/** Kilometres of a leg (`null` when any hop is unknown). */
+function legKm(points: readonly Pick<RoutePoint, "placeId">[], hopKm: HopKm): number | null {
+  let total = 0;
+  for (let i = 1; i < points.length; i++) {
+    const km = hopKm(points[i - 1]!.placeId, points[i]!.placeId);
+    if (km == null) return null;
+    total += km;
+  }
+  return total;
 }
 
 /**
- * The host ride after `passenger` joins: boarding/alighting inserted by cheapest insertion on
- * every leg they join that the host route has, ETAs recomputed, the start kept and the end
- * extended by the added driving (rounded up to a quarter hour, capped 23:59, never shortened).
+ * The host ride after `passenger` joins (REQ §13.95 H1; SQL `ride_route()` twin): on every leg
+ * they join that the host route has, boarding is inserted strictly BEFORE the leg's final place
+ * and alighting at or before it (cheapest insertion), and the added driving on the leg must stay
+ * within `detourLimitMinutes` / `detourLimitKm` - otherwise `valid` is false and the host's own
+ * route comes back. The ride then LEAVES earlier by the added out-leg driving (rounded down to a
+ * quarter hour) and ENDS later by the added return-leg driving (rounded up, capped 23:59, never
+ * shortened), so the base person's own times are kept.
  */
 export function mergePassengerIntoRoute(input: {
   route: readonly RoutePoint[];
@@ -198,20 +248,27 @@ export function mergePassengerIntoRoute(input: {
   passenger: RoutePassenger;
   hop: Hop;
   stopMinutes?: number;
+  detourLimitMinutes?: number | null;
+  detourLimitKm?: number | null;
+  hopKm?: HopKm;
 }): MergedRoute {
   const { passenger, hop } = input;
   const stopMinutes = input.stopMinutes ?? DEFAULT_STOP_MINUTES;
   const startMs = Date.parse(input.startsAt);
   const endMs = Date.parse(input.endsAt);
   const legsOf = (leg: RouteLeg) => input.route.filter((p) => p.leg === leg).sort((a, b) => a.position - b.position);
-  let added = 0;
-  const grown: Record<RouteLeg, Draft[]> = { out: legsOf("out").map(strip), return: legsOf("return").map(strip) };
+  const original: Record<RouteLeg, Draft[]> = { out: legsOf("out").map(strip), return: legsOf("return").map(strip) };
+  const grown: Record<RouteLeg, Draft[]> = { out: original.out, return: original.return };
+  const addedBy: Record<RouteLeg, number> = { out: 0, return: 0 };
+  let invalid: MergeInvalid | null = null;
   let boardLeg: RouteLeg | null = null;
   let boardIndex = -1;
   for (const leg of ["out", "return"] as const) {
     const joins = passenger.leg === "both" || passenger.leg === leg;
     if (!joins || grown[leg].length < 2) continue;
-    const before = legMinutes(grown[leg], hop, stopMinutes);
+    const base = grown[leg];
+    const n = base.length;
+    const before = legMinutes(base, hop, stopMinutes);
     const boardsAtOrigin = leg === "out";
     const board: Draft = {
       leg, kind: "board", requestId: passenger.requestId,
@@ -225,27 +282,61 @@ export function mergePassengerIntoRoute(input: {
       placeText: (boardsAtOrigin ? passenger.destinationText : passenger.originText) ?? null,
       name: (boardsAtOrigin ? passenger.destinationName : passenger.originName) ?? (boardsAtOrigin ? passenger.destinationText : passenger.originText) ?? "",
     };
-    const first = addPlace(grown[leg], board, 0, hop);
-    const second = addPlace(first.route, alight, first.index, hop);
+    // Boards strictly before the leg's final place (dedupe up to n-1, insert before the last point),
+    // alights at or before it.
+    if (board.placeId && board.placeId === base[n - 1]!.placeId) { invalid = "boards_at_end"; break; }
+    const first = addPlace(base, board, 0, hop, n - 1, n);
+    const second = first ? addPlace(first.route, alight, first.index, hop, first.route.length, first.route.length) : null;
+    if (!first || !second) { invalid = "boards_at_end"; break; }
     grown[leg] = second.route;
-    added += Math.max(legMinutes(grown[leg], hop, stopMinutes) - before, 0);
+    // REQ §13.95, same rule as SQL `_merge_check`: a free-text place on the merged leg has no known
+    // travel time, so the added driving is unknown — no detour-limit refusal and no automatic
+    // window change (the Sadran decides). List places keep the limit.
+    if (second.route.some((p) => !p.placeId)) {
+      if (boardLeg === null) { boardLeg = leg; boardIndex = first.index - 1; }
+      continue;
+    }
+    addedBy[leg] = Math.max(legMinutes(second.route, hop, stopMinutes) - before, 0);
+    if (input.detourLimitMinutes != null && addedBy[leg] > input.detourLimitMinutes) { invalid = "detour_too_long"; break; }
+    if (input.detourLimitKm != null && input.hopKm) {
+      const kmBefore = legKm(base, input.hopKm);
+      const kmAfter = legKm(second.route, input.hopKm);
+      if (kmBefore != null && kmAfter != null && kmAfter - kmBefore > input.detourLimitKm) { invalid = "detour_too_long"; break; }
+    }
     if (boardLeg === null) { boardLeg = leg; boardIndex = first.index - 1; }
   }
-  const newEndMs = added > 0 ? Math.max(endMs, roundUpRideEnd(startMs, endMs + added * 60_000)) : endMs;
+  if (invalid) {
+    const route = [
+      ...(original.out.length ? routeEtas(original.out, "out", startMs, endMs, hop, stopMinutes) : []),
+      ...(original.return.length ? routeEtas(original.return, "return", startMs, endMs, hop, stopMinutes) : []),
+    ];
+    return {
+      route, startsAt: input.startsAt, endsAt: input.endsAt, addedMinutes: 0, boardEta: null, boardLeg: null,
+      valid: false, invalid, originalStartsAt: input.startsAt, addedOutMinutes: 0, addedReturnMinutes: 0,
+    };
+  }
+  const added = addedBy.out + addedBy.return;
+  const newStartMs = addedBy.out > 0 ? Math.min(startMs, roundDownRideStart(startMs - addedBy.out * 60_000)) : startMs;
+  const newEndMs = addedBy.return > 0 ? Math.max(endMs, roundUpRideEnd(startMs, endMs + addedBy.return * 60_000)) : endMs;
   const route = [
-    ...(grown.out.length ? routeEtas(grown.out, "out", startMs, newEndMs, hop, stopMinutes) : []),
-    ...(grown.return.length ? routeEtas(grown.return, "return", startMs, newEndMs, hop, stopMinutes) : []),
+    ...(grown.out.length ? routeEtas(grown.out, "out", newStartMs, newEndMs, hop, stopMinutes) : []),
+    ...(grown.return.length ? routeEtas(grown.return, "return", newStartMs, newEndMs, hop, stopMinutes) : []),
   ];
   // The boarding place may coincide with a place already on the route (e.g. the host's own origin),
   // in which case no separate "board" point exists - the ETA is then that place's.
   const boardPoint = boardLeg ? route.find((p) => p.leg === boardLeg && p.position === boardIndex) : undefined;
   return {
     route,
-    startsAt: new Date(startMs).toISOString(),
+    startsAt: new Date(newStartMs).toISOString(),
     endsAt: new Date(newEndMs).toISOString(),
     addedMinutes: added,
     boardEta: boardPoint?.eta ?? null,
     boardLeg,
+    valid: true,
+    invalid: null,
+    originalStartsAt: input.startsAt,
+    addedOutMinutes: addedBy.out,
+    addedReturnMinutes: addedBy.return,
   };
 }
 

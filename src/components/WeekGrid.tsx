@@ -80,6 +80,8 @@ export interface WeekGridRide {
    * as the ride it would become) - one block on the base car with a small "· מאוחד" marker.
    */
   merged?: boolean;
+  /** REQ §13.95 (H2): one half of a connected הקפצה pair (small "מחובר" marker). */
+  connected?: boolean;
   /** The added people of a merged block, drawn as draggable chips (REQ §13.94 G10). */
   guests?: readonly WeekGridGuest[];
   needsDriver?: boolean;
@@ -840,9 +842,10 @@ export function WeekGrid({
                   absolutely positioned outside the wrapper. */}
               <div className="sticky z-[1] flex w-full flex-col" style={{ top: HEADER_ROW_HEIGHT_PX }}>
               {ride.guests?.length ? <GuestChips guests={ride.guests} enabled={dragEnabled && !!onGuestDrop} resolveTarget={guestTargetAt} onHover={onGuestHover} onDrop={onGuestDrop} /> : null}
-              {(ride.isMine || ride.needsDriver || ride.tightSchedule || ride.chainBrokenWarning || ride.draft || ride.merged) ? <span className="flex w-full flex-wrap gap-1 px-1.5 pt-1 text-[10px] leading-tight">
+              {(ride.isMine || ride.needsDriver || ride.tightSchedule || ride.chainBrokenWarning || ride.draft || ride.merged || ride.connected) ? <span className="flex w-full flex-wrap gap-1 px-1.5 pt-1 text-[10px] leading-tight">
                 {ride.draft ? <span className="rounded-sm bg-primary px-1 font-semibold text-primary-foreground" data-testid="draft-tag">{he.boardDrafts.tag}</span> : null}
                 {ride.merged ? <span className="rounded-sm bg-foreground/10 px-1 font-medium" data-testid="merged-marker">{he.mergedRide.marker}</span> : null}
+                {ride.connected ? <span className="rounded-sm bg-foreground/10 px-1 font-medium" data-testid="connected-marker">{he.connectedPair.marker}</span> : null}
                 {ride.isMine ? <span className={cn("flex items-center gap-1 font-bold", ride.needsDriver ? "text-destructive" : "text-foreground")}><Star className="size-3 shrink-0 fill-current" aria-hidden="true" />{he.siddur.myRide}</span> : null}
                 {ride.needsDriver ? <span className="flex items-center gap-1 font-semibold text-destructive"><UserRoundX className="size-3 shrink-0" aria-hidden="true" />{he.boardCoordination.needsDriver}</span> : null}
                 {ride.tightSchedule ? <span className="flex items-center gap-1 text-amber-700" title={he.boardCoordination.tightHelp}><Clock3 className="size-3 shrink-0" aria-hidden="true" />{he.boardCoordination.tight}</span> : null}

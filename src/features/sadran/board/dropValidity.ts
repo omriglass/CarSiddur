@@ -13,8 +13,9 @@ import { TZ, dateKey } from "@/lib/time";
 import type { Car } from "@/features/fleet/api";
 
 import { servedOf } from "../applySolve";
+import { isReservation } from "@/features/rides/servedOf";
 import { slotToIso, wouldOverlap } from "./geometry";
-import { defaultMergeLeg, previewMerge, type MergeLeg, type MergeRouteContext } from "./mergeProposal";
+import { defaultMergeLeg, mergeInvalidReason, previewMerge, type MergeLeg, type MergeRouteContext } from "./mergeProposal";
 import { unmetItemId } from "./unmetLegs";
 import { requestStart, requestWindow, requesterDrives, standaloneChauffeurWindow, tripTypeOf } from "./phantomLanes";
 import type { UnmetListItem } from "./components/UnmetList";
@@ -63,11 +64,11 @@ export interface BoardDropContext {
   route?: MergeRouteContext;
 }
 
-/** The window of `host` once `request` joins (REQ §13.94): same start, end grown by the added driving. */
+/** The window of `host` once `request` joins (REQ §13.94/§13.95): start earlier by the added out-leg driving, end later by the added return-leg driving. */
 export function mergedHostWindow(ctx: BoardDropContext, host: BoardRide, request: WeekRequestRow | undefined, leg: MergeLeg): { startsAt: string; endsAt: string } | null {
   if (!host.starts_at || !host.ends_at) return null;
   const preview = ctx.route && request ? previewMerge(host, request, leg, ctx.route) : null;
-  return { startsAt: host.starts_at, endsAt: preview?.endsAt ?? host.ends_at };
+  return { startsAt: preview?.startsAt ?? host.starts_at, endsAt: preview?.endsAt ?? host.ends_at };
 }
 
 /**
@@ -120,7 +121,7 @@ export function mergeCandidateForRide(ctx: BoardDropContext, rideId: string, car
   const source = ctx.rides.find((ride) => ride.id === rideId);
   if (!source?.needs_driver || !hostRideId) return null;
   const host = ctx.rides.find((ride) => ride.id !== rideId && ride.car_id === carId && ride.starts_at && ride.ends_at
-    && ride.id === hostRideId && !!ride.driver_id && !ride.needs_driver);
+    && ride.id === hostRideId && !!ride.driver_id && !ride.needs_driver && !isReservation(ride));
   const guest = source ? servedOf(source).find((entry) => entry.role === "driver") ?? servedOf(source)[0] : undefined;
   if (!source?.starts_at || !source.ends_at || !host?.starts_at || !host.ends_at || !guest) return null;
   const request = ctx.requests.find((request) => request.id === guest.request_id);
@@ -155,7 +156,7 @@ export function isDropTargetValid(ctx: BoardDropContext, rideId: string, carId: 
   if (!ride?.starts_at || !ride.ends_at) return true;
   const merge = mergeCandidateForRide(ctx, rideId, carId, minutesIso(ctx, startMinutes), minutesIso(ctx, endMinutes), hostRideId);
   if (merge) {
-    if (!merge.host.driver_id || merge.host.needs_driver || !merge.request || unavailable(ctx, carId, merge.window.startsAt, merge.window.endsAt)) return false;
+    if (!merge.host.driver_id || merge.host.needs_driver || !merge.request || mergeInvalidReason(merge.host, merge.request, defaultMergeLeg(merge.request), ctx.route) || unavailable(ctx, carId, merge.window.startsAt, merge.window.endsAt)) return false;
     const hostNeed = passengersOf(merge.host);
     if (!seatsFit(ctx, carId, { adults: hostNeed.adults + merge.request.adults, childSeats: hostNeed.childSeats + merge.request.child_seats, boosters: hostNeed.boosters + merge.request.boosters })) return false;
     return !wouldOverlap(merge.window, ctx.rides.filter((other) => other.id !== rideId && other.id !== merge.host.id && other.car_id === carId && other.starts_at && other.ends_at)
@@ -163,6 +164,18 @@ export function isDropTargetValid(ctx: BoardDropContext, rideId: string, carId: 
   }
   if (!seatsFit(ctx, carId, passengersOf(ride))) return false;
   return true;
+}
+
+/**
+ * REQ §13.95 (H2): a הקפצה's second leg dropped on the car that already carries its other leg
+ * becomes a connected pair driven by the requester (SQL connects it inside `edit_ride`). Between
+ * the legs the car waits at the destination, so none of the "car must be at the origin" /
+ * "wrap window" rules apply to that drop.
+ */
+export function connectsOtherLeg(ctx: Pick<BoardDropContext, "rides">, item: UnmetListItem, carId: string): boolean {
+  if (!item.leg || tripTypeOf(item.request) !== "drop_off") return false;
+  return ctx.rides.some((ride) => ride.car_id === carId && ride.status !== "cancelled"
+    && servedOf(ride).some((entry) => entry.request_id === item.request.id));
 }
 
 export function unmetRequestPassengers(r: WeekRequestRow): SeatNeed {
@@ -189,14 +202,14 @@ export function unmetCandidateWindow(ctx: BoardDropContext, item: UnmetListItem,
 
 export function unmetMergeHost(ctx: BoardDropContext, item: UnmetListItem, carId: string, _minutes: number, hostRideId?: string) {
   if (tripTypeOf(item.request) === "round_trip" || !hostRideId) return undefined;
-  return ctx.rides.find((ride) => ride.id === hostRideId && ride.car_id === carId && !!ride.driver_id && !ride.needs_driver);
+  return ctx.rides.find((ride) => ride.id === hostRideId && ride.car_id === carId && !!ride.driver_id && !ride.needs_driver && !isReservation(ride));
 }
 
 export function unmetPreviewWindow(ctx: BoardDropContext, item: UnmetListItem, carId: string, minutes: number, hostRideId?: string) {
   const host = unmetMergeHost(ctx, item, carId, minutes, hostRideId);
   return host?.starts_at && host.ends_at
     ? mergedHostWindow(ctx, host, item.request, defaultMergeLeg(item.request))
-    : unmetCandidateWindow(ctx, item, minutes, true);
+    : unmetCandidateWindow(ctx, item, minutes, !connectsOtherLeg(ctx, item, carId));
 }
 
 /**
@@ -220,7 +233,7 @@ export function originMismatch(ctx: BoardDropContext, carId: string, originId: s
  */
 export function strandsNextRide(ctx: BoardDropContext, carId: string, endLocationId: string, afterIso: string, excludeRideId?: string): boolean {
   const next = ctx.rides
-    .filter((r) => r.id !== excludeRideId && r.car_id === carId && r.starts_at && Date.parse(r.starts_at) >= Date.parse(afterIso))
+    .filter((r) => r.id !== excludeRideId && !isReservation(r) && r.car_id === carId && r.starts_at && Date.parse(r.starts_at) >= Date.parse(afterIso))
     .sort((a, b) => Date.parse(a.starts_at as string) - Date.parse(b.starts_at as string))[0];
   return !!next && next.origin_id != null && next.origin_id !== endLocationId;
 }
@@ -234,12 +247,14 @@ export function isUnmetDropValid(ctx: BoardDropContext, item: UnmetListItem, car
   // A merge boards the guest *en route* (REQ §13.94): where the car is and where it ends are the
   // host's business, not the guest's origin/destination.
   const originId = item.request.origin_id ?? ctx.homeDestinationId;
-  if (!host && originId && originMismatch(ctx, carId, originId, window.startsAt)) return false;
+  const connects = !host && connectsOtherLeg(ctx, item, carId);
+  if (!host && !connects && originId && originMismatch(ctx, carId, originId, window.startsAt)) return false;
   if (!host && tripTypeOf(item.request) === "one_way" && item.request.destination_id
     && strandsNextRide(ctx, carId, item.request.destination_id, window.endsAt)) return false;
   if (host && (!host.driver_id || host.needs_driver)) return false;
+  if (host && mergeInvalidReason(host, item.request, defaultMergeLeg(item.request), ctx.route)) return false;
   const need = host ? passengersOf(host) : { adults: 1, childSeats: 0, boosters: 0 };
-  if (!seatsFit(ctx, carId, host || !requesterDrives(item.request)
+  if (!seatsFit(ctx, carId, host || !(requesterDrives(item.request) || connects)
     ? { adults: need.adults + item.request.adults, childSeats: need.childSeats + item.request.child_seats, boosters: need.boosters + item.request.boosters }
     : unmetRequestPassengers(item.request))) return false;
   // Without a merge host, `others` is every ride already on the target car — a plain drop

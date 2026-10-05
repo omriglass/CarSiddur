@@ -117,3 +117,12 @@ export function toSubmitRequestPayload(
     ],
   };
 }
+
+/**
+ * The edit form's return time (UX_FLOWS §3.4): the request's own `return_at`, else - for a
+ * one-way request - the return time it kept (`kept_return_at`), so switching back to a round
+ * trip restores it instead of asking again. Pass `timeOf` (instant -> "HH:mm").
+ */
+export function editReturnInstant(row: { returnAt: string | null; keptReturnAt?: string | null }): string | null {
+  return row.returnAt ?? row.keptReturnAt ?? null;
+}

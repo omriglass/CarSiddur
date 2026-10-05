@@ -6,7 +6,7 @@
 // טיוטה / הכן הצעה / ביטול.
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { he } from "@/i18n/he";
+import { he, tv } from "@/i18n/he";
 import { formatTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
@@ -63,9 +63,16 @@ export function MergePrefillDialog({ prefill, hostLabel, hostStartsAt, hostEndsA
               {hostStartsAt && hostEndsAt ? (
                 <p>
                   <span dir="ltr" className="tabular-nums">{formatTime(new Date(hostStartsAt))}–{formatTime(new Date(hostEndsAt))}</span>
-                  {preview && preview.endsAt !== hostEndsAt ? (
-                    <span className="ms-2 text-muted-foreground">{he.mergedRide.endsAt} <Time iso={preview.endsAt} /></span>
-                  ) : null}
+                </p>
+              ) : null}
+              {preview?.valid && hostStartsAt && preview.startsAt !== hostStartsAt ? (
+                <p className="font-semibold text-maintenance" data-testid="merge-departs-earlier">
+                  {tv("mergedRide.departsAt", { time: formatTime(new Date(preview.startsAt)), old: formatTime(new Date(hostStartsAt)) })}
+                </p>
+              ) : null}
+              {preview?.valid && hostEndsAt && preview.endsAt !== hostEndsAt ? (
+                <p className="font-semibold text-maintenance" data-testid="merge-ends-later">
+                  {tv("mergedRide.endsLater", { time: formatTime(new Date(preview.endsAt)), old: formatTime(new Date(hostEndsAt)) })}
                 </p>
               ) : null}
             </div>
@@ -99,7 +106,9 @@ export function MergePrefillDialog({ prefill, hostLabel, hostStartsAt, hostEndsA
                 )}
               </div>
             ) : null}
-            {preview?.boardEta ? (
+            {preview && !preview.valid && preview.invalid ? (
+              <p className="font-semibold text-destructive" data-testid="merge-invalid">{he.mergedRide.invalid[preview.invalid]}</p>
+            ) : preview?.boardEta ? (
               <div data-testid="merge-eta" className="space-y-0.5">
                 <p>{he.mergedRide.estimated} <Time iso={preview.boardEta} /></p>
                 {preview.timeChanges ? (
@@ -112,8 +121,8 @@ export function MergePrefillDialog({ prefill, hostLabel, hostStartsAt, hostEndsA
           </div>
         ) : null}
         <div className="flex flex-wrap gap-2">
-          <Button onClick={onConfirm} disabled={busy} className="min-h-11" data-testid="merge-prepare">{he.boardDrafts.prepare}</Button>
-          <Button variant="secondary" onClick={onDraft} disabled={busy} className="min-h-11" data-testid="merge-save-draft">{he.boardDrafts.draftButton}</Button>
+          <Button onClick={onConfirm} disabled={busy || (!!preview && !preview.valid)} className="min-h-11" data-testid="merge-prepare">{he.boardDrafts.prepare}</Button>
+          <Button variant="secondary" onClick={onDraft} disabled={busy || (!!preview && !preview.valid)} className="min-h-11" data-testid="merge-save-draft">{he.boardDrafts.draftButton}</Button>
           <Button variant="outline" onClick={onCancel} className="min-h-11">{he.common.cancel}</Button>
         </div>
       </DialogContent>

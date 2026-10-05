@@ -169,6 +169,9 @@ function mergeSuggestions(nr: NormalizedRequest, leg: LegSide, ctx: SuggestionCo
       cost: c.cost,
       confidence: c.confidence,
       boardAtLocationId: c.boardAtLocationId,
+      hostWindowBefore: c.hostWindowBefore,
+      addedOutMinutes: c.addedOutMinutes,
+      addedReturnMinutes: c.addedReturnMinutes,
     };
   });
 }

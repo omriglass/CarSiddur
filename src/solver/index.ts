@@ -91,6 +91,7 @@ function solveExpanded(input: SolverInput): SolverOutput {
         endLocationId: fr.destinationId,
         overnightAck: fr.overnightAck,
         approvedBufferAfterSlots: fr.approvedBufferAfterSlots,
+        locationNeutral: fr.locationNeutral,
       });
     }
     fixedAssignments.push({
@@ -167,7 +168,18 @@ function solveExpanded(input: SolverInput): SolverOutput {
   // waiting at the destination) — it becomes a standalone chauffeur placement
   // instead (SOLVER §3.6.1a). Legs this cannot heal (no car has room for the
   // whole chauffeur window) keep the old UNMET_NO_RELAY_PARTNER path.
-  const { healed, healedIds } = chauffeurUnpairedRelayLegs(unpaired, timelines, input, carsMap, scores);
+  // REQUIREMENTS §13.95 (H2): when the connected pair of one drop-off-with-pickup (both halves of a split
+  // request, driven by the requester) fits on no car, each half falls back to this same
+  // chauffeur path instead of staying unmet.
+  const ownPairFallback: NormalizedRequest[] = [];
+  for (const u of improveResult.stillUnmetUnits) {
+    if (u.kind !== 'pair' || !u.pair) continue;
+    const { outNr, retNr } = u.pair;
+    if (outNr.request.splitFrom !== undefined && outNr.request.splitFrom === retNr.request.splitFrom) {
+      ownPairFallback.push(outNr, retNr);
+    }
+  }
+  const { healed, healedIds } = chauffeurUnpairedRelayLegs([...unpaired, ...ownPairFallback], timelines, input, carsMap, scores);
   const stillUnpairedRelay = unpaired.filter((nr) => !healedIds.has(nr.id));
   // REQUIREMENTS §13.88 (owner 2026-09-24, docs/TODO.md Q7): a one-way leg with no eligible
   // driver on board gets the same missing-driver chauffeur ride the SQL healing gives it
@@ -191,8 +203,8 @@ function solveExpanded(input: SolverInput): SolverOutput {
   for (const u of improveResult.stillUnmetUnits) {
     if (u.kind === 'single' && u.single) unmetIds.set(u.single.id, u.single);
     else if (u.kind === 'pair' && u.pair) {
-      unmetIds.set(u.pair.outNr.id, u.pair.outNr);
-      unmetIds.set(u.pair.retNr.id, u.pair.retNr);
+      if (!healedIds.has(u.pair.outNr.id)) unmetIds.set(u.pair.outNr.id, u.pair.outNr);
+      if (!healedIds.has(u.pair.retNr.id)) unmetIds.set(u.pair.retNr.id, u.pair.retNr);
     }
   }
   for (const nr of stillUnpairedRelay) unmetIds.set(nr.id, nr);

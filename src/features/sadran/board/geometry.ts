@@ -53,6 +53,8 @@ export interface BoardRideForConflict {
   destinationId: string;
   /** Effective approved buffer after this ride; absent uses the department default. */
   turnaroundMinutes?: number;
+  /** REQ §13.96: a reservation holds the car for time only - its places never move the car. */
+  locationNeutral?: boolean;
 }
 
 /** Per car: its base location (REQUIREMENTS §13.93, default home) and its location at the
@@ -64,8 +66,8 @@ export interface CarLocationInput {
 
 export interface ChainBreak {
   rideId: string;
-  expectedLocationId: string;
-  actualLocationId: string;
+  carLocationId: string;
+  rideOriginId: string;
 }
 
 export interface ConflictScanResult {
@@ -178,6 +180,13 @@ export function scanBoardConflicts(params: {
     (a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
   );
   const previousByCar = new Map<string, BoardRideForConflict>();
+  // Where each car is as the scan walks forward; a location-neutral ride (reservation) is
+  // treated as starting and ending right there, so it can never break or move the chain.
+  const locationByCar = new Map<string, string>();
+  for (const id of params.carIds) {
+    const loc = params.carLocationsById?.get(id);
+    locationByCar.set(id, loc?.startLocationId ?? loc?.baseLocationId ?? params.homeLocationId);
+  }
   // Record both sides, including nested overlaps that the timeline cannot add.
   for (let i = 0; i < sorted.length; i++) {
     const ride = sorted[i]!;
@@ -195,14 +204,19 @@ export function scanBoardConflicts(params: {
       end: isoToSlot(ride.endsAt, params.weekStartMs),
     };
     const previous = previousByCar.get(ride.carId);
+    const neutral = !!ride.locationNeutral;
+    const here = locationByCar.get(ride.carId) ?? params.homeLocationId;
+    const originId = neutral ? here : ride.originId;
+    const destinationId = neutral ? here : ride.destinationId;
+    locationByCar.set(ride.carId, destinationId);
     const previousBuffer = previous?.turnaroundMinutes ?? params.bufferMinutes;
     // REQ §13.94 (G7) manual handover: a ride that starts exactly where the car's previous ride
     // ended, away from the car's base, has no turnaround to protect (a real overlap is still
     // flagged by the pairwise pass above).
-    const handover = !!previous && isHandoverPair(previous, ride, params.carLocationsById?.get(ride.carId)?.baseLocationId ?? params.homeLocationId);
+    const handover = !!previous && !neutral && !previous.locationNeutral && isHandoverPair(previous, ride, params.carLocationsById?.get(ride.carId)?.baseLocationId ?? params.homeLocationId);
     const bufferConflict = !!previous && !handover && Date.parse(ride.startsAt) < Date.parse(previous.endsAt) + previousBuffer * 60_000;
     previousByCar.set(ride.carId, ride);
-    const free = (handover || tl.isFree(window, ride.originId)) && !bufferConflict;
+    const free = (handover || tl.isFree(window, originId)) && !bufferConflict;
     if (!free) conflictRideIds.add(ride.id);
     try {
       // `forceAdd` skips the location check (already covered by `isFree`
@@ -218,8 +232,8 @@ export function scanBoardConflicts(params: {
       tl.forceAdd({
         rideId: ride.id,
         window,
-        startLocationId: ride.originId,
-        endLocationId: ride.destinationId,
+        startLocationId: originId,
+        endLocationId: destinationId,
         overnightAck: true,
       });
     } catch {

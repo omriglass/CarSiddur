@@ -2174,6 +2174,7 @@ export type Database = {
           id: string
           is_late: boolean
           join_ride_id: string | null
+          kept_return_at: string | null
           manual_boost: number
           manual_boost_reason: string | null
           needs_car_at_destination: boolean
@@ -2222,6 +2223,7 @@ export type Database = {
           id?: string
           is_late?: boolean
           join_ride_id?: string | null
+          kept_return_at?: string | null
           manual_boost?: number
           manual_boost_reason?: string | null
           needs_car_at_destination?: boolean
@@ -2270,6 +2272,7 @@ export type Database = {
           id?: string
           is_late?: boolean
           join_ride_id?: string | null
+          kept_return_at?: string | null
           manual_boost?: number
           manual_boost_reason?: string | null
           needs_car_at_destination?: boolean
@@ -3662,6 +3665,7 @@ export type Database = {
           ends_at: string | null
           guest_passenger_names: string[] | null
           is_late: boolean | null
+          kept_return_at: string | null
           leg: Database["public"]["Enums"]["ride_leg"] | null
           license_plate: string | null
           needs_car_at_destination: boolean | null
@@ -3964,6 +3968,14 @@ export type Database = {
         Args: { p_day: string; p_series_id: string }
         Returns: undefined
       }
+      _merge_check: {
+        Args: {
+          p_leg?: Database["public"]["Enums"]["ride_leg"]
+          p_request_id: string
+          p_ride_id: string
+        }
+        Returns: Json
+      }
       _ride_route: {
         Args: { p_ride_id: string }
         Returns: {
@@ -3977,6 +3989,23 @@ export type Database = {
         }[]
       }
       _ride_route_visible: { Args: { p_ride_id: string }; Returns: boolean }
+      _ride_route_with: {
+        Args: {
+          p_extra_leg?: Database["public"]["Enums"]["ride_leg"]
+          p_extra_request?: string
+          p_ride_id: string
+        }
+        Returns: {
+          eta: string
+          kind: string
+          leg: Database["public"]["Enums"]["ride_leg"]
+          place_id: string
+          place_text: string
+          position: number
+          refused: string
+          request_id: string
+        }[]
+      }
       _round_up_ride_end: {
         Args: { p_end: string; p_start: string }
         Returns: string
@@ -4157,6 +4186,10 @@ export type Database = {
       close_offer: { Args: { p_offer_id: string }; Returns: undefined }
       compute_week_stats: {
         Args: { p_department_id: string; p_week_start: string }
+        Returns: undefined
+      }
+      connect_drop_off_legs: {
+        Args: { _car: string; _week: string }
         Returns: undefined
       }
       create_department: {
@@ -4355,6 +4388,14 @@ export type Database = {
         Args: { p_source_id: string; p_target_id: string }
         Returns: undefined
       }
+      merge_preview: {
+        Args: {
+          p_leg?: Database["public"]["Enums"]["ride_leg"]
+          p_request_id: string
+          p_ride_id: string
+        }
+        Returns: Json
+      }
       merge_request_fingerprint: {
         Args: { p_request_id: string }
         Returns: string
@@ -4398,6 +4439,19 @@ export type Database = {
         Returns: undefined
       }
       phone_of: { Args: { _profile: string }; Returns: string }
+      place_request_on_car: {
+        Args: {
+          p_actor: string
+          p_car_id: string
+          p_dep: string
+          p_manual: boolean
+          p_named_driver: string
+          p_reason?: string
+          p_request_id: string
+          p_ret: string
+        }
+        Returns: string
+      }
       place_series: {
         Args: {
           p_car_id: string
@@ -4646,6 +4700,7 @@ export type Database = {
         Args: { p_template_id: string }
         Returns: undefined
       }
+      ride_is_reservation: { Args: { p_ride_id: string }; Returns: boolean }
       ride_route: {
         Args: { p_ride_id: string }
         Returns: {
@@ -4720,6 +4775,14 @@ export type Database = {
       set_request_companions: {
         Args: { p_profile_ids: string[]; p_request_id: string }
         Returns: undefined
+      }
+      set_request_trip_type: {
+        Args: {
+          p_expected_version: number
+          p_request_id: string
+          p_trip_type: Database["public"]["Enums"]["trip_type"]
+        }
+        Returns: Json
       }
       set_ride_passengers: {
         Args: {

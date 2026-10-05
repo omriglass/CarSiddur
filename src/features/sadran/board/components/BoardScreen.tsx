@@ -372,6 +372,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
             onOpenProposals={() => navigate(paths.sadran.proposals(departmentId, weekStart))}
             pendingProposalsCount={(board.proposalsQuery.data ?? []).filter((p) => p.status === "sent").length}
             homeDestinationId={board.department?.home_destination_id ?? undefined}
+            tripTypeScope={{ departmentId, weekStart }}
           />
 
         </div>
@@ -394,6 +395,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
               onDecision={dnd.handleUnmetDecision}
               onOpenProposal={dnd.setSelectedProposalId}
               homeDestinationId={board.department?.home_destination_id ?? undefined}
+              tripTypeScope={{ departmentId, weekStart }}
               dayStartMinutes={dayStartMinutes}
               dayEndMinutes={dayEndMinutes}
               onDragHover={(item, carId, minutes, hostRideId) => dnd.setUnmetDragHover(carId && minutes != null ? { item, carId, minutes, hostRideId } : null)}
@@ -441,7 +443,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
       />
       <Sheet open={!!selectedUnmet} onOpenChange={(open) => !open && dnd.setSelectedUnmetId(null)}>
         <SheetContent side="bottom"><SheetHeader><SheetTitle>{he.board.unmet}</SheetTitle></SheetHeader>
-          {selectedUnmet ? <UnmetList items={[selectedUnmet]} onAction={dnd.handleUnmetAction} onDecision={dnd.handleUnmetDecision} onOpenProposal={dnd.setSelectedProposalId} homeDestinationId={board.department?.home_destination_id ?? undefined} /> : null}
+          {selectedUnmet ? <UnmetList items={[selectedUnmet]} onAction={dnd.handleUnmetAction} onDecision={dnd.handleUnmetDecision} onOpenProposal={dnd.setSelectedProposalId} homeDestinationId={board.department?.home_destination_id ?? undefined} tripTypeScope={{ departmentId, weekStart }} /> : null}
         </SheetContent>
       </Sheet>
 

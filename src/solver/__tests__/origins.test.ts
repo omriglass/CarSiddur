@@ -375,3 +375,32 @@ describe('car location persists across days and weeks regardless of origin (REQU
     expect(output.unmet.some((u) => u.requestId === 'R1')).toBe(true);
   });
 });
+
+describe('location-neutral reservation (REQUIREMENTS §13.96)', () => {
+  it('a reservation labelled with another place between two home rides changes nothing about where the car is', () => {
+    const fixed = (id: string, start: number, end: number, place: string, extra: object = {}) => ({
+      id,
+      carId: 'C1',
+      window: { start, end },
+      originId: place,
+      destinationId: place,
+      legs: [],
+      servedRequestIds: [],
+      passengers: { adults: 0, childSeats: 0, boosters: 0 },
+      luggageCount: 0,
+      overnightAck: false,
+      kind: 'pinned' as const,
+      ...extra,
+    });
+    const input = baseInput({
+      cars: [makeCar('C1')],
+      fixedRides: [fixed('FXA', 8, 16, HOME), fixed('RES', 30, 40, 'destB', { locationNeutral: true }), fixed('FXB', 70, 78, HOME)],
+      requests: [makeRequest({ id: 'R1', destinationId: 'destA', departureMs: slotMs(48), returnMs: slotMs(56) })],
+    });
+    const output = solve(input);
+    expect(output.warnings.some((w) => w.code === 'CHAIN_BROKEN')).toBe(false);
+    expect(output.carsAway).toEqual([]);
+    expect(output.unmet).toEqual([]);
+    expect(output.assignments.find((a) => a.source === 'solver')?.originId).toBe(HOME);
+  });
+});

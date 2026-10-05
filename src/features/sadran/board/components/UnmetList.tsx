@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { CAR_COLUMN_ATTR } from "@/components/WeekGrid";
 import { minutesFromClientY } from "@/components/weekGridGeometry";
 import { StatusBadge } from "@/components/StatusBadge";
+import { TripTypeChange } from "./TripTypeChange";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { he, tv } from "@/i18n/he";
@@ -66,6 +67,8 @@ interface UnmetListProps {
   items: readonly UnmetListItem[];
   onDecision?: (item: UnmetListItem, type: "deny" | "shift" | "external") => void;
   onAction: (item: UnmetListItem, suggestion: Suggestion | null) => void;
+  /** REQ §13.95 (H3): scope for the per-card "סוג נסיעה" selector; the selector is hidden without it. */
+  tripTypeScope?: { departmentId: string; weekStart: string };
   /** Opens the board's proposal sheet (withdraw) for a card that has a proposal out. */
   onOpenProposal?: (proposalId: string) => void;
   /** Drag-to-place; the board chooses direct assignment or a proposal for one-way legs. */
@@ -89,7 +92,7 @@ interface UnmetListProps {
  * week with no ride (bug #1), sorted by policy score when a solver preview
  * exists for it, otherwise by departure time.
  */
-export function UnmetList({ items, onAction, onOpenProposal, onDecision, dayStartMinutes = 6 * 60, dayEndMinutes = 23 * 60 + 59, onDragHover, onDragDrop, showHeading = true, homeDestinationId }: UnmetListProps) {
+export function UnmetList({ items, onAction, onOpenProposal, onDecision, dayStartMinutes = 6 * 60, dayEndMinutes = 23 * 60 + 59, onDragHover, onDragDrop, showHeading = true, homeDestinationId, tripTypeScope }: UnmetListProps) {
   const dragEnabled = !!onDragDrop;
   const [drag, setDrag] = useState<DragState | null>(null);
   const dragRef = useRef<DragState | null>(null);
@@ -258,6 +261,16 @@ export function UnmetList({ items, onAction, onOpenProposal, onDecision, dayStar
                 <Button size="sm" variant="outline" onClick={() => onDecision ? onDecision(item, "shift") : onAction(item, null)}>{he.sadranProposal.suggestTimes}</Button>
                 <Button size="sm" variant="outline" disabled={!onDecision} onClick={() => onDecision?.(item, "external")}>{he.sadranProposal.solveOutside}</Button>
               </div>
+              {tripTypeScope && !item.pendingProposalId ? (
+                <TripTypeChange
+                  requestId={item.request.id}
+                  version={item.request.version}
+                  tripType={item.request.trip_type}
+                  name={item.request.requester_full_name ?? ""}
+                  departmentId={tripTypeScope.departmentId}
+                  weekStart={tripTypeScope.weekStart}
+                />
+              ) : null}
               {item.pendingProposalId && onOpenProposal ? (
                 <div className="flex items-center justify-between gap-2 rounded-md border border-dashed border-maintenance p-2 text-xs" data-testid="unmet-proposal-out">
                   <span>{he.boardDrafts.proposalOut}</span>

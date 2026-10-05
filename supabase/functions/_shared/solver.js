@@ -99,44 +99,6 @@ function legRouteMinutes(lookup, request, leg, stopMinutes) {
 function legRouteSlots(lookup, request, leg, stopMinutes) {
   return Math.max(1, Math.ceil(legRouteMinutes(lookup, request, leg, stopMinutes) / 15));
 }
-function stopEtas(lookup, request, leg, anchorSlot, stopMinutes) {
-  const route = legRoute(lookup, request, leg);
-  if (route.length <= 2) return [];
-  if (leg === "out") {
-    let cumulative2 = 0;
-    const etas2 = [];
-    for (let i = 1; i < route.length - 1; i++) {
-      cumulative2 += hopMinutes(lookup, route[i - 1], route[i]);
-      etas2.push({ locationId: route[i]?.locationId, slot: anchorSlot + Math.round(cumulative2 / 15) });
-      cumulative2 += stopMinutes;
-    }
-    return etas2;
-  }
-  let cumulative = 0;
-  const etas = [];
-  for (let i = route.length - 1; i >= 1; i--) {
-    cumulative += hopMinutes(lookup, route[i - 1], route[i]);
-    if (i - 1 >= 1) {
-      etas.unshift({ locationId: route[i - 1]?.locationId, slot: anchorSlot - Math.round(cumulative / 15) });
-      cumulative += stopMinutes;
-    }
-  }
-  return etas;
-}
-function routeEtaAt(lookup, request, leg, anchorSlot, stopMinutes, locationId) {
-  const route = legRoute(lookup, request, leg);
-  const idx = route.findIndex((r) => r.locationId === locationId);
-  if (idx === -1) return void 0;
-  const last = route.length - 1;
-  if (leg === "out" && idx === 0 || leg === "return" && idx === last) return anchorSlot;
-  const endIndex = leg === "out" ? last : 0;
-  if (idx === endIndex) {
-    const totalMinutes2 = legRouteMinutes(lookup, request, leg, stopMinutes);
-    return leg === "out" ? anchorSlot + Math.round(totalMinutes2 / 15) : anchorSlot - Math.round(totalMinutes2 / 15);
-  }
-  const etas = stopEtas(lookup, request, leg, anchorSlot, stopMinutes);
-  return etas[idx - 1]?.slot;
-}
 
 // src/solver/slots.ts
 var SLOT_MS = 15 * 60 * 1e3;
@@ -1496,7 +1458,7 @@ var CarTimeline = class {
     let location = this.startLocation;
     for (const b of this.blocks) {
       if (b.window.start > slot) break;
-      location = b.endLocationId;
+      if (!b.locationNeutral) location = b.endLocationId;
     }
     return location;
   }
@@ -1529,7 +1491,7 @@ var CarTimeline = class {
     if (this.overlapsAnything(w.start, w.end, void 0, void 0, relayPairId)) return false;
     if (this.locationAt(w.start) !== originId) return false;
     if (endLocationId !== void 0 && endLocationId !== originId) {
-      const next = this.blocks.filter((b) => b.window.start >= w.end).sort((a, b) => a.window.start - b.window.start)[0];
+      const next = this.blocks.filter((b) => b.window.start >= w.end && !b.locationNeutral).sort((a, b) => a.window.start - b.window.start)[0];
       if (next && next.startLocationId !== endLocationId) return false;
     }
     return true;
@@ -1537,7 +1499,7 @@ var CarTimeline = class {
   /** Inserts a block; rejects (throws) one whose start location mismatches the car's actual location. */
   add(b) {
     const actual = this.locationAt(b.window.start);
-    if (actual !== b.startLocationId) {
+    if (!b.locationNeutral && actual !== b.startLocationId) {
       throw new Error(
         `CarTimeline.add: block ${b.rideId} starts at ${b.startLocationId} but car ${this.car.id} is at ${actual}`
       );
@@ -1576,8 +1538,9 @@ var CarTimeline = class {
     const breaks = [];
     let location = this.startLocation;
     for (const b of this.blocks) {
+      if (b.locationNeutral) continue;
       if (b.startLocationId !== location) {
-        breaks.push({ rideId: b.rideId, expectedLocationId: location, actualLocationId: b.startLocationId });
+        breaks.push({ rideId: b.rideId, carLocationId: location, rideOriginId: b.startLocationId });
       }
       location = b.endLocationId;
     }
@@ -1612,7 +1575,7 @@ var CarTimeline = class {
     let cursor = 0;
     let location = this.startLocation;
     const obstacles = [
-      ...this.blocks.map((b) => ({ start: b.window.start, end: b.window.end, endLocationId: b.endLocationId })),
+      ...this.blocks.map((b) => ({ start: b.window.start, end: b.window.end, endLocationId: b.locationNeutral ? void 0 : b.endLocationId })),
       ...this.maintenance.map((m) => ({ start: m.window.start, end: m.window.end }))
     ].sort((a, b) => a.start - b.start);
     for (const o of obstacles) {
@@ -1639,7 +1602,7 @@ var CarTimeline = class {
     let cursor = 0;
     let location = this.startLocation;
     const obstacles = [
-      ...this.blocks.map((b) => ({ start: b.window.start, end: b.window.end, endLocationId: b.endLocationId })),
+      ...this.blocks.filter((b) => !b.locationNeutral).map((b) => ({ start: b.window.start, end: b.window.end, endLocationId: b.endLocationId })),
       ...this.maintenance.map((m) => ({ start: m.window.start, end: m.window.end }))
     ].sort((a, b) => a.start - b.start);
     for (const o of obstacles) {
@@ -1669,7 +1632,7 @@ var CarTimeline = class {
     for (const day of days) {
       const spanning = away.find((a) => a.window.start <= day.dayEndSlot && day.dayEndSlot < a.window.end);
       if (!spanning) continue;
-      const cause = [...this.blocks].filter((b) => b.window.end <= spanning.window.start && b.endLocationId === spanning.locationId).sort((a, b) => b.window.end - a.window.end)[0];
+      const cause = [...this.blocks].filter((b) => !b.locationNeutral && b.window.end <= spanning.window.start && b.endLocationId === spanning.locationId).sort((a, b) => b.window.end - a.window.end)[0];
       if (!cause || !cause.overnightAck) {
         violations.push({ window: spanning.window, causeRideId: cause?.rideId });
       }
@@ -1708,6 +1671,7 @@ function assertInvariants(input, output) {
   const bufferSlots = minutesToSlots(input.config.bufferMinutes);
   const weekSlots = weekSlotsOf(input);
   const overnightAckByRideId = new Map(input.fixedRides.map((fr) => [fr.id, fr.overnightAck]));
+  const neutralByRideId = new Map(input.fixedRides.map((fr) => [fr.id, fr.locationNeutral === true]));
   const approvedBufferByRideId = new Map(input.fixedRides.map((fr) => [fr.id, fr.approvedBufferAfterSlots]));
   const relayPairIdByRideId = /* @__PURE__ */ new Map();
   for (const a of output.assignments) {
@@ -1758,6 +1722,7 @@ function assertInvariants(input, output) {
           endLocationId: a.destinationId,
           overnightAck: overnightAckByRideId.get(a.rideId) ?? Boolean(a.seriesId),
           approvedBufferAfterSlots: approvedBufferByRideId.get(a.rideId),
+          locationNeutral: a.source === "fixed" && neutralByRideId.get(a.rideId) === true ? true : void 0,
           seriesId: a.seriesId,
           relayPairId: relayPairIdByRideId.get(a.rideId)
         };
@@ -1848,7 +1813,6 @@ function assertInvariants(input, output) {
 }
 
 // src/solver/merge.ts
-var ZONE_PENALTY_MINUTES = 10;
 function requestOriginOfLeg(leg) {
   return leg.leg === "return" ? leg.destinationId : leg.originId;
 }
@@ -1885,140 +1849,155 @@ function legCompatible(guestLeg, hostLeg) {
   if (guestLeg === "out") return hostLeg === "both" || hostLeg === "out";
   return hostLeg === "both" || hostLeg === "return";
 }
-function detourBetween(hostDestId, guestDestId, destinations, config) {
-  if (hostDestId === guestDestId) return { minutes: 0, km: 0 };
-  const h = destinations[hostDestId];
-  const g = destinations[guestDestId];
-  if (!h || !g || h.zone === "unknown" || g.zone === "unknown") return null;
-  const travelH = h.travelMinutes ?? config.defaultTravelMinutes;
-  const travelG = g.travelMinutes ?? config.defaultTravelMinutes;
-  const km = Math.abs((h.distanceKm ?? 0) - (g.distanceKm ?? 0));
-  if (h.zone === g.zone) return { minutes: Math.abs(travelH - travelG), km };
-  const minutes = Math.abs(travelH - travelG) + ZONE_PENALTY_MINUTES;
-  if (minutes > config.detour.maxMinutes || km > config.detour.maxKm) return null;
-  return { minutes, km };
-}
-function hostTimeCompatible(host, guest, leg) {
-  if (leg === "both") return host.window.start >= guest.flexDep[0] && host.window.start <= guest.flexDep[1] && host.window.end >= guest.flexRet[0] && host.window.end <= guest.flexRet[1];
-  if (leg === "out") return host.window.start >= guest.flexDep[0] && host.window.start <= guest.flexDep[1];
-  return host.window.end >= guest.flexRet[0] && host.window.end <= guest.flexRet[1];
-}
-function tryHostShift(host, guest, hostNr, tl) {
-  if (host.isFixed || host.legSide !== "both" || !hostNr || !tl) return null;
-  const clamp2 = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
-  const newStart = clamp2(host.window.start, guest.flexDep[0], guest.flexDep[1]);
-  const newEnd = clamp2(host.window.end, guest.flexRet[0], guest.flexRet[1]);
-  if (newEnd - newStart < hostNr.minDurationSlots) return null;
-  if (newStart < hostNr.flexDep[0] || newStart > hostNr.flexDep[1]) return null;
-  if (newEnd < hostNr.flexRet[0] || newEnd > hostNr.flexRet[1]) return null;
-  if (newStart === host.window.start && newEnd === host.window.end) return null;
-  tl.remove(host.rideId);
-  const free = tl.isFree({ start: newStart, end: newEnd }, hostNr.legs[0]?.originId ?? "");
-  tl.add({
-    rideId: host.rideId,
-    window: host.window,
-    startLocationId: hostNr.legs[0]?.originId ?? "",
-    endLocationId: hostNr.legs[0]?.destinationId ?? "",
-    overnightAck: false
-  });
-  if (!free) return null;
-  return {
-    window: { start: newStart, end: newEnd },
-    shift: {
-      departureMin: slotsToMinutes(newStart - host.window.start),
-      returnMin: slotsToMinutes(newEnd - host.window.end)
+function routeCost(lookup, route, stopMinutes) {
+  let t = 0;
+  let km = 0;
+  const arrival = [0];
+  for (let i = 0; i < route.length - 1; i++) {
+    const x = route[i];
+    const y = route[i + 1];
+    if (!x.locationId || !y.locationId) {
+      t += lookup.config.defaultTravelMinutes;
+      km = void 0;
+    } else {
+      const hop = travelBetween(lookup, x.locationId, y.locationId);
+      t += hop.minutes;
+      km = km === void 0 || hop.km === void 0 ? void 0 : km + hop.km;
     }
-  };
+    arrival.push(t);
+    if (i + 1 < route.length - 1) t += stopMinutes;
+  }
+  return { minutes: t, km, arrival };
 }
-function tryRouteMatch(host, guest, leg, params, car) {
-  const hostNr = params.hostDriverRequests.get(host.rideId);
-  const hostRequestLike = hostNr ? hostNr.request : { originId: host.originId, destinationId: host.requestDestinationId };
-  const lookup = { travel: params.travel, homeLocationId: params.homeLocationId, destinations: params.destinations, config: params.config };
-  const stopMinutes = resolveStopMinutes(params.config);
-  const route = legRoute(lookup, hostRequestLike, leg);
-  const a = leg === "out" ? guest.originId : guest.destinationId;
-  const b = leg === "out" ? guest.destinationId : guest.originId;
+function cheapestInsertion(lookup, route, a, b, stopMinutes, limits) {
+  const last = route.length - 1;
+  const base = routeCost(lookup, route, stopMinutes);
   const idxA = route.findIndex((r) => r.locationId === a);
   const idxB = route.findIndex((r) => r.locationId === b);
-  if (idxA === -1 || idxB === -1 || idxA >= idxB) return null;
-  const anchor = leg === "out" ? host.window.start : host.window.end;
-  const checkLocationId = leg === "out" ? a : b;
-  const checkSlot = routeEtaAt(lookup, hostRequestLike, leg, anchor, stopMinutes, checkLocationId);
-  if (checkSlot === void 0) return null;
-  const flexBound = leg === "out" ? guest.flexDep : guest.flexRet;
-  if (checkSlot < flexBound[0] || checkSlot > flexBound[1]) return null;
-  const combinedPassengers = sum(host.passengers, guest.passengers);
-  const combinedLuggage = host.luggageCount + (guest.luggage ? 1 : 0);
-  if (!fits(car, combinedPassengers) || !luggageFits(car, combinedLuggage)) return null;
-  const hostNeedsCar = hostNr?.request.needsCarAtDestination ?? true;
-  const guestNeedsCar = guest.request.needsCarAtDestination;
-  const proposedDriverRequestId = !hostNeedsCar && guestNeedsCar ? guest.id : host.driverRequestId;
-  const guestPreferred = leg === "out" ? guest.window.start : guest.window.end;
-  const shiftCostGuest = slotsToMinutes(Math.abs(checkSlot - guestPreferred));
-  const confidence = Math.max(0, 1 - 0.1 * host.guestCount - shiftCostGuest / 480);
-  return {
-    hostRideId: host.rideId,
-    carId: host.carId,
-    window: host.window,
-    // The guest boards exactly on the host's own route — no physical detour.
-    detourMinutes: 0,
-    detourKm: 0,
-    cost: shiftCostGuest,
-    confidence,
-    proposedDriverRequestId,
-    boardAtLocationId: a
-  };
+  if (idxA === last) return null;
+  if (idxA !== -1 && idxB !== -1 && idxB <= idxA) return null;
+  let best = null;
+  const boardEdges = idxA !== -1 ? [-1] : Array.from({ length: last }, (_, i) => i);
+  for (const be of boardEdges) {
+    const withA = be === -1 ? route : [...route.slice(0, be + 1), { locationId: a }, ...route.slice(be + 1)];
+    const aIdx = be === -1 ? idxA : be + 1;
+    const existingB = withA.findIndex((r) => r.locationId === b);
+    const alightEdges = existingB !== -1 ? [-1] : Array.from({ length: withA.length - 1 - aIdx }, (_, k) => aIdx + k);
+    for (const ae of alightEdges) {
+      const full = ae === -1 ? withA : [...withA.slice(0, ae + 1), { locationId: b }, ...withA.slice(ae + 1)];
+      const bIdx = ae === -1 ? existingB : ae + 1;
+      if (bIdx <= aIdx) continue;
+      const cost = routeCost(lookup, full, stopMinutes);
+      const added = Math.max(0, cost.minutes - base.minutes);
+      const addedKm = cost.km === void 0 || base.km === void 0 ? void 0 : Math.max(0, cost.km - base.km);
+      if (added > limits.maxMinutes) continue;
+      if (addedKm !== void 0 && addedKm > limits.maxKm) continue;
+      if (best && best.addedMinutes <= added) continue;
+      best = {
+        addedMinutes: added,
+        addedKm,
+        boardArrivalMinutes: cost.arrival[aIdx],
+        alightTailMinutes: cost.minutes - cost.arrival[bIdx]
+      };
+    }
+  }
+  return best;
+}
+var slotsCeil = (minutes) => minutes <= 0 ? 0 : Math.ceil(minutes / 15);
+function sideFor(params, hostRequest, guest, dir) {
+  const lookup = { travel: params.travel, homeLocationId: params.homeLocationId, destinations: params.destinations, config: params.config };
+  const route = legRoute(lookup, hostRequest, dir);
+  const a = dir === "out" ? guest.originId : guest.destinationId;
+  const b = dir === "out" ? guest.destinationId : guest.originId;
+  const insertion = cheapestInsertion(lookup, route, a, b, resolveStopMinutes(params.config), params.config.detour);
+  if (!insertion) return null;
+  return { insertion, addedSlots: slotsCeil(insertion.addedMinutes) };
 }
 function findMergeHosts(params) {
-  const { guest, leg, hosts: hosts2, destinations, config, cars } = params;
+  const { guest, leg, hosts: hosts2, cars } = params;
   const candidates = [];
   for (const host of hosts2) {
     if (!legCompatible(leg, host.legSide)) continue;
     const car = cars.get(host.carId);
     if (!car) continue;
-    if (leg !== "both") {
-      const routeCandidate = tryRouteMatch(host, guest, leg, params, car);
-      if (routeCandidate) {
-        candidates.push(routeCandidate);
-        continue;
-      }
-    }
-    if (host.originId !== guest.originId) continue;
-    const detour = detourBetween(host.destinationId, guest.destinationId, destinations, config);
-    if (!detour) continue;
     const combinedPassengers = sum(host.passengers, guest.passengers);
     const combinedLuggage = host.luggageCount + (guest.luggage ? 1 : 0);
     if (!fits(car, combinedPassengers) || !luggageFits(car, combinedLuggage)) continue;
     const hostNr = params.hostDriverRequests.get(host.rideId);
-    let window = host.window;
+    const hostRequest = hostNr ? hostNr.request : { originId: host.originId, destinationId: host.requestDestinationId };
+    const mergesOut = leg === "out" || leg === "both";
+    const mergesReturn = leg === "return" || leg === "both";
+    const out = mergesOut ? sideFor(params, hostRequest, guest, "out") : null;
+    const ret = mergesReturn ? sideFor(params, hostRequest, guest, "return") : null;
+    if (mergesOut && !out || mergesReturn && !ret) continue;
+    const addOut = out?.addedSlots ?? 0;
+    const addRet = ret?.addedSlots ?? 0;
+    const etaOutOf = (baseStart2) => baseStart2 - addOut + Math.round((out?.insertion.boardArrivalMinutes ?? 0) / 15);
+    const etaRetOf = (baseEnd2) => baseEnd2 + addRet - Math.round((ret?.insertion.alightTailMinutes ?? 0) / 15);
+    const okOut = !out || etaOutOf(host.window.start) >= guest.flexDep[0] && etaOutOf(host.window.start) <= guest.flexDep[1];
+    const okRet = !ret || etaRetOf(host.window.end) >= guest.flexRet[0] && etaRetOf(host.window.end) <= guest.flexRet[1];
+    let baseStart = host.window.start;
+    let baseEnd = host.window.end;
     let hostShift;
-    if (!hostTimeCompatible(host, guest, leg)) {
-      const shifted = tryHostShift(host, guest, hostNr, params.hostTimelines.get(host.carId));
-      if (!shifted) continue;
-      window = shifted.window;
-      hostShift = shifted.shift;
+    if (!okOut || !okRet) {
+      if (host.isFixed || host.legSide !== "both" || !hostNr) continue;
+      const clamp2 = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
+      const bootOut = Math.round((out?.insertion.boardArrivalMinutes ?? 0) / 15);
+      const tailRet = Math.round((ret?.insertion.alightTailMinutes ?? 0) / 15);
+      if (out) baseStart = clamp2(baseStart, guest.flexDep[0] + addOut - bootOut, guest.flexDep[1] + addOut - bootOut);
+      if (ret) baseEnd = clamp2(baseEnd, guest.flexRet[0] - addRet + tailRet, guest.flexRet[1] - addRet + tailRet);
+      if (baseEnd - baseStart < hostNr.minDurationSlots) continue;
+      if (baseStart < hostNr.flexDep[0] || baseStart > hostNr.flexDep[1]) continue;
+      if (baseEnd < hostNr.flexRet[0] || baseEnd > hostNr.flexRet[1]) continue;
+      hostShift = {
+        departureMin: slotsToMinutes(baseStart - host.window.start),
+        returnMin: slotsToMinutes(baseEnd - host.window.end)
+      };
+    }
+    const window = { start: baseStart - addOut, end: baseEnd + addRet };
+    if (window.start < 0) continue;
+    if (window.start !== host.window.start || window.end !== host.window.end) {
+      const tl = params.hostTimelines.get(host.carId);
+      const block = tl?.allBlocks().find((x) => x.rideId === host.rideId);
+      if (tl && block) {
+        tl.remove(host.rideId);
+        const free = tl.isFree(window, block.startLocationId, block.relayPairId, block.endLocationId);
+        if (host.isFixed) tl.forceAdd(block);
+        else tl.add(block);
+        if (!free) continue;
+      }
     }
     const hostNeedsCar = hostNr?.request.needsCarAtDestination ?? true;
     const guestNeedsCar = guest.request.needsCarAtDestination;
     const proposedDriverRequestId = !hostNeedsCar && guestNeedsCar ? guest.id : host.driverRequestId;
-    const shiftCostGuest = slotsToMinutes(Math.abs(window.start - guest.window.start)) + slotsToMinutes(Math.abs(window.end - guest.window.end));
+    const detourMinutes = Math.max(out?.insertion.addedMinutes ?? 0, ret?.insertion.addedMinutes ?? 0);
+    const kmOut = out?.insertion.addedKm;
+    const kmRet = ret?.insertion.addedKm;
+    const detourKm = Math.max(kmOut ?? 0, kmRet ?? 0);
+    const guestStartEta = out ? etaOutOf(baseStart) : void 0;
+    const guestEndEta = ret ? etaRetOf(baseEnd) : void 0;
+    const shiftCostGuest = (guestStartEta === void 0 ? 0 : slotsToMinutes(Math.abs(guestStartEta - guest.window.start))) + (guestEndEta === void 0 ? 0 : slotsToMinutes(Math.abs(guestEndEta - guest.window.end)));
     const shiftCostHost = hostShift ? Math.abs(hostShift.departureMin) + Math.abs(hostShift.returnMin) : 0;
-    const cost = detour.minutes + shiftCostGuest + shiftCostHost;
+    const addedTotal = (out?.insertion.addedMinutes ?? 0) + (ret?.insertion.addedMinutes ?? 0);
+    const cost = addedTotal + shiftCostGuest + shiftCostHost;
     const confidence = Math.max(
       0,
-      1 - 0.4 * (detour.minutes / Math.max(1, config.detour.maxMinutes)) - 0.1 * host.guestCount - shiftCostGuest / 480
+      1 - 0.4 * (detourMinutes / Math.max(1, params.config.detour.maxMinutes)) - 0.1 * host.guestCount - shiftCostGuest / 480
     );
     candidates.push({
       hostRideId: host.rideId,
       carId: host.carId,
       window,
       hostShift,
-      detourMinutes: detour.minutes,
-      detourKm: detour.km,
+      detourMinutes,
+      detourKm,
       cost,
       confidence,
-      boardAtLocationId: host.originId,
-      proposedDriverRequestId
+      proposedDriverRequestId,
+      boardAtLocationId: leg === "return" ? guest.destinationId : guest.originId,
+      hostWindowBefore: window.start !== host.window.start || window.end !== host.window.end ? host.window : void 0,
+      addedOutMinutes: out && out.insertion.addedMinutes > 0 ? out.insertion.addedMinutes : void 0,
+      addedReturnMinutes: ret && ret.insertion.addedMinutes > 0 ? ret.insertion.addedMinutes : void 0
     });
   }
   candidates.sort((a, b) => a.cost - b.cost || (a.hostRideId < b.hostRideId ? -1 : 1));
@@ -2368,7 +2347,9 @@ function pairRelays(requests, cars) {
       if (c) candidates.push(c);
     }
   }
+  const own = (c) => c.out.request.splitFrom !== void 0 && c.out.request.splitFrom === c.ret.request.splitFrom ? 0 : 1;
   candidates.sort((a, b) => {
+    if (own(a) !== own(b)) return own(a) - own(b);
     const rankA = a.idleSlots + a.shiftCost;
     const rankB = b.idleSlots + b.shiftCost;
     if (rankA !== rankB) return rankA - rankB;
@@ -2499,6 +2480,7 @@ function expandDropOffs(input) {
     requests.push({
       ...r,
       id: r.id + OUT,
+      splitFrom: r.id,
       tripShape: "one_way_to",
       tripType: "drop_off",
       returnMs: void 0,
@@ -2507,6 +2489,7 @@ function expandDropOffs(input) {
     requests.push({
       ...r,
       id: r.id + RET,
+      splitFrom: r.id,
       tripShape: "one_way_from",
       tripType: "drop_off",
       departureMs: void 0,
@@ -2827,7 +2810,10 @@ function mergeSuggestions(nr, leg, ctx, hosts2) {
       }),
       cost: c.cost,
       confidence: c.confidence,
-      boardAtLocationId: c.boardAtLocationId
+      boardAtLocationId: c.boardAtLocationId,
+      hostWindowBefore: c.hostWindowBefore,
+      addedOutMinutes: c.addedOutMinutes,
+      addedReturnMinutes: c.addedReturnMinutes
     };
   });
 }
@@ -3128,7 +3114,8 @@ function solveExpanded(input) {
         startLocationId: fr.originId,
         endLocationId: fr.destinationId,
         overnightAck: fr.overnightAck,
-        approvedBufferAfterSlots: fr.approvedBufferAfterSlots
+        approvedBufferAfterSlots: fr.approvedBufferAfterSlots,
+        locationNeutral: fr.locationNeutral
       });
     }
     fixedAssignments.push({
@@ -3180,7 +3167,15 @@ function solveExpanded(input) {
   const improveResult = runImprove(unmetUnits, placedSingles, timelines, input, scores);
   const finalPlaced = [...placed, ...improveResult.newlyPlaced];
   const solverAssignments = toAssignments(finalPlaced, input, carsMap);
-  const { healed, healedIds } = chauffeurUnpairedRelayLegs(unpaired, timelines, input, carsMap, scores);
+  const ownPairFallback = [];
+  for (const u of improveResult.stillUnmetUnits) {
+    if (u.kind !== "pair" || !u.pair) continue;
+    const { outNr, retNr } = u.pair;
+    if (outNr.request.splitFrom !== void 0 && outNr.request.splitFrom === retNr.request.splitFrom) {
+      ownPairFallback.push(outNr, retNr);
+    }
+  }
+  const { healed, healedIds } = chauffeurUnpairedRelayLegs([...unpaired, ...ownPairFallback], timelines, input, carsMap, scores);
   const stillUnpairedRelay = unpaired.filter((nr) => !healedIds.has(nr.id));
   const { healed: healedNoDriver, healedIds: healedNoDriverIds } = chauffeurUnpairedRelayLegs(passengerOnly, timelines, input, carsMap, scores, "noDriver");
   const stillPassengerOnly = passengerOnly.filter((nr) => !healedNoDriverIds.has(nr.id));
@@ -3192,8 +3187,8 @@ function solveExpanded(input) {
   for (const u of improveResult.stillUnmetUnits) {
     if (u.kind === "single" && u.single) unmetIds.set(u.single.id, u.single);
     else if (u.kind === "pair" && u.pair) {
-      unmetIds.set(u.pair.outNr.id, u.pair.outNr);
-      unmetIds.set(u.pair.retNr.id, u.pair.retNr);
+      if (!healedIds.has(u.pair.outNr.id)) unmetIds.set(u.pair.outNr.id, u.pair.outNr);
+      if (!healedIds.has(u.pair.retNr.id)) unmetIds.set(u.pair.retNr.id, u.pair.retNr);
     }
   }
   for (const nr of stillUnpairedRelay) unmetIds.set(nr.id, nr);

@@ -46,7 +46,7 @@ export function resolveDraftPlacement(
   requests: readonly WeekRequestRow[],
   rides: readonly BoardRide[],
   homeId?: string,
-  route?: Pick<MergeRouteContext, "hop" | "stopMinutes">,
+  route?: Pick<MergeRouteContext, "hop" | "stopMinutes" | "hopKm" | "detourLimitMinutes" | "detourLimitKm">,
 ): DraftPlacement | null {
   const request = requests.find((r) => r.id === proposal.request_id);
   if (!request || !proposal.request_id) return null;
@@ -59,7 +59,7 @@ export function resolveDraftPlacement(
     const host = rides.find((ride) => ride.id === proposal.ride_id);
     if (!host?.car_id || !host.starts_at || !host.ends_at) return null;
     const preview = route ? previewMerge(host, request, mergePayloadLeg(payload, request), { ...route, homeId }) : null;
-    const startsAt = new Date(Math.min(Date.parse(host.starts_at), Date.parse(str(payload.starts_at) ?? host.starts_at))).toISOString();
+    const startsAt = new Date(Math.min(Date.parse(preview?.startsAt ?? host.starts_at), Date.parse(str(payload.starts_at) ?? host.starts_at))).toISOString();
     const endsAt = new Date(Math.max(Date.parse(preview?.endsAt ?? host.ends_at), Date.parse(str(payload.ends_at) ?? host.ends_at))).toISOString();
     return { ...common, type: "merge", carId: host.car_id, startsAt, endsAt,
       originId: host.origin_id, destinationId: host.destination_id, hostRideId: host.id, replacesRideId: null };
@@ -122,7 +122,7 @@ export function resolveDraftPlacements(
   requests: readonly WeekRequestRow[],
   rides: readonly BoardRide[],
   homeId?: string,
-  route?: Pick<MergeRouteContext, "hop" | "stopMinutes">,
+  route?: Pick<MergeRouteContext, "hop" | "stopMinutes" | "hopKm" | "detourLimitMinutes" | "detourLimitKm">,
 ): DraftPlacement[] {
   return proposals
     .filter((proposal) => proposal.status === "draft")

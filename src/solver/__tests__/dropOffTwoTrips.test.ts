@@ -58,6 +58,47 @@ describe('drop-off with a pickup (REQ §13.94)', () => {
   });
 });
 
+describe('a הקפצה\'s two legs connect on one car (REQ §13.95 H2)', () => {
+  const byRide = (out: ReturnType<typeof solve>, id: string) => out.assignments.filter((a) => a.servedRequestIds.includes(id));
+
+  it('the requester drives both legs on one car, preferred over pairing with another member\'s leg', () => {
+    const lone = makeRequest({ id: 'R3', memberId: 'm-R3', destinationId: 'destA', tripShape: 'one_way_from', needsCarAtDestination: false, returnMs: slotMs(48) });
+    const out = solve(baseInput({ cars: [makeCar('C1'), makeCar('C2')], requests: [dropOff('R1'), lone] }));
+    const legs = byRide(out, 'R1');
+    expect(legs).toHaveLength(2);
+    expect(new Set(legs.map((a) => a.carId)).size).toBe(1);
+    expect(legs.every((a) => a.driverRequestId === 'R1' && a.legs[0]?.carMode === 'relay')).toBe(true);
+    // the other member's lone leg is not the one that loses its volunteer-free pair partner to R1
+    expect(byRide(out, 'R3')[0]?.reasonCode).toBe('PLACED_CHAUFFEUR_NO_RETURNER');
+  });
+
+  it('a non-driver keeps the chauffeur path (no connected pair)', () => {
+    const out = solve(baseInput({ cars: [makeCar('C1')], requests: [dropOff('R1', { canDrive: false })] }));
+    const legs = byRide(out, 'R1');
+    expect(legs.every((a) => a.legs[0]?.carMode === 'chauffeur')).toBe(true);
+  });
+
+  it('falls back to chauffeur rides when no car can wait at the destination between the legs', () => {
+    const input = baseInput({
+      cars: [makeCar('C1')],
+      fixedRides: [
+        {
+          id: 'FX1', carId: 'C1', window: { start: 44, end: 48 }, originId: 'home', destinationId: 'home',
+          driverRequestId: 'FXR', driverMemberId: 'owner',
+          legs: [{ requestId: 'FXR', leg: 'both', carMode: 'keep', originId: 'home', destinationId: 'destB', role: 'driver' }],
+          servedRequestIds: ['FXR'], passengers: { adults: 1, childSeats: 0, boosters: 0 }, luggageCount: 0, overnightAck: false, kind: 'pinned',
+        },
+      ],
+      requests: [dropOff('R1')],
+    });
+    const out = solve(input);
+    const legs = byRide(out, 'R1');
+    expect(out.unmet.map((u) => u.requestId)).toEqual([]);
+    expect(legs).toHaveLength(2);
+    expect(legs.every((a) => a.legs[0]?.carMode === 'chauffeur')).toBe(true);
+  });
+});
+
 function a_(out: ReturnType<typeof solve>) {
   return out.assignments.filter((a) => a.servedRequestIds.includes('R1'));
 }

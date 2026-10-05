@@ -376,6 +376,28 @@ export const heSadran = {
     dragChip: "גררו אל רשימת הלא-משובצים או אל רכב אחר כדי להוציא מהנסיעה",
     removeAria: "הוצא/י את {{name}} מהנסיעה",
     removed: "{{name}} הוצא/ה מהנסיעה — הבקשה חזרה לרשימה",
+    /** REQ §13.95 (H1): a merge is refused - toast text. */
+    invalid: {
+      boards_at_end: "אי אפשר לצרף — האיסוף אחרי היעד של הנסיעה",
+      detour_too_long: "אי אפשר לצרף — העיקוף ארוך מהמותר",
+    },
+    departsAt: "הנסיעה תצא ב-{{time}} במקום {{old}}",
+    endsLater: "והחזרה תסתיים ב-{{time}} במקום {{old}}",
+    detourLine: "תוספת נסיעה: {{minutes}} דק׳",
+  },
+  /** REQ §13.95 (H2): a הקפצה's drop-off and pickup on one car. */
+  connectedPair: {
+    marker: "מחובר",
+    driver: "הנהיגה: {{name}}",
+    saved: "שתי הנסיעות חוברו — המבקש/ת נוהג/ת בשתיהן והרכב ממתין ביעד",
+  },
+  /** REQ §13.95 (H3): the Sadran changes a request's trip type from the ride sheet / unmet card. */
+  tripTypeChange: {
+    label: "סוג נסיעה",
+    aria: "שינוי סוג הנסיעה של {{name}}",
+    stayed: "סוג הנסיעה של {{name}} שונה והבקשה נשארה על הרכב",
+    unplaced: "סוג הנסיעה של {{name}} שונה והבקשה חזרה לרשימת הלא-משובצים",
+    returnRestored: "שעת החזרה {{time}} שוחזרה",
   },
   /** REQ §13.94 (G8): the ride sheet's "מסלול" section. */
   rideRouteEdit: {

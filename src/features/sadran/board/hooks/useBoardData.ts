@@ -15,6 +15,7 @@ import { fetchCarSeatConfigs } from "@/features/fleet/api";
 import { useDestinations, useRideTypes } from "@/features/fleet/hooks";
 import { useCarLocations, useDepartments } from "@/features/siddur/hooks";
 import { useRideChanges } from "@/features/rides/hooks";
+import { isReservation } from "@/features/rides/servedOf";
 import { useMyDepartments } from "@/features/auth/useMyDepartments";
 import { rideCoordinatorNotes } from "@/lib/rideCoordinatorNotes";
 import type { WeekGridBlock, WeekGridCar, WeekGridDiscussionBlock, WeekGridRide } from "@/components/WeekGrid";
@@ -25,9 +26,9 @@ import { readLastUsedPolicyVersion, rememberLastUsedPolicyVersion } from "../../
 import { sadranKeys } from "../../keys";
 import { scanBoardConflicts, slotToIso, requestDayMismatchRideIds, tightScheduleRideIds } from "../geometry";
 import { rideBlockLabel } from "../rideLabel";
-import { DEFAULT_STOP_MINUTES, homeTravelEdges, makeHop, parseRideRoute } from "@/lib/rideRoute";
+import { DEFAULT_STOP_MINUTES, homeTravelEdges, makeHop, makeHopKm, parseRideRoute } from "@/lib/rideRoute";
 import { addedGuestsOf, mergePayloadLeg, previewMerge } from "../mergeProposal";
-import { unmetItemId, unmetRequestViews, viewsOnDay } from "../unmetLegs";
+import { connectedPairRideIds, unmetItemId, unmetRequestViews, viewsOnDay } from "../unmetLegs";
 import { isUnmetStatus } from "../../unmetStatuses";
 import { requestRouteLine } from "../requestRoute";
 import { resolveDraftPlacements } from "../draftOverlay";
@@ -458,8 +459,12 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
   const placeTravelData = placeTravelQuery.data;
   const homeId = department?.home_destination_id ?? undefined;
   const destinationRows = destinationsQuery.data;
-  const hop = useMemo(() => makeHop([...(placeTravelData ?? []), ...homeTravelEdges(homeId, destinationRows ?? [])]), [placeTravelData, homeId, destinationRows]);
-  const routeCtx = useMemo(() => ({ hop, stopMinutes, homeId }), [hop, stopMinutes, homeId]);
+  const travelEdges = useMemo(() => [...(placeTravelData ?? []), ...homeTravelEdges(homeId, destinationRows ?? [])], [placeTravelData, homeId, destinationRows]);
+  const hop = useMemo(() => makeHop(travelEdges), [travelEdges]);
+  const hopKm = useMemo(() => makeHopKm(travelEdges), [travelEdges]);
+  const detourLimitMinutes = departmentSettingsQuery.data?.detour_limit_minutes;
+  const detourLimitKm = departmentSettingsQuery.data?.detour_limit_km;
+  const routeCtx = useMemo(() => ({ hop, hopKm, stopMinutes, homeId, detourLimitMinutes, detourLimitKm }), [hop, hopKm, stopMinutes, homeId, detourLimitMinutes, detourLimitKm]);
   const requestRows = requestsQuery.data;
   const boardRequests = useMemo(() => withRouteTravelMinutes(requestRows ?? [], routeCtx), [requestRows, routeCtx]);
 
@@ -486,7 +491,7 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
     const payload = proposal.payload && typeof proposal.payload === "object" && !Array.isArray(proposal.payload) ? proposal.payload : {};
     const legacyStart = typeof payload.starts_at === "string" ? Date.parse(payload.starts_at) : Number.POSITIVE_INFINITY;
     const legacyEnd = typeof payload.ends_at === "string" ? Date.parse(payload.ends_at) : 0;
-    const startsAt = new Date(Math.min(Date.parse(host.starts_at), legacyStart)).toISOString();
+    const startsAt = new Date(Math.min(Date.parse(preview?.startsAt ?? host.starts_at), legacyStart)).toISOString();
     const endsAt = new Date(Math.max(Date.parse(preview?.endsAt ?? host.ends_at), legacyEnd)).toISOString();
     return [{ proposal, host, guest, startsAt, endsAt, leg, isDraft: proposal.status === "draft" }];
   });
@@ -523,6 +528,7 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
               originId: r.origin_id,
               destinationId: r.destination_id,
               turnaroundMinutes: r.turnaround_override_minutes ?? undefined,
+              locationNeutral: isReservation(r),
             })),
             carIds: [...new Set(validRides.map((r) => r.car_id))],
             weekStartMs,
@@ -542,7 +548,7 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
         })()
       : null;
 
-  const tightRideIds = tightScheduleRideIds(rides.filter((ride) => !(ride.id && mergeGuestRideIds.has(ride.id))), daySettings?.turnaround_minutes ?? 30, {
+  const tightRideIds = tightScheduleRideIds(rides.filter((ride) => !(ride.id && mergeGuestRideIds.has(ride.id))).map((ride) => (isReservation(ride) ? { ...ride, origin_id: null, destination_id: null } : ride)), daySettings?.turnaround_minutes ?? 30, {
     homeLocationId: department?.home_destination_id,
     carBaseLocationId: new Map((carsQuery.data ?? []).map((c) => [c.id, c.base_location_id])),
   });
@@ -571,9 +577,9 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
 
   // REQUIREMENTS §13.93, SOLVER.md §1.3a: a fixed ride whose car isn't actually where the ride
   // claims — a warning only (never a block, never thrown).
-  const chainBreakByRideId = new Map<string, { actualLocationId: string }>();
+  const chainBreakByRideId = new Map<string, { carLocationId: string }>();
   for (const breaks of (conflictScan?.chainBreaksByCarId ?? new Map()).values()) {
-    for (const b of breaks) chainBreakByRideId.set(b.rideId, { actualLocationId: b.actualLocationId });
+    for (const b of breaks) chainBreakByRideId.set(b.rideId, { carLocationId: b.carLocationId });
   }
 
   function dayStartIso(day: string): string {
@@ -608,6 +614,7 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
   const boardCanSwapCars = weekRowQuery.data ? weekRowQuery.data.phase !== "archived" : false;
 
   const shadowedRideIds = new Set((rideChangesQuery.data ?? []).filter((change) => !change.is_planning).flatMap((change) => [change.ride_id, ...change.parties.map((party) => party.ride_id)]));
+  const connectedRideIds = connectedPairRideIds(rides);
   const weekGridRides: WeekGridRide[] = activeDayRidesAll
     .filter((r) => r.id && r.car_id && r.starts_at && r.ends_at)
     .map((r) => ({
@@ -656,6 +663,7 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
       pinned: !!r.is_pinned,
       // REQ §13.94 (G10): an applied merge - the ride's own route carries boarding/alighting places.
       merged: parseRideRoute(r.route).some((point) => point.kind === "board" || point.kind === "alight"),
+      connected: connectedRideIds.has(r.id as string),
       guests: addedGuestsOf(r.id as string, withChildNames(servedOf(r), requestsQuery.data ?? [])),
       needsDriver: !!r.needs_driver,
       tightSchedule: tightRideIds.has(r.id as string),
@@ -667,7 +675,7 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
       seriesIndex: r.series_index,
       seriesCount: r.series_count,
       chainBrokenWarning: r.id && chainBreakByRideId.has(r.id)
-        ? tv("sadranBoard.carNotHereWarning", { place: destinationNameById.get(chainBreakByRideId.get(r.id)!.actualLocationId) ?? "" })
+        ? tv("sadranBoard.carNotHereWarning", { place: destinationNameById.get(chainBreakByRideId.get(r.id)!.carLocationId) ?? "" })
         : undefined,
     }));
 

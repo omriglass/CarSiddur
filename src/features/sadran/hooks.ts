@@ -8,7 +8,7 @@ import { sadranKeys } from "./keys";
 import { publishWithScores } from "./publish/publishWithScores";
 
 import type { Json } from "@/integrations/supabase/types";
-import type { NotificationChannel } from "@/lib/enums";
+import type { NotificationChannel, TripType } from "@/lib/enums";
 import { invalidateWeekData } from "@/features/rides/invalidateWeek";
 
 // ---------------------------------------------------------------------------
@@ -227,6 +227,18 @@ export function useUnmergeRequestMutation() {
       rideId: string; requestId: string; expectedVersion: number; departmentId: string; weekStart: string;
     }) => api.unmergeRequest(rideId, requestId, expectedVersion),
     onSuccess: (_data, { departmentId, weekStart }) => invalidateBoard(queryClient, departmentId, weekStart),
+    onError: showErrorToast,
+  });
+}
+
+/** REQ §13.95 (H3): "סוג נסיעה" - applied directly by the Sadran, no draft/proposal. */
+export function useSetRequestTripTypeMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ requestId, tripType, expectedVersion }: {
+      requestId: string; tripType: TripType; expectedVersion: number; departmentId: string; weekStart: string;
+    }) => api.setRequestTripType(requestId, tripType, expectedVersion),
+    onSuccess: (_data, { departmentId, weekStart }) => invalidateWeekData(queryClient, departmentId, weekStart),
     onError: showErrorToast,
   });
 }

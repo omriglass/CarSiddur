@@ -80,7 +80,7 @@ export function nowMs(): number {
   return Date.now();
 }
 
-import { servedOf, type ServedEntry } from "@/features/rides/servedOf";
+import { isReservation, servedOf, type ServedEntry } from "@/features/rides/servedOf";
 
 export { servedOf, namedPassengersOf, withChildNames, representativeRideTypeCode, relayPartnerOf, rideStopCount } from "@/features/rides/servedOf";
 export type { ServedEntry, RidePassengerEntry, RelayPartner } from "@/features/rides/servedOf";
@@ -152,6 +152,8 @@ export function boardRideToFixedRide(ride: BoardRide, weekStartMs: number): Fixe
     passengers,
     luggageCount,
     overnightAck: !!ride.overnight_ack_by,
+    // REQ §13.96: a reservation (no served requests, not an auto relocation ride) is location-neutral.
+    ...(isReservation(ride) ? { locationNeutral: true } : {}),
     approvedBufferAfterSlots: ride.turnaround_override_minutes == null ? undefined : Math.ceil(ride.turnaround_override_minutes / 15),
     kind: "pinned",
   };

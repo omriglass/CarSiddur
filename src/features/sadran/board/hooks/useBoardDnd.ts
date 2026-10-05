@@ -17,13 +17,14 @@ import { useProfile } from "@/features/auth/useProfile";
 import { useDepartmentMembers } from "@/features/auth/useDepartmentMembers";
 import { fetchChildren } from "@/features/requests/api";
 
-import { defaultMergeLeg, mergePayload, type MergeLeg } from "../mergeProposal";
+import { defaultMergeLeg, mergeInvalidReason, mergePayload, type MergeLeg } from "../mergeProposal";
 import { isDropOffWithPickup, legView, unmetItemId, unmetItemKey } from "../unmetLegs";
 import type { GuestDropTarget } from "@/components/GuestChips";
 import { requestStart, requestWithinFlex } from "../phantomLanes";
 import { reservationRoutePlaces, routeEditPayload, type RouteEditValues } from "../rideRouteEdit";
 import { buildDraftInput, type ComposerPrefill } from "../draftInput";
 import {
+  connectsOtherLeg,
   isUnmetDropValid,
   minutesIso,
   passengersOf,
@@ -291,15 +292,18 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
     const host = unmetMergeHost(dropCtx, item, carId, minutes, droppedOnRideId);
     if (host?.id && host.starts_at && host.ends_at) {
       if (!host.driver_id || host.needs_driver) { toast.error(he.boardCoordination.mergeNeedsDriver); return; }
+      const invalidMerge = mergeInvalidReason(host, req, defaultMergeLeg(req), dropCtx.route);
+      if (invalidMerge) { toast.error(he.mergedRide.invalid[invalidMerge]); return; }
       if (!isUnmetDropValid(dropCtx, item, carId, minutes, droppedOnRideId)) { toast.error(he.sadranBoard.dragInvalidOverlapToast); return; }
       // REQ §13.94 (G10): the popup shows the merged ride; the payload is legs only (the host keeps its times).
       setMergePrefill({ requestId: req.id, rideId: host.id, type: "merge", payload: mergePayload(host.id, defaultMergeLeg(req)) });
       return;
     }
-    window = unmetCandidateWindow(dropCtx, item, minutes, true);
+    const connects = connectsOtherLeg(dropCtx, item, carId);
+    window = unmetCandidateWindow(dropCtx, item, minutes, !connects);
     if (!window) { toast.error(he.sadranBoard.invalidWindow); return; }
     if (unavailable(dropCtx, carId, window.startsAt, window.endsAt)) { toast.error(he.sadranBoard.maintenanceUnavailable); return; }
-    if (!seatsFit(dropCtx, carId, unmetRequestPassengers(req))) {
+    if (!seatsFit(dropCtx, carId, connects ? { adults: req.adults, childSeats: req.child_seats, boosters: req.boosters } : unmetRequestPassengers(req))) {
       toast.error(he.sadranBoard.dragInvalidSeatsToast);
       return;
     }
@@ -331,7 +335,7 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
         weekStart,
       });
       const carName = carsData.find((c) => c.id === carId)?.name ?? "";
-      toast.success(placement.driverIsRequester ? tv("sadranBoard.dragPlacedToast", { car: carName, start: formatMinutes(minutes) }) : he.boardCoordination.standaloneSaved);
+      toast.success(placement.driverIsRequester ? tv("sadranBoard.dragPlacedToast", { car: carName, start: formatMinutes(minutes) }) : connects ? he.connectedPair.saved : he.boardCoordination.standaloneSaved);
     } catch {
       // The mutation reports validation errors; keep the request on its phantom lane.
     }
@@ -392,6 +396,9 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
         const host = rides.find((candidate) => candidate.id === droppedOnRideId);
         if (!host?.starts_at || !host.ends_at) return;
         if (!host.driver_id || host.needs_driver) { toast.error(he.boardCoordination.mergeNeedsDriver); return; }
+        const guestRequest = requestsData.find((r) => r.id === driverEntry.request_id);
+        const invalidMerge = guestRequest ? mergeInvalidReason(host, guestRequest, driverEntry.leg ?? "both", dropCtx.route) : null;
+        if (invalidMerge) { toast.error(he.mergedRide.invalid[invalidMerge]); return; }
         setMergePrefill({
           requestId: driverEntry.request_id,
           rideId: droppedOnRideId,

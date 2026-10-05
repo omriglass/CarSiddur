@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { rpc, toAppError } from "@/lib/rpc";
 
 import type { Database, Json } from "@/integrations/supabase/types";
-import type { LegCarMode, NotificationChannel, ProposalType, RideLeg, RideRole } from "@/lib/enums";
+import type { LegCarMode, NotificationChannel, ProposalType, RideLeg, RideRole, TripType } from "@/lib/enums";
 
 /**
  * The only file in the `sadran` feature that calls `supabase.from`/`.rpc`
@@ -496,6 +496,26 @@ export async function unassignRide(rideId: string, expectedVersion: number): Pro
  */
 export async function unmergeRequest(rideId: string, requestId: string, expectedVersion: number): Promise<void> {
   await rpc("unmerge_request", { p_ride_id: rideId, p_request_id: requestId, p_expected_version: expectedVersion });
+}
+
+/**
+ * REQ §13.95 (H3): the Sadran changes a request's trip type directly (`set_request_trip_type`).
+ * `ride_id` is set when the request was re-placed on a ride (it stayed on the car); absent when it
+ * went back to the unmet list. Errors: `trip_type_needs_return`, `non_driver_needs_drop_off`.
+ */
+export interface SetTripTypeResult {
+  status: string;
+  rideId: string | null;
+  /** `false` when the request already had that trip type (nothing happened). */
+  changed: boolean;
+  /** The kept return time SQL put back when switching from one-way to a round trip (`restored_return_at`), if any. */
+  restoredReturnAt: string | null;
+}
+
+export async function setRequestTripType(requestId: string, tripType: TripType, expectedVersion: number): Promise<SetTripTypeResult> {
+  const raw = await rpc("set_request_trip_type", { p_request_id: requestId, p_trip_type: tripType, p_expected_version: expectedVersion });
+  const body = raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, Json | undefined>) : {};
+  return { status: typeof body.status === "string" ? body.status : "", rideId: typeof body.ride_id === "string" ? body.ride_id : null, changed: body.changed !== false, restoredReturnAt: typeof body.restored_return_at === "string" ? body.restored_return_at : null };
 }
 
 /**

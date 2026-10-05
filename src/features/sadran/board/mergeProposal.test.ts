@@ -45,17 +45,17 @@ describe("mergePayload", () => {
 });
 
 describe("previewMerge", () => {
-  it("keeps the host start, extends the end and reports the estimated stop time", () => {
+  it("leaves earlier by the added driving, keeps the end and reports the estimated stop time", () => {
     const preview = previewMerge(host, request({}), "out", { hop, stopMinutes: 5, homeId: "H" })!;
-    expect(preview.startsAt).toBe(host.starts_at);
-    expect(preview.endsAt).toBe("2026-10-11T07:15:00.000Z");
-    expect(preview.boardEta).toBe("2026-10-11T04:35:00.000Z");
-    // asked for 07:00 local (04:00Z), the ride gets there at 07:35 local
+    expect(preview.startsAt).toBe("2026-10-11T04:00:00.000Z");
+    expect(preview.endsAt).toBe(host.ends_at);
+    expect(preview.boardEta).toBe("2026-10-11T04:20:00.000Z");
+    // asked for 07:00 local (04:00Z), the ride gets there at 07:20 local
     expect(preview.timeChanges).toBe(true);
   });
 
   it("reports no change when the estimate equals the requested time", () => {
-    const preview = previewMerge(host, request({ depart_at: "2026-10-11T04:35:00.000Z" }), "out", { hop, stopMinutes: 5, homeId: "H" })!;
+    const preview = previewMerge(host, request({ depart_at: "2026-10-11T04:20:00.000Z" }), "out", { hop, stopMinutes: 5, homeId: "H" })!;
     expect(preview.timeChanges).toBe(false);
   });
 

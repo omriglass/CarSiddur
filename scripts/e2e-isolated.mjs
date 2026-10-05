@@ -21,7 +21,7 @@
 // --keep leaves the snapshot directory in place (its path is printed) for trace inspection.
 
 import { execFileSync, spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -69,6 +69,30 @@ const result = spawnSync("npx", ["playwright", "test", ...playwrightArgs], {
     E2E_SUPABASE_WORKDIR: snapshot,
   },
 });
+
+// Playwright's webServer may have started `supabase functions serve` from the snapshot
+// (playwright.config.ts, when the edge functions were not answering yet). That replaces the
+// local stack's edge-runtime container with one bind-mounted on `<snapshot>/supabase/functions`;
+// once the snapshot is deleted every function call fails with "failed to determine entrypoint"
+// (found 2026-10-05: answering a proposal showed "לא ניתן לטעון את ההצעה כרגע" for days).
+// Restart the stack from the repository so the container mounts the real functions again —
+// `supabase stop` keeps the database volume, so this resets nothing beyond what the run did.
+function edgeRuntimeMountsSnapshot() {
+  try {
+    const config = readFileSync(join(root, "supabase", "config.toml"), "utf8");
+    const projectId = /^project_id\s*=\s*"([^"]+)"/m.exec(config)?.[1];
+    if (!projectId) return false;
+    const mounts = execFileSync("docker", ["inspect", `supabase_edge_runtime_${projectId}`, "--format", "{{range .Mounts}}{{.Source}}\n{{end}}"], { encoding: "utf8" });
+    return mounts.split("\n").some((source) => source.includes(snapshot));
+  } catch {
+    return false; // no docker / no edge runtime container: nothing to repair
+  }
+}
+if (!keep && edgeRuntimeMountsSnapshot()) {
+  console.log("[e2e:isolated] the edge runtime is mounted on the snapshot — restarting the local stack from the repository");
+  spawnSync("npx", ["supabase", "stop"], { cwd: root, stdio: "inherit" });
+  spawnSync("npx", ["supabase", "start"], { cwd: root, stdio: "inherit" });
+}
 
 if (keep) console.log(`[e2e:isolated] kept ${snapshot}`);
 else rmSync(snapshot, { recursive: true, force: true });

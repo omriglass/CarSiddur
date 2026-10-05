@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { flexValueToInterval, intervalToFlexValue, toInstant, toSubmitRequestPayload } from "./mapper";
+import { editReturnInstant, flexValueToInterval, intervalToFlexValue, toInstant, toSubmitRequestPayload } from "./mapper";
 import { REQUEST_FORM_DEFAULTS, type RequestFormValues } from "./schema";
 
 // What Postgres echoes back (`select '15 min'::interval` etc.) for each literal
@@ -184,5 +184,13 @@ describe("quick-variant options", () => {
     expect(toSubmitRequestPayload(oneWay, { reserveMissingDriver: true }).one_way_car_mode).toBe("passenger");
     expect(toSubmitRequestPayload(oneWay, {}).one_way_car_mode).toBeUndefined();
     expect(toSubmitRequestPayload(baseValues()).reserve_missing_driver).toBeUndefined();
+  });
+});
+
+describe("editReturnInstant (UX_FLOWS §3.4)", () => {
+  it("prefers return_at, falls back to the kept return time of a one-way request", () => {
+    expect(editReturnInstant({ returnAt: "2026-09-13T14:00:00Z", keptReturnAt: "2026-09-13T15:00:00Z" })).toBe("2026-09-13T14:00:00Z");
+    expect(editReturnInstant({ returnAt: null, keptReturnAt: "2026-09-13T15:00:00Z" })).toBe("2026-09-13T15:00:00Z");
+    expect(editReturnInstant({ returnAt: null })).toBeNull();
   });
 });

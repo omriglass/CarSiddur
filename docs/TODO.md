@@ -425,3 +425,17 @@ Decisions (full text in REQ §13.93): explicit request origin (list place or fre
 - **Q3 (G9):** yes to all — Sadranim-only and saved; dashed "טיוטה"; auto-fill/re-solve keep drafts; send or discard; publishing refused while drafts remain.
 - **Q4 (G10):** yes — the base ride's times; the added places inserted where they add the least driving with estimated times (a different start = a pickup stop); one way / both ways; the suggestion states a changed time; consent or draft.
 - **Q5 (G10):** yes — the ride dropped onto is the base; the joiner's own booking is released; dragging them out restores their request.
+
+### Found while testing (owner, 2026-10-05)
+- ~~"לא ניתן לטעון את ההצעה כרגע" when a member opens a suggestion~~ — environment, not code: since 2026-09-24 the local stack's edge-runtime container was mounted on a deleted `e2e:isolated` snapshot (Playwright's webServer had started `supabase functions serve` from the snapshot), so every edge function failed ("failed to determine entrypoint"). Fixed by restarting the stack (data kept; backup in `backups/*-2026-10-05_1357.sql`); `scripts/e2e-isolated.mjs` now restarts the stack from the repository after a run whenever the edge runtime is mounted on its snapshot.
+- ~~Board warning "הרכב לא נמצא כאן — הוא בחיפה" named the ride's own start instead of where the car is~~ — `ChainBreak` fields renamed to `carLocationId` (where the car is) / `rideOriginId` (where the ride starts); the board names `carLocationId`.
+- The home place still reads "נבו" on an existing local database: the seed rename only applies on a reset — rename it in ניהול מערכת → יעדים (the `home` row).
+
+## Owner feedback 2026-10-05 (evening) — merge detours, connected legs, trip-type changes (owner answered the same day — **built 2026-10-05**, REQ §13.95–§13.97)
+- ~~**H1**~~ ✅ **Merge validity and timing.** A merge never boards at/after the base ride's end and stays within the detour limit; the ride leaves earlier (return ends later) by the added driving. Solver suggestions, board drops/popup, SQL apply and joinable rides use the same rule.
+- ~~**H2**~~ ✅ **Connect a הקפצה's two legs on one car** (requester or companion drives both; no volunteer).
+- ~~**H3**~~ ✅ **The Sadran changes a request's trip type directly** from the ride sheet; member notified; re-placed on the same car when it fits.
+- Answers: boarding rule = detours allowed with an earlier start ("I might put you in the nearest bus station before going to work, so I'll need to go out 15 minutes earlier"); connect legs = yes; trip type = directly.
+- ~~**H4**~~ ✅ **"שמירת זמן" is location-neutral** (owner 2026-10-05, REQ §13.96): a reservation holds time only — ignored for car location, chain checks and warnings everywhere; no route editor for it.
+- ~~**H5**~~ ✅ **Switching to one-way keeps the return time** (owner 2026-10-05, REQ §13.97): `requests.kept_return_at`; restored on switching back; the form only hides the field.
+- Open point (H5): switching to one-way keeps the return *time*, but a request's return-leg **stops** are still dropped (`set_request_trip_type` / `submit_request` delete them when there is no return) — keeping them needs every return-route reader to ignore them while the trip is one-way; ask the owner whether it matters.

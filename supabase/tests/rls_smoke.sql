@@ -516,7 +516,8 @@ begin
       'drain_push_outbox', 'dispatch_push_outbox_row', 'housekeeping', 'enqueue_notification',
       'try_auto_approve', 'resolve_freed_offer', 'maybe_apply_accepted_proposal', 'release_request_draft_rides',
       'place_series', 'assert_car_chain', 'cancel_ride_without_passengers', 'edit_ride_before_series',
-      'pair_one_way_legs', 'try_widen_one_way_leg', 'eligible_leg_driver', 'settle_waitlist_group')
+      'pair_one_way_legs', 'try_widen_one_way_leg', 'eligible_leg_driver', 'settle_waitlist_group',
+      'ride_is_reservation')
     and has_function_privilege('authenticated', p.oid, 'execute');
   assert v_bad is null, format('TEST 14 FAILED: internal functions executable by authenticated: %s', v_bad);
 

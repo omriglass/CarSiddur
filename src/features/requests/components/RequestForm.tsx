@@ -59,7 +59,7 @@ import {
   useSubmitSeriesRequestMutation,
   useWithdrawRequestMutation,
 } from "../hooks";
-import { intervalToFlexValue, toInstant, toSubmitRequestPayload } from "../mapper";
+import { editReturnInstant, intervalToFlexValue, toInstant, toSubmitRequestPayload } from "../mapper";
 import { requestFormSchema, type RequestFormValues } from "../schema";
 import { isSeriesSubmission, seriesSpanDays } from "../series";
 import { payloadSeatCounts } from "../seatCounts";
@@ -255,7 +255,8 @@ function mapEditRowToValues(row: RequestEditRow, weekStart: string, companions: 
   const day = row.departAt ? dayFromInstant(row.departAt) : row.returnAt ? dayFromInstant(row.returnAt) : weekStart;
   const dates = datesOfWeek(weekStart);
   const departTime = row.departAt ? timeFromInstant(row.departAt) : undefined;
-  const returnTime = row.returnAt ? timeFromInstant(row.returnAt) : undefined;
+  const returnInstant = editReturnInstant(row);
+  const returnTime = returnInstant ? timeFromInstant(returnInstant) : undefined;
   const returnNextDay = !!(
     row.departAt &&
     row.returnAt &&

@@ -28,10 +28,12 @@ import { TZ, dateKey, formatTime } from "@/lib/time";
 
 import { rideBlockLabel } from "../rideLabel";
 import { requestRouteLine } from "../requestRoute";
+import { isReservation } from "@/features/rides/servedOf";
 import { namedPassengersOf, relayPartnerOf, servedOf, withChildNames } from "../../solverRun";
 import { peopleOf } from "@/features/rides/ridePeople";
 import { RidePassengersEditor } from "./RidePassengersEditor";
 import { RideRouteEditor } from "./RideRouteEditor";
+import { TripTypeChange } from "./TripTypeChange";
 import { initialRouteEditValues, type RouteEditValues } from "../rideRouteEdit";
 
 import type { BoardRide, WeekRequestRow } from "../../api";
@@ -124,6 +126,7 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
     onSave({ carId, startsAt, endsAt });
   }
 
+  const reservation = !!ride && isReservation(ride);
   const servedEntries = ride ? withChildNames(servedOf(ride), requests) : [];
   // Everyone but the base request (the driver's, else the first) was added by a merge.
   const baseEntry = servedEntries.find((entry) => entry.role === "driver") ?? servedEntries[0];
@@ -156,7 +159,7 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
               {ridePublicDetails(servedEntries, { includeCompanions: false }) ? <p className="whitespace-pre-wrap break-words">{ridePublicDetails(servedEntries, { includeCompanions: false })}</p> : null}
               {coordinatorNotes ? <div className="whitespace-pre-wrap break-words text-muted-foreground"><span className="font-medium">{he.field.notes}: </span>{coordinatorNotes}</div> : null}
               <p className="text-muted-foreground">
-                {ride.origin_id && ride.destination_id && homeDestinationId
+                {reservation ? (driverName ?? ride.driver_name ?? "") : ride.origin_id && ride.destination_id && homeDestinationId
                   ? rideBlockLabel({
                       originId: ride.origin_id,
                       destinationId: ride.destination_id,
@@ -176,15 +179,32 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
 
               {/* G6: each served request's own start/destination and trip type. */}
               <ul className="space-y-0.5 text-xs text-muted-foreground" data-testid="ride-sheet-requests">
-                {servedEntries.map((entry) => (
-                  <li key={entry.request_id}>
-                    {entry.requester ? `${entry.requester}: ` : ""}
-                    {requestRouteLine({ originId: entry.origin_id, originName: entry.origin_name, originText: entry.origin_text, destination: entry.destination ?? "", tripType: entry.trip_type }, homeDestinationId)}
-                  </li>
-                ))}
+                {servedEntries.map((entry) => {
+                  const entryRequest = entry.request_id ? requests.find((request) => request.id === entry.request_id) : undefined;
+                  return (
+                    <li key={entry.request_id} className="space-y-1">
+                      <span>
+                        {entry.requester ? `${entry.requester}: ` : ""}
+                        {requestRouteLine({ originId: entry.origin_id, originName: entry.origin_name, originText: entry.origin_text, destination: entry.destination ?? "", tripType: entry.trip_type }, homeDestinationId)}
+                      </span>
+                      {/* REQ §13.95 (H3): the Sadran changes the trip type directly. */}
+                      {entry.request_id && entryRequest && departmentId && weekStart && !isPlanning && ride.status !== "cancelled" ? (
+                        <TripTypeChange
+                          requestId={entry.request_id}
+                          version={entryRequest.version}
+                          tripType={entryRequest.trip_type ?? entry.trip_type}
+                          name={entry.requester ?? entryRequest.requester_full_name ?? ""}
+                          departmentId={departmentId}
+                          weekStart={weekStart}
+                          disabled={saving}
+                        />
+                      ) : null}
+                    </li>
+                  );
+                })}
               </ul>
 
-              {routeHasIntermediates(parseRideRoute(ride.route)) ? <RideRoute route={ride.route} /> : <RideRouteStops served={servedEntries} />}
+              {reservation ? null : routeHasIntermediates(parseRideRoute(ride.route)) ? <RideRoute route={ride.route} /> : <RideRouteStops served={servedEntries} />}
 
               {/* REQ §13.94 (G10): people added to this ride by a merge - take them back out
                   (a draft/sent merge is discarded/withdrawn, an applied one un-merged). */}
@@ -273,7 +293,7 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
               ) : null}
 
               {/* REQ §13.94 (G8): start, end and stops per leg. */}
-              {onSaveRoute && destinations && !isPlanning && ride.id && ride.status !== "cancelled" && (baseRequest || !servedEntries.length) ? (
+              {!reservation && onSaveRoute && destinations && !isPlanning && ride.id && ride.status !== "cancelled" && (baseRequest || !servedEntries.length) ? (
                 <RideRouteEditor
                   key={`${ride.id}:${ride.version}:route`}
                   initial={initialRouteEditValues({

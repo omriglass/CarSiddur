@@ -56,23 +56,56 @@ describe('findMergeHosts', () => {
     expect(candidates[0]?.detourMinutes).toBe(0);
   });
 
-  it('detour just over the limit (21 min) fails; just at the limit (20 min) passes', () => {
+  it('REQUIREMENTS §13.95: detour over the limit refused, at the limit accepted (the ride starts earlier)', () => {
     const cars = [makeCar('C1', { seatConfigs: [passengers(4)] })];
-    const assignment = hostAssignment();
-    const hosts = buildHostRides([assignment], new Map(cars.map((c) => [c.id, c])));
+    const hosts = buildHostRides([hostAssignment()], new Map(cars.map((c) => [c.id, c])));
+    // host home -> destA (30 min). Guest boards at a bus station and alights at destA.
+    // home -> bus -> destA: explicit travel rows make the added driving exact.
+    const run = (busToHome: number) => {
+      const guest = guestNr({ originId: 'bus', destinationId: 'destA', departureMs: slotMs(30), returnMs: slotMs(48), flexDeparture: { earlierMin: 60, laterMin: 60 } });
+      return findMergeHosts({
+        guest, leg: 'out', hosts,
+        ...commonParams(cars, { bus: { id: 'bus', zone: 'zoneA', distanceKm: 5, travelMinutes: 10 } }),
+        travel: [
+          { fromId: HOME, toId: 'bus', travelMinutes: busToHome, distanceKm: 5 },
+          { fromId: 'bus', toId: 'destA', travelMinutes: 30, distanceKm: 20 },
+        ],
+      });
+    };
+    // 15 + 30 - 30 + 5 (stop dwell) = 20 added (= limit) -> accepted, window starts 2 slots earlier
+    const ok = run(15);
+    expect(ok).toHaveLength(1);
+    expect(ok[0]?.addedOutMinutes).toBe(20);
+    expect(ok[0]?.window.start).toBe(32 - 2);
+    expect(ok[0]?.hostWindowBefore).toEqual({ start: 32, end: 48 });
+    expect(ok[0]?.window.end).toBe(48);
+    // 21 added -> refused
+    expect(run(16)).toHaveLength(0);
+  });
 
-    // detourMinutes = |travelDiff| + a 10-min cross-zone penalty (merge.ts ZONE_PENALTY_MINUTES);
-    // distanceKm must also stay within maxKm (15) — match the host's 20km exactly so only the time check is exercised.
-    const failing = guestNr({ destinationId: 'destFar' });
-    const destinationsFail = { destFar: { id: 'destFar', zone: 'zoneOther', distanceKm: 20, travelMinutes: 30 + 11 } }; // 11+10=21 > 20
-    const candidatesFail = findMergeHosts({ guest: failing, leg: 'both', hosts, ...commonParams(cars, destinationsFail) });
-    expect(candidatesFail).toHaveLength(0);
+  it('REQUIREMENTS §13.95: a guest boarding at the host\'s final destination (Haifa -> Afula on a home -> Haifa host) is refused', () => {
+    const cars = [makeCar('C1', { seatConfigs: [passengers(4)] })];
+    const hosts = buildHostRides([hostAssignment({ legs: [{ requestId: 'HOST', leg: 'out', carMode: 'relay', originId: HOME, destinationId: 'haifa', role: 'driver' }], destinationId: 'haifa' })], new Map(cars.map((c) => [c.id, c])));
+    const guest = guestNr({ tripShape: 'one_way_to', originId: 'haifa', destinationId: 'afula', departureMs: slotMs(34) });
+    const params = {
+      ...commonParams(cars, { haifa: { id: 'haifa', zone: 'z', travelMinutes: 30 }, afula: { id: 'afula', zone: 'z', travelMinutes: 30 } }),
+      travel: [{ fromId: 'haifa', toId: 'afula', travelMinutes: 5, distanceKm: 1 }],
+    };
+    expect(findMergeHosts({ guest, leg: 'out', hosts, ...params })).toHaveLength(0);
+  });
 
-    const passing = guestNr({ destinationId: 'destOk' });
-    const destinationsPass = { destOk: { id: 'destOk', zone: 'zoneOther', distanceKm: 20, travelMinutes: 30 + 10 } }; // 10+10=20 == limit
-    const candidatesPass = findMergeHosts({ guest: passing, leg: 'both', hosts, ...commonParams(cars, destinationsPass) });
-    expect(candidatesPass).toHaveLength(1);
-    expect(candidatesPass[0]?.detourMinutes).toBe(20);
+  it('REQUIREMENTS §13.95: the return leg ends later by the added driving on the way back', () => {
+    const cars = [makeCar('C1', { seatConfigs: [passengers(4)] })];
+    const hosts = buildHostRides([hostAssignment()], new Map(cars.map((c) => [c.id, c])));
+    const guest = guestNr({ originId: 'bus', destinationId: 'destA', departureMs: slotMs(30), returnMs: slotMs(50), flexDeparture: { earlierMin: 60, laterMin: 60 }, flexReturn: { earlierMin: 60, laterMin: 60 } });
+    const found = findMergeHosts({
+      guest, leg: 'both', hosts,
+      ...commonParams(cars, { bus: { id: 'bus', zone: 'zoneA', travelMinutes: 10 } }),
+      travel: [{ fromId: HOME, toId: 'bus', travelMinutes: 15 }, { fromId: 'bus', toId: 'destA', travelMinutes: 30 }],
+    });
+    expect(found).toHaveLength(1);
+    // out: home -> bus -> destA = 45 + 5 dwell vs 30: +20 = 2 slots earlier; return: +20 = 2 slots later
+    expect(found[0]?.window).toEqual({ start: 30, end: 50 });
   });
 
   it('luggage 2 needs the large_trunk feature (capacity 2)', () => {
@@ -141,7 +174,7 @@ describe('findMergeHosts', () => {
     expect(hostIds).not.toContain('return-only');
   });
 
-  it('REQUIREMENTS §13.93: merges only between requests with the same origin', () => {
+  it('REQUIREMENTS §13.95: a guest with another origin merges only if the detour fits (replaces the same-origin filter)', () => {
     const cars = [makeCar('C1', { seatConfigs: [passengers(4)] })];
     // host-ride's driver leg originId is HOME (hostAssignment's default).
     const assignment = hostAssignment();
