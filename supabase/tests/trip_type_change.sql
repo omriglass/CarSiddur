@@ -67,11 +67,20 @@ begin
   assert r.car_id=car1 and r.origin_id=home and r.destination_id=haifa and r.driver_id=m1, 'relay out leg home -> Haifa on the same car, requester drives';
   assert (select count(*) from public.ride_requests rr join public.rides d on d.id=rr.ride_id where rr.request_id=q and d.status<>'cancelled')=1, 'one live ride';
 
-  -- 3) one_way -> round_trip needs a return time (neither a stored one nor a kept one)
+  -- 3) one_way -> round_trip with no known return (neither a stored one nor a kept one): REQ §13.98
+  --    sets it ~2 hours after arrival (departure + out route + 2h, nearest quarter hour) and makes
+  --    the return flexibility "any time that day" so the Sadran can move it without asking.
   update public.requests set kept_return_at=null where id=q;
   select version into v from public.requests where id=q;
-  begin perform public.set_request_trip_type(q,'round_trip',v); raise exception 'round_trip without return must be refused';
-  exception when others then if sqlerrm<>'trip_type_needs_return' then raise; end if; end;
+  res:=public.set_request_trip_type(q,'round_trip',v);
+  select * into r from public.requests where id=q;
+  assert r.trip_type='round_trip' and r.return_at = to_timestamp(round(extract(epoch from
+      r.depart_at + make_interval(mins => coalesce(public.request_leg_route_minutes(q,'out'),30)) + interval '2 hours') / 900) * 900),
+    format('default return = departure + route + 2h, got %s (depart %s)', r.return_at, r.depart_at);
+  assert r.flex_return_early = interval '1 day' and r.flex_return_late = interval '1 day', 'default return is flexible all day';
+  assert (res->>'defaulted_return_at')::timestamptz = r.return_at and not (res ? 'restored_return_at'), format('result reports the defaulted return, got %s', res);
+  -- back to one_way for the following steps (the defaulted return is kept, as any other)
+  res:=public.set_request_trip_type(q,'one_way',r.version);
 
   -- 4) non-driver without companion: only drop_off
   update public.profiles set does_not_drive=true where id=m2;

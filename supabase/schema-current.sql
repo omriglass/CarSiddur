@@ -4700,7 +4700,7 @@ CREATE OR REPLACE FUNCTION "public"."freed_slot_candidates"("_offer" "uuid") RET
   join rides cr on cr.id = o.cancelled_ride_id
   join requests q
     on q.department_id = o.department_id and q.week_start = o.week_start
-   and q.status in ('waitlisted','denied')
+   and q.status in ('waitlisted','denied','external')
    and not q.freed_slot_opt_out
    and q.trip_shape = 'round_trip'                     -- one-way requests are never auto-placed (REQ §13.64)
    and q.series_id is null                             -- REQ §13.77: a multi-day series never fits a one-day freed slot
@@ -6313,7 +6313,7 @@ begin
     select q.department_id, min(q.depart_at), max(q.return_at), count(*)::int, max(q.series_count)::int
       into v_dept, v_first, v_last, v_legs, v_expected
     from public.requests q
-    where q.series_id = p_series_id and q.status not in ('withdrawn','cancelled','denied')
+    where q.series_id = p_series_id and q.status not in ('withdrawn','cancelled','denied','external')
     group by q.department_id;
     if v_dept is null or v_legs is distinct from v_expected then
       raise exception 'series_car_unavailable' using errcode = 'MDR03', detail = 'series_incomplete';
@@ -9144,7 +9144,7 @@ declare
   v_shape public.trip_shape; v_needs boolean; v_mode public.leg_car_mode; v_dep timestamptz; v_ret timestamptz;
   v_car uuid; v_ride uuid; v_old record; v_old_cars uuid[] := '{}'; v_old_car uuid; v_prev_sys text;
   v_status public.request_status; v_placed boolean := false; v_driver_mode public.leg_car_mode;
-  v_kept timestamptz;
+  v_kept timestamptz; v_defaulted timestamptz; v_flex_any boolean := false;
 begin
   select * into q from public.requests where id = p_request_id for update;
   if q.id is null then raise exception 'request_not_found' using errcode = 'P0001'; end if;
@@ -9167,7 +9167,19 @@ begin
   v_dep := q.depart_at; v_ret := q.return_at; v_kept := q.kept_return_at;
   if p_trip_type = 'round_trip' then
     v_ret := coalesce(v_ret, q.kept_return_at); v_kept := null;
-    if v_ret is null or v_dep is null then raise exception 'trip_type_needs_return' using errcode = 'P0001'; end if;
+    if v_dep is null then raise exception 'trip_type_needs_return' using errcode = 'P0001'; end if;
+    -- REQ §13.98: no known return time -> about two hours after arrival (departure + the out
+    -- route + 2h, nearest quarter hour, never past the day's end) with return flexibility "any
+    -- time that day", so the Sadran can move it without asking anyone.
+    if v_ret is null then
+      v_ret := to_timestamp(round(extract(epoch from
+        v_dep + make_interval(mins => coalesce(public.request_leg_route_minutes(q.id, 'out'), 30)) + interval '2 hours') / 900) * 900);
+      if (v_ret at time zone 'Asia/Jerusalem')::date <> (v_dep at time zone 'Asia/Jerusalem')::date then
+        v_ret := (((v_dep at time zone 'Asia/Jerusalem')::date + time '23:59') at time zone 'Asia/Jerusalem');
+      end if;
+      if v_ret <= v_dep then raise exception 'trip_type_needs_return' using errcode = 'P0001'; end if;
+      v_defaulted := v_ret; v_flex_any := true;
+    end if;
     v_shape := 'round_trip'; v_needs := true; v_mode := null;
   elsif p_trip_type = 'one_way' then
     v_kept := coalesce(v_ret, q.kept_return_at); v_dep := coalesce(v_dep, v_ret); v_ret := null;
@@ -9189,7 +9201,9 @@ begin
   perform set_config('app.system_status_transition', 'on', true);
 
   update public.requests set trip_type = p_trip_type, trip_shape = v_shape, needs_car_at_destination = v_needs,
-    one_way_car_mode = v_mode, depart_at = v_dep, return_at = v_ret, kept_return_at = v_kept
+    one_way_car_mode = v_mode, depart_at = v_dep, return_at = v_ret, kept_return_at = v_kept,
+    flex_return_early = case when v_flex_any then interval '1 day' else flex_return_early end,
+    flex_return_late = case when v_flex_any then interval '1 day' else flex_return_late end
   where id = q.id;
   -- REQ §13.97: return-leg stops are kept (inactive while there is no return), never deleted.
 
@@ -9230,7 +9244,8 @@ begin
   select status into v_status from public.requests where id = q.id;
   -- REQ §13.97: tell the caller when a kept return time came back (the board's toast says so).
   return jsonb_strip_nulls(jsonb_build_object('status', v_status, 'ride_id', v_ride, 'changed', true,
-    'restored_return_at', case when q.return_at is null and v_ret is not null then v_ret end));
+    'restored_return_at', case when q.return_at is null and v_ret is not null and v_defaulted is null then v_ret end,
+    'defaulted_return_at', v_defaulted));
 end;
 $$;
 
@@ -9998,7 +10013,7 @@ begin
   -- Duplicate detection (warn, never block, REQ §5.3).
   if exists (
     select 1 from public.requests q
-    where q.requester_id = v_requester_id and q.id <> v_request_id and q.status not in ('withdrawn','cancelled','denied')
+    where q.requester_id = v_requester_id and q.id <> v_request_id and q.status not in ('withdrawn','cancelled','denied','external')
       and q.department_id = v_department_id
       -- REQ §13.77: the legs of one multi-day series overlap each other by construction.
       and (v_series_id is null or q.series_id is distinct from v_series_id)
@@ -13423,7 +13438,7 @@ CREATE INDEX "requests_dept_week_status_idx" ON "public"."requests" USING "btree
 
 
 
-CREATE INDEX "requests_freed_slot_candidates_idx" ON "public"."requests" USING "btree" ("department_id", "week_start") WHERE (("status" = ANY (ARRAY['waitlisted'::"public"."request_status", 'denied'::"public"."request_status"])) AND (NOT "freed_slot_opt_out"));
+CREATE INDEX "requests_freed_slot_candidates_idx" ON "public"."requests" USING "btree" ("department_id", "week_start") WHERE (("status" = ANY (ARRAY['waitlisted'::"public"."request_status", 'denied'::"public"."request_status", 'external'::"public"."request_status"])) AND (NOT "freed_slot_opt_out"));
 
 
 

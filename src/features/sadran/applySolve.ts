@@ -82,7 +82,7 @@ export function nowMs(): number {
 
 import { isReservation, servedOf, type ServedEntry } from "@/features/rides/servedOf";
 
-export { servedOf, namedPassengersOf, withChildNames, representativeRideTypeCode, relayPartnerOf, rideStopCount } from "@/features/rides/servedOf";
+export { servedOf, namedPassengersOf, withChildNames, representativeRideTypeCode, relayPartnerOf, rideViaNames } from "@/features/rides/servedOf";
 export type { ServedEntry, RidePassengerEntry, RelayPartner } from "@/features/rides/servedOf";
 
 

@@ -27,6 +27,7 @@ import { sadranKeys } from "../../keys";
 import { scanBoardConflicts, slotToIso, requestDayMismatchRideIds, tightScheduleRideIds } from "../geometry";
 import { rideBlockLabel } from "../rideLabel";
 import { DEFAULT_STOP_MINUTES, homeTravelEdges, makeHop, makeHopKm, parseRideRoute } from "@/lib/rideRoute";
+import { viaLabel } from "@/lib/routeLabel";
 import { addedGuestsOf, mergePayloadLeg, previewMerge } from "../mergeProposal";
 import { connectedPairRideIds, unmetItemId, unmetRequestViews, viewsOnDay } from "../unmetLegs";
 import { isUnmetStatus } from "../../unmetStatuses";
@@ -55,7 +56,7 @@ import {
   policyLookbackWeeks,
   relayPartnerOf,
   representativeRideTypeCode,
-  rideStopCount,
+  rideViaNames,
   runSolve,
   servedOf,
   withChildNames,
@@ -637,8 +638,8 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
       description: [servedOf(r).length ? r.notes : null, ridePublicDetails(withChildNames(servedOf(r), requestsQuery.data ?? []), { includeCompanions: false })].filter(Boolean).join("\n"),
       passengerSummary: ridePassengerSummary(withChildNames(servedOf(r), requestsQuery.data ?? []), r.needs_driver ? null : r.driver_name),
       coordinatorNotes: rideCoordinatorNotes(servedOf(r), requestsQuery.data ?? []),
-      // REQUIREMENTS §13.93 "Multi-stop rides" Display: "· N עצירות" appended only when the
-      // ride actually serves a request with stops (`rideStopCount`, never 0).
+      // REQUIREMENTS §13.93 "Multi-stop rides" Display: "· דרך: פתח תקווה, תל אביב" — the stops by
+      // name (owner 2026-10-05: not a count), only when the ride passes any (`rideViaNames`).
       label: (() => {
         const base = (!servedOf(r).length && r.notes) || (
           department?.home_destination_id && r.origin_id && r.destination_id
@@ -657,8 +658,8 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
                 relayPartner: relayPartnerOf(r),
               })
             : (r.destination_name ?? ""));
-        const stopCount = rideStopCount(servedOf(r));
-        return stopCount > 0 ? `${base} ${tv("sadranBoard.stopCount", { count: String(stopCount) })}` : base;
+        const via = viaLabel(rideViaNames(r));
+        return via ? `${base} · ${via}` : base;
       })(),
       pinned: !!r.is_pinned,
       // REQ §13.94 (G10): an applied merge - the ride's own route carries boarding/alighting places.
@@ -800,7 +801,7 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
       };
     });
 
-  const phantomRides = packPhantomLanes(unmetItems.filter((item) => item.request.status !== "denied").flatMap((item) => {
+  const phantomRides = packPhantomLanes(unmetItems.filter((item) => item.request.status !== "denied" && item.request.status !== "external").flatMap((item) => {
     const window = requestWindow(item.request);
     if (!window) return [];
     return [{ id: unmetItemId(item), startMinutes: (Date.parse(window.startsAt) - Date.parse(dayStartIso(selectedDay))) / 60_000,

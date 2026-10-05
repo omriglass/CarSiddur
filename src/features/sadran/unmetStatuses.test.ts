@@ -14,14 +14,16 @@ import type { RequestStatus } from "@/lib/enums";
 
 // Per unmetStatuses.ts's header comment (owner bug report #1): "not yet
 // accepted" = still needs a ride and might still get one — submitted,
-// proposed, waitlisted, denied. Everything else is either not yet a real
-// request (draft), already placed (assigned/merged/external), or no longer
-// active (withdrawn/cancelled).
+// proposed, waitlisted, denied — and external (solved outside the app; owner
+// 2026-10-05: treated like denied, still on the waiting list). Everything else
+// is either not yet a real request (draft), already placed (assigned/merged),
+// or no longer active (withdrawn/cancelled).
 const EXPECTED_UNMET: ReadonlySet<RequestStatus> = new Set([
   "submitted",
   "proposed",
   "waitlisted",
   "denied",
+  "external",
 ]);
 
 describe("isUnmetStatus", () => {
@@ -39,10 +41,13 @@ describe("isUnmetStatus", () => {
     expect(new Set(UNMET_REQUEST_STATUSES)).toEqual(EXPECTED_UNMET);
   });
 
-  it("assigned/merged/external requests are not unmet (already placed)", () => {
+  it("assigned/merged requests are not unmet (already placed)", () => {
     expect(isUnmetStatus("assigned")).toBe(false);
     expect(isUnmetStatus("merged")).toBe(false);
-    expect(isUnmetStatus("external")).toBe(false);
+  });
+
+  it("an external request (solved outside the app) stays unmet, like a denied one (owner 2026-10-05)", () => {
+    expect(isUnmetStatus("external")).toBe(true);
   });
 
   it("withdrawn/cancelled requests are not unmet (no longer active)", () => {

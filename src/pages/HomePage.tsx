@@ -67,7 +67,7 @@ import { paths } from "@/app/routes";
 import { isAwaitingAnswer } from "@/features/requests/pendingProposal";
 import { hasRideTodayOrTomorrow, resolveHomeWeek } from "./homeWeek";
 
-const UNSERVED_STATUSES = new Set<MyRequestRow["status"]>(["waitlisted", "denied", "proposed"]);
+const UNSERVED_STATUSES = new Set<MyRequestRow["status"]>(["waitlisted", "denied", "external", "proposed"]);
 
 function reasonLine(row: MyRequestRow): string | null {
   if (row.pendingProposal) return row.pendingProposal.reasonHe;

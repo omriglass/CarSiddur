@@ -71,7 +71,8 @@ import { SiddurDisplayMenu } from "@/features/siddur/components/SiddurDisplayMen
 import { siddurKeys } from "@/features/siddur/queryKeys";
 import type { Week, BoardRide } from "@/features/siddur/api";
 import type { RideMove } from "@/features/rides/api";
-import { namedPassengersOf, representativeRideTypeCode, rideStopCount, servedOf } from "@/features/rides/servedOf";
+import { namedPassengersOf, representativeRideTypeCode, rideViaNames, servedOf } from "@/features/rides/servedOf";
+import { viaLabel } from "@/lib/routeLabel";
 import { peopleOf } from "@/features/rides/ridePeople";
 import { rideBlockLabel, resolveRideRealDestination } from "@/lib/rideLabel";
 import { he, t, tv } from "@/i18n/he";
@@ -405,8 +406,8 @@ export function SiddurPage() {
               startsAt: r.starts_at ?? undefined,
             })
           : (r.destination_name ?? ""));
-        const stopCount = rideStopCount(servedOf(r));
-        return stopCount > 0 ? `${base} ${tv("sadranBoard.stopCount", { count: String(stopCount) })}` : base;
+        const via = viaLabel(rideViaNames(r));
+        return via ? `${base} · ${via}` : base;
       })(),
       rideTypeCode: representativeRideTypeCode(servedOf(r)),
       description: [servedOf(r).length ? r.notes : null, ridePublicDetails(servedOf(r), { includeCompanions: !isSadran, addedNames: addedNamesOf(r) })].filter(Boolean).join("\n"),

@@ -188,6 +188,8 @@ function shiftBeyondFlexSuggestion(nr: NormalizedRequest, ctx: SuggestionContext
     if (!best || placement.cost < best.placement.cost) best = { car, placement };
   }
   if (!best) return null;
+  // A 0-minute shift is not a suggestion: the greedy retry passes would already have placed it.
+  if (best.placement.shift.departureMin === 0 && best.placement.shift.returnMin === 0) return null;
   return {
     kind: 'shiftBeyondFlex',
     requestId: nr.id,

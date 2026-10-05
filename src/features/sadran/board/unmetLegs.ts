@@ -71,7 +71,7 @@ export function unmetRequestViews(
   for (const request of requests) {
     if (opts.draftPlacedRequestIds.has(request.id)) continue;
     if (isDropOffWithPickup(request) && (isUnmetStatus(request.status) || PARTLY_PLACED_STATUSES.has(request.status) || opts.awaitingDriverRequestIds.has(request.id))) {
-      if (request.status === "denied") { views.push({ request }); continue; }
+      if (request.status === "denied" || request.status === "external") { views.push({ request }); continue; }
       const covered = coveredLegs(rides, request.id);
       if (covered.out && covered.return) continue;
       if (!covered.out) views.push({ request: legView(request, "out"), leg: "out" });

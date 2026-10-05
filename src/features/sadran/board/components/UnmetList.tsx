@@ -19,6 +19,22 @@ import { unmetItemKey } from "../unmetLegs";
 import { requestRouteLine } from "../requestRoute";
 
 import type { WeekRequestRow } from "../../api";
+import { viaLabel } from "@/lib/routeLabel";
+import { isActiveStop } from "@/lib/routeStops";
+
+/** An unmet request's own active stops by name, per leg in route order (raw `request_stops` rows). */
+function unmetViaNames(
+  stops: readonly { leg: "out" | "return"; position: number; place_id: string | null; place_text?: string | null; place?: { name: string } | null }[] | undefined,
+  hasReturn: boolean,
+): { out: string[]; return: string[] } {
+  const via = { out: [] as string[], return: [] as string[] };
+  for (const stop of [...(stops ?? [])].sort((a, b) => a.position - b.position)) {
+    if (!isActiveStop(stop, hasReturn)) continue;
+    const name = stop.place?.name ?? stop.place_text ?? "";
+    if (name) via[stop.leg].push(name);
+  }
+  return via;
+}
 import type { Suggestion, UnmetRequest } from "@/solver";
 
 export interface UnmetListItem {
@@ -244,8 +260,11 @@ export function UnmetList({ items, onAction, onOpenProposal, onDecision, dayStar
                 <span dir="ltr">{dayTimeLabel(requestStart(item.request))}</span>
                 <span>
                   {item.request.ride_type_name_he ?? ""}
-                  {/* REQUIREMENTS §13.93 "Multi-stop rides" Display: same marker as the board ride card, shown only when > 0. */}
-                  {item.request.stops?.length ? ` ${tv("sadranBoard.stopCount", { count: String(item.request.stops.length) })}` : ""}
+                  {/* The stops by name, like the ride cards (owner 2026-10-05: not a count). */}
+                  {(() => {
+                    const via = viaLabel(unmetViaNames(item.request.stops, item.request.return_at != null));
+                    return via ? ` · ${via}` : "";
+                  })()}
                 </span>
                 {item.solverInfo ? (
                   <span dir="ltr">

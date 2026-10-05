@@ -4,6 +4,7 @@
 // `applySolve.ts` re-exports it so every existing `from "../applySolve"`/`solverRun` import
 // keeps working.
 import { isActiveStop } from "@/lib/routeStops";
+import { parseRideRoute, routeViaNames } from "@/lib/rideRoute";
 
 import type { BoardRide } from "./api";
 
@@ -135,10 +136,21 @@ export function representativeRideTypeCode(served: readonly ServedEntry[]): stri
 }
 
 /**
- * Total stop count across every served request's own out+return legs (REQUIREMENTS §13.93
- * "Multi-stop rides" Display) — the board/siddur ride card's "· N עצירות" marker, shown only
- * when > 0.
+ * The places a ride passes through, by name, per leg (owner 2026-10-05: the board/siddur card shows
+ * the stops, not a count — "דרך: פתח תקווה, תל אביב"). Reads the ride's own route
+ * (`v_board_rides.route`, which also carries a merged passenger's boarding/alighting places); falls
+ * back to the served requests' own active stops when the route is absent.
  */
-export function rideStopCount(served: readonly ServedEntry[]): number {
-  return served.reduce((sum, entry) => sum + (entry.stops?.filter((s) => isActiveStop(s)).length ?? 0), 0);
+export function rideViaNames(ride: { route?: unknown } & Parameters<typeof servedOf>[0]): { out: string[]; return: string[] } {
+  const fromRoute = routeViaNames(parseRideRoute(ride.route));
+  if (fromRoute.out.length || fromRoute.return.length) return fromRoute;
+  const via = { out: [] as string[], return: [] as string[] };
+  for (const entry of servedOf(ride)) {
+    for (const stop of [...(entry.stops ?? [])].sort((a, b) => a.position - b.position)) {
+      if (!isActiveStop(stop) || !stop.name) continue;
+      const list = via[stop.leg];
+      if (list[list.length - 1] !== stop.name) list.push(stop.name);
+    }
+  }
+  return via;
 }

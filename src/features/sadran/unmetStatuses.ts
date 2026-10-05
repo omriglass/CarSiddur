@@ -16,6 +16,9 @@ export const UNMET_REQUEST_STATUSES: ReadonlySet<RequestStatus> = new Set<Reques
   "proposed",
   "waitlisted",
   "denied",
+  // Owner 2026-10-05: a request solved "outside" (public transport, cab…) stays on the waiting
+  // list like a denied one — it can still get a freed car unless the member opted out.
+  "external",
 ]);
 
 export function isUnmetStatus(status: RequestStatus): boolean {

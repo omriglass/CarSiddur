@@ -560,7 +560,7 @@ export function RequestForm({
         ? toInstant(day, values.returnTime, false)
         : null;
     const candidates = (myRequestsQuery.data ?? []).filter(
-      (r) => r.departmentId === departmentId && !["withdrawn", "cancelled", "denied"].includes(r.status),
+      (r) => r.departmentId === departmentId && !["withdrawn", "cancelled", "denied", "external"].includes(r.status),
     );
     return findOverlappingRequest({ departAt, returnAt }, candidates, initial?.id);
   }, [day, tripShape, values.departTime, values.returnTime, myRequestsQuery.data, departmentId, initial?.id]);

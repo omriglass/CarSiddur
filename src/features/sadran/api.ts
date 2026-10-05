@@ -64,11 +64,11 @@ export interface WeekRequestRow extends RequestRow {
   /** REQUIREMENTS §13.93: resolved origin name (list place) — `null` leaves `origin_text` (free text) as the only label. */
   origin_resolved_name: string | null;
   /**
-   * REQUIREMENTS §13.93 "Multi-stop rides": raw `request_stops` rows (minimal columns — the
-   * unmet card's "· N עצירות" count, `UnmetList.tsx`, and the solver-bridge feeder,
-   * `src/features/solverBridge/buildSolverInput.ts`; names/ETAs are not needed on this path).
+   * REQUIREMENTS §13.93 "Multi-stop rides": raw `request_stops` rows — the unmet card's "דרך: …"
+   * line (`UnmetList.tsx`, names) and the solver-bridge feeder (`buildSolverInput.ts`). No `active`
+   * column on the table: use `isActiveStop(stop, request.return_at != null)`.
    */
-  stops: { leg: "out" | "return"; position: number; active?: boolean; place_id: string | null }[];
+  stops: { leg: "out" | "return"; position: number; active?: boolean; place_id: string | null; place_text?: string | null; place?: { name: string } | null }[];
 }
 
 const WEEK_REQUEST_SELECT = `*,
@@ -79,7 +79,7 @@ const WEEK_REQUEST_SELECT = `*,
   preferred_car:cars!requests_preferred_car_id_fkey(name),
   companions:request_companions(profile_id, profile:profiles!request_companions_profile_id_fkey(full_name, does_not_drive)),
   request_children(child:children(full_name)),
-  stops:request_stops(leg, position, place_id)`;
+  stops:request_stops(leg, position, place_id, place_text, place:destinations(name))`;
 
 interface WeekRequestJoinRow extends RequestRow {
   companions: { profile_id: string; profile: { full_name: string; does_not_drive: boolean } | null }[];
@@ -89,7 +89,7 @@ interface WeekRequestJoinRow extends RequestRow {
   origin: { name: string } | null;
   ride_type: { code: string; name_he: string } | null;
   preferred_car: { name: string } | null;
-  stops: { leg: "out" | "return"; position: number; active?: boolean; place_id: string | null }[];
+  stops: { leg: "out" | "return"; position: number; active?: boolean; place_id: string | null; place_text?: string | null; place?: { name: string } | null }[];
 }
 
 /** Ids of `companions` whose profile is an eligible driver (`!does_not_drive`), REQ §13.88. */
@@ -164,14 +164,14 @@ export async function fetchWeekRequests(departmentId: string, weekStart: string)
     .select(`*,
       requester:profiles!requests_requester_id_fkey(full_name, does_not_drive),
       companions:request_companions(profile_id, profile:profiles!request_companions_profile_id_fkey(does_not_drive)),
-      stops:request_stops(leg, position, place_id)`)
+      stops:request_stops(leg, position, place_id, place_text, place:destinations(name))`)
     .eq("department_id", departmentId)
     .eq("week_start", weekStart);
   if (error) throw toAppError(error);
   return ((data ?? []) as unknown as (RequestRow & {
     requester: { full_name: string; does_not_drive: boolean } | null;
     companions: { profile_id: string; profile: { does_not_drive: boolean } | null }[];
-    stops: { leg: "out" | "return"; position: number; active?: boolean; place_id: string | null }[];
+    stops: { leg: "out" | "return"; position: number; active?: boolean; place_id: string | null; place_text?: string | null; place?: { name: string } | null }[];
   })[]).map(
     ({ requester, companions, ...rest }) => ({
       ...rest,
@@ -510,12 +510,15 @@ export interface SetTripTypeResult {
   changed: boolean;
   /** The kept return time SQL put back when switching from one-way to a round trip (`restored_return_at`), if any. */
   restoredReturnAt: string | null;
+  /** REQ §13.98: with no known return, SQL set one (~2h after arrival, flexible all day) — `defaulted_return_at`. */
+  defaultedReturnAt: string | null;
 }
 
 export async function setRequestTripType(requestId: string, tripType: TripType, expectedVersion: number): Promise<SetTripTypeResult> {
   const raw = await rpc("set_request_trip_type", { p_request_id: requestId, p_trip_type: tripType, p_expected_version: expectedVersion });
   const body = raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, Json | undefined>) : {};
-  return { status: typeof body.status === "string" ? body.status : "", rideId: typeof body.ride_id === "string" ? body.ride_id : null, changed: body.changed !== false, restoredReturnAt: typeof body.restored_return_at === "string" ? body.restored_return_at : null };
+  return { status: typeof body.status === "string" ? body.status : "", rideId: typeof body.ride_id === "string" ? body.ride_id : null, changed: body.changed !== false, restoredReturnAt: typeof body.restored_return_at === "string" ? body.restored_return_at : null,
+    defaultedReturnAt: typeof body.defaulted_return_at === "string" ? body.defaulted_return_at : null };
 }
 
 /**

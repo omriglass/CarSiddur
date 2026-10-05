@@ -825,187 +825,200 @@ function runGreedy(units, timelines, input) {
     if (mileageEnabled) addAssignedKm(assignedKmByCar, carId, km);
   };
   const carChoice = input.policy.carChoice ?? "spread";
-  for (const unit of sortUnits(units)) {
-    if (unit.kind === "single" && unit.single) {
-      const nr = unit.single;
-      const leg = nr.legs[0];
-      if (!leg) {
-        unmetUnits.push(unit);
-        continue;
-      }
-      let best = null;
-      const mileageDecision = new MileageDecisionTracker(carChoice);
-      for (const car of sharedCars) {
-        if (!fits(car, nr.passengers) || !luggageFits(car, nr.luggage ? 1 : 0)) continue;
-        const tl2 = timelines.get(car.id);
-        if (!tl2) continue;
-        if (withinRequestDay(nr, nr.window) && tl2.isFree(nr.window, leg.originId, void 0, leg.destinationId)) {
-          const key = {
-            shiftCost: 0,
-            preference: carPreferenceRank(car.id, [nr.request.preferredCarId]),
-            slackVal: homeSlack(car, nr),
-            continuity: continuityRank(car.id, nr.id, nr.request.memberId, input),
-            fragmentation: fragmentationFor(tl2, nr.window),
-            mileageVal: mileageValue(car, assignedKmByCar),
-            carId: car.id
-          };
-          const replaced = !best || compareKey(key, best.key, carChoice) < 0;
-          mileageDecision.consider(key, best?.key, replaced);
-          if (replaced) {
-            best = { car, window: nr.window, shift: { departureMin: 0, returnMin: 0 }, key };
-          }
+  let pending = sortUnits(units);
+  while (pending.length > 0) {
+    const stillUnmet = [];
+    let progress = false;
+    for (const unit of pending) {
+      if (unit.kind === "single" && unit.single) {
+        const nr = unit.single;
+        const leg = nr.legs[0];
+        if (!leg) {
+          stillUnmet.push(unit);
+          continue;
         }
-      }
-      if (!best) {
+        let best = null;
+        const mileageDecision = new MileageDecisionTracker(carChoice);
         for (const car of sharedCars) {
           if (!fits(car, nr.passengers) || !luggageFits(car, nr.luggage ? 1 : 0)) continue;
           const tl2 = timelines.get(car.id);
           if (!tl2) continue;
-          const placement = bestPlacementWithinFlex(tl2, nr);
-          if (!placement) continue;
-          if (!tl2.isFree(placement.window, leg.originId, void 0, leg.destinationId)) continue;
-          const key = {
-            shiftCost: placement.cost,
-            preference: carPreferenceRank(car.id, [nr.request.preferredCarId]),
-            slackVal: homeSlack(car, nr),
-            continuity: continuityRank(car.id, nr.id, nr.request.memberId, input),
-            fragmentation: fragmentationFor(tl2, placement.window),
-            mileageVal: mileageValue(car, assignedKmByCar),
-            carId: car.id
-          };
-          const replaced = !best || compareKey(key, best.key, carChoice) < 0;
-          mileageDecision.consider(key, best?.key, replaced);
-          if (replaced) {
-            best = { car, window: placement.window, shift: placement.shift, key };
+          if (withinRequestDay(nr, nr.window) && tl2.isFree(nr.window, leg.originId, void 0, leg.destinationId)) {
+            const key = {
+              shiftCost: 0,
+              preference: carPreferenceRank(car.id, [nr.request.preferredCarId]),
+              slackVal: homeSlack(car, nr),
+              continuity: continuityRank(car.id, nr.id, nr.request.memberId, input),
+              fragmentation: fragmentationFor(tl2, nr.window),
+              mileageVal: mileageValue(car, assignedKmByCar),
+              carId: car.id
+            };
+            const replaced = !best || compareKey(key, best.key, carChoice) < 0;
+            mileageDecision.consider(key, best?.key, replaced);
+            if (replaced) {
+              best = { car, window: nr.window, shift: { departureMin: 0, returnMin: 0 }, key };
+            }
           }
         }
-      }
-      if (!best) {
-        unmetUnits.push(unit);
+        if (!best) {
+          for (const car of sharedCars) {
+            if (!fits(car, nr.passengers) || !luggageFits(car, nr.luggage ? 1 : 0)) continue;
+            const tl2 = timelines.get(car.id);
+            if (!tl2) continue;
+            const placement = bestPlacementWithinFlex(tl2, nr);
+            if (!placement) continue;
+            if (!tl2.isFree(placement.window, leg.originId, void 0, leg.destinationId)) continue;
+            const key = {
+              shiftCost: placement.cost,
+              preference: carPreferenceRank(car.id, [nr.request.preferredCarId]),
+              slackVal: homeSlack(car, nr),
+              continuity: continuityRank(car.id, nr.id, nr.request.memberId, input),
+              fragmentation: fragmentationFor(tl2, placement.window),
+              mileageVal: mileageValue(car, assignedKmByCar),
+              carId: car.id
+            };
+            const replaced = !best || compareKey(key, best.key, carChoice) < 0;
+            mileageDecision.consider(key, best?.key, replaced);
+            if (replaced) {
+              best = { car, window: placement.window, shift: placement.shift, key };
+            }
+          }
+        }
+        if (!best) {
+          stillUnmet.push(unit);
+          continue;
+        }
+        const tl = timelines.get(best.car.id);
+        tl?.add({
+          rideId: `ride:${nr.id}`,
+          window: best.window,
+          startLocationId: leg.originId,
+          endLocationId: leg.destinationId,
+          overnightAck: false
+        });
+        trackKm(best.car.id, destinationKm(input, nr.destinationId) * 2);
+        progress = true;
+        placed.push({
+          kind: "single",
+          nr,
+          carId: best.car.id,
+          window: best.window,
+          shift: best.shift,
+          balancedMileage: mileageDecision.value
+        });
         continue;
       }
-      const tl = timelines.get(best.car.id);
-      tl?.add({
-        rideId: `ride:${nr.id}`,
-        window: best.window,
-        startLocationId: leg.originId,
-        endLocationId: leg.destinationId,
-        overnightAck: false
-      });
-      trackKm(best.car.id, destinationKm(input, nr.destinationId) * 2);
-      placed.push({
-        kind: "single",
-        nr,
-        carId: best.car.id,
-        window: best.window,
-        shift: best.shift,
-        balancedMileage: mileageDecision.value
-      });
-      continue;
-    }
-    if (unit.kind === "pair" && unit.pair) {
-      const { pair, outNr, retNr } = unit.pair;
-      let best = null;
-      for (const car of sharedCars) {
-        if (!fits(car, outNr.passengers) || !fits(car, retNr.passengers)) continue;
-        if (!luggageFits(car, outNr.luggage ? 1 : 0) || !luggageFits(car, retNr.luggage ? 1 : 0)) continue;
-        const tl2 = timelines.get(car.id);
-        if (!tl2) continue;
-        if (pair.outWindow.end > pair.returnWindow.start) continue;
-        if (!tl2.isFree(pair.outWindow, pair.originId, void 0, pair.destinationId)) continue;
-        const outRideId = `ride:${outNr.id}`;
-        const relayPairId2 = relayPairIdOf(outNr.id, retNr.id);
-        tl2.add({
-          rideId: outRideId,
+      if (unit.kind === "pair" && unit.pair) {
+        const { pair, outNr, retNr } = unit.pair;
+        let best = null;
+        for (const car of sharedCars) {
+          if (!fits(car, outNr.passengers) || !fits(car, retNr.passengers)) continue;
+          if (!luggageFits(car, outNr.luggage ? 1 : 0) || !luggageFits(car, retNr.luggage ? 1 : 0)) continue;
+          const tl2 = timelines.get(car.id);
+          if (!tl2) continue;
+          if (pair.outWindow.end > pair.returnWindow.start) continue;
+          if (!tl2.isFree(pair.outWindow, pair.originId, void 0, pair.destinationId)) continue;
+          const outRideId = `ride:${outNr.id}`;
+          const relayPairId2 = relayPairIdOf(outNr.id, retNr.id);
+          tl2.add({
+            rideId: outRideId,
+            window: pair.outWindow,
+            startLocationId: pair.originId,
+            endLocationId: pair.destinationId,
+            overnightAck: false,
+            relayPairId: relayPairId2
+          });
+          const returnOk = tl2.isFree(pair.returnWindow, pair.destinationId, relayPairId2, pair.originId);
+          tl2.remove(outRideId);
+          if (!returnOk) continue;
+          const shiftCost = pair.shiftCost;
+          const slackVal = Math.max(homeSlack(car, outNr), homeSlack(car, retNr));
+          const continuity = Math.min(
+            continuityRank(car.id, outNr.id, outNr.request.memberId, input),
+            continuityRank(car.id, retNr.id, retNr.request.memberId, input)
+          );
+          const fragmentation = fragmentationFor(tl2, { start: pair.outWindow.start, end: pair.returnWindow.end });
+          const preference = carPreferenceRank(car.id, [outNr.request.preferredCarId, retNr.request.preferredCarId]);
+          const key = { shiftCost, preference, slackVal, continuity, fragmentation, mileageVal: 0, carId: car.id };
+          if (!best || compareKey(key, best.key, carChoice) < 0) best = { car, key };
+        }
+        if (!best) {
+          stillUnmet.push(unit);
+          continue;
+        }
+        const tl = timelines.get(best.car.id);
+        const relayPairId = relayPairIdOf(outNr.id, retNr.id);
+        tl?.add({
+          rideId: `ride:${outNr.id}`,
           window: pair.outWindow,
           startLocationId: pair.originId,
           endLocationId: pair.destinationId,
           overnightAck: false,
-          relayPairId: relayPairId2
+          relayPairId
         });
-        const returnOk = tl2.isFree(pair.returnWindow, pair.destinationId, relayPairId2, pair.originId);
-        tl2.remove(outRideId);
-        if (!returnOk) continue;
-        const shiftCost = pair.shiftCost;
-        const slackVal = Math.max(homeSlack(car, outNr), homeSlack(car, retNr));
-        const continuity = Math.min(
-          continuityRank(car.id, outNr.id, outNr.request.memberId, input),
-          continuityRank(car.id, retNr.id, retNr.request.memberId, input)
-        );
-        const fragmentation = fragmentationFor(tl2, { start: pair.outWindow.start, end: pair.returnWindow.end });
-        const preference = carPreferenceRank(car.id, [outNr.request.preferredCarId, retNr.request.preferredCarId]);
-        const key = { shiftCost, preference, slackVal, continuity, fragmentation, mileageVal: 0, carId: car.id };
-        if (!best || compareKey(key, best.key, carChoice) < 0) best = { car, key };
-      }
-      if (!best) {
-        unmetUnits.push(unit);
-        continue;
-      }
-      const tl = timelines.get(best.car.id);
-      const relayPairId = relayPairIdOf(outNr.id, retNr.id);
-      tl?.add({
-        rideId: `ride:${outNr.id}`,
-        window: pair.outWindow,
-        startLocationId: pair.originId,
-        endLocationId: pair.destinationId,
-        overnightAck: false,
-        relayPairId
-      });
-      tl?.add({
-        rideId: `ride:${retNr.id}`,
-        window: pair.returnWindow,
-        startLocationId: pair.destinationId,
-        endLocationId: pair.originId,
-        overnightAck: false,
-        relayPairId
-      });
-      trackKm(best.car.id, destinationKm(input, pair.destinationId) * 2);
-      placed.push({ kind: "pair", pair, outNr, retNr, carId: best.car.id });
-      continue;
-    }
-    if (unit.kind === "series" && unit.series) {
-      const su = unit.series;
-      const legs = su.legs;
-      let best = null;
-      for (const car2 of sharedCars) {
-        if (!legs.every((leg) => fits(car2, leg.passengers) && luggageFits(car2, leg.luggage ? 1 : 0))) continue;
-        const tl2 = timelines.get(car2.id);
-        if (!tl2) continue;
-        const placement2 = trySeriesOnCar(tl2, legs, su.seriesCount);
-        if (!placement2) continue;
-        const slackVal = legs.reduce((max, leg) => Math.max(max, slack(car2, leg.passengers) ?? Number.POSITIVE_INFINITY), 0);
-        const continuity = legs.reduce(
-          (min, leg) => Math.min(min, continuityRank(car2.id, leg.requestId, leg.request.memberId, input)),
-          2
-        );
-        const fragmentation = fragmentationFor(tl2, { start: placement2.firstWindow.start, end: placement2.lastWindow.end });
-        const preference = carPreferenceRank(car2.id, legs.map((leg) => leg.request.preferredCarId));
-        const key = { shiftCost: placement2.shiftCost, preference, slackVal, continuity, fragmentation, mileageVal: 0, carId: car2.id };
-        if (!best || compareKey(key, best.key, carChoice) < 0) best = { car: car2, placement: placement2, key };
-      }
-      if (!best || !best.placement) {
-        unmetUnits.push(unit);
-        continue;
-      }
-      const { car, placement } = best;
-      const tl = timelines.get(car.id);
-      for (const leg of legs) {
-        const window = seriesLegWindow(leg, legs, placement);
         tl?.add({
-          rideId: `ride:${leg.requestId}`,
-          window,
-          startLocationId: leg.originId,
-          endLocationId: leg.destinationId,
-          // A series leg legitimately leaves the car away overnight at the
-          // destination between legs — never a day-end violation.
-          overnightAck: true,
-          seriesId: su.seriesId
+          rideId: `ride:${retNr.id}`,
+          window: pair.returnWindow,
+          startLocationId: pair.destinationId,
+          endLocationId: pair.originId,
+          overnightAck: false,
+          relayPairId
         });
+        trackKm(best.car.id, destinationKm(input, pair.destinationId) * 2);
+        progress = true;
+        placed.push({ kind: "pair", pair, outNr, retNr, carId: best.car.id });
+        continue;
       }
-      placed.push({ kind: "series", series: su, carId: car.id, firstWindow: placement.firstWindow, lastWindow: placement.lastWindow });
-      continue;
+      if (unit.kind === "series" && unit.series) {
+        const su = unit.series;
+        const legs = su.legs;
+        let best = null;
+        for (const car2 of sharedCars) {
+          if (!legs.every((leg) => fits(car2, leg.passengers) && luggageFits(car2, leg.luggage ? 1 : 0))) continue;
+          const tl2 = timelines.get(car2.id);
+          if (!tl2) continue;
+          const placement2 = trySeriesOnCar(tl2, legs, su.seriesCount);
+          if (!placement2) continue;
+          const slackVal = legs.reduce((max, leg) => Math.max(max, slack(car2, leg.passengers) ?? Number.POSITIVE_INFINITY), 0);
+          const continuity = legs.reduce(
+            (min, leg) => Math.min(min, continuityRank(car2.id, leg.requestId, leg.request.memberId, input)),
+            2
+          );
+          const fragmentation = fragmentationFor(tl2, { start: placement2.firstWindow.start, end: placement2.lastWindow.end });
+          const preference = carPreferenceRank(car2.id, legs.map((leg) => leg.request.preferredCarId));
+          const key = { shiftCost: placement2.shiftCost, preference, slackVal, continuity, fragmentation, mileageVal: 0, carId: car2.id };
+          if (!best || compareKey(key, best.key, carChoice) < 0) best = { car: car2, placement: placement2, key };
+        }
+        if (!best || !best.placement) {
+          stillUnmet.push(unit);
+          continue;
+        }
+        const { car, placement } = best;
+        const tl = timelines.get(car.id);
+        for (const leg of legs) {
+          const window = seriesLegWindow(leg, legs, placement);
+          tl?.add({
+            rideId: `ride:${leg.requestId}`,
+            window,
+            startLocationId: leg.originId,
+            endLocationId: leg.destinationId,
+            // A series leg legitimately leaves the car away overnight at the
+            // destination between legs — never a day-end violation.
+            overnightAck: true,
+            seriesId: su.seriesId
+          });
+        }
+        progress = true;
+        placed.push({ kind: "series", series: su, carId: car.id, firstWindow: placement.firstWindow, lastWindow: placement.lastWindow });
+        continue;
+      }
+      stillUnmet.push(unit);
     }
-    unmetUnits.push(unit);
+    pending = stillUnmet;
+    if (!progress) {
+      unmetUnits.push(...stillUnmet);
+      break;
+    }
   }
   return { placed, unmetUnits };
 }
@@ -2829,6 +2842,7 @@ function shiftBeyondFlexSuggestion(nr, ctx) {
     if (!best || placement.cost < best.placement.cost) best = { car, placement };
   }
   if (!best) return null;
+  if (best.placement.shift.departureMin === 0 && best.placement.shift.returnMin === 0) return null;
   return {
     kind: "shiftBeyondFlex",
     requestId: nr.id,

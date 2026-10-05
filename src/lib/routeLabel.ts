@@ -13,6 +13,14 @@ export interface RouteLabelInput {
   stops?: readonly string[];
 }
 
+/** "דרך: פתח תקווה, תל אביב" (+ " · חזרה דרך: …") — the stops a ride passes, by name; '' when none. */
+export function viaLabel(via: { out: readonly string[]; return: readonly string[] }): string {
+  const parts: string[] = [];
+  if (via.out.length) parts.push(tv("route.viaStops", { stops: via.out.join(", ") }));
+  if (via.return.length) parts.push(tv("route.viaStopsReturn", { stops: via.return.join(", ") }));
+  return parts.join(" · ");
+}
+
 export function routeLabel({ destination, origin, originIsHome, stops = [] }: RouteLabelInput): string {
   const named = stops.filter((stop) => stop.trim() !== "");
   const showOrigin = !originIsHome && !!origin?.trim();

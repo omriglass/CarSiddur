@@ -58,6 +58,21 @@ export function parseRideRoute(raw: unknown): RoutePoint[] {
     .sort((a, b) => (a.leg === b.leg ? a.position - b.position : a.leg === "out" ? -1 : 1));
 }
 
+/**
+ * The places a ride passes through between its start and its destination, per leg, in route order
+ * (stops, boarding and alighting points; consecutive repeats collapsed) — the board/siddur card's
+ * "דרך: …" line (owner 2026-10-05: show the stops, not a count).
+ */
+export function routeViaNames(points: readonly Pick<RoutePoint, "leg" | "kind" | "name">[]): { out: string[]; return: string[] } {
+  const via = { out: [] as string[], return: [] as string[] };
+  for (const point of points) {
+    if (point.kind === "origin" || point.kind === "destination" || !point.name) continue;
+    const list = via[point.leg];
+    if (list[list.length - 1] !== point.name) list.push(point.name);
+  }
+  return via;
+}
+
 /** `true` when a route has anything between the first and last place of a leg (stops, boarding, alighting). */
 export function routeHasIntermediates(points: readonly Pick<RoutePoint, "kind">[]): boolean {
   return points.some((p) => p.kind === "stop" || p.kind === "board" || p.kind === "alight");

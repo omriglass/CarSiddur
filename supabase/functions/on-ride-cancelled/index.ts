@@ -207,7 +207,7 @@ Deno.serve(async (req) => {
     .maybeSingle();
   const freedLocationId = (cancelledRide?.origin_id as string | undefined) ?? (cancelledRide?.destination_id as string | undefined);
 
-  // Pre-filtered candidates (round trip, same dept/week, waitlisted/denied, not opted out,
+  // Pre-filtered candidates (round trip, same dept/week, waitlisted/denied/external, not opted out,
   // window overlaps the freed slot, fits the car) — DATA_MODEL.md §7.2.
   const { data: candidateRows, error: candidatesError } = await client.rpc('freed_slot_candidates', {
     _offer: offer.id,
@@ -342,13 +342,13 @@ Deno.serve(async (req) => {
     .in('requester_id', memberIds)
     .gte('week_start', lookbackStart.toISOString().slice(0, 10))
     .lt('week_start', offer.week_start)
-    .in('status', ['assigned', 'merged', 'denied', 'waitlisted']);
+    .in('status', ['assigned', 'merged', 'denied', 'external', 'waitlisted']);
 
   const fairness: SolverStats['fairness'] = {};
   for (const memberId of memberIds) {
     const rows = (history ?? []).filter((h) => h.requester_id === memberId);
     const served = rows.filter((h) => h.status === 'assigned' || h.status === 'merged').length;
-    const unmet = rows.filter((h) => h.status === 'denied' || h.status === 'waitlisted').length;
+    const unmet = rows.filter((h) => h.status === 'denied' || h.status === 'external' || h.status === 'waitlisted').length;
     fairness[memberId] = { deficit: served + unmet > 0 ? unmet / (served + unmet) : 0.5 };
   }
   const stats: SolverStats = { fairness, usualCarId: {} };

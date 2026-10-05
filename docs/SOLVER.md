@@ -425,6 +425,10 @@ When `mileageVal` genuinely was the deciding factor — every earlier key field 
 
 When no car in the input carries `mileageKm` (the common case until `car_mileage_totals` is wired up for a department, or any input built without it), `mileageVal` is `0` for every car and the key behaves exactly as it did before this field existed — golden fixtures are unaffected. The owner's decision (A12, 2026-09-14): this is a visible reason only, never a coercion — moving a mileage-balanced ride to a different car on the board triggers no extra confirmation.
 
+#### 3.6.3 Retry passes (2026-10-05)
+
+A placement can change where a car is (a `one_way` / relay leg, a chauffeur ride, a fixed-ride chain), which makes a request that starts at that place placeable although it was tried — and failed — earlier. After the first ordered pass, `runGreedy` therefore re-runs the still-unmet units in the same `(−score, submittedAtMs, id)` order with the same placement routines, repeating until a pass places nothing new (every non-final pass places at least one unit, so at most `units.length` passes). The location chain, end check, buffer, seat and luggage rules are unchanged; automatic placement keeps the full turnaround (a 15-minute gap after a one-way arrival stays unmet). Because retries run before suggestions, a request placeable at its own window is never reported unmet, and `shiftBeyondFlex` never emits a 0-minute shift. Test: `__tests__/retryPasses.test.ts`.
+
 ### 3.7 Flexibility search (`flex.ts`)
 
 ```ts

@@ -160,6 +160,9 @@ export const he = {
     fromTo: "מ{{origin}} ל{{destination}}",
     via: "מ{{origin}} דרך {{stops}} ל{{destination}}",
     toVia: "דרך {{stops}} ל{{destination}}",
+    /** Ride card line (board + siddur): the stops by name instead of a count (owner 2026-10-05). */
+    viaStops: "דרך: {{stops}}",
+    viaStopsReturn: "חזרה דרך: {{stops}}",
   },
   rideCoordination: {
     cancelHelp: "הבקשה שלך תבוטל. אם נהגת עבור נוסעים נוספים, הנסיעה שלהם תישאר בסידור ותסומן כחסרת נהג/ת עד שמישהו יתנדב. ביטול של נוסע/ת אינו מבטל את נסיעת האחרים.",

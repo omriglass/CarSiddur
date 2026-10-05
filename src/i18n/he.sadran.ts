@@ -136,7 +136,6 @@ export const heSadran = {
     /** REQUIREMENTS §13.93: a free-text origin — never placed automatically (solver reason `UNMET_FREE_TEXT_ORIGIN`). */
     unmetFreeTextOrigin: "נקודת יציאה בטקסט חופשי: {{place}} — לא ישובץ אוטומטית",
     /** REQUIREMENTS §13.93 "Multi-stop rides" Display: a ride block/unmet card's own stop count, shown only when > 0. */
-    stopCount: "· {{count}} עצירות",
     /** REQUIREMENTS §13.93 "Multi-stop rides" §6.3 "Joining at a stop": a merge suggestion that boards the guest at a stop, not the host's own origin. */
     mergeBoardAt: "עולה ב{{place}}",
     scoreLabel: "ניקוד",
@@ -398,6 +397,8 @@ export const heSadran = {
     stayed: "סוג הנסיעה של {{name}} שונה והבקשה נשארה על הרכב",
     unplaced: "סוג הנסיעה של {{name}} שונה והבקשה חזרה לרשימת הלא-משובצים",
     returnRestored: "שעת החזרה {{time}} שוחזרה",
+    /** REQ §13.98: no known return — set ~2 hours after arrival, flexible all day. */
+    returnDefaulted: "שעת החזרה נקבעה ל-{{time}} (גמישות מלאה בחזרה — אפשר להזיז בלי לשאול)",
   },
   /** REQ §13.94 (G8): the ride sheet's "מסלול" section. */
   rideRouteEdit: {

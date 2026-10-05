@@ -360,12 +360,19 @@ export function runGreedy(
   // absent policy.carChoice = 'spread' (today's behavior, unchanged).
   const carChoice: CarChoiceMode = input.policy.carChoice ?? 'spread';
 
-  for (const unit of sortUnits(units)) {
+  // Retry passes (docs/SOLVER.md §3.6.3): a placement that moves a car (one_way/relay leg, chauffeur)
+  // can unlock a request starting at the new place, so unmet units are retried in the same priority
+  // order until a pass places nothing new (each pass places >= 1 unit, so <= units.length passes).
+  let pending = sortUnits(units);
+  while (pending.length > 0) {
+  const stillUnmet: Unit[] = [];
+  let progress = false;
+  for (const unit of pending) {
     if (unit.kind === 'single' && unit.single) {
       const nr = unit.single;
       const leg = nr.legs[0];
       if (!leg) {
-        unmetUnits.push(unit);
+        stillUnmet.push(unit);
         continue;
       }
       let best: { car: Car; window: Window; shift: { departureMin: number; returnMin: number }; key: CarKey } | null =
@@ -429,7 +436,7 @@ export function runGreedy(
       }
 
       if (!best) {
-        unmetUnits.push(unit);
+        stillUnmet.push(unit);
         continue;
       }
       const tl = timelines.get(best.car.id);
@@ -443,6 +450,7 @@ export function runGreedy(
       // F5 (docs/SOLVER.md §3.6.2): a round trip counts 2x its destination's
       // distance toward this car's running in-solve total.
       trackKm(best.car.id, destinationKm(input, nr.destinationId) * 2);
+      progress = true;
       placed.push({
         kind: 'single',
         nr,
@@ -499,7 +507,7 @@ export function runGreedy(
         if (!best || compareKey(key, best.key, carChoice) < 0) best = { car, key };
       }
       if (!best) {
-        unmetUnits.push(unit);
+        stillUnmet.push(unit);
         continue;
       }
       const tl = timelines.get(best.car.id);
@@ -525,6 +533,7 @@ export function runGreedy(
       // the same place would — so a later single request's mileage
       // tie-break sees it too.
       trackKm(best.car.id, destinationKm(input, pair.destinationId) * 2);
+      progress = true;
       placed.push({ kind: 'pair', pair, outNr, retNr, carId: best.car.id });
       continue;
     }
@@ -553,7 +562,7 @@ export function runGreedy(
         if (!best || compareKey(key, best.key, carChoice) < 0) best = { car, placement, key };
       }
       if (!best || !best.placement) {
-        unmetUnits.push(unit);
+        stillUnmet.push(unit);
         continue;
       }
       const { car, placement } = best;
@@ -580,11 +589,18 @@ export function runGreedy(
       // feature's v1 scope does not need (series placement is all-or-nothing
       // on one car already, §3.16, so there is nothing here for the mileage
       // tie-break to decide between).
+      progress = true;
       placed.push({ kind: 'series', series: su, carId: car.id, firstWindow: placement.firstWindow, lastWindow: placement.lastWindow });
       continue;
     }
 
-    unmetUnits.push(unit);
+    stillUnmet.push(unit);
+  }
+  pending = stillUnmet;
+  if (!progress) {
+    unmetUnits.push(...stillUnmet);
+    break;
+  }
   }
 
   return { placed, unmetUnits };

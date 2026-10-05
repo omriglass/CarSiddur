@@ -40,9 +40,12 @@ export function TripTypeChange({ requestId, version, tripType, name, departmentI
         onSuccess: (result) => {
           if (!result.changed) return;
           const base = tv(result.rideId ? "tripTypeChange.stayed" : "tripTypeChange.unplaced", { name });
-          toast.success(result.restoredReturnAt
-            ? `${base} · ${tv("tripTypeChange.returnRestored", { time: formatTime(new Date(result.restoredReturnAt)) })}`
-            : base);
+          const detail = result.restoredReturnAt
+            ? tv("tripTypeChange.returnRestored", { time: formatTime(new Date(result.restoredReturnAt)) })
+            : result.defaultedReturnAt
+              ? tv("tripTypeChange.returnDefaulted", { time: formatTime(new Date(result.defaultedReturnAt)) })
+              : "";
+          toast.success(detail ? `${base} · ${detail}` : base);
         },
       },
     );

@@ -14,7 +14,8 @@ import { groupSeries } from "./series";
 /** Mirrors `freed_slot_candidates()`'s own `status in ('waitlisted','denied')` filter
  * (supabase/migrations/20260907091100_freed_slots.sql) — only these statuses are ever
  * eligible to be offered a freed slot, so the opt-out toggle is only meaningful here. */
-export const FREED_SLOT_ELIGIBLE_STATUSES = new Set<MyRequestRow["status"]>(["waitlisted", "denied"]);
+// "external" (solved outside — public transport, cab) is treated like "denied" (owner 2026-10-05).
+export const FREED_SLOT_ELIGIBLE_STATUSES = new Set<MyRequestRow["status"]>(["waitlisted", "denied", "external"]);
 
 /** "הפוך/י לחוזר" is only meaningful once the request is a real, still-relevant filing —
  * mirrors the statuses a repeating request could plausibly resubmit as (REQ §76). */
