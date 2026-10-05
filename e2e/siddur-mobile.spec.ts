@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
 import { he } from "../src/i18n/he";
 import { getWeekStart, NEVO_DEPARTMENT_ID, SEEDED_USERS, serviceRoleClient, signIn } from "./helpers";
 import { paths } from "../src/app/routes";
@@ -66,11 +67,15 @@ test.describe("siddur mobile header", { tag: ["@siddur"] }, () => {
     const { data: sharedCars } = await service.from("cars").select("id").eq("department_id", NEVO_DEPARTMENT_ID).eq("type", "shared").eq("status", "active");
     const carIds = (sharedCars ?? []).map((c) => c.id);
     expect(carIds.length).toBeGreaterThan(0);
-    const now = new Date();
-    // `rides.starts_at`/`ends_at` must land on a quarter-hour (`rides_ends_qh_ck`).
-    const roundToQuarterHour = (ms: number) => Math.round(ms / 900_000) * 900_000;
-    const blockStart = new Date(roundToQuarterHour(now.getTime() - 2 * 3600_000)).toISOString();
-    const blockEnd = new Date(roundToQuarterHour(now.getTime() + 2 * 3600_000)).toISOString();
+    // Car-now only counts free time inside the department's day window (from 06:00), so a
+    // wall-clock run at night never sees a free car (found 2026-10-05 00:58; the nightly CI e2e
+    // runs at 03:00). Freeze the page's clock to midday today — same technique as
+    // quick-request.spec.ts — and block the cars around that instant.
+    const todayKey = formatInTimeZone(new Date(), "Asia/Jerusalem", "yyyy-MM-dd");
+    const now = fromZonedTime(`${todayKey} 12:00:00`, "Asia/Jerusalem");
+    await page.clock.setFixedTime(now);
+    const blockStart = new Date(now.getTime() - 2 * 3600_000).toISOString();
+    const blockEnd = new Date(now.getTime() + 2 * 3600_000).toISOString();
     // The seed puts real rides on the live week relative to `now()`; whenever one of them
     // overlaps the ±2h block (plus the 30-minute turnaround) the insert below hits the
     // `ride_turnaround_conflict` guard — a time-of-day failure (2026-09-15, 09:50 run). Park

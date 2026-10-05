@@ -64,7 +64,14 @@ export function QuickRequestSheet({
 }: QuickRequestSheetProps) {
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <PortalSheetContent side="bottom" className="max-h-[85dvh] overflow-y-auto overscroll-contain">
+      {/* The destination combobox opens itself on mount (UX_FLOWS §18); the sheet's own
+          open-auto-focus would move focus to its first tabbable element — since REQ §13.93
+          that is the origin line's button — and close the destination popover again. */}
+      <PortalSheetContent
+        side="bottom"
+        className="max-h-[85dvh] overflow-y-auto overscroll-contain"
+        onOpenAutoFocus={(event) => event.preventDefault()}
+      >
         <SheetHeader className="sr-only">
           <SheetTitle>{he.quickRequest.submit}</SheetTitle>
         </SheetHeader>

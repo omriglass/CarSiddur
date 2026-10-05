@@ -20,6 +20,12 @@ export const sadranKeys = {
   /** F5 (docs/SOLVER.md §3.6.2): `car_mileage_totals()`, rolling window fixed at 4 weeks. */
   mileageTotals: (departmentId: string, weekStart: string) =>
     [...sadranKeys.week(departmentId, weekStart), "mileageTotals"] as const,
+  /** REQUIREMENTS §13.93 (ORIGINS_PLAN §2 item 7): `car_start_locations()`. */
+  carStartLocations: (departmentId: string, weekStart: string) =>
+    [...sadranKeys.week(departmentId, weekStart), "carStartLocations"] as const,
+  /** REQUIREMENTS §13.93 (ORIGINS_PLAN §2 item 6): `place_travel_for_week()`. */
+  placeTravel: (departmentId: string, weekStart: string) =>
+    [...sadranKeys.week(departmentId, weekStart), "placeTravel"] as const,
   rideTypes: () => [...sadranKeys.all, "rideTypes"] as const,
   departmentSettings: (departmentId: string) => [...sadranKeys.all, departmentId, "settings"] as const,
   activePolicy: (departmentId: string) => [...sadranKeys.all, departmentId, "activePolicy"] as const,

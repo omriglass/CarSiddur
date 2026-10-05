@@ -72,6 +72,7 @@ export function DepartmentForm({ department, onSaved, settingsOnly = false }: { 
           auto_apply_accepted_proposals: settingsQuery.data.auto_apply_accepted_proposals,
           board_start_time: settingsQuery.data.board_start_time,
           join_radius_km: settingsQuery.data.join_radius_km,
+          stop_minutes: settingsQuery.data.stop_minutes,
         }
       : undefined,
   });
@@ -423,6 +424,25 @@ export function DepartmentForm({ department, onSaved, settingsOnly = false }: { 
                       />
                     </FormControl>
                     <p className="text-sm text-muted-foreground">{he.adminDepartments.fieldJoinRadiusKmHelp}</p>
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={settingsForm.control}
+                name="stop_minutes"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{he.adminDepartments.fieldStopMinutes}</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="number"
+                        min={0}
+                        max={60}
+                        value={field.value}
+                        onChange={(e) => field.onChange(Number(e.target.value))}
+                      />
+                    </FormControl>
+                    <p className="text-sm text-muted-foreground">{he.adminDepartments.fieldStopMinutesHelp}</p>
                   </FormItem>
                 )}
               />

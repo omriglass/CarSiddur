@@ -120,4 +120,73 @@ describe('CarTimeline', () => {
       expect(tl.dayEndViolations(days)).toEqual([]);
     });
   });
+
+  describe('isFree end-check (REQUIREMENTS §13.93)', () => {
+    it('rejects a candidate that would leave the car away from an already-scheduled later block', () => {
+      const tl = bufferedTl(2);
+      // A later block already expects the car at HOME when it starts.
+      tl.add({ rideId: 'later', window: { start: 40, end: 50 }, startLocationId: HOME, endLocationId: HOME, overnightAck: false });
+      // A one-way candidate [10,20) HOME -> X would strand that later block.
+      expect(tl.isFree({ start: 10, end: 20 }, HOME, undefined, 'X')).toBe(false);
+      // Without the endLocationId check it would have been free (no overlap).
+      expect(tl.isFree({ start: 10, end: 20 }, HOME)).toBe(true);
+    });
+
+    it('accepts a one-way candidate when the next block already starts at the same place it is left', () => {
+      const tl = bufferedTl(2);
+      tl.forceAdd({ rideId: 'later', window: { start: 40, end: 50 }, startLocationId: 'X', endLocationId: 'X', overnightAck: false });
+      expect(tl.isFree({ start: 10, end: 20 }, HOME, undefined, 'X')).toBe(true);
+    });
+
+    it('accepts a one-way candidate with no later block at all', () => {
+      const tl = bufferedTl(2);
+      expect(tl.isFree({ start: 10, end: 20 }, HOME, undefined, 'X')).toBe(true);
+    });
+
+    it('is a no-op when endLocationId equals originId (keep/chauffeur legs)', () => {
+      const tl = bufferedTl(2);
+      tl.forceAdd({ rideId: 'later', window: { start: 40, end: 50 }, startLocationId: 'X', endLocationId: 'X', overnightAck: false });
+      expect(tl.isFree({ start: 10, end: 20 }, HOME, undefined, HOME)).toBe(true);
+    });
+  });
+
+  describe('chainBreaks() and weekEndAway() (REQUIREMENTS §13.93)', () => {
+    it('forceAdd records a chain break instead of throwing when a fixed ride starts where the car is not', () => {
+      const tl = bufferedTl(2);
+      tl.add({ rideId: 'out', window: { start: 10, end: 20 }, startLocationId: HOME, endLocationId: 'X', overnightAck: false });
+      // The car is at X after `out`, but this fixed ride claims to start at HOME.
+      tl.forceAdd({ rideId: 'fixed1', window: { start: 40, end: 50 }, startLocationId: HOME, endLocationId: HOME, overnightAck: false });
+      expect(tl.chainBreaks()).toEqual([{ rideId: 'fixed1', expectedLocationId: 'X', actualLocationId: HOME }]);
+    });
+
+    it('chainBreaks() is empty when every fixed ride chains correctly', () => {
+      const tl = bufferedTl(2);
+      tl.add({ rideId: 'out', window: { start: 10, end: 20 }, startLocationId: HOME, endLocationId: 'X', overnightAck: false });
+      tl.forceAdd({ rideId: 'fixed1', window: { start: 40, end: 50 }, startLocationId: 'X', endLocationId: 'X', overnightAck: false });
+      expect(tl.chainBreaks()).toEqual([]);
+    });
+
+    it('weekEndAway() reports the car away from its base at the end of the week', () => {
+      const tl = new CarTimeline(makeCar('C1', { baseLocationId: HOME }), 2, WEEK_SLOTS, HOME);
+      tl.add({ rideId: 'out', window: { start: 10, end: 20 }, startLocationId: HOME, endLocationId: 'X', overnightAck: false });
+      expect(tl.weekEndAway()).toEqual({ locationId: 'X' });
+    });
+
+    it('weekEndAway() is null when the car ends the week at its base (home default)', () => {
+      const tl = bufferedTl(2);
+      tl.add({ rideId: 'out', window: { start: 10, end: 20 }, startLocationId: HOME, endLocationId: 'X', overnightAck: false });
+      tl.add({ rideId: 'back', window: { start: 40, end: 50 }, startLocationId: 'X', endLocationId: HOME, overnightAck: false });
+      expect(tl.weekEndAway()).toBeNull();
+    });
+
+    it('weekEndAway() honors a non-home base location: a car based in Haifa that never left the department home is "away" from its own base', () => {
+      const tl = new CarTimeline(makeCar('C1', { baseLocationId: 'HAIFA' }), 2, WEEK_SLOTS, HOME);
+      expect(tl.weekEndAway()).toEqual({ locationId: HOME });
+    });
+
+    it('weekEndAway() is null for a Haifa-based car that starts and ends the week in Haifa', () => {
+      const tl = new CarTimeline(makeCar('C1', { baseLocationId: 'HAIFA', startLocationId: 'HAIFA' }), 2, WEEK_SLOTS, HOME);
+      expect(tl.weekEndAway()).toBeNull();
+    });
+  });
 });

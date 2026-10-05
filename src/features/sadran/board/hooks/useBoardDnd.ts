@@ -108,7 +108,7 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
   function goToComposer(prefill: {
     requestId: string;
     rideId: string | null;
-    type: "shift" | "merge" | "deny" | "external";
+    type: "shift" | "merge" | "deny" | "external" | "origin";
     payload: Record<string, unknown>;
     proposalId?: string;
   }) {
@@ -423,6 +423,12 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
         return;
       case "deny":
         goToComposer({ requestId: item.request.id, rideId: null, type: "deny", payload: {} });
+        return;
+      case "changeOrigin":
+        // REQUIREMENTS §13.93 (ORIGINS_PLAN §3 "O4b"): the solver's "car free at a different
+        // place" suggestion becomes an `origin` proposal — same send-from-the-board path as
+        // every other suggestion kind (SOLVER §3.15).
+        goToComposer({ requestId: item.request.id, rideId: null, type: "origin", payload: { origin_id: suggestion.originId, car_id: suggestion.carId } });
         return;
       default:
         return;

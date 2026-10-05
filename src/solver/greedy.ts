@@ -378,7 +378,7 @@ export function runGreedy(
         if (!fits(car, nr.passengers) || !luggageFits(car, nr.luggage ? 1 : 0)) continue;
         const tl = timelines.get(car.id);
         if (!tl) continue;
-        if (withinRequestDay(nr, nr.window) && tl.isFree(nr.window, leg.originId)) {
+        if (withinRequestDay(nr, nr.window) && tl.isFree(nr.window, leg.originId, undefined, leg.destinationId)) {
           const key: CarKey = {
             shiftCost: 0,
             preference: carPreferenceRank(car.id, [nr.request.preferredCarId]),
@@ -404,6 +404,12 @@ export function runGreedy(
           if (!tl) continue;
           const placement = bestPlacementWithinFlex(tl, nr);
           if (!placement) continue;
+          // REQUIREMENTS §13.93: a leg that would leave the car somewhere other
+          // than where it started (today, only a one_way/relay leg) must still
+          // pass the end-check — `bestPlacementWithinFlex` only bounds the
+          // candidate inside a free gap, it does not look at what follows it.
+          // A no-op re-check for any 'both'/keep leg (originId === destinationId).
+          if (!tl.isFree(placement.window, leg.originId, undefined, leg.destinationId)) continue;
           const key: CarKey = {
             shiftCost: placement.cost,
             preference: carPreferenceRank(car.id, [nr.request.preferredCarId]),
@@ -456,7 +462,7 @@ export function runGreedy(
         const tl = timelines.get(car.id);
         if (!tl) continue;
         if (pair.outWindow.end > pair.returnWindow.start) continue;
-        if (!tl.isFree(pair.outWindow, input.homeLocationId)) continue;
+        if (!tl.isFree(pair.outWindow, pair.originId, undefined, pair.destinationId)) continue;
         // isFree of the back-leg is evaluated on the timeline *after* the out-leg
         // block is added (SOLVER §3.6) — the car is then at destination, so try
         // it tentatively and roll back if the return leg does not fit.
@@ -467,12 +473,12 @@ export function runGreedy(
         tl.add({
           rideId: outRideId,
           window: pair.outWindow,
-          startLocationId: input.homeLocationId,
+          startLocationId: pair.originId,
           endLocationId: pair.destinationId,
           overnightAck: false,
           relayPairId,
         });
-        const returnOk = tl.isFree(pair.returnWindow, pair.destinationId, relayPairId);
+        const returnOk = tl.isFree(pair.returnWindow, pair.destinationId, relayPairId, pair.originId);
         tl.remove(outRideId);
         if (!returnOk) continue;
 
@@ -500,7 +506,7 @@ export function runGreedy(
       tl?.add({
         rideId: `ride:${outNr.id}`,
         window: pair.outWindow,
-        startLocationId: input.homeLocationId,
+        startLocationId: pair.originId,
         endLocationId: pair.destinationId,
         overnightAck: false,
         relayPairId,
@@ -509,7 +515,7 @@ export function runGreedy(
         rideId: `ride:${retNr.id}`,
         window: pair.returnWindow,
         startLocationId: pair.destinationId,
-        endLocationId: input.homeLocationId,
+        endLocationId: pair.originId,
         overnightAck: false,
         relayPairId,
       });
@@ -594,6 +600,16 @@ export function toAssignments(placed: Placed[], input: SolverInput, carsById: Ma
     if (p.kind === 'single') {
       const { nr, carId, window, shift } = p;
       const car = carsById.get(carId);
+      const leg = nr.legs[0];
+      // REQUIREMENTS §13.93: a `one_way` single unit keeps its own 'out'/relay
+      // leg shape all the way to the Assignment (the car ends at the
+      // destination, no obligation to bring it back); every other single unit
+      // (round_trip, and drop_off's round-trip-shaped 'keep' fallback) is a
+      // `both`/keep ride that starts and ends at the request's own origin
+      // (REQUIREMENTS §13.93 generalizes "home" to "origin" here).
+      const isOneWay = nr.tripType === 'one_way';
+      const legOriginId = leg?.originId ?? input.homeLocationId;
+      const legDestinationId = leg?.destinationId ?? input.homeLocationId;
       // REQUIREMENTS §13.88: a non-driver is never given a driver role — this
       // round trip is placed exactly like any other `keep` ride, but driverless
       // (the requester's own leg is `role: 'passenger'`); overrides the ordinary
@@ -620,17 +636,17 @@ export function toAssignments(placed: Placed[], input: SolverInput, carsById: Ma
         rideId: `ride:${nr.id}`,
         carId,
         window,
-        originId: input.homeLocationId,
-        destinationId: input.homeLocationId,
+        originId: legOriginId,
+        destinationId: isOneWay ? legDestinationId : legOriginId,
         driverRequestId: canDrive ? nr.id : undefined,
         driverMemberId: canDrive ? nr.request.memberId : undefined,
         legs: [
           {
             requestId: nr.id,
-            leg: 'both',
-            carMode: 'keep',
-            originId: input.homeLocationId,
-            destinationId: nr.destinationId,
+            leg: isOneWay ? 'out' : 'both',
+            carMode: isOneWay ? 'relay' : 'keep',
+            originId: legOriginId,
+            destinationId: isOneWay ? legDestinationId : nr.destinationId,
             role: canDrive ? 'driver' : 'passenger',
           },
         ],
@@ -668,7 +684,7 @@ export function toAssignments(placed: Placed[], input: SolverInput, carsById: Ma
         rideId: outRideId,
         carId,
         window: pair.outWindow,
-        originId: input.homeLocationId,
+        originId: pair.originId,
         destinationId: pair.destinationId,
         driverRequestId: outNr.id,
         driverMemberId: outDriverMemberId,
@@ -677,7 +693,7 @@ export function toAssignments(placed: Placed[], input: SolverInput, carsById: Ma
             requestId: outNr.id,
             leg: 'out',
             carMode: 'relay',
-            originId: input.homeLocationId,
+            originId: pair.originId,
             destinationId: pair.destinationId,
             role: outDriverMemberId === outNr.request.memberId ? 'driver' : 'passenger',
           },
@@ -697,7 +713,7 @@ export function toAssignments(placed: Placed[], input: SolverInput, carsById: Ma
         carId,
         window: pair.returnWindow,
         originId: pair.destinationId,
-        destinationId: input.homeLocationId,
+        destinationId: pair.originId,
         driverRequestId: retNr.id,
         driverMemberId: retDriverMemberId,
         legs: [
@@ -706,7 +722,7 @@ export function toAssignments(placed: Placed[], input: SolverInput, carsById: Ma
             leg: 'return',
             carMode: 'relay',
             originId: pair.destinationId,
-            destinationId: input.homeLocationId,
+            destinationId: pair.originId,
             role: retDriverMemberId === retNr.request.memberId ? 'driver' : 'passenger',
           },
         ],

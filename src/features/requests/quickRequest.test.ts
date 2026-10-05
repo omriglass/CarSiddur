@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { coverNamedPassengers, guestPassengerNames, quickVehicleWindow } from "./quickRequest";
+import { coverNamedPassengers, guestPassengerNames, quickVehicleWindow, resolveQuickOrigin } from "./quickRequest";
 
 describe("quick live requests", () => {
   it("covers the requester and named people without dropping unnamed passengers or existing child seats", () => {
@@ -31,5 +31,41 @@ describe("quick live requests", () => {
     expect(quickVehicleWindow("one_way_from", 0, 0, -30, -10)).toEqual({ startMs: -15 * 60_000, endMs: 0 });
     expect(quickVehicleWindow("one_way_to", 0, 0, 30, -10)).toEqual({ startMs: 0, endMs: 60 * 60_000 });
     expect(quickVehicleWindow("one_way_to", 0, 0, -30, 20)).toEqual({ startMs: 0, endMs: 30 * 60_000 });
+  });
+});
+
+describe("resolveQuickOrigin (REQ §13.93)", () => {
+  const base = { carId: "car-1", atMs: 1000, awayWindows: [], homeId: "home", homeName: "נבו" } as const;
+
+  it("uses an away window covering the slot's start", () => {
+    expect(
+      resolveQuickOrigin({
+        ...base,
+        awayWindows: [{ carId: "car-1", awayFrom: "1970-01-01T00:00:00.500Z", awayUntil: null, locationId: "x", locationName: "כפר סבא" }],
+      }),
+    ).toEqual({ presetId: "x", name: "כפר סבא" });
+  });
+
+  it("ignores an away window for a different car or outside its range", () => {
+    expect(
+      resolveQuickOrigin({
+        ...base,
+        awayWindows: [{ carId: "car-2", awayFrom: "1970-01-01T00:00:00.000Z", awayUntil: null, locationId: "x" }],
+      }),
+    ).toEqual({ presetId: "home", name: "נבו" });
+    expect(
+      resolveQuickOrigin({
+        ...base,
+        awayWindows: [{ carId: "car-1", awayFrom: "1970-01-01T00:00:02.000Z", awayUntil: null, locationId: "x" }],
+      }),
+    ).toEqual({ presetId: "home", name: "נבו" });
+  });
+
+  it("falls back to the car's base location, else home", () => {
+    expect(resolveQuickOrigin({ ...base, baseLocationId: "base-1", baseLocationName: "חדרה" })).toEqual({
+      presetId: "base-1",
+      name: "חדרה",
+    });
+    expect(resolveQuickOrigin(base)).toEqual({ presetId: "home", name: "נבו" });
   });
 });

@@ -23,6 +23,8 @@ const TEMPLATES: Record<string, string> = {
   UNMET_NO_RELAY_PARTNER: 'אין מי שיחזיר/יביא את הרכב מ{dest} באותו יום; הרכב חייב לחזור הביתה עד {dayEnd}',
   UNMET_NEEDS_DRIVER: 'אין נסיעה מתאימה להצטרף אליה; דרוש/ה נהג/ת מתנדב/ת להסעה ל{dest} ב-{dep}',
   UNMET_SERIES_NO_CAR: 'אין רכב פנוי לכל ימי הבקשה הרב-יומית ({index}/{count})',
+  UNMET_NO_CAR_AT_ORIGIN: 'אין רכב פנוי שנמצא ב{origin} כדי לצאת משם ל{dest}',
+  UNMET_FREE_TEXT_ORIGIN: 'נקודת היציאה היא טקסט חופשי ולא מקום מוכר; לא ניתן לשבץ נסיעה ממנה אוטומטית',
 
   // Suggestions
   SUGGEST_SHIFT_WITHIN_FLEX: 'הזזה ל{car} בתוך הגמישות שהוצהרה, ללא צורך בהסכמה נוספת',
@@ -32,6 +34,7 @@ const TEMPLATES: Record<string, string> = {
   SUGGEST_SPLIT_LEGS: 'פיצול הנסיעה: הלוך {outbound} וחזור {return} בנפרד — דורש הסכמה',
   SUGGEST_ROUND_TRIP: 'במקום להשאיר את הרכב ב{dest}: לקחת אותו הלוך ושוב ולחזור ב-{ret} — דורש הסכמה',
   SUGGEST_CHAUFFEUR: 'הסעה: נהג/ת מתנדב/ת מסיע/ה ל{dest} ב-{dep} וחוזר/ת עם הרכב (כ-{minutes} דק׳); הסדרן/ית משבץ/ת נהג/ת',
+  SUGGEST_CHANGE_ORIGIN: 'יש רכב פנוי ב{origin} לאורך כל החלון המבוקש; ניתן להציע יציאה מ{origin} עם {car} — דורש הסכמה',
   SUGGEST_EXTERNAL_CAB: 'ניתן להסתדר במונית לנסיעה זו',
   SUGGEST_EXTERNAL_RENTAL: 'משך הנסיעה ארוך; כדאי לשקול השכרת רכב',
   SUGGEST_EXTERNAL_PT: 'יש תחבורה ציבורית סבירה ל{dest}',
@@ -40,8 +43,11 @@ const TEMPLATES: Record<string, string> = {
   // Normalization warnings (message text; code stays the machine key)
   WARN_TIME_NOT_ALIGNED: 'זמן הבקשה אינו מיושר לרבע שעה',
   WARN_NO_CAR_FITS_SEATS: 'אין רכב פעיל שמתאים למספר הנוסעים המבוקש',
-  WARN_FIXED_RIDE_LOCATION_MISMATCH: 'מיקום הרכב בתחילת הנסיעה הקבועה אינו תואם את מיקומו בפועל',
-  WARN_CAR_AWAY_AT_DAY_END: 'הרכב אינו חוזר הביתה עד סוף היום ולא אושרה השארה למחר',
+  // WARN_FIXED_RIDE_LOCATION_MISMATCH / WARN_CAR_AWAY_AT_DAY_END retired with
+  // the day-end rule (REQUIREMENTS §13.93) — superseded by WARN_CHAIN_BROKEN
+  // (CarTimeline.chainBreaks()) and WARN_CAR_AWAY_AT_WEEK_END below.
+  WARN_CHAIN_BROKEN: 'נסיעה קבועה מתחילה במקום שהרכב אינו נמצא בו בפועל',
+  WARN_CAR_AWAY_AT_WEEK_END: '{car} מסיים/ת את השבוע ב{place} ולא בבסיסו/ה',
   WARN_UNKNOWN_RULE_TYPE: 'סוג כלל מדיניות לא מוכר; הכלל דולג',
 };
 

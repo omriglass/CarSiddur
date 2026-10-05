@@ -9,12 +9,17 @@ export interface DayFreeWindowsCar {
   id: string;
   name: string;
   type: "shared" | "temporary";
+  /** REQ §13.93: `cars.base_location_id` — the quick-request origin fallback when the car is not currently away. */
+  baseLocationId: string | null;
 }
 
 export interface DayFreeWindowsAway {
   carId: string;
   awayFrom: string;
   awayUntil: string | null;
+  /** REQ §13.93: where the car is while away (`v_car_locations.location_id/location_name`) — the quick-request origin. */
+  locationId?: string;
+  locationName?: string;
 }
 
 export interface DayFreeWindowsResult {
@@ -52,6 +57,8 @@ export function useDayFreeWindows(
       carId: l.car_id,
       awayFrom: l.away_from,
       awayUntil: l.away_until,
+      locationId: l.location_id ?? undefined,
+      locationName: l.location_name ?? undefined,
     }));
 
   const freeWindows: CarFreeWindow[] = day
@@ -78,6 +85,6 @@ export function useDayFreeWindows(
     isLoading: carsQuery.isLoading || boardRidesQuery.isLoading || turnaroundQuery.isLoading || maintenanceQuery.isLoading,
     freeWindows,
     awayWindows,
-    cars: sharedCars.map((c) => ({ id: c.id, name: siddurCarName(c), type: c.type })),
+    cars: sharedCars.map((c) => ({ id: c.id, name: siddurCarName(c), type: c.type, baseLocationId: c.base_location_id ?? null })),
   };
 }

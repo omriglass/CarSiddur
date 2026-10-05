@@ -27,6 +27,19 @@ insert into public.weekday_labels (dow, short_he, long_he) values
 on conflict (dow) do nothing;
 
 -- ---------------------------------------------------------------------------
+-- Route connectors (global reference data, not department-scoped): also inserted by the
+-- migration itself (20261004130000) so deployed DBs get them without running this seed;
+-- repeated here for local/e2e resets. `request_route_label()`/`route_label()` (REQ §13.93
+-- "Display") pick one of these to build the `{{route}}` notification var.
+-- ---------------------------------------------------------------------------
+insert into public.text_fragments (key, body) values
+  ('route.to', 'ל{{destination}}'),
+  ('route.from_to', 'מ{{origin}} ל{{destination}}'),
+  ('route.via', 'מ{{origin}} דרך {{stops}} ל{{destination}}'),
+  ('route.to_via', 'דרך {{stops}} ל{{destination}}')
+on conflict (key) do nothing;
+
+-- ---------------------------------------------------------------------------
 -- Department "נבו" + home destination + 9 more destinations
 -- ---------------------------------------------------------------------------
 insert into public.departments (id, name, slug)
@@ -209,15 +222,15 @@ from (values
   ('outcome_changed', 'שינוי בסידור שלך לימים {{days}}', '{{diffLine}}'),
   ('proposal_received', 'הצעה מ{{sadranName}} לגבי {{destination}}', 'יום {{day}} {{depart}}–{{return}} — {{proposalShort}}'),
   ('proposal_answered', '{{firstName}} ענה/תה על ההצעה', '{{destination}}, יום {{day}} {{depart}}–{{return}}'),
-  ('freed_slot', 'התפנה רכב ל{{destination}}', '{{car}}, יום {{day}} {{depart}}–{{return}}.'),
-  ('freed_slot_auto', 'שובצת לרכב שהתפנה', '{{car}}, יום {{day}} {{depart}}–{{return}} ל{{destination}}.'),
+  ('freed_slot', 'התפנה רכב {{route}}', '{{car}}, יום {{day}} {{depart}}–{{return}}.'),
+  ('freed_slot_auto', 'שובצת לרכב שהתפנה', '{{car}}, יום {{day}} {{depart}}–{{return}} {{route}}.'),
   ('claim_approved', 'הרכב שלך 🎉', 'הסדרן/ית אישר/ה: {{car}}, יום {{day}} {{depart}}–{{return}}.'),
-  ('claim_declined', 'הרכב שהתפנה נמסר לאחר/ת', 'הבקשה ל{{destination}} נשארת ברשימת ההמתנה.'),
+  ('claim_declined', 'הרכב שהתפנה נמסר לאחר/ת', 'הבקשה {{route}} נשארת ברשימת ההמתנה.'),
   ('claim_contested', '{{count}} חברים מבקשים את הרכב שהתפנה', '{{car}}, יום {{day}} {{depart}}–{{return}}.'),
-  ('maintenance_affects', '{{car}} נכנס/ת לטיפול', 'הנסיעה שלך ל{{destination}} ביום {{day}} תשובץ מחדש; נעדכן בהקדם.'),
+  ('maintenance_affects', '{{car}} נכנס/ת לטיפול', 'הנסיעה שלך {{route}} ביום {{day}} תשובץ מחדש; נעדכן בהקדם.'),
   ('late_request', 'בקשה מאוחרת מ{{firstName}}', '{{destination}}, יום {{day}} {{depart}}–{{return}} — התקבלה אחרי סגירת החלון.'),
   ('waitlisted_request', 'בקשה חדשה מ{{firstName}} ללא רכב פנוי', '{{destination}}, יום {{day}} {{depart}}–{{return}}.'),
-  ('auto_approved', 'הבקשה אושרה אוטומטית', '{{car}}, יום {{day}} {{depart}}–{{return}} ל{{destination}}.'),
+  ('auto_approved', 'הבקשה אושרה אוטומטית', '{{car}}, יום {{day}} {{depart}}–{{return}} {{route}}.'),
   ('request_changed', '{{firstName}} שינה/תה בקשה', '{{destination}}, יום {{day}} — {{diffLine}}'),
   ('access_request', 'בקשת גישה חדשה', '{{email}} מבקש/ת להצטרף.'),
   ('access_approved', 'הגישה שלך אושרה', 'אפשר להיכנס לסידור הרכב של נבו.')
@@ -286,29 +299,29 @@ insert into public.notification_templates (event, channel, variant, title, body,
 select event, channel, variant, null, body, null, body from (values
   ('proposal_received'::public.notification_event, 'whatsapp'::public.notification_channel, 'shift',
     'היי {{firstName}}, זה/זו {{sadranName}} מסידור הרכב 🚗' || chr(10) ||
-    'ביקשת רכב ל{{destination}} ביום {{day}}, {{depart}}–{{return}}.' || chr(10) ||
+    'ביקשת רכב {{route}} ביום {{day}}, {{depart}}–{{return}}.' || chr(10) ||
     'בשעות האלה אין רכב פנוי, אבל יש רכב אם יוצאים {{newDepart}} וחוזרים {{newReturn}}.' || chr(10) ||
     'מתאים? אפשר לאשר או לדחות כאן:' || chr(10) || '{{link}}'),
   ('proposal_received', 'whatsapp', 'merge_passenger',
     'היי {{firstName}}, זה/זו {{sadranName}} מסידור הרכב 🚗' || chr(10) ||
-    'ביקשת רכב ל{{destination}} ביום {{day}}.' || chr(10) ||
+    'ביקשת רכב {{route}} ביום {{day}}.' || chr(10) ||
     '{{driverName}} נוסע/ת לשם באותו יום — יציאה {{newDepart}}, חזרה {{newReturn}} — ויש מקום ברכב.' || chr(10) ||
     'להצטרף לנסיעה כנוסע/ת? כך משתחרר רכב לחבר/ה אחר/ת.' || chr(10) ||
     'תשובה כאן:' || chr(10) || '{{link}}'),
   ('proposal_received', 'whatsapp', 'merge_driver',
     'היי {{firstName}}, זה/זו {{sadranName}} מסידור הרכב 🚗' || chr(10) ||
-    'בנסיעה שלך ל{{destination}} ביום {{day}} ({{depart}}–{{return}}) יש מקום פנוי.' || chr(10) ||
+    'בנסיעה שלך {{route}} ביום {{day}} ({{depart}}–{{return}}) יש מקום פנוי.' || chr(10) ||
     '{{passengerName}} צריך/ה להגיע לאותו אזור. אפשר לצרף? התוספת בדרך: כ-{{detourMin}} דק׳.' || chr(10) ||
     'תשובה כאן:' || chr(10) || '{{link}}'),
   ('proposal_received', 'whatsapp', 'deny',
     'היי {{firstName}}, זה/זו {{sadranName}} מסידור הרכב 🚗' || chr(10) ||
-    'לצערי לא הצלחנו לשבץ רכב ל{{destination}} ביום {{day}} {{depart}}–{{return}}.' || chr(10) ||
+    'לצערי לא הצלחנו לשבץ רכב {{route}} ביום {{day}} {{depart}}–{{return}}.' || chr(10) ||
     'הסיבה: {{reason}}.' || chr(10) ||
     'אם יתפנה רכב מתאים במהלך השבוע תקבל/י הודעה אוטומטית. פרטים ואפשרויות:' || chr(10) || '{{link}}'),
   -- Stage 3 hardening fix #4 (DATA_MODEL.md §6.1 item 19, UX_FLOWS.md §6.2 `wa.external` verbatim).
   ('proposal_received', 'whatsapp', 'external',
     'היי {{firstName}}, זה/זו {{sadranName}} מסידור הרכב 🚗' || chr(10) ||
-    'לצערי אין רכב פנוי ל{{destination}} ביום {{day}} {{depart}}–{{return}}, גם לא עם הזזה.' || chr(10) ||
+    'לצערי אין רכב פנוי {{route}} ביום {{day}} {{depart}}–{{return}}, גם לא עם הזזה.' || chr(10) ||
     'אפשר לענות כאן:' || chr(10) || '{{link}}' || chr(10) ||
     '(אסתדר/ת בעצמי, או להישאר ברשימת ההמתנה למקרה שיתפנה רכב)'),
   -- Stage 3 hardening fix #4: `wa.chauffeur` verbatim (UX_FLOWS.md §6.2); no composer action
@@ -316,11 +329,19 @@ select event, channel, variant, null, body, null, body from (values
   -- whenever that UI ships.
   ('proposal_received', 'whatsapp', 'chauffeur',
     'היי {{firstName}}, זה/זו {{sadranName}} מסידור הרכב 🚗' || chr(10) ||
-    '{{passengerName}} צריך/ה הסעה ל{{destination}} ביום {{day}} סביב {{depart}} ({{driverName}} לא נוהג/ת בעצמו/ה הפעם).' || chr(10) ||
+    '{{passengerName}} צריך/ה הסעה {{route}} ביום {{day}} סביב {{depart}} ({{driverName}} לא נוהג/ת בעצמו/ה הפעם).' || chr(10) ||
     'אפשר/י להסיע ולהחזיר את הרכב הביתה? זה ייקח כ-{{detourMin}} דק׳.' || chr(10) ||
     'תשובה כאן:' || chr(10) || '{{link}}'),
   ('proposal_received', 'whatsapp', 'reminder',
-    'היי {{firstName}}, תזכורת קטנה מ{{sadranName}} 🙂 ההצעה לגבי הנסיעה ל{{destination}} ביום {{day}} מחכה לתשובה: {{link}}')
+    'היי {{firstName}}, תזכורת קטנה מ{{sadranName}} 🙂 ההצעה לגבי הנסיעה {{route}} ביום {{day}} מחכה לתשובה: {{link}}'),
+  -- `origin` (REQ §13.93, ORIGINS_PLAN §3/§4 "O4b"): the solver's "car free at a different
+  -- place" (`changeOrigin`) suggestion, sent from the board's unmet list like every other
+  -- suggestion kind (SOLVER §3.15). Mirrors 20261004120000_proposal_template_origin.sql.
+  ('proposal_received', 'whatsapp', 'origin',
+    'היי {{firstName}}, זה/זו {{sadranName}} מסידור הרכב 🚗' || chr(10) ||
+    'ביקשת רכב {{route}} ביום {{day}}.' || chr(10) ||
+    'אין רכב פנוי מ{{origin}} בשעות האלה, אבל יש רכב פנוי מ{{newOrigin}} ({{car}}).' || chr(10) ||
+    'מתאים לך לצאת מ{{newOrigin}}? אפשר לאשר או לדחות כאן:' || chr(10) || '{{link}}')
 ) as w(event, channel, variant, body)
 on conflict (event, channel, coalesce(variant, '')) do nothing;
 
@@ -466,9 +487,9 @@ on conflict (event,channel,(coalesce(variant,''))) do update set title=excluded.
 insert into public.notification_templates(event,channel,variant,title,body,default_title,default_body)
 select 'outcome_changed',channel,'ride_cancelled',
   '{{byName}} ביטל/ה נסיעה שהיית בה',
-  'יום {{day}} {{depart}}–{{return}}, {{car}} ל{{destination}}.',
+  'יום {{day}} {{depart}}–{{return}}, {{car}} {{route}}.',
   '{{byName}} ביטל/ה נסיעה שהיית בה',
-  'יום {{day}} {{depart}}–{{return}}, {{car}} ל{{destination}}.'
+  'יום {{day}} {{depart}}–{{return}}, {{car}} {{route}}.'
 from unnest(array['inbox','push']::public.notification_channel[]) channel
 on conflict (event,channel,(coalesce(variant,''))) do update set title=excluded.title,body=excluded.body,default_title=excluded.default_title,default_body=excluded.default_body;
 

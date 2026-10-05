@@ -20,11 +20,12 @@ import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useIsSadranAnywhere } from "@/features/auth/useIsSadran";
 import { useTheme, type ThemePreference } from "@/hooks/useTheme";
-import { useMyDepartments } from "@/features/auth/useMyDepartments";
+import { useMyDepartments, useSetMyDefaultOriginMutation } from "@/features/auth/useMyDepartments";
 import { useProfile, useUpdateProfileMutation } from "@/features/auth/useProfile";
 import { usePushSubscriptionStatus } from "@/features/auth/usePushSubscriptionStatus";
 import { useSession } from "@/features/auth/useSession";
 import {
+  useDestinations,
   useMyTemporaryCars,
   useRegisterTemporaryCarMutation,
 } from "@/features/fleet/hooks";
@@ -51,6 +52,11 @@ export function ProfilePage() {
   const { isSadran } = useIsSadranAnywhere();
   const isAdmin = !!profileQuery.data?.is_admin;
   const { preference: themePreference, setPreference: setThemePreference } = useTheme();
+
+  // REQ §13.93: "נקודת יציאה קבועה" for the active department — `department_members.default_origin_id`.
+  const originDestinationsQuery = useDestinations(active.departmentId);
+  const setDefaultOriginMutation = useSetMyDefaultOriginMutation();
+  const activeMembership = (departmentsQuery.data ?? []).find((d) => d.department_id === active.departmentId);
 
   const pushStatus = usePushSubscriptionStatus();
   const [pushBusy, setPushBusy] = useState(false);
@@ -167,6 +173,40 @@ export function ProfilePage() {
               {profileQuery.data?.default_department_id === d.department_id ? ` · ${he.profileExtra.defaultBadge}` : ""}
             </span>
           ))}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">{he.profileExtra.defaultOriginTitle}</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {active.departmentId ? (
+            <>
+              <Label htmlFor="profile-default-origin">{he.profileExtra.defaultOriginLabel}</Label>
+              <Select
+                value={activeMembership?.default_origin_id ?? ""}
+                onValueChange={(next) =>
+                  setDefaultOriginMutation.mutate({ departmentId: active.departmentId as string, originId: next || null })
+                }
+              >
+                <SelectTrigger id="profile-default-origin">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">{he.profileExtra.defaultOriginHome}</SelectItem>
+                  {(originDestinationsQuery.data ?? []).map((destination) => (
+                    <SelectItem key={destination.id} value={destination.id}>
+                      {destination.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">{he.profileExtra.defaultOriginHelp}</p>
+            </>
+          ) : (
+            <p className="text-sm text-muted-foreground">{he.profileExtra.defaultOriginNoDepartment}</p>
+          )}
         </CardContent>
       </Card>
 

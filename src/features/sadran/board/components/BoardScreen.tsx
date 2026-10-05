@@ -333,6 +333,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
             onUnmetDecision={dnd.handleUnmetDecision}
             onOpenProposals={() => navigate(paths.sadran.proposals(departmentId, weekStart))}
             pendingProposalsCount={(board.proposalsQuery.data ?? []).filter((p) => p.status === "sent").length}
+            homeDestinationId={board.department?.home_destination_id ?? undefined}
           />
 
         </div>
@@ -353,6 +354,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
               items={board.unmetItems}
               onAction={dnd.handleUnmetAction}
               onDecision={dnd.handleUnmetDecision}
+              homeDestinationId={board.department?.home_destination_id ?? undefined}
               dayStartMinutes={dayStartMinutes}
               dayEndMinutes={dayEndMinutes}
               onDragHover={(item, carId, minutes, hostRideId) => dnd.setUnmetDragHover(carId && minutes != null ? { item, carId, minutes, hostRideId } : null)}
@@ -374,7 +376,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
       />
       <Sheet open={!!selectedUnmet} onOpenChange={(open) => !open && dnd.setSelectedUnmetId(null)}>
         <SheetContent side="bottom"><SheetHeader><SheetTitle>{he.board.unmet}</SheetTitle></SheetHeader>
-          {selectedUnmet ? <UnmetList items={[selectedUnmet]} onAction={dnd.handleUnmetAction} onDecision={dnd.handleUnmetDecision} /> : null}
+          {selectedUnmet ? <UnmetList items={[selectedUnmet]} onAction={dnd.handleUnmetAction} onDecision={dnd.handleUnmetDecision} homeDestinationId={board.department?.home_destination_id ?? undefined} /> : null}
         </SheetContent>
       </Sheet>
 
@@ -479,7 +481,9 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
                 needs_driver: !!selectedRide.needs_driver,
                 allow_conflict: true,
                 notes: selectedRide.notes,
-                overnight_ack: input.overnightAck,
+                // REQUIREMENTS §13.93: the day-end rule/overnight acknowledgement are retired —
+                // `edit_ride` no longer needs this field (the DB column is deprecated, not
+                // dropped; omitting it here is harmless for old data).
                 // Manual save (including a plain car change via the sheet's
                 // select, the no-drag fallback bug #2 asks for) auto-pins,
                 // same reasoning as the drag path above.

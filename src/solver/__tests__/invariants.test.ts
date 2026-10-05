@@ -144,7 +144,7 @@ describe('assertInvariants', () => {
     expect(() => assertInvariants(input, output)).toThrowError(expect.objectContaining({ code: 'TEMP_CAR_AWAY' }));
   });
 
-  it('throws when a shared car is away at day end without an acknowledged overnight ride', () => {
+  it('does not throw when a shared car is away at day end (REQUIREMENTS §13.93: the day-end rule is retired)', () => {
     const days = makeWeekDays();
     const input = baseInput({ week: { startMs: WEEK_START_MS, days }, cars: [makeCar('C1')], requests: [] });
     const output: SolverOutput = {
@@ -157,7 +157,9 @@ describe('assertInvariants', () => {
           window: { start: 32, end: 36 },
           originId: 'home',
           destinationId: 'destA',
-          legs: [{ requestId: 'R1', leg: 'out', carMode: 'relay', originId: 'home', destinationId: 'destA', role: 'driver' }],
+          driverRequestId: undefined,
+          driverMemberId: undefined,
+          legs: [{ requestId: 'R1', leg: 'out', carMode: 'chauffeur', originId: 'home', destinationId: 'destA', role: 'passenger' }],
         }),
       ],
       unmet: [],
@@ -166,7 +168,7 @@ describe('assertInvariants', () => {
       warnings: [],
       stats: emptyStats(),
     };
-    expect(() => assertInvariants(input, output)).toThrowError(expect.objectContaining({ code: 'CAR_AWAY_AT_DAY_END' }));
+    expect(() => assertInvariants(input, output)).not.toThrow();
   });
 
   it('does not throw when the away-at-day-end block came from a fixed ride (soft, caller/SQL responsibility)', () => {

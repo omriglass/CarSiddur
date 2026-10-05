@@ -15,6 +15,7 @@ import {
   rejectMember,
   revokeAdmin,
   setMemberRole,
+  updateMemberDefaultOrigin,
   type ImportRow,
   type Role,
 } from "./api";
@@ -99,6 +100,15 @@ export function useSetMemberRoleMutation() {
   return useMutation({
     mutationFn: ({ departmentId, profileId, role }: { departmentId: string; profileId: string; role: Role }) =>
       setMemberRole(departmentId, profileId, role),
+    onSuccess: invalidate,
+  });
+}
+
+export function useUpdateMemberDefaultOriginMutation() {
+  const invalidate = useInvalidateMembers();
+  return useMutation({
+    mutationFn: ({ departmentId, profileId, originId }: { departmentId: string; profileId: string; originId: string | null }) =>
+      updateMemberDefaultOrigin(departmentId, profileId, originId),
     onSuccess: invalidate,
   });
 }

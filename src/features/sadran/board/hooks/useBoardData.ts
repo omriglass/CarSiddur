@@ -20,7 +20,7 @@ import { rideCoordinatorNotes } from "@/lib/rideCoordinatorNotes";
 import type { WeekGridBlock, WeekGridCar, WeekGridDiscussionBlock, WeekGridRide } from "@/components/WeekGrid";
 import type { Window } from "@/solver";
 
-import { fetchCarMileageTotals, fetchFairnessStats } from "../../api";
+import { fetchCarMileageTotals, fetchCarStartLocations, fetchFairnessStats, fetchPlaceTravelForWeek } from "../../api";
 import { readLastUsedPolicyVersion, rememberLastUsedPolicyVersion } from "../../lastUsedPolicy";
 import { sadranKeys } from "../../keys";
 import { scanBoardConflicts, slotToIso, requestDayMismatchRideIds, tightScheduleRideIds } from "../geometry";
@@ -47,7 +47,9 @@ import {
   hashSolverInput,
   nowMs,
   policyLookbackWeeks,
+  relayPartnerOf,
   representativeRideTypeCode,
+  rideStopCount,
   runSolve,
   servedOf,
   withChildNames,
@@ -183,6 +185,20 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
     enabled: !!departmentId,
     staleTime: 60_000,
   });
+  // REQUIREMENTS §13.93 (ORIGINS_PLAN §2 items 6/7): same preview-only, 60s-cached
+  // treatment as mileage above.
+  const carStartLocationsQuery = useQuery({
+    queryKey: sadranKeys.carStartLocations(departmentId, weekStart),
+    queryFn: () => fetchCarStartLocations(departmentId, weekStart),
+    enabled: !!departmentId,
+    staleTime: 60_000,
+  });
+  const placeTravelQuery = useQuery({
+    queryKey: sadranKeys.placeTravel(departmentId, weekStart),
+    queryFn: () => fetchPlaceTravelForWeek(departmentId, weekStart),
+    enabled: !!departmentId,
+    staleTime: 60_000,
+  });
 
   function selectPolicyVersion(policyVersionId: string) {
     setPolicyVersionOverride(policyVersionId);
@@ -213,7 +229,9 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
       !departmentSettingsQuery.data ||
       destinationsQuery.isLoading ||
       fairnessStatsQuery.isLoading ||
-      mileageStatsQuery.isLoading
+      mileageStatsQuery.isLoading ||
+      carStartLocationsQuery.isLoading ||
+      placeTravelQuery.isLoading
     ) return;
     try {
       // Reads straight from this screen's own already-loaded query hooks
@@ -244,6 +262,8 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
           seatConfigsFlat: seatConfigsQuery.data ?? [],
           fairness: fairnessStatsQuery.data ?? [],
           mileageKmByCarId: mileageStatsQuery.data ?? {},
+          carStartLocationsByCarId: carStartLocationsQuery.data ?? {},
+          travel: placeTravelQuery.data ?? [],
         },
       );
       const output = runSolve(context.input);
@@ -341,6 +361,8 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
     destinationsQuery.isLoading ||
     fairnessStatsQuery.isLoading ||
     mileageStatsQuery.isLoading ||
+    carStartLocationsQuery.isLoading ||
+    placeTravelQuery.isLoading ||
     seatConfigsQuery.isLoading;
   const boardScoreRows: SolverContextRows | null =
     boardScoreRowsLoading || !departmentSettingsQuery.data
@@ -356,6 +378,8 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
           seatConfigsFlat: seatConfigsQuery.data ?? [],
           fairness: fairnessStatsQuery.data ?? [],
           mileageKmByCarId: mileageStatsQuery.data ?? {},
+          carStartLocationsByCarId: carStartLocationsQuery.data ?? {},
+          travel: placeTravelQuery.data ?? [],
         };
   const boardPolicyScores = useBoardPolicyScores({
     departmentId,
@@ -388,6 +412,8 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
       destinationsQuery.isLoading ||
       fairnessStatsQuery.isLoading ||
       mileageStatsQuery.isLoading ||
+      carStartLocationsQuery.isLoading ||
+      placeTravelQuery.isLoading ||
       seatConfigsQuery.isLoading ||
       !effectivePolicyVersionId
     ) return;
@@ -406,6 +432,8 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
     destinationsQuery.isLoading,
     fairnessStatsQuery.isLoading,
     mileageStatsQuery.isLoading,
+    carStartLocationsQuery.isLoading,
+    placeTravelQuery.isLoading,
     seatConfigsQuery.isLoading,
     effectivePolicyVersionId,
   ]);
@@ -440,7 +468,6 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
               endsAt: r.ends_at,
               originId: r.origin_id,
               destinationId: r.destination_id,
-              overnightAck: !!r.overnight_ack_by,
               turnaroundMinutes: r.turnaround_override_minutes ?? undefined,
             })),
             carIds: [...new Set(validRides.map((r) => r.car_id))],
@@ -448,6 +475,15 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
             bufferMinutes: daySettings.turnaround_minutes,
             homeLocationId: department.home_destination_id,
             days: days96,
+            // REQUIREMENTS §13.93: each car's own base (`cars.base_location_id`) and its
+            // location at week start (`car_start_locations()`) — the away band and the
+            // chain-break/week-end-away warnings are relative to these, not always home.
+            carLocationsById: new Map(
+              (carsQuery.data ?? []).map((c) => [c.id, {
+                baseLocationId: c.base_location_id ?? undefined,
+                startLocationId: carStartLocationsQuery.data?.[c.id]?.locationId,
+              }]),
+            ),
           });
         })()
       : null;
@@ -476,16 +512,38 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
     (proposalsQuery.data ?? []).filter((p) => p.status === "sent" && p.ride_id).map((p) => p.ride_id as string),
   );
 
+  // REQUIREMENTS §13.93, SOLVER.md §1.3a: a fixed ride whose car isn't actually where the ride
+  // claims — a warning only (never a block, never thrown).
+  const chainBreakByRideId = new Map<string, { actualLocationId: string }>();
+  for (const breaks of (conflictScan?.chainBreaksByCarId ?? new Map()).values()) {
+    for (const b of breaks) chainBreakByRideId.set(b.rideId, { actualLocationId: b.actualLocationId });
+  }
+
   function dayStartIso(day: string): string {
     return fromZonedTime(`${day}T00:00:00`, TZ).toISOString();
   }
 
-  const weekGridCars: WeekGridCar[] = (carsQuery.data ?? []).map((c) => ({
-    id: c.id,
-    name: c.name,
-    group: c.type,
-    locationBadge: carLocationsQuery.data?.find((l) => l.car_id === c.id)?.location_name ?? undefined,
-  }));
+  // Moved up from near `awayWeekGridBlocks` below — also needed by `weekGridCars`' base badge.
+  const destinationNameById = new Map((destinationsQuery.data ?? []).map((d) => [d.id, d.name]));
+  const isLastDayOfWeek = selectedDay === days[days.length - 1];
+  const weekGridCars: WeekGridCar[] = (carsQuery.data ?? []).map((c) => {
+    const base = c.base_location_id ?? undefined;
+    const weekEndAway = isLastDayOfWeek ? conflictScan?.weekEndAwayByCarId.get(c.id) : null;
+    return {
+      id: c.id,
+      name: c.name,
+      group: c.type,
+      locationBadge: carLocationsQuery.data?.find((l) => l.car_id === c.id)?.location_name ?? undefined,
+      // REQUIREMENTS §13.93: the car's own base, shown only when it isn't the department home.
+      baseBadge: base && base !== department?.home_destination_id
+        ? tv("sadranBoard.carBase", { place: destinationNameById.get(base) ?? "" })
+        : undefined,
+      // REQUIREMENTS §13.93/SOLVER.md §1.3a: a warning only, shown on the last day of the week.
+      weekEndAwayWarning: weekEndAway
+        ? tv("sadranBoard.carAwayAtWeekEnd", { place: destinationNameById.get(weekEndAway.locationId) ?? "" })
+        : undefined,
+    };
+  });
 
   // REQ §13.92 "Who": the Sadran may drag-swap car headers on any non-archived day — planning,
   // no notifications (owner A6). An archived week has no board route in practice (its own week
@@ -528,21 +586,29 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
       description: [servedOf(r).length ? r.notes : null, ridePublicDetails(withChildNames(servedOf(r), requestsQuery.data ?? []), { includeCompanions: false })].filter(Boolean).join("\n"),
       passengerSummary: ridePassengerSummary(withChildNames(servedOf(r), requestsQuery.data ?? []), r.needs_driver ? null : r.driver_name),
       coordinatorNotes: rideCoordinatorNotes(servedOf(r), requestsQuery.data ?? []),
-      label: (!servedOf(r).length && r.notes) || (
-        department?.home_destination_id && r.origin_id && r.destination_id
-          ? rideBlockLabel({
-              originId: r.origin_id,
-              destinationId: r.destination_id,
-              originName: r.origin_name ?? "",
-              destinationName: r.destination_name ?? "",
-              homeDestinationId: department.home_destination_id,
-              served: servedOf(r),
-              driverName: r.driver_name,
-              isChauffeur: !!r.is_chauffeur,
-              needsDriver: !!r.needs_driver,
-              autoRelocation: !!r.auto_relocation,
-            })
-          : (r.destination_name ?? "")),
+      // REQUIREMENTS §13.93 "Multi-stop rides" Display: "· N עצירות" appended only when the
+      // ride actually serves a request with stops (`rideStopCount`, never 0).
+      label: (() => {
+        const base = (!servedOf(r).length && r.notes) || (
+          department?.home_destination_id && r.origin_id && r.destination_id
+            ? rideBlockLabel({
+                originId: r.origin_id,
+                destinationId: r.destination_id,
+                originName: r.origin_name ?? "",
+                destinationName: r.destination_name ?? "",
+                homeDestinationId: department.home_destination_id,
+                served: servedOf(r),
+                driverName: r.driver_name,
+                isChauffeur: !!r.is_chauffeur,
+                needsDriver: !!r.needs_driver,
+                autoRelocation: !!r.auto_relocation,
+                startsAt: r.starts_at ?? undefined,
+                relayPartner: relayPartnerOf(r),
+              })
+            : (r.destination_name ?? ""));
+        const stopCount = rideStopCount(servedOf(r));
+        return stopCount > 0 ? `${base} ${tv("sadranBoard.stopCount", { count: String(stopCount) })}` : base;
+      })(),
       pinned: !!r.is_pinned,
       needsDriver: !!r.needs_driver,
       tightSchedule: tightRideIds.has(r.id as string),
@@ -553,6 +619,9 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
       rideTypeCode: representativeRideTypeCode(servedOf(r)),
       seriesIndex: r.series_index,
       seriesCount: r.series_count,
+      chainBrokenWarning: r.id && chainBreakByRideId.has(r.id)
+        ? tv("sadranBoard.carNotHereWarning", { place: destinationNameById.get(chainBreakByRideId.get(r.id)!.actualLocationId) ?? "" })
+        : undefined,
     }));
 
   for (const merge of pendingMerges) {
@@ -582,11 +651,11 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
     return startMinutes < 1440 && endMinutes > 0 ? [{ id: block.id, carId: block.car_id, startMinutes, endMinutes, kind: "maintenance" as const }] : [];
   });
 
-  // REQ §89 (owner 2026-09-15): the car is away at a destination between a relay out-leg and
+  // REQ §89 (owner 2026-09-15)/§13.93: the car is away from its base between a relay out-leg and
   // its return — draw an explicit, non-interactive "away" band instead of leaving that gap
   // looking like a free/vacant column (`conflictScan.awayByCarId`, computed by the same
-  // solver `CarTimeline` the conflict scan already reuses).
-  const destinationNameById = new Map((destinationsQuery.data ?? []).map((d) => [d.id, d.name]));
+  // solver `CarTimeline` the conflict scan already reuses). `destinationNameById` is defined
+  // above, next to `weekGridCars`' own base badge.
   const awayByCarId: Map<string, { locationId: string; window: Window }[]> = conflictScan?.awayByCarId ?? new Map();
   const awayWeekGridBlocks: WeekGridBlock[] = [...awayByCarId].flatMap(([carId, windows]) =>
     windows.flatMap((away, index) => {
@@ -627,11 +696,24 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
    */
   const unmetItems = (requestsQuery.data ?? [])
     .filter((r) => isUnmetStatus(r.status) && !awaitingDriverRequestIds.has(r.id) && requestStart(r) && dateKey(new Date(requestStart(r)!)) === selectedDay)
-    .map((r) => ({
-      request: r,
-      destinationName: r.destination_resolved_name ?? "—",
-      solverInfo: preview?.output.unmet.find((u) => u.requestId === r.id),
-    }));
+    .map((r) => {
+      const solverInfo = preview?.output.unmet.find((u) => u.requestId === r.id);
+      return {
+        request: r,
+        destinationName: r.destination_resolved_name ?? "—",
+        solverInfo,
+        // REQUIREMENTS §13.93 "Multi-stop rides" §6.3 "Joining at a stop": a merge suggestion
+        // whose `boardAtLocationId` is not the host ride's own origin says where the guest
+        // boards — parallel array to `solverInfo.suggestions`, `null` for the ordinary
+        // same-origin case (nothing worth saying).
+        suggestionBoardAt: (solverInfo?.suggestions ?? []).map((suggestion) => {
+          if (suggestion.kind !== "merge" || !suggestion.boardAtLocationId) return null;
+          const hostOriginId = rides.find((ride) => ride.id === suggestion.hostRideId)?.origin_id;
+          if (!hostOriginId || suggestion.boardAtLocationId === hostOriginId) return null;
+          return tv("sadranBoard.mergeBoardAt", { place: destinationNameById.get(suggestion.boardAtLocationId) ?? "" });
+        }),
+      };
+    });
 
   const phantomRides = packPhantomLanes(unmetItems.filter((item) => item.request.status !== "denied").flatMap((item) => {
     const window = requestWindow(item.request);
@@ -670,6 +752,9 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
     chauffeurDwellMinutes: daySettings?.chauffeur_dwell_minutes ?? 10,
     awayByCarId: conflictScan?.awayByCarId,
     weekStartMs,
+    // REQUIREMENTS §13.93: each car's own base, already defaulted to the department home.
+    carBaseLocationId: new Map((carsQuery.data ?? []).map((c) => [c.id, c.base_location_id ?? department?.home_destination_id ?? ""])),
+    homeDestinationId: department?.home_destination_id ?? undefined,
   };
 
   return {

@@ -3,9 +3,11 @@
 // assertInvariants() (docs/SOLVER.md §3.12): runs before solve() returns.
 // Checks no-overlap per car (buffer + maintenance), seat fit, every request
 // served exactly once, fixed rides unchanged, the location chain per car,
-// every shared car home at day end (unless overnightAck), temporary cars
-// only home -> home, and relay pairing consistency. A violation throws
-// SolverInvariantError — the caller keeps the previous draft.
+// temporary cars only base -> base, and relay pairing consistency. The
+// day-end rule is retired (REQUIREMENTS §13.93): a car may legitimately end
+// any day away from home — only `WARN_CAR_AWAY_AT_WEEK_END` (index.ts, a
+// warning, not an invariant) flags it away from its base at week end. A
+// violation throws SolverInvariantError — the caller keeps the previous draft.
 
 import { fits, luggageFits } from './seatFit';
 import { minutesToSlots, SLOT_MS } from './slots';
@@ -47,9 +49,13 @@ export function assertInvariants(input: SolverInput, output: SolverOutput): void
     if (!tl || !car) throw new SolverInvariantError(`unknown car ${carId}`, 'UNKNOWN_CAR');
 
     if (car.type === 'temporary') {
+      // REQUIREMENTS §13.93: a temporary car's "home" is its own base
+      // location (the owner's default origin), not necessarily the
+      // department home — unchanged (home) for every car that omits `baseLocationId`.
+      const base = car.baseLocationId ?? input.homeLocationId;
       for (const a of list) {
-        if (a.originId !== input.homeLocationId || a.destinationId !== input.homeLocationId) {
-          throw new SolverInvariantError(`temporary car ${carId} used away from home on ride ${a.rideId}`, 'TEMP_CAR_AWAY');
+        if (a.originId !== base || a.destinationId !== base) {
+          throw new SolverInvariantError(`temporary car ${carId} used away from its base on ride ${a.rideId}`, 'TEMP_CAR_AWAY');
         }
       }
     }
@@ -94,14 +100,10 @@ export function assertInvariants(input: SolverInput, output: SolverOutput): void
       }
     }
 
-    if (car.type === 'shared') {
-      const solverRideIds = new Set(sorted.filter((a) => a.source === 'solver').map((a) => a.rideId));
-      const violations = tl.dayEndViolations(input.week.days);
-      const hardViolation = violations.find((v) => v.causeRideId === undefined || solverRideIds.has(v.causeRideId));
-      if (hardViolation) {
-        throw new SolverInvariantError(`car ${carId} is away from home at day end`, 'CAR_AWAY_AT_DAY_END');
-      }
-    }
+    // REQUIREMENTS §13.93: the day-end rule (and its CAR_AWAY_AT_DAY_END
+    // invariant) is retired — a car legitimately stays wherever its last ride
+    // left it, across days and weeks; only `WARN_CAR_AWAY_AT_WEEK_END`
+    // (a warning, not an invariant) flags a car away from its base at week end.
   }
 
   // Every request appears exactly once (assignment, unmet, or servedByFixed).
@@ -135,9 +137,12 @@ export function assertInvariants(input: SolverInput, output: SolverOutput): void
   }
 
   // Relay pairing consistency (solver-placed rides only; fixed rides are
-  // pre-validated by the caller / SQL's assert_car_chain()).
+  // pre-validated by the caller / SQL's assert_car_chain()). Scoped to
+  // PLACED_RELAY_PAIR (the only reasonCode the pairing path produces) —
+  // REQUIREMENTS §13.93's explicit `one_way` trip type also places a single
+  // `carMode: 'relay'` leg, but has no pairing obligation by design.
   for (const a of output.assignments) {
-    if (a.source !== 'solver') continue;
+    if (a.source !== 'solver' || a.reasonCode !== 'PLACED_RELAY_PAIR') continue;
     for (const leg of a.legs) {
       if (leg.carMode !== 'relay') continue;
       if (!a.pairedRideId) {

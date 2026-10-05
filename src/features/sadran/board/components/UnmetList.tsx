@@ -23,6 +23,12 @@ export interface UnmetListItem {
   destinationName: string;
   /** Present only once a client-side solve has run this session (SOLVER.md §2 `UnmetRequest`). */
   solverInfo?: UnmetRequest;
+  /**
+   * REQUIREMENTS §13.93 "Multi-stop rides" §6.3 "Joining at a stop": parallel array to
+   * `solverInfo.suggestions` — a ready-made "עולה ב<place>" string for a merge suggestion
+   * that boards the guest somewhere other than the host's own origin, `null`/absent otherwise.
+   */
+  suggestionBoardAt?: (string | null)[];
 }
 
 /** "יום ג' 09:00" — Asia/Jerusalem-zoned, never a raw `getDay()` (CLAUDE.md hard rule 6). */
@@ -63,6 +69,8 @@ interface UnmetListProps {
    * list — pass `false` there so it isn't duplicated.
    */
   showHeading?: boolean;
+  /** REQUIREMENTS §13.93: shows "מ<origin>" on a card whose request origin isn't the department home. */
+  homeDestinationId?: string;
 }
 
 /**
@@ -70,7 +78,7 @@ interface UnmetListProps {
  * week with no ride (bug #1), sorted by policy score when a solver preview
  * exists for it, otherwise by departure time.
  */
-export function UnmetList({ items, onAction, onDecision, dayStartMinutes = 6 * 60, dayEndMinutes = 23 * 60 + 59, onDragHover, onDragDrop, showHeading = true }: UnmetListProps) {
+export function UnmetList({ items, onAction, onDecision, dayStartMinutes = 6 * 60, dayEndMinutes = 23 * 60 + 59, onDragHover, onDragDrop, showHeading = true, homeDestinationId }: UnmetListProps) {
   const dragEnabled = !!onDragDrop;
   const [drag, setDrag] = useState<DragState | null>(null);
   const dragRef = useRef<DragState | null>(null);
@@ -218,7 +226,11 @@ export function UnmetList({ items, onAction, onDecision, dayStartMinutes = 6 * 6
               </div>
               <div className="flex items-center justify-between text-xs text-muted-foreground">
                 <span dir="ltr">{dayTimeLabel(requestStart(item.request))}</span>
-                <span>{item.request.ride_type_name_he ?? ""}</span>
+                <span>
+                  {item.request.ride_type_name_he ?? ""}
+                  {/* REQUIREMENTS §13.93 "Multi-stop rides" Display: same marker as the board ride card, shown only when > 0. */}
+                  {item.request.stops?.length ? ` ${tv("sadranBoard.stopCount", { count: String(item.request.stops.length) })}` : ""}
+                </span>
                 {item.solverInfo ? (
                   <span dir="ltr">
                     {he.sadranBoard.scoreLabel} {item.solverInfo.score.toFixed(2)}
@@ -240,10 +252,37 @@ export function UnmetList({ items, onAction, onDecision, dayStartMinutes = 6 * 6
                   {tv("sadranBoard.preferredCar", { car: item.request.preferred_car_name })}
                 </p>
               ) : null}
+              {/* REQUIREMENTS §13.93: the request's own origin, shown only when it isn't the
+                  department home — a free-text origin (never auto-placed, solver reason
+                  `UNMET_FREE_TEXT_ORIGIN`) is visibly flagged rather than silently blended in. */}
+              {item.request.origin_id && homeDestinationId && item.request.origin_id !== homeDestinationId ? (
+                <p className="text-xs text-muted-foreground">
+                  {tv("sadranBoard.unmetOrigin", { place: item.request.origin_resolved_name ?? "" })}
+                </p>
+              ) : null}
+              {!item.request.origin_id && item.request.origin_text ? (
+                <p className="text-xs font-medium text-destructive">
+                  {tv("sadranBoard.unmetFreeTextOrigin", { place: item.request.origin_text })}
+                </p>
+              ) : null}
               <p className="whitespace-pre-wrap break-words text-xs">{ridePassengerSummary([{ ...item.request, requester: item.request.requester_full_name }])}</p>
               {item.request.ride_description ? <p className="whitespace-pre-wrap break-words text-xs">{item.request.ride_description}</p> : null}
               {item.request.notes ? <p className="whitespace-pre-wrap break-words text-xs text-muted-foreground"><span className="font-medium">{he.field.notes}: </span>{item.request.notes}</p> : null}
               {item.solverInfo?.reason ? <p className="text-xs text-muted-foreground">{item.solverInfo.reason}</p> : null}
+              {item.solverInfo?.suggestions.length ? (
+                <div className="space-y-1 border-t pt-1">
+                  <p className="text-xs font-medium text-muted-foreground">{he.sadranBoard.suggestionsLabel}</p>
+                  {item.solverInfo.suggestions.map((suggestion, index) => (
+                    <div key={index} className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                      <span>
+                        {suggestion.reason}
+                        {item.suggestionBoardAt?.[index] ? ` · ${item.suggestionBoardAt[index]}` : ""}
+                      </span>
+                      <Button size="sm" variant="ghost" onClick={() => onAction(item, suggestion)}>{he.action.propose}</Button>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
               {dragEnabled && item.request.trip_shape !== "round_trip" ? (
                 <p className="text-xs text-muted-foreground">{he.sadranBoard.dragOneWayUnsupported}</p>
               ) : null}

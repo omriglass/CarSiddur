@@ -21,10 +21,12 @@ interface BoardListModeProps {
   onOpenProposals: () => void;
   /** Count of `status='sent'` (awaiting answer) proposals — a small badge on the "הצעות" tab when > 0. */
   pendingProposalsCount?: number;
+  /** REQUIREMENTS §13.93: forwarded to `UnmetList` for the "מ<origin>" line. */
+  homeDestinationId?: string;
 }
 
 /** Phone fallback for the board (UX_FLOWS.md §4.2 "Phone fallback — list mode"): רכבים / לא שובצו / הצעות segments. */
-export function BoardListMode({ rides, pendingRides = [], shadowedRideIds, onRideClick, unmetItems, onUnmetAction, onUnmetDecision, onOpenProposals, pendingProposalsCount = 0 }: BoardListModeProps) {
+export function BoardListMode({ rides, pendingRides = [], shadowedRideIds, onRideClick, unmetItems, onUnmetAction, onUnmetDecision, onOpenProposals, pendingProposalsCount = 0, homeDestinationId }: BoardListModeProps) {
   const [segment, setSegment] = useState<Segment>("cars");
 
   return (
@@ -75,7 +77,7 @@ export function BoardListMode({ rides, pendingRides = [], shadowedRideIds, onRid
         </div>
       ) : null}
 
-      {segment === "unmet" ? <UnmetList items={unmetItems} onAction={onUnmetAction} onDecision={onUnmetDecision} /> : null}
+      {segment === "unmet" ? <UnmetList items={unmetItems} onAction={onUnmetAction} onDecision={onUnmetDecision} homeDestinationId={homeDestinationId} /> : null}
     </div>
   );
 }

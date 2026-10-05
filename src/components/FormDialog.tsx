@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/dialog";
 import { PortalDialogContent } from "@/components/PortalDialogContent";
 import { he } from "@/i18n/he";
+import { cn } from "@/lib/utils";
 
 interface FormDialogProps {
   open: boolean;
@@ -56,7 +57,9 @@ export function FormDialog({
 }: FormDialogProps) {
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!loading) onOpenChange(next); }}>
-      <PortalDialogContent className={className}>
+      {/* Taller than the screen (e.g. the member editor with one origin select per
+          department) → the dialog scrolls, so the footer's buttons stay reachable. */}
+      <PortalDialogContent className={cn("max-h-[90dvh] overflow-y-auto", className)}>
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           {description ? <DialogDescription>{description}</DialogDescription> : null}

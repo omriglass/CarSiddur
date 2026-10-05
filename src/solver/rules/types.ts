@@ -5,13 +5,23 @@
 // src/solver/reasons.ts via ruleDescription()/PolicyParamsError.
 
 import type { NormalizedRequest } from '../slots';
-import { PolicyParamsError, type Destination, type Policy, type SolverStats } from '../types';
+import { PolicyParamsError, type Destination, type Policy, type SolverConfig, type SolverStats, type TravelEdge } from '../types';
 
 export interface RuleContext<P> {
   params: P;
   policy: Policy;
   stats: SolverStats;
   destinations: Record<string, Destination>;
+  /**
+   * Department home (REQUIREMENTS §13.93); use with `originIdOf()`/
+   * `travelBetween()`, never compare directly. Optional for backward
+   * compatibility with hand-built contexts (rule unit tests) that predate
+   * origins — every rule that needs it (currently only `distance`) treats an
+   * absent value as "no origin resolution available" and degrades gracefully.
+   */
+  homeLocationId?: string;
+  travel?: TravelEdge[];
+  config?: Pick<SolverConfig, 'defaultTravelMinutes'>;
   /** for batch-relative rules (e.g. minmax normalization, submission rank) */
   batch: {
     requests: NormalizedRequest[];

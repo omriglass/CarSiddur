@@ -27,6 +27,10 @@ interface LegFixture {
   canDrive: boolean;
   companionCanDrive?: boolean;
   destination?: string;
+  /** O3 (REQ §13.93, ORIGINS_PLAN §3): 'home' (default) | 'destA' | 'destB'. */
+  origin?: string;
+  /** O3: undefined -> effectiveTripType() derives 'drop_off' from the legacy one_way_to/one_way_from shape, same as everywhere else. */
+  tripType?: 'round_trip' | 'one_way' | 'drop_off';
   flexEarlierMin?: number;
   flexLaterMin?: number;
 }
@@ -63,6 +67,8 @@ function buildRequests(c: CaseFixture): Request[] {
         id: `${c.id}-out`,
         tripShape: 'one_way_to',
         destinationId: out.destination ?? c.destination ?? 'destA',
+        originId: out.origin && out.origin !== 'home' ? out.origin : undefined,
+        tripType: out.tripType,
         departureMs: slotMs(out.departSlot!),
         canDrive: out.canDrive,
         drivingCompanionIds: out.companionCanDrive ? ['comp'] : undefined,
@@ -78,6 +84,8 @@ function buildRequests(c: CaseFixture): Request[] {
         id: `${c.id}-return`,
         tripShape: 'one_way_from',
         destinationId: ret.destination ?? c.destination ?? 'destA',
+        originId: ret.origin && ret.origin !== 'home' ? ret.origin : undefined,
+        tripType: ret.tripType,
         returnMs: slotMs(ret.returnSlot!),
         canDrive: ret.canDrive,
         drivingCompanionIds: ret.companionCanDrive ? ['comp'] : undefined,
@@ -107,7 +115,19 @@ function runCase(c: CaseFixture): { output: SolverOutput; input: SolverInput } {
   // Two shared cars: a case whose two legs heal into two *independent*
   // chauffeur rides (e.g. different destinations) must not be starved of a
   // second car just because this harness reuses one car per case.
-  const input = baseInput({ cars: [makeCar('C1'), makeCar('C2')], requests: buildRequests(c) });
+  //
+  // O3 (REQ §13.93, ORIGINS_PLAN §3): a non-home `origin` needs an actual car positioned
+  // there to begin with -- unlike the SQL side's test harness (scripts/test-pairing-parity.mjs),
+  // which always force-creates a feasible-looking lone chauffeur placeholder at the leg's own
+  // origin regardless of whether a car starts there, solve() builds placement from scratch via
+  // real car timelines. C1 starts at the out leg's own origin when it is explicit and non-home
+  // (the realistic precondition for a drop_off pair/chauffeur placement to be possible there at
+  // all); C2 stays at home, covering a case whose other leg's origin is home.
+  const outOrigin = c.out?.origin && c.out.origin !== 'home' ? c.out.origin : undefined;
+  const input = baseInput({
+    cars: [makeCar('C1', outOrigin ? { startLocationId: outOrigin } : {}), makeCar('C2')],
+    requests: buildRequests(c),
+  });
   return { output: solve(input), input };
 }
 

@@ -37,8 +37,8 @@ begin
   -- driver cleared, ride_requests.car_mode -> 'chauffeur', role -> 'passenger', and the
   -- request stays 'assigned' — no separate relocation ride is created.
   -- ---------------------------------------------------------------------------
-  insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,depart_at,trip_shape,one_way_car_mode,needs_car_at_destination,status)
-    values(dept,w,driver,manager,dest,typ,dt,'one_way_to','relay',false,'submitted') returning id into qout;
+  insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,depart_at,trip_shape,trip_type,one_way_car_mode,needs_car_at_destination,status)
+    values(dept,w,driver,manager,dest,typ,dt,'one_way_to','drop_off','relay',false,'submitted') returning id into qout;
   rout:=public.edit_ride(jsonb_build_object('department_id',dept,'week_start',w,'car_id',car,'driver_id',driver,
     'origin_id',home,'destination_id',dest,'starts_at',dt,'ends_at',dt+interval '15 minutes',
     'served',jsonb_build_array(jsonb_build_object('request_id',qout,'role','driver','leg','out','car_mode','relay'))));
@@ -63,8 +63,8 @@ begin
   -- car — the car sits at X in between, no relocation ride, and the widened chauffeur
   -- shape from (a) is undone.
   -- ---------------------------------------------------------------------------
-  insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,return_at,trip_shape,one_way_car_mode,needs_car_at_destination,status)
-    values(dept,w,back,manager,dest,typ,dt+interval '4 hours','one_way_from','relay',false,'submitted') returning id into qback;
+  insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,return_at,trip_shape,trip_type,one_way_car_mode,needs_car_at_destination,status)
+    values(dept,w,back,manager,dest,typ,dt+interval '4 hours','one_way_from','drop_off','relay',false,'submitted') returning id into qback;
   -- A fresh lone one-way reservation is created chauffeur-shaped (home -> home, like
   -- reserve_live_one_way_slot's quick reservation) — ride_requests_leg_location()
   -- requires that shape for car_mode = 'chauffeur' at insert time.
@@ -98,6 +98,20 @@ begin
   perform public.assert_ride_request_day(rout);
   perform public.assert_ride_request_day(rback);
 
+  -- REQ §13.93 "Display": v_board_rides.relay_partner names the other leg of the pair (its
+  -- ride id, driver name and time) so the board/siddur label can say "...ליוסי (9:00)" /
+  -- "...דנה מביאה אותו ב-8:40" instead of just the place.
+  assert (select (relay_partner->>'ride_id')::uuid = rback
+            and relay_partner->>'name' = (select full_name from public.profiles where id=back)
+            and (relay_partner->>'at')::timestamptz = expected_ret_start
+          from public.v_board_rides where id=rout),
+    'out-leg relay_partner did not name the return leg';
+  assert (select (relay_partner->>'ride_id')::uuid = rout
+            and relay_partner->>'name' = (select full_name from public.profiles where id=driver)
+            and (relay_partner->>'at')::timestamptz = expected_out_end
+          from public.v_board_rides where id=rback),
+    'return-leg relay_partner did not name the out leg';
+
   -- Idempotent: running the walk again changes nothing.
   perform public.assert_car_chain(car, w);
   assert (select not needs_driver and driver_id=driver and destination_id=dest from public.rides where id=rout)
@@ -123,10 +137,10 @@ begin
   declare
     qout2 uuid; qback2 uuid; rout2 uuid; rback2 uuid; v2 int;
   begin
-    insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,depart_at,trip_shape,one_way_car_mode,needs_car_at_destination,status)
-      values(dept,w,driver,manager,dest,typ,dt2,'one_way_to','relay',false,'submitted') returning id into qout2;
-    insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,return_at,trip_shape,one_way_car_mode,needs_car_at_destination,status)
-      values(dept,w,back,manager,dest,typ,dt2+interval '4 hours','one_way_from','relay',false,'submitted') returning id into qback2;
+    insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,depart_at,trip_shape,trip_type,one_way_car_mode,needs_car_at_destination,status)
+      values(dept,w,driver,manager,dest,typ,dt2,'one_way_to','drop_off','relay',false,'submitted') returning id into qout2;
+    insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,return_at,trip_shape,trip_type,one_way_car_mode,needs_car_at_destination,status)
+      values(dept,w,back,manager,dest,typ,dt2+interval '4 hours','one_way_from','drop_off','relay',false,'submitted') returning id into qback2;
     rout2:=public.edit_ride(jsonb_build_object('department_id',dept,'week_start',w,'car_id',car,'driver_id',driver,
       'origin_id',home,'destination_id',dest,'starts_at',dt2,'ends_at',dt2+interval '15 minutes',
       'served',jsonb_build_array(jsonb_build_object('request_id',qout2,'role','driver','leg','out','car_mode','relay'))));
@@ -153,13 +167,13 @@ begin
   declare
     qout3 uuid; qback3 uuid; rout3 uuid; rback3 uuid;
   begin
-    insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,depart_at,trip_shape,one_way_car_mode,needs_car_at_destination,adults,status)
-      values(dept,w,back,manager,dest,typ,dt3,'one_way_to','passenger',false,2,'submitted') returning id into qout3;
+    insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,depart_at,trip_shape,trip_type,one_way_car_mode,needs_car_at_destination,adults,status)
+      values(dept,w,back,manager,dest,typ,dt3,'one_way_to','drop_off','passenger',false,2,'submitted') returning id into qout3;
     insert into public.request_companions(request_id,profile_id) values(qout3,driver);
     update public.profiles set does_not_drive=true where id=back;
 
-    insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,return_at,trip_shape,one_way_car_mode,needs_car_at_destination,status)
-      values(dept,w,manager,manager,dest,typ,dt3+interval '4 hours','one_way_from','passenger',false,'submitted') returning id into qback3;
+    insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,return_at,trip_shape,trip_type,one_way_car_mode,needs_car_at_destination,status)
+      values(dept,w,manager,manager,dest,typ,dt3+interval '4 hours','one_way_from','drop_off','passenger',false,'submitted') returning id into qback3;
     -- Both start life as chauffeur-shaped (home -> home) lone reservations, exactly
     -- like reserve_live_one_way_slot's quick reservation.
     rout3:=public.edit_ride(jsonb_build_object('department_id',dept,'week_start',w,'car_id',car,'needs_driver',true,
@@ -179,16 +193,18 @@ begin
   end;
 
   -- ---------------------------------------------------------------------------
-  -- (f) A manual Sadran ride ending away that is NOT a lone one-way leg (it carries two
-  -- passengers) still gets the old missing-driver relocation ride.
+  -- (f) O3 (REQ §13.93, 2026-10-04): a manual Sadran ride ending away that is NOT a lone
+  -- drop_off leg (it carries two passengers) gets NO relocation ride any more — the car chain
+  -- heal-via-relocation-ride design is retired; a car may legitimately end a day away from its
+  -- base, the board shows a warning (O5), SQL raises nothing and creates nothing.
   -- ---------------------------------------------------------------------------
   declare
     qm1 uuid; qm2 uuid; rman uuid; reloc uuid;
   begin
-    insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,depart_at,trip_shape,one_way_car_mode,needs_car_at_destination,status)
-      values(dept,w,driver,manager,dest,typ,dt4,'one_way_to','relay',false,'submitted') returning id into qm1;
-    insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,depart_at,trip_shape,one_way_car_mode,needs_car_at_destination,status)
-      values(dept,w,back,manager,dest,typ,dt4,'one_way_to','passenger',false,'submitted') returning id into qm2;
+    insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,depart_at,trip_shape,trip_type,one_way_car_mode,needs_car_at_destination,status)
+      values(dept,w,driver,manager,dest,typ,dt4,'one_way_to','drop_off','relay',false,'submitted') returning id into qm1;
+    insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,depart_at,trip_shape,trip_type,one_way_car_mode,needs_car_at_destination,status)
+      values(dept,w,back,manager,dest,typ,dt4,'one_way_to','drop_off','passenger',false,'submitted') returning id into qm2;
     rman:=public.edit_ride(jsonb_build_object('department_id',dept,'week_start',w,'car_id',car,'driver_id',driver,
       'origin_id',home,'destination_id',dest,'starts_at',dt4,'ends_at',dt4+interval '15 minutes',
       'served',jsonb_build_array(
@@ -198,27 +214,22 @@ begin
     select id into reloc from public.rides
       where car_id=car and week_start=w and auto_relocation and status<>'cancelled'
         and origin_id=dest and destination_id=home;
-    assert reloc is not null, 'a multi-passenger ride ending away must still get a relocation ride';
+    assert reloc is null, 'O3: no relocation ride is ever created any more (ORIGINS_PLAN §3)';
     assert (select origin_id=home and destination_id=dest from public.rides where id=rman),
-      'the manual ride itself must not be widened/rewritten — only a lone one-way leg is';
-    perform public.assert_ride_driver(reloc);
-    perform public.assert_ride_request_day(reloc);
+      'the manual ride itself must not be widened/rewritten — only a lone drop_off leg is';
+    perform public.assert_ride_request_day(rman);
   end;
 
-  -- (g) The one remaining impossible case still raises: a car whose department has no
-  -- home location.
+  -- (g) O3 (REQ §13.93): assert_car_chain() no longer looks up a department home at all (it
+  -- only needs the car's own department to pair/heal drop_off legs), so a car whose department
+  -- has no home location no longer raises — it simply has nothing to walk.
   declare
     homeless_dept uuid; homeless_car uuid;
   begin
     insert into public.departments(name,slug) values('Homeless Test Dept','homeless-test-dept') returning id into homeless_dept;
     insert into public.cars(department_id,name,license_plate,type,status)
       values(homeless_dept,'No Home Car','HOMELESS-1','shared','active') returning id into homeless_car;
-    begin
-      perform public.assert_car_chain(homeless_car, w);
-      raise exception 'expected no_home_location';
-    exception when others then
-      if sqlstate<>'P0412' then raise; end if;
-    end;
+    perform public.assert_car_chain(homeless_car, w);
   end;
 
   raise notice 'car_chain_healing.sql: all assertions passed';
@@ -259,10 +270,10 @@ begin
     dep := ((w+pass)+time '08:00') at time zone 'Asia/Jerusalem';
     ret := dep + make_interval(mins=>2*travel) + interval '3 hours';
     ret := to_timestamp(ceil(extract(epoch from ret)/900)*900);
-    insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,depart_at,trip_shape,one_way_car_mode,needs_car_at_destination,adults,status)
-      values(dept,w,driver,manager,dest,typ,dep,'one_way_to','relay',false,3,'submitted') returning id into qout;
-    insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,return_at,trip_shape,one_way_car_mode,needs_car_at_destination,adults,status)
-      values(dept,w,back,manager,dest,typ,ret,'one_way_from','relay',false,1,'submitted') returning id into qret;
+    insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,depart_at,trip_shape,trip_type,one_way_car_mode,needs_car_at_destination,adults,status)
+      values(dept,w,driver,manager,dest,typ,dep,'one_way_to','drop_off','relay',false,3,'submitted') returning id into qout;
+    insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,return_at,trip_shape,trip_type,one_way_car_mode,needs_car_at_destination,adults,status)
+      values(dept,w,back,manager,dest,typ,ret,'one_way_from','drop_off','relay',false,1,'submitted') returning id into qret;
     if pass = 2 then
       -- The big car is busy during the return leg; the small car cannot seat the out-leg's three.
       insert into public.rides(department_id,week_start,car_id,starts_at,ends_at,origin_id,destination_id,driver_id,status,is_pinned,pin_reason,created_by)

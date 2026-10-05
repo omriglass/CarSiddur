@@ -45,6 +45,8 @@ export interface ProposalSummary {
   departmentId?: string;
   weekStart?: string;
   request: ProposalRequestSummary | null;
+  /** `origin` proposals only (REQ §13.93) -- resolved place/car names, never raw ids (`answer-proposal/index.ts`'s `buildSummary()`). */
+  originChange?: { from: string | null; to: string | null; car: string | null } | null;
   parties: ProposalPartySummary[];
 }
 

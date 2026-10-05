@@ -166,6 +166,38 @@ begin
   assert (select bool_and(status='assigned') from public.requests where id in ((first->>'request_id')::uuid,(second->>'request_id')::uuid)),
     'both paired requests must be assigned';
 end $$;
+-- REQ §13.93 (2026-10-04): "pick me up from X" — a one-leg drop_off whose origin is X and whose
+-- destination is home, every car at home. The quick reservation uses the pickup window: the
+-- volunteer leaves home in time to collect the member at X at the requested time, and the car is
+-- back home one (grid-rounded) travel time later; the ride starts and ends at home.
+do $$
+declare
+  dept uuid:='00000000-0000-0000-0000-000000000001'; manager uuid:='00000000-0000-0000-0000-000000000102';
+  member uuid:='00000000-0000-0000-0000-000000000103'; car uuid:='00000000-0000-0000-0000-000000000040';
+  dest uuid:='00000000-0000-0000-0000-000000000011'; typ uuid:='00000000-0000-0000-0000-000000000021';
+  home uuid; w date:=public.current_week_start()+126; dt timestamptz; published uuid; result jsonb; ride public.rides%rowtype;
+begin
+  select home_destination_id into home from public.departments where id=dept;
+  insert into public.weeks(department_id,week_start,phase,open_at,close_at,publish_at,settings_overrides)
+    values(dept,w,'open',now()-interval '2 days',now()-interval '1 day',now()+interval '1 day','{"chauffeur_dwell_minutes":10,"turnaround_minutes":30}');
+  insert into public.siddur_versions(department_id,week_start,snapshot,published_by) values(dept,w,'{}',manager) returning id into published;
+  perform set_config('app.in_publish','on',true);
+  update public.weeks set published_days=array(select week_start+i from generate_series(0,6) i),phase='live',published_version_id=published where department_id=dept and week_start=w;
+  perform set_config('app.in_publish','off',true);
+  update public.destinations set travel_minutes=20 where id=dest;
+  dt:=((w+1)+time '09:00') at time zone 'Asia/Jerusalem';
+  perform set_config('request.jwt.claims',jsonb_build_object('sub',member,'role','authenticated')::text,true);
+  result:=public.submit_request(jsonb_build_object('department_id',dept,'week_start',w,'origin_id',dest,'destination_id',home,
+    'ride_type_id',typ,'trip_type','drop_off','depart_at',dt,'reserve_missing_driver',true,'preferred_car_id',car,'adults',1));
+  assert (result->>'needs_driver')::boolean and result->>'car_id'=car::text,
+    format('pickup from X with the car at home must reserve a missing-driver ride, got %s', result);
+  -- t = 20 → back home at dt + 30 (rounded up to the grid); 2t + dwell = 50 → 60 minutes in all.
+  assert (result->>'ends_at')::timestamptz=dt+interval '30 minutes' and (result->>'starts_at')::timestamptz=dt-interval '30 minutes',
+    format('pickup window must end one grid-rounded travel time after the pickup, got %s', result);
+  select * into ride from public.rides where id=(result->>'ride_id')::uuid;
+  assert ride.origin_id=home and ride.destination_id=home, 'pickup chauffeur ride must start and end where the car is (home)';
+  raise notice 'live_quick_one_way.sql: pickup-from-X quick reservation passed';
+end $$;
 set constraints all immediate;
 set constraints all deferred;
 rollback;

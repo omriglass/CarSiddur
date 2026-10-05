@@ -30,5 +30,7 @@ export const departmentSettingsSchema = z.object({
   auto_apply_accepted_proposals: z.boolean(),
   board_start_time: z.string(),
   join_radius_km: z.number().min(0).max(100),
+  /** REQUIREMENTS §13.93 "Multi-stop rides": dwell time per declared stop (`request_leg_route_minutes()`/`legRouteMinutes()`), default 5. */
+  stop_minutes: z.number().int().min(0).max(60),
 });
 export type DepartmentSettingsFormValues = z.infer<typeof departmentSettingsSchema>;

@@ -49,6 +49,31 @@ describe("one-way unmet cards", () => {
     expect(drop).not.toHaveBeenCalled();
   });
 
+  // REQ §13.93/SOLVER §3.15 (O4b): a `changeOrigin` suggestion gets the same "הצע" send
+  // action as every other suggestion kind — no more "no send action yet" carve-out.
+  it("offers a propose action for a changeOrigin suggestion", () => {
+    const onAction = vi.fn();
+    const suggestion = {
+      kind: "changeOrigin" as const,
+      requestId: "return-request",
+      carId: "car-1",
+      originId: "dest-haifa",
+      window: { start: 0, end: 60 },
+      reasonCode: "SUGGEST_CHANGE_ORIGIN",
+      reason: "יש רכב פנוי מחיפה",
+      cost: 0,
+      confidence: 0.4,
+    };
+    const itemWithSuggestion = {
+      ...item,
+      solverInfo: { requestId: "return-request", score: 0, blockers: [], reasonCode: "UNMET_NO_CAR", reason: "אין רכב פנוי", suggestions: [suggestion] },
+    };
+    render(<UnmetList items={[itemWithSuggestion]} onAction={onAction} />);
+    expect(screen.getByText("יש רכב פנוי מחיפה")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: he.action.propose }));
+    expect(onAction).toHaveBeenCalledWith(itemWithSuggestion, suggestion);
+  });
+
   // Regression: the desktop board's side panel (`BoardScreen.tsx`) renders its own
   // "לא שובצו (N)" heading right above this list, which used to duplicate this component's own
   // heading (`UnmetList.tsx`); `showHeading` lets a caller that already has one opt out while

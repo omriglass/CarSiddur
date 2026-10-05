@@ -190,6 +190,9 @@ function ProposalAnswerBody({
   isSubmitting,
 }: ProposalAnswerBodyProps) {
   const isDenyVariant = summary.type === "deny" || summary.type === "external";
+  // `origin` (REQ §13.93): no time shift to show before/after -- the request's own window
+  // (shown by `ProposalSummaryView`'s `TripSummary`) never changes, only where the car starts.
+  const isOriginVariant = summary.type === "origin";
   const shift = readShiftPayload(summary.payload);
 
   return (
@@ -202,10 +205,11 @@ function ProposalAnswerBody({
           purpose={summary.request?.rideType}
           departAt={summary.request?.departAt ?? null}
           returnAt={summary.request?.returnAt ?? null}
+          originChange={summary.originChange}
         />
       </div>
 
-      {!isDenyVariant ? (
+      {!isDenyVariant && !isOriginVariant ? (
         <div>
           <div className="flex gap-2">
             <BeforeAfterBox

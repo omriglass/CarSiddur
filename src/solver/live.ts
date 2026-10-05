@@ -12,6 +12,7 @@ import { scoreRequests } from './policy/engine';
 import { reason } from './reasons';
 import { fits, luggageFits } from './seatFit';
 import { byId, dayBoundsForSlot, formatSlotTime, normalize } from './slots';
+import { originIdOf } from './travel';
 import type { CarTimeline } from './timeline';
 import type {
   Car,
@@ -21,6 +22,7 @@ import type {
   SolverConfig,
   SolverInput,
   SolverStats,
+  TravelEdge,
   Window,
 } from './types';
 
@@ -36,6 +38,8 @@ export interface FreedSlotInput {
   config: SolverConfig;
   week: SolverInput['week'];
   homeLocationId: string;
+  /** REQUIREMENTS §13.93 (ORIGINS_PLAN §4): read only via `travelBetween()`, same as `SolverInput.travel`. */
+  travel?: TravelEdge[];
 }
 
 export interface FreedSlotCandidate {
@@ -53,18 +57,25 @@ export interface FreedSlotCandidate {
  * every leg's own day, never into a single freed slot.
  */
 export function matchFreedSlot(input: FreedSlotInput): FreedSlotCandidate[] {
-  if (input.freedLocationId !== input.homeLocationId) return [];
+  // REQUIREMENTS §13.93: a candidate only matters if its own declared origin
+  // is where the car was actually freed — generalizes the old strict
+  // "freedLocationId === home" check (every legacy request's origin is home).
+  const candidates = input.candidates.filter(
+    (r) => originIdOf(r, input.homeLocationId) === input.freedLocationId,
+  );
+  if (candidates.length === 0) return [];
 
   const pseudoInput: SolverInput = {
     week: input.week,
     homeLocationId: input.homeLocationId,
     cars: [input.car],
-    requests: input.candidates.filter((r) => r.seriesId === undefined),
+    requests: candidates.filter((r) => r.seriesId === undefined),
     fixedRides: [],
     destinations: input.destinations,
     policy: input.policy,
     stats: input.stats,
     config: input.config,
+    travel: input.travel,
   };
   const { normalized } = normalize(pseudoInput);
   const roundTrips = normalized.filter((nr) => nr.legs[0]?.side === 'both');

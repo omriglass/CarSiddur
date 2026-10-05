@@ -51,18 +51,75 @@ export interface BoardRideForConflict {
   endsAt: string;
   originId: string;
   destinationId: string;
-  overnightAck: boolean;
   /** Effective approved buffer after this ride; absent uses the department default. */
   turnaroundMinutes?: number;
+}
+
+/** Per car: its base location (REQUIREMENTS §13.93, default home) and its location at the
+ *  start of this week (`car_start_locations()`, default its base). */
+export interface CarLocationInput {
+  baseLocationId?: string;
+  startLocationId?: string;
+}
+
+export interface ChainBreak {
+  rideId: string;
+  expectedLocationId: string;
+  actualLocationId: string;
 }
 
 export interface ConflictScanResult {
   /** Ride ids that overlap another ride on the same car (within the buffer) or start where the car isn't. */
   conflictRideIds: Set<string>;
-  /** Per car, windows where the car is away from home (for the board's location badge). */
+  /** Per car, windows where the car is away from its *base* (REQUIREMENTS §13.93) — for the board's away band, continuing across days. */
   awayByCarId: Map<string, { locationId: string; window: Window }[]>;
-  /** Per car, day-end violations (away at day end, not acknowledged) — the board's overnight warning. */
-  dayEndViolationsByCarId: Map<string, { window: Window; causeRideId?: string }[]>;
+  /**
+   * Per car, fixed rides whose recorded start location does not match where the timeline says
+   * the car actually is (REQUIREMENTS §13.93, SOLVER.md §1.3a `CarTimeline.chainBreaks()`) — a
+   * warning on the ride itself, never a block.
+   */
+  chainBreaksByCarId: Map<string, ChainBreak[]>;
+  /**
+   * Per car, where it ends the week when that differs from its base (SOLVER.md §1.3a
+   * `weekEndAway()`) — a warning on the car's column, last day of the week, never a block.
+   */
+  weekEndAwayByCarId: Map<string, { locationId: string } | null>;
+}
+
+interface ConflictBlock {
+  window: Window;
+  startLocationId: string;
+  endLocationId: string;
+}
+
+/**
+ * Raw (un-trimmed) away gaps for one car, walked from its own week-start location through its
+ * committed blocks in time order — the UI-layer equivalent of `CarTimeline`'s private
+ * `rawGaps()`/`awayWindows()`, reimplemented here because those compare against the department
+ * home for every car alike, while REQUIREMENTS §13.93 wants each car's *own* base. Continues
+ * across every day of the week by construction (no day boundary is special-cased).
+ */
+function awayWindowsFromBase(
+  blocks: readonly ConflictBlock[],
+  startLocationId: string,
+  baseLocationId: string,
+  weekSlots: number,
+): { locationId: string; window: Window }[] {
+  const sorted = [...blocks].sort((a, b) => a.window.start - b.window.start);
+  const result: { locationId: string; window: Window }[] = [];
+  let cursor = 0;
+  let location = startLocationId;
+  for (const b of sorted) {
+    if (b.window.start > cursor && location !== baseLocationId) {
+      result.push({ locationId: location, window: { start: cursor, end: b.window.start } });
+    }
+    cursor = Math.max(cursor, b.window.end);
+    location = b.endLocationId;
+  }
+  if (weekSlots > cursor && location !== baseLocationId) {
+    result.push({ locationId: location, window: { start: cursor, end: weekSlots } });
+  }
+  return result;
 }
 
 /**
@@ -81,19 +138,26 @@ export function scanBoardConflicts(params: {
   bufferMinutes: number;
   homeLocationId: string;
   days: readonly DayBounds[];
+  /** REQUIREMENTS §13.93: per-car base/start location; a car absent here defaults to home for both. */
+  carLocationsById?: ReadonlyMap<string, CarLocationInput>;
 }): ConflictScanResult {
 
   const days = [...params.days];
   const weekSlots = days.reduce((max, d) => Math.max(max, d.endSlot), 0);
-  const stubCars: SolverCar[] = params.carIds.map((id) => ({
-    id,
-    name: id,
-    type: "shared",
-    seatConfigs: [],
-    features: [],
-    luggageCapacity: 0,
-    maintenance: [],
-  }));
+  const stubCars: SolverCar[] = params.carIds.map((id) => {
+    const loc = params.carLocationsById?.get(id);
+    return {
+      id,
+      name: id,
+      type: "shared",
+      seatConfigs: [],
+      features: [],
+      luggageCapacity: 0,
+      maintenance: [],
+      baseLocationId: loc?.baseLocationId,
+      startLocationId: loc?.startLocationId,
+    };
+  });
   const timelines = buildTimelines(stubCars, 0, weekSlots, params.homeLocationId);
 
   const conflictRideIds = new Set<string>();
@@ -130,13 +194,16 @@ export function scanBoardConflicts(params: {
       // simply isn't added to the timeline, so a *third* ride overlapping
       // only this one (not the first) could be missed — an accepted
       // limitation of a client-side scan (a real conflict always involves
-      // at least one flagged pair either way).
+      // at least one flagged pair either way). `overnightAck` is retired
+      // (REQUIREMENTS §13.93) — the `Block` type still requires the field,
+      // but nothing reads it any more (the deprecated `dayEndViolations()`
+      // is never called below).
       tl.forceAdd({
         rideId: ride.id,
         window,
         startLocationId: ride.originId,
         endLocationId: ride.destinationId,
-        overnightAck: ride.overnightAck,
+        overnightAck: true,
       });
     } catch {
       // already recorded in conflictRideIds above.
@@ -144,15 +211,20 @@ export function scanBoardConflicts(params: {
   }
 
   const awayByCarId = new Map<string, { locationId: string; window: Window }[]>();
-  const dayEndViolationsByCarId = new Map<string, { window: Window; causeRideId?: string }[]>();
+  const chainBreaksByCarId = new Map<string, ChainBreak[]>();
+  const weekEndAwayByCarId = new Map<string, { locationId: string } | null>();
   for (const carId of params.carIds) {
     const tl = timelines.get(carId);
     if (!tl) continue;
-    awayByCarId.set(carId, [...tl.awayWindows()]);
-    dayEndViolationsByCarId.set(carId, [...tl.dayEndViolations(days)]);
+    const loc = params.carLocationsById?.get(carId);
+    const startLocationId = loc?.startLocationId ?? params.homeLocationId;
+    const baseLocationId = loc?.baseLocationId ?? params.homeLocationId;
+    awayByCarId.set(carId, awayWindowsFromBase(tl.allBlocks(), startLocationId, baseLocationId, weekSlots));
+    chainBreaksByCarId.set(carId, [...tl.chainBreaks()]);
+    weekEndAwayByCarId.set(carId, tl.weekEndAway());
   }
 
-  return { conflictRideIds, awayByCarId, dayEndViolationsByCarId };
+  return { conflictRideIds, awayByCarId, chainBreaksByCarId, weekEndAwayByCarId };
 }
 
 /**

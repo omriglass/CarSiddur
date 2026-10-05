@@ -59,6 +59,7 @@ function baseValues(overrides: Partial<RequestFormValues> = {}): RequestFormValu
     day: "2026-09-15",
     dayIndex: 2,
     destination: { presetId: "dest-1", name: "חיפה" },
+    origin: { freeText: "" },
     rideTypeId: "type-1",
     ...overrides,
   } as RequestFormValues;
@@ -75,6 +76,18 @@ describe("toSubmitRequestPayload", () => {
     expect(payload.return_at).toBe("2026-09-15T09:00:00.000Z");
     expect(payload.one_way_car_mode).toBeUndefined();
     expect(payload.needs_car_at_destination).toBe(true);
+  });
+
+  it("sends trip_type straight through and an empty origin as neither origin_id nor origin_text (REQ §13.93)", () => {
+    const payload = toSubmitRequestPayload(baseValues({ tripType: "round_trip" }));
+    expect(payload.trip_type).toBe("round_trip");
+    expect(payload.origin_id).toBeUndefined();
+    expect(payload.origin_text).toBeUndefined();
+  });
+
+  it("maps an explicit origin preset/free-text onto origin_id/origin_text", () => {
+    expect(toSubmitRequestPayload(baseValues({ origin: { presetId: "origin-1", name: "כפר סבא" } })).origin_id).toBe("origin-1");
+    expect(toSubmitRequestPayload(baseValues({ origin: { freeText: "איפשהו" } })).origin_text).toBe("איפשהו");
   });
 
   it("omits needs_car_at_destination's opposite fields for a one-way shape and never sends a car mode (REQ §88 — the server decides it)", () => {
@@ -120,6 +133,38 @@ describe("multi-day (series) requests", () => {
   it("ignores returnDay when it equals day (an ordinary same-day request)", () => {
     const payload = toSubmitRequestPayload(baseValues({ returnDay: "2026-09-15" }));
     expect(payload.return_at).toBe("2026-09-15T09:00:00.000Z");
+  });
+});
+
+describe("stops (REQ §13.93 'Multi-stop rides')", () => {
+  it("always sends the stops key, even empty, so an edit can clear a previously-added stop", () => {
+    expect(toSubmitRequestPayload(baseValues()).stops).toEqual([]);
+  });
+
+  it("maps outStops/returnStops onto the payload in leg/route order, preset and free-text alike", () => {
+    const payload = toSubmitRequestPayload(
+      baseValues({
+        outStops: [{ presetId: "binyamina-dest", name: "בנימינה" }, { freeText: "עצירה חופשית" }],
+        returnStops: [{ presetId: "hadera-dest", name: "חדרה" }],
+      }),
+    );
+    expect(payload.stops).toEqual([
+      { leg: "out", place_id: "binyamina-dest" },
+      { leg: "out", place_text: "עצירה חופשית" },
+      { leg: "return", place_id: "hadera-dest" },
+    ]);
+  });
+
+  it("never sends return-stops for a one-way-to leg, even if the form still holds some", () => {
+    const payload = toSubmitRequestPayload(
+      baseValues({
+        tripShape: "one_way_to",
+        departTime: "08:00",
+        returnTime: undefined,
+        returnStops: [{ presetId: "hadera-dest", name: "חדרה" }],
+      }),
+    );
+    expect(payload.stops).toEqual([]);
   });
 });
 

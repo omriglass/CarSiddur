@@ -323,7 +323,8 @@
           "reasonCode": "SUGGEST_MERGE",
           "reason": "הצטרפות לנסיעה של levi לTA ביציאה 09:00 ובחזרה 17:30, ללא סטייה",
           "cost": 60,
-          "confidence": 0.875
+          "confidence": 0.875,
+          "boardAtLocationId": "home"
         },
         {
           "kind": "externalHint",

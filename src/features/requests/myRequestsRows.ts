@@ -1,4 +1,6 @@
 import { he } from "@/i18n/he";
+import { routeLabel } from "@/lib/routeLabel";
+import { routeStopNames } from "@/lib/routeStops";
 import type { MyRequestRow } from "./api";
 import { groupSeries } from "./series";
 
@@ -17,6 +19,29 @@ export const FREED_SLOT_ELIGIBLE_STATUSES = new Set<MyRequestRow["status"]>(["wa
 /** "הפוך/י לחוזר" is only meaningful once the request is a real, still-relevant filing —
  * mirrors the statuses a repeating request could plausibly resubmit as (REQ §76). */
 export const MAKE_REPEATING_STATUSES = new Set<MyRequestRow["status"]>(["submitted", "assigned"]);
+
+/**
+ * "מ<origin> ל<destination>" / "מ<origin> דרך <stops> ל<destination>" (REQ §13.93, §13.93
+ * "Multi-stop rides") — the origin is shown only when it is not the department home (a
+ * free-text origin always shows its own text; `homeDestinationId` is `/my`'s per-department
+ * `departments.home_destination_id` map, `undefined` while it has not loaded yet). Out-stop
+ * names (never return-stops — REQ §13.93 "Multi-stop rides" Display keeps the one-line label
+ * to the outbound route only) are listed via the shared `routeLabel()`.
+ */
+export function originDestinationLabel(
+  row: Pick<MyRequestRow, "originId" | "originText" | "originName" | "destination" | "stops">,
+  homeDestinationId: string | null | undefined,
+): string {
+  const originLabel = row.originName ?? row.originText ?? "";
+  if (!originLabel) return row.destination;
+  const originIsHome = !!row.originId && row.originId === homeDestinationId;
+  const stops = routeStopNames(row.stops ?? [], "out");
+  // The mundane case (home origin, no stops) stays the bare destination, exactly as before
+  // out-stops existed — `routeLabel()`'s own "ל<destination>" template is for a leg that
+  // genuinely has something worth naming before the destination (a non-home origin or a stop).
+  if (originIsHome && !stops.length) return row.destination;
+  return routeLabel({ destination: row.destination, origin: originLabel, originIsHome, stops });
+}
 
 export function requestStart(row: MyRequestRow): number {
   const instant = row.ride?.startsAt ?? row.departAt ?? row.returnAt;

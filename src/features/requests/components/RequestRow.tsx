@@ -13,14 +13,25 @@ import { describeStatusReason } from "@/lib/statusReason";
 import { cn } from "@/lib/utils";
 import { paths } from "@/app/routes";
 
+import type { TripType } from "@/lib/enums";
+
 import { canEditRequest } from "../window";
-import { FREED_SLOT_ELIGIBLE_STATUSES, MAKE_REPEATING_STATUSES, type DisplayRow } from "../myRequestsRows";
+import { FREED_SLOT_ELIGIBLE_STATUSES, MAKE_REPEATING_STATUSES, originDestinationLabel, type DisplayRow } from "../myRequestsRows";
+
+/** REQ §13.93: shown whenever a request is not a plain round trip (the mundane default). */
+const TRIP_TYPE_LABEL: Record<TripType, string> = {
+  round_trip: he.request.tripTypeRoundTrip,
+  one_way: he.request.tripTypeOneWay,
+  drop_off: he.request.tripTypeDropOff,
+};
 
 interface RequestRowProps {
   row: DisplayRow;
   /** Ring-highlight + scroll target for `?focus=<request_id>` (notification deep link). */
   highlighted?: boolean;
   rowRef?: Ref<HTMLDivElement>;
+  /** `departments.home_destination_id` for `row.departmentId` (REQ §13.93) — origin shows only when it differs. */
+  homeDestinationId?: string | null;
   /**
    * `/my/history` renders the same card with no actions at all — a request whose day has
    * passed is read-only (REQ §13 item 91).
@@ -42,6 +53,7 @@ export function RequestRow({
   row,
   highlighted,
   rowRef,
+  homeDestinationId,
   readOnly,
   onWithdraw,
   onCancelRide,
@@ -57,7 +69,7 @@ export function RequestRow({
     >
       <div className="flex items-start justify-between gap-2">
         <TripSummary
-          destination={row.destination}
+          destination={originDestinationLabel(row, homeDestinationId)}
           purpose={row.rideTypeName}
           departAt={row.ride?.startsAt ?? row.departAt}
           returnAt={row.ride?.endsAt ?? row.returnAt}
@@ -68,6 +80,7 @@ export function RequestRow({
         </div>
       </div>
       {row.ride?.needsDriver ? <p className="text-sm font-medium text-destructive">{he.rideCoordination.missingDriver}</p> : null}
+      {row.tripType !== "round_trip" ? <p className="text-xs text-muted-foreground">{TRIP_TYPE_LABEL[row.tripType]}</p> : null}
       {row.preferredCarName ? <p className="text-xs text-muted-foreground">{he.request.preferredCar}: {row.preferredCarName}</p> : null}
       {row.childNames?.length ? (
         <p className="text-xs text-muted-foreground">{tv("ridePublicDetails.companions", { names: row.childNames.join(", ") })}</p>

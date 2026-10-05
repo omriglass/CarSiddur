@@ -1,14 +1,15 @@
 import { describe, expect, it } from "vitest";
 
-import { he } from "@/i18n/he";
+import { he, tv } from "@/i18n/he";
 import type { MyRequestRow } from "./api";
-import { confirmDialogDescription, requestStart, toDisplayRows } from "./myRequestsRows";
+import { confirmDialogDescription, originDestinationLabel, requestStart, toDisplayRows } from "./myRequestsRows";
 
 function request(overrides: Partial<MyRequestRow> = {}): MyRequestRow {
   return {
     id: "request-1", departmentId: "dept-1", weekStart: "2026-09-13", status: "submitted",
     statusReason: null, isLate: false, changedSinceSolve: false, departAt: "2026-09-15T08:00:00+03:00",
     returnAt: "2026-09-15T12:00:00+03:00", tripShape: "round_trip", destination: "Destination",
+    originId: null, originText: null, originName: null, stops: [], tripType: "round_trip",
     rideTypeId: "type-1", rideTypeName: "Type", rideTypeCode: null, needsCarAtDestination: true,
     version: 1, freedSlotOptOut: false, ride: null, pendingProposal: null, templateId: null,
     seriesId: null, seriesIndex: null, seriesCount: null,
@@ -52,6 +53,36 @@ describe("toDisplayRows", () => {
     const [display] = toDisplayRows([request({ id: "solo" })]);
     expect(display!.id).toBe("solo");
     expect(display!.seriesLegs).toBeUndefined();
+  });
+});
+
+describe("originDestinationLabel (REQ §13.93 'Multi-stop rides')", () => {
+  it("shows the bare destination for the mundane case (home origin, no stops)", () => {
+    const row = request({ originId: "home-dest", originName: "נבו" });
+    expect(originDestinationLabel(row, "home-dest")).toBe("Destination");
+  });
+
+  it("shows מ<origin> ל<destination> for a non-home origin with no stops", () => {
+    const row = request({ originId: "haifa-dest", originName: "חיפה" });
+    expect(originDestinationLabel(row, "home-dest")).toBe(tv("route.fromTo", { origin: "חיפה", destination: "Destination" }));
+  });
+
+  it("lists out-stop names even when the origin is home", () => {
+    const row = request({
+      originId: "home-dest",
+      originName: "נבו",
+      stops: [{ leg: "out", position: 1, placeId: "binyamina-dest", placeText: null, name: "בנימינה", eta: null }],
+    });
+    expect(originDestinationLabel(row, "home-dest")).toBe(tv("route.toVia", { destination: "Destination", stops: "בנימינה" }));
+  });
+
+  it("never lists return-stops in the one-line label", () => {
+    const row = request({
+      originId: "home-dest",
+      originName: "נבו",
+      stops: [{ leg: "return", position: 1, placeId: "binyamina-dest", placeText: null, name: "בנימינה", eta: null }],
+    });
+    expect(originDestinationLabel(row, "home-dest")).toBe("Destination");
   });
 });
 

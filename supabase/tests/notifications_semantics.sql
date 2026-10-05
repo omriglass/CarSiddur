@@ -382,4 +382,47 @@ begin
   update public.profiles set muted_events = had_muted_events where id = member;
 end $$;
 
+-- ---------------------------------------------------------------------------
+-- REQ §13.93 "Display": `{{route}}` renders "ל<dest>" for a home-origin request and
+-- "מ<origin> ל<dest>" otherwise; no delivered notification ever shows a raw template token.
+-- ---------------------------------------------------------------------------
+do $$
+declare
+  dept uuid := '00000000-0000-0000-0000-000000000001';
+  member uuid := '00000000-0000-0000-0000-000000000104';
+  home uuid := '00000000-0000-0000-0000-000000000010'; -- נבו, the department home
+  dest uuid := '00000000-0000-0000-0000-000000000011'; -- חיפה
+  origin uuid := '00000000-0000-0000-0000-000000000012'; -- בנימינה
+  typ uuid := '00000000-0000-0000-0000-000000000021';
+  w date := public.current_week_start();
+  q_home uuid; q_away uuid; ctx jsonb;
+begin
+  insert into public.requests(department_id,week_start,requester_id,filed_by,origin_id,destination_id,ride_type_id,depart_at,return_at,status)
+  values(dept, w, member, member, home, dest, typ,
+         ((w+4)+time '09:00') at time zone 'Asia/Jerusalem', ((w+4)+time '12:00') at time zone 'Asia/Jerusalem', 'submitted')
+  returning id into q_home;
+
+  ctx := public.notification_context(member, dept, w, jsonb_build_object('request_id', q_home));
+  assert ctx->>'route' = 'לחיפה', format('home-origin route should read "לחיפה", got %s', ctx->>'route');
+  assert ctx->>'origin' = '', format('home-origin request should report an empty origin var, got %s', ctx->>'origin');
+
+  insert into public.requests(department_id,week_start,requester_id,filed_by,origin_id,destination_id,ride_type_id,depart_at,return_at,status)
+  values(dept, w, member, member, origin, dest, typ,
+         ((w+4)+time '14:00') at time zone 'Asia/Jerusalem', ((w+4)+time '17:00') at time zone 'Asia/Jerusalem', 'submitted')
+  returning id into q_away;
+
+  ctx := public.notification_context(member, dept, w, jsonb_build_object('request_id', q_away));
+  assert ctx->>'route' = 'מבנימינה לחיפה', format('non-home-origin route should read "מבנימינה לחיפה", got %s', ctx->>'route');
+  assert ctx->>'origin' = 'בנימינה', format('non-home-origin request should report its origin name, got %s', ctx->>'origin');
+end $$;
+
+do $$
+declare v_bad text;
+begin
+  select string_agg(format('%s/%s', event, id), ', ') into v_bad
+  from public.notifications
+  where title_he like '%{{%' or body_he like '%{{%';
+  assert v_bad is null, format('notification(s) rendered a raw template token: %s', v_bad);
+end $$;
+
 rollback;

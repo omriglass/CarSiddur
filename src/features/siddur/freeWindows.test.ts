@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { computeCarFreeWindows, firstCarFreeNow, isSlotFree, nextFreeWindowForCar, roundUpToQuarterHour } from "./freeWindows";
+import { carBaseIsHome, computeCarFreeWindows, firstCarFreeNow, isSlotFree, nextFreeWindowForCar, roundUpToQuarterHour } from "./freeWindows";
 
 const DAY_START = Date.parse("2026-09-08T05:00:00+03:00"); // Tuesday, Asia/Jerusalem (+03:00 in September)
 const DAY_END = Date.parse("2026-09-09T00:00:00+03:00");
@@ -192,5 +192,17 @@ describe("nextFreeWindowForCar / firstCarFreeNow", () => {
     expect(firstCarFreeNow(carWindows, at("05:00"))).toEqual(carWindows[1]);
     expect(firstCarFreeNow(carWindows, at("10:30"))).toEqual(carWindows[0]);
     expect(firstCarFreeNow(carWindows, at("10:31"))).toBeNull();
+  });
+});
+
+describe("carBaseIsHome (REQUIREMENTS §13.93)", () => {
+  it("treats a null/undefined base as home", () => {
+    expect(carBaseIsHome(null, "home")).toBe(true);
+    expect(carBaseIsHome(undefined, "home")).toBe(true);
+  });
+
+  it("matches only when the base equals the department home", () => {
+    expect(carBaseIsHome("home", "home")).toBe(true);
+    expect(carBaseIsHome("binyamina", "home")).toBe(false);
   });
 });

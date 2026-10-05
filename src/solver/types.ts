@@ -34,6 +34,30 @@ export type LegSide = 'out' | 'return' | 'both';
 /** = SQL leg_car_mode */
 export type LegCarMode = 'keep' | 'relay' | 'passenger' | 'chauffeur';
 
+/**
+ * = SQL trip_type (REQUIREMENTS §13.93, docs/ORIGINS_PLAN_2026-10.md §1/§4).
+ * Member-facing labels (Hebrew, see docs/SOLVER.md and reasons.ts) are
+ * round trip, one-way-only and drop-off, in that order.
+ * When a `Request` omits `tripType` (legacy/bridge input), `effectiveTripType()`
+ * derives it from the legacy fields exactly as the SQL backfill does: any
+ * one-way shape (`one_way_to`/`one_way_from`) or a round trip with
+ * `needsCarAtDestination = false` becomes `drop_off` (today's relay/
+ * chauffeur/passenger behavior, now origin-aware); everything else is
+ * `round_trip`. The NEW `one_way` value is only ever produced by an explicit
+ * `tripType: 'one_way'` on the input (a future bridge concern, O5) — no
+ * legacy combination of fields derives it, so every existing golden fixture
+ * and the one-way pairing parity suite keep deriving `drop_off` unchanged.
+ */
+export type TripType = 'round_trip' | 'one_way' | 'drop_off';
+
+/** One row of `SolverInput.travel` (REQUIREMENTS §13.93, ORIGINS_PLAN §4). Symmetric. */
+export interface TravelEdge {
+  fromId: string;
+  toId: string;
+  distanceKm?: number;
+  travelMinutes?: number;
+}
+
 export interface Destination {
   id: string;
   /** 'unknown' for unclassified free text; 'home' for the department base */
@@ -56,6 +80,24 @@ export interface Request {
   destinationId: string;
   rideType: string;
   tripShape: TripShape;
+  /**
+   * Where this trip starts (REQUIREMENTS §13.93). Undefined means the
+   * department home (`SolverInput.homeLocationId`) — the only value every
+   * request had before this field existed, so omitting it is fully
+   * backward-compatible. Use `originIdOf(request, homeLocationId)` rather
+   * than reading this field directly.
+   */
+  originId?: string;
+  /** `originId` is free text, not a managed place — such a request is never placed (§4 item 5). */
+  originIsFreeText?: boolean;
+  /**
+   * New explicit trip type (REQUIREMENTS §13.93). Undefined means "derive
+   * from the legacy fields" — see `TripType`/`effectiveTripType()`. Only an
+   * explicit `'one_way'` changes solver behavior (no pairing obligation, no
+   * chauffeur fallback, end-check-only placement); everything else behaves
+   * exactly like today's `drop_off`-equivalent legacy handling.
+   */
+  tripType?: TripType;
   /**
    * Deprecated input (REQUIREMENTS §13.88, rule made precise 2026-09-16): the
    * member never chose this on the form, and the stored value is now *ignored
@@ -114,6 +156,16 @@ export interface Request {
   seriesId?: string;
   seriesIndex?: number;
   seriesCount?: number;
+  /**
+   * Multi-stop rides (REQUIREMENTS §13.93 "Multi-stop rides", ORIGINS_PLAN
+   * §6, docs/SOLVER.md §3.1a): extra waypoints on the out and/or return leg,
+   * in route order (array order, filtered by `leg` — there is no separate
+   * position field). `locationId` undefined = a free-text stop (never
+   * matched by `travelBetween`/merge joining; always `config.defaultTravelMinutes`
+   * on both adjoining hops). Read only via `legRoute()`/`legRouteMinutes()`/
+   * `stopEtas()` (`src/solver/travel.ts`), never indexed directly.
+   */
+  stops?: { leg: 'out' | 'return'; locationId?: string }[];
 }
 
 export interface Car {
@@ -127,6 +179,14 @@ export interface Car {
   maintenance: Window[];
   /** where the car is at week start; default = home */
   startLocationId?: string;
+  /**
+   * The car's home base (REQUIREMENTS §13.93, ORIGINS_PLAN §1): undefined =
+   * the department home (`SolverInput.homeLocationId`). A car stays wherever
+   * its last ride left it across days/weeks regardless of this field — it is
+   * only used by `weekEndAway()` to decide whether the week ends with the
+   * car somewhere other than where it "belongs".
+   */
+  baseLocationId?: string;
   /**
    * Kilometres this car drove in the rolling window before this week (F5,
    * docs/SOLVER.md §3.6.2; from the `car_mileage_totals` SQL RPC via
@@ -203,6 +263,12 @@ export interface SolverConfig {
   improvementBudget: number;
   perRequestBudget: number;
   externalHints: { cabMaxMinutes: number; rentalMinHours: number; ptMinScore: number };
+  /**
+   * Multi-stop rides (REQUIREMENTS §13.93, ORIGINS_PLAN §6.2): minutes added
+   * per stop to a leg's route duration (`department_settings.stop_minutes`).
+   * Optional; `resolveStopMinutes()` (`src/solver/travel.ts`) defaults it to 5.
+   */
+  stopMinutes?: number;
 }
 
 export interface SolverInput {
@@ -216,6 +282,13 @@ export interface SolverInput {
   policy: Policy;
   stats: SolverStats;
   config: SolverConfig;
+  /**
+   * Known point-to-point travel figures not involving home (REQUIREMENTS
+   * §13.93, ORIGINS_PLAN §4) — e.g. Google-routed distances between two
+   * non-home destinations. Symmetric: a row matches either direction. Read
+   * via `travelBetween()`, never indexed directly.
+   */
+  travel?: TravelEdge[];
   previousAssignments?: Pick<Assignment, 'servedRequestIds' | 'carId'>[];
   /** elapsed-time measurement only, never business logic; no Date.now()/new Date() inside the solver */
   now?: () => number;
@@ -296,6 +369,7 @@ export type SuggestionKind =
   | 'splitLegs'
   | 'convertToRoundTrip'
   | 'chauffeur'
+  | 'changeOrigin'
   | 'externalHint'
   | 'deny';
 
@@ -317,6 +391,13 @@ export type Suggestion =
       hostShift?: { departureMin: number; returnMin: number };
       detourMinutes: number;
       detourKm: number;
+      /**
+       * Multi-stop rides (REQUIREMENTS §13.93, ORIGINS_PLAN §6.3): where the
+       * guest boards the host's ride — the host's own origin in the
+       * same-origin case, or one of the host's declared stops. Informational,
+       * for the UI/proposal; never changes placement.
+       */
+      boardAtLocationId?: string;
     })
   | (SuggestionBase & {
       kind: 'shiftBeyondFlex';
@@ -342,6 +423,19 @@ export type Suggestion =
       carId: string;
       window: Window;
       volunteerCandidateMemberIds: string[];
+    })
+  | (SuggestionBase & {
+      /**
+       * REQUIREMENTS §13.93, ORIGINS_PLAN §4: a car is free for this
+       * request's whole window at another place Y (where that car already
+       * is), so placing the request's origin at Y breaks nothing. SOLVER
+       * §3.15 maps this to proposal type `origin`, payload `{ originId, carId }`
+       * (shown to the Sadran only — never auto-applied).
+       */
+      kind: 'changeOrigin';
+      carId: string;
+      originId: string;
+      window: Window;
     })
   | (SuggestionBase & {
       kind: 'externalHint';

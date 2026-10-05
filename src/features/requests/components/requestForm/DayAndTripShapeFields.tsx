@@ -9,12 +9,11 @@ import { FormItem } from "@/components/ui/form";
 import { Label } from "@/components/ui/label";
 import { DateField } from "@/components/DateField";
 import { datesOfWeek } from "@/components/dateFieldDates";
-import { FieldAnchor } from "@/components/FieldAnchor";
-import { TripShapeControl } from "@/components/TripShapeControl";
 import { t, tv } from "@/i18n/he";
 
 import { returnDayAfterDayChange } from "../../series";
 import type { RequestFormValues } from "../../schema";
+import { TripTypeFields } from "./TripTypeFields";
 
 export interface DayAndTripShapeFieldsProps {
   control: Control<RequestFormValues>;
@@ -29,6 +28,9 @@ export interface DayAndTripShapeFieldsProps {
   multiDaySpan: number | null;
   isQuickContext: boolean;
   oneWay: boolean;
+  tripType: RequestFormValues["tripType"];
+  dropOffPickup: boolean;
+  canDrive: boolean;
 }
 
 export function DayAndTripShapeFields({
@@ -44,6 +46,9 @@ export function DayAndTripShapeFields({
   multiDaySpan,
   isQuickContext,
   oneWay,
+  tripType,
+  dropOffPickup,
+  canDrive,
 }: DayAndTripShapeFieldsProps) {
   return (
     <>
@@ -126,30 +131,10 @@ export function DayAndTripShapeFields({
       ) : null}
 
       {variant !== "carNow" && !isMultiDay ? (
-        <FieldAnchor name="tripShape">
-          <Controller
-            control={control}
-            name="tripShape"
-            render={({ field }) => (
-              <TripShapeControl
-                value={field.value}
-                onChange={(next) => {
-                  const previousShape = field.value;
-                  field.onChange(next);
-                  // `departTime`/`returnTime` are two independent fields, but only one is ever
-                  // shown for a one-way shape — carry the visible value across so switching shape
-                  // doesn't silently swap in the other field's own (possibly stale) value.
-                  if (next === "one_way_from" && previousShape !== "one_way_from") {
-                    form.setValue("returnTime", form.getValues("departTime"), { shouldDirty: true });
-                  } else if (previousShape === "one_way_from" && next !== "one_way_from") {
-                    form.setValue("departTime", form.getValues("returnTime"), { shouldDirty: true });
-                  }
-                }}
-              />
-            )}
-          />
+        <>
+          <TripTypeFields control={control} form={form} variant={variant} tripType={tripType} dropOffPickup={dropOffPickup} canDrive={canDrive} />
           {isQuickContext && oneWay ? <p className="text-sm text-destructive">{t("quickRequest.oneWayHelp")}</p> : null}
-        </FieldAnchor>
+        </>
       ) : null}
     </>
   );

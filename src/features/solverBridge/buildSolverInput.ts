@@ -30,6 +30,7 @@ import type {
   SolverConfig,
   SolverInput,
   SolverStats,
+  TravelEdge,
   Window,
 } from "@/solver";
 
@@ -110,7 +111,7 @@ export interface BuildSolverInputParams {
   homeDestinationId: string;
   departmentSettings: Pick<
     DepartmentSettingsRow,
-    "turnaround_minutes" | "detour_limit_minutes" | "detour_limit_km" | "chauffeur_dwell_minutes" | "day_end_time"
+    "turnaround_minutes" | "detour_limit_minutes" | "detour_limit_km" | "chauffeur_dwell_minutes" | "day_end_time" | "stop_minutes"
   >;
   /**
    * Plain `requests` rows, optionally carrying `requester_does_not_drive` — REQ §88 (owner
@@ -123,7 +124,16 @@ export interface BuildSolverInputParams {
    * don't (e.g. the admin policy preview's own plain `requests` fetch) simply leave every
    * request driving with no driving companions, same as before either field existed.
    */
-  requests: (RequestRow & { requester_does_not_drive?: boolean; driving_companion_ids?: string[] })[];
+  requests: (RequestRow & {
+    requester_does_not_drive?: boolean;
+    driving_companion_ids?: string[];
+    /**
+     * `request_stops` rows (REQUIREMENTS §13.93 "Multi-stop rides", docs/ORIGINS_PLAN_2026-10.md
+     * §6.1) -> `Request.stops`. Omit (or leave empty) for a request with no stops, exactly as
+     * before this field existed.
+     */
+    stops?: { leg: "out" | "return"; position: number; place_id: string | null }[];
+  })[];
   /** `ride_type_id -> code` (policy `rideType` rule params are keyed by `ride_types.code`, SOLVER.md §4.3). */
   rideTypeCodesById: Record<string, string>;
   cars: CarRow[];
@@ -153,6 +163,23 @@ export interface BuildSolverInputParams {
    * (SOLVER.md §5.1: "the caller decides which requests are open").
    */
   fixedRides?: FixedRide[];
+  /**
+   * `car_start_locations(p_department_id, p_week_start)` rows, keyed by
+   * `car_id` (REQUIREMENTS §13.93, docs/ORIGINS_PLAN_2026-10.md §2 item 7):
+   * `locationId` -> `Car.startLocationId`, `baseLocationId` -> (unused here;
+   * `cars.base_location_id` on the car row itself is the source of truth for
+   * `Car.baseLocationId` — see `car.base_location_id` below). Omit (or leave
+   * a car out of the map) to default to the department home, as before this
+   * field existed.
+   */
+  carStartLocationsByCarId?: Record<string, { locationId: string; baseLocationId: string }>;
+  /**
+   * `place_travel_for_week(p_department_id, p_week_start)` rows (REQUIREMENTS
+   * §13.93, ORIGINS_PLAN §2 item 6) -> `SolverInput.travel`, read only via
+   * `travelBetween()`. Omit for `[]` (every non-home-origin leg then falls
+   * back to `config.defaultTravelMinutes`, as before this field existed).
+   */
+  travel?: TravelEdge[];
   /**
    * Continuity hints for a full re-solve (SOLVER.md §5.1: "a full re-run ...
    * supplies the previous draft as `previousAssignments` so continuity ...
@@ -223,6 +250,16 @@ export function buildSolverInput(params: BuildSolverInputParams): SolverInput {
         destinationId: r.destination_id ?? FREE_TEXT_DESTINATION_ID,
         rideType: params.rideTypeCodesById[r.ride_type_id] ?? "other",
         tripShape: r.trip_shape,
+        // REQUIREMENTS §13.93 (ORIGINS_PLAN §4 item 1): `origin_id` is null for a
+        // free-text origin (then `origin_text` is set) or for a legacy/pre-backfill
+        // row (home default) — only the free-text case sets `originIsFreeText`.
+        originId: r.origin_id ?? undefined,
+        originIsFreeText: !r.origin_id && !!r.origin_text,
+        // Always passed explicitly (never left to the solver's own legacy-field
+        // derivation): a stored `trip_type = 'one_way'` has legacy `trip_shape =
+        // 'one_way_to'`, which `effectiveTripType()` would otherwise derive to
+        // `drop_off` if `tripType` were omitted (ORIGINS_PLAN §4 item 1).
+        tripType: r.trip_type,
         oneWayCarMode,
         // REQ §88 (owner 2026-09-15): everyone can drive unless they said otherwise in their
         // profile; `undefined` here (field not selected by this particular caller) also means
@@ -252,15 +289,26 @@ export function buildSolverInput(params: BuildSolverInputParams): SolverInput {
         seriesId: r.series_id ?? undefined,
         seriesIndex: r.series_index ?? undefined,
         seriesCount: r.series_count ?? undefined,
+        // REQUIREMENTS §13.93 "Multi-stop rides": array order = route order per leg
+        // (`src/solver/travel.ts`'s `legRoute()` filters by leg, so only the within-leg
+        // relative order matters) — sorted by `position` since the embed itself carries no
+        // ordering guarantee.
+        stops: r.stops?.length
+          ? [...r.stops]
+              .sort((a, b) => a.leg.localeCompare(b.leg) || a.position - b.position)
+              .map((s) => ({ leg: s.leg, locationId: s.place_id ?? undefined }))
+          : undefined,
       } satisfies SolverRequest;
     });
 
-  // `startLocationId` (SOLVER.md §3.x, Car.startLocationId) is left undefined here: this mapper's
-  // BuildSolverInputParams has no "car's location before the week" input (no prior-ride lookup is
-  // wired through). A car defaults to home in that case (src/solver/timeline.ts) — safe because the
-  // hard guarantee that a continuing series' car is actually where the previous week's SQL
-  // `place_series()` left it is `assert_car_chain()` in SQL, not this mapper (see CLAUDE.md decision
-  // 14 and SOLVER.md §1.3.8). A future caller that has that lookup can pass it through here.
+  // `startLocationId` (SOLVER.md §3.x, Car.startLocationId) now comes from the
+  // `car_start_locations()` RPC when the caller fetches and passes it in
+  // (REQUIREMENTS §13.93, ORIGINS_PLAN §2 item 7); omitted (or a car left out
+  // of the map), it defaults to home (src/solver/timeline.ts) exactly as
+  // before this field existed. The hard guarantee that a continuing series'
+  // car is actually where the previous week's SQL `place_series()` left it is
+  // still `assert_car_chain()` in SQL, not this mapper (CLAUDE.md decision 14,
+  // SOLVER.md §1.3.8).
   const cars: SolverCar[] = params.cars.map((car) => ({
     id: car.id,
     name: car.name,
@@ -277,6 +325,10 @@ export function buildSolverInput(params: BuildSolverInputParams): SolverInput {
       toWindow(b.starts_at, b.ends_at, weekStartMs),
     ),
     mileageKm: params.mileageKmByCarId?.[car.id],
+    startLocationId: params.carStartLocationsByCarId?.[car.id]?.locationId,
+    // REQUIREMENTS §13.93: `cars.base_location_id` (null = home, CarRow already
+    // carries it since every caller selects the full row).
+    baseLocationId: car.base_location_id ?? undefined,
   }));
 
   const fairness: SolverStats["fairness"] = fairnessDeficits(params.fairness ?? []);
@@ -290,6 +342,9 @@ export function buildSolverInput(params: BuildSolverInputParams): SolverInput {
     beyondFlexMaxMinutes: 120,
     defaultTravelMinutes: 60,
     chauffeurDwellMinutes: params.departmentSettings.chauffeur_dwell_minutes,
+    // REQUIREMENTS §13.93 "Multi-stop rides" (ORIGINS_PLAN §6.2): `department_settings.
+    // stop_minutes` -> dwell time per stop, read by `legRouteMinutes()`/`stopEtas()`.
+    stopMinutes: params.departmentSettings.stop_minutes,
     improvementBudget: 5000,
     perRequestBudget: 200,
     externalHints: { cabMaxMinutes: 90, rentalMinHours: 30, ptMinScore: 0.6 },
@@ -305,6 +360,7 @@ export function buildSolverInput(params: BuildSolverInputParams): SolverInput {
     policy: params.policy satisfies Policy,
     stats: { fairness, usualCarId: {} },
     config,
+    travel: params.travel,
     now: params.now,
     previousAssignments: params.previousAssignments,
   };

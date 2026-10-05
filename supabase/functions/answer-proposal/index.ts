@@ -65,6 +65,8 @@ interface ProposalSummary {
     childSeats: number;
     boosters: number;
   } | null;
+  /** `origin` proposals only (REQ §13.93) -- resolved place/car names, never raw ids. */
+  originChange?: { from: string | null; to: string | null; car: string | null } | null;
   parties: PartySummary[];
 }
 
@@ -72,10 +74,12 @@ async function findByToken(token: string) {
   const hash = await sha256Hex(token);
   const client = getServiceRoleClient();
 
+  // Two FKs on `requests` point at `destinations` (destination_id, origin_id), so PostgREST
+  // refuses a bare `destinations(name)` embed (PGRST201) — both embeds name their FK.
   const proposalSelect =
     'id, type, status, reason_he, expires_at, payload, request_id, department_id, week_start, ' +
-    'requests(id, requester_id, destination_id, destination_text, depart_at, return_at, adults, child_seats, boosters, ride_type_id, ' +
-    'destinations(name), ride_types(name_he))';
+    'requests(id, requester_id, origin_id, origin_text, destination_id, destination_text, depart_at, return_at, adults, child_seats, boosters, ride_type_id, ' +
+    'destinations!requests_destination_id_fkey(name), ride_types(name_he), origin:destinations!requests_origin_id_fkey(name))';
 
   const byProposal = await client.from('proposals').select(proposalSelect).eq('token_hash', hash).maybeSingle();
   if (byProposal.data) {
@@ -107,6 +111,8 @@ async function buildSummary(proposal: Record<string, unknown>, myProfileId: stri
   const request = proposal.requests as
     | {
         id: string;
+        origin_id: string | null;
+        origin_text: string | null;
         destination_id: string | null;
         destination_text: string | null;
         depart_at: string | null;
@@ -116,8 +122,30 @@ async function buildSummary(proposal: Record<string, unknown>, myProfileId: stri
         boosters: number;
         destinations: { name: string } | null;
         ride_types: { name_he: string } | null;
+        origin: { name: string } | null;
       }
     | null;
+
+  // `origin` proposals (REQ §13.93): resolve the payload's raw `origin_id`/`car_id` into
+  // names here — the public `/p/:token` page has no session, so it cannot read
+  // `destinations`/`cars` itself (anon has no grants, hard rule 4).
+  let originChange: ProposalSummary['originChange'];
+  if (proposal.type === 'origin') {
+    const payload = proposal.payload as { origin_id?: string; car_id?: string } | null;
+    const [destRes, carRes] = await Promise.all([
+      payload?.origin_id
+        ? client.from('destinations').select('name').eq('id', payload.origin_id).maybeSingle()
+        : Promise.resolve({ data: null }),
+      payload?.car_id
+        ? client.from('cars').select('name').eq('id', payload.car_id).maybeSingle()
+        : Promise.resolve({ data: null }),
+    ]);
+    originChange = {
+      from: request?.origin?.name ?? request?.origin_text ?? null,
+      to: (destRes.data as { name: string } | null)?.name ?? null,
+      car: (carRes.data as { name: string } | null)?.name ?? null,
+    };
+  }
 
   return {
     proposalId,
@@ -140,6 +168,7 @@ async function buildSummary(proposal: Record<string, unknown>, myProfileId: stri
           boosters: request.boosters,
         }
       : null,
+    originChange,
     // Never include phone (ARCHITECTURE.md §10 / hard rule: only phone_of() reads it, and
     // only for members who share a department/ride — this public endpoint reveals neither).
     parties: (parties ?? []).map((p) => ({

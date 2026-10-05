@@ -117,6 +117,16 @@ export function computeCarFreeWindows(input: ComputeCarFreeWindowsInput): CarFre
     .filter((w) => w.end > w.start);
 }
 
+/**
+ * REQUIREMENTS §13.93: "I need a car now" only offers a car whose *base* is the department
+ * home — a car based elsewhere (a temporary car whose owner's default origin isn't home, or a
+ * shared car given a non-home base) is never "free at home" even with no away window of its
+ * own on record (it simply starts the week somewhere else). `null`/`undefined` base = home.
+ */
+export function carBaseIsHome(baseLocationId: string | null | undefined, homeDestinationId: string | null | undefined): boolean {
+  return baseLocationId == null || baseLocationId === homeDestinationId;
+}
+
 /** Is `[start, end)` fully free for `carId` per the already-computed `windows`? */
 export function isSlotFree(windows: readonly CarFreeWindow[], carId: string, start: number, end: number): boolean {
   return windows.some((w) => w.carId === carId && w.start <= start && end <= w.end);

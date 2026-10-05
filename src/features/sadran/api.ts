@@ -61,23 +61,35 @@ export interface WeekRequestRow extends RequestRow {
   ride_type_name_he: string | null;
   /** Quick-request-from-empty-slot (UX_FLOWS.md §18) — the car the member asked for, if any. */
   preferred_car_name: string | null;
+  /** REQUIREMENTS §13.93: resolved origin name (list place) — `null` leaves `origin_text` (free text) as the only label. */
+  origin_resolved_name: string | null;
+  /**
+   * REQUIREMENTS §13.93 "Multi-stop rides": raw `request_stops` rows (minimal columns — the
+   * unmet card's "· N עצירות" count, `UnmetList.tsx`, and the solver-bridge feeder,
+   * `src/features/solverBridge/buildSolverInput.ts`; names/ETAs are not needed on this path).
+   */
+  stops: { leg: "out" | "return"; position: number; place_id: string | null }[];
 }
 
 const WEEK_REQUEST_SELECT = `*,
   requester:profiles!requests_requester_id_fkey(full_name, does_not_drive),
-  destination:destinations(name, travel_minutes),
+  destination:destinations!requests_destination_id_fkey(name, travel_minutes),
+  origin:destinations!requests_origin_id_fkey(name),
   ride_type:ride_types(code, name_he),
   preferred_car:cars!requests_preferred_car_id_fkey(name),
   companions:request_companions(profile_id, profile:profiles!request_companions_profile_id_fkey(full_name, does_not_drive)),
-  request_children(child:children(full_name))`;
+  request_children(child:children(full_name)),
+  stops:request_stops(leg, position, place_id)`;
 
 interface WeekRequestJoinRow extends RequestRow {
   companions: { profile_id: string; profile: { full_name: string; does_not_drive: boolean } | null }[];
   request_children: { child: { full_name: string } | null }[];
   requester: { full_name: string; does_not_drive: boolean } | null;
   destination: { name: string; travel_minutes: number | null } | null;
+  origin: { name: string } | null;
   ride_type: { code: string; name_he: string } | null;
   preferred_car: { name: string } | null;
+  stops: { leg: "out" | "return"; position: number; place_id: string | null }[];
 }
 
 /** Ids of `companions` whose profile is an eligible driver (`!does_not_drive`), REQ §13.88. */
@@ -86,7 +98,7 @@ function drivingCompanionIdsOf(companions: { profile_id: string; profile: { does
 }
 
 function flattenWeekRequest(row: WeekRequestJoinRow): WeekRequestRow {
-  const { requester, destination, ride_type, preferred_car, companions, request_children, ...rest } = row;
+  const { requester, destination, origin, ride_type, preferred_car, companions, request_children, ...rest } = row;
   return {
     ...rest,
     requester_full_name: requester?.full_name ?? null,
@@ -101,6 +113,7 @@ function flattenWeekRequest(row: WeekRequestJoinRow): WeekRequestRow {
     ride_type_code: ride_type?.code ?? null,
     ride_type_name_he: ride_type?.name_he ?? null,
     preferred_car_name: preferred_car?.name ?? null,
+    origin_resolved_name: origin?.name ?? rest.origin_text ?? null,
   } as WeekRequestRow;
 }
 
@@ -136,20 +149,27 @@ export async function fetchWeekRow(departmentId: string, weekStart: string): Pro
  * rather than `WEEK_REQUEST_SELECT`'s full join set (names/destinations/children) since this
  * runs on every solve.
  */
-export type RequestRowWithDriverFlag = RequestRow & { requester_does_not_drive: boolean; driving_companion_ids: string[] };
+export type RequestRowWithDriverFlag = RequestRow & {
+  requester_does_not_drive: boolean;
+  driving_companion_ids: string[];
+  /** REQUIREMENTS §13.93 "Multi-stop rides": -> `buildSolverInput`'s `Request.stops`. */
+  stops?: { leg: "out" | "return"; position: number; place_id: string | null }[];
+};
 
 export async function fetchWeekRequests(departmentId: string, weekStart: string): Promise<RequestRowWithDriverFlag[]> {
   const { data, error } = await supabase
     .from("requests")
     .select(`*,
       requester:profiles!requests_requester_id_fkey(does_not_drive),
-      companions:request_companions(profile_id, profile:profiles!request_companions_profile_id_fkey(does_not_drive))`)
+      companions:request_companions(profile_id, profile:profiles!request_companions_profile_id_fkey(does_not_drive)),
+      stops:request_stops(leg, position, place_id)`)
     .eq("department_id", departmentId)
     .eq("week_start", weekStart);
   if (error) throw toAppError(error);
   return ((data ?? []) as unknown as (RequestRow & {
     requester: { does_not_drive: boolean } | null;
     companions: { profile_id: string; profile: { does_not_drive: boolean } | null }[];
+    stops: { leg: "out" | "return"; position: number; place_id: string | null }[];
   })[]).map(
     ({ requester, companions, ...rest }) => ({
       ...rest,
@@ -330,6 +350,43 @@ export async function fetchCarMileageTotals(departmentId: string, weekStart: str
   return Object.fromEntries((data ?? []).map((row) => [row.car_id, Number(row.km)]));
 }
 
+/**
+ * `car_start_locations()` (REQUIREMENTS §13.93, docs/ORIGINS_PLAN_2026-10.md
+ * §2 item 7): where each shared/temporary car is at week start — fed into
+ * `buildSolverInput`'s `carStartLocationsByCarId` -> `Car.startLocationId`.
+ * Keyed by `car_id`; a car left out of the map defaults to the department
+ * home, as before this field existed.
+ */
+export async function fetchCarStartLocations(
+  departmentId: string,
+  weekStart: string,
+): Promise<Record<string, { locationId: string; baseLocationId: string }>> {
+  const rows = await rpc("car_start_locations", { p_department_id: departmentId, p_week_start: weekStart });
+  return Object.fromEntries(
+    (rows ?? []).map((row) => [row.car_id, { locationId: row.location_id, baseLocationId: row.base_location_id }]),
+  );
+}
+
+/**
+ * `place_travel_for_week()` (REQUIREMENTS §13.93, ORIGINS_PLAN §2 item 6):
+ * every distinct (origin, destination) travel figure the week's requests
+ * need beyond the home<->destination lookup already covered by
+ * `destinations` rows — fed into `buildSolverInput`'s `travel` ->
+ * `SolverInput.travel`, read only via the solver's own `travelBetween()`.
+ */
+export async function fetchPlaceTravelForWeek(
+  departmentId: string,
+  weekStart: string,
+): Promise<{ fromId: string; toId: string; distanceKm?: number; travelMinutes?: number }[]> {
+  const rows = await rpc("place_travel_for_week", { p_department_id: departmentId, p_week_start: weekStart });
+  return (rows ?? []).map((row) => ({
+    fromId: row.origin_id,
+    toId: row.destination_id,
+    distanceKm: row.distance_km ?? undefined,
+    travelMinutes: row.travel_minutes ?? undefined,
+  }));
+}
+
 // ---------------------------------------------------------------------------
 // Solver runs (Run solver / record preview / apply draft)
 // ---------------------------------------------------------------------------
@@ -412,7 +469,6 @@ export interface EditRideInput {
   allow_conflict?: boolean;
   notes?: string | null;
   overflow_allowed?: boolean;
-  overnight_ack?: boolean;
   is_pinned?: boolean;
   pin_reason?: string | null;
   served?: EditRideServedLeg[];

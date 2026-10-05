@@ -423,6 +423,7 @@ export type Database = {
       }
       cars: {
         Row: {
+          base_location_id: string | null
           built_in_boosters: number
           built_in_child_seats: number
           created_at: string
@@ -440,6 +441,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          base_location_id?: string | null
           built_in_boosters?: number
           built_in_child_seats?: number
           created_at?: string
@@ -457,6 +459,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          base_location_id?: string | null
           built_in_boosters?: number
           built_in_child_seats?: number
           created_at?: string
@@ -474,6 +477,13 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "cars_base_location_id_fkey"
+            columns: ["department_id", "base_location_id"]
+            isOneToOne: false
+            referencedRelation: "destinations"
+            referencedColumns: ["department_id", "id"]
+          },
           {
             foreignKeyName: "cars_department_id_fkey"
             columns: ["department_id"]
@@ -604,6 +614,7 @@ export type Database = {
         Row: {
           added_by: string | null
           created_at: string
+          default_origin_id: string | null
           department_id: string
           profile_id: string
           removed_at: string | null
@@ -612,6 +623,7 @@ export type Database = {
         Insert: {
           added_by?: string | null
           created_at?: string
+          default_origin_id?: string | null
           department_id: string
           profile_id: string
           removed_at?: string | null
@@ -620,6 +632,7 @@ export type Database = {
         Update: {
           added_by?: string | null
           created_at?: string
+          default_origin_id?: string | null
           department_id?: string
           profile_id?: string
           removed_at?: string | null
@@ -632,6 +645,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "department_members_default_origin_id_fkey"
+            columns: ["department_id", "default_origin_id"]
+            isOneToOne: false
+            referencedRelation: "destinations"
+            referencedColumns: ["department_id", "id"]
           },
           {
             foreignKeyName: "department_members_department_id_fkey"
@@ -669,6 +689,7 @@ export type Database = {
           proposal_expiry_mode: string
           publish_dow: number
           publish_time: string
+          stop_minutes: number
           turnaround_minutes: number
           updated_at: string | null
           updated_by: string | null
@@ -693,6 +714,7 @@ export type Database = {
           proposal_expiry_mode?: string
           publish_dow?: number
           publish_time?: string
+          stop_minutes?: number
           turnaround_minutes?: number
           updated_at?: string | null
           updated_by?: string | null
@@ -717,6 +739,7 @@ export type Database = {
           proposal_expiry_mode?: string
           publish_dow?: number
           publish_time?: string
+          stop_minutes?: number
           turnaround_minutes?: number
           updated_at?: string | null
           updated_by?: string | null
@@ -1209,6 +1232,64 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "weeks"
             referencedColumns: ["department_id", "week_start"]
+          },
+        ]
+      }
+      place_distances: {
+        Row: {
+          created_at: string
+          department_id: string
+          distance_km: number
+          from_id: string
+          id: string
+          source: string
+          to_id: string
+          travel_minutes: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          department_id: string
+          distance_km: number
+          from_id: string
+          id?: string
+          source?: string
+          to_id: string
+          travel_minutes: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          department_id?: string
+          distance_km?: number
+          from_id?: string
+          id?: string
+          source?: string
+          to_id?: string
+          travel_minutes?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "place_distances_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "place_distances_from_id_fkey"
+            columns: ["department_id", "from_id"]
+            isOneToOne: false
+            referencedRelation: "destinations"
+            referencedColumns: ["department_id", "id"]
+          },
+          {
+            foreignKeyName: "place_distances_to_id_fkey"
+            columns: ["department_id", "to_id"]
+            isOneToOne: false
+            referencedRelation: "destinations"
+            referencedColumns: ["department_id", "id"]
           },
         ]
       }
@@ -1823,6 +1904,71 @@ export type Database = {
           },
         ]
       }
+      request_stops: {
+        Row: {
+          created_at: string
+          department_id: string
+          id: string
+          leg: Database["public"]["Enums"]["ride_leg"]
+          place_id: string | null
+          place_text: string | null
+          position: number
+          request_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          department_id: string
+          id?: string
+          leg: Database["public"]["Enums"]["ride_leg"]
+          place_id?: string | null
+          place_text?: string | null
+          position: number
+          request_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          department_id?: string
+          id?: string
+          leg?: Database["public"]["Enums"]["ride_leg"]
+          place_id?: string | null
+          place_text?: string | null
+          position?: number
+          request_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "request_stops_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "request_stops_place_id_fkey"
+            columns: ["department_id", "place_id"]
+            isOneToOne: false
+            referencedRelation: "destinations"
+            referencedColumns: ["department_id", "id"]
+          },
+          {
+            foreignKeyName: "request_stops_request_id_fkey"
+            columns: ["request_id"]
+            isOneToOne: false
+            referencedRelation: "requests"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "request_stops_request_id_fkey"
+            columns: ["request_id"]
+            isOneToOne: false
+            referencedRelation: "v_my_requests"
+            referencedColumns: ["request_id"]
+          },
+        ]
+      }
       request_templates: {
         Row: {
           adults: number
@@ -1848,6 +1994,8 @@ export type Database = {
           needs_car_at_destination: boolean
           notes: string | null
           one_way_car_mode: Database["public"]["Enums"]["leg_car_mode"] | null
+          origin_id: string | null
+          origin_text: string | null
           paused_until: string | null
           preferred_car_id: string | null
           requester_id: string
@@ -1858,7 +2006,9 @@ export type Database = {
           snoozed_until_week: string | null
           source_request_id: string | null
           stopped_at: string | null
+          stops: Json
           trip_shape: Database["public"]["Enums"]["trip_shape"]
+          trip_type: Database["public"]["Enums"]["trip_type"]
           updated_at: string
         }
         Insert: {
@@ -1885,6 +2035,8 @@ export type Database = {
           needs_car_at_destination?: boolean
           notes?: string | null
           one_way_car_mode?: Database["public"]["Enums"]["leg_car_mode"] | null
+          origin_id?: string | null
+          origin_text?: string | null
           paused_until?: string | null
           preferred_car_id?: string | null
           requester_id: string
@@ -1895,7 +2047,9 @@ export type Database = {
           snoozed_until_week?: string | null
           source_request_id?: string | null
           stopped_at?: string | null
+          stops?: Json
           trip_shape?: Database["public"]["Enums"]["trip_shape"]
+          trip_type?: Database["public"]["Enums"]["trip_type"]
           updated_at?: string
         }
         Update: {
@@ -1922,6 +2076,8 @@ export type Database = {
           needs_car_at_destination?: boolean
           notes?: string | null
           one_way_car_mode?: Database["public"]["Enums"]["leg_car_mode"] | null
+          origin_id?: string | null
+          origin_text?: string | null
           paused_until?: string | null
           preferred_car_id?: string | null
           requester_id?: string
@@ -1932,7 +2088,9 @@ export type Database = {
           snoozed_until_week?: string | null
           source_request_id?: string | null
           stopped_at?: string | null
+          stops?: Json
           trip_shape?: Database["public"]["Enums"]["trip_shape"]
+          trip_type?: Database["public"]["Enums"]["trip_type"]
           updated_at?: string
         }
         Relationships: [
@@ -1946,6 +2104,13 @@ export type Database = {
           {
             foreignKeyName: "request_templates_destination_id_fkey"
             columns: ["department_id", "destination_id"]
+            isOneToOne: false
+            referencedRelation: "destinations"
+            referencedColumns: ["department_id", "id"]
+          },
+          {
+            foreignKeyName: "request_templates_origin_id_fkey"
+            columns: ["department_id", "origin_id"]
             isOneToOne: false
             referencedRelation: "destinations"
             referencedColumns: ["department_id", "id"]
@@ -2014,6 +2179,8 @@ export type Database = {
           needs_car_at_destination: boolean
           notes: string | null
           one_way_car_mode: Database["public"]["Enums"]["leg_car_mode"] | null
+          origin_id: string | null
+          origin_text: string | null
           original_depart_at: string | null
           original_return_at: string | null
           preferred_car_id: string | null
@@ -2029,6 +2196,7 @@ export type Database = {
           submitted_at: string | null
           template_id: string | null
           trip_shape: Database["public"]["Enums"]["trip_shape"]
+          trip_type: Database["public"]["Enums"]["trip_type"]
           updated_at: string
           version: number
           week_start: string
@@ -2059,6 +2227,8 @@ export type Database = {
           needs_car_at_destination?: boolean
           notes?: string | null
           one_way_car_mode?: Database["public"]["Enums"]["leg_car_mode"] | null
+          origin_id?: string | null
+          origin_text?: string | null
           original_depart_at?: string | null
           original_return_at?: string | null
           preferred_car_id?: string | null
@@ -2074,6 +2244,7 @@ export type Database = {
           submitted_at?: string | null
           template_id?: string | null
           trip_shape?: Database["public"]["Enums"]["trip_shape"]
+          trip_type?: Database["public"]["Enums"]["trip_type"]
           updated_at?: string
           version?: number
           week_start: string
@@ -2104,6 +2275,8 @@ export type Database = {
           needs_car_at_destination?: boolean
           notes?: string | null
           one_way_car_mode?: Database["public"]["Enums"]["leg_car_mode"] | null
+          origin_id?: string | null
+          origin_text?: string | null
           original_depart_at?: string | null
           original_return_at?: string | null
           preferred_car_id?: string | null
@@ -2119,6 +2292,7 @@ export type Database = {
           submitted_at?: string | null
           template_id?: string | null
           trip_shape?: Database["public"]["Enums"]["trip_shape"]
+          trip_type?: Database["public"]["Enums"]["trip_type"]
           updated_at?: string
           version?: number
           week_start?: string
@@ -2165,6 +2339,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "v_my_requests"
             referencedColumns: ["ride_id"]
+          },
+          {
+            foreignKeyName: "requests_origin_id_fkey"
+            columns: ["department_id", "origin_id"]
+            isOneToOne: false
+            referencedRelation: "destinations"
+            referencedColumns: ["department_id", "id"]
           },
           {
             foreignKeyName: "requests_preferred_car_id_fkey"
@@ -2972,6 +3153,27 @@ export type Database = {
           },
         ]
       }
+      text_fragments: {
+        Row: {
+          body: string
+          created_at: string
+          key: string
+          updated_at: string
+        }
+        Insert: {
+          body: string
+          created_at?: string
+          key: string
+          updated_at?: string
+        }
+        Update: {
+          body?: string
+          created_at?: string
+          key?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       waitlist_group_members: {
         Row: {
           adults: number
@@ -3353,6 +3555,7 @@ export type Database = {
           people: Json | null
           pin_reason: string | null
           planning_conflict: boolean | null
+          relay_partner: Json | null
           series_count: number | null
           series_id: string | null
           series_index: number | null
@@ -3463,6 +3666,9 @@ export type Database = {
           needs_car_at_destination: boolean | null
           needs_driver: boolean | null
           one_way_car_mode: Database["public"]["Enums"]["leg_car_mode"] | null
+          origin_id: string | null
+          origin_name: string | null
+          origin_text: string | null
           original_depart_at: string | null
           original_return_at: string | null
           pending_proposal_expires_at: string | null
@@ -3488,11 +3694,20 @@ export type Database = {
           starts_at: string | null
           status: Database["public"]["Enums"]["request_status"] | null
           status_reason: string | null
+          stops: Json | null
           trip_shape: Database["public"]["Enums"]["trip_shape"] | null
+          trip_type: Database["public"]["Enums"]["trip_type"] | null
           turnaround_override_minutes: number | null
           week_start: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "requests_origin_id_fkey"
+            columns: ["department_id", "origin_id"]
+            isOneToOne: false
+            referencedRelation: "destinations"
+            referencedColumns: ["department_id", "id"]
+          },
           {
             foreignKeyName: "requests_preferred_car_id_fkey"
             columns: ["preferred_car_id"]
@@ -3539,6 +3754,9 @@ export type Database = {
           needs_car_at_destination: boolean | null
           notes: string | null
           one_way_car_mode: Database["public"]["Enums"]["leg_car_mode"] | null
+          origin_id: string | null
+          origin_name: string | null
+          origin_text: string | null
           preferred_car_id: string | null
           return_at: string | null
           return_dow: number | null
@@ -3546,8 +3764,10 @@ export type Database = {
           ride_description: string | null
           ride_type_id: string | null
           ride_type_name: string | null
+          stops: Json | null
           template_id: string | null
           trip_shape: Database["public"]["Enums"]["trip_shape"] | null
+          trip_type: Database["public"]["Enums"]["trip_type"] | null
           week_start: string | null
         }
         Relationships: [
@@ -3561,6 +3781,13 @@ export type Database = {
           {
             foreignKeyName: "request_templates_destination_id_fkey"
             columns: ["department_id", "destination_id"]
+            isOneToOne: false
+            referencedRelation: "destinations"
+            referencedColumns: ["department_id", "id"]
+          },
+          {
+            foreignKeyName: "request_templates_origin_id_fkey"
+            columns: ["department_id", "origin_id"]
             isOneToOne: false
             referencedRelation: "destinations"
             referencedColumns: ["department_id", "id"]
@@ -3846,6 +4073,7 @@ export type Database = {
         Args: { p_expected_version: number; p_group_id: string }
         Returns: Json
       }
+      car_base_location: { Args: { _car: string }; Returns: string }
       car_care_recipients: { Args: { _car_id: string }; Returns: string[] }
       car_fits: {
         Args: {
@@ -3866,6 +4094,18 @@ export type Database = {
         Returns: {
           car_id: string
           km: number
+        }[]
+      }
+      car_next_ride_origin: {
+        Args: { _after: string; _car: string }
+        Returns: string
+      }
+      car_start_locations: {
+        Args: { p_department_id: string; p_week_start: string }
+        Returns: {
+          base_location_id: string
+          car_id: string
+          location_id: string
         }[]
       }
       claim_freed_slot: {
@@ -4128,6 +4368,24 @@ export type Database = {
         }
         Returns: Json
       }
+      place_travel: {
+        Args: { p_from: string; p_to: string }
+        Returns: {
+          distance_km: number
+          source: string
+          travel_minutes: number
+        }[]
+      }
+      place_travel_for_week: {
+        Args: { p_department_id: string; p_week_start: string }
+        Returns: {
+          destination_id: string
+          distance_km: number
+          origin_id: string
+          source: string
+          travel_minutes: number
+        }[]
+      }
       prepare_manual_ride_window: {
         Args: {
           p_car_id: string
@@ -4241,6 +4499,15 @@ export type Database = {
         }
         Returns: undefined
       }
+      replace_request_stops: {
+        Args: {
+          p_department_id: string
+          p_has_return: boolean
+          p_request_id: string
+          p_stops: Json
+        }
+        Returns: undefined
+      }
       report_car_issue: {
         Args: {
           _car_id: string
@@ -4254,6 +4521,31 @@ export type Database = {
         Args: { p_hours?: number; p_issue_id: string }
         Returns: string
       }
+      request_leg_route_km: {
+        Args: {
+          p_leg: Database["public"]["Enums"]["ride_leg"]
+          p_request_id: string
+        }
+        Returns: number
+      }
+      request_leg_route_minutes: {
+        Args: {
+          p_leg: Database["public"]["Enums"]["ride_leg"]
+          p_request_id: string
+        }
+        Returns: number
+      }
+      request_leg_route_points: {
+        Args: {
+          p_leg: Database["public"]["Enums"]["ride_leg"]
+          p_request_id: string
+        }
+        Returns: {
+          place_id: string
+          place_text: string
+          position: number
+        }[]
+      }
       request_ride_change: {
         Args: {
           p_car_id: string
@@ -4264,6 +4556,7 @@ export type Database = {
         }
         Returns: string
       }
+      request_route_label: { Args: { p_request_id: string }; Returns: string }
       request_served_by_public_ride: {
         Args: { _request_id: string }
         Returns: boolean
@@ -4271,6 +4564,16 @@ export type Database = {
       request_span: {
         Args: { _depart: string; _return: string }
         Returns: unknown
+      }
+      request_stop_etas: {
+        Args: { p_request_id: string }
+        Returns: {
+          eta: string
+          leg: Database["public"]["Enums"]["ride_leg"]
+          place_id: string
+          place_text: string
+          position: number
+        }[]
       }
       required_turnaround_minutes: {
         Args: { p_department_id: string; p_week_start: string }
@@ -4304,6 +4607,17 @@ export type Database = {
         Args: { p_template_id: string }
         Returns: undefined
       }
+      route_label: {
+        Args: {
+          p_department_id: string
+          p_destination_id: string
+          p_destination_text: string
+          p_origin_id: string
+          p_origin_text: string
+          p_stops_text?: string
+        }
+        Returns: string
+      }
       sadran_contact_of: {
         Args: { _department_id: string; _week_start: string }
         Returns: {
@@ -4330,6 +4644,10 @@ export type Database = {
       }
       set_manual_boost: {
         Args: { p_reason: string; p_request_id: string; p_value: number }
+        Returns: undefined
+      }
+      set_my_default_origin: {
+        Args: { p_department_id: string; p_origin_id: string }
         Returns: undefined
       }
       set_policy_active: {
@@ -4533,7 +4851,7 @@ export type Database = {
         | "expired"
         | "applied"
         | "withdrawn"
-      proposal_type: "shift" | "merge" | "deny" | "external"
+      proposal_type: "shift" | "merge" | "deny" | "external" | "origin"
       push_outbox_status: "pending" | "sent" | "failed" | "dead"
       request_status:
         | "draft"
@@ -4553,6 +4871,7 @@ export type Database = {
       solver_run_status: "succeeded" | "failed"
       tire_state: "ok" | "low" | "very_low"
       trip_shape: "round_trip" | "one_way_to" | "one_way_from"
+      trip_type: "round_trip" | "one_way" | "drop_off"
       waitlist_group_status: "open" | "resolved" | "cancelled"
       week_phase:
         | "upcoming"
@@ -4760,7 +5079,7 @@ export const Constants = {
         "applied",
         "withdrawn",
       ],
-      proposal_type: ["shift", "merge", "deny", "external"],
+      proposal_type: ["shift", "merge", "deny", "external", "origin"],
       push_outbox_status: ["pending", "sent", "failed", "dead"],
       request_status: [
         "draft",
@@ -4781,6 +5100,7 @@ export const Constants = {
       solver_run_status: ["succeeded", "failed"],
       tire_state: ["ok", "low", "very_low"],
       trip_shape: ["round_trip", "one_way_to", "one_way_from"],
+      trip_type: ["round_trip", "one_way", "drop_off"],
       waitlist_group_status: ["open", "resolved", "cancelled"],
       week_phase: [
         "upcoming",

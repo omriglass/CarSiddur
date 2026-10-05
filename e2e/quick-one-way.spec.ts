@@ -31,7 +31,9 @@ async function quickFixture(week: string) {
   const { data: destination, error: destinationError } = await service.from("destinations").select("id,name,travel_minutes").eq("id", "00000000-0000-0000-0000-000000000011").single();
   if (destinationError) throw destinationError;
   const { data: settings } = await service.from("department_settings").select("chauffeur_dwell_minutes").eq("department_id", NEVO_DEPARTMENT_ID).single();
-  return { service, cleanup, carId: car!.car_id as string, destination: destination!, dwell: settings!.chauffeur_dwell_minutes as number };
+  const { data: department } = await service.from("departments").select("home_destination_id").eq("id", NEVO_DEPARTMENT_ID).single();
+  const { data: home } = await service.from("destinations").select("id,name").eq("id", department!.home_destination_id!).single();
+  return { service, cleanup, carId: car!.car_id as string, destination: destination!, home: home!, dwell: settings!.chauffeur_dwell_minutes as number };
 }
 
 async function openQuickRequest(page: Page, week: string, carId: string, minutes = 600) {
@@ -65,7 +67,11 @@ async function fillPublicDetails(page: Page, destinationName: string, descriptio
   await expect(sheet.getByText(tv("request.namedPassengerCount", { count: String(1 + 1 + guestNames.length) }))).toBeVisible();
 }
 
-for (const [index, shape] of (["one_way_to", "one_way_from"] as const).entries()) {
+// REQ §13.93: both quick one-leg cases are a הקפצה (drop_off). "drop_off": the car is at the
+// origin (home) and the volunteer drives the member to X and back. "pickup": "pick me up from
+// X" — origin X, destination home, the car at home: the volunteer leaves home in time to collect
+// the member at X at the requested time and brings the car back (the former `one_way_from`).
+for (const [index, shape] of (["drop_off", "pickup"] as const).entries()) {
   test(`live quick ${shape} keeps the requested endpoint and public passenger details through a driver claim`, { tag: ["@quick-request"] }, async ({ browser }) => {
     const week = index ? "2044-01-10" : "2044-01-03";
     const fixture = await quickFixture(week);
@@ -76,25 +82,31 @@ for (const [index, shape] of (["one_way_to", "one_way_from"] as const).entries()
       const member = await newSignedInPage(browser, SEEDED_USERS.member1);
       contexts.push(member.context);
       await openQuickRequest(member.page, week, fixture.carId);
-      await fillPublicDetails(member.page, fixture.destination.name, description, guestNames);
-      await member.page.getByRole("radio", { name: shape === "one_way_to" ? he.request.tripShapeOneWayTo : he.request.tripShapeOneWayFrom, exact: true }).click();
+      await fillPublicDetails(member.page, shape === "pickup" ? fixture.home.name : fixture.destination.name, description, guestNames);
       const sheet = mainDialog(member.page);
-      if (shape === "one_way_from") {
-        await expect(sheet.getByLabel(he.field.depart, { exact: true })).toHaveCount(0);
-        await expect(sheet.getByLabel(he.field.return, { exact: true })).toHaveValue("10:00");
+      if (shape === "pickup") {
+        await sheet.getByRole("button", { name: he.field.origin, exact: true }).click();
+        await member.page.getByPlaceholder(he.field.origin).fill(fixture.destination.name);
+        await member.page.getByRole("option").filter({ hasText: fixture.destination.name }).first().click();
+        await expect(sheet.getByRole("button", { name: he.field.origin, exact: true })).toContainText(fixture.destination.name);
       }
+      await member.page.getByRole("radio", { name: he.request.tripTypeDropOff, exact: true }).click();
       await sheet.getByRole("button", { name: he.quickRequest.submitOneWay, exact: true }).click();
       await expect(sheet).not.toBeVisible();
       await expect(member.page.locator('[data-needs-driver="true"]')).toHaveCount(1);
-      const { data: request, error: requestError } = await fixture.service.from("requests").select("id,trip_shape,depart_at,return_at,adults,ride_description,guest_passenger_names")
+      const { data: request, error: requestError } = await fixture.service.from("requests")
+        .select("id,trip_shape,trip_type,origin_id,destination_id,depart_at,return_at,adults,ride_description,guest_passenger_names")
         .eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", week).single();
       if (requestError) throw requestError;
-      expect(request!.trip_shape).toBe(shape);
+      expect(request!.trip_shape).toBe("one_way_to");
+      expect(request!.trip_type).toBe("drop_off");
+      expect(request!.origin_id).toBe(shape === "pickup" ? fixture.destination.id : fixture.home.id);
+      expect(request!.destination_id).toBe(shape === "pickup" ? fixture.home.id : fixture.destination.id);
       expect(request!.ride_description).toBe(description);
       expect(request!.guest_passenger_names).toEqual(guestNames);
       expect(request!.adults).toBe(4);
-      expect(shape === "one_way_to" ? request!.return_at : request!.depart_at).toBeNull();
-      expect(Date.parse(shape === "one_way_to" ? request!.depart_at : request!.return_at)).toBe(Date.parse(`${week}T10:00:00+02:00`));
+      expect(request!.return_at).toBeNull();
+      expect(Date.parse(request!.depart_at)).toBe(Date.parse(`${week}T10:00:00+02:00`));
       const { data: companions } = await fixture.service.from("request_companions").select("profile_id").eq("request_id", request!.id);
       expect(companions).toEqual([{ profile_id: "00000000-0000-0000-0000-000000000101" }]);
       const { data: guestsWithAccounts } = await fixture.service.from("profiles").select("id").in("full_name", guestNames);
@@ -105,7 +117,10 @@ for (const [index, shape] of (["one_way_to", "one_way_from"] as const).entries()
       expect(ride!.driver_id).toBeNull();
       expect(ride!.needs_driver).toBe(true);
       expect(Date.parse(ride!.ends_at) - Date.parse(ride!.starts_at)).toBe(Math.ceil((2 * fixture.destination.travel_minutes + fixture.dwell) / 15) * 15 * 60000);
-      expect(Date.parse(shape === "one_way_to" ? ride!.starts_at : ride!.ends_at)).toBe(Date.parse(`${week}T10:00:00+02:00`));
+      // Drop-off: the car leaves home at the requested time. Pickup: it is back home one
+      // (grid-rounded) travel time after collecting the member at X at the requested time.
+      if (shape === "drop_off") expect(Date.parse(ride!.starts_at)).toBe(Date.parse(`${week}T10:00:00+02:00`));
+      else expect(Date.parse(ride!.ends_at)).toBe(Date.parse(`${week}T10:00:00+02:00`) + Math.ceil(fixture.destination.travel_minutes / 15) * 15 * 60000);
 
       const coordinator = await newSignedInPage(browser, SEEDED_USERS.sadran);
       contexts.push(coordinator.context);

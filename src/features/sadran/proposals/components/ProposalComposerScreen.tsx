@@ -18,6 +18,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { TimeField15 } from "@/components/TimeField15";
 import { useCars, useDestinations } from "@/features/fleet/hooks";
+import { useActiveDepartment } from "@/features/auth/useActiveDepartment";
 import { useProfile } from "@/features/auth/useProfile";
 import { ProposalSummary } from "@/features/proposals/components/ProposalSummary";
 import { fetchBoardRideById } from "@/features/siddur/api";
@@ -26,6 +27,7 @@ import { sadranKeys } from "../../keys";
 import { servedOf } from "../../solverRun";
 import { env } from "@/lib/env";
 import { formatDayDate } from "@/lib/dayLabels";
+import { routeLabel } from "@/lib/routeLabel";
 import { TZ, dateKey, formatTime } from "@/lib/time";
 import { useQuery } from "@tanstack/react-query";
 
@@ -82,6 +84,10 @@ const VARIANT_OF_TYPE: Record<ProposalType, string | null> = {
   // value (SOLVER.md §3.15: it is sent as a `merge` proposal with `role: 'driver'`) and no
   // composer action yet — UX_FLOWS.md §15 item 6 records that as a separate, still-open gap.
   external: "external",
+  // `origin` (REQ §13.93, ORIGINS_PLAN §3/§4, db-migrator O3 + ui-dev O4b): the solver's
+  // `changeOrigin` suggestion is sent from the board's unmet list exactly like every other
+  // suggestion kind; the WhatsApp copy is seeded (`supabase/seed.sql`, `20261004120000_...sql`).
+  origin: "origin",
 };
 
 /** `/sadran/:dept/:week/proposals/new` — proposal composer (UX_FLOWS.md §4.3). */
@@ -127,6 +133,14 @@ export function ProposalComposerScreen({ departmentId, weekStart }: ProposalComp
   const proposedDepartAt = atTime(departAt, departOverride);
   const proposedReturnAt = atTime(returnAt, returnOverride);
   const destinationName = destinationsQuery.data?.find((d) => d.id === request?.destination_id)?.name ?? request?.destination_text ?? "";
+  // REQ §13.93: every WhatsApp `proposal_received` template is rendered here (not in SQL) and
+  // reads "{{route}}" — "ל<dest>", or "מ<origin> ל<dest>" when the origin is not home.
+  const homeDestinationId = useActiveDepartment().departments.find((d) => d.id === departmentId)?.home_destination_id ?? null;
+  const route = routeLabel({
+    destination: destinationName,
+    origin: request?.origin_resolved_name ?? request?.origin_text ?? null,
+    originIsHome: !request?.origin_id ? !request?.origin_text : request.origin_id === homeDestinationId,
+  });
 
   const hostRideQuery = useQuery({
     queryKey: sadranKeys.proposalHostRide(rideId),
@@ -171,6 +185,13 @@ export function ProposalComposerScreen({ departmentId, weekStart }: ProposalComp
   const mergePayload = (currentProposal?.payload ?? prefill?.payload) as Record<string, unknown> | undefined;
   const combinedStart = typeof mergePayload?.starts_at === "string" ? mergePayload.starts_at : hostRideQuery.data?.starts_at;
   const combinedEnd = typeof mergePayload?.ends_at === "string" ? mergePayload.ends_at : hostRideQuery.data?.ends_at;
+  // `origin` (REQ §13.93, SOLVER §3.15): never editable in the composer — the board already
+  // picked the free car/location pair, this screen only shows and sends it.
+  const originPayload = type === "origin" ? ((currentProposal?.payload ?? prefill?.payload) as Record<string, unknown> | undefined) : undefined;
+  const originIdValue = typeof originPayload?.origin_id === "string" ? originPayload.origin_id : undefined;
+  const originCarIdValue = typeof originPayload?.car_id === "string" ? originPayload.car_id : undefined;
+  const newOriginName = destinationsQuery.data?.find((d) => d.id === originIdValue)?.name ?? "";
+  const originCarName = carsQuery.data?.find((c) => c.id === originCarIdValue)?.name ?? "";
 
   const variant = VARIANT_OF_TYPE[type];
   const template = variant ? (templatesQuery.data ?? []).find((t) => t.variant === variant) : undefined;
@@ -199,13 +220,19 @@ export function ProposalComposerScreen({ departmentId, weekStart }: ProposalComp
       firstName: firstNameOf(requester?.full_name),
       sadranName: profileQuery.data?.full_name ?? "",
       destination: destinationName,
+      route,
       day,
       date,
       depart: request?.depart_at ? formatTime(new Date(request.depart_at)) : "",
       return: request?.return_at ? formatTime(new Date(request.return_at)) : "",
       newDepart: proposedDepartAt ? formatTime(new Date(proposedDepartAt)) : "",
       newReturn: proposedReturnAt ? formatTime(new Date(proposedReturnAt)) : "",
-      car: carsQuery.data?.find((c) => c.id === hostRideQuery.data?.car_id)?.name ?? "",
+      car: type === "origin" ? originCarName : (carsQuery.data?.find((c) => c.id === hostRideQuery.data?.car_id)?.name ?? ""),
+      // `origin` (REQ §13.93): the request's current origin vs. the free car's origin the
+      // board suggested instead — baked into `reason_he` at creation time (never left as a
+      // raw `{{origin}}`/`{{newOrigin}}` token, same rule as every other var here).
+      origin: request?.origin_resolved_name ?? "",
+      newOrigin: newOriginName,
       driverName: hostRideQuery.data?.driver_name ?? "",
       passengerName: firstNameOf(requester?.full_name),
       detourMin: "",
@@ -268,6 +295,12 @@ export function ProposalComposerScreen({ departmentId, weekStart }: ProposalComp
         ? prefill.payload.legs
         : [{ ride_id: rideId, role: "passenger", leg: request?.trip_shape === "one_way_to" ? "out" : request?.trip_shape === "one_way_from" ? "return" : "both", car_mode: "passenger" }];
       return { ...prefill?.payload, ride_id: rideId, legs, starts_at: combinedStart, ends_at: combinedEnd };
+    }
+    if (type === "origin") {
+      const originId = typeof prefill?.payload.origin_id === "string" ? prefill.payload.origin_id : undefined;
+      const carId = typeof prefill?.payload.car_id === "string" ? prefill.payload.car_id : undefined;
+      if (!originId || !carId) return null;
+      return { origin_id: originId, car_id: carId };
     }
     return null;
   }
@@ -355,20 +388,22 @@ export function ProposalComposerScreen({ departmentId, weekStart }: ProposalComp
             <span className="font-medium">{he.field.rideType}:</span>
             <Select value={type} disabled>
               <SelectTrigger className="w-48">
-                <SelectValue>{he.proposal.type[type as "shift" | "merge" | "deny" | "external"]}</SelectValue>
+                <SelectValue>{he.proposal.type[type as "shift" | "merge" | "deny" | "external" | "origin"]}</SelectValue>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="shift">{he.proposal.type.shift}</SelectItem>
                 <SelectItem value="merge">{he.proposal.type.merge}</SelectItem>
                 <SelectItem value="deny">{he.proposal.type.deny}</SelectItem>
                 <SelectItem value="external">{he.proposal.type.external}</SelectItem>
+                <SelectItem value="origin">{he.proposal.type.origin}</SelectItem>
               </SelectContent>
             </Select>
           </div>
 
           <ProposalSummary requesterName={request.requester_full_name} destination={destinationName}
             purpose={request.ride_type_name_he} departAt={request.depart_at} returnAt={request.return_at}
-            hostDriverName={type === "merge" ? hostRideQuery.data?.driver_name : undefined} />
+            hostDriverName={type === "merge" ? hostRideQuery.data?.driver_name : undefined}
+            originChange={type === "origin" ? { from: request.origin_resolved_name, to: newOriginName || null, car: originCarName || null } : undefined} />
 
           {type === "shift" && !proposalId ? <div className="flex flex-wrap gap-4">
             {departAt ? <label className="space-y-1 text-xs"><span className="block">{he.field.depart}</span><TimeField15 min="00:00" value={departOverride ?? formatTime(new Date(departAt))} onChange={(time) => { setDepartOverride(time); setEditedText(null); }} aria-label={he.field.depart} /></label> : null}

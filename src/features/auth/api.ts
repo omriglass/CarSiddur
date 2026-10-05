@@ -59,6 +59,8 @@ export async function updateProfile(profileId: string, patch: ProfilePatch): Pro
 export interface DepartmentMembership {
   department_id: string;
   role: Role;
+  /** REQ §13.93: the member's fixed origin for this department (`set_my_default_origin`), null = department home. */
+  default_origin_id: string | null;
   department: { id: string; name: string; slug: string };
 }
 
@@ -66,16 +68,25 @@ export interface DepartmentMembership {
 export async function fetchMyDepartments(profileId: string): Promise<DepartmentMembership[]> {
   const { data, error } = await supabase
     .from("department_members")
-    .select("department_id, role, department:departments(id, name, slug)")
+    .select("department_id, role, default_origin_id, department:departments(id, name, slug)")
     .eq("profile_id", profileId)
     .is("removed_at", null);
   if (error) throw toAppError(error);
   return (data ?? []) as unknown as DepartmentMembership[];
 }
 
+/** "נקודת יציאה קבועה" (REQ §13.93, ORIGINS_PLAN §2.3) — null clears it (department home). */
+export async function setMyDefaultOrigin(departmentId: string, originId: string | null): Promise<void> {
+  // `p_origin_id uuid default null` — the generated Args type doesn't know the SQL param
+  // accepts null (it only reflects the column type), so this cast matches the real signature.
+  await rpc("set_my_default_origin", { p_department_id: departmentId, p_origin_id: originId as unknown as string });
+}
+
 export interface DepartmentMemberOption {
   id: string;
   name: string;
+  /** REQ §13.93/§13.88: whether this companion can drive (`profiles.does_not_drive`). */
+  doesNotDrive: boolean;
 }
 
 /** Active members of a department (for `CompanionPicker`), excluding the current member. */
@@ -85,14 +96,14 @@ export async function fetchDepartmentMembers(
 ): Promise<DepartmentMemberOption[]> {
   const { data, error } = await supabase
     .from("department_members")
-    .select("profile_id, profile:profiles!department_members_profile_id_fkey(id, full_name)")
+    .select("profile_id, profile:profiles!department_members_profile_id_fkey(id, full_name, does_not_drive)")
     .eq("department_id", departmentId)
     .is("removed_at", null)
     .neq("profile_id", excludeProfileId);
   if (error) throw toAppError(error);
-  return ((data ?? []) as unknown as { profile_id: string; profile: { id: string; full_name: string } | null }[])
+  return ((data ?? []) as unknown as { profile_id: string; profile: { id: string; full_name: string; does_not_drive: boolean } | null }[])
     .filter((row) => row.profile !== null)
-    .map((row) => ({ id: row.profile_id, name: row.profile!.full_name }));
+    .map((row) => ({ id: row.profile_id, name: row.profile!.full_name, doesNotDrive: row.profile!.does_not_drive }));
 }
 
 /** Duty recipients for a week: explicit assignment or permanent Sadran rotation. */

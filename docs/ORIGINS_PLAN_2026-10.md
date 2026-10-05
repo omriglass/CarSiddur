@@ -1,0 +1,81 @@
+# Origins, three trip types, cars stay where they are left — implementation plan (2026-10-04)
+
+Spec of record: **REQUIREMENTS §13.93**. This file is the shared design brief for steps O2–O6 (`docs/TODO.md`, "Owner request 2026-10-04"). Each step updates DATA_MODEL / SOLVER / UX_FLOWS in the same change (hard rule 2); this file only fixes the cross-layer decisions so the layers agree.
+
+## 1. Vocabulary
+
+| Member-facing | `trip_type` (new enum) | Derived legacy columns (kept in sync by `submit_request`) | Leg(s) and car mode |
+|---|---|---|---|
+| הלוך-חזור | `round_trip` | `trip_shape='round_trip'`, `needs_car_at_destination=true` | one `both` leg, `keep` — car origin → origin |
+| הלוך בלבד | `one_way` | `trip_shape='one_way_to'`, `one_way_car_mode='relay'` | one `out` leg, `relay` — car origin → destination, **no** obligation to bring it back |
+| הקפצה | `drop_off` | no pickup: `trip_shape='one_way_to'`; with pickup time: `trip_shape='round_trip'`, `needs_car_at_destination=false`; `one_way_car_mode` = today's default (`passenger` for a non-driver, else `relay`) | `out` (origin → destination) and optionally `return` (destination → origin); each leg is `relay` (pair), `chauffeur` or `passenger` — the car ends where it started |
+
+- `one_way_from` is **legacy only**: new requests never produce it. "Pick me up from Harish" is `drop_off` with origin = Harish, destination = Givat Haviva. Readers keep handling `one_way_from` (leg `return`, destination → origin).
+- "Home" = `departments.home_destination_id`. "Base" = `cars.base_location_id`, else (temporary car) the owner's default origin in that department, else home.
+- Where the car is at instant t = destination of the last non-cancelled ride starting at or before t (any week), else its base (`car_location_at`, extended).
+
+## 2. Schema (O2)
+
+1. `create type trip_type as enum ('round_trip','one_way','drop_off')`; mirrored in `src/lib/enums.ts` + `he.enums.tripType` (labels הלוך-חזור / הלוך בלבד / הקפצה).
+2. `requests` and `request_templates`: `origin_id uuid` (composite FK `(department_id, origin_id)` → `destinations(department_id, id)`, like `destination_id`), `origin_text text`, `trip_type trip_type not null default 'round_trip'`. Check: `origin_id is not null or origin_text is not null` (after backfill). Backfill: `origin_id` = department home; `trip_type` = `round_trip` if `trip_shape='round_trip' and needs_car_at_destination`, else `drop_off`.
+3. `department_members.default_origin_id uuid` (composite FK to the same department's destinations, must be an approved place). Member sets it via a new RPC `set_my_default_origin(p_department_id, p_origin_id)` (null clears); admins via the existing admin member editor (direct update is already admin-only by RLS, or a small RPC — migrator's choice).
+4. `cars.base_location_id uuid` (composite FK; null = home). `cars` is readable across departments → classify the column in `rls_smoke.sql` TEST 18.
+5. `place_distances` (department-scoped, RLS per command): `(department_id, from_id, to_id, distance_km, travel_minutes, source text check (source in ('route')), unique(department_id, from_id, to_id))` — stores Google routes for non-home pairs; treated as symmetric.
+6. `place_travel(p_from uuid, p_to uuid) returns (distance_km numeric, travel_minutes int, source text)`: same place → 0/0 `same`; a stored route either direction → `route`; one end is home → the other end's `destinations.distance_km/travel_minutes` → `preset`; else haversine(lat/lng) × **1.3** road factor, minutes = km / **60 km/h** → `estimate`; else nulls. `place_travel_for_week(p_department_id, p_week_start)` returns those rows for every distinct (origin_id, destination_id) of the week's requests whose origin is not home (bridge input).
+7. `car_start_locations(p_department_id, p_week_start)` → `(car_id, location_id, base_location_id)` = `car_location_at(car, week start 00:00 Asia/Jerusalem)` — the solver's `Car.startLocationId`.
+8. Views: `v_board_rides` / `v_my_requests` (and whatever reads request rows for the board/siddur) gain `origin_id`, `origin_text`, `origin_name`, `trip_type`, appended at the end of the column list. `v_car_locations`: "away" = destination ≠ the car's base (not home); keep `overnight_acknowledged` (deprecated).
+9. Deprecated, not dropped: `rides.overnight_ack_by/at`, `rides.auto_relocation`, `requests.needs_car_at_destination`, `requests.one_way_car_mode`. `department_settings.day_end_time` stays — it still bounds a ride to its own day (§13.62); it no longer means "car must be home".
+
+## 3. SQL behaviour (O3)
+
+- `submit_request` accepts `origin_id` / `origin_text` / `trip_type`; when no origin is sent: the requester's `default_origin_id` for the department, else home. It derives the legacy columns per §1 (an old client that sends only `trip_shape` keeps working: one-way → `drop_off`). A non-driver (`profiles.does_not_drive`) with no driving companion may only file `drop_off` → `non_driver_needs_drop_off`. Free-text origin: accepted, never auto-approved/placed.
+- `try_auto_approve` (and series): applies to `round_trip`, `one_way`, and `drop_off` with a pickup (today's round-trip behaviour); the car must be **at the request's origin** at departure, free, and its next ride after the window must start where this request leaves the car (origin for round trips, destination for `one_way`). `drop_off` without pickup keeps today's live/published path.
+- `assert_car_chain(car, week)`: start from `car_location_at(car, week start)`; **never** raises for a broken chain and **never** inserts relocation rides (existing `auto_relocation` rides are left as ordinary needs-driver rides). Healing is kept only for `drop_off` legs: a `relay` out-leg to X is satisfied when the car's next ride **the same day** starts at X and ends elsewhere (any trip type except one that just returns to X); otherwise it widens to a chauffeur ride. A `relay` return/pickup leg whose car is not at X widens to a chauffeur fetch. A chauffeur ride is created only when one end of the leg is where the car is (drop-off from / pickup to the car's location); otherwise the request goes back to `submitted`/unmet. `one_way` legs are never widened. `pair_one_way_legs` consolidates `drop_off` legs only, origin-aware (an "opposite" leg = X → the same origin). When a pair breaks the remaining leg's requester is notified (`outcome_changed`).
+- Chauffeur windows for a leg A → B at departure D, car at C, travel t, dwell w: C = A → `[D, D + 2t + w)`; C = B → `[D − t − w, D + t)`; legacy return legs keep their current formula.
+- Origin-aware triggers: `ride_requests_leg_location` (keep: ride origin = ride destination = request origin; relay out: request origin → destination; relay return: destination → origin; chauffeur: ride starts and ends where the car is), `rides_temp_car_never_relays` (temporary car rides start and end at the same place).
+- `reserve_live_one_way_slot` / quick request from a gap: origin = where the car is at that time. `joinable_rides_for_request`: same origin only. `car_mileage_totals`: km from `place_travel(origin, destination)`.
+- Proposal type for "car from Y" (O4b): new `proposal_type` value `origin` (own migration file, `alter type … add value` alone); applying it updates the request's `origin_id` and places it.
+
+## 4. Solver (O4)
+
+- Input: `Request.originId?: string` (undefined → home), `Request.originIsFreeText?: boolean`, `Request.tripType?: 'round_trip' | 'one_way' | 'drop_off'` (undefined → derived from the legacy fields exactly as SQL backfills); `Car.baseLocationId?: string`; `Car.startLocationId` (exists, now filled by the bridge); `SolverInput.travel?: { fromId, toId, distanceKm?, travelMinutes? }[]` + one pure `travelBetween(input, from, to)` helper (same → 0; pair row either direction; home ↔ X → the destination's own figures; else `defaultTravelMinutes`).
+- Legs run origin → destination (→ origin). Placement only where the car is (`CarTimeline.isFree` already checks the start); **add an end check**: a block that ends somewhere other than where it started needs the car's next block to start at that end location (or no next block in the week) — this is the `one_way` "breaks no later ride" rule and also guards relay legs.
+- `CarTimeline.add` keeps throwing for solver-placed blocks with a wrong start, but **fixed rides** (Sadran/members) may break the chain: record them (`chainBreaks()`), never throw. `dayEndViolations` / `CAR_AWAY_AT_DAY_END` / `WARN_CAR_AWAY_AT_DAY_END` are retired; new warnings `WARN_CHAIN_BROKEN` (fixed ride starts where the car is not) and `WARN_CAR_AWAY_AT_WEEK_END` (car ends the week away from its base).
+- Relay/chauffeur logic applies to `drop_off` legs only; a relay out-leg counts as paired when the next block on that car the same day starts at X and moves the car away; else it becomes a chauffeur ride under the §3 rule (one end at the car's location) or stays unmet (new reason `UNMET_NO_CAR_AT_ORIGIN`). `one_way` legs are placed as plain relay legs under the end-check rule; when no car allows it they stay unmet with a "as a הקפצה it fits" suggestion if a drop-off placement would work.
+- Merges only between requests with the same origin. Distance rule: `travelBetween(origin, destination)`. Free-text origin → unmet, reason `UNMET_FREE_TEXT_ORIGIN`.
+- New suggestion kind `changeOrigin`: for an unmet request, a car that is free for the request's whole window at another place Y (where that car is, so placing there breaks nothing) → SOLVER §3.15 maps it to proposal type `origin` with `{ origin_id: Y, car_id }`. Shown to the Sadran only. A `drop_off` with pickup that falls back to `keep` (today's rule for round trips without the car at the destination) is allowed only when the requester can drive.
+- Parity: `supabase/tests/fixtures/one_way_pairing_cases.json` gets origin-aware and `one_way` cases; both sides must pass.
+
+## 5. Bridge, edge function, UI (O5)
+
+- `buildSolverInput`: map `origin_id`/`origin_text`/`trip_type`, `cars.base_location_id`, `car_start_locations`, `place_travel_for_week`. `supabase/functions/on-ride-cancelled` builds its own input — mirror the same fields.
+- Request form: origin shown as text "מ<מקום> אל [יעד]", tap opens the destination picker in origin mode (list + free text); trip type = three options (הלוך-חזור / הלוך בלבד / הקפצה) replacing `TripShapeControl` + `CarAtDestinationToggle`; הלוך-חזור: departure + return; הלוך בלבד: departure; הקפצה: departure + optional pickup time. Non-driver without a driving companion: only הקפצה enabled. Car-now: origin fixed to home, round trip. Quick request from a gap: origin = the car's location at that slot.
+- Profile: "נקודת יציאה קבועה" per active department (list places only); admin member editor: the same per membership. Car editor: "מיקום קבוע" (base location, list place, default home).
+- Display: "מחיפה לנהריה" wherever origin ≠ home (`src/lib/rideLabel.ts`, request rows, board cards, ride sheets, notification variables); driver labels per REQ §13.93 "Display"; column header shows the car's base when ≠ home; away band continues across days.
+- Board: remove the overnight-acknowledgement UI and the day-end warning; add the chain-break warning (ride whose car is elsewhere) and the week-end-away warning. Drop validity: a ride may be dropped only where the car is (already the case via `CarTimeline`).
+
+## 6. Multi-stop (O6) — design (owner answers 2026-10-04, REQ §13.93 "Multi-stop rides")
+
+### 6.1 Data
+- Table `request_stops` (department-scoped, RLS enable+force, per-command policies): `id`, `request_id` (FK → requests on delete cascade), `department_id` (denormalized, composite FK with `place_id` → `destinations(department_id, id)`), `leg ride_leg check (leg in ('out','return'))`, `position smallint` (1-based, unique per `(request_id, leg, position)`), `place_id uuid null`, `place_text text null` (check: exactly one set), timestamps. SELECT mirrors `requests` visibility (requester, companions, `can_manage_week`, public-week rule — reuse the same helpers the `requests` select policy uses); **no** direct INSERT/UPDATE/DELETE policies — written only by `submit_request` (payload `stops: [{ leg, place_id | place_text }]`, in order per leg; replaces the request's stops on edit; return-leg stops refused unless the request has a return).
+- `request_templates.stops jsonb not null default '[]'` (same shape; templates are prefill only) — `save_request_template` and the template-suggestion view carry it.
+- `department_settings.stop_minutes int not null default 5 check (stop_minutes between 0 and 60)` (admin settings form gets the field).
+- Views: `v_my_requests`, `v_request_template_suggestions`, `v_board_rides.served[]` expose `stops` as a json array `[{ leg, position, place_id, place_text, name }]` ordered by leg, position.
+
+### 6.2 Route and time (one definition per side)
+- Route of a leg: out = origin → out-stops → destination; return = destination → return-stops → origin.
+- Leg route minutes = Σ travel(consecutive places) + `stop_minutes` × number of stops on that leg. Travel between two places = `place_travel()` / solver `travelBetween()`; a free-text stop on either side of a hop → `defaultTravelMinutes` (solver) / 30 (SQL, the existing fallback).
+- SQL: `request_leg_route_minutes(p_request_id uuid, p_leg ride_leg) returns int` and `request_stop_etas(p_request_id uuid) returns table(leg, position, place_id, eta timestamptz)` — out ETAs count forward from `depart_at`; return ETAs count backward from `return_at` (arrival at the origin). `place_travel_for_week` also returns every consecutive hop of every request's routes.
+- Solver: `Request.stops?: { leg: 'out' | 'return'; locationId?: string }[]` (no `locationId` = free text), `SolverConfig.stopMinutes` (bridge from `department_settings.stop_minutes`); one helper `legRouteMinutes(input, request, leg)` and `stopEtas(...)` in `travel.ts`. Every place that used `travelBetween(origin, destination)` for a request's leg duration uses the route minutes instead.
+- Occupancy: הלוך-חזור (keep) — unchanged `[D, R]`. הלוך בלבד — `[D, D + out route)`. הקפצה chauffeur — car at origin A: `[D, D + out route + travel(B → A) + dwell)`; car at destination B (pickup): `[D − travel(B → A) − dwell, D + out route)`; legacy/return pickup leg: `[R − return route − travel(carPlace → B) − dwell, R)`. Relay legs: the leg's route window.
+
+### 6.3 Joining at a stop
+- A guest leg g (from a to b, a passenger/one-leg הקפצה or one leg of a הקפצה with a pickup) can merge into host ride h when a and b both appear on h's leg route with index(a) < index(b), g's requested time is within g's flexibility of h's ETA at a, and the seats fit for the whole ride (host load + guest ≤ a seat configuration). Same-origin merges are the special case a = h's origin.
+- Solver: `findMergeHosts` uses this rule (replacing the plain same-origin filter); merge suggestions carry `boardAt: a`. SQL: `joinable_rides_for_request` uses the same rule (exact place match on the route, ETA within ±120 min as today). Free-text stops never match.
+
+### 6.4 Display and copy
+- `text_fragments`: `route.via` = `מ{{origin}} דרך {{stops}} ל{{destination}}`, `route.to_via` = `דרך {{stops}} ל{{destination}}` (origin home); `request_route_label()` uses them when the request has out-stops (stop names joined by ", "); return stops are not in the one-line label. TS `routeLabel` mirrors it (`he.route.via`, `he.route.toVia`).
+- Form: out-stops = removable chips between the origin line and the destination, added via one "+ עצירה" link (opens the same `DestinationCombobox`); return-stops only when the trip has a return, via "+ עצירה בחזור" beside the return time; both collapsed by default. Board card: "· N עצירות"; ride sheet + siddur ride detail: the route with estimated times; `/my`: the route label.
+
+### 6.5 Tests
+- SQL: `supabase/tests/multi_stop.sql` (stops written/replaced by `submit_request`, RLS visibility, route minutes/ETAs, one_way and chauffeur windows with stops, joinable rides on-route, notification route label). Solver: `__tests__/multiStop.test.ts`. Parity: one multi-stop case in `one_way_pairing_cases.json` if the pairing logic is touched. e2e: one spec — file a request with an out-stop, see it on the board/ride detail.

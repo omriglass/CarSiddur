@@ -68,7 +68,6 @@ export const heSadran = {
     changedRequests: "{{count}} בקשות שונו לאחר תחילת הסידור",
     expiringProposals: "{{count}} הצעות ללא תשובה, פוקעות בקרוב",
     chauffeurNeeded: "{{count}} הסעות דרושות נהג/ת",
-    carsAwayAtDayEnd: "{{count}} רכבים לא חוזרים הביתה בזמן — דרוש אישור",
     maintenanceAffecting: "{{count}} נסיעות מושפעות מטיפול רכב",
     contestedClaims: "{{count}} בקשות מבקשות מקום שהתפנה",
   },
@@ -98,8 +97,14 @@ export const heSadran = {
     /** REQ §89 (owner 2026-09-15): an automatic missing-driver relocation ride's block/card
      * label (shared with the siddur via `src/lib/rideLabel.ts`). */
     autoRelocation: "החזרת רכב — חסר/ה נהג/ת",
-    /** The board's "away" band between a relay out-leg and its return (REQ §89). */
+    /** The board's "away" band, relative to the car's own base (REQ §89/§13.93). */
     awayBand: "הרכב ב{{place}}",
+    /** REQUIREMENTS §13.93: the car's own base, shown on its column header when it isn't the department home. */
+    carBase: "בסיס: {{place}}",
+    /** REQUIREMENTS §13.93/SOLVER.md §1.3a `weekEndAway()` — a warning only, shown on the car's column on the week's last day. */
+    carAwayAtWeekEnd: "מסיים/ת את השבוע ב{{place}}, לא בבסיס",
+    /** REQUIREMENTS §13.93/SOLVER.md §1.3a `chainBreaks()` — a fixed ride whose car is actually elsewhere; a warning only. */
+    carNotHereWarning: "הרכב לא נמצא כאן — הוא ב{{place}}",
     invalidWindow: "יש לבחור טווח שעות תקין באותו יום",
     mergeConfirm: "לאחד את שתי הנסיעות?",
     mergeDescription: "תוכן הצעת איחוד שתוכלו לערוך לפני השליחה.",
@@ -126,6 +131,14 @@ export const heSadran = {
     conflictLocation: "התנגשות {{index}} מתוך {{count}} · {{date}} · {{time}} · {{car}}",
     unmetTitle: "לא שובצו ({{count}})",
     preferredCar: "ביקש/ה רכב מסוים: {{car}}",
+    /** REQUIREMENTS §13.93: an unmet request card's own origin, shown only when it isn't the department home. */
+    unmetOrigin: "יוצא/ת מ{{place}}",
+    /** REQUIREMENTS §13.93: a free-text origin — never placed automatically (solver reason `UNMET_FREE_TEXT_ORIGIN`). */
+    unmetFreeTextOrigin: "נקודת יציאה בטקסט חופשי: {{place}} — לא ישובץ אוטומטית",
+    /** REQUIREMENTS §13.93 "Multi-stop rides" Display: a ride block/unmet card's own stop count, shown only when > 0. */
+    stopCount: "· {{count}} עצירות",
+    /** REQUIREMENTS §13.93 "Multi-stop rides" §6.3 "Joining at a stop": a merge suggestion that boards the guest at a stop, not the host's own origin. */
+    mergeBoardAt: "עולה ב{{place}}",
     scoreLabel: "ניקוד",
     suggestionsLabel: "הצעות",
     noSuggestions: "אין הצעות זמינות",
@@ -134,8 +147,6 @@ export const heSadran = {
     unpinConfirm: "לבטל את הנעילה?",
     boostPrompt: "סיבה להעדפה הידנית",
     cancelRidePrompt: "סיבת ביטול",
-    overnightAckPrompt: "לאשר שהרכב יישאר מחוץ לבית הלילה?",
-    overnightAckConfirm: "אשר לינת לילה",
     dragAppliedToast: "הוזז בתוך הגמישות — יעודכן בפרסום",
     dragBeyondFlexToast: "מעבר לגמישות — נפתחת הצעה",
     dropMergeToast: "נפתחת הצעת איחוד",

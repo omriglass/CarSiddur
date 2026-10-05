@@ -9,8 +9,6 @@ import { Controller, type UseFormReturn } from "react-hook-form";
 import { Button } from "@/components/ui/button";
 import { FormItem } from "@/components/ui/form";
 import { Label } from "@/components/ui/label";
-import { CarAtDestinationToggle } from "@/components/CarAtDestinationToggle";
-import { FieldAnchor } from "@/components/FieldAnchor";
 import { FlexibilityRange } from "@/components/FlexibilitySegmented";
 import { TimeField15 } from "@/components/TimeField15";
 import { t, tv } from "@/i18n/he";
@@ -115,16 +113,6 @@ export function TimeFields({
             <p className="text-xs">{t("quickRequest.noCarFree")}</p>
           )}
         </div>
-      ) : null}
-
-      {tripShape === "round_trip" && variant !== "carNow" ? (
-        <FieldAnchor name="needsCarAtDestination">
-          <Controller
-            control={control}
-            name="needsCarAtDestination"
-            render={({ field }) => <CarAtDestinationToggle checked={field.value} onChange={field.onChange} />}
-          />
-        </FieldAnchor>
       ) : null}
     </>
   );

@@ -16,7 +16,8 @@ import { fits, luggageFits, sum } from './seatFit';
 import type { NormalizedRequest } from './slots';
 import { slotsToMinutes } from './slots';
 import type { CarTimeline } from './timeline';
-import type { Assignment, Car, Destination, LegSide, Passengers, SolverConfig, Window } from './types';
+import { legRoute, resolveStopMinutes, routeEtaAt, type TravelLookup } from './travel';
+import type { Assignment, AssignmentLeg, Car, Destination, LegSide, Passengers, Request, SolverConfig, TravelEdge, Window } from './types';
 
 const ZONE_PENALTY_MINUTES = 10;
 
@@ -27,11 +28,36 @@ export interface HostRide {
   driverRequestId: string;
   legSide: LegSide;
   destinationId: string;
+  /** The host request's own declared origin (REQUIREMENTS §13.93) — a 'return' leg's
+   *  physical travel origin is the destination, but the *request's* origin is where it
+   *  ends (home/origin); derived from the AssignmentLeg so it works for fixed rides too. */
+  originId: string;
+  /** The host request's own far/declared destination (REQUIREMENTS §13.93, ORIGINS_PLAN
+   *  §6.3, mirrors `originId` above): for a 'return' leg this is the leg's physical
+   *  *origin* (the far place); for 'out'/'both' it's the leg's physical destination.
+   *  Used only as the multi-stop route fallback when no NormalizedRequest is available
+   *  (a fixed-ride host, whose own `.stops` the solver never sees). */
+  requestDestinationId: string;
   passengers: Passengers;
   luggageCount: number;
   guestCount: number;
   isFixed: boolean;
   isTemporary: boolean;
+}
+
+/** The host *request's* own origin, derived from its driver leg (REQUIREMENTS §13.93):
+ *  for 'out'/'both' this is the leg's physical originId; for 'return' (destination -> origin)
+ *  it's the leg's destinationId. */
+function requestOriginOfLeg(leg: AssignmentLeg): string {
+  return leg.leg === 'return' ? leg.destinationId : leg.originId;
+}
+
+/** The host *request's* own far/declared destination, mirroring `requestOriginOfLeg`
+ *  (REQUIREMENTS §13.93, ORIGINS_PLAN §6.3): for 'return' this is the leg's physical
+ *  originId (the far place the car is coming back from); for 'out'/'both' it's the
+ *  leg's physical destinationId. */
+function requestDestinationOfLeg(leg: AssignmentLeg): string {
+  return leg.leg === 'return' ? leg.originId : leg.destinationId;
 }
 
 export function buildHostRides(assignments: Assignment[], cars: Map<string, Car>): HostRide[] {
@@ -50,6 +76,8 @@ export function buildHostRides(assignments: Assignment[], cars: Map<string, Car>
       driverRequestId: a.driverRequestId,
       legSide: driverLeg.leg,
       destinationId: driverLeg.destinationId,
+      originId: requestOriginOfLeg(driverLeg),
+      requestDestinationId: requestDestinationOfLeg(driverLeg),
       passengers: a.passengers,
       luggageCount: a.luggageCount,
       guestCount: a.legs.filter((l) => l.role === 'passenger').length,
@@ -100,6 +128,9 @@ export interface MergeCandidate {
   cost: number;
   confidence: number;
   proposedDriverRequestId: string;
+  /** Multi-stop rides (REQUIREMENTS §13.93, ORIGINS_PLAN §6.3): where the guest boards —
+   *  the host's own origin in the same-origin case, or one of its declared stops. */
+  boardAtLocationId?: string;
 }
 
 export interface MergeSearchParams {
@@ -112,6 +143,11 @@ export interface MergeSearchParams {
   /** driver's own NormalizedRequest and timeline, for host-shift search (keyed by host rideId) */
   hostDriverRequests: Map<string, NormalizedRequest>;
   hostTimelines: Map<string, CarTimeline>;
+  /** REQUIREMENTS §13.93, ORIGINS_PLAN §6.3: for `legRoute()`/`travelBetween()` (an 'out'/
+   *  'return' guest leg's route-based join). Not needed for a 'both' guest leg (unchanged
+   *  same-origin + destination/zone detour heuristic, which never consults stops). */
+  homeLocationId: string;
+  travel?: TravelEdge[];
 }
 
 function hostTimeCompatible(host: HostRide, guest: NormalizedRequest, leg: LegSide): boolean {
@@ -154,6 +190,81 @@ function tryHostShift(
   };
 }
 
+/**
+ * Multi-stop rides (REQUIREMENTS §13.93 "Multi-stop rides", ORIGINS_PLAN
+ * §6.3): tries to board the guest's `leg` ('out' or 'return' only — a 'both'
+ * guest keeps the plain same-origin + detour heuristic below unchanged) at
+ * any point on the host's own route for that direction, not just at its
+ * origin. `a`/`b` are the guest's own boarding/alighting places (an 'out'
+ * guest travels origin -> destination; a 'return' guest travels destination
+ * -> origin); the host qualifies when both appear on its route with
+ * `index(a) < index(b)` and the host's ETA at `a` (the relevant edge for the
+ * matched direction) falls inside the guest's own declared flexibility.
+ * Returns null when the host has no stops that help (a plain two-node route,
+ * `[origin, destination]`) and the exact endpoints don't match either — the
+ * caller then falls back to the pre-existing same-origin/detour heuristic,
+ * so a same-zone-but-different-destination merge (no stops involved at all)
+ * keeps working exactly as before.
+ */
+function tryRouteMatch(
+  host: HostRide,
+  guest: NormalizedRequest,
+  leg: 'out' | 'return',
+  params: MergeSearchParams,
+  car: Car,
+): MergeCandidate | null {
+  const hostNr = params.hostDriverRequests.get(host.rideId);
+  const hostRequestLike: Pick<Request, 'originId' | 'destinationId' | 'stops'> = hostNr
+    ? hostNr.request
+    : { originId: host.originId, destinationId: host.requestDestinationId };
+  const lookup: TravelLookup = { travel: params.travel, homeLocationId: params.homeLocationId, destinations: params.destinations, config: params.config };
+  const stopMinutes = resolveStopMinutes(params.config);
+  const route = legRoute(lookup, hostRequestLike, leg);
+
+  const a = leg === 'out' ? guest.originId : guest.destinationId;
+  const b = leg === 'out' ? guest.destinationId : guest.originId;
+  const idxA = route.findIndex((r) => r.locationId === a);
+  const idxB = route.findIndex((r) => r.locationId === b);
+  if (idxA === -1 || idxB === -1 || idxA >= idxB) return null;
+
+  const anchor = leg === 'out' ? host.window.start : host.window.end;
+  // The relevant time check mirrors the pre-existing hostTimeCompatible()
+  // convention (departure for 'out', arrival-at-own-origin for 'return'):
+  // the ETA at `a` for an out guest (they board and leave at their own
+  // declared departure flex), the ETA at `b` for a return guest (they care
+  // about arriving home within their declared return flex).
+  const checkLocationId = leg === 'out' ? a : b;
+  const checkSlot = routeEtaAt(lookup, hostRequestLike, leg, anchor, stopMinutes, checkLocationId);
+  if (checkSlot === undefined) return null;
+  const flexBound = leg === 'out' ? guest.flexDep : guest.flexRet;
+  if (checkSlot < flexBound[0] || checkSlot > flexBound[1]) return null;
+
+  const combinedPassengers = sum(host.passengers, guest.passengers);
+  const combinedLuggage = host.luggageCount + (guest.luggage ? 1 : 0);
+  if (!fits(car, combinedPassengers) || !luggageFits(car, combinedLuggage)) return null;
+
+  const hostNeedsCar = hostNr?.request.needsCarAtDestination ?? true;
+  const guestNeedsCar = guest.request.needsCarAtDestination;
+  const proposedDriverRequestId = !hostNeedsCar && guestNeedsCar ? guest.id : host.driverRequestId;
+
+  const guestPreferred = leg === 'out' ? guest.window.start : guest.window.end;
+  const shiftCostGuest = slotsToMinutes(Math.abs(checkSlot - guestPreferred));
+  const confidence = Math.max(0, 1 - 0.1 * host.guestCount - shiftCostGuest / 480);
+
+  return {
+    hostRideId: host.rideId,
+    carId: host.carId,
+    window: host.window,
+    // The guest boards exactly on the host's own route — no physical detour.
+    detourMinutes: 0,
+    detourKm: 0,
+    cost: shiftCostGuest,
+    confidence,
+    proposedDriverRequestId,
+    boardAtLocationId: a,
+  };
+}
+
 export function findMergeHosts(params: MergeSearchParams): MergeCandidate[] {
   const { guest, leg, hosts, destinations, config, cars } = params;
   const candidates: MergeCandidate[] = [];
@@ -162,6 +273,24 @@ export function findMergeHosts(params: MergeSearchParams): MergeCandidate[] {
     if (!legCompatible(leg, host.legSide)) continue;
     const car = cars.get(host.carId);
     if (!car) continue;
+
+    if (leg !== 'both') {
+      const routeCandidate = tryRouteMatch(host, guest, leg, params, car);
+      if (routeCandidate) {
+        candidates.push(routeCandidate);
+        continue;
+      }
+    }
+
+    // REQUIREMENTS §13.93, ORIGINS_PLAN §4 item 5: merges only between
+    // requests that share the same origin — a no-op filter for every
+    // legacy (home-origin) request, since every host/guest origin defaults
+    // to the same department home. The same-origin case is "boarding = host
+    // origin" (ORIGINS_PLAN §6.3), already covered by tryRouteMatch above for
+    // an 'out'/'return' guest leg; this is the remaining fallback — a 'both'
+    // guest leg (never routed), or an 'out'/'return' guest whose destination
+    // isn't literally on the host's route but is zone/detour-compatible.
+    if (host.originId !== guest.originId) continue;
 
     const detour = detourBetween(host.destinationId, guest.destinationId, destinations, config);
     if (!detour) continue;
@@ -204,6 +333,7 @@ export function findMergeHosts(params: MergeSearchParams): MergeCandidate[] {
       detourKm: detour.km,
       cost,
       confidence,
+      boardAtLocationId: host.originId,
       proposedDriverRequestId,
     });
   }

@@ -43,11 +43,18 @@ function tooClose(aStart: number, aEnd: number, bStart: number, bEnd: number, bu
   return aStart < bEnd + buffer && bStart < aEnd + buffer;
 }
 
+export interface ChainBreak {
+  rideId: string;
+  expectedLocationId: string;
+  actualLocationId: string;
+}
+
 export class CarTimeline {
   private blocks: Block[] = [];
   private fixedRideIds = new Set<string>();
   private maintenance: MaintenanceEntry[] = [];
   private readonly startLocation: string;
+  private readonly baseLocation: string;
 
   constructor(
     private readonly car: Car,
@@ -56,6 +63,7 @@ export class CarTimeline {
     private readonly homeLocationId: string,
   ) {
     this.startLocation = car.startLocationId ?? homeLocationId;
+    this.baseLocation = car.baseLocationId ?? homeLocationId;
     for (const w of car.maintenance) this.maintenance.push({ window: w });
   }
 
@@ -87,11 +95,27 @@ export class CarTimeline {
     return false;
   }
 
-  /** Free AND the car is at `originId` when `w` starts. */
-  isFree(w: Window, originId: string, relayPairId?: string): boolean {
+  /**
+   * Free AND the car is at `originId` when `w` starts. When `endLocationId`
+   * is given and differs from `originId` (REQUIREMENTS §13.93, ORIGINS_PLAN
+   * §4) — i.e. this candidate would leave the car somewhere other than where
+   * it started — the car's next block after `w`, if any, must itself start
+   * at `endLocationId`; otherwise committing to this candidate would strand
+   * that later block expecting the car where it no longer is. A candidate
+   * ending where it started (the common case: keep/chauffeur/round trips)
+   * never triggers this check.
+   */
+  isFree(w: Window, originId: string, relayPairId?: string, endLocationId?: string): boolean {
     if (w.end <= w.start) return false;
     if (this.overlapsAnything(w.start, w.end, undefined, undefined, relayPairId)) return false;
-    return this.locationAt(w.start) === originId;
+    if (this.locationAt(w.start) !== originId) return false;
+    if (endLocationId !== undefined && endLocationId !== originId) {
+      const next = this.blocks
+        .filter((b) => b.window.start >= w.end)
+        .sort((a, b) => a.window.start - b.window.start)[0];
+      if (next && next.startLocationId !== endLocationId) return false;
+    }
+    return true;
   }
 
   /** Inserts a block; rejects (throws) one whose start location mismatches the car's actual location. */
@@ -114,7 +138,9 @@ export class CarTimeline {
    * Inserts a block without checking the location chain (only the buffer/overlap
    * rule still applies) — used only to seed fixed rides, which are "still
    * honoured" even when their recorded origin does not match the car's
-   * computed location (SOLVER §3.1, FIXED_RIDE_LOCATION_MISMATCH warning).
+   * computed location (SOLVER §3.1). A mismatch is recorded (`chainBreaks()`,
+   * REQUIREMENTS §13.93) rather than thrown — the car simply "teleports" to
+   * the fixed ride's own origin from there on.
    */
   forceAdd(b: Block): void {
     if (this.overlapsAnything(b.window.start, b.window.end, b)) {
@@ -124,6 +150,35 @@ export class CarTimeline {
     if (idx === -1) this.blocks.push(b);
     else this.blocks.splice(idx, 0, b);
     this.fixedRideIds.add(b.rideId);
+  }
+
+  /**
+   * Blocks whose recorded origin does not match where the car is when they
+   * start, walking the week in time order (only fixed rides seeded via
+   * `forceAdd()` can produce one — `add()` refuses them). Computed on demand so
+   * the answer does not depend on the order the fixed rides were seeded in.
+   */
+  chainBreaks(): ChainBreak[] {
+    const breaks: ChainBreak[] = [];
+    let location = this.startLocation;
+    for (const b of this.blocks) {
+      if (b.startLocationId !== location) {
+        breaks.push({ rideId: b.rideId, expectedLocationId: location, actualLocationId: b.startLocationId });
+      }
+      location = b.endLocationId;
+    }
+    return breaks;
+  }
+
+  /**
+   * The car's location at week end, when it differs from its base
+   * (REQUIREMENTS §13.93: "the board warns only when a car ends the *week*
+   * away from its base"); null when it's home/at its base, or at its base
+   * location. `car.baseLocationId ?? homeLocationId` is "where it belongs".
+   */
+  weekEndAway(): { locationId: string } | null {
+    const end = this.locationAt(this.weekSlots);
+    return end === this.baseLocation ? null : { locationId: end };
   }
 
   remove(rideId: string): void {

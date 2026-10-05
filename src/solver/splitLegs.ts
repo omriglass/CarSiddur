@@ -19,7 +19,7 @@ import { buildHostRides, findMergeHosts, type HostRide, type MergeCandidate } fr
 import { tryPair } from './relay';
 import { roundTripOutLeg, roundTripReturnLeg, type NormalizedRequest } from './slots';
 import type { CarTimeline } from './timeline';
-import type { Assignment, Car, Destination, SolverConfig } from './types';
+import type { Assignment, Car, Destination, SolverConfig, TravelEdge } from './types';
 
 export interface SplitLegsContext {
   destinations: Record<string, Destination>;
@@ -32,6 +32,8 @@ export interface SplitLegsContext {
   /** relay one-way requests relay.ts could not pair (still available as split-leg partners) */
   unpairedRelay: NormalizedRequest[];
   home: string;
+  /** REQUIREMENTS §13.93, ORIGINS_PLAN §6.3: forwarded to findMergeHosts() for route-based joining. */
+  travel?: TravelEdge[];
 }
 
 export interface SplitLegSide {
@@ -60,6 +62,8 @@ function passengerCombo(nr: NormalizedRequest, ctx: SplitLegsContext): SplitLegR
     hostDriverRequests: ctx.hostDriverRequests,
     hostTimelines: ctx.timelines,
     hosts: hosts(ctx),
+    homeLocationId: ctx.home,
+    travel: ctx.travel,
   };
   const xCandidates: MergeCandidate[] = findMergeHosts({ guest: nr, leg: 'out', ...common });
   const yCandidates: MergeCandidate[] = findMergeHosts({ guest: nr, leg: 'return', ...common });
@@ -76,8 +80,8 @@ function passengerCombo(nr: NormalizedRequest, ctx: SplitLegsContext): SplitLegR
 }
 
 function selfPairCombo(nr: NormalizedRequest, ctx: SplitLegsContext): SplitLegResult | null {
-  const outLeg = roundTripOutLeg(nr, ctx.home);
-  const retLeg = roundTripReturnLeg(nr, ctx.home);
+  const outLeg = roundTripOutLeg(nr);
+  const retLeg = roundTripReturnLeg(nr);
   const sharedCars = [...ctx.cars.values()].filter((c) => c.type === 'shared').sort((a, b) => (a.id < b.id ? -1 : 1));
 
   for (const car of sharedCars) {
@@ -85,10 +89,10 @@ function selfPairCombo(nr: NormalizedRequest, ctx: SplitLegsContext): SplitLegRe
     const tl = ctx.timelines.get(car.id);
     if (!tl) continue;
     if (outLeg.window.end > retLeg.window.start) continue;
-    if (!tl.isFree(outLeg.window, ctx.home)) continue;
+    if (!tl.isFree(outLeg.window, nr.originId, undefined, nr.destinationId)) continue;
     const probeId = `split-out:${nr.id}`;
-    tl.add({ rideId: probeId, window: outLeg.window, startLocationId: ctx.home, endLocationId: nr.destinationId, overnightAck: false });
-    const retFree = tl.isFree(retLeg.window, nr.destinationId);
+    tl.add({ rideId: probeId, window: outLeg.window, startLocationId: nr.originId, endLocationId: nr.destinationId, overnightAck: false });
+    const retFree = tl.isFree(retLeg.window, nr.destinationId, undefined, nr.originId);
     tl.remove(probeId);
     if (!retFree) continue;
     const idleSlots = retLeg.window.start - outLeg.window.end;
@@ -103,7 +107,7 @@ function selfPairCombo(nr: NormalizedRequest, ctx: SplitLegsContext): SplitLegRe
 }
 
 function relayPassengerCombo(nr: NormalizedRequest, ctx: SplitLegsContext): SplitLegResult | null {
-  const outLeg = roundTripOutLeg(nr, ctx.home);
+  const outLeg = roundTripOutLeg(nr);
   const synthOut: NormalizedRequest = {
     ...nr,
     legs: [outLeg],
@@ -124,6 +128,8 @@ function relayPassengerCombo(nr: NormalizedRequest, ctx: SplitLegsContext): Spli
     hostDriverRequests: ctx.hostDriverRequests,
     hostTimelines: ctx.timelines,
     hosts: hosts(ctx),
+    homeLocationId: ctx.home,
+    travel: ctx.travel,
   });
   const y = yCandidates[0];
   if (!y) return null;
@@ -136,7 +142,7 @@ function relayPassengerCombo(nr: NormalizedRequest, ctx: SplitLegsContext): Spli
 }
 
 function passengerRelayCombo(nr: NormalizedRequest, ctx: SplitLegsContext): SplitLegResult | null {
-  const retLeg = roundTripReturnLeg(nr, ctx.home);
+  const retLeg = roundTripReturnLeg(nr);
   const synthRet: NormalizedRequest = {
     ...nr,
     legs: [retLeg],
@@ -157,6 +163,8 @@ function passengerRelayCombo(nr: NormalizedRequest, ctx: SplitLegsContext): Spli
     hostDriverRequests: ctx.hostDriverRequests,
     hostTimelines: ctx.timelines,
     hosts: hosts(ctx),
+    homeLocationId: ctx.home,
+    travel: ctx.travel,
   });
   const x = xCandidates[0];
   if (!x) return null;

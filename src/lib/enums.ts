@@ -114,6 +114,20 @@ export const tripShapeSchema = z.enum(TRIP_SHAPES);
 assertSameEnum<TripShape, Enums<"trip_shape">>();
 
 // ---------------------------------------------------------------------------
+// trip_type (REQ §13.93: the three member-facing trip types that replace the
+// trip_shape/needs_car_at_destination/one_way_car_mode combination in the UI;
+// those legacy columns stay in sync server-side, see submit_request())
+// ---------------------------------------------------------------------------
+export const TRIP_TYPES = [
+  "round_trip",
+  "one_way",
+  "drop_off",
+] as const satisfies readonly Enums<"trip_type">[];
+export type TripType = (typeof TRIP_TYPES)[number];
+export const tripTypeSchema = z.enum(TRIP_TYPES);
+assertSameEnum<TripType, Enums<"trip_type">>();
+
+// ---------------------------------------------------------------------------
 // leg_car_mode
 // ---------------------------------------------------------------------------
 export const LEG_CAR_MODES = [
@@ -175,6 +189,7 @@ export const PROPOSAL_TYPES = [
   "merge",
   "deny",
   "external",
+  "origin",
 ] as const satisfies readonly Enums<"proposal_type">[];
 export type ProposalType = (typeof PROPOSAL_TYPES)[number];
 export const proposalTypeSchema = z.enum(PROPOSAL_TYPES);

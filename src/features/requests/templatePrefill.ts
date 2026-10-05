@@ -3,6 +3,8 @@ import { dateKey, formatTime } from "@/lib/time";
 
 import { intervalToFlexValue, type FlexValue } from "./mapper";
 import { REQUEST_FORM_DEFAULTS, type RequestFormValues } from "./schema";
+import { routeStopsToDestinationValues } from "./stops";
+import { initialTripType } from "./tripType";
 
 import type { TemplateSuggestion } from "./api";
 
@@ -25,6 +27,7 @@ export function suggestionToFormValues(row: TemplateSuggestion, weekStart: strin
   const dates = datesOfWeek(weekStart);
   const departTime = row.departAt ? timeFromInstant(row.departAt) : undefined;
   const returnTime = row.returnAt ? timeFromInstant(row.returnAt) : undefined;
+  const { tripType, dropOffPickup } = initialTripType(row);
 
   return {
     ...REQUEST_FORM_DEFAULTS,
@@ -35,9 +38,16 @@ export function suggestionToFormValues(row: TemplateSuggestion, weekStart: strin
     destination: row.destinationId
       ? { presetId: row.destinationId, name: row.destinationName ?? "" }
       : { freeText: row.destinationText ?? "" },
+    origin: row.originId
+      ? { presetId: row.originId, name: row.originName ?? "" }
+      : { freeText: row.originText ?? "" },
+    outStops: routeStopsToDestinationValues(row.stops, "out"),
+    returnStops: routeStopsToDestinationValues(row.stops, "return"),
     rideTypeId: row.rideTypeId,
     preferredCarId: row.preferredCarId ?? "",
     tripShape: row.tripShape,
+    tripType,
+    dropOffPickup,
     departTime,
     returnTime,
     returnNextDay: false,

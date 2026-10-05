@@ -1,10 +1,10 @@
 import { z } from "zod";
 
 import { he } from "@/i18n/he";
-import { carTypeSchema, TRIP_SHAPES } from "@/lib/enums";
+import { carTypeSchema, TRIP_SHAPES, TRIP_TYPES, tripTypeSchema } from "@/lib/enums";
 
 import type { DestinationValue } from "@/components/DestinationCombobox";
-import type { TripShape } from "@/lib/enums";
+import type { TripShape, TripType } from "@/lib/enums";
 
 /**
  * react-hook-form + zod schema for the new/edit request form (UX_FLOWS.md
@@ -17,6 +17,10 @@ import type { TripShape } from "@/lib/enums";
 /** = SQL `trip_shape` (`src/lib/enums.ts`). */
 export const REQUEST_TRIP_SHAPES = TRIP_SHAPES;
 export type RequestTripShape = TripShape;
+
+/** = SQL `trip_type` (`src/lib/enums.ts`) — the member-facing control (REQ §13.93). */
+export const REQUEST_TRIP_TYPES = TRIP_TYPES;
+export type RequestTripType = TripType;
 
 /** = SQL `leg_car_mode`, restricted to what a member may pick for a one-way leg. */
 export const ONE_WAY_CAR_MODES = ["relay", "passenger"] as const;
@@ -34,6 +38,19 @@ const flexValueSchema = z.union([
 const destinationValueSchema: z.ZodType<DestinationValue> = z.union([
   z.object({ presetId: z.string().min(1), name: z.string().min(1) }),
   z.object({ freeText: z.string().trim().min(1) }),
+]);
+
+/**
+ * REQ §13.93: unlike `destination`, an unresolved origin (`{ freeText: "" }`, the placeholder
+ * `RequestForm.tsx` starts from before its own render-body sync picks the member's real
+ * default) is a valid, submittable value — `mapper.ts` sends neither `origin_id` nor
+ * `origin_text` for it, and `submit_request` resolves its own default server-side. Validation
+ * must never block a submit on a default that genuinely has not resolved yet (e.g. a slow
+ * department/destinations fetch).
+ */
+const originValueSchema: z.ZodType<DestinationValue> = z.union([
+  z.object({ presetId: z.string().min(1), name: z.string() }),
+  z.object({ freeText: z.string() }),
 ]);
 
 /** "HH:MM", 15-minute aligned (mirrors `TimeField15`'s own output format). */
@@ -62,9 +79,36 @@ export const requestFormSchema = z
      */
     returnDay: z.string().optional(),
     destination: destinationValueSchema,
+    /**
+     * REQ §13.93: the request's origin (list place or free text), shown as "מ<place> אל" above
+     * the destination. Defaults to the requester's `department_members.default_origin_id` for
+     * this department, else the department home (`RequestForm.tsx` resolves the default;
+     * `submit_request` re-resolves it server-side when omitted, so an empty value here is never
+     * actually sent — see `mapper.ts`).
+     */
+    origin: originValueSchema,
+    /**
+     * REQ §13.93 "Multi-stop rides": waypoints on the way out (origin → stop → … →
+     * destination), chip-added via `StopsField` — collapsed behind one "+ עצירה" link so the
+     * form stays compact. `mapper.ts` always sends the `stops` key (even `[]`) so an edit can
+     * clear a previously-added stop.
+     */
+    outStops: z.array(destinationValueSchema).max(10),
+    /** Same shape, destination → stop → … → origin — only shown/submittable when the trip has a return. */
+    returnStops: z.array(destinationValueSchema).max(10),
     rideTypeId: z.string().min(1, he.request.rideTypeRequired),
     preferredCarId: z.string().optional(),
     tripShape: z.enum(REQUEST_TRIP_SHAPES),
+    /**
+     * REQ §13.93: the member-facing three-option control (הלוך-חזור / הלוך בלבד / הקפצה) —
+     * the only field `TripTypeFields` writes to directly; it also keeps `tripShape`/
+     * `needsCarAtDestination`/`oneWayCarMode` in sync (`tripType.ts`'s `tripTypeToLegacyFields`)
+     * so every other consumer of those legacy fields (validation, duplicate detection, the
+     * quick-window math, time-field visibility) is unaffected by this addition.
+     */
+    tripType: z.enum(REQUEST_TRIP_TYPES),
+    /** "הקפצה" optional pickup leg ("צריך/ה גם איסוף") — only meaningful when `tripType === "drop_off"`. */
+    dropOffPickup: z.boolean(),
     departTime: timeStringSchema.optional(),
     returnTime: z.union([timeStringSchema, z.literal("23:59")]).optional(),
     /** Kept for old callers; overnight values are rejected. No UI toggle. */
@@ -163,9 +207,11 @@ export const requestFormSchema = z
 
 export type RequestFormValues = z.infer<typeof requestFormSchema>;
 
-export const REQUEST_FORM_DEFAULTS: Omit<RequestFormValues, "departmentId" | "weekStart" | "day" | "dayIndex" | "rideTypeId" | "destination"> = {
+export const REQUEST_FORM_DEFAULTS: Omit<RequestFormValues, "departmentId" | "weekStart" | "day" | "dayIndex" | "rideTypeId" | "destination" | "origin"> = {
   preferredCarId: "",
   tripShape: "round_trip",
+  tripType: "round_trip",
+  dropOffPickup: false,
   departTime: "08:00",
   returnTime: "12:00",
   returnNextDay: false,
@@ -186,6 +232,8 @@ export const REQUEST_FORM_DEFAULTS: Omit<RequestFormValues, "departmentId" | "we
   rideDescription: "",
   guestNames: "",
   repeatWeekly: false,
+  outStops: [],
+  returnStops: [],
 };
 
 /**
@@ -195,6 +243,20 @@ export const REQUEST_FORM_DEFAULTS: Omit<RequestFormValues, "departmentId" | "we
  * `week_start` (computed in SQL from `depart_dow`/`depart_time` etc.), so the prefill mapper
  * (`../templatePrefill.ts`) can read them exactly like `RequestEditRow`'s own instants.
  */
+/**
+ * One `v_request_template_suggestions.stops`/`v_my_requests.stops`/`v_board_rides.served[].stops`
+ * element (REQ §13.93 "Multi-stop rides", ORIGINS_PLAN §6.1) — `eta` is always null on a
+ * template suggestion (no committed request to compute a real one against).
+ */
+export const requestStopRowSchema = z.object({
+  leg: z.enum(["out", "return"]),
+  position: z.number(),
+  place_id: z.string().nullable(),
+  place_text: z.string().nullable(),
+  name: z.string(),
+  eta: z.string().nullable(),
+});
+
 export const templateSuggestionRowSchema = z.object({
   template_id: z.string(),
   department_id: z.string(),
@@ -205,6 +267,11 @@ export const templateSuggestionRowSchema = z.object({
   ride_type_id: z.string(),
   ride_type_name: z.string().nullable(),
   trip_shape: z.enum(REQUEST_TRIP_SHAPES),
+  /** REQ §13.93 (ORIGINS_PLAN step O2): `origin_id`/`origin_text`/`trip_type`, copied by `save_request_template`. */
+  origin_id: z.string().nullable(),
+  origin_text: z.string().nullable(),
+  origin_name: z.string().nullable(),
+  trip_type: tripTypeSchema,
   depart_dow: z.number().nullable(),
   depart_time: z.string().nullable(),
   return_dow: z.number().nullable(),
@@ -227,6 +294,8 @@ export const templateSuggestionRowSchema = z.object({
   ride_description: z.string().nullable(),
   guest_passenger_names: z.array(z.string()),
   notes: z.string().nullable(),
+  /** REQ §13.93 "Multi-stop rides": `request_templates.stops`, prefill only. */
+  stops: z.array(requestStopRowSchema),
 });
 
 export type TemplateSuggestionRow = z.infer<typeof templateSuggestionRowSchema>;

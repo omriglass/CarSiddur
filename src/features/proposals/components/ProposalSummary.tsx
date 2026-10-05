@@ -15,6 +15,8 @@ interface ProposalSummaryProps {
   returnAt: string | null;
   /** Merge proposals only — the ride the request would join. */
   hostDriverName?: string | null;
+  /** `origin` proposals only — resolved place/car names for the one-line "יציאה מ... במקום מ..." summary. */
+  originChange?: { from: string | null; to: string | null; car?: string | null } | null;
 }
 
 /**
@@ -33,6 +35,7 @@ export function ProposalSummary({
   departAt,
   returnAt,
   hostDriverName,
+  originChange,
 }: ProposalSummaryProps) {
   return (
     <div className="space-y-1">
@@ -45,6 +48,11 @@ export function ProposalSummary({
       <TripSummary name={requesterName} destination={destination} purpose={purpose} departAt={departAt} returnAt={returnAt} />
       {hostDriverName ? (
         <p className="text-xs text-muted-foreground">{tv("sadranProposal.hostDriverLabel", { name: hostDriverName })}</p>
+      ) : null}
+      {originChange?.to ? (
+        <p className="text-xs text-muted-foreground">
+          {tv("rideCoordination.originChangeSummary", { from: originChange.from ?? "", to: originChange.to, car: originChange.car ?? "" })}
+        </p>
       ) : null}
     </div>
   );

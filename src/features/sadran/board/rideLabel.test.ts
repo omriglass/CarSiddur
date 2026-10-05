@@ -1,4 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { chauffeurRideLabel } from "@/lib/rideLabel";
+import { tv } from "@/i18n/he";
+import { formatTime } from "@/lib/time";
 
 import { resolveRideRealDestination, rideBlockLabel } from "./rideLabel";
 
@@ -102,6 +105,72 @@ describe("rideBlockLabel", () => {
     });
     expect(label).toBe("לנבו");
   });
+
+  it("REQUIREMENTS §13.93: a round trip from a non-home default origin shows מ<origin>", () => {
+    const label = rideBlockLabel({
+      originId: HAIFA,
+      destinationId: HAIFA,
+      originName: "חיפה",
+      destinationName: "חיפה",
+      homeDestinationId: HOME,
+      served: [{ role: "driver", requester: "עומרי כהן", destination: "תל אביב", origin_id: HAIFA, origin_name: "חיפה" }],
+    });
+    expect(label).toBe("עומרי מחיפה לתל אביב");
+  });
+
+  it("REQUIREMENTS §13.93: a chauffeur drop-off leg uses the precise wording", () => {
+    const label = rideBlockLabel({
+      originId: HOME, destinationId: TLV, originName: "נבו", destinationName: "תל אביב", homeDestinationId: HOME,
+      needsDriver: false, driverName: "דנה לוי",
+      served: [{ role: "passenger", requester: "יואב", destination: "תל אביב", leg: "out", car_mode: "chauffeur" }],
+    });
+    expect(label).toBe("דנה מסיע/ה את יואב לתל אביב וחוזר/ת");
+  });
+
+  it("REQUIREMENTS §13.93: a chauffeur pickup leg names the ride's own departure time", () => {
+    const label = rideBlockLabel({
+      originId: HOME, destinationId: TLV, originName: "נבו", destinationName: "תל אביב", homeDestinationId: HOME,
+      needsDriver: false, driverName: "דנה לוי", startsAt: "2026-09-13T12:20:00.000Z",
+      served: [{ role: "passenger", requester: "יואב", destination: "תל אביב", leg: "return", car_mode: "chauffeur" }],
+    });
+    expect(label).toContain("דנה אוסף/ת את יואב מתל אביב (יציאה");
+  });
+
+  it("REQUIREMENTS §13.93: a relay pair's leave/wait legs name the place, not a direction prefix (no partner known yet)", () => {
+    const leave = rideBlockLabel({
+      originId: HOME, destinationId: HAIFA, originName: "נבו", destinationName: "חיפה", homeDestinationId: HOME,
+      served: [{ role: "driver", requester: "רון", destination: "חיפה", leg: "out", car_mode: "relay", trip_type: "drop_off" }],
+    });
+    expect(leave).toBe("משאיר/ה את הרכב בחיפה");
+    const wait = rideBlockLabel({
+      originId: HAIFA, destinationId: HOME, originName: "חיפה", destinationName: "נבו", homeDestinationId: HOME,
+      served: [{ role: "driver", requester: "Dana", destination: "נבו", leg: "return", car_mode: "relay", trip_type: "drop_off" }],
+    });
+    expect(wait).toBe("הרכב מחכה בחיפה");
+  });
+
+  it("REQUIREMENTS §13.93: a relay pair's leave/wait legs name the partner and the time (v_board_rides.relay_partner)", () => {
+    const leave = rideBlockLabel({
+      originId: HOME, destinationId: HAIFA, originName: "נבו", destinationName: "חיפה", homeDestinationId: HOME,
+      served: [{ role: "driver", requester: "רון", destination: "חיפה", leg: "out", car_mode: "relay", trip_type: "drop_off" }],
+      relayPartner: { ride_id: "r2", name: "יוסי כהן", at: "2026-10-04T06:00:00.000Z" },
+    });
+    expect(leave).toBe(tv("rideCoordination.relayLeaveFor", { place: "חיפה", name: "יוסי", time: formatTime(new Date("2026-10-04T06:00:00.000Z")) }));
+    const wait = rideBlockLabel({
+      originId: HAIFA, destinationId: HOME, originName: "חיפה", destinationName: "נבו", homeDestinationId: HOME,
+      served: [{ role: "driver", requester: "Dana", destination: "נבו", leg: "return", car_mode: "relay", trip_type: "drop_off" }],
+      relayPartner: { ride_id: "r1", name: "דנה לוי", at: "2026-10-04T05:40:00.000Z" },
+    });
+    expect(wait).toBe(tv("rideCoordination.relayWaitFrom", { place: "חיפה", name: "דנה", time: formatTime(new Date("2026-10-04T05:40:00.000Z")) }));
+  });
+
+  it("REQUIREMENTS §13.93: a plain הלוך בלבד leg says the car stays there, no partner named", () => {
+    const label = rideBlockLabel({
+      originId: HOME, destinationId: HAIFA, originName: "נבו", destinationName: "חיפה", homeDestinationId: HOME,
+      served: [{ role: "driver", requester: "רון", destination: "חיפה", leg: "out", car_mode: "relay", trip_type: "one_way" }],
+    });
+    expect(label).toBe("רון לחיפה (הרכב נשאר שם)");
+  });
 });
 
 describe("resolveRideRealDestination", () => {
@@ -129,5 +198,19 @@ describe("resolveRideRealDestination", () => {
         served: [{ role: "driver", requester: "יואב לוי", destination: "חיפה" }],
       }),
     ).toBe("חיפה");
+  });
+});
+
+describe("chauffeurRideLabel — drop-off vs pickup (REQ §13.93)", () => {
+  const harish = { requester: "Dana Cohen", destination: "Givat Haviva", origin_id: "harish", origin_name: "Harish", leg: "out" as const, car_mode: "chauffeur" as const, role: "passenger" as const };
+
+  it("an out leg whose origin is where the car is reads as a drop-off", () => {
+    expect(chauffeurRideLabel("Avi Levi", [{ ...harish, origin_id: "home", origin_name: "Givat Haviva", destination: "Harish" }], undefined, "home"))
+      .toBe(tv("rideCoordination.chauffeurDropoff", { driver: "Avi", name: "Dana", place: "Harish" }));
+  });
+
+  it("an out leg starting away from the car ('pick me up from Harish') reads as a pickup at its origin", () => {
+    expect(chauffeurRideLabel(null, [harish], undefined, "home"))
+      .toBe(tv("rideCoordination.chauffeurPickup", { driver: "_____", name: "Dana", place: "Harish", time: "" }));
   });
 });

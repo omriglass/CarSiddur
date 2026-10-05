@@ -11,12 +11,13 @@ import { ridePublicDetails } from "@/lib/ridePublicDetails";
 import { he, t, tv } from "@/i18n/he";
 import { formatTime } from "@/lib/time";
 import type { Car } from "@/features/fleet/api";
-import { servedOf, type ServedEntry } from "@/features/rides/servedOf";
+import { relayPartnerOf, servedOf, type ServedEntry } from "@/features/rides/servedOf";
 
 import type { BoardRide } from "../api";
 import { AddPassengersDialog } from "@/features/rides/components/AddPassengersDialog";
 import { RidePassengersList } from "@/features/rides/components/RidePassengersList";
 import { RidePublicNotesEditor } from "@/features/rides/components/RidePublicNotesEditor";
+import { RideRouteStops } from "@/features/rides/components/RideRouteStops";
 import { peopleOf } from "@/features/rides/ridePeople";
 
 /**
@@ -44,14 +45,22 @@ function headerLabel(ride: BoardRide, served: readonly ServedEntry[], homeDestin
     isChauffeur: !!ride.is_chauffeur,
     needsDriver: !!ride.needs_driver,
     autoRelocation: !!ride.auto_relocation,
+    startsAt: ride.starts_at ?? undefined,
+    relayPartner: relayPartnerOf(ride),
   });
 }
 
+/**
+ * A round trip's extra explanatory line ("הרכב נשאר איתי ביעד" / chauffeur). A one-way/relay/
+ * drop_off leg (`origin_id !== destination_id`) no longer gets a second, possibly-conflicting
+ * line here — REQUIREMENTS §13.93's precise driver-label wording (`src/lib/rideLabel.ts`'s
+ * "הרכב נשאר שם" / "משאיר/ה את הרכב ב…" / "הרכב מחכה ב…") already lives in `headerLabel` above.
+ */
 function carModeLabel(ride: BoardRide): string {
   if (ride.origin_id === ride.destination_id) {
     return ride.is_chauffeur ? he.rideDetail.carModeChauffeur : he.rideDetail.carModeKeep;
   }
-  return tv("rideDetail.carModeRelayOut", { destination: ride.destination_name ?? "" });
+  return "";
 }
 
 interface RideDetailSheetProps {
@@ -126,7 +135,8 @@ export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = 
                 </p>
               ) : null}
 
-              <p className="text-muted-foreground">{carModeLabel(ride)}</p>
+              {carModeLabel(ride) ? <p className="text-muted-foreground">{carModeLabel(ride)}</p> : null}
+              <RideRouteStops served={served} />
               {canEditPublicNotes && ride.id && ride.version != null ? (
                 <RidePublicNotesEditor key={`${ride.id}:${ride.version}`} rideId={ride.id} expectedVersion={ride.version} initialNotes={ride.notes} departmentId={ride.department_id ?? ""} weekStart={ride.week_start ?? ""} />
               ) : ride.notes ? <p className="whitespace-pre-wrap break-words">{ride.notes}</p> : null}

@@ -5,6 +5,7 @@ import { ridePassengerSummary } from "@/lib/ridePassengerSummary";
 import { AddPassengersDialog } from "@/features/rides/components/AddPassengersDialog";
 import { RidePassengersList } from "@/features/rides/components/RidePassengersList";
 import { RidePublicNotesEditor } from "@/features/rides/components/RidePublicNotesEditor";
+import { RideRouteStops } from "@/features/rides/components/RideRouteStops";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -23,7 +24,7 @@ import { he, t, tv } from "@/i18n/he";
 import { TZ, dateKey, formatTime } from "@/lib/time";
 
 import { rideBlockLabel } from "../rideLabel";
-import { namedPassengersOf, servedOf, withChildNames } from "../../solverRun";
+import { namedPassengersOf, relayPartnerOf, servedOf, withChildNames } from "../../solverRun";
 import { peopleOf } from "@/features/rides/ridePeople";
 import { RidePassengersEditor } from "./RidePassengersEditor";
 
@@ -34,7 +35,6 @@ export interface RideSheetSaveInput {
   carId: string;
   startsAt: string;
   endsAt: string;
-  overnightAck: boolean;
 }
 
 interface RideSheetProps {
@@ -109,7 +109,7 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
     const endMin = parseHHMM(endTime) ?? 0;
     const startsAt = fromZonedTime(`${day}T${formatMinutes(startMin)}:00`, TZ).toISOString();
     const endsAt = fromZonedTime(`${day}T${formatMinutes(endMin)}:00`, TZ).toISOString();
-    onSave({ carId, startsAt, endsAt, overnightAck: false });
+    onSave({ carId, startsAt, endsAt });
   }
 
   const servedEntries = ride ? withChildNames(servedOf(ride), requests) : [];
@@ -152,9 +152,13 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
                       isChauffeur: !!ride.is_chauffeur,
                       needsDriver: !!ride.needs_driver,
                       autoRelocation: !!ride.auto_relocation,
+                      startsAt: ride.starts_at ?? undefined,
+                      relayPartner: relayPartnerOf(ride),
                     })
                   : `${ride.origin_name} → ${ride.destination_name} · ${driverName ?? ride.driver_name}`}
               </p>
+
+              <RideRouteStops served={servedEntries} />
 
               <div className="flex items-center gap-2">
                 <TimeField15 min="00:00" value={startTime} onChange={setStartTime} aria-label={he.sadranRideSheet.depart} />

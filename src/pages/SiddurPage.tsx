@@ -35,7 +35,7 @@ import { useSession } from "@/features/auth/useSession";
 import { useIsSadran } from "@/features/auth/useIsSadran";
 import { useMyRequests, useCancelRideMutation } from "@/features/requests/hooks";
 import { CarNameWithReport } from "@/features/carCare/components/CarNameWithReport";
-import { useCars, useRideTypes, useMaintenanceBlocks, useCarSeatConfigs } from "@/features/fleet/hooks";
+import { useCars, useDestinations, useRideTypes, useMaintenanceBlocks, useCarSeatConfigs } from "@/features/fleet/hooks";
 import { AddRideFab } from "@/features/requests/components/AddRideFab";
 import { CarNowButton } from "@/features/requests/components/CarNowButton";
 import { QuickRequestSheet } from "@/features/requests/components/QuickRequestSheet";
@@ -71,7 +71,7 @@ import { SiddurDisplayMenu } from "@/features/siddur/components/SiddurDisplayMen
 import { siddurKeys } from "@/features/siddur/queryKeys";
 import type { Week, BoardRide } from "@/features/siddur/api";
 import type { RideMove } from "@/features/rides/api";
-import { namedPassengersOf, representativeRideTypeCode, servedOf } from "@/features/rides/servedOf";
+import { namedPassengersOf, representativeRideTypeCode, rideStopCount, servedOf } from "@/features/rides/servedOf";
 import { peopleOf } from "@/features/rides/ridePeople";
 import { rideBlockLabel, resolveRideRealDestination } from "@/lib/rideLabel";
 import { he, t, tv } from "@/i18n/he";
@@ -356,16 +356,20 @@ export function SiddurPage() {
     ? carLocationsQuery.data?.find((l) => l.car_id === selectedRide.car_id)?.location_name ?? null
     : null;
 
-  const weekGridCars: WeekGridCar[] = useMemo(
-    () =>
-      (carsQuery.data ?? []).map((c) => ({
-        id: c.id,
-        name: siddurCarName(c),
-        group: c.type,
-        locationBadge: carLocationsQuery.data?.find((l) => l.car_id === c.id)?.location_name ?? undefined,
-      })),
-    [carsQuery.data, carLocationsQuery.data],
-  );
+  const destinationsQuery = useDestinations(departmentId);
+  const weekGridCars: WeekGridCar[] = useMemo(() => {
+    const destinationNameById = new Map((destinationsQuery.data ?? []).map((d) => [d.id, d.name]));
+    return (carsQuery.data ?? []).map((c) => ({
+      id: c.id,
+      name: siddurCarName(c),
+      group: c.type,
+      locationBadge: carLocationsQuery.data?.find((l) => l.car_id === c.id)?.location_name ?? undefined,
+      // REQUIREMENTS §13.93: the car's own base, shown only when it isn't the department home.
+      baseBadge: c.base_location_id && c.base_location_id !== homeDestinationId
+        ? tv("sadranBoard.carBase", { place: destinationNameById.get(c.base_location_id) ?? "" })
+        : undefined,
+    }));
+  }, [carsQuery.data, carLocationsQuery.data, destinationsQuery.data, homeDestinationId]);
   // Not memoized: `activeDayRides` is a freshly derived array each render (it comes from
   // `.find(...)?.items`), so a `useMemo` here would never skip recomputation anyway — the
   // mapping itself is cheap (one day's rides, a handful of rows).
@@ -383,8 +387,10 @@ export function SiddurPage() {
       carId: r.car_id as string,
       startMinutes: minutesSinceMidnight(r.starts_at as string),
       endMinutes: minutesSinceMidnight(r.starts_at as string) + (Date.parse(r.ends_at as string) - Date.parse(r.starts_at as string)) / 60_000,
-      label:
-        (!servedOf(r).length && r.notes) || (homeDestinationId && r.origin_id && r.destination_id
+      // REQUIREMENTS §13.93 "Multi-stop rides" Display: "· N עצירות" appended only when the
+      // ride actually serves a request with stops (same marker as the Sadran board).
+      label: (() => {
+        const base = (!servedOf(r).length && r.notes) || (homeDestinationId && r.origin_id && r.destination_id
           ? rideBlockLabel({
               originId: r.origin_id,
               destinationId: r.destination_id,
@@ -396,8 +402,12 @@ export function SiddurPage() {
               isChauffeur: !!r.is_chauffeur,
               needsDriver: !!r.needs_driver,
               autoRelocation: !!r.auto_relocation,
+              startsAt: r.starts_at ?? undefined,
             })
-          : (r.destination_name ?? "")),
+          : (r.destination_name ?? ""));
+        const stopCount = rideStopCount(servedOf(r));
+        return stopCount > 0 ? `${base} ${tv("sadranBoard.stopCount", { count: String(stopCount) })}` : base;
+      })(),
       rideTypeCode: representativeRideTypeCode(servedOf(r)),
       description: [servedOf(r).length ? r.notes : null, ridePublicDetails(servedOf(r), { includeCompanions: !isSadran, addedNames: addedNamesOf(r) })].filter(Boolean).join("\n"),
       passengerSummary: isSadran ? ridePassengerSummary(servedOf(r), r.needs_driver ? null : r.driver_name, { addedNames: addedNamesOf(r) }) : undefined,

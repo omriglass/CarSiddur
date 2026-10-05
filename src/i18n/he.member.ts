@@ -69,6 +69,24 @@ export const heMember = {
     tripShapeRoundTrip: "הלוך ושוב",
     tripShapeOneWayTo: "הלוך בלבד",
     tripShapeOneWayFrom: "חזור בלבד",
+    // REQ §13.93: the three trip types shown in the request form, replacing
+    // TripShapeControl/CarAtDestinationToggle (step O5a).
+    tripTypeRoundTrip: "הלוך-חזור",
+    tripTypeOneWay: "הלוך בלבד",
+    tripTypeDropOff: "הקפצה",
+    /** Origin line above the destination field, tap to change (REQ §13.93). */
+    fromOrigin: "מ{{place}} אל",
+    /** "+ עצירה" — opens the out-stop picker inline (REQ §13.93 "Multi-stop rides"). */
+    addStop: "+ עצירה",
+    stopPlaceholder: "איפה עוצרים?",
+    /** "+ עצירה בחזור" — same, for the return leg, shown only when the trip has a return. */
+    addReturnStop: "+ עצירה בחזור",
+    /** Remove-stop chip button `aria-label`. */
+    removeStop: "הסרת עצירה",
+    /** "הקפצה" optional pickup leg toggle. */
+    dropOffPickupToggle: "צריך/ה גם איסוף",
+    /** Shown when a non-driver member has not named a driving companion (REQ §13.88/§13.93). */
+    nonDriverTripTypeHint: "בלי מלווה/ת שנוהג/ת, אפשר להגיש רק בקשת הקפצה",
     departArrival: "הגעה הביתה",
     carAtDestinationHelper:
       "אם תכבו: הרכב יחזור לקיבוץ ויוכל לשמש אחרים. ייתכן שתיסע/י כנוסע/ת אצל מישהו, או שתנהג/י ותשאיר/י את הרכב שם למי שחוזר/ת.",
@@ -179,6 +197,10 @@ export const heMember = {
     locationBadge: "ב{{location}}",
     /** Multi-day request leg (REQ §13.77, UX_FLOWS.md §3.5). */
     seriesLine: "חלק מבקשה רב-יומית, יום {{index}} מתוך {{count}}",
+    /** REQUIREMENTS §13.93 "Multi-stop rides" Display: the ride sheet/ride-detail route-with-stops section. */
+    routeStopsTitle: "עצירות בדרך",
+    routeStopsOut: "הלוך:",
+    routeStopsReturn: "חזור:",
   },
   /**
    * The "+ נוסעים" button (siddur `RideDetailSheet` and the board's `RideSheet`, REQ §13.85):
@@ -243,6 +265,12 @@ export const heMember = {
     homeWeekAuto: "אוטומטי",
     homeWeekLive: "השבוע הפעיל",
     homeWeekOpen: "השבוע הפתוח",
+    /** "נקודת יציאה קבועה" card (REQ §13.93): per-department default origin, `set_my_default_origin`. */
+    defaultOriginTitle: "נקודת יציאה קבועה",
+    defaultOriginLabel: "נקודת יציאה",
+    defaultOriginHelp: "נקודת היציאה שתוצע כברירת מחדל בבקשות חדשות במחלקה הזו.",
+    defaultOriginHome: "בית (ברירת מחדל)",
+    defaultOriginNoDepartment: "יש לבחור מחלקה כדי להגדיר נקודת יציאה",
     notificationsTitle: "התראות",
     pushEnabled: "מופעל",
     pushDisabled: "כבוי",

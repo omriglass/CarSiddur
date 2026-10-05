@@ -231,7 +231,8 @@ CREATE TYPE "public"."proposal_type" AS ENUM (
     'shift',
     'merge',
     'deny',
-    'external'
+    'external',
+    'origin'
 );
 
 
@@ -333,6 +334,16 @@ CREATE TYPE "public"."trip_shape" AS ENUM (
 
 
 ALTER TYPE "public"."trip_shape" OWNER TO "postgres";
+
+
+CREATE TYPE "public"."trip_type" AS ENUM (
+    'round_trip',
+    'one_way',
+    'drop_off'
+);
+
+
+ALTER TYPE "public"."trip_type" OWNER TO "postgres";
 
 
 CREATE TYPE "public"."waitlist_group_status" AS ENUM (
@@ -704,6 +715,7 @@ declare
   v_actor uuid := (select auth.uid());
   v_actor_name text;
   v_destination_name text;
+  v_route text;
   v_item jsonb;
   v_person_id uuid;
   v_child_id uuid;
@@ -863,9 +875,10 @@ begin
   if array_length(v_added_names, 1) > 0 and v_ride.driver_id is distinct from v_actor then
     select full_name into v_actor_name from public.profiles where id = v_actor;
     select name into v_destination_name from public.destinations where id = v_ride.destination_id;
+    v_route := public.route_label(v_ride.department_id, v_ride.origin_id, null, v_ride.destination_id, null);
     v_names_joined := array_to_string(v_added_names, ', ');
     perform public.enqueue_notification(v_ride.driver_id, 'outcome_changed', v_ride.department_id, v_ride.week_start,
-      jsonb_build_object('byName', coalesce(v_actor_name, ''), 'names', v_names_joined, 'destination', coalesce(v_destination_name, '')),
+      jsonb_build_object('byName', coalesce(v_actor_name, ''), 'names', v_names_joined, 'destination', coalesce(v_destination_name, ''), 'route', coalesce(v_route, '')),
       jsonb_build_object('variant', 'passengers_added', 'ride_id', p_ride_id),
       format('passengers_added:%s:%s:%s', p_ride_id, v_new_version, v_ride.driver_id));
   end if;
@@ -877,10 +890,11 @@ begin
       select full_name into v_actor_name from public.profiles where id = v_actor;
     end if;
     select name into v_destination_name from public.destinations where id = v_ride.destination_id;
+    v_route := public.route_label(v_ride.department_id, v_ride.origin_id, null, v_ride.destination_id, null);
     for v_person_id in select unnest(v_added_person_ids) loop
       if v_person_id is distinct from v_actor then
         perform public.enqueue_notification(v_person_id, 'outcome_changed', v_ride.department_id, v_ride.week_start,
-          jsonb_build_object('byName', coalesce(v_actor_name, ''), 'destination', coalesce(v_destination_name, '')),
+          jsonb_build_object('byName', coalesce(v_actor_name, ''), 'destination', coalesce(v_destination_name, ''), 'route', coalesce(v_route, '')),
           jsonb_build_object('variant', 'passenger_added_you', 'ride_id', p_ride_id),
           format('passenger_added_you:%s:%s:%s', p_ride_id, v_new_version, v_person_id));
       end if;
@@ -1119,6 +1133,7 @@ declare
   required_party uuid;
   combined_start timestamptz;combined_end timestamptz;
   gap_override smallint;
+  v_origin_result jsonb;
 begin
   select * into v_prop from public.proposals where id = p_proposal_id for update;
   if v_prop is null then raise exception 'proposal_not_found' using errcode = 'P0001'; end if;
@@ -1140,6 +1155,17 @@ begin
   elsif v_prop.type = 'external' then
     update public.requests set status = 'external', status_reason = coalesce(v_prop.payload ->> 'reason', 'EXTERNAL')
     where id = v_prop.request_id;
+  elsif v_prop.type = 'origin' then
+    update public.requests set
+      origin_id = (v_prop.payload ->> 'origin_id')::uuid, origin_text = null,
+      preferred_car_id = (v_prop.payload ->> 'car_id')::uuid,
+      status = 'submitted'
+    where id = v_prop.request_id;
+    v_origin_result := public.try_auto_approve(v_prop.request_id);
+    if coalesce(v_origin_result ->> 'status', '') <> 'assigned' then
+      raise exception 'origin_change_unavailable' using errcode = 'P0001';
+    end if;
+    v_ride_id := (v_origin_result ->> 'ride_id')::uuid;
   elsif v_prop.type = 'shift' then
     if v_prop.payload ? 'car_id' then
       select rd.* into v_existing from public.rides rd join public.ride_requests rr on rr.ride_id=rd.id
@@ -1160,7 +1186,7 @@ begin
         insert into public.rides(department_id,week_start,car_id,starts_at,ends_at,origin_id,destination_id,driver_id,status,is_pinned,pin_reason,created_by,turnaround_override_minutes)
         values(v_prop.department_id,v_prop.week_start,(v_prop.payload->>'car_id')::uuid,
           coalesce((v_prop.payload->>'depart_at')::timestamptz,v_req.depart_at),coalesce((v_prop.payload->>'return_at')::timestamptz,v_req.return_at),
-          coalesce((v_prop.payload->>'origin_id')::uuid,v_home),coalesce((v_prop.payload->>'destination_id')::uuid,v_home),v_req.requester_id,
+          coalesce((v_prop.payload->>'origin_id')::uuid,v_req.origin_id,v_home),coalesce((v_prop.payload->>'destination_id')::uuid,v_req.origin_id,v_home),v_req.requester_id,
           case when public.is_week_public(v_prop.department_id,v_prop.week_start) then 'confirmed'::public.ride_status else 'draft'::public.ride_status end,
           true,'PROPOSAL_APPLIED',v_prop.created_by,gap_override) returning id into v_ride_id;
         insert into public.ride_requests(ride_id,request_id,role,leg,car_mode) values(v_ride_id,v_req.id,'driver','both','keep');
@@ -1516,179 +1542,68 @@ CREATE OR REPLACE FUNCTION "public"."assert_car_chain"("_car" "uuid", "_week" "d
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
 declare
-  v_home uuid; v_day_end time; v_loc uuid; v_car_name text; v_dept uuid; v_week_starts timestamptz;
-  v_new_status public.ride_status; v_turnaround interval; v_pending uuid[]; v_hint jsonb; v_hint_used boolean := false;
-  r record; v_gap_id uuid; v_travel interval; v_start timestamptz; v_end timestamptz; v_next_start_limit timestamptz;
-  v_widen text; v_r_origin uuid; v_r_destination uuid;
+  v_dept uuid; v_turnaround interval; v_week_starts timestamptz;
+  r record; v_next record; v_prev_loc uuid; v_request_id uuid; v_leg public.ride_leg;
+  v_car_mode public.leg_car_mode; v_trip_type public.trip_type; v_widen text;
 begin
-  select d.id, d.home_destination_id, s.day_end_time, c.name into v_dept, v_home, v_day_end, v_car_name
-  from public.cars c
-  join public.departments d on d.id = c.department_id
-  join public.department_settings s on s.department_id = d.id
-  where c.id = _car;
-  if v_home is null then raise exception 'no_home_location' using errcode = 'P0412'; end if;
-
-  v_hint := nullif(current_setting('app.chain_hint', true), '')::jsonb;
-  perform set_config('app.chain_hint', '', true);
+  select department_id into v_dept from public.cars where id = _car;
+  if v_dept is null then return; end if;
 
   v_turnaround := make_interval(mins => coalesce(public.required_turnaround_minutes(v_dept, _week), 30));
-  v_new_status := case when public.is_week_public(v_dept, _week) then 'confirmed'::public.ride_status else 'draft'::public.ride_status end;
+  v_week_starts := (_week::timestamp) at time zone 'Asia/Jerusalem';
 
-  -- REQ §13.88/§13.89: pair up any matching one-way legs across the department before
+  -- REQ §13.88/§13.93: pair up any matching drop_off legs across the department before
   -- walking this car's own chain, so a freshly-matched pair is never seen as a gap.
   perform public.pair_one_way_legs(v_dept, _week);
 
-  select coalesce(array_agg(id order by starts_at), '{}') into v_pending
-  from public.rides
-  where car_id = _car and week_start = _week and auto_relocation and needs_driver
-    and driver_id is null and status <> 'cancelled' and not planning_conflict;
-
-  v_week_starts := (_week::timestamp) at time zone 'Asia/Jerusalem';
-  select coalesce((select p.destination_id from public.rides p
-                   where p.car_id = _car and p.status <> 'cancelled' and not p.planning_conflict
-                     and (not p.auto_relocation or p.driver_id is not null)
-                     and p.starts_at < v_week_starts
-                   order by p.starts_at desc limit 1), v_home)
-    into v_loc;
-
   for r in
-    select id, origin_id, destination_id, starts_at, ends_at, blocked_until, overnight_ack_by, series_id, created_by
-    from public.rides
-    where car_id = _car and week_start = _week and status <> 'cancelled' and not planning_conflict
-      and (not auto_relocation or driver_id is not null)
-    order by starts_at
+    select rd.id as ride_id, rd.origin_id, rd.destination_id, rd.starts_at, rd.ends_at
+    from public.rides rd
+    where rd.car_id = _car and rd.week_start = _week and rd.status <> 'cancelled' and not rd.planning_conflict
+      and (not rd.auto_relocation or rd.driver_id is not null)
+    order by rd.starts_at
   loop
-    v_r_origin := r.origin_id;
-    v_r_destination := r.destination_id;
+    select rr.request_id, rr.leg, rr.car_mode into v_request_id, v_leg, v_car_mode
+    from public.ride_requests rr
+    where rr.ride_id = r.ride_id and rr.car_mode = 'relay'
+    order by (rr.leg = 'out') desc limit 1;
 
-    if v_r_origin <> v_loc then
-      -- Out-gap: the car must relocate v_loc -> r.origin_id before r can start. A lone
-      -- one-way "return" leg fetches itself instead of a separate relocation ride.
-      v_widen := null;
-      if v_loc = v_home then
-        v_widen := public.try_widen_one_way_leg(r.id, _car, v_dept, _week, v_home, v_turnaround, 'fetch');
-      end if;
-      if v_widen = 'here' then
-        v_r_origin := v_home;
-      elsif v_widen = 'moved' then
-        -- The leg moved to another car entirely; it no longer belongs to this car's chain.
-        continue;
-      else
-        select id into v_gap_id from public.rides where id = any(v_pending)
-          and origin_id = v_loc and destination_id = r.origin_id order by starts_at limit 1;
-        if v_gap_id is not null then
-          v_pending := array_remove(v_pending, v_gap_id);
-        else
-          v_travel := make_interval(mins => greatest(coalesce((select travel_minutes from public.destinations
-            where id = case when v_loc = v_home then r.origin_id else v_loc end), 30), 15));
-          if not v_hint_used and v_hint is not null
-            and (v_hint->>'origin_id')::uuid = v_loc and (v_hint->>'destination_id')::uuid = r.origin_id
-            and (v_hint->>'ends_at')::timestamptz <= r.starts_at - v_turnaround
-          then
-            v_start := (v_hint->>'starts_at')::timestamptz;
-            v_end := (v_hint->>'ends_at')::timestamptz;
-            v_hint_used := true;
-          else
-            v_end := r.starts_at - v_turnaround;
-            if not public.is_quarter_hour(v_end) then
-              v_end := to_timestamp(floor(extract(epoch from v_end) / 900) * 900);
-            end if;
-            v_start := v_end - v_travel;
-            if not public.is_quarter_hour(v_start) then
-              v_start := to_timestamp(floor(extract(epoch from v_start) / 900) * 900);
-            end if;
-            if v_start >= v_end then v_start := v_end - interval '15 minutes'; end if;
-          end if;
-          insert into public.rides(department_id, week_start, car_id, starts_at, ends_at, origin_id, destination_id,
-            driver_id, needs_driver, auto_relocation, status, is_pinned, created_by)
-          values(v_dept, _week, _car, v_start, v_end, v_loc, r.origin_id, null, true, true, v_new_status, false,
-            coalesce((select auth.uid()), r.created_by));
-        end if;
-      end if;
+    if v_request_id is null then
+      continue; -- keep/chauffeur/reservation/pinned ride: nothing for this step to heal
     end if;
-    v_loc := v_r_destination;
 
-    if v_r_destination <> v_home and r.overnight_ack_by is null
-      -- REQ §13.77: the next leg of the same series takes the car over the night.
-      and not (r.series_id is not null and exists (
-        select 1 from public.rides s
-        where s.car_id = _car and s.status <> 'cancelled' and not s.planning_conflict
-          and s.series_id = r.series_id and s.id <> r.id
-          and (s.starts_at at time zone 'Asia/Jerusalem')::date
-              = (r.ends_at at time zone 'Asia/Jerusalem')::date + 1))
-    then
-      v_next_start_limit := (((r.ends_at at time zone 'Asia/Jerusalem')::date + v_day_end) at time zone 'Asia/Jerusalem');
-      if not exists (
-        select 1 from public.rides n
-        where n.car_id = _car and n.status <> 'cancelled' and not n.planning_conflict
-          and (not n.auto_relocation or n.driver_id is not null)
-          -- `>=`: a relay return leg may start the moment the out-leg arrives (REQ §13.88,
-          -- owner 2026-09-24 — no buffer inside a pair); it is still the car's next ride.
-          and n.id <> r.id and n.starts_at >= r.ends_at and n.starts_at < v_next_start_limit
-      ) then
-        -- Return-relocation gap: r.destination_id -> home, by day end. A lone one-way
-        -- "out" leg widens into home -> X -> home instead of a separate relocation ride.
-        v_widen := public.try_widen_one_way_leg(r.id, _car, v_dept, _week, v_home, v_turnaround, 'out');
-        if v_widen = 'here' then
-          v_loc := v_home;
-        elsif v_widen = 'moved' then
-          v_loc := v_home; -- the leg (and its away-gap) moved to another car entirely.
-        else
-          select id into v_gap_id from public.rides where id = any(v_pending)
-            and origin_id = r.destination_id and destination_id = v_home
-            and starts_at >= r.blocked_until order by starts_at limit 1;
-          if v_gap_id is not null then
-            v_pending := array_remove(v_pending, v_gap_id);
-          else
-            v_travel := make_interval(mins => greatest(coalesce((select travel_minutes from public.destinations
-              where id = r.destination_id), 30), 15));
-            if not v_hint_used and v_hint is not null
-              and (v_hint->>'origin_id')::uuid = r.destination_id and (v_hint->>'destination_id')::uuid = v_home
-              and (v_hint->>'starts_at')::timestamptz >= r.blocked_until
-            then
-              v_start := (v_hint->>'starts_at')::timestamptz;
-              v_end := (v_hint->>'ends_at')::timestamptz;
-              v_hint_used := true;
-            else
-              v_end := v_next_start_limit;
-              if not (public.is_quarter_hour(v_end) or public.is_same_day_end(v_end)) then
-                v_end := to_timestamp(floor(extract(epoch from v_end) / 900) * 900);
-              end if;
-              v_start := v_end - v_travel;
-              if not public.is_quarter_hour(v_start) then
-                v_start := to_timestamp(floor(extract(epoch from v_start) / 900) * 900);
-              end if;
-              if v_start < r.blocked_until then
-                -- Would overlap the last real ride's own turnaround: place right after it.
-                v_start := r.blocked_until;
-                if not public.is_quarter_hour(v_start) then
-                  v_start := to_timestamp(ceil(extract(epoch from v_start) / 900) * 900);
-                end if;
-                v_end := v_start + v_travel;
-                if not (public.is_quarter_hour(v_end) or public.is_same_day_end(v_end)) then
-                  v_end := to_timestamp(ceil(extract(epoch from v_end) / 900) * 900);
-                end if;
-              end if;
-              if v_start >= v_end then v_end := v_start + interval '15 minutes'; end if;
-            end if;
-            insert into public.rides(department_id, week_start, car_id, starts_at, ends_at, origin_id, destination_id,
-              driver_id, needs_driver, auto_relocation, status, is_pinned, created_by)
-            values(v_dept, _week, _car, v_start, v_end, r.destination_id, v_home, null, true, true, v_new_status, false,
-              coalesce((select auth.uid()), r.created_by));
-          end if;
-          v_loc := v_home;
-        end if;
+    select q.trip_type into v_trip_type from public.requests q where q.id = v_request_id;
+    if v_trip_type is distinct from 'drop_off' then
+      continue; -- an explicit one_way leg is never widened (§1.3a)
+    end if;
+
+    if v_leg = 'out' then
+      select rd2.id, rd2.origin_id, rd2.destination_id into v_next
+      from public.rides rd2
+      where rd2.car_id = _car and rd2.status <> 'cancelled' and not rd2.planning_conflict
+        and (not rd2.auto_relocation or rd2.driver_id is not null)
+        and rd2.starts_at > r.starts_at
+        and (rd2.starts_at at time zone 'Asia/Jerusalem')::date = (r.starts_at at time zone 'Asia/Jerusalem')::date
+      order by rd2.starts_at limit 1;
+      if v_next.id is not null and v_next.origin_id = r.destination_id and v_next.destination_id <> r.destination_id then
+        continue; -- paired: the next ride the same day takes the car on from X
       end if;
+      v_widen := public.try_widen_one_way_leg(r.ride_id, _car, v_dept, _week, null, v_turnaround, 'out');
+    else
+      select coalesce(
+        (select rd3.destination_id from public.rides rd3
+          where rd3.car_id = _car and rd3.status <> 'cancelled' and not rd3.planning_conflict
+            and (not rd3.auto_relocation or rd3.driver_id is not null)
+            and rd3.starts_at < r.starts_at and rd3.id <> r.ride_id
+          order by rd3.starts_at desc limit 1),
+        public.car_location_at(_car, v_week_starts))
+      into v_prev_loc;
+      if v_prev_loc = r.origin_id then
+        continue; -- paired: the car is already at X when this pickup leg needs it
+      end if;
+      v_widen := public.try_widen_one_way_leg(r.ride_id, _car, v_dept, _week, null, v_turnaround, 'fetch');
     end if;
   end loop;
-
-  -- Any tentative relocation not reused above is no longer needed (a real ride now
-  -- bridges the gap, or the car is already where it would have brought it).
-  if coalesce(array_length(v_pending, 1), 0) > 0 then
-    update public.rides set status = 'cancelled', cancelled_at = now(),
-      cancelled_by = coalesce((select auth.uid()), created_by), cancel_reason = 'AUTO_RELOCATION_OBSOLETE'
-    where id = any(v_pending);
-  end if;
 end $$;
 
 
@@ -2312,6 +2227,22 @@ $$;
 ALTER FUNCTION "public"."car_access_codes_set_department"() OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."car_base_location"("_car" "uuid") RETURNS "uuid"
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select coalesce(
+    (select c.base_location_id from public.cars c where c.id = _car),
+    (select dm.default_origin_id from public.cars c
+       join public.department_members dm on dm.department_id = c.department_id and dm.profile_id = c.owner_id
+       where c.id = _car and c.type = 'temporary' and dm.removed_at is null),
+    (select d.home_destination_id from public.cars c join public.departments d on d.id = c.department_id where c.id = _car));
+$$;
+
+
+ALTER FUNCTION "public"."car_base_location"("_car" "uuid") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."car_care_recipients"("_car_id" "uuid") RETURNS SETOF "uuid"
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -2382,7 +2313,7 @@ CREATE OR REPLACE FUNCTION "public"."car_location_at"("_car" "uuid", "_at" times
     (select r.destination_id from public.rides r
       where r.car_id = _car and r.status <> 'cancelled' and r.starts_at <= _at
       order by r.starts_at desc limit 1),
-    (select d.home_destination_id from public.cars c join public.departments d on d.id = c.department_id where c.id = _car));
+    public.car_base_location(_car));
 $$;
 
 
@@ -2414,8 +2345,13 @@ begin
   return query
     select c.id,
       coalesce(sum(
-        coalesce(dest.distance_km, 0)
-        * case when r.origin_id = r.destination_id then 2 else 1 end
+        case served.leg
+          when 'both' then coalesce(public.request_leg_route_km(served.request_id, 'out'), 0)
+                           + coalesce(public.request_leg_route_km(served.request_id, 'return'), 0)
+          when 'out' then coalesce(public.request_leg_route_km(served.request_id, 'out'), 0)
+          when 'return' then coalesce(public.request_leg_route_km(served.request_id, 'return'), 0)
+          else 0
+        end
       ), 0)::numeric as km
     from public.cars c
     left join public.rides r
@@ -2425,14 +2361,12 @@ begin
       and r.week_start <= p_week_start
       and (r.week_start < p_week_start or r.status = 'confirmed')
     left join lateral (
-      select rq.request_id
+      select rq.request_id, rq.leg
       from public.ride_requests rq
       where rq.ride_id = r.id
       order by case when rq.role = 'driver' then 0 else 1 end, rq.request_id
       limit 1
     ) served on true
-    left join public.requests req on req.id = served.request_id
-    left join public.destinations dest on dest.id = req.destination_id
     where c.department_id = p_department_id and c.type = 'shared' and c.status = 'active'
     group by c.id;
 end;
@@ -2440,6 +2374,42 @@ $$;
 
 
 ALTER FUNCTION "public"."car_mileage_totals"("p_department_id" "uuid", "p_week_start" "date", "p_weeks" integer) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."car_next_ride_origin"("_car" "uuid", "_after" timestamp with time zone) RETURNS "uuid"
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select r.origin_id from public.rides r
+  where r.car_id = _car and r.status <> 'cancelled' and not r.planning_conflict
+    and (not r.auto_relocation or r.driver_id is not null)
+    and r.starts_at >= _after
+  order by r.starts_at asc limit 1;
+$$;
+
+
+ALTER FUNCTION "public"."car_next_ride_origin"("_car" "uuid", "_after" timestamp with time zone) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."car_start_locations"("p_department_id" "uuid", "p_week_start" "date") RETURNS TABLE("car_id" "uuid", "location_id" "uuid", "base_location_id" "uuid")
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare v_at timestamptz;
+begin
+  if not public.member_of(p_department_id) then
+    raise exception 'not_authorized' using errcode = 'P0001';
+  end if;
+  v_at := (p_week_start::timestamp) at time zone 'Asia/Jerusalem';
+  return query
+    select c.id, public.car_location_at(c.id, v_at), public.car_base_location(c.id)
+    from public.cars c
+    where c.department_id = p_department_id and c.status <> 'retired';
+end;
+$$;
+
+
+ALTER FUNCTION "public"."car_start_locations"("p_department_id" "uuid", "p_week_start" "date") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."cars_protect_owner_editable_fields"() RETURNS "trigger"
@@ -2843,6 +2813,11 @@ begin
     select array_agg(distinct id) into p_party_profile_ids from unnest(coalesce(p_party_profile_ids,'{}')||required_parties) id where id is not null;
     p_payload:=p_payload||jsonb_build_object('host_versions',host_versions,'source_versions',source_versions,
       'request_fingerprint',public.merge_request_fingerprint(v_req.id),'allow_tight_turnaround',public.can_manage_week(v_req.department_id,v_req.week_start));
+  elsif p_type='origin' then
+    if p_created_via <> 'sadran' then raise exception 'not_authorized' using errcode = 'P0001'; end if;
+    if nullif(p_payload->>'origin_id','') is null or nullif(p_payload->>'car_id','') is null then
+      raise exception 'origin_proposal_requires_car_and_origin' using errcode = 'P0001';
+    end if;
   end if;
 
   -- No timer any more: expires_at stays null until the proposal's day is
@@ -4612,8 +4587,9 @@ begin
     raise exception 'not_authorized' using errcode = 'P0001';
   end if;
 
-  -- Free-text destination (owner A8): nothing to compare against, no rows.
-  if v_request.destination_id is null then
+  -- Free-text destination (owner A8) or free-text origin (REQ §13.93): nothing to compare
+  -- against, no rows.
+  if v_request.destination_id is null or v_request.origin_id is null then
     return;
   end if;
 
@@ -4649,13 +4625,17 @@ begin
     p.phone
   from public.rides rd
   join lateral (
-    select q2.destination_id
+    select q2.id as request_id, q2.destination_id, rr2.leg
     from public.ride_requests rr2
     join public.requests q2 on q2.id = rr2.request_id
     where rr2.ride_id = rd.id
     order by (rr2.role = 'driver') desc, rr2.request_id
     limit 1
   ) trip on true
+  left join lateral (
+    select array_agg(pt.place_id order by pt."position") as route_ids
+    from public.request_leg_route_points(trip.request_id, case when trip.leg = 'return' then 'return'::public.ride_leg else 'out'::public.ride_leg end) pt
+  ) route on true
   join public.destinations rdest on rdest.id = trip.destination_id
   join public.destinations qdest on qdest.id = v_request.destination_id
   join public.cars c on c.id = rd.car_id
@@ -4672,6 +4652,11 @@ begin
   where rd.department_id = v_request.department_id
     and rd.week_start = v_request.week_start
     and rd.status <> 'cancelled'
+    -- REQ §13.93 "Multi-stop rides": the candidate's origin is any place on the host's served
+    -- leg route (same-origin is the a = route[0] special case); destination stays a radius
+    -- match, same as before stops existed.
+    and route.route_ids is not null
+    and array_position(route.route_ids, v_request.origin_id) is not null
     and qdest.lat is not null and qdest.lng is not null
     and rdest.lat is not null and rdest.lng is not null
     and public.haversine_km(qdest.lat, qdest.lng, rdest.lat, rdest.lng) <= v_radius
@@ -4681,7 +4666,8 @@ begin
     and greatest(coalesce(cfg.max_adults, 0) - coalesce(load.adults, 0), 0) >= 1
     and not exists (select 1 from public.ride_requests xr where xr.ride_id = rd.id and xr.request_id = v_request.id)
   order by 8 asc, rd.starts_at asc, rd.id asc;
-end $$;
+end;
+$$;
 
 
 ALTER FUNCTION "public"."joinable_rides_for_request"("p_request_id" "uuid") OWNER TO "postgres";
@@ -5051,6 +5037,7 @@ CREATE OR REPLACE FUNCTION "public"."notification_context"("_recipient" "uuid", 
     AS $$
 declare q public.requests%rowtype; r public.rides%rowtype; pr public.proposals%rowtype; w public.weeks%rowtype;
   v jsonb; dt timestamptz; dest text; fullname text; carname text;
+  v_home uuid; v_origin_name text; v_origin text; v_route text;
 begin
   select * into w from public.weeks where department_id=_department_id and week_start=_week_start;
   select * into pr from public.proposals where id=nullif(_data->>'proposal_id','')::uuid;
@@ -5061,9 +5048,24 @@ begin
   select full_name into fullname from public.profiles where id=coalesce(q.requester_id,_recipient);
   select name into carname from public.cars where id=r.car_id;
   dt:=coalesce(q.depart_at,q.return_at,r.starts_at);
+
+  select home_destination_id into v_home from public.departments where id=_department_id;
+  select name into v_origin_name from public.destinations where id=q.origin_id;
+  v_origin_name := coalesce(v_origin_name, q.origin_text);
+  v_origin := case when q.id is null or q.origin_id is null or q.origin_id = v_home then '' else coalesce(v_origin_name,'') end;
+
+  if q.id is not null then
+    v_route := public.request_route_label(q.id);
+  else
+    v_route := public.render_notification_text(
+      (select body from public.text_fragments where key='route.to'),
+      jsonb_build_object('destination', coalesce(dest,q.destination_text,'')));
+  end if;
+
   v:=jsonb_build_object('weekLabel',to_char(_week_start,'DD/MM/YY'),
     'closeTime',to_char(w.close_at at time zone 'Asia/Jerusalem','DD/MM HH24:MI'),
     'firstName',coalesce(fullname,''),'destination',coalesce(dest,q.destination_text,''),
+    'origin',v_origin,'route',coalesce(v_route,''),
     'date',to_char(dt at time zone 'Asia/Jerusalem','DD/MM/YY'),'day',public.day_date_label(dt),
     'depart',to_char(coalesce(r.starts_at,q.depart_at) at time zone 'Asia/Jerusalem','HH24:MI'),
     'return',to_char(coalesce(r.ends_at,q.return_at) at time zone 'Asia/Jerusalem','HH24:MI'),
@@ -5375,7 +5377,7 @@ CREATE OR REPLACE FUNCTION "public"."pair_one_way_legs"("p_dept" "uuid", "p_week
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
 declare
-  v_home uuid; v_turnaround interval; v_travel int;
+  v_turnaround interval; v_travel int;
   out_leg record; ret_leg record;
   v_driver_out uuid; v_driver_ret uuid;
   v_out_start timestamptz; v_out_end timestamptz; v_ret_start timestamptz; v_ret_end timestamptz;
@@ -5384,42 +5386,58 @@ declare
   v_out_load record; v_ret_load record;
   v_prev_flag text;
 begin
-  select d.home_destination_id into v_home from public.departments d where d.id = p_dept;
-  if v_home is null then return; end if;
   v_turnaround := make_interval(mins => coalesce(public.required_turnaround_minutes(p_dept, p_week), 30));
 
   for out_leg in
     select r.id as ride_id, r.car_id, r.driver_id, r.needs_driver,
-           rr.request_id, q.destination_id, q.depart_at
+           rr.request_id, q.origin_id, q.destination_id, q.depart_at
     from public.rides r
     join public.ride_requests rr on rr.ride_id = r.id
     join public.requests q on q.id = rr.request_id
     where r.department_id = p_dept and r.week_start = p_week and r.status <> 'cancelled' and not r.planning_conflict
       and not r.auto_relocation and r.overnight_ack_by is null
-      and q.trip_shape = 'one_way_to'
+      and q.trip_shape = 'one_way_to' and q.trip_type = 'drop_off'
+      and q.origin_id is not null and q.destination_id is not null
       and (select count(*) from public.ride_requests rr2 where rr2.ride_id = r.id) = 1
     order by r.starts_at
   loop
-    v_travel := greatest(coalesce((select travel_minutes from public.destinations where id = out_leg.destination_id), 30), 0);
+    v_travel := greatest(coalesce(public.request_leg_route_minutes(out_leg.request_id, 'out'), 30), 0);
     v_out_start := out_leg.depart_at;
     v_out_end := v_out_start + make_interval(mins => v_travel);
     if not public.is_quarter_hour(v_out_end) then
       v_out_end := to_timestamp(ceil(extract(epoch from v_out_end) / 900) * 900);
     end if;
 
-    select r2.id as ride_id, r2.car_id, rr2.request_id, q2.return_at
-      into ret_leg
-    from public.rides r2
-    join public.ride_requests rr2 on rr2.ride_id = r2.id
-    join public.requests q2 on q2.id = rr2.request_id
-    where r2.department_id = p_dept and r2.week_start = p_week and r2.status <> 'cancelled' and not r2.planning_conflict
-      and not r2.auto_relocation and r2.overnight_ack_by is null
-      and q2.trip_shape = 'one_way_from' and q2.destination_id = out_leg.destination_id
-      and (select count(*) from public.ride_requests rr3 where rr3.ride_id = r2.id) = 1
-      -- REQ §13.88 (owner 2026-09-24): any non-overlapping gap at X pairs, even one shorter
-      -- than the turnaround — the car just waits there; the out-leg stores the actual gap.
-      and q2.return_at - make_interval(mins => v_travel) >= v_out_end
-    order by q2.return_at limit 1;
+    select x.ride_id, x.car_id, x.request_id, x.ret_start, x.ret_end into ret_leg
+    from (
+      select r2.id as ride_id, r2.car_id, q2.id as request_id,
+             q2.return_at - make_interval(mins => greatest(coalesce(public.request_leg_route_minutes(q2.id, 'return'), 30), 0)) as ret_start,
+             q2.return_at as ret_end
+      from public.requests q2
+      join public.ride_requests rr2 on rr2.request_id = q2.id
+      join public.rides r2 on r2.id = rr2.ride_id
+      where q2.trip_shape = 'one_way_from' and q2.trip_type = 'drop_off'
+        and q2.destination_id = out_leg.destination_id and q2.origin_id = out_leg.origin_id
+        and r2.department_id = p_dept and r2.week_start = p_week and r2.status <> 'cancelled' and not r2.planning_conflict
+        and not r2.auto_relocation and r2.overnight_ack_by is null
+        and (select count(*) from public.ride_requests rr3 where rr3.ride_id = r2.id) = 1
+      union all
+      select r2.id, r2.car_id, q2.id,
+             q2.depart_at,
+             q2.depart_at + make_interval(mins => greatest(coalesce(public.request_leg_route_minutes(q2.id, 'out'), 30), 0))
+      from public.requests q2
+      join public.ride_requests rr2 on rr2.request_id = q2.id
+      join public.rides r2 on r2.id = rr2.ride_id
+      where q2.trip_shape = 'one_way_to' and q2.trip_type = 'drop_off'
+        and q2.origin_id = out_leg.destination_id and q2.destination_id = out_leg.origin_id
+        and r2.department_id = p_dept and r2.week_start = p_week and r2.status <> 'cancelled' and not r2.planning_conflict
+        and not r2.auto_relocation and r2.overnight_ack_by is null
+        and (select count(*) from public.ride_requests rr3 where rr3.ride_id = r2.id) = 1
+    ) x
+    -- REQ §13.88 (owner 2026-09-24): any non-overlapping gap at X pairs, even one shorter
+    -- than the turnaround -- the car just waits there; the out-leg stores the actual gap.
+    where x.ret_start >= v_out_end
+    order by x.ret_start limit 1;
 
     if ret_leg.ride_id is null then continue; end if;
 
@@ -5433,11 +5451,16 @@ begin
       continue;
     end if;
 
-    v_ret_start := ret_leg.return_at - make_interval(mins => v_travel);
-    if not public.is_quarter_hour(v_ret_start) then
-      v_ret_start := to_timestamp(floor(extract(epoch from v_ret_start) / 900) * 900);
+    if not public.is_quarter_hour(ret_leg.ret_start) then
+      v_ret_start := to_timestamp(floor(extract(epoch from ret_leg.ret_start) / 900) * 900);
+    else
+      v_ret_start := ret_leg.ret_start;
     end if;
-    v_ret_end := ret_leg.return_at;
+    if not public.is_quarter_hour(ret_leg.ret_end) then
+      v_ret_end := to_timestamp(ceil(extract(epoch from ret_leg.ret_end) / 900) * 900);
+    else
+      v_ret_end := ret_leg.ret_end;
+    end if;
     v_gap_override := case when v_ret_start - v_out_end < v_turnaround
       then (extract(epoch from (v_ret_start - v_out_end)) / 60)::smallint end;
 
@@ -5470,14 +5493,14 @@ begin
       continue; -- no car is free for, and fits, both legs; heal each independently for now
     end if;
 
-    update public.rides set car_id = v_target_car, origin_id = v_home, destination_id = out_leg.destination_id,
+    update public.rides set car_id = v_target_car, origin_id = out_leg.origin_id, destination_id = out_leg.destination_id,
       starts_at = v_out_start, ends_at = v_out_end, needs_driver = false, driver_id = v_driver_out,
       turnaround_override_minutes = v_gap_override
     where id = out_leg.ride_id;
     update public.ride_requests set role = 'driver', car_mode = 'relay'
     where ride_id = out_leg.ride_id and request_id = out_leg.request_id;
 
-    update public.rides set car_id = v_target_car, origin_id = out_leg.destination_id, destination_id = v_home,
+    update public.rides set car_id = v_target_car, origin_id = out_leg.destination_id, destination_id = out_leg.origin_id,
       starts_at = v_ret_start, ends_at = v_ret_end, needs_driver = false, driver_id = v_driver_ret
     where id = ret_leg.ride_id;
     update public.ride_requests set role = 'driver', car_mode = 'relay'
@@ -5528,10 +5551,10 @@ CREATE OR REPLACE FUNCTION "public"."place_series"("p_series_id" "uuid", "p_car_
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
 declare
-  v_dept uuid; v_home uuid; v_dest uuid; v_first timestamptz; v_last timestamptz;
+  v_dept uuid; v_origin uuid; v_dest uuid; v_first timestamptz; v_last timestamptz;
   v_first_week date; v_turnaround interval; v_legs int; v_expected int; v_actor uuid := (select auth.uid());
   v_ride_ids uuid[] := '{}'; v_weeks date[] := '{}';
-  leg record; v_ride_id uuid; v_origin uuid; v_destination uuid; v_pin boolean; v_reason text;
+  leg record; v_ride_id uuid; v_origin_leg uuid; v_destination uuid; v_pin boolean; v_reason text;
   w date;
 begin
   begin
@@ -5545,9 +5568,10 @@ begin
     end if;
 
     select min(q.week_start) into v_first_week from public.requests q where q.series_id = p_series_id;
-    select d.home_destination_id into v_home from public.departments d where d.id = v_dept;
-    if v_home is null then raise exception 'no_home_location' using errcode = 'P0412'; end if;
-    select coalesce(q.destination_id, v_home) into v_dest
+    select q.origin_id into v_origin from public.requests q
+    where q.series_id = p_series_id order by q.series_index limit 1;
+    if v_origin is null then raise exception 'no_home_location' using errcode = 'P0412'; end if;
+    select coalesce(q.destination_id, v_origin) into v_dest
     from public.requests q where q.series_id = p_series_id order by q.series_index limit 1;
 
     if not exists (select 1 from public.cars c
@@ -5579,11 +5603,12 @@ begin
       and tstzrange(b.starts_at, b.ends_at, '[)') && tstzrange(v_first, v_last + v_turnaround, '[)')) then
       raise exception 'series_car_unavailable' using errcode = 'MDR03', detail = 'ride_conflicts_with_maintenance';
     end if;
-    -- The car must be home when the series starts (own legs ignored so re-runs are idempotent).
+    -- The car must be at the series' own origin when the series starts (own legs ignored so
+    -- re-runs are idempotent).
     if coalesce((select r.destination_id from public.rides r
       where r.car_id = p_car_id and r.status <> 'cancelled' and not r.planning_conflict
         and r.series_id is distinct from p_series_id and r.starts_at < v_first
-      order by r.starts_at desc limit 1), v_home) <> v_home then
+      order by r.starts_at desc limit 1), v_origin) <> v_origin then
       raise exception 'series_car_unavailable' using errcode = 'MDR03', detail = 'car_not_home';
     end if;
 
@@ -5594,14 +5619,14 @@ begin
                  where rr.request_id = leg.id and r.status <> 'cancelled') then
         continue;                                   -- already placed on p_car_id (checked above)
       end if;
-      v_origin      := case when leg.series_index = 1 then v_home else v_dest end;
-      v_destination := case when leg.series_index = leg.series_count then v_home else v_dest end;
+      v_origin_leg  := case when leg.series_index = 1 then v_origin else v_dest end;
+      v_destination := case when leg.series_index = leg.series_count then v_origin else v_dest end;
       v_pin    := p_pin or leg.week_start <> v_first_week;
       v_reason := case when leg.week_start <> v_first_week then 'SERIES_CARRY_OVER'
                        else coalesce(p_pin_reason, 'SERIES_PLACED') end;
       insert into public.rides (department_id, week_start, car_id, starts_at, ends_at, origin_id, destination_id,
         driver_id, status, is_pinned, pin_reason, created_by, series_id)
-      values (v_dept, leg.week_start, p_car_id, leg.depart_at, leg.return_at, v_origin, v_destination,
+      values (v_dept, leg.week_start, p_car_id, leg.depart_at, leg.return_at, v_origin_leg, v_destination,
         leg.requester_id,
         case when public.is_week_public(v_dept, leg.week_start) then 'confirmed'::public.ride_status
              else 'draft'::public.ride_status end,
@@ -5632,6 +5657,110 @@ end $$;
 
 
 ALTER FUNCTION "public"."place_series"("p_series_id" "uuid", "p_car_id" "uuid", "p_pin" boolean, "p_pin_reason" "text") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."place_travel"("p_from" "uuid", "p_to" "uuid") RETURNS TABLE("distance_km" numeric, "travel_minutes" integer, "source" "text")
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_from public.destinations;
+  v_to public.destinations;
+  v_route public.place_distances;
+  v_home_from boolean;
+  v_home_to boolean;
+  v_km numeric;
+begin
+  if p_from = p_to then
+    return query select 0::numeric, 0, 'same'::text;
+    return;
+  end if;
+
+  select * into v_from from public.destinations where id = p_from;
+  select * into v_to from public.destinations where id = p_to;
+  if v_from.id is null or v_to.id is null then
+    return query select null::numeric, null::int, null::text;
+    return;
+  end if;
+
+  select * into v_route from public.place_distances pd
+    where pd.department_id = v_from.department_id
+      and ((pd.from_id = p_from and pd.to_id = p_to) or (pd.from_id = p_to and pd.to_id = p_from))
+    limit 1;
+  if v_route.id is not null then
+    return query select v_route.distance_km, v_route.travel_minutes, 'route'::text;
+    return;
+  end if;
+
+  v_home_from := exists(select 1 from public.departments d where d.id = v_from.department_id and d.home_destination_id = p_from);
+  v_home_to := exists(select 1 from public.departments d where d.id = v_to.department_id and d.home_destination_id = p_to);
+  if v_home_from and not v_home_to then
+    return query select v_to.distance_km, v_to.travel_minutes, 'preset'::text;
+    return;
+  elsif v_home_to and not v_home_from then
+    return query select v_from.distance_km, v_from.travel_minutes, 'preset'::text;
+    return;
+  end if;
+
+  if v_from.lat is not null and v_from.lng is not null and v_to.lat is not null and v_to.lng is not null then
+    v_km := (6371 * asin(sqrt(
+        power(sin(radians(v_to.lat - v_from.lat) / 2), 2)
+        + cos(radians(v_from.lat)) * cos(radians(v_to.lat)) * power(sin(radians(v_to.lng - v_from.lng) / 2), 2)
+      ))) * 1.3;
+    -- 60 km/h: minutes = km / 60 * 60, i.e. numerically equal to the (road-factored) km.
+    return query select round(v_km, 1), round(v_km)::int, 'estimate'::text;
+    return;
+  end if;
+
+  return query select null::numeric, null::int, null::text;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."place_travel"("p_from" "uuid", "p_to" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."place_travel_for_week"("p_department_id" "uuid", "p_week_start" "date") RETURNS TABLE("origin_id" "uuid", "destination_id" "uuid", "distance_km" numeric, "travel_minutes" integer, "source" "text")
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare v_home uuid;
+begin
+  if not public.member_of(p_department_id) then
+    raise exception 'not_authorized' using errcode = 'P0001';
+  end if;
+  select home_destination_id into v_home from public.departments where id = p_department_id;
+  return query
+    select distinct merged.origin_id, merged.destination_id, merged.distance_km, merged.travel_minutes, merged.source
+    from (
+      select q.origin_id, q.destination_id, pt.distance_km, pt.travel_minutes, pt.source
+      from public.requests q
+      cross join lateral public.place_travel(q.origin_id, q.destination_id) pt
+      where q.department_id = p_department_id and q.week_start = p_week_start
+        and q.origin_id is not null and q.destination_id is not null
+        and q.origin_id is distinct from v_home
+
+      union all
+
+      select hop.from_id as origin_id, hop.to_id as destination_id, pt2.distance_km, pt2.travel_minutes, pt2.source
+      from public.requests q2
+      cross join lateral (values ('out'::public.ride_leg), ('return'::public.ride_leg)) legs(leg)
+      cross join lateral (
+        select a.place_id as from_id, b.place_id as to_id
+        from public.request_leg_route_points(q2.id, legs.leg) a
+        join public.request_leg_route_points(q2.id, legs.leg) b on b."position" = a."position" + 1
+      ) hop
+      cross join lateral public.place_travel(hop.from_id, hop.to_id) pt2
+      where q2.department_id = p_department_id and q2.week_start = p_week_start
+        and hop.from_id is not null and hop.to_id is not null
+        and hop.from_id is distinct from hop.to_id
+        and exists (select 1 from public.request_stops s where s.request_id = q2.id and s.leg = legs.leg)
+    ) merged;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."place_travel_for_week"("p_department_id" "uuid", "p_week_start" "date") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."policy_current_version_matches"() RETURNS "trigger"
@@ -6442,6 +6571,7 @@ declare
   v_actor uuid := (select auth.uid());
   v_actor_name text;
   v_destination_name text;
+  v_route text;
   v_prefix text;
   v_request_id uuid;
   v_profile_id uuid;
@@ -6567,18 +6697,20 @@ begin
 
     if v_removed_person_id is not null and v_removed_person_id is distinct from v_actor then
       select name into v_destination_name from public.destinations where id = v_ride.destination_id;
+      v_route := public.route_label(v_ride.department_id, v_ride.origin_id, null, v_ride.destination_id, null);
       perform public.enqueue_notification(v_removed_person_id, 'outcome_changed', v_ride.department_id, v_ride.week_start,
-        jsonb_build_object('byName', coalesce(v_actor_name, ''), 'destination', coalesce(v_destination_name, '')),
+        jsonb_build_object('byName', coalesce(v_actor_name, ''), 'destination', coalesce(v_destination_name, ''), 'route', coalesce(v_route, '')),
         jsonb_build_object('variant', 'passenger_removed_you', 'ride_id', p_ride_id),
         format('passenger_removed_you:%s:%s:%s', p_ride_id, v_new_version, v_removed_person_id));
     end if;
 
     if v_removed_child_id is not null then
       select name into v_destination_name from public.destinations where id = v_ride.destination_id;
+      v_route := public.route_label(v_ride.department_id, v_ride.origin_id, null, v_ride.destination_id, null);
       for v_guardian in select cg.profile_id from public.child_guardians cg where cg.child_id = v_removed_child_id loop
         if v_guardian.profile_id is distinct from v_actor then
           perform public.enqueue_notification(v_guardian.profile_id, 'outcome_changed', v_ride.department_id, v_ride.week_start,
-            jsonb_build_object('byName', coalesce(v_actor_name, ''), 'childName', coalesce(v_removed_display_name, ''), 'destination', coalesce(v_destination_name, '')),
+            jsonb_build_object('byName', coalesce(v_actor_name, ''), 'childName', coalesce(v_removed_display_name, ''), 'destination', coalesce(v_destination_name, ''), 'route', coalesce(v_route, '')),
             jsonb_build_object('variant', 'child_removed', 'ride_id', p_ride_id),
             format('child_removed:%s:%s:%s:%s', p_ride_id, v_new_version, v_removed_child_id, v_guardian.profile_id));
         end if;
@@ -6638,6 +6770,53 @@ $$;
 
 
 ALTER FUNCTION "public"."reopen_week"("p_department_id" "uuid", "p_week_start" "date", "p_phase" "public"."week_phase", "p_expected_fingerprint" "text") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."replace_request_stops"("p_request_id" "uuid", "p_department_id" "uuid", "p_has_return" boolean, "p_stops" "jsonb") RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_item jsonb; v_leg text; v_place_id uuid; v_place_text text;
+  v_out_pos smallint := 0; v_return_pos smallint := 0;
+begin
+  if jsonb_typeof(p_stops) is distinct from 'array' then
+    raise exception 'invalid_stops' using errcode = 'P0001';
+  end if;
+
+  delete from public.request_stops where request_id = p_request_id;
+
+  for v_item in select * from jsonb_array_elements(p_stops) loop
+    if jsonb_typeof(v_item) <> 'object' then raise exception 'invalid_stops' using errcode = 'P0001'; end if;
+    v_leg := v_item ->> 'leg';
+    v_place_id := nullif(v_item ->> 'place_id', '')::uuid;
+    v_place_text := nullif(v_item ->> 'place_text', '');
+
+    if v_leg not in ('out', 'return') then raise exception 'invalid_stops' using errcode = 'P0001'; end if;
+    if v_leg = 'return' and not p_has_return then raise exception 'invalid_stops' using errcode = 'P0001'; end if;
+    if (v_place_id is null) = (v_place_text is null) then raise exception 'invalid_stops' using errcode = 'P0001'; end if;
+    if v_place_id is not null and not exists (
+      select 1 from public.destinations d
+      where d.id = v_place_id and d.department_id = p_department_id and d.is_approved
+    ) then raise exception 'invalid_stops' using errcode = 'P0001'; end if;
+
+    if v_leg = 'out' then
+      v_out_pos := v_out_pos + 1;
+      if v_out_pos > 10 then raise exception 'invalid_stops' using errcode = 'P0001'; end if;
+      insert into public.request_stops (request_id, department_id, leg, "position", place_id, place_text)
+      values (p_request_id, p_department_id, 'out', v_out_pos, v_place_id, v_place_text);
+    else
+      v_return_pos := v_return_pos + 1;
+      if v_return_pos > 10 then raise exception 'invalid_stops' using errcode = 'P0001'; end if;
+      insert into public.request_stops (request_id, department_id, leg, "position", place_id, place_text)
+      values (p_request_id, p_department_id, 'return', v_return_pos, v_place_id, v_place_text);
+    end if;
+  end loop;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."replace_request_stops"("p_request_id" "uuid", "p_department_id" "uuid", "p_has_return" boolean, "p_stops" "jsonb") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."report_car_issue"("_car_id" "uuid", "_category" "public"."car_issue_category", "_description" "text", "_photo_path" "text" DEFAULT NULL::"text") RETURNS "uuid"
@@ -6723,6 +6902,105 @@ $$;
 ALTER FUNCTION "public"."request_companions_not_requester"() OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."request_leg_route_km"("p_request_id" "uuid", "p_leg" "public"."ride_leg") RETURNS numeric
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare v_total numeric := 0; v_prev record; v_cur record; v_has_prev boolean := false;
+begin
+  for v_cur in select * from public.request_leg_route_points(p_request_id, p_leg) order by "position" loop
+    if v_has_prev then
+      v_total := v_total + coalesce(
+        case when v_prev.place_id is not null and v_cur.place_id is not null
+          then (select distance_km from public.place_travel(v_prev.place_id, v_cur.place_id))
+        end, 0);
+    end if;
+    v_prev := v_cur;
+    v_has_prev := true;
+  end loop;
+  return v_total;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."request_leg_route_km"("p_request_id" "uuid", "p_leg" "public"."ride_leg") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."request_leg_route_minutes"("p_request_id" "uuid", "p_leg" "public"."ride_leg") RETURNS integer
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_dept uuid; v_stop_minutes int; v_total int := 0; v_stop_count int;
+  v_prev record; v_cur record; v_has_prev boolean := false;
+begin
+  select department_id into v_dept from public.requests where id = p_request_id;
+  if v_dept is null then return null; end if;
+
+  select stop_minutes into v_stop_minutes from public.department_settings where department_id = v_dept;
+  v_stop_minutes := coalesce(v_stop_minutes, 5);
+
+  select count(*) into v_stop_count from public.request_stops s
+  where s.request_id = p_request_id and s.leg = p_leg;
+
+  for v_cur in select * from public.request_leg_route_points(p_request_id, p_leg) order by "position" loop
+    if v_has_prev then
+      v_total := v_total + greatest(coalesce(
+        case when v_prev.place_id is not null and v_cur.place_id is not null
+          then (select travel_minutes from public.place_travel(v_prev.place_id, v_cur.place_id))
+        end, 30), 0);
+    end if;
+    v_prev := v_cur;
+    v_has_prev := true;
+  end loop;
+
+  return v_total + v_stop_count * v_stop_minutes;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."request_leg_route_minutes"("p_request_id" "uuid", "p_leg" "public"."ride_leg") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."request_leg_route_points"("p_request_id" "uuid", "p_leg" "public"."ride_leg") RETURNS TABLE("position" smallint, "place_id" "uuid", "place_text" "text")
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_req public.requests%rowtype;
+  v_start_id uuid; v_start_text text; v_end_id uuid; v_end_text text;
+  v_stop_count smallint;
+begin
+  select * into v_req from public.requests where id = p_request_id;
+  if v_req.id is null then return; end if;
+  if p_leg = 'out' then
+    v_start_id := v_req.origin_id; v_start_text := v_req.origin_text;
+    v_end_id := v_req.destination_id; v_end_text := v_req.destination_text;
+  elsif p_leg = 'return' then
+    v_start_id := v_req.destination_id; v_start_text := v_req.destination_text;
+    v_end_id := v_req.origin_id; v_end_text := v_req.origin_text;
+  else
+    return; -- 'both' has no stored request_stops rows; callers always pass 'out'/'return'.
+  end if;
+
+  select count(*) into v_stop_count from public.request_stops s
+  where s.request_id = p_request_id and s.leg = p_leg;
+
+  return query
+    select 0::smallint, v_start_id, v_start_text
+    union all
+    select s."position", s.place_id, s.place_text
+    from public.request_stops s where s.request_id = p_request_id and s.leg = p_leg
+    union all
+    select (v_stop_count + 1)::smallint, v_end_id, v_end_text
+    order by 1;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."request_leg_route_points"("p_request_id" "uuid", "p_leg" "public"."ride_leg") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."request_named_passenger_counts"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -6781,6 +7059,25 @@ end $$;
 ALTER FUNCTION "public"."request_ride_change"("p_ride_id" "uuid", "p_car_id" "uuid", "p_starts_at" timestamp with time zone, "p_ends_at" timestamp with time zone, "p_expected_version" integer) OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."request_route_label"("p_request_id" "uuid") RETURNS "text"
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select public.route_label(q.department_id, q.origin_id, q.origin_text, q.destination_id, q.destination_text, stops.names)
+  from public.requests q
+  left join lateral (
+    select string_agg(coalesce(d.name, s.place_text), ', ' order by s."position") as names
+    from public.request_stops s
+    left join public.destinations d on d.id = s.place_id
+    where s.request_id = q.id and s.leg = 'out'
+  ) stops on true
+  where q.id = p_request_id;
+$$;
+
+
+ALTER FUNCTION "public"."request_route_label"("p_request_id" "uuid") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."request_served_by_public_ride"("_request_id" "uuid") RETURNS boolean
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -6802,6 +7099,81 @@ $$;
 
 
 ALTER FUNCTION "public"."request_span"("_depart" timestamp with time zone, "_return" timestamp with time zone) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."request_stop_etas"("p_request_id" "uuid") RETURNS TABLE("leg" "public"."ride_leg", "position" smallint, "place_id" "uuid", "place_text" "text", "eta" timestamp with time zone)
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_req public.requests%rowtype;
+  v_stop record;
+  v_t timestamptz;
+  v_anchor_id uuid; v_anchor_text text;
+  v_stop_minutes int;
+begin
+  select * into v_req from public.requests where id = p_request_id;
+  if v_req.id is null then return; end if;
+  select stop_minutes into v_stop_minutes from public.department_settings where department_id = v_req.department_id;
+  v_stop_minutes := coalesce(v_stop_minutes, 5);
+
+  if v_req.depart_at is not null then
+    v_t := v_req.depart_at;
+    v_anchor_id := v_req.origin_id; v_anchor_text := v_req.origin_text;
+    for v_stop in
+      select * from public.request_stops s where s.request_id = p_request_id and s.leg = 'out' order by s."position"
+    loop
+      v_t := v_t + make_interval(mins => greatest(coalesce(
+        case when v_anchor_id is not null and v_stop.place_id is not null
+          then (select travel_minutes from public.place_travel(v_anchor_id, v_stop.place_id)) end, 30), 0));
+      leg := 'out'; "position" := v_stop."position"; place_id := v_stop.place_id; place_text := v_stop.place_text; eta := v_t;
+      return next;
+      v_t := v_t + make_interval(mins => v_stop_minutes);
+      v_anchor_id := v_stop.place_id; v_anchor_text := v_stop.place_text;
+    end loop;
+  end if;
+
+  if v_req.return_at is not null then
+    v_t := v_req.return_at;
+    v_anchor_id := v_req.origin_id; v_anchor_text := v_req.origin_text;  -- final arrival point
+    for v_stop in
+      select * from public.request_stops s where s.request_id = p_request_id and s.leg = 'return' order by s."position" desc
+    loop
+      v_t := v_t - make_interval(mins => greatest(coalesce(
+        case when v_stop.place_id is not null and v_anchor_id is not null
+          then (select travel_minutes from public.place_travel(v_stop.place_id, v_anchor_id)) end, 30), 0));
+      leg := 'return'; "position" := v_stop."position"; place_id := v_stop.place_id; place_text := v_stop.place_text; eta := v_t;
+      return next;
+      v_t := v_t - make_interval(mins => v_stop_minutes);
+      v_anchor_id := v_stop.place_id; v_anchor_text := v_stop.place_text;
+    end loop;
+  end if;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."request_stop_etas"("p_request_id" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."requests_default_origin"() RETURNS "trigger"
+    LANGUAGE "plpgsql"
+    AS $$
+declare v_origin uuid;
+begin
+  if new.origin_id is null and new.origin_text is null then
+    select dm.default_origin_id into v_origin from public.department_members dm
+      where dm.department_id = new.department_id and dm.profile_id = new.requester_id and dm.removed_at is null;
+    if v_origin is null then
+      select home_destination_id into v_origin from public.departments where id = new.department_id;
+    end if;
+    new.origin_id := v_origin;
+  end if;
+  return new;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."requests_default_origin"() OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."requests_preserve_original_times"() RETURNS "trigger"
@@ -6899,43 +7271,63 @@ CREATE OR REPLACE FUNCTION "public"."reserve_live_one_way_slot"("p_request_id" "
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
-declare q public.requests%rowtype; c record; home uuid; duration_minutes int; travel int; dwell int;
-  start_time timestamptz;end_time timestamptz;buffer_minutes int;ride_id uuid;
+declare q public.requests%rowtype; c record; dwell int; duration_minutes int; travel int;
+  start_time timestamptz; end_time timestamptz; buffer_minutes int; ride_id uuid;
+  pickup_start timestamptz; pickup_end timestamptz;
+  v_start timestamptz; v_end timestamptz; v_loc uuid;
+  week_from timestamptz; week_until timestamptz; request_day date;
 begin
   select * into q from public.requests where id=p_request_id for update;
   if not found or q.requester_id is distinct from (select auth.uid()) or not public.member_of(q.department_id)
     or q.trip_shape='round_trip' or not exists(select 1 from public.weeks where department_id=q.department_id and week_start=q.week_start and phase='live')
     or exists(select 1 from public.ride_requests where request_id=q.id) then raise exception 'invalid_quick_reservation';end if;
-  select d.home_destination_id,coalesce((w.settings_overrides->>'chauffeur_dwell_minutes')::int,s.chauffeur_dwell_minutes,10)
-    into home,dwell from public.departments d join public.department_settings s on s.department_id=d.id
-    join public.weeks w on w.department_id=d.id and w.week_start=q.week_start where d.id=q.department_id;
-  select coalesce(travel_minutes,30) into travel from public.destinations where id=q.destination_id;
-  travel:=greatest(coalesce(travel,30),0);
+  select coalesce((w.settings_overrides->>'chauffeur_dwell_minutes')::int,s.chauffeur_dwell_minutes,10)
+    into dwell from public.department_settings s
+    join public.weeks w on w.department_id=s.department_id and w.week_start=q.week_start where s.department_id=q.department_id;
+  travel := greatest(coalesce(public.request_leg_route_minutes(
+    q.id, case when q.trip_shape='one_way_to' then 'out'::public.ride_leg else 'return'::public.ride_leg end), 30), 0);
   duration_minutes:=greatest(15,ceil((2*travel+greatest(dwell,0))/15.0)::int*15);
-  if q.trip_shape='one_way_to' then start_time:=q.depart_at;end_time:=q.depart_at+make_interval(mins=>duration_minutes);
+  if q.trip_shape='one_way_to' then
+    start_time:=q.depart_at;end_time:=q.depart_at+make_interval(mins=>duration_minutes);
+    -- Pickup candidate: back at the car's place `t` after collecting the member at D,
+    -- rounded up to the 15-minute grid; the window keeps the same total duration.
+    pickup_end:=q.depart_at+make_interval(mins=>ceil(travel/15.0)::int*15);
+    pickup_start:=pickup_end-make_interval(mins=>duration_minutes);
   else end_time:=q.return_at;start_time:=q.return_at-make_interval(mins=>duration_minutes);end if;
   if start_time<now() then raise exception 'ride_in_past';end if;
-  if start_time<q.week_start::timestamp at time zone 'Asia/Jerusalem'
-    or end_time>(q.week_start+7)::timestamp at time zone 'Asia/Jerusalem' then raise exception 'ride_outside_week';end if;
-  if (start_time at time zone 'Asia/Jerusalem')::date<>(coalesce(q.depart_at,q.return_at) at time zone 'Asia/Jerusalem')::date then raise exception 'ride_request_day_mismatch';end if;
+  week_from:=q.week_start::timestamp at time zone 'Asia/Jerusalem';
+  week_until:=(q.week_start+7)::timestamp at time zone 'Asia/Jerusalem';
+  if start_time<week_from or end_time>week_until then raise exception 'ride_outside_week';end if;
+  request_day:=(coalesce(q.depart_at,q.return_at) at time zone 'Asia/Jerusalem')::date;
+  if (start_time at time zone 'Asia/Jerusalem')::date<>request_day then raise exception 'ride_request_day_mismatch';end if;
   buffer_minutes:=coalesce(public.required_turnaround_minutes(q.department_id,q.week_start),30);
   perform set_config('app.audit_reason','reserve_live_one_way_slot',true);
   perform set_config('app.system_status_transition','on',true);
-  if home is not null then
+  if q.origin_id is not null then
     for c in select car.id from public.cars car where car.department_id=q.department_id and car.status='active' and car.type='shared'
       and exists(select 1 from public.car_seat_configs seats where seats.car_id=car.id and seats.adults>=q.adults+1 and seats.child_seats>=q.child_seats and seats.boosters>=q.boosters)
       order by (car.id=q.preferred_car_id) desc nulls last,car.id loop
       -- A car being reserved by another transaction is temporarily unavailable; try the next one.
       if not pg_try_advisory_xact_lock(hashtextextended(c.id::text,0)) then continue;end if;
       perform 1 from public.cars where id=c.id and status='active' and type='shared' for share;
-      if not found or public.car_location_at(c.id,start_time) is distinct from home
+      if not found then continue;end if;
+      v_loc:=null;
+      if public.car_location_at(c.id,start_time) is not distinct from q.origin_id then
+        v_start:=start_time;v_end:=end_time;v_loc:=q.origin_id;
+      elsif q.trip_shape='one_way_to' and q.destination_id is not null
+        and pickup_start>=now() and pickup_start>=week_from
+        and (pickup_start at time zone 'Asia/Jerusalem')::date=request_day
+        and public.car_location_at(c.id,pickup_start) is not distinct from q.destination_id then
+        v_start:=pickup_start;v_end:=pickup_end;v_loc:=q.destination_id;
+      end if;
+      if v_loc is null
         or exists(select 1 from public.rides r where r.car_id=c.id and r.status<>'cancelled'
-          and tstzrange(r.starts_at,r.blocked_until,'[)') && tstzrange(start_time,end_time+make_interval(mins=>buffer_minutes),'[)'))
+          and tstzrange(r.starts_at,r.blocked_until,'[)') && tstzrange(v_start,v_end+make_interval(mins=>buffer_minutes),'[)'))
         or exists(select 1 from public.car_maintenance_blocks b where b.car_id=c.id
-          and tstzrange(b.starts_at,b.ends_at,'[)') && tstzrange(start_time,end_time+make_interval(mins=>buffer_minutes),'[)')) then continue;end if;
+          and tstzrange(b.starts_at,b.ends_at,'[)') && tstzrange(v_start,v_end+make_interval(mins=>buffer_minutes),'[)')) then continue;end if;
       begin
         insert into public.rides(department_id,week_start,car_id,starts_at,ends_at,origin_id,destination_id,driver_id,needs_driver,status,is_pinned,pin_reason,created_by)
-          values(q.department_id,q.week_start,c.id,start_time,end_time,home,home,null,true,'confirmed',true,'MISSING_DRIVER',q.requester_id) returning id into ride_id;
+          values(q.department_id,q.week_start,c.id,v_start,v_end,v_loc,v_loc,null,true,'confirmed',true,'MISSING_DRIVER',q.requester_id) returning id into ride_id;
         insert into public.ride_requests(ride_id,request_id,role,leg,car_mode)
           values(ride_id,q.id,'passenger',case when q.trip_shape='one_way_to' then 'out'::public.ride_leg else 'return'::public.ride_leg end,'chauffeur');
         perform public.assert_ride_driver(ride_id);perform public.assert_ride_request_day(ride_id);
@@ -6950,7 +7342,7 @@ begin
         end if;
         update public.requests set status='waitlisted',status_reason='UNMET_NEEDS_DRIVER' where id=q.id;
         perform set_config('app.system_status_transition','off',true);
-        return jsonb_build_object('status','waitlisted','reason','UNMET_NEEDS_DRIVER','needs_driver',true,'ride_id',ride_id,'car_id',c.id,'starts_at',start_time,'ends_at',end_time);
+        return jsonb_build_object('status','waitlisted','reason','UNMET_NEEDS_DRIVER','needs_driver',true,'ride_id',ride_id,'car_id',c.id,'starts_at',v_start,'ends_at',v_end);
       exception when exclusion_violation or sqlstate 'P0410' or sqlstate 'P0411' then null;
       end;
     end loop;
@@ -7180,20 +7572,18 @@ CREATE OR REPLACE FUNCTION "public"."ride_requests_leg_location"() RETURNS "trig
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
 declare
-  v_home uuid;
-  v_dept uuid;
   v_ride_origin uuid;
   v_ride_destination uuid;
+  v_req_origin uuid;
   v_req_destination uuid;
   v_ride_driver uuid;
   v_req_requester uuid;
   v_series uuid;
 begin
-  select r.origin_id, r.destination_id, r.driver_id, r.department_id, r.series_id
-    into v_ride_origin, v_ride_destination, v_ride_driver, v_dept, v_series
+  select r.origin_id, r.destination_id, r.driver_id, r.series_id
+    into v_ride_origin, v_ride_destination, v_ride_driver, v_series
   from public.rides r where r.id = new.ride_id;
-  select d.home_destination_id into v_home from public.departments d where d.id = v_dept;
-  select q.destination_id, q.requester_id into v_req_destination, v_req_requester
+  select q.origin_id, q.destination_id, q.requester_id into v_req_origin, v_req_destination, v_req_requester
   from public.requests q where q.id = new.request_id;
 
   if new.role = 'driver' and v_ride_driver is distinct from v_req_requester
@@ -7204,26 +7594,31 @@ begin
     raise exception 'driver_row_requester_mismatch' using errcode = 'P0001';
   end if;
 
-  if new.car_mode in ('keep','chauffeur') then
-    -- REQ §13.77: a multi-day series' legs chain home -> destination -> … -> home; the car
+  if new.car_mode = 'keep' then
+    -- REQ §13.77: a multi-day series' legs chain origin -> destination -> … -> origin; the car
     -- stays with the same member throughout, so "keep" legs of a series are exempt from the
-    -- ordinary home -> home rule. place_series() is the only writer of these locations.
-    if v_series is null and (v_ride_origin <> v_home or v_ride_destination <> v_home) then
+    -- ordinary origin -> origin rule. place_series() is the only writer of these locations.
+    if v_series is null and (v_ride_origin <> v_req_origin or v_ride_destination <> v_req_origin) then
       raise exception 'leg_location_mismatch' using errcode = 'P0001',
-        detail = 'keep/chauffeur legs require the ride to start and end at home';
+        detail = 'keep legs require the ride to start and end at the request''s own origin';
+    end if;
+  elsif new.car_mode = 'chauffeur' then
+    if v_ride_origin <> v_ride_destination or v_ride_origin not in (v_req_origin, v_req_destination) then
+      raise exception 'leg_location_mismatch' using errcode = 'P0001',
+        detail = 'chauffeur legs must start and end at the same place, which must be the leg''s origin or destination';
     end if;
   elsif new.car_mode = 'relay' then
     if v_req_destination is null then
       raise exception 'relay_requires_destination_id' using errcode = 'P0001',
         detail = 'a free-text destination can never relay (REQ §13.58)';
     end if;
-    if new.leg = 'out' and (v_ride_origin <> v_home or v_ride_destination <> v_req_destination) then
+    if new.leg = 'out' and (v_ride_origin <> v_req_origin or v_ride_destination <> v_req_destination) then
       raise exception 'leg_location_mismatch' using errcode = 'P0001',
-        detail = 'relay out leg must go home -> request destination';
+        detail = 'relay out leg must go request origin -> request destination';
     end if;
-    if new.leg = 'return' and (v_ride_origin <> v_req_destination or v_ride_destination <> v_home) then
+    if new.leg = 'return' and (v_ride_origin <> v_req_destination or v_ride_destination <> v_req_origin) then
       raise exception 'leg_location_mismatch' using errcode = 'P0001',
-        detail = 'relay return leg must go request destination -> home';
+        detail = 'relay return leg must go request destination -> request origin';
     end if;
   end if;
 
@@ -7349,7 +7744,7 @@ CREATE OR REPLACE FUNCTION "public"."rides_location_ends"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
-declare v_home uuid; r public.rides%rowtype;
+declare r public.rides%rowtype;
 begin
   -- Deferred trigger: `new` is the row image of the *triggering* statement. Re-read the
   -- current row so a ride inserted and then cancelled/edited before the check point is judged
@@ -7361,13 +7756,12 @@ begin
   if r.auto_relocation or r.status = 'cancelled' then
     return null;
   end if;
-  select d.home_destination_id into v_home from public.departments d where d.id = r.department_id;
-  if r.origin_id = v_home and r.destination_id = v_home then
+  if r.origin_id = r.destination_id then
     return null;
   end if;
   if not exists (select 1 from public.ride_requests rr where rr.ride_id = r.id) then
     raise exception 'ride_location_ends_invalid' using errcode = 'P0001',
-      detail = 'a ride whose origin/destination is not home must have at least one served relay leg';
+      detail = 'a ride whose origin differs from its destination must have at least one served relay leg';
   end if;
   return null;
 end;
@@ -7381,12 +7775,10 @@ CREATE OR REPLACE FUNCTION "public"."rides_temp_car_never_relays"() RETURNS "tri
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
-declare v_type public.car_type; v_home uuid;
+declare v_type public.car_type;
 begin
-  select c.type, d.home_destination_id into v_type, v_home
-  from public.cars c join public.departments d on d.id = c.department_id
-  where c.id = new.car_id;
-  if v_type = 'temporary' and (new.origin_id <> v_home or new.destination_id <> v_home) then
+  select c.type into v_type from public.cars c where c.id = new.car_id;
+  if v_type = 'temporary' and new.origin_id <> new.destination_id then
     raise exception 'temporary_car_never_relays' using errcode = 'P0001';
   end if;
   return new;
@@ -7430,6 +7822,44 @@ end $$;
 
 
 ALTER FUNCTION "public"."rides_within_week"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."route_label"("p_department_id" "uuid", "p_origin_id" "uuid", "p_origin_text" "text", "p_destination_id" "uuid", "p_destination_text" "text", "p_stops_text" "text" DEFAULT NULL::"text") RETURNS "text"
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_home uuid;
+  v_origin_name text;
+  v_dest_name text;
+  v_key text;
+  v_has_origin boolean;
+begin
+  select home_destination_id into v_home from public.departments where id = p_department_id;
+
+  select name into v_origin_name from public.destinations where id = p_origin_id;
+  v_origin_name := coalesce(v_origin_name, p_origin_text);
+
+  select name into v_dest_name from public.destinations where id = p_destination_id;
+  v_dest_name := coalesce(v_dest_name, p_destination_text);
+
+  v_has_origin := not (p_origin_id is null or p_origin_id = v_home);
+  v_key := case
+    when v_has_origin and p_stops_text is not null then 'route.via'
+    when v_has_origin then 'route.from_to'
+    when p_stops_text is not null then 'route.to_via'
+    else 'route.to'
+  end;
+
+  return public.render_notification_text(
+    (select body from public.text_fragments where key = v_key),
+    jsonb_build_object('origin', coalesce(v_origin_name, ''), 'destination', coalesce(v_dest_name, ''),
+      'stops', coalesce(p_stops_text, '')));
+end;
+$$;
+
+
+ALTER FUNCTION "public"."route_label"("p_department_id" "uuid", "p_origin_id" "uuid", "p_origin_text" "text", "p_destination_id" "uuid", "p_destination_text" "text", "p_stops_text" "text") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."sadran_assignments_require_roster_role"() RETURNS "trigger"
@@ -7507,6 +7937,7 @@ declare
   v_return_time time;
   v_child_ids uuid[];
   v_companion_ids uuid[];
+  v_stops jsonb;
 begin
   if not public.is_approved() then raise exception 'not_authorized' using errcode = 'P0001'; end if;
 
@@ -7527,6 +7958,10 @@ begin
     from public.request_children where request_id = q.id;
   select coalesce(array_agg(profile_id), '{}') into v_companion_ids
     from public.request_companions where request_id = q.id;
+  select coalesce(jsonb_agg(jsonb_build_object(
+      'leg', s.leg, 'position', s."position", 'place_id', s.place_id, 'place_text', s.place_text
+    ) order by s.leg, s."position"), '[]'::jsonb) into v_stops
+    from public.request_stops s where s.request_id = q.id;
 
   v_template_id := q.template_id;
   if v_template_id is null then
@@ -7536,6 +7971,7 @@ begin
   if v_template_id is not null then
     update public.request_templates set
       destination_id = q.destination_id, destination_text = q.destination_text,
+      origin_id = q.origin_id, origin_text = q.origin_text, trip_type = q.trip_type,
       ride_type_id = q.ride_type_id, trip_shape = q.trip_shape,
       depart_dow = v_depart_dow, depart_time = v_depart_time,
       return_dow = v_return_dow, return_time = v_return_time,
@@ -7545,23 +7981,25 @@ begin
       flex_return_early = q.flex_return_early, flex_return_late = q.flex_return_late,
       notes = q.notes, preferred_car_id = q.preferred_car_id,
       ride_description = q.ride_description, guest_passenger_names = q.guest_passenger_names,
-      companion_ids = v_companion_ids, child_ids = v_child_ids,
+      companion_ids = v_companion_ids, child_ids = v_child_ids, stops = v_stops,
       source_request_id = q.id, is_active = true, stopped_at = null
     where id = v_template_id;
   else
     insert into public.request_templates (
-      requester_id, department_id, destination_id, destination_text, ride_type_id, trip_shape,
+      requester_id, department_id, destination_id, destination_text, origin_id, origin_text, trip_type,
+      ride_type_id, trip_shape,
       depart_dow, depart_time, return_dow, return_time, one_way_car_mode, needs_car_at_destination,
       adults, child_seats, boosters, has_luggage,
       flex_depart_early, flex_depart_late, flex_return_early, flex_return_late,
-      notes, preferred_car_id, ride_description, guest_passenger_names, companion_ids, child_ids,
+      notes, preferred_car_id, ride_description, guest_passenger_names, companion_ids, child_ids, stops,
       source_request_id
     ) values (
-      q.requester_id, q.department_id, q.destination_id, q.destination_text, q.ride_type_id, q.trip_shape,
+      q.requester_id, q.department_id, q.destination_id, q.destination_text, q.origin_id, q.origin_text, q.trip_type,
+      q.ride_type_id, q.trip_shape,
       v_depart_dow, v_depart_time, v_return_dow, v_return_time, q.one_way_car_mode, q.needs_car_at_destination,
       q.adults, q.child_seats, q.boosters, q.has_luggage,
       q.flex_depart_early, q.flex_depart_late, q.flex_return_early, q.flex_return_late,
-      q.notes, q.preferred_car_id, q.ride_description, q.guest_passenger_names, v_companion_ids, v_child_ids,
+      q.notes, q.preferred_car_id, q.ride_description, q.guest_passenger_names, v_companion_ids, v_child_ids, v_stops,
       q.id
     ) returning id into v_template_id;
   end if;
@@ -7745,6 +8183,32 @@ $$;
 
 
 ALTER FUNCTION "public"."set_manual_boost"("p_request_id" "uuid", "p_value" numeric, "p_reason" "text") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."set_my_default_origin"("p_department_id" "uuid", "p_origin_id" "uuid") RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+begin
+  if not public.member_of(p_department_id) then
+    raise exception 'not_authorized' using errcode = 'P0001';
+  end if;
+  if p_origin_id is not null and not exists (
+    select 1 from public.destinations d where d.id = p_origin_id and d.department_id = p_department_id and d.is_approved
+  ) then
+    raise exception 'invalid_origin' using errcode = 'P0001';
+  end if;
+  update public.department_members
+    set default_origin_id = p_origin_id
+    where department_id = p_department_id and profile_id = (select auth.uid()) and removed_at is null;
+  if not found then
+    raise exception 'not_authorized' using errcode = 'P0001';
+  end if;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."set_my_default_origin"("p_department_id" "uuid", "p_origin_id" "uuid") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."set_policy_active"("p_policy_id" "uuid", "p_is_active" boolean) RETURNS "void"
@@ -8377,6 +8841,10 @@ declare
   v_one_way_mode public.leg_car_mode := nullif(payload ->> 'one_way_car_mode', '')::public.leg_car_mode;
   v_needs_car boolean := coalesce((payload ->> 'needs_car_at_destination')::boolean, true);
   v_preferred_car_id uuid := nullif(payload ->> 'preferred_car_id', '')::uuid;
+  v_origin_id uuid := nullif(payload ->> 'origin_id', '')::uuid;
+  v_origin_text text := nullif(payload ->> 'origin_text', '');
+  v_trip_type_in text := nullif(payload ->> 'trip_type', '');
+  v_trip_type public.trip_type;
   v_week record;
   v_existing record;
   v_can_manage boolean;
@@ -8391,6 +8859,7 @@ declare
   v_series_id uuid := nullif(payload ->> 'series_id', '')::uuid;
   v_series_index smallint := nullif(payload ->> 'series_index', '')::smallint;
   v_series_count smallint := nullif(payload ->> 'series_count', '')::smallint;
+  v_eligible_driver uuid;
 begin
   if v_requester_id <> v_actor then
     if not public.can_manage_week(v_department_id, v_week_start) then
@@ -8428,6 +8897,41 @@ begin
     end if;
   end if;
 
+  -- REQ §13.93: origin defaults to the requester's default_origin_id for this department,
+  -- else the department home; an explicit origin_id/origin_text always wins.
+  if v_origin_id is null and v_origin_text is null then
+    select dm.default_origin_id into v_origin_id from public.department_members dm
+      where dm.department_id = v_department_id and dm.profile_id = v_requester_id and dm.removed_at is null;
+    if v_origin_id is null then
+      select home_destination_id into v_origin_id from public.departments where id = v_department_id;
+    end if;
+  end if;
+
+  -- REQ §13.93: trip_type is the source of truth when sent; otherwise derive it from the
+  -- legacy fields above (same mapping as the 20261004100200 backfill).
+  if v_trip_type_in is not null then
+    v_trip_type := v_trip_type_in::public.trip_type;
+    case v_trip_type
+      when 'round_trip' then
+        v_trip_shape := 'round_trip'; v_needs_car := true; v_one_way_mode := null;
+      when 'one_way' then
+        v_trip_shape := 'one_way_to'; v_needs_car := true; v_one_way_mode := 'relay';
+      when 'drop_off' then
+        if v_return_at is not null then
+          v_trip_shape := 'round_trip'; v_needs_car := false; v_one_way_mode := null;
+        else
+          v_trip_shape := 'one_way_to'; v_needs_car := false;
+          if v_one_way_mode is null then
+            select case when p.does_not_drive then 'passenger'::public.leg_car_mode else 'relay'::public.leg_car_mode end
+              into v_one_way_mode
+            from public.profiles p where p.id = v_requester_id;
+          end if;
+        end if;
+    end case;
+  else
+    v_trip_type := case when v_trip_shape = 'round_trip' and v_needs_car then 'round_trip'::public.trip_type else 'drop_off'::public.trip_type end;
+  end if;
+
   if v_request_id is not null then
     select * into v_existing from public.requests where id = v_request_id for update;
     if v_existing is null then
@@ -8463,6 +8967,7 @@ begin
     v_status := 'submitted';
     insert into public.requests (
       department_id, week_start, requester_id, filed_by, destination_id, destination_text, ride_type_id,
+      origin_id, origin_text, trip_type,
       trip_shape, depart_at, return_at, one_way_car_mode, needs_car_at_destination,
       adults, child_seats, boosters, has_luggage,
       flex_depart_early, flex_depart_late, flex_return_early, flex_return_late,
@@ -8472,6 +8977,7 @@ begin
       v_department_id, v_week_start, v_requester_id, v_actor,
       nullif(payload ->> 'destination_id', '')::uuid, nullif(payload ->> 'destination_text', ''),
       (payload ->> 'ride_type_id')::uuid,
+      v_origin_id, v_origin_text, v_trip_type,
       v_trip_shape, v_depart_at, v_return_at, v_one_way_mode, v_needs_car,
       coalesce((payload ->> 'adults')::smallint, 1), coalesce((payload ->> 'child_seats')::smallint, 0),
       coalesce((payload ->> 'boosters')::smallint, 0), coalesce((payload ->> 'has_luggage')::boolean, false),
@@ -8489,6 +8995,7 @@ begin
       destination_id = nullif(payload ->> 'destination_id', '')::uuid,
       destination_text = nullif(payload ->> 'destination_text', ''),
       ride_type_id = (payload ->> 'ride_type_id')::uuid,
+      origin_id = v_origin_id, origin_text = v_origin_text, trip_type = v_trip_type,
       trip_shape = v_trip_shape, depart_at = v_depart_at, return_at = v_return_at,
       one_way_car_mode = v_one_way_mode, needs_car_at_destination = v_needs_car,
       adults = coalesce((payload ->> 'adults')::smallint, adults),
@@ -8538,6 +9045,21 @@ begin
   end if;
   if payload ? 'guest_passenger_names' or payload ? 'companion_ids' then perform public.assert_named_passenger_counts(v_request_id);end if;
 
+  -- REQ §13.93 "Multi-stop rides": payload `stops` replaces the request's whole set, in route
+  -- order per leg; absent key = leave existing stops untouched (same convention as `notes`).
+  if payload ? 'stops' then
+    perform public.replace_request_stops(v_request_id, v_department_id, v_return_at is not null, payload -> 'stops');
+  end if;
+
+  -- REQ §13.93: a requester who does not drive, and has no driving companion on board,
+  -- may only file a הקפצה (drop_off) -- checked after companions are written above.
+  if v_trip_type <> 'drop_off' then
+    v_eligible_driver := public.eligible_leg_driver(v_request_id);
+    if v_eligible_driver is null then
+      raise exception 'non_driver_needs_drop_off' using errcode = 'P0001';
+    end if;
+  end if;
+
   -- Duplicate detection (warn, never block, REQ §5.3).
   if exists (
     select 1 from public.requests q
@@ -8573,8 +9095,10 @@ begin
     end if;
   end if;
 
-  -- Waiting-list semantics widening (this migration's intended change, REQ §5.3/§8):
-  -- round-trip auto-approve now also runs for an already-published week, not just 'live'.
+  -- Placement on submit (REQ §13.93, ORIGINS_PLAN §3): round_trip, an explicit one_way, and
+  -- drop_off-with-pickup (trip_shape='round_trip' either way) all go through try_auto_approve()
+  -- once a week is published/live; drop_off without a pickup time keeps today's live-only
+  -- waitlisted/reserve_live_one_way_slot path.
   if coalesce((payload->>'reserve_missing_driver')::boolean,false) then
     v_auto_result:=public.reserve_live_one_way_slot(v_request_id);
     perform public.enqueue_notification(s.profile_id,'waitlisted_request',v_department_id,v_week_start,
@@ -8584,7 +9108,8 @@ begin
     -- REQ §13.77: placement is all-or-nothing across every leg — try_auto_approve_series()
     -- is called once by submit_series_request() after the last leg exists.
     v_auto_result := null;
-  elsif v_week.phase in ('published','live') and v_trip_shape = 'round_trip' then
+  elsif v_week.phase in ('published','live')
+    and (v_trip_shape = 'round_trip' or (v_trip_shape = 'one_way_to' and v_trip_type = 'one_way')) then
     v_auto_result := public.try_auto_approve(v_request_id);
   elsif v_week.phase = 'live' then
     perform set_config('app.system_status_transition', 'on', true);
@@ -8659,7 +9184,7 @@ begin
     v_d := v_first_date + i;
     v_week := v_d - extract(dow from v_d)::int;
     v_leg := public.submit_request(
-      (payload - 'request_id' - 'expected_version') || jsonb_build_object(
+      (payload - 'request_id' - 'expected_version' - 'trip_type') || jsonb_build_object(
         'week_start', v_week,
         'trip_shape', 'round_trip',
         'depart_at', case when i = 0 then v_depart else (v_d::timestamp) at time zone 'Asia/Jerusalem' end,
@@ -8848,34 +9373,59 @@ CREATE OR REPLACE FUNCTION "public"."try_auto_approve"("p_request_id" "uuid") RE
 declare
   v_req record;
   v_car record;
-  v_home uuid;
   v_turnaround interval;
   v_ride_id uuid;
   v_preferred_ok boolean := false;
+  v_is_one_way boolean;
+  v_end timestamptz;
+  v_travel int;
+  v_driver uuid;
 begin
   select * into v_req from public.requests where id = p_request_id for update;
   if v_req.id is null or v_req.status not in ('submitted', 'waitlisted') then
     return null;
   end if;
-  if v_req.trip_shape <> 'round_trip' then
+
+  v_is_one_way := v_req.trip_shape = 'one_way_to' and v_req.trip_type = 'one_way';
+  if v_req.trip_shape <> 'round_trip' and not v_is_one_way then
+    return null;
+  end if;
+  -- A free-text origin is never auto-placed (REQ §13.93: "the Sadran handles it").
+  if v_req.origin_id is null then
     return null;
   end if;
 
   perform set_config('app.system_status_transition', 'on', true);
 
-  select d.home_destination_id into v_home from public.departments d where d.id = v_req.department_id;
-  if v_home is null then
-    update public.requests set status = 'waitlisted', status_reason = 'NO_HOME_LOCATION' where id = p_request_id;
-    perform set_config('app.system_status_transition', 'off', true);
-    return jsonb_build_object('status', 'waitlisted', 'reason', 'NO_HOME_LOCATION');
-  end if;
-
   select make_interval(mins => s.turnaround_minutes) into v_turnaround
   from public.department_settings s where s.department_id = v_req.department_id;
 
+  if v_is_one_way then
+    -- A free-text destination can never relay (REQ §13.58); no window to compute either.
+    if v_req.destination_id is null then
+      perform set_config('app.system_status_transition', 'off', true);
+      return null;
+    end if;
+    v_driver := public.eligible_leg_driver(p_request_id);
+    if v_driver is null then
+      -- No eligible driver on board: not this function's job (submit_request's
+      -- non_driver_needs_drop_off guard should have prevented this at submission time).
+      perform set_config('app.system_status_transition', 'off', true);
+      return null;
+    end if;
+    v_travel := greatest(coalesce(public.request_leg_route_minutes(p_request_id, 'out'), 30), 0);
+    v_end := v_req.depart_at + make_interval(mins => v_travel);
+    if not public.is_quarter_hour(v_end) then
+      v_end := to_timestamp(ceil(extract(epoch from v_end) / 900) * 900);
+    end if;
+  else
+    v_end := v_req.return_at;
+  end if;
+
   -- Preferred car first: same eligibility rules as the fallback query below (shared,
-  -- active, seats fit, at home at the requested depart time, no overlap incl. the
-  -- turnaround buffer), scoped to that single car.
+  -- active, seats fit, at the request's origin at departure, no overlap incl. the
+  -- turnaround buffer, and -- for a one-way leg -- no later ride on that car starting
+  -- anywhere but the destination), scoped to that single car.
   if v_req.preferred_car_id is not null then
     select c.* into v_car
     from public.cars c
@@ -8883,12 +9433,13 @@ begin
     where c.id = v_req.preferred_car_id and c.department_id = v_req.department_id
       and c.status = 'active' and c.type = 'shared'
       and csc.adults >= v_req.adults and csc.child_seats >= v_req.child_seats and csc.boosters >= v_req.boosters
-      and public.car_location_at(c.id, v_req.depart_at) = v_home
+      and public.car_location_at(c.id, v_req.depart_at) = v_req.origin_id
       and not exists (
         select 1 from public.rides r
         where r.car_id = c.id and r.status <> 'cancelled'
-          and tstzrange(r.starts_at, r.blocked_until, '[)') && tstzrange(v_req.depart_at, v_req.return_at + v_turnaround, '[)')
+          and tstzrange(r.starts_at, r.blocked_until, '[)') && tstzrange(v_req.depart_at, v_end + v_turnaround, '[)')
       )
+      and (not v_is_one_way or coalesce(public.car_next_ride_origin(c.id, v_end), v_req.destination_id) = v_req.destination_id)
     order by c.id limit 1;
     v_preferred_ok := v_car.id is not null;
   end if;
@@ -8899,12 +9450,13 @@ begin
     join public.car_seat_configs csc on csc.car_id = c.id
     where c.department_id = v_req.department_id and c.status = 'active' and c.type = 'shared'
       and csc.adults >= v_req.adults and csc.child_seats >= v_req.child_seats and csc.boosters >= v_req.boosters
-      and public.car_location_at(c.id, v_req.depart_at) = v_home
+      and public.car_location_at(c.id, v_req.depart_at) = v_req.origin_id
       and not exists (
         select 1 from public.rides r
         where r.car_id = c.id and r.status <> 'cancelled'
-          and tstzrange(r.starts_at, r.blocked_until, '[)') && tstzrange(v_req.depart_at, v_req.return_at + v_turnaround, '[)')
+          and tstzrange(r.starts_at, r.blocked_until, '[)') && tstzrange(v_req.depart_at, v_end + v_turnaround, '[)')
       )
+      and (not v_is_one_way or coalesce(public.car_next_ride_origin(c.id, v_end), v_req.destination_id) = v_req.destination_id)
     order by c.id limit 1;
   end if;
 
@@ -8916,34 +9468,40 @@ begin
       format('waitlisted_request:%s', p_request_id))
     from public.sadranim_of(v_req.department_id, v_req.week_start) as s(profile_id);
     perform set_config('app.system_status_transition', 'off', true);
-    -- 20260910091900 (contested waiting-list groups, REQ §7.3): if the day is already
-    -- published, this member is not simply "waiting" — somebody else is holding the car in
-    -- that window. join_waitlist_group() either adds them to the open group for that window
-    -- or pairs them with another lone waitlisted round trip, so both sides get told and can
-    -- settle it between them. It is a no-op for unpublished days, one-way requests and
-    -- requests already in an open group, and it never calls back into this function.
+    -- 20260910091900 (contested waiting-list groups, REQ §7.3): join_waitlist_group() is a
+    -- round-trip-only no-op for a one-way leg, so this stays safe to call unconditionally.
     if public.join_waitlist_group(p_request_id) is not null then
       return jsonb_build_object('status', 'waitlisted', 'reason', 'WAITLISTED_CONTESTED');
     end if;
-    -- NO_FREE_CAR (product owner's wording) and the pre-existing WAITLISTED_NO_CAR are the
-    -- same case; kept as the one status_reason code (backward compatible with
-    -- src/i18n/he.ts's statusReason table and every existing e2e/seed fixture using it).
     return jsonb_build_object('status', 'waitlisted', 'reason', 'WAITLISTED_NO_CAR');
   end if;
 
   perform set_config('app.audit_reason', 'try_auto_approve:assigned', true);
-  insert into public.rides (department_id, week_start, car_id, starts_at, ends_at, origin_id, destination_id,
-    driver_id, status, is_pinned, pin_reason, created_by)
-  values (v_req.department_id, v_req.week_start, v_car.id, v_req.depart_at, v_req.return_at, v_home, v_home,
-    v_req.requester_id, 'confirmed', true, 'AUTO_APPROVED', v_req.requester_id)
-  returning id into v_ride_id;
+  if v_is_one_way then
+    insert into public.rides (department_id, week_start, car_id, starts_at, ends_at, origin_id, destination_id,
+      driver_id, status, is_pinned, pin_reason, created_by)
+    values (v_req.department_id, v_req.week_start, v_car.id, v_req.depart_at, v_end, v_req.origin_id, v_req.destination_id,
+      v_driver, 'confirmed', true, 'AUTO_APPROVED', v_req.requester_id)
+    returning id into v_ride_id;
 
-  insert into public.ride_requests (ride_id, request_id, role, leg, car_mode)
-  values (v_ride_id, p_request_id, 'driver', 'both', 'keep');
+    insert into public.ride_requests (ride_id, request_id, role, leg, car_mode)
+    values (v_ride_id, p_request_id, 'driver', 'out', 'relay');
+
+    update public.requests set status = 'assigned', status_reason = 'AUTO_APPROVED_RELAY' where id = p_request_id;
+  else
+    insert into public.rides (department_id, week_start, car_id, starts_at, ends_at, origin_id, destination_id,
+      driver_id, status, is_pinned, pin_reason, created_by)
+    values (v_req.department_id, v_req.week_start, v_car.id, v_req.depart_at, v_req.return_at, v_req.origin_id, v_req.origin_id,
+      v_req.requester_id, 'confirmed', true, 'AUTO_APPROVED', v_req.requester_id)
+    returning id into v_ride_id;
+
+    insert into public.ride_requests (ride_id, request_id, role, leg, car_mode)
+    values (v_ride_id, p_request_id, 'driver', 'both', 'keep');
+
+    update public.requests set status = 'assigned', status_reason = 'AUTO_APPROVED_FREE_CAR' where id = p_request_id;
+  end if;
 
   perform public.assert_car_chain(v_car.id, v_req.week_start);
-
-  update public.requests set status = 'assigned', status_reason = 'AUTO_APPROVED_FREE_CAR' where id = p_request_id;
   perform set_config('app.system_status_transition', 'off', true);
 
   perform public.enqueue_notification(v_req.requester_id, 'auto_approved', v_req.department_id, v_req.week_start,
@@ -9010,81 +9568,174 @@ CREATE OR REPLACE FUNCTION "public"."try_widen_one_way_leg"("p_ride_id" "uuid", 
     AS $$
 declare
   v_ride public.rides%rowtype;
-  v_request_id uuid; v_trip_shape public.trip_shape; v_dest uuid;
-  v_travel int; v_dwell int; v_start timestamptz; v_end timestamptz;
+  v_request_id uuid; v_trip_shape public.trip_shape; v_trip_type public.trip_type;
+  v_origin uuid; v_dest uuid; v_requester uuid;
+  v_travel int; v_dwell int;
+  v_start_a timestamptz; v_end_a timestamptz;
+  v_start_b timestamptz; v_end_b timestamptz;
+  v_start timestamptz; v_end timestamptz; v_loc uuid;
   v_car_id uuid; v_candidate uuid;
+  v_was_active boolean;
+  v_adults smallint; v_child_seats smallint; v_boosters smallint;
+  v_prev_flag text;
 begin
   select * into v_ride from public.rides where id = p_ride_id;
-  if v_ride is null or v_ride.status = 'cancelled' or v_ride.overnight_ack_by is not null then return null; end if;
+  if v_ride is null or v_ride.status = 'cancelled' then return null; end if;
   if (select count(*) from public.ride_requests where ride_id = p_ride_id) <> 1 then return null; end if;
 
-  select rr.request_id, q.trip_shape, q.destination_id into v_request_id, v_trip_shape, v_dest
+  select rr.request_id, q.trip_shape, q.trip_type, q.origin_id, q.destination_id, q.requester_id,
+         q.adults, q.child_seats, q.boosters
+    into v_request_id, v_trip_shape, v_trip_type, v_origin, v_dest, v_requester,
+         v_adults, v_child_seats, v_boosters
   from public.ride_requests rr join public.requests q on q.id = rr.request_id
   where rr.ride_id = p_ride_id;
-  if v_trip_shape = 'round_trip' then return null; end if;
+  -- An explicit one_way trip never widens (§1.3a); neither does a round trip or a free-text end.
+  if v_trip_type is distinct from 'drop_off' then return null; end if;
+  if v_origin is null or v_dest is null then return null; end if;
   if p_direction = 'out' and v_trip_shape <> 'one_way_to' then return null; end if;
   if p_direction = 'fetch' and v_trip_shape <> 'one_way_from' then return null; end if;
+
+  v_was_active := not v_ride.needs_driver;
 
   select coalesce(
       (select (w.settings_overrides ->> 'chauffeur_dwell_minutes')::int from public.weeks w
        where w.department_id = p_dept and w.week_start = p_week),
       (select s.chauffeur_dwell_minutes from public.department_settings s where s.department_id = p_dept), 10)
     into v_dwell;
-  select greatest(coalesce(travel_minutes, 30), 0) into v_travel from public.destinations where id = v_dest;
 
   if p_direction = 'out' then
-    -- Out-leg widening: the car leaves at the same time it already would, and comes
-    -- straight back instead of being left at X.
-    v_start := v_ride.starts_at;
-    v_end := v_start + make_interval(mins => 2 * v_travel + greatest(v_dwell, 0));
-    if not (public.is_quarter_hour(v_end) or public.is_same_day_end(v_end)) then
-      v_end := to_timestamp(ceil(extract(epoch from v_end) / 900) * 900);
+    v_travel := greatest(coalesce(public.request_leg_route_minutes(v_request_id, 'out'), 30), 0);
+    -- Candidate A: the car is at the leg's origin -- drop-off wrap, leaves when the leg
+    -- already would and comes straight back instead of being left at the destination.
+    v_start_a := v_ride.starts_at;
+    v_end_a := v_start_a + make_interval(mins => 2 * v_travel + greatest(v_dwell, 0));
+    if not (public.is_quarter_hour(v_end_a) or public.is_same_day_end(v_end_a)) then
+      v_end_a := to_timestamp(ceil(extract(epoch from v_end_a) / 900) * 900);
+    end if;
+    -- Candidate B: the car is at the leg's destination -- pickup wrap ("pick me up from X"):
+    -- the car fetches the requester at the origin just in time for the stated departure and
+    -- returns to the destination.
+    v_start_b := v_start_a - make_interval(mins => v_travel + greatest(v_dwell, 0));
+    if not public.is_quarter_hour(v_start_b) then
+      v_start_b := to_timestamp(floor(extract(epoch from v_start_b) / 900) * 900);
+    end if;
+    v_end_b := v_start_a + make_interval(mins => v_travel);
+    if not public.is_quarter_hour(v_end_b) then
+      v_end_b := to_timestamp(ceil(extract(epoch from v_end_b) / 900) * 900);
+    end if;
+
+    v_car_id := null;
+    for v_candidate in
+      select c.id from public.cars c
+      where c.department_id = p_dept and c.status = 'active' and c.type = 'shared'
+      order by (c.id = p_car) desc, c.id
+    loop
+      if public.car_location_at(v_candidate, v_start_a) = v_origin
+        and public.car_fits(v_candidate, v_adults + 1, v_child_seats, v_boosters)
+        and not exists (
+          select 1 from public.rides x
+          where x.car_id = v_candidate and x.id <> p_ride_id and x.status <> 'cancelled' and not x.planning_conflict
+            and tstzrange(x.starts_at, x.blocked_until, '[)') && tstzrange(v_start_a, v_end_a + p_turnaround, '[)')
+        )
+      then
+        v_car_id := v_candidate; v_start := v_start_a; v_end := v_end_a; v_loc := v_origin;
+        exit;
+      end if;
+    end loop;
+
+    if v_car_id is null then
+      for v_candidate in
+        select c.id from public.cars c
+        where c.department_id = p_dept and c.status = 'active' and c.type = 'shared'
+        order by (c.id = p_car) desc, c.id
+      loop
+        if public.car_location_at(v_candidate, v_start_b) = v_dest
+          and public.car_fits(v_candidate, v_adults + 1, v_child_seats, v_boosters)
+          and not exists (
+            select 1 from public.rides x
+            where x.car_id = v_candidate and x.id <> p_ride_id and x.status <> 'cancelled' and not x.planning_conflict
+              and tstzrange(x.starts_at, x.blocked_until, '[)') && tstzrange(v_start_b, v_end_b + p_turnaround, '[)')
+          )
+        then
+          v_car_id := v_candidate; v_start := v_start_b; v_end := v_end_b; v_loc := v_dest;
+          exit;
+        end if;
+      end loop;
     end if;
   else
-    -- Fetch widening: the car arrives home at the same time it already would (the
-    -- requested arrival), leaving earlier to go fetch the passenger first.
+    -- Legacy return/fetch leg: single formula, now anchored at the request's own origin
+    -- (previously always the department home) -- unchanged otherwise.
+    v_travel := greatest(coalesce(public.request_leg_route_minutes(v_request_id, 'return'), 30), 0);
     v_end := v_ride.ends_at;
     v_start := v_end - make_interval(mins => 2 * v_travel + greatest(v_dwell, 0));
     if not public.is_quarter_hour(v_start) then
       v_start := to_timestamp(floor(extract(epoch from v_start) / 900) * 900);
     end if;
+    v_loc := v_origin;
+
+    v_car_id := p_car;
+    if not (public.car_fits(v_car_id, v_adults + 1, v_child_seats, v_boosters)) or exists (
+      select 1 from public.rides x
+      where x.car_id = v_car_id and x.id <> p_ride_id and x.status <> 'cancelled' and not x.planning_conflict
+        and tstzrange(x.starts_at, x.blocked_until, '[)') && tstzrange(v_start, v_end + p_turnaround, '[)')
+    ) then
+      v_car_id := null;
+      for v_candidate in
+        select c.id from public.cars c
+        where c.department_id = p_dept and c.status = 'active' and c.type = 'shared' and c.id <> p_car
+        order by c.id
+      loop
+        if public.car_fits(v_candidate, v_adults + 1, v_child_seats, v_boosters) and not exists (
+          select 1 from public.rides x
+          where x.car_id = v_candidate and x.status <> 'cancelled' and not x.planning_conflict
+            and tstzrange(x.starts_at, x.blocked_until, '[)') && tstzrange(v_start, v_end + p_turnaround, '[)')
+        ) then
+          v_car_id := v_candidate;
+          exit;
+        end if;
+      end loop;
+    end if;
   end if;
+
   if v_start >= v_end then v_end := v_start + interval '15 minutes'; end if;
 
-  v_car_id := p_car;
-  if exists (
-    select 1 from public.rides x
-    where x.car_id = v_car_id and x.id <> p_ride_id and x.status <> 'cancelled' and not x.planning_conflict
-      and tstzrange(x.starts_at, x.blocked_until, '[)') && tstzrange(v_start, v_end + p_turnaround, '[)')
-  ) then
-    v_car_id := null;
-    for v_candidate in
-      select c.id from public.cars c
-      where c.department_id = p_dept and c.status = 'active' and c.type = 'shared' and c.id <> p_car
-      order by c.id
-    loop
-      if not exists (
-        select 1 from public.rides x
-        where x.car_id = v_candidate and x.status <> 'cancelled' and not x.planning_conflict
-          and tstzrange(x.starts_at, x.blocked_until, '[)') && tstzrange(v_start, v_end + p_turnaround, '[)')
-      ) then
-        v_car_id := v_candidate;
-        exit;
-      end if;
-    end loop;
-    if v_car_id is null then return null; end if;
+  if v_car_id is null then
+    -- Neither end has an available, seat-fitting car: the request goes back to unmet
+    -- (ORIGINS_PLAN §3) instead of staying a dangling chauffeur placeholder.
+    delete from public.ride_requests where ride_id = p_ride_id and request_id = v_request_id;
+    update public.rides set status = 'cancelled', cancelled_at = now(),
+      cancelled_by = coalesce((select auth.uid()), v_ride.created_by), cancel_reason = 'UNMET_NO_CAR_AT_ORIGIN'
+    where id = p_ride_id;
+
+    v_prev_flag := coalesce(current_setting('app.system_status_transition', true), 'off');
+    perform set_config('app.system_status_transition', 'on', true);
+    update public.requests set status = 'submitted', status_reason = 'UNMET_NO_CAR_AT_ORIGIN' where id = v_request_id;
+    perform set_config('app.system_status_transition', v_prev_flag, true);
+
+    if v_was_active then
+      perform public.enqueue_notification(v_requester, 'outcome_changed', p_dept, p_week,
+        '{}'::jsonb, jsonb_build_object('request_id', v_request_id),
+        format('outcome_changed:%s:%s', v_request_id, now()));
+    end if;
+    return 'unmet';
   end if;
 
   update public.rides set
-    car_id = v_car_id, origin_id = p_home, destination_id = p_home,
+    car_id = v_car_id, origin_id = v_loc, destination_id = v_loc,
     starts_at = v_start, ends_at = v_end, needs_driver = true, driver_id = null,
-    -- A former relay out-leg may carry its short gap at X as an override (20260924120000);
+    -- A former relay leg may carry its short gap at X as an override (20260924120000);
     -- the reshaped chauffeur ride gets the ordinary turnaround again.
     turnaround_override_minutes = null
   where id = p_ride_id;
 
   update public.ride_requests set role = 'passenger', car_mode = 'chauffeur'
   where ride_id = p_ride_id and request_id = v_request_id;
+
+  if v_was_active then
+    perform public.enqueue_notification(v_requester, 'outcome_changed', p_dept, p_week,
+      '{}'::jsonb, jsonb_build_object('request_id', v_request_id),
+      format('outcome_changed:%s:%s', v_request_id, now()));
+  end if;
 
   return case when v_car_id = p_car then 'here' else 'moved' end;
 end $$;
@@ -9215,6 +9866,7 @@ CREATE OR REPLACE FUNCTION "public"."validate_proposal_payload"("_type" "public"
     when 'merge' then _payload ? 'ride_id' and _payload ? 'legs'
     when 'deny' then _payload ? 'reason'
     when 'external' then _payload ? 'hint' and _payload ? 'reason'
+    when 'origin' then _payload ? 'origin_id' and _payload ? 'car_id'
     else false
   end;
 $$;
@@ -9316,11 +9968,13 @@ CREATE TABLE IF NOT EXISTS "public"."department_settings" (
     "updated_at" timestamp with time zone,
     "updated_by" "uuid",
     "join_radius_km" numeric(5,1) DEFAULT 10 NOT NULL,
+    "stop_minutes" integer DEFAULT 5 NOT NULL,
     CONSTRAINT "department_settings_close_dow_ck" CHECK ((("close_dow" >= 0) AND ("close_dow" <= 6))),
     CONSTRAINT "department_settings_expiry_mode_ck" CHECK (("proposal_expiry_mode" = ANY (ARRAY['at_publish'::"text", 'fixed_hours'::"text"]))),
     CONSTRAINT "department_settings_join_radius_km_ck" CHECK ((("join_radius_km" >= (0)::numeric) AND ("join_radius_km" <= (100)::numeric))),
     CONSTRAINT "department_settings_open_dow_ck" CHECK ((("open_dow" >= 0) AND ("open_dow" <= 6))),
     CONSTRAINT "department_settings_publish_dow_ck" CHECK ((("publish_dow" >= 0) AND ("publish_dow" <= 6))),
+    CONSTRAINT "department_settings_stop_minutes_ck" CHECK ((("stop_minutes" >= 0) AND ("stop_minutes" <= 60))),
     CONSTRAINT "department_settings_turnaround_ck" CHECK (((("turnaround_minutes" % 15) = 0) AND (("turnaround_minutes" >= 0) AND ("turnaround_minutes" <= 120))))
 );
 
@@ -9700,6 +10354,7 @@ CREATE TABLE IF NOT EXISTS "public"."cars" (
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     "responsible_id" "uuid",
+    "base_location_id" "uuid",
     CONSTRAINT "cars_built_in_boosters_ck" CHECK (("built_in_boosters" >= 0)),
     CONSTRAINT "cars_built_in_child_seats_ck" CHECK (("built_in_child_seats" >= 0)),
     CONSTRAINT "cars_temporary_owner_ck" CHECK ((("type" = 'temporary'::"public"."car_type") = ("owner_id" IS NOT NULL)))
@@ -9773,6 +10428,7 @@ CREATE TABLE IF NOT EXISTS "public"."department_members" (
     "added_by" "uuid",
     "removed_at" timestamp with time zone,
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "default_origin_id" "uuid",
     CONSTRAINT "department_members_role_ck" CHECK (("role" = ANY (ARRAY['member'::"public"."role", 'sadran'::"public"."role"])))
 );
 
@@ -9928,6 +10584,26 @@ ALTER TABLE ONLY "public"."notifications" FORCE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."notifications" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."place_distances" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "department_id" "uuid" NOT NULL,
+    "from_id" "uuid" NOT NULL,
+    "to_id" "uuid" NOT NULL,
+    "distance_km" numeric(6,1) NOT NULL,
+    "travel_minutes" integer NOT NULL,
+    "source" "text" DEFAULT 'route'::"text" NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "place_distances_pair_ck" CHECK (("from_id" <> "to_id")),
+    CONSTRAINT "place_distances_source_ck" CHECK (("source" = 'route'::"text"))
+);
+
+ALTER TABLE ONLY "public"."place_distances" FORCE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."place_distances" OWNER TO "postgres";
 
 
 CREATE TABLE IF NOT EXISTS "public"."policies" (
@@ -10123,6 +10799,27 @@ ALTER TABLE ONLY "public"."request_companions" FORCE ROW LEVEL SECURITY;
 ALTER TABLE "public"."request_companions" OWNER TO "postgres";
 
 
+CREATE TABLE IF NOT EXISTS "public"."request_stops" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "request_id" "uuid" NOT NULL,
+    "department_id" "uuid" NOT NULL,
+    "leg" "public"."ride_leg" NOT NULL,
+    "position" smallint NOT NULL,
+    "place_id" "uuid",
+    "place_text" "text",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "request_stops_leg_ck" CHECK (("leg" = ANY (ARRAY['out'::"public"."ride_leg", 'return'::"public"."ride_leg"]))),
+    CONSTRAINT "request_stops_place_ck" CHECK ((("place_id" IS NULL) <> ("place_text" IS NULL))),
+    CONSTRAINT "request_stops_position_ck" CHECK ((("position" >= 1) AND ("position" <= 10)))
+);
+
+ALTER TABLE ONLY "public"."request_stops" FORCE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."request_stops" OWNER TO "postgres";
+
+
 CREATE TABLE IF NOT EXISTS "public"."request_templates" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "requester_id" "uuid" NOT NULL,
@@ -10159,6 +10856,10 @@ CREATE TABLE IF NOT EXISTS "public"."request_templates" (
     "snoozed_until_week" "date",
     "stopped_at" timestamp with time zone,
     "child_ids" "uuid"[] DEFAULT '{}'::"uuid"[] NOT NULL,
+    "origin_id" "uuid",
+    "origin_text" "text",
+    "trip_type" "public"."trip_type" DEFAULT 'round_trip'::"public"."trip_type" NOT NULL,
+    "stops" "jsonb" DEFAULT '[]'::"jsonb" NOT NULL,
     CONSTRAINT "request_templates_adults_ck" CHECK (("adults" >= 1)),
     CONSTRAINT "request_templates_boosters_ck" CHECK (("boosters" >= 0)),
     CONSTRAINT "request_templates_child_seats_ck" CHECK (("child_seats" >= 0)),
@@ -10170,6 +10871,7 @@ CREATE TABLE IF NOT EXISTS "public"."request_templates" (
     CONSTRAINT "request_templates_flex_return_early_ck" CHECK (("flex_return_early" = ANY (ARRAY['00:00:00'::interval, '00:15:00'::interval, '00:30:00'::interval, '01:00:00'::interval, '02:00:00'::interval, '1 day'::interval]))),
     CONSTRAINT "request_templates_flex_return_late_ck" CHECK (("flex_return_late" = ANY (ARRAY['00:00:00'::interval, '00:15:00'::interval, '00:30:00'::interval, '01:00:00'::interval, '02:00:00'::interval, '1 day'::interval]))),
     CONSTRAINT "request_templates_one_way_mode_ck" CHECK (((("one_way_car_mode" IS NULL) = ("trip_shape" = 'round_trip'::"public"."trip_shape")) AND (("one_way_car_mode" IS NULL) OR ("one_way_car_mode" = ANY (ARRAY['relay'::"public"."leg_car_mode", 'passenger'::"public"."leg_car_mode"]))))),
+    CONSTRAINT "request_templates_origin_ck" CHECK ((("origin_id" IS NOT NULL) OR ("origin_text" IS NOT NULL))),
     CONSTRAINT "request_templates_return_ck" CHECK ((("return_dow" IS NULL) = ("trip_shape" = 'one_way_to'::"public"."trip_shape"))),
     CONSTRAINT "request_templates_return_dow_ck" CHECK ((("return_dow" IS NULL) OR (("return_dow" >= 0) AND ("return_dow" <= 6)))),
     CONSTRAINT "request_templates_snoozed_until_week_sunday_ck" CHECK ((("snoozed_until_week" IS NULL) OR (EXTRACT(dow FROM "snoozed_until_week") = (0)::numeric)))
@@ -10249,6 +10951,9 @@ CREATE TABLE IF NOT EXISTS "public"."requests" (
     "series_id" "uuid",
     "series_index" smallint,
     "series_count" smallint,
+    "origin_id" "uuid",
+    "origin_text" "text",
+    "trip_type" "public"."trip_type" DEFAULT 'round_trip'::"public"."trip_type" NOT NULL,
     CONSTRAINT "requests_adults_ck" CHECK (("adults" >= 1)),
     CONSTRAINT "requests_boosters_ck" CHECK (("boosters" >= 0)),
     CONSTRAINT "requests_child_seats_ck" CHECK (("child_seats" >= 0)),
@@ -10261,6 +10966,7 @@ CREATE TABLE IF NOT EXISTS "public"."requests" (
     CONSTRAINT "requests_flex_return_late_ck" CHECK (("flex_return_late" = ANY (ARRAY['00:00:00'::interval, '00:15:00'::interval, '00:30:00'::interval, '01:00:00'::interval, '02:00:00'::interval, '1 day'::interval]))),
     CONSTRAINT "requests_manual_boost_ck" CHECK ((("manual_boost" = (0)::numeric) OR ("manual_boost_reason" IS NOT NULL))),
     CONSTRAINT "requests_one_way_mode_ck" CHECK (((("one_way_car_mode" IS NULL) = ("trip_shape" = 'round_trip'::"public"."trip_shape")) AND (("one_way_car_mode" IS NULL) OR ("one_way_car_mode" = ANY (ARRAY['relay'::"public"."leg_car_mode", 'passenger'::"public"."leg_car_mode"]))))),
+    CONSTRAINT "requests_origin_ck" CHECK ((("origin_id" IS NOT NULL) OR ("origin_text" IS NOT NULL))),
     CONSTRAINT "requests_return_after_depart_ck" CHECK ((("depart_at" IS NULL) OR ("return_at" IS NULL) OR ("return_at" > "depart_at"))),
     CONSTRAINT "requests_return_presence_ck" CHECK ((("return_at" IS NOT NULL) = ("trip_shape" <> 'one_way_to'::"public"."trip_shape"))),
     CONSTRAINT "requests_return_qh_ck" CHECK (("public"."is_quarter_hour"("return_at") OR "public"."is_same_day_end"("return_at"))),
@@ -10489,6 +11195,19 @@ ALTER TABLE ONLY "public"."solver_runs" FORCE ROW LEVEL SECURITY;
 ALTER TABLE "public"."solver_runs" OWNER TO "postgres";
 
 
+CREATE TABLE IF NOT EXISTS "public"."text_fragments" (
+    "key" "text" NOT NULL,
+    "body" "text" NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL
+);
+
+ALTER TABLE ONLY "public"."text_fragments" FORCE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."text_fragments" OWNER TO "postgres";
+
+
 CREATE OR REPLACE VIEW "public"."v_board_rides" AS
 SELECT
     NULL::"uuid" AS "id",
@@ -10521,7 +11240,8 @@ SELECT
     NULL::smallint AS "series_count",
     NULL::"jsonb" AS "passengers",
     NULL::"jsonb" AS "people",
-    NULL::boolean AS "auto_relocation";
+    NULL::boolean AS "auto_relocation",
+    NULL::"jsonb" AS "relay_partner";
 
 
 ALTER VIEW "public"."v_board_rides" OWNER TO "postgres";
@@ -10537,65 +11257,71 @@ CREATE OR REPLACE VIEW "public"."v_car_locations" WITH ("security_invoker"='true
     "dl"."name" AS "location_name",
     "r"."id" AS "leaving_ride_id",
     ("r"."overnight_ack_by" IS NOT NULL) AS "overnight_acknowledged"
-   FROM ((("public"."rides" "r"
-     JOIN "public"."departments" "d" ON (("d"."id" = "r"."department_id")))
+   FROM (("public"."rides" "r"
      JOIN "public"."destinations" "dl" ON (("dl"."id" = "r"."destination_id")))
      LEFT JOIN LATERAL ( SELECT "n_1"."starts_at"
            FROM "public"."rides" "n_1"
           WHERE (("n_1"."car_id" = "r"."car_id") AND ("n_1"."status" <> 'cancelled'::"public"."ride_status") AND ("n_1"."starts_at" > "r"."ends_at"))
           ORDER BY "n_1"."starts_at"
          LIMIT 1) "n" ON (true))
-  WHERE (("r"."status" <> 'cancelled'::"public"."ride_status") AND ("r"."destination_id" <> "d"."home_destination_id"));
+  WHERE (("r"."status" <> 'cancelled'::"public"."ride_status") AND ("r"."destination_id" IS DISTINCT FROM "public"."car_base_location"("r"."car_id")));
 
 
 ALTER VIEW "public"."v_car_locations" OWNER TO "postgres";
 
 
 CREATE OR REPLACE VIEW "public"."v_my_requests" WITH ("security_invoker"='true') AS
- SELECT "existing"."request_id",
-    "existing"."requester_id",
-    "existing"."department_id",
-    "existing"."week_start",
-    "existing"."status",
-    "existing"."status_reason",
-    "existing"."is_late",
-    "existing"."changed_since_solve",
-    "existing"."depart_at",
-    "existing"."return_at",
-    "existing"."trip_shape",
-    "existing"."one_way_car_mode",
-    "existing"."needs_car_at_destination",
-    "existing"."destination",
-    "existing"."ride_type_name",
-    "existing"."ride_id",
-    "existing"."starts_at",
-    "existing"."ends_at",
-    "existing"."ride_status",
-    "existing"."car_name",
-    "existing"."license_plate",
-    "existing"."ride_origin",
-    "existing"."ride_destination",
-    "existing"."driver_name",
-    "existing"."role",
-    "existing"."leg",
-    "existing"."car_mode",
-    "existing"."pending_proposal_id",
-    "existing"."pending_proposal_type",
-    "existing"."pending_proposal_reason",
-    "existing"."pending_proposal_expires_at",
-    "existing"."preferred_car_id",
-    "existing"."original_depart_at",
-    "existing"."original_return_at",
-    "existing"."needs_driver",
-    "existing"."turnaround_override_minutes",
-    "existing"."ride_description",
-    "existing"."guest_passenger_names",
-    "existing"."companions",
-    "existing"."child_names",
-    "q"."series_id",
-    "q"."series_index",
-    "q"."series_count"
-   FROM (( SELECT "existing_1"."request_id",
+ SELECT "request_id",
+    "requester_id",
+    "department_id",
+    "week_start",
+    "status",
+    "status_reason",
+    "is_late",
+    "changed_since_solve",
+    "depart_at",
+    "return_at",
+    "trip_shape",
+    "one_way_car_mode",
+    "needs_car_at_destination",
+    "destination",
+    "ride_type_name",
+    "ride_id",
+    "starts_at",
+    "ends_at",
+    "ride_status",
+    "car_name",
+    "license_plate",
+    "ride_origin",
+    "ride_destination",
+    "driver_name",
+    "role",
+    "leg",
+    "car_mode",
+    "pending_proposal_id",
+    "pending_proposal_type",
+    "pending_proposal_reason",
+    "pending_proposal_expires_at",
+    "preferred_car_id",
+    "original_depart_at",
+    "original_return_at",
+    "needs_driver",
+    "turnaround_override_minutes",
+    "ride_description",
+    "guest_passenger_names",
+    "companions",
+    "child_names",
+    "series_id",
+    "series_index",
+    "series_count",
+    "origin_id",
+    "origin_text",
+    "origin_name",
+    "trip_type",
+    COALESCE(( SELECT "jsonb_agg"("jsonb_build_object"('leg', "e"."leg", 'position', "e"."position", 'place_id', "e"."place_id", 'place_text', "e"."place_text", 'name', COALESCE("d"."name", "e"."place_text"), 'eta', "e"."eta") ORDER BY "e"."leg", "e"."position") AS "jsonb_agg"
+           FROM ("public"."request_stop_etas"("existing"."request_id") "e"("leg", "position", "place_id", "place_text", "eta")
+             LEFT JOIN "public"."destinations" "d" ON (("d"."id" = "e"."place_id")))), '[]'::"jsonb") AS "stops"
+   FROM ( SELECT "existing_1"."request_id",
             "existing_1"."requester_id",
             "existing_1"."department_id",
             "existing_1"."week_start",
@@ -10634,11 +11360,15 @@ CREATE OR REPLACE VIEW "public"."v_my_requests" WITH ("security_invoker"='true')
             "existing_1"."ride_description",
             "existing_1"."guest_passenger_names",
             "existing_1"."companions",
-            COALESCE(( SELECT "array_agg"("c"."full_name" ORDER BY "c"."full_name") AS "array_agg"
-                   FROM ("public"."request_children" "rc"
-                     JOIN "public"."children" "c" ON (("c"."id" = "rc"."child_id")))
-                  WHERE ("rc"."request_id" = "existing_1"."request_id")), '{}'::"text"[]) AS "child_names"
-           FROM ( SELECT "existing_1_1"."request_id",
+            "existing_1"."child_names",
+            "existing_1"."series_id",
+            "existing_1"."series_index",
+            "existing_1"."series_count",
+            "q"."origin_id",
+            "q"."origin_text",
+            COALESCE("od"."name", "q"."origin_text") AS "origin_name",
+            "q"."trip_type"
+           FROM ((( SELECT "existing_1_1"."request_id",
                     "existing_1_1"."requester_id",
                     "existing_1_1"."department_id",
                     "existing_1_1"."week_start",
@@ -10674,12 +11404,13 @@ CREATE OR REPLACE VIEW "public"."v_my_requests" WITH ("security_invoker"='true')
                     "existing_1_1"."original_return_at",
                     "existing_1_1"."needs_driver",
                     "existing_1_1"."turnaround_override_minutes",
-                    "q_1"."ride_description",
-                    "q_1"."guest_passenger_names",
-                    COALESCE(( SELECT "jsonb_agg"("jsonb_build_object"('profile_id', "p"."id", 'name', "p"."full_name") ORDER BY "p"."full_name", "p"."id") AS "jsonb_agg"
-                           FROM ("public"."request_companions" "rc"
-                             JOIN "public"."profiles" "p" ON (("p"."id" = "rc"."profile_id")))
-                          WHERE ("rc"."request_id" = "q_1"."id")), '[]'::"jsonb") AS "companions"
+                    "existing_1_1"."ride_description",
+                    "existing_1_1"."guest_passenger_names",
+                    "existing_1_1"."companions",
+                    "existing_1_1"."child_names",
+                    "q_1"."series_id",
+                    "q_1"."series_index",
+                    "q_1"."series_count"
                    FROM (( SELECT "existing_1_1_1"."request_id",
                             "existing_1_1_1"."requester_id",
                             "existing_1_1_1"."department_id",
@@ -10711,56 +11442,143 @@ CREATE OR REPLACE VIEW "public"."v_my_requests" WITH ("security_invoker"='true')
                             "existing_1_1_1"."pending_proposal_type",
                             "existing_1_1_1"."pending_proposal_reason",
                             "existing_1_1_1"."pending_proposal_expires_at",
-                            "q_1_1"."preferred_car_id",
-                            "q_1_1"."original_depart_at",
-                            "q_1_1"."original_return_at",
-                            "r"."needs_driver",
-                            "r"."turnaround_override_minutes"
-                           FROM ((( SELECT "q_1_1_1"."id" AS "request_id",
-                                    "q_1_1_1"."requester_id",
-                                    "q_1_1_1"."department_id",
-                                    "q_1_1_1"."week_start",
-                                    "q_1_1_1"."status",
-                                    "q_1_1_1"."status_reason",
-                                    "q_1_1_1"."is_late",
-                                    "q_1_1_1"."changed_since_solve",
-                                    "q_1_1_1"."depart_at",
-                                    "q_1_1_1"."return_at",
-                                    "q_1_1_1"."trip_shape",
-                                    "q_1_1_1"."one_way_car_mode",
-                                    "q_1_1_1"."needs_car_at_destination",
-                                    COALESCE("dst"."name", "q_1_1_1"."destination_text") AS "destination",
-                                    "rt"."name_he" AS "ride_type_name",
-                                    "r_1"."id" AS "ride_id",
-                                    "r_1"."starts_at",
-                                    "r_1"."ends_at",
-                                    "r_1"."status" AS "ride_status",
-                                    "c"."name" AS "car_name",
-                                    "c"."license_plate",
-                                    "ro"."name" AS "ride_origin",
-                                    "re"."name" AS "ride_destination",
-                                    "drv"."full_name" AS "driver_name",
-                                    "rr"."role",
-                                    "rr"."leg",
-                                    "rr"."car_mode",
-                                    "pr"."id" AS "pending_proposal_id",
-                                    "pr"."type" AS "pending_proposal_type",
-                                    "pr"."reason_he" AS "pending_proposal_reason",
-                                    "pr"."expires_at" AS "pending_proposal_expires_at"
-                                   FROM ((((((((("public"."requests" "q_1_1_1"
-                                     JOIN "public"."ride_types" "rt" ON (("rt"."id" = "q_1_1_1"."ride_type_id")))
-                                     LEFT JOIN "public"."destinations" "dst" ON (("dst"."id" = "q_1_1_1"."destination_id")))
-                                     LEFT JOIN "public"."ride_requests" "rr" ON (("rr"."request_id" = "q_1_1_1"."id")))
-                                     LEFT JOIN "public"."rides" "r_1" ON ((("r_1"."id" = "rr"."ride_id") AND ("r_1"."status" <> 'cancelled'::"public"."ride_status"))))
-                                     LEFT JOIN "public"."destinations" "ro" ON (("ro"."id" = "r_1"."origin_id")))
-                                     LEFT JOIN "public"."destinations" "re" ON (("re"."id" = "r_1"."destination_id")))
-                                     LEFT JOIN "public"."cars" "c" ON (("c"."id" = "r_1"."car_id")))
-                                     LEFT JOIN "public"."profiles" "drv" ON (("drv"."id" = "r_1"."driver_id")))
-                                     LEFT JOIN "public"."proposals" "pr" ON ((("pr"."request_id" = "q_1_1_1"."id") AND ("pr"."status" = 'sent'::"public"."proposal_status"))))) "existing_1_1_1"
-                             JOIN "public"."requests" "q_1_1" ON (("q_1_1"."id" = "existing_1_1_1"."request_id")))
-                             LEFT JOIN "public"."rides" "r" ON (("r"."id" = "existing_1_1_1"."ride_id")))) "existing_1_1"
-                     JOIN "public"."requests" "q_1" ON (("q_1"."id" = "existing_1_1"."request_id")))) "existing_1") "existing"
-     JOIN "public"."requests" "q" ON (("q"."id" = "existing"."request_id")));
+                            "existing_1_1_1"."preferred_car_id",
+                            "existing_1_1_1"."original_depart_at",
+                            "existing_1_1_1"."original_return_at",
+                            "existing_1_1_1"."needs_driver",
+                            "existing_1_1_1"."turnaround_override_minutes",
+                            "existing_1_1_1"."ride_description",
+                            "existing_1_1_1"."guest_passenger_names",
+                            "existing_1_1_1"."companions",
+                            COALESCE(( SELECT "array_agg"("c"."full_name" ORDER BY "c"."full_name") AS "array_agg"
+                                   FROM ("public"."request_children" "rc"
+                                     JOIN "public"."children" "c" ON (("c"."id" = "rc"."child_id")))
+                                  WHERE ("rc"."request_id" = "existing_1_1_1"."request_id")), '{}'::"text"[]) AS "child_names"
+                           FROM ( SELECT "existing_1_1_1_1"."request_id",
+                                    "existing_1_1_1_1"."requester_id",
+                                    "existing_1_1_1_1"."department_id",
+                                    "existing_1_1_1_1"."week_start",
+                                    "existing_1_1_1_1"."status",
+                                    "existing_1_1_1_1"."status_reason",
+                                    "existing_1_1_1_1"."is_late",
+                                    "existing_1_1_1_1"."changed_since_solve",
+                                    "existing_1_1_1_1"."depart_at",
+                                    "existing_1_1_1_1"."return_at",
+                                    "existing_1_1_1_1"."trip_shape",
+                                    "existing_1_1_1_1"."one_way_car_mode",
+                                    "existing_1_1_1_1"."needs_car_at_destination",
+                                    "existing_1_1_1_1"."destination",
+                                    "existing_1_1_1_1"."ride_type_name",
+                                    "existing_1_1_1_1"."ride_id",
+                                    "existing_1_1_1_1"."starts_at",
+                                    "existing_1_1_1_1"."ends_at",
+                                    "existing_1_1_1_1"."ride_status",
+                                    "existing_1_1_1_1"."car_name",
+                                    "existing_1_1_1_1"."license_plate",
+                                    "existing_1_1_1_1"."ride_origin",
+                                    "existing_1_1_1_1"."ride_destination",
+                                    "existing_1_1_1_1"."driver_name",
+                                    "existing_1_1_1_1"."role",
+                                    "existing_1_1_1_1"."leg",
+                                    "existing_1_1_1_1"."car_mode",
+                                    "existing_1_1_1_1"."pending_proposal_id",
+                                    "existing_1_1_1_1"."pending_proposal_type",
+                                    "existing_1_1_1_1"."pending_proposal_reason",
+                                    "existing_1_1_1_1"."pending_proposal_expires_at",
+                                    "existing_1_1_1_1"."preferred_car_id",
+                                    "existing_1_1_1_1"."original_depart_at",
+                                    "existing_1_1_1_1"."original_return_at",
+                                    "existing_1_1_1_1"."needs_driver",
+                                    "existing_1_1_1_1"."turnaround_override_minutes",
+                                    "q_1_1"."ride_description",
+                                    "q_1_1"."guest_passenger_names",
+                                    COALESCE(( SELECT "jsonb_agg"("jsonb_build_object"('profile_id', "p"."id", 'name', "p"."full_name") ORDER BY "p"."full_name", "p"."id") AS "jsonb_agg"
+   FROM ("public"."request_companions" "rc"
+     JOIN "public"."profiles" "p" ON (("p"."id" = "rc"."profile_id")))
+  WHERE ("rc"."request_id" = "q_1_1"."id")), '[]'::"jsonb") AS "companions"
+                                   FROM (( SELECT "existing_1_1_1_1_1"."request_id",
+    "existing_1_1_1_1_1"."requester_id",
+    "existing_1_1_1_1_1"."department_id",
+    "existing_1_1_1_1_1"."week_start",
+    "existing_1_1_1_1_1"."status",
+    "existing_1_1_1_1_1"."status_reason",
+    "existing_1_1_1_1_1"."is_late",
+    "existing_1_1_1_1_1"."changed_since_solve",
+    "existing_1_1_1_1_1"."depart_at",
+    "existing_1_1_1_1_1"."return_at",
+    "existing_1_1_1_1_1"."trip_shape",
+    "existing_1_1_1_1_1"."one_way_car_mode",
+    "existing_1_1_1_1_1"."needs_car_at_destination",
+    "existing_1_1_1_1_1"."destination",
+    "existing_1_1_1_1_1"."ride_type_name",
+    "existing_1_1_1_1_1"."ride_id",
+    "existing_1_1_1_1_1"."starts_at",
+    "existing_1_1_1_1_1"."ends_at",
+    "existing_1_1_1_1_1"."ride_status",
+    "existing_1_1_1_1_1"."car_name",
+    "existing_1_1_1_1_1"."license_plate",
+    "existing_1_1_1_1_1"."ride_origin",
+    "existing_1_1_1_1_1"."ride_destination",
+    "existing_1_1_1_1_1"."driver_name",
+    "existing_1_1_1_1_1"."role",
+    "existing_1_1_1_1_1"."leg",
+    "existing_1_1_1_1_1"."car_mode",
+    "existing_1_1_1_1_1"."pending_proposal_id",
+    "existing_1_1_1_1_1"."pending_proposal_type",
+    "existing_1_1_1_1_1"."pending_proposal_reason",
+    "existing_1_1_1_1_1"."pending_proposal_expires_at",
+    "q_1_1_1"."preferred_car_id",
+    "q_1_1_1"."original_depart_at",
+    "q_1_1_1"."original_return_at",
+    "r"."needs_driver",
+    "r"."turnaround_override_minutes"
+   FROM ((( SELECT "q_1_1_1_1"."id" AS "request_id",
+      "q_1_1_1_1"."requester_id",
+      "q_1_1_1_1"."department_id",
+      "q_1_1_1_1"."week_start",
+      "q_1_1_1_1"."status",
+      "q_1_1_1_1"."status_reason",
+      "q_1_1_1_1"."is_late",
+      "q_1_1_1_1"."changed_since_solve",
+      "q_1_1_1_1"."depart_at",
+      "q_1_1_1_1"."return_at",
+      "q_1_1_1_1"."trip_shape",
+      "q_1_1_1_1"."one_way_car_mode",
+      "q_1_1_1_1"."needs_car_at_destination",
+      COALESCE("dst"."name", "q_1_1_1_1"."destination_text") AS "destination",
+      "rt"."name_he" AS "ride_type_name",
+      "r_1"."id" AS "ride_id",
+      "r_1"."starts_at",
+      "r_1"."ends_at",
+      "r_1"."status" AS "ride_status",
+      "c"."name" AS "car_name",
+      "c"."license_plate",
+      "ro"."name" AS "ride_origin",
+      "re"."name" AS "ride_destination",
+      "drv"."full_name" AS "driver_name",
+      "rr"."role",
+      "rr"."leg",
+      "rr"."car_mode",
+      "pr"."id" AS "pending_proposal_id",
+      "pr"."type" AS "pending_proposal_type",
+      "pr"."reason_he" AS "pending_proposal_reason",
+      "pr"."expires_at" AS "pending_proposal_expires_at"
+     FROM ((((((((("public"."requests" "q_1_1_1_1"
+       JOIN "public"."ride_types" "rt" ON (("rt"."id" = "q_1_1_1_1"."ride_type_id")))
+       LEFT JOIN "public"."destinations" "dst" ON (("dst"."id" = "q_1_1_1_1"."destination_id")))
+       LEFT JOIN "public"."ride_requests" "rr" ON (("rr"."request_id" = "q_1_1_1_1"."id")))
+       LEFT JOIN "public"."rides" "r_1" ON ((("r_1"."id" = "rr"."ride_id") AND ("r_1"."status" <> 'cancelled'::"public"."ride_status"))))
+       LEFT JOIN "public"."destinations" "ro" ON (("ro"."id" = "r_1"."origin_id")))
+       LEFT JOIN "public"."destinations" "re" ON (("re"."id" = "r_1"."destination_id")))
+       LEFT JOIN "public"."cars" "c" ON (("c"."id" = "r_1"."car_id")))
+       LEFT JOIN "public"."profiles" "drv" ON (("drv"."id" = "r_1"."driver_id")))
+       LEFT JOIN "public"."proposals" "pr" ON ((("pr"."request_id" = "q_1_1_1_1"."id") AND ("pr"."status" = 'sent'::"public"."proposal_status"))))) "existing_1_1_1_1_1"
+     JOIN "public"."requests" "q_1_1_1" ON (("q_1_1_1"."id" = "existing_1_1_1_1_1"."request_id")))
+     LEFT JOIN "public"."rides" "r" ON (("r"."id" = "existing_1_1_1_1_1"."ride_id")))) "existing_1_1_1_1"
+                                     JOIN "public"."requests" "q_1_1" ON (("q_1_1"."id" = "existing_1_1_1_1"."request_id")))) "existing_1_1_1") "existing_1_1"
+                     JOIN "public"."requests" "q_1" ON (("q_1"."id" = "existing_1_1"."request_id")))) "existing_1"
+             JOIN "public"."requests" "q" ON (("q"."id" = "existing_1"."request_id")))
+             LEFT JOIN "public"."destinations" "od" ON (("od"."id" = "q"."origin_id")))) "existing";
 
 
 ALTER VIEW "public"."v_my_requests" OWNER TO "postgres";
@@ -10792,50 +11610,126 @@ ALTER TABLE "public"."weeks" OWNER TO "postgres";
 
 
 CREATE OR REPLACE VIEW "public"."v_request_template_suggestions" WITH ("security_invoker"='true') AS
- SELECT "t"."id" AS "template_id",
-    "t"."department_id",
-    "w"."week_start",
-    "t"."destination_id",
-    "t"."destination_text",
-    COALESCE("dst"."name", "t"."destination_text") AS "destination_name",
-    "t"."ride_type_id",
-    "rt"."name_he" AS "ride_type_name",
-    "t"."trip_shape",
-    "t"."depart_dow",
-    "t"."depart_time",
-    "t"."return_dow",
-    "t"."return_time",
-        CASE
-            WHEN ("t"."depart_dow" IS NOT NULL) THEN (((("w"."week_start" + ("t"."depart_dow")::integer))::timestamp without time zone + ("t"."depart_time")::interval) AT TIME ZONE 'Asia/Jerusalem'::"text")
-            ELSE NULL::timestamp with time zone
-        END AS "depart_at",
-        CASE
-            WHEN ("t"."return_dow" IS NOT NULL) THEN (((("w"."week_start" + ("t"."return_dow")::integer))::timestamp without time zone + ("t"."return_time")::interval) AT TIME ZONE 'Asia/Jerusalem'::"text")
-            ELSE NULL::timestamp with time zone
-        END AS "return_at",
-    "t"."one_way_car_mode",
-    "t"."needs_car_at_destination",
-    "t"."adults",
-    "t"."child_seats",
-    "t"."boosters",
-    "t"."child_ids",
-    "t"."companion_ids",
-    "t"."has_luggage",
-    "t"."flex_depart_early",
-    "t"."flex_depart_late",
-    "t"."flex_return_early",
-    "t"."flex_return_late",
-    "t"."preferred_car_id",
-    "t"."ride_description",
-    "t"."guest_passenger_names",
-    "t"."notes"
-   FROM ((("public"."request_templates" "t"
-     JOIN "public"."weeks" "w" ON ((("w"."department_id" = "t"."department_id") AND ("w"."phase" = 'open'::"public"."week_phase"))))
-     LEFT JOIN "public"."destinations" "dst" ON (("dst"."id" = "t"."destination_id")))
-     JOIN "public"."ride_types" "rt" ON (("rt"."id" = "t"."ride_type_id")))
-  WHERE (("t"."requester_id" = ( SELECT "auth"."uid"() AS "uid")) AND "t"."is_active" AND (("t"."snoozed_until_week" IS NULL) OR ("t"."snoozed_until_week" <= "w"."week_start")) AND (NOT (EXISTS ( SELECT 1
-           FROM "public"."requests" "q"
-          WHERE (("q"."template_id" = "t"."id") AND ("q"."week_start" = "w"."week_start") AND ("q"."status" <> ALL (ARRAY['withdrawn'::"public"."request_status", 'cancelled'::"public"."request_status", 'draft'::"public"."request_status"])))))));
+ SELECT "existing"."template_id",
+    "existing"."department_id",
+    "existing"."week_start",
+    "existing"."destination_id",
+    "existing"."destination_text",
+    "existing"."destination_name",
+    "existing"."ride_type_id",
+    "existing"."ride_type_name",
+    "existing"."trip_shape",
+    "existing"."depart_dow",
+    "existing"."depart_time",
+    "existing"."return_dow",
+    "existing"."return_time",
+    "existing"."depart_at",
+    "existing"."return_at",
+    "existing"."one_way_car_mode",
+    "existing"."needs_car_at_destination",
+    "existing"."adults",
+    "existing"."child_seats",
+    "existing"."boosters",
+    "existing"."child_ids",
+    "existing"."companion_ids",
+    "existing"."has_luggage",
+    "existing"."flex_depart_early",
+    "existing"."flex_depart_late",
+    "existing"."flex_return_early",
+    "existing"."flex_return_late",
+    "existing"."preferred_car_id",
+    "existing"."ride_description",
+    "existing"."guest_passenger_names",
+    "existing"."notes",
+    "existing"."origin_id",
+    "existing"."origin_text",
+    "existing"."origin_name",
+    "existing"."trip_type",
+    COALESCE(( SELECT "jsonb_agg"("jsonb_build_object"('leg', ("item"."value" ->> 'leg'::"text"), 'position', (("item"."value" ->> 'position'::"text"))::smallint, 'place_id', (NULLIF(("item"."value" ->> 'place_id'::"text"), ''::"text"))::"uuid", 'place_text', ("item"."value" ->> 'place_text'::"text"), 'name', COALESCE("d"."name", ("item"."value" ->> 'place_text'::"text")), 'eta', NULL::"unknown") ORDER BY ("item"."value" ->> 'leg'::"text"), (("item"."value" ->> 'position'::"text"))::smallint) AS "jsonb_agg"
+           FROM ("jsonb_array_elements"("tpl"."stops") "item"("value")
+             LEFT JOIN "public"."destinations" "d" ON (("d"."id" = (NULLIF(("item"."value" ->> 'place_id'::"text"), ''::"text"))::"uuid")))), '[]'::"jsonb") AS "stops"
+   FROM (( SELECT "existing_1"."template_id",
+            "existing_1"."department_id",
+            "existing_1"."week_start",
+            "existing_1"."destination_id",
+            "existing_1"."destination_text",
+            "existing_1"."destination_name",
+            "existing_1"."ride_type_id",
+            "existing_1"."ride_type_name",
+            "existing_1"."trip_shape",
+            "existing_1"."depart_dow",
+            "existing_1"."depart_time",
+            "existing_1"."return_dow",
+            "existing_1"."return_time",
+            "existing_1"."depart_at",
+            "existing_1"."return_at",
+            "existing_1"."one_way_car_mode",
+            "existing_1"."needs_car_at_destination",
+            "existing_1"."adults",
+            "existing_1"."child_seats",
+            "existing_1"."boosters",
+            "existing_1"."child_ids",
+            "existing_1"."companion_ids",
+            "existing_1"."has_luggage",
+            "existing_1"."flex_depart_early",
+            "existing_1"."flex_depart_late",
+            "existing_1"."flex_return_early",
+            "existing_1"."flex_return_late",
+            "existing_1"."preferred_car_id",
+            "existing_1"."ride_description",
+            "existing_1"."guest_passenger_names",
+            "existing_1"."notes",
+            "t"."origin_id",
+            "t"."origin_text",
+            COALESCE("od"."name", "t"."origin_text") AS "origin_name",
+            "t"."trip_type"
+           FROM ((( SELECT "t_1"."id" AS "template_id",
+                    "t_1"."department_id",
+                    "w"."week_start",
+                    "t_1"."destination_id",
+                    "t_1"."destination_text",
+                    COALESCE("dst"."name", "t_1"."destination_text") AS "destination_name",
+                    "t_1"."ride_type_id",
+                    "rt"."name_he" AS "ride_type_name",
+                    "t_1"."trip_shape",
+                    "t_1"."depart_dow",
+                    "t_1"."depart_time",
+                    "t_1"."return_dow",
+                    "t_1"."return_time",
+                        CASE
+                            WHEN ("t_1"."depart_dow" IS NOT NULL) THEN (((("w"."week_start" + ("t_1"."depart_dow")::integer))::timestamp without time zone + ("t_1"."depart_time")::interval) AT TIME ZONE 'Asia/Jerusalem'::"text")
+                            ELSE NULL::timestamp with time zone
+                        END AS "depart_at",
+                        CASE
+                            WHEN ("t_1"."return_dow" IS NOT NULL) THEN (((("w"."week_start" + ("t_1"."return_dow")::integer))::timestamp without time zone + ("t_1"."return_time")::interval) AT TIME ZONE 'Asia/Jerusalem'::"text")
+                            ELSE NULL::timestamp with time zone
+                        END AS "return_at",
+                    "t_1"."one_way_car_mode",
+                    "t_1"."needs_car_at_destination",
+                    "t_1"."adults",
+                    "t_1"."child_seats",
+                    "t_1"."boosters",
+                    "t_1"."child_ids",
+                    "t_1"."companion_ids",
+                    "t_1"."has_luggage",
+                    "t_1"."flex_depart_early",
+                    "t_1"."flex_depart_late",
+                    "t_1"."flex_return_early",
+                    "t_1"."flex_return_late",
+                    "t_1"."preferred_car_id",
+                    "t_1"."ride_description",
+                    "t_1"."guest_passenger_names",
+                    "t_1"."notes"
+                   FROM ((("public"."request_templates" "t_1"
+                     JOIN "public"."weeks" "w" ON ((("w"."department_id" = "t_1"."department_id") AND ("w"."phase" = 'open'::"public"."week_phase"))))
+                     LEFT JOIN "public"."destinations" "dst" ON (("dst"."id" = "t_1"."destination_id")))
+                     JOIN "public"."ride_types" "rt" ON (("rt"."id" = "t_1"."ride_type_id")))
+                  WHERE (("t_1"."requester_id" = ( SELECT "auth"."uid"() AS "uid")) AND "t_1"."is_active" AND (("t_1"."snoozed_until_week" IS NULL) OR ("t_1"."snoozed_until_week" <= "w"."week_start")) AND (NOT (EXISTS ( SELECT 1
+                           FROM "public"."requests" "q"
+                          WHERE (("q"."template_id" = "t_1"."id") AND ("q"."week_start" = "w"."week_start") AND ("q"."status" <> ALL (ARRAY['withdrawn'::"public"."request_status", 'cancelled'::"public"."request_status", 'draft'::"public"."request_status"])))))))) "existing_1"
+             JOIN "public"."request_templates" "t" ON (("t"."id" = "existing_1"."template_id")))
+             LEFT JOIN "public"."destinations" "od" ON (("od"."id" = "t"."origin_id")))) "existing"
+     JOIN "public"."request_templates" "tpl" ON (("tpl"."id" = "existing"."template_id")));
 
 
 ALTER VIEW "public"."v_request_template_suggestions" OWNER TO "postgres";
@@ -11133,6 +12027,16 @@ ALTER TABLE ONLY "public"."notifications"
 
 
 
+ALTER TABLE ONLY "public"."place_distances"
+    ADD CONSTRAINT "place_distances_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."place_distances"
+    ADD CONSTRAINT "place_distances_unique" UNIQUE ("department_id", "from_id", "to_id");
+
+
+
 ALTER TABLE ONLY "public"."policies"
     ADD CONSTRAINT "policies_pkey" PRIMARY KEY ("id");
 
@@ -11205,6 +12109,16 @@ ALTER TABLE ONLY "public"."request_children"
 
 ALTER TABLE ONLY "public"."request_companions"
     ADD CONSTRAINT "request_companions_pkey" PRIMARY KEY ("request_id", "profile_id");
+
+
+
+ALTER TABLE ONLY "public"."request_stops"
+    ADD CONSTRAINT "request_stops_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."request_stops"
+    ADD CONSTRAINT "request_stops_unique" UNIQUE ("request_id", "leg", "position");
 
 
 
@@ -11285,6 +12199,11 @@ ALTER TABLE ONLY "public"."siddur_versions"
 
 ALTER TABLE ONLY "public"."solver_runs"
     ADD CONSTRAINT "solver_runs_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."text_fragments"
+    ADD CONSTRAINT "text_fragments_pkey" PRIMARY KEY ("key");
 
 
 
@@ -11418,6 +12337,10 @@ CREATE INDEX "push_outbox_due_idx" ON "public"."push_outbox" USING "btree" ("nex
 
 
 
+CREATE INDEX "request_stops_request_id_idx" ON "public"."request_stops" USING "btree" ("request_id");
+
+
+
 CREATE INDEX "requests_dept_week_status_idx" ON "public"."requests" USING "btree" ("department_id", "week_start", "status");
 
 
@@ -11547,7 +12470,7 @@ CREATE OR REPLACE VIEW "public"."v_board_rides" WITH ("security_invoker"='true')
     "existing"."driver_id",
     "existing"."driver_name",
     "existing"."is_chauffeur",
-    "existing"."served",
+    COALESCE("served_stops"."served", "existing"."served") AS "served",
     "existing"."notes",
     "existing"."needs_driver",
     "existing"."turnaround_override_minutes",
@@ -11557,7 +12480,8 @@ CREATE OR REPLACE VIEW "public"."v_board_rides" WITH ("security_invoker"='true')
     "existing"."series_count",
     "existing"."passengers",
     "existing"."people",
-    "r"."auto_relocation"
+    "existing"."auto_relocation",
+    "existing"."relay_partner"
    FROM (( SELECT "existing_1"."id",
             "existing_1"."department_id",
             "existing_1"."week_start",
@@ -11587,104 +12511,10 @@ CREATE OR REPLACE VIEW "public"."v_board_rides" WITH ("security_invoker"='true')
             "existing_1"."series_index",
             "existing_1"."series_count",
             "existing_1"."passengers",
-            COALESCE(( SELECT "jsonb_agg"("jsonb_build_object"('key', "pe"."key", 'source', "pe"."source", 'request_id', "pe"."request_id", 'ride_passenger_id', "pe"."ride_passenger_id", 'person_id', "pe"."person_id", 'child_id', "pe"."child_id", 'display_name', "pe"."display_name", 'seat_kind', "pe"."seat_kind", 'added_by', "pe"."added_by", 'removable', "pe"."removable") ORDER BY "pe"."is_driver" DESC, "pe"."display_name", "pe"."key") AS "jsonb_agg"
-                   FROM ( SELECT ('driver:'::"text" || "existing_1"."driver_id") AS "key",
-                            'driver'::"text" AS "source",
-                            ( SELECT "q0"."id"
-                                   FROM ("public"."ride_requests" "rr0"
-                                     JOIN "public"."requests" "q0" ON (("q0"."id" = "rr0"."request_id")))
-                                  WHERE (("rr0"."ride_id" = "existing_1"."id") AND ("q0"."requester_id" = "existing_1"."driver_id"))
-                                 LIMIT 1) AS "request_id",
-                            NULL::"uuid" AS "ride_passenger_id",
-                            "existing_1"."driver_id" AS "person_id",
-                            NULL::"uuid" AS "child_id",
-                            "existing_1"."driver_name" AS "display_name",
-                            'adult'::"text" AS "seat_kind",
-                            NULL::"uuid" AS "added_by",
-                            false AS "removable",
-                            true AS "is_driver"
-                          WHERE ("existing_1"."driver_id" IS NOT NULL)
-                        UNION ALL
-                         SELECT ('req:'::"text" || "q"."id"),
-                            'requester'::"text" AS "text",
-                            "q"."id",
-                            NULL::"uuid" AS "uuid",
-                            "q"."requester_id",
-                            NULL::"uuid" AS "uuid",
-                            "p"."full_name",
-                            'adult'::"text" AS "text",
-                            NULL::"uuid" AS "uuid",
-                            true,
-                            false
-                           FROM (("public"."ride_requests" "rr"
-                             JOIN "public"."requests" "q" ON (("q"."id" = "rr"."request_id")))
-                             JOIN "public"."profiles" "p" ON (("p"."id" = "q"."requester_id")))
-                          WHERE (("rr"."ride_id" = "existing_1"."id") AND ("q"."requester_id" IS DISTINCT FROM "existing_1"."driver_id"))
-                        UNION ALL
-                         SELECT ((('comp:'::"text" || "q"."id") || ':'::"text") || "rc"."profile_id"),
-                            'companion'::"text" AS "text",
-                            "q"."id",
-                            NULL::"uuid" AS "uuid",
-                            "rc"."profile_id",
-                            NULL::"uuid" AS "uuid",
-                            "p"."full_name",
-                            'adult'::"text" AS "text",
-                            NULL::"uuid" AS "uuid",
-                            true,
-                            false
-                           FROM ((("public"."ride_requests" "rr"
-                             JOIN "public"."requests" "q" ON (("q"."id" = "rr"."request_id")))
-                             JOIN "public"."request_companions" "rc" ON (("rc"."request_id" = "q"."id")))
-                             JOIN "public"."profiles" "p" ON (("p"."id" = "rc"."profile_id")))
-                          WHERE ("rr"."ride_id" = "existing_1"."id")
-                        UNION ALL
-                         SELECT ((('child:'::"text" || "q"."id") || ':'::"text") || "rc"."child_id"),
-                            'child'::"text" AS "text",
-                            "q"."id",
-                            NULL::"uuid" AS "uuid",
-                            NULL::"uuid" AS "uuid",
-                            "rc"."child_id",
-                            "c"."full_name",
-                            'child_seat'::"text" AS "text",
-                            NULL::"uuid" AS "uuid",
-                            true,
-                            false
-                           FROM ((("public"."ride_requests" "rr"
-                             JOIN "public"."requests" "q" ON (("q"."id" = "rr"."request_id")))
-                             JOIN "public"."request_children" "rc" ON (("rc"."request_id" = "q"."id")))
-                             JOIN "public"."children" "c" ON (("c"."id" = "rc"."child_id")))
-                          WHERE ("rr"."ride_id" = "existing_1"."id")
-                        UNION ALL
-                         SELECT ((('guest:'::"text" || "q"."id") || ':'::"text") || "gn"."n"),
-                            'guest'::"text" AS "text",
-                            "q"."id",
-                            NULL::"uuid" AS "uuid",
-                            NULL::"uuid" AS "uuid",
-                            NULL::"uuid" AS "uuid",
-                            "gn"."name",
-                            'adult'::"text" AS "text",
-                            NULL::"uuid" AS "uuid",
-                            true,
-                            false
-                           FROM (("public"."ride_requests" "rr"
-                             JOIN "public"."requests" "q" ON (("q"."id" = "rr"."request_id")))
-                             CROSS JOIN LATERAL "unnest"("q"."guest_passenger_names") WITH ORDINALITY "gn"("name", "n"))
-                          WHERE ("rr"."ride_id" = "existing_1"."id")
-                        UNION ALL
-                         SELECT ('added:'::"text" || "rp"."id"),
-                            'added'::"text" AS "text",
-                            NULL::"uuid" AS "uuid",
-                            "rp"."id",
-                            "rp"."person_id",
-                            "rp"."child_id",
-                            "rp"."display_name",
-                            "rp"."seat_kind",
-                            "rp"."added_by",
-                            true,
-                            false
-                           FROM "public"."ride_passengers" "rp"
-                          WHERE ("rp"."ride_id" = "existing_1"."id")) "pe"("key", "source", "request_id", "ride_passenger_id", "person_id", "child_id", "display_name", "seat_kind", "added_by", "removable", "is_driver")), '[]'::"jsonb") AS "people"
-           FROM ( SELECT "existing_1_1"."id",
+            "existing_1"."people",
+            "existing_1"."auto_relocation",
+            "rp"."relay_partner"
+           FROM (( SELECT "existing_1_1"."id",
                     "existing_1_1"."department_id",
                     "existing_1_1"."week_start",
                     "existing_1_1"."car_id",
@@ -11712,10 +12542,10 @@ CREATE OR REPLACE VIEW "public"."v_board_rides" WITH ("security_invoker"='true')
                     "existing_1_1"."series_id",
                     "existing_1_1"."series_index",
                     "existing_1_1"."series_count",
-                    COALESCE(( SELECT "jsonb_agg"("jsonb_build_object"('id', "rp"."id", 'person_id', "rp"."person_id", 'child_id', "rp"."child_id", 'display_name', "rp"."display_name", 'seat_kind', "rp"."seat_kind", 'added_by', "rp"."added_by") ORDER BY "rp"."created_at") AS "jsonb_agg"
-                           FROM "public"."ride_passengers" "rp"
-                          WHERE ("rp"."ride_id" = "existing_1_1"."id")), '[]'::"jsonb") AS "passengers"
-                   FROM ( SELECT "existing_1_1_1"."id",
+                    "existing_1_1"."passengers",
+                    "existing_1_1"."people",
+                    "r"."auto_relocation"
+                   FROM (( SELECT "existing_1_1_1"."id",
                             "existing_1_1_1"."department_id",
                             "existing_1_1_1"."week_start",
                             "existing_1_1_1"."car_id",
@@ -11740,20 +12570,108 @@ CREATE OR REPLACE VIEW "public"."v_board_rides" WITH ("security_invoker"='true')
                             "existing_1_1_1"."needs_driver",
                             "existing_1_1_1"."turnaround_override_minutes",
                             "existing_1_1_1"."planning_conflict",
-                            "r_1"."series_id",
-                            ( SELECT "q"."series_index"
-                                   FROM ("public"."ride_requests" "rr"
-                                     JOIN "public"."requests" "q" ON (("q"."id" = "rr"."request_id")))
-                                  WHERE (("rr"."ride_id" = "existing_1_1_1"."id") AND ("q"."series_id" IS NOT NULL))
-                                  ORDER BY "q"."series_index"
-                                 LIMIT 1) AS "series_index",
-                            ( SELECT "q"."series_count"
-                                   FROM ("public"."ride_requests" "rr"
-                                     JOIN "public"."requests" "q" ON (("q"."id" = "rr"."request_id")))
-                                  WHERE (("rr"."ride_id" = "existing_1_1_1"."id") AND ("q"."series_id" IS NOT NULL))
-                                  ORDER BY "q"."series_index"
-                                 LIMIT 1) AS "series_count"
-                           FROM (( SELECT "existing_1_1_1_1"."id",
+                            "existing_1_1_1"."series_id",
+                            "existing_1_1_1"."series_index",
+                            "existing_1_1_1"."series_count",
+                            "existing_1_1_1"."passengers",
+                            COALESCE(( SELECT "jsonb_agg"("jsonb_build_object"('key', "pe"."key", 'source', "pe"."source", 'request_id', "pe"."request_id", 'ride_passenger_id', "pe"."ride_passenger_id", 'person_id', "pe"."person_id", 'child_id', "pe"."child_id", 'display_name', "pe"."display_name", 'seat_kind', "pe"."seat_kind", 'added_by', "pe"."added_by", 'removable', "pe"."removable") ORDER BY "pe"."is_driver" DESC, "pe"."display_name", "pe"."key") AS "jsonb_agg"
+                                   FROM ( SELECT ('driver:'::"text" || "existing_1_1_1"."driver_id") AS "key",
+    'driver'::"text" AS "source",
+    ( SELECT "q0"."id"
+     FROM ("public"."ride_requests" "rr0"
+       JOIN "public"."requests" "q0" ON (("q0"."id" = "rr0"."request_id")))
+    WHERE (("rr0"."ride_id" = "existing_1_1_1"."id") AND ("q0"."requester_id" = "existing_1_1_1"."driver_id"))
+   LIMIT 1) AS "request_id",
+    NULL::"uuid" AS "ride_passenger_id",
+    "existing_1_1_1"."driver_id" AS "person_id",
+    NULL::"uuid" AS "child_id",
+    "existing_1_1_1"."driver_name" AS "display_name",
+    'adult'::"text" AS "seat_kind",
+    NULL::"uuid" AS "added_by",
+    false AS "removable",
+    true AS "is_driver"
+  WHERE ("existing_1_1_1"."driver_id" IS NOT NULL)
+UNION ALL
+ SELECT ('req:'::"text" || "q"."id"),
+    'requester'::"text" AS "text",
+    "q"."id",
+    NULL::"uuid" AS "uuid",
+    "q"."requester_id",
+    NULL::"uuid" AS "uuid",
+    "p"."full_name",
+    'adult'::"text" AS "text",
+    NULL::"uuid" AS "uuid",
+    true,
+    false
+   FROM (("public"."ride_requests" "rr"
+     JOIN "public"."requests" "q" ON (("q"."id" = "rr"."request_id")))
+     JOIN "public"."profiles" "p" ON (("p"."id" = "q"."requester_id")))
+  WHERE (("rr"."ride_id" = "existing_1_1_1"."id") AND ("q"."requester_id" IS DISTINCT FROM "existing_1_1_1"."driver_id"))
+UNION ALL
+ SELECT ((('comp:'::"text" || "q"."id") || ':'::"text") || "rc"."profile_id"),
+    'companion'::"text" AS "text",
+    "q"."id",
+    NULL::"uuid" AS "uuid",
+    "rc"."profile_id",
+    NULL::"uuid" AS "uuid",
+    "p"."full_name",
+    'adult'::"text" AS "text",
+    NULL::"uuid" AS "uuid",
+    true,
+    false
+   FROM ((("public"."ride_requests" "rr"
+     JOIN "public"."requests" "q" ON (("q"."id" = "rr"."request_id")))
+     JOIN "public"."request_companions" "rc" ON (("rc"."request_id" = "q"."id")))
+     JOIN "public"."profiles" "p" ON (("p"."id" = "rc"."profile_id")))
+  WHERE ("rr"."ride_id" = "existing_1_1_1"."id")
+UNION ALL
+ SELECT ((('child:'::"text" || "q"."id") || ':'::"text") || "rc"."child_id"),
+    'child'::"text" AS "text",
+    "q"."id",
+    NULL::"uuid" AS "uuid",
+    NULL::"uuid" AS "uuid",
+    "rc"."child_id",
+    "c"."full_name",
+    'child_seat'::"text" AS "text",
+    NULL::"uuid" AS "uuid",
+    true,
+    false
+   FROM ((("public"."ride_requests" "rr"
+     JOIN "public"."requests" "q" ON (("q"."id" = "rr"."request_id")))
+     JOIN "public"."request_children" "rc" ON (("rc"."request_id" = "q"."id")))
+     JOIN "public"."children" "c" ON (("c"."id" = "rc"."child_id")))
+  WHERE ("rr"."ride_id" = "existing_1_1_1"."id")
+UNION ALL
+ SELECT ((('guest:'::"text" || "q"."id") || ':'::"text") || "gn"."n"),
+    'guest'::"text" AS "text",
+    "q"."id",
+    NULL::"uuid" AS "uuid",
+    NULL::"uuid" AS "uuid",
+    NULL::"uuid" AS "uuid",
+    "gn"."name",
+    'adult'::"text" AS "text",
+    NULL::"uuid" AS "uuid",
+    true,
+    false
+   FROM (("public"."ride_requests" "rr"
+     JOIN "public"."requests" "q" ON (("q"."id" = "rr"."request_id")))
+     CROSS JOIN LATERAL "unnest"("q"."guest_passenger_names") WITH ORDINALITY "gn"("name", "n"))
+  WHERE ("rr"."ride_id" = "existing_1_1_1"."id")
+UNION ALL
+ SELECT ('added:'::"text" || "rp_1"."id"),
+    'added'::"text" AS "text",
+    NULL::"uuid" AS "uuid",
+    "rp_1"."id",
+    "rp_1"."person_id",
+    "rp_1"."child_id",
+    "rp_1"."display_name",
+    "rp_1"."seat_kind",
+    "rp_1"."added_by",
+    true,
+    false
+   FROM "public"."ride_passengers" "rp_1"
+  WHERE ("rp_1"."ride_id" = "existing_1_1_1"."id")) "pe"("key", "source", "request_id", "ride_passenger_id", "person_id", "child_id", "display_name", "seat_kind", "added_by", "removable", "is_driver")), '[]'::"jsonb") AS "people"
+                           FROM ( SELECT "existing_1_1_1_1"."id",
                                     "existing_1_1_1_1"."department_id",
                                     "existing_1_1_1_1"."week_start",
                                     "existing_1_1_1_1"."car_id",
@@ -11777,8 +12695,14 @@ CREATE OR REPLACE VIEW "public"."v_board_rides" WITH ("security_invoker"='true')
                                     "existing_1_1_1_1"."notes",
                                     "existing_1_1_1_1"."needs_driver",
                                     "existing_1_1_1_1"."turnaround_override_minutes",
-                                    "r_1_1"."planning_conflict"
-                                   FROM (( SELECT "existing_1_1_1_1_1"."id",
+                                    "existing_1_1_1_1"."planning_conflict",
+                                    "existing_1_1_1_1"."series_id",
+                                    "existing_1_1_1_1"."series_index",
+                                    "existing_1_1_1_1"."series_count",
+                                    COALESCE(( SELECT "jsonb_agg"("jsonb_build_object"('id', "rp_1"."id", 'person_id', "rp_1"."person_id", 'child_id', "rp_1"."child_id", 'display_name', "rp_1"."display_name", 'seat_kind', "rp_1"."seat_kind", 'added_by', "rp_1"."added_by") ORDER BY "rp_1"."created_at") AS "jsonb_agg"
+   FROM "public"."ride_passengers" "rp_1"
+  WHERE ("rp_1"."ride_id" = "existing_1_1_1_1"."id")), '[]'::"jsonb") AS "passengers"
+                                   FROM ( SELECT "existing_1_1_1_1_1"."id",
     "existing_1_1_1_1_1"."department_id",
     "existing_1_1_1_1_1"."week_start",
     "existing_1_1_1_1_1"."car_id",
@@ -11800,53 +12724,160 @@ CREATE OR REPLACE VIEW "public"."v_board_rides" WITH ("security_invoker"='true')
     "existing_1_1_1_1_1"."is_chauffeur",
     "existing_1_1_1_1_1"."served",
     "existing_1_1_1_1_1"."notes",
-    "r_1_1_1"."needs_driver",
-    "r_1_1_1"."turnaround_override_minutes"
-   FROM (( SELECT "r_1_1_1_1"."id",
-      "r_1_1_1_1"."department_id",
-      "r_1_1_1_1"."week_start",
-      "r_1_1_1_1"."car_id",
-      "r_1_1_1_1"."starts_at",
-      "r_1_1_1_1"."ends_at",
-      "r_1_1_1_1"."blocked_until",
-      "r_1_1_1_1"."status",
-      "r_1_1_1_1"."is_pinned",
-      "r_1_1_1_1"."pin_reason",
-      "r_1_1_1_1"."version",
-      "r_1_1_1_1"."origin_id",
-      "o"."name" AS "origin_name",
-      "r_1_1_1_1"."destination_id",
-      "e"."name" AS "destination_name",
-      "r_1_1_1_1"."overflow_allowed",
-      "r_1_1_1_1"."overnight_ack_by",
-      "r_1_1_1_1"."driver_id",
-      "d"."full_name" AS "driver_name",
-      (NOT (EXISTS ( SELECT 1
-       FROM "public"."ride_requests" "x"
-      WHERE (("x"."ride_id" = "r_1_1_1_1"."id") AND ("x"."role" = 'driver'::"public"."ride_role"))))) AS "is_chauffeur",
-      COALESCE("jsonb_agg"("jsonb_build_object"('request_id', "q"."id", 'role', "rr"."role", 'leg', "rr"."leg", 'car_mode', "rr"."car_mode", 'requester', "p"."full_name", 'destination', COALESCE("dst"."name", "q"."destination_text"), 'ride_type', "rt"."code", 'adults', "q"."adults", 'child_seats', "q"."child_seats", 'boosters', "q"."boosters", 'luggage', "q"."has_luggage", 'child_names', COALESCE(( SELECT "array_agg"("c"."full_name" ORDER BY "c"."full_name") AS "array_agg"
-       FROM ("public"."request_children" "rc"
-         JOIN "public"."children" "c" ON (("c"."id" = "rc"."child_id")))
-      WHERE ("rc"."request_id" = "q"."id")), '{}'::"text"[]), 'ride_description', "q"."ride_description", 'guest_passenger_names', "q"."guest_passenger_names", 'companions', COALESCE(( SELECT "jsonb_agg"("jsonb_build_object"('profile_id', "p_1"."id", 'name', "p_1"."full_name") ORDER BY "p_1"."full_name", "p_1"."id") AS "jsonb_agg"
-       FROM ("public"."request_companions" "rc"
-         JOIN "public"."profiles" "p_1" ON (("p_1"."id" = "rc"."profile_id")))
-      WHERE ("rc"."request_id" = "q"."id")), '[]'::"jsonb"), 'preferred_car_id', "q"."preferred_car_id", 'original_depart_at', "q"."original_depart_at", 'original_return_at', "q"."original_return_at") ORDER BY "rr"."role", "p"."full_name") FILTER (WHERE ("q"."id" IS NOT NULL)), '[]'::"jsonb") AS "served",
-      "r_1_1_1_1"."notes"
-     FROM (((((((("public"."rides" "r_1_1_1_1"
-       JOIN "public"."destinations" "o" ON (("o"."id" = "r_1_1_1_1"."origin_id")))
-       JOIN "public"."destinations" "e" ON (("e"."id" = "r_1_1_1_1"."destination_id")))
-       LEFT JOIN "public"."profiles" "d" ON (("d"."id" = "r_1_1_1_1"."driver_id")))
-       LEFT JOIN "public"."ride_requests" "rr" ON (("rr"."ride_id" = "r_1_1_1_1"."id")))
-       LEFT JOIN "public"."requests" "q" ON (("q"."id" = "rr"."request_id")))
-       LEFT JOIN "public"."profiles" "p" ON (("p"."id" = "q"."requester_id")))
-       LEFT JOIN "public"."ride_types" "rt" ON (("rt"."id" = "q"."ride_type_id")))
-       LEFT JOIN "public"."destinations" "dst" ON (("dst"."id" = "q"."destination_id")))
-    WHERE ("r_1_1_1_1"."status" <> 'cancelled'::"public"."ride_status")
-    GROUP BY "r_1_1_1_1"."id", "o"."name", "e"."name", "d"."full_name") "existing_1_1_1_1_1"
-     JOIN "public"."rides" "r_1_1_1" ON (("r_1_1_1"."id" = "existing_1_1_1_1_1"."id")))) "existing_1_1_1_1"
-                                     JOIN "public"."rides" "r_1_1" ON (("r_1_1"."id" = "existing_1_1_1_1"."id")))) "existing_1_1_1"
-                             JOIN "public"."rides" "r_1" ON (("r_1"."id" = "existing_1_1_1"."id")))) "existing_1_1") "existing_1") "existing"
-     JOIN "public"."rides" "r" ON (("r"."id" = "existing"."id")));
+    "existing_1_1_1_1_1"."needs_driver",
+    "existing_1_1_1_1_1"."turnaround_override_minutes",
+    "existing_1_1_1_1_1"."planning_conflict",
+    "r_1"."series_id",
+    ( SELECT "q"."series_index"
+     FROM ("public"."ride_requests" "rr"
+       JOIN "public"."requests" "q" ON (("q"."id" = "rr"."request_id")))
+    WHERE (("rr"."ride_id" = "existing_1_1_1_1_1"."id") AND ("q"."series_id" IS NOT NULL))
+    ORDER BY "q"."series_index"
+   LIMIT 1) AS "series_index",
+    ( SELECT "q"."series_count"
+     FROM ("public"."ride_requests" "rr"
+       JOIN "public"."requests" "q" ON (("q"."id" = "rr"."request_id")))
+    WHERE (("rr"."ride_id" = "existing_1_1_1_1_1"."id") AND ("q"."series_id" IS NOT NULL))
+    ORDER BY "q"."series_index"
+   LIMIT 1) AS "series_count"
+   FROM (( SELECT "existing_1_1_1_1_1_1"."id",
+      "existing_1_1_1_1_1_1"."department_id",
+      "existing_1_1_1_1_1_1"."week_start",
+      "existing_1_1_1_1_1_1"."car_id",
+      "existing_1_1_1_1_1_1"."starts_at",
+      "existing_1_1_1_1_1_1"."ends_at",
+      "existing_1_1_1_1_1_1"."blocked_until",
+      "existing_1_1_1_1_1_1"."status",
+      "existing_1_1_1_1_1_1"."is_pinned",
+      "existing_1_1_1_1_1_1"."pin_reason",
+      "existing_1_1_1_1_1_1"."version",
+      "existing_1_1_1_1_1_1"."origin_id",
+      "existing_1_1_1_1_1_1"."origin_name",
+      "existing_1_1_1_1_1_1"."destination_id",
+      "existing_1_1_1_1_1_1"."destination_name",
+      "existing_1_1_1_1_1_1"."overflow_allowed",
+      "existing_1_1_1_1_1_1"."overnight_ack_by",
+      "existing_1_1_1_1_1_1"."driver_id",
+      "existing_1_1_1_1_1_1"."driver_name",
+      "existing_1_1_1_1_1_1"."is_chauffeur",
+      "existing_1_1_1_1_1_1"."served",
+      "existing_1_1_1_1_1_1"."notes",
+      "existing_1_1_1_1_1_1"."needs_driver",
+      "existing_1_1_1_1_1_1"."turnaround_override_minutes",
+      "r_1_1"."planning_conflict"
+     FROM (( SELECT "existing_1_1_1_1_1_1_1"."id",
+        "existing_1_1_1_1_1_1_1"."department_id",
+        "existing_1_1_1_1_1_1_1"."week_start",
+        "existing_1_1_1_1_1_1_1"."car_id",
+        "existing_1_1_1_1_1_1_1"."starts_at",
+        "existing_1_1_1_1_1_1_1"."ends_at",
+        "existing_1_1_1_1_1_1_1"."blocked_until",
+        "existing_1_1_1_1_1_1_1"."status",
+        "existing_1_1_1_1_1_1_1"."is_pinned",
+        "existing_1_1_1_1_1_1_1"."pin_reason",
+        "existing_1_1_1_1_1_1_1"."version",
+        "existing_1_1_1_1_1_1_1"."origin_id",
+        "existing_1_1_1_1_1_1_1"."origin_name",
+        "existing_1_1_1_1_1_1_1"."destination_id",
+        "existing_1_1_1_1_1_1_1"."destination_name",
+        "existing_1_1_1_1_1_1_1"."overflow_allowed",
+        "existing_1_1_1_1_1_1_1"."overnight_ack_by",
+        "existing_1_1_1_1_1_1_1"."driver_id",
+        "existing_1_1_1_1_1_1_1"."driver_name",
+        "existing_1_1_1_1_1_1_1"."is_chauffeur",
+        "existing_1_1_1_1_1_1_1"."served",
+        "existing_1_1_1_1_1_1_1"."notes",
+        "r_1_1_1"."needs_driver",
+        "r_1_1_1"."turnaround_override_minutes"
+       FROM (( SELECT "r_1_1_1_1"."id",
+          "r_1_1_1_1"."department_id",
+          "r_1_1_1_1"."week_start",
+          "r_1_1_1_1"."car_id",
+          "r_1_1_1_1"."starts_at",
+          "r_1_1_1_1"."ends_at",
+          "r_1_1_1_1"."blocked_until",
+          "r_1_1_1_1"."status",
+          "r_1_1_1_1"."is_pinned",
+          "r_1_1_1_1"."pin_reason",
+          "r_1_1_1_1"."version",
+          "r_1_1_1_1"."origin_id",
+          "o"."name" AS "origin_name",
+          "r_1_1_1_1"."destination_id",
+          "e"."name" AS "destination_name",
+          "r_1_1_1_1"."overflow_allowed",
+          "r_1_1_1_1"."overnight_ack_by",
+          "r_1_1_1_1"."driver_id",
+          "d"."full_name" AS "driver_name",
+          (NOT (EXISTS ( SELECT 1
+           FROM "public"."ride_requests" "x"
+          WHERE (("x"."ride_id" = "r_1_1_1_1"."id") AND ("x"."role" = 'driver'::"public"."ride_role"))))) AS "is_chauffeur",
+          COALESCE("jsonb_agg"("jsonb_build_object"('request_id', "q"."id", 'role', "rr"."role", 'leg', "rr"."leg", 'car_mode', "rr"."car_mode", 'requester', "p"."full_name", 'destination', COALESCE("dst"."name", "q"."destination_text"), 'ride_type', "rt"."code", 'adults', "q"."adults", 'child_seats', "q"."child_seats", 'boosters', "q"."boosters", 'luggage', "q"."has_luggage", 'origin_id', "q"."origin_id", 'origin_text', "q"."origin_text", 'origin_name', ( SELECT "dd"."name"
+           FROM "public"."destinations" "dd"
+          WHERE ("dd"."id" = "q"."origin_id")), 'trip_type', "q"."trip_type", 'child_names', COALESCE(( SELECT "array_agg"("c"."full_name" ORDER BY "c"."full_name") AS "array_agg"
+           FROM ("public"."request_children" "rc"
+             JOIN "public"."children" "c" ON (("c"."id" = "rc"."child_id")))
+          WHERE ("rc"."request_id" = "q"."id")), '{}'::"text"[]), 'ride_description', "q"."ride_description", 'guest_passenger_names', "q"."guest_passenger_names", 'companions', COALESCE(( SELECT "jsonb_agg"("jsonb_build_object"('profile_id', "p_1"."id", 'name', "p_1"."full_name") ORDER BY "p_1"."full_name", "p_1"."id") AS "jsonb_agg"
+           FROM ("public"."request_companions" "rc"
+             JOIN "public"."profiles" "p_1" ON (("p_1"."id" = "rc"."profile_id")))
+          WHERE ("rc"."request_id" = "q"."id")), '[]'::"jsonb"), 'preferred_car_id', "q"."preferred_car_id", 'original_depart_at', "q"."original_depart_at", 'original_return_at', "q"."original_return_at") ORDER BY "rr"."role", "p"."full_name") FILTER (WHERE ("q"."id" IS NOT NULL)), '[]'::"jsonb") AS "served",
+          "r_1_1_1_1"."notes"
+         FROM (((((((("public"."rides" "r_1_1_1_1"
+           JOIN "public"."destinations" "o" ON (("o"."id" = "r_1_1_1_1"."origin_id")))
+           JOIN "public"."destinations" "e" ON (("e"."id" = "r_1_1_1_1"."destination_id")))
+           LEFT JOIN "public"."profiles" "d" ON (("d"."id" = "r_1_1_1_1"."driver_id")))
+           LEFT JOIN "public"."ride_requests" "rr" ON (("rr"."ride_id" = "r_1_1_1_1"."id")))
+           LEFT JOIN "public"."requests" "q" ON (("q"."id" = "rr"."request_id")))
+           LEFT JOIN "public"."profiles" "p" ON (("p"."id" = "q"."requester_id")))
+           LEFT JOIN "public"."ride_types" "rt" ON (("rt"."id" = "q"."ride_type_id")))
+           LEFT JOIN "public"."destinations" "dst" ON (("dst"."id" = "q"."destination_id")))
+        WHERE ("r_1_1_1_1"."status" <> 'cancelled'::"public"."ride_status")
+        GROUP BY "r_1_1_1_1"."id", "o"."name", "e"."name", "d"."full_name") "existing_1_1_1_1_1_1_1"
+         JOIN "public"."rides" "r_1_1_1" ON (("r_1_1_1"."id" = "existing_1_1_1_1_1_1_1"."id")))) "existing_1_1_1_1_1_1"
+       JOIN "public"."rides" "r_1_1" ON (("r_1_1"."id" = "existing_1_1_1_1_1_1"."id")))) "existing_1_1_1_1_1"
+     JOIN "public"."rides" "r_1" ON (("r_1"."id" = "existing_1_1_1_1_1"."id")))) "existing_1_1_1_1") "existing_1_1_1") "existing_1_1"
+                     JOIN "public"."rides" "r" ON (("r"."id" = "existing_1_1"."id")))) "existing_1"
+             LEFT JOIN LATERAL ( SELECT "jsonb_build_object"('ride_id', "x"."ride_id", 'name', COALESCE("x"."driver_name", "x"."first_requester"), 'at', "x"."at") AS "relay_partner"
+                   FROM (( SELECT "nr"."id" AS "ride_id",
+                            "nr"."starts_at" AS "at",
+                            "dp"."full_name" AS "driver_name",
+                            ( SELECT "p"."full_name"
+                                   FROM (("public"."ride_requests" "rr"
+                                     JOIN "public"."requests" "q" ON (("q"."id" = "rr"."request_id")))
+                                     JOIN "public"."profiles" "p" ON (("p"."id" = "q"."requester_id")))
+                                  WHERE ("rr"."ride_id" = "nr"."id")
+                                  ORDER BY "rr"."created_at"
+                                 LIMIT 1) AS "first_requester"
+                           FROM ("public"."rides" "nr"
+                             LEFT JOIN "public"."profiles" "dp" ON (("dp"."id" = "nr"."driver_id")))
+                          WHERE ((EXISTS ( SELECT 1
+                                   FROM "jsonb_array_elements"("existing_1"."served") "e"("value")
+                                  WHERE ((("e"."value" ->> 'role'::"text") = 'driver'::"text") AND (("e"."value" ->> 'car_mode'::"text") = 'relay'::"text") AND (("e"."value" ->> 'leg'::"text") = 'out'::"text")))) AND ("nr"."id" <> "existing_1"."id") AND ("nr"."car_id" = "existing_1"."car_id") AND ("nr"."department_id" = "existing_1"."department_id") AND ("nr"."week_start" = "existing_1"."week_start") AND ("nr"."status" <> 'cancelled'::"public"."ride_status") AND ("nr"."origin_id" = "existing_1"."destination_id") AND ((("nr"."starts_at" AT TIME ZONE 'Asia/Jerusalem'::"text"))::"date" = (("existing_1"."ends_at" AT TIME ZONE 'Asia/Jerusalem'::"text"))::"date"))
+                          ORDER BY "nr"."starts_at"
+                         LIMIT 1)
+                        UNION ALL
+                        ( SELECT "pr"."id" AS "ride_id",
+                            "pr"."ends_at" AS "at",
+                            "dp2"."full_name" AS "driver_name",
+                            ( SELECT "p"."full_name"
+                                   FROM (("public"."ride_requests" "rr"
+                                     JOIN "public"."requests" "q" ON (("q"."id" = "rr"."request_id")))
+                                     JOIN "public"."profiles" "p" ON (("p"."id" = "q"."requester_id")))
+                                  WHERE ("rr"."ride_id" = "pr"."id")
+                                  ORDER BY "rr"."created_at"
+                                 LIMIT 1) AS "first_requester"
+                           FROM ("public"."rides" "pr"
+                             LEFT JOIN "public"."profiles" "dp2" ON (("dp2"."id" = "pr"."driver_id")))
+                          WHERE ((EXISTS ( SELECT 1
+                                   FROM "jsonb_array_elements"("existing_1"."served") "e"("value")
+                                  WHERE ((("e"."value" ->> 'role'::"text") = 'driver'::"text") AND (("e"."value" ->> 'car_mode'::"text") = 'relay'::"text") AND (("e"."value" ->> 'leg'::"text") = 'return'::"text")))) AND ("pr"."id" <> "existing_1"."id") AND ("pr"."car_id" = "existing_1"."car_id") AND ("pr"."department_id" = "existing_1"."department_id") AND ("pr"."week_start" = "existing_1"."week_start") AND ("pr"."status" <> 'cancelled'::"public"."ride_status") AND ("pr"."destination_id" = "existing_1"."origin_id") AND ((("pr"."ends_at" AT TIME ZONE 'Asia/Jerusalem'::"text"))::"date" = (("existing_1"."starts_at" AT TIME ZONE 'Asia/Jerusalem'::"text"))::"date"))
+                          ORDER BY "pr"."ends_at" DESC
+                         LIMIT 1)) "x"
+                 LIMIT 1) "rp" ON (true))) "existing"
+     LEFT JOIN LATERAL ( SELECT "jsonb_agg"(("elem"."value" || "jsonb_build_object"('stops', COALESCE("stop_agg"."stops", '[]'::"jsonb"))) ORDER BY "elem"."ord") AS "served"
+           FROM ("jsonb_array_elements"("existing"."served") WITH ORDINALITY "elem"("value", "ord")
+             LEFT JOIN LATERAL ( SELECT COALESCE("jsonb_agg"("jsonb_build_object"('leg', "e"."leg", 'position', "e"."position", 'place_id', "e"."place_id", 'place_text', "e"."place_text", 'name', COALESCE("d"."name", "e"."place_text"), 'eta', "e"."eta") ORDER BY "e"."leg", "e"."position"), '[]'::"jsonb") AS "stops"
+                   FROM ("public"."request_stop_etas"((("elem"."value" ->> 'request_id'::"text"))::"uuid") "e"("leg", "position", "place_id", "place_text", "eta")
+                     LEFT JOIN "public"."destinations" "d" ON (("d"."id" = "e"."place_id")))) "stop_agg" ON (true))) "served_stops" ON (true));
 
 
 
@@ -12136,6 +13167,14 @@ CREATE OR REPLACE TRIGGER "request_companions_valid" BEFORE INSERT OR UPDATE ON 
 
 
 
+CREATE OR REPLACE TRIGGER "request_templates_default_origin" BEFORE INSERT ON "public"."request_templates" FOR EACH ROW EXECUTE FUNCTION "public"."requests_default_origin"();
+
+
+
+CREATE OR REPLACE TRIGGER "requests_default_origin" BEFORE INSERT ON "public"."requests" FOR EACH ROW EXECUTE FUNCTION "public"."requests_default_origin"();
+
+
+
 CREATE CONSTRAINT TRIGGER "requests_named_passenger_counts" AFTER INSERT OR UPDATE OF "adults", "child_seats", "boosters", "guest_passenger_names" ON "public"."requests" DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION "public"."request_named_passenger_counts"();
 
 
@@ -12256,6 +13295,10 @@ CREATE OR REPLACE TRIGGER "set_updated_at" BEFORE UPDATE ON "public"."notificati
 
 
 
+CREATE OR REPLACE TRIGGER "set_updated_at" BEFORE UPDATE ON "public"."place_distances" FOR EACH ROW EXECUTE FUNCTION "public"."set_updated_at"();
+
+
+
 CREATE OR REPLACE TRIGGER "set_updated_at" BEFORE UPDATE ON "public"."policies" FOR EACH ROW EXECUTE FUNCTION "public"."set_updated_at"();
 
 
@@ -12265,6 +13308,10 @@ CREATE OR REPLACE TRIGGER "set_updated_at" BEFORE UPDATE ON "public"."profiles" 
 
 
 CREATE OR REPLACE TRIGGER "set_updated_at" BEFORE UPDATE ON "public"."proposals" FOR EACH ROW EXECUTE FUNCTION "public"."set_updated_at"();
+
+
+
+CREATE OR REPLACE TRIGGER "set_updated_at" BEFORE UPDATE ON "public"."request_stops" FOR EACH ROW EXECUTE FUNCTION "public"."set_updated_at"();
 
 
 
@@ -12289,6 +13336,10 @@ CREATE OR REPLACE TRIGGER "set_updated_at" BEFORE UPDATE ON "public"."ride_passe
 
 
 CREATE OR REPLACE TRIGGER "set_updated_at" BEFORE UPDATE ON "public"."rides" FOR EACH ROW EXECUTE FUNCTION "public"."set_updated_at"();
+
+
+
+CREATE OR REPLACE TRIGGER "set_updated_at" BEFORE UPDATE ON "public"."text_fragments" FOR EACH ROW EXECUTE FUNCTION "public"."set_updated_at"();
 
 
 
@@ -12425,6 +13476,11 @@ ALTER TABLE ONLY "public"."car_seat_configs"
 
 
 ALTER TABLE ONLY "public"."cars"
+    ADD CONSTRAINT "cars_base_location_id_fkey" FOREIGN KEY ("department_id", "base_location_id") REFERENCES "public"."destinations"("department_id", "id");
+
+
+
+ALTER TABLE ONLY "public"."cars"
     ADD CONSTRAINT "cars_department_id_fkey" FOREIGN KEY ("department_id") REFERENCES "public"."departments"("id");
 
 
@@ -12461,6 +13517,11 @@ ALTER TABLE ONLY "public"."client_errors"
 
 ALTER TABLE ONLY "public"."department_members"
     ADD CONSTRAINT "department_members_added_by_fkey" FOREIGN KEY ("added_by") REFERENCES "public"."profiles"("id");
+
+
+
+ALTER TABLE ONLY "public"."department_members"
+    ADD CONSTRAINT "department_members_default_origin_id_fkey" FOREIGN KEY ("department_id", "default_origin_id") REFERENCES "public"."destinations"("department_id", "id");
 
 
 
@@ -12566,6 +13627,21 @@ ALTER TABLE ONLY "public"."notifications"
 
 ALTER TABLE ONLY "public"."notifications"
     ADD CONSTRAINT "notifications_week_fk" FOREIGN KEY ("department_id", "week_start") REFERENCES "public"."weeks"("department_id", "week_start");
+
+
+
+ALTER TABLE ONLY "public"."place_distances"
+    ADD CONSTRAINT "place_distances_department_id_fkey" FOREIGN KEY ("department_id") REFERENCES "public"."departments"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."place_distances"
+    ADD CONSTRAINT "place_distances_from_id_fkey" FOREIGN KEY ("department_id", "from_id") REFERENCES "public"."destinations"("department_id", "id");
+
+
+
+ALTER TABLE ONLY "public"."place_distances"
+    ADD CONSTRAINT "place_distances_to_id_fkey" FOREIGN KEY ("department_id", "to_id") REFERENCES "public"."destinations"("department_id", "id");
 
 
 
@@ -12694,6 +13770,21 @@ ALTER TABLE ONLY "public"."request_companions"
 
 
 
+ALTER TABLE ONLY "public"."request_stops"
+    ADD CONSTRAINT "request_stops_department_id_fkey" FOREIGN KEY ("department_id") REFERENCES "public"."departments"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."request_stops"
+    ADD CONSTRAINT "request_stops_place_id_fkey" FOREIGN KEY ("department_id", "place_id") REFERENCES "public"."destinations"("department_id", "id");
+
+
+
+ALTER TABLE ONLY "public"."request_stops"
+    ADD CONSTRAINT "request_stops_request_id_fkey" FOREIGN KEY ("request_id") REFERENCES "public"."requests"("id") ON DELETE CASCADE;
+
+
+
 ALTER TABLE ONLY "public"."request_templates"
     ADD CONSTRAINT "request_templates_department_id_fkey" FOREIGN KEY ("department_id") REFERENCES "public"."departments"("id");
 
@@ -12701,6 +13792,11 @@ ALTER TABLE ONLY "public"."request_templates"
 
 ALTER TABLE ONLY "public"."request_templates"
     ADD CONSTRAINT "request_templates_destination_id_fkey" FOREIGN KEY ("department_id", "destination_id") REFERENCES "public"."destinations"("department_id", "id");
+
+
+
+ALTER TABLE ONLY "public"."request_templates"
+    ADD CONSTRAINT "request_templates_origin_id_fkey" FOREIGN KEY ("department_id", "origin_id") REFERENCES "public"."destinations"("department_id", "id");
 
 
 
@@ -12736,6 +13832,11 @@ ALTER TABLE ONLY "public"."requests"
 
 ALTER TABLE ONLY "public"."requests"
     ADD CONSTRAINT "requests_join_ride_fk" FOREIGN KEY ("join_ride_id") REFERENCES "public"."rides"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."requests"
+    ADD CONSTRAINT "requests_origin_id_fkey" FOREIGN KEY ("department_id", "origin_id") REFERENCES "public"."destinations"("department_id", "id");
 
 
 
@@ -13364,6 +14465,25 @@ CREATE POLICY "notifications_update" ON "public"."notifications" FOR UPDATE TO "
 
 
 
+ALTER TABLE "public"."place_distances" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "place_distances_delete" ON "public"."place_distances" FOR DELETE TO "authenticated" USING ("public"."can_manage_operations"("department_id"));
+
+
+
+CREATE POLICY "place_distances_insert" ON "public"."place_distances" FOR INSERT TO "authenticated" WITH CHECK ("public"."can_manage_operations"("department_id"));
+
+
+
+CREATE POLICY "place_distances_select" ON "public"."place_distances" FOR SELECT TO "authenticated" USING (("public"."member_of"("department_id") OR "public"."is_admin"()));
+
+
+
+CREATE POLICY "place_distances_update" ON "public"."place_distances" FOR UPDATE TO "authenticated" USING ("public"."can_manage_operations"("department_id")) WITH CHECK ("public"."can_manage_operations"("department_id"));
+
+
+
 ALTER TABLE "public"."policies" ENABLE ROW LEVEL SECURITY;
 
 
@@ -13499,6 +14619,15 @@ CREATE POLICY "request_companions_select" ON "public"."request_companions" FOR S
 
 
 
+ALTER TABLE "public"."request_stops" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "request_stops_select" ON "public"."request_stops" FOR SELECT TO "authenticated" USING ((EXISTS ( SELECT 1
+   FROM "public"."requests" "q"
+  WHERE (("q"."id" = "request_stops"."request_id") AND (("q"."requester_id" = ( SELECT "auth"."uid"() AS "uid")) OR ("q"."filed_by" = ( SELECT "auth"."uid"() AS "uid")) OR "public"."is_request_companion"("q"."id") OR "public"."is_sadran"("q"."department_id", "q"."week_start") OR "public"."is_admin"() OR ("public"."is_approved"() AND "public"."is_week_public"("q"."department_id", "q"."week_start") AND "public"."request_served_by_public_ride"("q"."id")))))));
+
+
+
 ALTER TABLE "public"."request_templates" ENABLE ROW LEVEL SECURITY;
 
 
@@ -13617,6 +14746,25 @@ CREATE POLICY "solver_runs_delete" ON "public"."solver_runs" FOR DELETE TO "auth
 
 
 CREATE POLICY "solver_runs_select" ON "public"."solver_runs" FOR SELECT TO "authenticated" USING (("public"."is_sadran"("department_id", "week_start") OR "public"."is_admin"()));
+
+
+
+ALTER TABLE "public"."text_fragments" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "text_fragments_delete" ON "public"."text_fragments" FOR DELETE TO "authenticated" USING ("public"."is_admin"());
+
+
+
+CREATE POLICY "text_fragments_insert" ON "public"."text_fragments" FOR INSERT TO "authenticated" WITH CHECK ("public"."is_admin"());
+
+
+
+CREATE POLICY "text_fragments_select" ON "public"."text_fragments" FOR SELECT TO "authenticated" USING ("public"."is_approved"());
+
+
+
+CREATE POLICY "text_fragments_update" ON "public"."text_fragments" FOR UPDATE TO "authenticated" USING ("public"."is_admin"()) WITH CHECK ("public"."is_admin"());
 
 
 
@@ -13883,6 +15031,12 @@ GRANT ALL ON FUNCTION "public"."car_access_codes_set_department"() TO "service_r
 
 
 
+REVOKE ALL ON FUNCTION "public"."car_base_location"("_car" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."car_base_location"("_car" "uuid") TO "service_role";
+GRANT ALL ON FUNCTION "public"."car_base_location"("_car" "uuid") TO "authenticated";
+
+
+
 REVOKE ALL ON FUNCTION "public"."car_care_recipients"("_car_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."car_care_recipients"("_car_id" "uuid") TO "service_role";
 
@@ -13919,6 +15073,17 @@ GRANT ALL ON FUNCTION "public"."car_maintenance_blocks_set_department"() TO "ser
 REVOKE ALL ON FUNCTION "public"."car_mileage_totals"("p_department_id" "uuid", "p_week_start" "date", "p_weeks" integer) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."car_mileage_totals"("p_department_id" "uuid", "p_week_start" "date", "p_weeks" integer) TO "service_role";
 GRANT ALL ON FUNCTION "public"."car_mileage_totals"("p_department_id" "uuid", "p_week_start" "date", "p_weeks" integer) TO "authenticated";
+
+
+
+REVOKE ALL ON FUNCTION "public"."car_next_ride_origin"("_car" "uuid", "_after" timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."car_next_ride_origin"("_car" "uuid", "_after" timestamp with time zone) TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."car_start_locations"("p_department_id" "uuid", "p_week_start" "date") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."car_start_locations"("p_department_id" "uuid", "p_week_start" "date") TO "service_role";
+GRANT ALL ON FUNCTION "public"."car_start_locations"("p_department_id" "uuid", "p_week_start" "date") TO "authenticated";
 
 
 
@@ -14396,6 +15561,17 @@ GRANT ALL ON FUNCTION "public"."place_series"("p_series_id" "uuid", "p_car_id" "
 
 
 
+REVOKE ALL ON FUNCTION "public"."place_travel"("p_from" "uuid", "p_to" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."place_travel"("p_from" "uuid", "p_to" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."place_travel_for_week"("p_department_id" "uuid", "p_week_start" "date") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."place_travel_for_week"("p_department_id" "uuid", "p_week_start" "date") TO "service_role";
+GRANT ALL ON FUNCTION "public"."place_travel_for_week"("p_department_id" "uuid", "p_week_start" "date") TO "authenticated";
+
+
+
 REVOKE ALL ON FUNCTION "public"."policy_current_version_matches"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."policy_current_version_matches"() TO "service_role";
 
@@ -14550,6 +15726,11 @@ GRANT ALL ON FUNCTION "public"."reopen_week"("p_department_id" "uuid", "p_week_s
 
 
 
+REVOKE ALL ON FUNCTION "public"."replace_request_stops"("p_request_id" "uuid", "p_department_id" "uuid", "p_has_return" boolean, "p_stops" "jsonb") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."replace_request_stops"("p_request_id" "uuid", "p_department_id" "uuid", "p_has_return" boolean, "p_stops" "jsonb") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."report_car_issue"("_car_id" "uuid", "_category" "public"."car_issue_category", "_description" "text", "_photo_path" "text") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."report_car_issue"("_car_id" "uuid", "_category" "public"."car_issue_category", "_description" "text", "_photo_path" "text") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."report_car_issue"("_car_id" "uuid", "_category" "public"."car_issue_category", "_description" "text", "_photo_path" "text") TO "service_role";
@@ -14568,6 +15749,21 @@ GRANT ALL ON FUNCTION "public"."request_companions_not_requester"() TO "service_
 
 
 
+REVOKE ALL ON FUNCTION "public"."request_leg_route_km"("p_request_id" "uuid", "p_leg" "public"."ride_leg") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."request_leg_route_km"("p_request_id" "uuid", "p_leg" "public"."ride_leg") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."request_leg_route_minutes"("p_request_id" "uuid", "p_leg" "public"."ride_leg") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."request_leg_route_minutes"("p_request_id" "uuid", "p_leg" "public"."ride_leg") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."request_leg_route_points"("p_request_id" "uuid", "p_leg" "public"."ride_leg") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."request_leg_route_points"("p_request_id" "uuid", "p_leg" "public"."ride_leg") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."request_named_passenger_counts"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."request_named_passenger_counts"() TO "service_role";
 
@@ -14576,6 +15772,11 @@ GRANT ALL ON FUNCTION "public"."request_named_passenger_counts"() TO "service_ro
 REVOKE ALL ON FUNCTION "public"."request_ride_change"("p_ride_id" "uuid", "p_car_id" "uuid", "p_starts_at" timestamp with time zone, "p_ends_at" timestamp with time zone, "p_expected_version" integer) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."request_ride_change"("p_ride_id" "uuid", "p_car_id" "uuid", "p_starts_at" timestamp with time zone, "p_ends_at" timestamp with time zone, "p_expected_version" integer) TO "authenticated";
 GRANT ALL ON FUNCTION "public"."request_ride_change"("p_ride_id" "uuid", "p_car_id" "uuid", "p_starts_at" timestamp with time zone, "p_ends_at" timestamp with time zone, "p_expected_version" integer) TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."request_route_label"("p_request_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."request_route_label"("p_request_id" "uuid") TO "service_role";
 
 
 
@@ -14588,6 +15789,17 @@ GRANT ALL ON FUNCTION "public"."request_served_by_public_ride"("_request_id" "uu
 REVOKE ALL ON FUNCTION "public"."request_span"("_depart" timestamp with time zone, "_return" timestamp with time zone) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."request_span"("_depart" timestamp with time zone, "_return" timestamp with time zone) TO "authenticated";
 GRANT ALL ON FUNCTION "public"."request_span"("_depart" timestamp with time zone, "_return" timestamp with time zone) TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."request_stop_etas"("p_request_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."request_stop_etas"("p_request_id" "uuid") TO "service_role";
+GRANT ALL ON FUNCTION "public"."request_stop_etas"("p_request_id" "uuid") TO "authenticated";
+
+
+
+REVOKE ALL ON FUNCTION "public"."requests_default_origin"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."requests_default_origin"() TO "service_role";
 
 
 
@@ -14729,6 +15941,11 @@ GRANT ALL ON FUNCTION "public"."rides_within_week"() TO "service_role";
 
 
 
+REVOKE ALL ON FUNCTION "public"."route_label"("p_department_id" "uuid", "p_origin_id" "uuid", "p_origin_text" "text", "p_destination_id" "uuid", "p_destination_text" "text", "p_stops_text" "text") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."route_label"("p_department_id" "uuid", "p_origin_id" "uuid", "p_origin_text" "text", "p_destination_id" "uuid", "p_destination_text" "text", "p_stops_text" "text") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."sadran_assignments_require_roster_role"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."sadran_assignments_require_roster_role"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."sadran_assignments_require_roster_role"() TO "service_role";
@@ -14773,6 +15990,12 @@ GRANT ALL ON FUNCTION "public"."set_freed_slot_opt_out"("p_request_id" "uuid", "
 REVOKE ALL ON FUNCTION "public"."set_manual_boost"("p_request_id" "uuid", "p_value" numeric, "p_reason" "text") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."set_manual_boost"("p_request_id" "uuid", "p_value" numeric, "p_reason" "text") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."set_manual_boost"("p_request_id" "uuid", "p_value" numeric, "p_reason" "text") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."set_my_default_origin"("p_department_id" "uuid", "p_origin_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."set_my_default_origin"("p_department_id" "uuid", "p_origin_id" "uuid") TO "service_role";
+GRANT ALL ON FUNCTION "public"."set_my_default_origin"("p_department_id" "uuid", "p_origin_id" "uuid") TO "authenticated";
 
 
 
@@ -15106,6 +16329,11 @@ GRANT ALL ON TABLE "public"."notifications" TO "service_role";
 
 
 
+GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE "public"."place_distances" TO "authenticated";
+GRANT ALL ON TABLE "public"."place_distances" TO "service_role";
+
+
+
 GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE "public"."policies" TO "authenticated";
 GRANT ALL ON TABLE "public"."policies" TO "service_role";
 
@@ -15229,6 +16457,11 @@ GRANT ALL ON TABLE "public"."request_companions" TO "service_role";
 
 
 
+GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE "public"."request_stops" TO "authenticated";
+GRANT ALL ON TABLE "public"."request_stops" TO "service_role";
+
+
+
 GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE "public"."request_templates" TO "authenticated";
 GRANT ALL ON TABLE "public"."request_templates" TO "service_role";
 
@@ -15281,6 +16514,11 @@ GRANT ALL ON TABLE "public"."siddur_versions" TO "service_role";
 
 GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE "public"."solver_runs" TO "authenticated";
 GRANT ALL ON TABLE "public"."solver_runs" TO "service_role";
+
+
+
+GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE "public"."text_fragments" TO "authenticated";
+GRANT ALL ON TABLE "public"."text_fragments" TO "service_role";
 
 
 

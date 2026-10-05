@@ -22,15 +22,18 @@
 
 import { reason } from './reasons';
 import type { NormalizedRequest } from './slots';
-import { byId, dayBoundsForSlot, formatSlotTime, minutesToSlots, withinRequestDay } from './slots';
+import { byId, dayBoundsForSlot, formatSlotTime, minutesToSlots, travelSlotsFor, withinRequestDay } from './slots';
 import type { CarTimeline } from './timeline';
 import type { Assignment, Car, SolverInput, Window } from './types';
 import { chauffeurLoad, fits, luggageFits } from './seatFit';
+import { chauffeurCandidates, type ChauffeurCandidate } from './travel';
 
 export interface RelayPair {
   id: string;
   outRequestId: string;
   returnRequestId: string;
+  /** both legs' shared origin (REQUIREMENTS §13.93) — the car starts and ends here */
+  originId: string;
   destinationId: string;
   outWindow: Window;
   returnWindow: Window;
@@ -38,13 +41,17 @@ export interface RelayPair {
   shiftCost: number; // minutes
 }
 
+// A `tripType === 'one_way'` request (REQUIREMENTS §13.93) never enters pairing —
+// it has no pairing obligation and is placed directly as a single unit by
+// greedy.ts instead (defense in depth: index.ts also keeps it out of the
+// `relayEligible` batch passed in here).
 function isRelayOut(nr: NormalizedRequest): boolean {
   const leg = nr.legs[0];
-  return leg?.side === 'out' && leg.preferredMode === 'relay';
+  return leg?.side === 'out' && leg.preferredMode === 'relay' && nr.tripType !== 'one_way';
 }
 function isRelayReturn(nr: NormalizedRequest): boolean {
   const leg = nr.legs[0];
-  return leg?.side === 'return' && leg.preferredMode === 'relay';
+  return leg?.side === 'return' && leg.preferredMode === 'relay' && nr.tripType !== 'one_way';
 }
 
 export interface Candidate {
@@ -58,6 +65,11 @@ export interface Candidate {
 
 export function tryPair(out: NormalizedRequest, ret: NormalizedRequest, cars: Car[]): Candidate | null {
   if (out.destinationId !== ret.destinationId) return null;
+  // REQUIREMENTS §13.93: both legs of a relay pair must share the same
+  // origin — the car leaves from and returns to one place. Every legacy
+  // (home-origin) request has the same originId (home), so this is a no-op
+  // for every existing scenario.
+  if (out.originId !== ret.originId) return null;
   if (out.dayIndex !== ret.dayIndex) return null;
 
   // Each leg's own passengers must fit some shared car (checked per leg, §3.3/§3.6.1).
@@ -142,6 +154,7 @@ export function pairRelays(requests: NormalizedRequest[], cars: Car[]): PairRela
       id: `pair:${c.out.id}:${c.ret.id}`,
       outRequestId: c.out.id,
       returnRequestId: c.ret.id,
+      originId: c.out.originId,
       destinationId: c.out.destinationId,
       outWindow: c.outWindow,
       returnWindow: c.returnWindow,
@@ -162,33 +175,29 @@ export interface ChauffeurHealResult {
   healedIds: Set<string>;
 }
 
-/** Car occupancy window of a standalone chauffeur ride (docs/SOLVER.md §1.2): a
- *  home round trip wrapped around the requester's one-way leg — `[D, D + 2·travel
- *  + dwell)` for an out leg (drop-off), `[R − 2·travel − dwell, R)` for a return
- *  leg (pick-up). Mirrors `suggestions.ts`'s (private) `chauffeurWindow`. */
-function chauffeurWindow(side: 'out' | 'return', point: number, travelSlots: number, dwellSlots: number): Window {
-  const total = travelSlots * 2 + dwellSlots;
-  return side === 'out' ? { start: point, end: point + total } : { start: point - total, end: point };
-}
-
 /**
  * Places an unpaired relay candidate as a standalone **chauffeur** ride
  * (REQUIREMENTS §13.88, rule made precise 2026-09-16; docs/SOLVER.md §3.6.1a
  * — supersedes the removed `healLoneRelayLegs`/`PLACED_RELAY_SOLO`
  * relocation-pair design). Owner: "if nobody can drive back, my leg is a
- * chauffeur ride" — the car goes home → X → home (or home → X → home to
- * fetch, for a return leg) around the requester's own leg; the requester
- * rides as a passenger and the ride waits for a volunteer driver like any
- * other needs-driver ride (`stats.needsDriver`). The car is **never** left
- * waiting at X — there is no relocation ride and no `pairedRideId`. Mutates
- * `timelines` (adds the one block) exactly like the greedy pass does.
+ * chauffeur ride" — the car wraps around the requester's own leg, originId ===
+ * destinationId (never left waiting at the destination), around whichever end
+ * of the leg the car is actually free at (REQUIREMENTS §13.93, owner
+ * follow-up 2026-10-04, ORIGINS_PLAN §3, `chauffeurCandidates()`): the leg's
+ * own origin for a drop-off, or its destination for a pickup (e.g. "pick me
+ * up from Harish": origin Harish, destination Givat Haviva, the car is at
+ * Givat Haviva). A `return` leg keeps the legacy single formula, anchored at
+ * the request's own origin. The requester rides as a passenger and the ride
+ * waits for a volunteer driver like any other needs-driver ride
+ * (`stats.needsDriver`). There is no relocation ride and no `pairedRideId`.
+ * Mutates `timelines` (adds the one block) exactly like the greedy pass does.
  *
  * Simplification (documented, in the style of docs/SOLVER.md §9.1): only the
- * leg's own preferred window is tried, on the first shared car (by id) that
- * has room for the *whole* chauffeur window and fits `chauffeurLoad` — no
- * flexibility search. A leg no car can take this way is left for the ordinary
- * `UNMET_NO_RELAY_PARTNER` suggestion ladder unchanged (§3.11 item 5, whose
- * `chauffeur` suggestion tries the identical window again).
+ * leg's own preferred window(s) are tried, on the first shared car (by id)
+ * that has room for the *whole* chauffeur window and fits `chauffeurLoad` —
+ * no flexibility search. A leg no car can take this way (at either end) is
+ * left for the ordinary `UNMET_NO_RELAY_PARTNER` suggestion ladder unchanged
+ * (§3.11 item 5, whose `chauffeur` suggestion tries the identical candidates).
  */
 export function chauffeurUnpairedRelayLegs(
   unpaired: NormalizedRequest[],
@@ -204,7 +213,6 @@ export function chauffeurUnpairedRelayLegs(
   const healed: Assignment[] = [];
   const healedIds = new Set<string>();
   const dwellSlots = minutesToSlots(input.config.chauffeurDwellMinutes);
-  const home = input.homeLocationId;
   const sharedCars = input.cars.filter((c) => c.type === 'shared').sort((a, b) => byId({ id: a.id }, { id: b.id }));
 
   const sorted = [...unpaired].sort((a, b) => {
@@ -220,31 +228,49 @@ export function chauffeurUnpairedRelayLegs(
     if (!leg || leg.side === 'both') continue; // defensive: unpaired only ever holds one-way relay legs
     const side: 'out' | 'return' = leg.side === 'out' ? 'out' : 'return';
     const point = side === 'out' ? leg.window.start : leg.window.end;
-    const window = chauffeurWindow(side, point, nr.travelSlots, dwellSlots);
     // The chauffeur window must stay on the leg's own scheduling day (mirrors
     // the day-boundary care the superseded relocation design took via
     // dayEndSlot/startSlot) — no car can ever fix a window that spills past
     // midnight, so this is checked once, independent of car choice.
     const day = dayBoundsForSlot(input.week.days, point);
-    if (window.start < day.startSlot || window.end > day.endSlot) continue;
     const load = chauffeurLoad(nr.passengers);
     const luggageCount = nr.luggage ? 1 : 0;
+    // REQUIREMENTS §13.93 (owner follow-up 2026-10-04, ORIGINS_PLAN §3): an
+    // `out` leg A -> B tries the car at A (drop-off) and at B (pickup, e.g.
+    // "pick me up from Harish") in that order; a `return` leg keeps the
+    // legacy single formula anchored at the request's own origin. A no-op
+    // generalization for every home-origin request (its only candidate is
+    // still the drop-off one, anchored at home). Multi-stop rides
+    // (REQUIREMENTS §13.93 "Multi-stop rides"): `nr.travelSlots` is already
+    // the leg's own route duration (stops included, from normalize()); the
+    // chauffeur's empty repositioning drive never revisits the stops, so it
+    // uses the plain point-to-point `directSlots` instead.
+    const directSlots = travelSlotsFor(input, nr.originId, nr.destinationId);
+    const candidates = chauffeurCandidates(side, point, nr.travelSlots, directSlots, dwellSlots, nr.originId, nr.destinationId);
 
     let carId: string | null = null;
-    for (const car of sharedCars) {
-      if (!fits(car, load) || !luggageFits(car, luggageCount)) continue;
-      const tl = timelines.get(car.id);
-      if (!tl || !tl.isFree(window, home)) continue;
-      carId = car.id;
-      break;
+    let chosen: ChauffeurCandidate | null = null;
+    for (const candidate of candidates) {
+      if (candidate.window.start < day.startSlot || candidate.window.end > day.endSlot) continue;
+      for (const car of sharedCars) {
+        if (!fits(car, load) || !luggageFits(car, luggageCount)) continue;
+        const tl = timelines.get(car.id);
+        if (!tl || !tl.isFree(candidate.window, candidate.carOriginId)) continue;
+        carId = car.id;
+        chosen = candidate;
+        break;
+      }
+      if (carId) break;
     }
-    if (!carId) continue;
+    if (!carId || !chosen) continue;
+    const window = chosen.window;
+    const carOrigin = chosen.carOriginId;
 
     const tl = timelines.get(carId);
     if (!tl) continue;
     const car = carsById.get(carId);
     const rideId = `ride:${nr.id}`;
-    tl.add({ rideId, window, startLocationId: home, endLocationId: home, overnightAck: false });
+    tl.add({ rideId, window, startLocationId: carOrigin, endLocationId: carOrigin, overnightAck: false });
 
     const reasonCode = cause === 'noDriver' ? 'PLACED_NEEDS_DRIVER' : 'PLACED_CHAUFFEUR_NO_RETURNER';
     const text = cause === 'noDriver'
@@ -260,8 +286,8 @@ export function chauffeurUnpairedRelayLegs(
       rideId,
       carId,
       window,
-      originId: home,
-      destinationId: home,
+      originId: carOrigin,
+      destinationId: carOrigin,
       driverRequestId: undefined,
       driverMemberId: undefined,
       legs: [

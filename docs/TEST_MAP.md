@@ -55,14 +55,16 @@ Hebrew strings quoted below are copied verbatim from `src/i18n/he.member.ts` / `
 `dayLabel.ts`(+test), `destinationLabel.ts`(+test), `seatCounts.ts`(+test), `schema.ts`(+test), `submitOutcome.ts`(+test), `api.ts`, `hooks.ts`,
 `queryKeys.ts` (all under `src/features/requests/`); `src/components/RideTypeChips.tsx`(+test); `src/i18n/he.member.ts`; migrations matching
 `*request_template*`, `*series*`, `*requests.sql`, `*request_edit*`, `*bulk_request_withdrawal*`,
-`*child*`; `e2e/multi-day.spec.ts`, `repeating-requests.spec.ts`, `member.spec.ts`,
-`auto-approve.spec.ts`, `upcoming-week.spec.ts`.
+`*child*`, `*origin*` (origins/trip_type, REQ §13.93, steps O2/O3), `*stop*` (multi-stop rides, REQ §13.93, step O6); `e2e/multi-day.spec.ts`, `repeating-requests.spec.ts`, `member.spec.ts`,
+`auto-approve.spec.ts`, `upcoming-week.spec.ts`, `multi-stop.spec.ts`;
+`src/features/requests/stops.ts`(+test via `requestForm/StopsField.test.tsx`), `src/lib/routeStops.ts`, `src/lib/routeLabel.ts`(+test).
 
 **Automated**:
 - Vitest: `npx vitest run src/features/requests`
-- SQL: `request_templates.sql`, `multi_day_series.sql` (run via `npm run db:test`, all-or-nothing)
+- SQL: `request_templates.sql`, `multi_day_series.sql`, `origins_schema.sql`, `origins_chain.sql`, `multi_stop.sql` (run via `npm run db:test`, all-or-nothing)
 - Playwright: `npx playwright test --grep "@request-form"` (`multi-day.spec.ts`,
-  `repeating-requests.spec.ts`, `member.spec.ts`, `auto-approve.spec.ts`, `upcoming-week.spec.ts`)
+  `repeating-requests.spec.ts`, `member.spec.ts`, `auto-approve.spec.ts`, `upcoming-week.spec.ts`,
+  `multi-stop.spec.ts`)
 
 **QA script**:
 1. Sign in as `member1`. Go to "הבקשות שלי" → new request. Fill destination/time, tap "חזרה ביום
@@ -76,8 +78,11 @@ Hebrew strings quoted below are copied verbatim from `src/i18n/he.member.ts` / `
    for good.
 4. Submit a plain single-day round-trip request (no "חזרה ביום אחר?"); confirm a late submission
    (after the department's close time) is still accepted but flagged (REQ §13.6).
+5. Add an out-stop via "+ עצירה" on a new request; confirm the chip, that "/my" shows the stop
+   name in the route label, and the Sadran board's unmet card shows "· 1 עצירות" (REQ §13.93
+   "Multi-stop rides").
 
-**REQ**: §13.28, §13.45, §13.76, §13.77.
+**REQ**: §13.28, §13.45, §13.76, §13.77, §13.93.
 
 ### quick-request — Quick / car-now request
 
@@ -170,7 +175,9 @@ gap is closed.
 `WeekStrip.test.tsx`, `src/pages/SiddurPage.tsx`; `src/i18n/he.member.ts`; migrations matching
 `*public_request*`, `*public_notes*`, `*car_swap*`, or whose content defines `v_board_rides`;
 `src/components/CarSwapDialog.tsx`(+test), `WeekGrid.carSwap.test.tsx`, `src/features/carSwap/**`;
-`e2e/siddur-mobile.spec.ts`, `ride-editing.spec.ts`, `member.spec.ts`, `car-swap.spec.ts`.
+`e2e/siddur-mobile.spec.ts`, `ride-editing.spec.ts`, `member.spec.ts`, `car-swap.spec.ts`;
+`src/features/rides/servedOf.ts`, `src/features/rides/components/RideRouteStops.tsx`,
+`src/lib/routeStops.ts` (multi-stop rides ride-detail route display, REQ §13.93, step O6).
 
 **Automated**:
 - Vitest: `npx vitest run src/features/siddur src/components/WeekGrid.test.ts src/components/WeekGrid.gestures.test.tsx src/components/weekGridCars.test.ts`
@@ -205,11 +212,13 @@ grid (item 2) — `hideIdleTemporaryCars()` is unit-tested in `weekGridCars.test
 content-matching `v_board_rides`/`publish_siddur`; `src/components/CarSwapDialog.tsx`(+test),
 `WeekGrid.carSwap.test.tsx`, `src/features/carSwap/**`; `e2e/board.spec.ts`, `board-mobile.spec.ts`,
 `board-coordination.spec.ts`, `export.spec.ts`, `weekly-permissions.spec.ts`, `ride-editing.spec.ts`,
-`car-swap.spec.ts`.
+`car-swap.spec.ts`, `multi-stop.spec.ts`; `src/features/rides/servedOf.ts`,
+`src/features/rides/components/RideRouteStops.tsx`, `src/lib/routeStops.ts` (multi-stop rides
+display, REQ §13.93, step O6).
 
 **Automated**:
 - Vitest: `npx vitest run src/features/sadran/board src/features/sadran/applySolve.test.ts src/features/sadran/unmetStatuses.test.ts src/features/sadran/deviations src/features/sadran/export`
-- SQL: `todo_board_semantics.sql`, `coordinator_planning.sql`, `solve_semantics.sql`, `car_chain_healing.sql`, `day_car_swap.sql`
+- SQL: `todo_board_semantics.sql`, `coordinator_planning.sql`, `solve_semantics.sql`, `car_chain_healing.sql`, `day_car_swap.sql`, `origins_chain.sql`
 - Playwright: `npx playwright test --grep "@board"`
 
 **QA script**:
@@ -225,14 +234,19 @@ content-matching `v_board_rides`/`publish_siddur`; `src/components/CarSwapDialog
 6. Download the week as an Excel workbook from the kebab menu; confirm the three sheets (בקשות /
    סידור / ניקוד בפרסום).
 7. Remove the return leg of a relay pair (or the out leg from under a standing return leg);
-   confirm the edit succeeds and a missing-driver relocation ride appears bridging the gap
-   instead of an error (REQ §13.89). Claim it as a volunteer; confirm it becomes an ordinary
-   one-way leg.
+   confirm the edit succeeds and the remaining leg becomes a standalone chauffeur ride (needs a
+   driver) with no relocation ride created — or, if no car is free at either end, the request
+   goes back to the unmet list (REQ §13.93, 2026-10-04 — supersedes the relocation-ride
+   behaviour of §13.89). Claim the chauffeur ride as a volunteer; confirm a later matching leg
+   re-pairs both into ordinary relay legs.
 8. As the Sadran, drag one car's header onto another's on an unpublished day; confirm the swap
    applies with no notifications, and that a multi-day series leg offers "whole ride" vs "only
    this day" (REQ §13.92).
+9. Open a ride sheet for a ride whose request declared stops; confirm the route-per-leg section
+   with estimated times, and that an unmet/placed card shows "· N עצירות" only when N > 0 (REQ
+   §13.93 "Multi-stop rides").
 
-**REQ**: §13.42, §13.80, §13.84, §13.89, §13.92.
+**REQ**: §13.42, §13.80, §13.84, §13.89, §13.92, §13.93.
 
 ### proposals — Proposals & /p/:token
 
@@ -323,15 +337,16 @@ fan-out); `src/i18n/he.sadran.ts`; migrations matching `*publish*`, `*siddur_ver
 ### solver — Solver (placement, mileage/carChoice, suggestions)
 
 **Paths**: `src/solver/**`, `src/features/solverBridge/**`, `supabase/functions/on-ride-cancelled/**`;
-migrations matching `*polic*`, `*fairness*`, `*mileage*`, `*apply_solver_result*`, `*pair_one_way_legs*`;
+migrations matching `*polic*`, `*fairness*`, `*mileage*`, `*apply_solver_result*`, `*pair_one_way_legs*`,
+`*route_minutes*`, `*route_helpers*` (route minutes/km for multi-stop legs, REQ §13.93, step O6);
 `supabase/tests/fixtures/one_way_pairing_cases.json` + `scripts/test-pairing-parity.mjs` +
 `src/solver/__tests__/oneWayPairingParity.test.ts` (one-way pairing golden cases, run against both the
-solver and SQL `pair_one_way_legs`; the SQL side is the last step of `db:test`); `e2e/auto-approve.spec.ts`,
-`freed-slot.spec.ts`, `board.spec.ts`.
+solver and SQL `pair_one_way_legs`; the SQL side is the last step of `db:test`); `supabase/tests/multi_stop.sql`;
+`e2e/auto-approve.spec.ts`, `freed-slot.spec.ts`, `board.spec.ts`.
 
 **Automated**:
 - Vitest: `npx vitest run src/solver src/features/solverBridge`
-- SQL: `solve_semantics.sql`, `car_mileage.sql`
+- SQL: `solve_semantics.sql`, `car_mileage.sql`, `multi_stop.sql`
 - Playwright: `npx playwright test --grep "@solver"` (indirect coverage only — the solver itself is
   pure and has no UI of its own; these specs exercise it end to end)
 - **After any change under `src/solver/**`**: `npm run functions:bundle` (CI diff-checks
@@ -404,13 +419,14 @@ solver and SQL `pair_one_way_legs`; the SQL side is the last step of `db:test`);
 
 **Paths**: `src/features/admin/**`, `src/features/fleet/**`,
 `supabase/functions/destination-route/**`; `src/i18n/he.admin.ts`; migrations matching `*admin*`,
-`*catalog*`, `*member_identity*`, `*department_membership*`; `e2e/admin.spec.ts`,
-`admin-department.spec.ts`, `department-context.spec.ts`.
+`*catalog*`, `*member_identity*`, `*department_membership*`, `*origin*`, `*place_distances*`
+(cars' base location / members' default origin / `place_distances`, REQ §13.93, steps O2/O3);
+`e2e/admin.spec.ts`, `admin-department.spec.ts`, `department-context.spec.ts`.
 
 **Automated**:
 - Vitest: `npx vitest run src/features/admin src/features/fleet`
 - SQL: `admin_member_fixes.sql`, `admin_department_membership.sql`, `department_catalogs.sql`,
-  `member_identity.sql`
+  `member_identity.sql`, `origins_schema.sql`
 - Playwright: `npx playwright test --grep "@admin"`
 
 **QA script**:

@@ -40,8 +40,16 @@ export interface WeekGridCar {
   name: string;
   /** Temporary cars are tinted and separated with a stronger divider (UX_FLOWS §4.2). */
   group?: "shared" | "temporary" | "phantom";
-  /** e.g. "בבנימינה" while away from home — shown next to the car name. */
+  /** e.g. "בבנימינה" while away from its base — shown next to the car name. */
   locationBadge?: string;
+  /** REQUIREMENTS §13.93: the car's own base, shown only when it differs from the department home (e.g. "בסיס: בנימינה"). */
+  baseBadge?: string;
+  /**
+   * REQUIREMENTS §13.93/SOLVER.md §1.3a `weekEndAway()`: the car ends the *week* away from its
+   * base — a warning only (never a block); the caller only sets this while rendering the last
+   * day of the week.
+   */
+  weekEndAwayWarning?: string;
 }
 
 export interface WeekGridRide {
@@ -69,6 +77,12 @@ export interface WeekGridRide {
   /** Multi-day request leg (REQ §13.77, UX_FLOWS.md §4.2) — 1-based position and total leg count; shows a "יום {{index}}/{{count}}" marker on the block when `seriesCount` is above 1. */
   seriesIndex?: number | null;
   seriesCount?: number | null;
+  /**
+   * REQUIREMENTS §13.93, SOLVER.md §1.3a `CarTimeline.chainBreaks()`: this (fixed) ride starts
+   * where its car's tracked location says it is not — a warning only, never a block. Already
+   * resolved Hebrew text (e.g. "הרכב לא נמצא כאן — הוא בבנימינה").
+   */
+  chainBrokenWarning?: string;
 }
 
 export interface WeekGridBlock {
@@ -789,10 +803,11 @@ export function WeekGrid({
                   unlike `overflow-hidden`, does not create a new scroll container. Resize handles stay
                   absolutely positioned outside the wrapper. */}
               <div className="sticky z-[1] flex w-full flex-col" style={{ top: HEADER_ROW_HEIGHT_PX }}>
-              {(ride.isMine || ride.needsDriver || ride.tightSchedule) ? <span className="flex w-full flex-wrap gap-1 px-1.5 pt-1 text-[10px] leading-tight">
+              {(ride.isMine || ride.needsDriver || ride.tightSchedule || ride.chainBrokenWarning) ? <span className="flex w-full flex-wrap gap-1 px-1.5 pt-1 text-[10px] leading-tight">
                 {ride.isMine ? <span className={cn("flex items-center gap-1 font-bold", ride.needsDriver ? "text-destructive" : "text-foreground")}><Star className="size-3 shrink-0 fill-current" aria-hidden="true" />{he.siddur.myRide}</span> : null}
                 {ride.needsDriver ? <span className="flex items-center gap-1 font-semibold text-destructive"><UserRoundX className="size-3 shrink-0" aria-hidden="true" />{he.boardCoordination.needsDriver}</span> : null}
                 {ride.tightSchedule ? <span className="flex items-center gap-1 text-amber-700" title={he.boardCoordination.tightHelp}><Clock3 className="size-3 shrink-0" aria-hidden="true" />{he.boardCoordination.tight}</span> : null}
+                {ride.chainBrokenWarning ? <span className="flex items-center gap-1 font-medium text-amber-700" title={ride.chainBrokenWarning}><CarFront className="size-3 shrink-0" aria-hidden="true" />{ride.chainBrokenWarning}</span> : null}
               </span> : null}
               {ride.pinned ? (
                 <span className="absolute end-1 top-1 z-10 text-foreground/70" aria-hidden="true">
@@ -896,6 +911,8 @@ export function WeekGrid({
               ) : null}
             </span>
             {car.locationBadge ? <span className="truncate text-xs text-muted-foreground">{car.locationBadge}</span> : null}
+            {car.baseBadge ? <span className="truncate text-[10px] text-muted-foreground">{car.baseBadge}</span> : null}
+            {car.weekEndAwayWarning ? <span className="truncate text-[10px] font-medium text-amber-700">{car.weekEndAwayWarning}</span> : null}
             {car.group === "temporary" ? <span className="truncate text-[10px] text-booked">{he.car.type.temporary}</span> : null}
           </div>
           );

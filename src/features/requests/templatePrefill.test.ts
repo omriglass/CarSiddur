@@ -17,6 +17,11 @@ function baseRow(overrides: Partial<TemplateSuggestion> = {}): TemplateSuggestio
     rideTypeId: "ride-type-1",
     rideTypeName: "אחר",
     tripShape: "round_trip",
+    originId: "home-dest-1",
+    originText: null,
+    originName: "נבו",
+    stops: [],
+    tripType: "round_trip",
     departDow: 2,
     departTime: "08:00:00",
     returnDow: 2,
@@ -52,6 +57,9 @@ describe("suggestionToFormValues", () => {
     expect(values.day).toBe("2027-01-12");
     expect(values.dayIndex).toBe(2);
     expect(values.destination).toEqual({ presetId: "dest-1", name: "עפולה" });
+    expect(values.origin).toEqual({ presetId: "home-dest-1", name: "נבו" });
+    expect(values.tripType).toBe("round_trip");
+    expect(values.dropOffPickup).toBe(false);
     expect(values.rideTypeId).toBe("ride-type-1");
     expect(values.tripShape).toBe("round_trip");
     expect(values.departTime).toBe("08:00");
@@ -80,6 +88,7 @@ describe("suggestionToFormValues", () => {
     const values = suggestionToFormValues(
       baseRow({
         tripShape: "one_way_to",
+        tripType: "one_way",
         oneWayCarMode: "relay",
         returnDow: null,
         returnTime: null,
@@ -97,5 +106,23 @@ describe("suggestionToFormValues", () => {
     const values = suggestionToFormValues(baseRow({ departAt: null, returnAt: null }), WEEK_START);
     expect(values.day).toBe(WEEK_START);
     expect(values.dayIndex).toBe(0);
+  });
+
+  it("prefills outStops/returnStops from the template's stops, in position order per leg (REQ §13.93 'Multi-stop rides')", () => {
+    const values = suggestionToFormValues(
+      baseRow({
+        stops: [
+          { leg: "out", position: 2, placeId: "dest-b", placeText: null, name: "בנימינה", eta: null },
+          { leg: "out", position: 1, placeId: "dest-a", placeText: null, name: "חיפה", eta: null },
+          { leg: "return", position: 1, placeId: null, placeText: "עצירה חופשית", name: "עצירה חופשית", eta: null },
+        ],
+      }),
+      WEEK_START,
+    );
+    expect(values.outStops).toEqual([
+      { presetId: "dest-a", name: "חיפה" },
+      { presetId: "dest-b", name: "בנימינה" },
+    ]);
+    expect(values.returnStops).toEqual([{ freeText: "עצירה חופשית" }]);
   });
 });

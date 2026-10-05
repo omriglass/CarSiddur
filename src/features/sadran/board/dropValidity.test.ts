@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest";
 import {
   isDropTargetValid,
   isUnmetDropValid,
+  originMismatch,
   seatsFit,
+  strandsNextRide,
   unavailable,
   type BoardDropContext,
 } from "./dropValidity";
@@ -61,29 +63,66 @@ describe("seatsFit", () => {
   });
 });
 
-describe("unavailable (away band, REQ §89)", () => {
+describe("unavailable (maintenance/active only — REQUIREMENTS §13.93)", () => {
   const WEEK_START_MS = Date.parse("2026-09-13T00:00:00.000Z");
 
-  it("treats a candidate window inside the car's away window like a maintenance block", () => {
+  it("never blocks on an away window any more — a manual ride move is always allowed location-wise", () => {
     const ctx = baseContext({
       awayByCarId: new Map([["car1", [{ locationId: "away-dest", window: { start: 32, end: 48 } }]]]),
       weekStartMs: WEEK_START_MS,
     });
-    // Slots 32..48 = away; a candidate fully inside it must be rejected.
-    expect(unavailable(ctx, "car1", slotToIso(36, WEEK_START_MS), slotToIso(40, WEEK_START_MS))).toBe(true);
-  });
-
-  it("allows a candidate window outside the car's away window", () => {
-    const ctx = baseContext({
-      awayByCarId: new Map([["car1", [{ locationId: "away-dest", window: { start: 32, end: 48 } }]]]),
-      weekStartMs: WEEK_START_MS,
-    });
-    expect(unavailable(ctx, "car1", slotToIso(60, WEEK_START_MS), slotToIso(64, WEEK_START_MS))).toBe(false);
+    // Slots 32..48 = away; a manual ride move into it is still allowed (chain-break warning
+    // shown afterwards instead) — only `isUnmetDropValid` gates a *new* request card on origin.
+    expect(unavailable(ctx, "car1", slotToIso(36, WEEK_START_MS), slotToIso(40, WEEK_START_MS))).toBe(false);
   });
 
   it("is a no-op when weekStartMs/awayByCarId are omitted (callers that never built a conflict scan)", () => {
     const ctx = baseContext();
     expect(unavailable(ctx, "car1", "2026-09-13T06:00:00.000Z", "2026-09-13T07:00:00.000Z")).toBe(false);
+  });
+});
+
+describe("originMismatch (REQUIREMENTS §13.93)", () => {
+  const WEEK_START_MS = Date.parse("2026-09-13T00:00:00.000Z");
+
+  it("rejects a request whose origin differs from where the car actually is (in an away window)", () => {
+    const ctx = baseContext({
+      awayByCarId: new Map([["car1", [{ locationId: "harish", window: { start: 32, end: 48 } }]]]),
+      weekStartMs: WEEK_START_MS,
+      homeDestinationId: "home",
+    });
+    expect(originMismatch(ctx, "car1", "home", slotToIso(36, WEEK_START_MS))).toBe(true);
+    expect(originMismatch(ctx, "car1", "harish", slotToIso(36, WEEK_START_MS))).toBe(false);
+  });
+
+  it("matches the car's own base outside any away window", () => {
+    const ctx = baseContext({
+      carBaseLocationId: new Map([["car1", "binyamina"]]),
+      weekStartMs: WEEK_START_MS,
+      homeDestinationId: "home",
+    });
+    expect(originMismatch(ctx, "car1", "binyamina", slotToIso(10, WEEK_START_MS))).toBe(false);
+    expect(originMismatch(ctx, "car1", "home", slotToIso(10, WEEK_START_MS))).toBe(true);
+  });
+
+  it("never blocks when the context has no location data loaded yet", () => {
+    const ctx = baseContext();
+    expect(originMismatch(ctx, "car1", "home", "2026-09-13T06:00:00.000Z")).toBe(false);
+  });
+});
+
+describe("strandsNextRide (REQUIREMENTS §13.93)", () => {
+  it("rejects a one-way drop that would leave the car somewhere its next ride doesn't start", () => {
+    const ctx = baseContext({
+      rides: [ride({ id: "next1", car_id: "car1", origin_id: "home", starts_at: "2026-09-13T10:00:00.000Z", ends_at: "2026-09-13T11:00:00.000Z" })],
+    });
+    expect(strandsNextRide(ctx, "car1", "harish", "2026-09-13T09:00:00.000Z")).toBe(true);
+    expect(strandsNextRide(ctx, "car1", "home", "2026-09-13T09:00:00.000Z")).toBe(false);
+  });
+
+  it("never blocks when there is no later ride on that car", () => {
+    const ctx = baseContext();
+    expect(strandsNextRide(ctx, "car1", "harish", "2026-09-13T09:00:00.000Z")).toBe(false);
   });
 });
 

@@ -51,6 +51,15 @@ interface Car {
   luggageCapacity: number;
   maintenance: { start: number; end: number }[];
   startLocationId?: string;
+  /** REQUIREMENTS §13.93 (ORIGINS_PLAN §2 item 4): `cars.base_location_id`, null = home. */
+  baseLocationId?: string;
+}
+/** REQUIREMENTS §13.93 (ORIGINS_PLAN §4): mirrors `SolverInput.travel`'s row shape. */
+interface TravelEdge {
+  fromId: string;
+  toId: string;
+  distanceKm?: number;
+  travelMinutes?: number;
 }
 interface PolicyRuleConfig {
   type: string;
@@ -75,6 +84,8 @@ interface SolverConfig {
   improvementBudget: number;
   perRequestBudget: number;
   externalHints: { cabMaxMinutes: number; rentalMinHours: number; ptMinScore: number };
+  /** REQUIREMENTS §13.93 "Multi-stop rides" (ORIGINS_PLAN §6.2): `department_settings.stop_minutes`. */
+  stopMinutes?: number;
 }
 interface SolverRequest {
   id: string;
@@ -83,6 +94,11 @@ interface SolverRequest {
   destinationId: string;
   rideType: string;
   tripShape: 'round_trip' | 'one_way_to' | 'one_way_from';
+  /** REQUIREMENTS §13.93 (ORIGINS_PLAN §4): undefined -> homeLocationId. */
+  originId?: string;
+  originIsFreeText?: boolean;
+  /** Always passed explicitly (never left to the solver's legacy-field derivation) — see buildSolverInput.ts's identical comment. */
+  tripType?: 'round_trip' | 'one_way' | 'drop_off';
   departureMs?: number;
   returnMs?: number;
   flexDeparture: { earlierMin: number | 'day'; laterMin: number | 'day' };
@@ -94,6 +110,8 @@ interface SolverRequest {
   submittedAtMs: number;
   isLate: boolean;
   manualBoost?: { value: number; reason: string };
+  /** REQUIREMENTS §13.93 "Multi-stop rides" (ORIGINS_PLAN §6.1): `request_stops` rows, `src/solver/travel.ts`'s `legRoute()`-ordered. */
+  stops?: { leg: 'out' | 'return'; locationId?: string }[];
 }
 /** Structural subset of src/solver/timeline.ts's `CarTimeline` this function actually calls. */
 interface CarTimelineLike {
@@ -117,6 +135,8 @@ interface FreedSlotInput {
   config: SolverConfig;
   week: { startMs: number; days: ReturnType<typeof buildWeekDays> };
   homeLocationId: string;
+  /** REQUIREMENTS §13.93 (ORIGINS_PLAN §4). */
+  travel?: TravelEdge[];
 }
 
 const DEFAULT_LOOKBACK_WEEKS = 3;
@@ -212,18 +232,29 @@ Deno.serve(async (req) => {
   const candidateIds = candidates.map((c) => c.request_id);
   const requesterById = new Map(candidates.map((c) => [c.request_id, c.requester_id]));
 
-  const [{ data: requestRows }, { data: carRow }, { data: seatConfigs }, { data: maintenanceBlocks }, { data: department }, { data: settings }, { data: otherRides }] =
-    await Promise.all([
+  const [
+    { data: requestRows },
+    { data: carRow },
+    { data: seatConfigs },
+    { data: maintenanceBlocks },
+    { data: department },
+    { data: settings },
+    { data: otherRides },
+    { data: carStartLocationRows },
+    { data: travelRows },
+    { data: stopRows },
+  ] = await Promise.all([
       client
         .from('requests')
         .select(
           'id, requester_id, department_id, destination_id, destination_text, trip_shape, depart_at, return_at, ' +
+            'origin_id, origin_text, trip_type, ' +
             'adults, child_seats, boosters, has_luggage, needs_car_at_destination, ' +
             'flex_depart_early, flex_depart_late, flex_return_early, flex_return_late, ' +
             'submitted_at, created_at, is_late, manual_boost, manual_boost_reason, ride_types(code)',
         )
         .in('id', candidateIds),
-      client.from('cars').select('id, name, type, owner_id, features').eq('id', offer.car_id).maybeSingle(),
+      client.from('cars').select('id, name, type, owner_id, features, base_location_id').eq('id', offer.car_id).maybeSingle(),
       client.from('car_seat_configs').select('adults, child_seats, boosters').eq('car_id', offer.car_id),
       client
         .from('car_maintenance_blocks')
@@ -234,7 +265,7 @@ Deno.serve(async (req) => {
       client.from('departments').select('home_destination_id').eq('id', offer.department_id).maybeSingle(),
       client
         .from('department_settings')
-        .select('turnaround_minutes, day_end_time, chauffeur_dwell_minutes, detour_limit_minutes, detour_limit_km')
+        .select('turnaround_minutes, day_end_time, chauffeur_dwell_minutes, detour_limit_minutes, detour_limit_km, stop_minutes')
         .eq('department_id', offer.department_id)
         .maybeSingle(),
       client
@@ -244,6 +275,12 @@ Deno.serve(async (req) => {
         .eq('week_start', offer.week_start)
         .neq('status', 'cancelled')
         .neq('id', offer.cancelled_ride_id),
+      // REQUIREMENTS §13.93 (ORIGINS_PLAN §2 item 7): where this car actually is at week start.
+      client.rpc('car_start_locations', { p_department_id: offer.department_id, p_week_start: offer.week_start }),
+      // REQUIREMENTS §13.93 (ORIGINS_PLAN §2 item 6): non-home travel figures for this week's requests.
+      client.rpc('place_travel_for_week', { p_department_id: offer.department_id, p_week_start: offer.week_start }),
+      // REQUIREMENTS §13.93 "Multi-stop rides" (ORIGINS_PLAN §6.1): candidates' own stops.
+      client.from('request_stops').select('request_id, leg, position, place_id').in('request_id', candidateIds),
     ]);
 
   if (!carRow || !department || !settings) {
@@ -321,6 +358,7 @@ Deno.serve(async (req) => {
     beyondFlexMaxMinutes: 120,
     defaultTravelMinutes: 60,
     chauffeurDwellMinutes: settings.chauffeur_dwell_minutes as number,
+    stopMinutes: settings.stop_minutes as number,
     improvementBudget: 5000,
     perRequestBudget: 200,
     externalHints: { cabMaxMinutes: 90, rentalMinHours: 30, ptMinScore: 0.6 },
@@ -343,6 +381,11 @@ Deno.serve(async (req) => {
     start: Math.max(0, toSlotFloor(Date.parse(b.starts_at as string), weekStartMs)),
     end: Math.min(weekSlots, toSlotCeil(Date.parse(b.ends_at as string), weekStartMs)),
   }));
+  // REQUIREMENTS §13.93 (ORIGINS_PLAN §2 item 7): `car_start_locations()` keyed by car_id;
+  // this car's own row, falling back to home (unchanged behavior) if the RPC found nothing.
+  const carStartLocation = (carStartLocationRows ?? []).find((r) => r.car_id === offer.car_id) as
+    | { car_id: string; location_id: string; base_location_id: string }
+    | undefined;
   const car: Car = {
     id: carRow.id as string,
     name: carRow.name as string,
@@ -352,8 +395,16 @@ Deno.serve(async (req) => {
     features: (carRow.features as string[]) ?? [],
     luggageCapacity: 999,
     maintenance,
-    startLocationId: homeLocationId,
+    startLocationId: carStartLocation?.location_id ?? homeLocationId,
+    baseLocationId: (carRow.base_location_id as string | null | undefined) ?? undefined,
   };
+  // REQUIREMENTS §13.93 (ORIGINS_PLAN §2 item 6).
+  const travel: TravelEdge[] = (travelRows ?? []).map((r) => ({
+    fromId: r.origin_id as string,
+    toId: r.destination_id as string,
+    distanceKm: (r.distance_km as number | null) ?? undefined,
+    travelMinutes: (r.travel_minutes as number | null) ?? undefined,
+  }));
 
   const bufferSlots = minutesToSlots(config.bufferMinutes);
   const timelines = buildTimelines([car], bufferSlots, weekSlots, homeLocationId);
@@ -371,6 +422,15 @@ Deno.serve(async (req) => {
     });
   }
 
+  // REQUIREMENTS §13.93 "Multi-stop rides": group by request_id, route order per leg (sorted by
+  // `position` — mirrors `buildSolverInput.ts`'s identical comment).
+  const stopsByRequestId = new Map<string, { leg: 'out' | 'return'; position: number; place_id: string | null }[]>();
+  for (const s of (stopRows ?? []) as { request_id: string; leg: 'out' | 'return'; position: number; place_id: string | null }[]) {
+    const list = stopsByRequestId.get(s.request_id) ?? [];
+    list.push(s);
+    stopsByRequestId.set(s.request_id, list);
+  }
+
   const solverRequests: SolverRequest[] = (requestRows ?? []).map((r) => ({
     id: r.id as string,
     memberId: r.requester_id as string,
@@ -378,6 +438,10 @@ Deno.serve(async (req) => {
     destinationId: (r.destination_id as string | null) ?? `text:${r.destination_text}`,
     rideType: ((r.ride_types as { code?: string } | null)?.code) ?? 'other',
     tripShape: r.trip_shape as SolverRequest['tripShape'],
+    originId: (r.origin_id as string | null) ?? undefined,
+    originIsFreeText: !r.origin_id && !!r.origin_text,
+    // Always passed explicitly — see buildSolverInput.ts's identical comment (ORIGINS_PLAN §4 item 1).
+    tripType: r.trip_type as SolverRequest['tripType'],
     departureMs: r.depart_at ? Date.parse(r.depart_at as string) : undefined,
     returnMs: r.return_at ? Date.parse(r.return_at as string) : undefined,
     flexDeparture: { earlierMin: parseFlexInterval(r.flex_depart_early as string), laterMin: parseFlexInterval(r.flex_depart_late as string) },
@@ -389,6 +453,11 @@ Deno.serve(async (req) => {
     submittedAtMs: Date.parse((r.submitted_at as string) ?? (r.created_at as string)),
     isLate: r.is_late as boolean,
     manualBoost: (r.manual_boost as number) > 0 ? { value: r.manual_boost as number, reason: (r.manual_boost_reason as string) ?? '' } : undefined,
+    stops: (() => {
+      const rows = stopsByRequestId.get(r.id as string);
+      if (!rows?.length) return undefined;
+      return [...rows].sort((a, b) => a.leg.localeCompare(b.leg) || a.position - b.position).map((s) => ({ leg: s.leg, locationId: s.place_id ?? undefined }));
+    })(),
   }));
 
   if (!destinations[homeLocationId]) destinations[homeLocationId] = { id: homeLocationId, zone: 'home' };
@@ -413,6 +482,7 @@ Deno.serve(async (req) => {
     config,
     week: { startMs: weekStartMs, days },
     homeLocationId,
+    travel,
   };
 
   const ranked = matchFreedSlot(matchInput);

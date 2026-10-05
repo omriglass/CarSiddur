@@ -89,7 +89,6 @@ describe("scanBoardConflicts", () => {
         endsAt: iso(9 * 3600_000),
         originId: "home",
         destinationId: "home",
-        overnightAck: false,
       },
       {
         id: "r2",
@@ -98,7 +97,6 @@ describe("scanBoardConflicts", () => {
         endsAt: iso(9.5 * 3600_000),
         originId: "home",
         destinationId: "home",
-        overnightAck: false,
       },
       {
         id: "r3",
@@ -107,7 +105,6 @@ describe("scanBoardConflicts", () => {
         endsAt: iso(9 * 3600_000),
         originId: "home",
         destinationId: "home",
-        overnightAck: false,
       },
     ];
     const result = scanBoardConflicts({
@@ -132,7 +129,6 @@ describe("scanBoardConflicts", () => {
         endsAt: iso(9 * 3600_000),
         originId: "away",
         destinationId: "home",
-        overnightAck: false,
       },
     ];
     const result = scanBoardConflicts({
@@ -146,16 +142,15 @@ describe("scanBoardConflicts", () => {
     expect(result.conflictRideIds.has("r1")).toBe(true);
   });
 
-  it("reports a day-end violation for an un-acknowledged overnight stay", () => {
+  it("records a chain break instead of blocking (REQUIREMENTS §13.93 — day-end rule retired)", () => {
     const rides = [
       {
         id: "r1",
         carId: "car-1",
-        startsAt: iso(22 * 3600_000),
-        endsAt: iso(23 * 3600_000),
-        originId: "home",
-        destinationId: "away",
-        overnightAck: false,
+        startsAt: iso(8 * 3600_000),
+        endsAt: iso(9 * 3600_000),
+        originId: "away",
+        destinationId: "home",
       },
     ];
     const result = scanBoardConflicts({
@@ -166,11 +161,12 @@ describe("scanBoardConflicts", () => {
       homeLocationId: "home",
       days: DAYS,
     });
-    expect(result.dayEndViolationsByCarId.get("car-1")?.length).toBeGreaterThan(0);
-    expect(result.awayByCarId.get("car-1")?.some((a) => a.locationId === "away")).toBe(true);
+    expect(result.chainBreaksByCarId.get("car-1")).toEqual([
+      { rideId: "r1", expectedLocationId: "home", actualLocationId: "away" },
+    ]);
   });
 
-  it("does not flag an acknowledged overnight stay", () => {
+  it("reports an away window spanning day end (no day-end warning any more)", () => {
     const rides = [
       {
         id: "r1",
@@ -179,7 +175,6 @@ describe("scanBoardConflicts", () => {
         endsAt: iso(23 * 3600_000),
         originId: "home",
         destinationId: "away",
-        overnightAck: true,
       },
     ];
     const result = scanBoardConflicts({
@@ -190,7 +185,39 @@ describe("scanBoardConflicts", () => {
       homeLocationId: "home",
       days: DAYS,
     });
-    expect(result.dayEndViolationsByCarId.get("car-1")?.length).toBe(0);
+    expect(result.awayByCarId.get("car-1")?.some((a) => a.locationId === "away")).toBe(true);
+    // The car never returns within the week in this fixture -> away at week end too.
+    expect(result.weekEndAwayByCarId.get("car-1")).toEqual({ locationId: "away" });
+  });
+
+  it("away band is relative to the car's own base, continues across days", () => {
+    const rides = [
+      {
+        id: "r1",
+        carId: "car-1",
+        startsAt: iso(8 * 3600_000),
+        endsAt: iso(9 * 3600_000),
+        originId: "binyamina",
+        destinationId: "home",
+      },
+    ];
+    const result = scanBoardConflicts({
+      rides,
+      carIds: ["car-1"],
+      weekStartMs: WEEK_START_MS,
+      bufferMinutes: 30,
+      homeLocationId: "home",
+      days: DAYS,
+      carLocationsById: new Map([["car-1", { baseLocationId: "binyamina", startLocationId: "binyamina" }]]),
+    });
+    // The car starts and stays at its own (non-home) base until r1 moves it home — that
+    // leading stretch is not "away" (it's exactly where it belongs), and the tail after the
+    // ride (now at home, not its base) is away, through week end.
+    expect(result.chainBreaksByCarId.get("car-1")).toEqual([]);
+    const away = result.awayByCarId.get("car-1") ?? [];
+    expect(away.some((a) => a.locationId === "binyamina")).toBe(false);
+    expect(away.some((a) => a.locationId === "home" && a.window.start === isoToSlot(iso(9 * 3600_000), WEEK_START_MS))).toBe(true);
+    expect(result.weekEndAwayByCarId.get("car-1")).toEqual({ locationId: "home" });
   });
 });
 
@@ -216,7 +243,7 @@ describe("requestDayMismatchRideIds", () => {
 });
 
 describe("approved tight turnarounds", () => {
-  const first = { id: "a", carId: "car", startsAt: iso(8 * 3600_000), endsAt: iso(9 * 3600_000), originId: "home", destinationId: "home", overnightAck: false };
+  const first = { id: "a", carId: "car", startsAt: iso(8 * 3600_000), endsAt: iso(9 * 3600_000), originId: "home", destinationId: "home" };
   const next = { ...first, id: "b", startsAt: iso(9 * 3600_000), endsAt: iso(10 * 3600_000) };
   const scan = (rides: (typeof first & { turnaroundMinutes?: number })[]) => scanBoardConflicts({ rides, carIds: ["car"], weekStartMs: WEEK_START_MS, bufferMinutes: 30, homeLocationId: "home", days: DAYS });
   it("allows an intentional zero gap while retaining the standard buffer otherwise", () => {

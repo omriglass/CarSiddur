@@ -82,6 +82,9 @@ export const heAdmin = {
     fieldBoardStart: "שעת התחלת לוח",
     fieldJoinRadiusKm: 'רדיוס להצעת הצטרפות (ק"מ)',
     fieldJoinRadiusKmHelp: 'לפני כניסה לרשימת המתנה, מוצעות נסיעות קיימות באותו יום ליעד במרחק זה או פחות.',
+    /** REQUIREMENTS §13.93 "Multi-stop rides": `department_settings.stop_minutes`, default 5. */
+    fieldStopMinutes: "דקות לעצירה",
+    fieldStopMinutesHelp: "זמן המתנה משוער בכל עצירה בדרך — משפיע על זמני ההגעה המשוערים ועל משך הנסיעה.",
   },
   adminMembers: {
     googleName: "שם מחשבון Google",
@@ -95,6 +98,9 @@ export const heAdmin = {
     /** REQ §88 (owner 2026-09-15): admin-editable mirror of the member's own profile switch. */
     doesNotDrive: "לא נוהג/ת",
     doesNotDriveHelp: "החבר/ה לא ישובץ/תשובץ כנהג/ת; אפשר להביא נהג/ת אורח/ת",
+    /** Per-membership "נקודת יציאה קבועה" select (REQ §13.93), next to each department chip. */
+    defaultOriginLabel: "נקודת יציאה",
+    defaultOriginHome: "בית (ברירת מחדל)",
     title: "חברים",
     tabMembers: "חברים",
     tabPending: "ממתינים לאישור",
@@ -188,6 +194,9 @@ export const heAdmin = {
     fieldBuiltInBoosters: "בוסטרים קבועים ברכב",
     fieldResponsible: "אחראי/ת רכב",
     fieldResponsibleNone: "ללא אחראי/ת",
+    /** "מיקום קבוע" (REQ §13.93): `cars.base_location_id`, default the department home. */
+    fieldBaseLocation: "מיקום קבוע",
+    fieldBaseLocationHome: "בית (ברירת מחדל)",
     columnResponsible: "אחראי/ת",
     noResponsible: "ללא אחראי/ת",
     featureRoofRack: "גגון",

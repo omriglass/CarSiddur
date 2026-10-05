@@ -225,6 +225,76 @@
         "return": "relay_pair"
       },
       "knownDivergence": "By design: SQL healing (pair_one_way_legs) works on the requests' stored times and never shifts a member's own request, so the raw overlap cannot pair and each leg heals into its own chauffeur ride; only the solver may shift within declared flexibility."
+    },
+    {
+      "id": "same_origin_pair",
+      "description": "O3 (REQ §13.93, ORIGINS_PLAN §3, 2026-10-04): both legs share a non-home origin (destB) and go to/from destA -- pairing is origin-aware (§3.6 'same origin'), not home-anchored; otherwise identical timing to basic_relay_pair, so it still pairs.",
+      "destination": "destA",
+      "out": {
+        "departSlot": 40,
+        "canDrive": true,
+        "origin": "destB"
+      },
+      "return": {
+        "returnSlot": 60,
+        "canDrive": true,
+        "origin": "destB"
+      },
+      "expectedSql": {
+        "out": "relay_pair",
+        "return": "relay_pair"
+      },
+      "expectedTs": {
+        "out": "relay_pair",
+        "return": "relay_pair"
+      }
+    },
+    {
+      "id": "different_origin_no_pair",
+      "description": "O3 (REQ §13.93, ORIGINS_PLAN §3): same destination and otherwise-pairable timing as basic_relay_pair, but the two legs start from different origins (destB vs home) -- an 'opposite' leg must share the SAME origin (SOLVER.md §3.6), so neither pairs; each heals into its own chauffeur ride instead.",
+      "destination": "destA",
+      "out": {
+        "departSlot": 40,
+        "canDrive": true,
+        "origin": "destB"
+      },
+      "return": {
+        "returnSlot": 60,
+        "canDrive": true,
+        "origin": "home"
+      },
+      "expectedSql": {
+        "out": "chauffeur",
+        "return": "chauffeur"
+      },
+      "expectedTs": {
+        "out": "chauffeur",
+        "return": "chauffeur"
+      }
+    },
+    {
+      "id": "explicit_one_way_never_pairs",
+      "description": "O3 (REQ §13.93, §1.3a): an explicit 'one_way' trip type (הלוך בלבד) is never paired or widened, even with otherwise-perfect timing/destination/origin match -- pairing and chauffeur-healing are drop_off-only.",
+      "destination": "destA",
+      "out": {
+        "departSlot": 40,
+        "canDrive": true,
+        "tripType": "one_way"
+      },
+      "return": {
+        "returnSlot": 47,
+        "canDrive": true,
+        "tripType": "one_way"
+      },
+      "expectedSql": {
+        "out": "chauffeur",
+        "return": "chauffeur"
+      },
+      "expectedTs": {
+        "out": "relay_pair",
+        "return": "relay_pair"
+      },
+      "knownDivergence": "This fixture harness always seeds BOTH legs as a lone chauffeur-shaped reservation (reserve_live_one_way_slot's shape) regardless of trip type, purely to exercise pair_one_way_legs()/try_widen_one_way_leg()'s drop_off-only filter on the SQL side. A real explicit one_way request never takes that code path at all (it is placed as an ordinary relay leg by try_auto_approve()/the solver directly, §1.3a) -- the TS side's expectedTs reflects that real placement, not this harness's synthetic shape, so the two sides intentionally diverge here."
     }
   ]
 }

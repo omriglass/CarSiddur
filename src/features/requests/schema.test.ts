@@ -11,6 +11,7 @@ function baseValues(overrides: Partial<RequestFormValues> = {}): RequestFormValu
     day: "2026-09-15",
     dayIndex: 2,
     destination: { presetId: "dest-1", name: "חיפה" },
+    origin: { freeText: "" },
     rideTypeId: "type-1",
     ...overrides,
   } as RequestFormValues;
@@ -132,6 +133,10 @@ describe("templateSuggestionRowSchema", () => {
       ride_type_id: "ride-type-1",
       ride_type_name: "אחר",
       trip_shape: "round_trip",
+      origin_id: "home-dest-1",
+      origin_text: null,
+      origin_name: "נבו",
+      trip_type: "round_trip",
       depart_dow: 2,
       depart_time: "08:00:00",
       return_dow: 2,
@@ -154,6 +159,7 @@ describe("templateSuggestionRowSchema", () => {
       ride_description: null,
       guest_passenger_names: [],
       notes: null,
+      stops: [],
     };
   }
 

@@ -188,6 +188,11 @@ begin
   perform pg_temp.expect_refused('destinations.merge_destination', format('select public.merge_destination(%L, %L)', other_dest_b, home_b));
   perform pg_temp.expect_refused('destinations.suggest_destination', format('select public.suggest_destination(%L, %L, %L)', dept_b, 'Intruder Place', 'unknown'));
 
+  -- origins (REQ §13.93, ORIGINS_PLAN §2) -----------------------------------
+  perform pg_temp.expect_refused('origins.place_travel_for_week', format('select * from public.place_travel_for_week(%L, %L)', dept_b, week_b));
+  perform pg_temp.expect_refused('origins.car_start_locations', format('select * from public.car_start_locations(%L, %L)', dept_b, week_b));
+  perform pg_temp.expect_refused('origins.set_my_default_origin', format('select public.set_my_default_origin(%L, %L)', dept_b, other_dest_b));
+
   -- members / admin (is_admin()-gated, sadran_a is not admin) ---------------
   perform pg_temp.expect_refused('members.admin_approve_member', format('select public.admin_approve_member(%L, %L)', member_b, dept_b));
   perform pg_temp.expect_refused('members.admin_update_member', format('select public.admin_update_member(%L, %L::jsonb)', member_b, '{"display_name":"attack"}'));
@@ -313,7 +318,8 @@ declare
     'open_week','reopen_week','set_week_phase','set_week_close_at','ensure_department_weeks',
     'publication_readiness','publish_siddur','record_solver_preview','form_waitlist_groups',
     'publish_scores_fingerprint','sadran_contact_of','fairness_stats','department_stats','joinable_rides_for_request',
-    'create_policy_version','set_policy_active','resolve_waitlist_group','cancel_waitlist_group'
+    'create_policy_version','set_policy_active','resolve_waitlist_group','cancel_waitlist_group',
+    'place_travel_for_week','car_start_locations','set_my_default_origin'
   ];
   -- 'name:one-word-reason'. Duplicated names (day_date_label has two overloads) are fine —
   -- the completeness check below groups by proname.
@@ -329,13 +335,17 @@ declare
     'rides_location_ends:trigger', 'rides_temp_car_never_relays:trigger',
     'rides_temp_car_owner_only:trigger', 'sadran_assignments_require_roster_role:trigger',
     'waitlist_group_membership_sync:trigger',
-    'can_manage_any_open_week:read-helper', 'can_manage_operations:read-helper',
+    'can_manage_any_open_week:read-helper', 'can_manage_operations:read-helper', 'car_base_location:read-helper',
     'can_manage_week:read-helper', 'day_date_label:read-helper', 'is_admin:read-helper',
     'is_approved:read-helper', 'is_car_responsible:read-helper', 'is_day_public:read-helper',
     'is_proposal_party:read-helper', 'is_request_companion:read-helper', 'is_sadran:read-helper',
     'is_sadran_any:read-helper', 'is_week_public:read-helper', 'member_of:read-helper',
     'phone_of:read-helper', 'profile_phones:read-helper', 'request_served_by_public_ride:read-helper',
     'sadranim_of:read-helper',
+    -- REQ §13.93 "Multi-stop rides": per-id derived-data reader referenced directly inside
+    -- `v_my_requests`/`v_board_rides` (security_invoker views), same category as
+    -- request_served_by_public_ride/is_request_companion above.
+    'request_stop_etas:read-helper',
     'claim_freed_slot:self-only', 'register_push_subscription:self-only',
     'resume_request_template:self-only', 'save_request_template:self-only',
     'snooze_request_template:self-only', 'stop_request_template:self-only',

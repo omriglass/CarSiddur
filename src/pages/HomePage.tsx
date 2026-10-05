@@ -92,6 +92,9 @@ function rowDay(row: MyRequestRow): string | null {
 export function HomePage() {
   const profileQuery = useProfile();
   const active = useActiveDepartment();
+  // REQ §13.93: `departments.home_destination_id` per department, for `RequestRow`'s "מ<origin>
+  // ל<destination>" display (`active.departments` already lists every active department).
+  const homeDestinationIds = Object.fromEntries(active.departments.map((d) => [d.id, d.home_destination_id]));
   const requestsQuery = useMyRequests();
   const upcomingRidesQuery = useMyUpcomingRides();
   const rideTypesQuery = useRideTypes();
@@ -418,6 +421,7 @@ export function HomePage() {
                     row={row}
                     highlighted={row.id === focusedId}
                     rowRef={row.id === focusedId ? highlightedRef : undefined}
+                    homeDestinationId={homeDestinationIds[group.departmentId]}
                     onWithdraw={(target) => setConfirmAction({ kind: "withdraw", row: target })}
                     onCancelRide={(target) => setConfirmAction({ kind: "cancel", row: target })}
                     onMakeRepeating={(target) =>

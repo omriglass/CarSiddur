@@ -9,7 +9,7 @@ import { formatTime } from "@/lib/time";
 export interface MergePrefill {
   requestId: string;
   rideId: string | null;
-  type: "shift" | "merge" | "deny" | "external";
+  type: "shift" | "merge" | "deny" | "external" | "origin";
   payload: Record<string, unknown>;
   proposalId?: string;
 }

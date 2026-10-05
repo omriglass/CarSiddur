@@ -10,10 +10,11 @@ import type { HostRide } from './merge';
 import { buildHostRides, findMergeHosts } from './merge';
 import { reason } from './reasons';
 import { chauffeurLoad, fits, luggageFits } from './seatFit';
-import { dayBoundsForSlot, formatSlotTime, minutesToSlots, type NormalizedRequest } from './slots';
+import { dayBoundsForSlot, formatSlotTime, minutesToSlots, travelSlotsFor, type NormalizedRequest } from './slots';
 import type { SplitLegsContext } from './splitLegs';
 import { trySplitLegs } from './splitLegs';
 import { CarTimeline } from './timeline';
+import { chauffeurCandidates } from './travel';
 import type { Assignment, Car, Destination, LegSide, SolverConfig, SolverInput, Suggestion, Window } from './types';
 
 export interface SuggestionContext {
@@ -39,19 +40,14 @@ function volunteerCandidates(input: SolverInput, window: { start: number; end: n
   return [...driversToday].sort();
 }
 
-/** Car occupancy window of a standalone chauffeur ride (SOLVER §1.2, §3.3): a home
- *  round trip wrapped around the requester's one-way leg — `[D, D + 2·travel + dwell)`
- *  for a drop-off (`out`), `[R − 2·travel − dwell, R)` for a pick-up (`return`). */
-function chauffeurWindow(side: 'out' | 'return', point: number, travelSlots: number, dwellSlots: number): Window {
-  const total = travelSlots * 2 + dwellSlots;
-  return side === 'out' ? { start: point, end: point + total } : { start: point - total, end: point };
-}
-
 /** Owner decision 2026-09-14: a `chauffeur` suggestion is offered only when it is
- *  actually possible — some shared car is free at home for the whole chauffeur
- *  window and its seat configuration fits `chauffeurLoad(nr.passengers)` (the
- *  requester's load plus the volunteer). Returns the first qualifying car in the
- *  existing deterministic car order, or null if none qualifies. */
+ *  actually possible — some shared car is free for the whole chauffeur window
+ *  (REQUIREMENTS §13.93, owner follow-up 2026-10-04, ORIGINS_PLAN §3: tried at
+ *  the leg's origin — drop-off — then its destination — pickup, e.g. "pick me
+ *  up from Harish"; a `return` leg keeps the legacy single formula) and its
+ *  seat configuration fits `chauffeurLoad(nr.passengers)` (the requester's
+ *  load plus the volunteer). Returns the first qualifying car/candidate in the
+ *  existing deterministic order, or null if none qualifies. */
 function findChauffeurCar(
   nr: NormalizedRequest,
   side: 'out' | 'return',
@@ -59,14 +55,22 @@ function findChauffeurCar(
   ctx: SuggestionContext,
 ): { carId: string; window: Window } | null {
   const dwellSlots = minutesToSlots(ctx.input.config.chauffeurDwellMinutes);
-  const window = chauffeurWindow(side, point, nr.travelSlots, dwellSlots);
+  // Multi-stop rides (REQUIREMENTS §13.93 "Multi-stop rides"): nr.travelSlots
+  // is already the leg's own route duration; the chauffeur's empty
+  // repositioning drive never revisits the stops (directSlots).
+  const directSlots = travelSlotsFor(ctx.input, nr.originId, nr.destinationId);
+  const candidates = chauffeurCandidates(side, point, nr.travelSlots, directSlots, dwellSlots, nr.originId, nr.destinationId);
+  const day = dayBoundsForSlot(ctx.input.week.days, point);
   const load = chauffeurLoad(nr.passengers);
   const sharedCars = ctx.input.cars.filter((c) => c.type === 'shared').sort((a, b) => (a.id < b.id ? -1 : 1));
-  for (const car of sharedCars) {
-    if (!fits(car, load) || !luggageFits(car, nr.luggage ? 1 : 0)) continue;
-    const tl = ctx.timelines.get(car.id);
-    if (!tl || !tl.isFree(window, ctx.input.homeLocationId)) continue;
-    return { carId: car.id, window };
+  for (const candidate of candidates) {
+    if (candidate.window.start < day.startSlot || candidate.window.end > day.endSlot) continue;
+    for (const car of sharedCars) {
+      if (!fits(car, load) || !luggageFits(car, nr.luggage ? 1 : 0)) continue;
+      const tl = ctx.timelines.get(car.id);
+      if (!tl || !tl.isFree(candidate.window, candidate.carOriginId)) continue;
+      return { carId: car.id, window: candidate.window };
+    }
   }
   return null;
 }
@@ -134,6 +138,8 @@ function mergeSuggestions(nr: NormalizedRequest, leg: LegSide, ctx: SuggestionCo
     cars: new Map(ctx.input.cars.map((c) => [c.id, c])),
     hostDriverRequests: ctx.hostDriverRequests,
     hostTimelines: ctx.timelines,
+    homeLocationId: ctx.input.homeLocationId,
+    travel: ctx.input.travel,
   }).slice(0, 3);
 
   return candidates.map((c) => {
@@ -162,6 +168,7 @@ function mergeSuggestions(nr: NormalizedRequest, leg: LegSide, ctx: SuggestionCo
       }),
       cost: c.cost,
       confidence: c.confidence,
+      boardAtLocationId: c.boardAtLocationId,
     };
   });
 }
@@ -215,6 +222,7 @@ export function buildSuggestions(nr: NormalizedRequest, ctx: SuggestionContext, 
         timelines: ctx.timelines,
         unpairedRelay: ctx.unpairedRelay,
         home: ctx.input.homeLocationId,
+        travel: ctx.input.travel,
       };
       const split = trySplitLegs(nr, splitCtx);
       if (split) {
@@ -333,9 +341,62 @@ export function buildSuggestions(nr: NormalizedRequest, ctx: SuggestionContext, 
     }
   }
 
+  const changeOrigin = changeOriginSuggestion(nr, ctx);
+  if (changeOrigin) suggestions.push(changeOrigin);
+
   const destination = ctx.input.destinations[nr.destinationId];
   suggestions.push(...externalHints(nr, destination, ctx.input.config));
   suggestions.push(denySuggestion(nr, blockerCarIds));
 
   return suggestions;
+}
+
+/**
+ * REQUIREMENTS §13.93, ORIGINS_PLAN §4 item 6: for an unmet request, a car
+ * that is free for the request's *whole preferred window* at another place Y
+ * (somewhere that car already is, so placing the request's origin there
+ * breaks nothing) — mapped to proposal type `origin` (SOLVER §3.15), shown to
+ * the Sadran only, never auto-applied. Simplification (documented, in the
+ * style of SOLVER §9): only the preferred window is tried (no flex search),
+ * on the first car/location pair found in deterministic order; a
+ * zero-duration window (a passenger-only leg's single point in time) never
+ * qualifies — there is no "whole window" to be free for.
+ */
+function changeOriginSuggestion(nr: NormalizedRequest, ctx: SuggestionContext): Suggestion | null {
+  if (nr.window.end <= nr.window.start) return null;
+  // Only trip types the SQL `origin` proposal can place through `try_auto_approve`
+  // (round_trip, one_way, drop_off with a pickup); a one-leg drop_off is served by
+  // pairing/chauffeur rides, never by "take the car from Y" (DATA_MODEL O3).
+  const placeable = nr.tripType === 'round_trip' || nr.tripType === 'one_way'
+    || (nr.tripType === 'drop_off' && nr.request.tripShape === 'round_trip');
+  if (!placeable) return null;
+  const sharedCars = ctx.input.cars.filter((c) => c.type === 'shared').sort((a, b) => (a.id < b.id ? -1 : 1));
+  for (const car of sharedCars) {
+    if (!fits(car, nr.passengers) || !luggageFits(car, nr.luggage ? 1 : 0)) continue;
+    const tl = ctx.timelines.get(car.id);
+    if (!tl) continue;
+    const seen = new Set<string>([nr.originId]);
+    for (const gap of tl.gaps()) {
+      if (seen.has(gap.locationId)) continue;
+      seen.add(gap.locationId);
+      // A one_way trip leaves the car at the destination: the same end check as
+      // placement (the car's next ride must start there, or there is none).
+      const endLocationId = nr.tripType === 'one_way' ? nr.destinationId : gap.locationId;
+      if (gap.window.start <= nr.window.start && nr.window.end <= gap.window.end
+        && tl.isFree(nr.window, gap.locationId, undefined, endLocationId)) {
+        return {
+          kind: 'changeOrigin',
+          requestId: nr.id,
+          carId: car.id,
+          originId: gap.locationId,
+          window: nr.window,
+          reasonCode: 'SUGGEST_CHANGE_ORIGIN',
+          reason: reason('SUGGEST_CHANGE_ORIGIN', { origin: gap.locationId, car: car.name }),
+          cost: 0,
+          confidence: 0.4,
+        };
+      }
+    }
+  }
+  return null;
 }

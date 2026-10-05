@@ -67,6 +67,9 @@ export function scoreRequests(
       policy: input.policy,
       stats: input.stats,
       destinations: input.destinations,
+      homeLocationId: input.homeLocationId,
+      travel: input.travel,
+      config: input.config,
       batch: { requests: batch, size: batch.length, relayPairPeople },
     };
     const values = new Map<string, number>();

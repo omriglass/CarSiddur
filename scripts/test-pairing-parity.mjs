@@ -74,12 +74,23 @@ end $$;
 }
 
 function destVar(key) {
+  if (key === 'home') return 'home';
   return key === 'destB' ? 'dest_b' : 'dest_a';
 }
 
-/** One leg's block: declares/fills q<which>/r<which>, and toggles does_not_drive / request_companions as needed. */
+/**
+ * One leg's block: declares/fills q<which>/r<which>, and toggles does_not_drive /
+ * request_companions as needed. O3 (REQ §13.93, ORIGINS_PLAN §3, 2026-10-04): each leg now
+ * carries its own `origin` (default 'home', matching every pre-O3 case unchanged) and
+ * `tripType` (default 'drop_off' -- the only type pair_one_way_legs()/try_widen_one_way_leg()
+ * ever act on; a case may set 'one_way' to prove an explicit one-way leg is never touched).
+ * The placeholder ride's own origin/destination (the "lone chauffeur reservation" shape
+ * reserve_live_one_way_slot() produces) is now the request's own origin, not always home.
+ */
 function legSql(which, leg, caseDest) {
   const destExpr = destVar(leg.destination ?? caseDest ?? 'destA');
+  const originExpr = destVar(leg.origin ?? 'home');
+  const tripType = leg.tripType ?? 'drop_off';
   const isOut = which === 'out';
   const tripShape = isOut ? 'one_way_to' : 'one_way_from';
   const timeCol = isOut ? 'depart_at' : 'return_at';
@@ -95,8 +106,8 @@ function legSql(which, leg, caseDest) {
     : '';
 
   return `
-  ${nonDriver}insert into public.requests(department_id, week_start, requester_id, filed_by, destination_id, ride_type_id, ${timeCol}, trip_shape, one_way_car_mode, needs_car_at_destination, status)
-    values (${DEPT}, w, ${requesterVar}, manager, ${destExpr}, ${RIDE_TYPE}, ${timeExpr}, '${tripShape}', 'relay', false, 'submitted')
+  ${nonDriver}insert into public.requests(department_id, week_start, requester_id, filed_by, destination_id, origin_id, ride_type_id, ${timeCol}, trip_shape, trip_type, one_way_car_mode, needs_car_at_destination, status)
+    values (${DEPT}, w, ${requesterVar}, manager, ${destExpr}, ${originExpr}, ${RIDE_TYPE}, ${timeExpr}, '${tripShape}', '${tripType}', 'relay', false, 'submitted')
     returning id into q${which};
   ${companionInsert}select travel_minutes into ${which}_travel from public.destinations where id = ${destExpr};
   select chauffeur_dwell_minutes into ${which}_dwell from public.department_settings where department_id = ${DEPT};
@@ -107,7 +118,7 @@ function legSql(which, leg, caseDest) {
       : `${which}_end := ${timeExpr};\n  ${which}_start := ${which}_end - make_interval(mins => ${which}_dur);`
   }
   r${which} := public.edit_ride(jsonb_build_object('department_id', ${DEPT}, 'week_start', w, 'car_id', ${car}, 'needs_driver', true,
-    'origin_id', home, 'destination_id', home, 'starts_at', ${which}_start, 'ends_at', ${which}_end,
+    'origin_id', ${originExpr}, 'destination_id', ${originExpr}, 'starts_at', ${which}_start, 'ends_at', ${which}_end,
     'served', jsonb_build_array(jsonb_build_object('request_id', q${which}, 'role', 'passenger', 'leg', '${legLabel}', 'car_mode', 'chauffeur'))));
 `;
 }

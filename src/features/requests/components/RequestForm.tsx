@@ -1,5 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useContext, useMemo, useRef, useState } from "react";
+import { useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -14,7 +14,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { FormItem } from "@/components/ui/form";
 import { datesOfWeek } from "@/components/dateFieldDates";
 import { useScrollToFirstError } from "@/components/useScrollToFirstError";
+import { useActiveDepartment } from "@/features/auth/useActiveDepartment";
 import { useDepartmentMembers } from "@/features/auth/useDepartmentMembers";
+import { useMyDepartments } from "@/features/auth/useMyDepartments";
 import { useProfile } from "@/features/auth/useProfile";
 import { useSession } from "@/features/auth/useSession";
 import { useCars, useCarSeatConfigs, useDestinations, useRideTypes, useSuggestDestinationMutation } from "@/features/fleet/hooks";
@@ -34,6 +36,8 @@ import { cn } from "@/lib/utils";
 import { fits } from "@/solver/seatFit";
 import type { Car as SolverCar } from "@/solver/types";
 
+import type { DestinationValue } from "@/components/DestinationCombobox";
+
 import { fetchChildren, fetchRequestVersion } from "../api";
 import type { JoinableRideRow, RequestEditRow, SubmitRequestResult, SubmitSeriesRequestResult, TemplateSuggestion } from "../api";
 import { dayLabel } from "../dayLabel";
@@ -41,7 +45,7 @@ import { CAR_NOW_DEFAULT_HOURS } from "../carNow";
 import { findOverlappingRequest } from "../duplicate";
 import { QUICK_REQUEST_DURATION_HOURS, endTimeForDuration } from "../duration";
 import { joinableRideDriverLabel } from "../joinableRides";
-import { guestPassengerNames, quickVehicleWindow } from "../quickRequest";
+import { guestPassengerNames, quickVehicleWindow, resolveQuickOrigin } from "../quickRequest";
 import {
   useJoinableRidesMutation,
   useMyRequests,
@@ -61,11 +65,14 @@ import { isSeriesSubmission, seriesSpanDays } from "../series";
 import { payloadSeatCounts } from "../seatCounts";
 import { shouldOfferJoinableRides, toastSeriesSubmitOutcome, toastSubmitOutcome } from "../submitOutcome";
 import { suggestionToFormValues } from "../templatePrefill";
+import { canUseDrivingTripTypes, initialTripType, tripTypeToLegacyFields } from "../tripType";
 import { JoinableRidesDialog } from "./JoinableRidesDialog";
 import { CarPreferenceFields } from "./requestForm/CarPreferenceFields";
 import { DayAndTripShapeFields } from "./requestForm/DayAndTripShapeFields";
 import { DestinationRideTypeFields } from "./requestForm/DestinationRideTypeFields";
 import { FieldError } from "./requestForm/FieldError";
+import { OriginField } from "./requestForm/OriginField";
+import { StopsField } from "./requestForm/StopsField";
 import { FlexibilityFields, TimeFields } from "./requestForm/TimesFlexibilityFields";
 import { PassengersFields } from "./requestForm/PassengersFields";
 import { RepeatWeeklyField } from "./requestForm/RepeatWeeklyField";
@@ -85,12 +92,17 @@ export interface QuickRequestCarOption {
   id: string;
   name: string;
   type: "shared" | "temporary";
+  /** REQ §13.93: the quick-request origin fallback when the car is not currently away. */
+  baseLocationId?: string | null;
 }
 
 export interface QuickRequestAwayWindow {
   carId: string;
   awayFrom: string;
   awayUntil: string | null;
+  /** REQ §13.93: where the car is while away — the quick-request origin. */
+  locationId?: string;
+  locationName?: string;
 }
 
 export interface QuickRequestContext {
@@ -169,6 +181,11 @@ function emptyValues(
   returnTime = "12:00",
   preferredCarId = "",
   durationHours?: number,
+  // REQ §13.93: a placeholder until `RequestForm`'s own render-body sync resolves the real
+  // default (the member's `default_origin_id` for this department, else home) once the
+  // department/destinations catalog has loaded — see the "catalog may arrive after useForm
+  // captures its initial defaults" comment below.
+  origin: DestinationValue = { freeText: "" },
 ): RequestFormValues {
   const dates = datesOfWeek(weekStart);
   return {
@@ -180,9 +197,14 @@ function emptyValues(
     // it later (REQ §13.77).
     returnDay: day,
     destination: { freeText: "" },
+    origin,
+    outStops: [],
+    returnStops: [],
     rideTypeId,
     preferredCarId,
     tripShape: "round_trip",
+    tripType: "round_trip",
+    dropOffPickup: false,
     departTime,
     returnTime,
     returnNextDay: false,
@@ -220,6 +242,8 @@ function buildJoinRideValues(
       ? { presetId: joinRide.destinationId, name: joinRide.destinationName }
       : { freeText: joinRide.destinationName },
     tripShape: joinRide.isRelay ? "one_way_to" : "round_trip",
+    tripType: joinRide.isRelay ? "one_way" : "round_trip",
+    dropOffPickup: false,
     departTime: timeFromInstant(joinRide.startsAt),
     returnTime: joinRide.isRelay ? undefined : timeFromInstant(joinRide.endsAt),
     oneWayCarMode: joinRide.isRelay ? "passenger" : undefined,
@@ -249,9 +273,15 @@ function mapEditRowToValues(row: RequestEditRow, weekStart: string, companions: 
     destination: row.destinationId
       ? { presetId: row.destinationId, name: row.destinationName ?? "" }
       : { freeText: row.destinationText ?? "" },
+    origin: row.originId
+      ? { presetId: row.originId, name: row.originName ?? "" }
+      : { freeText: row.originText ?? "" },
+    outStops: row.outStops ?? [],
+    returnStops: row.returnStops ?? [],
     rideTypeId: row.rideTypeId,
     preferredCarId: row.preferredCarId ?? "",
     tripShape: row.tripShape,
+    ...initialTripType(row),
     departTime,
     returnTime: returnNextDay ? "23:59" : returnTime,
     returnNextDay: false,
@@ -305,6 +335,10 @@ export function RequestForm({
   const membersQuery = useDepartmentMembers(departmentId);
   const { session } = useSession();
   const profileQuery = useProfile();
+  // REQ §13.93: origin defaults (the member's own `default_origin_id` for this department, the
+  // department home) and the non-driver trip-type gate (REQ §13.88).
+  const activeDepartmentsQuery = useActiveDepartment();
+  const myDepartmentsQuery = useMyDepartments();
   const companionsQuery = useRequestCompanionsQuery(initial?.id);
   const requestChildrenQuery = useRequestChildrenQuery(initial?.id);
   const settingsQuery = useDepartmentSettings(departmentId);
@@ -396,6 +430,10 @@ export function RequestForm({
   const values = useWatch({ control: form.control });
   const tripShape = values.tripShape ?? "round_trip";
   const oneWay = tripShape !== "round_trip";
+  // REQ §13.93 "Multi-stop rides": return-stops only make sense on a leg that actually returns
+  // (הלוך-חזור, or הקפצה with the pickup switch on) — same gate `mapper.ts`/`submit_request`
+  // use ("tripShape !== 'one_way_to'" <=> the RPC's own `return_at is not null` check).
+  const needsReturn = tripShape !== "one_way_to";
   // carNow has no return-time picker — `returnTime` tracks the fixed (preset, hidden)
   // `departTime` plus the visible `durationHours` select instead. Its own `Controller` below
   // stays mounted (rendering `null`) specifically so this write reaches `useWatch`'s `values`
@@ -408,6 +446,63 @@ export function RequestForm({
     }
   }
   const day = values.day ?? weekStart;
+
+  // REQ §13.93: the department home and the member's own default origin for this department —
+  // `carNow` is pinned to home; `quick` defaults to wherever the slot's car actually is
+  // (`resolveQuickOrigin`); everything else defaults to the member's `default_origin_id`, else
+  // home. `null` while the department/destinations catalogs have not loaded yet.
+  const homeDestinationId = activeDepartmentsQuery.departments.find((d) => d.id === departmentId)?.home_destination_id ?? null;
+  const homeName = destinationsQuery.data?.find((d) => d.id === homeDestinationId)?.name ?? "";
+  const myDefaultOriginId = myDepartmentsQuery.data?.find((d) => d.department_id === departmentId)?.default_origin_id ?? homeDestinationId;
+  const resolvedOrigin: DestinationValue | null = (() => {
+    if (variant === "carNow") {
+      return homeDestinationId ? { presetId: homeDestinationId, name: homeName } : null;
+    }
+    if (variant === "quick" && quickContext) {
+      if (!homeDestinationId) return null;
+      const carId = values.preferredCarId || "";
+      const atMs = Date.parse(toInstant(day, values.departTime || "08:00", false));
+      const car = quickContext.cars.find((c) => c.id === carId);
+      return resolveQuickOrigin({
+        carId,
+        atMs,
+        awayWindows: quickContext.awayWindows ?? [],
+        baseLocationId: car?.baseLocationId,
+        baseLocationName: car?.baseLocationId ? destinationsQuery.data?.find((d) => d.id === car.baseLocationId)?.name : undefined,
+        homeId: homeDestinationId,
+        homeName,
+      });
+    }
+    if (!myDefaultOriginId) return null;
+    return { presetId: myDefaultOriginId, name: destinationsQuery.data?.find((d) => d.id === myDefaultOriginId)?.name ?? "" };
+  })();
+  // Applies the resolved default once per distinct value (so the member's own tap-to-edit choice
+  // is never fought), and only for a request that has no origin of its own yet (edit/join/template
+  // prefills already carry the real stored origin). In an effect, not during render: a
+  // render-time `form.setValue` reached the form state but not the already-mounted origin
+  // `Controller`, which kept showing an empty "מ אל" (found by e2e 2026-10-04). The applied key
+  // lives in a ref, so no state is set inside the effect.
+  const appliedOriginKeyRef = useRef<string | null>(null);
+  const shouldApplyOrigin = mode !== "edit" && !joinRide && !templateSuggestion && !!resolvedOrigin;
+  const resolvedOriginKey = resolvedOrigin ? JSON.stringify(resolvedOrigin) : null;
+  useEffect(() => {
+    if (!shouldApplyOrigin || !resolvedOriginKey || resolvedOriginKey === appliedOriginKeyRef.current) return;
+    form.setValue("origin", JSON.parse(resolvedOriginKey) as DestinationValue, { shouldDirty: false });
+    appliedOriginKeyRef.current = resolvedOriginKey;
+  }, [form, shouldApplyOrigin, resolvedOriginKey]);
+
+  // REQ §13.88/§13.93: a non-driver with no driving companion selected may only file a drop-off.
+  const companionDoesNotDriveById = new Map((membersQuery.data ?? []).map((m) => [m.id, m.doesNotDrive]));
+  const canDrive = canUseDrivingTripTypes(profileQuery.data?.does_not_drive ?? false, values.companions ?? [], companionDoesNotDriveById);
+  const tripType = values.tripType ?? "round_trip";
+  const dropOffPickup = values.dropOffPickup ?? false;
+  if (!canDrive && tripType !== "drop_off") {
+    const forced = tripTypeToLegacyFields("drop_off", dropOffPickup);
+    form.setValue("tripType", "drop_off", { shouldDirty: true });
+    form.setValue("tripShape", forced.tripShape, { shouldDirty: true, shouldValidate: true });
+    form.setValue("needsCarAtDestination", forced.needsCarAtDestination, { shouldDirty: true });
+    form.setValue("oneWayCarMode", forced.oneWayCarMode, { shouldDirty: true });
+  }
   // Multi-day ("series") request (REQ §13.77, UX_FLOWS.md §3.4): the return-day picker only
   // makes sense for a brand-new weekly round trip — editing a series is not supported in v1,
   // and the quick/carNow variants are always about a single live day.
@@ -534,7 +629,9 @@ export function RequestForm({
     setSubmitError(null);
     const isSeriesRequest = isSeriesSubmit(formValues);
     const guestNamesList = guestPassengerNames(formValues.guestNames);
-    const isOneWay = formValues.tripShape !== "round_trip";
+    // REQ §13.93: only a הקפצה without a pickup books the quick missing-driver ride; a
+    // הלוך בלבד leaves the car at the destination and goes through normal placement.
+    const isOneWayDropOff = formValues.tripType === "drop_off" && formValues.tripShape !== "round_trip";
     // Seat counts exclude the *selected* children on purpose — `set_request_children()` (called
     // right after) adds them, re-classified by birth year, and subtracts the children the
     // request had before; see `payloadSeatCounts` for the contract and the double-count bug.
@@ -553,7 +650,7 @@ export function RequestForm({
           expectedVersion: initial?.version,
           joinRideId: mode === "new" ? joinRide?.rideId : undefined,
           guestPassengerNames: guestNamesList,
-          reserveMissingDriver: variant === "quick" && isOneWay ? true : undefined,
+          reserveMissingDriver: variant === "quick" && isOneWayDropOff ? true : undefined,
         },
       ),
       ...(waitlist ? { waitlist: true } : {}),
@@ -745,6 +842,25 @@ export function RequestForm({
       ) : null}
       {waitlist ? <div className="rounded-md border-s-4 border-amber-500 bg-amber-50 p-3 text-sm text-amber-900">{t("request.waitlistBanner")}</div> : null}
 
+      <OriginField
+        control={form.control}
+        destinations={destinationsQuery.data ?? []}
+        editable={variant !== "carNow"}
+      />
+
+      {/* REQ §13.93 "Multi-stop rides": compact chips between the origin line and the
+          destination field, behind one "+ עצירה" link — not shown for carNow (fixed home
+          round trip, no room/need for stops). */}
+      {variant !== "carNow" ? (
+        <StopsField
+          control={form.control}
+          name="outStops"
+          destinations={destinationsQuery.data ?? []}
+          addLabel={he.request.addStop}
+          removeAriaLabel={he.request.removeStop}
+        />
+      ) : null}
+
       <DestinationRideTypeFields
         control={form.control}
         destinations={destinationsQuery.data ?? []}
@@ -776,6 +892,9 @@ export function RequestForm({
         multiDaySpan={multiDaySpan}
         isQuickContext={!!quickContext}
         oneWay={oneWay}
+        tripType={tripType}
+        dropOffPickup={dropOffPickup}
+        canDrive={canDrive}
       />
 
       <TimeFields
@@ -792,6 +911,18 @@ export function RequestForm({
         departTimeError={form.formState.errors.departTime?.message}
         returnTimeError={form.formState.errors.returnTime?.message}
       />
+
+      {/* REQ §13.93 "Multi-stop rides": return-stop chips, next to the return time, only when
+          the trip actually has a return leg — behind one "+ עצירה בחזור" link. */}
+      {variant !== "carNow" && needsReturn ? (
+        <StopsField
+          control={form.control}
+          name="returnStops"
+          destinations={destinationsQuery.data ?? []}
+          addLabel={he.request.addReturnStop}
+          removeAriaLabel={he.request.removeStop}
+        />
+      ) : null}
 
       <PassengersFields
         control={form.control}

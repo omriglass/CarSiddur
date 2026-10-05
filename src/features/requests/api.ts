@@ -1,10 +1,12 @@
 import { supabase } from "@/integrations/supabase/client";
 import { ageFromBirthYear, isAdultPassenger } from "@/lib/childAge";
+import { parseRouteStops, type RouteStop } from "@/lib/routeStops";
 import { rpc, toAppError } from "@/lib/rpc";
 import { siddurCarName } from "@/lib/siddurCarName";
 
 import { joinableRideRowSchema, templateSuggestionRowSchema, type TemplateSuggestionRow } from "./schema";
 
+import type { DestinationValue } from "@/components/DestinationCombobox";
 import type { Json } from "@/integrations/supabase/types";
 import type {
   CarType,
@@ -17,6 +19,7 @@ import type {
   RideRole,
   RideStatus,
   TripShape,
+  TripType,
 } from "@/lib/enums";
 import type { RequestWindow } from "./window";
 
@@ -36,7 +39,7 @@ import type { RequestWindow } from "./window";
  * `.eq('requester_id', …)` instead. Flagged in the final report as a
  * data-layer finding, not fixed here (supabase/ is out of scope for stage 1c).
  */
-export type { RequestStatus, TripShape, CarType, RideRole, ProposalType };
+export type { RequestStatus, TripShape, TripType, CarType, RideRole, ProposalType };
 
 export interface MyRequestRide {
   needsDriver?: boolean;
@@ -79,6 +82,13 @@ export interface MyRequestRow {
   departAt: string | null;
   returnAt: string | null;
   tripShape: TripShape;
+  /** REQ §13.93: `requests.origin_id`/`origin_text`, resolved name joined in `SELECT`. */
+  originId: string | null;
+  originText: string | null;
+  originName: string | null;
+  /** REQ §13.93 "Multi-stop rides": out/return waypoints, already leg+position-ordered — `originDestinationLabel()` reads the out-leg names. */
+  stops: RouteStop[];
+  tripType: TripType;
   destination: string;
   rideTypeId: string;
   rideTypeName: string;
@@ -102,10 +112,13 @@ export interface MyRequestRow {
 const SELECT = `
   id, department_id, week_start, status, status_reason, is_late, changed_since_solve,
   depart_at, return_at, trip_shape, needs_car_at_destination, destination_text, version, ride_type_id,
+  origin_id, origin_text, trip_type,
   freed_slot_opt_out, preferred_car_id, template_id, series_id, series_index, series_count,
   preferred_car:cars!requests_preferred_car_id_fkey(name),
   window:weeks(phase, open_at, close_at),
-  destination:destinations(name),
+  destination:destinations!requests_destination_id_fkey(name),
+  origin:destinations!requests_origin_id_fkey(name),
+  stops:request_stops(leg, position, place_id, place_text, place:destinations(name)),
   ride_type:ride_types(code, name_he),
   ride_requests(
     role,
@@ -140,11 +153,16 @@ interface RawRequestRow {
   version: number;
   freed_slot_opt_out: boolean;
   ride_type_id: string;
+  origin_id: string | null;
+  origin_text: string | null;
+  trip_type: TripType;
   template_id: string | null;
   series_id: string | null;
   series_index: number | null;
   series_count: number | null;
   destination: { name: string } | null;
+  origin: { name: string } | null;
+  stops: { leg: "out" | "return"; position: number; place_id: string | null; place_text: string | null; place: { name: string } | null }[];
   ride_type: { code: string; name_he: string } | null;
   ride_requests: {
     role: RideRole;
@@ -175,6 +193,25 @@ interface RawRequestRow {
   request_children: { child: { full_name: string } | null }[];
 }
 
+/**
+ * `SELECT`'s `stops:request_stops(...)` embed (nested `place:destinations(name)`, no `eta` — this
+ * queries the base `requests` table directly, not `v_my_requests`/`request_stop_etas()`) into the
+ * shared `RouteStop[]` shape (REQ §13.93 "Multi-stop rides"). `/my`'s one-line label only needs
+ * out-stop *names*, never a computed ETA.
+ */
+function mapEmbeddedStops(rows: RawRequestRow["stops"]): RouteStop[] {
+  return (rows ?? [])
+    .map((s) => ({
+      leg: s.leg,
+      position: s.position,
+      placeId: s.place_id,
+      placeText: s.place_text,
+      name: s.place?.name ?? s.place_text ?? "",
+      eta: null,
+    }))
+    .sort((a, b) => a.position - b.position);
+}
+
 function mapRow(row: RawRequestRow): MyRequestRow {
   const legWithRide = row.ride_requests.find((leg) => leg.ride !== null && leg.ride.status !== "cancelled");
   const ride = legWithRide?.ride ?? null;
@@ -199,6 +236,11 @@ function mapRow(row: RawRequestRow): MyRequestRow {
     departAt: row.depart_at,
     returnAt: row.return_at,
     tripShape: row.trip_shape,
+    originId: row.origin_id,
+    originText: row.origin_text,
+    originName: row.origin?.name ?? row.origin_text ?? null,
+    stops: mapEmbeddedStops(row.stops),
+    tripType: row.trip_type,
     destination: row.destination?.name ?? row.destination_text ?? "",
     rideTypeId: row.ride_type_id,
     rideTypeName: row.ride_type?.name_he ?? "",
@@ -259,6 +301,14 @@ export interface RequestEditRow {
   destinationName: string | null;
   rideTypeId: string;
   tripShape: TripShape;
+  /** REQ §13.93: `requests.origin_id`/`origin_text`/`trip_type`. */
+  originId: string | null;
+  originText: string | null;
+  originName: string | null;
+  /** REQ §13.93 "Multi-stop rides": prefill-ready form values (`RequestForm.tsx`'s `mapEditRowToValues`). */
+  outStops: DestinationValue[];
+  returnStops: DestinationValue[];
+  tripType: TripType;
   departAt: string | null;
   returnAt: string | null;
   oneWayCarMode: LegCarMode | null;
@@ -282,10 +332,13 @@ export interface RequestEditRow {
 const EDIT_SELECT = `
   id, department_id, week_start, status, version, destination_id, destination_text, ride_type_id,
   trip_shape, depart_at, return_at, one_way_car_mode, needs_car_at_destination,
+  origin_id, origin_text, trip_type,
   adults, child_seats, boosters, has_luggage,
   flex_depart_early, flex_depart_late, flex_return_early, flex_return_late, notes, ride_description, guest_passenger_names, changed_since_solve, preferred_car_id, template_id,
   preferred_car:cars!requests_preferred_car_id_fkey(name),
-  destination:destinations(name),
+  destination:destinations!requests_destination_id_fkey(name),
+  origin:destinations!requests_origin_id_fkey(name),
+  stops:request_stops(leg, position, place_id, place_text, place:destinations(name)),
   window:weeks(phase, open_at, close_at),
   ride_requests(ride:rides(status))
 `;
@@ -309,6 +362,9 @@ export async function fetchRequestById(requestId: string, profileId: string): Pr
     destination_text: string | null;
     ride_type_id: string;
     trip_shape: TripShape;
+    origin_id: string | null;
+    origin_text: string | null;
+    trip_type: TripType;
     depart_at: string | null;
     return_at: string | null;
     one_way_car_mode: LegCarMode | null;
@@ -327,7 +383,17 @@ export async function fetchRequestById(requestId: string, profileId: string): Pr
     changed_since_solve: boolean;
     template_id: string | null;
     destination: { name: string } | null;
+    origin: { name: string } | null;
+    stops: { leg: "out" | "return"; position: number; place_id: string | null; place_text: string | null; place: { name: string } | null }[];
   };
+  const outStops: DestinationValue[] = row.stops
+    .filter((s) => s.leg === "out")
+    .sort((a, b) => a.position - b.position)
+    .map((s) => (s.place_id ? { presetId: s.place_id, name: s.place?.name ?? "" } : { freeText: s.place_text ?? "" }));
+  const returnStops: DestinationValue[] = row.stops
+    .filter((s) => s.leg === "return")
+    .sort((a, b) => a.position - b.position)
+    .map((s) => (s.place_id ? { presetId: s.place_id, name: s.place?.name ?? "" } : { freeText: s.place_text ?? "" }));
   return {
     preferredCarId: row.preferred_car_id,
     preferredCarName: row.preferred_car?.name ?? null,
@@ -343,6 +409,12 @@ export async function fetchRequestById(requestId: string, profileId: string): Pr
     destinationName: row.destination?.name ?? null,
     rideTypeId: row.ride_type_id,
     tripShape: row.trip_shape,
+    originId: row.origin_id,
+    originText: row.origin_text,
+    originName: row.origin?.name ?? row.origin_text ?? null,
+    outStops,
+    returnStops,
+    tripType: row.trip_type,
     departAt: row.depart_at,
     returnAt: row.return_at,
     oneWayCarMode: row.one_way_car_mode,
@@ -383,6 +455,17 @@ export interface SubmitRequestPayload {
   destination_text?: string;
   ride_type_id: string;
   trip_shape: TripShape;
+  /** REQ §13.93: source of truth when sent — `submit_request` derives `trip_shape`/`needs_car_at_destination`/`one_way_car_mode` from it. */
+  trip_type?: TripType;
+  /** REQ §13.93: explicit origin; omitted to let `submit_request` default to the requester's own `default_origin_id`, else the department home. */
+  origin_id?: string;
+  origin_text?: string;
+  /**
+   * REQ §13.93 "Multi-stop rides": replaces the request's whole stop set, in route order per
+   * leg; the key must always be present on edit — its absence leaves existing stops untouched
+   * (`submit_request`'s own convention, same as `notes`) — `mapper.ts` always sends it.
+   */
+  stops?: { leg: "out" | "return"; place_id?: string; place_text?: string }[];
   depart_at?: string;
   return_at?: string;
   adults: number;
@@ -598,7 +681,7 @@ export async function fetchMyFreedSlotOffers(profileId: string): Promise<MyFreed
       `status, request_id,
        offer:freed_slot_offers(id, status, starts_at, ends_at, expires_at,
          car:cars(name),
-         cancelled_ride:rides!freed_slot_offers_cancelled_ride_id_fkey(destination:destinations(name)))`,
+         cancelled_ride:rides!freed_slot_offers_cancelled_ride_id_fkey(destination:destinations!rides_destination_id_fkey(name)))`,
     )
     .eq("profile_id", profileId)
     .order("offered_at", { ascending: false });
@@ -672,6 +755,13 @@ export interface TemplateSuggestion {
   rideTypeId: string;
   rideTypeName: string | null;
   tripShape: TripShape;
+  /** REQ §13.93: copied by `save_request_template`, read by `v_request_template_suggestions`. */
+  originId: string | null;
+  originText: string | null;
+  originName: string | null;
+  /** REQ §13.93 "Multi-stop rides": `request_templates.stops`, `eta` always null (prefill only). */
+  stops: RouteStop[];
+  tripType: TripType;
   departDow: number | null;
   departTime: string | null;
   returnDow: number | null;
@@ -708,6 +798,11 @@ function mapTemplateSuggestion(row: TemplateSuggestionRow): TemplateSuggestion {
     rideTypeId: row.ride_type_id,
     rideTypeName: row.ride_type_name,
     tripShape: row.trip_shape,
+    originId: row.origin_id,
+    originText: row.origin_text,
+    originName: row.origin_name,
+    stops: parseRouteStops(row.stops),
+    tripType: row.trip_type,
     departDow: row.depart_dow,
     departTime: row.depart_time,
     returnDow: row.return_dow,
@@ -735,10 +830,11 @@ function mapTemplateSuggestion(row: TemplateSuggestionRow): TemplateSuggestion {
 
 const TEMPLATE_SUGGESTION_SELECT = `
   template_id, department_id, week_start, destination_id, destination_text, destination_name,
-  ride_type_id, ride_type_name, trip_shape, depart_dow, depart_time, return_dow, return_time,
+  ride_type_id, ride_type_name, trip_shape, origin_id, origin_text, origin_name, trip_type,
+  depart_dow, depart_time, return_dow, return_time,
   depart_at, return_at, one_way_car_mode, needs_car_at_destination, adults, child_seats, boosters,
   child_ids, companion_ids, has_luggage, flex_depart_early, flex_depart_late, flex_return_early,
-  flex_return_late, preferred_car_id, ride_description, guest_passenger_names, notes
+  flex_return_late, preferred_car_id, ride_description, guest_passenger_names, notes, stops
 `;
 
 /** Repeating-request suggestions for the caller's own open week(s) (REQ §76, DATA_MODEL §3.6). */

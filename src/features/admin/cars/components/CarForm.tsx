@@ -10,6 +10,7 @@ import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, For
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { useDestinations } from "@/features/fleet/hooks";
 import { he } from "@/i18n/he";
 import { showErrorToast } from "@/lib/rpc";
 
@@ -81,11 +82,16 @@ export function CarForm({
       built_in_child_seats: car?.built_in_child_seats ?? 0,
       built_in_boosters: car?.built_in_boosters ?? 0,
       responsible_id: car?.responsible_id ?? null,
+      base_location_id: car?.base_location_id ?? null,
     },
   });
   const formRef = useRef<HTMLFormElement>(null);
   const onInvalid = useScrollToFirstError(form, formRef);
   const isReplaced = useWatch({ control: form.control, name: "is_replaced" });
+  // REQ §13.93: "מיקום קבוע" options follow whichever department the form currently holds
+  // (the admin screen lets the department field change before save).
+  const watchedDepartmentId = useWatch({ control: form.control, name: "department_id" });
+  const baseLocationDestinationsQuery = useDestinations(watchedDepartmentId || car?.department_id);
 
   async function onSubmit(values: CarFormValues) {
     try {
@@ -274,6 +280,31 @@ export function CarForm({
                   <FormDescription>{he.carPage.fieldResponsibleReadonlyHelp}</FormDescription>
                 </>
               )}
+            </FormItem>
+          )}
+        />
+        <FormField
+          control={form.control}
+          name="base_location_id"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>{he.adminCars.fieldBaseLocation}</FormLabel>
+              <Select value={field.value ?? ""} onValueChange={(value) => field.onChange(value === "" ? null : value)}>
+                <FormControl>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                </FormControl>
+                <SelectContent>
+                  <SelectItem value="">{he.adminCars.fieldBaseLocationHome}</SelectItem>
+                  {(baseLocationDestinationsQuery.data ?? []).map((destination) => (
+                    <SelectItem key={destination.id} value={destination.id}>
+                      {destination.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <FormMessage />
             </FormItem>
           )}
         />

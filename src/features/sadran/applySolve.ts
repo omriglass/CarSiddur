@@ -80,8 +80,8 @@ export function nowMs(): number {
 
 import { servedOf, type ServedEntry } from "@/features/rides/servedOf";
 
-export { servedOf, namedPassengersOf, withChildNames, representativeRideTypeCode } from "@/features/rides/servedOf";
-export type { ServedEntry, RidePassengerEntry } from "@/features/rides/servedOf";
+export { servedOf, namedPassengersOf, withChildNames, representativeRideTypeCode, relayPartnerOf, rideStopCount } from "@/features/rides/servedOf";
+export type { ServedEntry, RidePassengerEntry, RelayPartner } from "@/features/rides/servedOf";
 
 
 /** `served` in the shape `edit_ride`'s payload expects, unchanged — for a board edit that only moves/reassigns a ride. */
@@ -254,6 +254,10 @@ export interface SolverContextRows {
   fairness: Awaited<ReturnType<typeof api.fetchFairnessStats>>;
   /** F5 (docs/SOLVER.md §3.6.2): `car_mileage_totals()`, car_id -> km. */
   mileageKmByCarId: Awaited<ReturnType<typeof api.fetchCarMileageTotals>>;
+  /** REQUIREMENTS §13.93 (ORIGINS_PLAN §2 item 7): `car_start_locations()`, car_id -> {locationId, baseLocationId}. */
+  carStartLocationsByCarId: Awaited<ReturnType<typeof api.fetchCarStartLocations>>;
+  /** REQUIREMENTS §13.93 (ORIGINS_PLAN §2 item 6): `place_travel_for_week()` rows. */
+  travel: Awaited<ReturnType<typeof api.fetchPlaceTravelForWeek>>;
 }
 
 /** `fairness_stats()`'s `p_lookback_weeks` argument, read from the fairness rule's own params (default 3, CLAUDE.md decision 16). Exported so a caller that must fetch fairness itself (`gatherSolverContext` below, `BoardScreen`'s own fairness query) asks for the right lookback window without duplicating the policy-rules shape. */
@@ -276,7 +280,20 @@ export function policyCarChoice(policy: PolicyChoice): Policy["carChoice"] {
  * its own query cache (`BoardScreen`'s hooks) can skip the fetch entirely.
  */
 export function buildSolverContextFromData(params: GatherSolverContextParams, rows: SolverContextRows): SolverContext {
-  const { departmentSettings, allRequests, cars, destinations, rideTypes, maintenanceBlocks, boardRides, seatConfigsFlat, fairness, mileageKmByCarId } = rows;
+  const {
+    departmentSettings,
+    allRequests,
+    cars,
+    destinations,
+    rideTypes,
+    maintenanceBlocks,
+    boardRides,
+    seatConfigsFlat,
+    fairness,
+    mileageKmByCarId,
+    carStartLocationsByCarId,
+    travel,
+  } = rows;
 
   const seatConfigsByCarId: Record<string, typeof seatConfigsFlat> = {};
   for (const row of seatConfigsFlat) (seatConfigsByCarId[row.car_id] ??= []).push(row);
@@ -335,6 +352,8 @@ export function buildSolverContextFromData(params: GatherSolverContextParams, ro
     policy,
     fairness,
     mileageKmByCarId,
+    carStartLocationsByCarId,
+    travel,
     fixedRides,
     previousAssignments,
     now: () => Date.now(),
@@ -374,6 +393,11 @@ export async function gatherSolverContext(params: GatherSolverContextParams): Pr
   // F5 (docs/SOLVER.md §3.6.2): rolling window is fixed at 4 weeks in v1, no
   // department setting (REQUIREMENTS §13.84) — unlike fairness's lookback.
   const mileageKmByCarId = await api.fetchCarMileageTotals(params.departmentId, params.weekStart);
+  // REQUIREMENTS §13.93 (ORIGINS_PLAN §2 items 6/7).
+  const [carStartLocationsByCarId, travel] = await Promise.all([
+    api.fetchCarStartLocations(params.departmentId, params.weekStart),
+    api.fetchPlaceTravelForWeek(params.departmentId, params.weekStart),
+  ]);
 
   return buildSolverContextFromData(params, {
     departmentSettings,
@@ -386,6 +410,8 @@ export async function gatherSolverContext(params: GatherSolverContextParams): Pr
     seatConfigsFlat,
     fairness,
     mileageKmByCarId,
+    carStartLocationsByCarId,
+    travel,
   });
 }
 

@@ -640,6 +640,7 @@ begin
     ('cars', 'created_at', 'public'),
     ('cars', 'updated_at', 'public'),
     ('cars', 'responsible_id', 'public'),
+    ('cars', 'base_location_id', 'public'),
     ('departments', 'id', 'public'),
     ('departments', 'name', 'public'),
     ('departments', 'slug', 'public'),
@@ -692,7 +693,11 @@ begin
     ('profiles', 'id', 'public'),
     ('profiles', 'is_admin', 'public'),
     ('profiles', 'muted_events', 'public'),
-    ('profiles', 'updated_at', 'public');
+    ('profiles', 'updated_at', 'public'),
+    ('text_fragments', 'key', 'public'),
+    ('text_fragments', 'body', 'public'),
+    ('text_fragments', 'created_at', 'public'),
+    ('text_fragments', 'updated_at', 'public');
 
   -- (a) a table becomes cross-department readable but has no pin list at all.
   select string_agg(t.tablename, ', ') into v_offenders
@@ -724,7 +729,7 @@ begin
     from information_schema.columns c
     where c.table_schema = 'public'
       and c.table_name in ('app_settings', 'car_seat_configs', 'cars', 'departments',
-        'notification_templates', 'ride_types', 'weekday_labels')
+        'notification_templates', 'ride_types', 'weekday_labels', 'text_fragments')
     union
     select 'profiles', cp.column_name
     from information_schema.column_privileges cp

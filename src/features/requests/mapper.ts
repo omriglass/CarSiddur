@@ -3,6 +3,8 @@ import { fromZonedTime } from "date-fns-tz";
 
 import { TZ } from "@/lib/time";
 
+import { destinationValuesToStopPayload } from "./stops";
+
 import type { SubmitRequestPayload } from "./api";
 import type { RequestFormValues } from "./schema";
 
@@ -67,6 +69,12 @@ export function toSubmitRequestPayload(
     week_start: values.weekStart,
     destination_id: "presetId" in values.destination ? values.destination.presetId : undefined,
     destination_text: "freeText" in values.destination ? values.destination.freeText : undefined,
+    // REQ §13.93: an empty origin (the placeholder `emptyValues()` default, before `RequestForm`
+    // resolves the member's real default) sends neither field, which is exactly what tells
+    // `submit_request` to resolve its own default — never an empty string origin_text.
+    origin_id: values.origin && "presetId" in values.origin ? values.origin.presetId : undefined,
+    origin_text: values.origin && "freeText" in values.origin && values.origin.freeText.trim() ? values.origin.freeText.trim() : undefined,
+    trip_type: values.tripType,
     ride_type_id: values.rideTypeId,
     preferred_car_id: values.preferredCarId || null,
     trip_shape: values.tripShape,
@@ -100,5 +108,12 @@ export function toSubmitRequestPayload(
     request_id: options.requestId,
     expected_version: options.expectedVersion,
     join_ride_id: options.joinRideId,
+    // REQ §13.93 "Multi-stop rides": always sent (even `[]`) so an edit can clear a
+    // previously-added stop — `submit_request` only leaves existing stops untouched when the
+    // key is entirely absent from the payload. Return stops never exist without a return leg.
+    stops: [
+      ...destinationValuesToStopPayload(values.outStops, "out"),
+      ...(needsReturn ? destinationValuesToStopPayload(values.returnStops, "return") : []),
+    ],
   };
 }

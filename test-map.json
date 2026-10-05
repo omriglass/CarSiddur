@@ -63,6 +63,11 @@
         "supabase/migrations/**/*child*",
         "supabase/tests/request_templates.sql",
         "supabase/tests/multi_day_series.sql",
+        "supabase/tests/origins_schema.sql",
+        "supabase/tests/origins_chain.sql",
+        "supabase/tests/multi_stop.sql",
+        "supabase/migrations/**/*origin*",
+        "supabase/migrations/**/*stop*",
         "e2e/multi-day.spec.ts",
         "e2e/repeating-requests.spec.ts",
         "e2e/member.spec.ts",
@@ -83,7 +88,12 @@
         "src/pages/HomePage.tsx",
         "src/pages/MyHistoryPage.tsx",
         "src/pages/RequestsRedirect.tsx",
-        "src/features/requests/components/requestForm/**"
+        "src/features/requests/components/requestForm/**",
+        "src/features/requests/stops.ts",
+        "src/lib/routeStops.ts",
+        "src/lib/routeLabel.ts",
+        "src/lib/routeLabel.test.ts",
+        "e2e/multi-stop.spec.ts"
       ],
       "vitest": [
         "src/features/requests"
@@ -91,7 +101,10 @@
       "sql": [
         "request_templates.sql",
         "multi_day_series.sql",
-        "upcoming_weeks.sql"
+        "upcoming_weeks.sql",
+        "origins_schema.sql",
+        "origins_chain.sql",
+        "multi_stop.sql"
       ],
       "playwrightTags": [
         "@request-form"
@@ -268,7 +281,10 @@
         "src/features/rides/invalidateWeek.ts",
         "src/features/rides/invalidateWeek.test.ts",
         "src/features/rides/hooks.ts",
-        "src/features/rides/export/**"
+        "src/features/rides/export/**",
+        "src/features/rides/servedOf.ts",
+        "src/features/rides/components/RideRouteStops.tsx",
+        "src/lib/routeStops.ts"
       ],
       "vitest": [
         "src/features/siddur",
@@ -323,6 +339,7 @@
         "supabase/tests/coordinator_planning.sql",
         "supabase/tests/solve_semantics.sql",
         "supabase/tests/car_chain_healing.sql",
+        "supabase/tests/origins_chain.sql",
         "e2e/board.spec.ts",
         "e2e/board-mobile.spec.ts",
         "e2e/board-coordination.spec.ts",
@@ -343,7 +360,13 @@
         "src/features/sadran/board/hooks/**",
         "src/features/sadran/board/components/**",
         "supabase/migrations/**/*pair_one_way_legs*",
-        "supabase/tests/fixtures/one_way_pairing_cases.json"
+        "supabase/tests/fixtures/one_way_pairing_cases.json",
+        "src/features/rides/servedOf.ts",
+        "src/features/rides/components/RideRouteStops.tsx",
+        "src/lib/routeStops.ts",
+        "src/lib/rideLabel.ts",
+        "src/lib/rideLabel.test.ts",
+        "e2e/multi-stop.spec.ts"
       ],
       "vitest": [
         "src/features/sadran/board",
@@ -356,6 +379,7 @@
         "todo_board_semantics.sql",
         "coordinator_planning.sql",
         "car_chain_healing.sql",
+        "origins_chain.sql",
         "solve_semantics.sql",
         "day_car_swap.sql"
       ],
@@ -375,7 +399,7 @@
         "Move a ride via the sheet's car selector; confirm it persists (REQ §13.42)",
         "Confirm a private car's board row is hidden on days with no ride (REQ §13.80)",
         "Confirm a weekly-assigned member sees only their assigned week (REQ §13.42)",
-        "Remove the return leg of a relay pair; confirm a missing-driver relocation ride appears instead of an error (REQ §13.89)"
+        "Remove the return leg of a relay pair; confirm the remaining leg becomes a standalone chauffeur ride (or goes back to unmet) with no relocation ride created (REQ §13.93, 2026-10-04)"
       ]
     },
     {
@@ -538,7 +562,10 @@
         "scripts/test-pairing-parity.mjs",
         "src/solver/__tests__/oneWayPairingParity.test.ts",
         "supabase/migrations/**/*apply_solver_result*",
-        "supabase/migrations/**/*pair_one_way_legs*"
+        "supabase/migrations/**/*pair_one_way_legs*",
+        "supabase/migrations/**/*route_minutes*",
+        "supabase/migrations/**/*route_helpers*",
+        "supabase/tests/multi_stop.sql"
       ],
       "vitest": [
         "src/solver",
@@ -546,7 +573,8 @@
       ],
       "sql": [
         "solve_semantics.sql",
-        "car_mileage.sql"
+        "car_mileage.sql",
+        "multi_stop.sql"
       ],
       "playwrightTags": [
         "@solver"
@@ -664,9 +692,14 @@
         "supabase/tests/admin_department_membership.sql",
         "supabase/tests/department_catalogs.sql",
         "supabase/tests/member_identity.sql",
+        "supabase/tests/origins_schema.sql",
+        "supabase/migrations/**/*origin*",
+        "supabase/migrations/**/*place_distances*",
         "e2e/admin.spec.ts",
         "e2e/admin-department.spec.ts",
-        "e2e/department-context.spec.ts"
+        "e2e/department-context.spec.ts",
+        "src/features/admin/departments/schema.ts",
+        "src/features/admin/departments/components/DepartmentsScreen.tsx"
       ],
       "vitest": [
         "src/features/admin",
@@ -676,7 +709,8 @@
         "admin_member_fixes.sql",
         "admin_department_membership.sql",
         "department_catalogs.sql",
-        "member_identity.sql"
+        "member_identity.sql",
+        "origins_schema.sql"
       ],
       "playwrightTags": [
         "@admin"

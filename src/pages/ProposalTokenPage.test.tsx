@@ -152,6 +152,34 @@ describe("ProposalTokenPage", () => {
     expect(sadranContactQueryMock).toHaveBeenCalledWith("dept-1", "2041-01-13");
   });
 
+  it("shows an origin-change proposal clearly, with accept/decline and no before/after time boxes", async () => {
+    fetchProposalSummaryMock.mockResolvedValueOnce({
+      proposalId: "p6",
+      type: "origin",
+      status: "sent",
+      reasonHe: "אין רכב פנוי מהבית, אבל יש רכב פנוי מחיפה. מתאים לך?",
+      expiresAt: null,
+      payload: { origin_id: "dest-haifa", car_id: "car-1" },
+      originChange: { from: "הבית", to: "חיפה", car: "רכב 1" },
+      request: {
+        id: "r6",
+        destination: "עפולה",
+        rideType: "בריאות",
+        departAt: new Date().toISOString(),
+        returnAt: new Date().toISOString(),
+        adults: 1,
+        childSeats: 0,
+        boosters: 0,
+      },
+      parties: [],
+    });
+    renderPage();
+    await waitFor(() => expect(screen.getByText("מקבל/ת את ההצעה")).toBeInTheDocument());
+    expect(screen.getByText("לא מתאים לי")).toBeInTheDocument();
+    expect(screen.getByText("יציאה מחיפה במקום מהבית, ברכב רכב 1")).toBeInTheDocument();
+    expect(screen.queryByText(he.proposalScreen.before)).not.toBeInTheDocument();
+  });
+
   it("shows the deny variant without an accept-proposal button", async () => {
     fetchProposalSummaryMock.mockResolvedValueOnce({
       proposalId: "p2",

@@ -59,34 +59,50 @@ describe("quick request sheet (RequestForm's variant=\"quick\")", () => {
   it("blocks a late one-way request whose driver could only return the following day", () => {
     show("23:45");
     fireEvent.click(screen.getByRole("button", { name: "Destination" }));
-    fireEvent.click(screen.getByRole("radio", { name: he.request.tripShapeOneWayTo }));
+    fireEvent.click(screen.getByRole("radio", { name: he.request.tripTypeOneWay }));
     expect(screen.getByText(he.sadranProposal.sameDayOnly)).toBeVisible();
     expect(screen.getByRole("button", { name: he.quickRequest.submitOneWay })).toBeDisabled();
     expect(mocks.submit).not.toHaveBeenCalled();
   });
 
-  it.each(["one_way_to", "one_way_from"] as const)("submits %s as an atomic public passenger request with a missing-driver reservation", async (shape) => {
+  // REQ §13.93: the quick sheet's trip-type control (`TripTypeFields`) only ever produces
+  // `trip_shape: "one_way_to"` — a legacy `one_way_from` ("I'm away, pick me up") is now filed
+  // as a drop-off with a non-home origin (tap-to-change `OriginField`), not a radio option here.
+  it("submits a drop-off (הקפצה) as an atomic public passenger request with a missing-driver reservation", async () => {
     mocks.submit.mockResolvedValue({ request_id: "request", status: "waitlisted", needs_driver: true, ride_id: "ride", car_id: "car" });
     show();
     fireEvent.click(screen.getByRole("button", { name: "Destination" }));
-    fireEvent.click(screen.getByRole("radio", { name: shape === "one_way_to" ? he.request.tripShapeOneWayTo : he.request.tripShapeOneWayFrom }));
+    fireEvent.click(screen.getByRole("radio", { name: he.request.tripTypeDropOff }));
     fireEvent.change(screen.getByLabelText(he.quickRequest.rideDescription), { target: { value: "Public route and pickup" } });
     fireEvent.click(screen.getByRole("button", { name: "Member" }));
     fireEvent.change(screen.getByLabelText(he.quickRequest.guestPassengers), { target: { value: " Guest \n" } });
     fireEvent.click(screen.getByRole("button", { name: he.quickRequest.submitOneWay }));
     await waitFor(() => expect(mocks.submit).toHaveBeenCalledOnce());
     const payload = mocks.submit.mock.calls[0]![0];
-    expect(payload).toMatchObject({ trip_shape: shape, reserve_missing_driver: true, ride_description: "Public route and pickup", guest_passenger_names: ["Guest"], adults: 3 });
+    expect(payload).toMatchObject({ trip_shape: "one_way_to", trip_type: "drop_off", reserve_missing_driver: true, ride_description: "Public route and pickup", guest_passenger_names: ["Guest"], adults: 3 });
     // A quick one-way reservation books a missing-driver ride for the member, so it is a
     // `passenger` leg by definition — `submit_request` refuses `reserve_missing_driver` with any
     // other mode (REQ §13.88 leaves the mode to the server everywhere else).
     expect(payload.one_way_car_mode).toBe("passenger");
     expect(payload.notes).toBeUndefined();
-    expect(payload[shape === "one_way_to" ? "depart_at" : "return_at"]).toBe("2044-01-03T10:00:00.000Z");
-    expect(payload[shape === "one_way_to" ? "return_at" : "depart_at"]).toBeUndefined();
+    expect(payload.depart_at).toBe("2044-01-03T10:00:00.000Z");
+    expect(payload.return_at).toBeUndefined();
     // Companions are set through the same follow-up RPC the weekly form uses, not inline.
     expect(mocks.setCompanions).toHaveBeenCalledWith({ requestId: "request", profileIds: ["member"] });
     await waitFor(() => expect(mocks.success).toHaveBeenCalledWith(tv("quickRequest.successNeedsDriver", { car: "Car" })));
+  });
+
+  it("submits a one-way (הלוך בלבד) without a missing-driver reservation — the car stays at the destination (REQ §13.93)", async () => {
+    mocks.submit.mockResolvedValue({ request_id: "request", status: "assigned", car_id: "car" });
+    show();
+    fireEvent.click(screen.getByRole("button", { name: "Destination" }));
+    fireEvent.click(screen.getByRole("radio", { name: he.request.tripTypeOneWay }));
+    fireEvent.click(screen.getByRole("button", { name: he.quickRequest.submitOneWay }));
+    await waitFor(() => expect(mocks.submit).toHaveBeenCalledOnce());
+    const payload = mocks.submit.mock.calls[0]![0];
+    expect(payload).toMatchObject({ trip_shape: "one_way_to", trip_type: "one_way" });
+    expect(payload.reserve_missing_driver).toBeUndefined();
+    expect(payload.one_way_car_mode).toBeUndefined();
   });
 
   it("preserves the round-trip keep request and its two-hour default", async () => {

@@ -125,6 +125,17 @@ export async function revokeAdmin(profileId: string): Promise<void> {
   if (error) throw toAppError(error);
 }
 
+/** REQ §13.93: admin editor's per-membership "נקודת יציאה" select — direct update, admin RLS allows it. */
+export async function updateMemberDefaultOrigin(departmentId: string, profileId: string, originId: string | null): Promise<void> {
+  const { error } = await supabase
+    .from("department_members")
+    .update({ default_origin_id: originId })
+    .eq("department_id", departmentId)
+    .eq("profile_id", profileId)
+    .is("removed_at", null);
+  if (error) throw toAppError(error);
+}
+
 export async function setMemberRole(departmentId: string, profileId: string, role: Role): Promise<void> {
   const { error } = await supabase
     .from("department_members")

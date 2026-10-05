@@ -123,3 +123,8 @@ export { fetchFairnessStats } from "@/features/sadran/api";
 // the "test on last week" preview needs a car's rolling-window mileage same
 // as the board does.
 export { fetchCarMileageTotals } from "@/features/sadran/api";
+
+// Same reuse for origins (REQUIREMENTS §13.93, ORIGINS_PLAN §2 items 6/7):
+// the "test on last week" preview needs the same car-start-location/travel
+// figures the board does.
+export { fetchCarStartLocations, fetchPlaceTravelForWeek } from "@/features/sadran/api";

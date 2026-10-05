@@ -12,6 +12,7 @@ function request(overrides: Partial<MyRequestRow> = {}): MyRequestRow {
     id: "request-1", departmentId: "dept-1", weekStart: "2026-09-13", status: "submitted",
     statusReason: null, isLate: false, changedSinceSolve: false, departAt: "2026-09-15T08:00:00+03:00",
     returnAt: "2026-09-15T12:00:00+03:00", tripShape: "round_trip", destination: "Destination",
+    originId: null, originText: null, originName: null, stops: [], tripType: "round_trip",
     rideTypeId: "type-1", rideTypeName: "Type", rideTypeCode: null, needsCarAtDestination: true,
     version: 1, freedSlotOptOut: false, ride: null, pendingProposal: null, templateId: null,
     seriesId: null, seriesIndex: null, seriesCount: null,

@@ -154,11 +154,32 @@ export const he = {
     namesExceedSeats: "מספר הנוסעים צריך לכלול אותך ואת כל הנוסעים ששמם נוסף",
     invalidQuickReservation: "אפשר להוסיף נסיעה שממתינה לנהג/ת רק לסידור הפעיל של המחלקה שלך",
   },
+  /** One-line route for notifications/WhatsApp copy (REQ §13.93) — mirrors the seeded `text_fragments` `route.*` rows used by SQL `route_label()`. */
+  route: {
+    to: "ל{{destination}}",
+    fromTo: "מ{{origin}} ל{{destination}}",
+    via: "מ{{origin}} דרך {{stops}} ל{{destination}}",
+    toVia: "דרך {{stops}} ל{{destination}}",
+  },
   rideCoordination: {
     cancelHelp: "הבקשה שלך תבוטל. אם נהגת עבור נוסעים נוספים, הנסיעה שלהם תישאר בסידור ותסומן כחסרת נהג/ת עד שמישהו יתנדב. ביטול של נוסע/ת אינו מבטל את נסיעת האחרים.",
     passengerTo: "{{name}} ל{{destination}}",
     passengerFrom: "{{name}} מ{{destination}}",
     chauffeurLabel: "{{driver}} מסיע את {{passengers}}",
+    /** REQUIREMENTS §13.93 "Display": a chauffeur ride's single drop-off leg. */
+    chauffeurDropoff: "{{driver}} מסיע/ה את {{name}} ל{{place}} וחוזר/ת",
+    /** REQUIREMENTS §13.93 "Display": a chauffeur ride's single pickup leg — `{{time}}` is the ride's own departure. */
+    chauffeurPickup: "{{driver}} אוסף/ת את {{name}} מ{{place}} (יציאה {{time}})",
+    /** REQUIREMENTS §13.93 "Display": a הקפצה relay pair's out-leg — the car is left for a later trip to take on. Fallback when the partner ride isn't known yet. */
+    relayLeave: "משאיר/ה את הרכב ב{{place}}",
+    /** REQUIREMENTS §13.93 "Display": same out-leg, naming the partner who picks the car up and when (`v_board_rides.relay_partner`). */
+    relayLeaveFor: "משאיר/ה את הרכב ב{{place}} ל{{name}} ({{time}})",
+    /** REQUIREMENTS §13.93 "Display": a הקפצה relay pair's return/pickup leg — the car is picked up from where it was left. Fallback when the partner ride isn't known yet. */
+    relayWait: "הרכב מחכה ב{{place}}",
+    /** REQUIREMENTS §13.93 "Display": same return leg, naming the partner who left the car there and when they bring it (`v_board_rides.relay_partner`). */
+    relayWaitFrom: "הרכב מחכה לך ב{{place}} — {{name}} מביא/ה אותו ב{{time}}",
+    /** REQUIREMENTS §13.93 "Display": a plain הלוך בלבד leg — the car stays at the destination with nobody designated to bring it back. */
+    oneWayParked: "{{name}} ל{{place}} (הרכב נשאר שם)",
     missingDriver: "חסר/ה נהג/ת",
     volunteer: "אני אנהג בנסיעה הזו",
     volunteerHelp: "ההתנדבות כוללת את הסעת הנוסעים והחזרת הרכב, לפי השעות המוצגות.",
@@ -173,6 +194,8 @@ export const he = {
     combinedConsent: "השינוי יוחל רק אחרי אישור הנהג/ת וכל הנוסעים המושפעים ממנו.",
     combinedSummary: "נסיעה משולבת: {{driver}} מסיע/ה את {{passenger}} ל{{destination}}, ברכב {{car}}, בשעות {{start}}–{{end}}.",
     separateDestinations: "יעדים לפי בקשה",
+    /** REQ §13.93/SOLVER §3.15: the `origin` proposal's one-line summary (composer + `/p/:token`). */
+    originChangeSummary: "יציאה מ{{to}} במקום מ{{from}}, ברכב {{car}}",
   },
   deviations: {
     title: "כל השינויים מהבקשות המקוריות",
@@ -355,6 +378,8 @@ export const he = {
     destination: "לאן?",
     destinationFrom: "מאיפה?",
     destinationFreeText: "יעד חופשי",
+    /** Origin field label (REQ §13.93) — opened when the member taps the "מ..." line above the destination. */
+    origin: "נקודת יציאה",
     rideType: "סוג נסיעה",
     day: "יום",
     depart: "יציאה",
@@ -448,6 +473,8 @@ export const he = {
       merge: "איחוד נסיעות",
       deny: "דחייה",
       external: "פתרון חיצוני",
+      /** REQ §13.93/SOLVER §3.15: the `changeOrigin` suggestion -- "car free at a different place". */
+      origin: "יציאה ממקום אחר",
     },
     optOutFreed: "אל תציעו לי מקומות שמתפנים השבוע",
     recorded: {
@@ -582,6 +609,12 @@ export const he = {
     oneWayCarModeRequired: "יש לבחור אופן נסיעה בכיוון אחד",
     /** REQ §88 (owner 2026-09-15): server-side guard — a member who marked "אני לא נוהג/ת" was placed as a driver/relay. */
     nonDriverCannotDrive: "חבר/ה שסימן/ה 'לא נוהג/ת' לא יכול/ה להיות נהג/ת",
+    /** REQ §13.93: a non-driver with no driving companion may only file a הקפצה. */
+    nonDriverNeedsDropOff: "מי שלא נוהג/ת יכול/ה לבקש רק הקפצה",
+    /** REQ §13.93/SOLVER §3.15: accepting a `changeOrigin` proposal found the car/window no longer free. */
+    originChangeUnavailable: "הרכב כבר לא פנוי בנקודת היציאה הזו — יש להריץ הצעה חדשה",
+    /** REQ §13.93 "Multi-stop rides": submit_request()'s stops payload failed validation. */
+    invalidStops: "פרטי העצירות אינם תקינים",
     manualBoostRequiresReason: "יש לציין סיבה להעדפה ידנית",
     requestNotFound: "הבקשה לא נמצאה",
     requestHasRide: "הבקשה כבר משובצת לנסיעה — יש לבטל את הנסיעה במקום למשוך את הבקשה",

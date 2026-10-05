@@ -23,6 +23,12 @@ export interface ServedEntry {
   destination?: string | null;
   /** `v_board_rides.served[].ride_type` — `ride_types.code` (visual pass: ride-type block coloring, `src/lib/rideTypeColors.ts`). Already selected by the view; no new query needed. */
   ride_type?: string | null;
+  /** REQUIREMENTS §13.93 (`v_board_rides.served[].origin_id/origin_text/origin_name`): the request's own origin, distinct from the ride's own `origin_id` (where the car starts). */
+  origin_id?: string | null;
+  origin_text?: string | null;
+  origin_name?: string | null;
+  /** REQUIREMENTS §13.93 `v_board_rides.served[].trip_type` — drives `src/lib/rideLabel.ts`'s driver-label wording. */
+  trip_type?: "round_trip" | "one_way" | "drop_off" | null;
   /**
    * Named children (`request_children` → `children.full_name`). Mapped directly from
    * `v_board_rides.served[].child_names`
@@ -34,6 +40,12 @@ export interface ServedEntry {
    * (it only overwrites when it has its own non-empty names), kept as-is.
    */
   childNames?: string[];
+  /**
+   * REQUIREMENTS §13.93 "Multi-stop rides": this request's own out/return waypoints, already
+   * leg+position-ordered (`v_board_rides.served[].stops`, `request_stop_etas()`) — read via
+   * `@/lib/routeStops`' `parseRouteStops()`/`routeStopNames()`, never indexed directly.
+   */
+  stops?: { leg: "out" | "return"; position: number; place_id: string | null; place_text: string | null; name: string; eta: string | null }[];
 }
 
 /** Reads `v_board_rides.served` (a jsonb aggregate, RideDetailSheet.tsx uses the same shape) into typed rows. */
@@ -42,6 +54,21 @@ export function servedOf(ride: BoardRide): ServedEntry[] {
   return raw
     .filter((s) => !!s.request_id)
     .map((s) => (s.child_names?.length ? { ...s, childNames: s.child_names } : s));
+}
+
+/** `v_board_rides.relay_partner` (REQUIREMENTS §13.93 "Display"): the paired relay leg (out ↔
+ *  return) on the same car, same day — its ride id, driver (or first requester) name and time.
+ *  Null when this ride carries no relay leg, or no matching ride was found yet. */
+export interface RelayPartner {
+  ride_id: string;
+  name: string;
+  at: string;
+}
+
+/** Reads `v_board_rides.relay_partner` into a typed value — same idiom as `servedOf()`. */
+export function relayPartnerOf(ride: BoardRide): RelayPartner | null {
+  const raw = ride.relay_partner as unknown as RelayPartner | null;
+  return raw?.ride_id ? raw : null;
 }
 
 /** A `ride_passengers` row (F3, 20260914120000_ride_passengers.sql) — a named person or child on a ride with no `requests` row behind them. */
@@ -94,4 +121,13 @@ export function withChildNames(entries: readonly ServedEntry[], requests: readon
 export function representativeRideTypeCode(served: readonly ServedEntry[]): string | null {
   const driver = served.find((s) => s.role === "driver");
   return driver?.ride_type ?? served[0]?.ride_type ?? null;
+}
+
+/**
+ * Total stop count across every served request's own out+return legs (REQUIREMENTS §13.93
+ * "Multi-stop rides" Display) — the board/siddur ride card's "· N עצירות" marker, shown only
+ * when > 0.
+ */
+export function rideStopCount(served: readonly ServedEntry[]): number {
+  return served.reduce((sum, entry) => sum + (entry.stops?.length ?? 0), 0);
 }

@@ -42,6 +42,9 @@ export type ErrorCode =
   | "week_not_open"
   | "one_way_car_mode_required"
   | "non_driver_cannot_drive"
+  | "non_driver_needs_drop_off"
+  | "origin_change_unavailable"
+  | "invalid_stops"
   | "manual_boost_requires_reason"
   | "request_not_found"
   | "ride_not_found"
@@ -123,6 +126,9 @@ const MESSAGE_TO_CODE: Record<string, ErrorCode> = {
   week_not_open: "week_not_open",
   one_way_car_mode_required: "one_way_car_mode_required",
   non_driver_cannot_drive: "non_driver_cannot_drive",
+  non_driver_needs_drop_off: "non_driver_needs_drop_off",
+  origin_change_unavailable: "origin_change_unavailable",
+  invalid_stops: "invalid_stops",
   manual_boost_requires_reason: "manual_boost_requires_reason",
   request_not_found: "request_not_found",
   request_has_ride: "request_has_ride",
@@ -206,6 +212,9 @@ const CODE_TO_MESSAGE: Record<ErrorCode, string> = {
   week_not_open: he.errors.weekNotOpen,
   one_way_car_mode_required: he.errors.oneWayCarModeRequired,
   non_driver_cannot_drive: he.errors.nonDriverCannotDrive,
+  non_driver_needs_drop_off: he.errors.nonDriverNeedsDropOff,
+  origin_change_unavailable: he.errors.originChangeUnavailable,
+  invalid_stops: he.errors.invalidStops,
   manual_boost_requires_reason: he.errors.manualBoostRequiresReason,
   request_not_found: he.errors.requestNotFound,
   request_has_ride: he.errors.requestHasRide,

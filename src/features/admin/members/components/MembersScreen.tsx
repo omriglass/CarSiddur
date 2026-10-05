@@ -14,6 +14,7 @@ import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { useDestinations } from "@/features/fleet/hooks";
 import { useDepartments } from "@/features/siddur/hooks";
 import { useSession } from "@/features/auth/useSession";
 import { he, tv } from "@/i18n/he";
@@ -35,6 +36,7 @@ import {
   useRejectMemberMutation,
   useRevokeAdminMutation,
   useSetMemberRoleMutation,
+  useUpdateMemberDefaultOriginMutation,
   useManagedChildren,
   useCreateChildMutation,
   useUpdateChildMutation,
@@ -47,6 +49,43 @@ const ROLE_LABEL: Record<"member" | "sadran" | "admin", string> = {
   admin: he.adminMembers.roleAdmin,
 };
 
+/**
+ * Per-membership "נקודת יציאה" select (REQ §13.93): its own component so `useDestinations`
+ * (scoped to one department) is called once per membership row, not in a loop inside
+ * `MembersTab`'s render (React hooks rules).
+ */
+function MembershipOriginSelect({
+  departmentId,
+  value,
+  pending,
+  onChange,
+}: {
+  departmentId: string;
+  value: string | null;
+  pending: boolean;
+  onChange: (originId: string | null) => void;
+}) {
+  const destinationsQuery = useDestinations(departmentId);
+  return (
+    <label className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+      {he.adminMembers.defaultOriginLabel}
+      <Select
+        value={value ?? ""}
+        disabled={pending}
+        onValueChange={(next) => onChange(next || null)}
+      >
+        <SelectTrigger className="h-8 w-40 text-xs"><SelectValue /></SelectTrigger>
+        <SelectContent>
+          <SelectItem value="">{he.adminMembers.defaultOriginHome}</SelectItem>
+          {(destinationsQuery.data ?? []).map((destination) => (
+            <SelectItem key={destination.id} value={destination.id}>{destination.name}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </label>
+  );
+}
+
 function MembersTab() {
   const { session } = useSession();
   const profilesQuery = useAllProfiles();
@@ -55,6 +94,7 @@ function MembersTab() {
   const grantAdminMutation = useGrantAdminMutation();
   const revokeAdminMutation = useRevokeAdminMutation();
   const setRoleMutation = useSetMemberRoleMutation();
+  const setDefaultOriginMutation = useUpdateMemberDefaultOriginMutation();
   const updateDetailsMutation = useUpdateMemberDetailsMutation();
   const [editing, setEditing] = useState<{ profileId: string; fullName: string; displayName: string; removedDepartmentIds: string[]; phone: string; departmentId?: string; doesNotDrive: boolean } | null>(null);
 
@@ -67,10 +107,10 @@ function MembersTab() {
     [departmentsQuery.data],
   );
   const membershipsByProfile = useMemo(() => {
-    const map = new Map<string, { departmentId: string; role: "member" | "sadran" | "admin" }[]>();
+    const map = new Map<string, { departmentId: string; role: "member" | "sadran" | "admin"; defaultOriginId: string | null }[]>();
     for (const dm of deptMembersQuery.data ?? []) {
       const list = map.get(dm.profile_id) ?? [];
-      list.push({ departmentId: dm.department_id, role: dm.role });
+      list.push({ departmentId: dm.department_id, role: dm.role, defaultOriginId: dm.default_origin_id });
       map.set(dm.profile_id, list);
     }
     return map;
@@ -197,12 +237,27 @@ function MembersTab() {
           <span>{he.adminMembers.columnDepartments}</span>
           {(membershipsByProfile.get(editing?.profileId ?? "") ?? []).map((membership) => {
             const removing = editing?.removedDepartmentIds.includes(membership.departmentId);
-            return <div key={membership.departmentId} className="flex items-center justify-between gap-2">
-              <span className={removing ? "line-through text-muted-foreground" : ""}>{departmentsById.get(membership.departmentId)}</span>
-              <Button variant="outline" size="sm" onClick={() => setEditing((old) => old && ({ ...old,
-                removedDepartmentIds: removing ? old.removedDepartmentIds.filter((id) => id !== membership.departmentId)
-                  : [...old.removedDepartmentIds, membership.departmentId],
-              }))}>{removing ? he.adminMembers.undoRemoval : he.adminMembers.removeDepartment}</Button>
+            return <div key={membership.departmentId} className="flex flex-col gap-2 rounded-md border p-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className={removing ? "line-through text-muted-foreground" : ""}>{departmentsById.get(membership.departmentId)}</span>
+                <Button variant="outline" size="sm" onClick={() => setEditing((old) => old && ({ ...old,
+                  removedDepartmentIds: removing ? old.removedDepartmentIds.filter((id) => id !== membership.departmentId)
+                    : [...old.removedDepartmentIds, membership.departmentId],
+                }))}>{removing ? he.adminMembers.undoRemoval : he.adminMembers.removeDepartment}</Button>
+              </div>
+              {!removing && editing ? (
+                <MembershipOriginSelect
+                  departmentId={membership.departmentId}
+                  value={membership.defaultOriginId}
+                  pending={setDefaultOriginMutation.isPending}
+                  onChange={(originId) =>
+                    setDefaultOriginMutation.mutate(
+                      { departmentId: membership.departmentId, profileId: editing.profileId, originId },
+                      { onSuccess: () => toast.success(he.adminCommon.savedToast), onError: showErrorToast },
+                    )
+                  }
+                />
+              ) : null}
             </div>;
           })}
           <p className="text-sm text-muted-foreground">{he.adminMembers.removalHelp}</p>

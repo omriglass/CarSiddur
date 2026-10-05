@@ -26,6 +26,11 @@ export { ruleRegistry, type RuleType } from './rules/index';
 export { matchFreedSlot } from './live';
 export { CarTimeline, buildTimelines } from './timeline';
 export type { NormalizedRequest, NormalizedLeg, SeriesLeg, SeriesUnit } from './slots';
+// REQUIREMENTS §13.93 (docs/SOLVER.md §1.3a): origin helpers, for callers
+// (the DB->solver bridge, O5) that need to resolve/derive the same things
+// the solver does internally.
+export { effectiveTripType, originIdOf, travelBetween } from './travel';
+export type { TravelResult, TravelLookup } from './travel';
 
 function peopleOf(nr: NormalizedRequest): number {
   return nr.passengers.adults + nr.passengers.childSeats + nr.passengers.boosters - 1;
@@ -56,7 +61,7 @@ export function solve(input: SolverInput): SolverOutput {
   const startedAt = input.now?.();
   const warnings: { code: string; message: string; requestId?: string }[] = [];
 
-  const { normalized, warnings: normalizeWarnings, seriesUnits } = normalize(input);
+  const { normalized, warnings: normalizeWarnings, seriesUnits, freeTextOriginIds } = normalize(input);
   warnings.push(...normalizeWarnings.map((w) => ({ code: w.code, message: w.message, requestId: w.requestId })));
 
   const bufferSlots = minutesToSlots(input.config.bufferMinutes);
@@ -68,10 +73,6 @@ export function solve(input: SolverInput): SolverOutput {
   for (const fr of [...input.fixedRides].sort((a, b) => byId(a, b))) {
     const tl = timelines.get(fr.carId);
     if (tl) {
-      const actualLocation = tl.locationAt(fr.window.start);
-      if (actualLocation !== fr.originId) {
-        warnings.push({ code: 'FIXED_RIDE_LOCATION_MISMATCH', message: reason('WARN_FIXED_RIDE_LOCATION_MISMATCH'), requestId: fr.id });
-      }
       tl.forceAdd({
         rideId: fr.id,
         window: fr.window,
@@ -99,17 +100,25 @@ export function solve(input: SolverInput): SolverOutput {
       reason: reason('PLACED_FIXED'),
     });
   }
+  // REQUIREMENTS §13.93: the day-end rule is retired. A fixed ride that
+  // starts where the car actually is not still goes in (chain break,
+  // recorded by `forceAdd`/`chainBreaks()` instead of a mismatch warning at
+  // seed time); only ending the *week* away from its base is worth a warning.
   for (const car of input.cars.filter((c) => c.type === 'shared')) {
     const tl = timelines.get(car.id);
     if (!tl) continue;
-    const violations = tl.dayEndViolations(input.week.days);
-    for (const v of violations) {
-      warnings.push({ code: 'CAR_AWAY_AT_DAY_END', message: reason('WARN_CAR_AWAY_AT_DAY_END'), requestId: v.causeRideId });
+    for (const brk of tl.chainBreaks()) {
+      warnings.push({ code: 'CHAIN_BROKEN', message: reason('WARN_CHAIN_BROKEN'), requestId: brk.rideId });
     }
   }
 
-  const roundTrips = normalized.filter((nr) => nr.legs[0]?.side === 'both');
-  const oneWay = normalized.filter((nr) => nr.legs[0]?.side !== 'both');
+  // REQUIREMENTS §13.93: an explicit `one_way` trip type has no pairing
+  // obligation — it is placed directly as a single unit (origin -> destination,
+  // end-check only) alongside ordinary 'both'/keep round trips, never through
+  // relay pairing/chauffeur healing (which stays scoped to `drop_off`, the
+  // legacy-derived default for every one-way/needsCarAtDestination=false case).
+  const roundTrips = normalized.filter((nr) => nr.legs[0]?.side === 'both' || nr.tripType === 'one_way');
+  const oneWay = normalized.filter((nr) => nr.legs[0]?.side !== 'both' && nr.tripType !== 'one_way');
   const passengerOnly = oneWay.filter((nr) => nr.isPassengerOnly);
   const relayEligible = oneWay.filter((nr) => !nr.isPassengerOnly);
 
@@ -203,13 +212,17 @@ export function solve(input: SolverInput): SolverOutput {
         ? 'UNMET_PASSENGER_NO_HOST'
         : stillUnpairedRelay.includes(nr)
           ? 'UNMET_NO_RELAY_PARTNER'
-          : 'UNMET_NO_CAR';
+          : nr.tripType === 'one_way'
+            ? 'UNMET_NO_CAR_AT_ORIGIN'
+            : 'UNMET_NO_CAR';
       const reasonText =
         reasonCode === 'UNMET_NO_RELAY_PARTNER'
           ? reason('UNMET_NO_RELAY_PARTNER', { dest: nr.destinationId, dayEnd: '23:59' })
           : reasonCode === 'UNMET_PASSENGER_NO_HOST'
             ? reason('UNMET_NEEDS_DRIVER', { dest: nr.destinationId, dep: '' })
-            : reason('UNMET_NO_CAR', { blockers: blockers.map((b) => b.carId).join(', ') });
+            : reasonCode === 'UNMET_NO_CAR_AT_ORIGIN'
+              ? reason('UNMET_NO_CAR_AT_ORIGIN', { origin: nr.originId, dest: nr.destinationId })
+              : reason('UNMET_NO_CAR', { blockers: blockers.map((b) => b.carId).join(', ') });
       return {
         requestId: nr.id,
         score: scores.get(nr.id)?.total ?? 0,
@@ -219,6 +232,20 @@ export function solve(input: SolverInput): SolverOutput {
         reason: reasonText,
       };
     });
+
+  // REQUIREMENTS §13.93, ORIGINS_PLAN §4 item 5: a free-text origin is never
+  // normalized and never placed — no score, no suggestions beyond a plain
+  // deny (there is nowhere to merge/shift/chauffeur it to or from).
+  for (const requestId of [...freeTextOriginIds].sort()) {
+    unmet.push({
+      requestId,
+      score: 0,
+      blockers: [],
+      suggestions: [{ kind: 'deny', requestId, reasonCode: 'SUGGEST_DENY', reason: reason('SUGGEST_DENY', { blockers: '' }), cost: 0, confidence: 1 }],
+      reasonCode: 'UNMET_FREE_TEXT_ORIGIN',
+      reason: reason('UNMET_FREE_TEXT_ORIGIN'),
+    });
+  }
 
   // Multi-day series (SOLVER §3.x): all-or-nothing, no suggestions — every leg
   // of a series that could not be placed on one car becomes its own
@@ -255,6 +282,8 @@ export function solve(input: SolverInput): SolverOutput {
       cars: carsMap,
       hostDriverRequests: byRequestId,
       hostTimelines: timelines,
+      homeLocationId: input.homeLocationId,
+      travel: input.travel,
     });
     const best = candidates[0];
     if (best && best.detourMinutes === 0) {
@@ -275,6 +304,12 @@ export function solve(input: SolverInput): SolverOutput {
     if (!tl) continue;
     for (const away of tl.awayWindows()) {
       carsAway.push({ carId: car.id, locationId: away.locationId, window: away.window });
+    }
+    // REQUIREMENTS §13.93: the day-end rule is gone; the only remaining
+    // location warning is a car ending the whole *week* away from its base.
+    const endAway = tl.weekEndAway();
+    if (endAway) {
+      warnings.push({ code: 'CAR_AWAY_AT_WEEK_END', message: reason('WARN_CAR_AWAY_AT_WEEK_END', { car: car.name, place: endAway.locationId }) });
     }
   }
 

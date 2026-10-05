@@ -41,6 +41,8 @@ interface DestinationComboboxProps {
   autoFocus?: boolean;
   /** react-hook-form field name, for `useScrollToFirstError` to find this control on an invalid submit. */
   dataField?: string;
+  /** Overrides the trigger/search placeholder, e.g. "מאיפה?" for the origin field (default `field.destination`, "לאן?"). */
+  placeholder?: string;
 }
 
 function labelFor(value: DestinationValue | null): string {
@@ -53,7 +55,7 @@ function labelFor(value: DestinationValue | null): string {
  * presets by name/alias/zone, and always offers a free-text row as the last
  * option (UX_FLOWS.md §3.4) — typing something unknown never dead-ends.
  */
-export function DestinationCombobox({ destinations, value, onChange, autoFocus, dataField }: DestinationComboboxProps) {
+export function DestinationCombobox({ destinations, value, onChange, autoFocus, dataField, placeholder }: DestinationComboboxProps) {
   const [open, setOpen] = useState(!!autoFocus);
   const [query, setQuery] = useState("");
   const matches = filterDestinations(destinations, query);
@@ -79,7 +81,7 @@ export function DestinationCombobox({ destinations, value, onChange, autoFocus, 
         >
           <span className="flex items-center gap-2 truncate">
             <MapPin className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-            {labelFor(value) || t("field.destination")}
+            {labelFor(value) || placeholder || t("field.destination")}
           </span>
           <ChevronsUpDown className="size-4 shrink-0 opacity-50" />
         </Button>
@@ -96,7 +98,7 @@ export function DestinationCombobox({ destinations, value, onChange, autoFocus, 
             <CommandInput
               value={query}
               onValueChange={setQuery}
-              placeholder={t("field.destination")}
+              placeholder={placeholder || t("field.destination")}
             />
             <CommandList>
               <CommandEmpty>{t("field.destinationFreeText")}</CommandEmpty>

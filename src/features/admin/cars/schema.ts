@@ -24,6 +24,8 @@ export const carSchema = z.object({
   built_in_boosters: z.number().int().min(0),
   /** Admin-set, optional (REQ §6.6/§13.69); read-only to a non-admin responsible person (`CarForm`'s `canEditResponsible`). */
   responsible_id: z.string().uuid().nullable(),
+  /** "מיקום קבוע" (REQ §13.93) — null = the department home. */
+  base_location_id: z.string().uuid().nullable(),
 }).superRefine((values, ctx) => {
   if (!values.is_replaced) return;
   if (!values.replacement_code || !/^[0-9]{4,5}$/.test(values.replacement_code)) {

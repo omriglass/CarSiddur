@@ -41,6 +41,7 @@ function commonParams(cars: Car[], destinations: Record<string, Destination> = {
     cars: new Map(cars.map((c) => [c.id, c])),
     hostDriverRequests: new Map(),
     hostTimelines: timelines,
+    homeLocationId: HOME,
   };
 }
 
@@ -138,5 +139,18 @@ describe('findMergeHosts', () => {
     expect(hostIds).toContain('host-ride');
     expect(hostIds).toContain('relay-out');
     expect(hostIds).not.toContain('return-only');
+  });
+
+  it('REQUIREMENTS §13.93: merges only between requests with the same origin', () => {
+    const cars = [makeCar('C1', { seatConfigs: [passengers(4)] })];
+    // host-ride's driver leg originId is HOME (hostAssignment's default).
+    const assignment = hostAssignment();
+    const hosts = buildHostRides([assignment], new Map(cars.map((c) => [c.id, c])));
+
+    const sameOriginGuest = guestNr({ destinationId: 'destA' }); // originId undefined -> HOME, like the host
+    expect(findMergeHosts({ guest: sameOriginGuest, leg: 'both', hosts, ...commonParams(cars) })).toHaveLength(1);
+
+    const otherOriginGuest = guestNr({ destinationId: 'destA', originId: 'HAIFA' });
+    expect(findMergeHosts({ guest: otherOriginGuest, leg: 'both', hosts, ...commonParams(cars) })).toHaveLength(0);
   });
 });

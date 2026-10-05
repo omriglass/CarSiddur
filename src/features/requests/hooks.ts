@@ -1,7 +1,8 @@
 import { useActiveDepartment } from "@/features/auth/useActiveDepartment";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { roundUpToQuarterHour } from "@/features/siddur/freeWindows";
+import { carBaseIsHome, roundUpToQuarterHour } from "@/features/siddur/freeWindows";
+import { useDepartments } from "@/features/siddur/hooks";
 import { siddurKeys } from "@/features/siddur/queryKeys";
 import { useDayFreeWindows, type DayFreeWindowsAway, type DayFreeWindowsCar } from "@/features/siddur/useDayFreeWindows";
 import { sadranKeys } from "@/features/sadran/keys";
@@ -281,13 +282,19 @@ export function useFreeCarsNowQuery(departmentId: string | undefined): FreeCarsN
   const day = dateKey(now);
   const weekStart = dateKey(weekStartFor(now));
   const dayFreeWindows = useDayFreeWindows(departmentId, weekStart, day, now);
+  // REQUIREMENTS §13.93: "I need a car now" only ever offers a car based at the department
+  // home — a car whose own base is elsewhere is never "free at home", even with no away window
+  // of its own (it simply starts there, `carBaseIsHome`).
+  const departmentsQuery = useDepartments();
+  const homeDestinationId = (departmentsQuery.data ?? []).find((d) => d.id === departmentId)?.home_destination_id ?? null;
   const nowRounded = roundUpToQuarterHour(now.getTime());
   const freeCars = dayFreeWindows.cars.filter((car) =>
-    dayFreeWindows.freeWindows.some((w) => w.carId === car.id && w.start === nowRounded),
+    carBaseIsHome(car.baseLocationId, homeDestinationId)
+    && dayFreeWindows.freeWindows.some((w) => w.carId === car.id && w.start === nowRounded),
   );
 
   return {
-    isLoading: dayFreeWindows.isLoading,
+    isLoading: dayFreeWindows.isLoading || departmentsQuery.isLoading,
     weekStart,
     day,
     now,

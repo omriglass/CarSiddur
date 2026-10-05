@@ -27,6 +27,11 @@ function requestRow(overrides: Partial<RequestRow> = {}): RequestRow {
     destination_text: null,
     ride_type_id: "rt-work",
     trip_shape: "round_trip",
+    // REQUIREMENTS §13.93: a backfilled row always has origin_id set (home by
+    // default) and a non-null trip_type; tests override these explicitly.
+    origin_id: HOME,
+    origin_text: null,
+    trip_type: "round_trip",
     one_way_car_mode: null,
     depart_at: "2026-09-08T05:00:00Z",
     return_at: "2026-09-08T10:00:00Z",
@@ -67,6 +72,7 @@ function carRow(overrides: Partial<CarRow> = {}): CarRow {
     type: "shared",
     status: "active",
     owner_id: null,
+    base_location_id: null,
     features: [],
     built_in_child_seats: 0,
     built_in_boosters: 0,
@@ -105,6 +111,7 @@ const DEFAULT_SETTINGS = {
   detour_limit_km: 15,
   chauffeur_dwell_minutes: 10,
   day_end_time: "23:59:00",
+  stop_minutes: 5,
 };
 
 describe("parseFlexInterval", () => {
@@ -358,5 +365,157 @@ describe("multi-day series fields", () => {
     expect(ordinary?.seriesId).toBeUndefined();
     expect(ordinary?.seriesIndex).toBeUndefined();
     expect(ordinary?.seriesCount).toBeUndefined();
+  });
+});
+
+describe("origins, trip types, cars stay put (REQUIREMENTS §13.93, docs/ORIGINS_PLAN_2026-10.md §4)", () => {
+  it("maps origin_id straight onto Request.originId; originIsFreeText false", () => {
+    const input = buildSolverInput({
+      weekStart: WEEK_START,
+      homeDestinationId: HOME,
+      departmentSettings: DEFAULT_SETTINGS,
+      requests: [requestRow({ id: "r1", origin_id: "dest-harish", origin_text: null })],
+      rideTypeCodesById: {},
+      cars: [],
+      seatConfigsByCarId: {},
+      destinations: [destRow()],
+      policy: { id: "p1", version: 1, rules: [] },
+    });
+    const r = input.requests[0]!;
+    expect(r.originId).toBe("dest-harish");
+    expect(r.originIsFreeText).toBe(false);
+  });
+
+  it("a null origin_id with origin_text set maps to originIsFreeText: true, originId undefined", () => {
+    const input = buildSolverInput({
+      weekStart: WEEK_START,
+      homeDestinationId: HOME,
+      departmentSettings: DEFAULT_SETTINGS,
+      requests: [requestRow({ id: "r1", origin_id: null, origin_text: "איפשהו בכביש" })],
+      rideTypeCodesById: {},
+      cars: [],
+      seatConfigsByCarId: {},
+      destinations: [destRow()],
+      policy: { id: "p1", version: 1, rules: [] },
+    });
+    const r = input.requests[0]!;
+    expect(r.originId).toBeUndefined();
+    expect(r.originIsFreeText).toBe(true);
+  });
+
+  it("maps trip_type straight onto Request.tripType, always explicitly -- a stored 'one_way' is never left to derive from legacy trip_shape", () => {
+    const input = buildSolverInput({
+      weekStart: WEEK_START,
+      homeDestinationId: HOME,
+      departmentSettings: DEFAULT_SETTINGS,
+      requests: [
+        // Legacy trip_shape for a one_way request is 'one_way_to' -- effectiveTripType()
+        // would derive 'drop_off' from that alone; trip_type must override it.
+        requestRow({ id: "one-way", trip_shape: "one_way_to", trip_type: "one_way", depart_at: "2026-09-08T05:00:00Z", return_at: null }),
+        requestRow({ id: "drop-off", trip_shape: "one_way_to", trip_type: "drop_off", depart_at: "2026-09-08T05:00:00Z", return_at: null }),
+        requestRow({ id: "round-trip", trip_shape: "round_trip", trip_type: "round_trip" }),
+      ],
+      rideTypeCodesById: {},
+      cars: [],
+      seatConfigsByCarId: {},
+      destinations: [destRow()],
+      policy: { id: "p1", version: 1, rules: [] },
+    });
+    const byId = new Map(input.requests.map((r) => [r.id, r]));
+    expect(byId.get("one-way")!.tripType).toBe("one_way");
+    expect(byId.get("drop-off")!.tripType).toBe("drop_off");
+    expect(byId.get("round-trip")!.tripType).toBe("round_trip");
+  });
+
+  it("maps cars.base_location_id onto Car.baseLocationId, undefined when null", () => {
+    const input = buildSolverInput({
+      weekStart: WEEK_START,
+      homeDestinationId: HOME,
+      departmentSettings: DEFAULT_SETTINGS,
+      requests: [],
+      rideTypeCodesById: {},
+      cars: [carRow({ id: "car-1", base_location_id: "dest-haifa" }), carRow({ id: "car-2", base_location_id: null })],
+      seatConfigsByCarId: {},
+      destinations: [destRow()],
+      policy: { id: "p1", version: 1, rules: [] },
+    });
+    const byId = new Map(input.cars.map((c) => [c.id, c]));
+    expect(byId.get("car-1")!.baseLocationId).toBe("dest-haifa");
+    expect(byId.get("car-2")!.baseLocationId).toBeUndefined();
+  });
+
+  it("maps carStartLocationsByCarId onto Car.startLocationId; a car left out of the map is undefined (defaults to home)", () => {
+    const input = buildSolverInput({
+      weekStart: WEEK_START,
+      homeDestinationId: HOME,
+      departmentSettings: DEFAULT_SETTINGS,
+      requests: [],
+      rideTypeCodesById: {},
+      cars: [carRow({ id: "car-1" }), carRow({ id: "car-2" })],
+      seatConfigsByCarId: {},
+      destinations: [destRow()],
+      policy: { id: "p1", version: 1, rules: [] },
+      carStartLocationsByCarId: { "car-1": { locationId: "dest-haifa", baseLocationId: HOME } },
+    });
+    const byId = new Map(input.cars.map((c) => [c.id, c]));
+    expect(byId.get("car-1")!.startLocationId).toBe("dest-haifa");
+    expect(byId.get("car-2")!.startLocationId).toBeUndefined();
+  });
+
+  it("passes travel through to SolverInput.travel unchanged, [] when omitted", () => {
+    const travel = [{ fromId: "dest-haifa", toId: "dest-nahariya", distanceKm: 20, travelMinutes: 25 }];
+    const withTravel = buildSolverInput({
+      weekStart: WEEK_START, homeDestinationId: HOME, departmentSettings: DEFAULT_SETTINGS,
+      requests: [], rideTypeCodesById: {}, cars: [], seatConfigsByCarId: {}, destinations: [],
+      policy: { id: "p1", version: 1, rules: [] }, travel,
+    });
+    expect(withTravel.travel).toBe(travel);
+
+    const withoutTravel = buildSolverInput({
+      weekStart: WEEK_START, homeDestinationId: HOME, departmentSettings: DEFAULT_SETTINGS,
+      requests: [], rideTypeCodesById: {}, cars: [], seatConfigsByCarId: {}, destinations: [],
+      policy: { id: "p1", version: 1, rules: [] },
+    });
+    expect(withoutTravel.travel).toBeUndefined();
+  });
+
+  it("maps department_settings.stop_minutes onto SolverConfig.stopMinutes (REQ §13.93 'Multi-stop rides')", () => {
+    const input = buildSolverInput({
+      weekStart: WEEK_START, homeDestinationId: HOME, departmentSettings: { ...DEFAULT_SETTINGS, stop_minutes: 7 },
+      requests: [], rideTypeCodesById: {}, cars: [], seatConfigsByCarId: {}, destinations: [],
+      policy: { id: "p1", version: 1, rules: [] },
+    });
+    expect(input.config.stopMinutes).toBe(7);
+  });
+
+  it("maps request_stops rows onto Request.stops, sorted by position, free-text (no place_id) -> locationId undefined; omitted when empty/absent", () => {
+    const input = buildSolverInput({
+      weekStart: WEEK_START,
+      homeDestinationId: HOME,
+      departmentSettings: DEFAULT_SETTINGS,
+      requests: [
+        {
+          ...requestRow({ id: "with-stops" }),
+          stops: [
+            { leg: "out", position: 2, place_id: "dest-b" },
+            { leg: "out", position: 1, place_id: "dest-a" },
+            { leg: "return", position: 1, place_id: null },
+          ],
+        },
+        requestRow({ id: "no-stops" }),
+      ],
+      rideTypeCodesById: {},
+      cars: [],
+      seatConfigsByCarId: {},
+      destinations: [destRow()],
+      policy: { id: "p1", version: 1, rules: [] },
+    });
+    const byId = new Map(input.requests.map((r) => [r.id, r]));
+    expect(byId.get("with-stops")!.stops).toEqual([
+      { leg: "out", locationId: "dest-a" },
+      { leg: "out", locationId: "dest-b" },
+      { leg: "return", locationId: undefined },
+    ]);
+    expect(byId.get("no-stops")!.stops).toBeUndefined();
   });
 });

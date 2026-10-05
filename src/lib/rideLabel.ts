@@ -22,6 +22,7 @@
 // Pure/no React, no Supabase — unit tested directly (rideLabel.test.ts).
 
 import { he, tv } from "@/i18n/he";
+import { formatTime } from "@/lib/time";
 
 export interface RideLabelServedEntry {
   role: "driver" | "passenger";
@@ -31,6 +32,14 @@ export interface RideLabelServedEntry {
   destination?: string | null;
   leg?: "out" | "return" | "both";
   car_mode?: "keep" | "relay" | "passenger" | "chauffeur";
+  /** REQUIREMENTS §13.93 (`v_board_rides.served[].origin_id/origin_name`): the request's own
+   *  origin — distinct from the ride's own `originId` (where the *car* starts) whenever this
+   *  entry was merged onto a host with a different origin, or the ride's origin is mid-chain. */
+  origin_id?: string | null;
+  origin_name?: string | null;
+  /** REQUIREMENTS §13.93 `trip_type`: decides the driver-label wording (plain one-way "parked"
+   *  vs a הקפצה relay pair's "leave"/"wait" phrasing below). */
+  trip_type?: "round_trip" | "one_way" | "drop_off" | null;
 }
 
 export interface RideLabelInput {
@@ -50,6 +59,13 @@ export interface RideLabelInput {
    * both the board and the siddur (this function is shared between the two).
    */
   autoRelocation?: boolean;
+  /** The ride's own departure time (ISO) — REQUIREMENTS §13.93 "Display": a chauffeur pickup
+   *  leg shows "(יציאה {{time}})", the whole ride's own start. */
+  startsAt?: string;
+  /** `v_board_rides.relay_partner` — the paired relay leg (out ↔ return) on the same car: its
+   *  ride id, driver (or first requester) name and time. REQUIREMENTS §13.93 "Display": a
+   *  relay pair's leave/wait label names the partner and the time instead of just the place. */
+  relayPartner?: { ride_id: string; name: string; at: string } | null;
 }
 
 function firstName(fullName: string): string {
@@ -66,34 +82,54 @@ function hebrewList(names: readonly string[]): string {
   return `${clean.slice(0, -1).join(", ")} ${he.rideLabel.and}${last}`;
 }
 
-/** The designated driver may have no request of their own (a volunteer). */
-export function chauffeurRideLabel(driverName: string | null, passengers: readonly RideLabelServedEntry[]): string {
+/**
+ * The designated driver may have no request of their own (a volunteer). REQUIREMENTS §13.93
+ * "Display": a chauffeur ride carrying exactly one passenger group gets the precise wording
+ * ("X מסיע/ה את Y לחריש וחוזר/ת" drop-off, "X אוסף/ת את Y מחריש (יציאה 15:20)" pickup); a ride
+ * that ended up carrying several distinct groups (rare — a chauffeur ride is normally a single
+ * lone leg) falls back to the older combined phrasing rather than repeating the driver's name
+ * once per group.
+ */
+export function chauffeurRideLabel(driverName: string | null, passengers: readonly RideLabelServedEntry[], startsAt?: string, carLocationId?: string): string {
+  const driver = driverName?.trim() ? firstName(driverName) : "_____";
   const groups = new Map<string, { destination: string; returning: boolean; names: string[] }>();
   for (const passenger of passengers) {
-    const destination = passenger.destination ?? "";
-    const returning = passenger.leg === "return";
+    // A pickup is a legacy return leg (fetch from its destination), or — REQ §13.93 "pick me up
+    // from Harish" — an out leg whose own origin is not where the car is (`carLocationId`, the
+    // chauffeur ride's origin): the driver fetches the passenger at that origin.
+    const pickupFromOrigin = passenger.leg !== "return" && !!carLocationId && !!passenger.origin_id
+      && passenger.origin_id !== carLocationId;
+    const destination = pickupFromOrigin ? (passenger.origin_name ?? "") : (passenger.destination ?? "");
+    const returning = passenger.leg === "return" || pickupFromOrigin;
     const key = JSON.stringify([destination, returning]);
     const group = groups.get(key) ?? { destination, returning, names: [] };
     if (passenger.requester) group.names.push(firstName(passenger.requester));
     groups.set(key, group);
   }
-  const routes = [...groups.values()].map((group) => tv(
+  const groupList = [...groups.values()];
+  if (groupList.length === 1) {
+    const [group] = groupList as [{ destination: string; returning: boolean; names: string[] }];
+    const name = hebrewList(group.names);
+    return group.returning
+      ? tv("rideCoordination.chauffeurPickup", { driver, name, place: group.destination, time: startsAt ? formatTime(new Date(startsAt)) : "" })
+      : tv("rideCoordination.chauffeurDropoff", { driver, name, place: group.destination });
+  }
+  const routes = groupList.map((group) => tv(
     group.returning ? "rideCoordination.passengerFrom" : "rideCoordination.passengerTo",
     { name: hebrewList(group.names), destination: group.destination },
   ));
-  return tv("rideCoordination.chauffeurLabel", {
-    driver: driverName?.trim() ? firstName(driverName) : "_____",
-    passengers: hebrewList(routes),
-  });
+  return tv("rideCoordination.chauffeurLabel", { driver, passengers: hebrewList(routes) });
 }
 
 /**
  * The direction prefix ("ל"/"מ") and the real place name — shared by
  * `rideBlockLabel` (board grid) and `resolveRideRealDestination` (board
  * list-mode `RideCard`s, which show origin/destination as two separate
- * fields rather than one composed string).
+ * fields rather than one composed string). `originLabel`, when set
+ * (REQUIREMENTS §13.93 "Display"), is the served request's own origin —
+ * shown as a "מ<origin>" prefix whenever it isn't the department home.
  */
-function resolveDirection(input: RideLabelInput): { kind: "to" | "from"; place: string } {
+function resolveDirection(input: RideLabelInput): { kind: "to" | "from"; place: string; originLabel?: string } {
   const isHomeOrigin = input.originId === input.homeDestinationId;
   const isHomeDestination = input.destinationId === input.homeDestinationId;
 
@@ -105,11 +141,17 @@ function resolveDirection(input: RideLabelInput): { kind: "to" | "from"; place: 
     // one-way-from: arriving home from wherever it started.
     return { kind: "from", place: input.originName };
   }
-  // Round trip (origin === destination, normally home): the real
-  // destination only exists on the served requests.
+  // Round trip (origin === destination): the real destination only exists on the served
+  // requests. The ride's shared origin/destination is normally the department home, but
+  // REQUIREMENTS §13.93 allows a round trip to start at a member's own non-home default
+  // origin instead — surfaced here as a "מ<origin>" prefix.
   const driver = input.served.find((s) => s.role === "driver");
   const passenger = input.served.find((s) => s.role === "passenger" && s.destination);
-  return { kind: "to", place: driver?.destination ?? passenger?.destination ?? input.destinationName };
+  const primary = driver ?? passenger;
+  const originLabel = primary?.origin_name && primary.origin_id && primary.origin_id !== input.homeDestinationId
+    ? primary.origin_name
+    : undefined;
+  return { kind: "to", place: driver?.destination ?? passenger?.destination ?? input.destinationName, originLabel };
 }
 
 /**
@@ -123,13 +165,41 @@ export function rideBlockLabel(input: RideLabelInput): string {
   if (input.autoRelocation) return he.sadranBoard.autoRelocation;
   const driver = input.served.find((s) => s.role === "driver");
   const passengers = input.served.filter((s) => s.role === "passenger");
+
+  // REQUIREMENTS §13.93 "Display": a lone relay leg (one served request, no merge) tells the
+  // Sadran/member what happens to the *car*, not just who travels — a plain הלוך בלבד leaves it
+  // parked with nobody designated to bring it back, while a הקפצה relay pair's own leg either
+  // leaves the car for a later trip to pick up or is itself that later pickup. The matching
+  // leg's own name/time comes from `v_board_rides.relay_partner` (the paired ride, same car,
+  // same day); falls back to the place-only wording when it isn't known yet (not paired, or an
+  // older `v_board_rides` row before this field existed).
+  if (input.served.length === 1 && driver?.car_mode === "relay") {
+    if (driver.trip_type === "one_way") {
+      return tv("rideCoordination.oneWayParked", {
+        name: driver.requester ? firstName(driver.requester) : "",
+        place: driver.leg === "return" ? input.originName : input.destinationName,
+      });
+    }
+    if (driver.trip_type === "drop_off") {
+      const partner = input.relayPartner;
+      if (driver.leg === "return") {
+        return partner
+          ? tv("rideCoordination.relayWaitFrom", { place: input.originName, name: firstName(partner.name), time: formatTime(new Date(partner.at)) })
+          : tv("rideCoordination.relayWait", { place: input.originName });
+      }
+      return partner
+        ? tv("rideCoordination.relayLeaveFor", { place: input.destinationName, name: firstName(partner.name), time: formatTime(new Date(partner.at)) })
+        : tv("rideCoordination.relayLeave", { place: input.destinationName });
+    }
+  }
+
   if (passengers.length && (input.isChauffeur || input.needsDriver || passengers.some((s) => s.car_mode === "chauffeur"))) {
     const direction = resolveDirection(input);
     const label = chauffeurRideLabel(input.needsDriver ? null : input.driverName ?? driver?.requester ?? null, passengers.map((passenger) => ({
       ...passenger,
       destination: passenger.destination ?? direction.place,
       leg: passenger.leg ?? (direction.kind === "from" ? "return" : "out"),
-    })));
+    })), input.startsAt, input.originId);
     // A merged passenger leg must not hide the host's separate destination.
     if (driver?.destination && !passengers.some((passenger) => passenger.destination === driver.destination)) {
       return `${label} · ${tv(driver.leg === "return" ? "rideCoordination.passengerFrom" : "rideCoordination.passengerTo", {
@@ -151,9 +221,10 @@ export function rideBlockLabel(input: RideLabelInput): string {
     .filter((n): n is string => !!n);
   const who = hebrewList(names);
 
-  const { kind, place } = resolveDirection(input);
+  const { kind, place, originLabel } = resolveDirection(input);
   const prefix = he.rideLabel[kind];
-  return who ? `${who} ${prefix}${place}` : `${prefix}${place}`;
+  const originPrefix = originLabel ? `${he.rideLabel.from}${originLabel} ` : "";
+  return who ? `${who} ${originPrefix}${prefix}${place}` : `${originPrefix}${prefix}${place}`;
 }
 
 /**

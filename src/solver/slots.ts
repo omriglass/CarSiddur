@@ -8,16 +8,16 @@
 import type {
   Car,
   DayBounds,
-  Destination,
   LegCarMode,
   LegSide,
   Passengers,
   Request,
-  SolverConfig,
   SolverInput,
+  TripType,
   Window,
 } from './types';
 import { fits } from './seatFit';
+import { effectiveTripType, legRouteSlots, originIdOf, resolveStopMinutes, travelBetween } from './travel';
 
 export const SLOT_MS = 15 * 60 * 1000;
 
@@ -91,6 +91,10 @@ export interface NormalizedRequest {
   dayWindow: Window;
   /** one-way passenger mode: the solver never places this itself; it is served only via merge/chauffeur suggestions */
   isPassengerOnly: boolean;
+  /** `request.originId`, or the department home when unset (REQUIREMENTS §13.93). Equals `legs[*].originId`/`destinationId` as appropriate. */
+  originId: string;
+  /** derived via `effectiveTripType()` (REQUIREMENTS §13.93) */
+  tripType: TripType;
 }
 
 function requestDayWindow(request: Request, day: DayBounds, weekStartMs: number): Window {
@@ -114,20 +118,22 @@ export interface Warning {
   requestId?: string;
 }
 
-function travelSlotsFor(destination: Destination | undefined, config: SolverConfig): number {
-  const minutes = destination?.travelMinutes ?? config.defaultTravelMinutes;
+/**
+ * Travel time (in 15-min slots) of a leg between `originId` and
+ * `destinationId` (REQUIREMENTS §13.93, ORIGINS_PLAN §4): replaces the old
+ * direct `destinations[id].travelMinutes` lookup (which implicitly assumed
+ * every leg started at home) with `travelBetween()`, origin-aware.
+ */
+export function travelSlotsFor(input: SolverInput, originId: string, destinationId: string): number {
+  const { minutes } = travelBetween(input, originId, destinationId);
   return Math.max(1, Math.ceil(minutes / 15));
 }
 
-function destinationOf(input: SolverInput, id: string): Destination {
-  return input.destinations[id] ?? { id, zone: 'unknown' };
-}
-
-/** Builds the fallback/only 'both' (keep) leg of a round trip: the car block starts and
- * ends at home; the requester's travel to the destination is recorded on the
- * AssignmentLeg, not on the car block itself. */
-function buildKeepLeg(home: string, D: number, R: number): NormalizedLeg {
-  return { side: 'both', preferredMode: 'keep', originId: home, destinationId: home, window: { start: D, end: R } };
+/** Builds the fallback/only 'both' (keep) leg of a round trip (and, generalized, a
+ * `drop_off` round trip): the car block starts and ends at `origin`; the requester's
+ * travel to the destination is recorded on the AssignmentLeg, not on the car block itself. */
+function buildKeepLeg(origin: string, D: number, R: number): NormalizedLeg {
+  return { side: 'both', preferredMode: 'keep', originId: origin, destinationId: origin, window: { start: D, end: R } };
 }
 
 /**
@@ -170,26 +176,30 @@ export function resolveOneWayMode(request: Request): 'relay' | 'passenger' {
   return hasEligibleDriver(request) ? 'relay' : 'passenger';
 }
 
-/** The independent out-leg of a round trip (used by relay pairing / splitLegs when needsCarAtDestination = false). */
-export function roundTripOutLeg(nr: NormalizedRequest, home: string): NormalizedLeg {
+/** The independent out-leg of a round trip (used by relay pairing / splitLegs when needsCarAtDestination = false).
+ *  `home` is accepted for backward compatibility but ignored — the leg always uses the request's own origin
+ *  (`nr.originId`, REQUIREMENTS §13.93), which equals `home` for every legacy (home-origin) request. */
+export function roundTripOutLeg(nr: NormalizedRequest, home?: string): NormalizedLeg {
+  void home;
   const D = nr.window.start;
   return {
     side: 'out',
     preferredMode: resolveOneWayMode(nr.request),
-    originId: home,
+    originId: nr.originId,
     destinationId: nr.destinationId,
     window: { start: D, end: D + nr.travelSlots },
   };
 }
 
-/** The independent return-leg of a round trip. */
-export function roundTripReturnLeg(nr: NormalizedRequest, home: string): NormalizedLeg {
+/** The independent return-leg of a round trip. See `roundTripOutLeg` re: `home`. */
+export function roundTripReturnLeg(nr: NormalizedRequest, home?: string): NormalizedLeg {
+  void home;
   const R = nr.window.end;
   return {
     side: 'return',
     preferredMode: resolveOneWayMode(nr.request),
     originId: nr.destinationId,
-    destinationId: home,
+    destinationId: nr.originId,
     window: { start: R - nr.travelSlots, end: R },
   };
 }
@@ -236,6 +246,8 @@ export interface NormalizeResult {
   servedByFixed: Set<string>;
   warnings: Warning[];
   seriesUnits: SeriesUnit[];
+  /** requests with `originIsFreeText = true` (REQUIREMENTS §13.93 item 5): never normalized, never placed. */
+  freeTextOriginIds: Set<string>;
 }
 
 /** Builds the same NormalizedRequest shape the main loop's round_trip branch produces — factored out
@@ -243,7 +255,7 @@ export interface NormalizeResult {
 function buildRoundTripNormalized(
   request: Request,
   input: SolverInput,
-  home: string,
+  origin: string,
   D: number,
   R: number,
   travelSlots: number,
@@ -261,7 +273,7 @@ function buildRoundTripNormalized(
   return {
     id: request.id,
     request,
-    legs: [buildKeepLeg(home, D, R)],
+    legs: [buildKeepLeg(origin, D, R)],
     window: { start: D, end: R },
     minDurationSlots: Math.max(1, R - D),
     flexDep: boundedFlex(flexDep, { ...dayWindow, end: day.endSlot - 1 }),
@@ -274,6 +286,8 @@ function buildRoundTripNormalized(
     dayIndex: day.dayIndex,
     dayWindow,
     isPassengerOnly: false,
+    originId: origin,
+    tripType: effectiveTripType(request),
   };
 }
 
@@ -316,8 +330,8 @@ function buildSeriesUnits(
           request,
           seriesIndex,
           window: { start: 0, end: 0 },
-          originId: isGlobalFirst ? home : request.destinationId,
-          destinationId: isGlobalLast ? home : request.destinationId,
+          originId: isGlobalFirst ? originIdOf(request, home) : request.destinationId,
+          destinationId: isGlobalLast ? originIdOf(request, home) : request.destinationId,
           passengers: request.passengers,
           luggage: request.luggage,
           dayIndex: 0,
@@ -361,8 +375,8 @@ function buildSeriesUnits(
         request,
         seriesIndex,
         window: { start: D, end: R },
-        originId: isGlobalFirst ? home : request.destinationId,
-        destinationId: isGlobalLast ? home : request.destinationId,
+        originId: isGlobalFirst ? originIdOf(request, home) : request.destinationId,
+        destinationId: isGlobalLast ? originIdOf(request, home) : request.destinationId,
         passengers: request.passengers,
         luggage: request.luggage,
         dayIndex: day.dayIndex,
@@ -374,13 +388,14 @@ function buildSeriesUnits(
     legs.sort((a, b) => a.seriesIndex - b.seriesIndex);
     const first = legs[0];
     if (!first) continue;
-    const travelSlots = travelSlotsFor(destinationOf(input, first.request.destinationId), input.config);
+    const firstOrigin = originIdOf(first.request, home);
+    const travelSlots = travelSlotsFor(input, firstOrigin, first.request.destinationId);
     seriesUnits.push({
       seriesId,
       seriesCount,
       destinationId: first.request.destinationId,
       legs,
-      scoreProxy: buildRoundTripNormalized(first.request, input, home, first.window.start, first.window.end, travelSlots),
+      scoreProxy: buildRoundTripNormalized(first.request, input, firstOrigin, first.window.start, first.window.end, travelSlots),
     });
   }
   return seriesUnits;
@@ -394,10 +409,12 @@ export function normalize(input: SolverInput): NormalizeResult {
   }
 
   const home = input.homeLocationId;
+  const stopMinutes = resolveStopMinutes(input.config);
   const sortedRequests = [...input.requests].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 
   const normalized: NormalizedRequest[] = [];
   const seriesRequests: Request[] = [];
+  const freeTextOriginIds = new Set<string>();
 
   for (const request of sortedRequests) {
     if (servedByFixed.has(request.id)) continue;
@@ -405,11 +422,64 @@ export function normalize(input: SolverInput): NormalizeResult {
       seriesRequests.push(request);
       continue;
     }
-    const destination = destinationOf(input, request.destinationId);
-    const travelSlots = travelSlotsFor(destination, input.config);
+    // REQUIREMENTS §13.93 / ORIGINS_PLAN §4 item 5: a free-text origin is never
+    // placed — it is never even given a leg; it surfaces as its own unmet
+    // reason (UNMET_FREE_TEXT_ORIGIN) in index.ts.
+    if (request.originIsFreeText) {
+      freeTextOriginIds.add(request.id);
+      continue;
+    }
+    const origin = originIdOf(request, home);
+    const tripType = effectiveTripType(request);
+    const travelSlots = travelSlotsFor(input, origin, request.destinationId);
 
     if (input.cars.length > 0 && !input.cars.some((c) => fits(c, request.passengers))) {
       warnings.push({ code: 'NO_CAR_FITS_SEATS', message: 'WARN_NO_CAR_FITS_SEATS', requestId: request.id });
+    }
+
+    // New explicit `one_way` trip type (REQUIREMENTS §13.93): a single relay
+    // leg origin -> destination, unconditionally (no passenger fallback — the
+    // SQL side refuses this trip type to a non-driver with no driving
+    // companion), no pairing obligation and no chauffeur conversion (§4 item
+    // 4). Placement is governed only by `CarTimeline.isFree`'s end-check
+    // (the car's next block, if any, must start at the destination).
+    if (request.tripShape === 'one_way_to' && tripType === 'one_way') {
+      if (request.departureMs === undefined) continue;
+      if (!isAligned(request.departureMs, input.week.startMs)) {
+        warnings.push({ code: 'TIME_NOT_ALIGNED', message: 'WARN_TIME_NOT_ALIGNED', requestId: request.id });
+      }
+      // Multi-stop rides (REQUIREMENTS §13.93): the leg's own route duration,
+      // not the plain origin<->destination lookup — equal to it when there
+      // are no out-stops.
+      const travelSlots = legRouteSlots(input, request, 'out', stopMinutes);
+      const D = toSlotFloor(request.departureMs, input.week.startMs);
+      const day = dayBoundsForSlot(input.week.days, D);
+      const dayWindow = requestDayWindow(request, day, input.week.startMs);
+      const flexDep: [number, number] = [
+        resolveFlexBound(D, request.flexDeparture.earlierMin, 'earlier', day),
+        resolveFlexBound(D, request.flexDeparture.laterMin, 'later', day),
+      ];
+      const window = { start: D, end: D + travelSlots };
+      normalized.push({
+        id: request.id,
+        request,
+        legs: [{ side: 'out', preferredMode: 'relay', originId: origin, destinationId: request.destinationId, window }],
+        window,
+        minDurationSlots: Math.max(1, travelSlots),
+        flexDep: boundedFlex(flexDep, dayWindow),
+        flexRet: [D, D],
+        durationFixed: true,
+        travelSlots,
+        passengers: request.passengers,
+        luggage: request.luggage,
+        destinationId: request.destinationId,
+        dayIndex: day.dayIndex,
+        dayWindow,
+        isPassengerOnly: false,
+        originId: origin,
+        tripType,
+      });
+      continue;
     }
 
     if (request.tripShape === 'round_trip') {
@@ -436,7 +506,7 @@ export function normalize(input: SolverInput): NormalizeResult {
       normalized.push({
         id: request.id,
         request,
-        legs: [buildKeepLeg(home, D, R)],
+        legs: [buildKeepLeg(origin, D, R)],
         window: { start: D, end: R },
         minDurationSlots: Math.max(1, R - D),
         flexDep: boundedFlex(flexDep, { ...dayWindow, end: day.endSlot - 1 }),
@@ -449,11 +519,15 @@ export function normalize(input: SolverInput): NormalizeResult {
         dayIndex: day.dayIndex,
         dayWindow,
         isPassengerOnly: false,
+        originId: origin,
+        tripType,
       });
       continue;
     }
 
-    // One-way shapes: durationFixed = true (single shift dimension). The member
+    // One-way shapes (legacy `one_way_to`/`one_way_from`, or an explicit
+    // `drop_off` with no pickup leg — REQUIREMENTS §13.93 derives both to
+    // `drop_off`): durationFixed = true (single shift dimension). The member
     // never states a mode on the form (REQUIREMENTS §13.88) and any stored
     // `oneWayCarMode` is ignored — `resolveOneWayMode` returns the *candidate*
     // mode (relay-eligible vs. definite passenger); pairing (`relay.ts`) decides
@@ -465,6 +539,9 @@ export function normalize(input: SolverInput): NormalizeResult {
       if (!isAligned(request.departureMs, input.week.startMs)) {
         warnings.push({ code: 'TIME_NOT_ALIGNED', message: 'WARN_TIME_NOT_ALIGNED', requestId: request.id });
       }
+      // Multi-stop rides (REQUIREMENTS §13.93): route-aware, equal to the
+      // plain lookup when there are no out-stops.
+      const travelSlots = legRouteSlots(input, request, 'out', stopMinutes);
       const D = toSlotFloor(request.departureMs, input.week.startMs);
       const day = dayBoundsForSlot(input.week.days, D);
       const dayWindow = requestDayWindow(request, day, input.week.startMs);
@@ -476,7 +553,7 @@ export function normalize(input: SolverInput): NormalizeResult {
       normalized.push({
         id: request.id,
         request,
-        legs: [{ side: 'out', preferredMode: mode, originId: home, destinationId: request.destinationId, window }],
+        legs: [{ side: 'out', preferredMode: mode, originId: origin, destinationId: request.destinationId, window }],
         window,
         minDurationSlots: mode === 'relay' ? Math.max(1, travelSlots) : 0,
         flexDep: boundedFlex(flexDep, dayWindow),
@@ -489,15 +566,22 @@ export function normalize(input: SolverInput): NormalizeResult {
         dayIndex: day.dayIndex,
         dayWindow,
         isPassengerOnly: mode === 'passenger',
+        originId: origin,
+        tripType,
       });
       continue;
     }
 
-    // one_way_from
+    // one_way_from (always `drop_off`: see effectiveTripType — there is no
+    // "return-only" new trip type, §1 of ORIGINS_PLAN)
     if (request.returnMs === undefined) continue;
     if (!isAligned(request.returnMs, input.week.startMs)) {
       warnings.push({ code: 'TIME_NOT_ALIGNED', message: 'WARN_TIME_NOT_ALIGNED', requestId: request.id });
     }
+    // Multi-stop rides (REQUIREMENTS §13.93): route-aware, equal to the plain
+    // lookup when there are no return-stops. (Named distinctly from the outer
+    // origin<->destination `travelSlots` above, still in scope here.)
+    const returnTravelSlots = legRouteSlots(input, request, 'return', stopMinutes);
     const R = toSlotCeil(request.returnMs, input.week.startMs);
     const day = dayBoundsForSlot(input.week.days, toSlotFloor(request.returnMs, input.week.startMs));
     const dayWindow = requestDayWindow(request, day, input.week.startMs);
@@ -505,29 +589,31 @@ export function normalize(input: SolverInput): NormalizeResult {
       resolveFlexBound(R, request.flexReturn.earlierMin, 'earlier', day),
       resolveFlexBound(R, request.flexReturn.laterMin, 'later', day),
     ];
-    const window = mode === 'relay' ? { start: R - travelSlots, end: R } : { start: R, end: R };
+    const window = mode === 'relay' ? { start: R - returnTravelSlots, end: R } : { start: R, end: R };
     normalized.push({
       id: request.id,
       request,
-      legs: [{ side: 'return', preferredMode: mode, originId: request.destinationId, destinationId: home, window }],
+      legs: [{ side: 'return', preferredMode: mode, originId: request.destinationId, destinationId: origin, window }],
       window,
-      minDurationSlots: mode === 'relay' ? Math.max(1, travelSlots) : 0,
+      minDurationSlots: mode === 'relay' ? Math.max(1, returnTravelSlots) : 0,
       flexDep: [R, R],
       flexRet: boundedFlex(flexRet, dayWindow),
       durationFixed: true,
-      travelSlots,
+      travelSlots: returnTravelSlots,
       passengers: request.passengers,
       luggage: request.luggage,
       destinationId: request.destinationId,
       dayIndex: day.dayIndex,
       dayWindow,
       isPassengerOnly: mode === 'passenger',
+      originId: origin,
+      tripType,
     });
   }
 
   const seriesUnits = buildSeriesUnits(seriesRequests, input, warnings);
 
-  return { normalized, servedByFixed, warnings, seriesUnits };
+  return { normalized, servedByFixed, warnings, seriesUnits, freeTextOriginIds };
 }
 
 /** Total-order request id comparator used everywhere as the final tie-break (determinism). */
