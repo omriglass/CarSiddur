@@ -9,6 +9,7 @@ import { bestPlacementWithinFlex } from './flexibility';
 import type { HostRide } from './merge';
 import { buildHostRides, findMergeHosts } from './merge';
 import { reason } from './reasons';
+import { carName as carNameOf, placeName, requestDestName, rideHostLabel } from './names';
 import { chauffeurLoad, fits, luggageFits } from './seatFit';
 import { dayBoundsForSlot, formatSlotTime, minutesToSlots, travelSlotsFor, type NormalizedRequest } from './slots';
 import type { SplitLegsContext } from './splitLegs';
@@ -75,7 +76,7 @@ function findChauffeurCar(
   return null;
 }
 
-function externalHints(nr: NormalizedRequest, destination: Destination | undefined, config: SolverConfig): Suggestion[] {
+function externalHints(nr: NormalizedRequest, destination: Destination | undefined, config: SolverConfig, input: SolverInput): Suggestion[] {
   const out: Suggestion[] = [];
   const occupancyMinutes = nr.travelSlots * 15 + (nr.request.tripShape === 'round_trip' ? (nr.window.end - nr.window.start) * 15 - nr.travelSlots * 15 * 2 : 0);
   const singleLeg = nr.request.tripShape !== 'round_trip';
@@ -109,7 +110,7 @@ function externalHints(nr: NormalizedRequest, destination: Destination | undefin
       requestId: nr.id,
       hint: 'publicTransport',
       reasonCode: 'SUGGEST_EXTERNAL_PT',
-      reason: reason('SUGGEST_EXTERNAL_PT', { dest: destination?.id ?? nr.destinationId }),
+      reason: reason('SUGGEST_EXTERNAL_PT', { dest: requestDestName(input, nr.request) }),
       cost: 0,
       confidence: 0.3,
     });
@@ -117,12 +118,12 @@ function externalHints(nr: NormalizedRequest, destination: Destination | undefin
   return out;
 }
 
-function denySuggestion(nr: NormalizedRequest, blockers: string[]): Suggestion {
+function denySuggestion(nr: NormalizedRequest, blockers: string[], input: SolverInput): Suggestion {
   return {
     kind: 'deny',
     requestId: nr.id,
     reasonCode: 'SUGGEST_DENY',
-    reason: reason('SUGGEST_DENY', { blockers: blockers.join(', ') }),
+    reason: reason('SUGGEST_DENY', { blockers: blockers.map((id) => carNameOf(input.cars, id)).filter(Boolean).join(', ') }),
     cost: 0,
     confidence: 1,
   };
@@ -144,8 +145,7 @@ function mergeSuggestions(nr: NormalizedRequest, leg: LegSide, ctx: SuggestionCo
 
   return candidates.map((c) => {
     const day = dayBoundsForSlot(ctx.input.week.days, c.window.start);
-    const hostRide = ctx.assignments.find((a) => a.rideId === c.hostRideId);
-    const carName = ctx.input.cars.find((car) => car.id === c.carId)?.name ?? c.carId;
+    const carName = carNameOf(ctx.input.cars, c.carId);
     const code = c.detourMinutes === 0 ? 'SUGGEST_MERGE' : 'SUGGEST_MERGE_DETOUR';
     return {
       kind: 'merge' as const,
@@ -160,8 +160,8 @@ function mergeSuggestions(nr: NormalizedRequest, leg: LegSide, ctx: SuggestionCo
       detourKm: c.detourKm,
       reasonCode: code,
       reason: reason(code, {
-        host: hostRide?.driverMemberId ?? carName,
-        dest: nr.destinationId,
+        host: rideHostLabel(ctx.input, ctx.assignments, c.hostRideId) || carName,
+        dest: requestDestName(ctx.input, nr.request),
         dep: formatSlotTime(c.window.start, day),
         ret: formatSlotTime(c.window.end, day),
         minutes: c.detourMinutes,
@@ -269,7 +269,7 @@ export function buildSuggestions(nr: NormalizedRequest, ctx: SuggestionContext, 
           volunteerCandidateMemberIds: volunteerCandidates(ctx.input, candidate.window),
           reasonCode: 'SUGGEST_CHAUFFEUR',
           reason: reason('SUGGEST_CHAUFFEUR', {
-            dest: nr.destinationId,
+            dest: requestDestName(ctx.input, nr.request),
             dep: formatSlotTime(nr.window.start, day),
             minutes: nr.travelSlots * 15 * 2 + ctx.input.config.chauffeurDwellMinutes,
           }),
@@ -307,7 +307,7 @@ export function buildSuggestions(nr: NormalizedRequest, ctx: SuggestionContext, 
             window: { start: leg.window.start, end: latestReturn },
             returnSlot: latestReturn,
             reasonCode: 'SUGGEST_ROUND_TRIP',
-            reason: reason('SUGGEST_ROUND_TRIP', { dest: nr.destinationId, ret: formatSlotTime(latestReturn, day) }),
+            reason: reason('SUGGEST_ROUND_TRIP', { dest: requestDestName(ctx.input, nr.request), ret: formatSlotTime(latestReturn, day) }),
             cost: 0,
             confidence: 0.4,
           });
@@ -330,7 +330,7 @@ export function buildSuggestions(nr: NormalizedRequest, ctx: SuggestionContext, 
           volunteerCandidateMemberIds: volunteerCandidates(ctx.input, candidate.window),
           reasonCode: 'SUGGEST_CHAUFFEUR',
           reason: reason('SUGGEST_CHAUFFEUR', {
-            dest: nr.destinationId,
+            dest: requestDestName(ctx.input, nr.request),
             dep: formatSlotTime(nr.window.start, day),
             minutes: nr.travelSlots * 15 * 2 + ctx.input.config.chauffeurDwellMinutes,
           }),
@@ -345,8 +345,8 @@ export function buildSuggestions(nr: NormalizedRequest, ctx: SuggestionContext, 
   if (changeOrigin) suggestions.push(changeOrigin);
 
   const destination = ctx.input.destinations[nr.destinationId];
-  suggestions.push(...externalHints(nr, destination, ctx.input.config));
-  suggestions.push(denySuggestion(nr, blockerCarIds));
+  suggestions.push(...externalHints(nr, destination, ctx.input.config, ctx.input));
+  suggestions.push(denySuggestion(nr, blockerCarIds, ctx.input));
 
   return suggestions;
 }
@@ -391,7 +391,7 @@ function changeOriginSuggestion(nr: NormalizedRequest, ctx: SuggestionContext): 
           originId: gap.locationId,
           window: nr.window,
           reasonCode: 'SUGGEST_CHANGE_ORIGIN',
-          reason: reason('SUGGEST_CHANGE_ORIGIN', { origin: gap.locationId, car: car.name }),
+          reason: reason('SUGGEST_CHANGE_ORIGIN', { origin: placeName(ctx.input, gap.locationId), car: car.name }),
           cost: 0,
           confidence: 0.4,
         };

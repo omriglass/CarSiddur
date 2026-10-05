@@ -4,6 +4,7 @@ import { parseRouteStops, type RouteStop } from "@/lib/routeStops";
 import { rpc, toAppError } from "@/lib/rpc";
 import { siddurCarName } from "@/lib/siddurCarName";
 
+import { pickPendingProposal } from "./pendingProposal";
 import { joinableRideRowSchema, templateSuggestionRowSchema, type TemplateSuggestionRow } from "./schema";
 
 import type { DestinationValue } from "@/components/DestinationCombobox";
@@ -215,10 +216,7 @@ function mapEmbeddedStops(rows: RawRequestRow["stops"]): RouteStop[] {
 function mapRow(row: RawRequestRow): MyRequestRow {
   const legWithRide = row.ride_requests.find((leg) => leg.ride !== null && leg.ride.status !== "cancelled");
   const ride = legWithRide?.ride ?? null;
-  const pendingProposal =
-    row.proposals.find((p) => p.status === "sent") ??
-    row.proposals.find((p) => p.status === "accepted") ??
-    null;
+  const pendingProposal = pickPendingProposal(row.proposals);
 
   return {
     preferredCarId: row.preferred_car_id,

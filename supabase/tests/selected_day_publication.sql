@@ -276,15 +276,19 @@ begin
     jsonb_build_object('depart_at',dtB+interval '1 hour','return_at',dtB+interval '3 hours'),'Unpublished-day fixture');
   insert into publication_ids values('gate_propOpen',propOpen);
 
-  -- Publish the second day too. expire_proposals() (called by publish_siddur() at the end)
-  -- only expires status='sent' rows, so this never-sent draft is untouched — send_proposal()
-  -- alone has to catch that its day went public between draft and send.
+  -- REQ §13.94: an unsent draft on a day blocks publishing it (publication_drafts), even with
+  -- p_allow_unanswered. Once discarded the day publishes, and the (withdrawn) draft cannot be sent.
+  begin
+    perform public.publish_siddur(dept,w3,'[]'::jsonb,public.publish_scores_fingerprint(dept,w3),'[]'::jsonb,array[w3+2],true);
+    raise exception 'publish_siddur published a day that still has a draft proposal';
+  exception when raise_exception then if sqlerrm<>'publication_drafts' then raise;end if;end;
+  perform public.discard_proposal(propOpen);
   perform public.publish_siddur(dept,w3,'[]'::jsonb,public.publish_scores_fingerprint(dept,w3),'[]'::jsonb,array[w3+2],true);
-  assert (select status='draft' from public.proposals where id=propOpen),'draft proposal was touched by publishing its own day';
+  assert (select status='withdrawn' from public.proposals where id=propOpen),'discarded draft must stay withdrawn after publishing its day';
   begin
     perform public.send_proposal(propOpen);
-    raise exception 'send_proposal sent a proposal whose day became public after the draft was created';
-  exception when raise_exception then if sqlerrm<>'proposal_day_public' then raise;end if;end;
+    raise exception 'send_proposal sent a withdrawn proposal';
+  exception when raise_exception then null;end;
 
   -- "Ask to join" is exempt from both guards: a manager (or, per submit_request(), the
   -- member themselves) can still create a merge/shift proposal for the requester's own

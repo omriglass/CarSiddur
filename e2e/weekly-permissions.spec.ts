@@ -91,6 +91,7 @@ test("weekly member manages only their assigned board while permanent Sadran ret
         const unmetCard = temporary.page.locator(`[data-request-id="${fixtureRequest!.id}"]`);
         await expect(unmetCard).toBeVisible();
         await unmetCard.getByRole("button", { name: he.sadranProposal.suggestTimes, exact: true }).click();
+        await temporary.page.getByTestId("draft-choice-compose").click(); // REQ §13.94 chooser: "הכן הצעה"
         await expect(temporary.page).toHaveURL(/\/proposals\/new$/);
         const sent = temporary.page.waitForResponse((response) =>
           response.url().endsWith("/rest/v1/rpc/send_proposal") && response.request().method() === "POST");

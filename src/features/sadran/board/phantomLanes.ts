@@ -1,6 +1,23 @@
 import { parseFlexInterval } from "@/features/solverBridge/buildSolverInput";
+import { legMinutes, type Hop } from "@/lib/rideRoute";
 import { withinFlex } from "./geometry";
 import type { WeekRequestRow } from "../api";
+
+export type RequestTripType = "round_trip" | "one_way" | "drop_off";
+
+/**
+ * The member-facing trip type (REQ §13.93). Rows always carry it; the fallback only keeps
+ * legacy fixtures/old clients working, derived the way the solver's `effectiveTripType` does
+ * (any one-way shape is a drop-off, a round trip stays a round trip).
+ */
+export function tripTypeOf(request: Pick<WeekRequestRow, "trip_shape"> & { trip_type?: RequestTripType | null }): RequestTripType {
+  return request.trip_type ?? (request.trip_shape === "round_trip" ? "round_trip" : "drop_off");
+}
+
+/** Round trips and one-way trips are driven by the requester; only a drop-off (הקפצה) needs another driver. */
+export function requesterDrives(request: Pick<WeekRequestRow, "trip_shape"> & { trip_type?: RequestTripType | null }): boolean {
+  return tripTypeOf(request) !== "drop_off";
+}
 
 /** The day anchor is the requested arrival home for one-way-from requests. */
 export function requestStart(request: Pick<WeekRequestRow, "trip_shape" | "depart_at" | "return_at">): string | null {
@@ -36,7 +53,8 @@ export function requestWithinFlex(req: WeekRequestRow, startsAt: string, endsAt:
   if (!withinFlex(startShift,
     parseFlexInterval(returning ? req.flex_return_early : req.flex_depart_early),
     parseFlexInterval(returning ? req.flex_return_late : req.flex_depart_late))) return false;
-  if (req.trip_shape !== "round_trip") return true;
+  // A drop-off with pickup places only its out leg at a time; the return is checked when it is placed.
+  if (req.trip_shape !== "round_trip" || tripTypeOf(req) === "drop_off") return true;
   return !!req.return_at && withinFlex((Date.parse(endsAt) - Date.parse(req.return_at)) / 60_000,
     parseFlexInterval(req.flex_return_early), parseFlexInterval(req.flex_return_late));
 }
@@ -45,11 +63,45 @@ export function requestWithinFlex(req: WeekRequestRow, startsAt: string, endsAt:
  * leg; the passenger's requested arrival/departure stays the same anchor.
  */
 export function standaloneChauffeurWindow(request: WeekRequestRow, dwellMinutes: number): { startsAt: string; endsAt: string } | null {
-  if (request.trip_shape === "round_trip") return requestWindow(request);
+  // A round trip the requester drives keeps its whole span. A drop-off that is also picked up
+  // (round-trip shape) places only its out leg as a chauffeur ride, like a one-way-to leg.
+  if (request.trip_shape === "round_trip" && tripTypeOf(request) !== "drop_off") return requestWindow(request);
   const anchor = requestStart(request);
   if (!anchor) return null;
   const duration = Math.max(15, Math.ceil((2 * Math.max(0, request.destination_travel_minutes ?? 30) + Math.max(0, dwellMinutes)) / 15) * 15) * 60_000;
   return request.trip_shape === "one_way_from"
     ? { startsAt: new Date(Math.floor((Date.parse(anchor) - duration) / (15 * 60_000)) * 15 * 60_000).toISOString(), endsAt: anchor }
     : { startsAt: anchor, endsAt: new Date(Date.parse(anchor) + duration).toISOString() };
+}
+
+/**
+ * REQ §13.94 (item 7): the minutes of a one-way request's route **from its own origin** (stops
+ * included, `stop_minutes` dwell at every intermediate stop) - what the placement window must
+ * use instead of the home-based `destination_travel_minutes`. A return-shaped request uses its
+ * return stops. `null` when the request has no destination place to measure to.
+ */
+export function routeTravelMinutes(
+  request: Pick<WeekRequestRow, "trip_shape" | "origin_id" | "origin_text" | "destination_id" | "stops">,
+  ctx: { hop: Hop; stopMinutes: number; homeId?: string | null },
+): number | null {
+  if (!request.destination_id && !request.stops?.length) return null;
+  const leg = request.trip_shape === "one_way_from" ? "return" : "out";
+  const origin = request.origin_id ?? (request.origin_text ? null : ctx.homeId ?? null);
+  const stops = (request.stops ?? []).filter((stop) => stop.leg === leg).sort((a, b) => a.position - b.position).map((stop) => stop.place_id);
+  const places = leg === "out" ? [origin, ...stops, request.destination_id] : [request.destination_id, ...stops, origin];
+  if (places.length < 2) return null;
+  return legMinutes(places.map((placeId) => ({ placeId })), ctx.hop, ctx.stopMinutes);
+}
+
+/**
+ * Board copies of the requests whose `destination_travel_minutes` is the origin-based route
+ * minutes (`routeTravelMinutes`), so every placement window (`requestWindow`,
+ * `standaloneChauffeurWindow`, phantom lanes, drop previews) uses the real route. The solver and
+ * the proposal payloads keep reading the untouched rows.
+ */
+export function withRouteTravelMinutes<T extends WeekRequestRow>(requests: readonly T[], ctx: { hop: Hop; stopMinutes: number; homeId?: string | null }): T[] {
+  return requests.map((request) => {
+    const minutes = routeTravelMinutes(request, ctx);
+    return minutes == null ? request : { ...request, destination_travel_minutes: minutes };
+  });
 }

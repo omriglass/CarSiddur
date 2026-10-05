@@ -3,7 +3,7 @@
 // data (cars/rides/blocks/unmet list/policy preview) that used to live in
 // the component's own body. Pure move — behaviour unchanged.
 import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { datesOfWeek, todayInJerusalem } from "@/components/dateFieldDates";
@@ -25,8 +25,13 @@ import { readLastUsedPolicyVersion, rememberLastUsedPolicyVersion } from "../../
 import { sadranKeys } from "../../keys";
 import { scanBoardConflicts, slotToIso, requestDayMismatchRideIds, tightScheduleRideIds } from "../geometry";
 import { rideBlockLabel } from "../rideLabel";
+import { DEFAULT_STOP_MINUTES, homeTravelEdges, makeHop, parseRideRoute } from "@/lib/rideRoute";
+import { addedGuestsOf, mergePayloadLeg, previewMerge } from "../mergeProposal";
+import { unmetItemId, unmetRequestViews, viewsOnDay } from "../unmetLegs";
 import { isUnmetStatus } from "../../unmetStatuses";
-import { packPhantomLanes, requestStart, requestWindow, standaloneChauffeurWindow } from "../phantomLanes";
+import { requestRouteLine } from "../requestRoute";
+import { resolveDraftPlacements } from "../draftOverlay";
+import { packPhantomLanes, requestStart, requestWindow, standaloneChauffeurWindow, withRouteTravelMinutes } from "../phantomLanes";
 import type { BoardDropContext } from "../dropValidity";
 import {
   useActivePolicy,
@@ -264,6 +269,7 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
           mileageKmByCarId: mileageStatsQuery.data ?? {},
           carStartLocationsByCarId: carStartLocationsQuery.data ?? {},
           travel: placeTravelQuery.data ?? [],
+          proposals: proposalsQuery.data ?? [],
         },
       );
       const output = runSolve(context.input);
@@ -399,6 +405,8 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
     effectivePolicyVersionId ?? "",
     (ridesQuery.data ?? []).map((r) => `${r.id}:${r.car_id}:${r.starts_at}:${r.ends_at}:${r.status}:${r.version}`).join(","),
     (requestsQuery.data ?? []).map((r) => `${r.id}:${r.status}:${r.depart_at}:${r.return_at}:${r.version}`).join(","),
+    // REQ §13.94: a draft/sent/accepted proposal removes its request from solving and fixes its window.
+    (proposalsQuery.data ?? []).map((p) => `${p.id}:${p.status}:${JSON.stringify(p.payload)}`).join(","),
   ].join("|");
   useEffect(() => {
     if (
@@ -441,9 +449,55 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
   const daySettings = departmentSettingsQuery.data;
   const rides = ridesQuery.data ?? [];
   const awaitingDriverRequestIds = new Set(rides.filter((ride) => ride.needs_driver).flatMap((ride) => servedOf(ride).map((entry) => entry.request_id)));
-  const activeDayRides = rides.filter(
+
+  // REQ §13.94: route data for the merged-ride twin (`src/lib/rideRoute.ts`) and for the one-way
+  // placement window (route minutes from the request's own origin, not the home-based
+  // `destination_travel_minutes`). `boardRequests` are display/placement copies; the solver and
+  // proposal payloads keep reading `requestsQuery.data`.
+  const stopMinutes = departmentSettingsQuery.data?.stop_minutes ?? DEFAULT_STOP_MINUTES;
+  const placeTravelData = placeTravelQuery.data;
+  const homeId = department?.home_destination_id ?? undefined;
+  const destinationRows = destinationsQuery.data;
+  const hop = useMemo(() => makeHop([...(placeTravelData ?? []), ...homeTravelEdges(homeId, destinationRows ?? [])]), [placeTravelData, homeId, destinationRows]);
+  const routeCtx = useMemo(() => ({ hop, stopMinutes, homeId }), [hop, stopMinutes, homeId]);
+  const requestRows = requestsQuery.data;
+  const boardRequests = useMemo(() => withRouteTravelMinutes(requestRows ?? [], routeCtx), [requestRows, routeCtx]);
+
+  // Board drafts (REQ §13.94): every unsent proposal drawn as the result it would produce. A draft
+  // that places its request on a car (shift/merge/origin) takes the request off the unmet list
+  // ("planned, tentatively") and, for a shift of an already-placed request, hides the original
+  // ride block while the draft block shows. Drafts that place nothing (deny/external, a shift
+  // with no car) leave the request visible in the unmet list.
+  const draftPlacements = resolveDraftPlacements(proposalsQuery.data ?? [], boardRequests, rides, department?.home_destination_id ?? undefined, routeCtx);
+  const draftPlacedRequestIds = new Set(draftPlacements.map((placement) => placement.requestId));
+  const draftHiddenRideIds = new Set(draftPlacements.flatMap((placement) => (placement.replacesRideId ? [placement.replacesRideId] : [])));
+
+  // REQ §13.94 (G10): a pending merge (draft, sent or accepted) is ONE block on the host's car -
+  // the host window grown by the added driving. The host's own block and the guest's own
+  // booking are hidden while it is pending, and the guest's booking leaves the conflict scan
+  // (so nothing overlaps and no red stripes appear).
+  const pendingMerges = (proposalsQuery.data ?? []).flatMap((proposal) => {
+    if (proposal.type !== "merge" || !["draft", "sent", "accepted"].includes(proposal.status)) return [];
+    const host = rides.find((ride) => ride.id === proposal.ride_id);
+    const guest = boardRequests.find((request) => request.id === proposal.request_id);
+    if (!host?.car_id || !host.id || !host.starts_at || !host.ends_at || !guest) return [];
+    const leg = mergePayloadLeg(proposal.payload, guest);
+    const preview = previewMerge(host, guest, leg, routeCtx);
+    const payload = proposal.payload && typeof proposal.payload === "object" && !Array.isArray(proposal.payload) ? proposal.payload : {};
+    const legacyStart = typeof payload.starts_at === "string" ? Date.parse(payload.starts_at) : Number.POSITIVE_INFINITY;
+    const legacyEnd = typeof payload.ends_at === "string" ? Date.parse(payload.ends_at) : 0;
+    const startsAt = new Date(Math.min(Date.parse(host.starts_at), legacyStart)).toISOString();
+    const endsAt = new Date(Math.max(Date.parse(preview?.endsAt ?? host.ends_at), legacyEnd)).toISOString();
+    return [{ proposal, host, guest, startsAt, endsAt, leg, isDraft: proposal.status === "draft" }];
+  });
+  const mergeGuestRideIds = new Set(pendingMerges.flatMap((merge) => rides.filter((ride) => ride.id && ride.id !== merge.host.id
+    && servedOf(ride).length > 0 && servedOf(ride).every((entry) => entry.request_id === merge.guest.id)).map((ride) => ride.id as string)));
+  const mergeHostRideIds = new Set(pendingMerges.map((merge) => merge.host.id as string));
+  const mergeHiddenRideIds = new Set([...mergeGuestRideIds, ...mergeHostRideIds]);
+  const activeDayRidesAll = rides.filter(
     (r) => r.starts_at && dateKey(new Date(r.starts_at)) === selectedDay,
   );
+  const activeDayRides = activeDayRidesAll.filter((r) => !(r.id && (draftHiddenRideIds.has(r.id) || mergeHiddenRideIds.has(r.id))));
 
   const weekStartMs = fromZonedTime(`${weekStart}T00:00:00`, TZ).getTime();
 
@@ -452,7 +506,7 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
       ? (() => {
           const validRides = rides.filter(
             (r): r is typeof r & { id: string; car_id: string; starts_at: string; ends_at: string; origin_id: string; destination_id: string } =>
-              !!r.id && !!r.car_id && !!r.starts_at && !!r.ends_at && !!r.origin_id && !!r.destination_id,
+              !!r.id && !!r.car_id && !!r.starts_at && !!r.ends_at && !!r.origin_id && !!r.destination_id && !mergeGuestRideIds.has(r.id),
           );
           const days96 = Array.from({ length: 7 }, (_, i) => ({
             dayIndex: i as 0 | 1 | 2 | 3 | 4 | 5 | 6,
@@ -488,7 +542,10 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
         })()
       : null;
 
-  const tightRideIds = tightScheduleRideIds(rides, daySettings?.turnaround_minutes ?? 30);
+  const tightRideIds = tightScheduleRideIds(rides.filter((ride) => !(ride.id && mergeGuestRideIds.has(ride.id))), daySettings?.turnaround_minutes ?? 30, {
+    homeLocationId: department?.home_destination_id,
+    carBaseLocationId: new Map((carsQuery.data ?? []).map((c) => [c.id, c.base_location_id])),
+  });
   const planningRows = (rideChangesQuery.data ?? []).filter((change) => change.is_planning).flatMap((change) => {
     const original = rides.find((ride) => ride.id === change.ride_id);
     return original ? [{ ...original, id: `change:${change.id}`, car_id: change.car_id, starts_at: change.starts_at, ends_at: change.ends_at }] : [];
@@ -550,21 +607,8 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
   // switcher excludes it), but a direct URL could still land here, so this still gates the drag.
   const boardCanSwapCars = weekRowQuery.data ? weekRowQuery.data.phase !== "archived" : false;
 
-  const pendingMerges = (proposalsQuery.data ?? []).flatMap((proposal) => {
-    if (proposal.type !== "merge" || !["sent", "accepted"].includes(proposal.status)) return [];
-    const payload = proposal.payload;
-    if (!payload || typeof payload !== "object" || Array.isArray(payload) || typeof payload.starts_at !== "string" || typeof payload.ends_at !== "string") return [];
-    const host = rides.find((ride) => ride.id === proposal.ride_id);
-    const guest = (requestsQuery.data ?? []).find((request) => request.id === proposal.request_id);
-    if (!host?.car_id || !host.id || !guest) return [];
-    return [{ proposal, host, guest, startsAt: payload.starts_at, endsAt: payload.ends_at }];
-  });
   const shadowedRideIds = new Set((rideChangesQuery.data ?? []).filter((change) => !change.is_planning).flatMap((change) => [change.ride_id, ...change.parties.map((party) => party.ride_id)]));
-  for (const merge of pendingMerges) {
-    shadowedRideIds.add(merge.host.id!);
-    for (const ride of rides) if (ride.id && servedOf(ride).some((entry) => entry.request_id === merge.guest.id)) shadowedRideIds.add(ride.id);
-  }
-  const weekGridRides: WeekGridRide[] = activeDayRides
+  const weekGridRides: WeekGridRide[] = activeDayRidesAll
     .filter((r) => r.id && r.car_id && r.starts_at && r.ends_at)
     .map((r) => ({
       id: r.id as string,
@@ -573,7 +617,7 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
       endMinutes: Math.round((Date.parse(r.ends_at as string) - Date.parse(dayStartIso(selectedDay))) / 60_000),
       requestedStartMinutes: (() => {
         const entry = servedOf(r).find((served) => served.role === "driver") ?? servedOf(r)[0];
-        const request = (requestsQuery.data ?? []).find((request) => request.id === entry?.request_id);
+        const request = boardRequests.find((request) => request.id === entry?.request_id);
         const window = request ? standaloneChauffeurWindow(request, daySettings?.chauffeur_dwell_minutes ?? 10) : null;
         return window ? (Date.parse(window.startsAt) - Date.parse(dayStartIso(selectedDay))) / 60_000 : undefined;
       })(),
@@ -610,6 +654,9 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
         return stopCount > 0 ? `${base} ${tv("sadranBoard.stopCount", { count: String(stopCount) })}` : base;
       })(),
       pinned: !!r.is_pinned,
+      // REQ §13.94 (G10): an applied merge - the ride's own route carries boarding/alighting places.
+      merged: parseRideRoute(r.route).some((point) => point.kind === "board" || point.kind === "alight"),
+      guests: addedGuestsOf(r.id as string, withChildNames(servedOf(r), requestsQuery.data ?? [])),
       needsDriver: !!r.needs_driver,
       tightSchedule: tightRideIds.has(r.id as string),
       shadowed: shadowedRideIds.has(r.id as string),
@@ -624,14 +671,43 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
         : undefined,
     }));
 
+  // REQ §13.94 (G10): the pending merge as one block - normal ride-type colours, the "· מאוחד"
+  // marker, dashed draft/sent styling; never conflict stripes (it is not in the conflict scan).
   for (const merge of pendingMerges) {
     if (dateKey(merge.startsAt) !== selectedDay) continue;
     const host = weekGridRides.find((ride) => ride.id === merge.host.id);
     weekGridRides.push({ id: `merge:${merge.proposal.id}`, carId: merge.host.car_id!,
-      startMinutes: (Date.parse(merge.startsAt) - Date.parse(dayStartIso(selectedDay))) / 60_000,
-      endMinutes: (Date.parse(merge.endsAt) - Date.parse(dayStartIso(selectedDay))) / 60_000,
-      label: `${host?.label ?? merge.host.driver_name ?? ""} · ${merge.guest.requester_full_name ?? ""} · ${merge.guest.destination_resolved_name ?? merge.guest.destination_text ?? ""}`,
-      pendingConsent: true, needsDriver: !!merge.host.needs_driver, rideTypeCode: host?.rideTypeCode });
+      startMinutes: Math.round((Date.parse(merge.startsAt) - Date.parse(dayStartIso(selectedDay))) / 60_000),
+      endMinutes: Math.round((Date.parse(merge.endsAt) - Date.parse(dayStartIso(selectedDay))) / 60_000),
+      label: `${host?.label ?? merge.host.driver_name ?? ""} · ${merge.guest.requester_full_name ?? ""}`,
+      passengerSummary: host?.passengerSummary,
+      merged: true, guests: [{ requestId: merge.guest.id, rideId: merge.host.id as string, name: merge.guest.requester_full_name ?? "" }],
+      pendingConsent: !merge.isDraft, draft: merge.isDraft, needsDriver: !!merge.host.needs_driver, rideTypeCode: host?.rideTypeCode });
+  }
+
+  // REQ §13.94 overlay: shift/origin drafts as dashed "result" blocks (merge drafts are the
+  // `merge:` ghosts above, drawn with the same draft styling).
+  for (const placement of draftPlacements) {
+    if (placement.type === "merge" || dateKey(placement.startsAt) !== selectedDay) continue;
+    const request = boardRequests.find((r) => r.id === placement.requestId);
+    const original = placement.replacesRideId ? weekGridRides.find((ride) => ride.id === placement.replacesRideId) : undefined;
+    weekGridRides.push({
+      id: `draft:${placement.proposalId}`,
+      carId: placement.carId,
+      startMinutes: Math.round((Date.parse(placement.startsAt) - Date.parse(dayStartIso(selectedDay))) / 60_000),
+      endMinutes: Math.round((Date.parse(placement.endsAt) - Date.parse(dayStartIso(selectedDay))) / 60_000),
+      label: original?.label ?? (request
+        ? `${request.requester_full_name ?? ""} · ${requestRouteLine({ originId: placement.originId ?? request.origin_id, originName: request.origin_resolved_name, originText: request.origin_text, destination: request.destination_resolved_name ?? "", tripType: request.trip_type }, department?.home_destination_id)}`
+        : ""),
+      passengerSummary: original?.passengerSummary ?? (request ? ridePassengerSummary([{ ...request, requester: request.requester_full_name }]) : undefined),
+      draft: true,
+      needsDriver: false,
+      rideTypeCode: original?.rideTypeCode ?? request?.ride_type_code,
+    });
+  }
+  // The draft block replaces the original ride's block (kept in the list above only to borrow its label).
+  for (let index = weekGridRides.length - 1; index >= 0; index--) {
+    if (draftHiddenRideIds.has(weekGridRides[index]!.id) || mergeHiddenRideIds.has(weekGridRides[index]!.id)) weekGridRides.splice(index, 1);
   }
 
   for (const change of rideChangesQuery.data ?? []) {
@@ -680,11 +756,11 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
     label: tv("waitlist.blockLabel", { names: group.members.map((member) => member.name).join(", ") }),
   }));
 
+  // REQ §13.94 (G4): a drop-off with a pickup is two cards (drop-off / pickup), each placed on its own.
+  const allUnmetViews = unmetRequestViews(boardRequests, rides, { awaitingDriverRequestIds, draftPlacedRequestIds });
   const dayCounts = days.map((d) => ({
     rides: rides.filter((r) => r.starts_at && dateKey(new Date(r.starts_at)) === d).length,
-    unmet: (requestsQuery.data ?? []).filter(
-      (r) => isUnmetStatus(r.status) && !awaitingDriverRequestIds.has(r.id) && requestStart(r) && dateKey(new Date(requestStart(r)!)) === d,
-    ).length,
+    unmet: viewsOnDay(allUnmetViews, d, (iso) => dateKey(new Date(iso))).length,
   }));
 
   /**
@@ -694,12 +770,13 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
    * departure time (`UnmetList.tsx`'s own sort), never empty just because
    * nobody has clicked "הרץ פותר" yet or the page was reloaded (bug #1).
    */
-  const unmetItems = (requestsQuery.data ?? [])
-    .filter((r) => isUnmetStatus(r.status) && !awaitingDriverRequestIds.has(r.id) && requestStart(r) && dateKey(new Date(requestStart(r)!)) === selectedDay)
-    .map((r) => {
-      const solverInfo = preview?.output.unmet.find((u) => u.requestId === r.id);
+  const unmetItems = viewsOnDay(allUnmetViews, selectedDay, (iso) => dateKey(new Date(iso)))
+    .map(({ request: r, leg }) => {
+      const solverInfo = leg === "return" ? undefined : preview?.output.unmet.find((u) => u.requestId === r.id);
       return {
         request: r,
+        leg,
+        pendingProposalId: (proposalsQuery.data ?? []).find((p) => p.request_id === r.id && (p.status === "sent" || p.status === "accepted"))?.id,
         destinationName: r.destination_resolved_name ?? "—",
         solverInfo,
         // REQUIREMENTS §13.93 "Multi-stop rides" §6.3 "Joining at a stop": a merge suggestion
@@ -718,9 +795,9 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
   const phantomRides = packPhantomLanes(unmetItems.filter((item) => item.request.status !== "denied").flatMap((item) => {
     const window = requestWindow(item.request);
     if (!window) return [];
-    return [{ id: `request:${item.request.id}`, startMinutes: (Date.parse(window.startsAt) - Date.parse(dayStartIso(selectedDay))) / 60_000,
+    return [{ id: unmetItemId(item), startMinutes: (Date.parse(window.startsAt) - Date.parse(dayStartIso(selectedDay))) / 60_000,
       endMinutes: (Date.parse(window.endsAt) - Date.parse(dayStartIso(selectedDay))) / 60_000,
-      label: `${item.request.requester_full_name ?? ""} · ${item.destinationName}`, rideTypeCode: item.request.ride_type_code,
+      label: `${item.leg ? `${item.leg === "out" ? he.tripLegs.out : he.tripLegs.pickup} · ` : ""}${item.request.requester_full_name ?? ""} · ${requestRouteLine({ originId: item.request.origin_id, originName: item.request.origin_id ? item.request.origin_resolved_name : null, originText: item.request.origin_text, destination: item.destinationName, tripType: item.request.trip_type }, department?.home_destination_id)}`, rideTypeCode: item.request.ride_type_code,
       passengerSummary: ridePassengerSummary([{ ...item.request, requester: item.request.requester_full_name }]) }];
   }));
   for (let lane = 0; lane <= Math.max(-1, ...phantomRides.map((ride) => ride.lane)); lane++) {
@@ -743,7 +820,7 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
   // one place that assembles the closure state those functions need.
   const dropCtx: BoardDropContext = {
     rides,
-    requests: requestsQuery.data ?? [],
+    requests: boardRequests,
     cars: carsQuery.data ?? [],
     maintenanceBlocks: maintenanceQuery.data ?? [],
     seatConfigsByCarId,
@@ -755,6 +832,7 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
     // REQUIREMENTS §13.93: each car's own base, already defaulted to the department home.
     carBaseLocationId: new Map((carsQuery.data ?? []).map((c) => [c.id, c.base_location_id ?? department?.home_destination_id ?? ""])),
     homeDestinationId: department?.home_destination_id ?? undefined,
+    route: routeCtx,
   };
 
   return {
@@ -768,6 +846,8 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
     rideTypesQuery,
     maintenanceQuery,
     requestsQuery,
+    boardRequests,
+    routeCtx,
     ridesQuery,
     rideChangesQuery,
     proposalsQuery,
@@ -802,6 +882,7 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
     weekGridCars,
     boardCanSwapCars,
     pendingMerges,
+    draftPlacements,
     shadowedRideIds,
     weekGridRides,
     weekGridBlocks,

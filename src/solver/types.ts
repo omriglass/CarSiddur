@@ -60,6 +60,8 @@ export interface TravelEdge {
 
 export interface Destination {
   id: string;
+  /** Display name for reason texts (SOLVER §3.13a); never the id. */
+  name?: string;
   /** 'unknown' for unclassified free text; 'home' for the department base */
   zone: string;
   distanceKm?: number;
@@ -76,6 +78,11 @@ export interface Flexibility {
 export interface Request {
   id: string;
   memberId: string;
+  /** Requester display name, used only in reason texts (SOLVER §3.13a). */
+  memberName?: string;
+  /** Free-text destination/origin labels (reason texts only; the id is a sentinel). */
+  destinationText?: string;
+  originText?: string;
   departmentId: string;
   destinationId: string;
   rideType: string;
@@ -90,6 +97,8 @@ export interface Request {
   originId?: string;
   /** `originId` is free text, not a managed place — such a request is never placed (§4 item 5). */
   originIsFreeText?: boolean;
+  /** `destinationId` is the free-text pseudo place, not a managed one: a car can never wait there, so such legs never form a relay pair (REQ §13.58). */
+  destinationIsFreeText?: boolean;
   /**
    * New explicit trip type (REQUIREMENTS §13.93). Undefined means "derive
    * from the legacy fields" — see `TripType`/`effectiveTripType()`. Only an

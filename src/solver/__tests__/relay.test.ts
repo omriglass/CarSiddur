@@ -42,6 +42,14 @@ describe('pairRelays', () => {
     expect(pairs[0]?.shiftCost).toBe(0);
   });
 
+  it('never pairs legs to a free-text destination (a car cannot wait there, REQ §13.58)', () => {
+    const { normalized, cars } = normalizeAll([
+      outReq('O1', 'destA', 36, { destinationIsFreeText: true }),
+      retReq('R1', 'destA', 48, { destinationIsFreeText: true }),
+    ]);
+    expect(pairRelays(normalized, cars).pairs).toHaveLength(0);
+  });
+
   it('does not pair legs to the same zone but a different destination_id', () => {
     const { normalized, cars } = normalizeAll([
       outReq('O1', 'destA', 36),

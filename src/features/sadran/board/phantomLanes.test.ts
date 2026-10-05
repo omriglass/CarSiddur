@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { WeekRequestRow } from "../api";
-import { packPhantomLanes, standaloneChauffeurWindow, requestStart, requestWindow, requestWithinFlex } from "./phantomLanes";
+import { makeHop } from "@/lib/rideRoute";
+import { packPhantomLanes, routeTravelMinutes, standaloneChauffeurWindow, requestStart, requestWindow, requestWithinFlex, withRouteTravelMinutes } from "./phantomLanes";
 
 const request = {
   trip_shape: "round_trip", depart_at: "2026-09-10T07:00:00Z", return_at: "2026-09-10T09:00:00Z",
@@ -57,5 +58,27 @@ describe("standalone chauffeur reservations", () => {
   it("anchors return-only arrival after empty outward travel and pickup", () => {
     const returning = { ...request, trip_shape: "one_way_from" as const, depart_at: null };
     expect(standaloneChauffeurWindow(returning, 10)).toEqual({ startsAt: "2026-09-10T07:30:00.000Z", endsAt: request.return_at });
+  });
+});
+
+describe("route minutes from the request's own origin (REQ §13.94 item 7)", () => {
+  const hop = makeHop([{ fromId: "home", toId: "X", travelMinutes: 90 }, { fromId: "T", toId: "X", travelMinutes: 25 }, { fromId: "T", toId: "S", travelMinutes: 10 }, { fromId: "S", toId: "X", travelMinutes: 20 }]);
+  const ctx = { hop, stopMinutes: 5, homeId: "home" };
+  const oneWay = { ...request, trip_shape: "one_way_to" as const, return_at: null, origin_id: "T", origin_text: null, destination_id: "X", stops: [] } as unknown as WeekRequestRow;
+
+  it("uses the origin's own travel time, not the home-based destination time", () => {
+    expect(routeTravelMinutes(oneWay, ctx)).toBe(25);
+    expect(routeTravelMinutes({ ...oneWay, origin_id: null } as WeekRequestRow, ctx)).toBe(90);
+  });
+
+  it("adds stops with the stop dwell", () => {
+    const withStop = { ...oneWay, stops: [{ leg: "out", position: 0, place_id: "S" }] } as unknown as WeekRequestRow;
+    expect(routeTravelMinutes(withStop, ctx)).toBe(10 + 5 + 20);
+  });
+
+  it("makes the placement window follow the route", () => {
+    const [board] = withRouteTravelMinutes([oneWay], ctx);
+    expect(requestWindow(board!)).toEqual({ startsAt: request.depart_at, endsAt: "2026-09-10T07:30:00.000Z" });
+    expect(requestWindow(oneWay)).toEqual({ startsAt: request.depart_at, endsAt: "2026-09-10T07:45:00.000Z" });
   });
 });

@@ -14,8 +14,9 @@ import type { Car } from "@/features/fleet/api";
 
 import { servedOf } from "../applySolve";
 import { slotToIso, wouldOverlap } from "./geometry";
-import { expandedMergeWindow } from "./mergeWindow";
-import { requestStart, requestWindow, standaloneChauffeurWindow } from "./phantomLanes";
+import { defaultMergeLeg, previewMerge, type MergeLeg, type MergeRouteContext } from "./mergeProposal";
+import { unmetItemId } from "./unmetLegs";
+import { requestStart, requestWindow, requesterDrives, standaloneChauffeurWindow, tripTypeOf } from "./phantomLanes";
 import type { UnmetListItem } from "./components/UnmetList";
 
 import type { BoardRide, MaintenanceBlockRow, WeekRequestRow } from "../api";
@@ -55,6 +56,18 @@ export interface BoardDropContext {
   carBaseLocationId?: Map<string, string>;
   /** The department home — the implicit origin of a request with no `origin_id` of its own. */
   homeDestinationId?: string;
+  /**
+   * REQ §13.94 (G10): travel data for the merged-ride preview. A merge keeps the host's start and
+   * grows its end only by the added driving; without it the preview is the host's own window.
+   */
+  route?: MergeRouteContext;
+}
+
+/** The window of `host` once `request` joins (REQ §13.94): same start, end grown by the added driving. */
+export function mergedHostWindow(ctx: BoardDropContext, host: BoardRide, request: WeekRequestRow | undefined, leg: MergeLeg): { startsAt: string; endsAt: string } | null {
+  if (!host.starts_at || !host.ends_at) return null;
+  const preview = ctx.route && request ? previewMerge(host, request, leg, ctx.route) : null;
+  return { startsAt: host.starts_at, endsAt: preview?.endsAt ?? host.ends_at };
 }
 
 /**
@@ -111,8 +124,8 @@ export function mergeCandidateForRide(ctx: BoardDropContext, rideId: string, car
   const guest = source ? servedOf(source).find((entry) => entry.role === "driver") ?? servedOf(source)[0] : undefined;
   if (!source?.starts_at || !source.ends_at || !host?.starts_at || !host.ends_at || !guest) return null;
   const request = ctx.requests.find((request) => request.id === guest.request_id);
-  const window = source.needs_driver && request ? requestWindow(request) : { startsAt: source.starts_at, endsAt: source.ends_at };
-  return window ? { host, source, request, window: expandedMergeWindow({ startsAt: host.starts_at, endsAt: host.ends_at }, window) } : null;
+  const window = mergedHostWindow(ctx, host, request, guest.leg ?? (request ? defaultMergeLeg(request) : "both"));
+  return window ? { host, source, request, window } : null;
 }
 
 /** Same conversion as `BoardScreen`'s own `dayStartIso` (kept there too, for grid-layout
@@ -134,7 +147,7 @@ export function minutesIso(ctx: Pick<BoardDropContext, "selectedDay">, minutes: 
 export function isDropTargetValid(ctx: BoardDropContext, rideId: string, carId: string, startMinutes: number, endMinutes: number, hostRideId?: string): boolean {
   if (carId.startsWith("phantom:")) return !rideId.startsWith("request:");
   if (rideId.startsWith("request:")) {
-    const item = ctx.unmetItems.find((item) => `request:${item.request.id}` === rideId);
+    const item = ctx.unmetItems.find((item) => unmetItemId(item) === rideId);
     return !!item && isUnmetDropValid(ctx, item, carId, startMinutes, hostRideId);
   }
   if (startMinutes < 0 || endMinutes > 1439 || endMinutes <= startMinutes || unavailable(ctx, carId, minutesIso(ctx, startMinutes), minutesIso(ctx, endMinutes))) return false;
@@ -153,32 +166,36 @@ export function isDropTargetValid(ctx: BoardDropContext, rideId: string, carId: 
 }
 
 export function unmetRequestPassengers(r: WeekRequestRow): SeatNeed {
-  return { adults: r.adults + (r.trip_shape === "round_trip" ? 0 : 1), childSeats: r.child_seats, boosters: r.boosters };
+  // The requester's own seat is counted in `adults` when they drive (round trip, one way); a
+  // drop-off needs a separate driver seat.
+  return { adults: r.adults + (requesterDrives(r) ? 0 : 1), childSeats: r.child_seats, boosters: r.boosters };
 }
 
 export function unmetCandidateWindow(ctx: BoardDropContext, item: UnmetListItem, minutes: number, standalone = false): { startsAt: string; endsAt: string } | null {
   const req = item.request;
   const passenger = requestWindow(req);
-  const original = standalone ? standaloneChauffeurWindow(req, ctx.chauffeurDwellMinutes) : passenger;
+  // Only a drop-off (הקפצה) is a chauffeur ride with its own wider window; a one-way trip is
+  // the requester driving departure -> departure + route minutes, a round trip its whole span.
+  const chauffeur = standalone && tripTypeOf(req) === "drop_off";
+  const original = chauffeur ? standaloneChauffeurWindow(req, ctx.chauffeurDwellMinutes) : passenger;
   if (!original || !passenger || !requestStart(req) || dateKey(new Date(requestStart(req)!)) !== ctx.selectedDay) return null;
   const duration = (Date.parse(original.endsAt) - Date.parse(original.startsAt)) / 60_000;
   const requestedMinutes = (Date.parse(passenger.startsAt) - Date.parse(dayStartIso(ctx.selectedDay))) / 60_000;
   if (Math.abs(minutes - requestedMinutes) <= 15) minutes = requestedMinutes;
-  const start = minutes - (standalone && req.trip_shape === "one_way_from" ? (Date.parse(passenger.startsAt) - Date.parse(original.startsAt)) / 60_000 : 0);
+  const start = minutes - (chauffeur && req.trip_shape === "one_way_from" ? (Date.parse(passenger.startsAt) - Date.parse(original.startsAt)) / 60_000 : 0);
   if (start < 0 || start + duration > 1439) return null;
   return { startsAt: minutesIso(ctx, start), endsAt: minutesIso(ctx, start + duration) };
 }
 
 export function unmetMergeHost(ctx: BoardDropContext, item: UnmetListItem, carId: string, _minutes: number, hostRideId?: string) {
-  if (item.request.trip_shape === "round_trip" || !hostRideId) return undefined;
+  if (tripTypeOf(item.request) === "round_trip" || !hostRideId) return undefined;
   return ctx.rides.find((ride) => ride.id === hostRideId && ride.car_id === carId && !!ride.driver_id && !ride.needs_driver);
 }
 
 export function unmetPreviewWindow(ctx: BoardDropContext, item: UnmetListItem, carId: string, minutes: number, hostRideId?: string) {
   const host = unmetMergeHost(ctx, item, carId, minutes, hostRideId);
-  const passenger = requestWindow(item.request);
-  return host?.starts_at && host.ends_at && passenger
-    ? expandedMergeWindow({ startsAt: host.starts_at, endsAt: host.ends_at }, passenger)
+  return host?.starts_at && host.ends_at
+    ? mergedHostWindow(ctx, host, item.request, defaultMergeLeg(item.request))
     : unmetCandidateWindow(ctx, item, minutes, true);
 }
 
@@ -213,14 +230,16 @@ export function strandsNextRide(ctx: BoardDropContext, carId: string, endLocatio
 export function isUnmetDropValid(ctx: BoardDropContext, item: UnmetListItem, carId: string, minutes: number, hostRideId?: string): boolean {
   const window = unmetPreviewWindow(ctx, item, carId, minutes, hostRideId);
   if (!window || carId.startsWith("phantom:") || unavailable(ctx, carId, window.startsAt, window.endsAt)) return false;
-  const originId = item.request.origin_id ?? ctx.homeDestinationId;
-  if (originId && originMismatch(ctx, carId, originId, window.startsAt)) return false;
-  if (item.request.trip_type === "one_way" && item.request.destination_id
-    && strandsNextRide(ctx, carId, item.request.destination_id, window.endsAt)) return false;
   const host = unmetMergeHost(ctx, item, carId, minutes, hostRideId);
+  // A merge boards the guest *en route* (REQ §13.94): where the car is and where it ends are the
+  // host's business, not the guest's origin/destination.
+  const originId = item.request.origin_id ?? ctx.homeDestinationId;
+  if (!host && originId && originMismatch(ctx, carId, originId, window.startsAt)) return false;
+  if (!host && tripTypeOf(item.request) === "one_way" && item.request.destination_id
+    && strandsNextRide(ctx, carId, item.request.destination_id, window.endsAt)) return false;
   if (host && (!host.driver_id || host.needs_driver)) return false;
   const need = host ? passengersOf(host) : { adults: 1, childSeats: 0, boosters: 0 };
-  if (!seatsFit(ctx, carId, host || item.request.trip_shape !== "round_trip"
+  if (!seatsFit(ctx, carId, host || !requesterDrives(item.request)
     ? { adults: need.adults + item.request.adults, childSeats: need.childSeats + item.request.child_seats, boosters: need.boosters + item.request.boosters }
     : unmetRequestPassengers(item.request))) return false;
   // Without a merge host, `others` is every ride already on the target car — a plain drop
@@ -230,4 +249,56 @@ export function isUnmetDropValid(ctx: BoardDropContext, item: UnmetListItem, car
   const others = ctx.rides.filter((ride) => ride.id !== host?.id && ride.car_id === carId && ride.starts_at && ride.ends_at)
     .map((ride) => ({ startsAt: ride.starts_at!, endsAt: ride.ends_at! }));
   return !wouldOverlap(window, others, 0);
+}
+
+export interface UnmetPlacement {
+  originId: string;
+  destinationId: string;
+  /** The requester drives (round trip, one way) or nobody does yet (drop-off: a chauffeur ride awaiting a driver). */
+  driverIsRequester: boolean;
+  served: { role: "driver" | "passenger"; leg: "out" | "return" | "both"; car_mode: "keep" | "relay" | "chauffeur" };
+}
+
+/**
+ * How an unmet request card dropped on `carId` becomes a ride, by the member-facing trip type
+ * (REQ §13.93; replaces the old `trip_shape` + department-home placement):
+ * - `round_trip`: origin = destination = the request's origin, requester drives, `keep`.
+ * - `one_way` (הלוך בלבד): origin -> destination, requester drives, `relay` (the car stays there).
+ * - `drop_off` (הקפצה): a chauffeur ride; the ride's origin/destination is where the car is at the
+ *   window start. With pickup (round-trip shape) only the out leg is placed (the card is one
+ *   whole request; the return leg stays to be placed afterwards).
+ * `null` when a one-way request has no destination place (free text cannot be a ride's end).
+ */
+export function unmetPlacement(ctx: BoardDropContext, req: WeekRequestRow, carId: string, windowStartIso: string): UnmetPlacement | null {
+  const home = ctx.homeDestinationId;
+  const origin = req.origin_id ?? home;
+  if (!origin) return null;
+  const type = tripTypeOf(req);
+  if (type === "round_trip") {
+    return { originId: origin, destinationId: origin, driverIsRequester: true, served: { role: "driver", leg: "both", car_mode: "keep" } };
+  }
+  const leg = req.trip_shape === "one_way_from" ? "return" : "out";
+  if (type === "one_way") {
+    if (!req.destination_id) return null;
+    return { originId: origin, destinationId: req.destination_id, driverIsRequester: true, served: { role: "driver", leg, car_mode: "relay" } };
+  }
+  const where = carLocationAt(ctx, carId, windowStartIso) ?? (leg === "return" ? req.destination_id : origin) ?? origin;
+  return { originId: where, destinationId: where, driverIsRequester: false, served: { role: "passenger", leg, car_mode: "chauffeur" } };
+}
+
+/**
+ * The `shift` proposal payload for an unmet drop that falls outside the request's flexibility:
+ * the places always come from the request/placement, never the department home.
+ */
+export function unmetShiftPayload(req: WeekRequestRow, carId: string, window: { startsAt: string; endsAt: string }, placement: UnmetPlacement): Record<string, unknown> {
+  const type = tripTypeOf(req);
+  // A drop-off's ride places are where the car is, not the request's route: keep the request's own.
+  const places: Record<string, string> = Object.fromEntries(Object.entries(type === "drop_off"
+    ? { origin_id: req.origin_id, destination_id: req.destination_id }
+    : { origin_id: placement.originId, destination_id: placement.destinationId }).filter(([, id]) => !!id)) as Record<string, string>;
+  if (type === "round_trip") return { car_id: carId, depart_at: window.startsAt, return_at: window.endsAt, ...places };
+  if (type === "one_way") return req.trip_shape === "one_way_from"
+    ? { car_id: carId, return_at: window.endsAt, ...places }
+    : { car_id: carId, depart_at: window.startsAt, ...places };
+  return req.trip_shape === "one_way_from" ? { return_at: window.endsAt, ...places } : { depart_at: window.startsAt, ...places };
 }

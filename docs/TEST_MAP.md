@@ -211,13 +211,13 @@ grid (item 2) — `hideIdleTemporaryCars()` is unit-tested in `weekGridCars.test
 `*board*`, `*coordinator*`, `*ride_edit*`, `*day_readiness*`, `*car_chain*`, `*car_swap*`, or
 content-matching `v_board_rides`/`publish_siddur`; `src/components/CarSwapDialog.tsx`(+test),
 `WeekGrid.carSwap.test.tsx`, `src/features/carSwap/**`; `e2e/board.spec.ts`, `board-mobile.spec.ts`,
-`board-coordination.spec.ts`, `export.spec.ts`, `weekly-permissions.spec.ts`, `ride-editing.spec.ts`,
+`board-coordination.spec.ts`, `board-drafts.spec.ts` (REQ §13.94 drafts), `merged-ride.spec.ts` (REQ §13.94 merged ride = one block, unmerge), `export.spec.ts`, `weekly-permissions.spec.ts`, `ride-editing.spec.ts`,
 `car-swap.spec.ts`, `multi-stop.spec.ts`; `src/features/rides/servedOf.ts`,
 `src/features/rides/components/RideRouteStops.tsx`, `src/lib/routeStops.ts` (multi-stop rides
-display, REQ §13.93, step O6).
+display, REQ §13.93, step O6); `src/features/rides/components/RideRoute.tsx`, `src/lib/rideRoute.ts`(+test) (ride route twin and display, REQ §13.94).
 
 **Automated**:
-- Vitest: `npx vitest run src/features/sadran/board src/features/sadran/applySolve.test.ts src/features/sadran/unmetStatuses.test.ts src/features/sadran/deviations src/features/sadran/export`
+- Vitest: `npx vitest run src/features/sadran/board src/features/sadran/applySolve.test.ts src/features/sadran/unmetStatuses.test.ts src/features/sadran/deviations src/features/sadran/export src/lib/rideRoute.test.ts`
 - SQL: `todo_board_semantics.sql`, `coordinator_planning.sql`, `solve_semantics.sql`, `car_chain_healing.sql`, `day_car_swap.sql`, `origins_chain.sql`
 - Playwright: `npx playwright test --grep "@board"`
 
@@ -252,7 +252,7 @@ display, REQ §13.93, step O6).
 
 **Paths**: `src/features/proposals/**`, `src/features/sadran/proposals/**`,
 `supabase/functions/answer-proposal/**`; `src/i18n/he.sadran.ts`, `he.member.ts`; migrations
-matching `*proposal*`; `e2e/proposal.spec.ts`, `proposal-retry.spec.ts`, `board-coordination.spec.ts`,
+matching `*proposal*`; `e2e/proposal.spec.ts`, `proposal-retry.spec.ts`, `board-coordination.spec.ts`, `board-drafts.spec.ts`, `merged-ride.spec.ts`,
 `one-way-consent.spec.ts`, `sadran.spec.ts`.
 
 **Automated**:
@@ -317,7 +317,7 @@ fan-out); `src/i18n/he.sadran.ts`; migrations matching `*publish*`, `*siddur_ver
 
 **Automated**:
 - Vitest: `npx vitest run src/features/sadran/publish src/features/sadran/lastUsedPolicy.test.ts`
-- SQL: `selected_day_publication.sql`
+- SQL: `selected_day_publication.sql`, `board_drafts.sql` (draft proposals block publishing, discard/withdraw RPCs, re-solve keeps draft merge hosts), `merged_rides.sql` (ride route, merge apply window, `unmerge_request`, shift places/stops, manual handover)
 - Playwright: `npx playwright test --grep "@publication"`
 
 **QA script**:

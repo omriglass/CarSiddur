@@ -28,6 +28,30 @@ function baseAssignment(overrides: Partial<Assignment> = {}): Assignment {
   };
 }
 
+describe('assertInvariants: a request on two rides', () => {
+  const out = (assignments: Assignment[]): SolverOutput => ({
+    policyId: 'p', policyVersion: 1, assignments, unmet: [], mergeOpportunities: [], carsAway: [], warnings: [], stats: emptyStats(),
+  });
+  const leg = (side: 'out' | 'return' | 'both') => [{ requestId: 'R1', leg: side, carMode: 'chauffeur' as const, originId: 'home', destinationId: 'destA', role: 'passenger' as const }];
+  const input = baseInput({ cars: [makeCar('C1'), makeCar('C2')], requests: [makeRequest({ id: 'R1', departureMs: slotMs(32), returnMs: slotMs(80) })] });
+
+  it('allows the two legs of one request on two rides (drop-off + pickup)', () => {
+    const rides = [
+      baseAssignment({ rideId: 'ride:out', carId: 'C1', legs: leg('out'), window: { start: 32, end: 40 } }),
+      baseAssignment({ rideId: 'ride:ret', carId: 'C2', legs: leg('return'), window: { start: 72, end: 80 } }),
+    ];
+    expect(() => assertInvariants(input, out(rides))).not.toThrow();
+  });
+
+  it('still rejects two rides claiming the same leg', () => {
+    const rides = [
+      baseAssignment({ rideId: 'ride:a', carId: 'C1', legs: leg('out'), window: { start: 32, end: 40 } }),
+      baseAssignment({ rideId: 'ride:b', carId: 'C2', legs: leg('both'), window: { start: 32, end: 80 } }),
+    ];
+    expect(() => assertInvariants(input, out(rides))).toThrow(/served more than once/);
+  });
+});
+
 describe('assertInvariants', () => {
   it('passes for a valid, minimal output', () => {
     const input = baseInput({ cars: [makeCar('C1')], requests: [makeRequest({ id: 'R1', departureMs: slotMs(32), returnMs: slotMs(48) })] });

@@ -1,6 +1,7 @@
 import { toast } from "sonner";
 
 import { t, tv } from "@/i18n/he";
+import type { TripType } from "@/lib/enums";
 
 import type { SubmitRequestResult, SubmitSeriesRequestResult } from "./api";
 
@@ -9,6 +10,8 @@ export interface SubmitOutcomeContext {
   carName: (id: string | null | undefined) => string;
   /** The requester's own preferred/requested car, for the "assigned to a different car" case. */
   preferredCarId?: string | null;
+  /** The submitted trip type (G2): only a drop-off ever reads as "a driver is still needed". */
+  tripType?: TripType;
   departTime?: string;
   returnTime?: string;
   /** Shown as the waitlisted toast's action link (My requests). */
@@ -31,13 +34,15 @@ export function toastSubmitOutcome(result: SubmitRequestResult | null | undefine
     return;
   }
 
-  if (result.needs_driver && result.ride_id && result.car_id) {
+  if (result.needs_driver && result.ride_id && result.car_id && ctx.tripType !== "one_way" && ctx.tripType !== "round_trip") {
     toast.success(tv("quickRequest.successNeedsDriver", { car: ctx.carName(result.car_id) }));
     return;
   }
 
   if (result.status === "assigned" && result.car_id) {
-    if (result.car_id === ctx.preferredCarId) {
+    if (ctx.tripType === "one_way") {
+      toast.success(tv("quickRequest.successOneWayAssigned", { car: ctx.carName(result.car_id), start: ctx.departTime ?? "" }));
+    } else if (result.car_id === ctx.preferredCarId) {
       toast.success(tv("quickRequest.successAssigned", { car: ctx.carName(result.car_id), start: ctx.departTime ?? "", end: ctx.returnTime ?? "" }));
     } else {
       toast.success(tv("quickRequest.successFallback", { car: ctx.carName(result.car_id), preferredCar: ctx.carName(ctx.preferredCarId) }));

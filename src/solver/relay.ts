@@ -21,6 +21,7 @@
 // left waiting at the destination.
 
 import { reason } from './reasons';
+import { requestDestName } from './names';
 import type { NormalizedRequest } from './slots';
 import { byId, dayBoundsForSlot, formatSlotTime, minutesToSlots, travelSlotsFor, withinRequestDay } from './slots';
 import type { CarTimeline } from './timeline';
@@ -65,6 +66,8 @@ export interface Candidate {
 
 export function tryPair(out: NormalizedRequest, ret: NormalizedRequest, cars: Car[]): Candidate | null {
   if (out.destinationId !== ret.destinationId) return null;
+  // A free-text destination is no place a car can wait at (REQ §13.58): never a relay pair.
+  if (out.request.destinationIsFreeText || ret.request.destinationIsFreeText) return null;
   // REQUIREMENTS §13.93: both legs of a relay pair must share the same
   // origin — the car leaves from and returns to one place. Every legacy
   // (home-origin) request has the same originId (home), so this is a no-op
@@ -274,10 +277,10 @@ export function chauffeurUnpairedRelayLegs(
 
     const reasonCode = cause === 'noDriver' ? 'PLACED_NEEDS_DRIVER' : 'PLACED_CHAUFFEUR_NO_RETURNER';
     const text = cause === 'noDriver'
-      ? reason('PLACED_NEEDS_DRIVER', { car: car?.name ?? carId })
+      ? reason('PLACED_NEEDS_DRIVER', { car: car?.name ?? '' })
       : reason('PLACED_CHAUFFEUR_NO_RETURNER', {
-          car: car?.name ?? carId,
-          dest: nr.destinationId,
+          car: car?.name ?? '',
+          dest: requestDestName(input, nr.request),
           dep: formatSlotTime(window.start, day),
           ret: formatSlotTime(window.end, day),
         });

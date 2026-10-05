@@ -11,7 +11,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { PageHeader } from "@/components/PageHeader";
 import { formatMinutes } from "@/components/timeField15Format";
-import { requestWithinFlex } from "../phantomLanes";
+import { requestStart, requestWindow, requestWithinFlex } from "../phantomLanes";
 import {
   isDropTargetValid,
   isUnmetDropValid,
@@ -40,6 +40,9 @@ import { ridePassengerSummary } from "@/lib/ridePassengerSummary";
 import { rideCoordinatorNotes } from "@/lib/rideCoordinatorNotes";
 
 import { resolveRideRealDestination } from "../rideLabel";
+import { unmetItemId } from "../unmetLegs";
+import { mergePayloadLeg, previewMerge } from "../mergeProposal";
+import { requestRouteLine } from "../requestRoute";
 import { parseTimeToMinutes } from "@/features/solverBridge/buildSolverInput";
 import { representativeRideTypeCode, servedOf, servedToEditRideLegs, withChildNames } from "../../solverRun";
 import { useBoardData } from "../hooks/useBoardData";
@@ -50,7 +53,9 @@ import { BoardDisplayMenu } from "./BoardDisplayMenu";
 import { BoardListMode } from "./BoardListMode";
 import { BoardTitleSwitcher } from "./BoardTitleSwitcher";
 import { BoardWeekSwitcher } from "./BoardWeekSwitcher";
+import { DraftChoiceDialog } from "./DraftChoiceDialog";
 import { MergePrefillDialog } from "./MergePrefillDialog";
+import { ProposalActionSheet } from "./ProposalActionSheet";
 import { PolicyChip } from "./PolicyChip";
 import { ReservationDialog } from "./ReservationDialog";
 import { RideSheet } from "./RideSheet";
@@ -138,6 +143,27 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
 
   const conflictCount = board.conflicts.length;
   const unmetPreview = dnd.unmetDragHover ? unmetPreviewWindow(board.dropCtx, dnd.unmetDragHover.item, dnd.unmetDragHover.carId, dnd.unmetDragHover.minutes, dnd.unmetDragHover.hostRideId) : null;
+
+  const draftRideIds = new Set([
+    ...board.pendingMerges.filter((merge) => merge.isDraft).map((merge) => `merge:${merge.proposal.id}`),
+    ...board.draftPlacements.filter((placement) => placement.type !== "merge").map((placement) => `draft:${placement.proposalId}`),
+  ]);
+  const selectedProposalRequest = board.requestsQuery.data?.find((request) => request.id === dnd.selectedProposal?.request_id);
+
+  // REQ §13.94 (G10): live preview while a guest chip is dragged over a car (translucent, snapped, like a ride drag).
+  const guestTarget = dnd.guestHover?.target;
+  const guestRequest = board.boardRequests.find((request) => request.id === dnd.guestHover?.guest.requestId);
+  const guestWindow = guestRequest ? requestWindow(guestRequest) : null;
+  const guestMinutes = guestWindow ? Math.max(15, Math.round((Date.parse(guestWindow.endsAt) - Date.parse(guestWindow.startsAt)) / 60_000)) : 60;
+  const guestPreview = guestTarget?.kind === "car" && dnd.guestHover
+    ? { carId: guestTarget.carId, startMinutes: guestTarget.minutes, endMinutes: guestTarget.minutes + guestMinutes, label: dnd.guestHover.guest.name, valid: true }
+    : null;
+
+  // REQ §13.94 (G10): the merge popup's base ride, added request and merged-ride preview.
+  const mergeHost = board.rides.find((ride) => ride.id === dnd.mergePrefill?.rideId);
+  const mergeRequest = board.boardRequests.find((request) => request.id === dnd.mergePrefill?.requestId);
+  const mergeLeg = mergeRequest ? mergePayloadLeg(dnd.mergePrefill?.payload, mergeRequest) : "out";
+  const mergePreview = mergeHost && mergeRequest ? previewMerge(mergeHost, mergeRequest, mergeLeg, board.routeCtx) : null;
 
   const currentPolicyForActions = (board.policyOptionsQuery.data ?? []).find((policy) => policy.policyVersionId === board.effectivePolicyVersionId)
     ?? (board.activePolicyQuery.data?.policyVersionId === board.effectivePolicyVersionId ? board.activePolicyQuery.data ?? null : null);
@@ -243,15 +269,15 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
             dayEndMinutes={dayEndMinutes}
             readOnly={false}
             draggable
-            canDragRide={(ride) => !ride.id.startsWith("merge:") && (!ride.id.startsWith("change:") || !!(board.rideChangesQuery.data ?? []).find((change) => change.is_planning && `change:${change.id}` === ride.id))}
-            canResizeRide={(ride) => !ride.id.startsWith("request:") && !ride.id.startsWith("change:") && !ride.id.startsWith("merge:")}
+            canDragRide={(ride) => !ride.id.startsWith("merge:") && !ride.id.startsWith("draft:") && (!ride.id.startsWith("change:") || !!(board.rideChangesQuery.data ?? []).find((change) => change.is_planning && `change:${change.id}` === ride.id))}
+            canResizeRide={(ride) => !ride.id.startsWith("request:") && !ride.id.startsWith("change:") && !ride.id.startsWith("merge:") && !ride.id.startsWith("draft:")}
             onSlotClick={(carId, minutes) => !carId.startsWith("phantom:") && dnd.setReservation({ carId, start: formatMinutes(minutes), end: formatMinutes(Math.min(1439, minutes + 60)), notes: "", memberIds: [], childIds: [] })}
             onRideClick={dnd.handleRideClick}
             onRideDrop={(rideId, carId, minutes, droppedOnRideId) => void dnd.handleRideDrop(rideId, carId, minutes, droppedOnRideId)}
             onRideResize={dnd.handleRideResize}
             isDropTargetValid={(rideId, carId, startMinutes, endMinutes, hostRideId) => isDropTargetValid(board.dropCtx, rideId, carId, startMinutes, endMinutes, hostRideId)}
             resolveDropPreview={(ride, carId, startMinutes, endMinutes, hostRideId) => {
-              const item = board.unmetItems.find((item) => `request:${item.request.id}` === ride.id);
+              const item = board.unmetItems.find((item) => unmetItemId(item) === ride.id);
               if (carId.startsWith("phantom:")) return { startMinutes, endMinutes };
               const window = item ? unmetPreviewWindow(board.dropCtx, item, carId, startMinutes, hostRideId)
                 : mergeCandidateForRide(board.dropCtx, ride.id, carId, minutesIso(board.dropCtx, startMinutes), minutesIso(board.dropCtx, endMinutes), hostRideId)?.window;
@@ -267,8 +293,10 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
                     label: `${dnd.unmetDragHover.item.request.requester_full_name ?? ""} · ${dnd.unmetDragHover.item.destinationName}`,
                     valid: isUnmetDropValid(board.dropCtx, dnd.unmetDragHover.item, dnd.unmetDragHover.carId, dnd.unmetDragHover.minutes, dnd.unmetDragHover.hostRideId),
                   }
-                : null
+                : guestPreview
             }
+            onGuestHover={(guest, target) => dnd.setGuestHover({ guest, target })}
+            onGuestDrop={(guest, target) => void dnd.handleGuestDrop(guest, target)}
             onRideDropOnUnmet={(rideId) => void dnd.handleUnassignRide(rideId)}
             discussionBlocks={board.weekGridDiscussionBlocks}
             onDiscussionClick={dnd.setSelectedGroupId}
@@ -288,11 +316,20 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
           <BoardListMode
             key={conflictJump?.sequence ?? 0}
             shadowedRideIds={board.shadowedRideIds}
-            pendingRides={board.pendingMerges.filter((merge) => dateKey(merge.startsAt) === board.selectedDay).map((merge) => ({
-              id: `merge:${merge.proposal.id}`, startsAt: merge.startsAt, endsAt: merge.endsAt,
-              originName: merge.host.origin_name ?? "", destinationName: board.weekGridRides.find((ride) => ride.id === `merge:${merge.proposal.id}`)?.label ?? "",
-              driverName: merge.host.driver_name, carName: (board.carsQuery.data ?? []).find((car) => car.id === merge.host.car_id)?.name ?? null,
-            }))}
+            draftRideIds={draftRideIds}
+            pendingRides={[
+              ...board.pendingMerges.filter((merge) => dateKey(merge.startsAt) === board.selectedDay).map((merge) => ({
+                id: `merge:${merge.proposal.id}`, startsAt: merge.startsAt, endsAt: merge.endsAt,
+                originName: merge.host.origin_name ?? "", destinationName: board.weekGridRides.find((ride) => ride.id === `merge:${merge.proposal.id}`)?.label ?? "",
+                driverName: merge.host.driver_name, carName: (board.carsQuery.data ?? []).find((car) => car.id === merge.host.car_id)?.name ?? null,
+              })),
+              // REQ §13.94: shift/origin drafts as "result" cards, same as the grid's dashed blocks.
+              ...board.draftPlacements.filter((placement) => placement.type !== "merge" && dateKey(placement.startsAt) === board.selectedDay).map((placement) => ({
+                id: `draft:${placement.proposalId}`, startsAt: placement.startsAt, endsAt: placement.endsAt,
+                originName: "", destinationName: board.weekGridRides.find((ride) => ride.id === `draft:${placement.proposalId}`)?.label ?? "",
+                driverName: null, carName: (board.carsQuery.data ?? []).find((car) => car.id === placement.carId)?.name ?? null,
+              })),
+            ]}
             rides={[...board.activeDayRides, ...board.planningRows.filter((ride) => dateKey(ride.starts_at) === board.selectedDay)]
               .filter((r) => r.id && r.starts_at)
               .map((r) => ({
@@ -331,6 +368,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
             unmetItems={board.unmetItems}
             onUnmetAction={dnd.handleUnmetAction}
             onUnmetDecision={dnd.handleUnmetDecision}
+            onOpenProposal={dnd.setSelectedProposalId}
             onOpenProposals={() => navigate(paths.sadran.proposals(departmentId, weekStart))}
             pendingProposalsCount={(board.proposalsQuery.data ?? []).filter((p) => p.status === "sent").length}
             homeDestinationId={board.department?.home_destination_id ?? undefined}
@@ -354,6 +392,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
               items={board.unmetItems}
               onAction={dnd.handleUnmetAction}
               onDecision={dnd.handleUnmetDecision}
+              onOpenProposal={dnd.setSelectedProposalId}
               homeDestinationId={board.department?.home_destination_id ?? undefined}
               dayStartMinutes={dayStartMinutes}
               dayEndMinutes={dayEndMinutes}
@@ -368,15 +407,41 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
 
       <MergePrefillDialog
         prefill={dnd.mergePrefill}
-        hostLabel={board.weekGridRides.find((ride) => ride.id === dnd.mergePrefill?.rideId)?.label}
-        requesterName={board.requestsQuery.data?.find((request) => request.id === dnd.mergePrefill?.requestId)?.requester_full_name}
-        destinationName={board.requestsQuery.data?.find((request) => request.id === dnd.mergePrefill?.requestId)?.destination_resolved_name}
-        onConfirm={() => { if (dnd.mergePrefill) dnd.goToComposer(dnd.mergePrefill); dnd.setMergePrefill(null); }}
+        hostLabel={board.weekGridRides.find((ride) => ride.id === dnd.mergePrefill?.rideId)?.label ?? mergeHost?.driver_name}
+        hostStartsAt={mergeHost?.starts_at}
+        hostEndsAt={mergeHost?.ends_at}
+        request={mergeRequest}
+        requestRoute={mergeRequest ? requestRouteLine({ originId: mergeRequest.origin_id, originName: mergeRequest.origin_id ? mergeRequest.origin_resolved_name : null, originText: mergeRequest.origin_text, destination: mergeRequest.destination_resolved_name ?? mergeRequest.destination_text ?? "", tripType: mergeRequest.trip_type }, board.department?.home_destination_id) : ""}
+        leg={mergeLeg}
+        onLegChange={dnd.setMergeLeg}
+        preview={mergePreview}
+        onConfirm={() => { if (dnd.mergePrefill) dnd.openComposer(dnd.mergePrefill); dnd.setMergePrefill(null); }}
+        onDraft={() => { if (dnd.mergePrefill) void dnd.saveDraft(dnd.mergePrefill); }}
+        busy={dnd.draftPending}
         onCancel={() => dnd.setMergePrefill(null)}
+      />
+      <DraftChoiceDialog
+        choice={dnd.composeChoice}
+        requesterName={board.requestsQuery.data?.find((request) => request.id === dnd.composeChoice?.requestId)?.requester_full_name}
+        onCompose={dnd.composeFromChoice}
+        onDraft={() => { if (dnd.composeChoice) void dnd.saveDraft(dnd.composeChoice); }}
+        busy={dnd.draftPending}
+        onCancel={() => dnd.setComposeChoice(null)}
+      />
+      <ProposalActionSheet
+        proposal={dnd.selectedProposal}
+        requesterName={selectedProposalRequest?.requester_full_name}
+        dayIso={selectedProposalRequest ? requestStart(selectedProposalRequest) : null}
+        busy={dnd.proposalActionPending}
+        onOpenChange={(open) => !open && dnd.setSelectedProposalId(null)}
+        onSend={dnd.sendDraft}
+        onEdit={dnd.editDraft}
+        onDiscard={(proposal) => void dnd.discardDraft(proposal)}
+        onWithdraw={(proposal) => void dnd.withdrawSent(proposal)}
       />
       <Sheet open={!!selectedUnmet} onOpenChange={(open) => !open && dnd.setSelectedUnmetId(null)}>
         <SheetContent side="bottom"><SheetHeader><SheetTitle>{he.board.unmet}</SheetTitle></SheetHeader>
-          {selectedUnmet ? <UnmetList items={[selectedUnmet]} onAction={dnd.handleUnmetAction} onDecision={dnd.handleUnmetDecision} homeDestinationId={board.department?.home_destination_id ?? undefined} /> : null}
+          {selectedUnmet ? <UnmetList items={[selectedUnmet]} onAction={dnd.handleUnmetAction} onDecision={dnd.handleUnmetDecision} onOpenProposal={dnd.setSelectedProposalId} homeDestinationId={board.department?.home_destination_id ?? undefined} /> : null}
         </SheetContent>
       </Sheet>
 
@@ -436,6 +501,9 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
         cars={board.carsQuery.data ?? []}
         driverName={selectedRideDriverName}
         homeDestinationId={board.department?.home_destination_id ?? null}
+        destinations={(board.destinationsQuery.data ?? []).map((d) => ({ id: d.id, name: d.name, aliases: d.aliases, zone: d.zone }))}
+        onSaveRoute={(values) => { if (selectedRide) void dnd.saveRideRoute(selectedRide, values); }}
+        onRemoveAddedPerson={(requestId, name) => { if (selectedRide?.id) void dnd.removeAddedPerson(selectedRide.id, requestId, name); }}
         onOpenChange={(open) => !open && dnd.setSelectedRideId(null)}
         saving={dnd.editRideMutation.isPending || dnd.claimDriverMutation.isPending}
         tightSchedule={!!selectedRide?.id && board.tightRideIds.has(selectedRide.id)}

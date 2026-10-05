@@ -13,11 +13,16 @@ import { formatMinutes, parseHHMM } from "@/components/timeField15Format";
 import { he, tv } from "@/i18n/he";
 import { dateKey } from "@/lib/time";
 import { useSession } from "@/features/auth/useSession";
+import { useProfile } from "@/features/auth/useProfile";
 import { useDepartmentMembers } from "@/features/auth/useDepartmentMembers";
 import { fetchChildren } from "@/features/requests/api";
 
-import { expandedMergeWindow } from "../mergeWindow";
-import { requestStart, requestWindow, requestWithinFlex } from "../phantomLanes";
+import { defaultMergeLeg, mergePayload, type MergeLeg } from "../mergeProposal";
+import { isDropOffWithPickup, legView, unmetItemId, unmetItemKey } from "../unmetLegs";
+import type { GuestDropTarget } from "@/components/GuestChips";
+import { requestStart, requestWithinFlex } from "../phantomLanes";
+import { reservationRoutePlaces, routeEditPayload, type RouteEditValues } from "../rideRouteEdit";
+import { buildDraftInput, type ComposerPrefill } from "../draftInput";
 import {
   isUnmetDropValid,
   minutesIso,
@@ -26,22 +31,29 @@ import {
   unavailable,
   unmetCandidateWindow,
   unmetMergeHost,
+  unmetPlacement,
   unmetRequestPassengers,
+  unmetShiftPayload,
 } from "../dropValidity";
 import type { UnmetListItem } from "../components/UnmetList";
 import { wouldOverlap } from "../geometry";
 import { buildRidePassengerInputs, splitReservationDriverAndPassengers } from "../reservationPeople";
 import {
+  useCreateProposalMutation,
+  useDiscardProposalMutation,
+  useWhatsappTemplates,
+  useWithdrawProposalMutation,
   useEditRideMutation,
   useSetRidePassengersMutation,
   useUnassignRideMutation,
+  useUnmergeRequestMutation,
   useCancelRideMutation,
 } from "../../hooks";
 import { useClaimRideDriverMutation, useCancelRideChangeMutation } from "@/features/rides/hooks";
 import { useUndoStack } from "../useUndoStack";
 import { servedOf, servedToEditRideLegs } from "../../solverRun";
 
-import type { EditRideInput, RidePassengerInput, WeekRequestRow } from "../../api";
+import type { BoardRide, EditRideInput, ProposalRow, RidePassengerInput, WeekRequestRow } from "../../api";
 import type { Suggestion } from "@/solver";
 import type { useBoardData } from "./useBoardData";
 
@@ -62,7 +74,12 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
   // Swap cars on a day by dragging car names (REQ §13.92, owner batch 2026-09-24 S1) — the
   // Sadran is allowed on any non-archived day (planning, no notifications).
   const [carSwapPair, setCarSwapPair] = useState<{ carA: string; carB: string } | null>(null);
-  const [mergePrefill, setMergePrefill] = useState<Parameters<typeof goToComposer>[0] | null>(null);
+  const [mergePrefill, setMergePrefill] = useState<ComposerPrefill | null>(null);
+  // REQ §13.94: every board popup that leads to the composer first offers "טיוטה" (store the
+  // proposal unsent and stay on the board) next to "הכן הצעה" (open the composer).
+  const [composeChoice, setComposeChoice] = useState<ComposerPrefill | null>(null);
+  // Tapped draft block / sent merge ghost -> its action sheet (send, edit, discard / withdraw).
+  const [selectedProposalId, setSelectedProposalId] = useState<string | null>(null);
   // memberIds: department members picked for the reservation, in pick order — the first
   // becomes the ride's driver (owner A5, 2026-09-14); the rest (plus childIds) become
   // `ride_passengers` rows via set_ride_passengers() once the ride itself is saved.
@@ -76,14 +93,21 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
   // gesture since the drag starts on its cards, outside the grid) — the
   // grid only needs to know which car to highlight and whether the drop
   // would be valid right now.
+  const [guestHover, setGuestHover] = useState<{ guest: { requestId: string; name: string }; target: GuestDropTarget | null } | null>(null);
   const [unmetDragHover, setUnmetDragHover] = useState<{ item: UnmetListItem; carId: string; minutes: number; hostRideId?: string } | null>(null);
 
+  const createProposalMutation = useCreateProposalMutation();
+  const discardProposalMutation = useDiscardProposalMutation();
+  const withdrawProposalMutation = useWithdrawProposalMutation();
+  const templatesQuery = useWhatsappTemplates();
+  const profileQuery = useProfile();
   const editRideMutation = useEditRideMutation();
   const setRidePassengersMutation = useSetRidePassengersMutation();
   const claimDriverMutation = useClaimRideDriverMutation();
   const cancelRideChangeMutation = useCancelRideChangeMutation();
   const cancelRideMutation = useCancelRideMutation();
   const unassignRideMutation = useUnassignRideMutation();
+  const unmergeRequestMutation = useUnmergeRequestMutation();
   const undoStack = useUndoStack<void>();
   const undoVersions = useRef(new Map<string, number>());
 
@@ -100,19 +124,155 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
     enabled: !!departmentId && !!profileId,
   });
 
-  const { selectedDay, dayStartIso, dropCtx, rides, pendingMerges } = board;
+  const { selectedDay, dayStartIso, dropCtx, rides } = board;
   const requestsData = board.requestsQuery.data ?? [];
   const carsData = board.carsQuery.data ?? [];
   const department = board.department;
 
-  function goToComposer(prefill: {
-    requestId: string;
-    rideId: string | null;
-    type: "shift" | "merge" | "deny" | "external" | "origin";
-    payload: Record<string, unknown>;
-    proposalId?: string;
-  }) {
+  /** Opens the composer (the old `goToComposer`); `proposalId` set = view/send that existing proposal. */
+  function openComposer(prefill: ComposerPrefill) {
     navigate(paths.sadran.composer(departmentId, weekStart), { state: { ...prefill, returnTo: location.pathname + location.search } });
+  }
+
+  /**
+   * Every board path that leads to a suggestion goes through here: an existing proposal opens
+   * directly, a new one first asks "טיוטה" / "הכן הצעה" (REQ §13.94).
+   */
+  function goToComposer(prefill: ComposerPrefill) {
+    if (prefill.proposalId) { openComposer(prefill); return; }
+    setComposeChoice(prefill);
+  }
+
+  /** "טיוטה": `create_proposal` with the payload and text the composer would have built; stays on the board. */
+  async function saveDraft(prefill: ComposerPrefill) {
+    const built = buildDraftInput(prefill, {
+      requests: requestsData,
+      rides,
+      templates: templatesQuery.data ?? [],
+      destinations: board.destinationsQuery.data ?? [],
+      cars: carsData,
+      sadranName: profileQuery.data?.full_name ?? "",
+      homeDestinationId: department?.home_destination_id,
+      route: board.routeCtx,
+    });
+    if (!built.ok) { toast.error(he.boardDrafts.cannotDraft); return; }
+    try {
+      await createProposalMutation.mutateAsync({ ...built.input, departmentId, weekStart });
+      setComposeChoice(null);
+      setMergePrefill(null);
+      toast.success(he.boardDrafts.saved);
+    } catch {
+      // the mutation already showed the error toast; keep the popup open
+    }
+  }
+
+  function composeFromChoice() {
+    const choice = composeChoice;
+    setComposeChoice(null);
+    if (choice) openComposer(choice);
+  }
+
+  const proposals: ProposalRow[] = board.proposalsQuery.data ?? [];
+  const selectedProposal = proposals.find((p) => p.id === selectedProposalId) ?? null;
+
+  /** REQ §13.94 (G10): the popup's "הלוך בלבד" / "הלוך וחזור" choice rewrites the merge payload's leg. */
+  function setMergeLeg(leg: MergeLeg) {
+    setMergePrefill((prev) => (prev?.rideId ? { ...prev, payload: mergePayload(prev.rideId, leg) } : prev));
+  }
+
+  /**
+   * REQ §13.94 (G10): take an added person out of a merged ride. A draft merge is discarded, a
+   * sent/accepted one withdrawn, an applied one un-merged (`unmerge_request`: the request returns
+   * to the unmet list and the person is notified).
+   */
+  async function removeAddedPerson(rideId: string, requestId: string, name: string): Promise<boolean> {
+    const ride = rides.find((r) => r.id === rideId);
+    const pending = proposals.find((p) => p.type === "merge" && p.request_id === requestId && p.ride_id === rideId && ["draft", "sent", "accepted"].includes(p.status));
+    try {
+      if (pending?.status === "draft") await discardProposalMutation.mutateAsync({ proposalId: pending.id, departmentId, weekStart });
+      else if (pending) await withdrawProposalMutation.mutateAsync({ proposalId: pending.id, departmentId, weekStart });
+      else if (ride?.version != null) await unmergeRequestMutation.mutateAsync({ rideId, requestId, expectedVersion: ride.version, departmentId, weekStart });
+      else return false;
+      setSelectedRideId(null);
+      toast.success(tv("mergedRide.removed", { name }));
+      return true;
+    } catch { /* toast shown by the mutation */ return false; }
+  }
+
+  /**
+   * REQ §13.94 (G10): a guest chip was dragged off a merged block. Dropped on the unmet list / a
+   * phantom lane: unmerge only. Dropped on a car (or onto another ride): unmerge first, then the
+   * ordinary unmet placement / merge path for that request at the drop point.
+   */
+  async function handleGuestDrop(guest: { requestId: string; rideId: string; name: string }, target: GuestDropTarget) {
+    setGuestHover(null);
+    const removed = await removeAddedPerson(guest.rideId, guest.requestId, guest.name);
+    if (!removed || target.kind === "unmet") return;
+    const request = board.boardRequests.find((r) => r.id === guest.requestId);
+    if (!request) return;
+    const servedLeg = rides.flatMap((ride) => servedOf(ride)).find((entry) => entry.request_id === guest.requestId)?.leg;
+    const view = isDropOffWithPickup(request) && (servedLeg === "out" || servedLeg === "return") ? legView(request, servedLeg) : request;
+    await handlePlaceUnmetRequest({ request: view, leg: undefined, destinationName: request.destination_resolved_name ?? "—" }, target.carId, target.minutes, target.hostRideId);
+  }
+
+  /**
+   * REQ §13.94 (G8): save the ride sheet's "מסלול" section. A ride serving a member's request goes
+   * through a `shift` proposal (draft or compose); a Sadran reservation uses `edit_ride` directly.
+   */
+  async function saveRideRoute(ride: BoardRide, values: RouteEditValues) {
+    if (!ride.id) return;
+    const served = servedOf(ride);
+    const base = served.find((entry) => entry.role === "driver") ?? served[0];
+    if (base?.request_id) {
+      setSelectedRideId(null);
+      goToComposer({ requestId: base.request_id, rideId: ride.id, type: "shift", payload: routeEditPayload(ride.id, values) });
+      return;
+    }
+    const places = reservationRoutePlaces(values);
+    if (!places || !ride.car_id || !ride.starts_at || !ride.ends_at) { toast.error(he.rideRouteEdit.presetOnly); return; }
+    try {
+      await editRideMutation.mutateAsync({
+        input: {
+          id: ride.id, department_id: departmentId, week_start: weekStart, car_id: ride.car_id,
+          starts_at: ride.starts_at, ends_at: ride.ends_at,
+          origin_id: places.originId, destination_id: places.destinationId,
+          driver_id: ride.driver_id, needs_driver: !!ride.needs_driver, notes: ride.notes ?? undefined,
+          is_pinned: !!ride.is_pinned, pin_reason: ride.pin_reason, allow_conflict: true,
+          served: servedToEditRideLegs(served),
+        },
+        expectedVersion: ride.version ?? undefined, departmentId, weekStart,
+      });
+      setSelectedRideId(null);
+      toast.success(he.rideRouteEdit.saved);
+    } catch { /* toast shown by the mutation */ }
+  }
+
+  /** "שלח" on a draft: the composer on that draft, whose send is the existing `send_proposal`. */
+  function sendDraft(proposal: ProposalRow) {
+    setSelectedProposalId(null);
+    openComposer({ requestId: proposal.request_id as string, rideId: proposal.ride_id, type: proposal.type, payload: (proposal.payload ?? {}) as Record<string, unknown>, proposalId: proposal.id });
+  }
+
+  /** "ערוך": the composer editable again, prefilled from the draft; saving supersedes the old draft. */
+  function editDraft(proposal: ProposalRow) {
+    setSelectedProposalId(null);
+    openComposer({ requestId: proposal.request_id as string, rideId: proposal.ride_id, type: proposal.type, payload: (proposal.payload ?? {}) as Record<string, unknown> });
+  }
+
+  async function discardDraft(proposal: ProposalRow) {
+    try {
+      await discardProposalMutation.mutateAsync({ proposalId: proposal.id, departmentId, weekStart });
+      setSelectedProposalId(null);
+      toast.success(he.boardDrafts.discarded);
+    } catch { /* toast shown by the mutation */ }
+  }
+
+  async function withdrawSent(proposal: ProposalRow) {
+    try {
+      await withdrawProposalMutation.mutateAsync({ proposalId: proposal.id, departmentId, weekStart });
+      setSelectedProposalId(null);
+      toast.success(he.boardDrafts.withdrawn);
+    } catch { /* toast shown by the mutation */ }
   }
 
   /** Assign a request leg or prepare a proposal when sharing/relay coordination is required. */
@@ -132,11 +292,8 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
     if (host?.id && host.starts_at && host.ends_at) {
       if (!host.driver_id || host.needs_driver) { toast.error(he.boardCoordination.mergeNeedsDriver); return; }
       if (!isUnmetDropValid(dropCtx, item, carId, minutes, droppedOnRideId)) { toast.error(he.sadranBoard.dragInvalidOverlapToast); return; }
-      const original = requestWindow(req)!;
-      const expanded = expandedMergeWindow({ startsAt: host.starts_at, endsAt: host.ends_at }, original);
-      setMergePrefill({ requestId: req.id, rideId: host.id, type: "merge", payload: { ride_id: host.id,
-        starts_at: expanded.startsAt, ends_at: expanded.endsAt,
-        legs: [{ ride_id: host.id, role: "passenger", leg: req.trip_shape === "round_trip" ? "both" : req.trip_shape === "one_way_from" ? "return" : "out", car_mode: "passenger" }] } });
+      // REQ §13.94 (G10): the popup shows the merged ride; the payload is legs only (the host keeps its times).
+      setMergePrefill({ requestId: req.id, rideId: host.id, type: "merge", payload: mergePayload(host.id, defaultMergeLeg(req)) });
       return;
     }
     window = unmetCandidateWindow(dropCtx, item, minutes, true);
@@ -146,8 +303,11 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
       toast.error(he.sadranBoard.dragInvalidSeatsToast);
       return;
     }
+    // Placement by the member-facing trip type and the request's own places (REQ §13.93).
+    const placement = unmetPlacement(dropCtx, req, carId, window.startsAt);
+    if (!placement) { toast.error(he.sadranBoard.invalidWindow); return; }
     if (!requestWithinFlex(req, window.startsAt, window.endsAt)) {
-      goToComposer({ requestId: req.id, rideId: null, type: "shift", payload: req.trip_shape === "round_trip" ? { car_id: carId, depart_at: window.startsAt, return_at: window.endsAt, origin_id: department.home_destination_id, destination_id: department.home_destination_id } : req.trip_shape === "one_way_from" ? { return_at: window.endsAt } : { depart_at: window.startsAt } });
+      goToComposer({ requestId: req.id, rideId: null, type: "shift", payload: unmetShiftPayload(req, carId, window, placement) });
       return;
     }
     try {
@@ -158,20 +318,20 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
           car_id: carId,
           starts_at: window.startsAt,
           ends_at: window.endsAt,
-          origin_id: department.home_destination_id,
-          destination_id: department.home_destination_id,
-          driver_id: req.trip_shape === "round_trip" ? req.requester_id : null,
-          needs_driver: req.trip_shape !== "round_trip",
+          origin_id: placement.originId,
+          destination_id: placement.destinationId,
+          driver_id: placement.driverIsRequester ? req.requester_id : null,
+          needs_driver: !placement.driverIsRequester,
           allow_conflict: true,
           is_pinned: true,
           pin_reason: "SADRAN_MANUAL",
-          served: [{ request_id: req.id, role: req.trip_shape === "round_trip" ? "driver" : "passenger", leg: req.trip_shape === "round_trip" ? "both" : req.trip_shape === "one_way_from" ? "return" : "out", car_mode: req.trip_shape === "round_trip" ? "keep" : "chauffeur" }],
+          served: [{ request_id: req.id, ...placement.served }],
         },
         departmentId,
         weekStart,
       });
       const carName = carsData.find((c) => c.id === carId)?.name ?? "";
-      toast.success(req.trip_shape === "round_trip" ? tv("sadranBoard.dragPlacedToast", { car: carName, start: formatMinutes(minutes) }) : he.boardCoordination.standaloneSaved);
+      toast.success(placement.driverIsRequester ? tv("sadranBoard.dragPlacedToast", { car: carName, start: formatMinutes(minutes) }) : he.boardCoordination.standaloneSaved);
     } catch {
       // The mutation reports validation errors; keep the request on its phantom lane.
     }
@@ -201,11 +361,12 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
       return;
     }
     if (id.startsWith("request:")) { setSelectedUnmetId(id.slice(8)); return; }
-    if (id.startsWith("merge:")) {
-      const merge = pendingMerges.find((entry) => entry.proposal.id === id.slice(6));
-      if (merge) goToComposer({ requestId: merge.guest.id, rideId: merge.host.id, type: "merge", payload: merge.proposal.payload as Record<string, unknown>, proposalId: merge.proposal.id });
-      return;
-    }
+    // A draft block, or a sent/accepted merge ghost: its action sheet (REQ §13.94).
+    if (id.startsWith("merge:")) { setSelectedProposalId(id.slice(6)); return; }
+    if (id.startsWith("draft:")) { setSelectedProposalId(id.slice(6)); return; }
+    // A ride with a sent/accepted shift proposal waiting for an answer: its proposal sheet (withdraw) (REQ §13.94).
+    const awaiting = proposals.find((p) => p.type === "shift" && p.ride_id === id && (p.status === "sent" || p.status === "accepted"));
+    if (awaiting) { setSelectedProposalId(awaiting.id); return; }
     setSelectedRideId(id);
   }
 
@@ -217,7 +378,7 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
       resizedEndMinutes ??= startMinutes + (Date.parse(planningChange.ends_at) - Date.parse(planningChange.starts_at)) / 60_000;
     }
     if (rideId.startsWith("request:")) {
-      const item = board.unmetItems.find((item) => `request:${item.request.id}` === rideId);
+      const item = board.unmetItems.find((item) => unmetItemId(item) === rideId);
       if (item) await handlePlaceUnmetRequest(item, carId, startMinutes, droppedOnRideId);
       return;
     }
@@ -231,18 +392,11 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
         const host = rides.find((candidate) => candidate.id === droppedOnRideId);
         if (!host?.starts_at || !host.ends_at) return;
         if (!host.driver_id || host.needs_driver) { toast.error(he.boardCoordination.mergeNeedsDriver); return; }
-        const sourceRequest = requestsData.find((request) => request.id === driverEntry.request_id);
-        const guestWindow = ride.needs_driver && sourceRequest ? requestWindow(sourceRequest) : null;
-        const expanded = expandedMergeWindow({ startsAt: host.starts_at, endsAt: host.ends_at }, guestWindow ?? { startsAt: ride.starts_at, endsAt: ride.ends_at });
         setMergePrefill({
           requestId: driverEntry.request_id,
           rideId: droppedOnRideId,
           type: "merge",
-          payload: {
-            ride_id: droppedOnRideId,
-            starts_at: expanded.startsAt, ends_at: expanded.endsAt,
-            legs: [{ ride_id: droppedOnRideId, role: "passenger", leg: driverEntry.leg ?? "both", car_mode: "passenger" }],
-          },
+          payload: mergePayload(droppedOnRideId, driverEntry.leg ?? "both"),
         });
       }
       return;
@@ -415,8 +569,11 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
         goToComposer({ requestId: item.request.id, rideId: null, type: "shift", payload: {} });
         return;
       case "merge":
+        // REQ §13.94: the suggestion path builds the same full payload as the drag path.
+        goToComposer({ requestId: item.request.id, rideId: suggestion.hostRideId, type: "merge", payload: mergePayload(suggestion.hostRideId, defaultMergeLeg(item.request)) });
+        return;
       case "splitLegs":
-        goToComposer({ requestId: item.request.id, rideId: suggestion.kind === "merge" ? suggestion.hostRideId : null, type: "merge", payload: {} });
+        goToComposer({ requestId: item.request.id, rideId: null, type: "merge", payload: {} });
         return;
       case "externalHint":
         goToComposer({ requestId: item.request.id, rideId: null, type: "external", payload: { hint: suggestion.hint } });
@@ -454,7 +611,7 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
   const selectedPlanningChange = (board.rideChangesQuery.data ?? []).find((change) => change.is_planning && `change:${change.id}` === selectedRideId);
   const selectedRide = rides.find((r) => r.id === (selectedPlanningChange?.ride_id ?? selectedRideId)) ?? null;
   const selectedRideDriverName = selectedRide?.driver_name ?? null;
-  const selectedUnmet = board.unmetItems.find((item) => item.request.id === selectedUnmetId);
+  const selectedUnmet = board.unmetItems.find((item) => unmetItemKey(item) === selectedUnmetId);
   const selectedWaitlistGroup = (board.waitlistGroupsQuery.data ?? []).find((group) => group.id === selectedGroupId) ?? null;
 
   return {
@@ -468,6 +625,16 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
     setCarSwapPair,
     mergePrefill,
     setMergePrefill,
+    setMergeLeg,
+    removeAddedPerson,
+    handleGuestDrop,
+    guestHover,
+    setGuestHover,
+    saveRideRoute,
+    composeChoice,
+    setComposeChoice,
+    selectedProposal,
+    setSelectedProposalId,
     reservation,
     setReservation,
     seriesMoveConfirm,
@@ -480,10 +647,20 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
     cancelRideChangeMutation,
     cancelRideMutation,
     unassignRideMutation,
+    unmergeRequestMutation,
     undoStack,
     reservationMembersQuery,
     reservationChildrenQuery,
     goToComposer,
+    openComposer,
+    saveDraft,
+    composeFromChoice,
+    sendDraft,
+    editDraft,
+    discardDraft,
+    withdrawSent,
+    draftPending: createProposalMutation.isPending,
+    proposalActionPending: discardProposalMutation.isPending || withdrawProposalMutation.isPending || unmergeRequestMutation.isPending,
     handlePlaceUnmetRequest,
     handleUnassignRide,
     handleRideClick,

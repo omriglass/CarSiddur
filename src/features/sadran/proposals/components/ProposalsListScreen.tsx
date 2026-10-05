@@ -1,17 +1,21 @@
 import { Inbox } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 
 import { paths } from "@/app/routes";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { EmptyState } from "@/components/EmptyState";
 import { PageHeader } from "@/components/PageHeader";
+import { toast } from "sonner";
+
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ProposalSummary } from "@/features/proposals/components/ProposalSummary";
 import { he, tv } from "@/i18n/he";
 import { formatTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
-import { useAllWeekRides, useProposalsForWeek, useWeekRequestsWithNames } from "../../hooks";
+import { useAllWeekRides, useProposalsForWeek, useWeekRequestsWithNames, useWithdrawProposalMutation } from "../../hooks";
 
 interface ProposalsListScreenProps {
   departmentId: string;
@@ -34,6 +38,10 @@ export function ProposalsListScreen({ departmentId, weekStart }: ProposalsListSc
   const proposalsQuery = useProposalsForWeek(departmentId, weekStart);
   const requestsQuery = useWeekRequestsWithNames(departmentId, weekStart);
   const ridesQuery = useAllWeekRides(departmentId, weekStart);
+
+  // REQ §13.94: a sent/accepted proposal can be withdrawn (tokens revoked, no message to the member).
+  const withdrawMutation = useWithdrawProposalMutation();
+  const [withdrawId, setWithdrawId] = useState<string | null>(null);
 
   const proposals = proposalsQuery.data ?? [];
   const requests = requestsQuery.data ?? [];
@@ -91,6 +99,15 @@ export function ProposalsListScreen({ departmentId, weekStart }: ProposalsListSc
                     returnAt={request?.return_at ?? null}
                     hostDriverName={hostRide?.driver_name}
                   />
+                  {p.status === "sent" || p.status === "accepted" ? (
+                    <Button
+                      type="button" size="sm" variant="outline" className="min-h-11 shrink-0"
+                      data-testid="proposal-row-withdraw"
+                      onClick={(event) => { event.stopPropagation(); setWithdrawId(p.id); }}
+                    >
+                      {he.boardDrafts.withdraw}
+                    </Button>
+                  ) : null}
                   {p.expires_at ? (
                     <span className="whitespace-nowrap text-xs text-muted-foreground" dir="ltr">
                       {tv("sadranProposal.expiresAtLabel", { when: formatTime(new Date(p.expires_at)) })}
@@ -102,6 +119,21 @@ export function ProposalsListScreen({ departmentId, weekStart }: ProposalsListSc
           })}
         </div>
       )}
+      <ConfirmDialog
+        open={!!withdrawId}
+        onOpenChange={(open) => { if (!open) setWithdrawId(null); }}
+        title={he.boardDrafts.withdrawConfirmTitle}
+        description={he.boardDrafts.withdrawConfirmBody}
+        confirmLabel={he.boardDrafts.withdraw}
+        destructive
+        loading={withdrawMutation.isPending}
+        onConfirm={() => {
+          const proposalId = withdrawId;
+          setWithdrawId(null);
+          if (!proposalId) return;
+          withdrawMutation.mutate({ proposalId, departmentId, weekStart }, { onSuccess: () => toast.success(he.boardDrafts.withdrawn) });
+        }}
+      />
     </div>
   );
 }

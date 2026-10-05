@@ -61,7 +61,7 @@ describe("quick request sheet (RequestForm's variant=\"quick\")", () => {
     fireEvent.click(screen.getByRole("button", { name: "Destination" }));
     fireEvent.click(screen.getByRole("radio", { name: he.request.tripTypeOneWay }));
     expect(screen.getByText(he.sadranProposal.sameDayOnly)).toBeVisible();
-    expect(screen.getByRole("button", { name: he.quickRequest.submitOneWay })).toBeDisabled();
+    expect(screen.getByRole("button", { name: he.quickRequest.submitOneWayTakeCar })).toBeDisabled();
     expect(mocks.submit).not.toHaveBeenCalled();
   });
 
@@ -97,7 +97,7 @@ describe("quick request sheet (RequestForm's variant=\"quick\")", () => {
     show();
     fireEvent.click(screen.getByRole("button", { name: "Destination" }));
     fireEvent.click(screen.getByRole("radio", { name: he.request.tripTypeOneWay }));
-    fireEvent.click(screen.getByRole("button", { name: he.quickRequest.submitOneWay }));
+    fireEvent.click(screen.getByRole("button", { name: he.quickRequest.submitOneWayTakeCar }));
     await waitFor(() => expect(mocks.submit).toHaveBeenCalledOnce());
     const payload = mocks.submit.mock.calls[0]![0];
     expect(payload).toMatchObject({ trip_shape: "one_way_to", trip_type: "one_way" });

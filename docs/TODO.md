@@ -402,3 +402,26 @@ Decisions (full text in REQ §13.93): explicit request origin (list place or fre
 
 ### Ideas for later (not scheduled)
 - Undeclared "on the way" pickups/drop-offs: a trip Givat Haviva → Haifa may take route 6 or route 2, so "Binyamina is on the way" cannot be assumed; let people coordinate by hand for now (owner 2026-10-04).
+
+## Owner feedback 2026-10-05 — after REQ §13.93 (triaged; owner answered Q1–Q5 the same day — **built 2026-10-05**, REQ §13.94; design `docs/BOARD_DRAFTS_PLAN_2026-10.md`)
+
+### Bugs
+- ~~**G1**~~ ✅ **Unreadable solver text on the board.** Unmet reasons and suggestions print raw ids: "אין רכב פנוי בחלון המבוקש; חוסמים: 00000000-…042", "יש רכב פנוי ב00000000-…010 … עם יונדאי 1". `reasons.ts` gets car/location ids as vars (`UNMET_NO_CAR` blockers, `SUGGEST_CHANGE_ORIGIN` origin, and any other id-valued var). Fix: render names (car names, place names passed into the solver input), and audit every reason template for id vars.
+- ~~**G2**~~ ✅ **A הלוך בלבד is treated as needing a driver.** The quick sheet's one-way submit reads "הוסף/י הסעה שמחפשת נהג/ת" and the toast says a driver is still needed — the pre-§13.93 one-way copy; verify the weekly form/SQL path too (a הלוך בלבד from Givat Haviva to Haifa must be bookable as "I take the car").
+- ~~**G3**~~ ✅ **The department home shows as "נבו".** "נבו" is the department's name; the home place must read as the department's location (גבעת חביבה). Seed: rename the home place; production (no data yet): the admin names the home place; make sure the home place's name is editable in the admin destinations screen.
+- ~~**G4**~~ ✅ **A הקפצה with a pickup held the car for the whole window** (the solver's fallback to `keep` for a requester who can drive). Expected: two separate trips (drop-off, later pickup), the car free in between.
+- ~~**G5**~~ ✅ **"ממתין לתשובתך" on "my rides":** long text must wrap or truncate; a proposal that was withdrawn/expired/answered must disappear from it.
+- ~~**G6**~~ ✅ **The Sadran cannot see a request's origin and trip type** on the board (unmet cards, phantom lanes, request/ride sheets): show "מ<origin> ל<destination>" and the trip type (הלוך-חזור / הלוך בלבד / הקפצה) everywhere the Sadran looks at a request or ride.
+
+### Features
+- ~~**G7**~~ ✅ **Turnaround after arriving away from base.** Example: 08:00 Givat Haviva → Haifa (one-way, arrives ~08:45) and 08:00 Haifa → Afula (and back): moving the second to 09:00 on the same car was impossible. (Q1)
+- ~~**G8**~~ ✅ **The Sadran edits a ride's details:** end location, stops (and origin?) from the ride sheet. (Q2)
+- ~~**G9**~~ ✅ **Drafts on the board.** Every "make a suggestion" popup also offers "טיוטה": the change is applied on the board tentatively and the popup closes, no message is sent; the board can be shaped freely without asking anyone yet. Publishing is blocked until every draft is sent and answered, or discarded. (Q3)
+- ~~**G10**~~ ✅ **Merging makes one ride, not two overlapping blocks.** The merged ride keeps the base ride's driver and final location; the other request's destination becomes a stop on it and its driver becomes a passenger; a popup asks whether the added person rides one-way or both ways; the merged ride looks normal (no red stripes, which read as an error) with a merged marker; dragging the added person out of it undoes the merge (removes the extra stop and passenger). (Q4, Q5)
+
+### Answers (owner 2026-10-05)
+- **Q1 (G7):** yes — the turnaround is waived at a handover away from the base, specifically for manual (Sadran) placements; automatic placement keeps the buffer.
+- **Q2 (G8):** yes — editing a member's ride's places/stops goes through their consent (suggestion or draft); the Sadran's own reservations change directly.
+- **Q3 (G9):** yes to all — Sadranim-only and saved; dashed "טיוטה"; auto-fill/re-solve keep drafts; send or discard; publishing refused while drafts remain.
+- **Q4 (G10):** yes — the base ride's times; the added places inserted where they add the least driving with estimated times (a different start = a pickup stop); one way / both ways; the suggestion states a changed time; consent or draft.
+- **Q5 (G10):** yes — the ride dropped onto is the base; the joiner's own booking is released; dragging them out restores their request.

@@ -202,6 +202,17 @@ export const heMember = {
     routeStopsOut: "הלוך:",
     routeStopsReturn: "חזור:",
   },
+  /** REQ §13.94: the ride's whole route (both legs, with estimated times) in the ride sheet/ride detail. */
+  rideRoute: {
+    title: "מסלול הנסיעה",
+    out: "הלוך",
+    return: "חזור",
+    origin: "יציאה",
+    destination: "יעד",
+    stop: "עצירה",
+    board: "עלייה: {{name}}",
+    alight: "ירידה: {{name}}",
+  },
   /**
    * The "+ נוסעים" button (siddur `RideDetailSheet` and the board's `RideSheet`, REQ §13.85):
    * anyone in the department may add named passengers to any published ride.
@@ -330,6 +341,8 @@ export const heMember = {
     oneWayHelp: "הרכב יישמר להסעה ויופיע באדום עד שמישהו יתנדב לנהוג. נשמר גם מקום נוסף לנהג/ת.",
     arrivalHomeHelp: "השעה היא שעת ההגעה הביתה. הרכב יוצא לאיסוף מוקדם יותר.",
     vehicleWindow: "הרכב נדרש בשעות {{start}}–{{end}}, כולל נסיעת הנהג/ת והאיסוף.",
+    submitOneWayTakeCar: "קח/י את הרכב (הלוך בלבד)",
+    successOneWayAssigned: "{{car}} שלך ב-{{start}} — הלוך בלבד, הרכב יישאר ביעד",
     successNeedsDriver: "{{car}} נשמר להסעה — עדיין דרוש/ה נהג/ת",
     header: "לוקח/ת את {{car}} ביום {{day}} {{start}}",
     headerNoCar: "לוקח/ת רכב ביום {{day}} {{start}}",

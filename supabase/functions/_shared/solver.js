@@ -666,6 +666,35 @@ function ruleDescription(code) {
 }
 var reasonCodes = Object.keys(ALL);
 
+// src/solver/names.ts
+function placeName(input, id, freeText) {
+  const named = id ? input.destinations[id]?.name : void 0;
+  if (named) return named;
+  return freeText ?? "";
+}
+function requestDestName(input, request) {
+  return placeName(input, request.destinationId, request.destinationText);
+}
+function requestOriginName(input, request, originId) {
+  return placeName(input, originId, request.originText);
+}
+function memberName(input, memberId) {
+  if (!memberId) return "";
+  for (const r of input.requests) if (r.memberId === memberId && r.memberName) return r.memberName;
+  return "";
+}
+function carName(cars, carId) {
+  return cars.find((c) => c.id === carId)?.name ?? "";
+}
+function rideHostLabel(input, assignments, rideId) {
+  const ride = assignments.find((a) => a.rideId === rideId);
+  if (!ride) return "";
+  const fromMember = memberName(input, ride.driverMemberId);
+  if (fromMember) return fromMember;
+  const driverReq = ride.driverRequestId ? input.requests.find((r) => r.id === ride.driverRequestId) : void 0;
+  return driverReq?.memberName ?? carName(input.cars, ride.carId);
+}
+
 // src/solver/greedy.ts
 function buildUnits(roundTrips, pairs, byRequestId, scores, seriesUnits = []) {
   const units = [];
@@ -1033,8 +1062,8 @@ function toAssignments(placed, input, carsById) {
       const legDestinationId = leg?.destinationId ?? input.homeLocationId;
       const canDrive = nr.request.canDrive ?? true;
       const code = !canDrive ? "PLACED_NEEDS_DRIVER" : p.balancedMileage ? "CAR_BALANCED_MILEAGE" : shiftReasonCode(shift);
-      const text = code === "PLACED_NEEDS_DRIVER" ? reason("PLACED_NEEDS_DRIVER", { car: car?.name ?? carId }) : code === "CAR_BALANCED_MILEAGE" ? reason("CAR_BALANCED_MILEAGE", { car: car?.name ?? carId }) : code === "PLACED_PREFERRED" ? reason("PLACED_PREFERRED", { car: car?.name ?? carId }) : reason("PLACED_SHIFTED", {
-        car: car?.name ?? carId,
+      const text = code === "PLACED_NEEDS_DRIVER" ? reason("PLACED_NEEDS_DRIVER", { car: car?.name ?? "" }) : code === "CAR_BALANCED_MILEAGE" ? reason("CAR_BALANCED_MILEAGE", { car: car?.name ?? "" }) : code === "PLACED_PREFERRED" ? reason("PLACED_PREFERRED", { car: car?.name ?? "" }) : reason("PLACED_SHIFTED", {
+        car: car?.name ?? "",
         dep: String(Math.abs(shift.departureMin)),
         ret: String(Math.abs(shift.returnMin))
       });
@@ -1072,11 +1101,11 @@ function toAssignments(placed, input, carsById) {
       const outDriverMemberId = eligibleDriverMemberId(outNr.request);
       const retDriverMemberId = eligibleDriverMemberId(retNr.request);
       const text = reason("PLACED_RELAY_PAIR", {
-        car: car?.name ?? carId,
-        member: outDriverMemberId ?? outNr.request.memberId,
-        dest: pair.destinationId,
+        car: car?.name ?? "",
+        member: memberName(input, outDriverMemberId ?? outNr.request.memberId),
+        dest: placeName(input, pair.destinationId, outNr.request.destinationText),
         dep: formatSlotTime(pair.outWindow.start, dayOut),
-        partner: retDriverMemberId ?? retNr.request.memberId,
+        partner: memberName(input, retDriverMemberId ?? retNr.request.memberId),
         ret: formatSlotTime(pair.returnWindow.end, dayRet)
       });
       const outShift = { departureMin: (pair.outWindow.start - outNr.window.start) * 15, returnMin: 0 };
@@ -1170,7 +1199,7 @@ function toAssignments(placed, input, carsById) {
           seriesId: series.seriesId,
           source: "solver",
           reasonCode: "PLACED_SERIES",
-          reason: reason("PLACED_SERIES", { car: car?.name ?? carId, index: leg.seriesIndex, count: series.seriesCount })
+          reason: reason("PLACED_SERIES", { car: car?.name ?? "", index: leg.seriesIndex, count: series.seriesCount })
         });
       }
     }
@@ -1743,9 +1772,16 @@ function assertInvariants(input, output) {
     }
   }
   const seen = /* @__PURE__ */ new Set();
+  const claimedLegs = /* @__PURE__ */ new Map();
   for (const a of output.assignments) {
-    for (const rid of a.servedRequestIds) {
-      if (seen.has(rid)) throw new SolverInvariantError(`request ${rid} served more than once`, "DUPLICATE_SERVE");
+    for (const rid of new Set(a.servedRequestIds)) {
+      const sides = a.legs.filter((l) => l.requestId === rid).flatMap((l) => l.leg === "both" ? ["out", "return"] : [l.leg]);
+      const claimed = claimedLegs.get(rid) ?? /* @__PURE__ */ new Set();
+      for (const side of sides.length ? sides : ["out", "return"]) {
+        if (claimed.has(side)) throw new SolverInvariantError(`request ${rid} served more than once`, "DUPLICATE_SERVE");
+        claimed.add(side);
+      }
+      claimedLegs.set(rid, claimed);
       seen.add(rid);
     }
   }
@@ -2282,6 +2318,7 @@ function isRelayReturn(nr) {
 }
 function tryPair(out, ret, cars) {
   if (out.destinationId !== ret.destinationId) return null;
+  if (out.request.destinationIsFreeText || ret.request.destinationIsFreeText) return null;
   if (out.originId !== ret.originId) return null;
   if (out.dayIndex !== ret.dayIndex) return null;
   const sharedCars = cars.filter((c) => c.type === "shared");
@@ -2405,9 +2442,9 @@ function chauffeurUnpairedRelayLegs(unpaired, timelines, input, carsById, scores
     const rideId = `ride:${nr.id}`;
     tl.add({ rideId, window, startLocationId: carOrigin, endLocationId: carOrigin, overnightAck: false });
     const reasonCode = cause === "noDriver" ? "PLACED_NEEDS_DRIVER" : "PLACED_CHAUFFEUR_NO_RETURNER";
-    const text = cause === "noDriver" ? reason("PLACED_NEEDS_DRIVER", { car: car?.name ?? carId }) : reason("PLACED_CHAUFFEUR_NO_RETURNER", {
-      car: car?.name ?? carId,
-      dest: nr.destinationId,
+    const text = cause === "noDriver" ? reason("PLACED_NEEDS_DRIVER", { car: car?.name ?? "" }) : reason("PLACED_CHAUFFEUR_NO_RETURNER", {
+      car: car?.name ?? "",
+      dest: requestDestName(input, nr.request),
       dep: formatSlotTime(window.start, day),
       ret: formatSlotTime(window.end, day)
     });
@@ -2440,6 +2477,107 @@ function chauffeurUnpairedRelayLegs(unpaired, timelines, input, carsById, scores
     healedIds.add(nr.id);
   }
   return { healed, healedIds };
+}
+
+// src/solver/dropOffSplit.ts
+var OUT = "#out";
+var RET = "#ret";
+function isSplitDropOff(r, servedByFixed) {
+  return r.tripShape === "round_trip" && effectiveTripType(r) === "drop_off" && r.departureMs !== void 0 && r.returnMs !== void 0 && r.seriesId === void 0 && !r.originIsFreeText && !servedByFixed.has(r.id);
+}
+function expandDropOffs(input) {
+  const servedByFixed = /* @__PURE__ */ new Set();
+  for (const fr of input.fixedRides) for (const id of fr.servedRequestIds) servedByFixed.add(id);
+  const splitIds = /* @__PURE__ */ new Set();
+  const requests = [];
+  for (const r of input.requests) {
+    if (!isSplitDropOff(r, servedByFixed)) {
+      requests.push(r);
+      continue;
+    }
+    splitIds.add(r.id);
+    requests.push({
+      ...r,
+      id: r.id + OUT,
+      tripShape: "one_way_to",
+      tripType: "drop_off",
+      returnMs: void 0,
+      stops: r.stops?.filter((s) => s.leg === "out")
+    });
+    requests.push({
+      ...r,
+      id: r.id + RET,
+      tripShape: "one_way_from",
+      tripType: "drop_off",
+      departureMs: void 0,
+      stops: r.stops?.filter((s) => s.leg === "return")
+    });
+  }
+  if (splitIds.size === 0) return { input, splitIds };
+  const previousAssignments = input.previousAssignments?.map((p) => ({
+    ...p,
+    servedRequestIds: p.servedRequestIds.flatMap((id) => splitIds.has(id) ? [id + OUT, id + RET] : [id])
+  }));
+  return { input: { ...input, requests, previousAssignments }, splitIds };
+}
+function baseId(id, splitIds) {
+  for (const suffix of [OUT, RET]) {
+    if (id.endsWith(suffix)) {
+      const base = id.slice(0, -suffix.length);
+      if (splitIds.has(base)) return base;
+    }
+  }
+  return id;
+}
+function mapIds(value, splitIds) {
+  if (typeof value === "string") return baseId(value, splitIds);
+  if (Array.isArray(value)) return value.map((v) => mapIds(v, splitIds));
+  if (value && typeof value === "object") {
+    const out = {};
+    for (const [k, v] of Object.entries(value)) out[k] = mapIds(v, splitIds);
+    return out;
+  }
+  return value;
+}
+function mergeUnmet(a, b) {
+  const suggestions = [...a.suggestions, ...b.suggestions];
+  const lastDeny = suggestions.map((s) => s.kind).lastIndexOf("deny");
+  const kept = suggestions.filter((s, i) => s.kind !== "deny" || i === lastDeny);
+  const blockers = [...a.blockers];
+  for (const bl of b.blockers) if (!blockers.some((x) => JSON.stringify(x) === JSON.stringify(bl))) blockers.push(bl);
+  return { ...a, score: Math.max(a.score, b.score), blockers, suggestions: kept };
+}
+function restoreDropOffIds(output, splitIds) {
+  if (splitIds.size === 0) return output;
+  const assignments = output.assignments.map((a) => {
+    const m = mapIds(a, splitIds);
+    return { ...m, servedRequestIds: [...new Set(m.servedRequestIds)] };
+  });
+  const unmetById = /* @__PURE__ */ new Map();
+  const unmet = [];
+  for (const u of output.unmet) {
+    const m = mapIds(u, splitIds);
+    const prev = unmetById.get(m.requestId);
+    if (prev) {
+      const merged = mergeUnmet(prev, m);
+      unmetById.set(m.requestId, merged);
+      unmet[unmet.indexOf(prev)] = merged;
+    } else {
+      unmetById.set(m.requestId, m);
+      unmet.push(m);
+    }
+  }
+  unmet.sort((x, y) => x.requestId < y.requestId ? -1 : x.requestId > y.requestId ? 1 : 0);
+  const served = /* @__PURE__ */ new Set();
+  for (const a of assignments) for (const id of a.servedRequestIds) served.add(id);
+  return {
+    ...output,
+    assignments,
+    unmet,
+    mergeOpportunities: mapIds(output.mergeOpportunities, splitIds),
+    warnings: mapIds(output.warnings, splitIds),
+    stats: { ...output.stats, served: served.size, unmet: unmet.length }
+  };
 }
 
 // src/solver/splitLegs.ts
@@ -2601,7 +2739,7 @@ function findChauffeurCar(nr, side, point, ctx) {
   }
   return null;
 }
-function externalHints(nr, destination, config) {
+function externalHints(nr, destination, config, input) {
   const out = [];
   const occupancyMinutes = nr.travelSlots * 15 + (nr.request.tripShape === "round_trip" ? (nr.window.end - nr.window.start) * 15 - nr.travelSlots * 15 * 2 : 0);
   const singleLeg = nr.request.tripShape !== "round_trip";
@@ -2634,19 +2772,19 @@ function externalHints(nr, destination, config) {
       requestId: nr.id,
       hint: "publicTransport",
       reasonCode: "SUGGEST_EXTERNAL_PT",
-      reason: reason("SUGGEST_EXTERNAL_PT", { dest: destination?.id ?? nr.destinationId }),
+      reason: reason("SUGGEST_EXTERNAL_PT", { dest: requestDestName(input, nr.request) }),
       cost: 0,
       confidence: 0.3
     });
   }
   return out;
 }
-function denySuggestion(nr, blockers) {
+function denySuggestion(nr, blockers, input) {
   return {
     kind: "deny",
     requestId: nr.id,
     reasonCode: "SUGGEST_DENY",
-    reason: reason("SUGGEST_DENY", { blockers: blockers.join(", ") }),
+    reason: reason("SUGGEST_DENY", { blockers: blockers.map((id) => carName(input.cars, id)).filter(Boolean).join(", ") }),
     cost: 0,
     confidence: 1
   };
@@ -2666,8 +2804,7 @@ function mergeSuggestions(nr, leg, ctx, hosts2) {
   }).slice(0, 3);
   return candidates.map((c) => {
     const day = dayBoundsForSlot(ctx.input.week.days, c.window.start);
-    const hostRide = ctx.assignments.find((a) => a.rideId === c.hostRideId);
-    const carName = ctx.input.cars.find((car) => car.id === c.carId)?.name ?? c.carId;
+    const carName2 = carName(ctx.input.cars, c.carId);
     const code = c.detourMinutes === 0 ? "SUGGEST_MERGE" : "SUGGEST_MERGE_DETOUR";
     return {
       kind: "merge",
@@ -2682,8 +2819,8 @@ function mergeSuggestions(nr, leg, ctx, hosts2) {
       detourKm: c.detourKm,
       reasonCode: code,
       reason: reason(code, {
-        host: hostRide?.driverMemberId ?? carName,
-        dest: nr.destinationId,
+        host: rideHostLabel(ctx.input, ctx.assignments, c.hostRideId) || carName2,
+        dest: requestDestName(ctx.input, nr.request),
         dep: formatSlotTime(c.window.start, day),
         ret: formatSlotTime(c.window.end, day),
         minutes: c.detourMinutes
@@ -2787,7 +2924,7 @@ function buildSuggestions(nr, ctx, blockerCarIds) {
           volunteerCandidateMemberIds: volunteerCandidates(ctx.input, candidate.window),
           reasonCode: "SUGGEST_CHAUFFEUR",
           reason: reason("SUGGEST_CHAUFFEUR", {
-            dest: nr.destinationId,
+            dest: requestDestName(ctx.input, nr.request),
             dep: formatSlotTime(nr.window.start, day),
             minutes: nr.travelSlots * 15 * 2 + ctx.input.config.chauffeurDwellMinutes
           }),
@@ -2822,7 +2959,7 @@ function buildSuggestions(nr, ctx, blockerCarIds) {
             window: { start: leg.window.start, end: latestReturn },
             returnSlot: latestReturn,
             reasonCode: "SUGGEST_ROUND_TRIP",
-            reason: reason("SUGGEST_ROUND_TRIP", { dest: nr.destinationId, ret: formatSlotTime(latestReturn, day) }),
+            reason: reason("SUGGEST_ROUND_TRIP", { dest: requestDestName(ctx.input, nr.request), ret: formatSlotTime(latestReturn, day) }),
             cost: 0,
             confidence: 0.4
           });
@@ -2845,7 +2982,7 @@ function buildSuggestions(nr, ctx, blockerCarIds) {
           volunteerCandidateMemberIds: volunteerCandidates(ctx.input, candidate.window),
           reasonCode: "SUGGEST_CHAUFFEUR",
           reason: reason("SUGGEST_CHAUFFEUR", {
-            dest: nr.destinationId,
+            dest: requestDestName(ctx.input, nr.request),
             dep: formatSlotTime(nr.window.start, day),
             minutes: nr.travelSlots * 15 * 2 + ctx.input.config.chauffeurDwellMinutes
           }),
@@ -2858,8 +2995,8 @@ function buildSuggestions(nr, ctx, blockerCarIds) {
   const changeOrigin = changeOriginSuggestion(nr, ctx);
   if (changeOrigin) suggestions.push(changeOrigin);
   const destination = ctx.input.destinations[nr.destinationId];
-  suggestions.push(...externalHints(nr, destination, ctx.input.config));
-  suggestions.push(denySuggestion(nr, blockerCarIds));
+  suggestions.push(...externalHints(nr, destination, ctx.input.config, ctx.input));
+  suggestions.push(denySuggestion(nr, blockerCarIds, ctx.input));
   return suggestions;
 }
 function changeOriginSuggestion(nr, ctx) {
@@ -2884,7 +3021,7 @@ function changeOriginSuggestion(nr, ctx) {
           originId: gap.locationId,
           window: nr.window,
           reasonCode: "SUGGEST_CHANGE_ORIGIN",
-          reason: reason("SUGGEST_CHANGE_ORIGIN", { origin: gap.locationId, car: car.name }),
+          reason: reason("SUGGEST_CHANGE_ORIGIN", { origin: placeName(ctx.input, gap.locationId), car: car.name }),
           cost: 0,
           confidence: 0.4
         };
@@ -2969,6 +3106,10 @@ function computeBlockers(nr, timelines, cars) {
   return blockers;
 }
 function solve(input) {
+  const { input: expanded, splitIds } = expandDropOffs(input);
+  return restoreDropOffIds(solveExpanded(expanded), splitIds);
+}
+function solveExpanded(input) {
   const startedAt = input.now?.();
   const warnings = [];
   const { normalized, warnings: normalizeWarnings, seriesUnits, freeTextOriginIds } = normalize(input);
@@ -3075,7 +3216,7 @@ function solve(input) {
       blockers.map((b) => b.carId)
     );
     const reasonCode = stillPassengerOnly.includes(nr) ? "UNMET_PASSENGER_NO_HOST" : stillUnpairedRelay.includes(nr) ? "UNMET_NO_RELAY_PARTNER" : nr.tripType === "one_way" ? "UNMET_NO_CAR_AT_ORIGIN" : "UNMET_NO_CAR";
-    const reasonText = reasonCode === "UNMET_NO_RELAY_PARTNER" ? reason("UNMET_NO_RELAY_PARTNER", { dest: nr.destinationId, dayEnd: "23:59" }) : reasonCode === "UNMET_PASSENGER_NO_HOST" ? reason("UNMET_NEEDS_DRIVER", { dest: nr.destinationId, dep: "" }) : reasonCode === "UNMET_NO_CAR_AT_ORIGIN" ? reason("UNMET_NO_CAR_AT_ORIGIN", { origin: nr.originId, dest: nr.destinationId }) : reason("UNMET_NO_CAR", { blockers: blockers.map((b) => b.carId).join(", ") });
+    const reasonText = reasonCode === "UNMET_NO_RELAY_PARTNER" ? reason("UNMET_NO_RELAY_PARTNER", { dest: requestDestName(input, nr.request), dayEnd: "23:59" }) : reasonCode === "UNMET_PASSENGER_NO_HOST" ? reason("UNMET_NEEDS_DRIVER", { dest: requestDestName(input, nr.request), dep: "" }) : reasonCode === "UNMET_NO_CAR_AT_ORIGIN" ? reason("UNMET_NO_CAR_AT_ORIGIN", { origin: requestOriginName(input, nr.request, nr.originId), dest: requestDestName(input, nr.request) }) : reason("UNMET_NO_CAR", { blockers: blockers.map((b) => carName(input.cars, b.carId)).filter(Boolean).join(", ") });
     return {
       requestId: nr.id,
       score: scores.get(nr.id)?.total ?? 0,
@@ -3136,7 +3277,7 @@ function solve(input) {
         freedCarId: guestHost.carId,
         freedWindow: guestHost.window,
         detourMinutes: best.detourMinutes,
-        reason: reason("SUGGEST_MERGE", { host: best.hostRideId, dest: guestNr.destinationId, dep: "", ret: "" })
+        reason: reason("SUGGEST_MERGE", { host: rideHostLabel(input, assignments, best.hostRideId), dest: requestDestName(input, guestNr.request), dep: "", ret: "" })
       });
     }
   }
@@ -3149,7 +3290,7 @@ function solve(input) {
     }
     const endAway = tl.weekEndAway();
     if (endAway) {
-      warnings.push({ code: "CAR_AWAY_AT_WEEK_END", message: reason("WARN_CAR_AWAY_AT_WEEK_END", { car: car.name, place: endAway.locationId }) });
+      warnings.push({ code: "CAR_AWAY_AT_WEEK_END", message: reason("WARN_CAR_AWAY_AT_WEEK_END", { car: car.name, place: placeName(input, endAway.locationId) }) });
     }
   }
   const needsDriverUnmet = unmet.filter((u) => u.suggestions.some((s) => s.kind === "chauffeur")).length;

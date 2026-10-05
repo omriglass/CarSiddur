@@ -414,6 +414,8 @@ describe("origins, trip types, cars stay put (REQUIREMENTS §13.93, docs/ORIGINS
         requestRow({ id: "one-way", trip_shape: "one_way_to", trip_type: "one_way", depart_at: "2026-09-08T05:00:00Z", return_at: null }),
         requestRow({ id: "drop-off", trip_shape: "one_way_to", trip_type: "drop_off", depart_at: "2026-09-08T05:00:00Z", return_at: null }),
         requestRow({ id: "round-trip", trip_shape: "round_trip", trip_type: "round_trip" }),
+        // A free-text destination can never relay (REQ §13.58): placed as a chauffeur ride.
+        requestRow({ id: "one-way-free-text", trip_shape: "one_way_to", trip_type: "one_way", destination_id: null, destination_text: "x", depart_at: "2026-09-08T05:00:00Z", return_at: null }),
       ],
       rideTypeCodesById: {},
       cars: [],
@@ -425,6 +427,7 @@ describe("origins, trip types, cars stay put (REQUIREMENTS §13.93, docs/ORIGINS
     expect(byId.get("one-way")!.tripType).toBe("one_way");
     expect(byId.get("drop-off")!.tripType).toBe("drop_off");
     expect(byId.get("round-trip")!.tripType).toBe("round_trip");
+    expect(byId.get("one-way-free-text")!.tripType).toBe("drop_off");
   });
 
   it("maps cars.base_location_id onto Car.baseLocationId, undefined when null", () => {

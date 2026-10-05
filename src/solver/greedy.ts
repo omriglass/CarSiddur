@@ -16,6 +16,7 @@ import { carPreferenceRank } from './carPreference';
 import { bestPlacementWithinFlex } from './flexibility';
 import type { RelayPair } from './relay';
 import { reason } from './reasons';
+import { memberName, placeName } from './names';
 import {
   dayBoundsForSlot,
   eligibleDriverMemberId,
@@ -622,13 +623,13 @@ export function toAssignments(placed: Placed[], input: SolverInput, carsById: Ma
       const code = !canDrive ? 'PLACED_NEEDS_DRIVER' : p.balancedMileage ? 'CAR_BALANCED_MILEAGE' : shiftReasonCode(shift);
       const text =
         code === 'PLACED_NEEDS_DRIVER'
-          ? reason('PLACED_NEEDS_DRIVER', { car: car?.name ?? carId })
+          ? reason('PLACED_NEEDS_DRIVER', { car: car?.name ?? '' })
           : code === 'CAR_BALANCED_MILEAGE'
-            ? reason('CAR_BALANCED_MILEAGE', { car: car?.name ?? carId })
+            ? reason('CAR_BALANCED_MILEAGE', { car: car?.name ?? '' })
             : code === 'PLACED_PREFERRED'
-              ? reason('PLACED_PREFERRED', { car: car?.name ?? carId })
+              ? reason('PLACED_PREFERRED', { car: car?.name ?? '' })
               : reason('PLACED_SHIFTED', {
-                  car: car?.name ?? carId,
+                  car: car?.name ?? '',
                   dep: String(Math.abs(shift.departureMin)),
                   ret: String(Math.abs(shift.returnMin)),
                 });
@@ -669,11 +670,11 @@ export function toAssignments(placed: Placed[], input: SolverInput, carsById: Ma
       const outDriverMemberId = eligibleDriverMemberId(outNr.request);
       const retDriverMemberId = eligibleDriverMemberId(retNr.request);
       const text = reason('PLACED_RELAY_PAIR', {
-        car: car?.name ?? carId,
-        member: outDriverMemberId ?? outNr.request.memberId,
-        dest: pair.destinationId,
+        car: car?.name ?? '',
+        member: memberName(input, outDriverMemberId ?? outNr.request.memberId),
+        dest: placeName(input, pair.destinationId, outNr.request.destinationText),
         dep: formatSlotTime(pair.outWindow.start, dayOut),
-        partner: retDriverMemberId ?? retNr.request.memberId,
+        partner: memberName(input, retDriverMemberId ?? retNr.request.memberId),
         ret: formatSlotTime(pair.returnWindow.end, dayRet),
       });
       const outShift = { departureMin: (pair.outWindow.start - outNr.window.start) * 15, returnMin: 0 };
@@ -772,7 +773,7 @@ export function toAssignments(placed: Placed[], input: SolverInput, carsById: Ma
           seriesId: series.seriesId,
           source: 'solver',
           reasonCode: 'PLACED_SERIES',
-          reason: reason('PLACED_SERIES', { car: car?.name ?? carId, index: leg.seriesIndex, count: series.seriesCount }),
+          reason: reason('PLACED_SERIES', { car: car?.name ?? '', index: leg.seriesIndex, count: series.seriesCount }),
         });
       }
     }

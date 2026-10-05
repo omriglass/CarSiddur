@@ -208,6 +208,58 @@ begin
     assert (select car_id=car2 from public.rides where id=v_assigned_ride), '6) it must be placed on the proposed car';
   end;
 
+  -----------------------------------------------------------------------
+  -- 7) REQ §13.94 G2/G4: one_way is "I take the car", never a missing-driver ride; a drop_off
+  --    with a pickup is two separate trips, never one `keep` block holding the car.
+  -----------------------------------------------------------------------
+  declare
+    w2 date := public.current_week_start() + 819; pub2 uuid; r1 jsonb; r2 jsonb; r3 jsonb;
+  begin
+    insert into public.weeks(department_id, week_start, phase, open_at, close_at, publish_at)
+      values (dept, w2, 'solving', now() - interval '3 days', now() - interval '2 days', now() - interval '1 day');
+    insert into public.siddur_versions(department_id, week_start, snapshot, published_by) values (dept, w2, '{}', manager) returning id into pub2;
+    perform set_config('app.in_publish', 'on', true);
+    update public.weeks set phase = 'live', published_version_id = pub2, published_at = now()
+      where department_id = dept and week_start = w2;
+    perform set_config('app.in_publish', 'off', true);
+
+    -- one_way Givat Haviva (home) -> Haifa in a live week: the requester drives, never needs_driver.
+    r1 := public.submit_request(jsonb_build_object(
+      'department_id', dept, 'week_start', w2, 'requester_id', member1, 'origin_id', home, 'destination_id', haifa,
+      'ride_type_id', ride_type, 'trip_type', 'one_way', 'depart_at', (w2+2+time '08:00') at time zone 'Asia/Jerusalem'));
+    assert coalesce((r1 ->> 'needs_driver')::boolean, false) = false, '7) a one_way must never report needs_driver';
+    assert (r1 ->> 'status') in ('assigned', 'waitlisted'), '7) one_way: assigned or waitlisted, got ' || coalesce(r1 ->> 'status', 'null');
+    assert not exists (select 1 from public.rides r join public.ride_requests rr on rr.ride_id = r.id
+      where rr.request_id = (r1 ->> 'request_id')::uuid and r.needs_driver), '7) a one_way never gets a needs_driver ride';
+    assert (r1 ->> 'status') <> 'waitlisted' or (r1 ->> 'reason') not in ('WAITLISTED_ONE_WAY', 'MISSING_DRIVER'),
+      '7) a waitlisted one_way carries a non-driver reason';
+    update public.requests set status = 'withdrawn' where id = (r1 ->> 'request_id')::uuid;
+
+    -- the quick missing-driver reservation is for a one-leg drop_off only
+    begin
+      perform public.submit_request(jsonb_build_object(
+        'department_id', dept, 'week_start', w2, 'requester_id', member1, 'origin_id', home, 'destination_id', haifa,
+        'ride_type_id', ride_type, 'trip_type', 'one_way', 'reserve_missing_driver', true,
+        'depart_at', (w2+3+time '08:00') at time zone 'Asia/Jerusalem'));
+      raise exception 'expected invalid_quick_reservation';
+    exception when others then
+      if sqlerrm <> 'invalid_quick_reservation' then raise; end if;
+    end;
+
+    -- drop_off with a pickup (two trips): never auto-placed as one block, no ride holds the car
+    r2 := public.submit_request(jsonb_build_object(
+      'department_id', dept, 'week_start', w2, 'requester_id', member1, 'origin_id', home, 'destination_id', haifa,
+      'ride_type_id', ride_type, 'trip_type', 'drop_off', 'depart_at', (w2+4+time '08:00') at time zone 'Asia/Jerusalem',
+      'return_at', (w2+4+time '16:00') at time zone 'Asia/Jerusalem'));
+    assert (r2 ->> 'status') = 'waitlisted' and (r2 ->> 'reason') = 'WAITLISTED_ONE_WAY',
+      '7) a drop_off with a pickup is waitlisted with the one-way reason, got ' || coalesce(r2::text, 'null');
+    assert not exists (select 1 from public.ride_requests where request_id = (r2 ->> 'request_id')::uuid),
+      '7) a drop_off with a pickup must not be placed as one keep block';
+    assert public.try_auto_approve((r2 ->> 'request_id')::uuid) is null, '7) try_auto_approve refuses a drop_off';
+    assert not exists (select 1 from public.ride_requests where request_id = (r2 ->> 'request_id')::uuid),
+      '7) try_auto_approve must leave a drop_off unplaced';
+  end;
+
   raise notice 'origins_chain.sql: all assertions passed';
 end $$;
 

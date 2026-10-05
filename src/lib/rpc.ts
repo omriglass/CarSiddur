@@ -44,7 +44,15 @@ export type ErrorCode =
   | "non_driver_cannot_drive"
   | "non_driver_needs_drop_off"
   | "origin_change_unavailable"
+  | "car_not_at_leg_origin"
+  | "car_next_ride_elsewhere"
+  | "car_not_at_leg_place"
+  | "shift_car_invalid"
+  | "no_eligible_driver"
   | "invalid_stops"
+  | "invalid_place"
+  | "unmerge_base_request"
+  | "request_not_on_ride"
   | "manual_boost_requires_reason"
   | "request_not_found"
   | "ride_not_found"
@@ -70,6 +78,7 @@ export type ErrorCode =
   | "publication_days_invalid"
   | "publication_conflicts"
   | "publication_unanswered"
+  | "publication_drafts"
   | "pending_ride_changes"
   | "request_window_closed"
   | "driver_unavailable"
@@ -128,7 +137,15 @@ const MESSAGE_TO_CODE: Record<string, ErrorCode> = {
   non_driver_cannot_drive: "non_driver_cannot_drive",
   non_driver_needs_drop_off: "non_driver_needs_drop_off",
   origin_change_unavailable: "origin_change_unavailable",
+  car_not_at_leg_origin: "car_not_at_leg_origin",
+  car_next_ride_elsewhere: "car_next_ride_elsewhere",
+  car_not_at_leg_place: "car_not_at_leg_place",
+  shift_car_invalid: "shift_car_invalid",
+  no_eligible_driver: "no_eligible_driver",
   invalid_stops: "invalid_stops",
+  invalid_place: "invalid_place",
+  unmerge_base_request: "unmerge_base_request",
+  request_not_on_ride: "request_not_on_ride",
   manual_boost_requires_reason: "manual_boost_requires_reason",
   request_not_found: "request_not_found",
   request_has_ride: "request_has_ride",
@@ -159,6 +176,7 @@ const MESSAGE_TO_CODE: Record<string, ErrorCode> = {
   invalid_publication_days: "publication_days_invalid",
   publication_conflicts: "publication_conflicts",
   publication_unanswered: "publication_unanswered",
+  publication_drafts: "publication_drafts",
   pending_ride_changes: "pending_ride_changes",
   request_window_closed: "request_window_closed",
   request_not_editable: "request_window_closed",
@@ -214,7 +232,15 @@ const CODE_TO_MESSAGE: Record<ErrorCode, string> = {
   non_driver_cannot_drive: he.errors.nonDriverCannotDrive,
   non_driver_needs_drop_off: he.errors.nonDriverNeedsDropOff,
   origin_change_unavailable: he.errors.originChangeUnavailable,
+  car_not_at_leg_origin: he.errors.carNotAtLegOrigin,
+  car_next_ride_elsewhere: he.errors.carNextRideElsewhere,
+  car_not_at_leg_place: he.errors.carNotAtLegPlace,
+  shift_car_invalid: he.errors.shiftCarInvalid,
+  no_eligible_driver: he.errors.noEligibleDriver,
   invalid_stops: he.errors.invalidStops,
+  invalid_place: he.errors.invalidPlace,
+  unmerge_base_request: he.errors.unmergeBaseRequest,
+  request_not_on_ride: he.errors.requestNotOnRide,
   manual_boost_requires_reason: he.errors.manualBoostRequiresReason,
   request_not_found: he.errors.requestNotFound,
   request_has_ride: he.errors.requestHasRide,
@@ -241,6 +267,7 @@ const CODE_TO_MESSAGE: Record<ErrorCode, string> = {
   publication_days_invalid: he.publicationFlow.noSelection,
   publication_conflicts: he.sadranPublish.blockedByConflicts,
   publication_unanswered: he.publicationFlow.unresolvedHelp,
+  publication_drafts: he.errors.publicationDrafts,
   pending_ride_changes: he.rideEditing.pendingPublish,
   request_window_closed: he.request.editWindowClosed,
   driver_unavailable: he.rideCoordination.driverBusy,

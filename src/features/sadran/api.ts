@@ -151,6 +151,8 @@ export async function fetchWeekRow(departmentId: string, weekStart: string): Pro
  */
 export type RequestRowWithDriverFlag = RequestRow & {
   requester_does_not_drive: boolean;
+  /** Names merge hosts in the solver's reasons (`buildSolverInput` maps it onto `Request.memberName`). */
+  requester_full_name: string | null;
   driving_companion_ids: string[];
   /** REQUIREMENTS §13.93 "Multi-stop rides": -> `buildSolverInput`'s `Request.stops`. */
   stops?: { leg: "out" | "return"; position: number; place_id: string | null }[];
@@ -160,20 +162,21 @@ export async function fetchWeekRequests(departmentId: string, weekStart: string)
   const { data, error } = await supabase
     .from("requests")
     .select(`*,
-      requester:profiles!requests_requester_id_fkey(does_not_drive),
+      requester:profiles!requests_requester_id_fkey(full_name, does_not_drive),
       companions:request_companions(profile_id, profile:profiles!request_companions_profile_id_fkey(does_not_drive)),
       stops:request_stops(leg, position, place_id)`)
     .eq("department_id", departmentId)
     .eq("week_start", weekStart);
   if (error) throw toAppError(error);
   return ((data ?? []) as unknown as (RequestRow & {
-    requester: { does_not_drive: boolean } | null;
+    requester: { full_name: string; does_not_drive: boolean } | null;
     companions: { profile_id: string; profile: { does_not_drive: boolean } | null }[];
     stops: { leg: "out" | "return"; position: number; place_id: string | null }[];
   })[]).map(
     ({ requester, companions, ...rest }) => ({
       ...rest,
       requester_does_not_drive: requester?.does_not_drive ?? false,
+      requester_full_name: requester?.full_name ?? null,
       driving_companion_ids: drivingCompanionIdsOf(companions ?? []),
     }),
   );
@@ -487,6 +490,15 @@ export async function unassignRide(rideId: string, expectedVersion: number): Pro
 }
 
 /**
+ * REQ §13.94 (G10): take an applied merge's added person back out of the ride (Sadran only): the
+ * host window shrinks to its base route, the request returns to `submitted` (unmet) and the
+ * person is notified. `p_expected_version` is the ride's.
+ */
+export async function unmergeRequest(rideId: string, requestId: string, expectedVersion: number): Promise<void> {
+  await rpc("unmerge_request", { p_ride_id: rideId, p_request_id: requestId, p_expected_version: expectedVersion });
+}
+
+/**
  * A named person or child on a ride with no `requests` row behind them (F3,
  * 20260914120000_ride_passengers.sql). The reusable base for both the board reservation
  * dialog's optional people picker and the not-yet-built "+ נוסעים" button (docs/TODO.md).
@@ -578,6 +590,16 @@ export async function recordAnswerOnBehalf(
   });
 }
 
+/** REQ §13.94: Sadran discards an unsent draft (`draft` -> `withdrawn`). */
+export async function discardProposal(proposalId: string): Promise<void> {
+  await rpc("discard_proposal", { p_proposal_id: proposalId });
+}
+
+/** REQ §13.94: Sadran cancels a sent/accepted proposal (`-> withdrawn`, tokens revoked, no message to the member). */
+export async function withdrawProposal(proposalId: string): Promise<void> {
+  await rpc("withdraw_proposal", { p_proposal_id: proposalId });
+}
+
 export async function applyProposal(proposalId: string): Promise<string> {
   return rpc("apply_proposal", { p_proposal_id: proposalId });
 }
@@ -661,6 +683,8 @@ export interface PublicationDay {
   /** The real defect split out of `unresolvedRequests`: an assigned/merged request whose legs are not all covered. `ready` keys off this, not `unresolvedRequests`. */
   incompleteAssignments: number;
   pendingProposals: number;
+  /** REQ §13.94: unsent draft proposals of this day — `ready` requires 0 and `publish_siddur` raises `publication_drafts`. */
+  draftProposals: number;
   missingDriverRides: number;
   conflictRides: number;
   ready: boolean;

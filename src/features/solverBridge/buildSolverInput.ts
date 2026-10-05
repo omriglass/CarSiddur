@@ -126,6 +126,8 @@ export interface BuildSolverInputParams {
    */
   requests: (RequestRow & {
     requester_does_not_drive?: boolean;
+    /** Requester's display name -> `Request.memberName` (reason texts only, SOLVER §3.13a); omit and merge hosts read as their car name. */
+    requester_full_name?: string | null;
     driving_companion_ids?: string[];
     /**
      * `request_stops` rows (REQUIREMENTS §13.93 "Multi-stop rides", docs/ORIGINS_PLAN_2026-10.md
@@ -197,6 +199,7 @@ export interface BuildSolverInputParams {
 function toSolverDestination(row: DestinationRow): SolverDestination {
   return {
     id: row.id,
+    name: row.name || undefined,
     zone: row.zone,
     distanceKm: row.distance_km ?? undefined,
     travelMinutes: row.travel_minutes ?? undefined,
@@ -246,6 +249,9 @@ export function buildSolverInput(params: BuildSolverInputParams): SolverInput {
       return {
         id: r.id,
         memberId: r.requester_id,
+        memberName: r.requester_full_name || undefined,
+        destinationText: r.destination_text || undefined,
+        originText: r.origin_text || undefined,
         departmentId: r.department_id,
         destinationId: r.destination_id ?? FREE_TEXT_DESTINATION_ID,
         rideType: params.rideTypeCodesById[r.ride_type_id] ?? "other",
@@ -255,11 +261,14 @@ export function buildSolverInput(params: BuildSolverInputParams): SolverInput {
         // row (home default) — only the free-text case sets `originIsFreeText`.
         originId: r.origin_id ?? undefined,
         originIsFreeText: !r.origin_id && !!r.origin_text,
+        destinationIsFreeText: !r.destination_id,
         // Always passed explicitly (never left to the solver's own legacy-field
         // derivation): a stored `trip_type = 'one_way'` has legacy `trip_shape =
         // 'one_way_to'`, which `effectiveTripType()` would otherwise derive to
         // `drop_off` if `tripType` were omitted (ORIGINS_PLAN §4 item 1).
-        tripType: r.trip_type,
+        // A free-text destination is not a place a car can stay at (REQ §13.58: it can never
+        // relay), so a `one_way` to one is placed as a chauffeur ride (`drop_off`).
+        tripType: r.trip_type === "one_way" && !r.destination_id ? "drop_off" : r.trip_type,
         oneWayCarMode,
         // REQ §88 (owner 2026-09-15): everyone can drive unless they said otherwise in their
         // profile; `undefined` here (field not selected by this particular caller) also means

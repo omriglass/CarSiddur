@@ -5,7 +5,10 @@ import { ridePassengerSummary } from "@/lib/ridePassengerSummary";
 import { AddPassengersDialog } from "@/features/rides/components/AddPassengersDialog";
 import { RidePassengersList } from "@/features/rides/components/RidePassengersList";
 import { RidePublicNotesEditor } from "@/features/rides/components/RidePublicNotesEditor";
+import { RideRoute } from "@/features/rides/components/RideRoute";
 import { RideRouteStops } from "@/features/rides/components/RideRouteStops";
+import { parseRideRoute, routeHasIntermediates } from "@/lib/rideRoute";
+import type { DestinationPreset } from "@/components/DestinationCombobox";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -24,9 +27,12 @@ import { he, t, tv } from "@/i18n/he";
 import { TZ, dateKey, formatTime } from "@/lib/time";
 
 import { rideBlockLabel } from "../rideLabel";
+import { requestRouteLine } from "../requestRoute";
 import { namedPassengersOf, relayPartnerOf, servedOf, withChildNames } from "../../solverRun";
 import { peopleOf } from "@/features/rides/ridePeople";
 import { RidePassengersEditor } from "./RidePassengersEditor";
+import { RideRouteEditor } from "./RideRouteEditor";
+import { initialRouteEditValues, type RouteEditValues } from "../rideRouteEdit";
 
 import type { BoardRide, WeekRequestRow } from "../../api";
 import type { Car } from "@/features/fleet/api";
@@ -59,6 +65,12 @@ interface RideSheetProps {
   /** For `RidePassengersEditor` (F3) — only rendered for a manual reservation, which always belongs to exactly one department/week. */
   departmentId?: string;
   weekStart?: string;
+  /** REQ §13.94 (G8): list places for the "מסלול" editor; omit to hide the section. */
+  destinations?: readonly DestinationPreset[];
+  /** Saves the "מסלול" section (shift proposal for a served request, `edit_ride` for a reservation). */
+  onSaveRoute?: (values: RouteEditValues) => void;
+  /** REQ §13.94 (G10): "הוצא מהנסיעה" for an added person of a merged ride. */
+  onRemoveAddedPerson?: (requestId: string, name: string) => void;
 }
 
 /**
@@ -67,7 +79,7 @@ interface RideSheetProps {
  * fallback for reassigning a car via the "העבר לרכב" select below instead of
  * dragging.
  */
-export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenChange, onSave, onTogglePin, onCancel, onUnassign, saving, tightSchedule, onClaimDriver, coordinatorNotes, isPlanning, requests = [], departmentId, weekStart }: RideSheetProps) {
+export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenChange, onSave, onTogglePin, onCancel, onUnassign, saving, tightSchedule, onClaimDriver, coordinatorNotes, isPlanning, requests = [], departmentId, weekStart, destinations, onSaveRoute, onRemoveAddedPerson }: RideSheetProps) {
   // Bug-fix pass (owner bug #2): the previous re-sync condition compared
   // `ride.car_id !== carId` to detect "a different ride opened" — but that's
   // exactly as true the moment the Sadran picks a *different* car for the
@@ -113,6 +125,10 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
   }
 
   const servedEntries = ride ? withChildNames(servedOf(ride), requests) : [];
+  // Everyone but the base request (the driver's, else the first) was added by a merge.
+  const baseEntry = servedEntries.find((entry) => entry.role === "driver") ?? servedEntries[0];
+  const addedPeople = servedEntries.filter((entry) => entry.request_id && entry.request_id !== baseEntry?.request_id);
+  const baseRequest = baseEntry?.request_id ? requests.find((request) => request.id === baseEntry.request_id) : undefined;
   // Directly `add_ride_passengers()`-added names (`people`, `source: 'added'`) — not tied to
   // any served request, so the summary/details lines take them as an extra list of their own.
   const addedNames = ride ? peopleOf(ride).filter((person) => person.source === "added").map((person) => person.display_name) : [];
@@ -158,7 +174,37 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
                   : `${ride.origin_name} → ${ride.destination_name} · ${driverName ?? ride.driver_name}`}
               </p>
 
-              <RideRouteStops served={servedEntries} />
+              {/* G6: each served request's own start/destination and trip type. */}
+              <ul className="space-y-0.5 text-xs text-muted-foreground" data-testid="ride-sheet-requests">
+                {servedEntries.map((entry) => (
+                  <li key={entry.request_id}>
+                    {entry.requester ? `${entry.requester}: ` : ""}
+                    {requestRouteLine({ originId: entry.origin_id, originName: entry.origin_name, originText: entry.origin_text, destination: entry.destination ?? "", tripType: entry.trip_type }, homeDestinationId)}
+                  </li>
+                ))}
+              </ul>
+
+              {routeHasIntermediates(parseRideRoute(ride.route)) ? <RideRoute route={ride.route} /> : <RideRouteStops served={servedEntries} />}
+
+              {/* REQ §13.94 (G10): people added to this ride by a merge - take them back out
+                  (a draft/sent merge is discarded/withdrawn, an applied one un-merged). */}
+              {onRemoveAddedPerson && !isPlanning && addedPeople.length ? (
+                <div className="space-y-1" data-testid="ride-added-people">
+                  <span className="font-medium">{he.mergedRide.addedPeople}</span>
+                  <ul className="flex flex-wrap gap-2">
+                    {addedPeople.map((entry) => (
+                      <li key={entry.request_id} className="inline-flex items-center gap-1 rounded-full border bg-muted ps-3 text-xs" data-testid="ride-added-person" data-request-id={entry.request_id ?? undefined}>
+                        <span>{entry.requester ?? ""}</span>
+                        <Button type="button" variant="ghost" size="sm" className="min-h-11 text-destructive" disabled={saving}
+                          aria-label={tv("mergedRide.removeAria", { name: entry.requester ?? "" })}
+                          onClick={() => onRemoveAddedPerson(entry.request_id as string, entry.requester ?? "")}>
+                          {he.mergedRide.removeFromRide}
+                        </Button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
 
               <div className="flex items-center gap-2">
                 <TimeField15 min="00:00" value={startTime} onChange={setStartTime} aria-label={he.sadranRideSheet.depart} />
@@ -169,7 +215,7 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
               <div>
                 <label className="mb-1 block text-xs text-muted-foreground">{he.sadranRideSheet.moveToCar}</label>
                 <Select value={carId} onValueChange={setCarId}>
-                  <SelectTrigger>
+                  <SelectTrigger data-testid="ride-car-select">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -223,6 +269,25 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
                   departmentId={departmentId}
                   weekStart={weekStart}
                   people={peopleOf(ride)}
+                />
+              ) : null}
+
+              {/* REQ §13.94 (G8): start, end and stops per leg. */}
+              {onSaveRoute && destinations && !isPlanning && ride.id && ride.status !== "cancelled" && (baseRequest || !servedEntries.length) ? (
+                <RideRouteEditor
+                  key={`${ride.id}:${ride.version}:route`}
+                  initial={initialRouteEditValues({
+                    request: baseRequest ?? null,
+                    stops: baseEntry?.stops ?? [],
+                    ride,
+                    homeId: homeDestinationId,
+                    placeName: (id) => destinations.find((d) => d.id === id)?.name,
+                  })}
+                  destinations={destinations}
+                  stopsEditable={!!baseRequest}
+                  hasReturn={baseRequest?.trip_shape === "round_trip"}
+                  saving={saving}
+                  onSave={onSaveRoute}
                 />
               ) : null}
 

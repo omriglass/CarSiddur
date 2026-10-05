@@ -27,7 +27,7 @@ export interface DayAndTripShapeFieldsProps {
   isMultiDay: boolean;
   multiDaySpan: number | null;
   isQuickContext: boolean;
-  oneWay: boolean;
+  seeksDriver: boolean;
   tripType: RequestFormValues["tripType"];
   dropOffPickup: boolean;
   canDrive: boolean;
@@ -45,7 +45,7 @@ export function DayAndTripShapeFields({
   isMultiDay,
   multiDaySpan,
   isQuickContext,
-  oneWay,
+  seeksDriver,
   tripType,
   dropOffPickup,
   canDrive,
@@ -133,7 +133,7 @@ export function DayAndTripShapeFields({
       {variant !== "carNow" && !isMultiDay ? (
         <>
           <TripTypeFields control={control} form={form} variant={variant} tripType={tripType} dropOffPickup={dropOffPickup} canDrive={canDrive} />
-          {isQuickContext && oneWay ? <p className="text-sm text-destructive">{t("quickRequest.oneWayHelp")}</p> : null}
+          {isQuickContext && seeksDriver ? <p className="text-sm text-destructive">{t("quickRequest.oneWayHelp")}</p> : null}
         </>
       ) : null}
     </>

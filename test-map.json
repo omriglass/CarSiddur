@@ -343,6 +343,11 @@
         "e2e/board.spec.ts",
         "e2e/board-mobile.spec.ts",
         "e2e/board-coordination.spec.ts",
+        "e2e/board-drafts.spec.ts",
+        "e2e/merged-ride.spec.ts",
+        "src/lib/rideRoute.ts",
+        "src/lib/rideRoute.test.ts",
+        "src/features/rides/components/RideRoute.tsx",
         "e2e/export.spec.ts",
         "e2e/weekly-permissions.spec.ts",
         "e2e/ride-editing.spec.ts",
@@ -418,6 +423,8 @@
         "e2e/proposal.spec.ts",
         "e2e/proposal-retry.spec.ts",
         "e2e/board-coordination.spec.ts",
+        "e2e/board-drafts.spec.ts",
+        "e2e/merged-ride.spec.ts",
         "e2e/one-way-consent.spec.ts",
         "e2e/sadran.spec.ts",
         "src/pages/ProposalTokenPage.tsx",
@@ -518,6 +525,8 @@
         "supabase/migrations/**/*siddur_version*",
         "supabase/migrations/**/*publication*",
         "supabase/tests/selected_day_publication.sql",
+        "supabase/tests/board_drafts.sql",
+        "supabase/tests/merged_rides.sql",
         "e2e/sadran.spec.ts",
         "e2e/waitlist-groups.spec.ts",
         "e2e/export.spec.ts"
@@ -527,7 +536,9 @@
         "src/features/sadran/lastUsedPolicy.test.ts"
       ],
       "sql": [
-        "selected_day_publication.sql"
+        "selected_day_publication.sql",
+        "board_drafts.sql",
+        "merged_rides.sql"
       ],
       "playwrightTags": [
         "@publication"

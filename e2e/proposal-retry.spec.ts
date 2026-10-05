@@ -20,6 +20,7 @@ for (const scenario of [
       await page.locator(`[data-request-id="${fixture.request.id}"]`).getByRole("button", {
         name: he.sadranProposal.solveOutside, exact: true,
       }).click();
+      await page.getByTestId("draft-choice-compose").click(); // REQ §13.94 chooser: "הכן הצעה"
       await expect(page).toHaveURL(/\/proposals\/new$/);
       const tripSummary = page.locator("[data-trip-summary]");
       await expect(tripSummary).toContainText(SEEDED_USERS.member1.fullName);
@@ -83,6 +84,7 @@ async function composeFromBoard(page: Page, baseUrl: string, requestId: string) 
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(`${baseUrl}/board`);
   await page.locator(`[data-request-id="${requestId}"]`).getByRole("button", { name: he.sadranProposal.suggestTimes, exact: true }).click();
+  await page.getByTestId("draft-choice-compose").click(); // REQ §13.94 chooser: "הכן הצעה"
   await expect(page).toHaveURL(/\/proposals\/new$/);
 }
 

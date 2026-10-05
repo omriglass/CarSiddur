@@ -16,6 +16,7 @@ import { paths } from "@/app/routes";
 import type { TripType } from "@/lib/enums";
 
 import { canEditRequest } from "../window";
+import { isAwaitingAnswer } from "../pendingProposal";
 import { FREED_SLOT_ELIGIBLE_STATUSES, MAKE_REPEATING_STATUSES, originDestinationLabel, type DisplayRow } from "../myRequestsRows";
 
 /** REQ §13.93: shown whenever a request is not a plain round trip (the mundane default). */
@@ -107,7 +108,7 @@ export function RequestRow({
       ) : null}
       {readOnly ? null : (
         <div className="flex flex-wrap gap-2 pt-1">
-          {row.status === "proposed" && row.pendingProposal ? (
+          {row.status === "proposed" && row.pendingProposal && isAwaitingAnswer(row.pendingProposal) ? (
             <OpenProposalButton proposalId={row.pendingProposal.id} size="sm" />
           ) : null}
           {row.statusReason === "WAITLISTED_CONTESTED" && (row.departAt ?? row.returnAt) ? (

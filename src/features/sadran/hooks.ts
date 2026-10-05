@@ -61,6 +61,16 @@ export function useDepartmentSettings(departmentId: string | undefined) {
   });
 }
 
+/** `place_travel_for_week` rows (REQ §13.93) - the composer's merged-ride window preview (REQ §13.94). */
+export function usePlaceTravelForWeek(departmentId: string | undefined, weekStart: string, enabled = true) {
+  return useQuery({
+    queryKey: sadranKeys.placeTravel(departmentId ?? "", weekStart),
+    queryFn: () => api.fetchPlaceTravelForWeek(departmentId as string, weekStart),
+    enabled: enabled && !!departmentId,
+    staleTime: 60_000,
+  });
+}
+
 export function useMaintenanceBlocks(departmentId: string | undefined) {
   return useQuery({
     queryKey: sadranKeys.maintenanceBlocks(departmentId ?? ""),
@@ -209,6 +219,18 @@ export function useUnassignRideMutation() {
   });
 }
 
+/** REQ §13.94 (G10): "הוצא מהנסיעה" for an applied merge (`unmerge_request`). */
+export function useUnmergeRequestMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ rideId, requestId, expectedVersion }: {
+      rideId: string; requestId: string; expectedVersion: number; departmentId: string; weekStart: string;
+    }) => api.unmergeRequest(rideId, requestId, expectedVersion),
+    onSuccess: (_data, { departmentId, weekStart }) => invalidateBoard(queryClient, departmentId, weekStart),
+    onError: showErrorToast,
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Proposals
 // ---------------------------------------------------------------------------
@@ -282,6 +304,25 @@ export function useSendProposalMutation() {
     onSettled: (_data, _error, { departmentId, weekStart }) => Promise.all([
       invalidateWeekData(queryClient, departmentId, weekStart),
     ]),
+    onError: showErrorToast,
+  });
+}
+
+/** Discard (`draft`) or withdraw (`sent`/`accepted`) a proposal from the board (REQ §13.94). */
+export function useDiscardProposalMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ proposalId }: { proposalId: string; departmentId: string; weekStart: string }) => api.discardProposal(proposalId),
+    onSettled: (_data, _error, { departmentId, weekStart }) => invalidateBoard(queryClient, departmentId, weekStart),
+    onError: showErrorToast,
+  });
+}
+
+export function useWithdrawProposalMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ proposalId }: { proposalId: string; departmentId: string; weekStart: string }) => api.withdrawProposal(proposalId),
+    onSettled: (_data, _error, { departmentId, weekStart }) => invalidateBoard(queryClient, departmentId, weekStart),
     onError: showErrorToast,
   });
 }

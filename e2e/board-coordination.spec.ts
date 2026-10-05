@@ -74,9 +74,9 @@ test("one-way drop persists a missing-driver ride, tight edits remain publishabl
   await cleanupFixture();
   try {
     const { data: requests, error: requestError } = await service.from("requests").insert([
-      { department_id: NEVO_DEPARTMENT_ID, week_start: week, requester_id: members[0], filed_by: members[0], ride_type_id: "00000000-0000-0000-0000-000000000021", destination_id: "00000000-0000-0000-0000-000000000011", trip_shape: "round_trip", depart_at: at("07:15"), return_at: at("10:00"), status: "assigned" },
-      { department_id: NEVO_DEPARTMENT_ID, week_start: week, requester_id: members[1], filed_by: members[1], ride_type_id: "00000000-0000-0000-0000-000000000021", destination_id: "00000000-0000-0000-0000-000000000011", trip_shape: "one_way_to", one_way_car_mode: "passenger", depart_at: at("07:00"), status: "submitted" },
-      { department_id: NEVO_DEPARTMENT_ID, week_start: week, requester_id: members[1], filed_by: members[1], ride_type_id: "00000000-0000-0000-0000-000000000021", destination_id: "00000000-0000-0000-0000-000000000011", trip_shape: "one_way_to", one_way_car_mode: "relay", depart_at: at("12:00"), status: "submitted" },
+      { department_id: NEVO_DEPARTMENT_ID, week_start: week, requester_id: members[0], filed_by: members[0], ride_type_id: "00000000-0000-0000-0000-000000000021", destination_id: "00000000-0000-0000-0000-000000000011", trip_shape: "round_trip", trip_type: "round_trip", depart_at: at("07:15"), return_at: at("10:00"), status: "assigned" },
+      { department_id: NEVO_DEPARTMENT_ID, week_start: week, requester_id: members[1], filed_by: members[1], ride_type_id: "00000000-0000-0000-0000-000000000021", destination_id: "00000000-0000-0000-0000-000000000011", trip_shape: "one_way_to", trip_type: "drop_off", one_way_car_mode: "passenger", depart_at: at("07:00"), status: "submitted" },
+      { department_id: NEVO_DEPARTMENT_ID, week_start: week, requester_id: members[1], filed_by: members[1], ride_type_id: "00000000-0000-0000-0000-000000000021", destination_id: "00000000-0000-0000-0000-000000000011", trip_shape: "one_way_to", trip_type: "drop_off", one_way_car_mode: "relay", depart_at: at("12:00"), status: "submitted" },
     ]).select("id");
     if (requestError) throw requestError;
     const rideBase = { department_id: NEVO_DEPARTMENT_ID, week_start: week, car_id: cars![0]!.id, created_by: members[0], origin_id: department!.home_destination_id, destination_id: department!.home_destination_id, status: "confirmed" };
@@ -113,15 +113,20 @@ test("one-way drop persists a missing-driver ride, tight edits remain publishabl
     await page.goto(boardUrl);
     await dragRequest(page, requests![1]!.id, cars![0]!.id, 450);
     await expect(page.getByRole("heading", { name: he.boardCoordination.mergeTitle })).toBeVisible();
-    await expect(page.getByRole("dialog")).toContainText("07:00–10:00");
-    await page.getByRole("button", { name: he.sadranBoard.prepareMerge }).click();
+    // REQ §13.94: the base keeps its own start (07:15) - the old widened "07:00–10:00" window is gone.
+    await expect(page.getByRole("dialog")).toContainText("07:15");
+    await expect(page.getByRole("dialog")).not.toContainText("07:00–10:00");
+    await expect(page.getByTestId("merge-leg-fixed")).toHaveText(he.mergedRide.legOut);
+    await page.getByRole("button", { name: he.boardDrafts.prepare, exact: true }).click();
     await page.getByRole("button", { name: he.action.propose, exact: true }).click();
     await expect(page).toHaveURL(boardUrl);
-    const ghost = page.locator('button[data-ride-id^="merge:"]:visible');
-    await expect(ghost).toBeVisible();
-    await expect(ghost).toContainText(SEEDED_USERS.member1.fullName.split(" ")[0]!);
-    await expect(ghost).toContainText(SEEDED_USERS.member2.fullName);
-    await expect(page.locator(`button[data-ride-id="${rides![0]!.id}"]:visible`)).toHaveClass(/opacity-50/);
+    // One merged block on the host's car (no ghost + shadowed host): the host's own block is replaced.
+    const merged = page.locator('button[data-merged="true"]:visible');
+    await expect(merged).toHaveCount(1);
+    await expect(merged.getByTestId("merged-marker")).toHaveText(he.mergedRide.marker);
+    await expect(merged).toContainText(SEEDED_USERS.member1.fullName.split(" ")[0]!);
+    await expect(merged).toContainText(SEEDED_USERS.member2.fullName);
+    await expect(page.locator(`button[data-ride-id="${rides![0]!.id}"]:visible`)).toHaveCount(0);
     const { data: unchanged } = await service.from("rides").select("starts_at").eq("id", rides![0]!.id).single();
     expect(Date.parse(unchanged!.starts_at)).toBe(Date.parse(at("07:15")));
   } finally {

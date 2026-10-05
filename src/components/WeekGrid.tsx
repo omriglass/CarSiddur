@@ -13,6 +13,7 @@ import {
 import { he, tv } from "@/i18n/he";
 import { rideTypeColorClasses } from "@/lib/rideTypeColors";
 import { cn } from "@/lib/utils";
+import { GuestChips, type GuestDropTarget, type WeekGridGuest } from "./GuestChips";
 import { clampRideVertical, minutesFromClientY, snapTimeShift } from "./weekGridGeometry";
 
 /**
@@ -68,6 +69,19 @@ export interface WeekGridRide {
   shadowed?: boolean;
   conflict?: boolean;
   pendingConsent?: boolean;
+  /**
+   * REQ §13.94: an unsent proposal (board draft) drawn as the result it would produce — a dashed
+   * primary outline plus a "טיוטה" tag, distinct from conflict stripes and from the sent
+   * `pendingConsent` dash.
+   */
+  draft?: boolean;
+  /**
+   * REQ §13.94 (G10): the block is a merged ride (an applied merge, or a draft/sent merge drawn
+   * as the ride it would become) - one block on the base car with a small "· מאוחד" marker.
+   */
+  merged?: boolean;
+  /** The added people of a merged block, drawn as draggable chips (REQ §13.94 G10). */
+  guests?: readonly WeekGridGuest[];
   needsDriver?: boolean;
   isMine?: boolean;
   highlighted?: boolean;
@@ -159,6 +173,10 @@ export interface WeekGridProps {
   externalDropTarget?: { carId: string; valid: boolean; startMinutes?: number; endMinutes?: number; label?: string } | null;
   /** A ride block was dragged out of the grid and released over `[data-unmet-drop-zone]` (the reverse of `onRideDrop` — UX_FLOWS §20). */
   onRideDropOnUnmet?: (rideId: string) => void;
+  /** REQ §13.94 (G10): a merged block's chip is being dragged over `target` (`null` = over nothing) - live preview. */
+  onGuestHover?: (guest: WeekGridGuest, target: GuestDropTarget | null) => void;
+  /** A chip was dropped: on the unmet list / a phantom lane (`unmet`), or on a car column at `minutes` (maybe on another ride). */
+  onGuestDrop?: (guest: WeekGridGuest, target: GuestDropTarget) => void;
   /** Minutes-since-midnight for "now", only when the grid's day is today — draws a thin primary line across every column (visual pass). Omit/`null` to hide it (e.g. a past or future day). */
   nowMinutes?: number | null;
   /** When supplied, initially position the grid so this time is the first visible hour below the car headers. */
@@ -304,6 +322,8 @@ export function WeekGrid({
   resolveDropPreview,
   externalDropTarget = null,
   onRideDropOnUnmet,
+  onGuestHover,
+  onGuestDrop,
   nowMinutes = null,
   initialScrollMinutes = null,
   zoom = 1,
@@ -433,6 +453,19 @@ export function WeekGrid({
     const match = el?.closest<HTMLElement>("[data-ride-id]");
     const id = match?.getAttribute("data-ride-id") ?? null;
     return id && id !== excludeRideId ? id : null;
+  }
+
+  /** REQ §13.94: what a dragged guest chip is over - the unmet list / a phantom lane, or a car column (+ the ride under it). */
+  function guestTargetAt(clientX: number, clientY: number): GuestDropTarget | null {
+    if (unmetDropZoneAtPoint(clientX, clientY)) return { kind: "unmet" };
+    const hit = document.elementFromPoint(clientX, clientY);
+    const column = hit?.closest<HTMLElement>(`[${CAR_COLUMN_ATTR}]`);
+    const carId = column?.getAttribute(CAR_COLUMN_ATTR);
+    if (!column || !carId) return null;
+    if (carId.startsWith("phantom:")) return { kind: "unmet" };
+    const minutes = Math.round(minutesFromClientY(column.getBoundingClientRect(), clientY, dayStartMinutes, dayEndMinutes) / 15) * 15;
+    const rideId = hit?.closest<HTMLElement>("[data-ride-id]")?.getAttribute("data-ride-id");
+    return { kind: "car", carId, minutes, hostRideId: rideId && !rideId.includes(":") ? rideId : undefined };
   }
 
   function unmetDropZoneAtPoint(clientX: number, clientY: number): boolean {
@@ -761,6 +794,8 @@ export function WeekGrid({
               type="button"
               data-ride-id={ride.id}
               data-needs-driver={ride.needsDriver || undefined}
+              data-draft={ride.draft || undefined}
+              data-merged={ride.merged || undefined}
               data-my-ride={ride.isMine || undefined}
               data-tight-schedule={ride.tightSchedule || undefined}
               className={cn(
@@ -771,6 +806,7 @@ export function WeekGrid({
                 ride.conflict &&
                   "border-2 border-destructive bg-[repeating-linear-gradient(45deg,hsl(var(--destructive)/0.25),hsl(var(--destructive)/0.25)_6px,hsl(var(--destructive)/0.08)_6px,hsl(var(--destructive)/0.08)_12px)]",
                 ride.pendingConsent && "border-2 border-dashed border-maintenance",
+                ride.draft && "border-2 border-dashed border-primary bg-primary/10",
                 onRideClick && "cursor-pointer",
                 dragEnabled && (canDragRide?.(ride) ?? true) && "touch-none",
                 ride.shadowed && "opacity-50",
@@ -793,7 +829,7 @@ export function WeekGrid({
                 if (!rect2) return;
                 beginDrag(e, ride, "move", rect2);
               }}
-              aria-label={ride.isMine ? `${he.siddur.myRide} · ${ride.label}` : ride.label}
+              aria-label={ride.isMine ? `${he.siddur.myRide} · ${ride.label}` : ride.draft ? `${he.boardDrafts.tag} · ${ride.label}` : ride.label}
             >
               {/* Sliding label (owner, 2026-09-14): everything readable in the block — badges, clamped-start
                   hint and the label itself — sits in one `sticky` wrapper offset by the header row, so on a
@@ -803,7 +839,10 @@ export function WeekGrid({
                   unlike `overflow-hidden`, does not create a new scroll container. Resize handles stay
                   absolutely positioned outside the wrapper. */}
               <div className="sticky z-[1] flex w-full flex-col" style={{ top: HEADER_ROW_HEIGHT_PX }}>
-              {(ride.isMine || ride.needsDriver || ride.tightSchedule || ride.chainBrokenWarning) ? <span className="flex w-full flex-wrap gap-1 px-1.5 pt-1 text-[10px] leading-tight">
+              {ride.guests?.length ? <GuestChips guests={ride.guests} enabled={dragEnabled && !!onGuestDrop} resolveTarget={guestTargetAt} onHover={onGuestHover} onDrop={onGuestDrop} /> : null}
+              {(ride.isMine || ride.needsDriver || ride.tightSchedule || ride.chainBrokenWarning || ride.draft || ride.merged) ? <span className="flex w-full flex-wrap gap-1 px-1.5 pt-1 text-[10px] leading-tight">
+                {ride.draft ? <span className="rounded-sm bg-primary px-1 font-semibold text-primary-foreground" data-testid="draft-tag">{he.boardDrafts.tag}</span> : null}
+                {ride.merged ? <span className="rounded-sm bg-foreground/10 px-1 font-medium" data-testid="merged-marker">{he.mergedRide.marker}</span> : null}
                 {ride.isMine ? <span className={cn("flex items-center gap-1 font-bold", ride.needsDriver ? "text-destructive" : "text-foreground")}><Star className="size-3 shrink-0 fill-current" aria-hidden="true" />{he.siddur.myRide}</span> : null}
                 {ride.needsDriver ? <span className="flex items-center gap-1 font-semibold text-destructive"><UserRoundX className="size-3 shrink-0" aria-hidden="true" />{he.boardCoordination.needsDriver}</span> : null}
                 {ride.tightSchedule ? <span className="flex items-center gap-1 text-amber-700" title={he.boardCoordination.tightHelp}><Clock3 className="size-3 shrink-0" aria-hidden="true" />{he.boardCoordination.tight}</span> : null}

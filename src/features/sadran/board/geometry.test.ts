@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  isHandoverPair,
   isoToMinutesSinceMidnight,
   isoToSlot,
   scanBoardConflicts,
@@ -262,5 +263,40 @@ describe("approved tight turnarounds", () => {
     const leg = (id: string, start: number, end: number, series_id: string | null) => ({ id, car_id: "car", starts_at: iso(start * 3600_000), ends_at: iso(end * 3600_000), series_id });
     // day 1 08:00→23:59, day 2 00:00→23:59 (same series) then an unrelated ride 10 minutes later
     expect([...tightScheduleRideIds([leg("d1", 8, 23.983, "s"), leg("d2", 24, 47.983, "s"), leg("x", 48.15, 49, null)], 30)].sort()).toEqual(["d2", "x"]);
+  });
+});
+
+describe("manual handover (REQ §13.94, G7)", () => {
+  const out = { id: "out", carId: "car", startsAt: iso(8 * 3600_000), endsAt: iso(9 * 3600_000), originId: "home", destinationId: "x" };
+  const back = { id: "back", carId: "car", startsAt: iso(9 * 3600_000), endsAt: iso(10 * 3600_000), originId: "x", destinationId: "home" };
+  const scan = (rides: (typeof out)[], carLocationsById?: Map<string, { baseLocationId?: string }>) => scanBoardConflicts({ rides, carIds: ["car"], weekStartMs: WEEK_START_MS, bufferMinutes: 30, homeLocationId: "home", days: DAYS, carLocationsById });
+
+  it("recognises a pair that meets away from the car's base", () => {
+    expect(isHandoverPair({ destinationId: "x" }, { originId: "x" }, "home")).toBe(true);
+    expect(isHandoverPair({ destinationId: "home" }, { originId: "home" }, "home")).toBe(false);
+    expect(isHandoverPair({ destinationId: "x" }, { originId: "y" }, "home")).toBe(false);
+  });
+
+  it("does not flag a zero-gap handover at X but still flags the same gap at the base", () => {
+    expect(scan([out, back]).conflictRideIds.size).toBe(0);
+    const atBase = { ...out, destinationId: "home" };
+    expect(scan([atBase, { ...back, originId: "home" }]).conflictRideIds.has("back")).toBe(true);
+  });
+
+  it("treats a car whose base is X as no handover", () => {
+    expect(scan([out, back], new Map([["car", { baseLocationId: "x" }]])).conflictRideIds.has("back")).toBe(true);
+  });
+
+  it("still flags an actual overlap at the handover place", () => {
+    expect(scan([out, { ...back, startsAt: iso(8.75 * 3600_000) }]).conflictRideIds.has("back")).toBe(true);
+  });
+
+  it("does not mark a handover pair tight, but marks the same gap at the base", () => {
+    const ride = (id: string, start: number, end: number, origin_id: string, destination_id: string) =>
+      ({ id, car_id: "car", starts_at: iso(start * 3600_000), ends_at: iso(end * 3600_000), origin_id, destination_id });
+    const options = { homeLocationId: "home" };
+    expect([...tightScheduleRideIds([ride("a", 8, 9, "home", "x"), ride("b", 9.1, 10, "x", "home")], 30, options)]).toEqual([]);
+    expect([...tightScheduleRideIds([ride("a", 8, 9, "x", "home"), ride("b", 9.1, 10, "home", "x")], 30, options)].sort()).toEqual(["a", "b"]);
+    expect([...tightScheduleRideIds([ride("a", 8, 9, "home", "x"), ride("b", 9.1, 10, "x", "home")], 30, { carBaseLocationId: new Map([["car", "x"]]) })].sort()).toEqual(["a", "b"]);
   });
 });

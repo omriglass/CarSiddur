@@ -123,6 +123,19 @@ function awayWindowsFromBase(
 }
 
 /**
+ * REQ §13.94 (G7): `next` starts at the place `previous` ended and that place is not the car's
+ * base — the Sadran's manual handover (the car hands over at X), which waives the turnaround.
+ * At the base the buffer still applies.
+ */
+export function isHandoverPair(
+  previous: { destinationId?: string | null },
+  next: { originId?: string | null },
+  baseLocationId: string | null | undefined,
+): boolean {
+  return !!previous.destinationId && previous.destinationId === next.originId && previous.destinationId !== baseLocationId;
+}
+
+/**
  * Scans every ride of the board (one department/week, all days at once so
  * overnight relay chains are seen whole) for conflicts, reusing the solver's
  * own `CarTimeline` (buffer + location rules, SOLVER.md §1.3.1/§1.3.8) rather
@@ -183,9 +196,13 @@ export function scanBoardConflicts(params: {
     };
     const previous = previousByCar.get(ride.carId);
     const previousBuffer = previous?.turnaroundMinutes ?? params.bufferMinutes;
-    const bufferConflict = !!previous && Date.parse(ride.startsAt) < Date.parse(previous.endsAt) + previousBuffer * 60_000;
+    // REQ §13.94 (G7) manual handover: a ride that starts exactly where the car's previous ride
+    // ended, away from the car's base, has no turnaround to protect (a real overlap is still
+    // flagged by the pairwise pass above).
+    const handover = !!previous && isHandoverPair(previous, ride, params.carLocationsById?.get(ride.carId)?.baseLocationId ?? params.homeLocationId);
+    const bufferConflict = !!previous && !handover && Date.parse(ride.startsAt) < Date.parse(previous.endsAt) + previousBuffer * 60_000;
     previousByCar.set(ride.carId, ride);
-    const free = tl.isFree(window, ride.originId) && !bufferConflict;
+    const free = (handover || tl.isFree(window, ride.originId)) && !bufferConflict;
     if (!free) conflictRideIds.add(ride.id);
     try {
       // `forceAdd` skips the location check (already covered by `isFree`
@@ -277,12 +294,14 @@ export function requestDayMismatchRideIds(
  * leave less than the usual turnaround. This is informational, not a collision.
  */
 export function tightScheduleRideIds(
-  rides: readonly { id: string | null; car_id: string | null; starts_at: string | null; ends_at: string | null; series_id?: string | null }[],
+  rides: readonly { id: string | null; car_id: string | null; starts_at: string | null; ends_at: string | null; series_id?: string | null; origin_id?: string | null; destination_id?: string | null }[],
   bufferMinutes: number,
+  /** REQ §13.94 (G7): per car base (default `homeLocationId`) — a handover away from it is never tight. */
+  options?: { carBaseLocationId?: ReadonlyMap<string, string | null | undefined>; homeLocationId?: string | null },
 ): Set<string> {
   const tight = new Set<string>();
-  const previousByCar = new Map<string, { id: string; end: number; seriesId: string | null }>();
-  const ordered = rides.filter((ride): ride is { id: string; car_id: string; starts_at: string; ends_at: string; series_id?: string | null } =>
+  const previousByCar = new Map<string, { id: string; end: number; seriesId: string | null; destinationId: string | null }>();
+  const ordered = rides.filter((ride): ride is { id: string; car_id: string; starts_at: string; ends_at: string; series_id?: string | null; origin_id?: string | null; destination_id?: string | null } =>
     !!ride.id && !!ride.car_id && !!ride.starts_at && !!ride.ends_at)
     .sort((a, b) => Date.parse(a.starts_at) - Date.parse(b.starts_at) || a.id.localeCompare(b.id));
   for (const ride of ordered) {
@@ -292,11 +311,13 @@ export function tightScheduleRideIds(
     // the car simply stays with the same member, so there is no turnaround to squeeze.
     const sameSeries = !!previous && !!seriesId && previous.seriesId === seriesId;
     const gap = previous ? Date.parse(ride.starts_at) - previous.end : null;
-    if (previous && !sameSeries && gap != null && gap >= 0 && gap < bufferMinutes * 60_000) {
+    const handover = !!previous && isHandoverPair(previous, { originId: ride.origin_id },
+      options?.carBaseLocationId?.get(ride.car_id) ?? options?.homeLocationId);
+    if (previous && !sameSeries && !handover && gap != null && gap >= 0 && gap < bufferMinutes * 60_000) {
       tight.add(previous.id);
       tight.add(ride.id);
     }
-    previousByCar.set(ride.car_id, { id: ride.id, end: Date.parse(ride.ends_at), seriesId });
+    previousByCar.set(ride.car_id, { id: ride.id, end: Date.parse(ride.ends_at), seriesId, destinationId: ride.destination_id ?? null });
   }
   return tight;
 }

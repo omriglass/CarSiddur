@@ -13,11 +13,15 @@ type Segment = "cars" | "unmet" | "proposals";
 interface BoardListModeProps {
   rides: readonly RideCardData[];
   pendingRides?: readonly RideCardData[];
+  /** REQ §13.94: ids in `pendingRides` that are unsent drafts (tagged "טיוטה" instead of "ממתין"). */
+  draftRideIds?: ReadonlySet<string>;
   shadowedRideIds?: ReadonlySet<string>;
   onRideClick: (rideId: string) => void;
   unmetItems: readonly UnmetListItem[];
   onUnmetDecision?: (item: UnmetListItem, type: "deny" | "shift" | "external") => void;
   onUnmetAction: (item: UnmetListItem, suggestion: Suggestion | null) => void;
+  /** REQ §13.94: opens the proposal sheet (withdraw) of a card whose proposal is out. */
+  onOpenProposal?: (proposalId: string) => void;
   onOpenProposals: () => void;
   /** Count of `status='sent'` (awaiting answer) proposals — a small badge on the "הצעות" tab when > 0. */
   pendingProposalsCount?: number;
@@ -26,7 +30,7 @@ interface BoardListModeProps {
 }
 
 /** Phone fallback for the board (UX_FLOWS.md §4.2 "Phone fallback — list mode"): רכבים / לא שובצו / הצעות segments. */
-export function BoardListMode({ rides, pendingRides = [], shadowedRideIds, onRideClick, unmetItems, onUnmetAction, onUnmetDecision, onOpenProposals, pendingProposalsCount = 0, homeDestinationId }: BoardListModeProps) {
+export function BoardListMode({ rides, pendingRides = [], draftRideIds, shadowedRideIds, onRideClick, unmetItems, onUnmetAction, onUnmetDecision, onOpenProposal, onOpenProposals, pendingProposalsCount = 0, homeDestinationId }: BoardListModeProps) {
   const [segment, setSegment] = useState<Segment>("cars");
 
   return (
@@ -66,7 +70,7 @@ export function BoardListMode({ rides, pendingRides = [], shadowedRideIds, onRid
       {segment === "cars" ? (
         <div className="space-y-2">
           {pendingRides.map((ride) => <div key={ride.id} className="rounded-md border-2 border-dashed p-1">
-            <p className="px-2 text-xs text-muted-foreground">{he.rideEditing.pending}</p>
+            <p className="px-2 text-xs text-muted-foreground">{draftRideIds?.has(ride.id) ? he.boardDrafts.tag : he.rideEditing.pending}</p>
             <RideCard ride={ride} onClick={() => onRideClick(ride.id)} />
           </div>)}
           {rides.map((ride) => (
@@ -77,7 +81,7 @@ export function BoardListMode({ rides, pendingRides = [], shadowedRideIds, onRid
         </div>
       ) : null}
 
-      {segment === "unmet" ? <UnmetList items={unmetItems} onAction={onUnmetAction} onDecision={onUnmetDecision} homeDestinationId={homeDestinationId} /> : null}
+      {segment === "unmet" ? <UnmetList items={unmetItems} onAction={onUnmetAction} onDecision={onUnmetDecision} onOpenProposal={onOpenProposal} homeDestinationId={homeDestinationId} /> : null}
     </div>
   );
 }

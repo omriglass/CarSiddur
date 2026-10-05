@@ -17,7 +17,9 @@ import type { BoardRide } from "../api";
 import { AddPassengersDialog } from "@/features/rides/components/AddPassengersDialog";
 import { RidePassengersList } from "@/features/rides/components/RidePassengersList";
 import { RidePublicNotesEditor } from "@/features/rides/components/RidePublicNotesEditor";
+import { RideRoute } from "@/features/rides/components/RideRoute";
 import { RideRouteStops } from "@/features/rides/components/RideRouteStops";
+import { parseRideRoute, routeHasIntermediates } from "@/lib/rideRoute";
 import { peopleOf } from "@/features/rides/ridePeople";
 
 /**
@@ -136,7 +138,7 @@ export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = 
               ) : null}
 
               {carModeLabel(ride) ? <p className="text-muted-foreground">{carModeLabel(ride)}</p> : null}
-              <RideRouteStops served={served} />
+              {routeHasIntermediates(parseRideRoute(ride.route)) ? <RideRoute route={ride.route} /> : <RideRouteStops served={served} />}
               {canEditPublicNotes && ride.id && ride.version != null ? (
                 <RidePublicNotesEditor key={`${ride.id}:${ride.version}`} rideId={ride.id} expectedVersion={ride.version} initialNotes={ride.notes} departmentId={ride.department_id ?? ""} weekStart={ride.week_start ?? ""} />
               ) : ride.notes ? <p className="whitespace-pre-wrap break-words">{ride.notes}</p> : null}

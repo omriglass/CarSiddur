@@ -14,6 +14,8 @@ import { buildHostRides, findMergeHosts } from './merge';
 import { scoreRequests } from './policy/engine';
 import { chauffeurUnpairedRelayLegs, pairRelays } from './relay';
 import { reason } from './reasons';
+import { expandDropOffs, restoreDropOffIds } from './dropOffSplit';
+import { carName, placeName, rideHostLabel, requestDestName, requestOriginName } from './names';
 import { byId, normalize, type NormalizedRequest } from './slots';
 import { buildSuggestions, type SuggestionContext } from './suggestions';
 import { buildTimelines, CarTimeline } from './timeline';
@@ -57,7 +59,16 @@ function computeBlockers(nr: NormalizedRequest, timelines: Map<string, CarTimeli
   return blockers;
 }
 
+/**
+ * A drop-off with a pickup is solved as two independent one-way legs (REQUIREMENTS
+ * §13.94, docs/SOLVER.md §1.3a) — see `dropOffSplit.ts`.
+ */
 export function solve(input: SolverInput): SolverOutput {
+  const { input: expanded, splitIds } = expandDropOffs(input);
+  return restoreDropOffIds(solveExpanded(expanded), splitIds);
+}
+
+function solveExpanded(input: SolverInput): SolverOutput {
   const startedAt = input.now?.();
   const warnings: { code: string; message: string; requestId?: string }[] = [];
 
@@ -217,12 +228,12 @@ export function solve(input: SolverInput): SolverOutput {
             : 'UNMET_NO_CAR';
       const reasonText =
         reasonCode === 'UNMET_NO_RELAY_PARTNER'
-          ? reason('UNMET_NO_RELAY_PARTNER', { dest: nr.destinationId, dayEnd: '23:59' })
+          ? reason('UNMET_NO_RELAY_PARTNER', { dest: requestDestName(input, nr.request), dayEnd: '23:59' })
           : reasonCode === 'UNMET_PASSENGER_NO_HOST'
-            ? reason('UNMET_NEEDS_DRIVER', { dest: nr.destinationId, dep: '' })
+            ? reason('UNMET_NEEDS_DRIVER', { dest: requestDestName(input, nr.request), dep: '' })
             : reasonCode === 'UNMET_NO_CAR_AT_ORIGIN'
-              ? reason('UNMET_NO_CAR_AT_ORIGIN', { origin: nr.originId, dest: nr.destinationId })
-              : reason('UNMET_NO_CAR', { blockers: blockers.map((b) => b.carId).join(', ') });
+              ? reason('UNMET_NO_CAR_AT_ORIGIN', { origin: requestOriginName(input, nr.request, nr.originId), dest: requestDestName(input, nr.request) })
+              : reason('UNMET_NO_CAR', { blockers: blockers.map((b) => carName(input.cars, b.carId)).filter(Boolean).join(', ') });
       return {
         requestId: nr.id,
         score: scores.get(nr.id)?.total ?? 0,
@@ -293,7 +304,7 @@ export function solve(input: SolverInput): SolverOutput {
         freedCarId: guestHost.carId,
         freedWindow: guestHost.window,
         detourMinutes: best.detourMinutes,
-        reason: reason('SUGGEST_MERGE', { host: best.hostRideId, dest: guestNr.destinationId, dep: '', ret: '' }),
+        reason: reason('SUGGEST_MERGE', { host: rideHostLabel(input, assignments, best.hostRideId), dest: requestDestName(input, guestNr.request), dep: '', ret: '' }),
       });
     }
   }
@@ -309,7 +320,7 @@ export function solve(input: SolverInput): SolverOutput {
     // location warning is a car ending the whole *week* away from its base.
     const endAway = tl.weekEndAway();
     if (endAway) {
-      warnings.push({ code: 'CAR_AWAY_AT_WEEK_END', message: reason('WARN_CAR_AWAY_AT_WEEK_END', { car: car.name, place: endAway.locationId }) });
+      warnings.push({ code: 'CAR_AWAY_AT_WEEK_END', message: reason('WARN_CAR_AWAY_AT_WEEK_END', { car: car.name, place: placeName(input, endAway.locationId) }) });
     }
   }
 

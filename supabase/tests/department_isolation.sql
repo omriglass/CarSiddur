@@ -178,6 +178,8 @@ begin
   perform pg_temp.expect_refused('rides.set_ride_passengers',
     format('select public.set_ride_passengers(%L, %L, %L::jsonb)', ride_b, ride_b_version, '[]'::text));
   perform pg_temp.expect_refused('rides.remove_ride_person', format('select public.remove_ride_person(%L, %L, %L)', ride_b, ride_b_version, 'req:' || req_b));
+  perform pg_temp.expect_refused('rides.unmerge_request', format('select public.unmerge_request(%L, %L, %L)', ride_b, req_b, ride_b_version));
+  perform pg_temp.expect_refused('rides.ride_route', format('select * from public.ride_route(%L)', ride_b));
   perform pg_temp.expect_refused('rides.unassign_ride', format('select public.unassign_ride(%L, %L)', ride_b, ride_b_version));
   perform pg_temp.expect_refused('rides.cancel_ride', format('select public.cancel_ride(%L, %L, %L)', ride_b, 'attack', ride_b_version));
 
@@ -203,6 +205,8 @@ begin
     format('select public.create_proposal(%L, null, %L, %L::jsonb, %L, %L::uuid[], %L)', req_b3, 'deny',
       jsonb_build_object('reason', 'attack')::text, 'attack', '{}', 'sadran'));
   perform pg_temp.expect_refused('proposals.send_proposal', format('select public.send_proposal(%L)', proposal_b));
+  perform pg_temp.expect_refused('proposals.discard_proposal', format('select public.discard_proposal(%L)', proposal_b));
+  perform pg_temp.expect_refused('proposals.withdraw_proposal', format('select public.withdraw_proposal(%L)', proposal_b));
   perform pg_temp.expect_refused('proposals.apply_proposal', format('select public.apply_proposal(%L)', proposal_b));
   perform pg_temp.expect_refused('proposals.record_answer_on_behalf', format('select public.record_answer_on_behalf(%L, %L, true, null)', proposal_b, member_b));
 
@@ -310,11 +314,11 @@ declare
   iso_covered text[] := array[
     'submit_request','withdraw_request','set_manual_boost','set_freed_slot_opt_out','set_request_children',
     'set_request_companions','withdraw_all_requests','submit_series_request','enter_waiting_list','apply_solver_result',
-    'edit_ride','cancel_ride','unassign_ride','request_ride_change','respond_ride_change','cancel_ride_change',
+    'edit_ride','cancel_ride','unassign_ride','unmerge_request','ride_route','request_ride_change','respond_ride_change','cancel_ride_change',
     'update_ride_public_notes','add_ride_passengers','set_ride_passengers','remove_ride_person',
     'log_car_care','report_car_issue','merge_destination','suggest_destination','car_mileage_totals',
     'admin_approve_member','admin_update_member','admin_set_sadran_assignments',
-    'create_proposal','send_proposal','apply_proposal','record_answer_on_behalf',
+    'create_proposal','send_proposal','discard_proposal','withdraw_proposal','apply_proposal','record_answer_on_behalf',
     'open_week','reopen_week','set_week_phase','set_week_close_at','ensure_department_weeks',
     'publication_readiness','publish_siddur','record_solver_preview','form_waitlist_groups',
     'publish_scores_fingerprint','sadran_contact_of','fairness_stats','department_stats','joinable_rides_for_request',
@@ -346,6 +350,9 @@ declare
     -- `v_my_requests`/`v_board_rides` (security_invoker views), same category as
     -- request_served_by_public_ride/is_request_companion above.
     'request_stop_etas:read-helper',
+    -- REQ §13.94: per-ride route JSON read inside `v_board_rides` (security_invoker view; rows already
+    -- filtered by rides_select, the function re-checks visibility and returns [] otherwise).
+    'ride_route_json:read-helper',
     'claim_freed_slot:self-only', 'register_push_subscription:self-only',
     'resume_request_template:self-only', 'save_request_template:self-only',
     'snooze_request_template:self-only', 'stop_request_template:self-only',

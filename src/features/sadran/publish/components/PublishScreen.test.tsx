@@ -11,6 +11,7 @@ vi.mock("../../hooks", () => ({
   usePublicationReadiness: () => ({ data: mocks.readiness, isLoading: false, isError: false, refetch: vi.fn() }),
   useWeekRequestsWithNames: () => ({ data: [], isLoading: false, isError: false }),
   useAllWeekRides: () => ({ data: [], isLoading: false, isError: false }),
+  useProposalsForWeek: () => ({ data: [], isLoading: false, isError: false }),
   useSiddurVersions: () => ({ data: [], isLoading: false, isError: false }),
   usePublishSiddurMutation: () => ({ mutateAsync: mocks.publish, isPending: false }),
 }));
@@ -34,11 +35,19 @@ beforeEach(() => {
   mocks.publish.mockReset().mockResolvedValue("published-version");
   mocks.readiness = days.map((day) => ({
     day, ready: true, published: false, requestCount: 1, unresolvedRequests: 0, incompleteAssignments: 0,
-    pendingProposals: 0, missingDriverRides: 0, conflictRides: 0,
+    pendingProposals: 0, draftProposals: 0, missingDriverRides: 0, conflictRides: 0,
   }));
 });
 
 describe("publication choices", () => {
+  it("refuses a day with unsent drafts and says why (REQ §13.94)", () => {
+    mocks.readiness = mocks.readiness.map((day, index) => index === 2 ? { ...day, ready: false, draftProposals: 1 } : day);
+    show();
+    expect(screen.getByRole("button", { name: he.publicationFlow.allYes })).toBeDisabled();
+    expect(screen.getByText(he.boardDrafts.publishBlockedDay)).toBeVisible();
+    expect(mocks.publish).not.toHaveBeenCalled();
+  });
+
   it("publishes all seven resolved days without an unanswered-items override", async () => {
     show();
     expect(screen.getByText(he.publicationFlow.allReady)).toBeVisible();

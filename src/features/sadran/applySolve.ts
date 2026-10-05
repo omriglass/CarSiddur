@@ -52,13 +52,15 @@
 // `supabase/tests/solve_semantics.sql`.
 
 import { fetchCars, fetchCarSeatConfigs, fetchDestinations, fetchRideTypes } from "@/features/fleet/api";
-import { buildSolverInput, buildWeek } from "@/features/solverBridge/buildSolverInput";
+import { buildSolverInput, buildWeek, FREE_TEXT_DESTINATION_ID } from "@/features/solverBridge/buildSolverInput";
 import { solve } from "@/solver";
 
 import * as api from "./api";
 import { isoToSlot, slotToIso } from "./board/geometry";
+import { DEFAULT_STOP_MINUTES, homeTravelEdges, makeHop, type Hop } from "@/lib/rideRoute";
+import { requestIdsWithOpenProposal, resolveDraftPlacements } from "./board/draftOverlay";
 
-import type { BoardRide, RequestRow } from "./api";
+import type { BoardRide, ProposalRow, RequestRow, WeekRequestRow } from "./api";
 import type { Assignment, AssignmentLeg, FixedRide, Passengers, Policy, SolverInput, SolverOutput } from "@/solver";
 
 export const SOLVER_CLIENT_VERSION = "sadran-board-client@1";
@@ -230,8 +232,83 @@ const REOPENABLE_REQUEST_STATUSES = new Set(["submitted", "waitlisted", "assigne
 export function selectOpenRequests<R extends { id: string; status: string }>(
   allRequests: readonly R[],
   fixedRequestIds: ReadonlySet<string>,
+  /** REQ §13.94: requests with a draft/sent/accepted proposal are left alone (see `requestIdsWithOpenProposal`). */
+  proposalRequestIds: ReadonlySet<string> = new Set(),
 ): R[] {
-  return allRequests.filter((r) => REOPENABLE_REQUEST_STATUSES.has(r.status) && !fixedRequestIds.has(r.id));
+  return allRequests.filter((r) => REOPENABLE_REQUEST_STATUSES.has(r.status) && !fixedRequestIds.has(r.id) && !proposalRequestIds.has(r.id));
+}
+
+/**
+ * REQ §13.94: each unsent draft's resulting window as a fixed block on its car, so auto-fill and
+ * re-solves never double-book it. A merge draft widens its host ride's own block (the host is
+ * made fixed first when the mode left it free) and adds the guest to it.
+ */
+export function draftFixedRides(
+  proposals: readonly ProposalRow[],
+  allRequests: readonly RequestRow[],
+  boardRides: readonly BoardRide[],
+  fixedRides: readonly FixedRide[],
+  destinations: readonly { id: string; travel_minutes: number | null }[],
+  homeDestinationId: string,
+  weekStartMs: number,
+  route?: { hop: Hop; stopMinutes: number },
+): FixedRide[] {
+  const travelById = new Map(destinations.map((d) => [d.id, d.travel_minutes]));
+  const requests = allRequests.map((r) => ({ ...r, destination_travel_minutes: r.destination_id ? travelById.get(r.destination_id) ?? null : null })) as unknown as WeekRequestRow[];
+  const result = [...fixedRides];
+  for (const placement of resolveDraftPlacements(proposals, requests, boardRides, homeDestinationId, route)) {
+    const request = allRequests.find((r) => r.id === placement.requestId);
+    if (!request) continue;
+    const window = { start: isoToSlot(placement.startsAt, weekStartMs), end: isoToSlot(placement.endsAt, weekStartMs) };
+    if (placement.type === "merge") {
+      let index = result.findIndex((f) => f.id === placement.hostRideId);
+      if (index < 0) {
+        const host = boardRides.find((r) => r.id === placement.hostRideId);
+        const fixed = host ? boardRideToFixedRide(host, weekStartMs) : null;
+        if (!fixed) continue;
+        result.push(fixed);
+        index = result.length - 1;
+      }
+      const hostFixed = result[index];
+      if (!hostFixed) continue;
+      result[index] = {
+        ...hostFixed,
+        window: { start: Math.min(hostFixed.window.start, window.start), end: Math.max(hostFixed.window.end, window.end) },
+        servedRequestIds: [...hostFixed.servedRequestIds, request.id],
+        passengers: {
+          adults: hostFixed.passengers.adults + request.adults,
+          childSeats: hostFixed.passengers.childSeats + request.child_seats,
+          boosters: hostFixed.passengers.boosters + request.boosters,
+        },
+      };
+      continue;
+    }
+    const originId = placement.originId ?? homeDestinationId;
+    const destinationId = placement.destinationId ?? originId;
+    const roundTrip = request.trip_shape === "round_trip";
+    result.push({
+      id: `draft:${placement.proposalId}`,
+      carId: placement.carId,
+      window,
+      originId,
+      destinationId,
+      driverRequestId: roundTrip ? request.id : undefined,
+      legs: [{
+        requestId: request.id,
+        leg: roundTrip ? "both" : request.trip_shape === "one_way_from" ? "return" : "out",
+        carMode: roundTrip ? "keep" : "chauffeur",
+        originId,
+        destinationId,
+        role: roundTrip ? "driver" : "passenger",
+      }],
+      servedRequestIds: [request.id],
+      passengers: { adults: request.adults, childSeats: request.child_seats, boosters: request.boosters },
+      luggageCount: request.has_luggage ? 1 : 0,
+      overnightAck: false,
+      kind: "pinned",
+    });
+  }
+  return result;
 }
 
 /**
@@ -258,6 +335,8 @@ export interface SolverContextRows {
   carStartLocationsByCarId: Awaited<ReturnType<typeof api.fetchCarStartLocations>>;
   /** REQUIREMENTS §13.93 (ORIGINS_PLAN §2 item 6): `place_travel_for_week()` rows. */
   travel: Awaited<ReturnType<typeof api.fetchPlaceTravelForWeek>>;
+  /** REQ §13.94: the week's proposals — drafts become fixed blocks, any open proposal removes its request from solving. */
+  proposals?: ProposalRow[];
 }
 
 /** `fairness_stats()`'s `p_lookback_weeks` argument, read from the fairness rule's own params (default 3, CLAUDE.md decision 16). Exported so a caller that must fetch fairness itself (`gatherSolverContext` below, `BoardScreen`'s own fairness query) asks for the right lookback window without duplicating the policy-rules shape. */
@@ -293,6 +372,7 @@ export function buildSolverContextFromData(params: GatherSolverContextParams, ro
     mileageKmByCarId,
     carStartLocationsByCarId,
     travel,
+    proposals = [],
   } = rows;
 
   const seatConfigsByCarId: Record<string, typeof seatConfigsFlat> = {};
@@ -306,14 +386,17 @@ export function buildSolverContextFromData(params: GatherSolverContextParams, ro
   const { startMs: weekStartMs } = buildWeek(params.weekStart, departmentSettings.day_end_time);
 
   const eligibleBoardRides = params.forScoring ? [] : params.mode === "remaining" ? boardRides : boardRides.filter((r) => r.is_pinned);
-  const fixedRides = eligibleBoardRides
+  const boardFixedRides = eligibleBoardRides
     .map((r) => boardRideToFixedRide(r, weekStartMs))
     .filter((f): f is FixedRide => f !== null);
+  const scoringProposals = params.forScoring ? [] : proposals;
+  const fixedRides = draftFixedRides(scoringProposals, allRequests, boardRides, boardFixedRides, destinations, params.homeDestinationId, weekStartMs,
+    { hop: makeHop([...(travel ?? []), ...homeTravelEdges(params.homeDestinationId, destinations)]), stopMinutes: departmentSettings.stop_minutes ?? DEFAULT_STOP_MINUTES });
 
   const fixedRequestIds = new Set(fixedRides.flatMap((f) => f.servedRequestIds));
   const openRequests = params.forScoring
     ? allRequests.filter((r) => !["draft", "withdrawn", "cancelled"].includes(r.status))
-    : selectOpenRequests(allRequests, fixedRequestIds);
+    : selectOpenRequests(allRequests, fixedRequestIds, requestIdsWithOpenProposal(scoringProposals));
 
   // Rides a 'full' re-solve may replace: current, non-pinned board rides
   // (i.e. everything not in `fixedRides`). Used both for continuity
@@ -388,6 +471,7 @@ export async function gatherSolverContext(params: GatherSolverContextParams): Pr
       api.fetchAllWeekRides(params.departmentId, params.weekStart),
     ]);
 
+  const proposals = await api.fetchProposalsForWeek(params.departmentId, params.weekStart);
   const seatConfigsFlat = await fetchCarSeatConfigs(params.departmentId);
   const fairness = await api.fetchFairnessStats(params.departmentId, params.weekStart, policyLookbackWeeks(params.policy));
   // F5 (docs/SOLVER.md §3.6.2): rolling window is fixed at 4 weeks in v1, no
@@ -412,6 +496,7 @@ export async function gatherSolverContext(params: GatherSolverContextParams): Pr
     mileageKmByCarId,
     carStartLocationsByCarId,
     travel,
+    proposals,
   });
 }
 
@@ -548,8 +633,10 @@ export function buildApplyPayload(params: {
       car_id: a.carId,
       starts_at: slotToIso(a.window.start, weekStartMs),
       ends_at: exactEnd ?? roundedEnd,
-      origin_id: a.originId,
-      destination_id: a.destinationId,
+      // A free-text request has no place id: the solver models it as the `__free_text__` pseudo
+      // place, which is not a uuid. The car's recorded location falls back to the ride's other end.
+      origin_id: a.originId === FREE_TEXT_DESTINATION_ID ? a.destinationId : a.originId,
+      destination_id: a.destinationId === FREE_TEXT_DESTINATION_ID ? a.originId : a.destinationId,
       driver_id: driverMemberId,
       ...(driverMemberId === null && a.legs.length === 0 ? { auto_relocation: true } : {}),
       ...(a.turnaroundAfterMinutes !== undefined ? { turnaround_override_minutes: a.turnaroundAfterMinutes } : {}),

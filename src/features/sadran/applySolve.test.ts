@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { boardRideToFixedRide, buildApplyPayload, computeFullResolveDiff, selectOpenRequests, servedOf } from "./applySolve";
+import { boardRideToFixedRide, buildApplyPayload, computeFullResolveDiff, draftFixedRides, selectOpenRequests, servedOf } from "./applySolve";
 import { solve } from "@/solver";
 import { baseInput, makeCar, makeRequest, slotMs, WEEK_START_MS } from "@/solver/__fixtures__/gen";
 
-import type { RequestRow, BoardRide } from "./api";
+import type { RequestRow, BoardRide, ProposalRow } from "./api";
 import type { SolverContext } from "./applySolve";
 import type { SolverOutput } from "@/solver";
 
@@ -169,6 +169,11 @@ describe("buildApplyPayload (driverless rides, REQ §13.88/§13.89)", () => {
     expect(payload.rides[0]!.auto_relocation).toBe(true);
   });
 
+  it("never sends the solver's __free_text__ pseudo place as a ride origin/destination (not a uuid)", () => {
+    const payload = buildApplyPayload({ ...base, output: emptyOutput({ assignments: [assignment({ originId: "home", destinationId: "__free_text__", driverMemberId: "m" })] }) });
+    expect(payload.rides[0]).toMatchObject({ origin_id: "home", destination_id: "home" });
+  });
+
   it("keeps a driven ride as is: driver_id set, no relocation flag", () => {
     const payload = buildApplyPayload({ ...base, output: emptyOutput({ assignments: [assignment({ driverMemberId: "member-1" })] }) });
     expect(payload.rides[0]!.driver_id).toBe("member-1");
@@ -258,4 +263,26 @@ it("persists a 23:59 return exactly instead of the solver's conservative midnigh
     inputHash: "fixture", requestsById: new Map([["late", { id: "late", requester_id: "m1", return_at: returnAt } as RequestRow]]) });
   expect(payload.rides).toHaveLength(1);
   expect(payload.rides[0]?.ends_at).toBe(returnAt);
+});
+
+describe("board drafts in the solver context (REQ §13.94)", () => {
+  it("selectOpenRequests leaves requests with a draft/sent/accepted proposal alone", () => {
+    const requests = [req({ id: "r1", status: "submitted" }), req({ id: "r2", status: "submitted" }), req({ id: "r3", status: "waitlisted" })];
+    const open = selectOpenRequests(requests, new Set(), new Set(["r2"]));
+    expect(open.map((r) => r.id)).toEqual(["r1", "r3"]);
+  });
+
+  it("a draft shift becomes a fixed block on its car for exactly its window", () => {
+    const request = { ...req({ id: "r1", status: "submitted" }), trip_shape: "round_trip", origin_id: null, destination_id: "dest", depart_at: new Date(slotMs(10)).toISOString(), return_at: new Date(slotMs(20)).toISOString(), adults: 1, child_seats: 0, boosters: 0, has_luggage: false } as unknown as RequestRow;
+    const proposal = { id: "p1", type: "shift", status: "draft", request_id: "r1", ride_id: null,
+      payload: { car_id: "carB", depart_at: new Date(slotMs(12)).toISOString(), return_at: new Date(slotMs(22)).toISOString() } } as unknown as ProposalRow;
+    const fixed = draftFixedRides([proposal], [request], [], [], [{ id: "dest", travel_minutes: 30 }], "home", WEEK_START_MS);
+    expect(fixed).toHaveLength(1);
+    expect(fixed[0]).toMatchObject({ id: "draft:p1", carId: "carB", window: { start: 12, end: 22 }, servedRequestIds: ["r1"], originId: "home" });
+  });
+
+  it("sent proposals add no fixed block (their ride/ghost already exists)", () => {
+    const proposal = { id: "p1", type: "shift", status: "sent", request_id: "r1", payload: { car_id: "carB", depart_at: new Date(slotMs(12)).toISOString() } } as unknown as ProposalRow;
+    expect(draftFixedRides([proposal], [req({ id: "r1", status: "proposed" }) as unknown as RequestRow], [], [], [], "home", WEEK_START_MS)).toEqual([]);
+  });
 });

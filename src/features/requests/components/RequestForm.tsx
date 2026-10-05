@@ -430,6 +430,9 @@ export function RequestForm({
   const values = useWatch({ control: form.control });
   const tripShape = values.tripShape ?? "round_trip";
   const oneWay = tripShape !== "round_trip";
+  const tripTypeValue = values.tripType ?? "round_trip";
+  // G2: only a drop-off with no pickup leg looks for a driver; a הלוך בלבד is "I take the car".
+  const seeksDriver = oneWay && tripTypeValue === "drop_off";
   // REQ §13.93 "Multi-stop rides": return-stops only make sense on a leg that actually returns
   // (הלוך-חזור, or הקפצה with the pickup switch on) — same gate `mapper.ts`/`submit_request`
   // use ("tripShape !== 'one_way_to'" <=> the RPC's own `return_at is not null` check).
@@ -723,6 +726,7 @@ export function RequestForm({
       toastSubmitOutcome(result, {
         carName: (id) => carLookup.find((c) => c.id === id)?.name ?? "",
         preferredCarId: formValues.preferredCarId,
+        tripType: formValues.tripType,
         departTime: formValues.departTime,
         returnTime: formValues.returnTime,
         onViewRequests: () => navigate(paths.my()),
@@ -820,7 +824,7 @@ export function RequestForm({
     >
       {quickContext ? (
         <p className="text-base font-semibold">
-          {oneWay
+          {seeksDriver
             ? tv("quickRequest.oneWayHeader", { day: dayLabel(day), start: primaryTime })
             : quickCar
               ? tv("quickRequest.header", { car: quickCar.name, day: dayLabel(day), start: primaryTime })
@@ -891,7 +895,7 @@ export function RequestForm({
         isMultiDay={isMultiDay}
         multiDaySpan={multiDaySpan}
         isQuickContext={!!quickContext}
-        oneWay={oneWay}
+        seeksDriver={seeksDriver}
         tripType={tripType}
         dropOffPickup={dropOffPickup}
         canDrive={canDrive}
@@ -1018,7 +1022,7 @@ export function RequestForm({
               : waitlist
                 ? t("action.submitWaitlist")
                 : quickContext
-                  ? oneWay ? t("quickRequest.submitOneWay") : t("quickRequest.submit")
+                  ? seeksDriver ? t("quickRequest.submitOneWay") : oneWay ? t("quickRequest.submitOneWayTakeCar") : t("quickRequest.submit")
                   : t("action.submitRequest")}
           </Button>
           {quickContext && isPast ? <p className="text-xs text-destructive">{t("quickRequest.pastSlotTooltip")}</p> : null}

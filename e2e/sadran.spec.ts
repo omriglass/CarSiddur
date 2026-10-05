@@ -76,6 +76,7 @@ test.describe("sadran", { tag: ["@proposals", "@publication"] }, () => {
       await page.locator(`[data-request-id="${fixture.request.id}"]`).getByRole("button", {
         name: he.sadranProposal.suggestTimes, exact: true,
       }).click();
+      await page.getByTestId("draft-choice-compose").click(); // REQ §13.94 chooser: "הכן הצעה"
       await expect(page).toHaveURL(/\/proposals\/new$/);
       await page.getByRole("button", { name: he.action.propose, exact: true }).click();
 

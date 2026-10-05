@@ -13,13 +13,22 @@ import { formatTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { ridePassengerSummary } from "@/lib/ridePassengerSummary";
 
-import { requestStart, requestWindow } from "../phantomLanes";
+import { requestStart, requestWindow, tripTypeOf } from "../phantomLanes";
+import { unmetItemKey } from "../unmetLegs";
+import { requestRouteLine } from "../requestRoute";
 
 import type { WeekRequestRow } from "../../api";
 import type { Suggestion, UnmetRequest } from "@/solver";
 
 export interface UnmetListItem {
   request: WeekRequestRow;
+  /**
+   * REQ §13.94 (G4): set only on the two cards of a drop-off with a pickup (`out` = the drop-off,
+   * `return` = the pickup); `request` is then the one-leg view of that leg (`unmetLegs.ts`).
+   */
+  leg?: "out" | "return";
+  /** A sent/accepted proposal for this request (REQ §13.94): the card offers "בטל הצעה" instead of waiting silently. */
+  pendingProposalId?: string;
   destinationName: string;
   /** Present only once a client-side solve has run this session (SOLVER.md §2 `UnmetRequest`). */
   solverInfo?: UnmetRequest;
@@ -57,6 +66,8 @@ interface UnmetListProps {
   items: readonly UnmetListItem[];
   onDecision?: (item: UnmetListItem, type: "deny" | "shift" | "external") => void;
   onAction: (item: UnmetListItem, suggestion: Suggestion | null) => void;
+  /** Opens the board's proposal sheet (withdraw) for a card that has a proposal out. */
+  onOpenProposal?: (proposalId: string) => void;
   /** Drag-to-place; the board chooses direct assignment or a proposal for one-way legs. */
   dayStartMinutes?: number;
   dayEndMinutes?: number;
@@ -78,7 +89,7 @@ interface UnmetListProps {
  * week with no ride (bug #1), sorted by policy score when a solver preview
  * exists for it, otherwise by departure time.
  */
-export function UnmetList({ items, onAction, onDecision, dayStartMinutes = 6 * 60, dayEndMinutes = 23 * 60 + 59, onDragHover, onDragDrop, showHeading = true, homeDestinationId }: UnmetListProps) {
+export function UnmetList({ items, onAction, onOpenProposal, onDecision, dayStartMinutes = 6 * 60, dayEndMinutes = 23 * 60 + 59, onDragHover, onDragDrop, showHeading = true, homeDestinationId }: UnmetListProps) {
   const dragEnabled = !!onDragDrop;
   const [drag, setDrag] = useState<DragState | null>(null);
   const dragRef = useRef<DragState | null>(null);
@@ -194,11 +205,12 @@ export function UnmetList({ items, onAction, onDecision, dayStartMinutes = 6 * 6
       {showHeading ? <h2 className="text-sm font-medium">{tv("sadranBoard.unmetTitle", { count: String(items.length) })}</h2> : null}
       {sorted.map((item) => {
         const isDraggable = dragEnabled;
-        const isDragged = drag?.confirmed && drag.item.request.id === item.request.id;
+        const isDragged = drag?.confirmed && unmetItemKey(drag.item) === unmetItemKey(item);
         return (
           <Card
-            key={item.request.id}
+            key={unmetItemKey(item)}
             data-request-id={item.request.id}
+            data-unmet-leg={item.leg}
             className={cn("bg-gradient-card shadow-card transition-smooth", isDragged && "opacity-50")}
           >
             <CardContent className="space-y-2 p-3 text-sm">
@@ -219,6 +231,7 @@ export function UnmetList({ items, onAction, onDecision, dayStartMinutes = 6 * 6
                     </span>
                   ) : null}
                   <span className="whitespace-normal break-words font-medium">
+                    {item.leg ? <span className="me-1 rounded-sm bg-muted px-1 text-xs" data-testid="unmet-leg-tag">{item.leg === "out" ? he.tripLegs.out : he.tripLegs.pickup}</span> : null}
                     {item.request.requester_full_name ?? "—"} · {item.destinationName}
                   </span>
                 </span>
@@ -245,6 +258,12 @@ export function UnmetList({ items, onAction, onDecision, dayStartMinutes = 6 * 6
                 <Button size="sm" variant="outline" onClick={() => onDecision ? onDecision(item, "shift") : onAction(item, null)}>{he.sadranProposal.suggestTimes}</Button>
                 <Button size="sm" variant="outline" disabled={!onDecision} onClick={() => onDecision?.(item, "external")}>{he.sadranProposal.solveOutside}</Button>
               </div>
+              {item.pendingProposalId && onOpenProposal ? (
+                <div className="flex items-center justify-between gap-2 rounded-md border border-dashed border-maintenance p-2 text-xs" data-testid="unmet-proposal-out">
+                  <span>{he.boardDrafts.proposalOut}</span>
+                  <Button size="sm" variant="outline" className="min-h-11" onClick={() => onOpenProposal(item.pendingProposalId as string)} data-testid="unmet-withdraw">{he.boardDrafts.withdraw}</Button>
+                </div>
+              ) : null}
               {item.request.is_late ? <span className="text-xs font-medium text-maintenance">{he.flag.late}</span> : null}
               {item.request.changed_since_solve ? <span className="text-xs font-medium text-booked">{he.flag.changed}</span> : null}
               {item.request.preferred_car_name ? (
@@ -255,11 +274,9 @@ export function UnmetList({ items, onAction, onDecision, dayStartMinutes = 6 * 6
               {/* REQUIREMENTS §13.93: the request's own origin, shown only when it isn't the
                   department home — a free-text origin (never auto-placed, solver reason
                   `UNMET_FREE_TEXT_ORIGIN`) is visibly flagged rather than silently blended in. */}
-              {item.request.origin_id && homeDestinationId && item.request.origin_id !== homeDestinationId ? (
-                <p className="text-xs text-muted-foreground">
-                  {tv("sadranBoard.unmetOrigin", { place: item.request.origin_resolved_name ?? "" })}
-                </p>
-              ) : null}
+              <p className="text-xs text-muted-foreground" data-testid="unmet-route-line">
+                {requestRouteLine({ originId: item.request.origin_id, originName: item.request.origin_id ? item.request.origin_resolved_name : null, destination: item.destinationName, tripType: item.request.trip_type }, homeDestinationId)}
+              </p>
               {!item.request.origin_id && item.request.origin_text ? (
                 <p className="text-xs font-medium text-destructive">
                   {tv("sadranBoard.unmetFreeTextOrigin", { place: item.request.origin_text })}
@@ -283,7 +300,7 @@ export function UnmetList({ items, onAction, onDecision, dayStartMinutes = 6 * 6
                   ))}
                 </div>
               ) : null}
-              {dragEnabled && item.request.trip_shape !== "round_trip" ? (
+              {dragEnabled && tripTypeOf(item.request) !== "round_trip" ? (
                 <p className="text-xs text-muted-foreground">{he.sadranBoard.dragOneWayUnsupported}</p>
               ) : null}
 

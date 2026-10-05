@@ -14,12 +14,14 @@ import { useState } from "react";
 import { he, tv } from "@/i18n/he";
 import { formatDayDate } from "@/lib/dayLabels";
 import { dateKey, formatTime } from "@/lib/time";
+import { requestStart } from "@/features/sadran/board/phantomLanes";
 
 import { computeDiffSummary } from "../diffSummary";
 import {
   useAllWeekRides,
   usePublicationReadiness,
   usePublishSiddurMutation,
+  useProposalsForWeek,
   useSiddurVersions,
   useWeekRequestsWithNames,
 } from "../../hooks";
@@ -41,6 +43,7 @@ export function PublishScreen({ departmentId, weekStart }: PublishScreenProps) {
   const requestsQuery = useWeekRequestsWithNames(departmentId, weekStart);
   const ridesQuery = useAllWeekRides(departmentId, weekStart);
   const versionsQuery = useSiddurVersions(departmentId, weekStart);
+  const proposalsQuery = useProposalsForWeek(departmentId, weekStart);
   const publishMutation = usePublishSiddurMutation();
 
   const versions = versionsQuery.data ?? [];
@@ -48,6 +51,13 @@ export function PublishScreen({ departmentId, weekStart }: PublishScreenProps) {
   const savedScores = ((previousVersion?.snapshot as { policy_scores?: PolicyBoardScore[] } | null)?.policy_scores ?? []);
 
   const readiness = readinessQuery.data ?? [];
+  // REQ §13.94: unsent drafts block their day; list them (who/what/which day) with a way back.
+  const draftRows = (proposalsQuery.data ?? []).filter((proposal) => proposal.status === "draft").flatMap((proposal) => {
+    const request = (requestsQuery.data ?? []).find((r) => r.id === proposal.request_id);
+    const anchor = request ? requestStart(request) : null;
+    return anchor ? [{ id: proposal.id, name: request?.requester_full_name ?? "", type: proposal.type, day: dateKey(anchor) }] : [];
+  });
+  const draftDays = new Set(readiness.filter((day) => day.draftProposals > 0).map((day) => day.day));
   const allDays = readiness.map((day) => day.day);
   const readyDays = readiness.filter((day) => day.ready).map((day) => day.day);
   const chosenDays = selectedDays ?? allDays;
@@ -82,7 +92,7 @@ export function PublishScreen({ departmentId, weekStart }: PublishScreenProps) {
   function proposePublish(days: string[]) {
     if (!days.length) return;
     const chosen = readiness.filter((day) => days.includes(day.day));
-    if (chosen.some((day) => day.conflictRides > 0)) return;
+    if (chosen.some((day) => day.conflictRides > 0 || day.draftProposals > 0)) return;
     // `unresolvedRequests` no longer blocks publication (REQ §13.75) — an unresolved request is
     // auto-approved or grouped at publication time, `incompleteAssignments` is the real defect.
     if (chosen.some((day) => day.incompleteAssignments > 0 || day.pendingProposals > 0 || day.missingDriverRides > 0)) {
@@ -109,18 +119,19 @@ export function PublishScreen({ departmentId, weekStart }: PublishScreenProps) {
         <h2 className="font-semibold">{he.publicationFlow.allQuestion}</h2>
         <p className="text-sm text-muted-foreground">{readyDays.length === 7 ? he.publicationFlow.allReady : tv("publicationFlow.readiness", { count: String(readyDays.length) })}</p>
         <div className="flex flex-wrap gap-2">
-          <Button disabled={unavailable || readiness.some((day) => day.conflictRides > 0)} onClick={() => proposePublish(allDays)}>{publishMutation.isPending ? he.publishScores.calculating : he.publicationFlow.allYes}</Button>
+          <Button disabled={unavailable || readiness.some((day) => day.conflictRides > 0 || day.draftProposals > 0)} onClick={() => proposePublish(allDays)}>{publishMutation.isPending ? he.publishScores.calculating : he.publicationFlow.allYes}</Button>
           <Button variant="outline" disabled={unavailable} onClick={() => setSelectedDays(readyDays)}>{he.publicationFlow.onlyReady}</Button>
           <Button variant="ghost" disabled={unavailable} onClick={() => setSelectedDays(chosenDays)}>{he.publicationFlow.selectDays}</Button>
         </div>
         {selectedDays ? <div className="space-y-2 border-t pt-3">
           <p className="text-sm text-muted-foreground">{he.publicationFlow.partialHint}</p>
           {readiness.map((day) => <label key={day.day} className="flex items-start gap-3 rounded-md border p-3 text-sm">
-            <Checkbox checked={selectedDays.includes(day.day)} disabled={day.conflictRides > 0 || publishMutation.isPending} onCheckedChange={(checked) => setSelectedDays((current) => checked ? [...(current ?? []), day.day] : (current ?? []).filter((value) => value !== day.day))} />
+            <Checkbox checked={selectedDays.includes(day.day)} disabled={day.conflictRides > 0 || day.draftProposals > 0 || publishMutation.isPending} onCheckedChange={(checked) => setSelectedDays((current) => checked ? [...(current ?? []), day.day] : (current ?? []).filter((value) => value !== day.day))} />
             <span className="space-y-1">
               <span className="block font-medium">{dateLabel(day.day)}{day.published ? ` · ${he.publicationFlow.published}` : ""}</span>
               <span className="block text-xs text-muted-foreground">{day.ready ? he.publicationFlow.ready : [
                 day.unresolvedRequests ? tv("publicationFlow.unresolved", { count: String(day.unresolvedRequests) }) : null,
+                day.draftProposals ? tv("boardDrafts.publishDayDrafts", { count: String(day.draftProposals) }) : null,
                 day.pendingProposals ? tv("publicationFlow.pending", { count: String(day.pendingProposals) }) : null,
                 day.missingDriverRides ? tv("publicationFlow.missingDriver", { count: String(day.missingDriverRides) }) : null,
                 day.conflictRides ? tv("publicationFlow.conflicts", { count: String(day.conflictRides) }) : null,
@@ -133,6 +144,20 @@ export function PublishScreen({ departmentId, weekStart }: PublishScreenProps) {
           <p className="text-sm text-muted-foreground">{he.sadranPublish.unresolvedWillBeGrouped}</p>
         ) : null}
       </CardContent></Card>
+      {draftRows.length ? (
+        <Card className="border-amber-500/60" data-testid="publish-drafts"><CardContent className="space-y-2 p-4 text-sm">
+          <h2 className="font-medium">{he.boardDrafts.publishTitle}</h2>
+          <p className="text-muted-foreground">{he.boardDrafts.publishHelp}</p>
+          <ul className="space-y-1">
+            {draftRows.map((row) => (
+              <li key={row.id} className="flex flex-wrap items-center justify-between gap-2" data-testid="publish-draft-row">
+                <span><span className="font-medium">{dateLabel(row.day)}</span>{" · "}{tv("boardDrafts.publishRow", { name: row.name, type: he.proposal.type[row.type as keyof typeof he.proposal.type] ?? row.type })}</span>
+                <Button variant="outline" size="sm" onClick={() => navigate(paths.sadran.board(departmentId, weekStart))}>{he.boardDrafts.publishOpenBoard}</Button>
+              </li>
+            ))}
+          </ul>
+        </CardContent></Card>
+      ) : draftDays.size ? <p className="text-sm text-amber-700">{he.boardDrafts.publishBlockedDay}</p> : null}
       <p className="text-sm text-muted-foreground">{he.publishScores.help}</p>
       <RideChangeAnswers departmentId={departmentId} weekStart={weekStart} canManage />
       {savedScores.length ? <Card><CardContent className="overflow-x-auto p-4">
@@ -190,7 +215,7 @@ export function PublishScreen({ departmentId, weekStart }: PublishScreenProps) {
         </CardContent>
       </Card>
 
-      {selectedDays ? <Button className="w-full" size="lg" onClick={() => proposePublish(selectedDays)} disabled={unavailable || !selectedDays.length || conflictCount > 0}>
+      {selectedDays ? <Button className="w-full" size="lg" onClick={() => proposePublish(selectedDays)} disabled={unavailable || !selectedDays.length || conflictCount > 0 || selectedDays.some((day) => draftDays.has(day))}>
         {publishMutation.isPending ? he.publishScores.calculating : he.publicationFlow.selectedPublish}
       </Button> : null}
       <ConfirmDialog

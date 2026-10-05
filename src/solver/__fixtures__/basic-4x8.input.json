@@ -200,7 +200,8 @@
       "submittedAtMs": 0,
       "isLate": false,
       "departureMs": 1767600000000,
-      "returnMs": 1767614400000
+      "returnMs": 1767614400000,
+      "memberName": "dana"
     },
     {
       "id": "R2",
@@ -228,7 +229,8 @@
       "submittedAtMs": 0,
       "isLate": false,
       "departureMs": 1767601800000,
-      "returnMs": 1767632400000
+      "returnMs": 1767632400000,
+      "memberName": "yossi"
     },
     {
       "id": "R3",
@@ -256,7 +258,8 @@
       "submittedAtMs": 0,
       "isLate": false,
       "oneWayCarMode": "relay",
-      "departureMs": 1767603600000
+      "departureMs": 1767603600000,
+      "memberName": "noa"
     },
     {
       "id": "R4",
@@ -284,7 +287,8 @@
       "submittedAtMs": 0,
       "isLate": false,
       "departureMs": 1767618000000,
-      "returnMs": 1767627000000
+      "returnMs": 1767627000000,
+      "memberName": "avi"
     },
     {
       "id": "R5",
@@ -312,7 +316,8 @@
       "submittedAtMs": 0,
       "isLate": false,
       "departureMs": 1767619800000,
-      "returnMs": 1767625200000
+      "returnMs": 1767625200000,
+      "memberName": "michal"
     },
     {
       "id": "R6",
@@ -340,7 +345,8 @@
       "submittedAtMs": 0,
       "isLate": false,
       "departureMs": 1767603600000,
-      "returnMs": 1767634200000
+      "returnMs": 1767634200000,
+      "memberName": "levi"
     },
     {
       "id": "R7",
@@ -368,7 +374,8 @@
       "submittedAtMs": 0,
       "isLate": false,
       "oneWayCarMode": "relay",
-      "returnMs": 1767614400000
+      "returnMs": 1767614400000,
+      "memberName": "eitan"
     },
     {
       "id": "R8",
@@ -396,42 +403,48 @@
       "submittedAtMs": 0,
       "isLate": true,
       "departureMs": 1767616200000,
-      "returnMs": 1767623400000
+      "returnMs": 1767623400000,
+      "memberName": "rina"
     }
   ],
   "fixedRides": [],
   "destinations": {
     "home": {
       "id": "home",
-      "zone": "home"
+      "zone": "home",
+      "name": "home"
     },
     "TA": {
       "id": "TA",
       "zone": "TA",
       "distanceKm": 55,
       "travelMinutes": 60,
-      "publicTransportScore": 0.7
+      "publicTransportScore": 0.7,
+      "name": "TA"
     },
     "BS": {
       "id": "BS",
       "zone": "BS",
       "distanceKm": 40,
       "travelMinutes": 45,
-      "publicTransportScore": 0.5
+      "publicTransportScore": 0.5,
+      "name": "BS"
     },
     "ASH": {
       "id": "ASH",
       "zone": "ASH",
       "distanceKm": 25,
       "travelMinutes": 30,
-      "publicTransportScore": 0.3
+      "publicTransportScore": 0.3,
+      "name": "ASH"
     },
     "BIN": {
       "id": "BIN",
       "zone": "BIN",
       "distanceKm": 35,
       "travelMinutes": 45,
-      "publicTransportScore": 0.8
+      "publicTransportScore": 0.8,
+      "name": "BIN"
     }
   },
   "policy": {

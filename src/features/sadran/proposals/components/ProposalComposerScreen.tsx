@@ -1,4 +1,3 @@
-import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
 import { useState } from "react";
 import { X } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -22,20 +21,26 @@ import { useActiveDepartment } from "@/features/auth/useActiveDepartment";
 import { useProfile } from "@/features/auth/useProfile";
 import { ProposalSummary } from "@/features/proposals/components/ProposalSummary";
 import { fetchBoardRideById } from "@/features/siddur/api";
-import { he, t, tv } from "@/i18n/he";
+import { he, t } from "@/i18n/he";
 import { sadranKeys } from "../../keys";
 import { servedOf } from "../../solverRun";
 import { env } from "@/lib/env";
 import { formatDayDate } from "@/lib/dayLabels";
 import { routeLabel } from "@/lib/routeLabel";
-import { TZ, dateKey, formatTime } from "@/lib/time";
+import { formatTime } from "@/lib/time";
+import { DEFAULT_STOP_MINUTES, homeTravelEdges, makeHop } from "@/lib/rideRoute";
+import { mergePayloadLeg, previewMerge } from "../../board/mergeProposal";
 import { useQuery } from "@tanstack/react-query";
 
 import { renderTemplate } from "../waLink";
+import { atTime, buildProposalPayload, resolveShiftTimes } from "../buildProposalPayload";
+import { PROPOSAL_TEMPLATE_VARIANT, combinedSummaryText, externalSuggestionFor, proposalPreviewText } from "../proposalText";
 import { WhatsappDialog } from "./WhatsappDialog";
 import {
   useApplyProposalMutation,
   useCreateProposalMutation,
+  useDepartmentSettings,
+  usePlaceTravelForWeek,
   useProfilesByIds,
   useProposalParties,
   useProposalsForWeek,
@@ -74,22 +79,6 @@ interface ProposalComposerScreenProps {
   weekStart: string;
 }
 
-const VARIANT_OF_TYPE: Record<ProposalType, string | null> = {
-  shift: "shift",
-  merge: "merge_passenger",
-  deny: "deny",
-  // Stage 3 hardening fix #4 (DATA_MODEL.md §6.1 item 19): `external`'s WhatsApp copy
-  // (UX_FLOWS.md §6.2 `wa.external`) is now seeded (`supabase/seed.sql`), so the composer
-  // can look it up like every other type. `chauffeur` still has no dedicated proposal-type
-  // value (SOLVER.md §3.15: it is sent as a `merge` proposal with `role: 'driver'`) and no
-  // composer action yet — UX_FLOWS.md §15 item 6 records that as a separate, still-open gap.
-  external: "external",
-  // `origin` (REQ §13.93, ORIGINS_PLAN §3/§4, db-migrator O3 + ui-dev O4b): the solver's
-  // `changeOrigin` suggestion is sent from the board's unmet list exactly like every other
-  // suggestion kind; the WhatsApp copy is seeded (`supabase/seed.sql`, `20261004120000_...sql`).
-  origin: "origin",
-};
-
 /** `/sadran/:dept/:week/proposals/new` — proposal composer (UX_FLOWS.md §4.3). */
 export function ProposalComposerScreen({ departmentId, weekStart }: ProposalComposerScreenProps) {
   const navigate = useNavigate();
@@ -122,14 +111,7 @@ export function ProposalComposerScreen({ departmentId, weekStart }: ProposalComp
   const request = (requestsQuery.data ?? []).find((r) => r.id === requestId);
   const [departOverride, setDepartOverride] = useState<string | null>(null);
   const [returnOverride, setReturnOverride] = useState<string | null>(null);
-  const departAt = typeof prefill?.payload.depart_at === "string" ? prefill.payload.depart_at : request?.depart_at;
-  const requestedReturnAt = typeof prefill?.payload.return_at === "string" ? prefill.payload.return_at : request?.return_at;
-  const returnAt = departAt && requestedReturnAt && dateKey(departAt) !== dateKey(requestedReturnAt)
-    ? fromZonedTime(`${dateKey(departAt)}T23:59:00`, TZ).toISOString()
-    : requestedReturnAt;
-  function atTime(instant: string | null | undefined, time: string | null) {
-    return instant && time ? fromZonedTime(`${dateKey(instant)}T${time}:00`, TZ).toISOString() : instant;
-  }
+  const { departAt, returnAt } = resolveShiftTimes(prefill?.payload, request);
   const proposedDepartAt = atTime(departAt, departOverride);
   const proposedReturnAt = atTime(returnAt, returnOverride);
   const destinationName = destinationsQuery.data?.find((d) => d.id === request?.destination_id)?.name ?? request?.destination_text ?? "";
@@ -183,8 +165,17 @@ export function ProposalComposerScreen({ departmentId, weekStart }: ProposalComp
   const isDraft = !proposalId || currentProposal?.status === "draft";
   const busy = createMutation.isPending || sendMutation.isPending;
   const mergePayload = (currentProposal?.payload ?? prefill?.payload) as Record<string, unknown> | undefined;
+  // REQ §13.94 (G10): the merged ride keeps the host's start and grows its end by the added
+  // driving (`src/lib/rideRoute.ts`); the payload carries legs only, this window is display/text.
+  const placeTravelQuery = usePlaceTravelForWeek(departmentId, weekStart, type === "merge");
+  const settingsQuery = useDepartmentSettings(type === "merge" ? departmentId : undefined);
+  const mergePreview = type === "merge" && hostRideQuery.data && request
+    ? previewMerge(hostRideQuery.data, request, mergePayloadLeg(mergePayload, request), {
+        hop: makeHop([...(placeTravelQuery.data ?? []), ...homeTravelEdges(homeDestinationId, destinationsQuery.data ?? [])]), stopMinutes: settingsQuery.data?.stop_minutes ?? DEFAULT_STOP_MINUTES, homeId: homeDestinationId,
+      })
+    : null;
   const combinedStart = typeof mergePayload?.starts_at === "string" ? mergePayload.starts_at : hostRideQuery.data?.starts_at;
-  const combinedEnd = typeof mergePayload?.ends_at === "string" ? mergePayload.ends_at : hostRideQuery.data?.ends_at;
+  const combinedEnd = typeof mergePayload?.ends_at === "string" ? mergePayload.ends_at : (mergePreview?.endsAt ?? hostRideQuery.data?.ends_at);
   // `origin` (REQ §13.93, SOLVER §3.15): never editable in the composer — the board already
   // picked the free car/location pair, this screen only shows and sends it.
   const originPayload = type === "origin" ? ((currentProposal?.payload ?? prefill?.payload) as Record<string, unknown> | undefined) : undefined;
@@ -193,119 +184,42 @@ export function ProposalComposerScreen({ departmentId, weekStart }: ProposalComp
   const newOriginName = destinationsQuery.data?.find((d) => d.id === originIdValue)?.name ?? "";
   const originCarName = carsQuery.data?.find((c) => c.id === originCarIdValue)?.name ?? "";
 
-  const variant = VARIANT_OF_TYPE[type];
+  const variant = PROPOSAL_TEMPLATE_VARIANT[type];
   const template = variant ? (templatesQuery.data ?? []).find((t) => t.variant === variant) : undefined;
   const effectiveReason = reasonInput.trim() || he.sadranProposal.defaultReason;
-  const externalSuggestion = type === "external"
-    ? he.sadranProposal.externalSuggestion[externalHint as keyof typeof he.sadranProposal.externalSuggestion] ?? he.sadranProposal.externalSuggestion.private
-    : "";
+  const externalSuggestion = externalSuggestionFor(type, externalHint);
 
-  function firstNameOf(fullName: string | undefined): string {
-    return fullName?.split(" ")[0] ?? "";
-  }
+  const textInput = {
+    template,
+    type,
+    request,
+    requesterName: contactsQuery.data?.find((c) => c.id === request?.requester_id)?.full_name,
+    sadranName: profileQuery.data?.full_name ?? "",
+    destinationName,
+    route,
+    proposedDepartAt,
+    proposedReturnAt,
+    carName: type === "origin" ? originCarName : (carsQuery.data?.find((c) => c.id === hostRideQuery.data?.car_id)?.name ?? ""),
+    // `origin` (REQ §13.93): the request's current origin vs. the free car's origin the board
+    // suggested instead - baked into `reason_he` at creation time.
+    origin: request?.origin_resolved_name ?? "",
+    newOrigin: newOriginName,
+    driverName: hostRideQuery.data?.driver_name ?? "",
+    reason: effectiveReason,
+    externalSuggestion,
+    combined: type === "merge" && combinedStart && combinedEnd ? {
+      start: combinedStart, end: combinedEnd,
+      passengerName: contactsQuery.data?.find((c) => c.id === request?.requester_id)?.full_name ?? "",
+      hostCarName: carsQuery.data?.find((c) => c.id === hostRideQuery.data?.car_id)?.name ?? "",
+    } : null,
+  };
+  const combinedSummary = combinedSummaryText(textInput);
+  const previewText = currentProposal?.reason_he ?? editedText ?? proposalPreviewText(textInput);
 
-  function baseVars(): Record<string, string> {
-    const requesterId = request?.requester_id;
-    const requester = contactsQuery.data?.find((c) => c.id === requesterId);
-    // Stage 3 hardening bug fix (found while writing e2e/proposal.spec.ts): date-fns'
-    // "EEEE" token has no locale here, so this previously rendered the *English* weekday
-    // name ("Friday") into an otherwise all-Hebrew WhatsApp message. `formatDayDate` (the
-    // single canonical weekday+date renderer, Asia/Jerusalem-zoned, hard rule 6 — never a
-    // raw, unzoned `getDay()`) is correct. `day` now carries the full "ד׳ 16.9" label
-    // (templates are moving to `{{day}}` alone); `date` stays plain "d.M" for any template
-    // still combining the two.
-    const day = request?.depart_at ? formatDayDate(request.depart_at) : "";
-    const date = request?.depart_at ? formatInTimeZone(new Date(request.depart_at), TZ, "d.M") : "";
-    return {
-      firstName: firstNameOf(requester?.full_name),
-      sadranName: profileQuery.data?.full_name ?? "",
-      destination: destinationName,
-      route,
-      day,
-      date,
-      depart: request?.depart_at ? formatTime(new Date(request.depart_at)) : "",
-      return: request?.return_at ? formatTime(new Date(request.return_at)) : "",
-      newDepart: proposedDepartAt ? formatTime(new Date(proposedDepartAt)) : "",
-      newReturn: proposedReturnAt ? formatTime(new Date(proposedReturnAt)) : "",
-      car: type === "origin" ? originCarName : (carsQuery.data?.find((c) => c.id === hostRideQuery.data?.car_id)?.name ?? ""),
-      // `origin` (REQ §13.93): the request's current origin vs. the free car's origin the
-      // board suggested instead — baked into `reason_he` at creation time (never left as a
-      // raw `{{origin}}`/`{{newOrigin}}` token, same rule as every other var here).
-      origin: request?.origin_resolved_name ?? "",
-      newOrigin: newOriginName,
-      driverName: hostRideQuery.data?.driver_name ?? "",
-      passengerName: firstNameOf(requester?.full_name),
-      detourMin: "",
-      reason: effectiveReason,
-      externalSuggestion,
-      expiresAt: "",
-      // Deliberately no `link` key (Stage 3 hardening bug fix, found while writing
-      // e2e/proposal.spec.ts, UX_FLOWS.md §16 item 9): `renderTemplate` only replaces a
-      // `{{name}}` placeholder it has a var for, leaving anything else untouched — so
-      // `{{link}}` survives into `previewText` below and stays substitutable. Filling it in
-      // here with a placeholder string (the previous code did) would *replace* the literal
-      // `{{link}}` token in `previewText` with that placeholder text; `waButtonFor`'s own
-      // second `renderTemplate(previewText, { link })` pass then has no `{{link}}` token left
-      // to find, so the real per-recipient link silently never made it into the actual
-      // WhatsApp message text — every proposal ever sent linked to a dead placeholder string
-      // instead of `/p/<token>`. The live preview textarea now shows the literal `{{link}}`
-      // token before sending, which is the correct tradeoff (a real link doesn't exist yet).
-    };
-  }
-
-  const combinedSummary = type === "merge" && combinedStart && combinedEnd ? tv("rideCoordination.combinedSummary", {
-    driver: hostRideQuery.data?.driver_name ?? "",
-    passenger: contactsQuery.data?.find((c) => c.id === request?.requester_id)?.full_name ?? "",
-    destination: destinationName,
-    car: carsQuery.data?.find((c) => c.id === hostRideQuery.data?.car_id)?.name ?? "",
-    start: formatTime(new Date(combinedStart)), end: formatTime(new Date(combinedEnd)),
-  }) : "";
-  const previewText = currentProposal?.reason_he ?? editedText ?? (template ? [
-    combinedSummary,
-    renderTemplate(template.body, baseVars()),
-    // Older/custom templates may not have these placeholders. Include the
-    // selected alternative and optional explanation in the member's message.
-    (type === "deny" || type === "external") && !template.body.includes("{{reason}}") ? effectiveReason : "",
-    !template.body.includes("{{externalSuggestion}}") ? externalSuggestion : "",
-  ].filter(Boolean).join("\n\n") : "");
-
-  /**
-   * `proposals_payload_shape_ck` (supabase/migrations/20260907090900_proposals.sql
-   * `validate_proposal_payload`) requires type-specific keys — an empty `{}`
-   * payload is rejected outright. `null` means "not ready to submit yet"
-   * (missing a required field the Sadran must still fill in).
-   */
-  function buildPayload(): Record<string, unknown> | null {
-    if (type === "shift") {
-      const departAt = proposedDepartAt;
-      const returnAt = proposedReturnAt;
-      if (!departAt && !returnAt) return null;
-      if (departAt && returnAt && (Date.parse(returnAt) <= Date.parse(departAt) || dateKey(departAt) !== dateKey(returnAt))) return null;
-      return { ...prefill?.payload, depart_at: departAt, return_at: returnAt };
-    }
-    if (type === "deny") {
-      return { ...prefill?.payload, reason: effectiveReason };
-    }
-    if (type === "external") {
-      return { ...prefill?.payload, hint: externalHint, reason: effectiveReason };
-    }
-    if (type === "merge") {
-      if (!rideId) return null;
-      const legs = Array.isArray(prefill?.payload.legs)
-        ? prefill.payload.legs
-        : [{ ride_id: rideId, role: "passenger", leg: request?.trip_shape === "one_way_to" ? "out" : request?.trip_shape === "one_way_from" ? "return" : "both", car_mode: "passenger" }];
-      return { ...prefill?.payload, ride_id: rideId, legs, starts_at: combinedStart, ends_at: combinedEnd };
-    }
-    if (type === "origin") {
-      const originId = typeof prefill?.payload.origin_id === "string" ? prefill.payload.origin_id : undefined;
-      const carId = typeof prefill?.payload.car_id === "string" ? prefill.payload.car_id : undefined;
-      if (!originId || !carId) return null;
-      return { origin_id: originId, car_id: carId };
-    }
-    return null;
-  }
-
-  const payload = buildPayload();
+  const payload = buildProposalPayload({
+    type, prefillPayload: prefill?.payload, request, rideId, proposedDepartAt, proposedReturnAt,
+    effectiveReason, externalHint,
+  });
 
   async function handleCreateAndSend() {
     if (!request || (!proposalId && !payload) || busy) return;
@@ -343,6 +257,27 @@ export function ProposalComposerScreen({ departmentId, weekStart }: ProposalComp
       });
     } catch {
       // toasts already shown by the mutations
+    }
+  }
+
+  /** REQ §13.94: store the proposal unsent (a board draft) and go back to the board. */
+  async function handleSaveDraft() {
+    if (!request || proposalId || !payload || busy) return;
+    try {
+      await createMutation.mutateAsync({
+        requestId: request.id,
+        rideId,
+        type,
+        payload: payload as unknown as Json,
+        reasonHe: previewText,
+        partyProfileIds: extraPartyIds,
+        departmentId,
+        weekStart,
+      });
+      toast.success(he.boardDrafts.saved);
+      navigate(returnTo, { replace: true });
+    } catch {
+      // toast already shown by the mutation
     }
   }
 
@@ -465,11 +400,23 @@ export function ProposalComposerScreen({ departmentId, weekStart }: ProposalComp
             {proposalId ? <p className="text-sm text-muted-foreground">{he.sadranProposal.draftNote}</p> : null}
             <Button
               className="w-full"
+              data-testid="composer-send"
               onClick={handleCreateAndSend}
               disabled={(!proposalId && (!variant || !payload || (type === "merge" && !hostRideQuery.data?.driver_id))) || busy || !proposalsForWeekQuery.isSuccess || proposalsForWeekQuery.isFetching || (!!pendingProposal && (!pendingPartiesQuery.isSuccess || pendingHasAnswer))}
             >
               {pendingProposal ? he.sadranProposal.replaceAndSend : proposalId ? he.sadranProposal.retrySend : t("action.propose")}
             </Button>
+            {!proposalId ? (
+              <Button
+                className="w-full"
+                variant="outline"
+                data-testid="composer-save-draft"
+                onClick={handleSaveDraft}
+                disabled={!variant || !payload || (type === "merge" && !hostRideQuery.data?.driver_id) || busy}
+              >
+                {he.boardDrafts.saveDraft}
+              </Button>
+            ) : null}
             </>
           ) : (
             <div className="space-y-2">

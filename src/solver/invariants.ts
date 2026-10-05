@@ -107,10 +107,20 @@ export function assertInvariants(input: SolverInput, output: SolverOutput): void
   }
 
   // Every request appears exactly once (assignment, unmet, or servedByFixed).
+  // A request may sit on two rides when each carries a different leg (a drop-off with a pickup is
+  // two separate trips, REQ §13.94: after a solve both rides are fixed for the next "remaining"
+  // run); it is a violation only when two rides claim the same leg.
   const seen = new Set<string>();
+  const claimedLegs = new Map<string, Set<string>>();
   for (const a of output.assignments) {
-    for (const rid of a.servedRequestIds) {
-      if (seen.has(rid)) throw new SolverInvariantError(`request ${rid} served more than once`, 'DUPLICATE_SERVE');
+    for (const rid of new Set(a.servedRequestIds)) {
+      const sides = a.legs.filter((l) => l.requestId === rid).flatMap((l) => (l.leg === 'both' ? ['out', 'return'] : [l.leg]));
+      const claimed = claimedLegs.get(rid) ?? new Set<string>();
+      for (const side of sides.length ? sides : ['out', 'return']) {
+        if (claimed.has(side)) throw new SolverInvariantError(`request ${rid} served more than once`, 'DUPLICATE_SERVE');
+        claimed.add(side);
+      }
+      claimedLegs.set(rid, claimed);
       seen.add(rid);
     }
   }

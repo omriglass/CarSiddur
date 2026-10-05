@@ -138,6 +138,9 @@ test.describe.serial("quick request from an empty slot (live week)", { tag: ["@q
     // extends its blocked window to 12:30) — 12:15 renders as visually empty (no ride block
     // covers it) but is still inside that buffer, so it exercises the "clicked car busy"
     // fallback rather than accidentally clicking the existing ride block itself.
+    // The free-window check reads the loaded rides: wait for the previous test's ride block to
+    // render, or the click can race an empty ride list and see the car as free.
+    await expect(col.locator("button[data-ride-id]")).toBeVisible({ timeout: 10_000 });
     const box = await col.boundingBox();
     if (!box) throw new Error("car column not found");
     await col.click({ position: { x: box.width / 2, y: yForMinutes(12 * 60 + 15, box.height) } });

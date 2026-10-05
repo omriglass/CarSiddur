@@ -310,12 +310,13 @@ Deno.serve(async (req) => {
   for (const r of requestRows ?? []) if (r.destination_id) destinationIds.add(r.destination_id as string);
   const { data: destinationRows } = await client
     .from('destinations')
-    .select('id, zone, distance_km, travel_minutes, public_transport_score')
+    .select('id, name, zone, distance_km, travel_minutes, public_transport_score')
     .in('id', [...destinationIds]);
   const destinations: Record<string, Destination> = {};
   for (const d of destinationRows ?? []) {
     destinations[d.id as string] = {
       id: d.id as string,
+      name: (d.name as string | null) ?? undefined,
       zone: d.zone as string,
       distanceKm: d.distance_km ?? undefined,
       travelMinutes: d.travel_minutes ?? undefined,

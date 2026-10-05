@@ -7,6 +7,11 @@ import {
   seatsFit,
   strandsNextRide,
   unavailable,
+  unmetCandidateWindow,
+  unmetMergeHost,
+  unmetPlacement,
+  unmetRequestPassengers,
+  unmetShiftPayload,
   type BoardDropContext,
 } from "./dropValidity";
 import { slotToIso } from "./geometry";
@@ -204,5 +209,68 @@ describe("isUnmetDropValid", () => {
     const req = request({ id: "r1", trip_shape: "one_way_to", depart_at: "2026-09-13T08:00:00.000Z", destination_travel_minutes: 30 });
     const ctx = baseContext({ rides: [existing] });
     expect(isUnmetDropValid(ctx, unmetItem(req), "car1", 660)).toBe(true);
+  });
+});
+
+describe("unmet placement by trip type (REQUIREMENTS §13.93)", () => {
+  const item = (req: WeekRequestRow): UnmetListItem => ({ request: req, destinationName: "—" });
+  const ctx = baseContext({ homeDestinationId: "home", carBaseLocationId: new Map([["car1", "home"]]), weekStartMs: Date.parse("2026-09-13T00:00:00.000Z") });
+  const departAt = "2026-09-13T08:00:00.000Z";
+  const base = { id: "r1", depart_at: departAt, origin_id: "kfar", destination_id: "haifa" };
+
+  it("round trip: origin = destination = the request's origin, requester drives, keep", () => {
+    const req = request({ ...base, trip_type: "round_trip", trip_shape: "round_trip", return_at: "2026-09-13T12:00:00.000Z" });
+    expect(unmetPlacement(ctx, req, "car1", departAt)).toEqual({ originId: "kfar", destinationId: "kfar", driverIsRequester: true, served: { role: "driver", leg: "both", car_mode: "keep" } });
+  });
+
+  it("round trip without its own origin falls back to the department home", () => {
+    const req = request({ id: "r1", depart_at: departAt, origin_id: null, trip_type: "round_trip", trip_shape: "round_trip" });
+    expect(unmetPlacement(ctx, req, "car1", departAt)?.originId).toBe("home");
+  });
+
+  it("one way: origin -> destination, requester drives as the driver on a relay leg, window = departure + route minutes", () => {
+    const req = request({ ...base, trip_type: "one_way", trip_shape: "one_way_to", destination_travel_minutes: 30 });
+    expect(unmetPlacement(ctx, req, "car1", departAt)).toEqual({ originId: "kfar", destinationId: "haifa", driverIsRequester: true, served: { role: "driver", leg: "out", car_mode: "relay" } });
+    // Not the chauffeur window (2 x 30 + dwell): the requester drives out and stays there.
+    expect(unmetCandidateWindow(ctx, item(req), 660, true)).toEqual({ startsAt: "2026-09-13T08:00:00.000Z", endsAt: "2026-09-13T08:30:00.000Z" });
+    expect(unmetRequestPassengers(req)).toEqual({ adults: 1, childSeats: 0, boosters: 0 });
+  });
+
+  it("one way without a list destination cannot be placed", () => {
+    const req = request({ ...base, destination_id: null, trip_type: "one_way", trip_shape: "one_way_to" });
+    expect(unmetPlacement(ctx, req, "car1", departAt)).toBeNull();
+  });
+
+  it("drop-off: a chauffeur ride whose places are where the car is, not the department home", () => {
+    const req = request({ ...base, trip_type: "drop_off", trip_shape: "one_way_to" });
+    const away = baseContext({ homeDestinationId: "home", carBaseLocationId: new Map([["car1", "home"]]), weekStartMs: Date.parse("2026-09-13T00:00:00.000Z"),
+      awayByCarId: new Map([["car1", [{ locationId: "kfar", window: { start: 0, end: 96 } }]]]) });
+    expect(unmetPlacement(away, req, "car1", departAt)).toEqual({ originId: "kfar", destinationId: "kfar", driverIsRequester: false, served: { role: "passenger", leg: "out", car_mode: "chauffeur" } });
+    expect(unmetCandidateWindow(ctx, item(req), 660, true)).toEqual({ startsAt: "2026-09-13T08:00:00.000Z", endsAt: "2026-09-13T09:15:00.000Z" });
+    expect(unmetRequestPassengers(req).adults).toBe(2);
+  });
+
+  it("drop-off with pickup (round-trip shape) places only the out leg as a chauffeur leg", () => {
+    const req = request({ ...base, trip_type: "drop_off", trip_shape: "round_trip", return_at: "2026-09-13T12:00:00.000Z" });
+    expect(unmetPlacement(ctx, req, "car1", departAt)?.served).toEqual({ role: "passenger", leg: "out", car_mode: "chauffeur" });
+    expect(unmetCandidateWindow(ctx, item(req), 660, true)).toEqual({ startsAt: "2026-09-13T08:00:00.000Z", endsAt: "2026-09-13T09:15:00.000Z" });
+  });
+
+  it("a round trip is never a merge host target, a drop-off and a one way are", () => {
+    const host = ride({ id: "host1", car_id: "car1", driver_id: "d", needs_driver: false, starts_at: departAt, ends_at: "2026-09-13T09:00:00.000Z" });
+    const withHost = baseContext({ rides: [host] });
+    expect(unmetMergeHost(withHost, item(request({ ...base, trip_type: "round_trip", trip_shape: "round_trip" })), "car1", 0, "host1")).toBeUndefined();
+    expect(unmetMergeHost(withHost, item(request({ ...base, trip_type: "drop_off", trip_shape: "round_trip" })), "car1", 0, "host1")?.id).toBe("host1");
+    expect(unmetMergeHost(withHost, item(request({ ...base, trip_type: "one_way", trip_shape: "one_way_to" })), "car1", 0, "host1")?.id).toBe("host1");
+  });
+
+  it("the beyond-flex shift payload carries the request's places, never the department home", () => {
+    const window = { startsAt: departAt, endsAt: "2026-09-13T12:00:00.000Z" };
+    const round = request({ ...base, trip_type: "round_trip", trip_shape: "round_trip", return_at: window.endsAt });
+    expect(unmetShiftPayload(round, "car1", window, unmetPlacement(ctx, round, "car1", departAt)!)).toEqual({ car_id: "car1", depart_at: departAt, return_at: window.endsAt, origin_id: "kfar", destination_id: "kfar" });
+    const oneWay = request({ ...base, trip_type: "one_way", trip_shape: "one_way_to" });
+    expect(unmetShiftPayload(oneWay, "car1", window, unmetPlacement(ctx, oneWay, "car1", departAt)!)).toEqual({ car_id: "car1", depart_at: departAt, origin_id: "kfar", destination_id: "haifa" });
+    const drop = request({ ...base, trip_type: "drop_off", trip_shape: "one_way_to" });
+    expect(unmetShiftPayload(drop, "car1", window, unmetPlacement(ctx, drop, "car1", departAt)!)).toEqual({ depart_at: departAt, origin_id: "kfar", destination_id: "haifa" });
   });
 });

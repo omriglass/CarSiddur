@@ -50,8 +50,9 @@ begin
   assert (select not is_pinned and status='draft' from public.rides where id=rA), 'setup: rA must be a non-pinned draft';
   assert (select not is_pinned and status='draft' from public.rides where id=rB), 'setup: rB must be a non-pinned draft';
 
-  propA:=public.create_proposal(qA,rA,'shift',jsonb_build_object('depart_at',dt+interval '15 minutes','return_at',dt+interval '4 hours 15 minutes'),
-    'test shift reason', array[]::uuid[], 'sadran');
+  -- A 'deny' (not shift/merge: those rides are kept by a re-solve since REQ §13.94, see board_drafts.sql).
+  propA:=public.create_proposal(qA,rA,'deny',jsonb_build_object('reason','test deny'),
+    'test deny reason', array[]::uuid[], 'sadran');
   perform public.send_proposal(propA,'{}');
   assert (select status='sent' from public.proposals where id=propA), 'setup: propA must be sent';
   assert (select status='proposed' from public.requests where id=qA), 'setup: qA must be proposed while propA is sent';

@@ -64,6 +64,7 @@ import { describeStatusReason } from "@/lib/statusReason";
 import { formatTime } from "@/lib/time";
 import { paths } from "@/app/routes";
 
+import { isAwaitingAnswer } from "@/features/requests/pendingProposal";
 import { hasRideTodayOrTomorrow, resolveHomeWeek } from "./homeWeek";
 
 const UNSERVED_STATUSES = new Set<MyRequestRow["status"]>(["waitlisted", "denied", "proposed"]);
@@ -160,7 +161,7 @@ export function HomePage() {
 
   const upcomingRides = upcomingRidesQuery.data ?? [];
 
-  const nextAction = requests.find((r) => r.status === "proposed" && r.pendingProposal);
+  const nextAction = requests.find((r) => r.status === "proposed" && r.pendingProposal && isAwaitingAnswer(r.pendingProposal));
   const unserved = requests.filter(
     (r) => UNSERVED_STATUSES.has(r.status) && r.id !== nextAction?.id,
   );
@@ -295,7 +296,7 @@ export function HomePage() {
         >
           <div>
             <p className="font-medium text-maintenance">{t("home.nextAction")}</p>
-            <p className="text-foreground/80">{reasonLine(nextAction)}</p>
+            <p className="line-clamp-3 whitespace-normal break-words text-foreground/80">{reasonLine(nextAction)}</p>
           </div>
         </OpenProposalButton>
       ) : null}

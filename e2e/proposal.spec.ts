@@ -35,6 +35,7 @@ test.describe("proposal round trip", { tag: ["@proposals"] }, () => {
     await expect(unmetCard).toBeVisible();
     await unmetCard.getByRole("button", { name: he.sadranProposal.suggestTimes, exact: true }).click();
 
+    await page.getByTestId("draft-choice-compose").click(); // REQ §13.94 chooser: "הכן הצעה"
     await expect(page).toHaveURL(/\/proposals\/new$/);
     await expect(page.getByText(PROPOSAL_REQUEST_LABEL).first()).toBeVisible();
 

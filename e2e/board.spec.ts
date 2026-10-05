@@ -139,13 +139,19 @@ test.describe.serial("board (bug-fix pass regression, fake-week data)", { tag: [
     expect(n).toBeGreaterThan(0);
     const admin = serviceRoleClient();
     const weekStart = weekUrl.match(/(\d{4}-\d{2}-\d{2})$/)?.[1] ?? "";
-    const { data: requests } = await admin.from("requests").select("id, depart_at, return_at, trip_shape, status").eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", weekStart).in("status", ["submitted", "waitlisted", "proposed", "denied"]);
+    const { data: requests } = await admin.from("requests").select("id, depart_at, return_at, trip_shape, trip_type, status").eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", weekStart).in("status", ["submitted", "waitlisted", "proposed", "denied"]);
     for (const day of [0, 3]) {
       await page.getByRole("radio").nth(day).click();
-      const expected = (requests ?? []).filter((request) => {
+      const onDay = (anchor: string | null) => !!anchor && Number(formatInTimeZone(new Date(anchor), TZ, "i")) % 7 === day;
+      // REQ §13.94 (G4): a drop-off with a pickup is two cards, each shown on its own leg's day.
+      const expected = (requests ?? []).flatMap((request) => {
+        if (request.status === "denied") return [];
+        if (request.trip_type === "drop_off" && request.trip_shape === "round_trip") {
+          return [onDay(request.depart_at) ? `request:${request.id}` : null, onDay(request.return_at) ? `request:${request.id}:return` : null].filter((id): id is string => !!id);
+        }
         const anchor = request.trip_shape === "one_way_from" ? request.return_at : request.depart_at;
-        return request.status !== "denied" && anchor && Number(formatInTimeZone(new Date(anchor), TZ, "i")) % 7 === day;
-      }).map((request) => `request:${request.id}`).sort();
+        return onDay(anchor) ? [`request:${request.id}`] : [];
+      }).sort();
       await expect(async () => {
         const ids = await page.locator('button[data-ride-id^="request:"]:visible').evaluateAll((elements) => elements.map((element) => element.getAttribute("data-ride-id")).sort());
         expect(ids).toEqual(expected);
@@ -258,7 +264,8 @@ test.describe.serial("board (bug-fix pass regression, fake-week data)", { tag: [
     await page.getByRole("radio").nth(selectedDayIndex).click();
 
     // At least one ride block rendered on the default (busiest) day.
-    const firstRide = page.locator('button[data-ride-id]:not([data-ride-id^="request:"]):visible').first();
+    // (A chauffeur ride still awaiting a driver is labelled "_____ <verb> ..." - not the shape asserted below.)
+    const firstRide = page.locator('button[data-ride-id]:not([data-ride-id^="request:"]):not([data-needs-driver="true"]):visible').first();
     await expect(firstRide).toBeVisible({ timeout: 10_000 });
 
     // bug #3: the label is "<driver first name> ל/מ<destination>", never the department's own name.
@@ -359,7 +366,7 @@ test.describe.serial("board (bug-fix pass regression, fake-week data)", { tag: [
     await expect(page.getByRole("heading", { name: "פרטי הנסיעה" })).toBeVisible();
 
     // "העבר לרכב" select (bug #2's no-drag/touch fallback).
-    await page.getByRole("combobox").last().click();
+    await page.getByTestId("ride-car-select").click();
     await page.getByRole("option", { name: chosenCar?.name, exact: true }).click();
     await page.getByRole("button", { name: "שמור שינויים" }).click();
     await expect(page.getByRole("heading", { name: "פרטי הנסיעה" })).toBeHidden({ timeout: 10_000 });
@@ -424,18 +431,24 @@ test.describe.serial("board (bug-fix pass regression, fake-week data)", { tag: [
     type RideRow = NonNullable<typeof rides>[number];
     let chosenRide: RideRow | undefined;
     let chosenCar: { id: string; name: string } | undefined;
-    for (const ride of rides ?? []) {
-      const need = passengersByRideId.get(ride.id) ?? { adults: 0, child_seats: 0, boosters: 0 };
-      const candidate = (cars ?? []).find(
-        (c) =>
-          c.id !== ride.car_id &&
-          fits(c.id, need) &&
-          !(rides ?? []).some((other) => other.car_id === c.id && overlaps(ride.starts_at, ride.ends_at, other.starts_at, other.ends_at)),
-      );
-      if (candidate) {
-        chosenRide = ride;
-        chosenCar = candidate;
-        break;
+    // Cars stay where their last ride left them (REQ §13.93): a ride can only be dropped on a car
+    // that is at the ride's origin, so prefer a target car with no ride in the whole week (it
+    // is at its home base) and only then fall back to any free-by-time car.
+    for (const strict of [true, false]) {
+      for (const ride of rides ?? []) {
+        if (chosenRide) break;
+        const need = passengersByRideId.get(ride.id) ?? { adults: 0, child_seats: 0, boosters: 0 };
+        const candidate = (cars ?? []).find(
+          (c) =>
+            c.id !== ride.car_id &&
+            fits(c.id, need) &&
+            (!strict || !(rides ?? []).some((other) => other.car_id === c.id)) &&
+            !(rides ?? []).some((other) => other.car_id === c.id && overlaps(ride.starts_at, ride.ends_at, other.starts_at, other.ends_at)),
+        );
+        if (candidate) {
+          chosenRide = ride;
+          chosenCar = candidate;
+        }
       }
     }
     expect(chosenRide).toBeTruthy();
@@ -497,6 +510,9 @@ test.describe.serial("board (bug-fix pass regression, fake-week data)", { tag: [
     const beforeIds = new Set((beforeRides ?? []).map((r) => r.id));
     expect(beforeIds.size).toBeGreaterThan(0);
 
+    // Board data (department home, policy) must be loaded or the action silently does nothing.
+    await expect(page.locator("h2:visible").filter({ hasText: /לא שובצו \(\d+\)/ }).first()).toBeVisible();
+    await expect(page.locator('button[data-ride-id]:not([data-ride-id^="request:"]):visible').first()).toBeVisible({ timeout: 10_000 });
     const applied = page.waitForResponse((response) => response.url().endsWith("/rest/v1/rpc/apply_solver_result") && response.request().method() === "POST");
     await openBoardActionsMenu(page);
     await page.getByRole("menuitem", { name: "השלם אוטומטית", exact: true }).click();
