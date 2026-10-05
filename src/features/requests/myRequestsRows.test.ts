@@ -71,7 +71,7 @@ describe("originDestinationLabel (REQ §13.93 'Multi-stop rides')", () => {
     const row = request({
       originId: "home-dest",
       originName: "נבו",
-      stops: [{ leg: "out", position: 1, placeId: "binyamina-dest", placeText: null, name: "בנימינה", eta: null }],
+      stops: [{ leg: "out", position: 1, placeId: "binyamina-dest", placeText: null, name: "בנימינה", eta: null, active: true }],
     });
     expect(originDestinationLabel(row, "home-dest")).toBe(tv("route.toVia", { destination: "Destination", stops: "בנימינה" }));
   });
@@ -80,7 +80,7 @@ describe("originDestinationLabel (REQ §13.93 'Multi-stop rides')", () => {
     const row = request({
       originId: "home-dest",
       originName: "נבו",
-      stops: [{ leg: "return", position: 1, placeId: "binyamina-dest", placeText: null, name: "בנימינה", eta: null }],
+      stops: [{ leg: "return", position: 1, placeId: "binyamina-dest", placeText: null, name: "בנימינה", eta: null, active: true }],
     });
     expect(originDestinationLabel(row, "home-dest")).toBe("Destination");
   });

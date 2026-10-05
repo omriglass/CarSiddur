@@ -428,7 +428,12 @@ Deno.serve(async (req) => {
   // REQUIREMENTS §13.93 "Multi-stop rides": group by request_id, route order per leg (sorted by
   // `position` — mirrors `buildSolverInput.ts`'s identical comment).
   const stopsByRequestId = new Map<string, { leg: 'out' | 'return'; position: number; place_id: string | null }[]>();
+  // REQUIREMENTS §13.97: a one-way request keeps its return stops dormant — a return-leg stop
+  // counts only when its request has a return (the table has no `active` column; views compute it).
+  const hasReturnById = new Set(((requestRows ?? []) as { id: string; return_at?: string | null }[])
+    .filter((r) => r.return_at != null).map((r) => r.id));
   for (const s of (stopRows ?? []) as { request_id: string; leg: 'out' | 'return'; position: number; place_id: string | null }[]) {
+    if (s.leg === 'return' && !hasReturnById.has(s.request_id)) continue;
     const list = stopsByRequestId.get(s.request_id) ?? [];
     list.push(s);
     stopsByRequestId.set(s.request_id, list);

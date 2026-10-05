@@ -112,9 +112,9 @@ describe("suggestionToFormValues", () => {
     const values = suggestionToFormValues(
       baseRow({
         stops: [
-          { leg: "out", position: 2, placeId: "dest-b", placeText: null, name: "בנימינה", eta: null },
-          { leg: "out", position: 1, placeId: "dest-a", placeText: null, name: "חיפה", eta: null },
-          { leg: "return", position: 1, placeId: null, placeText: "עצירה חופשית", name: "עצירה חופשית", eta: null },
+          { leg: "out", position: 2, placeId: "dest-b", placeText: null, name: "בנימינה", eta: null, active: true },
+          { leg: "out", position: 1, placeId: "dest-a", placeText: null, name: "חיפה", eta: null, active: true },
+          { leg: "return", position: 1, placeId: null, placeText: "עצירה חופשית", name: "עצירה חופשית", eta: null, active: true },
         ],
       }),
       WEEK_START,

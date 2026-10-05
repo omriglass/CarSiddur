@@ -155,7 +155,7 @@ describe("stops (REQ §13.93 'Multi-stop rides')", () => {
     ]);
   });
 
-  it("never sends return-stops for a one-way-to leg, even if the form still holds some", () => {
+  it("still sends the held return stops for a one-way-to leg (REQ §13.97: the server keeps them inactive)", () => {
     const payload = toSubmitRequestPayload(
       baseValues({
         tripShape: "one_way_to",
@@ -164,7 +164,7 @@ describe("stops (REQ §13.93 'Multi-stop rides')", () => {
         returnStops: [{ presetId: "hadera-dest", name: "חדרה" }],
       }),
     );
-    expect(payload.stops).toEqual([]);
+    expect(payload.stops).toEqual([{ leg: "return", place_id: "hadera-dest" }]);
   });
 });
 
@@ -192,5 +192,30 @@ describe("editReturnInstant (UX_FLOWS §3.4)", () => {
     expect(editReturnInstant({ returnAt: "2026-09-13T14:00:00Z", keptReturnAt: "2026-09-13T15:00:00Z" })).toBe("2026-09-13T14:00:00Z");
     expect(editReturnInstant({ returnAt: null, keptReturnAt: "2026-09-13T15:00:00Z" })).toBe("2026-09-13T15:00:00Z");
     expect(editReturnInstant({ returnAt: null })).toBeNull();
+  });
+});
+
+describe("toSubmitRequestPayload stops (REQ §13.97)", () => {
+  it("sends both legs' stops even for a one-way request", () => {
+    const values = {
+      ...REQUEST_FORM_DEFAULTS,
+      departmentId: "dept-1",
+      weekStart: "2026-09-13",
+      day: "2026-09-15",
+      dayIndex: 2,
+      destination: { presetId: "dest-1", name: "x" },
+      tripShape: "one_way_to",
+      tripType: "one_way",
+      departTime: "08:00",
+      returnTime: "17:00",
+      outStops: [{ presetId: "o1", name: "o" }],
+      returnStops: [{ presetId: "r1", name: "r" }],
+    } as unknown as RequestFormValues;
+    const payload = toSubmitRequestPayload(values);
+    expect(payload.stops).toEqual([
+      { leg: "out", place_id: "o1" },
+      { leg: "return", place_id: "r1" },
+    ]);
+    expect(payload.return_at).toBeUndefined();
   });
 });

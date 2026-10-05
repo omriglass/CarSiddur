@@ -102,16 +102,18 @@ begin
   -- 3) Validation refusals (invalid_stops), each in its own savepoint via begin/exception so
   --    one failure does not abort the whole suite.
   -----------------------------------------------------------------------
-  -- 3a) a return-leg stop on a request with no return.
-  begin
-    perform public.submit_request(jsonb_build_object(
+  -- 3a) REQ §13.97: a return-leg stop on a request with no return is accepted and stored, inactive
+  --     (kept for when the request becomes a round trip again); not in its routes, ETAs or the view's active set.
+  v_result := public.submit_request(jsonb_build_object(
       'department_id', dept, 'week_start', w, 'requester_id', member1, 'destination_id', haifa, 'ride_type_id', ride_type,
       'trip_type', 'one_way', 'depart_at', (w+2 + time '08:00') at time zone 'Asia/Jerusalem',
       'stops', jsonb_build_array(jsonb_build_object('leg', 'return', 'place_id', binyamina))));
-    raise exception 'expected invalid_stops (3a)';
-  exception when others then
-    if sqlerrm <> 'invalid_stops' then raise; end if;
-  end;
+  assert exists(select 1 from public.request_stops where request_id = (v_result->>'request_id')::uuid and leg = 'return' and place_id = binyamina),
+    'TEST 3a FAILED: return stop must be stored on a one-way request';
+  assert not exists(select 1 from public.request_stop_etas((v_result->>'request_id')::uuid) where leg = 'return'),
+    'TEST 3a FAILED: inactive return stop must have no ETA';
+  assert (select count(*) from public.request_leg_route_points((v_result->>'request_id')::uuid, 'return')) = 2,
+    'TEST 3a FAILED: inactive return stop must not be a route point';
 
   -- 3b) an unapproved place.
   insert into public.destinations(department_id, name, zone, is_approved) values (dept, 'MS unapproved', 'unknown', false)

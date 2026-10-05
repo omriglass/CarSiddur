@@ -59,9 +59,9 @@ describe("initialRouteEditValues", () => {
     expect(values.returnStops).toEqual([{ freeText: "Kiosk" }]);
   });
 
-  it("drops return stops for a one-way request and uses the ride's places for a reservation", () => {
+  it("keeps (inactive) return stops for a one-way request (REQ §13.97) and uses the ride's places for a reservation", () => {
     const oneWay = initialRouteEditValues({ request: { ...request, trip_shape: "one_way_to" }, ride, homeId: "home", placeName, stops: [{ leg: "return", position: 0, place_id: "x", place_text: null, name: "X" }] });
-    expect(oneWay.returnStops).toEqual([]);
+    expect(oneWay.returnStops).toEqual([{ presetId: "x", name: "X" }]);
     const reservation = initialRouteEditValues({ request: null, ride, placeName, stops: [] });
     expect(reservation).toMatchObject({ origin: { presetId: "home" }, destination: { presetId: "haifa" }, outStops: [] });
   });

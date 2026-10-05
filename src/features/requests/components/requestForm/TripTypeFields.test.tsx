@@ -14,7 +14,7 @@ const captured: { form?: Form } = {};
 
 function Harness() {
   const form = useForm<RequestFormValues>({
-    defaultValues: { tripType: "round_trip", dropOffPickup: false, tripShape: "round_trip", needsCarAtDestination: true, departTime: "08:00", returnTime: "17:30" } as RequestFormValues,
+    defaultValues: { tripType: "round_trip", dropOffPickup: false, tripShape: "round_trip", needsCarAtDestination: true, departTime: "08:00", returnTime: "17:30", returnStops: [{ presetId: "x1", name: "X" }], outStops: [] } as unknown as RequestFormValues,
   });
   useEffect(() => { captured.form = form; });
   const tripType = (useWatch({ control: form.control, name: "tripType" }) ?? "round_trip") as TripType;
@@ -31,5 +31,14 @@ describe("TripTypeFields keeps the return time", () => {
     fireEvent.click(screen.getByRole("radio", { name: he.request.tripTypeRoundTrip }));
     expect(form().getValues("tripShape")).toBe("round_trip");
     expect(form().getValues("returnTime")).toBe("17:30");
+  });
+
+  it("keeps return stops in form state (and the payload) through one way and back (REQ §13.97)", () => {
+    render(<Harness />);
+    const form = () => captured.form as Form;
+    fireEvent.click(screen.getByRole("radio", { name: he.request.tripTypeOneWay }));
+    expect(form().getValues("returnStops")).toEqual([{ presetId: "x1", name: "X" }]);
+    fireEvent.click(screen.getByRole("radio", { name: he.request.tripTypeRoundTrip }));
+    expect(form().getValues("returnStops")).toEqual([{ presetId: "x1", name: "X" }]);
   });
 });

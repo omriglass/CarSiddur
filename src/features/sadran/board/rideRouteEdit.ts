@@ -89,6 +89,7 @@ export function initialRouteEditValues(source: RouteEditSource): RouteEditValues
       : preset(source.homeId, null, null, source.placeName),
     destination: preset(request.destination_id, request.destination_resolved_name, request.destination_text, source.placeName),
     outStops: stopsOf("out"),
-    returnStops: request.trip_shape === "round_trip" ? stopsOf("return") : [],
+    // REQ §13.97: always loaded (inactive ones included) — the payload is the complete list.
+    returnStops: stopsOf("return"),
   };
 }

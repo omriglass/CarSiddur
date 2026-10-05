@@ -110,10 +110,11 @@ export function toSubmitRequestPayload(
     join_ride_id: options.joinRideId,
     // REQ §13.93 "Multi-stop rides": always sent (even `[]`) so an edit can clear a
     // previously-added stop — `submit_request` only leaves existing stops untouched when the
-    // key is entirely absent from the payload. Return stops never exist without a return leg.
+    // key is entirely absent from the payload. REQ §13.97: the complete list for both legs — a
+    // one-way request still sends its (inactive) return stops so the server keeps them.
     stops: [
       ...destinationValuesToStopPayload(values.outStops, "out"),
-      ...(needsReturn ? destinationValuesToStopPayload(values.returnStops, "return") : []),
+      ...destinationValuesToStopPayload(values.returnStops, "return"),
     ],
   };
 }

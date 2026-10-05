@@ -255,6 +255,8 @@ export const requestStopRowSchema = z.object({
   place_text: z.string().nullable(),
   name: z.string(),
   eta: z.string().nullable(),
+  /** REQ §13.97 — absent on older rows = active. */
+  active: z.boolean().default(true),
 });
 
 export const templateSuggestionRowSchema = z.object({

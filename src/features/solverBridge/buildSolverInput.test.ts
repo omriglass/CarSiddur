@@ -503,8 +503,10 @@ describe("origins, trip types, cars stay put (REQUIREMENTS §13.93, docs/ORIGINS
             { leg: "out", position: 2, place_id: "dest-b" },
             { leg: "out", position: 1, place_id: "dest-a" },
             { leg: "return", position: 1, place_id: null },
+            { leg: "return", position: 2, place_id: "dest-z", active: false },
           ],
         },
+        { ...requestRow({ id: "only-inactive" }), stops: [{ leg: "return", position: 1, place_id: "dest-z", active: false }] },
         requestRow({ id: "no-stops" }),
       ],
       rideTypeCodesById: {},
@@ -520,5 +522,7 @@ describe("origins, trip types, cars stay put (REQUIREMENTS §13.93, docs/ORIGINS
       { leg: "return", locationId: undefined },
     ]);
     expect(byId.get("no-stops")!.stops).toBeUndefined();
+    // REQ §13.97: inactive (dormant return) stops never reach the solver.
+    expect(byId.get("only-inactive")!.stops).toBeUndefined();
   });
 });

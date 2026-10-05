@@ -3,6 +3,8 @@
 // dragging `src/solver/**` into the first paint (owner, 2026-09-14: bundle-size cleanup).
 // `applySolve.ts` re-exports it so every existing `from "../applySolve"`/`solverRun` import
 // keeps working.
+import { isActiveStop } from "@/lib/routeStops";
+
 import type { BoardRide } from "./api";
 
 export interface ServedEntry {
@@ -45,7 +47,7 @@ export interface ServedEntry {
    * leg+position-ordered (`v_board_rides.served[].stops`, `request_stop_etas()`) — read via
    * `@/lib/routeStops`' `parseRouteStops()`/`routeStopNames()`, never indexed directly.
    */
-  stops?: { leg: "out" | "return"; position: number; place_id: string | null; place_text: string | null; name: string; eta: string | null }[];
+  stops?: { leg: "out" | "return"; position: number; place_id: string | null; place_text: string | null; name: string; eta: string | null; active?: boolean }[];
 }
 
 /** Reads `v_board_rides.served` (a jsonb aggregate, RideDetailSheet.tsx uses the same shape) into typed rows. */
@@ -138,5 +140,5 @@ export function representativeRideTypeCode(served: readonly ServedEntry[]): stri
  * when > 0.
  */
 export function rideStopCount(served: readonly ServedEntry[]): number {
-  return served.reduce((sum, entry) => sum + (entry.stops?.length ?? 0), 0);
+  return served.reduce((sum, entry) => sum + (entry.stops?.filter((s) => isActiveStop(s)).length ?? 0), 0);
 }

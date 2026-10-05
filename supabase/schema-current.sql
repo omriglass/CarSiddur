@@ -7550,7 +7550,6 @@ begin
     v_place_text := nullif(v_item ->> 'place_text', '');
 
     if v_leg not in ('out', 'return') then raise exception 'invalid_stops' using errcode = 'P0001'; end if;
-    if v_leg = 'return' and not p_has_return then raise exception 'invalid_stops' using errcode = 'P0001'; end if;
     if (v_place_id is null) = (v_place_text is null) then raise exception 'invalid_stops' using errcode = 'P0001'; end if;
     if v_place_id is not null and not exists (
       select 1 from public.destinations d
@@ -7697,8 +7696,10 @@ begin
   select stop_minutes into v_stop_minutes from public.department_settings where department_id = v_dept;
   v_stop_minutes := coalesce(v_stop_minutes, 5);
 
+  -- REQ §13.97: return-leg stops are inactive while the request has no return.
   select count(*) into v_stop_count from public.request_stops s
-  where s.request_id = p_request_id and s.leg = p_leg;
+  where s.request_id = p_request_id and s.leg = p_leg
+    and (p_leg = 'out' or exists (select 1 from public.requests q where q.id = p_request_id and q.return_at is not null));
 
   for v_cur in select * from public.request_leg_route_points(p_request_id, p_leg) order by "position" loop
     if v_has_prev then
@@ -7740,14 +7741,16 @@ begin
     return; -- 'both' has no stored request_stops rows; callers always pass 'out'/'return'.
   end if;
 
+  -- REQ §13.97: return-leg stops are stored but inactive while the request has no return.
   select count(*) into v_stop_count from public.request_stops s
-  where s.request_id = p_request_id and s.leg = p_leg;
+  where s.request_id = p_request_id and s.leg = p_leg and (p_leg = 'out' or v_req.return_at is not null);
 
   return query
     select 0::smallint, v_start_id, v_start_text
     union all
     select s."position", s.place_id, s.place_text
     from public.request_stops s where s.request_id = p_request_id and s.leg = p_leg
+      and (p_leg = 'out' or v_req.return_at is not null)
     union all
     select (v_stop_count + 1)::smallint, v_end_id, v_end_text
     order by 1;
@@ -7910,6 +7913,23 @@ $$;
 
 
 ALTER FUNCTION "public"."request_stop_etas"("p_request_id" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."request_stops_with_eta"("p_request_id" "uuid") RETURNS TABLE("leg" "public"."ride_leg", "position" smallint, "place_id" "uuid", "place_text" "text", "eta" timestamp with time zone, "active" boolean)
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  -- REQ §13.97: every stored stop; return-leg stops are inactive (and have no ETA) while the request has no return.
+  select s.leg, s."position", s.place_id, s.place_text, e.eta,
+         (s.leg = 'out' or q.return_at is not null)
+  from public.request_stops s
+  join public.requests q on q.id = s.request_id
+  left join public.request_stop_etas(p_request_id) e on e.leg = s.leg and e."position" = s."position"
+  where s.request_id = p_request_id;
+$$;
+
+
+ALTER FUNCTION "public"."request_stops_with_eta"("p_request_id" "uuid") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."requests_default_origin"() RETURNS "trigger"
@@ -9171,7 +9191,7 @@ begin
   update public.requests set trip_type = p_trip_type, trip_shape = v_shape, needs_car_at_destination = v_needs,
     one_way_car_mode = v_mode, depart_at = v_dep, return_at = v_ret, kept_return_at = v_kept
   where id = q.id;
-  if v_ret is null then delete from public.request_stops where request_id = q.id and leg = 'return'; end if;
+  -- REQ §13.97: return-leg stops are kept (inactive while there is no return), never deleted.
 
   -- Re-place on the car the request was on (earliest live ride).
   select r.car_id into v_car from public.rides r join public.ride_requests rr on rr.ride_id = r.id
@@ -12373,8 +12393,8 @@ CREATE OR REPLACE VIEW "public"."v_my_requests" WITH ("security_invoker"='true')
     "origin_text",
     "origin_name",
     "trip_type",
-    COALESCE(( SELECT "jsonb_agg"("jsonb_build_object"('leg', "e"."leg", 'position', "e"."position", 'place_id', "e"."place_id", 'place_text', "e"."place_text", 'name', COALESCE("d"."name", "e"."place_text"), 'eta', "e"."eta") ORDER BY "e"."leg", "e"."position") AS "jsonb_agg"
-           FROM ("public"."request_stop_etas"("existing"."request_id") "e"("leg", "position", "place_id", "place_text", "eta")
+    COALESCE(( SELECT "jsonb_agg"("jsonb_build_object"('leg', "e"."leg", 'position', "e"."position", 'place_id', "e"."place_id", 'place_text', "e"."place_text", 'name', COALESCE("d"."name", "e"."place_text"), 'eta', "e"."eta", 'active', "e"."active") ORDER BY "e"."leg", "e"."position") AS "jsonb_agg"
+           FROM ("public"."request_stops_with_eta"("existing"."request_id") "e"("leg", "position", "place_id", "place_text", "eta", "active")
              LEFT JOIN "public"."destinations" "d" ON (("d"."id" = "e"."place_id")))), '[]'::"jsonb") AS "stops",
     ( SELECT "k"."kept_return_at"
            FROM "public"."requests" "k"
@@ -12703,7 +12723,7 @@ CREATE OR REPLACE VIEW "public"."v_request_template_suggestions" WITH ("security
     "existing"."origin_text",
     "existing"."origin_name",
     "existing"."trip_type",
-    COALESCE(( SELECT "jsonb_agg"("jsonb_build_object"('leg', ("item"."value" ->> 'leg'::"text"), 'position', (("item"."value" ->> 'position'::"text"))::smallint, 'place_id', (NULLIF(("item"."value" ->> 'place_id'::"text"), ''::"text"))::"uuid", 'place_text', ("item"."value" ->> 'place_text'::"text"), 'name', COALESCE("d"."name", ("item"."value" ->> 'place_text'::"text")), 'eta', NULL::"unknown") ORDER BY ("item"."value" ->> 'leg'::"text"), (("item"."value" ->> 'position'::"text"))::smallint) AS "jsonb_agg"
+    COALESCE(( SELECT "jsonb_agg"("jsonb_build_object"('leg', ("item"."value" ->> 'leg'::"text"), 'position', (("item"."value" ->> 'position'::"text"))::smallint, 'place_id', (NULLIF(("item"."value" ->> 'place_id'::"text"), ''::"text"))::"uuid", 'place_text', ("item"."value" ->> 'place_text'::"text"), 'name', COALESCE("d"."name", ("item"."value" ->> 'place_text'::"text")), 'eta', NULL::"text", 'active', ((("item"."value" ->> 'leg'::"text") = 'out'::"text") OR ("tpl"."return_dow" IS NOT NULL))) ORDER BY ("item"."value" ->> 'leg'::"text"), (("item"."value" ->> 'position'::"text"))::smallint) AS "jsonb_agg"
            FROM ("jsonb_array_elements"("tpl"."stops") "item"("value")
              LEFT JOIN "public"."destinations" "d" ON (("d"."id" = (NULLIF(("item"."value" ->> 'place_id'::"text"), ''::"text"))::"uuid")))), '[]'::"jsonb") AS "stops"
    FROM (( SELECT "existing_1"."template_id",
@@ -13966,8 +13986,8 @@ CREATE OR REPLACE VIEW "public"."v_board_rides" WITH ("security_invoker"='true')
                          LIMIT 1) "rp" ON (true))) "existing"
              LEFT JOIN LATERAL ( SELECT "jsonb_agg"(("elem"."value" || "jsonb_build_object"('stops', COALESCE("stop_agg"."stops", '[]'::"jsonb"))) ORDER BY "elem"."ord") AS "served"
                    FROM ("jsonb_array_elements"("existing"."served") WITH ORDINALITY "elem"("value", "ord")
-                     LEFT JOIN LATERAL ( SELECT COALESCE("jsonb_agg"("jsonb_build_object"('leg', "e"."leg", 'position', "e"."position", 'place_id', "e"."place_id", 'place_text', "e"."place_text", 'name', COALESCE("d"."name", "e"."place_text"), 'eta', "e"."eta") ORDER BY "e"."leg", "e"."position"), '[]'::"jsonb") AS "stops"
-                           FROM ("public"."request_stop_etas"((("elem"."value" ->> 'request_id'::"text"))::"uuid") "e"("leg", "position", "place_id", "place_text", "eta")
+                     LEFT JOIN LATERAL ( SELECT COALESCE("jsonb_agg"("jsonb_build_object"('leg', "e"."leg", 'position', "e"."position", 'place_id', "e"."place_id", 'place_text', "e"."place_text", 'name', COALESCE("d"."name", "e"."place_text"), 'eta', "e"."eta", 'active', "e"."active") ORDER BY "e"."leg", "e"."position"), '[]'::"jsonb") AS "stops"
+                           FROM ("public"."request_stops_with_eta"((("elem"."value" ->> 'request_id'::"text"))::"uuid") "e"("leg", "position", "place_id", "place_text", "eta", "active")
                              LEFT JOIN "public"."destinations" "d" ON (("d"."id" = "e"."place_id")))) "stop_agg" ON (true))) "served_stops" ON (true))) "ex";
 
 
@@ -16953,6 +16973,12 @@ GRANT ALL ON FUNCTION "public"."request_span"("_depart" timestamp with time zone
 REVOKE ALL ON FUNCTION "public"."request_stop_etas"("p_request_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."request_stop_etas"("p_request_id" "uuid") TO "service_role";
 GRANT ALL ON FUNCTION "public"."request_stop_etas"("p_request_id" "uuid") TO "authenticated";
+
+
+
+REVOKE ALL ON FUNCTION "public"."request_stops_with_eta"("p_request_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."request_stops_with_eta"("p_request_id" "uuid") TO "service_role";
+GRANT ALL ON FUNCTION "public"."request_stops_with_eta"("p_request_id" "uuid") TO "authenticated";
 
 
 

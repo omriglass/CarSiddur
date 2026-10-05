@@ -146,6 +146,43 @@ begin
   assert r.return_at=(w+5+time '15:00') at time zone 'Asia/Jerusalem' and r.kept_return_at is null, 'a real return replaces the kept one';
   assert exists(select 1 from public.v_my_requests where request_id=q and kept_return_at is null), 'v_my_requests exposes kept_return_at';
 
+  -- 8) REQ §13.97: switching trip type never deletes information -- a return-leg stop is kept (inactive)
+  --    while the request has no return and active again, same position, when the return comes back.
+  res:=public.submit_request(jsonb_build_object('department_id',dept,'week_start',w,'requester_id',m1,'destination_id',haifa,'origin_id',home,
+    'ride_type_id',typ,'trip_type','round_trip','depart_at',(w+6+time '08:00') at time zone 'Asia/Jerusalem','return_at',(w+6+time '13:00') at time zone 'Asia/Jerusalem',
+    'stops',jsonb_build_array(jsonb_build_object('leg','return','place_id',home))));
+  q:=(res->>'request_id')::uuid;
+  assert (select count(*) from public.request_leg_route_points(q,'return'))=3, 'active return stop is a route point';
+  assert exists(select 1 from public.request_stop_etas(q) where leg='return'), 'active return stop has an ETA';
+  assert exists(select 1 from public.request_stops_with_eta(q) where leg='return' and active and "position"=1), 'stop reported active';
+  -- via set_request_trip_type
+  select version into v from public.requests where id=q;
+  perform public.set_request_trip_type(q,'one_way',v);
+  assert exists(select 1 from public.request_stops where request_id=q and leg='return' and "position"=1), 'stop kept after switching to one_way';
+  assert (select count(*) from public.request_leg_route_points(q,'return'))=2, 'inactive stop not a route point';
+  assert not exists(select 1 from public.request_stop_etas(q) where leg='return'), 'inactive stop has no ETA';
+  assert exists(select 1 from public.request_stops_with_eta(q) where leg='return' and not active and eta is null), 'stop reported inactive';
+  select version into v from public.requests where id=q;
+  perform public.set_request_trip_type(q,'round_trip',v);
+  assert exists(select 1 from public.request_stops where request_id=q and leg='return' and "position"=1), 'stop still there';
+  assert (select count(*) from public.request_leg_route_points(q,'return'))=3, 'stop active again';
+  assert exists(select 1 from public.request_stops_with_eta(q) where leg='return' and active and "position"=1), 'stop active again, same position';
+  -- via submit_request edits (payload without stops leaves them untouched)
+  select version into v from public.requests where id=q;
+  perform public.submit_request(jsonb_build_object('request_id',q,'expected_version',v,'department_id',dept,'week_start',w,'requester_id',m1,'destination_id',haifa,'origin_id',home,
+    'ride_type_id',typ,'trip_type','one_way','depart_at',(w+6+time '08:00') at time zone 'Asia/Jerusalem'));
+  assert exists(select 1 from public.request_stops_with_eta(q) where leg='return' and not active), 'submit_request one-way edit keeps the stop inactive';
+  select version into v from public.requests where id=q;
+  perform public.submit_request(jsonb_build_object('request_id',q,'expected_version',v,'department_id',dept,'week_start',w,'requester_id',m1,'destination_id',haifa,'origin_id',home,
+    'ride_type_id',typ,'trip_type','round_trip','depart_at',(w+6+time '08:00') at time zone 'Asia/Jerusalem'));
+  assert exists(select 1 from public.request_stops_with_eta(q) where leg='return' and active and "position"=1), 'submit_request round-trip edit: stop active again';
+  -- a payload carrying the complete list replaces both legs
+  select version into v from public.requests where id=q;
+  perform public.submit_request(jsonb_build_object('request_id',q,'expected_version',v,'department_id',dept,'week_start',w,'requester_id',m1,'destination_id',haifa,'origin_id',home,
+    'ride_type_id',typ,'trip_type','one_way','depart_at',(w+6+time '08:00') at time zone 'Asia/Jerusalem','stops','[]'::jsonb));
+  assert not exists(select 1 from public.request_stops where request_id=q), 'empty stops array clears both legs';
+
+
   raise notice 'trip_type_change.sql: all assertions passed';
 end $$;
 rollback;

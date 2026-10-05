@@ -68,7 +68,7 @@ export interface WeekRequestRow extends RequestRow {
    * unmet card's "· N עצירות" count, `UnmetList.tsx`, and the solver-bridge feeder,
    * `src/features/solverBridge/buildSolverInput.ts`; names/ETAs are not needed on this path).
    */
-  stops: { leg: "out" | "return"; position: number; place_id: string | null }[];
+  stops: { leg: "out" | "return"; position: number; active?: boolean; place_id: string | null }[];
 }
 
 const WEEK_REQUEST_SELECT = `*,
@@ -89,7 +89,7 @@ interface WeekRequestJoinRow extends RequestRow {
   origin: { name: string } | null;
   ride_type: { code: string; name_he: string } | null;
   preferred_car: { name: string } | null;
-  stops: { leg: "out" | "return"; position: number; place_id: string | null }[];
+  stops: { leg: "out" | "return"; position: number; active?: boolean; place_id: string | null }[];
 }
 
 /** Ids of `companions` whose profile is an eligible driver (`!does_not_drive`), REQ §13.88. */
@@ -155,7 +155,7 @@ export type RequestRowWithDriverFlag = RequestRow & {
   requester_full_name: string | null;
   driving_companion_ids: string[];
   /** REQUIREMENTS §13.93 "Multi-stop rides": -> `buildSolverInput`'s `Request.stops`. */
-  stops?: { leg: "out" | "return"; position: number; place_id: string | null }[];
+  stops?: { leg: "out" | "return"; position: number; active?: boolean; place_id: string | null }[];
 };
 
 export async function fetchWeekRequests(departmentId: string, weekStart: string): Promise<RequestRowWithDriverFlag[]> {
@@ -171,7 +171,7 @@ export async function fetchWeekRequests(departmentId: string, weekStart: string)
   return ((data ?? []) as unknown as (RequestRow & {
     requester: { full_name: string; does_not_drive: boolean } | null;
     companions: { profile_id: string; profile: { does_not_drive: boolean } | null }[];
-    stops: { leg: "out" | "return"; position: number; place_id: string | null }[];
+    stops: { leg: "out" | "return"; position: number; active?: boolean; place_id: string | null }[];
   })[]).map(
     ({ requester, companions, ...rest }) => ({
       ...rest,

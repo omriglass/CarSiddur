@@ -16,6 +16,7 @@
 
 import { fromZonedTime } from "date-fns-tz";
 
+import { isActiveStop } from "@/lib/routeStops";
 import { TZ } from "@/lib/time";
 
 import type {
@@ -134,7 +135,7 @@ export interface BuildSolverInputParams {
      * §6.1) -> `Request.stops`. Omit (or leave empty) for a request with no stops, exactly as
      * before this field existed.
      */
-    stops?: { leg: "out" | "return"; position: number; place_id: string | null }[];
+    stops?: { leg: "out" | "return"; position: number; active?: boolean; place_id: string | null }[];
   })[];
   /** `ride_type_id -> code` (policy `rideType` rule params are keyed by `ride_types.code`, SOLVER.md §4.3). */
   rideTypeCodesById: Record<string, string>;
@@ -302,8 +303,10 @@ export function buildSolverInput(params: BuildSolverInputParams): SolverInput {
         // (`src/solver/travel.ts`'s `legRoute()` filters by leg, so only the within-leg
         // relative order matters) — sorted by `position` since the embed itself carries no
         // ordering guarantee.
-        stops: r.stops?.length
-          ? [...r.stops]
+        // REQ §13.97: only active stops (a one-way request keeps its return stops dormant).
+        stops: r.stops?.some((s) => isActiveStop(s, r.return_at != null))
+          ? r.stops
+              .filter((s) => isActiveStop(s, r.return_at != null))
               .sort((a, b) => a.leg.localeCompare(b.leg) || a.position - b.position)
               .map((s) => ({ leg: s.leg, locationId: s.place_id ?? undefined }))
           : undefined,

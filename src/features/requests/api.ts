@@ -1,6 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import { ageFromBirthYear, isAdultPassenger } from "@/lib/childAge";
-import { parseRouteStops, type RouteStop } from "@/lib/routeStops";
+import { isActiveStop, parseRouteStops, type RouteStop } from "@/lib/routeStops";
 import { rpc, toAppError } from "@/lib/rpc";
 import { siddurCarName } from "@/lib/siddurCarName";
 
@@ -163,7 +163,7 @@ interface RawRequestRow {
   series_count: number | null;
   destination: { name: string } | null;
   origin: { name: string } | null;
-  stops: { leg: "out" | "return"; position: number; place_id: string | null; place_text: string | null; place: { name: string } | null }[];
+  stops: { leg: "out" | "return"; position: number; active?: boolean; place_id: string | null; place_text: string | null; place: { name: string } | null }[];
   ride_type: { code: string; name_he: string } | null;
   ride_requests: {
     role: RideRole;
@@ -200,8 +200,9 @@ interface RawRequestRow {
  * shared `RouteStop[]` shape (REQ §13.93 "Multi-stop rides"). `/my`'s one-line label only needs
  * out-stop *names*, never a computed ETA.
  */
-function mapEmbeddedStops(rows: RawRequestRow["stops"]): RouteStop[] {
+function mapEmbeddedStops(rows: RawRequestRow["stops"], hasReturn: boolean): RouteStop[] {
   return (rows ?? [])
+    .filter((s) => isActiveStop(s, hasReturn))
     .map((s) => ({
       leg: s.leg,
       position: s.position,
@@ -209,6 +210,7 @@ function mapEmbeddedStops(rows: RawRequestRow["stops"]): RouteStop[] {
       placeText: s.place_text,
       name: s.place?.name ?? s.place_text ?? "",
       eta: null,
+      active: true,
     }))
     .sort((a, b) => a.position - b.position);
 }
@@ -237,7 +239,7 @@ function mapRow(row: RawRequestRow): MyRequestRow {
     originId: row.origin_id,
     originText: row.origin_text,
     originName: row.origin?.name ?? row.origin_text ?? null,
-    stops: mapEmbeddedStops(row.stops),
+    stops: mapEmbeddedStops(row.stops, row.return_at != null),
     tripType: row.trip_type,
     destination: row.destination?.name ?? row.destination_text ?? "",
     rideTypeId: row.ride_type_id,
@@ -385,12 +387,14 @@ export async function fetchRequestById(requestId: string, profileId: string): Pr
     template_id: string | null;
     destination: { name: string } | null;
     origin: { name: string } | null;
-    stops: { leg: "out" | "return"; position: number; place_id: string | null; place_text: string | null; place: { name: string } | null }[];
+    stops: { leg: "out" | "return"; position: number; active?: boolean; place_id: string | null; place_text: string | null; place: { name: string } | null }[];
   };
   const outStops: DestinationValue[] = row.stops
     .filter((s) => s.leg === "out")
     .sort((a, b) => a.position - b.position)
     .map((s) => (s.place_id ? { presetId: s.place_id, name: s.place?.name ?? "" } : { freeText: s.place_text ?? "" }));
+  // REQ §13.97: inactive return stops (kept on a one-way request) are loaded too, so the form
+  // keeps them hidden and a switch back to a return leg restores them.
   const returnStops: DestinationValue[] = row.stops
     .filter((s) => s.leg === "return")
     .sort((a, b) => a.position - b.position)

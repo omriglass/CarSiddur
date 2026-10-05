@@ -4668,6 +4668,17 @@ export type Database = {
           position: number
         }[]
       }
+      request_stops_with_eta: {
+        Args: { p_request_id: string }
+        Returns: {
+          active: boolean
+          eta: string
+          leg: Database["public"]["Enums"]["ride_leg"]
+          place_id: string
+          place_text: string
+          position: number
+        }[]
+      }
       required_turnaround_minutes: {
         Args: { p_department_id: string; p_week_start: string }
         Returns: number
