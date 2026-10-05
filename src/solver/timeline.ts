@@ -189,9 +189,24 @@ export class CarTimeline {
     return end === this.baseLocation ? null : { locationId: end };
   }
 
-  remove(rideId: string): void {
+  /** Removes a block and returns it (so a caller can `restore()` it exactly). */
+  remove(rideId: string): Block | undefined {
+    const removed = this.blocks.find((b) => b.rideId === rideId);
     this.blocks = this.blocks.filter((b) => b.rideId !== rideId);
     this.fixedRideIds.delete(rideId);
+    return removed;
+  }
+
+  /**
+   * Puts back a block previously returned by `remove()`, exactly as it was,
+   * without re-validating the location chain or overlap: rollbacks must never
+   * throw, even when other blocks were moved meanwhile.
+   */
+  restore(b: Block, wasFixed = false): void {
+    const idx = this.blocks.findIndex((x) => x.window.start > b.window.start);
+    if (idx === -1) this.blocks.push(b);
+    else this.blocks.splice(idx, 0, b);
+    if (wasFixed) this.fixedRideIds.add(b.rideId);
   }
 
   has(rideId: string): boolean {

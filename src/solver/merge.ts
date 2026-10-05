@@ -305,8 +305,7 @@ export function findMergeHosts(params: MergeSearchParams): MergeCandidate[] {
       if (tl && block) {
         tl.remove(host.rideId);
         const free = tl.isFree(window, block.startLocationId, block.relayPairId, block.endLocationId);
-        if (host.isFixed) tl.forceAdd(block);
-        else tl.add(block);
+        tl.restore(block, host.isFixed);
         if (!free) continue;
       }
     }

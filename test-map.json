@@ -576,7 +576,8 @@
         "supabase/migrations/**/*pair_one_way_legs*",
         "supabase/migrations/**/*route_minutes*",
         "supabase/migrations/**/*route_helpers*",
-        "supabase/tests/multi_stop.sql"
+        "supabase/tests/multi_stop.sql",
+        "scripts/qa/**"
       ],
       "vitest": [
         "src/solver",
@@ -612,7 +613,8 @@
         "Change policy weights; confirm resulting order changes on the board (REQ §13.19)",
         "Confirm mileage/carChoice balancing only breaks true ties, never forces a manual move (REQ §13.84)",
         "Confirm relay/merge/split-legs suggestions map to the right proposal type (REQ §13.24)",
-        "Confirm the solver never auto-displaces an already-placed ride (REQ §13.19)"
+        "Confirm the solver never auto-displaces an already-placed ride (REQ §13.19)",
+        "Extended QA regression (disposable stack only): `npm run qa:regression -- --seed 7` - seeded week, real solver, apply_solver_result, invariants (docs/QA_SIMULATION.md section 5)"
       ]
     },
     {

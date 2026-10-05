@@ -397,7 +397,9 @@ Deno.serve(async (req) => {
     luggageCapacity: 999,
     maintenance,
     startLocationId: carStartLocation?.location_id ?? homeLocationId,
-    baseLocationId: (carRow.base_location_id as string | null | undefined) ?? undefined,
+    // `car_base_location()`: cars.base_location_id, else a temporary car's owner default origin.
+    baseLocationId:
+      carStartLocation?.base_location_id ?? (carRow.base_location_id as string | null | undefined) ?? undefined,
   };
   // REQUIREMENTS §13.93 (ORIGINS_PLAN §2 item 6).
   const travel: TravelEdge[] = (travelRows ?? []).map((r) => ({

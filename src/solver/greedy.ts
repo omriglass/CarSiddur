@@ -314,7 +314,7 @@ function trySeriesOnCar(tl: CarTimeline, legs: SeriesLeg[], seriesCount: number)
   for (const D of depCandidates) {
     for (const R of retCandidates) {
       if (R <= D) continue;
-      if (!tl.isFree({ start: D, end: R }, first.originId)) continue;
+      if (!tl.isFree({ start: D, end: R }, first.originId, undefined, last.destinationId)) continue;
       const shiftCost = Math.abs(D - first.window.start) * 15 + Math.abs(R - last.window.end) * 15;
       if (!best || shiftCost < best.shiftCost) {
         best = {

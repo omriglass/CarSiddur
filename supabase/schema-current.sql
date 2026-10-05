@@ -6833,9 +6833,8 @@ CREATE OR REPLACE FUNCTION "public"."publication_conflicting_ride_ids"("p_depart
     LANGUAGE "plpgsql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
-declare r record; home uuid; bad boolean; res boolean;
+declare r record; here uuid; bad boolean; res boolean;
 begin
-  select home_destination_id into home from public.departments where id=p_department_id;
   for r in
     select * from public.rides where department_id=p_department_id and week_start=p_week_start and status<>'cancelled'
       and (starts_at at time zone 'Asia/Jerusalem')::date=any(p_days)
@@ -6850,17 +6849,17 @@ begin
     bad:=bad or exists(select 1 from public.car_maintenance_blocks b where b.car_id=r.car_id
       and tstzrange(b.starts_at,b.ends_at,'[)') && tstzrange(r.starts_at,r.ends_at,'[)'));
     bad:=bad or not exists(select 1 from public.cars c where c.id=r.car_id and c.department_id=p_department_id and c.status='active');
-    bad:=bad or (not res and r.origin_id is distinct from coalesce((select prev.destination_id from public.rides prev
-      where prev.car_id=r.car_id and prev.week_start=p_week_start and prev.status<>'cancelled' and (prev.starts_at,prev.id)<(r.starts_at,r.id)
-        and not public.ride_is_reservation(prev.id)
-      order by prev.starts_at desc,prev.id desc limit 1),home));
+    if not res then
+      here:=coalesce((select prev.destination_id from public.rides prev
+        where prev.car_id=r.car_id and prev.status<>'cancelled' and (prev.starts_at,prev.id)<(r.starts_at,r.id)
+          and not public.ride_is_reservation(prev.id)
+        order by prev.starts_at desc,prev.id desc limit 1),public.car_base_location(r.car_id));
+      bad:=bad or r.origin_id is distinct from here;
+    end if;
     bad:=bad or (not res and exists(select 1 from public.rides following where following.id=(select nxt.id from public.rides nxt
       where nxt.car_id=r.car_id and nxt.week_start=p_week_start and nxt.status<>'cancelled' and (nxt.starts_at,nxt.id)>(r.starts_at,r.id)
         and not public.ride_is_reservation(nxt.id)
       order by nxt.starts_at,nxt.id limit 1) and following.origin_id is distinct from r.destination_id));
-    bad:=bad or (not res and r.destination_id is distinct from home and r.overnight_ack_by is null and not exists(
-      select 1 from public.rides later where later.car_id=r.car_id and later.status<>'cancelled' and not public.ride_is_reservation(later.id)
-        and later.starts_at>r.starts_at and (later.starts_at at time zone 'Asia/Jerusalem')::date=(r.starts_at at time zone 'Asia/Jerusalem')::date));
     begin
       perform public.assert_ride_request_day(r.id);
       perform public.assert_ride_driver(r.id);

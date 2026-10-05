@@ -340,7 +340,11 @@ export function buildSolverInput(params: BuildSolverInputParams): SolverInput {
     startLocationId: params.carStartLocationsByCarId?.[car.id]?.locationId,
     // REQUIREMENTS §13.93: `cars.base_location_id` (null = home, CarRow already
     // carries it since every caller selects the full row).
-    baseLocationId: car.base_location_id ?? undefined,
+    // Prefer `car_start_locations().base_location_id` (= SQL `car_base_location()`: the car's
+    // base, else — for a temporary car — its owner's default origin, else home), so the
+    // TEMP_CAR_AWAY invariant agrees with SQL.
+    baseLocationId:
+      params.carStartLocationsByCarId?.[car.id]?.baseLocationId ?? car.base_location_id ?? undefined,
   }));
 
   const fairness: SolverStats["fairness"] = fairnessDeficits(params.fairness ?? []);

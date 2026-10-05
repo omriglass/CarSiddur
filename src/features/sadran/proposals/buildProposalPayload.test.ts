@@ -51,3 +51,13 @@ describe("resolveShiftTimes", () => {
     expect(resolveShiftTimes(undefined, request)).toEqual({ departAt: request.depart_at, returnAt: request.return_at });
   });
 });
+
+describe("shift payload never carries places", () => {
+  it("strips place keys from a time/car shift", () => {
+    const out = buildProposalPayload({
+      type: "shift", prefillPayload: { car_id: "c", origin_id: "home", destination_id: "home" }, request: undefined, rideId: null,
+      proposedDepartAt: "2026-09-13T06:00:00.000Z", proposedReturnAt: "2026-09-13T08:00:00.000Z", effectiveReason: "", externalHint: "",
+    });
+    expect(out).toEqual({ car_id: "c", depart_at: "2026-09-13T06:00:00.000Z", return_at: "2026-09-13T08:00:00.000Z" });
+  });
+});

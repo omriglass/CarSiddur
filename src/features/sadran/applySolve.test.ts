@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import type { FixedRide } from "@/solver";
 import { boardRideToFixedRide, buildApplyPayload, computeFullResolveDiff, draftFixedRides, selectOpenRequests, servedOf } from "./applySolve";
 import { solve } from "@/solver";
 import { baseInput, makeCar, makeRequest, slotMs, WEEK_START_MS } from "@/solver/__fixtures__/gen";
@@ -284,5 +285,22 @@ describe("board drafts in the solver context (REQ §13.94)", () => {
   it("sent proposals add no fixed block (their ride/ghost already exists)", () => {
     const proposal = { id: "p1", type: "shift", status: "sent", request_id: "r1", payload: { car_id: "carB", depart_at: new Date(slotMs(12)).toISOString() } } as unknown as ProposalRow;
     expect(draftFixedRides([proposal], [req({ id: "r1", status: "proposed" }) as unknown as RequestRow], [], [], [], "home", WEEK_START_MS)).toEqual([]);
+  });
+});
+
+describe("draftFixedRides overlap handling", () => {
+  const request = { ...req({ id: "r1", status: "submitted" }), trip_shape: "round_trip", origin_id: null, destination_id: "dest", depart_at: new Date(slotMs(10)).toISOString(), return_at: new Date(slotMs(20)).toISOString(), adults: 1, child_seats: 0, boosters: 0, has_luggage: false } as unknown as RequestRow;
+  const draft = { id: "p1", type: "shift", status: "draft", request_id: "r1", ride_id: null,
+    payload: { car_id: "carB", depart_at: new Date(slotMs(12)).toISOString(), return_at: new Date(slotMs(22)).toISOString() } } as unknown as ProposalRow;
+  const own = { id: "ride1", carId: "carB", window: { start: 10, end: 20 }, servedRequestIds: ["r1"] } as unknown as FixedRide;
+  const other = { id: "ride2", carId: "carB", window: { start: 21, end: 30 }, servedRequestIds: ["r2"] } as unknown as FixedRide;
+
+  it("replaces the request's own ride block", () => {
+    const fixed = draftFixedRides([draft], [request], [], [own], [{ id: "dest", travel_minutes: 30 }], "home", WEEK_START_MS);
+    expect(fixed.map((f) => f.id)).toEqual(["draft:p1"]);
+  });
+  it("skips a draft that genuinely overlaps another fixed ride instead of crashing", () => {
+    const fixed = draftFixedRides([draft], [request], [], [own, other], [{ id: "dest", travel_minutes: 30 }], "home", WEEK_START_MS);
+    expect(fixed.map((f) => f.id)).toEqual(["ride2"]);
   });
 });

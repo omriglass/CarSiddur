@@ -107,6 +107,18 @@ jobs:
       - name: SQL regression suites
         run: npm run db:test
 
+      # EXTENDED TEST (docs/QA_SIMULATION.md §5): seeded QA week -> real solver -> apply_solver_result
+      # -> invariant checks. Reports real findings (solver crash, publication conflicts), so it does
+      # not block the pipeline yet; remove `continue-on-error` once those are fixed.
+      - name: Extended - QA week regression (seeded, real solver)
+        continue-on-error: true
+        env:
+          QA_API_URL: http://127.0.0.1:54321
+          QA_ALLOW_DEFAULT_STACK: "1"
+        run: |
+          export SUPABASE_DB_CONTAINER="supabase_db_$(sed -n 's/^project_id *= *"\(.*\)"/\1/p' supabase/config.toml)"
+          node scripts/qa/regression.mjs --seed 7
+
       - name: Stop Supabase
         if: always()
         run: supabase stop --no-backup

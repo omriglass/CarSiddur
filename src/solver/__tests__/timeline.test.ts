@@ -230,4 +230,16 @@ describe('CarTimeline', () => {
       expect(tl.awayWindows()).toEqual([]);
     });
   });
+
+  it('remove() + restore() puts a block back exactly, even when the chain changed meanwhile (rollback never throws)', () => {
+    const tl = bufferedTl(0);
+    const a = { rideId: 'a', window: { start: 10, end: 20 }, startLocationId: HOME, endLocationId: 'haifa', overnightAck: false };
+    tl.add(a);
+    const removedA = tl.remove('a');
+    tl.add({ rideId: 'x', window: { start: 0, end: 5 }, startLocationId: HOME, endLocationId: 'gaza', overnightAck: false });
+    // the car is now at gaza when a starts: add() refuses, restore() does not
+    expect(() => tl.add(a)).toThrow(/starts at/);
+    expect(() => tl.restore(removedA!)).not.toThrow();
+    expect(tl.has('a')).toBe(true);
+  });
 });

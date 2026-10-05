@@ -197,7 +197,7 @@ scripts/
   check-migrations.mjs         `node scripts/check-migrations.mjs <base-ref>` — flags a new migration that drops/renames without a matching `supabase/rollback/<ts>_down.sql`
   impact.test.mjs              Vitest: the glob matcher, migrationContentRules, and test-map.json/docs/TEST_MAP.md area-id consistency
 .claude/
-  skills/                      9 routine-change playbooks with exact steps and file paths
+  skills/                      10 playbooks with exact steps and file paths (incl. `/qa-week`, the QA simulation — docs/QA_SIMULATION.md)
   agents/                      5 specialized agents: solver-dev, db-migrator, ui-dev, docs-keeper, e2e-tester
 ```
 
@@ -273,6 +273,7 @@ scripts/
 | Docs vs code drift | `/review-consistency` | docs-keeper |
 | Small bug report / regression | `/bugfixer` | none (or a cheap model) |
 | Playwright coverage | — | e2e-tester |
+| Mock week / end-to-end QA with role-played members | `/qa-week` (docs/QA_SIMULATION.md) | QA Sadran (opus) + QA user (sonnet) |
 
 ## Owner batch 2026-10-04 — origins, three trip types, cars stay where they are left (REQ §13.93; `docs/ORIGINS_PLAN_2026-10.md`; docs/TODO.md O1–O6)
 

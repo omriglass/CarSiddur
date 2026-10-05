@@ -1,0 +1,588 @@
+{
+  "_comment": "Hebrew copy and place data for the QA simulation (docs/QA_SIMULATION.md §1). CLAUDE.md hard rule 3: Hebrew never lives in JS source - it lives here. Coordinates are real (approximate town centres); distance_km / travel_minutes from home are computed by generate-week.mjs (haversine x 1.3 at ~55 km/h).",
+  "department": {
+    "name": "מחלקת בדיקות (QA)",
+    "homePlace": "גבעת חביבה"
+  },
+  "home": {
+    "name": "גבעת חביבה",
+    "lat": 32.4338,
+    "lng": 35.0207,
+    "zone": "home"
+  },
+  "places": [
+    {
+      "name": "חריש",
+      "lat": 32.4608,
+      "lng": 35.0464,
+      "zone": "north",
+      "band": "near",
+      "pt": 2
+    },
+    {
+      "name": "כרכור",
+      "lat": 32.4777,
+      "lng": 34.971,
+      "zone": "north",
+      "band": "near",
+      "pt": 3
+    },
+    {
+      "name": "פרדס חנה",
+      "lat": 32.473,
+      "lng": 34.978,
+      "zone": "north",
+      "band": "near",
+      "pt": 3
+    },
+    {
+      "name": "גן שמואל",
+      "lat": 32.442,
+      "lng": 34.946,
+      "zone": "north",
+      "band": "near",
+      "pt": 2
+    },
+    {
+      "name": "בנימינה",
+      "lat": 32.5195,
+      "lng": 34.9494,
+      "zone": "north",
+      "band": "near",
+      "pt": 3
+    },
+    {
+      "name": "עין שמר",
+      "lat": 32.444,
+      "lng": 35.009,
+      "zone": "north",
+      "band": "near",
+      "pt": 2
+    },
+    {
+      "name": "מענית",
+      "lat": 32.457,
+      "lng": 35.029,
+      "zone": "north",
+      "band": "near",
+      "pt": 1
+    },
+    {
+      "name": "חדרה",
+      "lat": 32.434,
+      "lng": 34.9196,
+      "zone": "north",
+      "band": "near",
+      "pt": 4
+    },
+    {
+      "name": "אור עקיבא",
+      "lat": 32.506,
+      "lng": 34.917,
+      "zone": "north",
+      "band": "near",
+      "pt": 3
+    },
+    {
+      "name": "נתניה",
+      "lat": 32.3215,
+      "lng": 34.8532,
+      "zone": "sharon",
+      "band": "far",
+      "pt": 4
+    },
+    {
+      "name": "זכרון יעקב",
+      "lat": 32.5723,
+      "lng": 34.9526,
+      "zone": "north",
+      "band": "far",
+      "pt": 2
+    },
+    {
+      "name": "קיסריה",
+      "lat": 32.5183,
+      "lng": 34.9046,
+      "zone": "north",
+      "band": "far",
+      "pt": 1
+    },
+    {
+      "name": "חיפה",
+      "lat": 32.794,
+      "lng": 34.9896,
+      "zone": "haifa",
+      "band": "far",
+      "pt": 5
+    },
+    {
+      "name": "עפולה",
+      "lat": 32.6078,
+      "lng": 35.2897,
+      "zone": "north",
+      "band": "far",
+      "pt": 3
+    },
+    {
+      "name": "יקנעם",
+      "lat": 32.6596,
+      "lng": 35.1075,
+      "zone": "north",
+      "band": "far",
+      "pt": 3
+    },
+    {
+      "name": "כפר סבא",
+      "lat": 32.178,
+      "lng": 34.9066,
+      "zone": "sharon",
+      "band": "far",
+      "pt": 4
+    },
+    {
+      "name": "רעננה",
+      "lat": 32.1848,
+      "lng": 34.8713,
+      "zone": "sharon",
+      "band": "far",
+      "pt": 4
+    },
+    {
+      "name": "תל אביב",
+      "lat": 32.0853,
+      "lng": 34.7818,
+      "zone": "tel_aviv",
+      "band": "far",
+      "pt": 5
+    },
+    {
+      "name": "ירושלים",
+      "lat": 31.7683,
+      "lng": 35.2137,
+      "zone": "jerusalem",
+      "band": "rare",
+      "pt": 3
+    }
+  ],
+  "dropOffRuleNote": "A drop-off (הקפצה) goes only to a place of band 'near' whose distance from home is at most the distance of the place named in dropOffMaxPlace.",
+  "dropOffMaxPlace": "בנימינה",
+  "originPlaces": [
+    "חיפה",
+    "חדרה",
+    "זכרון יעקב",
+    "יקנעם",
+    "נתניה"
+  ],
+  "cars": [
+    {
+      "name": "קורולה לבנה",
+      "plate": "QA-101",
+      "seats": [
+        {
+          "adults": 5,
+          "child_seats": 0,
+          "boosters": 0
+        },
+        {
+          "adults": 4,
+          "child_seats": 1,
+          "boosters": 0
+        },
+        {
+          "adults": 3,
+          "child_seats": 2,
+          "boosters": 0
+        }
+      ],
+      "features": []
+    },
+    {
+      "name": "יאריס כסופה",
+      "plate": "QA-102",
+      "seats": [
+        {
+          "adults": 5,
+          "child_seats": 0,
+          "boosters": 0
+        },
+        {
+          "adults": 4,
+          "child_seats": 0,
+          "boosters": 1
+        }
+      ],
+      "features": []
+    },
+    {
+      "name": "מאזדה 3 אדומה",
+      "plate": "QA-103",
+      "seats": [
+        {
+          "adults": 5,
+          "child_seats": 0,
+          "boosters": 0
+        },
+        {
+          "adults": 3,
+          "child_seats": 1,
+          "boosters": 1
+        }
+      ],
+      "features": []
+    },
+    {
+      "name": "סקודה אוקטביה",
+      "plate": "QA-104",
+      "seats": [
+        {
+          "adults": 5,
+          "child_seats": 0,
+          "boosters": 0
+        },
+        {
+          "adults": 4,
+          "child_seats": 1,
+          "boosters": 1
+        }
+      ],
+      "features": [
+        "large_trunk"
+      ]
+    },
+    {
+      "name": "ואן שבעה מקומות",
+      "plate": "QA-105",
+      "seats": [
+        {
+          "adults": 7,
+          "child_seats": 0,
+          "boosters": 0
+        },
+        {
+          "adults": 5,
+          "child_seats": 2,
+          "boosters": 0
+        },
+        {
+          "adults": 4,
+          "child_seats": 2,
+          "boosters": 2
+        }
+      ],
+      "features": [
+        "large_trunk"
+      ]
+    },
+    {
+      "name": "קיה פיקנטו קטנה",
+      "plate": "QA-106",
+      "seats": [
+        {
+          "adults": 4,
+          "child_seats": 0,
+          "boosters": 0
+        },
+        {
+          "adults": 3,
+          "child_seats": 1,
+          "boosters": 0
+        }
+      ],
+      "features": []
+    },
+    {
+      "name": "סיאט איביזה",
+      "plate": "QA-107",
+      "seats": [
+        {
+          "adults": 5,
+          "child_seats": 0,
+          "boosters": 0
+        },
+        {
+          "adults": 3,
+          "child_seats": 2,
+          "boosters": 0
+        }
+      ],
+      "features": []
+    },
+    {
+      "name": "הונדה ג'אז",
+      "plate": "QA-108",
+      "seats": [
+        {
+          "adults": 5,
+          "child_seats": 0,
+          "boosters": 0
+        },
+        {
+          "adults": 4,
+          "child_seats": 0,
+          "boosters": 2
+        }
+      ],
+      "features": [
+        "large_trunk"
+      ]
+    },
+    {
+      "name": "טויוטה ויטרה",
+      "plate": "QA-109",
+      "seats": [
+        {
+          "adults": 5,
+          "child_seats": 0,
+          "boosters": 0
+        },
+        {
+          "adults": 4,
+          "child_seats": 1,
+          "boosters": 0
+        }
+      ],
+      "features": []
+    },
+    {
+      "name": "מיניוואן משפחתי",
+      "plate": "QA-110",
+      "seats": [
+        {
+          "adults": 7,
+          "child_seats": 0,
+          "boosters": 0
+        },
+        {
+          "adults": 5,
+          "child_seats": 1,
+          "boosters": 2
+        }
+      ],
+      "features": [
+        "large_trunk"
+      ]
+    },
+    {
+      "name": "פיג'ו 208 כחולה",
+      "plate": "QA-111",
+      "seats": [
+        {
+          "adults": 5,
+          "child_seats": 0,
+          "boosters": 0
+        },
+        {
+          "adults": 4,
+          "child_seats": 1,
+          "boosters": 0
+        }
+      ],
+      "features": []
+    },
+    {
+      "name": "סוזוקי סוויפט",
+      "plate": "QA-112",
+      "seats": [
+        {
+          "adults": 4,
+          "child_seats": 0,
+          "boosters": 0
+        },
+        {
+          "adults": 3,
+          "child_seats": 1,
+          "boosters": 0
+        }
+      ],
+      "features": []
+    }
+  ],
+  "privateCarNames": [
+    "הרכב של ",
+    "האוטו הפרטי של "
+  ],
+  "firstNamesM": [
+    "איתן",
+    "נועם",
+    "עידו",
+    "יובל",
+    "אורי",
+    "טל",
+    "גיא",
+    "רון",
+    "עמית",
+    "דניאל",
+    "אלון",
+    "שחר",
+    "תומר",
+    "אסף",
+    "ניר",
+    "עומר",
+    "ליאור",
+    "מתן",
+    "אביב",
+    "דור",
+    "יונתן",
+    "בועז",
+    "רועי",
+    "שי"
+  ],
+  "firstNamesF": [
+    "מאיה",
+    "נועה",
+    "שירה",
+    "טליה",
+    "יעל",
+    "אביגיל",
+    "רותם",
+    "הדר",
+    "עדי",
+    "קרן",
+    "מיכל",
+    "גילי",
+    "דנה",
+    "ענבל",
+    "הילה",
+    "סיגל",
+    "לילך",
+    "מור",
+    "נטע",
+    "אפרת",
+    "תמר",
+    "רינת",
+    "שקד",
+    "עמית"
+  ],
+  "lastNames": [
+    "כהן",
+    "לוי",
+    "מזרחי",
+    "פרץ",
+    "ביטון",
+    "אזולאי",
+    "דהן",
+    "אבוטבול",
+    "בן דוד",
+    "גולן",
+    "שרון",
+    "נחום",
+    "אלוני",
+    "שדה",
+    "קרמר",
+    "ברק",
+    "עמרם",
+    "צור",
+    "רימון",
+    "שגיא",
+    "אורן",
+    "חיון",
+    "קורן",
+    "אשכנזי",
+    "סופר",
+    "וינר",
+    "גבאי",
+    "מלכה",
+    "הרשקוביץ",
+    "טל"
+  ],
+  "childNames": [
+    "אור",
+    "נועם",
+    "יולי",
+    "גל",
+    "ים",
+    "תום",
+    "שני",
+    "ליה",
+    "רוני",
+    "אריאל",
+    "מיקה",
+    "אלה",
+    "דורי",
+    "עדן",
+    "נדב",
+    "לין",
+    "אופיר",
+    "ספיר",
+    "יהלי",
+    "אמי"
+  ],
+  "freeTextDestinations": [
+    "רופא שיניים בבנימינה",
+    "פגישת הורים בבית ספר",
+    "מספרה בזכרון יעקב",
+    "בדיקת דם במרפאה",
+    "אירוע משפחתי בחיפה",
+    "חוג התעמלות",
+    "מוסך בחדרה",
+    "משרד הרישוי",
+    "בית הורים בקיבוץ שער העמקים"
+  ],
+  "freeTextOrigins": [
+    "בית חברים בזכרון",
+    "מעבדה ברחוב הנשיא בחיפה"
+  ],
+  "stopFreeText": [
+    "תחנת דלק בכביש 4",
+    "קניון בכביש הראשי"
+  ],
+  "notes": [
+    "צריך/ה לצאת בול בזמן, יש פגישה קבועה",
+    "אפשר גם מעט מוקדם יותר אם נוח",
+    "יש עמי מזוודה גדולה",
+    "תודה מראש!",
+    "גמיש/ה בשעת החזרה",
+    "אני צריך/ה להגיע בזמן לאוטובוס"
+  ],
+  "negotiationLines": [
+    "אני צריך/ה רכב גדול, יש לי ציוד",
+    "אני לא יכול/ה לצאת רבע שעה מוקדם יותר, יש לי פגישה",
+    "זה רחוק מדי בשבילי, אפשר רכב אחר?",
+    "אני מוכן/ה לשנות שעה רק אם אחזור באותו היום",
+    "אפשר לדחות בחצי שעה במקום להקדים?"
+  ],
+  "personaTags": {
+    "parent": "Parent of 1-2 named children (guardian). School/kindergarten runs, mostly drop-offs (הקפצות) to nearby places. Often a companion on the other parent's requests.",
+    "parentPairPartner": "The other guardian of the same children.",
+    "commuter": "Weekday commuter, long round trips, wants the same slot every day, fixed times.",
+    "workFromHome": "Works from home; very few rides, mostly errands and appointments.",
+    "nightOuting": "Evening outings with late returns (up to 23:45).",
+    "livesElsewhere": "Lives away from the kibbutz (default origin set to another town) but uses the same cars.",
+    "privateCar": "Owns a private car registered as a temporary car and posts some rides with it; others may ask to join.",
+    "doesNotDrive": "Does not drive. May only file drop-offs unless a driving companion is named.",
+    "hatesChangingTimes": "Dislikes changing times; agrees to a change only in a pinch (accepts roughly one proposal in three).",
+    "veryFlexible": "Very flexible with times; accepts almost any reasonable proposal.",
+    "editsAfterSubmit": "Edits a request after submitting it (a time shift).",
+    "needsBigCarButForgotToSay": "Needs a big car or a child seat but did not say so in the request; will mention it when a proposal arrives.",
+    "oftenCancels": "Cancels a ride now and then (live phase).",
+    "answersHalfTheTime": "Answers proposals only about half of the time; needs a nudge.",
+    "negotiator": "Counters proposals more often than average (see negotiationTendency)."
+  },
+  "liveEventTypes": {
+    "cancelRequest": "Member cancels one of their rides after publication.",
+    "lateRequest": "Member files a new request for a day that is already published.",
+    "carNow": "Member needs a car right now (live quick request).",
+    "editRequest": "Member asks to shift one of their rides by 30 minutes.",
+    "askToJoin": "Member asks to join someone else's ride."
+  },
+  "sadranName": "סדרן בדיקות",
+  "awayBasePlace": "חדרה",
+  "haifaPlace": "חיפה",
+  "nightPlaces": [
+    "תל אביב",
+    "חיפה",
+    "קיסריה",
+    "נתניה",
+    "כפר סבא",
+    "רעננה"
+  ],
+  "chainPlaces": [
+    "חיפה",
+    "נתניה",
+    "תל אביב",
+    "יקנעם",
+    "עפולה",
+    "כפר סבא",
+    "זכרון יעקב"
+  ]
+}

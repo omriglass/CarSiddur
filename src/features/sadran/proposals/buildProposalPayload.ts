@@ -70,7 +70,10 @@ export function buildProposalPayload(input: BuildProposalPayloadInput): Record<s
     const returnAt = input.proposedReturnAt;
     if (!departAt && !returnAt) return null;
     if (departAt && returnAt && (Date.parse(returnAt) <= Date.parse(departAt) || dateKey(departAt) !== dateKey(returnAt))) return null;
-    return { ...prefillPayload, depart_at: departAt, return_at: returnAt };
+    // A time/car shift never carries places (apply_proposal would overwrite the request's route).
+    const rest = { ...prefillPayload };
+    for (const key of PLACE_EDIT_KEYS) delete rest[key];
+    return { ...rest, depart_at: departAt, return_at: returnAt };
   }
   if (type === "deny") return { ...prefillPayload, reason: input.effectiveReason };
   if (type === "external") return { ...prefillPayload, hint: input.externalHint, reason: input.effectiveReason };

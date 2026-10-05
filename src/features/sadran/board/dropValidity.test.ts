@@ -275,14 +275,14 @@ describe("unmet placement by trip type (REQUIREMENTS §13.93)", () => {
     expect(unmetMergeHost(withHost, item(request({ ...base, trip_type: "one_way", trip_shape: "one_way_to" })), "car1", 0, "host1")?.id).toBe("host1");
   });
 
-  it("the beyond-flex shift payload carries the request's places, never the department home", () => {
+  it("the beyond-flex shift payload carries car and times only, never places", () => {
     const window = { startsAt: departAt, endsAt: "2026-09-13T12:00:00.000Z" };
     const round = request({ ...base, trip_type: "round_trip", trip_shape: "round_trip", return_at: window.endsAt });
-    expect(unmetShiftPayload(round, "car1", window, unmetPlacement(ctx, round, "car1", departAt)!)).toEqual({ car_id: "car1", depart_at: departAt, return_at: window.endsAt, origin_id: "kfar", destination_id: "kfar" });
+    expect(unmetShiftPayload(round, "car1", window, unmetPlacement(ctx, round, "car1", departAt)!)).toEqual({ car_id: "car1", depart_at: departAt, return_at: window.endsAt });
     const oneWay = request({ ...base, trip_type: "one_way", trip_shape: "one_way_to" });
-    expect(unmetShiftPayload(oneWay, "car1", window, unmetPlacement(ctx, oneWay, "car1", departAt)!)).toEqual({ car_id: "car1", depart_at: departAt, origin_id: "kfar", destination_id: "haifa" });
+    expect(unmetShiftPayload(oneWay, "car1", window, unmetPlacement(ctx, oneWay, "car1", departAt)!)).toEqual({ car_id: "car1", depart_at: departAt });
     const drop = request({ ...base, trip_type: "drop_off", trip_shape: "one_way_to" });
-    expect(unmetShiftPayload(drop, "car1", window, unmetPlacement(ctx, drop, "car1", departAt)!)).toEqual({ depart_at: departAt, origin_id: "kfar", destination_id: "haifa" });
+    expect(unmetShiftPayload(drop, "car1", window, unmetPlacement(ctx, drop, "car1", departAt)!)).toEqual({ depart_at: departAt });
   });
 });
 

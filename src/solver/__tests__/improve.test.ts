@@ -120,3 +120,15 @@ describe('runImprove', () => {
     expect(lowerScoreResult.ejectionSuggestions.has('A')).toBe(false);
   });
 });
+
+describe('chain safety (QA regression seed 7)', () => {
+  it('never throws OVERLAP_OR_LOCATION: a series leg ending away is not placed before a ride that starts at home', async () => {
+    // Minimal 2-request / 1-car extract of a QA week: a Monday round trip from home is placed first,
+    // then a Sunday series leg that leaves the car at its destination (pre-fix: trySeriesOnCar did not
+    // check the next block's start). The improve.ts rollbacks are covered by the timeline restore() test
+    // plus the chain-break baseline checks in tryRelocateSetAndPlace.
+    const { solve } = await import('../index');
+    const fixture = (await import('../__fixtures__/improve-chain-break.input.json')).default as unknown as SolverInput;
+    expect(() => solve(fixture)).not.toThrow();
+  });
+});

@@ -237,6 +237,7 @@ export const heSadran = {
     seriesLine: "בקשה רב-יומית · יום {{index}} מתוך {{count}}",
   },
   sadranProposal: {
+    sameTimesCar: "יש רכב פנוי בשעות שביקשת: {{car}}.",
     close: "סגירת ההצעה וחזרה למסך הקודם",
     suggestTimes: "הצעת שעות אחרות",
     solveOutside: "פתרון מחוץ לסידור",

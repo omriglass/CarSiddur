@@ -19,7 +19,7 @@ import { bestPlacementWithinFlex } from './flexibility';
 import { compareUnitsByPriority, type PlacedSingle, type Unit } from './greedy';
 import { fits, luggageFits } from './seatFit';
 import { reason } from './reasons';
-import type { CarTimeline } from './timeline';
+import type { Block, CarTimeline } from './timeline';
 import type { Car, Relocation, SolverConfig, SolverInput, Suggestion } from './types';
 
 export interface ImproveResult {
@@ -136,7 +136,7 @@ export function runImprove(
       const soleBlocker = blockers.length === 1 ? blockers[0] : undefined;
       const blockerScore = soleBlocker ? (scores.get(soleBlocker.nr.id)?.total ?? 0) : 0;
       if (!solved && soleBlocker && unit.score > blockerScore) {
-        const suggestion = ejectionCandidate(nr, car, soleBlocker, tl, input);
+        const suggestion = ejectionCandidate(nr, car, soleBlocker, tl);
         if (suggestion) ejectionSuggestions.set(nr.id, suggestion);
       }
     }
@@ -146,6 +146,15 @@ export function runImprove(
   }
 
   return { newlyPlaced, stillUnmetUnits, relocationsApplied, ejectionSuggestions, budgetExhausted: budgetState.exhausted };
+}
+
+/** Ride ids whose recorded origin does not match where the car is (pre-existing breaks are tolerated, new ones are not). */
+function chainBreakIds(tl: CarTimeline): Set<string> {
+  return new Set(tl.chainBreaks().map((c) => c.rideId));
+}
+
+function addsChainBreak(tl: CarTimeline, baseline: Set<string>): boolean {
+  return tl.chainBreaks().some((c) => !baseline.has(c.rideId));
 }
 
 interface RelocationOutcome {
@@ -166,6 +175,17 @@ function tryRelocateSetAndPlace(
 ): RelocationOutcome | null {
   const tl = timelines.get(car.id);
   if (!tl) return null;
+  // Moving a ride can strand a neighbour that expects the car where it no longer is
+  // (one-way legs end elsewhere): every tentative move is checked against these baselines.
+  const baselines = new Map<string, Set<string>>([[car.id, chainBreakIds(tl)]]);
+  const baselineOf = (id: string, t: CarTimeline) => {
+    let b = baselines.get(id);
+    if (!b) {
+      b = chainBreakIds(t);
+      baselines.set(id, b);
+    }
+    return b;
+  };
 
   // Fast path (single blocker only): rather than relocating the blocker to a
   // different car, try compressing both windows on the SAME car — shift the
@@ -180,7 +200,7 @@ function tryRelocateSetAndPlace(
       const bufferSlots = Math.round(input.config.bufferMinutes / 15);
       const compressed = closeGapSameCar(nr, b, bufferSlots);
       if (compressed) {
-        tl.remove(`ride:${b.nr.id}`);
+        const bOriginal = tl.remove(`ride:${b.nr.id}`);
         const bFits = tl.isFree(compressed.bWindow, b.nr.legs[0]?.originId ?? input.homeLocationId);
         if (bFits) {
           tl.add({
@@ -200,6 +220,9 @@ function tryRelocateSetAndPlace(
               endLocationId: leg?.destinationId ?? input.homeLocationId,
               overnightAck: false,
             });
+            if (addsChainBreak(tl, baselineOf(car.id, tl))) {
+              tl.remove(`ride:${nr.id}`); // the shared rollback below restores b
+            } else {
             b.carId = car.id;
             b.window = compressed.bWindow;
             b.shift = {
@@ -214,23 +237,23 @@ function tryRelocateSetAndPlace(
                 returnMin: (compressed.uWindow.end - nr.window.end) * 15,
               },
             };
+            }
           }
           tl.remove(`ride:${b.nr.id}`);
         }
-        // roll back b to its original window before falling through
-        tl.add({
-          rideId: `ride:${b.nr.id}`,
-          window: b.window,
-          startLocationId: b.nr.legs[0]?.originId ?? input.homeLocationId,
-          endLocationId: b.nr.legs[0]?.destinationId ?? input.homeLocationId,
-          overnightAck: false,
-        });
+        // roll back b to its original block before falling through
+        tl.remove(`ride:${b.nr.id}`);
+        if (bOriginal) tl.restore(bOriginal);
       }
     }
   }
 
   // Remove all blockers from `car`'s timeline up front.
-  for (const b of blockers) tl.remove(`ride:${b.nr.id}`);
+  const removedBlocks: Block[] = [];
+  for (const b of blockers) {
+    const removed = tl.remove(`ride:${b.nr.id}`);
+    if (removed) removedBlocks.push(removed);
+  }
 
   const newTargets: { blocker: PlacedSingle; targetCarId: string; window: { start: number; end: number } }[] = [];
   let ok = true;
@@ -251,6 +274,20 @@ function tryRelocateSetAndPlace(
       if (!targetTl) continue;
       const placement = bestPlacementWithinFlex(targetTl, b.nr);
       if (!placement) continue;
+      const targetBaseline = baselineOf(target.id, targetTl);
+      const probe = {
+        rideId: `ride:${b.nr.id}`,
+        window: placement.window,
+        startLocationId: b.nr.legs[0]?.originId ?? input.homeLocationId,
+        endLocationId: b.nr.legs[0]?.destinationId ?? input.homeLocationId,
+        overnightAck: false,
+      };
+      targetTl.add(probe);
+      if (addsChainBreak(targetTl, targetBaseline)) {
+        targetTl.remove(probe.rideId);
+        continue;
+      }
+      targetTl.remove(probe.rideId);
       placedTarget = { targetCarId: target.id, window: placement.window };
       targetTl.add({
         rideId: `ride:${b.nr.id}`,
@@ -268,17 +305,19 @@ function tryRelocateSetAndPlace(
     newTargets.push({ blocker: b, targetCarId: placedTarget.targetCarId, window: placedTarget.window });
   }
 
-  if (ok) {
-    const placement = bestPlacementWithinFlex(tl, nr);
-    if (placement) {
-      const leg = nr.legs[0];
-      tl.add({
-        rideId: `ride:${nr.id}`,
-        window: placement.window,
-        startLocationId: leg?.originId ?? input.homeLocationId,
-        endLocationId: leg?.destinationId ?? input.homeLocationId,
-        overnightAck: false,
-      });
+  const placement = ok ? bestPlacementWithinFlex(tl, nr) : null;
+  if (ok && placement) {
+    const leg = nr.legs[0];
+    tl.add({
+      rideId: `ride:${nr.id}`,
+      window: placement.window,
+      startLocationId: leg?.originId ?? input.homeLocationId,
+      endLocationId: leg?.destinationId ?? input.homeLocationId,
+      overnightAck: false,
+    });
+    if (addsChainBreak(tl, baselines.get(car.id) ?? new Set())) {
+      tl.remove(`ride:${nr.id}`);
+    } else {
       for (const t of newTargets) {
         t.blocker.carId = t.targetCarId;
         t.blocker.window = t.window;
@@ -310,15 +349,7 @@ function tryRelocateSetAndPlace(
   for (const t of newTargets) {
     timelines.get(t.targetCarId)?.remove(`ride:${t.blocker.nr.id}`);
   }
-  for (const b of blockers) {
-    tl.add({
-      rideId: `ride:${b.nr.id}`,
-      window: b.window,
-      startLocationId: b.nr.legs[0]?.originId ?? input.homeLocationId,
-      endLocationId: b.nr.legs[0]?.destinationId ?? input.homeLocationId,
-      overnightAck: false,
-    });
-  }
+  for (const removed of removedBlocks) tl.restore(removed);
   return null;
 }
 
@@ -371,17 +402,10 @@ function ejectionCandidate(
   car: Car,
   blocker: PlacedSingle,
   tl: CarTimeline,
-  input: SolverInput,
 ): Suggestion | null {
-  tl.remove(`ride:${blocker.nr.id}`);
+  const removed = tl.remove(`ride:${blocker.nr.id}`);
   const placement = bestPlacementWithinFlex(tl, nr);
-  tl.add({
-    rideId: `ride:${blocker.nr.id}`,
-    window: blocker.window,
-    startLocationId: blocker.nr.legs[0]?.originId ?? input.homeLocationId,
-    endLocationId: blocker.nr.legs[0]?.destinationId ?? input.homeLocationId,
-    overnightAck: false,
-  });
+  if (removed) tl.restore(removed);
   if (!placement) return null;
 
   return {

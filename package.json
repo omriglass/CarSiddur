@@ -31,7 +31,12 @@
     "db:fake": "node scripts/fake-week.mjs",
     "db:export": "node scripts/db-export.mjs",
     "impact": "node scripts/impact.mjs",
-    "release": "node scripts/release.mjs"
+    "release": "node scripts/release.mjs",
+    "qa:week": "node scripts/qa/generate-week.mjs",
+    "qa:regression": "node scripts/qa/regression.mjs",
+    "qa:sadran": "node scripts/qa/run.mjs sadran",
+    "qa:member": "node scripts/qa/run.mjs member",
+    "qa:ui": "node scripts/qa/ui.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "5.9.1",

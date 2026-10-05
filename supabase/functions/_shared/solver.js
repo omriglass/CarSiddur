@@ -797,7 +797,7 @@ function trySeriesOnCar(tl, legs, seriesCount) {
   for (const D of depCandidates) {
     for (const R of retCandidates) {
       if (R <= D) continue;
-      if (!tl.isFree({ start: D, end: R }, first.originId)) continue;
+      if (!tl.isFree({ start: D, end: R }, first.originId, void 0, last.destinationId)) continue;
       const shiftCost = Math.abs(D - first.window.start) * 15 + Math.abs(R - last.window.end) * 15;
       if (!best || shiftCost < best.shiftCost) {
         best = {
@@ -1256,7 +1256,7 @@ function runImprove(unmetUnits, placedSingles, timelines, input, scores) {
       const soleBlocker = blockers.length === 1 ? blockers[0] : void 0;
       const blockerScore = soleBlocker ? scores.get(soleBlocker.nr.id)?.total ?? 0 : 0;
       if (!solved && soleBlocker && unit.score > blockerScore) {
-        const suggestion = ejectionCandidate(nr, car, soleBlocker, tl, input);
+        const suggestion = ejectionCandidate(nr, car, soleBlocker, tl);
         if (suggestion) ejectionSuggestions.set(nr.id, suggestion);
       }
     }
@@ -1265,9 +1265,24 @@ function runImprove(unmetUnits, placedSingles, timelines, input, scores) {
   }
   return { newlyPlaced, stillUnmetUnits, relocationsApplied, ejectionSuggestions, budgetExhausted: budgetState.exhausted };
 }
+function chainBreakIds(tl) {
+  return new Set(tl.chainBreaks().map((c) => c.rideId));
+}
+function addsChainBreak(tl, baseline) {
+  return tl.chainBreaks().some((c) => !baseline.has(c.rideId));
+}
 function tryRelocateSetAndPlace(nr, car, blockers, sharedCars, timelines, input, budgetState, spend) {
   const tl = timelines.get(car.id);
   if (!tl) return null;
+  const baselines = /* @__PURE__ */ new Map([[car.id, chainBreakIds(tl)]]);
+  const baselineOf = (id, t) => {
+    let b = baselines.get(id);
+    if (!b) {
+      b = chainBreakIds(t);
+      baselines.set(id, b);
+    }
+    return b;
+  };
   if (blockers.length === 1) {
     const b = blockers[0];
     if (b) {
@@ -1276,7 +1291,7 @@ function tryRelocateSetAndPlace(nr, car, blockers, sharedCars, timelines, input,
       const bufferSlots = Math.round(input.config.bufferMinutes / 15);
       const compressed = closeGapSameCar(nr, b, bufferSlots);
       if (compressed) {
-        tl.remove(`ride:${b.nr.id}`);
+        const bOriginal = tl.remove(`ride:${b.nr.id}`);
         const bFits = tl.isFree(compressed.bWindow, b.nr.legs[0]?.originId ?? input.homeLocationId);
         if (bFits) {
           tl.add({
@@ -1296,34 +1311,37 @@ function tryRelocateSetAndPlace(nr, car, blockers, sharedCars, timelines, input,
               endLocationId: leg?.destinationId ?? input.homeLocationId,
               overnightAck: false
             });
-            b.carId = car.id;
-            b.window = compressed.bWindow;
-            b.shift = {
-              departureMin: (compressed.bWindow.start - b.nr.window.start) * 15,
-              returnMin: (compressed.bWindow.end - b.nr.window.end) * 15
-            };
-            return {
-              relocations: [{ rideId: `ride:${b.nr.id}`, fromCarId: car.id, toCarId: car.id, window: compressed.bWindow }],
-              window: compressed.uWindow,
-              shift: {
-                departureMin: (compressed.uWindow.start - nr.window.start) * 15,
-                returnMin: (compressed.uWindow.end - nr.window.end) * 15
-              }
-            };
+            if (addsChainBreak(tl, baselineOf(car.id, tl))) {
+              tl.remove(`ride:${nr.id}`);
+            } else {
+              b.carId = car.id;
+              b.window = compressed.bWindow;
+              b.shift = {
+                departureMin: (compressed.bWindow.start - b.nr.window.start) * 15,
+                returnMin: (compressed.bWindow.end - b.nr.window.end) * 15
+              };
+              return {
+                relocations: [{ rideId: `ride:${b.nr.id}`, fromCarId: car.id, toCarId: car.id, window: compressed.bWindow }],
+                window: compressed.uWindow,
+                shift: {
+                  departureMin: (compressed.uWindow.start - nr.window.start) * 15,
+                  returnMin: (compressed.uWindow.end - nr.window.end) * 15
+                }
+              };
+            }
           }
           tl.remove(`ride:${b.nr.id}`);
         }
-        tl.add({
-          rideId: `ride:${b.nr.id}`,
-          window: b.window,
-          startLocationId: b.nr.legs[0]?.originId ?? input.homeLocationId,
-          endLocationId: b.nr.legs[0]?.destinationId ?? input.homeLocationId,
-          overnightAck: false
-        });
+        tl.remove(`ride:${b.nr.id}`);
+        if (bOriginal) tl.restore(bOriginal);
       }
     }
   }
-  for (const b of blockers) tl.remove(`ride:${b.nr.id}`);
+  const removedBlocks = [];
+  for (const b of blockers) {
+    const removed = tl.remove(`ride:${b.nr.id}`);
+    if (removed) removedBlocks.push(removed);
+  }
   const newTargets = [];
   let ok = true;
   for (const b of blockers) {
@@ -1340,12 +1358,26 @@ function tryRelocateSetAndPlace(nr, car, blockers, sharedCars, timelines, input,
       if (!fits(target, b.nr.passengers) || !luggageFits(target, b.nr.luggage ? 1 : 0)) continue;
       const targetTl = timelines.get(target.id);
       if (!targetTl) continue;
-      const placement = bestPlacementWithinFlex(targetTl, b.nr);
-      if (!placement) continue;
-      placedTarget = { targetCarId: target.id, window: placement.window };
+      const placement2 = bestPlacementWithinFlex(targetTl, b.nr);
+      if (!placement2) continue;
+      const targetBaseline = baselineOf(target.id, targetTl);
+      const probe = {
+        rideId: `ride:${b.nr.id}`,
+        window: placement2.window,
+        startLocationId: b.nr.legs[0]?.originId ?? input.homeLocationId,
+        endLocationId: b.nr.legs[0]?.destinationId ?? input.homeLocationId,
+        overnightAck: false
+      };
+      targetTl.add(probe);
+      if (addsChainBreak(targetTl, targetBaseline)) {
+        targetTl.remove(probe.rideId);
+        continue;
+      }
+      targetTl.remove(probe.rideId);
+      placedTarget = { targetCarId: target.id, window: placement2.window };
       targetTl.add({
         rideId: `ride:${b.nr.id}`,
-        window: placement.window,
+        window: placement2.window,
         startLocationId: b.nr.legs[0]?.originId ?? input.homeLocationId,
         endLocationId: b.nr.legs[0]?.destinationId ?? input.homeLocationId,
         overnightAck: false
@@ -1358,17 +1390,19 @@ function tryRelocateSetAndPlace(nr, car, blockers, sharedCars, timelines, input,
     }
     newTargets.push({ blocker: b, targetCarId: placedTarget.targetCarId, window: placedTarget.window });
   }
-  if (ok) {
-    const placement = bestPlacementWithinFlex(tl, nr);
-    if (placement) {
-      const leg = nr.legs[0];
-      tl.add({
-        rideId: `ride:${nr.id}`,
-        window: placement.window,
-        startLocationId: leg?.originId ?? input.homeLocationId,
-        endLocationId: leg?.destinationId ?? input.homeLocationId,
-        overnightAck: false
-      });
+  const placement = ok ? bestPlacementWithinFlex(tl, nr) : null;
+  if (ok && placement) {
+    const leg = nr.legs[0];
+    tl.add({
+      rideId: `ride:${nr.id}`,
+      window: placement.window,
+      startLocationId: leg?.originId ?? input.homeLocationId,
+      endLocationId: leg?.destinationId ?? input.homeLocationId,
+      overnightAck: false
+    });
+    if (addsChainBreak(tl, baselines.get(car.id) ?? /* @__PURE__ */ new Set())) {
+      tl.remove(`ride:${nr.id}`);
+    } else {
       for (const t of newTargets) {
         t.blocker.carId = t.targetCarId;
         t.blocker.window = t.window;
@@ -1394,15 +1428,7 @@ function tryRelocateSetAndPlace(nr, car, blockers, sharedCars, timelines, input,
   for (const t of newTargets) {
     timelines.get(t.targetCarId)?.remove(`ride:${t.blocker.nr.id}`);
   }
-  for (const b of blockers) {
-    tl.add({
-      rideId: `ride:${b.nr.id}`,
-      window: b.window,
-      startLocationId: b.nr.legs[0]?.originId ?? input.homeLocationId,
-      endLocationId: b.nr.legs[0]?.destinationId ?? input.homeLocationId,
-      overnightAck: false
-    });
-  }
+  for (const removed of removedBlocks) tl.restore(removed);
   return null;
 }
 function closeGapSameCar(nr, b, bufferSlots) {
@@ -1422,16 +1448,10 @@ function closeGapSameCar(nr, b, bufferSlots) {
   const newLate = { start: late.window.start + lateShift, end: late.window.end + lateShift };
   return earlyIsB ? { bWindow: newEarly, uWindow: newLate } : { bWindow: newLate, uWindow: newEarly };
 }
-function ejectionCandidate(nr, car, blocker, tl, input) {
-  tl.remove(`ride:${blocker.nr.id}`);
+function ejectionCandidate(nr, car, blocker, tl) {
+  const removed = tl.remove(`ride:${blocker.nr.id}`);
   const placement = bestPlacementWithinFlex(tl, nr);
-  tl.add({
-    rideId: `ride:${blocker.nr.id}`,
-    window: blocker.window,
-    startLocationId: blocker.nr.legs[0]?.originId ?? input.homeLocationId,
-    endLocationId: blocker.nr.legs[0]?.destinationId ?? input.homeLocationId,
-    overnightAck: false
-  });
+  if (removed) tl.restore(removed);
   if (!placement) return null;
   return {
     kind: "shiftWithinFlex",
@@ -1569,9 +1589,23 @@ var CarTimeline = class {
     const end = this.locationAt(this.weekSlots);
     return end === this.baseLocation ? null : { locationId: end };
   }
+  /** Removes a block and returns it (so a caller can `restore()` it exactly). */
   remove(rideId) {
+    const removed = this.blocks.find((b) => b.rideId === rideId);
     this.blocks = this.blocks.filter((b) => b.rideId !== rideId);
     this.fixedRideIds.delete(rideId);
+    return removed;
+  }
+  /**
+   * Puts back a block previously returned by `remove()`, exactly as it was,
+   * without re-validating the location chain or overlap: rollbacks must never
+   * throw, even when other blocks were moved meanwhile.
+   */
+  restore(b, wasFixed = false) {
+    const idx = this.blocks.findIndex((x) => x.window.start > b.window.start);
+    if (idx === -1) this.blocks.push(b);
+    else this.blocks.splice(idx, 0, b);
+    if (wasFixed) this.fixedRideIds.add(b.rideId);
   }
   has(rideId) {
     return this.blocks.some((b) => b.rideId === rideId);
@@ -1975,8 +2009,7 @@ function findMergeHosts(params) {
       if (tl && block) {
         tl.remove(host.rideId);
         const free = tl.isFree(window, block.startLocationId, block.relayPairId, block.endLocationId);
-        if (host.isFixed) tl.forceAdd(block);
-        else tl.add(block);
+        tl.restore(block, host.isFixed);
         if (!free) continue;
       }
     }

@@ -91,8 +91,29 @@ export function combinedSummaryText(input: ProposalTextInput): string {
   });
 }
 
+/** A shift whose proposed times equal the request's own changes nothing about the times. */
+export function shiftTimesUnchanged(input: ProposalTextInput): boolean {
+  if (input.type !== "shift") return false;
+  const { request } = input;
+  const sameDepart = !input.proposedDepartAt || input.proposedDepartAt === request?.depart_at;
+  const sameReturn = !input.proposedReturnAt || input.proposedReturnAt === request?.return_at;
+  return sameDepart && sameReturn;
+}
+
+/** Drops template lines that phrase the (unchanged) times as a change; adds the car line instead. */
+function withoutTimeChangeLines(body: string, carName: string): string {
+  const lines = body.split("\n");
+  const index = lines.findIndex((l) => l.includes("{{newDepart}}") || l.includes("{{newReturn}}"));
+  if (index < 0) return body;
+  lines[index] = carName ? tv("sadranProposal.sameTimesCar", { car: carName }) : "";
+  return lines.filter((l, i) => i !== index || l).join("\n");
+}
+
 export function proposalPreviewText(input: ProposalTextInput): string {
-  const { template, type } = input;
+  const { type } = input;
+  const template = input.template && shiftTimesUnchanged(input)
+    ? { body: withoutTimeChangeLines(input.template.body, input.carName) }
+    : input.template;
   if (!template) return "";
   return [
     combinedSummaryText(input),

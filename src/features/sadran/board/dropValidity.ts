@@ -303,17 +303,15 @@ export function unmetPlacement(ctx: BoardDropContext, req: WeekRequestRow, carId
 
 /**
  * The `shift` proposal payload for an unmet drop that falls outside the request's flexibility:
- * the places always come from the request/placement, never the department home.
+ * car + times (and the leg) only. Never places: `apply_proposal` writes a shift's places onto the
+ * request, so a ride's own places (home/home for a round trip) would overwrite its destination.
+ * Places change only through the explicit ride-detail route edit.
  */
-export function unmetShiftPayload(req: WeekRequestRow, carId: string, window: { startsAt: string; endsAt: string }, placement: UnmetPlacement): Record<string, unknown> {
+export function unmetShiftPayload(req: WeekRequestRow, carId: string, window: { startsAt: string; endsAt: string }, _placement?: UnmetPlacement): Record<string, unknown> {
   const type = tripTypeOf(req);
-  // A drop-off's ride places are where the car is, not the request's route: keep the request's own.
-  const places: Record<string, string> = Object.fromEntries(Object.entries(type === "drop_off"
-    ? { origin_id: req.origin_id, destination_id: req.destination_id }
-    : { origin_id: placement.originId, destination_id: placement.destinationId }).filter(([, id]) => !!id)) as Record<string, string>;
-  if (type === "round_trip") return { car_id: carId, depart_at: window.startsAt, return_at: window.endsAt, ...places };
+  if (type === "round_trip") return { car_id: carId, depart_at: window.startsAt, return_at: window.endsAt };
   if (type === "one_way") return req.trip_shape === "one_way_from"
-    ? { car_id: carId, return_at: window.endsAt, ...places }
-    : { car_id: carId, depart_at: window.startsAt, ...places };
-  return req.trip_shape === "one_way_from" ? { return_at: window.endsAt, ...places } : { depart_at: window.startsAt, ...places };
+    ? { car_id: carId, return_at: window.endsAt }
+    : { car_id: carId, depart_at: window.startsAt };
+  return req.trip_shape === "one_way_from" ? { return_at: window.endsAt } : { depart_at: window.startsAt };
 }

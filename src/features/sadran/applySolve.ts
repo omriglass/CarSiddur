@@ -254,6 +254,8 @@ export function draftFixedRides(
   homeDestinationId: string,
   weekStartMs: number,
   route?: { hop: Hop; stopMinutes: number },
+  /** Turnaround buffer in slots: two blocks on one car closer than this would crash the solver's timeline. */
+  bufferSlots = 0,
 ): FixedRide[] {
   const travelById = new Map(destinations.map((d) => [d.id, d.travel_minutes]));
   const requests = allRequests.map((r) => ({ ...r, destination_travel_minutes: r.destination_id ? travelById.get(r.destination_id) ?? null : null })) as unknown as WeekRequestRow[];
@@ -285,6 +287,14 @@ export function draftFixedRides(
       };
       continue;
     }
+    // The draft's window replaces the request's own current ride (and the ride it explicitly replaces).
+    for (let i = result.length - 1; i >= 0; i--) {
+      const f = result[i]!;
+      const own = f.servedRequestIds.length === 1 && f.servedRequestIds[0] === request.id;
+      if (f.id === placement.replacesRideId || (own && f.carId !== undefined && !f.id.startsWith("draft:"))) result.splice(i, 1);
+    }
+    // Genuinely overlapping blocks must not crash the solver: skip this draft (it stays a draft).
+    if (result.some((f) => f.carId === placement.carId && window.start < f.window.end + bufferSlots && f.window.start < window.end + bufferSlots)) continue;
     const originId = placement.originId ?? homeDestinationId;
     const destinationId = placement.destinationId ?? originId;
     const roundTrip = request.trip_shape === "round_trip";
@@ -393,7 +403,8 @@ export function buildSolverContextFromData(params: GatherSolverContextParams, ro
     .filter((f): f is FixedRide => f !== null);
   const scoringProposals = params.forScoring ? [] : proposals;
   const fixedRides = draftFixedRides(scoringProposals, allRequests, boardRides, boardFixedRides, destinations, params.homeDestinationId, weekStartMs,
-    { hop: makeHop([...(travel ?? []), ...homeTravelEdges(params.homeDestinationId, destinations)]), stopMinutes: departmentSettings.stop_minutes ?? DEFAULT_STOP_MINUTES });
+    { hop: makeHop([...(travel ?? []), ...homeTravelEdges(params.homeDestinationId, destinations)]), stopMinutes: departmentSettings.stop_minutes ?? DEFAULT_STOP_MINUTES },
+    Math.ceil(departmentSettings.turnaround_minutes / 15));
 
   const fixedRequestIds = new Set(fixedRides.flatMap((f) => f.servedRequestIds));
   const openRequests = params.forScoring

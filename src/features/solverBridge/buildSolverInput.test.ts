@@ -465,6 +465,26 @@ describe("origins, trip types, cars stay put (REQUIREMENTS §13.93, docs/ORIGINS
     expect(byId.get("car-2")!.startLocationId).toBeUndefined();
   });
 
+  it("a temporary car's baseLocationId comes from car_start_locations() (owner's default origin), not undefined", () => {
+    const input = buildSolverInput({
+      weekStart: WEEK_START,
+      homeDestinationId: HOME,
+      departmentSettings: DEFAULT_SETTINGS,
+      requests: [],
+      rideTypeCodesById: {},
+      cars: [carRow({ id: "car-1", type: "temporary" } as never), carRow({ id: "car-2" })],
+      seatConfigsByCarId: {},
+      destinations: [destRow()],
+      policy: { id: "p1", version: 1, rules: [] },
+      carStartLocationsByCarId: {
+        "car-1": { locationId: "dest-haifa", baseLocationId: "dest-haifa" },
+        "car-2": { locationId: HOME, baseLocationId: HOME },
+      },
+    });
+    const byId = new Map(input.cars.map((c) => [c.id, c]));
+    expect(byId.get("car-1")!.baseLocationId).toBe("dest-haifa");
+  });
+
   it("passes travel through to SolverInput.travel unchanged, [] when omitted", () => {
     const travel = [{ fromId: "dest-haifa", toId: "dest-nahariya", distanceKm: 20, travelMinutes: 25 }];
     const withTravel = buildSolverInput({
