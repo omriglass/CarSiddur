@@ -243,6 +243,37 @@ export function useSetRequestTripTypeMutation() {
   });
 }
 
+export function useSeriesLegsQuery(seriesId: string | null | undefined, enabled = true) {
+  return useQuery({
+    queryKey: sadranKeys.seriesLegs(seriesId ?? ""),
+    queryFn: () => api.fetchSeriesLegs(seriesId as string),
+    enabled: !!seriesId && enabled,
+    staleTime: 10_000,
+  });
+}
+
+export function useSetRideDriverMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ rideId, driverId, expectedVersion }: {
+      rideId: string; driverId: string | null; expectedVersion: number; departmentId: string; weekStart: string;
+    }) => api.setRideDriver(rideId, driverId, expectedVersion),
+    onSuccess: (_data, { departmentId, weekStart }) => invalidateWeekData(queryClient, departmentId, weekStart),
+    onError: showErrorToast,
+  });
+}
+
+export function useWithdrawDuplicateRequestMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ requestId, expectedVersion }: {
+      requestId: string; expectedVersion: number; departmentId: string; weekStart: string;
+    }) => api.withdrawDuplicateRequest(requestId, expectedVersion),
+    onSuccess: (_data, { departmentId, weekStart }) => invalidateWeekData(queryClient, departmentId, weekStart),
+    onError: showErrorToast,
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Proposals
 // ---------------------------------------------------------------------------

@@ -34,6 +34,7 @@ import { useMyDepartments } from "@/features/auth/useMyDepartments";
 import { useSession } from "@/features/auth/useSession";
 import { useIsSadran } from "@/features/auth/useIsSadran";
 import { useMyRequests, useCancelRideMutation } from "@/features/requests/hooks";
+import { canEditRequest } from "@/features/requests/window";
 import { CarNameWithReport } from "@/features/carCare/components/CarNameWithReport";
 import { useCars, useDestinations, useRideTypes, useMaintenanceBlocks, useCarSeatConfigs } from "@/features/fleet/hooks";
 import { AddRideFab } from "@/features/requests/components/AddRideFab";
@@ -186,6 +187,10 @@ export function SiddurPage() {
   const homeDestinationId = (departmentsQuery.data ?? []).find((d) => d.id === departmentId)?.home_destination_id ?? null;
 
   const rides = boardRidesQuery.data ?? [];
+  const editableOwnRequest = selectedRideId
+    ? (myRequestsQuery.data ?? []).find((request) => request.ride?.id === selectedRideId && canEditRequest(request))
+    : undefined;
+  const editHrefForRide = editableOwnRequest ? paths.requests.edit(editableOwnRequest.id) : undefined;
   const myRequestIds = new Set((myRequestsQuery.data ?? []).map((request) => request.id));
   function isMyRide(ride: BoardRide): boolean {
     return !!profileId && (ride.driver_id === profileId ||
@@ -722,6 +727,7 @@ export function SiddurPage() {
         onOpenChange={(open) => !open && setSelectedRideId(null)}
         onRemoveOwnRide={selectedRide?.id && ownsSelectedRide && selectedRide.version != null ? () => cancelRideMutation.mutate({ rideId: selectedRide.id!, expectedVersion: selectedRide.version!, reason: "CANCELLED_BY_MEMBER" }, { onSuccess: () => setSelectedRideId(null) }) : undefined}
         removingOwnRide={cancelRideMutation.isPending}
+        editRequestHref={editHrefForRide}
         editor={selectedRide?.needs_driver && canEditWeek && selectedRide.ends_at && Date.parse(selectedRide.ends_at) > now.getTime() ? (
           <div className="space-y-2 rounded-md border border-destructive/50 p-3">
             <p className="font-semibold text-destructive">{he.rideCoordination.missingDriver}</p>

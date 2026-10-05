@@ -13,12 +13,14 @@ import { PageHeader } from "@/components/PageHeader";
 import { formatMinutes } from "@/components/timeField15Format";
 import { requestStart, requestWindow, requestWithinFlex } from "../phantomLanes";
 import {
+  carFreeForSpan,
   isDropTargetValid,
   isUnmetDropValid,
   mergeCandidateForRide,
   minutesIso,
   passengersOf,
   seatsFit,
+  swapLuggageBlocked,
   unmetPreviewWindow,
 } from "../dropValidity";
 import { Button } from "@/components/ui/button";
@@ -40,7 +42,8 @@ import { ridePassengerSummary } from "@/lib/ridePassengerSummary";
 import { rideCoordinatorNotes } from "@/lib/rideCoordinatorNotes";
 
 import { resolveRideRealDestination } from "../rideLabel";
-import { unmetItemId } from "../unmetLegs";
+import { duplicateChildRuns } from "../duplicateChildRuns";
+import { connectedMateOf, unmetItemId } from "../unmetLegs";
 import { mergePayloadLeg, previewMerge } from "../mergeProposal";
 import { requestRouteLine } from "../requestRoute";
 import { parseTimeToMinutes } from "@/features/solverBridge/buildSolverInput";
@@ -54,6 +57,7 @@ import { BoardListMode } from "./BoardListMode";
 import { BoardTitleSwitcher } from "./BoardTitleSwitcher";
 import { BoardWeekSwitcher } from "./BoardWeekSwitcher";
 import { DraftChoiceDialog } from "./DraftChoiceDialog";
+import type { FewerDaysSupport } from "./FewerDaysAction";
 import { MergePrefillDialog } from "./MergePrefillDialog";
 import { ProposalActionSheet } from "./ProposalActionSheet";
 import { PolicyChip } from "./PolicyChip";
@@ -134,7 +138,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
   // only covers the authorization check, not this screen's own queries.
   if (board.requestsQuery.isLoading || board.ridesQuery.isLoading || board.carsQuery.isLoading) {
     return (
-      <div className="mx-auto max-w-6xl space-y-3 p-4 pb-24">
+      <div className="mx-auto w-full max-w-none space-y-3 p-4 pb-24">
         <PageHeader title={he.screen.board.title} subtitle={formatWeekRangeLabel(weekStart)} />
         <BoardGridSkeleton />
       </div>
@@ -142,6 +146,13 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
   }
 
   const conflictCount = board.conflicts.length;
+  const fewerDays: FewerDaysSupport = {
+    cars: (board.carsQuery.data ?? []).filter((car) => car.type !== "temporary" && car.status === "active").map((car) => ({ id: car.id, name: car.name })),
+    isCarFree: (carId, startsAt, endsAt, hasLuggage) => carFreeForSpan(board.dropCtx, carId, startsAt, endsAt, hasLuggage),
+    onPropose: dnd.goToComposer,
+    requestIds: new Set(board.boardRequests.map((request) => request.id)),
+  };
+  const duplicateRuns = duplicateChildRuns(board.boardRequests).filter((run) => dateKey(run.startsAt) === board.selectedDay);
   const unmetPreview = dnd.unmetDragHover ? unmetPreviewWindow(board.dropCtx, dnd.unmetDragHover.item, dnd.unmetDragHover.carId, dnd.unmetDragHover.minutes, dnd.unmetDragHover.hostRideId) : null;
 
   const draftRideIds = new Set([
@@ -163,13 +174,19 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
   const mergeHost = board.rides.find((ride) => ride.id === dnd.mergePrefill?.rideId);
   const mergeRequest = board.boardRequests.find((request) => request.id === dnd.mergePrefill?.requestId);
   const mergeLeg = mergeRequest ? mergePayloadLeg(dnd.mergePrefill?.payload, mergeRequest) : "out";
-  const mergePreview = mergeHost && mergeRequest ? previewMerge(mergeHost, mergeRequest, mergeLeg, board.routeCtx) : null;
+  // REQ §13.101 (k): a "both ways" merge into one leg of a connected הקפצה pair joins one leg per
+  // ride on the server, so the popup previews both rides - each with its own leg.
+  const mergePair = mergeHost && mergeLeg === "both" ? connectedMateOf(board.rides, mergeHost) : null;
+  const mergePreview = mergeHost && mergeRequest ? previewMerge(mergeHost, mergeRequest, mergePair ? mergePair.rideLeg : mergeLeg, board.routeCtx) : null;
+  const mergePairPreview = mergePair && mergeRequest ? previewMerge(mergePair.mate, mergeRequest, mergePair.mateLeg, board.routeCtx) : null;
+  const mergeHostDriverEntry = mergeHost ? (servedOf(mergeHost).find((entry) => entry.role === "driver") ?? servedOf(mergeHost)[0]) : undefined;
+  const mergeHostRequest = mergeHostDriverEntry ? board.boardRequests.find((request) => request.id === mergeHostDriverEntry.request_id) : undefined;
 
   const currentPolicyForActions = (board.policyOptionsQuery.data ?? []).find((policy) => policy.policyVersionId === board.effectivePolicyVersionId)
     ?? (board.activePolicyQuery.data?.policyVersionId === board.effectivePolicyVersionId ? board.activePolicyQuery.data ?? null : null);
 
   return (
-    <div ref={boardRef} className="mx-auto max-w-6xl space-y-3 p-4 pb-24">
+    <div ref={boardRef} className="mx-auto w-full max-w-none space-y-3 p-4 pb-24">
       {/* Board header (UX_FLOWS.md §4.2, owner spec 2026-09-10): the title is the
           department/week switcher below `lg` (tap to switch) and the plain
           `PageHeader` + inline `BoardWeekSwitcher` selects from `lg` up; the
@@ -251,6 +268,23 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
         </button>
       ) : null}
 
+      {duplicateRuns.length > 0 ? (
+        <div role="status" aria-label={he.duplicateChild.listLabel} data-testid="duplicate-child-warning"
+          className="space-y-1 rounded-md border border-maintenance/50 bg-maintenance/10 p-2 text-sm">
+          {duplicateRuns.map((run) => (
+            <p key={`${run.childName}:${run.requests.map((r) => r.id).join(":")}`}>
+              <span className="font-semibold">{tv("duplicateChild.banner", { child: run.childName })}</span>
+              {" · "}
+              {tv("duplicateChild.line", {
+                a: run.requests[0]?.requester_full_name ?? "", b: run.requests[1]?.requester_full_name ?? "",
+                dayTime: `${formatDayDate(run.startsAt)} ${formatTime(new Date(run.startsAt))}`,
+              })}
+            </p>
+          ))}
+          <p className="text-xs text-muted-foreground">{he.duplicateChild.hint}</p>
+        </div>
+      ) : null}
+
       <WeekStrip weekStart={weekStart} counts={board.dayCounts} selected={board.selectedDay} onSelect={board.setSelectedDay} />
 
       <div className={showLegend ? "" : "hidden lg:block"}>
@@ -301,7 +335,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
             discussionBlocks={board.weekGridDiscussionBlocks}
             onDiscussionClick={dnd.setSelectedGroupId}
             canSwapCars={board.boardCanSwapCars}
-            onCarSwap={(carA, carB) => dnd.setCarSwapPair({ carA, carB })}
+            onCarSwap={(carA, carB) => { if (swapLuggageBlocked(board.dropCtx, carA, carB, board.selectedDay)) { toast.error(he.sadranBoard.luggageSwapToast); return; } dnd.setCarSwapPair({ carA, carB }); }}
           />
         </div>
 
@@ -373,6 +407,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
             pendingProposalsCount={(board.proposalsQuery.data ?? []).filter((p) => p.status === "sent").length}
             homeDestinationId={board.department?.home_destination_id ?? undefined}
             tripTypeScope={{ departmentId, weekStart }}
+            fewerDays={fewerDays}
           />
 
         </div>
@@ -396,6 +431,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
               onOpenProposal={dnd.setSelectedProposalId}
               homeDestinationId={board.department?.home_destination_id ?? undefined}
               tripTypeScope={{ departmentId, weekStart }}
+              fewerDays={fewerDays}
               dayStartMinutes={dayStartMinutes}
               dayEndMinutes={dayEndMinutes}
               onDragHover={(item, carId, minutes, hostRideId) => dnd.setUnmetDragHover(carId && minutes != null ? { item, carId, minutes, hostRideId } : null)}
@@ -413,6 +449,11 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
         hostStartsAt={mergeHost?.starts_at}
         hostEndsAt={mergeHost?.ends_at}
         request={mergeRequest}
+        hostRequest={mergeHostRequest}
+        pair={mergePair ? {
+          label: board.weekGridRides.find((ride) => ride.id === mergePair.mate.id)?.label ?? mergePair.mate.driver_name ?? "",
+          startsAt: mergePair.mate.starts_at, endsAt: mergePair.mate.ends_at, preview: mergePairPreview,
+        } : null}
         requestRoute={mergeRequest ? requestRouteLine({ originId: mergeRequest.origin_id, originName: mergeRequest.origin_id ? mergeRequest.origin_resolved_name : null, originText: mergeRequest.origin_text, destination: mergeRequest.destination_resolved_name ?? mergeRequest.destination_text ?? "", tripType: mergeRequest.trip_type }, board.department?.home_destination_id) : ""}
         leg={mergeLeg}
         onLegChange={dnd.setMergeLeg}
@@ -443,7 +484,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
       />
       <Sheet open={!!selectedUnmet} onOpenChange={(open) => !open && dnd.setSelectedUnmetId(null)}>
         <SheetContent side="bottom"><SheetHeader><SheetTitle>{he.board.unmet}</SheetTitle></SheetHeader>
-          {selectedUnmet ? <UnmetList items={[selectedUnmet]} onAction={dnd.handleUnmetAction} onDecision={dnd.handleUnmetDecision} onOpenProposal={dnd.setSelectedProposalId} homeDestinationId={board.department?.home_destination_id ?? undefined} tripTypeScope={{ departmentId, weekStart }} /> : null}
+          {selectedUnmet ? <UnmetList items={[selectedUnmet]} onAction={dnd.handleUnmetAction} onDecision={dnd.handleUnmetDecision} onOpenProposal={dnd.setSelectedProposalId} homeDestinationId={board.department?.home_destination_id ?? undefined} tripTypeScope={{ departmentId, weekStart }} fewerDays={fewerDays} /> : null}
         </SheetContent>
       </Sheet>
 
@@ -493,6 +534,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
         }}
       />
       <RideSheet
+        driverCandidates={dnd.reservationMembersQuery.data ?? []}
         key={selectedPlanningChange?.id ?? selectedRide?.id ?? "no-ride"}
         ride={selectedRide && selectedPlanningChange ? { ...selectedRide, car_id: selectedPlanningChange.car_id, starts_at: selectedPlanningChange.starts_at, ends_at: selectedPlanningChange.ends_at } : selectedRide}
         isPlanning={!!selectedPlanningChange}

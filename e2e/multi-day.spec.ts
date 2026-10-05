@@ -2,7 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import { expect, test } from "@playwright/test";
 import { formatInTimeZone } from "date-fns-tz";
 import { he, t, tv } from "../src/i18n/he";
-import { getWeekStart, NEVO_DEPARTMENT_ID, SEEDED_USERS, serviceRoleClient, signIn, SUPABASE_ANON_KEY, SUPABASE_URL } from "./helpers";
+import { getWeekStart, NEVO_DEPARTMENT_ID, SEEDED_USERS, serviceRoleClient, signIn, SUPABASE_ANON_KEY, SUPABASE_URL, submitRequestForm } from "./helpers";
 
 // Multi-day ("series") requests (REQ §13.77, UX_FLOWS §3.3/§3.4, built 2026-09-10): a round
 // trip whose return is a later calendar day files one `submit_request` per day, all sharing
@@ -35,7 +35,7 @@ test.describe("multi-day requests", { tag: ["@request-form"] }, () => {
     await returnPicker.getByRole("radio").nth(2).click();
     await expect(page.getByText(tv("request.multiDayBadge", { count: "3" }))).toBeVisible();
 
-    await page.getByRole("button", { name: t("action.submitRequest"), exact: true }).click();
+    await submitRequestForm(page);
     // Post-submit navigates to `/my` (2026-09-16, REQ §13 item 91) instead of the old
     // `/requests` list.
     await expect(page).toHaveURL(/\/my$/);

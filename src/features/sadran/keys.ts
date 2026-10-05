@@ -26,6 +26,8 @@ export const sadranKeys = {
   /** REQUIREMENTS §13.93 (ORIGINS_PLAN §2 item 6): `place_travel_for_week()`. */
   placeTravel: (departmentId: string, weekStart: string) =>
     [...sadranKeys.week(departmentId, weekStart), "placeTravel"] as const,
+  /** REQ §13.101 (j): the legs of one multi-day request. */
+  seriesLegs: (seriesId: string) => [...sadranKeys.all, "seriesLegs", seriesId] as const,
   rideTypes: () => [...sadranKeys.all, "rideTypes"] as const,
   departmentSettings: (departmentId: string) => [...sadranKeys.all, departmentId, "settings"] as const,
   activePolicy: (departmentId: string) => [...sadranKeys.all, departmentId, "activePolicy"] as const,

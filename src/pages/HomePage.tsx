@@ -17,7 +17,7 @@ import { formatWeekRangeLabel } from "@/components/dateFieldDates";
 import { useProfile } from "@/features/auth/useProfile";
 import { DeviceSetupPrompts } from "@/features/member/components/DeviceSetupPrompts";
 import { useMyResponsibleCarsQuery } from "@/features/cars/hooks";
-import { useCars, useRideTypes } from "@/features/fleet/hooks";
+import { useCars, useMyTemporaryCars, useRideTypes } from "@/features/fleet/hooks";
 import { AddRideFab } from "@/features/requests/components/AddRideFab";
 import { CarNowButton } from "@/features/requests/components/CarNowButton";
 import { NewRequestButton } from "@/features/requests/components/NewRequestButton";
@@ -25,6 +25,8 @@ import { RequestRow } from "@/features/requests/components/RequestRow";
 import { TemplateSuggestions } from "@/features/requests/components/TemplateSuggestions";
 import {
   useCancelRideMutation,
+  usePlaceOnOwnCarMutation,
+  useRestoreDuplicateMutation,
   useClaimFreedSlotMutation,
   useMyFreedSlotOffers,
   useMyRequests,
@@ -35,7 +37,7 @@ import {
   useWithdrawRequestMutation,
 } from "@/features/requests/hooks";
 import type { MyRequestRow } from "@/features/requests/api";
-import { canEditRequest } from "@/features/requests/window";
+import { canEditRequest, isPublishedDayWindow } from "@/features/requests/window";
 import {
   confirmDialogDescription,
   confirmDialogLabel,
@@ -117,6 +119,10 @@ export function HomePage() {
   const cancelRideMutation = useCancelRideMutation();
   const editMutation = useEditRideMutation();
   const changeMutation = useRequestRideChangeMutation();
+  const placeOnOwnCarMutation = usePlaceOnOwnCarMutation();
+  const restoreDuplicateMutation = useRestoreDuplicateMutation();
+  const ownCarsQuery = useMyTemporaryCars(profileQuery.data?.id);
+  const ownCars = (ownCarsQuery.data ?? []).filter((car) => car.status === "active" && !car.retired_at).map((car) => ({ id: car.id, name: car.name }));
   const withdrawMutation = useWithdrawRequestMutation();
   const withdrawAllMutation = useWithdrawAllRequestsMutation();
   const claimMutation = useClaimFreedSlotMutation();
@@ -335,6 +341,14 @@ export function HomePage() {
                 onWithdraw={(target) => setConfirmAction({ kind: "withdraw", row: target })}
                 onCancelRide={(target) => setConfirmAction({ kind: "cancel", row: target })}
                 onOptOutChange={(target, optOut) => optOutMutation.mutate({ requestId: target.id, optOut })}
+                onPlaceOnOwnCar={(target, carId) =>
+                  placeOnOwnCarMutation.mutate({ requestId: target.id, carId }, { onSuccess: () => toast.success(he.request.placedOnOwnCar) })
+                }
+                onRestoreDuplicate={(target) =>
+                  restoreDuplicateMutation.mutate(target.id, { onSuccess: () => toast.success(he.request.notDuplicateRestored) })
+                }
+                ownCars={ownCars}
+                actionPending={placeOnOwnCarMutation.isPending || restoreDuplicateMutation.isPending}
               />
             ))}
           </div>
@@ -397,7 +411,7 @@ export function HomePage() {
                   </span>
                   {phase ? <span className="text-sm text-muted-foreground">{he.phase[phase]}</span> : null}
                 </div>
-                {group.rows.some((row) => canEditRequest(row)) ? (
+                {group.rows.some((row) => canEditRequest(row) && !isPublishedDayWindow(row.window)) ? (
                   <Button
                     size="sm"
                     variant="outline"
@@ -420,6 +434,14 @@ export function HomePage() {
                     }
                     makeRepeatingPending={saveTemplateMutation.isPending}
                     onOptOutChange={(target, optOut) => optOutMutation.mutate({ requestId: target.id, optOut })}
+                  onPlaceOnOwnCar={(target, carId) =>
+                    placeOnOwnCarMutation.mutate({ requestId: target.id, carId }, { onSuccess: () => toast.success(he.request.placedOnOwnCar) })
+                  }
+                  onRestoreDuplicate={(target) =>
+                    restoreDuplicateMutation.mutate(target.id, { onSuccess: () => toast.success(he.request.notDuplicateRestored) })
+                  }
+                  ownCars={ownCars}
+                  actionPending={placeOnOwnCarMutation.isPending || restoreDuplicateMutation.isPending}
                   />
                 ))}
               </div>

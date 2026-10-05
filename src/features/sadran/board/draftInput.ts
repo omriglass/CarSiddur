@@ -7,8 +7,8 @@ import type { ProposalType } from "@/lib/enums";
 
 import { servedOf } from "../applySolve";
 import { mergePayloadLeg, previewMerge, type MergeRouteContext } from "./mergeProposal";
-import { buildProposalPayload, resolveShiftTimes } from "../proposals/buildProposalPayload";
-import { PROPOSAL_TEMPLATE_VARIANT, externalSuggestionFor, proposalPreviewText } from "../proposals/proposalText";
+import { buildProposalPayload, resolveShiftTimes, seriesSpanOf } from "../proposals/buildProposalPayload";
+import { externalSuggestionFor, proposalPreviewText, proposalTemplateVariant } from "../proposals/proposalText";
 
 import type { BoardRide, CreateProposalInput, NotificationTemplateRow, WeekRequestRow } from "../api";
 import type { Json } from "@/integrations/supabase/types";
@@ -38,6 +38,13 @@ export type DraftInputResult =
   | { ok: true; input: CreateProposalInput }
   | { ok: false };
 
+/** The full span of a multi-day request's legs (first departure, last return), or null. */
+export function seriesOriginalOf(legs: readonly { departAt: string | null; returnAt: string | null }[]): { departAt: string; returnAt: string } | null {
+  const departs = legs.map((l) => l.departAt).filter((x): x is string => !!x).sort();
+  const returns = legs.map((l) => l.returnAt).filter((x): x is string => !!x).sort();
+  return departs.length && returns.length ? { departAt: departs[0]!, returnAt: returns[returns.length - 1]! } : null;
+}
+
 export function buildDraftInput(prefill: ComposerPrefill, ctx: DraftInputContext): DraftInputResult {
   const request = ctx.requests.find((r) => r.id === prefill.requestId);
   if (!request) return { ok: false };
@@ -48,18 +55,21 @@ export function buildDraftInput(prefill: ComposerPrefill, ctx: DraftInputContext
   const reasonRaw = typeof prefill.payload.reason === "string" ? prefill.payload.reason.trim() : "";
   const reason = reasonRaw || he.sadranProposal.defaultReason;
 
-  const { departAt, returnAt } = resolveShiftTimes(prefill.payload, request);
+  const span = type === "shift" ? seriesSpanOf(prefill.payload) : null;
+  const { departAt, returnAt } = span ? { departAt: span.depart_at, returnAt: span.return_at } : resolveShiftTimes(prefill.payload, request);
   // REQ §13.94 (G10): the merged ride keeps the host's start; its end grows by the added driving
   // (route twin). Only the message text shows this window - the payload carries legs only.
   const mergedPreview = type === "merge" && hostRide && ctx.route ? previewMerge(hostRide, request, mergePayloadLeg(prefill.payload, request), ctx.route) : null;
   const combinedStart = typeof prefill.payload.starts_at === "string" ? prefill.payload.starts_at : hostRide?.starts_at;
   const combinedEnd = typeof prefill.payload.ends_at === "string" ? prefill.payload.ends_at : (mergedPreview?.endsAt ?? hostRide?.ends_at);
+  const originAway = !!request.origin_id && request.origin_id !== ctx.homeDestinationId;
   const payload = buildProposalPayload({
     type, prefillPayload: prefill.payload, request, rideId: prefill.rideId,
-    proposedDepartAt: departAt, proposedReturnAt: returnAt, effectiveReason: reason, externalHint: hint,
+    proposedDepartAt: departAt, proposedReturnAt: returnAt, effectiveReason: reason, externalHint: hint, originAway,
   });
   if (!payload) return { ok: false };
-  if (type === "merge" && !hostRide?.driver_id) return { ok: false };
+  // REQ §13.100 c: a merge into a ride that still needs a driver is valid; only a missing host is not.
+  if (type === "merge" && !hostRide) return { ok: false };
 
   const destinationName = ctx.destinations.find((d) => d.id === request.destination_id)?.name ?? request.destination_text ?? "";
   const route = routeLabel({
@@ -67,13 +77,16 @@ export function buildDraftInput(prefill: ComposerPrefill, ctx: DraftInputContext
     origin: request.origin_resolved_name ?? request.origin_text ?? null,
     originIsHome: !request.origin_id ? !request.origin_text : request.origin_id === ctx.homeDestinationId,
   });
-  const variant = PROPOSAL_TEMPLATE_VARIANT[type];
+  const variant = proposalTemplateVariant(type, payload, { hostHasDriver: !!hostRide?.driver_id, originAway });
   const template = variant ? ctx.templates.find((t) => t.variant === variant) : undefined;
   const originCarId = type === "origin" && typeof payload.car_id === "string" ? payload.car_id : undefined;
   const newOriginId = type === "origin" && typeof payload.origin_id === "string" ? payload.origin_id : undefined;
   const hostCarName = ctx.cars.find((c) => c.id === hostRide?.car_id)?.name ?? "";
+  // REQ §13.101 j: a fewer-days shift says "instead of" the series' original first/last day.
+  const seriesLegs = span && request.series_id ? ctx.requests.filter((r) => r.series_id === request.series_id) : [];
+  const seriesOriginal = seriesOriginalOf(seriesLegs.map((r) => ({ departAt: r.depart_at, returnAt: r.return_at })));
   const reasonHe = proposalPreviewText({
-    template, type, request,
+    template, type, request, seriesOriginal,
     requesterName: request.requester_full_name ?? undefined,
     sadranName: ctx.sadranName,
     destinationName, route,

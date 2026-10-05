@@ -71,6 +71,7 @@ export interface MyRequestRow {
   preferredCarName?: string | null;
   hasPublishedRide?: boolean;
   window?: RequestWindow | null;
+  hasLuggage?: boolean;
   /** Named children on this request (`request_children` → `children.full_name`), UX_FLOWS.md §4.2. */
   childNames?: string[];
   id: string;
@@ -114,7 +115,7 @@ const SELECT = `
   id, department_id, week_start, status, status_reason, is_late, changed_since_solve,
   depart_at, return_at, trip_shape, needs_car_at_destination, destination_text, version, ride_type_id,
   origin_id, origin_text, trip_type,
-  freed_slot_opt_out, preferred_car_id, template_id, series_id, series_index, series_count,
+  freed_slot_opt_out, has_luggage, preferred_car_id, template_id, series_id, series_index, series_count,
   preferred_car:cars!requests_preferred_car_id_fkey(name),
   window:weeks(phase, open_at, close_at),
   destination:destinations!requests_destination_id_fkey(name),
@@ -153,6 +154,7 @@ interface RawRequestRow {
   destination_text: string | null;
   version: number;
   freed_slot_opt_out: boolean;
+  has_luggage: boolean | null;
   ride_type_id: string;
   origin_id: string | null;
   origin_text: string | null;
@@ -224,6 +226,7 @@ function mapRow(row: RawRequestRow): MyRequestRow {
     preferredCarId: row.preferred_car_id,
     preferredCarName: row.preferred_car?.name ?? null,
     window: row.window,
+    hasLuggage: row.has_luggage ?? false,
     hasPublishedRide: row.ride_requests.some((link) => link.ride && link.ride.status !== "cancelled" && link.ride.status !== "draft"),
     childNames: row.request_children.flatMap((entry) => entry.child?.full_name ? [entry.child.full_name] : []),
     id: row.id,
@@ -291,6 +294,7 @@ export interface RequestEditRow {
   preferredCarName?: string | null;
   window?: RequestWindow | null;
   hasPublishedRide?: boolean;
+  seriesId?: string | null;
   id: string;
   departmentId: string;
   weekStart: string;
@@ -336,7 +340,7 @@ const EDIT_SELECT = `
   trip_shape, depart_at, return_at, kept_return_at, one_way_car_mode, needs_car_at_destination,
   origin_id, origin_text, trip_type,
   adults, child_seats, boosters, has_luggage,
-  flex_depart_early, flex_depart_late, flex_return_early, flex_return_late, notes, ride_description, guest_passenger_names, changed_since_solve, preferred_car_id, template_id,
+  flex_depart_early, flex_depart_late, flex_return_early, flex_return_late, notes, ride_description, guest_passenger_names, changed_since_solve, preferred_car_id, template_id, series_id,
   preferred_car:cars!requests_preferred_car_id_fkey(name),
   destination:destinations!requests_destination_id_fkey(name),
   origin:destinations!requests_origin_id_fkey(name),
@@ -356,6 +360,7 @@ export async function fetchRequestById(requestId: string, profileId: string): Pr
     window: RequestWindow | null;
     ride_requests: { ride: { status: string } | null }[];
     kept_return_at: string | null;
+    series_id: string | null;
     id: string;
     department_id: string;
     week_start: string;
@@ -403,6 +408,7 @@ export async function fetchRequestById(requestId: string, profileId: string): Pr
     preferredCarId: row.preferred_car_id,
     preferredCarName: row.preferred_car?.name ?? null,
     window: row.window,
+    seriesId: row.series_id,
     hasPublishedRide: row.ride_requests.some((link) => link.ride && link.ride.status !== "cancelled" && link.ride.status !== "draft"),
     id: row.id,
     departmentId: row.department_id,
@@ -441,6 +447,13 @@ export async function fetchRequestById(requestId: string, profileId: string): Pr
   };
 }
 
+/** REQ §13.101 e (QM4): a request the Sadran withdrew as a duplicate stays visible so the member can restore it. */
+function isDuplicateWithdrawn(row: { status: string; status_reason: string | null; depart_at: string | null; return_at: string | null }): boolean {
+  if (row.status !== "withdrawn" || row.status_reason !== "DUPLICATE_WITHDRAWN") return false;
+  const end = Math.max(row.depart_at ? Date.parse(row.depart_at) : 0, row.return_at ? Date.parse(row.return_at) : 0);
+  return end > Date.now();
+}
+
 export async function fetchMyRequests(profileId: string, departmentId?: string): Promise<MyRequestRow[]> {
   let query = supabase.from("requests").select(SELECT).eq("requester_id", profileId);
   if (departmentId) query = query.eq("department_id", departmentId);
@@ -450,7 +463,7 @@ export async function fetchMyRequests(profileId: string, departmentId?: string):
   // it out of the member feed even when it was withdrawn by a coordinator on
   // the member's behalf.
   return ((data ?? []) as unknown as RawRequestRow[])
-    .filter((row) => !["withdrawn", "cancelled"].includes(row.status))
+    .filter((row) => !["withdrawn", "cancelled"].includes(row.status) || isDuplicateWithdrawn(row))
     .map(mapRow);
 }
 
@@ -512,6 +525,8 @@ export interface SubmitRequestPayload {
    * manage the link for every other case.
    */
   template_id?: string;
+  /** REQ §13.101 f (QM5): re-submit of an edit the server asked to confirm (`needs_confirmation`). */
+  confirm_release?: boolean;
 }
 
 /**
@@ -538,6 +553,17 @@ export interface SubmitRequestResult {
    * result so the UI can say "no waiting list needed" rather than the ordinary success toast.
    */
   car_was_free?: boolean;
+  /**
+   * REQ §13.101 f (QM5): an edit of a published/live-day request found no free car at the new
+   * hours — nothing was changed; resubmit with `confirm_release: true` to release the current
+   * ride and move the request to the waiting list. `drives_others`: the member drives others.
+   */
+  needs_confirmation?: "release_to_waitlist";
+  drives_others?: boolean;
+  /** With `needs_confirmation`: a car is free at the new hours — asked only because the member drives others. */
+  would_place?: boolean;
+  /** REQ §13.101 g (QM7): the member's own rides/requests overlapping the submitted one. */
+  overlaps?: { request_id: string | null; ride_id: string | null }[];
 }
 
 /** `submit_request(payload jsonb)` — the only write path for requests (CLAUDE.md decision 8). */
@@ -635,6 +661,16 @@ export async function fetchRequestVersion(requestId: string): Promise<number | n
   const { data, error } = await supabase.from("requests").select("version").eq("id", requestId).maybeSingle();
   if (error) throw toAppError(error);
   return data?.version ?? null;
+}
+
+/** REQ §13.101 h (QM8): the requester puts an unserved round-trip request on their own private (temporary) car. */
+export async function placeOnOwnCar(requestId: string, carId: string): Promise<void> {
+  await rpc("place_on_own_car", { p_request_id: requestId, p_car_id: carId });
+}
+
+/** REQ §13.101 e (QM4): "this is not a duplicate" — restores a request the Sadran withdrew as one. */
+export async function restoreDuplicateRequest(requestId: string): Promise<void> {
+  await rpc("restore_duplicate_request", { p_request_id: requestId });
 }
 
 /** Member cancels their own ride (or a Sadran/Admin, `can_manage_week`); frees the slot (REQ §8). */

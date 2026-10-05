@@ -48,6 +48,8 @@ export interface BuildProposalPayloadInput {
   proposedReturnAt?: string | null;
   effectiveReason: string;
   externalHint: string;
+  /** External only: the request starts at a list place other than home -> "no car in your town" (REQ §13.101 b). */
+  originAway?: boolean;
 }
 
 const PLACE_EDIT_KEYS = ["origin_id", "origin_text", "destination_id", "destination_text", "stops"] as const;
@@ -62,8 +64,20 @@ export function isPlaceOnlyShift(prefillPayload: Record<string, unknown> | undef
   return PLACE_EDIT_KEYS.some((key) => key in prefillPayload);
 }
 
+/** REQ §13.101 (j): a shift that shortens a multi-day request carries `series_span` + `car_id`. */
+export function seriesSpanOf(prefillPayload: Record<string, unknown> | undefined): { depart_at: string; return_at: string } | null {
+  const span = prefillPayload?.series_span;
+  if (!span || typeof span !== "object") return null;
+  const { depart_at, return_at } = span as Record<string, unknown>;
+  return typeof depart_at === "string" && typeof return_at === "string" && Date.parse(return_at) > Date.parse(depart_at) ? { depart_at, return_at } : null;
+}
+
 export function buildProposalPayload(input: BuildProposalPayloadInput): Record<string, unknown> | null {
   const { type, prefillPayload, request, rideId } = input;
+  if (type === "shift" && prefillPayload && "series_span" in prefillPayload) {
+    const span = seriesSpanOf(prefillPayload);
+    return span && typeof prefillPayload.car_id === "string" ? { car_id: prefillPayload.car_id, series_span: span } : null;
+  }
   if (type === "shift" && isPlaceOnlyShift(prefillPayload)) return { ...prefillPayload };
   if (type === "shift") {
     const departAt = input.proposedDepartAt;
@@ -76,7 +90,9 @@ export function buildProposalPayload(input: BuildProposalPayloadInput): Record<s
     return { ...rest, depart_at: departAt, return_at: returnAt };
   }
   if (type === "deny") return { ...prefillPayload, reason: input.effectiveReason };
-  if (type === "external") return { ...prefillPayload, hint: input.externalHint, reason: input.effectiveReason };
+  if (type === "external") {
+    return { ...prefillPayload, hint: input.externalHint, reason: input.effectiveReason, ...(input.originAway ? { external_reason: "city" } : {}) };
+  }
   if (type === "merge") {
     if (!rideId) return null;
     const legs = Array.isArray(prefillPayload?.legs)

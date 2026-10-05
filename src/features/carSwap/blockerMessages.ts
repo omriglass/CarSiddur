@@ -30,6 +30,8 @@ export function carSwapBlockerMessage(
       return tv("carSwap.blockerSeats", { ride: rideLabel, car: carName });
     case "maintenance":
       return tv("carSwap.blockerMaintenance", { car: carName, ride: rideLabel });
+    case "luggage":
+      return tv("carSwap.blockerLuggage", { ride: rideLabel, car: carName });
     case "private_car":
       return he.carSwap.blockerPrivateCar;
     case "past":

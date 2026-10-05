@@ -163,6 +163,7 @@ interface OfferRow {
   starts_at: string;
   ends_at: string;
   status: string;
+  group_id: string | null;
 }
 
 Deno.serve(async (req) => {
@@ -188,7 +189,7 @@ Deno.serve(async (req) => {
 
   const { data: offer, error: offerError } = await client
     .from('freed_slot_offers')
-    .select('id, department_id, week_start, car_id, cancelled_ride_id, starts_at, ends_at, status')
+    .select('id, department_id, week_start, car_id, cancelled_ride_id, starts_at, ends_at, status, group_id')
     .eq('id', body.offer_id)
     .maybeSingle<OfferRow>();
   if (offerError) {
@@ -199,6 +200,11 @@ Deno.serve(async (req) => {
   if (offer.status !== 'open') {
     // Idempotent: a retried pg_net delivery or a Sadran action may have resolved this already.
     return jsonResponse({ skipped: true, reason: 'offer_not_open', status: offer.status }, { headers: corsHeaders });
+  }
+
+  if (offer.group_id) {
+    // REQ §13.101 (i): already held for a contested group; released (group_id cleared) when the group closes.
+    return jsonResponse({ skipped: true, reason: 'held_for_group' }, { headers: corsHeaders });
   }
 
   const { data: cancelledRide } = await client
@@ -219,6 +225,14 @@ Deno.serve(async (req) => {
   }
 
   const candidates = (candidateRows ?? []) as { request_id: string; requester_id: string; fits: boolean; slack: string }[];
+
+  // REQ §13.101 (i) / QF7: members of an open contested group overlapping the freed time are offered the car first.
+  const { data: priorityRows, error: priorityError } = await client.rpc('freed_slot_priority_requests', { _offer: offer.id });
+  if (priorityError) {
+    console.error('on-ride-cancelled db_error', priorityError.message);
+    return errorResponse(500, 'db_error', corsHeaders);
+  }
+  const priorityRequestIds = (priorityRows ?? []) as string[];
 
   async function resolve(ranked: { request_id: string; requester_id: string }[]) {
     const { error } = await client.rpc('resolve_freed_offer', { p_offer_id: offer.id, p_ranked_candidates: ranked });
@@ -370,10 +384,7 @@ Deno.serve(async (req) => {
   const days = buildWeekDays(weekStartMs, (settings.day_end_time as string) ?? '23:59:00');
   const weekSlots = days[days.length - 1].endSlot;
 
-  // Car: seat configs, maintenance clipped to this week, no known per-week luggage capacity
-  // column in `cars` (DATA_MODEL.md §3.2 has no such field yet) — generous default so luggage
-  // never blocks freed-slot matching; a documented gap, same spirit as DATA_MODEL.md §6.1's
-  // own "Implementation status and deviations" notes.
+  // Car: seat configs and maintenance clipped to this week; luggage capacity from the `large_trunk` feature.
   const seatConfigList: Passengers[] = (seatConfigs ?? []).map((s) => ({
     adults: s.adults as number,
     childSeats: s.child_seats as number,
@@ -395,7 +406,8 @@ Deno.serve(async (req) => {
     ownerMemberId: (carRow.owner_id as string | undefined) ?? undefined,
     seatConfigs: seatConfigList,
     features: (carRow.features as string[]) ?? [],
-    luggageCapacity: 999,
+    // REQ §13.101 (a): item 21 — a car without the `large_trunk` feature takes no large luggage, with it two.
+    luggageCapacity: ((carRow.features as string[]) ?? []).includes('large_trunk') ? 2 : 0,
     maintenance,
     startLocationId: carStartLocation?.location_id ?? homeLocationId,
     // `car_base_location()`: cars.base_location_id, else a temporary car's owner default origin.
@@ -498,7 +510,7 @@ Deno.serve(async (req) => {
     travel,
   };
 
-  const ranked = matchFreedSlot(matchInput);
+  const ranked = matchFreedSlot(matchInput, { priorityRequestIds });
   const rankedForRpc = ranked.map((c) => ({ request_id: c.requestId, requester_id: requesterById.get(c.requestId) ?? '' }));
 
   await resolve(rankedForRpc);

@@ -43,6 +43,7 @@ import type { JoinableRideRow, RequestEditRow, SubmitRequestResult, SubmitSeries
 import { dayLabel } from "../dayLabel";
 import { CAR_NOW_DEFAULT_HOURS } from "../carNow";
 import { findOverlappingRequest } from "../duplicate";
+import { overlapCancelAction } from "../overlap";
 import { QUICK_REQUEST_DURATION_HOURS, endTimeForDuration } from "../duration";
 import { joinableRideDriverLabel } from "../joinableRides";
 import { guestPassengerNames, quickVehicleWindow, resolveQuickOrigin } from "../quickRequest";
@@ -57,13 +58,14 @@ import {
   useStopTemplateMutation,
   useSubmitRequestMutation,
   useSubmitSeriesRequestMutation,
+  useCancelRideMutation,
   useWithdrawRequestMutation,
 } from "../hooks";
 import { editReturnInstant, intervalToFlexValue, toInstant, toSubmitRequestPayload } from "../mapper";
 import { requestFormSchema, type RequestFormValues } from "../schema";
 import { isSeriesSubmission, seriesSpanDays } from "../series";
 import { payloadSeatCounts } from "../seatCounts";
-import { shouldOfferJoinableRides, toastSeriesSubmitOutcome, toastSubmitOutcome } from "../submitOutcome";
+import { releaseConfirmation, shouldOfferJoinableRides, toastSeriesSubmitOutcome, toastSubmitOutcome } from "../submitOutcome";
 import { suggestionToFormValues } from "../templatePrefill";
 import { canUseDrivingTripTypes, initialTripType, tripTypeToLegacyFields } from "../tripType";
 import { JoinableRidesDialog } from "./JoinableRidesDialog";
@@ -358,6 +360,7 @@ export function RequestForm({
   // then withdraws that now-redundant waitlisted request — see `performSubmit`/`joinNow` below.
   const addRidePassengersMutation = useAddRidePassengersMutation();
   const withdrawMutation = useWithdrawRequestMutation();
+  const cancelRideMutation = useCancelRideMutation();
 
   const lastRequest = [...(myRequestsQuery.data ?? [])]
     .filter((r) => r.departAt)
@@ -602,6 +605,10 @@ export function RequestForm({
   // values while the "לשמור רכב ליותר משבוע?" confirmation is open; `performSubmit` runs
   // either straight from `onSubmit` (span ≤ 7 days) or from the dialog's own confirm.
   const [pendingSeriesSubmit, setPendingSeriesSubmit] = useState<RequestFormValues | null>(null);
+  // REQ §13.101 g (QM7): the form values held while "overlaps one of your own rides" is asked.
+  const [pendingOverlapSubmit, setPendingOverlapSubmit] = useState<RequestFormValues | null>(null);
+  // REQ §13.101 f (QM5): the edit the server wants confirmed (release to the waiting list).
+  const [pendingRelease, setPendingRelease] = useState<{ values: RequestFormValues; drivesOthers: boolean; wouldPlace: boolean } | null>(null);
   // F4 (docs/TODO.md, owner A8-A10): a `waitlisted` outcome with nearby joinable rides holds off
   // the normal onDone/navigate — `afterJoinableDialog` runs it once the member picks "ask to
   // join" or "stay on the waiting list". State (not a ref): it's only ever set from an event
@@ -619,6 +626,14 @@ export function RequestForm({
   }
 
   function onSubmit(formValues: RequestFormValues) {
+    if (duplicate && !waitlist) {
+      setPendingOverlapSubmit(formValues);
+      return;
+    }
+    continueSubmit(formValues);
+  }
+
+  function continueSubmit(formValues: RequestFormValues) {
     const returnDay = formValues.returnDay;
     const multiDay = isSeriesSubmit(formValues);
     if (multiDay && seriesSpanDays(formValues.day, returnDay!) > 7) {
@@ -628,7 +643,7 @@ export function RequestForm({
     void performSubmit(formValues);
   }
 
-  async function performSubmit(formValues: RequestFormValues) {
+  async function performSubmit(formValues: RequestFormValues, options: { confirmRelease?: boolean } = {}) {
     if (quickContext && (isPast || invalidTime)) return;
     setSubmitError(null);
     const isSeriesRequest = isSeriesSubmit(formValues);
@@ -658,6 +673,7 @@ export function RequestForm({
         },
       ),
       ...(waitlist ? { waitlist: true } : {}),
+      ...(options.confirmRelease ? { confirm_release: true } : {}),
       // Only a *new* request can link to an existing template on creation (`submit_request`'s
       // insert branch is the only place it reads `template_id`); an edit's own template link,
       // if any, is managed separately below via save/stop, never touched by this payload.
@@ -692,6 +708,13 @@ export function RequestForm({
       const raw = await submitMutation.mutateAsync(payload);
       const result = raw as unknown as SubmitRequestResult | null;
       const requestId = result?.request_id ?? initial?.id;
+
+      // REQ §13.101 f (QM5): nothing changed yet — ask, then resubmit with `confirm_release`.
+      const release = releaseConfirmation(result);
+      if (release) {
+        setPendingRelease({ values: formValues, ...release });
+        return;
+      }
 
       if (requestId) {
         await setCompanionsMutation.mutateAsync({ requestId, profileIds: formValues.companions });
@@ -766,6 +789,24 @@ export function RequestForm({
     } catch {
       setSubmitError(variant === "quick" || variant === "carNow" ? t("quickRequest.submitError") : t("request.submitError"));
     }
+  }
+
+  /** REQ §13.101 g (QM7): cancel the member's own overlapping request/ride, then submit. */
+  async function cancelOverlapAndSubmit() {
+    const values = pendingOverlapSubmit;
+    if (!values || !duplicate) return;
+    const action = overlapCancelAction(duplicate);
+    try {
+      if (action.kind === "cancelRide") {
+        await cancelRideMutation.mutateAsync({ rideId: action.rideId, reason: "CANCELLED_BY_MEMBER", expectedVersion: action.expectedVersion });
+      } else {
+        await withdrawMutation.mutateAsync({ requestId: action.requestId, expectedVersion: action.expectedVersion });
+      }
+    } catch {
+      return; // the mutation already toasted; keep the dialog open
+    }
+    setPendingOverlapSubmit(null);
+    continueSubmit(values);
   }
 
   /**
@@ -945,15 +986,18 @@ export function RequestForm({
           control={form.control}
           name="luggage"
           render={({ field }) => (
-            <label className="flex items-center gap-2 text-sm" data-field="luggage">
-              <input
-                type="checkbox"
-                checked={field.value}
-                onChange={(e) => field.onChange(e.target.checked)}
-                className="size-4"
-              />
-              {t("field.luggage")}
-            </label>
+            <div className="space-y-1" data-field="luggage">
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={field.value}
+                  onChange={(e) => field.onChange(e.target.checked)}
+                  className="size-4"
+                />
+                {t("request.luggageLabel")}
+              </label>
+              <p className="text-xs text-muted-foreground">{t("request.luggageHint")}</p>
+            </div>
           )}
         />
       ) : null}
@@ -1030,6 +1074,44 @@ export function RequestForm({
         </div>
       </div>
     </form>
+    <ConfirmDialog
+      open={!!pendingRelease}
+      onOpenChange={(open) => { if (!open) setPendingRelease(null); }}
+      title={t(pendingRelease?.wouldPlace ? "request.releaseKeepPassengersTitle" : "request.releaseTitle")}
+      description={t(pendingRelease?.wouldPlace ? "request.releaseKeepPassengersBody" : "request.releaseBody")}
+      loading={submitMutation.isPending}
+      onConfirm={() => {
+        const pending = pendingRelease;
+        setPendingRelease(null);
+        if (pending) void performSubmit(pending.values, { confirmRelease: true });
+      }}
+    >
+      {pendingRelease?.drivesOthers && !pendingRelease.wouldPlace ? <p className="text-sm">{t("request.releaseDrivesOthers")}</p> : null}
+    </ConfirmDialog>
+    <ConfirmDialog
+      open={!!pendingOverlapSubmit}
+      onOpenChange={(open) => { if (!open) setPendingOverlapSubmit(null); }}
+      title={t("request.overlapTitle")}
+      description={t("request.overlapBody")}
+      confirmLabel={t("request.overlapCancelOther")}
+      cancelLabel={t("request.overlapBack")}
+      destructive
+      loading={withdrawMutation.isPending || cancelRideMutation.isPending}
+      onConfirm={() => void cancelOverlapAndSubmit()}
+    >
+      <Button
+        type="button"
+        variant="outline"
+        className="w-full"
+        onClick={() => {
+          const values = pendingOverlapSubmit;
+          setPendingOverlapSubmit(null);
+          if (values) continueSubmit(values);
+        }}
+      >
+        {t("request.overlapKeepBoth")}
+      </Button>
+    </ConfirmDialog>
     <ConfirmDialog
       open={!!pendingSeriesSubmit}
       onOpenChange={(open) => { if (!open) setPendingSeriesSubmit(null); }}

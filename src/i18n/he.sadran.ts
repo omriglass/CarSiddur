@@ -157,6 +157,8 @@ export const heSadran = {
     listModeUnmet: "לא שובצו",
     listModeProposals: "הצעות",
     locationBadge: "ב{{location}}",
+    luggageNeedsTrunkToast: "הבקשה כוללת ציוד גדול — אפשר לשבץ אותה רק לרכב עם תא מטען גדול (עד שתי בקשות כאלה לרכב)",
+    luggageSwapToast: "אי אפשר להחליף: נסיעה עם ציוד גדול הייתה עוברת לרכב בלי תא מטען גדול",
     seatMismatchToast: "לרכב שנבחר אין מספיק מקומות לנוסעי הנסיעה הזו",
     overlapToast: "הזמן מתנגש עם נסיעה אחרת ברכב הזה",
     unmetEmptyDb: "כל הבקשות של השבוע שובצו",
@@ -240,6 +242,20 @@ export const heSadran = {
   },
   sadranProposal: {
     sameTimesCar: "יש רכב פנוי בשעות שביקשת: {{car}}.",
+    // Old -> new wording for proposal texts (REQ §13.101 b). Keep these worded identically to the SQL
+    // `text_fragments` of the same names (migration 20261007100000): the preview here is the composer's twin of
+    // what `proposal_reader_vars()` renders for push/inbox and the per-party WhatsApp text.
+    timeDepartChange: "יציאה {{new}} במקום {{old}}",
+    timeReturnChange: "חזרה {{new}} במקום {{old}}",
+    timeDepartDayChange: "יציאה ביום {{new}} במקום {{old}}",
+    timeReturnDayChange: "חזרה ביום {{new}} במקום {{old}}",
+    timeUnchanged: "השעות שלך לא משתנות",
+    sameTimesWithCar: "אותן שעות, ברכב {{car}}",
+    joinBoth: "יציאה {{depart}}, חזרה {{return}}",
+    joinOut: "הלוך בלבד, יציאה {{depart}}",
+    joinReturn: "חזור בלבד, חזרה {{return}}",
+    detourLine: " · כ-{{detourMin}} דק׳ נוספות בדרך",
+    reasonLine: "סיבה: {{reason}}",
     close: "סגירת ההצעה וחזרה למסך הקודם",
     suggestTimes: "הצעת שעות אחרות",
     solveOutside: "פתרון מחוץ לסידור",
@@ -361,6 +377,45 @@ export const heSadran = {
     publishBlockedDay: "יש טיוטות הצעה שלא נשלחו",
   },
   /** REQ §13.94 (G10): a merge is one ride - marker, popup and the "take them out" path. */
+  /** REQ §13.101 (j): propose fewer consecutive days of a multi-day request. */
+  fewerDays: {
+    action: "להציע פחות ימים",
+    title: "פחות ימים עבור {{name}}",
+    description: "בחר/י ימים רצופים ורכב אחד. אחרי אישור החבר/ה, הבקשה תתקצר לימים האלה בלבד.",
+    confirm: "המשך להצעה",
+    fromDay: "מיום",
+    toDay: "עד יום",
+    car: "רכב",
+    notFree: "לא פנוי",
+    noFreeCar: "אין רכב פנוי לכל הימים שנבחרו",
+    invalidSpan: "צריך לבחור פחות ימים מהבקשה המקורית, ברצף",
+  },
+  /** REQ §13.101 (e): the Sadran withdraws a request as a duplicate. */
+  withdrawDuplicate: {
+    action: "משיכה ככפילות",
+    title: "למשוך את הבקשה של {{name}} ככפילות?",
+    description: "הבקשה תוסר מהלוח והחבר/ה יקבל/תקבל הודעה. אם זו לא כפילות, אפשר יהיה לענות שצריך את שתי הבקשות והבקשה תחזור.",
+    confirm: "משוך/י ככפילות",
+    done: "הבקשה של {{name}} נמשכה ככפילות",
+  },
+  /** REQ §13.101 (d): the same named child on two overlapping requests of different parents. */
+  duplicateChild: {
+    banner: "ילד/ה {{child}} מופיע/ה בשתי בקשות חופפות",
+    line: "{{a}} ו{{b}} · {{dayTime}}",
+    hint: "ייתכן ששני ההורים הגישו את אותה נסיעה — אפשר למשוך אחת מהן ככפילות.",
+    listLabel: "ילדים בבקשות חופפות",
+  },
+  /** REQ §13.101 (c): the Sadran assigns a volunteer driver to a ride that needs one. */
+  rideDriver: {
+    assignLabel: "שיבוץ נהג/ת מתנדב/ת",
+    placeholder: "בחר/י נהג/ת",
+    selectAria: "נהג/ת לנסיעה",
+    assign: "שבץ/י נהג/ת",
+    assigned: "{{name}} שובץ/ה כנהג/ת — הנוסעים עודכנו",
+    current: "נהג/ת מתנדב/ת: {{name}}",
+    unassign: "הסר/י נהג/ת",
+    unassigned: "הנהג/ת הוסר/ה — הנסיעה מחכה שוב לנהג/ת",
+  },
   mergedRide: {
     marker: "· מאוחד",
     base: "נסיעה בסיס",
@@ -383,7 +438,18 @@ export const heSadran = {
     invalid: {
       boards_at_end: "אי אפשר לצרף — האיסוף אחרי היעד של הנסיעה",
       detour_too_long: "אי אפשר לצרף — העיקוף ארוך מהמותר",
+      luggage_needs_large_trunk: "אי אפשר לצרף — ציוד רב דורש רכב עם תא מטען גדול",
+      luggage_too_many: "אי אפשר לצרף — כבר יש שתי בקשות עם ציוד רב ברכב הזה",
+      series_span_invalid: "טווח הימים אינו תקין — צריך לפחות יומיים רצופים מתוך ההזמנה",
+      series_span_head: "קיצור ימים מוצע רק על הבקשה הראשונה בהזמנה הרב-יומית",
+      series_span_shared: "אי אפשר לקצר — נוסעים נוספים משובצים באחת הנסיעות",
     },
+    flexLabel: "גמישות",
+    flexNone: "ללא גמישות",
+    flexRange: "{{early}} דק׳ קודם / {{late}} דק׳ אחר כך",
+    flexDepart: "יציאה: {{value}}",
+    flexReturn: "חזרה: {{value}}",
+    pairHeading: "הנסיעה המחוברת",
     departsAt: "הנסיעה תצא ב-{{time}} במקום {{old}}",
     endsLater: "והחזרה תסתיים ב-{{time}} במקום {{old}}",
     detourLine: "תוספת נסיעה: {{minutes}} דק׳",

@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { he, t } from "../src/i18n/he";
-import { getWeekStart, NEVO_DEPARTMENT_ID, SEEDED_USERS, serviceRoleClient, signIn } from "./helpers";
+import { getWeekStart, NEVO_DEPARTMENT_ID, SEEDED_USERS, serviceRoleClient, signIn, submitRequestForm } from "./helpers";
 
 // Repeating-request suggestions (REQ §76, UX_FLOWS §3.3/§3.4, built 2026-09-10): submitting with
 // the "repeat weekly" switch on creates a `request_templates` row; every later open week without
@@ -75,7 +75,7 @@ test.describe("repeating requests", { tag: ["@request-form"] }, () => {
         await page.getByText(`"${DESTINATION}" — יעד חופשי`).click();
         await page.getByRole("radiogroup", { name: "סוג נסיעה" }).getByRole("radio").first().click();
         await page.getByRole("switch", { name: t("request.repeatWeekly") }).click();
-        await page.getByRole("button", { name: "הגש/י בקשה" }).click();
+        await submitRequestForm(page);
         await expect(page).toHaveURL(/\/my$/);
 
         const { data } = await service.from("request_templates").select("id, is_active")
@@ -108,7 +108,7 @@ test.describe("repeating requests", { tag: ["@request-form"] }, () => {
         await page.getByTestId("template-suggestions").getByRole("link", { name: he.request.useSuggestion, exact: true }).first().click();
         await expect(page).toHaveURL(/\/requests\/new\?.*template=/);
         await expect(page.getByText(DESTINATION)).toBeVisible();
-        await page.getByRole("button", { name: "הגש/י בקשה" }).click();
+        await submitRequestForm(page);
         await expect(page).toHaveURL(/\/my$/);
 
         await page.goto("/my");

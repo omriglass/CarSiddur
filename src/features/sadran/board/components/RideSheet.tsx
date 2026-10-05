@@ -34,6 +34,8 @@ import { peopleOf } from "@/features/rides/ridePeople";
 import { RidePassengersEditor } from "./RidePassengersEditor";
 import { RideRouteEditor } from "./RideRouteEditor";
 import { TripTypeChange } from "./TripTypeChange";
+import { WithdrawDuplicateAction } from "./WithdrawDuplicateAction";
+import { RideDriverPicker, type DriverCandidate } from "./RideDriverPicker";
 import { initialRouteEditValues, type RouteEditValues } from "../rideRouteEdit";
 
 import type { BoardRide, WeekRequestRow } from "../../api";
@@ -73,6 +75,8 @@ interface RideSheetProps {
   onSaveRoute?: (values: RouteEditValues) => void;
   /** REQ §13.94 (G10): "הוצא מהנסיעה" for an added person of a merged ride. */
   onRemoveAddedPerson?: (requestId: string, name: string) => void;
+  /** REQ §13.101 (c): department members for the volunteer-driver picker; omit to hide it. */
+  driverCandidates?: readonly DriverCandidate[];
 }
 
 /**
@@ -81,7 +85,7 @@ interface RideSheetProps {
  * fallback for reassigning a car via the "העבר לרכב" select below instead of
  * dragging.
  */
-export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenChange, onSave, onTogglePin, onCancel, onUnassign, saving, tightSchedule, onClaimDriver, coordinatorNotes, isPlanning, requests = [], departmentId, weekStart, destinations, onSaveRoute, onRemoveAddedPerson }: RideSheetProps) {
+export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenChange, onSave, onTogglePin, onCancel, onUnassign, saving, tightSchedule, onClaimDriver, coordinatorNotes, isPlanning, requests = [], departmentId, weekStart, destinations, onSaveRoute, onRemoveAddedPerson, driverCandidates }: RideSheetProps) {
   // Bug-fix pass (owner bug #2): the previous re-sync condition compared
   // `ride.car_id !== carId` to detect "a different ride opened" — but that's
   // exactly as true the moment the Sadran picks a *different* car for the
@@ -149,6 +153,20 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
                 <p className="font-semibold">{he.boardCoordination.needsDriver}</p><p>{he.boardCoordination.needsDriverHelp}</p>
                 {onClaimDriver ? <Button disabled={saving} onClick={onClaimDriver}>{he.boardCoordination.claimDriver}</Button> : null}
               </div> : null}
+              {driverCandidates && !isPlanning && !reservation && ride.id && ride.version != null && ride.status !== "cancelled"
+                && ride.ends_at && Date.parse(ride.ends_at) > nowMs && departmentId && weekStart ? (
+                <RideDriverPicker
+                  key={`${ride.id}:${ride.version}`}
+                  rideId={ride.id}
+                  version={ride.version}
+                  needsDriver={!!ride.needs_driver}
+                  volunteerName={!ride.needs_driver && ride.driver_id && !servedEntries.some((entry) => entry.role === "driver") ? (driverName ?? ride.driver_name ?? "") : null}
+                  candidates={driverCandidates}
+                  departmentId={departmentId}
+                  weekStart={weekStart}
+                  disabled={saving}
+                />
+              ) : null}
               {tightSchedule ? <p className="text-xs text-amber-700">{he.boardCoordination.tight} · {he.boardCoordination.tightHelp}</p> : null}
               {ride.series_count && ride.series_count > 1 ? (
                 <p className="text-muted-foreground">{tv("sadranRideSheet.seriesLine", { index: String(ride.series_index ?? 1), count: String(ride.series_count) })}</p>
@@ -199,12 +217,22 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
                           disabled={saving}
                         />
                       ) : null}
+                      {entry.request_id && entryRequest && !entryRequest.series_id && departmentId && weekStart && !isPlanning && ride.status !== "cancelled" ? (
+                        <WithdrawDuplicateAction
+                          requestId={entry.request_id}
+                          version={entryRequest.version}
+                          name={entry.requester ?? entryRequest.requester_full_name ?? ""}
+                          departmentId={departmentId}
+                          weekStart={weekStart}
+                          disabled={saving}
+                        />
+                      ) : null}
                     </li>
                   );
                 })}
               </ul>
 
-              {reservation ? null : routeHasIntermediates(parseRideRoute(ride.route)) ? <RideRoute route={ride.route} /> : <RideRouteStops served={servedEntries} />}
+              {reservation ? null : routeHasIntermediates(parseRideRoute(ride.route)) ? <RideRoute route={ride.route} served={servedEntries} /> : <RideRouteStops served={servedEntries} />}
 
               {/* REQ §13.94 (G10): people added to this ride by a merge - take them back out
                   (a draft/sent merge is discarded/withdrawn, an applied one un-merged). */}

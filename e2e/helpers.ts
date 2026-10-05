@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { expect, type Browser, type BrowserContext, type Page } from "@playwright/test";
+import { t } from "../src/i18n/he";
 
 // Stage 3 hardening (docs/UX_FLOWS.md §16 item 5): shared e2e utilities so
 // each spec doesn't reinvent sign-in / service-role plumbing. Local-only
@@ -38,6 +39,17 @@ export const NEVO_DEPARTMENT_ID = "00000000-0000-0000-0000-000000000001";
  * Specs were written against Home, so pin the remembered page to `/my` before signing in;
  * `auth.spec.ts` covers the default and the "last opened" behaviour explicitly.
  */
+/**
+ * Submits the request form. REQ §13.101 g: a request overlapping one of the member's own rides or
+ * requests opens "cancel the other one / keep both / back" — seeded members already have requests,
+ * so this answers "keep both" whenever that dialog appears (it opens synchronously on submit).
+ */
+export async function submitRequestForm(page: Page): Promise<void> {
+  await page.getByRole("button", { name: t("action.submitRequest"), exact: true }).click();
+  const keepBoth = page.getByRole("dialog", { name: t("request.overlapTitle") }).getByRole("button", { name: t("request.overlapKeepBoth") });
+  await keepBoth.waitFor({ state: "visible", timeout: 2_000 }).then(() => keepBoth.click(), () => undefined);
+}
+
 export async function primeLanding(page: Page, main: "/my" | "/siddur" = "/my"): Promise<void> {
   await page.addInitScript((value) => {
     try { window.localStorage.setItem("landing.lastMain", value); } catch { /* ignore */ }

@@ -6,6 +6,7 @@ import { ArrowDownToLine, ArrowUpFromLine, Flag, MapPin, Navigation } from "luci
 
 import { he, tv } from "@/i18n/he";
 import { formatTime } from "@/lib/time";
+import { entryCoversLeg, type ServedEntry } from "../servedOf";
 import { parseRideRoute, routeHasIntermediates, type RouteKind, type RoutePoint } from "@/lib/rideRoute";
 
 const KIND_ICON: Record<RouteKind, typeof MapPin> = {
@@ -27,9 +28,11 @@ function kindLabel(point: RoutePoint): string {
 export interface RideRouteProps {
   /** `BoardRide["route"]`. */
   route: unknown;
+  /** QB24: the ride's served entries - a relay ride shows only the leg(s) they cover. Omit to show every leg. */
+  served?: readonly Pick<ServedEntry, "leg">[];
 }
 
-export function RideRoute({ route }: RideRouteProps) {
+export function RideRoute({ route, served }: RideRouteProps) {
   const points = parseRideRoute(route);
   if (!routeHasIntermediates(points)) return null;
   return (
@@ -37,7 +40,7 @@ export function RideRoute({ route }: RideRouteProps) {
       <span className="font-medium">{he.rideRoute.title}</span>
       {(["out", "return"] as const).map((leg) => {
         const legPoints = points.filter((p) => p.leg === leg);
-        if (!legPoints.length) return null;
+        if (!legPoints.length || (served?.length && !served.some((entry) => entryCoversLeg(entry, leg)))) return null;
         return (
           <div key={leg} className="text-xs text-muted-foreground" data-testid={`ride-route-${leg}`}>
             <p className="font-medium text-foreground">{leg === "out" ? he.rideRoute.out : he.rideRoute.return}</p>

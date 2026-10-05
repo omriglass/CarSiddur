@@ -47,6 +47,11 @@ export type ErrorCode =
   | "trip_type_needs_return"
   | "merge_boards_at_end"
   | "merge_detour_too_long"
+  | "merge_luggage_needs_large_trunk"
+  | "merge_luggage_too_many"
+  | "series_span_invalid"
+  | "series_span_requires_series_head"
+  | "series_span_shared_ride"
   | "origin_change_unavailable"
   | "car_not_at_leg_origin"
   | "car_next_ride_elsewhere"
@@ -63,6 +68,8 @@ export type ErrorCode =
   | "proposal_not_found"
   | "proposal_day_public"
   | "private_car_owner_only"
+  | "own_car_not_free"
+  | "own_car_round_trip_only"
   | "proposal_already_sent"
   | "proposal_not_draft"
   | "proposal_replacement_answered"
@@ -99,6 +106,9 @@ export type ErrorCode =
   | "ride_seats_exceeded"
   | "invalid_ride_passenger"
   | "ride_driver_not_removable"
+  | "ride_driver_not_assignable"
+  | "driver_not_member"
+  | "luggage_capacity_violation"
   | "ride_week_not_public"
   | "push_unsupported"
   | "push_permission_denied"
@@ -144,6 +154,11 @@ const MESSAGE_TO_CODE: Record<string, ErrorCode> = {
   trip_type_needs_return: "trip_type_needs_return",
   merge_boards_at_end: "merge_boards_at_end",
   merge_detour_too_long: "merge_detour_too_long",
+  merge_luggage_needs_large_trunk: "merge_luggage_needs_large_trunk",
+  merge_luggage_too_many: "merge_luggage_too_many",
+  series_span_invalid: "series_span_invalid",
+  series_span_requires_series_head: "series_span_requires_series_head",
+  series_span_shared_ride: "series_span_shared_ride",
   origin_change_unavailable: "origin_change_unavailable",
   car_not_at_leg_origin: "car_not_at_leg_origin",
   car_next_ride_elsewhere: "car_next_ride_elsewhere",
@@ -161,6 +176,8 @@ const MESSAGE_TO_CODE: Record<string, ErrorCode> = {
   proposal_not_found: "proposal_not_found",
   proposal_day_public: "proposal_day_public",
   private_car_owner_only: "private_car_owner_only",
+  own_car_not_free: "own_car_not_free",
+  own_car_round_trip_only: "own_car_round_trip_only",
   proposal_already_sent: "proposal_already_sent",
   proposal_not_draft: "proposal_not_draft",
   proposal_replacement_answered: "proposal_replacement_answered",
@@ -192,6 +209,9 @@ const MESSAGE_TO_CODE: Record<string, ErrorCode> = {
   seat_config_violation: "ride_unavailable",
   temporary_car_owner_only: "ride_unavailable",
   driver_already_busy: "driver_unavailable",
+  ride_driver_not_assignable: "ride_driver_not_assignable",
+  driver_not_member: "driver_not_member",
+  luggage_capacity_violation: "luggage_capacity_violation",
   ride_driver_already_assigned: "driver_assigned",
   ride_in_past: "ride_past",
   invalid_preferred_car: "preferred_car_invalid",
@@ -245,6 +265,11 @@ const CODE_TO_MESSAGE: Record<ErrorCode, string> = {
   trip_type_needs_return: he.errors.tripTypeNeedsReturn,
   merge_boards_at_end: he.mergedRide.invalid.boards_at_end,
   merge_detour_too_long: he.mergedRide.invalid.detour_too_long,
+  merge_luggage_needs_large_trunk: he.mergedRide.invalid.luggage_needs_large_trunk,
+  merge_luggage_too_many: he.mergedRide.invalid.luggage_too_many,
+  series_span_invalid: he.mergedRide.invalid.series_span_invalid,
+  series_span_requires_series_head: he.mergedRide.invalid.series_span_head,
+  series_span_shared_ride: he.mergedRide.invalid.series_span_shared,
   origin_change_unavailable: he.errors.originChangeUnavailable,
   car_not_at_leg_origin: he.errors.carNotAtLegOrigin,
   car_next_ride_elsewhere: he.errors.carNextRideElsewhere,
@@ -262,6 +287,8 @@ const CODE_TO_MESSAGE: Record<ErrorCode, string> = {
   proposal_not_found: he.errors.proposalNotFound,
   proposal_day_public: he.errors.proposalDayPublic,
   private_car_owner_only: he.errors.privateCarOwnerOnly,
+  own_car_not_free: he.errors.ownCarNotFree,
+  own_car_round_trip_only: he.errors.ownCarRoundTripOnly,
   proposal_already_sent: he.sadranProposal.alreadySent,
   proposal_not_draft: he.sadranProposal.noLongerDraft,
   proposal_replacement_answered: he.sadranProposal.replacementAnswered,
@@ -286,6 +313,9 @@ const CODE_TO_MESSAGE: Record<ErrorCode, string> = {
   pending_ride_changes: he.rideEditing.pendingPublish,
   request_window_closed: he.request.editWindowClosed,
   driver_unavailable: he.rideCoordination.driverBusy,
+  ride_driver_not_assignable: he.errors.rideDriverNotAssignable,
+  driver_not_member: he.errors.driverNotMember,
+  luggage_capacity_violation: he.errors.luggageCapacityViolation,
   driver_assigned: he.rideCoordination.noLongerMissing,
   ride_past: he.rideCoordination.past,
   preferred_car_invalid: he.rideCoordination.invalidPreferredCar,
@@ -302,8 +332,7 @@ const CODE_TO_MESSAGE: Record<ErrorCode, string> = {
   week_close_not_editable: he.weekClose.notEditable,
   week_close_out_of_range: he.weekClose.outOfRange,
   series_week_not_open: he.errors.seriesWeekNotOpen,
-  // Reuses the existing "week closed for requests" copy; a dedicated message needs owner-approved wording.
-  car_now_week_not_live: he.errors.weekNotOpen,
+  car_now_week_not_live: he.errors.carNowWeekNotLive,
   series_edit_not_supported: he.errors.seriesEditNotSupported,
   series_car_unavailable: he.errors.seriesCarUnavailable,
   push_unsupported: he.errors.pushUnsupported,

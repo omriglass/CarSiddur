@@ -6,7 +6,7 @@ import { he, t } from "@/i18n/he";
 import { formatTime } from "@/lib/time";
 import { parseRouteStops, type RouteStop } from "@/lib/routeStops";
 
-import type { ServedEntry } from "../servedOf";
+import { entryCoversLeg, type ServedEntry } from "../servedOf";
 
 function legStops(leg: "out" | "return", stops: readonly RouteStop[]) {
   const named = stops.filter((s) => s.leg === leg);
@@ -44,8 +44,8 @@ export function RideRouteStops({ served }: RideRouteStopsProps) {
         const stops = parseRouteStops(entry.stops);
         return (
           <div key={entry.request_id} className="space-y-0.5 text-xs text-muted-foreground">
-            {legStops("out", stops)}
-            {legStops("return", stops)}
+            {entryCoversLeg(entry, "out") ? legStops("out", stops) : null}
+            {entryCoversLeg(entry, "return") ? legStops("return", stops) : null}
           </div>
         );
       })}

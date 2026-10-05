@@ -15,6 +15,8 @@ import type { CarFreeWindow } from "@/features/siddur/freeWindows";
 import {
   cancelRide,
   claimFreedSlot,
+  placeOnOwnCar,
+  restoreDuplicateRequest,
   fetchJoinableRides,
   fetchMyFreedSlotOffers,
   fetchMyRequests,
@@ -114,6 +116,40 @@ export function useWithdrawRequestMutation() {
   return useMutation({
     mutationFn: ({ requestId, expectedVersion }: { requestId: string; expectedVersion: number }) =>
       withdrawRequest(requestId, expectedVersion),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: requestsKeys.mine(profileId) });
+      queryClient.invalidateQueries({ queryKey: siddurKeys.all });
+      queryClient.invalidateQueries({ queryKey: sadranKeys.all });
+    },
+    onError: showErrorToast,
+  });
+}
+
+/** REQ §13.101 h (QM8): "לשים על הרכב הפרטי שלי". */
+export function usePlaceOnOwnCarMutation() {
+  const { session } = useSession();
+  const profileId = session?.user.id;
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ requestId, carId }: { requestId: string; carId: string }) => placeOnOwnCar(requestId, carId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: requestsKeys.mine(profileId) });
+      queryClient.invalidateQueries({ queryKey: siddurKeys.all });
+      queryClient.invalidateQueries({ queryKey: sadranKeys.all });
+    },
+    onError: showErrorToast,
+  });
+}
+
+/** REQ §13.101 e (QM4): "זו לא כפילות". */
+export function useRestoreDuplicateMutation() {
+  const { session } = useSession();
+  const profileId = session?.user.id;
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (requestId: string) => restoreDuplicateRequest(requestId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: requestsKeys.mine(profileId) });
       queryClient.invalidateQueries({ queryKey: siddurKeys.all });

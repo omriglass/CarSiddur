@@ -86,3 +86,15 @@ export function toastSeriesSubmitOutcome(result: SubmitSeriesRequestResult | nul
     toast(t("request.seriesWaitlisted"));
   }
 }
+
+/**
+ * REQ §13.101 f (QM5): the server answers an edit of a published/live-day request that has no
+ * free car at the new hours with `needs_confirmation` instead of changing anything. Returns the
+ * data the confirmation dialog needs, or `null` for an ordinary outcome.
+ */
+export function releaseConfirmation(
+  result: SubmitRequestResult | null | undefined,
+): { drivesOthers: boolean; wouldPlace: boolean } | null {
+  if (result?.needs_confirmation !== "release_to_waitlist") return null;
+  return { drivesOthers: result.drives_others === true, wouldPlace: result.would_place === true };
+}

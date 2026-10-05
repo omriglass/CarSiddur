@@ -11,9 +11,20 @@ import { formatTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
 import { mergeLegOptions, type MergeLeg, type MergePreview } from "../mergeProposal";
+import { requestFlexLines } from "../mergeFlex";
 
 import type { ComposerPrefill as MergePrefill } from "../draftInput";
 import type { WeekRequestRow } from "../../api";
+
+type FlexSource = Parameters<typeof requestFlexLines>[0];
+
+/** REQ §13.101 (k): the other ride of a connected הקפצה pair the "both ways" merge also joins. */
+export interface MergePairRide {
+  label: string;
+  startsAt?: string | null;
+  endsAt?: string | null;
+  preview: MergePreview | null;
+}
 
 export interface MergePrefillDialogProps {
   prefill: MergePrefill | null;
@@ -22,7 +33,11 @@ export interface MergePrefillDialogProps {
   /** The base ride's own window (before the merge). */
   hostStartsAt?: string | null;
   hostEndsAt?: string | null;
-  request: Pick<WeekRequestRow, "trip_shape" | "requester_full_name"> | undefined;
+  request: (Pick<WeekRequestRow, "trip_shape" | "requester_full_name"> & FlexSource) | undefined;
+  /** REQ §13.101 (QU5): the base ride's own requester (flexibility shown next to the base). */
+  hostRequest?: (Pick<WeekRequestRow, "requester_full_name"> & FlexSource) | null;
+  /** REQ §13.101 (k): second ride of a connected pair, previewed with its own leg. */
+  pair?: MergePairRide | null;
   /** "מ<origin> ל<destination> · <trip type>" of the added request. */
   requestRoute: string;
   leg: MergeLeg;
@@ -46,7 +61,55 @@ function Time({ iso }: { iso: string }) {
   return <span dir="ltr" className="tabular-nums">{formatTime(new Date(iso))}</span>;
 }
 
-export function MergePrefillDialog({ prefill, hostLabel, hostStartsAt, hostEndsAt, request, requestRoute, leg, onLegChange, preview, onConfirm, onDraft, busy, onCancel }: MergePrefillDialogProps) {
+function FlexLines({ request, testId }: { request: FlexSource; testId: string }) {
+  const lines = requestFlexLines(request);
+  return (
+    <p className="text-xs text-muted-foreground" data-testid={testId}>
+      {he.mergedRide.flexLabel} · {tv("mergedRide.flexDepart", { value: lines.depart })}
+      {lines.return ? ` · ${tv("mergedRide.flexReturn", { value: lines.return })}` : ""}
+    </p>
+  );
+}
+
+interface RideBlockProps {
+  testId: string;
+  heading: string;
+  label: string | null | undefined;
+  startsAt?: string | null;
+  endsAt?: string | null;
+  preview: MergePreview | null;
+  flex?: ({ requester_full_name?: string | null } & FlexSource) | null;
+}
+
+function RideBlock({ testId, heading, label, startsAt, endsAt, preview, flex }: RideBlockProps) {
+  return (
+    <div data-testid={testId}>
+      <p className="text-xs text-muted-foreground">{heading}</p>
+      <p className="font-medium">{label}</p>
+      {startsAt && endsAt ? (
+        <p>
+          <span dir="ltr" className="tabular-nums">{formatTime(new Date(startsAt))}–{formatTime(new Date(endsAt))}</span>
+        </p>
+      ) : null}
+      {flex ? <FlexLines request={flex} testId={`${testId}-flex`} /> : null}
+      {preview?.valid && startsAt && formatTime(new Date(preview.startsAt)) !== formatTime(new Date(startsAt)) ? (
+        <p className="font-semibold text-maintenance" data-testid={testId === "merge-base" ? "merge-departs-earlier" : `${testId}-departs-earlier`}>
+          {tv("mergedRide.departsAt", { time: formatTime(new Date(preview.startsAt)), old: formatTime(new Date(startsAt)) })}
+        </p>
+      ) : null}
+      {preview?.valid && endsAt && formatTime(new Date(preview.endsAt)) !== formatTime(new Date(endsAt)) ? (
+        <p className="font-semibold text-maintenance" data-testid={testId === "merge-base" ? "merge-ends-later" : `${testId}-ends-later`}>
+          {tv("mergedRide.endsLater", { time: formatTime(new Date(preview.endsAt)), old: formatTime(new Date(endsAt)) })}
+        </p>
+      ) : null}
+      {testId !== "merge-base" && preview && !preview.valid && preview.invalid ? (
+        <p className="font-semibold text-destructive" data-testid={`${testId}-invalid`}>{he.mergedRide.invalid[preview.invalid]}</p>
+      ) : null}
+    </div>
+  );
+}
+
+export function MergePrefillDialog({ prefill, hostLabel, hostStartsAt, hostEndsAt, request, hostRequest, pair, requestRoute, leg, onLegChange, preview, onConfirm, onDraft, busy, onCancel }: MergePrefillDialogProps) {
   const options = request ? mergeLegOptions(request) : null;
   return (
     <Dialog open={!!prefill} onOpenChange={(open) => !open && onCancel()}>
@@ -57,29 +120,15 @@ export function MergePrefillDialog({ prefill, hostLabel, hostStartsAt, hostEndsA
         </DialogHeader>
         {prefill ? (
           <div className="space-y-3 rounded-md border p-3 text-sm">
-            <div data-testid="merge-base">
-              <p className="text-xs text-muted-foreground">{he.mergedRide.base}</p>
-              <p className="font-medium">{hostLabel}</p>
-              {hostStartsAt && hostEndsAt ? (
-                <p>
-                  <span dir="ltr" className="tabular-nums">{formatTime(new Date(hostStartsAt))}–{formatTime(new Date(hostEndsAt))}</span>
-                </p>
-              ) : null}
-              {preview?.valid && hostStartsAt && formatTime(new Date(preview.startsAt)) !== formatTime(new Date(hostStartsAt)) ? (
-                <p className="font-semibold text-maintenance" data-testid="merge-departs-earlier">
-                  {tv("mergedRide.departsAt", { time: formatTime(new Date(preview.startsAt)), old: formatTime(new Date(hostStartsAt)) })}
-                </p>
-              ) : null}
-              {preview?.valid && hostEndsAt && formatTime(new Date(preview.endsAt)) !== formatTime(new Date(hostEndsAt)) ? (
-                <p className="font-semibold text-maintenance" data-testid="merge-ends-later">
-                  {tv("mergedRide.endsLater", { time: formatTime(new Date(preview.endsAt)), old: formatTime(new Date(hostEndsAt)) })}
-                </p>
-              ) : null}
-            </div>
+            <RideBlock testId="merge-base" heading={he.mergedRide.base} label={hostLabel} startsAt={hostStartsAt} endsAt={hostEndsAt} preview={preview} flex={hostRequest} />
+            {pair ? (
+              <RideBlock testId="merge-pair" heading={he.mergedRide.pairHeading} label={pair.label} startsAt={pair.startsAt} endsAt={pair.endsAt} preview={pair.preview} />
+            ) : null}
             <div data-testid="merge-added">
               <p className="text-xs text-muted-foreground">{he.mergedRide.added}</p>
               <p className="font-medium">{request?.requester_full_name}</p>
               <p className="text-muted-foreground">{requestRoute}</p>
+              {request ? <FlexLines request={request} testId="merge-added-flex" /> : null}
             </div>
             {options ? (
               <div data-testid="merge-legs">
@@ -121,8 +170,8 @@ export function MergePrefillDialog({ prefill, hostLabel, hostStartsAt, hostEndsA
           </div>
         ) : null}
         <div className="flex flex-wrap gap-2">
-          <Button onClick={onConfirm} disabled={busy || (!!preview && !preview.valid)} className="min-h-11" data-testid="merge-prepare">{he.boardDrafts.prepare}</Button>
-          <Button variant="secondary" onClick={onDraft} disabled={busy || (!!preview && !preview.valid)} className="min-h-11" data-testid="merge-save-draft">{he.boardDrafts.draftButton}</Button>
+          <Button onClick={onConfirm} disabled={busy || (!!preview && !preview.valid) || (!!pair?.preview && !pair.preview.valid)} className="min-h-11" data-testid="merge-prepare">{he.boardDrafts.prepare}</Button>
+          <Button variant="secondary" onClick={onDraft} disabled={busy || (!!preview && !preview.valid) || (!!pair?.preview && !pair.preview.valid)} className="min-h-11" data-testid="merge-save-draft">{he.boardDrafts.draftButton}</Button>
           <Button variant="outline" onClick={onCancel} className="min-h-11">{he.common.cancel}</Button>
         </div>
       </DialogContent>

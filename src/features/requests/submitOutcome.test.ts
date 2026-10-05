@@ -5,7 +5,7 @@ import { tv } from "@/i18n/he";
 const mocks = vi.hoisted(() => ({ toast: vi.fn(), success: vi.fn() }));
 vi.mock("sonner", () => ({ toast: Object.assign(mocks.toast, { success: mocks.success }) }));
 
-import { shouldOfferJoinableRides, toastSeriesSubmitOutcome, toastSubmitOutcome } from "./submitOutcome";
+import { releaseConfirmation, shouldOfferJoinableRides, toastSeriesSubmitOutcome, toastSubmitOutcome } from "./submitOutcome";
 import type { SubmitRequestResult, SubmitSeriesRequestResult } from "./api";
 import { t } from "@/i18n/he";
 
@@ -113,5 +113,18 @@ describe("shouldOfferJoinableRides", () => {
   it("is false for a null/undefined result", () => {
     expect(shouldOfferJoinableRides(null)).toBe(false);
     expect(shouldOfferJoinableRides(undefined)).toBe(false);
+  });
+});
+
+describe("releaseConfirmation", () => {
+  const base = { request_id: "r", is_late: false, warnings: [] };
+  it("maps a needs_confirmation result", () => {
+    expect(releaseConfirmation({ ...base, needs_confirmation: "release_to_waitlist", drives_others: true })).toEqual({ drivesOthers: true, wouldPlace: false });
+    expect(releaseConfirmation({ ...base, needs_confirmation: "release_to_waitlist" })).toEqual({ drivesOthers: false, wouldPlace: false });
+    expect(releaseConfirmation({ ...base, needs_confirmation: "release_to_waitlist", drives_others: true, would_place: true })).toEqual({ drivesOthers: true, wouldPlace: true });
+  });
+  it("is null for an ordinary result", () => {
+    expect(releaseConfirmation({ ...base, status: "assigned" })).toBeNull();
+    expect(releaseConfirmation(null)).toBeNull();
   });
 });

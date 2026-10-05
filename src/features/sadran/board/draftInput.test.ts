@@ -27,14 +27,16 @@ describe("buildDraftInput", () => {
   it("shift with no usable times is refused", () => {
     expect(buildDraftInput({ requestId: "req1", rideId: null, type: "shift", payload: {} }, { ...ctx, requests: [{ ...request, depart_at: null, return_at: null } as WeekRequestRow] }).ok).toBe(false);
   });
-  it("merge needs a host with a driver and adds the host driver as a party", () => {
+  it("merge needs a host ride and adds the host driver as a party", () => {
     const prefill = { requestId: "req1", rideId: "h1", type: "merge" as const, payload: { ride_id: "h1" } };
     const result = buildDraftInput(prefill, ctx);
     expect(result.ok && result.input.partyProfileIds).toEqual(["u2"]);
     // REQ §13.94: legs only, never a window - the host keeps its start.
     expect(result.ok && result.input.payload).toMatchObject({ ride_id: "h1", legs: [{ ride_id: "h1", role: "passenger", leg: "both" }] });
     expect(result.ok && result.input.payload).not.toHaveProperty("starts_at");
-    expect(buildDraftInput(prefill, { ...ctx, rides: [{ ...host, driver_id: null } as BoardRide] }).ok).toBe(false);
+    // REQ §13.100 c: a ride that still needs a driver is a valid merge host; a missing host is not.
+    expect(buildDraftInput(prefill, { ...ctx, rides: [{ ...host, driver_id: null } as BoardRide] }).ok).toBe(true);
+    expect(buildDraftInput(prefill, { ...ctx, rides: [] }).ok).toBe(false);
   });
   it("unknown request is refused; external waive is stored as deny", () => {
     expect(buildDraftInput({ requestId: "nope", rideId: null, type: "deny", payload: {} }, ctx).ok).toBe(false);

@@ -5,6 +5,7 @@ import { he } from "@/i18n/he";
 import { cn } from "@/lib/utils";
 
 import { UnmetList, type UnmetListItem } from "./UnmetList";
+import type { FewerDaysSupport } from "./FewerDaysAction";
 
 import type { Suggestion } from "@/solver";
 
@@ -29,10 +30,11 @@ interface BoardListModeProps {
   homeDestinationId?: string;
   /** REQ §13.95 (H3): forwarded to `UnmetList` for the "סוג נסיעה" selector. */
   tripTypeScope?: { departmentId: string; weekStart: string };
+  fewerDays?: FewerDaysSupport;
 }
 
 /** Phone fallback for the board (UX_FLOWS.md §4.2 "Phone fallback — list mode"): רכבים / לא שובצו / הצעות segments. */
-export function BoardListMode({ rides, pendingRides = [], draftRideIds, shadowedRideIds, onRideClick, unmetItems, onUnmetAction, onUnmetDecision, onOpenProposal, onOpenProposals, pendingProposalsCount = 0, homeDestinationId, tripTypeScope }: BoardListModeProps) {
+export function BoardListMode({ rides, pendingRides = [], draftRideIds, shadowedRideIds, onRideClick, unmetItems, onUnmetAction, onUnmetDecision, onOpenProposal, onOpenProposals, pendingProposalsCount = 0, homeDestinationId, tripTypeScope, fewerDays }: BoardListModeProps) {
   const [segment, setSegment] = useState<Segment>("cars");
 
   return (
@@ -83,7 +85,7 @@ export function BoardListMode({ rides, pendingRides = [], draftRideIds, shadowed
         </div>
       ) : null}
 
-      {segment === "unmet" ? <UnmetList items={unmetItems} tripTypeScope={tripTypeScope} onAction={onUnmetAction} onDecision={onUnmetDecision} onOpenProposal={onOpenProposal} homeDestinationId={homeDestinationId} /> : null}
+      {segment === "unmet" ? <UnmetList items={unmetItems} tripTypeScope={tripTypeScope} fewerDays={fewerDays} onAction={onUnmetAction} onDecision={onUnmetDecision} onOpenProposal={onOpenProposal} homeDestinationId={homeDestinationId} /> : null}
     </div>
   );
 }

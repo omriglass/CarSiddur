@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { getWeekStart, SEEDED_USERS, signIn, serviceRoleClient } from "./helpers";
+import { getWeekStart, SEEDED_USERS, signIn, serviceRoleClient, submitRequestForm } from "./helpers";
 
 // REQUIREMENTS §8 "New request on a free car": in a Live week, a round-trip request at a
 // time when a shared car is free and at home auto-approves immediately (`try_auto_approve()`,
@@ -32,7 +32,7 @@ test.describe("auto-approve on a free car (live week)", { tag: ["@request-form",
     // default 08:00–12:00 window regardless of what other specs already did to this week.
     await page.getByRole("radiogroup", { name: "יום" }).getByRole("radio").nth(4).click();
 
-    await page.getByRole("button", { name: "הגש/י בקשה" }).click();
+    await submitRequestForm(page);
 
     // Post-submit navigates to `/my` (2026-09-16, REQ §13 item 91: one "my rides" screen,
     // `RequestForm` now calls `navigate(paths.my())` instead of the old `/requests` list).

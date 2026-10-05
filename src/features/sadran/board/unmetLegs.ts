@@ -116,3 +116,18 @@ export function connectedPairRideIds(rides: readonly BoardRide[]): Set<string> {
   }
   return ids;
 }
+
+/**
+ * REQ §13.101 (k): the other half of a connected הקפצה pair `ride` belongs to (same car, same
+ * request, the opposite leg), with each ride's own leg; `null` when `ride` is not half of a pair.
+ */
+export function connectedMateOf(rides: readonly BoardRide[], ride: BoardRide): { mate: BoardRide; rideLeg: "out" | "return"; mateLeg: "out" | "return" } | null {
+  if (!ride.id || !connectedPairRideIds(rides).has(ride.id)) return null;
+  for (const entry of servedOf(ride)) {
+    if (!entry.request_id || (entry.leg !== "out" && entry.leg !== "return")) continue;
+    const mate = rides.find((other) => other.id !== ride.id && other.car_id === ride.car_id && other.status !== "cancelled"
+      && servedOf(other).some((e) => e.request_id === entry.request_id && e.leg !== entry.leg && (e.leg === "out" || e.leg === "return")));
+    if (mate) return { mate, rideLeg: entry.leg, mateLeg: entry.leg === "out" ? "return" : "out" };
+  }
+  return null;
+}

@@ -369,6 +369,102 @@ CREATE TYPE "public"."week_phase" AS ENUM (
 ALTER TYPE "public"."week_phase" OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."_apply_series_span"("p_request_id" "uuid", "p_span" "jsonb", "p_car_id" "uuid") RETURNS "uuid"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_head public.requests%rowtype; v_series uuid;
+  v_dep timestamptz; v_ret timestamptz; v_first date; v_last date;
+  v_n_in int; v_d_min date; v_d_max date; v_k int; v_i int := 0; v_leg record;
+  v_prev_flag text := coalesce(current_setting('app.system_status_transition', true), '');
+  v_applying text := coalesce(nullif(current_setting('app.applying_proposal', true), ''), '');
+  v_actor uuid := (select auth.uid()); v_prop uuid; v_ride uuid;
+begin
+  select * into v_head from public.requests where id = p_request_id for update;
+  if v_head.id is null then raise exception 'request_not_found' using errcode = 'P0001'; end if;
+  v_series := v_head.series_id;
+  if v_series is null or v_head.series_index is distinct from 1 then
+    raise exception 'series_span_requires_series_head' using errcode = 'P0001';
+  end if;
+  v_dep := nullif(p_span ->> 'depart_at', '')::timestamptz;
+  v_ret := nullif(p_span ->> 'return_at', '')::timestamptz;
+  if v_dep is null or v_ret is null or p_car_id is null
+     or not public.is_quarter_hour(v_dep)
+     or not (public.is_quarter_hour(v_ret) or (v_ret at time zone 'Asia/Jerusalem')::time = time '23:59') then
+    raise exception 'series_span_invalid' using errcode = 'P0001';
+  end if;
+  v_first := (v_dep at time zone 'Asia/Jerusalem')::date;
+  v_last := (v_ret at time zone 'Asia/Jerusalem')::date;
+  if v_first >= v_last then raise exception 'series_span_invalid' using errcode = 'P0001'; end if;
+
+  perform 1 from public.requests where series_id = v_series order by id for update;
+  select count(*) filter (where d between v_first and v_last), min(d), max(d) into v_n_in, v_d_min, v_d_max
+  from (select (q.depart_at at time zone 'Asia/Jerusalem')::date as d from public.requests q
+        where q.series_id = v_series and q.status not in ('withdrawn', 'cancelled')) x;
+  if v_first < v_d_min or v_last > v_d_max or v_n_in <> (v_last - v_first + 1) then
+    raise exception 'series_span_invalid' using errcode = 'P0001';
+  end if;
+  v_k := v_n_in;
+
+  -- Another request riding a series ride is not ours to cancel.
+  if exists (select 1 from public.rides r
+             join public.ride_requests rr on rr.ride_id = r.id
+             join public.requests q on q.id = rr.request_id
+             where r.series_id = v_series and r.status <> 'cancelled' and q.series_id is distinct from v_series) then
+    raise exception 'series_span_shared_ride' using errcode = 'P0001';
+  end if;
+
+  perform set_config('app.system_status_transition', 'on', true);
+  perform set_config('app.audit_reason', 'apply_series_span', true);
+
+  -- Nothing else stays open on the series.
+  for v_prop in select p.id from public.proposals p
+      where p.request_id in (select q.id from public.requests q where q.series_id = v_series)
+        and p.status in ('draft', 'sent', 'accepted') and p.id::text <> v_applying order by p.id loop
+    if exists (select 1 from public.proposals where id = v_prop and status = 'draft') then
+      update public.proposals set status = 'withdrawn' where id = v_prop;
+    else
+      perform public.proposal_system_withdraw(v_prop, 'withdrawn_edit');
+    end if;
+  end loop;
+
+  -- Rides: every series ride is released (dropped days for good, kept days to be placed again on the car).
+  update public.rides set status = 'cancelled', cancelled_at = now(),
+    cancelled_by = coalesce(v_actor, driver_id, created_by), cancel_reason = 'SERIES_SHORTENED'
+  where series_id = v_series and status <> 'cancelled';
+
+  -- Dropped days: withdrawn with a clear reason and detached from the series.
+  update public.requests set status = 'withdrawn', status_reason = 'SERIES_SHORTENED',
+    series_id = null, series_index = null, series_count = null
+  where series_id = v_series and status not in ('withdrawn', 'cancelled')
+    and (depart_at at time zone 'Asia/Jerusalem')::date not between v_first and v_last;
+
+  -- Kept days: renumbered; the first/last leg take the span's own times.
+  for v_leg in select q.id, (q.depart_at at time zone 'Asia/Jerusalem')::date as d from public.requests q
+      where q.series_id = v_series and q.status not in ('withdrawn', 'cancelled') order by 2 loop
+    v_i := v_i + 1;
+    update public.requests set series_index = v_i, series_count = v_k,
+      depart_at = case when v_i = 1 then v_dep else (v_leg.d::timestamp at time zone 'Asia/Jerusalem') end,
+      return_at = case when v_i = v_k then v_ret else ((v_leg.d + time '23:59') at time zone 'Asia/Jerusalem') end
+    where id = v_leg.id;
+  end loop;
+
+  perform public.place_series(v_series, p_car_id, true, 'PROPOSAL_APPLIED');
+
+  perform set_config('app.system_status_transition', 'on', true);
+  update public.requests set status_reason = 'PROPOSAL_APPLIED' where series_id = v_series and status = 'assigned';
+  perform set_config('app.system_status_transition', v_prev_flag, true);
+
+  select r.id into v_ride from public.rides r where r.series_id = v_series and r.status <> 'cancelled'
+  order by r.starts_at limit 1;
+  return v_ride;
+end $$;
+
+
+ALTER FUNCTION "public"."_apply_series_span"("p_request_id" "uuid", "p_span" "jsonb", "p_car_id" "uuid") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."_assert_shift_places"("p_request_id" "uuid", "p_department_id" "uuid", "p_payload" "jsonb") RETURNS "void"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -549,6 +645,7 @@ begin
   for r in
     select leg_side,
            sum(q.adults) a, sum(q.child_seats) c, sum(q.boosters) b,
+           count(*) filter (where q.has_luggage) lug,
            rd.id as ride_id, rd.car_id as old_car_id,
            (case when rd.car_id = p_car_a then p_car_b else p_car_a end) as new_car_id
     from public.ride_requests rr
@@ -565,6 +662,9 @@ begin
     if not public.car_fits(r.new_car_id, r.a::int, r.c::int, r.b::int) then
       v_blockers := v_blockers || jsonb_build_array(jsonb_build_object('code', 'seats', 'ride_id', r.ride_id,
         'car_id', r.new_car_id, 'detail', format('ride %s leg %s needs (%s,%s,%s) on car %s', r.ride_id, r.leg_side, r.a, r.c, r.b, r.new_car_id)));
+    elsif not public.car_takes_luggage(r.new_car_id, r.lug::int) then
+      v_blockers := v_blockers || jsonb_build_array(jsonb_build_object('code', 'luggage', 'ride_id', r.ride_id,
+        'car_id', r.new_car_id, 'detail', format('ride %s leg %s carries large luggage; car %s has no large trunk', r.ride_id, r.leg_side, r.new_car_id)));
     end if;
   end loop;
 
@@ -742,6 +842,26 @@ end $$;
 ALTER FUNCTION "public"."_day_car_swap_split_series"("p_series_id" "uuid", "p_day" "date") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."_frag"("_key" "text", "_vars" "jsonb" DEFAULT '{}'::"jsonb") RETURNS "text"
+    LANGUAGE "sql" STABLE
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select public.render_notification_text(coalesce((select f.body from public.text_fragments f where f.key = _key), ''), _vars);
+$$;
+
+
+ALTER FUNCTION "public"."_frag"("_key" "text", "_vars" "jsonb") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_hhmm"("_at" timestamp with time zone) RETURNS "text"
+    LANGUAGE "sql" STABLE
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$ select to_char(_at at time zone 'Asia/Jerusalem', 'HH24:MI'); $$;
+
+
+ALTER FUNCTION "public"."_hhmm"("_at" timestamp with time zone) OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."_merge_check"("p_ride_id" "uuid", "p_request_id" "uuid", "p_leg" "public"."ride_leg" DEFAULT 'both'::"public"."ride_leg") RETURNS "jsonb"
     LANGUAGE "plpgsql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -752,12 +872,28 @@ declare
   v_leg text; v_before numeric; v_after numeric; v_refused text; v_km_before numeric; v_km_after numeric;
   v_add_min int[] := array[0, 0]; v_add_km numeric[] := array[0, 0]; v_ix int;
   v_err text; v_start timestamptz; v_end timestamptz; v_day date; v_unknown boolean;
+  v_features text[]; v_luggage boolean; v_others int;
 begin
   select * into v_ride from public.rides where id = p_ride_id;
   if v_ride.id is null then return jsonb_build_object('ok', false, 'error', 'ride_not_found'); end if;
   select coalesce(s.detour_limit_minutes, 20), coalesce(s.detour_limit_km, 15) into v_lim_min, v_lim_km
   from public.department_settings s where s.department_id = v_ride.department_id;
   v_lim_min := coalesce(v_lim_min, 20); v_lim_km := coalesce(v_lim_km, 15);
+
+  -- REQ §13.101 a / item 21: a large-luggage ("ציוד רב") request rides only on a `large_trunk` car,
+  -- at most two such requests per car.
+  select coalesce(c.features, '{}') into v_features from public.cars c where c.id = v_ride.car_id;
+  select coalesce(q.has_luggage, false) into v_luggage from public.requests q where q.id = p_request_id;
+  if v_luggage then
+    if not ('large_trunk' = any (coalesce(v_features, '{}'))) then
+      v_err := 'merge_luggage_needs_large_trunk';
+    else
+      select count(distinct q.id) into v_others
+      from public.ride_requests rr join public.requests q on q.id = rr.request_id
+      where rr.ride_id = p_ride_id and q.has_luggage and q.id <> p_request_id;
+      if v_others >= 2 then v_err := 'merge_luggage_too_many'; end if;
+    end if;
+  end if;
 
   foreach v_leg in array array['out', 'return'] loop
     continue when p_leg <> 'both' and p_leg::text <> v_leg;
@@ -1052,6 +1188,35 @@ $$;
 ALTER FUNCTION "public"."_shift_place_on_car"("p_proposal_id" "uuid") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."_time_change_line"("_old_start" timestamp with time zone, "_old_end" timestamp with time zone, "_new_start" timestamp with time zone, "_new_end" timestamp with time zone, "_day_level" boolean DEFAULT false) RETURNS "text"
+    LANGUAGE "plpgsql" STABLE
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_parts text[] := '{}';
+  v_day boolean;
+begin
+  if _new_start is not null and _old_start is distinct from _new_start then
+    v_day := _day_level or (_old_start at time zone 'Asia/Jerusalem')::date <> (_new_start at time zone 'Asia/Jerusalem')::date;
+    v_parts := v_parts || public._frag(case when v_day then 'time.depart_day_change' else 'time.depart_change' end,
+      jsonb_build_object(
+        'new', case when v_day then public.day_date_label(_new_start) || ' ' || public._hhmm(_new_start) else public._hhmm(_new_start) end,
+        'old', case when v_day then public.day_date_label(_old_start) || ' ' || public._hhmm(_old_start) else public._hhmm(_old_start) end));
+  end if;
+  if _new_end is not null and _old_end is distinct from _new_end then
+    v_day := _day_level or (_old_end at time zone 'Asia/Jerusalem')::date <> (_new_end at time zone 'Asia/Jerusalem')::date;
+    v_parts := v_parts || public._frag(case when v_day then 'time.return_day_change' else 'time.return_change' end,
+      jsonb_build_object(
+        'new', case when v_day then public.day_date_label(_new_end) || ' ' || public._hhmm(_new_end) else public._hhmm(_new_end) end,
+        'old', case when v_day then public.day_date_label(_old_end) || ' ' || public._hhmm(_old_end) else public._hhmm(_old_end) end));
+  end if;
+  return array_to_string(v_parts, ' · ');
+end $$;
+
+
+ALTER FUNCTION "public"."_time_change_line"("_old_start" timestamp with time zone, "_old_end" timestamp with time zone, "_new_start" timestamp with time zone, "_new_end" timestamp with time zone, "_day_level" boolean) OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."add_ride_passengers"("p_ride_id" "uuid", "p_expected_version" integer, "p_passengers" "jsonb") RETURNS "void"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -1278,8 +1443,8 @@ begin
 
   if array_length(v_added_names, 1) > 0 and v_ride.driver_id is distinct from v_actor then
     select full_name into v_actor_name from public.profiles where id = v_actor;
-    select name into v_destination_name from public.destinations where id = v_ride.destination_id;
-    v_route := public.route_label(v_ride.department_id, v_ride.origin_id, null, v_ride.destination_id, null);
+    v_destination_name := public.ride_notice_destination(p_ride_id);
+    v_route := public.ride_notice_route(p_ride_id);
     v_names_joined := array_to_string(v_added_names, ', ');
     perform public.enqueue_notification(v_ride.driver_id, 'outcome_changed', v_ride.department_id, v_ride.week_start,
       jsonb_build_object('byName', coalesce(v_actor_name, ''), 'names', v_names_joined, 'destination', coalesce(v_destination_name, ''),
@@ -1296,8 +1461,8 @@ begin
     if v_actor_name is null then
       select full_name into v_actor_name from public.profiles where id = v_actor;
     end if;
-    select name into v_destination_name from public.destinations where id = v_ride.destination_id;
-    v_route := public.route_label(v_ride.department_id, v_ride.origin_id, null, v_ride.destination_id, null);
+    v_destination_name := public.ride_notice_destination(p_ride_id);
+    v_route := public.ride_notice_route(p_ride_id);
     for v_person_id in select unnest(v_added_person_ids) loop
       if v_person_id is distinct from v_actor then
         perform public.enqueue_notification(v_person_id, 'outcome_changed', v_ride.department_id, v_ride.week_start,
@@ -1544,6 +1709,9 @@ declare
   gap_override smallint;
   v_origin_result jsonb;
   v_leg_txt text; v_merge_out boolean:=false; v_merge_ret boolean:=false; v_snap jsonb; v_served_status public.request_status;
+  v_old_dep timestamptz; v_old_ret timestamptz; v_old_car uuid; v_old_series_dep timestamptz; v_old_series_ret timestamptz;
+  v_rv_joiner jsonb; v_rvs jsonb:='{}'::jsonb; v_rcpt record; v_byname text; v_tc text:=''; v_variant text; v_vars jsonb;
+  v_new_car text; v_old_car_name text; v_change_line text:='';
 begin
   select * into v_prop from public.proposals where id = p_proposal_id for update;
   if v_prop is null then raise exception 'proposal_not_found' using errcode = 'P0001'; end if;
@@ -1559,6 +1727,10 @@ begin
   perform set_config('app.audit_reason', 'apply_proposal', true);
   perform set_config('app.system_status_transition', 'on', true);
   perform set_config('app.applying_proposal', p_proposal_id::text, true);
+  -- Old values for the "old -> new" notification lines (REQ §13.101 b), taken before anything changes.
+  v_old_dep := v_req.depart_at; v_old_ret := v_req.return_at;
+  select rd.car_id into v_old_car from public.rides rd join public.ride_requests rr on rr.ride_id = rd.id
+  where rr.request_id = v_req.id and rd.status <> 'cancelled' order by rd.starts_at limit 1;
 
   if v_prop.type = 'deny' then
     update public.requests set status = 'denied', status_reason = coalesce(v_prop.payload ->> 'reason', 'DENIED_BY_SADRAN')
@@ -1577,6 +1749,14 @@ begin
       raise exception 'origin_change_unavailable' using errcode = 'P0001';
     end if;
     v_ride_id := (v_origin_result ->> 'ride_id')::uuid;
+  elsif v_prop.type = 'shift' and v_prop.payload ? 'series_span' then
+    -- REQ §13.101 j: fewer days for a multi-day request, held on one car.
+    if v_prop.created_via = 'sadran' then
+      perform public.assert_private_car_owner_only((v_prop.payload->>'car_id')::uuid, v_prop.created_by, v_req.requester_id);
+    end if;
+    select min(q.depart_at), max(q.return_at) into v_old_series_dep, v_old_series_ret
+    from public.requests q where q.series_id = v_req.series_id and q.status not in ('withdrawn', 'cancelled');
+    v_ride_id := public._apply_series_span(v_req.id, v_prop.payload -> 'series_span', (v_prop.payload ->> 'car_id')::uuid);
   elsif v_prop.type = 'shift' then
     v_has_places := v_prop.payload ? 'origin_id' or v_prop.payload ? 'origin_text' or v_prop.payload ? 'destination_id'
       or v_prop.payload ? 'destination_text' or v_prop.payload ? 'stops';
@@ -1656,6 +1836,17 @@ begin
       where id = v_prop.request_id;
     end if;
   elsif v_prop.type = 'merge' then
+    -- REQ §13.101 b: everyone already on the ride is told every time someone joins; their old -> new lines are
+    -- read now, before the ride moves.
+    v_rv_joiner := public.proposal_reader_vars(v_prop.id, v_req.requester_id);
+    select coalesce(jsonb_object_agg(y.pid::text, public.proposal_reader_vars(v_prop.id, y.pid)), '{}'::jsonb) into v_rvs
+    from (select distinct x.pid from (
+            select rd.driver_id as pid from public.rides rd
+            where rd.id in (select (l->>'ride_id')::uuid from jsonb_array_elements(coalesce(v_prop.payload->'legs','[]')) l)
+            union
+            select q.requester_id from public.ride_requests rr join public.requests q on q.id = rr.request_id
+            where rr.ride_id in (select (l->>'ride_id')::uuid from jsonb_array_elements(coalesce(v_prop.payload->'legs','[]')) l)
+          ) x where x.pid is not null and x.pid <> v_req.requester_id) y;
     if not exists(select 1 from public.proposal_parties where proposal_id=v_prop.id and profile_id=v_req.requester_id and response='accepted')
       or exists(select 1 from public.proposal_parties where proposal_id=v_prop.id and response<>'accepted') then raise exception 'proposal_consent_required'; end if;
     if v_prop.payload ? 'request_fingerprint' and v_prop.payload->>'request_fingerprint' is distinct from public.merge_request_fingerprint(v_req.id) then perform public.raise_stale_version(); end if;
@@ -1749,12 +1940,50 @@ begin
 
   update public.proposals set status = 'applied', applied_at = now(), applied_ride_id = v_ride_id where id = p_proposal_id;
 
-  perform public.enqueue_notification(v_req.requester_id, 'outcome_changed', v_prop.department_id, v_prop.week_start,
-    '{}'::jsonb, jsonb_build_object('request_id', v_prop.request_id), format('outcome_changed:%s:%s', v_prop.request_id, p_proposal_id));
-
-  if v_prop.type='merge' then
-    perform public.enqueue_notification(pp.profile_id,'outcome_changed',v_prop.department_id,v_prop.week_start,'{}',jsonb_build_object('request_id',v_req.id,'ride_id',v_ride_id),format('merge_applied:%s:%s',v_prop.id,pp.profile_id))
-    from public.proposal_parties pp where pp.proposal_id=v_prop.id and pp.profile_id<>v_req.requester_id;
+  select full_name into v_byname from public.profiles where id = v_prop.created_by;
+  if v_prop.type = 'merge' then
+    -- The joiner: where they ride now, with whom, at what time.
+    perform public.enqueue_notification(v_req.requester_id, 'outcome_changed', v_prop.department_id, v_prop.week_start,
+      coalesce(v_rv_joiner->'vars', '{}'::jsonb),
+      jsonb_build_object('request_id', v_prop.request_id, 'variant',
+        case when exists (select 1 from public.rides x where x.id = v_ride_id and x.driver_id is null) then 'merged_no_driver' else 'merged' end),
+      format('outcome_changed:%s:%s', v_prop.request_id, p_proposal_id));
+    -- Everyone else on the ride(s): who joined, and only what changes for them.
+    for v_rcpt in select key as pid, value as rv from jsonb_each(v_rvs) loop
+      perform public.enqueue_notification(v_rcpt.pid::uuid, 'outcome_changed', v_prop.department_id, v_prop.week_start,
+        (v_rcpt.rv->'vars'),
+        jsonb_build_object('ride_id', v_ride_id, 'variant', 'joined_ride'),
+        format('merge_applied:%s:%s', v_prop.id, v_rcpt.pid));
+    end loop;
+  else
+    v_variant := null; v_vars := '{}'::jsonb;
+    if v_prop.type = 'shift' then
+      select c.name into v_new_car from public.cars c where c.id = nullif(v_prop.payload->>'car_id', '')::uuid;
+      select c.name into v_old_car_name from public.cars c where c.id = v_old_car;
+      if v_prop.payload ? 'series_span' then
+        v_tc := public._time_change_line(v_old_series_dep, v_old_series_ret,
+          (v_prop.payload->'series_span'->>'depart_at')::timestamptz, (v_prop.payload->'series_span'->>'return_at')::timestamptz, true);
+      else
+        v_tc := public._time_change_line(v_old_dep, v_old_ret,
+          nullif(v_prop.payload->>'depart_at', '')::timestamptz, nullif(v_prop.payload->>'return_at', '')::timestamptz);
+      end if;
+      if v_old_car is not null and v_new_car is not null and v_old_car is distinct from nullif(v_prop.payload->>'car_id', '')::uuid then
+        v_change_line := public._frag('change.car', jsonb_build_object('newCar', v_new_car, 'oldCar', v_old_car_name));
+      end if;
+      if v_tc <> '' then
+        v_variant := 'time_changed';
+        v_vars := jsonb_build_object('byName', coalesce(v_byname, ''), 'route', coalesce(public.request_route_label(v_req.id), ''),
+          'day', public.day_date_label(coalesce(v_old_dep, v_old_ret)), 'timeChange', v_tc,
+          'carLine', case when coalesce(v_new_car, '') <> '' then ' · ' || v_new_car else '' end);
+      elsif v_change_line <> '' then
+        v_variant := 'car_changed';
+        v_vars := jsonb_build_object('route', coalesce(public.request_route_label(v_req.id), ''),
+          'day', public.day_date_label(coalesce(v_old_dep, v_old_ret)), 'changeLine', v_change_line);
+      end if;
+    end if;
+    perform public.enqueue_notification(v_req.requester_id, 'outcome_changed', v_prop.department_id, v_prop.week_start,
+      v_vars, jsonb_build_object('request_id', v_prop.request_id) || case when v_variant is null then '{}'::jsonb else jsonb_build_object('variant', v_variant) end,
+      format('outcome_changed:%s:%s', v_prop.request_id, p_proposal_id));
   end if;
   return v_ride_id;
 end;
@@ -2272,7 +2501,8 @@ declare r record;
 begin
   for r in
     select leg_side,
-           sum(q.adults) a, sum(q.child_seats) c, sum(q.boosters) b, rd.car_id
+           sum(q.adults) a, sum(q.child_seats) c, sum(q.boosters) b, rd.car_id,
+           count(*) filter (where q.has_luggage) lug
     from public.ride_requests rr
     join public.requests q on q.id = rr.request_id
     join public.rides rd on rd.id = rr.ride_id
@@ -2289,6 +2519,10 @@ begin
     if not public.car_fits(r.car_id, r.a::int, r.c::int, r.b::int) then
       raise exception 'seat_config_violation' using detail =
         format('ride %s leg %s needs (%s,%s,%s)', v_ride, r.leg_side, r.a, r.c, r.b);
+    end if;
+    if not public.car_takes_luggage(r.car_id, r.lug::int) then
+      raise exception 'luggage_capacity_violation' using errcode = 'P0001', detail =
+        format('ride %s leg %s carries %s large-luggage request(s)', v_ride, r.leg_side, r.lug);
     end if;
   end loop;
 end $$;
@@ -2985,6 +3219,18 @@ $$;
 ALTER FUNCTION "public"."car_start_locations"("p_department_id" "uuid", "p_week_start" "date") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."car_takes_luggage"("_car" "uuid", "_count" integer) RETURNS boolean
+    LANGUAGE "sql" STABLE
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select coalesce(_count, 0) <= 0
+    or (_count <= 2 and exists (select 1 from public.cars c where c.id = _car and 'large_trunk' = any(c.features)));
+$$;
+
+
+ALTER FUNCTION "public"."car_takes_luggage"("_car" "uuid", "_count" integer) OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."cars_protect_owner_editable_fields"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -3545,6 +3791,24 @@ begin
     select array_agg(distinct id) into p_party_profile_ids from unnest(coalesce(p_party_profile_ids,'{}')||required_parties) id where id is not null;
     p_payload:=p_payload||jsonb_build_object('host_versions',host_versions,'host_snapshots',host_snapshots,'source_versions',source_versions,
       'request_fingerprint',public.merge_request_fingerprint(v_req.id),'allow_tight_turnaround',public.can_manage_week(v_req.department_id,v_req.week_start));
+  elsif p_type='shift' and p_payload ? 'series_span' then
+    -- REQ §13.101 j: fewer days for a multi-day request (series head, one car, consecutive sub-span).
+    if p_created_via<>'sadran' then raise exception 'not_authorized' using errcode='P0001'; end if;
+    if nullif(p_payload->>'car_id','') is null or jsonb_typeof(p_payload->'series_span')<>'object'
+       or p_payload ? 'depart_at' or p_payload ? 'return_at' or p_payload ? 'origin_id' or p_payload ? 'origin_text'
+       or p_payload ? 'destination_id' or p_payload ? 'destination_text' or p_payload ? 'stops' then
+      raise exception 'series_span_invalid' using errcode='P0001';
+    end if;
+    if v_req.series_id is null or v_req.series_index is distinct from 1 then
+      raise exception 'series_span_requires_series_head' using errcode='P0001';
+    end if;
+    -- Feasibility probe: run the real change inside a sub-block that always rolls back.
+    begin
+      perform public._apply_series_span(v_req.id,p_payload->'series_span',(p_payload->>'car_id')::uuid);
+      raise exception 'series_span_probe_ok' using errcode='P0001';
+    exception when others then
+      if sqlerrm<>'series_span_probe_ok' then raise; end if;
+    end;
   elsif p_type='shift' and (p_payload ? 'origin_id' or p_payload ? 'origin_text' or p_payload ? 'destination_id'
         or p_payload ? 'destination_text' or p_payload ? 'stops') then
     perform public._assert_shift_places(v_req.id, v_req.department_id, p_payload);
@@ -4943,6 +5207,42 @@ $$;
 ALTER FUNCTION "public"."form_waitlist_groups"("p_department_id" "uuid", "p_week_start" "date", "p_day" "date") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."freed_offer_group"("_offer" "uuid") RETURNS "uuid"
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select g.id from public.freed_slot_offers o
+  join public.waitlist_groups g on g.department_id = o.department_id and g.week_start = o.week_start and g.status = 'open'
+   and tstzrange(g.starts_at, g.ends_at, '[)') && tstzrange(o.starts_at, o.ends_at, '[)')
+  where o.id = _offer order by g.starts_at, g.id limit 1;
+$$;
+
+
+ALTER FUNCTION "public"."freed_offer_group"("_offer" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."freed_offers_after_group_closed"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare o record; v_took boolean;
+begin
+  for o in select * from public.freed_slot_offers where group_id = new.id and status = 'open' for update loop
+    v_took := new.status = 'resolved' and exists (select 1 from public.rides r where r.id = new.ride_id and r.car_id = o.car_id);
+    if v_took then
+      update public.freed_slot_offers set status = 'closed', resolved_at = now() where id = o.id;
+    else
+      update public.freed_slot_offers set group_id = null where id = o.id;
+      perform public.invoke_on_ride_cancelled(o.id);
+    end if;
+  end loop;
+  return null;
+end $$;
+
+
+ALTER FUNCTION "public"."freed_offers_after_group_closed"() OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."freed_slot_candidates"("_offer" "uuid") RETURNS TABLE("request_id" "uuid", "requester_id" "uuid", "fits" boolean, "slack" interval)
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -4964,11 +5264,25 @@ CREATE OR REPLACE FUNCTION "public"."freed_slot_candidates"("_offer" "uuid") RET
   where o.id = _offer and o.status = 'open'
     and cr.origin_id = cr.destination_id
     and public.car_fits(o.car_id, q.adults, q.child_seats, q.boosters)
+    and public.car_takes_luggage(o.car_id, case when q.has_luggage then 1 else 0 end)
   order by slack asc, q.submitted_at asc;
 $$;
 
 
 ALTER FUNCTION "public"."freed_slot_candidates"("_offer" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."freed_slot_priority_requests"("_offer" "uuid") RETURNS "uuid"[]
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select coalesce(array_agg(m.request_id order by m.created_at, m.id), '{}'::uuid[])
+  from public.waitlist_group_members m
+  where m.group_id = public.freed_offer_group(_offer) and m.chosen is null;
+$$;
+
+
+ALTER FUNCTION "public"."freed_slot_priority_requests"("_offer" "uuid") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."gen_random_bytes"("count" integer) RETURNS "bytea"
@@ -5162,6 +5476,23 @@ end $$;
 
 
 ALTER FUNCTION "public"."initialize_department_catalogs"("p_department_id" "uuid", "p_source_department_id" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."invoke_on_ride_cancelled"("_offer" "uuid") RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+begin
+  perform net.http_post(url := cfg.url_val,
+    headers := jsonb_build_object('Content-Type', 'application/json', 'x-cron-secret', coalesce(cfg.secret_val, '')),
+    body := jsonb_build_object('offer_id', _offer))
+  from (select (select value ->> 'value' from public.app_settings where key = 'on_ride_cancelled_url') as url_val,
+               (select value ->> 'value' from public.app_secrets where key = 'cron_secret') as secret_val) cfg
+  where cfg.url_val is not null and cfg.url_val <> '';
+end $$;
+
+
+ALTER FUNCTION "public"."invoke_on_ride_cancelled"("_offer" "uuid") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."is_admin"() RETURNS boolean
@@ -6445,6 +6776,71 @@ $$;
 ALTER FUNCTION "public"."phone_of"("_profile" "uuid") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."place_on_own_car"("p_request_id" "uuid", "p_car_id" "uuid") RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_req public.requests%rowtype; v_actor uuid := (select auth.uid()); v_car public.cars%rowtype;
+  v_ride uuid; v_by text; v_prop uuid; v_phase public.week_phase; v_turnaround int;
+begin
+  select * into v_req from public.requests where id = p_request_id for update;
+  if v_req.id is null then raise exception 'request_not_found' using errcode = 'P0001'; end if;
+  if v_req.requester_id is distinct from v_actor then raise exception 'not_authorized' using errcode = 'P0001'; end if;
+  select * into v_car from public.cars where id = p_car_id;
+  if v_car.id is null or v_car.department_id <> v_req.department_id then raise exception 'not_authorized' using errcode = 'P0001'; end if;
+  if v_car.type <> 'temporary' or v_car.owner_id is distinct from v_actor then raise exception 'private_car_owner_only' using errcode = 'P0001'; end if;
+  if v_car.status <> 'active' then raise exception 'car_unavailable' using errcode = 'P0001'; end if;
+  if v_req.status in ('assigned', 'merged', 'withdrawn', 'cancelled') or v_req.series_id is not null
+     or exists (select 1 from public.ride_requests rr join public.rides r on r.id = rr.ride_id
+                where rr.request_id = p_request_id and r.status <> 'cancelled') then
+    raise exception 'request_not_editable' using errcode = 'P0001';
+  end if;
+  if v_req.trip_type <> 'round_trip' or v_req.depart_at is null or v_req.return_at is null or v_req.origin_id is null then
+    raise exception 'own_car_round_trip_only' using errcode = 'P0001';
+  end if;
+  if v_req.depart_at < now() then raise exception 'ride_in_past' using errcode = 'P0001'; end if;
+  select phase into v_phase from public.weeks where department_id = v_req.department_id and week_start = v_req.week_start;
+  if v_phase is null or v_phase in ('archived', 'upcoming') then raise exception 'week_archived' using errcode = 'P0001'; end if;
+  v_turnaround := coalesce(public.required_turnaround_minutes(v_req.department_id, v_req.week_start), 30);
+  if exists (select 1 from public.rides r where r.car_id = p_car_id and r.status <> 'cancelled'
+             and tstzrange(r.starts_at, r.blocked_until, '[)') && tstzrange(v_req.depart_at, v_req.return_at + make_interval(mins => v_turnaround), '[)'))
+     or exists (select 1 from public.car_maintenance_blocks b where b.car_id = p_car_id
+             and tstzrange(b.starts_at, b.ends_at, '[)') && tstzrange(v_req.depart_at, v_req.return_at, '[)')) then
+    raise exception 'own_car_not_free' using errcode = 'P0001';
+  end if;
+
+  perform set_config('app.audit_reason', 'place_on_own_car', true);
+  for v_prop in
+    select p.id from public.proposals p
+    where p.status in ('draft', 'sent')
+      and (p.request_id = p_request_id or exists (select 1 from public.proposal_parties pp where pp.proposal_id = p.id and pp.request_id = p_request_id))
+    for update
+  loop
+    update public.proposals set status = 'withdrawn' where id = v_prop;
+  end loop;
+
+  perform set_config('app.system_status_transition', 'on', true);
+  v_ride := public.place_request_on_car(p_request_id, p_car_id, false, v_actor, null, null, null, 'OWN_CAR');
+  perform set_config('app.system_status_transition', 'off', true);
+
+  select full_name into v_by from public.profiles where id = v_actor;
+  perform public.enqueue_notification(s.profile_id, 'outcome_changed', v_req.department_id, v_req.week_start,
+    jsonb_build_object('byName', coalesce(v_by, ''), 'route', coalesce(public.request_route_label(p_request_id), ''),
+      'day', public.day_date_label(v_req.depart_at), 'car', v_car.name),
+    jsonb_build_object('variant', 'own_car_placed', 'request_id', p_request_id, 'ride_id', v_ride,
+      'url', format('/sadran/%s/%s/board', v_req.department_id, v_req.week_start)),
+    format('own_car_placed:%s:%s', p_request_id, s.profile_id))
+  from public.sadranim_of(v_req.department_id, v_req.week_start) as s(profile_id)
+  where s.profile_id is distinct from v_actor;
+
+  return jsonb_build_object('request_id', p_request_id, 'ride_id', v_ride, 'status', 'assigned', 'car_id', p_car_id);
+end $$;
+
+
+ALTER FUNCTION "public"."place_on_own_car"("p_request_id" "uuid", "p_car_id" "uuid") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."place_request_on_car"("p_request_id" "uuid", "p_car_id" "uuid", "p_manual" boolean, "p_actor" "uuid", "p_named_driver" "uuid", "p_dep" timestamp with time zone, "p_ret" timestamp with time zone, "p_reason" "text" DEFAULT 'PROPOSAL_APPLIED'::"text") RETURNS "uuid"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -7053,12 +7449,17 @@ declare
   v_total int; v_accepted int; v_declined int; v_status public.proposal_status;
   v_prop record;
   v_new_status public.proposal_status;
+  v_who jsonb;
 begin
   -- the responder's own offer is handled
   update public.notifications set read_at = now()
   where recipient_id = new.profile_id and event = 'proposal_received' and read_at is null
     and data ->> 'proposal_id' = new.proposal_id::text;
   select status into v_status from public.proposals where id = new.proposal_id;
+  -- REQ §13.101 b: the texts name WHO answered (a host or fellow passenger may be the one who declined),
+  -- not the request's owner; `firstName` is the variable the answer templates use for that name.
+  v_who := jsonb_build_object('firstName', coalesce((select full_name from public.profiles where id = new.profile_id), ''),
+                              'byName', coalesce((select full_name from public.profiles where id = new.profile_id), ''));
   if v_status <> 'sent' then
     return new;
   end if;
@@ -7078,11 +7479,11 @@ begin
 
     if v_prop.created_by is not null then
       perform public.enqueue_notification(v_prop.created_by, 'proposal_answered', v_prop.department_id, v_prop.week_start,
-        '{}'::jsonb, jsonb_build_object('variant', v_new_status::text, 'proposal_id', v_prop.id),
+        v_who, jsonb_build_object('variant', v_new_status::text, 'proposal_id', v_prop.id),
         format('proposal_answered:%s:%s', v_prop.id, v_prop.created_by));
     else
       perform public.enqueue_notification(s.profile_id, 'proposal_answered', v_prop.department_id, v_prop.week_start,
-        '{}'::jsonb, jsonb_build_object('variant', v_new_status::text, 'proposal_id', v_prop.id),
+        v_who, jsonb_build_object('variant', v_new_status::text, 'proposal_id', v_prop.id),
         format('proposal_answered:%s:%s', v_prop.id, s.profile_id))
       from public.sadranim_of(v_prop.department_id, v_prop.week_start) as s(profile_id);
     end if;
@@ -7090,7 +7491,7 @@ begin
     -- QB15: a decline is news for the other parties too (driver, host, fellow passengers).
     if v_new_status = 'declined' then
       perform public.enqueue_notification(pp.profile_id, 'proposal_answered', v_prop.department_id, v_prop.week_start,
-        '{}'::jsonb, jsonb_build_object('variant', 'declined_party', 'proposal_id', v_prop.id, 'request_id', v_prop.request_id),
+        v_who, jsonb_build_object('variant', 'declined_party', 'proposal_id', v_prop.id, 'request_id', v_prop.request_id),
         format('proposal_answered:%s:%s', v_prop.id, pp.profile_id))
       from public.proposal_parties pp
       where pp.proposal_id = v_prop.id and pp.profile_id <> new.profile_id
@@ -7108,6 +7509,174 @@ $$;
 
 
 ALTER FUNCTION "public"."proposal_parties_roll_up"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."proposal_party_texts"("p_proposal_id" "uuid") RETURNS TABLE("profile_id" "uuid", "variant" "text", "body" "text")
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare pr public.proposals%rowtype; pp record; rv jsonb; v_tpl text; v_wa text;
+begin
+  select * into pr from public.proposals where id = p_proposal_id;
+  if pr.id is null then raise exception 'proposal_not_found' using errcode = 'P0001'; end if;
+  if not public.can_manage_week(pr.department_id, pr.week_start) then
+    raise exception 'not_authorized' using errcode = 'P0001';
+  end if;
+  for pp in select x.profile_id as pid from public.proposal_parties x where x.proposal_id = p_proposal_id order by x.id loop
+    rv := public.proposal_reader_vars(p_proposal_id, pp.pid);
+    profile_id := pp.pid; variant := rv ->> 'variant';
+    if pr.type = 'merge' then
+      v_wa := case variant when 'merge_host' then 'merge_driver' else variant end;
+      select t.body into v_tpl from public.notification_templates t
+      where t.event = 'proposal_received' and t.channel = 'whatsapp' and t.variant = v_wa;
+      body := replace(public.render_notification_text(coalesce(v_tpl, ''),
+        (rv -> 'vars') || jsonb_build_object('link', '@@LINK@@')), '@@LINK@@', '{{link}}');
+    else
+      body := pr.reason_he;
+    end if;
+    return next;
+  end loop;
+end $$;
+
+
+ALTER FUNCTION "public"."proposal_party_texts"("p_proposal_id" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."proposal_reader_vars"("p_proposal_id" "uuid", "p_profile_id" "uuid") RETURNS "jsonb"
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  pr public.proposals%rowtype; q public.requests%rowtype; r public.rides%rowtype;
+  v_variant text; v jsonb;
+  v_home uuid; v_first text; v_sadran text; v_joiner text; v_driver text;
+  v_car text; v_car_line text := ''; v_time_change text := ''; v_join_line text := ''; v_detour int := 0;
+  v_route text; v_origin_name text; v_new_origin text; v_city text;
+  v_leg text; v_mc jsonb; v_new_dep timestamptz; v_new_ret timestamptz; v_reason text;
+  v_span jsonb; v_old_dep timestamptz; v_old_ret timestamptz; v_ride_id uuid;
+begin
+  select * into pr from public.proposals where id = p_proposal_id;
+  if pr.id is null then return null; end if;
+  select * into q from public.requests where id = pr.request_id;
+  select home_destination_id into v_home from public.departments where id = pr.department_id;
+  select split_part(full_name, ' ', 1) into v_first from public.profiles where id = p_profile_id;
+  select full_name into v_sadran from public.profiles where id = pr.created_by;
+  select full_name into v_joiner from public.profiles where id = q.requester_id;
+  select d.name into v_origin_name from public.destinations d where d.id = q.origin_id;
+  v_origin_name := coalesce(v_origin_name, q.origin_text);
+  v_route := public.request_route_label(q.id);
+
+  if pr.type = 'shift' then
+    v_variant := 'shift';
+    select c.name into v_car from public.cars c where c.id = nullif(pr.payload ->> 'car_id', '')::uuid;
+    v_span := pr.payload -> 'series_span';
+    if v_span is not null then
+      select min(x.depart_at), max(x.return_at) into v_old_dep, v_old_ret
+      from public.requests x where x.series_id = q.series_id and x.status not in ('withdrawn', 'cancelled');
+      v_time_change := public._time_change_line(v_old_dep, v_old_ret,
+        (v_span ->> 'depart_at')::timestamptz, (v_span ->> 'return_at')::timestamptz, true);
+    else
+      v_time_change := public._time_change_line(q.depart_at, q.return_at,
+        nullif(pr.payload ->> 'depart_at', '')::timestamptz, nullif(pr.payload ->> 'return_at', '')::timestamptz);
+    end if;
+    if v_time_change = '' then
+      v_time_change := case when coalesce(v_car, '') <> ''
+        then public._frag('time.same_with_car', jsonb_build_object('car', v_car))
+        else public._frag('time.unchanged') end;
+    elsif coalesce(v_car, '') <> '' then
+      v_car_line := ' · ' || v_car;
+    end if;
+
+  elsif pr.type = 'merge' then
+    -- the ride this reader is on (or, for the joiner, the first target ride)
+    select x.ride_id into v_ride_id
+    from (select (l ->> 'ride_id')::uuid as ride_id, ord from jsonb_array_elements(coalesce(pr.payload -> 'legs', '[]')) with ordinality as t(l, ord)) x
+    join public.rides rd on rd.id = x.ride_id
+    where p_profile_id = q.requester_id or rd.driver_id = p_profile_id
+       or exists (select 1 from public.ride_requests rr join public.requests rq on rq.id = rr.request_id
+                  where rr.ride_id = rd.id and rq.requester_id = p_profile_id)
+    order by (rd.driver_id = p_profile_id) desc, x.ord limit 1;
+    if v_ride_id is null then
+      select (l ->> 'ride_id')::uuid into v_ride_id from jsonb_array_elements(coalesce(pr.payload -> 'legs', '[]')) l limit 1;
+    end if;
+    select * into r from public.rides where id = v_ride_id;
+    select case when count(distinct coalesce(l ->> 'leg', 'both')) > 1 or bool_or(coalesce(l ->> 'leg', 'both') = 'both') then 'both'
+                else max(coalesce(l ->> 'leg', 'both')) end into v_leg
+    from jsonb_array_elements(coalesce(pr.payload -> 'legs', '[]')) l
+    where (l ->> 'ride_id')::uuid = r.id and coalesce(l ->> 'role', 'passenger') <> 'driver';
+    select c.name into v_car from public.cars c where c.id = r.car_id;
+    select full_name into v_driver from public.profiles where id = r.driver_id;
+    if v_leg is not null then
+      v_mc := public._merge_check(r.id, q.id, v_leg::public.ride_leg);
+      v_detour := coalesce((v_mc ->> 'added_out_minutes')::int, 0) + coalesce((v_mc ->> 'added_return_minutes')::int, 0);
+    end if;
+
+    if p_profile_id = q.requester_id then
+      -- REQ §13.100 c: a ride that still needs a driver has no driver to name.
+      v_variant := case when r.driver_id is null then 'merge_passenger_no_driver' else 'merge_passenger' end;
+      if v_leg is not null then
+        select max(case when x.leg = 'out' then x.eta end), max(case when x.leg = 'return' then x.eta end)
+          into v_new_dep, v_new_ret
+        from public._ride_route_with(r.id, q.id, v_leg::public.ride_leg) x
+        where x.request_id = q.id and x.kind = 'board';
+      end if;
+      v_new_dep := coalesce(v_new_dep, case when v_leg in ('out', 'both') then r.starts_at end);
+      v_new_ret := coalesce(v_new_ret, case when v_leg in ('return', 'both') then r.ends_at end);
+      v_join_line := public._frag(case when v_new_dep is not null and v_new_ret is not null then 'join.both'
+                                       when v_new_dep is not null then 'join.out' else 'join.return' end,
+        jsonb_build_object('depart', public._hhmm(v_new_dep), 'return', public._hhmm(v_new_ret)));
+      v_time_change := public._time_change_line(q.depart_at, q.return_at, v_new_dep, v_new_ret);
+      v_route := public.request_route_label(q.id);
+    else
+      v_variant := case when r.driver_id = p_profile_id then 'merge_host' else 'merge_other' end;
+      v_time_change := public._time_change_line(r.starts_at, r.ends_at,
+        (v_mc ->> 'new_starts_at')::timestamptz, (v_mc ->> 'new_ends_at')::timestamptz);
+      -- the ride's own trip (its base request), not the car's home-to-home movement
+      select public.request_route_label(rr.request_id) into v_route
+      from public.ride_requests rr where rr.ride_id = r.id
+      order by (rr.role = 'driver') desc, rr.created_at, rr.request_id limit 1;
+      v_route := coalesce(v_route, public.route_label(r.department_id, r.origin_id, null, r.destination_id, null));
+    end if;
+    if v_time_change = '' then v_time_change := public._frag('time.unchanged'); end if;
+
+  elsif pr.type = 'external' then
+    v_city := case when q.origin_id is null or q.origin_id = v_home then '' else coalesce(v_origin_name, '') end;
+    v_variant := case when pr.payload ->> 'external_reason' = 'city' and v_city <> '' then 'external_city' else 'external_none' end;
+
+  elsif pr.type = 'deny' then
+    v_variant := 'deny';
+    v_reason := nullif(btrim(coalesce(pr.payload ->> 'reason', '')), '');
+
+  elsif pr.type = 'origin' then
+    v_variant := 'origin';
+    select c.name into v_car from public.cars c where c.id = nullif(pr.payload ->> 'car_id', '')::uuid;
+    select d.name into v_new_origin from public.destinations d where d.id = nullif(pr.payload ->> 'origin_id', '')::uuid;
+  end if;
+
+  v := jsonb_build_object(
+    'firstName', coalesce(v_first, ''),
+    'byName', coalesce(v_sadran, ''), 'sadranName', coalesce(v_sadran, ''),
+    'route', coalesce(v_route, ''),
+    'day', public.day_date_label(coalesce(q.depart_at, q.return_at)),
+    'depart', public._hhmm(q.depart_at), 'return', public._hhmm(q.return_at),
+    'car', coalesce(v_car, ''), 'carLine', v_car_line,
+    'timeChange', v_time_change, 'joinLine', v_join_line,
+    'joinerName', coalesce(v_joiner, ''), 'driverName', coalesce(v_driver, ''),
+    'detourMin', case when v_detour > 0 then v_detour::text else '' end,
+    'detourLine', case when v_detour > 0 then public._frag('detour.line', jsonb_build_object('detourMin', v_detour)) else '' end,
+    'city', coalesce(v_city, ''),
+    'reason', coalesce(v_reason, ''),
+    'reasonLine', case when v_reason is not null then public._frag('reason.line', jsonb_build_object('reason', v_reason))
+                       else public._frag('reason.default') end,
+    'originOrHome', coalesce(v_origin_name, (select d.name from public.destinations d where d.id = v_home), ''),
+    'newOrigin', coalesce(v_new_origin, ''),
+    'newDepart', public._hhmm(nullif(pr.payload ->> 'depart_at', '')::timestamptz),
+    'newReturn', public._hhmm(nullif(pr.payload ->> 'return_at', '')::timestamptz));
+  return jsonb_build_object('variant', v_variant, 'vars', v);
+end $$;
+
+
+ALTER FUNCTION "public"."proposal_reader_vars"("p_proposal_id" "uuid", "p_profile_id" "uuid") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."proposal_system_withdraw"("p_proposal_id" "uuid", "p_variant" "text") RETURNS "void"
@@ -7664,6 +8233,57 @@ $$;
 ALTER FUNCTION "public"."register_push_subscription"("p_endpoint" "text", "p_p256dh" "text", "p_auth" "text", "p_user_agent" "text") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."release_request_booking"("p_request_id" "uuid") RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_req public.requests%rowtype; r public.rides%rowtype; v_ride_id uuid; v_actor uuid := (select auth.uid());
+  v_names text; v_prev text;
+begin
+  select * into v_req from public.requests where id = p_request_id;
+  if v_req.id is null then raise exception 'request_not_found' using errcode = 'P0001'; end if;
+  perform public.release_request_draft_rides(p_request_id);
+  for v_ride_id in
+    select rd.id from public.ride_requests rr join public.rides rd on rd.id = rr.ride_id
+    where rr.request_id = p_request_id and rd.status not in ('cancelled', 'draft') order by rd.id
+  loop
+    select * into r from public.rides where id = v_ride_id for update;
+    if r.status = 'cancelled' then continue; end if;
+    if r.driver_id is not distinct from v_req.requester_id then
+      perform public.cancel_ride_before_series(r.id, 'REQUEST_RELEASED', r.version);
+    else
+      v_prev := coalesce(current_setting('app.system_status_transition', true), 'off');
+      perform set_config('app.audit_reason', 'request_released', true);
+      perform set_config('app.system_status_transition', 'on', true);
+      delete from public.ride_requests where ride_id = r.id and request_id = p_request_id;
+      if not exists (select 1 from public.ride_requests where ride_id = r.id)
+         and not exists (select 1 from public.ride_passengers where ride_id = r.id) then
+        update public.rides set status = 'cancelled', cancelled_at = now(), cancelled_by = v_actor,
+          cancel_reason = 'REQUEST_RELEASED' where id = r.id;
+      else
+        update public.rides set is_pinned = true where id = r.id;
+      end if;
+      perform set_config('app.system_status_transition', v_prev, true);
+      if r.driver_id is not null then
+        select full_name into v_names from public.profiles where id = v_req.requester_id;
+        perform public.enqueue_notification(r.driver_id, 'outcome_changed', r.department_id, r.week_start,
+          jsonb_build_object('names', coalesce(v_names, ''), 'route', coalesce(public.request_route_label(p_request_id), ''),
+            'day', public.day_date_label(r.starts_at)),
+          jsonb_build_object('variant', 'passenger_left', 'ride_id', r.id, 'request_id', p_request_id),
+          format('passenger_left:%s:%s:%s', r.id, p_request_id, r.version));
+      end if;
+    end if;
+  end loop;
+  -- a released request keeps no link to a ride it is no longer on (a later placement needs the slot free)
+  delete from public.ride_requests rr using public.rides rd
+  where rr.request_id = p_request_id and rd.id = rr.ride_id and rd.status = 'cancelled';
+end $$;
+
+
+ALTER FUNCTION "public"."release_request_booking"("p_request_id" "uuid") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."release_request_draft_rides"("p_request_id" "uuid") RETURNS "void"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -8007,6 +8627,35 @@ $$;
 
 
 ALTER FUNCTION "public"."report_car_issue_unsafe_to_maintenance"("p_issue_id" "uuid", "p_hours" integer) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."request_booking_info"("p_request_id" "uuid") RETURNS "jsonb"
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare v_has boolean := false; v_drives_others boolean := false; r record;
+begin
+  for r in
+    select rd.id, rd.driver_id, q.requester_id
+    from public.ride_requests rr
+    join public.rides rd on rd.id = rr.ride_id and rd.status not in ('cancelled', 'draft')
+    join public.requests q on q.id = rr.request_id
+    where rr.request_id = p_request_id
+  loop
+    v_has := true;
+    if r.driver_id = r.requester_id and (
+      exists (select 1 from public.ride_requests x join public.requests xq on xq.id = x.request_id
+              where x.ride_id = r.id and xq.requester_id is distinct from r.driver_id)
+      or exists (select 1 from public.ride_passengers rp where rp.ride_id = r.id and rp.person_id is distinct from r.driver_id)
+    ) then
+      v_drives_others := true;
+    end if;
+  end loop;
+  return jsonb_build_object('has_booking', v_has, 'drives_others', v_drives_others);
+end $$;
+
+
+ALTER FUNCTION "public"."request_booking_info"("p_request_id" "uuid") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."request_companions_not_requester"() RETURNS "trigger"
@@ -8553,6 +9202,8 @@ declare
   v_first jsonb;
   v_ride_id uuid;
   v_cand jsonb;
+  v_group uuid; v_g record; m record; v_car_name text;
+  v_prio uuid[];
 begin
   select * into v_offer from public.freed_slot_offers where id = p_offer_id;
   if v_offer is null then raise exception 'offer_not_found' using errcode = 'P0001'; end if;
@@ -8560,6 +9211,36 @@ begin
 
   v_count := jsonb_array_length(coalesce(p_ranked_candidates, '[]'));
   perform set_config('app.audit_reason', 'resolve_freed_offer', true);
+
+  -- REQ §13.101 (i): the open contested group whose time this car frees goes first.
+  v_group := public.freed_offer_group(p_offer_id);
+  if v_group is not null and v_count > 0 then
+    select coalesce(array_agg(wm.request_id), '{}') into v_prio from public.waitlist_group_members wm
+    where wm.group_id = v_group and wm.chosen is null
+      and wm.request_id in (select (c ->> 'request_id')::uuid from jsonb_array_elements(p_ranked_candidates) c);
+    if cardinality(v_prio) > 0 then
+      select * into v_g from public.waitlist_groups where id = v_group;
+      select name into v_car_name from public.cars where id = v_offer.car_id;
+      update public.freed_slot_offers set group_id = v_group where id = p_offer_id;
+      for m in select wm.request_id, wm.profile_id from public.waitlist_group_members wm
+               where wm.group_id = v_group and wm.chosen is null order by wm.created_at, wm.id loop
+        perform public.enqueue_notification(m.profile_id, 'waitlist_contested', v_g.department_id, v_g.week_start,
+          jsonb_build_object('car', coalesce(v_car_name, ''), 'day', public.day_date_label(v_g.starts_at),
+            'depart', to_char(v_g.starts_at at time zone 'Asia/Jerusalem', 'HH24:MI'),
+            'return', to_char(v_g.ends_at at time zone 'Asia/Jerusalem', 'HH24:MI')),
+          jsonb_build_object('group_id', v_group, 'request_id', m.request_id, 'day', v_g.day::text, 'variant', 'car_freed'),
+          format('waitlist_car_freed:%s:%s:%s', v_group, p_offer_id, m.profile_id));
+      end loop;
+      perform public.enqueue_notification(s.profile_id, 'waitlist_contested', v_g.department_id, v_g.week_start,
+        jsonb_build_object('car', coalesce(v_car_name, ''), 'day', public.day_date_label(v_g.starts_at),
+          'depart', to_char(v_g.starts_at at time zone 'Asia/Jerusalem', 'HH24:MI'),
+          'return', to_char(v_g.ends_at at time zone 'Asia/Jerusalem', 'HH24:MI')),
+        jsonb_build_object('group_id', v_group, 'day', v_g.day::text, 'variant', 'car_freed_sadran'),
+        format('waitlist_car_freed:%s:%s:sadran:%s', v_group, p_offer_id, s.profile_id))
+      from public.sadranim_of(v_g.department_id, v_g.week_start) as s(profile_id);
+      return;
+    end if;
+  end if;
 
   if v_count = 0 then
     update public.freed_slot_offers set status = 'closed', resolved_at = now() where id = p_offer_id;
@@ -8691,6 +9372,59 @@ end $$;
 ALTER FUNCTION "public"."respond_ride_change_before_planning"("p_change_id" "uuid", "p_accept" boolean) OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."restore_duplicate_request"("p_request_id" "uuid") RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_req public.requests%rowtype; v_actor uuid := (select auth.uid()); v_phase public.week_phase;
+  v_auto jsonb; v_status public.request_status; v_by text;
+begin
+  select * into v_req from public.requests where id = p_request_id for update;
+  if v_req.id is null then raise exception 'request_not_found' using errcode = 'P0001'; end if;
+  if v_req.requester_id is distinct from v_actor then raise exception 'not_authorized' using errcode = 'P0001'; end if;
+  if v_req.status <> 'withdrawn' or v_req.status_reason is distinct from 'DUPLICATE_WITHDRAWN' then
+    raise exception 'request_not_editable' using errcode = 'P0001';
+  end if;
+  if coalesce(v_req.return_at, v_req.depart_at) < now() then raise exception 'ride_in_past' using errcode = 'P0001'; end if;
+  select phase into v_phase from public.weeks where department_id = v_req.department_id and week_start = v_req.week_start;
+  if v_phase is null or v_phase in ('archived', 'upcoming') then raise exception 'week_archived' using errcode = 'P0001'; end if;
+
+  perform set_config('app.audit_reason', 'restore_duplicate_request', true);
+  perform set_config('app.system_status_transition', 'on', true);
+  update public.requests set status = 'submitted', status_reason = 'DUPLICATE_RESTORED', changed_since_solve = (v_phase not in ('open', 'solving'))
+  where id = p_request_id;
+  perform set_config('app.system_status_transition', 'off', true);
+
+  if v_phase in ('published', 'live') and v_req.trip_type in ('round_trip', 'one_way') then
+    v_auto := public.try_auto_approve(p_request_id);
+  end if;
+  select status into v_status from public.requests where id = p_request_id;
+  if v_phase in ('published', 'live') and v_status = 'submitted' then
+    perform set_config('app.system_status_transition', 'on', true);
+    update public.requests set status = 'waitlisted', status_reason = 'WAITLISTED_ONE_WAY' where id = p_request_id;
+    perform set_config('app.system_status_transition', 'off', true);
+    v_status := 'waitlisted';
+    v_auto := coalesce(v_auto, jsonb_build_object('status', 'waitlisted', 'reason', 'WAITLISTED_ONE_WAY'));
+  end if;
+
+  select full_name into v_by from public.profiles where id = v_actor;
+  perform public.enqueue_notification(s.profile_id, 'outcome_changed', v_req.department_id, v_req.week_start,
+    jsonb_build_object('byName', coalesce(v_by, ''), 'route', coalesce(public.request_route_label(p_request_id), ''),
+      'day', public.day_date_label(coalesce(v_req.depart_at, v_req.return_at))),
+    jsonb_build_object('variant', 'duplicate_restored', 'request_id', p_request_id,
+      'url', format('/sadran/%s/%s/board', v_req.department_id, v_req.week_start)),
+    format('duplicate_restored:%s:%s:%s', p_request_id, v_req.version, s.profile_id))
+  from public.sadranim_of(v_req.department_id, v_req.week_start) as s(profile_id);
+
+  return jsonb_build_object('request_id', p_request_id, 'status', v_status::text,
+    'car_was_free', v_status = 'assigned') || coalesce(v_auto, '{}'::jsonb);
+end $$;
+
+
+ALTER FUNCTION "public"."restore_duplicate_request"("p_request_id" "uuid") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."resume_request_template"("p_template_id" "uuid") RETURNS "void"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -8759,6 +9493,48 @@ $$;
 
 
 ALTER FUNCTION "public"."ride_merge_fingerprint"("p_ride_id" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."ride_notice_destination"("p_ride_id" "uuid") RETURNS "text"
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select coalesce(
+    (select coalesce(d.name, q.destination_text) from public.requests q
+       left join public.destinations d on d.id = q.destination_id
+       where q.id = public.ride_notice_request(p_ride_id)),
+    (select d.name from public.rides r join public.destinations d on d.id = r.destination_id where r.id = p_ride_id), '');
+$$;
+
+
+ALTER FUNCTION "public"."ride_notice_destination"("p_ride_id" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."ride_notice_request"("p_ride_id" "uuid") RETURNS "uuid"
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select rr.request_id from public.ride_requests rr join public.requests q on q.id = rr.request_id
+  where rr.ride_id = p_ride_id
+  order by (rr.role = 'driver') desc, q.depart_at nulls last, rr.request_id limit 1;
+$$;
+
+
+ALTER FUNCTION "public"."ride_notice_request"("p_ride_id" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."ride_notice_route"("p_ride_id" "uuid") RETURNS "text"
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select coalesce(
+    public.request_route_label(public.ride_notice_request(p_ride_id)),
+    (select public.route_label(r.department_id, r.origin_id, null, r.destination_id, null) from public.rides r where r.id = p_ride_id),
+    '');
+$$;
+
+
+ALTER FUNCTION "public"."ride_notice_route"("p_ride_id" "uuid") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."ride_requests_dept_week_match"() RETURNS "trigger"
@@ -9367,6 +10143,7 @@ declare
   v_proposal_token text;
   v_party_tokens jsonb:='{}';
   v_party record;
+  v_reader jsonb;
 begin
   select request_id into v_request_id from public.proposals where id=p_proposal_id;
   if v_request_id is null then raise exception 'proposal_not_found'; end if;
@@ -9427,10 +10204,11 @@ begin
     v_party_tokens:=v_party_tokens||jsonb_build_object(v_party.profile_id::text,v_token);
   end loop;
   for v_party in select profile_id from public.proposal_parties where proposal_id=p_proposal_id loop
+    -- REQ §13.101 b: one text per reader (variant + old -> new variables), never the whole WhatsApp text.
+    v_reader:=public.proposal_reader_vars(p_proposal_id,v_party.profile_id);
     perform public.enqueue_notification(v_party.profile_id,'proposal_received',v_prop.department_id,v_prop.week_start,
-      jsonb_build_object('newDepart',to_char((v_prop.payload->>'starts_at')::timestamptz at time zone 'Asia/Jerusalem','HH24:MI'),
-        'newReturn',to_char((v_prop.payload->>'ends_at')::timestamptz at time zone 'Asia/Jerusalem','HH24:MI')),
-      jsonb_build_object('proposal_id',p_proposal_id,'url','/p/'||(v_party_tokens->>v_party.profile_id::text)),
+      coalesce(v_reader->'vars','{}'::jsonb),
+      jsonb_build_object('proposal_id',p_proposal_id,'url','/p/'||(v_party_tokens->>v_party.profile_id::text),'variant',v_reader->>'variant'),
       format('proposal_received:%s:%s',p_proposal_id,v_party.profile_id));
   end loop;
   return jsonb_build_object('proposal_token',v_proposal_token,'party_tokens',v_party_tokens);
@@ -9733,6 +10511,108 @@ $$;
 ALTER FUNCTION "public"."set_request_trip_type"("p_request_id" "uuid", "p_trip_type" "public"."trip_type", "p_expected_version" integer) OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."set_ride_driver"("p_ride_id" "uuid", "p_driver_id" "uuid", "p_expected_version" integer) RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  r public.rides%rowtype; v_actor uuid := (select auth.uid()); v_by text; v_driver_name text; v_car text;
+  v_route text; v_day text; v_depart text; v_ret text; p record; v_notified uuid[] := '{}';
+begin
+  select * into r from public.rides where id = p_ride_id for update;
+  if not found or r.status = 'cancelled' then raise exception 'ride_not_found' using errcode = 'P0001'; end if;
+  if not public.can_manage_week(r.department_id, r.week_start) then raise exception 'not_authorized' using errcode = 'P0001'; end if;
+  if p_expected_version is null or r.version <> p_expected_version then perform public.raise_stale_version(); end if;
+  if exists (select 1 from public.weeks where department_id = r.department_id and week_start = r.week_start and phase = 'archived') then
+    raise exception 'week_archived' using errcode = 'P0001';
+  end if;
+  if r.ends_at <= now() then raise exception 'ride_in_past' using errcode = 'P0001'; end if;
+  if exists (select 1 from public.cars c where c.id = r.car_id and c.type = 'temporary') then
+    raise exception 'private_car_owner_only' using errcode = 'P0001';
+  end if;
+
+  select full_name into v_by from public.profiles where id = v_actor;
+  select name into v_car from public.cars where id = r.car_id;
+  v_route := public.ride_notice_route(r.id);
+  v_day := public.day_date_label(r.starts_at);
+  v_depart := to_char(r.starts_at at time zone 'Asia/Jerusalem', 'HH24:MI');
+  v_ret := to_char(r.ends_at at time zone 'Asia/Jerusalem', 'HH24:MI');
+  perform set_config('app.audit_reason', 'set_ride_driver', true);
+
+  if p_driver_id is null then
+    -- back to needs-driver: only a volunteer driver (no request of their own on the ride) can be taken off
+    if r.needs_driver or r.driver_id is null
+       or not exists (select 1 from public.ride_requests where ride_id = r.id)
+       or exists (select 1 from public.ride_requests where ride_id = r.id and role = 'driver') then
+      raise exception 'ride_driver_not_assignable' using errcode = 'P0001';
+    end if;
+    update public.rides set driver_id = null, needs_driver = true, is_pinned = true, pin_reason = 'MISSING_DRIVER',
+      status = case when status = 'draft' then 'draft'::public.ride_status else 'flagged'::public.ride_status end,
+      flag_reason = 'NEEDS_DRIVER' where id = r.id;
+    perform public.assert_ride_driver(r.id);
+    for p in
+      select q.requester_id as pid from public.ride_requests rr join public.requests q on q.id = rr.request_id where rr.ride_id = r.id
+      union select rp.person_id from public.ride_passengers rp where rp.ride_id = r.id and rp.person_id is not null
+    loop
+      continue when p.pid = v_actor;
+      perform public.enqueue_notification(p.pid, 'outcome_changed', r.department_id, r.week_start,
+        jsonb_build_object('byName', coalesce(v_by, ''), 'route', v_route, 'day', v_day, 'car', coalesce(v_car, '')),
+        jsonb_build_object('variant', 'driver_unassigned', 'ride_id', r.id),
+        format('driver_unassigned:%s:%s:%s', r.id, r.version, p.pid));
+    end loop;
+    return jsonb_build_object('ride_id', r.id, 'needs_driver', true);
+  end if;
+
+  if not r.needs_driver then raise exception 'ride_driver_not_assignable' using errcode = 'P0001'; end if;
+  if not exists (
+    select 1 from public.profiles pr join public.department_members dm on dm.profile_id = pr.id
+    where pr.id = p_driver_id and pr.approval_status = 'approved' and dm.department_id = r.department_id and dm.removed_at is null
+  ) then raise exception 'driver_not_member' using errcode = 'P0001'; end if;
+  if exists (select 1 from public.profiles where id = p_driver_id and does_not_drive) then
+    raise exception 'non_driver_cannot_drive' using errcode = 'P0001';
+  end if;
+  perform pg_advisory_xact_lock(hashtextextended('ride-driver:' || p_driver_id::text, 0));
+  if exists (select 1 from public.rides x where x.driver_id = p_driver_id and x.id <> r.id and x.status <> 'cancelled'
+             and tstzrange(x.starts_at, x.ends_at, '[)') && tstzrange(r.starts_at, r.ends_at, '[)')) then
+    raise exception 'driver_already_busy' using errcode = 'P0001';
+  end if;
+
+  update public.rides set driver_id = p_driver_id, needs_driver = false,
+    status = case when status = 'flagged' and flag_reason = 'NEEDS_DRIVER' then 'confirmed'::public.ride_status else status end,
+    flag_reason = case when flag_reason = 'NEEDS_DRIVER' then null else flag_reason end
+  where id = r.id;
+  perform public.assert_ride_driver(r.id);
+  perform public.assert_ride_seats_fit(r.id);
+  perform public.assert_car_chain(r.car_id, r.week_start);
+  perform set_config('app.system_status_transition', 'on', true);
+  update public.requests set status = 'merged', status_reason = 'DRIVER_ASSIGNED'
+  where id in (select request_id from public.ride_requests where ride_id = r.id) and status in ('waitlisted', 'submitted', 'proposed');
+  perform set_config('app.system_status_transition', 'off', true);
+
+  select full_name into v_driver_name from public.profiles where id = p_driver_id;
+  if p_driver_id is distinct from v_actor then
+    perform public.enqueue_notification(p_driver_id, 'outcome_changed', r.department_id, r.week_start,
+      jsonb_build_object('byName', coalesce(v_by, ''), 'route', v_route, 'day', v_day, 'depart', v_depart, 'return', v_ret, 'car', coalesce(v_car, '')),
+      jsonb_build_object('variant', 'driver_assigned', 'ride_id', r.id),
+      format('driver_assigned:%s:%s:%s', r.id, r.version, p_driver_id));
+  end if;
+  for p in
+    select q.requester_id as pid from public.ride_requests rr join public.requests q on q.id = rr.request_id where rr.ride_id = r.id
+    union select rp.person_id from public.ride_passengers rp where rp.ride_id = r.id and rp.person_id is not null
+  loop
+    continue when p.pid = p_driver_id or p.pid = v_actor;
+    perform public.enqueue_notification(p.pid, 'outcome_changed', r.department_id, r.week_start,
+      jsonb_build_object('driverName', coalesce(v_driver_name, ''), 'route', v_route, 'day', v_day, 'car', coalesce(v_car, '')),
+      jsonb_build_object('variant', 'driver_assigned_passenger', 'ride_id', r.id),
+      format('driver_assigned_passenger:%s:%s:%s', r.id, r.version, p.pid));
+  end loop;
+  return jsonb_build_object('ride_id', r.id, 'driver_id', p_driver_id, 'needs_driver', false);
+end $$;
+
+
+ALTER FUNCTION "public"."set_ride_driver"("p_ride_id" "uuid", "p_driver_id" "uuid", "p_expected_version" integer) OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."set_ride_passengers"("p_ride_id" "uuid", "p_expected_version" integer, "p_passengers" "jsonb") RETURNS "void"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -10027,7 +10907,7 @@ declare
   v_id uuid;
   v_chosen_names text;
   v_day text; v_depart text; v_return text;
-  m record; v_sadran uuid; v_variant text;
+  m record; v_sadran uuid; v_variant text; v_lug int;
 begin
   select * into g from public.waitlist_groups where id = p_group_id for update;
   if g.id is null then raise exception 'waitlist_group_not_found' using errcode = 'P0001'; end if;
@@ -10058,11 +10938,25 @@ begin
     into v_starts, v_ends, v_adults, v_child_seats, v_boosters
   from public.requests q where q.id = any(p_request_ids);
 
-  if v_preferred is not null then
+  select count(*) filter (where q.has_luggage) into v_lug from public.requests q where q.id = any(p_request_ids);
+
+  -- REQ §13.101 (i): a car freed for this group (held offer) is the first choice.
+  select c.* into v_car from public.cars c join public.freed_slot_offers fo on fo.car_id = c.id
+  where fo.group_id = g.id and fo.status = 'open'
+    and c.status = 'active' and c.type = 'shared'
+    and public.car_fits(c.id, v_adults, v_child_seats, v_boosters)
+    and public.car_takes_luggage(c.id, v_lug)
+    and public.car_location_at(c.id, v_starts) = v_home
+    and not exists (select 1 from public.rides r where r.car_id = c.id and r.status <> 'cancelled'
+      and tstzrange(r.starts_at, r.blocked_until, '[)') && tstzrange(v_starts, v_ends + v_turnaround, '[)'))
+  order by c.id limit 1;
+
+  if v_car.id is null and v_preferred is not null then
     select c.* into v_car from public.cars c
     where c.id = v_preferred and c.department_id = g.department_id
       and c.status = 'active' and c.type = 'shared'
       and public.car_fits(c.id, v_adults, v_child_seats, v_boosters)
+      and public.car_takes_luggage(c.id, v_lug)
       and public.car_location_at(c.id, v_starts) = v_home
       and not exists (select 1 from public.rides r where r.car_id = c.id and r.status <> 'cancelled'
         and tstzrange(r.starts_at, r.blocked_until, '[)') && tstzrange(v_starts, v_ends + v_turnaround, '[)'));
@@ -10071,6 +10965,7 @@ begin
     select c.* into v_car from public.cars c
     where c.department_id = g.department_id and c.status = 'active' and c.type = 'shared'
       and public.car_fits(c.id, v_adults, v_child_seats, v_boosters)
+      and public.car_takes_luggage(c.id, v_lug)
       and public.car_location_at(c.id, v_starts) = v_home
       and not exists (select 1 from public.rides r where r.car_id = c.id and r.status <> 'cancelled'
         and tstzrange(r.starts_at, r.blocked_until, '[)') && tstzrange(v_starts, v_ends + v_turnaround, '[)'))
@@ -10279,6 +11174,11 @@ declare
   v_eligible_driver uuid;
   v_kept timestamptz; v_prev_return timestamptz; v_prev_kept timestamptz;
   v_own_overlap boolean := false;
+  v_published_edit boolean := false;
+  v_confirm boolean := coalesce((payload ->> 'confirm_release')::boolean, false);
+  v_booking jsonb;
+  v_probe jsonb;
+  v_overlaps jsonb := '[]'::jsonb;
 begin
   if v_requester_id <> v_actor then
     if not public.can_manage_week(v_department_id, v_week_start) then
@@ -10371,11 +11271,37 @@ begin
     if v_existing.series_id is not null or v_series_id is not null then
       raise exception 'series_edit_not_supported' using errcode = 'MDR02';
     end if;
-    if not v_can_manage and (v_week.phase not in ('open','solving') or now() > v_week.close_at or now() < v_week.open_at) then raise exception 'request_window_closed'; end if;
-    if v_existing.status in ('cancelled','withdrawn') or exists(select 1 from public.ride_requests rr join public.rides r on r.id=rr.ride_id where rr.request_id=v_request_id and r.status not in ('draft','cancelled')) then raise exception 'request_not_editable'; end if;
+    -- REQ §13.101 (f): on a published/live day the requester may edit their own request; the new
+    -- version is placed (or released to the waiting list after a confirmation). A closed, unpublished
+    -- day keeps request_window_closed (the member contacts the Sadran).
+    v_published_edit := v_week.phase in ('published', 'live') and v_requester_id = v_actor;
+    if v_published_edit then
+      if coalesce(v_existing.return_at, v_existing.depart_at) < now() then raise exception 'request_not_editable'; end if;
+    elsif not v_can_manage and (v_week.phase not in ('open','solving') or now() > v_week.close_at or now() < v_week.open_at) then raise exception 'request_window_closed'; end if;
+    if v_existing.status in ('cancelled','withdrawn') or (not v_published_edit and exists(select 1 from public.ride_requests rr join public.rides r on r.id=rr.ride_id where rr.request_id=v_request_id and r.status not in ('draft','cancelled'))) then raise exception 'request_not_editable'; end if;
     if not (payload ? 'expected_version') then perform public.raise_stale_version(); end if;
     if v_existing.version is distinct from (payload ->> 'expected_version')::int then
       perform public.raise_stale_version();
+    end if;
+    if v_published_edit then
+      v_booking := public.request_booking_info(v_request_id);
+      if (v_booking ->> 'has_booking')::boolean and not v_confirm then
+        -- Probe: run the whole edit (release + new placement) in a subtransaction. A clean move onto a
+        -- free car (nobody left behind) is kept; anything else is rolled back and the member is asked.
+        begin
+          v_probe := public.submit_request(payload || jsonb_build_object('confirm_release', true));
+          if coalesce(v_probe ->> 'status', '') = 'assigned' and not (v_booking ->> 'drives_others')::boolean then
+            return v_probe;
+          end if;
+          raise exception 'release_probe_rollback' using errcode = 'PXRP1';
+        exception when sqlstate 'PXRP1' then
+          null;
+        end;
+        -- would_place: the probe found a car (only asked because the member drives others).
+        return jsonb_build_object('needs_confirmation', 'release_to_waitlist',
+          'drives_others', (v_booking ->> 'drives_others')::boolean,
+          'would_place', coalesce(v_probe ->> 'status', '') = 'assigned');
+      end if;
     end if;
   end if;
 
@@ -10395,6 +11321,13 @@ begin
     v_request_id is not null or v_requester_id is distinct from v_actor or v_week.phase<>'live' or v_trip_shape='round_trip' or v_trip_type<>'drop_off' or v_join_ride_id is not null
   ) then raise exception 'invalid_quick_reservation';end if;
   if v_request_id is not null then perform public.release_request_draft_rides(v_request_id); end if;
+  if v_request_id is not null and v_published_edit and coalesce((v_booking ->> 'has_booking')::boolean, false) then
+    -- confirmed (or probed) release of the old booking; the request starts over as `submitted`.
+    perform public.release_request_booking(v_request_id);
+    perform set_config('app.system_status_transition', 'on', true);
+    update public.requests set status = 'submitted', status_reason = null where id = v_request_id;
+    perform set_config('app.system_status_transition', 'off', true);
+  end if;
 
   v_is_late := now() > v_week.close_at;
 
@@ -10453,7 +11386,7 @@ begin
     where id = v_request_id
     returning status into v_status;
 
-    if v_week.phase in ('solving','published') then
+    if v_week.phase in ('solving','published','live') then
       perform public.enqueue_notification(s.profile_id, 'request_changed', v_department_id, v_week_start,
         jsonb_build_object('requestId', v_request_id::text), jsonb_build_object('request_id', v_request_id),
         format('request_changed:%s:%s', v_request_id, now()))
@@ -10524,6 +11457,30 @@ begin
     v_own_overlap := true;
   end if;
 
+  -- REQ §13.101 (g): name the member's own overlapping requests/rides so the form can offer to cancel one.
+  if v_series_id is null then
+    select coalesce(jsonb_agg(x.o), '[]'::jsonb) into v_overlaps from (
+      select jsonb_build_object('request_id', y.request_id, 'ride_id', y.ride_id) as o from (
+        select q.id as request_id,
+               (select rr.ride_id from public.ride_requests rr join public.rides r on r.id = rr.ride_id
+                 where rr.request_id = q.id and r.status not in ('cancelled', 'draft') order by r.starts_at limit 1) as ride_id
+        from public.requests q
+        where q.requester_id = v_requester_id and q.id <> v_request_id and q.department_id = v_department_id
+          and q.status not in ('withdrawn','cancelled','denied','external')
+          and public.request_span(q.depart_at, q.return_at) && public.request_span(v_depart_at, v_return_at)
+        union
+        select (select rr.request_id from public.ride_requests rr join public.requests rq on rq.id = rr.request_id
+                 where rr.ride_id = r.id and rq.requester_id = v_requester_id order by rr.request_id limit 1), r.id
+        from public.rides r
+        where r.department_id = v_department_id and r.status not in ('cancelled', 'draft')
+          and (r.driver_id = v_requester_id
+               or exists (select 1 from public.ride_passengers rp where rp.ride_id = r.id and rp.person_id = v_requester_id))
+          and not exists (select 1 from public.ride_requests rr where rr.ride_id = r.id and rr.request_id = v_request_id)
+          and tstzrange(r.starts_at, r.ends_at, '[)') && public.request_span(v_depart_at, v_return_at)
+      ) y
+    ) x;
+  end if;
+
   -- Seat-fit warning (warn, never block).
   if not exists (
     select 1 from public.cars c join public.car_seat_configs csc on csc.car_id = c.id
@@ -10533,6 +11490,12 @@ begin
       and csc.boosters >= coalesce((payload ->> 'boosters')::smallint, 0)
   ) then
     v_warnings := v_warnings || '"NO_CAR_FITS_SEATS"'::jsonb;
+  end if;
+  -- REQ §13.101 (a): large luggage needs a car with a large trunk.
+  if coalesce((payload ->> 'has_luggage')::boolean, false) and not exists (
+    select 1 from public.cars c where c.department_id = v_department_id and c.status = 'active' and 'large_trunk' = any(c.features)
+  ) then
+    v_warnings := v_warnings || '"NO_CAR_FITS_LUGGAGE"'::jsonb;
   end if;
 
   -- "Ask to join" a temporary car: create + send the merge proposal straight to the owner (REQ §13.43).
@@ -10588,6 +11551,22 @@ begin
     v_auto_result := jsonb_build_object('status', 'waitlisted', 'reason', 'WAITLISTED_ONE_WAY');
   end if;
 
+  -- REQ §13.101 (f): an edited request on a published/live day that found no car goes to the waiting list.
+  if v_published_edit and v_request_id is not null and coalesce(v_auto_result ->> 'status', '') <> 'assigned' then
+    select status into v_status from public.requests where id = v_request_id;
+    if v_status is distinct from 'waitlisted' then
+      perform set_config('app.system_status_transition', 'on', true);
+      update public.requests set status = 'waitlisted', status_reason = 'WAITLISTED_EDITED' where id = v_request_id;
+      perform set_config('app.system_status_transition', 'off', true);
+      perform public.enqueue_notification(s.profile_id, 'waitlisted_request', v_department_id, v_week_start,
+        jsonb_build_object('requestId', v_request_id::text), jsonb_build_object('request_id', v_request_id),
+        format('waitlisted_request:%s', v_request_id))
+      from public.sadranim_of(v_department_id, v_week_start) as s(profile_id);
+      v_auto_result := coalesce(v_auto_result, '{}'::jsonb)
+        || jsonb_build_object('status', 'waitlisted', 'reason', coalesce(v_auto_result ->> 'reason', 'WAITLISTED_EDITED'));
+    end if;
+  end if;
+
   if v_is_late and coalesce(v_auto_result->>'status','') <> 'assigned' and coalesce(v_series_index, 1) = 1 then
     perform public.enqueue_notification(s.profile_id, 'late_request', v_department_id, v_week_start,
       jsonb_build_object('requestId', v_request_id::text), jsonb_build_object('request_id', v_request_id),
@@ -10595,7 +11574,7 @@ begin
     from public.sadranim_of(v_department_id, v_week_start) as s(profile_id);
   end if;
 
-  return jsonb_build_object('request_id', v_request_id, 'is_late', v_is_late, 'warnings', v_warnings)
+  return jsonb_build_object('request_id', v_request_id, 'is_late', v_is_late, 'warnings', v_warnings, 'overlaps', v_overlaps)
     || coalesce(v_auto_result, '{}'::jsonb);
 end;
 $$;
@@ -10933,6 +11912,7 @@ begin
     where c.id = v_req.preferred_car_id and c.department_id = v_req.department_id
       and c.status = 'active' and c.type = 'shared'
       and csc.adults >= v_req.adults and csc.child_seats >= v_req.child_seats and csc.boosters >= v_req.boosters
+      and (not v_req.has_luggage or 'large_trunk' = any(c.features))
       and public.car_location_at(c.id, v_req.depart_at) = v_req.origin_id
       and not exists (
         select 1 from public.rides r
@@ -10950,6 +11930,7 @@ begin
     join public.car_seat_configs csc on csc.car_id = c.id
     where c.department_id = v_req.department_id and c.status = 'active' and c.type = 'shared'
       and csc.adults >= v_req.adults and csc.child_seats >= v_req.child_seats and csc.boosters >= v_req.boosters
+      and (not v_req.has_luggage or 'large_trunk' = any(c.features))
       and public.car_location_at(c.id, v_req.depart_at) = v_req.origin_id
       and not exists (
         select 1 from public.rides r
@@ -11484,7 +12465,7 @@ CREATE OR REPLACE FUNCTION "public"."validate_proposal_payload"("_type" "public"
     LANGUAGE "sql" IMMUTABLE
     AS $$
   select case _type
-    when 'shift' then _payload ? 'depart_at' or _payload ? 'return_at' or _payload ? 'car_id'
+    when 'shift' then _payload ? 'series_span' or _payload ? 'depart_at' or _payload ? 'return_at' or _payload ? 'car_id'
       or _payload ? 'origin_id' or _payload ? 'origin_text'
       or _payload ? 'destination_id' or _payload ? 'destination_text' or _payload ? 'stops'
     when 'merge' then _payload ? 'ride_id' and _payload ? 'legs'
@@ -11731,6 +12712,53 @@ end $$;
 
 
 ALTER FUNCTION "public"."withdraw_all_requests"("p_department_id" "uuid", "p_week_start" "date") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."withdraw_duplicate_request"("p_request_id" "uuid", "p_expected_version" integer) RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_req public.requests%rowtype; v_actor uuid := (select auth.uid()); v_by text; v_prop uuid;
+begin
+  select * into v_req from public.requests where id = p_request_id for update;
+  if v_req.id is null then raise exception 'request_not_found' using errcode = 'P0001'; end if;
+  if not public.can_manage_week(v_req.department_id, v_req.week_start) then raise exception 'not_authorized' using errcode = 'P0001'; end if;
+  if p_expected_version is null or v_req.version <> p_expected_version then perform public.raise_stale_version(); end if;
+  if v_req.status in ('withdrawn', 'cancelled') then raise exception 'request_not_editable' using errcode = 'P0001'; end if;
+  if v_req.series_id is not null then raise exception 'series_edit_not_supported' using errcode = 'MDR02'; end if;
+  if exists (select 1 from public.weeks where department_id = v_req.department_id and week_start = v_req.week_start and phase = 'archived') then
+    raise exception 'week_archived' using errcode = 'P0001';
+  end if;
+  perform set_config('app.audit_reason', 'withdraw_duplicate_request', true);
+
+  for v_prop in
+    select p.id from public.proposals p
+    where p.status in ('draft', 'sent')
+      and (p.request_id = p_request_id or exists (select 1 from public.proposal_parties pp where pp.proposal_id = p.id and pp.request_id = p_request_id))
+    for update
+  loop
+    update public.proposals set status = 'withdrawn' where id = v_prop;
+  end loop;
+
+  perform public.release_request_booking(p_request_id);
+  perform set_config('app.system_status_transition', 'on', true);
+  update public.requests set status = 'withdrawn', status_reason = 'DUPLICATE_WITHDRAWN' where id = p_request_id;
+  perform set_config('app.system_status_transition', 'off', true);
+
+  select full_name into v_by from public.profiles where id = v_actor;
+  if v_req.requester_id is distinct from v_actor then
+    perform public.enqueue_notification(v_req.requester_id, 'outcome_changed', v_req.department_id, v_req.week_start,
+      jsonb_build_object('byName', coalesce(v_by, ''), 'route', coalesce(public.request_route_label(p_request_id), ''),
+        'day', public.day_date_label(coalesce(v_req.depart_at, v_req.return_at))),
+      jsonb_build_object('variant', 'duplicate_withdrawn', 'request_id', p_request_id, 'url', '/my'),
+      format('duplicate_withdrawn:%s:%s', p_request_id, v_req.version));
+  end if;
+  return jsonb_build_object('request_id', p_request_id, 'status', 'withdrawn', 'status_reason', 'DUPLICATE_WITHDRAWN');
+end $$;
+
+
+ALTER FUNCTION "public"."withdraw_duplicate_request"("p_request_id" "uuid", "p_expected_version" integer) OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."withdraw_freed_slot_claim"("p_offer_id" "uuid", "p_request_id" "uuid") RETURNS "void"
@@ -12154,6 +13182,7 @@ CREATE TABLE IF NOT EXISTS "public"."freed_slot_offers" (
     "resolved_at" timestamp with time zone,
     "resolved_by" "uuid",
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "group_id" "uuid",
     CONSTRAINT "freed_slot_offers_order_ck" CHECK (("ends_at" > "starts_at"))
 );
 
@@ -13966,6 +14995,10 @@ CREATE INDEX "freed_slot_offers_dept_week_idx" ON "public"."freed_slot_offers" U
 
 
 
+CREATE INDEX "freed_slot_offers_group_idx" ON "public"."freed_slot_offers" USING "btree" ("group_id") WHERE ("group_id" IS NOT NULL);
+
+
+
 CREATE UNIQUE INDEX "freed_slot_offers_one_live_per_ride_idx" ON "public"."freed_slot_offers" USING "btree" ("cancelled_ride_id") WHERE ("status" = ANY (ARRAY['open'::"public"."freed_offer_status", 'pending_approval'::"public"."freed_offer_status"]));
 
 
@@ -15113,6 +16146,10 @@ CREATE OR REPLACE TRIGGER "waitlist_group_membership_sync" AFTER UPDATE OF "stat
 
 
 
+CREATE OR REPLACE TRIGGER "waitlist_groups_release_freed_offers" AFTER UPDATE OF "status" ON "public"."waitlist_groups" FOR EACH ROW WHEN ((("old"."status" = 'open'::"public"."waitlist_group_status") AND ("new"."status" <> 'open'::"public"."waitlist_group_status"))) EXECUTE FUNCTION "public"."freed_offers_after_group_closed"();
+
+
+
 CREATE OR REPLACE TRIGGER "weeks_guard_published_version" BEFORE UPDATE OF "published_version_id" ON "public"."weeks" FOR EACH ROW EXECUTE FUNCTION "public"."weeks_guard_published_version"();
 
 
@@ -15313,6 +16350,11 @@ ALTER TABLE ONLY "public"."freed_slot_offers"
 
 ALTER TABLE ONLY "public"."freed_slot_offers"
     ADD CONSTRAINT "freed_slot_offers_car_id_fkey" FOREIGN KEY ("car_id") REFERENCES "public"."cars"("id");
+
+
+
+ALTER TABLE ONLY "public"."freed_slot_offers"
+    ADD CONSTRAINT "freed_slot_offers_group_id_fkey" FOREIGN KEY ("group_id") REFERENCES "public"."waitlist_groups"("id") ON DELETE SET NULL;
 
 
 
@@ -16536,6 +17578,11 @@ GRANT USAGE ON SCHEMA "public" TO "service_role";
 
 
 
+REVOKE ALL ON FUNCTION "public"."_apply_series_span"("p_request_id" "uuid", "p_span" "jsonb", "p_car_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_apply_series_span"("p_request_id" "uuid", "p_span" "jsonb", "p_car_id" "uuid") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."_assert_shift_places"("p_request_id" "uuid", "p_department_id" "uuid", "p_payload" "jsonb") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_assert_shift_places"("p_request_id" "uuid", "p_department_id" "uuid", "p_payload" "jsonb") TO "service_role";
 
@@ -16596,6 +17643,16 @@ GRANT ALL ON FUNCTION "public"."_day_car_swap_split_series"("p_series_id" "uuid"
 
 
 
+REVOKE ALL ON FUNCTION "public"."_frag"("_key" "text", "_vars" "jsonb") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_frag"("_key" "text", "_vars" "jsonb") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_hhmm"("_at" timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_hhmm"("_at" timestamp with time zone) TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."_merge_check"("p_ride_id" "uuid", "p_request_id" "uuid", "p_leg" "public"."ride_leg") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_merge_check"("p_ride_id" "uuid", "p_request_id" "uuid", "p_leg" "public"."ride_leg") TO "service_role";
 
@@ -16633,6 +17690,11 @@ GRANT ALL ON FUNCTION "public"."_route_hop_minutes"("p_from" "uuid", "p_to" "uui
 
 REVOKE ALL ON FUNCTION "public"."_shift_place_on_car"("p_proposal_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_shift_place_on_car"("p_proposal_id" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_time_change_line"("_old_start" timestamp with time zone, "_old_end" timestamp with time zone, "_new_start" timestamp with time zone, "_new_end" timestamp with time zone, "_day_level" boolean) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_time_change_line"("_old_start" timestamp with time zone, "_old_end" timestamp with time zone, "_new_start" timestamp with time zone, "_new_end" timestamp with time zone, "_day_level" boolean) TO "service_role";
 
 
 
@@ -16865,6 +17927,11 @@ GRANT ALL ON FUNCTION "public"."car_next_ride_origin"("_car" "uuid", "_after" ti
 REVOKE ALL ON FUNCTION "public"."car_start_locations"("p_department_id" "uuid", "p_week_start" "date") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."car_start_locations"("p_department_id" "uuid", "p_week_start" "date") TO "service_role";
 GRANT ALL ON FUNCTION "public"."car_start_locations"("p_department_id" "uuid", "p_week_start" "date") TO "authenticated";
+
+
+
+REVOKE ALL ON FUNCTION "public"."car_takes_luggage"("_car" "uuid", "_count" integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."car_takes_luggage"("_car" "uuid", "_count" integer) TO "service_role";
 
 
 
@@ -17108,8 +18175,23 @@ GRANT ALL ON FUNCTION "public"."form_waitlist_groups"("p_department_id" "uuid", 
 
 
 
+REVOKE ALL ON FUNCTION "public"."freed_offer_group"("_offer" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."freed_offer_group"("_offer" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."freed_offers_after_group_closed"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."freed_offers_after_group_closed"() TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."freed_slot_candidates"("_offer" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."freed_slot_candidates"("_offer" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."freed_slot_priority_requests"("_offer" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."freed_slot_priority_requests"("_offer" "uuid") TO "service_role";
 
 
 
@@ -17160,6 +18242,11 @@ GRANT ALL ON FUNCTION "public"."housekeeping"("p_now" timestamp with time zone) 
 REVOKE ALL ON FUNCTION "public"."initialize_department_catalogs"("p_department_id" "uuid", "p_source_department_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."initialize_department_catalogs"("p_department_id" "uuid", "p_source_department_id" "uuid") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."initialize_department_catalogs"("p_department_id" "uuid", "p_source_department_id" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."invoke_on_ride_cancelled"("_offer" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."invoke_on_ride_cancelled"("_offer" "uuid") TO "service_role";
 
 
 
@@ -17364,6 +18451,12 @@ GRANT ALL ON FUNCTION "public"."phone_of"("_profile" "uuid") TO "service_role";
 
 
 
+REVOKE ALL ON FUNCTION "public"."place_on_own_car"("p_request_id" "uuid", "p_car_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."place_on_own_car"("p_request_id" "uuid", "p_car_id" "uuid") TO "service_role";
+GRANT ALL ON FUNCTION "public"."place_on_own_car"("p_request_id" "uuid", "p_car_id" "uuid") TO "authenticated";
+
+
+
 REVOKE ALL ON FUNCTION "public"."place_request_on_car"("p_request_id" "uuid", "p_car_id" "uuid", "p_manual" boolean, "p_actor" "uuid", "p_named_driver" "uuid", "p_dep" timestamp with time zone, "p_ret" timestamp with time zone, "p_reason" "text") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."place_request_on_car"("p_request_id" "uuid", "p_car_id" "uuid", "p_manual" boolean, "p_actor" "uuid", "p_named_driver" "uuid", "p_dep" timestamp with time zone, "p_ret" timestamp with time zone, "p_reason" "text") TO "service_role";
 
@@ -17453,6 +18546,17 @@ GRANT ALL ON FUNCTION "public"."proposal_parties_roll_up"() TO "service_role";
 
 
 
+REVOKE ALL ON FUNCTION "public"."proposal_party_texts"("p_proposal_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."proposal_party_texts"("p_proposal_id" "uuid") TO "service_role";
+GRANT ALL ON FUNCTION "public"."proposal_party_texts"("p_proposal_id" "uuid") TO "authenticated";
+
+
+
+REVOKE ALL ON FUNCTION "public"."proposal_reader_vars"("p_proposal_id" "uuid", "p_profile_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."proposal_reader_vars"("p_proposal_id" "uuid", "p_profile_id" "uuid") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."proposal_system_withdraw"("p_proposal_id" "uuid", "p_variant" "text") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."proposal_system_withdraw"("p_proposal_id" "uuid", "p_variant" "text") TO "service_role";
 
@@ -17526,6 +18630,11 @@ GRANT ALL ON FUNCTION "public"."register_push_subscription"("p_endpoint" "text",
 
 
 
+REVOKE ALL ON FUNCTION "public"."release_request_booking"("p_request_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."release_request_booking"("p_request_id" "uuid") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."release_request_draft_rides"("p_request_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."release_request_draft_rides"("p_request_id" "uuid") TO "service_role";
 
@@ -17563,6 +18672,11 @@ GRANT ALL ON FUNCTION "public"."report_car_issue"("_car_id" "uuid", "_category" 
 REVOKE ALL ON FUNCTION "public"."report_car_issue_unsafe_to_maintenance"("p_issue_id" "uuid", "p_hours" integer) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."report_car_issue_unsafe_to_maintenance"("p_issue_id" "uuid", "p_hours" integer) TO "authenticated";
 GRANT ALL ON FUNCTION "public"."report_car_issue_unsafe_to_maintenance"("p_issue_id" "uuid", "p_hours" integer) TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."request_booking_info"("p_request_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."request_booking_info"("p_request_id" "uuid") TO "service_role";
 
 
 
@@ -17691,6 +18805,12 @@ GRANT ALL ON FUNCTION "public"."respond_ride_change_before_planning"("p_change_i
 
 
 
+REVOKE ALL ON FUNCTION "public"."restore_duplicate_request"("p_request_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."restore_duplicate_request"("p_request_id" "uuid") TO "service_role";
+GRANT ALL ON FUNCTION "public"."restore_duplicate_request"("p_request_id" "uuid") TO "authenticated";
+
+
+
 REVOKE ALL ON FUNCTION "public"."resume_request_template"("p_template_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."resume_request_template"("p_template_id" "uuid") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."resume_request_template"("p_template_id" "uuid") TO "service_role";
@@ -17716,6 +18836,21 @@ GRANT ALL ON FUNCTION "public"."ride_is_reservation"("p_ride_id" "uuid") TO "ser
 
 REVOKE ALL ON FUNCTION "public"."ride_merge_fingerprint"("p_ride_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."ride_merge_fingerprint"("p_ride_id" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."ride_notice_destination"("p_ride_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."ride_notice_destination"("p_ride_id" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."ride_notice_request"("p_ride_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."ride_notice_request"("p_ride_id" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."ride_notice_route"("p_ride_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."ride_notice_route"("p_ride_id" "uuid") TO "service_role";
 
 
 
@@ -17901,6 +19036,12 @@ GRANT ALL ON FUNCTION "public"."set_request_companions"("p_request_id" "uuid", "
 REVOKE ALL ON FUNCTION "public"."set_request_trip_type"("p_request_id" "uuid", "p_trip_type" "public"."trip_type", "p_expected_version" integer) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."set_request_trip_type"("p_request_id" "uuid", "p_trip_type" "public"."trip_type", "p_expected_version" integer) TO "service_role";
 GRANT ALL ON FUNCTION "public"."set_request_trip_type"("p_request_id" "uuid", "p_trip_type" "public"."trip_type", "p_expected_version" integer) TO "authenticated";
+
+
+
+REVOKE ALL ON FUNCTION "public"."set_ride_driver"("p_ride_id" "uuid", "p_driver_id" "uuid", "p_expected_version" integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."set_ride_driver"("p_ride_id" "uuid", "p_driver_id" "uuid", "p_expected_version" integer) TO "service_role";
+GRANT ALL ON FUNCTION "public"."set_ride_driver"("p_ride_id" "uuid", "p_driver_id" "uuid", "p_expected_version" integer) TO "authenticated";
 
 
 
@@ -18106,6 +19247,12 @@ GRANT ALL ON FUNCTION "public"."weeks_phase_requires_published_version"() TO "se
 REVOKE ALL ON FUNCTION "public"."withdraw_all_requests"("p_department_id" "uuid", "p_week_start" "date") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."withdraw_all_requests"("p_department_id" "uuid", "p_week_start" "date") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."withdraw_all_requests"("p_department_id" "uuid", "p_week_start" "date") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."withdraw_duplicate_request"("p_request_id" "uuid", "p_expected_version" integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."withdraw_duplicate_request"("p_request_id" "uuid", "p_expected_version" integer) TO "service_role";
+GRANT ALL ON FUNCTION "public"."withdraw_duplicate_request"("p_request_id" "uuid", "p_expected_version" integer) TO "authenticated";
 
 
 

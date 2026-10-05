@@ -22,6 +22,7 @@ import { useProfile } from "@/features/auth/useProfile";
 import { ProposalSummary } from "@/features/proposals/components/ProposalSummary";
 import { fetchBoardRideById } from "@/features/siddur/api";
 import { he, t } from "@/i18n/he";
+import { fetchProposalPartyTexts } from "../../api";
 import { sadranKeys } from "../../keys";
 import { servedOf } from "../../solverRun";
 import { env } from "@/lib/env";
@@ -33,8 +34,9 @@ import { mergePayloadLeg, previewMerge } from "../../board/mergeProposal";
 import { useQuery } from "@tanstack/react-query";
 
 import { renderTemplate } from "../waLink";
-import { atTime, buildProposalPayload, resolveShiftTimes } from "../buildProposalPayload";
-import { PROPOSAL_TEMPLATE_VARIANT, combinedSummaryText, externalSuggestionFor, proposalPreviewText } from "../proposalText";
+import { atTime, buildProposalPayload, resolveShiftTimes, seriesSpanOf } from "../buildProposalPayload";
+import { seriesOriginalOf } from "../../board/draftInput";
+import { combinedSummaryText, proposalTemplateVariant, externalSuggestionFor, proposalPreviewText } from "../proposalText";
 import { WhatsappDialog } from "./WhatsappDialog";
 import {
   useApplyProposalMutation,
@@ -46,6 +48,7 @@ import {
   useProposalsForWeek,
   useRecordAnswerOnBehalfMutation,
   useSendProposalMutation,
+  useSeriesLegsQuery,
   useWeekRequestsWithNames,
   useWhatsappTemplates,
 } from "../../hooks";
@@ -123,6 +126,7 @@ export function ProposalComposerScreen({ departmentId, weekStart }: ProposalComp
     origin: request?.origin_resolved_name ?? request?.origin_text ?? null,
     originIsHome: !request?.origin_id ? !request?.origin_text : request.origin_id === homeDestinationId,
   });
+  const originAway = !!request?.origin_id && request.origin_id !== homeDestinationId;
 
   const hostRideQuery = useQuery({
     queryKey: sadranKeys.proposalHostRide(rideId),
@@ -184,15 +188,19 @@ export function ProposalComposerScreen({ departmentId, weekStart }: ProposalComp
   const newOriginName = destinationsQuery.data?.find((d) => d.id === originIdValue)?.name ?? "";
   const originCarName = carsQuery.data?.find((c) => c.id === originCarIdValue)?.name ?? "";
 
-  const variant = PROPOSAL_TEMPLATE_VARIANT[type];
+  const variant = proposalTemplateVariant(type, (currentProposal?.payload ?? prefill?.payload) as Record<string, unknown> | undefined, { hostHasDriver: !!hostRideQuery.data?.driver_id, originAway });
   const template = variant ? (templatesQuery.data ?? []).find((t) => t.variant === variant) : undefined;
   const effectiveReason = reasonInput.trim() || he.sadranProposal.defaultReason;
   const externalSuggestion = externalSuggestionFor(type, externalHint);
 
+  // REQ §13.101 j: a fewer-days shift states the series' original first/last day ("במקום").
+  const isSeriesSpan = type === "shift" && !!seriesSpanOf((currentProposal?.payload ?? prefill?.payload) as Record<string, unknown> | undefined);
+  const seriesLegsQuery = useSeriesLegsQuery(request?.series_id, isSeriesSpan);
   const textInput = {
     template,
     type,
     request,
+    seriesOriginal: isSeriesSpan ? seriesOriginalOf(seriesLegsQuery.data ?? []) : null,
     requesterName: contactsQuery.data?.find((c) => c.id === request?.requester_id)?.full_name,
     sadranName: profileQuery.data?.full_name ?? "",
     destinationName,
@@ -214,11 +222,19 @@ export function ProposalComposerScreen({ departmentId, weekStart }: ProposalComp
     } : null,
   };
   const combinedSummary = combinedSummaryText(textInput);
+  // REQ §13.101 b: a merge reaches the joiner, the host and the other passengers with one text each.
+  const partyTextsQuery = useQuery({
+    queryKey: [...sadranKeys.all, "proposalPartyTexts", proposalId ?? ""],
+    queryFn: () => fetchProposalPartyTexts(proposalId as string),
+    enabled: !!proposalId && type === "merge",
+    staleTime: 10_000,
+  });
+  const partyTexts = type === "merge" ? partyTextsQuery.data : undefined;
   const previewText = currentProposal?.reason_he ?? editedText ?? proposalPreviewText(textInput);
 
   const payload = buildProposalPayload({
     type, prefillPayload: prefill?.payload, request, rideId, proposedDepartAt, proposedReturnAt,
-    effectiveReason, externalHint,
+    effectiveReason, externalHint, originAway,
   });
 
   async function handleCreateAndSend() {
@@ -285,7 +301,7 @@ export function ProposalComposerScreen({ departmentId, weekStart }: ProposalComp
     const token = profileQuery.data?.id && proposalId ? sentTokensByActorAndProposal.get(`${profileQuery.data.id}:${proposalId}`)?.[contact.id] : undefined;
     if (!token || !contact.phone) return null;
     const link = `${env.VITE_APP_URL}/p/${token}`;
-    const text = renderTemplate(previewText, { link });
+    const text = renderTemplate(partyTexts?.[contact.id] ?? previewText, { link });
     return (
       <WhatsappDialog key={contact.id} name={contact.full_name} phone={contact.phone} message={text} />
     );
@@ -402,7 +418,7 @@ export function ProposalComposerScreen({ departmentId, weekStart }: ProposalComp
               className="w-full"
               data-testid="composer-send"
               onClick={handleCreateAndSend}
-              disabled={(!proposalId && (!variant || !payload || (type === "merge" && !hostRideQuery.data?.driver_id))) || busy || !proposalsForWeekQuery.isSuccess || proposalsForWeekQuery.isFetching || (!!pendingProposal && (!pendingPartiesQuery.isSuccess || pendingHasAnswer))}
+              disabled={(!proposalId && (!variant || !payload || (type === "merge" && !hostRideQuery.data))) || busy || !proposalsForWeekQuery.isSuccess || proposalsForWeekQuery.isFetching || (!!pendingProposal && (!pendingPartiesQuery.isSuccess || pendingHasAnswer))}
             >
               {pendingProposal ? he.sadranProposal.replaceAndSend : proposalId ? he.sadranProposal.retrySend : t("action.propose")}
             </Button>
@@ -412,7 +428,7 @@ export function ProposalComposerScreen({ departmentId, weekStart }: ProposalComp
                 variant="outline"
                 data-testid="composer-save-draft"
                 onClick={handleSaveDraft}
-                disabled={!variant || !payload || (type === "merge" && !hostRideQuery.data?.driver_id) || busy}
+                disabled={!variant || !payload || (type === "merge" && !hostRideQuery.data) || busy}
               >
                 {he.boardDrafts.saveDraft}
               </Button>

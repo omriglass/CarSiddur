@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import { he } from "../src/i18n/he";
-import { NEVO_DEPARTMENT_ID, serviceRoleClient, primeLanding } from "./helpers";
+import { NEVO_DEPARTMENT_ID, serviceRoleClient, primeLanding, submitRequestForm } from "./helpers";
 
 // Member-facing flows (stage 2a), on top of the seeded local stack
 // (supabase/seed.sql: member1@nevo.local is a member of department "נבו",
@@ -36,7 +36,7 @@ test.describe("member", { tag: ["@request-form", "@siddur"] }, () => {
     // Ride type: first chip (סוג נסיעה row).
     await page.getByRole("radiogroup", { name: "סוג נסיעה" }).getByRole("radio").first().click();
 
-    await page.getByRole("button", { name: "הגש/י בקשה" }).click();
+    await submitRequestForm(page);
 
     // Post-submit navigates to `/my` (2026-09-16, REQ §13 item 91) instead of the old
     // `/requests` list; the open week just submitted into is `/my`'s currently displayed week.

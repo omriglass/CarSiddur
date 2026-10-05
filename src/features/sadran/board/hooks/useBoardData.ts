@@ -154,7 +154,15 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
     return best;
   }
 
-  const selectedDay = selectedDayOverride ?? computeDefaultDay();
+  // QU3: the computed default is latched once the week's data is in, so a later change in
+  // activity (a proposal sent, a drop) never moves the board off the day being worked on.
+  const [latchedDay, setLatchedDay] = useState<string | null>(null);
+  const defaultDay = computeDefaultDay();
+  const validLatchedDay = latchedDay && days.includes(latchedDay) ? latchedDay : null;
+  if (!selectedDayOverride && !validLatchedDay && ridesQuery.data && requestsQuery.data && days.length > 0) {
+    setLatchedDay(defaultDay);
+  }
+  const selectedDay = selectedDayOverride ?? validLatchedDay ?? defaultDay;
   const setSelectedDay = setSelectedDayOverride;
 
   // No default-selection effect: an unset override simply falls back to the
@@ -673,6 +681,7 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
       connected: connectedRideIds.has(r.id as string),
       guests: addedGuestsOf(r.id as string, withChildNames(servedOf(r), requestsQuery.data ?? [])),
       needsDriver: !!r.needs_driver,
+      luggage: servedOf(r).some((entry) => entry.luggage),
       tightSchedule: tightRideIds.has(r.id as string),
       shadowed: shadowedRideIds.has(r.id as string),
       conflict: conflictRideIds.has(r.id as string),

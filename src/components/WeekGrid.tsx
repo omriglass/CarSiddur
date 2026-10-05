@@ -2,6 +2,7 @@ import { ArrowLeftRight, CarFront, Pin, Clock3, UserRoundX, Star } from "lucide-
 import type { MouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { edgeScrollStep } from "@/components/dragAutoScroll";
 import { nextZoom } from "@/components/pinchZoom";
 import { formatMinutes } from "@/components/timeField15Format";
 import {
@@ -85,6 +86,8 @@ export interface WeekGridRide {
   /** The added people of a merged block, drawn as draggable chips (REQ §13.94 G10). */
   guests?: readonly WeekGridGuest[];
   needsDriver?: boolean;
+  /** A served request carries large luggage (REQ §13.100, 101 a): small "ציוד גדול" chip. */
+  luggage?: boolean;
   isMine?: boolean;
   highlighted?: boolean;
   tightSchedule?: boolean;
@@ -265,6 +268,8 @@ interface DragState {
   anchorClientX: number;
   anchorClientY: number;
   anchorRect: { top: number; height: number };
+  /** Scroll offset of the grid viewport at pointer-down, so auto-scroll during the drag still maps to the right time. */
+  anchorScrollTop: number;
   /** Set once the pointer has moved past the click/drag threshold. */
   confirmed: boolean;
   shiftMinutes: number;
@@ -350,6 +355,7 @@ export function WeekGrid({
   const scrollViewportRef = useRef<HTMLDivElement>(null);
   const lastInitialScroll = useRef<number | null>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
+  const dragRef = useRef<DragState | null>(null);
   const suppressClick = useRef(false);
   const [carDrag, setCarDrag] = useState<CarDragState | null>(null);
   const carDragRef = useRef<CarDragState | null>(null);
@@ -423,6 +429,38 @@ export function WeekGrid({
       el.removeEventListener("touchcancel", handleTouchEnd);
     };
   }, []);
+
+  // QU1: auto-scroll the grid while any drag (ride, car header, unmet-list item) is held near
+  // an edge of the viewport. The pointer is tracked at window level; a requestAnimationFrame loop
+  // scrolls and then re-evaluates the hover state with the same pointer position.
+  const moveRef = useRef<(event: PointerEvent) => void>(() => {});
+  const dragActive = !!drag?.confirmed || !!carDrag?.confirmed || !!externalDropTarget;
+  useEffect(() => {
+    if (!dragActive) return;
+    const el = scrollViewportRef.current;
+    if (!el) return;
+    let last: PointerEvent | null = null;
+    let rafId = 0;
+    const onMove = (e: PointerEvent) => { last = e; };
+    function tick() {
+      if (el && last) {
+        const rect = el.getBoundingClientRect();
+        const dx = edgeScrollStep(last.clientX, rect.left, rect.right);
+        const dy = edgeScrollStep(last.clientY, rect.top, rect.bottom);
+        if (dx || dy) {
+          el.scrollBy(dx, dy);
+          if (dragRef.current) moveRef.current(last);
+        }
+      }
+      rafId = requestAnimationFrame(tick);
+    }
+    window.addEventListener("pointermove", onMove);
+    rafId = requestAnimationFrame(tick);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      cancelAnimationFrame(rafId);
+    };
+  }, [dragActive]);
 
   function ridesFor(carId: string) {
     return rides.filter((r) => r.carId === carId);
@@ -572,8 +610,6 @@ export function WeekGrid({
    * always see the latest drag state, not whatever was captured in a stale
    * closure from the render that first attached them.
    */
-  const dragRef = useRef<DragState | null>(null);
-
   function finishDrag() {
     dragRef.current = null;
     setDrag(null);
@@ -645,7 +681,8 @@ export function WeekGrid({
   }
 
   function dragShift(current: DragState, clientY: number): number {
-    const shift = snapTimeShift((clientY - current.anchorClientY) / current.anchorRect.height * (dayEndMinutes - dayStartMinutes));
+    const scrolled = (scrollViewportRef.current?.scrollTop ?? current.anchorScrollTop) - current.anchorScrollTop;
+    const shift = snapTimeShift((clientY - current.anchorClientY + scrolled) / current.anchorRect.height * (dayEndMinutes - dayStartMinutes));
     if (current.kind === "resize-end" && current.originEndMinutes + shift >= 1439 && dayEndMinutes === 1440) {
       return 1439 - current.originEndMinutes;
     }
@@ -674,6 +711,7 @@ export function WeekGrid({
       anchorClientX: event.clientX,
       anchorClientY: event.clientY,
       anchorRect: colRect,
+      anchorScrollTop: scrollViewportRef.current?.scrollTop ?? 0,
       confirmed: false,
       shiftMinutes: 0,
       hoverCarId: ride.carId,
@@ -685,6 +723,8 @@ export function WeekGrid({
     window.addEventListener("pointerup", handleWindowUp);
     window.addEventListener("pointercancel", handleWindowCancel);
   }
+
+  useEffect(() => { moveRef.current = handleWindowMove; });
 
   const draggedRide = drag ? rideById.get(drag.rideId) : undefined;
   const rawPreview = drag?.confirmed && draggedRide && drag.hoverCarId
@@ -702,7 +742,7 @@ export function WeekGrid({
   const hasDiscussionLane = discussionBlocks.length > 0;
   const discussionColIndex = allCars.length + 2;
   const gridTemplateRows = `minmax(${HEADER_ROW_HEIGHT_PX}px, auto) repeat(${hours.length}, ${HOUR_ROW_HEIGHT_PX}px)`;
-  const gridTemplateColumns = `${HOUR_COL_WIDTH_PX}px repeat(${allCars.length}, ${CAR_COL_WIDTH_PX}px)${hasDiscussionLane ? ` ${CAR_COL_WIDTH_PX}px` : ""}`;
+  const gridTemplateColumns = `${HOUR_COL_WIDTH_PX}px repeat(${allCars.length}, minmax(${CAR_COL_WIDTH_PX}px, 1fr))${hasDiscussionLane ? ` minmax(${CAR_COL_WIDTH_PX}px, 1fr)` : ""}`;
 
   function Column({ car, colIndex }: { car: WeekGridCar; colIndex: number }) {
     const isDragHoverTarget = drag?.confirmed && drag.hoverCarId === car.id;
@@ -842,9 +882,10 @@ export function WeekGrid({
                   absolutely positioned outside the wrapper. */}
               <div className="sticky z-[1] flex w-full flex-col" style={{ top: HEADER_ROW_HEIGHT_PX }}>
               {ride.guests?.length ? <GuestChips guests={ride.guests} enabled={dragEnabled && !!onGuestDrop} resolveTarget={guestTargetAt} onHover={onGuestHover} onDrop={onGuestDrop} /> : null}
-              {(ride.isMine || ride.needsDriver || ride.tightSchedule || ride.chainBrokenWarning || ride.draft || ride.merged || ride.connected) ? <span className="flex w-full flex-wrap gap-1 px-1.5 pt-1 text-[10px] leading-tight">
+              {(ride.isMine || ride.needsDriver || ride.tightSchedule || ride.chainBrokenWarning || ride.draft || ride.merged || ride.connected || ride.luggage) ? <span className="flex w-full flex-wrap gap-1 px-1.5 pt-1 text-[10px] leading-tight">
                 {ride.draft ? <span className="rounded-sm bg-primary px-1 font-semibold text-primary-foreground" data-testid="draft-tag">{he.boardDrafts.tag}</span> : null}
                 {ride.merged ? <span className="rounded-sm bg-foreground/10 px-1 font-medium" data-testid="merged-marker">{he.mergedRide.marker}</span> : null}
+                {ride.luggage ? <span className="rounded-sm bg-foreground/10 px-1 font-medium" data-testid="luggage-marker">{he.request.luggageChip}</span> : null}
                 {ride.connected ? <span className="rounded-sm bg-foreground/10 px-1 font-medium" data-testid="connected-marker">{he.connectedPair.marker}</span> : null}
                 {ride.isMine ? <span className={cn("flex items-center gap-1 font-bold", ride.needsDriver ? "text-destructive" : "text-foreground")}><Star className="size-3 shrink-0 fill-current" aria-hidden="true" />{he.siddur.myRide}</span> : null}
                 {ride.needsDriver ? <span className="flex items-center gap-1 font-semibold text-destructive"><UserRoundX className="size-3 shrink-0" aria-hidden="true" />{he.boardCoordination.needsDriver}</span> : null}
@@ -897,12 +938,12 @@ export function WeekGrid({
   return (
     <div
       ref={scrollViewportRef}
-      className="min-w-0 max-h-[70dvh] overflow-auto rounded-md border shadow-card"
-      style={{ touchAction: "pan-x pan-y" }}
+      className={cn("min-w-0 max-h-[70dvh] overflow-auto rounded-md border shadow-card", (dragActive || dragEnabled) && "select-none")}
+      style={{ touchAction: "pan-x pan-y", scrollSnapType: "x proximity", scrollPaddingInlineStart: HOUR_COL_WIDTH_PX * zoom }}
       data-week-grid-scroll-viewport
     >
       <div className="grid" style={{ zoom, gridTemplateColumns, gridTemplateRows, minWidth: HOUR_COL_WIDTH_PX + (allCars.length + (hasDiscussionLane ? 1 : 0)) * CAR_COL_WIDTH_PX }}>
-        <div className="sticky start-0 top-0 z-30 border-b border-e bg-muted/70 shadow-[0_2px_6px_-2px_hsl(var(--foreground)/0.12)]" style={{ gridColumn: 1, gridRow: 1 }} />
+        <div className="sticky start-0 top-0 z-30 border-b border-e bg-muted shadow-[0_2px_6px_-2px_hsl(var(--foreground)/0.12)]" style={{ gridColumn: 1, gridRow: 1 }} />
         {allCars.map((car, i) => {
           const swappable = canSwapCars && !!onCarSwap && car.group !== "phantom";
           const isCarDragSource = swappable && carDrag?.confirmed && carDrag.carId === car.id;
@@ -919,7 +960,7 @@ export function WeekGrid({
               isCarDragSource && "opacity-40",
               isCarDropHover && "bg-primary/10 ring-2 ring-inset ring-primary",
             )}
-            style={{ gridColumn: i + 2, gridRow: 1 }}
+            style={{ gridColumn: i + 2, gridRow: 1, scrollSnapAlign: "start" }}
             onPointerDown={swappable ? (e) => beginCarPointerDown(car.id, e) : undefined}
           >
             <span className="flex min-w-0 items-start gap-1 font-medium leading-tight">
@@ -970,7 +1011,7 @@ export function WeekGrid({
         {hours.map((h, i) => (
           <div
             key={h}
-            className="sticky start-0 z-10 flex items-start justify-end border-b border-e bg-muted/70 px-1.5 pt-0.5 text-xs font-medium text-muted-foreground shadow-[2px_0_6px_-2px_hsl(var(--foreground)/0.12)]"
+            className="sticky start-0 z-10 flex items-start justify-end border-b border-e bg-muted px-1.5 pt-0.5 text-xs font-medium text-muted-foreground shadow-[2px_0_6px_-2px_hsl(var(--foreground)/0.12)]"
             style={{ gridColumn: 1, gridRow: i + 2 }}
           >
             <span dir="ltr">{formatMinutes(h * 60)}</span>

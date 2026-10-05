@@ -566,6 +566,7 @@ var TEMPLATES = {
   PLACED_NEEDS_DRIVER: "\u05E9\u05D5\u05D1\u05E5 \u05DC{car} \u05DC\u05DC\u05D0 \u05E0\u05D4\u05D2/\u05EA \u05E7\u05D1\u05D5\u05E2/\u05D4; \u05D3\u05E8\u05D5\u05E9/\u05D4 \u05DE\u05EA\u05E0\u05D3\u05D1/\u05EA \u05D0\u05D5 \u05D0\u05D5\u05E8\u05D7/\u05EA \u05E9\u05D9\u05E1\u05D9\u05E2/\u05EA\u05E1\u05D9\u05E2",
   PLACED_CHAUFFEUR_NO_RETURNER: "\u05E9\u05D5\u05D1\u05E5 \u05DC{car} \u05DB\u05D4\u05E1\u05E2\u05D4 \u05DC{dest} ({dep}\u2013{ret}): \u05DC\u05D0 \u05E0\u05DE\u05E6\u05D0/\u05D4 \u05DE\u05D9 \u05E9\u05DE\u05D7\u05D6\u05D9\u05E8/\u05D4 \u05D0\u05EA \u05D4\u05E8\u05DB\u05D1; \u05D3\u05E8\u05D5\u05E9/\u05D4 \u05E0\u05D4\u05D2/\u05EA \u05DE\u05EA\u05E0\u05D3\u05D1/\u05EA",
   // Unmet reasons
+  UNMET_NEEDS_LARGE_TRUNK: "\u05E6\u05E8\u05D9\u05DA \u05E8\u05DB\u05D1 \u05E2\u05DD \u05EA\u05D0 \u05DE\u05D8\u05E2\u05DF \u05D2\u05D3\u05D5\u05DC",
   UNMET_NO_CAR: "\u05D0\u05D9\u05DF \u05E8\u05DB\u05D1 \u05E4\u05E0\u05D5\u05D9 \u05D1\u05D7\u05DC\u05D5\u05DF \u05D4\u05DE\u05D1\u05D5\u05E7\u05E9; \u05D7\u05D5\u05E1\u05DE\u05D9\u05DD: {blockers}",
   UNMET_NO_RELAY_PARTNER: "\u05D0\u05D9\u05DF \u05DE\u05D9 \u05E9\u05D9\u05D7\u05D6\u05D9\u05E8/\u05D9\u05D1\u05D9\u05D0 \u05D0\u05EA \u05D4\u05E8\u05DB\u05D1 \u05DE{dest} \u05D1\u05D0\u05D5\u05EA\u05D5 \u05D9\u05D5\u05DD; \u05D4\u05E8\u05DB\u05D1 \u05D7\u05D9\u05D9\u05D1 \u05DC\u05D7\u05D6\u05D5\u05E8 \u05D4\u05D1\u05D9\u05EA\u05D4 \u05E2\u05D3 {dayEnd}",
   UNMET_NEEDS_DRIVER: "\u05D0\u05D9\u05DF \u05E0\u05E1\u05D9\u05E2\u05D4 \u05DE\u05EA\u05D0\u05D9\u05DE\u05D4 \u05DC\u05D4\u05E6\u05D8\u05E8\u05E3 \u05D0\u05DC\u05D9\u05D4; \u05D3\u05E8\u05D5\u05E9/\u05D4 \u05E0\u05D4\u05D2/\u05EA \u05DE\u05EA\u05E0\u05D3\u05D1/\u05EA \u05DC\u05D4\u05E1\u05E2\u05D4 \u05DC{dest} \u05D1-{dep}",
@@ -3072,7 +3073,8 @@ function changeOriginSuggestion(nr, ctx) {
 }
 
 // src/solver/live.ts
-function matchFreedSlot(input) {
+function matchFreedSlot(input, opts) {
+  const priority = new Set(opts?.priorityRequestIds ?? []);
   const candidates = input.candidates.filter(
     (r) => originIdOf(r, input.homeLocationId) === input.freedLocationId
   );
@@ -3115,6 +3117,9 @@ function matchFreedSlot(input) {
     });
   }
   results.sort((a, b) => {
+    const pa = priority.has(a.requestId) ? 0 : 1;
+    const pb = priority.has(b.requestId) ? 0 : 1;
+    if (pa !== pb) return pa - pb;
     if (a.score !== b.score) return b.score - a.score;
     const shiftA = Math.abs(a.shift.departureMin) + Math.abs(a.shift.returnMin);
     const shiftB = Math.abs(b.shift.departureMin) + Math.abs(b.shift.returnMin);
@@ -3271,8 +3276,9 @@ function solveExpanded(input) {
       suggestionCtx,
       blockers.map((b) => b.carId)
     );
-    const reasonCode = stillPassengerOnly.includes(nr) ? "UNMET_PASSENGER_NO_HOST" : stillUnpairedRelay.includes(nr) ? "UNMET_NO_RELAY_PARTNER" : nr.tripType === "one_way" ? "UNMET_NO_CAR_AT_ORIGIN" : "UNMET_NO_CAR";
-    const reasonText = reasonCode === "UNMET_NO_RELAY_PARTNER" ? reason("UNMET_NO_RELAY_PARTNER", { dest: requestDestName(input, nr.request), dayEnd: "23:59" }) : reasonCode === "UNMET_PASSENGER_NO_HOST" ? reason("UNMET_NEEDS_DRIVER", { dest: requestDestName(input, nr.request), dep: "" }) : reasonCode === "UNMET_NO_CAR_AT_ORIGIN" ? reason("UNMET_NO_CAR_AT_ORIGIN", { origin: requestOriginName(input, nr.request, nr.originId), dest: requestDestName(input, nr.request) }) : reason("UNMET_NO_CAR", { blockers: blockers.map((b) => carName(input.cars, b.carId)).filter(Boolean).join(", ") });
+    const needsLargeTrunk = nr.luggage && !input.cars.some((c) => c.type === "shared" && c.luggageCapacity >= 1);
+    const reasonCode = needsLargeTrunk ? "UNMET_NEEDS_LARGE_TRUNK" : stillPassengerOnly.includes(nr) ? "UNMET_PASSENGER_NO_HOST" : stillUnpairedRelay.includes(nr) ? "UNMET_NO_RELAY_PARTNER" : nr.tripType === "one_way" ? "UNMET_NO_CAR_AT_ORIGIN" : "UNMET_NO_CAR";
+    const reasonText = reasonCode === "UNMET_NEEDS_LARGE_TRUNK" ? reason("UNMET_NEEDS_LARGE_TRUNK") : reasonCode === "UNMET_NO_RELAY_PARTNER" ? reason("UNMET_NO_RELAY_PARTNER", { dest: requestDestName(input, nr.request), dayEnd: "23:59" }) : reasonCode === "UNMET_PASSENGER_NO_HOST" ? reason("UNMET_NEEDS_DRIVER", { dest: requestDestName(input, nr.request), dep: "" }) : reasonCode === "UNMET_NO_CAR_AT_ORIGIN" ? reason("UNMET_NO_CAR_AT_ORIGIN", { origin: requestOriginName(input, nr.request, nr.originId), dest: requestDestName(input, nr.request) }) : reason("UNMET_NO_CAR", { blockers: blockers.map((b) => carName(input.cars, b.carId)).filter(Boolean).join(", ") });
     return {
       requestId: nr.id,
       score: scores.get(nr.id)?.total ?? 0,

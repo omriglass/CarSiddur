@@ -17,6 +17,7 @@ import type { TripType } from "@/lib/enums";
 
 import { canEditRequest } from "../window";
 import { isAwaitingAnswer } from "../pendingProposal";
+import { canPlaceOnOwnCar, isDuplicateWithdrawn } from "../overlap";
 import { FREED_SLOT_ELIGIBLE_STATUSES, MAKE_REPEATING_STATUSES, originDestinationLabel, type DisplayRow } from "../myRequestsRows";
 
 /** REQ §13.93: shown whenever a request is not a plain round trip (the mundane default). */
@@ -43,6 +44,12 @@ interface RequestRowProps {
   onMakeRepeating?: (row: DisplayRow) => void;
   makeRepeatingPending?: boolean;
   onOptOutChange?: (row: DisplayRow, optOut: boolean) => void;
+  /** REQ §13.101 h (QM8): the member's own active private cars in this department. */
+  ownCars?: { id: string; name: string }[];
+  onPlaceOnOwnCar?: (row: DisplayRow, carId: string) => void;
+  /** REQ §13.101 e (QM4): "זו לא כפילות". */
+  onRestoreDuplicate?: (row: DisplayRow) => void;
+  actionPending?: boolean;
 }
 
 /**
@@ -61,6 +68,10 @@ export function RequestRow({
   onMakeRepeating,
   makeRepeatingPending,
   onOptOutChange,
+  ownCars = [],
+  onPlaceOnOwnCar,
+  onRestoreDuplicate,
+  actionPending,
 }: RequestRowProps) {
   return (
     <div
@@ -82,6 +93,7 @@ export function RequestRow({
       </div>
       {row.ride?.needsDriver ? <p className="text-sm font-medium text-destructive">{he.rideCoordination.missingDriver}</p> : null}
       {row.tripType !== "round_trip" ? <p className="text-xs text-muted-foreground">{TRIP_TYPE_LABEL[row.tripType]}</p> : null}
+      {row.hasLuggage ? <Badge variant="outline" className="w-fit">{he.request.luggageChip}</Badge> : null}
       {row.preferredCarName ? <p className="text-xs text-muted-foreground">{he.request.preferredCar}: {row.preferredCarName}</p> : null}
       {row.childNames?.length ? (
         <p className="text-xs text-muted-foreground">{tv("ridePublicDetails.companions", { names: row.childNames.join(", ") })}</p>
@@ -124,6 +136,18 @@ export function RequestRow({
               <Link to={paths.requests.edit(row.id)}>{he.requestsList.edit}</Link>
             </Button>
           ) : null}
+          {isDuplicateWithdrawn(row) && onRestoreDuplicate ? (
+            <Button size="sm" variant="outline" disabled={actionPending} onClick={() => onRestoreDuplicate(row)}>
+              {he.request.notDuplicate}
+            </Button>
+          ) : null}
+          {onPlaceOnOwnCar && canPlaceOnOwnCar(row, ownCars.length)
+            ? ownCars.map((car) => (
+                <Button key={car.id} size="sm" variant="outline" disabled={actionPending} onClick={() => onPlaceOnOwnCar(row, car.id)}>
+                  {ownCars.length > 1 ? `${he.request.placeOnOwnCar} (${car.name})` : he.request.placeOnOwnCar}
+                </Button>
+              ))
+            : null}
           {row.status !== "withdrawn" && row.status !== "cancelled" && !row.ride && onWithdraw ? (
             <Button size="sm" variant="outline" onClick={() => onWithdraw(row)}>
               {he.requestsList.withdraw}

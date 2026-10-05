@@ -218,7 +218,7 @@ display, REQ §13.93, step O6); `src/features/rides/components/RideRoute.tsx`, `
 
 **Automated**:
 - Vitest: `npx vitest run src/features/sadran/board src/features/sadran/applySolve.test.ts src/features/sadran/unmetStatuses.test.ts src/features/sadran/deviations src/features/sadran/export src/lib/rideRoute.test.ts`
-- SQL: `todo_board_semantics.sql`, `coordinator_planning.sql`, `solve_semantics.sql`, `car_chain_healing.sql`, `day_car_swap.sql`, `origins_chain.sql`, `qa_run1_proposals.sql`, `qa_run1_cancel_waitlist.sql` (QA run 1 fixes: proposals/merges/chain, cancellation/waiting list/status)
+- SQL: `todo_board_semantics.sql`, `coordinator_planning.sql`, `solve_semantics.sql`, `car_chain_healing.sql`, `day_car_swap.sql`, `origins_chain.sql`, `qa_run1_proposals.sql`, `qa_run1_cancel_waitlist.sql` (QA run 1 fixes: proposals/merges/chain, cancellation/waiting list/status), `placement_features.sql` (REQ §13.101: luggage needs a large trunk, set_ride_driver, duplicate withdraw/restore, own-car placement, published-day edit, freed car to the contested group)
 - Playwright: `npx playwright test --grep "@board"`
 
 **QA script**:
@@ -317,7 +317,7 @@ fan-out); `src/i18n/he.sadran.ts`; migrations matching `*publish*`, `*siddur_ver
 
 **Automated**:
 - Vitest: `npx vitest run src/features/sadran/publish src/features/sadran/lastUsedPolicy.test.ts`
-- SQL: `selected_day_publication.sql`, `board_drafts.sql` (draft proposals block publishing, discard/withdraw RPCs, re-solve keeps draft merge hosts), `merged_rides.sql` (ride route, merge apply window, `unmerge_request`, shift places/stops, manual handover)
+- SQL: `selected_day_publication.sql`, `board_drafts.sql` (draft proposals block publishing, discard/withdraw RPCs, re-solve keeps draft merge hosts), `merged_rides.sql` (ride route, merge apply window, `unmerge_request`, shift places/stops, manual handover), `proposals_copy_and_series_span.sql` (REQ §13.101: per-reader proposal/outcome copy, joined-ride notices, `series_span` fewer days, large-luggage merge refusal)
 - Playwright: `npx playwright test --grep "@publication"`
 
 **QA script**:

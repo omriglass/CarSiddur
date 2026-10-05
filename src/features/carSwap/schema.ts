@@ -34,7 +34,7 @@ export const carSwapSeriesSchema = z.object({
 export type CarSwapSeries = z.infer<typeof carSwapSeriesSchema>;
 
 /** A4: refused on `seats`/`maintenance`/`private_car`/`not_allowed`; `past` covers a day already archived-by-time. */
-export const CAR_SWAP_BLOCKER_CODES = ["seats", "maintenance", "private_car", "not_allowed", "past"] as const;
+export const CAR_SWAP_BLOCKER_CODES = ["seats", "maintenance", "private_car", "not_allowed", "past", "luggage"] as const;
 export type CarSwapBlockerCode = (typeof CAR_SWAP_BLOCKER_CODES)[number];
 export const carSwapBlockerSchema = z.object({
   code: z.enum(CAR_SWAP_BLOCKER_CODES),

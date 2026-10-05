@@ -56,7 +56,11 @@ export interface FreedSlotCandidate {
  * too (SOLVER §3.x): they are immovable and placed all-or-nothing across
  * every leg's own day, never into a single freed slot.
  */
-export function matchFreedSlot(input: FreedSlotInput): FreedSlotCandidate[] {
+export function matchFreedSlot(
+  input: FreedSlotInput,
+  opts?: { priorityRequestIds?: readonly string[] },
+): FreedSlotCandidate[] {
+  const priority = new Set(opts?.priorityRequestIds ?? []);
   // REQUIREMENTS §13.93: a candidate only matters if its own declared origin
   // is where the car was actually freed — generalizes the old strict
   // "freedLocationId === home" check (every legacy request's origin is home).
@@ -105,6 +109,9 @@ export function matchFreedSlot(input: FreedSlotInput): FreedSlotCandidate[] {
   }
 
   results.sort((a, b) => {
+    const pa = priority.has(a.requestId) ? 0 : 1;
+    const pb = priority.has(b.requestId) ? 0 : 1;
+    if (pa !== pb) return pa - pb;
     if (a.score !== b.score) return b.score - a.score;
     const shiftA = Math.abs(a.shift.departureMin) + Math.abs(a.shift.returnMin);
     const shiftB = Math.abs(b.shift.departureMin) + Math.abs(b.shift.returnMin);

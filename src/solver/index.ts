@@ -238,7 +238,11 @@ function solveExpanded(input: SolverInput): SolverOutput {
         suggestionCtx,
         blockers.map((b) => b.carId),
       );
-      const reasonCode = stillPassengerOnly.includes(nr)
+      const needsLargeTrunk =
+        nr.luggage && !input.cars.some((c) => c.type === 'shared' && c.luggageCapacity >= 1);
+      const reasonCode = needsLargeTrunk
+        ? 'UNMET_NEEDS_LARGE_TRUNK'
+        : stillPassengerOnly.includes(nr)
         ? 'UNMET_PASSENGER_NO_HOST'
         : stillUnpairedRelay.includes(nr)
           ? 'UNMET_NO_RELAY_PARTNER'
@@ -246,7 +250,9 @@ function solveExpanded(input: SolverInput): SolverOutput {
             ? 'UNMET_NO_CAR_AT_ORIGIN'
             : 'UNMET_NO_CAR';
       const reasonText =
-        reasonCode === 'UNMET_NO_RELAY_PARTNER'
+        reasonCode === 'UNMET_NEEDS_LARGE_TRUNK'
+          ? reason('UNMET_NEEDS_LARGE_TRUNK')
+          : reasonCode === 'UNMET_NO_RELAY_PARTNER'
           ? reason('UNMET_NO_RELAY_PARTNER', { dest: requestDestName(input, nr.request), dayEnd: '23:59' })
           : reasonCode === 'UNMET_PASSENGER_NO_HOST'
             ? reason('UNMET_NEEDS_DRIVER', { dest: requestDestName(input, nr.request), dep: '' })

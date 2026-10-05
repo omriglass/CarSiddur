@@ -108,7 +108,7 @@ Component responsibilities:
 | `push-dispatch` | Drains `push_outbox` (called by pg_net on insert and by `drain_push_outbox()` in the tick), sends via `web-push`, marks rows sent/failed, prunes dead subscriptions (404/410). |
 | `answer-proposal` | Verifies the deep-link token (hash lookup, expiry, status) — **no session required** — and calls `answer_proposal(token, accept, note, via => 'token')`; when a JWT is also present it is verified and `via => 'session'` is recorded instead. |
 | `solve` | Optional server-side run of the same solver bundle (used by "auto-solve remaining" from a slow device, and by tests). |
-| `on-ride-cancelled` | Loads the hard-filtered candidates (`freed_slot_candidates()`), ranks them with the solver's `matchFreedSlot()`, calls `resolve_freed_offer()` which assigns, opens a contest or closes the offer, and notifies. |
+| `on-ride-cancelled` | Loads the hard-filtered candidates (`freed_slot_candidates()`), ranks them with the solver's `matchFreedSlot(input, { priorityRequestIds })` (the open contested group's requests from `freed_slot_priority_requests()` go first and the offer is held for the group, REQ §13.101 i; car luggage capacity from `large_trunk`), calls `resolve_freed_offer()` which assigns, opens a contest or closes the offer, and notifies. |
 
 ---
 

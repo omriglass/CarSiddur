@@ -184,6 +184,11 @@ begin
   perform pg_temp.expect_refused('rides.ride_route', format('select * from public.ride_route(%L)', ride_b));
   perform pg_temp.expect_refused('rides.unassign_ride', format('select public.unassign_ride(%L, %L)', ride_b, ride_b_version));
   perform pg_temp.expect_refused('rides.cancel_ride', format('select public.cancel_ride(%L, %L, %L)', ride_b, 'attack', ride_b_version));
+  -- REQ §13.101: placement / request features
+  perform pg_temp.expect_refused('rides.set_ride_driver', format('select public.set_ride_driver(%L, %L, %L)', ride_b, member_b, ride_b_version));
+  perform pg_temp.expect_refused('requests.withdraw_duplicate_request', format('select public.withdraw_duplicate_request(%L, 1)', req_b));
+  perform pg_temp.expect_refused('requests.restore_duplicate_request', format('select public.restore_duplicate_request(%L)', req_b));
+  perform pg_temp.expect_refused('requests.place_on_own_car', format('select public.place_on_own_car(%L, %L)', req_b, car_b));
 
   -- cars / destinations ----------------------------------------------------
   perform pg_temp.expect_refused('cars.log_car_care', format('select public.log_car_care(%L, %L, null, null)', car_b, 'wash'));
@@ -210,6 +215,7 @@ begin
   perform pg_temp.expect_refused('proposals.discard_proposal', format('select public.discard_proposal(%L)', proposal_b));
   perform pg_temp.expect_refused('proposals.withdraw_proposal', format('select public.withdraw_proposal(%L)', proposal_b));
   perform pg_temp.expect_refused('proposals.apply_proposal', format('select public.apply_proposal(%L)', proposal_b));
+  perform pg_temp.expect_refused('proposals.proposal_party_texts', format('select * from public.proposal_party_texts(%L)', proposal_b));
   perform pg_temp.expect_refused('proposals.record_answer_on_behalf', format('select public.record_answer_on_behalf(%L, %L, true, null)', proposal_b, member_b));
 
   -- weeks / policy / stats ----------------------------------------------------
@@ -320,12 +326,13 @@ declare
     'update_ride_public_notes','add_ride_passengers','set_ride_passengers','remove_ride_person',
     'log_car_care','report_car_issue','merge_destination','suggest_destination','car_mileage_totals',
     'admin_approve_member','admin_update_member','admin_set_sadran_assignments',
-    'create_proposal','send_proposal','discard_proposal','withdraw_proposal','apply_proposal','record_answer_on_behalf',
+    'create_proposal','send_proposal','discard_proposal','withdraw_proposal','apply_proposal','record_answer_on_behalf','proposal_party_texts',
     'open_week','reopen_week','set_week_phase','set_week_close_at','ensure_department_weeks',
     'publication_readiness','publish_siddur','record_solver_preview','form_waitlist_groups',
     'publish_scores_fingerprint','sadran_contact_of','fairness_stats','department_stats','joinable_rides_for_request',
     'create_policy_version','set_policy_active','resolve_waitlist_group','cancel_waitlist_group',
-    'place_travel_for_week','car_start_locations','set_my_default_origin'
+    'place_travel_for_week','car_start_locations','set_my_default_origin',
+    'set_ride_driver','withdraw_duplicate_request','restore_duplicate_request','place_on_own_car'
   ];
   -- 'name:one-word-reason'. Duplicated names (day_date_label has two overloads) are fine —
   -- the completeness check below groups by proname.

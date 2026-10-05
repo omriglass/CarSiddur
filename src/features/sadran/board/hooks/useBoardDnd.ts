@@ -32,6 +32,8 @@ import {
   privateCarBlocks,
   privateCarBlocksRide,
   seatsFit,
+  luggageBlocks,
+  luggageCountOf,
   unavailable,
   unmetCandidateWindow,
   unmetMergeHost,
@@ -293,9 +295,9 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
       toast.error(he.sadranBoard.invalidWindow);
       return;
     }
+    if (luggageBlocks(dropCtx, carId, req.has_luggage ? 1 : 0, window)) { toast.error(he.sadranBoard.luggageNeedsTrunkToast); return; }
     const host = unmetMergeHost(dropCtx, item, carId, minutes, droppedOnRideId);
     if (host?.id && host.starts_at && host.ends_at) {
-      if (!host.driver_id || host.needs_driver) { toast.error(he.boardCoordination.mergeNeedsDriver); return; }
       const invalidMerge = mergeInvalidReason(host, req, defaultMergeLeg(req), dropCtx.route);
       if (invalidMerge) { toast.error(he.mergedRide.invalid[invalidMerge]); return; }
       if (!isUnmetDropValid(dropCtx, item, carId, minutes, droppedOnRideId)) { toast.error(he.sadranBoard.dragInvalidOverlapToast); return; }
@@ -447,6 +449,10 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
     // all today, so they're validated here against the *real* dropped time.
     if (carId !== ride.car_id && !seatsFit(dropCtx, carId, passengersOf(ride))) {
       toast.error(he.sadranBoard.seatMismatchToast);
+      return;
+    }
+    if (carId !== ride.car_id && luggageBlocks(dropCtx, carId, luggageCountOf(ride), { startsAt: newStartsAt, endsAt: newEndsAt }, [ride.id])) {
+      toast.error(he.sadranBoard.luggageNeedsTrunkToast);
       return;
     }
     const otherRidesOnTargetCar = rides

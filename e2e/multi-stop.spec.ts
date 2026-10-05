@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
-import { he, t, tv } from "../src/i18n/he";
-import { getWeekStart, NEVO_DEPARTMENT_ID, newSignedInPage, SEEDED_USERS, serviceRoleClient, signIn } from "./helpers";
+import { he, tv } from "../src/i18n/he";
+import { getWeekStart, NEVO_DEPARTMENT_ID, newSignedInPage, SEEDED_USERS, serviceRoleClient, signIn, submitRequestForm } from "./helpers";
 
 // Multi-stop rides (REQ §13.93 "Multi-stop rides", docs/ORIGINS_PLAN_2026-10.md §6, built
 // 2026-10-05): a member adds one out-stop from the normal (weekly) request form — a compact
@@ -48,7 +48,7 @@ test.describe("multi-stop rides", { tag: ["@request-form", "@board"] }, () => {
     await expect(page.getByRole("button", { name: he.request.addStop, exact: true })).toBeVisible();
 
     await page.getByRole("radiogroup", { name: "סוג נסיעה" }).getByRole("radio").first().click();
-    await page.getByRole("button", { name: t("action.submitRequest"), exact: true }).click();
+    await submitRequestForm(page);
 
     await expect(page).toHaveURL(/\/my$/);
     // "דרך בנימינה לחיפה" (REQUIREMENTS §13.93 "Multi-stop rides" Display) — the home-origin

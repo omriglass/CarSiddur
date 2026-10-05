@@ -1,5 +1,6 @@
 import { MapPin } from "lucide-react";
 import type { ReactNode } from "react";
+import { Link } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -79,6 +80,8 @@ interface RideDetailSheetProps {
   /** Available only when the signed-in member has a request served by this ride. */
   onRemoveOwnRide?: () => void;
   removingOwnRide?: boolean;
+  /** REQ §13.101 f (QM5): edit link to the member's own (non-series) request on this ride. */
+  editRequestHref?: string;
   /**
    * The "+ נוסעים" button and the unified people list's remove (×) affordance (REQ §13.85):
    * true once the ride's week is public (or the caller manages it) and the ride itself isn't
@@ -97,7 +100,7 @@ interface RideDetailSheetProps {
  * §13.85; the `/requests/new?ride=` prefill path itself is untouched, still reachable from the
  * joinable-rides dialog after a waiting-list outcome).
  */
-export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = null, onOpenChange, editor, coordinatorNotes, canEditPublicNotes, passengerSummary, onRemoveOwnRide, removingOwnRide = false, showAddPassengers = false }: RideDetailSheetProps) {
+export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = null, onOpenChange, editor, coordinatorNotes, canEditPublicNotes, passengerSummary, onRemoveOwnRide, removingOwnRide = false, editRequestHref, showAddPassengers = false }: RideDetailSheetProps) {
   // `servedOf()` already maps `v_board_rides.served[].child_names` onto each entry's
   // `childNames` (`applySolve.ts`) — no more hand-rolled mapping needed here.
   const served: ServedEntry[] = ride ? servedOf(ride) : [];
@@ -138,7 +141,7 @@ export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = 
               ) : null}
 
               {carModeLabel(ride) ? <p className="text-muted-foreground">{carModeLabel(ride)}</p> : null}
-              {routeHasIntermediates(parseRideRoute(ride.route)) ? <RideRoute route={ride.route} /> : <RideRouteStops served={served} />}
+              {routeHasIntermediates(parseRideRoute(ride.route)) ? <RideRoute route={ride.route} served={served} /> : <RideRouteStops served={served} />}
               {canEditPublicNotes && ride.id && ride.version != null ? (
                 <RidePublicNotesEditor key={`${ride.id}:${ride.version}`} rideId={ride.id} expectedVersion={ride.version} initialNotes={ride.notes} departmentId={ride.department_id ?? ""} weekStart={ride.week_start ?? ""} />
               ) : ride.notes ? <p className="whitespace-pre-wrap break-words">{ride.notes}</p> : null}
@@ -183,6 +186,12 @@ export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = 
                   weekStart={ride.week_start ?? ""}
                   people={peopleOf(ride)}
                 />
+              ) : null}
+
+              {editRequestHref ? (
+                <Button asChild className="w-full" size="lg" variant="outline">
+                  <Link to={editRequestHref}>{he.requestsList.edit}</Link>
+                </Button>
               ) : null}
 
               {onRemoveOwnRide ? (

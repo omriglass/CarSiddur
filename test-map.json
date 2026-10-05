@@ -342,6 +342,7 @@
         "supabase/tests/origins_chain.sql",
         "supabase/tests/qa_run1_proposals.sql",
         "supabase/tests/qa_run1_cancel_waitlist.sql",
+        "supabase/tests/placement_features.sql",
         "e2e/board.spec.ts",
         "e2e/board-mobile.spec.ts",
         "e2e/board-coordination.spec.ts",
@@ -390,7 +391,8 @@
         "solve_semantics.sql",
         "day_car_swap.sql",
         "qa_run1_proposals.sql",
-        "qa_run1_cancel_waitlist.sql"
+        "qa_run1_cancel_waitlist.sql",
+        "placement_features.sql"
       ],
       "playwrightTags": [
         "@board"
@@ -531,6 +533,7 @@
         "supabase/tests/selected_day_publication.sql",
         "supabase/tests/board_drafts.sql",
         "supabase/tests/merged_rides.sql",
+        "supabase/tests/proposals_copy_and_series_span.sql",
         "e2e/sadran.spec.ts",
         "e2e/waitlist-groups.spec.ts",
         "e2e/export.spec.ts"
@@ -542,7 +545,8 @@
       "sql": [
         "selected_day_publication.sql",
         "board_drafts.sql",
-        "merged_rides.sql"
+        "merged_rides.sql",
+        "proposals_copy_and_series_span.sql"
       ],
       "playwrightTags": [
         "@publication"

@@ -5,6 +5,8 @@ import { CAR_COLUMN_ATTR } from "@/components/WeekGrid";
 import { minutesFromClientY } from "@/components/weekGridGeometry";
 import { StatusBadge } from "@/components/StatusBadge";
 import { TripTypeChange } from "./TripTypeChange";
+import { WithdrawDuplicateAction } from "./WithdrawDuplicateAction";
+import { FewerDaysAction, type FewerDaysSupport } from "./FewerDaysAction";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { he, tv } from "@/i18n/he";
@@ -85,6 +87,8 @@ interface UnmetListProps {
   onAction: (item: UnmetListItem, suggestion: Suggestion | null) => void;
   /** REQ §13.95 (H3): scope for the per-card "סוג נסיעה" selector; the selector is hidden without it. */
   tripTypeScope?: { departmentId: string; weekStart: string };
+  /** REQ §13.101 (j): enables "להציע פחות ימים" on multi-day requests. */
+  fewerDays?: FewerDaysSupport;
   /** Opens the board's proposal sheet (withdraw) for a card that has a proposal out. */
   onOpenProposal?: (proposalId: string) => void;
   /** Drag-to-place; the board chooses direct assignment or a proposal for one-way legs. */
@@ -108,7 +112,7 @@ interface UnmetListProps {
  * week with no ride (bug #1), sorted by policy score when a solver preview
  * exists for it, otherwise by departure time.
  */
-export function UnmetList({ items, onAction, onOpenProposal, onDecision, dayStartMinutes = 6 * 60, dayEndMinutes = 23 * 60 + 59, onDragHover, onDragDrop, showHeading = true, homeDestinationId, tripTypeScope }: UnmetListProps) {
+export function UnmetList({ items, onAction, onOpenProposal, onDecision, dayStartMinutes = 6 * 60, dayEndMinutes = 23 * 60 + 59, onDragHover, onDragDrop, showHeading = true, homeDestinationId, tripTypeScope, fewerDays }: UnmetListProps) {
   const dragEnabled = !!onDragDrop;
   const [drag, setDrag] = useState<DragState | null>(null);
   const dragRef = useRef<DragState | null>(null);
@@ -290,12 +294,23 @@ export function UnmetList({ items, onAction, onOpenProposal, onDecision, dayStar
                   weekStart={tripTypeScope.weekStart}
                 />
               ) : null}
+              {fewerDays && !item.pendingProposalId && item.request.series_id ? <FewerDaysAction request={item.request} support={fewerDays} /> : null}
+              {tripTypeScope && !item.pendingProposalId && !item.request.series_id ? (
+                <WithdrawDuplicateAction
+                  requestId={item.request.id}
+                  version={item.request.version}
+                  name={item.request.requester_full_name ?? ""}
+                  departmentId={tripTypeScope.departmentId}
+                  weekStart={tripTypeScope.weekStart}
+                />
+              ) : null}
               {item.pendingProposalId && onOpenProposal ? (
                 <div className="flex items-center justify-between gap-2 rounded-md border border-dashed border-maintenance p-2 text-xs" data-testid="unmet-proposal-out">
                   <span>{he.boardDrafts.proposalOut}</span>
                   <Button size="sm" variant="outline" className="min-h-11" onClick={() => onOpenProposal(item.pendingProposalId as string)} data-testid="unmet-withdraw">{he.boardDrafts.withdraw}</Button>
                 </div>
               ) : null}
+              {item.request.has_luggage ? <span className="text-xs font-medium" data-testid="unmet-luggage">{he.request.luggageChip}</span> : null}
               {item.request.is_late ? <span className="text-xs font-medium text-maintenance">{he.flag.late}</span> : null}
               {item.request.changed_since_solve ? <span className="text-xs font-medium text-booked">{he.flag.changed}</span> : null}
               {item.request.preferred_car_name ? (

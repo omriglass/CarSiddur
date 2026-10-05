@@ -166,7 +166,7 @@ describe("buildSolverInput", () => {
 
     expect(input.homeLocationId).toBe(HOME);
     expect(input.cars).toHaveLength(1);
-    expect(input.cars[0]).toMatchObject({ id: "car-1", type: "shared", luggageCapacity: 1 });
+    expect(input.cars[0]).toMatchObject({ id: "car-1", type: "shared", luggageCapacity: 0 });
     expect(input.cars[0]!.seatConfigs).toEqual([{ adults: 4, childSeats: 0, boosters: 0 }]);
 
     expect(input.requests).toHaveLength(1);

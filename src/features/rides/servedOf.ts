@@ -142,15 +142,32 @@ export function representativeRideTypeCode(served: readonly ServedEntry[]): stri
  * back to the served requests' own active stops when the route is absent.
  */
 export function rideViaNames(ride: { route?: unknown } & Parameters<typeof servedOf>[0]): { out: string[]; return: string[] } {
+  // QB24: a relay ride carries one leg only - its out-leg half must not list the return stops and
+  // the return-leg half must not list the out stops (the served entry's `leg` says which it is).
+  const entries = servedOf(ride);
+  const legs = servedLegs(entries);
   const fromRoute = routeViaNames(parseRideRoute(ride.route));
-  if (fromRoute.out.length || fromRoute.return.length) return fromRoute;
+  if (fromRoute.out.length || fromRoute.return.length) {
+    return { out: legs.out ? fromRoute.out : [], return: legs.return ? fromRoute.return : [] };
+  }
   const via = { out: [] as string[], return: [] as string[] };
-  for (const entry of servedOf(ride)) {
+  for (const entry of entries) {
     for (const stop of [...(entry.stops ?? [])].sort((a, b) => a.position - b.position)) {
-      if (!isActiveStop(stop) || !stop.name) continue;
+      if (!isActiveStop(stop) || !stop.name || !entryCoversLeg(entry, stop.leg)) continue;
       const list = via[stop.leg];
       if (list[list.length - 1] !== stop.name) list.push(stop.name);
     }
   }
   return via;
+}
+
+/** QB24: does this served entry's `leg` (out / return / both) cover `leg`? */
+export function entryCoversLeg(entry: Pick<ServedEntry, "leg">, leg: "out" | "return"): boolean {
+  return entry.leg === "both" || entry.leg === leg || !entry.leg;
+}
+
+/** Which legs the ride's served entries cover; a ride with no served entry covers both. */
+function servedLegs(entries: readonly Pick<ServedEntry, "leg">[]): { out: boolean; return: boolean } {
+  if (!entries.length) return { out: true, return: true };
+  return { out: entries.some((entry) => entryCoversLeg(entry, "out")), return: entries.some((entry) => entryCoversLeg(entry, "return")) };
 }

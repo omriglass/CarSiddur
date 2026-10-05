@@ -521,6 +521,42 @@ export async function setRequestTripType(requestId: string, tripType: TripType, 
     defaultedReturnAt: typeof body.defaulted_return_at === "string" ? body.defaulted_return_at : null };
 }
 
+/** One day (leg) of a multi-day request, as far as the Sadran's RLS lets this client see it. */
+export interface SeriesLeg {
+  id: string;
+  seriesIndex: number;
+  seriesCount: number;
+  departAt: string;
+  returnAt: string;
+  status: string;
+  version: number;
+}
+
+/** REQ §13.101 (j, QF5): every leg of a multi-day request, ordered by day (legs in weeks this client cannot read are absent). */
+export async function fetchSeriesLegs(seriesId: string): Promise<SeriesLeg[]> {
+  const { data, error } = await supabase
+    .from("requests")
+    .select("id, series_index, series_count, depart_at, return_at, status, version")
+    .eq("series_id", seriesId)
+    .order("depart_at", { ascending: true });
+  if (error) throw toAppError(error);
+  return (data ?? []).flatMap((row) => (row.depart_at && row.return_at ? [{
+    id: row.id, seriesIndex: row.series_index ?? 1, seriesCount: row.series_count ?? 1,
+    departAt: row.depart_at, returnAt: row.return_at, status: row.status, version: row.version,
+  }] : []));
+}
+
+/** REQ §13.101 (c): assign a volunteer driver to a needs-driver ride, or (`driverId` null) take a volunteer off again. */
+export async function setRideDriver(rideId: string, driverId: string | null, expectedVersion: number): Promise<void> {
+  // The RPC accepts a null driver (back to needs-driver); the generated Args type marks it required.
+  await rpc("set_ride_driver", { p_ride_id: rideId, p_driver_id: driverId as unknown as string, p_expected_version: expectedVersion });
+}
+
+/** REQ §13.101 (e): the Sadran withdraws a request as a duplicate; the member is notified and may answer "not a duplicate". */
+export async function withdrawDuplicateRequest(requestId: string, expectedVersion: number): Promise<void> {
+  await rpc("withdraw_duplicate_request", { p_request_id: requestId, p_expected_version: expectedVersion });
+}
+
 /**
  * A named person or child on a ride with no `requests` row behind them (F3,
  * 20260914120000_ride_passengers.sql). The reusable base for both the board reservation
@@ -557,6 +593,12 @@ export async function fetchProposalParties(proposalId: string): Promise<Proposal
   const { data, error } = await supabase.from("proposal_parties").select("*").eq("proposal_id", proposalId);
   if (error) throw toAppError(error);
   return data ?? [];
+}
+
+/** REQ §13.101 b: one WhatsApp text per party of a merge proposal (`{{link}}` left for the composer to fill). */
+export async function fetchProposalPartyTexts(proposalId: string): Promise<Record<string, string>> {
+  const rows = await rpc("proposal_party_texts", { p_proposal_id: proposalId });
+  return Object.fromEntries((rows ?? []).flatMap((row) => (row.profile_id && row.body ? [[row.profile_id, row.body] as const] : [])));
 }
 
 export interface CreateProposalInput {
