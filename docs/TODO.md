@@ -518,3 +518,60 @@ Merged and deduplicated from both agents' reports (S = QA Sadran, U = QA user). 
 - **QF7 — Freed-car offers prioritised to that day's contested group** (S).
 - **QF8 — Passenger "accept but ask for a time change" inside the proposal** (~15% negotiated by message) (U).
 - **QF9 — A "who is joining my car" view for private-car owners**, with an approve step (U).
+
+## QA run 2 findings (2026-10-06, seed 6044, week 11–17.10, department `qa-s6044`; QA Sadran = Opus, Wednesday via UI; QA user = Sonnet) — **awaiting owner triage**
+Merged and deduplicated from both reports (S = QA Sadran item, U = QA user item; full reports and screenshots in the run's scratchpad). Auto-fill served 91 of 146 legs; unmet at the end: Sun 8, Mon 7, Tue 7, Wed 12, Thu 10 (mostly no car at the member's town, seats, every car taken at zero flexibility, pickup legs needing a driver).
+
+### Bugs (most significant first)
+- **R2B1 — A proposal pending at publish can never be accepted** (`stale_version`: publishing bumps every ride's version, the proposal still checks the host's old one); it stays "sent" and the Sadran is not told (S1, U1: Mon 70ddb543, Wed d5e3aeb1).
+- **R2B2 — Two accepted proposals on one ride: the second undoes the first** (merge applied with the host's pre-shift window → the shift is lost, the next ride has a 0-minute turnaround, no warning) (S2: Sun ride b5a35694).
+- **R2B3 — `on-ride-cancelled` crashed** (`duplicate key … ride_requests_out_unique_idx`, re-inserting an already placed out leg) → the freed car was offered to nobody; the offer also stayed open after the time was given through the waiting-list group (S3: Thu a54140ac, offer 6f8f1125).
+- **R2B4 — Merging into a multi-day ride shows/sets departure 00:00** ("יציאה 00:00 במקום 07:00"; published ride 00:00–16:15) (S10, U2: Mon 25c1cf0d).
+- **R2B5 — "להציע פחות ימים" proposes the wrong span** (Mon only, no car) and its car list offers only a car parked away (S5: Ido Hershkovitz 7b357fd6).
+- **R2B6 — Withdrawing a request leaves rides that start where the car no longer is** (no healing, no warning) (S6: Wed c3b5859d → 19352d8c, e008eb6a).
+- **R2B7 — Dropping a card on a ride can create an overlapping ride with a success toast** instead of a merge or a refusal (round trips; a pending-merge block); undo is disabled after a drop from the unmet list (S7: Wed 3b82c9a8 → 83cc21d3, a44bb8cf → 29ccb5b5).
+- **R2B8 — The board refuses drops the server accepts**: a pickup leg onto the car parked at the pickup place, a "pick me up from X" הקפצה onto a car at home ("car not at departure place" — the QB23 check is too broad) (S8: Wed ecd27c3a, 0e412dc7).
+- **R2B9 — A pickup chauffeur ride uses two different times** (placed 12:30–13:00 labelled "(יציאה 12:30)", moving it is refused as beyond flexibility) (S9: Wed ecd27c3a).
+- **R2B10 — Proposal/notification copy still wrong in places** (S10, U3–U8): empty values ("חזרה 14:30 במקום .", "08:30–."); non-changes ("09:00 במקום 09:00"); out-only merges mention a return; return-only merge headline without a subject / "מסיע/ה את רועי…"; guest vs host times differ (09:45 vs 09:30; push 10:34 vs text 11:00); the window printed twice; host told "X מבקש/ת להצטרף אליך" when the Sadran proposed it; "אפשר לשבץ אותך אם מזיזים" / origin "אין רכב בגבעת חביבה" sent to members already placed; external "אין כרגע רכב בחיפה מחיפה", the Sadran's reason appended after the link, "אפשר להגיע לקיבוץ" for a trip *to* the kibbutz; group notices "ביום 11/10" without the weekday and "עידו הרשקוביץ נוסעים/ות" for one person.
+- **R2B11 — Solver reasons stale or empty**: UNMET_NO_RELAY_PARTNER still says "home by 23:59"; UNMET_NO_CAR shows an empty "חוסמים:" when the cause is seats or no car at the origin; the cab suggestion listed twice (S11).
+- **R2B12 — Suggestions that make no sense**: changeOrigin to the request's own origin; convertToRoundTrip where no car is at the origin; no changeOrigin offered although cars were free at home (S12: Thu cf3d6dea, Wed 0e412dc7, Tue df419774).
+- **R2B13 — The same merge sent twice** (the second after the first was accepted), and a second draft silently withdraws the first (U7, S18).
+- **R2B14 — Member siddur car header shows an away place on every day** (QB21 fixed on the board only) and "· קוד לא הוזן" on every car, private cars included (S14).
+- **R2B15 — The ride sheet shows the volunteer driver twice** after `set_ride_driver` (React duplicate key) (S15: ride 6049e8aa).
+- **R2B16 — An origin change leaves the new origin as a stop** ("חדרה->חדרה via חדרה") (S16: Sun 137c31ad).
+- **R2B17 — Wrong refusal reason** ("time conflicts" when the cause is seats) (S17: Mon 28169ba4 → b30cccba).
+- **R2B18 — Statuses**: "waitlisted" / `UNMET_NEEDS_DRIVER` while a ride serves the request; /my shows the whole ride window to an out-only passenger; "נמצא נהג/ת" sent for an unpublished day (S19, U-UI5).
+- **R2B19 — Connected-pair driver labels wrong** when the other leg's person is a passenger on a ride still needing a driver ("משאיר/ה את הרכב במענית לרועי") (S20).
+- **R2B20 — Edits give no feedback**: editing an assigned request in an open week silently returns it to "submitted" (the car is lost); a post-publish edit that was auto-approved sends no confirmation (U10, S missing-1).
+- **R2B21 — An unanswered external proposal stays pending while the member sits in a contested group** (U11: Sun 85eef4fb); an edited request did not join the open group while a late request did (S13).
+- **R2B22 — /my says "לא הגשת בקשות לשבוע הזה" below a list of requests** (U-UI1, m35 mobile).
+- **R2B23 — Siddur missing-driver card shows a placeholder** "_____ אוסף/ת את דניאל מגן שמואל" (U-UI2).
+- **R2B24 — A refused ask-to-join shows the raw code `DUPLICATE_OVERLAP`** and a home→home route, not which own request it overlaps (U-UI4).
+- **R2B25 — Merge popup**: a return-leg card offers only "הלוך בלבד / הלוך וחזור"; an off-grid ETA (12:53); the header says the ride keeps its start (contradicts §13.95) (S UI).
+- QA tooling (not the app): `qa:member` cannot resolve a contested group; `ask-to-join` files the ride's end place as the destination; CLI `merge` refuses needs-driver rides; CLI drop checks ignore drafts; no fewer-days / withdraw-duplicate commands; `contacts` lacks emails; CLI siddur prints the car's home→home instead of the route; car-now cannot be exercised in a future QA week.
+
+### Owner questions
+- **R2Q1 — Contested groups and origins** (S13, U12): groups mix members starting in Haifa/Zichron/Yokneam (no car there) with Givat Haviva members, show no car, form even when no car is free, and chain non-overlapping trips (07:15 and 16:00 via a middle one).
+- **R2Q2 — Freed-car offer window** (S4): offer the car's real free gap (Suzuki free 09:15–15:00), not just the cancelled ride's hours (11:30–14:30)?
+- Not done from the approved copy: the generic "שינוי בסידור שלך" / published notice per changed ride (COPY_DRAFT §7, needs old values captured at publish) (U-UI3, S10).
+
+### UI changes
+- **R2U1 — Sending a draft**: a small draft block opens the guest chip, not the sheet; "שלח" reads like a failure ("הטיוטה נשמרה… אפשר לנסות לשלוח שוב").
+- **R2U2 — Trip-type select on the unmet card applies at once** and notifies the member, no confirmation; the card keeps the old label.
+- **R2U3 — Volunteer-driver picker** lists all members with no hint of who is busy at that time.
+- **R2U4 — Sadran inbox noise**: every late request makes three notifications (late, waitlisted, contested).
+- **R2U5 — "הרכב מחכה בגן שמואל"** card has no route (U-UI2).
+
+### Missing obvious features
+- **R2M1 — Warn before an open-week edit loses the car** (see R2B20).
+- **R2M2 — Compose a split merge by hand** (out with ride A, back with ride B).
+- **R2M3 — Every merge refusal says why** (seats / detour / boards at the end).
+- **R2M4 — Warn a parent at submit** when their child is already on the partner's overlapping request (today only the Sadran sees it) (U-M4).
+- **R2M5 — A clear notice after accepting an external proposal** (today the generic "שינוי בסידור שלך | 13/10 06:45") (U-M2).
+
+### Additional features
+- **R2F1 — Prefer smaller cars for one-person multi-day rides and long holds** (a 3-day series held the only 7-seat van; a הקפצה pair held it 5 h).
+- **R2F2 — Link the two guardians of a child** so a child on one parent's request shows on both.
+- **R2F3 — Offer "join the out leg only"** when the return shift is large.
+- **R2F4 — Message the driver, or volunteer to drive, from the member's ride card** (overlaps QF1, later).
+- Related to "later" items: put a car based away from home to use for members starting there (the Hadera Mazda idle all week — QF3).
