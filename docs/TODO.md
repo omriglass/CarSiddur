@@ -709,3 +709,35 @@ Merged from both reports (S = QA Sadran, U = QA user). Worked: car move, merge p
 ### Missing / additional
 - **R5M1 — A failed cancel gives no notice or retry path** (U M2).
 - **R5F1 — After a car move away from base, offer the return move** (S F1). **R5F2 — Merge by dragging a placed ride onto another ride** (S F2). **R5F3 — "External for all legs" on a multi-day card** (S F3). **R5F4 — A "pull one of the duplicates" button on the Sadran's duplicate question; mailbox read receipts** (U F1).
+
+## QA run 6 findings (2026-10-06, **same seed 9882 as run 5**, department `qa-s9882`; QA Sadran = Opus, Tuesday via UI; QA user = Sonnet) — **awaiting owner triage**
+Re-play of run 5's week after the run-5 batch. **Outcome on the same week: 1 request waitlisted at the end (run 5: 33)**, 16 accepted externals (members living elsewhere, a 3-day series with no car for consecutive days, two merges refused). Whole-week auto-fill applied in one go (97 rides).
+
+### Run-5 re-check
+- **Fixed:** R5B1 (cancel as passenger / chauffeur requester / one leg — driver told), R5B2, R5B4 (no Sadran links in 32 inboxes), R5B6, R5B7 (live day), R5B9, R5U1, R5U2 (board).
+- **Partly:** R5B5 (window agrees; see R6B2, R6B10), R5B11 (pickups still "לבנימינה"/"לחדרה", series 00:00/23:59), R5U3 ("כל הבקשות קיבלו מענה" with one waitlisted), R5U4 (pickup wording, a waitlisted one-way as a bare "גבעת חביבה", still one dense line), R5U5 (notice fixed; the board card says only "מאוחרת"), REQ 105 a (auto-fill paired the Afula one-ways; the `chainOneWay` suggestion never appeared), 105 b (auto-fill uses the car at X; the manual board drop is still refused).
+- **Still broken:** R5B3 (a pickup-card shift has no car choice — the accepted shift leaves the pickup unplaced; the CLI `--return` shift moves the whole request), REQ 105 d (fewer days to the last day sends "יציאה ביום ד׳ 14.10 00:00 במקום…" with no return; its draft is drawn on Monday on a car parked in חדרה), R5U6 (TIME_NOT_ALIGNED names no request).
+- **Not exercised:** R5B8, R5B10, 105 c (the join button refused correctly; no short case).
+
+### Bugs
+- **R6B1 — A merge into a needs-driver ride is withdrawn after both accept** — the check ignores the volunteer driver's seat, the apply counts it; the member gets two notices (Thu 0a07b7c3, Wed beb28e26).
+- **R6B2 — Merge popup shows raw "הלוך: {time} / חזור: {time}"** (Tue, twice).
+- **R6B3 — Popup says valid, server refuses `merge_turnaround_conflict` "before the next ride"** while the clash is with the previous ride (Tue d29647ac).
+- **R6B4 — Changing a trip type to round trip placed the request on a car standing in חדרה** → CONFLICT, CHAIN-BREAK (Mon 3201d364).
+- **R6B5 — A one-way TA→home cannot merge into a round trip to TA** (`boards_at_end` for both legs) (Wed 552dec56).
+- **R6B6 — A car move back to base still warns CAR_AWAY_AT_WEEK_END** (Fri 961c12c5).
+- **R6B7 — Asking to join your own ride is accepted** (lands waitlisted `DUPLICATE_OVERLAP`) (Tue Dor Golan, Roi Levi; m29 b5b4fb39, m21 d2dbfd9b).
+- **R6B8 — Changing a volunteer driver is refused `ride_driver_not_assignable`**; unassign + assign works but the old driver is not told and passengers get "שוב בלי נהג/ת" then "נמצא נהג/ת".
+- **R6B9 — Shift text lists an unchanged time** ("יציאה 12:00 במקום 12:00").
+- **R6B10 — In a merge, "חזרה" is the time leaving the destination (09:55) while the request's return is the arrival (10:45)** — the member read it as an earlier return and declined (Tue 76bbf7dc).
+- **R6B11 — Moving a driverless chauffeur ride to another car silently made it a connected ride** (requester drives, the van waits 5.5 h in בנימינה).
+- **R6B12 — A request with an unmet pickup leg shows `assigned`.**
+- **R6B13 — A published-day edit leaves no notice** — not to the editor, not to the ride's host, nothing visible to the Sadran (Sun ac3b35b1 m19→12:45; Ron's merged request).
+- **R6B14 — An old "published" notice still lists a ride the member since cancelled** (m13 Mon 12.10); after cancelling one leg /my shows "dep --:--" (m22 e35a1638).
+- **R6B15 — On an unpublished day the toast "הנוסעים עודכנו" appears although nothing is sent** (volunteer assignment).
+- QA tooling: `qa:ui --day` finds no day tab on /my and /inbox; the CLI `propose shift --return` moves both legs.
+
+### UI changes / missing features
+- **R6U1 — Pickup composer has no car picker** (part of R5B3). **R6U2 — The ask-to-join card offers "merge into the requested ride"** and shows the target ride. **R6U3 — The Sadran's "accepted" notice shows the new times, not the old.** **R6U4 — The "start from חדרה" (changeOrigin) suggestion explains itself to kibbutz members.**
+- **R6M1 — Replace a volunteer driver in one step** (old driver told). **R6M2 — Apply the one-way chauffeur suggestion from the card.** **R6M3 — "+ נוסעים" resolves that member's own open request** (QB14 rule). **R6M4 — Tell a member that cancelling one leg kept the other** (m22).
+- **R6F1 — Show the target ride's driver in an ask-to-join's waitlist reason.**
