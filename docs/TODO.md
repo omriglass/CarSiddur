@@ -665,3 +665,38 @@ Merged from both reports (S = QA Sadran, U = QA user). Worked: car move (UI + CL
 ### Missing obvious features / additional
 - **R4M1 — Members who cancel get no inbox confirmation**; to verify: does the driver get `passenger_left` when a passenger leaves a shared ride (R3B12) — the QA user could not see the driver's side (U M1, M2).
 - **R4F1 — A chauffeur ride from a car away from base could end at home** (S F1). **R4F2 — Car-move duration from travel time** (default 60 min) (S F2). **R4F3 — Old → new and extra minutes in every proposal's inbox title** (U F2).
+
+## QA run 5 findings (2026-10-06, seed 9882, week 11–17.10, department `qa-s9882`; QA Sadran = Opus, Tuesday via UI; QA user = Sonnet) — **awaiting owner triage**
+Merged from both reports (S = QA Sadran, U = QA user). Worked: car move, merge popup, drafts on the board, origin proposal, two freed-car offers closed correctly, withdraw-duplicate, a published-day edit notified correctly. Unmet at the end: 33 waitlisted — mostly הקפצה legs on rides still without a driver (only 2 volunteers said yes) or pickups with no free child-seat car on Thursday, multi-day requests with no car for consecutive days, two late requests with every car busy.
+
+### Bugs
+- **R5B1 — A member cannot cancel a multi-day request** that has driverless rides: `21000 DELETE requires a WHERE clause` (`cancel_ride_before_series`, migration `20261010201000`, `delete from pg_temp.cancelled_legs` without WHERE) — nothing cancelled, no useful message (S6, U1: m14 eceebb5f/016a39d7, m22 c67b2057). **Regression from the run-4 batch.**
+- **R5B2 — The first whole-week auto-fill fails `leg_location_mismatch`** on a fresh week and applies nothing; per day it works (suspected cross-day ride on the Peugeot based in חדרה) (S1).
+- **R5B3 — An accepted shift for a הקפצה pickup leg is then auto-withdrawn "…כבר לא אפשרית"**; its text said "אותן שעות" despite `--return 15:30`; the CLI's suggested `propose … --depart --return` fails "cannot build this proposal" (S2: Thu b188c770, 74c85652).
+- **R5B4 — Members' notices link to a Sadran-only page** (`/sadran/…/proposals?proposal=…`) (S3, U2: m06 7da538ed, m07).
+- **R5B5 — Merge times still disagree**: popup 07:00 vs composer 07:15–08:30 vs WhatsApp "יציאה 06:45" (Tue 2eab60a4); title "יציאה 07:00 במקום 06:45" vs body 07:15–08:30 (c583a162); WhatsApp gives the guest's own 20:00/23:30 instead of the ride's 18:30–23:00 (Tue 8da1ebf1) (S4, U-UI3).
+- **R5B6 — Accepting "no car" (external) on one leg of a multi-day request resolves only that leg** (Tue cc242549 external, Wed 27805648 still waitlisted; 68222e4c/9b509719) (S5).
+- **R5B7 — Assigning a volunteer driver on a live ride notifies nobody** (Tue 37edd695) (S7).
+- **R5B8 — A short הקפצה by a member who drives was split into two overlapping driverless rides on two cars** instead of one connected ride (Sun 5b033f35) (S8).
+- **R5B9 — After accepting, the proposal still reads as pending** (CLI and possibly /my) (U3: m22 c583a162).
+- **R5B10 — An accepted shift's proposal later cancelled leaves the ride `flagged` without a driver; the member hears "הסדרן/ית יחזרו אליך" only afterwards** (U4: m06 f315db09, 87fec8ab).
+- **R5B11 — Copy/labels**: "אפשר לשבץ אותך אם מזיזים — השעות שלך לא משתנות" (Thu c32cdded); a pickup draft labelled "לחדרה" (→ "איסוף מחדרה"); a date "11/10" without the weekday; the composer's type select labelled "סוג נסיעה"; pickups tagged "needs a driver" when the blocker is child seats; series legs show 00:00 / "כל היום" / 23:59 inconsistently (S UI2/4/7/9/11, U-UI2).
+- QA tooling: `qa:ui shot --path inbox` showed Home for a member; `--day` on `/my` finds no day tab; `qa:member proposals` has no "accepted, waiting" state.
+
+### Owner questions
+- **R5Q1 — Pairing two members' complementary one-way legs** (A to X one way, B back from X one way → one car): the solver never chains or suggests it (§13.93 says one-way legs are never paired); the Sadran did it by hand (Tue acb7a309 + 086847b5). Suggest it? (S M2)
+- **R5Q2 — A pickup leg from X cannot use a car already standing at X** (Thu 74c85652, the Peugeot idle in חדרה) — allow it when the requester (or a companion) can drive it home? (S M1)
+- **R5Q3 — Join a short הקפצה's two legs into one ride by hand** (refused today `boards_at_end`) (S M3).
+- **R5Q4 — "Fewer days" for the Sadran down to a single day** (members can already shorten to one day) (S M4).
+
+### UI changes
+- **R5U1 — The draft sheet shows old → new times and car** (S UI1).
+- **R5U2 — Pickup/chauffeur rides show the real route** (today home→home; the member card says "יציאה" for the driver's departure) so a volunteer driver sees where to go (S UI3).
+- **R5U3 — Publish confirm**: accepted externals counted as "ללא מענה", "1 הצעות", no pending/expiring info (S UI5).
+- **R5U4 — The "published" notice**: reads as if only the member's days were published, omits pickup rides, lists external legs, five rides in one dense line (S UI6, U-UI4).
+- **R5U5 — Ask-to-join reaches the Sadran as a plain "late request"** (S UI8).
+- **R5U6 — Solver warnings in the day view name the ride/request** (S UI10).
+
+### Missing / additional
+- **R5M1 — A failed cancel gives no notice or retry path** (U M2).
+- **R5F1 — After a car move away from base, offer the return move** (S F1). **R5F2 — Merge by dragging a placed ride onto another ride** (S F2). **R5F3 — "External for all legs" on a multi-day card** (S F3). **R5F4 — A "pull one of the duplicates" button on the Sadran's duplicate question; mailbox read receipts** (U F1).
