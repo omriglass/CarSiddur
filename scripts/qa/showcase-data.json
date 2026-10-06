@@ -1,0 +1,442 @@
+{
+  "_comment": "Showcase department (docs/SHOWCASE_SCENARIOS.md): every member, car and request demonstrates one principle. Read by scripts/qa/showcase.mjs. Days are 0=Sun..4=Thu of the next week; times HH:MM (Asia/Jerusalem); places by name from qa-data.json (home = גבעת חביבה). Flexibility values: \"0\", \"15 min\", \"30 min\", \"1 hour\", \"2 hours\".",
+  "department": {
+    "name": "מחלקת הדגמה"
+  },
+  "sadranName": "סדרן הדגמה",
+  "members": [
+    {
+      "key": "m01",
+      "name": "דנה כהן",
+      "about": "regular driver at the kibbutz"
+    },
+    {
+      "key": "m02",
+      "name": "יואב לוי",
+      "origin": "חיפה",
+      "about": "lives in Haifa (default origin), drives"
+    },
+    {
+      "key": "m03",
+      "name": "רותי מזרחי",
+      "doesNotDrive": true,
+      "about": "does not drive"
+    },
+    {
+      "key": "m04",
+      "name": "מיכל אברהם",
+      "about": "parent; child נועה shared with m05, child איתי her own"
+    },
+    {
+      "key": "m05",
+      "name": "אבי אברהם",
+      "about": "parent; shares נועה with m04"
+    },
+    {
+      "key": "m06",
+      "name": "גיל פרץ",
+      "privateCar": {
+        "name": "הסובארו של גיל",
+        "plate": "SHW-P01",
+        "seats": {
+          "adults": 5,
+          "child_seats": 0,
+          "boosters": 0
+        }
+      },
+      "about": "owns a private car"
+    },
+    {
+      "key": "m07",
+      "name": "שירן ביטון",
+      "about": "very flexible, the volunteer driver"
+    },
+    {
+      "key": "m08",
+      "name": "עומר דהן",
+      "about": "multi-day traveller"
+    }
+  ],
+  "children": [
+    {
+      "name": "נועה אברהם",
+      "age": 4,
+      "guardians": [
+        "m04",
+        "m05"
+      ]
+    },
+    {
+      "name": "איתי אברהם",
+      "age": 9,
+      "guardians": [
+        "m04"
+      ]
+    }
+  ],
+  "cars": [
+    {
+      "key": "van",
+      "name": "ואן 7 מקומות",
+      "plate": "SHW-001",
+      "features": [
+        "large_trunk"
+      ],
+      "seats": [
+        {
+          "adults": 7,
+          "child_seats": 0,
+          "boosters": 0
+        },
+        {
+          "adults": 5,
+          "child_seats": 2,
+          "boosters": 0
+        }
+      ]
+    },
+    {
+      "key": "kids",
+      "name": "סקודה עם 2 מושבי ילד",
+      "plate": "SHW-002",
+      "features": [],
+      "seats": [
+        {
+          "adults": 5,
+          "child_seats": 0,
+          "boosters": 0
+        },
+        {
+          "adults": 3,
+          "child_seats": 2,
+          "boosters": 0
+        },
+        {
+          "adults": 3,
+          "child_seats": 1,
+          "boosters": 1
+        }
+      ]
+    },
+    {
+      "key": "small",
+      "name": "קיה קטנה",
+      "plate": "SHW-003",
+      "features": [],
+      "seats": [
+        {
+          "adults": 4,
+          "child_seats": 0,
+          "boosters": 0
+        }
+      ]
+    },
+    {
+      "key": "hadera",
+      "name": "הונדה שחונה בחדרה",
+      "plate": "SHW-004",
+      "features": [],
+      "base": "חדרה",
+      "seats": [
+        {
+          "adults": 5,
+          "child_seats": 0,
+          "boosters": 0
+        }
+      ]
+    },
+    {
+      "key": "plain",
+      "name": "קורולה",
+      "plate": "SHW-005",
+      "features": [],
+      "seats": [
+        {
+          "adults": 5,
+          "child_seats": 0,
+          "boosters": 0
+        }
+      ]
+    }
+  ],
+  "maintenance": [
+    {
+      "car": "small",
+      "day": 2,
+      "from": "08:00",
+      "to": "12:00",
+      "reason": "טיפול 10,000 ק\"מ"
+    }
+  ],
+  "requests": [
+    {
+      "id": "S1",
+      "member": "m01",
+      "day": 0,
+      "trip": "round_trip",
+      "dest": "תל אביב",
+      "depart": "08:00",
+      "ret": "12:00",
+      "flex": [
+        "0",
+        "30 min",
+        "0",
+        "30 min"
+      ],
+      "rideType": "work"
+    },
+    {
+      "id": "S2",
+      "member": "m07",
+      "day": 0,
+      "trip": "round_trip",
+      "dest": "תל אביב",
+      "depart": "08:30",
+      "ret": "11:30",
+      "flex": [
+        "1 hour",
+        "1 hour",
+        "1 hour",
+        "1 hour"
+      ],
+      "rideType": "errands"
+    },
+    {
+      "id": "S3",
+      "member": "m04",
+      "day": 0,
+      "trip": "round_trip",
+      "dest": "זכרון יעקב",
+      "depart": "10:00",
+      "ret": "14:00",
+      "adults": 6,
+      "rideType": "other"
+    },
+    {
+      "id": "S4",
+      "member": "m08",
+      "day": 0,
+      "trip": "round_trip",
+      "dest": "נתניה",
+      "depart": "15:00",
+      "ret": "18:00",
+      "luggage": true,
+      "rideType": "errands",
+      "notes": "ציוד רב — קניות לבית"
+    },
+    {
+      "id": "S5",
+      "member": "m03",
+      "day": 1,
+      "trip": "drop_off",
+      "pickup": true,
+      "dest": "בנימינה",
+      "depart": "08:30",
+      "ret": "13:00",
+      "rideType": "healthcare"
+    },
+    {
+      "id": "S6",
+      "member": "m03",
+      "day": 1,
+      "trip": "drop_off",
+      "pickup": true,
+      "dest": "כרכור",
+      "depart": "15:00",
+      "ret": "15:45",
+      "rideType": "errands"
+    },
+    {
+      "id": "S7",
+      "member": "m06",
+      "day": 1,
+      "trip": "drop_off",
+      "pickup": false,
+      "dest": "מענית",
+      "depart": "11:00",
+      "rideType": "work"
+    },
+    {
+      "id": "S8",
+      "member": "m01",
+      "day": 1,
+      "trip": "one_way",
+      "dest": "עפולה",
+      "depart": "09:00",
+      "rideType": "work"
+    },
+    {
+      "id": "S9",
+      "member": "m07",
+      "day": 1,
+      "trip": "one_way",
+      "origin": "עפולה",
+      "dest": "גבעת חביבה",
+      "depart": "16:00",
+      "flex": [
+        "0",
+        "1 hour",
+        "0",
+        "0"
+      ],
+      "rideType": "work"
+    },
+    {
+      "id": "S10",
+      "member": "m02",
+      "day": 2,
+      "trip": "round_trip",
+      "origin": "@default",
+      "dest": "עפולה",
+      "depart": "09:00",
+      "ret": "13:00",
+      "rideType": "work"
+    },
+    {
+      "id": "S11",
+      "member": "m07",
+      "day": 2,
+      "trip": "round_trip",
+      "origin": "חדרה",
+      "dest": "חיפה",
+      "depart": "14:00",
+      "ret": "17:00",
+      "rideType": "errands"
+    },
+    {
+      "id": "S12",
+      "member": "m04",
+      "day": 2,
+      "trip": "round_trip",
+      "dest": "חיפה",
+      "depart": "10:00",
+      "ret": "15:00",
+      "stops": [
+        {
+          "leg": "out",
+          "place": "זכרון יעקב"
+        }
+      ],
+      "rideType": "healthcare"
+    },
+    {
+      "id": "S13",
+      "member": "m01",
+      "day": 2,
+      "trip": "round_trip",
+      "dest": {
+        "text": "@freeText"
+      },
+      "depart": "16:00",
+      "ret": "19:00",
+      "rideType": "errands"
+    },
+    {
+      "id": "S14",
+      "member": "m04",
+      "day": 3,
+      "trip": "round_trip",
+      "dest": "פרדס חנה",
+      "depart": "07:30",
+      "ret": "08:30",
+      "children": "all",
+      "rideType": "childcare"
+    },
+    {
+      "id": "S15",
+      "member": "m05",
+      "day": 3,
+      "trip": "round_trip",
+      "dest": "פרדס חנה",
+      "depart": "07:45",
+      "ret": "08:30",
+      "children": "all",
+      "rideType": "childcare"
+    },
+    {
+      "id": "S16",
+      "member": "m01",
+      "day": 3,
+      "trip": "round_trip",
+      "dest": "כרכור",
+      "depart": "07:30",
+      "ret": "09:00",
+      "rideType": "work"
+    },
+    {
+      "id": "S17",
+      "member": "m06",
+      "day": 3,
+      "trip": "round_trip",
+      "dest": "נתניה",
+      "depart": "10:00",
+      "ret": "13:00",
+      "privateCar": true,
+      "rideType": "work"
+    },
+    {
+      "id": "S18",
+      "member": "m07",
+      "day": 3,
+      "trip": "round_trip",
+      "dest": "נתניה",
+      "depart": "10:00",
+      "ret": "13:00",
+      "joinOf": "S17",
+      "rideType": "errands"
+    },
+    {
+      "id": "S19",
+      "member": "m08",
+      "day": 3,
+      "returnDay": 5,
+      "trip": "round_trip",
+      "series": true,
+      "dest": "ירושלים",
+      "depart": "08:00",
+      "ret": "14:00",
+      "rideType": "work"
+    },
+    {
+      "id": "S20",
+      "member": "m01",
+      "day": 4,
+      "trip": "round_trip",
+      "dest": "חריש",
+      "depart": "08:00",
+      "ret": "12:00",
+      "rideType": "work"
+    },
+    {
+      "id": "S21",
+      "member": "m04",
+      "day": 4,
+      "trip": "round_trip",
+      "dest": "עין שמר",
+      "depart": "08:00",
+      "ret": "12:00",
+      "rideType": "errands"
+    },
+    {
+      "id": "S22",
+      "member": "m06",
+      "day": 4,
+      "trip": "round_trip",
+      "dest": "גן שמואל",
+      "depart": "08:00",
+      "ret": "12:00",
+      "rideType": "work"
+    },
+    {
+      "id": "S23",
+      "member": "m07",
+      "day": 4,
+      "trip": "round_trip",
+      "dest": "אור עקיבא",
+      "depart": "08:00",
+      "ret": "12:00",
+      "rideType": "work"
+    }
+  ],
+  "freeText": "קניון חוצות המפרץ"
+}

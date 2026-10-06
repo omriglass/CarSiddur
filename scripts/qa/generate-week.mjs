@@ -49,7 +49,7 @@ async function createDepartment(api, svc, tag, log) {
   return data;
 }
 
-async function installPlaces(svc, dept) {
+export async function installPlaces(svc, dept) {
   const home = QA_DATA.home;
   const { data: rows, error } = await svc.from("destinations").select("id").eq("department_id", dept.id).neq("id", dept.home_destination_id);
   if (error) throw error;
@@ -79,7 +79,7 @@ async function installPlaces(svc, dept) {
   return places;
 }
 
-async function openWeek(svc, dept, now, thisWeek = false) {
+export async function openWeek(svc, dept, now, thisWeek = false) {
   const weekStart = thisWeek ? thisWeekStart(now) : nextWeekStart(now);
   const hour = 3600_000;
   const { error } = await svc.from("weeks").insert({
@@ -171,7 +171,7 @@ function buildMemberPlan(rng, memberCount) {
   return { members, pairs };
 }
 
-async function createAccounts(svc, dept, members, tag, log) {
+export async function createAccounts(svc, dept, members, tag, log) {
   const sadranAccount = { name: QA_DATA.sadranName, email: `sadran@${tag}.qa.local` };
   const all = [{ ...sadranAccount, role: "sadran" }, ...members.map((m, i) => ({ name: m.name, email: `m${String(i + 1).padStart(2, "0")}@${tag}.qa.local`, role: "member" }))];
   const ids = [];
@@ -192,7 +192,7 @@ async function createAccounts(svc, dept, members, tag, log) {
 // ---------------------------------------------------------------------------
 // Requests
 // ---------------------------------------------------------------------------
-class Ctx {
+export class Ctx {
   constructor({ rng, dept, weekStart, places, rideTypes, cars }) {
     Object.assign(this, { rng, dept, weekStart, places, rideTypes, cars });
     this.home = places[0];
@@ -209,7 +209,7 @@ class Ctx {
 }
 
 /** Builds a submit_request payload. Dest/origin are place objects or {text}. */
-function buildPayload(ctx, o) {
+export function buildPayload(ctx, o) {
   const rng = ctx.rng;
   const isRound = o.tripType === "round_trip" || (o.tripType === "drop_off" && o.pickup);
   const payload = {

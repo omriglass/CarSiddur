@@ -42,6 +42,7 @@ Guidance for Claude Code working in this repository.
 | `npm run db:start` / `db:stop` | `supabase start` / `supabase stop` (Docker required) |
 | `npm run db:reset` | `supabase db reset` — replays migrations + seed.sql from scratch |
 | `npm run db:fake` | `node scripts/fake-week.mjs` — generates fake members/requests through `submit_request` for manual local testing (local Supabase only) |
+| `npm run qa:showcase -- --out <dir> [--api <url>] [--tag <name>]` | Small fixed **showcase department** (each member/car/request shows one principle; `docs/SHOWCASE_SCENARIOS.md` lists expected outcomes and a coverage checklist for any test data); disposable stack by default, the owner's stack only with `QA_OWNER_STACK=1` when asked |
 | `npm run db:export` | `node scripts/db-export.mjs [--local\|--linked] [--out <dir>]` — schema/data/roles dump via `supabase db dump`; `--linked` requires `--yes-remote` (FREE_DEPLOYMENT.md §8) |
 | `npm run db:types` | `supabase gen types typescript --local > src/integrations/supabase/types.ts` |
 | `npm run db:schema` | Regenerate `supabase/schema-current.sql` (schema-only dump of `public` from the local stack; generated, read-only reference — CI diff-checks it) |
