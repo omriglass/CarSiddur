@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 // QA week generator (docs/QA_SIMULATION.md section 1).
 //
-//   npm run qa:week -- --seed <n> --out <dir> [--api <url>] [--tag <name>]
+//   npm run qa:week -- --seed <n> --out <dir> [--api <url>] [--tag <name>] [--this-week]
 //
+// `--this-week` opens the week that contains today instead of the next one (for testing "car now").
 // Deterministic from --seed (mulberry32). Creates a dedicated QA department on a DISPOSABLE
 // Supabase stack (refuses 127.0.0.1:54321 - see qa-common.mjs), a QA Sadran, 30-40 members with
 // known passwords, shared + private cars, the places list, parent pairs with children, and about
@@ -16,7 +17,7 @@ import { fileURLToPath } from "node:url";
 
 import {
   ADMIN_EMAIL, ADMIN_PASSWORD, MEMBER_PASSWORD, SOURCE_DEPARTMENT_ID,
-  addDays, chance, jerusalemDate, mulberry32, nextWeekStart, parseArgs, pick, quarter, randInt,
+  addDays, chance, jerusalemDate, mulberry32, nextWeekStart, parseArgs, pick, quarter, randInt, thisWeekStart,
   resolveApi, roadKm, roadMinutes, serviceClient, shuffle, signedInClient, toInstant, weightedPick,
 } from "./qa-common.mjs";
 
@@ -78,8 +79,8 @@ async function installPlaces(svc, dept) {
   return places;
 }
 
-async function openWeek(svc, dept, now) {
-  const weekStart = nextWeekStart(now);
+async function openWeek(svc, dept, now, thisWeek = false) {
+  const weekStart = thisWeek ? thisWeekStart(now) : nextWeekStart(now);
   const hour = 3600_000;
   const { error } = await svc.from("weeks").insert({
     department_id: dept.id, week_start: weekStart, phase: "open",
@@ -336,7 +337,7 @@ function planMemberRequests(ctx, m, idx, state) {
 // ---------------------------------------------------------------------------
 // Main generation
 // ---------------------------------------------------------------------------
-export async function generateWeek({ seed, out, apiUrl, tag, log = console.log, now = new Date() }) {
+export async function generateWeek({ seed, out, apiUrl, tag, log = console.log, now = new Date(), thisWeek = false }) {
   const api = resolveApi(apiUrl);
   const svc = serviceClient(api);
   const rng = mulberry32(seed);
@@ -346,7 +347,7 @@ export async function generateWeek({ seed, out, apiUrl, tag, log = console.log, 
   log(`qa-week: seed ${seed}, tag ${tag}, api ${api.url}`);
   const dept = await createDepartment(api, svc, tag, log);
   const places = await installPlaces(svc, dept);
-  const weekStart = await openWeek(svc, dept, now);
+  const weekStart = await openWeek(svc, dept, now, thisWeek);
   log(`week ${weekStart} open`);
   const rt = await svc.from("ride_types").select("id, code").eq("department_id", dept.id);
   if (rt.error) throw rt.error;
@@ -648,9 +649,9 @@ function renderSummary({ world, members, submitted, places, liveEvents, failures
 // ---------------------------------------------------------------------------
 const invokedDirectly = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (invokedDirectly) {
-  const args = parseArgs(process.argv.slice(2), { seed: "7", out: "", api: "", tag: "" });
-  if (!args.out) { console.error("usage: npm run qa:week -- --seed <n> --out <dir> [--api <url>] [--tag <name>]"); process.exit(2); }
-  generateWeek({ seed: Number(args.seed), out: path.resolve(args.out), apiUrl: args.api, tag: args.tag })
+  const args = parseArgs(process.argv.slice(2), { seed: "7", out: "", api: "", tag: "", "this-week": false });
+  if (!args.out) { console.error("usage: npm run qa:week -- --seed <n> --out <dir> [--api <url>] [--tag <name>] [--this-week]"); process.exit(2); }
+  generateWeek({ seed: Number(args.seed), out: path.resolve(args.out), apiUrl: args.api, tag: args.tag, thisWeek: args["this-week"] === true })
     .then((r) => {
       console.log(`\n${r.summary}`);
       if (r.failureRate > 0.1) { console.error(`qa-week: ${(r.failureRate * 100).toFixed(1)}% of requests failed to file (>10%)`); process.exit(1); }

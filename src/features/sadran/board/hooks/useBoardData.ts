@@ -669,7 +669,7 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
                 needsDriver: !!r.needs_driver,
                 autoRelocation: !!r.auto_relocation,
                 startsAt: r.starts_at ?? undefined,
-                relayPartner: relayPartnerOf(r),
+                relayPartner: relayPartnerOf(r, rides),
               })
             : (r.destination_name ?? ""));
         const via = viaLabel(rideViaNames(r));

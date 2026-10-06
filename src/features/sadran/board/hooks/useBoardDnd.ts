@@ -17,7 +17,7 @@ import { useProfile } from "@/features/auth/useProfile";
 import { useDepartmentMembers } from "@/features/auth/useDepartmentMembers";
 import { fetchChildren } from "@/features/requests/api";
 
-import { defaultMergeLeg, mergeInvalidReason, mergePayload, type MergeLeg } from "../mergeProposal";
+import { combineMergeLegs, defaultMergeLeg, mergeLegForCard, mergePayload, mergePayloadFromLegs, mergePayloadLegs, type MergeLeg } from "../mergeProposal";
 import { isDropOffWithPickup, legView, unmetItemId, unmetItemKey } from "../unmetLegs";
 import type { GuestDropTarget } from "@/components/GuestChips";
 import { requestStart, requestWithinFlex } from "../phantomLanes";
@@ -25,7 +25,7 @@ import { reservationRoutePlaces, routeEditPayload, type RouteEditValues } from "
 import { buildDraftInput, type ComposerPrefill } from "../draftInput";
 import {
   connectsOtherLeg,
-  isUnmetDropValid,
+  legStartPlaceId,
   minutesIso,
   originMismatch,
   passengersOf,
@@ -34,15 +34,16 @@ import {
   seatsFit,
   luggageBlocks,
   luggageCountOf,
+  mergeRefusalReason,
   unavailable,
   unmetCandidateWindow,
-  unmetMergeHost,
   unmetPlacement,
   unmetRequestPassengers,
   unmetShiftPayload,
 } from "../dropValidity";
 import type { UnmetListItem } from "../components/UnmetList";
 import { wouldOverlap } from "../geometry";
+import { isReservation } from "@/features/rides/servedOf";
 import { buildRidePassengerInputs, splitReservationDriverAndPassengers } from "../reservationPeople";
 import {
   useCreateProposalMutation,
@@ -56,6 +57,7 @@ import {
   useCancelRideMutation,
 } from "../../hooks";
 import { useClaimRideDriverMutation, useCancelRideChangeMutation } from "@/features/rides/hooks";
+import { fetchRideVersion } from "../../api";
 import { useUndoStack } from "../useUndoStack";
 import { servedOf, servedToEditRideLegs } from "../../solverRun";
 
@@ -187,6 +189,25 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
   }
 
   /**
+   * Opens the merge popup for `requestId` joining `hostRideId` on `leg`. REQ §13.102 (d, R2M2/R2B13):
+   * when the request already has an open merge draft, the new leg extends it (out on ride A + return
+   * on ride B, one proposal) instead of replacing it silently.
+   */
+  function openMerge(requestId: string, hostRideId: string, leg: MergeLeg, anchorLeg: "out" | "return" | null) {
+    const prev = proposals.find((p) => p.type === "merge" && p.status === "draft" && p.request_id === requestId);
+    let payload = mergePayload(hostRideId, leg);
+    let draftNote: "extends" | "replaces" | null = null;
+    if (prev) {
+      const prevLegs = mergePayloadLegs(prev.payload);
+      const existing = prevLegs.length ? prevLegs : prev.ride_id ? [{ ride_id: prev.ride_id, leg: "both" as MergeLeg }] : [];
+      const combined = combineMergeLegs(existing, { ride_id: hostRideId, leg });
+      payload = mergePayloadFromLegs(combined.legs);
+      draftNote = combined.replaced ? "replaces" : "extends";
+    }
+    setMergePrefill({ requestId, rideId: payload.ride_id as string, type: "merge", payload, anchorLeg, draftNote });
+  }
+
+  /**
    * REQ §13.94 (G10): take an added person out of a merged ride. A draft merge is discarded, a
    * sent/accepted one withdrawn, an applied one un-merged (`unmerge_request`: the request returns
    * to the unmet list and the person is notified).
@@ -290,32 +311,44 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
       toast.error(he.sadranBoard.wrongDay); return;
     }
     if (privateCarBlocks(dropCtx, carId, req.requester_id)) { toast.error(he.sadranBoard.privateCarNotTarget); return; }
+    // R2B7: a drop on a draft block is refused; a drop on a pending-merge block means its ride.
+    if (droppedOnRideId?.startsWith("draft:")) { toast.error(he.sadranBoard.dropOnDraftBlock); return; }
+    if (droppedOnRideId?.startsWith("merge:")) {
+      droppedOnRideId = proposals.find((p) => p.id === droppedOnRideId!.slice(6))?.ride_id ?? undefined;
+    }
     let window = unmetCandidateWindow(dropCtx, item, minutes);
     if (!window || !department?.home_destination_id) {
       toast.error(he.sadranBoard.invalidWindow);
       return;
     }
     if (luggageBlocks(dropCtx, carId, req.has_luggage ? 1 : 0, window)) { toast.error(he.sadranBoard.luggageNeedsTrunkToast); return; }
-    const host = unmetMergeHost(dropCtx, item, carId, minutes, droppedOnRideId);
-    if (host?.id && host.starts_at && host.ends_at) {
-      const invalidMerge = mergeInvalidReason(host, req, defaultMergeLeg(req), dropCtx.route);
-      if (invalidMerge) { toast.error(he.mergedRide.invalid[invalidMerge]); return; }
-      if (!isUnmetDropValid(dropCtx, item, carId, minutes, droppedOnRideId)) { toast.error(he.sadranBoard.dragInvalidOverlapToast); return; }
-      // REQ §13.94 (G10): the popup shows the merged ride; the payload is legs only (the host keeps its times).
-      setMergePrefill({ requestId: req.id, rideId: host.id, type: "merge", payload: mergePayload(host.id, defaultMergeLeg(req)) });
+    // R2B7: a drop ON a ride (any trip type) is a merge attempt: the merge flow when valid, else the reason.
+    const dropHost = droppedOnRideId ? rides.find((ride) => ride.id === droppedOnRideId && ride.car_id === carId && !servedOf(ride).some((entry) => entry.request_id === req.id)) : undefined;
+    if (dropHost?.id && dropHost.starts_at && dropHost.ends_at) {
+      if (isReservation(dropHost)) { toast.error(he.sadranBoard.dropOnReservation); return; }
+      const mergeLeg = mergeLegForCard(req, item.leg ?? null);
+      const refusal = mergeRefusalReason(dropCtx, dropHost, req, mergeLeg);
+      if (refusal) { toast.error(he.mergedRide.invalid[refusal]); return; }
+      // REQ §13.94 (G10): the popup shows the merged ride; the payload is legs only (the host keeps its start).
+      openMerge(req.id, dropHost.id, mergeLeg, item.leg ?? null);
       return;
     }
     const connects = connectsOtherLeg(dropCtx, item, carId);
     window = unmetCandidateWindow(dropCtx, item, minutes, !connects);
     if (!window) { toast.error(he.sadranBoard.invalidWindow); return; }
     if (unavailable(dropCtx, carId, window.startsAt, window.endsAt)) { toast.error(he.sadranBoard.maintenanceUnavailable); return; }
+    // R2B7: never create a ride that overlaps another ride on the car (reservations and blocks included).
+    if (wouldOverlap(window, rides.filter((ride) => ride.car_id === carId && ride.status !== "cancelled" && ride.starts_at && ride.ends_at)
+      .map((ride) => ({ startsAt: ride.starts_at!, endsAt: ride.ends_at! })), 0)) {
+      toast.error(he.mergedRide.invalid.time_overlap); return;
+    }
     if (!seatsFit(dropCtx, carId, connects ? { adults: req.adults, childSeats: req.child_seats, boosters: req.boosters } : unmetRequestPassengers(req))) {
       toast.error(he.sadranBoard.dragInvalidSeatsToast);
       return;
     }
     // QB23: the car must be at the request's origin when the window starts - refuse instead of
     // offering a shift/placement onto a car parked elsewhere (a connected pair's own other leg is exempt).
-    const dropOrigin = req.origin_id ?? dropCtx.homeDestinationId;
+    const dropOrigin = legStartPlaceId(req, dropCtx.homeDestinationId);
     if (!connects && dropOrigin && originMismatch(dropCtx, carId, dropOrigin, window.startsAt)) {
       toast.error(he.sadranBoard.carNotAtOriginToast); return;
     }
@@ -327,24 +360,30 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
       return;
     }
     try {
-      await editRideMutation.mutateAsync({
-        input: {
-          department_id: departmentId,
-          week_start: weekStart,
-          car_id: carId,
-          starts_at: window.startsAt,
-          ends_at: window.endsAt,
-          origin_id: placement.originId,
-          destination_id: placement.destinationId,
-          driver_id: placement.driverIsRequester ? req.requester_id : null,
-          needs_driver: !placement.driverIsRequester,
-          allow_conflict: true,
-          is_pinned: true,
-          pin_reason: "SADRAN_MANUAL",
-          served: [{ request_id: req.id, ...placement.served }],
+      const placeInput: EditRideInput = {
+        department_id: departmentId,
+        week_start: weekStart,
+        car_id: carId,
+        starts_at: window.startsAt,
+        ends_at: window.endsAt,
+        origin_id: placement.originId,
+        destination_id: placement.destinationId,
+        driver_id: placement.driverIsRequester ? req.requester_id : null,
+        needs_driver: !placement.driverIsRequester,
+        allow_conflict: true,
+        is_pinned: true,
+        pin_reason: "SADRAN_MANUAL",
+        served: [{ request_id: req.id, ...placement.served }],
+      };
+      let placedRideId = await editRideMutation.mutateAsync({ input: placeInput, departmentId, weekStart });
+      // R2B7: undo works after a drop from the unmet list - it takes the placed ride back out (the request returns to the list).
+      undoStack.push({
+        label: req.requester_full_name ?? placedRideId,
+        run: async () => {
+          const expectedVersion = await fetchRideVersion(placedRideId);
+          await unassignRideMutation.mutateAsync({ rideId: placedRideId, expectedVersion, departmentId, weekStart });
         },
-        departmentId,
-        weekStart,
+        redo: async () => { placedRideId = await editRideMutation.mutateAsync({ input: placeInput, departmentId, weekStart }); },
       });
       const carName = carsData.find((c) => c.id === carId)?.name ?? "";
       toast.success(placement.driverIsRequester ? tv("sadranBoard.dragPlacedToast", { car: carName, start: formatMinutes(minutes) }) : connects ? he.connectedPair.saved : he.boardCoordination.standaloneSaved);
@@ -413,14 +452,9 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
         if (!host?.starts_at || !host.ends_at) return;
         if (!host.driver_id || host.needs_driver) { toast.error(he.boardCoordination.mergeNeedsDriver); return; }
         const guestRequest = requestsData.find((r) => r.id === driverEntry.request_id);
-        const invalidMerge = guestRequest ? mergeInvalidReason(host, guestRequest, driverEntry.leg ?? "both", dropCtx.route) : null;
+        const invalidMerge = guestRequest ? mergeRefusalReason(dropCtx, host, guestRequest, driverEntry.leg ?? "both", [ride.id]) : null;
         if (invalidMerge) { toast.error(he.mergedRide.invalid[invalidMerge]); return; }
-        setMergePrefill({
-          requestId: driverEntry.request_id,
-          rideId: droppedOnRideId,
-          type: "merge",
-          payload: mergePayload(droppedOnRideId, driverEntry.leg ?? "both"),
-        });
+        openMerge(driverEntry.request_id, droppedOnRideId, driverEntry.leg ?? "both", driverEntry.leg === "return" ? "return" : driverEntry.leg === "out" ? "out" : null);
       }
       return;
     }
@@ -438,7 +472,7 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
     const newEndsAt = minutesIso(dropCtx, newEndMinutes);
     if (unavailable(dropCtx, carId, newStartsAt, newEndsAt)) { toast.error(he.sadranBoard.maintenanceUnavailable); return; }
     const servedRequests = servedOf(ride).map((entry) => requestsData.find((req) => req.id === entry.request_id)).filter((req): req is WeekRequestRow => !!req);
-    const withinDepartFlex = servedRequests.every((req) => requestWithinFlex(req, newStartsAt, newEndsAt));
+    const withinDepartFlex = servedRequests.every((req) => requestWithinFlex(req, newStartsAt, newEndsAt, servedOf(ride).find((entry) => entry.request_id === req.id)?.leg, ride.driver_id !== req.requester_id));
 
     // Conflicts checked and reported in Hebrew *before* touching the DB
     // (owner bug report #2: "confirm conflicts — overlap/buffer/location/

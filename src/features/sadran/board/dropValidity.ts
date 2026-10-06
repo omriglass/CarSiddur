@@ -15,7 +15,7 @@ import type { Car } from "@/features/fleet/api";
 import { servedOf } from "../applySolve";
 import { isReservation } from "@/features/rides/servedOf";
 import { slotToIso, wouldOverlap } from "./geometry";
-import { defaultMergeLeg, mergeInvalidReason, previewMerge, type MergeLeg, type MergeRouteContext } from "./mergeProposal";
+import { defaultMergeLeg, mergeInvalidReason, mergeLegForCard, previewMerge, type MergeLeg, type MergeRouteContext } from "./mergeProposal";
 import { unmetItemId } from "./unmetLegs";
 import { requestStart, requestWindow, requesterDrives, standaloneChauffeurWindow, tripTypeOf } from "./phantomLanes";
 import type { UnmetListItem } from "./components/UnmetList";
@@ -158,7 +158,9 @@ export function swapLuggageBlocked(ctx: Pick<BoardDropContext, "cars" | "rides">
 }
 
 /** REQ §13.101 (j): can `carId` take `request` for the whole `[startsAt, endsAt)` span (active, no maintenance, no ride, luggage ok)? Only this week's rides are known here - the server re-checks. */
-export function carFreeForSpan(ctx: BoardDropContext, carId: string, startsAt: string, endsAt: string, hasLuggage: boolean): boolean {
+export function carFreeForSpan(ctx: BoardDropContext, carId: string, startsAt: string, endsAt: string, hasLuggage: boolean, originId?: string | null): boolean {
+  // R2B5: only a car that is at the series' starting place when the span begins (not one parked away).
+  if (originId && originMismatch(ctx, carId, originId, startsAt)) return false;
   if (unavailable(ctx, carId, startsAt, endsAt) || luggageBlocks(ctx, carId, hasLuggage ? 1 : 0, { startsAt, endsAt })) return false;
   const car = ctx.cars.find((c) => c.id === carId);
   if (!car || car.type === "temporary") return false;
@@ -274,15 +276,29 @@ export function unmetCandidateWindow(ctx: BoardDropContext, item: UnmetListItem,
 }
 
 export function unmetMergeHost(ctx: BoardDropContext, item: UnmetListItem, carId: string, _minutes: number, hostRideId?: string) {
-  if (tripTypeOf(item.request) === "round_trip" || !hostRideId) return undefined;
-  return ctx.rides.find((ride) => ride.id === hostRideId && ride.car_id === carId && !isReservation(ride));
+  // R2B7: a drop on a ride is a merge attempt for every trip type (round trips included).
+  if (!hostRideId) return undefined;
+  return ctx.rides.find((ride) => ride.id === hostRideId && ride.car_id === carId && !isReservation(ride)
+    && !servedOf(ride).some((entry) => entry.request_id === item.request.id));
 }
 
 export function unmetPreviewWindow(ctx: BoardDropContext, item: UnmetListItem, carId: string, minutes: number, hostRideId?: string) {
   const host = unmetMergeHost(ctx, item, carId, minutes, hostRideId);
   return host?.starts_at && host.ends_at
-    ? mergedHostWindow(ctx, host, item.request, defaultMergeLeg(item.request))
+    ? mergedHostWindow(ctx, host, item.request, mergeLegForCard(item.request, item.leg ?? null))
     : unmetCandidateWindow(ctx, item, minutes, !connectsOtherLeg(ctx, item, carId));
+}
+
+/**
+ * R2B8: where the car must be when the request's leg starts, or `null` when the car's own place
+ * does not matter. A return-only leg (pickup) starts at the pickup place (the request's destination);
+ * a הקפצה is a chauffeur ride that starts wherever the car is sent from (the placement takes the
+ * car's own location), so nothing is checked; every other leg starts at the request's origin.
+ */
+export function legStartPlaceId(request: Pick<WeekRequestRow, "origin_id" | "destination_id" | "trip_shape" | "trip_type">, homeId?: string | null): string | null {
+  if (tripTypeOf(request) === "drop_off") return null;
+  if (request.trip_shape === "one_way_from") return request.destination_id ?? null;
+  return request.origin_id ?? homeId ?? null;
 }
 
 /**
@@ -311,6 +327,34 @@ export function strandsNextRide(ctx: BoardDropContext, carId: string, endLocatio
   return !!next && next.origin_id != null && next.origin_id !== endLocationId;
 }
 
+/** Why a merge is refused (R2M3/R2B17) - keys of `he.mergedRide.invalid`; the server's reason codes map to the same texts in `lib/rpc.ts`. */
+export type MergeRefusal = "boards_at_end" | "detour_too_long" | "luggage_needs_large_trunk" | "luggage_too_many" | "private_car" | "seats_full" | "car_unavailable" | "time_overlap";
+
+/**
+ * The first reason `request` (on `leg`) may not join `host`, in the order a person would check it:
+ * a private car, the route (boards at the end / detour), luggage, seats, maintenance, then another
+ * ride on the same car in the merged window. `null` = valid. `excludeRideIds` are rides that stop
+ * counting (a needs-driver ride being merged away).
+ */
+export function mergeRefusalReason(ctx: BoardDropContext, host: BoardRide, request: WeekRequestRow, leg: MergeLeg, excludeRideIds: readonly string[] = []): MergeRefusal | null {
+  const carId = host.car_id;
+  if (!carId) return null;
+  if (privateCarBlocks(ctx, carId, request.requester_id)) return "private_car";
+  const route = mergeInvalidReason(host, request, leg, ctx.route);
+  if (route) return route;
+  const window = mergedHostWindow(ctx, host, request, leg);
+  if (luggageBlocks(ctx, carId, request.has_luggage ? 1 : 0, window, [...excludeRideIds])) {
+    return ctx.cars.find((car) => car.id === carId)?.features.includes("large_trunk") ? "luggage_too_many" : "luggage_needs_large_trunk";
+  }
+  const need = passengersOf(host);
+  if (!seatsFit(ctx, carId, { adults: need.adults + request.adults, childSeats: need.childSeats + request.child_seats, boosters: need.boosters + request.boosters })) return "seats_full";
+  if (!window) return null;
+  if (unavailable(ctx, carId, window.startsAt, window.endsAt)) return "car_unavailable";
+  const others = ctx.rides.filter((ride) => ride.id !== host.id && !excludeRideIds.includes(ride.id as string) && ride.car_id === carId && ride.status !== "cancelled" && ride.starts_at && ride.ends_at)
+    .map((ride) => ({ startsAt: ride.starts_at!, endsAt: ride.ends_at! }));
+  return wouldOverlap(window, others, 0) ? "time_overlap" : null;
+}
+
 /** Includes the whole chauffeur return block or expanded host, using actual
  * overlap rather than rejecting coordinator-approved short turnaround gaps. */
 export function isUnmetDropValid(ctx: BoardDropContext, item: UnmetListItem, carId: string, minutes: number, hostRideId?: string): boolean {
@@ -320,13 +364,13 @@ export function isUnmetDropValid(ctx: BoardDropContext, item: UnmetListItem, car
   const host = unmetMergeHost(ctx, item, carId, minutes, hostRideId);
   // A merge boards the guest *en route* (REQ §13.94): where the car is and where it ends are the
   // host's business, not the guest's origin/destination.
-  const originId = item.request.origin_id ?? ctx.homeDestinationId;
+  const originId = legStartPlaceId(item.request, ctx.homeDestinationId);
   const connects = !host && connectsOtherLeg(ctx, item, carId);
   if (!host && !connects && originId && originMismatch(ctx, carId, originId, window.startsAt)) return false;
   if (!host && tripTypeOf(item.request) === "one_way" && item.request.destination_id
     && strandsNextRide(ctx, carId, item.request.destination_id, window.endsAt)) return false;
   if (luggageBlocks(ctx, carId, item.request.has_luggage ? 1 : 0, window)) return false;
-  if (host && mergeInvalidReason(host, item.request, defaultMergeLeg(item.request), ctx.route)) return false;
+  if (host && mergeRefusalReason(ctx, host, item.request, mergeLegForCard(item.request, item.leg ?? null))) return false;
   const need = host ? passengersOf(host) : { adults: 1, childSeats: 0, boosters: 0 };
   if (!seatsFit(ctx, carId, host || !(requesterDrives(item.request) || connects)
     ? { adults: need.adults + item.request.adults, childSeats: need.childSeats + item.request.child_seats, boosters: need.boosters + item.request.boosters }

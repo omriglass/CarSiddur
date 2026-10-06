@@ -519,7 +519,7 @@ Merged and deduplicated from both agents' reports (S = QA Sadran, U = QA user). 
 - **QF8 — Passenger "accept but ask for a time change" inside the proposal** (~15% negotiated by message) (U).
 - **QF9 — A "who is joining my car" view for private-car owners**, with an approve step (U).
 
-## QA run 2 findings (2026-10-06, seed 6044, week 11–17.10, department `qa-s6044`; QA Sadran = Opus, Wednesday via UI; QA user = Sonnet) — **awaiting owner triage**
+## QA run 2 findings (2026-10-06, seed 6044, week 11–17.10, department `qa-s6044`; QA Sadran = Opus, Wednesday via UI; QA user = Sonnet) — **owner triaged 2026-10-06 (REQ item 102): all bugs; R2Q1 a–c, R2Q2, R2Q3, R2U1–U5, R2M1–R2M5 (R2M4 warn only) now; R2F1 not now (bigger cars may be preferred for long rides, mileage matters); R2F2 to do, not now; R2F3/R2F4 later**
 Merged and deduplicated from both reports (S = QA Sadran item, U = QA user item; full reports and screenshots in the run's scratchpad). Auto-fill served 91 of 146 legs; unmet at the end: Sun 8, Mon 7, Tue 7, Wed 12, Thu 10 (mostly no car at the member's town, seats, every car taken at zero flexibility, pickup legs needing a driver).
 
 ### Bugs (most significant first)
@@ -549,6 +549,10 @@ Merged and deduplicated from both reports (S = QA Sadran item, U = QA user item;
 - **R2B24 — A refused ask-to-join shows the raw code `DUPLICATE_OVERLAP`** and a home→home route, not which own request it overlaps (U-UI4).
 - **R2B25 — Merge popup**: a return-leg card offers only "הלוך בלבד / הלוך וחזור"; an off-grid ETA (12:53); the header says the ride keeps its start (contradicts §13.95) (S UI).
 - QA tooling (not the app): `qa:member` cannot resolve a contested group; `ask-to-join` files the ride's end place as the destination; CLI `merge` refuses needs-driver rides; CLI drop checks ignore drafts; no fewer-days / withdraw-duplicate commands; `contacts` lacks emails; CLI siddur prints the car's home→home instead of the route; car-now cannot be exercised in a future QA week.
+
+**Fix status (2026-10-06, migrations `20261008100000`–`…200200`; suites `qa_run2_proposals.sql`, `qa_run2_placement.sql`):**
+- Fixed: R2B1 (answers stand; an accepted proposal that can no longer apply is withdrawn and the Sadran gets `withdrawn_stale` with the reason), R2B2 (apply uses the ride's current window; `merge_turnaround_conflict`), R2B3 (`place_freed_slot_request` places only missing legs), R2B4, R2B5, R2B7, R2B8 (`legStartPlaceId`), R2B9 (TS: pickup ride judged by its end against return flexibility), R2B10 (copy round 2: `shift_placed`/`origin_placed`, `merge_passenger_split`, `external_city_home`, host "אני מציע/ה לצרף"), R2B11, R2B12, R2B13 (`merge_already_on_ride`), R2B14, R2B15, R2B16, R2B17, R2B18, R2B19, R2B20, R2B21, R2B22, R2B23, R2B24 (named toast), R2B25; QA tooling. Built: R2Q1 a–c, R2Q2, R2Q3 (per-ride publish lines), R2U1–U5, R2M1 (`probe_only` → `would_lose_booking`), R2M2 (split merge, one proposal, draft extends), R2M3 (`code` on `_merge_check`/`merge_preview`), R2M4 (`child_request_overlaps`), R2M5 (`external_accepted`).
+- Partial: R2B6 flags later rides + notifies the Sadran (`car_chain_broken`) instead of re-anchoring them; a split-merge draft draws its ghost on the first ride only; R2B24's home→home route not reproduced.
 
 ### Owner questions
 - **R2Q1 — Contested groups and origins** (S13, U12): groups mix members starting in Haifa/Zichron/Yokneam (no car there) with Givat Haviva members, show no car, form even when no car is free, and chain non-overlapping trips (07:15 and 16:00 via a middle one).

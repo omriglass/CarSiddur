@@ -223,6 +223,12 @@ begin
   perform public.record_answer_on_behalf(prop,p_requester,true);
   if (select status from public.proposals where id=prop)='accepted' then perform public.apply_proposal(prop); end if;
   rid:=(select applied_ride_id from public.proposals where id=prop);
+  -- REQ §13.102 R2B1: an accepted proposal that cannot be applied is withdrawn (the Sadran is told why) instead of
+  -- failing the member's answer; surface the recorded cause so the refusal checks below still name it.
+  if (select status from public.proposals where id=prop)='withdrawn' then
+    raise exception '%', coalesce((select n.data->>'reason' from public.notifications n
+      where n.data->>'proposal_id'=prop::text and n.data->>'variant'='withdrawn_stale' order by n.created_at desc limit 1), 'shift_not_applied');
+  end if;
   if (select status from public.proposals where id=prop)<>'applied' then raise exception 'shift_not_applied'; end if;
   return rid;
 end $f$;
@@ -391,11 +397,16 @@ begin
   perform public.send_proposal(prop,'{}');
   perform public.record_answer_on_behalf(prop,m2,true);
   update public.department_settings set detour_limit_minutes=1 where department_id=dept;
-  begin
-    perform public.record_answer_on_behalf(prop,m1,true);
-    raise exception 'apply must re-check the detour limit';
-  exception when others then if sqlerrm<>'merge_detour_too_long' then raise; end if; end;
+  -- REQ §13.102 R2B1: the last answer stands; the re-check fails, so the proposal is withdrawn and the Sadran is told why.
+  perform public.record_answer_on_behalf(prop,m1,true);
+  assert (select status from public.proposals where id=prop)='withdrawn', 'apply must re-check the detour limit (withdrawn)';
+  assert exists(select 1 from public.notifications n where n.data->>'proposal_id'=prop::text
+    and n.data->>'variant'='withdrawn_stale' and n.data->>'reason'='merge_detour_too_long'), 'Sadran told the detour limit failed';
   update public.department_settings set detour_limit_minutes=60 where department_id=dept;
+  prop:=public.create_proposal(g2,rA,'merge',jsonb_build_object('ride_id',rA,
+    'legs',jsonb_build_array(jsonb_build_object('ride_id',rA,'leg','out','car_mode','passenger'))),'detour merge');
+  perform public.send_proposal(prop,'{}');
+  perform public.record_answer_on_behalf(prop,m2,true);
   perform public.record_answer_on_behalf(prop,m1,true);
   assert (select status from public.proposals where id=prop)='applied', 'merge applied once within the limits';
   select * into r from public.rides where id=rA;

@@ -53,7 +53,7 @@ begin
   select title_he,body_he into t,b from public.notifications where recipient_id=m1 and event='proposal_received' and data->>'proposal_id'=prop::text;
   assert t like '%חברה שנייה%' and b not like '%{{%' and b not like '%היי%', format('joiner push/inbox: driver named, no greeting, got [%s] [%s]',t,b);
   select title_he,body_he into t,b from public.notifications where recipient_id=m2 and event='proposal_received' and data->>'proposal_id'=prop::text;
-  assert t like '%חבר ראשון%' and t like '%להצטרף%' and b not like '%{{%', format('host push/inbox names the joiner, got [%s] [%s]',t,b);
+  assert t like '%חבר ראשון%' and t like '%לצרף%' and b not like '%{{%', format('host push/inbox names the joiner, got [%s] [%s]',t,b);
   select title_he into t from public.notifications where recipient_id=admin_ and event='proposal_received' and data->>'proposal_id'=prop::text;
   assert t like '%חבר ראשון%', 'other passenger push/inbox names the joiner';
   assert (select count(distinct data->>'variant') from public.notifications where event='proposal_received' and data->>'proposal_id'=prop::text)=3,

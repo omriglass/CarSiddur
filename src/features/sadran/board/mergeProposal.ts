@@ -13,10 +13,17 @@ export type MergeLeg = "out" | "return" | "both";
  * preset and the popup hides the choice; a request with a pickup chooses "הלוך בלבד" (`out`) or
  * "הלוך וחזור" (`both`).
  */
-export function mergeLegOptions(request: Pick<WeekRequestRow, "trip_shape">): { preset: MergeLeg | null; choices: readonly MergeLeg[] } {
+export function mergeLegOptions(request: Pick<WeekRequestRow, "trip_shape">, anchorLeg?: "out" | "return" | null): { preset: MergeLeg | null; choices: readonly MergeLeg[] } {
   if (request.trip_shape === "one_way_to") return { preset: "out", choices: ["out"] };
   if (request.trip_shape === "one_way_from") return { preset: "return", choices: ["return"] };
+  // R2B25: a card for the request's RETURN leg offers "חזור בלבד" (and both), not the out leg.
+  if (anchorLeg === "return") return { preset: null, choices: ["return", "both"] };
   return { preset: null, choices: ["out", "both"] };
+}
+
+/** The leg a merge starts on for a card: the preset of a one-leg request, else the card's own leg (`out` when none). */
+export function mergeLegForCard(request: Pick<WeekRequestRow, "trip_shape">, cardLeg?: "out" | "return" | null): MergeLeg {
+  return mergeLegOptions(request, cardLeg).preset ?? (cardLeg === "return" ? "return" : "out");
 }
 
 /** The default leg: the preset, else the whole round trip. */
@@ -27,6 +34,42 @@ export function defaultMergeLeg(request: Pick<WeekRequestRow, "trip_shape">): Me
 /** The full merge payload (never a window): `{ ride_id, legs }`. */
 export function mergePayload(hostRideId: string, leg: MergeLeg): Record<string, unknown> {
   return { ride_id: hostRideId, legs: [{ ride_id: hostRideId, role: "passenger", leg, car_mode: "passenger" }] };
+}
+
+export interface MergeLegRef { ride_id: string; leg: MergeLeg }
+
+/** Every `{ride_id, leg}` stored in a merge payload (the payload may carry two rides - a split merge, REQ §13.102 d). */
+export function mergePayloadLegs(payload: unknown): MergeLegRef[] {
+  const legs = payload && typeof payload === "object" && !Array.isArray(payload) ? (payload as { legs?: unknown }).legs : undefined;
+  if (!Array.isArray(legs)) return [];
+  return legs.flatMap((entry) => {
+    const e = entry as { ride_id?: unknown; leg?: unknown } | null;
+    return e && typeof e.ride_id === "string" && (e.leg === "out" || e.leg === "return" || e.leg === "both") ? [{ ride_id: e.ride_id, leg: e.leg }] : [];
+  });
+}
+
+/** The merge payload for several `{ride_id, leg}` (first = the ride the proposal hangs on: the out leg's, else the first). */
+export function mergePayloadFromLegs(legs: readonly MergeLegRef[]): Record<string, unknown> {
+  const sorted = [...legs].sort((a, b) => (a.leg === "return" ? 1 : 0) - (b.leg === "return" ? 1 : 0));
+  return { ride_id: sorted[0]!.ride_id, legs: sorted.map((entry) => ({ ride_id: entry.ride_id, role: "passenger", leg: entry.leg, car_mode: "passenger" })) };
+}
+
+/**
+ * REQ §13.102 (d, R2M2/R2B13): a merge dropped for a request that already has an open merge draft
+ * extends it - the old draft keeps the legs the new one does not cover (out on ride A + return on
+ * ride B). `replaced` is true when the new leg covers everything the old draft had (the draft is
+ * replaced, and the Sadran is told so instead of it vanishing silently).
+ */
+export function combineMergeLegs(existing: readonly MergeLegRef[], added: MergeLegRef): { legs: MergeLegRef[]; replaced: boolean } {
+  const kept: MergeLegRef[] = [];
+  for (const old of existing) {
+    if (added.leg === "both" || old.leg === added.leg) continue;
+    if (old.leg === "both") kept.push({ ride_id: old.ride_id, leg: added.leg === "out" ? "return" : "out" });
+    else kept.push(old);
+  }
+  // Out and return on the same ride is simply "both".
+  if (kept.length === 1 && kept[0]!.ride_id === added.ride_id) return { legs: [{ ride_id: added.ride_id, leg: "both" }], replaced: false };
+  return { legs: [...kept, added], replaced: kept.length === 0 };
 }
 
 /** The leg stored in a merge payload (first entry), else the request's default. */
@@ -78,6 +121,8 @@ export function previewMerge(host: BoardRide, request: WeekRequestRow, leg: Merg
     },
   });
   const requestedAt = merged.boardLeg === "return" ? request.return_at : request.depart_at;
+  // R2B25: the stop ETA is shown on the 15-minute grid (like every ride time), never 12:53.
+  merged.boardEta = merged.boardEta ? new Date(Math.round(Date.parse(merged.boardEta) / 900_000) * 900_000).toISOString() : null;
   const timeChanges = !!merged.boardEta && !!requestedAt && Math.round(Date.parse(merged.boardEta) / 60_000) !== Math.round(Date.parse(requestedAt) / 60_000);
   return { ...merged, requestedAt: requestedAt ?? null, timeChanges };
 }

@@ -2,7 +2,7 @@ import { useProfile } from "@/features/auth/useProfile";
 import { useActiveDepartment } from "@/features/auth/useActiveDepartment";
 import { parseTimeToMinutes } from "@/features/solverBridge/buildSolverInput";
 import { CalendarDays, Inbox } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
@@ -50,7 +50,7 @@ import { conflictingRides, moveOnRideDay } from "@/features/siddur/rideEditing";
 import { tightScheduleRideIds } from "@/features/sadran/board/geometry";
 import { useEditRideMutation, useDepartmentSettings, useWeekRequestsWithNames } from "@/features/sadran/hooks";
 import { groupByDay } from "@/features/siddur/dayGrouping";
-import { hideIdleTemporaryCars } from "@/components/weekGridCars";
+import { carAwayPlaceAtDayStart, hideIdleTemporaryCars } from "@/components/weekGridCars";
 import { type CarFreeWindow } from "@/features/siddur/freeWindows";
 import {
   useBoardRides,
@@ -77,7 +77,9 @@ import { viaLabel } from "@/lib/routeLabel";
 import { peopleOf } from "@/features/rides/ridePeople";
 import { rideBlockLabel, resolveRideRealDestination } from "@/lib/rideLabel";
 import { he, t, tv } from "@/i18n/he";
-import { dateKey, formatTime } from "@/lib/time";
+import { fromZonedTime } from "date-fns-tz";
+
+import { TZ, dateKey, formatTime } from "@/lib/time";
 import { weekdayLabel } from "@/lib/dayLabels";
 import { cn } from "@/lib/utils";
 import { paths } from "@/app/routes";
@@ -363,19 +365,28 @@ export function SiddurPage() {
     : null;
 
   const destinationsQuery = useDestinations(departmentId);
-  const weekGridCars: WeekGridCar[] = useMemo(() => {
+  const weekGridCars: WeekGridCar[] = (() => {
     const destinationNameById = new Map((destinationsQuery.data ?? []).map((d) => [d.id, d.name]));
     return (carsQuery.data ?? []).map((c) => ({
       id: c.id,
       name: siddurCarName(c),
       group: c.type,
-      locationBadge: carLocationsQuery.data?.find((l) => l.car_id === c.id)?.location_name ?? undefined,
+      // R2B14: the away place only on the days the car is actually away (at the selected day's start).
+      locationBadge: !(activeDay ?? weekStart) ? undefined : carAwayPlaceAtDayStart({
+        carId: c.id,
+        dayStartIso: fromZonedTime(`${activeDay ?? weekStart}T00:00:00`, TZ).toISOString(),
+        rides: boardRidesQuery.data ?? [],
+        weekStartLocationId: carLocationsQuery.data?.find((l) => l.car_id === c.id)?.location_id,
+        baseLocationId: c.base_location_id,
+        homeId: homeDestinationId,
+        names: destinationNameById,
+      }),
       // REQUIREMENTS §13.93: the car's own base, shown only when it isn't the department home.
       baseBadge: c.base_location_id && c.base_location_id !== homeDestinationId
         ? tv("sadranBoard.carBase", { place: destinationNameById.get(c.base_location_id) ?? "" })
         : undefined,
     }));
-  }, [carsQuery.data, carLocationsQuery.data, destinationsQuery.data, homeDestinationId]);
+  })();
   // Not memoized: `activeDayRides` is a freshly derived array each render (it comes from
   // `.find(...)?.items`), so a `useMemo` here would never skip recomputation anyway — the
   // mapping itself is cheap (one day's rides, a handful of rows).
@@ -717,6 +728,7 @@ export function SiddurPage() {
       ) : null}
       <RideDetailSheet
         ride={selectedRide}
+        weekRides={rides}
         coordinatorNotes={selectedRide ? rideCoordinatorNotes(servedOf(selectedRide), coordinatorRequests) : undefined}
         canEditPublicNotes={canEditPublicNotes}
         showAddPassengers={!!selectedRide && selectedRide.status !== "cancelled" && weekIsPublic}

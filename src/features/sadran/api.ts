@@ -485,6 +485,13 @@ export async function cancelRide(rideId: string, reason: string, expectedVersion
   await rpc("cancel_ride", { p_ride_id: rideId, p_reason: reason, p_expected_version: expectedVersion });
 }
 
+/** The ride's current `version` (undo of a placement reads it fresh so a later edit does not make the undo stale). */
+export async function fetchRideVersion(rideId: string): Promise<number> {
+  const { data, error } = await supabase.from("rides").select("version").eq("id", rideId).single();
+  if (error) throw toAppError(error);
+  return data.version;
+}
+
 export async function unassignRide(rideId: string, expectedVersion: number): Promise<void> {
   await rpc("unassign_ride", { p_ride_id: rideId, p_expected_version: expectedVersion });
 }

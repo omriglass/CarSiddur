@@ -10,7 +10,10 @@ import { destinationValuesToStopPayload } from "@/features/requests/stops";
 import * as requests from "@/features/requests/api";
 import { fetchBoardRides, fetchMyUpcomingRides } from "@/features/siddur/api";
 import { servedOf, rideViaNames } from "@/features/sadran/applySolve";
+import { fetchWaitlistGroups, resolveWaitlistGroup } from "@/features/waitlist/api";
+import { orderedSelection } from "@/features/waitlist/orderedSelection";
 import { supabase } from "@/integrations/supabase/client";
+import { parseRideRoute } from "@/lib/rideRoute";
 import { TZ, dateKey, formatTime, weekStartFor } from "@/lib/time";
 import { parseHHMM, formatMinutes } from "@/components/timeField15Format";
 
@@ -110,6 +113,19 @@ async function cmdMyRides(): Promise<void> {
   for (const r of mine) console.log(`  ${reqLine(r)}`);
 }
 
+/** The ride's route as the people on it travel: `v_board_rides.route` points, else the served requests' places (never the car's home->home). */
+function routeText(r: Awaited<ReturnType<typeof fetchBoardRides>>[number]): string {
+  const points = parseRideRoute(r.route);
+  const chain = (leg: "out" | "return") => points.filter((p) => p.leg === leg).sort((a, b) => a.position - b.position).map((p) => p.name).filter(Boolean);
+  const out = chain("out");
+  const back = chain("return");
+  if (out.length >= 2) return `route ${out.join(" > ")}${back.length >= 2 && back.join(">") !== [...out].reverse().join(">") ? ` | return ${back.join(" > ")}` : ""}`;
+  const served = servedOf(r).filter((e) => e.destination);
+  if (served.length) return `route ${[...new Set(served.map((e) => `${e.origin_name ?? e.origin_text ?? r.origin_name ?? "home"}>${e.destination}`))].join(" ; ")}`;
+  const via = rideViaNames(r);
+  return `${r.origin_name}->${r.destination_name}${via.out.length ? ` via ${via.out.join(",")}` : ""}`;
+}
+
 async function cmdSiddur(args: Args): Promise<void> {
   const day = need(args.pos[0], "<yyyy-mm-dd>");
   if (!SCOPE) throw new UsageError("department not found");
@@ -119,9 +135,8 @@ async function cmdSiddur(args: Args): Promise<void> {
   const carNames = new Map((carRows ?? []).map((c) => [c.id, c.name]));
   console.log(`SIDDUR ${day} (week ${week}) as ${EMAIL}: ${rides.length} rides visible`);
   for (const r of rides) {
-    const via = rideViaNames(r);
     const mineFlag = r.driver_id === ME ? " [I DRIVE]" : "";
-    console.log(`  ride ${short(r.id)} ${t(r.starts_at)}-${t(r.ends_at)} ${r.origin_name}->${r.destination_name}${via.out.length ? ` via ${via.out.join(",")}` : ""} car=${carNames.get(r.car_id ?? "") ?? short(r.car_id)} driver=${r.needs_driver ? "(none yet)" : r.driver_name ?? "-"} status=${r.status}${mineFlag} | ${servedOf(r).map((e) => `${e.requester}(${e.leg})`).join(", ")}${r.notes ? ` | ${r.notes}` : ""}`);
+    console.log(`  ride ${short(r.id)} ${t(r.starts_at)}-${t(r.ends_at)} ${routeText(r)} car=${carNames.get(r.car_id ?? "") ?? short(r.car_id)} driver=${r.needs_driver ? "(none yet)" : r.driver_name ?? "-"} status=${r.status}${mineFlag} | ${servedOf(r).map((e) => `${e.requester}(${e.leg})`).join(", ")}${r.notes ? ` | ${r.notes}` : ""}`);
   }
 }
 
@@ -213,16 +228,48 @@ async function cmdAskToJoin(args: Args): Promise<void> {
   const day = need(flag(args, "day"), "--day <yyyy-mm-dd> (the ride's day)");
   const rides = (await fetchBoardRides(SCOPE.departmentId, weekOf(day))).filter((r) => r.status !== "cancelled");
   const ride = rides.find((r) => r.id === resolveId(need(args.pos[0], "<rideId>"), rides.flatMap((x) => (x.id ? [x.id] : [])), "ride"))!;
-  if (!ride.starts_at || !ride.ends_at || !ride.destination_id) throw new UsageError("ride lacks times/destination");
+  if (!ride.starts_at || !ride.ends_at) throw new UsageError("ride lacks times");
+  // The real destination is the served request's (the ride's own end place is where the car stops, often home).
+  const destinations = await fetchDestinations(SCOPE.departmentId);
+  const entry = servedOf(ride).find((e) => e.role === "driver" && e.destination) ?? servedOf(ride).find((e) => e.destination);
+  const place = flag(args, "dest") ? resolvePlaceToken(destinations, flag(args, "dest")!)
+    : entry?.destination ? (destinations.find((d) => d.name === entry.destination) ? { presetId: destinations.find((d) => d.name === entry.destination)!.id } : { freeText: entry.destination })
+    : ride.destination_id ? { presetId: ride.destination_id } : null;
+  if (!place) throw new UsageError("cannot tell the ride's destination (give --dest <place>)");
   const rideTypes = await fetchRideTypes(SCOPE.departmentId);
   const rideType = rideTypes.find((r) => r.code === "other") ?? rideTypes[0];
   if (!rideType) throw new UsageError("no ride type available");
   const result = await requests.submitRequest({
-    department_id: SCOPE.departmentId, week_start: ride.week_start ?? weekOf(day), destination_id: ride.destination_id, ride_type_id: rideType.id, trip_shape: "round_trip", trip_type: "round_trip",
+    department_id: SCOPE.departmentId, week_start: ride.week_start ?? weekOf(day), destination_id: "presetId" in place ? place.presetId : undefined, destination_text: "freeText" in place ? place.freeText : undefined, ride_type_id: rideType.id, trip_shape: "round_trip", trip_type: "round_trip",
     depart_at: ride.starts_at, return_at: ride.ends_at, adults: Number(flag(args, "adults") ?? 1), child_seats: 0, boosters: 0,
     flex_depart_early: "0", flex_depart_late: "0", flex_return_early: "0", flex_return_late: "0", notes: flag(args, "notes"), join_ride_id: ride.id as string,
   }) as unknown as requests.SubmitRequestResult;
   console.log(`asked to join ride ${short(ride.id)}: request ${short(result.request_id)} status=${result.status ?? "submitted"}${result.reason ? ` reason=${result.reason}` : ""}`);
+}
+
+/** `groups [--day D]` - the open contested waiting-list groups of the week ("בדיון"). */
+async function cmdGroups(): Promise<void> {
+  if (!SCOPE) throw new UsageError("department not found");
+  const groups = await fetchWaitlistGroups(SCOPE.departmentId, SCOPE.weekStart);
+  for (const g of groups) console.log(`group ${short(g.id)} ${dateKey(g.starts_at)} ${t(g.starts_at)}-${t(g.ends_at)} v${g.version}: ${g.members.map((m) => `${m.name}[req ${short(m.request_id)} ${m.adults}a ${m.destination}${m.profile_id === ME ? " (me)" : ""}]`).join(", ")}`);
+  console.log(`(${groups.length} open groups in week ${SCOPE.weekStart})`);
+}
+
+/** `resolve-group <group> <member,...> [--driver X]` - a participant settles a contested group by ticking who rides (first = driver). */
+async function cmdResolveGroup(args: Args): Promise<void> {
+  if (!SCOPE) throw new UsageError("department not found");
+  const groups = await fetchWaitlistGroups(SCOPE.departmentId, SCOPE.weekStart);
+  const group = groups.find((g) => g.id === resolveId(need(args.pos[0], "<groupId>"), groups.map((g) => g.id), "group (open, this week; use --day for another week)"))!;
+  const pick = (token: string): string => {
+    const lower = token.toLowerCase();
+    const found = group.members.filter((m) => m.request_id.endsWith(token) || m.profile_id.endsWith(token) || m.name.toLowerCase().includes(lower));
+    if (found.length !== 1) throw new UsageError(`member '${token}' ${found.length ? "is ambiguous" : "is not in the group"} (members: ${group.members.map((m) => m.name).join(", ")})`);
+    return found[0]!.request_id;
+  };
+  const ticked = need(args.pos[1], "<member,member,...> (first = driver)").split(",").map((x) => x.trim()).filter(Boolean).map(pick);
+  const ids = orderedSelection(ticked, flag(args, "driver") ? pick(flag(args, "driver")!) : null);
+  const res = await resolveWaitlistGroup(group.id, ids, group.version);
+  console.log(`group ${short(group.id)} resolved: ride ${short(res.ride_id)} car ${short(res.car_id)} driver request ${short(res.driver_request_id)} chosen=${res.chosen.map(short).join(",")} not_chosen=${res.not_chosen.map(short).join(",") || "-"}`);
 }
 
 async function cmdWithdraw(args: Args): Promise<void> {
@@ -248,7 +295,8 @@ function usage(): void {
   request <day> --depart HH:MM [--return HH:MM] --dest <place|free:text> [--trip round_trip|one_way|drop_off] [--from] [--pickup] [--origin P] [--stop P]... [--return-stop P]...
           [--adults N --child-seats N --boosters N --luggage] [--flex 0|15|30|60|120|any | --flex-depart-early/-late/--flex-return-early/-late] [--return-day D] [--car ID] [--ride-type CODE] [--notes T] [--waitlist]
   edit <req> [--day D --depart HH:MM --return HH:MM --dest P --origin P --trip-type T [--from|--pickup] --adults N --flex X --notes T --stop P... --clear-stops]
-  ask-to-join <ride> --day D [--adults N --notes T] | withdraw <req> | cancel <req> [reason] | car-now --dest P [--hours N] [--adults N]`);
+  groups | resolve-group <group> <member,...> [--driver X] (first listed drives)
+  ask-to-join <ride> --day D [--dest P] [--adults N --notes T] | withdraw <req> | cancel <req> [reason] | car-now --dest P [--hours N] [--adults N]`);
 }
 
 run(async () => {
@@ -270,6 +318,8 @@ run(async () => {
     case "siddur": return cmdSiddur(args);
     case "edit": return cmdEdit(args);
     case "ask-to-join": return cmdAskToJoin(args);
+    case "groups": return cmdGroups();
+    case "resolve-group": return cmdResolveGroup(args);
     case "withdraw": return cmdWithdraw(args);
     case "cancel": return cmdCancel(args);
     case "request": return cmdRequest(args);

@@ -103,6 +103,8 @@ export function ProposalComposerScreen({ departmentId, weekStart }: ProposalComp
   const destinationsQuery = useDestinations(departmentId);
   const carsQuery = useCars(departmentId);
 
+  // R2U1: "try again" wording only after a send actually failed; an opened draft's send is a plain action.
+  const [sendFailed, setSendFailed] = useState(false);
   const [requestId] = useState(prefill?.requestId ?? "");
   const [selectedType] = useState<ProposalType>(prefill?.type ?? "shift");
   const [rideId] = useState<string | null>(prefill?.rideId ?? null);
@@ -188,7 +190,11 @@ export function ProposalComposerScreen({ departmentId, weekStart }: ProposalComp
   const newOriginName = destinationsQuery.data?.find((d) => d.id === originIdValue)?.name ?? "";
   const originCarName = carsQuery.data?.find((c) => c.id === originCarIdValue)?.name ?? "";
 
-  const variant = proposalTemplateVariant(type, (currentProposal?.payload ?? prefill?.payload) as Record<string, unknown> | undefined, { hostHasDriver: !!hostRideQuery.data?.driver_id, originAway });
+  const variant = proposalTemplateVariant(type, (currentProposal?.payload ?? prefill?.payload) as Record<string, unknown> | undefined, {
+    hostHasDriver: !!hostRideQuery.data?.driver_id, originAway,
+    destinationIsHome: !!homeDestinationId && request?.destination_id === homeDestinationId,
+    placed: request?.status === "assigned" || request?.status === "merged",
+  });
   const template = variant ? (templatesQuery.data ?? []).find((t) => t.variant === variant) : undefined;
   const effectiveReason = reasonInput.trim() || he.sadranProposal.defaultReason;
   const externalSuggestion = externalSuggestionFor(type, externalHint);
@@ -273,6 +279,7 @@ export function ProposalComposerScreen({ departmentId, weekStart }: ProposalComp
       });
     } catch {
       // toasts already shown by the mutations
+      setSendFailed(true);
     }
   }
 
@@ -413,14 +420,14 @@ export function ProposalComposerScreen({ departmentId, weekStart }: ProposalComp
 
           {isDraft ? (
             <>
-            {proposalId ? <p className="text-sm text-muted-foreground">{he.sadranProposal.draftNote}</p> : null}
+            {proposalId && sendFailed ? <p className="text-sm text-muted-foreground">{he.sadranProposal.draftNote}</p> : null}
             <Button
               className="w-full"
               data-testid="composer-send"
               onClick={handleCreateAndSend}
               disabled={(!proposalId && (!variant || !payload || (type === "merge" && !hostRideQuery.data))) || busy || !proposalsForWeekQuery.isSuccess || proposalsForWeekQuery.isFetching || (!!pendingProposal && (!pendingPartiesQuery.isSuccess || pendingHasAnswer))}
             >
-              {pendingProposal ? he.sadranProposal.replaceAndSend : proposalId ? he.sadranProposal.retrySend : t("action.propose")}
+              {pendingProposal ? he.sadranProposal.replaceAndSend : proposalId ? (sendFailed ? he.sadranProposal.retrySend : he.boardDrafts.send) : t("action.propose")}
             </Button>
             {!proposalId ? (
               <Button

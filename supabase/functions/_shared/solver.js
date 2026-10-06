@@ -568,7 +568,11 @@ var TEMPLATES = {
   // Unmet reasons
   UNMET_NEEDS_LARGE_TRUNK: "\u05E6\u05E8\u05D9\u05DA \u05E8\u05DB\u05D1 \u05E2\u05DD \u05EA\u05D0 \u05DE\u05D8\u05E2\u05DF \u05D2\u05D3\u05D5\u05DC",
   UNMET_NO_CAR: "\u05D0\u05D9\u05DF \u05E8\u05DB\u05D1 \u05E4\u05E0\u05D5\u05D9 \u05D1\u05D7\u05DC\u05D5\u05DF \u05D4\u05DE\u05D1\u05D5\u05E7\u05E9; \u05D7\u05D5\u05E1\u05DE\u05D9\u05DD: {blockers}",
-  UNMET_NO_RELAY_PARTNER: "\u05D0\u05D9\u05DF \u05DE\u05D9 \u05E9\u05D9\u05D7\u05D6\u05D9\u05E8/\u05D9\u05D1\u05D9\u05D0 \u05D0\u05EA \u05D4\u05E8\u05DB\u05D1 \u05DE{dest} \u05D1\u05D0\u05D5\u05EA\u05D5 \u05D9\u05D5\u05DD; \u05D4\u05E8\u05DB\u05D1 \u05D7\u05D9\u05D9\u05D1 \u05DC\u05D7\u05D6\u05D5\u05E8 \u05D4\u05D1\u05D9\u05EA\u05D4 \u05E2\u05D3 {dayEnd}",
+  UNMET_NO_CAR_NONE: "\u05D0\u05D9\u05DF \u05E8\u05DB\u05D1\u05D9\u05DD \u05DE\u05E9\u05D5\u05EA\u05E4\u05D9\u05DD \u05D6\u05DE\u05D9\u05E0\u05D9\u05DD \u05DC\u05E9\u05D9\u05D1\u05D5\u05E5",
+  UNMET_NO_CAR_BUSY: "\u05DB\u05DC \u05D4\u05E8\u05DB\u05D1\u05D9\u05DD \u05EA\u05E4\u05D5\u05E1\u05D9\u05DD \u05D1\u05D7\u05DC\u05D5\u05DF \u05D4\u05DE\u05D1\u05D5\u05E7\u05E9",
+  UNMET_NO_CAR_SEATS: "\u05D0\u05D9\u05DF \u05E8\u05DB\u05D1 \u05E2\u05DD \u05DE\u05E1\u05E4\u05D9\u05E7 \u05DE\u05E7\u05D5\u05DE\u05D5\u05EA \u05D9\u05E9\u05D9\u05D1\u05D4 \u05DC\u05E0\u05D5\u05E1\u05E2\u05D9\u05DD (\u05DB\u05D5\u05DC\u05DC \u05D4\u05E0\u05D4\u05D2/\u05EA)",
+  UNMET_NO_CAR_LUGGAGE: "\u05D0\u05D9\u05DF \u05E8\u05DB\u05D1 \u05E2\u05DD \u05EA\u05D0 \u05DE\u05D8\u05E2\u05DF \u05DE\u05EA\u05D0\u05D9\u05DD \u05DC\u05DB\u05DE\u05D5\u05EA \u05D4\u05DE\u05D8\u05E2\u05DF",
+  UNMET_NO_RELAY_PARTNER: "\u05D0\u05D9\u05DF \u05DE\u05D9 \u05E9\u05D9\u05D7\u05D6\u05D9\u05E8/\u05D9\u05D1\u05D9\u05D0 \u05D0\u05EA \u05D4\u05E8\u05DB\u05D1 \u05DE{dest}: \u05DC\u05D0 \u05E0\u05DE\u05E6\u05D0/\u05D4 \u05E0\u05D4\u05D2/\u05EA \u05E9\u05D9\u05D7\u05D6\u05D9\u05E8/\u05D4 \u05D0\u05D5\u05EA\u05D5, \u05D5\u05D4\u05E0\u05E1\u05D9\u05E2\u05D4 \u05D1\u05DB\u05D9\u05D5\u05D5\u05DF \u05D0\u05D7\u05D3 \u05EA\u05E9\u05D0\u05D9\u05E8 \u05D0\u05D5\u05EA\u05D5 \u05E9\u05DD",
   UNMET_NEEDS_DRIVER: "\u05D0\u05D9\u05DF \u05E0\u05E1\u05D9\u05E2\u05D4 \u05DE\u05EA\u05D0\u05D9\u05DE\u05D4 \u05DC\u05D4\u05E6\u05D8\u05E8\u05E3 \u05D0\u05DC\u05D9\u05D4; \u05D3\u05E8\u05D5\u05E9/\u05D4 \u05E0\u05D4\u05D2/\u05EA \u05DE\u05EA\u05E0\u05D3\u05D1/\u05EA \u05DC\u05D4\u05E1\u05E2\u05D4 \u05DC{dest} \u05D1-{dep}",
   UNMET_SERIES_NO_CAR: "\u05D0\u05D9\u05DF \u05E8\u05DB\u05D1 \u05E4\u05E0\u05D5\u05D9 \u05DC\u05DB\u05DC \u05D9\u05DE\u05D9 \u05D4\u05D1\u05E7\u05E9\u05D4 \u05D4\u05E8\u05D1-\u05D9\u05D5\u05DE\u05D9\u05EA ({index}/{count})",
   UNMET_NO_CAR_AT_ORIGIN: "\u05D0\u05D9\u05DF \u05E8\u05DB\u05D1 \u05E4\u05E0\u05D5\u05D9 \u05E9\u05E0\u05DE\u05E6\u05D0 \u05D1{origin} \u05DB\u05D3\u05D9 \u05DC\u05E6\u05D0\u05EA \u05DE\u05E9\u05DD \u05DC{dest}",
@@ -2579,7 +2583,14 @@ function mapIds(value, splitIds) {
 function mergeUnmet(a, b) {
   const suggestions = [...a.suggestions, ...b.suggestions];
   const lastDeny = suggestions.map((s) => s.kind).lastIndexOf("deny");
-  const kept = suggestions.filter((s, i) => s.kind !== "deny" || i === lastDeny);
+  const seen = /* @__PURE__ */ new Set();
+  const kept = suggestions.filter((s, i) => {
+    if (s.kind === "deny") return i === lastDeny;
+    const key = s.kind === "externalHint" ? `${s.kind}:${s.hint}` : JSON.stringify(s);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
   const blockers = [...a.blockers];
   for (const bl of b.blockers) if (!blockers.some((x) => JSON.stringify(x) === JSON.stringify(bl))) blockers.push(bl);
   return { ...a, score: Math.max(a.score, b.score), blockers, suggestions: kept };
@@ -2992,7 +3003,10 @@ function buildSuggestions(nr, ctx, blockerCarIds) {
             latestReturn = candidateEnd;
           }
         }
-        if (latestReturn !== null) {
+        const atOrigin = tl.gaps().some(
+          (g) => g.locationId === nr.originId && g.window.start <= leg.window.start && leg.window.start < g.window.end
+        );
+        if (latestReturn !== null && atOrigin) {
           suggestions.push({
             kind: "convertToRoundTrip",
             requestId: nr.id,
@@ -3049,10 +3063,8 @@ function changeOriginSuggestion(nr, ctx) {
     if (!fits(car, nr.passengers) || !luggageFits(car, nr.luggage ? 1 : 0)) continue;
     const tl = ctx.timelines.get(car.id);
     if (!tl) continue;
-    const seen = /* @__PURE__ */ new Set([nr.originId]);
     for (const gap of tl.gaps()) {
-      if (seen.has(gap.locationId)) continue;
-      seen.add(gap.locationId);
+      if (gap.locationId === nr.originId) continue;
       const endLocationId = nr.tripType === "one_way" ? nr.destinationId : gap.locationId;
       if (gap.window.start <= nr.window.start && nr.window.end <= gap.window.end && tl.isFree(nr.window, gap.locationId, void 0, endLocationId)) {
         return {
@@ -3149,6 +3161,27 @@ function computeBlockers(nr, timelines, cars) {
     if (overlapping.length > 0) blockers.push({ carId: car.id, rideIds: overlapping });
   }
   return blockers;
+}
+function noCarReason(input, nr, timelines, blockers) {
+  const shared = input.cars.filter((c) => c.type === "shared");
+  if (shared.length === 0) return reason("UNMET_NO_CAR_NONE");
+  const seatOk = shared.filter((c) => fits(c, nr.passengers));
+  if (shared.length > 0 && seatOk.length === 0) return reason("UNMET_NO_CAR_SEATS");
+  const fitting = seatOk.filter((c) => luggageFits(c, nr.luggage ? 1 : 0));
+  if (shared.length > 0 && fitting.length === 0) return reason("UNMET_NO_CAR_LUGGAGE");
+  const atOrigin = fitting.some(
+    (c) => (timelines.get(c.id)?.gaps() ?? []).some(
+      (g) => g.locationId === nr.originId && g.window.start < nr.window.end && nr.window.start < g.window.end
+    )
+  );
+  if (!atOrigin) {
+    return reason("UNMET_NO_CAR_AT_ORIGIN", {
+      origin: requestOriginName(input, nr.request, nr.originId),
+      dest: requestDestName(input, nr.request)
+    });
+  }
+  const names = blockers.map((b) => carName(input.cars, b.carId)).filter(Boolean).join(", ");
+  return names ? reason("UNMET_NO_CAR", { blockers: names }) : reason("UNMET_NO_CAR_BUSY");
 }
 function solve(input) {
   const { input: expanded, splitIds } = expandDropOffs(input);
@@ -3278,7 +3311,7 @@ function solveExpanded(input) {
     );
     const needsLargeTrunk = nr.luggage && !input.cars.some((c) => c.type === "shared" && c.luggageCapacity >= 1);
     const reasonCode = needsLargeTrunk ? "UNMET_NEEDS_LARGE_TRUNK" : stillPassengerOnly.includes(nr) ? "UNMET_PASSENGER_NO_HOST" : stillUnpairedRelay.includes(nr) ? "UNMET_NO_RELAY_PARTNER" : nr.tripType === "one_way" ? "UNMET_NO_CAR_AT_ORIGIN" : "UNMET_NO_CAR";
-    const reasonText = reasonCode === "UNMET_NEEDS_LARGE_TRUNK" ? reason("UNMET_NEEDS_LARGE_TRUNK") : reasonCode === "UNMET_NO_RELAY_PARTNER" ? reason("UNMET_NO_RELAY_PARTNER", { dest: requestDestName(input, nr.request), dayEnd: "23:59" }) : reasonCode === "UNMET_PASSENGER_NO_HOST" ? reason("UNMET_NEEDS_DRIVER", { dest: requestDestName(input, nr.request), dep: "" }) : reasonCode === "UNMET_NO_CAR_AT_ORIGIN" ? reason("UNMET_NO_CAR_AT_ORIGIN", { origin: requestOriginName(input, nr.request, nr.originId), dest: requestDestName(input, nr.request) }) : reason("UNMET_NO_CAR", { blockers: blockers.map((b) => carName(input.cars, b.carId)).filter(Boolean).join(", ") });
+    const reasonText = reasonCode === "UNMET_NEEDS_LARGE_TRUNK" ? reason("UNMET_NEEDS_LARGE_TRUNK") : reasonCode === "UNMET_NO_RELAY_PARTNER" ? reason("UNMET_NO_RELAY_PARTNER", { dest: requestDestName(input, nr.request) }) : reasonCode === "UNMET_PASSENGER_NO_HOST" ? reason("UNMET_NEEDS_DRIVER", { dest: requestDestName(input, nr.request), dep: "" }) : reasonCode === "UNMET_NO_CAR_AT_ORIGIN" ? reason("UNMET_NO_CAR_AT_ORIGIN", { origin: requestOriginName(input, nr.request, nr.originId), dest: requestDestName(input, nr.request) }) : noCarReason(input, nr, timelines, blockers);
     return {
       requestId: nr.id,
       score: scores.get(nr.id)?.total ?? 0,

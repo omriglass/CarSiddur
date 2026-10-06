@@ -269,6 +269,7 @@ function mapRow(row: RawRequestRow): MyRequestRow {
             carName: ride.car
               ? siddurCarName({
                   name: ride.car.name,
+                  type: ride.car.type,
                   ...(Array.isArray(ride.car.codes) ? ride.car.codes[0] : ride.car.codes),
                 })
               : null,
@@ -527,6 +528,8 @@ export interface SubmitRequestPayload {
   template_id?: string;
   /** REQ §13.101 f (QM5): re-submit of an edit the server asked to confirm (`needs_confirmation`). */
   confirm_release?: boolean;
+  /** R2B20 / REQ §102 f: ask the server what the edit would do without changing anything. */
+  probe_only?: boolean;
 }
 
 /**
@@ -564,6 +567,46 @@ export interface SubmitRequestResult {
   would_place?: boolean;
   /** REQ §13.101 g (QM7): the member's own rides/requests overlapping the submitted one. */
   overlaps?: { request_id: string | null; ride_id: string | null }[];
+  /** With `probe_only`: the edit would release the member's current car (R2B20). */
+  would_lose_booking?: boolean;
+}
+
+/** `submit_request` with `probe_only: true` — changes nothing, reports `would_lose_booking`. */
+export async function probeSubmitRequest(payload: SubmitRequestPayload): Promise<SubmitRequestResult | null> {
+  const raw = await rpc("submit_request", { payload: { ...payload, probe_only: true } as unknown as Json });
+  return raw as unknown as SubmitRequestResult | null;
+}
+
+export interface ChildOverlapRow {
+  requestId: string;
+  requesterName: string;
+  childName: string;
+  departAt: string;
+  returnAt: string;
+}
+
+/** R2M4: named children of this request that are already on another member's overlapping request. */
+export async function fetchChildRequestOverlaps(args: {
+  departmentId: string;
+  childNames: string[];
+  departAt: string;
+  returnAt: string;
+  excludeRequestId?: string;
+}): Promise<ChildOverlapRow[]> {
+  const rows = await rpc("child_request_overlaps", {
+    p_department_id: args.departmentId,
+    p_child_names: args.childNames,
+    p_depart_at: args.departAt,
+    p_return_at: args.returnAt,
+    ...(args.excludeRequestId ? { p_exclude_request_id: args.excludeRequestId } : {}),
+  });
+  return (rows ?? []).map((r) => ({
+    requestId: r.request_id,
+    requesterName: r.requester_name,
+    childName: r.child_name,
+    departAt: r.depart_at,
+    returnAt: r.return_at,
+  }));
 }
 
 /** `submit_request(payload jsonb)` — the only write path for requests (CLAUDE.md decision 8). */

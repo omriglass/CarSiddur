@@ -123,6 +123,12 @@ export function nextWeekStart(now = new Date()) {
   return addDays(today, 7 - dowOf(today));
 }
 
+/** The Sunday on or before "today" in Jerusalem (the week that contains today; `--this-week`). */
+export function thisWeekStart(now = new Date()) {
+  const today = jerusalemDate(now);
+  return addDays(today, -dowOf(today));
+}
+
 /** Offset (ms) of Asia/Jerusalem from UTC at a given UTC instant. */
 function jerusalemOffsetMs(utcMs) {
   const parts = new Intl.DateTimeFormat("en-US", {

@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { he, tv } from "@/i18n/he";
 
 import { useSetRideDriverMutation } from "../../hooks";
+import { sortFreeFirst } from "../driverBusy";
 
 export interface DriverCandidate {
   id: string;
@@ -25,13 +26,15 @@ export interface RideDriverPickerProps {
   candidates: readonly DriverCandidate[];
   departmentId: string;
   weekStart: string;
+  /** R2U3: members busy during the ride (own ride/request overlapping); marked, and listed after the free ones. */
+  busyIds?: ReadonlySet<string>;
   disabled?: boolean;
 }
 
-export function RideDriverPicker({ rideId, version, needsDriver, volunteerName, candidates, departmentId, weekStart, disabled }: RideDriverPickerProps) {
+export function RideDriverPicker({ rideId, version, needsDriver, volunteerName, candidates, departmentId, weekStart, busyIds, disabled }: RideDriverPickerProps) {
   const [driverId, setDriverId] = useState("");
   const mutation = useSetRideDriverMutation();
-  const drivers = candidates.filter((candidate) => !candidate.doesNotDrive);
+  const drivers = sortFreeFirst(candidates.filter((candidate) => !candidate.doesNotDrive), busyIds ?? new Set<string>());
 
   if (!needsDriver && !volunteerName) return null;
 
@@ -59,7 +62,7 @@ export function RideDriverPicker({ rideId, version, needsDriver, volunteerName, 
                 <SelectValue placeholder={he.rideDriver.placeholder} />
               </SelectTrigger>
               <SelectContent>
-                {drivers.map((candidate) => <SelectItem key={candidate.id} value={candidate.id}>{candidate.name}</SelectItem>)}
+                {drivers.map((candidate) => <SelectItem key={candidate.id} value={candidate.id}>{busyIds?.has(candidate.id) ? `${candidate.name} · ${he.rideDriver.busy}` : candidate.name}</SelectItem>)}
               </SelectContent>
             </Select>
             <Button type="button" className="min-h-11" disabled={!driverId || disabled || mutation.isPending} onClick={assign} data-testid="ride-driver-assign">

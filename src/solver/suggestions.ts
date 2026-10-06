@@ -304,7 +304,11 @@ export function buildSuggestions(nr: NormalizedRequest, ctx: SuggestionContext, 
             latestReturn = candidateEnd;
           }
         }
-        if (latestReturn !== null) {
+        // R2B12: the car must actually be at the leg's origin when it leaves.
+        const atOrigin = tl.gaps().some(
+          (g) => g.locationId === nr.originId && g.window.start <= leg.window.start && leg.window.start < g.window.end,
+        );
+        if (latestReturn !== null && atOrigin) {
           suggestions.push({
             kind: 'convertToRoundTrip',
             requestId: nr.id,
@@ -380,10 +384,10 @@ function changeOriginSuggestion(nr: NormalizedRequest, ctx: SuggestionContext): 
     if (!fits(car, nr.passengers) || !luggageFits(car, nr.luggage ? 1 : 0)) continue;
     const tl = ctx.timelines.get(car.id);
     if (!tl) continue;
-    const seen = new Set<string>([nr.originId]);
     for (const gap of tl.gaps()) {
-      if (seen.has(gap.locationId)) continue;
-      seen.add(gap.locationId);
+      // never suggest the request's own origin (R2B12); every gap is tried —
+      // a car can have an earlier unusable gap at the same place
+      if (gap.locationId === nr.originId) continue;
       // A one_way trip leaves the car at the destination: the same end check as
       // placement (the car's next ride must start there, or there is none).
       const endLocationId = nr.tripType === 'one_way' ? nr.destinationId : gap.locationId;

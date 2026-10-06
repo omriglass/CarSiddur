@@ -155,6 +155,10 @@ test("member edits own request, saves directional flexibility, and confirms scop
     await page.getByRole("option", { name: car!.name, exact: true }).click();
     await page.getByLabel(he.field.notes, { exact: true }).fill("Updated through member request form");
     await page.getByRole("button", { name: he.action.saveRequest }).click();
+    // REQ §13.102 f (R2M1): an open-week edit of a placed request warns that the car is released.
+    const loseBooking = page.getByRole("dialog", { name: he.request.loseBookingTitle });
+    await loseBooking.waitFor({ state: "visible", timeout: 3_000 }).then(
+      () => loseBooking.getByRole("button", { name: he.common.confirm, exact: true }).click(), () => undefined);
     // Post-save navigates to `/my` (2026-09-16, REQ §13 item 91).
     await expect(page).toHaveURL(/\/my$/);
     const { data: edited } = await service.from("requests").select("notes, flex_depart_early, flex_depart_late, preferred_car_id").eq("id", mine[0]!.id).single();

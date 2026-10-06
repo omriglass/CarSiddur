@@ -214,7 +214,7 @@ begin
   assert (select count(*) from public.notifications where recipient_id=memberB and department_id=dept and week_start=w2 and event='outcome_changed')=1,
     'memberB should get exactly one outcome_changed notification after a status change';
   select title_he into title from public.notifications where recipient_id=memberB and department_id=dept and week_start=w2 and event='outcome_changed';
-  assert title=format('שינוי בסידור שלך לימים %s',public.weekday_short_label(w2)),'outcome_changed title should list the day: '||title;
+  assert title=format('שינוי בסידור שלך — %s',public.weekday_short_label(w2)),'outcome_changed title should list the day: '||title;
   assert (select count(*) from public.notifications where recipient_id=memberA and department_id=dept and week_start=w2 and event='outcome_changed')=0,
     'memberA had no status change and should get no outcome_changed notification';
 end $$;

@@ -51,9 +51,13 @@ export function peopleOf(ride: Pick<BoardRide, "people">): RidePerson[] {
   const raw = ride.people;
   if (!Array.isArray(raw)) return [];
   const people: RidePerson[] = [];
+  // R2B15: one row per `key` (a volunteer driver after `set_ride_driver` can arrive twice).
+  const seen = new Set<string>();
   for (const entry of raw) {
     const parsed = ridePersonSchema.safeParse(entry);
-    if (parsed.success) people.push(parsed.data);
+    if (!parsed.success || seen.has(parsed.data.key)) continue;
+    seen.add(parsed.data.key);
+    people.push(parsed.data);
   }
   return people;
 }

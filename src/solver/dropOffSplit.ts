@@ -96,7 +96,15 @@ function mergeUnmet(a: UnmetRequest, b: UnmetRequest): UnmetRequest {
   const suggestions: Suggestion[] = [...a.suggestions, ...b.suggestions];
   // one deny is enough: keep the last (both are identical in effect)
   const lastDeny = suggestions.map((s) => s.kind).lastIndexOf('deny');
-  const kept = suggestions.filter((s, i) => s.kind !== 'deny' || i === lastDeny);
+  const seen = new Set<string>();
+  const kept = suggestions.filter((s, i) => {
+    if (s.kind === 'deny') return i === lastDeny;
+    // the same suggestion from both legs (cab, rental, ...) is listed once
+    const key = s.kind === 'externalHint' ? `${s.kind}:${s.hint}` : JSON.stringify(s);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
   const blockers = [...a.blockers];
   for (const bl of b.blockers) if (!blockers.some((x) => JSON.stringify(x) === JSON.stringify(bl))) blockers.push(bl);
   return { ...a, score: Math.max(a.score, b.score), blockers, suggestions: kept };

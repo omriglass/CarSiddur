@@ -31,11 +31,19 @@ export const PROPOSAL_TEMPLATE_VARIANT: Record<ProposalType, string | null> = {
 export function proposalTemplateVariant(
   type: ProposalType,
   payload?: Record<string, unknown> | null,
-  opts?: { hostHasDriver?: boolean; originAway?: boolean },
+  opts?: { hostHasDriver?: boolean; originAway?: boolean; destinationIsHome?: boolean; placed?: boolean },
 ): string | null {
-  // "No car in your town" needs a list-place origin other than home (SQL `proposal_reader_vars`).
-  if (type === "external" && (payload?.external_reason === "city" || opts?.originAway)) return "external_city";
+  // "No car in your town" needs a list-place origin other than home (SQL `proposal_reader_vars`); when the trip
+  // goes home there is no "get to the kibbutz yourself" advice (`external_city_home`, REQ §13.102 R2B10).
+  if (type === "external" && (payload?.external_reason === "city" || opts?.originAway)) {
+    return opts?.destinationIsHome ? "external_city_home" : "external_city";
+  }
+  // A member who already has a ride is offered a *move*, never "we could place you" (`shift_placed`/`origin_placed`).
+  if (opts?.placed && (type === "shift" || type === "origin")) return `${type}_placed`;
   if (type === "merge" && opts?.hostHasDriver === false) return "merge_passenger_no_driver";
+  // REQ §13.102 d: out on one ride, back on another - one proposal (`merge_passenger_split` in SQL).
+  if (type === "merge" && Array.isArray(payload?.legs)
+    && new Set((payload.legs as { ride_id?: unknown }[]).map((leg) => leg?.ride_id)).size > 1) return "merge_passenger_split";
   return PROPOSAL_TEMPLATE_VARIANT[type];
 }
 
@@ -80,6 +88,7 @@ export function timeChangeLine(
 ): string {
   const part = (kind: "Depart" | "Return", from?: string | null, to?: string | null): string => {
     if (!to || from === to) return "";
+    if (!from) return tv(`sadranProposal.time${kind}Set` as "sadranProposal.timeDepartSet", { new: formatTime(new Date(to)) });
     const day = dayLevel || (from ? formatDayDate(from) !== formatDayDate(to) : false);
     const label = (iso: string) => (day ? `${formatDayDate(iso)} ${formatTime(new Date(iso))}` : formatTime(new Date(iso)));
     return tv(`sadranProposal.time${kind}${day ? "Day" : ""}Change` as "sadranProposal.timeDepartChange", { new: label(to), old: from ? label(from) : "" });
@@ -95,6 +104,7 @@ export function proposalTemplateVars(input: ProposalTextInput): Record<string, s
   let timeChange = "";
   let carLine = "";
   let joinLine = "";
+  let legWord = "";
   if (input.type === "shift") {
     const dayLevel = !!input.seriesOriginal;
     timeChange = timeChangeLine(
@@ -110,7 +120,13 @@ export function proposalTemplateVars(input: ProposalTextInput): Record<string, s
     const ret = leg === "out" ? null : (input.combined?.end ?? request?.return_at);
     joinLine = tv(depart && ret ? "sadranProposal.joinBoth" : depart ? "sadranProposal.joinOut" : "sadranProposal.joinReturn", { depart: times(depart), return: times(ret) });
     timeChange = timeChangeLine({ depart: request?.depart_at, return: request?.return_at }, { depart, return: ret }) || he.sadranProposal.timeUnchanged;
+    legWord = leg === "out" ? he.sadranProposal.legOut : leg === "return" ? he.sadranProposal.legReturn : he.sadranProposal.legBoth;
   }
+
+  // The request's own window as text: "08:00–12:00", just the departure for a one-way, "חזרה ב16:00" for a return-only.
+  const windowText = request?.depart_at && request.return_at ? `${times(request.depart_at)}–${times(request.return_at)}`
+    : request?.depart_at ? times(request.depart_at)
+    : request?.return_at ? tv("sadranProposal.windowReturn", { return: times(request.return_at) }) : "";
 
   // `{{link}}` is deliberately never a key: `renderTemplate` leaves unknown placeholders alone,
   // so the literal token survives into the preview and is substituted per recipient when the
@@ -130,6 +146,9 @@ export function proposalTemplateVars(input: ProposalTextInput): Record<string, s
     timeChange,
     carLine,
     joinLine,
+    legWord,
+    window: windowText,
+    destinationRoute: tv("route.to", { destination: input.destinationName }),
     joinerName: input.requesterName ?? "",
     detourLine: input.detourMin ? tv("sadranProposal.detourLine", { detourMin: String(input.detourMin) }) : "",
     car: input.carName,
@@ -142,6 +161,8 @@ export function proposalTemplateVars(input: ProposalTextInput): Record<string, s
     detourMin: input.detourMin ? String(input.detourMin) : "",
     reason: input.reason,
     reasonLine: input.reason ? tv("sadranProposal.reasonLine", { reason: input.reason }) : "",
+    // Sits before the link (REQ §13.102 R2B10), never after it.
+    reasonNote: input.reason ? `${tv("sadranProposal.reasonLine", { reason: input.reason })}\n` : "",
     externalSuggestion: input.externalSuggestion,
     expiresAt: "",
   };
@@ -176,7 +197,7 @@ export function proposalPreviewText(input: ProposalTextInput): string {
     renderTemplate(template.body, proposalTemplateVars(input)),
     // Older/custom templates may not have these placeholders. Include the selected alternative
     // and optional explanation in the member's message.
-    (type === "deny" || type === "external") && !template.body.includes("{{reason}}") && !template.body.includes("{{reasonLine}}") ? input.reason : "",
+    (type === "deny" || type === "external") && !template.body.includes("{{reason}}") && !template.body.includes("{{reasonLine}}") && !template.body.includes("{{reasonNote}}") ? input.reason : "",
     !template.body.includes("{{externalSuggestion}}") ? input.externalSuggestion : "",
   ].filter(Boolean).join("\n\n");
 }

@@ -59,6 +59,34 @@ function computeBlockers(nr: NormalizedRequest, timelines: Map<string, CarTimeli
   return blockers;
 }
 
+/** R2B11: name the real cause of a plain "no car" (never an empty blockers list). */
+function noCarReason(
+  input: SolverInput,
+  nr: NormalizedRequest,
+  timelines: Map<string, CarTimeline>,
+  blockers: { carId: string; rideIds: string[] }[],
+): string {
+  const shared = input.cars.filter((c) => c.type === 'shared');
+  if (shared.length === 0) return reason('UNMET_NO_CAR_NONE');
+  const seatOk = shared.filter((c) => fits(c, nr.passengers));
+  if (shared.length > 0 && seatOk.length === 0) return reason('UNMET_NO_CAR_SEATS');
+  const fitting = seatOk.filter((c) => luggageFits(c, nr.luggage ? 1 : 0));
+  if (shared.length > 0 && fitting.length === 0) return reason('UNMET_NO_CAR_LUGGAGE');
+  const atOrigin = fitting.some((c) =>
+    (timelines.get(c.id)?.gaps() ?? []).some(
+      (g) => g.locationId === nr.originId && g.window.start < nr.window.end && nr.window.start < g.window.end,
+    ),
+  );
+  if (!atOrigin) {
+    return reason('UNMET_NO_CAR_AT_ORIGIN', {
+      origin: requestOriginName(input, nr.request, nr.originId),
+      dest: requestDestName(input, nr.request),
+    });
+  }
+  const names = blockers.map((b) => carName(input.cars, b.carId)).filter(Boolean).join(', ');
+  return names ? reason('UNMET_NO_CAR', { blockers: names }) : reason('UNMET_NO_CAR_BUSY');
+}
+
 /**
  * A drop-off with a pickup is solved as two independent one-way legs (REQUIREMENTS
  * §13.94, docs/SOLVER.md §1.3a) — see `dropOffSplit.ts`.
@@ -253,12 +281,12 @@ function solveExpanded(input: SolverInput): SolverOutput {
         reasonCode === 'UNMET_NEEDS_LARGE_TRUNK'
           ? reason('UNMET_NEEDS_LARGE_TRUNK')
           : reasonCode === 'UNMET_NO_RELAY_PARTNER'
-          ? reason('UNMET_NO_RELAY_PARTNER', { dest: requestDestName(input, nr.request), dayEnd: '23:59' })
+          ? reason('UNMET_NO_RELAY_PARTNER', { dest: requestDestName(input, nr.request) })
           : reasonCode === 'UNMET_PASSENGER_NO_HOST'
             ? reason('UNMET_NEEDS_DRIVER', { dest: requestDestName(input, nr.request), dep: '' })
             : reasonCode === 'UNMET_NO_CAR_AT_ORIGIN'
               ? reason('UNMET_NO_CAR_AT_ORIGIN', { origin: requestOriginName(input, nr.request, nr.originId), dest: requestDestName(input, nr.request) })
-              : reason('UNMET_NO_CAR', { blockers: blockers.map((b) => carName(input.cars, b.carId)).filter(Boolean).join(', ') });
+              : noCarReason(input, nr, timelines, blockers);
       return {
         requestId: nr.id,
         score: scores.get(nr.id)?.total ?? 0,

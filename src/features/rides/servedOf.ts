@@ -78,9 +78,14 @@ export interface RelayPartner {
 }
 
 /** Reads `v_board_rides.relay_partner` into a typed value — same idiom as `servedOf()`. */
-export function relayPartnerOf(ride: BoardRide): RelayPartner | null {
+export function relayPartnerOf(ride: BoardRide, rides?: readonly Pick<BoardRide, "id" | "needs_driver" | "driver_id">[]): RelayPartner | null {
   const raw = ride.relay_partner as unknown as RelayPartner | null;
-  return raw?.ride_id ? raw : null;
+  if (!raw?.ride_id) return null;
+  // R2B19: when the partner ride still has no driver, the name is a passenger on it - not the person
+  // who leaves/brings the car - so the label falls back to the place-only wording.
+  const partnerRide = rides?.find((candidate) => candidate.id === raw.ride_id);
+  if (partnerRide && (partnerRide.needs_driver || !partnerRide.driver_id)) return null;
+  return raw;
 }
 
 /** A `ride_passengers` row (F3, 20260914120000_ride_passengers.sql) — a named person or child on a ride with no `requests` row behind them. */

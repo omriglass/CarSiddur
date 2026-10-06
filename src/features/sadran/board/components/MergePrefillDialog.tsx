@@ -42,6 +42,14 @@ export interface MergePrefillDialogProps {
   requestRoute: string;
   leg: MergeLeg;
   onLegChange: (leg: MergeLeg) => void;
+  /** The card's own leg (a return-leg card offers "חזור בלבד", REQ §13.102). */
+  anchorLeg?: "out" | "return" | null;
+  /** Legs the popup may offer: a leg whose merge is invalid is disabled. */
+  legValid?: Partial<Record<MergeLeg, boolean>>;
+  /** REQ §13.102 (d): out on one ride and return on another, one proposal - leg choice hidden. */
+  split?: boolean;
+  /** How this merge relates to the request's open draft. */
+  draftNote?: "extends" | "replaces" | null;
   /** The merged ride (route twin); `null` when it cannot be computed. */
   preview: MergePreview | null;
   onConfirm: () => void;
@@ -109,8 +117,8 @@ function RideBlock({ testId, heading, label, startsAt, endsAt, preview, flex }: 
   );
 }
 
-export function MergePrefillDialog({ prefill, hostLabel, hostStartsAt, hostEndsAt, request, hostRequest, pair, requestRoute, leg, onLegChange, preview, onConfirm, onDraft, busy, onCancel }: MergePrefillDialogProps) {
-  const options = request ? mergeLegOptions(request) : null;
+export function MergePrefillDialog({ prefill, hostLabel, hostStartsAt, hostEndsAt, request, hostRequest, pair, requestRoute, leg, onLegChange, anchorLeg, legValid, split, draftNote, preview, onConfirm, onDraft, busy, onCancel }: MergePrefillDialogProps) {
+  const options = request && !split ? mergeLegOptions(request, anchorLeg) : null;
   return (
     <Dialog open={!!prefill} onOpenChange={(open) => !open && onCancel()}>
       <DialogContent data-testid="merge-dialog">
@@ -120,9 +128,11 @@ export function MergePrefillDialog({ prefill, hostLabel, hostStartsAt, hostEndsA
         </DialogHeader>
         {prefill ? (
           <div className="space-y-3 rounded-md border p-3 text-sm">
-            <RideBlock testId="merge-base" heading={he.mergedRide.base} label={hostLabel} startsAt={hostStartsAt} endsAt={hostEndsAt} preview={preview} flex={hostRequest} />
+            {draftNote ? <p className="text-xs font-semibold text-maintenance" data-testid="merge-draft-note">{draftNote === "extends" ? he.mergedRide.draftExtends : he.mergedRide.draftReplaces}</p> : null}
+            {split ? <p className="text-xs text-muted-foreground" data-testid="merge-split-note">{he.mergedRide.splitNote}</p> : null}
+            <RideBlock testId="merge-base" heading={split ? he.mergedRide.splitHeadingOut : he.mergedRide.base} label={hostLabel} startsAt={hostStartsAt} endsAt={hostEndsAt} preview={preview} flex={hostRequest} />
             {pair ? (
-              <RideBlock testId="merge-pair" heading={he.mergedRide.pairHeading} label={pair.label} startsAt={pair.startsAt} endsAt={pair.endsAt} preview={pair.preview} />
+              <RideBlock testId="merge-pair" heading={split ? he.mergedRide.splitHeadingReturn : he.mergedRide.pairHeading} label={pair.label} startsAt={pair.startsAt} endsAt={pair.endsAt} preview={pair.preview} />
             ) : null}
             <div data-testid="merge-added">
               <p className="text-xs text-muted-foreground">{he.mergedRide.added}</p>
@@ -141,6 +151,7 @@ export function MergePrefillDialog({ prefill, hostLabel, hostStartsAt, hostEndsA
                         type="button"
                         role="radio"
                         aria-checked={leg === choice}
+                        disabled={legValid?.[choice] === false}
                         variant={leg === choice ? "default" : "outline"}
                         className={cn("min-h-11 flex-1")}
                         data-testid={`merge-leg-${choice}`}

@@ -17,6 +17,8 @@ export const waitlistGroupMemberSchema = z.object({
   child_seats: z.number(),
   boosters: z.number(),
   destination: z.string(),
+  /** R2Q1 c: the member's own origin when not the department home; absent until the view exposes it. */
+  origin_name: z.string().nullish(),
   chosen: z.boolean().nullable(),
 });
 

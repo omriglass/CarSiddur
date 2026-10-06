@@ -3206,6 +3206,7 @@ export type Database = {
           destination: string | null
           group_id: string
           id: string
+          origin_name: string | null
           profile_id: string
           request_id: string
           return_at: string
@@ -3223,6 +3224,7 @@ export type Database = {
           destination?: string | null
           group_id: string
           id?: string
+          origin_name?: string | null
           profile_id: string
           request_id: string
           return_at: string
@@ -3240,6 +3242,7 @@ export type Database = {
           destination?: string | null
           group_id?: string
           id?: string
+          origin_name?: string | null
           profile_id?: string
           request_id?: string
           return_at?: string
@@ -3991,6 +3994,14 @@ export type Database = {
       }
       _frag: { Args: { _key: string; _vars?: Json }; Returns: string }
       _hhmm: { Args: { _at: string }; Returns: string }
+      _joiner_times: {
+        Args: {
+          _leg: Database["public"]["Enums"]["ride_leg"]
+          _request_id: string
+          _ride_id: string
+        }
+        Returns: Record<string, unknown>
+      }
       _merge_check: {
         Args: {
           p_leg?: Database["public"]["Enums"]["ride_leg"]
@@ -3998,6 +4009,16 @@ export type Database = {
           p_ride_id: string
         }
         Returns: Json
+      }
+      _merge_error_code: { Args: { _err: string }; Returns: string }
+      _merge_union_legs: { Args: { _new: Json; _old: Json }; Returns: Json }
+      _merge_window_conflict: {
+        Args: { _new_end: string; _new_start: string; _ride_id: string }
+        Returns: boolean
+      }
+      _ride_fp: {
+        Args: { p_ride_id: string; p_status?: string }
+        Returns: string
       }
       _ride_route: {
         Args: { p_ride_id: string }
@@ -4033,6 +4054,7 @@ export type Database = {
         Args: { p_end: string; p_start: string }
         Returns: string
       }
+      _round5: { Args: { _at: string }; Returns: string }
       _route_add_place: {
         Args: {
           p_after: number
@@ -4059,6 +4081,7 @@ export type Database = {
         }
         Returns: string
       }
+      _window_text: { Args: { _dep: string; _ret: string }; Returns: string }
       add_ride_passengers: {
         Args: {
           p_expected_version: number
@@ -4227,6 +4250,22 @@ export type Database = {
         }
         Returns: number
       }
+      child_request_overlaps: {
+        Args: {
+          p_child_names: string[]
+          p_depart_at: string
+          p_department_id: string
+          p_exclude_request_id?: string
+          p_return_at: string
+        }
+        Returns: {
+          child_name: string
+          depart_at: string
+          request_id: string
+          requester_name: string
+          return_at: string
+        }[]
+      }
       claim_freed_slot: {
         Args: { p_offer_id: string; p_request_id: string }
         Returns: undefined
@@ -4357,6 +4396,10 @@ export type Database = {
           granted_hours: number
           profile_id: string
         }[]
+      }
+      flag_car_chain_breaks: {
+        Args: { p_car: string; p_week: string }
+        Returns: number
       }
       form_waitlist_groups: {
         Args: { p_day: string; p_department_id: string; p_week_start: string }
@@ -4498,6 +4541,15 @@ export type Database = {
         Returns: undefined
       }
       phone_of: { Args: { _profile: string }; Returns: string }
+      place_freed_slot_request: {
+        Args: {
+          p_actor: string
+          p_offer_id: string
+          p_reason: string
+          p_request_id: string
+        }
+        Returns: string
+      }
       place_on_own_car: {
         Args: { p_car_id: string; p_request_id: string }
         Returns: Json
@@ -4592,7 +4644,7 @@ export type Database = {
         Returns: Json
       }
       proposal_system_withdraw: {
-        Args: { p_proposal_id: string; p_variant: string }
+        Args: { p_proposal_id: string; p_reason?: string; p_variant: string }
         Returns: undefined
       }
       publication_conflicting_ride_ids: {
@@ -4698,6 +4750,14 @@ export type Database = {
         Returns: string
       }
       request_booking_info: { Args: { p_request_id: string }; Returns: Json }
+      request_covered_legs: {
+        Args: { p_request_id: string }
+        Returns: string[]
+      }
+      request_has_free_car_at_origin: {
+        Args: { p_request_id: string; p_strict: boolean }
+        Returns: boolean
+      }
       request_leg_route_km: {
         Args: {
           p_leg: Database["public"]["Enums"]["ride_leg"]

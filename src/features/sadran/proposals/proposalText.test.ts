@@ -43,3 +43,23 @@ describe("proposalTemplateVariant", () => {
     expect(proposalTemplateVariant("merge")).toBe("merge_passenger");
   });
 });
+
+describe("QA run 2 copy (REQ §13.102 R2B10)", () => {
+  it("never prints an empty old value: no old time -> new only", () => {
+    const line = timeChangeLine({ return: null }, { return: "2026-09-13T11:30:00.000Z" });
+    expect(line).toContain("14:30");
+    expect(line).not.toContain("במקום");
+  });
+  it("renders the window without a dangling dash and the reason before the link", () => {
+    const text = proposalPreviewText({
+      ...base, type: "external", reason: "אין רכב", request: { depart_at: "2026-09-13T06:00:00.000Z", return_at: null },
+      template: { body: "{{window}}\n{{reasonNote}}שאלה\n{{link}}" },
+    });
+    expect(text.split("\n")[0]).toBe("09:00");
+    expect(text.indexOf("אין רכב")).toBeLessThan(text.indexOf("{{link}}"));
+  });
+  it("picks the city-home and placed variants", () => {
+    expect(proposalTemplateVariant("external", { external_reason: "city" }, { destinationIsHome: true })).toBe("external_city_home");
+    expect(proposalTemplateVariant("shift", null, { placed: true })).toBe("shift_placed");
+  });
+});

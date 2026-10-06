@@ -59,7 +59,9 @@ begin
     update public.rides set notes='Changed after offer' where id=host;
     perform public.answer_proposal(tokens->'party_tokens'->>passenger::text,true);
     perform public.answer_proposal(tokens->'party_tokens'->>driver::text,true);
-    raise exception 'stale host consent applied';
+    -- REQ §13.102 R2B1: the answers stand; the proposal that can no longer be applied is withdrawn (Sadran told), never applied.
+    assert (select status='withdrawn' from public.proposals where id=prop),'stale host consent must withdraw the proposal';
+    assert not exists(select 1 from public.ride_requests where ride_id=host and request_id=qpass),'stale host consent applied';
   exception when sqlstate 'P0409' then null;end;
   prop:=public.create_proposal(qpass,host,'merge',jsonb_build_object('ride_id',host,'starts_at',dt,
     'legs',jsonb_build_array(jsonb_build_object('ride_id',host,'leg','out','car_mode','passenger'))),'Declined consent check');
@@ -135,8 +137,9 @@ begin
     'allow_tight_turnaround',true,'legs',jsonb_build_array(jsonb_build_object('ride_id',host,'leg','out','car_mode','passenger'))),'Member expansion','{}','ask_to_join');
   tokens:=public.send_proposal(prop);
   perform public.answer_proposal(tokens->'party_tokens'->>driver::text,true);
-  begin perform public.answer_proposal(tokens->'party_tokens'->>passenger::text,true);raise exception 'member expansion bypassed buffer';
-  exception when exclusion_violation then null;end;
+  -- REQ §13.102 R2B1: the answer stands, the expansion that would eat the buffer is refused by withdrawing the proposal.
+  perform public.answer_proposal(tokens->'party_tokens'->>passenger::text,true);
+  assert (select status='withdrawn' from public.proposals where id=prop),'member expansion bypassed buffer';
   assert (select ends_at=dt+interval '3 hours' from public.rides where id=host),'failed member expansion changed host';
 
   -- Soft car preference supports explicit clear, omission, and recurring materialization.

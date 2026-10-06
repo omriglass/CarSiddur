@@ -45,14 +45,19 @@ export function packPhantomLanes<T extends { id: string; startMinutes: number; e
 }
 
 /** Compare each edited endpoint with the request, never the previously moved ride. */
-export function requestWithinFlex(req: WeekRequestRow, startsAt: string, endsAt: string): boolean {
+export function requestWithinFlex(req: WeekRequestRow, startsAt: string, endsAt: string, servedLeg?: "out" | "return" | "both" | null, chauffeur = false): boolean {
   const originalStart = requestStart(req);
   if (!originalStart) return false;
-  // QB12: a pickup (return) leg of a drop-off is judged by the return flexibility, not the departure one.
-  const pickupLeg = tripTypeOf(req) === "drop_off" && req.trip_shape === "round_trip" && !!req.return_at
-    && Math.abs(Date.parse(startsAt) - Date.parse(req.return_at)) < Math.abs(Date.parse(startsAt) - Date.parse(originalStart));
+  // QB12 / R2B9: a pickup (return) leg of a drop-off is judged by its own time (the ride's start)
+  // against the return flexibility. When the ride's served leg is known that decides; else the
+  // closer of the two requested times does.
+  const dropOffWithPickup = tripTypeOf(req) === "drop_off" && req.trip_shape === "round_trip" && !!req.return_at;
+  const pickupLeg = dropOffWithPickup && (servedLeg === "return" ? true : servedLeg === "out" ? false
+    : Math.abs(Date.parse(startsAt) - Date.parse(req.return_at as string)) < Math.abs(Date.parse(startsAt) - Date.parse(originalStart)));
   if (pickupLeg && req.return_at) {
-    return withinFlex((Date.parse(startsAt) - Date.parse(req.return_at)) / 60_000,
+    // A chauffeur pickup ride is placed so that it ENDS at the pickup time (`standaloneChauffeurWindow`),
+    // so moving it is judged by the same end against the return flexibility (R2B9: one time, not two).
+    return withinFlex((Date.parse(chauffeur ? endsAt : startsAt) - Date.parse(req.return_at)) / 60_000,
       parseFlexInterval(req.flex_return_early), parseFlexInterval(req.flex_return_late));
   }
   const returning = req.trip_shape === "one_way_from";

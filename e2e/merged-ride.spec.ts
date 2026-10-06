@@ -121,10 +121,10 @@ test("a draft merge is one marked block without conflict stripes, and taking the
     const { data: drafts } = await service.from("proposals").select("status,type,payload").eq("request_id", guestRequestId);
     expect(drafts).toHaveLength(1);
     expect(drafts![0]).toMatchObject({ status: "draft", type: "merge" });
-    // The server stamps the host's own window (no widening) - never a requested window.
-    const stamped = drafts![0]!.payload as { starts_at: string; ends_at: string };
-    expect(Date.parse(stamped.starts_at)).toBe(Date.parse(at("07:15")));
-    expect(Date.parse(stamped.ends_at)).toBe(Date.parse(at("10:00")));
+    // REQ §13.102 R2B2: a Sadran merge draft stores no window - apply always uses the host ride's current one.
+    const stamped = drafts![0]!.payload as { starts_at?: string; ends_at?: string; window_explicit?: boolean };
+    expect(stamped.starts_at).toBeUndefined();
+    expect(stamped.ends_at).toBeUndefined();
 
     // ONE block on the host's car: marked "· מאוחד", dashed draft, no red stripes, the host's own block and the guest card gone.
     const merged = page.locator('button[data-merged="true"]:visible');
@@ -307,7 +307,9 @@ test("the Sadran changes an unmet request's trip type directly from its card (RE
     const control = page.locator(`[data-testid="trip-type-change"][data-trip-request-id="${guestRequestId}"]:visible`);
     await control.getByTestId("trip-type-select").click();
     await page.getByTestId("trip-type-option-drop_off").click();
-    // Applied immediately - no draft, no proposal.
+    // REQ §13.102 h (R2U2): the change asks first.
+    await page.getByRole("dialog").getByRole("button", { name: he.tripTypeChange.confirm, exact: true }).click();
+    // Applied directly - no draft, no proposal.
     await expect.poll(async () => (await service.from("requests").select("trip_type").eq("id", guestRequestId).single()).data?.trip_type).toBe("drop_off");
     const { data: proposals } = await service.from("proposals").select("id").eq("request_id", guestRequestId);
     expect(proposals).toHaveLength(0);

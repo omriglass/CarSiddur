@@ -516,10 +516,10 @@ Every assignment, unmet record and suggestion has a `reasonCode` and a Hebrew `r
 | `CAR_BALANCED_MILEAGE` | `נבחר {car} לאיזון קילומטראז' בין הרכבים` (§3.6.2 — only when mileage genuinely decided the car) |
 | `PLACED_NEEDS_DRIVER` | `שובץ ל{car} ללא נהג/ת קבוע/ה; דרוש/ה מתנדב/ת או אורח/ת שיסיע/תסיע` (§1.3.10a: a non-driver's driverless round trip) |
 | `PLACED_CHAUFFEUR_NO_RETURNER` | `שובץ ל{car} כהסעה ל{dest} ({dep}–{ret}): לא נמצא/ה מי שמחזיר/ה את הרכב; דרוש/ה נהג/ת מתנדב/ת` (§3.6.1a: an unpaired relay candidate, placed as a standalone chauffeur ride) |
-| `UNMET_NO_CAR` | `אין רכב פנוי בחלון המבוקש; חוסמים: {blockers}` |
+| `UNMET_NO_CAR` | text names the real cause (R2B11), same `reasonCode`: no shared cars (`UNMET_NO_CAR_NONE`), no car with enough seats incl. the driver (`_SEATS`), luggage (`_LUGGAGE`), no car at the origin (`UNMET_NO_CAR_AT_ORIGIN` text), else `אין רכב פנוי בחלון המבוקש; חוסמים: {blockers}` (never empty; `_BUSY` when no blocker is named). Identical suggestions from a split drop-off's two legs are listed once; `changeOrigin` never targets the request's own origin and tries every car gap; `convertToRoundTrip` requires the car at the leg's origin (R2B12) |
 | `UNMET_NEEDS_LARGE_TRUNK` | `צריך רכב עם תא מטען גדול` (large luggage and no shared car has a big trunk) |
 | `UNMET_SERIES_NO_CAR` | `אין רכב פנוי לכל ימי הבקשה הרב-יומית ({index}/{count})` |
-| `UNMET_NO_RELAY_PARTNER` | `אין מי שיחזיר/יביא את הרכב מ{dest} באותו יום; הרכב חייב לחזור הביתה עד {dayEnd}` |
+| `UNMET_NO_RELAY_PARTNER` | `אין מי שיחזיר/יביא את הרכב מ{dest}: לא נמצא/ה נהג/ת שיחזיר/ה אותו, והנסיעה בכיוון אחד תשאיר אותו שם` (no day-end wording, REQ §13.93) |
 | `UNMET_NEEDS_DRIVER` | `אין נסיעה מתאימה להצטרף אליה; דרוש/ה נהג/ת מתנדב/ת להסעה ל{dest} ב-{dep}` |
 | `SUGGEST_MERGE` | `הצטרפות לנסיעה של {host} ל{dest} ביציאה {dep} ובחזרה {ret}, ללא סטייה` |
 | `SUGGEST_BEYOND_FLEX` | `הזזה של {dep} דק' מעבר לגמישות שהוצהרה — דורש הסכמה` |

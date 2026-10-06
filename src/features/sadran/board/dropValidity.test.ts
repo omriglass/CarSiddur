@@ -267,10 +267,10 @@ describe("unmet placement by trip type (REQUIREMENTS §13.93)", () => {
     expect(unmetCandidateWindow(ctx, item(req), 660, true)).toEqual({ startsAt: "2026-09-13T08:00:00.000Z", endsAt: "2026-09-13T09:15:00.000Z" });
   });
 
-  it("a round trip is never a merge host target, a drop-off and a one way are", () => {
+  it("a drop on a ride is a merge attempt for every trip type (R2B7), but never onto a ride serving the same request", () => {
     const host = ride({ id: "host1", car_id: "car1", driver_id: "d", needs_driver: false, starts_at: departAt, ends_at: "2026-09-13T09:00:00.000Z" });
     const withHost = baseContext({ rides: [host] });
-    expect(unmetMergeHost(withHost, item(request({ ...base, trip_type: "round_trip", trip_shape: "round_trip" })), "car1", 0, "host1")).toBeUndefined();
+    expect(unmetMergeHost(withHost, item(request({ ...base, trip_type: "round_trip", trip_shape: "round_trip" })), "car1", 0, "host1")?.id).toBe("host1");
     expect(unmetMergeHost(withHost, item(request({ ...base, trip_type: "drop_off", trip_shape: "round_trip" })), "car1", 0, "host1")?.id).toBe("host1");
     expect(unmetMergeHost(withHost, item(request({ ...base, trip_type: "one_way", trip_shape: "one_way_to" })), "car1", 0, "host1")?.id).toBe("host1");
   });
@@ -326,5 +326,30 @@ describe("merge validity and connected legs (REQ §13.95)", () => {
     expect(connectsOtherLeg({ rides: [first] }, item, "car1")).toBe(true);
     expect(connectsOtherLeg({ rides: [first] }, item, "car2")).toBe(false);
     expect(connectsOtherLeg({ rides: [] }, item, "car1")).toBe(false);
+  });
+});
+
+import { legStartPlaceId } from "./dropValidity";
+import { requestWithinFlex } from "./phantomLanes";
+
+describe("legStartPlaceId (R2B8)", () => {
+  const base = { origin_id: "O", destination_id: "D" };
+  it("uses the leg's real start place", () => {
+    expect(legStartPlaceId({ ...base, trip_shape: "round_trip", trip_type: "round_trip" }, "H")).toBe("O");
+    expect(legStartPlaceId({ ...base, trip_shape: "one_way_from", trip_type: "one_way" }, "H")).toBe("D");
+    expect(legStartPlaceId({ origin_id: null, destination_id: "D", trip_shape: "round_trip", trip_type: "round_trip" }, "H")).toBe("H");
+  });
+  it("does not constrain a chauffeur (הקפצה) leg", () => {
+    expect(legStartPlaceId({ ...base, trip_shape: "one_way_from", trip_type: "drop_off" }, "H")).toBeNull();
+    expect(legStartPlaceId({ ...base, trip_shape: "one_way_to", trip_type: "drop_off" }, "H")).toBeNull();
+  });
+});
+
+describe("requestWithinFlex chauffeur pickup (R2B9)", () => {
+  it("judges a pickup ride's end against the return time and flexibility", () => {
+    const req = { trip_shape: "round_trip", trip_type: "drop_off", depart_at: "2026-10-12T05:00:00.000Z", return_at: "2026-10-12T10:00:00.000Z", flex_return_early: "00:00:00", flex_return_late: "00:30:00", flex_depart_early: "00:00:00", flex_depart_late: "00:00:00" } as never;
+    // ride 09:30-10:00 ends at the return time: within flexibility
+    expect(requestWithinFlex(req, "2026-10-12T09:30:00.000Z", "2026-10-12T10:00:00.000Z", "return", true)).toBe(true);
+    expect(requestWithinFlex(req, "2026-10-12T09:30:00.000Z", "2026-10-12T11:00:00.000Z", "return", true)).toBe(false);
   });
 });

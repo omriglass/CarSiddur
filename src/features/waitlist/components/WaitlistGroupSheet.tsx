@@ -130,7 +130,7 @@ export function WaitlistGroupSheet({ group, departmentId, weekStart, profileId, 
                       <div className="flex-1 space-y-0.5">
                         <p className="font-medium">{member.name}</p>
                         <p className="text-xs text-muted-foreground">
-                          <span dir="ltr">{formatTime(new Date(member.depart_at))}–{formatTime(new Date(member.return_at))}</span> · {member.destination}
+                          <span dir="ltr">{formatTime(new Date(member.depart_at))}–{formatTime(new Date(member.return_at))}</span> · {member.origin_name ? tv("route.fromTo", { origin: member.origin_name, destination: member.destination }) : member.destination}
                         </p>
                         <p className="text-xs text-muted-foreground">
                           {tv("waitlist.seatsLine", { adults: String(member.adults), childSeats: String(member.child_seats), boosters: String(member.boosters) })}

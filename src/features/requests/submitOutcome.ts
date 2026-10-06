@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import { t, tv } from "@/i18n/he";
 import type { TripType } from "@/lib/enums";
 
+import { overlapRefusalMessage } from "./overlapNames";
 import type { SubmitRequestResult, SubmitSeriesRequestResult } from "./api";
 
 export interface SubmitOutcomeContext {
@@ -16,6 +17,8 @@ export interface SubmitOutcomeContext {
   returnTime?: string;
   /** Shown as the waitlisted toast's action link (My requests). */
   onViewRequests?: () => void;
+  /** R2B24: names of the member's own overlapping requests/rides (`overlapNames()`). */
+  overlapNames?: readonly string[];
 }
 
 /**
@@ -28,6 +31,11 @@ export interface SubmitOutcomeContext {
  */
 export function toastSubmitOutcome(result: SubmitRequestResult | null | undefined, ctx: SubmitOutcomeContext): void {
   if (!result) return;
+
+  if (result.reason === "DUPLICATE_OVERLAP") {
+    toast.warning(overlapRefusalMessage(ctx.overlapNames ?? []));
+    return;
+  }
 
   if (result.car_was_free) {
     toast.success(tv("quickRequest.successCarWasFree", { car: ctx.carName(result.car_id) }));

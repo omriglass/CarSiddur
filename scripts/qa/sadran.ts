@@ -23,6 +23,7 @@ import { initialRouteEditValues, reservationRoutePlaces, routeEditChanged, route
 import { isDropOffWithPickup, coveredLegs } from "@/features/sadran/board/unmetLegs";
 import { fetchWhatsappTemplates } from "@/features/sadran/api";
 import { addRidePassengers } from "@/features/rides/api";
+import { activeSeriesLegs, buildSeriesSpan, seriesHead, seriesSpanPrefill } from "@/features/sadran/board/seriesSpan";
 import { slotToIso } from "@/features/sadran/board/geometry";
 import { supabase } from "@/integrations/supabase/client";
 import type { DestinationValue } from "@/components/DestinationCombobox";
@@ -30,7 +31,7 @@ import type { Json } from "@/integrations/supabase/types";
 import type { Suggestion } from "@/solver";
 import { createClient } from "@supabase/supabase-js";
 
-import { loadBoard, dropCtxOf, solverPreview, unmetItemsOf, type Board } from "./lib/board";
+import { loadBoard, dropCtxOf, draftHiddenRideIds, solverPreview, unmetItemsOf, type Board } from "./lib/board";
 import {
   UsageError, appendMail, resolvePlaceToken, flag, flagAll, has, mailFor, need, outDir, parseArgs, printMail, resolveId, resolveScope, run, sadranFromPersonas, short, signIn, DEMO_PASSWORD,
   type Args, type Scope,
@@ -312,7 +313,8 @@ async function cmdMove(board: Board, args: Args): Promise<void> {
   const served = servedOf(ride);
   const servedRequests = served.map((e) => board.boardRequests.find((r) => r.id === e.request_id)).filter((r): r is NonNullable<typeof r> => !!r);
   const withinFlex = servedRequests.every((r) => requestWithinFlex(r, newStartsAt, newEndsAt));
-  const others = board.rides.filter((r) => r.id !== ride.id && r.car_id === carId && r.starts_at && r.ends_at && r.status !== "cancelled");
+  const hiddenIds = draftHiddenRideIds(board);
+  const others = board.rides.filter((r) => r.id !== ride.id && !(r.id && hiddenIds.has(r.id)) && r.car_id === carId && r.starts_at && r.ends_at && r.status !== "cancelled");
   const collision = others.some((o) => Date.parse(newStartsAt) < Date.parse(o.ends_at!) && Date.parse(o.starts_at!) < Date.parse(newEndsAt));
   const driverEntry = served.find((s) => s.role === "driver") ?? served[0];
   if (!withinFlex && !(collision && ride.status !== "draft")) {
@@ -351,7 +353,8 @@ async function cmdMerge(board: Board, args: Args): Promise<void> {
   const request = resolveRequest(board, need(args.pos[0], "<requestId>"));
   const host = resolveRide(board, need(args.pos[1], "<rideId>"));
   const leg = (flag(args, "leg") ?? (request.trip_shape === "one_way_from" ? "return" : "out")) as MergeLeg;
-  if (!host.driver_id || host.needs_driver) throw new UsageError("host ride has no driver: a merge needs a driven ride");
+  // REQ §13.100 (c): a request may be merged into a ride that still needs a driver (it keeps waiting for a volunteer).
+  if (host.needs_driver || !host.driver_id) console.log(`note: host ride ${short(host.id)} still needs a driver; the guest joins it and the ride keeps waiting for a volunteer`);
   const invalid = mergeInvalidReason(host, request, leg, board.routeCtx);
   if (invalid) throw new UsageError(`merge not valid: ${invalid}`);
   await createProposalFrom(board, { requestId: request.id, rideId: host.id, type: "merge", payload: mergePayload(host.id as string, leg) }, has(args, "draft"));
@@ -519,12 +522,15 @@ async function cmdAddPassengers(board: Board, args: Args): Promise<void> {
   console.log(`added ${passengers.map((p) => `${p.display_name}(${p.seat_kind})`).join(", ")} to ride ${short(ride.id)}`);
 }
 
-interface MemberContact { id: string; name: string; phone: string | null; role: string }
+interface MemberContact { id: string; name: string; phone: string | null; role: string; email: string | null }
 async function loadMembers(board: Board): Promise<MemberContact[]> {
   const { data, error } = await supabase.from("department_members").select("profile_id, role").eq("department_id", board.scope.departmentId).is("removed_at", null);
   if (error) throw new Error(error.message);
-  const profiles = await fetchProfilesByIds((data ?? []).map((m) => m.profile_id));
-  return profiles.map((p) => ({ id: p.id, name: p.full_name, phone: p.phone, role: (data ?? []).find((m) => m.profile_id === p.id)?.role ?? "member" }));
+  const ids = (data ?? []).map((m) => m.profile_id);
+  const profiles = await fetchProfilesByIds(ids);
+  const { data: emailRows } = await supabase.from("profiles").select("id, email").in("id", ids);
+  const emails = new Map((emailRows ?? []).map((r) => [r.id, r.email as string | null]));
+  return profiles.map((p) => ({ id: p.id, name: p.full_name, phone: p.phone, email: emails.get(p.id) ?? null, role: (data ?? []).find((m) => m.profile_id === p.id)?.role ?? "member" }));
 }
 function pickMember(members: readonly MemberContact[], token: string): MemberContact {
   const lower = token.toLowerCase();
@@ -536,9 +542,41 @@ function pickMember(members: readonly MemberContact[], token: string): MemberCon
 /** `contacts [<name filter>]` - the Sadran's contact list (name, phone, id) for WhatsApp follow-ups. */
 async function cmdContacts(board: Board, args: Args): Promise<void> {
   const filter = args.pos[0]?.toLowerCase();
-  const members = (await loadMembers(board)).filter((m) => !filter || m.name.toLowerCase().includes(filter)).sort((a, b) => a.name.localeCompare(b.name));
-  for (const m of members) console.log(`${m.name} | ${m.phone ?? "no phone"} | ${m.role} | ${short(m.id)}`);
+  const members = (await loadMembers(board)).filter((m) => !filter || m.name.toLowerCase().includes(filter) || (m.email ?? "").toLowerCase().includes(filter)).sort((a, b) => a.name.localeCompare(b.name));
+  for (const m of members) console.log(`${m.name} | ${m.email ?? "no email"} | ${m.phone ?? "no phone"} | ${m.role} | ${short(m.id)}`);
   console.log(`(${members.length} members)`);
+}
+
+/** `fewer-days <request> <first-day> <last-day> [--car C] [--draft]` - the board's "להציע פחות ימים": a shift proposal with `series_span`. */
+async function cmdFewerDays(board: Board, args: Args): Promise<void> {
+  const request = resolveRequest(board, need(args.pos[0], "<requestId>"));
+  const firstDay = need(args.pos[1], "<first-day yyyy-mm-dd>");
+  const lastDay = need(args.pos[2], "<last-day yyyy-mm-dd>");
+  if (!request.series_id) throw new UsageError("that request is not part of a multi-day series");
+  const legs = activeSeriesLegs(await api.fetchSeriesLegs(request.series_id));
+  const from = legs.findIndex((l) => dayOf(l.departAt) === firstDay);
+  const to = legs.findIndex((l) => dayOf(l.departAt) === lastDay);
+  if (from < 0 || to < 0) throw new UsageError(`days must be legs of the series (${legs.map((l) => dayOf(l.departAt)).join(", ")})`);
+  if (to <= from) throw new UsageError("the app needs at least two consecutive days in the span");
+  const span = buildSeriesSpan(legs, from, to);
+  if (!span) throw new UsageError("the span must be consecutive, non-empty and strictly shorter than the whole series");
+  const hidden = draftHiddenRideIds(board);
+  const busy = (carId: string) => board.rides.some((r) => r.car_id === carId && r.status !== "cancelled" && !(r.id && hidden.has(r.id)) && r.starts_at && r.ends_at
+    && Date.parse(span.depart_at) < Date.parse(r.ends_at) && Date.parse(r.starts_at) < Date.parse(span.return_at));
+  const car = flag(args, "car") ? resolveCar(board, flag(args, "car")!)
+    : board.cars.find((c) => c.status === "active" && c.type === "shared" && !busy(c.id) && !board.maintenance.some((m) => m.car_id === c.id && Date.parse(span.depart_at) < Date.parse(m.ends_at) && Date.parse(m.starts_at) < Date.parse(span.return_at)));
+  if (!car) throw new UsageError("no car is free for the whole span (give --car)");
+  const head = seriesHead(legs);
+  const requestId = head && board.requests.some((r) => r.id === head.id) ? head.id : request.id;
+  console.log(`fewer days ${firstDay}..${lastDay} on ${car.name}${requestId !== request.id ? ` (proposal on the series head ${short(requestId)})` : ""}`);
+  await createProposalFrom(board, seriesSpanPrefill(requestId, car.id, span), has(args, "draft"));
+}
+
+/** `withdraw-duplicate <request>` - the board's "withdraw as duplicate" (the member is notified and may answer "not a duplicate"). */
+async function cmdWithdrawDuplicate(board: Board, args: Args): Promise<void> {
+  const request = resolveRequest(board, need(args.pos[0], "<requestId>"));
+  await api.withdrawDuplicateRequest(request.id, request.version);
+  console.log(`request ${short(request.id)} (${request.requester_full_name ?? "?"}) withdrawn as a duplicate`);
 }
 
 async function cmdAdvanceLive(board: Board): Promise<void> {
@@ -566,6 +604,7 @@ function usage(): void {
   send <proposal> | withdraw <proposal> | discard <proposal> | apply <proposal>
   unassign <ride> | cancel-ride <ride> [reason] | reserve <car> <day> <HH:MM-HH:MM> <note>
   message <memberEmail> <text> | messages [--new]
+  fewer-days <req> <first-day> <last-day> [--car C] [--draft] | withdraw-duplicate <req>
   assign-driver <ride> <member|none> | add-passengers <ride> <name>[:adult|child_seat|booster]... | contacts [<name>]
   publish [--days d1,d2] [--allow-unanswered] | advance live`);
 }
@@ -598,6 +637,8 @@ run(async () => {
     case "assign-driver": return cmdAssignDriver(board, args);
     case "add-passengers": return cmdAddPassengers(board, args);
     case "contacts": return cmdContacts(board, args);
+    case "fewer-days": return cmdFewerDays(board, args);
+    case "withdraw-duplicate": return cmdWithdrawDuplicate(board, args);
     case "message": {
       const to = need(args.pos[0], "<memberEmail>"); const text = args.pos.slice(1).join(" ");
       if (!text) throw new UsageError("message <memberEmail> <text>");

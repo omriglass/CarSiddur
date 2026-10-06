@@ -18,7 +18,7 @@ import type { TripType } from "@/lib/enums";
 import { canEditRequest } from "../window";
 import { isAwaitingAnswer } from "../pendingProposal";
 import { canPlaceOnOwnCar, isDuplicateWithdrawn } from "../overlap";
-import { FREED_SLOT_ELIGIBLE_STATUSES, MAKE_REPEATING_STATUSES, originDestinationLabel, type DisplayRow } from "../myRequestsRows";
+import { FREED_SLOT_ELIGIBLE_STATUSES, MAKE_REPEATING_STATUSES, originDestinationLabel, ownLegWindow, type DisplayRow } from "../myRequestsRows";
 
 /** REQ §13.93: shown whenever a request is not a plain round trip (the mundane default). */
 const TRIP_TYPE_LABEL: Record<TripType, string> = {
@@ -83,8 +83,8 @@ export function RequestRow({
         <TripSummary
           destination={originDestinationLabel(row, homeDestinationId)}
           purpose={row.rideTypeName}
-          departAt={row.ride?.startsAt ?? row.departAt}
-          returnAt={row.ride?.endsAt ?? row.returnAt}
+          departAt={ownLegWindow(row).departAt}
+          returnAt={ownLegWindow(row).returnAt}
         />
         <div className="flex shrink-0 items-center gap-2">
           {row.seriesLegs ? <Badge variant="outline">{tv("request.multiDayBadge", { count: String(row.seriesLegs.length) })}</Badge> : null}

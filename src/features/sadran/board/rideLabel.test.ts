@@ -146,7 +146,7 @@ describe("rideBlockLabel", () => {
       originId: HAIFA, destinationId: HOME, originName: "חיפה", destinationName: "נבו", homeDestinationId: HOME,
       served: [{ role: "driver", requester: "Dana", destination: "נבו", leg: "return", car_mode: "relay", trip_type: "drop_off" }],
     });
-    expect(wait).toBe("הרכב מחכה בחיפה");
+    expect(wait).toBe("הרכב מחכה בחיפה · חזרה לנבו");
   });
 
   it("REQUIREMENTS §13.93: a relay pair's leave/wait legs name the partner and the time (v_board_rides.relay_partner)", () => {
@@ -211,6 +211,6 @@ describe("chauffeurRideLabel — drop-off vs pickup (REQ §13.93)", () => {
 
   it("an out leg starting away from the car ('pick me up from Harish') reads as a pickup at its origin", () => {
     expect(chauffeurRideLabel(null, [harish], undefined, "home"))
-      .toBe(tv("rideCoordination.chauffeurPickup", { driver: "_____", name: "Dana", place: "Harish", time: "" }));
+      .toBe(tv("rideCoordination.chauffeurPickupNeedsDriver", { name: "Dana", place: "Harish", time: "" }));
   });
 });

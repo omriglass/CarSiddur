@@ -91,3 +91,10 @@ describe("canRemoveRidePerson", () => {
     expect(canRemoveRidePerson(added, { canManagePeople: true, rideCancelled: true })).toBe(false);
   });
 });
+
+describe("peopleOf dedupe (R2B15)", () => {
+  it("keeps one row per key", () => {
+    const row = { key: "driver:1", source: "driver", request_id: null, ride_passenger_id: null, person_id: "p", child_id: null, display_name: "A", seat_kind: "adult", added_by: null, removable: false };
+    expect(peopleOf({ people: [row, { ...row }] } as never)).toHaveLength(1);
+  });
+});

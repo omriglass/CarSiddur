@@ -177,7 +177,9 @@ test("failed first send reopens as a sendable draft and retries the same proposa
     await page.goto(`${fixture.baseUrl}/proposals`);
     await page.getByTestId("proposal-row").filter({ hasText: label }).click();
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.getByRole("button", { name: he.sadranProposal.retrySend, exact: true }).click();
+    // REQ §13.102 h (R2U1): a reopened draft reads as a plain send action - the retry wording is only shown
+    // right after a send failed in this session.
+    await page.getByRole("button", { name: he.boardDrafts.send, exact: true }).click();
     await expect(page).toHaveURL(`${fixture.baseUrl}/proposals`);
     // Reopening from the list (without the success-toast action) retains WhatsApp links.
     await page.getByTestId("proposal-row").filter({ hasText: label }).click();

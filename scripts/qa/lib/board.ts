@@ -116,9 +116,25 @@ export function unmetItemsOf(board: Board, day: string, output?: SolverOutput | 
   }));
 }
 
+/**
+ * Bookings the board hides while a draft/pending proposal replaces them (`useBoardData`'s dropCtx): the ride a shift
+ * draft replaces and the guest's own booking of a pending merge. Drop/placement checks ignore them.
+ */
+export function draftHiddenRideIds(board: Board): Set<string> {
+  const hidden = new Set(board.draftPlacements.flatMap((p) => (p.replacesRideId ? [p.replacesRideId] : [])));
+  for (const proposal of board.proposals) {
+    if (proposal.type !== "merge" || !["draft", "sent", "accepted"].includes(proposal.status)) continue;
+    for (const ride of board.rides) {
+      if (ride.id && ride.id !== proposal.ride_id && servedOf(ride).length > 0 && servedOf(ride).every((e) => e.request_id === proposal.request_id)) hidden.add(ride.id);
+    }
+  }
+  return hidden;
+}
+
 export function dropCtxOf(board: Board, day: string, output?: SolverOutput | null): BoardDropContext {
+  const hidden = draftHiddenRideIds(board);
   return {
-    rides: board.rides, requests: board.boardRequests, cars: board.cars, maintenanceBlocks: board.maintenance,
+    rides: board.rides.filter((r) => !(r.id && hidden.has(r.id))), requests: board.boardRequests, cars: board.cars, maintenanceBlocks: board.maintenance,
     seatConfigsByCarId: board.seatConfigsByCarId, unmetItems: unmetItemsOf(board, day, output), selectedDay: day,
     chauffeurDwellMinutes: board.settings.chauffeur_dwell_minutes ?? 10,
     awayByCarId: board.awayByCarId, weekStartMs: board.weekStartMs,

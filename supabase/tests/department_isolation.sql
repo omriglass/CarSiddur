@@ -235,6 +235,7 @@ begin
   perform pg_temp.expect_refused('weeks.fairness_stats', format('select * from public.fairness_stats(%L, %L, 3)', dept_b, week_b));
   perform pg_temp.expect_refused('weeks.department_stats', format('select public.department_stats(%L, %L, %L)', dept_b, week_b, week_b + 6));
   perform pg_temp.expect_refused('weeks.joinable_rides_for_request', format('select * from public.joinable_rides_for_request(%L)', req_b));
+  perform pg_temp.expect_refused('children.child_request_overlaps', format('select * from public.child_request_overlaps(%L, array[%L], now(), now() + interval ''1 hour'')', dept_b, 'x'));
   perform pg_temp.expect_refused('policies.create_policy_version', format('select public.create_policy_version(%L, %L::jsonb, null, %L::jsonb)', policy_b, '[]', '{}'));
   perform pg_temp.expect_refused('policies.set_policy_active', format('select public.set_policy_active(%L, false)', policy_b));
 
@@ -332,7 +333,7 @@ declare
     'publish_scores_fingerprint','sadran_contact_of','fairness_stats','department_stats','joinable_rides_for_request',
     'create_policy_version','set_policy_active','resolve_waitlist_group','cancel_waitlist_group',
     'place_travel_for_week','car_start_locations','set_my_default_origin',
-    'set_ride_driver','withdraw_duplicate_request','restore_duplicate_request','place_on_own_car'
+    'set_ride_driver','withdraw_duplicate_request','restore_duplicate_request','place_on_own_car','child_request_overlaps'
   ];
   -- 'name:one-word-reason'. Duplicated names (day_date_label has two overloads) are fine —
   -- the completeness check below groups by proname.

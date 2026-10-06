@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { makeHop } from "@/lib/rideRoute";
 
-import { addedGuestsOf, defaultMergeLeg, mergeLegOptions, mergePayload, mergePayloadLeg, previewMerge } from "./mergeProposal";
+import { addedGuestsOf, combineMergeLegs, defaultMergeLeg, mergeLegForCard, mergeLegOptions, mergePayloadFromLegs, mergePayloadLegs, mergePayload, mergePayloadLeg, previewMerge } from "./mergeProposal";
 
 import type { BoardRide, WeekRequestRow } from "../api";
 
@@ -49,13 +49,14 @@ describe("previewMerge", () => {
     const preview = previewMerge(host, request({}), "out", { hop, stopMinutes: 5, homeId: "H" })!;
     expect(preview.startsAt).toBe("2026-10-11T04:00:00.000Z");
     expect(preview.endsAt).toBe(host.ends_at);
-    expect(preview.boardEta).toBe("2026-10-11T04:20:00.000Z");
-    // asked for 07:00 local (04:00Z), the ride gets there at 07:20 local
+    // ETA shown on the 15-minute grid (R2B25): 04:20Z -> 04:15Z
+    expect(preview.boardEta).toBe("2026-10-11T04:15:00.000Z");
+    // asked for 07:00 local (04:00Z), the ride gets there at ~07:15 local
     expect(preview.timeChanges).toBe(true);
   });
 
   it("reports no change when the estimate equals the requested time", () => {
-    const preview = previewMerge(host, request({ depart_at: "2026-10-11T04:20:00.000Z" }), "out", { hop, stopMinutes: 5, homeId: "H" })!;
+    const preview = previewMerge(host, request({ depart_at: "2026-10-11T04:15:00.000Z" }), "out", { hop, stopMinutes: 5, homeId: "H" })!;
     expect(preview.timeChanges).toBe(false);
   });
 
@@ -75,5 +76,24 @@ describe("addedGuestsOf", () => {
     expect(addedGuestsOf("ride", served)).toEqual([{ requestId: "p", rideId: "ride", name: "Pat" }, { requestId: "q", rideId: "ride", name: "Quin" }]);
     expect(addedGuestsOf("ride", served.slice(0, 1))).toEqual([]);
     expect(addedGuestsOf("ride", [])).toEqual([]);
+  });
+});
+
+describe("split merge helpers (REQ 102 d)", () => {
+  it("a return-leg card offers return / both", () => {
+    expect(mergeLegOptions({ trip_shape: "round_trip" }, "return").choices).toEqual(["return", "both"]);
+    expect(mergeLegForCard({ trip_shape: "round_trip" }, "return")).toBe("return");
+    expect(mergeLegOptions({ trip_shape: "round_trip" }, null).choices).toEqual(["out", "both"]);
+  });
+  it("extends an open draft with the other leg on another ride", () => {
+    const result = combineMergeLegs([{ ride_id: "A", leg: "out" }], { ride_id: "B", leg: "return" });
+    expect(result).toEqual({ legs: [{ ride_id: "A", leg: "out" }, { ride_id: "B", leg: "return" }], replaced: false });
+    const payload = mergePayloadFromLegs(result.legs);
+    expect(payload.ride_id).toBe("A");
+    expect(mergePayloadLegs(payload)).toEqual(result.legs);
+  });
+  it("replaces a draft for the same leg, and collapses out+return on one ride to both", () => {
+    expect(combineMergeLegs([{ ride_id: "A", leg: "out" }], { ride_id: "B", leg: "out" }).replaced).toBe(true);
+    expect(combineMergeLegs([{ ride_id: "A", leg: "out" }], { ride_id: "A", leg: "return" }).legs).toEqual([{ ride_id: "A", leg: "both" }]);
   });
 });

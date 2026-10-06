@@ -881,7 +881,7 @@ export function WeekGrid({
                   unlike `overflow-hidden`, does not create a new scroll container. Resize handles stay
                   absolutely positioned outside the wrapper. */}
               <div className="sticky z-[1] flex w-full flex-col" style={{ top: HEADER_ROW_HEIGHT_PX }}>
-              {ride.guests?.length ? <GuestChips guests={ride.guests} enabled={dragEnabled && !!onGuestDrop} resolveTarget={guestTargetAt} onHover={onGuestHover} onDrop={onGuestDrop} /> : null}
+              {ride.guests?.length ? <GuestChips guests={ride.guests} passClick={!!ride.draft} enabled={dragEnabled && !!onGuestDrop} resolveTarget={guestTargetAt} onHover={onGuestHover} onDrop={onGuestDrop} /> : null}
               {(ride.isMine || ride.needsDriver || ride.tightSchedule || ride.chainBrokenWarning || ride.draft || ride.merged || ride.connected || ride.luggage) ? <span className="flex w-full flex-wrap gap-1 px-1.5 pt-1 text-[10px] leading-tight">
                 {ride.draft ? <span className="rounded-sm bg-primary px-1 font-semibold text-primary-foreground" data-testid="draft-tag">{he.boardDrafts.tag}</span> : null}
                 {ride.merged ? <span className="rounded-sm bg-foreground/10 px-1 font-medium" data-testid="merged-marker">{he.mergedRide.marker}</span> : null}

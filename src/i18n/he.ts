@@ -31,6 +31,7 @@ export const STATUS_REASON_CODES = [
   "CANCELLED_BY_MEMBER",
   "DENIED_BY_SADRAN",
   "DRIVER_CLAIMED",
+  "DUPLICATE_OVERLAP",
   "DUPLICATE_WITHDRAWN",
   "EXTERNAL",
   "FREED_SLOT_APPROVED",
@@ -172,6 +173,10 @@ export const he = {
     passengerTo: "{{name}} ל{{destination}}",
     passengerFrom: "{{name}} מ{{destination}}",
     chauffeurLabel: "{{driver}} מסיע את {{passengers}}",
+    /** Needs-driver wordings (R2B23): no driver yet, so never a "_____" placeholder. */
+    chauffeurLabelNeedsDriver: "נדרש/ת נהג/ת להסיע את {{passengers}}",
+    chauffeurDropoffNeedsDriver: "נדרש/ת נהג/ת להסיע את {{name}} ל{{place}} ולחזור",
+    chauffeurPickupNeedsDriver: "נדרש/ת נהג/ת לאסוף את {{name}} מ{{place}} (יציאה {{time}})",
     /** REQUIREMENTS §13.93 "Display": a chauffeur ride's single drop-off leg. */
     chauffeurDropoff: "{{driver}} מסיע/ה את {{name}} ל{{place}} וחוזר/ת",
     /** REQUIREMENTS §13.93 "Display": a chauffeur ride's single pickup leg — `{{time}}` is the ride's own departure. */
@@ -182,6 +187,8 @@ export const he = {
     relayLeaveFor: "משאיר/ה את הרכב ב{{place}} ל{{name}} ({{time}})",
     /** REQUIREMENTS §13.93 "Display": a הקפצה relay pair's return/pickup leg — the car is picked up from where it was left. Fallback when the partner ride isn't known yet. */
     relayWait: "הרכב מחכה ב{{place}}",
+    /** R2U5: the same card names its route when no partner is known. */
+    relayWaitRoute: "הרכב מחכה ב{{place}} · חזרה ל{{destination}}",
     /** REQUIREMENTS §13.93 "Display": same return leg, naming the partner who left the car there and when they bring it (`v_board_rides.relay_partner`). */
     relayWaitFrom: "הרכב מחכה לך ב{{place}} — {{name}} מביא/ה אותו ב{{time}}",
     /** REQUIREMENTS §13.93 "Display": a plain הלוך בלבד leg — the car stays at the destination with nobody designated to bring it back. */
@@ -568,6 +575,7 @@ export const he = {
   // `STATUS_REASON_CODES` above. `satisfies` makes an added code with no
   // label fail typecheck.
   statusReason: {
+    DUPLICATE_OVERLAP: "חופפת לנסיעה או לבקשה אחרת שלך",
     DUPLICATE_WITHDRAWN: "הסדרן/ית משך/ה את הבקשה ככפילות",
     ASK_TO_JOIN_TEMP_CAR: "בקשה להצטרף לנסיעה ברכב פרטי",
     AUTO_APPROVED: "אושרה אוטומטית — היה רכב פנוי",

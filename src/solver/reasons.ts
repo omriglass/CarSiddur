@@ -21,7 +21,11 @@ const TEMPLATES: Record<string, string> = {
   // Unmet reasons
   UNMET_NEEDS_LARGE_TRUNK: 'צריך רכב עם תא מטען גדול',
   UNMET_NO_CAR: 'אין רכב פנוי בחלון המבוקש; חוסמים: {blockers}',
-  UNMET_NO_RELAY_PARTNER: 'אין מי שיחזיר/יביא את הרכב מ{dest} באותו יום; הרכב חייב לחזור הביתה עד {dayEnd}',
+  UNMET_NO_CAR_NONE: 'אין רכבים משותפים זמינים לשיבוץ',
+  UNMET_NO_CAR_BUSY: 'כל הרכבים תפוסים בחלון המבוקש',
+  UNMET_NO_CAR_SEATS: 'אין רכב עם מספיק מקומות ישיבה לנוסעים (כולל הנהג/ת)',
+  UNMET_NO_CAR_LUGGAGE: 'אין רכב עם תא מטען מתאים לכמות המטען',
+  UNMET_NO_RELAY_PARTNER: 'אין מי שיחזיר/יביא את הרכב מ{dest}: לא נמצא/ה נהג/ת שיחזיר/ה אותו, והנסיעה בכיוון אחד תשאיר אותו שם',
   UNMET_NEEDS_DRIVER: 'אין נסיעה מתאימה להצטרף אליה; דרוש/ה נהג/ת מתנדב/ת להסעה ל{dest} ב-{dep}',
   UNMET_SERIES_NO_CAR: 'אין רכב פנוי לכל ימי הבקשה הרב-יומית ({index}/{count})',
   UNMET_NO_CAR_AT_ORIGIN: 'אין רכב פנוי שנמצא ב{origin} כדי לצאת משם ל{dest}',

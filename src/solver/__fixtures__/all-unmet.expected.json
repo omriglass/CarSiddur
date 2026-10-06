@@ -18,7 +18,7 @@
         }
       ],
       "reasonCode": "UNMET_NO_CAR",
-      "reason": "אין רכב פנוי בחלון המבוקש; חוסמים: "
+      "reason": "אין רכבים משותפים זמינים לשיבוץ"
     },
     {
       "requestId": "R2",
@@ -35,7 +35,7 @@
         }
       ],
       "reasonCode": "UNMET_NO_CAR",
-      "reason": "אין רכב פנוי בחלון המבוקש; חוסמים: "
+      "reason": "אין רכבים משותפים זמינים לשיבוץ"
     }
   ],
   "mergeOpportunities": [],

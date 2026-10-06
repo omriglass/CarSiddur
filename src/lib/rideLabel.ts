@@ -91,7 +91,8 @@ function hebrewList(names: readonly string[]): string {
  * once per group.
  */
 export function chauffeurRideLabel(driverName: string | null, passengers: readonly RideLabelServedEntry[], startsAt?: string, carLocationId?: string): string {
-  const driver = driverName?.trim() ? firstName(driverName) : "_____";
+  const hasDriver = !!driverName?.trim();
+  const driver = hasDriver ? firstName(driverName as string) : "";
   const groups = new Map<string, { destination: string; returning: boolean; names: string[] }>();
   for (const passenger of passengers) {
     // A pickup is a legacy return leg (fetch from its destination), or — REQ §13.93 "pick me up
@@ -110,15 +111,23 @@ export function chauffeurRideLabel(driverName: string | null, passengers: readon
   if (groupList.length === 1) {
     const [group] = groupList as [{ destination: string; returning: boolean; names: string[] }];
     const name = hebrewList(group.names);
-    return group.returning
-      ? tv("rideCoordination.chauffeurPickup", { driver, name, place: group.destination, time: startsAt ? formatTime(new Date(startsAt)) : "" })
-      : tv("rideCoordination.chauffeurDropoff", { driver, name, place: group.destination });
+    const time = startsAt ? formatTime(new Date(startsAt)) : "";
+    if (group.returning) {
+      return hasDriver
+        ? tv("rideCoordination.chauffeurPickup", { driver, name, place: group.destination, time })
+        : tv("rideCoordination.chauffeurPickupNeedsDriver", { name, place: group.destination, time });
+    }
+    return hasDriver
+      ? tv("rideCoordination.chauffeurDropoff", { driver, name, place: group.destination })
+      : tv("rideCoordination.chauffeurDropoffNeedsDriver", { name, place: group.destination });
   }
   const routes = groupList.map((group) => tv(
     group.returning ? "rideCoordination.passengerFrom" : "rideCoordination.passengerTo",
     { name: hebrewList(group.names), destination: group.destination },
   ));
-  return tv("rideCoordination.chauffeurLabel", { driver, passengers: hebrewList(routes) });
+  return hasDriver
+    ? tv("rideCoordination.chauffeurLabel", { driver, passengers: hebrewList(routes) })
+    : tv("rideCoordination.chauffeurLabelNeedsDriver", { passengers: hebrewList(routes) });
 }
 
 /**
@@ -186,7 +195,7 @@ export function rideBlockLabel(input: RideLabelInput): string {
       if (driver.leg === "return") {
         return partner
           ? tv("rideCoordination.relayWaitFrom", { place: input.originName, name: firstName(partner.name), time: formatTime(new Date(partner.at)) })
-          : tv("rideCoordination.relayWait", { place: input.originName });
+          : tv("rideCoordination.relayWaitRoute", { place: input.originName, destination: input.destinationName });
       }
       return partner
         ? tv("rideCoordination.relayLeaveFor", { place: input.destinationName, name: firstName(partner.name), time: formatTime(new Date(partner.at)) })

@@ -38,8 +38,8 @@ import type { Car as SolverCar } from "@/solver/types";
 
 import type { DestinationValue } from "@/components/DestinationCombobox";
 
-import { fetchChildren, fetchRequestVersion } from "../api";
-import type { JoinableRideRow, RequestEditRow, SubmitRequestResult, SubmitSeriesRequestResult, TemplateSuggestion } from "../api";
+import { fetchChildRequestOverlaps, fetchChildren, fetchRequestVersion, probeSubmitRequest } from "../api";
+import type { ChildOverlapRow, JoinableRideRow, RequestEditRow, SubmitRequestResult, SubmitSeriesRequestResult, TemplateSuggestion } from "../api";
 import { dayLabel } from "../dayLabel";
 import { CAR_NOW_DEFAULT_HOURS } from "../carNow";
 import { findOverlappingRequest } from "../duplicate";
@@ -65,6 +65,8 @@ import { editReturnInstant, intervalToFlexValue, toInstant, toSubmitRequestPaylo
 import { requestFormSchema, type RequestFormValues } from "../schema";
 import { isSeriesSubmission, seriesSpanDays } from "../series";
 import { payloadSeatCounts } from "../seatCounts";
+import { overlapNames } from "../overlapNames";
+import { childOverlapMessage } from "../childOverlap";
 import { releaseConfirmation, shouldOfferJoinableRides, toastSeriesSubmitOutcome, toastSubmitOutcome } from "../submitOutcome";
 import { suggestionToFormValues } from "../templatePrefill";
 import { canUseDrivingTripTypes, initialTripType, tripTypeToLegacyFields } from "../tripType";
@@ -608,6 +610,10 @@ export function RequestForm({
   // REQ §13.101 g (QM7): the form values held while "overlaps one of your own rides" is asked.
   const [pendingOverlapSubmit, setPendingOverlapSubmit] = useState<RequestFormValues | null>(null);
   // REQ §13.101 f (QM5): the edit the server wants confirmed (release to the waiting list).
+  // R2M4: named children already on another member's overlapping request — warn, allow anyway.
+  const [pendingChildOverlap, setPendingChildOverlap] = useState<{ values: RequestFormValues; rows: ChildOverlapRow[] } | null>(null);
+  // R2B20 / REQ §102 f: an open-week edit the probe says would lose the member's current car.
+  const [pendingLose, setPendingLose] = useState<RequestFormValues | null>(null);
   const [pendingRelease, setPendingRelease] = useState<{ values: RequestFormValues; drivesOthers: boolean; wouldPlace: boolean } | null>(null);
   // F4 (docs/TODO.md, owner A8-A10): a `waitlisted` outcome with nearby joinable rides holds off
   // the normal onDone/navigate — `afterJoinableDialog` runs it once the member picks "ask to
@@ -643,7 +649,7 @@ export function RequestForm({
     void performSubmit(formValues);
   }
 
-  async function performSubmit(formValues: RequestFormValues, options: { confirmRelease?: boolean } = {}) {
+  async function performSubmit(formValues: RequestFormValues, options: { confirmRelease?: boolean; confirmLose?: boolean; ignoreChildOverlap?: boolean } = {}) {
     if (quickContext && (isPast || invalidTime)) return;
     setSubmitError(null);
     const isSeriesRequest = isSeriesSubmit(formValues);
@@ -686,6 +692,34 @@ export function RequestForm({
     const existingTemplateId = mode === "edit" ? (initial?.templateId ?? undefined) : templateSuggestion?.templateId;
 
     try {
+      // R2M4: warn (never block) when a named child is on someone else's overlapping request.
+      const childNames = (childrenQuery.data ?? []).filter((c) => formValues.children.includes(c.id)).map((c) => c.name);
+      const anchor = payload.depart_at ?? payload.return_at;
+      if (!options.ignoreChildOverlap && childNames.length > 0 && anchor) {
+        try {
+          const rows = await fetchChildRequestOverlaps({
+            departmentId,
+            childNames,
+            departAt: payload.depart_at ?? anchor,
+            returnAt: payload.return_at ?? anchor,
+            excludeRequestId: initial?.id,
+          });
+          if (rows.length > 0) {
+            setPendingChildOverlap({ values: formValues, rows });
+            return;
+          }
+        } catch { /* advisory only */ }
+      }
+      // R2B20: an edit of an assigned request in an open week may drop its car — probe first.
+      if (!isSeriesRequest && !options.confirmLose && !options.confirmRelease && !waitlist && mode === "edit" && initial?.status === "assigned") {
+        try {
+          const probe = await probeSubmitRequest(payload);
+          if (probe?.would_lose_booking) {
+            setPendingLose(formValues);
+            return;
+          }
+        } catch { /* advisory only */ }
+      }
       if (isSeriesRequest) {
         // Multi-day request (REQ §13.77): `submit_series_request` returns one `request_id`
         // per calendar day of the span — passengers/children apply to every leg so they show
@@ -754,6 +788,7 @@ export function RequestForm({
         departTime: formValues.departTime,
         returnTime: formValues.returnTime,
         onViewRequests: () => navigate(paths.my()),
+        overlapNames: overlapNames(result?.overlaps, myRequestsQuery.data ?? []),
       });
 
       const proceed = () => {
@@ -1074,6 +1109,36 @@ export function RequestForm({
         </div>
       </div>
     </form>
+    <ConfirmDialog
+      open={!!pendingLose}
+      onOpenChange={(open) => { if (!open) setPendingLose(null); }}
+      title={t("request.loseBookingTitle")}
+      description={t("request.loseBookingBody")}
+      loading={submitMutation.isPending}
+      onConfirm={() => {
+        const values = pendingLose;
+        setPendingLose(null);
+        if (values) void performSubmit(values, { confirmLose: true, ignoreChildOverlap: true });
+      }}
+    />
+    <ConfirmDialog
+      open={!!pendingChildOverlap}
+      onOpenChange={(open) => { if (!open) setPendingChildOverlap(null); }}
+      title={t("request.childOverlapTitle")}
+      confirmLabel={t("request.childOverlapConfirm")}
+      cancelLabel={t("request.overlapBack")}
+      onConfirm={() => {
+        const pending = pendingChildOverlap;
+        setPendingChildOverlap(null);
+        if (pending) void performSubmit(pending.values, { ignoreChildOverlap: true });
+      }}
+    >
+      <ul className="space-y-1 text-sm">
+        {(pendingChildOverlap?.rows ?? []).map((row) => (
+          <li key={`${row.requestId}:${row.childName}`}>{childOverlapMessage(row)}</li>
+        ))}
+      </ul>
+    </ConfirmDialog>
     <ConfirmDialog
       open={!!pendingRelease}
       onOpenChange={(open) => { if (!open) setPendingRelease(null); }}

@@ -44,6 +44,19 @@ export function originDestinationLabel(
   return routeLabel({ destination: row.destination, origin: originLabel, originIsHome, stops });
 }
 
+/**
+ * The times /my shows for a row (R2B18). A request with both an out and a return leg shows the
+ * ride's window; an out-only or return-only passenger shows only their own leg's time — never the
+ * whole ride window (the ride may also carry other people's legs).
+ */
+export function ownLegWindow(
+  row: Pick<MyRequestRow, "departAt" | "returnAt" | "ride"> & { seriesLegs?: unknown },
+): { departAt: string | null; returnAt: string | null } {
+  const singleLeg = !row.seriesLegs && (!row.departAt || !row.returnAt);
+  if (singleLeg) return { departAt: row.departAt, returnAt: row.returnAt };
+  return { departAt: row.ride?.startsAt ?? row.departAt, returnAt: row.ride?.endsAt ?? row.returnAt };
+}
+
 export function requestStart(row: MyRequestRow): number {
   const instant = row.ride?.startsAt ?? row.departAt ?? row.returnAt;
   return instant ? new Date(instant).getTime() : Number.POSITIVE_INFINITY;

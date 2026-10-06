@@ -388,7 +388,7 @@ export function HomePage() {
 
       <section className="space-y-3 border-t pt-4">
         <p className="text-sm text-muted-foreground">{t("home.weekRequests")}</p>
-        {upcomingWeeks.length === 0 ? (
+        {requests.length === 0 ? (
           <EmptyState
             icon={Inbox}
             message={
@@ -462,6 +462,7 @@ export function HomePage() {
 
       <RideDetailSheet
         ride={selectedMyRide}
+        weekRides={selectedRideWeekQuery.data}
         car={selectedMyRide ? (carsQuery.data ?? []).find((car) => car.id === selectedMyRide.car_id) ?? null : null}
         locationBadge={null}
         onOpenChange={(open) => !open && setSelectedMyRide(null)}

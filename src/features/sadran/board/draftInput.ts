@@ -6,7 +6,7 @@ import { routeLabel } from "@/lib/routeLabel";
 import type { ProposalType } from "@/lib/enums";
 
 import { servedOf } from "../applySolve";
-import { mergePayloadLeg, previewMerge, type MergeRouteContext } from "./mergeProposal";
+import { mergePayloadLeg, mergePayloadLegs, previewMerge, type MergeRouteContext } from "./mergeProposal";
 import { buildProposalPayload, resolveShiftTimes, seriesSpanOf } from "../proposals/buildProposalPayload";
 import { externalSuggestionFor, proposalPreviewText, proposalTemplateVariant } from "../proposals/proposalText";
 
@@ -20,6 +20,9 @@ export interface ComposerPrefill {
   type: "shift" | "merge" | "deny" | "external" | "origin";
   payload: Record<string, unknown>;
   proposalId?: string;
+  /** Board-only hints for the merge popup (never sent): the card's own leg, and how this merge relates to the request's open draft. */
+  anchorLeg?: "out" | "return" | null;
+  draftNote?: "extends" | "replaces" | null;
 }
 
 export interface DraftInputContext {
@@ -77,7 +80,11 @@ export function buildDraftInput(prefill: ComposerPrefill, ctx: DraftInputContext
     origin: request.origin_resolved_name ?? request.origin_text ?? null,
     originIsHome: !request.origin_id ? !request.origin_text : request.origin_id === ctx.homeDestinationId,
   });
-  const variant = proposalTemplateVariant(type, payload, { hostHasDriver: !!hostRide?.driver_id, originAway });
+  const variant = proposalTemplateVariant(type, payload, {
+    hostHasDriver: !!hostRide?.driver_id, originAway,
+    destinationIsHome: !!ctx.homeDestinationId && request.destination_id === ctx.homeDestinationId,
+    placed: request.status === "assigned" || request.status === "merged",
+  });
   const template = variant ? ctx.templates.find((t) => t.variant === variant) : undefined;
   const originCarId = type === "origin" && typeof payload.car_id === "string" ? payload.car_id : undefined;
   const newOriginId = type === "origin" && typeof payload.origin_id === "string" ? payload.origin_id : undefined;
@@ -102,10 +109,15 @@ export function buildDraftInput(prefill: ComposerPrefill, ctx: DraftInputContext
       : null,
   });
 
-  const hostRequestIds = new Set(hostRide ? servedOf(hostRide).map((entry) => entry.request_id) : []);
+  // A split merge (REQ §13.102 d) joins two rides: every host ride's driver and requesters consent.
+  const hostRides = type === "merge"
+    ? [...new Set([prefill.rideId, ...mergePayloadLegs(prefill.payload).map((entry) => entry.ride_id)])]
+      .flatMap((id) => { const ride = ctx.rides.find((r) => r.id === id); return ride ? [ride] : []; })
+    : [];
+  const hostRequestIds = new Set(hostRides.flatMap((ride) => servedOf(ride).map((entry) => entry.request_id)));
   const partyProfileIds = type === "merge"
     ? [...new Set([
-        hostRide?.driver_id,
+        ...hostRides.map((ride) => ride.driver_id),
         ...ctx.requests.filter((r) => hostRequestIds.has(r.id)).map((r) => r.requester_id),
       ].filter((id): id is string => !!id && id !== request.requester_id))]
     : [];

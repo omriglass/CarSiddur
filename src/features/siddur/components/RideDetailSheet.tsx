@@ -31,7 +31,7 @@ import { peopleOf } from "@/features/rides/ridePeople";
  * origin/destination names (pre-fix behavior) when `homeDestinationId` isn't
  * known yet (still loading).
  */
-function headerLabel(ride: BoardRide, served: readonly ServedEntry[], homeDestinationId: string | null): string {
+function headerLabel(ride: BoardRide, served: readonly ServedEntry[], homeDestinationId: string | null, weekRides?: readonly BoardRide[]): string {
   if (!homeDestinationId || !ride.origin_id || !ride.destination_id) {
     return ride.origin_id !== ride.destination_id
       ? `${ride.origin_name} → ${ride.destination_name}`
@@ -49,7 +49,7 @@ function headerLabel(ride: BoardRide, served: readonly ServedEntry[], homeDestin
     needsDriver: !!ride.needs_driver,
     autoRelocation: !!ride.auto_relocation,
     startsAt: ride.starts_at ?? undefined,
-    relayPartner: relayPartnerOf(ride),
+    relayPartner: relayPartnerOf(ride, weekRides),
   });
 }
 
@@ -67,6 +67,8 @@ function carModeLabel(ride: BoardRide): string {
 }
 
 interface RideDetailSheetProps {
+  /** The week's rides, so a relay label never names a passenger on a needs-driver partner ride (R2B19). */
+  weekRides?: readonly BoardRide[];
   ride: BoardRide | null;
   car: Car | null;
   locationBadge: string | null;
@@ -100,7 +102,7 @@ interface RideDetailSheetProps {
  * §13.85; the `/requests/new?ride=` prefill path itself is untouched, still reachable from the
  * joinable-rides dialog after a waiting-list outcome).
  */
-export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = null, onOpenChange, editor, coordinatorNotes, canEditPublicNotes, passengerSummary, onRemoveOwnRide, removingOwnRide = false, editRequestHref, showAddPassengers = false }: RideDetailSheetProps) {
+export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = null, onOpenChange, editor, coordinatorNotes, canEditPublicNotes, passengerSummary, onRemoveOwnRide, removingOwnRide = false, editRequestHref, showAddPassengers = false, weekRides }: RideDetailSheetProps) {
   // `servedOf()` already maps `v_board_rides.served[].child_names` onto each entry's
   // `childNames` (`applySolve.ts`) — no more hand-rolled mapping needed here.
   const served: ServedEntry[] = ride ? servedOf(ride) : [];
@@ -131,7 +133,7 @@ export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = 
 
               <div className="flex items-center gap-1 font-medium">
                 <MapPin className="size-4 shrink-0 text-muted-foreground" />
-                <span>{headerLabel(ride, served, homeDestinationId)}</span>
+                <span>{headerLabel(ride, served, homeDestinationId, weekRides)}</span>
               </div>
 
               {ride.series_count && ride.series_count > 1 ? (

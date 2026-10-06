@@ -35,6 +35,7 @@ import { RidePassengersEditor } from "./RidePassengersEditor";
 import { RideRouteEditor } from "./RideRouteEditor";
 import { TripTypeChange } from "./TripTypeChange";
 import { WithdrawDuplicateAction } from "./WithdrawDuplicateAction";
+import { busyDriverIds } from "../driverBusy";
 import { RideDriverPicker, type DriverCandidate } from "./RideDriverPicker";
 import { initialRouteEditValues, type RouteEditValues } from "../rideRouteEdit";
 
@@ -77,6 +78,8 @@ interface RideSheetProps {
   onRemoveAddedPerson?: (requestId: string, name: string) => void;
   /** REQ §13.101 (c): department members for the volunteer-driver picker; omit to hide it. */
   driverCandidates?: readonly DriverCandidate[];
+  /** Every ride of the week - lets the volunteer-driver picker mark who is busy then (R2U3). */
+  otherRides?: readonly BoardRide[];
 }
 
 /**
@@ -85,7 +88,7 @@ interface RideSheetProps {
  * fallback for reassigning a car via the "העבר לרכב" select below instead of
  * dragging.
  */
-export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenChange, onSave, onTogglePin, onCancel, onUnassign, saving, tightSchedule, onClaimDriver, coordinatorNotes, isPlanning, requests = [], departmentId, weekStart, destinations, onSaveRoute, onRemoveAddedPerson, driverCandidates }: RideSheetProps) {
+export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenChange, onSave, onTogglePin, onCancel, onUnassign, saving, tightSchedule, onClaimDriver, coordinatorNotes, isPlanning, requests = [], departmentId, weekStart, destinations, onSaveRoute, onRemoveAddedPerson, driverCandidates, otherRides = [] }: RideSheetProps) {
   // Bug-fix pass (owner bug #2): the previous re-sync condition compared
   // `ride.car_id !== carId` to detect "a different ride opened" — but that's
   // exactly as true the moment the Sadran picks a *different* car for the
@@ -162,6 +165,7 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
                   needsDriver={!!ride.needs_driver}
                   volunteerName={!ride.needs_driver && ride.driver_id && !servedEntries.some((entry) => entry.role === "driver") ? (driverName ?? ride.driver_name ?? "") : null}
                   candidates={driverCandidates}
+                  busyIds={busyDriverIds(ride, otherRides, requests)}
                   departmentId={departmentId}
                   weekStart={weekStart}
                   disabled={saving}
@@ -190,7 +194,7 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
                       needsDriver: !!ride.needs_driver,
                       autoRelocation: !!ride.auto_relocation,
                       startsAt: ride.starts_at ?? undefined,
-                      relayPartner: relayPartnerOf(ride),
+                      relayPartner: relayPartnerOf(ride, otherRides),
                     })
                   : `${ride.origin_name} → ${ride.destination_name} · ${driverName ?? ride.driver_name}`}
               </p>

@@ -35,12 +35,14 @@ interface GuestDrag {
 export interface GuestChipsProps {
   guests: readonly WeekGridGuest[];
   enabled: boolean;
+  /** R2U1: on a draft block a click on a chip opens the block's own sheet instead of being swallowed. */
+  passClick?: boolean;
   resolveTarget: (clientX: number, clientY: number) => GuestDropTarget | null;
   onHover?: (guest: WeekGridGuest, target: GuestDropTarget | null) => void;
   onDrop?: (guest: WeekGridGuest, target: GuestDropTarget) => void;
 }
 
-export function GuestChips({ guests, enabled, resolveTarget, onHover, onDrop }: GuestChipsProps) {
+export function GuestChips({ guests, enabled, passClick, resolveTarget, onHover, onDrop }: GuestChipsProps) {
   const [drag, setDrag] = useState<GuestDrag | null>(null);
   const dragRef = useRef<GuestDrag | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -113,7 +115,7 @@ export function GuestChips({ guests, enabled, resolveTarget, onHover, onDrop }: 
           aria-label={he.mergedRide.dragChip}
           className={`inline-flex min-h-6 touch-none items-center rounded-full border bg-background/80 px-2 text-[10px] leading-tight ${enabled ? "cursor-grab active:cursor-grabbing" : ""} ${drag?.confirmed && drag.guest.requestId === guest.requestId ? "opacity-50" : ""}`}
           onPointerDown={(event) => begin(guest, event)}
-          onClick={(event) => event.stopPropagation()}
+          onClick={(event) => { if (!passClick) event.stopPropagation(); }}
         >
           {guest.name}
         </span>
