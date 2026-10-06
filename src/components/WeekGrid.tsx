@@ -292,7 +292,9 @@ interface CarDragState {
 }
 
 /**
- * One day, time × cars, bounded to `max-h-[70dvh]` with its own
+ * One day, time × cars, bounded to `max-h-[70dvh]` on a phone and to the whole screen height
+ * on a computer (`lg:max-h-[calc(100dvh-1.5rem)]`, owner 2026-10-06: scrolling the page brings the
+ * table up to fill the screen, so far more of the day shows without scrolling the table) with its own
  * `overflow-auto` (both axes) at every breakpoint — the standard
  * frozen-header/frozen-column pattern (car headers `sticky top-0`, hour
  * column `sticky start-0`, corner cell both). This is a hard CSS constraint,
@@ -952,7 +954,7 @@ export function WeekGrid({
   return (
     <div
       ref={scrollViewportRef}
-      className={cn("min-w-0 max-h-[70dvh] overflow-auto rounded-md border shadow-card", (dragActive || dragEnabled) && "select-none")}
+      className={cn("min-w-0 max-h-[70dvh] overflow-auto rounded-md border shadow-card lg:max-h-[calc(100dvh-1.5rem)]", (dragActive || dragEnabled) && "select-none")}
       style={{ touchAction: "pan-x pan-y", scrollSnapType: "x proximity", scrollPaddingInlineStart: HOUR_COL_WIDTH_PX * zoom }}
       data-week-grid-scroll-viewport
     >

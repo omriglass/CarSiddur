@@ -494,7 +494,8 @@ export function SiddurPage() {
   ) : null;
 
   return (
-    <div className="mx-auto max-w-5xl space-y-4 p-4 pb-24">
+    <div className="mx-auto max-w-5xl space-y-4 p-4 pb-24 lg:max-w-none">
+      {/* On a computer the published siddur uses the whole width (owner 2026-10-06). */}
       {/* Mobile header (below `md`): the title is itself the this-week/next-week switcher; the
           eye icon collapses every `TableViewControls` option plus "show early hours" into one
           menu (UX_FLOWS.md member siddur "mobile header"). */}
