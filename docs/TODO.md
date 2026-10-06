@@ -624,3 +624,40 @@ Merged from both reports (S = QA Sadran, U = QA user). Whole week published; unm
 - **R3F1 — A day-level "merge same-destination rides" hint** (Tue 17:30: 3 cars to כפר סבא; Sun: 3 הקפצות to כרכור 07:15–07:45) (S F1).
 - **R3F2 — A member shortens their own multi-day request** (U F2).
 - Not findings: a decline reason (answers are binary, decision 21); the overlap/child warnings (built in the form; the CLI bypasses them); separate requests and 00:00–23:59 middle days of a multi-day request and its cascading withdraw (REQ §13.77 by design).
+
+## QA run 4 findings (2026-10-06, seed 1059, week 11–17.10, department `qa-s1059`; QA Sadran = Opus, Thursday via UI; QA user = Sonnet) — **awaiting owner triage**
+Merged from both reports (S = QA Sadran, U = QA user). Worked: car move (UI + CLI), merge into a needs-driver ride, drafts drawn/sent from the board, publish flow, busy marks in the driver picker, late requests auto-approved, a freed-car offer correctly closed with no eligible candidate. Unmet at the end: Sun 9, Mon 9, Tue 5, Wed 9, Thu 6 cards + ~35 rides without a driver (lone all-day commuters on every car, scarce child-seat cars, members living where no car is, zero-flexibility declines, big-trunk needs).
+
+### Bugs
+- **R4B1 — Auto-fill does not finish in one click** (87 placed, then +4, then more; the day view keeps saying "would place") (S1).
+- **R4B2 — Connecting a הקפצה's pickup next to its drop-off says "שתי הנסיעות חוברו — המבקש/ת נוהג/ת בשתיהן" but saves two driverless chauffeur rides** (route home→X→home each) (S2: Thu 9849c1e2 UI, Sun a900430d CLI).
+- **R4B3 — A draft from dropping an unmet הקפצה outside its flexibility has no `car_id`** — not drawn, the car looks idle (S3: Thu 9cc731e4 → 7a52486b).
+- **R4B4 — A draft from dropping a pickup ("איסוף") card has no leg/car** (`{depart 07:30, return 14:15}`) and is drawn as a 07:30–14:15 block replacing the out-leg ride and overlapping another ride (S4: Thu aec7afd5 → 2deac9e1).
+- **R4B5 — Times disagree between the merge popup, the composer, the notification and the other party**: popup 07:45 vs composer 08:00 (d6e0ffc9); 11:15 vs 11:45–16:15 (345fa0db); notification return "12:45 במקום 13:30" vs proposal 11:00–13:15 and the driver's 13:15 (3a6d19dc); "שובצת… יציאה 07:30" vs the ride's 06:30 (Thu 40c64dbf) (S5, U1, U2).
+- **R4B6 — A guest's merge text drops their own stops and destination** (via חדרה/קניון, כפר סבא shown while the ride goes to רעננה; 07:00/16:30 → 08:00/18:00 without "במקום") (U3: Thu 02ee311b).
+- **R4B7 — A chauffeur ride from a car parked away omits the empty drive to the pickup** (car at חדרה, pickup at חיפה at the ride's start minute) (S6: Sun 68032462).
+- **R4B8 — Cancelling one leg of a הקפצה returns that leg to the unmet list** instead of ending it; a spurious "העריכה נשמרה והבקשה שובצה" arrives for a member who edited nothing (S7, U2: Tue 5bffadd9, Thu 40c64dbf/820118c2).
+- **R4B9 — Rides "confirmed" while still without a driver**, the request `waitlisted(UNMET_NEEDS_DRIVER)` (U4: Tue 4040b6f0, Thu 820118c2, Mon 08f14851).
+- **R4B10 — Declining an external proposal fails `proposal_not_answerable`** with no explanation (U5: Sun 8e465fbd — expired at publish 3 minutes after it was sent).
+- **R4B11 — Labels and checks**: a הקפצה whose legs are on separate chauffeur rides is labelled "משולבת" (Thu cb1850e7, Wed b269ad01); a drop check says "would strand" when the real refusal is `private_car_owner_only` (Sun 145a45d3); kids' drop-offs blocked by child seats report `UNMET_NO_RELAY_PARTNER` with only a cab suggestion (Mon 10775417, 96d8dcff, 94502de2); publish shows "80/139 placed" while the solver reports 109 served; a drop-off's out-leg shows "גבעת חביבה->גבעת חביבה" in my rides (U-UI3) (S U3, U4, U7, U9).
+- QA tooling: `qa:ui shot` timed out at sign-in for members (m06, m17, m07) — no member UI check on Thursday.
+
+### Owner questions
+- **R4Q1 — Cross-request relay pairs park a car at X all day** while round trips go unmet (Tue Corolla at גן שמואל, Thu minivan at פרדס חנה; converted by hand, each freed car served an unmet request) — apply the R3Q1 rule (pair only when the car is not needed elsewhere) to these pairs too? (S8)
+- **R4Q2 — The solver never uses a member's own idle private car for their own request** (5 cases; manual placement works) — place it automatically, suggest it, or leave it to the one-tap button? (S9)
+- **R4Q3 — Child-seat-aware car choice**: lone adults take the cars with two child seats, kids' drop-offs go unmet — keep child-seat cars for children? (S M1)
+- **R4Q4 — Volunteer drivers**: ~35 rides needed a driver; the Sadran sent 13 free-text mailbox asks — an in-app "can you drive?" ask with accept/decline (close to QF1)? (S M3, U F1)
+- **R4Q5 — One chauffeur ride for a short drop-off + pickup** (Thu 63837f85 uses two cars at 10:45) — when the wait is short, should the driver wait/stay and do both on one car? (S M2)
+
+### UI changes
+- **R4U1 — A 15-minute ride card is ~20 px and covered by the away band/sticky header** (S U1).
+- **R4U2 — Car-move dialog**: date without weekday, title stays "שמירת זמן", the destination list includes the car's current place (S U2).
+- **R4U3 — Merge popup shows the guest's new boarding time but not the new return time; merge texts for the guest show only new times** (S U5, U-UI1).
+- **R4U4 — Publish confirmation does not warn that pending deny/external proposals expire at publish** (S U6).
+- **R4U5 — Volunteer picker: no hint of where members live; a car based away shows the "away" hatch all day while at the kibbutz** (S U8).
+- **R4U6 — After accepting, my rides still shows the proposal as pending** (no "you accepted, waiting for the others") (U-UI2).
+- **R4U7 — "נהג/ת שעוד לא נמצא/ה מסיע/ה את…" reads badly** → "הנסיעה עוד מחפשת נהג/ת" (U-UI4).
+
+### Missing obvious features / additional
+- **R4M1 — Members who cancel get no inbox confirmation**; to verify: does the driver get `passenger_left` when a passenger leaves a shared ride (R3B12) — the QA user could not see the driver's side (U M1, M2).
+- **R4F1 — A chauffeur ride from a car away from base could end at home** (S F1). **R4F2 — Car-move duration from travel time** (default 60 min) (S F2). **R4F3 — Old → new and extra minutes in every proposal's inbox title** (U F2).
