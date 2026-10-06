@@ -579,3 +579,43 @@ Merged and deduplicated from both reports (S = QA Sadran item, U = QA user item;
 - **R2F3 — Offer "join the out leg only"** when the return shift is large.
 - **R2F4 — Message the driver, or volunteer to drive, from the member's ride card** (overlaps QF1, later).
 - Related to "later" items: put a car based away from home to use for members starting there (the Hadera Mazda idle all week — QF3).
+
+## QA run 3 findings (2026-10-06, seed 6731, week 11–17.10, department `qa-s6731`; QA Sadran = Opus, Wednesday (busiest, 33 requests) via UI; QA user = Sonnet) — **awaiting owner triage**
+Merged from both reports (S = QA Sadran, U = QA user). Whole week published; unmet at the end: 9 waitlisted, 13 external, 2 denied (mostly members living where no car is, Mon load, the stuck group of R3B9). **Regressions of items reported fixed in the QA run 2 batch: R3B9 (R2Q1 b), R3B11 (R2M2), R3B15 (QU3), R3B16 (R2B15), R3B6 (R2B10).**
+
+### Bugs
+- **R3B1 — A merge accepted by both parties ends `withdrawn`** after the Sadran assigned a volunteer driver to the host ride (or another ride on that car) — the fingerprint changed; nobody is warned, the members who accepted are not told (S1: Wed e8b475b1, Sun 5c91838b).
+- **R3B2 — Dragging a needs-driver הקפצה ride onto another needs-driver ride** moves it 75 min beyond its 0/0 flexibility, overlapping the host, with the toast "הוזז בתוך הגמישות" (no merge popup) (S2: Wed 8585c814 → 09013b9e).
+- **R3B3 — Green drop preview, then a server refusal shown as "אירעה שגיאה" + raw English** ("chauffeur legs must start and end at the same place…") for a pickup onto an idle car based away (S3: Wed 64c60880:return, Seat at חדרה).
+- **R3B4 — A drop 15 min after the requested time snaps back** to the requested time and is refused as overlapping (`unmetCandidateWindow`) (S4: Tue 24d75fbd).
+- **R3B5 — A red-preview drop is applied without confirmation**, creating a chain conflict with the next day (S5: Wed 3fa43837).
+- **R3B6 — Return-only merge text has the wrong direction/times** ("מסיע את דור לזכרון יעקב… יציאה 16:15, חזרה 16:45" for a return from Zichron); the popup says "אי אפשר לחשב את זמן העצירה" (S6, U3: Wed 28cf69ae).
+- **R3B7 — `freed_slot_auto` body ends "13:30–15:00 ל."** (destination missing) (S7, U6: Sun 5b4ede58).
+- **R3B8 — A late waitlisted request placed onto a confirmed ride (live) is not notified** (S8: Tue 98c5b0e1).
+- **R3B9 — A contested group forms where no car can serve anyone**; resolving always fails `no_car_free`, even for one member; the siddur shows an extra "00:00–18:45" line under the group block (S9, U1, U-UI2: Wed 9159fe43).
+- **R3B10 — Ask-to-join is auto-approved onto a separate free car** instead of becoming a merge with the asked ride (two cars for one trip, the driver not told); another ask-to-join used the member's default origin (חדרה) although the ride starts at home (S10, U7: Tue 3477efa6, 2a848950).
+- **R3B11 — Split merge does not work**: the second leg's merge replaces the first ("expired"), sending a draft for the other leg fails `stale_version` (S11: Mon 5fd5469b).
+- **R3B12 — A passenger cancelling leaves the driver's ride without notice** (U2, U-M2: Mon cf20b773 → dd0f35dc, driver m36).
+- **R3B13 — A proposal shows only the new time** ("יציאה 06:45", request was 07:30 — no old → new) (U4: Tue 54d03896).
+- **R3B14 — A published-day edit (+30 min) silently moves the ride to another car**; the notice "העריכה נשמרה והבקשה שובצה" has no old → new and no car change (U5: Mon 1d44067a).
+- **R3B15 — After sending from the composer the board returns to Sunday** (S UI).
+- **R3B16 — The ride sheet shows the volunteer driver twice and the picker stays open** (S UI).
+- **R3B17 — Ride text shows through the sticky car-header row; drag auto-scroll runs onto the "רכב חסר" columns** (S UI).
+- **R3B18 — The `TIME_NOT_ALIGNED` warning shows as a raw code** (reasons.ts has the Hebrew) (S UI).
+- **R3B19 — Labels/copy**: a one-way ride to home labelled "(הרכב נשאר שם)"; a lone הקפצה labelled "משולבת"; an origin-change draft drawn with the old origin; the publish recipient list shows requested instead of placed times; the duplicate-child banner line repeats; the shift composer's starting text "השעות שלך לא משתנות"; the time picker opens at 00 (S UI).
+- **R3B20 — The merge popup defaults to "הלוך בלבד"** for a round-trip guest whose return also fits (S UI).
+- **R3B21 — A return stop equal to the destination is accepted** (S UI).
+- **R3B22 — `set_ride_driver` accepts a volunteer riding elsewhere at that time** (only the UI picker warns) (S M4).
+- QA tooling: `qa:member answer` omits the proposal type; `qa:ui shot --day` finds no day tab; `qa:member cancel` on a waitlisted request ("no ride to cancel" — members withdraw); `my-rides` prints the car's home→home; the QA user's CLI submissions bypass the form warnings (overlap, child) by design.
+
+### Owner questions
+- **R3Q1 — Connected הקפצה legs park a shared car 5–9 hours at a place 5–10 minutes away** (Mon, Wed, Thu, several cars) while other requests stay unmet; there is no "two short legs, the car comes home" choice (S M1).
+- **R3Q2 — A car idle away from home** (the Seat at חדרה, all Wednesday) can only be used through an origin-change proposal; a "fetch the car" ride? (S M2; close to QF3, later).
+
+### UI changes
+- **R3U1 — On mobile /my the install-app and push-blocked banners push "my upcoming rides" below the fold** (U-UI1).
+
+### Additional features
+- **R3F1 — A day-level "merge same-destination rides" hint** (Tue 17:30: 3 cars to כפר סבא; Sun: 3 הקפצות to כרכור 07:15–07:45) (S F1).
+- **R3F2 — A member shortens their own multi-day request** (U F2).
+- Not findings: a decline reason (answers are binary, decision 21); the overlap/child warnings (built in the form; the CLI bypasses them); separate requests and 00:00–23:59 middle days of a multi-day request and its cascading withdraw (REQ §13.77 by design).
