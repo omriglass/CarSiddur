@@ -1,6 +1,7 @@
 import { ArrowLeftRight, CarFront, Pin, Clock3, UserRoundX, Star } from "lucide-react";
+import { useFitToViewport } from "./useFitToViewport";
 import type { MouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 
 import { edgeScrollStep } from "@/components/dragAutoScroll";
 import { nextZoom } from "@/components/pinchZoom";
@@ -293,8 +294,8 @@ interface CarDragState {
 
 /**
  * One day, time × cars, bounded to `max-h-[70dvh]` on a phone and to the whole screen height
- * on a computer (`lg:max-h-[calc(100dvh-1.5rem)]`, owner 2026-10-06: scrolling the page brings the
- * table up to fill the screen, so far more of the day shows without scrolling the table) with its own
+ * on a computer the box ends exactly at the bottom of the screen (`useFitToViewport`, owner
+ * 2026-10-06: no page scrolling to reach the table's end or its horizontal scrollbar) with its own
  * `overflow-auto` (both axes) at every breakpoint — the standard
  * frozen-header/frozen-column pattern (car headers `sticky top-0`, hour
  * column `sticky start-0`, corner cell both). This is a hard CSS constraint,
@@ -356,7 +357,10 @@ export function WeekGrid({
 
   const rideById = useMemo(() => new Map(rides.map((r) => [r.id, r])), [rides]);
   const colRefs = useRef<Map<string, HTMLDivElement>>(new Map());
-  const scrollViewportRef = useRef<HTMLDivElement>(null);
+  const scrollViewportRef = useRef<HTMLDivElement | null>(null);
+  // REQ §13.106: on a computer the box ends at the bottom of the screen (no page scroll to reach it).
+  const { fitRef, maxHeight: fitMaxHeight } = useFitToViewport();
+  const setScrollViewport = useCallback((node: HTMLDivElement | null) => { scrollViewportRef.current = node; fitRef(node); }, [fitRef]);
   const lastInitialScroll = useRef<number | null>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
   const dragRef = useRef<DragState | null>(null);
@@ -953,9 +957,9 @@ export function WeekGrid({
 
   return (
     <div
-      ref={scrollViewportRef}
-      className={cn("min-w-0 max-h-[70dvh] overflow-auto rounded-md border shadow-card lg:max-h-[calc(100dvh-1.5rem)]", (dragActive || dragEnabled) && "select-none")}
-      style={{ touchAction: "pan-x pan-y", scrollSnapType: "x proximity", scrollPaddingInlineStart: HOUR_COL_WIDTH_PX * zoom }}
+      ref={setScrollViewport}
+      className={cn("min-w-0 max-h-[70dvh] overflow-auto rounded-md border shadow-card", (dragActive || dragEnabled) && "select-none")}
+      style={{ ...(fitMaxHeight ? { maxHeight: fitMaxHeight } : {}), touchAction: "pan-x pan-y", scrollSnapType: "x proximity", scrollPaddingInlineStart: HOUR_COL_WIDTH_PX * zoom }}
       data-week-grid-scroll-viewport
     >
       <div className="grid" style={{ zoom, gridTemplateColumns, gridTemplateRows, minWidth: HOUR_COL_WIDTH_PX + (allCars.length + (hasDiscussionLane ? 1 : 0)) * CAR_COL_WIDTH_PX }}>
