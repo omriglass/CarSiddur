@@ -1,7 +1,6 @@
 import { ArrowLeftRight, CarFront, Pin, Clock3, UserRoundX, Star } from "lucide-react";
-import { useFitToViewport } from "./useFitToViewport";
 import type { MouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
-import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback, useSyncExternalStore } from "react";
 
 import { edgeScrollStep } from "@/components/dragAutoScroll";
 import { nextZoom } from "@/components/pinchZoom";
@@ -224,6 +223,18 @@ const DEFAULT_END = 24 * 60;
 const HOUR_COL_WIDTH_PX = 56;
 const CAR_COL_WIDTH_PX = 120;
 const HEADER_ROW_HEIGHT_PX = 48;
+const DESKTOP_QUERY = "(min-width: 1024px)";
+function subscribeDesktop(cb: () => void) {
+  if (typeof window.matchMedia !== "function") return () => {};
+  const mq = window.matchMedia(DESKTOP_QUERY);
+  mq.addEventListener("change", cb);
+  return () => mq.removeEventListener("change", cb);
+}
+/** Tailwind `lg` and up: the table is part of the page (see `WeekGrid`). */
+function useIsDesktop(): boolean {
+  return useSyncExternalStore(subscribeDesktop, () => typeof window.matchMedia === "function" && window.matchMedia(DESKTOP_QUERY).matches, () => false);
+}
+
 const HOUR_ROW_HEIGHT_PX = 80;
 /** 15-min rides still render at least this tall so the label/time stay legible (UX_FLOWS §20). */
 const RIDE_MIN_HEIGHT_PX = 32;
@@ -293,26 +304,15 @@ interface CarDragState {
 }
 
 /**
- * One day, time × cars, bounded to `max-h-[70dvh]` on a phone and to the whole screen height
- * on a computer the box ends exactly at the bottom of the screen (`useFitToViewport`, owner
- * 2026-10-06: no page scrolling to reach the table's end or its horizontal scrollbar) with its own
- * `overflow-auto` (both axes) at every breakpoint — the standard
- * frozen-header/frozen-column pattern (car headers `sticky top-0`, hour
- * column `sticky start-0`, corner cell both). This is a hard CSS constraint,
- * not a style preference: `position: sticky` only tracks the scrolling of
- * its *nearest* scroll-container ancestor (any element whose `overflow` is
- * not `visible`, even if that element's content never actually overflows —
- * confirmed directly, this is the textbook "sticky doesn't stick" gotcha).
- * Previously this bound only applied from `lg:` up, so on a phone (`<lg`)
- * the container had no bounded height, meaning `overflow-auto` was a no-op
- * scroll container that never itself scrolled — the *page* scrolled instead,
- * and since `position: sticky` was still scoped to that inert container, the
- * headers did not track the page's scroll at all (a real, confirmed
- * regression against the "must work on a phone" requirement, not merely a
- * cosmetic gap). Bounding the container at every breakpoint fixes it
- * uniformly and keeps horizontal scrolling for wide fleets working the same
- * way on a phone as on desktop. See UX_FLOWS.md "Page scrolling for the
- * Siddur table" for the doc-side correction.
+ * One day, time × cars. Below `lg` (phones/tablets) the box is bounded to `max-h-[70dvh]` and
+ * scrolls itself (`overflow-auto`, both axes): car headers `sticky top-0`, hour column `sticky
+ * start-0`. `position: sticky` only tracks its *nearest* scroll container, so that bound is what
+ * keeps the headers pinned on a phone. On a computer (`lg`+, owner 2026-10-06, REQ §13.106) the
+ * table is part of the page: the box has no height bound and scrolls only horizontally, the app
+ * shell's `main` scrolls vertically, and the car-name header row is rendered *outside* the box as a
+ * `sticky top-0` strip (its `scrollLeft` follows the box's) so the names stay pinned at the top of
+ * the screen. Drag auto-scroll, drag-anchor compensation and the initial scroll follow `main` there.
+ * See UX_FLOWS.md "Page scrolling for the Siddur table".
  */
 export function WeekGrid({
   cars,
@@ -358,9 +358,17 @@ export function WeekGrid({
   const rideById = useMemo(() => new Map(rides.map((r) => [r.id, r])), [rides]);
   const colRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const scrollViewportRef = useRef<HTMLDivElement | null>(null);
-  // REQ §13.106: on a computer the box ends at the bottom of the screen (no page scroll to reach it).
-  const { fitRef, maxHeight: fitMaxHeight } = useFitToViewport();
-  const setScrollViewport = useCallback((node: HTMLDivElement | null) => { scrollViewportRef.current = node; fitRef(node); }, [fitRef]);
+  // REQ §13.106: on a computer the table is part of the page (the page scrolls vertically, the car
+  // names are pinned above the box); below `lg` the box scrolls itself.
+  const desktop = useIsDesktop();
+  const headerRef = useRef<HTMLDivElement | null>(null);
+  const setScrollViewport = useCallback((node: HTMLDivElement | null) => { scrollViewportRef.current = node; }, []);
+  /** The element that scrolls the table vertically: the app shell's `main` on a computer, else the box. */
+  function verticalScroller(): HTMLElement | null {
+    const box = scrollViewportRef.current;
+    if (!box) return null;
+    return (desktop ? box.closest<HTMLElement>("#main-content") : null) ?? box;
+  }
   const lastInitialScroll = useRef<number | null>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
   const dragRef = useRef<DragState | null>(null);
@@ -381,8 +389,17 @@ export function WeekGrid({
     const target = Math.min(dayEndMinutes, Math.max(dayStartMinutes, initialScrollMinutes));
     if (lastInitialScroll.current === target) return;
     lastInitialScroll.current = target;
-    scrollViewportRef.current.scrollTop = ((target - dayStartMinutes) / 60) * HOUR_ROW_HEIGHT_PX * zoom;
-  }, [dayEndMinutes, dayStartMinutes, initialScrollMinutes, zoom]);
+    const offset = ((target - dayStartMinutes) / 60) * HOUR_ROW_HEIGHT_PX * zoom;
+    const box = scrollViewportRef.current;
+    const page = desktop ? box.closest<HTMLElement>("#main-content") : null;
+    if (page) {
+      // The row `offset` below the box's top goes right under the pinned header.
+      const headerHeight = headerRef.current?.getBoundingClientRect().height ?? 0;
+      page.scrollTop += box.getBoundingClientRect().top + offset - page.getBoundingClientRect().top - headerHeight;
+    } else {
+      box.scrollTop = offset;
+    }
+  }, [dayEndMinutes, dayStartMinutes, initialScrollMinutes, zoom, desktop]);
 
   // Two-finger pinch-to-zoom (UX_FLOWS.md member siddur "pinch to zoom"). Registered once as
   // native listeners (never React's synthetic touch handlers, which Chromium treats as
@@ -454,7 +471,10 @@ export function WeekGrid({
       if (el && last) {
         const rect = el.getBoundingClientRect();
         const dx = edgeScrollStep(last.clientX, rect.left, rect.right);
-        const dy = edgeScrollStep(last.clientY, rect.top, rect.bottom);
+        const page = desktop ? el.closest<HTMLElement>("#main-content") : null;
+        const pageRect = page?.getBoundingClientRect();
+        const headerHeight = page ? (headerRef.current?.getBoundingClientRect().height ?? 0) : 0;
+        const dy = pageRect ? edgeScrollStep(last.clientY, pageRect.top + headerHeight, pageRect.bottom) : edgeScrollStep(last.clientY, rect.top, rect.bottom);
         if (dx || dy) {
           // R3B17: auto-scroll never brings the "missing car" lanes into view (they are drop targets
           // for un-assigning, reached on purpose, not by an edge scroll).
@@ -465,7 +485,7 @@ export function WeekGrid({
             return box.left < rect.right && box.right > rect.left;
           };
           const wasVisible = phantomVisible();
-          el.scrollBy(dx, dy);
+          if (page) { page.scrollBy(0, dy); el.scrollBy(dx, 0); } else el.scrollBy(dx, dy);
           if (phantom && !wasVisible && phantomVisible()) el.scrollBy(-dx, 0);
           if (dragRef.current) moveRef.current(last);
         }
@@ -478,7 +498,7 @@ export function WeekGrid({
       window.removeEventListener("pointermove", onMove);
       cancelAnimationFrame(rafId);
     };
-  }, [dragActive]);
+  }, [dragActive, desktop]);
 
   function ridesFor(carId: string) {
     return rides.filter((r) => r.carId === carId);
@@ -699,7 +719,7 @@ export function WeekGrid({
   }
 
   function dragShift(current: DragState, clientY: number): number {
-    const scrolled = (scrollViewportRef.current?.scrollTop ?? current.anchorScrollTop) - current.anchorScrollTop;
+    const scrolled = (verticalScroller()?.scrollTop ?? current.anchorScrollTop) - current.anchorScrollTop;
     const shift = snapTimeShift((clientY - current.anchorClientY + scrolled) / current.anchorRect.height * (dayEndMinutes - dayStartMinutes));
     if (current.kind === "resize-end" && current.originEndMinutes + shift >= 1439 && dayEndMinutes === 1440) {
       return 1439 - current.originEndMinutes;
@@ -729,7 +749,7 @@ export function WeekGrid({
       anchorClientX: event.clientX,
       anchorClientY: event.clientY,
       anchorRect: colRect,
-      anchorScrollTop: scrollViewportRef.current?.scrollTop ?? 0,
+      anchorScrollTop: verticalScroller()?.scrollTop ?? 0,
       confirmed: false,
       shiftMinutes: 0,
       hoverCarId: ride.carId,
@@ -743,6 +763,8 @@ export function WeekGrid({
   }
 
   useEffect(() => { moveRef.current = handleWindowMove; });
+  const carPointerDownRef = useRef(beginCarPointerDown);
+  useEffect(() => { carPointerDownRef.current = beginCarPointerDown; });
 
   const draggedRide = drag ? rideById.get(drag.rideId) : undefined;
   const rawPreview = drag?.confirmed && draggedRide && drag.hoverCarId
@@ -759,7 +781,8 @@ export function WeekGrid({
   const carDragHoverId = carDrag?.confirmed ? carDrag.hoverCarId : null;
   const hasDiscussionLane = discussionBlocks.length > 0;
   const discussionColIndex = allCars.length + 2;
-  const gridTemplateRows = `minmax(${HEADER_ROW_HEIGHT_PX}px, auto) repeat(${hours.length}, ${HOUR_ROW_HEIGHT_PX}px)`;
+  const gridTemplateRows = `${desktop ? "0px" : `minmax(${HEADER_ROW_HEIGHT_PX}px, auto)`} repeat(${hours.length}, ${HOUR_ROW_HEIGHT_PX}px)`;
+  const gridMinWidth = HOUR_COL_WIDTH_PX + (allCars.length + (hasDiscussionLane ? 1 : 0)) * CAR_COL_WIDTH_PX;
   const gridTemplateColumns = `${HOUR_COL_WIDTH_PX}px repeat(${allCars.length}, minmax(${CAR_COL_WIDTH_PX}px, 1fr))${hasDiscussionLane ? ` minmax(${CAR_COL_WIDTH_PX}px, 1fr)` : ""}`;
 
   function Column({ car, colIndex }: { car: WeekGridCar; colIndex: number }) {
@@ -955,14 +978,9 @@ export function WeekGrid({
     );
   }
 
-  return (
-    <div
-      ref={setScrollViewport}
-      className={cn("min-w-0 max-h-[70dvh] overflow-auto rounded-md border shadow-card", (dragActive || dragEnabled) && "select-none")}
-      style={{ ...(fitMaxHeight ? { maxHeight: fitMaxHeight } : {}), touchAction: "pan-x pan-y", scrollSnapType: "x proximity", scrollPaddingInlineStart: HOUR_COL_WIDTH_PX * zoom }}
-      data-week-grid-scroll-viewport
-    >
-      <div className="grid" style={{ zoom, gridTemplateColumns, gridTemplateRows, minWidth: HOUR_COL_WIDTH_PX + (allCars.length + (hasDiscussionLane ? 1 : 0)) * CAR_COL_WIDTH_PX }}>
+  /** Corner + car headers + discussion header, one render for both placements (in the grid below `lg`, pinned above the box on `lg`). */
+  const headerCells = (
+      <>
         <div className="sticky start-0 top-0 z-30 border-b border-e bg-muted shadow-[0_2px_6px_-2px_hsl(var(--foreground)/0.12)]" style={{ gridColumn: 1, gridRow: 1 }} />
         {allCars.map((car, i) => {
           const swappable = canSwapCars && !!onCarSwap && car.group !== "phantom";
@@ -981,7 +999,7 @@ export function WeekGrid({
               isCarDropHover && "bg-primary/10 ring-2 ring-inset ring-primary",
             )}
             style={{ gridColumn: i + 2, gridRow: 1, scrollSnapAlign: "start" }}
-            onPointerDown={swappable ? (e) => beginCarPointerDown(car.id, e) : undefined}
+            onPointerDown={swappable ? (e) => carPointerDownRef.current(car.id, e) : undefined}
           >
             <span className="flex min-w-0 items-start gap-1 font-medium leading-tight">
               {renderCarName ? renderCarName(car) : (
@@ -1028,6 +1046,31 @@ export function WeekGrid({
             <span className="font-medium">{he.waitlist.laneTitle}</span>
           </div>
         ) : null}
+      </>
+  );
+
+  return (
+    <div className="min-w-0">
+    {desktop ? (
+      <div
+        ref={headerRef}
+        data-week-grid-header
+        className="sticky top-0 z-30 overflow-hidden rounded-t-md border border-b-0 bg-muted"
+      >
+        <div className="grid" style={{ zoom, gridTemplateColumns, gridTemplateRows: `minmax(${HEADER_ROW_HEIGHT_PX}px, auto)`, minWidth: gridMinWidth }}>
+          {headerCells}
+        </div>
+      </div>
+    ) : null}
+    <div
+      ref={setScrollViewport}
+      className={cn("min-w-0 max-h-[70dvh] overflow-auto rounded-md border shadow-card lg:max-h-none lg:overflow-y-hidden lg:rounded-t-none", (dragActive || dragEnabled) && "select-none")}
+      onScroll={desktop ? (e) => { if (headerRef.current) headerRef.current.scrollLeft = e.currentTarget.scrollLeft; } : undefined}
+      style={{ touchAction: "pan-x pan-y", scrollSnapType: "x proximity", scrollPaddingInlineStart: HOUR_COL_WIDTH_PX * zoom }}
+      data-week-grid-scroll-viewport
+    >
+      <div className="grid" style={{ zoom, gridTemplateColumns, gridTemplateRows, minWidth: gridMinWidth }}>
+        {desktop ? null : headerCells}
         {hours.map((h, i) => (
           <div
             key={h}
@@ -1090,6 +1133,7 @@ export function WeekGrid({
           {allCars.find((c) => c.id === carDrag.carId)?.name ?? ""}
         </div>
       ) : null}
+    </div>
     </div>
   );
 }

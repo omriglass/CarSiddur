@@ -1,5 +1,4 @@
 import { paths } from "@/app/routes";
-import { useFitToViewport } from "@/components/useFitToViewport";
 import { formatInTimeZone } from "date-fns-tz";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -74,8 +73,6 @@ interface BoardScreenProps {
 
 /** `/sadran/:dept/:week/board` — the board (UX_FLOWS.md §4.2). */
 export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
-  // REQ §13.106: the unmet list beside the table ends at the screen's bottom, like the table.
-  const { fitRef: unmetFitRef, maxHeight: unmetMaxHeight } = useFitToViewport();
   const navigate = useNavigate();
 
   const boardRef = useRef<HTMLDivElement>(null);
@@ -442,13 +439,12 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
         </div>
 
         <div
-          // Bounded and independently scrollable, ending at the screen's bottom like `WeekGrid` (useFitToViewport)
+          // On `lg` the table is part of the page, so this panel stays pinned (`sticky top-0`) while the page
+          // scrolls, capped to the screen height with its own scroll when the list is longer (REQ §13.106).
           // overflow-auto` side-by-side (UX_FLOWS.md §20) — without this the panel grows with
           // the page, forcing a page-level scroll to reach lower unmet cards that also pushes
           // the grid itself off-screen.
-          ref={unmetFitRef}
-          style={!tableView && unmetMaxHeight ? { maxHeight: unmetMaxHeight } : undefined}
-          className={tableView ? "min-w-0" : "hidden min-w-0 lg:block lg:overflow-auto"}
+          className={tableView ? "min-w-0" : "hidden min-w-0 lg:sticky lg:top-0 lg:block lg:max-h-[100dvh] lg:self-start lg:overflow-auto"}
           {...{ [UNMET_DROP_ZONE_ATTR]: "true" }}
         >
           <h2 className="mb-2 font-semibold">{tv("sadranBoard.unmetTitle", { count: String(board.unmetItems.length) })}</h2>

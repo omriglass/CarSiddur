@@ -111,7 +111,7 @@ export function AppShell() {
   ];
 
   return (
-    <div className="flex min-h-dvh flex-col bg-background md:flex-row">
+    <div className="flex min-h-dvh flex-col bg-background md:flex-row lg:h-dvh">
       <a
         href="#main-content"
         className="sr-only focus:not-sr-only focus:fixed focus:start-2 focus:top-2 focus:z-50 focus:rounded-md focus:bg-primary focus:px-4 focus:py-2 focus:text-primary-foreground"
@@ -130,7 +130,7 @@ export function AppShell() {
         <NavLinks items={desktopNavItems} orientation="vertical" />
       </nav>
 
-      <div className="flex flex-1 flex-col">
+      <div className="flex flex-1 flex-col lg:min-h-0">
         <header className="sticky top-0 z-40 flex h-14 shrink-0 items-center gap-2 border-b bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/60 md:hidden">
           <AppLogoMark />
           <span className="text-base font-semibold leading-tight">{he.app.name}</span>
@@ -141,7 +141,7 @@ export function AppShell() {
           ) : null}
         </header>
         <OfflineNotice />
-        <main id="main-content" className="flex-1 overflow-y-auto pb-16 md:pb-0">
+        <main id="main-content" className="flex-1 overflow-y-auto pb-16 md:pb-0 lg:min-h-0">
           <DepartmentContextSelector />
           <div key={context.departmentId}><Outlet /></div>
         </main>
