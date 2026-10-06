@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { initialRouteEditValues, reservationRoutePlaces, routeEditChanged, routeEditPayload, type RouteEditValues } from "./rideRouteEdit";
+import { initialRouteEditValues, reservationRoutePlaces, routeEditChanged, routeEditPayload, stopEqualsDestination, type RouteEditValues } from "./rideRouteEdit";
 
 const base: RouteEditValues = {
   origin: { presetId: "home", name: "Home" },
@@ -64,5 +64,13 @@ describe("initialRouteEditValues", () => {
     expect(oneWay.returnStops).toEqual([{ presetId: "x", name: "X" }]);
     const reservation = initialRouteEditValues({ request: null, ride, placeName, stops: [] });
     expect(reservation).toMatchObject({ origin: { presetId: "home" }, destination: { presetId: "haifa" }, outStops: [] });
+  });
+});
+
+describe("stopEqualsDestination (R3B21)", () => {
+  const dest = { presetId: "d1", name: "x" };
+  it("flags a return stop equal to the destination", () => {
+    expect(stopEqualsDestination({ origin: null, destination: dest, outStops: [], returnStops: [{ presetId: "d1", name: "x" }] })).toBe(true);
+    expect(stopEqualsDestination({ origin: null, destination: dest, outStops: [], returnStops: [{ presetId: "d2", name: "y" }] })).toBe(false);
   });
 });

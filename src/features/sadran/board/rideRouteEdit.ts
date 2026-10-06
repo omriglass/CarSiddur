@@ -27,6 +27,12 @@ export function routeEditChanged(initial: RouteEditValues, next: RouteEditValues
   return routeEditKey(initial) !== routeEditKey(next);
 }
 
+/** R3B21: a stop (either leg) that is the destination itself is not a stop - the editor refuses to save it. */
+export function stopEqualsDestination(values: RouteEditValues): boolean {
+  const destination = valueKey(values.destination);
+  return !!destination && [...values.outStops, ...values.returnStops].some((stop) => valueKey(stop) === destination);
+}
+
 /** Shift-proposal payload for a route edit: places and the whole stop set (any array replaces it). */
 export function routeEditPayload(rideId: string, values: RouteEditValues): Record<string, unknown> {
   const payload: Record<string, unknown> = { ride_id: rideId };

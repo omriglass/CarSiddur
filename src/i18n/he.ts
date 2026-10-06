@@ -206,6 +206,8 @@ export const he = {
     combinedWindow: "שעות הנסיעה המשולבת",
     combinedConsent: "השינוי יוחל רק אחרי אישור הנהג/ת וכל הנוסעים המושפעים ממנו.",
     combinedSummary: "נסיעה משולבת: {{driver}} מסיע/ה את {{passenger}} ל{{destination}}, ברכב {{car}}, בשעות {{start}}–{{end}}.",
+    combinedSummaryReturn: "נסיעה משולבת: {{driver}} אוסף/ת את {{passenger}} מ{{destination}}, ברכב {{car}}, בשעות {{start}}–{{end}}.",
+    driverWanted: "נהג/ת שעוד לא נמצא/ה",
     separateDestinations: "יעדים לפי בקשה",
     /** REQ §13.93/SOLVER §3.15: the `origin` proposal's one-line summary (composer + `/p/:token`). */
     originChangeSummary: "יציאה מ{{to}} במקום מ{{from}}, ברכב {{car}}",
@@ -633,6 +635,9 @@ export const he = {
     /** REQ §13.93/SOLVER §3.15: accepting a `changeOrigin` proposal found the car/window no longer free. */
     originChangeUnavailable: "הרכב כבר לא פנוי בנקודת היציאה הזו — יש להריץ הצעה חדשה",
     carNotAtLegOrigin: "הרכב לא נמצא בנקודת היציאה בשעה הזו",
+    carMoveInvalid: "העברת הרכב אינה תקינה (שעה, משך, מקום או אנשים)",
+    carMoveSamePlace: "נקודת היעד זהה למקום שבו הרכב נמצא",
+    legLocationMismatch: "מסלול הנסיעה אינו מתאים לבקשה (נקודת יציאה או יעד שונים)",
     carNextRideElsewhere: "הנסיעה הבאה של הרכב יוצאת ממקום אחר — הלוך בלבד היה משאיר אותו ביעד",
     carNotAtLegPlace: "הרכב לא נמצא באף אחד מקצות הנסיעה בשעה הזו",
     shiftCarInvalid: "הרכב שנבחר אינו פעיל במחלקה",

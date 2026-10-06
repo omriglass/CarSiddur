@@ -30,7 +30,7 @@ import { formatDayDate } from "@/lib/dayLabels";
 import { routeLabel } from "@/lib/routeLabel";
 import { formatTime } from "@/lib/time";
 import { DEFAULT_STOP_MINUTES, homeTravelEdges, makeHop } from "@/lib/rideRoute";
-import { mergePayloadLeg, previewMerge } from "../../board/mergeProposal";
+import { mergeLegSummary, mergePayloadLeg, previewMerge } from "../../board/mergeProposal";
 import { useQuery } from "@tanstack/react-query";
 
 import { renderTemplate } from "../waLink";
@@ -206,6 +206,8 @@ export function ProposalComposerScreen({ departmentId, weekStart }: ProposalComp
     template,
     type,
     request,
+    // R3B6: the merged legs decide the wording (a return-only guest is collected from the destination).
+    mergeLeg: type === "merge" && request ? mergeLegSummary(currentProposal?.payload ?? prefill?.payload, request) : undefined,
     seriesOriginal: isSeriesSpan ? seriesOriginalOf(seriesLegsQuery.data ?? []) : null,
     requesterName: contactsQuery.data?.find((c) => c.id === request?.requester_id)?.full_name,
     sadranName: profileQuery.data?.full_name ?? "",

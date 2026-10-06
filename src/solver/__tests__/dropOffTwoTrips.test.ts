@@ -30,7 +30,7 @@ describe('drop-off with a pickup (REQ §13.94)', () => {
     const third = makeRequest({
       id: 'R2',
       memberId: 'm-R2',
-      originId: 'destA', // the car waits at destA between the two trips
+      // home -> destB: needs the only car during the wait, so R1's legs stay separate (REQ §13.103a)
       destinationId: 'destB',
       departureMs: slotMs(44), // 11:00 - 12:00, inside the old keep window
       returnMs: slotMs(48),
@@ -102,3 +102,18 @@ describe('a הקפצה\'s two legs connect on one car (REQ §13.95 H2)', () => {
 function a_(out: ReturnType<typeof solve>) {
   return out.assignments.filter((a) => a.servedRequestIds.includes('R1'));
 }
+
+describe('connect only when the wait is uncontested (REQ §13.103a)', () => {
+  it('connects the legs on one car when no other request needs it', () => {
+    const out = solve(baseInput({ cars: [makeCar('C1')], requests: [dropOff('R1')] }));
+    const legs = out.assignments.filter((a) => a.servedRequestIds.includes('R1'));
+    expect(legs.every((a) => a.legs[0]?.carMode === 'relay')).toBe(true);
+  });
+  it('separates the legs (chauffeur, no waiting relay) when another request needs the only car', () => {
+    const third = makeRequest({ id: 'R2', memberId: 'm-R2', destinationId: 'destB', departureMs: slotMs(44), returnMs: slotMs(48) });
+    const out = solve(baseInput({ cars: [makeCar('C1')], requests: [dropOff('R1'), third] }));
+    expect(out.unmet.map((u) => u.requestId)).toEqual([]);
+    const legs = out.assignments.filter((a) => a.servedRequestIds.includes('R1'));
+    expect(legs.every((a) => a.legs[0]?.carMode !== 'relay')).toBe(true);
+  });
+});

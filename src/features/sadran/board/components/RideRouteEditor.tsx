@@ -9,7 +9,7 @@ import { DestinationCombobox, type DestinationPreset, type DestinationValue } fr
 import { Button } from "@/components/ui/button";
 import { he } from "@/i18n/he";
 
-import { routeEditChanged, type RouteEditValues } from "../rideRouteEdit";
+import { routeEditChanged, stopEqualsDestination, type RouteEditValues } from "../rideRouteEdit";
 
 const MAX_STOPS = 10;
 
@@ -70,6 +70,7 @@ export interface RideRouteEditorProps {
 export function RideRouteEditor({ initial, destinations, stopsEditable, hasReturn, saving, onSave }: RideRouteEditorProps) {
   const [values, setValues] = useState<RouteEditValues>(initial);
   const changed = routeEditChanged(initial, values);
+  const stopIsDestination = stopEqualsDestination(values);
   return (
     <div className="space-y-2 rounded-md border p-3" data-testid="ride-route-editor">
       <span className="font-medium">{he.rideRouteEdit.title}</span>
@@ -99,7 +100,8 @@ export function RideRouteEditor({ initial, destinations, stopsEditable, hasRetur
           ) : null}
         </>
       ) : <p className="text-xs text-muted-foreground">{he.rideRouteEdit.noStopsOnReservation}</p>}
-      <Button type="button" variant="secondary" className="min-h-11 w-full" disabled={!changed || saving} onClick={() => onSave(values)} data-testid="ride-route-save">
+      {stopIsDestination ? <p role="alert" className="text-xs text-destructive" data-testid="ride-route-stop-error">{he.rideRouteEdit.stopIsDestination}</p> : null}
+      <Button type="button" variant="secondary" className="min-h-11 w-full" disabled={!changed || saving || stopIsDestination} onClick={() => onSave(values)} data-testid="ride-route-save">
         {he.rideRouteEdit.save}
       </Button>
     </div>

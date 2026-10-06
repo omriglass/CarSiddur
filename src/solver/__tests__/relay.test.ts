@@ -98,3 +98,20 @@ describe('pairRelays', () => {
     expect(pairs).toHaveLength(1); // submittedAtMs never enters the pairing decision
   });
 });
+
+describe('pairRelays: own drop-off pair connects only when the wait is not contested (REQ 103a)', () => {
+  const own = (extra: Parameters<typeof makeRequest>[0] = {}) => [
+    outReq('X#out', 'destA', 36, { splitFrom: 'X', ...extra }),
+    retReq('X#ret', 'destA', 60, { splitFrom: 'X', ...extra }),
+  ];
+  it('connects the two legs when no other request needs a car during the wait', () => {
+    const { normalized, cars } = normalizeAll(own());
+    expect(pairRelays(normalized, cars).pairs).toHaveLength(1);
+  });
+  it('keeps the legs separate when another request needs the only car during the wait', () => {
+    const { normalized, cars } = normalizeAll([...own(), makeRequest({ id: 'Z', destinationId: 'destB', departureMs: slotMs(44), returnMs: slotMs(50) })]);
+    const { pairs, unpaired } = pairRelays(normalized.filter((n) => n.legs[0]?.side !== 'both'), cars, normalized.filter((n) => n.legs[0]?.side === 'both'));
+    expect(pairs).toHaveLength(0);
+    expect(unpaired).toHaveLength(2);
+  });
+});

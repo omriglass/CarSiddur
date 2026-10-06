@@ -66,6 +66,14 @@ describe("previewMerge", () => {
   });
 });
 
+describe("previewMerge return-only guest (R3B6)", () => {
+  it("computes a stop time when the host has a single stored leg", () => {
+    const preview = previewMerge(host, request({ trip_shape: "one_way_from", origin_id: "H", destination_id: "T", destination_resolved_name: "Station", depart_at: null, return_at: "2026-10-11T04:15:00.000Z" }), "return", { hop, stopMinutes: 5, homeId: "H" })!;
+    expect(preview.boardLeg).not.toBeNull();
+    expect(preview.boardEta).not.toBeNull();
+  });
+});
+
 describe("addedGuestsOf", () => {
   it("lists everyone but the base (driver first, else the first served)", () => {
     const served = [

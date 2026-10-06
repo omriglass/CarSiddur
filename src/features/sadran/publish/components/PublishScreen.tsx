@@ -17,6 +17,7 @@ import { dateKey, formatTime } from "@/lib/time";
 import { requestStart } from "@/features/sadran/board/phantomLanes";
 
 import { computeDiffSummary } from "../diffSummary";
+import { placedTimes } from "../placedTimes";
 import {
   useAllWeekRides,
   usePublicationReadiness,
@@ -205,12 +206,15 @@ export function PublishScreen({ departmentId, weekStart }: PublishScreenProps) {
         <CardContent className="space-y-2 p-4 text-sm">
           <h2 className="font-medium">{tv("sadranPublish.notifyListTitle", { count: String(notifyList.length) })}</h2>
           <ul className="space-y-1 text-muted-foreground">
-            {notifyList.map((r) => (
+            {notifyList.map((r) => {
+              const placed = placedTimes(r, ridesQuery.data ?? []);
+              return (
               <li key={r.id}>
-                <TripSummary name={r.requester_full_name} destination={r.destination_resolved_name ?? r.destination_text} purpose={r.ride_type_name_he} departAt={r.depart_at} returnAt={r.return_at} />
+                <TripSummary name={r.requester_full_name} destination={r.destination_resolved_name ?? r.destination_text} purpose={r.ride_type_name_he} departAt={placed.departAt} returnAt={placed.returnAt} />
                 {he.status[r.status as keyof typeof he.status] ?? r.status}
               </li>
-            ))}
+              );
+            })}
           </ul>
         </CardContent>
       </Card>

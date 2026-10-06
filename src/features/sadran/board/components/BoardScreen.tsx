@@ -42,7 +42,7 @@ import { ridePassengerSummary } from "@/lib/ridePassengerSummary";
 import { rideCoordinatorNotes } from "@/lib/rideCoordinatorNotes";
 
 import { resolveRideRealDestination } from "../rideLabel";
-import { duplicateChildRuns } from "../duplicateChildRuns";
+import { duplicateChildRuns, groupDuplicateRuns } from "../duplicateChildRuns";
 import { connectedMateOf, unmetItemId } from "../unmetLegs";
 import { mergePayloadLeg, mergePayloadLegs, previewMerge } from "../mergeProposal";
 import { requestRouteLine } from "../requestRoute";
@@ -280,9 +280,9 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
       {duplicateRuns.length > 0 ? (
         <div role="status" aria-label={he.duplicateChild.listLabel} data-testid="duplicate-child-warning"
           className="space-y-1 rounded-md border border-maintenance/50 bg-maintenance/10 p-2 text-sm">
-          {duplicateRuns.map((run) => (
-            <p key={`${run.childName}:${run.requests.map((r) => r.id).join(":")}`}>
-              <span className="font-semibold">{tv("duplicateChild.banner", { child: run.childName })}</span>
+          {groupDuplicateRuns(duplicateRuns).map((run) => (
+            <p key={run.key}>
+              <span className="font-semibold">{tv("duplicateChild.banner", { child: run.childNames.join(", ") })}</span>
               {" · "}
               {tv("duplicateChild.line", {
                 a: run.requests[0]?.requester_full_name ?? "", b: run.requests[1]?.requester_full_name ?? "",
@@ -314,7 +314,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
             draggable
             canDragRide={(ride) => !ride.id.startsWith("merge:") && !ride.id.startsWith("draft:") && (!ride.id.startsWith("change:") || !!(board.rideChangesQuery.data ?? []).find((change) => change.is_planning && `change:${change.id}` === ride.id))}
             canResizeRide={(ride) => !ride.id.startsWith("request:") && !ride.id.startsWith("change:") && !ride.id.startsWith("merge:") && !ride.id.startsWith("draft:")}
-            onSlotClick={(carId, minutes) => !carId.startsWith("phantom:") && dnd.setReservation({ carId, start: formatMinutes(minutes), end: formatMinutes(Math.min(1439, minutes + 60)), notes: "", memberIds: [], childIds: [] })}
+            onSlotClick={(carId, minutes) => !carId.startsWith("phantom:") && dnd.setReservation({ carId, start: formatMinutes(minutes), end: formatMinutes(Math.min(1439, minutes + 60)), notes: "", memberIds: [], childIds: [], kind: "reservation", toPlaceId: "" })}
             onRideClick={dnd.handleRideClick}
             onRideDrop={(rideId, carId, minutes, droppedOnRideId) => void dnd.handleRideDrop(rideId, carId, minutes, droppedOnRideId)}
             onRideResize={dnd.handleRideResize}
@@ -528,8 +528,10 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
         cars={board.carsQuery.data ?? []}
         members={dnd.reservationMembersQuery.data ?? []}
         children={dnd.reservationChildrenQuery.data ?? []}
+        places={(board.destinationsQuery.data ?? []).map((d) => ({ id: d.id, name: d.name }))}
+        carLocationName={dnd.reservationFromName}
         onSave={() => void dnd.saveReservation()}
-        saving={dnd.editRideMutation.isPending || dnd.setRidePassengersMutation.isPending}
+        saving={dnd.editRideMutation.isPending || dnd.setRidePassengersMutation.isPending || dnd.markCarMoveMutation.isPending}
       />
       <ConfirmDialog
         open={!!dnd.seriesMoveConfirm}
@@ -543,6 +545,17 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
         onConfirm={() => {
           const confirmed = dnd.seriesMoveConfirm;
           dnd.setSeriesMoveConfirm(null);
+          if (confirmed) void confirmed.run();
+        }}
+      />
+      <ConfirmDialog
+        open={!!dnd.invalidDropConfirm}
+        onOpenChange={(open) => { if (!open) dnd.setInvalidDropConfirm(null); }}
+        title={he.sadranBoard.invalidDropTitle}
+        description={he.sadranBoard.invalidDropBody}
+        onConfirm={() => {
+          const confirmed = dnd.invalidDropConfirm;
+          dnd.setInvalidDropConfirm(null);
           if (confirmed) void confirmed.run();
         }}
       />

@@ -419,6 +419,7 @@ export function SiddurPage() {
               isChauffeur: !!r.is_chauffeur,
               needsDriver: !!r.needs_driver,
               autoRelocation: !!r.auto_relocation,
+              carMove: r.pin_reason === "CAR_MOVE",
               startsAt: r.starts_at ?? undefined,
             })
           : (r.destination_name ?? ""));

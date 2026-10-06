@@ -173,3 +173,13 @@ describe("templateSuggestionRowSchema", () => {
     expect(result.success).toBe(false);
   });
 });
+
+describe("isSamePlace (R3B21)", () => {
+  it("matches same preset or same free text only", async () => {
+    const { isSamePlace } = await import("./schema");
+    expect(isSamePlace({ presetId: "a", name: "x" }, { presetId: "a", name: "y" })).toBe(true);
+    expect(isSamePlace({ presetId: "a", name: "x" }, { presetId: "b", name: "x" })).toBe(false);
+    expect(isSamePlace({ freeText: " Foo " }, { freeText: "foo" })).toBe(true);
+    expect(isSamePlace({ freeText: "" }, { freeText: "" })).toBe(false);
+  });
+});

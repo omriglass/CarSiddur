@@ -169,7 +169,7 @@ function solveExpanded(input: SolverInput): SolverOutput {
   const passengerOnly = oneWay.filter((nr) => nr.isPassengerOnly);
   const relayEligible = oneWay.filter((nr) => !nr.isPassengerOnly);
 
-  const { pairs, unpaired } = pairRelays(relayEligible, input.cars);
+  const { pairs, unpaired } = pairRelays(relayEligible, input.cars, normalized.filter((nr) => !relayEligible.includes(nr)));
 
   const relayPairPeople = new Map<string, number>();
   for (const pair of pairs) {

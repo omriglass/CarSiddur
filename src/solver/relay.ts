@@ -126,7 +126,7 @@ export interface PairRelaysResult {
   unpaired: NormalizedRequest[];
 }
 
-export function pairRelays(requests: NormalizedRequest[], cars: Car[]): PairRelaysResult {
+export function pairRelays(requests: NormalizedRequest[], cars: Car[], others: NormalizedRequest[] = []): PairRelaysResult {
   const outs = requests.filter(isRelayOut);
   const rets = requests.filter(isRelayReturn);
 
@@ -141,7 +141,27 @@ export function pairRelays(requests: NormalizedRequest[], cars: Car[]): PairRela
   // REQUIREMENTS §13.95 (H2): the two halves of one drop-off-with-pickup (`splitFrom`) connect into one
   // relay pair on one car — the requester (or a driving companion) drives both — before
   // any cross pairing with another member's leg.
-  const own = (c: Candidate): number => (c.out.request.splitFrom !== undefined && c.out.request.splitFrom === c.ret.request.splitFrom ? 0 : 1);
+  const isOwn = (c: Candidate): boolean => c.out.request.splitFrom !== undefined && c.out.request.splitFrom === c.ret.request.splitFrom;
+  // REQUIREMENTS §13.103a: the connected own pair keeps the car waiting at the destination, so it is
+  // offered only when the wait is not contested: fewer other requests overlap the wait window than
+  // there are shared cars. Otherwise the two legs stay separate (chauffeur legs, car returns between).
+  const sharedCars = cars.filter((c) => c.type === 'shared').length;
+  const contested = (c: Candidate): boolean => {
+    const waitStart = c.outWindow.end;
+    const waitEnd = c.returnWindow.start;
+    const demand = new Set<string>();
+    for (const nr of [...requests, ...others]) {
+      if (nr.request.splitFrom !== undefined && nr.request.splitFrom === c.out.request.splitFrom) continue;
+      if (nr.id === c.out.id || nr.id === c.ret.id) continue;
+      if (nr.window.start < waitEnd && waitStart < nr.window.end) demand.add(nr.request.splitFrom ?? nr.id);
+    }
+    return demand.size >= Math.max(1, sharedCars);
+  };
+  for (let i = candidates.length - 1; i >= 0; i--) {
+    const c = candidates[i];
+    if (c && isOwn(c) && contested(c)) candidates.splice(i, 1);
+  }
+  const own = (c: Candidate): number => (isOwn(c) ? 0 : 1);
   candidates.sort((a, b) => {
     if (own(a) !== own(b)) return own(a) - own(b);
     const rankA = a.idleSlots + a.shiftCost;

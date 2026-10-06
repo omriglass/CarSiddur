@@ -6,7 +6,7 @@ import { routeLabel } from "@/lib/routeLabel";
 import type { ProposalType } from "@/lib/enums";
 
 import { servedOf } from "../applySolve";
-import { mergePayloadLeg, mergePayloadLegs, previewMerge, type MergeRouteContext } from "./mergeProposal";
+import { mergeLegSummary, mergePayloadLeg, mergePayloadLegs, previewMerge, type MergeRouteContext } from "./mergeProposal";
 import { buildProposalPayload, resolveShiftTimes, seriesSpanOf } from "../proposals/buildProposalPayload";
 import { externalSuggestionFor, proposalPreviewText, proposalTemplateVariant } from "../proposals/proposalText";
 
@@ -23,6 +23,8 @@ export interface ComposerPrefill {
   /** Board-only hints for the merge popup (never sent): the card's own leg, and how this merge relates to the request's open draft. */
   anchorLeg?: "out" | "return" | null;
   draftNote?: "extends" | "replaces" | null;
+  /** The ride this drop merges into - the popup's leg toggle edits only its leg (a split merge keeps the other ride's leg). */
+  legRideId?: string;
 }
 
 export interface DraftInputContext {
@@ -94,6 +96,8 @@ export function buildDraftInput(prefill: ComposerPrefill, ctx: DraftInputContext
   const seriesOriginal = seriesOriginalOf(seriesLegs.map((r) => ({ departAt: r.depart_at, returnAt: r.return_at })));
   const reasonHe = proposalPreviewText({
     template, type, request, seriesOriginal,
+    // R3B6: the text speaks of the legs actually merged (a return-only guest is collected, not driven out).
+    mergeLeg: type === "merge" ? mergeLegSummary(payload, request) : undefined,
     requesterName: request.requester_full_name ?? undefined,
     sadranName: ctx.sadranName,
     destinationName, route,

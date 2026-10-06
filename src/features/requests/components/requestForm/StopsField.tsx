@@ -20,6 +20,8 @@ export interface StopsFieldProps {
   destinations: readonly DestinationPreset[];
   addLabel: string;
   removeAriaLabel: string;
+  /** First validation message of any stop (R3B21: stop equals origin/destination). */
+  error?: string;
 }
 
 function stopName(value: DestinationValue, destinations: readonly DestinationPreset[]): string {
@@ -28,7 +30,7 @@ function stopName(value: DestinationValue, destinations: readonly DestinationPre
 }
 
 /** Out- or return-stop chips (REQUIREMENTS §13.93 "Multi-stop rides") — one `StopsField` per leg. */
-export function StopsField({ control, name, destinations, addLabel, removeAriaLabel }: StopsFieldProps) {
+export function StopsField({ control, name, destinations, addLabel, removeAriaLabel, error }: StopsFieldProps) {
   const { fields, append, remove } = useFieldArray({ control, name });
   const [adding, setAdding] = useState(false);
 
@@ -76,6 +78,7 @@ export function StopsField({ control, name, destinations, addLabel, removeAriaLa
           {addLabel}
         </button>
       ) : null}
+      {error ? <p role="alert" className="w-full text-sm font-medium text-destructive">{error}</p> : null}
     </div>
   );
 }

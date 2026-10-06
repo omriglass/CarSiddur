@@ -48,3 +48,16 @@ export function duplicateChildRuns(requests: readonly WeekRequestRow[]): Duplica
   return result.sort((x, y) => Date.parse(x.startsAt) - Date.parse(y.startsAt) || x.requests[0]!.id.localeCompare(y.requests[0]!.id) || x.childName.localeCompare(y.childName));
 }
 
+
+/** R3B19: one banner line per request pair - every shared child of the pair is named in that one line. */
+export function groupDuplicateRuns(runs: readonly DuplicateChildRun[]): { key: string; childNames: string[]; requests: WeekRequestRow[]; startsAt: string }[] {
+  const byPair = new Map<string, { key: string; childNames: string[]; requests: WeekRequestRow[]; startsAt: string }>();
+  for (const run of runs) {
+    const pairKey = run.requests.map((request) => request.id).join(":");
+    const entry = byPair.get(pairKey);
+    if (entry) {
+      if (!entry.childNames.includes(run.childName)) entry.childNames.push(run.childName);
+    } else byPair.set(pairKey, { key: pairKey, childNames: [run.childName], requests: run.requests, startsAt: run.startsAt });
+  }
+  return [...byPair.values()];
+}

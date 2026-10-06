@@ -481,6 +481,16 @@ export async function editRide(input: EditRideInput, expectedVersion?: number): 
   return rpc("edit_ride", { p_ride: input as unknown as Json, p_expected_version: expectedVersion });
 }
 
+/** REQ §13.103 b: "the car was moved from A to B" - a ride that decides where the car is from then on. */
+export interface MarkCarMoveInput { carId: string; fromPlaceId: string; toPlaceId: string; at: string; minutes: number; peopleIds?: string[] }
+
+export async function markCarMove(input: MarkCarMoveInput): Promise<string> {
+  return rpc("mark_car_move", {
+    p_car_id: input.carId, p_from_place: input.fromPlaceId, p_to_place: input.toPlaceId,
+    p_at: input.at, p_minutes: input.minutes, p_people: input.peopleIds ?? [],
+  });
+}
+
 export async function cancelRide(rideId: string, reason: string, expectedVersion?: number): Promise<void> {
   await rpc("cancel_ride", { p_ride_id: rideId, p_reason: reason, p_expected_version: expectedVersion });
 }

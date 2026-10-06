@@ -34,6 +34,7 @@ import {
   submitSeriesRequest,
   withdrawFreedSlotClaim,
   withdrawRequest,
+  shortenSeries,
   withdrawAllRequests,
   type JoinableRideRow,
   type SubmitRequestPayload,
@@ -118,6 +119,21 @@ export function useWithdrawRequestMutation() {
       withdrawRequest(requestId, expectedVersion),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: requestsKeys.mine(profileId) });
+      queryClient.invalidateQueries({ queryKey: siddurKeys.all });
+      queryClient.invalidateQueries({ queryKey: sadranKeys.all });
+    },
+    onError: showErrorToast,
+  });
+}
+
+/** REQ §13.103 c: "קיצור הבקשה". */
+export function useShortenSeriesMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ requestId, departAt, returnAt }: { requestId: string; departAt: string; returnAt: string }) =>
+      shortenSeries(requestId, departAt, returnAt),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: requestsKeys.all });
       queryClient.invalidateQueries({ queryKey: siddurKeys.all });
       queryClient.invalidateQueries({ queryKey: sadranKeys.all });
     },

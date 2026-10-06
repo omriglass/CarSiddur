@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  chauffeurCarElsewhere,
   connectsOtherLeg,
   isDropTargetValid,
   isUnmetDropValid,
@@ -351,5 +352,33 @@ describe("requestWithinFlex chauffeur pickup (R2B9)", () => {
     // ride 09:30-10:00 ends at the return time: within flexibility
     expect(requestWithinFlex(req, "2026-10-12T09:30:00.000Z", "2026-10-12T10:00:00.000Z", "return", true)).toBe(true);
     expect(requestWithinFlex(req, "2026-10-12T09:30:00.000Z", "2026-10-12T11:00:00.000Z", "return", true)).toBe(false);
+  });
+});
+
+describe("R3B3/R3B4 (QA run 3)", () => {
+  const departAt = "2026-09-13T08:00:00.000Z"; // minute 660 (11:00 Jerusalem)
+  const base = { id: "r1", origin_id: "home", destination_id: "dest", depart_at: departAt, return_at: null };
+  const away = baseContext({ homeDestinationId: "home", carBaseLocationId: new Map([["car1", "hadera"]]), weekStartMs: Date.parse("2026-09-13T00:00:00.000Z") });
+
+  it("R3B3: a הקפצה cannot take a car parked at a place that is neither its origin nor destination", () => {
+    const dropOff = request({ ...base, trip_type: "drop_off", trip_shape: "one_way_from" });
+    expect(chauffeurCarElsewhere(away, dropOff, "car1", departAt)).toBe(true);
+    expect(isUnmetDropValid({ ...away, unmetItems: [] }, { request: dropOff, destinationName: "—" }, "car1", 660)).toBe(false);
+    // a car at the leg's origin or destination is fine; other trip types are not gated here
+    expect(chauffeurCarElsewhere({ ...away, carBaseLocationId: new Map([["car1", "dest"]]) }, dropOff, "car1", departAt)).toBe(false);
+    expect(chauffeurCarElsewhere(away, request({ ...base, trip_type: "round_trip", trip_shape: "round_trip" }), "car1", departAt)).toBe(false);
+  });
+
+  it("R3B4: a nearby drop snaps to the requested time, unless that slot is taken and the dropped one is free", () => {
+    const item: UnmetListItem = { request: request({ ...base, trip_type: "round_trip", trip_shape: "one_way_to" }), destinationName: "—" };
+    const free = baseContext({ selectedDay: "2026-09-13" });
+    expect(unmetCandidateWindow(free, item, 675, false, "car1")?.startsAt).toBe(departAt);
+    expect(unmetCandidateWindow(free, item, 660, false, "car1")?.startsAt).toBe(departAt);
+    // The car is busy at the requested start (until 08:10Z) - the Sadran's later drop stands.
+    const busy = baseContext({
+      selectedDay: "2026-09-13",
+      rides: [ride({ id: "busy", car_id: "car1", starts_at: "2026-09-13T07:30:00.000Z", ends_at: "2026-09-13T08:10:00.000Z", status: "confirmed" })],
+    });
+    expect(unmetCandidateWindow(busy, item, 675, false, "car1")?.startsAt).toBe("2026-09-13T08:15:00.000Z");
   });
 });

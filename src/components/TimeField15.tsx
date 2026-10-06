@@ -103,11 +103,13 @@ export function TimeField15({ value, min, max, onChange, disabled, ...rest }: Ti
                 </button>
               ))}
             </div>
-            <div className="max-h-48 overflow-y-auto" role="listbox" aria-label={he.timeField.hourListLabel}>
+            <div className="relative max-h-48 overflow-y-auto" role="listbox" aria-label={he.timeField.hourListLabel}>
               {hours.map((h) => (
                 <button
                   key={h}
                   type="button"
+                  // R3B19: the list opens on the current hour, not on its first entry.
+                  ref={draftHour === pad2(h) ? (el) => { if (el?.parentElement) el.parentElement.scrollTop = Math.max(0, el.offsetTop - 44); } : undefined}
                   className={cn(
                     "flex h-11 w-full min-w-11 items-center justify-center rounded text-sm hover:bg-accent",
                     draftHour === pad2(h) && "bg-accent font-semibold",

@@ -127,7 +127,14 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
   // freshly-solved week look exactly like solving had done nothing (owner
   // bug report #4): the board opened on an empty Sunday while every new ride
   // landed on the actual busy days.
-  const [selectedDayOverride, setSelectedDayOverride] = useState<string | null>(null);
+  // R3B15: the picked day outlives the board's own unmounting (the composer is a separate route), so
+  // the day is also kept per department+week in sessionStorage and restored on mount.
+  const dayStorageKey = `board-day:${departmentId}:${weekStart}`;
+  const [selectedDayOverride, setSelectedDayOverrideState] = useState<string | null>(() => readStoredBoardDay(dayStorageKey));
+  const setSelectedDayOverride = (day: string | null) => {
+    setSelectedDayOverrideState(day);
+    writeStoredBoardDay(dayStorageKey, day);
+  };
 
   function computeDefaultDay(): string {
     if (days.includes(today)) return today;
@@ -159,10 +166,11 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
   const [latchedDay, setLatchedDay] = useState<string | null>(null);
   const defaultDay = computeDefaultDay();
   const validLatchedDay = latchedDay && days.includes(latchedDay) ? latchedDay : null;
-  if (!selectedDayOverride && !validLatchedDay && ridesQuery.data && requestsQuery.data && days.length > 0) {
+  if (!(selectedDayOverride && days.includes(selectedDayOverride)) && !validLatchedDay && ridesQuery.data && requestsQuery.data && days.length > 0) {
     setLatchedDay(defaultDay);
+    writeStoredBoardDay(dayStorageKey, defaultDay);
   }
-  const selectedDay = selectedDayOverride ?? validLatchedDay ?? defaultDay;
+  const selectedDay = selectedDayOverride && days.includes(selectedDayOverride) ? selectedDayOverride : validLatchedDay ?? defaultDay;
   const setSelectedDay = setSelectedDayOverride;
 
   // No default-selection effect: an unset override simply falls back to the
@@ -668,6 +676,7 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
                 isChauffeur: !!r.is_chauffeur,
                 needsDriver: !!r.needs_driver,
                 autoRelocation: !!r.auto_relocation,
+                carMove: r.pin_reason === "CAR_MOVE",
                 startsAt: r.starts_at ?? undefined,
                 relayPartner: relayPartnerOf(r, rides),
               })
@@ -677,7 +686,12 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
       })(),
       pinned: !!r.is_pinned,
       // REQ §13.94 (G10): an applied merge - the ride's own route carries boarding/alighting places.
-      merged: parseRideRoute(r.route).some((point) => point.kind === "board" || point.kind === "alight"),
+      // R3B19: a lone הקפצה's own pickup/drop points are not a merge - only another request's points are.
+      merged: (() => {
+        const served = servedOf(r);
+        const baseRequestId = (served.find((entry) => entry.role === "driver") ?? served[0])?.request_id ?? null;
+        return parseRideRoute(r.route).some((point) => (point.kind === "board" || point.kind === "alight") && point.requestId !== baseRequestId);
+      })(),
       connected: connectedRideIds.has(r.id as string),
       guests: addedGuestsOf(r.id as string, withChildNames(servedOf(r), requestsQuery.data ?? [])),
       needsDriver: !!r.needs_driver,
@@ -720,8 +734,11 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
       carId: placement.carId,
       startMinutes: Math.round((Date.parse(placement.startsAt) - Date.parse(dayStartIso(selectedDay))) / 60_000),
       endMinutes: Math.round((Date.parse(placement.endsAt) - Date.parse(dayStartIso(selectedDay))) / 60_000),
-      label: original?.label ?? (request
-        ? `${request.requester_full_name ?? ""} · ${requestRouteLine({ originId: placement.originId ?? request.origin_id, originName: request.origin_resolved_name, originText: request.origin_text, destination: request.destination_resolved_name ?? "", tripType: request.trip_type }, department?.home_destination_id)}`
+      // R3B19: an origin-change draft is drawn with the NEW origin (never the borrowed old label).
+      label: (placement.type === "origin" ? undefined : original?.label) ?? (request
+        ? `${request.requester_full_name ?? ""} · ${requestRouteLine({ originId: placement.originId ?? request.origin_id,
+          originName: placement.originId && placement.originId !== request.origin_id ? destinationNameById.get(placement.originId) ?? request.origin_resolved_name : request.origin_resolved_name,
+          originText: placement.originId && placement.originId !== request.origin_id ? null : request.origin_text, destination: request.destination_resolved_name ?? "", tripType: request.trip_type }, department?.home_destination_id)}`
         : ""),
       passengerSummary: original?.passengerSummary ?? (request ? ridePassengerSummary([{ ...request, requester: request.requester_full_name }]) : undefined),
       draft: true,
@@ -923,4 +940,15 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
     focusedConflict,
     focusedConflictIndex,
   };
+}
+
+function readStoredBoardDay(key: string): string | null {
+  try { return window.sessionStorage.getItem(key); } catch { return null; }
+}
+
+function writeStoredBoardDay(key: string, day: string | null): void {
+  try {
+    if (day) window.sessionStorage.setItem(key, day);
+    else window.sessionStorage.removeItem(key);
+  } catch { /* storage unavailable: the in-memory pick still works */ }
 }

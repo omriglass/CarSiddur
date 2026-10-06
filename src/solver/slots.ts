@@ -17,6 +17,7 @@ import type {
   Window,
 } from './types';
 import { fits } from './seatFit';
+import { reason } from './reasons';
 import { effectiveTripType, legRouteSlots, originIdOf, resolveStopMinutes, travelBetween } from './travel';
 
 export const SLOT_MS = 15 * 60 * 1000;
@@ -324,7 +325,7 @@ function buildSeriesUnits(
       const isGlobalLast = seriesIndex === seriesCount;
 
       if (request.departureMs === undefined || request.returnMs === undefined) {
-        warnings.push({ code: 'TIME_NOT_ALIGNED', message: 'WARN_TIME_NOT_ALIGNED', requestId: request.id });
+        warnings.push({ code: 'TIME_NOT_ALIGNED', message: reason('WARN_TIME_NOT_ALIGNED'), requestId: request.id });
         legs.push({
           requestId: request.id,
           request,
@@ -341,7 +342,7 @@ function buildSeriesUnits(
         continue;
       }
       if (!isAligned(request.departureMs, input.week.startMs) || !isAligned(request.returnMs, input.week.startMs)) {
-        warnings.push({ code: 'TIME_NOT_ALIGNED', message: 'WARN_TIME_NOT_ALIGNED', requestId: request.id });
+        warnings.push({ code: 'TIME_NOT_ALIGNED', message: reason('WARN_TIME_NOT_ALIGNED'), requestId: request.id });
       }
       const D = toSlotFloor(request.departureMs, input.week.startMs);
       const R = toSlotCeil(request.returnMs, input.week.startMs);
@@ -446,7 +447,7 @@ export function normalize(input: SolverInput): NormalizeResult {
     if (request.tripShape === 'one_way_to' && tripType === 'one_way') {
       if (request.departureMs === undefined) continue;
       if (!isAligned(request.departureMs, input.week.startMs)) {
-        warnings.push({ code: 'TIME_NOT_ALIGNED', message: 'WARN_TIME_NOT_ALIGNED', requestId: request.id });
+        warnings.push({ code: 'TIME_NOT_ALIGNED', message: reason('WARN_TIME_NOT_ALIGNED'), requestId: request.id });
       }
       // Multi-stop rides (REQUIREMENTS §13.93): the leg's own route duration,
       // not the plain origin<->destination lookup — equal to it when there
@@ -485,11 +486,11 @@ export function normalize(input: SolverInput): NormalizeResult {
     if (request.tripShape === 'round_trip') {
       if (request.departureMs === undefined || request.returnMs === undefined) {
         // malformed input; skip rather than throw (normalization never throws)
-        warnings.push({ code: 'TIME_NOT_ALIGNED', message: 'WARN_TIME_NOT_ALIGNED', requestId: request.id });
+        warnings.push({ code: 'TIME_NOT_ALIGNED', message: reason('WARN_TIME_NOT_ALIGNED'), requestId: request.id });
         continue;
       }
       if (!isAligned(request.departureMs, input.week.startMs) || !isAligned(request.returnMs, input.week.startMs)) {
-        warnings.push({ code: 'TIME_NOT_ALIGNED', message: 'WARN_TIME_NOT_ALIGNED', requestId: request.id });
+        warnings.push({ code: 'TIME_NOT_ALIGNED', message: reason('WARN_TIME_NOT_ALIGNED'), requestId: request.id });
       }
       const D = toSlotFloor(request.departureMs, input.week.startMs);
       const R = toSlotCeil(request.returnMs, input.week.startMs);
@@ -537,7 +538,7 @@ export function normalize(input: SolverInput): NormalizeResult {
     if (request.tripShape === 'one_way_to') {
       if (request.departureMs === undefined) continue;
       if (!isAligned(request.departureMs, input.week.startMs)) {
-        warnings.push({ code: 'TIME_NOT_ALIGNED', message: 'WARN_TIME_NOT_ALIGNED', requestId: request.id });
+        warnings.push({ code: 'TIME_NOT_ALIGNED', message: reason('WARN_TIME_NOT_ALIGNED'), requestId: request.id });
       }
       // Multi-stop rides (REQUIREMENTS §13.93): route-aware, equal to the
       // plain lookup when there are no out-stops.
@@ -576,7 +577,7 @@ export function normalize(input: SolverInput): NormalizeResult {
     // "return-only" new trip type, §1 of ORIGINS_PLAN)
     if (request.returnMs === undefined) continue;
     if (!isAligned(request.returnMs, input.week.startMs)) {
-      warnings.push({ code: 'TIME_NOT_ALIGNED', message: 'WARN_TIME_NOT_ALIGNED', requestId: request.id });
+      warnings.push({ code: 'TIME_NOT_ALIGNED', message: reason('WARN_TIME_NOT_ALIGNED'), requestId: request.id });
     }
     // Multi-stop rides (REQUIREMENTS §13.93): route-aware, equal to the plain
     // lookup when there are no return-stops. (Named distinctly from the outer

@@ -694,6 +694,11 @@ export async function withdrawRequest(requestId: string, expectedVersion: number
   await rpc("withdraw_request", { p_request_id: requestId, p_expected_version: expectedVersion });
 }
 
+/** REQ §13.103 c: shorten the caller's own multi-day request to a consecutive sub-span. */
+export async function shortenSeries(requestId: string, departAt: string, returnAt: string): Promise<void> {
+  await rpc("shorten_series", { p_request_id: requestId, p_depart_at: departAt, p_return_at: returnAt });
+}
+
 /**
  * `requests.version` right now — used right before `withdrawRequest()` when the caller
  * (`JoinableRidesDialog`'s "join now" flow, `RequestForm.tsx`) doesn't already hold a

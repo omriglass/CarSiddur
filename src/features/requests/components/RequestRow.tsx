@@ -41,6 +41,8 @@ interface RequestRowProps {
   readOnly?: boolean;
   onWithdraw?: (row: DisplayRow) => void;
   onCancelRide?: (row: DisplayRow) => void;
+  /** REQ §13.103 c: "קיצור הבקשה" on a multi-day request. */
+  onShorten?: (row: DisplayRow) => void;
   onMakeRepeating?: (row: DisplayRow) => void;
   makeRepeatingPending?: boolean;
   onOptOutChange?: (row: DisplayRow, optOut: boolean) => void;
@@ -65,6 +67,7 @@ export function RequestRow({
   readOnly,
   onWithdraw,
   onCancelRide,
+  onShorten,
   onMakeRepeating,
   makeRepeatingPending,
   onOptOutChange,
@@ -151,6 +154,11 @@ export function RequestRow({
           {row.status !== "withdrawn" && row.status !== "cancelled" && !row.ride && onWithdraw ? (
             <Button size="sm" variant="outline" onClick={() => onWithdraw(row)}>
               {he.requestsList.withdraw}
+            </Button>
+          ) : null}
+          {row.seriesLegs && row.status !== "withdrawn" && row.status !== "cancelled" && onShorten ? (
+            <Button size="sm" variant="outline" onClick={() => onShorten(row)}>
+              {he.request.shortenSeries}
             </Button>
           ) : null}
           {row.ride && row.ride.status !== "cancelled" && onCancelRide ? (

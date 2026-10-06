@@ -170,8 +170,9 @@ export function proposalTemplateVars(input: ProposalTextInput): Record<string, s
 
 export function combinedSummaryText(input: ProposalTextInput): string {
   if (input.type !== "merge" || !input.combined) return "";
-  return tv("rideCoordination.combinedSummary", {
-    driver: input.driverName,
+  // R3B6: a return-only guest is collected *from* the destination; a ride still needing a driver names none.
+  return tv(input.mergeLeg === "return" ? "rideCoordination.combinedSummaryReturn" : "rideCoordination.combinedSummary", {
+    driver: input.driverName || he.rideCoordination.driverWanted,
     passenger: input.combined.passengerName,
     destination: input.destinationName,
     car: input.combined.hostCarName,

@@ -56,6 +56,16 @@ const originValueSchema: z.ZodType<DestinationValue> = z.union([
 /** "HH:MM", 15-minute aligned (mirrors `TimeField15`'s own output format). */
 const timeStringSchema = z.string().regex(/^([01]\d|2[0-3]):(00|15|30|45)$/);
 
+/** Same list place, or the same free text (trimmed, case-insensitive). An empty free text matches nothing. */
+export function isSamePlace(a: DestinationValue, b: DestinationValue): boolean {
+  if ("presetId" in a && "presetId" in b) return a.presetId === b.presetId;
+  if ("freeText" in a && "freeText" in b) {
+    const left = a.freeText.trim().toLowerCase();
+    return left !== "" && left === b.freeText.trim().toLowerCase();
+  }
+  return false;
+}
+
 function timeToMinutes(value: string): number {
   const [h, m] = value.split(":").map(Number);
   return (h ?? 0) * 60 + (m ?? 0);
@@ -183,6 +193,19 @@ export const requestFormSchema = z
         });
       }
     }
+
+    // R3B21: a stop equal to the place the leg already ends/starts at is a no-op detour.
+    const originPlace = value.origin;
+    value.outStops.forEach((stop, index) => {
+      if (isSamePlace(stop, originPlace)) {
+        ctx.addIssue({ path: ["outStops", index], code: z.ZodIssueCode.custom, message: he.request.stopEqualsOrigin });
+      }
+    });
+    value.returnStops.forEach((stop, index) => {
+      if (isSamePlace(stop, value.destination)) {
+        ctx.addIssue({ path: ["returnStops", index], code: z.ZodIssueCode.custom, message: he.request.stopEqualsDestination });
+      }
+    });
 
     if (value.returnNextDay) {
       ctx.addIssue({

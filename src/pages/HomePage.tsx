@@ -22,6 +22,7 @@ import { AddRideFab } from "@/features/requests/components/AddRideFab";
 import { CarNowButton } from "@/features/requests/components/CarNowButton";
 import { NewRequestButton } from "@/features/requests/components/NewRequestButton";
 import { RequestRow } from "@/features/requests/components/RequestRow";
+import { ShortenSeriesDialog } from "@/features/requests/components/ShortenSeriesDialog";
 import { TemplateSuggestions } from "@/features/requests/components/TemplateSuggestions";
 import {
   useCancelRideMutation,
@@ -45,6 +46,7 @@ import {
   groupByWeek,
   requestStart,
   toDisplayRows,
+  type DisplayRow,
   type ConfirmAction,
 } from "@/features/requests/myRequestsRows";
 import { isTodayOrLater } from "@/features/requests/upcoming";
@@ -116,6 +118,7 @@ export function HomePage() {
   const [selectedMyRide, setSelectedMyRide] = useState<BoardRide | null>(null);
   const [collisionMove, setCollisionMove] = useState<(RideMove & { departmentId: string; weekStart: string }) | null>(null);
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
+  const [shortenRow, setShortenRow] = useState<DisplayRow | null>(null);
   const cancelRideMutation = useCancelRideMutation();
   const editMutation = useEditRideMutation();
   const changeMutation = useRequestRideChangeMutation();
@@ -262,7 +265,6 @@ export function HomePage() {
         }
       />
 
-      <DeviceSetupPrompts />
       {!active.canSubmit && <p className="text-sm text-muted-foreground">{he.departmentContext.noMembership} <Link to={paths.siddur({ dept: active.departmentId })}>{he.nav.siddur}</Link></p>}
 
       {(myCarsQuery.data ?? []).length > 0 ? (
@@ -325,6 +327,9 @@ export function HomePage() {
         )}
       </section>
 
+      {/* R3U1: setup banners sit below the upcoming rides so they never push them off the first screen. */}
+      <DeviceSetupPrompts />
+
       <section className="space-y-3">
         <h2 className="text-sm font-semibold text-muted-foreground">{t("home.unservedRequests")}</h2>
         {unserved.length === 0 ? (
@@ -340,6 +345,7 @@ export function HomePage() {
                 homeDestinationId={homeDestinationIds[row.departmentId]}
                 onWithdraw={(target) => setConfirmAction({ kind: "withdraw", row: target })}
                 onCancelRide={(target) => setConfirmAction({ kind: "cancel", row: target })}
+                onShorten={setShortenRow}
                 onOptOutChange={(target, optOut) => optOutMutation.mutate({ requestId: target.id, optOut })}
                 onPlaceOnOwnCar={(target, carId) =>
                   placeOnOwnCarMutation.mutate({ requestId: target.id, carId }, { onSuccess: () => toast.success(he.request.placedOnOwnCar) })
@@ -429,6 +435,7 @@ export function HomePage() {
                     homeDestinationId={homeDestinationIds[group.departmentId]}
                     onWithdraw={(target) => setConfirmAction({ kind: "withdraw", row: target })}
                     onCancelRide={(target) => setConfirmAction({ kind: "cancel", row: target })}
+                onShorten={setShortenRow}
                     onMakeRepeating={(target) =>
                       saveTemplateMutation.mutate(target.id, { onSuccess: () => toast.success(he.request.repeatSaved) })
                     }
@@ -483,6 +490,7 @@ export function HomePage() {
           />
         ) : undefined}
       />
+      <ShortenSeriesDialog row={shortenRow} onOpenChange={(open) => { if (!open) setShortenRow(null); }} />
       <ConfirmDialog
         open={!!collisionMove}
         onOpenChange={(open) => !open && setCollisionMove(null)}

@@ -72,6 +72,11 @@ async function cmdInbox(args: Args): Promise<void> {
   if (has(args, "mark-read")) await markAllNotificationsRead(ME);
 }
 
+async function proposalType(id: string): Promise<string> {
+  const { data } = await supabase.from("proposals").select("type").eq("id", id).maybeSingle();
+  return data?.type ?? "?";
+}
+
 async function cmdProposals(): Promise<void> {
   const mine = await requests.fetchMyRequests(ME, SCOPE?.departmentId);
   const pending = mine.filter((r) => r.pendingProposal);
@@ -80,35 +85,42 @@ async function cmdProposals(): Promise<void> {
   const notes = (await fetchNotifications(ME)).filter((n) => n.event === "proposal_received" && !n.read_at);
   for (const n of notes) {
     const id = (n.data as { proposal_id?: string } | null)?.proposal_id;
-    if (id && !pending.some((r) => r.pendingProposal!.id === id)) console.log(`proposal ${short(id)} (inbox, unread) ${oneLine(n.title_he)} | ${oneLine(n.body_he)}`);
+    if (id && !pending.some((r) => r.pendingProposal!.id === id)) console.log(`proposal ${short(id)}/${await proposalType(id)} (inbox, unread) ${oneLine(n.title_he)} | ${oneLine(n.body_he)}`);
   }
   if (!pending.length && !notes.length) console.log("(no pending proposals)");
 }
 
-async function tokenFor(idOrToken: string): Promise<string> {
-  if (!/^[0-9a-f-]{8,36}$/i.test(idOrToken) || idOrToken.length < 8) return idOrToken;
+async function tokenFor(idOrToken: string): Promise<{ token: string; proposalId?: string }> {
+  if (!/^[0-9a-f-]{8,36}$/i.test(idOrToken) || idOrToken.length < 8) return { token: idOrToken };
   const notes = (await fetchNotifications(ME)).filter((n) => n.event === "proposal_received");
   const ids = notes.flatMap((n) => { const id = (n.data as { proposal_id?: string } | null)?.proposal_id; return id ? [id] : []; });
   const proposalId = resolveId(idOrToken, [...new Set(ids)], "proposal (in your inbox)");
   const url = await fetchProposalLink(proposalId);
   const token = url?.split("/p/")[1]?.split(/[?#]/)[0];
   if (!token) throw new UsageError(`no /p/<token> link found for proposal ${short(proposalId)}`);
-  return token;
+  return { token, proposalId };
 }
 
 async function cmdAnswer(args: Args): Promise<void> {
-  const token = await tokenFor(need(args.pos[0], "<proposalId|token>"));
+  const given = need(args.pos[0], "<proposalId|token>");
+  const { token, proposalId } = await tokenFor(given);
+  const type = proposalId ? await proposalType(proposalId) : "?";
   const answer = need(args.pos[1], "accept|decline");
   if (answer !== "accept" && answer !== "decline") throw new UsageError("answer must be accept or decline");
   await answerProposal({ token, accept: answer === "accept", note: flag(args, "note"), via: "session" });
-  console.log(`answered ${answer}`);
+  console.log(`answered ${answer} (${type} proposal)`);
 }
 
 async function cmdMyRides(): Promise<void> {
   const rides = await fetchMyUpcomingRides(ME, SCOPE?.departmentId);
-  console.log(`MY RIDES (${rides.length})`);
-  for (const r of rides) console.log(`  ride ${short(r.id)} ${dateKey(r.starts_at as string)} ${t(r.starts_at)}-${t(r.ends_at)} ${r.origin_name}->${r.destination_name} car=${r.car_name ?? "?"} driver=${r.needs_driver ? "(none yet)" : r.driver_name ?? "-"}${r.driver_id === ME ? " (I drive)" : ""} status=${r.status} | ${servedOf(r).map((e) => e.requester).join(", ")}`);
   const mine = await requests.fetchMyRequests(ME, SCOPE?.departmentId);
+  console.log(`MY RIDES (${rides.length})`);
+  for (const r of rides) {
+    // My own route (my request's places), not the car's home->home; the car's legs are shown after "car".
+    const own = mine.find((q) => q.ride?.id === r.id);
+    const myRoute = own ? `${own.originName ?? own.originText ?? "home"}->${own.destination}${own.stops.length ? ` via ${own.stops.map((x) => x.name).join(",")}` : ""}` : null;
+    console.log(`  ride ${short(r.id)} ${dateKey(r.starts_at as string)} ${t(r.starts_at)}-${t(r.ends_at)} ${myRoute ? `my route ${myRoute} (car ${r.origin_name}->${r.destination_name})` : `${r.origin_name}->${r.destination_name}`} car=${r.car_name ?? "?"} driver=${r.needs_driver ? "(none yet)" : r.driver_name ?? "-"}${r.driver_id === ME ? " (I drive)" : ""} status=${r.status} | ${servedOf(r).map((e) => e.requester).join(", ")}`);
+  }
   console.log(`MY REQUESTS (${mine.length})`);
   for (const r of mine) console.log(`  ${reqLine(r)}`);
 }
@@ -272,6 +284,16 @@ async function cmdResolveGroup(args: Args): Promise<void> {
   console.log(`group ${short(group.id)} resolved: ride ${short(res.ride_id)} car ${short(res.car_id)} driver request ${short(res.driver_request_id)} chosen=${res.chosen.map(short).join(",")} not_chosen=${res.not_chosen.map(short).join(",") || "-"}`);
 }
 
+/** REQ §13.103 c: shorten my multi-day request to a consecutive sub-span (`shorten_series`). */
+async function cmdShorten(args: Args): Promise<void> {
+  const rows = await requests.fetchMyRequests(ME);
+  const row = rows.find((r) => r.id === resolveId(need(args.pos[0], "<requestId>"), rows.map((r) => r.id), "request"))!;
+  const firstDay = need(args.pos[1], "<first-day>");
+  const lastDay = need(args.pos[3], "<last-day>");
+  await requests.shortenSeries(row.id, instantAt(firstDay, need(args.pos[2], "<HH:MM>")), instantAt(lastDay, need(args.pos[4], "<HH:MM>")));
+  console.log(`shortened ${short(row.id)} to ${firstDay} ${args.pos[2]} .. ${lastDay} ${args.pos[4]}`);
+}
+
 async function cmdWithdraw(args: Args): Promise<void> {
   const rows = await requests.fetchMyRequests(ME);
   const row = rows.find((r) => r.id === resolveId(need(args.pos[0], "<requestId>"), rows.map((r) => r.id), "request"))!;
@@ -282,7 +304,12 @@ async function cmdWithdraw(args: Args): Promise<void> {
 async function cmdCancel(args: Args): Promise<void> {
   const rows = await requests.fetchMyRequests(ME);
   const row = rows.find((r) => r.id === resolveId(need(args.pos[0], "<requestId>"), rows.map((r) => r.id), "request"))!;
-  if (!row.ride) throw new UsageError("this request has no ride to cancel (use withdraw)");
+  if (!row.ride) {
+    // No ride to cancel: the request itself is what ends, i.e. `withdraw`.
+    await requests.withdrawRequest(row.id, row.version);
+    console.log(`request ${short(row.id)} has no ride; withdrawn it instead (same as \`withdraw\`)`);
+    return;
+  }
   const { data } = await supabase.from("rides").select("version").eq("id", row.ride.id).single();
   await requests.cancelRide(row.ride.id, args.pos.slice(1).join(" ") || "qa member cancel", data?.version ?? undefined);
   console.log(`cancelled ride ${short(row.ride.id)} of request ${short(row.id)}`);
@@ -296,7 +323,7 @@ function usage(): void {
           [--adults N --child-seats N --boosters N --luggage] [--flex 0|15|30|60|120|any | --flex-depart-early/-late/--flex-return-early/-late] [--return-day D] [--car ID] [--ride-type CODE] [--notes T] [--waitlist]
   edit <req> [--day D --depart HH:MM --return HH:MM --dest P --origin P --trip-type T [--from|--pickup] --adults N --flex X --notes T --stop P... --clear-stops]
   groups | resolve-group <group> <member,...> [--driver X] (first listed drives)
-  ask-to-join <ride> --day D [--dest P] [--adults N --notes T] | withdraw <req> | cancel <req> [reason] | car-now --dest P [--hours N] [--adults N]`);
+  ask-to-join <ride> --day D [--dest P] [--adults N --notes T] | withdraw <req> | cancel <req> [reason] | shorten <req> <first-day> <HH:MM> <last-day> <HH:MM> | car-now --dest P [--hours N] [--adults N]`);
 }
 
 run(async () => {
@@ -322,6 +349,7 @@ run(async () => {
     case "resolve-group": return cmdResolveGroup(args);
     case "withdraw": return cmdWithdraw(args);
     case "cancel": return cmdCancel(args);
+    case "shorten": return cmdShorten(args);
     case "request": return cmdRequest(args);
     case "car-now": return cmdRequest(args, true);
     default: usage(); throw new UsageError(`unknown command ${args.cmd}`);

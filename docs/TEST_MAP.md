@@ -317,7 +317,7 @@ fan-out); `src/i18n/he.sadran.ts`; migrations matching `*publish*`, `*siddur_ver
 
 **Automated**:
 - Vitest: `npx vitest run src/features/sadran/publish src/features/sadran/lastUsedPolicy.test.ts`
-- SQL: `selected_day_publication.sql`, `board_drafts.sql` (draft proposals block publishing, discard/withdraw RPCs, re-solve keeps draft merge hosts), `merged_rides.sql` (ride route, merge apply window, `unmerge_request`, shift places/stops, manual handover), `proposals_copy_and_series_span.sql` (REQ §13.101: per-reader proposal/outcome copy, joined-ride notices, `series_span` fewer days, large-luggage merge refusal), `qa_run2_proposals.sql` (REQ §13.102: pending proposal answerable across publication, impossible one withdrawn + Sadran told, merge reason codes, split merge on two rides, no empty/non-change copy, external-accepted notice, placed -> external withdrawn, publish notice per changed ride old -> new)
+- SQL: `selected_day_publication.sql`, `board_drafts.sql` (draft proposals block publishing, discard/withdraw RPCs, re-solve keeps draft merge hosts), `merged_rides.sql` (ride route, merge apply window, `unmerge_request`, shift places/stops, manual handover), `proposals_copy_and_series_span.sql` (REQ §13.101: per-reader proposal/outcome copy, joined-ride notices, `series_span` fewer days, large-luggage merge refusal), `qa_run2_proposals.sql` (REQ §13.102: pending proposal answerable across publication, impossible one withdrawn + Sadran told, merge reason codes, split merge on two rides, no empty/non-change copy, external-accepted notice, placed -> external withdrawn, publish notice per changed ride old -> new), `qa_run3_proposals.sql` (REQ §13.103: a driver assigned to the host never makes an accepted merge stale, members who accepted are told when it falls through, return-only merge copy/preview stop time, split merge through a sent proposal extended by the other leg, old -> new in shift/merge texts)
 - Playwright: `npx playwright test --grep "@publication"`
 
 **QA script**:
@@ -528,7 +528,7 @@ real-solver regression, QA CLIs — docs/QA_SIMULATION.md).
   `eslint.config.js`, covered by `npm run lint`).
 - SQL: `rls_smoke.sql` (every table has forced RLS, no `using (true)` on writes, no `for all`
   policies, TEST 14 checks function grants, TEST 18 pins every column of the tables readable
-  across departments), `hardening_semantics.sql`, `qa_run2_placement.sql` (REQ §13.102 placement: free-gap offers, partial-leg freed-slot placement, chain flags, probe_only, one late notice, child overlaps), `department_isolation.sql` (every browser-facing
+  across departments), `hardening_semantics.sql`, `qa_run2_placement.sql` (REQ §13.102 placement: free-gap offers, partial-leg freed-slot placement, chain flags, probe_only, one late notice, child overlaps), `qa_run3_placement.sql` (REQ §13.103: car move, series shortening, passenger-left notice, busy volunteer, placed-late notice, ask-to-join, connected הקפצה vs demand, no unservable groups, machine-code refusals), `department_isolation.sql` (every browser-facing
   SECURITY DEFINER RPC called as department A with department B's ids must refuse; fails on an
   unclassified new RPC; `requests` status guard incl. a signed-in second party declining a proposal)
 - Playwright: no dedicated tag — RLS gaps normally surface as a 403/permission-denied inside

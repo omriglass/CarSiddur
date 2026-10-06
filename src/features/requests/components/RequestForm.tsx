@@ -310,6 +310,17 @@ function mapEditRowToValues(row: RequestEditRow, weekStart: string, companions: 
   };
 }
 
+/** First message among an array field's per-item errors (and its own). */
+function stopsError(errors: unknown): string | undefined {
+  if (!errors || typeof errors !== "object") return undefined;
+  const list = Array.isArray(errors) ? errors : [errors];
+  for (const item of list) {
+    const message = (item as { message?: unknown } | undefined)?.message;
+    if (typeof message === "string") return message;
+  }
+  return undefined;
+}
+
 /**
  * New/edit request form (UX_FLOWS.md §3.4/§18, component inventory `RequestForm`). One form
  * body for both the full weekly request and the live-week "quick" request (`variant` prop) —
@@ -936,6 +947,7 @@ export function RequestForm({
         <StopsField
           control={form.control}
           name="outStops"
+          error={stopsError(form.formState.errors.outStops)}
           destinations={destinationsQuery.data ?? []}
           addLabel={he.request.addStop}
           removeAriaLabel={he.request.removeStop}
@@ -999,6 +1011,7 @@ export function RequestForm({
         <StopsField
           control={form.control}
           name="returnStops"
+          error={stopsError(form.formState.errors.returnStops)}
           destinations={destinationsQuery.data ?? []}
           addLabel={he.request.addReturnStop}
           removeAriaLabel={he.request.removeStop}

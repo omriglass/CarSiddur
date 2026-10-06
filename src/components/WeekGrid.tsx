@@ -448,7 +448,17 @@ export function WeekGrid({
         const dx = edgeScrollStep(last.clientX, rect.left, rect.right);
         const dy = edgeScrollStep(last.clientY, rect.top, rect.bottom);
         if (dx || dy) {
+          // R3B17: auto-scroll never brings the "missing car" lanes into view (they are drop targets
+          // for un-assigning, reached on purpose, not by an edge scroll).
+          const phantom = dx ? el.querySelector<HTMLElement>('[data-car-col-id^="phantom:"]') : null;
+          const phantomVisible = () => {
+            if (!phantom) return false;
+            const box = phantom.getBoundingClientRect();
+            return box.left < rect.right && box.right > rect.left;
+          };
+          const wasVisible = phantomVisible();
           el.scrollBy(dx, dy);
+          if (phantom && !wasVisible && phantomVisible()) el.scrollBy(-dx, 0);
           if (dragRef.current) moveRef.current(last);
         }
       }
@@ -953,8 +963,8 @@ export function WeekGrid({
             key={`h-${car.id}`}
             data-car-header-id={car.id}
             className={cn(
-              "sticky top-0 z-20 flex flex-col justify-center gap-0.5 overflow-hidden border-b border-e bg-muted/70 px-2 py-1 text-sm shadow-[0_2px_6px_-2px_hsl(var(--foreground)/0.12)]",
-              car.group === "temporary" && "bg-booked/10",
+              "sticky top-0 z-20 flex flex-col justify-center gap-0.5 overflow-hidden border-b border-e bg-muted px-2 py-1 text-sm shadow-[0_2px_6px_-2px_hsl(var(--foreground)/0.12)]",
+              car.group === "temporary" && "bg-background bg-gradient-to-b from-booked/10 to-booked/10",
               i === sharedCars.length && temporaryCars.length > 0 && "border-s-2 border-s-border",
               swappable && "touch-none",
               isCarDragSource && "opacity-40",
@@ -1002,7 +1012,7 @@ export function WeekGrid({
         })}
         {hasDiscussionLane ? (
           <div
-            className="sticky top-0 z-20 flex items-center justify-center border-b border-s-2 border-s-border bg-maintenance/10 px-2 py-1 text-sm shadow-[0_2px_6px_-2px_hsl(var(--foreground)/0.12)]"
+            className="sticky top-0 z-20 flex items-center justify-center border-b border-s-2 border-s-border bg-background bg-gradient-to-b from-maintenance/10 to-maintenance/10 px-2 py-1 text-sm shadow-[0_2px_6px_-2px_hsl(var(--foreground)/0.12)]"
             style={{ gridColumn: discussionColIndex, gridRow: 1 }}
           >
             <span className="font-medium">{he.waitlist.laneTitle}</span>

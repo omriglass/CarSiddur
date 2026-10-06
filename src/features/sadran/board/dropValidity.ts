@@ -259,7 +259,7 @@ export function unmetRequestPassengers(r: WeekRequestRow): SeatNeed {
   return { adults: r.adults + (requesterDrives(r) ? 0 : 1), childSeats: r.child_seats, boosters: r.boosters };
 }
 
-export function unmetCandidateWindow(ctx: BoardDropContext, item: UnmetListItem, minutes: number, standalone = false): { startsAt: string; endsAt: string } | null {
+export function unmetCandidateWindow(ctx: BoardDropContext, item: UnmetListItem, minutes: number, standalone = false, carId?: string): { startsAt: string; endsAt: string } | null {
   const req = item.request;
   const passenger = requestWindow(req);
   // Only a drop-off (הקפצה) is a chauffeur ride with its own wider window; a one-way trip is
@@ -269,10 +269,27 @@ export function unmetCandidateWindow(ctx: BoardDropContext, item: UnmetListItem,
   if (!original || !passenger || !requestStart(req) || dateKey(new Date(requestStart(req)!)) !== ctx.selectedDay) return null;
   const duration = (Date.parse(original.endsAt) - Date.parse(original.startsAt)) / 60_000;
   const requestedMinutes = (Date.parse(passenger.startsAt) - Date.parse(dayStartIso(ctx.selectedDay))) / 60_000;
-  if (Math.abs(minutes - requestedMinutes) <= 15) minutes = requestedMinutes;
-  const start = minutes - (chauffeur && req.trip_shape === "one_way_from" ? (Date.parse(passenger.startsAt) - Date.parse(original.startsAt)) / 60_000 : 0);
-  if (start < 0 || start + duration > 1439) return null;
-  return { startsAt: minutesIso(ctx, start), endsAt: minutesIso(ctx, start + duration) };
+  const offset = chauffeur && req.trip_shape === "one_way_from" ? (Date.parse(passenger.startsAt) - Date.parse(original.startsAt)) / 60_000 : 0;
+  const windowAt = (at: number) => {
+    const start = at - offset;
+    return start < 0 || start + duration > 1439 ? null : { startsAt: minutesIso(ctx, start), endsAt: minutesIso(ctx, start + duration) };
+  };
+  // A drop near the requested time snaps to it - unless that slot is taken on the car while the dropped
+  // time is free (R3B4: the Sadran placed it later on purpose).
+  if (Math.abs(minutes - requestedMinutes) <= 15 && minutes !== requestedMinutes) {
+    const snapped = windowAt(requestedMinutes);
+    const dropped = windowAt(minutes);
+    if (snapped && !(carId && dropped && carBusy(ctx, carId, snapped) && !carBusy(ctx, carId, dropped))) return snapped;
+    return dropped;
+  }
+  return windowAt(minutes);
+}
+
+/** The car is in maintenance/inactive or already has a ride overlapping `window`. */
+function carBusy(ctx: BoardDropContext, carId: string, window: { startsAt: string; endsAt: string }): boolean {
+  return unavailable(ctx, carId, window.startsAt, window.endsAt)
+    || wouldOverlap(window, ctx.rides.filter((ride) => ride.car_id === carId && ride.status !== "cancelled" && !!ride.starts_at && !!ride.ends_at)
+      .map((ride) => ({ startsAt: ride.starts_at!, endsAt: ride.ends_at! })), 0);
 }
 
 export function unmetMergeHost(ctx: BoardDropContext, item: UnmetListItem, carId: string, _minutes: number, hostRideId?: string) {
@@ -286,7 +303,7 @@ export function unmetPreviewWindow(ctx: BoardDropContext, item: UnmetListItem, c
   const host = unmetMergeHost(ctx, item, carId, minutes, hostRideId);
   return host?.starts_at && host.ends_at
     ? mergedHostWindow(ctx, host, item.request, mergeLegForCard(item.request, item.leg ?? null))
-    : unmetCandidateWindow(ctx, item, minutes, !connectsOtherLeg(ctx, item, carId));
+    : unmetCandidateWindow(ctx, item, minutes, !connectsOtherLeg(ctx, item, carId), carId);
 }
 
 /**
@@ -312,6 +329,20 @@ export function legStartPlaceId(request: Pick<WeekRequestRow, "origin_id" | "des
 export function originMismatch(ctx: BoardDropContext, carId: string, originId: string, atIso: string): boolean {
   const location = carLocationAt(ctx, carId, atIso);
   return location != null && location !== originId;
+}
+
+/**
+ * R3B3: a הקפצה leg is a chauffeur ride from where the car is, and the server only accepts it when
+ * that place is the leg's origin or destination (`ride_requests` leg-location check). A car parked
+ * anywhere else cannot take it - the preview must be red and the drop refused up front.
+ * Always `false` for other trip types and when the car's place is unknown.
+ */
+export function chauffeurCarElsewhere(ctx: BoardDropContext, req: WeekRequestRow, carId: string, atIso: string): boolean {
+  if (tripTypeOf(req) !== "drop_off") return false;
+  const where = carLocationAt(ctx, carId, atIso);
+  if (!where) return false;
+  const places = [req.origin_id ?? ctx.homeDestinationId, req.destination_id].filter((p): p is string => !!p);
+  return places.length > 0 && !places.includes(where);
 }
 
 /**
@@ -367,6 +398,7 @@ export function isUnmetDropValid(ctx: BoardDropContext, item: UnmetListItem, car
   const originId = legStartPlaceId(item.request, ctx.homeDestinationId);
   const connects = !host && connectsOtherLeg(ctx, item, carId);
   if (!host && !connects && originId && originMismatch(ctx, carId, originId, window.startsAt)) return false;
+  if (!host && !connects && chauffeurCarElsewhere(ctx, item.request, carId, window.startsAt)) return false;
   if (!host && tripTypeOf(item.request) === "one_way" && item.request.destination_id
     && strandsNextRide(ctx, carId, item.request.destination_id, window.endsAt)) return false;
   if (luggageBlocks(ctx, carId, item.request.has_luggage ? 1 : 0, window)) return false;

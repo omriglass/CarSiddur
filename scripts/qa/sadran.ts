@@ -480,6 +480,20 @@ async function cmdReserve(board: Board, args: Args): Promise<void> {
   console.log(`reserved ${car.name} ${day} ${from}-${to} "${note}" -> ride ${short(rideId)}`);
 }
 
+/** REQ §13.103 b: "the car was moved from A to B" — decides where the car is from then on (`mark_car_move`). */
+async function cmdCarMove(board: Board, args: Args): Promise<void> {
+  const car = resolveCar(board, need(args.pos[0], "<car>"));
+  const from = resolvePlace(board, need(args.pos[1], "<from>"));
+  const to = resolvePlace(board, need(args.pos[2], "<to>"));
+  if (!("presetId" in from) || !("presetId" in to)) throw new UsageError("car-move needs list places for <from> and <to>");
+  const at = need(args.pos[3], "<HH:MM>");
+  const day = flag(args, "day") ?? board.scope.weekStart;
+  const minutes = Number(flag(args, "minutes") ?? 60);
+  const { data, error } = await supabase.rpc("mark_car_move", { p_car_id: car.id, p_from_place: from.presetId, p_to_place: to.presetId, p_at: instantAt(day, at), p_minutes: minutes });
+  if (error) throw new UsageError(`car-move refused: ${error.message}`);
+  console.log(`car ${car.name} moved ${from.name} -> ${to.name} ${day} ${at} (${minutes} min) -> ride ${short(data)}`);
+}
+
 async function cmdPublish(board: Board, args: Args): Promise<void> {
   const days = flag(args, "days")?.split(",");
   const publishedDays = async () => (await api.fetchPublicationReadiness(board.scope.departmentId, board.scope.weekStart)).filter((d) => d.published).map((d) => d.day);
@@ -602,7 +616,7 @@ function usage(): void {
   edit-route <ride|req> [--origin P] [--dest P] [--stop P]... [--return-stop P]... [--clear-stops] [--draft]
   propose <req> shift [--car C --depart HH:MM --return HH:MM --day D --ride R --no-places] | origin --origin P --car C | deny [--reason T] | external [--hint cab|rental|public_transport|private|waive] [--reason T]  [--draft]
   send <proposal> | withdraw <proposal> | discard <proposal> | apply <proposal>
-  unassign <ride> | cancel-ride <ride> [reason] | reserve <car> <day> <HH:MM-HH:MM> <note>
+  unassign <ride> | cancel-ride <ride> [reason] | reserve <car> <day> <HH:MM-HH:MM> <note> | car-move <car> <from> <to> <HH:MM> [--day D] [--minutes N]
   message <memberEmail> <text> | messages [--new]
   fewer-days <req> <first-day> <last-day> [--car C] [--draft] | withdraw-duplicate <req>
   assign-driver <ride> <member|none> | add-passengers <ride> <name>[:adult|child_seat|booster]... | contacts [<name>]
@@ -634,6 +648,7 @@ run(async () => {
     case "unassign": { const r = resolveRide(board, need(args.pos[0], "<rideId>")); await api.unassignRide(r.id as string, r.version ?? 0); console.log(`ride ${short(r.id)} unassigned; its requests are unmet again`); return; }
     case "cancel-ride": { const r = resolveRide(board, need(args.pos[0], "<rideId>")); await api.cancelRide(r.id as string, args.pos.slice(1).join(" ") || "qa", r.version ?? undefined); console.log(`ride ${short(r.id)} cancelled`); return; }
     case "reserve": return cmdReserve(board, args);
+    case "car-move": return cmdCarMove(board, args);
     case "assign-driver": return cmdAssignDriver(board, args);
     case "add-passengers": return cmdAddPassengers(board, args);
     case "contacts": return cmdContacts(board, args);

@@ -4020,6 +4020,14 @@ export type Database = {
         Args: { p_ride_id: string; p_status?: string }
         Returns: string
       }
+      _ride_fp_legacy: {
+        Args: { p_ride_id: string; p_status?: string }
+        Returns: string
+      }
+      _ride_fp_matches: {
+        Args: { p_ride_id: string; p_stored: string }
+        Returns: boolean
+      }
       _ride_route: {
         Args: { p_ride_id: string }
         Returns: {
@@ -4349,6 +4357,10 @@ export type Database = {
         | { Args: { data: string; type: string }; Returns: string }
       discard_proposal: { Args: { p_proposal_id: string }; Returns: undefined }
       dispatch_push_outbox_row: { Args: { _id: number }; Returns: undefined }
+      dissolve_unservable_waitlist_groups: {
+        Args: { p_day: string; p_department_id: string; p_week_start: string }
+        Returns: number
+      }
       drain_push_outbox: { Args: { _now?: string }; Returns: number }
       edit_ride: {
         Args: { p_expected_version?: number; p_ride: Json }
@@ -4472,6 +4484,17 @@ export type Database = {
           _kind: Database["public"]["Enums"]["car_care_kind"]
           _note?: string
           _tires?: Json
+        }
+        Returns: string
+      }
+      mark_car_move: {
+        Args: {
+          p_at: string
+          p_car_id: string
+          p_from_place: string
+          p_minutes: number
+          p_people?: string[]
+          p_to_place: string
         }
         Returns: string
       }
@@ -4994,6 +5017,10 @@ export type Database = {
         Returns: Json
       }
       shares_ride_with: { Args: { _profile: string }; Returns: boolean }
+      shorten_series: {
+        Args: { p_depart_at: string; p_request_id: string; p_return_at: string }
+        Returns: string
+      }
       snooze_request_template: {
         Args: { p_template_id: string; p_week_start: string }
         Returns: undefined

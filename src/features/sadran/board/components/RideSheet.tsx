@@ -134,6 +134,8 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
   }
 
   const reservation = !!ride && isReservation(ride);
+  // R3B16: a volunteer driver is shown by the driver picker (name + remove); the passenger summary below must not repeat it.
+  const volunteerShownByPicker = !!ride && !!driverCandidates && !ride.needs_driver && !!ride.driver_id && !servedOf(ride).some((entry) => entry.role === "driver");
   const servedEntries = ride ? withChildNames(servedOf(ride), requests) : [];
   // Everyone but the base request (the driver's, else the first) was added by a merge.
   const baseEntry = servedEntries.find((entry) => entry.role === "driver") ?? servedEntries[0];
@@ -169,13 +171,14 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
                   departmentId={departmentId}
                   weekStart={weekStart}
                   disabled={saving}
+                  onDone={() => onOpenChange(false)}
                 />
               ) : null}
               {tightSchedule ? <p className="text-xs text-amber-700">{he.boardCoordination.tight} · {he.boardCoordination.tightHelp}</p> : null}
               {ride.series_count && ride.series_count > 1 ? (
                 <p className="text-muted-foreground">{tv("sadranRideSheet.seriesLine", { index: String(ride.series_index ?? 1), count: String(ride.series_count) })}</p>
               ) : null}
-              <p className="whitespace-pre-wrap break-words">{ridePassengerSummary(servedEntries, ride.needs_driver ? null : driverName ?? ride.driver_name, { addedNames })}</p>
+              <p className="whitespace-pre-wrap break-words">{ridePassengerSummary(servedEntries, ride.needs_driver || volunteerShownByPicker ? null : driverName ?? ride.driver_name, { addedNames })}</p>
               {/* `includeCompanions: false` here — the summary line above already lists every
                   named person, added ones included; this is only the free-text description. */}
               {ridePublicDetails(servedEntries, { includeCompanions: false }) ? <p className="whitespace-pre-wrap break-words">{ridePublicDetails(servedEntries, { includeCompanions: false })}</p> : null}
@@ -193,6 +196,7 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
                       isChauffeur: !!ride.is_chauffeur,
                       needsDriver: !!ride.needs_driver,
                       autoRelocation: !!ride.auto_relocation,
+                      carMove: ride.pin_reason === "CAR_MOVE",
                       startsAt: ride.starts_at ?? undefined,
                       relayPartner: relayPartnerOf(ride, otherRides),
                     })

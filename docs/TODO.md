@@ -580,7 +580,7 @@ Merged and deduplicated from both reports (S = QA Sadran item, U = QA user item;
 - **R2F4 — Message the driver, or volunteer to drive, from the member's ride card** (overlaps QF1, later).
 - Related to "later" items: put a car based away from home to use for members starting there (the Hadera Mazda idle all week — QF3).
 
-## QA run 3 findings (2026-10-06, seed 6731, week 11–17.10, department `qa-s6731`; QA Sadran = Opus, Wednesday (busiest, 33 requests) via UI; QA user = Sonnet) — **awaiting owner triage**
+## QA run 3 findings (2026-10-06, seed 6731, week 11–17.10, department `qa-s6731`; QA Sadran = Opus, Wednesday (busiest, 33 requests) via UI; QA user = Sonnet) — **owner triaged 2026-10-06 (REQ item 103): all bugs; R3Q1 → connect legs only when no other request needs the car; R3Q2 → the Sadran marks a car move (reservation dialog), automatic fetching later; R3U1 and R3F2 build; R3F1 later**
 Merged from both reports (S = QA Sadran, U = QA user). Whole week published; unmet at the end: 9 waitlisted, 13 external, 2 denied (mostly members living where no car is, Mon load, the stuck group of R3B9). **Regressions of items reported fixed in the QA run 2 batch: R3B9 (R2Q1 b), R3B11 (R2M2), R3B15 (QU3), R3B16 (R2B15), R3B6 (R2B10).**
 
 ### Bugs
@@ -607,6 +607,11 @@ Merged from both reports (S = QA Sadran, U = QA user). Whole week published; unm
 - **R3B21 — A return stop equal to the destination is accepted** (S UI).
 - **R3B22 — `set_ride_driver` accepts a volunteer riding elsewhere at that time** (only the UI picker warns) (S M4).
 - QA tooling: `qa:member answer` omits the proposal type; `qa:ui shot --day` finds no day tab; `qa:member cancel` on a waitlisted request ("no ride to cancel" — members withdraw); `my-rides` prints the car's home→home; the QA user's CLI submissions bypass the form warnings (overlap, child) by design.
+
+**Fix status (2026-10-06, migrations `20261009100000`, `20261009200100`–`…201500`; suites `qa_run3_proposals.sql`, `qa_run3_placement.sql`). Reproduced on the QA week before fixing (REQ 103 e) unless noted:**
+- SQL, reproduced + verified: R3B1 (`_ride_fp` ignores driver fields; members who accepted are told when a proposal is withdrawn), R3B6 (joiner route/times per leg), R3B11 (extends a sent unanswered merge too), R3B3 (machine code `leg_location_mismatch`), R3B7, R3B8, R3B9 (groups need a member a free car can serve; stale groups dissolve), R3B10 (ask-to-join never auto-approved, origin from the asked ride), R3B12 (`passenger_left`), R3B14 (`app.edit_prefer_car`, `car_changed` notice), R3B22 (`driver_busy`); REQ 103 a in SQL + solver (wait "needed" = other overlapping requests ≥ shared cars), 103 b `mark_car_move` (`auto_relocation` + `pin_reason CAR_MOVE`), 103 c `shorten_series` (1..n−1 days).
+- UI: R3B15 (selected day in sessionStorage) and R3B17 header verified on the QA week; R3B2–B5, R3B16, R3B19, R3B20, R3B21 fixed from code + unit tests (not reproduced in the browser); R3B6 composer/draft texts now get the merged legs (`mergeLegSummary`); R3B11 popup leg toggle keeps a split merge's other leg; R3B18 solver warning text; R3U1, R3F2 built; car-move labels on board and siddur.
+- Not reproduced: R3B13 (stored notification already old → new). Known: R3B8's member notice reuses the `edit_applied` copy ("העריכה נשמרה והבקשה שובצה"); R3B5 preview does not detect next-day chain conflicts.
 
 ### Owner questions
 - **R3Q1 — Connected הקפצה legs park a shared car 5–9 hours at a place 5–10 minutes away** (Mon, Wed, Thu, several cars) while other requests stay unmet; there is no "two short legs, the car comes home" choice (S M1).

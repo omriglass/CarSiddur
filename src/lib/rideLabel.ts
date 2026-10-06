@@ -59,6 +59,8 @@ export interface RideLabelInput {
    * both the board and the siddur (this function is shared between the two).
    */
   autoRelocation?: boolean;
+  /** REQ §13.103 b: a Sadran-marked car move (`rides.pin_reason = 'CAR_MOVE'`): "העברת רכב: X → Y". */
+  carMove?: boolean;
   /** The ride's own departure time (ISO) — REQUIREMENTS §13.93 "Display": a chauffeur pickup
    *  leg shows "(יציאה {{time}})", the whole ride's own start. */
   startsAt?: string;
@@ -171,6 +173,7 @@ function resolveDirection(input: RideLabelInput): { kind: "to" | "from"; place: 
  * happen for a real ride, but keeps this total).
  */
 export function rideBlockLabel(input: RideLabelInput): string {
+  if (input.carMove) return tv("sadranBoard.carMoveLabel", { from: input.originName, to: input.destinationName });
   if (input.autoRelocation) return he.sadranBoard.autoRelocation;
   const driver = input.served.find((s) => s.role === "driver");
   const passengers = input.served.filter((s) => s.role === "passenger");
@@ -183,7 +186,8 @@ export function rideBlockLabel(input: RideLabelInput): string {
   // same day); falls back to the place-only wording when it isn't known yet (not paired, or an
   // older `v_board_rides` row before this field existed).
   if (input.served.length === 1 && driver?.car_mode === "relay") {
-    if (driver.trip_type === "one_way") {
+    // R3B19: a one-way ride that ends at the department home leaves no car parked away.
+    if (driver.trip_type === "one_way" && input.destinationId !== input.homeDestinationId) {
       return tv("rideCoordination.oneWayParked", {
         name: driver.requester ? firstName(driver.requester) : "",
         place: driver.leg === "return" ? input.originName : input.destinationName,

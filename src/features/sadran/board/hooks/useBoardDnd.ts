@@ -17,14 +17,17 @@ import { useProfile } from "@/features/auth/useProfile";
 import { useDepartmentMembers } from "@/features/auth/useDepartmentMembers";
 import { fetchChildren } from "@/features/requests/api";
 
-import { combineMergeLegs, defaultMergeLeg, mergeLegForCard, mergePayload, mergePayloadFromLegs, mergePayloadLegs, type MergeLeg } from "../mergeProposal";
+import { combineMergeLegs, defaultMergeLeg, mergeLegForCard, mergeLegOptions, mergePayload, mergePayloadFromLegs, mergePayloadLegs, type MergeLeg } from "../mergeProposal";
 import { isDropOffWithPickup, legView, unmetItemId, unmetItemKey } from "../unmetLegs";
 import type { GuestDropTarget } from "@/components/GuestChips";
 import { requestStart, requestWithinFlex } from "../phantomLanes";
 import { reservationRoutePlaces, routeEditPayload, type RouteEditValues } from "../rideRouteEdit";
 import { buildDraftInput, type ComposerPrefill } from "../draftInput";
 import {
+  carLocationAt,
+  chauffeurCarElsewhere,
   connectsOtherLeg,
+  isDropTargetValid,
   legStartPlaceId,
   minutesIso,
   originMismatch,
@@ -51,6 +54,7 @@ import {
   useWhatsappTemplates,
   useWithdrawProposalMutation,
   useEditRideMutation,
+  useMarkCarMoveMutation,
   useSetRidePassengersMutation,
   useUnassignRideMutation,
   useUnmergeRequestMutation,
@@ -91,7 +95,7 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
   // memberIds: department members picked for the reservation, in pick order — the first
   // becomes the ride's driver (owner A5, 2026-09-14); the rest (plus childIds) become
   // `ride_passengers` rows via set_ride_passengers() once the ride itself is saved.
-  const [reservation, setReservation] = useState<{ carId: string; start: string; end: string; notes: string; memberIds: string[]; childIds: string[] } | null>(null);
+  const [reservation, setReservation] = useState<{ carId: string; start: string; end: string; notes: string; memberIds: string[]; childIds: string[]; kind: "reservation" | "move"; toPlaceId: string } | null>(null);
   // Multi-day request ("series") car-change confirmation (REQ §13.77, UX_FLOWS.md §4.2):
   // dragging a series leg onto a different car moves every day of the span — confirm first,
   // since a car free on this day only is not necessarily free for the whole series (MDR03).
@@ -101,6 +105,8 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
   // gesture since the drag starts on its cards, outside the grid) — the
   // grid only needs to know which car to highlight and whether the drop
   // would be valid right now.
+  // R3B5: a drop whose live preview was red (invalid target) is applied only after an explicit confirmation.
+  const [invalidDropConfirm, setInvalidDropConfirm] = useState<{ run: () => Promise<void> } | null>(null);
   const [guestHover, setGuestHover] = useState<{ guest: { requestId: string; name: string }; target: GuestDropTarget | null } | null>(null);
   const [unmetDragHover, setUnmetDragHover] = useState<{ item: UnmetListItem; carId: string; minutes: number; hostRideId?: string } | null>(null);
 
@@ -110,6 +116,7 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
   const templatesQuery = useWhatsappTemplates();
   const profileQuery = useProfile();
   const editRideMutation = useEditRideMutation();
+  const markCarMoveMutation = useMarkCarMoveMutation();
   const setRidePassengersMutation = useSetRidePassengersMutation();
   const claimDriverMutation = useClaimRideDriverMutation();
   const cancelRideChangeMutation = useCancelRideChangeMutation();
@@ -185,7 +192,16 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
 
   /** REQ §13.94 (G10): the popup's "הלוך בלבד" / "הלוך וחזור" choice rewrites the merge payload's leg. */
   function setMergeLeg(leg: MergeLeg) {
-    setMergePrefill((prev) => (prev?.rideId ? { ...prev, payload: mergePayload(prev.rideId, leg) } : prev));
+    setMergePrefill((prev) => {
+      if (!prev?.rideId) return prev;
+      // R3B11: a split merge (legs on two rides) keeps the other ride's leg; only the dropped-on ride's leg changes.
+      const legs = mergePayloadLegs(prev.payload);
+      const target = prev.legRideId ?? prev.rideId;
+      if (new Set(legs.map((entry) => entry.ride_id)).size > 1) {
+        return { ...prev, payload: mergePayloadFromLegs(legs.map((entry) => (entry.ride_id === target ? { ...entry, leg } : entry))) };
+      }
+      return { ...prev, payload: mergePayload(prev.rideId, leg) };
+    });
   }
 
   /**
@@ -194,7 +210,8 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
    * on ride B, one proposal) instead of replacing it silently.
    */
   function openMerge(requestId: string, hostRideId: string, leg: MergeLeg, anchorLeg: "out" | "return" | null) {
-    const prev = proposals.find((p) => p.type === "merge" && p.status === "draft" && p.request_id === requestId);
+    // The server extends an open draft or a sent, unanswered merge (REQ §13.102 d) - mirror it.
+    const prev = proposals.find((p) => p.type === "merge" && (p.status === "draft" || p.status === "sent") && p.request_id === requestId);
     let payload = mergePayload(hostRideId, leg);
     let draftNote: "extends" | "replaces" | null = null;
     if (prev) {
@@ -204,7 +221,7 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
       payload = mergePayloadFromLegs(combined.legs);
       draftNote = combined.replaced ? "replaces" : "extends";
     }
-    setMergePrefill({ requestId, rideId: payload.ride_id as string, type: "merge", payload, anchorLeg, draftNote });
+    setMergePrefill({ requestId, rideId: payload.ride_id as string, type: "merge", payload, anchorLeg, draftNote, legRideId: hostRideId });
   }
 
   /**
@@ -316,7 +333,7 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
     if (droppedOnRideId?.startsWith("merge:")) {
       droppedOnRideId = proposals.find((p) => p.id === droppedOnRideId!.slice(6))?.ride_id ?? undefined;
     }
-    let window = unmetCandidateWindow(dropCtx, item, minutes);
+    let window = unmetCandidateWindow(dropCtx, item, minutes, false, carId);
     if (!window || !department?.home_destination_id) {
       toast.error(he.sadranBoard.invalidWindow);
       return;
@@ -326,7 +343,9 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
     const dropHost = droppedOnRideId ? rides.find((ride) => ride.id === droppedOnRideId && ride.car_id === carId && !servedOf(ride).some((entry) => entry.request_id === req.id)) : undefined;
     if (dropHost?.id && dropHost.starts_at && dropHost.ends_at) {
       if (isReservation(dropHost)) { toast.error(he.sadranBoard.dropOnReservation); return; }
-      const mergeLeg = mergeLegForCard(req, item.leg ?? null);
+      // R3B20: a round-trip guest (no preset leg, not a single-leg card) joins both legs when both fit.
+      let mergeLeg = mergeLegForCard(req, item.leg ?? null);
+      if (!item.leg && !mergeLegOptions(req).preset && mergeRefusalReason(dropCtx, dropHost, req, "both") === null) mergeLeg = "both";
       const refusal = mergeRefusalReason(dropCtx, dropHost, req, mergeLeg);
       if (refusal) { toast.error(he.mergedRide.invalid[refusal]); return; }
       // REQ §13.94 (G10): the popup shows the merged ride; the payload is legs only (the host keeps its start).
@@ -334,7 +353,7 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
       return;
     }
     const connects = connectsOtherLeg(dropCtx, item, carId);
-    window = unmetCandidateWindow(dropCtx, item, minutes, !connects);
+    window = unmetCandidateWindow(dropCtx, item, minutes, !connects, carId);
     if (!window) { toast.error(he.sadranBoard.invalidWindow); return; }
     if (unavailable(dropCtx, carId, window.startsAt, window.endsAt)) { toast.error(he.sadranBoard.maintenanceUnavailable); return; }
     // R2B7: never create a ride that overlaps another ride on the car (reservations and blocks included).
@@ -350,6 +369,9 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
     // offering a shift/placement onto a car parked elsewhere (a connected pair's own other leg is exempt).
     const dropOrigin = legStartPlaceId(req, dropCtx.homeDestinationId);
     if (!connects && dropOrigin && originMismatch(dropCtx, carId, dropOrigin, window.startsAt)) {
+      toast.error(he.sadranBoard.carNotAtOriginToast); return;
+    }
+    if (!connects && chauffeurCarElsewhere(dropCtx, req, carId, window.startsAt)) {
       toast.error(he.sadranBoard.carNotAtOriginToast); return;
     }
     // Placement by the member-facing trip type and the request's own places (REQ §13.93).
@@ -445,7 +467,9 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
       && privateCarBlocks(dropCtx, carId, servedOf(ride).map((e) => requestsData.find((r) => r.id === e.request_id)).find((r) => r)?.requester_id))) {
       toast.error(he.sadranBoard.privateCarNotTarget); return;
     }
-    if (ride.needs_driver && droppedOnRideId && droppedOnRideId !== rideId && rides.some((other) => other.id === droppedOnRideId && !!other.driver_id && !other.needs_driver)) {
+    // R3B2: a needs-driver ride dropped on another ride is always a merge attempt (the host may itself
+    // need a driver: refused below), never a plain move.
+    if (ride.needs_driver && droppedOnRideId && droppedOnRideId !== rideId && rides.some((other) => other.id === droppedOnRideId && other.car_id === carId)) {
       const driverEntry = servedOf(ride).find((s) => s.role === "driver") ?? servedOf(ride)[0];
       if (driverEntry?.request_id) {
         const host = rides.find((candidate) => candidate.id === droppedOnRideId);
@@ -563,6 +587,11 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
         setSeriesMoveConfirm({ carName, index: ride.series_index ?? 1, count: ride.series_count ?? 1, run: applyMove });
         return;
       }
+      // R3B5: the live preview was red -> never apply silently.
+      if (!isDropTargetValid(dropCtx, rideId, carId, startMinutes, newEndMinutes, droppedOnRideId)) {
+        setInvalidDropConfirm({ run: applyMove });
+        return;
+      }
       await applyMove();
     } else if (driverRequest) {
       toast(he.sadranBoard.dragBeyondFlexToast);
@@ -594,6 +623,17 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
     if (!reservation || !department?.home_destination_id) return;
     const start = parseHHMM(reservation.start);
     const end = parseHHMM(reservation.end);
+    if (reservation.kind === "move") {
+      // REQ §13.103 b: from = where the car is at that time (never typed), to = the picked place.
+      const atIso = start == null ? null : minutesIso(dropCtx, start);
+      const fromPlaceId = atIso ? carLocationAt(dropCtx, reservation.carId, atIso) : null;
+      if (start == null || end == null || end <= start || !atIso || !fromPlaceId || !reservation.toPlaceId) { toast.error(he.sadranBoard.invalidWindow); return; }
+      try {
+        await markCarMoveMutation.mutateAsync({ carId: reservation.carId, fromPlaceId, toPlaceId: reservation.toPlaceId, at: atIso, minutes: end - start, peopleIds: reservation.memberIds, departmentId, weekStart });
+        setReservation(null); toast.success(he.sadranBoard.carMoveSaved);
+      } catch { /* the mutation shows the error */ }
+      return;
+    }
     if (start == null || end == null || end <= start || !reservation.notes.trim()) { toast.error(he.sadranBoard.invalidWindow); return; }
     // First picked member = driver (owner A5, 2026-09-14); everyone else picked, plus any
     // picked children, become named `ride_passengers` once the ride itself exists.
@@ -669,6 +709,11 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
     } catch { /* Version conflicts are reported by the mutation. */ }
   }
 
+  // REQ §13.103 b: the car-move dialog shows where the car is at the chosen start time.
+  const reservationStart = reservation ? parseHHMM(reservation.start) : null;
+  const reservationFromId = reservation && reservationStart != null ? carLocationAt(dropCtx, reservation.carId, minutesIso(dropCtx, reservationStart)) : null;
+  const reservationFromName = reservationFromId ? (board.destinationsQuery.data ?? []).find((d) => d.id === reservationFromId)?.name ?? null : null;
+
   const selectedPlanningChange = (board.rideChangesQuery.data ?? []).find((change) => change.is_planning && `change:${change.id}` === selectedRideId);
   const selectedRide = rides.find((r) => r.id === (selectedPlanningChange?.ride_id ?? selectedRideId)) ?? null;
   const selectedRideDriverName = selectedRide?.driver_name ?? null;
@@ -700,9 +745,13 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
     setReservation,
     seriesMoveConfirm,
     setSeriesMoveConfirm,
+    invalidDropConfirm,
+    setInvalidDropConfirm,
     unmetDragHover,
     setUnmetDragHover,
     editRideMutation,
+    markCarMoveMutation,
+    reservationFromName,
     setRidePassengersMutation,
     claimDriverMutation,
     cancelRideChangeMutation,

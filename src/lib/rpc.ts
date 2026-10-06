@@ -56,6 +56,10 @@ export type ErrorCode =
   | "series_span_shared_ride"
   | "origin_change_unavailable"
   | "car_not_at_leg_origin"
+  | "car_move_invalid"
+  | "car_move_same_place"
+  | "leg_location_mismatch"
+  | "relay_requires_destination_id"
   | "car_next_ride_elsewhere"
   | "car_not_at_leg_place"
   | "shift_car_invalid"
@@ -165,6 +169,11 @@ const MESSAGE_TO_CODE: Record<string, ErrorCode> = {
   series_span_shared_ride: "series_span_shared_ride",
   origin_change_unavailable: "origin_change_unavailable",
   car_not_at_leg_origin: "car_not_at_leg_origin",
+  car_move_invalid: "car_move_invalid",
+  car_move_same_place: "car_move_same_place",
+  leg_location_mismatch: "leg_location_mismatch",
+  driver_busy: "driver_unavailable",
+  relay_requires_destination_id: "relay_requires_destination_id",
   car_next_ride_elsewhere: "car_next_ride_elsewhere",
   car_not_at_leg_place: "car_not_at_leg_place",
   shift_car_invalid: "shift_car_invalid",
@@ -278,6 +287,10 @@ const CODE_TO_MESSAGE: Record<ErrorCode, string> = {
   series_span_shared_ride: he.mergedRide.invalid.series_span_shared,
   origin_change_unavailable: he.errors.originChangeUnavailable,
   car_not_at_leg_origin: he.errors.carNotAtLegOrigin,
+  car_move_invalid: he.errors.carMoveInvalid,
+  car_move_same_place: he.errors.carMoveSamePlace,
+  leg_location_mismatch: he.errors.legLocationMismatch,
+  relay_requires_destination_id: he.errors.legLocationMismatch,
   car_next_ride_elsewhere: he.errors.carNextRideElsewhere,
   car_not_at_leg_place: he.errors.carNotAtLegPlace,
   shift_car_invalid: he.errors.shiftCarInvalid,

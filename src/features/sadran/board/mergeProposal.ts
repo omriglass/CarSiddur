@@ -79,6 +79,13 @@ export function mergePayloadLeg(payload: unknown, request: Pick<WeekRequestRow, 
   return first?.leg === "out" || first?.leg === "return" || first?.leg === "both" ? first.leg : defaultMergeLeg(request);
 }
 
+/** The legs a merge payload covers, over all its rides: "out", "return" or "both" (a split merge is "both"). */
+export function mergeLegSummary(payload: unknown, request: Pick<WeekRequestRow, "trip_shape">): MergeLeg {
+  const sides = new Set(mergePayloadLegs(payload).map((entry) => entry.leg));
+  if (sides.size === 1) return [...sides][0]!;
+  return sides.size > 1 ? "both" : mergePayloadLeg(payload, request);
+}
+
 export interface MergeRouteContext {
   hop: Hop;
   stopMinutes: number;
@@ -100,11 +107,16 @@ export interface MergePreview extends MergedRoute {
 export function previewMerge(host: BoardRide, request: WeekRequestRow, leg: MergeLeg, ctx: MergeRouteContext): MergePreview | null {
   if (!host.starts_at || !host.ends_at) return null;
   const stored = parseRideRoute(host.route);
-  const route = stored.length ? stored : fallbackRoute({
+  const baseRoute = stored.length ? stored : fallbackRoute({
     startsAt: host.starts_at, endsAt: host.ends_at,
     originId: host.origin_id, originName: host.origin_name,
     destinationId: host.destination_id, destinationName: host.destination_name,
   });
+  // R3B6: a return-only guest joins a host whose single stored leg is "out" (a pickup/chauffeur ride has
+  // no separate return leg): that one leg is the leg the guest rides, so the stop time can be computed.
+  const route = leg === "return" && !baseRoute.some((point) => point.leg === "return")
+    ? baseRoute.map((point) => ({ ...point, leg: "return" as const }))
+    : baseRoute;
   const merged = mergePassengerIntoRoute({
     route, startsAt: host.starts_at, endsAt: host.ends_at, hop: ctx.hop, stopMinutes: ctx.stopMinutes,
     detourLimitMinutes: ctx.detourLimitMinutes, detourLimitKm: ctx.detourLimitKm, hopKm: ctx.hopKm,

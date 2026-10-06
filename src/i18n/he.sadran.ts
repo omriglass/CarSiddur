@@ -99,6 +99,14 @@ export const heSadran = {
     /** REQ §89 (owner 2026-09-15): an automatic missing-driver relocation ride's block/card
      * label (shared with the siddur via `src/lib/rideLabel.ts`). */
     autoRelocation: "החזרת רכב — חסר/ה נהג/ת",
+    carMoveLabel: "העברת רכב: {{from}} → {{to}}",
+    carMove: "העברת רכב",
+    carMoveHint: "מסמן שהרכב הועבר ממקום למקום; מרגע זה הוא נמצא ביעד.",
+    carMoveFrom: "הרכב נמצא ב",
+    carMoveFromUnknown: "מיקום הרכב אינו ידוע בשעה זו",
+    carMoveTo: "מועבר ל",
+    carMoveToPlaceholder: "בחרו מקום",
+    carMoveSaved: "העברת הרכב נשמרה",
     /** The board's "away" band, relative to the car's own base (REQ §89/§13.93). */
     awayBand: "הרכב ב{{place}}",
     /** REQUIREMENTS §13.93: the car's own base, shown on its column header when it isn't the department home. */
@@ -201,6 +209,8 @@ export const heSadran = {
     redoToast: "בוצע שוב: {{label}}",
     redoNothing: "אין מה לבצע שוב",
     /** Multi-day request ("series") board handling (REQ §13.77, UX_FLOWS.md §4.2, 2026-09-10). */
+    invalidDropTitle: "היעד מסומן באדום. להעביר בכל זאת?",
+    invalidDropBody: "המקום שנבחר אינו מתאים (מושבים, מטען, תחזוקה או רכב פרטי). ההעברה תתבצע רק באישורך.",
     seriesMoveTitle: "להעביר את כל ימי הבקשה הרב-יומית?",
     seriesMoveBody: "הנסיעה היא יום {{index}} מתוך {{count}}. כל הימים יועברו ל{{car}} אם הוא פנוי בכולם.",
     seriesUnassignHint: "בקשה רב-יומית: אפשר לבטל את כל הימים או להעביר לרכב אחר",
@@ -503,6 +513,7 @@ export const heSadran = {
     addStopOut: "+ עצירה",
     addStopReturn: "+ עצירה בחזור",
     removeStop: "הסר עצירה",
+    stopIsDestination: "עצירה לא יכולה להיות היעד עצמו",
     save: "שמור מסלול",
     saved: "המסלול נשמר",
     presetOnly: "בהזמנת סדרן אפשר לבחור רק מקומות מהרשימה",

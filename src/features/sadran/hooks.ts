@@ -146,6 +146,16 @@ export function useApplySolverResultMutation() {
 // Single-ride edits
 // ---------------------------------------------------------------------------
 
+/** `mark_car_move()` - the reservation dialog's "העברת רכב" option (REQ §13.103 b). */
+export function useMarkCarMoveMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: api.MarkCarMoveInput & { departmentId: string; weekStart: string }) => api.markCarMove(input),
+    onSuccess: (_data, { departmentId, weekStart }) => invalidateBoard(queryClient, departmentId, weekStart),
+    onError: showErrorToast,
+  });
+}
+
 export function useEditRideMutation() {
   const queryClient = useQueryClient();
   return useMutation({

@@ -48,6 +48,7 @@ function headerLabel(ride: BoardRide, served: readonly ServedEntry[], homeDestin
     isChauffeur: !!ride.is_chauffeur,
     needsDriver: !!ride.needs_driver,
     autoRelocation: !!ride.auto_relocation,
+    carMove: ride.pin_reason === "CAR_MOVE",
     startsAt: ride.starts_at ?? undefined,
     relayPartner: relayPartnerOf(ride, weekRides),
   });

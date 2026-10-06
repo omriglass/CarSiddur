@@ -223,18 +223,13 @@ begin
   payload := jsonb_build_object('department_id',dept,'week_start',w::text,'destination_id',dest,'ride_type_id',typ,
     'trip_shape','round_trip','depart_at',base::text,'return_at',(base+interval '2 hours')::text,'adults',1);
   result := public.enter_waiting_list(payload);
-  assert result->>'status' = 'waitlisted' and result->>'reason' = 'WAITLISTED_CONTESTED' and not (result ? 'car_was_free'),
-    format('enter_waiting_list should waitlist as contested with no free car, got %s', result::text);
+  -- REQ §13.103 R3B9 (QA run 3): every car is booked for that window, so nobody could be served: the two
+  -- overlapping waitlisted round trips stay on the ordinary waiting list, they do not form a contested group.
+  assert result->>'status' = 'waitlisted' and result->>'reason' = 'WAITLISTED_NO_CAR' and not (result ? 'car_was_free'),
+    format('enter_waiting_list should waitlist with no free car and no group, got %s', result::text);
   assert (select count(*) from public.waitlist_groups g where g.department_id = dept and g.week_start = w
-          and g.day = w + 3 and g.status = 'open') = 1,
-    'the two overlapping waitlisted round trips should share exactly one open group';
-  assert (select count(*) from public.waitlist_group_members m
-          join public.waitlist_groups g on g.id = m.group_id
-          where g.department_id = dept and g.week_start = w and g.status = 'open' and m.chosen is null) = 2,
-    'both overlapping requests should be open members of the group';
-  assert exists(select 1 from public.notifications n where n.event = 'waitlist_contested'
-          and n.recipient_id = '00000000-0000-0000-0000-0000000000a5' and n.week_start = w),
-    'the contested members should be notified';
+          and g.day = w + 3 and g.status = 'open') = 0,
+    'no contested group where no car can serve any member';
 end $$;
 
 -- ---------------------------------------------------------------------------

@@ -24,7 +24,7 @@ Owner request 2026-10-05. A repeatable, realistic week that a smart **QA Sadran*
 
 ## 2. Tooling
 - **`qa:sadran` CLI** — what the board does, as the QA Sadran: show a day (rides per car with routes, unmet requests with reasons and suggestions, drafts/proposals, warnings), auto-fill (the real solver + bridge + `apply_solver_result`), place / move / resize / merge / unmerge, change trip type, edit ride details, create a draft / send a proposal / withdraw / discard, write a free-text message to a member (mailbox), read replies, readiness and publish, advance the week to live.
-- **`qa:member` CLI** — what a member does: inbox and pending proposals, answer (accept/decline), reply to a message, edit/withdraw/cancel a request, file a late request, "car now", show "my rides" and the siddur as that member sees them.
+- **`qa:member` CLI** — what a member does: inbox and pending proposals, answer (accept/decline), reply to a message, edit/withdraw/cancel a request (`cancel` on a request with no ride withdraws it), shorten a multi-day request (`shorten <req> <first-day> <HH:MM> <last-day> <HH:MM>`), `answer`/`proposals` print each proposal's type, `my-rides` prints the member's own route, file a late request, "car now", show "my rides" and the siddur as that member sees them.
 - **Mailbox** (`<out>/mailbox.jsonl`): free-text messages between the QA Sadran and members (the WhatsApp conversation the app does not model).
 - **UI helper** for the UI day (Playwright): sign in as any QA account, open the board/siddur/my rides/inbox, act, take screenshots the agents can read.
 
@@ -38,6 +38,8 @@ All three tools run on the disposable stack only (API `http://127.0.0.1:57321`, 
 - `edit-route <ride|req> [--origin P] [--dest P] [--stop P]... [--return-stop P]... [--clear-stops] [--draft]` (a shift proposal for a ride that serves a request; `edit_ride` for a reservation).
 - `propose <req> shift [--car C --depart HH:MM --return HH:MM --day D --ride R --no-places] | origin --origin P --car C | deny [--reason T] | external [--hint cab|rental|public_transport|private|waive] [--reason T] [--draft]` (creates and sends; `--draft` leaves it unsent), `send|withdraw|discard|apply <proposal>` (an accepted answer already applies it).
 - `assign-driver <ride> <member|none>`, `add-passengers <ride> <name>[:kind]...`, `contacts [<filter>]` (name, email, phone, role, id), `message <memberEmail> <text>`, `messages [--new]` (mailbox). `publish [--days d1,d2] [--allow-unanswered]` (same fingerprint + scores path as the UI). `advance live` flips this department's published week to live through the service role (the cron `app.tick()` is not reachable from a browser session, and calling `advance_week_phases` would also close/archive other weeks).
+
+**`npm run qa:sadran`** also has `car-move <car> <from> <to> <HH:MM> [--day D] [--minutes N]` (REQ §13.103 b, `mark_car_move`).
 
 **`npm run qa:member -- --as <email> <command>`** - password from `personas.json` (else `qa-member-1234` for `*.qa.local`, `nevo-demo-1234` for the demo accounts).
 - `inbox [--all] [--limit N] [--mark-read]` (notifications + new mailbox messages), `proposals` (pending ones with the text the member would read), `answer <proposalId|token> accept|decline [--note T]` (uses the member's own `/p/<token>` from the inbox, via the session), `messages [--new]`, `reply <text> [--to X]`.

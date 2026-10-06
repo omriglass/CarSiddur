@@ -29,9 +29,11 @@ export interface RideDriverPickerProps {
   /** R2U3: members busy during the ride (own ride/request overlapping); marked, and listed after the free ones. */
   busyIds?: ReadonlySet<string>;
   disabled?: boolean;
+  /** Called after a successful assign/remove (R3B16: the sheet closes). */
+  onDone?: () => void;
 }
 
-export function RideDriverPicker({ rideId, version, needsDriver, volunteerName, candidates, departmentId, weekStart, busyIds, disabled }: RideDriverPickerProps) {
+export function RideDriverPicker({ rideId, version, needsDriver, volunteerName, candidates, departmentId, weekStart, busyIds, disabled, onDone }: RideDriverPickerProps) {
   const [driverId, setDriverId] = useState("");
   const mutation = useSetRideDriverMutation();
   const drivers = sortFreeFirst(candidates.filter((candidate) => !candidate.doesNotDrive), busyIds ?? new Set<string>());
@@ -42,12 +44,12 @@ export function RideDriverPicker({ rideId, version, needsDriver, volunteerName, 
     const chosen = drivers.find((candidate) => candidate.id === driverId);
     if (!chosen) return;
     mutation.mutate({ rideId, driverId: chosen.id, expectedVersion: version, departmentId, weekStart }, {
-      onSuccess: () => { setDriverId(""); toast.success(tv("rideDriver.assigned", { name: chosen.name })); },
+      onSuccess: () => { setDriverId(""); toast.success(tv("rideDriver.assigned", { name: chosen.name })); onDone?.(); },
     });
   }
   function unassign() {
     mutation.mutate({ rideId, driverId: null, expectedVersion: version, departmentId, weekStart }, {
-      onSuccess: () => toast.success(he.rideDriver.unassigned),
+      onSuccess: () => { toast.success(he.rideDriver.unassigned); onDone?.(); },
     });
   }
 
