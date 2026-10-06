@@ -4,7 +4,7 @@ import { isActiveStop, parseRouteStops, type RouteStop } from "@/lib/routeStops"
 import { rpc, toAppError } from "@/lib/rpc";
 import { siddurCarName } from "@/lib/siddurCarName";
 
-import { pickPendingProposal } from "./pendingProposal";
+import { splitMemberProposals } from "./pendingProposal";
 import { joinableRideRowSchema, templateSuggestionRowSchema, type TemplateSuggestionRow } from "./schema";
 
 import type { DestinationValue } from "@/components/DestinationCombobox";
@@ -134,7 +134,7 @@ const SELECT = `
       driver:profiles!rides_driver_id_fkey(full_name)
     )
   ),
-  proposals(id, type, reason_he, expires_at, status),
+  proposals(id, type, reason_he, expires_at, status, parties:proposal_parties(profile_id, response)),
   request_children(child:children(full_name))
 `;
 
@@ -194,6 +194,7 @@ interface RawRequestRow {
     reason_he: string;
     expires_at: string | null;
     status: ProposalStatus;
+    parties: { profile_id: string; response: "pending" | "accepted" | "declined" }[] | null;
   }[];
   request_children: { child: { full_name: string } | null }[];
 }
@@ -219,10 +220,11 @@ function mapEmbeddedStops(rows: RawRequestRow["stops"], hasReturn: boolean): Rou
     .sort((a, b) => a.position - b.position);
 }
 
-function mapRow(row: RawRequestRow): MyRequestRow {
+function mapRow(row: RawRequestRow, profileId?: string): MyRequestRow {
   const legWithRide = row.ride_requests.find((leg) => leg.ride !== null && leg.ride.status !== "cancelled");
   const ride = legWithRide?.ride ?? null;
-  const pendingProposal = pickPendingProposal(row.proposals);
+  // R5B9: a sent proposal the member has already answered (it still waits for the other parties) is no longer "waiting for your answer".
+  const { pending: pendingProposal, answeredWaiting } = splitMemberProposals(row.proposals, profileId);
 
   return {
     preferredCarId: row.preferred_car_id,
@@ -289,7 +291,7 @@ function mapRow(row: RawRequestRow): MyRequestRow {
           expiresAt: pendingProposal.expires_at,
         }
       : null,
-    acceptedAwaitingOthers: !pendingProposal && row.proposals.some((p) => p.status === "accepted"),
+    acceptedAwaitingOthers: !pendingProposal && (answeredWaiting || row.proposals.some((p) => p.status === "accepted")),
   };
 }
 
@@ -468,7 +470,7 @@ export async function fetchMyRequests(profileId: string, departmentId?: string):
   // the member's behalf.
   return ((data ?? []) as unknown as RawRequestRow[])
     .filter((row) => !["withdrawn", "cancelled"].includes(row.status) || isDuplicateWithdrawn(row))
-    .map(mapRow);
+    .map((row) => mapRow(row, profileId));
 }
 
 export interface SubmitRequestPayload {

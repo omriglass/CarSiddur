@@ -34,6 +34,11 @@ describe("resolveDraftPlacement", () => {
     expect(placement?.endsAt).toBe("2026-10-11T11:00:00.000Z");
     expect(placement?.startsAt).toBe("2026-10-11T10:30:00.000Z");
   });
+  it("R5B3/R5B11: a drop-off shift carrying only a return time is the pickup leg (inferred like the server)", () => {
+    const req = request({ trip_type: "drop_off", depart_at: "2026-10-11T04:30:00.000Z", return_at: "2026-10-11T11:00:00.000Z" } as Partial<WeekRequestRow>);
+    const placement = resolveDraftPlacement(proposal({ payload: { car_id: "carB", depart_at: null, return_at: "2026-10-11T11:00:00.000Z" } }), [req], [], "home");
+    expect(placement).toMatchObject({ leg: "return", carId: "carB", endsAt: "2026-10-11T11:00:00.000Z" });
+  });
   it("R4B4: a pickup-leg shift draws only that leg on its car and does not replace the out-leg ride", () => {
     const req = request({ trip_type: "drop_off", depart_at: "2026-10-11T04:30:00.000Z", return_at: "2026-10-11T11:00:00.000Z" } as Partial<WeekRequestRow>);
     const outRide = ride({ starts_at: "2026-10-11T04:30:00.000Z", ends_at: "2026-10-11T05:30:00.000Z" });

@@ -12,7 +12,7 @@ import { assertInvariants } from './invariants';
 import { fits, luggageFits } from './seatFit';
 import { buildHostRides, findMergeHosts } from './merge';
 import { scoreRequests } from './policy/engine';
-import { chauffeurShortDropOffs, chauffeurUnpairedRelayLegs, pairRelays } from './relay';
+import { chauffeurShortDropOffs, chauffeurUnpairedRelayLegs, pairRelays, pickupFromCarAtX } from './relay';
 import { reason } from './reasons';
 import { expandDropOffs, restoreDropOffIds } from './dropOffSplit';
 import { carName, placeName, rideHostLabel, requestDestName, requestOriginName } from './names';
@@ -169,7 +169,7 @@ function solveExpanded(input: SolverInput): SolverOutput {
   const passengerOnly = oneWay.filter((nr) => nr.isPassengerOnly);
   const relayEligible = oneWay.filter((nr) => !nr.isPassengerOnly);
 
-  const { pairs, unpaired } = pairRelays(relayEligible, input.cars, normalized.filter((nr) => !relayEligible.includes(nr)));
+  const { pairs, unpaired } = pairRelays(relayEligible, input.cars, normalized.filter((nr) => !relayEligible.includes(nr)), 2 * bufferSlots);
 
   const relayPairPeople = new Map<string, number>();
   for (const pair of pairs) {
@@ -214,7 +214,13 @@ function solveExpanded(input: SolverInput): SolverOutput {
     if (u.kind !== 'pair' || !u.pair) continue;
     ownPairFallback.push(u.pair.outNr, u.pair.retNr);
   }
-  const { healed, healedIds } = chauffeurUnpairedRelayLegs([...unpaired, ...ownPairFallback], timelines, input, carsMap, scores);
+  // REQ §13.105 b: a pickup from X on a car already standing at X, driven home by the requester, comes first.
+  const pickupCandidates = [...unpaired, ...ownPairFallback];
+  const pickups = pickupFromCarAtX(pickupCandidates, timelines, input, carsMap, scores);
+  const chauffeured = chauffeurUnpairedRelayLegs(
+    pickupCandidates.filter((nr) => !pickups.healedIds.has(nr.id)), timelines, input, carsMap, scores);
+  const healed = [...pickups.healed, ...chauffeured.healed];
+  const healedIds = new Set([...pickups.healedIds, ...chauffeured.healedIds]);
   const stillUnpairedRelay = unpaired.filter((nr) => !healedIds.has(nr.id));
   // REQUIREMENTS §13.88 (owner 2026-09-24, docs/TODO.md Q7): a one-way leg with no eligible
   // driver on board gets the same missing-driver chauffeur ride the SQL healing gives it

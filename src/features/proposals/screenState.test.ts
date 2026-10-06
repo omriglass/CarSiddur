@@ -68,3 +68,17 @@ describe("classifyProposalScreenState", () => {
     },
   );
 });
+
+describe("classifyProposalScreenState - already answered (R5B9)", () => {
+  const base = {
+    proposalId: "p", type: "merge", status: "sent", reasonHe: "", expiresAt: null, payload: null, request: null,
+    parties: [{ profileId: "me", fullName: "x", response: "accepted", isYou: true }, { profileId: "host", fullName: "y", response: "pending", isYou: false }],
+  } as unknown as Parameters<typeof classifyProposalScreenState>[0]["summary"];
+  it("a sent proposal this reader accepted reads as answered, not answerable", () => {
+    expect(classifyProposalScreenState({ isLoading: false, errorCode: null, summary: base, justAnswered: false }).kind).toBe("answered");
+  });
+  it("a pending reader still answers", () => {
+    const pending = { ...base!, parties: base!.parties.map((p) => ({ ...p, response: "pending" as const })) };
+    expect(classifyProposalScreenState({ isLoading: false, errorCode: null, summary: pending, justAnswered: false }).kind).toBe("answerable");
+  });
+});

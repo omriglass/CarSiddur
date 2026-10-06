@@ -112,9 +112,9 @@ export const heSadran = {
     /** REQUIREMENTS §13.93: the car's own base, shown on its column header when it isn't the department home. */
     carBase: "בסיס: {{place}}",
     /** REQUIREMENTS §13.93/SOLVER.md §1.3a `weekEndAway()` — a warning only, shown on the car's column on the week's last day. */
-    carAwayAtWeekEnd: "מסיים/ת את השבוע ב{{place}}, לא בבסיס",
+    carAwayAtWeekEnd: "{{car}} מסיים/ת את השבוע ב{{place}}, לא בבסיס",
     /** REQUIREMENTS §13.93/SOLVER.md §1.3a `chainBreaks()` — a fixed ride whose car is actually elsewhere; a warning only. */
-    carNotHereWarning: "הרכב לא נמצא כאן — הוא ב{{place}}",
+    carNotHereWarning: "הנסיעה ({{ride}}): הרכב לא נמצא כאן — הוא ב{{place}}",
     invalidWindow: "יש לבחור טווח שעות תקין באותו יום",
     mergeConfirm: "לאחד את שתי הנסיעות?",
     mergeDescription: "תוכן הצעת איחוד שתוכלו לערוך לפני השליחה.",
@@ -182,6 +182,7 @@ export const heSadran = {
     relayNeedsCoordination: "השיבוץ דורש תיאום של מסלול הרכב — נפתחת הצעה לשינוי השעות",
     dragInvalidLocationToast: "הרכב לא נמצא בבית בשעה הזו",
     unassignedToast: "השיבוץ הוסר — הבקשות חזרו ללא שיבוץ",
+    legsJoinedToast: "ההקפצה והאיסוף חוברו לנסיעה אחת",
     /**
      * Mobile-friendly board header (2026-09-10): the eye/kebab icon menus that
      * replace the old inline row of buttons (the former `he.action.runSolver` key was removed on 2026-09-10 —
@@ -248,6 +249,8 @@ export const heSadran = {
     version: "גרסה {{version}}",
     cancelled: "הנסיעה בוטלה",
     removeAssignment: "הסר שיבוץ",
+    /** REQ §13.105 c: join a הקפצה's drop-off and pickup rides into one ride. */
+    joinLegs: "חבר הלוך ואיסוף לנסיעה אחת",
     removeAssignmentReason: "הוסר שיבוץ מהלוח (נגרר לרשימת הלא-משובצים)",
     /** Multi-day request leg (REQ §13.77, UX_FLOWS.md §4.2). */
     seriesLine: "בקשה רב-יומית · יום {{index}} מתוך {{count}}",
@@ -322,6 +325,8 @@ export const heSadran = {
     hintRental: "השכרה",
     hintPublicTransport: "תחבורה ציבורית",
     hintPrivate: "רכב פרטי",
+    /** R5B11: the composer's select names the PROPOSAL type, not "סוג נסיעה" (ride type). */
+    typeLabel: "סוג ההצעה",
   },
   sadranClaims: {
     empty: "אין בקשות שנויות במחלוקת השבוע",
@@ -365,6 +370,12 @@ export const heSadran = {
    * proposal, drawn on the board as the result it would produce.
    */
   boardDrafts: {
+    /** R5U1: the draft/sent sheet states what changes - old -> new times and car. */
+    changeCar: "רכב: {{new}} במקום {{old}}",
+    changeCarSet: "רכב: {{new}}",
+    changesTitle: "מה משתנה",
+    /** R5B11: a pickup draft reads "איסוף מ<place>", never just "ל<place>". */
+    pickupLabel: "איסוף מ{{place}}",
     tag: "טיוטה",
     draftButton: "טיוטה",
     prepare: "הכן הצעה",

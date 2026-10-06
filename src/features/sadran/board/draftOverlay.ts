@@ -22,6 +22,8 @@ export interface DraftPlacement {
   hostRideId: string | null;
   /** Shift: the request's current ride the draft replaces (its block is hidden while the draft shows). */
   replacesRideId: string | null;
+  /** Shift of ONE leg of a הקפצה (payload `leg`, else inferred from the single time it carries): the label says "איסוף מ..." for `return`. */
+  leg?: "out" | "return" | null;
 }
 
 function payloadOf(proposal: Pick<ProposalRow, "payload">): Record<string, unknown> {
@@ -78,7 +80,9 @@ export function resolveDraftPlacement(
     const returnAt = str(payload.return_at);
     // R4B4: one leg of a split drop-off is drawn as that leg only, never as the whole request window
     // replacing the other leg's ride.
-    const leg = payload.leg === "out" || payload.leg === "return" ? payload.leg : null;
+    // The leg is inferred the way the server does (`_shift_place_on_car`): a drop-off shift carrying a single time.
+    const inferredLeg = request.trip_type === "drop_off" && !payload.leg ? (returnAt && !departAt ? "return" : departAt && !returnAt ? "out" : null) : null;
+    const leg = payload.leg === "out" || payload.leg === "return" ? payload.leg : inferredLeg;
     const legCar = str(payload.car_id);
     if (leg && legCar) {
       const win = leg === "return" && returnAt
@@ -87,7 +91,7 @@ export function resolveDraftPlacement(
       if (!win) return null;
       return { ...common, type: "shift", carId: legCar, startsAt: win.startsAt, endsAt: win.endsAt,
         originId: str(payload.origin_id) ?? request.origin_id ?? homeId ?? null,
-        destinationId: str(payload.destination_id) ?? request.destination_id, hostRideId: null, replacesRideId: null };
+        destinationId: str(payload.destination_id) ?? request.destination_id, hostRideId: null, replacesRideId: null, leg };
     }
     const ride = rideServing(rides, request.id, proposal.ride_id);
     const carId = str(payload.car_id) ?? ride?.car_id ?? null;

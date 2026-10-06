@@ -92,6 +92,13 @@ export const he = {
     published: "כבר פורסם",
     unresolved: "{{count}} בקשות ללא מענה",
     pending: "{{count}} הצעות ללא תשובה",
+    pendingOne: "הצעה אחת ללא תשובה",
+    unresolvedOne: "בקשה אחת ללא מענה",
+    missingDriverOne: "נסיעה אחת ללא נהג/ת",
+    answeredElsewhere: "{{count}} בקשות נענו בדחייה או בפתרון חיצוני",
+    answeredElsewhereOne: "בקשה אחת נענתה בדחייה או בפתרון חיצוני",
+    pendingTitle: "הצעות שעוד ממתינות לתשובה (הפרסום לא יבטל אותן):",
+    pendingRow: "{{name}} · {{type}} · {{day}} · עד {{expires}}",
     missingDriver: "{{count}} נסיעות ללא נהג/ת",
     placedCount: "שובצו {{placed}} מתוך {{total}} בקשות",
     expiringTitle: "הצעות דחייה/פתרון חיצוני שעוד לא נענו יפוגו עם הפרסום:",
@@ -175,15 +182,17 @@ export const he = {
     cancelHelp: "הבקשה שלך תבוטל. אם נהגת עבור נוסעים נוספים, הנסיעה שלהם תישאר בסידור ותסומן כחסרת נהג/ת עד שמישהו יתנדב. ביטול של נוסע/ת אינו מבטל את נסיעת האחרים.",
     passengerTo: "{{name}} ל{{destination}}",
     passengerFrom: "{{name}} מ{{destination}}",
+    /** R5U2: the car's real path on a pickup/chauffeur ride ("נבו → חדרה → נבו"). */
+    carPath: "מסלול: {{path}}",
     chauffeurLabel: "{{driver}} מסיע את {{passengers}}",
     /** Needs-driver wordings (R2B23): no driver yet, so never a "_____" placeholder. */
     chauffeurLabelNeedsDriver: "נדרש/ת נהג/ת להסיע את {{passengers}}",
     chauffeurDropoffNeedsDriver: "נדרש/ת נהג/ת להסיע את {{name}} ל{{place}} ולחזור",
-    chauffeurPickupNeedsDriver: "נדרש/ת נהג/ת לאסוף את {{name}} מ{{place}} (יציאה {{time}})",
+    chauffeurPickupNeedsDriver: "נדרש/ת נהג/ת לאסוף את {{name}} מ{{place}} (הנסיעה מתחילה ב{{time}})",
     /** REQUIREMENTS §13.93 "Display": a chauffeur ride's single drop-off leg. */
     chauffeurDropoff: "{{driver}} מסיע/ה את {{name}} ל{{place}} וחוזר/ת",
-    /** REQUIREMENTS §13.93 "Display": a chauffeur ride's single pickup leg — `{{time}}` is the ride's own departure. */
-    chauffeurPickup: "{{driver}} אוסף/ת את {{name}} מ{{place}} (יציאה {{time}})",
+    /** REQUIREMENTS §13.93 "Display": a chauffeur ride's single pickup leg — `{{time}}` is when the car starts out, not the pickup time. */
+    chauffeurPickup: "{{driver}} אוסף/ת את {{name}} מ{{place}} (הנסיעה מתחילה ב{{time}})",
     /** REQUIREMENTS §13.93 "Display": a הקפצה relay pair's out-leg — the car is left for a later trip to take on. Fallback when the partner ride isn't known yet. */
     relayLeave: "משאיר/ה את הרכב ב{{place}}",
     /** REQUIREMENTS §13.93 "Display": same out-leg, naming the partner who picks the car up and when (`v_board_rides.relay_partner`). */
@@ -652,6 +661,12 @@ export const he = {
     invalidStops: "פרטי העצירות אינם תקינים",
     invalidPlace: "המקום שנבחר אינו תקין",
     unmergeBaseRequest: "אי אפשר להוציא את הבקשה שהנסיעה נוצרה עבורה",
+    joinLegsNotDropOff: "אפשר לחבר לנסיעה אחת רק הקפצה הלוך וחזור",
+    joinLegsNotTwoRides: "אין שתי נסיעות נפרדות (הלוך ואיסוף) לחיבור",
+    joinLegsSharedRide: "אחת הנסיעות משותפת עם בקשה אחרת — אי אפשר לחבר",
+    joinLegsTwoDrivers: "לכל נסיעה כבר יש נהג/ת אחר/ת — אי אפשר לחבר",
+    joinLegsOrder: "האיסוף מתחיל לפני שההקפצה מסתיימת — אי אפשר לחבר",
+    joinLegsCarBusy: "אין רכב פנוי לכל משך הנסיעה המחוברת",
     requestNotOnRide: "הבקשה כבר אינה חלק מהנסיעה הזאת",
     manualBoostRequiresReason: "יש לציין סיבה להעדפה ידנית",
     requestNotFound: "הבקשה לא נמצאה",

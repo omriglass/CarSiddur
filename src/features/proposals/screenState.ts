@@ -24,7 +24,9 @@ const FINAL_STATUSES = new Set(["accepted", "declined", "expired", "applied", "w
 export function classifyProposalScreenState(input: ClassifyProposalStateInput): ProposalScreenState {
   if (input.errorCode) return { kind: "error", code: input.errorCode };
   if (input.isLoading || !input.summary) return { kind: "loading" };
-  if (input.justAnswered || FINAL_STATUSES.has(input.summary.status)) {
+  // R5B9: this reader already answered (the proposal still waits for the other parties) - nothing to answer, not "pending".
+  const answeredByYou = input.summary.parties.some((party) => party.isYou && party.response !== "pending");
+  if (input.justAnswered || answeredByYou || FINAL_STATUSES.has(input.summary.status)) {
     return { kind: "answered", summary: input.summary };
   }
   return { kind: "answerable", summary: input.summary };

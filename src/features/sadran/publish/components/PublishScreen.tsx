@@ -77,6 +77,16 @@ export function PublishScreen({ departmentId, weekStart }: PublishScreenProps) {
       return request && anchor && (confirmDays ?? []).includes(dateKey(anchor))
         ? [{ id: proposal.id, name: request.requester_full_name ?? "", type: proposal.type, day: dateKey(anchor) }] : [];
     });
+  // R5U3: sent proposals other than deny/external (those expire at publication, listed above) stay pending; show who and until when.
+  const pendingProposalRows = (proposalsQuery.data ?? []).filter((proposal) => proposal.type !== "deny" && proposal.type !== "external" && proposal.status === "sent")
+    .flatMap((proposal) => {
+      const request = (requestsQuery.data ?? []).find((r) => r.id === proposal.request_id);
+      const anchor = request ? requestStart(request) : null;
+      return request && anchor && (confirmDays ?? []).includes(dateKey(anchor))
+        ? [{ id: proposal.id, name: request.requester_full_name ?? "", type: proposal.type, day: dateKey(anchor), expires: proposal.expires_at }] : [];
+    });
+  const countLabel = (count: number, many: "unresolved" | "pending" | "missingDriver") =>
+    count === 1 ? t(`publicationFlow.${many}One` as TranslationKey) : tv(`publicationFlow.${many}` as TranslationKey, { count: String(count) });
   const previewQueries = [requestsQuery, ridesQuery, versionsQuery];
   const unavailable = readinessQuery.isLoading || readinessQuery.isError || !readiness.length || publishMutation.isPending || previewQueries.some((query) => query.isLoading || query.isError);
   const dateLabel = (day: string) => formatDayDate(`${day}T12:00:00Z`);
@@ -127,9 +137,15 @@ export function PublishScreen({ departmentId, weekStart }: PublishScreenProps) {
       <Card><CardContent className="space-y-3 p-4">
         <h2 className="font-semibold">{he.publicationFlow.allQuestion}</h2>
         <p className="text-sm text-muted-foreground" data-testid="publish-placed-count">{tv("publicationFlow.placedCount", {
-          total: String(readiness.reduce((n, day) => n + day.requestCount, 0)),
-          placed: String(readiness.reduce((n, day) => n + day.requestCount - day.unresolvedRequests, 0)),
+          total: String(readiness.reduce((n, day) => n + day.requestCount - (day.answeredRequests ?? 0), 0)),
+          placed: String(readiness.reduce((n, day) => n + day.requestCount - (day.answeredRequests ?? 0) - day.unresolvedRequests, 0)),
         })}</p>
+        {readiness.reduce((n, day) => n + (day.answeredRequests ?? 0), 0) > 0 ? (
+          <p className="text-sm text-muted-foreground" data-testid="publish-answered-count">{(() => {
+            const answered = readiness.reduce((n, day) => n + (day.answeredRequests ?? 0), 0);
+            return answered === 1 ? he.publicationFlow.answeredElsewhereOne : tv("publicationFlow.answeredElsewhere", { count: String(answered) });
+          })()}</p>
+        ) : null}
         <p className="text-sm text-muted-foreground">{readyDays.length === 7 ? he.publicationFlow.allReady : tv("publicationFlow.readiness", { count: String(readyDays.length) })}</p>
         <div className="flex flex-wrap gap-2">
           <Button disabled={unavailable || readiness.some((day) => day.conflictRides > 0 || day.draftProposals > 0)} onClick={() => proposePublish(allDays)}>{publishMutation.isPending ? he.publishScores.calculating : he.publicationFlow.allYes}</Button>
@@ -143,10 +159,10 @@ export function PublishScreen({ departmentId, weekStart }: PublishScreenProps) {
             <span className="space-y-1">
               <span className="block font-medium">{dateLabel(day.day)}{day.published ? ` · ${he.publicationFlow.published}` : ""}</span>
               <span className="block text-xs text-muted-foreground">{day.ready ? he.publicationFlow.ready : [
-                day.unresolvedRequests ? tv("publicationFlow.unresolved", { count: String(day.unresolvedRequests) }) : null,
+                day.unresolvedRequests ? countLabel(day.unresolvedRequests, "unresolved") : null,
                 day.draftProposals ? tv("boardDrafts.publishDayDrafts", { count: String(day.draftProposals) }) : null,
-                day.pendingProposals ? tv("publicationFlow.pending", { count: String(day.pendingProposals) }) : null,
-                day.missingDriverRides ? tv("publicationFlow.missingDriver", { count: String(day.missingDriverRides) }) : null,
+                day.pendingProposals ? countLabel(day.pendingProposals, "pending") : null,
+                day.missingDriverRides ? countLabel(day.missingDriverRides, "missingDriver") : null,
                 day.conflictRides ? tv("publicationFlow.conflicts", { count: String(day.conflictRides) }) : null,
               ].filter(Boolean).join(" · ")}</span>
             </span>
@@ -245,15 +261,24 @@ export function PublishScreen({ departmentId, weekStart }: PublishScreenProps) {
       >
         <ul className="space-y-2 text-sm">{readiness.filter((day) => confirmDays?.includes(day.day) && (day.unresolvedRequests || day.pendingProposals || day.missingDriverRides)).map((day) => <li key={day.day}>
           <span className="font-medium">{dateLabel(day.day)}</span>{" · "}{[
-            day.unresolvedRequests ? tv("publicationFlow.unresolved", { count: String(day.unresolvedRequests) }) : null,
-            day.pendingProposals ? tv("publicationFlow.pending", { count: String(day.pendingProposals) }) : null,
-            day.missingDriverRides ? tv("publicationFlow.missingDriver", { count: String(day.missingDriverRides) }) : null,
+            day.unresolvedRequests ? countLabel(day.unresolvedRequests, "unresolved") : null,
+            day.pendingProposals ? countLabel(day.pendingProposals, "pending") : null,
+            day.missingDriverRides ? countLabel(day.missingDriverRides, "missingDriver") : null,
           ].filter(Boolean).join(" · ")}
         </li>)}</ul>
         {expiringProposals.length ? (
           <div className="mt-3 space-y-1 text-sm" data-testid="publish-expiring-proposals">
             <p className="font-medium text-maintenance">{he.publicationFlow.expiringTitle}</p>
             <ul className="list-disc ps-5">{expiringProposals.map((row) => <li key={row.id}>{tv("publicationFlow.expiringRow", { name: row.name, type: t(`proposal.type.${row.type}` as TranslationKey), day: dateLabel(row.day) })}</li>)}</ul>
+          </div>
+        ) : null}
+        {pendingProposalRows.length ? (
+          <div className="mt-3 space-y-1 text-sm" data-testid="publish-pending-proposals">
+            <p className="font-medium">{he.publicationFlow.pendingTitle}</p>
+            <ul className="list-disc ps-5">{pendingProposalRows.map((row) => <li key={row.id}>{tv("publicationFlow.pendingRow", {
+              name: row.name, type: t(`proposal.type.${row.type}` as TranslationKey), day: dateLabel(row.day),
+              expires: row.expires ? formatDayDate(row.expires) + " " + formatTime(new Date(row.expires)) : "",
+            })}</li>)}</ul>
           </div>
         ) : null}
       </ConfirmDialog>

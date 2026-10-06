@@ -15,7 +15,7 @@ export function suggestionCarIds(suggestion: Suggestion, rides: readonly RideLik
     case "splitLegs":
       ids.push(suggestion.outbound.carId, hostCar(suggestion.outbound.hostRideId), suggestion.return.carId, hostCar(suggestion.return.hostRideId));
       break;
-    case "shiftWithinFlex": case "shiftBeyondFlex": case "convertToRoundTrip": case "chauffeur": case "changeOrigin":
+    case "shiftWithinFlex": case "shiftBeyondFlex": case "convertToRoundTrip": case "chauffeur": case "changeOrigin": case "chainOneWay":
       ids.push(suggestion.carId); break;
     default: break;
   }

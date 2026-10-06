@@ -165,9 +165,13 @@ begin
   exception when others then assert sqlerrm='series_span_invalid', format('out-of-series refusal, got %s',sqlerrm); end;
   begin
     perform public.create_proposal(qS,null,'shift',
-      jsonb_build_object('car_id',car40,'series_span',jsonb_build_object('depart_at',((w+1)+time '09:00') at time zone 'Asia/Jerusalem','return_at',((w+1)+time '17:00') at time zone 'Asia/Jerusalem')),'x');
-    raise exception 'single-day span accepted';
-  exception when others then assert sqlerrm='series_span_invalid', format('single-day refusal, got %s',sqlerrm); end;
+      jsonb_build_object('car_id',car40,'series_span',jsonb_build_object('depart_at',((w+3)+time '09:00') at time zone 'Asia/Jerusalem','return_at',((w+2)+time '17:00') at time zone 'Asia/Jerusalem')),'x');
+    raise exception 'inverted span accepted';
+  exception when others then assert sqlerrm='series_span_invalid', format('inverted-span refusal, got %s',sqlerrm); end;
+  -- REQ §13.105 d: a single day is allowed (it used to be refused); the feasibility probe leaves nothing behind
+  prop:=public.create_proposal(qS,null,'shift',
+    jsonb_build_object('car_id',car40,'series_span',jsonb_build_object('depart_at',((w+1)+time '09:00') at time zone 'Asia/Jerusalem','return_at',((w+1)+time '17:00') at time zone 'Asia/Jerusalem')),'x');
+  update public.proposals set status='withdrawn' where id=prop;
   -- a busy car on a kept day is refused at creation time (probe), and the probe leaves nothing behind
   insert into public.rides(department_id,week_start,car_id,starts_at,ends_at,origin_id,destination_id,driver_id,status,created_by)
     values(dept,w,car42,((w+1)+time '10:00') at time zone 'Asia/Jerusalem',((w+1)+time '12:00') at time zone 'Asia/Jerusalem',home,home,m2,'draft',manager);

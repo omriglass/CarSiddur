@@ -36,6 +36,18 @@ describe("timeChangeLine", () => {
   });
 });
 
+describe("proposalTemplateVariant - R5B11 same times", () => {
+  it("an unplaced member offered only a car gets the same-times variant", () => {
+    expect(proposalTemplateVariant("shift", { car_id: "c" }, { timesUnchanged: true })).toBe("shift_same_times");
+  });
+  it("not when placed, when a time changes, or for a fewer-days span", () => {
+    expect(proposalTemplateVariant("shift", { car_id: "c" }, { timesUnchanged: true, placed: true })).toBe("shift_placed");
+    expect(proposalTemplateVariant("shift", { car_id: "c" }, { timesUnchanged: false })).toBe("shift");
+    expect(proposalTemplateVariant("shift", { car_id: "c", series_span: {} }, { timesUnchanged: true })).toBe("shift");
+    expect(proposalTemplateVariant("shift", {}, { timesUnchanged: true })).toBe("shift");
+  });
+});
+
 describe("proposalTemplateVariant", () => {
   it("has two external variants and no own-car one", () => {
     expect(proposalTemplateVariant("external", {})).toBe("external_none");

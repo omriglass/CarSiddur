@@ -15,6 +15,7 @@ const TEMPLATES: Record<string, string> = {
   PLACED_SERIES: 'שובץ/ה כחלק מבקשה רב-יומית ל{car} ({index}/{count})',
   CAR_BALANCED_MILEAGE: 'נבחר {car} לאיזון קילומטראז׳ בין הרכבים',
   PLACED_NEEDS_DRIVER: 'שובץ ל{car} ללא נהג/ת קבוע/ה; דרוש/ה מתנדב/ת או אורח/ת שיסיע/תסיע',
+  PLACED_PICKUP_FROM_CAR_AT_X: 'שובץ ל{car}: הרכב כבר ב{place}; המבקש/ת נוהג/ת בו הביתה ומגיע/ה ב-{ret}',
   PLACED_CHAUFFEUR_NO_RETURNER:
     'שובץ ל{car} כהסעה ל{dest} ({dep}–{ret}): לא נמצא/ה מי שמחזיר/ה את הרכב; דרוש/ה נהג/ת מתנדב/ת',
 
@@ -41,6 +42,8 @@ const TEMPLATES: Record<string, string> = {
   SUGGEST_ROUND_TRIP: 'במקום להשאיר את הרכב ב{dest}: לקחת אותו הלוך ושוב ולחזור ב-{ret} — דורש הסכמה',
   SUGGEST_CHAUFFEUR: 'הסעה: נהג/ת מתנדב/ת מסיע/ה ל{dest} ב-{dep} וחוזר/ת עם הרכב (כ-{minutes} דק׳); הסדרן/ית משבץ/ת נהג/ת',
   SUGGEST_CHANGE_ORIGIN: 'יש רכב פנוי ב{origin} לאורך כל החלון המבוקש; ניתן להציע יציאה מ{origin} עם {car} — דורש הסכמה',
+  SUGGEST_CHAIN_ONE_WAY: '{car} נשאר/ת ב{place} אחרי הנסיעה של {member}; אפשר לשבץ אותך עליו/ה ל{dest} ב-{dep} — דורש הסכמה',
+  SUGGEST_CHAIN_ONE_WAY_ANON: '{car} נשאר/ת ב{place} אחרי נסיעה קודמת; אפשר לשבץ אותך עליו/ה ל{dest} ב-{dep} — דורש הסכמה',
   SUGGEST_EXTERNAL_CAB: 'ניתן להסתדר במונית לנסיעה זו',
   SUGGEST_EXTERNAL_RENTAL: 'משך הנסיעה ארוך; כדאי לשקול השכרת רכב',
   SUGGEST_EXTERNAL_PT: 'יש תחבורה ציבורית סבירה ל{dest}',

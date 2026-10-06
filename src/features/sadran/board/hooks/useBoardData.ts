@@ -9,7 +9,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { datesOfWeek, todayInJerusalem } from "@/components/dateFieldDates";
 import { tv } from "@/i18n/he";
-import { TZ, dateKey } from "@/lib/time";
+import { TZ, dateKey, formatTime } from "@/lib/time";
 import { ridePublicDetails } from "@/lib/ridePublicDetails";
 import { ridePassengerSummary } from "@/lib/ridePassengerSummary";
 import { fetchCarSeatConfigs } from "@/features/fleet/api";
@@ -32,7 +32,7 @@ import { viaLabel } from "@/lib/routeLabel";
 import { addedGuestsOf, mergePayloadLeg, previewMerge } from "../mergeProposal";
 import { connectedPairRideIds, unmetItemId, unmetRequestViews, viewsOnDay } from "../unmetLegs";
 import { isUnmetStatus } from "../../unmetStatuses";
-import { requestRouteLine } from "../requestRoute";
+import { requestRouteLine, tripTypeLabel } from "../requestRoute";
 import { resolveDraftPlacements } from "../draftOverlay";
 import { awayLocationAt } from "../geometry";
 import { packPhantomLanes, requestStart, requestWindow, standaloneChauffeurWindow, withRouteTravelMinutes } from "../phantomLanes";
@@ -626,7 +626,7 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
         : undefined,
       // REQUIREMENTS §13.93/SOLVER.md §1.3a: a warning only, shown on the last day of the week.
       weekEndAwayWarning: weekEndAway
-        ? tv("sadranBoard.carAwayAtWeekEnd", { place: destinationNameById.get(weekEndAway.locationId) ?? "" })
+        ? tv("sadranBoard.carAwayAtWeekEnd", { car: c.name, place: destinationNameById.get(weekEndAway.locationId) ?? "" })
         : undefined,
     };
   });
@@ -705,7 +705,11 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
       seriesIndex: r.series_index,
       seriesCount: r.series_count,
       chainBrokenWarning: r.id && chainBreakByRideId.has(r.id)
-        ? tv("sadranBoard.carNotHereWarning", { place: destinationNameById.get(chainBreakByRideId.get(r.id)!.carLocationId) ?? "" })
+        ? tv("sadranBoard.carNotHereWarning", {
+          // R5U6: name the ride (time + who) so the warning is readable away from its block (list mode, tooltips, screen readers).
+          ride: [r.starts_at ? formatTime(new Date(r.starts_at)) : "", ...servedOf(r).map((entry) => entry.requester?.trim().split(/\s+/)[0] ?? "").filter(Boolean)].filter(Boolean).join(" · "),
+          place: destinationNameById.get(chainBreakByRideId.get(r.id)!.carLocationId) ?? "",
+        })
         : undefined,
     }));
 
@@ -735,7 +739,10 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
       startMinutes: Math.round((Date.parse(placement.startsAt) - Date.parse(dayStartIso(selectedDay))) / 60_000),
       endMinutes: Math.round((Date.parse(placement.endsAt) - Date.parse(dayStartIso(selectedDay))) / 60_000),
       // R3B19: an origin-change draft is drawn with the NEW origin (never the borrowed old label).
-      label: (placement.type === "origin" ? undefined : original?.label) ?? (request
+      label: (placement.type === "origin" ? undefined : original?.label) ?? (request && placement.leg === "return" && request.trip_type === "drop_off"
+        // R5B11: a pickup draft reads "איסוף מ<place>" (never just "ל<place>").
+        ? `${request.requester_full_name ?? ""} · ${tv("boardDrafts.pickupLabel", { place: request.destination_resolved_name ?? "" })} · ${tripTypeLabel(request.trip_type)}`
+        : request
         ? `${request.requester_full_name ?? ""} · ${requestRouteLine({ originId: placement.originId ?? request.origin_id,
           originName: placement.originId && placement.originId !== request.origin_id ? destinationNameById.get(placement.originId) ?? request.origin_resolved_name : request.origin_resolved_name,
           originText: placement.originId && placement.originId !== request.origin_id ? null : request.origin_text, destination: request.destination_resolved_name ?? "", tripType: request.trip_type }, department?.home_destination_id)}`

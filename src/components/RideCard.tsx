@@ -6,6 +6,7 @@ import { he, tv } from "@/i18n/he";
 import { formatDayDate } from "@/lib/dayLabels";
 import { rideTypeColorClasses } from "@/lib/rideTypeColors";
 import { dateKey, formatTime } from "@/lib/time";
+import { rideSpanKind } from "@/lib/wholeDay";
 import { cn } from "@/lib/utils";
 
 /**
@@ -62,6 +63,7 @@ export function RideCard({ ride, onClick }: RideCardProps) {
   const isRelay = ride.originName !== ride.destinationName;
   const start = new Date(ride.startsAt);
   const end = ride.endsAt ? new Date(ride.endsAt) : null;
+  const spanKind = rideSpanKind(ride.startsAt, ride.endsAt);
   const typeColors = rideTypeColorClasses(ride.rideTypeCode);
   const dayLabel = (date: Date) => formatDayDate(date);
   const endsOnAnotherDay = end && dateKey(start) !== dateKey(end);
@@ -92,8 +94,12 @@ export function RideCard({ ride, onClick }: RideCardProps) {
           {ride.showDay ? <p className="font-bold">{dayLabel(start)}</p> : null}
           <div className="flex items-center justify-between gap-2">
             <span dir="ltr" className={cn("tabular-nums", ride.isMine ? "font-bold" : "font-medium")}>
-              {formatTime(start)}
-              {end ? <>–{ride.showDay && endsOnAnotherDay ? <bdi>{dayLabel(end)} </bdi> : null}{formatTime(end)}</> : " →"}
+              {spanKind === "all_day" ? <span dir="rtl">{he.flex.anyTime}</span>
+                : spanKind === "return_only" && end ? <span dir="rtl">{he.field.return} {formatTime(end)}</span>
+                : spanKind === "departure_only" ? <>{formatTime(start)} →</> : <>
+                  {formatTime(start)}
+                  {end ? <>–{ride.showDay && endsOnAnotherDay ? <bdi>{dayLabel(end)} </bdi> : null}{formatTime(end)}</> : " →"}
+                </>}
             </span>
             {ride.carType === "temporary" ? (
               <span className="flex items-center gap-1 rounded-full bg-booked/10 px-2 py-0.5 text-xs font-medium text-booked">

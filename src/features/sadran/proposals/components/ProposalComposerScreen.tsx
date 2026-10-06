@@ -30,18 +30,19 @@ import { formatDayDate } from "@/lib/dayLabels";
 import { routeLabel } from "@/lib/routeLabel";
 import { formatTime } from "@/lib/time";
 import { DEFAULT_STOP_MINUTES, homeTravelEdges, makeHop, makeHopKm } from "@/lib/rideRoute";
-import { mergeLegSummary, mergePayloadLeg, previewMerge } from "../../board/mergeProposal";
+import { applyServerMergeTimes, mergeLegSummary, mergePayloadLeg, previewMerge } from "../../board/mergeProposal";
 import { useQuery } from "@tanstack/react-query";
 
 import { renderTemplate } from "../waLink";
 import { atTime, buildProposalPayload, resolveShiftTimes, seriesSpanOf } from "../buildProposalPayload";
 import { seriesOriginalOf } from "../../board/draftInput";
-import { combinedSummaryText, proposalTemplateVariant, externalSuggestionFor, proposalPreviewText } from "../proposalText";
+import { combinedSummaryText, proposalTemplateVariant, externalSuggestionFor, proposalPreviewText, shiftTimesUnchanged } from "../proposalText";
 import { WhatsappDialog } from "./WhatsappDialog";
 import {
   useApplyProposalMutation,
   useCreateProposalMutation,
   useDepartmentSettings,
+  useMergePreview,
   usePlaceTravelForWeek,
   useProfilesByIds,
   useProposalParties,
@@ -176,14 +177,18 @@ export function ProposalComposerScreen({ departmentId, weekStart }: ProposalComp
   const placeTravelQuery = usePlaceTravelForWeek(departmentId, weekStart, type === "merge");
   const settingsQuery = useDepartmentSettings(type === "merge" ? departmentId : undefined);
   const mergeEdges = [...(placeTravelQuery.data ?? []), ...homeTravelEdges(homeDestinationId, destinationsQuery.data ?? [])];
-  const mergePreview = type === "merge" && hostRideQuery.data && request
+  const mergeLegValue = request ? mergePayloadLeg(mergePayload, request) : "out";
+  // R5B5 / U2: the window and the joiner's own times are the server's `merge_preview`, the same numbers the popup and every message show.
+  const serverMergeQuery = useMergePreview(hostRideQuery.data?.id, request?.id, mergeLegValue, type === "merge");
+  const twinPreview = type === "merge" && hostRideQuery.data && request
     ? previewMerge(hostRideQuery.data, request, mergePayloadLeg(mergePayload, request), {
         // R4B5: the same context as the board (hop + km + detour limits) so both show the same times.
         hop: makeHop(mergeEdges), hopKm: makeHopKm(mergeEdges), stopMinutes: settingsQuery.data?.stop_minutes ?? DEFAULT_STOP_MINUTES, homeId: homeDestinationId,
         detourLimitMinutes: settingsQuery.data?.detour_limit_minutes, detourLimitKm: settingsQuery.data?.detour_limit_km,
       })
     : null;
-  const combinedStart = typeof mergePayload?.starts_at === "string" ? mergePayload.starts_at : hostRideQuery.data?.starts_at;
+  const mergePreview = request ? applyServerMergeTimes(twinPreview, serverMergeQuery.data, request) : twinPreview;
+  const combinedStart = typeof mergePayload?.starts_at === "string" ? mergePayload.starts_at : (mergePreview?.startsAt ?? hostRideQuery.data?.starts_at);
   const combinedEnd = typeof mergePayload?.ends_at === "string" ? mergePayload.ends_at : (mergePreview?.endsAt ?? hostRideQuery.data?.ends_at);
   // `origin` (REQ §13.93, SOLVER §3.15): never editable in the composer — the board already
   // picked the free car/location pair, this screen only shows and sends it.
@@ -197,6 +202,7 @@ export function ProposalComposerScreen({ departmentId, weekStart }: ProposalComp
     hostHasDriver: !!hostRideQuery.data?.driver_id, originAway,
     destinationIsHome: !!homeDestinationId && request?.destination_id === homeDestinationId,
     placed: request?.status === "assigned" || request?.status === "merged",
+    timesUnchanged: type === "shift" && !!request && shiftTimesUnchanged({ type, request, proposedDepartAt, proposedReturnAt }),
   });
   const template = variant ? (templatesQuery.data ?? []).find((t) => t.variant === variant) : undefined;
   const effectiveReason = reasonInput.trim() || he.sadranProposal.defaultReason;
@@ -349,7 +355,7 @@ export function ProposalComposerScreen({ departmentId, weekStart }: ProposalComp
             <p className="text-muted-foreground">{he.rideCoordination.combinedConsent}</p>
           </div> : null}
           <div className="flex items-center gap-2">
-            <span className="font-medium">{he.field.rideType}:</span>
+            <span className="font-medium">{he.sadranProposal.typeLabel}:</span>
             <Select value={type} disabled>
               <SelectTrigger className="w-48">
                 <SelectValue>{he.proposal.type[type as "shift" | "merge" | "deny" | "external" | "origin"]}</SelectValue>

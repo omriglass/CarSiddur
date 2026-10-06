@@ -145,6 +145,52 @@ export function previewMerge(host: BoardRide, request: WeekRequestRow, leg: Merg
 }
 
 /**
+ * R5B5 / TODO U2: the server's `merge_preview` (SQL `_merge_check` + `_joiner_times`) is the one
+ * source of the merged ride's window and the joiner's own times; the popup, the composer and the
+ * draft text show these instead of the TS route twin's estimate (which still drives the route
+ * picture and the synchronous drag validity).
+ */
+export interface ServerMergePreview {
+  ok: boolean;
+  code: string | null;
+  /** The ride's window after the merge. */
+  newStartsAt: string | null;
+  newEndsAt: string | null;
+  joinerDepartAt: string | null;
+  joinerReturnAt: string | null;
+}
+
+const isoOrNull = (value: unknown): string | null => (typeof value === "string" && value ? value : null);
+
+export function parseServerMergePreview(raw: unknown): ServerMergePreview | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const r = raw as Record<string, unknown>;
+  return {
+    ok: r.ok === true,
+    code: typeof r.code === "string" ? r.code : null,
+    newStartsAt: isoOrNull(r.new_starts_at),
+    newEndsAt: isoOrNull(r.new_ends_at),
+    joinerDepartAt: isoOrNull(r.joiner_depart_at),
+    joinerReturnAt: isoOrNull(r.joiner_return_at),
+  };
+}
+
+/** `preview` with the times the server computed (display only; the route and validity stay the twin's). */
+export function applyServerMergeTimes(preview: MergePreview | null, server: ServerMergePreview | null | undefined, request: Pick<WeekRequestRow, "depart_at" | "return_at">): MergePreview | null {
+  if (!preview || !server || !preview.valid) return preview;
+  const boardEta = preview.boardLeg === "return" ? (server.joinerReturnAt ?? preview.boardEta) : (server.joinerDepartAt ?? preview.boardEta);
+  const requestedAt = preview.boardLeg === "return" ? request.return_at : request.depart_at;
+  const timeChanges = !!boardEta && !!requestedAt && Math.round(Date.parse(boardEta) / 60_000) !== Math.round(Date.parse(requestedAt) / 60_000);
+  return {
+    ...preview,
+    startsAt: server.newStartsAt ?? preview.startsAt,
+    endsAt: server.newEndsAt ?? preview.endsAt,
+    boardEta, requestedAt: requestedAt ?? null, timeChanges,
+    joinerOutAt: server.joinerDepartAt, joinerReturnAt: server.joinerReturnAt,
+  };
+}
+
+/**
  * REQ §13.95 (H1): why dropping `request` onto `host` is not a valid merge, or `null` when it is
  * (or when the host has no times / route data to judge by).
  */

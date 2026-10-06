@@ -1,11 +1,9 @@
 // Pure rendering of a proposal's WhatsApp preview text, shared by the composer and the board's
 // "draft" action (REQ §13.94): a draft saved from the board stores the same `reason_he` the
 // composer would have, so opening it later and sending it behaves identically.
-import { formatInTimeZone } from "date-fns-tz";
-
 import { he, tv } from "@/i18n/he";
 import { formatDayDate } from "@/lib/dayLabels";
-import { TZ, formatTime } from "@/lib/time";
+import { formatTime } from "@/lib/time";
 import type { ProposalType } from "@/lib/enums";
 
 import { renderTemplate } from "./waLink";
@@ -31,7 +29,7 @@ export const PROPOSAL_TEMPLATE_VARIANT: Record<ProposalType, string | null> = {
 export function proposalTemplateVariant(
   type: ProposalType,
   payload?: Record<string, unknown> | null,
-  opts?: { hostHasDriver?: boolean; originAway?: boolean; destinationIsHome?: boolean; placed?: boolean },
+  opts?: { hostHasDriver?: boolean; originAway?: boolean; destinationIsHome?: boolean; placed?: boolean; timesUnchanged?: boolean },
 ): string | null {
   // "No car in your town" needs a list-place origin other than home (SQL `proposal_reader_vars`); when the trip
   // goes home there is no "get to the kibbutz yourself" advice (`external_city_home`, REQ §13.102 R2B10).
@@ -40,6 +38,8 @@ export function proposalTemplateVariant(
   }
   // A member who already has a ride is offered a *move*, never "we could place you" (`shift_placed`/`origin_placed`).
   if (opts?.placed && (type === "shift" || type === "origin")) return `${type}_placed`;
+  // R5B11: an unplaced member offered a car at their own times - "a car is free for you", not "if we move" (SQL `shift_same_times`).
+  if (type === "shift" && opts?.timesUnchanged && payload?.car_id && !payload.series_span) return "shift_same_times";
   if (type === "merge" && opts?.hostHasDriver === false) return "merge_passenger_no_driver";
   // REQ §13.102 d: out on one ride, back on another - one proposal (`merge_passenger_split` in SQL).
   if (type === "merge" && Array.isArray(payload?.legs)
@@ -139,7 +139,8 @@ export function proposalTemplateVars(input: ProposalTextInput): Record<string, s
     destination: input.destinationName,
     route: input.route,
     day: request?.depart_at ? formatDayDate(request.depart_at) : "",
-    date: request?.depart_at ? formatInTimeZone(new Date(request.depart_at), TZ, "d.M") : "",
+    // R5B11: a date never appears without its weekday.
+    date: request?.depart_at ? formatDayDate(request.depart_at) : "",
     depart: times(request?.depart_at),
     return: times(request?.return_at),
     newDepart: times(input.proposedDepartAt),
@@ -186,7 +187,7 @@ export function combinedSummaryText(input: ProposalTextInput): string {
 }
 
 /** A shift whose proposed times equal the request's own changes nothing about the times. */
-export function shiftTimesUnchanged(input: ProposalTextInput): boolean {
+export function shiftTimesUnchanged(input: Pick<ProposalTextInput, "type" | "request" | "proposedDepartAt" | "proposedReturnAt">): boolean {
   if (input.type !== "shift") return false;
   const { request } = input;
   const sameDepart = !input.proposedDepartAt || input.proposedDepartAt === request?.depart_at;

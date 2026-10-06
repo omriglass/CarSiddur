@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { makeHop } from "@/lib/rideRoute";
 
-import { addedGuestsOf, combineMergeLegs, defaultMergeLeg, mergeLegForCard, mergeLegOptions, mergePayloadFromLegs, mergePayloadLegs, mergePayload, mergePayloadLeg, previewMerge } from "./mergeProposal";
+import { addedGuestsOf, applyServerMergeTimes, combineMergeLegs, parseServerMergePreview, defaultMergeLeg, mergeLegForCard, mergeLegOptions, mergePayloadFromLegs, mergePayloadLegs, mergePayload, mergePayloadLeg, previewMerge } from "./mergeProposal";
 
 import type { BoardRide, WeekRequestRow } from "../api";
 
@@ -105,5 +105,36 @@ describe("split merge helpers (REQ 102 d)", () => {
   it("replaces a draft for the same leg, and collapses out+return on one ride to both", () => {
     expect(combineMergeLegs([{ ride_id: "A", leg: "out" }], { ride_id: "B", leg: "out" }).replaced).toBe(true);
     expect(combineMergeLegs([{ ride_id: "A", leg: "out" }], { ride_id: "A", leg: "return" }).legs).toEqual([{ ride_id: "A", leg: "both" }]);
+  });
+});
+
+describe("server merge times (R5B5 / TODO U2)", () => {
+  const raw = {
+    ok: true, code: null, new_starts_at: "2026-10-11T04:00:00+00:00", new_ends_at: "2026-10-11T07:15:00+00:00",
+    joiner_depart_at: "2026-10-11T04:00:00+00:00", joiner_return_at: null, joiner_old_depart_at: "2026-10-11T03:45:00+00:00",
+  };
+  it("parses merge_preview's jsonb into the fields the UI reads", () => {
+    expect(parseServerMergePreview(raw)).toEqual({ ok: true, code: null, newStartsAt: raw.new_starts_at, newEndsAt: raw.new_ends_at, joinerDepartAt: raw.joiner_depart_at, joinerReturnAt: null });
+    expect(parseServerMergePreview(null)).toBeNull();
+    expect(parseServerMergePreview([1])).toBeNull();
+    expect(parseServerMergePreview({ ok: false, code: "seats" })?.ok).toBe(false);
+  });
+  it("overrides the twin's window and the joiner's own times with the server's", () => {
+    const guest = request({ trip_shape: "one_way_to" });
+    const twin = previewMerge(host, guest, "out", { hop, stopMinutes: 0, homeId: "H" });
+    expect(twin).not.toBeNull();
+    const shown = applyServerMergeTimes(twin, parseServerMergePreview(raw), guest)!;
+    expect(shown.startsAt).toBe(raw.new_starts_at);
+    expect(shown.endsAt).toBe(raw.new_ends_at);
+    expect(shown.joinerOutAt).toBe(raw.joiner_depart_at);
+    expect(shown.joinerReturnAt).toBeNull();
+    expect(shown.boardEta).toBe(raw.joiner_depart_at);
+    expect(shown.timeChanges).toBe(false);   // requested 04:00 = the server's joiner time
+  });
+  it("leaves the twin untouched without a server answer or for an invalid merge", () => {
+    const guest = request({ trip_shape: "one_way_to" });
+    const twin = previewMerge(host, guest, "out", { hop, stopMinutes: 0, homeId: "H" });
+    expect(applyServerMergeTimes(twin, null, guest)).toBe(twin);
+    expect(applyServerMergeTimes(null, parseServerMergePreview(raw), guest)).toBeNull();
   });
 });

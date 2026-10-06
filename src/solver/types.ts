@@ -386,6 +386,7 @@ export type SuggestionKind =
   | 'convertToRoundTrip'
   | 'chauffeur'
   | 'changeOrigin'
+  | 'chainOneWay'
   | 'externalHint'
   | 'deny';
 
@@ -457,6 +458,23 @@ export type Suggestion =
       carId: string;
       originId: string;
       window: Window;
+    })
+  | (SuggestionBase & {
+      /**
+       * REQUIREMENTS §13.105 a (QA run 5 R5Q1): another member's one-way ride ends at this unmet one-way
+       * request's origin X and leaves the car standing there, so the request can follow on the same car
+       * (`window` = the request's own length, starting at its stated departure or the earliest slot the
+       * car is free again, <= `beyondFlexMaxMinutes` later; `shift` says how far that is). Shown to the
+       * Sadran only, never automatic. SOLVER §3.15 maps this to proposal type `shift`, payload
+       * `{ car_id: carId, depart_at }` (the requester consents when the time moves).
+       */
+      kind: 'chainOneWay';
+      carId: string;
+      window: Window;
+      shift: { departureMin: number; returnMin: number };
+      /** the ride the request follows, and the first request it serves (the other member) */
+      afterRideId: string;
+      afterRequestId?: string;
     })
   | (SuggestionBase & {
       kind: 'externalHint';

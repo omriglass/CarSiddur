@@ -52,6 +52,7 @@ var TEMPLATES = {
   PLACED_SERIES: "\u05E9\u05D5\u05D1\u05E5/\u05D4 \u05DB\u05D7\u05DC\u05E7 \u05DE\u05D1\u05E7\u05E9\u05D4 \u05E8\u05D1-\u05D9\u05D5\u05DE\u05D9\u05EA \u05DC{car} ({index}/{count})",
   CAR_BALANCED_MILEAGE: "\u05E0\u05D1\u05D7\u05E8 {car} \u05DC\u05D0\u05D9\u05D6\u05D5\u05DF \u05E7\u05D9\u05DC\u05D5\u05DE\u05D8\u05E8\u05D0\u05D6\u05F3 \u05D1\u05D9\u05DF \u05D4\u05E8\u05DB\u05D1\u05D9\u05DD",
   PLACED_NEEDS_DRIVER: "\u05E9\u05D5\u05D1\u05E5 \u05DC{car} \u05DC\u05DC\u05D0 \u05E0\u05D4\u05D2/\u05EA \u05E7\u05D1\u05D5\u05E2/\u05D4; \u05D3\u05E8\u05D5\u05E9/\u05D4 \u05DE\u05EA\u05E0\u05D3\u05D1/\u05EA \u05D0\u05D5 \u05D0\u05D5\u05E8\u05D7/\u05EA \u05E9\u05D9\u05E1\u05D9\u05E2/\u05EA\u05E1\u05D9\u05E2",
+  PLACED_PICKUP_FROM_CAR_AT_X: "\u05E9\u05D5\u05D1\u05E5 \u05DC{car}: \u05D4\u05E8\u05DB\u05D1 \u05DB\u05D1\u05E8 \u05D1{place}; \u05D4\u05DE\u05D1\u05E7\u05E9/\u05EA \u05E0\u05D5\u05D4\u05D2/\u05EA \u05D1\u05D5 \u05D4\u05D1\u05D9\u05EA\u05D4 \u05D5\u05DE\u05D2\u05D9\u05E2/\u05D4 \u05D1-{ret}",
   PLACED_CHAUFFEUR_NO_RETURNER: "\u05E9\u05D5\u05D1\u05E5 \u05DC{car} \u05DB\u05D4\u05E1\u05E2\u05D4 \u05DC{dest} ({dep}\u2013{ret}): \u05DC\u05D0 \u05E0\u05DE\u05E6\u05D0/\u05D4 \u05DE\u05D9 \u05E9\u05DE\u05D7\u05D6\u05D9\u05E8/\u05D4 \u05D0\u05EA \u05D4\u05E8\u05DB\u05D1; \u05D3\u05E8\u05D5\u05E9/\u05D4 \u05E0\u05D4\u05D2/\u05EA \u05DE\u05EA\u05E0\u05D3\u05D1/\u05EA",
   // Unmet reasons
   UNMET_NEEDS_LARGE_TRUNK: "\u05E6\u05E8\u05D9\u05DA \u05E8\u05DB\u05D1 \u05E2\u05DD \u05EA\u05D0 \u05DE\u05D8\u05E2\u05DF \u05D2\u05D3\u05D5\u05DC",
@@ -75,6 +76,8 @@ var TEMPLATES = {
   SUGGEST_ROUND_TRIP: "\u05D1\u05DE\u05E7\u05D5\u05DD \u05DC\u05D4\u05E9\u05D0\u05D9\u05E8 \u05D0\u05EA \u05D4\u05E8\u05DB\u05D1 \u05D1{dest}: \u05DC\u05E7\u05D7\u05EA \u05D0\u05D5\u05EA\u05D5 \u05D4\u05DC\u05D5\u05DA \u05D5\u05E9\u05D5\u05D1 \u05D5\u05DC\u05D7\u05D6\u05D5\u05E8 \u05D1-{ret} \u2014 \u05D3\u05D5\u05E8\u05E9 \u05D4\u05E1\u05DB\u05DE\u05D4",
   SUGGEST_CHAUFFEUR: "\u05D4\u05E1\u05E2\u05D4: \u05E0\u05D4\u05D2/\u05EA \u05DE\u05EA\u05E0\u05D3\u05D1/\u05EA \u05DE\u05E1\u05D9\u05E2/\u05D4 \u05DC{dest} \u05D1-{dep} \u05D5\u05D7\u05D5\u05D6\u05E8/\u05EA \u05E2\u05DD \u05D4\u05E8\u05DB\u05D1 (\u05DB-{minutes} \u05D3\u05E7\u05F3); \u05D4\u05E1\u05D3\u05E8\u05DF/\u05D9\u05EA \u05DE\u05E9\u05D1\u05E5/\u05EA \u05E0\u05D4\u05D2/\u05EA",
   SUGGEST_CHANGE_ORIGIN: "\u05D9\u05E9 \u05E8\u05DB\u05D1 \u05E4\u05E0\u05D5\u05D9 \u05D1{origin} \u05DC\u05D0\u05D5\u05E8\u05DA \u05DB\u05DC \u05D4\u05D7\u05DC\u05D5\u05DF \u05D4\u05DE\u05D1\u05D5\u05E7\u05E9; \u05E0\u05D9\u05EA\u05DF \u05DC\u05D4\u05E6\u05D9\u05E2 \u05D9\u05E6\u05D9\u05D0\u05D4 \u05DE{origin} \u05E2\u05DD {car} \u2014 \u05D3\u05D5\u05E8\u05E9 \u05D4\u05E1\u05DB\u05DE\u05D4",
+  SUGGEST_CHAIN_ONE_WAY: "{car} \u05E0\u05E9\u05D0\u05E8/\u05EA \u05D1{place} \u05D0\u05D7\u05E8\u05D9 \u05D4\u05E0\u05E1\u05D9\u05E2\u05D4 \u05E9\u05DC {member}; \u05D0\u05E4\u05E9\u05E8 \u05DC\u05E9\u05D1\u05E5 \u05D0\u05D5\u05EA\u05DA \u05E2\u05DC\u05D9\u05D5/\u05D4 \u05DC{dest} \u05D1-{dep} \u2014 \u05D3\u05D5\u05E8\u05E9 \u05D4\u05E1\u05DB\u05DE\u05D4",
+  SUGGEST_CHAIN_ONE_WAY_ANON: "{car} \u05E0\u05E9\u05D0\u05E8/\u05EA \u05D1{place} \u05D0\u05D7\u05E8\u05D9 \u05E0\u05E1\u05D9\u05E2\u05D4 \u05E7\u05D5\u05D3\u05DE\u05EA; \u05D0\u05E4\u05E9\u05E8 \u05DC\u05E9\u05D1\u05E5 \u05D0\u05D5\u05EA\u05DA \u05E2\u05DC\u05D9\u05D5/\u05D4 \u05DC{dest} \u05D1-{dep} \u2014 \u05D3\u05D5\u05E8\u05E9 \u05D4\u05E1\u05DB\u05DE\u05D4",
   SUGGEST_EXTERNAL_CAB: "\u05E0\u05D9\u05EA\u05DF \u05DC\u05D4\u05E1\u05EA\u05D3\u05E8 \u05D1\u05DE\u05D5\u05E0\u05D9\u05EA \u05DC\u05E0\u05E1\u05D9\u05E2\u05D4 \u05D6\u05D5",
   SUGGEST_EXTERNAL_RENTAL: "\u05DE\u05E9\u05DA \u05D4\u05E0\u05E1\u05D9\u05E2\u05D4 \u05D0\u05E8\u05D5\u05DA; \u05DB\u05D3\u05D0\u05D9 \u05DC\u05E9\u05E7\u05D5\u05DC \u05D4\u05E9\u05DB\u05E8\u05EA \u05E8\u05DB\u05D1",
   SUGGEST_EXTERNAL_PT: "\u05D9\u05E9 \u05EA\u05D7\u05D1\u05D5\u05E8\u05D4 \u05E6\u05D9\u05D1\u05D5\u05E8\u05D9\u05EA \u05E1\u05D1\u05D9\u05E8\u05D4 \u05DC{dest}",
@@ -2427,7 +2430,7 @@ function waitContested(all, waitStart, waitEnd, self, sharedCars) {
   }
   return demand.size >= Math.max(1, sharedCars);
 }
-function pairRelays(requests, cars, others = []) {
+function pairRelays(requests, cars, others = [], shortWaitSlots = 0) {
   const outs = requests.filter(isRelayOut);
   const rets = requests.filter(isRelayReturn);
   const candidates = [];
@@ -2439,7 +2442,7 @@ function pairRelays(requests, cars, others = []) {
   }
   const isOwn = (c) => c.out.request.splitFrom !== void 0 && c.out.request.splitFrom === c.ret.request.splitFrom;
   const sharedCars = cars.filter((c) => c.type === "shared").length;
-  const contested = (c) => waitContested([...requests, ...others], c.outWindow.end, c.returnWindow.start, [c.out, c.ret], sharedCars);
+  const contested = (c) => !(isOwn(c) && c.returnWindow.start - c.outWindow.end <= shortWaitSlots) && waitContested([...requests, ...others], c.outWindow.end, c.returnWindow.start, [c.out, c.ret], sharedCars);
   for (let i = candidates.length - 1; i >= 0; i--) {
     const c = candidates[i];
     if (c && contested(c)) candidates.splice(i, 1);
@@ -2474,6 +2477,69 @@ function pairRelays(requests, cars, others = []) {
   }
   const unpaired = requests.filter((nr) => isRelayOut(nr) && !usedOut.has(nr.id) || isRelayReturn(nr) && !usedRet.has(nr.id));
   return { pairs, unpaired };
+}
+function pickupFromCarAtX(unpaired, timelines, input, carsById, scores) {
+  const healed = [];
+  const healedIds = /* @__PURE__ */ new Set();
+  const sharedCars = input.cars.filter((c) => c.type === "shared").sort((a, b) => byId({ id: a.id }, { id: b.id }));
+  const sorted = [...unpaired].sort((a, b) => {
+    const sa = scores.get(a.id)?.total ?? 0;
+    const sb = scores.get(b.id)?.total ?? 0;
+    if (sa !== sb) return sb - sa;
+    return byId(a, b);
+  });
+  for (const nr of sorted) {
+    const leg = nr.legs[0];
+    if (!leg || leg.side !== "return" || leg.originId === leg.destinationId) continue;
+    const driverMemberId = eligibleDriverMemberId(nr.request);
+    if (!driverMemberId) continue;
+    const day = dayBoundsForSlot(input.week.days, leg.window.start);
+    if (leg.window.start < day.startSlot || leg.window.end > day.endSlot) continue;
+    const luggageCount = nr.luggage ? 1 : 0;
+    const car = sharedCars.find((c) => {
+      if (!fits(c, nr.passengers) || !luggageFits(c, luggageCount)) return false;
+      const tl2 = timelines.get(c.id);
+      return !!tl2 && tl2.isFree(leg.window, leg.originId, void 0, leg.destinationId);
+    });
+    if (!car) continue;
+    const tl = timelines.get(car.id);
+    if (!tl) continue;
+    const rideId = `ride:${nr.id}`;
+    tl.add({ rideId, window: leg.window, startLocationId: leg.originId, endLocationId: leg.destinationId, overnightAck: false });
+    const carName2 = carsById.get(car.id)?.name ?? car.name;
+    healed.push({
+      rideId,
+      carId: car.id,
+      window: leg.window,
+      originId: leg.originId,
+      destinationId: leg.destinationId,
+      driverRequestId: nr.id,
+      driverMemberId,
+      legs: [
+        {
+          requestId: nr.id,
+          leg: "return",
+          carMode: "relay",
+          originId: leg.originId,
+          destinationId: leg.destinationId,
+          role: driverMemberId === nr.request.memberId ? "driver" : "passenger"
+        }
+      ],
+      servedRequestIds: [nr.id],
+      passengers: nr.passengers,
+      luggageCount,
+      shift: { departureMin: 0, returnMin: 0 },
+      source: "solver",
+      reasonCode: "PLACED_PICKUP_FROM_CAR_AT_X",
+      reason: reason("PLACED_PICKUP_FROM_CAR_AT_X", {
+        car: carName2,
+        place: placeName(input, leg.originId, nr.request.destinationText),
+        ret: formatSlotTime(leg.window.end, day)
+      })
+    });
+    healedIds.add(nr.id);
+  }
+  return { healed, healedIds };
 }
 function chauffeurUnpairedRelayLegs(unpaired, timelines, input, carsById, scores, cause = "noReturner") {
   const healed = [];
@@ -3035,6 +3101,8 @@ function buildSuggestions(nr, ctx, blockerCarIds) {
   const leg = nr.legs[0];
   const ejection = ctx.ejectionSuggestions.get(nr.id);
   if (ejection) suggestions.push(ejection);
+  const chain = chainOneWaySuggestion(nr, ctx);
+  if (chain) suggestions.push(chain);
   if (leg?.side === "both") {
     suggestions.push(...mergeSuggestions(nr, "both", ctx, hosts2));
     const beyond = shiftBeyondFlexSuggestion(nr, ctx);
@@ -3173,6 +3241,51 @@ function buildSuggestions(nr, ctx, blockerCarIds) {
   suggestions.push(...externalHints(nr, destination, ctx.input.config, ctx.input));
   suggestions.push(denySuggestion(nr, blockerCarIds, ctx.input));
   return suggestions;
+}
+function chainOneWaySuggestion(nr, ctx) {
+  const leg = nr.legs[0];
+  if (nr.tripType !== "one_way" || !leg || leg.side !== "out" || nr.originId === nr.destinationId) return null;
+  const bufferSlots = minutesToSlots(ctx.input.config.bufferMinutes);
+  const maxShift = minutesToSlots(ctx.input.config.beyondFlexMaxMinutes);
+  const length = Math.max(1, leg.window.end - leg.window.start);
+  const day = dayBoundsForSlot(ctx.input.week.days, leg.window.start);
+  const cars = new Map(ctx.input.cars.map((c) => [c.id, c]));
+  let best = null;
+  for (const a of [...ctx.assignments].sort((x, y) => x.rideId < y.rideId ? -1 : x.rideId > y.rideId ? 1 : 0)) {
+    if (a.destinationId !== nr.originId || a.originId === a.destinationId || a.servedRequestIds.includes(nr.id)) continue;
+    const car = cars.get(a.carId);
+    const tl = ctx.timelines.get(a.carId);
+    if (!car || car.type !== "shared" || !tl || !fits(car, nr.passengers) || !luggageFits(car, nr.luggage ? 1 : 0)) continue;
+    const start = Math.max(leg.window.start, a.window.end + bufferSlots);
+    const shift = start - leg.window.start;
+    const window = { start, end: start + length };
+    if (shift > maxShift || window.start < day.startSlot || window.end > day.endSlot) continue;
+    if (!tl.isFree(window, nr.originId, void 0, nr.destinationId)) continue;
+    if (!best || shift < best.shift) best = { a, car, window, shift };
+  }
+  if (!best) return null;
+  const afterRequestId = best.a.servedRequestIds[0];
+  const other = afterRequestId ? ctx.input.requests.find((r) => r.id === afterRequestId) : void 0;
+  const chainMember = memberName(ctx.input, best.a.driverMemberId ?? other?.memberId);
+  return {
+    kind: "chainOneWay",
+    requestId: nr.id,
+    carId: best.car.id,
+    window: best.window,
+    shift: { departureMin: best.shift * 15, returnMin: 0 },
+    afterRideId: best.a.rideId,
+    ...afterRequestId ? { afterRequestId } : {},
+    reasonCode: chainMember ? "SUGGEST_CHAIN_ONE_WAY" : "SUGGEST_CHAIN_ONE_WAY_ANON",
+    reason: reason(chainMember ? "SUGGEST_CHAIN_ONE_WAY" : "SUGGEST_CHAIN_ONE_WAY_ANON", {
+      car: best.car.name,
+      place: placeName(ctx.input, nr.originId, nr.request.originText),
+      member: chainMember,
+      dest: requestDestName(ctx.input, nr.request),
+      dep: formatSlotTime(best.window.start, day)
+    }),
+    cost: best.shift * 15,
+    confidence: Math.max(0.1, 0.6 - best.shift * 15 / 480)
+  };
 }
 function changeOriginSuggestion(nr, ctx) {
   if (nr.window.end <= nr.window.start) return null;
@@ -3366,7 +3479,7 @@ function solveExpanded(input) {
   const oneWay = normalized.filter((nr) => nr.legs[0]?.side !== "both" && nr.tripType !== "one_way");
   const passengerOnly = oneWay.filter((nr) => nr.isPassengerOnly);
   const relayEligible = oneWay.filter((nr) => !nr.isPassengerOnly);
-  const { pairs, unpaired } = pairRelays(relayEligible, input.cars, normalized.filter((nr) => !relayEligible.includes(nr)));
+  const { pairs, unpaired } = pairRelays(relayEligible, input.cars, normalized.filter((nr) => !relayEligible.includes(nr)), 2 * bufferSlots);
   const relayPairPeople = /* @__PURE__ */ new Map();
   for (const pair of pairs) {
     const out = normalized.find((nr) => nr.id === pair.outRequestId);
@@ -3391,7 +3504,17 @@ function solveExpanded(input) {
     if (u.kind !== "pair" || !u.pair) continue;
     ownPairFallback.push(u.pair.outNr, u.pair.retNr);
   }
-  const { healed, healedIds } = chauffeurUnpairedRelayLegs([...unpaired, ...ownPairFallback], timelines, input, carsMap, scores);
+  const pickupCandidates = [...unpaired, ...ownPairFallback];
+  const pickups = pickupFromCarAtX(pickupCandidates, timelines, input, carsMap, scores);
+  const chauffeured = chauffeurUnpairedRelayLegs(
+    pickupCandidates.filter((nr) => !pickups.healedIds.has(nr.id)),
+    timelines,
+    input,
+    carsMap,
+    scores
+  );
+  const healed = [...pickups.healed, ...chauffeured.healed];
+  const healedIds = /* @__PURE__ */ new Set([...pickups.healedIds, ...chauffeured.healedIds]);
   const stillUnpairedRelay = unpaired.filter((nr) => !healedIds.has(nr.id));
   const shortRides = chauffeurShortDropOffs(passengerOnly, normalized, timelines, input, scores);
   const remainingPassengerOnly = passengerOnly.filter((nr) => !shortRides.healedIds.has(nr.id));

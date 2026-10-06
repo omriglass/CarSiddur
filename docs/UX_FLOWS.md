@@ -760,7 +760,7 @@ This table **is** the `notification_event` enum (DATA_MODEL §2) and ARCHITECTUR
 | `notif.windowOpen` | `window_open` | Request window opened | הבקשות לשבוע {{weekLabel}} נפתחו | אפשר להגיש בקשות עד {{closeTime}}. |
 | `notif.windowClosing` | `window_closing` | Closing reminder (T-24h, T-2h; `closing_reminder_hours`) | עוד {{count}} שעות לסגירת הבקשות | עדיין לא הגשת בקשה לשבוע {{weekLabel}}? זה הזמן. |
 | `notif.windowClosedSolveNow` | `window_closed_solve_now` | Request window closed, solve now (to Sadran; fired by `advance_week_phases()`) | הבקשות לשבוע {{weekLabel}} נסגרו | אפשר להריץ את הפתרון האוטומטי וללוח הסדרן/ית. |
-| `notif.published` | `published` | Siddur published | הסידור פורסם לימים {{days}} | {{outcomeLine}} |
+| `notif.published` | `published` | Siddur published (R5U4, 2026-10-06: one body line per ride the member is on — `{{day}} {{range}} · {{route}} · {{car}}`, a pickup reads `איסוף מ<place>`; external/withdrawn requests are not listed; dates always carry the weekday) | הסידור פורסם · הנסיעות שלך: {{days}} | {{outcomeLine}} |
 | `notif.outcomeChanged` | `outcome_changed` | Your outcome changed | שינוי בסידור שלך לימים {{days}} | {{diffLine}} |
 | `notif.reservationAdded` | `outcome_changed` / `reservation_added` (variant) | Named passenger added to a manual reservation (REQ §13.82, 2026-09-14) | נשמר לך מקום ברכב | {{byName}} שמר/ה לך מקום ברכב {{car}} ביום {{day}} ({{notes}}) |
 | `notif.passengersAdded` | `outcome_changed` / `passengers_added` (variant) | "+ נוסעים": someone (not the driver) added named passengers to the driver's ride (REQ §13.85, 2026-09-14) | נוספו נוסעים לנסיעה שלך | {{byName}} הוסיף/ה את {{names}} לנסיעה שלך ביום {{day}} {{route}} |
@@ -1850,3 +1850,13 @@ The shell selector switches Home and all operational catalogs together. A view-o
 - **משיכה ככפילות (QM4, 101 e):** ConfirmDialog action on unmet cards and each served request in the ride sheet -> `withdraw_duplicate_request` (hidden for multi-day series).
 - **להציע פחות ימים (QF5, 101 j):** on an unmet multi-day request: first/last day + car (default: a free one) -> `shift` proposal `{ car_id, series_span }` through the draft/prepare choice (`FewerDaysAction`, `board/seriesSpan.ts`).
 - **Relay return ride stops (QB24):** `rideViaNames`, `RideRouteStops` and `RideRoute` show only the leg(s) the served entry covers.
+
+
+### QA run 5 usability notes (REQ §13.105 e, 2026-10-06)
+
+- **Pickup/chauffeur rides** read `<driver> אוסף/ת את <name> מ<place> (הנסיעה מתחילה ב<time>) · מסלול: נבו → <place> → נבו` on the board, siddur, my rides and both ride sheets (`chauffeurRideLabel` `carPath`); the time is when the car starts out, never called "יציאה".
+- **Publish confirmation** (`PublishScreen`): `publication_readiness` returns `answeredRequests` (external/denied, shown as "נענו בדחייה או בפתרון חיצוני", not "ללא מענה"); an accepted external/deny proposal is not pending; singular forms ("הצעה אחת ללא תשובה"); still-pending proposals are listed with their expiry (`publish-pending-proposals`), expiring deny/external ones as before.
+- **Ask to join** reaches the Sadran as variant `ask_to_join` of `waitlisted_request` / `late_request` ("בקשת הצטרפות מ{{firstName}}", names the ride via `{{rideLabel}}`).
+- Board chain-break warning names the ride (`carNotHereWarning`: time + who); week-end-away names the car; series legs on `RideCard` read "כל היום" / departure only / "חזרה HH:MM" (`rideSpanKind`); `closeTime`/`publishTime`/`expiresAt` notice dates carry the weekday (`_dt_label`).
+
+**After QA run 5, proposals (REQ §13.105; R5B5/R5B9/R5B11/R5U1/105 c).** The merge popup, the composer's summary and the saved draft's text show the window and the joiner's own times from the server's `merge_preview` (one source). A draft's / sent proposal's sheet (`ProposalActionSheet`) has a "מה משתנה" block: old -> new times and car (shift) or the joiner's old -> new times and the host's car (merge). The composer's select is labelled "סוג ההצעה". A pickup draft block reads "איסוף מ<place>". A member who has accepted a proposal that still waits for the other parties sees "אישרת, ממתין לאחרים" (never "מחכה לתשובה שלך"), also on `/p/:token`. The ride sheet of a הקפצה's drop-off or pickup chauffeur ride offers "חבר הלוך ואיסוף לנסיעה אחת" when the same request's other leg is on a second single-request chauffeur ride (`join_drop_off_legs`). "Fewer days" offers a single day.

@@ -36,7 +36,8 @@ export function myRideCard(
   return {
     id: ride.id, startsAt: ride.starts_at, endsAt: ride.ends_at,
     originName: ride.origin_name ?? "", destinationName: destination,
-    label: chauffeur ? chauffeurRideLabel(ride.needs_driver ? null : ride.driver_name, passengers, ride.starts_at, ride.origin_id ?? undefined)
+    label: chauffeur ? chauffeurRideLabel(ride.needs_driver ? null : ride.driver_name, passengers, ride.starts_at, ride.origin_id ?? undefined,
+      { from: ride.origin_name ?? "", to: ride.destination_name ?? "" })
       : tv(ownEntry?.leg === "return" ? "home.rideFrom" : "home.rideTo", { destination }),
     showDay: true,
     purpose: ownRequest?.rideTypeName || purposes.join(" / ") || rideTypes.find((type) => type.code === "other")?.name_he,

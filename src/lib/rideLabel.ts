@@ -92,7 +92,14 @@ function hebrewList(names: readonly string[]): string {
  * lone leg) falls back to the older combined phrasing rather than repeating the driver's name
  * once per group.
  */
-export function chauffeurRideLabel(driverName: string | null, passengers: readonly RideLabelServedEntry[], startsAt?: string, carLocationId?: string): string {
+export function chauffeurRideLabel(
+  driverName: string | null,
+  passengers: readonly RideLabelServedEntry[],
+  startsAt?: string,
+  carLocationId?: string,
+  /** R5U2: where the car starts and ends — the label then shows the real path "from → place → to" (not home → home). */
+  carPath?: { from: string; to: string },
+): string {
   const hasDriver = !!driverName?.trim();
   const driver = hasDriver ? firstName(driverName as string) : "";
   const groups = new Map<string, { destination: string; returning: boolean; names: string[] }>();
@@ -114,14 +121,17 @@ export function chauffeurRideLabel(driverName: string | null, passengers: readon
     const [group] = groupList as [{ destination: string; returning: boolean; names: string[] }];
     const name = hebrewList(group.names);
     const time = startsAt ? formatTime(new Date(startsAt)) : "";
+    const path = carPath && group.destination
+      ? ` · ${tv("rideCoordination.carPath", { path: [carPath.from, group.destination, carPath.to].filter((place, i, all) => !!place && place !== all[i - 1]).join(" → ") })}`
+      : "";
     if (group.returning) {
-      return hasDriver
+      return (hasDriver
         ? tv("rideCoordination.chauffeurPickup", { driver, name, place: group.destination, time })
-        : tv("rideCoordination.chauffeurPickupNeedsDriver", { name, place: group.destination, time });
+        : tv("rideCoordination.chauffeurPickupNeedsDriver", { name, place: group.destination, time })) + path;
     }
-    return hasDriver
+    return (hasDriver
       ? tv("rideCoordination.chauffeurDropoff", { driver, name, place: group.destination })
-      : tv("rideCoordination.chauffeurDropoffNeedsDriver", { name, place: group.destination });
+      : tv("rideCoordination.chauffeurDropoffNeedsDriver", { name, place: group.destination })) + path;
   }
   const routes = groupList.map((group) => tv(
     group.returning ? "rideCoordination.passengerFrom" : "rideCoordination.passengerTo",
@@ -213,7 +223,7 @@ export function rideBlockLabel(input: RideLabelInput): string {
       ...passenger,
       destination: passenger.destination ?? direction.place,
       leg: passenger.leg ?? (direction.kind === "from" ? "return" : "out"),
-    })), input.startsAt, input.originId);
+    })), input.startsAt, input.originId, { from: input.originName, to: input.destinationName });
     // A merged passenger leg must not hide the host's separate destination.
     if (driver?.destination && !passengers.some((passenger) => passenger.destination === driver.destination)) {
       return `${label} · ${tv(driver.leg === "return" ? "rideCoordination.passengerFrom" : "rideCoordination.passengerTo", {

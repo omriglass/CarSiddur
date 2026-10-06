@@ -8,7 +8,7 @@ import { sadranKeys } from "./keys";
 import { publishWithScores } from "./publish/publishWithScores";
 
 import type { Json } from "@/integrations/supabase/types";
-import type { NotificationChannel, TripType } from "@/lib/enums";
+import type { NotificationChannel, RideLeg, TripType } from "@/lib/enums";
 import { invalidateWeekData } from "@/features/rides/invalidateWeek";
 
 // ---------------------------------------------------------------------------
@@ -68,6 +68,16 @@ export function usePlaceTravelForWeek(departmentId: string | undefined, weekStar
     queryFn: () => api.fetchPlaceTravelForWeek(departmentId as string, weekStart),
     enabled: enabled && !!departmentId,
     staleTime: 60_000,
+  });
+}
+
+/** R5B5: server `merge_preview` for one ride/request/leg; `undefined` while loading or when not asked for. */
+export function useMergePreview(rideId: string | null | undefined, requestId: string | null | undefined, leg: RideLeg, enabled = true) {
+  return useQuery({
+    queryKey: sadranKeys.mergePreview(rideId ?? "", requestId ?? "", leg),
+    queryFn: () => api.fetchMergePreview(rideId as string, requestId as string, leg),
+    enabled: enabled && !!rideId && !!requestId,
+    staleTime: 0,
   });
 }
 
@@ -224,6 +234,18 @@ export function useUnassignRideMutation() {
     mutationFn: ({ rideId, expectedVersion }: {
       rideId: string; expectedVersion: number; departmentId: string; weekStart: string;
     }) => api.unassignRide(rideId, expectedVersion),
+    onSuccess: (_data, { departmentId, weekStart }) => invalidateBoard(queryClient, departmentId, weekStart),
+    onError: showErrorToast,
+  });
+}
+
+/** REQ §13.105 c: "חבר לנסיעה אחת" - a הקפצה's drop-off and pickup rides become one ride (`join_drop_off_legs`). */
+export function useJoinDropOffLegsMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ requestId, rideId, expectedVersion }: {
+      requestId: string; rideId: string; expectedVersion: number; departmentId: string; weekStart: string;
+    }) => api.joinDropOffLegs(requestId, rideId, expectedVersion),
     onSuccess: (_data, { departmentId, weekStart }) => invalidateBoard(queryClient, departmentId, weekStart),
     onError: showErrorToast,
   });

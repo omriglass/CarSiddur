@@ -81,13 +81,16 @@ async function cmdProposals(): Promise<void> {
   const mine = await requests.fetchMyRequests(ME, SCOPE?.departmentId);
   const pending = mine.filter((r) => r.pendingProposal);
   for (const r of pending) console.log(`proposal ${short(r.pendingProposal!.id)} ${r.pendingProposal!.type} on ${reqLine(r)}`);
+  // R5B9: answered by me, still waiting for the other parties - never listed as pending.
+  const waiting = mine.filter((r) => !r.pendingProposal && r.acceptedAwaitingOthers);
+  for (const r of waiting) console.log(`accepted, waiting for the others: ${reqLine(r)}`);
   // Merge proposals also address other parties (host/driver); their copy lives in the inbox.
   const notes = (await fetchNotifications(ME)).filter((n) => n.event === "proposal_received" && !n.read_at);
   for (const n of notes) {
     const id = (n.data as { proposal_id?: string } | null)?.proposal_id;
     if (id && !pending.some((r) => r.pendingProposal!.id === id)) console.log(`proposal ${short(id)}/${await proposalType(id)} (inbox, unread) ${oneLine(n.title_he)} | ${oneLine(n.body_he)}`);
   }
-  if (!pending.length && !notes.length) console.log("(no pending proposals)");
+  if (!pending.length && !notes.length && !waiting.length) console.log("(no pending proposals)");
 }
 
 async function tokenFor(idOrToken: string): Promise<{ token: string; proposalId?: string }> {

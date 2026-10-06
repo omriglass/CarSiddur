@@ -17,7 +17,7 @@ import { useProfile } from "@/features/auth/useProfile";
 import { useDepartmentMembers } from "@/features/auth/useDepartmentMembers";
 import { fetchChildren } from "@/features/requests/api";
 
-import { combineMergeLegs, defaultMergeLeg, mergeLegForCard, mergeLegOptions, mergePayload, mergePayloadFromLegs, mergePayloadLegs, type MergeLeg } from "../mergeProposal";
+import { combineMergeLegs, defaultMergeLeg, mergeLegForCard, mergeLegOptions, mergePayload, mergePayloadFromLegs, mergePayloadLeg, mergePayloadLegs, type MergeLeg } from "../mergeProposal";
 import { isDropOffWithPickup, legView, unmetItemId, unmetItemKey } from "../unmetLegs";
 import type { GuestDropTarget } from "@/components/GuestChips";
 import { requestStart, requestWithinFlex } from "../phantomLanes";
@@ -45,7 +45,7 @@ import {
   unmetShiftPayload,
 } from "../dropValidity";
 import type { UnmetListItem } from "../components/UnmetList";
-import { wouldOverlap } from "../geometry";
+import { slotToIso, wouldOverlap } from "../geometry";
 import { isReservation } from "@/features/rides/servedOf";
 import { buildRidePassengerInputs, splitReservationDriverAndPassengers } from "../reservationPeople";
 import {
@@ -56,12 +56,13 @@ import {
   useEditRideMutation,
   useMarkCarMoveMutation,
   useSetRidePassengersMutation,
+  useJoinDropOffLegsMutation,
   useUnassignRideMutation,
   useUnmergeRequestMutation,
   useCancelRideMutation,
 } from "../../hooks";
 import { useClaimRideDriverMutation, useCancelRideChangeMutation } from "@/features/rides/hooks";
-import { fetchRideVersion } from "../../api";
+import { fetchMergePreview, fetchRideVersion } from "../../api";
 import { useUndoStack } from "../useUndoStack";
 import { servedOf, servedToEditRideLegs } from "../../solverRun";
 
@@ -122,6 +123,7 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
   const cancelRideChangeMutation = useCancelRideChangeMutation();
   const cancelRideMutation = useCancelRideMutation();
   const unassignRideMutation = useUnassignRideMutation();
+  const joinLegsMutation = useJoinDropOffLegsMutation();
   const unmergeRequestMutation = useUnmergeRequestMutation();
   const undoStack = useUndoStack<void>();
   const undoVersions = useRef(new Map<string, number>());
@@ -160,6 +162,10 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
 
   /** "טיוטה": `create_proposal` with the payload and text the composer would have built; stays on the board. */
   async function saveDraft(prefill: ComposerPrefill) {
+    // R5B5: the draft's stored text reads the server's merge preview, like the popup and the composer.
+    const serverMerge = prefill.type === "merge" && prefill.rideId
+      ? await fetchMergePreview(prefill.rideId, prefill.requestId, mergePayloadLeg(prefill.payload, requestsData.find((r) => r.id === prefill.requestId) ?? { trip_shape: "round_trip" })).catch(() => null)
+      : null;
     const built = buildDraftInput(prefill, {
       requests: requestsData,
       rides,
@@ -169,6 +175,7 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
       sadranName: profileQuery.data?.full_name ?? "",
       homeDestinationId: department?.home_destination_id,
       route: board.routeCtx,
+      serverMerge,
     });
     if (!built.ok) { toast.error(he.boardDrafts.cannotDraft); return; }
     try {
@@ -415,6 +422,18 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
   }
 
   /** Return every served request to the unmet board atomically. */
+  /** REQ §13.105 c: "חבר לנסיעה אחת" - the drop-off ride and the pickup ride of one request become one ride. */
+  async function handleJoinLegs(rideId: string, requestId: string) {
+    const ride = rides.find((r) => r.id === rideId);
+    if (!ride?.version) return;
+    try {
+      await joinLegsMutation.mutateAsync({ requestId, rideId, expectedVersion: ride.version, departmentId, weekStart });
+      toast.success(he.sadranBoard.legsJoinedToast);
+    } catch {
+      // toast already shown by the mutation
+    }
+  }
+
   async function handleUnassignRide(rideId: string) {
     const ride = rides.find((r) => r.id === rideId);
     if (!ride?.version) return;
@@ -682,6 +701,14 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
       case "deny":
         goToComposer({ requestId: item.request.id, rideId: null, type: "deny", payload: {} });
         return;
+      case "chainOneWay":
+        // REQ §13.105 a: two members' complementary one-way legs - the Sadran sends a shift onto the car
+        // left at X (SOLVER §3.15); never placed automatically.
+        goToComposer({
+          requestId: item.request.id, rideId: null, type: "shift",
+          payload: { car_id: suggestion.carId, ...(dropCtx.weekStartMs != null ? { depart_at: slotToIso(suggestion.window.start, dropCtx.weekStartMs) } : {}) },
+        });
+        return;
       case "changeOrigin":
         // REQUIREMENTS §13.93 (ORIGINS_PLAN §3 "O4b"): the solver's "car free at a different
         // place" suggestion becomes an `origin` proposal — same send-from-the-board path as
@@ -758,6 +785,7 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
     cancelRideChangeMutation,
     cancelRideMutation,
     unassignRideMutation,
+    handleJoinLegs,
     unmergeRequestMutation,
     undoStack,
     reservationMembersQuery,

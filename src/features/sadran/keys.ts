@@ -23,6 +23,8 @@ export const sadranKeys = {
   /** REQUIREMENTS §13.93 (ORIGINS_PLAN §2 item 7): `car_start_locations()`. */
   carStartLocations: (departmentId: string, weekStart: string) =>
     [...sadranKeys.week(departmentId, weekStart), "carStartLocations"] as const,
+  /** R5B5: the server's `merge_preview` for one ride/request/leg. */
+  mergePreview: (rideId: string, requestId: string, leg: string) => [...sadranKeys.all, "mergePreview", rideId, requestId, leg] as const,
   /** REQUIREMENTS §13.93 (ORIGINS_PLAN §2 item 6): `place_travel_for_week()`. */
   placeTravel: (departmentId: string, weekStart: string) =>
     [...sadranKeys.week(departmentId, weekStart), "placeTravel"] as const,

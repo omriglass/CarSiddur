@@ -3926,6 +3926,7 @@ export type Database = {
         Args: { p_car_id: string; p_request_id: string; p_span: Json }
         Returns: string
       }
+      _ask_to_join_ride_label: { Args: { p_ride_id: string }; Returns: string }
       _assert_shift_places: {
         Args: { p_department_id: string; p_payload: Json; p_request_id: string }
         Returns: undefined
@@ -3992,6 +3993,7 @@ export type Database = {
         Args: { p_day: string; p_series_id: string }
         Returns: undefined
       }
+      _dt_label: { Args: { p_at: string }; Returns: string }
       _frag: { Args: { _key: string; _vars?: Json }; Returns: string }
       _hhmm: { Args: { _at: string }; Returns: string }
       _joiner_times: {
@@ -4015,6 +4017,10 @@ export type Database = {
       _merge_window_conflict: {
         Args: { _new_end: string; _new_start: string; _ride_id: string }
         Returns: boolean
+      }
+      _publish_ride_line: {
+        Args: { p_request_id: string; p_ride_id: string }
+        Returns: string
       }
       _ride_fp: {
         Args: { p_ride_id: string; p_status?: string }
@@ -4476,6 +4482,14 @@ export type Database = {
         Args: { _dept: string; _week: string }
         Returns: boolean
       }
+      join_drop_off_legs: {
+        Args: {
+          p_expected_version: number
+          p_request_id: string
+          p_ride_id: string
+        }
+        Returns: string
+      }
       join_waitlist_group: { Args: { p_request_id: string }; Returns: string }
       joinable_rides_for_request: {
         Args: { p_request_id: string }
@@ -4565,6 +4579,7 @@ export type Database = {
           _data: Json
           _department_id: string
           _event: Database["public"]["Enums"]["notification_event"]
+          _recipient?: string
           _week_start: string
         }
         Returns: string

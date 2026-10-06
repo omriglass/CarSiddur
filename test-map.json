@@ -537,6 +537,8 @@
         "supabase/tests/qa_run2_proposals.sql",
         "supabase/tests/qa_run3_proposals.sql",
         "supabase/tests/qa_run4_proposals.sql",
+        "supabase/tests/qa_run5_proposals.sql",
+        "supabase/tests/qa_run5_publish.sql",
         "e2e/sadran.spec.ts",
         "e2e/waitlist-groups.spec.ts",
         "e2e/export.spec.ts"
@@ -552,7 +554,9 @@
         "proposals_copy_and_series_span.sql",
         "qa_run2_proposals.sql",
         "qa_run3_proposals.sql",
-        "qa_run4_proposals.sql"
+        "qa_run4_proposals.sql",
+        "qa_run5_proposals.sql",
+        "qa_run5_publish.sql"
       ],
       "playwrightTags": [
         "@publication"
@@ -879,6 +883,9 @@
         "supabase/tests/qa_run2_placement.sql",
         "supabase/tests/qa_run3_placement.sql",
         "supabase/tests/qa_run4_placement.sql",
+        "supabase/tests/qa_run5_placement.sql",
+        "supabase/tests/qa_run5_cancel.sql",
+        "scripts/test-api.mjs",
         "supabase/migrations/**/*department_scope*",
         "supabase/migrations/**/*status_department_guard*",
         "supabase/schema-current.sql"

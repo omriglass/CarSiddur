@@ -9,7 +9,7 @@ import { bestPlacementWithinFlex } from './flexibility';
 import type { HostRide } from './merge';
 import { buildHostRides, findMergeHosts } from './merge';
 import { reason } from './reasons';
-import { carName as carNameOf, placeName, requestDestName, rideHostLabel } from './names';
+import { carName as carNameOf, memberName, placeName, requestDestName, rideHostLabel } from './names';
 import { chauffeurLoad, fits, luggageFits } from './seatFit';
 import { dayBoundsForSlot, formatSlotTime, minutesToSlots, travelSlotsFor, type NormalizedRequest } from './slots';
 import type { SplitLegsContext } from './splitLegs';
@@ -213,6 +213,10 @@ export function buildSuggestions(nr: NormalizedRequest, ctx: SuggestionContext, 
   const ejection = ctx.ejectionSuggestions.get(nr.id);
   if (ejection) suggestions.push(ejection);
 
+  // REQ §13.105 a: complementary explicit one-way legs on one car (a suggestion, never automatic).
+  const chain = chainOneWaySuggestion(nr, ctx);
+  if (chain) suggestions.push(chain);
+
   if (leg?.side === 'both') {
     suggestions.push(...mergeSuggestions(nr, 'both', ctx, hosts));
     const beyond = shiftBeyondFlexSuggestion(nr, ctx);
@@ -358,6 +362,61 @@ export function buildSuggestions(nr: NormalizedRequest, ctx: SuggestionContext, 
   suggestions.push(denySuggestion(nr, blockerCarIds, ctx.input));
 
   return suggestions;
+}
+
+/**
+ * REQUIREMENTS §13.105 a (QA run 5 R5Q1, owner 2026-10-06): an unmet explicit one-way request `X -> D` can
+ * follow another member's ride that ended at X and left a shared car standing there ("A to X one way,
+ * B back from X later" = one car). Offered as a suggestion only (SOLVER §3.15: proposal type `shift` with
+ * the car and the departure); the car must be free from the earlier ride's end plus the turnaround until
+ * B's leg ends and its next ride (if any) must start at D (`CarTimeline.isFree` end check). The earliest
+ * start is B's stated departure or just after the earlier ride + turnaround, at most `beyondFlexMaxMinutes`
+ * later; the cheapest (smallest shift, then car id, then ride id) wins.
+ */
+function chainOneWaySuggestion(nr: NormalizedRequest, ctx: SuggestionContext): Suggestion | null {
+  const leg = nr.legs[0];
+  if (nr.tripType !== 'one_way' || !leg || leg.side !== 'out' || nr.originId === nr.destinationId) return null;
+  const bufferSlots = minutesToSlots(ctx.input.config.bufferMinutes);
+  const maxShift = minutesToSlots(ctx.input.config.beyondFlexMaxMinutes);
+  const length = Math.max(1, leg.window.end - leg.window.start);
+  const day = dayBoundsForSlot(ctx.input.week.days, leg.window.start);
+  const cars = new Map(ctx.input.cars.map((c) => [c.id, c]));
+  let best: { a: Assignment; car: Car; window: Window; shift: number } | null = null;
+  for (const a of [...ctx.assignments].sort((x, y) => (x.rideId < y.rideId ? -1 : x.rideId > y.rideId ? 1 : 0))) {
+    if (a.destinationId !== nr.originId || a.originId === a.destinationId || a.servedRequestIds.includes(nr.id)) continue;
+    const car = cars.get(a.carId);
+    const tl = ctx.timelines.get(a.carId);
+    if (!car || car.type !== 'shared' || !tl || !fits(car, nr.passengers) || !luggageFits(car, nr.luggage ? 1 : 0)) continue;
+    const start = Math.max(leg.window.start, a.window.end + bufferSlots);
+    const shift = start - leg.window.start;
+    const window = { start, end: start + length };
+    if (shift > maxShift || window.start < day.startSlot || window.end > day.endSlot) continue;
+    if (!tl.isFree(window, nr.originId, undefined, nr.destinationId)) continue;
+    if (!best || shift < best.shift) best = { a, car, window, shift };
+  }
+  if (!best) return null;
+  const afterRequestId = best.a.servedRequestIds[0];
+  const other = afterRequestId ? ctx.input.requests.find((r) => r.id === afterRequestId) : undefined;
+  const chainMember = memberName(ctx.input, best.a.driverMemberId ?? other?.memberId);
+  return {
+    kind: 'chainOneWay',
+    requestId: nr.id,
+    carId: best.car.id,
+    window: best.window,
+    shift: { departureMin: best.shift * 15, returnMin: 0 },
+    afterRideId: best.a.rideId,
+    ...(afterRequestId ? { afterRequestId } : {}),
+    reasonCode: chainMember ? 'SUGGEST_CHAIN_ONE_WAY' : 'SUGGEST_CHAIN_ONE_WAY_ANON',
+    reason: reason(chainMember ? 'SUGGEST_CHAIN_ONE_WAY' : 'SUGGEST_CHAIN_ONE_WAY_ANON', {
+      car: best.car.name,
+      place: placeName(ctx.input, nr.originId, nr.request.originText),
+      member: chainMember,
+      dest: requestDestName(ctx.input, nr.request),
+      dep: formatSlotTime(best.window.start, day),
+    }),
+    cost: best.shift * 15,
+    confidence: Math.max(0.1, 0.6 - (best.shift * 15) / 480),
+  };
 }
 
 /**

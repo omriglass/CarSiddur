@@ -16,3 +16,19 @@ export function isAwaitingAnswer(proposal: { status?: string; expiresAt?: string
 export function pickPendingProposal<T extends ProposalLike>(proposals: readonly T[], now: number = Date.now()): T | null {
   return proposals.find((p) => isAwaitingAnswer(p, now)) ?? null;
 }
+
+interface ProposalWithParties extends ProposalLike {
+  parties?: readonly { profile_id: string; response: string }[] | null;
+}
+
+/**
+ * R5B9: what the member still has to answer vs what they answered while the proposal waits for the
+ * other parties (a merge needs the host / other passengers too). `pending` is the first sent proposal
+ * the member has NOT answered; `answeredWaiting` is true when a sent proposal carries their accept/decline.
+ */
+export function splitMemberProposals<T extends ProposalWithParties>(proposals: readonly T[], profileId: string | undefined, now: number = Date.now()): { pending: T | null; answeredWaiting: boolean } {
+  const own = (p: T) => (profileId ? p.parties?.find((party) => party.profile_id === profileId)?.response : undefined);
+  const pending = pickPendingProposal(proposals.filter((p) => own(p) === undefined || own(p) === "pending"), now);
+  const answeredWaiting = proposals.some((p) => p.status === "sent" && (own(p) === "accepted" || own(p) === "declined"));
+  return { pending, answeredWaiting };
+}

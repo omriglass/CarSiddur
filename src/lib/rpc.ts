@@ -67,6 +67,12 @@ export type ErrorCode =
   | "invalid_stops"
   | "invalid_place"
   | "unmerge_base_request"
+  | "join_legs_not_drop_off"
+  | "join_legs_not_two_rides"
+  | "join_legs_shared_ride"
+  | "join_legs_two_drivers"
+  | "join_legs_order"
+  | "join_legs_car_busy"
   | "request_not_on_ride"
   | "manual_boost_requires_reason"
   | "request_not_found"
@@ -181,6 +187,12 @@ const MESSAGE_TO_CODE: Record<string, ErrorCode> = {
   invalid_stops: "invalid_stops",
   invalid_place: "invalid_place",
   unmerge_base_request: "unmerge_base_request",
+  join_legs_not_drop_off: "join_legs_not_drop_off",
+  join_legs_not_two_rides: "join_legs_not_two_rides",
+  join_legs_shared_ride: "join_legs_shared_ride",
+  join_legs_two_drivers: "join_legs_two_drivers",
+  join_legs_order: "join_legs_order",
+  join_legs_car_busy: "join_legs_car_busy",
   request_not_on_ride: "request_not_on_ride",
   manual_boost_requires_reason: "manual_boost_requires_reason",
   request_not_found: "request_not_found",
@@ -298,6 +310,12 @@ const CODE_TO_MESSAGE: Record<ErrorCode, string> = {
   invalid_stops: he.errors.invalidStops,
   invalid_place: he.errors.invalidPlace,
   unmerge_base_request: he.errors.unmergeBaseRequest,
+  join_legs_not_drop_off: he.errors.joinLegsNotDropOff,
+  join_legs_not_two_rides: he.errors.joinLegsNotTwoRides,
+  join_legs_shared_ride: he.errors.joinLegsSharedRide,
+  join_legs_two_drivers: he.errors.joinLegsTwoDrivers,
+  join_legs_order: he.errors.joinLegsOrder,
+  join_legs_car_busy: he.errors.joinLegsCarBusy,
   request_not_on_ride: he.errors.requestNotOnRide,
   manual_boost_requires_reason: he.errors.manualBoostRequiresReason,
   request_not_found: he.errors.requestNotFound,

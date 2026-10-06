@@ -10,13 +10,41 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "
 import { he, tv } from "@/i18n/he";
 import { formatDayDate } from "@/lib/dayLabels";
 
-import type { ProposalRow } from "../../api";
+import { useMergePreview } from "../../hooks";
+import { mergePayloadLeg } from "../mergeProposal";
+import { proposalChangeLines } from "../proposalChange";
+
+import type { ProposalRow, WeekRequestRow } from "../../api";
+
+/** R5U1: what the sheet needs to state old -> new (the request, the car it rides now, the car the proposal names). */
+export interface ProposalChangeContext {
+  request: Pick<WeekRequestRow, "depart_at" | "return_at" | "trip_shape"> | undefined;
+  oldCarName?: string | null;
+  newCarName?: string | null;
+}
+
+function ProposalChanges({ proposal, context }: { proposal: ProposalRow; context: ProposalChangeContext }) {
+  const payload = proposal.payload && typeof proposal.payload === "object" && !Array.isArray(proposal.payload) ? (proposal.payload as Record<string, unknown>) : {};
+  const isMerge = proposal.type === "merge";
+  const leg = context.request ? mergePayloadLeg(payload, context.request) : "out";
+  const server = useMergePreview(proposal.ride_id, proposal.request_id, leg, isMerge && !!proposal.ride_id && !!context.request);
+  const lines = proposalChangeLines({ type: proposal.type, payload, request: context.request, oldCarName: context.oldCarName, newCarName: context.newCarName, server: server.data });
+  if (!lines.length) return null;
+  return (
+    <div className="space-y-1 rounded-md border p-3 text-sm" data-testid="proposal-changes">
+      <p className="text-xs font-medium text-muted-foreground">{he.boardDrafts.changesTitle}</p>
+      {lines.map((line) => <p key={line}>{line}</p>)}
+    </div>
+  );
+}
 
 export interface ProposalActionSheetProps {
   proposal: ProposalRow | null;
   requesterName: string | null | undefined;
   /** ISO instant of the proposal's day (the request's day). */
   dayIso: string | null | undefined;
+  /** R5U1: old -> new times and car (shift / merge). */
+  changes?: ProposalChangeContext;
   busy?: boolean;
   onOpenChange: (open: boolean) => void;
   onSend: (proposal: ProposalRow) => void;
@@ -25,7 +53,7 @@ export interface ProposalActionSheetProps {
   onWithdraw: (proposal: ProposalRow) => void;
 }
 
-export function ProposalActionSheet({ proposal, requesterName, dayIso, busy, onOpenChange, onSend, onEdit, onDiscard, onWithdraw }: ProposalActionSheetProps) {
+export function ProposalActionSheet({ proposal, requesterName, dayIso, changes, busy, onOpenChange, onSend, onEdit, onDiscard, onWithdraw }: ProposalActionSheetProps) {
   const [confirmWithdraw, setConfirmWithdraw] = useState(false);
   const isDraft = proposal?.status === "draft";
   const withdrawable = proposal?.status === "sent" || proposal?.status === "accepted";
@@ -43,6 +71,7 @@ export function ProposalActionSheet({ proposal, requesterName, dayIso, busy, onO
               }) : ""}
             </SheetDescription>
           </SheetHeader>
+          {proposal && changes ? <ProposalChanges proposal={proposal} context={changes} /> : null}
           {proposal ? (
             <div className="flex flex-wrap gap-2 py-3">
               {isDraft ? (

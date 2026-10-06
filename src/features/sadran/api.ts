@@ -2,6 +2,8 @@ import { ensureDepartmentWeeks } from "@/features/siddur/api";
 import { supabase } from "@/integrations/supabase/client";
 import { rpc, toAppError } from "@/lib/rpc";
 
+import { parseServerMergePreview, type ServerMergePreview } from "./board/mergeProposal";
+
 import type { Database, Json } from "@/integrations/supabase/types";
 import type { LegCarMode, NotificationChannel, ProposalType, RideLeg, RideRole, TripType } from "@/lib/enums";
 
@@ -507,6 +509,15 @@ export async function unassignRide(rideId: string, expectedVersion: number): Pro
 }
 
 /**
+ * REQ §13.105 c: join a הקפצה's drop-off ride and pickup ride (the request's two single-request chauffeur
+ * rides) into one ride, by hand (`join_drop_off_legs`). `rideId`/`expectedVersion` are the ride the Sadran
+ * opened; returns the surviving (drop-off) ride id.
+ */
+export async function joinDropOffLegs(requestId: string, rideId: string, expectedVersion: number): Promise<string> {
+  return rpc("join_drop_off_legs", { p_request_id: requestId, p_ride_id: rideId, p_expected_version: expectedVersion });
+}
+
+/**
  * REQ §13.94 (G10): take an applied merge's added person back out of the ride (Sadran only): the
  * host window shrinks to its base route, the request returns to `submitted` (unmet) and the
  * person is notified. `p_expected_version` is the ride's.
@@ -616,6 +627,12 @@ export async function fetchProposalParties(proposalId: string): Promise<Proposal
 export async function fetchProposalPartyTexts(proposalId: string): Promise<Record<string, string>> {
   const rows = await rpc("proposal_party_texts", { p_proposal_id: proposalId });
   return Object.fromEntries((rows ?? []).flatMap((row) => (row.profile_id && row.body ? [[row.profile_id, row.body] as const] : [])));
+}
+
+/** R5B5: the server's merge preview (window + the joiner's own times) - the single source for every merge text. */
+export async function fetchMergePreview(rideId: string, requestId: string, leg: RideLeg): Promise<ServerMergePreview | null> {
+  const raw = await rpc("merge_preview", { p_ride_id: rideId, p_request_id: requestId, p_leg: leg });
+  return parseServerMergePreview(raw);
 }
 
 export interface CreateProposalInput {
@@ -764,6 +781,8 @@ export interface PublicationDay {
   unresolvedRequests: number;
   /** The real defect split out of `unresolvedRequests`: an assigned/merged request whose legs are not all covered. `ready` keys off this, not `unresolvedRequests`. */
   incompleteAssignments: number;
+  /** R5U3: external/denied requests - answered, not "unresolved". */
+  answeredRequests?: number;
   pendingProposals: number;
   /** REQ §13.94: unsent draft proposals of this day — `ready` requires 0 and `publish_siddur` raises `publication_drafts`. */
   draftProposals: number;

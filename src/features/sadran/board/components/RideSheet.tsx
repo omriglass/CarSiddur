@@ -2,6 +2,7 @@ import { fromZonedTime } from "date-fns-tz";
 import { useState } from "react";
 import { ridePublicDetails } from "@/lib/ridePublicDetails";
 import { ridePassengerSummary } from "@/lib/ridePassengerSummary";
+import { joinableDropOffLegs } from "../joinLegs";
 import { AddPassengersDialog } from "@/features/rides/components/AddPassengersDialog";
 import { RidePassengersList } from "@/features/rides/components/RidePassengersList";
 import { RidePublicNotesEditor } from "@/features/rides/components/RidePublicNotesEditor";
@@ -60,6 +61,8 @@ interface RideSheetProps {
   onCancel: (reason: string) => void;
   /** Return served requests to the unmet board without cancelling them. */
   onUnassign?: () => void;
+  /** REQ §13.105 c: join this הקפצה's drop-off and pickup rides into one (the request id comes from `joinableDropOffLegs`). */
+  onJoinLegs?: (requestId: string) => void;
   saving?: boolean;
   tightSchedule?: boolean;
   onClaimDriver?: () => void;
@@ -88,7 +91,7 @@ interface RideSheetProps {
  * fallback for reassigning a car via the "העבר לרכב" select below instead of
  * dragging.
  */
-export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenChange, onSave, onTogglePin, onCancel, onUnassign, saving, tightSchedule, onClaimDriver, coordinatorNotes, isPlanning, requests = [], departmentId, weekStart, destinations, onSaveRoute, onRemoveAddedPerson, driverCandidates, otherRides = [] }: RideSheetProps) {
+export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenChange, onSave, onTogglePin, onCancel, onUnassign, onJoinLegs, saving, tightSchedule, onClaimDriver, coordinatorNotes, isPlanning, requests = [], departmentId, weekStart, destinations, onSaveRoute, onRemoveAddedPerson, driverCandidates, otherRides = [] }: RideSheetProps) {
   // Bug-fix pass (owner bug #2): the previous re-sync condition compared
   // `ride.car_id !== carId` to detect "a different ride opened" — but that's
   // exactly as true the moment the Sadran picks a *different* car for the
@@ -102,6 +105,7 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
   // same one, resets the local fields), not on whether `carId` happens to
   // differ from the ride's persisted value.
   const [nowMs] = useState(() => Date.now());
+  const joinable = ride ? joinableDropOffLegs(ride, otherRides) : null;
   const [lastRideId, setLastRideId] = useState<string | null>(ride?.id ?? null);
   const [carId, setCarId] = useState(ride?.car_id ?? "");
   const [startTime, setStartTime] = useState(ride?.starts_at ? formatTime(new Date(ride.starts_at)) : "08:00");
@@ -361,6 +365,11 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
                 >
                   {ride.is_pinned ? t("action.unpin") : t("action.pin")}
                 </Button> : null}
+                {joinable && onJoinLegs && !isPlanning ? (
+                  <Button variant="outline" className="flex-1" onClick={() => onJoinLegs(joinable.requestId)} disabled={saving} data-testid="join-legs">
+                    {he.sadranRideSheet.joinLegs}
+                  </Button>
+                ) : null}
                 {onUnassign && !isPlanning && !ride.series_id ? (
                   <Button variant="outline" className="flex-1" onClick={onUnassign} disabled={saving}>
                     {he.sadranRideSheet.removeAssignment}

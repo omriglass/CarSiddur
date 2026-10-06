@@ -6,9 +6,9 @@ import { routeLabel } from "@/lib/routeLabel";
 import type { ProposalType } from "@/lib/enums";
 
 import { servedOf } from "../applySolve";
-import { mergeLegSummary, mergePayloadLeg, mergePayloadLegs, previewMerge, type MergeRouteContext } from "./mergeProposal";
+import { applyServerMergeTimes, mergeLegSummary, mergePayloadLeg, mergePayloadLegs, previewMerge, type MergeRouteContext, type ServerMergePreview } from "./mergeProposal";
 import { buildProposalPayload, resolveShiftTimes, seriesSpanOf } from "../proposals/buildProposalPayload";
-import { externalSuggestionFor, proposalPreviewText, proposalTemplateVariant } from "../proposals/proposalText";
+import { externalSuggestionFor, proposalPreviewText, proposalTemplateVariant, shiftTimesUnchanged } from "../proposals/proposalText";
 
 import type { BoardRide, CreateProposalInput, NotificationTemplateRow, WeekRequestRow } from "../api";
 import type { Json } from "@/integrations/supabase/types";
@@ -37,6 +37,8 @@ export interface DraftInputContext {
   homeDestinationId: string | null | undefined;
   /** Travel data for the merged-ride window in the message text (REQ §13.94). */
   route?: MergeRouteContext;
+  /** R5B5: the server's `merge_preview` for the dropped-on ride - the text's window and the guest's own times come from it. */
+  serverMerge?: ServerMergePreview | null;
 }
 
 export type DraftInputResult =
@@ -64,8 +66,9 @@ export function buildDraftInput(prefill: ComposerPrefill, ctx: DraftInputContext
   const { departAt, returnAt } = span ? { departAt: span.depart_at, returnAt: span.return_at } : resolveShiftTimes(prefill.payload, request);
   // REQ §13.94 (G10): the merged ride keeps the host's start; its end grows by the added driving
   // (route twin). Only the message text shows this window - the payload carries legs only.
-  const mergedPreview = type === "merge" && hostRide && ctx.route ? previewMerge(hostRide, request, mergePayloadLeg(prefill.payload, request), ctx.route) : null;
-  const combinedStart = typeof prefill.payload.starts_at === "string" ? prefill.payload.starts_at : hostRide?.starts_at;
+  const twinPreview = type === "merge" && hostRide && ctx.route ? previewMerge(hostRide, request, mergePayloadLeg(prefill.payload, request), ctx.route) : null;
+  const mergedPreview = applyServerMergeTimes(twinPreview, ctx.serverMerge, request);
+  const combinedStart = typeof prefill.payload.starts_at === "string" ? prefill.payload.starts_at : (mergedPreview?.startsAt ?? hostRide?.starts_at);
   const combinedEnd = typeof prefill.payload.ends_at === "string" ? prefill.payload.ends_at : (mergedPreview?.endsAt ?? hostRide?.ends_at);
   const originAway = !!request.origin_id && request.origin_id !== ctx.homeDestinationId;
   const payload = buildProposalPayload({
@@ -86,6 +89,7 @@ export function buildDraftInput(prefill: ComposerPrefill, ctx: DraftInputContext
     hostHasDriver: !!hostRide?.driver_id, originAway,
     destinationIsHome: !!ctx.homeDestinationId && request.destination_id === ctx.homeDestinationId,
     placed: request.status === "assigned" || request.status === "merged",
+    timesUnchanged: type === "shift" && !span && !!payload.car_id && shiftTimesUnchanged({ type, request, proposedDepartAt: departAt, proposedReturnAt: returnAt }),
   });
   const template = variant ? ctx.templates.find((t) => t.variant === variant) : undefined;
   const originCarId = type === "origin" && typeof payload.car_id === "string" ? payload.car_id : undefined;

@@ -109,5 +109,8 @@ export async function selectDay(page, day) {
   if ((await letters.count()) >= 7) { await letters.nth(weekday).click(); await page.waitForTimeout(800); return true; }
   const dated = page.locator('[role="tab"], button').filter({ hasText: new RegExp(`(^|\\D)${date}\\.${month}(\\D|$)`) }).first();
   if (await dated.count()) { await dated.click(); await page.waitForTimeout(800); return true; }
+  // /my and other lists have no day tabs: bring the first row dated that day into view ("ד׳ 14.10").
+  const row = page.getByText(new RegExp(`(^|\\D)${date}\\.${month}(\\D|$)`)).first();
+  if (await row.count()) { await row.scrollIntoViewIfNeeded(); await page.waitForTimeout(300); return true; }
   return false;
 }

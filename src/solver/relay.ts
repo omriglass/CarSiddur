@@ -21,9 +21,9 @@
 // left waiting at the destination.
 
 import { reason } from './reasons';
-import { requestDestName } from './names';
+import { placeName, requestDestName } from './names';
 import type { NormalizedRequest } from './slots';
-import { byId, dayBoundsForSlot, formatSlotTime, minutesToSlots, travelSlotsFor, withinRequestDay } from './slots';
+import { byId, dayBoundsForSlot, eligibleDriverMemberId, formatSlotTime, minutesToSlots, travelSlotsFor, withinRequestDay } from './slots';
 import type { CarTimeline } from './timeline';
 import type { Assignment, Car, SolverInput, Window } from './types';
 import { chauffeurLoad, fits, luggageFits } from './seatFit';
@@ -149,7 +149,13 @@ export function waitContested(
   return demand.size >= Math.max(1, sharedCars);
 }
 
-export function pairRelays(requests: NormalizedRequest[], cars: Car[], others: NormalizedRequest[] = []): PairRelaysResult {
+export function pairRelays(
+  requests: NormalizedRequest[],
+  cars: Car[],
+  others: NormalizedRequest[] = [],
+  /** R5B8 (REQ §13.105): an own pair whose wait is at most this many slots is connected even when contested. */
+  shortWaitSlots = 0,
+): PairRelaysResult {
   const outs = requests.filter(isRelayOut);
   const rets = requests.filter(isRelayReturn);
 
@@ -169,7 +175,11 @@ export function pairRelays(requests: NormalizedRequest[], cars: Car[], others: N
   // offered only when the wait is not contested: fewer other requests overlap the wait window than
   // there are shared cars. Otherwise the two legs stay separate (chauffeur legs, car returns between).
   const sharedCars = cars.filter((c) => c.type === 'shared').length;
+  // R5B8 (REQ §13.105, owner 2026-10-06): a SHORT wait (<= 2 x turnaround, the 104b threshold) never counts as
+  // contested for the request's own pair — the two chauffeur wraps it would split into burn more car time than
+  // the wait, and leave a driver-able member with two overlapping driverless rides on two cars.
   const contested = (c: Candidate): boolean =>
+    !(isOwn(c) && c.returnWindow.start - c.outWindow.end <= shortWaitSlots) &&
     waitContested([...requests, ...others], c.outWindow.end, c.returnWindow.start, [c.out, c.ret], sharedCars);
   for (let i = candidates.length - 1; i >= 0; i--) {
     const c = candidates[i];
@@ -215,6 +225,86 @@ export interface ChauffeurHealResult {
   healed: Assignment[];
   /** ids of requests that were healed (no longer unmet) */
   healedIds: Set<string>;
+}
+
+/**
+ * REQ §13.105 b (QA run 5 R5Q2, owner 2026-10-06): a pickup from X ("pick me up from Harish": a `return`
+ * relay leg X -> origin) may use a car that already **stands at X** when the requester (or a driving
+ * companion, every relay candidate has one) drives it home. One ordinary relay-mode ride X -> origin,
+ * the driver is the member; no chauffeur wrap, no volunteer. Tried before the chauffeur healing for
+ * the unpaired `return` legs; the car must be at X when the leg starts, free for the leg's own window
+ * and its next ride (if any) must start where the leg leaves it (`isFree` end-check). Mutates
+ * `timelines` like the greedy pass; only the leg's own window is tried (no flexibility search).
+ */
+export function pickupFromCarAtX(
+  unpaired: NormalizedRequest[],
+  timelines: Map<string, CarTimeline>,
+  input: SolverInput,
+  carsById: Map<string, Car>,
+  scores: Map<string, { total: number }>,
+): ChauffeurHealResult {
+  const healed: Assignment[] = [];
+  const healedIds = new Set<string>();
+  const sharedCars = input.cars.filter((c) => c.type === 'shared').sort((a, b) => byId({ id: a.id }, { id: b.id }));
+  const sorted = [...unpaired].sort((a, b) => {
+    const sa = scores.get(a.id)?.total ?? 0;
+    const sb = scores.get(b.id)?.total ?? 0;
+    if (sa !== sb) return sb - sa;
+    return byId(a, b);
+  });
+  for (const nr of sorted) {
+    const leg = nr.legs[0];
+    if (!leg || leg.side !== 'return' || leg.originId === leg.destinationId) continue;
+    const driverMemberId = eligibleDriverMemberId(nr.request);
+    if (!driverMemberId) continue;
+    const day = dayBoundsForSlot(input.week.days, leg.window.start);
+    if (leg.window.start < day.startSlot || leg.window.end > day.endSlot) continue;
+    const luggageCount = nr.luggage ? 1 : 0;
+    // the driver sits in the car: seats = passengers (their own seat is already counted in `adults`)
+    const car = sharedCars.find((c) => {
+      if (!fits(c, nr.passengers) || !luggageFits(c, luggageCount)) return false;
+      const tl = timelines.get(c.id);
+      return !!tl && tl.isFree(leg.window, leg.originId, undefined, leg.destinationId);
+    });
+    if (!car) continue;
+    const tl = timelines.get(car.id);
+    if (!tl) continue;
+    const rideId = `ride:${nr.id}`;
+    tl.add({ rideId, window: leg.window, startLocationId: leg.originId, endLocationId: leg.destinationId, overnightAck: false });
+    const carName = carsById.get(car.id)?.name ?? car.name;
+    healed.push({
+      rideId,
+      carId: car.id,
+      window: leg.window,
+      originId: leg.originId,
+      destinationId: leg.destinationId,
+      driverRequestId: nr.id,
+      driverMemberId,
+      legs: [
+        {
+          requestId: nr.id,
+          leg: 'return',
+          carMode: 'relay',
+          originId: leg.originId,
+          destinationId: leg.destinationId,
+          role: driverMemberId === nr.request.memberId ? 'driver' : 'passenger',
+        },
+      ],
+      servedRequestIds: [nr.id],
+      passengers: nr.passengers,
+      luggageCount,
+      shift: { departureMin: 0, returnMin: 0 },
+      source: 'solver',
+      reasonCode: 'PLACED_PICKUP_FROM_CAR_AT_X',
+      reason: reason('PLACED_PICKUP_FROM_CAR_AT_X', {
+        car: carName,
+        place: placeName(input, leg.originId, nr.request.destinationText),
+        ret: formatSlotTime(leg.window.end, day),
+      }),
+    });
+    healedIds.add(nr.id);
+  }
+  return { healed, healedIds };
 }
 
 /**

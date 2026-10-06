@@ -124,7 +124,7 @@ describe("rideBlockLabel", () => {
       needsDriver: false, driverName: "דנה לוי",
       served: [{ role: "passenger", requester: "יואב", destination: "תל אביב", leg: "out", car_mode: "chauffeur" }],
     });
-    expect(label).toBe("דנה מסיע/ה את יואב לתל אביב וחוזר/ת");
+    expect(label).toBe("דנה מסיע/ה את יואב לתל אביב וחוזר/ת · מסלול: נבו → תל אביב");
   });
 
   it("REQUIREMENTS §13.93: a chauffeur pickup leg names the ride's own departure time", () => {
@@ -133,7 +133,7 @@ describe("rideBlockLabel", () => {
       needsDriver: false, driverName: "דנה לוי", startsAt: "2026-09-13T12:20:00.000Z",
       served: [{ role: "passenger", requester: "יואב", destination: "תל אביב", leg: "return", car_mode: "chauffeur" }],
     });
-    expect(label).toContain("דנה אוסף/ת את יואב מתל אביב (יציאה");
+    expect(label).toContain("דנה אוסף/ת את יואב מתל אביב (הנסיעה מתחילה ב");
   });
 
   it("REQUIREMENTS §13.93: a relay pair's leave/wait legs name the place, not a direction prefix (no partner known yet)", () => {
@@ -212,5 +212,17 @@ describe("chauffeurRideLabel — drop-off vs pickup (REQ §13.93)", () => {
   it("an out leg starting away from the car ('pick me up from Harish') reads as a pickup at its origin", () => {
     expect(chauffeurRideLabel(null, [harish], undefined, "home"))
       .toBe(tv("rideCoordination.chauffeurPickupNeedsDriver", { name: "Dana", place: "Harish", time: "" }));
+  });
+});
+
+describe("R5U2: a pickup / chauffeur ride shows the car's real path", () => {
+  it("pickup: home → pickup place → home, and the start time is not called a departure", () => {
+    const label = rideBlockLabel({
+      originId: HOME, destinationId: HOME, originName: "נבו", destinationName: "נבו", homeDestinationId: HOME,
+      needsDriver: false, driverName: "דנה לוי", startsAt: "2026-09-13T12:20:00.000Z",
+      served: [{ role: "passenger", requester: "יואב", destination: "תל אביב", leg: "return", car_mode: "chauffeur" }],
+    });
+    expect(label).toContain("מסלול: נבו → תל אביב → נבו");
+    expect(label).not.toContain("יציאה");
   });
 });

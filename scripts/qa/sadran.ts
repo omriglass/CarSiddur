@@ -17,7 +17,7 @@ import {
   connectsOtherLeg, isUnmetDropValid, minutesIso, originMismatch, passengersOf, privateCarBlocks, seatsFit, strandsNextRide,
   unavailable, unmetCandidateWindow, unmetPlacement, unmetRequestPassengers, unmetShiftPayload, carLocationAt,
 } from "@/features/sadran/board/dropValidity";
-import { mergeInvalidReason, mergePayload, type MergeLeg } from "@/features/sadran/board/mergeProposal";
+import { mergeInvalidReason, mergePayload, mergePayloadLeg, type MergeLeg } from "@/features/sadran/board/mergeProposal";
 import { requestStart, requestWithinFlex, tripTypeOf } from "@/features/sadran/board/phantomLanes";
 import { initialRouteEditValues, reservationRoutePlaces, routeEditChanged, routeEditPayload, type RouteEditValues } from "@/features/sadran/board/rideRouteEdit";
 import { isDropOffWithPickup, coveredLegs } from "@/features/sadran/board/unmetLegs";
@@ -338,9 +338,13 @@ async function createProposalFrom(board: Board, prefill: ComposerPrefill, draft:
   const templates = await fetchWhatsappTemplates();
   const { data: me } = await supabase.auth.getUser();
   const profile = me.user ? (await fetchProfilesByIds([me.user.id]))[0] : undefined;
+  // R5B5: like the board's draft path, a merge's text reads the server's merge_preview (the one source of the times).
+  const mergeRequest = board.boardRequests.find((r) => r.id === prefill.requestId);
+  const serverMerge = prefill.type === "merge" && prefill.rideId && mergeRequest
+    ? await api.fetchMergePreview(prefill.rideId, prefill.requestId, mergePayloadLeg(prefill.payload, mergeRequest)).catch(() => null) : null;
   const built = buildDraftInput(prefill, {
     requests: board.boardRequests, rides: board.rides, templates, destinations: board.destinations, cars: board.cars,
-    sadranName: profile?.full_name ?? "", homeDestinationId: board.scope.homeDestinationId, route: board.routeCtx,
+    sadranName: profile?.full_name ?? "", homeDestinationId: board.scope.homeDestinationId, route: board.routeCtx, serverMerge,
   });
   if (!built.ok) throw new UsageError("cannot build this proposal (missing data: a merge needs a driven host ride; a shift needs a time or place change)");
   const pending = board.proposals.find((p) => p.request_id === prefill.requestId && p.status === "sent");
@@ -514,11 +518,8 @@ async function cmdAssignDriver(board: Board, args: Args): Promise<void> {
   const who = need(args.pos[1], "<member name|email-prefix|id|none>");
   const members = await loadMembers(board);
   const driver = who === "none" ? null : pickMember(members, who);
-  await api.editRide({
-    id: ride.id, department_id: board.scope.departmentId, week_start: board.scope.weekStart, car_id: ride.car_id, starts_at: ride.starts_at, ends_at: ride.ends_at,
-    origin_id: ride.origin_id, destination_id: ride.destination_id, driver_id: driver?.id ?? null, needs_driver: !driver, notes: ride.notes ?? undefined,
-    is_pinned: true, allow_conflict: true, pin_reason: ride.pin_reason ?? "SADRAN_MANUAL", served: servedToEditRideLegs(servedOf(ride)),
-  }, ride.version ?? undefined);
+  // R5B7: the board's driver picker path (`set_ride_driver`) - it notifies the driver and the passengers.
+  await api.setRideDriver(ride.id, driver?.id ?? null, ride.version ?? 0);
   console.log(`ride ${short(ride.id)} driver: ${driver ? `${driver.name} (${short(driver.id)})` : "(none, needs a driver)"}`);
 }
 
@@ -573,7 +574,7 @@ async function cmdFewerDays(board: Board, args: Args): Promise<void> {
   const from = legs.findIndex((l) => dayOf(l.departAt) === firstDay);
   const to = legs.findIndex((l) => dayOf(l.departAt) === lastDay);
   if (from < 0 || to < 0) throw new UsageError(`days must be legs of the series (${legs.map((l) => dayOf(l.departAt)).join(", ")})`);
-  if (to <= from) throw new UsageError("the app needs at least two consecutive days in the span");
+  if (to < from) throw new UsageError("the last day cannot be before the first day (a single day is allowed, REQ §13.105 d)");
   const span = buildSeriesSpan(legs, from, to);
   if (!span) throw new UsageError("the span must be consecutive, non-empty and strictly shorter than the whole series");
   const hidden = draftHiddenRideIds(board);

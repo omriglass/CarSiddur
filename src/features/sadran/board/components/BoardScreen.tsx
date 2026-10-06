@@ -44,10 +44,11 @@ import { rideCoordinatorNotes } from "@/lib/rideCoordinatorNotes";
 import { resolveRideRealDestination } from "../rideLabel";
 import { duplicateChildRuns, groupDuplicateRuns } from "../duplicateChildRuns";
 import { connectedMateOf, unmetItemId } from "../unmetLegs";
-import { mergePayloadLeg, mergePayloadLegs, previewMerge } from "../mergeProposal";
+import { applyServerMergeTimes, mergePayloadLeg, mergePayloadLegs, previewMerge } from "../mergeProposal";
 import { requestRouteLine } from "../requestRoute";
 import { parseTimeToMinutes } from "@/features/solverBridge/buildSolverInput";
 import { representativeRideTypeCode, servedOf, servedToEditRideLegs, withChildNames } from "../../solverRun";
+import { useMergePreview } from "../../hooks";
 import { useBoardData } from "../hooks/useBoardData";
 import { useBoardDnd } from "../hooks/useBoardDnd";
 import { useBoardDisplayPrefs } from "../useBoardDisplayPrefs";
@@ -126,6 +127,33 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
     target?.scrollIntoView({ behavior: "smooth", block: "start", inline: "center" });
   }, [conflictJump]);
 
+  // REQ §13.94 (G10): the merge popup's base ride, added request and merged-ride preview.
+  const mergeRequest = board.boardRequests.find((request) => request.id === dnd.mergePrefill?.requestId);
+  const mergeLegs = mergePayloadLegs(dnd.mergePrefill?.payload);
+  // REQ §13.102 (d): a split merge carries two rides (out on A, return on B), previewed each with its own leg.
+  const mergeSplit = mergeLegs.length === 2 && mergeLegs[0]!.ride_id !== mergeLegs[1]!.ride_id;
+  const mergeHost = board.rides.find((ride) => ride.id === (mergeLegs[0]?.ride_id ?? dnd.mergePrefill?.rideId));
+  const mergeLeg = mergeRequest ? mergePayloadLeg(dnd.mergePrefill?.payload, mergeRequest) : "out";
+  const splitMate = mergeSplit ? board.rides.find((ride) => ride.id === mergeLegs[1]!.ride_id) : undefined;
+  // REQ §13.101 (k): a "both ways" merge into one leg of a connected הקפצה pair joins one leg per
+  // ride on the server, so the popup previews both rides - each with its own leg.
+  const mergePair = splitMate && mergeHost
+    ? { mate: splitMate, rideLeg: mergeLegs[0]!.leg as "out" | "return", mateLeg: mergeLegs[1]!.leg as "out" | "return" }
+    : mergeHost && mergeLeg === "both" ? connectedMateOf(board.rides, mergeHost) : null;
+  // R5B5: the window and the guest's own times come from the server's `merge_preview` (the route picture and drag validity stay the TS twin's).
+  const popupOpen = !!dnd.mergePrefill;
+  const serverMergeHost = useMergePreview(mergeHost?.id, mergeRequest?.id, mergePair ? mergePair.rideLeg : mergeLeg, popupOpen);
+  const serverMergeMate = useMergePreview(mergePair?.mate.id, mergeRequest?.id, mergePair?.mateLeg ?? "out", popupOpen && !!mergePair);
+  const mergePreview = mergeHost && mergeRequest
+    ? applyServerMergeTimes(previewMerge(mergeHost, mergeRequest, mergePair ? mergePair.rideLeg : mergeLeg, board.routeCtx), serverMergeHost.data, mergeRequest) : null;
+  const mergePairPreview = mergePair && mergeRequest
+    ? applyServerMergeTimes(previewMerge(mergePair.mate, mergeRequest, mergePair.mateLeg, board.routeCtx), serverMergeMate.data, mergeRequest) : null;
+  const legValid = mergeHost && mergeRequest && !mergeSplit
+    ? Object.fromEntries((["out", "return", "both"] as const).map((leg) => [leg, !(previewMerge(mergeHost, mergeRequest, leg, board.routeCtx)?.invalid)]))
+    : undefined;
+  const mergeHostDriverEntry = mergeHost ? (servedOf(mergeHost).find((entry) => entry.role === "driver") ?? servedOf(mergeHost)[0]) : undefined;
+  const mergeHostRequest = mergeHostDriverEntry ? board.boardRequests.find((request) => request.id === mergeHostDriverEntry.request_id) : undefined;
+
   if (board.requestsQuery.isError || board.ridesQuery.isError) {
     return <ErrorState onRetry={() => board.ridesQuery.refetch()} />;
   }
@@ -160,6 +188,16 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
     ...board.draftPlacements.filter((placement) => placement.type !== "merge").map((placement) => `draft:${placement.proposalId}`),
   ]);
   const selectedProposalRequest = board.requestsQuery.data?.find((request) => request.id === dnd.selectedProposal?.request_id);
+  // R5U1: the sheet states old -> new times and car (the car the request rides now vs the proposal's / host's car).
+  const proposalChanges = (() => {
+    const proposal = dnd.selectedProposal;
+    if (!proposal || !selectedProposalRequest) return undefined;
+    const carName = (carId: string | null | undefined) => (carId ? ((board.carsQuery.data ?? []).find((car) => car.id === carId)?.name ?? null) : null);
+    const servingRide = board.rides.find((ride) => ride.status !== "cancelled" && servedOf(ride).some((entry) => entry.request_id === selectedProposalRequest.id));
+    const payload = proposal.payload && typeof proposal.payload === "object" && !Array.isArray(proposal.payload) ? (proposal.payload as Record<string, unknown>) : {};
+    const newCarId = proposal.type === "merge" ? board.rides.find((ride) => ride.id === proposal.ride_id)?.car_id : (typeof payload.car_id === "string" ? payload.car_id : null);
+    return { request: selectedProposalRequest, oldCarName: carName(servingRide?.car_id), newCarName: carName(newCarId) };
+  })();
 
   // REQ §13.94 (G10): live preview while a guest chip is dragged over a car (translucent, snapped, like a ride drag).
   const guestTarget = dnd.guestHover?.target;
@@ -169,27 +207,6 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
   const guestPreview = guestTarget?.kind === "car" && dnd.guestHover
     ? { carId: guestTarget.carId, startMinutes: guestTarget.minutes, endMinutes: guestTarget.minutes + guestMinutes, label: dnd.guestHover.guest.name, valid: true }
     : null;
-
-  // REQ §13.94 (G10): the merge popup's base ride, added request and merged-ride preview.
-  const mergeRequest = board.boardRequests.find((request) => request.id === dnd.mergePrefill?.requestId);
-  const mergeLegs = mergePayloadLegs(dnd.mergePrefill?.payload);
-  // REQ §13.102 (d): a split merge carries two rides (out on A, return on B), previewed each with its own leg.
-  const mergeSplit = mergeLegs.length === 2 && mergeLegs[0]!.ride_id !== mergeLegs[1]!.ride_id;
-  const mergeHost = board.rides.find((ride) => ride.id === (mergeLegs[0]?.ride_id ?? dnd.mergePrefill?.rideId));
-  const mergeLeg = mergeRequest ? mergePayloadLeg(dnd.mergePrefill?.payload, mergeRequest) : "out";
-  const splitMate = mergeSplit ? board.rides.find((ride) => ride.id === mergeLegs[1]!.ride_id) : undefined;
-  // REQ §13.101 (k): a "both ways" merge into one leg of a connected הקפצה pair joins one leg per
-  // ride on the server, so the popup previews both rides - each with its own leg.
-  const mergePair = splitMate && mergeHost
-    ? { mate: splitMate, rideLeg: mergeLegs[0]!.leg as "out" | "return", mateLeg: mergeLegs[1]!.leg as "out" | "return" }
-    : mergeHost && mergeLeg === "both" ? connectedMateOf(board.rides, mergeHost) : null;
-  const mergePreview = mergeHost && mergeRequest ? previewMerge(mergeHost, mergeRequest, mergePair ? mergePair.rideLeg : mergeLeg, board.routeCtx) : null;
-  const mergePairPreview = mergePair && mergeRequest ? previewMerge(mergePair.mate, mergeRequest, mergePair.mateLeg, board.routeCtx) : null;
-  const legValid = mergeHost && mergeRequest && !mergeSplit
-    ? Object.fromEntries((["out", "return", "both"] as const).map((leg) => [leg, !(previewMerge(mergeHost, mergeRequest, leg, board.routeCtx)?.invalid)]))
-    : undefined;
-  const mergeHostDriverEntry = mergeHost ? (servedOf(mergeHost).find((entry) => entry.role === "driver") ?? servedOf(mergeHost)[0]) : undefined;
-  const mergeHostRequest = mergeHostDriverEntry ? board.boardRequests.find((request) => request.id === mergeHostDriverEntry.request_id) : undefined;
 
   const currentPolicyForActions = (board.policyOptionsQuery.data ?? []).find((policy) => policy.policyVersionId === board.effectivePolicyVersionId)
     ?? (board.activePolicyQuery.data?.policyVersionId === board.effectivePolicyVersionId ? board.activePolicyQuery.data ?? null : null);
@@ -488,6 +505,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
         proposal={dnd.selectedProposal}
         requesterName={selectedProposalRequest?.requester_full_name}
         dayIso={selectedProposalRequest ? requestStart(selectedProposalRequest) : null}
+        changes={proposalChanges}
         busy={dnd.proposalActionPending}
         onOpenChange={(open) => !open && dnd.setSelectedProposalId(null)}
         onSend={dnd.sendDraft}
@@ -674,6 +692,10 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
             .catch(() => {
               // Toast already shown by the mutation's onError; same reasoning as `onSave` above.
             });
+        }}
+        onJoinLegs={(requestId) => {
+          if (!selectedRide?.id) return;
+          void dnd.handleJoinLegs(selectedRide.id, requestId).then(() => dnd.setSelectedRideId(null));
         }}
         onUnassign={() => {
           if (!selectedRide?.id) return;
