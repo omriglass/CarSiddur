@@ -18,8 +18,9 @@ export const LOCAL_SERVICE_KEY =
 
 /**
  * Refuses anything but a local disposable stack. The owner's own stack (port 54321) is
- * refused outright; CI's database job runs the default stack, so it is allowed only when both
- * `CI=true` and `QA_ALLOW_DEFAULT_STACK=1` are set.
+ * refused unless explicitly opted in: CI's database job (`CI=true` and `QA_ALLOW_DEFAULT_STACK=1`),
+ * or the owner asking for a QA week in their own local stack for hands-on testing
+ * (`QA_OWNER_STACK=1`; it creates its own `qa-s<seed>` department and never touches others).
  */
 export function resolveApi(apiArg) {
   const url = apiArg || process.env.QA_API_URL || DEFAULT_QA_API;
@@ -31,10 +32,11 @@ export function resolveApi(apiArg) {
   const port = parsed.port || (parsed.protocol === "https:" ? "443" : "80");
   if (port === "54321") {
     const ci = process.env.CI === "true" && process.env.QA_ALLOW_DEFAULT_STACK === "1";
-    if (!ci) {
+    const owner = process.env.QA_OWNER_STACK === "1";
+    if (!ci && !owner) {
       throw new Error(
         "qa: refusing 127.0.0.1:54321 - that is the owner's local stack. Use a disposable stack (docs/QA_SIMULATION.md section 0). " +
-          "(CI's database job is the only exception: CI=true and QA_ALLOW_DEFAULT_STACK=1.)",
+          "(Exceptions: CI's database job - CI=true and QA_ALLOW_DEFAULT_STACK=1 - or the owner's explicit QA_OWNER_STACK=1.)",
       );
     }
   }
