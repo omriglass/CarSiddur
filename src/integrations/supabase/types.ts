@@ -4632,6 +4632,10 @@ export type Database = {
         }
         Returns: Json
       }
+      place_series_on_car: {
+        Args: { p_car_id: string; p_series_id: string }
+        Returns: Json
+      }
       place_travel: {
         Args: { p_from: string; p_to: string }
         Returns: {

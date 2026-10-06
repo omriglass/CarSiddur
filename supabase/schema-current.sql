@@ -8160,6 +8160,37 @@ end $$;
 ALTER FUNCTION "public"."place_series"("p_series_id" "uuid", "p_car_id" "uuid", "p_pin" boolean, "p_pin_reason" "text") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."place_series_on_car"("p_series_id" "uuid", "p_car_id" "uuid") RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_dept uuid; v_week date; v_requester uuid;
+begin
+  select q.department_id, min(q.week_start), (array_agg(q.requester_id order by q.series_index))[1]
+    into v_dept, v_week, v_requester
+  from public.requests q
+  where q.series_id = p_series_id
+  group by q.department_id;
+  if v_dept is null then raise exception 'request_not_found' using errcode = 'P0001'; end if;
+  if not public.can_manage_week(v_dept, v_week) then raise exception 'not_authorized' using errcode = 'P0001'; end if;
+  if not exists (select 1 from public.cars c where c.id = p_car_id and c.department_id = v_dept) then
+    raise exception 'not_authorized' using errcode = 'P0001';
+  end if;
+  perform public.assert_private_car_owner_only(p_car_id, (select auth.uid()), v_requester);
+  if exists (select 1 from public.ride_requests rr
+             join public.rides r on r.id = rr.ride_id
+             join public.requests q on q.id = rr.request_id
+             where q.series_id = p_series_id and r.status <> 'cancelled') then
+    raise exception 'series_edit_not_supported' using errcode = 'MDR02';
+  end if;
+  return public.place_series(p_series_id, p_car_id, true, 'SADRAN_MANUAL');
+end $$;
+
+
+ALTER FUNCTION "public"."place_series_on_car"("p_series_id" "uuid", "p_car_id" "uuid") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."place_travel"("p_from" "uuid", "p_to" "uuid") RETURNS TABLE("distance_km" numeric, "travel_minutes" integer, "source" "text")
     LANGUAGE "plpgsql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -20213,6 +20244,12 @@ GRANT ALL ON FUNCTION "public"."place_request_on_car"("p_request_id" "uuid", "p_
 
 REVOKE ALL ON FUNCTION "public"."place_series"("p_series_id" "uuid", "p_car_id" "uuid", "p_pin" boolean, "p_pin_reason" "text") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."place_series"("p_series_id" "uuid", "p_car_id" "uuid", "p_pin" boolean, "p_pin_reason" "text") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."place_series_on_car"("p_series_id" "uuid", "p_car_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."place_series_on_car"("p_series_id" "uuid", "p_car_id" "uuid") TO "service_role";
+GRANT ALL ON FUNCTION "public"."place_series_on_car"("p_series_id" "uuid", "p_car_id" "uuid") TO "authenticated";
 
 
 

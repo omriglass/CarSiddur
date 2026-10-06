@@ -166,6 +166,17 @@ export function useMarkCarMoveMutation() {
   });
 }
 
+/** OB1: place a multi-day request by hand - all its days on one car. */
+export function usePlaceSeriesOnCarMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ seriesId, carId }: { seriesId: string; carId: string; departmentId: string; weekStart: string }) =>
+      api.placeSeriesOnCar(seriesId, carId),
+    onSuccess: (_data, { departmentId, weekStart }) => invalidateBoard(queryClient, departmentId, weekStart),
+    onError: showErrorToast,
+  });
+}
+
 export function useEditRideMutation() {
   const queryClient = useQueryClient();
   return useMutation({

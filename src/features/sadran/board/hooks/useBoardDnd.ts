@@ -54,6 +54,7 @@ import {
   useWhatsappTemplates,
   useWithdrawProposalMutation,
   useEditRideMutation,
+  usePlaceSeriesOnCarMutation,
   useMarkCarMoveMutation,
   useSetRidePassengersMutation,
   useJoinDropOffLegsMutation,
@@ -117,6 +118,7 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
   const templatesQuery = useWhatsappTemplates();
   const profileQuery = useProfile();
   const editRideMutation = useEditRideMutation();
+  const placeSeriesMutation = usePlaceSeriesOnCarMutation();
   const markCarMoveMutation = useMarkCarMoveMutation();
   const setRidePassengersMutation = useSetRidePassengersMutation();
   const claimDriverMutation = useClaimRideDriverMutation();
@@ -339,6 +341,15 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
     if (droppedOnRideId?.startsWith("draft:")) { toast.error(he.sadranBoard.dropOnDraftBlock); return; }
     if (droppedOnRideId?.startsWith("merge:")) {
       droppedOnRideId = proposals.find((p) => p.id === droppedOnRideId!.slice(6))?.ride_id ?? undefined;
+    }
+    // OB1: a multi-day request is placed whole - every day on this car; the server refuses when the
+    // car is not free on all of them (`series_car_unavailable`).
+    if (req.series_id && !droppedOnRideId) {
+      try {
+        await placeSeriesMutation.mutateAsync({ seriesId: req.series_id, carId, departmentId, weekStart });
+        toast.success(he.sadranBoard.seriesPlaced);
+      } catch { /* The mutation shows the error. */ }
+      return;
     }
     let window = unmetCandidateWindow(dropCtx, item, minutes, false, carId);
     if (!window || !department?.home_destination_id) {

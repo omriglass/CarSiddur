@@ -486,6 +486,11 @@ export async function editRide(input: EditRideInput, expectedVersion?: number): 
 /** REQ §13.103 b: "the car was moved from A to B" - a ride that decides where the car is from then on. */
 export interface MarkCarMoveInput { carId: string; fromPlaceId: string; toPlaceId: string; at: string; minutes: number; peopleIds?: string[] }
 
+/** OB1: place a multi-day request by hand - every day of the series on `carId` (refused unless the car is free on all of them). */
+export async function placeSeriesOnCar(seriesId: string, carId: string): Promise<void> {
+  await rpc("place_series_on_car", { p_series_id: seriesId, p_car_id: carId });
+}
+
 export async function markCarMove(input: MarkCarMoveInput): Promise<string> {
   return rpc("mark_car_move", {
     p_car_id: input.carId, p_from_place: input.fromPlaceId, p_to_place: input.toPlaceId,

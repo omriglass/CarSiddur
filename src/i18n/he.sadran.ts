@@ -95,6 +95,7 @@ export const heSadran = {
     wrongDay: "יש לשבץ את הבקשה ביום המקורי שלה",
     maintenanceUnavailable: "הרכב אינו זמין או נמצא בטיפול בשעות שנבחרו",
     carNotAtOriginToast: "הרכב לא נמצא במקום היציאה בשעה הזו (הוא חונה במקום אחר)",
+    seriesPlaced: "הבקשה הרב-יומית שובצה ברכב הזה לכל ימיה",
     privateCarNotTarget: "רכב פרטי: רק הבעלים מציב/ה עליו בקשות. אפשר לשלוח לבעלים בקשה להצטרף",
     /** REQ §89 (owner 2026-09-15): an automatic missing-driver relocation ride's block/card
      * label (shared with the siddur via `src/lib/rideLabel.ts`). */
