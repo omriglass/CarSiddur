@@ -28,7 +28,7 @@ begin
   assert (result->>'needs_driver')::boolean and result->>'car_id'=car::text,'quick one-way did not reserve preferred car';
   assert (result->>'starts_at')::timestamptz=dt and (result->>'ends_at')::timestamptz=dt+interval '1 hour','chauffeur duration or outbound anchor incorrect';
   select * into ride from public.rides where id=(result->>'ride_id')::uuid;
-  assert ride.status='confirmed' and ride.driver_id is null and ride.needs_driver and ride.is_pinned,'reservation missing confirmed pinned driver vacancy';
+  assert ride.status='flagged' and ride.driver_id is null and ride.needs_driver and ride.is_pinned,'reservation missing flagged (REQ §13.104) pinned driver vacancy';
   assert ride.origin_id=ride.destination_id and ride.notes is null,'quick reservation copied private notes';
   select * into q from public.requests where id=req;
   assert q.ride_description='Public outing' and q.guest_passenger_names=array['Guest A'] and q.notes='Private medical detail','public/private fields mixed or not normalized';

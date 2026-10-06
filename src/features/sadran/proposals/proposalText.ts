@@ -64,7 +64,7 @@ export interface ProposalTextInput {
   reason: string;
   externalSuggestion: string;
   /** Merge only: the combined window + names for the summary line. */
-  combined?: { start: string; end: string; passengerName: string; hostCarName: string } | null;
+  combined?: { start: string; end: string; passengerName: string; hostCarName: string; joinerOutAt?: string | null; joinerReturnAt?: string | null } | null;
   /** Merge only: which of the request's legs join the ride (default both). */
   mergeLeg?: "out" | "return" | "both";
   /** Merge only: the added driving for the host ("כ-N דק׳ נוספות"), when known. */
@@ -116,8 +116,9 @@ export function proposalTemplateVars(input: ProposalTextInput): Record<string, s
     else if (input.carName) carLine = ` · ${input.carName}`;
   } else if (input.type === "merge") {
     const leg = input.mergeLeg ?? "both";
-    const depart = leg === "return" ? null : (input.combined?.start ?? request?.depart_at);
-    const ret = leg === "out" ? null : (input.combined?.end ?? request?.return_at);
+    // R4B5: the joiner's own boarding times (the server's merge_preview twin), never the ride's window.
+    const depart = leg === "return" ? null : (input.combined?.joinerOutAt ?? request?.depart_at);
+    const ret = leg === "out" ? null : (input.combined?.joinerReturnAt ?? request?.return_at);
     joinLine = tv(depart && ret ? "sadranProposal.joinBoth" : depart ? "sadranProposal.joinOut" : "sadranProposal.joinReturn", { depart: times(depart), return: times(ret) });
     timeChange = timeChangeLine({ depart: request?.depart_at, return: request?.return_at }, { depart, return: ret }) || he.sadranProposal.timeUnchanged;
     legWord = leg === "out" ? he.sadranProposal.legOut : leg === "return" ? he.sadranProposal.legReturn : he.sadranProposal.legBoth;
@@ -171,8 +172,11 @@ export function proposalTemplateVars(input: ProposalTextInput): Record<string, s
 export function combinedSummaryText(input: ProposalTextInput): string {
   if (input.type !== "merge" || !input.combined) return "";
   // R3B6: a return-only guest is collected *from* the destination; a ride still needing a driver names none.
-  return tv(input.mergeLeg === "return" ? "rideCoordination.combinedSummaryReturn" : "rideCoordination.combinedSummary", {
-    driver: input.driverName || he.rideCoordination.driverWanted,
+  const key = input.driverName
+    ? (input.mergeLeg === "return" ? "rideCoordination.combinedSummaryReturn" : "rideCoordination.combinedSummary")
+    : (input.mergeLeg === "return" ? "rideCoordination.combinedSummaryReturnNoDriver" : "rideCoordination.combinedSummaryNoDriver");
+  return tv(key, {
+    driver: input.driverName,
     passenger: input.combined.passengerName,
     destination: input.destinationName,
     car: input.combined.hostCarName,

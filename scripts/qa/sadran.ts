@@ -14,7 +14,7 @@ import {
 import { publishWithScores } from "@/features/sadran/publish/publishWithScores";
 import { buildDraftInput, type ComposerPrefill } from "@/features/sadran/board/draftInput";
 import {
-  connectsOtherLeg, isUnmetDropValid, minutesIso, originMismatch, passengersOf, seatsFit, strandsNextRide,
+  connectsOtherLeg, isUnmetDropValid, minutesIso, originMismatch, passengersOf, privateCarBlocks, seatsFit, strandsNextRide,
   unavailable, unmetCandidateWindow, unmetPlacement, unmetRequestPassengers, unmetShiftPayload, carLocationAt,
 } from "@/features/sadran/board/dropValidity";
 import { mergeInvalidReason, mergePayload, type MergeLeg } from "@/features/sadran/board/mergeProposal";
@@ -273,6 +273,8 @@ async function cmdPlace(board: Board, args: Args): Promise<void> {
   const connects = connectsOtherLeg(dctx, item, car.id);
   const window = unmetCandidateWindow(dctx, item, minutes, !connects);
   if (!window) throw new UsageError("invalid window");
+  // R4B11: the board refuses a private car first (only its owner places requests there), whatever else is wrong.
+  if (privateCarBlocks(dctx, car.id, req.requester_id) && !has(args, "force")) throw new UsageError("the board would refuse this drop: private car - only its owner places requests on it (private_car_owner_only)");
   const problems: string[] = [];
   if (unavailable(dctx, car.id, window.startsAt, window.endsAt)) problems.push("car inactive or in maintenance then");
   if (!seatsFit(dctx, car.id, connects ? { adults: req.adults, childSeats: req.child_seats, boosters: req.boosters } : unmetRequestPassengers(req))) problems.push("seats do not fit");

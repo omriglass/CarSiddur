@@ -168,6 +168,8 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
                   volunteerName={!ride.needs_driver && ride.driver_id && !servedEntries.some((entry) => entry.role === "driver") ? (driverName ?? ride.driver_name ?? "") : null}
                   candidates={driverCandidates}
                   busyIds={busyDriverIds(ride, otherRides, requests)}
+                  placeName={(id) => destinations?.find((d) => d.id === id)?.name}
+                  homeDestinationId={homeDestinationId}
                   departmentId={departmentId}
                   weekStart={weekStart}
                   disabled={saving}

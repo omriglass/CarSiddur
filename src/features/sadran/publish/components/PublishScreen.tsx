@@ -11,7 +11,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ErrorState } from "@/components/ErrorState";
 import { useState } from "react";
-import { he, tv } from "@/i18n/he";
+import { he, t, tv, type TranslationKey } from "@/i18n/he";
 import { formatDayDate } from "@/lib/dayLabels";
 import { dateKey, formatTime } from "@/lib/time";
 import { requestStart } from "@/features/sadran/board/phantomLanes";
@@ -69,6 +69,14 @@ export function PublishScreen({ departmentId, weekStart }: PublishScreenProps) {
     const anchor = request.trip_shape === "one_way_from" ? request.return_at : request.depart_at;
     return anchor && chosenDays.includes(dateKey(anchor));
   });
+  // R4U4: sent deny/external proposals on the published days expire at publication - list them in the confirmation.
+  const expiringProposals = (proposalsQuery.data ?? []).filter((proposal) => (proposal.type === "deny" || proposal.type === "external") && proposal.status === "sent")
+    .flatMap((proposal) => {
+      const request = (requestsQuery.data ?? []).find((r) => r.id === proposal.request_id);
+      const anchor = request ? requestStart(request) : null;
+      return request && anchor && (confirmDays ?? []).includes(dateKey(anchor))
+        ? [{ id: proposal.id, name: request.requester_full_name ?? "", type: proposal.type, day: dateKey(anchor) }] : [];
+    });
   const previewQueries = [requestsQuery, ridesQuery, versionsQuery];
   const unavailable = readinessQuery.isLoading || readinessQuery.isError || !readiness.length || publishMutation.isPending || previewQueries.some((query) => query.isLoading || query.isError);
   const dateLabel = (day: string) => formatDayDate(`${day}T12:00:00Z`);
@@ -118,6 +126,10 @@ export function PublishScreen({ departmentId, weekStart }: PublishScreenProps) {
       {previewQueries.some((query) => query.isError) ? <ErrorState onRetry={() => void Promise.all(previewQueries.map((query) => query.refetch()))} /> : null}
       <Card><CardContent className="space-y-3 p-4">
         <h2 className="font-semibold">{he.publicationFlow.allQuestion}</h2>
+        <p className="text-sm text-muted-foreground" data-testid="publish-placed-count">{tv("publicationFlow.placedCount", {
+          total: String(readiness.reduce((n, day) => n + day.requestCount, 0)),
+          placed: String(readiness.reduce((n, day) => n + day.requestCount - day.unresolvedRequests, 0)),
+        })}</p>
         <p className="text-sm text-muted-foreground">{readyDays.length === 7 ? he.publicationFlow.allReady : tv("publicationFlow.readiness", { count: String(readyDays.length) })}</p>
         <div className="flex flex-wrap gap-2">
           <Button disabled={unavailable || readiness.some((day) => day.conflictRides > 0 || day.draftProposals > 0)} onClick={() => proposePublish(allDays)}>{publishMutation.isPending ? he.publishScores.calculating : he.publicationFlow.allYes}</Button>
@@ -238,6 +250,12 @@ export function PublishScreen({ departmentId, weekStart }: PublishScreenProps) {
             day.missingDriverRides ? tv("publicationFlow.missingDriver", { count: String(day.missingDriverRides) }) : null,
           ].filter(Boolean).join(" · ")}
         </li>)}</ul>
+        {expiringProposals.length ? (
+          <div className="mt-3 space-y-1 text-sm" data-testid="publish-expiring-proposals">
+            <p className="font-medium text-maintenance">{he.publicationFlow.expiringTitle}</p>
+            <ul className="list-disc ps-5">{expiringProposals.map((row) => <li key={row.id}>{tv("publicationFlow.expiringRow", { name: row.name, type: t(`proposal.type.${row.type}` as TranslationKey), day: dateLabel(row.day) })}</li>)}</ul>
+          </div>
+        ) : null}
       </ConfirmDialog>
     </div>
   );

@@ -29,7 +29,7 @@ import { env } from "@/lib/env";
 import { formatDayDate } from "@/lib/dayLabels";
 import { routeLabel } from "@/lib/routeLabel";
 import { formatTime } from "@/lib/time";
-import { DEFAULT_STOP_MINUTES, homeTravelEdges, makeHop } from "@/lib/rideRoute";
+import { DEFAULT_STOP_MINUTES, homeTravelEdges, makeHop, makeHopKm } from "@/lib/rideRoute";
 import { mergeLegSummary, mergePayloadLeg, previewMerge } from "../../board/mergeProposal";
 import { useQuery } from "@tanstack/react-query";
 
@@ -175,9 +175,12 @@ export function ProposalComposerScreen({ departmentId, weekStart }: ProposalComp
   // driving (`src/lib/rideRoute.ts`); the payload carries legs only, this window is display/text.
   const placeTravelQuery = usePlaceTravelForWeek(departmentId, weekStart, type === "merge");
   const settingsQuery = useDepartmentSettings(type === "merge" ? departmentId : undefined);
+  const mergeEdges = [...(placeTravelQuery.data ?? []), ...homeTravelEdges(homeDestinationId, destinationsQuery.data ?? [])];
   const mergePreview = type === "merge" && hostRideQuery.data && request
     ? previewMerge(hostRideQuery.data, request, mergePayloadLeg(mergePayload, request), {
-        hop: makeHop([...(placeTravelQuery.data ?? []), ...homeTravelEdges(homeDestinationId, destinationsQuery.data ?? [])]), stopMinutes: settingsQuery.data?.stop_minutes ?? DEFAULT_STOP_MINUTES, homeId: homeDestinationId,
+        // R4B5: the same context as the board (hop + km + detour limits) so both show the same times.
+        hop: makeHop(mergeEdges), hopKm: makeHopKm(mergeEdges), stopMinutes: settingsQuery.data?.stop_minutes ?? DEFAULT_STOP_MINUTES, homeId: homeDestinationId,
+        detourLimitMinutes: settingsQuery.data?.detour_limit_minutes, detourLimitKm: settingsQuery.data?.detour_limit_km,
       })
     : null;
   const combinedStart = typeof mergePayload?.starts_at === "string" ? mergePayload.starts_at : hostRideQuery.data?.starts_at;
@@ -227,6 +230,7 @@ export function ProposalComposerScreen({ departmentId, weekStart }: ProposalComp
       start: combinedStart, end: combinedEnd,
       passengerName: contactsQuery.data?.find((c) => c.id === request?.requester_id)?.full_name ?? "",
       hostCarName: carsQuery.data?.find((c) => c.id === hostRideQuery.data?.car_id)?.name ?? "",
+      joinerOutAt: mergePreview?.joinerOutAt, joinerReturnAt: mergePreview?.joinerReturnAt,
     } : null,
   };
   const combinedSummary = combinedSummaryText(textInput);

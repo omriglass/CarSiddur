@@ -80,8 +80,10 @@ export function buildProposalPayload(input: BuildProposalPayloadInput): Record<s
   }
   if (type === "shift" && isPlaceOnlyShift(prefillPayload)) return { ...prefillPayload };
   if (type === "shift") {
-    const departAt = input.proposedDepartAt;
-    const returnAt = input.proposedReturnAt;
+    // R4B4: a one-leg shift (`leg`) keeps only that leg's time - the request's other time must not leak in.
+    const leg = prefillPayload?.leg;
+    const departAt = leg === "return" ? null : input.proposedDepartAt;
+    const returnAt = leg === "out" ? null : input.proposedReturnAt;
     if (!departAt && !returnAt) return null;
     if (departAt && returnAt && (Date.parse(returnAt) <= Date.parse(departAt) || dateKey(departAt) !== dateKey(returnAt))) return null;
     // A time/car shift never carries places (apply_proposal would overwrite the request's route).

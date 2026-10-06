@@ -225,7 +225,9 @@ const CAR_COL_WIDTH_PX = 120;
 const HEADER_ROW_HEIGHT_PX = 48;
 const HOUR_ROW_HEIGHT_PX = 80;
 /** 15-min rides still render at least this tall so the label/time stay legible (UX_FLOWS §20). */
-const RIDE_MIN_HEIGHT_PX = 26;
+const RIDE_MIN_HEIGHT_PX = 32;
+/** R4U1: a ride this short or shorter gets slim resize handles so most of the card stays a click target. */
+const SHORT_RIDE_MINUTES = 30;
 /** Below this many pixels of movement, a pointerdown/up pair is a click, not a drag. */
 const DRAG_START_THRESHOLD_PX = 4;
 /**
@@ -816,7 +818,9 @@ export function WeekGrid({
               key={b.id}
               data-block-kind={b.kind ?? "maintenance"}
               className={cn(
-                "absolute inset-x-1 flex items-start overflow-clip rounded-sm border p-1 text-xs",
+                "absolute inset-x-1 z-0 flex items-start overflow-clip rounded-sm border p-1 text-xs",
+                // R4U1: an away band is only a hint - it never takes clicks from a ride card on the same car.
+                isAway && "pointer-events-none",
                 isAway
                   ? "border-muted-foreground/50 bg-[repeating-linear-gradient(45deg,hsl(var(--muted-foreground)/0.25),hsl(var(--muted-foreground)/0.25)_4px,hsl(var(--muted-foreground)/0.08)_4px,hsl(var(--muted-foreground)/0.08)_8px)] text-muted-foreground"
                   : "border-maintenance/60 bg-[repeating-linear-gradient(45deg,hsl(var(--maintenance)/0.35),hsl(var(--maintenance)/0.35)_4px,hsl(var(--maintenance)/0.12)_4px,hsl(var(--maintenance)/0.12)_8px)]",
@@ -914,7 +918,7 @@ export function WeekGrid({
               ) : null}
               {resizeEnabled && (canDragRide?.(ride) ?? true) && (canResizeRide?.(ride) ?? true) ? (
                 <span
-                  className="absolute inset-x-0 top-0 z-20 h-2.5 cursor-ns-resize touch-none border-y border-foreground/20 bg-foreground/10"
+                  className={cn("absolute inset-x-0 top-0 z-20 cursor-ns-resize touch-none border-y border-foreground/20 bg-foreground/10", ride.endMinutes - ride.startMinutes <= SHORT_RIDE_MINUTES ? "h-1" : "h-2.5")}
                   aria-hidden="true"
                   onClick={(e) => e.stopPropagation()}
                   onPointerDown={(e) => {
@@ -928,7 +932,7 @@ export function WeekGrid({
               </div>
               {resizeEnabled && (canDragRide?.(ride) ?? true) && (canResizeRide?.(ride) ?? true) ? (
                 <span
-                  className="absolute inset-x-0 bottom-0 z-20 h-2.5 cursor-ns-resize touch-none border-y border-foreground/20 bg-foreground/10"
+                  className={cn("absolute inset-x-0 bottom-0 z-20 cursor-ns-resize touch-none border-y border-foreground/20 bg-foreground/10", ride.endMinutes - ride.startMinutes <= SHORT_RIDE_MINUTES ? "h-1" : "h-2.5")}
                   aria-hidden="true"
                   onClick={(e) => e.stopPropagation()}
                   onPointerDown={(e) => {

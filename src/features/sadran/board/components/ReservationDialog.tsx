@@ -6,6 +6,7 @@ import { CompanionPicker } from "@/components/CompanionPicker";
 import { PortalDialogContent } from "@/components/PortalDialogContent";
 import { TimeField15 } from "@/components/TimeField15";
 import { Button } from "@/components/ui/button";
+import { formatDayDate } from "@/lib/dayLabels";
 import { Dialog, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   Select,
@@ -41,14 +42,16 @@ export interface ReservationDialogProps {
   places: { id: string; name: string }[];
   /** Where the car is at the dialog's start time (name), `null` when unknown. */
   carLocationName: string | null;
+  /** R4U2: the car's current place is never offered as the move's target. */
+  carLocationId?: string | null;
   onSave: () => void;
   saving: boolean;
 }
 
-export function ReservationDialog({ reservation, onChange, onOpenChange, selectedDay, cars, members, children, places, carLocationName, onSave, saving }: ReservationDialogProps) {
+export function ReservationDialog({ reservation, onChange, onOpenChange, selectedDay, cars, members, children, places, carLocationName, carLocationId, onSave, saving }: ReservationDialogProps) {
   return (
     <Dialog open={!!reservation} onOpenChange={(open) => !open && onOpenChange(false)}>
-      <PortalDialogContent><DialogHeader><DialogTitle>{he.sadranBoard.reservation}</DialogTitle><DialogDescription>{selectedDay}</DialogDescription></DialogHeader>
+      <PortalDialogContent><DialogHeader><DialogTitle>{reservation?.kind === "move" ? he.sadranBoard.carMove : he.sadranBoard.reservation}</DialogTitle><DialogDescription>{formatDayDate(`${selectedDay}T12:00:00Z`)}</DialogDescription></DialogHeader>
         {reservation ? <>
           <div className="flex gap-2" role="radiogroup" aria-label={he.sadranBoard.reservation}>
             <Button type="button" role="radio" aria-checked={reservation.kind === "reservation"} variant={reservation.kind === "reservation" ? "default" : "outline"} className="min-h-11 flex-1" data-testid="reservation-kind-reservation" onClick={() => onChange({ ...reservation, kind: "reservation" })}>{he.sadranBoard.reservation}</Button>
@@ -62,7 +65,7 @@ export function ReservationDialog({ reservation, onChange, onOpenChange, selecte
               <p className="text-sm" data-testid="car-move-from">{he.sadranBoard.carMoveFrom}{carLocationName ?? he.sadranBoard.carMoveFromUnknown}</p>
               <Select value={reservation.toPlaceId} onValueChange={(toPlaceId) => onChange({ ...reservation, toPlaceId })}>
                 <SelectTrigger aria-label={he.sadranBoard.carMoveTo} data-testid="car-move-to"><SelectValue placeholder={he.sadranBoard.carMoveToPlaceholder} /></SelectTrigger>
-                <SelectContent>{places.map((place) => <SelectItem key={place.id} value={place.id}>{place.name}</SelectItem>)}</SelectContent>
+                <SelectContent>{places.filter((place) => place.id !== carLocationId).map((place) => <SelectItem key={place.id} value={place.id}>{place.name}</SelectItem>)}</SelectContent>
               </Select>
             </div>
           ) : (

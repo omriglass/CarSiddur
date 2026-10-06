@@ -33,7 +33,7 @@ export interface MergePrefillDialogProps {
   /** The base ride's own window (before the merge). */
   hostStartsAt?: string | null;
   hostEndsAt?: string | null;
-  request: (Pick<WeekRequestRow, "trip_shape" | "requester_full_name"> & FlexSource) | undefined;
+  request: (Pick<WeekRequestRow, "trip_shape" | "requester_full_name" | "depart_at" | "return_at"> & FlexSource) | undefined;
   /** REQ §13.101 (QU5): the base ride's own requester (flexibility shown next to the base). */
   hostRequest?: (Pick<WeekRequestRow, "requester_full_name"> & FlexSource) | null;
   /** REQ §13.101 (k): second ride of a connected pair, previewed with its own leg. */
@@ -170,7 +170,12 @@ export function MergePrefillDialog({ prefill, hostLabel, hostStartsAt, hostEndsA
               <p className="font-semibold text-destructive" data-testid="merge-invalid">{he.mergedRide.invalid[preview.invalid]}</p>
             ) : preview?.boardEta ? (
               <div data-testid="merge-eta" className="space-y-0.5">
-                <p>{he.mergedRide.estimated} <Time iso={preview.boardEta} /></p>
+                <p>{he.mergedRide.estimated}</p>
+                {([["out", preview.joinerOutAt, request?.depart_at, "mergedRide.joinerOut"], ["return", preview.joinerReturnAt, request?.return_at, "mergedRide.joinerReturn"]] as const).map(([side, at, old, key]) => at ? (
+                  <p key={side} data-testid={`merge-joiner-${side}`}>
+                    {tv(key, { time: old && formatTime(new Date(old)) !== formatTime(new Date(at)) ? tv("mergedRide.joinerChanged", { time: formatTime(new Date(at)), old: formatTime(new Date(old)) }) : formatTime(new Date(at)) })}
+                  </p>
+                ) : null)}
                 {preview.timeChanges ? (
                   <p className="font-semibold text-maintenance" data-testid="merge-time-changes">{he.mergedRide.timeChanges}<Time iso={preview.boardEta} /></p>
                 ) : null}

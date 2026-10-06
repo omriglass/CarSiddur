@@ -313,8 +313,9 @@ describe('changeOrigin suggestion (REQUIREMENTS §13.93, ORIGINS_PLAN §4 item 6
 
   it('is not offered for a one-leg drop_off — the SQL origin proposal cannot place it (DATA_MODEL O3)', () => {
     const output = solve(awayCarInput(makeRequest({ id: 'R1', destinationId: 'destA', tripShape: 'one_way_to', tripType: 'drop_off', departureMs: slotMs(20) })));
+    // R4B7 (REQ §13.104): the parked-away car now serves it as a chauffeur ride; either way no changeOrigin.
     const unmet = output.unmet.find((u) => u.requestId === 'R1');
-    expect(unmet?.suggestions.some((s) => s.kind === 'changeOrigin')).toBe(false);
+    expect(unmet?.suggestions.some((s) => s.kind === 'changeOrigin') ?? false).toBe(false);
   });
 
   it('is not offered for a one_way that would strand the car\'s next ride (same end check as placement)', () => {

@@ -781,6 +781,8 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
       const startMinutes = (Date.parse(startsAt) - Date.parse(dayStartIso(selectedDay))) / 60_000;
       const endMinutes = (Date.parse(endsAt) - Date.parse(dayStartIso(selectedDay))) / 60_000;
       if (startMinutes >= 1440 || endMinutes <= 0) return [];
+      // R4U5: a car based away is not "away" while it stands at the kibbutz itself.
+      if (away.locationId === homeId) return [];
       const place = destinationNameById.get(away.locationId) ?? "";
       return [{ id: `away:${carId}:${index}`, carId, startMinutes, endMinutes, kind: "away" as const, label: tv("sadranBoard.awayBand", { place }) }];
     }),

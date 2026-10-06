@@ -34,6 +34,13 @@ describe("resolveDraftPlacement", () => {
     expect(placement?.endsAt).toBe("2026-10-11T11:00:00.000Z");
     expect(placement?.startsAt).toBe("2026-10-11T10:30:00.000Z");
   });
+  it("R4B4: a pickup-leg shift draws only that leg on its car and does not replace the out-leg ride", () => {
+    const req = request({ trip_type: "drop_off", depart_at: "2026-10-11T04:30:00.000Z", return_at: "2026-10-11T11:00:00.000Z" } as Partial<WeekRequestRow>);
+    const outRide = ride({ starts_at: "2026-10-11T04:30:00.000Z", ends_at: "2026-10-11T05:30:00.000Z" });
+    const placement = resolveDraftPlacement(proposal({ payload: { car_id: "carB", return_at: "2026-10-11T11:00:00.000Z", leg: "return" } }), [req], [outRide], "home");
+    expect(placement).toMatchObject({ carId: "carB", endsAt: "2026-10-11T11:00:00.000Z", replacesRideId: null });
+    expect(Date.parse(placement!.startsAt)).toBeGreaterThan(Date.parse("2026-10-11T10:00:00.000Z"));
+  });
   it("merge: host car with the payload's combined window", () => {
     const placement = resolveDraftPlacement(proposal({ type: "merge", ride_id: "ride1", payload: { starts_at: "2026-10-11T05:00:00.000Z", ends_at: "2026-10-11T11:00:00.000Z" } }), [request()], [ride()]);
     expect(placement).toMatchObject({ type: "merge", carId: "carA", hostRideId: "ride1", startsAt: "2026-10-11T05:00:00.000Z" });

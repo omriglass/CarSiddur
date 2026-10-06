@@ -625,7 +625,7 @@ Merged from both reports (S = QA Sadran, U = QA user). Whole week published; unm
 - **R3F2 — A member shortens their own multi-day request** (U F2).
 - Not findings: a decline reason (answers are binary, decision 21); the overlap/child warnings (built in the form; the CLI bypasses them); separate requests and 00:00–23:59 middle days of a multi-day request and its cascading withdraw (REQ §13.77 by design).
 
-## QA run 4 findings (2026-10-06, seed 1059, week 11–17.10, department `qa-s1059`; QA Sadran = Opus, Thursday via UI; QA user = Sonnet) — **awaiting owner triage**
+## QA run 4 findings (2026-10-06, seed 1059, week 11–17.10, department `qa-s1059`; QA Sadran = Opus, Thursday via UI; QA user = Sonnet) — **owner triaged 2026-10-06 (REQ item 104): all bugs; R4Q1, R4Q3, R4Q5 yes; R4Q2 no; R4Q4 future; R4U1–U7 build; R4F3 build; R4M1, R4F1, R4F2 not now**
 Merged from both reports (S = QA Sadran, U = QA user). Worked: car move (UI + CLI), merge into a needs-driver ride, drafts drawn/sent from the board, publish flow, busy marks in the driver picker, late requests auto-approved, a freed-car offer correctly closed with no eligible candidate. Unmet at the end: Sun 9, Mon 9, Tue 5, Wed 9, Thu 6 cards + ~35 rides without a driver (lone all-day commuters on every car, scarce child-seat cars, members living where no car is, zero-flexibility declines, big-trunk needs).
 
 ### Bugs
@@ -641,6 +641,10 @@ Merged from both reports (S = QA Sadran, U = QA user). Worked: car move (UI + CL
 - **R4B10 — Declining an external proposal fails `proposal_not_answerable`** with no explanation (U5: Sun 8e465fbd — expired at publish 3 minutes after it was sent).
 - **R4B11 — Labels and checks**: a הקפצה whose legs are on separate chauffeur rides is labelled "משולבת" (Thu cb1850e7, Wed b269ad01); a drop check says "would strand" when the real refusal is `private_car_owner_only` (Sun 145a45d3); kids' drop-offs blocked by child seats report `UNMET_NO_RELAY_PARTNER` with only a cab suggestion (Mon 10775417, 96d8dcff, 94502de2); publish shows "80/139 placed" while the solver reports 109 served; a drop-off's out-leg shows "גבעת חביבה->גבעת חביבה" in my rides (U-UI3) (S U3, U4, U7, U9).
 - QA tooling: `qa:ui shot` timed out at sign-in for members (m06, m17, m07) — no member UI check on Thursday.
+
+**Fix status (2026-10-06, migrations `20261010100000`–`…100400`, `20261010200000`–`…201100`; suites `qa_run4_proposals.sql`, `qa_run4_placement.sql`):**
+- Reproduced + fixed-verified on the QA week: R4B1 (unmet relay pairs fall back to chauffeur legs in the same solve; re-solve adds nothing — fuzz test), R4B2 (manual connect skips the demand guard), R4B5 (`_joiner_times` from the merged route; `merge_preview` `joiner_depart_at/return_at` + `joiner_old_*`), R4B6, R4B9 (driverless rides are `flagged`/`NEEDS_DRIVER`, never `confirmed`; requests `waitlisted`/`UNMET_NEEDS_DRIVER`; `merged` only when riding in someone else's ride), R4B11 count (`placedRequests`/`awaitingDriverRequests`).
+- Fixed, verified by test only: R4B3, R4B4 (single-leg shift payload `leg`+`car_id`; `app.place_only_leg`), R4B7 (solver + `extend_chauffeur_pickup_drive` safety net, out legs), R4B8 (cancelled leg ends: `one_way_to`/`one_way_from`; no spurious `edit_applied`), R4B10 (`proposal_expired`), R4B11 labels. Built: REQ 104 a (relay pairs + `car_wait_needed_elsewhere`), b (`merge_short_drop_off_rides`, wait ≤ 2 × turnaround; solver `chauffeurShortDropOffs`), c (solver `kidSeats` rank, `UNMET_NO_CAR_SEATS_BUSY`), e (`{{titleChange}}`), f (R4U1–U7). QA tooling: member sign-in retry. Not reproduced: the A→A label in my rides.
 
 ### Owner questions
 - **R4Q1 — Cross-request relay pairs park a car at X all day** while round trips go unmet (Tue Corolla at גן שמואל, Thu minivan at פרדס חנה; converted by hand, each freed car served an unmet request) — apply the R3Q1 rule (pair only when the car is not needed elsewhere) to these pairs too? (S8)

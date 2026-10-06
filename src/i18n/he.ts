@@ -93,6 +93,9 @@ export const he = {
     unresolved: "{{count}} בקשות ללא מענה",
     pending: "{{count}} הצעות ללא תשובה",
     missingDriver: "{{count}} נסיעות ללא נהג/ת",
+    placedCount: "שובצו {{placed}} מתוך {{total}} בקשות",
+    expiringTitle: "הצעות דחייה/פתרון חיצוני שעוד לא נענו יפוגו עם הפרסום:",
+    expiringRow: "{{name}} · {{type}} · {{day}}",
     conflicts: "{{count}} התנגשויות — יש לפתור לפני פרסום",
     noSelection: "יש לבחור לפחות יום אחד",
     unresolvedTitle: "לפרסם למרות הבקשות שטרם קיבלו מענה?",
@@ -208,6 +211,9 @@ export const he = {
     combinedSummary: "נסיעה משולבת: {{driver}} מסיע/ה את {{passenger}} ל{{destination}}, ברכב {{car}}, בשעות {{start}}–{{end}}.",
     combinedSummaryReturn: "נסיעה משולבת: {{driver}} אוסף/ת את {{passenger}} מ{{destination}}, ברכב {{car}}, בשעות {{start}}–{{end}}.",
     driverWanted: "נהג/ת שעוד לא נמצא/ה",
+    /** R4U7: a merge into a ride still needing a driver names no driver. */
+    combinedSummaryNoDriver: "נסיעה משולבת: הנסיעה עוד מחפשת נהג/ת. {{passenger}} מצטרף/ת לנסיעה ל{{destination}}, ברכב {{car}}, בשעות {{start}}–{{end}}.",
+    combinedSummaryReturnNoDriver: "נסיעה משולבת: הנסיעה עוד מחפשת נהג/ת. {{passenger}} נאסף/ת מ{{destination}}, ברכב {{car}}, בשעות {{start}}–{{end}}.",
     separateDestinations: "יעדים לפי בקשה",
     /** REQ §13.93/SOLVER §3.15: the `origin` proposal's one-line summary (composer + `/p/:token`). */
     originChangeSummary: "יציאה מ{{to}} במקום מ{{from}}, ברכב {{car}}",

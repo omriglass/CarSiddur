@@ -4251,6 +4251,16 @@ export type Database = {
         Args: { _car: string; _count: number }
         Returns: boolean
       }
+      car_wait_needed_elsewhere: {
+        Args: {
+          p_dept: string
+          p_exclude: string[]
+          p_from: string
+          p_to: string
+          p_week: string
+        }
+        Returns: boolean
+      }
       chauffeur_ride_minutes: {
         Args: {
           p_leg: Database["public"]["Enums"]["ride_leg"]
@@ -4398,6 +4408,10 @@ export type Database = {
       enter_waiting_list: { Args: { p_payload: Json }; Returns: Json }
       expire_freed_offers: { Args: { _now?: string }; Returns: number }
       expire_proposals: { Args: { _now?: string }; Returns: number }
+      extend_chauffeur_pickup_drive: {
+        Args: { _car: string; _week: string }
+        Returns: undefined
+      }
       fairness_stats: {
         Args: {
           p_department_id: string
@@ -4523,6 +4537,10 @@ export type Database = {
       merge_request_fingerprint: {
         Args: { p_request_id: string }
         Returns: string
+      }
+      merge_short_drop_off_rides: {
+        Args: { _car: string; _week: string }
+        Returns: undefined
       }
       move_series: {
         Args: {
@@ -4772,6 +4790,10 @@ export type Database = {
         Args: { p_hours?: number; p_issue_id: string }
         Returns: string
       }
+      request_awaits_driver: {
+        Args: { p_request_id: string }
+        Returns: boolean
+      }
       request_booking_info: { Args: { p_request_id: string }; Returns: Json }
       request_covered_legs: {
         Args: { p_request_id: string }
@@ -4779,6 +4801,10 @@ export type Database = {
       }
       request_has_free_car_at_origin: {
         Args: { p_request_id: string; p_strict: boolean }
+        Returns: boolean
+      }
+      request_has_own_rides_only: {
+        Args: { p_request_id: string }
         Returns: boolean
       }
       request_leg_route_km: {
@@ -4807,6 +4833,7 @@ export type Database = {
         }[]
       }
       request_legs_covered: { Args: { p_request_id: string }; Returns: boolean }
+      request_legs_placed: { Args: { p_request_id: string }; Returns: boolean }
       request_ride_change: {
         Args: {
           p_car_id: string

@@ -378,7 +378,7 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
     const placement = unmetPlacement(dropCtx, req, carId, window.startsAt);
     if (!placement) { toast.error(he.sadranBoard.invalidWindow); return; }
     if (!requestWithinFlex(req, window.startsAt, window.endsAt)) {
-      goToComposer({ requestId: req.id, rideId: null, type: "shift", payload: unmetShiftPayload(req, carId, window, placement) });
+      goToComposer({ requestId: req.id, rideId: null, type: "shift", payload: unmetShiftPayload(req, carId, window, placement, item.leg) });
       return;
     }
     try {
@@ -752,6 +752,7 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
     editRideMutation,
     markCarMoveMutation,
     reservationFromName,
+    reservationFromId,
     setRidePassengersMutation,
     claimDriverMutation,
     cancelRideChangeMutation,

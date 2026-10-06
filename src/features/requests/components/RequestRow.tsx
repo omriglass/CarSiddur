@@ -18,7 +18,7 @@ import type { TripType } from "@/lib/enums";
 import { canEditRequest } from "../window";
 import { isAwaitingAnswer } from "../pendingProposal";
 import { canPlaceOnOwnCar, isDuplicateWithdrawn } from "../overlap";
-import { FREED_SLOT_ELIGIBLE_STATUSES, MAKE_REPEATING_STATUSES, originDestinationLabel, ownLegWindow, type DisplayRow } from "../myRequestsRows";
+import { FREED_SLOT_ELIGIBLE_STATUSES, MAKE_REPEATING_STATUSES, displayStatus, originDestinationLabel, ownLegWindow, type DisplayRow } from "../myRequestsRows";
 
 /** REQ §13.93: shown whenever a request is not a plain round trip (the mundane default). */
 const TRIP_TYPE_LABEL: Record<TripType, string> = {
@@ -91,7 +91,9 @@ export function RequestRow({
         />
         <div className="flex shrink-0 items-center gap-2">
           {row.seriesLegs ? <Badge variant="outline">{tv("request.multiDayBadge", { count: String(row.seriesLegs.length) })}</Badge> : null}
-          <StatusBadge kind="request" status={row.status} />
+          {row.status === "proposed" && row.acceptedAwaitingOthers
+            ? <Badge variant="outline" data-testid="request-accepted-waiting">{he.request.acceptedWaitingOthers}</Badge>
+            : <StatusBadge kind="request" status={displayStatus(row)} />}
         </div>
       </div>
       {row.ride?.needsDriver ? <p className="text-sm font-medium text-destructive">{he.rideCoordination.missingDriver}</p> : null}

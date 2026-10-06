@@ -101,6 +101,9 @@ export interface MergePreview extends MergedRoute {
   requestedAt: string | null;
   /** The estimated time differs from the requested one (to the minute). */
   timeChanges: boolean;
+  /** R4B5/R4U3: the joiner's own estimated boarding time per leg (15-minute grid), `null` when they do not ride that leg. */
+  joinerOutAt: string | null;
+  joinerReturnAt: string | null;
 }
 
 /** The host ride as it would be once `request` joins on `leg`. */
@@ -136,7 +139,9 @@ export function previewMerge(host: BoardRide, request: WeekRequestRow, leg: Merg
   // R2B25: the stop ETA is shown on the 15-minute grid (like every ride time), never 12:53.
   merged.boardEta = merged.boardEta ? new Date(Math.round(Date.parse(merged.boardEta) / 900_000) * 900_000).toISOString() : null;
   const timeChanges = !!merged.boardEta && !!requestedAt && Math.round(Date.parse(merged.boardEta) / 60_000) !== Math.round(Date.parse(requestedAt) / 60_000);
-  return { ...merged, requestedAt: requestedAt ?? null, timeChanges };
+  const grid = (iso: string | null | undefined) => (iso ? new Date(Math.round(Date.parse(iso) / 900_000) * 900_000).toISOString() : null);
+  const boardAt = (side: "out" | "return") => grid(merged.route.find((p) => p.requestId === request.id && p.kind === "board" && p.leg === side)?.eta);
+  return { ...merged, requestedAt: requestedAt ?? null, timeChanges, joinerOutAt: boardAt("out"), joinerReturnAt: boardAt("return") };
 }
 
 /**

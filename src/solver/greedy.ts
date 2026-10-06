@@ -123,6 +123,9 @@ function continuityRank(carId: string, requestId: string, memberId: string, inpu
 interface CarKey {
   shiftCost: number;
   preference: number;
+  /** REQ §13.104c: 1 = a child-seat car given to a request without child seats while another unplaced
+   *  request that overlaps it needs child seats. Ranked right after `preference`; absent = 0. */
+  kidSeats?: number;
   slackVal: number;
   continuity: number;
   fragmentation: number;
@@ -140,6 +143,7 @@ export type CarChoiceMode = 'pack' | 'spread';
 function compareKey(a: CarKey, b: CarKey, carChoice: CarChoiceMode): number {
   if (a.shiftCost !== b.shiftCost) return a.shiftCost - b.shiftCost;
   if (a.preference !== b.preference) return a.preference - b.preference;
+  if ((a.kidSeats ?? 0) !== (b.kidSeats ?? 0)) return (a.kidSeats ?? 0) - (b.kidSeats ?? 0);
   if (a.slackVal !== b.slackVal) return a.slackVal - b.slackVal;
   if (a.continuity !== b.continuity) return a.continuity - b.continuity;
   if (carChoice === 'spread') {
@@ -168,6 +172,7 @@ function coreKeyEqual(a: CarKey, b: CarKey, carChoice: CarChoiceMode): boolean {
   const base =
     a.shiftCost === b.shiftCost &&
     a.preference === b.preference &&
+    (a.kidSeats ?? 0) === (b.kidSeats ?? 0) &&
     a.slackVal === b.slackVal &&
     a.continuity === b.continuity;
   return carChoice === 'pack' ? base && a.fragmentation === b.fragmentation : base;
@@ -335,6 +340,17 @@ function seriesLegWindow(leg: SeriesLeg, legs: SeriesLeg[], placement: SeriesPla
   return leg.window;
 }
 
+function childCapacity(car: Car): boolean {
+  return car.seatConfigs.some((q) => q.childSeats + q.boosters > 0);
+}
+
+/** Every request a unit holds (series excluded: they never compete for child-seat cars here). */
+function unitRequests(u: Unit): NormalizedRequest[] {
+  if (u.kind === 'single' && u.single) return [u.single];
+  if (u.kind === 'pair' && u.pair) return [u.pair.outNr, u.pair.retNr];
+  return [];
+}
+
 /** Runs the ordered greedy pass, mutating `timelines` in place for every unit it places. */
 export function runGreedy(
   units: Unit[],
@@ -364,6 +380,13 @@ export function runGreedy(
   // can unlock a request starting at the new place, so unmet units are retried in the same priority
   // order until a pass places nothing new (each pass places >= 1 unit, so <= units.length passes).
   let pending = sortUnits(units);
+  const kidRequests = units.flatMap(unitRequests).filter((r) => r.passengers.childSeats + r.passengers.boosters > 0);
+  const kidSeatsFor = (nr: NormalizedRequest, car: Car, unplacedKids: NormalizedRequest[]): number => {
+    if (nr.passengers.childSeats + nr.passengers.boosters > 0 || !childCapacity(car)) return 0;
+    const lo = nr.flexDep[0];
+    const hi = nr.legs[0]?.side === 'both' ? nr.flexRet[1] : Math.max(nr.window.end, nr.flexRet[1]);
+    return unplacedKids.some((k) => k.id !== nr.id && k.window.start < hi && lo < k.window.end && (!nr.legs[0] || fits(car, k.passengers))) ? 1 : 0;
+  };
   while (pending.length > 0) {
   const stillUnmet: Unit[] = [];
   let progress = false;
@@ -380,6 +403,8 @@ export function runGreedy(
       // F5 (docs/SOLVER.md §3.6.2): tracks whether mileage (rather than an
       // earlier, more important consideration) actually decided the winner.
       const mileageDecision = new MileageDecisionTracker(carChoice);
+      const placedIds = new Set(placed.flatMap((p) => (p.kind === 'single' ? [p.nr.id] : p.kind === 'pair' ? [p.outNr.id, p.retNr.id] : [])));
+      const unplacedKids = kidRequests.filter((k) => !placedIds.has(k.id));
 
       // Phase 1: preferred time on every car.
       for (const car of sharedCars) {
@@ -390,6 +415,7 @@ export function runGreedy(
           const key: CarKey = {
             shiftCost: 0,
             preference: carPreferenceRank(car.id, [nr.request.preferredCarId]),
+            kidSeats: kidSeatsFor(nr, car, unplacedKids),
             slackVal: homeSlack(car, nr),
             continuity: continuityRank(car.id, nr.id, nr.request.memberId, input),
             fragmentation: fragmentationFor(tl, nr.window),
@@ -421,6 +447,7 @@ export function runGreedy(
           const key: CarKey = {
             shiftCost: placement.cost,
             preference: carPreferenceRank(car.id, [nr.request.preferredCarId]),
+            kidSeats: kidSeatsFor(nr, car, unplacedKids),
             slackVal: homeSlack(car, nr),
             continuity: continuityRank(car.id, nr.id, nr.request.memberId, input),
             fragmentation: fragmentationFor(tl, placement.window),

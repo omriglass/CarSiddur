@@ -15,6 +15,8 @@ export interface DriverCandidate {
   id: string;
   name: string;
   doesNotDrive?: boolean;
+  /** R4U5: the member's own home place when it is not the department's (null/undefined = home). */
+  homePlaceId?: string | null;
 }
 
 export interface RideDriverPickerProps {
@@ -28,17 +30,21 @@ export interface RideDriverPickerProps {
   weekStart: string;
   /** R2U3: members busy during the ride (own ride/request overlapping); marked, and listed after the free ones. */
   busyIds?: ReadonlySet<string>;
+  /** R4U5: where members live, shown next to the name when not the department home. */
+  placeName?: (placeId: string) => string | undefined;
+  homeDestinationId?: string | null;
   disabled?: boolean;
   /** Called after a successful assign/remove (R3B16: the sheet closes). */
   onDone?: () => void;
 }
 
-export function RideDriverPicker({ rideId, version, needsDriver, volunteerName, candidates, departmentId, weekStart, busyIds, disabled, onDone }: RideDriverPickerProps) {
+export function RideDriverPicker({ rideId, version, needsDriver, volunteerName, candidates, departmentId, weekStart, busyIds, placeName, homeDestinationId, disabled, onDone }: RideDriverPickerProps) {
   const [driverId, setDriverId] = useState("");
   const mutation = useSetRideDriverMutation();
   const drivers = sortFreeFirst(candidates.filter((candidate) => !candidate.doesNotDrive), busyIds ?? new Set<string>());
 
   if (!needsDriver && !volunteerName) return null;
+  const livesAway = (candidate: DriverCandidate) => (candidate.homePlaceId && candidate.homePlaceId !== homeDestinationId ? placeName?.(candidate.homePlaceId) ?? null : null);
 
   function assign() {
     const chosen = drivers.find((candidate) => candidate.id === driverId);
@@ -64,7 +70,7 @@ export function RideDriverPicker({ rideId, version, needsDriver, volunteerName, 
                 <SelectValue placeholder={he.rideDriver.placeholder} />
               </SelectTrigger>
               <SelectContent>
-                {drivers.map((candidate) => <SelectItem key={candidate.id} value={candidate.id}>{busyIds?.has(candidate.id) ? `${candidate.name} · ${he.rideDriver.busy}` : candidate.name}</SelectItem>)}
+                {drivers.map((candidate) => <SelectItem key={candidate.id} value={candidate.id}>{[candidate.name, livesAway(candidate), busyIds?.has(candidate.id) ? he.rideDriver.busy : null].filter(Boolean).join(" · ")}</SelectItem>)}
               </SelectContent>
             </Select>
             <Button type="button" className="min-h-11" disabled={!driverId || disabled || mutation.isPending} onClick={assign} data-testid="ride-driver-assign">

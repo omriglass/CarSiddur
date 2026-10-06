@@ -536,6 +536,7 @@
         "supabase/tests/proposals_copy_and_series_span.sql",
         "supabase/tests/qa_run2_proposals.sql",
         "supabase/tests/qa_run3_proposals.sql",
+        "supabase/tests/qa_run4_proposals.sql",
         "e2e/sadran.spec.ts",
         "e2e/waitlist-groups.spec.ts",
         "e2e/export.spec.ts"
@@ -550,7 +551,8 @@
         "merged_rides.sql",
         "proposals_copy_and_series_span.sql",
         "qa_run2_proposals.sql",
-        "qa_run3_proposals.sql"
+        "qa_run3_proposals.sql",
+        "qa_run4_proposals.sql"
       ],
       "playwrightTags": [
         "@publication"
@@ -876,6 +878,7 @@
         "supabase/tests/department_isolation.sql",
         "supabase/tests/qa_run2_placement.sql",
         "supabase/tests/qa_run3_placement.sql",
+        "supabase/tests/qa_run4_placement.sql",
         "supabase/migrations/**/*department_scope*",
         "supabase/migrations/**/*status_department_guard*",
         "supabase/schema-current.sql"

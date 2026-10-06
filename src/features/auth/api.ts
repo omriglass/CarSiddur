@@ -87,6 +87,8 @@ export interface DepartmentMemberOption {
   name: string;
   /** REQ §13.93/§13.88: whether this companion can drive (`profiles.does_not_drive`). */
   doesNotDrive: boolean;
+  /** R4U5: `department_members.default_origin_id` (null = the department home). */
+  homeOriginId?: string | null;
 }
 
 /** Active members of a department (for `CompanionPicker`), excluding the current member. */
@@ -96,14 +98,14 @@ export async function fetchDepartmentMembers(
 ): Promise<DepartmentMemberOption[]> {
   const { data, error } = await supabase
     .from("department_members")
-    .select("profile_id, profile:profiles!department_members_profile_id_fkey(id, full_name, does_not_drive)")
+    .select("profile_id, default_origin_id, profile:profiles!department_members_profile_id_fkey(id, full_name, does_not_drive)")
     .eq("department_id", departmentId)
     .is("removed_at", null)
     .neq("profile_id", excludeProfileId);
   if (error) throw toAppError(error);
-  return ((data ?? []) as unknown as { profile_id: string; profile: { id: string; full_name: string; does_not_drive: boolean } | null }[])
+  return ((data ?? []) as unknown as { profile_id: string; default_origin_id: string | null; profile: { id: string; full_name: string; does_not_drive: boolean } | null }[])
     .filter((row) => row.profile !== null)
-    .map((row) => ({ id: row.profile_id, name: row.profile!.full_name, doesNotDrive: row.profile!.does_not_drive }));
+    .map((row) => ({ id: row.profile_id, name: row.profile!.full_name, doesNotDrive: row.profile!.does_not_drive, homeOriginId: row.default_origin_id }));
 }
 
 /** Duty recipients for a week: explicit assignment or permanent Sadran rotation. */

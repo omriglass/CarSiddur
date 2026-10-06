@@ -74,10 +74,23 @@ export function resolveDraftPlacement(
   }
 
   if (proposal.type === "shift") {
-    const ride = rideServing(rides, request.id, proposal.ride_id);
-    const carId = str(payload.car_id) ?? ride?.car_id ?? null;
     const departAt = str(payload.depart_at);
     const returnAt = str(payload.return_at);
+    // R4B4: one leg of a split drop-off is drawn as that leg only, never as the whole request window
+    // replacing the other leg's ride.
+    const leg = payload.leg === "out" || payload.leg === "return" ? payload.leg : null;
+    const legCar = str(payload.car_id);
+    if (leg && legCar) {
+      const win = leg === "return" && returnAt
+        ? requestWindow({ ...request, trip_shape: "one_way_from", return_at: returnAt })
+        : leg === "out" && departAt ? requestWindow({ ...request, trip_shape: "one_way_to", depart_at: departAt, return_at: null }) : null;
+      if (!win) return null;
+      return { ...common, type: "shift", carId: legCar, startsAt: win.startsAt, endsAt: win.endsAt,
+        originId: str(payload.origin_id) ?? request.origin_id ?? homeId ?? null,
+        destinationId: str(payload.destination_id) ?? request.destination_id, hostRideId: null, replacesRideId: null };
+    }
+    const ride = rideServing(rides, request.id, proposal.ride_id);
+    const carId = str(payload.car_id) ?? ride?.car_id ?? null;
     const base = ride?.starts_at && ride.ends_at ? { startsAt: ride.starts_at, endsAt: ride.ends_at } : requestWindow(request);
     if (!carId || !base) return null;
     const baseMs = Date.parse(base.endsAt) - Date.parse(base.startsAt);

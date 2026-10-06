@@ -109,7 +109,7 @@ export function buildDraftInput(prefill: ComposerPrefill, ctx: DraftInputContext
     reason,
     externalSuggestion: externalSuggestionFor(type, hint),
     combined: type === "merge" && combinedStart && combinedEnd
-      ? { start: combinedStart, end: combinedEnd, passengerName: request.requester_full_name ?? "", hostCarName }
+      ? { start: combinedStart, end: combinedEnd, passengerName: request.requester_full_name ?? "", hostCarName, joinerOutAt: mergedPreview?.joinerOutAt, joinerReturnAt: mergedPreview?.joinerReturnAt }
       : null,
   });
 

@@ -866,11 +866,24 @@ CREATE OR REPLACE FUNCTION "public"."_joiner_times"("_ride_id" "uuid", "_request
     LANGUAGE "plpgsql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
-declare q public.requests%rowtype;
+declare
+  q public.requests%rowtype; v_ride public.rides%rowtype; v_mc jsonb;
+  v_out_shift interval := interval '0'; v_ret_shift interval := interval '0';
 begin
   select * into q from public.requests where id = _request_id;
-  select max(case when x.leg = 'out' then x.eta end), max(case when x.leg = 'return' then x.eta end) into dep, ret
-  from public._ride_route_with(_ride_id, _request_id, _leg) x where x.request_id = _request_id and x.kind = 'board';
+  select * into v_ride from public.rides where id = _ride_id;
+  v_mc := public._merge_check(_ride_id, _request_id, _leg);
+  if v_mc ->> 'new_starts_at' is not null and v_ride.id is not null then
+    v_out_shift := (v_mc ->> 'new_starts_at')::timestamptz - v_ride.starts_at;
+    v_ret_shift := (v_mc ->> 'new_ends_at')::timestamptz - v_ride.ends_at;
+  end if;
+  select
+    coalesce(max(case when x.leg = 'out' and x.kind = 'board' and x.request_id = _request_id then x.eta end),
+             max(case when x.leg = 'out' and x."position" = 0 then x.eta end)) + v_out_shift,
+    coalesce(max(case when x.leg = 'return' and x.kind = 'board' and x.request_id = _request_id then x.eta end),
+             max(case when x.leg = 'return' and x."position" = 0 then x.eta end)) + v_ret_shift
+  into dep, ret
+  from public._ride_route_with(_ride_id, _request_id, _leg) x;
   dep := public._round5(coalesce(dep, case when _leg in ('out', 'both') then q.depart_at end));
   ret := public._round5(coalesce(ret, case when _leg in ('return', 'both') then q.return_at end));
   if _leg = 'return' then dep := null; elsif _leg = 'out' then ret := null; end if;
@@ -1323,14 +1336,40 @@ CREATE OR REPLACE FUNCTION "public"."_shift_place_on_car"("p_proposal_id" "uuid"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
-declare p public.proposals%rowtype;
+declare
+  p public.proposals%rowtype; q public.requests%rowtype; v_leg text; v_old record; v_prev text; v_res uuid;
 begin
   select * into p from public.proposals where id = p_proposal_id;
+  select * into q from public.requests where id = p.request_id;
+  v_leg := nullif(p.payload ->> 'leg', '');
+  if v_leg in ('out', 'return') and q.trip_type = 'drop_off' then
+    for v_old in
+      select rd.id from public.ride_requests rr join public.rides rd on rd.id = rr.ride_id
+      where rr.request_id = q.id and rr.leg = v_leg::public.ride_leg and rd.status <> 'cancelled'
+      order by rd.id for update of rd
+    loop
+      if exists(select 1 from public.ride_requests where ride_id = v_old.id and request_id <> q.id) then
+        if p.created_via <> 'sadran' then raise exception 'shared_ride_requires_sadran' using errcode = 'P0001'; end if;
+      else
+        update public.rides set status = 'cancelled', cancelled_at = now(),
+          cancelled_by = coalesce(p.created_by, q.requester_id), cancel_reason = 'REPLACED_BY_PROPOSAL' where id = v_old.id;
+      end if;
+      delete from public.ride_requests where ride_id = v_old.id and request_id = q.id and leg = v_leg::public.ride_leg;
+    end loop;
+    -- Only this leg is (re)placed (); the other leg's ride stays exactly as it was.
+    v_prev := coalesce(current_setting('app.place_only_leg', true), '');
+    perform set_config('app.place_only_leg', v_leg, true);
+    v_res := public.place_request_on_car(p.request_id, (p.payload ->> 'car_id')::uuid, p.created_via = 'sadran', p.created_by,
+      nullif(p.payload ->> 'driver_id', '')::uuid,
+      case when v_leg = 'out' then nullif(p.payload ->> 'depart_at', '')::timestamptz end,
+      case when v_leg = 'return' then nullif(p.payload ->> 'return_at', '')::timestamptz end, 'PROPOSAL_APPLIED');
+    perform set_config('app.place_only_leg', v_prev, true);
+    return v_res;
+  end if;
   return public.place_request_on_car(p.request_id, (p.payload ->> 'car_id')::uuid, p.created_via = 'sadran', p.created_by,
     nullif(p.payload ->> 'driver_id', '')::uuid, nullif(p.payload ->> 'depart_at', '')::timestamptz,
     nullif(p.payload ->> 'return_at', '')::timestamptz, 'PROPOSAL_APPLIED');
-end;
-$$;
+end $$;
 
 
 ALTER FUNCTION "public"."_shift_place_on_car"("p_proposal_id" "uuid") OWNER TO "postgres";
@@ -1818,6 +1857,7 @@ begin
   ) order by q.id for update;
   select * into v_proposal from public.proposals where token_hash = v_hash;
   if v_proposal.id is not null then
+    if v_proposal.status = 'expired' and not exists(select 1 from public.proposals o where o.request_id = v_proposal.request_id and o.id <> v_proposal.id and o.sent_at >= v_proposal.sent_at) then raise exception 'proposal_expired' using errcode = 'P0001'; end if;
     if v_proposal.status <> 'sent' then raise exception 'proposal_not_answerable' using errcode = 'P0001'; end if;
     if now() > v_proposal.expires_at then raise exception 'proposal_expired' using errcode = 'P0001'; end if;
 
@@ -1839,6 +1879,7 @@ begin
   from public.proposal_parties pp join public.proposals p on p.id = pp.proposal_id
   where pp.token_hash = v_hash;
   if v_party.proposal_id is null then raise exception 'invalid_token' using errcode = 'P0001'; end if;
+  if v_party.proposal_status = 'expired' and not exists(select 1 from public.proposals o, public.proposals me where me.id = v_party.proposal_id and o.request_id = me.request_id and o.id <> me.id and o.sent_at >= me.sent_at) then raise exception 'proposal_expired' using errcode = 'P0001'; end if;
   if v_party.proposal_status <> 'sent' then raise exception 'proposal_not_answerable' using errcode = 'P0001'; end if;
   if now() > v_party.proposal_expires_at then raise exception 'proposal_expired' using errcode = 'P0001'; end if;
 
@@ -2478,6 +2519,10 @@ begin
   perform public.pair_one_way_legs(v_dept, _week);
   -- REQ §13.95 H2: a הקפצה's out and return legs on this car, driven by the requester/companion, connect.
   perform public.connect_drop_off_legs(_car, _week);
+  -- REQ §13.104 (R4B7): a chauffeur ride from a car parked away includes the empty drive to the pickup.
+  perform public.extend_chauffeur_pickup_drive(_car, _week);
+  -- REQ §13.104 b: a short drop-off + pickup is one chauffeur ride when the car is not needed elsewhere.
+  perform public.merge_short_drop_off_rides(_car, _week);
 
   for r in
     select rd.id as ride_id, rd.origin_id, rd.destination_id, rd.starts_at, rd.ends_at
@@ -2920,7 +2965,7 @@ CREATE OR REPLACE FUNCTION "public"."cancel_ride_before_series"("p_ride_id" "uui
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
-declare r public.rides%rowtype; own_requests uuid[]; passenger record; v_driver_name text;
+declare r public.rides%rowtype; v_gone record; own_requests uuid[]; passenger record; v_driver_name text;
 begin
   select * into r from public.rides where id=p_ride_id for update;
   if not found or r.status='cancelled' then raise exception 'ride_not_found'; end if;
@@ -2931,8 +2976,26 @@ begin
     select array_agg(q.id) into own_requests from public.ride_requests rr join public.requests q on q.id=rr.request_id where rr.ride_id=r.id and q.requester_id=(select auth.uid()) and rr.role='passenger';
     if coalesce(cardinality(own_requests),0)=0 then raise exception 'not_authorized'; end if;
     perform set_config('app.audit_reason','passenger_cancelled_own_request',true);
+    create temp table if not exists pg_temp.cancelled_legs(request_id uuid, leg public.ride_leg) on commit drop;
+    delete from pg_temp.cancelled_legs;
+    insert into pg_temp.cancelled_legs select request_id, leg from public.ride_requests where ride_id=r.id and request_id=any(own_requests);
     delete from public.ride_requests where ride_id=r.id and request_id=any(own_requests);
     perform set_config('app.system_status_transition','on',true);
+    -- REQ §13.104 (R4B8): cancelling one leg of a הקפצה ENDS that leg: the request keeps only its other leg (the cancelled
+    -- leg's time is kept in kept_return_at / original_depart_at) instead of returning the leg to the unmet list.
+    for v_gone in select cl.request_id, cl.leg from pg_temp.cancelled_legs cl join public.requests q on q.id=cl.request_id
+      where q.trip_type='drop_off' and q.trip_shape='round_trip' and q.series_id is null and cl.leg in ('out','return')
+        and exists(select 1 from public.ride_requests rr join public.rides rd on rd.id=rr.ride_id where rr.request_id=q.id and rd.status<>'cancelled' and rd.id<>r.id) loop
+      if v_gone.leg='return' then
+        update public.requests set trip_shape='one_way_to', needs_car_at_destination=false, kept_return_at=return_at, return_at=null,
+          one_way_car_mode=case when (select does_not_drive from public.profiles where id=requester_id) then 'passenger'::public.leg_car_mode else 'relay'::public.leg_car_mode end
+        where id=v_gone.request_id;
+      else
+        update public.requests set trip_shape='one_way_from', needs_car_at_destination=false, depart_at=null,
+          one_way_car_mode=case when (select does_not_drive from public.profiles where id=requester_id) then 'passenger'::public.leg_car_mode else 'relay'::public.leg_car_mode end
+        where id=v_gone.request_id;
+      end if;
+    end loop;
     update public.requests q set status='cancelled',status_reason='RIDE_CANCELLED' where q.id=any(own_requests)
       and not exists(select 1 from public.ride_requests rr join public.rides rd on rd.id=rr.ride_id where rr.request_id=q.id and rd.status<>'cancelled');
     -- REQ §13.103 R3B12: a ride nobody is left on is released; the driver is always told who left.
@@ -3455,6 +3518,23 @@ $$;
 ALTER FUNCTION "public"."car_takes_luggage"("_car" "uuid", "_count" integer) OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."car_wait_needed_elsewhere"("p_dept" "uuid", "p_week" "date", "p_from" timestamp with time zone, "p_to" timestamp with time zone, "p_exclude" "uuid"[]) RETURNS boolean
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select (select count(distinct x.id) from public.requests x
+          where x.department_id = p_dept and x.week_start = p_week and not (x.id = any(coalesce(p_exclude, '{}'::uuid[])))
+            and x.status in ('submitted', 'waitlisted', 'proposed', 'assigned', 'merged') and x.depart_at is not null
+            and tstzrange(x.depart_at, coalesce(x.return_at, x.depart_at + interval '1 hour'), '[)')
+                && tstzrange(p_from, greatest(p_to, p_from + interval '1 minute'), '[)'))
+      >= (select count(*) from public.cars cc
+          where cc.department_id = p_dept and cc.status = 'active' and cc.type = 'shared');
+$$;
+
+
+ALTER FUNCTION "public"."car_wait_needed_elsewhere"("p_dept" "uuid", "p_week" "date", "p_from" timestamp with time zone, "p_to" timestamp with time zone, "p_exclude" "uuid"[]) OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."cars_protect_owner_editable_fields"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -3811,16 +3891,16 @@ begin
   v_turnaround := make_interval(mins => coalesce(public.required_turnaround_minutes(v_dept, _week), 30));
 
   for c in
-    select o.request_id, o.ride_id as out_ride, rt.ride_id as ret_ride
+    select o.request_id, o.ride_id as out_ride, rt.ride_id as ret_ride, (o.manual or rt.manual) as manual
     from (
-      select rr.request_id, r.id as ride_id, rr.car_mode
+      select rr.request_id, r.id as ride_id, rr.car_mode, (r.pin_reason = 'SADRAN_MANUAL') as manual
       from public.rides r join public.ride_requests rr on rr.ride_id = r.id
       where r.car_id = _car and r.week_start = _week and r.status <> 'cancelled' and not r.planning_conflict
         and not r.auto_relocation and rr.leg = 'out'
         and (select count(*) from public.ride_requests x where x.ride_id = r.id) = 1
     ) o
     join (
-      select rr.request_id, r.id as ride_id, rr.car_mode
+      select rr.request_id, r.id as ride_id, rr.car_mode, (r.pin_reason = 'SADRAN_MANUAL') as manual
       from public.rides r join public.ride_requests rr on rr.ride_id = r.id
       where r.car_id = _car and r.week_start = _week and r.status <> 'cancelled' and not r.planning_conflict
         and not r.auto_relocation and rr.leg = 'return'
@@ -3844,12 +3924,9 @@ begin
     v_re := q.return_at;
     v_rs := to_timestamp(floor(extract(epoch from (v_re - make_interval(mins => v_t_ret))) / 900) * 900);
     if v_rs < v_oe then continue; end if;
-    -- REQ §13.103 a: the wait is needed by others -> two legs, the car returns.
-    if (select count(distinct x.id) from public.requests x
-        where x.department_id = q.department_id and x.week_start = q.week_start and x.id <> q.id
-          and x.status in ('submitted', 'waitlisted', 'proposed', 'assigned', 'merged') and x.depart_at is not null
-          and tstzrange(x.depart_at, coalesce(x.return_at, x.depart_at + interval '1 hour'), '[)') && tstzrange(v_oe, greatest(v_rs, v_oe + interval '1 minute'), '[)'))
-       >= (select count(*) from public.cars cc where cc.department_id = q.department_id and cc.status = 'active' and cc.type = 'shared') then
+    -- REQ §13.103 a / §13.104 a: the wait is needed by others -> two legs, the car returns. A Sadran's own
+    -- (manual) placement of either leg is an explicit decision and is never undone by this rule (R4B2).
+    if not c.manual and public.car_wait_needed_elsewhere(q.department_id, q.week_start, v_oe, v_rs, array[q.id]) then
       continue;
     end if;
 
@@ -4978,6 +5055,7 @@ CREATE OR REPLACE FUNCTION "public"."edit_ride_before_planning"("p_ride" "jsonb"
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
 declare
+  v_prev_reason text;
   v_id uuid := nullif(p_ride->>'id', '')::uuid;
   v_dept uuid := (p_ride->>'department_id')::uuid;
   v_week date := (p_ride->>'week_start')::date;
@@ -5079,7 +5157,7 @@ begin
     delete from public.ride_requests where ride_id=v_id;
     for v_served in select * from jsonb_array_elements(p_ride->'served') loop
       if exists (select 1 from public.rides where id=v_id and driver_id is null and not needs_driver) then raise exception 'reservation_cannot_serve_requests'; end if;
-      select status, requester_id into v_prev_status, v_rq_requester from public.requests where id=(v_served->>'request_id')::uuid;
+      select status, requester_id, status_reason into v_prev_status, v_rq_requester, v_prev_reason from public.requests where id=(v_served->>'request_id')::uuid;
       insert into public.ride_requests(ride_id,request_id,role,leg,car_mode,detour_minutes)
       values(v_id,(v_served->>'request_id')::uuid,(v_served->>'role')::public.ride_role,
         coalesce((v_served->>'leg')::public.ride_leg,'both'),(v_served->>'car_mode')::public.leg_car_mode,coalesce((v_served->>'detour_minutes')::smallint,0));
@@ -5087,6 +5165,9 @@ begin
       where id=(v_served->>'request_id')::uuid;
       if v_manage and not v_needs_driver and v_prev_status in ('waitlisted','submitted','proposed')
          and v_rq_requester is distinct from (select auth.uid())
+         -- R4B8: not when the request was already on this ride, or already placed and only awaiting a driver
+         and not ((v_served->>'request_id')::uuid = any(coalesce(v_old_requests,'{}'::uuid[])))
+         and v_prev_reason is distinct from 'UNMET_NEEDS_DRIVER'
          and public.is_day_public(v_dept,v_week,((p_ride->>'starts_at')::timestamptz at time zone 'Asia/Jerusalem')::date) then
         perform public.enqueue_notification(v_rq_requester,'outcome_changed',v_dept,v_week,'{}'::jsonb,
           jsonb_build_object('variant','edit_applied','request_id',(v_served->>'request_id')::uuid,'ride_id',v_id),
@@ -5413,6 +5494,60 @@ end $$;
 
 
 ALTER FUNCTION "public"."expire_proposals"("_now" timestamp with time zone) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."extend_chauffeur_pickup_drive"("_car" "uuid", "_week" "date") RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_dept uuid; v_turnaround interval; v_dwell int; c record;
+  v_t1 int; v_t3 int; v_route int; v_start timestamptz; v_end timestamptz;
+begin
+  select department_id into v_dept from public.cars where id = _car;
+  if v_dept is null then return; end if;
+  v_turnaround := make_interval(mins => coalesce(public.required_turnaround_minutes(v_dept, _week), 30));
+  select coalesce((w.settings_overrides ->> 'chauffeur_dwell_minutes')::int, s.chauffeur_dwell_minutes, 10) into v_dwell
+  from public.department_settings s left join public.weeks w on w.department_id = s.department_id and w.week_start = _week
+  where s.department_id = v_dept;
+  v_dwell := greatest(coalesce(v_dwell, 10), 0);
+
+  for c in
+    select r.id as ride_id, r.starts_at, r.ends_at, r.origin_id as place, q.id as request_id, q.depart_at, q.origin_id, q.destination_id
+    from public.rides r
+    join public.ride_requests rr on rr.ride_id = r.id
+    join public.requests q on q.id = rr.request_id
+    where r.car_id = _car and r.week_start = _week and r.status <> 'cancelled' and not r.planning_conflict and not r.auto_relocation
+      and r.pin_reason is distinct from 'SADRAN_MANUAL'
+      and rr.car_mode = 'chauffeur' and rr.leg = 'out'
+      and (select count(*) from public.ride_requests x where x.ride_id = r.id) = 1
+      and q.origin_id is not null and q.destination_id is not null and q.depart_at is not null
+      and r.origin_id is distinct from q.origin_id
+    order by r.starts_at
+  loop
+    select p.travel_minutes into v_t1 from public.place_travel(c.place, c.origin_id) p;
+    continue when v_t1 is null;
+    select p.travel_minutes into v_t3 from public.place_travel(c.destination_id, c.place) p;
+    v_route := greatest(coalesce(public.request_leg_route_minutes(c.request_id, 'out'), 30), 0);
+    v_start := to_timestamp(floor(extract(epoch from (c.depart_at - make_interval(mins => v_t1 + v_dwell))) / 900) * 900);
+    v_end := greatest(c.ends_at, to_timestamp(ceil(extract(epoch from (c.depart_at + make_interval(mins => v_route + coalesce(v_t3, 0)))) / 900) * 900));
+    continue when c.starts_at <= v_start and c.ends_at >= v_end;
+    v_start := least(v_start, c.starts_at);
+    continue when (v_start at time zone 'Asia/Jerusalem')::date <> (c.starts_at at time zone 'Asia/Jerusalem')::date
+      or ((v_end - interval '1 minute') at time zone 'Asia/Jerusalem')::date <> (c.starts_at at time zone 'Asia/Jerusalem')::date;
+    continue when exists (
+      select 1 from public.rides x
+      where x.car_id = _car and x.id <> c.ride_id and x.status <> 'cancelled' and not x.planning_conflict
+        and tstzrange(x.starts_at, x.blocked_until, '[)') && tstzrange(v_start, v_end + v_turnaround, '[)'))
+      or exists (
+      select 1 from public.car_maintenance_blocks b
+      where b.car_id = _car and tstzrange(b.starts_at, b.ends_at, '[)') && tstzrange(v_start, v_end, '[)'));
+    update public.rides set starts_at = v_start, ends_at = v_end where id = c.ride_id;
+  end loop;
+end $$;
+
+
+ALTER FUNCTION "public"."extend_chauffeur_pickup_drive"("_car" "uuid", "_week" "date") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."fairness_stats"("p_department_id" "uuid", "p_week_start" "date", "p_lookback_weeks" integer) RETURNS TABLE("profile_id" "uuid", "granted_hours" numeric)
@@ -6570,7 +6705,6 @@ begin
   end if;
   v := public._merge_check(p_ride_id, p_request_id, p_leg);
   v_err := v ->> 'error';
-  -- REQ §13.103 R3B6: the joiner's own stop time(s) on this ride (a return leg: the pickup, never a departure).
   select jt.dep, jt.ret into v_jd, v_jr from public._joiner_times(p_ride_id, p_request_id, p_leg) jt;
   if v_err is null and coalesce((v ->> 'turnaround_conflict')::boolean, false) then v_err := 'merge_turnaround_conflict'; end if;
   if v_err is null then
@@ -6592,7 +6726,9 @@ begin
     end;
   end if;
   return v || jsonb_build_object('ok', v_err is null, 'error', v_err, 'code', public._merge_error_code(v_err),
-    'joiner_depart_at', v_jd, 'joiner_return_at', v_jr);
+    'joiner_depart_at', v_jd, 'joiner_return_at', v_jr,
+    'joiner_old_depart_at', case when p_leg in ('out', 'both') then v_req.depart_at end,
+    'joiner_old_return_at', case when p_leg in ('return', 'both') then v_req.return_at end);
 end $$;
 
 
@@ -6608,6 +6744,86 @@ $$;
 
 
 ALTER FUNCTION "public"."merge_request_fingerprint"("p_request_id" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."merge_short_drop_off_rides"("_car" "uuid", "_week" "date") RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_dept uuid; v_turnaround interval; v_limit interval; c record; q public.requests%rowtype;
+  v_cand uuid; v_try int; v_cars uuid[];
+begin
+  select department_id into v_dept from public.cars where id = _car;
+  if v_dept is null then return; end if;
+  v_turnaround := make_interval(mins => coalesce(public.required_turnaround_minutes(v_dept, _week), 30));
+  v_limit := v_turnaround * 2;
+
+  for c in
+    select o.request_id, o.ride_id as out_ride, o.car_id as out_car, o.starts_at as o_start, o.ends_at as o_end, o.origin_id as o_place,
+           rt.ride_id as ret_ride, rt.car_id as ret_car, rt.starts_at as r_start, rt.ends_at as r_end, rt.origin_id as r_place
+    from (
+      select rr.request_id, r.id as ride_id, r.car_id, r.starts_at, r.ends_at, r.origin_id
+      from public.rides r join public.ride_requests rr on rr.ride_id = r.id
+      where r.week_start = _week and r.department_id = v_dept and r.status <> 'cancelled' and not r.planning_conflict and not r.auto_relocation
+        and r.needs_driver and r.driver_id is null and r.pin_reason is distinct from 'SADRAN_MANUAL'
+        and rr.leg = 'out' and rr.car_mode = 'chauffeur'
+        and (select count(*) from public.ride_requests x where x.ride_id = r.id) = 1
+    ) o
+    join (
+      select rr.request_id, r.id as ride_id, r.car_id, r.starts_at, r.ends_at, r.origin_id
+      from public.rides r join public.ride_requests rr on rr.ride_id = r.id
+      where r.week_start = _week and r.department_id = v_dept and r.status <> 'cancelled' and not r.planning_conflict and not r.auto_relocation
+        and r.needs_driver and r.driver_id is null and r.pin_reason is distinct from 'SADRAN_MANUAL'
+        and rr.leg = 'return' and rr.car_mode = 'chauffeur'
+        and (select count(*) from public.ride_requests x where x.ride_id = r.id) = 1
+    ) rt on rt.request_id = o.request_id
+    join public.requests qq on qq.id = o.request_id
+    where (o.car_id = _car or rt.car_id = _car)
+      and qq.trip_type = 'drop_off' and qq.trip_shape = 'round_trip'
+      and rt.starts_at >= o.ends_at and rt.starts_at - o.ends_at <= v_limit
+      and (o.starts_at at time zone 'Asia/Jerusalem')::date = ((rt.ends_at - interval '1 minute') at time zone 'Asia/Jerusalem')::date
+    order by o.starts_at, o.request_id
+  loop
+    select * into q from public.requests where id = c.request_id;
+    if public.car_wait_needed_elsewhere(v_dept, _week, c.o_end, c.r_start, array[q.id]) then continue; end if;
+
+    v_cand := null;
+    for v_try in 1..2 loop
+      if v_try = 1 then v_cand := c.out_car;
+      elsif c.ret_car <> c.out_car and c.r_place = c.o_place and public.car_location_excluding(c.ret_car, c.o_start, c.ret_ride) = c.o_place then v_cand := c.ret_car;
+      else v_cand := null; end if;
+      continue when v_cand is null;
+      if public.car_fits(v_cand, q.adults + 1, q.child_seats, q.boosters)
+         and not exists (
+           select 1 from public.rides x
+           where x.car_id = v_cand and x.id not in (c.out_ride, c.ret_ride) and x.status <> 'cancelled' and not x.planning_conflict
+             and tstzrange(x.starts_at, x.blocked_until, '[)') && tstzrange(c.o_start, c.r_end + v_turnaround, '[)'))
+         and not exists (
+           select 1 from public.car_maintenance_blocks b
+           where b.car_id = v_cand and tstzrange(b.starts_at, b.ends_at, '[)') && tstzrange(c.o_start, c.r_end, '[)'))
+      then exit; end if;
+      v_cand := null;
+    end loop;
+    continue when v_cand is null;
+
+    delete from public.ride_requests where ride_id = c.ret_ride and request_id = q.id;
+    update public.rides set status = 'cancelled', cancelled_at = now(),
+      cancelled_by = coalesce((select auth.uid()), created_by), cancel_reason = 'MERGED_SHORT_DROP_OFF'
+    where id = c.ret_ride;
+    update public.ride_requests set leg = 'both' where ride_id = c.out_ride and request_id = q.id;
+    update public.rides set car_id = v_cand, ends_at = c.r_end, turnaround_override_minutes = null where id = c.out_ride;
+    v_cars := array[c.out_car, c.ret_car];
+    for v_try in 1..2 loop
+      if v_cars[v_try] <> _car and (v_try = 1 or v_cars[1] <> v_cars[2]) then
+        perform public.assert_car_chain(v_cars[v_try], _week);
+      end if;
+    end loop;
+  end loop;
+end $$;
+
+
+ALTER FUNCTION "public"."merge_short_drop_off_rides"("_car" "uuid", "_week" "date") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."move_series"("p_series_id" "uuid", "p_new_car_id" "uuid", "p_expected_version" integer DEFAULT NULL::integer) RETURNS "jsonb"
@@ -7147,7 +7363,7 @@ begin
 
   for out_leg in
     select r.id as ride_id, r.car_id, r.driver_id, r.needs_driver, (r.is_pinned and r.pin_reason is distinct from 'MISSING_DRIVER') as is_pinned,
-           rr.request_id, q.origin_id, q.destination_id, q.depart_at
+           (r.pin_reason = 'SADRAN_MANUAL') as manual, rr.request_id, q.origin_id, q.destination_id, q.depart_at
     from public.rides r
     join public.ride_requests rr on rr.ride_id = r.id
     join public.requests q on q.id = rr.request_id
@@ -7165,9 +7381,10 @@ begin
       v_out_end := to_timestamp(ceil(extract(epoch from v_out_end) / 900) * 900);
     end if;
 
-    select x.ride_id, x.car_id, x.request_id, x.ret_start, x.ret_end, x.is_pinned into ret_leg
+    select x.ride_id, x.car_id, x.request_id, x.ret_start, x.ret_end, x.is_pinned, x.manual into ret_leg
     from (
       select r2.id as ride_id, r2.car_id, q2.id as request_id, (r2.is_pinned and r2.pin_reason is distinct from 'MISSING_DRIVER') as is_pinned,
+             (r2.pin_reason = 'SADRAN_MANUAL') as manual,
              q2.return_at - make_interval(mins => greatest(coalesce(public.request_leg_route_minutes(q2.id, 'return'), 30), 0)) as ret_start,
              q2.return_at as ret_end
       from public.requests q2
@@ -7179,7 +7396,7 @@ begin
         and not r2.auto_relocation and r2.overnight_ack_by is null
         and (select count(*) from public.ride_requests rr3 where rr3.ride_id = r2.id) = 1
       union all
-      select r2.id, r2.car_id, q2.id, (r2.is_pinned and r2.pin_reason is distinct from 'MISSING_DRIVER'),
+      select r2.id, r2.car_id, q2.id, (r2.is_pinned and r2.pin_reason is distinct from 'MISSING_DRIVER'), (r2.pin_reason = 'SADRAN_MANUAL'),
              q2.depart_at,
              q2.depart_at + make_interval(mins => greatest(coalesce(public.request_leg_route_minutes(q2.id, 'out'), 30), 0))
       from public.requests q2
@@ -7205,6 +7422,13 @@ begin
     -- Idempotent: already paired correctly (out-leg already relay with the right driver,
     -- on the same car as the return leg) — nothing to do.
     if out_leg.needs_driver = false and out_leg.driver_id = v_driver_out and out_leg.car_id = ret_leg.car_id then
+      continue;
+    end if;
+
+    -- REQ §13.104 a (R4Q1): two different members' legs park the car at X only when nobody else needs a car
+    -- during the wait (the §13.103 a rule); a Sadran's own manual placement of either leg is never undone.
+    if not (out_leg.manual or ret_leg.manual)
+       and public.car_wait_needed_elsewhere(p_dept, p_week, v_out_end, ret_leg.ret_start, array[out_leg.request_id, ret_leg.request_id]) then
       continue;
     end if;
 
@@ -7463,7 +7687,8 @@ begin
   -- Replace the request's previous placement.
   for v_old in select rd.* from public.rides rd join public.ride_requests rr on rr.ride_id = rd.id
     where rr.request_id = q.id and rd.status <> 'cancelled' order by rd.id for update of rd loop
-    continue when coalesce(current_setting('app.place_only_missing', true), 'off') = 'on';   -- R2B3: keep legs already served
+    continue when coalesce(current_setting('app.place_only_missing', true), 'off') = 'on'   -- R2B3: keep legs already served
+      or coalesce(current_setting('app.place_only_leg', true), '') in ('out', 'return');   -- R4B4: the other leg stays
     if exists(select 1 from public.ride_requests where ride_id = v_old.id and request_id <> q.id) then
       if not v_manual then raise exception 'shared_ride_requires_sadran'; end if;
     else
@@ -7527,6 +7752,8 @@ begin
     for k in 1..2 loop
       if k = 1 then v_leg := 'out'; v_at := v_dep; else v_leg := 'return'; v_at := v_ret; end if;
       continue when v_at is null;
+      continue when coalesce(current_setting('app.place_only_leg', true), '') in ('out', 'return')   -- R4B4: a single-leg shift places only that leg
+        and v_leg::text <> current_setting('app.place_only_leg', true);
       continue when coalesce(current_setting('app.place_only_missing', true), 'off') = 'on' and v_leg::text = any(public.request_covered_legs(q.id));
       v_wanted := v_wanted + 1;
       v_travel := greatest(coalesce(public.request_leg_route_minutes(q.id, v_leg), 30), 0);
@@ -8140,6 +8367,7 @@ declare
   v_rides uuid[]; v_e jsonb; v_part text; v_parts text[] := '{}'; v_tc_parts text[] := '{}'; v_times text; v_tc text;
   v_placed boolean; v_leg_word text := ''; v_hint text; v_suggest text := ''; v_note text := '';
   v_jd timestamptz; v_jr timestamptz; v_ride_driver text; v_ride_car text; v_leg_raw text := '';
+  v_title_change text := ''; v_added text := ''; v_ret_stops text; v_cont text := ''; v_ride_dest text;
 begin
   select * into pr from public.proposals where id = p_proposal_id;
   if pr.id is null then return null; end if;
@@ -8170,6 +8398,9 @@ begin
       v_time_change := public._time_change_line(q.depart_at, q.return_at,
         nullif(pr.payload ->> 'depart_at', '')::timestamptz, nullif(pr.payload ->> 'return_at', '')::timestamptz);
     end if;
+    v_title_change := public._frag('title.change', jsonb_build_object('change',
+      case when v_time_change <> '' then v_time_change else coalesce(v_car, '') end));
+    if v_time_change = '' and coalesce(v_car, '') = '' then v_title_change := ''; end if;
     if v_time_change = '' then
       v_time_change := case when coalesce(v_car, '') <> ''
         then public._frag('time.same_with_car', jsonb_build_object('car', v_car))
@@ -8211,6 +8442,18 @@ begin
       end loop;
       select * into r from public.rides where id = v_ride_id;
       if v_leg_raw <> '' then v_leg_word := public._frag('leg.' || v_leg_raw); end if;
+      -- R4B6: the joiner's own return-leg stops, and where the ride goes on past their destination.
+      select string_agg(coalesce(d.name, s.place_text), ', ' order by s."position") into v_ret_stops
+      from public.request_stops s left join public.destinations d on d.id = s.place_id
+      where s.request_id = q.id and s.leg = 'return' and q.return_at is not null;
+      if v_leg_raw in ('out', 'both') and v_ride_id is not null then
+        select coalesce(d.name, x.place_text) into v_ride_dest
+        from public._ride_route_with(v_ride_id, q.id, v_leg_raw::public.ride_leg) x left join public.destinations d on d.id = x.place_id
+        where x.leg = 'out' and x.kind = 'destination' limit 1;
+        if v_ride_dest is not null and v_ride_dest is distinct from v_dest_name then
+          v_cont := public._frag('join.continues', jsonb_build_object('rideDestination', v_ride_dest));
+        end if;
+      end if;
       -- REQ §13.103 R3B6: a return-only join runs FROM the destination (pickup there) back to where the trip began.
       if v_leg_raw = 'return' then
         v_route := public.route_label(q.department_id, q.destination_id, q.destination_text,
@@ -8233,7 +8476,12 @@ begin
           else public._frag(case when v_new_dep is not null and v_new_ret is not null then 'join.both'
                                  when v_new_dep is not null then 'join.out' else 'join.return' end,
             jsonb_build_object('depart', coalesce(public._hhmm(v_new_dep), ''), 'return', coalesce(public._hhmm(v_new_ret), ''))) end;
+        if v_ret_stops is not null and v_leg_raw in ('return', 'both') then
+          v_join_line := v_join_line || ' · ' || public._frag('join.return_via', jsonb_build_object('stops', v_ret_stops));
+        end if;
+        if v_cont <> '' then v_join_line := v_join_line || ' · ' || v_cont; end if;
       end if;
+      v_title_change := case when v_time_change <> '' then public._frag('title.change', jsonb_build_object('change', v_time_change)) else '' end;
     else
       -- A host or a fellow passenger: the ride this reader is on, and only the joiner's legs on that ride.
       select x.rid into v_ride_id
@@ -8266,6 +8514,11 @@ begin
       order by (rr.role = 'driver') desc, rr.created_at, rr.request_id limit 1;
       v_route := coalesce(v_route, public.route_label(r.department_id, r.origin_id, null, r.destination_id, null));
     end if;
+    if p_profile_id <> q.requester_id then
+      if v_detour > 0 then v_added := public._frag('title.added_min', jsonb_build_object('min', v_detour)); end if;
+      v_title_change := case when v_time_change <> '' or v_added <> ''
+        then public._frag('title.change', jsonb_build_object('change', concat_ws(' · ', nullif(v_time_change, ''), nullif(v_added, '')))) else '' end;
+    end if;
     if v_time_change = '' then v_time_change := public._frag('time.unchanged'); end if;
 
   elsif pr.type = 'external' then
@@ -8297,7 +8550,7 @@ begin
     'depart', coalesce(public._hhmm(q.depart_at), ''), 'return', coalesce(public._hhmm(q.return_at), ''),
     'window', public._window_text(q.depart_at, q.return_at),
     'car', coalesce(v_car, ''), 'carLine', v_car_line,
-    'timeChange', v_time_change, 'joinLine', v_join_line, 'legWord', v_leg_word,
+    'timeChange', v_time_change, 'joinLine', v_join_line, 'legWord', v_leg_word, 'titleChange', v_title_change,
     'joinerName', coalesce(v_joiner, ''), 'driverName', coalesce(v_driver, ''),
     'detourMin', case when v_detour > 0 then v_detour::text else '' end,
     'detourLine', case when v_detour > 0 then public._frag('detour.line', jsonb_build_object('detourMin', v_detour)) else '' end,
@@ -8474,20 +8727,21 @@ CREATE OR REPLACE FUNCTION "public"."publication_readiness"("p_department_id" "u
     LANGUAGE "plpgsql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
-declare result jsonb:='[]'; d date; requests_n int; unresolved_n int; incomplete_n int; pending_n int; draft_n int; missing_n int; conflicts_n int;
+declare result jsonb:='[]'; d date; requests_n int; unresolved_n int; incomplete_n int; placed_n int; awaiting_n int; pending_n int; draft_n int; missing_n int; conflicts_n int;
 begin
   if not public.can_manage_week(p_department_id,p_week_start) then raise exception 'not_authorized';end if;
   if exists(select 1 from public.weeks w where w.department_id=p_department_id and w.week_start=p_week_start and w.phase='upcoming') then raise exception 'week_not_open'; end if;
   for d in select p_week_start+i from generate_series(0,6) i loop
+    -- REQ §13.104 (R4B11): "placed" = the request holds a live ride on every leg (driver or not) = the solver's "served".
+    -- unresolvedRequests = requests NOT placed (so requestCount - unresolvedRequests = placedRequests = solver served);
+    -- incompleteAssignments = assigned/merged requests with a leg no ride covers; awaitingDriverRequests = placed but a leg
+    -- only on a ride that still needs a driver (blocks publication through missingDriverRides, not as unresolved).
     select count(*),
-      count(*) filter(where q.status in ('submitted','waitlisted','proposed')),
-      count(*) filter(where q.status in ('assigned','merged') and not (
-        (q.trip_shape='one_way_from' or exists(select 1 from public.ride_requests rr join public.rides r on r.id=rr.ride_id
-          where rr.request_id=q.id and rr.covers_out and r.status<>'cancelled' and not r.needs_driver))
-        and (q.trip_shape='one_way_to' or exists(select 1 from public.ride_requests rr join public.rides r on r.id=rr.ride_id
-          where rr.request_id=q.id and rr.covers_return and r.status<>'cancelled' and not r.needs_driver))
-      ))
-    into requests_n,unresolved_n,incomplete_n from public.requests q where q.department_id=p_department_id and q.week_start=p_week_start
+      count(*) filter(where not public.request_legs_placed(q.id)),
+      count(*) filter(where q.status in ('assigned','merged') and not public.request_legs_placed(q.id)),
+      count(*) filter(where public.request_legs_placed(q.id)),
+      count(*) filter(where public.request_legs_placed(q.id) and public.request_awaits_driver(q.id))
+    into requests_n,unresolved_n,incomplete_n,placed_n,awaiting_n from public.requests q where q.department_id=p_department_id and q.week_start=p_week_start
       and q.status not in ('draft','withdrawn','cancelled') and (coalesce(q.depart_at,q.return_at) at time zone 'Asia/Jerusalem')::date=d;
     -- 20261005110300: unsent drafts are counted separately (draftProposals) and no longer in
     -- pendingProposals, so a day with a draft is not blocked twice with two messages.
@@ -8502,7 +8756,7 @@ begin
       and r.status<>'cancelled' and r.needs_driver and (r.starts_at at time zone 'Asia/Jerusalem')::date=d;
     select count(distinct id) into conflicts_n from public.publication_conflicting_ride_ids(p_department_id,p_week_start,array[d]) id;
     result:=result||jsonb_build_array(jsonb_build_object('day',d,'published',public.is_day_public(p_department_id,p_week_start,d),
-      'requestCount',requests_n,'unresolvedRequests',unresolved_n+incomplete_n,'incompleteAssignments',incomplete_n,
+      'requestCount',requests_n,'unresolvedRequests',unresolved_n,'placedRequests',placed_n,'awaitingDriverRequests',awaiting_n,'incompleteAssignments',incomplete_n,
       'pendingProposals',pending_n,'draftProposals',draft_n,'missingDriverRides',missing_n,'conflictRides',conflicts_n,
       'ready',incomplete_n=0 and pending_n=0 and draft_n=0 and missing_n=0 and conflicts_n=0));
   end loop;
@@ -9327,6 +9581,29 @@ $$;
 ALTER FUNCTION "public"."report_car_issue_unsafe_to_maintenance"("p_issue_id" "uuid", "p_hours" integer) OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."request_awaits_driver"("p_request_id" "uuid") RETURNS boolean
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select coalesce((
+    select case
+      when q.trip_shape = 'round_trip' then
+        coalesce(bool_or(rr.covers_out), false) and coalesce(bool_or(rr.covers_return), false)
+        and not (coalesce(bool_or(rr.covers_out) filter (where not r.needs_driver), false)
+             and coalesce(bool_or(rr.covers_return) filter (where not r.needs_driver), false))
+      else count(rr.request_id) > 0 and coalesce(bool_and(r.needs_driver), false)
+    end
+    from public.requests q
+    join public.ride_requests rr on rr.request_id = q.id
+    join public.rides r on r.id = rr.ride_id and r.status <> 'cancelled'
+    where q.id = p_request_id
+    group by q.id, q.trip_shape), false);
+$$;
+
+
+ALTER FUNCTION "public"."request_awaits_driver"("p_request_id" "uuid") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."request_booking_info"("p_request_id" "uuid") RETURNS "jsonb"
     LANGUAGE "plpgsql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -9412,6 +9689,21 @@ end $$;
 
 
 ALTER FUNCTION "public"."request_has_free_car_at_origin"("p_request_id" "uuid", "p_strict" boolean) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."request_has_own_rides_only"("p_request_id" "uuid") RETURNS boolean
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select exists (select 1 from public.ride_requests rr join public.rides r on r.id = rr.ride_id and r.status <> 'cancelled'
+                 where rr.request_id = p_request_id)
+     and not exists (select 1 from public.ride_requests rr join public.rides r on r.id = rr.ride_id and r.status <> 'cancelled'
+                     join public.ride_requests o on o.ride_id = r.id and o.request_id <> rr.request_id
+                     where rr.request_id = p_request_id);
+$$;
+
+
+ALTER FUNCTION "public"."request_has_own_rides_only"("p_request_id" "uuid") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."request_leg_route_km"("p_request_id" "uuid", "p_leg" "public"."ride_leg") RETURNS numeric
@@ -9536,6 +9828,24 @@ $$;
 
 
 ALTER FUNCTION "public"."request_legs_covered"("p_request_id" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."request_legs_placed"("p_request_id" "uuid") RETURNS boolean
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select coalesce((
+    select case when q.trip_shape = 'round_trip'
+      then coalesce(bool_or(rr.covers_out), false) and coalesce(bool_or(rr.covers_return), false)
+      else count(rr.request_id) > 0 end
+    from public.requests q
+    join public.ride_requests rr on rr.request_id = q.id
+    join public.rides r on r.id = rr.ride_id and r.status <> 'cancelled'
+    where q.id = p_request_id group by q.id, q.trip_shape), false);
+$$;
+
+
+ALTER FUNCTION "public"."request_legs_placed"("p_request_id" "uuid") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."request_named_passenger_counts"() RETURNS "trigger"
@@ -9707,6 +10017,24 @@ $$;
 
 
 ALTER FUNCTION "public"."request_stops_with_eta"("p_request_id" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."requests_awaiting_driver_status"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+begin
+  if new.status in ('assigned', 'merged') and public.request_awaits_driver(new.id) then
+    new.status := 'waitlisted';
+    new.status_reason := 'UNMET_NEEDS_DRIVER';
+  elsif new.status = 'merged' and public.request_has_own_rides_only(new.id) then
+    new.status := 'assigned';
+  end if;
+  return new;
+end $$;
+
+
+ALTER FUNCTION "public"."requests_awaiting_driver_status"() OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."requests_default_origin"() RETURNS "trigger"
@@ -10517,6 +10845,25 @@ begin perform public.assert_ride_driver(new.id);return null;end $$;
 
 
 ALTER FUNCTION "public"."rides_driver_check"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."rides_driverless_not_confirmed"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+begin
+  if new.status = 'confirmed' and new.needs_driver and new.driver_id is null then
+    new.status := 'flagged';
+    new.flag_reason := 'NEEDS_DRIVER';
+  elsif new.status = 'flagged' and new.flag_reason = 'NEEDS_DRIVER' and new.driver_id is not null and not new.needs_driver then
+    new.status := 'confirmed';
+    new.flag_reason := null;
+  end if;
+  return new;
+end $$;
+
+
+ALTER FUNCTION "public"."rides_driverless_not_confirmed"() OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."rides_location_ends"() RETURNS "trigger"
@@ -12750,17 +13097,34 @@ CREATE OR REPLACE FUNCTION "public"."sync_request_coverage"("p_request_id" "uuid
 declare q public.requests%rowtype; v_prev text; v_needs_driver boolean; v_reason text;
 begin
   select * into q from public.requests where id = p_request_id for update;
-  if q.id is null or q.status <> 'waitlisted' then return; end if;
+  if q.id is null or q.status not in ('waitlisted', 'assigned', 'merged') then return; end if;
+
+  if q.status in ('assigned', 'merged') then
+    if public.request_awaits_driver(q.id) then
+      v_prev := current_setting('app.system_status_transition', true);
+      perform set_config('app.system_status_transition', 'on', true);
+      perform set_config('app.audit_reason', 'request_coverage_sync', true);
+      update public.requests set status = 'waitlisted', status_reason = 'UNMET_NEEDS_DRIVER' where id = q.id;
+      perform set_config('app.system_status_transition', coalesce(v_prev, 'off'), true);
+    elsif q.status = 'merged' and public.request_has_own_rides_only(q.id) then
+      v_prev := current_setting('app.system_status_transition', true);
+      perform set_config('app.system_status_transition', 'on', true);
+      perform set_config('app.audit_reason', 'request_coverage_sync', true);
+      update public.requests set status = 'assigned' where id = q.id;
+      perform set_config('app.system_status_transition', coalesce(v_prev, 'off'), true);
+    end if;
+    return;
+  end if;
+
   if not public.request_legs_covered(q.id) then return; end if;
 
-  -- R2B18: it waits for a driver only when some leg is served by needs-driver rides alone.
   select case when q.trip_shape = 'round_trip'
               then not (coalesce(bool_or(rr.covers_out) filter (where not r.needs_driver), false)
                     and coalesce(bool_or(rr.covers_return) filter (where not r.needs_driver), false))
               else coalesce(bool_and(r.needs_driver), false) end into v_needs_driver
   from public.ride_requests rr join public.rides r on r.id = rr.ride_id
   where rr.request_id = q.id and r.status not in ('cancelled', 'draft');
-  if v_needs_driver then return; end if;   -- stays waitlisted / UNMET_NEEDS_DRIVER until a driver exists
+  if v_needs_driver then return; end if;
 
   v_reason := case when q.status_reason = 'UNMET_NEEDS_DRIVER' then 'DRIVER_CLAIMED' else null end;
   v_prev := current_setting('app.system_status_transition', true);
@@ -16881,6 +17245,10 @@ CREATE OR REPLACE TRIGGER "request_templates_default_origin" BEFORE INSERT ON "p
 
 
 
+CREATE OR REPLACE TRIGGER "requests_awaiting_driver_status" BEFORE UPDATE OF "status" ON "public"."requests" FOR EACH ROW WHEN ((("new"."status" = ANY (ARRAY['assigned'::"public"."request_status", 'merged'::"public"."request_status"])) AND ("new"."status" IS DISTINCT FROM "old"."status"))) EXECUTE FUNCTION "public"."requests_awaiting_driver_status"();
+
+
+
 CREATE OR REPLACE TRIGGER "requests_default_origin" BEFORE INSERT ON "public"."requests" FOR EACH ROW EXECUTE FUNCTION "public"."requests_default_origin"();
 
 
@@ -16966,6 +17334,10 @@ CREATE CONSTRAINT TRIGGER "rides_driver_check" AFTER INSERT OR UPDATE OF "driver
 
 
 CREATE OR REPLACE TRIGGER "rides_driver_schedule" BEFORE INSERT OR UPDATE OF "driver_id", "starts_at", "ends_at", "status" ON "public"."rides" FOR EACH ROW EXECUTE FUNCTION "public"."guard_ride_driver_schedule"();
+
+
+
+CREATE OR REPLACE TRIGGER "rides_driverless_not_confirmed" BEFORE INSERT OR UPDATE OF "status", "needs_driver", "driver_id", "flag_reason" ON "public"."rides" FOR EACH ROW EXECUTE FUNCTION "public"."rides_driverless_not_confirmed"();
 
 
 
@@ -18955,6 +19327,11 @@ GRANT ALL ON FUNCTION "public"."car_takes_luggage"("_car" "uuid", "_count" integ
 
 
 
+REVOKE ALL ON FUNCTION "public"."car_wait_needed_elsewhere"("p_dept" "uuid", "p_week" "date", "p_from" timestamp with time zone, "p_to" timestamp with time zone, "p_exclude" "uuid"[]) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."car_wait_needed_elsewhere"("p_dept" "uuid", "p_week" "date", "p_from" timestamp with time zone, "p_to" timestamp with time zone, "p_exclude" "uuid"[]) TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."cars_protect_owner_editable_fields"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."cars_protect_owner_editable_fields"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."cars_protect_owner_editable_fields"() TO "service_role";
@@ -19179,6 +19556,11 @@ GRANT ALL ON FUNCTION "public"."expire_freed_offers"("_now" timestamp with time 
 
 REVOKE ALL ON FUNCTION "public"."expire_proposals"("_now" timestamp with time zone) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."expire_proposals"("_now" timestamp with time zone) TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."extend_chauffeur_pickup_drive"("_car" "uuid", "_week" "date") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."extend_chauffeur_pickup_drive"("_car" "uuid", "_week" "date") TO "service_role";
 
 
 
@@ -19416,6 +19798,11 @@ GRANT ALL ON FUNCTION "public"."merge_preview"("p_ride_id" "uuid", "p_request_id
 
 REVOKE ALL ON FUNCTION "public"."merge_request_fingerprint"("p_request_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."merge_request_fingerprint"("p_request_id" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."merge_short_drop_off_rides"("_car" "uuid", "_week" "date") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."merge_short_drop_off_rides"("_car" "uuid", "_week" "date") TO "service_role";
 
 
 
@@ -19722,6 +20109,11 @@ GRANT ALL ON FUNCTION "public"."report_car_issue_unsafe_to_maintenance"("p_issue
 
 
 
+REVOKE ALL ON FUNCTION "public"."request_awaits_driver"("p_request_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."request_awaits_driver"("p_request_id" "uuid") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."request_booking_info"("p_request_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."request_booking_info"("p_request_id" "uuid") TO "service_role";
 
@@ -19743,6 +20135,11 @@ GRANT ALL ON FUNCTION "public"."request_has_free_car_at_origin"("p_request_id" "
 
 
 
+REVOKE ALL ON FUNCTION "public"."request_has_own_rides_only"("p_request_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."request_has_own_rides_only"("p_request_id" "uuid") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."request_leg_route_km"("p_request_id" "uuid", "p_leg" "public"."ride_leg") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."request_leg_route_km"("p_request_id" "uuid", "p_leg" "public"."ride_leg") TO "service_role";
 
@@ -19760,6 +20157,11 @@ GRANT ALL ON FUNCTION "public"."request_leg_route_points"("p_request_id" "uuid",
 
 REVOKE ALL ON FUNCTION "public"."request_legs_covered"("p_request_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."request_legs_covered"("p_request_id" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."request_legs_placed"("p_request_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."request_legs_placed"("p_request_id" "uuid") TO "service_role";
 
 
 
@@ -19800,6 +20202,11 @@ GRANT ALL ON FUNCTION "public"."request_stop_etas"("p_request_id" "uuid") TO "au
 REVOKE ALL ON FUNCTION "public"."request_stops_with_eta"("p_request_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."request_stops_with_eta"("p_request_id" "uuid") TO "service_role";
 GRANT ALL ON FUNCTION "public"."request_stops_with_eta"("p_request_id" "uuid") TO "authenticated";
+
+
+
+REVOKE ALL ON FUNCTION "public"."requests_awaiting_driver_status"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."requests_awaiting_driver_status"() TO "service_role";
 
 
 
@@ -19977,6 +20384,11 @@ GRANT ALL ON FUNCTION "public"."rides_car_same_department"() TO "service_role";
 
 REVOKE ALL ON FUNCTION "public"."rides_driver_check"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."rides_driver_check"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."rides_driverless_not_confirmed"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."rides_driverless_not_confirmed"() TO "service_role";
 
 
 

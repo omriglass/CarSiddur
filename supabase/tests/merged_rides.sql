@@ -468,18 +468,18 @@ begin
   -- legs on different cars are never connected; the Sadran then moving the return leg onto the first
   -- leg's car (edit_ride -> assert_car_chain) connects them.
   insert into public.requests(department_id,week_start,requester_id,filed_by,origin_id,destination_id,ride_type_id,depart_at,return_at,trip_shape,trip_type,needs_car_at_destination,status)
-    values(dept,w,m2,manager,home,haifa,typ,(w+0+time '19:00') at time zone 'Asia/Jerusalem',(w+0+time '22:00') at time zone 'Asia/Jerusalem','round_trip','drop_off',false,'assigned') returning id into q3;
+    values(dept,w,m2,manager,home,haifa,typ,(w+0+time '19:00') at time zone 'Asia/Jerusalem',(w+0+time '23:15') at time zone 'Asia/Jerusalem','round_trip','drop_off',false,'assigned') returning id into q3;
   insert into public.rides(department_id,week_start,car_id,starts_at,ends_at,origin_id,destination_id,needs_driver,status,created_by,is_pinned,pin_reason)
     values(dept,w,car1,(w+0+time '19:00') at time zone 'Asia/Jerusalem',(w+0+time '20:00') at time zone 'Asia/Jerusalem',home,home,true,'draft',manager,true,'MISSING_DRIVER') returning id into ro;
   insert into public.ride_requests(ride_id,request_id,role,leg,car_mode) values(ro,q3,'passenger','out','chauffeur');
   insert into public.rides(department_id,week_start,car_id,starts_at,ends_at,origin_id,destination_id,needs_driver,status,created_by,is_pinned,pin_reason)
-    values(dept,w,car2,(w+0+time '21:00') at time zone 'Asia/Jerusalem',(w+0+time '22:00') at time zone 'Asia/Jerusalem',home,home,true,'draft',manager,true,'MISSING_DRIVER') returning id into rr;
+    values(dept,w,car2,(w+0+time '22:15') at time zone 'Asia/Jerusalem',(w+0+time '23:15') at time zone 'Asia/Jerusalem',home,home,true,'draft',manager,true,'MISSING_DRIVER') returning id into rr;
   insert into public.ride_requests(ride_id,request_id,role,leg,car_mode) values(rr,q3,'passenger','return','chauffeur');
   perform public.assert_car_chain(car1,w); perform public.assert_car_chain(car2,w);
   assert not exists(select 1 from public.ride_requests x where x.request_id=q3 and x.car_mode='relay'), 'legs on different cars stay chauffeur rides';
   select version into v from public.rides where id=rr;
   perform public.edit_ride(jsonb_build_object('id',rr,'department_id',dept,'week_start',w,'car_id',car1,
-    'starts_at',(w+0+time '21:00') at time zone 'Asia/Jerusalem','ends_at',(w+0+time '22:00') at time zone 'Asia/Jerusalem'),v);
+    'starts_at',(w+0+time '22:15') at time zone 'Asia/Jerusalem','ends_at',(w+0+time '23:15') at time zone 'Asia/Jerusalem'),v);
   select count(*) into n from public.ride_requests x join public.rides d on d.id=x.ride_id
     where x.request_id=q3 and d.status<>'cancelled' and x.car_mode='relay' and d.car_id=car1 and d.driver_id=m2 and not d.needs_driver;
   assert n=2, format('placing the return leg on the first leg car connects both, got %s',n);

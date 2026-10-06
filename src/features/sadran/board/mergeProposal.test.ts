@@ -51,6 +51,8 @@ describe("previewMerge", () => {
     expect(preview.endsAt).toBe(host.ends_at);
     // ETA shown on the 15-minute grid (R2B25): 04:20Z -> 04:15Z
     expect(preview.boardEta).toBe("2026-10-11T04:15:00.000Z");
+    // R4B5: the joiner's own boarding time is the same value the popup and the text show
+    expect(preview.joinerOutAt).toBe(preview.boardEta);
     // asked for 07:00 local (04:00Z), the ride gets there at ~07:15 local
     expect(preview.timeChanges).toBe(true);
   });

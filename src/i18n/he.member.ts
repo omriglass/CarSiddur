@@ -63,6 +63,7 @@ export const heMember = {
     editWindowClosed: "הבקשות לשבוע הזה נסגרו והסידור עוד לא פורסם — לשינוי פנה/י לסדרן/ית",
     luggageLabel: "ציוד רב — צריך תא מטען גדול",
     luggageHint: "למשל קניות גדולות, ציוד, ריהוט (איקאה). נבחר לך רכב עם תא מטען גדול.",
+    acceptedWaitingOthers: "אישרת — ממתין לאחרים",
     luggageChip: "ציוד גדול",
     overlapTitle: "כבר יש לך נסיעה או בקשה בשעות האלה",
     overlapBody: "אפשר לבטל את הקודמת ולהגיש את החדשה, להשאיר את שתיהן, או לחזור לעריכה.",
@@ -410,7 +411,7 @@ export const heMember = {
   },
   memberErrors: {
     requestOutsideWeek: "הנסיעה יוצאת מגבולות השבוע — פנה/י לסדרן/ית",
-    proposalExpired: "ההצעה פגה",
+    proposalExpired: "ההצעה פגה (למשל כי הסידור כבר פורסם). אפשר לפנות לסדרן/ית",
     proposalNotAnswerable: "ההצעה כבר נענתה או אינה זמינה",
     invalidToken: "הקישור אינו תקין",
     offerNotFound: "ההצעה לרכב שהתפנה לא נמצאה",

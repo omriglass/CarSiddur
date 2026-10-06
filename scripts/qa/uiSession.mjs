@@ -67,11 +67,24 @@ export async function openAs(email, opts = {}) {
   const context = await browser.newContext({ baseURL: UI_URL, viewport: size, locale: "he-IL", timezoneId: "Asia/Jerusalem" });
   const page = await context.newPage();
   await page.addInitScript(() => { try { window.localStorage.setItem("landing.lastMain", "/my"); } catch { /* ignore */ } });
-  await page.goto("/login");
-  await page.locator('input[type="email"]').fill(email);
-  await page.locator('input[type="password"]').fill(password);
-  await page.locator('form button[type="submit"]').click();
-  await page.waitForURL((url) => !url.pathname.startsWith("/login"), { timeout: 30_000 });
+  // Member sign-in used to time out on a cold dev server (first bundle compile + auth round trip):
+  // retry the whole form once, generous timeout, and say what the page showed if it still fails.
+  for (let attempt = 1; ; attempt++) {
+    await page.goto("/login");
+    await page.locator('input[type="email"]').fill(email);
+    await page.locator('input[type="password"]').fill(password);
+    await page.locator('form button[type="submit"]').click();
+    try {
+      await page.waitForURL((url) => !url.pathname.startsWith("/login"), { timeout: 45_000 });
+      break;
+    } catch (error) {
+      if (attempt >= 2) {
+        const shown = (await page.locator("body").innerText().catch(() => "")).replace(/\s+/g, " ").slice(0, 200);
+        await browser.close();
+        throw new Error(`sign-in as ${email} did not leave /login after ${attempt} attempts (page: ${shown}): ${error.message}`);
+      }
+    }
+  }
   const { dept, week } = { ...scopeFrom(out), ...(opts.dept ? { dept: opts.dept } : {}), ...(opts.week ? { week: opts.week } : {}) };
   const urls = {
     board: (d = dept, w = week) => `/sadran/${d}/${w}/board`,

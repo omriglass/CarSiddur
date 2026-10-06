@@ -457,11 +457,13 @@ export function unmetPlacement(ctx: BoardDropContext, req: WeekRequestRow, carId
  * request, so a ride's own places (home/home for a round trip) would overwrite its destination.
  * Places change only through the explicit ride-detail route edit.
  */
-export function unmetShiftPayload(req: WeekRequestRow, carId: string, window: { startsAt: string; endsAt: string }, _placement?: UnmetPlacement): Record<string, unknown> {
+export function unmetShiftPayload(req: WeekRequestRow, carId: string, window: { startsAt: string; endsAt: string }, _placement?: UnmetPlacement, leg?: "out" | "return"): Record<string, unknown> {
   const type = tripTypeOf(req);
   if (type === "round_trip") return { car_id: carId, depart_at: window.startsAt, return_at: window.endsAt };
   if (type === "one_way") return req.trip_shape === "one_way_from"
     ? { car_id: carId, return_at: window.endsAt }
     : { car_id: carId, depart_at: window.startsAt };
-  return req.trip_shape === "one_way_from" ? { return_at: window.endsAt } : { depart_at: window.startsAt };
+  // R4B3/R4B4: a drop-off shift carries its car (drawn on it) and, for one leg of a split drop-off, that leg.
+  const pickup = req.trip_shape === "one_way_from";
+  return { car_id: carId, ...(pickup ? { return_at: window.endsAt } : { depart_at: window.startsAt }), ...(leg ? { leg } : {}) };
 }

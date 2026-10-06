@@ -135,7 +135,7 @@ begin
     raise exception 'missing driver did not require acknowledgment';
   exception when raise_exception then if sqlerrm<>'publication_unanswered' then raise;end if;end;
   perform public.publish_siddur(dept,w,scores->'profiles',public.publish_scores_fingerprint(dept,w),scores->'policies',array[w+3],true);
-  assert (select status='confirmed' and needs_driver and driver_id is null from public.rides where id=(select id from publication_ids where k='ride4')),'missing-driver booking could not publish';
+  assert (select status='flagged' and flag_reason='NEEDS_DRIVER' and needs_driver and driver_id is null from public.rides where id=(select id from publication_ids where k='ride4')),'missing-driver booking could not publish';
   select count(*) into ride_count from public.rides where department_id=dept and week_start=w;
   select count(*) into link_count from public.ride_requests rr join public.rides r on r.id=rr.ride_id where r.department_id=dept and r.week_start=w;
   select count(*) into versions from public.siddur_versions where department_id=dept and week_start=w;
@@ -206,9 +206,9 @@ begin
   select title_he into title from public.notifications where recipient_id=memberB and department_id=dept and week_start=w2 and event='published';
   assert title=format('הסידור פורסם לימים %s',public.weekday_short_label(w2)),'memberB single-day title should list one day: '||title;
 
-  -- Force a real, sticky status change on memberB's day-0 request (merged is outside the
+  -- Force a real, sticky status change on memberB's day-0 request (denied is outside the
   -- submitted/waitlisted range form_waitlist_groups() touches) and republish the same day.
-  update public.requests set status='merged' where id=(select id from publication_ids where k='groupedB_request');
+  update public.requests set status='denied' where id=(select id from publication_ids where k='groupedB_request');
   perform public.publish_siddur(dept,w2,'[]'::jsonb,public.publish_scores_fingerprint(dept,w2),'[]'::jsonb,array[w2],true);
 
   assert (select count(*) from public.notifications where recipient_id=memberB and department_id=dept and week_start=w2 and event='outcome_changed')=1,

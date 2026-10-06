@@ -282,8 +282,12 @@ describe("unmet placement by trip type (REQUIREMENTS §13.93)", () => {
     expect(unmetShiftPayload(round, "car1", window, unmetPlacement(ctx, round, "car1", departAt)!)).toEqual({ car_id: "car1", depart_at: departAt, return_at: window.endsAt });
     const oneWay = request({ ...base, trip_type: "one_way", trip_shape: "one_way_to" });
     expect(unmetShiftPayload(oneWay, "car1", window, unmetPlacement(ctx, oneWay, "car1", departAt)!)).toEqual({ car_id: "car1", depart_at: departAt });
+    // R4B3/R4B4: a drop-off shift carries its car; one leg of a split drop-off carries that leg
+    const dropOff = { ...oneWay, trip_type: "drop_off" as const };
+    expect(unmetShiftPayload(dropOff, "car1", window)).toEqual({ car_id: "car1", depart_at: window.startsAt });
+    expect(unmetShiftPayload({ ...dropOff, trip_shape: "one_way_from" }, "car1", window, undefined, "return")).toEqual({ car_id: "car1", return_at: window.endsAt, leg: "return" });
     const drop = request({ ...base, trip_type: "drop_off", trip_shape: "one_way_to" });
-    expect(unmetShiftPayload(drop, "car1", window, unmetPlacement(ctx, drop, "car1", departAt)!)).toEqual({ depart_at: departAt });
+    expect(unmetShiftPayload(drop, "car1", window, unmetPlacement(ctx, drop, "car1", departAt)!)).toEqual({ car_id: "car1", depart_at: departAt });
   });
 });
 

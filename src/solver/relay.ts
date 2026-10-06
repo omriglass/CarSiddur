@@ -126,6 +126,29 @@ export interface PairRelaysResult {
   unpaired: NormalizedRequest[];
 }
 
+/**
+ * REQ §13.103a/§13.104a: a car may wait at a place only when the wait is not needed elsewhere —
+ * fewer other requests overlapping [waitStart, waitEnd) than there are shared cars. The legs of the
+ * waiting request itself (same `splitFrom`, or the given `self` legs) never count.
+ */
+export function waitContested(
+  all: readonly NormalizedRequest[],
+  waitStart: number,
+  waitEnd: number,
+  self: readonly NormalizedRequest[],
+  sharedCars: number,
+): boolean {
+  const selfIds = new Set(self.map((n) => n.id));
+  const selfSplit = new Set(self.map((n) => n.request.splitFrom).filter((x): x is string => x !== undefined));
+  const demand = new Set<string>();
+  for (const nr of all) {
+    if (selfIds.has(nr.id)) continue;
+    if (nr.request.splitFrom !== undefined && selfSplit.has(nr.request.splitFrom)) continue;
+    if (nr.window.start < waitEnd && waitStart < nr.window.end) demand.add(nr.request.splitFrom ?? nr.id);
+  }
+  return demand.size >= Math.max(1, sharedCars);
+}
+
 export function pairRelays(requests: NormalizedRequest[], cars: Car[], others: NormalizedRequest[] = []): PairRelaysResult {
   const outs = requests.filter(isRelayOut);
   const rets = requests.filter(isRelayReturn);
@@ -146,20 +169,11 @@ export function pairRelays(requests: NormalizedRequest[], cars: Car[], others: N
   // offered only when the wait is not contested: fewer other requests overlap the wait window than
   // there are shared cars. Otherwise the two legs stay separate (chauffeur legs, car returns between).
   const sharedCars = cars.filter((c) => c.type === 'shared').length;
-  const contested = (c: Candidate): boolean => {
-    const waitStart = c.outWindow.end;
-    const waitEnd = c.returnWindow.start;
-    const demand = new Set<string>();
-    for (const nr of [...requests, ...others]) {
-      if (nr.request.splitFrom !== undefined && nr.request.splitFrom === c.out.request.splitFrom) continue;
-      if (nr.id === c.out.id || nr.id === c.ret.id) continue;
-      if (nr.window.start < waitEnd && waitStart < nr.window.end) demand.add(nr.request.splitFrom ?? nr.id);
-    }
-    return demand.size >= Math.max(1, sharedCars);
-  };
+  const contested = (c: Candidate): boolean =>
+    waitContested([...requests, ...others], c.outWindow.end, c.returnWindow.start, [c.out, c.ret], sharedCars);
   for (let i = candidates.length - 1; i >= 0; i--) {
     const c = candidates[i];
-    if (c && isOwn(c) && contested(c)) candidates.splice(i, 1);
+    if (c && contested(c)) candidates.splice(i, 1);
   }
   const own = (c: Candidate): number => (isOwn(c) ? 0 : 1);
   candidates.sort((a, b) => {
@@ -290,6 +304,26 @@ export function chauffeurUnpairedRelayLegs(
       }
       if (carId) break;
     }
+    // R4B7 (REQ §13.104): a car parked somewhere else (neither at the drop-off origin nor at the
+    // pickup place) still serves an `out` leg: the ride starts early by the empty drive to the pickup.
+    if (!carId && side === 'out') {
+      for (const car of sharedCars) {
+        if (!fits(car, load) || !luggageFits(car, luggageCount)) continue;
+        const tl = timelines.get(car.id);
+        if (!tl) continue;
+        const at = tl.locationAt(point);
+        if (at === nr.originId || at === nr.destinationId || at === input.homeLocationId) continue;
+        const window = {
+          start: point - travelSlotsFor(input, at, nr.originId),
+          end: point + nr.travelSlots + directSlots + dwellSlots + travelSlotsFor(input, nr.originId, at),
+        };
+        if (window.start < day.startSlot || window.end > day.endSlot) continue;
+        if (!tl.isFree(window, at)) continue;
+        carId = car.id;
+        chosen = { window, carOriginId: at };
+        break;
+      }
+    }
     if (!carId || !chosen) continue;
     const window = chosen.window;
     const carOrigin = chosen.carOriginId;
@@ -340,5 +374,81 @@ export function chauffeurUnpairedRelayLegs(
     healedIds.add(nr.id);
   }
 
+  return { healed, healedIds };
+}
+
+/**
+ * REQ §13.104b: a short drop-off + pickup (both halves of one `drop_off` request, wait between the
+ * drop-off's arrival and the pickup's departure <= 2 x turnaround) on one car as ONE chauffeur ride
+ * (car home -> X -> wait -> home) when no other request needs a car during the wait. Applies to the
+ * legs with no driver on board (`passengerOnly`); returns the rides and the healed request ids.
+ */
+export function chauffeurShortDropOffs(
+  legs: NormalizedRequest[],
+  all: readonly NormalizedRequest[],
+  timelines: Map<string, CarTimeline>,
+  input: SolverInput,
+  scores: Map<string, { total: number }>,
+): ChauffeurHealResult {
+  const healed: Assignment[] = [];
+  const healedIds = new Set<string>();
+  const bufferSlots = minutesToSlots(input.config.bufferMinutes);
+  const sharedCars = input.cars.filter((c) => c.type === 'shared').sort((a, b) => byId({ id: a.id }, { id: b.id }));
+  const outs = legs.filter((nr) => nr.legs[0]?.side === 'out' && nr.request.splitFrom !== undefined);
+  const pairs: { out: NormalizedRequest; ret: NormalizedRequest }[] = [];
+  for (const out of outs) {
+    const ret = legs.find((nr) => nr.legs[0]?.side === 'return' && nr.request.splitFrom === out.request.splitFrom);
+    if (ret && ret.originId === out.originId && ret.destinationId === out.destinationId) pairs.push({ out, ret });
+  }
+  pairs.sort((a, b) => {
+    const sa = Math.max(scores.get(a.out.id)?.total ?? 0, scores.get(a.ret.id)?.total ?? 0);
+    const sb = Math.max(scores.get(b.out.id)?.total ?? 0, scores.get(b.ret.id)?.total ?? 0);
+    return sa !== sb ? sb - sa : byId(a.out, b.out);
+  });
+  for (const { out, ret } of pairs) {
+    const outLeg = out.legs[0];
+    const retLeg = ret.legs[0];
+    if (!outLeg || !retLeg) continue;
+    const gap = retLeg.window.start - outLeg.window.end;
+    if (gap < 0 || gap > 2 * bufferSlots) continue;
+    if (waitContested(all, outLeg.window.end, retLeg.window.start, [out, ret], sharedCars.length)) continue;
+    const day = dayBoundsForSlot(input.week.days, outLeg.window.start);
+    const start = outLeg.window.start;
+    const window = { start, end: retLeg.window.end };
+    if (window.start < day.startSlot || window.end > day.endSlot) continue;
+    const load = chauffeurLoad(out.passengers);
+    const luggageCount = out.luggage || ret.luggage ? 1 : 0;
+    const car = sharedCars.find((c) => {
+      const tl = timelines.get(c.id);
+      return fits(c, load) && luggageFits(c, luggageCount) && !!tl && tl.isFree(window, out.originId);
+    });
+    if (!car) continue;
+    const tl = timelines.get(car.id);
+    if (!tl) continue;
+    const rideId = `ride:${out.id}`;
+    tl.add({ rideId, window, startLocationId: out.originId, endLocationId: out.originId, overnightAck: false });
+    healed.push({
+      rideId,
+      carId: car.id,
+      window,
+      originId: out.originId,
+      destinationId: out.originId,
+      driverRequestId: undefined,
+      driverMemberId: undefined,
+      legs: [
+        { requestId: out.id, leg: 'out', carMode: 'chauffeur', originId: outLeg.originId, destinationId: outLeg.destinationId, role: 'passenger' },
+        { requestId: ret.id, leg: 'return', carMode: 'chauffeur', originId: retLeg.originId, destinationId: retLeg.destinationId, role: 'passenger' },
+      ],
+      servedRequestIds: [out.id, ret.id],
+      passengers: out.passengers,
+      luggageCount,
+      shift: { departureMin: 0, returnMin: 0 },
+      source: 'solver',
+      reasonCode: 'PLACED_NEEDS_DRIVER',
+      reason: reason('PLACED_NEEDS_DRIVER', { car: car.name }),
+    });
+    healedIds.add(out.id);
+    healedIds.add(ret.id);
+  }
   return { healed, healedIds };
 }

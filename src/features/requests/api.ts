@@ -101,6 +101,8 @@ export interface MyRequestRow {
   /** First placed leg, if any — a split relay's second leg is not shown separately (known simplification, see final report). */
   ride: MyRequestRide | null;
   pendingProposal: MyRequestPendingProposal | null;
+  /** R4U6: the member accepted a proposal that still waits for the other parties. */
+  acceptedAwaitingOthers?: boolean;
   /** Links to `request_templates` (DATA_MODEL §3.6) when this request came from — or was marked as — a repeating request. */
   templateId: string | null;
   /** Multi-day request ("series", REQ §13.77) — `null` for an ordinary single-day request. */
@@ -287,6 +289,7 @@ function mapRow(row: RawRequestRow): MyRequestRow {
           expiresAt: pendingProposal.expires_at,
         }
       : null,
+    acceptedAwaitingOthers: !pendingProposal && row.proposals.some((p) => p.status === "accepted"),
   };
 }
 

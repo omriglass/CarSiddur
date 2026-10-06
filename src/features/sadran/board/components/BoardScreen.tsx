@@ -530,6 +530,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
         children={dnd.reservationChildrenQuery.data ?? []}
         places={(board.destinationsQuery.data ?? []).map((d) => ({ id: d.id, name: d.name }))}
         carLocationName={dnd.reservationFromName}
+        carLocationId={dnd.reservationFromId}
         onSave={() => void dnd.saveReservation()}
         saving={dnd.editRideMutation.isPending || dnd.setRidePassengersMutation.isPending || dnd.markCarMoveMutation.isPending}
       />
@@ -560,7 +561,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
         }}
       />
       <RideSheet
-        driverCandidates={dnd.reservationMembersQuery.data ?? []}
+        driverCandidates={(dnd.reservationMembersQuery.data ?? []).map((m) => ({ ...m, homePlaceId: m.homeOriginId }))}
         otherRides={board.rides}
         key={selectedPlanningChange?.id ?? selectedRide?.id ?? "no-ride"}
         ride={selectedRide && selectedPlanningChange ? { ...selectedRide, car_id: selectedPlanningChange.car_id, starts_at: selectedPlanningChange.starts_at, ends_at: selectedPlanningChange.ends_at } : selectedRide}

@@ -12,7 +12,7 @@ import { assertInvariants } from './invariants';
 import { fits, luggageFits } from './seatFit';
 import { buildHostRides, findMergeHosts } from './merge';
 import { scoreRequests } from './policy/engine';
-import { chauffeurUnpairedRelayLegs, pairRelays } from './relay';
+import { chauffeurShortDropOffs, chauffeurUnpairedRelayLegs, pairRelays } from './relay';
 import { reason } from './reasons';
 import { expandDropOffs, restoreDropOffIds } from './dropOffSplit';
 import { carName, placeName, rideHostLabel, requestDestName, requestOriginName } from './names';
@@ -206,13 +206,13 @@ function solveExpanded(input: SolverInput): SolverOutput {
   // REQUIREMENTS §13.95 (H2): when the connected pair of one drop-off-with-pickup (both halves of a split
   // request, driven by the requester) fits on no car, each half falls back to this same
   // chauffeur path instead of staying unmet.
+  // R4B1: this holds for every unmet pair unit (own connected pair or a cross-request relay pair): a
+  // pair that fits on no car leaves its legs unpaired, so each leg gets the chauffeur path in this same
+  // click — otherwise the next solve (partner now fixed) places them and auto-fill never finishes.
   const ownPairFallback: NormalizedRequest[] = [];
   for (const u of improveResult.stillUnmetUnits) {
     if (u.kind !== 'pair' || !u.pair) continue;
-    const { outNr, retNr } = u.pair;
-    if (outNr.request.splitFrom !== undefined && outNr.request.splitFrom === retNr.request.splitFrom) {
-      ownPairFallback.push(outNr, retNr);
-    }
+    ownPairFallback.push(u.pair.outNr, u.pair.retNr);
   }
   const { healed, healedIds } = chauffeurUnpairedRelayLegs([...unpaired, ...ownPairFallback], timelines, input, carsMap, scores);
   const stillUnpairedRelay = unpaired.filter((nr) => !healedIds.has(nr.id));
@@ -220,8 +220,13 @@ function solveExpanded(input: SolverInput): SolverOutput {
   // driver on board gets the same missing-driver chauffeur ride the SQL healing gives it
   // (`try_widen_one_way_leg`), instead of staying unmet; only when no car has room does it
   // keep the UNMET_PASSENGER_NO_HOST path and its merge suggestions.
-  const { healed: healedNoDriver, healedIds: healedNoDriverIds } =
-    chauffeurUnpairedRelayLegs(passengerOnly, timelines, input, carsMap, scores, 'noDriver');
+  // REQ §13.104b: a short drop-off + pickup with nobody needing the car meanwhile is one chauffeur ride.
+  const shortRides = chauffeurShortDropOffs(passengerOnly, normalized, timelines, input, scores);
+  const remainingPassengerOnly = passengerOnly.filter((nr) => !shortRides.healedIds.has(nr.id));
+  const { healed: healedNoDriverSingles, healedIds: healedNoDriverSingleIds } =
+    chauffeurUnpairedRelayLegs(remainingPassengerOnly, timelines, input, carsMap, scores, 'noDriver');
+  const healedNoDriver = [...shortRides.healed, ...healedNoDriverSingles];
+  const healedNoDriverIds = new Set([...shortRides.healedIds, ...healedNoDriverSingleIds]);
   const stillPassengerOnly = passengerOnly.filter((nr) => !healedNoDriverIds.has(nr.id));
 
   const assignments = [...fixedAssignments, ...solverAssignments, ...healed, ...healedNoDriver].sort((a, b) => byId({ id: a.rideId }, { id: b.rideId }));
@@ -268,8 +273,20 @@ function solveExpanded(input: SolverInput): SolverOutput {
       );
       const needsLargeTrunk =
         nr.luggage && !input.cars.some((c) => c.type === 'shared' && c.luggageCapacity >= 1);
+      // REQ §13.104c: a child's leg that only lacks a child-seat car says so, not "no relay partner".
+      const leg0 = nr.legs[0];
+      const seatsBusy =
+        stillUnpairedRelay.includes(nr) &&
+        nr.passengers.childSeats + nr.passengers.boosters > 0 &&
+        !!leg0 &&
+        (() => {
+          const fit = input.cars.filter((c) => c.type === 'shared' && fits(c, nr.passengers));
+          return fit.length === 0 || fit.every((c) => !timelines.get(c.id)?.isFree(leg0.window, nr.originId));
+        })();
       const reasonCode = needsLargeTrunk
         ? 'UNMET_NEEDS_LARGE_TRUNK'
+        : seatsBusy
+        ? 'UNMET_NO_CAR_SEATS_BUSY'
         : stillPassengerOnly.includes(nr)
         ? 'UNMET_PASSENGER_NO_HOST'
         : stillUnpairedRelay.includes(nr)
@@ -280,6 +297,8 @@ function solveExpanded(input: SolverInput): SolverOutput {
       const reasonText =
         reasonCode === 'UNMET_NEEDS_LARGE_TRUNK'
           ? reason('UNMET_NEEDS_LARGE_TRUNK')
+          : reasonCode === 'UNMET_NO_CAR_SEATS_BUSY'
+          ? reason('UNMET_NO_CAR_SEATS_BUSY')
           : reasonCode === 'UNMET_NO_RELAY_PARTNER'
           ? reason('UNMET_NO_RELAY_PARTNER', { dest: requestDestName(input, nr.request) })
           : reasonCode === 'UNMET_PASSENGER_NO_HOST'

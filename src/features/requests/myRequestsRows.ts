@@ -134,3 +134,8 @@ export function confirmDialogLabel(action: ConfirmAction | null): string {
   if (action.kind === "withdrawFreedClaim") return he.requestsList.withdrawClaim;
   return action.kind === "withdraw" ? he.requestsList.withdraw : he.requestsList.cancelRide;
 }
+
+/** R4B11: a הקפצה carried by its own chauffeur ride joined nobody - "assigned", not "merged" (משולבת). */
+export function displayStatus(row: Pick<DisplayRow, "status" | "tripType" | "ride">): DisplayRow["status"] {
+  return row.status === "merged" && row.tripType === "drop_off" && row.ride?.isChauffeur ? "assigned" : row.status;
+}
