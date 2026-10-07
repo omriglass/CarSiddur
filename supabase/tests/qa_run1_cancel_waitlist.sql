@@ -45,10 +45,14 @@ begin
   perform public.cancel_ride(rA,'test driver cancel',(select version from public.rides where id=rA));
   select count(*) into n from public.notifications where recipient_id=m2 and event='outcome_changed' and data->>'variant'='driver_cancelled';
   assert n=1, format('QB6: passenger must get the driver_cancelled notice, got %s',n);
-  assert (select body_he like '%נחפש רכב אחר%' and title_he like '%ביטל/ה%' from public.notifications
+  assert (select body_he like '%ממתינה לנהג%' and body_he not like '%רשימת ההמתנה%' and title_he like '%ביטל/ה%' and title_he like '%בלי נהג%' from public.notifications
           where recipient_id=m2 and data->>'variant'='driver_cancelled'), 'QB6: notice copy (COPY_DRAFT §6)';
   select count(*) into n from public.notifications where recipient_id=sadran and data->>'variant'='driver_cancelled_sadran';
   assert n=1, 'QB6: the Sadran of the week is notified';
+  -- R7B9 / QA run 7: the Sadran's notice has its own copy (no generic "שינוי בסידור שלך — " with an empty detail)
+  assert (select title_he like '%בלי נהג%' and title_he not like '%— ' and title_he not like '%{{%' and body_he not like '%{{%' and body_he<>''
+          from public.notifications where recipient_id=sadran and data->>'variant'='driver_cancelled_sadran'), 'QB6: Sadran notice copy';
+  assert not exists(select 1 from public.notifications where title_he like '%— ' or title_he like '%{{%'), 'no notification title ends with a dangling dash';
   select status::text, status_reason into st, rs from public.requests where id=q2;
   assert st='waitlisted' and rs='UNMET_NEEDS_DRIVER', format('QB6: passenger request must read as missing driver, got %s/%s',st,rs);
   assert (select needs_driver and driver_id is null from public.rides where id=rA), 'QB6: ride kept, needs a driver';

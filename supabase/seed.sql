@@ -556,10 +556,12 @@ on conflict (key) do nothing;
 insert into public.notification_templates (event, channel, variant, title, body, default_title, default_body)
 select t.event::public.notification_event, ch, t.variant, t.title, t.body, t.title, t.body
 from (values
-  ('outcome_changed', 'driver_cancelled', 'הנסיעה שלך בוטלה — {{driverName}} ביטל/ה',
-   '{{route}} · {{day}} {{timeRange}}. הבקשה חזרה לרשימת ההמתנה; נחפש רכב אחר.'),
-  ('outcome_changed', 'driver_cancelled_plain', 'הנסיעה שלך בוטלה — {{driverName}} ביטל/ה',
-   '{{route}} · {{day}} {{timeRange}}.'),
+  ('outcome_changed', 'driver_cancelled', '{{driverName}} ביטל/ה — הנסיעה שלך נשארה בלי נהג/ת',
+   '{{route}} · {{day}} {{timeRange}}. הנסיעה נשמרת וממתינה לנהג/ת; הסדרן/ית יחפשו נהג/ת.'),
+  ('outcome_changed', 'driver_cancelled_plain', '{{driverName}} ביטל/ה — הנסיעה שלך נשארה בלי נהג/ת',
+   '{{route}} · {{day}} {{timeRange}}. הנסיעה נשמרת וממתינה לנהג/ת.'),
+  ('outcome_changed', 'driver_cancelled_sadran', '{{driverName}} ביטל/ה — הנסיעה נשארה בלי נהג/ת',
+   '{{car}} · {{day}} {{timeRange}}'),
   ('outcome_changed', 'passenger_joined', 'הצטרפות לנסיעה שלך',
    '{{byName}} הצטרף/ה לנסיעה שלך ביום {{day}} {{route}}'),
   ('waitlist_contested', 'single', 'רשימת המתנה משותפת ליום {{day}}',

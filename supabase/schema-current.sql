@@ -3229,7 +3229,11 @@ begin
     perform set_config('app.system_status_transition','off',true);
     return;
   end if;
-  if r.needs_driver then raise exception 'ride_already_needs_driver'; end if;
+  -- R7B9 follow-up: a driverless ride (a ride that already needs a driver, a car move) has no driver to hand
+  -- over, so cancelling it simply cancels it (the Sadran is the only caller that gets here).
+  if r.needs_driver then
+    perform public.cancel_ride_without_passengers(p_ride_id,p_reason,p_expected_version);return;
+  end if;
   if not exists(select 1 from public.ride_requests rr join public.requests q on q.id=rr.request_id where rr.ride_id=r.id and q.requester_id is distinct from r.driver_id) then
     perform public.cancel_ride_without_passengers(p_ride_id,p_reason,p_expected_version);return;
   end if;
@@ -3385,6 +3389,7 @@ begin
     update public.rides set status = 'flagged', flag_reason = 'relay_pair_cancelled'
     where car_id = v_ride.car_id and week_start = v_ride.week_start and status <> 'cancelled'
       and (origin_id = v_ride.destination_id or destination_id = v_ride.origin_id) and id <> p_ride_id
+      and not needs_driver   -- a driverless ride keeps its NEEDS_DRIVER flag
       and not public.ride_is_reservation(id);
     return;
   end if;
@@ -9623,7 +9628,7 @@ declare r record; v_n int := 0; v_clear boolean; v_broken boolean;
 begin
   for r in
     select rd.* from public.rides rd
-    where rd.car_id = p_car and rd.status = 'flagged' and not rd.needs_driver
+    where rd.car_id = p_car and rd.status = 'flagged'
       and rd.flag_reason in ('car_chain_broken', 'relay_pair_cancelled', 'relay_driver_missing', 'maintenance')
     order by rd.starts_at, rd.id
   loop
@@ -9640,7 +9645,9 @@ begin
           and x.needs_driver and x.ends_at <= r.starts_at)
       else false end;
     if v_clear then
-      update public.rides set flag_reason = null, status = 'confirmed' where id = r.id;
+      -- a driverless ride stays flagged for what it still lacks: its driver
+      update public.rides set flag_reason = case when r.needs_driver then 'NEEDS_DRIVER' else null end,
+        status = case when r.needs_driver then r.status else 'confirmed'::public.ride_status end where id = r.id;
       v_n := v_n + 1;
     end if;
   end loop;

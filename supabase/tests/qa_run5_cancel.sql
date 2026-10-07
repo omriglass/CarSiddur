@@ -195,6 +195,49 @@ begin
   assert (select status::text='confirmed' and flag_reason is null from public.rides where id=rF), 'R7B14: the flag is cleared when the conflict is gone';
 
 
+  -- ---- QA run 7 leftovers: cancel_ride on a driverless ride works; a driverless partner keeps NEEDS_DRIVER ----
+  insert into public.rides(department_id,week_start,car_id,starts_at,ends_at,origin_id,destination_id,driver_id,needs_driver,status,flag_reason,is_pinned,pin_reason,auto_relocation,created_by)
+    values(dept,w,carB,dt+interval '4 days',dt+interval '4 days 1 hour',home,dest,null,true,'flagged','NEEDS_DRIVER',true,'CAR_MOVE',true,sadran) returning id into rB;
+  perform set_config('request.jwt.claims',jsonb_build_object('sub',sadran,'role','authenticated')::text,true);
+  set local role authenticated;
+  perform public.cancel_ride(rB,'test cancel driverless',(select version from public.rides where id=rB));
+  reset role;
+  assert (select status::text from public.rides where id=rB)='cancelled', 'cancel_ride: a driverless ride (car move) can be cancelled';
+  -- a driverless ride with a waiting passenger: the Sadran cancels it, the passenger is told
+  insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,depart_at,return_at,trip_shape,status)
+    values(dept,w,m2,sadran,dest,typ,dt+interval '4 days',dt+interval '4 days 4 hours','round_trip','waitlisted') returning id into q2;
+  insert into public.rides(department_id,week_start,car_id,starts_at,ends_at,origin_id,destination_id,driver_id,needs_driver,status,flag_reason,is_pinned,pin_reason,created_by)
+    values(dept,w,carB,dt+interval '4 days',dt+interval '4 days 4 hours',home,home,null,true,'flagged','NEEDS_DRIVER',true,'MISSING_DRIVER',sadran) returning id into rB;
+  insert into public.ride_requests(ride_id,request_id,role,leg,car_mode) values(rB,q2,'passenger','both','chauffeur');
+  set local role authenticated;
+  perform public.cancel_ride(rB,'test cancel driverless',(select version from public.rides where id=rB));
+  reset role;
+  assert (select status::text from public.rides where id=rB)='cancelled', 'cancel_ride: a driverless ride with a passenger can be cancelled';
+  select count(*) into n from public.notifications where recipient_id=m2 and data->>'ride_id'=rB::text and data->>'variant'='ride_cancelled';
+  assert n=1, 'cancel_ride: the waiting passenger is told';
+
+  -- ---- R7B14: cancelling a relay leg does not overwrite a driverless partner's NEEDS_DRIVER flag
+  insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,depart_at,trip_shape,one_way_car_mode,status)
+    values(dept,w,m1,sadran,dest,typ,dt+interval '4 days','one_way_to','relay','assigned') returning id into q1;
+  insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,return_at,trip_shape,one_way_car_mode,status)
+    values(dept,w,m2,sadran,dest,typ,dt+interval '4 days 7 hours','one_way_from','passenger','assigned') returning id into q2;
+  insert into public.rides(department_id,week_start,car_id,starts_at,ends_at,origin_id,destination_id,driver_id,status,is_pinned,pin_reason,created_by)
+    values(dept,w,carC,dt+interval '4 days',dt+interval '4 days 1 hour',home,dest,m1,'confirmed',true,'SADRAN_MANUAL',sadran) returning id into rO;
+  insert into public.rides(department_id,week_start,car_id,starts_at,ends_at,origin_id,destination_id,driver_id,needs_driver,status,flag_reason,is_pinned,pin_reason,created_by)
+    values(dept,w,carC,dt+interval '4 days 7 hours',dt+interval '4 days 8 hours',dest,home,null,true,'flagged','NEEDS_DRIVER',true,'MISSING_DRIVER',sadran) returning id into rR;
+  insert into public.ride_requests(ride_id,request_id,role,leg,car_mode) values(rO,q1,'driver','out','relay');
+  insert into public.ride_requests(ride_id,request_id,role,leg,car_mode) values(rR,q2,'passenger','return','passenger');
+  set local role authenticated;
+  perform public.cancel_ride(rO,'test relay cancel',(select version from public.rides where id=rO));
+  reset role;
+  assert (select flag_reason from public.rides where id=rR)='NEEDS_DRIVER', 'R7B14: the driverless partner keeps NEEDS_DRIVER, got '||coalesce((select flag_reason from public.rides where id=rR),'null');
+  -- a stale relay_pair_cancelled left on a driverless ride is tidied back to NEEDS_DRIVER by refresh_ride_flags
+  update public.rides set flag_reason='relay_pair_cancelled' where id=rR;
+  update public.rides set origin_id=home where id=rR;   -- the car is where the ride starts again
+  perform public.refresh_ride_flags(carC);
+  assert (select status::text='flagged' and flag_reason='NEEDS_DRIVER' from public.rides where id=rR), 'R7B14: refresh restores NEEDS_DRIVER on a driverless ride';
+
+
   -- ---- follow-up: an expired offer tells the member (expire_proposals, also run by "publish anyway")
   insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,depart_at,return_at,trip_shape,status)
     values(dept,w,m2,sadran,dest,typ,dt+interval '2 days',dt+interval '2 days 4 hours','round_trip','proposed') returning id into q2;
