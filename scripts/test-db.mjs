@@ -38,11 +38,17 @@ if (process.env.QA_REGRESSION === "1") {
   });
 }
 
-// API-level suite, opt-in (docs/TODO.md U1): real RPCs as signed-in seeded users through PostgREST (catches
-// failures the owner-run SQL suites cannot, e.g. R5B1's unqualified DELETE). Needs QA_API_URL, the API of the
-// disposable stack behind SUPABASE_DB_CONTAINER.
+// API-level suite, opt-in locally, always on in CI's database job (docs/TODO.md U1/U1a): real RPCs as signed-in
+// seeded users through PostgREST (catches failures the owner-run SQL suites cannot: RLS, grants, unqualified writes
+// such as R5B1's DELETE). Covers: cancel_ride (passenger/chauffeur/driver/stranger); submit_request -> edit with
+// expected_version -> withdraw_request; Sadran create_proposal (merge, shift) -> send_proposal -> members
+// answer_proposal in-app -> applied; publish_siddur then a plain member reads the rides (RLS); member
+// add_ride_passengers/remove_ride_person and swap_day_cars; Sadran mark_car_move and set_ride_driver; freed slot
+// (cancel_ride -> resolve_freed_offer -> claim_freed_slot -> approve_claim, and the lone-candidate auto assign);
+// submit_series_request -> shorten_series; plus per-role negatives (a member cannot publish, propose, send, approve,
+// move a car or assign a driver). Needs QA_API_URL, the API of the stack behind SUPABASE_DB_CONTAINER.
 if (process.env.QA_API === "1") {
   if (!process.env.QA_API_URL) throw new Error("QA_API=1 needs QA_API_URL (the API of the stack behind SUPABASE_DB_CONTAINER)");
-  console.log("API checks: scripts/test-api.mjs (member cancel as passenger / chauffeur requester / driver)");
+  console.log("API checks: scripts/test-api.mjs (main flows as signed-in members and Sadran: requests, proposals, publish, rides, freed slot, series)");
   execFileSync(process.execPath, [new URL("./test-api.mjs", import.meta.url).pathname], { stdio: "inherit" });
 }

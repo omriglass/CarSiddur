@@ -104,7 +104,13 @@ jobs:
           git diff --exit-code -- supabase/schema-current.sql \
             || { echo "::error::supabase/schema-current.sql is stale — run 'npm run db:schema' and commit"; exit 1; }
 
-      - name: SQL regression suites
+      # QA_API=1 appends the API-level suite (scripts/test-api.mjs, docs/TODO.md U1a): the main flows driven as
+      # signed-in seeded users through PostgREST/RPC, which the owner-run SQL suites cannot catch (RLS, grants).
+      - name: SQL regression suites + API-level suite
+        env:
+          QA_API: "1"
+          QA_API_URL: http://127.0.0.1:54321
+          QA_ALLOW_DEFAULT_STACK: "1"
         run: npm run db:test
 
       # EXTENDED TEST (docs/QA_SIMULATION.md §5): seeded QA week -> real solver -> apply_solver_result
