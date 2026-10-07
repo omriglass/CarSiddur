@@ -16,11 +16,11 @@ function hostRoute() {
 }
 
 describe("makeHop", () => {
-  it("is symmetric, zero for the same place and defaults to 30 for unknown or free-text places", () => {
+  it("is symmetric, zero for the same place and defaults to 60 for unknown or free-text places", () => {
     expect(hop("D", "H")).toBe(60);
     expect(hop("H", "H")).toBe(0);
-    expect(hop("H", "X")).toBe(30);
-    expect(hop(null, "H")).toBe(30);
+    expect(hop("H", "X")).toBe(60);
+    expect(hop(null, "H")).toBe(60);
   });
 });
 

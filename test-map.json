@@ -374,14 +374,18 @@
         "src/lib/routeStops.ts",
         "src/lib/rideLabel.ts",
         "src/lib/rideLabel.test.ts",
-        "e2e/multi-stop.spec.ts"
+        "e2e/multi-stop.spec.ts",
+        "src/lib/weekSettings.ts",
+        "src/lib/weekSettings.test.ts",
+        "supabase/tests/week_settings_source.sql"
       ],
       "vitest": [
         "src/features/sadran/board",
         "src/features/sadran/applySolve.test.ts",
         "src/features/sadran/unmetStatuses.test.ts",
         "src/features/sadran/deviations",
-        "src/features/sadran/export"
+        "src/features/sadran/export",
+        "src/lib/weekSettings.test.ts"
       ],
       "sql": [
         "todo_board_semantics.sql",
@@ -392,7 +396,8 @@
         "day_car_swap.sql",
         "qa_run1_proposals.sql",
         "qa_run1_cancel_waitlist.sql",
-        "placement_features.sql"
+        "placement_features.sql",
+        "week_settings_source.sql"
       ],
       "playwrightTags": [
         "@board"

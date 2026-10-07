@@ -63,6 +63,7 @@ import { servedOf } from "@/features/rides/servedOf";
 import { OpenProposalButton } from "@/features/proposals/components/OpenProposalButton";
 import { he, t, tv } from "@/i18n/he";
 import { describeStatusReason } from "@/lib/statusReason";
+import { effectiveWeekSettings } from "@/lib/weekSettings";
 import { formatTime } from "@/lib/time";
 import { paths } from "@/app/routes";
 
@@ -208,7 +209,7 @@ export function HomePage() {
 
   async function saveMyRideMove(move: RideMove) {
     if (!editableRide || !ownsEditableRide || !editableRide.department_id || !editableRide.week_start || !editableRide.origin_id || !editableRide.destination_id) return;
-    if (conflictingRides(move, selectedRideWeekQuery.data ?? [], settingsQuery.data?.turnaround_minutes ?? 30).length) {
+    if (conflictingRides(move, selectedRideWeekQuery.data ?? [], effectiveWeekSettings(settingsQuery.data, editableWeek).turnaroundMinutes).length) {
       setCollisionMove({ ...move, departmentId: editableRide.department_id, weekStart: editableRide.week_start });
       return;
     }

@@ -82,6 +82,7 @@ import { fromZonedTime } from "date-fns-tz";
 import { TZ, dateKey, formatTime } from "@/lib/time";
 import { weekdayLabel } from "@/lib/dayLabels";
 import { cn } from "@/lib/utils";
+import { effectiveWeekSettings } from "@/lib/weekSettings";
 import { paths } from "@/app/routes";
 
 /**
@@ -306,7 +307,9 @@ export function SiddurPage() {
     (isSadran || (canEditWeek && ownsSelectedRide) || !!profileQuery.data?.is_admin);
   const pendingChanges = changesQuery.data ?? [];
   const shadowedRideIds = new Set(pendingChanges.flatMap((c) => [c.ride_id, ...c.parties.map((p) => p.ride_id)]));
-  const tightRideIds = tightScheduleRideIds(boardRidesQuery.data ?? [], settingsQuery.data?.turnaround_minutes ?? 30);
+  // REQ §13.108 D1: the shown week's override of the turnaround buffer wins over the department's.
+  const turnaroundMinutes = effectiveWeekSettings(settingsQuery.data, resolvedWeek).turnaroundMinutes;
+  const tightRideIds = tightScheduleRideIds(boardRidesQuery.data ?? [], turnaroundMinutes);
 
   function ownsEditableRide(rideId: string) {
     const ride = boardRidesQuery.data?.find((r) => r.id === rideId);
@@ -319,7 +322,7 @@ export function SiddurPage() {
   async function saveMove(move: RideMove) {
     const ride = boardRidesQuery.data?.find((r) => r.id === move.rideId);
     if (!ride || !ownsEditableRide(move.rideId) || !departmentId || !weekStart || !ride.origin_id || !ride.destination_id) return;
-    if (conflictingRides(move, boardRidesQuery.data ?? [], settingsQuery.data?.turnaround_minutes ?? 30).length) {
+    if (conflictingRides(move, boardRidesQuery.data ?? [], turnaroundMinutes).length) {
       setCollisionMove({ ...move, departmentId, weekStart });
       return;
     }
@@ -351,7 +354,7 @@ export function SiddurPage() {
     if (!ride || !car || car.status !== "active" || (car.type === "temporary" && car.owner_id !== profileId)) return false;
     const move = moveOnRideDay(ride, carId, startMinutes, endMinutes);
     if (!move || Date.parse(move.startsAt) <= now.getTime()) return false;
-    const buffer = settingsQuery.data?.turnaround_minutes ?? 30;
+    const buffer = turnaroundMinutes;
     if (conflictingRides(move, boardRidesQuery.data ?? [], buffer).length) return false;
     if ((maintenanceQuery.data ?? []).some((block) => block.car_id === carId && Date.parse(move.startsAt) < Date.parse(block.ends_at)
       && Date.parse(move.endsAt) + buffer * 60_000 > Date.parse(block.starts_at))) return false;

@@ -214,11 +214,11 @@ content-matching `v_board_rides`/`publish_siddur`; `src/components/CarSwapDialog
 `board-coordination.spec.ts`, `board-drafts.spec.ts` (REQ §13.94 drafts), `merged-ride.spec.ts` (REQ §13.94 merged ride = one block, unmerge), `export.spec.ts`, `weekly-permissions.spec.ts`, `ride-editing.spec.ts`,
 `car-swap.spec.ts`, `multi-stop.spec.ts`; `src/features/rides/servedOf.ts`,
 `src/features/rides/components/RideRouteStops.tsx`, `src/lib/routeStops.ts` (multi-stop rides
-display, REQ §13.93, step O6); `src/features/rides/components/RideRoute.tsx`, `src/lib/rideRoute.ts`(+test) (ride route twin and display, REQ §13.94).
+display, REQ §13.93, step O6); `src/features/rides/components/RideRoute.tsx`, `src/lib/rideRoute.ts`(+test) (ride route twin and display, REQ §13.94); `src/lib/weekSettings.ts`(+test) (week turnaround/dwell override, REQ §13.108 a).
 
 **Automated**:
-- Vitest: `npx vitest run src/features/sadran/board src/features/sadran/applySolve.test.ts src/features/sadran/unmetStatuses.test.ts src/features/sadran/deviations src/features/sadran/export src/lib/rideRoute.test.ts`
-- SQL: `todo_board_semantics.sql`, `coordinator_planning.sql`, `solve_semantics.sql`, `car_chain_healing.sql`, `day_car_swap.sql`, `origins_chain.sql`, `qa_run1_proposals.sql`, `qa_run1_cancel_waitlist.sql` (QA run 1 fixes: proposals/merges/chain, cancellation/waiting list/status), `placement_features.sql` (REQ §13.101: luggage needs a large trunk, set_ride_driver, duplicate withdraw/restore, own-car placement, published-day edit, freed car to the contested group)
+- Vitest: `npx vitest run src/features/sadran/board src/features/sadran/applySolve.test.ts src/features/sadran/unmetStatuses.test.ts src/features/sadran/deviations src/features/sadran/export src/lib/rideRoute.test.ts src/lib/weekSettings.test.ts`
+- SQL: `todo_board_semantics.sql`, `coordinator_planning.sql`, `solve_semantics.sql`, `car_chain_healing.sql`, `day_car_swap.sql`, `origins_chain.sql`, `qa_run1_proposals.sql`, `qa_run1_cancel_waitlist.sql` (QA run 1 fixes: proposals/merges/chain, cancellation/waiting list/status), `placement_features.sql` (REQ §13.101: luggage needs a large trunk, set_ride_driver, duplicate withdraw/restore, own-car placement, published-day edit, freed car to the contested group), `week_settings_source.sql` (REQ §13.108 a/b: week turnaround override, 60-minute unknown travel)
 - Playwright: `npx playwright test --grep "@board"`
 
 **QA script**:

@@ -18,6 +18,7 @@ import { fromZonedTime } from "date-fns-tz";
 
 import { isActiveStop } from "@/lib/routeStops";
 import { TZ } from "@/lib/time";
+import { effectiveWeekSettings } from "@/lib/weekSettings";
 
 import type {
   Assignment,
@@ -35,7 +36,7 @@ import type {
   Window,
 } from "@/solver";
 
-import type { Database } from "@/integrations/supabase/types";
+import type { Database, Json } from "@/integrations/supabase/types";
 
 export type RequestRow = Database["public"]["Tables"]["requests"]["Row"];
 export type CarRow = Database["public"]["Tables"]["cars"]["Row"];
@@ -114,6 +115,12 @@ export interface BuildSolverInputParams {
     DepartmentSettingsRow,
     "turnaround_minutes" | "detour_limit_minutes" | "detour_limit_km" | "chauffeur_dwell_minutes" | "day_end_time" | "stop_minutes"
   >;
+  /**
+   * The week's `weeks.settings_overrides` (REQ §13.108 D1): its `turnaround_minutes` /
+   * `chauffeur_dwell_minutes` win over `departmentSettings` (`effectiveWeekSettings`), exactly as
+   * SQL `required_turnaround_minutes()` does. Omitted = no override.
+   */
+  weekSettingsOverrides?: Json | null;
   /**
    * Plain `requests` rows, optionally carrying `requester_does_not_drive` — REQ §88 (owner
    * 2026-09-15): `Request.canDrive = !requester_does_not_drive` — and `driving_companion_ids`,
@@ -349,15 +356,17 @@ export function buildSolverInput(params: BuildSolverInputParams): SolverInput {
 
   const fairness: SolverStats["fairness"] = fairnessDeficits(params.fairness ?? []);
 
+  const weekSettings = effectiveWeekSettings(params.departmentSettings, { settings_overrides: params.weekSettingsOverrides });
+
   const config: SolverConfig = {
-    bufferMinutes: params.departmentSettings.turnaround_minutes,
+    bufferMinutes: weekSettings.turnaroundMinutes,
     detour: {
       maxMinutes: params.departmentSettings.detour_limit_minutes,
       maxKm: params.departmentSettings.detour_limit_km,
     },
     beyondFlexMaxMinutes: 120,
     defaultTravelMinutes: 60,
-    chauffeurDwellMinutes: params.departmentSettings.chauffeur_dwell_minutes,
+    chauffeurDwellMinutes: weekSettings.chauffeurDwellMinutes,
     // REQUIREMENTS §13.93 "Multi-stop rides" (ORIGINS_PLAN §6.2): `department_settings.
     // stop_minutes` -> dwell time per stop, read by `legRouteMinutes()`/`stopEtas()`.
     stopMinutes: params.departmentSettings.stop_minutes,

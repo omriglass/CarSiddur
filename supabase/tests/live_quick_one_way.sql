@@ -62,12 +62,12 @@ begin
   exception when raise_exception then if sqlerrm<>'invalid_quick_reservation' then raise;end if;end;
   begin perform public.submit_request(payload||jsonb_build_object('trip_shape','round_trip','return_at',dt+interval '2 hours','one_way_car_mode',null));raise exception 'roundtrip quick driver vacancy accepted';
   exception when raise_exception then if sqlerrm<>'invalid_quick_reservation' then raise;end if;end;
-  -- Unknown travel duration uses 30 minutes each way, plus dwell, rounded upward to 75.
+  -- Unknown travel duration uses 60 minutes each way (REQ §13.108 D2), plus dwell, rounded upward to 135.
   insert into public.car_maintenance_blocks(car_id,department_id,starts_at,ends_at,reason,created_by)
     values(car,dept,dt+interval '4 hours',dt+interval '6 hours','Fixture maintenance',manager);
   second:=public.submit_request((payload-array['guest_passenger_names','companion_ids'])||jsonb_build_object('adults',1,'destination_id',null,'destination_text','Unknown destination','depart_at',dt+interval '4 hours'));
   assert second->>'car_id'<>car::text,'quick reservation ignored maintenance';
-  assert (second->>'ends_at')::timestamptz-(second->>'starts_at')::timestamptz=interval '75 minutes','unknown destination fallback incorrect';
+  assert (second->>'ends_at')::timestamptz-(second->>'starts_at')::timestamptz=interval '135 minutes','unknown destination fallback incorrect';
   -- All unavailable cars: preserve a waitlisted request without overlapping rides.
   insert into public.car_maintenance_blocks(car_id,department_id,starts_at,ends_at,reason,created_by)
     select id,dept,dt+interval '8 hours',dt+interval '10 hours','Fixture fully unavailable',manager from public.cars where department_id=dept and type='shared';

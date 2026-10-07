@@ -30,7 +30,9 @@ import { siddurKeys } from "@/features/siddur/queryKeys";
 import { paths } from "@/app/routes";
 import { he, t, tv } from "@/i18n/he";
 import { dateKey, formatTime, weekdayIndex } from "@/lib/time";
+import { DEFAULT_HOP_MINUTES } from "@/lib/rideRoute";
 import { cn } from "@/lib/utils";
+import { effectiveWeekSettings } from "@/lib/weekSettings";
 // Import the seat-fit helper from its own module, not the `@/solver` barrel: the barrel pulls
 // the entire solver into the eager member bundle (owner, 2026-09-14 bundle-size cleanup).
 import { fits } from "@/solver/seatFit";
@@ -588,10 +590,8 @@ export function RequestForm({
   const selectedMs = Date.parse(toInstant(day, tripShape === "one_way_from" ? returnTimeSafe : departTimeSafe, false));
   const roundTripEndMs = Date.parse(toInstant(day, returnTimeSafe, false));
   const destinationId = values.destination && "presetId" in values.destination ? values.destination.presetId : undefined;
-  const travelMinutes = destinationsQuery.data?.find((d) => d.id === destinationId)?.travel_minutes ?? 30;
-  const overrides = weekRowQuery.data?.settings_overrides;
-  const overrideDwell = overrides && typeof overrides === "object" && !Array.isArray(overrides) ? overrides.chauffeur_dwell_minutes : undefined;
-  const dwellMinutes = typeof overrideDwell === "number" ? overrideDwell : settingsQuery.data?.chauffeur_dwell_minutes ?? 10;
+  const travelMinutes = destinationsQuery.data?.find((d) => d.id === destinationId)?.travel_minutes ?? DEFAULT_HOP_MINUTES;
+  const dwellMinutes = effectiveWeekSettings(settingsQuery.data, weekRowQuery.data).chauffeurDwellMinutes;
   const { startMs, endMs } = quickContext
     ? quickVehicleWindow(tripShape, selectedMs, roundTripEndMs, travelMinutes, dwellMinutes)
     : { startMs: 0, endMs: 0 };

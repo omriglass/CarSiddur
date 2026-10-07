@@ -1,5 +1,5 @@
 import { parseFlexInterval } from "@/features/solverBridge/buildSolverInput";
-import { legMinutes, type Hop } from "@/lib/rideRoute";
+import { DEFAULT_HOP_MINUTES, legMinutes, type Hop } from "@/lib/rideRoute";
 import { withinFlex } from "./geometry";
 import type { WeekRequestRow } from "../api";
 
@@ -27,7 +27,7 @@ export function requestStart(request: Pick<WeekRequestRow, "trip_shape" | "depar
 export function requestWindow(request: WeekRequestRow): { startsAt: string; endsAt: string } | null {
   const anchor = requestStart(request);
   if (!anchor) return null;
-  const travelMs = Math.max(15, Math.ceil((request.destination_travel_minutes ?? 30) / 15) * 15) * 60_000;
+  const travelMs = Math.max(15, Math.ceil((request.destination_travel_minutes ?? DEFAULT_HOP_MINUTES) / 15) * 15) * 60_000;
   if (request.trip_shape === "one_way_from") return { startsAt: new Date(Date.parse(anchor) - travelMs).toISOString(), endsAt: anchor };
   const endsAt = request.trip_shape === "round_trip" ? request.return_at : new Date(Date.parse(anchor) + travelMs).toISOString();
   return endsAt ? { startsAt: anchor, endsAt } : null;
@@ -80,7 +80,7 @@ export function standaloneChauffeurWindow(request: WeekRequestRow, dwellMinutes:
   if (request.trip_shape === "round_trip" && tripTypeOf(request) !== "drop_off") return requestWindow(request);
   const anchor = requestStart(request);
   if (!anchor) return null;
-  const duration = Math.max(15, Math.ceil((2 * Math.max(0, request.destination_travel_minutes ?? 30) + Math.max(0, dwellMinutes)) / 15) * 15) * 60_000;
+  const duration = Math.max(15, Math.ceil((2 * Math.max(0, request.destination_travel_minutes ?? DEFAULT_HOP_MINUTES) + Math.max(0, dwellMinutes)) / 15) * 15) * 60_000;
   return request.trip_shape === "one_way_from"
     ? { startsAt: new Date(Math.floor((Date.parse(anchor) - duration) / (15 * 60_000)) * 15 * 60_000).toISOString(), endsAt: anchor }
     : { startsAt: anchor, endsAt: new Date(Date.parse(anchor) + duration).toISOString() };

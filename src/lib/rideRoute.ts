@@ -28,7 +28,8 @@ export interface RoutePoint {
 /** Minutes of driving between two places (`null` place = free text / unknown -> default hop). */
 export type Hop = (fromId: string | null, toId: string | null) => number;
 
-export const DEFAULT_HOP_MINUTES = 30;
+/** Unknown travel between two places (REQ item 14; SQL `_route_hop_minutes`): 60 minutes. Not the 30-minute turnaround default. */
+export const DEFAULT_HOP_MINUTES = 60;
 export const DEFAULT_STOP_MINUTES = 5;
 
 const KINDS: readonly RouteKind[] = ["origin", "stop", "board", "alight", "destination"];
@@ -99,7 +100,7 @@ export function makeHop(
 /**
  * The home <-> place edges `place_travel_for_week` leaves out (it only returns pairs beyond the
  * `destinations` preset): home to every preset place with its stored `travel_minutes`. Append
- * these to the week's rows before `makeHop` so a home-origin ride is not priced at the 30 min fallback.
+ * these to the week's rows before `makeHop` so a home-origin ride is not priced at the 60 min fallback.
  */
 export function homeTravelEdges(
   homeId: string | null | undefined,

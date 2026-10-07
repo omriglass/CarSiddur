@@ -29,6 +29,7 @@ import { scanBoardConflicts, slotToIso, requestDayMismatchRideIds, tightSchedule
 import { rideBlockLabel } from "../rideLabel";
 import { DEFAULT_STOP_MINUTES, homeTravelEdges, makeHop, makeHopKm, parseRideRoute } from "@/lib/rideRoute";
 import { viaLabel } from "@/lib/routeLabel";
+import { effectiveWeekSettings } from "@/lib/weekSettings";
 import { addedGuestsOf, mergePayloadLeg, previewMerge } from "../mergeProposal";
 import { connectedPairRideIds, unmetItemId, unmetRequestViews, viewsOnDay } from "../unmetLegs";
 import { isUnmetStatus } from "../../unmetStatuses";
@@ -290,6 +291,7 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
           carStartLocationsByCarId: carStartLocationsQuery.data ?? {},
           travel: placeTravelQuery.data ?? [],
           proposals: proposalsQuery.data ?? [],
+          weekRow: weekRowQuery.data,
         },
       );
       const output = withoutPrivateCarOffers(runSolve(context.input), carsQuery.data ?? [], ridesQuery.data ?? [], requestsQuery.data ?? []);
@@ -406,6 +408,7 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
           mileageKmByCarId: mileageStatsQuery.data ?? {},
           carStartLocationsByCarId: carStartLocationsQuery.data ?? {},
           travel: placeTravelQuery.data ?? [],
+          weekRow: weekRowQuery.data,
         };
   const boardPolicyScores = useBoardPolicyScores({
     departmentId,
@@ -423,6 +426,7 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
   // render.
   const solverInputFingerprint = [
     effectivePolicyVersionId ?? "",
+    JSON.stringify(weekRowQuery.data?.settings_overrides ?? null),
     (ridesQuery.data ?? []).map((r) => `${r.id}:${r.car_id}:${r.starts_at}:${r.ends_at}:${r.status}:${r.version}`).join(","),
     (requestsQuery.data ?? []).map((r) => `${r.id}:${r.status}:${r.depart_at}:${r.return_at}:${r.version}`).join(","),
     // REQ §13.94: a draft/sent/accepted proposal removes its request from solving and fixes its window.
@@ -437,6 +441,7 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
       rideTypesQuery.isLoading ||
       maintenanceQuery.isLoading ||
       departmentSettingsQuery.isLoading ||
+      weekRowQuery.isLoading ||
       destinationsQuery.isLoading ||
       fairnessStatsQuery.isLoading ||
       mileageStatsQuery.isLoading ||
@@ -457,6 +462,7 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
     rideTypesQuery.isLoading,
     maintenanceQuery.isLoading,
     departmentSettingsQuery.isLoading,
+    weekRowQuery.isLoading,
     destinationsQuery.isLoading,
     fairnessStatsQuery.isLoading,
     mileageStatsQuery.isLoading,
@@ -467,6 +473,8 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
   ]);
 
   const daySettings = departmentSettingsQuery.data;
+  // REQ §13.108 D1: the week's override of turnaround / chauffeur dwell, same source as SQL `required_turnaround_minutes()`.
+  const weekSettings = effectiveWeekSettings(daySettings, weekRowQuery.data);
   const rides = ridesQuery.data ?? [];
   const awaitingDriverRequestIds = new Set(rides.filter((ride) => ride.needs_driver).flatMap((ride) => servedOf(ride).map((entry) => entry.request_id)));
 
@@ -551,7 +559,7 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
             })),
             carIds: [...new Set(validRides.map((r) => r.car_id))],
             weekStartMs,
-            bufferMinutes: daySettings.turnaround_minutes,
+            bufferMinutes: weekSettings.turnaroundMinutes,
             homeLocationId: department.home_destination_id,
             days: days96,
             // REQUIREMENTS §13.93: each car's own base (`cars.base_location_id`) and its
@@ -567,7 +575,7 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
         })()
       : null;
 
-  const tightRideIds = tightScheduleRideIds(rides.filter((ride) => !(ride.id && mergeGuestRideIds.has(ride.id))).map((ride) => (isReservation(ride) ? { ...ride, origin_id: null, destination_id: null } : ride)), daySettings?.turnaround_minutes ?? 30, {
+  const tightRideIds = tightScheduleRideIds(rides.filter((ride) => !(ride.id && mergeGuestRideIds.has(ride.id))).map((ride) => (isReservation(ride) ? { ...ride, origin_id: null, destination_id: null } : ride)), weekSettings.turnaroundMinutes, {
     homeLocationId: department?.home_destination_id,
     carBaseLocationId: new Map((carsQuery.data ?? []).map((c) => [c.id, c.base_location_id])),
   });
@@ -648,7 +656,7 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
       requestedStartMinutes: (() => {
         const entry = servedOf(r).find((served) => served.role === "driver") ?? servedOf(r)[0];
         const request = boardRequests.find((request) => request.id === entry?.request_id);
-        const window = request ? standaloneChauffeurWindow(request, daySettings?.chauffeur_dwell_minutes ?? 10) : null;
+        const window = request ? standaloneChauffeurWindow(request, weekSettings.chauffeurDwellMinutes) : null;
         return window ? (Date.parse(window.startsAt) - Date.parse(dayStartIso(selectedDay))) / 60_000 : undefined;
       })(),
       // Owner bug report #3: a round-trip ride is stored as one row with
@@ -878,7 +886,7 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
     seatConfigsByCarId,
     unmetItems,
     selectedDay,
-    chauffeurDwellMinutes: daySettings?.chauffeur_dwell_minutes ?? 10,
+    chauffeurDwellMinutes: weekSettings.chauffeurDwellMinutes,
     awayByCarId: conflictScan?.awayByCarId,
     weekStartMs,
     // REQUIREMENTS §13.93: each car's own base, already defaulted to the department home.

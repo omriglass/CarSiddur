@@ -1,9 +1,10 @@
 import { useCars, useMaintenanceBlocks, useTurnaroundMinutes } from "@/features/fleet/hooks";
+import { effectiveWeekSettings } from "@/lib/weekSettings";
 import { siddurCarName } from "@/lib/siddurCarName";
 import { toInstant } from "@/features/requests/mapper";
 
 import { computeCarFreeWindows, type CarFreeWindow } from "./freeWindows";
-import { useBoardRides, useCarLocations } from "./hooks";
+import { useBoardRides, useCarLocations, useWeeks } from "./hooks";
 
 export interface DayFreeWindowsCar {
   id: string;
@@ -49,6 +50,9 @@ export function useDayFreeWindows(
   const carLocationsQuery = useCarLocations(departmentId, weekStart);
   const maintenanceQuery = useMaintenanceBlocks(departmentId);
   const turnaroundQuery = useTurnaroundMinutes(departmentId);
+  // REQ §13.108 D1: the week's `settings_overrides.turnaround_minutes` wins over the department's (same as SQL `required_turnaround_minutes`).
+  const weeksQuery = useWeeks(departmentId);
+  const weekRow = weeksQuery.data?.find((w) => w.week_start === weekStart) ?? null;
 
   const sharedCars = (carsQuery.data ?? []).filter((c) => c.type === "shared" && c.status === "active");
   const awayWindows: DayFreeWindowsAway[] = (carLocationsQuery.data ?? [])
@@ -63,7 +67,7 @@ export function useDayFreeWindows(
 
   const freeWindows: CarFreeWindow[] = day
     ? sharedCars.flatMap((c) => {
-        const turnaroundMinutes = turnaroundQuery.data ?? 30;
+        const turnaroundMinutes = effectiveWeekSettings({ turnaround_minutes: turnaroundQuery.data }, weekRow).turnaroundMinutes;
         return computeCarFreeWindows({
           carId: c.id,
           rides: (boardRidesQuery.data ?? [])
@@ -82,7 +86,7 @@ export function useDayFreeWindows(
     : [];
 
   return {
-    isLoading: carsQuery.isLoading || boardRidesQuery.isLoading || turnaroundQuery.isLoading || maintenanceQuery.isLoading,
+    isLoading: carsQuery.isLoading || boardRidesQuery.isLoading || turnaroundQuery.isLoading || weeksQuery.isLoading || maintenanceQuery.isLoading,
     freeWindows,
     awayWindows,
     cars: sharedCars.map((c) => ({ id: c.id, name: siddurCarName(c), type: c.type, baseLocationId: c.base_location_id ?? null })),

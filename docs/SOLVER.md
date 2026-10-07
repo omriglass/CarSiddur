@@ -176,7 +176,7 @@ export interface SolverStats {
 }
 
 export interface SolverConfig {
-  bufferMinutes: number;            // default 30 (department_settings.turnaround_minutes)
+  bufferMinutes: number;            // default 30 (the week's settings_overrides.turnaround_minutes, else department_settings.turnaround_minutes — bridge: effectiveWeekSettings(), REQ §13.108 a)
   detour: { maxMinutes: number; maxKm: number };      // default 20 / 15
   beyondFlexMaxMinutes: number;     // default 120
   defaultTravelMinutes: number;     // default 60, used when the destination has no travel_minutes

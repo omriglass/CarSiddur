@@ -1402,8 +1402,8 @@ CREATE OR REPLACE FUNCTION "public"."_route_hop_minutes"("p_from" "uuid", "p_to"
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
-  select case when p_from is null or p_to is null then 30
-    else greatest(coalesce((select travel_minutes from public.place_travel(p_from, p_to)), 30), 0) end;
+  select case when p_from is null or p_to is null then 60
+    else greatest(coalesce((select travel_minutes from public.place_travel(p_from, p_to)), 60), 0) end;
 $$;
 
 
@@ -5788,9 +5788,7 @@ begin
 
   perform public.dissolve_unservable_waitlist_groups(p_department_id, p_week_start, p_day);
 
-  select make_interval(mins => s.turnaround_minutes) into v_turnaround
-  from public.department_settings s where s.department_id = p_department_id;
-  v_turnaround := coalesce(v_turnaround, interval '30 minutes');
+  v_turnaround := make_interval(mins => coalesce(public.required_turnaround_minutes(p_department_id, p_week_start), 30));
 
   -- Sweep the day's candidates by departure; because the intervals are half-open
   -- [depart, return + turnaround), "starts before the running cluster ends" is exactly the
@@ -6387,9 +6385,7 @@ begin
     return null;
   end if;
 
-  select make_interval(mins => s.turnaround_minutes) into v_turnaround
-  from public.department_settings s where s.department_id = v_req.department_id;
-  v_turnaround := coalesce(v_turnaround, interval '30 minutes');
+  v_turnaround := make_interval(mins => coalesce(public.required_turnaround_minutes(v_req.department_id, v_req.week_start), 30));
 
   select g.id into v_group
   from public.waitlist_groups g
@@ -7055,9 +7051,9 @@ begin
       raise exception 'series_car_unavailable' using errcode = 'MDR03', detail = 'seat_config_violation';
     end if;
 
-    select coalesce(make_interval(mins => s.turnaround_minutes), interval '30 minutes') into v_turnaround
-    from public.department_settings s where s.department_id = v_dept;
-    v_turnaround := coalesce(v_turnaround, interval '30 minutes');
+    -- A series can span weeks; the span check uses the largest turnaround any of its weeks requires.
+    select make_interval(mins => coalesce(max(public.required_turnaround_minutes(v_dept, wk)), 30)) into v_turnaround
+    from unnest(v_weeks) as wk;
     select d.home_destination_id into v_home from public.departments d where d.id = v_dept;
 
     if exists (select 1 from public.rides r
@@ -8088,9 +8084,10 @@ begin
       raise exception 'series_car_unavailable' using errcode = 'MDR03', detail = 'series_split_across_cars';
     end if;
 
-    select coalesce(make_interval(mins => s.turnaround_minutes), interval '30 minutes') into v_turnaround
-    from public.department_settings s where s.department_id = v_dept;
-    v_turnaround := coalesce(v_turnaround, interval '30 minutes');
+    -- A series can span weeks; the span check uses the largest turnaround any of its weeks requires.
+    select make_interval(mins => coalesce(max(public.required_turnaround_minutes(v_dept, wk.week_start)), 30)) into v_turnaround
+    from (select distinct q.week_start from public.requests q
+          where q.series_id = p_series_id and q.status not in ('withdrawn','cancelled','denied','external')) wk;
 
     -- Nobody else uses the car anywhere inside the span.
     if exists (select 1 from public.rides r
@@ -10071,7 +10068,7 @@ begin
       v_total := v_total + greatest(coalesce(
         case when v_prev.place_id is not null and v_cur.place_id is not null
           then (select travel_minutes from public.place_travel(v_prev.place_id, v_cur.place_id))
-        end, 30), 0);
+        end, 60), 0);
     end if;
     v_prev := v_cur;
     v_has_prev := true;
@@ -10289,7 +10286,7 @@ begin
     loop
       v_t := v_t + make_interval(mins => greatest(coalesce(
         case when v_anchor_id is not null and v_stop.place_id is not null
-          then (select travel_minutes from public.place_travel(v_anchor_id, v_stop.place_id)) end, 30), 0));
+          then (select travel_minutes from public.place_travel(v_anchor_id, v_stop.place_id)) end, 60), 0));
       leg := 'out'; "position" := v_stop."position"; place_id := v_stop.place_id; place_text := v_stop.place_text; eta := v_t;
       return next;
       v_t := v_t + make_interval(mins => v_stop_minutes);
@@ -10305,7 +10302,7 @@ begin
     loop
       v_t := v_t - make_interval(mins => greatest(coalesce(
         case when v_stop.place_id is not null and v_anchor_id is not null
-          then (select travel_minutes from public.place_travel(v_stop.place_id, v_anchor_id)) end, 30), 0));
+          then (select travel_minutes from public.place_travel(v_stop.place_id, v_anchor_id)) end, 60), 0));
       leg := 'return'; "position" := v_stop."position"; place_id := v_stop.place_id; place_text := v_stop.place_text; eta := v_t;
       return next;
       v_t := v_t - make_interval(mins => v_stop_minutes);
@@ -12378,9 +12375,7 @@ begin
   from public.departments d where d.id = g.department_id;
   if v_home is null then raise exception 'no_home_location' using errcode = 'P0412'; end if;
 
-  select make_interval(mins => s.turnaround_minutes) into v_turnaround
-  from public.department_settings s where s.department_id = g.department_id;
-  v_turnaround := coalesce(v_turnaround, interval '30 minutes');
+  v_turnaround := make_interval(mins => coalesce(public.required_turnaround_minutes(g.department_id, g.week_start), 30));
 
   select min(q.depart_at), max(q.return_at),
          sum(q.adults)::int, sum(q.child_seats)::int, sum(q.boosters)::int
@@ -13498,8 +13493,7 @@ begin
 
   perform set_config('app.system_status_transition', 'on', true);
 
-  select make_interval(mins => s.turnaround_minutes) into v_turnaround
-  from public.department_settings s where s.department_id = v_req.department_id;
+  v_turnaround := make_interval(mins => coalesce(public.required_turnaround_minutes(v_req.department_id, v_req.week_start), 30));
 
   if v_is_one_way then
     -- A free-text destination can never relay (REQ §13.58); no window to compute either.

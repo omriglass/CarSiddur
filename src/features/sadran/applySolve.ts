@@ -58,6 +58,7 @@ import { solve } from "@/solver";
 import * as api from "./api";
 import { isoToSlot, slotToIso } from "./board/geometry";
 import { DEFAULT_STOP_MINUTES, homeTravelEdges, makeHop, type Hop } from "@/lib/rideRoute";
+import { effectiveWeekSettings } from "@/lib/weekSettings";
 import { requestIdsWithOpenProposal, resolveDraftPlacements } from "./board/draftOverlay";
 
 import type { BoardRide, ProposalRow, RequestRow, WeekRequestRow } from "./api";
@@ -350,6 +351,8 @@ export interface SolverContextRows {
   travel: Awaited<ReturnType<typeof api.fetchPlaceTravelForWeek>>;
   /** REQ §13.94: the week's proposals — drafts become fixed blocks, any open proposal removes its request from solving. */
   proposals?: ProposalRow[];
+  /** REQ §13.108 D1: the week's `weeks` row — its `settings_overrides` (turnaround / chauffeur dwell) win over `departmentSettings`. */
+  weekRow?: Pick<Awaited<ReturnType<typeof api.fetchWeekRow>> & object, "settings_overrides"> | null;
 }
 
 /** `fairness_stats()`'s `p_lookback_weeks` argument, read from the fairness rule's own params (default 3, CLAUDE.md decision 16). Exported so a caller that must fetch fairness itself (`gatherSolverContext` below, `BoardScreen`'s own fairness query) asks for the right lookback window without duplicating the policy-rules shape. */
@@ -385,6 +388,7 @@ export function buildSolverContextFromData(params: GatherSolverContextParams, ro
     mileageKmByCarId,
     carStartLocationsByCarId,
     travel,
+    weekRow,
     proposals = [],
   } = rows;
 
@@ -405,7 +409,7 @@ export function buildSolverContextFromData(params: GatherSolverContextParams, ro
   const scoringProposals = params.forScoring ? [] : proposals;
   const fixedRides = draftFixedRides(scoringProposals, allRequests, boardRides, boardFixedRides, destinations, params.homeDestinationId, weekStartMs,
     { hop: makeHop([...(travel ?? []), ...homeTravelEdges(params.homeDestinationId, destinations)]), stopMinutes: departmentSettings.stop_minutes ?? DEFAULT_STOP_MINUTES },
-    Math.ceil(departmentSettings.turnaround_minutes / 15));
+    Math.ceil(effectiveWeekSettings(departmentSettings, weekRow).turnaroundMinutes / 15));
 
   const fixedRequestIds = new Set(fixedRides.flatMap((f) => f.servedRequestIds));
   const openRequests = params.forScoring
@@ -440,6 +444,7 @@ export function buildSolverContextFromData(params: GatherSolverContextParams, ro
     weekStart: params.weekStart,
     homeDestinationId: params.homeDestinationId,
     departmentSettings,
+    weekSettingsOverrides: weekRow?.settings_overrides,
     requests: openRequests,
     rideTypeCodesById,
     cars,
@@ -474,7 +479,7 @@ export function buildSolverContextFromData(params: GatherSolverContextParams, ro
  * nine rows in their own query cache already.
  */
 export async function gatherSolverContext(params: GatherSolverContextParams): Promise<SolverContext> {
-  const [departmentSettings, allRequests, cars, destinations, rideTypes, maintenanceBlocks, boardRides] =
+  const [departmentSettings, allRequests, cars, destinations, rideTypes, maintenanceBlocks, boardRides, weekRow] =
     await Promise.all([
       api.fetchDepartmentSettings(params.departmentId),
       api.fetchWeekRequests(params.departmentId, params.weekStart),
@@ -483,6 +488,7 @@ export async function gatherSolverContext(params: GatherSolverContextParams): Pr
       fetchRideTypes(params.departmentId),
       api.fetchMaintenanceBlocksForDepartment(params.departmentId),
       api.fetchAllWeekRides(params.departmentId, params.weekStart),
+      api.fetchWeekRow(params.departmentId, params.weekStart),
     ]);
 
   const proposals = await api.fetchProposalsForWeek(params.departmentId, params.weekStart);
@@ -511,6 +517,7 @@ export async function gatherSolverContext(params: GatherSolverContextParams): Pr
     carStartLocationsByCarId,
     travel,
     proposals,
+    weekRow,
   });
 }
 
