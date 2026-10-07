@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { formatInTimeZone } from "date-fns-tz";
+import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
 
 import { TZ } from "../src/lib/time";
 
@@ -64,8 +64,19 @@ test.describe("freed slot (live week, single candidate)", { tag: ["@waitlist", "
         const { error } = await client.from("requests").update({ depart_at: shift(row.depart_at!), return_at: shift(row.return_at!) }).eq("id", row.id);
         if (error) throw error;
       }
-      const { data: ride } = await client.from("rides").select("starts_at, ends_at").eq("id", CANCELLED_RIDE_ID).single();
-      const { error } = await client.from("rides").update({ starts_at: shift(ride!.starts_at), ends_at: shift(ride!.ends_at) }).eq("id", CANCELLED_RIDE_ID);
+      const { data: ride } = await client.from("rides").select("starts_at, ends_at, car_id, department_id").eq("id", CANCELLED_RIDE_ID).single();
+      // Earlier specs may have put another ride on this car on the target day (car-swap.spec.ts swaps
+      // today's cars), which the turnaround guard refuses; move the fixture to a shared car with no
+      // other ride that day, preferring its own.
+      const dayStart = fromZonedTime(`${targetKey}T00:00:00`, TZ).toISOString();
+      const dayEnd = fromZonedTime(`${targetKey}T23:59:59`, TZ).toISOString();
+      const { data: busyRides } = await client.from("rides").select("car_id").neq("status", "cancelled").neq("id", CANCELLED_RIDE_ID)
+        .gte("starts_at", new Date(Date.parse(dayStart) - 6 * 3600_000).toISOString()).lt("starts_at", dayEnd);
+      const busyCars = new Set((busyRides ?? []).map((r) => r.car_id));
+      const { data: cars } = await client.from("cars").select("id").eq("department_id", ride!.department_id).eq("type", "shared").eq("status", "active").order("id");
+      const carId = !busyCars.has(ride!.car_id) ? ride!.car_id : (cars ?? []).find((c) => !busyCars.has(c.id))?.id;
+      test.skip(!carId, "no shared car is free on the target day for the freed-slot fixture");
+      const { error } = await client.from("rides").update({ starts_at: shift(ride!.starts_at), ends_at: shift(ride!.ends_at), car_id: carId! }).eq("id", CANCELLED_RIDE_ID);
       if (error) throw error;
     }
 
