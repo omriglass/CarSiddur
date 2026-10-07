@@ -36,7 +36,7 @@ function sum(...ps) {
   );
 }
 function luggageFits(car, luggageCount) {
-  return luggageCount <= car.luggageCapacity;
+  return luggageCount <= 0 || car.luggageCapacity > 0;
 }
 function chauffeurLoad(served) {
   return sum(served, { adults: 1, childSeats: 0, boosters: 0 });

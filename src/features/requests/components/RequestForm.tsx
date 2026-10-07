@@ -563,7 +563,7 @@ export function RequestForm({
           .filter((sc) => sc.car_id === c.id)
           .map((sc) => ({ adults: sc.adults, childSeats: sc.child_seats, boosters: sc.boosters })),
         features: c.features,
-        luggageCapacity: c.features.includes("large_trunk") ? 2 : 1,
+        luggageCapacity: c.features.includes("large_trunk") ? 1 : 0,
         maintenance: [],
       }));
     return cars.length > 0 && !cars.some((c) => fits(c, passengers));

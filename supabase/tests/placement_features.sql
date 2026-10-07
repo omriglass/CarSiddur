@@ -29,7 +29,7 @@ declare
   car42 uuid:='00000000-0000-0000-0000-000000000042';
   car43 uuid:='00000000-0000-0000-0000-000000000043';
   w date:=public.current_week_start()+1190;
-  dt timestamptz; pub uuid; res jsonb; r jsonb; q1 uuid; q2 uuid; q3 uuid; rid uuid; rid2 uuid; n int; g uuid; off uuid; v text;
+  dt timestamptz; pub uuid; res jsonb; r jsonb; q1 uuid; q2 uuid; q3 uuid; rid uuid; rid2 uuid; n int; i int; g uuid; off uuid; v text;
   dest_name text; procedure_ok boolean;
 begin
   insert into public.weeks(department_id,week_start,phase,open_at,close_at,publish_at)
@@ -61,6 +61,26 @@ begin
   perform pg_temp.expect_err(format('insert into public.ride_requests(ride_id,request_id,role,leg,car_mode) values(%L,%L,''driver'',''both'',''keep'')',rid,q1),'luggage_capacity_violation');
   delete from public.requests where id=q1;
   delete from public.rides where id=rid;
+  -- REQ item 21 (yes/no): any number of luggage requests share one large_trunk car; none on a plain car
+  assert public.car_takes_luggage(car41, 0) and public.car_takes_luggage(car41, 1) and public.car_takes_luggage(car41, 3),
+    'a large_trunk car takes any number of large-luggage requests';
+  assert public.car_takes_luggage(car40, 0) and not public.car_takes_luggage(car40, 1),
+    'a car without a large trunk takes none';
+  for i in 1..3 loop
+    insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,depart_at,return_at,trip_shape,status,origin_id,has_luggage)
+      values(dept,w,m2,sadran,dest,typ,dt+interval '2 days',dt+interval '2 days 3 hours','round_trip','waitlisted',home,true) returning id into q1;
+    if i=1 then
+      insert into public.rides(department_id,week_start,car_id,starts_at,ends_at,origin_id,destination_id,driver_id,status,is_pinned,pin_reason,created_by)
+        values(dept,w,car41,dt+interval '2 days',dt+interval '2 days 3 hours',home,home,m2,'confirmed',true,'SADRAN_MANUAL',sadran) returning id into rid;
+      insert into public.ride_requests(ride_id,request_id,role,leg,car_mode) values(rid,q1,'driver','both','keep');
+    else
+      insert into public.ride_requests(ride_id,request_id,role,leg,car_mode) values(rid,q1,'passenger','both','passenger');
+    end if;
+  end loop;
+  perform public.assert_ride_seats_fit(rid);  -- three luggage requests on the large-trunk ride: no luggage_capacity_violation
+  delete from public.ride_requests where ride_id=rid;
+  delete from public.rides where id=rid;
+  delete from public.requests where depart_at=dt+interval '2 days' and has_luggage;
 
   -- ---- (c) set_ride_driver ---------------------------------------------------------------------------
   dt:=((w+2)+time '09:00') at time zone 'Asia/Jerusalem';

@@ -406,8 +406,8 @@ Deno.serve(async (req) => {
     ownerMemberId: (carRow.owner_id as string | undefined) ?? undefined,
     seatConfigs: seatConfigList,
     features: (carRow.features as string[]) ?? [],
-    // REQ §13.101 (a): item 21 — a car without the `large_trunk` feature takes no large luggage, with it two.
-    luggageCapacity: ((carRow.features as string[]) ?? []).includes('large_trunk') ? 2 : 0,
+    // REQ §13.101 (a): item 21 (yes/no, 2026-10-07) — a car without the `large_trunk` feature takes no large luggage, with it any number (> 0 = has a large trunk).
+    luggageCapacity: ((carRow.features as string[]) ?? []).includes('large_trunk') ? 1 : 0,
     maintenance,
     startLocationId: carStartLocation?.location_id ?? homeLocationId,
     // `car_base_location()`: cars.base_location_id, else a temporary car's owner default origin.

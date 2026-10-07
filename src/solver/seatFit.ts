@@ -40,9 +40,13 @@ export function sum(...ps: Passengers[]): Passengers {
   );
 }
 
-/** Luggage fit: number of luggage requests in a ride <= luggageCapacity(car). */
+/**
+ * Luggage fit is yes/no (REQ item 21, 2026-10-07): any number of large-luggage
+ * requests may ride together on a car with a large trunk (`luggageCapacity > 0`),
+ * and a car without one takes none. There is no per-car count cap.
+ */
 export function luggageFits(car: Car, luggageCount: number): boolean {
-  return luggageCount <= car.luggageCapacity;
+  return luggageCount <= 0 || car.luggageCapacity > 0;
 }
 
 /** Chauffeur load: served requests' passengers plus one adult for the volunteer (SOLVER §3.3, REQ §13.65). */

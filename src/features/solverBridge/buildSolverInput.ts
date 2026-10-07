@@ -339,7 +339,7 @@ export function buildSolverInput(params: BuildSolverInputParams): SolverInput {
       boosters: sc.boosters,
     })),
     features: car.features,
-    luggageCapacity: car.features.includes("large_trunk") ? 2 : 0,
+    luggageCapacity: car.features.includes("large_trunk") ? 1 : 0,
     maintenance: (params.maintenanceBlocksByCarId?.[car.id] ?? []).map((b) =>
       toWindow(b.starts_at, b.ends_at, weekStartMs),
     ),

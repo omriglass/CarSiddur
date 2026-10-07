@@ -356,7 +356,7 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
       toast.error(he.sadranBoard.invalidWindow);
       return;
     }
-    if (luggageBlocks(dropCtx, carId, req.has_luggage ? 1 : 0, window)) { toast.error(he.sadranBoard.luggageNeedsTrunkToast); return; }
+    if (luggageBlocks(dropCtx, carId, req.has_luggage ? 1 : 0)) { toast.error(he.sadranBoard.luggageNeedsTrunkToast); return; }
     // R2B7: a drop ON a ride (any trip type) is a merge attempt: the merge flow when valid, else the reason.
     const dropHost = droppedOnRideId ? rides.find((ride) => ride.id === droppedOnRideId && ride.car_id === carId && !servedOf(ride).some((entry) => entry.request_id === req.id)) : undefined;
     if (dropHost?.id && dropHost.starts_at && dropHost.ends_at) {
@@ -539,7 +539,7 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
       toast.error(he.sadranBoard.seatMismatchToast);
       return;
     }
-    if (carId !== ride.car_id && luggageBlocks(dropCtx, carId, luggageCountOf(ride), { startsAt: newStartsAt, endsAt: newEndsAt }, [ride.id])) {
+    if (carId !== ride.car_id && luggageBlocks(dropCtx, carId, luggageCountOf(ride))) {
       toast.error(he.sadranBoard.luggageNeedsTrunkToast);
       return;
     }

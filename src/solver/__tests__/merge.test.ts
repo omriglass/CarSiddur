@@ -108,18 +108,23 @@ describe('findMergeHosts', () => {
     expect(found[0]?.window).toEqual({ start: 30, end: 50 });
   });
 
-  it('luggage 2 needs the large_trunk feature (capacity 2)', () => {
-    const cars = [makeCar('C1', { seatConfigs: [passengers(4)], luggageCapacity: 1 })];
+  it('large luggage is a yes/no match: needs the large_trunk feature, no per-car count (REQ item 21)', () => {
+    const cars = [makeCar('C1', { seatConfigs: [passengers(4)], luggageCapacity: 0 })];
     const assignment = hostAssignment({ luggageCount: 1 });
     const hosts = buildHostRides([assignment], new Map(cars.map((c) => [c.id, c])));
     const guest = guestNr({ destinationId: 'destA', luggage: true });
     const noTrunk = findMergeHosts({ guest, leg: 'both', hosts, ...commonParams(cars) });
     expect(noTrunk).toHaveLength(0);
 
-    const carsWithTrunk = [makeCar('C1', { seatConfigs: [passengers(4)], luggageCapacity: 2, features: ['large_trunk'] })];
+    const carsWithTrunk = [makeCar('C1', { seatConfigs: [passengers(4)], luggageCapacity: 1, features: ['large_trunk'] })];
     const hosts2 = buildHostRides([assignment], new Map(carsWithTrunk.map((c) => [c.id, c])));
     const withTrunk = findMergeHosts({ guest, leg: 'both', hosts: hosts2, ...commonParams(carsWithTrunk) });
     expect(withTrunk).toHaveLength(1);
+
+    // a third luggage request still fits on the same large-trunk car
+    const crowded = hostAssignment({ luggageCount: 2 });
+    const hosts3 = buildHostRides([crowded], new Map(carsWithTrunk.map((c) => [c.id, c])));
+    expect(findMergeHosts({ guest, leg: 'both', hosts: hosts3, ...commonParams(carsWithTrunk) })).toHaveLength(1);
   });
 
   it('a temporary car appears as a host ride but is never a merge target (REQ §13.99)', () => {

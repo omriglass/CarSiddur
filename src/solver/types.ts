@@ -186,6 +186,7 @@ export interface Car {
   ownerMemberId?: string;
   seatConfigs: Passengers[];
   features: string[];
+  /** > 0 = the car has a large trunk (takes any number of large-luggage requests); 0 = none. Not a count cap. */
   luggageCapacity: number;
   maintenance: Window[];
   /** where the car is at week start; default = home */

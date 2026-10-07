@@ -46,10 +46,13 @@ describe('seatFit', () => {
     expect(fits(car, sum(host, guest2))).toBe(false); // (3,2,0) does not fit {3,1,0}
   });
 
-  it('luggage fits up to the car capacity', () => {
+  it('luggage is yes/no: any count on a large-trunk car, none otherwise', () => {
     const car = makeCar('c', { luggageCapacity: 1 });
     expect(luggageFits(car, 1)).toBe(true);
-    expect(luggageFits(car, 2)).toBe(false);
+    expect(luggageFits(car, 5)).toBe(true);
+    const noTrunk = makeCar('n', { luggageCapacity: 0 });
+    expect(luggageFits(noTrunk, 0)).toBe(true);
+    expect(luggageFits(noTrunk, 1)).toBe(false);
   });
 
   it('chauffeur load adds exactly one adult for the volunteer', () => {

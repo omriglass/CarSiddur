@@ -43,7 +43,7 @@ __tests__/       unit matrix (SOLVER §7.1), property tests (§7.2, fast-check),
 
 ## Invariants (REQ §7.1, SOLVER §1.3, §3.12)
 - Fixed rides (pinned, accepted proposals, temporary-car owner) never move; temporary cars are never assigned, only merge hosts.
-- No overlap per car including buffer and maintenance; seat fit by dominance; luggage ≤ capacity.
+- No overlap per car including buffer and maintenance; seat fit by dominance; luggage only on a large-trunk car (yes/no).
 - Solver placements stay within declared flexibility; beyond-flex (≤ 2 h) and merges are suggestions only.
 - `assertInvariants()` runs before return; violation throws `SolverInvariantError` (caller keeps the previous draft).
 - Budget: 300×15 fixture < 2 s in CI.

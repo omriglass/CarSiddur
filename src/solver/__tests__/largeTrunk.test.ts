@@ -18,10 +18,23 @@ function input(cars: SolverInput['cars'], requests: SolverInput['requests']): So
 describe('large luggage needs a large-trunk car', () => {
   it('goes to the big-trunk car only', () => {
     const out = solve(input(
-      [makeCar('A', { luggageCapacity: 0 }), makeCar('B', { luggageCapacity: 2 })],
+      [makeCar('A', { luggageCapacity: 0 }), makeCar('B', { luggageCapacity: 1 })],
       [makeRequest({ id: 'R1', luggage: true, departureMs: slotMs(32), returnMs: slotMs(48) })],
     ));
     expect(out.assignments.map((a) => a.carId)).toEqual(['B']);
+  });
+
+  it('any number of luggage requests share the one large-trunk car (no count cap)', () => {
+    const out = solve(input(
+      [makeCar('A', { luggageCapacity: 0 }), makeCar('B', { luggageCapacity: 1 })],
+      [
+        makeRequest({ id: 'R1', luggage: true, departureMs: slotMs(8), returnMs: slotMs(16) }),
+        makeRequest({ id: 'R2', luggage: true, departureMs: slotMs(32), returnMs: slotMs(40) }),
+        makeRequest({ id: 'R3', luggage: true, departureMs: slotMs(56), returnMs: slotMs(64) }),
+      ],
+    ));
+    expect(out.unmet).toEqual([]);
+    expect(new Set(out.assignments.map((a) => a.carId))).toEqual(new Set(['B']));
   });
 
   it('with no big-trunk car it is unmet with UNMET_NEEDS_LARGE_TRUNK', () => {

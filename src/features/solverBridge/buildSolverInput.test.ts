@@ -273,7 +273,7 @@ describe("buildSolverInput", () => {
     expect(input.stats.fairness.m3!.deficit).toBe(1);
   });
 
-  it("computes luggage capacity 2 for cars with the large_trunk feature", () => {
+  it("marks cars (luggageCapacity > 0, no count cap) with the large_trunk feature", () => {
     const input = buildSolverInput({
       weekStart: WEEK_START,
       homeDestinationId: HOME,
@@ -286,7 +286,7 @@ describe("buildSolverInput", () => {
       policy: { id: "p1", version: 1, rules: [] },
     });
 
-    expect(input.cars[0]!.luggageCapacity).toBe(2);
+    expect(input.cars[0]!.luggageCapacity).toBeGreaterThan(0);
   });
 
   // MAJOR BUG investigation (docs/UX_FLOWS.md §19): a full re-solve needs

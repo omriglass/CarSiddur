@@ -50,7 +50,6 @@ export type ErrorCode =
   | "merge_boards_at_end"
   | "merge_detour_too_long"
   | "merge_luggage_needs_large_trunk"
-  | "merge_luggage_too_many"
   | "merge_turnaround_conflict"
   | "merge_already_on_ride"
   | "series_span_invalid"
@@ -169,7 +168,6 @@ const MESSAGE_TO_CODE: Record<string, ErrorCode> = {
   merge_boards_at_end: "merge_boards_at_end",
   merge_detour_too_long: "merge_detour_too_long",
   merge_luggage_needs_large_trunk: "merge_luggage_needs_large_trunk",
-  merge_luggage_too_many: "merge_luggage_too_many",
   merge_turnaround_conflict: "merge_turnaround_conflict",
   merge_already_on_ride: "merge_already_on_ride",
   series_span_invalid: "series_span_invalid",
@@ -293,7 +291,6 @@ const CODE_TO_MESSAGE: Record<ErrorCode, string> = {
   merge_boards_at_end: he.mergedRide.invalid.boards_at_end,
   merge_detour_too_long: he.mergedRide.invalid.detour_too_long,
   merge_luggage_needs_large_trunk: he.mergedRide.invalid.luggage_needs_large_trunk,
-  merge_luggage_too_many: he.mergedRide.invalid.luggage_too_many,
   merge_turnaround_conflict: he.mergedRide.invalid.turnaround_conflict,
   merge_already_on_ride: he.mergedRide.invalid.already_on_ride,
   series_span_invalid: he.mergedRide.invalid.series_span_invalid,

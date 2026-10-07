@@ -219,7 +219,7 @@ export function buildChecks(opts) {
     {
       id: "ride_luggage_capacity",
       level: "error",
-      title: "a ride leg carries more large-luggage requests than the car's large_trunk allows (car_takes_luggage)",
+      title: "a ride leg carries a large-luggage request on a car without a large trunk (car_takes_luggage, yes/no)",
       sql: `select l.ride_id::text, format('car %s leg %s carries %s large-luggage request(s)', c.name, l.side, l.lug), 1
       from (
         select rd.id as ride_id, rd.car_id, legs.side, rd.starts_at, count(*) filter (where q.has_luggage)::int as lug

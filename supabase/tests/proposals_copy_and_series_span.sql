@@ -216,7 +216,7 @@ begin
     perform public.create_proposal(qL,rH,'merge',jsonb_build_object('ride_id',rH,'legs',jsonb_build_array(jsonb_build_object('ride_id',rH,'leg','both','car_mode','passenger'))),'x');
     raise exception 'luggage merge onto a car without large_trunk accepted';
   exception when others then assert sqlerrm='merge_luggage_needs_large_trunk', format('create_proposal luggage refusal, got %s',sqlerrm); end;
-  -- large_trunk car: two luggage requests fit, the third does not
+  -- large_trunk car: any number of luggage requests fit
   insert into public.rides(department_id,week_start,car_id,starts_at,ends_at,origin_id,destination_id,driver_id,status,created_by)
     values(dept,w,car41,d,d+interval '4 hours',home,home,m2,'draft',manager) returning id into rL;
   insert into public.requests(department_id,week_start,requester_id,filed_by,origin_id,destination_id,ride_type_id,depart_at,return_at,trip_shape,trip_type,status,has_luggage)
@@ -225,9 +225,11 @@ begin
   insert into public.requests(department_id,week_start,requester_id,filed_by,origin_id,destination_id,ride_type_id,depart_at,return_at,trip_shape,trip_type,status,has_luggage)
     values(dept,w,admin_,manager,home,haifa,typ,d,d+interval '4 hours','round_trip','round_trip','merged',true) returning id into qL2;
   insert into public.ride_requests(ride_id,request_id,role,leg,car_mode) values(rL,qL2,'passenger','both','passenger');
-  assert (public.merge_preview(rL,qL,'both')->>'error')='merge_luggage_too_many', 'a third large-luggage request is refused';
+  assert coalesce(public.merge_preview(rL,qL,'both')->>'error','') not in ('merge_luggage_too_many','merge_luggage_needs_large_trunk'),
+    'a third large-luggage request on a large_trunk car is fine (no count cap)';
+  assert (public.merge_preview(rL,qL,'both')->>'code') is distinct from 'luggage_count', 'luggage_count can no longer occur';
   delete from public.ride_requests where request_id=qL2;
-  assert coalesce(public.merge_preview(rL,qL,'both')->>'error','')<>'merge_luggage_too_many' and (public.merge_preview(rL,qL,'both')->>'error') is distinct from 'merge_luggage_needs_large_trunk',
+  assert coalesce(public.merge_preview(rL,qL,'both')->>'error','') not in ('merge_luggage_too_many','merge_luggage_needs_large_trunk'),
     'the second large-luggage request on a large_trunk car is fine';
 
   -- ============================================= wording fixes
