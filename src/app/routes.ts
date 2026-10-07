@@ -103,6 +103,11 @@ export const paths = {
    */
   car: (carId: string) => `/cars/${carId}`,
 
+  admin: {
+    /** `/admin/errors` — admin-only list of browser errors from `client_errors` (E1, UX_FLOWS.md §5.13). */
+    errors: (): string => "/admin/errors",
+  },
+
   /** `/inbox`; `?change=<rideChangeId>` is produced by `deepLinkFor` for `ride_change_id` notifications. */
   inbox: (changeId?: string) => withQuery("/inbox", { change: changeId }),
 

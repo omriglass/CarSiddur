@@ -1,11 +1,14 @@
 import type { RouteObject } from "react-router-dom";
 
+import { paths } from "@/app/routes";
+
 import {
   AdminHomePage,
   CarDetailPage,
   CarsPage,
   DepartmentsPage,
   DestinationsPage,
+  ErrorsPage,
   IssuesPage,
   MaintenancePage,
   MembersPage,
@@ -27,6 +30,7 @@ export const adminRoutes: RouteObject[] = [
   { path: "/admin/departments", element: <DepartmentsPage /> },
   { path: "/admin/members", element: <MembersPage /> },
   { path: "/admin/roster", element: <RosterPage /> },
+  { path: paths.admin.errors(), element: <ErrorsPage /> },
 ];
 
 export const operationsRoutes: RouteObject[] = [

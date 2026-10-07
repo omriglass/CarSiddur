@@ -8,10 +8,11 @@ import { toast } from "sonner";
 import { router } from "@/app/router";
 import { Toaster } from "@/components/ui/sonner";
 import { SessionProvider } from "@/features/auth/SessionProvider";
+import { errorToReport, reportClientError } from "@/features/diagnostics/reportClientError";
 import { applyTheme, getStoredPreference } from "@/hooks/useTheme";
 import { he } from "@/i18n/he";
 import { captureInstallPrompt } from "@/lib/installPrompt";
-import { showErrorToast } from "@/lib/rpc";
+import { AppError, showErrorToast } from "@/lib/rpc";
 
 import "@/index.css";
 
@@ -28,11 +29,26 @@ captureInstallPrompt();
 // path. `AppError`/`Error` reasons get the normal Hebrew mapping; anything
 // else (a rejected non-Error value) falls back to the generic error toast.
 window.addEventListener("unhandledrejection", (event) => {
+  // E1 (docs/ARCHITECTURE.md §12): every unhandled rejection reaches `client_errors`, except an
+  // `AppError` — those already went through `toAppError`, which reports only the unexpected ones.
+  if (!(event.reason instanceof AppError)) {
+    reportClientError(errorToReport(event.reason, "unhandledrejection"));
+  }
   if (event.reason instanceof Error) {
     showErrorToast(event.reason);
   } else {
     toast.error(he.errors.unknown);
   }
+});
+
+// Uncaught synchronous exceptions outside React's render (event handlers, timers, scripts).
+window.addEventListener("error", (event) => {
+  const where = event.filename ? `${event.filename}:${event.lineno}:${event.colno}` : undefined;
+  reportClientError(
+    event.error !== undefined && event.error !== null
+      ? errorToReport(event.error, where ? `window.error ${where}` : "window.error")
+      : { message: event.message, context: where ? `window.error ${where}` : "window.error" },
+  );
 });
 
 const queryClient = new QueryClient({

@@ -1,6 +1,7 @@
 import {
   AlertTriangle,
   BarChart3,
+  Bug,
   Building2,
   Calendar,
   Car,
@@ -46,6 +47,7 @@ export function AdminHomeScreen() {
     { to: "/admin/policies", title: he.screen.admin.policies, subtitle: he.adminHome.cardPolicies, icon: ScrollText },
     { to: "/admin/templates", title: he.screen.admin.templates, subtitle: he.adminHome.cardTemplates, icon: MessageSquare },
     { to: "/admin/settings", title: he.screen.admin.settings, subtitle: he.adminHome.cardSettings, icon: Settings },
+    { to: paths.admin.errors(), title: he.adminErrors.title, subtitle: he.adminHome.cardErrors, icon: Bug },
     ...(activeDepartment.departmentId
       ? [{ to: paths.stats(activeDepartment.departmentId), title: he.stats.title, subtitle: he.adminHome.cardStats, icon: BarChart3 }]
       : []),
@@ -58,7 +60,7 @@ export function AdminHomeScreen() {
         <p className="text-sm text-muted-foreground">{he.adminHome.subtitle}</p>
       </div>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3">
-        {cards.filter((card) => isAdmin || !["/admin/departments", "/admin/members", "/admin/roster"].includes(card.to)).map(({ to, title, subtitle, icon: Icon }) => (
+        {cards.filter((card) => isAdmin || !["/admin/departments", "/admin/members", "/admin/roster", paths.admin.errors()].includes(card.to)).map(({ to, title, subtitle, icon: Icon }) => (
           <Link key={to} to={to}>
             <Card className="h-full bg-gradient-card shadow-card transition-smooth hover:shadow-elegant">
               <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">

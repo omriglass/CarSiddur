@@ -713,6 +713,7 @@
       "paths": [
         "src/features/admin/**",
         "src/features/fleet/**",
+        "src/features/diagnostics/**",
         "supabase/functions/destination-route/**",
         "src/i18n/he.admin.ts",
         "supabase/migrations/**/*admin*",
@@ -734,7 +735,8 @@
       ],
       "vitest": [
         "src/features/admin",
-        "src/features/fleet"
+        "src/features/fleet",
+        "src/features/diagnostics"
       ],
       "sql": [
         "admin_member_fixes.sql",
@@ -754,7 +756,8 @@
       "qaChecklist": [
         "Create a car, destination and policy version; confirm each appears in its list/history (REQ §13.2)",
         "Assign a weekly (non-permanent) Sadran; confirm scoped permissions (REQ §13.8)",
-        "Switch department context to one you don't belong to; confirm read-only (REQ §13.25)"
+        "Switch department context to one you don't belong to; confirm read-only (REQ §13.25)",
+        "As admin open /admin/errors; recent browser errors list with time, user, version, page and stack (REQ §13.40/E1)"
       ]
     },
     {

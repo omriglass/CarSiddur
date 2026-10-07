@@ -1,7 +1,9 @@
+import { useEffect } from "react";
 import { isRouteErrorResponse, Link, useRouteError } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { reportClientError } from "@/features/diagnostics/reportClientError";
 import { he } from "@/i18n/he";
 import { NotFoundPage } from "@/pages/NotFoundPage";
 
@@ -25,8 +27,19 @@ function describeError(error: unknown): string {
  */
 export function ErrorScreen() {
   const error = useRouteError();
+  const isNotFound = isRouteErrorResponse(error) && error.status === 404;
 
-  if (isRouteErrorResponse(error) && error.status === 404) {
+  // Render crash (E1): report once per mounted error; a 404 is not a bug. Not a data fetch.
+  useEffect(() => {
+    if (isNotFound) return;
+    reportClientError({
+      message: error instanceof Error ? error.message || error.name : describeError(error).split("\n")[0] ?? "route error",
+      stack: describeError(error),
+      context: "ErrorScreen",
+    });
+  }, [error, isNotFound]);
+
+  if (isNotFound) {
     return <NotFoundPage />;
   }
 

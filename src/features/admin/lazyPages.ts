@@ -17,6 +17,7 @@ export const CarDetailPage = lazy(() => import("@/pages/admin/CarDetailPage").th
 export const CarsPage = lazy(() => import("@/pages/admin/CarsPage").then((m) => ({ default: m.CarsPage })));
 export const DepartmentsPage = lazy(() => import("@/pages/admin/DepartmentsPage").then((m) => ({ default: m.DepartmentsPage })));
 export const DestinationsPage = lazy(() => import("@/pages/admin/DestinationsPage").then((m) => ({ default: m.DestinationsPage })));
+export const ErrorsPage = lazy(() => import("@/pages/admin/ErrorsPage").then((m) => ({ default: m.ErrorsPage })));
 export const IssuesPage = lazy(() => import("@/pages/admin/IssuesPage").then((m) => ({ default: m.IssuesPage })));
 export const MaintenancePage = lazy(() => import("@/pages/admin/MaintenancePage").then((m) => ({ default: m.MaintenancePage })));
 export const MembersPage = lazy(() => import("@/pages/admin/MembersPage").then((m) => ({ default: m.MembersPage })));

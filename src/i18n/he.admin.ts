@@ -31,6 +31,7 @@ export const heAdmin = {
     cardTemplates: "תוכן הודעות והתראות",
     cardSettings: "הגדרות כלליות",
     cardStats: "ניצולת רכבים, בקשות ודירוג המדיניות",
+    cardErrors: "שגיאות שהתרחשו אצל משתמשים",
   },
   adminCommon: {
     search: "חיפוש",
@@ -234,6 +235,19 @@ export const heAdmin = {
     end: "סיים חסימה",
     endedToast: "החסימה הסתיימה",
     affectedRidesWarning: "החסימה הזו משפיעה על {{count}} נסיעות בשבוע פעיל/מפורסם",
+  },
+  adminErrors: {
+    title: "שגיאות באפליקציה",
+    subtitle: "השגיאות האחרונות שדווחו מהדפדפן של המשתמשים (נשמרות 90 יום)",
+    empty: "אין שגיאות שדווחו",
+    refresh: "רענון",
+    unknownUser: "משתמש לא מחובר",
+    showStack: "פירוט טכני",
+    version: "גרסה",
+    page: "דף",
+    user: "משתמש",
+    device: "מכשיר",
+    count: "מוצגות {{count}} שגיאות אחרונות",
   },
   adminIssues: {
     title: "תקלות ברכבים",

@@ -1,5 +1,7 @@
 import { toast } from "sonner";
 
+import { isUnexpectedErrorCode } from "@/features/diagnostics/report";
+import { errorToReport, reportClientError } from "@/features/diagnostics/reportClientError";
 import { supabase } from "@/integrations/supabase/client";
 import { he } from "@/i18n/he";
 
@@ -428,11 +430,37 @@ interface PostgrestLikeError {
 /** Codes whose Hebrew message is generic on its own; `error.details` (when present) names the specific ride/car. */
 const CODES_NAMING_THE_RIDE = new Set<ErrorCode>(["car_chain_broken", "car_away_at_day_end"]);
 
+/**
+ * Sends an unexpected failure to `client_errors` (E1, docs/ARCHITECTURE.md §12). Called only
+ * where an `AppError` is first created, so a passed-through `AppError` is never reported twice;
+ * expected business refusals (any code but `unknown`/`network`) are not reported at all.
+ */
+function reportUnexpected(code: ErrorCode, error: unknown): void {
+  if (!isUnexpectedErrorCode(code)) return;
+  if (error instanceof Error) {
+    reportClientError(errorToReport(error, `rpc:${code}`));
+    return;
+  }
+  const pg = error as PostgrestLikeError | null | undefined;
+  reportClientError({
+    message: pg?.message || `unmapped error (${pg?.code ?? "no code"})`,
+    stack: [
+      pg?.code ? `code=${pg.code}` : null,
+      pg?.details ? `details=${pg.details}` : null,
+      pg?.hint ? `hint=${pg.hint}` : null,
+    ]
+      .filter(Boolean)
+      .join("\n") || undefined,
+    context: `rpc:${code}`,
+  });
+}
+
 /** Maps a Postgrest/Supabase error (or unknown thrown value) to a Hebrew `AppError`. */
 export function toAppError(error: unknown): AppError {
   if (error instanceof AppError) return error;
   if (error instanceof TypeError) {
     // fetch() throws a bare TypeError ("Failed to fetch") when offline.
+    reportUnexpected("network", error);
     return new AppError("network", CODE_TO_MESSAGE.network);
   }
   const pgError = error as PostgrestLikeError | null | undefined;
@@ -453,6 +481,7 @@ export function toAppError(error: unknown): AppError {
         ? SQLSTATE_TO_CODE[pgError.code]
         : undefined;
   const code = byMessage ?? bySqlstate ?? "unknown";
+  reportUnexpected(code, error);
   const baseMessage = CODE_TO_MESSAGE[code];
   const message =
     CODES_NAMING_THE_RIDE.has(code) && pgError?.details ? `${baseMessage} (${pgError.details})` : baseMessage;

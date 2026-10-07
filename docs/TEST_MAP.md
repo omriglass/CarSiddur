@@ -420,14 +420,14 @@ real-solver regression, QA CLIs — docs/QA_SIMULATION.md).
 
 ### admin — Admin catalogs (cars, destinations, ride types, policies, settings, members, departments)
 
-**Paths**: `src/features/admin/**`, `src/features/fleet/**`,
+**Paths**: `src/features/admin/**`, `src/features/fleet/**`, `src/features/diagnostics/**` (client errors, `/admin/errors`),
 `supabase/functions/destination-route/**`; `src/i18n/he.admin.ts`; migrations matching `*admin*`,
 `*catalog*`, `*member_identity*`, `*department_membership*`, `*origin*`, `*place_distances*`
 (cars' base location / members' default origin / `place_distances`, REQ §13.93, steps O2/O3);
 `e2e/admin.spec.ts`, `admin-department.spec.ts`, `department-context.spec.ts`.
 
 **Automated**:
-- Vitest: `npx vitest run src/features/admin src/features/fleet`
+- Vitest: `npx vitest run src/features/admin src/features/fleet src/features/diagnostics`
 - SQL: `admin_member_fixes.sql`, `admin_department_membership.sql`, `department_catalogs.sql`,
   `member_identity.sql`, `origins_schema.sql`
 - Playwright: `npx playwright test --grep "@admin"`
@@ -442,6 +442,8 @@ real-solver regression, QA CLIs — docs/QA_SIMULATION.md).
    name behavior.
 4. As `member1`, switch the department context selector to a department they don't belong to;
    confirm it's read-only (catalogs/Maps route estimates require the owning department).
+5. As `admin`, open `/admin/errors` ("שגיאות באפליקציה"): the list shows recent browser errors
+   (time, user, version, page, expandable stack); a member cannot open the route.
 
 **REQ**: §13.2, §13.8, §13.25.
 
