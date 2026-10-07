@@ -161,17 +161,20 @@ e2e/
   published-week.ts             publishedFixtureWeek() helper shared by several specs
   admin.spec.ts                  admin screens; Sadran operational administration
   admin-department.spec.ts       admin joins/leaves departments via member editor; display name vs Google name
+  admin-errors.spec.ts           /admin/errors lists client_errors for an admin; a member is redirected (REQ §13.108, E1)
   auth.spec.ts                   sign-in / onboarding
   auto-approve.spec.ts           auto-approve on a free car (live week)
   board.spec.ts                  board regression pass (fake-week data)
   board-coordination.spec.ts     one-way drop, tight edits, merge consent coordination
   board-mobile.spec.ts           board mobile header: title/week switcher, eye menu, kebab menu, undo/redo, policy chip
+  car-handover.spec.ts           "!" be-back-on-time note and its mirror on /my and the ride sheet; none for a wide gap (REQ §13.108 f)
   car-care.spec.ts               report/tire-fill/wash, responsible person sees it in History, export
   car-swap.spec.ts               swap two cars' rides for a day: siddur header menu (member), board drag (Sadran), seats blocker
   department-context.spec.ts     department selector; catalogs/Maps estimates; read-only department switching
   device-setup.spec.ts           home-screen install prompt / push-permission dismissal
   export.spec.ts                 Sadran downloads the week as a Hebrew Excel workbook
   freed-slot.spec.ts             freed slot, live week, single candidate
+  merge-verdict.spec.ts          merge popup enables/refuses legs from the server's merge_preview verdict (REQ §13.108 e)
   member.spec.ts                 member area flows
   multi-day.spec.ts              multi-day ("series") request: one card/badge, linked legs, cascading withdraw, board day markers
   one-way-consent.spec.ts        combined one-way consent; orphaned passenger; volunteering

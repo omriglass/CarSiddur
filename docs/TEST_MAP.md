@@ -175,7 +175,7 @@ gap is closed.
 `WeekStrip.test.tsx`, `src/pages/SiddurPage.tsx`; `src/i18n/he.member.ts`; migrations matching
 `*public_request*`, `*public_notes*`, `*car_swap*`, or whose content defines `v_board_rides`;
 `src/components/CarSwapDialog.tsx`(+test), `WeekGrid.carSwap.test.tsx`, `src/features/carSwap/**`;
-`e2e/siddur-mobile.spec.ts`, `ride-editing.spec.ts`, `member.spec.ts`, `car-swap.spec.ts`;
+`e2e/siddur-mobile.spec.ts`, `ride-editing.spec.ts`, `member.spec.ts`, `car-swap.spec.ts`, `car-handover.spec.ts` ("be back on time" note);
 `src/features/rides/servedOf.ts`, `src/features/rides/components/RideRouteStops.tsx`,
 `src/lib/routeStops.ts` (multi-stop rides ride-detail route display, REQ §13.93, step O6).
 `src/features/rides/carHandover*`, `components/CarHandoverNotice.tsx`, `components/RideCarHandover.tsx`, `src/features/requests/rowHandover*`,
@@ -220,7 +220,7 @@ grid (item 2) — `hideIdleTemporaryCars()` is unit-tested in `weekGridCars.test
 `*board*`, `*coordinator*`, `*ride_edit*`, `*day_readiness*`, `*car_chain*`, `*car_swap*`, or
 content-matching `v_board_rides`/`publish_siddur`; `src/components/CarSwapDialog.tsx`(+test),
 `WeekGrid.carSwap.test.tsx`, `src/features/carSwap/**`; `e2e/board.spec.ts`, `board-mobile.spec.ts`,
-`board-coordination.spec.ts`, `board-drafts.spec.ts` (REQ §13.94 drafts), `merged-ride.spec.ts` (REQ §13.94 merged ride = one block, unmerge), `export.spec.ts`, `weekly-permissions.spec.ts`, `ride-editing.spec.ts`,
+`board-coordination.spec.ts`, `board-drafts.spec.ts` (REQ §13.94 drafts), `merged-ride.spec.ts` (REQ §13.94 merged ride = one block, unmerge), `merge-verdict.spec.ts` (REQ §13.108 e: merge popup takes the server's `merge_preview` verdict), `export.spec.ts`, `weekly-permissions.spec.ts`, `ride-editing.spec.ts`,
 `car-swap.spec.ts`, `multi-stop.spec.ts`; `src/features/rides/servedOf.ts`,
 `src/features/rides/components/RideRouteStops.tsx`, `src/lib/routeStops.ts` (multi-stop rides
 display, REQ §13.93, step O6); `src/features/rides/components/RideRoute.tsx`, `src/lib/rideRoute.ts`(+test) (ride route twin and display, REQ §13.94); `src/lib/weekSettings.ts`(+test) (week turnaround/dwell override, REQ §13.108 a).
@@ -433,7 +433,7 @@ real-solver regression, QA CLIs — docs/QA_SIMULATION.md).
 `supabase/functions/destination-route/**`; `src/i18n/he.admin.ts`; migrations matching `*admin*`,
 `*catalog*`, `*member_identity*`, `*department_membership*`, `*origin*`, `*place_distances*`
 (cars' base location / members' default origin / `place_distances`, REQ §13.93, steps O2/O3);
-`e2e/admin.spec.ts`, `admin-department.spec.ts`, `department-context.spec.ts`.
+`e2e/admin.spec.ts`, `admin-department.spec.ts`, `admin-errors.spec.ts`, `department-context.spec.ts`.
 
 **Automated**:
 - Vitest: `npx vitest run src/features/admin src/features/fleet src/features/diagnostics`
