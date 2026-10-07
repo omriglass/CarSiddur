@@ -824,6 +824,51 @@ Re-play of run 5's week after the run-5 batch. **Outcome on the same week: 1 req
 - **R7F4** Offer a freed car first to waitlisted members starting where the car is.
 - **R7F5** Lend a car parked at a destination during a long round trip for someone else's short trip there (the Yokneam van).
 
+## QA run 8 findings (2026-10-07, **seed 4499 again** = run 7's week on a fresh stack with the run-7 fixes, department `qa-s4499`; QA Sadran = Opus, **Sunday via UI, Thursday + Saturday via CLI**; QA user = Sonnet; freed-car service wired) — **awaiting owner triage**
+**Outcome:** Sun/Thu/Sat published and live; at the end unmet only members starting away from home with no car there (Sun: נטע גבאי, ניר לוי, אביב שדה, עמית — two use private cars) and מור שגיא (Thu waiting on a private-car owner, Sat declined both offers). Saturday autofill identical to run 7 (10 placed, 2 unmet). Health check clean.
+
+### Verified working
+- **"!" note:** every tight pair right on both sides (30 min shows, 45 min does not, a 6-hour relay wait does not), disappears after a cancellation.
+- **Freed cars:** 5 offers created and resolved by the edge function within a second (2 auto-assigned, 3 closed with no candidate). Thursday: a waitlisted member got the freed car with a correct notice.
+- Members see "submitted" (not an outcome) before publication on my-rides; per-day autofill dialog; one-step driver replace (RPC/CLI); placing a series by hand on the board (OB1); host merge text lists time changes and the added driving; seats refusals by the server.
+
+### Bugs
+- **R8B1 (regression of today's R7U1)** Per-day autofill never places a multi-day series — `restrictInputToDay` drops the series' other-day requests, so the series is `UNMET_SERIES_NO_CAR` even with a car idle all week (Sun dcf01913, cb1f811f; the whole-week preview said PLACED_SERIES).
+- **R8B2 (today's R7U2 incomplete)** The publish day picker pre-ticks days nobody solved (Mon/Tue/Wed/Fri with 24/18/21/2 open requests) as "ready"; "רק ימים מוכנים" would publish them. The publish-anyway dialog still says members are not told although they now get `offer_expired` (stale text).
+- **R8B3 (gap in R7B9)** A passenger cancelling their own two-leg request (`cancel_ride` → `passenger_cancelled_own_request`) leaves the request `merged` on its other leg — it took two cancels (Sun d468230e: 16:31:56 merged/DRIVER_ASSIGNED, 16:32:16 cancelled). The guest left on the ride is not told the host left.
+- **R8B4** Freed-car matching auto-placed an **ask-to-join** request on a separate car (b83ca065 `FREED_SLOT_AUTO`, ignores `join_ride_id`; ask-to-join is never auto-approved); the member's card then shows "אישרת — ממתין לאחרים" and "שובצת אוטומטית לרכב שהתפנה" together.
+- **R8B5** Ask-to-join on a **private car** is never delivered to its owner (proposal 1cc6c559 `ASK_TO_JOIN_TEMP_CAR`, `sent_at` null, owner not notified); the Sadran then has no in-app path (merge/add-passengers are owner-only).
+- **R8B6** The "published" notice lists unplaced/proposed requests under "הנסיעות שלך" (m05 b2299091 "א׳ 11.10 07:15–23:59 · כפר סבא" while waitlisted; m25 7c26ba9e lists waitlisted and proposed ones).
+- **R8B7 (gap in REQ 109 a)** Before publication members still get outcome notices after accepting a merge ("שובצת כנוסע/ת…", "X מצטרף/ת לנסיעה שלך", links to an unpublished siddur), an empty-title "שינוי בסידור שלך —" (m25 77151d5a), a "כל הרכבים תפוסים" banner (m25), and a series card says "שובצה" for unpublished days (m05).
+- **R8B8** A host's `/p` page shows the guest's request as "הבקשה שלך" (m02 on 6cfc5493 sees m10's 07:30–14:45), and a one-way join is shown with a return.
+- **R8B9** A merge was accepted with the guest's times outside her window (cd934c7a: pickup 08:40 vs asked 10:15–10:30, return 17:50 past 17:30) — the Sadran is not warned and the server does not check the guest's flexibility.
+- **R8B10** A member who does not drive is addressed as the host of merges ("לצרף את טליה לנסיעה שלך", m12, ccfdd0dc/1b61a2e8).
+- **R8B11** No freed-car offer when a needs-driver (chauffeur) ride is cancelled (f819c890).
+- **R8B12** Changing a trip type (to הקפצה) does not place the request although a car was free (Sun 67c0daff).
+- **R8B13** Chauffeur durations disagree: placed by hand 09:30–10:45, solver 09:30–11:15.
+- **R8B14** Complementary one-way pairs get neither a pairing nor a `chainOneWay` suggestion; the reason "אין רכב פנוי שנמצא בגבעת חביבה" is wrong (cars idle there) (Sun 74feea8d/99d3a5bc, 67c0daff/dd63c2b1).
+- **R8B15** Publish-anyway dialog line truncated ("… · א׳ 11.10 · עד"); a "waive" external is labelled "דחייה"; a React duplicate-key warning on the ride sheet (f0fb8b66).
+
+### UI changes
+- **R8U1** The ride sheet cannot replace a volunteer driver (only "הסר/י נהג/ת"), though the RPC does it in one step.
+- **R8U2** A host ride with a pending merge becomes a `merge:` ghost — clicking opens the proposal, the ride itself (driver, edit) is unreachable until the guest answers.
+- **R8U3** Origin proposal text: "מזכרון יעקב לנתניה… במקום מזכרון יעקב", no new time, no word that the car waits in Hadera.
+- **R8U4** Driver refused as busy: "כבר שובצת…" addressed to the Sadran instead of naming the driver; refused merges show generic `ride_unavailable` instead of the seats reason; `TIME_NOT_ALIGNED` names no request; series 00:00/23:59.
+- **R8U5** Publish dialog: "כן, פרסום הכול" stays primary while the day picker is open; publish-anyway expires externals members already agreed to by message.
+- **R8U6** The volunteer driver of a cancelled pickup is told only "X לא נוסע/ת איתך יותר", not that the drive is gone; m07's merge proposal does not say his separate ride is released.
+- **R8U7** Duplicate `proposal_received` notices when a merge draft is extended (one-way then round trip) — the first is stale; "העריכה נשמרה והבקשה שובצה" shown as late on any edit; the solver suggests a Yokneam member start from Kfar Saba only because a car waits there.
+
+### Missing obvious features
+- **R8M1** No notice to the driver when someone asks to join, nor to a guest when the host leaves (R7M1/M2 family).
+- **R8M2** The solver never suggests joining a private ride with the same origin and destination; the Sadran has no path for it (owner-only).
+- **R8M3** A member cannot see why a proposal exists or who the other party is before answering.
+
+### Additional features
+- **R8F1** A "car left at X" waiting list so away-from-home members get freed-car offers there; threading a reply/decline note to its proposal.
+
+### Tooling
+- `qa:sadran`: no command to place a series by hand (`series_edit_not_supported` on `place`); `merge` defaults to the out leg for round trips. `qa:member`: no add-passengers, `edit` ignores `needs_confirmation`, my-rides shows no "!" line.
+
 ## Owner hands-on testing (2026-10-06) — bugs to fix
 - **OB1 — A multi-day request cannot be placed by hand on the board.** Dropping its card on a car fails with "בקשה רב-יומית — אפשר לבטל ולהגיש מחדש, לא לערוך" (`series_edit_not_supported`, MDR02). The board's manual placement goes through `edit_ride`, which refuses any request with a `series_id` (the v1 rule "a series is cancelled and resubmitted, never edited", REQ §13.77) — but placing is not editing the request. Expected: dropping a series leg (or the series card) on a car places the **whole series** on that car for all its days (the same hold auto-fill makes, `place_series`), refused only when the car is not free on every day; moving a placed series to another car likewise moves all its days. The Sadran's other path today is "להציע פחות ימים" / auto-fill only. Seen on the showcase department (S19). **Fixed 2026-10-06:** `place_series_on_car(series, car)` (Sadran; private-car owner rule; refuses an already placed series) wraps `place_series`; the board drop of a multi-day card calls it ("הבקשה הרב-יומית שובצה ברכב הזה לכל ימיה"). Verified through the API (3 rides, all legs assigned; second placement and a member refused). Not covered: moving an already placed series to another car.
 
