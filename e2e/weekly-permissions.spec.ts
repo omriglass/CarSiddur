@@ -4,14 +4,14 @@ import { expect, test } from "@playwright/test";
 import { he } from "../src/i18n/he";
 import {
   getWeekStart, NEVO_DEPARTMENT_ID, newSignedInPage, SEEDED_USERS,
-  serviceRoleClient, SUPABASE_ANON_KEY, SUPABASE_URL,
-} from "./helpers";
+  serviceRoleClient, SUPABASE_ANON_KEY, SUPABASE_URL, confirmAutoFillWholeWeek } from "./helpers";
 
 // A dedicated fixture week (own Sunday, far from the seed) rather than `getWeekStart("open")`:
 // the seed has exactly one Open week, and other specs that run earlier in a full suite
 // (sadran.spec.ts's "publishes the week" test) advance it to `published`, so depending on it
 // here raced with test order. This spec owns its own week end-to-end instead.
 const WEEK = "2043-02-15";
+const shiftDays = (day: string, n: number) => new Date(Date.parse(`${day}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
 
 test("weekly member manages only their assigned board while permanent Sadran retains access", { tag: ["@board", "@auth"] }, async ({ browser }) => {
   const database = serviceRoleClient();
@@ -25,6 +25,7 @@ test("weekly member manages only their assigned board while permanent Sadran ret
   async function cleanupWeek() {
     await database.from("proposals").delete().eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", week);
     await database.from("notifications").delete().eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", week);
+    await database.from("rides").delete().eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", week);
     await database.from("requests").delete().eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", week);
     await database.from("sadran_assignments").delete().eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", week);
     await database.from("weeks").delete().eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", week);
@@ -46,6 +47,17 @@ test("weekly member manages only their assigned board while permanent Sadran ret
     if (error) throw error;
   }
   await assign([member.id]);
+  // REQ §13.109 (b): "השלם אוטומטית" confirms only when something is open, so the week gets one
+  // open request (Monday, clear of the Sunday proposal fixture below) for the weekly Sadran to place.
+  {
+    const { error } = await database.from("requests").insert({
+      department_id: NEVO_DEPARTMENT_ID, week_start: week, requester_id: member.id, filed_by: member.id,
+      ride_type_id: "00000000-0000-0000-0000-000000000021", destination_text: "E2E weekly-permission autofill",
+      trip_shape: "round_trip", depart_at: `${shiftDays(week, 1)}T09:00:00Z`, return_at: `${shiftDays(week, 1)}T11:00:00Z`,
+      adults: 1, status: "submitted",
+    });
+    if (error) throw error;
+  }
   try {
     const { data: membership, error } = await database.from("department_members").select("role")
       .eq("department_id", NEVO_DEPARTMENT_ID).eq("profile_id", member.id).single();
@@ -63,6 +75,7 @@ test("weekly member manages only their assigned board while permanent Sadran ret
       // "השלם אוטומטית" now lives in the board's kebab "actions" menu (UX_FLOWS.md §4.2, 2026-09-10) at every width.
       await temporary.page.getByRole("button", { name: he.sadranBoard.actionsMenu, exact: true }).click();
       await temporary.page.getByRole("menuitem", { name: he.action.autoSolveRemaining, exact: true }).click();
+      await confirmAutoFillWholeWeek(temporary.page);
       expect((await applied).ok()).toBe(true);
       await temporary.page.goto(`/sadran/${NEVO_DEPARTMENT_ID}/${otherWeek}/board`);
       await expect(temporary.page).toHaveURL(new RegExp(`${boardPath}$`));

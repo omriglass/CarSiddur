@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { serviceRoleClient, NEVO_DEPARTMENT_ID, primeLanding } from "./helpers";
+import { serviceRoleClient, NEVO_DEPARTMENT_ID, primeLanding, confirmAutoFillWholeWeek } from "./helpers";
 import { he } from "../src/i18n/he";
 
 /**
@@ -58,6 +58,7 @@ test.describe("sadran", { tag: ["@proposals", "@publication"] }, () => {
     // "השלם אוטומטית" now lives in the board's kebab "actions" menu (UX_FLOWS.md §4.2, 2026-09-10) at every width.
     await page.getByRole("button", { name: he.sadranBoard.actionsMenu, exact: true }).click();
     await page.getByRole("menuitem", { name: he.action.autoSolveRemaining, exact: true }).click();
+    await confirmAutoFillWholeWeek(page);
     expect((await applied).ok()).toBe(true);
 
     await expect(page).toHaveURL(/\/board$/);

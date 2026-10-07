@@ -136,7 +136,8 @@ test.describe("merge popup takes the server's verdict", { tag: ["@board"] }, () 
         const dialog = page.getByTestId("merge-dialog");
         await expect(dialog).toBeVisible();
         const invalid = dialog.getByTestId("merge-invalid");
-        await expect(invalid).toHaveText(he.mergedRide.invalid.turnaround_conflict);
+        // R6B3: the clash is with the PREVIOUS ride (its turnaround reaches the grown start), and the reason says so.
+        await expect(invalid).toHaveText(he.mergedRide.invalid.turnaround_conflict_previous);
         await expect(invalid).toHaveAttribute("data-code", "turnaround");
         await expect(dialog.getByTestId("merge-prepare")).toBeDisabled();
         await expect(dialog.getByTestId("merge-save-draft")).toBeDisabled();

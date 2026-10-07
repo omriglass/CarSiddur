@@ -188,6 +188,10 @@ export function HomePage() {
     (r) => UNSERVED_STATUSES.has(displayStatus(r)) && r.id !== nextAction?.id,
   );
 
+  // R7B8-1: "all placed" only when nothing is still waiting for the siddur; with neither unserved
+  // requests nor that line, the section (and its heading) is not shown at all.
+  const allPlaced = !requests.some((r) => r.status === "submitted" || r.status === "draft")
+    && requests.some((r) => r.status === "assigned" || r.status === "merged");
   const weeks = (weeksQuery.data ?? []).map((w) => ({ weekStart: w.week_start, phase: w.phase }));
   const homeWeek = resolveHomeWeek(
     profileQuery.data?.home_week_preference ?? "auto",
@@ -345,11 +349,10 @@ export function HomePage() {
       {/* R3U1: setup banners sit below the upcoming rides so they never push them off the first screen. */}
       <DeviceSetupPrompts />
 
-      <section className="space-y-3">
+      {unserved.length > 0 || allPlaced ? <section className="space-y-3">
         <h2 className="text-sm font-semibold text-muted-foreground">{t("home.unservedRequests")}</h2>
         {unserved.length === 0 ? (
-          // R7B8-1: "all placed" only when nothing below is still waiting for the siddur.
-          requests.some((r) => r.status === "submitted" || r.status === "draft") || !requests.some((r) => r.status === "assigned" || r.status === "merged") ? null : <EmptyState icon={MessageCircleQuestion} message={t("home.emptyUnserved")} />
+          <EmptyState icon={MessageCircleQuestion} message={t("home.emptyUnserved")} />
         ) : (
           <div className="space-y-2">
             {unserved.map((row) => (
@@ -375,7 +378,7 @@ export function HomePage() {
             ))}
           </div>
         )}
-      </section>
+      </section> : null}
 
       {openOffers.length > 0 ? (
         <section className="space-y-2">

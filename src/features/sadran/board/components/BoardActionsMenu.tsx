@@ -51,10 +51,13 @@ export function BoardActionsMenu({
   const navigate = useNavigate();
   const [deviationsOpen, setDeviationsOpen] = useState(false);
   const [autoFillOpen, setAutoFillOpen] = useState(false);
+  // Controlled so opening a dialog that lives outside the menu also closes the menu (a menu left
+  // open keeps the rest of the board aria-hidden after the dialog closes).
+  const [menuOpen, setMenuOpen] = useState(false);
   const { download: downloadExcel, loading: exporting } = useWeekExcelExport(departmentId, weekStart);
 
   return <>
-    <DropdownMenu>
+    <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
       <DropdownMenuTrigger asChild>
         <Button type="button" variant="outline" size="icon" aria-label={he.sadranBoard.actionsMenu} data-testid="board-actions-menu-trigger">
           <MoreVertical className="size-4" />
@@ -69,11 +72,11 @@ export function BoardActionsMenu({
           {exporting ? he.excelExport.loading : he.excelExport.button}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuItem disabled={autoSolving} onSelect={(e) => { e.preventDefault(); setAutoFillOpen(true); }}>
+        <DropdownMenuItem disabled={autoSolving} onSelect={(e) => { e.preventDefault(); setMenuOpen(false); setAutoFillOpen(true); }}>
           <PlayCircle className="me-2 size-4" aria-hidden="true" />
           {autoSolving ? he.sadranDashboard.solving : he.action.autoSolveRemaining}
         </DropdownMenuItem>
-        <DropdownMenuItem onSelect={(e) => { e.preventDefault(); setDeviationsOpen(true); }}>
+        <DropdownMenuItem onSelect={(e) => { e.preventDefault(); setMenuOpen(false); setDeviationsOpen(true); }}>
           <ListChecks className="me-2 size-4" aria-hidden="true" />
           {he.deviations.title}
         </DropdownMenuItem>

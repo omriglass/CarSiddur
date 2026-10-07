@@ -3,7 +3,7 @@ import { execSync } from "node:child_process";
 import { formatInTimeZone } from "date-fns-tz";
 import { expect, test, type Page } from "@playwright/test";
 
-import { NEVO_DEPARTMENT_ID, serviceRoleClient, primeLanding } from "./helpers";
+import { NEVO_DEPARTMENT_ID, serviceRoleClient, primeLanding, confirmAutoFillWholeWeek } from "./helpers";
 import resetDatabase from "./global-setup";
 import { he } from "../src/i18n/he";
 
@@ -104,6 +104,7 @@ async function fillRemaining(page: Page) {
   const applied = page.waitForResponse((response) => response.url().endsWith("/rest/v1/rpc/apply_solver_result") && response.request().method() === "POST");
   await openBoardActionsMenu(page);
   await page.getByRole("menuitem", { name: he.action.autoSolveRemaining, exact: true }).click();
+  await confirmAutoFillWholeWeek(page);
   const response = await applied;
   // On failure surface the PostgREST/Postgres error body instead of a bare `false`.
   expect(response.ok(), `apply_solver_result ${response.status()}: ${await response.text()}`).toBe(true);
@@ -516,6 +517,7 @@ test.describe.serial("board (bug-fix pass regression, fake-week data)", { tag: [
     const applied = page.waitForResponse((response) => response.url().endsWith("/rest/v1/rpc/apply_solver_result") && response.request().method() === "POST");
     await openBoardActionsMenu(page);
     await page.getByRole("menuitem", { name: "השלם אוטומטית", exact: true }).click();
+    await confirmAutoFillWholeWeek(page);
     expect((await applied).ok()).toBe(true);
 
     const { data: afterRides } = await admin

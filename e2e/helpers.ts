@@ -169,3 +169,12 @@ export async function waitForCondition(
     await new Promise((resolve) => setTimeout(resolve, intervalMs));
   }
 }
+
+/**
+ * REQ §13.109 (b): "השלם אוטומטית" opens a scope picker + confirmation. Specs written for the
+ * whole-week behaviour pick "כל השבוע" explicitly and confirm.
+ */
+export async function confirmAutoFillWholeWeek(page: Page): Promise<void> {
+  await page.getByTestId("autofill-day-week").click();
+  await page.getByRole("alertdialog").or(page.getByRole("dialog")).getByRole("button", { name: t("sadranBoard.autoFill.confirmAction"), exact: true }).click();
+}
