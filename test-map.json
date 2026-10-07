@@ -908,6 +908,7 @@
         "supabase/tests/qa_run3_placement.sql",
         "supabase/tests/qa_run4_placement.sql",
         "supabase/tests/qa_run5_placement.sql",
+        "supabase/tests/qa_run6_car_location.sql",
         "supabase/tests/qa_run5_cancel.sql",
         "scripts/test-api.mjs",
         "supabase/migrations/**/*department_scope*",

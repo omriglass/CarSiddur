@@ -7,7 +7,7 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { reasonCodes } from '../reasons';
+import { reason, reasonCodes } from '../reasons';
 
 const SOLVER_DIR = new URL('..', import.meta.url).pathname;
 
@@ -65,5 +65,11 @@ describe('src/solver/reasons.ts <-> usage sites', () => {
       }
     }
     expect(unknown).toEqual([]);
+  });
+});
+
+describe('R7B5: no reason ends on an empty time', () => {
+  it('UNMET_NEEDS_DRIVER has no dangling "ב-"', () => {
+    expect(reason('UNMET_NEEDS_DRIVER', { dest: 'חריש' }).trim().endsWith('ב-')).toBe(false);
   });
 });

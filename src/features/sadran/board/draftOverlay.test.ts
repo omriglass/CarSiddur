@@ -46,6 +46,11 @@ describe("resolveDraftPlacement", () => {
     expect(placement).toMatchObject({ carId: "carB", endsAt: "2026-10-11T11:00:00.000Z", replacesRideId: null });
     expect(Date.parse(placement!.startsAt)).toBeGreaterThan(Date.parse("2026-10-11T10:00:00.000Z"));
   });
+  it("REQ 105 d: a fewer-days draft is drawn on the span's own day and car, not on the series head's day", () => {
+    const head = request({ depart_at: "2026-10-12T05:00:00.000Z", return_at: "2026-10-12T20:59:00.000Z" });
+    const placement = resolveDraftPlacement(proposal({ payload: { car_id: "carB", series_span: { depart_at: "2026-10-14T05:00:00.000Z", return_at: "2026-10-14T14:00:00.000Z" } } }), [head], [], "home");
+    expect(placement).toMatchObject({ type: "shift", carId: "carB", startsAt: "2026-10-14T05:00:00.000Z", endsAt: "2026-10-14T14:00:00.000Z" });
+  });
   it("merge: host car with the payload's combined window", () => {
     const placement = resolveDraftPlacement(proposal({ type: "merge", ride_id: "ride1", payload: { starts_at: "2026-10-11T05:00:00.000Z", ends_at: "2026-10-11T11:00:00.000Z" } }), [request()], [ride()]);
     expect(placement).toMatchObject({ type: "merge", carId: "carA", hostRideId: "ride1", startsAt: "2026-10-11T05:00:00.000Z" });

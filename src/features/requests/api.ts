@@ -17,11 +17,13 @@ import type {
   ProposalStatus,
   ProposalType,
   RequestStatus,
+  RideLeg,
   RideRole,
   RideStatus,
   TripShape,
   TripType,
 } from "@/lib/enums";
+import { isHiddenOutcome, isRequestDayPublished, type PlacedLeg } from "./publishedOutcome";
 import type { RequestWindow } from "./window";
 
 /**
@@ -100,6 +102,8 @@ export interface MyRequestRow {
   freedSlotOptOut: boolean;
   /** First placed leg, if any — a split relay's second leg is not shown separately (known simplification, see final report). */
   ride: MyRequestRide | null;
+  /** Every live ride leg this request holds (empty before the day is published, REQ §13.109 a) — per-leg state and the member's own times. */
+  legs?: PlacedLeg[];
   pendingProposal: MyRequestPendingProposal | null;
   /** R4U6: the member accepted a proposal that still waits for the other parties. */
   acceptedAwaitingOthers?: boolean;
@@ -119,13 +123,13 @@ const SELECT = `
   origin_id, origin_text, trip_type,
   freed_slot_opt_out, has_luggage, preferred_car_id, template_id, series_id, series_index, series_count,
   preferred_car:cars!requests_preferred_car_id_fkey(name),
-  window:weeks(phase, open_at, close_at),
+  window:weeks(phase, open_at, close_at, published_days),
   destination:destinations!requests_destination_id_fkey(name),
   origin:destinations!requests_origin_id_fkey(name),
   stops:request_stops(leg, position, place_id, place_text, place:destinations(name)),
   ride_type:ride_types(code, name_he),
   ride_requests(
-    role,
+    role, leg,
     ride:rides(
       id, starts_at, ends_at, status, needs_driver, version,
       origin:destinations!rides_origin_id_fkey(name),
@@ -134,7 +138,7 @@ const SELECT = `
       driver:profiles!rides_driver_id_fkey(full_name)
     )
   ),
-  proposals(id, type, reason_he, expires_at, status, parties:proposal_parties(profile_id, response)),
+  proposals(id, type, reason:payload->>reason, expires_at, status, parties:proposal_parties(profile_id, response)),
   request_children(child:children(full_name))
 `;
 
@@ -171,6 +175,7 @@ interface RawRequestRow {
   ride_type: { code: string; name_he: string } | null;
   ride_requests: {
     role: RideRole;
+    leg: RideLeg;
     ride: {
       needs_driver: boolean;
       version: number;
@@ -191,7 +196,7 @@ interface RawRequestRow {
   proposals: {
     id: string;
     type: ProposalType;
-    reason_he: string;
+    reason: string | null;
     expires_at: string | null;
     status: ProposalStatus;
     parties: { profile_id: string; response: "pending" | "accepted" | "declined" }[] | null;
@@ -221,8 +226,16 @@ function mapEmbeddedStops(rows: RawRequestRow["stops"], hasReturn: boolean): Rou
 }
 
 function mapRow(row: RawRequestRow, profileId?: string): MyRequestRow {
-  const legWithRide = row.ride_requests.find((leg) => leg.ride !== null && leg.ride.status !== "cancelled");
+  // REQ §13.109 (a): outcomes (status, reason, ride, legs) exist for the member only on published days.
+  const published = isRequestDayPublished(row.window, row.depart_at, row.return_at);
+  const liveLinks = published ? row.ride_requests : [];
+  const hidden = isHiddenOutcome(row.status, published);
+  const legWithRide = liveLinks.find((leg) => leg.ride !== null && leg.ride.status !== "cancelled");
   const ride = legWithRide?.ride ?? null;
+  const legs: PlacedLeg[] = liveLinks.flatMap((link) =>
+    link.ride && link.ride.status !== "cancelled"
+      ? [{ leg: link.leg, startsAt: link.ride.starts_at, endsAt: link.ride.ends_at }]
+      : []);
   // R5B9: a sent proposal the member has already answered (it still waits for the other parties) is no longer "waiting for your answer".
   const { pending: pendingProposal, answeredWaiting } = splitMemberProposals(row.proposals, profileId);
 
@@ -236,8 +249,9 @@ function mapRow(row: RawRequestRow, profileId?: string): MyRequestRow {
     id: row.id,
     departmentId: row.department_id,
     weekStart: row.week_start,
-    status: row.status,
-    statusReason: row.status_reason,
+    status: hidden ? "submitted" : row.status,
+    statusReason: hidden ? null : row.status_reason,
+    legs,
     isLate: row.is_late,
     changedSinceSolve: row.changed_since_solve,
     departAt: row.depart_at,
@@ -287,7 +301,7 @@ function mapRow(row: RawRequestRow, profileId?: string): MyRequestRow {
       ? {
           id: pendingProposal.id,
           type: pendingProposal.type,
-          reasonHe: pendingProposal.reason_he,
+          reasonHe: pendingProposal.reason?.trim() ?? "",
           expiresAt: pendingProposal.expires_at,
         }
       : null,

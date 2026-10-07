@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { he, tv } from "@/i18n/he";
 import type { MyRequestRow } from "./api";
-import { confirmDialogDescription, originDestinationLabel, requestStart, toDisplayRows } from "./myRequestsRows";
+import { confirmDialogDescription, displayStatus, legStateLine, originDestinationLabel, ownLegWindow, requestStart, toDisplayRows } from "./myRequestsRows";
 
 function request(overrides: Partial<MyRequestRow> = {}): MyRequestRow {
   return {
@@ -100,5 +100,23 @@ describe("confirmDialogDescription", () => {
   it("returns the bulk-withdraw and freed-slot-claim copy for their own kinds", () => {
     expect(confirmDialogDescription({ kind: "withdrawAll", departmentId: "d", weekStart: "2026-09-13" })).toBe(he.requestsList.withdrawAllBody);
     expect(confirmDialogDescription({ kind: "withdrawFreedClaim", offerId: "o", requestId: "r" })).toBe(he.freedSlot.withdrawClaimBody);
+  });
+});
+
+describe("per-leg state (R6B12, R7B8)", () => {
+  const out = [{ leg: "out" as const, startsAt: "2026-09-15T08:00:00+03:00", endsAt: "2026-09-15T09:00:00+03:00" }];
+  it("one placed leg of a two-leg request is waiting, with a per-leg line", () => {
+    const row = request({ status: "assigned", legs: out });
+    expect(displayStatus(row)).toBe("waitlisted");
+    expect(legStateLine(row)).toBe(tv("request.legStateLine", { out: he.request.legPlaced, ret: he.request.legWaiting }));
+  });
+  it("both legs placed keeps assigned and shows no line", () => {
+    const row = request({ status: "assigned", legs: [{ ...out[0]!, leg: "both" }] });
+    expect(displayStatus(row)).toBe("assigned");
+    expect(legStateLine(row)).toBeNull();
+  });
+  it("own times come from the rides carrying each leg (a merge moved the return)", () => {
+    const legs = [...out, { leg: "return" as const, startsAt: "2026-09-15T21:00:00+03:00", endsAt: "2026-09-15T22:40:00+03:00" }];
+    expect(ownLegWindow(request({ legs, ride: null }))).toEqual({ departAt: "2026-09-15T08:00:00+03:00", returnAt: "2026-09-15T22:40:00+03:00" });
   });
 });

@@ -321,6 +321,12 @@ describe("unmet placement by trip type (REQUIREMENTS §13.93)", () => {
     expect(unmetMergeHost(withHost, item(request({ ...base, trip_type: "one_way", trip_shape: "one_way_to" })), "car1", 0, "host1")?.id).toBe("host1");
   });
 
+  it("R7B10: a cancelled ride is never a merge host - the drop is a plain placement", () => {
+    const cancelled = ride({ id: "gone", car_id: "car1", driver_id: "d", needs_driver: false, status: "cancelled", starts_at: departAt, ends_at: "2026-09-13T09:00:00.000Z" });
+    const withGone = baseContext({ rides: [cancelled] });
+    expect(unmetMergeHost(withGone, item(request({ ...base, trip_type: "round_trip", trip_shape: "round_trip" })), "car1", 0, "gone")).toBeUndefined();
+  });
+
   it("the beyond-flex shift payload carries car and times only, never places", () => {
     const window = { startsAt: departAt, endsAt: "2026-09-13T12:00:00.000Z" };
     const round = request({ ...base, trip_type: "round_trip", trip_shape: "round_trip", return_at: window.endsAt });

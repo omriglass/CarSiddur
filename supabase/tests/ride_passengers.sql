@@ -520,7 +520,7 @@ begin
   assert (select status from public.rides where id = ride5) = 'confirmed', 'the ride itself must survive a single passenger''s removal';
   assert exists(
     select 1 from public.notifications where recipient_id = requesterA and event = 'outcome_changed'
-      and data->>'variant' = 'passenger_removed_you' and data->>'ride_id' = ride5::text
+      and data->>'variant' = 'passenger_removed_request' and data->>'ride_id' = ride5::text   -- R7U4: says the request ended
   ), 'the removed requester was not notified';
 end $$;
 

@@ -227,10 +227,12 @@ function ProposalAnswerBody({
         </div>
       ) : null}
 
-      <div className="space-y-1 text-sm">
-        <p className="font-medium">{he.proposalScreen.reason}</p>
-        <p className="text-muted-foreground">{summary.reasonHe}</p>
-      </div>
+      {summary.reasonHe ? (
+        <div className="space-y-1 text-sm">
+          <p className="font-medium">{he.proposalScreen.reason}</p>
+          <p className="text-muted-foreground">{summary.reasonHe}</p>
+        </div>
+      ) : null}
 
       {summary.expiresAt ? (
         <p className="text-xs text-muted-foreground" dir="ltr">

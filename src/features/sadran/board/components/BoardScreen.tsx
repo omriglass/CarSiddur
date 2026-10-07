@@ -304,6 +304,9 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
             onPolicyUsed={board.rememberUsedPolicy}
             onAutoSolveRemaining={board.handleAutoSolveRemaining}
             autoSolving={board.autoSolving}
+            days={board.days}
+            selectedDay={board.selectedDay}
+            openCount={board.openRequestCount}
           />
         </div>
       </div>

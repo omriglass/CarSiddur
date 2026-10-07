@@ -102,6 +102,7 @@ export const he = {
     missingDriver: "{{count}} נסיעות ללא נהג/ת",
     placedCount: "שובצו {{placed}} מתוך {{total}} בקשות",
     expiringTitle: "הצעות דחייה/פתרון חיצוני שעוד לא נענו יפוגו עם הפרסום:",
+    expiringWhoIsTold: "ההצעה תפוג והסדרן/ית ששלח/ה אותה יקבל/ת הודעה. החברים ברשימה לא יקבלו הודעת פקיעה נפרדת, כדאי לעדכן אותם.",
     expiringRow: "{{name}} · {{type}} · {{day}}",
     conflicts: "{{count}} התנגשויות — יש לפתור לפני פרסום",
     noSelection: "יש לבחור לפחות יום אחד",
@@ -188,11 +189,11 @@ export const he = {
     /** Needs-driver wordings (R2B23): no driver yet, so never a "_____" placeholder. */
     chauffeurLabelNeedsDriver: "נדרש/ת נהג/ת להסיע את {{passengers}}",
     chauffeurDropoffNeedsDriver: "נדרש/ת נהג/ת להסיע את {{name}} ל{{place}} ולחזור",
-    chauffeurPickupNeedsDriver: "נדרש/ת נהג/ת לאסוף את {{name}} מ{{place}} (הנסיעה מתחילה ב{{time}})",
+    chauffeurPickupNeedsDriver: "נדרש/ת נהג/ת לאסוף את {{name}} מ{{place}} (הנסיעה מתחילה ב-{{time}})",
     /** REQUIREMENTS §13.93 "Display": a chauffeur ride's single drop-off leg. */
     chauffeurDropoff: "{{driver}} מסיע/ה את {{name}} ל{{place}} וחוזר/ת",
     /** REQUIREMENTS §13.93 "Display": a chauffeur ride's single pickup leg — `{{time}}` is when the car starts out, not the pickup time. */
-    chauffeurPickup: "{{driver}} אוסף/ת את {{name}} מ{{place}} (הנסיעה מתחילה ב{{time}})",
+    chauffeurPickup: "{{driver}} אוסף/ת את {{name}} מ{{place}} (הנסיעה מתחילה ב-{{time}})",
     /** REQUIREMENTS §13.93 "Display": a הקפצה relay pair's out-leg — the car is left for a later trip to take on. Fallback when the partner ride isn't known yet. */
     relayLeave: "משאיר/ה את הרכב ב{{place}}",
     /** REQUIREMENTS §13.93 "Display": same out-leg, naming the partner who picks the car up and when (`v_board_rides.relay_partner`). */
@@ -202,7 +203,7 @@ export const he = {
     /** R2U5: the same card names its route when no partner is known. */
     relayWaitRoute: "הרכב מחכה ב{{place}} · חזרה ל{{destination}}",
     /** REQUIREMENTS §13.93 "Display": same return leg, naming the partner who left the car there and when they bring it (`v_board_rides.relay_partner`). */
-    relayWaitFrom: "הרכב מחכה לך ב{{place}} — {{name}} מביא/ה אותו ב{{time}}",
+    relayWaitFrom: "הרכב מחכה לך ב{{place}} — {{name}} מביא/ה אותו ב-{{time}}",
     /** REQUIREMENTS §13.93 "Display": a plain הלוך בלבד leg — the car stays at the destination with nobody designated to bring it back. */
     oneWayParked: "{{name}} ל{{place}} (הרכב נשאר שם)",
     missingDriver: "חסר/ה נהג/ת",
@@ -645,6 +646,8 @@ export const he = {
     nonDriverCannotDrive: "חבר/ה שסימן/ה 'לא נוהג/ת' לא יכול/ה להיות נהג/ת",
     /** REQ §13.93: a non-driver with no driving companion may only file a הקפצה. */
     nonDriverNeedsDropOff: "מי שלא נוהג/ת יכול/ה לבקש רק הקפצה",
+    originEqualsDestination: "מקום היציאה והיעד זהים — בחר/י יעד אחר או שנה/י את נקודת היציאה",
+    joinOwnRide: "אי אפשר לבקש להצטרף לנסיעה שאת/ה כבר בה",
     /** REQ §13.95 (H3): `set_request_trip_type` — a round trip needs a return time. */
     tripTypeNeedsReturn: "אי אפשר לעבור להלוך-חזור — לבקשה אין שעת חזרה",
     /** REQ §13.93/SOLVER §3.15: accepting a `changeOrigin` proposal found the car/window no longer free. */

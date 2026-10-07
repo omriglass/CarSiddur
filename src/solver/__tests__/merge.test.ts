@@ -94,6 +94,30 @@ describe('findMergeHosts', () => {
     expect(findMergeHosts({ guest, leg: 'out', hosts, ...params })).toHaveLength(0);
   });
 
+  it('R6B5: a one-way destA -> home guest rides the return leg of a home -> destA -> home host (no detour, its own departure window)', () => {
+    const cars = [makeCar('C1', { seatConfigs: [passengers(4)] })];
+    const hosts = buildHostRides([hostAssignment()], new Map(cars.map((c) => [c.id, c])));
+    // the host's return leaves destA at slot 46 (end 48 - 30 min); the guest wants to leave destA around then
+    const guest = guestNr({ tripShape: 'one_way_to', originId: 'destA', destinationId: HOME, departureMs: slotMs(46), returnMs: undefined, flexDeparture: { earlierMin: 30, laterMin: 30 } });
+    const found = findMergeHosts({ guest, leg: 'out', hosts, ...commonParams(cars) });
+    expect(found).toHaveLength(1);
+    expect(found[0]?.reversedOneWay).toBe(true);
+    expect(found[0]?.detourMinutes).toBe(0);
+    expect(found[0]?.window).toEqual({ start: 32, end: 48 });
+    // its departure is far outside the host's return time: not offered (no host shift for a fixed 'both' host without a driver request)
+    const early = guestNr({ tripShape: 'one_way_to', originId: 'destA', destinationId: HOME, departureMs: slotMs(34), returnMs: undefined, flexDeparture: { earlierMin: 0, laterMin: 0 } });
+    expect(findMergeHosts({ guest: early, leg: 'out', hosts, ...commonParams(cars) })).toHaveLength(0);
+  });
+
+  it('R6B5: only the exact reverse is rescued - destA -> elsewhere on a round-trip host still boards at the end and is refused', () => {
+    const cars = [makeCar('C1', { seatConfigs: [passengers(4)] })];
+    const hosts = buildHostRides([hostAssignment()], new Map(cars.map((c) => [c.id, c])));
+    const guest = guestNr({ tripShape: 'one_way_to', originId: 'destA', destinationId: 'other', departureMs: slotMs(46), returnMs: undefined, flexDeparture: { earlierMin: 30, laterMin: 30 } });
+    const found = findMergeHosts({ guest, leg: 'out', hosts, ...commonParams(cars, { other: { id: 'other', zone: 'zoneA', distanceKm: 20, travelMinutes: 30 } }) });
+    expect(found.every((c) => !c.reversedOneWay)).toBe(true);
+    expect(found).toHaveLength(0);
+  });
+
   it('REQUIREMENTS §13.95: the return leg ends later by the added driving on the way back', () => {
     const cars = [makeCar('C1', { seatConfigs: [passengers(4)] })];
     const hosts = buildHostRides([hostAssignment()], new Map(cars.map((c) => [c.id, c])));

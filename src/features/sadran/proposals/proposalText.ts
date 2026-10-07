@@ -87,7 +87,8 @@ export function timeChangeLine(
   dayLevel = false,
 ): string {
   const part = (kind: "Depart" | "Return", from?: string | null, to?: string | null): string => {
-    if (!to || from === to) return "";
+    // R6B9: same minute (whatever the ISO spelling or seconds) is no change.
+    if (!to || (from && Math.floor(new Date(from).getTime() / 60000) === Math.floor(new Date(to).getTime() / 60000))) return "";
     if (!from) return tv(`sadranProposal.time${kind}Set` as "sadranProposal.timeDepartSet", { new: formatTime(new Date(to)) });
     const day = dayLevel || (from ? formatDayDate(from) !== formatDayDate(to) : false);
     const label = (iso: string) => (day ? `${formatDayDate(iso)} ${formatTime(new Date(iso))}` : formatTime(new Date(iso)));

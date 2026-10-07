@@ -134,15 +134,26 @@ export function previewMerge(host: BoardRide, request: WeekRequestRow, leg: Merg
       destinationText: request.destination_text,
       destinationName: request.destination_resolved_name ?? request.destination_text,
       leg,
+      oneWay: request.trip_shape === "one_way_to",
     },
   });
-  const requestedAt = merged.boardLeg === "return" ? request.return_at : request.depart_at;
-  // R2B25: the stop ETA is shown on the 15-minute grid (like every ride time), never 12:53.
-  merged.boardEta = merged.boardEta ? new Date(Math.round(Date.parse(merged.boardEta) / 900_000) * 900_000).toISOString() : null;
-  const timeChanges = !!merged.boardEta && !!requestedAt && Math.round(Date.parse(merged.boardEta) / 60_000) !== Math.round(Date.parse(requestedAt) / 60_000);
+  // R6B5: a reversed one-way boards on the host's return leg but still asks for its own departure time.
+  const requestedAt = merged.boardLeg === "return" && !merged.swapped ? request.return_at : request.depart_at;
   const grid = (iso: string | null | undefined) => (iso ? new Date(Math.round(Date.parse(iso) / 900_000) * 900_000).toISOString() : null);
+  // R2B25: the stop ETA is shown on the 15-minute grid (like every ride time), never 12:53.
+  merged.boardEta = grid(merged.boardEta);
   const boardAt = (side: "out" | "return") => grid(merged.route.find((p) => p.requestId === request.id && p.kind === "board" && p.leg === side)?.eta);
-  return { ...merged, requestedAt: requestedAt ?? null, timeChanges, joinerOutAt: boardAt("out"), joinerReturnAt: boardAt("return") };
+  // R6B10: the guest's return is the ARRIVAL at their origin (the request's own return time), not the time they leave the destination.
+  const originId = request.origin_id ?? ctx.homeId ?? null;
+  const alightAt = () => grid((merged.route.find((p) => p.requestId === request.id && p.kind === "alight" && p.leg === "return")
+    ?? [...merged.route].reverse().find((p) => p.leg === "return" && p.position > 0 && !!originId && p.placeId === originId))?.eta);
+  const joinerOutAt = merged.swapped
+    ? (boardAt("return") ?? grid(merged.route.find((p) => p.leg === "return" && !!originId && p.placeId === originId)?.eta))
+    : boardAt("out");
+  const joinerReturnAt = merged.swapped ? null : (alightAt() ?? boardAt("return"));
+  if (merged.boardLeg === "return" && !merged.swapped && joinerReturnAt) merged.boardEta = joinerReturnAt;
+  const timeChanges = !!merged.boardEta && !!requestedAt && Math.round(Date.parse(merged.boardEta) / 60_000) !== Math.round(Date.parse(requestedAt) / 60_000);
+  return { ...merged, requestedAt: requestedAt ?? null, timeChanges, joinerOutAt, joinerReturnAt };
 }
 
 /**
@@ -159,6 +170,8 @@ export interface ServerMergePreview {
   newEndsAt: string | null;
   joinerDepartAt: string | null;
   joinerReturnAt: string | null;
+  /** R6B3: which neighbour a turnaround refusal clashes with (`previous` = the ride before, `next` = the ride after). */
+  turnaroundSide?: "previous" | "next" | null;
 }
 
 const isoOrNull = (value: unknown): string | null => (typeof value === "string" && value ? value : null);
@@ -173,6 +186,7 @@ export function parseServerMergePreview(raw: unknown): ServerMergePreview | null
     newEndsAt: isoOrNull(r.new_ends_at),
     joinerDepartAt: isoOrNull(r.joiner_depart_at),
     joinerReturnAt: isoOrNull(r.joiner_return_at),
+    turnaroundSide: r.turnaround_side === "previous" || r.turnaround_side === "next" ? r.turnaround_side : null,
   };
 }
 
@@ -181,8 +195,9 @@ export function applyServerMergeTimes(preview: MergePreview | null, server: Serv
   // The server's verdict wins (REQ §13.108 e): a merge the TS twin refused but the server allows still gets the server's times.
   if (!preview || !server || (!preview.valid && !server.ok)) return preview;
   if (!preview.valid) preview = { ...preview, valid: true, invalid: null };
-  const boardEta = preview.boardLeg === "return" ? (server.joinerReturnAt ?? preview.boardEta) : (server.joinerDepartAt ?? preview.boardEta);
-  const requestedAt = preview.boardLeg === "return" ? request.return_at : request.depart_at;
+  const returnSide = preview.boardLeg === "return" && !preview.swapped;
+  const boardEta = returnSide ? (server.joinerReturnAt ?? preview.boardEta) : (server.joinerDepartAt ?? preview.boardEta);
+  const requestedAt = returnSide ? request.return_at : request.depart_at;
   const timeChanges = !!boardEta && !!requestedAt && Math.round(Date.parse(boardEta) / 60_000) !== Math.round(Date.parse(requestedAt) / 60_000);
   return {
     ...preview,
@@ -207,7 +222,8 @@ const MERGE_CODE_TEXT: Record<string, string> = {
 };
 
 /** Hebrew reason for a `merge_preview` refusal `code` (REQ item 108 M1). */
-export function mergeRefusalText(code: string | null | undefined): string {
+export function mergeRefusalText(code: string | null | undefined, turnaroundSide?: "previous" | "next" | null): string {
+  if (code === "turnaround" && turnaroundSide === "previous") return he.mergedRide.invalid.turnaround_conflict_previous;
   return (code ? MERGE_CODE_TEXT[code] : undefined) ?? he.mergedRide.invalid.unknown;
 }
 
@@ -236,7 +252,7 @@ export function mergeVerdict(states: readonly MergePreviewState[], twinInvalid: 
   let loading = false;
   for (const state of states) {
     if (state.data) {
-      if (!state.data.ok) return { status: "refused", message: mergeRefusalText(state.data.code), code: state.data.code, source: "server" };
+      if (!state.data.ok) return { status: "refused", message: mergeRefusalText(state.data.code, state.data.turnaroundSide), code: state.data.code, source: "server" };
     } else if (state.isError || state.data === null) {
       if (twinInvalid) return { status: "refused", message: he.mergedRide.invalid[twinInvalid], code: twinInvalid, source: "twin" };
     } else {

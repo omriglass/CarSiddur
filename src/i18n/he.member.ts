@@ -50,6 +50,9 @@ export const heMember = {
     waitlistNextWeek: "רשימת המתנה לשבוע הבא",
   },
   request: {
+    legStateLine: "הלוך: {{out}} · חזור: {{ret}}",
+    legPlaced: "שובץ",
+    legWaiting: "ממתין",
     namedPassengerCount: "נוסעים מבוגרים: {{count}} (כולל אותך)",
     namedChildCount: "ילדים: {{count}}",
     waitlistBanner: "הבקשה תיכנס לרשימת ההמתנה ליום שכבר פורסם. אם נסיעה מתאימה תבוטל, תקבל/י הודעה.",
@@ -169,6 +172,7 @@ export const heMember = {
     seriesCancelBody: "הביטול חל על כל ימי הבקשה הרב-יומית.",
     stopEqualsOrigin: "העצירה זהה למקום היציאה",
     stopEqualsDestination: "העצירה זהה ליעד",
+    originEqualsDestination: "מקום היציאה והיעד זהים",
     shortenSeries: "קיצור הבקשה",
     shortenSeriesTitle: "קיצור הבקשה הרב-יומית",
     shortenSeriesHelp: "בחרו יום ושעת יציאה חדשים, ויום ושעת חזרה חדשים בתוך הימים של הבקשה. הימים שיוצאים מהטווח משתחררים, והרכב נשמר לימים שנשארו.",

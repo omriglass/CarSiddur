@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { tv } from "@/i18n/he";
 import { proposalPreviewText, proposalTemplateVariant, timeChangeLine, type ProposalTextInput } from "./proposalText";
 
 const base: ProposalTextInput = {
@@ -31,6 +32,10 @@ describe("proposalPreviewText shift", () => {
 });
 
 describe("timeChangeLine", () => {
+  it("R6B9: the same minute in another ISO spelling is no change", () => {
+    expect(timeChangeLine({ depart: "2026-09-13T06:00:00.000Z", return: "2026-09-13T09:00:00Z" }, { depart: "2026-09-13T06:00:00+00:00", return: "2026-09-13T09:00:30Z" })).toBe("");
+  });
+
   it("is empty when nothing changes", () => {
     expect(timeChangeLine({ depart: "2026-09-13T06:00:00.000Z" }, { depart: "2026-09-13T06:00:00.000Z" })).toBe("");
   });
@@ -73,5 +78,14 @@ describe("QA run 2 copy (REQ §13.102 R2B10)", () => {
   it("picks the city-home and placed variants", () => {
     expect(proposalTemplateVariant("external", { external_reason: "city" }, { destinationIsHome: true })).toBe("external_city_home");
     expect(proposalTemplateVariant("shift", null, { placed: true })).toBe("shift_placed");
+  });
+});
+
+describe("R7B5: merge popup time lines carry no raw placeholders", () => {
+  it("renders the joiner lines with the time", () => {
+    for (const text of [tv("mergedRide.joinerOut", { time: "09:00" }), tv("mergedRide.joinerChanged", { time: "09:00", old: "09:30" })]) {
+      expect(text).not.toMatch(/\{/);
+      expect(text).toContain("09:00");
+    }
   });
 });

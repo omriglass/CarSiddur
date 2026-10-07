@@ -17,7 +17,7 @@ import { useProfile } from "@/features/auth/useProfile";
 import { useDepartmentMembers } from "@/features/auth/useDepartmentMembers";
 import { fetchChildren } from "@/features/requests/api";
 
-import { combineMergeLegs, defaultMergeLeg, mergeLegForCard, mergeLegOptions, mergePayload, mergePayloadFromLegs, mergePayloadLeg, mergePayloadLegs, type MergeLeg } from "../mergeProposal";
+import { combineMergeLegs, defaultMergeLeg, mergeLegForCard, mergeLegOptions, mergePayload, mergePayloadFromLegs, mergePayloadLeg, mergePayloadLegs, mergeRefusalText, type MergeLeg } from "../mergeProposal";
 import { isDropOffWithPickup, legView, unmetItemId, unmetItemKey } from "../unmetLegs";
 import type { GuestDropTarget } from "@/components/GuestChips";
 import { requestStart, requestWithinFlex } from "../phantomLanes";
@@ -234,6 +234,27 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
   }
 
   /**
+   * REQ item 108 (R7B4): the TS twin refused a drop - the server decides (`merge_preview`, per leg). Returns the leg (and the
+   * card anchor) to open the popup on: the preferred leg when the server accepts it, else the first leg it accepts
+   * (a round trip whose "both" is too long may still ride "חזור" alone); `null` + a toast with the server's own reason when
+   * no leg is allowed. A failed preview call falls back to the preferred leg (the popup then shows the twin's verdict).
+   */
+  async function serverMergeLeg(hostId: string, req: WeekRequestRow, preferred: MergeLeg, anchor: "out" | "return" | null): Promise<{ leg: MergeLeg; anchor: "out" | "return" | null } | null> {
+    const preset = mergeLegOptions(req).preset;
+    const order: MergeLeg[] = preset ? [preset] : [...new Set<MergeLeg>([preferred, "both", "out", "return"])];
+    let firstRefusal: string | null = null;
+    for (const leg of order) {
+      let server;
+      try { server = await fetchMergePreview(hostId, req.id, leg); } catch { return { leg: preferred, anchor }; }
+      if (!server) return { leg: preferred, anchor };
+      if (server.ok) return { leg, anchor: leg === "return" ? "return" : leg === "out" && anchor === "return" ? null : anchor };
+      firstRefusal ??= mergeRefusalText(server.code, server.turnaroundSide);
+    }
+    toast.error(firstRefusal ?? he.mergedRide.invalid.unknown);
+    return null;
+  }
+
+  /**
    * REQ §13.94 (G10): take an added person out of a merged ride. A draft merge is discarded, a
    * sent/accepted one withdrawn, an applied one un-merged (`unmerge_request`: the request returns
    * to the unmet list and the person is notified).
@@ -358,16 +379,24 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
     }
     if (luggageBlocks(dropCtx, carId, req.has_luggage ? 1 : 0)) { toast.error(he.sadranBoard.luggageNeedsTrunkToast); return; }
     // R2B7: a drop ON a ride (any trip type) is a merge attempt: the merge flow when valid, else the reason.
-    const dropHost = droppedOnRideId ? rides.find((ride) => ride.id === droppedOnRideId && ride.car_id === carId && !servedOf(ride).some((entry) => entry.request_id === req.id)) : undefined;
+    const dropHost = droppedOnRideId ? rides.find((ride) => ride.id === droppedOnRideId && ride.status !== "cancelled" && ride.car_id === carId && !servedOf(ride).some((entry) => entry.request_id === req.id)) : undefined;
     if (dropHost?.id && dropHost.starts_at && dropHost.ends_at) {
       if (isReservation(dropHost)) { toast.error(he.sadranBoard.dropOnReservation); return; }
       // R3B20: a round-trip guest (no preset leg, not a single-leg card) joins both legs when both fit.
       let mergeLeg = mergeLegForCard(req, item.leg ?? null);
       if (!item.leg && !mergeLegOptions(req).preset && mergeRefusalReason(dropCtx, dropHost, req, "both") === null) mergeLeg = "both";
       const refusal = mergeRefusalReason(dropCtx, dropHost, req, mergeLeg);
-      if (refusal) { toast.error(he.mergedRide.invalid[refusal]); return; }
+      if (refusal === "private_car") { toast.error(he.mergedRide.invalid[refusal]); return; }
+      let openLeg = mergeLeg;
+      let openAnchor: "out" | "return" | null = item.leg ?? null;
+      if (refusal) {
+        // R7B4: the twin is only advisory - the server's per-leg verdict decides whether (and on which leg) the popup opens.
+        const chosen = await serverMergeLeg(dropHost.id, req, mergeLeg, openAnchor);
+        if (!chosen) return;
+        openLeg = chosen.leg; openAnchor = chosen.anchor;
+      }
       // REQ §13.94 (G10): the popup shows the merged ride; the payload is legs only (the host keeps its start).
-      openMerge(req.id, dropHost.id, mergeLeg, item.leg ?? null);
+      openMerge(req.id, dropHost.id, openLeg, openAnchor);
       return;
     }
     const connects = connectsOtherLeg(dropCtx, item, carId);
@@ -377,7 +406,8 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
     // R2B7: never create a ride that overlaps another ride on the car (reservations and blocks included).
     if (wouldOverlap(window, rides.filter((ride) => ride.car_id === carId && ride.status !== "cancelled" && ride.starts_at && ride.ends_at)
       .map((ride) => ({ startsAt: ride.starts_at!, endsAt: ride.ends_at! })), 0)) {
-      toast.error(he.mergedRide.invalid.time_overlap); return;
+      // R7B10: a plain placement (nothing to merge into) - never worded as a merged ride.
+      toast.error(he.sadranBoard.placementOverlap); return;
     }
     if (!seatsFit(dropCtx, carId, connects ? { adults: req.adults, childSeats: req.child_seats, boosters: req.boosters } : unmetRequestPassengers(req))) {
       toast.error(he.sadranBoard.dragInvalidSeatsToast);
@@ -507,8 +537,15 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
         if (!host.driver_id || host.needs_driver) { toast.error(he.boardCoordination.mergeNeedsDriver); return; }
         const guestRequest = requestsData.find((r) => r.id === driverEntry.request_id);
         const invalidMerge = guestRequest ? mergeRefusalReason(dropCtx, host, guestRequest, driverEntry.leg ?? "both", [ride.id]) : null;
-        if (invalidMerge) { toast.error(he.mergedRide.invalid[invalidMerge]); return; }
-        openMerge(driverEntry.request_id, droppedOnRideId, driverEntry.leg ?? "both", driverEntry.leg === "return" ? "return" : driverEntry.leg === "out" ? "out" : null);
+        if (invalidMerge === "private_car") { toast.error(he.mergedRide.invalid[invalidMerge]); return; }
+        let openLeg: MergeLeg = driverEntry.leg ?? "both";
+        let openAnchor: "out" | "return" | null = driverEntry.leg === "return" ? "return" : driverEntry.leg === "out" ? "out" : null;
+        if (invalidMerge && guestRequest) {
+          const chosen = await serverMergeLeg(droppedOnRideId, guestRequest, openLeg, openAnchor);
+          if (!chosen) return;
+          openLeg = chosen.leg; openAnchor = chosen.anchor;
+        }
+        openMerge(driverEntry.request_id, droppedOnRideId, openLeg, openAnchor);
       }
       return;
     }
@@ -695,6 +732,17 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
     }
     switch (suggestion.kind) {
       case "shiftBeyondFlex":
+        // REQ §13.105 / QA run 6 R5B3: the card's own car (and, on one card of a split הקפצה, its leg) goes with the
+        // shift, so accepting it places exactly that leg on that car (`_shift_place_on_car`) instead of leaving it unmet.
+        goToComposer({
+          requestId: item.request.id, rideId: null, type: "shift",
+          payload: dropCtx.weekStartMs != null
+            ? unmetShiftPayload(item.request, suggestion.carId, {
+              startsAt: slotToIso(suggestion.window.start, dropCtx.weekStartMs), endsAt: slotToIso(suggestion.window.end, dropCtx.weekStartMs),
+            }, undefined, item.leg)
+            : { car_id: suggestion.carId, ...(item.leg ? { leg: item.leg } : {}) },
+        });
+        return;
       case "convertToRoundTrip":
         goToComposer({ requestId: item.request.id, rideId: null, type: "shift", payload: {} });
         return;

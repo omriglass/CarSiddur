@@ -212,3 +212,40 @@ describe("roundUpRideEnd", () => {
     expect(new Date(roundUpRideEnd(Date.parse("2026-10-11T18:00:00.000Z"), Date.parse("2026-10-11T21:30:00.000Z"))).toISOString()).toBe("2026-10-11T20:59:00.000Z");
   });
 });
+
+describe("R6B5: a reversed one-way guest rides the host's return leg", () => {
+  const point = (leg: "out" | "return", position: number, placeId: string, kind: "origin" | "destination") =>
+    ({ leg, position, placeId, placeText: null, name: placeId, requestId: "host", kind, eta: null });
+  const roundTrip = [
+    point("out", 0, "H", "origin"), point("out", 1, "D", "destination"),
+    point("return", 0, "D", "origin"), point("return", 1, "H", "destination"),
+  ];
+  it("D -> H into an H -> D -> H ride boards at D on the return leg, adds no driving and keeps the window", () => {
+    const merged = mergePassengerIntoRoute({
+      route: roundTrip, startsAt: START, endsAt: END, hop,
+      passenger: { requestId: "r2", originId: "D", destinationId: "H", leg: "out", oneWay: true },
+    });
+    expect(merged.valid).toBe(true);
+    expect(merged.swapped).toBe(true);
+    expect(merged.boardLeg).toBe("return");
+    expect(merged.addedMinutes).toBe(0);
+    expect(merged.startsAt).toBe(START);
+    expect(merged.endsAt).toBe(END);
+  });
+  it("is still refused when the one-way is not the exact reverse (boards where the out leg ends)", () => {
+    const merged = mergePassengerIntoRoute({
+      route: roundTrip, startsAt: START, endsAt: END, hop,
+      passenger: { requestId: "r2", originId: "D", destinationId: "T", leg: "out", oneWay: true },
+    });
+    expect(merged.valid).toBe(false);
+    expect(merged.invalid).toBe("boards_at_end");
+    expect(merged.swapped).toBeFalsy();
+  });
+  it("a two-way request (not oneWay) boarding at D on the out leg is refused as before", () => {
+    const merged = mergePassengerIntoRoute({
+      route: roundTrip, startsAt: START, endsAt: END, hop,
+      passenger: { requestId: "r2", originId: "D", destinationId: "H", leg: "out" },
+    });
+    expect(merged.invalid).toBe("boards_at_end");
+  });
+});

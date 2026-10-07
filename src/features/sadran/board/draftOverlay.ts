@@ -82,6 +82,17 @@ export function resolveDraftPlacement(
   }
 
   if (proposal.type === "shift") {
+    // REQ §13.105 d: a fewer-days shift is drawn on the span's own day(s) on the chosen car, not on the series head's day.
+    const spanRaw = payload.series_span && typeof payload.series_span === "object" ? (payload.series_span as Record<string, unknown>) : null;
+    const spanStart = spanRaw ? str(spanRaw.depart_at) : null;
+    const spanEnd = spanRaw ? str(spanRaw.return_at) : null;
+    const spanCar = str(payload.car_id);
+    if (spanStart && spanEnd && spanCar && Date.parse(spanEnd) > Date.parse(spanStart)) {
+      const spanRide = rideServing(rides, request.id, proposal.ride_id);
+      return { ...common, type: "shift", carId: spanCar, startsAt: spanStart, endsAt: spanEnd,
+        originId: request.origin_id ?? homeId ?? null, destinationId: request.origin_id ?? homeId ?? null,
+        hostRideId: null, replacesRideId: spanRide?.id ?? null };
+    }
     const departAt = str(payload.depart_at);
     const returnAt = str(payload.return_at);
     // R4B4: one leg of a split drop-off is drawn as that leg only, never as the whole request window

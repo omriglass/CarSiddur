@@ -16,6 +16,7 @@ import { useWeekExcelExport } from "../../export/useWeekExcelExport";
 import { CancelPublicationAction } from "../../publish/components/BoardPublicationActions";
 import { he } from "@/i18n/he";
 
+import { AutoFillDialog } from "./AutoFillDialog";
 import { FullResolveAction } from "./FullResolveAction";
 import { SetWeekCloseAction } from "./SetWeekCloseAction";
 
@@ -27,7 +28,11 @@ interface BoardActionsMenuProps {
   homeDestinationId: string | null;
   policy: ActivePolicy | null;
   onPolicyUsed: (policyVersionId: string) => void;
-  onAutoSolveRemaining: () => void;
+  onAutoSolveRemaining: (day: string | null) => void;
+  /** Per-day autofill picker (REQ §13.109 b). */
+  days: string[];
+  selectedDay: string;
+  openCount: (day: string | null) => number;
   autoSolving: boolean;
 }
 
@@ -41,10 +46,11 @@ interface BoardActionsMenuProps {
  * old inline row.
  */
 export function BoardActionsMenu({
-  departmentId, weekStart, homeDestinationId, policy, onPolicyUsed, onAutoSolveRemaining, autoSolving,
+  departmentId, weekStart, homeDestinationId, policy, onPolicyUsed, onAutoSolveRemaining, autoSolving, days, selectedDay, openCount,
 }: BoardActionsMenuProps) {
   const navigate = useNavigate();
   const [deviationsOpen, setDeviationsOpen] = useState(false);
+  const [autoFillOpen, setAutoFillOpen] = useState(false);
   const { download: downloadExcel, loading: exporting } = useWeekExcelExport(departmentId, weekStart);
 
   return <>
@@ -63,7 +69,7 @@ export function BoardActionsMenu({
           {exporting ? he.excelExport.loading : he.excelExport.button}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuItem disabled={autoSolving} onSelect={onAutoSolveRemaining}>
+        <DropdownMenuItem disabled={autoSolving} onSelect={(e) => { e.preventDefault(); setAutoFillOpen(true); }}>
           <PlayCircle className="me-2 size-4" aria-hidden="true" />
           {autoSolving ? he.sadranDashboard.solving : he.action.autoSolveRemaining}
         </DropdownMenuItem>
@@ -120,6 +126,15 @@ export function BoardActionsMenu({
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
+    <AutoFillDialog
+      open={autoFillOpen}
+      onOpenChange={setAutoFillOpen}
+      days={days}
+      defaultDay={selectedDay}
+      openCount={openCount}
+      loading={autoSolving}
+      onConfirm={(day) => { onAutoSolveRemaining(day); setAutoFillOpen(false); }}
+    />
     <RequestDeviationsDialog departmentId={departmentId} weekStart={weekStart} open={deviationsOpen} onOpenChange={setDeviationsOpen} />
   </>;
 }

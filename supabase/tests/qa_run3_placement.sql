@@ -201,6 +201,9 @@ begin
 
   -- R3B10: ask-to-join never lands on another car, and starts where the asked ride starts
   update public.department_members set default_origin_id=dest where department_id=dept and profile_id=p103;
+  -- (R6B7: 103 is already on rA, so the ask goes to another ride of 104's)
+  insert into public.rides(department_id,week_start,car_id,starts_at,ends_at,origin_id,destination_id,driver_id,status,is_pinned,pin_reason,created_by)
+    values(dept,w,carA,t+interval '24 hours',t+interval '27 hours',home,home,p104,'confirmed',true,'TEST',manager) returning id into rA;
   perform set_config('request.jwt.claims',jsonb_build_object('sub',p103,'role','authenticated')::text,true);
   res:=public.submit_request(jsonb_build_object('department_id',dept,'week_start',w,'destination_id',dest,'ride_type_id',typ,'trip_shape','round_trip',
     'adults',1,'depart_at',t+interval '24 hours','return_at',t+interval '27 hours','join_ride_id',rA));

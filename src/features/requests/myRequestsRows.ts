@@ -1,8 +1,9 @@
-import { he } from "@/i18n/he";
+import { he, tv } from "@/i18n/he";
 import { routeLabel } from "@/lib/routeLabel";
 import { routeStopNames } from "@/lib/routeStops";
 import type { MyRequestRow } from "./api";
 import { groupSeries } from "./series";
+import { isPartiallyPlaced, legCoverage, ownTimesFromLegs } from "./publishedOutcome";
 
 /**
  * Pure row-shaping helpers for the member's own request list, shared by `/my` (Home,
@@ -50,8 +51,14 @@ export function originDestinationLabel(
  * whole ride window (the ride may also carry other people's legs).
  */
 export function ownLegWindow(
-  row: Pick<MyRequestRow, "departAt" | "returnAt" | "ride"> & { seriesLegs?: unknown },
+  row: Pick<MyRequestRow, "departAt" | "returnAt" | "ride" | "legs"> & { seriesLegs?: unknown },
 ): { departAt: string | null; returnAt: string | null } {
+  // R7B8-2: with per-leg data the member's own times come from the ride carrying each leg (a merge may have moved them);
+  // a leg with no ride keeps the requested time.
+  if (!row.seriesLegs && row.legs?.length && row.departAt && row.returnAt) {
+    const own = ownTimesFromLegs(row.legs);
+    return { departAt: own.departAt ?? row.departAt, returnAt: own.returnAt ?? row.returnAt };
+  }
   const singleLeg = !row.seriesLegs && (!row.departAt || !row.returnAt);
   if (singleLeg) return { departAt: row.departAt, returnAt: row.returnAt };
   return { departAt: row.ride?.startsAt ?? row.departAt, returnAt: row.ride?.endsAt ?? row.returnAt };
@@ -136,6 +143,18 @@ export function confirmDialogLabel(action: ConfirmAction | null): string {
 }
 
 /** R4B11: a הקפצה carried by its own chauffeur ride joined nobody - "assigned", not "merged" (משולבת). */
-export function displayStatus(row: Pick<DisplayRow, "status" | "tripType" | "ride">): DisplayRow["status"] {
+export function displayStatus(row: Pick<DisplayRow, "status" | "tripType" | "ride" | "legs" | "departAt" | "returnAt" | "seriesLegs">): DisplayRow["status"] {
+  // R6B12/R7B8-3: one placed leg of a two-leg request is not "assigned" — the other leg waits.
+  if ((row.status === "assigned" || row.status === "merged") && !row.seriesLegs
+    && isPartiallyPlaced(legCoverage(row.legs ?? [], !!row.departAt, !!row.returnAt))) return "waitlisted";
   return row.status === "merged" && row.tripType === "drop_off" && row.ride?.isChauffeur ? "assigned" : row.status;
+}
+
+/** "הלוך: שובץ · חזור: ממתין" for a two-leg request with exactly one placed leg; null otherwise (R6B12, R7B8-3). */
+export function legStateLine(row: Pick<DisplayRow, "legs" | "departAt" | "returnAt" | "seriesLegs">): string | null {
+  if (row.seriesLegs) return null;
+  const coverage = legCoverage(row.legs ?? [], !!row.departAt, !!row.returnAt);
+  if (!isPartiallyPlaced(coverage) || !coverage) return null;
+  const word = (placed: boolean) => (placed ? he.request.legPlaced : he.request.legWaiting);
+  return tv("request.legStateLine", { out: word(coverage.out), ret: word(coverage.ret) });
 }

@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { he } from "@/i18n/he";
 import type { PublicationDay } from "../../api";
@@ -32,6 +32,7 @@ function show() {
 }
 
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-09-12T08:00:00Z") });
   mocks.publish.mockReset().mockResolvedValue("published-version");
   mocks.readiness = days.map((day) => ({
     day, ready: true, published: false, requestCount: 1, unresolvedRequests: 0, incompleteAssignments: 0,
@@ -39,7 +40,18 @@ beforeEach(() => {
   }));
 });
 
+afterEach(() => { vi.useRealTimers(); });
+
 describe("publication choices", () => {
+  it("'choose days' pre-ticks only ready, unpublished, non-past days (R7U2)", () => {
+    mocks.readiness[2] = { ...mocks.readiness[2]!, ready: false, unresolvedRequests: 1 };
+    mocks.readiness[3] = { ...mocks.readiness[3]!, published: true };
+    show();
+    fireEvent.click(screen.getByRole("button", { name: he.publicationFlow.selectDays }));
+    // days 13..19; "today" is the 12th, so only 2 (not ready) and 3 (published) are excluded
+    expect(screen.getAllByRole("checkbox", { checked: true })).toHaveLength(5);
+  });
+
   it("refuses a day with unsent drafts and says why (REQ §13.94)", () => {
     mocks.readiness = mocks.readiness.map((day, index) => index === 2 ? { ...day, ready: false, draftProposals: 1 } : day);
     show();
@@ -91,7 +103,10 @@ describe("publication choices", () => {
     show();
     expect(screen.getByRole("button", { name: he.publicationFlow.allYes })).toBeDisabled();
     fireEvent.click(screen.getByRole("button", { name: he.publicationFlow.selectDays }));
-    expect(screen.getByRole("button", { name: he.publicationFlow.selectedPublish })).toBeDisabled();
+    // the conflicted day is neither pre-ticked nor tickable
+    const boxes = screen.getAllByRole("checkbox");
+    expect(boxes[2]).not.toBeChecked();
+    expect(boxes[2]).toBeDisabled();
     expect(mocks.publish).not.toHaveBeenCalled();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });

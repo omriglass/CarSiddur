@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import type { FixedRide } from "@/solver";
-import { boardRideToFixedRide, buildApplyPayload, computeFullResolveDiff, draftFixedRides, selectOpenRequests, servedOf } from "./applySolve";
+import { boardRideToFixedRide, buildApplyPayload, computeFullResolveDiff, draftFixedRides, restrictInputToDay, selectOpenRequests, servedOf } from "./applySolve";
 import { solve } from "@/solver";
+import { dateKey } from "@/lib/time";
 import { baseInput, makeCar, makeRequest, slotMs, WEEK_START_MS } from "@/solver/__fixtures__/gen";
 
 import type { RequestRow, BoardRide, ProposalRow } from "./api";
@@ -86,6 +87,17 @@ it("keeps a claimed automatic relocation ride (auto_relocation with a driver) as
   } as unknown as BoardRide, WEEK_START_MS);
   expect(fixed).not.toBeNull();
   expect(fixed?.id).toBe("relocation-claimed");
+});
+
+it("keeps a driverless Sadran car move (pin_reason CAR_MOVE) as a fixed, location-deciding ride (R6B6)", () => {
+  const fixed = boardRideToFixedRide({
+    id: "car-move", car_id: "car", driver_id: null, auto_relocation: true, pin_reason: "CAR_MOVE",
+    starts_at: new Date(slotMs(32)).toISOString(), ends_at: new Date(slotMs(40)).toISOString(),
+    origin_id: "away", destination_id: "home", served: [],
+  } as unknown as BoardRide, WEEK_START_MS);
+  expect(fixed?.id).toBe("car-move");
+  expect(fixed?.destinationId).toBe("home");
+  expect(fixed?.locationNeutral).toBeUndefined();
 });
 
 it("solves around coordinator-approved adjacent fixed rides while retaining normal buffers for new rides", () => {
@@ -302,5 +314,17 @@ describe("draftFixedRides overlap handling", () => {
   it("skips a draft that genuinely overlaps another fixed ride instead of crashing", () => {
     const fixed = draftFixedRides([draft], [request], [], [own, other], [{ id: "dest", travel_minutes: 30 }], "home", WEEK_START_MS);
     expect(fixed.map((f) => f.id)).toEqual(["ride2"]);
+  });
+});
+
+describe("restrictInputToDay (per-day autofill, R7U1)", () => {
+  it("keeps only requests anchored on the chosen Jerusalem day", () => {
+    const input = baseInput({ requests: [
+      makeRequest({ id: "a", departureMs: slotMs(40) }),
+      makeRequest({ id: "b", departureMs: slotMs(2 * 96 + 40) }),
+    ] });
+    const dayOfA = dateKey(new Date(slotMs(40)));
+    restrictInputToDay(input, dayOfA);
+    expect(input.requests.map((r) => r.id)).toEqual(["a"]);
   });
 });

@@ -63,7 +63,7 @@ var TEMPLATES = {
   UNMET_NO_CAR_SEATS_BUSY: "\u05DB\u05DC \u05D4\u05E8\u05DB\u05D1\u05D9\u05DD \u05E2\u05DD \u05DE\u05D5\u05E9\u05D1\u05D9 \u05D9\u05DC\u05D3\u05D9\u05DD \u05DE\u05EA\u05D0\u05D9\u05DE\u05D9\u05DD \u05EA\u05E4\u05D5\u05E1\u05D9\u05DD \u05D1\u05D6\u05DE\u05DF \u05D4\u05E0\u05E1\u05D9\u05E2\u05D4",
   UNMET_NO_CAR_LUGGAGE: "\u05D0\u05D9\u05DF \u05E8\u05DB\u05D1 \u05E2\u05DD \u05EA\u05D0 \u05DE\u05D8\u05E2\u05DF \u05DE\u05EA\u05D0\u05D9\u05DD \u05DC\u05DB\u05DE\u05D5\u05EA \u05D4\u05DE\u05D8\u05E2\u05DF",
   UNMET_NO_RELAY_PARTNER: "\u05D0\u05D9\u05DF \u05DE\u05D9 \u05E9\u05D9\u05D7\u05D6\u05D9\u05E8/\u05D9\u05D1\u05D9\u05D0 \u05D0\u05EA \u05D4\u05E8\u05DB\u05D1 \u05DE{dest}: \u05DC\u05D0 \u05E0\u05DE\u05E6\u05D0/\u05D4 \u05E0\u05D4\u05D2/\u05EA \u05E9\u05D9\u05D7\u05D6\u05D9\u05E8/\u05D4 \u05D0\u05D5\u05EA\u05D5, \u05D5\u05D4\u05E0\u05E1\u05D9\u05E2\u05D4 \u05D1\u05DB\u05D9\u05D5\u05D5\u05DF \u05D0\u05D7\u05D3 \u05EA\u05E9\u05D0\u05D9\u05E8 \u05D0\u05D5\u05EA\u05D5 \u05E9\u05DD",
-  UNMET_NEEDS_DRIVER: "\u05D0\u05D9\u05DF \u05E0\u05E1\u05D9\u05E2\u05D4 \u05DE\u05EA\u05D0\u05D9\u05DE\u05D4 \u05DC\u05D4\u05E6\u05D8\u05E8\u05E3 \u05D0\u05DC\u05D9\u05D4; \u05D3\u05E8\u05D5\u05E9/\u05D4 \u05E0\u05D4\u05D2/\u05EA \u05DE\u05EA\u05E0\u05D3\u05D1/\u05EA \u05DC\u05D4\u05E1\u05E2\u05D4 \u05DC{dest} \u05D1-{dep}",
+  UNMET_NEEDS_DRIVER: "\u05D0\u05D9\u05DF \u05E0\u05E1\u05D9\u05E2\u05D4 \u05DE\u05EA\u05D0\u05D9\u05DE\u05D4 \u05DC\u05D4\u05E6\u05D8\u05E8\u05E3 \u05D0\u05DC\u05D9\u05D4; \u05D3\u05E8\u05D5\u05E9/\u05D4 \u05E0\u05D4\u05D2/\u05EA \u05DE\u05EA\u05E0\u05D3\u05D1/\u05EA \u05DC\u05D4\u05E1\u05E2\u05D4 \u05DC{dest}",
   UNMET_SERIES_NO_CAR: "\u05D0\u05D9\u05DF \u05E8\u05DB\u05D1 \u05E4\u05E0\u05D5\u05D9 \u05DC\u05DB\u05DC \u05D9\u05DE\u05D9 \u05D4\u05D1\u05E7\u05E9\u05D4 \u05D4\u05E8\u05D1-\u05D9\u05D5\u05DE\u05D9\u05EA ({index}/{count})",
   UNMET_NO_CAR_AT_ORIGIN: "\u05D0\u05D9\u05DF \u05E8\u05DB\u05D1 \u05E4\u05E0\u05D5\u05D9 \u05E9\u05E0\u05DE\u05E6\u05D0 \u05D1{origin} \u05DB\u05D3\u05D9 \u05DC\u05E6\u05D0\u05EA \u05DE\u05E9\u05DD \u05DC{dest}",
   UNMET_FREE_TEXT_ORIGIN: "\u05E0\u05E7\u05D5\u05D3\u05EA \u05D4\u05D9\u05E6\u05D9\u05D0\u05D4 \u05D4\u05D9\u05D0 \u05D8\u05E7\u05E1\u05D8 \u05D7\u05D5\u05E4\u05E9\u05D9 \u05D5\u05DC\u05D0 \u05DE\u05E7\u05D5\u05DD \u05DE\u05D5\u05DB\u05E8; \u05DC\u05D0 \u05E0\u05D9\u05EA\u05DF \u05DC\u05E9\u05D1\u05E5 \u05E0\u05E1\u05D9\u05E2\u05D4 \u05DE\u05DE\u05E0\u05D4 \u05D0\u05D5\u05D8\u05D5\u05DE\u05D8\u05D9\u05EA",
@@ -1979,18 +1979,19 @@ function cheapestInsertion(lookup, route, a, b, stopMinutes, limits) {
         addedMinutes: added,
         addedKm,
         boardArrivalMinutes: cost.arrival[aIdx],
-        alightTailMinutes: cost.minutes - cost.arrival[bIdx]
+        alightTailMinutes: cost.minutes - cost.arrival[bIdx],
+        boardTailMinutes: cost.minutes - cost.arrival[aIdx]
       };
     }
   }
   return best;
 }
 var slotsCeil = (minutes) => minutes <= 0 ? 0 : Math.ceil(minutes / 15);
-function sideFor(params, hostRequest, guest, dir) {
+function sideFor(params, hostRequest, guest, dir, forward = dir === "out") {
   const lookup = { travel: params.travel, homeLocationId: params.homeLocationId, destinations: params.destinations, config: params.config };
   const route = legRoute(lookup, hostRequest, dir);
-  const a = dir === "out" ? guest.originId : guest.destinationId;
-  const b = dir === "out" ? guest.destinationId : guest.originId;
+  const a = forward ? guest.originId : guest.destinationId;
+  const b = forward ? guest.destinationId : guest.originId;
   const insertion = cheapestInsertion(lookup, route, a, b, resolveStopMinutes(params.config), params.config.detour);
   if (!insertion) return null;
   return { insertion, addedSlots: slotsCeil(insertion.addedMinutes) };
@@ -2008,17 +2009,23 @@ function findMergeHosts(params) {
     if (!fits(car, combinedPassengers) || !luggageFits(car, combinedLuggage)) continue;
     const hostNr = params.hostDriverRequests.get(host.rideId);
     const hostRequest = hostNr ? hostNr.request : { originId: host.originId, destinationId: host.requestDestinationId };
-    const mergesOut = leg === "out" || leg === "both";
-    const mergesReturn = leg === "return" || leg === "both";
+    const lookup = { travel: params.travel, homeLocationId: params.homeLocationId, destinations: params.destinations, config: params.config };
+    const hostOutRoute = legRoute(lookup, hostRequest, "out");
+    const hostReturnRoute = legRoute(lookup, hostRequest, "return");
+    const reversed = leg === "out" && guest.request.tripShape === "one_way_to" && host.legSide === "both" && !!guest.originId && !!guest.destinationId && guest.originId === hostOutRoute[hostOutRoute.length - 1]?.locationId && guest.destinationId === hostReturnRoute[hostReturnRoute.length - 1]?.locationId;
+    const mergesOut = !reversed && (leg === "out" || leg === "both");
+    const mergesReturn = reversed || leg === "return" || leg === "both";
     const out = mergesOut ? sideFor(params, hostRequest, guest, "out") : null;
-    const ret = mergesReturn ? sideFor(params, hostRequest, guest, "return") : null;
+    const ret = mergesReturn ? sideFor(params, hostRequest, guest, "return", reversed) : null;
     if (mergesOut && !out || mergesReturn && !ret) continue;
     const addOut = out?.addedSlots ?? 0;
     const addRet = ret?.addedSlots ?? 0;
     const etaOutOf = (baseStart2) => baseStart2 - addOut + Math.round((out?.insertion.boardArrivalMinutes ?? 0) / 15);
-    const etaRetOf = (baseEnd2) => baseEnd2 + addRet - Math.round((ret?.insertion.alightTailMinutes ?? 0) / 15);
+    const retTail = reversed ? ret?.insertion.boardTailMinutes ?? 0 : ret?.insertion.alightTailMinutes ?? 0;
+    const retFlex = reversed ? guest.flexDep : guest.flexRet;
+    const etaRetOf = (baseEnd2) => baseEnd2 + addRet - Math.round(retTail / 15);
     const okOut = !out || etaOutOf(host.window.start) >= guest.flexDep[0] && etaOutOf(host.window.start) <= guest.flexDep[1];
-    const okRet = !ret || etaRetOf(host.window.end) >= guest.flexRet[0] && etaRetOf(host.window.end) <= guest.flexRet[1];
+    const okRet = !ret || etaRetOf(host.window.end) >= retFlex[0] && etaRetOf(host.window.end) <= retFlex[1];
     let baseStart = host.window.start;
     let baseEnd = host.window.end;
     let hostShift;
@@ -2026,9 +2033,9 @@ function findMergeHosts(params) {
       if (host.isFixed || host.legSide !== "both" || !hostNr) continue;
       const clamp2 = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
       const bootOut = Math.round((out?.insertion.boardArrivalMinutes ?? 0) / 15);
-      const tailRet = Math.round((ret?.insertion.alightTailMinutes ?? 0) / 15);
+      const tailRet = Math.round(retTail / 15);
       if (out) baseStart = clamp2(baseStart, guest.flexDep[0] + addOut - bootOut, guest.flexDep[1] + addOut - bootOut);
-      if (ret) baseEnd = clamp2(baseEnd, guest.flexRet[0] - addRet + tailRet, guest.flexRet[1] - addRet + tailRet);
+      if (ret) baseEnd = clamp2(baseEnd, retFlex[0] - addRet + tailRet, retFlex[1] - addRet + tailRet);
       if (baseEnd - baseStart < hostNr.minDurationSlots) continue;
       if (baseStart < hostNr.flexDep[0] || baseStart > hostNr.flexDep[1]) continue;
       if (baseEnd < hostNr.flexRet[0] || baseEnd > hostNr.flexRet[1]) continue;
@@ -2058,7 +2065,7 @@ function findMergeHosts(params) {
     const detourKm = Math.max(kmOut ?? 0, kmRet ?? 0);
     const guestStartEta = out ? etaOutOf(baseStart) : void 0;
     const guestEndEta = ret ? etaRetOf(baseEnd) : void 0;
-    const shiftCostGuest = (guestStartEta === void 0 ? 0 : slotsToMinutes(Math.abs(guestStartEta - guest.window.start))) + (guestEndEta === void 0 ? 0 : slotsToMinutes(Math.abs(guestEndEta - guest.window.end)));
+    const shiftCostGuest = (guestStartEta === void 0 ? 0 : slotsToMinutes(Math.abs(guestStartEta - guest.window.start))) + (guestEndEta === void 0 ? 0 : slotsToMinutes(Math.abs(guestEndEta - (reversed ? guest.window.start : guest.window.end))));
     const shiftCostHost = hostShift ? Math.abs(hostShift.departureMin) + Math.abs(hostShift.returnMin) : 0;
     const addedTotal = (out?.insertion.addedMinutes ?? 0) + (ret?.insertion.addedMinutes ?? 0);
     const cost = addedTotal + shiftCostGuest + shiftCostHost;
@@ -2077,6 +2084,7 @@ function findMergeHosts(params) {
       confidence,
       proposedDriverRequestId,
       boardAtLocationId: leg === "return" ? guest.destinationId : guest.originId,
+      reversedOneWay: reversed || void 0,
       hostWindowBefore: window.start !== host.window.start || window.end !== host.window.end ? host.window : void 0,
       addedOutMinutes: out && out.insertion.addedMinutes > 0 ? out.insertion.addedMinutes : void 0,
       addedReturnMinutes: ret && ret.insertion.addedMinutes > 0 ? ret.insertion.addedMinutes : void 0
@@ -3297,7 +3305,9 @@ function changeOriginSuggestion(nr, ctx) {
     const tl = ctx.timelines.get(car.id);
     if (!tl) continue;
     for (const gap of tl.gaps()) {
-      if (gap.locationId === nr.originId) continue;
+      if (gap.locationId === nr.originId || gap.locationId === nr.destinationId) continue;
+      const gapName = placeName(ctx.input, gap.locationId);
+      if (gapName !== "" && gapName === placeName(ctx.input, nr.originId, nr.request.originText)) continue;
       const endLocationId = nr.tripType === "one_way" ? nr.destinationId : gap.locationId;
       if (gap.window.start <= nr.window.start && nr.window.end <= gap.window.end && tl.isFree(nr.window, gap.locationId, void 0, endLocationId)) {
         return {

@@ -90,6 +90,15 @@ export const heSadran = {
     missingDriverPublish: "יש נסיעות שממתינות לנהג/ת. הן יסומנו באדום גם בסידור שיפורסם.",
   },
   sadranBoard: {
+    autoFill: {
+      title: "השלמה אוטומטית",
+      description: "בחרו איזה יום להשלים. רק בקשות פתוחות ישובצו; שיבוצים קיימים לא ישתנו.",
+      wholeWeek: "כל השבוע",
+      confirmDay: "{{count}} בקשות פתוחות ביום {{day}} ישובצו.",
+      confirmWeek: "{{count}} בקשות פתוחות בכל השבוע ישובצו.",
+      confirmNone: "אין בקשות פתוחות לשיבוץ בבחירה הזו.",
+      confirmAction: "השלם",
+    },
     unassignLane: "גררו לכאן להסרת שיבוץ",
     phantomCar: "רכב חסר {{number}}",
     wrongDay: "יש לשבץ את הבקשה ביום המקורי שלה",
@@ -175,6 +184,7 @@ export const heSadran = {
     dragHandleLabel: "גרור/י ללוח",
     dragOneWayUnsupported: "גרירה תשבץ נסיעה חד־כיוונית או תכין הצעת איחוד או חלופה לפי זמינות הרכב",
     dragPlacedToast: "שובץ/ה ל{{car}} {{start}}",
+    placementOverlap: "אי אפשר לשבץ שם — הבקשה מתנגשת בנסיעה אחרת באותו רכב",
     dragInvalidSeatsToast: "לרכב הזה אין מספיק מקומות לנוסעי הבקשה הזו",
     dropOnDraftBlock: "זו טיוטה שעדיין לא נשלחה — אפשר לשחרר על נסיעה אחרת, או לפתוח את הטיוטה",
     dropOnReservation: "אי אפשר לצרף בקשה לשמירת זמן — אפשר לשחרר על נסיעה אחרת או על שעה פנויה",
@@ -347,6 +357,7 @@ export const heSadran = {
     groupMessageLabel: "הודעה כללית לצירוף (אופציונלי)",
     blockedByConflicts: "לא ניתן לפרסם — יש התנגשויות בלוח",
     successTitle: "הסידור פורסם",
+    successDays: "הסידור פורסם לימים: {{days}}",
     copySummarySuccess: "הסיכום הועתק",
     // REQ §13.75 / DATA_MODEL.md §7.4a: `unresolvedRequests` no longer blocks publication
     // (`incompleteAssignments` does) — this note explains why to the Sadran.
@@ -443,6 +454,8 @@ export const heSadran = {
     selectAria: "נהג/ת לנסיעה",
     assign: "שבץ/י נהג/ת",
     assigned: "{{name}} שובץ/ה כנהג/ת — הנוסעים עודכנו",
+    /** R6B15: the day is not published, so nobody is told yet. */
+    assignedUnpublished: "{{name}} שובץ/ה כנהג/ת — נשמר (הנוסעים יעודכנו עם פרסום הסידור)",
     current: "נהג/ת מתנדב/ת: {{name}}",
     unassign: "הסר/י נהג/ת",
     unassigned: "הנהג/ת הוסר/ה — הנסיעה מחכה שוב לנהג/ת",
@@ -457,9 +470,9 @@ export const heSadran = {
     legBoth: "הלוך וחזור",
     legReturn: "חזור בלבד",
     estimated: "השעה המשוערת בעצירה שלהם:",
-    joinerOut: "הלוך: {time}",
-    joinerReturn: "חזור: {time}",
-    joinerChanged: "{time} (במקום {old})",
+    joinerOut: "הלוך: {{time}}",
+    joinerReturn: "חזור: {{time}}",
+    joinerChanged: "{{time}} (במקום {{old}})",
     timeChanges: "השעה תשתנה ל-",
     endsAt: "סיום משוער:",
     noRoute: "אי אפשר לחשב את זמן העצירה לנסיעה הזו",
@@ -481,6 +494,7 @@ export const heSadran = {
       car_unavailable: "אי אפשר לצרף — הרכב אינו זמין בשעות הנסיעה המאוחדת",
       time_overlap: "אי אפשר לצרף — הנסיעה המאוחדת מתנגשת בנסיעה אחרת באותו רכב",
       turnaround_conflict: "אי אפשר לצרף — הנסיעה המאוחדת לא משאירה זמן מעבר לפני הנסיעה הבאה ברכב",
+      turnaround_conflict_previous: "אי אפשר לצרף — הנסיעה המאוחדת מתחילה מוקדם מדי ולא משאירה זמן מעבר אחרי הנסיעה הקודמת ברכב",
       already_on_ride: "הבקשה כבר בנסיעה הזו (או שהצעה זהה כבר נשלחה)",
       // REQ item 108 (M1): reasons only the server's `merge_preview` can give.
       window: "אי אפשר לצרף — הנסיעה המאוחדת תחרוג מהיום של הנסיעה",

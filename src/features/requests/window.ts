@@ -4,6 +4,8 @@ export interface RequestWindow {
   phase: WeekPhase;
   open_at: string;
   close_at: string;
+  /** `weeks.published_days` (Jerusalem date keys) — the days a member may see outcomes for (REQ §13.109 a). */
+  published_days?: string[];
 }
 
 export function isRequestWindowOpen(window: RequestWindow | null | undefined, now = Date.now()): boolean {

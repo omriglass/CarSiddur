@@ -28,7 +28,7 @@ const TEMPLATES: Record<string, string> = {
   UNMET_NO_CAR_SEATS_BUSY: 'כל הרכבים עם מושבי ילדים מתאימים תפוסים בזמן הנסיעה',
   UNMET_NO_CAR_LUGGAGE: 'אין רכב עם תא מטען מתאים לכמות המטען',
   UNMET_NO_RELAY_PARTNER: 'אין מי שיחזיר/יביא את הרכב מ{dest}: לא נמצא/ה נהג/ת שיחזיר/ה אותו, והנסיעה בכיוון אחד תשאיר אותו שם',
-  UNMET_NEEDS_DRIVER: 'אין נסיעה מתאימה להצטרף אליה; דרוש/ה נהג/ת מתנדב/ת להסעה ל{dest} ב-{dep}',
+  UNMET_NEEDS_DRIVER: 'אין נסיעה מתאימה להצטרף אליה; דרוש/ה נהג/ת מתנדב/ת להסעה ל{dest}',
   UNMET_SERIES_NO_CAR: 'אין רכב פנוי לכל ימי הבקשה הרב-יומית ({index}/{count})',
   UNMET_NO_CAR_AT_ORIGIN: 'אין רכב פנוי שנמצא ב{origin} כדי לצאת משם ל{dest}',
   UNMET_FREE_TEXT_ORIGIN: 'נקודת היציאה היא טקסט חופשי ולא מקום מוכר; לא ניתן לשבץ נסיעה ממנה אוטומטית',

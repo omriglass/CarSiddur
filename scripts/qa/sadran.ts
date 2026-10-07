@@ -10,6 +10,7 @@ import { fetchProfilesByIds } from "@/features/sadran/api";
 import * as api from "@/features/sadran/api";
 import {
   buildApplyPayload, computeFullResolveDiff, gatherSolverContext, hashSolverInput, nowMs, runSolve, servedOf, servedToEditRideLegs, rideViaNames,
+  restrictInputToDay,
 } from "@/features/sadran/applySolve";
 import { publishWithScores } from "@/features/sadran/publish/publishWithScores";
 import { buildDraftInput, type ComposerPrefill } from "@/features/sadran/board/draftInput";
@@ -231,7 +232,7 @@ async function applyOutput(board: Board, mode: "remaining" | "full", args: Args)
   const context = await gatherSolverContext({ departmentId: board.scope.departmentId, weekStart: board.scope.weekStart, homeDestinationId: board.scope.homeDestinationId,
     policy: { policyId: policy.policyId, policyVersionId: policy.policyVersionId, versionNo: policy.versionNo, rules: policy.rules, settings: policy.settings }, mode });
   const day = flag(args, "day");
-  if (day) context.input.requests = context.input.requests.filter((r) => { const anchor = r.departureMs ?? r.returnMs; return anchor != null && dateKey(new Date(anchor)) === day; });
+  if (day) restrictInputToDay(context.input, day);
   const startedAtMs = nowMs();
   const output = runSolve(context.input);
   const finishedAtMs = nowMs();
@@ -427,7 +428,15 @@ async function cmdPropose(board: Board, args: Args): Promise<void> {
     const startsAt = flag(args, "depart") ? instantAt(day0, flag(args, "depart")!) : request.depart_at;
     const endsAt = flag(args, "return") ? instantAt(day0, flag(args, "return")!) : request.return_at;
     if (rideId) payload.ride_id = rideId;
-    if (flag(args, "car") && startsAt) {
+    // R5B3 (QA run 6): a drop-off shift given ONE time (or --leg) is a one-leg shift, as the board sends it - it
+    // carries the car and that leg only, so the other leg stays where it is.
+    const oneLegArg = flag(args, "leg") as "out" | "return" | undefined;
+    const oneLeg = tripTypeOf(request) === "drop_off" ? (oneLegArg ?? (flag(args, "return") && !flag(args, "depart") ? "return" : flag(args, "depart") && !flag(args, "return") ? "out" : undefined)) : undefined;
+    if (oneLeg && flag(args, "car")) {
+      payload.car_id = resolveCar(board, flag(args, "car")!).id;
+      payload.leg = oneLeg;
+      if (oneLeg === "return") payload.return_at = endsAt; else payload.depart_at = startsAt;
+    } else if (flag(args, "car") && startsAt) {
       // Same payload the board builds for an unmet drop outside the request's flexibility (places from the placement).
       const car = resolveCar(board, flag(args, "car")!);
       const dctx = dropCtxOf(board, dayOf(requestStart(request)) || day0);

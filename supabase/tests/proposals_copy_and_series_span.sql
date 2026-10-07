@@ -239,6 +239,12 @@ begin
     'WhatsApp proposal texts never introduce the Sadran';
   assert not exists(select 1 from public.notification_templates where event='proposal_received' and variant like '%own_car%'), 'no own-car variant';
 
+  -- R6B9 (REQ §13.109): an unchanged time, even by a few seconds, never appears in a change line
+  assert public._time_change_line('2026-10-20 09:00:00+00', '2026-10-20 12:00:00+00', '2026-10-20 09:00:20+00', '2026-10-20 12:00:00+00') = '',
+    'R6B9: same minute is no change';
+  assert position(public._hhmm('2026-10-20 09:00:00+00') in public._time_change_line('2026-10-20 09:00:00+00', '2026-10-20 12:00:00+00', '2026-10-20 09:00:20+00', '2026-10-20 12:30:00+00')) = 0,
+    'R6B9: only the changed return is listed';
+
   raise notice 'proposals_copy_and_series_span.sql: all assertions passed';
 end $$;
 rollback;

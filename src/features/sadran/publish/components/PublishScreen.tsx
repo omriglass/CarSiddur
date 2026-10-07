@@ -61,6 +61,9 @@ export function PublishScreen({ departmentId, weekStart }: PublishScreenProps) {
   const draftDays = new Set(readiness.filter((day) => day.draftProposals > 0).map((day) => day.day));
   const allDays = readiness.map((day) => day.day);
   const readyDays = readiness.filter((day) => day.ready).map((day) => day.day);
+  // R7U2: the "choose days" list pre-ticks only days that are ready, not yet published and not past.
+  const todayKey = dateKey(new Date());
+  const preselectedDays = readiness.filter((day) => day.ready && !day.published && day.day >= todayKey).map((day) => day.day);
   const chosenDays = selectedDays ?? allDays;
   const chosen = readiness.filter((day) => chosenDays.includes(day.day));
   const conflictCount = chosen.reduce((count, day) => count + day.conflictRides, 0);
@@ -122,7 +125,8 @@ export function PublishScreen({ departmentId, weekStart }: PublishScreenProps) {
   async function handlePublish(days: string[], allowUnanswered: boolean) {
     try {
       await publishMutation.mutateAsync({ departmentId, weekStart, days, allowUnanswered });
-      toast.success(he.sadranPublish.successTitle);
+      const labelled = days.map((day) => formatDayDate(`${day}T12:00:00Z`)).join(", ");
+      toast.success(tv("sadranPublish.successDays", { days: labelled }));
       navigate(paths.sadran.board(departmentId, weekStart));
     } catch {
       // toast already shown
@@ -149,8 +153,8 @@ export function PublishScreen({ departmentId, weekStart }: PublishScreenProps) {
         <p className="text-sm text-muted-foreground">{readyDays.length === 7 ? he.publicationFlow.allReady : tv("publicationFlow.readiness", { count: String(readyDays.length) })}</p>
         <div className="flex flex-wrap gap-2">
           <Button disabled={unavailable || readiness.some((day) => day.conflictRides > 0 || day.draftProposals > 0)} onClick={() => proposePublish(allDays)}>{publishMutation.isPending ? he.publishScores.calculating : he.publicationFlow.allYes}</Button>
-          <Button variant="outline" disabled={unavailable} onClick={() => setSelectedDays(readyDays)}>{he.publicationFlow.onlyReady}</Button>
-          <Button variant="ghost" disabled={unavailable} onClick={() => setSelectedDays(chosenDays)}>{he.publicationFlow.selectDays}</Button>
+          <Button variant="outline" disabled={unavailable} onClick={() => setSelectedDays(preselectedDays)}>{he.publicationFlow.onlyReady}</Button>
+          <Button variant="ghost" disabled={unavailable} onClick={() => setSelectedDays(preselectedDays)}>{he.publicationFlow.selectDays}</Button>
         </div>
         {selectedDays ? <div className="space-y-2 border-t pt-3">
           <p className="text-sm text-muted-foreground">{he.publicationFlow.partialHint}</p>
@@ -269,6 +273,7 @@ export function PublishScreen({ departmentId, weekStart }: PublishScreenProps) {
         {expiringProposals.length ? (
           <div className="mt-3 space-y-1 text-sm" data-testid="publish-expiring-proposals">
             <p className="font-medium text-maintenance">{he.publicationFlow.expiringTitle}</p>
+            <p className="text-muted-foreground">{he.publicationFlow.expiringWhoIsTold}</p>
             <ul className="list-disc ps-5">{expiringProposals.map((row) => <li key={row.id}>{tv("publicationFlow.expiringRow", { name: row.name, type: t(`proposal.type.${row.type}` as TranslationKey), day: dateLabel(row.day) })}</li>)}</ul>
           </div>
         ) : null}

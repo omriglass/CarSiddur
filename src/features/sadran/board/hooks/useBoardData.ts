@@ -61,6 +61,7 @@ import {
   policyLookbackWeeks,
   relayPartnerOf,
   representativeRideTypeCode,
+  restrictInputToDay,
   rideViaNames,
   runSolve,
   servedOf,
@@ -313,7 +314,7 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
    * flow there is no separate confirmation sheet, since everything already
    * on the board is untouched by definition (only unmet requests can move).
    */
-  async function handleAutoSolveRemaining() {
+  async function handleAutoSolveRemaining(day: string | null = null) {
     const chosen = (policyOptionsQuery.data ?? []).find((p) => p.policyVersionId === effectivePolicyVersionId);
     const policy = chosen ?? activePolicyQuery.data;
     if (!policy || !department?.home_destination_id) return;
@@ -332,6 +333,7 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
         },
         mode: "remaining",
       });
+      if (day) restrictInputToDay(context.input, day);
       const startedAtMs = nowMs();
       const output = runSolve(context.input);
       rememberUsedPolicy(policy.policyVersionId);
@@ -498,6 +500,16 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
   const routeCtx = useMemo(() => ({ hop, hopKm, stopMinutes, homeId, detourLimitMinutes, detourLimitKm }), [hop, hopKm, stopMinutes, homeId, detourLimitMinutes, detourLimitKm]);
   const requestRows = requestsQuery.data;
   const boardRequests = useMemo(() => withRouteTravelMinutes(requestRows ?? [], routeCtx), [requestRows, routeCtx]);
+
+  /** Open (submitted/waitlisted) requests anchored on `day` (null = whole week) — the autofill confirmation count. */
+  function openRequestCount(day: string | null): number {
+    return boardRequests.filter((r) => {
+      if (r.status !== "submitted" && r.status !== "waitlisted") return false;
+      if (!day) return true;
+      const start = requestStart(r);
+      return !!start && dateKey(new Date(start)) === day;
+    }).length;
+  }
 
   // Board drafts (REQ §13.94): every unsent proposal drawn as the result it would produce. A draft
   // that places its request on a car (shift/merge/origin) takes the request off the unmet list
@@ -950,6 +962,7 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
     rememberUsedPolicy,
     effectivePolicyVersionId,
     handleAutoSolveRemaining,
+    openRequestCount,
     policyIsStale,
     boardPolicyScores,
     rides,

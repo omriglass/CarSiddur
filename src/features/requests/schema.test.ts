@@ -183,3 +183,14 @@ describe("isSamePlace (R3B21)", () => {
     expect(isSamePlace({ freeText: "" }, { freeText: "" })).toBe(false);
   });
 });
+
+describe("origin = destination (R7B12)", () => {
+  it("refuses the same list place or the same free text as origin and destination", () => {
+    const place = { presetId: "p1", name: "x" };
+    const same = requestFormSchema.safeParse(baseValues({ origin: place, destination: place }));
+    expect(same.success).toBe(false);
+    if (!same.success) expect(same.error.issues.some((i) => i.path[0] === "destination")).toBe(true);
+    expect(requestFormSchema.safeParse(baseValues({ origin: { freeText: " Foo " }, destination: { freeText: "foo" } })).success).toBe(false);
+    expect(requestFormSchema.safeParse(baseValues({ origin: { presetId: "p2", name: "y" }, destination: place })).success).toBe(true);
+  });
+});

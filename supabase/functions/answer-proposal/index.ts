@@ -41,6 +41,11 @@ interface PartySummary {
   isYou: boolean;
 }
 
+function memberReason(payload: unknown): string {
+  const reason = payload && typeof payload === 'object' ? (payload as { reason?: unknown }).reason : null;
+  return typeof reason === 'string' ? reason.trim() : '';
+}
+
 interface ProposalSummary {
   proposalId: string;
   type: string;
@@ -151,7 +156,9 @@ async function buildSummary(proposal: Record<string, unknown>, myProfileId: stri
     proposalId,
     type: proposal.type as string,
     status: proposal.status as string,
-    reasonHe: proposal.reason_he as string,
+    // `reason_he` is the Sadran's whole WhatsApp text (with a `{{link}}` placeholder): members never see it
+    // (REQ §13.109 R7B1). Only the Sadran's own typed reason, when there is one, is shown.
+    reasonHe: memberReason(proposal.payload),
     expiresAt: proposal.expires_at as string | null,
     payload: proposal.payload,
     departmentId: proposal.department_id as string | undefined,

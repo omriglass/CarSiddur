@@ -140,6 +140,18 @@ export interface RoutePassenger {
   destinationName?: string | null;
   /** The legs the passenger joins (`out` / `return` / `both`). */
   leg: "out" | "return" | "both";
+  /** R6B5: the request is a one-way (`one_way_to`): the exact reverse of a round-trip host rides the host's return leg. */
+  oneWay?: boolean;
+}
+
+/**
+ * R6B5 (SQL `_merge_guest_swapped`, solver `reversedOneWay`): a one-way request that boards where a
+ * round-trip host's out leg ends and alights where its return leg ends (TA -> home into a home -> TA -> home ride)
+ * rides the host's RETURN leg, in its own direction.
+ */
+export function isReversedOneWay(passenger: Pick<RoutePassenger, "oneWay" | "leg" | "originId" | "destinationId">, outEndId: string | null | undefined, returnEndId: string | null | undefined): boolean {
+  return !!passenger.oneWay && passenger.leg === "out" && !!passenger.originId && !!passenger.destinationId
+    && !!outEndId && !!returnEndId && passenger.originId === outEndId && passenger.destinationId === returnEndId;
 }
 
 type Draft = Omit<RoutePoint, "position" | "eta">;
@@ -222,6 +234,8 @@ export interface MergedRoute {
   /** REQ §13.95 (H1): `false` when the merge is not allowed - see `invalid`. The route is then the host's own. */
   valid: boolean;
   invalid: MergeInvalid | null;
+  /** R6B5: the passenger rides the host's return leg although their request has only an out leg. */
+  swapped?: boolean;
   /** The host's own start (before the merge); `startsAt` is earlier by the added out-leg driving. */
   originalStartsAt: string;
   /** Added driving per leg (minutes). */
@@ -289,13 +303,15 @@ export function mergePassengerIntoRoute(input: {
   let invalid: MergeInvalid | null = null;
   let boardLeg: RouteLeg | null = null;
   let boardIndex = -1;
+  const swapped = original.out.length >= 2 && original.return.length >= 2
+    && isReversedOneWay(passenger, original.out[original.out.length - 1]!.placeId, original.return[original.return.length - 1]!.placeId);
   for (const leg of ["out", "return"] as const) {
-    const joins = passenger.leg === "both" || passenger.leg === leg;
+    const joins = swapped ? leg === "return" : passenger.leg === "both" || passenger.leg === leg;
     if (!joins || grown[leg].length < 2) continue;
     const base = grown[leg];
     const n = base.length;
     const before = legMinutes(base, hop, stopMinutes);
-    const boardsAtOrigin = leg === "out";
+    const boardsAtOrigin = leg === "out" || swapped;
     const board: Draft = {
       leg, kind: "board", requestId: passenger.requestId,
       placeId: boardsAtOrigin ? passenger.originId : passenger.destinationId,
@@ -358,6 +374,7 @@ export function mergePassengerIntoRoute(input: {
     addedMinutes: added,
     boardEta: boardPoint?.eta ?? null,
     boardLeg,
+    swapped,
     valid: true,
     invalid: null,
     originalStartsAt: input.startsAt,

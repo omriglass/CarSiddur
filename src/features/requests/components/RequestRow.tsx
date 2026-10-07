@@ -10,7 +10,7 @@ import { CarHandoverNotice } from "@/features/rides/components/CarHandoverNotice
 import { OpenProposalButton } from "@/features/proposals/components/OpenProposalButton";
 import { OpenWaitlistGroupButton } from "@/features/waitlist/components/OpenWaitlistGroupButton";
 import { he, tv } from "@/i18n/he";
-import { describeStatusReason } from "@/lib/statusReason";
+import { knownStatusReason } from "@/lib/statusReason";
 import { cn } from "@/lib/utils";
 import { paths } from "@/app/routes";
 
@@ -21,7 +21,7 @@ import type { CarHandoverNotes } from "@/features/rides/carHandover";
 import { canEditRequest } from "../window";
 import { isAwaitingAnswer } from "../pendingProposal";
 import { canPlaceOnOwnCar, isDuplicateWithdrawn } from "../overlap";
-import { FREED_SLOT_ELIGIBLE_STATUSES, MAKE_REPEATING_STATUSES, displayStatus, originDestinationLabel, ownLegWindow, type DisplayRow } from "../myRequestsRows";
+import { FREED_SLOT_ELIGIBLE_STATUSES, MAKE_REPEATING_STATUSES, displayStatus, legStateLine, originDestinationLabel, ownLegWindow, type DisplayRow } from "../myRequestsRows";
 
 /** REQ §13.93: shown whenever a request is not a plain round trip (the mundane default). */
 const TRIP_TYPE_LABEL: Record<TripType, string> = {
@@ -116,8 +116,11 @@ export function RequestRow({
           {he.request.repeating}
         </p>
       ) : null}
-      {describeStatusReason(row.statusReason) ? (
-        <p className="text-xs text-muted-foreground">{describeStatusReason(row.statusReason)}</p>
+      {legStateLine(row) ? (
+        <p className="text-xs font-medium" data-testid="request-leg-state">{legStateLine(row)}</p>
+      ) : null}
+      {knownStatusReason(row.statusReason) ? (
+        <p className="text-xs text-muted-foreground">{knownStatusReason(row.statusReason)}</p>
       ) : null}
       {!readOnly && FREED_SLOT_ELIGIBLE_STATUSES.has(row.status) && onOptOutChange ? (
         <label className="flex items-center gap-2 text-xs text-muted-foreground">

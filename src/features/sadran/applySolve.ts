@@ -58,6 +58,7 @@ import { solve } from "@/solver";
 import * as api from "./api";
 import { isoToSlot, slotToIso } from "./board/geometry";
 import { DEFAULT_STOP_MINUTES, homeTravelEdges, makeHop, type Hop } from "@/lib/rideRoute";
+import { dateKey } from "@/lib/time";
 import { effectiveWeekSettings } from "@/lib/weekSettings";
 import { requestIdsWithOpenProposal, resolveDraftPlacements } from "./board/draftOverlay";
 
@@ -118,7 +119,9 @@ export function boardRideToFixedRide(ride: BoardRide, weekStartMs: number): Fixe
   // chain-healing placeholder, not a real plan — it disappears the moment a real leg covers
   // the gap, so the solver must never pin it as a constraint. A *claimed* one (`driver_id`
   // set) is an ordinary one-way leg and stays fixed like any other ride.
-  if (ride.auto_relocation && !ride.driver_id) {
+  // R6B6: a Sadran car move (`pin_reason = 'CAR_MOVE'`, also auto_relocation) is a real, location-deciding ride:
+  // it stays fixed even without a driver, or "a car move back to base" would still warn CAR_AWAY_AT_WEEK_END.
+  if (ride.auto_relocation && !ride.driver_id && ride.pin_reason !== "CAR_MOVE") {
     return null;
   }
   const served = servedOf(ride);
@@ -240,6 +243,20 @@ export function selectOpenRequests<R extends { id: string; status: string }>(
   proposalRequestIds: ReadonlySet<string> = new Set(),
 ): R[] {
   return allRequests.filter((r) => REOPENABLE_REQUEST_STATUSES.has(r.status) && !fixedRequestIds.has(r.id) && !proposalRequestIds.has(r.id));
+}
+
+/**
+ * Per-day autofill (REQ §13.109 b, R7U1): keep only the requests anchored on `day`
+ * (`yyyy-MM-dd`, Jerusalem) — anchor = first departure, else the return. Every other day's rides
+ * stay fixed because the context is built in `'remaining'` mode. A multi-day series request is
+ * therefore handled only when its FIRST day is the chosen day (its legs on later days follow it);
+ * the QA CLI (`scripts/qa/sadran.ts autofill --day`) calls this same function. Mutates `input`.
+ */
+export function restrictInputToDay(input: SolverInput, day: string): void {
+  input.requests = input.requests.filter((r) => {
+    const anchor = r.departureMs ?? r.returnMs;
+    return anchor != null && dateKey(new Date(anchor)) === day;
+  });
 }
 
 /**

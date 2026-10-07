@@ -48,7 +48,8 @@ begin
   assert v ? 'joiner_old_depart_at' and v ? 'joiner_old_return_at', 'R4B5: the preview carries the requested times to show old -> new';
   -- R4B5: the joiner boards at the ride's (new) start, never before it, and is picked up inside the new window
   assert mp_dep = ride_new_start, format('R4B5: joiner boards at the ride start %s, got %s',ride_new_start,mp_dep);
-  assert mp_ret < ride_new_end and mp_ret > '08:00', format('R4B5: the pick-up %s lies inside the ride window (end %s)',mp_ret,ride_new_end);
+  -- R6B10: the joiner's return is the ARRIVAL back at their origin (here the ride's end at home), not the time they leave the destination.
+  assert mp_ret <= ride_new_end and mp_ret > '08:00', format('R4B5/R6B10: the return %s lies inside the ride window (end %s)',mp_ret,ride_new_end);
 
   prop:=public.create_proposal(qJ,rH,'merge',jsonb_build_object('legs',jsonb_build_array(
     jsonb_build_object('ride_id',rH,'leg','both','car_mode','passenger'))),'x');

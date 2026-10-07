@@ -46,6 +46,8 @@ export type ErrorCode =
   | "one_way_car_mode_required"
   | "non_driver_cannot_drive"
   | "non_driver_needs_drop_off"
+  | "origin_equals_destination"
+  | "join_own_ride"
   | "trip_type_needs_return"
   | "merge_boards_at_end"
   | "merge_detour_too_long"
@@ -164,6 +166,8 @@ const MESSAGE_TO_CODE: Record<string, ErrorCode> = {
   one_way_car_mode_required: "one_way_car_mode_required",
   non_driver_cannot_drive: "non_driver_cannot_drive",
   non_driver_needs_drop_off: "non_driver_needs_drop_off",
+  origin_equals_destination: "origin_equals_destination",
+  join_own_ride: "join_own_ride",
   trip_type_needs_return: "trip_type_needs_return",
   merge_boards_at_end: "merge_boards_at_end",
   merge_detour_too_long: "merge_detour_too_long",
@@ -287,6 +291,8 @@ const CODE_TO_MESSAGE: Record<ErrorCode, string> = {
   one_way_car_mode_required: he.errors.oneWayCarModeRequired,
   non_driver_cannot_drive: he.errors.nonDriverCannotDrive,
   non_driver_needs_drop_off: he.errors.nonDriverNeedsDropOff,
+  origin_equals_destination: he.errors.originEqualsDestination,
+  join_own_ride: he.errors.joinOwnRide,
   trip_type_needs_return: he.errors.tripTypeNeedsReturn,
   merge_boards_at_end: he.mergedRide.invalid.boards_at_end,
   merge_detour_too_long: he.mergedRide.invalid.detour_too_long,

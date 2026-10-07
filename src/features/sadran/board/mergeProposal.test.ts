@@ -45,6 +45,34 @@ describe("mergePayload", () => {
   });
 });
 
+describe("R6B10: the guest's return is the arrival at their origin (the request's own return time)", () => {
+  const pt = (leg: "out" | "return", position: number, place_id: string, kind: string, eta: string) => ({ leg, position, place_id, kind, eta, name: place_id });
+  // host H -> D -> H: out 07:15-08:15 (Z 04:15-05:15), back 09:00-10:00 local (Z 06:00-07:00)
+  const roundHost = {
+    ...host,
+    route: [pt("out", 0, "H", "origin", "2026-10-11T04:15:00.000Z"), pt("out", 1, "D", "destination", "2026-10-11T05:15:00.000Z"),
+      pt("return", 0, "D", "origin", "2026-10-11T06:00:00.000Z"), pt("return", 1, "H", "destination", "2026-10-11T07:00:00.000Z")],
+  } as unknown as BoardRide;
+  it("a pickup guest (T, return only) shows its arrival back at T, not the time it leaves D", () => {
+    const guest = request({ trip_shape: "one_way_from", origin_id: "T", destination_id: "D", depart_at: null, return_at: "2026-10-11T06:50:00.000Z" });
+    const preview = previewMerge(roundHost, guest, "return", { hop, stopMinutes: 5, homeId: "H" })!;
+    expect(preview.valid).toBe(true);
+    // leaves D at 06:00Z, reaches T (45 min) before H: the joiner's return = the alight time at T, later than the board time
+    expect(preview.joinerReturnAt).not.toBeNull();
+    expect(Date.parse(preview.joinerReturnAt!)).toBeGreaterThan(Date.parse("2026-10-11T06:00:00.000Z"));
+    expect(preview.boardEta).toBe(preview.joinerReturnAt);
+  });
+  it("R6B5: a one-way D -> H guest into the round trip is valid, boards on the return leg and asks for its own departure", () => {
+    const guest = request({ trip_shape: "one_way_to", origin_id: "D", destination_id: "H", depart_at: "2026-10-11T06:00:00.000Z", return_at: null });
+    const preview = previewMerge(roundHost, guest, "out", { hop, stopMinutes: 5, homeId: "H" })!;
+    expect(preview.valid).toBe(true);
+    expect(preview.swapped).toBe(true);
+    expect(preview.joinerOutAt).toBe("2026-10-11T06:00:00.000Z");
+    expect(preview.joinerReturnAt).toBeNull();
+    expect(preview.timeChanges).toBe(false);
+  });
+});
+
 describe("previewMerge", () => {
   it("leaves earlier by the added driving, keeps the end and reports the estimated stop time", () => {
     const preview = previewMerge(host, request({}), "out", { hop, stopMinutes: 5, homeId: "H" })!;
@@ -115,7 +143,7 @@ describe("server merge times (R5B5 / TODO U2)", () => {
     joiner_depart_at: "2026-10-11T04:00:00+00:00", joiner_return_at: null, joiner_old_depart_at: "2026-10-11T03:45:00+00:00",
   };
   it("parses merge_preview's jsonb into the fields the UI reads", () => {
-    expect(parseServerMergePreview(raw)).toEqual({ ok: true, code: null, newStartsAt: raw.new_starts_at, newEndsAt: raw.new_ends_at, joinerDepartAt: raw.joiner_depart_at, joinerReturnAt: null });
+    expect(parseServerMergePreview(raw)).toEqual({ ok: true, code: null, newStartsAt: raw.new_starts_at, newEndsAt: raw.new_ends_at, joinerDepartAt: raw.joiner_depart_at, joinerReturnAt: null, turnaroundSide: null });
     expect(parseServerMergePreview(null)).toBeNull();
     expect(parseServerMergePreview([1])).toBeNull();
     expect(parseServerMergePreview({ ok: false, code: "seats" })?.ok).toBe(false);
@@ -163,6 +191,9 @@ describe("mergeVerdict / mergeRefusalText (REQ item 108 M1: the server decides)"
     expect(mergeRefusalText("boards_at_end")).toBe(he.mergedRide.invalid.boards_at_end);
     expect(mergeRefusalText("private_car")).toBe(he.mergedRide.invalid.private_car);
     expect(mergeRefusalText("turnaround")).toBe(he.mergedRide.invalid.turnaround_conflict);
+    // R6B3: a clash with the PREVIOUS ride is named as such
+    expect(mergeRefusalText("turnaround", "previous")).toBe(he.mergedRide.invalid.turnaround_conflict_previous);
+    expect(mergeRefusalText("turnaround", "next")).toBe(he.mergedRide.invalid.turnaround_conflict);
     expect(mergeRefusalText("already_on_ride")).toBe(he.mergedRide.invalid.already_on_ride);
     expect(mergeRefusalText("something_new")).toBe(he.mergedRide.invalid.unknown);
     expect(mergeRefusalText(null)).toBe(he.mergedRide.invalid.unknown);

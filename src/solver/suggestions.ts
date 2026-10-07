@@ -446,7 +446,10 @@ function changeOriginSuggestion(nr: NormalizedRequest, ctx: SuggestionContext): 
     for (const gap of tl.gaps()) {
       // never suggest the request's own origin (R2B12); every gap is tried —
       // a car can have an earlier unusable gap at the same place
-      if (gap.locationId === nr.originId) continue;
+      // R7B12: nor the request's own destination (a trip from X to X), nor a place with the same name.
+      if (gap.locationId === nr.originId || gap.locationId === nr.destinationId) continue;
+      const gapName = placeName(ctx.input, gap.locationId);
+      if (gapName !== '' && gapName === placeName(ctx.input, nr.originId, nr.request.originText)) continue;
       // A one_way trip leaves the car at the destination: the same end check as
       // placement (the car's next ride must start there, or there is none).
       const endLocationId = nr.tripType === 'one_way' ? nr.destinationId : gap.locationId;

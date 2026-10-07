@@ -15,6 +15,7 @@
 //   ride     add_ride_passengers + remove_ride_person, swap_day_cars by a member, mark_car_move, set_ride_driver
 //   freed    cancelled ride on a published day -> freed-slot offer -> member claim_freed_slot -> Sadran approve_claim
 //   series   multi-day request auto-placed on a published week -> member shorten_series
+//   lifecycle (REQ 13.109) a drop-off cancelled with a merged guest releases both legs; ask-to-join own ride / origin = destination refused; volunteer driver replaced
 //   neighbours a member reads v_ride_car_neighbours (next/previous ride on the car, tight gap) for a published ride
 import { resolveApi, serviceClient, signedInClient, ADMIN_PASSWORD } from "./qa/qa-common.mjs";
 
@@ -435,6 +436,51 @@ try {
     check("  the next ride's people include its driver", Array.isArray(mine.data?.next_people) && mine.data.next_people.includes(m2Id), JSON.stringify(mine.data?.next_people));
     const mirror = await m2.from("v_ride_car_neighbours").select("prev_ride_id,prev_tight,prev_people").eq("ride_id", rB.id).single();
     check("  the next ride's driver gets the mirror fields", !mirror.error && mirror.data.prev_ride_id === rA.id && mirror.data.prev_tight === true && mirror.data.prev_people.includes(m1Id), JSON.stringify(mirror.data ?? errText(mirror)));
+  });
+
+  // ------------------------------------------------ request lifecycle (REQ 13.109 d/e/f: R7B9, R6B7, R7B12, R6B8)
+  await section("lifecycle: cancel a drop-off with a guest, refusals, driver replacement", async () => {
+    const wk = await mkWeek(8, "solving");
+    {
+      const q1 = must(await svc.from("requests").insert({
+        department_id: DEPT, week_start: wk, requester_id: m1Id, filed_by: sadranId, destination_id: DEST, ride_type_id: TYPE,
+        depart_at: at(8, 1, 6), return_at: at(8, 1, 10), trip_shape: "round_trip", trip_type: "drop_off", needs_car_at_destination: false, status: "assigned",
+      }).select("id").single(), "drop-off request").id;
+      const q2 = must(await svc.from("requests").insert({
+        department_id: DEPT, week_start: wk, requester_id: m2Id, filed_by: sadranId, destination_id: DEST, ride_type_id: TYPE,
+        depart_at: at(8, 1, 6), trip_shape: "one_way_to", one_way_car_mode: "passenger", status: "merged",
+      }).select("id").single(), "guest request").id;
+      const rOut = await ride({ n: 8, car: CAR_A, day: 1, driver: m1Id, origin: HOME, destination: DEST, hour: 6, endHour: 7 });
+      const rRet = await ride({ n: 8, car: CAR_A, day: 1, driver: m1Id, origin: DEST, destination: HOME, hour: 9, endHour: 10 });
+      must(await svc.from("ride_requests").insert([
+        { ride_id: rOut.id, request_id: q1, role: "driver", leg: "out", car_mode: "relay" },
+        { ride_id: rRet.id, request_id: q1, role: "driver", leg: "return", car_mode: "relay" },
+        { ride_id: rOut.id, request_id: q2, role: "passenger", leg: "out", car_mode: "passenger" },
+      ]), "links");
+      const res = await m1.rpc("cancel_ride", { p_ride_id: rRet.id, p_reason: "api test dropoff", p_expected_version: await version(rRet.id) });
+      check("member cancels the return ride of his drop-off", !res.error, res.error?.message);
+      check("  the request is cancelled", (await reqRow(q1)).status === "cancelled");
+      const out = await rideRow(rOut.id);
+      check("  the outbound ride is released: it survives for the guest and needs a driver", out.status !== "cancelled" && out.needs_driver === true && out.driver_id === null, JSON.stringify([out.status, out.needs_driver, out.driver_id]));
+      const told = must(await svc.from("notifications").select("id").eq("recipient_id", m2Id).eq("data->>ride_id", rOut.id), "guest notices").length;
+      check("  the merged guest is told", told >= 1, String(told));
+      const un = await sadran.rpc("unassign_ride", { p_ride_id: rOut.id, p_expected_version: out.version });
+      check("  the Sadran can unassign the released outbound ride", !un.error, un.error?.message);
+    }
+    {
+      const ownRide = await ride({ n: 8, car: CAR_B, day: 3, driver: m1Id });
+      const own = await m1.rpc("submit_request", { payload: { department_id: DEPT, week_start: wk, destination_id: DEST, ride_type_id: TYPE, trip_shape: "round_trip", depart_at: at(8, 3, 6), return_at: at(8, 3, 10), join_ride_id: ownRide.id } });
+      check("asking to join your own ride is refused", !!own.error && /join_own_ride/.test(own.error.message), errText(own));
+      const same = await m1.rpc("submit_request", { payload: { department_id: DEPT, week_start: wk, destination_id: DEST, origin_id: DEST, ride_type_id: TYPE, trip_shape: "round_trip", depart_at: at(8, 4, 6), return_at: at(8, 4, 10) } });
+      check("origin = destination is refused", !!same.error && /origin_equals_destination/.test(same.error.message), errText(same));
+    }
+    {
+      const r = await ride({ n: 8, car: CAR_B, day: 5, driver: m1Id });
+      const q = await request({ n: 8, requester: m2Id, day: 5, status: "merged" }); await link(r.id, q, "passenger", "passenger");
+      const res = await sadran.rpc("set_ride_driver", { p_ride_id: r.id, p_driver_id: sadranId, p_expected_version: r.version });
+      check("Sadran replaces a volunteer driver in one step", !res.error, res.error?.message);
+      check("  the ride's driver changed", (await rideRow(r.id)).driver_id === sadranId);
+    }
   });
 } finally {
   await purge([...madeWeeks]);

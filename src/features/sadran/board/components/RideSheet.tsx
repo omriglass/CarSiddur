@@ -177,6 +177,7 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
                   departmentId={departmentId}
                   weekStart={weekStart}
                   disabled={saving}
+                  published={ride.status !== "draft"}
                   onDone={() => onOpenChange(false)}
                 />
               ) : null}

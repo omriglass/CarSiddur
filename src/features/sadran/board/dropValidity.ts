@@ -306,7 +306,7 @@ function carBusy(ctx: BoardDropContext, carId: string, window: { startsAt: strin
 export function unmetMergeHost(ctx: BoardDropContext, item: UnmetListItem, carId: string, _minutes: number, hostRideId?: string) {
   // R2B7: a drop on a ride is a merge attempt for every trip type (round trips included).
   if (!hostRideId) return undefined;
-  return ctx.rides.find((ride) => ride.id === hostRideId && ride.car_id === carId && !isReservation(ride)
+  return ctx.rides.find((ride) => ride.id === hostRideId && ride.status !== "cancelled" && ride.car_id === carId && !isReservation(ride)
     && !servedOf(ride).some((entry) => entry.request_id === item.request.id));
 }
 

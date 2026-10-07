@@ -129,6 +129,8 @@ begin
   exception when exclusion_violation then null;end;
   perform public.edit_ride(to_jsonb(r)||jsonb_build_object('starts_at',dt+interval '210 minutes','ends_at',dt+interval '270 minutes'),r.version);
   assert (select turnaround_override_minutes is null from public.rides where id=host),'obsolete shortened turnaround not restored';
+  -- (create_proposal now refuses seats like apply does, REQ 109 g: put the served passenger back to one seat first.)
+  update public.requests set adults=1 where id=qpass;
   -- A member merge may not inherit a coordinator override when expanding a host.
   insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,depart_at,trip_shape,one_way_car_mode,needs_car_at_destination,status)
     values(dept,w,driver,driver,dest,typ,dt,'one_way_to','passenger',false,'submitted') returning id into qother;

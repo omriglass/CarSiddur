@@ -4244,10 +4244,18 @@ export type Database = {
         Returns: Json
       }
       _merge_error_code: { Args: { _err: string }; Returns: string }
+      _merge_guest_swapped: {
+        Args: { p_request_id: string; p_ride_id: string }
+        Returns: boolean
+      }
       _merge_union_legs: { Args: { _new: Json; _old: Json }; Returns: Json }
       _merge_window_conflict: {
         Args: { _new_end: string; _new_start: string; _ride_id: string }
         Returns: boolean
+      }
+      _merge_window_conflict_side: {
+        Args: { _new_end: string; _new_start: string; _ride_id: string }
+        Returns: string
       }
       _publish_ride_line: {
         Args: { p_request_id: string; p_ride_id: string }
@@ -4984,6 +4992,7 @@ export type Database = {
         Args: { p_car_id: string; p_week_start: string }
         Returns: undefined
       }
+      refresh_ride_flags: { Args: { p_car: string }; Returns: number }
       register_push_subscription: {
         Args: {
           p_auth: string

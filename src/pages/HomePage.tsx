@@ -46,6 +46,7 @@ import {
   groupByWeek,
   requestStart,
   toDisplayRows,
+  displayStatus,
   type DisplayRow,
   type ConfirmAction,
 } from "@/features/requests/myRequestsRows";
@@ -74,8 +75,8 @@ import { hasRideTodayOrTomorrow, resolveHomeWeek } from "./homeWeek";
 const UNSERVED_STATUSES = new Set<MyRequestRow["status"]>(["waitlisted", "denied", "external", "proposed"]);
 
 function reasonLine(row: MyRequestRow): string | null {
-  if (row.pendingProposal) return row.pendingProposal.reasonHe;
-  return describeStatusReason(row.statusReason);
+  // R7B1: only the Sadran's own typed reason, never the WhatsApp text.
+  return (row.pendingProposal?.reasonHe || null) ?? describeStatusReason(row.statusReason);
 }
 
 /** The request/ride's own calendar day — same field priority as `requestStart` (an assigned
@@ -184,7 +185,7 @@ export function HomePage() {
 
   const nextAction = requests.find((r) => r.status === "proposed" && r.pendingProposal && isAwaitingAnswer(r.pendingProposal));
   const unserved = requests.filter(
-    (r) => UNSERVED_STATUSES.has(r.status) && r.id !== nextAction?.id,
+    (r) => UNSERVED_STATUSES.has(displayStatus(r)) && r.id !== nextAction?.id,
   );
 
   const weeks = (weeksQuery.data ?? []).map((w) => ({ weekStart: w.week_start, phase: w.phase }));
@@ -318,7 +319,7 @@ export function HomePage() {
         >
           <div>
             <p className="font-medium text-maintenance">{t("home.nextAction")}</p>
-            <p className="line-clamp-3 whitespace-normal break-words text-foreground/80">{reasonLine(nextAction)}</p>
+            {reasonLine(nextAction) ? <p className="line-clamp-3 whitespace-normal break-words text-foreground/80">{reasonLine(nextAction)}</p> : null}
           </div>
         </OpenProposalButton>
       ) : null}
@@ -347,7 +348,8 @@ export function HomePage() {
       <section className="space-y-3">
         <h2 className="text-sm font-semibold text-muted-foreground">{t("home.unservedRequests")}</h2>
         {unserved.length === 0 ? (
-          <EmptyState icon={MessageCircleQuestion} message={t("home.emptyUnserved")} />
+          // R7B8-1: "all placed" only when nothing below is still waiting for the siddur.
+          requests.some((r) => r.status === "submitted" || r.status === "draft") || !requests.some((r) => r.status === "assigned" || r.status === "merged") ? null : <EmptyState icon={MessageCircleQuestion} message={t("home.emptyUnserved")} />
         ) : (
           <div className="space-y-2">
             {unserved.map((row) => (

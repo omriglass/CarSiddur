@@ -133,7 +133,16 @@ describe("rideBlockLabel", () => {
       needsDriver: false, driverName: "דנה לוי", startsAt: "2026-09-13T12:20:00.000Z",
       served: [{ role: "passenger", requester: "יואב", destination: "תל אביב", leg: "return", car_mode: "chauffeur" }],
     });
-    expect(label).toContain("דנה אוסף/ת את יואב מתל אביב (הנסיעה מתחילה ב");
+    expect(label).toContain("דנה אוסף/ת את יואב מתל אביב (הנסיעה מתחילה ב-");
+  });
+
+  it("R7B6: a pickup away from the car still shows the passenger's destination on the car path", () => {
+    const label = rideBlockLabel({
+      originId: HOME, destinationId: HOME, originName: "חדרה", destinationName: "חדרה", homeDestinationId: HOME,
+      needsDriver: false, driverName: "נטע סופר", startsAt: "2026-09-13T04:00:00.000Z",
+      served: [{ role: "passenger", requester: "מאיה", destination: "בנימינה", leg: "out", origin_id: "other", origin_name: "גבעת חביבה", car_mode: "chauffeur" }],
+    });
+    expect(label).toContain("מסלול: חדרה → גבעת חביבה → בנימינה → חדרה");
   });
 
   it("REQUIREMENTS §13.93: a relay pair's leave/wait legs name the place, not a direction prefix (no partner known yet)", () => {

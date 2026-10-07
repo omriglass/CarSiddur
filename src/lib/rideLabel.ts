@@ -102,7 +102,7 @@ export function chauffeurRideLabel(
 ): string {
   const hasDriver = !!driverName?.trim();
   const driver = hasDriver ? firstName(driverName as string) : "";
-  const groups = new Map<string, { destination: string; returning: boolean; names: string[] }>();
+  const groups = new Map<string, { destination: string; returning: boolean; names: string[]; onward: string }>();
   for (const passenger of passengers) {
     // A pickup is a legacy return leg (fetch from its destination), or — REQ §13.93 "pick me up
     // from Harish" — an out leg whose own origin is not where the car is (`carLocationId`, the
@@ -112,17 +112,20 @@ export function chauffeurRideLabel(
     const destination = pickupFromOrigin ? (passenger.origin_name ?? "") : (passenger.destination ?? "");
     const returning = passenger.leg === "return" || pickupFromOrigin;
     const key = JSON.stringify([destination, returning]);
-    const group = groups.get(key) ?? { destination, returning, names: [] };
+    // R7B6: a pickup away from the car (an out leg that starts elsewhere) still ends at the passenger's own
+    // destination, which the car path must show after the pickup place.
+    const onward = pickupFromOrigin && passenger.leg !== "return" ? (passenger.destination ?? "") : "";
+    const group = groups.get(key) ?? { destination, returning, names: [], onward };
     if (passenger.requester) group.names.push(firstName(passenger.requester));
     groups.set(key, group);
   }
   const groupList = [...groups.values()];
   if (groupList.length === 1) {
-    const [group] = groupList as [{ destination: string; returning: boolean; names: string[] }];
+    const [group] = groupList as [{ destination: string; returning: boolean; names: string[]; onward: string }];
     const name = hebrewList(group.names);
     const time = startsAt ? formatTime(new Date(startsAt)) : "";
     const path = carPath && group.destination
-      ? ` · ${tv("rideCoordination.carPath", { path: [carPath.from, group.destination, carPath.to].filter((place, i, all) => !!place && place !== all[i - 1]).join(" → ") })}`
+      ? ` · ${tv("rideCoordination.carPath", { path: [carPath.from, group.destination, group.onward, carPath.to].filter(Boolean).filter((place, i, all) => place !== all[i - 1]).join(" → ") })}`
       : "";
     if (group.returning) {
       return (hasDriver

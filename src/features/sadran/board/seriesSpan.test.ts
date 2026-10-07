@@ -12,9 +12,19 @@ const leg = (i: number, status = "waitlisted"): SeriesLeg => ({
 describe("seriesSpan", () => {
   const legs = [leg(1), leg(2), leg(3)];
   it("builds a consecutive strictly-shorter sub-span", () => {
-    expect(buildSeriesSpan(legs, 0, 1)).toEqual({ depart_at: legs[0]!.departAt, return_at: legs[1]!.returnAt });
-    expect(buildSeriesSpan(legs, 1, 2)).toEqual({ depart_at: legs[1]!.departAt, return_at: legs[2]!.returnAt });
+    const ms = (span: { depart_at: string; return_at: string } | null) => [Date.parse(span!.depart_at), Date.parse(span!.return_at)];
+    expect(ms(buildSeriesSpan(legs, 0, 1))).toEqual([Date.parse(legs[0]!.departAt), Date.parse(legs[1]!.returnAt)]);
+    expect(ms(buildSeriesSpan(legs, 1, 2))).toEqual([Date.parse(legs[1]!.departAt), Date.parse(legs[2]!.returnAt)]);
     expect(buildSeriesSpan(legs, 1, 1)).not.toBeNull();
+  });
+  it("a span ending on the last day starts at the series' real departure time, not the held-day 00:00 (REQ 105 d)", () => {
+    const real = [
+      { ...leg(1), departAt: "2026-10-12T05:00:00Z", returnAt: "2026-10-12T20:59:00Z" },
+      { ...leg(2), departAt: "2026-10-12T21:00:00Z", returnAt: "2026-10-13T20:59:00Z" },
+      { ...leg(3), departAt: "2026-10-13T21:00:00Z", returnAt: "2026-10-14T14:00:00Z" },
+    ];
+    expect(buildSeriesSpan(real, 2, 2)).toEqual({ depart_at: "2026-10-14T05:00:00.000Z", return_at: "2026-10-14T14:00:00Z" });
+    expect(buildSeriesSpan(real, 1, 1)?.depart_at).toBe("2026-10-13T05:00:00.000Z");
   });
   it("refuses the whole series, an inverted or an out-of-range span", () => {
     expect(buildSeriesSpan(legs, 0, 2)).toBeNull();

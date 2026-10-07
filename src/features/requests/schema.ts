@@ -194,6 +194,11 @@ export const requestFormSchema = z
       }
     }
 
+    // R7B12 (REQ §13.109 e): the same place as origin and destination is a trip to nowhere.
+    if (isSamePlace(value.origin, value.destination)) {
+      ctx.addIssue({ path: ["destination"], code: z.ZodIssueCode.custom, message: he.request.originEqualsDestination });
+    }
+
     // R3B21: a stop equal to the place the leg already ends/starts at is a no-op detour.
     const originPlace = value.origin;
     value.outStops.forEach((stop, index) => {

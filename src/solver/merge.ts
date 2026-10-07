@@ -112,6 +112,8 @@ export interface MergeCandidate {
   /** Added driving per leg (minutes, rounded up to slots in the window) — 0 when that leg is not merged. */
   addedOutMinutes?: number;
   addedReturnMinutes?: number;
+  /** R6B5: the one-way guest rides the host's return leg (its own request leg is still 'out'). */
+  reversedOneWay?: boolean;
 }
 
 export interface MergeSearchParams {
@@ -139,6 +141,8 @@ interface Insertion {
   boardArrivalMinutes: number;
   /** minutes from arriving at the alighting node to the route end */
   alightTailMinutes: number;
+  /** minutes from arriving at the boarding node to the route end (R6B5: a reversed one-way guest is timed by its boarding on the return leg) */
+  boardTailMinutes: number;
 }
 
 interface RouteCost {
@@ -214,6 +218,7 @@ function cheapestInsertion(
         addedKm,
         boardArrivalMinutes: cost.arrival[aIdx] as number,
         alightTailMinutes: cost.minutes - (cost.arrival[bIdx] as number),
+        boardTailMinutes: cost.minutes - (cost.arrival[aIdx] as number),
       };
     }
   }
@@ -233,12 +238,14 @@ function sideFor(
   hostRequest: Pick<Request, 'originId' | 'destinationId' | 'stops'>,
   guest: NormalizedRequest,
   dir: 'out' | 'return',
+  forward = dir === 'out',
 ): Side | null {
   const lookup: TravelLookup = { travel: params.travel, homeLocationId: params.homeLocationId, destinations: params.destinations, config: params.config };
   const route = legRoute(lookup, hostRequest, dir);
-  // the guest travels origin -> destination on 'out', destination -> origin on 'return'
-  const a = dir === 'out' ? guest.originId : guest.destinationId;
-  const b = dir === 'out' ? guest.destinationId : guest.originId;
+  // the guest travels origin -> destination on 'out', destination -> origin on 'return';
+  // `forward` (R6B5, a reversed one-way guest) rides the host's return leg origin -> destination.
+  const a = forward ? guest.originId : guest.destinationId;
+  const b = forward ? guest.destinationId : guest.originId;
   const insertion = cheapestInsertion(lookup, route, a, b, resolveStopMinutes(params.config), params.config.detour);
   if (!insertion) return null;
   return { insertion, addedSlots: slotsCeil(insertion.addedMinutes) };
@@ -264,10 +271,19 @@ export function findMergeHosts(params: MergeSearchParams): MergeCandidate[] {
       ? hostNr.request
       : { originId: host.originId, destinationId: host.requestDestinationId };
 
-    const mergesOut = leg === 'out' || leg === 'both';
-    const mergesReturn = leg === 'return' || leg === 'both';
+    // R6B5 (SQL `_merge_guest_swapped`, TS `isReversedOneWay`): a one-way guest that is exactly the reverse of a
+    // round-trip host (boards where the host's out leg ends, alights where its return leg ends) rides the host's return leg.
+    const lookup: TravelLookup = { travel: params.travel, homeLocationId: params.homeLocationId, destinations: params.destinations, config: params.config };
+    const hostOutRoute = legRoute(lookup, hostRequest, 'out');
+    const hostReturnRoute = legRoute(lookup, hostRequest, 'return');
+    const reversed = leg === 'out' && guest.request.tripShape === 'one_way_to' && host.legSide === 'both'
+      && !!guest.originId && !!guest.destinationId
+      && guest.originId === hostOutRoute[hostOutRoute.length - 1]?.locationId
+      && guest.destinationId === hostReturnRoute[hostReturnRoute.length - 1]?.locationId;
+    const mergesOut = !reversed && (leg === 'out' || leg === 'both');
+    const mergesReturn = reversed || leg === 'return' || leg === 'both';
     const out = mergesOut ? sideFor(params, hostRequest, guest, 'out') : null;
-    const ret = mergesReturn ? sideFor(params, hostRequest, guest, 'return') : null;
+    const ret = mergesReturn ? sideFor(params, hostRequest, guest, 'return', reversed) : null;
     if ((mergesOut && !out) || (mergesReturn && !ret)) continue;
     const addOut = out?.addedSlots ?? 0;
     const addRet = ret?.addedSlots ?? 0;
@@ -275,9 +291,12 @@ export function findMergeHosts(params: MergeSearchParams): MergeCandidate[] {
     // Guest-time check at the boarding ETA (out) / arrival at the guest's own place (return),
     // anchored at the host's *new* window. Shift the host (non-fixed 'both' hosts only) when it misses.
     const etaOutOf = (baseStart: number) => baseStart - addOut + Math.round((out?.insertion.boardArrivalMinutes ?? 0) / 15);
-    const etaRetOf = (baseEnd: number) => baseEnd + addRet - Math.round((ret?.insertion.alightTailMinutes ?? 0) / 15);
+    // A reversed one-way guest is timed by its BOARDING on the return leg against its own departure window.
+    const retTail = reversed ? (ret?.insertion.boardTailMinutes ?? 0) : (ret?.insertion.alightTailMinutes ?? 0);
+    const retFlex = reversed ? guest.flexDep : guest.flexRet;
+    const etaRetOf = (baseEnd: number) => baseEnd + addRet - Math.round(retTail / 15);
     const okOut = !out || (etaOutOf(host.window.start) >= guest.flexDep[0] && etaOutOf(host.window.start) <= guest.flexDep[1]);
-    const okRet = !ret || (etaRetOf(host.window.end) >= guest.flexRet[0] && etaRetOf(host.window.end) <= guest.flexRet[1]);
+    const okRet = !ret || (etaRetOf(host.window.end) >= retFlex[0] && etaRetOf(host.window.end) <= retFlex[1]);
 
     let baseStart = host.window.start;
     let baseEnd = host.window.end;
@@ -286,9 +305,9 @@ export function findMergeHosts(params: MergeSearchParams): MergeCandidate[] {
       if (host.isFixed || host.legSide !== 'both' || !hostNr) continue;
       const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi);
       const bootOut = Math.round((out?.insertion.boardArrivalMinutes ?? 0) / 15);
-      const tailRet = Math.round((ret?.insertion.alightTailMinutes ?? 0) / 15);
+      const tailRet = Math.round(retTail / 15);
       if (out) baseStart = clamp(baseStart, guest.flexDep[0] + addOut - bootOut, guest.flexDep[1] + addOut - bootOut);
-      if (ret) baseEnd = clamp(baseEnd, guest.flexRet[0] - addRet + tailRet, guest.flexRet[1] - addRet + tailRet);
+      if (ret) baseEnd = clamp(baseEnd, retFlex[0] - addRet + tailRet, retFlex[1] - addRet + tailRet);
       if (baseEnd - baseStart < hostNr.minDurationSlots) continue;
       if (baseStart < hostNr.flexDep[0] || baseStart > hostNr.flexDep[1]) continue;
       if (baseEnd < hostNr.flexRet[0] || baseEnd > hostNr.flexRet[1]) continue;
@@ -326,7 +345,7 @@ export function findMergeHosts(params: MergeSearchParams): MergeCandidate[] {
     const guestEndEta = ret ? etaRetOf(baseEnd) : undefined;
     const shiftCostGuest =
       (guestStartEta === undefined ? 0 : slotsToMinutes(Math.abs(guestStartEta - guest.window.start))) +
-      (guestEndEta === undefined ? 0 : slotsToMinutes(Math.abs(guestEndEta - guest.window.end)));
+      (guestEndEta === undefined ? 0 : slotsToMinutes(Math.abs(guestEndEta - (reversed ? guest.window.start : guest.window.end))));
     const shiftCostHost = hostShift ? Math.abs(hostShift.departureMin) + Math.abs(hostShift.returnMin) : 0;
     const addedTotal = (out?.insertion.addedMinutes ?? 0) + (ret?.insertion.addedMinutes ?? 0);
     const cost = addedTotal + shiftCostGuest + shiftCostHost;
@@ -346,6 +365,7 @@ export function findMergeHosts(params: MergeSearchParams): MergeCandidate[] {
       confidence,
       proposedDriverRequestId,
       boardAtLocationId: leg === 'return' ? guest.destinationId : guest.originId,
+      reversedOneWay: reversed || undefined,
       hostWindowBefore: window.start !== host.window.start || window.end !== host.window.end ? host.window : undefined,
       addedOutMinutes: out && out.insertion.addedMinutes > 0 ? out.insertion.addedMinutes : undefined,
       addedReturnMinutes: ret && ret.insertion.addedMinutes > 0 ? ret.insertion.addedMinutes : undefined,

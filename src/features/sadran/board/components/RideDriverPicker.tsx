@@ -34,11 +34,13 @@ export interface RideDriverPickerProps {
   placeName?: (placeId: string) => string | undefined;
   homeDestinationId?: string | null;
   disabled?: boolean;
+  /** R6B15: false on an unpublished (draft) day — nothing is sent, so the toast says "saved". Default true. */
+  published?: boolean;
   /** Called after a successful assign/remove (R3B16: the sheet closes). */
   onDone?: () => void;
 }
 
-export function RideDriverPicker({ rideId, version, needsDriver, volunteerName, candidates, departmentId, weekStart, busyIds, placeName, homeDestinationId, disabled, onDone }: RideDriverPickerProps) {
+export function RideDriverPicker({ rideId, version, needsDriver, volunteerName, candidates, departmentId, weekStart, busyIds, placeName, homeDestinationId, disabled, published = true, onDone }: RideDriverPickerProps) {
   const [driverId, setDriverId] = useState("");
   const mutation = useSetRideDriverMutation();
   const drivers = sortFreeFirst(candidates.filter((candidate) => !candidate.doesNotDrive), busyIds ?? new Set<string>());
@@ -50,7 +52,7 @@ export function RideDriverPicker({ rideId, version, needsDriver, volunteerName, 
     const chosen = drivers.find((candidate) => candidate.id === driverId);
     if (!chosen) return;
     mutation.mutate({ rideId, driverId: chosen.id, expectedVersion: version, departmentId, weekStart }, {
-      onSuccess: () => { setDriverId(""); toast.success(tv("rideDriver.assigned", { name: chosen.name })); onDone?.(); },
+      onSuccess: () => { setDriverId(""); toast.success(tv(published ? "rideDriver.assigned" : "rideDriver.assignedUnpublished", { name: chosen.name })); onDone?.(); },
     });
   }
   function unassign() {
