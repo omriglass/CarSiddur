@@ -26,6 +26,9 @@ export interface DraftPlacement {
   leg?: "out" | "return" | null;
 }
 
+/** Per merge proposal id: the merged ride's window as the server's `merge_preview` computed it (REQ item 108 M1). */
+export type ServerMergeWindows = ReadonlyMap<string, { startsAt: string; endsAt: string }>;
+
 function payloadOf(proposal: Pick<ProposalRow, "payload">): Record<string, unknown> {
   const payload = proposal.payload;
   return payload && typeof payload === "object" && !Array.isArray(payload) ? (payload as Record<string, unknown>) : {};
@@ -49,6 +52,7 @@ export function resolveDraftPlacement(
   rides: readonly BoardRide[],
   homeId?: string,
   route?: Pick<MergeRouteContext, "hop" | "stopMinutes" | "hopKm" | "detourLimitMinutes" | "detourLimitKm">,
+  serverMergeWindows?: ServerMergeWindows,
 ): DraftPlacement | null {
   const request = requests.find((r) => r.id === proposal.request_id);
   if (!request || !proposal.request_id) return null;
@@ -61,8 +65,10 @@ export function resolveDraftPlacement(
     const host = rides.find((ride) => ride.id === proposal.ride_id);
     if (!host?.car_id || !host.starts_at || !host.ends_at) return null;
     const preview = route ? previewMerge(host, request, mergePayloadLeg(payload, request), { ...route, homeId }) : null;
-    const startsAt = new Date(Math.min(Date.parse(preview?.startsAt ?? host.starts_at), Date.parse(str(payload.starts_at) ?? host.starts_at))).toISOString();
-    const endsAt = new Date(Math.max(Date.parse(preview?.endsAt ?? host.ends_at), Date.parse(str(payload.ends_at) ?? host.ends_at))).toISOString();
+    // REQ item 108 (M1): the server's `merge_preview` window wins; the route twin is the fallback while it loads or fails.
+    const server = serverMergeWindows?.get(proposal.id);
+    const startsAt = new Date(Math.min(Date.parse(server?.startsAt ?? preview?.startsAt ?? host.starts_at), Date.parse(str(payload.starts_at) ?? host.starts_at))).toISOString();
+    const endsAt = new Date(Math.max(Date.parse(server?.endsAt ?? preview?.endsAt ?? host.ends_at), Date.parse(str(payload.ends_at) ?? host.ends_at))).toISOString();
     return { ...common, type: "merge", carId: host.car_id, startsAt, endsAt,
       originId: host.origin_id, destinationId: host.destination_id, hostRideId: host.id, replacesRideId: null };
   }
@@ -140,11 +146,12 @@ export function resolveDraftPlacements(
   rides: readonly BoardRide[],
   homeId?: string,
   route?: Pick<MergeRouteContext, "hop" | "stopMinutes" | "hopKm" | "detourLimitMinutes" | "detourLimitKm">,
+  serverMergeWindows?: ServerMergeWindows,
 ): DraftPlacement[] {
   return proposals
     .filter((proposal) => proposal.status === "draft")
     .flatMap((proposal) => {
-      const placement = resolveDraftPlacement(proposal, requests, rides, homeId, route);
+      const placement = resolveDraftPlacement(proposal, requests, rides, homeId, route, serverMergeWindows);
       return placement ? [placement] : [];
     });
 }

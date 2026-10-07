@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { fetchCars } from "@/features/fleet/api";
 import { showErrorToast } from "@/lib/rpc";
@@ -78,6 +78,27 @@ export function useMergePreview(rideId: string | null | undefined, requestId: st
     queryFn: () => api.fetchMergePreview(rideId as string, requestId as string, leg),
     enabled: enabled && !!rideId && !!requestId,
     staleTime: 0,
+    // A failed preview falls back to the TS twin (REQ item 108 M1) - do not keep the Sadran waiting on retries.
+    retry: 1,
+  });
+}
+
+export interface MergePreviewSpec { rideId: string | null | undefined; requestId: string | null | undefined; leg: RideLeg }
+
+/**
+ * REQ item 108 (M1): `merge_preview` for several ride/request/leg combinations at once (the popup's
+ * legs, the pending-merge blocks). Same query keys as `useMergePreview`, so they share the cache and
+ * `invalidateWeekData` refreshes them. Results are in `specs` order.
+ */
+export function useMergePreviews(specs: readonly MergePreviewSpec[], enabled = true, staleTime = 0) {
+  return useQueries({
+    queries: specs.map((spec) => ({
+      queryKey: sadranKeys.mergePreview(spec.rideId ?? "", spec.requestId ?? "", spec.leg),
+      queryFn: () => api.fetchMergePreview(spec.rideId as string, spec.requestId as string, spec.leg),
+      enabled: enabled && !!spec.rideId && !!spec.requestId,
+      staleTime,
+      retry: 1,
+    })),
   });
 }
 

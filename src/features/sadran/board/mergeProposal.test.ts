@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import { makeHop } from "@/lib/rideRoute";
 
-import { addedGuestsOf, applyServerMergeTimes, combineMergeLegs, parseServerMergePreview, defaultMergeLeg, mergeLegForCard, mergeLegOptions, mergePayloadFromLegs, mergePayloadLegs, mergePayload, mergePayloadLeg, previewMerge } from "./mergeProposal";
+import { addedGuestsOf, applyServerMergeTimes, combineMergeLegs, parseServerMergePreview, defaultMergeLeg, mergeLegForCard, mergeLegOptions, mergePayloadFromLegs, mergePayloadLegs, mergePayload, mergePayloadLeg, mergeRefusalText, mergeVerdict, previewMerge, type ServerMergePreview } from "./mergeProposal";
+import { he } from "@/i18n/he";
 
 import type { BoardRide, WeekRequestRow } from "../api";
 
@@ -70,7 +71,7 @@ describe("previewMerge", () => {
 
 describe("previewMerge return-only guest (R3B6)", () => {
   it("computes a stop time when the host has a single stored leg", () => {
-    const preview = previewMerge(host, request({ trip_shape: "one_way_from", origin_id: "H", destination_id: "T", destination_resolved_name: "Station", depart_at: null, return_at: "2026-10-11T04:15:00.000Z" }), "return", { hop, stopMinutes: 5, homeId: "H" })!;
+    const preview = previewMerge(host, request({ trip_shape: "one_way_from", origin_id: "H", destination_id: "T", destination_resolved_name: "Station", depart_at: null, return_at: "2026-10-11T04:15:00.000Z" }), "return", { hop, stopMinutes: 5, homeId: "H", detourLimitMinutes: 120 })!;
     expect(preview.boardLeg).not.toBeNull();
     expect(preview.boardEta).not.toBeNull();
   });
@@ -136,5 +137,52 @@ describe("server merge times (R5B5 / TODO U2)", () => {
     const twin = previewMerge(host, guest, "out", { hop, stopMinutes: 0, homeId: "H" });
     expect(applyServerMergeTimes(twin, null, guest)).toBe(twin);
     expect(applyServerMergeTimes(null, parseServerMergePreview(raw), guest)).toBeNull();
+  });
+  it("takes the server's times and verdict when the twin refused but the server allows", () => {
+    const guest = request({ trip_shape: "one_way_to" });
+    const twin = { ...previewMerge(host, guest, "out", { hop, stopMinutes: 0, homeId: "H" })!, valid: false, invalid: "detour_too_long" as const };
+    const shown = applyServerMergeTimes(twin, parseServerMergePreview(raw), guest)!;
+    expect(shown.valid).toBe(true);
+    expect(shown.invalid).toBeNull();
+    expect(shown.startsAt).toBe(raw.new_starts_at);
+    expect(shown.boardEta).toBe(raw.joiner_depart_at);
+    const refused = applyServerMergeTimes(twin, { ...parseServerMergePreview(raw)!, ok: false, code: "detour" }, guest);
+    expect(refused).toBe(twin);
+  });
+});
+
+describe("mergeVerdict / mergeRefusalText (REQ item 108 M1: the server decides)", () => {
+  const server = (patch: Partial<ServerMergePreview>): ServerMergePreview => ({ ok: true, code: null, newStartsAt: null, newEndsAt: null, joinerDepartAt: null, joinerReturnAt: null, ...patch });
+
+  it("maps every server code to its reason text, unknown codes to the generic one", () => {
+    expect(mergeRefusalText("maintenance")).toBe(he.mergedRide.invalid.maintenance);
+    expect(mergeRefusalText("window")).toBe(he.mergedRide.invalid.window);
+    expect(mergeRefusalText("seats")).toBe(he.mergedRide.invalid.seats_full);
+    expect(mergeRefusalText("detour")).toBe(he.mergedRide.invalid.detour_too_long);
+    expect(mergeRefusalText("luggage")).toBe(he.mergedRide.invalid.luggage_needs_large_trunk);
+    expect(mergeRefusalText("boards_at_end")).toBe(he.mergedRide.invalid.boards_at_end);
+    expect(mergeRefusalText("private_car")).toBe(he.mergedRide.invalid.private_car);
+    expect(mergeRefusalText("turnaround")).toBe(he.mergedRide.invalid.turnaround_conflict);
+    expect(mergeRefusalText("already_on_ride")).toBe(he.mergedRide.invalid.already_on_ride);
+    expect(mergeRefusalText("something_new")).toBe(he.mergedRide.invalid.unknown);
+    expect(mergeRefusalText(null)).toBe(he.mergedRide.invalid.unknown);
+  });
+
+  it("is loading until every call answered; a refusal wins over a pending call", () => {
+    expect(mergeVerdict([{ data: undefined, isError: false }], null)).toEqual({ status: "loading" });
+    expect(mergeVerdict([{ data: server({}), isError: false }, { data: undefined, isError: false }], null)).toEqual({ status: "loading" });
+    expect(mergeVerdict([{ data: undefined, isError: false }, { data: server({ ok: false, code: "seats" }), isError: false }], null))
+      .toMatchObject({ status: "refused", code: "seats", source: "server", message: he.mergedRide.invalid.seats_full });
+  });
+
+  it("allows only when the server says ok - the twin's objection does not matter", () => {
+    expect(mergeVerdict([{ data: server({}), isError: false }], "detour_too_long")).toEqual({ status: "ok" });
+  });
+
+  it("falls back to the twin when the preview call failed", () => {
+    expect(mergeVerdict([{ data: undefined, isError: true }], null)).toEqual({ status: "ok" });
+    expect(mergeVerdict([{ data: undefined, isError: true }], "boards_at_end"))
+      .toMatchObject({ status: "refused", source: "twin", message: he.mergedRide.invalid.boards_at_end });
+    expect(mergeVerdict([{ data: null, isError: false }], "detour_too_long")).toMatchObject({ status: "refused", source: "twin" });
   });
 });

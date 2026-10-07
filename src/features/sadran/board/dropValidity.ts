@@ -5,6 +5,12 @@
  * blocks, seat configs, the currently selected day, the chauffeur-dwell
  * setting, the unmet-request list) is passed in explicitly via
  * `BoardDropContext`. Behaviour is unchanged; this is a mechanical hoist.
+ *
+ * ADVISORY ONLY (REQ item 108 e, TODO M1/D3): this is the board's instant, approximate
+ * drag highlight, a TypeScript twin of rules the database owns. The server's verdict decides
+ * on drop - the merge popup and composer read `merge_preview` (`ok`/`code`) and every write
+ * re-checks in SQL (`_merge_check`, `rides_before_write`, `assert_*`). Keep the twin no
+ * stricter than SQL; where the two differ, SQL is right.
  */
 import { fromZonedTime } from "date-fns-tz";
 
@@ -42,9 +48,22 @@ export interface BoardDropContext {
   cars: Car[];
   maintenanceBlocks: MaintenanceBlockRow[];
   seatConfigsByCarId: Map<string, SeatConfig[]>;
+  /**
+   * `false` while the seat configurations are still loading: a car with no configuration then
+   * is "unknown", not "refused". Omitted/`true` = loaded: a car with NO configuration fits nobody
+   * (SQL `car_fits`, solver `fits`).
+   */
+  seatConfigsLoaded?: boolean;
   unmetItems: UnmetListItem[];
   selectedDay: string;
   chauffeurDwellMinutes: number;
+  /** The week's turnaround buffer (REQ item 108 a) - the maintenance check counts it after a ride's end. Default 30. */
+  turnaroundMinutes?: number;
+  /**
+   * The viewer is an admin: an admin may place a ride over a maintenance block (SQL
+   * `rides_before_write`, REQ item 108 c). Everyone else is refused.
+   */
+  isAdmin?: boolean;
   /**
    * Per car, windows where the car is away from its base (REQUIREMENTS §13.93;
    * `board/geometry.ts`'s `scanBoardConflicts` — same data the grid's "away" band draws).
@@ -151,10 +170,14 @@ export function carFreeForSpan(ctx: BoardDropContext, carId: string, startsAt: s
     .map((ride) => ({ startsAt: ride.starts_at!, endsAt: ride.ends_at! })), 0);
 }
 
-/** Does any of `carId`'s seat configurations fit `need`? No configs on record -> don't block (unknown, not invalid). */
+/**
+ * Does any of `carId`'s seat configurations fit `need`? A car with NO configuration fits nobody
+ * (SQL `car_fits`, solver `fits` - REQ item 108 D3), except while the configurations are still
+ * loading (`seatConfigsLoaded === false`), when the answer is unknown and nothing is blocked.
+ */
 export function seatsFit(ctx: BoardDropContext, carId: string, need: SeatNeed): boolean {
   const configs = ctx.seatConfigsByCarId.get(carId) ?? [];
-  if (configs.length === 0) return true;
+  if (configs.length === 0) return ctx.seatConfigsLoaded === false;
   return configs.some((c) => c.adults >= need.adults && c.child_seats >= need.childSeats && c.boosters >= need.boosters);
 }
 
@@ -167,7 +190,12 @@ export function seatsFit(ctx: BoardDropContext, carId: string, need: SeatNeed): 
  */
 export function unavailable(ctx: BoardDropContext, carId: string, startsAt: string, endsAt: string): boolean {
   if (ctx.cars.find((car) => car.id === carId)?.status !== "active") return true;
-  if (wouldOverlap({ startsAt, endsAt }, ctx.maintenanceBlocks.filter((block) => block.car_id === carId)
+  // Same rule as SQL `rides_before_write` (REQ item 108 c): an admin may place over a maintenance
+  // block; for everyone else the ride blocks the car until its end PLUS the turnaround buffer
+  // (a block may not start within the turnaround after the ride), and nothing before its start.
+  if (ctx.isAdmin) return false;
+  const bufferedEnd = new Date(Date.parse(endsAt) + (ctx.turnaroundMinutes ?? 30) * 60_000).toISOString();
+  if (wouldOverlap({ startsAt, endsAt: bufferedEnd }, ctx.maintenanceBlocks.filter((block) => block.car_id === carId)
     .map((block) => ({ startsAt: block.starts_at, endsAt: block.ends_at })), 0)) return true;
   return false;
 }

@@ -482,7 +482,13 @@ export const heSadran = {
       time_overlap: "אי אפשר לצרף — הנסיעה המאוחדת מתנגשת בנסיעה אחרת באותו רכב",
       turnaround_conflict: "אי אפשר לצרף — הנסיעה המאוחדת לא משאירה זמן מעבר לפני הנסיעה הבאה ברכב",
       already_on_ride: "הבקשה כבר בנסיעה הזו (או שהצעה זהה כבר נשלחה)",
+      // REQ item 108 (M1): reasons only the server's `merge_preview` can give.
+      window: "אי אפשר לצרף — הנסיעה המאוחדת תחרוג מהיום של הנסיעה",
+      maintenance: "אי אפשר לצרף — הרכב בטיפול בשעות הנסיעה המאוחדת",
+      unknown: "אי אפשר לצרף את הבקשה לנסיעה הזו",
     },
+    /** REQ item 108 (M1): the popup waits for the server's verdict before offering the actions. */
+    checking: "בודק אם אפשר לצרף…",
     flexLabel: "גמישות",
     flexNone: "ללא גמישות",
     flexRange: "{{early}} דק׳ קודם / {{late}} דק׳ אחר כך",

@@ -1019,6 +1019,15 @@ begin
     v_end := (((v_day) + time '23:59') at time zone 'Asia/Jerusalem');
   end if;
 
+  -- REQ item 108 (2026-10-07): a merge that grows the window may not push the ride over a car
+  -- maintenance block - the same rule as rides_before_write (the ride's own turnaround counts after
+  -- the end, none before; admins are exempt). A window that does not grow was already accepted.
+  if v_err is null and not (v_start >= v_ride.starts_at and v_end <= v_ride.ends_at) and not public.is_admin()
+     and exists(select 1 from public.car_maintenance_blocks b where b.car_id = v_ride.car_id
+       and tstzrange(b.starts_at, b.ends_at, '[)') && tstzrange(v_start, v_end + (v_ride.blocked_until - v_ride.ends_at), '[)')) then
+    v_err := 'ride_conflicts_with_maintenance';
+  end if;
+
   v_conflict := v_err is null and public._merge_window_conflict(p_ride_id, v_start, v_end);
 
   return jsonb_build_object('ok', v_err is null, 'error', v_err, 'code', public._merge_error_code(v_err),
@@ -1048,6 +1057,7 @@ CREATE OR REPLACE FUNCTION "public"."_merge_error_code"("_err" "text") RETURNS "
     when 'private_car_owner_only' then 'private_car'
     when 'merge_turnaround_conflict' then 'turnaround'
     when 'merge_already_on_ride' then 'already_on_ride'
+    when 'ride_conflicts_with_maintenance' then 'maintenance'
     when 'ride_not_found' then 'ride_not_found'
     else _err end
 $$;

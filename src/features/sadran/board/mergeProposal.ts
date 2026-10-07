@@ -2,6 +2,7 @@
 // drag paths and the suggestion path so they all build the SAME payload: legs only - the host
 // keeps its start and its end grows by the added driving (computed by `apply_proposal` from the
 // ride route; `src/lib/rideRoute.ts` is the TS twin used to preview it). No React, no Supabase.
+import { he } from "@/i18n/he";
 import { fallbackRoute, mergePassengerIntoRoute, parseRideRoute, type Hop, type HopKm, type MergedRoute, type MergeInvalid } from "@/lib/rideRoute";
 
 import type { BoardRide, WeekRequestRow } from "../api";
@@ -177,7 +178,9 @@ export function parseServerMergePreview(raw: unknown): ServerMergePreview | null
 
 /** `preview` with the times the server computed (display only; the route and validity stay the twin's). */
 export function applyServerMergeTimes(preview: MergePreview | null, server: ServerMergePreview | null | undefined, request: Pick<WeekRequestRow, "depart_at" | "return_at">): MergePreview | null {
-  if (!preview || !server || !preview.valid) return preview;
+  // The server's verdict wins (REQ §13.108 e): a merge the TS twin refused but the server allows still gets the server's times.
+  if (!preview || !server || (!preview.valid && !server.ok)) return preview;
+  if (!preview.valid) preview = { ...preview, valid: true, invalid: null };
   const boardEta = preview.boardLeg === "return" ? (server.joinerReturnAt ?? preview.boardEta) : (server.joinerDepartAt ?? preview.boardEta);
   const requestedAt = preview.boardLeg === "return" ? request.return_at : request.depart_at;
   const timeChanges = !!boardEta && !!requestedAt && Math.round(Date.parse(boardEta) / 60_000) !== Math.round(Date.parse(requestedAt) / 60_000);
@@ -188,6 +191,59 @@ export function applyServerMergeTimes(preview: MergePreview | null, server: Serv
     boardEta, requestedAt: requestedAt ?? null, timeChanges,
     joinerOutAt: server.joinerDepartAt, joinerReturnAt: server.joinerReturnAt,
   };
+}
+
+/** The server's refusal codes (`_merge_error_code`) -> the `he.mergedRide.invalid` text. An unknown code gets the generic text. */
+const MERGE_CODE_TEXT: Record<string, string> = {
+  boards_at_end: he.mergedRide.invalid.boards_at_end,
+  detour: he.mergedRide.invalid.detour_too_long,
+  luggage: he.mergedRide.invalid.luggage_needs_large_trunk,
+  seats: he.mergedRide.invalid.seats_full,
+  private_car: he.mergedRide.invalid.private_car,
+  turnaround: he.mergedRide.invalid.turnaround_conflict,
+  already_on_ride: he.mergedRide.invalid.already_on_ride,
+  window: he.mergedRide.invalid.window,
+  maintenance: he.mergedRide.invalid.maintenance,
+};
+
+/** Hebrew reason for a `merge_preview` refusal `code` (REQ item 108 M1). */
+export function mergeRefusalText(code: string | null | undefined): string {
+  return (code ? MERGE_CODE_TEXT[code] : undefined) ?? he.mergedRide.invalid.unknown;
+}
+
+/**
+ * REQ item 108 (M1): whether one leg's merge is allowed. The server's `merge_preview` decides;
+ * the TS twin's verdict is only the fallback when the preview request itself failed.
+ * `loading` = no verdict yet (offer nothing), `source` says who refused.
+ */
+export type MergeVerdict =
+  | { status: "loading" }
+  | { status: "ok" }
+  | { status: "refused"; message: string; code: string | null; source: "server" | "twin" };
+
+/** What `useQuery` says about one `merge_preview` call (a subset, so tests need no React). */
+export interface MergePreviewState {
+  data: ServerMergePreview | null | undefined;
+  isError: boolean;
+}
+
+/**
+ * The verdict for one merge choice made of one or more `merge_preview` calls (a connected pair's
+ * "both" joins one leg on each of two rides - every ride must accept). A refusal wins over a pending
+ * call; a failed (or unreadable) call falls back to `twinInvalid` for that call.
+ */
+export function mergeVerdict(states: readonly MergePreviewState[], twinInvalid: MergeInvalid | null): MergeVerdict {
+  let loading = false;
+  for (const state of states) {
+    if (state.data) {
+      if (!state.data.ok) return { status: "refused", message: mergeRefusalText(state.data.code), code: state.data.code, source: "server" };
+    } else if (state.isError || state.data === null) {
+      if (twinInvalid) return { status: "refused", message: he.mergedRide.invalid[twinInvalid], code: twinInvalid, source: "twin" };
+    } else {
+      loading = true;
+    }
+  }
+  return loading ? { status: "loading" } : { status: "ok" };
 }
 
 /**

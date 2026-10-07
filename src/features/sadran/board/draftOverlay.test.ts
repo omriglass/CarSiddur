@@ -57,6 +57,18 @@ describe("resolveDraftPlacement", () => {
     const placement = resolveDraftPlacement(proposal({ type: "merge", ride_id: "ride1", payload: { ride_id: "ride1", legs: [{ ride_id: "ride1", role: "passenger", leg: "out", car_mode: "passenger" }] } }), [guest], [host], "home", { hop, stopMinutes: 5 });
     expect(placement).toMatchObject({ type: "merge", carId: "carA", startsAt: "2026-10-11T05:45:00.000Z", endsAt: "2026-10-11T08:00:00.000Z" });
   });
+  it("merge: the server's merge_preview window wins over the route twin (REQ item 108 M1)", () => {
+    const hop = makeHop([{ fromId: "home", toId: "dest", travelMinutes: 60 }, { fromId: "home", toId: "stn", travelMinutes: 20 }, { fromId: "stn", toId: "dest", travelMinutes: 45 }]);
+    const host = ride({ origin_id: "home", destination_id: "dest", route: [] as never, starts_at: "2026-10-11T06:00:00.000Z", ends_at: "2026-10-11T08:00:00.000Z" });
+    const guest = request({ trip_shape: "one_way_to", origin_id: "stn", destination_id: "dest" });
+    const draft = proposal({ type: "merge", ride_id: "ride1", payload: { ride_id: "ride1", legs: [{ ride_id: "ride1", role: "passenger", leg: "out", car_mode: "passenger" }] } });
+    const server = new Map([["p1", { startsAt: "2026-10-11T05:30:00.000Z", endsAt: "2026-10-11T08:15:00.000Z" }]]);
+    expect(resolveDraftPlacement(draft, [guest], [host], "home", { hop, stopMinutes: 5 }, server))
+      .toMatchObject({ startsAt: "2026-10-11T05:30:00.000Z", endsAt: "2026-10-11T08:15:00.000Z" });
+    // another proposal's window is not used; the twin fills in
+    expect(resolveDraftPlacement(draft, [guest], [host], "home", { hop, stopMinutes: 5 }, new Map([["other", { startsAt: "2026-10-11T01:00:00.000Z", endsAt: "2026-10-11T09:00:00.000Z" }]])))
+      .toMatchObject({ startsAt: "2026-10-11T05:45:00.000Z", endsAt: "2026-10-11T08:00:00.000Z" });
+  });
   it("origin: the request's own window on the proposed car and place", () => {
     const placement = resolveDraftPlacement(proposal({ type: "origin", payload: { car_id: "carC", origin_id: "haifa" } }), [request()], []);
     expect(placement).toMatchObject({ type: "origin", carId: "carC", originId: "haifa", startsAt: "2026-10-11T06:00:00.000Z" });

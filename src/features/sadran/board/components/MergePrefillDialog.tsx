@@ -10,7 +10,7 @@ import { he, tv } from "@/i18n/he";
 import { formatTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
-import { mergeLegOptions, type MergeLeg, type MergePreview } from "../mergeProposal";
+import { mergeLegOptions, type MergeLeg, type MergePreview, type MergeVerdict } from "../mergeProposal";
 import { requestFlexLines } from "../mergeFlex";
 
 import type { ComposerPrefill as MergePrefill } from "../draftInput";
@@ -44,8 +44,13 @@ export interface MergePrefillDialogProps {
   onLegChange: (leg: MergeLeg) => void;
   /** The card's own leg (a return-leg card offers "חזור בלבד", REQ §13.102). */
   anchorLeg?: "out" | "return" | null;
-  /** Legs the popup may offer: a leg whose merge is invalid is disabled. */
-  legValid?: Partial<Record<MergeLeg, boolean>>;
+  /**
+   * REQ item 108 (M1): the server's verdict (`merge_preview`) per leg the popup offers; a leg that is
+   * refused or still being checked is disabled.
+   */
+  legVerdicts?: Partial<Record<MergeLeg, MergeVerdict>>;
+  /** The server's verdict for the selected leg(s): refused -> its reason is shown and send/draft are disabled; loading -> disabled. */
+  verdict?: MergeVerdict;
   /** REQ §13.102 (d): out on one ride and return on another, one proposal - leg choice hidden. */
   split?: boolean;
   /** How this merge relates to the request's open draft. */
@@ -110,15 +115,14 @@ function RideBlock({ testId, heading, label, startsAt, endsAt, preview, flex }: 
           {tv("mergedRide.endsLater", { time: formatTime(new Date(preview.endsAt)), old: formatTime(new Date(endsAt)) })}
         </p>
       ) : null}
-      {testId !== "merge-base" && preview && !preview.valid && preview.invalid ? (
-        <p className="font-semibold text-destructive" data-testid={`${testId}-invalid`}>{he.mergedRide.invalid[preview.invalid]}</p>
-      ) : null}
     </div>
   );
 }
 
-export function MergePrefillDialog({ prefill, hostLabel, hostStartsAt, hostEndsAt, request, hostRequest, pair, requestRoute, leg, onLegChange, anchorLeg, legValid, split, draftNote, preview, onConfirm, onDraft, busy, onCancel }: MergePrefillDialogProps) {
+export function MergePrefillDialog({ prefill, hostLabel, hostStartsAt, hostEndsAt, request, hostRequest, pair, requestRoute, leg, onLegChange, anchorLeg, legVerdicts, verdict, split, draftNote, preview, onConfirm, onDraft, busy, onCancel }: MergePrefillDialogProps) {
   const options = request && !split ? mergeLegOptions(request, anchorLeg) : null;
+  // The server decides; without a verdict (no host/request to ask about) the TS twin's validity is the fallback.
+  const blocked = verdict ? verdict.status !== "ok" : (!!preview && !preview.valid) || (!!pair?.preview && !pair.preview.valid);
   return (
     <Dialog open={!!prefill} onOpenChange={(open) => !open && onCancel()}>
       <DialogContent data-testid="merge-dialog">
@@ -151,7 +155,7 @@ export function MergePrefillDialog({ prefill, hostLabel, hostStartsAt, hostEndsA
                         type="button"
                         role="radio"
                         aria-checked={leg === choice}
-                        disabled={legValid?.[choice] === false}
+                        disabled={!!legVerdicts?.[choice] && legVerdicts[choice]!.status !== "ok"}
                         variant={leg === choice ? "default" : "outline"}
                         className={cn("min-h-11 flex-1")}
                         data-testid={`merge-leg-${choice}`}
@@ -166,8 +170,10 @@ export function MergePrefillDialog({ prefill, hostLabel, hostStartsAt, hostEndsA
                 )}
               </div>
             ) : null}
-            {preview && !preview.valid && preview.invalid ? (
-              <p className="font-semibold text-destructive" data-testid="merge-invalid">{he.mergedRide.invalid[preview.invalid]}</p>
+            {verdict?.status === "refused" ? (
+              <p className="font-semibold text-destructive" data-testid="merge-invalid" data-code={verdict.code ?? undefined}>{verdict.message}</p>
+            ) : verdict?.status === "loading" ? (
+              <p className="text-muted-foreground" data-testid="merge-checking" role="status">{he.mergedRide.checking}</p>
             ) : preview?.boardEta ? (
               <div data-testid="merge-eta" className="space-y-0.5">
                 <p>{he.mergedRide.estimated}</p>
@@ -186,8 +192,8 @@ export function MergePrefillDialog({ prefill, hostLabel, hostStartsAt, hostEndsA
           </div>
         ) : null}
         <div className="flex flex-wrap gap-2">
-          <Button onClick={onConfirm} disabled={busy || (!!preview && !preview.valid) || (!!pair?.preview && !pair.preview.valid)} className="min-h-11" data-testid="merge-prepare">{he.boardDrafts.prepare}</Button>
-          <Button variant="secondary" onClick={onDraft} disabled={busy || (!!preview && !preview.valid) || (!!pair?.preview && !pair.preview.valid)} className="min-h-11" data-testid="merge-save-draft">{he.boardDrafts.draftButton}</Button>
+          <Button onClick={onConfirm} disabled={busy || blocked} className="min-h-11" data-testid="merge-prepare">{he.boardDrafts.prepare}</Button>
+          <Button variant="secondary" onClick={onDraft} disabled={busy || blocked} className="min-h-11" data-testid="merge-save-draft">{he.boardDrafts.draftButton}</Button>
           <Button variant="outline" onClick={onCancel} className="min-h-11">{he.common.cancel}</Button>
         </div>
       </DialogContent>

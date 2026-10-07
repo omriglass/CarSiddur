@@ -376,6 +376,30 @@ begin
   assert (pv->>'new_ends_at')::timestamptz=d0+interval '4 hours', 'return end unchanged for an out-only guest';
   assert (pv->>'added_out_km')::numeric>0, 'added km reported';
 
+  -- M1 (REQ item 108): a merge whose grown window would overlap a car maintenance block is refused with
+  -- code 'maintenance' (same rule as rides_before_write); an admin is exempt; a block outside the window is fine.
+  insert into public.car_maintenance_blocks(car_id, starts_at, ends_at, reason, created_by)
+    values (car1, d0-interval '3 hours', d0, 'merge fixture', manager);
+  pv:=public.merge_preview(rA,g2,'out');
+  assert (pv->>'ok')::boolean=false and pv->>'code'='maintenance' and pv->>'error'='ride_conflicts_with_maintenance',
+    format('merge_preview must refuse a window growing into a maintenance block, got %s',pv);
+  begin
+    perform public.create_proposal(g2,rA,'merge',jsonb_build_object('ride_id',rA,
+      'legs',jsonb_build_array(jsonb_build_object('ride_id',rA,'leg','out','car_mode','passenger'))),'x');
+    raise exception 'maintenance overlap must be refused';
+  exception when others then if sqlerrm<>'ride_conflicts_with_maintenance' then raise; end if; end;
+  perform set_config('request.jwt.claims',jsonb_build_object('sub','00000000-0000-0000-0000-000000000101','role','authenticated')::text,true);
+  pv:=public.merge_preview(rA,g2,'out');
+  assert (pv->>'ok')::boolean, format('an admin may merge over a maintenance block, got %s',pv);
+  perform set_config('request.jwt.claims',jsonb_build_object('sub',manager,'role','authenticated')::text,true);
+  delete from public.car_maintenance_blocks where car_id=car1 and reason='merge fixture';
+  -- a block that ends before the grown start does not matter
+  insert into public.car_maintenance_blocks(car_id, starts_at, ends_at, reason, created_by)
+    values (car1, d0-interval '5 hours', d0-interval '30 minutes', 'merge fixture', manager);
+  pv:=public.merge_preview(rA,g2,'out');
+  assert (pv->>'ok')::boolean, format('a block clear of the grown window is fine, got %s',pv);
+  delete from public.car_maintenance_blocks where car_id=car1 and reason='merge fixture';
+
   -- detour limits (minutes, then km) refuse at create time ...
   update public.department_settings set detour_limit_minutes=1 where department_id=dept;
   begin
@@ -416,6 +440,20 @@ begin
   assert (select eta from public.ride_route(rA) where leg='out' and kind='destination')<=d0+interval '20 minutes'+interval '1 minute'
      or (select eta from public.ride_route(rA) where leg='out' and kind='destination')<=d0+interval '20 minutes'+make_interval(mins=>(ceil((t-5)/15.0)*15)::int-(t-5)),
     'the base request keeps (about) its own arrival';
+  -- M1: a merge that would grow the ride across midnight reports ok=false, code 'window'.
+  declare qC uuid; rC uuid; g3 uuid; dm timestamptz:=((w+5)+time '00:00') at time zone 'Asia/Jerusalem';
+  begin
+    insert into public.requests(department_id,week_start,requester_id,filed_by,origin_id,destination_id,ride_type_id,depart_at,return_at,trip_shape,status)
+      values(dept,w,m1,manager,home,haifa,typ,dm,dm+interval '2 hours','round_trip','assigned') returning id into qC;
+    insert into public.rides(department_id,week_start,car_id,starts_at,ends_at,origin_id,destination_id,driver_id,status,created_by)
+      values(dept,w,car1,dm,dm+interval '2 hours',home,home,m1,'draft',manager) returning id into rC;
+    insert into public.ride_requests(ride_id,request_id,role,leg,car_mode) values(rC,qC,'driver','both','keep');
+    insert into public.requests(department_id,week_start,requester_id,filed_by,origin_id,destination_id,ride_type_id,depart_at,trip_shape,trip_type,needs_car_at_destination,one_way_car_mode,status)
+      values(dept,w,m2,manager,bin,haifa,typ,dm,'one_way_to','one_way',true,'relay','submitted') returning id into g3;
+    pv:=public.merge_preview(rC,g3,'out');
+    assert (pv->>'ok')::boolean=false and pv->>'code'='window' and pv->>'error'='ride_request_day_mismatch',
+      format('merge_preview must refuse a window crossing midnight with code window, got %s',pv);
+  end;
   update public.department_settings set detour_limit_minutes=20, detour_limit_km=15 where department_id=dept;
   raise notice 'merged_rides.sql section 7: merge validity, detour limits and window passed';
 end $$;

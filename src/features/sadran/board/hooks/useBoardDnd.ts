@@ -529,12 +529,11 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
     const withinDepartFlex = servedRequests.every((req) => requestWithinFlex(req, newStartsAt, newEndsAt, servedOf(ride).find((entry) => entry.request_id === req.id)?.leg, ride.driver_id !== req.requester_id));
 
     // Conflicts checked and reported in Hebrew *before* touching the DB
-    // (owner bug report #2: "confirm conflicts — overlap/buffer/location/
-    // seat fit — are checked and reported in Hebrew on drop"). Location/
-    // overnight-chain is still enforced server-side by `assert_car_chain`
-    // inside `edit_ride` (`lib/rpc.ts`'s `car_chain_broken` -> `he.errors.
-    // carChainBroken`); seat-fit and same-car overlap have no DB check at
-    // all today, so they're validated here against the *real* dropped time.
+    // (owner bug report #2): overlap/buffer, maintenance and seat fit are checked here against the
+    // *real* dropped time as an instant, advisory pre-check - the server re-checks on write
+    // (`rides_before_write`, `assert_ride_seats_fit`) and its error is shown if it disagrees.
+    // Location (the car chain) is NOT enforced: `assert_car_chain` inside `edit_ride` heals what it
+    // can and `flag_car_chain_breaks` only flags the rest (a board warning, never a refusal).
     if (carId !== ride.car_id && !seatsFit(dropCtx, carId, passengersOf(ride))) {
       toast.error(he.sadranBoard.seatMismatchToast);
       return;

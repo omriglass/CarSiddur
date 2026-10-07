@@ -28,6 +28,8 @@ export function isSiddurQueryAffectedByWeek(query: Pick<Query, "queryKey">, depa
 export function invalidateWeekData(queryClient: QueryClient, departmentId: string, weekStart: string): Promise<unknown> {
   return Promise.all([
     queryClient.invalidateQueries({ queryKey: sadranKeys.week(departmentId, weekStart) }),
+    // REQ item 108 (M1): the server's merge verdicts/windows are not week-keyed; any ride or request change can alter them.
+    queryClient.invalidateQueries({ queryKey: sadranKeys.mergePreviews() }),
     queryClient.invalidateQueries({ predicate: (query) => isSiddurQueryAffectedByWeek(query, departmentId, weekStart) }),
     queryClient.invalidateQueries({ queryKey: requestsKeys.all }),
   ]);

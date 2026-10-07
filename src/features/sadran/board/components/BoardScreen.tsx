@@ -44,11 +44,11 @@ import { rideCoordinatorNotes } from "@/lib/rideCoordinatorNotes";
 import { resolveRideRealDestination } from "../rideLabel";
 import { duplicateChildRuns, groupDuplicateRuns } from "../duplicateChildRuns";
 import { connectedMateOf, unmetItemId } from "../unmetLegs";
-import { applyServerMergeTimes, mergePayloadLeg, mergePayloadLegs, previewMerge } from "../mergeProposal";
+import { applyServerMergeTimes, mergeInvalidReason, mergeLegOptions, mergePayloadLeg, mergePayloadLegs, mergeVerdict, previewMerge, type MergeLeg, type MergeVerdict } from "../mergeProposal";
 import { requestRouteLine } from "../requestRoute";
 import { parseTimeToMinutes } from "@/features/solverBridge/buildSolverInput";
 import { representativeRideTypeCode, servedOf, servedToEditRideLegs, withChildNames } from "../../solverRun";
-import { useMergePreview } from "../../hooks";
+import { useMergePreview, useMergePreviews, type MergePreviewSpec } from "../../hooks";
 import { useBoardData } from "../hooks/useBoardData";
 import { useBoardDnd } from "../hooks/useBoardDnd";
 import { useBoardDisplayPrefs } from "../useBoardDisplayPrefs";
@@ -148,9 +148,37 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
     ? applyServerMergeTimes(previewMerge(mergeHost, mergeRequest, mergePair ? mergePair.rideLeg : mergeLeg, board.routeCtx), serverMergeHost.data, mergeRequest) : null;
   const mergePairPreview = mergePair && mergeRequest
     ? applyServerMergeTimes(previewMerge(mergePair.mate, mergeRequest, mergePair.mateLeg, board.routeCtx), serverMergeMate.data, mergeRequest) : null;
-  const legValid = mergeHost && mergeRequest && !mergeSplit
-    ? Object.fromEntries((["out", "return", "both"] as const).map((leg) => [leg, !(previewMerge(mergeHost, mergeRequest, leg, board.routeCtx)?.invalid)]))
-    : undefined;
+  // REQ item 108 (M1): which legs may be merged, and whether the popup may send/draft, is the SERVER's verdict
+  // (`merge_preview` `ok`/`code` - the same check the real write runs). The TS twin only fills in when the preview
+  // request itself failed; while it is loading nothing is offered yet.
+  const verdictLegs: MergeLeg[] = mergeHost && mergeRequest && !mergeSplit
+    ? [...new Set<MergeLeg>([...mergeLegOptions(mergeRequest, dnd.mergePrefill?.anchorLeg).choices, mergeLeg])] : [];
+  const connectedMate = mergeHost && !mergeSplit ? connectedMateOf(board.rides, mergeHost) : null;
+  const specsForLeg = (leg: MergeLeg): MergePreviewSpec[] => {
+    if (!mergeHost || !mergeRequest) return [];
+    if (leg === "both" && connectedMate) {
+      return [{ rideId: mergeHost.id, requestId: mergeRequest.id, leg: connectedMate.rideLeg }, { rideId: connectedMate.mate.id, requestId: mergeRequest.id, leg: connectedMate.mateLeg }];
+    }
+    return [{ rideId: mergeHost.id, requestId: mergeRequest.id, leg }];
+  };
+  const verdictGroups: { leg: MergeLeg | "split"; specs: MergePreviewSpec[] }[] = mergeSplit && mergeHost && mergeRequest && mergePair
+    ? [{ leg: "split", specs: [{ rideId: mergeHost.id, requestId: mergeRequest.id, leg: mergePair.rideLeg }, { rideId: mergePair.mate.id, requestId: mergeRequest.id, leg: mergePair.mateLeg }] }]
+    : verdictLegs.map((leg) => ({ leg, specs: specsForLeg(leg) }));
+  const verdictQueries = useMergePreviews(verdictGroups.flatMap((group) => group.specs), popupOpen);
+  const legVerdicts: Partial<Record<MergeLeg, MergeVerdict>> = {};
+  let splitVerdict: MergeVerdict | undefined;
+  let queryIndex = 0;
+  for (const group of verdictGroups) {
+    const states = verdictQueries.slice(queryIndex, queryIndex + group.specs.length);
+    queryIndex += group.specs.length;
+    if (!mergeHost || !mergeRequest) continue;
+    const twinInvalid = group.leg === "split"
+      ? ((mergePreview && !mergePreview.valid ? mergePreview.invalid : null) ?? (mergePairPreview && !mergePairPreview.valid ? mergePairPreview.invalid : null))
+      : mergeInvalidReason(mergeHost, mergeRequest, group.leg, board.routeCtx);
+    const verdict = mergeVerdict(states, twinInvalid);
+    if (group.leg === "split") splitVerdict = verdict; else legVerdicts[group.leg] = verdict;
+  }
+  const mergeVerdictNow: MergeVerdict | undefined = mergeSplit ? splitVerdict : legVerdicts[mergeLeg];
   const mergeHostDriverEntry = mergeHost ? (servedOf(mergeHost).find((entry) => entry.role === "driver") ?? servedOf(mergeHost)[0]) : undefined;
   const mergeHostRequest = mergeHostDriverEntry ? board.boardRequests.find((request) => request.id === mergeHostDriverEntry.request_id) : undefined;
 
@@ -485,7 +513,8 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
         leg={mergeLeg}
         onLegChange={dnd.setMergeLeg}
         anchorLeg={dnd.mergePrefill?.anchorLeg}
-        legValid={legValid}
+        legVerdicts={legVerdicts}
+        verdict={mergeVerdictNow}
         split={mergeSplit}
         draftNote={dnd.mergePrefill?.draftNote}
         preview={mergePreview}

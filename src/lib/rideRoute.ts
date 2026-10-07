@@ -229,6 +229,14 @@ export interface MergedRoute {
   addedReturnMinutes: number;
 }
 
+/**
+ * REQ item 108 D3: the detour limits SQL `_merge_check` applies when `department_settings` leaves
+ * them null (`coalesce(detour_limit_minutes, 20)` / `coalesce(detour_limit_km, 15)`). The twin never
+ * skips the check for a missing limit.
+ */
+export const DEFAULT_DETOUR_LIMIT_MINUTES = 20;
+export const DEFAULT_DETOUR_LIMIT_KM = 15;
+
 /** Why a merge is refused: boards at/after the base's final destination, or the detour is over the limit. */
 export type MergeInvalid = "boards_at_end" | "detour_too_long";
 
@@ -270,6 +278,8 @@ export function mergePassengerIntoRoute(input: {
 }): MergedRoute {
   const { passenger, hop } = input;
   const stopMinutes = input.stopMinutes ?? DEFAULT_STOP_MINUTES;
+  const detourLimitMinutes = input.detourLimitMinutes ?? DEFAULT_DETOUR_LIMIT_MINUTES;
+  const detourLimitKm = input.detourLimitKm ?? DEFAULT_DETOUR_LIMIT_KM;
   const startMs = Date.parse(input.startsAt);
   const endMs = Date.parse(input.endsAt);
   const legsOf = (leg: RouteLeg) => input.route.filter((p) => p.leg === leg).sort((a, b) => a.position - b.position);
@@ -313,11 +323,11 @@ export function mergePassengerIntoRoute(input: {
       continue;
     }
     addedBy[leg] = Math.max(legMinutes(second.route, hop, stopMinutes) - before, 0);
-    if (input.detourLimitMinutes != null && addedBy[leg] > input.detourLimitMinutes) { invalid = "detour_too_long"; break; }
-    if (input.detourLimitKm != null && input.hopKm) {
+    if (addedBy[leg] > detourLimitMinutes) { invalid = "detour_too_long"; break; }
+    if (input.hopKm) {
       const kmBefore = legKm(base, input.hopKm);
       const kmAfter = legKm(second.route, input.hopKm);
-      if (kmBefore != null && kmAfter != null && kmAfter - kmBefore > input.detourLimitKm) { invalid = "detour_too_long"; break; }
+      if (kmBefore != null && kmAfter != null && kmAfter - kmBefore > detourLimitKm) { invalid = "detour_too_long"; break; }
     }
     if (boardLeg === null) { boardLeg = leg; boardIndex = first.index - 1; }
   }

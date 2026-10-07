@@ -1,8 +1,11 @@
+import { QueryClient } from "@tanstack/react-query";
 import { describe, expect, it } from "vitest";
+
+import { sadranKeys } from "@/features/sadran/keys";
 
 import { siddurKeys } from "@/features/siddur/queryKeys";
 
-import { isSiddurQueryAffectedByWeek } from "./invalidateWeek";
+import { invalidateWeekData, isSiddurQueryAffectedByWeek } from "./invalidateWeek";
 import { ridesKeys } from "./keys";
 
 const DEPT = "dept-a";
@@ -35,5 +38,16 @@ describe("isSiddurQueryAffectedByWeek", () => {
   it("ignores queries of other features", () => {
     expect(affected(["sadran", DEPT, WEEK])).toBe(false);
     expect(affected(["requests", "mine", "me"])).toBe(false);
+  });
+});
+
+describe("invalidateWeekData", () => {
+  it("also refreshes the server merge verdicts, which are not week-keyed (REQ item 108 M1)", async () => {
+    const client = new QueryClient();
+    const key = sadranKeys.mergePreview("ride-1", "req-1", "out");
+    client.setQueryData(key, { ok: true });
+    expect(client.getQueryState(key)?.isInvalidated).toBe(false);
+    await invalidateWeekData(client, DEPT, WEEK);
+    expect(client.getQueryState(key)?.isInvalidated).toBe(true);
   });
 });

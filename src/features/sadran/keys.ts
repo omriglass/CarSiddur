@@ -24,6 +24,8 @@ export const sadranKeys = {
   carStartLocations: (departmentId: string, weekStart: string) =>
     [...sadranKeys.week(departmentId, weekStart), "carStartLocations"] as const,
   /** R5B5: the server's `merge_preview` for one ride/request/leg. */
+  /** Root of every `merge_preview` query - `invalidateWeekData` refreshes them all (a ride/request change can change any verdict). */
+  mergePreviews: () => [...sadranKeys.all, "mergePreview"] as const,
   mergePreview: (rideId: string, requestId: string, leg: string) => [...sadranKeys.all, "mergePreview", rideId, requestId, leg] as const,
   /** REQUIREMENTS §13.93 (ORIGINS_PLAN §2 item 6): `place_travel_for_week()`. */
   placeTravel: (departmentId: string, weekStart: string) =>

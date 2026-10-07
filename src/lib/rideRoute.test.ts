@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { fallbackRoute, homeTravelEdges, makeHop, makeHopKm, mergePassengerIntoRoute, parseRideRoute, roundUpRideEnd } from "./rideRoute";
+import { DEFAULT_DETOUR_LIMIT_KM, DEFAULT_DETOUR_LIMIT_MINUTES, fallbackRoute, homeTravelEdges, makeHop, makeHopKm, mergePassengerIntoRoute, parseRideRoute, roundUpRideEnd } from "./rideRoute";
 
 const hop = makeHop([
   { fromId: "H", toId: "D", travelMinutes: 60 },
@@ -145,6 +145,24 @@ describe("mergePassengerIntoRoute validity (REQ §13.95 H1)", () => {
     expect(ok.valid).toBe(true);
     expect(ok.addedOutMinutes).toBe(30);
     expect(ok.startsAt).toBe("2026-10-11T03:45:00.000Z"); // 07:15 - 30
+  });
+
+  it("applies SQL's default limits (20 min / 15 km) when the department leaves them unset (REQ item 108 D3)", () => {
+    expect([DEFAULT_DETOUR_LIMIT_MINUTES, DEFAULT_DETOUR_LIMIT_KM]).toEqual([20, 15]);
+    const base = { route: hostToHaifa(), startsAt: START, endsAt: END, hop: haifaHop, passenger: { requestId: "g", originId: "AF", destinationId: "HF", leg: "out" as const } };
+    // +30 minutes: over the 20 minute default whether the limit is undefined or null ...
+    expect(mergePassengerIntoRoute(base)).toMatchObject({ valid: false, invalid: "detour_too_long" });
+    expect(mergePassengerIntoRoute({ ...base, detourLimitMinutes: null, detourLimitKm: null })).toMatchObject({ valid: false, invalid: "detour_too_long" });
+    // ... but an explicit larger limit still wins
+    expect(mergePassengerIntoRoute({ ...base, detourLimitMinutes: 30 }).valid).toBe(true);
+    // the km default: +25 km (95 vs 70) is over 15 even with no km limit configured
+    const hopKm = makeHopKm([
+      { fromId: "H", toId: "HF", distanceKm: 70 },
+      { fromId: "H", toId: "AF", distanceKm: 50 },
+      { fromId: "HF", toId: "AF", distanceKm: 45 },
+    ]);
+    expect(mergePassengerIntoRoute({ ...base, hopKm, detourLimitMinutes: 60 })).toMatchObject({ valid: false, invalid: "detour_too_long" });
+    expect(mergePassengerIntoRoute({ ...base, hopKm, detourLimitMinutes: 60, detourLimitKm: 30 }).valid).toBe(true);
   });
 
   it("does not apply the detour limit when a place on the merged leg is free text (unknown travel) and keeps the window", () => {

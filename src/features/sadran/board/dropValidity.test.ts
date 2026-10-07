@@ -47,7 +47,7 @@ function baseContext(overrides: Partial<BoardDropContext> = {}): BoardDropContex
     requests: [],
     cars: [car("car1")],
     maintenanceBlocks: [],
-    seatConfigsByCarId: new Map(),
+    seatConfigsByCarId: new Map([["car1", [{ adults: 6, child_seats: 2, boosters: 2 }]], ["car2", [{ adults: 6, child_seats: 2, boosters: 2 }]]]),
     unmetItems: [],
     selectedDay: "2026-09-13",
     chauffeurDwellMinutes: 10,
@@ -56,8 +56,12 @@ function baseContext(overrides: Partial<BoardDropContext> = {}): BoardDropContex
 }
 
 describe("seatsFit", () => {
-  it("does not block when the car has no seat configuration on record", () => {
-    expect(seatsFit(baseContext(), "car1", { adults: 5, childSeats: 2, boosters: 2 })).toBe(true);
+  it("refuses a car with no seat configuration on record (SQL car_fits / solver fits, REQ item 108 D3)", () => {
+    expect(seatsFit(baseContext({ seatConfigsByCarId: new Map() }), "car1", { adults: 1, childSeats: 0, boosters: 0 })).toBe(false);
+  });
+
+  it("does not block on a missing configuration while the configurations are still loading", () => {
+    expect(seatsFit(baseContext({ seatConfigsByCarId: new Map(), seatConfigsLoaded: false }), "car1", { adults: 5, childSeats: 2, boosters: 2 })).toBe(true);
   });
 
   it("rejects a need that exceeds every configured seat set", () => {
@@ -89,6 +93,47 @@ describe("unavailable (maintenance/active only — REQUIREMENTS §13.93)", () =>
   it("is a no-op when weekStartMs/awayByCarId are omitted (callers that never built a conflict scan)", () => {
     const ctx = baseContext();
     expect(unavailable(ctx, "car1", "2026-09-13T06:00:00.000Z", "2026-09-13T07:00:00.000Z")).toBe(false);
+  });
+});
+
+describe("unavailable - maintenance follows SQL rides_before_write (REQ item 108 c, D3)", () => {
+  const block = (startsAt: string, endsAt: string): MaintenanceBlockRow => ({ car_id: "car1", starts_at: startsAt, ends_at: endsAt }) as unknown as MaintenanceBlockRow;
+  const RIDE_START = "2026-09-13T08:00:00.000Z";
+  const RIDE_END = "2026-09-13T10:00:00.000Z";
+
+  it("refuses a block that overlaps the ride itself", () => {
+    const ctx = baseContext({ maintenanceBlocks: [block("2026-09-13T09:00:00.000Z", "2026-09-13T12:00:00.000Z")] });
+    expect(unavailable(ctx, "car1", RIDE_START, RIDE_END)).toBe(true);
+  });
+
+  it("refuses a block that starts within the turnaround after the ride's end", () => {
+    const ctx = baseContext({ turnaroundMinutes: 30, maintenanceBlocks: [block("2026-09-13T10:15:00.000Z", "2026-09-13T12:00:00.000Z")] });
+    expect(unavailable(ctx, "car1", RIDE_START, RIDE_END)).toBe(true);
+  });
+
+  it("allows a block that starts exactly when the turnaround ends, and counts the week's own turnaround", () => {
+    const blocks = [block("2026-09-13T10:30:00.000Z", "2026-09-13T12:00:00.000Z")];
+    expect(unavailable(baseContext({ turnaroundMinutes: 30, maintenanceBlocks: blocks }), "car1", RIDE_START, RIDE_END)).toBe(false);
+    expect(unavailable(baseContext({ turnaroundMinutes: 60, maintenanceBlocks: blocks }), "car1", RIDE_START, RIDE_END)).toBe(true);
+    // the default turnaround is 30 minutes
+    expect(unavailable(baseContext({ maintenanceBlocks: blocks }), "car1", RIDE_START, RIDE_END)).toBe(false);
+  });
+
+  it("has no buffer before the ride: a block ending exactly at the ride's start is fine", () => {
+    const ctx = baseContext({ maintenanceBlocks: [block("2026-09-13T06:00:00.000Z", RIDE_START)] });
+    expect(unavailable(ctx, "car1", RIDE_START, RIDE_END)).toBe(false);
+  });
+
+  it("an admin may place the ride over a maintenance block", () => {
+    const ctx = baseContext({ isAdmin: true, maintenanceBlocks: [block("2026-09-13T09:00:00.000Z", "2026-09-13T12:00:00.000Z")] });
+    expect(unavailable(ctx, "car1", RIDE_START, RIDE_END)).toBe(false);
+    // ... but an inactive car is still refused for everyone
+    expect(unavailable({ ...ctx, cars: [car("car1", "retired" as Car["status"])] }, "car1", RIDE_START, RIDE_END)).toBe(true);
+  });
+
+  it("ignores another car's block", () => {
+    const ctx = baseContext({ maintenanceBlocks: [{ ...block("2026-09-13T09:00:00.000Z", "2026-09-13T12:00:00.000Z"), car_id: "car2" } as MaintenanceBlockRow] });
+    expect(unavailable(ctx, "car1", RIDE_START, RIDE_END)).toBe(false);
   });
 });
 

@@ -30,7 +30,7 @@ import { formatDayDate } from "@/lib/dayLabels";
 import { routeLabel } from "@/lib/routeLabel";
 import { formatTime } from "@/lib/time";
 import { DEFAULT_STOP_MINUTES, homeTravelEdges, makeHop, makeHopKm } from "@/lib/rideRoute";
-import { applyServerMergeTimes, mergeLegSummary, mergePayloadLeg, previewMerge } from "../../board/mergeProposal";
+import { applyServerMergeTimes, mergeLegSummary, mergePayloadLeg, mergePayloadLegs, mergeVerdict, previewMerge } from "../../board/mergeProposal";
 import { useQuery } from "@tanstack/react-query";
 
 import { renderTemplate } from "../waLink";
@@ -43,6 +43,7 @@ import {
   useCreateProposalMutation,
   useDepartmentSettings,
   useMergePreview,
+  useMergePreviews,
   usePlaceTravelForWeek,
   useProfilesByIds,
   useProposalParties,
@@ -188,6 +189,17 @@ export function ProposalComposerScreen({ departmentId, weekStart }: ProposalComp
       })
     : null;
   const mergePreview = request ? applyServerMergeTimes(twinPreview, serverMergeQuery.data, request) : twinPreview;
+  // REQ item 108 (M1): whether this merge may be sent/drafted is the server's verdict (`merge_preview` ok/code) for every
+  // leg the payload carries (a split merge has legs on two rides); the TS twin only fills in when the preview call failed.
+  const payloadLegs = type === "merge" ? mergePayloadLegs(mergePayload) : [];
+  const verdictSpecs = type === "merge" && request
+    ? (payloadLegs.length ? payloadLegs.map((entry) => ({ rideId: entry.ride_id, requestId: request.id, leg: entry.leg })) : [{ rideId: hostRideQuery.data?.id, requestId: request.id, leg: mergeLegValue }])
+    : [];
+  const verdictQueries = useMergePreviews(verdictSpecs, type === "merge" && isDraft);
+  const mergeGate = type === "merge" && isDraft && request
+    ? mergeVerdict(verdictQueries, twinPreview && !twinPreview.valid ? twinPreview.invalid : null)
+    : null;
+  const mergeBlocked = !!mergeGate && mergeGate.status !== "ok";
   const combinedStart = typeof mergePayload?.starts_at === "string" ? mergePayload.starts_at : (mergePreview?.startsAt ?? hostRideQuery.data?.starts_at);
   const combinedEnd = typeof mergePayload?.ends_at === "string" ? mergePayload.ends_at : (mergePreview?.endsAt ?? hostRideQuery.data?.ends_at);
   // `origin` (REQ §13.93, SOLVER §3.15): never editable in the composer — the board already
@@ -401,6 +413,12 @@ export function ProposalComposerScreen({ departmentId, weekStart }: ProposalComp
             </Select>
           ) : null}
 
+          {mergeGate?.status === "refused" ? (
+            <p className="font-semibold text-destructive" role="alert" data-testid="composer-merge-invalid" data-code={mergeGate.code ?? undefined}>{mergeGate.message}</p>
+          ) : mergeGate?.status === "loading" ? (
+            <p className="text-muted-foreground" role="status" data-testid="composer-merge-checking">{he.mergedRide.checking}</p>
+          ) : null}
+
           {!variant ? (
             <p className="text-amber-600">{he.sadranProposal.templateMissing}</p>
           ) : (
@@ -437,7 +455,7 @@ export function ProposalComposerScreen({ departmentId, weekStart }: ProposalComp
               className="w-full"
               data-testid="composer-send"
               onClick={handleCreateAndSend}
-              disabled={(!proposalId && (!variant || !payload || (type === "merge" && !hostRideQuery.data))) || busy || !proposalsForWeekQuery.isSuccess || proposalsForWeekQuery.isFetching || (!!pendingProposal && (!pendingPartiesQuery.isSuccess || pendingHasAnswer))}
+              disabled={(!proposalId && (!variant || !payload || (type === "merge" && !hostRideQuery.data))) || mergeBlocked || busy || !proposalsForWeekQuery.isSuccess || proposalsForWeekQuery.isFetching || (!!pendingProposal && (!pendingPartiesQuery.isSuccess || pendingHasAnswer))}
             >
               {pendingProposal ? he.sadranProposal.replaceAndSend : proposalId ? (sendFailed ? he.sadranProposal.retrySend : he.boardDrafts.send) : t("action.propose")}
             </Button>
@@ -447,7 +465,7 @@ export function ProposalComposerScreen({ departmentId, weekStart }: ProposalComp
                 variant="outline"
                 data-testid="composer-save-draft"
                 onClick={handleSaveDraft}
-                disabled={!variant || !payload || (type === "merge" && !hostRideQuery.data) || busy}
+                disabled={!variant || !payload || (type === "merge" && !hostRideQuery.data) || mergeBlocked || busy}
               >
                 {he.boardDrafts.saveDraft}
               </Button>

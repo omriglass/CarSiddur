@@ -18,6 +18,7 @@ import { useCarLocations, useDepartments } from "@/features/siddur/hooks";
 import { useRideChanges } from "@/features/rides/hooks";
 import { isReservation } from "@/features/rides/servedOf";
 import { useMyDepartments } from "@/features/auth/useMyDepartments";
+import { useProfile } from "@/features/auth/useProfile";
 import { rideCoordinatorNotes } from "@/lib/rideCoordinatorNotes";
 import type { WeekGridBlock, WeekGridCar, WeekGridDiscussionBlock, WeekGridRide } from "@/components/WeekGrid";
 import type { Window } from "@/solver";
@@ -45,6 +46,7 @@ import {
   useCarsForDepartment,
   useDepartmentSettings,
   useMaintenanceBlocks,
+  useMergePreviews,
   usePolicyOptions,
   useProposalsForWeek,
   useWeekRequestsWithNames,
@@ -82,6 +84,8 @@ import { he } from "@/i18n/he";
 export function useBoardData(departmentId: string, weekStart: string, focusedConflictRideId: string | undefined) {
   const departmentsQuery = useDepartments();
   const department = (departmentsQuery.data ?? []).find((d) => d.id === departmentId);
+  // REQ item 108 c: an admin may place over a maintenance block (SQL `rides_before_write`), so the drop checks let them.
+  const isAdmin = !!useProfile().data?.is_admin;
   // Mobile title switcher subtitle (UX_FLOWS.md §4.2): the department name only
   // shows there when the Sadran actually manages more than one.
   const myDepartmentsQuery = useMyDepartments();
@@ -500,7 +504,21 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
   // ("planned, tentatively") and, for a shift of an already-placed request, hides the original
   // ride block while the draft block shows. Drafts that place nothing (deny/external, a shift
   // with no car) leave the request visible in the unmet list.
-  const draftPlacements = resolveDraftPlacements(proposalsQuery.data ?? [], boardRequests, rides, department?.home_destination_id ?? undefined, routeCtx);
+  // REQ item 108 (M1): every open (draft/sent/accepted) merge's window comes from the server's `merge_preview`;
+  // the route twin only shows while a preview loads or when it fails (or when the server says the merge no longer holds).
+  const openMergeSpecs = (proposalsQuery.data ?? []).flatMap((proposal) => {
+    if (proposal.type !== "merge" || !["draft", "sent", "accepted"].includes(proposal.status)) return [];
+    const mergeHost = rides.find((ride) => ride.id === proposal.ride_id);
+    const mergeGuest = boardRequests.find((request) => request.id === proposal.request_id);
+    return mergeHost?.id && mergeGuest ? [{ proposalId: proposal.id, rideId: mergeHost.id, requestId: mergeGuest.id, leg: mergePayloadLeg(proposal.payload, mergeGuest) }] : [];
+  });
+  const openMergeQueries = useMergePreviews(openMergeSpecs, true, 15_000);
+  const serverMergeWindows = new Map<string, { startsAt: string; endsAt: string }>();
+  openMergeSpecs.forEach((spec, index) => {
+    const server = openMergeQueries[index]?.data;
+    if (server?.ok && server.newStartsAt && server.newEndsAt) serverMergeWindows.set(spec.proposalId, { startsAt: server.newStartsAt, endsAt: server.newEndsAt });
+  });
+  const draftPlacements = resolveDraftPlacements(proposalsQuery.data ?? [], boardRequests, rides, department?.home_destination_id ?? undefined, routeCtx, serverMergeWindows);
   const draftPlacedRequestIds = new Set(draftPlacements.map((placement) => placement.requestId));
   const draftHiddenRideIds = new Set(draftPlacements.flatMap((placement) => (placement.replacesRideId ? [placement.replacesRideId] : [])));
 
@@ -518,8 +536,9 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
     const payload = proposal.payload && typeof proposal.payload === "object" && !Array.isArray(proposal.payload) ? proposal.payload : {};
     const legacyStart = typeof payload.starts_at === "string" ? Date.parse(payload.starts_at) : Number.POSITIVE_INFINITY;
     const legacyEnd = typeof payload.ends_at === "string" ? Date.parse(payload.ends_at) : 0;
-    const startsAt = new Date(Math.min(Date.parse(preview?.startsAt ?? host.starts_at), legacyStart)).toISOString();
-    const endsAt = new Date(Math.max(Date.parse(preview?.endsAt ?? host.ends_at), legacyEnd)).toISOString();
+    const serverWindow = serverMergeWindows.get(proposal.id);
+    const startsAt = new Date(Math.min(Date.parse(serverWindow?.startsAt ?? preview?.startsAt ?? host.starts_at), legacyStart)).toISOString();
+    const endsAt = new Date(Math.max(Date.parse(serverWindow?.endsAt ?? preview?.endsAt ?? host.ends_at), legacyEnd)).toISOString();
     return [{ proposal, host, guest, startsAt, endsAt, leg, isDraft: proposal.status === "draft" }];
   });
   const mergeGuestRideIds = new Set(pendingMerges.flatMap((merge) => rides.filter((ride) => ride.id && ride.id !== merge.host.id
@@ -884,9 +903,13 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
     cars: carsQuery.data ?? [],
     maintenanceBlocks: maintenanceQuery.data ?? [],
     seatConfigsByCarId,
+    seatConfigsLoaded: seatConfigsQuery.isSuccess,
     unmetItems,
     selectedDay,
     chauffeurDwellMinutes: weekSettings.chauffeurDwellMinutes,
+    // REQ item 108 c/D3: the maintenance check follows SQL (admin exempt, turnaround counted after the ride only).
+    turnaroundMinutes: weekSettings.turnaroundMinutes,
+    isAdmin,
     awayByCarId: conflictScan?.awayByCarId,
     weekStartMs,
     // REQUIREMENTS §13.93: each car's own base, already defaulted to the department home.
