@@ -767,6 +767,57 @@ Re-play of run 5's week after the run-5 batch. **Outcome on the same week: 1 req
 - **R6M1 — Replace a volunteer driver in one step** (old driver told). **R6M2 — Apply the one-way chauffeur suggestion from the card.** **R6M3 — "+ נוסעים" resolves that member's own open request** (QB14 rule). **R6M4 — Tell a member that cancelling one leg kept the other** (m22).
 - **R6F1 — Show the target ride's driver in an ask-to-join's waitlist reason.**
 
+## QA run 7 findings (2026-10-07, seed 4499, week 11–17.10, department `qa-s4499`; QA Sadran = Opus, **Wednesday via UI, Saturday via CLI, other days not solved**; QA user = Sonnet; first run with Friday/Saturday requests) — **awaiting owner triage**
+32 members, 12 shared + 6 private cars, 133 requests (Wed 20, Sat 12). Emphasis: today's pilot-hardening changes (REQ §13.108), live phase, member view. Phases: plan → members answer → publish Wed+Sat, live → member live events → Sadran handles them → final member check. **Outcome:** Wed and Sat published; at the end 1 request unmet (1167bee6, no car at Zichron + large luggage) and one return leg unplaced (74fdbba4).
+
+### Verified working (today's changes)
+- **"!" be-back-on-time note (U3):** all 8 tight pairs correct both ways (ride / reservation / car move wording; nobody sees it about themselves; the driver of both rides sees none), on /my and the siddur ride sheet; disappears after a cancellation; none for a wide gap.
+- **Luggage yes/no (D4):** a car without a large trunk refuses; two luggage requests share a large-trunk car; board and server agree.
+- **Merge verdict (M1):** "boards at the end" and detour refusals match the server; allowed merges applied. Not reached: maintenance / past-midnight refusals (no such case in the data; covered by `merged_rides.sql` + `merge-verdict.spec.ts`).
+- Late requests auto-approved on a free car; post-publish edits re-placed with a clear notice; a car swap notice on an edit.
+- **Not tested:** freed-car offers (6 offers created, none resolved — the QA stack's `on_ride_cancelled_url`/`cron_secret` setup step was skipped by the lead; `freed-slot.spec.ts` covers it on the local stack); car-now (week not the current calendar week); the week turnaround override (no board control found).
+
+### Bugs
+- **R7B1** Raw `{{link}}` shown to members in external proposals: Home banner, request card, and the `/p/<token>` page prints the whole WhatsApp text as the "reason" (Wed, m25 1c043971; m20, m32).
+- **R7B2** The chauffeur suggestion becomes a `shift` proposal with only `{depart_at, return_at: null}`: the member reads "השעות שלך לא משתנות"; accepted → marked applied but **no ride created**, request stuck `PROPOSAL_APPLIED_PENDING_ASSIGNMENT`, Sadran not told; the member's notice has an empty title "שינוי בסידור שלך — |" (Wed, m28 aa5f9079, request 8fe02d4a).
+- **R7B3** `send_proposal` sends a merge that `merge_preview` refuses for seats (Sat, draft d40e99d8: b7ccb8e7 → ride 757ab1ed; the CLI merge check missed it too).
+- **R7B4** The board refuses a whole drop "העיקוף ארוך מהמותר" when the server allows the return leg alone; expected the popup with only "חזור" enabled (Wed, 8e8f9edf → fa5e9714).
+- **R7B5** Raw `{time}` in the merge popup ("הלוך: {time} / חזור: {time}", Wed 30d905ec→504252a0, 1167bee6→c02bce1a; `scratchpad/ui/w07-after-drop.png`); an unmet reason ends "להסעה לחריש ב-" with no time (30d905ec).
+- **R7B6** Ride label omits the destination: "מסלול: חדרה → גבעת חביבה → חדרה" for a ride to Binyamina, and "ב07:00" lacks the hyphen (Wed 9f630d68).
+- **R7B7** Members see placement outcomes on **unpublished** days: "שובצה על ידי הסדרן/ית", "ברשימת המתנה · כל הרכבים תפוסים", "הרכב שובץ, אך חסר נהג מתנדב" (Thu, m05, m06, m28), while "my rides" shows 0.
+- **R7B8** /my contradicts itself: "כל הבקשות שלך שובצו 🎉" above a request still waiting (m28); a merged passenger's card keeps the old times after the merge moved her return 50 min (m25 19:30–23:30 vs 22:40); a הקפצה whose return is unplaced shows "שובצה" with only the placed leg and "עדכון סטטוס ללא פירוט", and no notice mentions the missing return (m20 74fdbba4).
+- **R7B9** Cancelling a הקפצה request with a merged guest (m05 da0b663d) cancelled only the return ride; outbound 504252a0 stayed `flagged` with the cancelled member as driver and his children listed; the merged passenger (m24) got no notice; `unassign_ride` on it then fails "status cancelled is terminal".
+- **R7B10** An ask-to-join whose host ride is cancelled keeps pointing at it and the requester is not told (m31 6ca254bb → b0270bb9); dropping that request on an empty slot on the board is treated as a merge and refused ("הנסיעה המאוחדת מתנגשת"), the CLI placed it fine.
+- **R7B11** A הקפצה with a pickup away from home (Yokneam, Zichron) cannot be placed by hand: the board refuses ("the car is at Givat Haviva"); forced, the server starts the driver's ride at the member's own departure with no time to drive there (10:15 vs the solver's 09:15); moving it earlier or placing the return leg is refused "beyond flexibility" (Wed 74fdbba4, 1167bee6).
+- **R7B12** `submit_request` accepts origin = destination (m17 4588555e Netanya→Netanya); the solver suggests `changeOrigin` to the member's current origin (טליה, Givat Haviva→Givat Haviva).
+- **R7B13** Placing a one-way trip by hand on a shared car strands it for the rest of the week with no board warning (only the solver's CAR_AWAY_AT_WEEK_END) and no chauffeur option (Wed, ליאור).
+- **R7B14** Ride e842b86c stays `flagged` after its conflict was removed (Wed).
+- **R7B15** (verify: app vs CLI) A member's edit of an already placed request (week solving) dropped it to "submitted" with no notice whether the car is lost (m30 e6d47b10, m29 09e93340); the `qa:member edit` CLI also ignores `needs_confirmation: release_to_waitlist`.
+
+### UI changes
+- **R7U1** The board's "השלם אוטומטית" has no per-day mode, no confirmation and no undo — on Wednesday it filled the whole week (98 rides).
+- **R7U2** Publish: "בחירת ימים לפרסום" pre-ticks all 7 days including unready ones; no success toast after publishing; "publish anyway" expires unanswered external proposals and the member gets no new option.
+- **R7U3** External proposal text: run-on sentences, the question ("האם אפשר להשתמש בתחבורה ציבורית?") after the answer link, contradicts "reach the kibbutz yourself" — unclear what accept/decline means; m20's text omits the destination; the composer defaults to taxi when the suggestion said public transport.
+- **R7U4** Notice wording: "העריכה נשמרה והבקשה שובצה" to a member the Sadran moved (she edited nothing; doesn't say she now drives, m31); "סדרן בדיקות ביטל/ה נסיעה שהיית בה" when the member cancelled it himself (m05); "הסיר/ה אותך מהנסיעה" with no reason or next step (m24); two contradictory trip-type notices 2 minutes apart with no outcome (m25); "יעדכנו" (plural) with "הסדרן/ית".
+- **R7U5** Merge proposals: the host's is a bare "השעות שלך לא משתנות" (no pickup stop, no passenger); m16's says "בשעות 08:45–17:45" but "חזרה 17:00" in the text and title; after the requester accepts an ask-to-join it stays "proposed" with no "waiting for איתן טל".
+- **R7U6** `/p` after answering: "התשובה שלך נרשמה" without saying what was accepted/declined; the Home banner shows 1 of 3 pending proposals (m25); the origin proposal says "כל הרכבים תפוסים" when the real reason is "no car in Zichron".
+- **R7U7** Board details: the reservation "שמירה" button stays disabled until a description is entered, with no hint; the car-move people picker does not mark busy members / non-drivers; an unexplained grey pill "בזכרון יעקב" on a ride starting at home (m23 sheet); the floating "+" covers the card's car line on /my (m29).
+- **R7U8** Ask-to-join files a full-day round trip when the member only wanted to join one ride (m16, m31).
+- **R7U9** (tooling) CLI: `day` repeats a week-level CHAIN_BROKEN on another day without naming the ride, lacks the "ציוד רב" flag; `my-rides` has no "!" line; `edit` ignores `needs_confirmation`; no `place_on_own_car` command; the uiSession dev server shares `node_modules/.vite` with the owner's `npm run dev` ("Invalid hook call" — 2 `client_errors` rows).
+
+### Missing obvious features
+- **R7M1** No confirmation notice for an auto-approved late request, a filed ask-to-join, or after answering a proposal ("what happens next", m20, m32).
+- **R7M2** No "what next" notice to a passenger / ask-to-join requester whose host ride or request is cancelled.
+- **R7M3** No per-leg status for a request split into two legs ("out placed, return waiting").
+- **R7M4** No way to turn a placed one-way into a chauffeur ride from the board (only via trip-type change).
+
+### Additional features
+- **R7F1** Merge a guest whose outbound matches the host ride's return direction.
+- **R7F2** Let a private-car member offer their car through the external proposal (m32).
+- **R7F3** Let a member counter a proposal with a time ("I can leave 30 minutes later") in the app.
+- **R7F4** Offer a freed car first to waitlisted members starting where the car is.
+- **R7F5** Lend a car parked at a destination during a long round trip for someone else's short trip there (the Yokneam van).
+
 ## Owner hands-on testing (2026-10-06) — bugs to fix
 - **OB1 — A multi-day request cannot be placed by hand on the board.** Dropping its card on a car fails with "בקשה רב-יומית — אפשר לבטל ולהגיש מחדש, לא לערוך" (`series_edit_not_supported`, MDR02). The board's manual placement goes through `edit_ride`, which refuses any request with a `series_id` (the v1 rule "a series is cancelled and resubmitted, never edited", REQ §13.77) — but placing is not editing the request. Expected: dropping a series leg (or the series card) on a car places the **whole series** on that car for all its days (the same hold auto-fill makes, `place_series`), refused only when the car is not free on every day; moving a placed series to another car likewise moves all its days. The Sadran's other path today is "להציע פחות ימים" / auto-fill only. Seen on the showcase department (S19). **Fixed 2026-10-06:** `place_series_on_car(series, car)` (Sadran; private-car owner rule; refuses an already placed series) wraps `place_series`; the board drop of a multi-day card calls it ("הבקשה הרב-יומית שובצה ברכב הזה לכל ימיה"). Verified through the API (3 rides, all legs assigned; second placement and a member refused). Not covered: moving an already placed series to another car.
 
