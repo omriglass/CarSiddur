@@ -3,6 +3,8 @@ import { rpc, toAppError } from "@/lib/rpc";
 
 import type { Database, Json } from "@/integrations/supabase/types";
 
+import type { CarNeighbourRow } from "./carHandover";
+
 /**
  * Shared ride-level pieces the `siddur` and `sadran` features both need (moved out of
  * `siddur/api.ts`/`sadran/servedOf.ts` — REFACTOR_BACKLOG "R8: break the siddur ⇄ sadran
@@ -87,4 +89,15 @@ export async function addRidePassengers(rideId: string, expectedVersion: number,
  */
 export async function removeRidePerson(rideId: string, expectedVersion: number, key: string): Promise<void> {
   await rpc("remove_ride_person", { p_ride_id: rideId, p_expected_version: expectedVersion, p_key: key });
+}
+
+/**
+ * REQ §13.108 f: the ride before/after each given ride on its car (`v_ride_car_neighbours`, security_invoker —
+ * a member only gets rows for rides RLS lets them see). One round trip for any number of rides.
+ */
+export async function fetchCarNeighbours(rideIds: readonly string[]): Promise<CarNeighbourRow[]> {
+  if (rideIds.length === 0) return [];
+  const { data, error } = await supabase.from("v_ride_car_neighbours").select("*").in("ride_id", [...rideIds]);
+  if (error) throw toAppError(error);
+  return data ?? [];
 }

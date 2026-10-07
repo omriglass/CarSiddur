@@ -79,4 +79,15 @@ describe("RequestRow", () => {
     expect(screen.queryByRole("button", { name: he.request.makeRepeating })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: he.requestsList.edit })).not.toBeInTheDocument();
   });
+  it("shows the 'be back on time' note with an accessible '!' when the parent passes one (REQ §13.108 f)", () => {
+    show(request(), {
+      handover: {
+        notes: { returnBy: { rideId: "n", at: "2026-09-15T12:30:00+03:00", kind: "ride", name: "Dana", people: [], gapMinutes: 30, tight: true } },
+        span: { startsAt: "2026-09-15T08:00:00+03:00", endsAt: "2026-09-15T12:00:00+03:00" },
+      },
+    });
+    expect(screen.getByRole("img", { name: he.carHandover.alertLabel })).toHaveTextContent("!");
+    expect(screen.getByTestId("car-handover-notice")).toHaveTextContent("Dana");
+    expect(screen.getByTestId("car-handover-notice")).toHaveTextContent("12:30");
+  });
 });

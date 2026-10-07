@@ -19,6 +19,7 @@ import { AddPassengersDialog } from "@/features/rides/components/AddPassengersDi
 import { RidePassengersList } from "@/features/rides/components/RidePassengersList";
 import { RidePublicNotesEditor } from "@/features/rides/components/RidePublicNotesEditor";
 import { RideRoute } from "@/features/rides/components/RideRoute";
+import { RideCarHandover } from "@/features/rides/components/RideCarHandover";
 import { RideRouteStops } from "@/features/rides/components/RideRouteStops";
 import { parseRideRoute, routeHasIntermediates } from "@/lib/rideRoute";
 import { peopleOf } from "@/features/rides/ridePeople";
@@ -131,6 +132,8 @@ export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = 
                   </span>
                 ) : null}
               </div>
+
+              <RideCarHandover ride={ride} />
 
               <div className="flex items-center gap-1 font-medium">
                 <MapPin className="size-4 shrink-0 text-muted-foreground" />

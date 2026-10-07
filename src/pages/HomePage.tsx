@@ -51,12 +51,13 @@ import {
 } from "@/features/requests/myRequestsRows";
 import { isTodayOrLater } from "@/features/requests/upcoming";
 import { useBoardRides, useWeeks, useMyUpcomingRides } from "@/features/siddur/hooks";
-import { useRideChanges, useRequestRideChangeMutation } from "@/features/rides/hooks";
+import { useCarNeighboursQuery, useRideChanges, useRequestRideChangeMutation } from "@/features/rides/hooks";
 import { RideDetailSheet } from "@/features/siddur/components/RideDetailSheet";
 import { MemberRideEditor } from "@/features/siddur/components/MemberRideEditor";
 import type { BoardRide } from "@/features/siddur/api";
 import type { RideMove } from "@/features/rides/api";
 import { myRideCard } from "@/features/siddur/myRideCard";
+import { rowHandover, rowHandoverRideIds } from "@/features/requests/rowHandover";
 import { conflictingRides } from "@/features/siddur/rideEditing";
 import { useDepartmentSettings, useEditRideMutation } from "@/features/sadran/hooks";
 import { servedOf } from "@/features/rides/servedOf";
@@ -145,6 +146,18 @@ export function HomePage() {
   useEffect(() => {
     if (focusedId) highlightedRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
   }, [focusedId]);
+
+  // REQ §13.108 f: one fetch for the "be back on time" neighbours of every upcoming ride shown below
+  // (the member's request rows and the upcoming-ride cards).
+  const viewerId = profileQuery.data?.id;
+  const handoverRideIds = [
+    ...rowHandoverRideIds(toDisplayRows((requestsQuery.data ?? []).filter((row) => {
+      const day = rowDay(row);
+      return !day || isTodayOrLater(day, now);
+    }))),
+    ...(upcomingRidesQuery.data ?? []).flatMap((ride) => (ride.id ? [ride.id] : [])),
+  ];
+  const neighboursByRide = useCarNeighboursQuery(handoverRideIds).data;
 
   const isLoading = active.isLoading || profileQuery.isLoading || requestsQuery.isLoading || upcomingRidesQuery.isLoading || weeksQuery.isLoading;
 
@@ -321,7 +334,7 @@ export function HomePage() {
         ) : (
           <div className="space-y-2">
             {upcomingRides.map((row) => {
-              const data = myRideCard(row, requests, rideTypesQuery.data ?? []);
+              const data = myRideCard(row, requests, rideTypesQuery.data ?? [], { viewerId, neighbours: row.id ? neighboursByRide?.get(row.id) : undefined });
               return data ? <RideCard key={row.id} ride={data} onClick={() => setSelectedMyRide(row)} /> : null;
             })}
           </div>
@@ -434,6 +447,7 @@ export function HomePage() {
                     highlighted={row.id === focusedId}
                     rowRef={row.id === focusedId ? highlightedRef : undefined}
                     homeDestinationId={homeDestinationIds[group.departmentId]}
+                    handover={rowHandover(row, neighboursByRide, viewerId)}
                     onWithdraw={(target) => setConfirmAction({ kind: "withdraw", row: target })}
                     onCancelRide={(target) => setConfirmAction({ kind: "cancel", row: target })}
                 onShorten={setShortenRow}

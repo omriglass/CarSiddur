@@ -1017,6 +1017,27 @@ export type Database = {
             referencedColumns: ["ride_id"]
           },
           {
+            foreignKeyName: "freed_slot_offers_cancelled_ride_id_fkey"
+            columns: ["cancelled_ride_id"]
+            isOneToOne: false
+            referencedRelation: "v_ride_car_neighbours"
+            referencedColumns: ["next_ride_id"]
+          },
+          {
+            foreignKeyName: "freed_slot_offers_cancelled_ride_id_fkey"
+            columns: ["cancelled_ride_id"]
+            isOneToOne: false
+            referencedRelation: "v_ride_car_neighbours"
+            referencedColumns: ["prev_ride_id"]
+          },
+          {
+            foreignKeyName: "freed_slot_offers_cancelled_ride_id_fkey"
+            columns: ["cancelled_ride_id"]
+            isOneToOne: false
+            referencedRelation: "v_ride_car_neighbours"
+            referencedColumns: ["ride_id"]
+          },
+          {
             foreignKeyName: "freed_slot_offers_car_id_fkey"
             columns: ["car_id"]
             isOneToOne: false
@@ -1692,6 +1713,27 @@ export type Database = {
             referencedColumns: ["ride_id"]
           },
           {
+            foreignKeyName: "proposals_applied_ride_id_fkey"
+            columns: ["applied_ride_id"]
+            isOneToOne: false
+            referencedRelation: "v_ride_car_neighbours"
+            referencedColumns: ["next_ride_id"]
+          },
+          {
+            foreignKeyName: "proposals_applied_ride_id_fkey"
+            columns: ["applied_ride_id"]
+            isOneToOne: false
+            referencedRelation: "v_ride_car_neighbours"
+            referencedColumns: ["prev_ride_id"]
+          },
+          {
+            foreignKeyName: "proposals_applied_ride_id_fkey"
+            columns: ["applied_ride_id"]
+            isOneToOne: false
+            referencedRelation: "v_ride_car_neighbours"
+            referencedColumns: ["ride_id"]
+          },
+          {
             foreignKeyName: "proposals_created_by_fkey"
             columns: ["created_by"]
             isOneToOne: false
@@ -1738,6 +1780,27 @@ export type Database = {
             columns: ["ride_id"]
             isOneToOne: false
             referencedRelation: "v_my_requests"
+            referencedColumns: ["ride_id"]
+          },
+          {
+            foreignKeyName: "proposals_ride_id_fkey"
+            columns: ["ride_id"]
+            isOneToOne: false
+            referencedRelation: "v_ride_car_neighbours"
+            referencedColumns: ["next_ride_id"]
+          },
+          {
+            foreignKeyName: "proposals_ride_id_fkey"
+            columns: ["ride_id"]
+            isOneToOne: false
+            referencedRelation: "v_ride_car_neighbours"
+            referencedColumns: ["prev_ride_id"]
+          },
+          {
+            foreignKeyName: "proposals_ride_id_fkey"
+            columns: ["ride_id"]
+            isOneToOne: false
+            referencedRelation: "v_ride_car_neighbours"
             referencedColumns: ["ride_id"]
           },
           {
@@ -2361,6 +2424,27 @@ export type Database = {
             referencedColumns: ["ride_id"]
           },
           {
+            foreignKeyName: "requests_join_ride_fk"
+            columns: ["join_ride_id"]
+            isOneToOne: false
+            referencedRelation: "v_ride_car_neighbours"
+            referencedColumns: ["next_ride_id"]
+          },
+          {
+            foreignKeyName: "requests_join_ride_fk"
+            columns: ["join_ride_id"]
+            isOneToOne: false
+            referencedRelation: "v_ride_car_neighbours"
+            referencedColumns: ["prev_ride_id"]
+          },
+          {
+            foreignKeyName: "requests_join_ride_fk"
+            columns: ["join_ride_id"]
+            isOneToOne: false
+            referencedRelation: "v_ride_car_neighbours"
+            referencedColumns: ["ride_id"]
+          },
+          {
             foreignKeyName: "requests_origin_id_fkey"
             columns: ["department_id", "origin_id"]
             isOneToOne: false
@@ -2491,6 +2575,27 @@ export type Database = {
             referencedRelation: "v_my_requests"
             referencedColumns: ["ride_id"]
           },
+          {
+            foreignKeyName: "ride_change_parties_ride_id_fkey"
+            columns: ["ride_id"]
+            isOneToOne: false
+            referencedRelation: "v_ride_car_neighbours"
+            referencedColumns: ["next_ride_id"]
+          },
+          {
+            foreignKeyName: "ride_change_parties_ride_id_fkey"
+            columns: ["ride_id"]
+            isOneToOne: false
+            referencedRelation: "v_ride_car_neighbours"
+            referencedColumns: ["prev_ride_id"]
+          },
+          {
+            foreignKeyName: "ride_change_parties_ride_id_fkey"
+            columns: ["ride_id"]
+            isOneToOne: false
+            referencedRelation: "v_ride_car_neighbours"
+            referencedColumns: ["ride_id"]
+          },
         ]
       }
       ride_change_requests: {
@@ -2599,6 +2704,27 @@ export type Database = {
             referencedRelation: "v_my_requests"
             referencedColumns: ["ride_id"]
           },
+          {
+            foreignKeyName: "ride_change_requests_ride_id_fkey"
+            columns: ["ride_id"]
+            isOneToOne: false
+            referencedRelation: "v_ride_car_neighbours"
+            referencedColumns: ["next_ride_id"]
+          },
+          {
+            foreignKeyName: "ride_change_requests_ride_id_fkey"
+            columns: ["ride_id"]
+            isOneToOne: false
+            referencedRelation: "v_ride_car_neighbours"
+            referencedColumns: ["prev_ride_id"]
+          },
+          {
+            foreignKeyName: "ride_change_requests_ride_id_fkey"
+            columns: ["ride_id"]
+            isOneToOne: false
+            referencedRelation: "v_ride_car_neighbours"
+            referencedColumns: ["ride_id"]
+          },
         ]
       }
       ride_passengers: {
@@ -2699,6 +2825,27 @@ export type Database = {
             referencedColumns: ["ride_id"]
           },
           {
+            foreignKeyName: "ride_passengers_ride_id_fkey"
+            columns: ["ride_id"]
+            isOneToOne: false
+            referencedRelation: "v_ride_car_neighbours"
+            referencedColumns: ["next_ride_id"]
+          },
+          {
+            foreignKeyName: "ride_passengers_ride_id_fkey"
+            columns: ["ride_id"]
+            isOneToOne: false
+            referencedRelation: "v_ride_car_neighbours"
+            referencedColumns: ["prev_ride_id"]
+          },
+          {
+            foreignKeyName: "ride_passengers_ride_id_fkey"
+            columns: ["ride_id"]
+            isOneToOne: false
+            referencedRelation: "v_ride_car_neighbours"
+            referencedColumns: ["ride_id"]
+          },
+          {
             foreignKeyName: "ride_passengers_week_fk"
             columns: ["department_id", "week_start"]
             isOneToOne: false
@@ -2782,6 +2929,27 @@ export type Database = {
             columns: ["ride_id"]
             isOneToOne: false
             referencedRelation: "v_my_requests"
+            referencedColumns: ["ride_id"]
+          },
+          {
+            foreignKeyName: "ride_requests_ride_id_fkey"
+            columns: ["ride_id"]
+            isOneToOne: false
+            referencedRelation: "v_ride_car_neighbours"
+            referencedColumns: ["next_ride_id"]
+          },
+          {
+            foreignKeyName: "ride_requests_ride_id_fkey"
+            columns: ["ride_id"]
+            isOneToOne: false
+            referencedRelation: "v_ride_car_neighbours"
+            referencedColumns: ["prev_ride_id"]
+          },
+          {
+            foreignKeyName: "ride_requests_ride_id_fkey"
+            columns: ["ride_id"]
+            isOneToOne: false
+            referencedRelation: "v_ride_car_neighbours"
             referencedColumns: ["ride_id"]
           },
         ]
@@ -3391,6 +3559,27 @@ export type Database = {
             referencedColumns: ["ride_id"]
           },
           {
+            foreignKeyName: "waitlist_groups_ride_id_fkey"
+            columns: ["ride_id"]
+            isOneToOne: false
+            referencedRelation: "v_ride_car_neighbours"
+            referencedColumns: ["next_ride_id"]
+          },
+          {
+            foreignKeyName: "waitlist_groups_ride_id_fkey"
+            columns: ["ride_id"]
+            isOneToOne: false
+            referencedRelation: "v_ride_car_neighbours"
+            referencedColumns: ["prev_ride_id"]
+          },
+          {
+            foreignKeyName: "waitlist_groups_ride_id_fkey"
+            columns: ["ride_id"]
+            isOneToOne: false
+            referencedRelation: "v_ride_car_neighbours"
+            referencedColumns: ["ride_id"]
+          },
+          {
             foreignKeyName: "waitlist_groups_week_fk"
             columns: ["department_id", "week_start"]
             isOneToOne: false
@@ -3833,6 +4022,27 @@ export type Database = {
           },
         ]
       }
+      v_ride_car_neighbours: {
+        Row: {
+          next_gap_minutes: number | null
+          next_kind: string | null
+          next_name: string | null
+          next_people: string[] | null
+          next_ride_id: string | null
+          next_starts_at: string | null
+          next_tight: boolean | null
+          prev_ends_at: string | null
+          prev_gap_minutes: number | null
+          prev_kind: string | null
+          prev_name: string | null
+          prev_people: string[] | null
+          prev_ride_id: string | null
+          prev_tight: boolean | null
+          ride_id: string | null
+          threshold_minutes: number | null
+        }
+        Relationships: []
+      }
       v_waitlist_groups: {
         Row: {
           created_at: string | null
@@ -3891,6 +4101,27 @@ export type Database = {
             columns: ["ride_id"]
             isOneToOne: false
             referencedRelation: "v_my_requests"
+            referencedColumns: ["ride_id"]
+          },
+          {
+            foreignKeyName: "waitlist_groups_ride_id_fkey"
+            columns: ["ride_id"]
+            isOneToOne: false
+            referencedRelation: "v_ride_car_neighbours"
+            referencedColumns: ["next_ride_id"]
+          },
+          {
+            foreignKeyName: "waitlist_groups_ride_id_fkey"
+            columns: ["ride_id"]
+            isOneToOne: false
+            referencedRelation: "v_ride_car_neighbours"
+            referencedColumns: ["prev_ride_id"]
+          },
+          {
+            foreignKeyName: "waitlist_groups_ride_id_fkey"
+            columns: ["ride_id"]
+            isOneToOne: false
+            referencedRelation: "v_ride_car_neighbours"
             referencedColumns: ["ride_id"]
           },
           {

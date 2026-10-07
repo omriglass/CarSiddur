@@ -10,4 +10,9 @@ export const ridesKeys = {
    */
   rideChanges: (userId: string | undefined, departmentId: string | undefined, weekStart: string | undefined) =>
     [siddurKeys.all[0], "rideChanges", userId, departmentId, weekStart] as const,
+  /**
+   * Under the `siddur` root like `rideChanges`: every ride/request change already refreshes the siddur
+   * family, which keeps the "be back on time" neighbours (REQ §13.108 f) fresh with no extra wiring.
+   */
+  carNeighbours: (rideIds: readonly string[]) => [siddurKeys.all[0], "carNeighbours", [...rideIds].sort().join(",")] as const,
 };

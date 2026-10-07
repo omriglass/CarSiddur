@@ -15,6 +15,7 @@
 //   ride     add_ride_passengers + remove_ride_person, swap_day_cars by a member, mark_car_move, set_ride_driver
 //   freed    cancelled ride on a published day -> freed-slot offer -> member claim_freed_slot -> Sadran approve_claim
 //   series   multi-day request auto-placed on a published week -> member shorten_series
+//   neighbours a member reads v_ride_car_neighbours (next/previous ride on the car, tight gap) for a published ride
 import { resolveApi, serviceClient, signedInClient, ADMIN_PASSWORD } from "./qa/qa-common.mjs";
 
 const api = resolveApi();
@@ -410,6 +411,30 @@ try {
     check("  two days stay placed, the last one is dropped", live.length === 2 && live.every((p) => p.status === "assigned"), JSON.stringify(left));
     const stranger = await m1.rpc("shorten_series", { p_request_id: ids[0], p_depart_at: at(5, 1, 6), p_return_at: at(5, 1, 10) });
     check("  another member cannot shorten it", !!stranger.error && /not_authorized/.test(stranger.error.message), errText(stranger));
+  });
+
+  // -------------------------------------------------------------------- "be back on time" neighbours (REQ 13.108 f)
+  await section("neighbours: a member reads v_ride_car_neighbours for a published ride", async () => {
+    const wk = await mkWeek(6, "solving");
+    const day = 2; const date = dayDate(6, day);
+    const rA = await ride({ n: 6, car: CAR_A, day, driver: m1Id, status: "draft" });
+    const qA = await request({ n: 6, requester: m1Id, day, status: "assigned" }); await link(rA.id, qA, "driver", "keep");
+    const rB = must(await svc.from("rides").insert({
+      department_id: DEPT, week_start: wk, car_id: CAR_A, starts_at: at(6, day, 10, 30), ends_at: at(6, day, 12), origin_id: HOME, destination_id: HOME,
+      driver_id: m2Id, status: "draft", is_pinned: true, pin_reason: "SADRAN_MANUAL", created_by: sadranId,
+    }).select("id").single(), "insert next ride");
+    const qB = await request({ n: 6, requester: m2Id, day, status: "assigned" }); await link(rB.id, qB, "driver", "keep");
+    const hidden = await m1.from("v_ride_car_neighbours").select("ride_id").eq("ride_id", rA.id);
+    check("before publishing the member gets no neighbour row", !hidden.error && hidden.data.length === 0, errText(hidden));
+    const fp = must(await sadran.rpc("publish_scores_fingerprint", { p_department_id: DEPT, p_week_start: wk }), "fingerprint");
+    const pub = await sadran.rpc("publish_siddur", { p_department_id: DEPT, p_week_start: wk, p_profile_scores: [], p_expected_fingerprint: fp, p_policy_scores: [], p_days: [date], p_allow_unanswered: false });
+    check("Sadran publishes the day", !pub.error && !!pub.data, errText(pub));
+    const mine = await m1.from("v_ride_car_neighbours").select("*").eq("ride_id", rA.id).single();
+    check("a member reads the neighbours of a published ride (grant + RLS)", !mine.error, errText(mine));
+    check("  the next ride is another member's, 30 minutes later: tight", mine.data?.next_ride_id === rB.id && mine.data.next_tight === true && mine.data.next_gap_minutes === 30 && mine.data.next_kind === "ride", JSON.stringify(mine.data));
+    check("  the next ride's people include its driver", Array.isArray(mine.data?.next_people) && mine.data.next_people.includes(m2Id), JSON.stringify(mine.data?.next_people));
+    const mirror = await m2.from("v_ride_car_neighbours").select("prev_ride_id,prev_tight,prev_people").eq("ride_id", rB.id).single();
+    check("  the next ride's driver gets the mirror fields", !mirror.error && mirror.data.prev_ride_id === rA.id && mirror.data.prev_tight === true && mirror.data.prev_people.includes(m1Id), JSON.stringify(mirror.data ?? errText(mirror)));
   });
 } finally {
   await purge([...madeWeeks]);

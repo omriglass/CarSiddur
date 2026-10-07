@@ -950,7 +950,7 @@ declare
   v_leg text; v_before numeric; v_after numeric; v_refused text; v_km_before numeric; v_km_after numeric;
   v_add_min int[] := array[0, 0]; v_add_km numeric[] := array[0, 0]; v_ix int;
   v_err text; v_start timestamptz; v_end timestamptz; v_day date; v_unknown boolean;
-  v_features text[]; v_luggage boolean; v_others int; v_conflict boolean := false;
+  v_features text[]; v_luggage boolean; v_conflict boolean := false;
 begin
   select * into v_ride from public.rides where id = p_ride_id;
   if v_ride.id is null then return jsonb_build_object('ok', false, 'error', 'ride_not_found', 'code', 'ride_not_found'); end if;
@@ -964,19 +964,12 @@ begin
     v_err := 'merge_already_on_ride';
   end if;
 
-  -- REQ §13.101 a / item 21: a large-luggage (ציוד רב) request rides only on a `large_trunk` car,
-  -- at most two such requests per car.
+  -- REQ item 21 (2026-10-07): large luggage is a yes/no match - a large-luggage (ציוד רב) request
+  -- rides only on a `large_trunk` car, and any number of them may share that car (no count cap).
   select coalesce(c.features, '{}') into v_features from public.cars c where c.id = v_ride.car_id;
   select coalesce(q.has_luggage, false) into v_luggage from public.requests q where q.id = p_request_id;
-  if v_luggage then
-    if not ('large_trunk' = any (coalesce(v_features, '{}'))) then
-      v_err := coalesce(v_err, 'merge_luggage_needs_large_trunk');
-    else
-      select count(distinct q.id) into v_others
-      from public.ride_requests rr join public.requests q on q.id = rr.request_id
-      where rr.ride_id = p_ride_id and q.has_luggage and q.id <> p_request_id;
-      if v_others >= 2 then v_err := coalesce(v_err, 'merge_luggage_too_many'); end if;
-    end if;
+  if v_luggage and not ('large_trunk' = any (coalesce(v_features, '{}'))) then
+    v_err := coalesce(v_err, 'merge_luggage_needs_large_trunk');
   end if;
 
   foreach v_leg in array array['out', 'return'] loop
@@ -1047,7 +1040,6 @@ CREATE OR REPLACE FUNCTION "public"."_merge_error_code"("_err" "text") RETURNS "
     AS $$
   select case _err
     when 'merge_luggage_needs_large_trunk' then 'luggage'
-    when 'merge_luggage_too_many' then 'luggage_count'
     when 'luggage_capacity_violation' then 'luggage'
     when 'merge_detour_too_long' then 'detour'
     when 'merge_boards_at_end' then 'boards_at_end'
@@ -3612,7 +3604,7 @@ CREATE OR REPLACE FUNCTION "public"."car_takes_luggage"("_car" "uuid", "_count" 
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
   select coalesce(_count, 0) <= 0
-    or (_count <= 2 and exists (select 1 from public.cars c where c.id = _car and 'large_trunk' = any(c.features)));
+    or exists (select 1 from public.cars c where c.id = _car and 'large_trunk' = any(c.features));
 $$;
 
 
@@ -16082,6 +16074,132 @@ CREATE OR REPLACE VIEW "public"."v_request_template_suggestions" WITH ("security
 ALTER VIEW "public"."v_request_template_suggestions" OWNER TO "postgres";
 
 
+CREATE OR REPLACE VIEW "public"."v_ride_car_neighbours" WITH ("security_invoker"='true') AS
+ SELECT "r"."id" AS "ride_id",
+    "th"."minutes" AS "threshold_minutes",
+    "nx"."id" AS "next_ride_id",
+    "nx"."starts_at" AS "next_starts_at",
+    "nx"."kind" AS "next_kind",
+    "nx"."name" AS "next_name",
+    "nx"."people" AS "next_people",
+        CASE
+            WHEN ("nx"."id" IS NULL) THEN NULL::integer
+            ELSE ("round"((EXTRACT(epoch FROM ("nx"."starts_at" - "r"."ends_at")) / (60)::numeric)))::integer
+        END AS "next_gap_minutes",
+    COALESCE((("nx"."id" IS NOT NULL) AND (("nx"."starts_at" - "r"."ends_at") <= "make_interval"("mins" => "th"."minutes"))), false) AS "next_tight",
+    "pv"."id" AS "prev_ride_id",
+    "pv"."ends_at" AS "prev_ends_at",
+    "pv"."kind" AS "prev_kind",
+    "pv"."name" AS "prev_name",
+    "pv"."people" AS "prev_people",
+        CASE
+            WHEN ("pv"."id" IS NULL) THEN NULL::integer
+            ELSE ("round"((EXTRACT(epoch FROM ("r"."starts_at" - "pv"."ends_at")) / (60)::numeric)))::integer
+        END AS "prev_gap_minutes",
+    COALESCE((("pv"."id" IS NOT NULL) AND (("r"."starts_at" - "pv"."ends_at") <= "make_interval"("mins" => "th"."minutes"))), false) AS "prev_tight"
+   FROM ((("public"."rides" "r"
+     CROSS JOIN LATERAL ( SELECT GREATEST(COALESCE((("w"."settings_overrides" ->> 'turnaround_minutes'::"text"))::integer, "s"."turnaround_minutes", 30), 30) AS "minutes"
+           FROM ((( SELECT 1 AS "?column?") "one"
+             LEFT JOIN "public"."department_settings" "s" ON (("s"."department_id" = "r"."department_id")))
+             LEFT JOIN "public"."weeks" "w" ON ((("w"."department_id" = "r"."department_id") AND ("w"."week_start" = "r"."week_start"))))) "th")
+     LEFT JOIN LATERAL ( SELECT "n"."id",
+            "n"."starts_at",
+            "k"."kind",
+            "nm"."name",
+            "pe"."people"
+           FROM ((("public"."rides" "n"
+             CROSS JOIN LATERAL ( SELECT
+                        CASE
+                            WHEN ("n"."auto_relocation" AND ("n"."pin_reason" = 'CAR_MOVE'::"text")) THEN 'car_move'::"text"
+                            WHEN ((NOT "n"."auto_relocation") AND (NOT (EXISTS ( SELECT 1
+                               FROM "public"."ride_requests" "x"
+                              WHERE ("x"."ride_id" = "n"."id"))))) THEN 'reservation'::"text"
+                            ELSE 'ride'::"text"
+                        END AS "kind") "k")
+             CROSS JOIN LATERAL ( SELECT COALESCE(( SELECT "d"."full_name"
+                           FROM "public"."profiles" "d"
+                          WHERE ("d"."id" = "n"."driver_id")), ( SELECT "p"."full_name"
+                           FROM (("public"."ride_requests" "rr"
+                             JOIN "public"."requests" "q" ON (("q"."id" = "rr"."request_id")))
+                             JOIN "public"."profiles" "p" ON (("p"."id" = "q"."requester_id")))
+                          WHERE ("rr"."ride_id" = "n"."id")
+                          ORDER BY "rr"."created_at", "rr"."request_id"
+                         LIMIT 1), ( SELECT "rp"."display_name"
+                           FROM "public"."ride_passengers" "rp"
+                          WHERE ("rp"."ride_id" = "n"."id")
+                          ORDER BY "rp"."created_at", "rp"."id"
+                         LIMIT 1)) AS "name") "nm")
+             CROSS JOIN LATERAL ( SELECT COALESCE("array_agg"(DISTINCT "x"."pid") FILTER (WHERE ("x"."pid" IS NOT NULL)), '{}'::"uuid"[]) AS "people"
+                   FROM ( SELECT "n"."driver_id" AS "pid"
+                        UNION ALL
+                         SELECT "q"."requester_id"
+                           FROM ("public"."ride_requests" "rr"
+                             JOIN "public"."requests" "q" ON (("q"."id" = "rr"."request_id")))
+                          WHERE ("rr"."ride_id" = "n"."id")
+                        UNION ALL
+                         SELECT "rc"."profile_id"
+                           FROM ("public"."ride_requests" "rr"
+                             JOIN "public"."request_companions" "rc" ON (("rc"."request_id" = "rr"."request_id")))
+                          WHERE ("rr"."ride_id" = "n"."id")
+                        UNION ALL
+                         SELECT "rp"."person_id"
+                           FROM "public"."ride_passengers" "rp"
+                          WHERE ("rp"."ride_id" = "n"."id")) "x") "pe")
+          WHERE (("n"."car_id" = "r"."car_id") AND ("n"."id" <> "r"."id") AND ("n"."status" = ANY (ARRAY['confirmed'::"public"."ride_status", 'flagged'::"public"."ride_status"])) AND (NOT "n"."planning_conflict") AND ("n"."starts_at" >= "r"."ends_at") AND (("r"."series_id" IS NULL) OR ("n"."series_id" IS DISTINCT FROM "r"."series_id")) AND "public"."is_day_public"("n"."department_id", "n"."week_start", (("n"."starts_at" AT TIME ZONE 'Asia/Jerusalem'::"text"))::"date"))
+          ORDER BY "n"."starts_at", "n"."id"
+         LIMIT 1) "nx" ON (true))
+     LEFT JOIN LATERAL ( SELECT "n"."id",
+            "n"."ends_at",
+            "k"."kind",
+            "nm"."name",
+            "pe"."people"
+           FROM ((("public"."rides" "n"
+             CROSS JOIN LATERAL ( SELECT
+                        CASE
+                            WHEN ("n"."auto_relocation" AND ("n"."pin_reason" = 'CAR_MOVE'::"text")) THEN 'car_move'::"text"
+                            WHEN ((NOT "n"."auto_relocation") AND (NOT (EXISTS ( SELECT 1
+                               FROM "public"."ride_requests" "x"
+                              WHERE ("x"."ride_id" = "n"."id"))))) THEN 'reservation'::"text"
+                            ELSE 'ride'::"text"
+                        END AS "kind") "k")
+             CROSS JOIN LATERAL ( SELECT COALESCE(( SELECT "d"."full_name"
+                           FROM "public"."profiles" "d"
+                          WHERE ("d"."id" = "n"."driver_id")), ( SELECT "p"."full_name"
+                           FROM (("public"."ride_requests" "rr"
+                             JOIN "public"."requests" "q" ON (("q"."id" = "rr"."request_id")))
+                             JOIN "public"."profiles" "p" ON (("p"."id" = "q"."requester_id")))
+                          WHERE ("rr"."ride_id" = "n"."id")
+                          ORDER BY "rr"."created_at", "rr"."request_id"
+                         LIMIT 1), ( SELECT "rp"."display_name"
+                           FROM "public"."ride_passengers" "rp"
+                          WHERE ("rp"."ride_id" = "n"."id")
+                          ORDER BY "rp"."created_at", "rp"."id"
+                         LIMIT 1)) AS "name") "nm")
+             CROSS JOIN LATERAL ( SELECT COALESCE("array_agg"(DISTINCT "x"."pid") FILTER (WHERE ("x"."pid" IS NOT NULL)), '{}'::"uuid"[]) AS "people"
+                   FROM ( SELECT "n"."driver_id" AS "pid"
+                        UNION ALL
+                         SELECT "q"."requester_id"
+                           FROM ("public"."ride_requests" "rr"
+                             JOIN "public"."requests" "q" ON (("q"."id" = "rr"."request_id")))
+                          WHERE ("rr"."ride_id" = "n"."id")
+                        UNION ALL
+                         SELECT "rc"."profile_id"
+                           FROM ("public"."ride_requests" "rr"
+                             JOIN "public"."request_companions" "rc" ON (("rc"."request_id" = "rr"."request_id")))
+                          WHERE ("rr"."ride_id" = "n"."id")
+                        UNION ALL
+                         SELECT "rp"."person_id"
+                           FROM "public"."ride_passengers" "rp"
+                          WHERE ("rp"."ride_id" = "n"."id")) "x") "pe")
+          WHERE (("n"."car_id" = "r"."car_id") AND ("n"."id" <> "r"."id") AND ("n"."status" = ANY (ARRAY['confirmed'::"public"."ride_status", 'flagged'::"public"."ride_status"])) AND (NOT "n"."planning_conflict") AND ("n"."ends_at" <= "r"."starts_at") AND (("r"."series_id" IS NULL) OR ("n"."series_id" IS DISTINCT FROM "r"."series_id")) AND "public"."is_day_public"("n"."department_id", "n"."week_start", (("n"."starts_at" AT TIME ZONE 'Asia/Jerusalem'::"text"))::"date"))
+          ORDER BY "n"."ends_at" DESC, "n"."id"
+         LIMIT 1) "pv" ON (true))
+  WHERE ("r"."status" = ANY (ARRAY['confirmed'::"public"."ride_status", 'flagged'::"public"."ride_status"]));
+
+
+ALTER VIEW "public"."v_ride_car_neighbours" OWNER TO "postgres";
+
+
 CREATE OR REPLACE VIEW "public"."v_waitlist_groups" AS
 SELECT
     NULL::"uuid" AS "id",
@@ -16758,6 +16876,10 @@ CREATE UNIQUE INDEX "ride_requests_return_unique_idx" ON "public"."ride_requests
 
 
 CREATE INDEX "rides_car_chain_idx" ON "public"."rides" USING "btree" ("car_id", "week_start", "starts_at") WHERE ("status" <> 'cancelled'::"public"."ride_status");
+
+
+
+CREATE INDEX "rides_car_starts_idx" ON "public"."rides" USING "btree" ("car_id", "starts_at") WHERE ("status" <> 'cancelled'::"public"."ride_status");
 
 
 
@@ -21431,6 +21553,11 @@ GRANT ALL ON TABLE "public"."weeks" TO "service_role";
 
 GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE "public"."v_request_template_suggestions" TO "authenticated";
 GRANT ALL ON TABLE "public"."v_request_template_suggestions" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."v_ride_car_neighbours" TO "service_role";
+GRANT SELECT ON TABLE "public"."v_ride_car_neighbours" TO "authenticated";
 
 
 

@@ -3,6 +3,7 @@ import type { MyRequestRow } from "@/features/requests/api";
 import { chauffeurRideLabel } from "@/lib/rideLabel";
 import { ridePublicDetails } from "@/lib/ridePublicDetails";
 import { tv } from "@/i18n/he";
+import { carHandoverNotes, type CarNeighbours } from "@/features/rides/carHandover";
 import { servedOf } from "@/features/rides/servedOf";
 import { peopleOf } from "@/features/rides/ridePeople";
 import type { BoardRide } from "./api";
@@ -11,6 +12,8 @@ export function myRideCard(
   ride: BoardRide & { car_name: string | null; car_type?: "shared" | "temporary" | null },
   requests: readonly MyRequestRow[],
   rideTypes: readonly { code: string; name_he: string }[],
+  /** REQ §13.108 f: the signed-in member and this ride's neighbours on its car — enables the "be back on time" note. */
+  handover?: { viewerId: string | undefined; neighbours: CarNeighbours | undefined },
 ): RideCardData | null {
   if (!ride.id || !ride.starts_at) return null;
   const served = servedOf(ride);
@@ -33,7 +36,12 @@ export function myRideCard(
   }).map((entry) => tv(entry.leg === "return" ? "home.joiningFrom" : "home.joiningTo", {
     name: entry.requester!, destination: entry.destination ?? "",
   }));
+  // The viewer drives it or requested it (their own request is among its served entries).
+  const viewerId = handover?.viewerId;
+  const participates = !!viewerId && (ride.driver_id === viewerId || !!ownEntry);
+  const handoverNotes = participates ? carHandoverNotes(handover?.neighbours, viewerId, [viewerId]) : undefined;
   return {
+    handover: handoverNotes,
     id: ride.id, startsAt: ride.starts_at, endsAt: ride.ends_at,
     originName: ride.origin_name ?? "", destinationName: destination,
     label: chauffeur ? chauffeurRideLabel(ride.needs_driver ? null : ride.driver_name, passengers, ride.starts_at, ride.origin_id ?? undefined,

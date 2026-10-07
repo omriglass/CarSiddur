@@ -220,6 +220,18 @@ export const heMember = {
     archiveEmpty: "אין עדיין סידורים בארכיון",
     archivedWeekHint: "סידור מהארכיון (לצפייה בלבד)",
   },
+  // REQ §13.108 f: "be back on time" — who takes the car next / where it arrives from (display only).
+  carHandover: {
+    alertLabel: "שימו לב",
+    returnByRide: "{{name}} לוקח/ת את הרכב ב-{{time}} — חשוב להחזיר בזמן",
+    returnByUnnamed: "הרכב נלקח ב-{{time}} — חשוב להחזיר בזמן",
+    returnByReservation: "הרכב שמור ב-{{time}} — חשוב להחזיר בזמן",
+    returnByCarMove: "הרכב מועבר ב-{{time}} — חשוב להחזיר בזמן",
+    arrivesFromRide: "הרכב מגיע מהנסיעה של {{name}} ב-{{time}}, ממש לפני הנסיעה שלך",
+    arrivesFromUnnamed: "הרכב מגיע מנסיעה קודמת ב-{{time}}, ממש לפני הנסיעה שלך",
+    arrivesFromReservation: "הרכב מגיע משמירת זמן ב-{{time}}, ממש לפני הנסיעה שלך",
+    arrivesFromCarMove: "הרכב מועבר אליך ב-{{time}}, ממש לפני הנסיעה שלך",
+  },
   rideDetail: {
     title: "פרטי הנסיעה",
     driver: "נהג/ת",

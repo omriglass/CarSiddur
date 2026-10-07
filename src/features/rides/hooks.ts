@@ -11,6 +11,7 @@ import {
   addRidePassengers,
   cancelRideChange,
   claimRideDriver,
+  fetchCarNeighbours,
   fetchRideChanges,
   removeRidePerson,
   requestRideChange,
@@ -19,6 +20,7 @@ import {
   type RideMove,
   type RidePassengerInput,
 } from "./api";
+import { mapCarNeighbours, type CarNeighbours } from "./carHandover";
 import { ridesKeys } from "./keys";
 import { invalidateWeekData } from "./invalidateWeek";
 
@@ -129,5 +131,20 @@ export function useCancelRideChangeMutation() {
       for (const key of [siddurKeys.all, sadranKeys.all, inboxKeys.all]) void client.invalidateQueries({ queryKey: key });
     },
     onError: showErrorToast,
+  });
+}
+
+/** Neighbours (ride before/after on the same car) for the given rides, keyed by ride id. Nothing is fetched for no ids. */
+export function useCarNeighboursQuery(rideIds: readonly string[]) {
+  const ids = [...new Set(rideIds)];
+  return useQuery({
+    queryKey: ridesKeys.carNeighbours(ids),
+    queryFn: () => fetchCarNeighbours(ids),
+    enabled: ids.length > 0,
+    select: (rows): Map<string, CarNeighbours> => {
+      const byRide = new Map<string, CarNeighbours>();
+      for (const row of rows) if (row.ride_id) byRide.set(row.ride_id, mapCarNeighbours(row));
+      return byRide;
+    },
   });
 }

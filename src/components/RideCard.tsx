@@ -2,6 +2,8 @@ import { ArrowLeft, CarFront, MapPin, Star } from "lucide-react";
 
 import { Card, CardContent } from "@/components/ui/card";
 import { CarNameWithReport } from "@/features/carCare/components/CarNameWithReport";
+import type { CarHandoverNotes } from "@/features/rides/carHandover";
+import { CarHandoverNotice } from "@/features/rides/components/CarHandoverNotice";
 import { he, tv } from "@/i18n/he";
 import { formatDayDate } from "@/lib/dayLabels";
 import { rideTypeColorClasses } from "@/lib/rideTypeColors";
@@ -51,6 +53,8 @@ export interface RideCardData {
   /** Multi-day request leg (REQ §13.77, UX_FLOWS.md §3.3/§3.5) — 1-based position and total leg count; shows a "יום {{index}}/{{count}}" marker when `seriesCount` is above 1. */
   seriesIndex?: number | null;
   seriesCount?: number | null;
+  /** REQ §13.108 f: "be back on time" note (only on the member's own ride, only when the gap is tight). */
+  handover?: CarHandoverNotes;
 }
 
 interface RideCardProps {
@@ -140,6 +144,7 @@ export function RideCard({ ride, onClick }: RideCardProps) {
           {ride.joining?.map((line, index) => <p key={index} className="whitespace-normal break-words text-sm">{line}</p>)}
           {ride.passengerSummary ? <p className="whitespace-pre-wrap break-words">{ride.passengerSummary}</p> : null}
           {ride.description ? <p className="whitespace-pre-wrap break-words text-muted-foreground">{ride.description}</p> : null}
+          {ride.handover ? <CarHandoverNotice notes={ride.handover} ride={{ startsAt: ride.startsAt, endsAt: ride.endsAt ?? ride.startsAt }} /> : null}
           {ride.coordinatorNotes ? <p className="whitespace-pre-wrap break-words text-xs text-muted-foreground">{he.field.notes}: {ride.coordinatorNotes}</p> : null}
           <div className="flex flex-wrap items-center gap-x-2 text-muted-foreground">
             {ride.needsDriver ? <span className="font-semibold text-destructive">{he.rideCoordination.missingDriver}</span> : null}

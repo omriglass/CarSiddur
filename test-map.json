@@ -284,9 +284,19 @@
         "src/features/rides/export/**",
         "src/features/rides/servedOf.ts",
         "src/features/rides/components/RideRouteStops.tsx",
-        "src/lib/routeStops.ts"
+        "src/lib/routeStops.ts",
+        "src/features/rides/carHandover.ts",
+        "src/features/rides/carHandover.test.ts",
+        "src/features/rides/components/CarHandoverNotice.tsx",
+        "src/features/rides/components/RideCarHandover.tsx",
+        "src/features/requests/rowHandover.ts",
+        "src/features/requests/rowHandover.test.ts",
+        "supabase/migrations/**/*ride_car_neighbours*",
+        "supabase/tests/car_handover_notes.sql"
       ],
       "vitest": [
+        "src/features/rides/carHandover.test.ts",
+        "src/features/requests/rowHandover.test.ts",
         "src/features/siddur",
         "src/components/WeekGrid.test.ts",
         "src/components/WeekGrid.gestures.test.tsx",
@@ -294,7 +304,8 @@
       ],
       "sql": [
         "selected_day_publication.sql",
-        "day_car_swap.sql"
+        "day_car_swap.sql",
+        "car_handover_notes.sql"
       ],
       "playwrightTags": [
         "@siddur"
@@ -303,13 +314,15 @@
         "13.42",
         "13.56",
         "13.80",
-        "13.92"
+        "13.92",
+        "13.108"
       ],
       "qaChecklist": [
         "Switch weeks/toggle table view/open the archive on the siddur (REQ §13.42)",
         "Confirm a private car's row appears only on days it has a ride (REQ §13.80)",
         "View another department's published siddur; confirm read-only, no lockbox code (REQ §13.52)",
-        "Resize an owned ride and confirm shadow-collision requires explicit driver consent (REQ §13.42)"
+        "Resize an owned ride and confirm shadow-collision requires explicit driver consent (REQ §13.42)",
+        "Give a ride on a published day a follow-up ride on the same car within the turnaround (min. 30 min): the driver/requester sees an amber \"!\" on /my, the Home card and the ride sheet, the next ride's driver sees the mirror note; an unpublished next day or the member's own next ride shows nothing (REQ §13.108 f)"
       ]
     },
     {

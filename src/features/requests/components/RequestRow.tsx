@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/StatusBadge";
 import { TripSummary } from "@/components/TripSummary";
+import { CarHandoverNotice } from "@/features/rides/components/CarHandoverNotice";
 import { OpenProposalButton } from "@/features/proposals/components/OpenProposalButton";
 import { OpenWaitlistGroupButton } from "@/features/waitlist/components/OpenWaitlistGroupButton";
 import { he, tv } from "@/i18n/he";
@@ -14,6 +15,8 @@ import { cn } from "@/lib/utils";
 import { paths } from "@/app/routes";
 
 import type { TripType } from "@/lib/enums";
+
+import type { CarHandoverNotes } from "@/features/rides/carHandover";
 
 import { canEditRequest } from "../window";
 import { isAwaitingAnswer } from "../pendingProposal";
@@ -52,6 +55,8 @@ interface RequestRowProps {
   /** REQ §13.101 e (QM4): "זו לא כפילות". */
   onRestoreDuplicate?: (row: DisplayRow) => void;
   actionPending?: boolean;
+  /** REQ §13.108 f: "be back on time" note for this row (see `rowHandover()`); the parent fetches the neighbours once for all rows. */
+  handover?: { notes: CarHandoverNotes; span: { startsAt: string; endsAt: string } } | null;
 }
 
 /**
@@ -75,6 +80,7 @@ export function RequestRow({
   onPlaceOnOwnCar,
   onRestoreDuplicate,
   actionPending,
+  handover,
 }: RequestRowProps) {
   return (
     <div
@@ -96,6 +102,7 @@ export function RequestRow({
             : <StatusBadge kind="request" status={displayStatus(row)} />}
         </div>
       </div>
+      {handover ? <CarHandoverNotice notes={handover.notes} ride={handover.span} /> : null}
       {row.ride?.needsDriver ? <p className="text-sm font-medium text-destructive">{he.rideCoordination.missingDriver}</p> : null}
       {row.tripType !== "round_trip" ? <p className="text-xs text-muted-foreground">{TRIP_TYPE_LABEL[row.tripType]}</p> : null}
       {row.hasLuggage ? <Badge variant="outline" className="w-fit">{he.request.luggageChip}</Badge> : null}

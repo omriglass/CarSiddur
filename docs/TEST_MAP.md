@@ -178,10 +178,12 @@ gap is closed.
 `e2e/siddur-mobile.spec.ts`, `ride-editing.spec.ts`, `member.spec.ts`, `car-swap.spec.ts`;
 `src/features/rides/servedOf.ts`, `src/features/rides/components/RideRouteStops.tsx`,
 `src/lib/routeStops.ts` (multi-stop rides ride-detail route display, REQ §13.93, step O6).
+`src/features/rides/carHandover*`, `components/CarHandoverNotice.tsx`, `components/RideCarHandover.tsx`, `src/features/requests/rowHandover*`,
+migrations `*ride_car_neighbours*`, `supabase/tests/car_handover_notes.sql` ("be back on time" note, REQ §13.108 f).
 
 **Automated**:
-- Vitest: `npx vitest run src/features/siddur src/components/WeekGrid.test.ts src/components/WeekGrid.gestures.test.tsx src/components/weekGridCars.test.ts`
-- SQL: `selected_day_publication.sql`, `day_car_swap.sql`
+- Vitest: `npx vitest run src/features/siddur src/features/rides/carHandover.test.ts src/features/requests/rowHandover.test.ts src/components/WeekGrid.test.ts src/components/WeekGrid.gestures.test.tsx src/components/weekGridCars.test.ts`
+- SQL: `selected_day_publication.sql`, `day_car_swap.sql`, `car_handover_notes.sql`
 - Playwright: `npx playwright test --grep "@siddur"`
 
 **QA script**:
@@ -197,11 +199,18 @@ gap is closed.
    driver consent rather than silently overwriting another ride.
 6. Drag one car's header onto another's for a published, non-past day; confirm the confirmation
    dialog lists what moves, the swap succeeds, and everyone but you gets notified (REQ §13.92).
+7. Give a ride on a published day a follow-up ride on the same car (another member, a Sadran
+   reservation or a car move) starting within the week's turnaround (never under 30 minutes) after
+   it ends: the driver/requester sees an amber "!" line on `/my`, the Home card and the ride sheet
+   ("X takes the car at HH:MM — return on time"); the next ride's driver sees "the car arrives from
+   X's ride at HH:MM". Nothing shows for an unpublished next day, a cancelled ride, the member's
+   own next ride or the next day of the same multi-day request (REQ §13.108 f). No e2e spec yet —
+   covered by `car_handover_notes.sql`, the API suite and unit tests.
 
 **Coverage gap**: no spec directly asserts the private-car-hidden-on-idle-days behavior on either
 grid (item 2) — `hideIdleTemporaryCars()` is unit-tested in `weekGridCars.test.ts` but not via e2e.
 
-**REQ**: §13.42, §13.56, §13.80, §13.92.
+**REQ**: §13.42, §13.56, §13.80, §13.92, §13.108.
 
 ### board — Board (Sadran): drag/drop, reservations, policy chip/score
 
