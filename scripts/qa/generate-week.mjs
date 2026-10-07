@@ -441,6 +441,34 @@ export async function generateWeek({ seed, out, apiUrl, tag, log = console.log, 
     const d1 = randInt(rng, 0, 3), d2 = Math.min(5, d1 + randInt(rng, 1, 2));
     plans.push({ member: m, kind: "series", o: { tripType: "round_trip", rideType: "work", day: d1, returnDay: d2, depart: quarter(randInt(rng, 7 * 60, 9 * 60)), ret: quarter(randInt(rng, 15 * 60, 19 * 60)), dest: pick(rng, [...ctx.mid, ...(chance(rng, 0.3) ? ctx.rare : [])]), origin: ctx.home, defaultOriginId: ctx.home.id, flex: flexMix(rng, "mixed"), series: true } });
   }
+  // Weekend (Friday/Saturday) requests, owner 2026-10-07: drawn from their own random stream so the
+  // weekday plans of earlier seeds stay as they were. Saturday outings (some with family), Friday
+  // morning errands, Saturday evenings, a few Friday -> Saturday family visits (multi-day series).
+  const wrng = mulberry32((seed ^ 0x5a7d0e) >>> 0);
+  for (const m of members) {
+    if (m.privateCar) continue;
+    const nonDriver = m.tags.includes("doesNotDrive");
+    const from = m.originName ? ctx.byName.get(m.originName) : ctx.home;
+    const away = (list) => pick(wrng, list.filter((p) => p.id !== from.id));
+    const wflex = () => flexMix(wrng, m.tags.includes("hatesChangingTimes") ? "rigid" : "mixed");
+    const common = { origin: from, defaultOriginId: from.id };
+    if (chance(wrng, 0.35)) {
+      const dep = quarter(randInt(wrng, 8 * 60 + 30, 11 * 60)), ret = quarter(randInt(wrng, 15 * 60, 19 * 60));
+      if (nonDriver) plans.push({ member: m, kind: "weekend", o: { ...common, tripType: "drop_off", pickup: true, rideType: "other", day: 6, depart: dep, ret, dest: pick(wrng, ctx.dropOff.filter((p) => p.id !== from.id)), flex: wflex() } });
+      else plans.push({ member: m, kind: "weekend", o: { ...common, tripType: "round_trip", rideType: "other", day: 6, depart: dep, ret, dest: away([...ctx.mid, ...ctx.rare]), adults: weightedPick(wrng, [[1, 2], [2, 3], [3, 2], [4, 1]]), withChildren: m.children?.length && chance(wrng, 0.5) ? true : undefined, flex: wflex() } });
+    }
+    if (!nonDriver && chance(wrng, 0.2)) {
+      const dep = quarter(randInt(wrng, 8 * 60, 11 * 60));
+      plans.push({ member: m, kind: "weekend", o: { ...common, tripType: "round_trip", rideType: "errands", day: 5, depart: dep, ret: dep + 60 * randInt(wrng, 1, 3), dest: away([...ctx.near, ...ctx.mid]), flex: wflex() } });
+    }
+    if (!nonDriver && chance(wrng, 0.1)) {
+      const night = ctx.mid.filter((p) => QA_DATA.nightPlaces.includes(p.name) && p.id !== from.id);
+      if (night.length) plans.push({ member: m, kind: "weekend", o: { ...common, tripType: "round_trip", rideType: "other", day: 6, depart: quarter(randInt(wrng, 19 * 60, 20 * 60 + 30)), ret: quarter(randInt(wrng, 22 * 60 + 30, 23 * 60 + 45)), dest: pick(wrng, night), flex: wflex() } });
+    }
+    if (!nonDriver && !m.originName && chance(wrng, 0.08)) {
+      plans.push({ member: m, kind: "series", o: { tripType: "round_trip", rideType: "other", day: 5, returnDay: 6, depart: quarter(randInt(wrng, 13 * 60, 15 * 60)), ret: quarter(randInt(wrng, 18 * 60, 21 * 60)), dest: away([...ctx.mid, ...ctx.rare]), origin: ctx.home, defaultOriginId: ctx.home.id, flex: wflex(), series: true } });
+    }
+  }
   // Decorations: stops, companions, preferred cars, extra seats.
   const sharedCars = cars;
   for (const p of plans) {
@@ -480,9 +508,9 @@ export async function generateWeek({ seed, out, apiUrl, tag, log = console.log, 
   const clashes = (m, [a, b]) => (busy.get(m.id) ?? []).some(([c, d]) => a < d && c < b);
   const kept = [];
   // Fixed-day plans claim their time first; the movable ones work around them.
-  const claimOrder = [...plans.filter((p) => p.kind === "series"), ...plans.filter((p) => ["chainOut", "chainBack", "loneOneWay"].includes(p.kind)), ...plans.filter((p) => !["series", "chainOut", "chainBack", "loneOneWay"].includes(p.kind))];
+  const claimOrder = [...plans.filter((p) => p.kind === "series"), ...plans.filter((p) => ["chainOut", "chainBack", "loneOneWay", "weekend"].includes(p.kind)), ...plans.filter((p) => !["series", "chainOut", "chainBack", "loneOneWay", "weekend"].includes(p.kind))];
   for (const p of claimOrder) {
-    const movable = !["series", "chainOut", "chainBack", "loneOneWay"].includes(p.kind);
+    const movable = !["series", "chainOut", "chainBack", "loneOneWay", "weekend"].includes(p.kind);
     let ok = !clashes(p.member, spanOf(p.o));
     for (let tries = 0; !ok && movable && tries < 6; tries++) {
       p.o.day = ctx.dayIndex(false);
