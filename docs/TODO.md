@@ -735,7 +735,7 @@ Merged from both reports (S = QA Sadran, U = QA user). Worked: car move, merge p
 - **R5M1 — A failed cancel gives no notice or retry path** (U M2).
 - **R5F1 — After a car move away from base, offer the return move** (S F1). **R5F2 — Merge by dragging a placed ride onto another ride** (S F2). **R5F3 — "External for all legs" on a multi-day card** (S F3). **R5F4 — A "pull one of the duplicates" button on the Sadran's duplicate question; mailbox read receipts** (U F1).
 
-## QA run 6 findings (2026-10-06, **same seed 9882 as run 5**, department `qa-s9882`; QA Sadran = Opus, Tuesday via UI; QA user = Sonnet) — **awaiting owner triage**
+## QA run 6 findings (2026-10-06, **same seed 9882 as run 5**, department `qa-s9882`; QA Sadran = Opus, Tuesday via UI; QA user = Sonnet) — **owner triaged 2026-10-07: every R6B bug before the pilot (merges R6B1/B3/B5/B10, texts R6B9/B13/B14/B15, drivers & ask-to-join R6B7/B8 + R6M1, car location R6B4/B6/B11), plus the still-broken run-5 items R5B3 (pickup shift car choice) and REQ 105 d (fewer days to the last day); R6U1–U4, R6M2–M4, R6F1 after the first pilot week**
 Re-play of run 5's week after the run-5 batch. **Outcome on the same week: 1 request waitlisted at the end (run 5: 33)**, 16 accepted externals (members living elsewhere, a 3-day series with no car for consecutive days, two merges refused). Whole-week auto-fill applied in one go (97 rides).
 
 ### Run-5 re-check
