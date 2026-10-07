@@ -767,7 +767,7 @@ Re-play of run 5's week after the run-5 batch. **Outcome on the same week: 1 req
 - **R6M1 — Replace a volunteer driver in one step** (old driver told). **R6M2 — Apply the one-way chauffeur suggestion from the card.** **R6M3 — "+ נוסעים" resolves that member's own open request** (QB14 rule). **R6M4 — Tell a member that cancelling one leg kept the other** (m22).
 - **R6F1 — Show the target ride's driver in an ask-to-join's waitlist reason.**
 
-## QA run 7 findings (2026-10-07, seed 4499, week 11–17.10, department `qa-s4499`; QA Sadran = Opus, **Wednesday via UI, Saturday via CLI, other days not solved**; QA user = Sonnet; first run with Friday/Saturday requests) — **awaiting owner triage**
+## QA run 7 findings (2026-10-07, seed 4499, week 11–17.10, department `qa-s4499`; QA Sadran = Opus, **Wednesday via UI, Saturday via CLI, other days not solved**; QA user = Sonnet; first run with Friday/Saturday requests) — **owner triaged 2026-10-07 (REQ item 109): before the pilot — R7B1, R7B3–R7B10, R7B12, R7B14, R7U1 (per-day autofill), R7U2, R7U4; R7B2 waits (owner); after the first pilot week — R7B11, R7B13, R7B15 (verify app vs CLI first), the other U/M/F items**
 32 members, 12 shared + 6 private cars, 133 requests (Wed 20, Sat 12). Emphasis: today's pilot-hardening changes (REQ §13.108), live phase, member view. Phases: plan → members answer → publish Wed+Sat, live → member live events → Sadran handles them → final member check. **Outcome:** Wed and Sat published; at the end 1 request unmet (1167bee6, no car at Zichron + large luggage) and one return leg unplaced (74fdbba4).
 
 ### Verified working (today's changes)
