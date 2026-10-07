@@ -302,6 +302,28 @@ Order once approved: D1 → D6 → D5 → D4 → D3 (bugs, smallest first) → D
 
 - **U3 — "Be back on time" warning on my rides (owner 2026-10-07, part of the refactor).** When the next ride on the same car starts soon after this ride ends — the gap is **≤ the department's turnaround time, and never less than 30 minutes** (threshold = max(`turnaround_minutes`, 30)) — the member's card for this ride on /my (and the ride sheet) shows a **"!"** telling them someone takes the car next and they must return on time (with the next ride's start time). Computed from the car's actual next ride (any member's), so it also covers manual handovers and waived turnarounds; the next ride's driver may see the mirror note ("the car arrives just before you"). Server-side data for it belongs with the U2 single-source work (one function computes "next ride on this car and the gap" for the board, my rides and notices).
 
+### Pilot hardening plan (owner 2026-10-07; pilot starts Sunday 2026-10-11; REQ §13.108)
+
+Owner answers 2026-10-07: U3 threshold = max(week turnaround, 30); the other half of a one-way pair counts as a next ride; driver + requester see it, with the next person's name; mirror note built now; unpublished days never count. Pilot Sunday 2026-10-11 — before it: P0, P1, U3 and P2 M1; after the first pilot week: the rest of P2. Unknown travel = 60 min; admins may place over maintenance; large luggage is yes/no (no count). Commit per step. Other ideas (release gating on e2e, showcase as an automatic check, blocking QA-week CI step, "report a problem" button, release rhythm) wait.
+
+Duplicate-rule inventory (2026-10-07): 16 rules in two or three copies; only one-way pairing has shared golden cases; the board reads `merge_preview` times but ignores its `ok`/`code`.
+
+- **P0 — safety net**
+  - **U1a** API suite (`scripts/test-api.mjs`) covers the main flows as signed-in users (submit/edit/withdraw, proposals create/send/answer/apply, merge, publish, freed-slot claim, car move, shorten) and CI's database job runs it.
+  - **E1** Browser errors reach `client_errors` (uncaught errors + failed RPCs, rate-limited) and admins can read them.
+  - **HC** Health check script + skill: read-only invariant queries (overlapping rides on a car, assigned requests without a ride, chain breaks, stuck proposals/outbox) against the local or hosted database.
+- **P1 — drift fixes (the database is the reference)**
+  - **D1** One week-settings source: the six SQL functions reading `department_settings.turnaround_minutes` directly (`try_auto_approve`, `place_series`, `move_series`, `settle_waitlist_group`, `join_waitlist_group`, `form_waitlist_groups`) use `required_turnaround_minutes()`; the board, siddur and solver bridge read the week override too.
+  - **D2** Unknown travel = 60 min in SQL (`_route_hop_minutes`) and TS (`DEFAULT_HOP_MINUTES`), as REQ item 14 already says.
+  - **D3** Board maintenance check follows SQL (admins exempt, buffer after the ride only); seat fit with no seat configuration refuses (as SQL/solver); detour limits default to SQL's 20 min / 15 km when unset.
+  - **D4** Large luggage yes/no: drop the per-car count in SQL (`car_takes_luggage`, `_merge_check` `luggage_count`, waiting-list settle), solver, board (`luggageBlocks`, swap blocker) and the request form.
+- **P2 — U2 single source**
+  - **M1** (before the pilot) The board decides merges from `merge_preview` (`ok`/`code`, times) on drop; `merge_preview` also checks maintenance and the past-midnight end; the pending-merge block and draft overlay use the server times.
+  - **M2** (after) `drop_preview` RPC: runs the real placement write in a savepoint and rolls back; the board's drop of an unmet request / ride move asks it before confirming.
+  - **G1** (after) Shared golden cases per rule kept in both solver and SQL (merge validity/times, seat fit, luggage, turnaround/overlap, car location/chain, travel), run by Vitest and `db:test`.
+  - **T1** (after) Remove board TS twins a server call replaces; fix remaining drift (insertion order, per-leg seat load, trip-type fallback, private car owned by the Sadran, child age year).
+- **P3 — U3** "!" warning: one SQL source for the previous/next ride on the same car (visible rides only, so unpublished days never count), read by `v_board_rides`, my rides and the ride sheets; the "!" + mirror note in /my rows, Home ride cards, the siddur ride sheet.
+
 ## Code review 2026-09-24 — follow-ups (triaged; owner answered Q1–Q4 the same day — **built 2026-09-24**; new owner questions Q5–Q8 at the end)
 
 Scope set by the owner: level 1 (bugs), level 2 (refactors of existing behaviour), new tests, and a column checklist for tables readable across departments. **Out of scope:** notification merging/digest (owner: not yet shown to be a real problem). E2E baseline: `e95bfd1` passes all 67 specs on a clean tree; the 6 failures seen on 2026-09-24 came from files changing mid-run (see R5). Dropped from the review: "carCare/stats/proposals skip `toAppError`" — false, they go through the `rpc()` wrapper.
