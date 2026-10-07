@@ -26,6 +26,7 @@
     "db:new": "npx supabase migration new",
     "db:push": "npx supabase db push",
     "db:test": "node scripts/test-db.mjs",
+    "health": "node scripts/health-check.mjs",
     "functions:serve": "npx supabase functions serve --env-file supabase/functions/.env",
     "functions:bundle": "node scripts/bundle-solver.mjs && node supabase/tests/bundle_solver.test.mjs",
     "db:fake": "node scripts/fake-week.mjs",

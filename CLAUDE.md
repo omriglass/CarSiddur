@@ -43,6 +43,7 @@ Guidance for Claude Code working in this repository.
 | `npm run db:reset` | `supabase db reset` — replays migrations + seed.sql from scratch |
 | `npm run db:fake` | `node scripts/fake-week.mjs` — generates fake members/requests through `submit_request` for manual local testing (local Supabase only) |
 | `npm run qa:showcase -- --out <dir> [--api <url>] [--tag <name>]` | Small fixed **showcase department** (each member/car/request shows one principle; `docs/SHOWCASE_SCENARIOS.md` lists expected outcomes and a coverage checklist for any test data); disposable stack by default, the owner's stack only with `QA_OWNER_STACK=1` when asked |
+| `npm run health -- [--container <name>\|--db-url <url> --yes-remote] [--dept <id>] [--from <date>]` | Read-only database health check (`scripts/health-check.mjs`, skill `/health-check`): overlapping rides, assigned requests without a ride, driverless confirmed rides, seat/luggage violations, chain breaks, stuck proposals/outbox, lagging week phases, recent `client_errors`; exits 1 on any error-level finding. Never writes |
 | `npm run db:export` | `node scripts/db-export.mjs [--local\|--linked] [--out <dir>]` — schema/data/roles dump via `supabase db dump`; `--linked` requires `--yes-remote` (FREE_DEPLOYMENT.md §8) |
 | `npm run db:types` | `supabase gen types typescript --local > src/integrations/supabase/types.ts` |
 | `npm run db:schema` | Regenerate `supabase/schema-current.sql` (schema-only dump of `public` from the local stack; generated, read-only reference — CI diff-checks it) |

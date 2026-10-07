@@ -28,6 +28,7 @@ Status: v0.3 + verified 2026-09-06 (all paths tested against actual code layout;
 | `/new-feature-checklist` | Anything else; also a pre-merge audit. | `/new-feature-checklist let members export their week's rides as an image for the family WhatsApp group` |
 | `/review-consistency` | Check that docs and code (and the docs among themselves) still agree. | `/review-consistency` — add `and fix the derived docs` to let it apply fixes |
 | `/bugfixer` | Triage, locate, fix and regression-test a small bug report (not a new feature). | `/bugfixer the return-day of a multi-day request shows as a separate, unlinked ride` |
+| `/health-check` | Read-only database health check (`npm run health`, local or hosted): overlapping rides, assigned requests without a ride, driverless confirmed rides, seat/maintenance violations, chain breaks, stuck proposals/push outbox, lagging week phases, client errors. Reports; never fixes production data. | `/health-check` — or `npm run health -- --db-url "$HEALTH_DB_URL" --yes-remote` for the hosted database |
 
 ## Agents (Claude picks them automatically; you can also name them)
 
