@@ -309,20 +309,21 @@ Owner answers 2026-10-07: U3 threshold = max(week turnaround, 30); the other hal
 Duplicate-rule inventory (2026-10-07): 16 rules in two or three copies; only one-way pairing has shared golden cases; the board reads `merge_preview` times but ignores its `ok`/`code`.
 
 - **P0 — safety net**
-  - **U1a** API suite (`scripts/test-api.mjs`) covers the main flows as signed-in users (submit/edit/withdraw, proposals create/send/answer/apply, merge, publish, freed-slot claim, car move, shorten) and CI's database job runs it.
-  - **E1** Browser errors reach `client_errors` (uncaught errors + failed RPCs, rate-limited) and admins can read them.
-  - **HC** Health check script + skill: read-only invariant queries (overlapping rides on a car, assigned requests without a ride, chain breaks, stuck proposals/outbox) against the local or hosted database.
+  - ✅ 2026-10-07 **U1a** API suite (`scripts/test-api.mjs`) covers the main flows as signed-in users (submit/edit/withdraw, proposals create/send/answer/apply, merge, publish, freed-slot claim, car move, shorten) and CI's database job runs it.
+  - ✅ 2026-10-07 **E1** (`/admin/errors`) Browser errors reach `client_errors` (uncaught errors + failed RPCs, rate-limited) and admins can read them.
+  - ✅ 2026-10-07 **HC** (`npm run health`, `/health-check`) Health check script + skill: read-only invariant queries (overlapping rides on a car, assigned requests without a ride, chain breaks, stuck proposals/outbox) against the local or hosted database.
 - **P1 — drift fixes (the database is the reference)**
-  - **D1** One week-settings source: the six SQL functions reading `department_settings.turnaround_minutes` directly (`try_auto_approve`, `place_series`, `move_series`, `settle_waitlist_group`, `join_waitlist_group`, `form_waitlist_groups`) use `required_turnaround_minutes()`; the board, siddur and solver bridge read the week override too.
-  - **D2** Unknown travel = 60 min in SQL (`_route_hop_minutes`) and TS (`DEFAULT_HOP_MINUTES`), as REQ item 14 already says.
-  - **D3** Board maintenance check follows SQL (admins exempt, buffer after the ride only); seat fit with no seat configuration refuses (as SQL/solver); detour limits default to SQL's 20 min / 15 km when unset.
-  - **D4** Large luggage yes/no: drop the per-car count in SQL (`car_takes_luggage`, `_merge_check` `luggage_count`, waiting-list settle), solver, board (`luggageBlocks`, swap blocker) and the request form.
+  - ✅ 2026-10-07 **D1** One week-settings source: the six SQL functions reading `department_settings.turnaround_minutes` directly (`try_auto_approve`, `place_series`, `move_series`, `settle_waitlist_group`, `join_waitlist_group`, `form_waitlist_groups`) use `required_turnaround_minutes()`; the board, siddur and solver bridge read the week override too.
+  - ✅ 2026-10-07 **D2** Unknown travel = 60 min in SQL (`_route_hop_minutes`) and TS (`DEFAULT_HOP_MINUTES`), as REQ item 14 already says.
+  - ✅ 2026-10-07 **D3** Board maintenance check follows SQL (admins exempt, buffer after the ride only); seat fit with no seat configuration refuses (as SQL/solver); detour limits default to SQL's 20 min / 15 km when unset.
+  - ✅ 2026-10-07 **D4** Large luggage yes/no: drop the per-car count in SQL (`car_takes_luggage`, `_merge_check` `luggage_count`, waiting-list settle), solver, board (`luggageBlocks`, swap blocker) and the request form.
 - **P2 — U2 single source**
-  - **M1** (before the pilot) The board decides merges from `merge_preview` (`ok`/`code`, times) on drop; `merge_preview` also checks maintenance and the past-midnight end; the pending-merge block and draft overlay use the server times.
+  - ✅ 2026-10-07 **M1** (before the pilot; left in TS: the drop-time toast for a merge the twin already refuses, which `merged-ride.spec.ts` relies on, and the route picture) The board decides merges from `merge_preview` (`ok`/`code`, times) on drop; `merge_preview` also checks maintenance and the past-midnight end; the pending-merge block and draft overlay use the server times.
   - **M2** (after) `drop_preview` RPC: runs the real placement write in a savepoint and rolls back; the board's drop of an unmet request / ride move asks it before confirming.
   - **G1** (after) Shared golden cases per rule kept in both solver and SQL (merge validity/times, seat fit, luggage, turnaround/overlap, car location/chain, travel), run by Vitest and `db:test`.
+  - **E2E** (before the pilot, owner's go needed — it resets the local database) run the Playwright suite once on the new code: no spec covers the "!" note, the server-decided merge popup or `/admin/errors` yet.
   - **T1** (after) Remove board TS twins a server call replaces; fix remaining drift (insertion order, per-leg seat load, trip-type fallback, private car owned by the Sadran, child age year).
-- **P3 — U3** "!" warning: one SQL source for the previous/next ride on the same car (visible rides only, so unpublished days never count), read by `v_board_rides`, my rides and the ride sheets; the "!" + mirror note in /my rows, Home ride cards, the siddur ride sheet.
+- ✅ 2026-10-07 **P3 — U3** "!" warning (`v_ride_car_neighbours`; `/my/history` does not show it): one SQL source for the previous/next ride on the same car (visible rides only, so unpublished days never count), read by `v_board_rides`, my rides and the ride sheets; the "!" + mirror note in /my rows, Home ride cards, the siddur ride sheet.
 
 ## Code review 2026-09-24 — follow-ups (triaged; owner answered Q1–Q4 the same day — **built 2026-09-24**; new owner questions Q5–Q8 at the end)
 
