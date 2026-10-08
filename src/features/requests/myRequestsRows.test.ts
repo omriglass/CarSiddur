@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { he, tv } from "@/i18n/he";
 import type { MyRequestRow } from "./api";
-import { confirmDialogDescription, displayStatus, legStateLine, originDestinationLabel, ownLegWindow, requestStart, toDisplayRows } from "./myRequestsRows";
+import { canMakeRepeating, confirmDialogDescription, displayStatus, legStateLine, originDestinationLabel, ownLegWindow, requestStart, toDisplayRows } from "./myRequestsRows";
 
 function request(overrides: Partial<MyRequestRow> = {}): MyRequestRow {
   return {
@@ -120,3 +120,30 @@ describe("per-leg state (R6B12, R7B8)", () => {
     expect(ownLegWindow(request({ legs, ride: null }))).toEqual({ departAt: "2026-09-15T08:00:00+03:00", returnAt: "2026-09-15T22:40:00+03:00" });
   });
 });
+
+describe("a request served by its plan B (R10B5, R10U7)", () => {
+  const alternative = {
+    dropPlaceId: "p1", dropPlaceText: null, dropPlaceName: "Harish", arriveBy: "2026-09-15T05:00:00Z",
+    pickup: true, pickupAt: "2026-09-15T16:00:00Z", pickupPlaceId: null as string | null, pickupPlaceText: null, pickupPlaceName: null, originalMain: null,
+  };
+
+  it("reads as placed even when the server status is waitlisted", () => {
+    const [row] = toDisplayRows([request({ status: "waitlisted", servedByAlternative: true, alternative })]);
+    expect(displayStatus(row!)).toBe("assigned");
+    expect(displayStatus(toDisplayRows([request({ status: "waitlisted" })])[0]!)).toBe("waitlisted");
+  });
+
+  it("is never offered 'make repeating'", () => {
+    expect(canMakeRepeating({ status: "assigned", templateId: null, seriesLegs: undefined, servedByAlternative: true })).toBe(false);
+    expect(canMakeRepeating({ status: "assigned", templateId: null, seriesLegs: undefined, servedByAlternative: false })).toBe(true);
+  });
+
+  it("the remove dialog says it is placed, and names the pickup request only when there is one", () => {
+    const same = toDisplayRows([request({ status: "assigned", servedByAlternative: true, alternative })])[0]!;
+    const other = toDisplayRows([request({ status: "assigned", servedByAlternative: true, alternative: { ...alternative, pickupPlaceId: "p2" } })])[0]!;
+    expect(confirmDialogDescription({ kind: "withdraw", row: same })).toBe(he.request.withdrawPlanBBody);
+    expect(confirmDialogDescription({ kind: "cancel", row: other })).toBe(he.request.withdrawPlanBPickupBody);
+    expect(confirmDialogDescription({ kind: "withdraw", row: toDisplayRows([request()])[0]! })).toBe(he.request.withdrawConfirmBody);
+  });
+});
+

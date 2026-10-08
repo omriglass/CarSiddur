@@ -185,7 +185,8 @@ export function HomePage() {
 
   const nextAction = requests.find((r) => r.status === "proposed" && r.pendingProposal && isAwaitingAnswer(r.pendingProposal));
   const unserved = requests.filter(
-    (r) => UNSERVED_STATUSES.has(displayStatus(r)) && r.id !== nextAction?.id,
+    // R10B5: a request served by its plan B is placed — never listed as unserved / waitlisted.
+    (r) => !r.servedByAlternative && UNSERVED_STATUSES.has(displayStatus(r)) && r.id !== nextAction?.id,
   );
 
   // R7B8-1: "all placed" only when nothing is still waiting for the siddur; with neither unserved

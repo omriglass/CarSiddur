@@ -22,6 +22,11 @@ export const FREED_SLOT_ELIGIBLE_STATUSES = new Set<MyRequestRow["status"]>(["wa
  * mirrors the statuses a repeating request could plausibly resubmit as (REQ §76). */
 export const MAKE_REPEATING_STATUSES = new Set<MyRequestRow["status"]>(["submitted", "assigned"]);
 
+/** R10B5: "הפוך/י לחוזר" makes no sense for a request that is now its plan B (a plan B holds absolute clock times and a place). */
+export function canMakeRepeating(row: Pick<DisplayRow, "status" | "templateId" | "seriesLegs" | "servedByAlternative">): boolean {
+  return !row.templateId && !row.seriesLegs && !row.servedByAlternative && MAKE_REPEATING_STATUSES.has(row.status);
+}
+
 /**
  * "מ<origin> ל<destination>" / "מ<origin> דרך <stops> ל<destination>" (REQ §13.93, §13.93
  * "Multi-stop rides") — the origin is shown only when it is not the department home (a
@@ -108,10 +113,18 @@ export function confirmDialogTitle(action: ConfirmAction | null): string {
   return action.kind === "withdraw" ? he.request.withdrawConfirmTitle : he.request.cancelConfirmTitle;
 }
 
+/** R10U7: removing a request that is already served by its plan B; a pickup from another place made a linked request that goes too. */
+export function planBRemoveBody(row: Pick<DisplayRow, "servedByAlternative" | "alternative">): string | null {
+  if (!row.servedByAlternative) return null;
+  return row.alternative?.pickup && row.alternative.pickupPlaceId ? he.request.withdrawPlanBPickupBody : he.request.withdrawPlanBBody;
+}
+
 export function confirmDialogDescription(action: ConfirmAction | null): string {
   if (!action) return "";
   if (action.kind === "withdrawAll") return he.requestsList.withdrawAllBody;
   if (action.kind === "withdrawFreedClaim") return he.freedSlot.withdrawClaimBody;
+  const planB = planBRemoveBody(action.row);
+  if (planB) return action.row.seriesLegs ? `${planB} ${he.request.seriesCancelBody}` : planB;
   const base = action.kind === "withdraw" ? he.request.withdrawConfirmBody : he.rideCoordination.cancelHelp;
   return action.row.seriesLegs ? `${base} ${he.request.seriesCancelBody}` : base;
 }
@@ -143,7 +156,9 @@ export function confirmDialogLabel(action: ConfirmAction | null): string {
 }
 
 /** R4B11: a הקפצה carried by its own chauffeur ride joined nobody - "assigned", not "merged" (משולבת). */
-export function displayStatus(row: Pick<DisplayRow, "status" | "tripType" | "ride" | "legs" | "departAt" | "returnAt" | "seriesLegs">): DisplayRow["status"] {
+export function displayStatus(row: Pick<DisplayRow, "status" | "tripType" | "ride" | "legs" | "departAt" | "returnAt" | "seriesLegs"> & { servedByAlternative?: boolean }): DisplayRow["status"] {
+  // R10B5: a request served by its plan B IS placed (on a ride that may still need a driver) — never "waiting list".
+  if (row.servedByAlternative && row.status === "waitlisted") return "assigned";
   // R6B12/R7B8-3: one placed leg of a two-leg request is not "assigned" — the other leg waits.
   if ((row.status === "assigned" || row.status === "merged") && !row.seriesLegs
     && isPartiallyPlaced(legCoverage(row.legs ?? [], !!row.departAt, !!row.returnAt))) return "waitlisted";

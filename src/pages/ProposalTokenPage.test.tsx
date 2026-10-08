@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { he } from "@/i18n/he";
@@ -10,11 +10,13 @@ import { he } from "@/i18n/he";
 vi.mock("@/features/auth/useSession", () => ({ useSession: () => ({ session: null, isLoading: false }) }));
 
 const fetchProposalSummaryMock = vi.fn();
+const answerViaTokenMock = vi.fn();
 vi.mock("@/features/proposals/api", async () => {
   const actual = await vi.importActual<typeof import("@/features/proposals/api")>("@/features/proposals/api");
   return {
     ...actual,
     fetchProposalSummary: (...args: unknown[]) => fetchProposalSummaryMock(...args),
+    answerProposalViaToken: (...args: unknown[]) => answerViaTokenMock(...args),
   };
 });
 
@@ -178,6 +180,25 @@ describe("ProposalTokenPage", () => {
     expect(screen.getByText("לא מתאים לי")).toBeInTheDocument();
     expect(screen.getByText("יציאה מחיפה במקום מהבית, ברכב רכב 1")).toBeInTheDocument();
     expect(screen.queryByText(he.proposalScreen.before)).not.toBeInTheDocument();
+  });
+
+  it("plan B: the plan is the main text, and accepting says it was applied (R10U3, R10U9)", async () => {
+    const summary = {
+      proposalId: "p7", type: "alternative", status: "sent", reasonHe: "x", expiresAt: null, payload: {},
+      alternative: { dropPlace: "חריש", arriveBy: "2026-10-14T10:00:00Z", pickupAt: null },
+      request: { id: "r7", destination: "חיפה", rideType: "עבודה", departAt: "2026-10-14T09:00:00Z", returnAt: "2026-10-14T18:00:00Z", adults: 1, childSeats: 0, boosters: 0 },
+      parties: [],
+    };
+    fetchProposalSummaryMock.mockResolvedValue(summary);
+    answerViaTokenMock.mockResolvedValue({ proposalId: "p7", accepted: true });
+    renderPage();
+    const plan = await screen.findByTestId("proposal-alternative");
+    expect(plan.className).not.toContain("text-xs");
+    expect(plan.className).toContain("font-medium");
+    fireEvent.click(screen.getByText("מקבל/ת את ההצעה"));
+    await screen.findByTestId("proposal-plan-b-applied");
+    expect(screen.getByText(he.proposalScreen.confirmedPlanBTitle)).toBeInTheDocument();
+    expect(screen.queryByText(he.proposalScreen.confirmedTitle)).not.toBeInTheDocument();
   });
 
   it("shows the deny variant without an accept-proposal button", async () => {

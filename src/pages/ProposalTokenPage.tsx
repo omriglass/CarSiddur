@@ -145,7 +145,13 @@ export function ProposalTokenPage() {
 
           {state.kind === "answered" ? (
             <div className="space-y-3">
-              <p className="font-medium">{he.proposalScreen.confirmedTitle}</p>
+              {/* R10U9: accepting a plan B applies it on the spot — say so (declining keeps the ordinary thanks). */}
+              {justAnswered === "accepted" && summaryQuery.data?.type === "alternative" ? (
+                <div className="space-y-1" data-testid="proposal-plan-b-applied">
+                  <p className="font-medium">{he.proposalScreen.confirmedPlanBTitle}</p>
+                  <p className="text-sm text-muted-foreground">{he.proposalScreen.confirmedPlanBHelp}</p>
+                </div>
+              ) : <p className="font-medium">{he.proposalScreen.confirmedTitle}</p>}
               {!justAnswered ? <p className="text-sm text-muted-foreground">{he.proposalScreen.alreadyAnsweredBy}</p> : null}
               <Button asChild variant="outline">
                 <Link to="/my">{he.proposalScreen.backHome}</Link>

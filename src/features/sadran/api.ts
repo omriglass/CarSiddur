@@ -698,9 +698,32 @@ export async function createProposal(input: CreateProposalInput): Promise<string
   }));
 }
 
+/** REQ §13.112 (e), R10B6/R10F1: another pending proposal (sent / accepted, not yet applied) already holds a car this proposal wants. */
+export interface ProposalCarConflict {
+  proposal_id: string;
+  request_id: string;
+  type: string;
+  status: string;
+  /** The holder: the requester of the other proposal's request. */
+  requester_name: string;
+  car_id: string;
+  car_name: string;
+  /** The overlapping part of the two holds (ISO instants). */
+  from_at: string;
+  to_at: string;
+}
+
 export interface SendProposalResult {
   proposal_token: string;
   party_tokens: Record<string, string>;
+  /** Informational, repeats `proposal_car_conflicts` at send time (empty = none); a sent proposal is never refused for it. */
+  car_conflicts?: ProposalCarConflict[];
+}
+
+/** The preview the board shows before sending ("ההצעה של X כבר מחזיקה את <car> …"). */
+export async function proposalCarConflicts(proposalId: string): Promise<ProposalCarConflict[]> {
+  const result = await rpc("proposal_car_conflicts", { p_proposal_id: proposalId });
+  return (result ?? []) as unknown as ProposalCarConflict[];
 }
 
 export async function sendProposal(

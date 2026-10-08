@@ -277,6 +277,12 @@ export const heSadran = {
     alternativePickup: ", ואיסוף משם ב־{{pickupTime}}",
     alternativePickupFrom: ", ואיסוף מ{{pickupPlace}} ב־{{pickupTime}}",
     alternativePlan: "הקפצה ל{{dropPlace}} עד {{dropTime}}{{pickupLine}}",
+    /** REQ §13.112 (e): sending a proposal whose car another pending proposal already holds (R10B6/R10F1). */
+    carConflictTitle: "הרכב כבר מוחזק בהצעה אחרת",
+    carConflictLine: "ההצעה של {{name}} כבר מחזיקה את {{car}} בשעות ⁦{{from}}–{{to}}⁩.",
+    carConflictHelp: "אם שתי ההצעות יאושרו, השנייה תבוטל. לשלוח בכל זאת?",
+    carConflictSend: "לשלוח בכל זאת",
+    carConflictBack: "חזרה",
     timeDepartSet: "יציאה {{new}}",
     timeReturnSet: "חזרה {{new}}",
     windowReturn: "חזרה ב{{return}}",

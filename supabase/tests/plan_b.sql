@@ -154,12 +154,14 @@ begin
   assert (select status = 'draft' and payload ->> 'drop_place_id' = binyamina::text and (payload ->> 'arrive_by')::timestamptz = row_a.arrive_by
           and payload ->> 'return_car_id' = carA::text from public.proposals where id = prop), 'TEST 7 FAILED: draft payload is completed from the row, not from the caller';
   r := (select item from jsonb_array_elements(public.publication_readiness(dept, w)) item where (item ->> 'day')::date = w + 2);
-  assert (r ->> 'alternativeProposals')::int = 1 and not (r ->> 'ready')::boolean, 'TEST 7 FAILED: readiness counts the plan-B draft';
+  -- R10B3: an unsent plan-B draft is counted once, as a draft (alternativeProposals = sent / accepted-not-applied only)
+  assert (r ->> 'draftProposals')::int = 1 and (r ->> 'alternativeProposals')::int = 0 and (r ->> 'pendingProposals')::int = 0 and not (r ->> 'ready')::boolean,
+    'TEST 7 FAILED: readiness counts the plan-B draft once, as a draft';
   fp := public.publish_scores_fingerprint(dept, w);
   v_threw := false;
   begin perform public.publish_siddur(dept, w, '[]'::jsonb, fp, '[]'::jsonb, array[w + 2], true);
-  exception when others then v_threw := sqlerrm = 'publication_alternatives_pending'; end;
-  assert v_threw, 'TEST 7 FAILED: publish refuses a pending plan B even with p_allow_unanswered';
+  exception when others then v_threw := sqlerrm in ('publication_alternatives_pending', 'publication_drafts'); end;
+  assert v_threw, 'TEST 7 FAILED: publish refuses a plan-B draft even with p_allow_unanswered';
 
   -- TEST 8: send -> the requester gets the per-reader copy; still blocks publishing.
   toks := public.send_proposal(prop);
@@ -171,6 +173,9 @@ begin
   begin perform public.publish_siddur(dept, w, '[]'::jsonb, public.publish_scores_fingerprint(dept, w), '[]'::jsonb, array[w + 2], true);
   exception when others then v_threw := sqlerrm = 'publication_alternatives_pending'; end;
   assert v_threw, 'TEST 8 FAILED: a sent plan B still blocks publishing';
+  r := (select item from jsonb_array_elements(public.publication_readiness(dept, w)) item where (item ->> 'day')::date = w + 2);
+  assert (r ->> 'alternativeProposals')::int = 1 and (r ->> 'draftProposals')::int = 0 and (r ->> 'pendingProposals')::int = 0 and not (r ->> 'ready')::boolean,
+    'TEST 8 FAILED: a sent plan B is counted once, as an alternative proposal';
   assert public.proposal_reader_vars(prop, member1) -> 'vars' ->> 'pickupLine' like '%' || to_char((row_a.pickup_at at time zone 'Asia/Jerusalem'), 'HH24:MI') || '%',
     'TEST 8 FAILED: pickupLine in the reader vars';
 
@@ -194,6 +199,11 @@ begin
     'TEST 9 FAILED: the member is told they were placed by plan B';
   assert exists (select 1 from public.notifications where recipient_id = manager and event = 'proposal_answered' and data ->> 'proposal_id' = prop::text),
     'TEST 9 FAILED: the Sadran is told the answer';
+  -- R10U10: the Sadran's notice says it was plan B and names the plan
+  assert exists (select 1 from public.notifications where recipient_id = manager and event = 'proposal_answered' and data ->> 'proposal_id' = prop::text
+    and data ->> 'variant' = 'alternative_accepted' and body_he like '%' || (select name from public.destinations where id = binyamina) || '%'
+    and body_he like '%' || to_char((row_a.arrive_by at time zone 'Asia/Jerusalem'), 'HH24:MI') || '%'),
+    'TEST 9 FAILED: the Sadran notice names the plan B';
   r := (select item from jsonb_array_elements(public.publication_readiness(dept, w)) item where (item ->> 'day')::date = w + 2);
   assert (r ->> 'alternativeProposals')::int = 0, 'TEST 9 FAILED: an applied plan B no longer blocks';
   -- an applied request cannot be edited (the member withdraws it instead)
@@ -327,6 +337,44 @@ begin
     perform public.withdraw_request(qd, row_q.version);
     assert (select status = 'withdrawn' from public.requests where id = sib.id), 'TEST 15 FAILED: withdrawing the parent withdraws the sibling';
     assert not exists (select 1 from public.ride_requests rr join public.rides r on r.id = rr.ride_id where rr.request_id = sib.id and r.status <> 'cancelled'), 'TEST 15 FAILED: sibling rides released';
+    perform set_config('request.jwt.claims', jsonb_build_object('sub', manager, 'role', 'authenticated')::text, true);
+  end;
+
+  -- TEST 16 (R10B6 / R10F1): a proposal whose car another pending proposal holds at an overlapping time is NOT refused; the
+  -- preview and the send result list the conflict, a non-overlapping one lists none.
+  declare qa uuid; qb uuid; qc uuid; pa uuid; pb uuid; pc uuid; tk jsonb; dd timestamptz; cf jsonb; altb jsonb;
+  begin
+    dd := ((w + 4) + time '07:00') at time zone 'Asia/Jerusalem';
+    altb := jsonb_build_object('drop_place_id', binyamina, 'arrive_by', dd + interval '1 hour', 'pickup', false);
+    perform set_config('request.jwt.claims', jsonb_build_object('sub', member1, 'role', 'authenticated')::text, true);
+    qa := (public.submit_request(jsonb_build_object('department_id', dept, 'week_start', w, 'destination_id', haifa, 'ride_type_id', typ,
+      'trip_type', 'round_trip', 'depart_at', dd, 'return_at', dd + interval '5 hours', 'fallback', 'alternative', 'alternative', altb)) ->> 'request_id')::uuid;
+    qc := (public.submit_request(jsonb_build_object('department_id', dept, 'week_start', w, 'destination_id', haifa, 'ride_type_id', typ,
+      'trip_type', 'round_trip', 'depart_at', dd + interval '30 minutes', 'return_at', dd + interval '5 hours', 'fallback', 'alternative', 'alternative', altb)) ->> 'request_id')::uuid;
+    perform set_config('request.jwt.claims', jsonb_build_object('sub', member2, 'role', 'authenticated')::text, true);
+    qb := (public.submit_request(jsonb_build_object('department_id', dept, 'week_start', w, 'destination_id', haifa, 'ride_type_id', typ,
+      'trip_type', 'round_trip', 'depart_at', dd + interval '15 minutes', 'return_at', dd + interval '5 hours', 'fallback', 'alternative', 'alternative', altb)) ->> 'request_id')::uuid;
+    perform set_config('request.jwt.claims', jsonb_build_object('sub', manager, 'role', 'authenticated')::text, true);
+    pa := public.create_proposal(qa, null, 'alternative', jsonb_build_object('car_id', carA, 'depart_at', dd + interval '30 minutes'), 'a');
+    pb := public.create_proposal(qb, null, 'alternative', jsonb_build_object('car_id', carA, 'depart_at', dd + interval '30 minutes'), 'b');
+    pc := public.create_proposal(qc, null, 'alternative', jsonb_build_object('car_id', (select id from public.cars where department_id = dept and id <> carA and type <> 'temporary' limit 1),
+      'depart_at', dd + interval '30 minutes'), 'c');
+    assert public.proposal_car_conflicts(pb) = '[]'::jsonb, 'TEST 16 FAILED: a draft holds nothing yet';
+    tk := public.send_proposal(pa);
+    assert tk -> 'car_conflicts' = '[]'::jsonb, 'TEST 16 FAILED: the first send has no conflict';
+    cf := public.proposal_car_conflicts(pb);
+    assert jsonb_array_length(cf) = 1 and cf -> 0 ->> 'proposal_id' = pa::text and cf -> 0 ->> 'car_id' = carA::text
+      and cf -> 0 ->> 'car_name' = (select name from public.cars where id = carA)
+      and cf -> 0 ->> 'requester_name' = (select full_name from public.profiles where id = member1), format('TEST 16 FAILED: the preview names the holder: %s', cf);
+    tk := public.send_proposal(pb);   -- not refused: the board has asked the Sadran
+    assert jsonb_array_length(tk -> 'car_conflicts') = 1 and (select status = 'sent' from public.proposals where id = pb), 'TEST 16 FAILED: send is not refused and repeats the conflict';
+    -- another car, or another time, is no conflict
+    assert public.proposal_car_conflicts(pc) = '[]'::jsonb, 'TEST 16 FAILED: another car is no conflict';
+    -- the same request's own earlier proposal is never a conflict, and a member may not ask
+    perform set_config('request.jwt.claims', jsonb_build_object('sub', member1, 'role', 'authenticated')::text, true);
+    v_threw := false;
+    begin perform public.proposal_car_conflicts(pa); exception when others then v_threw := sqlerrm = 'not_authorized'; end;
+    assert v_threw, 'TEST 16 FAILED: members cannot read conflicts';
     perform set_config('request.jwt.claims', jsonb_build_object('sub', manager, 'role', 'authenticated')::text, true);
   end;
 

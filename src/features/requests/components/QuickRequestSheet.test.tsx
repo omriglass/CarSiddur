@@ -12,6 +12,7 @@ vi.mock("../hooks", () => ({
   useMyRequests: () => ({ data: [] }),
   // These tests cover the classic field-by-field layout (REQ §13.110); the sentence layout has its own spec.
   useRequestFormLayout: () => "classic",
+  useRouteMinutesFetcher: () => () => Promise.resolve(45),
   useRouteMinutesQuery: () => ({ data: undefined, isError: false }),
   useRequestCompanionsQuery: () => ({ data: [], isSuccess: true }),
   useRequestChildrenQuery: () => ({ data: [], isSuccess: true }),

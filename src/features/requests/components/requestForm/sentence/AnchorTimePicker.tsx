@@ -15,6 +15,8 @@ import { LtrText } from "./LtrText";
 interface AnchorTimePickerProps {
   /** The toggle's options in display order; `null` = no toggle (a single meaning). */
   anchors: readonly TimeAnchor[] | null;
+  /** Toggle options that cannot be chosen yet (plan B's "לצאת ב־" before a drop place is known). */
+  disabledAnchors?: readonly TimeAnchor[];
   anchor: TimeAnchor;
   anchorLabel: (anchor: TimeAnchor) => string;
   onAnchorChange: (anchor: TimeAnchor) => void;
@@ -33,7 +35,7 @@ interface AnchorTimePickerProps {
 }
 
 export function AnchorTimePicker({
-  anchors, anchor, anchorLabel, onAnchorChange, value, onChange, min, max, ariaLabel, dataField, error, estimate, estimateTestId, beforeEstimate,
+  anchors, disabledAnchors, anchor, anchorLabel, onAnchorChange, value, onChange, min, max, ariaLabel, dataField, error, estimate, estimateTestId, beforeEstimate,
 }: AnchorTimePickerProps) {
   return (
     <>
@@ -48,17 +50,18 @@ export function AnchorTimePicker({
           aria-label={he.requestSentence.anchorToggle}
         >
           {anchors.map((option) => (
-            <ToggleGroupItem key={option} value={option} className="h-8 rounded-full text-sm data-[state=on]:bg-background data-[state=on]:font-medium data-[state=on]:text-primary data-[state=on]:shadow-sm">
+            <ToggleGroupItem key={option} value={option} disabled={disabledAnchors?.includes(option)} className="h-8 rounded-full text-sm data-[state=on]:bg-background data-[state=on]:font-medium data-[state=on]:text-primary data-[state=on]:shadow-sm">
               {anchorLabel(option)}
             </ToggleGroupItem>
           ))}
         </ToggleGroup>
       ) : null}
 
+      {/* R10U4/R10U6: the error sits above the field — the hour list opens below it and would cover it. */}
+      <FieldError message={error} />
       <div className="flex justify-center" data-field={dataField}>
         <TimeField15 min={min} max={max} value={value} onChange={onChange} aria-label={ariaLabel} />
       </div>
-      <FieldError message={error} />
       {beforeEstimate}
       {estimate ? (
         <p className="text-center text-sm text-muted-foreground" data-testid={estimateTestId}>

@@ -8,6 +8,7 @@ import { siddurKeys } from "@/features/siddur/queryKeys";
 import { useDayFreeWindows, type DayFreeWindowsAway, type DayFreeWindowsCar } from "@/features/siddur/useDayFreeWindows";
 import { sadranKeys } from "@/features/sadran/keys";
 import { useSession } from "@/features/auth/useSession";
+import { DEFAULT_HOP_MINUTES } from "@/lib/rideRoute";
 import { showErrorToast } from "@/lib/rpc";
 import { dateKey, weekStartFor } from "@/lib/time";
 
@@ -460,6 +461,20 @@ export function useRouteMinutesQuery(departmentId: string | undefined, points: r
     staleTime: 5 * 60_000,
     placeholderData: (previous) => previous,
   });
+}
+
+/**
+ * REQ §13.112 (e): the same preview as `useRouteMinutesQuery`, fetched on demand (the classic form has no anchors, so
+ * switching its trip to a plan-B הקפצה asks for the two drives once). An unreachable preview is 60 minutes (REQ §13.109).
+ */
+export function useRouteMinutesFetcher(departmentId: string | undefined) {
+  const queryClient = useQueryClient();
+  return (points: readonly RoutePreviewPoint[]): Promise<number> => {
+    if (!departmentId) return Promise.resolve(DEFAULT_HOP_MINUTES);
+    return queryClient
+      .fetchQuery({ queryKey: requestsKeys.routeMinutes(departmentId, points), queryFn: () => fetchRouteMinutesPreview(departmentId, points), staleTime: 5 * 60_000 })
+      .catch(() => DEFAULT_HOP_MINUTES);
+  };
 }
 
 export type RequestFormLayout = "sentence" | "classic";

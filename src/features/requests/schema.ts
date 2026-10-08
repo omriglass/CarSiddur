@@ -6,7 +6,7 @@ import { carTypeSchema, requestFallbackSchema, TRIP_SHAPES, TRIP_TYPES, timeAnch
 import type { DestinationValue } from "@/components/DestinationCombobox";
 import type { TripShape, TripType } from "@/lib/enums";
 
-import { hasAltPlace, planBActive, planBProblems } from "./planB";
+import { hasAltPlace, planBActive, planBProblems, type MainTripSnapshot } from "./planB";
 import { windowModeActive, windowProblem } from "./timeWindow";
 
 /**
@@ -157,6 +157,11 @@ export const requestFormSchema = z
     altPickupAt: timeStringSchema.optional(),
     /** Pickup place other than the drop place; empty/absent = "משם" (from the drop place). */
     altPickupPlace: originValueSchema.optional(),
+    /**
+     * REQ §13.112 (e): the previous main trip + plan B while the request is the plan-B הקפצה (`planB.ts`
+     * `snapshotMainTrip`) so switching back restores both. Form state only — never validated, never submitted.
+     */
+    mainTripBackup: z.custom<MainTripSnapshot>().optional(),
     /** Kept for old callers; overnight values are rejected. No UI toggle. */
     returnNextDay: z.boolean(),
     /**

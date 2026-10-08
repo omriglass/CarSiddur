@@ -33,6 +33,9 @@ export interface DayAndTripShapeFieldsProps {
   canDrive: boolean;
   /** `false` in the sentence layout's day sheet, where the trip type has its own chip/sheet (UX_FLOWS §3.4a). Default `true`. */
   showTripType?: boolean;
+  /** Passed to `TripTypeFields` for the switch to a plan-B הקפצה (REQ §13.112 e). */
+  departmentId?: string;
+  destinations?: readonly { id: string; name: string; aliases: string[]; zone?: string; is_drop_point?: boolean }[];
 }
 
 export function DayAndTripShapeFields({
@@ -52,6 +55,8 @@ export function DayAndTripShapeFields({
   dropOffPickup,
   canDrive,
   showTripType = true,
+  departmentId,
+  destinations,
 }: DayAndTripShapeFieldsProps) {
   return (
     <>
@@ -132,7 +137,7 @@ export function DayAndTripShapeFields({
 
       {showTripType && variant !== "carNow" && !isMultiDay ? (
         <>
-          <TripTypeFields control={control} form={form} variant={variant} tripType={tripType} dropOffPickup={dropOffPickup} canDrive={canDrive} />
+          <TripTypeFields control={control} form={form} variant={variant} tripType={tripType} dropOffPickup={dropOffPickup} canDrive={canDrive} departmentId={departmentId} destinations={destinations} />
           {isQuickContext && seeksDriver ? <p className="text-sm text-destructive">{t("quickRequest.oneWayHelp")}</p> : null}
         </>
       ) : null}

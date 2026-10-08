@@ -1,4 +1,6 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { fireEvent, render as baseRender, screen } from "@testing-library/react";
+import type { ReactElement } from "react";
 import { useEffect } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { describe, expect, it } from "vitest";
@@ -8,6 +10,8 @@ import type { TripType } from "@/lib/enums";
 
 import { TripTypeFields } from "./TripTypeFields";
 import type { RequestFormValues } from "../../schema";
+
+const render = (ui: ReactElement) => baseRender(<QueryClientProvider client={new QueryClient()}>{ui}</QueryClientProvider>);
 
 type Form = ReturnType<typeof useForm<RequestFormValues>>;
 const captured: { form?: Form } = {};

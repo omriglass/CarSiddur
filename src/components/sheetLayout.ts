@@ -13,7 +13,7 @@ export const CENTERED_ON_DESKTOP =
  * The content area of a sheet that hosts a `TimeField15` must be tall enough for the field's hour/minute
  * popover. The popover is portaled *into* the sheet (touch scroll under the modal lock), so it is clipped
  * by the sheet's own `overflow-y-auto` and covered by its sticky footer; the desktop `h-fit` card with a
- * one-row sheet is ~300px while the popover needs ~210px below the input (owner 2026-10-08: the plan-B
+ * one-row sheet is ~300px while the popover needs ~330px below the input (six and a half 44px rows, R10U6) (owner 2026-10-08: the plan-B
  * time picker was cut off). Reserving the room in the content (above the footer) keeps the footer at the bottom.
  */
-export const TIME_FIELD_MIN_HEIGHT = "min-h-[22rem]";
+export const TIME_FIELD_MIN_HEIGHT = "min-h-[27rem]";

@@ -14,8 +14,8 @@ begin
   insert into public.weeks(department_id,week_start,phase,open_at,close_at,publish_at)
     values(dept,w,'open',now()-interval '1 day',now()+interval '1 day',now()+interval '2 days');
   -- two placed round trips of m1 (Mon, Tue), one external request of m1 (Wed), one pickup of m2 (Thu)
-  for n in 1..4 loop
-    dt:=((w+n)+time '08:00') at time zone 'Asia/Jerusalem';
+  for n in 1..5 loop
+    dt:=((w+case when n=5 then 1 else n end)+time '08:00') at time zone 'Asia/Jerusalem';   -- 5: a denied request of m1 (same time as #1)
     insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,origin_id,ride_type_id,trip_shape,one_way_car_mode,
       needs_car_at_destination,trip_type,depart_at,return_at,status)
     values(dept,w,case when n=4 then m2 else m1 end,manager,case when n=4 then home else dest end,case when n=4 then dest else null end,typ,
@@ -23,10 +23,10 @@ begin
       case when n=4 then 'passenger'::public.leg_car_mode else null end,n<>4,
       case when n=4 then 'drop_off'::public.trip_type else 'round_trip'::public.trip_type end,
       case when n=4 then null else dt end,dt+interval '2 hours',
-      case when n=3 then 'external'::public.request_status else 'assigned'::public.request_status end)
+      case when n=3 then 'external'::public.request_status when n=5 then 'denied'::public.request_status else 'assigned'::public.request_status end)
     returning id into q;
     insert into qa5_ids values('q'||n,q);
-    if n=3 then continue; end if;
+    if n in (3,5) then continue; end if;   -- 3: external, 5: denied, neither has a ride (R10B4)
     insert into public.rides(department_id,week_start,car_id,starts_at,ends_at,origin_id,destination_id,driver_id,needs_driver,status,created_by)
     values(dept,w,car,dt,dt+interval '2 hours',home,home,case when n=4 then m1 else m1 end,false,'draft',manager) returning id into r;
     insert into public.ride_requests(ride_id,request_id,role,leg,car_mode) values(r,q,
@@ -61,7 +61,9 @@ declare dept uuid:='00000000-0000-0000-0000-000000000001'; w date:=public.curren
 begin
   select n.body_he,n.title_he into body,title from public.notifications n where n.recipient_id=m1 and n.event='published' and n.week_start=w;
   assert body is not null, 'no published notice for m1';
+  -- R10B4: only the two placed rides are "your rides"; a request with no live ride (denied here) is not listed
   assert array_length(string_to_array(body,chr(10)),1)=2, 'm1 notice should list exactly 2 rides, got: '||body;
+  assert body not like '%ברשימת המתנה%', 'a denied request must not read as waitlisted: '||body;
   assert title like '%'||public.day_date_label(w+1)||'%', 'title lacks the weekday date: '||title;
   select n.body_he into body from public.notifications n where n.recipient_id=m2 and n.event='published' and n.week_start=w;
   assert body like '%איסוף%', 'pickup not read as a pickup: '||body;

@@ -512,9 +512,14 @@ try {
     check("  a member cannot create one", !!member.error, errText(member));
     const fp = must(await sadran.rpc("publish_scores_fingerprint", { p_department_id: DEPT, p_week_start: wk }), "fingerprint");
     const pub = await sadran.rpc("publish_siddur", { p_department_id: DEPT, p_week_start: wk, p_profile_scores: [], p_expected_fingerprint: fp, p_policy_scores: [], p_days: [dayDate(9, 2)], p_allow_unanswered: true });
-    check("publish waits for the plan B even with allow_unanswered", !!pub.error && /publication_alternatives_pending/.test(pub.error.message), errText(pub));
+    check("publish refuses an unsent plan-B draft even with allow_unanswered", !!pub.error && /publication_drafts/.test(pub.error.message), errText(pub));
+    const conflicts = await sadran.rpc("proposal_car_conflicts", { p_proposal_id: p.data });
+    check("  the car-conflict preview answers (none)", !conflicts.error && Array.isArray(conflicts.data) && conflicts.data.length === 0, errText(conflicts));
     const sent = await sadran.rpc("send_proposal", { p_proposal_id: p.data });
-    check("Sadran sends it", !sent.error, errText(sent));
+    check("Sadran sends it", !sent.error && Array.isArray(sent.data?.car_conflicts), errText(sent));
+    const fp2 = must(await sadran.rpc("publish_scores_fingerprint", { p_department_id: DEPT, p_week_start: wk }), "fingerprint");
+    const pub2 = await sadran.rpc("publish_siddur", { p_department_id: DEPT, p_week_start: wk, p_profile_scores: [], p_expected_fingerprint: fp2, p_policy_scores: [], p_days: [dayDate(9, 2)], p_allow_unanswered: true });
+    check("publish waits for a sent plan B even with allow_unanswered", !!pub2.error && /publication_alternatives_pending/.test(pub2.error.message), errText(pub2));
     const token = sent.data?.party_tokens?.[m1Id];
     const ans = await m1.rpc("answer_proposal", { p_token: token, p_accept: true, p_via: "session" });
     check("the member accepts in-app", !ans.error, errText(ans));

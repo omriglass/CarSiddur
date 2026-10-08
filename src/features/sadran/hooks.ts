@@ -415,6 +415,14 @@ export function useSendProposalMutation() {
   });
 }
 
+/** R10B6/R10F1: the cars another pending proposal already holds, asked for before a send (never refuses). */
+export function useProposalCarConflictsMutation() {
+  return useMutation({
+    mutationFn: (proposalId: string) => api.proposalCarConflicts(proposalId),
+    onError: showErrorToast,
+  });
+}
+
 /** Discard (`draft`) or withdraw (`sent`/`accepted`) a proposal from the board (REQ §13.94). */
 export function useDiscardProposalMutation() {
   const queryClient = useQueryClient();

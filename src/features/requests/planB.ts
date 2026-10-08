@@ -8,6 +8,8 @@ import type { DestinationValue } from "@/components/DestinationCombobox";
 import type { RequestFallbackValue } from "@/lib/enums";
 
 import type { RequestFormValues } from "./schema";
+import { departFromArriveBy, returnFromLeaveThere } from "./timeAnchors";
+import { tripTypeToLegacyFields } from "./tripType";
 
 /** The default "be there by" is the main departure plus this much (the member leaves home later than a car ride would). */
 export const PLAN_B_ARRIVE_OFFSET_MINUTES = 60;
@@ -113,4 +115,110 @@ export function planBFormFields(
       ? { presetId: alt.pickupPlaceId, name: alt.pickupPlaceName ?? "" }
       : alt.pickupPlaceText ? { freeText: alt.pickupPlaceText } : undefined,
   };
+}
+
+/**
+ * Plan B's drop time moved: when it reaches or passes the pickup, the pickup moves by the same amount
+ * (like `shiftReturnByDepartureDelta` for the main return) so the member never meets a "pickup before arrival"
+ * error under an open picker. Returns the (possibly unchanged) pickup time; `moved` says whether it changed.
+ */
+export function pickupAfterArrivalMoved(previousArrive: string, nextArrive: string, pickupAt: string | undefined): { pickupAt: string | undefined; moved: boolean } {
+  if (!pickupAt) return { pickupAt, moved: false };
+  if (toMinutes(nextArrive) < toMinutes(pickupAt)) return { pickupAt, moved: false };
+  const shifted = shiftTime(pickupAt, toMinutes(nextArrive) - toMinutes(previousArrive));
+  return { pickupAt: shifted, moved: shifted !== pickupAt };
+}
+
+/** The earliest pickup time a plan B with this arrival may have (one grid step after it). */
+export function earliestPickup(arriveBy: string): string {
+  return shiftTime(arriveBy, 15);
+}
+
+// ---- Switching the main trip to a הקפצה (REQ §13.112 e) -------------------------------------------------
+
+/** A complete plan B as the form holds it. */
+export interface PlanBDetails {
+  place: DestinationValue;
+  arriveBy: string;
+  pickup: boolean;
+  pickupAt?: string;
+  /** Pickup place other than `place`; absent = from the drop place. */
+  pickupPlace?: DestinationValue;
+}
+
+/** The active, complete plan B of the form values (`null` when there is none or it is unfinished). */
+export function planBDetails(values: OfferScope & Pick<RequestFormValues, "fallback" | "altPlace" | "altArriveBy" | "altPickup" | "altPickupAt" | "altPickupPlace">): PlanBDetails | null {
+  if (!planBActive(values) || !values.altPlace || !hasAltPlace(values.altPlace) || !values.altArriveBy) return null;
+  const pickup = !!values.altPickup && !!values.altPickupAt;
+  return {
+    place: values.altPlace,
+    arriveBy: values.altArriveBy,
+    pickup,
+    pickupAt: pickup ? values.altPickupAt : undefined,
+    pickupPlace: pickup && hasAltPlace(values.altPickupPlace) ? values.altPickupPlace : undefined,
+  };
+}
+
+/** The form fields that make up "the main trip" and are kept while the request is a plan-B הקפצה. */
+const SNAPSHOT_KEYS = [
+  "tripType", "dropOffPickup", "tripShape", "needsCarAtDestination", "oneWayCarMode", "destination", "outStops", "returnStops",
+  "departTime", "returnTime", "departAnchor", "arriveByTime", "returnAnchor", "leaveDestTime",
+  "fallback", "altPlace", "altArriveBy", "altPickup", "altPickupAt", "altPickupPlace",
+] as const;
+
+/** The previous main trip + its plan B, kept in form state (never submitted) so switching back restores both exactly. */
+// A plain record on purpose: typing it from `RequestFormValues` would make that type depend on itself (the schema holds it).
+export type MainTripSnapshot = Record<string, unknown>;
+
+export function snapshotMainTrip(values: RequestFormValues): MainTripSnapshot {
+  const snapshot: Record<string, unknown> = {};
+  for (const key of SNAPSHOT_KEYS) snapshot[key] = structuredClone(values[key]);
+  return snapshot;
+}
+
+/** The form patch that restores a snapshot. */
+export function restoreMainTripPatch(snapshot: MainTripSnapshot): Partial<RequestFormValues> {
+  return structuredClone(snapshot) as Partial<RequestFormValues>;
+}
+
+/**
+ * The form patch that makes plan B the main request: a הקפצה to the drop place, the outbound entered as
+ * "להגיע עד" plan B's arrive-by, the pickup (when there is one) entered as "איסוף משם ב־" its time; stops
+ * belong to the old route and are cleared (the snapshot keeps them); plan B itself is cleared (REQ §13.97: the
+ * snapshot keeps it too). The car times (`departTime`/`returnTime`) are derived by the caller from route minutes.
+ */
+export function dropOffFromPlanBPatch(plan: PlanBDetails, anchored: boolean): Partial<RequestFormValues> {
+  const legacy = tripTypeToLegacyFields("drop_off", plan.pickup);
+  return {
+    tripType: "drop_off",
+    dropOffPickup: plan.pickup,
+    ...legacy,
+    destination: plan.place,
+    outStops: [],
+    returnStops: [],
+    // The classic form has no anchors: its car times are set directly (`dropOffCarTimes`).
+    departAnchor: anchored ? "arrive" : "leave",
+    arriveByTime: anchored ? plan.arriveBy : undefined,
+    returnAnchor: anchored && plan.pickup ? "leave" : "arrive",
+    leaveDestTime: anchored && plan.pickup ? plan.pickupAt : undefined,
+    fallback: "none",
+  };
+}
+
+/** The car times of the plan-B הקפצה: leave early enough to arrive by plan B's time, back home after the pickup + drive. */
+export function dropOffCarTimes(plan: PlanBDetails, routes: { outMinutes: number; returnMinutes: number }): { departTime: string; returnTime?: string } {
+  return {
+    departTime: departFromArriveBy(plan.arriveBy, routes.outMinutes),
+    returnTime: plan.pickup && plan.pickupAt ? returnFromLeaveThere(plan.pickupAt, routes.returnMinutes) : undefined,
+  };
+}
+
+/** The pickup place the main הקפצה cannot model (it always picks up from its own destination); `null` when none. */
+export function droppedPickupPlace(plan: PlanBDetails): DestinationValue | null {
+  return plan.pickup && plan.pickupPlace ? plan.pickupPlace : null;
+}
+
+/** The department's places with the drop points (`is_drop_point`) first, each group in its own order (the plan-B place lists). */
+export function dropPointsFirst<T extends { is_drop_point?: boolean }>(places: readonly T[]): T[] {
+  return [...places.filter((place) => place.is_drop_point), ...places.filter((place) => !place.is_drop_point)];
 }

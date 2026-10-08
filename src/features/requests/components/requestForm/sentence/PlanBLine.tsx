@@ -11,10 +11,12 @@ import { he, tv } from "@/i18n/he";
 import type { TimeAnchor } from "@/lib/enums";
 import { cn } from "@/lib/utils";
 
-import { defaultPlanB, hasAltPlace, planBOffered } from "../../../planB";
-import { isSamePlace, type RequestFormValues } from "../../../schema";
+import { earliestPickup, hasAltPlace, planBOffered } from "../../../planB";
+import type { RequestFormValues } from "../../../schema";
 import { arriveByFromDeparture, departFromArriveBy, endEstimate } from "../../../timeAnchors";
 import { FieldError } from "../FieldError";
+import { planBActions } from "../planBActions";
+import { LtrText } from "./LtrText";
 import { AnchorTimePicker } from "./AnchorTimePicker";
 import { FieldSheet } from "./FieldSheet";
 import { PillChip } from "./PillChip";
@@ -38,15 +40,19 @@ interface PlanBLineProps {
  * + estimate line. The stored value is always `arrive_by`; the chosen anchor and the typed
  * departure live only in this component's state, so reopening the sheet shows "להגיע עד" (no DB column).
  */
-function PlanBArriveBody({ arriveBy, routeMinutes, onChange, error }: { arriveBy: string; routeMinutes: number | null; onChange: (value: string) => void; error?: string }) {
+function PlanBArriveBody({ arriveBy, routeMinutes, onChange, error }: { arriveBy: string; routeMinutes: number | null; onChange: (value: string) => string | null; error?: string }) {
   const [anchor, setAnchor] = useState<TimeAnchor>("arrive");
   const [departure, setDeparture] = useState(() => (routeMinutes != null ? departFromArriveBy(arriveBy, routeMinutes) : arriveBy));
+  // R10U4: set when the drop time pushed the pickup along.
+  const [movedPickup, setMovedPickup] = useState<string | null>(null);
   const leave = anchor === "leave" && routeMinutes != null;
   const entered = leave ? departure : arriveBy;
   const estimate = routeMinutes != null ? endEstimate("out", leave ? "leave" : "arrive", entered, routeMinutes) : null;
   return (
     <AnchorTimePicker
-      anchors={routeMinutes != null ? ["arrive", "leave"] : null}
+      anchors={["arrive", "leave"]}
+      // R10U5: the toggle is shown before a place is chosen; "לצאת ב־" needs the drive, so it waits for the place.
+      disabledAnchors={routeMinutes == null ? ["leave"] : undefined}
       anchor={anchor}
       anchorLabel={(option) => he.requestSentence.anchor[option === "arrive" ? "outArrive" : "outLeave"]}
       onAnchorChange={(next) => {
@@ -57,14 +63,24 @@ function PlanBArriveBody({ arriveBy, routeMinutes, onChange, error }: { arriveBy
       onChange={(next) => {
         if (leave && routeMinutes != null) {
           setDeparture(next);
-          onChange(arriveByFromDeparture(next, routeMinutes));
-        } else onChange(next);
+          setMovedPickup(onChange(arriveByFromDeparture(next, routeMinutes)));
+        } else setMovedPickup(onChange(next));
       }}
       ariaLabel={he.planB.sheet.arrive}
       dataField="altArriveBy"
       error={error}
       estimate={estimate}
       estimateTestId="plan-b-time-estimate"
+      beforeEstimate={
+        <>
+          {routeMinutes == null ? <p className="text-center text-sm text-muted-foreground" data-testid="plan-b-time-estimate">{he.planB.sheet.estimateUnknown}</p> : null}
+          {movedPickup ? (
+            <p className="text-center text-sm text-muted-foreground" data-testid="plan-b-pickup-moved">
+              <LtrText text={tv("planB.sheet.pickupMoved", { time: movedPickup })} />
+            </p>
+          ) : null}
+        </>
+      }
     />
   );
 }
@@ -90,56 +106,22 @@ export function PlanBLine({ form, errors, destinations, sheet, setSheet, routeMi
   const hasPickupPlace = hasAltPlace(pickupPlace);
   const invalid = (field: keyof RequestFormValues) => field in errors;
 
-  const options = { shouldDirty: true, shouldValidate: true } as const;
-  const set = {
-    fallback: (value: RequestFormValues["fallback"]) => form.setValue("fallback", value, options),
-    altPlace: (value: RequestFormValues["altPlace"]) => form.setValue("altPlace", value, options),
-    altArriveBy: (value: RequestFormValues["altArriveBy"]) => form.setValue("altArriveBy", value, options),
-    altPickup: (value: RequestFormValues["altPickup"]) => form.setValue("altPickup", value, options),
-    altPickupAt: (value: RequestFormValues["altPickupAt"]) => form.setValue("altPickupAt", value, options),
-    altPickupPlace: (value: RequestFormValues["altPickupPlace"]) => form.setValue("altPickupPlace", value, options),
-  };
+  const actions = planBActions(form);
+  const set = actions.set;
 
-  /** Switching to plan B fills the defaults the first time (an edit keeps what was stored). */
   function choose(next: "none" | "alternative" | "manage") {
-    set.fallback(next);
-    if (next === "alternative" && !values.altArriveBy) {
-      const defaults = defaultPlanB({
-        tripType: values.tripType ?? "round_trip",
-        departTime: values.departTime,
-        returnTime: values.returnTime,
-        arriveByTime: values.arriveByTime,
-        departAnchor: values.departAnchor ?? "leave",
-      });
-      set.altPlace(defaults.altPlace);
-      set.altArriveBy(defaults.altArriveBy);
-      set.altPickup(defaults.altPickup);
-      set.altPickupAt(defaults.altPickupAt);
-    }
+    actions.choose(next);
     setSheet(null);
   }
 
   function pickPlace(next: DestinationValue) {
-    set.altPlace(next);
+    actions.pickPlace(next);
     setSheet(null);
   }
 
-  /** Picking the drop place itself is the same as "משם". */
   function pickPickupPlace(next: DestinationValue | undefined) {
-    set.altPickupPlace(next && place && isSamePlace(next, place) ? undefined : next);
+    actions.pickPickupPlace(next);
     setSheet(null);
-  }
-
-  function setPickup(on: boolean) {
-    set.altPickup(on);
-    if (!on) {
-      set.altPickupAt(undefined);
-      set.altPickupPlace(undefined);
-    }
-    else if (!values.altPickupAt) {
-      const defaults = defaultPlanB({ tripType: "round_trip", departTime: values.departTime, returnTime: values.returnTime, arriveByTime: values.arriveByTime, departAnchor: values.departAnchor ?? "leave" });
-      set.altPickupAt(defaults.altPickupAt);
-    }
   }
 
   // Drop points first (stable inside each group), tagged so the member sees why they are on top.
@@ -148,7 +130,11 @@ export function PlanBLine({ form, errors, destinations, sheet, setSheet, routeMi
     ...destinations.filter((d) => !d.is_drop_point),
   ].map((d) => ({ id: d.id, name: d.name, aliases: d.aliases, zone: d.zone, tag: d.is_drop_point ? he.planB.dropPointTag : undefined }));
 
-  const pickupTitle = hasPickupPlace ? tv("planB.sheet.pickupFromAt", { place: placeName(pickupPlace, destinations) }) : he.planB.sheet.pickup;
+  // R10U5: the sheet titles name the place, or show a placeholder until one is chosen.
+  const dropName = hasAltPlace(place) ? placeName(place, destinations) : "";
+  const arriveTitle = dropName ? tv("planB.sheet.arriveAt", { place: dropName }) : he.planB.sheet.arriveNoPlace;
+  const pickupName = hasPickupPlace ? placeName(pickupPlace, destinations) : dropName;
+  const pickupTitle = pickupName ? tv("planB.sheet.pickupFromAt", { place: pickupName }) : he.planB.sheet.pickupNoPlace;
   const kindLabel = alternative ? he.planB.kind.alternative : he.planB.kind.manage;
   const kindOptions = [
     { value: "alternative", label: he.planB.options.alternative, hint: he.planB.options.alternativeHint },
@@ -189,12 +175,15 @@ export function PlanBLine({ form, errors, destinations, sheet, setSheet, routeMi
               </SentenceChip>
               {pickup ? (
                 <>
-                  <span>{he.planB.pickupWords}</span>
-                  <span className="inline-flex max-w-full items-center whitespace-nowrap">
-                    {hasPickupPlace ? <span className="-me-1">{he.planB.pickupFromPrefix}</span> : null}
-                    <SentenceChip field="altPickupPlace" invalid={invalid("altPickupPlace")} onClick={() => setSheet("planBPickupPlace")} data-testid="chip-plan-b-pickup-place">
-                      {hasPickupPlace ? placeName(pickupPlace, destinations) : he.planB.samePlaceChip}
-                    </SentenceChip>
+                  {/* R10U1: "ואיסוף מ[place]" never splits across lines. */}
+                  <span className="inline-flex max-w-full items-center gap-1.5 whitespace-nowrap">
+                    <span>{he.planB.pickupWords}</span>
+                    <span className="inline-flex min-w-0 items-center">
+                      {hasPickupPlace ? <span className="-me-1">{he.planB.pickupFromPrefix}</span> : null}
+                      <SentenceChip field="altPickupPlace" invalid={invalid("altPickupPlace")} onClick={() => setSheet("planBPickupPlace")} data-testid="chip-plan-b-pickup-place">
+                        {hasPickupPlace ? placeName(pickupPlace, destinations) : he.planB.samePlaceChip}
+                      </SentenceChip>
+                    </span>
                   </span>
                   <SentenceChip field="altPickupAt" invalid={invalid("altPickupAt")} onClick={() => setSheet("planBPickup")} data-testid="chip-plan-b-pickup">
                     <span dir="ltr">{he.planB.atPrefix}{pickupAt}</span>
@@ -254,14 +243,14 @@ export function PlanBLine({ form, errors, destinations, sheet, setSheet, routeMi
         <PlacePicker places={places} value={hasPickupPlace ? (pickupPlace as DestinationValue) : null} onPick={pickPickupPlace} placeholder={he.planB.placeSearch} />
       </FieldSheet>
 
-      <FieldSheet open={sheet === "planBArrive"} onOpenChange={(open) => !open && setSheet(null)} title={he.planB.sheet.arrive} testId="plan-b-arrive-sheet" hasTimeField>
-        <PlanBArriveBody arriveBy={arriveBy} routeMinutes={routeMinutes} onChange={(next) => set.altArriveBy(next)} error={errors.altArriveBy?.message} />
+      <FieldSheet open={sheet === "planBArrive"} onOpenChange={(open) => !open && setSheet(null)} title={arriveTitle} testId="plan-b-arrive-sheet" hasTimeField>
+        <PlanBArriveBody arriveBy={arriveBy} routeMinutes={routeMinutes} onChange={actions.setArriveBy} error={errors.altArriveBy?.message ?? errors.altPickupAt?.message} />
       </FieldSheet>
 
       <FieldSheet open={sheet === "planBPickup"} onOpenChange={(open) => !open && setSheet(null)} title={pickupTitle} testId="plan-b-pickup-sheet" hasTimeField>
         <div className="flex flex-wrap gap-1.5" role="group" aria-label={pickupTitle}>
-          <PillChip pressed={pickup} onClick={() => setPickup(true)} data-testid="plan-b-pickup-on">{he.planB.pickupToggleOn}</PillChip>
-          <PillChip pressed={!pickup} onClick={() => setPickup(false)} data-testid="plan-b-pickup-off">{he.planB.pickupToggle}</PillChip>
+          <PillChip pressed={pickup} onClick={() => actions.setPickup(true)} data-testid="plan-b-pickup-on">{he.planB.pickupToggleOn}</PillChip>
+          <PillChip pressed={!pickup} onClick={() => actions.setPickup(false)} data-testid="plan-b-pickup-off">{he.planB.pickupToggle}</PillChip>
         </div>
         {pickup ? (
           <AnchorTimePicker
@@ -270,6 +259,7 @@ export function PlanBLine({ form, errors, destinations, sheet, setSheet, routeMi
             anchorLabel={() => pickupTitle}
             onAnchorChange={() => undefined}
             value={pickupAt || arriveBy}
+            min={earliestPickup(arriveBy)}
             onChange={(next) => set.altPickupAt(next)}
             ariaLabel={pickupTitle}
             dataField="altPickupAt"

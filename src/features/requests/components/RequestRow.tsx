@@ -24,7 +24,7 @@ import { PlanBLines } from "./PlanBLines";
 import { WindowSummaryLine } from "./WindowSummaryLine";
 import { isAwaitingAnswer } from "../pendingProposal";
 import { canPlaceOnOwnCar, isDuplicateWithdrawn } from "../overlap";
-import { FREED_SLOT_ELIGIBLE_STATUSES, MAKE_REPEATING_STATUSES, displayStatus, legStateLine, originDestinationLabel, ownLegWindow, type DisplayRow } from "../myRequestsRows";
+import { FREED_SLOT_ELIGIBLE_STATUSES, canMakeRepeating, displayStatus, legStateLine, originDestinationLabel, ownLegWindow, type DisplayRow } from "../myRequestsRows";
 
 /** REQ §13.93: shown whenever a request is not a plain round trip (the mundane default). */
 const TRIP_TYPE_LABEL: Record<TripType, string> = {
@@ -60,6 +60,14 @@ interface RequestRowProps {
   actionPending?: boolean;
   /** REQ §13.108 f: "be back on time" note for this row (see `rowHandover()`); the parent fetches the neighbours once for all rows. */
   handover?: { notes: CarHandoverNotes; span: { startsAt: string; endsAt: string } } | null;
+}
+
+/**
+ * R10B5: the line "שובצת בתוכנית ב׳ …" already says the request is placed, so no "נשלחה" pill beside it while the member
+ * has no outcome to show (the day is not published yet, REQ §13.109 a); once published the ordinary outcome pill shows.
+ */
+function planBServedWithoutOutcome(row: DisplayRow): boolean {
+  return !!row.servedByAlternative && !!row.alternative && displayStatus(row) === "submitted";
 }
 
 /** REQ §13.110 (b): "להגיע עד 09:30" / "יציאה מחיפה 13:00" when the member entered the times that way. */
@@ -112,7 +120,7 @@ export function RequestRow({
           {row.seriesLegs ? <Badge variant="outline">{tv("request.multiDayBadge", { count: String(row.seriesLegs.length) })}</Badge> : null}
           {row.status === "proposed" && row.acceptedAwaitingOthers
             ? <Badge variant="outline" data-testid="request-accepted-waiting">{he.request.acceptedWaitingOthers}</Badge>
-            : <StatusBadge kind="request" status={displayStatus(row)} />}
+            : planBServedWithoutOutcome(row) ? null : <StatusBadge kind="request" status={displayStatus(row)} />}
         </div>
       </div>
       <EnteredTimes
@@ -147,7 +155,7 @@ export function RequestRow({
       {knownStatusReason(row.statusReason) ? (
         <p className="text-xs text-muted-foreground">{knownStatusReason(row.statusReason)}</p>
       ) : null}
-      {!readOnly && FREED_SLOT_ELIGIBLE_STATUSES.has(row.status) && onOptOutChange ? (
+      {!readOnly && !row.servedByAlternative && FREED_SLOT_ELIGIBLE_STATUSES.has(row.status) && onOptOutChange ? (
         <label className="flex items-center gap-2 text-xs text-muted-foreground">
           <input
             type="checkbox"
@@ -203,7 +211,7 @@ export function RequestRow({
               {he.requestsList.cancelRide}
             </Button>
           ) : null}
-          {!row.templateId && !row.seriesLegs && MAKE_REPEATING_STATUSES.has(row.status) && onMakeRepeating ? (
+          {canMakeRepeating(row) && onMakeRepeating ? (
             <Button size="sm" variant="outline" disabled={makeRepeatingPending} onClick={() => onMakeRepeating(row)}>
               {he.request.makeRepeating}
             </Button>

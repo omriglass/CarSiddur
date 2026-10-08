@@ -353,8 +353,16 @@ async function createProposalFrom(board: Board, prefill: ComposerPrefill, draft:
   const id = await api.createProposal(built.input);
   if (draft) { console.log(`draft proposal ${short(id)} (${prefill.type}) created; send it with: send ${short(id)}`); return id; }
   const sent = await api.sendProposal(id, [], pending ? { id: pending.id, version: pending.version } : undefined);
+  printCarConflicts(sent);
   console.log(`proposal ${short(id)} (${prefill.type}) sent to ${Object.keys(sent.party_tokens).length || 1} party/ies${pending ? ` (replaced ${short(pending.id)})` : ""}`);
   return id;
+}
+
+/** R10B6/R10F1: the board asks the Sadran before sending a proposal whose car another pending proposal holds; the CLI prints the warning and sends. */
+function printCarConflicts(sent: api.SendProposalResult): void {
+  for (const c of sent.car_conflicts ?? []) {
+    console.log(`warning: ${c.requester_name}'s ${c.type} proposal ${short(c.proposal_id)} already holds ${c.car_name} ${c.from_at} - ${c.to_at}; sent anyway (if both are accepted the later one is withdrawn as stale)`);
+  }
 }
 
 async function cmdMerge(board: Board, args: Args): Promise<void> {
@@ -473,6 +481,7 @@ async function cmdSend(board: Board, args: Args): Promise<void> {
   const proposal = board.proposals.find((p) => p.id === resolveId(need(args.pos[0], "<proposalId>"), board.proposals.map((p) => p.id), "proposal"))!;
   const pending = board.proposals.find((p) => p.request_id === proposal.request_id && p.status === "sent" && p.id !== proposal.id);
   const sent = await api.sendProposal(proposal.id, [], pending ? { id: pending.id, version: pending.version } : undefined);
+  printCarConflicts(sent);
   console.log(`proposal ${short(proposal.id)} sent to ${Object.keys(sent.party_tokens).length || 1} party/ies${pending ? ` (replaced ${short(pending.id)})` : ""}`);
 }
 

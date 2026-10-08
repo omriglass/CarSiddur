@@ -61,8 +61,9 @@ export function PublishScreen({ departmentId, weekStart }: PublishScreenProps) {
     return anchor ? [{ id: proposal.id, name: request?.requester_full_name ?? "", type: proposal.type, day: dateKey(anchor) }] : [];
   });
   const draftDays = new Set(readiness.filter((day) => day.draftProposals > 0).map((day) => day.day));
-  // REQ §13.112 (a): a plan-B proposal that nobody answered yet holds its day back (server: publication_alternatives_pending, never bypassable).
-  const alternativeRows = (proposalsQuery.data ?? []).filter((proposal) => proposal.type === "alternative" && ["draft", "sent", "accepted"].includes(proposal.status)).flatMap((proposal) => {
+  // REQ §13.112 (a): a SENT plan-B proposal that nobody answered yet holds its day back (server: publication_alternatives_pending,
+  // never bypassable). An unsent plan-B draft is listed once, with the other drafts above (R10B3).
+  const alternativeRows = (proposalsQuery.data ?? []).filter((proposal) => proposal.type === "alternative" && ["sent", "accepted"].includes(proposal.status)).flatMap((proposal) => {
     const request = (requestsQuery.data ?? []).find((r) => r.id === proposal.request_id);
     const anchor = request ? requestStart(request) : null;
     return request && anchor ? [{ id: proposal.id, name: request.requester_full_name ?? "", day: dateKey(anchor), plan: request.alternative ? alternativePlanText(request.alternative) : "" }] : [];

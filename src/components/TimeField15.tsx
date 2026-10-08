@@ -30,7 +30,7 @@ interface TimeField15Props {
  * Two-column 15-minute time picker (UX_FLOWS.md §3.4, component inventory
  * `TimeField15`): a typed `HH:MM` input that snaps on blur, plus a popover
  * with a minutes column (00/15/30/45) on the RTL starting edge and an hours
- * column (05–23) beside it.
+ * column (06–23) beside it.
  */
 export function TimeField15({ value, min, max, onChange, disabled, ...rest }: TimeField15Props) {
   const [draft, setDraft] = useState(value);
@@ -81,10 +81,12 @@ export function TimeField15({ value, min, max, onChange, disabled, ...rest }: Ti
       </PopoverTrigger>
       <PopoverPrimitive.Portal container={portalContainer ?? undefined}>
         <PopoverPrimitive.Content
-          align="start"
+          // R10U6: centred under the input, never closer than 8px to the screen edge (360px phones).
+          align="center"
           sideOffset={4}
+          collisionPadding={8}
           className={cn(
-            "z-50 w-56 rounded-md border bg-popover p-2 text-popover-foreground shadow-md outline-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2",
+            "z-50 w-56 max-w-[calc(100vw-1rem)] rounded-md border bg-popover p-2 text-popover-foreground shadow-md outline-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2",
           )}
         >
           <div className="grid grid-cols-2 gap-2" dir="rtl">
@@ -103,7 +105,8 @@ export function TimeField15({ value, min, max, onChange, disabled, ...rest }: Ti
                 </button>
               ))}
             </div>
-            <div className="relative max-h-48 overflow-y-auto" role="listbox" aria-label={he.timeField.hourListLabel}>
+            {/* R10U6: six and a half rows high (the half row hints at the scroll) with a thin always-visible scrollbar and a fade at the foot, so it reads as scrollable. */}
+            <div className="relative max-h-72 overflow-y-auto [scrollbar-color:hsl(var(--muted-foreground)/0.6)_transparent] [scrollbar-width:thin]" role="listbox" aria-label={he.timeField.hourListLabel} data-testid="time-hour-list">
               {hours.map((h) => (
                 <button
                   key={h}
@@ -119,6 +122,7 @@ export function TimeField15({ value, min, max, onChange, disabled, ...rest }: Ti
                   {pad2(h)}
                 </button>
               ))}
+              <div aria-hidden="true" className="pointer-events-none sticky bottom-0 -mt-6 h-6 bg-gradient-to-t from-popover to-transparent" />
             </div>
           </div>
         </PopoverPrimitive.Content>

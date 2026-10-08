@@ -4457,6 +4457,21 @@ export type Database = {
         Args: { _new_end: string; _new_start: string; _ride_id: string }
         Returns: string
       }
+      _proposal_car_conflicts: {
+        Args: { p_proposal_id: string }
+        Returns: Json
+      }
+      _proposal_car_holds: {
+        Args: {
+          p_payload: Json
+          p_type: Database["public"]["Enums"]["proposal_type"]
+        }
+        Returns: {
+          car_id: string
+          from_at: string
+          to_at: string
+        }[]
+      }
       _publish_ride_line: {
         Args: { p_request_id: string; p_ride_id: string }
         Returns: string
@@ -5187,6 +5202,7 @@ export type Database = {
           phone: string
         }[]
       }
+      proposal_car_conflicts: { Args: { p_proposal_id: string }; Returns: Json }
       proposal_party_texts: {
         Args: { p_proposal_id: string }
         Returns: {

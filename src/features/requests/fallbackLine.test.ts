@@ -35,14 +35,14 @@ describe("pickup from another place", () => {
   const other = { ...alt, pickupPlaceId: "karkur", pickupPlaceName: "צומת כרכור" };
   it("names the pickup place in /my, the served line and the recap (twin of SQL alt.pickup_from)", () => {
     expect(waitingFallbackLine({ status: "waitlisted", fallback: "alternative", alternative: other })).toBe("תוכנית ב׳: הקפצה לצומת חריש עד 08:00 · איסוף מצומת כרכור ב־19:00");
-    expect(servedByAlternativeLine(other)).toBe("שובצת בתוכנית ב׳: הקפצה לצומת חריש עד 08:00, איסוף מצומת כרכור 19:00");
+    expect(servedByAlternativeLine(other)).toBe("שובצת בתוכנית ב׳: הקפצה לצומת חריש עד 08:00, איסוף מצומת כרכור ב־19:00");
     expect(planBRecapLine({ fallback: "alternative", altArriveBy: "08:00", altPickup: true, altPickupAt: "19:00" }, "צומת חריש", "צומת כרכור")).toBe("אם אין רכב: הקפצה לצומת חריש עד 08:00, ואיסוף מצומת כרכור ב־19:00");
   });
 });
 
 describe("servedByAlternativeLine", () => {
   it("names the place for the drop and the pickup", () => {
-    expect(servedByAlternativeLine(alt)).toBe("שובצת בתוכנית ב׳: הקפצה לצומת חריש עד 08:00, איסוף מצומת חריש 19:00");
+    expect(servedByAlternativeLine(alt)).toBe("שובצת בתוכנית ב׳: הקפצה לצומת חריש עד 08:00, איסוף מצומת חריש ב־19:00");
     expect(servedByAlternativeLine({ ...alt, pickup: false, pickupAt: null, pickupPlaceId: null, pickupPlaceText: null, pickupPlaceName: null })).toBe("שובצת בתוכנית ב׳: הקפצה לצומת חריש עד 08:00");
   });
 });

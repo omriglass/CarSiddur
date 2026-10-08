@@ -290,7 +290,8 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
           the title line. */}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <PublishButton departmentId={departmentId} weekStart={weekStart} />
-        <div className="flex shrink-0 items-center gap-2">
+        {/* R10U11: the chip may wrap onto its own line; the four icon buttons stay together, so the "⋮" is never pushed past the screen edge. */}
+        <div className="flex min-w-0 max-w-full flex-wrap items-center justify-end gap-2">
           <PolicyChip
             policyOptions={board.policyOptionsQuery.data ?? []}
             activePolicy={board.activePolicyQuery.data ?? null}
@@ -299,6 +300,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
             onSelect={board.selectPolicyVersion}
             scores={board.boardPolicyScores}
           />
+          <div className="flex shrink-0 items-center gap-2">
           <Button type="button" variant="outline" size="icon" aria-label={he.action.undo} disabled={!dnd.undoStack.canUndo} onClick={() => void dnd.handleUndo()}>
             <Undo2 className="size-4 rtl:rotate-180" />
           </Button>
@@ -327,6 +329,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
             selectedDay={board.selectedDay}
             openCount={board.openRequestCount}
           />
+          </div>
         </div>
       </div>
 

@@ -19,6 +19,7 @@ vi.mock("../hooks", () => ({
   useSubmitSeriesRequestMutation: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useMyRequests: () => ({ data: [] }),
   useRequestFormLayout: () => mocks.layout.current,
+  useRouteMinutesFetcher: () => () => Promise.resolve(45),
   useRouteMinutesQuery: (_dept: string | undefined, _points: unknown, enabled: boolean) => ({
     data: enabled ? mocks.routeMinutes.current : undefined,
     isError: false,
@@ -96,8 +97,101 @@ describe("RequestForm plan B line (REQ §13.112 a/b)", () => {
     expect(screen.getByTestId("plan-b-link")).toBeVisible();
     fireEvent.click(screen.getByTestId("chip-trip"));
     fireEvent.click(screen.getByRole("radio", { name: he.request.tripTypeDropOff }));
+    // No plan B yet: the switch asks for the הקפצה as one sentence; confirming it makes the request a הקפצה.
+    fireEvent.click(screen.getByTestId("drop-off-switch-place"));
+    fireEvent.click(screen.getByText("Harish"));
+    fireEvent.click(screen.getByRole("button", { name: he.planB.switch.confirm }));
     fireEvent.click(screen.getByRole("button", { name: he.requestSentence.sheetDone }));
     expect(screen.queryByTestId("plan-b")).not.toBeInTheDocument();
+  });
+
+  it("switching to הקפצה without a plan B asks for it; cancelling keeps the trip type (R10M2)", async () => {
+    show();
+    pickSentenceDestination();
+    fireEvent.click(screen.getByTestId("chip-trip"));
+    fireEvent.click(screen.getByRole("radio", { name: he.request.tripTypeDropOff }));
+    const dialog = screen.getByTestId("drop-off-switch-dialog");
+    // The sentence names the trip it replaces.
+    expect(screen.getByText(/במקום הלוך-חזור לDestination, הקפצה/)).toBeVisible();
+    // Nothing chosen yet: refused with the plan-B message.
+    fireEvent.click(screen.getByRole("button", { name: he.planB.switch.confirm }));
+    expect(within(dialog).getByText(he.planB.error.placeRequired)).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: he.common.cancel }));
+    expect(screen.queryByTestId("drop-off-switch-dialog")).not.toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: he.request.tripTypeRoundTrip })).toBeChecked();
+  });
+
+  it("with a plan B the הקפצה uses it and switching back restores the trip and plan B exactly (R10M2)", async () => {
+    show();
+    pickSentenceDestination();
+    fireEvent.click(screen.getByTestId("plan-b-link"));
+    fireEvent.click(screen.getByTestId("chip-plan-b-place"));
+    fireEvent.click(screen.getByText("Harish"));
+    fireEvent.click(screen.getByTestId("chip-trip"));
+    fireEvent.click(screen.getByRole("radio", { name: he.request.tripTypeDropOff }));
+    expect(screen.queryByTestId("drop-off-switch-dialog")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: he.requestSentence.sheetDone }));
+    expect(screen.getByTestId("chip-destination")).toHaveTextContent("Harish");
+    expect(screen.queryByTestId("plan-b")).not.toBeInTheDocument();
+    // Back to the round trip: Destination and the plan B (drop at Harish) are both there again.
+    fireEvent.click(screen.getByTestId("chip-trip"));
+    fireEvent.click(screen.getByRole("radio", { name: he.request.tripTypeRoundTrip }));
+    fireEvent.click(screen.getByRole("button", { name: he.requestSentence.sheetDone }));
+    expect(screen.getByTestId("chip-destination")).toHaveTextContent("Destination");
+    expect(screen.getByTestId("chip-plan-b-place")).toHaveTextContent("Harish");
+    expect(screen.getByTestId("chip-plan-b-arrive")).toHaveTextContent("09:00");
+    expect(screen.getByTestId("chip-plan-b-pickup")).toHaveTextContent("12:00");
+  });
+
+  it("the switched request is submitted as the plan-B הקפצה (drop place, arrive-by anchor, pickup)", async () => {
+    show();
+    pickSentenceDestination();
+    fireEvent.click(screen.getByTestId("plan-b-link"));
+    fireEvent.click(screen.getByTestId("chip-plan-b-place"));
+    fireEvent.click(screen.getByText("Harish"));
+    fireEvent.click(screen.getByTestId("chip-trip"));
+    fireEvent.click(screen.getByRole("radio", { name: he.request.tripTypeDropOff }));
+    fireEvent.click(screen.getByRole("button", { name: he.requestSentence.sheetDone }));
+    await submitFromStageOne();
+    await waitFor(() => expect(mocks.submit).toHaveBeenCalledOnce());
+    const payload = mocks.submit.mock.calls[0]![0];
+    expect(payload).toMatchObject({ trip_type: "drop_off", destination_id: "harish", depart_anchor: "arrive", arrive_by: "2044-01-03T07:00:00.000Z", return_anchor: "leave" });
+    expect("fallback" in payload).toBe(false);
+  });
+
+  it("choosing 'אסתדר' clears the plan-B errors (R10B2)", async () => {
+    show();
+    pickSentenceDestination();
+    fireEvent.click(screen.getByTestId("plan-b-link"));
+    fireEvent.click(screen.getByTestId("stage-next"));
+    await waitFor(() => expect(screen.getByText(he.planB.error.placeRequired)).toBeVisible());
+    fireEvent.click(screen.getByTestId("chip-plan-b-kind"));
+    fireEvent.click(screen.getByTestId("plan-b-option-manage"));
+    await waitFor(() => expect(screen.queryByText(he.planB.error.placeRequired)).not.toBeInTheDocument());
+  });
+
+  it("the drop-time sheet names the place or shows a placeholder, with the toggle and an empty estimate (R10U5)", () => {
+    show();
+    fireEvent.click(screen.getByTestId("plan-b-link"));
+    fireEvent.click(screen.getByTestId("chip-plan-b-arrive"));
+    const sheet = screen.getByTestId("plan-b-arrive-sheet");
+    expect(within(sheet).getAllByText(he.planB.sheet.arriveNoPlace)[0]).toBeVisible();
+    expect(within(sheet).getByRole("radio", { name: he.requestSentence.anchor.outArrive })).toBeVisible();
+    expect(within(sheet).getByTestId("plan-b-time-estimate")).toHaveTextContent("—");
+  });
+
+  it("moving the drop time past the pickup moves the pickup along and says so (R10U4)", () => {
+    show();
+    pickSentenceDestination();
+    fireEvent.click(screen.getByTestId("plan-b-link"));
+    fireEvent.click(screen.getByTestId("chip-plan-b-arrive"));
+    const input = within(screen.getByTestId("plan-b-arrive-sheet")).getByRole("textbox", { name: he.planB.sheet.arrive });
+    fireEvent.change(input, { target: { value: "13:00" } });
+    fireEvent.blur(input);
+    expect(screen.getByTestId("plan-b-pickup-moved")).toHaveTextContent("16:00");
+    fireEvent.click(screen.getByRole("button", { name: he.requestSentence.sheetDone }));
+    expect(screen.getByTestId("chip-plan-b-pickup")).toHaveTextContent("16:00");
+    expect(screen.queryByText(he.planB.error.pickupBeforeArrive)).not.toBeInTheDocument();
   });
 
   it("an empty plan B blocks the next stage; with a drop point picked the payload carries it", async () => {
@@ -188,5 +282,32 @@ describe("RequestForm plan B line (REQ §13.112 a/b)", () => {
     fireEvent.click(screen.getByRole("button", { name: he.action.submitRequest }));
     await waitFor(() => expect(mocks.submit).toHaveBeenCalledOnce());
     expect(mocks.submit.mock.calls[0]![0].alternative).toMatchObject({ drop_place_id: "harish", pickup_place_id: "destination" });
+  });
+
+  it("the classic layout has a collapsed '+ תוכנית ב׳' section that edits and sends the same fields (R10M1)", async () => {
+    mocks.layout.current = "classic";
+    show();
+    expect(screen.queryByTestId("plan-b-option-alternative")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("plan-b-link"));
+    // Defaults: arrive by departure + 1 h; the pickup follows the main return.
+    expect(screen.getByRole("textbox", { name: he.planB.classic.arrive })).toHaveValue("09:00");
+    expect(screen.getByRole("textbox", { name: he.planB.classic.pickupAt })).toHaveValue("12:00");
+    // The comboboxes are stand-ins: [0] destination, [1] drop place (the pickup place only shows when asked for).
+    fireEvent.click(screen.getAllByText("pick-destination")[0]!);
+    fireEvent.click(screen.getAllByText("pick-destination")[1]!);
+    fireEvent.click(screen.getByRole("button", { name: he.action.submitRequest }));
+    await waitFor(() => expect(mocks.submit).toHaveBeenCalledOnce());
+    expect(mocks.submit.mock.calls[0]![0]).toMatchObject({ fallback: "alternative", alternative: { drop_place_id: "destination", pickup: true } });
+  });
+
+  it("the classic layout's 'אסתדר' / 'בלי' are sent too and clear errors", async () => {
+    mocks.layout.current = "classic";
+    show();
+    fireEvent.click(screen.getByTestId("plan-b-link"));
+    fireEvent.click(screen.getByTestId("plan-b-option-manage"));
+    fireEvent.click(screen.getAllByText("pick-destination")[0]!);
+    fireEvent.click(screen.getByRole("button", { name: he.action.submitRequest }));
+    await waitFor(() => expect(mocks.submit).toHaveBeenCalledOnce());
+    expect(mocks.submit.mock.calls[0]![0]).toMatchObject({ fallback: "manage", alternative: null });
   });
 });

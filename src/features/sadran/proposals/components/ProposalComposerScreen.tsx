@@ -4,6 +4,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
 import { paths } from "@/app/routes";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -21,8 +22,8 @@ import { useActiveDepartment } from "@/features/auth/useActiveDepartment";
 import { useProfile } from "@/features/auth/useProfile";
 import { ProposalSummary } from "@/features/proposals/components/ProposalSummary";
 import { fetchBoardRideById } from "@/features/siddur/api";
-import { he, t } from "@/i18n/he";
-import { fetchProposalPartyTexts } from "../../api";
+import { he, t, tv } from "@/i18n/he";
+import { fetchProposalPartyTexts, type ProposalCarConflict } from "../../api";
 import { sadranKeys } from "../../keys";
 import { servedOf } from "../../solverRun";
 import { env } from "@/lib/env";
@@ -49,6 +50,7 @@ import {
   useProposalParties,
   useProposalsForWeek,
   useRecordAnswerOnBehalfMutation,
+  useProposalCarConflictsMutation,
   useSendProposalMutation,
   useSeriesLegsQuery,
   useWeekRequestsWithNames,
@@ -153,6 +155,9 @@ export function ProposalComposerScreen({ departmentId, weekStart }: ProposalComp
 
   const createMutation = useCreateProposalMutation();
   const sendMutation = useSendProposalMutation();
+  const conflictsMutation = useProposalCarConflictsMutation();
+  // R10B6/R10F1: the car(s) another pending proposal holds; the Sadran may send anyway.
+  const [carConflicts, setCarConflicts] = useState<ProposalCarConflict[] | null>(null);
   const recordAnswerMutation = useRecordAnswerOnBehalfMutation();
   const applyMutation = useApplyProposalMutation();
   const partiesQuery = useProposalParties(proposalId ?? undefined);
@@ -269,7 +274,7 @@ export function ProposalComposerScreen({ departmentId, weekStart }: ProposalComp
     effectiveReason, externalHint, originAway,
   });
 
-  async function handleCreateAndSend() {
+  async function handleCreateAndSend(confirmedConflicts = false) {
     if (!request || (!proposalId && !payload) || busy) return;
     try {
       const draftId = proposalId ?? await createMutation.mutateAsync({
@@ -285,6 +290,10 @@ export function ProposalComposerScreen({ departmentId, weekStart }: ProposalComp
       // Keep the successful creation even if sending fails. Retrying must send
       // this draft, rather than create a second proposal for the same request.
       setProposalId(draftId);
+      if (!confirmedConflicts) {
+        const found = await conflictsMutation.mutateAsync(draftId);
+        if (found.length) { setCarConflicts(found); return; }
+      }
       const sendResult = await sendMutation.mutateAsync({
         proposalId: draftId, departmentId, weekStart,
         replacement: pendingProposal ? { id: pendingProposal.id, version: pendingProposal.version } : undefined,
@@ -458,7 +467,7 @@ export function ProposalComposerScreen({ departmentId, weekStart }: ProposalComp
             <Button
               className="w-full"
               data-testid="composer-send"
-              onClick={handleCreateAndSend}
+              onClick={() => handleCreateAndSend()}
               disabled={(!proposalId && (!variant || !payload || (type === "merge" && !hostRideQuery.data))) || mergeBlocked || busy || !proposalsForWeekQuery.isSuccess || proposalsForWeekQuery.isFetching || (!!pendingProposal && (!pendingPartiesQuery.isSuccess || pendingHasAnswer))}
             >
               {pendingProposal ? he.sadranProposal.replaceAndSend : proposalId ? (sendFailed ? he.sadranProposal.retrySend : he.boardDrafts.send) : t("action.propose")}
@@ -560,6 +569,27 @@ export function ProposalComposerScreen({ departmentId, weekStart }: ProposalComp
           )}
         </CardContent>
       </Card>
+      <ConfirmDialog
+        open={!!carConflicts}
+        onOpenChange={(open) => { if (!open) setCarConflicts(null); }}
+        title={he.sadranProposal.carConflictTitle}
+        confirmLabel={he.sadranProposal.carConflictSend}
+        cancelLabel={he.sadranProposal.carConflictBack}
+        loading={busy}
+        onConfirm={() => { setCarConflicts(null); void handleCreateAndSend(true); }}
+      >
+        <ul className="space-y-1 text-sm" data-testid="car-conflicts">
+          {(carConflicts ?? []).map((conflict, index) => (
+            <li key={`${conflict.proposal_id}:${conflict.car_id}:${index}`}>
+              {tv("sadranProposal.carConflictLine", {
+                name: conflict.requester_name, car: conflict.car_name,
+                from: formatTime(new Date(conflict.from_at)), to: formatTime(new Date(conflict.to_at)),
+              })}
+            </li>
+          ))}
+        </ul>
+        <p className="text-sm text-muted-foreground">{he.sadranProposal.carConflictHelp}</p>
+      </ConfirmDialog>
     </div>
   );
 }

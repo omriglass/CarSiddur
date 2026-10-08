@@ -1438,6 +1438,60 @@ end $$;
 ALTER FUNCTION "public"."_plan_b_pair_cascade"() OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."_proposal_car_conflicts"("p_proposal_id" "uuid") RETURNS "jsonb"
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select coalesce(jsonb_agg(jsonb_build_object(
+      'proposal_id', o.id, 'request_id', o.request_id, 'type', o.type, 'status', o.status,
+      'requester_name', coalesce(pf.full_name, ''), 'car_id', h.car_id, 'car_name', coalesce(c.name, ''),
+      'from_at', greatest(h.from_at, mine.from_at), 'to_at', least(h.to_at, mine.to_at))
+    order by greatest(h.from_at, mine.from_at), o.id), '[]'::jsonb)
+  from public.proposals p
+  cross join lateral public._proposal_car_holds(p.payload, p.type) mine
+  join public.proposals o on o.department_id = p.department_id and o.week_start = p.week_start and o.id <> p.id
+    and o.request_id <> p.request_id and (o.status = 'sent' or o.status = 'accepted')
+  cross join lateral public._proposal_car_holds(o.payload, o.type) h
+  left join public.requests q on q.id = o.request_id
+  left join public.profiles pf on pf.id = q.requester_id
+  left join public.cars c on c.id = h.car_id
+  where p.id = p_proposal_id and h.car_id = mine.car_id and h.from_at < mine.to_at and mine.from_at < h.to_at
+$$;
+
+
+ALTER FUNCTION "public"."_proposal_car_conflicts"("p_proposal_id" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_proposal_car_holds"("p_payload" "jsonb", "p_type" "public"."proposal_type") RETURNS TABLE("car_id" "uuid", "from_at" timestamp with time zone, "to_at" timestamp with time zone)
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare v_dep timestamptz; v_arr timestamptz; v_pick timestamptz; v_ret timestamptz; v_dur interval; v_car uuid; v_ret_car uuid;
+begin
+  v_car := nullif(p_payload ->> 'car_id', '')::uuid;
+  if v_car is null then return; end if;
+  v_dep := nullif(p_payload ->> 'depart_at', '')::timestamptz;
+  v_ret := nullif(p_payload ->> 'return_at', '')::timestamptz;
+  if p_type = 'alternative' then
+    v_arr := nullif(p_payload ->> 'arrive_by', '')::timestamptz;
+    if v_dep is null or v_arr is null then return; end if;
+    v_dur := greatest(v_arr - v_dep, interval '15 minutes');
+    car_id := v_car; from_at := v_dep; to_at := v_arr; return next;
+    v_pick := nullif(p_payload ->> 'pickup_at', '')::timestamptz;
+    if coalesce((p_payload ->> 'pickup')::boolean, false) and v_pick is not null then
+      v_ret_car := coalesce(nullif(p_payload ->> 'return_car_id', '')::uuid, v_car);
+      car_id := v_ret_car; from_at := least(v_pick, coalesce(v_ret, v_pick)); to_at := greatest(v_pick, coalesce(v_ret, v_pick)) + v_dur; return next;
+    end if;
+  elsif p_type in ('shift', 'origin') then
+    if coalesce(v_dep, v_ret) is null then return; end if;
+    car_id := v_car; from_at := coalesce(v_dep, v_ret); to_at := coalesce(v_ret, v_dep + interval '2 hours'); return next;
+  end if;
+end $$;
+
+
+ALTER FUNCTION "public"."_proposal_car_holds"("p_payload" "jsonb", "p_type" "public"."proposal_type") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."_publish_ride_line"("p_request_id" "uuid", "p_ride_id" "uuid") RETURNS "text"
     LANGUAGE "plpgsql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -9296,6 +9350,22 @@ $$;
 ALTER FUNCTION "public"."profiles_require_phone_for_approval"() OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."proposal_car_conflicts"("p_proposal_id" "uuid") RETURNS "jsonb"
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare v_dept uuid; v_week date;
+begin
+  select department_id, week_start into v_dept, v_week from public.proposals where id = p_proposal_id;
+  if v_dept is null then raise exception 'proposal_not_found'; end if;
+  if not public.can_manage_week(v_dept, v_week) then raise exception 'not_authorized'; end if;
+  return public._proposal_car_conflicts(p_proposal_id);
+end $$;
+
+
+ALTER FUNCTION "public"."proposal_car_conflicts"("p_proposal_id" "uuid") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."proposal_parties_roll_up"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -9304,7 +9374,7 @@ declare
   v_total int; v_accepted int; v_declined int; v_status public.proposal_status;
   v_prop record;
   v_new_status public.proposal_status;
-  v_who jsonb;
+  v_who jsonb; v_alt jsonb; v_variant text;
 begin
   -- the responder's own offer is handled
   update public.notifications set read_at = now()
@@ -9332,13 +9402,16 @@ begin
     update public.proposals set status = v_new_status where id = new.proposal_id
     returning * into v_prop;
 
+    -- R10U10: a plan-B answer says it was plan B and names the plan ("הקפצה ל... עד ...") — variants alternative_accepted / alternative_declined.
+    v_variant := case when v_prop.type = 'alternative' and v_new_status in ('accepted', 'declined') then 'alternative_' || v_new_status::text else v_new_status::text end;
+    v_alt := case when v_prop.type = 'alternative' then public._alternative_vars(v_prop.payload, v_prop.department_id) else '{}'::jsonb end;
     if v_prop.created_by is not null then
       perform public.enqueue_notification(v_prop.created_by, 'proposal_answered', v_prop.department_id, v_prop.week_start,
-        v_who, jsonb_build_object('variant', v_new_status::text, 'proposal_id', v_prop.id),
+        v_who || v_alt, jsonb_build_object('variant', v_variant, 'proposal_id', v_prop.id),
         format('proposal_answered:%s:%s', v_prop.id, v_prop.created_by));
     else
       perform public.enqueue_notification(s.profile_id, 'proposal_answered', v_prop.department_id, v_prop.week_start,
-        v_who, jsonb_build_object('variant', v_new_status::text, 'proposal_id', v_prop.id),
+        v_who || v_alt, jsonb_build_object('variant', v_variant, 'proposal_id', v_prop.id),
         format('proposal_answered:%s:%s', v_prop.id, s.profile_id))
       from public.sadranim_of(v_prop.department_id, v_prop.week_start) as s(profile_id);
     end if;
@@ -9836,14 +9909,15 @@ begin
     -- and an accepted external/deny proposal is no longer 'pending'.
     -- 20261005110300: unsent drafts are counted separately (draftProposals) and no longer in
     -- pendingProposals, so a day with a draft is not blocked twice with two messages.
-    select count(*) filter(where p.status='sent' or (p.status='accepted' and p.type not in ('external','deny'))), count(*) filter(where p.status='draft') into pending_n,draft_n
+    select count(*) filter(where p.type<>'alternative' and (p.status='sent' or (p.status='accepted' and p.type not in ('external','deny')))), count(*) filter(where p.status='draft') into pending_n,draft_n
       from public.proposals p join public.requests q on q.id=p.request_id
       where p.department_id=p_department_id and p.week_start=p_week_start and p.status in ('draft','sent','accepted')
         and ((coalesce(q.depart_at,q.return_at) at time zone 'Asia/Jerusalem')::date=d
           or exists(select 1 from public.rides r where r.id=p.ride_id and (r.starts_at at time zone 'Asia/Jerusalem')::date=d));
-    -- REQ §13.112 (a): a plan-B proposal not yet answered/applied blocks the day (counted again in draft/pending above).
+    -- REQ §13.112 (a), R10B3: a SENT plan-B proposal not yet answered/applied blocks the day, counted only here (not in pending); an unsent
+    -- plan-B draft is counted once, in draftProposals.
     select count(*) into alt_n from public.proposals p join public.requests q on q.id=p.request_id
-      where p.department_id=p_department_id and p.week_start=p_week_start and p.type='alternative' and p.status in ('draft','sent','accepted')
+      where p.department_id=p_department_id and p.week_start=p_week_start and p.type='alternative' and p.status in ('sent','accepted')
         and (coalesce(q.depart_at,q.return_at) at time zone 'Asia/Jerusalem')::date=d;
     pending_n:=pending_n+(select count(*) from public.ride_change_requests c where c.department_id=p_department_id and c.week_start=p_week_start
       and c.status='pending' and (c.starts_at at time zone 'Asia/Jerusalem')::date=d);
@@ -10111,14 +10185,18 @@ begin
       where c.event_kind = 'published'
         and (x.starts_at at time zone 'Asia/Jerusalem')::date = any(v_days)
       union all
-      select c.requester_id, c.id, c.request_day, coalesce(c.line_depart, c.line_dt), c.request_line
+      -- R10B4: a request with no live ride is not one of "your rides"; a waitlisted one gets its own line
+      -- ("on the waiting list: ..."), any other (denied, still open) is left out.
+      select c.requester_id, c.id, c.request_day, coalesce(c.line_depart, c.line_dt), public._frag('publish.waitlisted', jsonb_build_object('line', c.request_line))
       from classified c
-      where c.event_kind = 'published'
+      where c.event_kind = 'published' and c.status = 'waitlisted'
         and not exists (select 1 from public.ride_requests rr join public.rides x on x.id = rr.ride_id
                         where rr.request_id = c.id and x.status <> 'cancelled')
     ), days_agg as (
       select requester_id, event_kind, string_agg(public.day_date_label(request_day), ', ' order by request_day) as days_list
-      from (select distinct requester_id, event_kind, request_day from classified where event_kind is not null) d
+      from (select distinct c.requester_id, c.event_kind, c.request_day from classified c where c.event_kind is not null
+        and (c.event_kind <> 'published' or exists (select 1 from public.ride_requests rr join public.rides x on x.id = rr.ride_id
+                where rr.request_id = c.id and x.status <> 'cancelled'))) d
       group by requester_id, event_kind
     ), chg_lines as (
       select rc.requester_id, rc.request_id, rc.request_day,
@@ -12687,7 +12765,9 @@ begin
       jsonb_build_object('proposal_id',p_proposal_id,'url','/p/'||(v_party_tokens->>v_party.profile_id::text),'variant',v_reader->>'variant'),
       format('proposal_received:%s:%s',p_proposal_id,v_party.profile_id));
   end loop;
-  return jsonb_build_object('proposal_token',v_proposal_token,'party_tokens',v_party_tokens);
+  -- QA run 10 (R10B6 / R10F1): informational only — the board has already shown the warning and the Sadran confirmed.
+  return jsonb_build_object('proposal_token',v_proposal_token,'party_tokens',v_party_tokens,
+    'car_conflicts',public._proposal_car_conflicts(p_proposal_id));
 end $$;
 
 
@@ -20949,6 +21029,16 @@ GRANT ALL ON FUNCTION "public"."_plan_b_pair_cascade"() TO "service_role";
 
 
 
+REVOKE ALL ON FUNCTION "public"."_proposal_car_conflicts"("p_proposal_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_proposal_car_conflicts"("p_proposal_id" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_proposal_car_holds"("p_payload" "jsonb", "p_type" "public"."proposal_type") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_proposal_car_holds"("p_payload" "jsonb", "p_type" "public"."proposal_type") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."_publish_ride_line"("p_request_id" "uuid", "p_ride_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_publish_ride_line"("p_request_id" "uuid", "p_ride_id" "uuid") TO "service_role";
 
@@ -21967,6 +22057,12 @@ GRANT ALL ON FUNCTION "public"."profiles_protect_last_admin"() TO "service_role"
 REVOKE ALL ON FUNCTION "public"."profiles_require_phone_for_approval"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."profiles_require_phone_for_approval"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."profiles_require_phone_for_approval"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."proposal_car_conflicts"("p_proposal_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."proposal_car_conflicts"("p_proposal_id" "uuid") TO "service_role";
+GRANT ALL ON FUNCTION "public"."proposal_car_conflicts"("p_proposal_id" "uuid") TO "authenticated";
 
 
 

@@ -19,6 +19,7 @@ vi.mock("../hooks", () => ({
   useSubmitSeriesRequestMutation: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useMyRequests: () => ({ data: [] }),
   useRequestFormLayout: () => mocks.layout.current,
+  useRouteMinutesFetcher: () => () => Promise.resolve(45),
   useRouteMinutesQuery: (_dept: string | undefined, _points: unknown, enabled: boolean) => ({
     data: enabled ? mocks.routeMinutes.current : undefined,
     isError: false,

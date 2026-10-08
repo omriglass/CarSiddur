@@ -7,6 +7,8 @@ import type { MyRequestRow } from "../api";
 import { toDisplayRows } from "../myRequestsRows";
 import { RequestRow } from "./RequestRow";
 
+vi.mock("@/features/fleet/hooks", () => ({ useDestinations: () => ({ data: [] }) }));
+
 function request(overrides: Partial<MyRequestRow> = {}): MyRequestRow {
   return {
     id: "request-1", departmentId: "dept-1", weekStart: "2026-09-13", status: "submitted",
@@ -89,5 +91,28 @@ describe("RequestRow", () => {
     expect(screen.getByRole("img", { name: he.carHandover.alertLabel })).toHaveTextContent("!");
     expect(screen.getByTestId("car-handover-notice")).toHaveTextContent("Dana");
     expect(screen.getByTestId("car-handover-notice")).toHaveTextContent("12:30");
+  });
+
+  describe("a request served by its plan B (R10B5)", () => {
+    const alternative = {
+      dropPlaceId: "p1", dropPlaceText: null, dropPlaceName: "Harish", arriveBy: "2026-09-15T05:00:00Z",
+      pickup: true, pickupAt: "2026-09-15T16:00:00Z", pickupPlaceId: "p2", pickupPlaceText: null, pickupPlaceName: "Pardes", originalMain: null,
+    };
+
+    it("shows no pending pill, no make-repeating and no waiting-list opt-out", () => {
+      show(request({ status: "waitlisted", servedByAlternative: true, fallback: "alternative", alternative }), { onMakeRepeating: vi.fn(), onOptOutChange: vi.fn() });
+      expect(screen.queryByText(he.status.waitlisted)).not.toBeInTheDocument();
+      expect(screen.queryByText(he.status.submitted)).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: he.request.makeRepeating })).not.toBeInTheDocument();
+      expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+      expect(screen.getByText(he.status.assigned)).toBeInTheDocument();
+      expect(screen.getByTestId("request-served-by-plan-b")).toBeInTheDocument();
+    });
+
+    it("hides the 'submitted' pill while the day is unpublished", () => {
+      show(request({ status: "submitted", servedByAlternative: true, fallback: "alternative", alternative }));
+      expect(screen.queryByText(he.status.submitted)).not.toBeInTheDocument();
+      expect(screen.getByTestId("request-served-by-plan-b")).toBeInTheDocument();
+    });
   });
 });

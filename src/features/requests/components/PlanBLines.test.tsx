@@ -26,7 +26,7 @@ describe("PlanBLines (/my)", () => {
 
   it("shows 'served by plan B' with the original request line", () => {
     render(<PlanBLines row={{ status: "assigned", departmentId: "d", fallback: "alternative", servedByAlternative: true, alternative }} />);
-    expect(screen.getByTestId("request-served-by-plan-b")).toHaveTextContent("שובצת בתוכנית ב׳: הקפצה לצומת חריש עד 08:00, איסוף מצומת חריש 19:00");
+    expect(screen.getByTestId("request-served-by-plan-b")).toHaveTextContent("שובצת בתוכנית ב׳: הקפצה לצומת חריש עד 08:00, איסוף מצומת חריש ב־19:00");
     expect(screen.getByTestId("request-original-main")).toHaveTextContent("הבקשה המקורית: הלוך-חזור לחיפה ד׳ 14.10 08:00–19:00");
   });
 

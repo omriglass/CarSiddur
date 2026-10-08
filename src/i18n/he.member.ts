@@ -132,6 +132,9 @@ export const heMember = {
       "בקשה להצטרף לנסיעה של {{driverName}} ברכב הפרטי שלו/שלה — ההצעה תישלח אליו/אליה ישירות",
     withdrawConfirmTitle: "להסיר את הבקשה?",
     withdrawConfirmBody: "הבקשה תוסר ולא תישלח לסדרן/ית.",
+    /** R10U7: removing / cancelling a request that is already served by its plan B (REQ §13.112 a) — it is placed, not unsent. */
+    withdrawPlanBBody: "הבקשה כבר שובצה בתוכנית ב׳. הסרתה מבטלת את ההקפצה שנקבעה.",
+    withdrawPlanBPickupBody: "הבקשה כבר שובצה בתוכנית ב׳. הסרתה מבטלת את ההקפצה שנקבעה וגם את בקשת האיסוף הקשורה אליה.",
     cancelConfirmTitle: "לבטל את הנסיעה?",
     cancelConfirmBodyFreed: "הרכב יוצע לחברים ברשימת ההמתנה.",
     cancelConfirmBodyRelay: "הסדרן/ית יקבלו הודעה — הרכב צריך לחזור הביתה.",
@@ -304,6 +307,9 @@ export const heMember = {
     alreadyAnswered: "כבר עניתם להצעה הזו",
     genericError: "לא ניתן לטעון את ההצעה כרגע",
     confirmedTitle: "תודה! הסדרן/ית יעדכנו את הסידור",
+    /** R10U9: after accepting a plan B on `/p/:token` — it was applied on the spot, unlike every other answer. */
+    confirmedPlanBTitle: "ההצעה אושרה — שובצת בתוכנית ב׳",
+    confirmedPlanBHelp: "אפשר לראות אותה ב״הנסיעות שלי״.",
     alreadyAnsweredBy: "התשובה שלך נרשמה",
     backHome: "לדף הבית",
     yourRequest: "הבקשה שלך",
@@ -461,9 +467,43 @@ export const heMember = {
       kind: "אם אין רכב",
       place: "להקפיץ אותי אל",
       arrive: "להיות שם עד",
+      /** The arrive sheet's title once the drop place is known / before it is chosen (R10U5). */
+      arriveAt: "להיות ב{{place}} עד",
+      arriveNoPlace: "להיות ב[נקודת ההקפצה] עד",
       pickup: "איסוף משם ב־",
       pickupFromAt: "איסוף מ{{place}} ב־",
+      pickupNoPlace: "איסוף מ[נקודת ההקפצה] ב־",
       pickupPlace: "מאיפה לאסוף?",
+      /** Shown in the arrive sheet when the drop time pushed the pickup along (R10U4). */
+      pickupMoved: "גם האיסוף זז ל־{{time}}",
+      /** The estimate line while the drop place (so the drive) is not known yet (R10U5). */
+      estimateUnknown: "יציאה משוערת —",
+    },
+    /** The classic form's "+ תוכנית ב׳" section (R10M1). */
+    classic: {
+      link: "+ תוכנית ב׳",
+      title: "תוכנית ב׳",
+      kind: "מה אם אין רכב?",
+      place: "להקפיץ אותי אל",
+      arrive: "להיות שם עד",
+      pickupSwitch: "ואיסוף משם",
+      pickupPlace: "מאיפה לאסוף? (ברירת מחדל: מאותו מקום)",
+      pickupPlaceSame: "מאותו מקום",
+      pickupAt: "שעת איסוף",
+    },
+    /** Switching the main trip to a הקפצה (R10M2): uses plan B, or asks for it as one sentence. */
+    switch: {
+      title: "מעבר להקפצה",
+      instead: "במקום {{trip}}, הקפצה",
+      toPlace: "ל…",
+      untilTime: "עד",
+      pickupSwitch: "ואיסוף",
+      pickupFromPlace: "מ…",
+      pickupFromPlaceHint: "ללא בחירה: מאותו מקום",
+      atTime: "ב־",
+      confirm: "מעבר להקפצה",
+      /** Toast: the main form picks up from the drop place only; the other pickup place stays in plan B. */
+      pickupPlaceKept: "הקפצה ל{{place}} — האיסוף יהיה מ{{place}}. האיסוף מ{{pickupPlace}} נשמר, וחוזר כשחוזרים להלוך-חזור.",
     },
     options: {
       alternative: "הקפצה",
@@ -497,7 +537,7 @@ export const heMember = {
     myLineNoPickup: "תוכנית ב׳: הקפצה ל{{place}} עד {{arrive}}",
     myLineManage: "אם אין רכב: אסתדר",
     /** `/my`: a request served by its plan B. */
-    served: "שובצת בתוכנית ב׳: הקפצה ל{{place}} עד {{arrive}}, איסוף מ{{pickupPlace}} {{pickup}}",
+    served: "שובצת בתוכנית ב׳: הקפצה ל{{place}} עד {{arrive}}, איסוף מ{{pickupPlace}} ב־{{pickup}}",
     servedNoPickup: "שובצת בתוכנית ב׳: הקפצה ל{{place}} עד {{arrive}}",
     original: "הבקשה המקורית: {{route}} {{day}} {{times}}",
     originalRoute: "{{trip}} ל{{destination}}",

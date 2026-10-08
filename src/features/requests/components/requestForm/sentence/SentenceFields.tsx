@@ -79,6 +79,8 @@ export interface SentenceFieldsProps {
   form: UseFormReturn<RequestFormValues>;
   variant: "weekly" | "quick" | "carNow";
   weekStart: string;
+  /** For the route preview of a plan-B הקפצה switch (`TripTypeFields`). */
+  departmentId?: string;
   day: string;
   errors: FieldErrors<RequestFormValues>;
   destinations: { id: string; name: string; aliases: string[]; zone: string; travel_minutes?: number | null; is_drop_point?: boolean }[];
@@ -153,7 +155,7 @@ function Seg({ prefix, suffix, loose, children }: { prefix?: string; suffix?: st
 
 export function SentenceFields(props: SentenceFieldsProps) {
   const {
-    form, variant, weekStart, day, errors, destinations, rideTypes, preferredCars, initialPreferredCarName, members, childOptions,
+    form, variant, weekStart, departmentId, day, errors, destinations, rideTypes, preferredCars, initialPreferredCarName, members, childOptions,
     tripShape, tripType, dropOffPickup, canDrive, seeksDriver, isQuickContext, showReturnDayPicker,
     returnAnotherDay, setReturnAnotherDay, isMultiDay, multiDaySpan, routeMinutes, recentDestinations, recentCompanionIds, stage, onStageChange,
     invalidSignal, quickContext, quickWindow, notices, onChildAdded, mode,
@@ -372,8 +374,8 @@ export function SentenceFields(props: SentenceFieldsProps) {
           <span className="shrink-0 font-medium">{tripLabel}</span>
           <span className="min-w-0 flex-1 truncate">{he.requestSentence.from}{originName} {he.requestSentence.to}{destinationName}</span>
         </span>
-        {planBLine ? <span className="text-muted-foreground" data-testid="recap-plan-b"><LtrText text={planBLine} /></span> : null}
-        <span className="text-muted-foreground" data-testid="recap-when">
+        {planBLine ? <span className="whitespace-normal break-words text-muted-foreground" data-testid="recap-plan-b"><LtrText text={planBLine} /></span> : null}
+        <span className="whitespace-normal break-words text-muted-foreground" data-testid="recap-when">
           {recapDay} · {windowOn
             ? <LtrText text={tv("requestSentence.window.summary", { hours: windowHoursLabel(windowHours), start: windowStart, end: windowEnd })} />
             : anchored ? <LtrText text={recapPieces.join(" · ")} /> : <span dir="ltr">{plainTimes}</span>}
@@ -654,7 +656,7 @@ export function SentenceFields(props: SentenceFieldsProps) {
       </FieldSheet>
 
       <FieldSheet open={sheet === "trip"} onOpenChange={(open) => !open && setSheet(null)} title={he.requestSentence.sheet.trip}>
-        <TripTypeFields control={control} form={form} variant={variant} tripType={tripType} dropOffPickup={dropOffPickup} canDrive={canDrive} pill />
+        <TripTypeFields control={control} form={form} variant={variant} tripType={tripType} dropOffPickup={dropOffPickup} canDrive={canDrive} pill departmentId={departmentId} destinations={destinations} />
       </FieldSheet>
 
       <FieldSheet open={sheet === "origin"} onOpenChange={(open) => !open && setSheet(null)} title={he.requestSentence.sheet.origin} hideFooter>

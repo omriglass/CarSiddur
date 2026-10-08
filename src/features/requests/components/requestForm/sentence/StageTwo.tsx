@@ -46,7 +46,8 @@ export function StageTwo({ form, errors, rideTypes, preferredCars, initialPrefer
         </button>
         <button
           type="button"
-          className="min-w-0 flex-1 truncate py-2 pe-3 text-start text-sm"
+          // R10U2: no `truncate` here — the recap's own rows truncate the route and wrap the plan-B / time text.
+          className="min-w-0 flex-1 py-2 pe-3 text-start text-sm"
           aria-label={he.requestSentence.recapEdit}
           onClick={onBack}
           data-testid="stage-recap"

@@ -63,7 +63,7 @@ export interface SubmitPayloadOptions {
    */
   layout?: "sentence" | "classic";
   isSeries?: boolean;
-  /** REQ §13.112 (a)/(b): the weekly sentence form also sends its "אם אין רכב" line (never quick / car-now / classic). */
+  /** REQ §13.112 (a)/(b): the weekly form (either layout) also sends its plan-B / "אסתדר" line (never quick / car-now). */
   planB?: boolean;
 }
 
@@ -111,7 +111,7 @@ export function windowPayload(values: RequestFormValues): Pick<SubmitRequestPayl
 }
 
 /**
- * REQ §13.112 (a)/(b), weekly sentence layout only. A הלוך-חזור / הלוך בלבד on one day always sends its state
+ * REQ §13.112 (a)/(b), weekly form (sentence and classic layouts, since 2026-10-08). A הלוך-חזור / הלוך בלבד on one day always sends its state
  * (`none` + `alternative: null` when the line was removed, so an edit clears a stored plan B); a הקפצה sends nothing —
  * the server keeps a stored plan B inactive. Plan B times are clock times on the request's own day (`values.day`),
  * so changing the main day moves plan B with it.
@@ -204,7 +204,8 @@ export function toSubmitRequestPayload(
     ],
     ...(options.layout === "sentence" && !options.isSeries ? anchorPayload(values) : {}),
     ...(options.layout === "sentence" && !options.isSeries ? windowPayload(values) : {}),
-    ...(options.layout === "sentence" && options.planB && !options.isSeries ? fallbackPayload(values) : {}),
+    // Both layouts show plan B (REQ §13.112 e), so both send it; quick / car-now never do.
+    ...(options.planB && !options.isSeries ? fallbackPayload(values) : {}),
   };
 }
 

@@ -87,6 +87,7 @@ import { CarPreferenceFields } from "./requestForm/CarPreferenceFields";
 import { DayAndTripShapeFields } from "./requestForm/DayAndTripShapeFields";
 import { DestinationRideTypeFields } from "./requestForm/DestinationRideTypeFields";
 import { FieldError } from "./requestForm/FieldError";
+import { PlanBFields } from "./requestForm/PlanBFields";
 import { OriginField } from "./requestForm/OriginField";
 import { StopsField } from "./requestForm/StopsField";
 import { FlexibilityFields, TimeFields } from "./requestForm/TimesFlexibilityFields";
@@ -1115,6 +1116,7 @@ export function RequestForm({
           form={form}
           variant={variant}
           weekStart={weekStart}
+          departmentId={departmentId}
           day={day}
           errors={form.formState.errors}
           destinations={destinationsQuery.data ?? []}
@@ -1202,6 +1204,8 @@ export function RequestForm({
           tripType={tripType}
           dropOffPickup={dropOffPickup}
           canDrive={canDrive}
+          departmentId={departmentId}
+          destinations={destinationsQuery.data ?? []}
         />
 
         <TimeFields
@@ -1231,6 +1235,9 @@ export function RequestForm({
             removeAriaLabel={he.request.removeStop}
           />
         ) : null}
+
+        {/* REQ §13.112 (e): the classic layout's own plan-B section (the sentence layout has the "אם אין רכב" line). */}
+        {variant === "weekly" ? <PlanBFields form={form} errors={form.formState.errors} destinations={destinationsQuery.data ?? []} /> : null}
 
         <PassengersFields
           control={form.control}

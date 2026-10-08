@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils";
 
 import { tripTypeToLegacyFields } from "../../tripType";
 import type { RequestFormValues } from "../../schema";
+import { useDropOffSwitch } from "./DropOffSwitch";
 
 const LABEL_BY_TYPE: Record<TripType, string> = {
   round_trip: he.request.tripTypeRoundTrip,
@@ -32,9 +33,13 @@ export interface TripTypeFieldsProps {
   canDrive: boolean;
   /** Sentence layout (§3.4a): bordered pills, the selected one tinted. */
   pill?: boolean;
+  /** REQ §13.112 (e): switching to הקפצה uses plan B (route minutes need the department) or asks for it (the place list). */
+  departmentId?: string;
+  destinations?: readonly { id: string; name: string; aliases: string[]; zone?: string; is_drop_point?: boolean }[];
 }
 
-export function TripTypeFields({ control, form, variant, tripType, dropOffPickup, canDrive, pill }: TripTypeFieldsProps) {
+export function TripTypeFields({ control, form, variant, tripType, dropOffPickup, canDrive, pill, departmentId, destinations = [] }: TripTypeFieldsProps) {
+  const dropOffSwitch = useDropOffSwitch({ form, variant, departmentId, destinations, anchored: !!pill });
   if (variant === "carNow") return null;
 
   function applyTripType(next: TripType, nextDropOffPickup: boolean) {
@@ -57,7 +62,7 @@ export function TripTypeFields({ control, form, variant, tripType, dropOffPickup
             value={field.value}
             onValueChange={(next) => {
               if (!next) return;
-              applyTripType(next as TripType, next === "drop_off" ? dropOffPickup : false);
+              dropOffSwitch.select(next as TripType, (type) => applyTripType(type, type === "drop_off" ? dropOffPickup : false));
             }}
             className={cn("flex-wrap justify-start", pill && "gap-1.5")}
             aria-label={t("request.tripTypeRoundTrip")}
@@ -86,6 +91,7 @@ export function TripTypeFields({ control, form, variant, tripType, dropOffPickup
           />
         </div>
       ) : null}
+      {dropOffSwitch.dialog}
     </FieldAnchor>
   );
 }

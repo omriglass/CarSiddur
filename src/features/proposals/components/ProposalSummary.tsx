@@ -18,7 +18,7 @@ interface ProposalSummaryProps {
   hostDriverName?: string | null;
   /** `origin` proposals only — resolved place/car names for the one-line "יציאה מ... במקום מ..." summary. */
   originChange?: { from: string | null; to: string | null; car?: string | null } | null;
-  /** `alternative` proposals only (REQ §13.112 a) -- the member's own plan B: "הקפצה ל… עד … ואיסוף משם ב…". */
+  /** `alternative` proposals only (REQ §13.112 a) -- the member's own plan B: "הקפצה ל… עד … ואיסוף משם ב…" (the main information of the proposal, so normal size - R10U3). */
   alternative?: { dropPlace: string; arriveBy: string; pickupAt: string | null; pickupPlace?: string } | null;
 }
 
@@ -54,7 +54,7 @@ export function ProposalSummary({
         <p className="text-xs text-muted-foreground">{tv("sadranProposal.hostDriverLabel", { name: hostDriverName })}</p>
       ) : null}
       {alternative ? (
-        <p className="text-xs text-muted-foreground" data-testid="proposal-alternative">
+        <p className="text-base font-medium text-foreground" data-testid="proposal-alternative">
           {tv("sadranProposal.alternativePlan", {
             dropPlace: alternative.dropPlace,
             dropTime: formatTime(new Date(alternative.arriveBy)),
