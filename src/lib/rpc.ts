@@ -141,6 +141,7 @@ export type ErrorCode =
   | "driver_not_member"
   | "luggage_capacity_violation"
   | "needs_large_trunk"
+  | "car_fields_locked"
   | "ride_week_not_public"
   | "push_unsupported"
   | "push_permission_denied"
@@ -276,6 +277,7 @@ const MESSAGE_TO_CODE: Record<string, ErrorCode> = {
   driver_not_member: "driver_not_member",
   luggage_capacity_violation: "luggage_capacity_violation",
   needs_large_trunk: "needs_large_trunk",
+  car_fields_locked: "car_fields_locked",
   ride_driver_already_assigned: "driver_assigned",
   ride_in_past: "ride_past",
   invalid_preferred_car: "preferred_car_invalid",
@@ -410,6 +412,7 @@ const CODE_TO_MESSAGE: Record<ErrorCode, string> = {
   driver_not_member: he.errors.driverNotMember,
   luggage_capacity_violation: he.errors.luggageCapacityViolation,
   needs_large_trunk: he.errors.needsLargeTrunk,
+  car_fields_locked: he.errors.carFieldsLocked,
   driver_assigned: he.rideCoordination.noLongerMissing,
   ride_past: he.rideCoordination.past,
   preferred_car_invalid: he.rideCoordination.invalidPreferredCar,

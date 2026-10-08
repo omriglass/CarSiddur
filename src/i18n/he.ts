@@ -725,6 +725,7 @@ export const he = {
     rideDriverNotAssignable: "אי אפשר לשנות את הנהג/ת של הנסיעה הזו",
     driverNotMember: "הנהג/ת שנבחר/ה אינו/ה חבר/ה במחלקה",
     luggageCapacityViolation: "לרכב אין תא מטען גדול לציוד של הבקשה הזו",
+    carFieldsLocked: "אין לך הרשאה לשנות את פרטי הרכב האלה — רק מנהל/ת, סדרן/ית המחלקה או אחראי/ת הרכב",
     needsLargeTrunk: "הבקשה צריכה תא מטען גדול, ולרכב אין. אפשר לשבץ בכל זאת באישור מפורש",
     rideSeatsExceeded: "אין מספיק מקום ברכב לכל האנשים שנבחרו",
     invalidRidePassenger: "פרטי הנוסע/ת אינם תקינים",

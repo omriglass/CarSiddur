@@ -4538,7 +4538,13 @@ CREATE OR REPLACE FUNCTION "public"."cars_protect_owner_editable_fields"() RETUR
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
 begin
-  if not (public.is_admin() or public.is_car_responsible(old.id)) then
+  if not (
+    public.is_admin()
+    or public.is_car_responsible(old.id)
+    or (public.can_manage_operations(old.department_id)
+        and (new.department_id is not distinct from old.department_id
+             or public.can_manage_operations(new.department_id)))
+  ) then
     if new.name is distinct from old.name
        or new.license_plate is distinct from old.license_plate
        or new.department_id is distinct from old.department_id
