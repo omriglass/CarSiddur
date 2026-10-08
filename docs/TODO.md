@@ -932,6 +932,38 @@ Before the run the plan-B time picker was moved onto the shared picker (`AnchorT
 ### Additional features
 - **R10F1** Warn when sending a plan B that would take a car another pending proposal holds (with R10B6). ✅ 2026-10-08 (`20261020100100`): `proposal_car_conflicts` + `car_conflicts` in the `send_proposal` result; the composer warns ("לשלוח בכל זאת?"); `qa:sadran` prints it.
 
+## QA run 11 findings (2026-10-08, seed 7012, week 11–17.10, department `qa-s7012`; **no QA Sadran** — QA user = Sonnet, members via the UI + plan-B Sadran steps via `qa:sadran`; **Tuesday 13.10**; focus: the whole request form, REQ §13.110–§13.112) — **awaiting owner triage**
+
+Verified OK: drop points via /admin/destinations; sentence form (anchors, one-sided flexibility, window + stop, named and unnamed people with correct seat counts, large trunk / specific car, notes on stage 1, repeat weekly, overlap dialog); plan B same/different/no pickup, "אסתדר", errors only after a submit; switching to הקפצה with plan B (plan B becomes main, restored on switching back) and without (dialog); multi-day hides plan B/window and edit shows the series panel; /my + edit match the DB for every save; classic form plan B + switch + cross-form editing keeps everything; 8 edits lost nothing (except R11B2); plan-B cycle (autofill unmet, board card, car-conflict warning, publish refused while pending, accept via /p with a different pickup → two legs, one /my item, remove cancels both); car-now in the demo department in both layouts; looks at 390/360/1280 + dark.
+
+### Bugs
+- **R11B1 — A save with no changes releases or re-places a booking (both forms).** m10 cf32c92a (assigned, published Tuesday): classic save without edits → three dialogs (overlap with a series, "השינוי יוריד אותך מהרכב", "אין רכב פנוי") → assigned → waitlisted, preferred car lost; m06 6045008e re-placed (SADRAN_ASSIGNED → AUTO_APPROVED_FREE_CAR); m21 a6ee007a sentence form warns "השינוי יוריד אותך מהרכב"; after publish, no-op saves of other days flipped submitted → assigned (m01 848b9758, m05 ebc33c7d, `is_late`) and submitted → waitlisted (m14 8b0a1102). Likely pre-existing (published-day edit rules, REQ §13.101, `20261007200000`).
+- **R11B2** A classic save of a window request cuts its slack to a form value (m06 6045008e: late flexes 4h → 2h), silently.
+- **R11B3** A member whose request stays waitlisted at publish gets no `published` notice at all (m11 256383a3, m31 b3030545).
+- **R11B4** `/requests/new?week=…&day=…` ignores `day` (stays on Sunday).
+
+### UI changes
+- **R11U1** Board unmet card "ב׳: הקפצה…" reads like the weekday ב׳ next to "ג 07:30" — say "תוכנית ב׳:".
+- **R11U2** `/my` "נוסעים נוספים" lists children only (member companions and guests missing); the public description is not shown (m05 0cfce3e9).
+- **R11U3** Who chip "אני, יהלי מלכה ועוד 2 ו־2 ילדים" — "ועוד 2" needs a noun ("ועוד 2 מבוגרים").
+- **R11U4** The edit screen shows the new-request overlap hint "אולי כדאי לערוך אותה במקום לפתוח בקשה חדשה"; the overlap dialog does not name the other request, and its "בטל/י את הקודמת" may cancel a whole series.
+- **R11U5** The origin (home) is offered as destination, stop and plan-B pickup place.
+- **R11U6** The stage-2 recap omits out-stops ("דרך חדרה").
+- **R11U7** The anchor toggle order differs between the main time sheet and the plan-B sheet.
+- **R11U8** The toast after switching to הקפצה covers the "אישור"/"המשך" button for seconds.
+- **R11U9** Car-now title shows "· קוד לא הוזן" ("לוקח/ת את ואן 7 מקומות · קוד לא הוזן").
+- **R11U10** At 360 px the open hour list pushes "מוקדם ומאוחר בנפרד" under the sticky "אישור"; the estimate line wraps to 3 lines; at 1280 "דרך" touches the stop chip.
+- **R11U11** Switching the outbound to "להגיע עד 09:30" moved the return 12:00 → 13:30 (return-follows-departure applied from the arrival) — question for the owner.
+- **R11U12** `/admin/destinations` table has no drop-point column/badge.
+
+### Missing obvious features
+- **R11M1** The board's plan-B composer ("הכן הצעה") shows no car or times; the server picked a car (and a different return car) silently.
+- **R11M2** `qa:sadran propose <req> alternative --car … --depart … --return … --return-car …` → `alternative_payload_invalid` (CLI or payload mismatch).
+- **R11M3** The `/p/<token>` plan-B page shows only the times — not the car, the departure time, or that it replaces the original request.
+
+### Additional features
+- **R11F1** (with R11B1) a "no changes" check on save. **R11F2** (with R11U2) companions and guests on /my cards. **R11F3** (with R11U12) a drop-point badge in the destinations list.
+
 ## Owner hands-on testing (2026-10-06) — bugs to fix
 - **OB1 — A multi-day request cannot be placed by hand on the board.** Dropping its card on a car fails with "בקשה רב-יומית — אפשר לבטל ולהגיש מחדש, לא לערוך" (`series_edit_not_supported`, MDR02). The board's manual placement goes through `edit_ride`, which refuses any request with a `series_id` (the v1 rule "a series is cancelled and resubmitted, never edited", REQ §13.77) — but placing is not editing the request. Expected: dropping a series leg (or the series card) on a car places the **whole series** on that car for all its days (the same hold auto-fill makes, `place_series`), refused only when the car is not free on every day; moving a placed series to another car likewise moves all its days. The Sadran's other path today is "להציע פחות ימים" / auto-fill only. Seen on the showcase department (S19). **Fixed 2026-10-06:** `place_series_on_car(series, car)` (Sadran; private-car owner rule; refuses an already placed series) wraps `place_series`; the board drop of a multi-day card calls it ("הבקשה הרב-יומית שובצה ברכב הזה לכל ימיה"). Verified through the API (3 rides, all legs assigned; second placement and a member refused). Not covered: moving an already placed series to another car.
 
