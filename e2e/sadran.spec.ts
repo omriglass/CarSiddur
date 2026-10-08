@@ -117,6 +117,24 @@ test.describe("sadran", { tag: ["@proposals", "@publication"] }, () => {
       if (currentError) throw currentError;
     }
 
+    // Own the preconditions: other specs share this week and may leave things that make publishing wait (draft or pending
+    // proposals incl. plan-B ones, rides that conflict — e.g. the previous test's auto-fill gives one member two overlapping
+    // rides). Publishing here must not depend on their cleanup: drop such rides and put their requests back to unplaced.
+    await service.from("proposals").delete().eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", weekStart).in("status", ["draft", "sent", "accepted"]);
+    const { data: conflicting } = await service.rpc("publication_conflicting_ride_ids", {
+      p_department_id: NEVO_DEPARTMENT_ID, p_week_start: weekStart,
+      p_days: Array.from({ length: 7 }, (_, index) => new Date(Date.parse(`${weekStart}T00:00:00Z`) + index * 86_400_000).toISOString().slice(0, 10)),
+    });
+    const conflictIds = [...new Set((conflicting ?? []) as string[])];
+    if (conflictIds.length) {
+      const { data: links } = await service.from("ride_requests").select("request_id").in("ride_id", conflictIds);
+      await service.from("ride_requests").delete().in("ride_id", conflictIds);
+      await service.from("rides").delete().in("id", conflictIds);
+      const requestIds = (links ?? []).map((link) => link.request_id as string);
+      if (requestIds.length) await service.from("requests").update({ status: "submitted", status_reason: null }).in("id", requestIds);
+    }
+    await page.reload();
+
     await page.getByRole("button", { name: he.publicationFlow.closeAndPublish, exact: true })
       .or(page.getByRole("button", { name: he.action.publish, exact: true })).click();
     await expect(page).toHaveURL(`${weekUrl}/publish`);

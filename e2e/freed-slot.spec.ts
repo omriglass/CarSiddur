@@ -26,6 +26,15 @@ const CANDIDATE_REQUEST_ID = "00000000-0000-0000-0000-000000000204";
 const FIXTURE_REQUEST_ID = "00000000-0000-0000-0000-000000000201";
 
 test.describe("freed slot (live week, single candidate)", { tag: ["@waitlist", "@solver"] }, () => {
+  // The test shifts the seeded fixture to today/tomorrow and lets the offer auto-assign member2's request. That leaves
+  // member2 with a booking on a day other specs use (quick-request.spec.ts files on Friday), so everything it changes is
+  // put back afterwards.
+  let restore: (() => Promise<void>) | null = null;
+  test.afterEach(async () => {
+    await restore?.();
+    restore = null;
+  });
+
   test("member1 cancels an assigned ride and member2's overlapping waitlisted request is auto-assigned", async ({
     browser,
   }) => {
@@ -42,6 +51,43 @@ test.describe("freed slot (live week, single candidate)", { tag: ["@waitlist", "
     );
 
     const client = serviceRoleClient();
+    const original = {
+      requests: (await client.from("requests").select("id, depart_at, return_at, status, status_reason").in("id", [FIXTURE_REQUEST_ID, CANDIDATE_REQUEST_ID])).data ?? [],
+      links: (await client.from("ride_requests").select("*").eq("ride_id", CANCELLED_RIDE_ID)).data ?? [],
+      ride: (await client.from("rides").select("starts_at, ends_at, blocked_until, car_id, status").eq("id", CANCELLED_RIDE_ID).single()).data,
+    };
+    restore = async () => {
+      const { data: offers } = await client.from("freed_slot_offers").select("id").eq("cancelled_ride_id", CANCELLED_RIDE_ID);
+      const offerIds = (offers ?? []).map((offer) => offer.id as string);
+      if (offerIds.length) await client.from("freed_slot_claims").delete().in("offer_id", offerIds);
+      // The freed car was handed to the candidate: undo that link before moving anything back.
+      // The link between ride and request rejects a day mismatch, so unlink while both move back.
+      const { data: candidateLinks } = await client.from("ride_requests").select("ride_id").eq("request_id", CANDIDATE_REQUEST_ID);
+      await client.from("ride_requests").delete().eq("request_id", CANDIDATE_REQUEST_ID);
+      await client.from("ride_requests").delete().eq("ride_id", CANCELLED_RIDE_ID);
+      // The auto-assignment created its own ride for the candidate on the freed car: remove it.
+      const created = [...new Set((candidateLinks ?? []).map((link) => link.ride_id as string))].filter((id) => id !== CANCELLED_RIDE_ID);
+      if (created.length) {
+        await client.from("ride_requests").delete().in("ride_id", created);
+        await client.from("rides").delete().in("id", created);
+      }
+      await client.from("freed_slot_offers").delete().eq("cancelled_ride_id", CANCELLED_RIDE_ID);
+      if (original.ride) {
+        const { error } = await client.from("rides").update({
+          starts_at: original.ride.starts_at, ends_at: original.ride.ends_at, blocked_until: original.ride.blocked_until, car_id: original.ride.car_id,
+          status: original.ride.status, cancelled_at: null, cancelled_by: null, cancel_reason: null,
+        }).eq("id", CANCELLED_RIDE_ID);
+        if (error) throw error;
+      }
+      for (const row of original.requests) {
+        await client.from("requests").update({ depart_at: row.depart_at, return_at: row.return_at, status: row.status, status_reason: row.status_reason }).eq("id", row.id);
+      }
+      if (original.links.length) {
+        const { error } = await client.from("ride_requests").insert(original.links.map(({ covers_out: _out, covers_return: _return, ...link }) => link));
+        if (error) throw error;
+      }
+      await client.from("notifications").delete().contains("data", { request_id: CANDIDATE_REQUEST_ID });
+    };
 
     // `/my` shows requests from today onward only (REQ §13.91). The seeded fixture — ride
     // ...301 with request ...201 and member2's overlapping waitlisted request ...204 — sits on

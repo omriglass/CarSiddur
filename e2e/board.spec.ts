@@ -366,10 +366,15 @@ test.describe.serial("board (bug-fix pass regression, fake-week data)", { tag: [
     await rideLocator.click();
     await expect(page.getByRole("heading", { name: "פרטי הנסיעה" })).toBeVisible();
 
-    // "העבר לרכב" select (bug #2's no-drag/touch fallback).
-    await page.getByTestId("ride-car-select").click();
-    await page.getByRole("option", { name: chosenCar?.name, exact: true }).click();
-    await page.getByRole("button", { name: "שמור שינויים" }).click();
+    // "העבר לרכב" select (bug #2's no-drag/touch fallback). Under load the board re-renders while the sheet opens (the
+    // solver preview lands), detaching the select mid-click: retry the whole open-select-save sequence, re-opening the
+    // ride sheet when it was closed by the re-render.
+    await expect(async () => {
+      if (!(await page.getByRole("heading", { name: "פרטי הנסיעה" }).isVisible())) await rideLocator.click({ timeout: 5_000 });
+      await page.getByTestId("ride-car-select").click({ timeout: 5_000 });
+      await page.getByRole("option", { name: chosenCar?.name, exact: true }).click({ timeout: 5_000 });
+      await page.getByRole("button", { name: "שמור שינויים" }).click({ timeout: 5_000 });
+    }).toPass({ timeout: 40_000 });
     await expect(page.getByRole("heading", { name: "פרטי הנסיעה" })).toBeHidden({ timeout: 10_000 });
 
     const { data: after } = await admin.from("rides").select("car_id, is_pinned").eq("id", chosenRide?.id as string).single();
@@ -466,21 +471,28 @@ test.describe.serial("board (bug-fix pass regression, fake-week data)", { tag: [
     // land on.
     await rideLocator.scrollIntoViewIfNeeded();
 
-    const rideBox = await rideLocator.boundingBox();
-    const targetColBox = await page.locator(`[data-car-col-id="${chosenCar!.id}"]`).boundingBox();
-    if (!rideBox || !targetColBox) throw new Error("ride block or target car column not found");
+    // Under load the board's layout shifts after the first measurement (the solver preview lands), so a drag can start
+    // from stale coordinates and do nothing: measure and drag again until the ride has really moved.
+    await expect(async () => {
+      await rideLocator.scrollIntoViewIfNeeded();
+      const rideBox = await rideLocator.boundingBox();
+      const targetColBox = await page.locator(`[data-car-col-id="${chosenCar!.id}"]`).boundingBox();
+      if (!rideBox || !targetColBox) throw new Error("ride block or target car column not found");
 
-    const startX = rideBox.x + rideBox.width / 2;
-    const startY = rideBox.y + rideBox.height / 2;
-    const endX = targetColBox.x + targetColBox.width / 2;
-    // Same y as the source block -> ~0 vertical (time) delta, snapped to exactly 0 by the dead zone.
-    const endY = startY;
+      const startX = rideBox.x + rideBox.width / 2;
+      const startY = rideBox.y + rideBox.height / 2;
+      const endX = targetColBox.x + targetColBox.width / 2;
+      // Same y as the source block -> ~0 vertical (time) delta, snapped to exactly 0 by the dead zone.
+      const endY = startY;
 
-    await page.mouse.move(startX, startY);
-    await page.mouse.down();
-    await page.mouse.move(startX + Math.sign(endX - startX) * 20, startY, { steps: 5 });
-    await page.mouse.move(endX, endY, { steps: 10 });
-    await page.mouse.up();
+      await page.mouse.move(startX, startY);
+      await page.mouse.down();
+      await page.mouse.move(startX + Math.sign(endX - startX) * 20, startY, { steps: 5 });
+      await page.mouse.move(endX, endY, { steps: 10 });
+      await page.mouse.up();
+
+      await expect.poll(async () => (await admin.from("rides").select("car_id").eq("id", chosenRide!.id).single()).data?.car_id, { timeout: 4_000 }).toBe(chosenCar!.id);
+    }).toPass({ timeout: 45_000 });
 
     await expect(async () => {
       const { data: after } = await admin
