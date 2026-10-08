@@ -64,6 +64,80 @@ export function TimeField15({ value, min, max, onChange, disabled, ...rest }: Ti
   const hours = Array.from({ length: highHour - lowHour + 1 }, (_, i) => lowHour + i);
   const portalContainer = useContext(SheetPortalContext);
 
+  const [inlineOpen, setInlineOpen] = useState(false);
+
+  const picker = (
+<div className="grid grid-cols-2 gap-2" dir="rtl">
+  <div role="listbox" aria-label={he.timeField.minuteListLabel}>
+    {[...QUARTER_HOURS, ...(draftHour === "23" && maxMinutes === 1439 ? [59] : [])].map((m) => (
+      <button
+        key={m}
+        type="button"
+        className={cn(
+          "flex h-11 w-full min-w-11 items-center justify-center rounded text-sm hover:bg-accent",
+          draftMinute === pad2(m) && "bg-accent font-semibold",
+        )}
+        onClick={() => commit(`${draftHour ?? "08"}:${pad2(m)}`)}
+      >
+        {pad2(m)}
+      </button>
+    ))}
+  </div>
+  {/* R10U6: six and a half rows high (the half row hints at the scroll) with a thin always-visible scrollbar and a fade at the foot, so it reads as scrollable. */}
+  <div className="relative max-h-72 overflow-y-auto [scrollbar-color:hsl(var(--muted-foreground)/0.6)_transparent] [scrollbar-width:thin]" role="listbox" aria-label={he.timeField.hourListLabel} data-testid="time-hour-list">
+    {hours.map((h) => (
+      <button
+        key={h}
+        type="button"
+        // R3B19: the list opens on the current hour, not on its first entry.
+        ref={draftHour === pad2(h) ? (el) => { if (el?.parentElement) el.parentElement.scrollTop = Math.max(0, el.offsetTop - 44); } : undefined}
+        className={cn(
+          "flex h-11 w-full min-w-11 items-center justify-center rounded text-sm hover:bg-accent",
+          draftHour === pad2(h) && "bg-accent font-semibold",
+        )}
+        onClick={() => commit(`${pad2(h)}:${draftMinute ?? "00"}`)}
+      >
+        {pad2(h)}
+      </button>
+    ))}
+    <div aria-hidden="true" className="pointer-events-none sticky bottom-0 -mt-6 h-6 bg-gradient-to-t from-popover to-transparent" />
+  </div>
+</div>
+  );
+
+  // Inside a sheet/dialog the lists open inline under the input (pushing content down; the sheet's own scroll
+  // handles the rest) instead of a popover that the sheet would clip. Outside one, the popover stays.
+  if (portalContainer) {
+    return (
+      <div
+        className="space-y-1"
+        onBlur={(event) => {
+          if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget as Node)) setInlineOpen(false);
+        }}
+      >
+        <Input
+          {...rest}
+          type="text"
+          value={draft}
+          dir="ltr"
+          inputMode="numeric"
+          disabled={disabled}
+          aria-expanded={inlineOpen}
+          aria-haspopup="dialog"
+          className="w-24 text-center tabular-nums"
+          onClick={() => setInlineOpen((open) => !open)}
+          onChange={(event) => setDraft(event.target.value)}
+          onBlur={(event) => commit(event.target.value)}
+        />
+        {inlineOpen ? (
+          <div className="mx-auto w-56 max-w-full rounded-md border bg-popover p-2 text-popover-foreground" data-testid="time-inline-picker">
+            {picker}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
   return (
     <Popover>
       <PopoverTrigger asChild>
@@ -79,7 +153,7 @@ export function TimeField15({ value, min, max, onChange, disabled, ...rest }: Ti
           onBlur={(event) => commit(event.target.value)}
         />
       </PopoverTrigger>
-      <PopoverPrimitive.Portal container={portalContainer ?? undefined}>
+      <PopoverPrimitive.Portal>
         <PopoverPrimitive.Content
           // R10U6: centred under the input, never closer than 8px to the screen edge (360px phones).
           align="center"
@@ -89,42 +163,7 @@ export function TimeField15({ value, min, max, onChange, disabled, ...rest }: Ti
             "z-50 w-56 max-w-[calc(100vw-1rem)] rounded-md border bg-popover p-2 text-popover-foreground shadow-md outline-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2",
           )}
         >
-          <div className="grid grid-cols-2 gap-2" dir="rtl">
-            <div role="listbox" aria-label={he.timeField.minuteListLabel}>
-              {[...QUARTER_HOURS, ...(draftHour === "23" && maxMinutes === 1439 ? [59] : [])].map((m) => (
-                <button
-                  key={m}
-                  type="button"
-                  className={cn(
-                    "flex h-11 w-full min-w-11 items-center justify-center rounded text-sm hover:bg-accent",
-                    draftMinute === pad2(m) && "bg-accent font-semibold",
-                  )}
-                  onClick={() => commit(`${draftHour ?? "08"}:${pad2(m)}`)}
-                >
-                  {pad2(m)}
-                </button>
-              ))}
-            </div>
-            {/* R10U6: six and a half rows high (the half row hints at the scroll) with a thin always-visible scrollbar and a fade at the foot, so it reads as scrollable. */}
-            <div className="relative max-h-72 overflow-y-auto [scrollbar-color:hsl(var(--muted-foreground)/0.6)_transparent] [scrollbar-width:thin]" role="listbox" aria-label={he.timeField.hourListLabel} data-testid="time-hour-list">
-              {hours.map((h) => (
-                <button
-                  key={h}
-                  type="button"
-                  // R3B19: the list opens on the current hour, not on its first entry.
-                  ref={draftHour === pad2(h) ? (el) => { if (el?.parentElement) el.parentElement.scrollTop = Math.max(0, el.offsetTop - 44); } : undefined}
-                  className={cn(
-                    "flex h-11 w-full min-w-11 items-center justify-center rounded text-sm hover:bg-accent",
-                    draftHour === pad2(h) && "bg-accent font-semibold",
-                  )}
-                  onClick={() => commit(`${pad2(h)}:${draftMinute ?? "00"}`)}
-                >
-                  {pad2(h)}
-                </button>
-              ))}
-              <div aria-hidden="true" className="pointer-events-none sticky bottom-0 -mt-6 h-6 bg-gradient-to-t from-popover to-transparent" />
-            </div>
-          </div>
+          {picker}
         </PopoverPrimitive.Content>
       </PopoverPrimitive.Portal>
     </Popover>

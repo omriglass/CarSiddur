@@ -8,17 +8,19 @@ import type { DestinationValue } from "@/components/DestinationCombobox";
 import { defaultPlanB, pickupAfterArrivalMoved } from "../../planB";
 import { isSamePlace, type RequestFormValues } from "../../schema";
 
-const OPTIONS = { shouldDirty: true, shouldValidate: true } as const;
 const ALT_FIELDS = ["altPlace", "altArriveBy", "altPickup", "altPickupAt", "altPickupPlace"] as const;
 
 export function planBActions(form: UseFormReturn<RequestFormValues>) {
+  // Errors appear only after a submit attempt (like the other classic fields): opening plan B fills defaults and an
+  // empty place must not be flagged before the member has tried to submit. After a submit attempt edits revalidate.
+  const options = () => ({ shouldDirty: true, shouldValidate: form.formState.submitCount > 0 });
   const set = {
-    fallback: (value: RequestFormValues["fallback"]) => form.setValue("fallback", value, OPTIONS),
-    altPlace: (value: RequestFormValues["altPlace"]) => form.setValue("altPlace", value, OPTIONS),
-    altArriveBy: (value: RequestFormValues["altArriveBy"]) => form.setValue("altArriveBy", value, OPTIONS),
-    altPickup: (value: RequestFormValues["altPickup"]) => form.setValue("altPickup", value, OPTIONS),
-    altPickupAt: (value: RequestFormValues["altPickupAt"]) => form.setValue("altPickupAt", value, OPTIONS),
-    altPickupPlace: (value: RequestFormValues["altPickupPlace"]) => form.setValue("altPickupPlace", value, OPTIONS),
+    fallback: (value: RequestFormValues["fallback"]) => form.setValue("fallback", value, options()),
+    altPlace: (value: RequestFormValues["altPlace"]) => form.setValue("altPlace", value, options()),
+    altArriveBy: (value: RequestFormValues["altArriveBy"]) => form.setValue("altArriveBy", value, options()),
+    altPickup: (value: RequestFormValues["altPickup"]) => form.setValue("altPickup", value, options()),
+    altPickupAt: (value: RequestFormValues["altPickupAt"]) => form.setValue("altPickupAt", value, options()),
+    altPickupPlace: (value: RequestFormValues["altPickupPlace"]) => form.setValue("altPickupPlace", value, options()),
   };
 
   return {

@@ -711,7 +711,6 @@ export function SentenceFields(props: SentenceFieldsProps) {
         open={sheet === "out"}
         onOpenChange={(open) => !open && setSheet(null)}
         title={he.requestSentence.sheet.outTime}
-        hasTimeField
       >
         <TimeAnchorSheet
           form={form}
@@ -730,7 +729,6 @@ export function SentenceFields(props: SentenceFieldsProps) {
         open={sheet === "return"}
         onOpenChange={(open) => !open && setSheet(null)}
         title={isPickup ? he.requestSentence.sheet.pickupTime : he.requestSentence.sheet.returnTime}
-        hasTimeField
       >
         <TimeAnchorSheet
           form={form}
@@ -763,14 +761,14 @@ export function SentenceFields(props: SentenceFieldsProps) {
         <FieldError message={errors.windowEnd?.message} />
       </FieldSheet>
 
-      <FieldSheet open={sheet === "windowStart"} onOpenChange={(open) => !open && setSheet(null)} title={he.requestSentence.window.startTitle} testId="window-start-sheet" hasTimeField>
+      <FieldSheet open={sheet === "windowStart"} onOpenChange={(open) => !open && setSheet(null)} title={he.requestSentence.window.startTitle} testId="window-start-sheet">
         <div className="flex justify-center" data-field="windowStart">
           <TimeField15 min={WINDOW_EARLIEST_START} max={WINDOW_LATEST_END} value={windowStart} onChange={(next) => changeWindow({ windowStart: next })} aria-label={he.requestSentence.window.startAria} />
         </div>
         <FieldError message={errors.windowEnd?.message} />
       </FieldSheet>
 
-      <FieldSheet open={sheet === "windowEnd"} onOpenChange={(open) => !open && setSheet(null)} title={he.requestSentence.window.endTitle} testId="window-end-sheet" hasTimeField>
+      <FieldSheet open={sheet === "windowEnd"} onOpenChange={(open) => !open && setSheet(null)} title={he.requestSentence.window.endTitle} testId="window-end-sheet">
         <div className="flex justify-center" data-field="windowEnd">
           <TimeField15 min={WINDOW_EARLIEST_START} max={WINDOW_LATEST_END} value={windowEnd} onChange={(next) => form.setValue("windowEnd", next, { shouldDirty: true, shouldValidate: true })} aria-label={he.requestSentence.window.endAria} />
         </div>

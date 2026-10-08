@@ -80,26 +80,41 @@ describe("typed time entry", () => {
   });
 });
 
-describe("popover portal container", () => {
-  // A modal Sheet/Dialog only allows touch-scroll within its own content subtree
-  // (`react-remove-scroll`); portaling to `document.body` (the default) makes the
-  // picker's own scrollable "שעה" list a DOM *sibling* instead of a descendant, which
-  // silently breaks its touch-scroll. `SheetPortalContext` fixes that by portaling
-  // into the ancestor's own node instead — assert the popover actually lands there.
-  it("portals into the DOM node given by SheetPortalContext instead of document.body", () => {
+describe("inside a sheet or dialog", () => {
+  // A modal Sheet/Dialog clips a popover and blocks its touch-scroll, so with `SheetPortalContext` the
+  // lists open inline under the input (the sheet grows only while open).
+  it("opens the hour/minute lists inline, not in a portal, and toggles on click", () => {
     const container = document.createElement("div");
     document.body.appendChild(container);
-    render(
+    const { container: root } = render(
       <SheetPortalContext.Provider value={container}>
         <TimeField15 value="08:00" onChange={vi.fn()} aria-label="time" />
       </SheetPortalContext.Provider>,
     );
+    expect(screen.queryAllByRole("listbox")).toHaveLength(0);
     fireEvent.click(screen.getByLabelText("time"));
-    expect(container.querySelector('[role="listbox"][aria-label="שעה"]')).not.toBeNull();
+    expect(root.querySelector('[role="listbox"][aria-label="שעה"]')).not.toBeNull();
+    expect(container.querySelector('[role="listbox"]')).toBeNull();
+    fireEvent.click(screen.getByLabelText("time"));
+    expect(screen.queryAllByRole("listbox")).toHaveLength(0);
     document.body.removeChild(container);
   });
 
-  it("falls back to portaling into document.body when no context is provided", () => {
+  it("picks an hour inline", () => {
+    const onChange = vi.fn();
+    render(
+      <SheetPortalContext.Provider value={document.body}>
+        <TimeField15 value="08:00" onChange={onChange} aria-label="time" />
+      </SheetPortalContext.Provider>,
+    );
+    fireEvent.click(screen.getByLabelText("time"));
+    fireEvent.click(screen.getByRole("button", { name: "22" }));
+    expect(onChange).toHaveBeenCalledWith("22:00");
+  });
+});
+
+describe("popover outside a sheet", () => {
+  it("portals into document.body when no context is provided", () => {
     render(<TimeField15 value="08:00" onChange={vi.fn()} aria-label="time" />);
     fireEvent.click(screen.getByLabelText("time"));
     expect(document.body.querySelector('[role="listbox"][aria-label="שעה"]')).not.toBeNull();

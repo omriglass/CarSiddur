@@ -243,11 +243,11 @@ export function PlanBLine({ form, errors, destinations, sheet, setSheet, routeMi
         <PlacePicker places={places} value={hasPickupPlace ? (pickupPlace as DestinationValue) : null} onPick={pickPickupPlace} placeholder={he.planB.placeSearch} />
       </FieldSheet>
 
-      <FieldSheet open={sheet === "planBArrive"} onOpenChange={(open) => !open && setSheet(null)} title={arriveTitle} testId="plan-b-arrive-sheet" hasTimeField>
+      <FieldSheet open={sheet === "planBArrive"} onOpenChange={(open) => !open && setSheet(null)} title={arriveTitle} testId="plan-b-arrive-sheet">
         <PlanBArriveBody arriveBy={arriveBy} routeMinutes={routeMinutes} onChange={actions.setArriveBy} error={errors.altArriveBy?.message ?? errors.altPickupAt?.message} />
       </FieldSheet>
 
-      <FieldSheet open={sheet === "planBPickup"} onOpenChange={(open) => !open && setSheet(null)} title={pickupTitle} testId="plan-b-pickup-sheet" hasTimeField>
+      <FieldSheet open={sheet === "planBPickup"} onOpenChange={(open) => !open && setSheet(null)} title={pickupTitle} testId="plan-b-pickup-sheet">
         <div className="flex flex-wrap gap-1.5" role="group" aria-label={pickupTitle}>
           <PillChip pressed={pickup} onClick={() => actions.setPickup(true)} data-testid="plan-b-pickup-on">{he.planB.pickupToggleOn}</PillChip>
           <PillChip pressed={!pickup} onClick={() => actions.setPickup(false)} data-testid="plan-b-pickup-off">{he.planB.pickupToggle}</PillChip>

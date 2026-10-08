@@ -4,7 +4,7 @@
 import type { ReactNode } from "react";
 
 import { PortalSheetContent } from "@/components/PortalSheetContent";
-import { CENTERED_ON_DESKTOP, TIME_FIELD_MIN_HEIGHT } from "@/components/sheetLayout";
+import { CENTERED_ON_DESKTOP } from "@/components/sheetLayout";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { he } from "@/i18n/he";
@@ -17,11 +17,9 @@ interface FieldSheetProps {
   /** Hide the "אישור" footer for sheets that close themselves on pick (places). */
   hideFooter?: boolean;
   testId?: string;
-  /** The sheet hosts a `TimeField15`: reserve room for its popover so it is never clipped. */
-  hasTimeField?: boolean;
 }
 
-export function FieldSheet({ open, onOpenChange, title, children, hideFooter, testId, hasTimeField }: FieldSheetProps) {
+export function FieldSheet({ open, onOpenChange, title, children, hideFooter, testId }: FieldSheetProps) {
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <PortalSheetContent
@@ -34,7 +32,7 @@ export function FieldSheet({ open, onOpenChange, title, children, hideFooter, te
           <SheetTitle className="text-base">{title}</SheetTitle>
           <SheetDescription className="sr-only">{title}</SheetDescription>
         </SheetHeader>
-        <div className={`space-y-3 pb-1 pt-3${hasTimeField ? ` ${TIME_FIELD_MIN_HEIGHT}` : ""}`}>{children}</div>
+        <div className="space-y-3 pb-1 pt-3">{children}</div>
         {hideFooter ? null : (
           <div className="sticky -bottom-4 -mx-4 -mb-4 border-t bg-background p-3">
             <Button type="button" className="w-full" onClick={() => onOpenChange(false)}>
