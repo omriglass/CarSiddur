@@ -6,6 +6,7 @@ import { withSmallTrunkRetry } from "@/lib/smallTrunk";
 import { siddurCarName } from "@/lib/siddurCarName";
 
 import { splitMemberProposals } from "./pendingProposal";
+import { extraAdultsFromStored, unnamedChildSeatsFromStored } from "./seatCounts";
 import { joinableRideRowSchema, templateSuggestionRowSchema, type TemplateSuggestionRow } from "./schema";
 
 import type { DestinationValue } from "@/components/DestinationCombobox";
@@ -87,6 +88,12 @@ export interface MyRequestRow {
   luggageWaived?: boolean;
   /** Named children on this request (`request_children` → `children.full_name`), UX_FLOWS.md §4.2. */
   childNames?: string[];
+  /** R11U2/R11F2: the other people on the request — member companions, named guests, unnamed adults/children — and the public description. */
+  companionNames?: string[];
+  guestNames?: string[];
+  extraAdults?: number;
+  unnamedChildren?: number;
+  rideDescription?: string | null;
   /** REQ §13.110 (b): how each end was entered — drives "להגיע עד 09:30" / "יציאה מחיפה 13:00" (`enteredTimes.ts`). */
   departAnchor?: TimeAnchor | null;
   arriveBy?: string | null;
@@ -167,7 +174,9 @@ const SELECT = `
     )
   ),
   proposals(id, type, reason:payload->>reason, expires_at, status, parties:proposal_parties(profile_id, response)),
-  request_children(child:children(full_name))
+  adults, child_seats, boosters, guest_passenger_names, ride_description,
+  companions:request_companions(profile:profiles(full_name)),
+  request_children(child:children(full_name, birth_year))
 `;
 
 /** `request_alternatives(...)` embed: one row per request, so PostgREST returns an object (an array is tolerated). */
@@ -274,7 +283,13 @@ interface RawRequestRow {
     status: ProposalStatus;
     parties: { profile_id: string; response: "pending" | "accepted" | "declined" }[] | null;
   }[];
-  request_children: { child: { full_name: string } | null }[];
+  request_children: { child: { full_name: string; birth_year: number | null } | null }[];
+  adults?: number;
+  child_seats?: number;
+  boosters?: number;
+  guest_passenger_names?: string[] | null;
+  ride_description?: string | null;
+  companions?: { profile: { full_name: string } | null }[] | null;
 }
 
 /**
@@ -296,6 +311,21 @@ function mapEmbeddedStops(rows: RawRequestRow["stops"], hasReturn: boolean): Rou
       active: true,
     }))
     .sort((a, b) => a.position - b.position);
+}
+
+/** R11U2: who else is on the request — named companions/guests and the unnamed remainder of the stored seat counts. */
+function mapOtherPeople(row: RawRequestRow): Pick<MyRequestRow, "companionNames" | "guestNames" | "extraAdults" | "unnamedChildren"> {
+  const companionNames = (row.companions ?? []).flatMap((entry) => entry.profile?.full_name ? [entry.profile.full_name] : []);
+  const guestNames = row.guest_passenger_names ?? [];
+  const year = Number((row.depart_at ?? row.return_at ?? row.week_start).slice(0, 4));
+  const linked = row.request_children.flatMap((entry) => (entry.child ? [entry.child] : []));
+  const adultChildren = linked.filter((child) => isAdultPassenger(child.birth_year, year)).length;
+  return {
+    companionNames,
+    guestNames,
+    extraAdults: extraAdultsFromStored({ storedAdults: row.adults ?? 1, companionsCount: (row.companions ?? []).length, guestsCount: guestNames.length, adultChildrenCount: adultChildren }),
+    unnamedChildren: unnamedChildSeatsFromStored({ storedChildSeats: row.child_seats ?? 0, seatChildrenCount: linked.length - adultChildren }) + (row.boosters ?? 0),
+  };
 }
 
 function mapRow(row: RawRequestRow, profileId?: string): MyRequestRow {
@@ -320,6 +350,8 @@ function mapRow(row: RawRequestRow, profileId?: string): MyRequestRow {
     luggageWaived: !!row.has_luggage && !!row.luggage_waived_at,
     hasPublishedRide: row.ride_requests.some((link) => link.ride && link.ride.status !== "cancelled" && link.ride.status !== "draft"),
     childNames: row.request_children.flatMap((entry) => entry.child?.full_name ? [entry.child.full_name] : []),
+    ...mapOtherPeople(row),
+    rideDescription: row.ride_description?.trim() || null,
     departAnchor: row.depart_anchor ?? null,
     arriveBy: row.arrive_by ?? null,
     returnAnchor: row.return_anchor ?? null,
@@ -721,6 +753,8 @@ export interface SubmitRequestResult {
    * result so the UI can say "no waiting list needed" rather than the ordinary success toast.
    */
   car_was_free?: boolean;
+  /** R11B1: an edit that changes nothing (also on the probe) — the server touched nothing and asks nothing. */
+  unchanged?: boolean;
   /**
    * REQ §13.101 f (QM5): an edit of a published/live-day request found no free car at the new
    * hours — nothing was changed; resubmit with `confirm_release: true` to release the current

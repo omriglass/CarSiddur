@@ -87,7 +87,12 @@ export function TimeAnchorSheet({
     if (end === "out") {
       const previous = entered;
       form.setValue(departAnchor === "arrive" ? "arriveByTime" : "departTime", next, { shouldDirty: true, shouldValidate: true });
-      // "Return follows departure": moving the outbound time moves the typed return by the same delta.
+      // "Return follows departure": moving the *departure* moves the typed return by the same delta.
+      // R11U11: only a typed departure counts — an "arrive by" time (and switching the anchor) never moves the return.
+      if (departAnchor === "arrive") {
+        setMovedReturn(null);
+        return;
+      }
       const currentReturn = enteredReturnTime({ returnAnchor, leaveDestTime: form.getValues("leaveDestTime"), returnTime: form.getValues("returnTime") });
       const shifted = shiftReturnByDepartureDelta(previous, next, currentReturn);
       if (shifted !== currentReturn) {

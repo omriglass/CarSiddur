@@ -1,4 +1,4 @@
-// REQ §13.112 (a)/(b): how the board states a request's fallback -- the member's plan B ("ב׳: הקפצה ל… עד … · איסוף …")
+// REQ §13.112 (a)/(b): how the board states a request's fallback -- the member's plan B ("תוכנית ב׳: הקפצה ל… עד … · איסוף …")
 // or "אסתדר". Pure; the same plan text is used by the proposal texts (`proposalText.ts`) and the draft labels.
 import { he, tv } from "@/i18n/he";
 import { formatTime } from "@/lib/time";
@@ -31,7 +31,7 @@ export function alternativePlanText(alt: Pick<RequestAlternativeEmbed, "drop_pla
   });
 }
 
-/** The line on an unmet card: "אסתדר", or "ב׳: הקפצה ל… עד …"; `null` when the request has no active fallback. */
+/** The line on an unmet card: "אסתדר", or "תוכנית ב׳: הקפצה ל… עד …"; `null` when the request has no active fallback. */
 export function fallbackLine(request: FallbackRequest): string | null {
   if (!hasActiveFallback(request)) return null;
   if (request.fallback === "manage") return he.sadranPlanB.manage;

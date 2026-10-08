@@ -1,6 +1,5 @@
 import { useCars, useMaintenanceBlocks, useTurnaroundMinutes } from "@/features/fleet/hooks";
 import { effectiveWeekSettings } from "@/lib/weekSettings";
-import { siddurCarName } from "@/lib/siddurCarName";
 import { toInstant } from "@/features/requests/mapper";
 
 import { computeCarFreeWindows, type CarFreeWindow } from "./freeWindows";
@@ -89,6 +88,7 @@ export function useDayFreeWindows(
     isLoading: carsQuery.isLoading || boardRidesQuery.isLoading || turnaroundQuery.isLoading || weeksQuery.isLoading || maintenanceQuery.isLoading,
     freeWindows,
     awayWindows,
-    cars: sharedCars.map((c) => ({ id: c.id, name: siddurCarName(c), type: c.type, baseLocationId: c.base_location_id ?? null })),
+    // R11U9: the plain car name - the access-code suffix belongs to the siddur, not the quick / car-now header.
+    cars: sharedCars.map((c) => ({ id: c.id, name: c.name, type: c.type, baseLocationId: c.base_location_id ?? null })),
   };
 }

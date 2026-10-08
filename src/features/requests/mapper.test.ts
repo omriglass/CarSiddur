@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { editReturnInstant, flexValueToInterval, intervalToFlexValue, toInstant, toSubmitRequestPayload } from "./mapper";
+import { editReturnInstant, flexIntervalToSend, flexValueToInterval, intervalToFlexValue, toInstant, toSubmitRequestPayload } from "./mapper";
 import { REQUEST_FORM_DEFAULTS, type RequestFormValues } from "./schema";
 
 // What Postgres echoes back (`select '15 min'::interval` etc.) for each literal
@@ -305,5 +305,24 @@ describe("toSubmitRequestPayload time window (REQ §13.112 c)", () => {
 
   it("an invalid window (too short) is not sent as one", () => {
     expect(toSubmitRequestPayload({ ...windowed, windowHours: 6 }, { layout: "sentence" }).duration_locked).toBe(false);
+  });
+});
+
+describe("flexIntervalToSend (R11B2)", () => {
+  it("keeps the exact stored slack while the rounded form value is unchanged", () => {
+    expect(flexIntervalToSend(120, "04:00:00")).toBe("04:00:00");
+    expect(flexIntervalToSend(15, "00:20:00")).toBe("00:20:00");
+    expect(flexIntervalToSend("any", "1 day")).toBe("1 day");
+  });
+  it("sends the chosen value once the member changed it", () => {
+    expect(flexIntervalToSend(60, "04:00:00")).toBe("1 hour");
+    expect(flexIntervalToSend(30)).toBe("30 min");
+  });
+  it("is used by the payload for an edit's stored flexibility", () => {
+    const values = { ...REQUEST_FORM_DEFAULTS, departmentId: "d", weekStart: "2026-10-11", day: "2026-10-13", dayIndex: 2, rideTypeId: "r", destination: { presetId: "x", name: "X" }, origin: { presetId: "h", name: "H" }, flexDepartLate: 120 as const, flexReturnLate: 120 as const } satisfies RequestFormValues;
+    const payload = toSubmitRequestPayload(values, { storedFlex: { departLate: "04:00:00", returnLate: "04:00:00", departEarly: "00:00:00" } });
+    expect(payload.flex_depart_late).toBe("04:00:00");
+    expect(payload.flex_return_late).toBe("04:00:00");
+    expect(payload.flex_depart_early).toBe("00:00:00");
   });
 });

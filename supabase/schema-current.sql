@@ -1544,6 +1544,142 @@ end $$;
 ALTER FUNCTION "public"."_request_fallback_from_payload"("p_payload" "jsonb", "p_current" "public"."request_fallback") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."_request_save_unchanged"("p_request_id" "uuid", "payload" "jsonb", "p_trip_type" "public"."trip_type", "p_trip_shape" "public"."trip_shape", "p_needs_car" boolean, "p_one_way_mode" "public"."leg_car_mode", "p_origin_id" "uuid", "p_origin_text" "text", "p_depart_at" timestamp with time zone, "p_return_at" timestamp with time zone, "p_placement_only" boolean DEFAULT false) RETURNS boolean
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  e public.requests%rowtype; a public.request_alternatives%rowtype;
+  v_ret timestamptz; v_kept timestamptz;
+  v_da public.time_anchor; v_ab timestamptz; v_ra public.time_anchor; v_ld timestamptz;
+  v_alt jsonb; v_ppl uuid; v_ptx text; v_drop_text text; v_pickup boolean; v_pickup_at timestamptz;
+begin
+  select * into e from public.requests where id = p_request_id;
+  if e.id is null or e.status = 'draft' then return false; end if;
+  if coalesce((payload ->> 'reserve_missing_driver')::boolean, false) or coalesce((payload ->> 'allow_small_trunk')::boolean, false)
+     or (nullif(payload ->> 'join_ride_id', '') is not null and nullif(payload ->> 'join_ride_id', '')::uuid is distinct from e.join_ride_id)
+     or e.series_id is not null or nullif(payload ->> 'series_id', '') is not null then
+    return false;
+  end if;
+
+  if e.destination_id is distinct from nullif(payload ->> 'destination_id', '')::uuid
+     or e.destination_text is distinct from nullif(payload ->> 'destination_text', '')
+     or (not p_placement_only and e.ride_type_id is distinct from (payload ->> 'ride_type_id')::uuid)
+     or e.origin_id is distinct from p_origin_id or e.origin_text is distinct from p_origin_text
+     or e.trip_type is distinct from p_trip_type or e.trip_shape is distinct from p_trip_shape
+     or e.depart_at is distinct from p_depart_at then
+    return false;
+  end if;
+
+  -- a one-way request stores no return_at (the last real one is kept in kept_return_at), exactly as the update does
+  if p_trip_shape = 'one_way_to' then
+    v_kept := coalesce(p_return_at, e.return_at, e.kept_return_at); v_ret := null;
+  else
+    v_ret := coalesce(p_return_at, e.kept_return_at); v_kept := null;
+  end if;
+  if e.return_at is distinct from v_ret or e.kept_return_at is distinct from v_kept then return false; end if;
+
+  if e.adults is distinct from coalesce((payload ->> 'adults')::smallint, e.adults)
+     or e.child_seats is distinct from coalesce((payload ->> 'child_seats')::smallint, e.child_seats)
+     or e.boosters is distinct from coalesce((payload ->> 'boosters')::smallint, e.boosters)
+     or e.has_luggage is distinct from coalesce((payload ->> 'has_luggage')::boolean, e.has_luggage)
+     or e.flex_depart_early is distinct from coalesce(nullif(payload ->> 'flex_depart_early', '')::interval, e.flex_depart_early)
+     or e.flex_depart_late is distinct from coalesce(nullif(payload ->> 'flex_depart_late', '')::interval, e.flex_depart_late)
+     or e.flex_return_early is distinct from coalesce(nullif(payload ->> 'flex_return_early', '')::interval, e.flex_return_early)
+     or e.flex_return_late is distinct from coalesce(nullif(payload ->> 'flex_return_late', '')::interval, e.flex_return_late)
+     or e.freed_slot_opt_out is distinct from coalesce((payload ->> 'freed_slot_opt_out')::boolean, e.freed_slot_opt_out) then
+    return false;
+  end if;
+  if not p_placement_only and payload ? 'notes' and coalesce(nullif(payload ->> 'notes', ''), '') is distinct from coalesce(e.notes, '') then return false; end if;
+  if not p_placement_only and payload ? 'preferred_car_id' and nullif(payload ->> 'preferred_car_id', '')::uuid is distinct from e.preferred_car_id then return false; end if;
+  if not p_placement_only and payload ? 'ride_description' and coalesce(payload ->> 'ride_description', '') is distinct from coalesce(e.ride_description, '') then return false; end if;
+
+  -- how each end was entered (REQ §13.110 b): an absent key keeps the stored value
+  v_da := e.depart_anchor; v_ab := e.arrive_by; v_ra := e.return_anchor; v_ld := e.leave_dest_at;
+  if payload ? 'depart_anchor' or payload ? 'arrive_by' then
+    v_da := coalesce(nullif(payload ->> 'depart_anchor', '')::public.time_anchor, v_da);
+    v_ab := nullif(payload ->> 'arrive_by', '')::timestamptz;
+  end if;
+  if payload ? 'return_anchor' or payload ? 'leave_dest_at' then
+    v_ra := coalesce(nullif(payload ->> 'return_anchor', '')::public.time_anchor, v_ra);
+    v_ld := nullif(payload ->> 'leave_dest_at', '')::timestamptz;
+  end if;
+  if v_da is distinct from e.depart_anchor or v_ab is distinct from e.arrive_by
+     or v_ra is distinct from e.return_anchor or v_ld is distinct from e.leave_dest_at then return false; end if;
+  if payload ? 'duration_locked' and coalesce((payload ->> 'duration_locked')::boolean, false) is distinct from e.duration_locked then return false; end if;
+
+  -- plan B / "I will manage" (REQ §13.112 a/b)
+  if not p_placement_only and public._request_fallback_from_payload(payload, e.fallback) is distinct from e.fallback then return false; end if;
+  select * into a from public.request_alternatives where request_id = e.id;
+  v_alt := payload -> 'alternative';
+  if p_placement_only then
+    null;
+  elsif jsonb_typeof(v_alt) = 'object' then
+    if a.id is null then return false; end if;
+    v_drop_text := nullif(btrim(coalesce(v_alt ->> 'drop_place_text', '')), '');
+    v_pickup := coalesce((v_alt ->> 'pickup')::boolean, false);
+    v_pickup_at := null;
+    if v_pickup then v_pickup_at := nullif(v_alt ->> 'pickup_at', '')::timestamptz; end if;
+    v_ppl := nullif(v_alt ->> 'pickup_place_id', '')::uuid;
+    v_ptx := nullif(btrim(coalesce(v_alt ->> 'pickup_place_text', '')), '');
+    if v_ppl is not distinct from nullif(v_alt ->> 'drop_place_id', '')::uuid then v_ppl := null; end if;
+    if v_ptx is not null and lower(v_ptx) = lower(coalesce(v_drop_text, '')) then v_ptx := null; end if;
+    if a.drop_place_id is distinct from nullif(v_alt ->> 'drop_place_id', '')::uuid
+       or a.drop_place_text is distinct from v_drop_text
+       or a.arrive_by is distinct from nullif(v_alt ->> 'arrive_by', '')::timestamptz
+       or a.pickup is distinct from v_pickup
+       or a.pickup_at is distinct from v_pickup_at
+       or a.pickup_place_id is distinct from v_ppl or a.pickup_place_text is distinct from v_ptx then
+      return false;
+    end if;
+  elsif payload ? 'alternative' and jsonb_typeof(v_alt) = 'null' then
+    if a.id is not null and a.applied_at is null then return false; end if;
+  elsif payload ? 'alternative' then
+    return false;
+  end if;
+
+  -- stops: the payload is the complete list, in route order per leg (replace_request_stops numbers them)
+  if payload ? 'stops' then
+    if jsonb_typeof(payload -> 'stops') is distinct from 'array' then return false; end if;
+    if exists (
+      (select x.leg, row_number() over (partition by x.leg order by x.ord)::int, x.place_id, x.place_text
+         from (select t.ord, t.item ->> 'leg' as leg, nullif(t.item ->> 'place_id', '')::uuid as place_id, nullif(t.item ->> 'place_text', '') as place_text
+                 from jsonb_array_elements(payload -> 'stops') with ordinality t(item, ord)) x
+       except
+       select s.leg::text, s."position"::int, s.place_id, s.place_text from public.request_stops s where s.request_id = e.id)
+      union all
+      (select s.leg::text, s."position"::int, s.place_id, s.place_text from public.request_stops s where s.request_id = e.id
+       except
+       select x.leg, row_number() over (partition by x.leg order by x.ord)::int, x.place_id, x.place_text
+         from (select t.ord, t.item ->> 'leg' as leg, nullif(t.item ->> 'place_id', '')::uuid as place_id, nullif(t.item ->> 'place_text', '') as place_text
+                 from jsonb_array_elements(payload -> 'stops') with ordinality t(item, ord)) x)
+    ) then return false; end if;
+  end if;
+
+  -- companions (a set) and named guests (a list), when sent
+  if payload ? 'companion_ids' then
+    if jsonb_typeof(payload -> 'companion_ids') not in ('array', 'null') then return false; end if;
+    if array(select v::uuid from jsonb_array_elements_text(case when payload -> 'companion_ids' = 'null'::jsonb then '[]'::jsonb else payload -> 'companion_ids' end) v order by 1)
+       is distinct from array(select rc.profile_id from public.request_companions rc where rc.request_id = e.id order by 1) then return false; end if;
+    -- an unchanged list is still validated: a companion who has left the department is never "unchanged"
+    if exists (select 1 from public.request_companions rc where rc.request_id = e.id and not exists (
+         select 1 from public.profiles p join public.department_members dm on dm.profile_id = p.id
+         where p.id = rc.profile_id and p.approval_status = 'approved' and dm.department_id = e.department_id and dm.removed_at is null)) then
+      return false;
+    end if;
+  end if;
+  if payload ? 'guest_passenger_names' then
+    if jsonb_typeof(payload -> 'guest_passenger_names') not in ('array', 'null') then return false; end if;
+    if array(select jsonb_array_elements_text(case when payload -> 'guest_passenger_names' = 'null'::jsonb then '[]'::jsonb else payload -> 'guest_passenger_names' end))
+       is distinct from coalesce(e.guest_passenger_names, '{}'::text[]) then return false; end if;
+  end if;
+  return true;
+end $$;
+
+
+ALTER FUNCTION "public"."_request_save_unchanged"("p_request_id" "uuid", "payload" "jsonb", "p_trip_type" "public"."trip_type", "p_trip_shape" "public"."trip_shape", "p_needs_car" boolean, "p_one_way_mode" "public"."leg_car_mode", "p_origin_id" "uuid", "p_origin_text" "text", "p_depart_at" timestamp with time zone, "p_return_at" timestamp with time zone, "p_placement_only" boolean) OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."_restore_original_main"("p_request_id" "uuid") RETURNS "void"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -2144,6 +2280,8 @@ begin
   v_ret_car := coalesce(nullif(p_payload ->> 'return_car_id', '')::uuid, v_car);
   v_dep := nullif(p_payload ->> 'depart_at', '')::timestamptz;
   v_ret := nullif(p_payload ->> 'return_at', '')::timestamptz;
+  -- R11M1 (owner 2026-10-08): the server never picks a car for a plan-B proposal; the Sadran's choice (board suggestion or composer) is required.
+  if v_car is null then raise exception 'alternative_car_required' using errcode = 'P0001'; end if;
   v_day := (a.arrive_by at time zone 'Asia/Jerusalem')::date;
   -- a pickup from another place is its own request (sibling) at apply: the proposal then carries no `return_at`, the pickup car and the exact pickup time
   v_diff := a.pickup and (a.pickup_place_id is not null or a.pickup_place_text is not null);
@@ -10195,7 +10333,7 @@ begin
     ), days_agg as (
       select requester_id, event_kind, string_agg(public.day_date_label(request_day), ', ' order by request_day) as days_list
       from (select distinct c.requester_id, c.event_kind, c.request_day from classified c where c.event_kind is not null
-        and (c.event_kind <> 'published' or exists (select 1 from public.ride_requests rr join public.rides x on x.id = rr.ride_id
+        and (c.event_kind <> 'published' or c.status = 'waitlisted' or exists (select 1 from public.ride_requests rr join public.rides x on x.id = rr.ride_id
                 where rr.request_id = c.id and x.status <> 'cancelled'))) d
       group by requester_id, event_kind
     ), chg_lines as (
@@ -13874,6 +14012,7 @@ declare
   v_fallback public.request_fallback := 'none';
   v_is_edit boolean := nullif(payload ->> 'request_id', '') is not null;
   v_prev_fallback public.request_fallback := 'none'; v_prev_depart timestamptz;
+  v_unchanged boolean := false; v_neutral boolean := false;
 begin
   if v_requester_id <> v_actor then
     if not public.can_manage_week(v_department_id, v_week_start) then
@@ -13997,16 +14136,46 @@ begin
     elsif not v_can_manage and (v_week.phase not in ('open','solving') or now() > v_week.close_at or now() < v_week.open_at) then raise exception 'request_window_closed'; end if;
     if v_existing.served_by_alternative then raise exception 'request_served_by_alternative' using errcode = 'P0001'; end if;
     if v_existing.status in ('cancelled','withdrawn') or (not v_published_edit and exists(select 1 from public.ride_requests rr join public.rides r on r.id=rr.ride_id where rr.request_id=v_request_id and r.status not in ('draft','cancelled'))) then raise exception 'request_not_editable'; end if;
+    -- REQ §13.101 (h), R11B1: a save whose effective content equals the stored request changes nothing.
+    v_unchanged := public._request_save_unchanged(v_request_id, payload, v_trip_type, v_trip_shape, v_needs_car, v_one_way_mode,
+      v_origin_id, v_origin_text, v_depart_at, v_return_at);
+    -- placement-neutral edit on a published/live day: only notes / description / ride type / preferred car / plan B changed
+    v_neutral := v_published_edit and not v_unchanged and public._request_save_unchanged(v_request_id, payload, v_trip_type, v_trip_shape, v_needs_car,
+      v_one_way_mode, v_origin_id, v_origin_text, v_depart_at, v_return_at, true);
     -- REQ §13.102 (f), R2B20: the form asks before saving whether an edit would lose the current booking.
     if v_probe_only then
-      return jsonb_build_object('probe_only', true, 'request_id', v_request_id,
-        'would_lose_booking', v_existing.status in ('assigned', 'merged', 'proposed') or exists (
+      return jsonb_build_object('probe_only', true, 'request_id', v_request_id, 'unchanged', v_unchanged, 'placement_neutral', v_neutral,
+        'would_lose_booking', not v_unchanged and not v_neutral and (v_existing.status in ('assigned', 'merged', 'proposed') or exists (
           select 1 from public.ride_requests rr join public.rides r on r.id = rr.ride_id
-          where rr.request_id = v_request_id and r.status <> 'cancelled'));
+          where rr.request_id = v_request_id and r.status <> 'cancelled')));
     end if;
     if not (payload ? 'expected_version') then perform public.raise_stale_version(); end if;
     if v_existing.version is distinct from (payload ->> 'expected_version')::int then
       perform public.raise_stale_version();
+    end if;
+    if v_unchanged then
+      return jsonb_build_object('ok', true, 'unchanged', true, 'request_id', v_request_id, 'status', v_existing.status,
+        'is_late', v_existing.is_late, 'warnings', '[]'::jsonb, 'overlaps', '[]'::jsonb);
+    end if;
+    if v_neutral then
+      -- stored in place (the plan B is validated and saved by the same helper a normal edit uses)
+      perform set_config('app.audit_reason', 'submit_request', true);
+      update public.requests set
+        notes = case when payload ? 'notes' then nullif(payload ->> 'notes', '') else notes end,
+        ride_type_id = coalesce((payload ->> 'ride_type_id')::uuid, ride_type_id),
+        ride_description = case when payload ? 'ride_description' then payload ->> 'ride_description' else ride_description end,
+        preferred_car_id = case when payload ? 'preferred_car_id' then nullif(payload ->> 'preferred_car_id', '')::uuid else preferred_car_id end,
+        fallback = public._request_fallback_from_payload(payload, fallback)
+      where id = v_request_id;
+      if payload ? 'fallback' or payload ? 'alternative' or v_existing.fallback <> 'none' then
+        perform public._save_request_alternative(v_request_id, payload, v_existing.depart_at);
+      end if;
+      perform public.enqueue_notification(s.profile_id, 'request_changed', v_department_id, v_week_start,
+        jsonb_build_object('requestId', v_request_id::text), jsonb_build_object('request_id', v_request_id),
+        format('request_changed:%s:%s', v_request_id, now()))
+      from public.sadranim_of(v_department_id, v_week_start) as s(profile_id);
+      return jsonb_build_object('ok', true, 'placement_neutral', true, 'unchanged', false, 'request_id', v_request_id,
+        'status', v_existing.status, 'is_late', v_existing.is_late, 'warnings', '[]'::jsonb, 'overlaps', '[]'::jsonb);
     end if;
     if v_published_edit then
       v_booking := public.request_booking_info(v_request_id);
@@ -14023,7 +14192,7 @@ begin
           null;
         end;
         -- would_place: the probe found a car (only asked because the member drives others).
-        return jsonb_build_object('needs_confirmation', 'release_to_waitlist',
+        return jsonb_build_object('needs_confirmation', 'release_to_waitlist', 'unchanged', false,
           'drives_others', (v_booking ->> 'drives_others')::boolean,
           'would_place', coalesce(v_probe ->> 'status', '') = 'assigned');
       end if;
@@ -14031,7 +14200,7 @@ begin
   end if;
 
   if v_probe_only then
-    return jsonb_build_object('probe_only', true, 'would_lose_booking', false);
+    return jsonb_build_object('probe_only', true, 'would_lose_booking', false, 'unchanged', false);
   end if;
 
   -- A one-way shape stores no return_at: remember the last real one (payload, else the stored one) in
@@ -21046,6 +21215,11 @@ GRANT ALL ON FUNCTION "public"."_publish_ride_line"("p_request_id" "uuid", "p_ri
 
 REVOKE ALL ON FUNCTION "public"."_request_fallback_from_payload"("p_payload" "jsonb", "p_current" "public"."request_fallback") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_request_fallback_from_payload"("p_payload" "jsonb", "p_current" "public"."request_fallback") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_request_save_unchanged"("p_request_id" "uuid", "payload" "jsonb", "p_trip_type" "public"."trip_type", "p_trip_shape" "public"."trip_shape", "p_needs_car" boolean, "p_one_way_mode" "public"."leg_car_mode", "p_origin_id" "uuid", "p_origin_text" "text", "p_depart_at" timestamp with time zone, "p_return_at" timestamp with time zone, "p_placement_only" boolean) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_request_save_unchanged"("p_request_id" "uuid", "payload" "jsonb", "p_trip_type" "public"."trip_type", "p_trip_shape" "public"."trip_shape", "p_needs_car" boolean, "p_one_way_mode" "public"."leg_car_mode", "p_origin_id" "uuid", "p_origin_text" "text", "p_depart_at" timestamp with time zone, "p_return_at" timestamp with time zone, "p_placement_only" boolean) TO "service_role";
 
 
 

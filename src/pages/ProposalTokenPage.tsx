@@ -12,6 +12,7 @@ import {
   useProposalSummaryQuery,
   useSadranContactQuery,
 } from "@/features/proposals/hooks";
+import { planBLines } from "@/features/proposals/planBAnswer";
 import { classifyProposalScreenState } from "@/features/proposals/screenState";
 import { useSetFreedSlotOptOutMutation } from "@/features/requests/hooks";
 import { buildWaUrl } from "@/features/sadran/proposals/waLink";
@@ -176,6 +177,21 @@ export function ProposalTokenPage() {
   );
 }
 
+/** R11M3 (REQ §13.112 a): the car, when it leaves and arrives, the pickup and what accepting replaces — the answer needs all of it. */
+function PlanBDetails({ summary }: { summary: ProposalSummary }) {
+  if (!summary.alternative) return null;
+  const lines = planBLines(summary.alternative, summary.request);
+  return (
+    <div className="space-y-1 rounded-md border p-3 text-sm" data-testid="proposal-plan-b-details">
+      {lines.car ? <p className="font-medium" data-testid="plan-b-car">{lines.car}</p> : null}
+      {lines.leave ? <p data-testid="plan-b-leave">{lines.leave}</p> : null}
+      {lines.pickup ? <p data-testid="plan-b-pickup">{lines.pickup}{lines.back ? ` · ${lines.back}` : ""}</p> : null}
+      {lines.otherCar ? <p className="font-medium text-amber-700" data-testid="plan-b-other-car">{lines.otherCar}</p> : null}
+      {lines.replaces ? <p className="text-muted-foreground" data-testid="plan-b-replaces">{lines.replaces}</p> : null}
+    </div>
+  );
+}
+
 interface ProposalAnswerBodyProps {
   summary: ProposalSummary;
   sadranPhone: string | null;
@@ -216,6 +232,8 @@ function ProposalAnswerBody({
           alternative={summary.alternative}
         />
       </div>
+
+      {summary.alternative ? <PlanBDetails summary={summary} /> : null}
 
       {!isDenyVariant && !isOriginVariant ? (
         <div>

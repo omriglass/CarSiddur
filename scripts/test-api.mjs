@@ -185,6 +185,13 @@ try {
       JSON.stringify(edited.data));
     const stale = await m1.rpc("submit_request", { payload: payload({ request_id: requestId, expected_version: mine.data.version }) });
     check("  a stale expected_version is refused", !!stale.error && /stale/.test(stale.error.message), errText(stale));
+    // REQ §13.101 (h), R11B1: a save with no changes changes nothing (same payload, current version).
+    const same = await m1.rpc("submit_request", { payload: payload({ request_id: requestId, expected_version: edited.data.version, adults: 2, return_at: at(1, 2, 11) }) });
+    check("  a no-op resave answers unchanged:true", !same.error && same.data?.unchanged === true && same.data?.ok === true, errText(same));
+    const afterSame = await m1.from("requests").select("version,updated_at,status").eq("id", requestId).single();
+    check("  and changes nothing (version, updated_at, status)", afterSame.data?.version === edited.data.version && afterSame.data?.status === "submitted", JSON.stringify(afterSame.data));
+    const probe = await m1.rpc("submit_request", { payload: payload({ request_id: requestId, expected_version: edited.data.version, adults: 2, return_at: at(1, 2, 11), probe_only: true }) });
+    check("  a probe reports unchanged", !probe.error && probe.data?.unchanged === true, errText(probe));
     const other = await m2.rpc("submit_request", { payload: payload({ request_id: requestId, expected_version: edited.data.version }) });
     check("  another member cannot edit it", !!other.error, errText(other));
 
@@ -508,6 +515,8 @@ try {
       p_payload: { car_id: CAR_A, depart_at: at(9, 2, 6, 30), return_at: at(9, 2, 12, 30) }, p_reason_he: "plan B" });
     check("Sadran drafts the alternative proposal", !p.error && !!p.data, errText(p));
     if (!p.data) return;
+    const noCar = await sadran.rpc("create_proposal", { p_request_id: q, p_ride_id: null, p_type: "alternative", p_payload: { depart_at: at(9, 2, 6, 30), return_at: at(9, 2, 12, 30) }, p_reason_he: "x" });
+    check("  a plan-B proposal without a car is refused (alternative_car_required), no silent pick", !!noCar.error && /alternative_car_required/.test(noCar.error.message), errText(noCar));
     const member = await m1.rpc("create_proposal", { p_request_id: q, p_ride_id: null, p_type: "alternative", p_payload: { car_id: CAR_A, depart_at: at(9, 2, 6, 30) }, p_reason_he: "x" });
     check("  a member cannot create one", !!member.error, errText(member));
     const fp = must(await sadran.rpc("publish_scores_fingerprint", { p_department_id: DEPT, p_week_start: wk }), "fingerprint");
@@ -529,6 +538,29 @@ try {
     check("  the original trip is kept whole", !!alt.applied_at && alt.original_main?.trip_type === "round_trip" && alt.original_main?.destination_id === DEST);
     const edit = await m1.rpc("submit_request", { payload: { ...payload, request_id: q, expected_version: row.version } });
     check("  the served request cannot be edited", !!edit.error && /request_served_by_alternative/.test(edit.error.message), errText(edit));
+  });
+
+  await section("neutral: a notes-only edit of a placed request on a published day keeps its booking (REQ 13.101 l)", async () => {
+    const wk = await mkPublishedWeek(10);
+    const payload = (extra = {}) => ({
+      department_id: DEPT, week_start: wk, destination_id: DEST, ride_type_id: TYPE, trip_shape: "round_trip", trip_type: "round_trip",
+      depart_at: at(10, 2, 6), return_at: at(10, 2, 10), adults: 1, child_seats: 0, boosters: 0, has_luggage: false, stops: [], ...extra,
+    });
+    const sub = await m1.rpc("submit_request", { payload: payload() });
+    check("member files a round trip on a published day and it is placed", !sub.error && sub.data?.status === "assigned", errText(sub));
+    const q = sub.data?.request_id;
+    if (!q) return;
+    const before = await reqRow(q);
+    const rideOf = async () => must(await svc.from("ride_requests").select("ride_id").eq("request_id", q).limit(1), "ride link")[0]?.ride_id;
+    const rideBefore = await rideOf();
+    const edit = payload({ request_id: q, expected_version: before.version, notes: "only a note" });
+    const probe = await m1.rpc("submit_request", { payload: { ...edit, probe_only: true } });
+    check("  the probe says placement-neutral, no booking lost", !probe.error && probe.data?.placement_neutral === true && probe.data?.would_lose_booking === false, errText(probe));
+    const save = await m1.rpc("submit_request", { payload: edit });
+    check("  the save answers without a confirmation", !save.error && save.data?.placement_neutral === true && !save.data?.needs_confirmation, errText(save));
+    const after = await reqRow(q);
+    check("  note stored; same ride, still assigned, same reason", after.notes === "only a note" && (await rideOf()) === rideBefore && after.status === "assigned" && after.status_reason === before.status_reason,
+      JSON.stringify([after.notes, after.status, after.status_reason]));
   });
 
 } finally {

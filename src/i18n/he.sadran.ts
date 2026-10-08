@@ -281,6 +281,16 @@ export const heSadran = {
     carConflictTitle: "הרכב כבר מוחזק בהצעה אחרת",
     carConflictLine: "ההצעה של {{name}} כבר מחזיקה את {{car}} בשעות ⁦{{from}}–{{to}}⁩.",
     carConflictHelp: "אם שתי ההצעות יאושרו, השנייה תבוטל. לשלוח בכל זאת?",
+    /** R11M1 (REQ §13.112 a): the plan-B composer shows the cars and times the solver chose and lets the Sadran change each car. */
+    altCarsTitle: "רכבים ושעות",
+    altOutCar: "רכב להקפצה",
+    altOutLine: "יציאה ב־{{depart}} · הגעה ל{{place}} ב־{{arrive}}",
+    altPickupCar: "רכב לאיסוף",
+    altPickupLine: "איסוף ב־{{pickup}}",
+    altPickupFromLine: "איסוף מ{{pickupPlace}} ב־{{pickup}}",
+    altBackLine: "חזרה ב־{{back}}",
+    altOtherCar: "רכב אחר לאיסוף",
+    altNoCar: "בחר/י רכב",
     carConflictSend: "לשלוח בכל זאת",
     carConflictBack: "חזרה",
     timeDepartSet: "יציאה {{new}}",
@@ -432,7 +442,7 @@ export const heSadran = {
    */
   sadranPlanB: {
     manage: "אסתדר",
-    line: "ב׳: {{plan}}",
+    line: "תוכנית ב׳: {{plan}}",
     possible: "תוכנית ב׳ אפשרית",
     propose: "להציע",
     publishTitle: "תוכנית ב׳ שממתינה לתשובה",

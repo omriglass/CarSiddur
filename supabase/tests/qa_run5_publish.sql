@@ -34,6 +34,11 @@ begin
       case when n=4 then 'return'::public.ride_leg else 'both'::public.ride_leg end,
       case when n=4 then 'chauffeur'::public.leg_car_mode else 'keep'::public.leg_car_mode end);
   end loop;
+  -- R11B3: the admin's only request on the published days is a waitlisted drop-off (never auto-placed, no ride)
+  dt:=((w+2)+time '09:00') at time zone 'Asia/Jerusalem';
+  insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,origin_id,ride_type_id,trip_shape,one_way_car_mode,
+    needs_car_at_destination,trip_type,depart_at,return_at,status)
+  values(dept,w,'00000000-0000-0000-0000-000000000101',manager,dest,home,typ,'one_way_to','passenger',false,'drop_off',dt,null,'waitlisted');
   insert into qa5_ids values('w', null);
 end $$;
 set constraints all immediate;
@@ -67,6 +72,11 @@ begin
   assert title like '%'||public.day_date_label(w+1)||'%', 'title lacks the weekday date: '||title;
   select n.body_he into body from public.notifications n where n.recipient_id=m2 and n.event='published' and n.week_start=w;
   assert body like '%איסוף%', 'pickup not read as a pickup: '||body;
+  -- R11B3: a member whose only request on the published days is still waitlisted gets a notice with the waiting-list line
+  select n.body_he into body from public.notifications n where n.recipient_id='00000000-0000-0000-0000-000000000101' and n.event='published' and n.week_start=w;
+  assert body like '%ברשימת המתנה%', 'a waitlisted-only member must still get a published notice with the waiting-list line, got: '||coalesce(body,'<none>');
+  assert (select count(*) from public.notifications n where n.recipient_id='00000000-0000-0000-0000-000000000102' and n.event='published' and n.week_start=w)=0,
+    'a member with nothing on the published days gets no published notice';
   -- R5B11: a notice date/time always carries the weekday
   assert public._dt_label(now()) ~ '^\S+ [0-9]+\.[0-9]+ [0-9]{2}:[0-9]{2}$', 'notice date lost its weekday: '||public._dt_label(now());
   assert public._ask_to_join_ride_label((select id from public.rides where week_start=w limit 1)) ~ '[0-9]{2}:[0-9]{2}', 'ride label lacks a time';

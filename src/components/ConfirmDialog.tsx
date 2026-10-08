@@ -26,6 +26,8 @@ interface ConfirmDialogProps {
   loading?: boolean;
   /** Extra condition (besides `loading`) that keeps the confirm button disabled. */
   confirmDisabled?: boolean;
+  /** Offers only "cancel" (the action is not available in this situation). */
+  hideConfirm?: boolean;
   onConfirm: () => void;
   className?: string;
 }
@@ -51,6 +53,7 @@ export function ConfirmDialog({
   destructive = false,
   loading = false,
   confirmDisabled = false,
+  hideConfirm = false,
   onConfirm,
   className,
 }: ConfirmDialogProps) {
@@ -72,15 +75,17 @@ export function ConfirmDialog({
           >
             {cancelLabel}
           </Button>
-          <Button
-            type="button"
-            variant={destructive ? "destructive" : "default"}
-            className="w-full sm:w-auto"
-            disabled={loading || confirmDisabled}
-            onClick={onConfirm}
-          >
-            {confirmLabel}
-          </Button>
+          {hideConfirm ? null : (
+            <Button
+              type="button"
+              variant={destructive ? "destructive" : "default"}
+              className="w-full sm:w-auto"
+              disabled={loading || confirmDisabled}
+              onClick={onConfirm}
+            >
+              {confirmLabel}
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

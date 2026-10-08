@@ -45,6 +45,12 @@ describe("RequestRow", () => {
     expect(screen.getByText(new RegExp("Yossi.*Dana"))).toBeInTheDocument();
   });
 
+  it("lists companions, children, guests and the unnamed counts, plus the public description (R11U2)", () => {
+    show(request({ companionNames: ["Dana"], childNames: ["Yossi"], guestNames: ["Guest"], extraAdults: 2, unnamedChildren: 1, rideDescription: "With grandma" }));
+    expect(screen.getByTestId("request-other-people").textContent).toMatch(/Dana, Yossi.*Guest.*2.*/);
+    expect(screen.getByTestId("request-description")).toHaveTextContent("With grandma");
+  });
+
   it("renders no action buttons when readOnly", () => {
     show(request(), { readOnly: true, onWithdraw: vi.fn() });
     expect(screen.queryByRole("button")).not.toBeInTheDocument();

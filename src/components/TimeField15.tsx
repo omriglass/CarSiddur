@@ -66,7 +66,8 @@ export function TimeField15({ value, min, max, onChange, disabled, ...rest }: Ti
 
   const [inlineOpen, setInlineOpen] = useState(false);
 
-  const picker = (
+  // R11U10: inside a sheet the list is shorter (four and a half rows), so the rows below it stay clear of the sticky footer on a 360px phone.
+  const picker = (inline: boolean) => (
 <div className="grid grid-cols-2 gap-2" dir="rtl">
   <div role="listbox" aria-label={he.timeField.minuteListLabel}>
     {[...QUARTER_HOURS, ...(draftHour === "23" && maxMinutes === 1439 ? [59] : [])].map((m) => (
@@ -84,7 +85,7 @@ export function TimeField15({ value, min, max, onChange, disabled, ...rest }: Ti
     ))}
   </div>
   {/* R10U6: six and a half rows high (the half row hints at the scroll) with a thin always-visible scrollbar and a fade at the foot, so it reads as scrollable. */}
-  <div className="relative max-h-72 overflow-y-auto [scrollbar-color:hsl(var(--muted-foreground)/0.6)_transparent] [scrollbar-width:thin]" role="listbox" aria-label={he.timeField.hourListLabel} data-testid="time-hour-list">
+  <div className={cn("relative overflow-y-auto [scrollbar-color:hsl(var(--muted-foreground)/0.6)_transparent] [scrollbar-width:thin]", inline ? "max-h-[12.25rem]" : "max-h-72")} role="listbox" aria-label={he.timeField.hourListLabel} data-testid="time-hour-list">
     {hours.map((h) => (
       <button
         key={h}
@@ -131,7 +132,7 @@ export function TimeField15({ value, min, max, onChange, disabled, ...rest }: Ti
         />
         {inlineOpen ? (
           <div className="mx-auto w-56 max-w-full rounded-md border bg-popover p-2 text-popover-foreground" data-testid="time-inline-picker">
-            {picker}
+            {picker(true)}
           </div>
         ) : null}
       </div>
@@ -163,7 +164,7 @@ export function TimeField15({ value, min, max, onChange, disabled, ...rest }: Ti
             "z-50 w-56 max-w-[calc(100vw-1rem)] rounded-md border bg-popover p-2 text-popover-foreground shadow-md outline-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2",
           )}
         >
-          {picker}
+          {picker(false)}
         </PopoverPrimitive.Content>
       </PopoverPrimitive.Portal>
     </Popover>

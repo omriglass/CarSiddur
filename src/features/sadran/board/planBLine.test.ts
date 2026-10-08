@@ -7,7 +7,7 @@ const alt = { drop_place_id: "p", drop_place_text: null, arrive_by: "2026-10-11T
 describe("fallback line on the board (REQ §13.112)", () => {
   it("states the plan B with its pickup", () => {
     expect(alternativePlanText(alt)).toBe("הקפצה לצומת חריש עד 08:00, ואיסוף משם ב־19:00");
-    expect(fallbackLine({ fallback: "alternative", alternative: alt, trip_type: "round_trip" })).toBe("ב׳: הקפצה לצומת חריש עד 08:00, ואיסוף משם ב־19:00");
+    expect(fallbackLine({ fallback: "alternative", alternative: alt, trip_type: "round_trip" })).toBe("תוכנית ב׳: הקפצה לצומת חריש עד 08:00, ואיסוף משם ב־19:00");
   });
   it("a plan B without a pickup and with a free-text place", () => {
     expect(alternativePlanText({ ...alt, pickup: false, pickup_at: null, drop_place: null, drop_place_text: "הצומת" })).toBe("הקפצה להצומת עד 08:00");

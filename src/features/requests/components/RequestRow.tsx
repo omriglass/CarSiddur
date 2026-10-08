@@ -19,6 +19,7 @@ import type { CarHandoverNotes } from "@/features/rides/carHandover";
 
 import { enteredTimeLabels, type EnteredTimeLabels } from "../enteredTimes";
 import { canEditRequest } from "../window";
+import { whoText } from "../whoLabel";
 import { RequestLink } from "./RequestLink";
 import { PlanBLines } from "./PlanBLines";
 import { WindowSummaryLine } from "./WindowSummaryLine";
@@ -103,6 +104,8 @@ export function RequestRow({
   actionPending,
   handover,
 }: RequestRowProps) {
+  // R11U2: every other person on the request — member companions, named children, guests, then the unnamed counts.
+  const others = whoText([...(row.companionNames ?? []), ...(row.childNames ?? []), ...(row.guestNames ?? [])], row.extraAdults ?? 0, row.unnamedChildren ?? 0);
   return (
     <div
       ref={rowRef}
@@ -140,9 +143,10 @@ export function RequestRow({
       {row.tripType !== "round_trip" ? <p className="text-xs text-muted-foreground">{TRIP_TYPE_LABEL[row.tripType]}</p> : null}
       {row.hasLuggage ? <Badge variant="outline" className="w-fit" data-testid={row.luggageWaived ? "luggage-waived" : undefined}>{row.luggageWaived ? he.smallTrunk.waivedLabel : he.request.luggageChip}</Badge> : null}
       {row.preferredCarName ? <p className="text-xs text-muted-foreground">{he.request.preferredCar}: {row.preferredCarName}</p> : null}
-      {row.childNames?.length ? (
-        <p className="text-xs text-muted-foreground">{tv("ridePublicDetails.companions", { names: row.childNames.join(", ") })}</p>
+      {others ? (
+        <p className="text-xs text-muted-foreground" data-testid="request-other-people">{tv("ridePublicDetails.companions", { names: others })}</p>
       ) : null}
+      {row.rideDescription ? <p className="text-xs text-muted-foreground" data-testid="request-description"><bdi>{row.rideDescription}</bdi></p> : null}
       {row.templateId ? (
         <p className="flex items-center gap-1 text-xs text-muted-foreground">
           <Repeat className="size-3.5" aria-hidden="true" />

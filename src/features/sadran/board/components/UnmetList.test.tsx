@@ -97,7 +97,7 @@ describe("plan B and אסתדר on the unmet card (REQ §13.112)", () => {
     const onAction = vi.fn();
     const planB = { destinationName: "Haifa", request: { ...roundTrip, fallback: "alternative", alternative: alt } as WeekRequestRow, solverInfo };
     render(<UnmetList items={[planB]} onAction={onAction} onDecision={vi.fn()} />);
-    expect(screen.getByTestId("unmet-fallback")).toHaveTextContent("ב׳: הקפצה לצומת חריש עד 08:00, ואיסוף משם ב־19:00");
+    expect(screen.getByTestId("unmet-fallback")).toHaveTextContent("תוכנית ב׳: הקפצה לצומת חריש עד 08:00, ואיסוף משם ב־19:00");
     expect(screen.getByTestId("unmet-plan-b-possible")).toHaveTextContent(he.sadranPlanB.possible);
     fireEvent.click(screen.getByTestId("unmet-plan-b-propose"));
     expect(onAction).toHaveBeenCalledWith(planB, suggestion);

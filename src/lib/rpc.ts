@@ -67,6 +67,7 @@ export type ErrorCode =
   | "origin_change_unavailable"
   | "alternative_not_applicable"
   | "alternative_payload_invalid"
+  | "alternative_car_required"
   | "alternative_changed"
   | "request_served_by_alternative"
   | "alternative_unavailable"
@@ -203,6 +204,7 @@ const MESSAGE_TO_CODE: Record<string, ErrorCode> = {
   origin_change_unavailable: "origin_change_unavailable",
   alternative_not_applicable: "alternative_not_applicable",
   alternative_payload_invalid: "alternative_payload_invalid",
+  alternative_car_required: "alternative_car_required",
   alternative_changed: "alternative_changed",
   request_served_by_alternative: "request_served_by_alternative",
   alternative_unavailable: "alternative_unavailable",
@@ -397,6 +399,7 @@ const CODE_TO_MESSAGE: Record<ErrorCode, string> = {
   publication_alternatives_pending: he.errors.publicationAlternativesPending,
   alternative_not_applicable: he.errors.alternativeNotApplicable,
   alternative_payload_invalid: he.errors.alternativePayloadInvalid,
+  alternative_car_required: he.errors.alternativeCarRequired,
   alternative_changed: he.errors.alternativeChanged,
   request_served_by_alternative: he.errors.requestServedByAlternative,
   alternative_unavailable: he.errors.alternativeUnavailable,

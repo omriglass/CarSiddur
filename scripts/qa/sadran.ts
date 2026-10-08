@@ -464,12 +464,50 @@ async function cmdPropose(board: Board, args: Args): Promise<void> {
     payload.origin_id = (resolvePlace(board, need(flag(args, "origin"), "--origin") as string) as { presetId: string }).presetId;
     payload.car_id = resolveCar(board, need(flag(args, "car"), "--car") as string).id;
   } else if (type === "alternative") {
-    // REQ §13.112 (a): the request's own plan B placed on a car: --depart is when the member leaves home, --return when they are
-    // back (only with a pickup). `unmet` lists a `useAlternative` suggestion with the numbers to use.
-    payload.car_id = resolveCar(board, need(flag(args, "car"), "--car") as string).id;
-    if (flag(args, "return-car")) payload.return_car_id = resolveCar(board, flag(args, "return-car")!).id;
-    payload.depart_at = instantAt(day, need(flag(args, "depart"), "--depart") as string);
-    if (flag(args, "return")) payload.return_at = instantAt(day, flag(args, "return")!);
+    // REQ §13.112 (a), R11M2: the same payload the board builds for a `useAlternative` suggestion - the car(s), when the car
+    // leaves home (`depart_at`) and, for a pickup from the drop-off place, when the member is back (`return_at`). Without
+    // --car/--depart the solver's own suggestion for this request is used (`day <date>` lists it).
+    const alt = request.alternative;
+    if (!alt) throw new UsageError("this request has no plan B (fallback=alternative with a drop point); only such a request can get an alternative proposal");
+    let carId = flag(args, "car") ? resolveCar(board, flag(args, "car")!).id : undefined;
+    let departIso = flag(args, "depart") ? instantAt(day, flag(args, "depart")!) : undefined;
+    let returnIso = flag(args, "return") ? instantAt(day, flag(args, "return")!) : undefined;
+    let returnCarId = flag(args, "return-car") ? resolveCar(board, flag(args, "return-car")!).id : undefined;
+    if (!carId || !departIso) {
+      const policy = await api.fetchActivePolicy(board.scope.departmentId);
+      const output = policy ? await solverPreview(board, policy).catch(() => null) : null;
+      const suggestion = unmetItemsOf(board, day, output).find((i) => i.request.id === request.id)?.solverInfo?.suggestions.find((x) => x.kind === "useAlternative");
+      if (!suggestion || suggestion.kind !== "useAlternative") throw new UsageError("give --car and --depart (the solver found no plan-B placement for this request to take them from)");
+      carId ??= suggestion.carId;
+      departIso ??= slotToIso(suggestion.departSlot, board.weekStartMs);
+      if (!returnIso && suggestion.returnSlot != null) returnIso = slotToIso(suggestion.returnSlot, board.weekStartMs);
+      returnCarId ??= suggestion.returnCarId;
+    }
+    const arriveMs = Date.parse(alt.arrive_by);
+    if (!(Date.parse(departIso) < arriveMs) || dayOf(departIso) !== dayOf(alt.arrive_by)) {
+      throw new UsageError(`--depart ${t(departIso)} must be before the member's drop-off arrival ${t(alt.arrive_by)} on the same day`);
+    }
+    const pickupElsewhere = !!alt.pickup && (!!alt.pickup_place_id || !!alt.pickup_place_text);
+    if (alt.pickup && alt.pickup_at && !pickupElsewhere) {
+      // a pickup from the drop-off place: the car brings the member back, `return_at` within 4 hours after the pickup
+      const pickupMs = Date.parse(alt.pickup_at);
+      if (!returnIso) {
+        const driveMs = Math.max(15 * 60_000, arriveMs - Date.parse(departIso));
+        returnIso = new Date(Math.ceil((pickupMs + driveMs) / 900_000) * 900_000).toISOString();
+        console.log(`(--return defaulted to ${t(returnIso)}: the pickup at ${t(alt.pickup_at)} plus the drive)`);
+      }
+      if (Date.parse(returnIso) < pickupMs || Date.parse(returnIso) > pickupMs + 4 * 3_600_000) {
+        throw new UsageError(`--return ${t(returnIso)} must be between the pickup ${t(alt.pickup_at)} and 4 hours after it (the time the member is back home)`);
+      }
+    } else if (returnIso) {
+      throw new UsageError(alt.pickup
+        ? `--return is not used: the pickup from another place (${t(alt.pickup_at)}) is its own ride - set its car with --return-car`
+        : "--return is not used: this plan B has no pickup");
+    }
+    payload.car_id = carId;
+    if (returnCarId && returnCarId !== carId) payload.return_car_id = returnCarId;
+    payload.depart_at = departIso;
+    if (returnIso) payload.return_at = returnIso;
   } else if (type === "deny" || type === "external") {
     if (flag(args, "reason")) payload.reason = flag(args, "reason");
     if (type === "external") payload.hint = flag(args, "hint") ?? "cab";
@@ -643,7 +681,7 @@ function usage(): void {
   merge <req> <ride> [--leg out|return|both] [--draft] | unmerge <ride> <req>
   trip-type <req> <round_trip|one_way|drop_off>
   edit-route <ride|req> [--origin P] [--dest P] [--stop P]... [--return-stop P]... [--clear-stops] [--draft]
-  propose <req> shift [--car C --depart HH:MM --return HH:MM --day D --ride R --no-places] | origin --origin P --car C | deny [--reason T] | external [--hint cab|rental|public_transport|private|waive] [--reason T] | alternative --car C --depart HH:MM [--return HH:MM] [--return-car C]  [--draft]
+  propose <req> shift [--car C --depart HH:MM --return HH:MM --day D --ride R --no-places] | origin --origin P --car C | deny [--reason T] | external [--hint cab|rental|public_transport|private|waive] [--reason T] | alternative [--car C --depart HH:MM] [--return HH:MM (pickup from the drop-off place only; default pickup + drive)] [--return-car C (pickup car)]  [--draft]  (no --car/--depart = the solver's useAlternative numbers)
   send <proposal> | withdraw <proposal> | discard <proposal> | apply <proposal>
   unassign <ride> | cancel-ride <ride> [reason] | reserve <car> <day> <HH:MM-HH:MM> <note> | car-move <car> <from> <to> <HH:MM> [--day D] [--minutes N]
   message <memberEmail> <text> | messages [--new]

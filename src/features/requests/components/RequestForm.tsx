@@ -68,6 +68,7 @@ import {
   useWithdrawRequestMutation,
 } from "../hooks";
 import { editReturnInstant, intervalToFlexValue, toInstant, toSubmitRequestPayload } from "../mapper";
+import { editSignature, isUnchangedEdit } from "../unchanged";
 import { requestFormSchema, type RequestFormValues } from "../schema";
 import { anchorFormFields, resolveCarTimes, switchOutAnchor, switchReturnAnchor } from "../timeAnchors";
 import { windowCarTimes, windowFormFields, windowModeActive } from "../timeWindow";
@@ -163,6 +164,8 @@ interface RequestFormProps {
    * when `returnTime` is omitted, defaults it to `departTime` + `QUICK_REQUEST_DURATION_HOURS`.
    */
   slotPrefill?: { day: string; departTime: string; returnTime?: string; carId?: string };
+  /** `/requests/new?day=YYYY-MM-DD` (R11B4): only the day is preselected (when it is one of the week's dates). */
+  dayPrefill?: string;
   /** Published-day request: join the freed-slot notification queue. */
   waitlist?: boolean;
   /**
@@ -363,6 +366,7 @@ export function RequestForm({
   initial,
   joinRide,
   slotPrefill,
+  dayPrefill,
   waitlist = false,
   templateSuggestion,
   quickContext,
@@ -435,11 +439,11 @@ export function RequestForm({
     return emptyValues(
       departmentId,
       weekStart,
-      buildDefaultDay(weekStart, lastRequest?.departAt),
+      dayPrefill && datesOfWeek(weekStart).includes(dayPrefill) ? dayPrefill : buildDefaultDay(weekStart, lastRequest?.departAt),
       defaultRideTypeId,
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [departmentId, weekStart, mode, defaultRideTypeId, variant, joinRide?.rideId, templateSuggestion?.templateId, slotPrefill?.day, slotPrefill?.departTime, slotPrefill?.returnTime, slotPrefill?.carId]);
+  }, [departmentId, weekStart, mode, defaultRideTypeId, variant, dayPrefill, joinRide?.rideId, templateSuggestion?.templateId, slotPrefill?.day, slotPrefill?.departTime, slotPrefill?.returnTime, slotPrefill?.carId]);
 
   const form = useForm<RequestFormValues>({
     resolver: zodResolver(requestFormSchema),
@@ -494,6 +498,7 @@ export function RequestForm({
   // `react-hooks/set-state-in-effect` lint rule (calling `setState` inside an effect
   // body is flagged; adjusting state for freshly-arrived props during render is not).
   const [resetKey, setResetKey] = useState<string | null>(null);
+  const [baselineSignature, setBaselineSignature] = useState<string | null>(null);
   // Named children of the department (own children first). Declared before the edit reset below,
   // which needs them to tell an adult-seat child from a child-seat one (R9B1 prefill).
   const childReferenceYear = Number((form.getValues("day") || weekStart).slice(0, 4));
@@ -522,7 +527,11 @@ export function RequestForm({
       // Children whose age is unknown (the catalog failed to load) are taken as seat children, like `set_request_children` does.
       const unknownSeatChildren = childrenQuery.data ? 0 : requestChildrenQuery.data.length;
       const unnamedChildSeats = unnamedChildSeatsFromStored({ storedChildSeats: initial.childSeats, seatChildrenCount: linkedSeatChildren + unknownSeatChildren });
-      form.reset(mapEditRowToValues(initial, weekStart, companionsQuery.data, requestChildrenQuery.data, extraAdults, unnamedChildSeats));
+      const mapped = mapEditRowToValues(initial, weekStart, companionsQuery.data, requestChildrenQuery.data, extraAdults, unnamedChildSeats);
+      form.reset(mapped);
+      // R11B1: the loaded request in the same normalized form the save compares against (parsed like a submit would be).
+      const parsed = requestFormSchema.safeParse(mapped);
+      setBaselineSignature(editSignature(parsed.success ? parsed.data : mapped, { anchorSync: isSentence && variant === "weekly" }));
       setResetKey(nextResetKey);
     }
   }
@@ -678,6 +687,9 @@ export function RequestForm({
   const selectedChildSeatCount = selectedChildren.filter((child) => !child.isAdultPassenger).length;
   // REQ §13.112 (d): unnamed child seats are on top of the named children (boosters are counted separately below).
   const namedChildCount = selectedChildSeatCount + (values.legacyChildSeats ?? 0);
+  // R11U5: the origin place is never offered as destination, stop or plan-B place.
+  const originPresetId = values.origin && "presetId" in values.origin ? values.origin.presetId : undefined;
+  const destinationsWithoutOrigin = (destinationsQuery.data ?? []).filter((d) => d.id !== originPresetId);
   const preferredCars = (carsQuery.data ?? []).filter((car) => car.type === "shared" && car.status === "active");
 
   const seatFitWarning = useMemo(() => {
@@ -792,8 +804,29 @@ export function RequestForm({
     return isSeriesSubmission({ pickerShown: showReturnDayPicker, pickerOpen: returnAnotherDay, day: formValues.day, returnDay: formValues.returnDay });
   }
 
-  function onSubmit(formValues: RequestFormValues) {
+  /** R11B1: an edit that changes nothing is a no-op — no server call, no dialog. */
+  function finishUnchanged() {
+    toast(t("request.noChanges"));
+    if (onDone) onDone(null);
+    else navigate(paths.my());
+  }
+
+  async function onSubmit(formValues: RequestFormValues) {
+    if (mode === "edit" && isUnchangedEdit(formValues, baselineSignature, { anchorSync: anchorSyncActive })) {
+      finishUnchanged();
+      return;
+    }
     if (duplicate && !waitlist) {
+      // The server may know better than the client check (`unchanged: true` on its probe): then there is nothing to ask.
+      if (mode === "edit" && !isSeriesSubmit(formValues)) {
+        try {
+          const probe = await probeSubmitRequest(buildPayload(formValues, {}));
+          if (probe?.unchanged) {
+            finishUnchanged();
+            return;
+          }
+        } catch { /* advisory only */ }
+      }
       setPendingOverlapSubmit(formValues);
       return;
     }
@@ -810,9 +843,8 @@ export function RequestForm({
     void performSubmit(formValues);
   }
 
-  async function performSubmit(formValues: RequestFormValues, options: { confirmRelease?: boolean; confirmLose?: boolean; ignoreChildOverlap?: boolean } = {}) {
-    if (quickContext && (isPast || invalidTime)) return;
-    setSubmitError(null);
+  /** The `submit_request` payload of validated form values (also used by the unchanged probe). */
+  function buildPayload(formValues: RequestFormValues, options: { confirmRelease?: boolean }) {
     const isSeriesRequest = isSeriesSubmit(formValues);
     const guestNamesList = guestPassengerNames(formValues.guestNames);
     // REQ §13.93: only a הקפצה without a pickup books the quick missing-driver ride; a
@@ -829,7 +861,7 @@ export function RequestForm({
       extraAdults: formValues.extraAdults,
       previousChildren: (childrenQuery.data ?? []).filter((child) => previousChildIds.has(child.id)),
     });
-    const payload = {
+    return {
       ...toSubmitRequestPayload(
         { ...formValues, adults: seatCounts.adults, childSeats: seatCounts.childSeats },
         {
@@ -841,6 +873,10 @@ export function RequestForm({
           layout,
           isSeries: isSeriesRequest,
           planB: variant === "weekly",
+          // R11B2: a flexibility the member did not touch keeps its exact stored value (a window's slack is not a form value).
+          storedFlex: mode === "edit" && initial
+            ? { departEarly: initial.flexDepartEarly, departLate: initial.flexDepartLate, returnEarly: initial.flexReturnEarly, returnLate: initial.flexReturnLate }
+            : undefined,
         },
       ),
       ...(waitlist ? { waitlist: true } : {}),
@@ -852,6 +888,13 @@ export function RequestForm({
       // if any, is managed separately below via save/stop, never touched by this payload.
       ...(mode === "new" && templateSuggestion ? { template_id: templateSuggestion.templateId } : {}),
     };
+  }
+
+  async function performSubmit(formValues: RequestFormValues, options: { confirmRelease?: boolean; confirmLose?: boolean; ignoreChildOverlap?: boolean } = {}) {
+    if (quickContext && (isPast || invalidTime)) return;
+    setSubmitError(null);
+    const isSeriesRequest = isSeriesSubmit(formValues);
+    const payload = buildPayload(formValues, options);
 
     // The request this template link/unlink applies to, resolved once so both the "on" and
     // "off" branches below agree: an edit keeps its own row's template, a prefilled new
@@ -881,6 +924,10 @@ export function RequestForm({
       if (!isSeriesRequest && !options.confirmLose && !options.confirmRelease && !waitlist && mode === "edit" && initial?.status === "assigned") {
         try {
           const probe = await probeSubmitRequest(payload);
+          if (probe?.unchanged) {
+            finishUnchanged();
+            return;
+          }
           if (probe?.would_lose_booking) {
             setPendingLose(formValues);
             return;
@@ -909,6 +956,12 @@ export function RequestForm({
       const raw = await submitMutation.mutateAsync(payload);
       const result = raw as unknown as SubmitRequestResult | null;
       const requestId = result?.request_id ?? initial?.id;
+
+      // R11B1: the server found nothing to change — no release/overlap questions, no outcome toast.
+      if (result?.unchanged) {
+        finishUnchanged();
+        return;
+      }
 
       // REQ §13.101 f (QM5): nothing changed yet — ask, then resubmit with `confirm_release`.
       const release = releaseConfirmation(result);
@@ -1064,11 +1117,14 @@ export function RequestForm({
 
   // R9U4: in the sentence layout the seat/overlap warnings live in the page under the sentence,
   // never in the sticky footer (where they covered stage-2 content).
+  // R11U4: "edit it instead of opening a new request" is a new-request hint — never on the edit screen (the save asks instead).
+  const duplicateHint = duplicate && mode !== "edit";
+  const overlapSeries = !!duplicate && !!duplicate.seriesId && (duplicate.seriesCount ?? 0) > 1;
   const notices =
-    seatFitWarning || duplicate ? (
+    seatFitWarning || duplicateHint ? (
       <div className="space-y-1" data-testid="form-notices">
         {seatFitWarning ? <p className="text-sm text-amber-700">⚠ {t("request.seatFitWarning")}</p> : null}
-        {duplicate ? <p className="text-sm text-amber-700">{t("request.duplicateWarning")}</p> : null}
+        {duplicateHint ? <p className="text-sm text-amber-700">{t("request.duplicateWarning")}</p> : null}
       </div>
     ) : null;
 
@@ -1164,7 +1220,7 @@ export function RequestForm({
             control={form.control}
             name="outStops"
             error={stopsError(form.formState.errors.outStops)}
-            destinations={destinationsQuery.data ?? []}
+            destinations={destinationsWithoutOrigin}
             addLabel={he.request.addStop}
             removeAriaLabel={he.request.removeStop}
           />
@@ -1172,7 +1228,7 @@ export function RequestForm({
 
         <DestinationRideTypeFields
           control={form.control}
-          destinations={destinationsQuery.data ?? []}
+          destinations={destinationsWithoutOrigin}
           rideTypes={rideTypesQuery.data ?? []}
           tripShape={tripShape}
           variant={variant}
@@ -1230,14 +1286,14 @@ export function RequestForm({
             control={form.control}
             name="returnStops"
             error={stopsError(form.formState.errors.returnStops)}
-            destinations={destinationsQuery.data ?? []}
+            destinations={destinationsWithoutOrigin}
             addLabel={he.request.addReturnStop}
             removeAriaLabel={he.request.removeStop}
           />
         ) : null}
 
         {/* REQ §13.112 (e): the classic layout's own plan-B section (the sentence layout has the "אם אין רכב" line). */}
-        {variant === "weekly" ? <PlanBFields form={form} errors={form.formState.errors} destinations={destinationsQuery.data ?? []} /> : null}
+        {variant === "weekly" ? <PlanBFields form={form} errors={form.formState.errors} destinations={destinationsWithoutOrigin} /> : null}
 
         <PassengersFields
           control={form.control}
@@ -1319,7 +1375,7 @@ export function RequestForm({
           {isSentence ? null : (
             <>
               {seatFitWarning ? <p className="text-sm text-amber-700">⚠ {t("request.seatFitWarning")}</p> : null}
-              {duplicate ? <p className="text-sm text-amber-700">{t("request.duplicateWarning")}</p> : null}
+              {duplicateHint ? <p className="text-sm text-amber-700">{t("request.duplicateWarning")}</p> : null}
             </>
           )}
           {quickContext && invalidTime ? <p role="alert" className="text-sm text-destructive">{outsideDay ? he.sadranProposal.sameDayOnly : he.rideEditing.invalidTime}</p> : null}
@@ -1405,13 +1461,20 @@ export function RequestForm({
       open={!!pendingOverlapSubmit}
       onOpenChange={(open) => { if (!open) setPendingOverlapSubmit(null); }}
       title={t("request.overlapTitle")}
-      description={t("request.overlapBody")}
+      description={overlapSeries ? tv("request.overlapSeriesBody", { count: String(duplicate?.seriesCount ?? 0) }) : t("request.overlapBody")}
       confirmLabel={t("request.overlapCancelOther")}
       cancelLabel={t("request.overlapBack")}
+      // R11U4: cancelling one leg of a multi-day request would cancel the whole series, so that option is not offered from here.
+      hideConfirm={overlapSeries}
       destructive
       loading={withdrawMutation.isPending || cancelRideMutation.isPending}
       onConfirm={() => void cancelOverlapAndSubmit()}
     >
+      {duplicate ? (
+        <p className="text-sm font-medium" data-testid="overlap-other">
+          <bdi>{tv("request.overlapOther", { name: overlapNames([{ request_id: duplicate.id, ride_id: null }], [duplicate])[0] ?? duplicate.destination })}</bdi>
+        </p>
+      ) : null}
       <Button
         type="button"
         variant="outline"

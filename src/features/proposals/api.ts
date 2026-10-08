@@ -28,6 +28,22 @@ export interface ProposalRequestSummary {
   adults: number;
   childSeats: number;
   boosters: number;
+  /** Which request a plan-B answer replaces (REQ §13.112 a, R11M3); older cached responses omit it. */
+  tripType?: string | null;
+}
+
+/** `alternative` proposals only (REQ §13.112 a) -- the member's own plan B, drop place resolved to a name by the edge function. */
+export interface ProposalAlternativeSummary {
+  dropPlace: string;
+  arriveBy: string;
+  pickupAt: string | null;
+  pickupPlace?: string;
+  /** R11M3: the Sadran's chosen car for the drop-off, when it leaves and from where, the pickup car, when the member is back home. */
+  carName?: string;
+  departAt?: string | null;
+  originName?: string | null;
+  pickupCarName?: string | null;
+  returnAt?: string | null;
 }
 
 export interface ProposalSummary {
@@ -47,8 +63,7 @@ export interface ProposalSummary {
   request: ProposalRequestSummary | null;
   /** `origin` proposals only (REQ §13.93) -- resolved place/car names, never raw ids (`answer-proposal/index.ts`'s `buildSummary()`). */
   originChange?: { from: string | null; to: string | null; car: string | null } | null;
-  /** `alternative` proposals only (REQ §13.112 a) -- the member's own plan B, drop place resolved to a name by the edge function. */
-  alternative?: { dropPlace: string; arriveBy: string; pickupAt: string | null; pickupPlace?: string } | null;
+  alternative?: ProposalAlternativeSummary | null;
   parties: ProposalPartySummary[];
 }
 

@@ -37,9 +37,11 @@ import { useQuery } from "@tanstack/react-query";
 import { renderTemplate } from "../waLink";
 import { atTime, buildProposalPayload, resolveShiftTimes, seriesSpanOf } from "../buildProposalPayload";
 import { alternativeTextInput, seriesOriginalOf } from "../../board/draftInput";
+import { alternativeLegWindows, carsFreeForWindow } from "../alternativeCars";
 import { combinedSummaryText, proposalTemplateVariant, externalSuggestionFor, proposalPreviewText, shiftTimesUnchanged } from "../proposalText";
 import { WhatsappDialog } from "./WhatsappDialog";
 import {
+  useAllWeekRides,
   useApplyProposalMutation,
   useCreateProposalMutation,
   useDepartmentSettings,
@@ -84,6 +86,22 @@ interface ComposerPrefill {
 interface ProposalComposerScreenProps {
   departmentId: string;
   weekStart: string;
+}
+
+/** A car chooser for one plan-B leg (R11M1): the cars free for that leg's window, the chosen one always included. */
+function AltCarSelect({ cars, value, onChange, disabled, testId }: {
+  cars: readonly { id: string; name: string }[]; value: string | null; onChange: (carId: string) => void; disabled: boolean; testId: string;
+}) {
+  return (
+    <Select value={value ?? ""} onValueChange={onChange} disabled={disabled}>
+      <SelectTrigger className="w-56" data-testid={testId}>
+        <SelectValue placeholder={he.sadranProposal.altNoCar}>{cars.find((car) => car.id === value)?.name}</SelectValue>
+      </SelectTrigger>
+      <SelectContent>
+        {cars.map((car) => <SelectItem key={car.id} value={car.id}>{car.name}</SelectItem>)}
+      </SelectContent>
+    </Select>
+  );
 }
 
 /** `/sadran/:dept/:week/proposals/new` — proposal composer (UX_FLOWS.md §4.3). */
@@ -269,8 +287,25 @@ export function ProposalComposerScreen({ departmentId, weekStart }: ProposalComp
   const partyTexts = type === "merge" ? partyTextsQuery.data : undefined;
   const previewText = currentProposal?.reason_he ?? editedText ?? proposalPreviewText(textInput);
 
+  // R11M1 (REQ §13.112 a): the plan-B composer shows the solver's car(s) and times; the Sadran may change each car (no car, no proposal).
+  const altSource = type === "alternative" ? ((currentProposal?.payload ?? prefill?.payload) as Record<string, unknown> | undefined) : undefined;
+  const altStoredOut = typeof altSource?.car_id === "string" ? altSource.car_id : null;
+  const altStoredPickup = typeof altSource?.return_car_id === "string" ? altSource.return_car_id : altStoredOut;
+  const [altOutOverride, setAltOutOverride] = useState<string | null>(null);
+  const [altPickupOverride, setAltPickupOverride] = useState<string | null>(null);
+  const altOutCar = altOutOverride ?? altStoredOut;
+  const altPickupCar = altPickupOverride ?? (altOutOverride && altStoredPickup === altStoredOut ? altOutOverride : altStoredPickup);
+  const altRidesQuery = useAllWeekRides(type === "alternative" ? departmentId : undefined, weekStart);
+  const altRow = type === "alternative" ? request?.alternative : null;
+  const altDepartAt = typeof altSource?.depart_at === "string" ? altSource.depart_at : null;
+  const altReturnAt = typeof altSource?.return_at === "string" ? altSource.return_at : null;
+  const altWindows = altRow && altDepartAt
+    ? alternativeLegWindows({ departAt: altDepartAt, arriveBy: altRow.arrive_by, pickupAt: altRow.pickup ? altRow.pickup_at : null, returnAt: altReturnAt })
+    : null;
+
   const payload = buildProposalPayload({
-    type, prefillPayload: prefill?.payload, request, rideId, proposedDepartAt, proposedReturnAt,
+    type, prefillPayload: type === "alternative" && !proposalId ? { ...prefill?.payload, car_id: altOutCar ?? undefined, return_car_id: altPickupCar ?? undefined } : prefill?.payload,
+    request, rideId, proposedDepartAt, proposedReturnAt,
     effectiveReason, externalHint, originAway,
   });
 
@@ -399,6 +434,37 @@ export function ProposalComposerScreen({ departmentId, weekStart }: ProposalComp
             hostDriverName={type === "merge" ? hostRideQuery.data?.driver_name : undefined}
             originChange={type === "origin" ? { from: request.origin_resolved_name, to: newOriginName || null, car: originCarName || null } : undefined}
             alternative={type === "alternative" ? alternativeTextInput(request) : undefined} />
+
+          {type === "alternative" && altRow && altDepartAt && altWindows ? (
+            <div className="space-y-3 rounded-md border p-3" data-testid="composer-alt-cars">
+              <h2 className="font-medium">{he.sadranProposal.altCarsTitle}</h2>
+              <div className="space-y-1">
+                <p className="text-xs text-muted-foreground">{he.sadranProposal.altOutCar}</p>
+                <p data-testid="composer-alt-out-line">{tv("sadranProposal.altOutLine", {
+                  depart: formatTime(new Date(altDepartAt)), arrive: formatTime(new Date(altRow.arrive_by)),
+                  place: altRow.drop_place?.name ?? altRow.drop_place_text ?? "",
+                })}</p>
+                <AltCarSelect testId="composer-alt-out-car" value={altOutCar} disabled={!!proposalId}
+                  cars={carsFreeForWindow(carsQuery.data ?? [], altRidesQuery.data ?? [], altWindows.out, altOutCar)}
+                  onChange={(id) => { setAltOutOverride(id); setEditedText(null); }} />
+              </div>
+              {altRow.pickup && altRow.pickup_at && altWindows.pickup ? (
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground">{he.sadranProposal.altPickupCar}</p>
+                  <p data-testid="composer-alt-pickup-line">
+                    {tv(altRow.pickup_place || altRow.pickup_place_text ? "sadranProposal.altPickupFromLine" : "sadranProposal.altPickupLine", {
+                      pickup: formatTime(new Date(altRow.pickup_at)), pickupPlace: altRow.pickup_place?.name ?? altRow.pickup_place_text ?? "",
+                    })}
+                    {altReturnAt ? ` · ${tv("sadranProposal.altBackLine", { back: formatTime(new Date(altReturnAt)) })}` : ""}
+                  </p>
+                  <AltCarSelect testId="composer-alt-pickup-car" value={altPickupCar} disabled={!!proposalId}
+                    cars={carsFreeForWindow(carsQuery.data ?? [], altRidesQuery.data ?? [], altWindows.pickup, altPickupCar)}
+                    onChange={(id) => { setAltPickupOverride(id); setEditedText(null); }} />
+                  {altPickupCar && altOutCar && altPickupCar !== altOutCar ? <p className="text-xs font-medium text-amber-700" data-testid="composer-alt-other-car">{he.sadranProposal.altOtherCar}</p> : null}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
 
           {type === "shift" && !proposalId ? <div className="flex flex-wrap gap-4">
             {departAt ? <label className="space-y-1 text-xs"><span className="block">{he.field.depart}</span><TimeField15 min="00:00" value={departOverride ?? formatTime(new Date(departAt))} onChange={(time) => { setDepartOverride(time); setEditedText(null); }} aria-label={he.field.depart} /></label> : null}

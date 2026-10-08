@@ -29,6 +29,8 @@ interface PlanBLineProps {
   errors: FieldErrors<RequestFormValues>;
   /** The department's places; drop points (`is_drop_point`) are listed first. */
   destinations: readonly { id: string; name: string; aliases: string[]; zone: string; travel_minutes?: number | null; is_drop_point?: boolean }[];
+  /** R11U5: the request's origin (a list place) is not offered as a plan-B place. */
+  originPlaceId?: string;
   sheet: string | null;
   setSheet: (sheet: PlanBSheet | null) => void;
   /** `route_minutes_preview` from the request's origin to the drop place; `null` while unknown. */
@@ -50,7 +52,7 @@ function PlanBArriveBody({ arriveBy, routeMinutes, onChange, error }: { arriveBy
   const estimate = routeMinutes != null ? endEstimate("out", leave ? "leave" : "arrive", entered, routeMinutes) : null;
   return (
     <AnchorTimePicker
-      anchors={["arrive", "leave"]}
+      anchors={["leave", "arrive"]}
       // R10U5: the toggle is shown before a place is chosen; "לצאת ב־" needs the drive, so it waits for the place.
       disabledAnchors={routeMinutes == null ? ["leave"] : undefined}
       anchor={anchor}
@@ -91,7 +93,7 @@ function placeName(value: DestinationValue | undefined, destinations: PlanBLineP
   return value.freeText;
 }
 
-export function PlanBLine({ form, errors, destinations, sheet, setSheet, routeMinutes }: PlanBLineProps) {
+export function PlanBLine({ form, errors, destinations, originPlaceId, sheet, setSheet, routeMinutes }: PlanBLineProps) {
   const values = useWatch({ control: form.control });
   const scope = { tripType: values.tripType ?? "round_trip", day: values.day ?? "", returnDay: values.returnDay };
   if (!planBOffered(scope)) return null;
@@ -128,7 +130,7 @@ export function PlanBLine({ form, errors, destinations, sheet, setSheet, routeMi
   const places: PlaceOption[] = [
     ...destinations.filter((d) => d.is_drop_point),
     ...destinations.filter((d) => !d.is_drop_point),
-  ].map((d) => ({ id: d.id, name: d.name, aliases: d.aliases, zone: d.zone, tag: d.is_drop_point ? he.planB.dropPointTag : undefined }));
+  ].filter((d) => d.id !== originPlaceId).map((d) => ({ id: d.id, name: d.name, aliases: d.aliases, zone: d.zone, tag: d.is_drop_point ? he.planB.dropPointTag : undefined }));
 
   // R10U5: the sheet titles name the place, or show a placeholder until one is chosen.
   const dropName = hasAltPlace(place) ? placeName(place, destinations) : "";

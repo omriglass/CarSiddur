@@ -85,6 +85,7 @@ export function NewRequestPage() {
           weekStart={weekStart}
           joinRide={joinRide}
           slotPrefill={!joinRideId && dayParam && timeParam ? { day: dayParam, departTime: timeParam } : undefined}
+          dayPrefill={!joinRideId && dayParam && !timeParam ? dayParam : undefined}
           waitlist={waitlist}
           templateSuggestion={templateSuggestion}
           onDone={overlay ? close : undefined}

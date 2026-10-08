@@ -272,6 +272,7 @@ function ListTab() {
               <TableHead>{he.adminDestinations.fieldDistanceKm}</TableHead>
               <TableHead>{he.adminDestinations.fieldPtScore}</TableHead>
               <TableHead>{he.adminCommon.active}</TableHead>
+              <TableHead>{he.adminDestinations.dropPointBadge}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -289,7 +290,9 @@ function ListTab() {
                   <Badge variant={d.is_approved ? "default" : "outline"}>
                     {d.is_approved ? he.adminCommon.active : he.adminCommon.inactive}
                   </Badge>
-                  {d.is_drop_point ? <Badge variant="secondary" className="ms-1" data-testid="destination-drop-point-badge">{he.adminDestinations.dropPointBadge}</Badge> : null}
+                </TableCell>
+                <TableCell>
+                  {d.is_drop_point ? <Badge variant="secondary" data-testid="destination-drop-point-badge">{he.adminDestinations.dropPointBadge}</Badge> : "—"}
                 </TableCell>
               </TableRow>
             ))}

@@ -42,6 +42,14 @@ export function intervalToFlexValue(interval: string): FlexValue {
   return 0;
 }
 
+/**
+ * R11B2: the interval to send for one flexibility field. A stored value that the form only shows rounded
+ * (a window request's 4h slack reads as "2 hours") is kept exactly while the member did not touch the field.
+ */
+export function flexIntervalToSend(value: FlexValue, stored?: string | null): string {
+  return stored && intervalToFlexValue(stored) === value ? stored.trim() : flexValueToInterval(value);
+}
+
 /** Combines a `yyyy-MM-dd` day with an `HH:MM` time into an Asia/Jerusalem instant (ISO string, UTC). */
 export function toInstant(day: string, time: string, nextDay: boolean): string {
   const base = nextDay ? format(addDays(parseISO(day), 1), "yyyy-MM-dd") : day;
@@ -65,6 +73,8 @@ export interface SubmitPayloadOptions {
   isSeries?: boolean;
   /** REQ §13.112 (a)/(b): the weekly form (either layout) also sends its plan-B / "אסתדר" line (never quick / car-now). */
   planB?: boolean;
+  /** R11B2 (edit): the stored flexibility intervals, kept exactly while the form's rounded value is unchanged. */
+  storedFlex?: { departEarly?: string | null; departLate?: string | null; returnEarly?: string | null; returnLate?: string | null };
 }
 
 /**
@@ -183,10 +193,10 @@ export function toSubmitRequestPayload(
     // missing-driver ride for the member, so it is a `passenger` leg by definition and
     // `submit_request` refuses `reserve_missing_driver` with any other mode.
     one_way_car_mode: options.reserveMissingDriver && !isRoundTrip ? "passenger" : undefined,
-    flex_depart_early: flexValueToInterval(values.flexDepartEarly as FlexValue),
-    flex_depart_late: flexValueToInterval(values.flexDepartLate as FlexValue),
-    flex_return_early: flexValueToInterval(values.flexReturnEarly as FlexValue),
-    flex_return_late: flexValueToInterval(values.flexReturnLate as FlexValue),
+    flex_depart_early: flexIntervalToSend(values.flexDepartEarly as FlexValue, options.storedFlex?.departEarly),
+    flex_depart_late: flexIntervalToSend(values.flexDepartLate as FlexValue, options.storedFlex?.departLate),
+    flex_return_early: flexIntervalToSend(values.flexReturnEarly as FlexValue, options.storedFlex?.returnEarly),
+    flex_return_late: flexIntervalToSend(values.flexReturnLate as FlexValue, options.storedFlex?.returnLate),
     notes: values.notes.trim() || undefined,
     ride_description: values.rideDescription.trim() || null,
     guest_passenger_names: options.guestPassengerNames?.length ? options.guestPassengerNames : undefined,

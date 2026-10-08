@@ -4483,6 +4483,22 @@ export type Database = {
         }
         Returns: Database["public"]["Enums"]["request_fallback"]
       }
+      _request_save_unchanged: {
+        Args: {
+          p_depart_at: string
+          p_needs_car: boolean
+          p_one_way_mode: Database["public"]["Enums"]["leg_car_mode"]
+          p_origin_id: string
+          p_origin_text: string
+          p_placement_only?: boolean
+          p_request_id: string
+          p_return_at: string
+          p_trip_shape: Database["public"]["Enums"]["trip_shape"]
+          p_trip_type: Database["public"]["Enums"]["trip_type"]
+          payload: Json
+        }
+        Returns: boolean
+      }
       _restore_original_main: {
         Args: { p_request_id: string }
         Returns: undefined

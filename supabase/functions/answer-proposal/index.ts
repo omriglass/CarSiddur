@@ -69,11 +69,17 @@ interface ProposalSummary {
     adults: number;
     childSeats: number;
     boosters: number;
+    /** `round_trip` / `one_way` / `drop_off` -- a plan-B answer says which request it replaces (REQ §13.112 a, R11M3). */
+    tripType: string | null;
   } | null;
   /** `origin` proposals only (REQ §13.93) -- resolved place/car names, never raw ids. */
   originChange?: { from: string | null; to: string | null; car: string | null } | null;
   /** `alternative` proposals only (REQ §13.112 a) -- the member's own plan B with the drop place resolved to a name. */
-  alternative?: { dropPlace: string; arriveBy: string; pickupAt: string | null; pickupPlace?: string } | null;
+  alternative?: {
+    dropPlace: string; arriveBy: string; pickupAt: string | null; pickupPlace?: string;
+    /** R11M3: the car for the drop-off, when the car leaves (`depart_at`) and from where, the pickup car, when the member is back home. */
+    carName?: string; departAt?: string | null; originName?: string | null; pickupCarName?: string | null; returnAt?: string | null;
+  } | null;
   parties: PartySummary[];
 }
 
@@ -85,7 +91,7 @@ async function findByToken(token: string) {
   // refuses a bare `destinations(name)` embed (PGRST201) — both embeds name their FK.
   const proposalSelect =
     'id, type, status, reason_he, expires_at, payload, request_id, department_id, week_start, ' +
-    'requests(id, requester_id, origin_id, origin_text, destination_id, destination_text, depart_at, return_at, adults, child_seats, boosters, ride_type_id, ' +
+    'requests(id, requester_id, origin_id, origin_text, destination_id, destination_text, depart_at, return_at, adults, child_seats, boosters, ride_type_id, trip_type, ' +
     'destinations!requests_destination_id_fkey(name), ride_types(name_he), origin:destinations!requests_origin_id_fkey(name))';
 
   const byProposal = await client.from('proposals').select(proposalSelect).eq('token_hash', hash).maybeSingle();
@@ -127,6 +133,7 @@ async function buildSummary(proposal: Record<string, unknown>, myProfileId: stri
         adults: number;
         child_seats: number;
         boosters: number;
+        trip_type: string | null;
         destinations: { name: string } | null;
         ride_types: { name_he: string } | null;
         origin: { name: string } | null;
@@ -158,7 +165,12 @@ async function buildSummary(proposal: Record<string, unknown>, myProfileId: stri
   // creation); only the drop place id needs resolving to a name (no session on this public page).
   let alternative: ProposalSummary['alternative'];
   if (proposal.type === 'alternative') {
-    const payload = proposal.payload as { drop_place_id?: string | null; drop_place_text?: string | null; arrive_by?: string; pickup_at?: string | null; pickup_place_id?: string | null; pickup_place_text?: string | null } | null;
+    const payload = proposal.payload as { drop_place_id?: string | null; drop_place_text?: string | null; arrive_by?: string; pickup_at?: string | null; pickup_place_id?: string | null; pickup_place_text?: string | null;
+      car_id?: string | null; return_car_id?: string | null; depart_at?: string | null; return_at?: string | null } | null;
+    // R11M3: the cars the Sadran chose (no session here, so the names are resolved by the service role)
+    const carIds = [payload?.car_id, payload?.return_car_id].filter((id): id is string => !!id);
+    const carsRes = carIds.length ? await client.from('cars').select('id, name').in('id', carIds) : { data: [] };
+    const carName = (id?: string | null) => ((carsRes.data ?? []) as { id: string; name: string }[]).find((c) => c.id === id)?.name;
     const destRes = payload?.drop_place_id
       ? await client.from('destinations').select('name').eq('id', payload.drop_place_id).maybeSingle()
       : { data: null };
@@ -171,6 +183,11 @@ async function buildSummary(proposal: Record<string, unknown>, myProfileId: stri
       dropPlace: (destRes.data as { name: string } | null)?.name ?? payload?.drop_place_text ?? '',
       arriveBy: payload?.arrive_by ?? '',
       pickupAt: payload?.pickup_at ?? null,
+      carName: carName(payload?.car_id) ?? '',
+      departAt: payload?.depart_at ?? null,
+      originName: request?.origin?.name ?? request?.origin_text ?? null,
+      pickupCarName: payload?.pickup_at ? (carName(payload?.return_car_id ?? payload?.car_id) ?? null) : null,
+      returnAt: payload?.return_at ?? null,
     };
   }
 
@@ -195,6 +212,7 @@ async function buildSummary(proposal: Record<string, unknown>, myProfileId: stri
           adults: request.adults,
           childSeats: request.child_seats,
           boosters: request.boosters,
+          tripType: request.trip_type,
         }
       : null,
     originChange,

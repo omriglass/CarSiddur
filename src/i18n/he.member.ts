@@ -73,6 +73,10 @@ export const heMember = {
     overlapCancelOther: "בטל/י את הקודמת והגש/י",
     overlapKeepBoth: "השאר/י את שתיהן",
     overlapBack: "חזרה",
+    /** The overlap dialog names the other request ("חיפה · ד׳ 13.10 07:30–12:00"); a multi-day one cannot be cancelled from here. */
+    overlapOther: "הבקשה החופפת: {{name}}",
+    overlapSeriesBody: "הבקשה החופפת היא חלק מבקשה רב-יומית ({{count}} ימים), ואי אפשר לבטל אותה מכאן. אפשר להשאיר את שתיהן או לחזור לעריכה.",
+    noChanges: "לא בוצעו שינויים",
     releaseTitle: "אין רכב פנוי בשעות החדשות",
     releaseBody: "אין רכב פנוי בשעות החדשות — הנסיעה הנוכחית תשוחרר והבקשה תעבור לרשימת ההמתנה. להמשיך?",
     releaseDrivesOthers: "הנוסעים בנסיעה שלך יישארו בה וימתינו לנהג/ת",
@@ -310,6 +314,19 @@ export const heMember = {
     /** R10U9: after accepting a plan B on `/p/:token` — it was applied on the spot, unlike every other answer. */
     confirmedPlanBTitle: "ההצעה אושרה — שובצת בתוכנית ב׳",
     confirmedPlanBHelp: "אפשר לראות אותה ב״הנסיעות שלי״.",
+    /** R11M3 (REQ §13.112 a): what a plan-B proposal states — the car, when it leaves and arrives, the pickup, and that accepting replaces the original request. */
+    planB: {
+      car: "רכב: {{car}}",
+      leave: "יוצאים ב־{{depart}} מ{{origin}} · מגיעים ל{{place}} ב־{{arrive}}",
+      leaveNoOrigin: "יוצאים ב־{{depart}} · מגיעים ל{{place}} ב־{{arrive}}",
+      pickup: "איסוף ב־{{pickup}}",
+      pickupFrom: "איסוף מ{{pickupPlace}} ב־{{pickup}}",
+      pickupCar: "ברכב {{car}}",
+      otherCar: "רכב אחר לאיסוף",
+      back: "חזרה ב־{{back}}",
+      replaces: "אם מאשרים, ההצעה מחליפה את הבקשה המקורית. במקום: {{original}}",
+      originalTrip: "{{trip}} ל{{place}} {{times}}",
+    },
     alreadyAnsweredBy: "התשובה שלך נרשמה",
     backHome: "לדף הבית",
     yourRequest: "הבקשה שלך",
@@ -558,6 +575,8 @@ export const heMember = {
     to: "ל",
     on: "ב",
     via: "דרך",
+    /** Stage-2 recap: the stops of the return leg. */
+    recapReturnVia: "בחזור דרך {{names}}",
     and: "ו",
     /** The conjunction before a number: "ו־2 ילדים". */
     andNumber: "ו־",
@@ -616,9 +635,9 @@ export const heMember = {
     whoExtraAdults: "+ מבוגר/ת (בלי שם)",
     whoExtraAdultsMore: "עוד מבוגר/ת",
     whoExtraAdultsLess: "פחות מבוגרים",
-    /** The who chip's tail: "אני ועוד 2", "אני, דנה ועוד מבוגר/ת". */
+    /** The who chip's tail: "אני ועוד 2 מבוגרים", "אני, דנה ועוד מבוגר/ת". */
     whoMoreOne: "עוד מבוגר/ת",
-    whoMoreMany: "עוד {{n}}",
+    whoMoreMany: "עוד {{n}} מבוגרים",
     /** Unnamed children (REQ §13.112 d): "+ ילד/ה" with a seat type each; the who chip's tail ("אני ועוד ילד/ה", "אני, דנה ו־2 ילדים"). */
     whoUnnamedChildren: "+ ילד/ה (בלי שם)",
     whoChildSeats: "מושב בטיחות",

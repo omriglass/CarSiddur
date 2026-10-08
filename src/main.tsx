@@ -77,7 +77,7 @@ createRoot(rootElement).render(
       <QueryClientProvider client={queryClient}>
         <SessionProvider>
           <RouterProvider router={router} />
-          <Toaster />
+          <Toaster position="top-center" />
           <SmallTrunkHost />
         </SessionProvider>
       </QueryClientProvider>

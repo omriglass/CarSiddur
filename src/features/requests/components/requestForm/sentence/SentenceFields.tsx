@@ -22,6 +22,7 @@ import { guestPassengerNames } from "../../../quickRequest";
 import { planBActive, planBOffered } from "../../../planB";
 import { planBRecapLine } from "../../../fallbackLine";
 import { toInstant } from "../../../mapper";
+import { whoText } from "../../../whoLabel";
 import type { RequestFormValues } from "../../../schema";
 import { anchorLabelKey, endEstimate, enteredOutTime, enteredReturnTime } from "../../../timeAnchors";
 import {
@@ -51,7 +52,7 @@ import { StageTwo } from "./StageTwo";
 import { TimeAnchorSheet } from "./TimeAnchorSheet";
 import { TimeField15 } from "@/components/TimeField15";
 import { WhoSheet } from "./WhoSheet";
-import { flexBrief, invalidTargetOf, joinWho, unnamedWhoLabel, type SentenceSheet } from "./sentenceModel";
+import { flexBrief, invalidTargetOf, type SentenceSheet } from "./sentenceModel";
 
 const HINT_STORAGE_KEY = "carshare.requestSentenceHintDismissed";
 const CAR_NOW_QUICK_HOURS = [1, 2, 3, 4, 6] as const;
@@ -143,10 +144,10 @@ function DetailRow({ label, value, open, onToggle, testId, children }: { label: 
 }
 
 /** A prefix letter / trailing punctuation glued to its chip ("מ" + "גבעת חביבה" + ","): never wrapped apart. */
-function Seg({ prefix, suffix, loose, children }: { prefix?: string; suffix?: string; /** A prefix that ends in a maqaf ("ל־") keeps its own space. */ loose?: boolean; children: ReactNode }) {
+function Seg({ prefix, suffix, loose, spaced, children }: { prefix?: string; suffix?: string; /** A prefix that ends in a maqaf keeps its own space. */ loose?: boolean; /** A whole word before the chip ("via"): a real gap, since the flex item eats its trailing space (R11U10). */ spaced?: boolean; children: ReactNode }) {
   return (
     <span className="inline-flex max-w-full items-center whitespace-nowrap">
-      {prefix ? <span className={loose ? undefined : "-me-1"}>{prefix}</span> : null}
+      {prefix ? <span className={spaced ? "me-1.5" : loose ? undefined : "-me-1"}>{prefix}</span> : null}
       {children}
       {suffix ? <span>{suffix}</span> : null}
     </span>
@@ -231,16 +232,7 @@ export function SentenceFields(props: SentenceFieldsProps) {
   const unnamedChildSeats = values.legacyChildSeats ?? 0;
   const unnamedBoosters = values.boosters ?? 0;
   const unnamedChildren = unnamedChildSeats + unnamedBoosters;
-  const moreLabel = unnamedWhoLabel(extraAdults, unnamedChildren, {
-    adultOne: he.requestSentence.whoMoreOne,
-    adultMany: (n) => tv("requestSentence.whoMoreMany", { n: String(n) }),
-    moreChildOne: he.requestSentence.whoMoreChildOne,
-    childOne: he.requestSentence.whoChildOne,
-    childMany: (n) => tv("requestSentence.whoChildMany", { n: String(n) }),
-    and: he.requestSentence.and,
-    andNumber: he.requestSentence.andNumber,
-  });
-  const whoLabel = joinWho(travellers, he.requestSentence.and, moreLabel, he.requestSentence.andNumber);
+  const whoLabel = whoText(travellers, extraAdults, unnamedChildren);
   const needsVerb = travellers.length > 1 || extraAdults > 0 || unnamedChildren > 0 ? he.requestSentence.needsPlural : he.requestSentence.needs;
 
   function timeChip(end: "out" | "return") {
@@ -368,12 +360,18 @@ export function SentenceFields(props: SentenceFieldsProps) {
     const planBLine = planBOffered(planBScope)
       ? planBRecapLine({ fallback: values.fallback, altArriveBy: values.altArriveBy, altPickup: values.altPickup, altPickupAt: values.altPickupAt }, planBActive({ ...planBScope, fallback: values.fallback }) ? placeLabel(values.altPlace as DestinationValue | undefined, destinations) : "", values.altPickup ? placeLabel(values.altPickupPlace as DestinationValue | undefined, destinations) : "")
       : null;
+    // R11U6: the stops of each leg ("דרך חדרה", "בחזור דרך …") belong to the recap too.
+    const viaPieces = [
+      outStops.length > 0 ? `${he.requestSentence.via} ${outStops.map((stop) => placeLabel(stop, destinations)).join(", ")}` : null,
+      hasReturn && returnStops.length > 0 ? tv("requestSentence.recapReturnVia", { names: returnStops.map((stop) => placeLabel(stop, destinations)).join(", ") }) : null,
+    ].filter((piece): piece is string => !!piece);
     const recap = (
       <span className="flex min-w-0 flex-col gap-0.5 text-[13px]">
         <span className="flex min-w-0 items-center gap-1.5">
           <span className="shrink-0 font-medium">{tripLabel}</span>
           <span className="min-w-0 flex-1 truncate">{he.requestSentence.from}{originName} {he.requestSentence.to}{destinationName}</span>
         </span>
+        {viaPieces.length > 0 ? <span className="whitespace-normal break-words text-muted-foreground" data-testid="recap-via">{viaPieces.join(" · ")}</span> : null}
         {planBLine ? <span className="whitespace-normal break-words text-muted-foreground" data-testid="recap-plan-b"><LtrText text={planBLine} /></span> : null}
         <span className="whitespace-normal break-words text-muted-foreground" data-testid="recap-when">
           {recapDay} · {windowOn
@@ -398,6 +396,10 @@ export function SentenceFields(props: SentenceFieldsProps) {
   }
 
   const placeOptions = destinations.map((d) => ({ id: d.id, name: d.name, aliases: d.aliases, zone: d.zone, travelMinutes: d.travel_minutes }));
+  // R11U5: the origin is never offered as destination, stop or plan-B place (the origin sheet itself lists everything).
+  const originValue = values.origin as DestinationValue | undefined;
+  const originPresetId = originValue && "presetId" in originValue ? originValue.presetId : undefined;
+  const placesWithoutOrigin = placeOptions.filter((place) => place.id !== originPresetId);
   const carNowHours = values.durationHours ?? CAR_NOW_DEFAULT_HOURS;
   const carNowDurationLabel = carNowHours === 1 ? he.requestSentence.carNowHour : carNowHours === 2 ? he.requestSentence.carNowTwoHours : tv("requestSentence.carNowHours", { n: String(carNowHours) });
   const errorMessages = [errors.destination ? t("request.destinationRequired") : undefined, errors.departTime?.message, errors.returnTime?.message, errors.windowEnd?.message, errors.day?.message].filter(Boolean) as string[];
@@ -446,7 +448,7 @@ export function SentenceFields(props: SentenceFieldsProps) {
               </SentenceChip>
             </Seg>
             {outStops.map((stop, index) => (
-              <Seg key={`${index}:${"presetId" in stop ? stop.presetId : stop.freeText}`} prefix={`${he.requestSentence.via} `}>
+              <Seg key={`${index}:${"presetId" in stop ? stop.presetId : stop.freeText}`} prefix={he.requestSentence.via} spaced>
                 <SentenceChip field="outStops" aria-label={`${he.request.removeStop}: ${placeLabel(stop, destinations)}`} onClick={() => removeStop(index)}>
                   {placeLabel(stop, destinations)} ×
                 </SentenceChip>
@@ -484,7 +486,7 @@ export function SentenceFields(props: SentenceFieldsProps) {
             )}
             {hasReturn
               ? returnStops.map((stop, index) => (
-                  <Seg key={`r${index}:${"presetId" in stop ? stop.presetId : stop.freeText}`} prefix={`${he.requestSentence.via} `}>
+                  <Seg key={`r${index}:${"presetId" in stop ? stop.presetId : stop.freeText}`} prefix={he.requestSentence.via} spaced>
                     <SentenceChip field="returnStops" aria-label={`${he.request.removeStop}: ${placeLabel(stop, destinations)}`} onClick={() => removeReturnStop(index)} data-testid="chip-return-stop">
                       {placeLabel(stop, destinations)} ×
                     </SentenceChip>
@@ -546,13 +548,16 @@ export function SentenceFields(props: SentenceFieldsProps) {
               {windowOn ? he.requestSentence.window.backToFixed : he.requestSentence.window.link}
             </button>
           ) : null}
-          <p className="min-w-0 text-xs text-muted-foreground" data-testid="derived-line">
-            {derivedLines.length > 0 ? <LtrText text={derivedLines.join(" · ")} /> : null}
-          </p>
+        </div>
+      ) : null}
+      {/* R11U10: its own full-width rows (one estimate per row, two at most) instead of a squeezed cell next to the links. */}
+      {variant !== "carNow" && derivedLines.length > 0 ? (
+        <div className="space-y-0.5 text-xs text-muted-foreground" data-testid="derived-line">
+          {derivedLines.map((line) => <p key={line}><LtrText text={line} /></p>)}
         </div>
       ) : null}
 
-      {isWeekly ? <PlanBLine form={form} errors={errors} destinations={destinations} sheet={sheet} setSheet={setSheet} routeMinutes={routeMinutes.planB} /> : null}
+      {isWeekly ? <PlanBLine form={form} errors={errors} destinations={destinations} originPlaceId={originPresetId} sheet={sheet} setSheet={setSheet} routeMinutes={routeMinutes.planB} /> : null}
 
       {notices}
 
@@ -670,7 +675,7 @@ export function SentenceFields(props: SentenceFieldsProps) {
 
       <FieldSheet open={sheet === "destination"} onOpenChange={(open) => !open && setSheet(null)} title={he.requestSentence.sheet.destination} hideFooter>
         <PlacePicker
-          places={placeOptions}
+          places={placesWithoutOrigin}
           value={hasDestination ? (destinationValue as DestinationValue) : null}
           onPick={(next) => pickPlace("destination", next)}
           placeholder={he.requestSentence.placeSearch}
@@ -679,11 +684,11 @@ export function SentenceFields(props: SentenceFieldsProps) {
       </FieldSheet>
 
       <FieldSheet open={sheet === "stop"} onOpenChange={(open) => !open && setSheet(null)} title={he.requestSentence.sheet.stop} hideFooter>
-        <PlacePicker places={placeOptions} value={null} onPick={addStop} placeholder={he.requestSentence.placeSearch} />
+        <PlacePicker places={placesWithoutOrigin} value={null} onPick={addStop} placeholder={he.requestSentence.placeSearch} />
       </FieldSheet>
 
       <FieldSheet open={sheet === "returnStop"} onOpenChange={(open) => !open && setSheet(null)} title={he.requestSentence.sheet.returnStop} hideFooter>
-        <PlacePicker places={placeOptions} value={null} onPick={addReturnStop} placeholder={he.requestSentence.placeSearch} />
+        <PlacePicker places={placesWithoutOrigin} value={null} onPick={addReturnStop} placeholder={he.requestSentence.placeSearch} />
       </FieldSheet>
 
       <FieldSheet open={sheet === "day"} onOpenChange={(open) => !open && setSheet(null)} title={he.requestSentence.sheet.day}>
