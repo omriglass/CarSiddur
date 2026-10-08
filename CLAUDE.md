@@ -164,6 +164,7 @@ e2e/
   admin-errors.spec.ts           /admin/errors lists client_errors for an admin; a member is redirected (REQ §13.108, E1)
   auth.spec.ts                   sign-in / onboarding
   auto-approve.spec.ts           auto-approve on a free car (live week)
+  car-now.spec.ts                "רוצה רכב עכשיו!" in the sentence layout files today's ride on the free car (clock pinned, nearby rides parked)
   board.spec.ts                  board regression pass (fake-week data)
   board-coordination.spec.ts     one-way drop, tight edits, merge consent coordination
   board-mobile.spec.ts           board mobile header: title/week switcher, eye menu, kebab menu, undo/redo, policy chip
@@ -171,20 +172,30 @@ e2e/
   car-care.spec.ts               report/tire-fill/wash, responsible person sees it in History, export
   car-swap.spec.ts               swap two cars' rides for a day: siddur header menu (member), board drag (Sadran), seats blocker
   department-context.spec.ts     department selector; catalogs/Maps estimates; read-only department switching
+  destinations-drop-points.spec.ts  /admin/destinations "נקודת הקפצה" switch + badge column, admin and Sadran (REQ §13.112)
   device-setup.spec.ts           home-screen install prompt / push-permission dismissal
   export.spec.ts                 Sadran downloads the week as a Hebrew Excel workbook
   freed-slot.spec.ts             freed slot, live week, single candidate
   merge-verdict.spec.ts          merge popup enables/refuses legs from the server's merge_preview verdict (REQ §13.108 e)
+  large-trunk-waiver.spec.ts     board: dropping a large-luggage request on a small car asks "לשבץ בכל זאת?"; confirm marks the waiver, decline leaves it unmet (REQ §13.111 a)
   member.spec.ts                 member area flows
   multi-day.spec.ts              multi-day ("series") request: one card/badge, linked legs, cascading withdraw, board day markers
   one-way-consent.spec.ts        combined one-way consent; orphaned passenger; volunteering
+  plan-b-cycle.spec.ts           plan B end to end (serial): unmet card "תוכנית ב׳ אפשרית" → alternative proposal → publish blocked → `/p/<token>` accept → "שובצת בתוכנית ב׳" → removal also removes the pickup request (REQ §13.112)
+  plan-b-form.spec.ts            plan B on the sentence form (other pickup place, "אסתדר", switch to הקפצה uses/restores it or asks) and the classic "+ תוכנית ב׳" section
   proposal.spec.ts               proposal round trip
   proposal-retry.spec.ts         resend/replace a sent proposal's token; retry a failed send
   quick-one-way.spec.ts          quick round-trip/one-way metadata persists on reopen/save
   quick-request.spec.ts          quick request from an empty slot (live week)
   repeating-requests.spec.ts     repeat-weekly template: suggestion card, snooze, use, stop repeating
+  request-edit.spec.ts           editing: no-change save toast + same version; published day note-only edit keeps the booking, a time change still asks (REQ §13.101 f/h)
+  request-form.ts                shared plumbing of the request-form specs: seeded ids, layout switch, member open week, fixture weeks, board drag
+  request-sentence.spec.ts       sentence layout: arrive-by chip, who chip + stage 2, profile switch back to the classic form
+  request-sentence-overlay.spec.ts  the sentence form as a card over the siddur (phone + desktop), who/seat counts, arrive-by derived departure, `?day=`
+  request-window.spec.ts         "יש לי חלון זמן?" 3 h between 07:00 and 12:00: stored lock, `/my` summary, edit reopens in window mode
   ride-editing.spec.ts           member resizes owned rides; shadow-collision driver consent
   sadran.spec.ts                 sadran flows
+  siddur-desktop.spec.ts         siddur on a computer (1280 px): week switcher (this/next/archive), car names visible, no sideways overflow (REQ §13.111 b)
   siddur-mobile.spec.ts          siddur mobile header: title/week switcher, eye menu, car-now, waitlist button, archive
   smoke.spec.ts                  shell loads, RTL/Hebrew wired end to end
   upcoming-week.spec.ts          a series reaching 2 weeks out materializes an `upcoming` week; member/Sadran visibility split

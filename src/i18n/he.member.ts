@@ -31,6 +31,19 @@ export const heMember = {
     noScores: "אין ניקוד שמור לפרסום בשבוע הזה", yes: "כן", no: "לא",
     /** Multi-day request leg index/count column (REQ §13.77, UX_FLOWS.md §4.2). */
     seriesDay: "יום ברב-יומי",
+    /** Week-grid "סידור" sheet (one table per day, a column per car). */
+    dayTitle: "יום {{date}}",
+    timeColumn: "שעה",
+    requestInWords: "הבקשה במילים",
+    timeRange: "{{start}}–{{end}}",
+    /** Requests sheet: "הבקשה במילים" — the request as the sentence form reads it, plus every modifier. */
+    sentence: {
+      onDay: "ביום {{day}}",
+      flex: "גמישות {{brief}}",
+      flexOut: "גמישות ביציאה {{brief}}",
+      flexReturn: "גמישות בחזרה {{brief}}",
+      preferredCar: "עדיפות לרכב {{name}}",
+    },
   },
   /**
    * F2 (docs/TODO.md 2026-09-14): the shared three/four-state "בקשה חדשה" button

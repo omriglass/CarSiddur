@@ -8,7 +8,6 @@ import { useState, type ReactNode } from "react";
 import { Controller, useWatch, type FieldErrors, type UseFormReturn } from "react-hook-form";
 
 import type { DestinationPreset, DestinationValue } from "@/components/DestinationCombobox";
-import type { FlexValue } from "@/components/flexibilityValues";
 import { RideTypeChips } from "@/components/RideTypeChips";
 import { FormItem } from "@/components/ui/form";
 import { Label } from "@/components/ui/label";
@@ -52,6 +51,7 @@ import { StageTwo } from "./StageTwo";
 import { TimeAnchorSheet } from "./TimeAnchorSheet";
 import { TimeField15 } from "@/components/TimeField15";
 import { WhoSheet } from "./WhoSheet";
+import { flexBriefText } from "../../../flexText";
 import { flexBrief, invalidTargetOf, type SentenceSheet } from "./sentenceModel";
 
 const HINT_STORAGE_KEY = "carshare.requestSentenceHintDismissed";
@@ -241,16 +241,7 @@ export function SentenceFields(props: SentenceFieldsProps) {
     const brief = flexEnabled
       ? end === "out" ? flexBrief(values.flexDepartEarly ?? 0, values.flexDepartLate ?? 0) : flexBrief(values.flexReturnEarly ?? 0, values.flexReturnLate ?? 0)
       : ({ kind: "none" } as const);
-    const amountLabel = (value: FlexValue) =>
-      he.requestSentence.flexChip[String(value) as keyof typeof he.requestSentence.flexChip];
-    const briefText = brief.kind === "both"
-      ? tv("requestSentence.flexBrief", { amount: amountLabel(brief.value) })
-      : brief.kind === "split"
-        ? [
-            brief.early !== 0 ? tv("requestSentence.flexBriefEarly", { amount: amountLabel(brief.early) }) : null,
-            brief.late !== 0 ? tv("requestSentence.flexBriefLate", { amount: amountLabel(brief.late) }) : null,
-          ].filter(Boolean).join(" / ")
-        : "";
+    const briefText = flexBriefText(brief);
     return (
       <SentenceChip
         field={end === "out" ? "departTime" : "returnTime"}

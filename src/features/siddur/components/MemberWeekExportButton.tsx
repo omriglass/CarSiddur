@@ -5,7 +5,9 @@ import { Button } from "@/components/ui/button";
 import { he } from "@/i18n/he";
 import { showErrorToast } from "@/lib/rpc";
 
-import { fetchBoardRides, fetchExportCarNames } from "../api";
+import { fetchExportLayout } from "@/features/rides/api";
+
+import { fetchBoardRides } from "../api";
 import { createMemberWeekWorkbook } from "../export/memberWeekWorkbook";
 import { siddurKeys } from "../queryKeys";
 
@@ -19,11 +21,11 @@ export function MemberWeekExportButton({ departmentId, weekStart }: { department
   const exportQuery = useQuery({
     queryKey: siddurKeys.weekExport(departmentId, weekStart),
     queryFn: async () => {
-      const [rides, cars] = await Promise.all([
+      const [rides, layout] = await Promise.all([
         fetchBoardRides(departmentId, weekStart),
-        fetchExportCarNames(departmentId),
+        fetchExportLayout(departmentId),
       ]);
-      return { departmentId, weekStart, rides, cars };
+      return { departmentId, weekStart, rides, cars: layout.cars, homeDestinationId: layout.homeDestinationId, boardStartTime: layout.boardStartTime };
     },
     enabled: false,
     retry: false,

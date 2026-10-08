@@ -104,3 +104,26 @@ export async function fetchCarNeighbours(rideIds: readonly string[]): Promise<Ca
   if (error) throw toAppError(error);
   return data ?? [];
 }
+
+/**
+ * What the week-grid Excel sheet needs beyond the rides (both exports, Sadran + archive):
+ * every car of the department with its type (a private car is listed only when it has a ride),
+ * the department home place (ride-label direction) and the board's first visible time.
+ * `cars`, `departments` and `department_settings` are readable by any approved member.
+ */
+export interface ExportLayoutData {
+  cars: { id: string; name: string; type: string | null; status?: string | null }[];
+  homeDestinationId: string | null;
+  boardStartTime: string | null;
+}
+export async function fetchExportLayout(departmentId: string): Promise<ExportLayoutData> {
+  const [cars, department, settings] = await Promise.all([
+    supabase.from("cars").select("id, name, type, status").eq("department_id", departmentId).order("name"),
+    supabase.from("departments").select("home_destination_id").eq("id", departmentId).maybeSingle(),
+    supabase.from("department_settings").select("board_start_time").eq("department_id", departmentId).maybeSingle(),
+  ]);
+  if (cars.error) throw toAppError(cars.error);
+  if (department.error) throw toAppError(department.error);
+  if (settings.error) throw toAppError(settings.error);
+  return { cars: cars.data ?? [], homeDestinationId: department.data?.home_destination_id ?? null, boardStartTime: settings.data?.board_start_time ?? null };
+}

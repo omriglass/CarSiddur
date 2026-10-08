@@ -59,3 +59,26 @@ describe("export-only XLSX", () => {
     expect(() => createXlsx([{ name: "data", rows: [["x".repeat(32768)]] }])).toThrow("spreadsheet_cell_too_long");
   });
 });
+
+describe("xlsx sheet options", () => {
+  const sheet = { name: "grid", rows: [[{ text: "T", style: "title" as const }, { text: null, style: "title" as const }], [{ text: "a", style: "ride" as const, fill: "#C9CEEA" }, { text: "b", style: "ride" as const, fill: "#C9CEEA" }]],
+    merges: ["A1:B1"], freezeRows: 2, freezeCols: 1, columnWidths: [4, 20], rowHeights: [24, 15], autoFilter: false, headerRow: false };
+  it("writes merges, freeze pane, widths, heights and per-style xfs without a filter", () => {
+    const files = unzipStored(createXlsx([sheet]));
+    const xml = files.get("xl/worksheets/sheet1.xml")!;
+    expect(xml).toContain('<mergeCells count="1"><mergeCell ref="A1:B1"/></mergeCells>');
+    expect(xml).toContain('<pane xSplit="1" ySplit="2" topLeftCell="B3" activePane="bottomRight" state="frozen"/>');
+    expect(xml).toContain('<col min="1" max="1" width="4" customWidth="1"/>');
+    expect(xml).toContain('<row r="1" ht="24" customHeight="1">');
+    expect(xml).not.toContain("autoFilter");
+    const styles = files.get("xl/styles.xml")!;
+    expect(styles).toContain('<cellXfs count="5">'); // 3 fixed + title(default fill) + ride(custom fill)
+    expect(styles).toContain('<fills count="5">');
+    expect(styles).toContain("FFC9CEEA");
+  });
+  it("keeps the default single frozen header row and filter for plain sheets", () => {
+    const xml = unzipStored(createXlsx([{ name: "p", rows: [["h"], ["v"]] }])).get("xl/worksheets/sheet1.xml")!;
+    expect(xml).toContain('<pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/>');
+    expect(xml).toContain('<autoFilter ref="A1:A2"/>');
+  });
+});

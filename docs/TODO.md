@@ -969,6 +969,28 @@ Verified OK: drop points via /admin/destinations; sentence form (anchors, one-si
 - ✅ **Bug (critical): saving a car as a Sadran failed.** A department Sadran who was not the car's responsible person got "אין לך הרשאה" on `/cars/:id`, and the `cars_protect_owner_editable_fields` trigger refused name/plate/type/seat changes by anyone but an admin or the responsible person (`car_fields_locked`, shown as a generic error) although the `cars` RLS policies allow `can_manage_operations`. Fixed: the car page and the trigger let the department's Sadranim manage cars like admins (`20261021100400`); `car_fields_locked` gets its own message. Not reproduced for an admin — if the owner still sees it as admin, capture the toast/console.
 - **Car make/model and colour (not now — owner).** The car details get a make/model field (e.g. "טויוטה קורולה") and a colour picker, shown with the car name where it helps members find the car (siddur card, car page). Needs: `cars.model text`, `cars.color` (a small fixed palette), the car editor, the siddur/ride sheet display, Excel export.
 
+## Pilot release triage (owner 2026-10-08) — next fix round, after the current release
+Order: finish the e2e runs → release what is in (`npm run release`) → a new agent fixes the items below with rigorous testing (QA week repro before/after, SQL suites, API test, e2e). Default form for pilot members: **the sentence form** (classic available in the profile).
+
+**Fix (before the pilot):**
+- **R8B2** publish day picker pre-ticks unsolved days as ready ("רק ימים מוכנים" could publish them); stale publish-anyway text.
+- **R8B1** per-day autofill must place a multi-day series: if the Sadran starts with Tuesday and the other days are still empty, a Monday–Thursday series must be placed (its whole span, `place_series`), not left `UNMET_SERIES_NO_CAR`.
+- **R7B2** → **hide chauffeur suggestions for the pilot** (no chauffeur-suggestion card actions / drafts / auto-proposals; keep the code).
+- **R8B7** no outcome notices before a day is published (accepting a merge, "שינוי בסידור שלך —" with an empty title, "כל הרכבים תפוסים", "שובצה").
+- **R8B8** host's `/p` page shows the guest's request as "הבקשה שלך"; a one-way join shown with a return.
+- **R8B5** ask-to-join on a private car never reaches the owner (`sent_at` null) and the Sadran has no in-app path.
+- **R7M2 / R8M1** notify passengers/joiners when the host ride is cancelled or the host leaves ("what now"); tell the driver when someone asks to join.
+- **R7U3** external proposal text (question before the link, no contradiction, public transport vs taxi default).
+- **R8B11** freed-car offer when a needs-driver (chauffeur) ride is cancelled.
+- **R8B12** changing a trip type to הקפצה places the request when a car is free.
+- **R8B14** complementary one-way pairs get a pairing / `chainOneWay` suggestion; correct unmet reason.
+- **R8B10** a non-driver is never addressed as the host/driver of a merge.
+- **R8B13** chauffeur duration identical between hand placement and the solver.
+- **R8U1 / R8U2** replace a volunteer driver in one step; a host ride with a pending merge stays editable (no ghost).
+- **OB1 leftover** move an already placed multi-day series to another car (all days, all-or-nothing).
+
+**Not now:** every other open B/C item (see the QA run sections).
+
 ## Owner hands-on testing (2026-10-06) — bugs to fix
 - **OB1 — A multi-day request cannot be placed by hand on the board.** Dropping its card on a car fails with "בקשה רב-יומית — אפשר לבטל ולהגיש מחדש, לא לערוך" (`series_edit_not_supported`, MDR02). The board's manual placement goes through `edit_ride`, which refuses any request with a `series_id` (the v1 rule "a series is cancelled and resubmitted, never edited", REQ §13.77) — but placing is not editing the request. Expected: dropping a series leg (or the series card) on a car places the **whole series** on that car for all its days (the same hold auto-fill makes, `place_series`), refused only when the car is not free on every day; moving a placed series to another car likewise moves all its days. The Sadran's other path today is "להציע פחות ימים" / auto-fill only. Seen on the showcase department (S19). **Fixed 2026-10-06:** `place_series_on_car(series, car)` (Sadran; private-car owner rule; refuses an already placed series) wraps `place_series`; the board drop of a multi-day card calls it ("הבקשה הרב-יומית שובצה ברכב הזה לכל ימיה"). Verified through the API (3 rides, all legs assigned; second placement and a member refused). Not covered: moving an already placed series to another car.
 

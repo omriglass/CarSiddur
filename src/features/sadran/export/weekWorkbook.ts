@@ -1,6 +1,7 @@
 import { he } from "@/i18n/he";
 import { createXlsx, type ExcelCell, type ExcelSheet } from "@/lib/xlsx";
 import { buildBoardSheet, jerusalemExcelDate } from "@/features/rides/export/weekWorkbook";
+import { requestSentenceText } from "./requestSentence";
 import type { WeekExportData } from "./api";
 
 // `jerusalemExcelDate`/`buildBoardSheet` moved to `@/features/rides/export/weekWorkbook.ts`
@@ -22,15 +23,15 @@ export function weekExportSheets(data: WeekExportData): ExcelSheet[] {
     .sort((a, b) => (a.depart_at ?? a.return_at ?? "").localeCompare(b.depart_at ?? b.return_at ?? "") || a.id.localeCompare(b.id));
   const cars = new Map(data.cars.map((car) => [car.id, car.name]));
   const profiles = new Map(requests.map((request) => [request.requester_id, request.requester_full_name ?? request.requester_id]));
-  const requestSheet: ExcelSheet = { name: copy.requestsSheet, rows: [
-    [copy.requestId, copy.requester, copy.status, copy.destination, copy.tripShape, copy.depart, copy.returning, copy.preferredCar,
+  const requestSheet: ExcelSheet = { name: copy.requestsSheet, columnWidths: [24, 24, 70], rows: [
+    [copy.requestId, copy.requester, copy.requestInWords, copy.status, copy.destination, copy.tripShape, copy.depart, copy.returning, copy.preferredCar,
       copy.adults, copy.childSeats, copy.boosters, copy.luggage, copy.flexDepartEarly, copy.flexDepartLate, copy.flexReturnEarly, copy.flexReturnLate, copy.notes, copy.week, copy.department],
-    ...requests.map((request) => [request.id, request.requester_full_name, he.status[request.status], request.destination_resolved_name, shapeLabels[request.trip_shape],
+    ...requests.map((request) => [request.id, request.requester_full_name, requestSentenceText(request), he.status[request.status], request.destination_resolved_name, shapeLabels[request.trip_shape],
       jerusalemExcelDate(request.depart_at), jerusalemExcelDate(request.return_at), request.preferred_car_name ?? cars.get(request.preferred_car_id ?? ""),
       request.adults, request.child_seats, request.boosters, request.has_luggage ? copy.yes : copy.no,
       request.flex_depart_early, request.flex_depart_late, request.flex_return_early, request.flex_return_late, request.notes, data.weekStart, data.departmentId]),
   ] };
-  const boardSheet = buildBoardSheet(data.rides, cars, data.weekStart, data.departmentId);
+  const boardSheet = buildBoardSheet(data.rides, data.cars, data.weekStart, data.departmentId, { homeDestinationId: data.homeDestinationId, boardStartTime: data.boardStartTime });
   const scoreRows: ExcelCell[][] = [[copy.policy, copy.policyVersion, copy.profile, copy.requestId, copy.score, copy.served, copy.ruleBreakdown, copy.publishedAt]];
   const publication = data.publication?.department_id === data.departmentId && data.publication.week_start === data.weekStart ? data.publication : null;
   const snapshot = object(publication?.snapshot);

@@ -13,6 +13,21 @@ interface PassengerEntry extends RidePublicEntry {
 export function ridePassengerSummary(
   entries: readonly PassengerEntry[],
   driverName?: string | null,
+  options: { addedNames?: readonly string[] } = {},
+): string {
+  const { names, adults, children } = ridePassengerParts(entries, driverName, options);
+  const parts = [...names];
+  if (adults) parts.push(tv(adults === 1 ? "ridePublicDetails.unnamedAdult" : "ridePublicDetails.unnamedAdults", { count: String(adults) }));
+  if (children) parts.push(tv(children === 1 ? "ridePublicDetails.unnamedChild" : "ridePublicDetails.unnamedChildren", { count: String(children) }));
+  if (!parts.length) return "";
+  const summary = parts.length === 1 ? parts[0]! : tv("ridePublicDetails.joinPassengers", { names: parts.slice(0, -1).join(", "), last: parts.at(-1)! });
+  return tv("ridePublicDetails.passengers", { summary });
+}
+
+/** Named people plus the counts of unnamed adults/children (shared by the summary text and the Excel grid's "who" wording). */
+export function ridePassengerParts(
+  entries: readonly PassengerEntry[],
+  driverName?: string | null,
   options: {
     /**
      * Directly `add_ride_passengers()`-added names (`v_board_rides.people`, `source: 'added'`,
@@ -22,7 +37,7 @@ export function ridePassengerSummary(
      */
     addedNames?: readonly string[];
   } = {},
-): string {
+): { names: string[]; adults: number; children: number } {
   const names: string[] = [];
   let adults = 0;
   let children = 0;
@@ -40,10 +55,5 @@ export function ridePassengerSummary(
     children += Math.max(0, entry.child_seats + entry.boosters - Math.max(0, named.length - entry.adults) - namedChildren.length);
   }
   names.push(...(options.addedNames ?? []).map((name) => name?.trim()).filter((name): name is string => !!name));
-  const parts = [...names];
-  if (adults) parts.push(tv(adults === 1 ? "ridePublicDetails.unnamedAdult" : "ridePublicDetails.unnamedAdults", { count: String(adults) }));
-  if (children) parts.push(tv(children === 1 ? "ridePublicDetails.unnamedChild" : "ridePublicDetails.unnamedChildren", { count: String(children) }));
-  if (!parts.length) return "";
-  const summary = parts.length === 1 ? parts[0]! : tv("ridePublicDetails.joinPassengers", { names: parts.slice(0, -1).join(", "), last: parts.at(-1)! });
-  return tv("ridePublicDetails.passengers", { summary });
+  return { names, adults, children };
 }

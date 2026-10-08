@@ -52,7 +52,10 @@ async function openQuickRequest(page: Page, week: string, carId: string, minutes
 }
 
 async function fillPublicDetails(page: Page, destinationName: string, description: string, guestNames: string[]) {
-  await page.getByPlaceholder(he.field.destination).fill(destinationName);
+  // The destination search is open on a fresh sheet but collapses to its trigger once the origin was edited.
+  const destinationInput = page.getByPlaceholder(he.field.destination);
+  if (!(await destinationInput.isVisible())) await mainDialog(page).getByRole("combobox").filter({ hasText: he.field.destination }).first().click();
+  await destinationInput.fill(destinationName);
   await page.getByRole("option").filter({ hasText: destinationName }).first().click();
   const sheet = mainDialog(page);
   await sheet.getByLabel(he.quickRequest.rideDescription, { exact: true }).fill(description);
@@ -82,14 +85,16 @@ for (const [index, shape] of (["drop_off", "pickup"] as const).entries()) {
       const member = await newSignedInPage(browser, SEEDED_USERS.member1);
       contexts.push(member.context);
       await openQuickRequest(member.page, week, fixture.carId);
-      await fillPublicDetails(member.page, shape === "pickup" ? fixture.home.name : fixture.destination.name, description, guestNames);
       const sheet = mainDialog(member.page);
       if (shape === "pickup") {
+        // The origin goes first: the destination list never offers the place the ride starts from
+        // (origin = destination is refused), so the home place is only pickable once the origin moved.
         await sheet.getByRole("button", { name: he.field.origin, exact: true }).click();
         await member.page.getByPlaceholder(he.field.origin).fill(fixture.destination.name);
         await member.page.getByRole("option").filter({ hasText: fixture.destination.name }).first().click();
         await expect(sheet.getByRole("button", { name: he.field.origin, exact: true })).toContainText(fixture.destination.name);
       }
+      await fillPublicDetails(member.page, shape === "pickup" ? fixture.home.name : fixture.destination.name, description, guestNames);
       await member.page.getByRole("radio", { name: he.request.tripTypeDropOff, exact: true }).click();
       await sheet.getByRole("button", { name: he.quickRequest.submitOneWay, exact: true }).click();
       await expect(sheet).not.toBeVisible();

@@ -455,6 +455,12 @@ export function RequestForm({
   // REQ §13.110 / UX_FLOWS §3.4a: one form state, two field arrangements (`profiles.classic_request_form`).
   const layout = useRequestFormLayout();
   const isSentence = layout === "sentence";
+  // The classic layout has a "no preference" car row, so the sentence-only "a specific car is required" flag
+  // (seeded from a stored preferred car) must not block clearing it.
+  const watchedPreferredCar = useWatch({ control: form.control, name: "preferredCarId" });
+  useEffect(() => {
+    if (!isSentence && form.getValues("preferSpecificCar")) form.setValue("preferSpecificCar", false);
+  }, [isSentence, form, watchedPreferredCar]);
   // A failed submit also opens the sheet/row of the first bad field in the sentence layout.
   const [invalidSignal, setInvalidSignal] = useState<{ field: string; n: number } | null>(null);
   // Weekly sentence requests have two stages: 1 = the sentence, 2 = the modifiers (UX_FLOWS §3.4a).

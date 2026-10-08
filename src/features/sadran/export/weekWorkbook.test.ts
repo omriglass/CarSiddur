@@ -21,17 +21,21 @@ describe("weekly Excel export", () => {
       week_start: data.weekStart, status: "waitlisted", trip_shape: "one_way_from", return_at: "2026-09-15T09:00:00Z",
       destination_resolved_name: "Destination", preferred_car_id: "car", notes: "=Literal note" };
     const ride = { id: "ride", car_id: "car", driver_id: null, driver_name: null, department_id: data.departmentId,
-      week_start: data.weekStart, status: "draft", notes: "Manual reservation", served: [] };
+      week_start: data.weekStart, status: "draft", notes: "Manual reservation", served: [], starts_at: "2026-09-14T06:00:00Z", ends_at: "2026-09-14T07:00:00Z" };
     const sheets = weekExportSheets({ ...data,
       requests: [request, { ...request, id: "other-week", week_start: "2026-09-20" }] as WeekExportData["requests"],
       rides: [ride, { ...ride, id: "cancelled", status: "cancelled" }, { ...ride, id: "other-dept", department_id: "elsewhere" }] as unknown as WeekExportData["rides"],
     });
     expect(sheets[0]!.rows).toHaveLength(2);
+    expect(sheets[0]!.rows[0]![2]).toBe(he.excelExport.requestInWords);
+    expect(String(sheets[0]!.rows[1]![2])).toContain("Destination");
+    expect(sheets[0]!.columnWidths?.[2]).toBe(70);
     expect(sheets[0]!.rows[1]).toContain("Shared car");
     expect(sheets[0]!.rows[1]).toContain("=Literal note");
-    expect(sheets[1]!.rows).toHaveLength(2);
-    expect(sheets[1]!.rows[1]).toContain(he.excelExport.noDriver);
-    expect(sheets[1]!.rows[1]).toContain("Manual reservation");
+    const texts = sheets[1]!.rows.flat().map((c) => (c && typeof c === "object" && "text" in c ? c.text : c));
+    expect(texts).toContain("Shared car");
+    expect(texts.filter((t) => typeof t === "string" && t.startsWith("Manual reservation\n"))).toHaveLength(1);
+    expect(texts).toContain(he.excelExport.timeColumn);
   });
 
   it("exports saved per-policy scores with their publication time, independently of current assignments", () => {

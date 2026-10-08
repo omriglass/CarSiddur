@@ -129,7 +129,14 @@
         "supabase/migrations/**/*alternative*",
         "supabase/migrations/**/*drop_point*",
         "supabase/migrations/**/*duration_lock*",
-        "supabase/migrations/**/*window_locked*"
+        "supabase/migrations/**/*window_locked*",
+        "e2e/request-sentence-overlay.spec.ts",
+        "e2e/request-window.spec.ts",
+        "e2e/request-edit.spec.ts",
+        "e2e/plan-b-form.spec.ts",
+        "e2e/plan-b-cycle.spec.ts",
+        "e2e/request-form.ts",
+        "e2e/destinations-drop-points.spec.ts"
       ],
       "vitest": [
         "src/features/requests"
@@ -181,7 +188,8 @@
         "supabase/migrations/**/*quick_request*",
         "supabase/tests/live_quick_one_way.sql",
         "e2e/quick-request.spec.ts",
-        "e2e/quick-one-way.spec.ts"
+        "e2e/quick-one-way.spec.ts",
+        "e2e/car-now.spec.ts"
       ],
       "vitest": [
         "src/features/requests/quickRequest.test.ts",
@@ -335,7 +343,8 @@
         "src/features/requests/rowHandover.ts",
         "src/features/requests/rowHandover.test.ts",
         "supabase/migrations/**/*ride_car_neighbours*",
-        "supabase/tests/car_handover_notes.sql"
+        "supabase/tests/car_handover_notes.sql",
+        "e2e/siddur-desktop.spec.ts"
       ],
       "vitest": [
         "src/features/rides/carHandover.test.ts",
@@ -442,7 +451,9 @@
         "src/lib/luggageWaiver.ts",
         "src/lib/luggageWaiver.test.ts",
         "src/components/SmallTrunkHost.tsx",
-        "src/components/useSmallTrunkConfirm.tsx"
+        "src/components/useSmallTrunkConfirm.tsx",
+        "e2e/large-trunk-waiver.spec.ts",
+        "e2e/plan-b-cycle.spec.ts"
       ],
       "vitest": [
         "src/lib/smallTrunk.test.ts",
@@ -507,7 +518,8 @@
         "e2e/one-way-consent.spec.ts",
         "e2e/sadran.spec.ts",
         "src/pages/ProposalTokenPage.tsx",
-        "supabase/migrations/**/*proposals_status_guard*"
+        "supabase/migrations/**/*proposals_status_guard*",
+        "e2e/plan-b-cycle.spec.ts"
       ],
       "vitest": [
         "src/features/proposals",
@@ -614,7 +626,8 @@
         "supabase/tests/qa_run5_publish.sql",
         "e2e/sadran.spec.ts",
         "e2e/waitlist-groups.spec.ts",
-        "e2e/export.spec.ts"
+        "e2e/export.spec.ts",
+        "e2e/plan-b-cycle.spec.ts"
       ],
       "vitest": [
         "src/features/sadran/publish",
@@ -805,7 +818,8 @@
         "e2e/admin-department.spec.ts",
         "e2e/department-context.spec.ts",
         "src/features/admin/departments/schema.ts",
-        "src/features/admin/departments/components/DepartmentsScreen.tsx"
+        "src/features/admin/departments/components/DepartmentsScreen.tsx",
+        "e2e/destinations-drop-points.spec.ts"
       ],
       "vitest": [
         "src/features/admin",

@@ -1,3 +1,4 @@
+import { formatWeekRangeLabel } from "../src/components/dateFieldDates";
 import { expect, test } from "@playwright/test";
 import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
 import { he } from "../src/i18n/he";
@@ -137,7 +138,7 @@ test.describe("siddur mobile header", { tag: ["@siddur"] }, () => {
     try {
       await page.goto(paths.siddurArchive(NEVO_DEPARTMENT_ID));
       await expect(page.getByRole("heading", { name: he.siddur.archiveTitle })).toBeVisible();
-      const row = page.getByTestId("siddur-archive-row").filter({ hasText: "5.1" });
+      const row = page.getByTestId("siddur-archive-row").filter({ hasText: formatWeekRangeLabel(pastWeekStart) });
       await expect(row).toBeVisible();
       await row.click();
       await expect(page.getByText(he.siddur.archivedWeekHint)).toBeVisible();
@@ -158,7 +159,7 @@ test.describe("siddur mobile header", { tag: ["@siddur"] }, () => {
     if (error) throw error;
     try {
       await page.goto(paths.siddurArchive(NEVO_DEPARTMENT_ID));
-      const row = page.getByTestId("siddur-archive-row").filter({ hasText: "2.2" });
+      const row = page.getByTestId("siddur-archive-row").filter({ hasText: formatWeekRangeLabel(pastWeekStart) });
       await expect(row).toBeVisible();
       const downloadPromise = page.waitForEvent("download");
       await page.getByTestId("siddur-archive-export").click();

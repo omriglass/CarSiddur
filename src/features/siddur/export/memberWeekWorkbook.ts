@@ -7,7 +7,9 @@ export interface MemberWeekExportData {
   departmentId: string;
   weekStart: string;
   rides: BoardRide[];
-  cars: { id: string; name: string }[];
+  cars: { id: string; name: string; type?: string | null; status?: string | null }[];
+  homeDestinationId?: string | null;
+  boardStartTime?: string | null;
 }
 
 /**
@@ -24,8 +26,7 @@ export interface MemberWeekExportData {
  * a published/archived day (`is_week_public()`/`is_day_public()`).
  */
 export function memberWeekExportSheets(data: MemberWeekExportData): ExcelSheet[] {
-  const carNames = new Map(data.cars.map((car) => [car.id, car.name]));
-  return [buildBoardSheet(data.rides, carNames, data.weekStart, data.departmentId)];
+  return [buildBoardSheet(data.rides, data.cars, data.weekStart, data.departmentId, { homeDestinationId: data.homeDestinationId, boardStartTime: data.boardStartTime })];
 }
 
 export function createMemberWeekWorkbook(data: MemberWeekExportData): Uint8Array<ArrayBuffer> {

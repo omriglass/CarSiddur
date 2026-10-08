@@ -57,7 +57,7 @@ the sentence layout (REQ §13.110: `requestForm/sentence/**`, `timeAnchors.ts`, 
 `queryKeys.ts` (all under `src/features/requests/`); `src/components/RideTypeChips.tsx`(+test); `src/i18n/he.member.ts`; migrations matching
 `*request_template*`, `*anchors*`, `*route_minutes_preview*`, `*classic_request_form*`, `*series*`, `*requests.sql`, `*request_edit*`, `*bulk_request_withdrawal*`,
 `*child*`, `*origin*` (origins/trip_type, REQ §13.93, steps O2/O3), `*stop*` (multi-stop rides, REQ §13.93, step O6); `e2e/multi-day.spec.ts`, `repeating-requests.spec.ts`, `member.spec.ts`,
-`auto-approve.spec.ts`, `upcoming-week.spec.ts`, `multi-stop.spec.ts`;
+`auto-approve.spec.ts`, `upcoming-week.spec.ts`, `multi-stop.spec.ts`, `request-sentence.spec.ts`, `request-sentence-overlay.spec.ts`, `request-window.spec.ts`, `request-edit.spec.ts`, `plan-b-form.spec.ts`, `plan-b-cycle.spec.ts` (shared plumbing: `e2e/request-form.ts`);
 `src/features/requests/stops.ts`(+test via `requestForm/StopsField.test.tsx`), `src/lib/routeStops.ts`, `src/lib/routeLabel.ts`(+test).
 
 **Automated**:
@@ -65,7 +65,8 @@ the sentence layout (REQ §13.110: `requestForm/sentence/**`, `timeAnchors.ts`, 
 - SQL: `request_templates.sql`, `multi_day_series.sql`, `origins_schema.sql`, `origins_chain.sql`, `multi_stop.sql`, `request_anchors.sql` (REQ §13.110: time anchors, shift trigger, `route_minutes_preview`, `classic_request_form`), `plan_b.sql` (REQ §13.112 a/b: `destinations.is_drop_point`, `submit_request` `fallback`/`alternative` keys + validation, `request_alternatives` RLS, the `alternative` proposal create → publish gate (`publication_alternatives_pending`, not bypassable) → send → accept → applied with the main trip kept in `original_main` and restorable, decline, a stale plan B, fairness weight 0.1, publication score weights; API twin in `scripts/test-api.mjs` section `planb`; solver `src/solver/__tests__/alternative.test.ts`), `qa_run11_noop_save.sql` (REQ §13.101 l, R11B1: a save with no changes is `unchanged` and writes nothing — open week, waitlisted/submitted/assigned on a published week; probes report it; a real change still saves; `qa_run5_publish.sql` also covers R11B3, a waitlisted-only member's `published` notice; `scripts/test-api.mjs` section `request`/`planb`: no-op resave, `alternative_car_required`), `request_window.sql` (REQ §13.112 c/d: `duration_locked`, relaxed late-flex CHECKs, `requests_duration_lock_guard`, `submit_request` keys, templates, `merge_window_locked`, unnamed children counts) (run via `npm run db:test`, all-or-nothing)
 - Playwright: `npx playwright test --grep "@request-form"` (`multi-day.spec.ts`,
   `repeating-requests.spec.ts`, `member.spec.ts`, `auto-approve.spec.ts`, `upcoming-week.spec.ts`,
-  `multi-stop.spec.ts`, `request-sentence.spec.ts`; `e2e/global-setup.ts` opts the seeded accounts into the classic form, `request-sentence.spec.ts` flips `member2` to the sentence layout for its run)
+  `multi-stop.spec.ts`, `request-sentence.spec.ts`; `e2e/global-setup.ts` opts the seeded accounts into the classic form, the sentence specs flip one member to the sentence layout for their run and restore it)
+  - REQ §13.110–§13.112 specs (written 2026-10-08): `request-sentence-overlay.spec.ts` (card over the siddur at phone + desktop width, who chip with companion + unnamed adult/child seat/booster stored as seat counts, arrive-by with derived departure, `/my` "להגיע עד", `?day=`), `request-window.spec.ts` ("יש לי חלון זמן?" 3 h between 07:00 and 12:00: stored `duration_locked`, `/my` summary, edit reopens in window mode), `request-edit.spec.ts` (no-change save toast + unchanged version; published day: a note-only edit keeps ride/status, a time change still asks), `plan-b-form.spec.ts` (sentence plan B with another pickup place, "אסתדר", switch to הקפצה uses/restores plan B or asks the dialog; classic "+ תוכנית ב׳" saves, reopens, no error before a submit attempt), `plan-b-cycle.spec.ts` (also `@board @proposals @publication`: unmet card "תוכנית ב׳ אפשרית" → proposal → publish blocked → `/p/<token>` accept → "שובצת בתוכנית ב׳" → removal also removes the pickup request; serial)
 
 **QA script**:
 0. (Sentence layout, REQ §13.110) Sign in as a member whose profile has "טופס הבקשה הקלאסי" off, open a new request: the form is one sentence of tappable chips. Pick a destination, open the outbound time chip, choose "להגיע עד" 09:30: the sheet shows "יציאה משוערת …"; submit; `/my` shows "להגיע עד 09:30". Turn the profile switch on: the old field-by-field form returns.
@@ -92,7 +93,7 @@ the sentence layout (REQ §13.110: `requestForm/sentence/**`, `timeAnchors.ts`, 
 **Paths**: `src/features/requests/quickRequest.ts`(+test), `carNow.ts`(+test),
 `components/QuickRequestSheet.tsx`(+test), `components/CarNowButton.tsx`(+test),
 `components/RequestForm.tsx` (shared, see fan-out); `src/i18n/he.member.ts`; migrations matching
-`*quick_request*`; `e2e/quick-request.spec.ts`, `quick-one-way.spec.ts`.
+`*quick_request*`; `e2e/quick-request.spec.ts`, `quick-one-way.spec.ts`, `car-now.spec.ts` ("רוצה רכב עכשיו!" in the sentence layout).
 
 **Automated**:
 - Vitest: `npx vitest run src/features/requests/quickRequest.test.ts src/features/requests/carNow.test.ts src/features/requests/components/QuickRequestSheet.test.tsx src/features/requests/components/CarNowButton.test.tsx`
@@ -178,7 +179,7 @@ gap is closed.
 `WeekStrip.test.tsx`, `src/pages/SiddurPage.tsx`; `src/i18n/he.member.ts`; migrations matching
 `*public_request*`, `*public_notes*`, `*car_swap*`, or whose content defines `v_board_rides`;
 `src/components/CarSwapDialog.tsx`(+test), `WeekGrid.carSwap.test.tsx`, `src/features/carSwap/**`;
-`e2e/siddur-mobile.spec.ts`, `ride-editing.spec.ts`, `member.spec.ts`, `car-swap.spec.ts`, `car-handover.spec.ts` ("be back on time" note);
+`e2e/siddur-mobile.spec.ts`, `siddur-desktop.spec.ts` (REQ §13.111 b: week switcher + car names without sideways overflow at 1280 px), `ride-editing.spec.ts`, `member.spec.ts`, `car-swap.spec.ts`, `car-handover.spec.ts` ("be back on time" note);
 `src/features/rides/servedOf.ts`, `src/features/rides/components/RideRouteStops.tsx`,
 `src/lib/routeStops.ts` (multi-stop rides ride-detail route display, REQ §13.93, step O6).
 `src/features/rides/carHandover*`, `components/CarHandoverNotice.tsx`, `components/RideCarHandover.tsx`, `src/features/requests/rowHandover*`,
@@ -223,7 +224,7 @@ grid (item 2) — `hideIdleTemporaryCars()` is unit-tested in `weekGridCars.test
 `*board*`, `*coordinator*`, `*ride_edit*`, `*day_readiness*`, `*car_chain*`, `*car_swap*`, or
 content-matching `v_board_rides`/`publish_siddur`; `src/components/CarSwapDialog.tsx`(+test),
 `WeekGrid.carSwap.test.tsx`, `src/features/carSwap/**`; `e2e/board.spec.ts`, `board-mobile.spec.ts`,
-`board-coordination.spec.ts`, `board-drafts.spec.ts` (REQ §13.94 drafts), `merged-ride.spec.ts` (REQ §13.94 merged ride = one block, unmerge), `merge-verdict.spec.ts` (REQ §13.108 e: merge popup takes the server's `merge_preview` verdict), `export.spec.ts`, `weekly-permissions.spec.ts`, `ride-editing.spec.ts`,
+`board-coordination.spec.ts`, `board-drafts.spec.ts` (REQ §13.94 drafts), `merged-ride.spec.ts` (REQ §13.94 merged ride = one block, unmerge), `merge-verdict.spec.ts` (REQ §13.108 e: merge popup takes the server's `merge_preview` verdict), `export.spec.ts`, `weekly-permissions.spec.ts`, `ride-editing.spec.ts`, `large-trunk-waiver.spec.ts` (REQ §13.111 a: confirm/decline the small-car waiver on a hand drop), `plan-b-cycle.spec.ts`,
 `car-swap.spec.ts`, `multi-stop.spec.ts`; `src/features/rides/servedOf.ts`,
 `src/features/rides/components/RideRouteStops.tsx`, `src/lib/routeStops.ts` (multi-stop rides
 display, REQ §13.93, step O6); `src/features/rides/components/RideRoute.tsx`, `src/lib/rideRoute.ts`(+test) (ride route twin and display, REQ §13.94); `src/lib/weekSettings.ts`(+test) (week turnaround/dwell override, REQ §13.108 a).
@@ -270,7 +271,7 @@ display, REQ §13.93, step O6); `src/features/rides/components/RideRoute.tsx`, `
 **Paths**: `src/features/proposals/**`, `src/features/sadran/proposals/**`,
 `supabase/functions/answer-proposal/**`; `src/i18n/he.sadran.ts`, `he.member.ts`; migrations
 matching `*proposal*`; `e2e/proposal.spec.ts`, `proposal-retry.spec.ts`, `board-coordination.spec.ts`, `board-drafts.spec.ts`, `merged-ride.spec.ts`,
-`one-way-consent.spec.ts`, `sadran.spec.ts`.
+`one-way-consent.spec.ts`, `sadran.spec.ts`, `plan-b-cycle.spec.ts` (REQ §13.112 a/f: the `alternative` proposal, its token page and application).
 
 **Automated**:
 - Vitest: `npx vitest run src/features/proposals src/features/sadran/proposals`
@@ -330,7 +331,7 @@ no-named-people path (per `docs/E2E_AUDIT_2026-09-14.md`).
 **Paths**: `src/features/sadran/publish/**`, `lastUsedPolicy.ts`(+test); `src/solver/**` (shared
 fan-out); `src/i18n/he.sadran.ts`; migrations matching `*publish*`, `*siddur_version*`,
 `*publication*`, or content-matching `v_board_rides`/`publish_siddur`; `e2e/sadran.spec.ts`,
-`waitlist-groups.spec.ts`, `export.spec.ts`.
+`waitlist-groups.spec.ts`, `export.spec.ts`, `plan-b-cycle.spec.ts` (publishing waits for a pending plan-B proposal).
 
 **Automated**:
 - Vitest: `npx vitest run src/features/sadran/publish src/features/sadran/lastUsedPolicy.test.ts`
@@ -441,7 +442,7 @@ real-solver regression, QA CLIs — docs/QA_SIMULATION.md).
 `supabase/functions/destination-route/**`; `src/i18n/he.admin.ts`; migrations matching `*admin*`,
 `*catalog*`, `*member_identity*`, `*department_membership*`, `*origin*`, `*place_distances*`
 (cars' base location / members' default origin / `place_distances`, REQ §13.93, steps O2/O3);
-`e2e/admin.spec.ts`, `admin-department.spec.ts`, `admin-errors.spec.ts`, `department-context.spec.ts`.
+`e2e/admin.spec.ts`, `admin-department.spec.ts`, `admin-errors.spec.ts`, `department-context.spec.ts`, `destinations-drop-points.spec.ts` (REQ §13.112: the "נקודת הקפצה" switch and column, admin and Sadran).
 
 **Automated**:
 - Vitest: `npx vitest run src/features/admin src/features/fleet src/features/diagnostics`

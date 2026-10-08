@@ -1,6 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
 import { fromZonedTime } from "date-fns-tz";
 
+import { he } from "../src/i18n/he";
+
 import { getWeekStart, NEVO_DEPARTMENT_ID, SEEDED_USERS, serviceRoleClient, signIn } from "./helpers";
 
 // Quick request from an empty slot (UX_FLOWS.md §18, REQUIREMENTS §8 "new request on a free
@@ -50,6 +52,33 @@ async function freezeToWednesdayMorning(page: Page, weekStart: string): Promise<
   await page.clock.setFixedTime(frozenInstant);
 }
 
+/** Clicks "take the car"; a member who already has an overlapping ride/request (left by earlier specs) is asked
+ * "cancel the other one / keep both / back" (REQ §13.101), so this answers "keep both" when that dialog opens. */
+async function takeTheCar(page: Page): Promise<void> {
+  await page.getByRole("button", { name: "קח/י את הרכב" }).click();
+  const keepBoth = page.getByRole("dialog", { name: he.request.overlapTitle }).getByRole("button", { name: he.request.overlapKeepBoth });
+  await keepBoth.waitFor({ state: "visible", timeout: 2_000 }).then(() => keepBoth.click(), () => undefined);
+}
+
+/**
+ * Earlier specs share this seed and can leave member2 with a ride/request on that Friday; the server then refuses to
+ * auto-place a second overlapping request (REQ §13.100 QB8) and the test would be about something else. Clears them.
+ */
+async function clearMember2Friday(liveWeekStart: string): Promise<void> {
+  const service = serviceRoleClient();
+  const [y, m, d] = liveWeekStart.split("-").map(Number);
+  const dayStart = fromZonedTime(`${new Date(Date.UTC(y!, m! - 1, d! + 5)).toISOString().slice(0, 10)} 00:00:00`, TZ);
+  const dayEnd = new Date(dayStart.getTime() + 86_400_000);
+  const { data: mine } = await service.from("requests").select("id,depart_at,return_at,status")
+    .eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", liveWeekStart).eq("requester_id", "00000000-0000-0000-0000-000000000104")
+    .not("status", "in", "(withdrawn,cancelled,denied)");
+  for (const request of (mine ?? []).filter((r) => r.depart_at && new Date(r.depart_at) < dayEnd && new Date(r.return_at ?? r.depart_at) > dayStart)) {
+    const { data: links } = await service.from("ride_requests").select("ride_id").eq("request_id", request.id);
+    if (links?.length) await service.from("rides").update({ status: "cancelled" }).in("id", links.map((l) => l.ride_id));
+    await service.from("requests").update({ status: "withdrawn" }).eq("id", request.id);
+  }
+}
+
 test.describe.serial("quick request from an empty slot (live week)", { tag: ["@quick-request"] }, () => {
   test.beforeEach(async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
@@ -58,6 +87,7 @@ test.describe.serial("quick request from an empty slot (live week)", { tag: ["@q
 
   test("clicking an empty cell assigns exactly the clicked car", async ({ page }) => {
     const liveWeekStart = await getWeekStart("live");
+    await clearMember2Friday(liveWeekStart);
     const admin = serviceRoleClient();
     const { data: cars } = await admin
       .from("cars")
@@ -84,7 +114,7 @@ test.describe.serial("quick request from an empty slot (live week)", { tag: ["@q
 
     await page.getByPlaceholder("לאן?").fill(DEST_1);
     await page.getByText(`"${DEST_1}" — יעד חופשי`).click();
-    await page.getByRole("button", { name: "קח/י את הרכב" }).click();
+    await takeTheCar(page);
 
     await expect(page.getByText(/הרכב שלך/)).toBeVisible({ timeout: 10_000 });
     await expect(col.locator("button[data-ride-id]")).toBeVisible({ timeout: 10_000 });
@@ -150,7 +180,7 @@ test.describe.serial("quick request from an empty slot (live week)", { tag: ["@q
 
     await page.getByPlaceholder("לאן?").fill(DEST_2);
     await page.getByText(`"${DEST_2}" — יעד חופשי`).click();
-    await page.getByRole("button", { name: "קח/י את הרכב" }).click();
+    await takeTheCar(page);
 
     await expect(page.getByText(/שובץ במקום/)).toBeVisible({ timeout: 10_000 });
 

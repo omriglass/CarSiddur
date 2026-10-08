@@ -45,10 +45,18 @@ test("Sadran downloads the entire current week as a Hebrew Excel workbook", { ta
   const workbook = files.get("xl/workbook.xml")!;
   for (const label of [he.excelExport.requestsSheet, he.excelExport.boardSheet, he.excelExport.scoresSheet]) expect(workbook).toContain(label);
   const strings = files.get("xl/sharedStrings.xml")!;
+  // בקשות sheet: one row per request (the id column stays) and the new "הבקשה במילים" column.
   for (const request of requests!) expect(strings).toContain(request.id);
-  for (const ride of rides!) expect(strings).toContain(ride.id);
+  expect(strings).toContain(he.excelExport.requestInWords);
   expect(strings).toContain(he.excelExport.notes);
   expect(files.get("xl/worksheets/sheet1.xml")!.match(/<row /g)).toHaveLength(requests!.length + 1);
-  expect(files.get("xl/worksheets/sheet2.xml")!.match(/<row /g)).toHaveLength(rides!.length + 1);
+  // סידור sheet: a stacked per-day grid with merged ride blocks, so rides are read by their label text, not by id.
+  const { data: labelled, error: labelError } = await service.from("v_board_rides").select("destination_name, driver_name")
+    .eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", weekStart).neq("status", "cancelled");
+  if (labelError) throw labelError;
+  const labels = (labelled ?? []).flatMap((ride) => [ride.destination_name, ride.driver_name]).filter((value): value is string => !!value);
+  expect(labels.length).toBeGreaterThan(0);
+  expect(labels.some((label) => strings.includes(label.replace(/&/g, "&amp;")))).toBe(true);
+  expect(files.get("xl/worksheets/sheet2.xml")).toContain("<mergeCell ");
   for (const content of files.values()) expect(content).not.toContain("<f>");
 });

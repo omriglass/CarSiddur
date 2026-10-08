@@ -24,7 +24,16 @@ test.describe("upcoming week phase", { tag: ["@request-form", "@new-request-wind
   test("a series reaching two weeks out materializes an upcoming week, hidden from members but visible to the Sadran", async ({ page, browser }) => {
     const service = serviceRoleClient();
     const openWeekStart = await getWeekStart("open");
-    const farWeekStart = new Date(Date.parse(`${openWeekStart}T00:00:00Z`) + 14 * 86_400_000).toISOString().slice(0, 10);
+    // Other specs materialize future weeks as `open`; start two weeks past the open week and move on
+    // until a week with no row exists (a leftover row cannot be deleted when rides reference it).
+    const plusDays = (iso: string, days: number) => new Date(Date.parse(`${iso}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
+    let farWeekStart = plusDays(openWeekStart, 14);
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      await service.from("weeks").delete().eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", farWeekStart);
+      const { data: leftover } = await service.from("weeks").select("week_start").eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", farWeekStart);
+      if (!leftover?.length) break;
+      farWeekStart = plusDays(farWeekStart, 7);
+    }
     const farDay0 = farWeekStart;
     const farDay1 = new Date(Date.parse(`${farWeekStart}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
 
