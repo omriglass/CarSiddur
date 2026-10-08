@@ -170,6 +170,9 @@ export function MergePrefillDialog({ prefill, hostLabel, hostStartsAt, hostEndsA
                 )}
               </div>
             ) : null}
+            {verdict?.status === "ok" && verdict.waivable ? (
+              <p className="font-medium text-amber-700 dark:text-amber-400" data-testid="merge-waivable">{he.smallTrunk.dropWarning}</p>
+            ) : null}
             {verdict?.status === "refused" ? (
               <p className="font-semibold text-destructive" data-testid="merge-invalid" data-code={verdict.code ?? undefined}>{verdict.message}</p>
             ) : verdict?.status === "loading" ? (

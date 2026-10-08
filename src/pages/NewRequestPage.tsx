@@ -1,6 +1,8 @@
 import { useActiveDepartment } from "@/features/auth/useActiveDepartment";
 import { useSearchParams } from "react-router-dom";
 
+import { RequestOverlay } from "@/app/RequestOverlay";
+import { useCloseRequestOverlay } from "@/app/overlayState";
 import { formatWeekRangeLabel } from "@/components/dateFieldDates";
 import { PageHeader } from "@/components/PageHeader";
 import { useMyDepartments } from "@/features/auth/useMyDepartments";
@@ -61,37 +63,57 @@ export function NewRequestPage() {
         }
       : undefined;
 
+  const close = useCloseRequestOverlay();
+  const overlay = !!profileQuery.data && !profileQuery.data.classic_request_form;
+
+  const body =
+    !isLoading && !active.canSubmit ? <p className="p-4">{he.departmentContext.noMembership}</p> : isLoading || !departmentId || !weekStart ? (
+      <div className="space-y-3 p-4">
+        <div className="h-11 animate-pulse rounded-md bg-muted" />
+        <div className="h-11 animate-pulse rounded-md bg-muted" />
+      </div>
+    ) : (
+      <>
+        {!templateId ? (
+          <div className="px-4 pt-2">
+            <TemplateSuggestions weekStart={weekStart} />
+          </div>
+        ) : null}
+        <RequestForm
+          mode="new"
+          departmentId={departmentId}
+          weekStart={weekStart}
+          joinRide={joinRide}
+          slotPrefill={!joinRideId && dayParam && timeParam ? { day: dayParam, departTime: timeParam } : undefined}
+          waitlist={waitlist}
+          templateSuggestion={templateSuggestion}
+          onDone={overlay ? close : undefined}
+        />
+      </>
+    );
+
+  // Sentence layout: an overlay over the page the member came from (UX_FLOWS §3.4a); the classic
+  // layout stays the full page.
+  if (overlay) {
+    return (
+      <RequestOverlay
+        title={he.screen.request.new}
+        subtitle={weekStart ? <span dir="ltr">{formatWeekRangeLabel(weekStart)}</span> : undefined}
+      >
+        {body}
+      </RequestOverlay>
+    );
+  }
+
   return (
     <div className="mx-auto max-w-2xl">
-      <div className="p-4 pb-0">
+      <div className="px-4 pt-2">
         <PageHeader
           title={he.screen.request.new}
-          subtitle={weekStart ? formatWeekRangeLabel(weekStart) : undefined}
+          actions={weekStart ? <span className="text-sm text-muted-foreground">{formatWeekRangeLabel(weekStart)}</span> : undefined}
         />
       </div>
-      {!isLoading && !active.canSubmit ? <p className="p-4">{he.departmentContext.noMembership}</p> : isLoading || !departmentId || !weekStart ? (
-        <div className="space-y-3 p-4">
-          <div className="h-11 animate-pulse rounded-md bg-muted" />
-          <div className="h-11 animate-pulse rounded-md bg-muted" />
-        </div>
-      ) : (
-        <>
-          {!templateId ? (
-            <div className="p-4 pb-0">
-              <TemplateSuggestions weekStart={weekStart} />
-            </div>
-          ) : null}
-          <RequestForm
-            mode="new"
-            departmentId={departmentId}
-            weekStart={weekStart}
-            joinRide={joinRide}
-            slotPrefill={!joinRideId && dayParam && timeParam ? { day: dayParam, departTime: timeParam } : undefined}
-            waitlist={waitlist}
-            templateSuggestion={templateSuggestion}
-          />
-        </>
-      )}
+      {body}
     </div>
   );
 }

@@ -219,10 +219,10 @@ export function buildChecks(opts) {
     {
       id: "ride_luggage_capacity",
       level: "error",
-      title: "a ride leg carries a large-luggage request on a car without a large trunk (car_takes_luggage, yes/no)",
+      title: "a ride leg carries a large-luggage request on a car without a large trunk (car_takes_luggage, yes/no; a request whose requirement was waived by hand is not counted, REQ §13.111 a)",
       sql: `select l.ride_id::text, format('car %s leg %s carries %s large-luggage request(s)', c.name, l.side, l.lug), 1
       from (
-        select rd.id as ride_id, rd.car_id, legs.side, rd.starts_at, count(*) filter (where q.has_luggage)::int as lug
+        select rd.id as ride_id, rd.car_id, legs.side, rd.starts_at, count(*) filter (where q.has_luggage and q.luggage_waived_at is null)::int as lug
         from public.rides rd
         ${inScope("rd")}
         join public.ride_requests rr on rr.ride_id = rd.id

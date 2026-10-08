@@ -41,6 +41,9 @@ export const carSwapBlockerSchema = z.object({
   ride_id: z.string().nullable(),
   car_id: z.string().nullable(),
   detail: z.string().nullable(),
+  /** REQ §13.111 (a): a luggage blocker the Sadran may accept (`swap_day_cars` with `allow_small_trunk`). */
+  waivable: z.boolean().optional(),
+  request_ids: z.array(z.string()).optional(),
 });
 export type CarSwapBlocker = z.infer<typeof carSwapBlockerSchema>;
 
@@ -60,6 +63,8 @@ export const carSwapPreviewSchema = z.object({
   blockers: z.array(carSwapBlockerSchema),
   notices: z.array(carSwapNoticeSchema),
   can_swap: z.boolean(),
+  /** REQ §13.111 (a): the swap can go ahead, but a large-luggage request would land on a car without a large trunk. */
+  needs_small_trunk: z.boolean().optional(),
   notify: z.boolean(),
 });
 export type CarSwapPreview = z.infer<typeof carSwapPreviewSchema>;

@@ -1,5 +1,3 @@
-import { Link } from "react-router-dom";
-
 import { paths } from "@/app/routes";
 import { Button } from "@/components/ui/button";
 import { useActiveDepartment } from "@/features/auth/useActiveDepartment";
@@ -8,6 +6,7 @@ import { t } from "@/i18n/he";
 import { cn } from "@/lib/utils";
 
 import { newRequestButtonState } from "../newRequestButton";
+import { RequestLink } from "./RequestLink";
 
 const LABEL_KEY = {
   nextWeek: "newRequestButton.nextWeek",
@@ -65,10 +64,10 @@ export function NewRequestButton({ variant, className }: NewRequestButtonProps) 
 
   return (
     <Button asChild size={variant === "fab" ? "lg" : "sm"} className={variant === "fab" ? fabClassName : className}>
-      <Link to={to}>
+      <RequestLink to={to}>
         {variant === "fab" ? <span aria-hidden="true" className="text-lg leading-none">+</span> : null}
         {label}
-      </Link>
+      </RequestLink>
     </Button>
   );
 }

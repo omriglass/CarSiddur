@@ -192,7 +192,8 @@ function ProposalAnswerBody({
   const isDenyVariant = summary.type === "deny" || summary.type === "external";
   // `origin` (REQ §13.93): no time shift to show before/after -- the request's own window
   // (shown by `ProposalSummaryView`'s `TripSummary`) never changes, only where the car starts.
-  const isOriginVariant = summary.type === "origin";
+  // `alternative` (REQ §13.112 a) likewise: the member's own plan B is stated as a line under the request, not as times to compare.
+  const isOriginVariant = summary.type === "origin" || summary.type === "alternative";
   const shift = readShiftPayload(summary.payload);
 
   return (
@@ -206,6 +207,7 @@ function ProposalAnswerBody({
           departAt={summary.request?.departAt ?? null}
           returnAt={summary.request?.returnAt ?? null}
           originChange={summary.originChange}
+          alternative={summary.alternative}
         />
       </div>
 

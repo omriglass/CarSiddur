@@ -1,4 +1,5 @@
 import { useActiveDepartment } from "@/features/auth/useActiveDepartment";
+import { useProfile } from "@/features/auth/useProfile";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { carBaseIsHome, roundUpToQuarterHour } from "@/features/siddur/freeWindows";
@@ -21,8 +22,10 @@ import {
   fetchMyFreedSlotOffers,
   fetchMyRequests,
   fetchRequestById,
+  fetchRecentCompanionRows,
   fetchRequestCompanionIds,
   fetchRequestChildIds,
+  fetchRouteMinutesPreview,
   fetchTemplateSuggestions,
   saveRequestTemplate,
   setFreedSlotOptOut,
@@ -37,9 +40,11 @@ import {
   shortenSeries,
   withdrawAllRequests,
   type JoinableRideRow,
+  type RoutePreviewPoint,
   type SubmitRequestPayload,
 } from "./api";
 import { requestsKeys } from "./queryKeys";
+import { recentCompanionIds } from "./recentCompanions";
 
 export function useMyRequests() {
   const { departmentId } = useActiveDepartment();
@@ -215,6 +220,17 @@ export function useRequestCompanionsQuery(requestId: string | undefined) {
     queryKey: requestsKeys.companions(requestId),
     queryFn: () => fetchRequestCompanionIds(requestId as string),
     enabled: !!requestId,
+  });
+}
+
+export function useRecentCompanionsQuery() {
+  const { session } = useSession();
+  const profileId = session?.user.id;
+  return useQuery({
+    queryKey: requestsKeys.recentCompanions(profileId),
+    queryFn: async () => recentCompanionIds(await fetchRecentCompanionRows(profileId as string), profileId),
+    enabled: !!profileId,
+    staleTime: 5 * 60_000,
   });
 }
 
@@ -429,4 +445,30 @@ export function useWithdrawAllRequestsMutation() {
     },
     onError: showErrorToast,
   });
+}
+
+/**
+ * REQ §13.110 (b): route minutes of an unsaved request leg for the sentence form's derived
+ * "יציאה משוערת" line. Enabled only once the destination is set; `placeholderData` keeps the
+ * last known value while a changed route reloads (submit uses it).
+ */
+export function useRouteMinutesQuery(departmentId: string | undefined, points: readonly RoutePreviewPoint[], enabled: boolean) {
+  return useQuery({
+    queryKey: requestsKeys.routeMinutes(departmentId, points),
+    queryFn: () => fetchRouteMinutesPreview(departmentId as string, points),
+    enabled: enabled && !!departmentId,
+    staleTime: 5 * 60_000,
+    placeholderData: (previous) => previous,
+  });
+}
+
+export type RequestFormLayout = "sentence" | "classic";
+
+/**
+ * REQ §13.110: which `RequestForm` layout the signed-in member sees (`profiles.classic_request_form`).
+ * The sentence layout is the default, also while the profile is still loading.
+ */
+export function useRequestFormLayout(): RequestFormLayout {
+  const profileQuery = useProfile();
+  return profileQuery.data?.classic_request_form ? "classic" : "sentence";
 }

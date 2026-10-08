@@ -1,4 +1,5 @@
 import { rpc } from "@/lib/rpc";
+import { withSmallTrunkRetry } from "@/lib/smallTrunk";
 
 import { carSwapPreviewSchema, carSwapResultSchema } from "./schema";
 
@@ -31,7 +32,8 @@ export interface SwapDayCarsArgs extends CarSwapArgs {
 }
 
 export async function swapDayCars(args: SwapDayCarsArgs): Promise<CarSwapResult> {
-  const data = await rpc("swap_day_cars", {
+  // REQ §13.111 (a): a large-luggage request landing on a car without a large trunk asks "לשבץ בכל זאת?" and retries with the flag.
+  const data = await withSmallTrunkRetry((allowSmallTrunk) => rpc("swap_day_cars", {
     p_department_id: args.departmentId,
     p_week_start: args.weekStart,
     p_day: args.day,
@@ -39,6 +41,7 @@ export async function swapDayCars(args: SwapDayCarsArgs): Promise<CarSwapResult>
     p_car_b: args.carB,
     p_expected_fingerprint: args.expectedFingerprint,
     p_series_mode: args.seriesMode,
-  });
+    p_allow_small_trunk: allowSmallTrunk,
+  }));
   return carSwapResultSchema.parse(data);
 }

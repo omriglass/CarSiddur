@@ -20,6 +20,7 @@ export const PROPOSAL_TEMPLATE_VARIANT: Record<ProposalType, string | null> = {
   deny: "deny",
   external: "external_none",
   origin: "origin",
+  alternative: "alternative",
 };
 
 /**
@@ -74,6 +75,8 @@ export interface ProposalTextInput {
    * `proposedDepartAt`/`proposedReturnAt` are the span's and the time line names the days.
    */
   seriesOriginal?: { departAt: string; returnAt: string } | null;
+  /** Plan B only (REQ §13.112 a): the member's own plan, from the request's `request_alternatives` row. */
+  alternative?: { dropPlace: string; arriveBy: string; pickupAt: string | null; pickupPlace?: string } | null;
 }
 
 function firstNameOf(fullName: string | undefined): string {
@@ -125,6 +128,16 @@ export function proposalTemplateVars(input: ProposalTextInput): Record<string, s
     legWord = leg === "out" ? he.sadranProposal.legOut : leg === "return" ? he.sadranProposal.legReturn : he.sadranProposal.legBoth;
   }
 
+  // REQ §13.112 (a): "{{dropPlace}} … {{dropTime}}{{pickupLine}}" -- the twin of SQL `_alternative_vars`.
+  const alt = input.alternative;
+  const pickupLine = alt?.pickupAt
+    ? tv(alt.pickupPlace ? "sadranProposal.alternativePickupFrom" : "sadranProposal.alternativePickup", { pickupTime: times(alt.pickupAt), pickupPlace: alt.pickupPlace ?? "" })
+    : "";
+  const altVars = alt
+    ? { dropPlace: alt.dropPlace, dropTime: times(alt.arriveBy), pickupLine,
+        planLine: tv("sadranProposal.alternativePlan", { dropPlace: alt.dropPlace, dropTime: times(alt.arriveBy), pickupLine }) }
+    : { dropPlace: "", dropTime: "", pickupLine: "", planLine: "" };
+
   // The request's own window as text: "08:00–12:00", just the departure for a one-way, "חזרה ב16:00" for a return-only.
   const windowText = request?.depart_at && request.return_at ? `${times(request.depart_at)}–${times(request.return_at)}`
     : request?.depart_at ? times(request.depart_at)
@@ -168,6 +181,7 @@ export function proposalTemplateVars(input: ProposalTextInput): Record<string, s
     reasonNote: input.reason ? `${tv("sadranProposal.reasonLine", { reason: input.reason })}\n` : "",
     externalSuggestion: input.externalSuggestion,
     expiresAt: "",
+    ...altVars,
   };
 }
 

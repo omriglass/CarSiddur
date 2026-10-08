@@ -7,13 +7,17 @@ import { FormItem } from "@/components/ui/form";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { CompanionPicker } from "@/components/CompanionPicker";
-import { t, tv } from "@/i18n/he";
+import { he, t, tv } from "@/i18n/he";
 
 import type { RequestFormValues } from "../../schema";
+import { AdultsStepper } from "./AdultsStepper";
 import { FieldError } from "./FieldError";
+import { UnnamedChildrenSteppers } from "./UnnamedChildrenSteppers";
 
 export interface PassengersFieldsProps {
   control: Control<RequestFormValues>;
+  /** R9U7: called when a named child was just added (suggests the childcare ride type). */
+  onChildAdded?: () => void;
   members: { id: string; name: string }[];
   children: { id: string; name: string; age: number | null }[];
   namedAdultCount: number;
@@ -21,7 +25,7 @@ export interface PassengersFieldsProps {
   guestNamesError: string | undefined;
 }
 
-export function PassengersFields({ control, members, children, namedAdultCount, namedChildCount, guestNamesError }: PassengersFieldsProps) {
+export function PassengersFields({ control, onChildAdded, members, children, namedAdultCount, namedChildCount, guestNamesError }: PassengersFieldsProps) {
   return (
     <>
       <FormItem data-field="companions">
@@ -40,6 +44,39 @@ export function PassengersFields({ control, members, children, namedAdultCount, 
         <p className="text-sm text-muted-foreground">{tv("request.namedPassengerCount", { count: String(namedAdultCount) })}</p>
       </FormItem>
 
+      <FormItem data-field="extraAdults">
+        <Label>{he.request.extraAdultsLabel}</Label>
+        <Controller
+          control={control}
+          name="extraAdults"
+          render={({ field }) => (
+            <AdultsStepper value={field.value ?? 0} onChange={field.onChange} moreLabel={he.request.extraAdultsMore} lessLabel={he.request.extraAdultsLess} testId="classic-extra-adults" />
+          )}
+        />
+      </FormItem>
+
+      <FormItem data-field="legacyChildSeats">
+        <Controller
+          control={control}
+          name="legacyChildSeats"
+          render={({ field: seatsField }) => (
+            <Controller
+              control={control}
+              name="boosters"
+              render={({ field: boostersField }) => (
+                <UnnamedChildrenSteppers
+                  childSeats={seatsField.value ?? 0}
+                  boosters={boostersField.value ?? 0}
+                  onChildSeatsChange={seatsField.onChange}
+                  onBoostersChange={boostersField.onChange}
+                  testId="classic-unnamed-children"
+                />
+              )}
+            />
+          )}
+        />
+      </FormItem>
+
       <FormItem data-field="children">
         <Label>{t("field.children")}</Label>
         <Controller control={control} name="children" render={({ field }) => (
@@ -49,7 +86,11 @@ export function PassengersFields({ control, members, children, namedAdultCount, 
               name: child.age == null ? child.name : `${child.name} · ${child.age}`,
             }))}
             value={field.value}
-            onChange={field.onChange}
+            onChange={(next) => {
+              const added = next.some((id) => !field.value.includes(id));
+              field.onChange(next);
+              if (added) onChildAdded?.();
+            }}
             label={t("field.children")}
           />
         )} />

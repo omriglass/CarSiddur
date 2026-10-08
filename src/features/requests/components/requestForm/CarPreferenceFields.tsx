@@ -20,9 +20,15 @@ export interface CarPreferenceFieldsProps {
   /** Structurally the same shape `QuickRequestContext` exposes — kept local to avoid importing
    * `RequestForm.tsx`'s own type back into this file. */
   quickContext?: { cars: readonly { id: string; name: string }[]; showCarPicker?: boolean };
+  /**
+   * Sentence layout "רכב מסוים" (R9U6): an empty select with a "בחר/י רכב" placeholder — no "none"
+   * row and no preselection; the schema refuses an empty choice (`preferSpecificCar`).
+   */
+  askForCar?: boolean;
+  error?: string;
 }
 
-export function CarPreferenceFields({ control, variant, preferredCars, initialPreferredCarName, quickContext }: CarPreferenceFieldsProps) {
+export function CarPreferenceFields({ control, variant, preferredCars, initialPreferredCarName, quickContext, askForCar, error }: CarPreferenceFieldsProps) {
   return (
     <>
       {variant === "carNow" ? (
@@ -51,10 +57,15 @@ export function CarPreferenceFields({ control, variant, preferredCars, initialPr
         <FormItem data-field="preferredCarId">
           <Label htmlFor="request-preferred-car">{t("request.preferredCar")}</Label>
           <Controller control={control} name="preferredCarId" render={({ field }) => (
-            <Select value={field.value || "none"} onValueChange={(value) => field.onChange(value === "none" ? "" : value)}>
-              <SelectTrigger id="request-preferred-car"><SelectValue /></SelectTrigger>
+            <Select
+              value={askForCar ? field.value || "" : field.value || "none"}
+              onValueChange={(value) => field.onChange(value === "none" ? "" : value)}
+            >
+              <SelectTrigger id="request-preferred-car" aria-invalid={error ? true : undefined}>
+                <SelectValue placeholder={askForCar ? he.requestSentence.carPick : undefined} />
+              </SelectTrigger>
               <SelectContent>
-                <SelectItem value="none">{t("request.noPreferredCar")}</SelectItem>
+                {askForCar ? null : <SelectItem value="none">{t("request.noPreferredCar")}</SelectItem>}
                 {field.value && !preferredCars.some((car) => car.id === field.value) ? (
                   <SelectItem value={field.value} disabled>{initialPreferredCarName ?? t("request.preferredCarUnavailable")}</SelectItem>
                 ) : null}
@@ -62,7 +73,8 @@ export function CarPreferenceFields({ control, variant, preferredCars, initialPr
               </SelectContent>
             </Select>
           )} />
-          <p className="text-xs text-muted-foreground">{t("request.preferredCarHelper")}</p>
+          {askForCar ? null : <p className="text-xs text-muted-foreground">{t("request.preferredCarHelper")}</p>}
+          {error ? <p role="alert" className="text-sm font-medium text-destructive">{error}</p> : null}
         </FormItem>
       ) : quickContext.showCarPicker ? (
         <FormItem data-field="preferredCarId">

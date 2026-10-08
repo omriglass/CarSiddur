@@ -4,7 +4,10 @@ export const requestsKeys = {
   mine: (profileId: string | undefined) => ["requests", "mine", profileId] as const,
   byId: (requestId: string | undefined) => ["requests", "byId", requestId] as const,
   companions: (requestId: string | undefined) => ["requests", "companions", requestId] as const,
+  recentCompanions: (profileId: string | undefined) => ["requests", "recentCompanions", profileId] as const,
   freedOffers: (profileId: string | undefined) => ["requests", "freedOffers", profileId] as const,
   /** Repeating-request suggestions (`v_request_template_suggestions`, REQ §76) — always "my own", RLS-scoped. */
+  /** `route_minutes_preview` for an unsaved request leg (REQ §13.110 b). */
+  routeMinutes: (departmentId: string | undefined, points: unknown) => ["requests", "routeMinutes", departmentId, points] as const,
   templateSuggestions: (profileId: string | undefined) => ["requests", "templateSuggestions", profileId] as const,
 };

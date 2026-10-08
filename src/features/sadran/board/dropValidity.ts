@@ -15,6 +15,7 @@
 import { fromZonedTime } from "date-fns-tz";
 
 import { formatMinutes } from "@/components/timeField15Format";
+import { needsLargeTrunk, type LuggageFields } from "@/lib/luggageWaiver";
 import { TZ, dateKey } from "@/lib/time";
 import type { Car } from "@/features/fleet/api";
 
@@ -130,40 +131,40 @@ export function passengersOf(ride: BoardRide): SeatNeed {
   );
 }
 
-/** How many of `ride`'s served requests carry large luggage. */
+/** How many of `ride`'s served requests still need a large trunk (large luggage that was not waived by hand, REQ §13.111 a). */
 export function luggageCountOf(ride: BoardRide): number {
-  return servedOf(ride).filter((entry) => entry.luggage).length;
+  return servedOf(ride).filter((entry) => entry.luggage && !entry.luggage_waived).length;
 }
 
 /**
  * REQ item 21 (2026-10-07): large luggage is a yes/no match - a large-luggage request goes only on
  * a car with the `large_trunk` feature, and any number of them may share that car (no per-car
  * count). `incoming` is the number of luggage requests being added.
+ *
+ * REQ §13.111 (a): this is no longer a reason to refuse a drop - whoever places by hand may waive it
+ * ("לשבץ בכל זאת", server `allow_small_trunk`). The drop stays valid and the board asks first; only the
+ * automatic checks (`carFreeForSpan`: a free car to offer) still treat it as unsuitable.
  */
-export function luggageBlocks(ctx: Pick<BoardDropContext, "cars">, carId: string, incoming: number): boolean {
+export function luggageWarns(ctx: Pick<BoardDropContext, "cars">, carId: string, incoming: number): boolean {
   if (incoming <= 0) return false;
   const car = ctx.cars.find((c) => c.id === carId);
   return !car || !car.features.includes("large_trunk");
 }
 
 /**
- * REQ item 21: swapping two cars' rides on `day` is refused when a ride with large luggage
- * would land on a car without a large trunk.
+ * The requests among `requests` that would need the waiver on `carId` (they still need a large trunk and
+ * the car has none) - what the board's "צריך תא מטען גדול" confirmation is about.
  */
-export function swapLuggageBlocked(ctx: Pick<BoardDropContext, "cars" | "rides">, carA: string, carB: string, day: string): boolean {
-  const onDay = (carId: string) => ctx.rides.filter((ride) => ride.car_id === carId && ride.status !== "cancelled" && ride.starts_at && dateKey(new Date(ride.starts_at)) === day);
-  const check = (from: string, to: string) => {
-    const incoming = onDay(from).reduce((sum, ride) => sum + luggageCountOf(ride), 0);
-    return luggageBlocks(ctx, to, incoming);
-  };
-  return check(carA, carB) || check(carB, carA);
+export function requestsNeedingSmallTrunkWaiver<T extends LuggageFields>(ctx: Pick<BoardDropContext, "cars">, carId: string, requests: readonly T[]): T[] {
+  const needing = requests.filter((request) => needsLargeTrunk(request));
+  return luggageWarns(ctx, carId, needing.length) ? needing : [];
 }
 
 /** REQ §13.101 (j): can `carId` take `request` for the whole `[startsAt, endsAt)` span (active, no maintenance, no ride, luggage ok)? Only this week's rides are known here - the server re-checks. */
 export function carFreeForSpan(ctx: BoardDropContext, carId: string, startsAt: string, endsAt: string, hasLuggage: boolean, originId?: string | null): boolean {
   // R2B5: only a car that is at the series' starting place when the span begins (not one parked away).
   if (originId && originMismatch(ctx, carId, originId, startsAt)) return false;
-  if (unavailable(ctx, carId, startsAt, endsAt) || luggageBlocks(ctx, carId, hasLuggage ? 1 : 0)) return false;
+  if (unavailable(ctx, carId, startsAt, endsAt) || luggageWarns(ctx, carId, hasLuggage ? 1 : 0)) return false;
   const car = ctx.cars.find((c) => c.id === carId);
   if (!car || car.type === "temporary") return false;
   return !wouldOverlap({ startsAt, endsAt }, ctx.rides.filter((ride) => ride.car_id === carId && ride.status !== "cancelled" && ride.starts_at && ride.ends_at)
@@ -243,12 +244,10 @@ export function isDropTargetValid(ctx: BoardDropContext, rideId: string, carId: 
     if (!merge.host.driver_id || merge.host.needs_driver || !merge.request || mergeInvalidReason(merge.host, merge.request, defaultMergeLeg(merge.request), ctx.route) || unavailable(ctx, carId, merge.window.startsAt, merge.window.endsAt)) return false;
     const hostNeed = passengersOf(merge.host);
     if (!seatsFit(ctx, carId, { adults: hostNeed.adults + merge.request.adults, childSeats: hostNeed.childSeats + merge.request.child_seats, boosters: hostNeed.boosters + merge.request.boosters })) return false;
-    if (luggageBlocks(ctx, carId, luggageCountOf(merge.source))) return false;
     return !wouldOverlap(merge.window, ctx.rides.filter((other) => other.id !== rideId && other.id !== merge.host.id && other.car_id === carId && other.starts_at && other.ends_at)
       .map((other) => ({ startsAt: other.starts_at!, endsAt: other.ends_at! })), 0);
   }
   if (!seatsFit(ctx, carId, passengersOf(ride))) return false;
-  if (ride.car_id !== carId && luggageBlocks(ctx, carId, luggageCountOf(ride))) return false;
   return true;
 }
 
@@ -385,7 +384,6 @@ export function mergeRefusalReason(ctx: BoardDropContext, host: BoardRide, reque
   const route = mergeInvalidReason(host, request, leg, ctx.route);
   if (route) return route;
   const window = mergedHostWindow(ctx, host, request, leg);
-  if (luggageBlocks(ctx, carId, request.has_luggage ? 1 : 0)) return "luggage_needs_large_trunk";
   const need = passengersOf(host);
   if (!seatsFit(ctx, carId, { adults: need.adults + request.adults, childSeats: need.childSeats + request.child_seats, boosters: need.boosters + request.boosters })) return "seats_full";
   if (!window) return null;
@@ -410,7 +408,6 @@ export function isUnmetDropValid(ctx: BoardDropContext, item: UnmetListItem, car
   if (!host && !connects && chauffeurCarElsewhere(ctx, item.request, carId, window.startsAt)) return false;
   if (!host && tripTypeOf(item.request) === "one_way" && item.request.destination_id
     && strandsNextRide(ctx, carId, item.request.destination_id, window.endsAt)) return false;
-  if (luggageBlocks(ctx, carId, item.request.has_luggage ? 1 : 0)) return false;
   if (host && mergeRefusalReason(ctx, host, item.request, mergeLegForCard(item.request, item.leg ?? null))) return false;
   const need = host ? passengersOf(host) : { adults: 1, childSeats: 0, boosters: 0 };
   if (!seatsFit(ctx, carId, host || !(requesterDrives(item.request) || connects)

@@ -17,7 +17,7 @@ import type { Json } from "@/integrations/supabase/types";
 export interface ComposerPrefill {
   requestId: string;
   rideId: string | null;
-  type: "shift" | "merge" | "deny" | "external" | "origin";
+  type: ProposalType;
   payload: Record<string, unknown>;
   proposalId?: string;
   /** Board-only hints for the merge popup (never sent): the card's own leg, and how this merge relates to the request's open draft. */
@@ -50,6 +50,14 @@ export function seriesOriginalOf(legs: readonly { departAt: string | null; retur
   const departs = legs.map((l) => l.departAt).filter((x): x is string => !!x).sort();
   const returns = legs.map((l) => l.returnAt).filter((x): x is string => !!x).sort();
   return departs.length && returns.length ? { departAt: departs[0]!, returnAt: returns[returns.length - 1]! } : null;
+}
+
+/** REQ §13.112 (a): the member's plan B as the proposal text speaks of it (the request's own `request_alternatives` row). */
+export function alternativeTextInput(request: Pick<WeekRequestRow, "alternative"> | undefined): { dropPlace: string; arriveBy: string; pickupAt: string | null; pickupPlace?: string } | undefined {
+  const alt = request?.alternative;
+  if (!alt) return undefined;
+  const pickupPlace = alt.pickup_place?.name ?? alt.pickup_place_text ?? "";
+  return { dropPlace: alt.drop_place?.name ?? alt.drop_place_text ?? "", arriveBy: alt.arrive_by, pickupAt: alt.pickup ? alt.pickup_at : null, ...(pickupPlace ? { pickupPlace } : {}) };
 }
 
 export function buildDraftInput(prefill: ComposerPrefill, ctx: DraftInputContext): DraftInputResult {
@@ -112,6 +120,7 @@ export function buildDraftInput(prefill: ComposerPrefill, ctx: DraftInputContext
     driverName: hostRide?.driver_name ?? "",
     reason,
     externalSuggestion: externalSuggestionFor(type, hint),
+    alternative: type === "alternative" ? alternativeTextInput(request) : undefined,
     combined: type === "merge" && combinedStart && combinedEnd
       ? { start: combinedStart, end: combinedEnd, passengerName: request.requester_full_name ?? "", hostCarName, joinerOutAt: mergedPreview?.joinerOutAt, joinerReturnAt: mergedPreview?.joinerReturnAt }
       : null,

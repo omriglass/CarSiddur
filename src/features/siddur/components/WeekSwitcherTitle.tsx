@@ -19,6 +19,8 @@ interface WeekSwitcherTitleProps {
   onSelect: (weekStart: string) => void;
   /** Navigates to `/siddur/:dept/archive` (Archive of past siddurim, 2026-09-10). */
   onArchive: () => void;
+  /** Test id of the trigger; the desktop instance differs from the mobile one (both are mounted, one CSS-hidden). */
+  triggerTestId?: string;
 }
 
 /**
@@ -26,9 +28,9 @@ interface WeekSwitcherTitleProps {
  * the title *is* the week switcher, exactly two choices ("השבוע"/"שבוע הבא").
  * Whichever is missing from the (RLS-filtered) `weeks` list is shown
  * disabled rather than hidden, so the two options are always in the same
- * place. Hidden `>= md` — desktop keeps the plain title + week-chip strip.
+ * place. Also used on a computer (REQ §13.111 b) under the page title, in place of the old week-chip list.
  */
-export function WeekSwitcherTitle({ resolution, activeWeekStart, onSelect, onArchive }: WeekSwitcherTitleProps) {
+export function WeekSwitcherTitle({ resolution, activeWeekStart, onSelect, onArchive, triggerTestId = "siddur-week-switcher" }: WeekSwitcherTitleProps) {
   const { thisWeekStart, nextWeekStart, thisWeek, nextWeek } = resolution;
   const label =
     activeWeekStart === thisWeekStart ? t("siddur.thisWeek")
@@ -41,7 +43,7 @@ export function WeekSwitcherTitle({ resolution, activeWeekStart, onSelect, onArc
         <button
           type="button"
           className="flex min-h-11 items-center gap-1 text-start"
-          data-testid="siddur-week-switcher"
+          data-testid={triggerTestId}
         >
           <span className="flex flex-col items-start">
             <span className="text-lg font-semibold text-foreground">{label}</span>

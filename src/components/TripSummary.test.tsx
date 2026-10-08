@@ -22,4 +22,10 @@ describe("TripSummary", () => {
       departAt="2026-09-09T20:00:00Z" returnAt="2026-09-09T22:00:00Z" />);
     expect(container).toHaveTextContent(`${he.days.short[3]}${he.days.geresh} 9.9 · 23:00–${he.days.short[4]}${he.days.geresh} 10.9 01:00`);
   });
+
+  it("isolates the time range left-to-right so an RTL page does not show it reversed (R9B5)", () => {
+    const { container } = render(<TripSummary destination="Netanya" departAt="2026-09-09T17:00:00Z" returnAt="2026-09-09T20:15:00Z" />);
+    const range = container.querySelector('span[dir="ltr"]');
+    expect(range).toHaveTextContent("20:00–23:15");
+  });
 });

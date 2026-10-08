@@ -20,6 +20,8 @@ export interface ServedEntry {
   child_seats: number;
   boosters: number;
   luggage: boolean;
+  /** REQ §13.111 (a): the large-trunk requirement of this request was waived by hand (`v_board_rides.served[].luggage_waived`). */
+  luggage_waived?: boolean;
   /** `v_board_rides.served[].requester` — the request's `profiles.full_name` (board label, bug #3). */
   requester?: string | null;
   /** `v_board_rides.served[].destination` — `coalesce(destinations.name, requests.destination_text)`. */

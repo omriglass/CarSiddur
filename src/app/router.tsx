@@ -15,6 +15,7 @@ import {
   RequireSadran,
 } from "@/features/auth/guards";
 import { adminRoutes, operationsRoutes } from "@/features/admin/routes";
+import { EditRequestPage } from "@/features/member/lazyPages";
 import { memberRoutes } from "@/features/member/routes";
 import { sadranRoutes } from "@/features/sadran/routes";
 import { HomePage } from "@/pages/HomePage";
@@ -22,6 +23,7 @@ import { LoginPage } from "@/pages/LoginPage";
 import { NotFoundPage } from "@/pages/NotFoundPage";
 import { OnboardingPage } from "@/pages/OnboardingPage";
 import { PendingPage } from "@/pages/PendingPage";
+import { RequestOverlayLayout } from "./RequestOverlayLayout";
 import { InboxPage, NewRequestPage, ProfilePage, ProposalTokenPage, SiddurPage } from "./lazyPages";
 
 // Route list from UX_FLOWS.md §2.1, nested under the auth guards (features/auth/guards.tsx):
@@ -55,7 +57,14 @@ export const router = createBrowserRouter([
                     children: [
                       { path: "/", element: <LandingRedirect /> },
                       { path: "/my", element: <HomePage /> },
-                      { path: "/requests/new", element: <Suspense fallback={<GuardLoading />}><NewRequestPage /></Suspense> },
+                      {
+                        // Sentence layout: the form is an overlay over the page the member came from (UX_FLOWS §3.4a).
+                        element: <RequestOverlayLayout />,
+                        children: [
+                          { path: "/requests/new", element: <Suspense fallback={<GuardLoading />}><NewRequestPage /></Suspense> },
+                          { path: "/requests/:id/edit", element: <Suspense fallback={<GuardLoading />}><EditRequestPage /></Suspense> },
+                        ],
+                      },
                       { path: "/siddur", element: <Suspense fallback={<GuardLoading />}><SiddurPage /></Suspense> },
                       { path: "/inbox", element: <Suspense fallback={<GuardLoading />}><InboxPage /></Suspense> },
                       { path: "/profile", element: <Suspense fallback={<GuardLoading />}><ProfilePage /></Suspense> },

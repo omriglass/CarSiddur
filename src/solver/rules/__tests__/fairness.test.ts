@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fairness } from '../fairness';
+import { alternativeServedWeightOf, fairness } from '../fairness';
 import { PolicyParamsError } from '../../types';
 import { normalize } from '../../slots';
 import { baseInput, makeCar, makeRequest, slotMs } from '../../__fixtures__/gen';
@@ -27,5 +27,21 @@ describe('rules/fairness', () => {
 
   it('default lookback is 3 weeks (REQ §13.18)', () => {
     expect(fairness.defaultParams.lookbackWeeks).toBe(3);
+  });
+
+  it('plan-B served weight (REQ §13.112 a): default 0.1, optional, validated 0..1', () => {
+    expect(fairness.defaultParams.alternativeServedWeight).toBe(0.1);
+    expect(fairness.validateParams({ lookbackWeeks: 3 })).toEqual({ lookbackWeeks: 3, alternativeServedWeight: 0.1 });
+    expect(fairness.validateParams({ lookbackWeeks: 3, alternativeServedWeight: 0.25 }).alternativeServedWeight).toBe(0.25);
+    expect(() => fairness.validateParams({ lookbackWeeks: 3, alternativeServedWeight: 1.5 })).toThrow(PolicyParamsError);
+    expect(() => fairness.validateParams({ lookbackWeeks: 3, alternativeServedWeight: -0.1 })).toThrow(PolicyParamsError);
+  });
+
+  it('alternativeServedWeightOf reads the policy fairness rule and never throws', () => {
+    const rules = (params: unknown) => ({ rules: [{ type: 'fairness', weight: 1, params }] });
+    expect(alternativeServedWeightOf(rules({ lookbackWeeks: 3, alternativeServedWeight: 0.3 }))).toBe(0.3);
+    expect(alternativeServedWeightOf(rules({ lookbackWeeks: 3 }))).toBe(0.1);
+    expect(alternativeServedWeightOf(rules({ lookbackWeeks: 3, alternativeServedWeight: 7 }))).toBe(0.1);
+    expect(alternativeServedWeightOf({ rules: [] })).toBe(0.1);
   });
 });

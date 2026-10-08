@@ -27,24 +27,25 @@ export interface SubmitOutcomeContext {
  * automatically covers the other. A plain weekly submission against an open/solving week has
  * no `status` on its result (`try_auto_approve` never ran) — every branch below is guarded on a
  * field that is only ever present once the RPC actually resolved a live/published-week outcome,
- * so that case falls through silently, unchanged from before this consolidation.
+ * so that case falls through silently — it returns `false` (nothing shown) and the form shows
+ * the plain "request sent" / "changes saved" confirmation itself (R9M3).
  */
-export function toastSubmitOutcome(result: SubmitRequestResult | null | undefined, ctx: SubmitOutcomeContext): void {
-  if (!result) return;
+export function toastSubmitOutcome(result: SubmitRequestResult | null | undefined, ctx: SubmitOutcomeContext): boolean {
+  if (!result) return false;
 
   if (result.reason === "DUPLICATE_OVERLAP") {
     toast.warning(overlapRefusalMessage(ctx.overlapNames ?? []));
-    return;
+    return true;
   }
 
   if (result.car_was_free) {
     toast.success(tv("quickRequest.successCarWasFree", { car: ctx.carName(result.car_id) }));
-    return;
+    return true;
   }
 
   if (result.needs_driver && result.ride_id && result.car_id && ctx.tripType !== "one_way" && ctx.tripType !== "round_trip") {
     toast.success(tv("quickRequest.successNeedsDriver", { car: ctx.carName(result.car_id) }));
-    return;
+    return true;
   }
 
   if (result.status === "assigned" && result.car_id) {
@@ -55,14 +56,16 @@ export function toastSubmitOutcome(result: SubmitRequestResult | null | undefine
     } else {
       toast.success(tv("quickRequest.successFallback", { car: ctx.carName(result.car_id), preferredCar: ctx.carName(ctx.preferredCarId) }));
     }
-    return;
+    return true;
   }
 
   if (result.status === "waitlisted") {
     toast(t("quickRequest.waitlisted"), {
       action: ctx.onViewRequests ? { label: t("quickRequest.waitlistedLink"), onClick: ctx.onViewRequests } : undefined,
     });
+    return true;
   }
+  return false;
 }
 
 /**
@@ -82,17 +85,19 @@ export function shouldOfferJoinableRides(result: SubmitRequestResult | null | un
  * Same "falls through silently against an open/solving week" shape as `toastSubmitOutcome`
  * above — `status` is only present once `try_auto_approve_series()` actually ran.
  */
-export function toastSeriesSubmitOutcome(result: SubmitSeriesRequestResult | null | undefined): void {
-  if (!result) return;
+export function toastSeriesSubmitOutcome(result: SubmitSeriesRequestResult | null | undefined): boolean {
+  if (!result) return false;
 
   if (result.status === "assigned") {
     toast.success(t("request.seriesAssigned"));
-    return;
+    return true;
   }
 
   if (result.status === "waitlisted") {
     toast(t("request.seriesWaitlisted"));
+    return true;
   }
+  return false;
 }
 
 /**

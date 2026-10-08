@@ -10,6 +10,8 @@ export interface CarNameWithReportProps {
   carId: string;
   carName: string;
   className?: string;
+  /** Overrides how the name text wraps (default wraps; the week grid header truncates with a tooltip). */
+  nameClassName?: string;
 }
 
 /**
@@ -30,7 +32,7 @@ export interface CarNameWithReportProps {
  * padding visually so the icon still looks its usual small size while its
  * tap target is >= 40px, per CLAUDE.md's mobile-first tap-target guidance.
  */
-export function CarNameWithReport({ carId, carName, className }: CarNameWithReportProps) {
+export function CarNameWithReport({ carId, carName, className, nameClassName }: CarNameWithReportProps) {
   const [open, setOpen] = useState(false);
   const label = tv("carCare.dialogTitle", { car: carName });
 
@@ -39,7 +41,7 @@ export function CarNameWithReport({ carId, carName, className }: CarNameWithRepo
   }
 
   return (
-    <span className={cn("inline-flex min-w-0 items-start gap-1", className)}>
+    <span className={cn("inline-flex min-w-0 items-center gap-1", className)}>
       <span
         role="button"
         tabIndex={0}
@@ -60,7 +62,7 @@ export function CarNameWithReport({ carId, carName, className }: CarNameWithRepo
       >
         <CarFront className="size-3.5" aria-hidden="true" />
       </span>
-      <span className="min-w-0 whitespace-normal break-words">{carName}</span>
+      <span className={cn("min-w-0", nameClassName ?? "whitespace-normal break-words")} title={nameClassName ? carName : undefined}>{carName}</span>
       <CarReportDialog carId={carId} carName={carName} open={open} onOpenChange={setOpen} />
     </span>
   );

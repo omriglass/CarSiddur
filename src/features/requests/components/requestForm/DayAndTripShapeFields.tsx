@@ -31,6 +31,8 @@ export interface DayAndTripShapeFieldsProps {
   tripType: RequestFormValues["tripType"];
   dropOffPickup: boolean;
   canDrive: boolean;
+  /** `false` in the sentence layout's day sheet, where the trip type has its own chip/sheet (UX_FLOWS §3.4a). Default `true`. */
+  showTripType?: boolean;
 }
 
 export function DayAndTripShapeFields({
@@ -49,6 +51,7 @@ export function DayAndTripShapeFields({
   tripType,
   dropOffPickup,
   canDrive,
+  showTripType = true,
 }: DayAndTripShapeFieldsProps) {
   return (
     <>
@@ -93,21 +96,18 @@ export function DayAndTripShapeFields({
       ) : null}
       {showReturnDayPicker && returnAnotherDay ? (
         <FormItem data-field="returnDay">
-          <div className="flex items-center justify-between gap-2">
-            <Label>{t("request.returnDay")}</Label>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="h-auto px-1 text-xs"
-              onClick={() => {
-                form.setValue("returnDay", day, { shouldDirty: true });
-                setReturnAnotherDay(false);
-              }}
-            >
-              {t("request.returnSameDay")}
-            </Button>
-          </div>
+          <Label>{t("request.returnDay")}</Label>
+          <Button
+            type="button"
+            variant="outline"
+            className="min-h-11 w-full"
+            onClick={() => {
+              form.setValue("returnDay", day, { shouldDirty: true });
+              setReturnAnotherDay(false);
+            }}
+          >
+            {t("request.returnSameDay")}
+          </Button>
           <Controller
             control={control}
             name="returnDay"
@@ -130,7 +130,7 @@ export function DayAndTripShapeFields({
         </div>
       ) : null}
 
-      {variant !== "carNow" && !isMultiDay ? (
+      {showTripType && variant !== "carNow" && !isMultiDay ? (
         <>
           <TripTypeFields control={control} form={form} variant={variant} tripType={tripType} dropOffPickup={dropOffPickup} canDrive={canDrive} />
           {isQuickContext && seeksDriver ? <p className="text-sm text-destructive">{t("quickRequest.oneWayHelp")}</p> : null}

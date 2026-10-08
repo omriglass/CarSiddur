@@ -65,7 +65,7 @@ export function FullResolveAction({ departmentId, weekStart, homeDestinationId, 
         });
         const car = context.input.cars.find((car) => car.id === item.carId)?.name ?? "";
         const purposes = [...new Set(servedOf(ride).map((entry) => rideTypesQuery.data?.find((type) => type.code === entry.ride_type)?.name_he).filter(Boolean))].join(" / ");
-        item.label = `${label} · ${car} · ${formatDayDate(item.startsAt)} ${formatTime(new Date(item.startsAt))}–${formatTime(new Date(item.endsAt))}${purposes ? ` · ${purposes}` : ""}`;
+        item.label = `${label} · ${car} · ${formatDayDate(item.startsAt)} \u2066${formatTime(new Date(item.startsAt))}–${formatTime(new Date(item.endsAt))}\u2069${purposes ? ` · ${purposes}` : ""}`;
       }
       setPreview({ diff, payload: buildApplyPayload({ output, weekStartMs: context.weekStartMs,
         policyVersionId: context.policyVersionId, startedAtMs, finishedAtMs,

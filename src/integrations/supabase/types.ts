@@ -809,6 +809,7 @@ export type Database = {
           distance_km: number | null
           id: string
           is_approved: boolean
+          is_drop_point: boolean
           lat: number | null
           lng: number | null
           name: string
@@ -825,6 +826,7 @@ export type Database = {
           distance_km?: number | null
           id?: string
           is_approved?: boolean
+          is_drop_point?: boolean
           lat?: number | null
           lng?: number | null
           name: string
@@ -841,6 +843,7 @@ export type Database = {
           distance_km?: number | null
           id?: string
           is_approved?: boolean
+          is_drop_point?: boolean
           lat?: number | null
           lng?: number | null
           name?: string
@@ -1440,6 +1443,7 @@ export type Database = {
           approved_at: string | null
           approved_by: string | null
           avatar_url: string | null
+          classic_request_form: boolean
           created_at: string
           default_boosters: number
           default_child_seats: number
@@ -1461,6 +1465,7 @@ export type Database = {
           approved_at?: string | null
           approved_by?: string | null
           avatar_url?: string | null
+          classic_request_form?: boolean
           created_at?: string
           default_boosters?: number
           default_child_seats?: number
@@ -1482,6 +1487,7 @@ export type Database = {
           approved_at?: string | null
           approved_by?: string | null
           avatar_url?: string | null
+          classic_request_form?: boolean
           created_at?: string
           default_boosters?: number
           default_child_seats?: number
@@ -1910,6 +1916,103 @@ export type Database = {
           },
         ]
       }
+      request_alternatives: {
+        Row: {
+          applied_at: string | null
+          arrive_by: string
+          created_at: string
+          department_id: string
+          drop_place_id: string | null
+          drop_place_text: string | null
+          id: string
+          original_main: Json | null
+          pickup: boolean
+          pickup_at: string | null
+          pickup_place_id: string | null
+          pickup_place_text: string | null
+          request_id: string
+          updated_at: string
+          week_start: string
+        }
+        Insert: {
+          applied_at?: string | null
+          arrive_by: string
+          created_at?: string
+          department_id: string
+          drop_place_id?: string | null
+          drop_place_text?: string | null
+          id?: string
+          original_main?: Json | null
+          pickup?: boolean
+          pickup_at?: string | null
+          pickup_place_id?: string | null
+          pickup_place_text?: string | null
+          request_id: string
+          updated_at?: string
+          week_start: string
+        }
+        Update: {
+          applied_at?: string | null
+          arrive_by?: string
+          created_at?: string
+          department_id?: string
+          drop_place_id?: string | null
+          drop_place_text?: string | null
+          id?: string
+          original_main?: Json | null
+          pickup?: boolean
+          pickup_at?: string | null
+          pickup_place_id?: string | null
+          pickup_place_text?: string | null
+          request_id?: string
+          updated_at?: string
+          week_start?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "request_alternatives_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "request_alternatives_pickup_place_fk"
+            columns: ["department_id", "pickup_place_id"]
+            isOneToOne: false
+            referencedRelation: "destinations"
+            referencedColumns: ["department_id", "id"]
+          },
+          {
+            foreignKeyName: "request_alternatives_place_fk"
+            columns: ["department_id", "drop_place_id"]
+            isOneToOne: false
+            referencedRelation: "destinations"
+            referencedColumns: ["department_id", "id"]
+          },
+          {
+            foreignKeyName: "request_alternatives_request_id_fkey"
+            columns: ["request_id"]
+            isOneToOne: true
+            referencedRelation: "requests"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "request_alternatives_request_id_fkey"
+            columns: ["request_id"]
+            isOneToOne: true
+            referencedRelation: "v_my_requests"
+            referencedColumns: ["request_id"]
+          },
+          {
+            foreignKeyName: "request_alternatives_week_fk"
+            columns: ["department_id", "week_start"]
+            isOneToOne: false
+            referencedRelation: "weeks"
+            referencedColumns: ["department_id", "week_start"]
+          },
+        ]
+      }
       request_children: {
         Row: {
           child_id: string
@@ -2052,16 +2155,19 @@ export type Database = {
       request_templates: {
         Row: {
           adults: number
+          arrive_by_time: string | null
           boosters: number
           child_ids: string[]
           child_seats: number
           companion_ids: string[]
           created_at: string
+          depart_anchor: Database["public"]["Enums"]["time_anchor"]
           depart_dow: number | null
           depart_time: string | null
           department_id: string
           destination_id: string | null
           destination_text: string | null
+          duration_locked: boolean
           flex_depart_early: string
           flex_depart_late: string
           flex_return_early: string
@@ -2071,6 +2177,7 @@ export type Database = {
           id: string
           is_active: boolean
           last_materialized_week: string | null
+          leave_dest_time: string | null
           needs_car_at_destination: boolean
           notes: string | null
           one_way_car_mode: Database["public"]["Enums"]["leg_car_mode"] | null
@@ -2079,6 +2186,7 @@ export type Database = {
           paused_until: string | null
           preferred_car_id: string | null
           requester_id: string
+          return_anchor: Database["public"]["Enums"]["time_anchor"]
           return_dow: number | null
           return_time: string | null
           ride_description: string | null
@@ -2093,16 +2201,19 @@ export type Database = {
         }
         Insert: {
           adults?: number
+          arrive_by_time?: string | null
           boosters?: number
           child_ids?: string[]
           child_seats?: number
           companion_ids?: string[]
           created_at?: string
+          depart_anchor?: Database["public"]["Enums"]["time_anchor"]
           depart_dow?: number | null
           depart_time?: string | null
           department_id: string
           destination_id?: string | null
           destination_text?: string | null
+          duration_locked?: boolean
           flex_depart_early?: string
           flex_depart_late?: string
           flex_return_early?: string
@@ -2112,6 +2223,7 @@ export type Database = {
           id?: string
           is_active?: boolean
           last_materialized_week?: string | null
+          leave_dest_time?: string | null
           needs_car_at_destination?: boolean
           notes?: string | null
           one_way_car_mode?: Database["public"]["Enums"]["leg_car_mode"] | null
@@ -2120,6 +2232,7 @@ export type Database = {
           paused_until?: string | null
           preferred_car_id?: string | null
           requester_id: string
+          return_anchor?: Database["public"]["Enums"]["time_anchor"]
           return_dow?: number | null
           return_time?: string | null
           ride_description?: string | null
@@ -2134,16 +2247,19 @@ export type Database = {
         }
         Update: {
           adults?: number
+          arrive_by_time?: string | null
           boosters?: number
           child_ids?: string[]
           child_seats?: number
           companion_ids?: string[]
           created_at?: string
+          depart_anchor?: Database["public"]["Enums"]["time_anchor"]
           depart_dow?: number | null
           depart_time?: string | null
           department_id?: string
           destination_id?: string | null
           destination_text?: string | null
+          duration_locked?: boolean
           flex_depart_early?: string
           flex_depart_late?: string
           flex_return_early?: string
@@ -2153,6 +2269,7 @@ export type Database = {
           id?: string
           is_active?: boolean
           last_materialized_week?: string | null
+          leave_dest_time?: string | null
           needs_car_at_destination?: boolean
           notes?: string | null
           one_way_car_mode?: Database["public"]["Enums"]["leg_car_mode"] | null
@@ -2161,6 +2278,7 @@ export type Database = {
           paused_until?: string | null
           preferred_car_id?: string | null
           requester_id?: string
+          return_anchor?: Database["public"]["Enums"]["time_anchor"]
           return_dow?: number | null
           return_time?: string | null
           ride_description?: string | null
@@ -2235,14 +2353,18 @@ export type Database = {
       requests: {
         Row: {
           adults: number
+          arrive_by: string | null
           boosters: number
           changed_since_solve: boolean
           child_seats: number
           created_at: string
+          depart_anchor: Database["public"]["Enums"]["time_anchor"]
           depart_at: string | null
           department_id: string
           destination_id: string | null
           destination_text: string | null
+          duration_locked: boolean
+          fallback: Database["public"]["Enums"]["request_fallback"]
           filed_by: string
           flex_depart_early: string
           flex_depart_late: string
@@ -2255,6 +2377,9 @@ export type Database = {
           is_late: boolean
           join_ride_id: string | null
           kept_return_at: string | null
+          leave_dest_at: string | null
+          luggage_waived_at: string | null
+          luggage_waived_by: string | null
           manual_boost: number
           manual_boost_reason: string | null
           needs_car_at_destination: boolean
@@ -2264,14 +2389,17 @@ export type Database = {
           origin_text: string | null
           original_depart_at: string | null
           original_return_at: string | null
+          plan_b_parent_id: string | null
           preferred_car_id: string | null
           requester_id: string
+          return_anchor: Database["public"]["Enums"]["time_anchor"]
           return_at: string | null
           ride_description: string | null
           ride_type_id: string
           series_count: number | null
           series_id: string | null
           series_index: number | null
+          served_by_alternative: boolean
           status: Database["public"]["Enums"]["request_status"]
           status_reason: string | null
           submitted_at: string | null
@@ -2284,14 +2412,18 @@ export type Database = {
         }
         Insert: {
           adults?: number
+          arrive_by?: string | null
           boosters?: number
           changed_since_solve?: boolean
           child_seats?: number
           created_at?: string
+          depart_anchor?: Database["public"]["Enums"]["time_anchor"]
           depart_at?: string | null
           department_id: string
           destination_id?: string | null
           destination_text?: string | null
+          duration_locked?: boolean
+          fallback?: Database["public"]["Enums"]["request_fallback"]
           filed_by: string
           flex_depart_early?: string
           flex_depart_late?: string
@@ -2304,6 +2436,9 @@ export type Database = {
           is_late?: boolean
           join_ride_id?: string | null
           kept_return_at?: string | null
+          leave_dest_at?: string | null
+          luggage_waived_at?: string | null
+          luggage_waived_by?: string | null
           manual_boost?: number
           manual_boost_reason?: string | null
           needs_car_at_destination?: boolean
@@ -2313,14 +2448,17 @@ export type Database = {
           origin_text?: string | null
           original_depart_at?: string | null
           original_return_at?: string | null
+          plan_b_parent_id?: string | null
           preferred_car_id?: string | null
           requester_id: string
+          return_anchor?: Database["public"]["Enums"]["time_anchor"]
           return_at?: string | null
           ride_description?: string | null
           ride_type_id: string
           series_count?: number | null
           series_id?: string | null
           series_index?: number | null
+          served_by_alternative?: boolean
           status?: Database["public"]["Enums"]["request_status"]
           status_reason?: string | null
           submitted_at?: string | null
@@ -2333,14 +2471,18 @@ export type Database = {
         }
         Update: {
           adults?: number
+          arrive_by?: string | null
           boosters?: number
           changed_since_solve?: boolean
           child_seats?: number
           created_at?: string
+          depart_anchor?: Database["public"]["Enums"]["time_anchor"]
           depart_at?: string | null
           department_id?: string
           destination_id?: string | null
           destination_text?: string | null
+          duration_locked?: boolean
+          fallback?: Database["public"]["Enums"]["request_fallback"]
           filed_by?: string
           flex_depart_early?: string
           flex_depart_late?: string
@@ -2353,6 +2495,9 @@ export type Database = {
           is_late?: boolean
           join_ride_id?: string | null
           kept_return_at?: string | null
+          leave_dest_at?: string | null
+          luggage_waived_at?: string | null
+          luggage_waived_by?: string | null
           manual_boost?: number
           manual_boost_reason?: string | null
           needs_car_at_destination?: boolean
@@ -2362,14 +2507,17 @@ export type Database = {
           origin_text?: string | null
           original_depart_at?: string | null
           original_return_at?: string | null
+          plan_b_parent_id?: string | null
           preferred_car_id?: string | null
           requester_id?: string
+          return_anchor?: Database["public"]["Enums"]["time_anchor"]
           return_at?: string | null
           ride_description?: string | null
           ride_type_id?: string
           series_count?: number | null
           series_id?: string | null
           series_index?: number | null
+          served_by_alternative?: boolean
           status?: Database["public"]["Enums"]["request_status"]
           status_reason?: string | null
           submitted_at?: string | null
@@ -2445,11 +2593,32 @@ export type Database = {
             referencedColumns: ["ride_id"]
           },
           {
+            foreignKeyName: "requests_luggage_waived_by_fkey"
+            columns: ["luggage_waived_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "requests_origin_id_fkey"
             columns: ["department_id", "origin_id"]
             isOneToOne: false
             referencedRelation: "destinations"
             referencedColumns: ["department_id", "id"]
+          },
+          {
+            foreignKeyName: "requests_plan_b_parent_id_fkey"
+            columns: ["plan_b_parent_id"]
+            isOneToOne: false
+            referencedRelation: "requests"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "requests_plan_b_parent_id_fkey"
+            columns: ["plan_b_parent_id"]
+            isOneToOne: false
+            referencedRelation: "v_my_requests"
+            referencedColumns: ["request_id"]
           },
           {
             foreignKeyName: "requests_preferred_car_id_fkey"
@@ -2600,6 +2769,7 @@ export type Database = {
       }
       ride_change_requests: {
         Row: {
+          allow_small_trunk: boolean
           car_id: string
           created_at: string
           department_id: string
@@ -2616,6 +2786,7 @@ export type Database = {
           week_start: string
         }
         Insert: {
+          allow_small_trunk?: boolean
           car_id: string
           created_at?: string
           department_id: string
@@ -2632,6 +2803,7 @@ export type Database = {
           week_start: string
         }
         Update: {
+          allow_small_trunk?: boolean
           car_id?: string
           created_at?: string
           department_id?: string
@@ -3862,11 +4034,13 @@ export type Database = {
       }
       v_my_requests: {
         Row: {
+          arrive_by: string | null
           car_mode: Database["public"]["Enums"]["leg_car_mode"] | null
           car_name: string | null
           changed_since_solve: boolean | null
           child_names: string[] | null
           companions: Json | null
+          depart_anchor: Database["public"]["Enums"]["time_anchor"] | null
           depart_at: string | null
           department_id: string | null
           destination: string | null
@@ -3875,6 +4049,7 @@ export type Database = {
           guest_passenger_names: string[] | null
           is_late: boolean | null
           kept_return_at: string | null
+          leave_dest_at: string | null
           leg: Database["public"]["Enums"]["ride_leg"] | null
           license_plate: string | null
           needs_car_at_destination: boolean | null
@@ -3894,6 +4069,7 @@ export type Database = {
           preferred_car_id: string | null
           request_id: string | null
           requester_id: string | null
+          return_anchor: Database["public"]["Enums"]["time_anchor"] | null
           return_at: string | null
           ride_description: string | null
           ride_destination: string | null
@@ -3948,10 +4124,12 @@ export type Database = {
       v_request_template_suggestions: {
         Row: {
           adults: number | null
+          arrive_by: string | null
           boosters: number | null
           child_ids: string[] | null
           child_seats: number | null
           companion_ids: string[] | null
+          depart_anchor: Database["public"]["Enums"]["time_anchor"] | null
           depart_at: string | null
           depart_dow: number | null
           depart_time: string | null
@@ -3959,12 +4137,14 @@ export type Database = {
           destination_id: string | null
           destination_name: string | null
           destination_text: string | null
+          duration_locked: boolean | null
           flex_depart_early: string | null
           flex_depart_late: string | null
           flex_return_early: string | null
           flex_return_late: string | null
           guest_passenger_names: string[] | null
           has_luggage: boolean | null
+          leave_dest_at: string | null
           needs_car_at_destination: boolean | null
           notes: string | null
           one_way_car_mode: Database["public"]["Enums"]["leg_car_mode"] | null
@@ -3972,6 +4152,7 @@ export type Database = {
           origin_name: string | null
           origin_text: string | null
           preferred_car_id: string | null
+          return_anchor: Database["public"]["Enums"]["time_anchor"] | null
           return_at: string | null
           return_dow: number | null
           return_time: string | null
@@ -4153,6 +4334,11 @@ export type Database = {
       }
     }
     Functions: {
+      _alternative_vars: {
+        Args: { p_department_id: string; p_payload: Json }
+        Returns: Json
+      }
+      _apply_alternative: { Args: { p_proposal_id: string }; Returns: string }
       _apply_series_span: {
         Args: { p_car_id: string; p_request_id: string; p_span: Json }
         Returns: string
@@ -4225,6 +4411,20 @@ export type Database = {
         Returns: undefined
       }
       _dt_label: { Args: { p_at: string }; Returns: string }
+      _duration_lock_shape_ok: {
+        Args: {
+          p_dep_early: string
+          p_dep_late: string
+          p_depart: string
+          p_ret_early: string
+          p_ret_late: string
+          p_return: string
+          p_series_id: string
+          p_trip_type: Database["public"]["Enums"]["trip_type"]
+        }
+        Returns: boolean
+      }
+      _flex_floor: { Args: { i: string }; Returns: string }
       _frag: { Args: { _key: string; _vars?: Json }; Returns: string }
       _hhmm: { Args: { _at: string }; Returns: string }
       _joiner_times: {
@@ -4260,6 +4460,17 @@ export type Database = {
       _publish_ride_line: {
         Args: { p_request_id: string; p_ride_id: string }
         Returns: string
+      }
+      _request_fallback_from_payload: {
+        Args: {
+          p_current: Database["public"]["Enums"]["request_fallback"]
+          p_payload: Json
+        }
+        Returns: Database["public"]["Enums"]["request_fallback"]
+      }
+      _restore_original_main: {
+        Args: { p_request_id: string }
+        Returns: undefined
       }
       _ride_fp: {
         Args: { p_ride_id: string; p_status?: string }
@@ -4323,7 +4534,21 @@ export type Database = {
         Args: { p_from: string; p_to: string }
         Returns: number
       }
+      _save_request_alternative: {
+        Args: { p_old_depart: string; p_payload: Json; p_request_id: string }
+        Returns: undefined
+      }
       _shift_place_on_car: { Args: { p_proposal_id: string }; Returns: string }
+      _small_trunk_check: {
+        Args: { p_allow: boolean; p_car_id: string; p_request_ids: string[] }
+        Returns: undefined
+      }
+      _small_trunk_detail: {
+        Args: { p_car_id: string; p_request_ids: string[] }
+        Returns: string
+      }
+      _small_trunk_mode: { Args: { p_allow: boolean }; Returns: undefined }
+      _small_trunk_probe: { Args: { p_request_id: string }; Returns: string }
       _time_change_line: {
         Args: {
           _day_level?: boolean
@@ -4333,6 +4558,10 @@ export type Database = {
           _old_start: string
         }
         Returns: string
+      }
+      _validate_alternative_payload: {
+        Args: { p_payload: Json; p_request_id: string }
+        Returns: Json
       }
       _window_text: { Args: { _dep: string; _ret: string }; Returns: string }
       add_ride_passengers: {
@@ -4360,6 +4589,10 @@ export type Database = {
         Returns: undefined
       }
       advance_week_phases: { Args: { p_now?: string }; Returns: number }
+      alternative_served_weight: {
+        Args: { p_department_id: string }
+        Returns: number
+      }
       answer_proposal: {
         Args: {
           p_accept: boolean
@@ -4380,6 +4613,21 @@ export type Database = {
       }
       assert_car_chain: {
         Args: { _car: string; _week: string }
+        Returns: undefined
+      }
+      assert_duration_lock: {
+        Args: {
+          p_dep_early: string
+          p_dep_late: string
+          p_depart: string
+          p_depart_anchor: Database["public"]["Enums"]["time_anchor"]
+          p_ret_early: string
+          p_ret_late: string
+          p_return: string
+          p_return_anchor: Database["public"]["Enums"]["time_anchor"]
+          p_series_id: string
+          p_trip_type: Database["public"]["Enums"]["trip_type"]
+        }
         Returns: undefined
       }
       assert_named_passenger_counts: {
@@ -4723,6 +4971,7 @@ export type Database = {
       }
       join_drop_off_legs: {
         Args: {
+          p_allow_small_trunk?: boolean
           p_expected_version: number
           p_request_id: string
           p_ride_id: string
@@ -4846,7 +5095,11 @@ export type Database = {
         Returns: string
       }
       place_on_own_car: {
-        Args: { p_car_id: string; p_request_id: string }
+        Args: {
+          p_allow_small_trunk?: boolean
+          p_car_id: string
+          p_request_id: string
+        }
         Returns: Json
       }
       place_request_on_car: {
@@ -4872,7 +5125,11 @@ export type Database = {
         Returns: Json
       }
       place_series_on_car: {
-        Args: { p_car_id: string; p_series_id: string }
+        Args: {
+          p_allow_small_trunk?: boolean
+          p_car_id: string
+          p_series_id: string
+        }
         Returns: Json
       }
       place_travel: {
@@ -5093,8 +5350,13 @@ export type Database = {
       }
       request_legs_covered: { Args: { p_request_id: string }; Returns: boolean }
       request_legs_placed: { Args: { p_request_id: string }; Returns: boolean }
+      request_needs_large_trunk: {
+        Args: { p_request_id: string }
+        Returns: boolean
+      }
       request_ride_change: {
         Args: {
+          p_allow_small_trunk?: boolean
           p_car_id: string
           p_ends_at: string
           p_expected_version: number
@@ -5204,6 +5466,10 @@ export type Database = {
           p_stops_text?: string
         }
         Returns: string
+      }
+      route_minutes_preview: {
+        Args: { p_department_id: string; p_points: Json }
+        Returns: number
       }
       sadran_contact_of: {
         Args: { _department_id: string; _week_start: string }
@@ -5323,6 +5589,7 @@ export type Database = {
       }
       swap_day_cars: {
         Args: {
+          p_allow_small_trunk?: boolean
           p_car_a: string
           p_car_b: string
           p_day: string
@@ -5479,8 +5746,15 @@ export type Database = {
         | "expired"
         | "applied"
         | "withdrawn"
-      proposal_type: "shift" | "merge" | "deny" | "external" | "origin"
+      proposal_type:
+        | "shift"
+        | "merge"
+        | "deny"
+        | "external"
+        | "origin"
+        | "alternative"
       push_outbox_status: "pending" | "sent" | "failed" | "dead"
+      request_fallback: "none" | "alternative" | "manage"
       request_status:
         | "draft"
         | "submitted"
@@ -5497,6 +5771,7 @@ export type Database = {
       ride_status: "draft" | "confirmed" | "flagged" | "cancelled"
       role: "member" | "sadran" | "admin"
       solver_run_status: "succeeded" | "failed"
+      time_anchor: "leave" | "arrive"
       tire_state: "ok" | "low" | "very_low"
       trip_shape: "round_trip" | "one_way_to" | "one_way_from"
       trip_type: "round_trip" | "one_way" | "drop_off"
@@ -5707,8 +5982,16 @@ export const Constants = {
         "applied",
         "withdrawn",
       ],
-      proposal_type: ["shift", "merge", "deny", "external", "origin"],
+      proposal_type: [
+        "shift",
+        "merge",
+        "deny",
+        "external",
+        "origin",
+        "alternative",
+      ],
       push_outbox_status: ["pending", "sent", "failed", "dead"],
+      request_fallback: ["none", "alternative", "manage"],
       request_status: [
         "draft",
         "submitted",
@@ -5726,6 +6009,7 @@ export const Constants = {
       ride_status: ["draft", "confirmed", "flagged", "cancelled"],
       role: ["member", "sadran", "admin"],
       solver_run_status: ["succeeded", "failed"],
+      time_anchor: ["leave", "arrive"],
       tire_state: ["ok", "low", "very_low"],
       trip_shape: ["round_trip", "one_way_to", "one_way_from"],
       trip_type: ["round_trip", "one_way", "drop_off"],

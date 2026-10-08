@@ -17,7 +17,7 @@ export function RideChangeAnswers({ departmentId, weekStart, canManage = false }
   return <section className="space-y-2" aria-label={he.rideEditing.answerTitle}>
     {mine.map((change) => <div key={change.id} className="space-y-3 rounded-md border border-primary/40 p-3" id={`change-${change.id}`}>
       <h2 className="font-medium">{he.rideEditing.answerTitle}</h2>
-      <p className="text-sm">{tv("rideEditing.answerBody", { name: change.requester?.full_name ?? "", time: `${formatDayDate(change.starts_at)} ${formatTime(new Date(change.starts_at))}–${formatTime(new Date(change.ends_at))}` })}</p>
+      <p className="text-sm">{tv("rideEditing.answerBody", { name: change.requester?.full_name ?? "", time: `${formatDayDate(change.starts_at)} \u2066${formatTime(new Date(change.starts_at))}–${formatTime(new Date(change.ends_at))}\u2069` })}</p>
       <div className="flex flex-wrap gap-2">{[true, false].map((accept) => <Button key={String(accept)} variant={accept ? "default" : "outline"} disabled={answer.isPending} onClick={() => answer.mutate({ changeId: change.id, accept }, { onSuccess: () => toast.success(he.rideEditing.answered) })}>
         {accept ? he.rideEditing.accept : he.rideEditing.decline}
       </Button>)}</div>

@@ -63,6 +63,10 @@ on conflict (id) do nothing;
 update public.departments set home_destination_id='00000000-0000-0000-0000-000000000010'
 where id='00000000-0000-0000-0000-000000000001';
 
+-- Plan B drop points (REQ §13.112 a): demo only -- in production the owner marks them in /admin/destinations.
+update public.destinations set is_drop_point = true
+where id in ('00000000-0000-0000-0000-000000000012', '00000000-0000-0000-0000-000000000013', '00000000-0000-0000-0000-000000000017');
+
 -- The row is auto-created; keep demo board hours explicit.
 update public.department_settings set board_start_time='06:00' where department_id='00000000-0000-0000-0000-000000000001';
 

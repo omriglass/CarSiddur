@@ -172,6 +172,8 @@ export interface ServerMergePreview {
   joinerReturnAt: string | null;
   /** R6B3: which neighbour a turnaround refusal clashes with (`previous` = the ride before, `next` = the ride after). */
   turnaroundSide?: "previous" | "next" | null;
+  /** REQ §13.111 (a): the only problem is a missing large trunk - the Sadran may accept it ("לשבץ בכל זאת", payload `allow_small_trunk`). */
+  waivable?: boolean;
 }
 
 const isoOrNull = (value: unknown): string | null => (typeof value === "string" && value ? value : null);
@@ -187,13 +189,14 @@ export function parseServerMergePreview(raw: unknown): ServerMergePreview | null
     joinerDepartAt: isoOrNull(r.joiner_depart_at),
     joinerReturnAt: isoOrNull(r.joiner_return_at),
     turnaroundSide: r.turnaround_side === "previous" || r.turnaround_side === "next" ? r.turnaround_side : null,
+    waivable: r.waivable === true,
   };
 }
 
 /** `preview` with the times the server computed (display only; the route and validity stay the twin's). */
 export function applyServerMergeTimes(preview: MergePreview | null, server: ServerMergePreview | null | undefined, request: Pick<WeekRequestRow, "depart_at" | "return_at">): MergePreview | null {
   // The server's verdict wins (REQ §13.108 e): a merge the TS twin refused but the server allows still gets the server's times.
-  if (!preview || !server || (!preview.valid && !server.ok)) return preview;
+  if (!preview || !server || (!preview.valid && !server.ok && !server.waivable)) return preview;
   if (!preview.valid) preview = { ...preview, valid: true, invalid: null };
   const returnSide = preview.boardLeg === "return" && !preview.swapped;
   const boardEta = returnSide ? (server.joinerReturnAt ?? preview.boardEta) : (server.joinerDepartAt ?? preview.boardEta);
@@ -218,6 +221,7 @@ const MERGE_CODE_TEXT: Record<string, string> = {
   turnaround: he.mergedRide.invalid.turnaround_conflict,
   already_on_ride: he.mergedRide.invalid.already_on_ride,
   window: he.mergedRide.invalid.window,
+  window_locked: he.mergedRide.invalid.window_locked,
   maintenance: he.mergedRide.invalid.maintenance,
 };
 
@@ -234,7 +238,8 @@ export function mergeRefusalText(code: string | null | undefined, turnaroundSide
  */
 export type MergeVerdict =
   | { status: "loading" }
-  | { status: "ok" }
+  /** `waivable`: allowed, but only after the Sadran accepts a car without a large trunk for a large-luggage request (REQ §13.111 a). */
+  | { status: "ok"; waivable?: boolean }
   | { status: "refused"; message: string; code: string | null; source: "server" | "twin" };
 
 /** What `useQuery` says about one `merge_preview` call (a subset, so tests need no React). */
@@ -250,16 +255,18 @@ export interface MergePreviewState {
  */
 export function mergeVerdict(states: readonly MergePreviewState[], twinInvalid: MergeInvalid | null): MergeVerdict {
   let loading = false;
+  let waivable = false;
   for (const state of states) {
     if (state.data) {
-      if (!state.data.ok) return { status: "refused", message: mergeRefusalText(state.data.code, state.data.turnaroundSide), code: state.data.code, source: "server" };
+      if (!state.data.ok && state.data.waivable) waivable = true;
+      else if (!state.data.ok) return { status: "refused", message: mergeRefusalText(state.data.code, state.data.turnaroundSide), code: state.data.code, source: "server" };
     } else if (state.isError || state.data === null) {
       if (twinInvalid) return { status: "refused", message: he.mergedRide.invalid[twinInvalid], code: twinInvalid, source: "twin" };
     } else {
       loading = true;
     }
   }
-  return loading ? { status: "loading" } : { status: "ok" };
+  return loading ? { status: "loading" } : waivable ? { status: "ok", waivable: true } : { status: "ok" };
 }
 
 /**

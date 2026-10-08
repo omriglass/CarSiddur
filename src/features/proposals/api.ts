@@ -47,6 +47,8 @@ export interface ProposalSummary {
   request: ProposalRequestSummary | null;
   /** `origin` proposals only (REQ §13.93) -- resolved place/car names, never raw ids (`answer-proposal/index.ts`'s `buildSummary()`). */
   originChange?: { from: string | null; to: string | null; car: string | null } | null;
+  /** `alternative` proposals only (REQ §13.112 a) -- the member's own plan B, drop place resolved to a name by the edge function. */
+  alternative?: { dropPlace: string; arriveBy: string; pickupAt: string | null; pickupPlace?: string } | null;
   parties: ProposalPartySummary[];
 }
 

@@ -30,10 +30,13 @@ export function canEditRequest(request: {
   hasPublishedRide?: boolean;
   ride?: { status: RideStatus } | null;
   seriesId?: string | null;
+  /** REQ §13.112 (a): a request now served by its plan B is not edited (`request_not_editable`). */
+  servedByAlternative?: boolean;
   departAt?: string | null;
   returnAt?: string | null;
 }, now = Date.now()): boolean {
   if (["withdrawn", "cancelled"].includes(request.status)) return false;
+  if (request.servedByAlternative) return false;
   if (isPublishedDayWindow(request.window)) {
     if (request.seriesId) return false;
     const end = Math.max(

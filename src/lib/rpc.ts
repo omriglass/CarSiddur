@@ -47,8 +47,15 @@ export type ErrorCode =
   | "non_driver_cannot_drive"
   | "non_driver_needs_drop_off"
   | "origin_equals_destination"
+  | "invalid_fallback"
+  | "fallback_not_allowed"
+  | "alternative_required"
+  | "invalid_alternative"
+  | "invalid_alternative_time"
   | "join_own_ride"
   | "trip_type_needs_return"
+  | "invalid_duration_lock"
+  | "merge_window_locked"
   | "merge_boards_at_end"
   | "merge_detour_too_long"
   | "merge_luggage_needs_large_trunk"
@@ -58,6 +65,11 @@ export type ErrorCode =
   | "series_span_requires_series_head"
   | "series_span_shared_ride"
   | "origin_change_unavailable"
+  | "alternative_not_applicable"
+  | "alternative_payload_invalid"
+  | "alternative_changed"
+  | "request_served_by_alternative"
+  | "alternative_unavailable"
   | "car_not_at_leg_origin"
   | "car_move_invalid"
   | "car_move_same_place"
@@ -68,6 +80,8 @@ export type ErrorCode =
   | "shift_car_invalid"
   | "no_eligible_driver"
   | "invalid_stops"
+  | "invalid_anchor"
+  | "invalid_anchor_time"
   | "invalid_place"
   | "unmerge_base_request"
   | "join_legs_not_drop_off"
@@ -106,6 +120,7 @@ export type ErrorCode =
   | "publication_conflicts"
   | "publication_unanswered"
   | "publication_drafts"
+  | "publication_alternatives_pending"
   | "pending_ride_changes"
   | "request_window_closed"
   | "driver_unavailable"
@@ -124,6 +139,7 @@ export type ErrorCode =
   | "ride_driver_not_assignable"
   | "driver_not_member"
   | "luggage_capacity_violation"
+  | "needs_large_trunk"
   | "ride_week_not_public"
   | "push_unsupported"
   | "push_permission_denied"
@@ -167,8 +183,15 @@ const MESSAGE_TO_CODE: Record<string, ErrorCode> = {
   non_driver_cannot_drive: "non_driver_cannot_drive",
   non_driver_needs_drop_off: "non_driver_needs_drop_off",
   origin_equals_destination: "origin_equals_destination",
+  invalid_fallback: "invalid_fallback",
+  fallback_not_allowed: "fallback_not_allowed",
+  alternative_required: "alternative_required",
+  invalid_alternative: "invalid_alternative",
+  invalid_alternative_time: "invalid_alternative_time",
   join_own_ride: "join_own_ride",
   trip_type_needs_return: "trip_type_needs_return",
+  invalid_duration_lock: "invalid_duration_lock",
+  merge_window_locked: "merge_window_locked",
   merge_boards_at_end: "merge_boards_at_end",
   merge_detour_too_long: "merge_detour_too_long",
   merge_luggage_needs_large_trunk: "merge_luggage_needs_large_trunk",
@@ -178,6 +201,11 @@ const MESSAGE_TO_CODE: Record<string, ErrorCode> = {
   series_span_requires_series_head: "series_span_requires_series_head",
   series_span_shared_ride: "series_span_shared_ride",
   origin_change_unavailable: "origin_change_unavailable",
+  alternative_not_applicable: "alternative_not_applicable",
+  alternative_payload_invalid: "alternative_payload_invalid",
+  alternative_changed: "alternative_changed",
+  request_served_by_alternative: "request_served_by_alternative",
+  alternative_unavailable: "alternative_unavailable",
   car_not_at_leg_origin: "car_not_at_leg_origin",
   car_move_invalid: "car_move_invalid",
   car_move_same_place: "car_move_same_place",
@@ -189,6 +217,9 @@ const MESSAGE_TO_CODE: Record<string, ErrorCode> = {
   shift_car_invalid: "shift_car_invalid",
   no_eligible_driver: "no_eligible_driver",
   invalid_stops: "invalid_stops",
+  invalid_anchor: "invalid_anchor",
+  anchor_time_mismatch: "invalid_anchor",
+  invalid_anchor_time: "invalid_anchor_time",
   invalid_place: "invalid_place",
   unmerge_base_request: "unmerge_base_request",
   join_legs_not_drop_off: "join_legs_not_drop_off",
@@ -232,6 +263,7 @@ const MESSAGE_TO_CODE: Record<string, ErrorCode> = {
   publication_conflicts: "publication_conflicts",
   publication_unanswered: "publication_unanswered",
   publication_drafts: "publication_drafts",
+  publication_alternatives_pending: "publication_alternatives_pending",
   pending_ride_changes: "pending_ride_changes",
   request_window_closed: "request_window_closed",
   request_not_editable: "request_window_closed",
@@ -241,6 +273,7 @@ const MESSAGE_TO_CODE: Record<string, ErrorCode> = {
   ride_driver_not_assignable: "ride_driver_not_assignable",
   driver_not_member: "driver_not_member",
   luggage_capacity_violation: "luggage_capacity_violation",
+  needs_large_trunk: "needs_large_trunk",
   ride_driver_already_assigned: "driver_assigned",
   ride_in_past: "ride_past",
   invalid_preferred_car: "preferred_car_invalid",
@@ -292,8 +325,15 @@ const CODE_TO_MESSAGE: Record<ErrorCode, string> = {
   non_driver_cannot_drive: he.errors.nonDriverCannotDrive,
   non_driver_needs_drop_off: he.errors.nonDriverNeedsDropOff,
   origin_equals_destination: he.errors.originEqualsDestination,
+  invalid_fallback: he.errors.invalidFallback,
+  fallback_not_allowed: he.errors.fallbackNotAllowed,
+  alternative_required: he.errors.alternativeRequired,
+  invalid_alternative: he.errors.invalidAlternative,
+  invalid_alternative_time: he.errors.invalidAlternativeTime,
   join_own_ride: he.errors.joinOwnRide,
   trip_type_needs_return: he.errors.tripTypeNeedsReturn,
+  invalid_duration_lock: he.errors.invalidDurationLock,
+  merge_window_locked: he.mergedRide.invalid.window_locked,
   merge_boards_at_end: he.mergedRide.invalid.boards_at_end,
   merge_detour_too_long: he.mergedRide.invalid.detour_too_long,
   merge_luggage_needs_large_trunk: he.mergedRide.invalid.luggage_needs_large_trunk,
@@ -313,6 +353,8 @@ const CODE_TO_MESSAGE: Record<ErrorCode, string> = {
   shift_car_invalid: he.errors.shiftCarInvalid,
   no_eligible_driver: he.errors.noEligibleDriver,
   invalid_stops: he.errors.invalidStops,
+  invalid_anchor: he.errors.invalidAnchor,
+  invalid_anchor_time: he.errors.invalidAnchorTime,
   invalid_place: he.errors.invalidPlace,
   unmerge_base_request: he.errors.unmergeBaseRequest,
   join_legs_not_drop_off: he.errors.joinLegsNotDropOff,
@@ -352,12 +394,19 @@ const CODE_TO_MESSAGE: Record<ErrorCode, string> = {
   publication_conflicts: he.sadranPublish.blockedByConflicts,
   publication_unanswered: he.publicationFlow.unresolvedHelp,
   publication_drafts: he.errors.publicationDrafts,
+  publication_alternatives_pending: he.errors.publicationAlternativesPending,
+  alternative_not_applicable: he.errors.alternativeNotApplicable,
+  alternative_payload_invalid: he.errors.alternativePayloadInvalid,
+  alternative_changed: he.errors.alternativeChanged,
+  request_served_by_alternative: he.errors.requestServedByAlternative,
+  alternative_unavailable: he.errors.alternativeUnavailable,
   pending_ride_changes: he.rideEditing.pendingPublish,
   request_window_closed: he.request.editWindowClosed,
   driver_unavailable: he.rideCoordination.driverBusy,
   ride_driver_not_assignable: he.errors.rideDriverNotAssignable,
   driver_not_member: he.errors.driverNotMember,
   luggage_capacity_violation: he.errors.luggageCapacityViolation,
+  needs_large_trunk: he.errors.needsLargeTrunk,
   driver_assigned: he.rideCoordination.noLongerMissing,
   ride_past: he.rideCoordination.past,
   preferred_car_invalid: he.rideCoordination.invalidPreferredCar,
@@ -403,12 +452,20 @@ export class AppError extends Error {
    * a bare "אירעה שגיאה").
    */
   readonly description?: string;
+  /**
+   * The server's raw `details` text, kept for the few codes whose caller needs its content
+   * (`needs_large_trunk`: JSON naming the requests and the car, `lib/smallTrunk.ts`).
+   */
+  readonly detail?: string;
+  /** The person answered "no" to the confirmation this refusal led to (`withSmallTrunkRetry`): nothing to report, no toast. */
+  declined = false;
 
-  constructor(code: ErrorCode, message: string, description?: string) {
+  constructor(code: ErrorCode, message: string, description?: string, detail?: string) {
     super(message);
     this.name = "AppError";
     this.code = code;
     this.description = description;
+    this.detail = detail;
   }
 }
 
@@ -498,12 +555,13 @@ export function toAppError(error: unknown): AppError {
     const description = pgError?.details || pgError?.hint || undefined;
     return new AppError(code, message, description ?? undefined);
   }
-  return new AppError(code, message);
+  return new AppError(code, message, undefined, code === "needs_large_trunk" ? (pgError?.details ?? undefined) : undefined);
 }
 
 /** Maps the error and shows a Hebrew toast (mutations' `onError`, CLAUDE.md "Data"). */
 export function showErrorToast(error: unknown): AppError {
   const appError = toAppError(error);
+  if (appError.declined) return appError;
   if (appError.description) {
     toast.error(appError.message, { description: appError.description });
   } else {

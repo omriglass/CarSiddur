@@ -53,20 +53,23 @@ Hebrew strings quoted below are copied verbatim from `src/i18n/he.member.ts` / `
 `src/pages/HomePage.tsx`, `MyHistoryPage.tsx`, `RequestsRedirect.tsx` (the one "my rides" screen, REQ §13.91),
 `templatePrefill.ts`(+test), `duplicate.ts`(+test), `mapper.ts`(+test), `duration.ts`(+test),
 `dayLabel.ts`(+test), `destinationLabel.ts`(+test), `seatCounts.ts`(+test), `schema.ts`(+test), `submitOutcome.ts`(+test), `api.ts`, `hooks.ts`,
+the sentence layout (REQ §13.110: `requestForm/sentence/**`, `timeAnchors.ts`, `enteredTimes.ts`, `routePoints.ts`, `recentDestinations.ts`, each with a co-located test; `RequestForm.sentence.test.tsx`; the time window, REQ §13.112 c: `timeWindow.ts`(+test), `WindowSummaryLine.tsx`; the migrations `*duration_lock*`/`*window_locked*`; the solver lock is covered under the solver area, `src/solver/__tests__/durationLock.test.ts`),
 `queryKeys.ts` (all under `src/features/requests/`); `src/components/RideTypeChips.tsx`(+test); `src/i18n/he.member.ts`; migrations matching
-`*request_template*`, `*series*`, `*requests.sql`, `*request_edit*`, `*bulk_request_withdrawal*`,
+`*request_template*`, `*anchors*`, `*route_minutes_preview*`, `*classic_request_form*`, `*series*`, `*requests.sql`, `*request_edit*`, `*bulk_request_withdrawal*`,
 `*child*`, `*origin*` (origins/trip_type, REQ §13.93, steps O2/O3), `*stop*` (multi-stop rides, REQ §13.93, step O6); `e2e/multi-day.spec.ts`, `repeating-requests.spec.ts`, `member.spec.ts`,
 `auto-approve.spec.ts`, `upcoming-week.spec.ts`, `multi-stop.spec.ts`;
 `src/features/requests/stops.ts`(+test via `requestForm/StopsField.test.tsx`), `src/lib/routeStops.ts`, `src/lib/routeLabel.ts`(+test).
 
 **Automated**:
 - Vitest: `npx vitest run src/features/requests`
-- SQL: `request_templates.sql`, `multi_day_series.sql`, `origins_schema.sql`, `origins_chain.sql`, `multi_stop.sql` (run via `npm run db:test`, all-or-nothing)
+- SQL: `request_templates.sql`, `multi_day_series.sql`, `origins_schema.sql`, `origins_chain.sql`, `multi_stop.sql`, `request_anchors.sql` (REQ §13.110: time anchors, shift trigger, `route_minutes_preview`, `classic_request_form`), `plan_b.sql` (REQ §13.112 a/b: `destinations.is_drop_point`, `submit_request` `fallback`/`alternative` keys + validation, `request_alternatives` RLS, the `alternative` proposal create → publish gate (`publication_alternatives_pending`, not bypassable) → send → accept → applied with the main trip kept in `original_main` and restorable, decline, a stale plan B, fairness weight 0.1, publication score weights; API twin in `scripts/test-api.mjs` section `planb`; solver `src/solver/__tests__/alternative.test.ts`), `request_window.sql` (REQ §13.112 c/d: `duration_locked`, relaxed late-flex CHECKs, `requests_duration_lock_guard`, `submit_request` keys, templates, `merge_window_locked`, unnamed children counts) (run via `npm run db:test`, all-or-nothing)
 - Playwright: `npx playwright test --grep "@request-form"` (`multi-day.spec.ts`,
   `repeating-requests.spec.ts`, `member.spec.ts`, `auto-approve.spec.ts`, `upcoming-week.spec.ts`,
-  `multi-stop.spec.ts`)
+  `multi-stop.spec.ts`, `request-sentence.spec.ts`; `e2e/global-setup.ts` opts the seeded accounts into the classic form, `request-sentence.spec.ts` flips `member2` to the sentence layout for its run)
 
 **QA script**:
+0. (Sentence layout, REQ §13.110) Sign in as a member whose profile has "טופס הבקשה הקלאסי" off, open a new request: the form is one sentence of tappable chips. Pick a destination, open the outbound time chip, choose "להגיע עד" 09:30: the sheet shows "יציאה משוערת …"; submit; `/my` shows "להגיע עד 09:30". Turn the profile switch on: the old field-by-field form returns.
+0b. (Time window + unnamed children, REQ §13.112 c/d) In the sentence form tap "יש לי חלון זמן?": the two time chips become "ל־4 שעות בין 08:00 ל־14:00"; set the hours to 3 and the window to 07:00–12:00, submit; `/my` shows "3 שעות בין 07:00 ל־12:00" and the stored row is the 07:00–10:00 block with 2 h later slack and `duration_locked`. Edit it: it reopens in window mode; "שעות מסוימות" switches back without losing the fixed times. In the who sheet add one מושב בטיחות and one בוסטר: the chip reads "אני ו־2 ילדים"; edit keeps them.
 1. Sign in as `member1`. Go to "הבקשות שלי" → new request. Fill destination/time, tap "חזרה ביום
    אחר?" (REQ §13.77), pick a day 2 days later, submit. Expected: one request card with a 3-day
    series badge, three linked legs shown on the siddur once placed.
@@ -227,7 +230,7 @@ display, REQ §13.93, step O6); `src/features/rides/components/RideRoute.tsx`, `
 
 **Automated**:
 - Vitest: `npx vitest run src/features/sadran/board src/features/sadran/applySolve.test.ts src/features/sadran/unmetStatuses.test.ts src/features/sadran/deviations src/features/sadran/export src/lib/rideRoute.test.ts src/lib/weekSettings.test.ts`
-- SQL: `todo_board_semantics.sql`, `coordinator_planning.sql`, `solve_semantics.sql`, `car_chain_healing.sql`, `day_car_swap.sql`, `origins_chain.sql`, `qa_run1_proposals.sql`, `qa_run1_cancel_waitlist.sql` (QA run 1 fixes: proposals/merges/chain, cancellation/waiting list/status), `placement_features.sql` (REQ §13.101: luggage needs a large trunk, set_ride_driver, duplicate withdraw/restore, own-car placement, published-day edit, freed car to the contested group), `week_settings_source.sql` (REQ §13.108 a/b: week turnaround override, 60-minute unknown travel)
+- SQL: `todo_board_semantics.sql`, `coordinator_planning.sql`, `solve_semantics.sql`, `car_chain_healing.sql`, `day_car_swap.sql`, `origins_chain.sql`, `qa_run1_proposals.sql`, `qa_run1_cancel_waitlist.sql` (QA run 1 fixes: proposals/merges/chain, cancellation/waiting list/status), `placement_features.sql` (REQ §13.101: luggage needs a large trunk, set_ride_driver, duplicate withdraw/restore, own-car placement, published-day edit, freed car to the contested group), `week_settings_source.sql` (REQ §13.108 a/b: week turnaround override, 60-minute unknown travel), `luggage_waiver.sql` (REQ §13.111 a: every manual placement path refuses with `needs_large_trunk` without `allow_small_trunk` and waives with it; merge_preview waivable verdict; waived request moves/merges/swaps later; automatic paths stay strict; editing luggage clears the waiver); Vitest `src/lib/smallTrunk.test.ts`, `src/lib/luggageWaiver.test.ts`
 - Playwright: `npx playwright test --grep "@board"`
 
 **QA script**:
@@ -254,8 +257,13 @@ display, REQ §13.93, step O6); `src/features/rides/components/RideRoute.tsx`, `
 9. Open a ride sheet for a ride whose request declared stops; confirm the route-per-leg section
    with estimated times, and that an unmet/placed card shows "· N עצירות" only when N > 0 (REQ
    §13.93 "Multi-stop rides").
+10. Drag an unmet request with "ציוד רב" onto a car without a large trunk; confirm "צריך תא מטען גדול ...
+    לשבץ בכל זאת?", that "ביטול" places nothing and "לשבץ בכל זאת" places it, and that its card then
+    reads "ציוד רב — ויתור על תא מטען גדול" (REQ §13.111 a). Repeat with moving a ride that carries
+    such a request, a merge onto a small car (popup note, then the confirmation on send/draft) and a
+    car swap that would put it on a small car.
 
-**REQ**: §13.42, §13.80, §13.84, §13.89, §13.92, §13.93.
+**REQ**: §13.42, §13.80, §13.84, §13.89, §13.92, §13.93, §13.111.
 
 ### proposals — Proposals & /p/:token
 

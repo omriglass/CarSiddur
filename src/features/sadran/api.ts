@@ -1,6 +1,7 @@
 import { ensureDepartmentWeeks } from "@/features/siddur/api";
 import { supabase } from "@/integrations/supabase/client";
 import { rpc, toAppError } from "@/lib/rpc";
+import { withSmallTrunkRetry } from "@/lib/smallTrunk";
 
 import { parseServerMergePreview, type ServerMergePreview } from "./board/mergeProposal";
 
@@ -48,7 +49,29 @@ export type BoardRide = Database["public"]["Views"]["v_board_rides"]["Row"];
  * allows this for a Sadran/admin managing the week (`can_manage_week`), the
  * same condition this function is used under.
  */
+/**
+ * REQ §13.112 (a): a request's plan B (`request_alternatives`, one row per request — an object through the unique FK)
+ * with the drop place's own name; `null` when none. `applied_at` set = an accepted plan B already serves the request.
+ */
+export interface RequestAlternativeEmbed {
+  drop_place_id: string | null;
+  drop_place_text: string | null;
+  arrive_by: string;
+  pickup: boolean;
+  pickup_at: string | null;
+  /** Pickup from another place than the drop place (REQ §13.112 a); both null = the drop place. */
+  pickup_place_id?: string | null;
+  pickup_place_text?: string | null;
+  applied_at: string | null;
+  drop_place?: { name: string } | null;
+  pickup_place?: { name: string } | null;
+}
+
+export const REQUEST_ALTERNATIVE_EMBED = `alternative:request_alternatives(drop_place_id, drop_place_text, arrive_by, pickup, pickup_at, pickup_place_id, pickup_place_text, applied_at, drop_place:destinations!request_alternatives_place_fk(name), pickup_place:destinations!request_alternatives_pickup_place_fk(name))`;
+
 export interface WeekRequestRow extends RequestRow {
+  /** REQ §13.112 (a): the member's plan B, when they stated one. */
+  alternative: RequestAlternativeEmbed | null;
   companions?: { profile_id: string; name: string }[];
   /** Named children (`request_children` → `children.full_name`), distinct from the guessed "unnamed child" fallback (`he.ridePublicDetails.unnamedChild`). */
   childNames?: string[];
@@ -81,9 +104,11 @@ const WEEK_REQUEST_SELECT = `*,
   preferred_car:cars!requests_preferred_car_id_fkey(name),
   companions:request_companions(profile_id, profile:profiles!request_companions_profile_id_fkey(full_name, does_not_drive)),
   request_children(child:children(full_name)),
-  stops:request_stops(leg, position, place_id, place_text, place:destinations(name))`;
+  stops:request_stops(leg, position, place_id, place_text, place:destinations(name)),
+  ${REQUEST_ALTERNATIVE_EMBED}`;
 
 interface WeekRequestJoinRow extends RequestRow {
+  alternative: RequestAlternativeEmbed | null;
   companions: { profile_id: string; profile: { full_name: string; does_not_drive: boolean } | null }[];
   request_children: { child: { full_name: string } | null }[];
   requester: { full_name: string; does_not_drive: boolean } | null;
@@ -158,6 +183,8 @@ export type RequestRowWithDriverFlag = RequestRow & {
   driving_companion_ids: string[];
   /** REQUIREMENTS §13.93 "Multi-stop rides": -> `buildSolverInput`'s `Request.stops`. */
   stops?: { leg: "out" | "return"; position: number; active?: boolean; place_id: string | null }[];
+  /** REQ §13.112 (a): -> `buildSolverInput`'s `Request.alternative`. */
+  alternative?: RequestAlternativeEmbed | null;
 };
 
 export async function fetchWeekRequests(departmentId: string, weekStart: string): Promise<RequestRowWithDriverFlag[]> {
@@ -166,7 +193,8 @@ export async function fetchWeekRequests(departmentId: string, weekStart: string)
     .select(`*,
       requester:profiles!requests_requester_id_fkey(full_name, does_not_drive),
       companions:request_companions(profile_id, profile:profiles!request_companions_profile_id_fkey(does_not_drive)),
-      stops:request_stops(leg, position, place_id, place_text, place:destinations(name))`)
+      stops:request_stops(leg, position, place_id, place_text, place:destinations(name)),
+      ${REQUEST_ALTERNATIVE_EMBED}`)
     .eq("department_id", departmentId)
     .eq("week_start", weekStart);
   if (error) throw toAppError(error);
@@ -477,18 +505,24 @@ export interface EditRideInput {
   is_pinned?: boolean;
   pin_reason?: string | null;
   served?: EditRideServedLeg[];
+  /** REQ §13.111 (a): the Sadran accepted a car without a large trunk for the large-luggage request(s) this edit places. */
+  allow_small_trunk?: boolean;
 }
 
 export async function editRide(input: EditRideInput, expectedVersion?: number): Promise<string> {
-  return rpc("edit_ride", { p_ride: input as unknown as Json, p_expected_version: expectedVersion });
+  // REQ §13.111 (a): a car without a large trunk for a large-luggage request asks "לשבץ בכל זאת?" and retries with the flag.
+  return withSmallTrunkRetry((allowSmallTrunk) => rpc("edit_ride", {
+    p_ride: { ...input, ...(allowSmallTrunk ? { allow_small_trunk: true } : {}) } as unknown as Json,
+    p_expected_version: expectedVersion,
+  }));
 }
 
 /** REQ §13.103 b: "the car was moved from A to B" - a ride that decides where the car is from then on. */
 export interface MarkCarMoveInput { carId: string; fromPlaceId: string; toPlaceId: string; at: string; minutes: number; peopleIds?: string[] }
 
 /** OB1: place a multi-day request by hand - every day of the series on `carId` (refused unless the car is free on all of them). */
-export async function placeSeriesOnCar(seriesId: string, carId: string): Promise<void> {
-  await rpc("place_series_on_car", { p_series_id: seriesId, p_car_id: carId });
+export async function placeSeriesOnCar(seriesId: string, carId: string, allowSmallTrunk = false): Promise<void> {
+  await withSmallTrunkRetry((retryAllow) => rpc("place_series_on_car", { p_series_id: seriesId, p_car_id: carId, p_allow_small_trunk: allowSmallTrunk || retryAllow }));
 }
 
 export async function markCarMove(input: MarkCarMoveInput): Promise<string> {
@@ -519,7 +553,7 @@ export async function unassignRide(rideId: string, expectedVersion: number): Pro
  * opened; returns the surviving (drop-off) ride id.
  */
 export async function joinDropOffLegs(requestId: string, rideId: string, expectedVersion: number): Promise<string> {
-  return rpc("join_drop_off_legs", { p_request_id: requestId, p_ride_id: rideId, p_expected_version: expectedVersion });
+  return withSmallTrunkRetry((allowSmallTrunk) => rpc("join_drop_off_legs", { p_request_id: requestId, p_ride_id: rideId, p_expected_version: expectedVersion, p_allow_small_trunk: allowSmallTrunk }));
 }
 
 /**
@@ -651,15 +685,17 @@ export interface CreateProposalInput {
 }
 
 export async function createProposal(input: CreateProposalInput): Promise<string> {
-  return rpc("create_proposal", {
+  // REQ §13.111 (a): a shift/merge onto a car without a large trunk asks "לשבץ בכל זאת?" and retries with `allow_small_trunk` in the payload.
+  return withSmallTrunkRetry((allowSmallTrunk) => rpc("create_proposal", {
     p_request_id: input.requestId,
     p_ride_id: input.rideId as unknown as string,
     p_type: input.type,
-    p_payload: input.payload,
+    p_payload: allowSmallTrunk && input.payload && typeof input.payload === "object" && !Array.isArray(input.payload)
+      ? { ...input.payload, allow_small_trunk: true } : input.payload,
     p_reason_he: input.reasonHe,
     p_party_profile_ids: input.partyProfileIds ?? [],
     p_created_via: input.createdVia ?? "sadran",
-  });
+  }));
 }
 
 export interface SendProposalResult {
@@ -791,6 +827,8 @@ export interface PublicationDay {
   pendingProposals: number;
   /** REQ §13.94: unsent draft proposals of this day — `ready` requires 0 and `publish_siddur` raises `publication_drafts`. */
   draftProposals: number;
+  /** REQ §13.112 (a): plan-B proposals (draft / sent / accepted) not yet answered - `ready` requires 0 and `publish_siddur` raises `publication_alternatives_pending` (not bypassable). */
+  alternativeProposals?: number;
   missingDriverRides: number;
   conflictRides: number;
   ready: boolean;

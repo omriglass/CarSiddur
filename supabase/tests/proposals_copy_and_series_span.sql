@@ -215,7 +215,8 @@ begin
   begin
     perform public.create_proposal(qL,rH,'merge',jsonb_build_object('ride_id',rH,'legs',jsonb_build_array(jsonb_build_object('ride_id',rH,'leg','both','car_mode','passenger'))),'x');
     raise exception 'luggage merge onto a car without large_trunk accepted';
-  exception when others then assert sqlerrm='merge_luggage_needs_large_trunk', format('create_proposal luggage refusal, got %s',sqlerrm); end;
+  -- REQ §13.111 (a): the Sadran's draft refuses with the waivable code (luggage_waiver.sql covers the allow_small_trunk path)
+  exception when others then assert sqlerrm='needs_large_trunk', format('create_proposal luggage refusal, got %s',sqlerrm); end;
   -- large_trunk car: any number of luggage requests fit
   insert into public.rides(department_id,week_start,car_id,starts_at,ends_at,origin_id,destination_id,driver_id,status,created_by)
     values(dept,w,car41,d,d+interval '4 hours',home,home,m2,'draft',manager) returning id into rL;

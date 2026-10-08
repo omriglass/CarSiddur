@@ -215,6 +215,18 @@ describe("buildApplyPayload (every reopened request lands in rides or request_st
   });
 });
 
+describe("boardRideToFixedRide large luggage (REQ §13.111 a)", () => {
+  const rideWith = (served: object[]) => ({
+    id: "ride-1", car_id: "car-1", starts_at: "2026-09-08T05:00:00Z", ends_at: "2026-09-08T09:00:00Z",
+    origin_id: "home", destination_id: "home", driver_id: "m1", status: "confirmed", served,
+  }) as unknown as BoardRide;
+  const entry = (id: string, extra: object) => ({ request_id: id, role: "passenger", leg: "both", car_mode: "keep", adults: 1, child_seats: 0, boosters: 0, luggage: true, ...extra });
+  it("counts only the luggage requests that still need a large trunk (a waived one does not)", () => {
+    const fixed = boardRideToFixedRide(rideWith([entry("a", {}), entry("b", { luggage_waived: true }), entry("c", { luggage: false })]), Date.parse("2026-09-06T00:00:00Z"));
+    expect(fixed?.luggageCount).toBe(1);
+  });
+});
+
 describe("computeFullResolveDiff (confirm-dialog data for 're-solve the whole week')", () => {
   it("lists every currently-replaceable ride and counts requests that would lose their assignment", () => {
     const context: SolverContext = {
@@ -314,6 +326,29 @@ describe("draftFixedRides overlap handling", () => {
   it("skips a draft that genuinely overlaps another fixed ride instead of crashing", () => {
     const fixed = draftFixedRides([draft], [request], [], [own, other], [{ id: "dest", travel_minutes: 30 }], "home", WEEK_START_MS);
     expect(fixed.map((f) => f.id)).toEqual(["ride2"]);
+  });
+});
+
+describe("draftFixedRides: a plan-B draft (REQ §13.112 a)", () => {
+  const request = { ...req({ id: "r1", status: "submitted" }), trip_shape: "round_trip", origin_id: null, destination_id: "dest", depart_at: new Date(slotMs(36)).toISOString(), return_at: new Date(slotMs(44)).toISOString(), adults: 1, child_seats: 0, boosters: 0, has_luggage: false } as unknown as RequestRow;
+  const draft = { id: "p1", type: "alternative", status: "draft", request_id: "r1", ride_id: null,
+    payload: { car_id: "carB", depart_at: new Date(slotMs(63)).toISOString(), arrive_by: new Date(slotMs(64)).toISOString(),
+      pickup_at: new Date(slotMs(72)).toISOString(), return_at: new Date(slotMs(73)).toISOString(), drop_place_id: "stn" } } as unknown as ProposalRow;
+
+  it("holds the car for the drop-off and the pickup as two chauffeur blocks and leaves the main window alone", () => {
+    const mainRide = { id: "main", carId: "carA", window: { start: 36, end: 44 }, servedRequestIds: ["r1"] } as unknown as FixedRide;
+    const fixed = draftFixedRides([draft], [request], [], [mainRide], [{ id: "dest", travel_minutes: 30 }], "home", WEEK_START_MS);
+    const blocks = fixed.filter((f) => f.id.startsWith("draft:p1"));
+    expect(blocks.map((f) => [f.id, f.carId, f.window.start, f.window.end])).toEqual([
+      ["draft:p1:out", "carB", 63, 66], ["draft:p1:return", "carB", 70, 73],
+    ]);
+    expect(blocks[0]!.legs[0]).toMatchObject({ requestId: "r1", leg: "out", carMode: "chauffeur", role: "passenger" });
+    expect(fixed.some((f) => f.id === "main")).toBe(true);
+  });
+  it("skips a leg that collides with another block of that car", () => {
+    const other = { id: "o", carId: "carB", window: { start: 60, end: 67 }, servedRequestIds: ["r2"] } as unknown as FixedRide;
+    const fixed = draftFixedRides([draft], [request], [], [other], [], "home", WEEK_START_MS);
+    expect(fixed.map((f) => f.id)).toEqual(["o", "draft:p1:return"]);
   });
 });
 

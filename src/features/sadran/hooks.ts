@@ -191,8 +191,8 @@ export function useMarkCarMoveMutation() {
 export function usePlaceSeriesOnCarMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ seriesId, carId }: { seriesId: string; carId: string; departmentId: string; weekStart: string }) =>
-      api.placeSeriesOnCar(seriesId, carId),
+    mutationFn: ({ seriesId, carId, allowSmallTrunk }: { seriesId: string; carId: string; allowSmallTrunk?: boolean; departmentId: string; weekStart: string }) =>
+      api.placeSeriesOnCar(seriesId, carId, allowSmallTrunk),
     onSuccess: (_data, { departmentId, weekStart }) => invalidateBoard(queryClient, departmentId, weekStart),
     onError: showErrorToast,
   });

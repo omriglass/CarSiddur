@@ -6,6 +6,7 @@ import { RouterProvider } from "react-router-dom";
 import { toast } from "sonner";
 
 import { router } from "@/app/router";
+import { SmallTrunkHost } from "@/components/SmallTrunkHost";
 import { Toaster } from "@/components/ui/sonner";
 import { SessionProvider } from "@/features/auth/SessionProvider";
 import { errorToReport, reportClientError } from "@/features/diagnostics/reportClientError";
@@ -77,6 +78,7 @@ createRoot(rootElement).render(
         <SessionProvider>
           <RouterProvider router={router} />
           <Toaster />
+          <SmallTrunkHost />
         </SessionProvider>
       </QueryClientProvider>
     </DirectionProvider>

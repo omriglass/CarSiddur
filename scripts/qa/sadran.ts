@@ -116,6 +116,7 @@ function describeSuggestion(board: Board, s: Suggestion, index: number): string 
     case "convertToRoundTrip": return `${base} car=${board.carName(s.carId)} window=${w(s.window)}`;
     case "chauffeur": return `${base} leg=${s.leg} car=${board.carName(s.carId)} window=${w(s.window)} volunteers=${s.volunteerCandidateMemberIds.length}`;
     case "changeOrigin": return `${base} origin=${board.destName(s.originId)} car=${board.carName(s.carId)}`;
+    case "useAlternative": return `${base} car=${board.carName(s.carId)}${s.returnCarId ? ` return-car=${board.carName(s.returnCarId)}` : ""} depart=${t(slotToIso(s.departSlot, board.weekStartMs))}${s.returnSlot != null ? ` back=${t(slotToIso(s.returnSlot, board.weekStartMs))}` : ""} (${s.reasonCode})`;
     case "externalHint": return `${base} hint=${s.hint}`;
     case "splitLegs": return `${base} out(${s.outbound.carMode}${s.outbound.hostRideId ? ` host ${short(s.outbound.hostRideId)}` : ""}) return(${s.return.carMode}${s.return.hostRideId ? ` host ${short(s.return.hostRideId)}` : ""})`;
     default: return `${base} (${s.reasonCode})`;
@@ -418,7 +419,7 @@ async function cmdEditRoute(board: Board, args: Args): Promise<void> {
 
 async function cmdPropose(board: Board, args: Args): Promise<void> {
   const request = resolveRequest(board, need(args.pos[0], "<requestId>"));
-  const type = need(args.pos[1], "shift|origin|deny|external") as "shift" | "origin" | "deny" | "external";
+  const type = need(args.pos[1], "shift|origin|alternative|deny|external") as "shift" | "origin" | "alternative" | "deny" | "external";
   const draft = has(args, "draft");
   const day = dayOf(requestStart(request)) || board.scope.weekStart;
   const rideId = flag(args, "ride") ? resolveRide(board, flag(args, "ride")!).id ?? null : null;
@@ -454,6 +455,13 @@ async function cmdPropose(board: Board, args: Args): Promise<void> {
   } else if (type === "origin") {
     payload.origin_id = (resolvePlace(board, need(flag(args, "origin"), "--origin") as string) as { presetId: string }).presetId;
     payload.car_id = resolveCar(board, need(flag(args, "car"), "--car") as string).id;
+  } else if (type === "alternative") {
+    // REQ §13.112 (a): the request's own plan B placed on a car: --depart is when the member leaves home, --return when they are
+    // back (only with a pickup). `unmet` lists a `useAlternative` suggestion with the numbers to use.
+    payload.car_id = resolveCar(board, need(flag(args, "car"), "--car") as string).id;
+    if (flag(args, "return-car")) payload.return_car_id = resolveCar(board, flag(args, "return-car")!).id;
+    payload.depart_at = instantAt(day, need(flag(args, "depart"), "--depart") as string);
+    if (flag(args, "return")) payload.return_at = instantAt(day, flag(args, "return")!);
   } else if (type === "deny" || type === "external") {
     if (flag(args, "reason")) payload.reason = flag(args, "reason");
     if (type === "external") payload.hint = flag(args, "hint") ?? "cab";
@@ -626,7 +634,7 @@ function usage(): void {
   merge <req> <ride> [--leg out|return|both] [--draft] | unmerge <ride> <req>
   trip-type <req> <round_trip|one_way|drop_off>
   edit-route <ride|req> [--origin P] [--dest P] [--stop P]... [--return-stop P]... [--clear-stops] [--draft]
-  propose <req> shift [--car C --depart HH:MM --return HH:MM --day D --ride R --no-places] | origin --origin P --car C | deny [--reason T] | external [--hint cab|rental|public_transport|private|waive] [--reason T]  [--draft]
+  propose <req> shift [--car C --depart HH:MM --return HH:MM --day D --ride R --no-places] | origin --origin P --car C | deny [--reason T] | external [--hint cab|rental|public_transport|private|waive] [--reason T] | alternative --car C --depart HH:MM [--return HH:MM] [--return-car C]  [--draft]
   send <proposal> | withdraw <proposal> | discard <proposal> | apply <proposal>
   unassign <ride> | cancel-ride <ride> [reason] | reserve <car> <day> <HH:MM-HH:MM> <note> | car-move <car> <from> <to> <HH:MM> [--day D] [--minutes N]
   message <memberEmail> <text> | messages [--new]

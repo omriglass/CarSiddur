@@ -60,6 +60,15 @@ describe("publication choices", () => {
     expect(mocks.publish).not.toHaveBeenCalled();
   });
 
+  it("refuses a day with an unanswered plan-B proposal (REQ §13.112 a) and lists the day", () => {
+    mocks.readiness = mocks.readiness.map((day, index) => index === 2 ? { ...day, ready: false, alternativeProposals: 1 } : day);
+    show();
+    expect(screen.getByRole("button", { name: he.publicationFlow.allYes })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: he.publicationFlow.selectDays }));
+    expect(screen.getByText(he.sadranPlanB.publishDayOne)).toBeVisible();
+    expect(mocks.publish).not.toHaveBeenCalled();
+  });
+
   it("publishes all seven resolved days without an unanswered-items override", async () => {
     show();
     expect(screen.getByText(he.publicationFlow.allReady)).toBeVisible();

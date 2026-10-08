@@ -128,6 +128,24 @@ export const tripTypeSchema = z.enum(TRIP_TYPES);
 assertSameEnum<TripType, Enums<"trip_type">>();
 
 // ---------------------------------------------------------------------------
+// time_anchor (REQ §13.110: which way a request end was entered — outbound
+// leave-home-at / arrive-by, return home-by (arrive) / leave-there-at (leave))
+// ---------------------------------------------------------------------------
+export const TIME_ANCHORS = ["leave", "arrive"] as const satisfies readonly Enums<"time_anchor">[];
+export type TimeAnchor = (typeof TIME_ANCHORS)[number];
+export const timeAnchorSchema = z.enum(TIME_ANCHORS);
+assertSameEnum<TimeAnchor, Enums<"time_anchor">>();
+
+// ---------------------------------------------------------------------------
+// request_fallback (REQ §13.112 a/b: what the member wants when no car is found —
+// nothing stated / a plan B הקפצה / "אסתדר")
+// ---------------------------------------------------------------------------
+export const REQUEST_FALLBACKS = ["none", "alternative", "manage"] as const satisfies readonly Enums<"request_fallback">[];
+export type RequestFallbackValue = (typeof REQUEST_FALLBACKS)[number];
+export const requestFallbackSchema = z.enum(REQUEST_FALLBACKS);
+assertSameEnum<RequestFallbackValue, Enums<"request_fallback">>();
+
+// ---------------------------------------------------------------------------
 // leg_car_mode
 // ---------------------------------------------------------------------------
 export const LEG_CAR_MODES = [
@@ -190,6 +208,7 @@ export const PROPOSAL_TYPES = [
   "deny",
   "external",
   "origin",
+  "alternative",
 ] as const satisfies readonly Enums<"proposal_type">[];
 export type ProposalType = (typeof PROPOSAL_TYPES)[number];
 export const proposalTypeSchema = z.enum(PROPOSAL_TYPES);

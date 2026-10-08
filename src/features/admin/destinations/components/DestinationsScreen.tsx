@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -53,6 +54,7 @@ function DestinationForm({ destination, prefillName, onSaved }: { destination: D
       travel_minutes: destination?.travel_minutes ?? null,
       public_transport_score: destination?.public_transport_score ?? null,
       is_approved: destination?.is_approved ?? true,
+      is_drop_point: destination?.is_drop_point ?? false,
     },
   });
 
@@ -70,6 +72,7 @@ function DestinationForm({ destination, prefillName, onSaved }: { destination: D
       travel_minutes: values.travel_minutes,
       public_transport_score: values.public_transport_score,
       is_approved: values.is_approved,
+      is_drop_point: values.is_drop_point,
     };
     try {
       if (destination) {
@@ -224,6 +227,21 @@ function DestinationForm({ destination, prefillName, onSaved }: { destination: D
             </FormItem>
           )}
         />
+        <FormField
+          control={form.control}
+          name="is_drop_point"
+          render={({ field }) => (
+            <FormItem className="flex flex-row items-center justify-between gap-2 space-y-0 rounded-md border p-3">
+              <div className="space-y-0.5">
+                <FormLabel className="!mt-0">{he.adminDestinations.fieldDropPoint}</FormLabel>
+                <p className="text-xs text-muted-foreground">{he.adminDestinations.dropPointHelp}</p>
+              </div>
+              <FormControl>
+                <Switch checked={field.value} onCheckedChange={field.onChange} data-testid="destination-drop-point" />
+              </FormControl>
+            </FormItem>
+          )}
+        />
         <Button type="submit" disabled={form.formState.isSubmitting}>
           {he.adminCommon.save}
         </Button>
@@ -271,6 +289,7 @@ function ListTab() {
                   <Badge variant={d.is_approved ? "default" : "outline"}>
                     {d.is_approved ? he.adminCommon.active : he.adminCommon.inactive}
                   </Badge>
+                  {d.is_drop_point ? <Badge variant="secondary" className="ms-1" data-testid="destination-drop-point-badge">{he.adminDestinations.dropPointBadge}</Badge> : null}
                 </TableCell>
               </TableRow>
             ))}

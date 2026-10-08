@@ -14,7 +14,9 @@ import { useState } from "react";
 import { he, t, tv, type TranslationKey } from "@/i18n/he";
 import { formatDayDate } from "@/lib/dayLabels";
 import { dateKey, formatTime } from "@/lib/time";
+import { alternativePlanText } from "@/features/sadran/board/planBLine";
 import { requestStart } from "@/features/sadran/board/phantomLanes";
+import type { PublicationDay } from "../../api";
 
 import { computeDiffSummary } from "../diffSummary";
 import { placedTimes } from "../placedTimes";
@@ -59,6 +61,13 @@ export function PublishScreen({ departmentId, weekStart }: PublishScreenProps) {
     return anchor ? [{ id: proposal.id, name: request?.requester_full_name ?? "", type: proposal.type, day: dateKey(anchor) }] : [];
   });
   const draftDays = new Set(readiness.filter((day) => day.draftProposals > 0).map((day) => day.day));
+  // REQ §13.112 (a): a plan-B proposal that nobody answered yet holds its day back (server: publication_alternatives_pending, never bypassable).
+  const alternativeRows = (proposalsQuery.data ?? []).filter((proposal) => proposal.type === "alternative" && ["draft", "sent", "accepted"].includes(proposal.status)).flatMap((proposal) => {
+    const request = (requestsQuery.data ?? []).find((r) => r.id === proposal.request_id);
+    const anchor = request ? requestStart(request) : null;
+    return request && anchor ? [{ id: proposal.id, name: request.requester_full_name ?? "", day: dateKey(anchor), plan: request.alternative ? alternativePlanText(request.alternative) : "" }] : [];
+  });
+  const blocksDay = (day: PublicationDay) => day.conflictRides > 0 || day.draftProposals > 0 || (day.alternativeProposals ?? 0) > 0;
   const allDays = readiness.map((day) => day.day);
   const readyDays = readiness.filter((day) => day.ready).map((day) => day.day);
   // R7U2: the "choose days" list pre-ticks only days that are ready, not yet published and not past.
@@ -114,7 +123,7 @@ export function PublishScreen({ departmentId, weekStart }: PublishScreenProps) {
   function proposePublish(days: string[]) {
     if (!days.length) return;
     const chosen = readiness.filter((day) => days.includes(day.day));
-    if (chosen.some((day) => day.conflictRides > 0 || day.draftProposals > 0)) return;
+    if (chosen.some(blocksDay)) return;
     // `unresolvedRequests` no longer blocks publication (REQ §13.75) — an unresolved request is
     // auto-approved or grouped at publication time, `incompleteAssignments` is the real defect.
     if (chosen.some((day) => day.incompleteAssignments > 0 || day.pendingProposals > 0 || day.missingDriverRides > 0)) {
@@ -152,19 +161,20 @@ export function PublishScreen({ departmentId, weekStart }: PublishScreenProps) {
         ) : null}
         <p className="text-sm text-muted-foreground">{readyDays.length === 7 ? he.publicationFlow.allReady : tv("publicationFlow.readiness", { count: String(readyDays.length) })}</p>
         <div className="flex flex-wrap gap-2">
-          <Button disabled={unavailable || readiness.some((day) => day.conflictRides > 0 || day.draftProposals > 0)} onClick={() => proposePublish(allDays)}>{publishMutation.isPending ? he.publishScores.calculating : he.publicationFlow.allYes}</Button>
+          <Button disabled={unavailable || readiness.some(blocksDay)} onClick={() => proposePublish(allDays)}>{publishMutation.isPending ? he.publishScores.calculating : he.publicationFlow.allYes}</Button>
           <Button variant="outline" disabled={unavailable} onClick={() => setSelectedDays(preselectedDays)}>{he.publicationFlow.onlyReady}</Button>
           <Button variant="ghost" disabled={unavailable} onClick={() => setSelectedDays(preselectedDays)}>{he.publicationFlow.selectDays}</Button>
         </div>
         {selectedDays ? <div className="space-y-2 border-t pt-3">
           <p className="text-sm text-muted-foreground">{he.publicationFlow.partialHint}</p>
           {readiness.map((day) => <label key={day.day} className="flex items-start gap-3 rounded-md border p-3 text-sm">
-            <Checkbox checked={selectedDays.includes(day.day)} disabled={day.conflictRides > 0 || day.draftProposals > 0 || publishMutation.isPending} onCheckedChange={(checked) => setSelectedDays((current) => checked ? [...(current ?? []), day.day] : (current ?? []).filter((value) => value !== day.day))} />
+            <Checkbox checked={selectedDays.includes(day.day)} disabled={blocksDay(day) || publishMutation.isPending} onCheckedChange={(checked) => setSelectedDays((current) => checked ? [...(current ?? []), day.day] : (current ?? []).filter((value) => value !== day.day))} />
             <span className="space-y-1">
               <span className="block font-medium">{dateLabel(day.day)}{day.published ? ` · ${he.publicationFlow.published}` : ""}</span>
               <span className="block text-xs text-muted-foreground">{day.ready ? he.publicationFlow.ready : [
                 day.unresolvedRequests ? countLabel(day.unresolvedRequests, "unresolved") : null,
                 day.draftProposals ? tv("boardDrafts.publishDayDrafts", { count: String(day.draftProposals) }) : null,
+                day.alternativeProposals ? (day.alternativeProposals === 1 ? he.sadranPlanB.publishDayOne : tv("sadranPlanB.publishDay", { count: String(day.alternativeProposals) })) : null,
                 day.pendingProposals ? countLabel(day.pendingProposals, "pending") : null,
                 day.missingDriverRides ? countLabel(day.missingDriverRides, "missingDriver") : null,
                 day.conflictRides ? tv("publicationFlow.conflicts", { count: String(day.conflictRides) }) : null,
@@ -191,6 +201,20 @@ export function PublishScreen({ departmentId, weekStart }: PublishScreenProps) {
           </ul>
         </CardContent></Card>
       ) : draftDays.size ? <p className="text-sm text-amber-700">{he.boardDrafts.publishBlockedDay}</p> : null}
+      {alternativeRows.length ? (
+        <Card className="border-amber-500/60" data-testid="publish-alternatives"><CardContent className="space-y-2 p-4 text-sm">
+          <h2 className="font-medium">{he.sadranPlanB.publishTitle}</h2>
+          <p className="text-muted-foreground">{he.sadranPlanB.publishHelp}</p>
+          <ul className="space-y-1">
+            {alternativeRows.map((row) => (
+              <li key={row.id} className="flex flex-wrap items-center justify-between gap-2" data-testid="publish-alternative-row">
+                <span><span className="font-medium">{dateLabel(row.day)}</span>{" · "}{tv("sadranPlanB.publishRow", { name: row.name, plan: row.plan })}</span>
+                <Button variant="outline" size="sm" onClick={() => navigate(paths.sadran.board(departmentId, weekStart))}>{he.boardDrafts.publishOpenBoard}</Button>
+              </li>
+            ))}
+          </ul>
+        </CardContent></Card>
+      ) : null}
       <p className="text-sm text-muted-foreground">{he.publishScores.help}</p>
       <RideChangeAnswers departmentId={departmentId} weekStart={weekStart} canManage />
       {savedScores.length ? <Card><CardContent className="overflow-x-auto p-4">

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { requestIdsWithOpenProposal, resolveDraftPlacement, resolveDraftPlacements } from "./draftOverlay";
+import { alternativeLegs, requestIdsWithOpenProposal, resolveDraftPlacement, resolveDraftPlacements } from "./draftOverlay";
 import { makeHop } from "@/lib/rideRoute";
 import type { BoardRide, ProposalRow, WeekRequestRow } from "../api";
 
@@ -94,5 +94,36 @@ describe("draft helpers", () => {
       { status: "withdrawn", request_id: "d" }, { status: "applied", request_id: "e" },
     ]);
     expect([...ids].sort()).toEqual(["a", "b", "c"]);
+  });
+});
+
+describe("plan B drafts (REQ §13.112 a)", () => {
+  const payload = {
+    car_id: "carA", return_car_id: "carB", depart_at: "2026-10-11T04:30:00.000Z", arrive_by: "2026-10-11T05:00:00.000Z",
+    pickup_at: "2026-10-11T16:00:00.000Z", return_at: "2026-10-11T16:30:00.000Z", drop_place_id: "stn",
+  };
+  it("alternativeLegs: a drop-off block (twice the drive plus the dwell) and a pickup block ending when the member is back", () => {
+    const legs = alternativeLegs(payload);
+    expect(legs).toEqual([
+      { leg: "out", carId: "carA", startsAt: "2026-10-11T04:30:00.000Z", endsAt: "2026-10-11T05:45:00.000Z" },
+      { leg: "return", carId: "carB", startsAt: "2026-10-11T15:15:00.000Z", endsAt: "2026-10-11T16:30:00.000Z" },
+    ]);
+  });
+  it("no pickup means only the drop-off block; an incomplete payload has none", () => {
+    expect(alternativeLegs({ car_id: "carA", depart_at: payload.depart_at, arrive_by: payload.arrive_by })).toHaveLength(1);
+    expect(alternativeLegs({ car_id: "carA" })).toEqual([]);
+  });
+  it("resolveDraftPlacement draws the drop-off block on the first car, keeps the request unplaced", () => {
+    const placement = resolveDraftPlacement(proposal({ type: "alternative", payload }), [request()], [ride()], "home");
+    expect(placement).toMatchObject({ type: "alternative", carId: "carA", leg: "out", startsAt: "2026-10-11T04:30:00.000Z", destinationId: "stn", originId: "home", replacesRideId: null });
+    expect(resolveDraftPlacement(proposal({ type: "alternative", payload: {} }), [request()], [], "home")).toBeNull();
+  });
+});
+
+describe("plan B draft with a pickup from another place", () => {
+  it("the pickup block has no return_at: the car drives to the pickup place first", () => {
+    const legs = alternativeLegs({ car_id: "carA", return_car_id: "carB", depart_at: "2026-10-11T04:30:00.000Z", arrive_by: "2026-10-11T05:00:00.000Z",
+      pickup_at: "2026-10-11T16:00:00.000Z", pickup_place_id: "karkur" });
+    expect(legs[1]).toEqual({ leg: "return", carId: "carB", startsAt: "2026-10-11T15:20:00.000Z", endsAt: "2026-10-11T16:30:00.000Z" });
   });
 });

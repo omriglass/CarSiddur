@@ -39,10 +39,13 @@ function requestRow(overrides: Partial<RequestRow> = {}): RequestRow {
     flex_depart_late: "0",
     flex_return_early: "0",
     flex_return_late: "1 day",
+    duration_locked: false,
     adults: 1,
     child_seats: 0,
     boosters: 0,
     has_luggage: false,
+    luggage_waived_at: null,
+    luggage_waived_by: null,
     needs_car_at_destination: true,
     freed_slot_opt_out: false,
     is_late: false,
@@ -125,6 +128,11 @@ describe("parseFlexInterval", () => {
     expect(parseFlexInterval("1 day")).toBe("day");
     expect(parseFlexInterval(null)).toBe(0);
   });
+
+  it("parses any quarter-hour slack of a window request (REQ §13.112 c)", () => {
+    expect(parseFlexInterval("03:15:00")).toBe(195);
+    expect(parseFlexInterval("11:45:00")).toBe(705);
+  });
 });
 
 describe("parseTimeToMinutes", () => {
@@ -204,6 +212,28 @@ describe("buildSolverInput", () => {
     expect(byId.get("non-driver")!.canDrive).toBe(false);
   });
 
+  it("maps duration_locked to Request.durationLocked (REQ §13.112 c), undefined when off", () => {
+    const input = buildSolverInput({
+      weekStart: WEEK_START,
+      homeDestinationId: HOME,
+      departmentSettings: DEFAULT_SETTINGS,
+      requests: [
+        requestRow({ id: "plain" }),
+        { ...requestRow({ id: "window" }), duration_locked: true, flex_depart_early: "0", flex_depart_late: "03:15:00", flex_return_late: "03:15:00" },
+      ],
+      rideTypeCodesById: {},
+      cars: [],
+      seatConfigsByCarId: {},
+      destinations: [destRow()],
+      policy: { id: "p1", version: 1, rules: [] },
+    });
+    const byId = new Map(input.requests.map((r) => [r.id, r]));
+    expect(byId.get("plain")!.durationLocked).toBeUndefined();
+    expect(byId.get("window")!.durationLocked).toBe(true);
+    expect(byId.get("window")!.flexDeparture).toEqual({ earlierMin: 0, laterMin: 195 });
+    expect(byId.get("window")!.flexReturn).toEqual({ earlierMin: 0, laterMin: 195 });
+  });
+
   it("maps driving_companion_ids straight onto Request.drivingCompanionIds, undefined when empty/absent (REQ §13.88)", () => {
     const input = buildSolverInput({
       weekStart: WEEK_START,
@@ -271,6 +301,24 @@ describe("buildSolverInput", () => {
     expect(input.stats.fairness.m1!.deficit).toBe(0);
     expect(input.stats.fairness.m2!.deficit).toBe(0.5);
     expect(input.stats.fairness.m3!.deficit).toBe(1);
+  });
+
+  it("maps a large-luggage request to luggage:true, and a waived one to luggage:false (REQ §13.111 a)", () => {
+    const solverInput = (requests: RequestRow[]) => buildSolverInput({
+      weekStart: WEEK_START,
+      homeDestinationId: HOME,
+      departmentSettings: DEFAULT_SETTINGS,
+      requests,
+      rideTypeCodesById: { "rt-work": "work" },
+      cars: [carRow()],
+      seatConfigsByCarId: {},
+      destinations: [destRow(), destRow({ id: HOME, name: "נבו", zone: "home", distance_km: null, travel_minutes: null, public_transport_score: null })],
+      policy: { id: "p1", version: 1, rules: [] },
+    });
+    const luggage = (input: ReturnType<typeof solverInput>) => input.requests.map((request) => request.luggage);
+    expect(luggage(solverInput([requestRow({ has_luggage: true })]))).toEqual([true]);
+    expect(luggage(solverInput([requestRow({ has_luggage: true, luggage_waived_at: "2026-10-17T08:00:00Z" })]))).toEqual([false]);
+    expect(luggage(solverInput([requestRow({ has_luggage: false })]))).toEqual([false]);
   });
 
   it("marks cars (luggageCapacity > 0, no count cap) with the large_trunk feature", () => {
@@ -544,5 +592,57 @@ describe("origins, trip types, cars stay put (REQUIREMENTS §13.93, docs/ORIGINS
     expect(byId.get("no-stops")!.stops).toBeUndefined();
     // REQ §13.97: inactive (dormant return) stops never reach the solver.
     expect(byId.get("only-inactive")!.stops).toBeUndefined();
+  });
+
+  describe("fallback / plan B (REQ §13.112 a/b)", () => {
+    const build = (requests: Parameters<typeof buildSolverInput>[0]["requests"]) => buildSolverInput({
+      weekStart: WEEK_START, homeDestinationId: HOME, departmentSettings: DEFAULT_SETTINGS, requests,
+      rideTypeCodesById: {}, cars: [], seatConfigsByCarId: {}, destinations: [destRow()], policy: { id: "p1", version: 1, rules: [] },
+    });
+    const alt = { drop_place_id: "dest-a", drop_place_text: null, arrive_by: "2026-09-08T05:00:00Z", pickup: true, pickup_at: "2026-09-08T14:00:00Z", applied_at: null };
+
+    it("maps a plan B (list place, with a pickup) onto Request.alternative and the fallback", () => {
+      const input = build([{ ...requestRow({ id: "a", fallback: "alternative" } as Partial<RequestRow>), alternative: alt }]);
+      const request = input.requests[0]!;
+      expect(request.fallback).toBe("alternative");
+      expect(request.alternative).toEqual({
+        dropPlaceId: "dest-a", dropPlaceIsFreeText: false, dropPlaceText: undefined,
+        arriveByMs: Date.parse("2026-09-08T05:00:00Z"), pickupMs: Date.parse("2026-09-08T14:00:00Z"),
+      });
+    });
+    it("a free-text drop place uses the free-text sentinel (and adds it to the destinations); no pickup = no pickupMs", () => {
+      const input = build([{ ...requestRow({ id: "a", fallback: "alternative" } as Partial<RequestRow>), alternative: { ...alt, drop_place_id: null, drop_place_text: "the junction", pickup: false, pickup_at: null } }]);
+      expect(input.requests[0]!.alternative).toMatchObject({ dropPlaceId: FREE_TEXT_DESTINATION_ID, dropPlaceIsFreeText: true, dropPlaceText: "the junction", pickupMs: undefined });
+      expect(input.destinations[FREE_TEXT_DESTINATION_ID]).toBeDefined();
+    });
+    it("אסתדר maps to fallback manage only", () => {
+      const request = build([requestRow({ id: "m", fallback: "manage" } as Partial<RequestRow>)]).requests[0]!;
+      expect(request.fallback).toBe("manage");
+      expect(request.alternative).toBeUndefined();
+    });
+    it("no active fallback for a הקפצה (dormant), a series leg, fallback none, or a plan B that was already applied", () => {
+      const rows = [
+        { ...requestRow({ id: "d", fallback: "alternative", trip_type: "drop_off" } as Partial<RequestRow>), alternative: alt },
+        { ...requestRow({ id: "s", fallback: "alternative", series_id: "S", series_index: 1, series_count: 2 } as Partial<RequestRow>), alternative: alt },
+        { ...requestRow({ id: "n", fallback: "none" } as Partial<RequestRow>), alternative: alt },
+        { ...requestRow({ id: "x", fallback: "alternative", served_by_alternative: true } as Partial<RequestRow>), alternative: { ...alt, applied_at: "2026-09-07T10:00:00Z" } },
+      ];
+      const byId = new Map(build(rows).requests.map((r) => [r.id, r]));
+      for (const id of ["d", "s", "n"]) { expect(byId.get(id)!.fallback).toBeUndefined(); expect(byId.get(id)!.alternative).toBeUndefined(); }
+      // a request an accepted plan B serves keeps only the scoring flag
+      expect(byId.get("x")!.fallback).toBeUndefined();
+      expect(byId.get("x")!.alternative).toBeUndefined();
+      expect(byId.get("x")!.servedByAlternative).toBe(true);
+    });
+
+    it("maps a pickup from another place and flags the pickup-leg sibling", () => {
+      const input = build([
+        { ...requestRow({ id: "a", fallback: "alternative" } as Partial<RequestRow>), alternative: { ...alt, pickup_place_id: "dest-b" } },
+        requestRow({ id: "s", plan_b_parent_id: "a", served_by_alternative: true, trip_type: "drop_off" } as Partial<RequestRow>),
+      ]);
+      const byId = new Map(input.requests.map((r) => [r.id, r]));
+      expect(byId.get("a")!.alternative).toMatchObject({ pickupPlaceId: "dest-b" });
+      expect(byId.get("s")!.planBSibling).toBe(true);
+    });
   });
 });

@@ -143,7 +143,7 @@ describe("server merge times (R5B5 / TODO U2)", () => {
     joiner_depart_at: "2026-10-11T04:00:00+00:00", joiner_return_at: null, joiner_old_depart_at: "2026-10-11T03:45:00+00:00",
   };
   it("parses merge_preview's jsonb into the fields the UI reads", () => {
-    expect(parseServerMergePreview(raw)).toEqual({ ok: true, code: null, newStartsAt: raw.new_starts_at, newEndsAt: raw.new_ends_at, joinerDepartAt: raw.joiner_depart_at, joinerReturnAt: null, turnaroundSide: null });
+    expect(parseServerMergePreview(raw)).toEqual({ ok: true, code: null, newStartsAt: raw.new_starts_at, newEndsAt: raw.new_ends_at, joinerDepartAt: raw.joiner_depart_at, joinerReturnAt: null, turnaroundSide: null, waivable: false });
     expect(parseServerMergePreview(null)).toBeNull();
     expect(parseServerMergePreview([1])).toBeNull();
     expect(parseServerMergePreview({ ok: false, code: "seats" })?.ok).toBe(false);
@@ -208,6 +208,17 @@ describe("mergeVerdict / mergeRefusalText (REQ item 108 M1: the server decides)"
 
   it("allows only when the server says ok - the twin's objection does not matter", () => {
     expect(mergeVerdict([{ data: server({}), isError: false }], "detour_too_long")).toEqual({ status: "ok" });
+  });
+
+  it("a luggage-only refusal is waivable: the verdict stays ok, marked waivable (REQ §13.111 a)", () => {
+    expect(parseServerMergePreview({ ok: false, code: "luggage", waivable: true })?.waivable).toBe(true);
+    const waivable = server({ ok: false, code: "luggage", waivable: true });
+    expect(mergeVerdict([{ data: waivable, isError: false }], null)).toEqual({ status: "ok", waivable: true });
+    // a real refusal on another call still wins over a waivable one
+    expect(mergeVerdict([{ data: waivable, isError: false }, { data: server({ ok: false, code: "seats" }), isError: false }], null))
+      .toMatchObject({ status: "refused", code: "seats" });
+    // a refusal that is not waivable stays a refusal
+    expect(mergeVerdict([{ data: server({ ok: false, code: "luggage" }), isError: false }], null)).toMatchObject({ status: "refused", code: "luggage" });
   });
 
   it("falls back to the twin when the preview call failed", () => {

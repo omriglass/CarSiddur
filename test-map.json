@@ -66,6 +66,10 @@
         "supabase/tests/origins_schema.sql",
         "supabase/tests/origins_chain.sql",
         "supabase/tests/multi_stop.sql",
+        "supabase/tests/request_anchors.sql",
+        "supabase/migrations/**/*anchors*",
+        "supabase/migrations/**/*route_minutes_preview*",
+        "supabase/migrations/**/*classic_request_form*",
         "supabase/migrations/**/*origin*",
         "supabase/migrations/**/*stop*",
         "e2e/multi-day.spec.ts",
@@ -93,7 +97,33 @@
         "src/lib/routeStops.ts",
         "src/lib/routeLabel.ts",
         "src/lib/routeLabel.test.ts",
-        "e2e/multi-stop.spec.ts"
+        "e2e/multi-stop.spec.ts",
+        "e2e/request-sentence.spec.ts",
+        "src/features/requests/timeAnchors.ts",
+        "src/features/requests/timeAnchors.test.ts",
+        "src/features/requests/enteredTimes.ts",
+        "src/features/requests/enteredTimes.test.ts",
+        "src/features/requests/routePoints.ts",
+        "src/features/requests/routePoints.test.ts",
+        "src/features/requests/recentDestinations.ts",
+        "src/features/requests/components/RequestForm.sentence.test.tsx",
+        "src/features/requests/timeWindow.ts",
+        "src/features/requests/timeWindow.test.ts",
+        "src/features/requests/components/WindowSummaryLine.tsx",
+        "supabase/tests/request_window.sql",
+        "supabase/tests/plan_b.sql",
+        "src/features/requests/planB.ts",
+        "src/features/requests/planB.test.ts",
+        "src/features/requests/fallbackLine.ts",
+        "src/features/requests/components/requestForm/sentence/PlanBLine.tsx",
+        "src/features/sadran/board/planBLine.ts",
+        "src/features/sadran/board/planBLine.test.ts",
+        "src/solver/alternative.ts",
+        "src/solver/__tests__/alternative.test.ts",
+        "supabase/migrations/**/*alternative*",
+        "supabase/migrations/**/*drop_point*",
+        "supabase/migrations/**/*duration_lock*",
+        "supabase/migrations/**/*window_locked*"
       ],
       "vitest": [
         "src/features/requests"
@@ -104,7 +134,10 @@
         "upcoming_weeks.sql",
         "origins_schema.sql",
         "origins_chain.sql",
-        "multi_stop.sql"
+        "multi_stop.sql",
+        "request_anchors.sql",
+        "request_window.sql",
+        "plan_b.sql"
       ],
       "playwrightTags": [
         "@request-form"
@@ -116,6 +149,8 @@
         "13.77"
       ],
       "qaChecklist": [
+        "Time window: tap \"יש לי חלון זמן?\", file \"3 שעות בין 07:00 ל־12:00\"; /my shows it; edit reopens in window mode (REQ §13.112 c)",
+        "Unnamed children: \"+ ילד/ה\" in the who sheet (child seat + booster) reads \"אני ו־2 ילדים\"; edit keeps them (REQ §13.112 d)",
         "Submit a multi-day series via the \"return another day?\" toggle; confirm one card, 3 linked legs (REQ §13.77)",
         "Withdraw a series request; confirm cascading withdraw of all legs (REQ §13.77)",
         "Submit with repeat-weekly on; confirm next-week suggestion, snooze, stop repeating (REQ §13.76)",
@@ -392,9 +427,19 @@
         "e2e/multi-stop.spec.ts",
         "src/lib/weekSettings.ts",
         "src/lib/weekSettings.test.ts",
-        "supabase/tests/week_settings_source.sql"
+        "supabase/tests/week_settings_source.sql",
+        "supabase/tests/luggage_waiver.sql",
+        "supabase/migrations/**/*luggage*",
+        "src/lib/smallTrunk.ts",
+        "src/lib/smallTrunk.test.ts",
+        "src/lib/luggageWaiver.ts",
+        "src/lib/luggageWaiver.test.ts",
+        "src/components/SmallTrunkHost.tsx",
+        "src/components/useSmallTrunkConfirm.tsx"
       ],
       "vitest": [
+        "src/lib/smallTrunk.test.ts",
+        "src/lib/luggageWaiver.test.ts",
         "src/features/sadran/board",
         "src/features/sadran/applySolve.test.ts",
         "src/features/sadran/unmetStatuses.test.ts",
@@ -412,7 +457,8 @@
         "qa_run1_proposals.sql",
         "qa_run1_cancel_waitlist.sql",
         "placement_features.sql",
-        "week_settings_source.sql"
+        "week_settings_source.sql",
+        "luggage_waiver.sql"
       ],
       "playwrightTags": [
         "@board"

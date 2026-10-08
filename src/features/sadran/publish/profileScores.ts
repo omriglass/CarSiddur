@@ -1,7 +1,7 @@
 import { scoreRequests, type ScoreBreakdown } from "@/solver/policy/engine";
 import { normalize } from "@/solver/slots";
 import { pairRelays } from "@/solver/relay";
-import type { SolverInput } from "@/solver";
+import { alternativeServedWeightOf, type SolverInput } from "@/solver";
 
 export interface ProfileScore {
   profile_id: string;
@@ -9,7 +9,8 @@ export interface ProfileScore {
   served_count: number;
   priority_total: number;
   served_priority_total: number;
-  requests: { request_id: string; score: number; breakdown: ScoreBreakdown["perRule"]; served: boolean }[];
+  /** `weight` (REQ §13.112 a): only a request served by its plan B carries one (the policy's `alternativeServedWeight`, default 0.1); every other served request counts fully. */
+  requests: { request_id: string; score: number; breakdown: ScoreBreakdown["perRule"]; served: boolean; weight?: number }[];
 }
 
 export interface PolicyBoardScore {
@@ -76,6 +77,8 @@ export function calculateProfileScores(input: SolverInput, servedRequestIds: Rea
   for (const request of [...input.requests].sort((a, b) => a.id.localeCompare(b.id))) {
     const score = scores.get(request.id)!;
     const served = servedRequestIds.has(request.id);
+    // REQ §13.112 (a): a request served by its plan B counts `alternativeServedWeight` (default 0.1) of its priority.
+    const weight = request.planBSibling ? 0 : request.servedByAlternative ? alternativeServedWeightOf(input.policy) : 1;
     const profile = profiles.get(request.memberId) ?? {
       profile_id: request.memberId, request_count: 0, served_count: 0,
       priority_total: 0, served_priority_total: 0, requests: [],
@@ -83,8 +86,8 @@ export function calculateProfileScores(input: SolverInput, servedRequestIds: Rea
     profile.request_count++;
     profile.served_count += Number(served);
     profile.priority_total = Math.round((profile.priority_total + score.total) * 1e6) / 1e6;
-    profile.served_priority_total = Math.round((profile.served_priority_total + (served ? score.total : 0)) * 1e6) / 1e6;
-    profile.requests.push({ request_id: request.id, score: score.total, breakdown: score.perRule, served });
+    profile.served_priority_total = Math.round((profile.served_priority_total + (served ? score.total * weight : 0)) * 1e6) / 1e6;
+    profile.requests.push({ request_id: request.id, score: score.total, breakdown: score.perRule, served, ...(request.servedByAlternative ? { weight } : {}) });
     profiles.set(profile.profile_id, profile);
   }
   return [...profiles.values()].sort((a, b) => a.profile_id.localeCompare(b.profile_id));

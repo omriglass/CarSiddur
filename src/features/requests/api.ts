@@ -2,6 +2,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { ageFromBirthYear, isAdultPassenger } from "@/lib/childAge";
 import { isActiveStop, parseRouteStops, type RouteStop } from "@/lib/routeStops";
 import { rpc, toAppError } from "@/lib/rpc";
+import { withSmallTrunkRetry } from "@/lib/smallTrunk";
 import { siddurCarName } from "@/lib/siddurCarName";
 
 import { splitMemberProposals } from "./pendingProposal";
@@ -16,14 +17,17 @@ import type {
   LegCarMode,
   ProposalStatus,
   ProposalType,
+  RequestFallbackValue,
   RequestStatus,
   RideLeg,
   RideRole,
   RideStatus,
+  TimeAnchor,
   TripShape,
   TripType,
 } from "@/lib/enums";
 import { isHiddenOutcome, isRequestDayPublished, type PlacedLeg } from "./publishedOutcome";
+import type { StoredAlternative } from "./planB";
 import type { RequestWindow } from "./window";
 
 /**
@@ -68,14 +72,36 @@ export interface MyRequestPendingProposal {
   expiresAt: string | null;
 }
 
+/** `request_alternatives` of a request as `/my` shows it (instants as ISO strings; `originalMain` = the replaced main trip once plan B was applied). */
+export interface MyRequestAlternative extends StoredAlternative {
+  originalMain: Json | null;
+}
+
 export interface MyRequestRow {
   preferredCarId?: string | null;
   preferredCarName?: string | null;
   hasPublishedRide?: boolean;
   window?: RequestWindow | null;
   hasLuggage?: boolean;
+  /** REQ §13.111 (a): the large-trunk requirement was waived by whoever placed the request by hand (`requests.luggage_waived_at`). */
+  luggageWaived?: boolean;
   /** Named children on this request (`request_children` → `children.full_name`), UX_FLOWS.md §4.2. */
   childNames?: string[];
+  /** REQ §13.110 (b): how each end was entered — drives "להגיע עד 09:30" / "יציאה מחיפה 13:00" (`enteredTimes.ts`). */
+  departAnchor?: TimeAnchor | null;
+  arriveBy?: string | null;
+  returnAnchor?: TimeAnchor | null;
+  leaveDestAt?: string | null;
+  /** REQ §13.112 (c): "N hours between A and B" — shown as such (`timeWindow.ts` `windowSummary`); `flexReturnLate` is the window's slack. */
+  durationLocked?: boolean;
+  flexReturnLate?: string | null;
+  /** REQ §13.112 (a)/(b): "אם אין רכב" — plan B / "אסתדר"; `servedByAlternative` = the request now IS its plan B (`fallbackLine.ts`). */
+  fallback?: RequestFallbackValue;
+  servedByAlternative?: boolean;
+  alternative?: MyRequestAlternative | null;
+  /** `requests.destination_id` (null for a free-text destination) — recent-destination chips. */
+  destinationId?: string | null;
+  destinationText?: string | null;
   id: string;
   departmentId: string;
   weekStart: string;
@@ -119,9 +145,11 @@ export interface MyRequestRow {
 
 const SELECT = `
   id, department_id, week_start, status, status_reason, is_late, changed_since_solve,
-  depart_at, return_at, trip_shape, needs_car_at_destination, destination_text, version, ride_type_id,
-  origin_id, origin_text, trip_type,
-  freed_slot_opt_out, has_luggage, preferred_car_id, template_id, series_id, series_index, series_count,
+  depart_at, return_at, trip_shape, needs_car_at_destination, destination_id, destination_text, version, ride_type_id,
+  origin_id, origin_text, trip_type, depart_anchor, arrive_by, return_anchor, leave_dest_at,
+  freed_slot_opt_out, has_luggage, luggage_waived_at, preferred_car_id, template_id, series_id, series_index, series_count,
+  duration_locked, flex_return_late, fallback, served_by_alternative, plan_b_parent_id,
+  alternative:request_alternatives(drop_place_id, drop_place_text, arrive_by, pickup, pickup_at, original_main, drop_place:destinations!request_alternatives_place_fk(name), pickup_place_id, pickup_place_text, pickup_place:destinations!request_alternatives_pickup_place_fk(name)),
   preferred_car:cars!requests_preferred_car_id_fkey(name),
   window:weeks(phase, open_at, close_at, published_days),
   destination:destinations!requests_destination_id_fkey(name),
@@ -142,6 +170,38 @@ const SELECT = `
   request_children(child:children(full_name))
 `;
 
+/** `request_alternatives(...)` embed: one row per request, so PostgREST returns an object (an array is tolerated). */
+interface RawAlternative {
+  drop_place_id: string | null;
+  drop_place_text: string | null;
+  arrive_by: string;
+  pickup: boolean;
+  pickup_at: string | null;
+  original_main?: Json | null;
+  drop_place?: { name: string } | null;
+  /** Pickup from somewhere other than the drop place (both null = from the drop place). */
+  pickup_place_id?: string | null;
+  pickup_place_text?: string | null;
+  pickup_place?: { name: string } | null;
+}
+
+function mapAlternative(raw: RawAlternative | RawAlternative[] | null | undefined): MyRequestAlternative | null {
+  const alt = Array.isArray(raw) ? raw[0] : raw;
+  if (!alt) return null;
+  return {
+    dropPlaceId: alt.drop_place_id,
+    dropPlaceText: alt.drop_place_text,
+    dropPlaceName: alt.drop_place?.name ?? alt.drop_place_text ?? null,
+    arriveBy: alt.arrive_by,
+    pickup: alt.pickup,
+    pickupAt: alt.pickup_at,
+    pickupPlaceId: alt.pickup_place_id ?? null,
+    pickupPlaceText: alt.pickup_place_text ?? null,
+    pickupPlaceName: alt.pickup_place?.name ?? alt.pickup_place_text ?? null,
+    originalMain: alt.original_main ?? null,
+  };
+}
+
 interface RawRequestRow {
   preferred_car_id: string | null;
   preferred_car: { name: string } | null;
@@ -157,10 +217,23 @@ interface RawRequestRow {
   return_at: string | null;
   trip_shape: TripShape;
   needs_car_at_destination: boolean;
+  destination_id?: string | null;
   destination_text: string | null;
+  depart_anchor?: TimeAnchor | null;
+  arrive_by?: string | null;
+  return_anchor?: TimeAnchor | null;
+  leave_dest_at?: string | null;
+  duration_locked?: boolean;
+  flex_return_late?: string | null;
+  fallback?: RequestFallbackValue;
+  served_by_alternative?: boolean;
+  /** The sibling request an accepted plan B with another pickup place creates; shown inside its parent, never as an item. */
+  plan_b_parent_id?: string | null;
+  alternative?: RawAlternative | RawAlternative[] | null;
   version: number;
   freed_slot_opt_out: boolean;
   has_luggage: boolean | null;
+  luggage_waived_at?: string | null;
   ride_type_id: string;
   origin_id: string | null;
   origin_text: string | null;
@@ -244,8 +317,20 @@ function mapRow(row: RawRequestRow, profileId?: string): MyRequestRow {
     preferredCarName: row.preferred_car?.name ?? null,
     window: row.window,
     hasLuggage: row.has_luggage ?? false,
+    luggageWaived: !!row.has_luggage && !!row.luggage_waived_at,
     hasPublishedRide: row.ride_requests.some((link) => link.ride && link.ride.status !== "cancelled" && link.ride.status !== "draft"),
     childNames: row.request_children.flatMap((entry) => entry.child?.full_name ? [entry.child.full_name] : []),
+    departAnchor: row.depart_anchor ?? null,
+    arriveBy: row.arrive_by ?? null,
+    returnAnchor: row.return_anchor ?? null,
+    leaveDestAt: row.leave_dest_at ?? null,
+    durationLocked: row.duration_locked ?? false,
+    flexReturnLate: row.flex_return_late ?? null,
+    fallback: row.fallback ?? "none",
+    servedByAlternative: row.served_by_alternative ?? false,
+    alternative: mapAlternative(row.alternative),
+    destinationId: row.destination_id ?? null,
+    destinationText: row.destination_text,
     id: row.id,
     departmentId: row.department_id,
     weekStart: row.week_start,
@@ -337,6 +422,17 @@ export interface RequestEditRow {
   returnAt: string | null;
   /** REQ §3.4: the return time a one-way request keeps (`requests.kept_return_at`), so switching back restores it. */
   keptReturnAt: string | null;
+  /** REQ §13.110 (b): how each end was entered (defaults leave / arrive on a pre-anchor row). */
+  departAnchor: TimeAnchor;
+  arriveBy: string | null;
+  returnAnchor: TimeAnchor;
+  leaveDestAt: string | null;
+  /** REQ §13.112 (c): a window request ("N hours between A and B"); opens in window mode on edit. */
+  durationLocked: boolean;
+  /** REQ §13.112 (a)/(b): the stored fallback + plan B; a request served by its plan B is not editable. */
+  fallback: RequestFallbackValue;
+  servedByAlternative: boolean;
+  alternative: StoredAlternative | null;
   oneWayCarMode: LegCarMode | null;
   needsCarAtDestination: boolean;
   adults: number;
@@ -358,7 +454,9 @@ export interface RequestEditRow {
 const EDIT_SELECT = `
   id, department_id, week_start, status, version, destination_id, destination_text, ride_type_id,
   trip_shape, depart_at, return_at, kept_return_at, one_way_car_mode, needs_car_at_destination,
-  origin_id, origin_text, trip_type,
+  origin_id, origin_text, trip_type, depart_anchor, arrive_by, return_anchor, leave_dest_at, duration_locked,
+  fallback, served_by_alternative, plan_b_parent_id,
+  alternative:request_alternatives(drop_place_id, drop_place_text, arrive_by, pickup, pickup_at, drop_place:destinations!request_alternatives_place_fk(name), pickup_place_id, pickup_place_text, pickup_place:destinations!request_alternatives_pickup_place_fk(name)),
   adults, child_seats, boosters, has_luggage,
   flex_depart_early, flex_depart_late, flex_return_early, flex_return_late, notes, ride_description, guest_passenger_names, changed_since_solve, preferred_car_id, template_id, series_id,
   preferred_car:cars!requests_preferred_car_id_fkey(name),
@@ -380,6 +478,14 @@ export async function fetchRequestById(requestId: string, profileId: string): Pr
     window: RequestWindow | null;
     ride_requests: { ride: { status: string } | null }[];
     kept_return_at: string | null;
+    depart_anchor: TimeAnchor | null;
+    arrive_by: string | null;
+    return_anchor: TimeAnchor | null;
+    leave_dest_at: string | null;
+    duration_locked: boolean | null;
+    fallback?: RequestFallbackValue | null;
+    served_by_alternative?: boolean | null;
+    alternative?: RawAlternative | RawAlternative[] | null;
     series_id: string | null;
     id: string;
     department_id: string;
@@ -449,6 +555,14 @@ export async function fetchRequestById(requestId: string, profileId: string): Pr
     departAt: row.depart_at,
     returnAt: row.return_at,
     keptReturnAt: row.kept_return_at ?? null,
+    departAnchor: row.depart_anchor ?? "leave",
+    arriveBy: row.arrive_by ?? null,
+    returnAnchor: row.return_anchor ?? "arrive",
+    leaveDestAt: row.leave_dest_at ?? null,
+    durationLocked: row.duration_locked ?? false,
+    fallback: row.fallback ?? "none",
+    servedByAlternative: row.served_by_alternative ?? false,
+    alternative: mapAlternative(row.alternative),
     oneWayCarMode: row.one_way_car_mode,
     needsCarAtDestination: row.needs_car_at_destination,
     adults: row.adults,
@@ -483,6 +597,7 @@ export async function fetchMyRequests(profileId: string, departmentId?: string):
   // it out of the member feed even when it was withdrawn by a coordinator on
   // the member's behalf.
   return ((data ?? []) as unknown as RawRequestRow[])
+    .filter((row) => !row.plan_b_parent_id)
     .filter((row) => !["withdrawn", "cancelled"].includes(row.status) || isDuplicateWithdrawn(row))
     .map((row) => mapRow(row, profileId));
 }
@@ -507,6 +622,16 @@ export interface SubmitRequestPayload {
   stops?: { leg: "out" | "return"; place_id?: string; place_text?: string }[];
   depart_at?: string;
   return_at?: string;
+  /**
+   * REQ §13.110 (b), sentence layout only: how each end was entered. `arrive_by` is set iff
+   * `depart_anchor = 'arrive'`, `leave_dest_at` iff `return_anchor = 'leave'` (explicit `null`
+   * clears); `depart_at`/`return_at` are the derived car times. Absent = the server keeps and
+   * shifts the stored anchors (the classic form never sends them).
+   */
+  depart_anchor?: TimeAnchor;
+  arrive_by?: string | null;
+  return_anchor?: TimeAnchor;
+  leave_dest_at?: string | null;
   adults: number;
   child_seats: number;
   boosters: number;
@@ -517,6 +642,23 @@ export interface SubmitRequestPayload {
   flex_depart_late?: string;
   flex_return_early?: string;
   flex_return_late?: string;
+  /** REQ §13.112 (c): "N hours somewhere in a window" — the stored block keeps its length (sentence layout only; absent = keep). */
+  duration_locked?: boolean;
+  /**
+   * REQ §13.112 (a)/(b), weekly sentence layout, single-day הלוך-חזור / הלוך בלבד only (`mapper.ts` `fallbackPayload`):
+   * absent = the server keeps what is stored; `alternative: null` removes a stored plan B.
+   */
+  fallback?: RequestFallbackValue;
+  alternative?: {
+    drop_place_id?: string;
+    drop_place_text?: string;
+    arrive_by: string;
+    pickup: boolean;
+    pickup_at: string | null;
+    /** Absent = pickup from the drop place; only with `pickup: true`. */
+    pickup_place_id?: string;
+    pickup_place_text?: string;
+  } | null;
   notes?: string;
   /** Public ride text, independent of the private coordinator notes. */
   ride_description?: string | null;
@@ -549,6 +691,10 @@ export interface SubmitRequestPayload {
   confirm_release?: boolean;
   /** R2B20 / REQ §102 f: ask the server what the edit would do without changing anything. */
   probe_only?: boolean;
+  /** REQ §13.111 (a): quick / car-now - ask "לשבץ בכל זאת?" when only a car without a large trunk could take a large-luggage request. */
+  ask_small_trunk?: boolean;
+  /** REQ §13.111 (a): the member confirmed it (set by the retry in `submitRequest`, never by a form). */
+  allow_small_trunk?: boolean;
 }
 
 /**
@@ -631,7 +777,10 @@ export async function fetchChildRequestOverlaps(args: {
 /** `submit_request(payload jsonb)` — the only write path for requests (CLAUDE.md decision 8). */
 export async function submitRequest(payload: SubmitRequestPayload): Promise<Json> {
   if (payload.waitlist) return rpc("enter_waiting_list", { p_payload: payload as unknown as Json });
-  return rpc("submit_request", { payload: payload as unknown as Json });
+  // REQ §13.111 (a): `needs_large_trunk` (quick / car-now, ask-to-join) asks the shared dialog and retries with the flag.
+  return withSmallTrunkRetry((allowSmallTrunk) => rpc("submit_request", {
+    payload: (allowSmallTrunk ? { ...payload, allow_small_trunk: true } : payload) as unknown as Json,
+  }));
 }
 
 /**
@@ -732,7 +881,8 @@ export async function fetchRequestVersion(requestId: string): Promise<number | n
 
 /** REQ §13.101 h (QM8): the requester puts an unserved round-trip request on their own private (temporary) car. */
 export async function placeOnOwnCar(requestId: string, carId: string): Promise<void> {
-  await rpc("place_on_own_car", { p_request_id: requestId, p_car_id: carId });
+  // REQ §13.111 (a): the owner's own car has no large trunk for a large-luggage request - ask "לשבץ בכל זאת?", then retry with the flag.
+  await withSmallTrunkRetry((allowSmallTrunk) => rpc("place_on_own_car", { p_request_id: requestId, p_car_id: carId, p_allow_small_trunk: allowSmallTrunk }));
 }
 
 /** REQ §13.101 e (QM4): "this is not a duplicate" — restores a request the Sadran withdrew as one. */
@@ -835,6 +985,18 @@ export async function fetchRequestCompanionIds(requestId: string): Promise<strin
   return (data ?? []).map((row) => row.profile_id);
 }
 
+/** Companions on the member's own requests (RLS-scoped), for the who-sheet's "recent" chips. */
+export async function fetchRecentCompanionRows(profileId: string): Promise<{ profileId: string; at: string | null }[]> {
+  const { data, error } = await supabase
+    .from("request_companions")
+    .select("profile_id, request:requests!inner(requester_id, depart_at, return_at)")
+    .eq("request.requester_id", profileId)
+    .limit(80);
+  if (error) throw toAppError(error);
+  const rows = (data ?? []) as unknown as { profile_id: string; request: { depart_at: string | null; return_at: string | null } | null }[];
+  return rows.map((row) => ({ profileId: row.profile_id, at: row.request?.depart_at ?? row.request?.return_at ?? null }));
+}
+
 export async function setRequestCompanions(requestId: string, profileIds: string[]): Promise<void> {
   await rpc("set_request_companions", { p_request_id: requestId, p_profile_ids: profileIds });
 }
@@ -879,6 +1041,13 @@ export interface TemplateSuggestion {
   departAt: string | null;
   returnAt: string | null;
   oneWayCarMode: LegCarMode | null;
+  /** REQ §13.110 (b): carried from the template's source request. */
+  departAnchor?: TimeAnchor;
+  arriveBy?: string | null;
+  returnAnchor?: TimeAnchor;
+  leaveDestAt?: string | null;
+  /** REQ §13.112 (c): the template's source was a window request. */
+  durationLocked?: boolean;
   needsCarAtDestination: boolean;
   adults: number;
   childSeats: number;
@@ -919,6 +1088,11 @@ function mapTemplateSuggestion(row: TemplateSuggestionRow): TemplateSuggestion {
     departAt: row.depart_at,
     returnAt: row.return_at,
     oneWayCarMode: row.one_way_car_mode,
+    departAnchor: row.depart_anchor ?? "leave",
+    arriveBy: row.arrive_by ?? null,
+    returnAnchor: row.return_anchor ?? "arrive",
+    leaveDestAt: row.leave_dest_at ?? null,
+    durationLocked: row.duration_locked ?? false,
     needsCarAtDestination: row.needs_car_at_destination ?? true,
     adults: row.adults,
     childSeats: row.child_seats,
@@ -941,9 +1115,9 @@ const TEMPLATE_SUGGESTION_SELECT = `
   template_id, department_id, week_start, destination_id, destination_text, destination_name,
   ride_type_id, ride_type_name, trip_shape, origin_id, origin_text, origin_name, trip_type,
   depart_dow, depart_time, return_dow, return_time,
-  depart_at, return_at, one_way_car_mode, needs_car_at_destination, adults, child_seats, boosters,
+  depart_at, return_at, depart_anchor, arrive_by, return_anchor, leave_dest_at, one_way_car_mode, needs_car_at_destination, adults, child_seats, boosters,
   child_ids, companion_ids, has_luggage, flex_depart_early, flex_depart_late, flex_return_early,
-  flex_return_late, preferred_car_id, ride_description, guest_passenger_names, notes, stops
+  flex_return_late, duration_locked, preferred_car_id, ride_description, guest_passenger_names, notes, stops
 `;
 
 /** Repeating-request suggestions for the caller's own open week(s) (REQ §76, DATA_MODEL §3.6). */
@@ -1000,4 +1174,18 @@ export async function fetchChildren(departmentId: string, profileId: string, ref
       isPriority: priority.has(child.id),
     }))
     .sort((a, b) => Number(b.isPriority) - Number(a.isPriority) || a.name.localeCompare(b.name, "he"));
+}
+
+/** One point of a `route_minutes_preview` route: a list place or free text. */
+export interface RoutePreviewPoint {
+  place_id: string | null;
+  place_text: string | null;
+}
+
+/**
+ * REQ §13.110 (b): route minutes of an unsaved request leg (`route_minutes_preview`, DATA_MODEL
+ * §7) — origin, stops..., destination (the return leg passes destination, return stops..., origin).
+ */
+export async function fetchRouteMinutesPreview(departmentId: string, points: readonly RoutePreviewPoint[]): Promise<number> {
+  return rpc("route_minutes_preview", { p_department_id: departmentId, p_points: points as unknown as Json });
 }

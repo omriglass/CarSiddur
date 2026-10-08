@@ -156,6 +156,18 @@ export function ProfilePage() {
               onCheckedChange={(checked) => updateProfileMutation.mutate({ does_not_drive: checked })}
             />
           </div>
+          {/* REQ §13.110 (e): the old field-by-field request form instead of the sentence layout. */}
+          <div className="flex items-center justify-between border-t pt-3">
+            <div className="space-y-0.5">
+              <Label htmlFor="profile-classic-request-form">{he.profileExtra.classicRequestFormLabel}</Label>
+              <p className="text-xs text-muted-foreground">{he.profileExtra.classicRequestFormHelp}</p>
+            </div>
+            <Switch
+              id="profile-classic-request-form"
+              checked={profileQuery.data?.classic_request_form ?? false}
+              onCheckedChange={(checked) => updateProfileMutation.mutate({ classic_request_form: checked })}
+            />
+          </div>
         </CardContent>
       </Card>
 

@@ -12,7 +12,6 @@ import { CarSwapDialog } from "@/components/CarSwapDialog";
 import { EmptyState } from "@/components/EmptyState";
 import { PageHeader } from "@/components/PageHeader";
 import { RideCard, type RideCardData } from "@/components/RideCard";
-import { StatusBadge } from "@/components/StatusBadge";
 import { RideTypeLegend } from "@/components/RideTypeLegend";
 import { CardListSkeleton } from "@/components/skeletons/CardListSkeleton";
 import { Button } from "@/components/ui/button";
@@ -83,6 +82,7 @@ import { TZ, dateKey, formatTime } from "@/lib/time";
 import { weekdayLabel } from "@/lib/dayLabels";
 import { cn } from "@/lib/utils";
 import { effectiveWeekSettings } from "@/lib/weekSettings";
+import { useRequestLinkProps } from "@/app/overlayState";
 import { paths } from "@/app/routes";
 
 /**
@@ -126,6 +126,7 @@ export function SiddurPage() {
   const params = useParams<{ dept?: string; week?: string }>();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const requestLinkProps = useRequestLinkProps();
   const queryClient = useQueryClient();
 
   const { session } = useSession();
@@ -282,7 +283,7 @@ export function SiddurPage() {
         cars: dayFreeWindows.cars, freeWindows: dayFreeWindows.freeWindows, awayWindows: dayFreeWindows.awayWindows,
       });
     } else {
-      navigate(paths.requests.new({ week: weekStart, day: activeDay, time }));
+      navigate(paths.requests.new({ week: weekStart, day: activeDay, time }), requestLinkProps);
     }
   }
 
@@ -473,7 +474,6 @@ export function SiddurPage() {
   // it is opened this way the page says so next to the title. An `upcoming`
   // week (materialized early for a multi-day series leg, REQ §13.79) is not
   // past, but it is not open for anything either — members never see it here.
-  const currentWeeks = weeks.filter((w) => !isPastWeek(w, today) && w.phase !== "upcoming");
   const viewingArchivedWeek = !!resolvedWeek && isPastWeek(resolvedWeek, today);
   function goToArchive() {
     if (departmentId) navigate(paths.siddurArchive(departmentId));
@@ -522,7 +522,6 @@ export function SiddurPage() {
       <div className="hidden md:block">
         <PageHeader
           title={t("screen.siddur.title")}
-          subtitle={weekStart ? formatWeekRangeLabel(weekStart) : undefined}
           actions={departmentSwitcher ?? undefined}
         />
       </div>
@@ -531,31 +530,8 @@ export function SiddurPage() {
       {viewingArchivedWeek ? <p className="text-xs text-muted-foreground">{he.siddur.archivedWeekHint}</p> : null}
 
       {departmentId ? (
-        <div className="hidden items-center gap-2 overflow-x-auto md:flex">
-          {currentWeeks.map((w) => (
-            <button
-              key={w.week_start}
-              type="button"
-              onClick={() => goTo(departmentId as string, w.week_start)}
-              className={
-                "flex shrink-0 items-center gap-1 rounded-md border px-2 py-1 text-xs " +
-                (w.week_start === weekStart ? "border-primary bg-primary/10" : "border-input")
-              }
-            >
-              <span dir="ltr">{formatWeekRangeLabel(w.week_start)}</span>
-              <StatusBadge kind="week" status={w.phase} className="h-5 px-1.5 py-0 text-[10px]" />
-            </button>
-          ))}
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="ms-auto shrink-0"
-            onClick={goToArchive}
-            data-testid="siddur-archive-link"
-          >
-            {he.siddur.archive}
-          </Button>
+        <div className="hidden md:block" data-testid="siddur-desktop-week-switcher">
+          <WeekSwitcherTitle resolution={thisNextWeek} activeWeekStart={weekStart} onSelect={(next) => goTo(departmentId, next)} onArchive={goToArchive} triggerTestId="siddur-week-switcher-desktop" />
         </div>
       ) : null}
 
@@ -592,7 +568,7 @@ export function SiddurPage() {
                 <div className="grid grid-cols-2 gap-2">
                   {departmentId ? <CarNowButton departmentId={departmentId} className="w-full" /> : null}
                   {activeDayPublished && (resolvedWeek?.phase === "published" || isLiveWeek) && weekStart && activeDay ? (
-                    <Button type="button" variant="outline" className="w-full" onClick={() => navigate(paths.requests.new({ week: weekStart, day: activeDay, waitlist: true }))}>
+                    <Button type="button" variant="outline" className="w-full" onClick={() => navigate(paths.requests.new({ week: weekStart, day: activeDay, waitlist: true }), requestLinkProps)}>
                       {tv("siddur.waitlistForDay", { day: weekdayLabel(`${activeDay}T12:00:00Z`, "short") })}
                     </Button>
                   ) : null}
@@ -709,7 +685,7 @@ export function SiddurPage() {
                 }}
                 onRideClick={setSelectedRideId}
                 onSlotClick={isMyDepartment ? handleSlotClick : undefined}
-                renderCarName={(car) => <CarNameWithReport carId={car.id} carName={car.name} className="min-w-0" />}
+                renderCarName={(car) => <CarNameWithReport carId={car.id} carName={car.name} className="min-w-0 items-center" nameClassName="whitespace-normal break-words md:line-clamp-2" />}
                 discussionBlocks={weekGridDiscussionBlocks}
                 onDiscussionClick={setSelectedGroupId}
                 canSwapCars={canSwapCarsOnActiveDay}

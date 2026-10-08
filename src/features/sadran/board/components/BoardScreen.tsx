@@ -20,7 +20,6 @@ import {
   minutesIso,
   passengersOf,
   seatsFit,
-  swapLuggageBlocked,
   unmetPreviewWindow,
 } from "../dropValidity";
 import { Button } from "@/components/ui/button";
@@ -35,6 +34,7 @@ import { RideTypeLegend } from "@/components/RideTypeLegend";
 import { BoardGridSkeleton } from "@/components/skeletons/BoardGridSkeleton";
 import { PublishButton } from "../../publish/components/BoardPublicationActions";
 import { he, tv } from "@/i18n/he";
+import { askSmallTrunk } from "@/lib/smallTrunk";
 import { formatDayDate } from "@/lib/dayLabels";
 import { TZ, dateKey, formatTime } from "@/lib/time";
 import { ridePublicDetails } from "@/lib/ridePublicDetails";
@@ -59,6 +59,7 @@ import { BoardTitleSwitcher } from "./BoardTitleSwitcher";
 import { BoardWeekSwitcher } from "./BoardWeekSwitcher";
 import { DraftChoiceDialog } from "./DraftChoiceDialog";
 import type { FewerDaysSupport } from "./FewerDaysAction";
+import type { ComposerPrefill } from "../draftInput";
 import { MergePrefillDialog } from "./MergePrefillDialog";
 import { ProposalActionSheet } from "./ProposalActionSheet";
 import { PolicyChip } from "./PolicyChip";
@@ -179,6 +180,24 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
     if (group.leg === "split") splitVerdict = verdict; else legVerdicts[group.leg] = verdict;
   }
   const mergeVerdictNow: MergeVerdict | undefined = mergeSplit ? splitVerdict : legVerdicts[mergeLeg];
+  // REQ §13.111 (a): a merge whose only problem is a missing large trunk is offered; sending or drafting it asks
+  // "לשבץ בכל זאת?" first and carries `allow_small_trunk` in the proposal payload.
+  async function withMergeWaiver(next: (prefill: ComposerPrefill) => void | Promise<void>) {
+    const prefill = dnd.mergePrefill;
+    if (!prefill) return;
+    if (mergeVerdictNow?.status === "ok" && mergeVerdictNow.waivable) {
+      const accepted = await askSmallTrunk({
+        requestIds: mergeRequest ? [mergeRequest.id] : [],
+        names: [mergeRequest?.requester_full_name ?? ""],
+        carId: mergeHost?.car_id ?? null,
+        carName: (board.carsQuery.data ?? []).find((car) => car.id === mergeHost?.car_id)?.name ?? null,
+      });
+      if (!accepted) return;
+      await next({ ...prefill, payload: { ...prefill.payload, allow_small_trunk: true } });
+      return;
+    }
+    await next(prefill);
+  }
   const mergeHostDriverEntry = mergeHost ? (servedOf(mergeHost).find((entry) => entry.role === "driver") ?? servedOf(mergeHost)[0]) : undefined;
   const mergeHostRequest = mergeHostDriverEntry ? board.boardRequests.find((request) => request.id === mergeHostDriverEntry.request_id) : undefined;
 
@@ -319,7 +338,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
           {board.focusedConflict ? <span aria-live="polite" className="mt-1 block font-semibold">{tv("sadranBoard.conflictLocation", {
             index: String(board.focusedConflictIndex + 1), count: String(conflictCount),
             date: formatDayDate(board.focusedConflict.starts_at),
-            time: `${formatTime(new Date(board.focusedConflict.starts_at))}–${formatTime(new Date(board.focusedConflict.ends_at))}`,
+            time: `\u2066${formatTime(new Date(board.focusedConflict.starts_at))}–${formatTime(new Date(board.focusedConflict.ends_at))}\u2069`,
             car: board.carsQuery.data?.find((car) => car.id === board.focusedConflict!.car_id)?.name ?? "",
           })}</span> : null}
         </button>
@@ -392,7 +411,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
             discussionBlocks={board.weekGridDiscussionBlocks}
             onDiscussionClick={dnd.setSelectedGroupId}
             canSwapCars={board.boardCanSwapCars}
-            onCarSwap={(carA, carB) => { if (swapLuggageBlocked(board.dropCtx, carA, carB, board.selectedDay)) { toast.error(he.sadranBoard.luggageSwapToast); return; } dnd.setCarSwapPair({ carA, carB }); }}
+            onCarSwap={(carA, carB) => { dnd.setCarSwapPair({ carA, carB }); }}
           />
         </div>
 
@@ -521,8 +540,8 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
         split={mergeSplit}
         draftNote={dnd.mergePrefill?.draftNote}
         preview={mergePreview}
-        onConfirm={() => { if (dnd.mergePrefill) dnd.openComposer(dnd.mergePrefill); dnd.setMergePrefill(null); }}
-        onDraft={() => { if (dnd.mergePrefill) void dnd.saveDraft(dnd.mergePrefill); }}
+        onConfirm={() => { void withMergeWaiver((prefill) => { dnd.openComposer(prefill); dnd.setMergePrefill(null); }); }}
+        onDraft={() => { void withMergeWaiver((prefill) => dnd.saveDraft(prefill)); }}
         busy={dnd.draftPending}
         onCancel={() => dnd.setMergePrefill(null)}
       />

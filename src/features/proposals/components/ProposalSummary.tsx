@@ -1,6 +1,7 @@
 import { StatusBadge } from "@/components/StatusBadge";
 import { TripSummary } from "@/components/TripSummary";
 import { he, tv } from "@/i18n/he";
+import { formatTime } from "@/lib/time";
 
 import type { ProposalStatus, ProposalType } from "@/lib/enums";
 
@@ -17,6 +18,8 @@ interface ProposalSummaryProps {
   hostDriverName?: string | null;
   /** `origin` proposals only — resolved place/car names for the one-line "יציאה מ... במקום מ..." summary. */
   originChange?: { from: string | null; to: string | null; car?: string | null } | null;
+  /** `alternative` proposals only (REQ §13.112 a) -- the member's own plan B: "הקפצה ל… עד … ואיסוף משם ב…". */
+  alternative?: { dropPlace: string; arriveBy: string; pickupAt: string | null; pickupPlace?: string } | null;
 }
 
 /**
@@ -36,6 +39,7 @@ export function ProposalSummary({
   returnAt,
   hostDriverName,
   originChange,
+  alternative,
 }: ProposalSummaryProps) {
   return (
     <div className="space-y-1">
@@ -48,6 +52,17 @@ export function ProposalSummary({
       <TripSummary name={requesterName} destination={destination} purpose={purpose} departAt={departAt} returnAt={returnAt} />
       {hostDriverName ? (
         <p className="text-xs text-muted-foreground">{tv("sadranProposal.hostDriverLabel", { name: hostDriverName })}</p>
+      ) : null}
+      {alternative ? (
+        <p className="text-xs text-muted-foreground" data-testid="proposal-alternative">
+          {tv("sadranProposal.alternativePlan", {
+            dropPlace: alternative.dropPlace,
+            dropTime: formatTime(new Date(alternative.arriveBy)),
+            pickupLine: alternative.pickupAt
+              ? tv(alternative.pickupPlace ? "sadranProposal.alternativePickupFrom" : "sadranProposal.alternativePickup", { pickupTime: formatTime(new Date(alternative.pickupAt)), pickupPlace: alternative.pickupPlace ?? "" })
+              : "",
+          })}
+        </p>
       ) : null}
       {originChange?.to ? (
         <p className="text-xs text-muted-foreground">

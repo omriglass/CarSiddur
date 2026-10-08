@@ -110,5 +110,21 @@ export function buildProposalPayload(input: BuildProposalPayloadInput): Record<s
     if (!originId || !carId) return null;
     return { origin_id: originId, car_id: carId };
   }
+  if (type === "alternative") {
+    // REQ §13.112 (a): the placement of the member's plan B. The places and the plan's own times come from the request's
+    // `request_alternatives` row (`create_proposal` completes the payload from it); only the car(s) and the member's own
+    // two times (leaves home / is back) are ours.
+    const carId = typeof prefillPayload?.car_id === "string" ? prefillPayload.car_id : undefined;
+    const departAt = typeof prefillPayload?.depart_at === "string" ? prefillPayload.depart_at : undefined;
+    if (!carId || !departAt) return null;
+    const returnAt = typeof prefillPayload?.return_at === "string" ? prefillPayload.return_at : undefined;
+    const returnCarId = typeof prefillPayload?.return_car_id === "string" ? prefillPayload.return_car_id : undefined;
+    return {
+      car_id: carId, depart_at: departAt,
+      ...(returnAt ? { return_at: returnAt } : {}),
+      ...(returnCarId && returnCarId !== carId ? { return_car_id: returnCarId } : {}),
+      ...(prefillPayload?.allow_small_trunk === true ? { allow_small_trunk: true } : {}),
+    };
+  }
   return null;
 }

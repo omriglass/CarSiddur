@@ -72,6 +72,8 @@ interface ProposalSummary {
   } | null;
   /** `origin` proposals only (REQ §13.93) -- resolved place/car names, never raw ids. */
   originChange?: { from: string | null; to: string | null; car: string | null } | null;
+  /** `alternative` proposals only (REQ §13.112 a) -- the member's own plan B with the drop place resolved to a name. */
+  alternative?: { dropPlace: string; arriveBy: string; pickupAt: string | null; pickupPlace?: string } | null;
   parties: PartySummary[];
 }
 
@@ -152,6 +154,26 @@ async function buildSummary(proposal: Record<string, unknown>, myProfileId: stri
     };
   }
 
+  // `alternative` proposals (REQ §13.112 a): the payload carries the plan (copied from the request's own plan-B row at
+  // creation); only the drop place id needs resolving to a name (no session on this public page).
+  let alternative: ProposalSummary['alternative'];
+  if (proposal.type === 'alternative') {
+    const payload = proposal.payload as { drop_place_id?: string | null; drop_place_text?: string | null; arrive_by?: string; pickup_at?: string | null; pickup_place_id?: string | null; pickup_place_text?: string | null } | null;
+    const destRes = payload?.drop_place_id
+      ? await client.from('destinations').select('name').eq('id', payload.drop_place_id).maybeSingle()
+      : { data: null };
+    const pickupRes = payload?.pickup_place_id
+      ? await client.from('destinations').select('name').eq('id', payload.pickup_place_id).maybeSingle()
+      : { data: null };
+    const pickupPlace = (pickupRes.data as { name: string } | null)?.name ?? payload?.pickup_place_text ?? '';
+    alternative = {
+      ...(pickupPlace ? { pickupPlace } : {}),
+      dropPlace: (destRes.data as { name: string } | null)?.name ?? payload?.drop_place_text ?? '',
+      arriveBy: payload?.arrive_by ?? '',
+      pickupAt: payload?.pickup_at ?? null,
+    };
+  }
+
   return {
     proposalId,
     type: proposal.type as string,
@@ -176,6 +198,7 @@ async function buildSummary(proposal: Record<string, unknown>, myProfileId: stri
         }
       : null,
     originChange,
+    alternative,
     // Never include phone (ARCHITECTURE.md §10 / hard rule: only phone_of() reads it, and
     // only for members who share a department/ride — this public endpoint reveals neither).
     parties: (parties ?? []).map((p) => ({

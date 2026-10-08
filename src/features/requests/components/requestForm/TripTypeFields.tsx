@@ -11,6 +11,7 @@ import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { he, t } from "@/i18n/he";
 import { TRIP_TYPES, type TripType } from "@/lib/enums";
+import { cn } from "@/lib/utils";
 
 import { tripTypeToLegacyFields } from "../../tripType";
 import type { RequestFormValues } from "../../schema";
@@ -29,9 +30,11 @@ export interface TripTypeFieldsProps {
   dropOffPickup: boolean;
   /** `canUseDrivingTripTypes()` — false disables round_trip/one_way (REQ §13.88/§13.93). */
   canDrive: boolean;
+  /** Sentence layout (§3.4a): bordered pills, the selected one tinted. */
+  pill?: boolean;
 }
 
-export function TripTypeFields({ control, form, variant, tripType, dropOffPickup, canDrive }: TripTypeFieldsProps) {
+export function TripTypeFields({ control, form, variant, tripType, dropOffPickup, canDrive, pill }: TripTypeFieldsProps) {
   if (variant === "carNow") return null;
 
   function applyTripType(next: TripType, nextDropOffPickup: boolean) {
@@ -56,7 +59,7 @@ export function TripTypeFields({ control, form, variant, tripType, dropOffPickup
               if (!next) return;
               applyTripType(next as TripType, next === "drop_off" ? dropOffPickup : false);
             }}
-            className="flex-wrap justify-start"
+            className={cn("flex-wrap justify-start", pill && "gap-1.5")}
             aria-label={t("request.tripTypeRoundTrip")}
           >
             {TRIP_TYPES.map((type) => (
@@ -64,7 +67,7 @@ export function TripTypeFields({ control, form, variant, tripType, dropOffPickup
                 key={type}
                 value={type}
                 disabled={type !== "drop_off" && !canDrive}
-                className="h-11 px-3 text-sm"
+                className={cn("h-11 px-3 text-sm", pill && "h-8 rounded-full border data-[state=on]:border-primary data-[state=on]:bg-primary/10 data-[state=on]:font-medium data-[state=on]:text-primary")}
               >
                 {LABEL_BY_TYPE[type]}
               </ToggleGroupItem>

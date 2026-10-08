@@ -16,9 +16,12 @@ import { formatTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { ridePassengerSummary } from "@/lib/ridePassengerSummary";
 
+import { enteredTimeLabels } from "@/features/requests/enteredTimes";
+import { WindowSummaryLine } from "@/features/requests/components/WindowSummaryLine";
 import { requestStart, requestWindow, tripTypeOf } from "../phantomLanes";
 import { unmetItemKey } from "../unmetLegs";
 import { requestRouteLine } from "../requestRoute";
+import { fallbackLine, hasActiveFallback } from "../planBLine";
 
 import type { WeekRequestRow } from "../../api";
 import { viaLabel } from "@/lib/routeLabel";
@@ -282,7 +285,10 @@ export function UnmetList({ items, onAction, onOpenProposal, onDecision, dayStar
               </p>
               <div className="flex flex-wrap gap-1">
                 <Button size="sm" variant="outline" onClick={() => onDecision ? onDecision(item, "shift") : onAction(item, null)}>{he.sadranProposal.suggestTimes}</Button>
-                <Button size="sm" variant="outline" disabled={!onDecision} onClick={() => onDecision?.(item, "external")}>{he.sadranProposal.solveOutside}</Button>
+                {/* REQ §13.112 (b): "אסתדר" -- no external / public-transport actions on this card (the Sadran can still refuse it). */}
+                {item.request.fallback === "manage" && hasActiveFallback(item.request) ? null : (
+                  <Button size="sm" variant="outline" disabled={!onDecision} onClick={() => onDecision?.(item, "external")}>{he.sadranProposal.solveOutside}</Button>
+                )}
               </div>
               {tripTypeScope && !item.pendingProposalId ? (
                 <TripTypeChange
@@ -310,7 +316,7 @@ export function UnmetList({ items, onAction, onOpenProposal, onDecision, dayStar
                   <Button size="sm" variant="outline" className="min-h-11" onClick={() => onOpenProposal(item.pendingProposalId as string)} data-testid="unmet-withdraw">{he.boardDrafts.withdraw}</Button>
                 </div>
               ) : null}
-              {item.request.has_luggage ? <span className="text-xs font-medium" data-testid="unmet-luggage">{he.request.luggageChip}</span> : null}
+              {item.request.has_luggage ? <span className="text-xs font-medium" data-testid="unmet-luggage">{item.request.luggage_waived_at ? he.smallTrunk.waivedLabel : he.request.luggageChip}</span> : null}
               {item.request.is_late ? <span className="text-xs font-medium text-maintenance">{he.flag.late}</span> : null}
               {item.request.changed_since_solve ? <span className="text-xs font-medium text-booked">{he.flag.changed}</span> : null}
               {item.request.preferred_car_name ? (
@@ -324,6 +330,26 @@ export function UnmetList({ items, onAction, onOpenProposal, onDecision, dayStar
               <p className="text-xs text-muted-foreground" data-testid="unmet-route-line">
                 {requestRouteLine({ originId: item.request.origin_id, originName: item.request.origin_id ? item.request.origin_resolved_name : null, destination: item.destinationName, tripType: item.request.trip_type }, homeDestinationId)}
               </p>
+              {(() => {
+                const entered = enteredTimeLabels({
+                  departAnchor: item.request.depart_anchor,
+                  arriveBy: item.request.arrive_by,
+                  returnAnchor: item.request.return_anchor,
+                  leaveDestAt: item.request.leave_dest_at,
+                  destinationName: item.destinationName,
+                  isPickup: item.request.trip_type === "drop_off",
+                });
+                return entered.out || entered.return ? (
+                  <p className="text-xs font-medium" data-testid="unmet-entered-times">{[entered.out, entered.return].filter(Boolean).join(" · ")}</p>
+                ) : null;
+              })()}
+              {fallbackLine(item.request) ? (
+                <p className="text-xs font-medium" data-testid="unmet-fallback">{fallbackLine(item.request)}</p>
+              ) : null}
+              <WindowSummaryLine
+                row={{ durationLocked: item.request.duration_locked, departAt: item.request.depart_at, returnAt: item.request.return_at, flexReturnLate: item.request.flex_return_late }}
+                testId="unmet-window"
+              />
               {!item.request.origin_id && item.request.origin_text ? (
                 <p className="text-xs font-medium text-destructive">
                   {tv("sadranBoard.unmetFreeTextOrigin", { place: item.request.origin_text })}
@@ -337,12 +363,13 @@ export function UnmetList({ items, onAction, onOpenProposal, onDecision, dayStar
                 <div className="space-y-1 border-t pt-1">
                   <p className="text-xs font-medium text-muted-foreground">{he.sadranBoard.suggestionsLabel}</p>
                   {item.solverInfo.suggestions.map((suggestion, index) => (
-                    <div key={index} className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                    <div key={index} className="flex items-center justify-between gap-2 text-xs text-muted-foreground" data-suggestion-kind={suggestion.kind}>
                       <span>
+                        {suggestion.kind === "useAlternative" ? <span className="me-1 rounded-sm bg-muted px-1 font-medium text-foreground" data-testid="unmet-plan-b-possible">{he.sadranPlanB.possible}</span> : null}
                         {suggestion.reason}
                         {item.suggestionBoardAt?.[index] ? ` · ${item.suggestionBoardAt[index]}` : ""}
                       </span>
-                      <Button size="sm" variant="ghost" onClick={() => onAction(item, suggestion)}>{he.action.propose}</Button>
+                      <Button size="sm" variant="ghost" onClick={() => onAction(item, suggestion)} data-testid={suggestion.kind === "useAlternative" ? "unmet-plan-b-propose" : undefined}>{suggestion.kind === "useAlternative" ? he.sadranPlanB.propose : he.action.propose}</Button>
                     </div>
                   ))}
                 </div>

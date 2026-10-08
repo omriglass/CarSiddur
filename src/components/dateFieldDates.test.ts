@@ -3,8 +3,12 @@ import { describe, expect, it } from "vitest";
 import { datesFrom, datesOfWeek, formatWeekRangeLabel } from "./dateFieldDates";
 
 describe("formatWeekRangeLabel", () => {
-  it("includes the month on both ends of an RTL week range", () => {
-    expect(formatWeekRangeLabel("2026-09-06")).toBe("6.9 – 12.9");
+  it("reads start-to-end as one left-to-right isolate, month once when it is the same", () => {
+    expect(formatWeekRangeLabel("2026-09-06")).toBe("\u20666–12.9\u2069");
+  });
+
+  it("keeps both months when the week crosses a month boundary", () => {
+    expect(formatWeekRangeLabel("2026-09-27")).toBe("\u206627.9–3.10\u2069");
   });
 });
 

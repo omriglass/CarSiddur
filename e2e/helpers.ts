@@ -45,6 +45,12 @@ export const NEVO_DEPARTMENT_ID = "00000000-0000-0000-0000-000000000001";
  * so this answers "keep both" whenever that dialog appears (it opens synchronously on submit).
  */
 export async function submitRequestForm(page: Page): Promise<void> {
+  // Sentence layout (UX_FLOWS §3.4a): a weekly request has two stages; "המשך" opens the second.
+  const next = page.getByTestId("stage-next");
+  if (await next.isVisible()) {
+    await next.click();
+    await page.getByTestId("stage-two").waitFor({ state: "visible" });
+  }
   await page.getByRole("button", { name: t("action.submitRequest"), exact: true }).click();
   const keepBoth = page.getByRole("dialog", { name: t("request.overlapTitle") }).getByRole("button", { name: t("request.overlapKeepBoth") });
   await keepBoth.waitFor({ state: "visible", timeout: 2_000 }).then(() => keepBoth.click(), () => undefined);

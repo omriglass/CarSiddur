@@ -219,3 +219,91 @@ describe("toSubmitRequestPayload stops (REQ §13.97)", () => {
     expect(payload.return_at).toBeUndefined();
   });
 });
+
+describe("toSubmitRequestPayload anchors (REQ §13.110 b)", () => {
+  const anchored = baseValues({
+    departAnchor: "arrive",
+    arriveByTime: "09:30",
+    departTime: "08:45",
+    returnAnchor: "leave",
+    leaveDestTime: "13:00",
+    returnTime: "13:45",
+  });
+
+  it("sends the four anchor keys only for the sentence layout", () => {
+    const sentence = toSubmitRequestPayload(anchored, { layout: "sentence" });
+    expect(sentence.depart_anchor).toBe("arrive");
+    expect(sentence.arrive_by).toBe(toInstant("2026-09-15", "09:30", false));
+    expect(sentence.return_anchor).toBe("leave");
+    expect(sentence.leave_dest_at).toBe(toInstant("2026-09-15", "13:00", false));
+    // depart_at / return_at stay the (derived) car times.
+    expect(sentence.depart_at).toBe(toInstant("2026-09-15", "08:45", false));
+    expect(sentence.return_at).toBe(toInstant("2026-09-15", "13:45", false));
+
+    const classic = toSubmitRequestPayload(anchored, { layout: "classic" });
+    for (const key of ["depart_anchor", "arrive_by", "return_anchor", "leave_dest_at"]) expect(key in classic).toBe(false);
+    expect("depart_anchor" in toSubmitRequestPayload(anchored)).toBe(false);
+  });
+
+  it("sends explicit nulls for the default anchors so an edit clears the stored times", () => {
+    const payload = toSubmitRequestPayload(baseValues(), { layout: "sentence" });
+    expect(payload).toMatchObject({ depart_anchor: "leave", arrive_by: null, return_anchor: "arrive", leave_dest_at: null });
+  });
+
+  it("never sends a leave-there time for a trip without a return", () => {
+    const payload = toSubmitRequestPayload({ ...anchored, tripShape: "one_way_to", tripType: "one_way" }, { layout: "sentence" });
+    expect(payload.leave_dest_at).toBeNull();
+    expect(payload.arrive_by).not.toBeNull();
+  });
+
+  it("omits the anchors for a multi-day series (its legs share one payload)", () => {
+    expect("arrive_by" in toSubmitRequestPayload(anchored, { layout: "sentence", isSeries: true })).toBe(false);
+  });
+
+  it("puts leave_dest_at on the return day of a multi-day request", () => {
+    const payload = toSubmitRequestPayload({ ...anchored, returnDay: "2026-09-16" }, { layout: "sentence" });
+    expect(payload.leave_dest_at).toBe(toInstant("2026-09-16", "13:00", false));
+  });
+});
+
+describe("toSubmitRequestPayload time window (REQ §13.112 c)", () => {
+  const windowed = baseValues({ timeMode: "window", windowHours: 4, windowStart: "07:00", windowEnd: "12:00", departTime: "09:00", returnTime: "10:00" });
+
+  it("stores the earliest block, later-only slack on both ends, default anchors and the lock", () => {
+    const payload = toSubmitRequestPayload(windowed, { layout: "sentence" });
+    expect(payload.duration_locked).toBe(true);
+    expect(payload.depart_at).toBe(toInstant("2026-09-15", "07:00", false));
+    expect(payload.return_at).toBe(toInstant("2026-09-15", "11:00", false));
+    expect(payload).toMatchObject({
+      flex_depart_early: "0", flex_return_early: "0", flex_depart_late: "01:00:00", flex_return_late: "01:00:00",
+      depart_anchor: "leave", arrive_by: null, return_anchor: "arrive", leave_dest_at: null,
+    });
+  });
+
+  it("keeps the fixed-mode times untouched in the form (switching modes never loses them)", () => {
+    expect(windowed.departTime).toBe("09:00");
+    const fixed = toSubmitRequestPayload({ ...windowed, timeMode: "fixed" }, { layout: "sentence" });
+    expect(fixed.duration_locked).toBe(false);
+    expect(fixed.depart_at).toBe(toInstant("2026-09-15", "09:00", false));
+    expect(fixed.flex_depart_late).toBe("0");
+  });
+
+  it("sends an explicit false in fixed mode so an edit back to fixed hours clears the lock", () => {
+    expect(toSubmitRequestPayload(baseValues(), { layout: "sentence" }).duration_locked).toBe(false);
+  });
+
+  it("the classic layout sends no lock key at all (the server keeps the stored lock)", () => {
+    expect("duration_locked" in toSubmitRequestPayload(windowed, { layout: "classic" })).toBe(false);
+    expect("duration_locked" in toSubmitRequestPayload(windowed)).toBe(false);
+  });
+
+  it("is never a window for a multi-day series, a one-way or a הקפצה", () => {
+    expect("duration_locked" in toSubmitRequestPayload(windowed, { layout: "sentence", isSeries: true })).toBe(false);
+    expect(toSubmitRequestPayload({ ...windowed, tripType: "one_way", tripShape: "one_way_to" }, { layout: "sentence" }).duration_locked).toBe(false);
+    expect(toSubmitRequestPayload({ ...windowed, tripType: "drop_off" }, { layout: "sentence" }).duration_locked).toBe(false);
+  });
+
+  it("an invalid window (too short) is not sent as one", () => {
+    expect(toSubmitRequestPayload({ ...windowed, windowHours: 6 }, { layout: "sentence" }).duration_locked).toBe(false);
+  });
+});

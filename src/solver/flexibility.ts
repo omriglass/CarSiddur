@@ -5,6 +5,8 @@
 // and clamped to the closest point to the preferred time — O(1) per gap, no
 // enumeration of shift pairs. The same function, with the flex intervals
 // widened by `beyondFlexMaxMinutes`, powers the shiftBeyondFlex suggestion.
+// A `durationLocked` window request (REQ §13.112 c) is placed as one block: a single shift
+// for both ends, so its length never changes (docs/SOLVER.md §3.7a).
 
 import type { NormalizedRequest, NormalizedLeg } from './slots';
 import { minutesToSlots, slotsToMinutes } from './slots';
@@ -33,6 +35,19 @@ function placeInGap(nr: NormalizedRequest, leg: NormalizedLeg, gap: Gap, widenSl
     const depHi = nr.flexDep[1] + widenSlots;
     const retLo = nr.flexRet[0] - widenSlots;
     const retHi = nr.flexRet[1] + widenSlots;
+    if (nr.durationLocked) {
+      // REQ §13.112 (c): a window request slides as one block — the shift `s` is the same at both ends, so the length
+      // never changes. Feasible `s` = what both ends allow (their own flex bounds and the gap); the closest to 0 wins.
+      const lo = Math.max(depLo - D, retLo - R, g1 - D);
+      const hi = Math.min(depHi - D, retHi - R, g2 - R);
+      if (lo > hi) return null;
+      const s = clamp(0, lo, hi);
+      return {
+        window: { start: D + s, end: R + s },
+        shift: { departureMin: slotsToMinutes(s), returnMin: slotsToMinutes(s) },
+        cost: 2 * slotsToMinutes(Math.abs(s)),
+      };
+    }
     const depRange: [number, number] = [Math.max(depLo, g1), depHi];
     const retRange: [number, number] = [retLo, Math.min(retHi, g2)];
     if (depRange[0] > depRange[1] || retRange[0] > retRange[1]) return null;

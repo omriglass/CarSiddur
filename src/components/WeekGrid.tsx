@@ -88,6 +88,8 @@ export interface WeekGridRide {
   needsDriver?: boolean;
   /** A served request carries large luggage (REQ §13.100, 101 a): small "ציוד גדול" chip. */
   luggage?: boolean;
+  /** REQ §13.111 (a): all of the ride's large luggage was waived by hand - the chip reads `he.smallTrunk.waivedLabel`. */
+  luggageWaived?: boolean;
   isMine?: boolean;
   highlighted?: boolean;
   tightSchedule?: boolean;
@@ -928,7 +930,7 @@ export function WeekGrid({
               {(ride.isMine || ride.needsDriver || ride.tightSchedule || ride.chainBrokenWarning || ride.draft || ride.merged || ride.connected || ride.luggage) ? <span className="flex w-full flex-wrap gap-1 px-1.5 pt-1 text-[10px] leading-tight">
                 {ride.draft ? <span className="rounded-sm bg-primary px-1 font-semibold text-primary-foreground" data-testid="draft-tag">{he.boardDrafts.tag}</span> : null}
                 {ride.merged ? <span className="rounded-sm bg-foreground/10 px-1 font-medium" data-testid="merged-marker">{he.mergedRide.marker}</span> : null}
-                {ride.luggage ? <span className="rounded-sm bg-foreground/10 px-1 font-medium" data-testid="luggage-marker">{he.request.luggageChip}</span> : null}
+                {ride.luggage ? <span className="rounded-sm bg-foreground/10 px-1 font-medium" data-testid="luggage-marker" data-waived={ride.luggageWaived ? "true" : undefined}>{ride.luggageWaived ? he.smallTrunk.waivedLabel : he.request.luggageChip}</span> : null}
                 {ride.connected ? <span className="rounded-sm bg-foreground/10 px-1 font-medium" data-testid="connected-marker">{he.connectedPair.marker}</span> : null}
                 {ride.isMine ? <span className={cn("flex items-center gap-1 font-bold", ride.needsDriver ? "text-destructive" : "text-foreground")}><Star className="size-3 shrink-0 fill-current" aria-hidden="true" />{he.siddur.myRide}</span> : null}
                 {ride.needsDriver ? <span className="flex items-center gap-1 font-semibold text-destructive"><UserRoundX className="size-3 shrink-0" aria-hidden="true" />{he.boardCoordination.needsDriver}</span> : null}
@@ -1001,11 +1003,11 @@ export function WeekGrid({
             style={{ gridColumn: i + 2, gridRow: 1, scrollSnapAlign: "start" }}
             onPointerDown={swappable ? (e) => carPointerDownRef.current(car.id, e) : undefined}
           >
-            <span className="flex min-w-0 items-start gap-1 font-medium leading-tight">
+            <span className="flex min-w-0 items-center justify-center gap-1 text-center text-sm font-medium md:text-base leading-tight" data-testid="week-grid-car-name">
               {renderCarName ? renderCarName(car) : (
                 <>
-                  <CarFront className="size-3.5 shrink-0 text-primary" aria-hidden="true" />
-                  <span className="min-w-0 whitespace-normal break-words">{car.name}</span>
+                  <CarFront className="size-3.5 shrink-0 text-primary md:size-4" aria-hidden="true" />
+                  <span className="min-w-0 whitespace-normal break-words md:line-clamp-2" title={car.name}>{car.name}</span>
                 </>
               )}
               {swappable ? (
@@ -1013,7 +1015,7 @@ export function WeekGrid({
                   <DropdownMenuTrigger asChild>
                     <button
                       type="button"
-                      className="ms-auto shrink-0 rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+                      className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
                       aria-label={he.carSwap.swapMenuLabel}
                       onPointerDown={(e) => e.stopPropagation()}
                       onClick={(e) => e.stopPropagation()}
@@ -1031,10 +1033,10 @@ export function WeekGrid({
                 </DropdownMenu>
               ) : null}
             </span>
-            {car.locationBadge ? <span className="truncate text-xs text-muted-foreground">{car.locationBadge}</span> : null}
-            {car.baseBadge ? <span className="truncate text-[10px] text-muted-foreground">{car.baseBadge}</span> : null}
-            {car.weekEndAwayWarning ? <span className="truncate text-[10px] font-medium text-amber-700">{car.weekEndAwayWarning}</span> : null}
-            {car.group === "temporary" ? <span className="truncate text-[10px] text-booked">{he.car.type.temporary}</span> : null}
+            {car.locationBadge ? <span className="truncate text-center text-xs text-muted-foreground">{car.locationBadge}</span> : null}
+            {car.baseBadge ? <span className="truncate text-center text-[10px] text-muted-foreground">{car.baseBadge}</span> : null}
+            {car.weekEndAwayWarning ? <span className="truncate text-center text-[10px] font-medium text-amber-700">{car.weekEndAwayWarning}</span> : null}
+            {car.group === "temporary" ? <span className="truncate text-center text-[10px] text-booked">{he.car.type.temporary}</span> : null}
           </div>
           );
         })}

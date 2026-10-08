@@ -1,10 +1,13 @@
 import { z } from "zod";
 
 import { he } from "@/i18n/he";
-import { carTypeSchema, TRIP_SHAPES, TRIP_TYPES, tripTypeSchema } from "@/lib/enums";
+import { carTypeSchema, requestFallbackSchema, TRIP_SHAPES, TRIP_TYPES, timeAnchorSchema, tripTypeSchema } from "@/lib/enums";
 
 import type { DestinationValue } from "@/components/DestinationCombobox";
 import type { TripShape, TripType } from "@/lib/enums";
+
+import { hasAltPlace, planBActive, planBProblems } from "./planB";
+import { windowModeActive, windowProblem } from "./timeWindow";
 
 /**
  * react-hook-form + zod schema for the new/edit request form (UX_FLOWS.md
@@ -121,6 +124,39 @@ export const requestFormSchema = z
     dropOffPickup: z.boolean(),
     departTime: timeStringSchema.optional(),
     returnTime: z.union([timeStringSchema, z.literal("23:59")]).optional(),
+    /**
+     * REQ §13.110 (b): how each end was entered. `departTime`/`returnTime` stay the car's own
+     * times (what the solver reads); with `departAnchor = "arrive"` the typed time is
+     * `arriveByTime` and `departTime` is derived from it (arrive-by − outbound route minutes,
+     * rounded down); with `returnAnchor = "leave"` the typed time is `leaveDestTime` and
+     * `returnTime` is derived (+ return route minutes, rounded up). Only the sentence layout
+     * writes them (`mapper.ts` sends the anchor keys only then).
+     */
+    departAnchor: timeAnchorSchema,
+    arriveByTime: timeStringSchema.optional(),
+    returnAnchor: timeAnchorSchema,
+    leaveDestTime: timeStringSchema.optional(),
+    /**
+     * REQ §13.112 (c), weekly sentence layout: "יש לי חלון זמן?" — `window` replaces the two time chips with
+     * "N hours between A and B". Only the fields of the active mode count; switching never clears the other mode's
+     * values. `mapper.ts` stores a window as the earliest block + later-only slack + `duration_locked`.
+     */
+    timeMode: z.enum(["fixed", "window"]).optional(),
+    windowHours: z.number().int().min(1).max(12).optional(),
+    windowStart: timeStringSchema.optional(),
+    windowEnd: timeStringSchema.optional(),
+    /**
+     * REQ §13.112 (a)/(b), weekly sentence layout only ("אם אין רכב…"): `none`/absent = no line, `alternative` = plan B
+     * (a הקפצה to `altPlace` by `altArriveBy`, optionally picked up from there at `altPickupAt`), `manage` = "אסתדר".
+     * Clock times on the main day; the fields of an inactive line are kept but not validated or sent (`planB.ts`).
+     */
+    fallback: requestFallbackSchema.optional(),
+    altPlace: originValueSchema.optional(),
+    altArriveBy: timeStringSchema.optional(),
+    altPickup: z.boolean().optional(),
+    altPickupAt: timeStringSchema.optional(),
+    /** Pickup place other than the drop place; empty/absent = "משם" (from the drop place). */
+    altPickupPlace: originValueSchema.optional(),
     /** Kept for old callers; overnight values are rejected. No UI toggle. */
     returnNextDay: z.boolean(),
     /**
@@ -134,6 +170,12 @@ export const requestFormSchema = z
     adults: z.number().int().min(1).max(8),
     childSeats: z.number().int().min(0).max(8),
     boosters: z.number().int().min(0).max(8),
+    /**
+     * R9B1/R9M1: adults beyond the requester and the named people (companions, guests, adult
+     * children) — "+ מבוגר/ת" without a name. Edit prefill derives it from the stored `adults`
+     * (`seatCounts.ts` `extraAdultsFromStored`) so an edit never loses seats.
+     */
+    extraAdults: z.number().int().min(0).max(7),
     companions: z.array(z.string()),
     children: z.array(z.string()),
     /** Pre-registry requests can have unnamed child seats; preserve them on edit. */
@@ -144,6 +186,8 @@ export const requestFormSchema = z
     flexReturnEarly: flexValueSchema,
     flexReturnLate: flexValueSchema,
     notes: z.string(),
+    /** Sentence layout (R9U6): "רכב מסוים" was chosen — a car must follow (no preselection). */
+    preferSpecificCar: z.boolean().optional(),
     rideDescription: z.string().trim().max(1000, he.ridePublicDetails.invalidDescription),
     /**
      * Free-text guest passengers, one name per line (`quickRequest.guestPassengers`) — shared
@@ -175,14 +219,25 @@ export const requestFormSchema = z
     // typos) does not apply — the RPC itself is the arbiter of the actual span.
     const isMultiDay = value.tripShape === "round_trip" && !!value.returnDay && value.returnDay !== value.day;
 
-    if (needsDepart && !value.departTime) {
+    // REQ §13.112 (c): in window mode the window's own fields replace the fixed times.
+    const windowMode = windowModeActive(value);
+    if (windowMode) {
+      const problem = windowProblem(value);
+      if (problem === "missing") {
+        ctx.addIssue({ path: ["windowEnd"], code: z.ZodIssueCode.custom, message: he.requestSentence.window.required });
+      } else if (problem === "tooShort") {
+        ctx.addIssue({ path: ["windowEnd"], code: z.ZodIssueCode.custom, message: he.requestSentence.window.tooShort });
+      }
+    }
+
+    if (!windowMode && needsDepart && !value.departTime) {
       ctx.addIssue({ path: ["departTime"], code: z.ZodIssueCode.custom, message: he.field.depart });
     }
-    if (needsReturn && !value.returnTime) {
+    if (!windowMode && needsReturn && !value.returnTime) {
       ctx.addIssue({ path: ["returnTime"], code: z.ZodIssueCode.custom, message: he.field.return });
     }
 
-    if (needsDepart && needsReturn && !isMultiDay && value.departTime && value.returnTime) {
+    if (!windowMode && needsDepart && needsReturn && !isMultiDay && value.departTime && value.returnTime) {
       const departMinutes = timeToMinutes(value.departTime);
       const returnMinutes = timeToMinutes(value.returnTime);
       if (returnMinutes <= departMinutes) {
@@ -211,6 +266,29 @@ export const requestFormSchema = z
         ctx.addIssue({ path: ["returnStops", index], code: z.ZodIssueCode.custom, message: he.request.stopEqualsDestination });
       }
     });
+
+    // REQ §13.112 (a): an active plan B needs its place and times, the pickup after the arrival, and a drop place that is not the origin.
+    if (planBActive(value)) {
+      const messages = {
+        placeRequired: he.planB.error.placeRequired,
+        arriveRequired: he.planB.error.arriveRequired,
+        pickupRequired: he.planB.error.pickupRequired,
+        pickupBeforeArrive: he.planB.error.pickupBeforeArrive,
+      };
+      for (const { field, problem } of planBProblems(value)) {
+        ctx.addIssue({ path: [field], code: z.ZodIssueCode.custom, message: messages[problem] });
+      }
+      if (hasAltPlace(value.altPlace) && value.altPlace && isSamePlace(value.altPlace, value.origin)) {
+        ctx.addIssue({ path: ["altPlace"], code: z.ZodIssueCode.custom, message: he.planB.error.sameAsOrigin });
+      }
+      if (value.altPickup && hasAltPlace(value.altPickupPlace) && value.altPickupPlace && isSamePlace(value.altPickupPlace, value.origin)) {
+        ctx.addIssue({ path: ["altPickupPlace"], code: z.ZodIssueCode.custom, message: he.planB.error.pickupSameAsOrigin });
+      }
+    }
+
+    if (value.preferSpecificCar && !value.preferredCarId) {
+      ctx.addIssue({ path: ["preferredCarId"], code: z.ZodIssueCode.custom, message: he.requestSentence.carRequired });
+    }
 
     if (value.returnNextDay) {
       ctx.addIssue({
@@ -242,12 +320,17 @@ export const REQUEST_FORM_DEFAULTS: Omit<RequestFormValues, "departmentId" | "we
   dropOffPickup: false,
   departTime: "08:00",
   returnTime: "12:00",
+  departAnchor: "leave",
+  arriveByTime: undefined,
+  returnAnchor: "arrive",
+  leaveDestTime: undefined,
   returnNextDay: false,
   oneWayCarMode: undefined,
   needsCarAtDestination: true,
   adults: 1,
   childSeats: 0,
   boosters: 0,
+  extraAdults: 0,
   companions: [],
   children: [],
   legacyChildSeats: 0,
@@ -309,6 +392,11 @@ export const templateSuggestionRowSchema = z.object({
   depart_at: z.string().nullable(),
   return_at: z.string().nullable(),
   one_way_car_mode: z.enum(ONE_WAY_CAR_MODES).nullable(),
+  /** REQ §13.110 (b): how each end was entered; absent on pre-anchor rows. */
+  depart_anchor: timeAnchorSchema.nullish(),
+  arrive_by: z.string().nullish(),
+  return_anchor: timeAnchorSchema.nullish(),
+  leave_dest_at: z.string().nullish(),
   needs_car_at_destination: z.boolean().nullable(),
   adults: z.number(),
   child_seats: z.number(),
@@ -320,6 +408,8 @@ export const templateSuggestionRowSchema = z.object({
   flex_depart_late: z.string(),
   flex_return_early: z.string(),
   flex_return_late: z.string(),
+  /** REQ §13.112 (c); absent on rows from before the column. */
+  duration_locked: z.boolean().nullish(),
   preferred_car_id: z.string().nullable(),
   ride_description: z.string().nullable(),
   guest_passenger_names: z.array(z.string()),

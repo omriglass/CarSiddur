@@ -3,6 +3,7 @@ import { useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import type { FieldErrors } from "react-hook-form";
 
 import { toast } from "sonner";
 
@@ -57,6 +58,9 @@ import {
   useSetRequestCompanionsMutation,
   useSetRequestChildrenMutation,
   useRequestChildrenQuery,
+  useRecentCompanionsQuery,
+  useRequestFormLayout,
+  useRouteMinutesQuery,
   useStopTemplateMutation,
   useSubmitRequestMutation,
   useSubmitSeriesRequestMutation,
@@ -65,11 +69,17 @@ import {
 } from "../hooks";
 import { editReturnInstant, intervalToFlexValue, toInstant, toSubmitRequestPayload } from "../mapper";
 import { requestFormSchema, type RequestFormValues } from "../schema";
+import { anchorFormFields, resolveCarTimes, switchOutAnchor, switchReturnAnchor } from "../timeAnchors";
+import { windowCarTimes, windowFormFields, windowModeActive } from "../timeWindow";
+import { recentDestinations } from "../recentDestinations";
+import { destinationValueToPoint, hasDestination, outboundRoutePoints, returnRoutePoints } from "../routePoints";
+import { planBFormFields } from "../planB";
 import { isSeriesSubmission, seriesSpanDays } from "../series";
-import { payloadSeatCounts } from "../seatCounts";
+import { extraAdultsFromStored, payloadSeatCounts, unnamedChildSeatsFromStored } from "../seatCounts";
 import { overlapNames } from "../overlapNames";
 import { childOverlapMessage } from "../childOverlap";
 import { releaseConfirmation, shouldOfferJoinableRides, toastSeriesSubmitOutcome, toastSubmitOutcome } from "../submitOutcome";
+import { shouldSuggestChildcare } from "../childcareType";
 import { suggestionToFormValues } from "../templatePrefill";
 import { canUseDrivingTripTypes, initialTripType, tripTypeToLegacyFields } from "../tripType";
 import { JoinableRidesDialog } from "./JoinableRidesDialog";
@@ -82,6 +92,8 @@ import { StopsField } from "./requestForm/StopsField";
 import { FlexibilityFields, TimeFields } from "./requestForm/TimesFlexibilityFields";
 import { PassengersFields } from "./requestForm/PassengersFields";
 import { RepeatWeeklyField } from "./requestForm/RepeatWeeklyField";
+import { SentenceFields } from "./requestForm/sentence/SentenceFields";
+import { STAGE_ONE_FIELDS, isStageOneField } from "./requestForm/sentence/sentenceModel";
 
 export interface JoinRidePrefill {
   rideId: string;
@@ -213,12 +225,17 @@ function emptyValues(
     dropOffPickup: false,
     departTime,
     returnTime,
+    departAnchor: "leave",
+    arriveByTime: undefined,
+    returnAnchor: "arrive",
+    leaveDestTime: undefined,
     returnNextDay: false,
     oneWayCarMode: undefined,
     needsCarAtDestination: true,
     adults: 1,
     childSeats: 0,
     boosters: 0,
+    extraAdults: 0,
     companions: [],
     children: [],
     legacyChildSeats: 0,
@@ -257,7 +274,7 @@ function buildJoinRideValues(
   };
 }
 
-function mapEditRowToValues(row: RequestEditRow, weekStart: string, companions: string[], children: string[]): RequestFormValues {
+function mapEditRowToValues(row: RequestEditRow, weekStart: string, companions: string[], children: string[], extraAdults: number, unnamedChildSeats: number): RequestFormValues {
   const day = row.departAt ? dayFromInstant(row.departAt) : row.returnAt ? dayFromInstant(row.returnAt) : weekStart;
   const dates = datesOfWeek(weekStart);
   const departTime = row.departAt ? timeFromInstant(row.departAt) : undefined;
@@ -291,12 +308,20 @@ function mapEditRowToValues(row: RequestEditRow, weekStart: string, companions: 
     ...initialTripType(row),
     departTime,
     returnTime: returnNextDay ? "23:59" : returnTime,
+    ...anchorFormFields(row, timeFromInstant),
+    // REQ §13.112 (a)/(b): the stored "אם אין רכב" line reopens as it was saved.
+    ...planBFormFields(row, timeFromInstant),
+    // REQ §13.112 (c): a window request reopens in window mode (the fixed fields keep the nominal block).
+    ...windowFormFields({ durationLocked: row.durationLocked, departAt: row.departAt, returnAt: row.returnAt, flexReturnLate: row.flexReturnLate }),
     returnNextDay: false,
     oneWayCarMode: (row.oneWayCarMode ?? undefined) as "relay" | "passenger" | undefined,
     needsCarAtDestination: row.needsCarAtDestination,
     adults: row.adults,
+    extraAdults,
+    preferSpecificCar: !!row.preferredCarId,
     childSeats: children.length,
-    legacyChildSeats: children.length ? 0 : row.childSeats,
+    // REQ §13.112 (d): the stored child seats minus the seat-using named children are the unnamed ones.
+    legacyChildSeats: unnamedChildSeats,
     boosters: row.boosters,
     companions,
     children,
@@ -359,6 +384,7 @@ export function RequestForm({
   const myDepartmentsQuery = useMyDepartments();
   const companionsQuery = useRequestCompanionsQuery(initial?.id);
   const requestChildrenQuery = useRequestChildrenQuery(initial?.id);
+  const recentCompanionsQuery = useRecentCompanionsQuery();
   const settingsQuery = useDepartmentSettings(departmentId);
   const weekRowQuery = useWeekRow(departmentId, weekStart);
 
@@ -420,7 +446,41 @@ export function RequestForm({
     mode: "onBlur",
   });
   const formRef = useRef<HTMLFormElement>(null);
-  const onInvalid = useScrollToFirstError(form, formRef);
+  const onScrollToInvalid = useScrollToFirstError(form, formRef);
+  // REQ §13.110 / UX_FLOWS §3.4a: one form state, two field arrangements (`profiles.classic_request_form`).
+  const layout = useRequestFormLayout();
+  const isSentence = layout === "sentence";
+  // A failed submit also opens the sheet/row of the first bad field in the sentence layout.
+  const [invalidSignal, setInvalidSignal] = useState<{ field: string; n: number } | null>(null);
+  // Weekly sentence requests have two stages: 1 = the sentence, 2 = the modifiers (UX_FLOWS §3.4a).
+  const twoStage = isSentence && variant === "weekly";
+  const [stage, setStage] = useState<1 | 2>(1);
+  function signalInvalid(field: string) {
+    setInvalidSignal((previous) => ({ field, n: (previous?.n ?? 0) + 1 }));
+  }
+  function onInvalid(errors: FieldErrors<RequestFormValues>) {
+    onScrollToInvalid(errors);
+    if (!isSentence) return;
+    // A stage-1 error sends the member back to the sentence and opens that chip's sheet; a stage-2
+    // error stays where it is (the scroll above already focused it).
+    const stageOne = Object.keys(errors).find(isStageOneField);
+    if (stageOne) {
+      setStage(1);
+      signalInvalid(stageOne);
+    } else {
+      const first = Object.keys(errors)[0];
+      if (first) signalInvalid(first);
+    }
+  }
+  async function goToStageTwo() {
+    const ok = await form.trigger([...STAGE_ONE_FIELDS]);
+    if (ok) {
+      setStage(2);
+      return;
+    }
+    const first = STAGE_ONE_FIELDS.find((field) => field in form.formState.errors);
+    if (first) signalInvalid(first);
+  }
 
   // The catalog may arrive after useForm captures its initial defaults.
   if (mode !== "edit" && defaultRideTypeId && !form.getValues("rideTypeId")) {
@@ -433,14 +493,35 @@ export function RequestForm({
   // `react-hooks/set-state-in-effect` lint rule (calling `setState` inside an effect
   // body is flagged; adjusting state for freshly-arrived props during render is not).
   const [resetKey, setResetKey] = useState<string | null>(null);
+  // Named children of the department (own children first). Declared before the edit reset below,
+  // which needs them to tell an adult-seat child from a child-seat one (R9B1 prefill).
+  const childReferenceYear = Number((form.getValues("day") || weekStart).slice(0, 4));
+  const childrenQuery = useQuery({ queryKey: ["children", departmentId, session?.user.id, childReferenceYear], queryFn: () => fetchChildren(departmentId, session!.user.id, childReferenceYear), enabled: !!session?.user.id });
   // Set only by `PortalSheetContent`/`PortalDialogContent` (`QuickRequestSheet`'s host) — reused
   // here to tell the submit bar it is inside a sheet: sticky within the sheet's scroll container,
   // no app tab bar to clear (SheetPortalContext.ts).
   const insideModalSheet = useContext(SheetPortalContext) !== null;
-  if (mode === "edit" && initial && companionsQuery.isSuccess && requestChildrenQuery.isSuccess) {
+  const linkedChildrenKnown =
+    requestChildrenQuery.isSuccess && (requestChildrenQuery.data.length === 0 || childrenQuery.isSuccess || childrenQuery.isError);
+  if (mode === "edit" && initial && companionsQuery.isSuccess && linkedChildrenKnown) {
     const nextResetKey = `${initial.id}:${initial.version}`;
     if (nextResetKey !== resetKey) {
-      form.reset(mapEditRowToValues(initial, weekStart, companionsQuery.data, requestChildrenQuery.data));
+      const linkedAdultChildren = (childrenQuery.data ?? []).filter(
+        (child) => requestChildrenQuery.data?.includes(child.id) && child.isAdultPassenger,
+      ).length;
+      const extraAdults = extraAdultsFromStored({
+        storedAdults: initial.adults,
+        companionsCount: companionsQuery.data.length,
+        guestsCount: (initial.guestPassengerNames ?? []).length,
+        adultChildrenCount: linkedAdultChildren,
+      });
+      const linkedSeatChildren = (childrenQuery.data ?? []).filter(
+        (child) => requestChildrenQuery.data?.includes(child.id) && !child.isAdultPassenger,
+      ).length;
+      // Children whose age is unknown (the catalog failed to load) are taken as seat children, like `set_request_children` does.
+      const unknownSeatChildren = childrenQuery.data ? 0 : requestChildrenQuery.data.length;
+      const unnamedChildSeats = unnamedChildSeatsFromStored({ storedChildSeats: initial.childSeats, seatChildrenCount: linkedSeatChildren + unknownSeatChildren });
+      form.reset(mapEditRowToValues(initial, weekStart, companionsQuery.data, requestChildrenQuery.data, extraAdults, unnamedChildSeats));
       setResetKey(nextResetKey);
     }
   }
@@ -535,15 +616,67 @@ export function RequestForm({
   const [returnAnotherDay, setReturnAnotherDay] = useState(false);
   const isMultiDay = showReturnDayPicker && returnAnotherDay && returnDayValue !== day;
   const multiDaySpan = isMultiDay ? seriesSpanDays(day, returnDayValue) : null;
-  const childReferenceYear = Number(day.slice(0, 4));
-  const childrenQuery = useQuery({ queryKey: ["children", departmentId, session?.user.id, childReferenceYear], queryFn: () => fetchChildren(departmentId, session!.user.id, childReferenceYear), enabled: !!session?.user.id });
+
+  // REQ §13.110 (b): route minutes of each leg (`route_minutes_preview`) turn an "arrive by" /
+  // "leave there at" time into the car's own times. Only the weekly sentence layout anchors.
+  const anchorSyncActive = isSentence && variant === "weekly";
+  const routeValues = {
+    origin: (values.origin ?? { freeText: "" }) as DestinationValue,
+    destination: (values.destination ?? { freeText: "" }) as DestinationValue,
+    outStops: (values.outStops ?? []) as DestinationValue[],
+    returnStops: (values.returnStops ?? []) as DestinationValue[],
+  };
+  const routesWanted = anchorSyncActive && hasDestination(routeValues.destination);
+  const outRouteQuery = useRouteMinutesQuery(departmentId, outboundRoutePoints(routeValues), routesWanted);
+  const returnRouteQuery = useRouteMinutesQuery(departmentId, returnRoutePoints(routeValues), routesWanted && needsReturn);
+  // Plan B (REQ §13.112): origin -> drop place, for the drop time sheet's "leave at" anchor.
+  const altPlaceValue = values.altPlace as DestinationValue | undefined;
+  const planBRouteQuery = useRouteMinutesQuery(
+    departmentId,
+    [routeValues.origin, altPlaceValue ?? { freeText: "" }].map(destinationValueToPoint),
+    anchorSyncActive && values.fallback === "alternative" && hasDestination(altPlaceValue),
+  );
+  // Unknown travel = 60 minutes (REQ §13.109), also when the preview call failed.
+  const outMinutes = outRouteQuery.data ?? (outRouteQuery.isError ? DEFAULT_HOP_MINUTES : null);
+  const returnMinutes = returnRouteQuery.data ?? (returnRouteQuery.isError ? DEFAULT_HOP_MINUTES : null);
+  const planBMinutes = planBRouteQuery.data ?? (planBRouteQuery.isError ? DEFAULT_HOP_MINUTES : null);
+
+  // Keeps `departTime`/`returnTime` (what is submitted) equal to the car times implied by the
+  // typed anchors; a multi-day request has no anchors (its legs share one payload).
+  const watchedDepartAnchor = values.departAnchor;
+  const watchedArriveBy = values.arriveByTime;
+  const watchedReturnAnchor = values.returnAnchor;
+  const watchedLeaveDest = values.leaveDestTime;
+  useEffect(() => {
+    if (!anchorSyncActive) return;
+    const current = form.getValues();
+    if (isMultiDay) {
+      if (current.departAnchor !== "leave") {
+        const patch = switchOutAnchor(current, "leave");
+        form.setValue("departAnchor", patch.departAnchor);
+        form.setValue("arriveByTime", patch.arriveByTime);
+        form.setValue("departTime", patch.departTime);
+      }
+      if (current.returnAnchor !== "arrive") {
+        const patch = switchReturnAnchor(current, "arrive");
+        form.setValue("returnAnchor", patch.returnAnchor);
+        form.setValue("leaveDestTime", patch.leaveDestTime);
+        form.setValue("returnTime", patch.returnTime);
+      }
+      return;
+    }
+    const times = resolveCarTimes(current, { outMinutes, returnMinutes });
+    if (times.departTime !== current.departTime) form.setValue("departTime", times.departTime, { shouldDirty: true });
+    if (times.returnTime !== current.returnTime) form.setValue("returnTime", times.returnTime, { shouldDirty: true });
+  }, [anchorSyncActive, isMultiDay, outMinutes, returnMinutes, watchedDepartAnchor, watchedArriveBy, watchedReturnAnchor, watchedLeaveDest, form]);
   const guests = guestPassengerNames(values.guestNames ?? "");
   // The requester is always one adult; every selected member, named child aged eight or
   // older and guest name is another. Named children below eight use a child seat instead.
   const selectedChildren = (childrenQuery.data ?? []).filter((child) => values.children?.includes(child.id));
-  const namedAdultCount = 1 + (values.companions?.length ?? 0) + selectedChildren.filter((child) => child.isAdultPassenger).length + guests.length;
+  const namedAdultCount = 1 + (values.extraAdults ?? 0) + (values.companions?.length ?? 0) + selectedChildren.filter((child) => child.isAdultPassenger).length + guests.length;
   const selectedChildSeatCount = selectedChildren.filter((child) => !child.isAdultPassenger).length;
-  const namedChildCount = Math.max(selectedChildSeatCount, values.legacyChildSeats ?? 0);
+  // REQ §13.112 (d): unnamed child seats are on top of the named children (boosters are counted separately below).
+  const namedChildCount = selectedChildSeatCount + (values.legacyChildSeats ?? 0);
   const preferredCars = (carsQuery.data ?? []).filter((car) => car.type === "shared" && car.status === "active");
 
   const seatFitWarning = useMemo(() => {
@@ -571,17 +704,21 @@ export function RequestForm({
 
   const duplicate = useMemo(() => {
     if (!values.departTime && !values.returnTime) return null;
-    const departAt =
-      tripShape !== "one_way_from" && values.departTime ? toInstant(day, values.departTime, false) : null;
-    const returnAt =
-      tripShape !== "one_way_to" && values.returnTime
+    // REQ §13.112 (c): a window request overlaps whatever its earliest block overlaps (the member's own other requests).
+    const windowTimes = windowModeActive({ timeMode: values.timeMode, tripType: values.tripType, tripShape, day, returnDay: values.returnDay }) ? windowCarTimes({ windowHours: values.windowHours, windowStart: values.windowStart, windowEnd: values.windowEnd }) : null;
+    const departAt = windowTimes
+      ? toInstant(day, windowTimes.departTime, false)
+      : tripShape !== "one_way_from" && values.departTime ? toInstant(day, values.departTime, false) : null;
+    const returnAt = windowTimes
+      ? toInstant(day, windowTimes.returnTime, false)
+      : tripShape !== "one_way_to" && values.returnTime
         ? toInstant(day, values.returnTime, false)
         : null;
     const candidates = (myRequestsQuery.data ?? []).filter(
       (r) => r.departmentId === departmentId && !["withdrawn", "cancelled", "denied", "external"].includes(r.status),
     );
     return findOverlappingRequest({ departAt, returnAt }, candidates, initial?.id);
-  }, [day, tripShape, values.departTime, values.returnTime, myRequestsQuery.data, departmentId, initial?.id]);
+  }, [day, tripShape, values.departTime, values.returnTime, values.timeMode, values.tripType, values.returnDay, values.windowHours, values.windowStart, values.windowEnd, myRequestsQuery.data, departmentId, initial?.id]);
 
   // Quick-variant-only: free-window pre-validation (server RPC remains the sole authority).
   const departTimeSafe = values.departTime || "08:00";
@@ -612,6 +749,18 @@ export function RequestForm({
   const isPast = !!quickContext && selectedMs < quickContext.now.getTime();
   const outsideDay = !!quickContext && (startMs < Date.parse(toInstant(day, "00:00", false)) || endMs > Date.parse(toInstant(day, "23:59", false)));
   const invalidTime = !!quickContext && (endMs <= startMs || outsideDay);
+
+  // R9U7/R9F1: a child on a new request suggests the childcare ride type while the member has not picked one.
+  const rideTypeTouched = !!form.formState.dirtyFields.rideTypeId;
+  function onChildAdded() {
+    const childcareId = shouldSuggestChildcare({
+      rideTypes: rideTypesQuery.data ?? [],
+      currentRideTypeId: form.getValues("rideTypeId"),
+      touched: rideTypeTouched,
+      isNew: mode === "new",
+    });
+    if (childcareId) form.setValue("rideTypeId", childcareId, { shouldValidate: true });
+  }
 
   const [submitError, setSubmitError] = useState<string | null>(null);
   // >7-day multi-day span (REQ §13.77, UX_FLOWS.md §3.4): holds the just-validated form
@@ -676,6 +825,7 @@ export function RequestForm({
       companionsCount: formValues.companions.length,
       guestsCount: guestNamesList.length,
       legacyChildSeats: formValues.legacyChildSeats,
+      extraAdults: formValues.extraAdults,
       previousChildren: (childrenQuery.data ?? []).filter((child) => previousChildIds.has(child.id)),
     });
     const payload = {
@@ -687,10 +837,15 @@ export function RequestForm({
           joinRideId: mode === "new" ? joinRide?.rideId : undefined,
           guestPassengerNames: guestNamesList,
           reserveMissingDriver: variant === "quick" && isOneWayDropOff ? true : undefined,
+          layout,
+          isSeries: isSeriesRequest,
+          planB: variant === "weekly",
         },
       ),
       ...(waitlist ? { waitlist: true } : {}),
       ...(options.confirmRelease ? { confirm_release: true } : {}),
+      // REQ §13.111 (a): a quick / car-now request is placed right away - the server asks before using a car with no large trunk.
+      ...(variant === "quick" || variant === "carNow" ? { ask_small_trunk: true } : {}),
       // Only a *new* request can link to an existing template on creation (`submit_request`'s
       // insert branch is the only place it reads `template_id`); an edit's own template link,
       // if any, is managed separately below via save/stop, never touched by this payload.
@@ -744,7 +899,7 @@ export function RequestForm({
         if ("freeText" in formValues.destination && formValues.destination.freeText.trim()) {
           suggestDestinationMutation.mutate({ name: formValues.destination.freeText.trim() });
         }
-        toastSeriesSubmitOutcome(seriesResult);
+        if (!toastSeriesSubmitOutcome(seriesResult)) toast.success(t("request.submitSent"));
         if (onDone) onDone(null);
         else navigate(paths.my());
         return;
@@ -792,7 +947,7 @@ export function RequestForm({
       // variant resolves car names against its own `quickContext.cars` (the exact free-window-
       // aware set the picker showed), not the plain `carsQuery` every variant also loads.
       const carLookup = quickContext?.cars ?? carsQuery.data ?? [];
-      toastSubmitOutcome(result, {
+      const outcomeToasted = toastSubmitOutcome(result, {
         carName: (id) => carLookup.find((c) => c.id === id)?.name ?? "",
         preferredCarId: formValues.preferredCarId,
         tripType: formValues.tripType,
@@ -801,6 +956,9 @@ export function RequestForm({
         onViewRequests: () => navigate(paths.my()),
         overlapNames: overlapNames(result?.overlaps, myRequestsQuery.data ?? []),
       });
+      // R9M3: an open/solving-week submit has no server outcome to report — confirm it ourselves
+      // (the quick/car-now sheets always get an outcome toast from a live-week result).
+      if (!outcomeToasted && variant === "weekly") toast.success(t(mode === "edit" ? "request.submitSaved" : "request.submitSent"));
 
       const proceed = () => {
         if (onDone) onDone(result);
@@ -891,7 +1049,7 @@ export function RequestForm({
     }
   }
 
-  const isLoading = destinationsQuery.isLoading || rideTypesQuery.isLoading || !hasResetForEdit;
+  const isLoading = destinationsQuery.isLoading || rideTypesQuery.isLoading || profileQuery.isLoading || !hasResetForEdit;
 
   if (isLoading) {
     return (
@@ -903,12 +1061,30 @@ export function RequestForm({
     );
   }
 
+  // R9U4: in the sentence layout the seat/overlap warnings live in the page under the sentence,
+  // never in the sticky footer (where they covered stage-2 content).
+  const notices =
+    seatFitWarning || duplicate ? (
+      <div className="space-y-1" data-testid="form-notices">
+        {seatFitWarning ? <p className="text-sm text-amber-700">⚠ {t("request.seatFitWarning")}</p> : null}
+        {duplicate ? <p className="text-sm text-amber-700">{t("request.duplicateWarning")}</p> : null}
+      </div>
+    ) : null;
+
   return (
     <>
     <form
       ref={formRef}
-      onSubmit={form.handleSubmit(onSubmit, onInvalid)}
-      className={cn("mx-auto flex max-w-2xl flex-col gap-5 p-4", insideModalSheet ? "" : "pb-28")}
+      onSubmit={(event) => {
+        // Stage 1 has no submit: Enter / implicit submission moves on to stage 2 instead.
+        if (twoStage && stage === 1) {
+          event.preventDefault();
+          void goToStageTwo();
+          return;
+        }
+        return form.handleSubmit(onSubmit, onInvalid)(event);
+      }}
+      className={cn("mx-auto flex max-w-2xl flex-col p-4", isSentence ? "gap-3 pt-1" : "gap-5", insideModalSheet ? "" : "pb-28")}
     >
       {quickContext ? (
         <p className="text-base font-semibold">
@@ -934,150 +1110,191 @@ export function RequestForm({
       ) : null}
       {waitlist ? <div className="rounded-md border-s-4 border-amber-500 bg-amber-50 p-3 text-sm text-amber-900">{t("request.waitlistBanner")}</div> : null}
 
-      <OriginField
-        control={form.control}
-        destinations={destinationsQuery.data ?? []}
-        editable={variant !== "carNow"}
-      />
-
-      {/* REQ §13.93 "Multi-stop rides": compact chips between the origin line and the
-          destination field, behind one "+ עצירה" link — not shown for carNow (fixed home
-          round trip, no room/need for stops). */}
-      {variant !== "carNow" ? (
-        <StopsField
-          control={form.control}
-          name="outStops"
-          error={stopsError(form.formState.errors.outStops)}
+      {isSentence ? (
+        <SentenceFields
+          form={form}
+          variant={variant}
+          weekStart={weekStart}
+          day={day}
+          errors={form.formState.errors}
           destinations={destinationsQuery.data ?? []}
-          addLabel={he.request.addStop}
-          removeAriaLabel={he.request.removeStop}
+          rideTypes={rideTypesQuery.data ?? []}
+          preferredCars={preferredCars}
+          initialPreferredCarName={initial?.preferredCarName}
+          members={membersQuery.data ?? []}
+          childOptions={childrenQuery.data ?? []}
+          tripShape={tripShape}
+          tripType={tripType}
+          dropOffPickup={dropOffPickup}
+          canDrive={canDrive}
+          seeksDriver={seeksDriver}
+          isQuickContext={!!quickContext}
+          showReturnDayPicker={showReturnDayPicker}
+          returnAnotherDay={returnAnotherDay}
+          setReturnAnotherDay={setReturnAnotherDay}
+          isMultiDay={isMultiDay}
+          multiDaySpan={multiDaySpan}
+          routeMinutes={{ out: outMinutes, return: returnMinutes, planB: planBMinutes }}
+          mode={mode}
+          notices={notices}
+          onChildAdded={onChildAdded}
+          recentDestinations={recentDestinations(myRequestsQuery.data ?? [])}
+          recentCompanionIds={recentCompanionsQuery.data ?? []}
+          stage={twoStage ? stage : 1}
+          onStageChange={setStage}
+          invalidSignal={invalidSignal}
+          quickContext={quickContext ? { cars: quickContext.cars, showCarPicker: quickContext.showCarPicker } : undefined}
+          quickWindow={{ startMs, endMs, carIsFree, isAway, otherFreeCar, oneWay }}
         />
-      ) : null}
-
-      <DestinationRideTypeFields
-        control={form.control}
-        destinations={destinationsQuery.data ?? []}
-        rideTypes={rideTypesQuery.data ?? []}
-        tripShape={tripShape}
-        variant={variant}
-        destinationHasError={!!form.formState.errors.destination}
-        rideTypeError={form.formState.errors.rideTypeId?.message}
-      />
-
-      <CarPreferenceFields
-        control={form.control}
-        variant={variant}
-        preferredCars={preferredCars}
-        initialPreferredCarName={initial?.preferredCarName}
-        quickContext={quickContext ? { cars: quickContext.cars, showCarPicker: quickContext.showCarPicker } : undefined}
-      />
-
-      <DayAndTripShapeFields
-        control={form.control}
-        form={form}
-        weekStart={weekStart}
-        variant={variant}
-        showReturnDayPicker={showReturnDayPicker}
-        returnAnotherDay={returnAnotherDay}
-        setReturnAnotherDay={setReturnAnotherDay}
-        day={day}
-        isMultiDay={isMultiDay}
-        multiDaySpan={multiDaySpan}
-        isQuickContext={!!quickContext}
-        seeksDriver={seeksDriver}
-        tripType={tripType}
-        dropOffPickup={dropOffPickup}
-        canDrive={canDrive}
-      />
-
-      <TimeFields
-        form={form}
-        variant={variant}
-        tripShape={tripShape}
-        isQuickContext={!!quickContext}
-        oneWay={oneWay}
-        startMs={startMs}
-        endMs={endMs}
-        carIsFree={carIsFree}
-        isAway={isAway}
-        otherFreeCar={otherFreeCar}
-        departTimeError={form.formState.errors.departTime?.message}
-        returnTimeError={form.formState.errors.returnTime?.message}
-      />
-
-      {/* REQ §13.93 "Multi-stop rides": return-stop chips, next to the return time, only when
-          the trip actually has a return leg — behind one "+ עצירה בחזור" link. */}
-      {variant !== "carNow" && needsReturn ? (
-        <StopsField
+      ) : (
+        <>
+        <OriginField
           control={form.control}
-          name="returnStops"
-          error={stopsError(form.formState.errors.returnStops)}
           destinations={destinationsQuery.data ?? []}
-          addLabel={he.request.addReturnStop}
-          removeAriaLabel={he.request.removeStop}
+          editable={variant !== "carNow"}
         />
-      ) : null}
 
-      <PassengersFields
-        control={form.control}
-        members={membersQuery.data ?? []}
-        children={childrenQuery.data ?? []}
-        namedAdultCount={namedAdultCount}
-        namedChildCount={namedChildCount}
-        guestNamesError={form.formState.errors.guestNames?.message}
-      />
+        {/* REQ §13.93 "Multi-stop rides": compact chips between the origin line and the
+            destination field, behind one "+ עצירה" link — not shown for carNow (fixed home
+            round trip, no room/need for stops). */}
+        {variant !== "carNow" ? (
+          <StopsField
+            control={form.control}
+            name="outStops"
+            error={stopsError(form.formState.errors.outStops)}
+            destinations={destinationsQuery.data ?? []}
+            addLabel={he.request.addStop}
+            removeAriaLabel={he.request.removeStop}
+          />
+        ) : null}
 
-      {/* Luggage, flexibility and the note to the Sadran are weekly-solver inputs; a same-day
-          quick/car-now request is placed immediately with nobody reading them (owner, 2026-09-14). */}
-      {variant === "weekly" ? (
-        <Controller
+        <DestinationRideTypeFields
           control={form.control}
-          name="luggage"
-          render={({ field }) => (
-            <div className="space-y-1" data-field="luggage">
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={field.value}
-                  onChange={(e) => field.onChange(e.target.checked)}
-                  className="size-4"
-                />
-                {t("request.luggageLabel")}
-              </label>
-              <p className="text-xs text-muted-foreground">{t("request.luggageHint")}</p>
-            </div>
-          )}
+          destinations={destinationsQuery.data ?? []}
+          rideTypes={rideTypesQuery.data ?? []}
+          tripShape={tripShape}
+          variant={variant}
+          destinationHasError={!!form.formState.errors.destination}
+          rideTypeError={form.formState.errors.rideTypeId?.message}
         />
-      ) : null}
 
-      <FlexibilityFields
-        form={form}
-        variant={variant}
-        tripShape={tripShape}
-        isMultiDay={isMultiDay}
-        flexDepartEarly={values.flexDepartEarly ?? 0}
-        flexDepartLate={values.flexDepartLate ?? 0}
-        flexReturnEarly={values.flexReturnEarly ?? 0}
-        flexReturnLate={values.flexReturnLate ?? 0}
-      />
+        <CarPreferenceFields
+          control={form.control}
+          variant={variant}
+          preferredCars={preferredCars}
+          initialPreferredCarName={initial?.preferredCarName}
+          quickContext={quickContext ? { cars: quickContext.cars, showCarPicker: quickContext.showCarPicker } : undefined}
+        />
 
-      {variant !== "carNow" ? (
-        <FormItem data-field="rideDescription">
-          <Label htmlFor="request-description">{t("quickRequest.rideDescription")}</Label>
-          <Controller control={form.control} name="rideDescription" render={({ field }) => <Textarea {...field} id="request-description" rows={2} maxLength={1000} aria-describedby="request-description-help" />} />
-          <p id="request-description-help" className="text-xs text-muted-foreground">{t("quickRequest.rideDescriptionHelp")}</p>
-          <FieldError message={form.formState.errors.rideDescription?.message} />
-        </FormItem>
-      ) : null}
+        <DayAndTripShapeFields
+          control={form.control}
+          form={form}
+          weekStart={weekStart}
+          variant={variant}
+          showReturnDayPicker={showReturnDayPicker}
+          returnAnotherDay={returnAnotherDay}
+          setReturnAnotherDay={setReturnAnotherDay}
+          day={day}
+          isMultiDay={isMultiDay}
+          multiDaySpan={multiDaySpan}
+          isQuickContext={!!quickContext}
+          seeksDriver={seeksDriver}
+          tripType={tripType}
+          dropOffPickup={dropOffPickup}
+          canDrive={canDrive}
+        />
 
-      {variant === "weekly" ? (
-        <FormItem data-field="notes">
-          <Label htmlFor="request-notes">{t("field.notes")}</Label>
-          <Controller control={form.control} name="notes" render={({ field }) => <Textarea {...field} id="request-notes" rows={2} />} />
-        </FormItem>
-      ) : null}
+        <TimeFields
+          form={form}
+          variant={variant}
+          tripShape={tripShape}
+          isQuickContext={!!quickContext}
+          oneWay={oneWay}
+          startMs={startMs}
+          endMs={endMs}
+          carIsFree={carIsFree}
+          isAway={isAway}
+          otherFreeCar={otherFreeCar}
+          departTimeError={form.formState.errors.departTime?.message}
+          returnTimeError={form.formState.errors.returnTime?.message}
+        />
 
-      {variant === "weekly" && !isMultiDay ? <RepeatWeeklyField control={form.control} /> : null}
+        {/* REQ §13.93 "Multi-stop rides": return-stop chips, next to the return time, only when
+            the trip actually has a return leg — behind one "+ עצירה בחזור" link. */}
+        {variant !== "carNow" && needsReturn ? (
+          <StopsField
+            control={form.control}
+            name="returnStops"
+            error={stopsError(form.formState.errors.returnStops)}
+            destinations={destinationsQuery.data ?? []}
+            addLabel={he.request.addReturnStop}
+            removeAriaLabel={he.request.removeStop}
+          />
+        ) : null}
+
+        <PassengersFields
+          control={form.control}
+          members={membersQuery.data ?? []}
+          children={childrenQuery.data ?? []}
+          onChildAdded={onChildAdded}
+          namedAdultCount={namedAdultCount}
+          namedChildCount={namedChildCount}
+          guestNamesError={form.formState.errors.guestNames?.message}
+        />
+
+        {/* Luggage, flexibility and the note to the Sadran are weekly-solver inputs; a same-day
+            quick/car-now request is placed immediately with nobody reading them (owner, 2026-09-14). */}
+        {variant === "weekly" ? (
+          <Controller
+            control={form.control}
+            name="luggage"
+            render={({ field }) => (
+              <div className="space-y-1" data-field="luggage">
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={field.value}
+                    onChange={(e) => field.onChange(e.target.checked)}
+                    className="size-4"
+                  />
+                  {t("request.luggageLabel")}
+                </label>
+                <p className="text-xs text-muted-foreground">{t("request.luggageHint")}</p>
+              </div>
+            )}
+          />
+        ) : null}
+
+        <FlexibilityFields
+          form={form}
+          variant={variant}
+          tripShape={tripShape}
+          isMultiDay={isMultiDay}
+          flexDepartEarly={values.flexDepartEarly ?? 0}
+          flexDepartLate={values.flexDepartLate ?? 0}
+          flexReturnEarly={values.flexReturnEarly ?? 0}
+          flexReturnLate={values.flexReturnLate ?? 0}
+        />
+
+        {variant !== "carNow" ? (
+          <FormItem data-field="rideDescription">
+            <Label htmlFor="request-description">{t("quickRequest.rideDescription")}</Label>
+            <Controller control={form.control} name="rideDescription" render={({ field }) => <Textarea {...field} id="request-description" rows={2} maxLength={1000} aria-describedby="request-description-help" />} />
+            <p id="request-description-help" className="text-xs text-muted-foreground">{t("quickRequest.rideDescriptionHelp")}</p>
+            <FieldError message={form.formState.errors.rideDescription?.message} />
+          </FormItem>
+        ) : null}
+
+        {variant === "weekly" ? (
+          <FormItem data-field="notes">
+            <Label htmlFor="request-notes">{t("field.notes")}</Label>
+            <Controller control={form.control} name="notes" render={({ field }) => <Textarea {...field} id="request-notes" rows={2} />} />
+          </FormItem>
+        ) : null}
+
+        {variant === "weekly" && !isMultiDay ? <RepeatWeeklyField control={form.control} /> : null}
+        </>
+      )}
 
       <div
         className={cn(
@@ -1092,8 +1309,12 @@ export function RequestForm({
         )}
       >
         <div className="mx-auto max-w-2xl space-y-2">
-          {seatFitWarning ? <p className="text-sm text-amber-700">⚠ {t("request.seatFitWarning")}</p> : null}
-          {duplicate ? <p className="text-sm text-amber-700">{t("request.duplicateWarning")}</p> : null}
+          {isSentence ? null : (
+            <>
+              {seatFitWarning ? <p className="text-sm text-amber-700">⚠ {t("request.seatFitWarning")}</p> : null}
+              {duplicate ? <p className="text-sm text-amber-700">{t("request.duplicateWarning")}</p> : null}
+            </>
+          )}
           {quickContext && invalidTime ? <p role="alert" className="text-sm text-destructive">{outsideDay ? he.sadranProposal.sameDayOnly : he.rideEditing.invalidTime}</p> : null}
           {form.formState.submitCount > 0 && Object.keys(form.formState.errors).length > 0 ? (
             <p role="alert" className="text-sm text-destructive">
@@ -1103,7 +1324,13 @@ export function RequestForm({
             </p>
           ) : null}
           {submitError ? <p className="text-sm text-destructive">{submitError}</p> : null}
+          {twoStage && stage === 1 ? (
+            <Button key="next" type="button" className="w-full" size="lg" onClick={() => void goToStageTwo()} data-testid="stage-next">
+              {he.requestSentence.next}
+            </Button>
+          ) : (
           <Button
+            key="submit"
             type="submit"
             className="w-full"
             size="lg"
@@ -1118,6 +1345,7 @@ export function RequestForm({
                   ? seeksDriver ? t("quickRequest.submitOneWay") : oneWay ? t("quickRequest.submitOneWayTakeCar") : t("quickRequest.submit")
                   : t("action.submitRequest")}
           </Button>
+          )}
           {quickContext && isPast ? <p className="text-xs text-destructive">{t("quickRequest.pastSlotTooltip")}</p> : null}
         </div>
       </div>

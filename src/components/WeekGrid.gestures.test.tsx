@@ -1,5 +1,6 @@
 import { fireEvent, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { he } from "@/i18n/he";
 import { WeekGrid } from "./WeekGrid";
 
 const ride = { id: "ride", carId: "a", startMinutes: 600, endMinutes: 720, label: "Driver and destination" };
@@ -75,6 +76,13 @@ describe("WeekGrid gestures", () => {
     expect(block).toHaveAttribute("data-needs-driver", "true");
     expect(block).toHaveAttribute("data-tight-schedule", "true");
     expect(block).toHaveClass("border-destructive");
+  });
+  it("labels large luggage, and a waived large-trunk requirement says so (REQ §13.111 a)", () => {
+    const needs = render(<WeekGrid cars={cars} rides={[{ ...ride, luggage: true }]} />);
+    expect(needs.container.querySelector('[data-testid="luggage-marker"]')).toHaveTextContent(he.request.luggageChip);
+    needs.unmount();
+    const waived = render(<WeekGrid cars={cars} rides={[{ ...ride, luggage: true, luggageWaived: true }]} />);
+    expect(waived.container.querySelector('[data-testid="luggage-marker"]')).toHaveTextContent(he.smallTrunk.waivedLabel);
   });
 
 });

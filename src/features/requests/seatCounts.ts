@@ -24,6 +24,8 @@ export interface PayloadSeatCountsInput {
   guestsCount: number;
   /** Unnamed child seats the member typed in (`RequestFormValues.legacyChildSeats`). */
   legacyChildSeats: number;
+  /** R9B1: adults beyond the requester and the named people (`RequestFormValues.extraAdults`). */
+  extraAdults?: number;
   /** Children linked to the request on the server right now (empty for a new request). */
   previousChildren: readonly SeatCountChild[];
 }
@@ -32,7 +34,7 @@ export function payloadSeatCounts(input: PayloadSeatCountsInput): { adults: numb
   const previousAdultChildren = input.previousChildren.filter((child) => child.isAdultPassenger).length;
   const previousChildSeatChildren = input.previousChildren.length - previousAdultChildren;
   return {
-    adults: 1 + input.companionsCount + input.guestsCount + previousAdultChildren,
+    adults: 1 + input.companionsCount + input.guestsCount + previousAdultChildren + Math.max(0, input.extraAdults ?? 0),
     childSeats: Math.max(0, input.legacyChildSeats) + previousChildSeatChildren,
   };
 }
@@ -57,4 +59,30 @@ export function serverSeatCountsAfterChildren(
     adults: Math.max(1, written.adults - previous.adult) + selected.adult,
     childSeats: Math.max(0, written.childSeats - previous.seat) + selected.seat,
   };
+}
+
+/**
+ * R9B1 edit prefill: the stored `adults` minus the requester and every *named* adult (companions,
+ * guests, linked children aged eight or older — `set_request_children()` already counted them in
+ * the stored value) is the unnamed remainder. Inverse of `payloadSeatCounts` +
+ * `serverSeatCountsAfterChildren`, so an edit that touches nothing keeps the same `adults`.
+ */
+export function extraAdultsFromStored(input: {
+  storedAdults: number;
+  companionsCount: number;
+  guestsCount: number;
+  /** Linked children that count as an adult seat (`SeatCountChild.isAdultPassenger`). */
+  adultChildrenCount: number;
+}): number {
+  return Math.min(7, Math.max(0, input.storedAdults - 1 - input.companionsCount - input.guestsCount - input.adultChildrenCount));
+}
+
+/**
+ * REQ §13.112 (d) edit prefill: the stored `child_seats` minus the named children that use a child seat
+ * (`set_request_children()` already counted them in the stored value) are the unnamed ones ("+ ילד/ה" in the who
+ * sheet). Inverse of `payloadSeatCounts` + `serverSeatCountsAfterChildren`, so an edit that touches nothing keeps
+ * the same `child_seats`.
+ */
+export function unnamedChildSeatsFromStored(input: { storedChildSeats: number; seatChildrenCount: number }): number {
+  return Math.min(8, Math.max(0, input.storedChildSeats - input.seatChildrenCount));
 }

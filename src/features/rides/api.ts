@@ -1,5 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import { rpc, toAppError } from "@/lib/rpc";
+import { withSmallTrunkRetry } from "@/lib/smallTrunk";
 
 import type { Database, Json } from "@/integrations/supabase/types";
 
@@ -46,10 +47,12 @@ export async function fetchRideChanges(departmentId?: string, weekStart?: string
 }
 
 export async function requestRideChange(move: RideMove): Promise<string> {
-  return rpc("request_ride_change", {
+  // REQ §13.111 (a): the driver accepts a car without a large trunk for their own large-luggage request ("לשבץ בכל זאת?").
+  return withSmallTrunkRetry((allowSmallTrunk) => rpc("request_ride_change", {
     p_ride_id: move.rideId, p_car_id: move.carId,
     p_starts_at: move.startsAt, p_ends_at: move.endsAt, p_expected_version: move.expectedVersion,
-  });
+    p_allow_small_trunk: allowSmallTrunk,
+  }));
 }
 
 export async function respondRideChange(changeId: string, accept: boolean): Promise<void> {

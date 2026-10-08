@@ -1,6 +1,5 @@
 import { Repeat } from "lucide-react";
 import type { Ref } from "react";
-import { Link } from "react-router-dom";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -18,7 +17,11 @@ import type { TripType } from "@/lib/enums";
 
 import type { CarHandoverNotes } from "@/features/rides/carHandover";
 
+import { enteredTimeLabels, type EnteredTimeLabels } from "../enteredTimes";
 import { canEditRequest } from "../window";
+import { RequestLink } from "./RequestLink";
+import { PlanBLines } from "./PlanBLines";
+import { WindowSummaryLine } from "./WindowSummaryLine";
 import { isAwaitingAnswer } from "../pendingProposal";
 import { canPlaceOnOwnCar, isDuplicateWithdrawn } from "../overlap";
 import { FREED_SLOT_ELIGIBLE_STATUSES, MAKE_REPEATING_STATUSES, displayStatus, legStateLine, originDestinationLabel, ownLegWindow, type DisplayRow } from "../myRequestsRows";
@@ -57,6 +60,16 @@ interface RequestRowProps {
   actionPending?: boolean;
   /** REQ §13.108 f: "be back on time" note for this row (see `rowHandover()`); the parent fetches the neighbours once for all rows. */
   handover?: { notes: CarHandoverNotes; span: { startsAt: string; endsAt: string } } | null;
+}
+
+/** REQ §13.110 (b): "להגיע עד 09:30" / "יציאה מחיפה 13:00" when the member entered the times that way. */
+function EnteredTimes({ labels }: { labels: EnteredTimeLabels }) {
+  if (!labels.out && !labels.return) return null;
+  return (
+    <p className="text-xs text-muted-foreground" data-testid="request-entered-times">
+      {[labels.out, labels.return].filter(Boolean).join(" · ")}
+    </p>
+  );
 }
 
 /**
@@ -102,10 +115,22 @@ export function RequestRow({
             : <StatusBadge kind="request" status={displayStatus(row)} />}
         </div>
       </div>
+      <EnteredTimes
+        labels={enteredTimeLabels({
+          departAnchor: row.departAnchor,
+          arriveBy: row.arriveBy,
+          returnAnchor: row.returnAnchor,
+          leaveDestAt: row.leaveDestAt,
+          destinationName: row.destination,
+          isPickup: row.tripType === "drop_off",
+        })}
+      />
+      <WindowSummaryLine row={{ durationLocked: row.durationLocked, departAt: row.departAt, returnAt: row.returnAt, flexReturnLate: row.flexReturnLate }} />
+      <PlanBLines row={row} />
       {handover ? <CarHandoverNotice notes={handover.notes} ride={handover.span} /> : null}
       {row.ride?.needsDriver ? <p className="text-sm font-medium text-destructive">{he.rideCoordination.missingDriver}</p> : null}
       {row.tripType !== "round_trip" ? <p className="text-xs text-muted-foreground">{TRIP_TYPE_LABEL[row.tripType]}</p> : null}
-      {row.hasLuggage ? <Badge variant="outline" className="w-fit">{he.request.luggageChip}</Badge> : null}
+      {row.hasLuggage ? <Badge variant="outline" className="w-fit" data-testid={row.luggageWaived ? "luggage-waived" : undefined}>{row.luggageWaived ? he.smallTrunk.waivedLabel : he.request.luggageChip}</Badge> : null}
       {row.preferredCarName ? <p className="text-xs text-muted-foreground">{he.request.preferredCar}: {row.preferredCarName}</p> : null}
       {row.childNames?.length ? (
         <p className="text-xs text-muted-foreground">{tv("ridePublicDetails.companions", { names: row.childNames.join(", ") })}</p>
@@ -148,7 +173,7 @@ export function RequestRow({
           ) : null}
           {canEditRequest(row) && !row.seriesLegs ? (
             <Button asChild size="sm" variant="outline">
-              <Link to={paths.requests.edit(row.id)}>{he.requestsList.edit}</Link>
+              <RequestLink to={paths.requests.edit(row.id)}>{he.requestsList.edit}</RequestLink>
             </Button>
           ) : null}
           {isDuplicateWithdrawn(row) && onRestoreDuplicate ? (

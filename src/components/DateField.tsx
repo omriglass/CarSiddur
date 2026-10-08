@@ -57,7 +57,8 @@ export function DateField({ weekStart, value, onChange, dayCount = 7, ariaLabel,
           >
             <span>{he.days.short[index % 7]}</span>
             <span className="text-[10px] tabular-nums" dir="ltr">
-              {dayNumber}
+              {/* A range over two weeks shows day.month so the date is unambiguous (R9U5). */}
+              {dayCount > 7 ? `${Number(dayNumber)}.${Number(date.slice(5, 7))}` : dayNumber}
             </span>
           </button>
         );

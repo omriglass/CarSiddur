@@ -16,6 +16,7 @@
 //   freed    cancelled ride on a published day -> freed-slot offer -> member claim_freed_slot -> Sadran approve_claim
 //   series   multi-day request auto-placed on a published week -> member shorten_series
 //   lifecycle (REQ 13.109) a drop-off cancelled with a merged guest releases both legs; ask-to-join own ride / origin = destination refused; volunteer driver replaced
+//   planb    (REQ 13.112) member files a request with a plan B; RLS on request_alternatives; Sadran proposes it, publish waits (even with allow_unanswered), member accepts in-app -> served by plan B
 //   neighbours a member reads v_ride_car_neighbours (next/previous ride on the car, tight gap) for a published ride
 import { resolveApi, serviceClient, signedInClient, ADMIN_PASSWORD } from "./qa/qa-common.mjs";
 
@@ -482,6 +483,49 @@ try {
       check("  the ride's driver changed", (await rideRow(r.id)).driver_id === sadranId);
     }
   });
+  // ------------------------------------------------ plan B (REQ 13.112 a)
+  await section("planb: member files a plan B -> Sadran proposes it -> publish waits -> member accepts in-app", async () => {
+    const wk = await mkWeek(9, "open", { open: true });
+    const STN = "00000000-0000-0000-0000-000000000012";
+    const payload = {
+      department_id: DEPT, week_start: wk, destination_id: DEST, ride_type_id: TYPE, trip_shape: "round_trip", trip_type: "round_trip",
+      depart_at: at(9, 2, 6), return_at: at(9, 2, 11), adults: 1, child_seats: 0, boosters: 0, has_luggage: false, stops: [],
+      fallback: "alternative", alternative: { drop_place_id: STN, arrive_by: at(9, 2, 7), pickup: true, pickup_at: at(9, 2, 12) },
+    };
+    const sub = await m1.rpc("submit_request", { payload });
+    check("member files a request with a plan B", !sub.error && !!sub.data?.request_id, errText(sub));
+    const q = sub.data?.request_id;
+    if (!q) return;
+    check("  the member reads their plan B row", ((await m1.from("request_alternatives").select("id").eq("request_id", q)).data ?? []).length === 1);
+    check("  another member cannot read it", ((await m2.from("request_alternatives").select("id").eq("request_id", q)).data ?? []).length === 0);
+    check("  the Sadran reads it", ((await sadran.from("request_alternatives").select("id").eq("request_id", q)).data ?? []).length === 1);
+    const direct = await m1.from("request_alternatives").update({ pickup: false, pickup_at: null }).eq("request_id", q).select("id");
+    check("  nobody writes the row directly", !direct.error ? (direct.data ?? []).length === 0 : true, errText(direct));
+    const bad = await m1.rpc("submit_request", { payload: { ...payload, trip_type: "drop_off", needs_car_at_destination: false } });
+    check("  a הקפצה carries no fallback (fallback_not_allowed)", !!bad.error && /fallback_not_allowed/.test(bad.error.message), errText(bad));
+
+    const p = await sadran.rpc("create_proposal", { p_request_id: q, p_ride_id: null, p_type: "alternative",
+      p_payload: { car_id: CAR_A, depart_at: at(9, 2, 6, 30), return_at: at(9, 2, 12, 30) }, p_reason_he: "plan B" });
+    check("Sadran drafts the alternative proposal", !p.error && !!p.data, errText(p));
+    if (!p.data) return;
+    const member = await m1.rpc("create_proposal", { p_request_id: q, p_ride_id: null, p_type: "alternative", p_payload: { car_id: CAR_A, depart_at: at(9, 2, 6, 30) }, p_reason_he: "x" });
+    check("  a member cannot create one", !!member.error, errText(member));
+    const fp = must(await sadran.rpc("publish_scores_fingerprint", { p_department_id: DEPT, p_week_start: wk }), "fingerprint");
+    const pub = await sadran.rpc("publish_siddur", { p_department_id: DEPT, p_week_start: wk, p_profile_scores: [], p_expected_fingerprint: fp, p_policy_scores: [], p_days: [dayDate(9, 2)], p_allow_unanswered: true });
+    check("publish waits for the plan B even with allow_unanswered", !!pub.error && /publication_alternatives_pending/.test(pub.error.message), errText(pub));
+    const sent = await sadran.rpc("send_proposal", { p_proposal_id: p.data });
+    check("Sadran sends it", !sent.error, errText(sent));
+    const token = sent.data?.party_tokens?.[m1Id];
+    const ans = await m1.rpc("answer_proposal", { p_token: token, p_accept: true, p_via: "session" });
+    check("the member accepts in-app", !ans.error, errText(ans));
+    const row = await reqRow(q);
+    check("  the request is now served by its plan B (a הקפצה to the drop point)", row.served_by_alternative === true && row.trip_type === "drop_off" && row.destination_id === STN, JSON.stringify([row.served_by_alternative, row.trip_type, row.status]));
+    const alt = must(await svc.from("request_alternatives").select("original_main,applied_at").eq("request_id", q).single(), "alt row");
+    check("  the original trip is kept whole", !!alt.applied_at && alt.original_main?.trip_type === "round_trip" && alt.original_main?.destination_id === DEST);
+    const edit = await m1.rpc("submit_request", { payload: { ...payload, request_id: q, expected_version: row.version } });
+    check("  the served request cannot be edited", !!edit.error && /request_served_by_alternative/.test(edit.error.message), errText(edit));
+  });
+
 } finally {
   await purge([...madeWeeks]);
 }

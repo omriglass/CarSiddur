@@ -683,6 +683,7 @@ begin
     ('profiles', 'approved_at', 'public'),
     ('profiles', 'approved_by', 'public'),
     ('profiles', 'avatar_url', 'public'),
+    ('profiles', 'classic_request_form', 'public'),
     ('profiles', 'created_at', 'public'),
     ('profiles', 'default_boosters', 'public'),
     ('profiles', 'default_child_seats', 'public'),

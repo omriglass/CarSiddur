@@ -14,6 +14,7 @@ import { buildHostRides, findMergeHosts } from './merge';
 import { scoreRequests } from './policy/engine';
 import { chauffeurShortDropOffs, chauffeurUnpairedRelayLegs, pairRelays, pickupFromCarAtX } from './relay';
 import { reason } from './reasons';
+import { applyFallbacks } from './alternative';
 import { expandDropOffs, restoreDropOffIds } from './dropOffSplit';
 import { carName, placeName, rideHostLabel, requestDestName, requestOriginName } from './names';
 import { byId, normalize, type NormalizedRequest } from './slots';
@@ -25,6 +26,7 @@ import type { Assignment, Car, SolverInput, SolverOutput, UnmetRequest } from '.
 export * from './types';
 export { fits, dominates, slack, sum, luggageFits, chauffeurLoad } from './seatFit';
 export { ruleRegistry, type RuleType } from './rules/index';
+export { alternativeServedWeightOf, DEFAULT_ALTERNATIVE_SERVED_WEIGHT } from './rules/fairness';
 export { matchFreedSlot } from './live';
 export { CarTimeline, buildTimelines } from './timeline';
 export type { NormalizedRequest, NormalizedLeg, SeriesLeg, SeriesUnit } from './slots';
@@ -92,6 +94,11 @@ function noCarReason(
  * §13.94, docs/SOLVER.md §1.3a) — see `dropOffSplit.ts`.
  */
 export function solve(input: SolverInput): SolverOutput {
+  return applyFallbacks(input, solveBase(input), solveBase);
+}
+
+/** The solve without the fallback pass (what a plan-B test solve runs on, REQ §13.112). */
+function solveBase(input: SolverInput): SolverOutput {
   const { input: expanded, splitIds } = expandDropOffs(input);
   return restoreDropOffIds(solveExpanded(expanded), splitIds);
 }

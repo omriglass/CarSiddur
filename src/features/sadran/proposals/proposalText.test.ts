@@ -89,3 +89,26 @@ describe("R7B5: merge popup time lines carry no raw placeholders", () => {
     }
   });
 });
+
+describe("proposalPreviewText alternative (REQ §13.112 a)", () => {
+  const alt: ProposalTextInput = {
+    ...base,
+    type: "alternative",
+    template: { body: "אין רכב {{destinationRoute}} ביום {{day}}. הקפצה ל{{dropPlace}} עד {{dropTime}}{{pickupLine}}\n{{link}}" },
+    destinationName: "חיפה",
+    alternative: { dropPlace: "צומת חריש", arriveBy: "2026-09-13T05:00:00.000Z", pickupAt: "2026-09-13T16:00:00.000Z" },
+  };
+  it("uses the alternative template variant", () => {
+    expect(proposalTemplateVariant("alternative")).toBe("alternative");
+  });
+  it("renders the drop place, the arrival and the pickup clause (twin of SQL _alternative_vars)", () => {
+    const text = proposalPreviewText(alt);
+    expect(text).toContain("הקפצה לצומת חריש עד 08:00, ואיסוף משם ב־19:00");
+    expect(text).toContain("{{link}}");
+  });
+  it("a plan B without a pickup has no pickup clause", () => {
+    const text = proposalPreviewText({ ...alt, alternative: { ...alt.alternative!, pickupAt: null } });
+    expect(text).toContain("עד 08:00");
+    expect(text).not.toContain("ואיסוף");
+  });
+});

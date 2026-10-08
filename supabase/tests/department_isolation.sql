@@ -207,6 +207,8 @@ begin
   perform pg_temp.expect_refused('origins.place_travel_for_week', format('select * from public.place_travel_for_week(%L, %L)', dept_b, week_b));
   perform pg_temp.expect_refused('origins.car_start_locations', format('select * from public.car_start_locations(%L, %L)', dept_b, week_b));
   perform pg_temp.expect_refused('origins.set_my_default_origin', format('select public.set_my_default_origin(%L, %L)', dept_b, other_dest_b));
+  perform pg_temp.expect_refused('requests.route_minutes_preview', format('select public.route_minutes_preview(%L, %L::jsonb)', dept_b, '[]'));
+  perform pg_temp.expect_refused('requests.route_minutes_preview_place', format('select public.route_minutes_preview(%L, jsonb_build_array(jsonb_build_object(''place_id'', %L), jsonb_build_object(''place_id'', %L)))', dept_a, home_b, other_dest_b));
 
   -- members / admin (is_admin()-gated, sadran_a is not admin) ---------------
   perform pg_temp.expect_refused('members.admin_approve_member', format('select public.admin_approve_member(%L, %L)', member_b, dept_b));
@@ -338,7 +340,7 @@ declare
     'publication_readiness','publish_siddur','record_solver_preview','form_waitlist_groups',
     'publish_scores_fingerprint','sadran_contact_of','fairness_stats','department_stats','joinable_rides_for_request',
     'create_policy_version','set_policy_active','resolve_waitlist_group','cancel_waitlist_group',
-    'place_travel_for_week','car_start_locations','set_my_default_origin',
+    'place_travel_for_week','car_start_locations','set_my_default_origin','route_minutes_preview',
     'set_ride_driver','withdraw_duplicate_request','restore_duplicate_request','place_on_own_car','child_request_overlaps',
     'mark_car_move','shorten_series','join_drop_off_legs','place_series_on_car'
   ];

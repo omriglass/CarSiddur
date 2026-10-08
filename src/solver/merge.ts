@@ -298,6 +298,9 @@ export function findMergeHosts(params: MergeSearchParams): MergeCandidate[] {
     const okOut = !out || (etaOutOf(host.window.start) >= guest.flexDep[0] && etaOutOf(host.window.start) <= guest.flexDep[1]);
     const okRet = !ret || (etaRetOf(host.window.end) >= retFlex[0] && etaRetOf(host.window.end) <= retFlex[1]);
 
+    // REQ §13.112 (c): a ride serving a window request keeps its length — a merge that adds driving would grow it.
+    if (hostNr?.durationLocked && (addOut > 0 || addRet > 0)) continue;
+
     let baseStart = host.window.start;
     let baseEnd = host.window.end;
     let hostShift: { departureMin: number; returnMin: number } | undefined;
@@ -306,8 +309,20 @@ export function findMergeHosts(params: MergeSearchParams): MergeCandidate[] {
       const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi);
       const bootOut = Math.round((out?.insertion.boardArrivalMinutes ?? 0) / 15);
       const tailRet = Math.round(retTail / 15);
-      if (out) baseStart = clamp(baseStart, guest.flexDep[0] + addOut - bootOut, guest.flexDep[1] + addOut - bootOut);
-      if (ret) baseEnd = clamp(baseEnd, retFlex[0] - addRet + tailRet, retFlex[1] - addRet + tailRet);
+      if (hostNr.durationLocked) {
+        // REQ §13.112 (c): a window host moves as one block — one shift `s` serves both guest legs.
+        let lo = -Infinity;
+        let hi = Infinity;
+        if (out) { lo = Math.max(lo, guest.flexDep[0] + addOut - bootOut - baseStart); hi = Math.min(hi, guest.flexDep[1] + addOut - bootOut - baseStart); }
+        if (ret) { lo = Math.max(lo, retFlex[0] - addRet + tailRet - baseEnd); hi = Math.min(hi, retFlex[1] - addRet + tailRet - baseEnd); }
+        if (lo > hi) continue;
+        const s = clamp(0, lo, hi);
+        baseStart += s;
+        baseEnd += s;
+      } else {
+        if (out) baseStart = clamp(baseStart, guest.flexDep[0] + addOut - bootOut, guest.flexDep[1] + addOut - bootOut);
+        if (ret) baseEnd = clamp(baseEnd, retFlex[0] - addRet + tailRet, retFlex[1] - addRet + tailRet);
+      }
       if (baseEnd - baseStart < hostNr.minDurationSlots) continue;
       if (baseStart < hostNr.flexDep[0] || baseStart > hostNr.flexDep[1]) continue;
       if (baseEnd < hostNr.flexRet[0] || baseEnd > hostNr.flexRet[1]) continue;
@@ -343,6 +358,10 @@ export function findMergeHosts(params: MergeSearchParams): MergeCandidate[] {
     const detourKm = Math.max(kmOut ?? 0, kmRet ?? 0);
     const guestStartEta = out ? etaOutOf(baseStart) : undefined;
     const guestEndEta = ret ? etaRetOf(baseEnd) : undefined;
+    // REQ §13.112 (c): a window guest needs the whole block's time away — boarding to alighting may not be shorter.
+    if (guest.durationLocked) {
+      if (guestStartEta === undefined || guestEndEta === undefined || guestEndEta - guestStartEta < guest.window.end - guest.window.start) continue;
+    }
     const shiftCostGuest =
       (guestStartEta === undefined ? 0 : slotsToMinutes(Math.abs(guestStartEta - guest.window.start))) +
       (guestEndEta === undefined ? 0 : slotsToMinutes(Math.abs(guestEndEta - (reversed ? guest.window.start : guest.window.end))));

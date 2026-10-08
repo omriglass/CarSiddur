@@ -9,6 +9,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { datesOfWeek, todayInJerusalem } from "@/components/dateFieldDates";
 import { tv } from "@/i18n/he";
+import { luggageMarker } from "@/lib/luggageWaiver";
 import { TZ, dateKey, formatTime } from "@/lib/time";
 import { ridePublicDetails } from "@/lib/ridePublicDetails";
 import { ridePassengerSummary } from "@/lib/ridePassengerSummary";
@@ -735,6 +736,7 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
       guests: addedGuestsOf(r.id as string, withChildNames(servedOf(r), requestsQuery.data ?? [])),
       needsDriver: !!r.needs_driver,
       luggage: servedOf(r).some((entry) => entry.luggage),
+      luggageWaived: luggageMarker(servedOf(r)) === "waived",
       tightSchedule: tightRideIds.has(r.id as string),
       shadowed: shadowedRideIds.has(r.id as string),
       conflict: conflictRideIds.has(r.id as string),
@@ -778,7 +780,8 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
       startMinutes: Math.round((Date.parse(placement.startsAt) - Date.parse(dayStartIso(selectedDay))) / 60_000),
       endMinutes: Math.round((Date.parse(placement.endsAt) - Date.parse(dayStartIso(selectedDay))) / 60_000),
       // R3B19: an origin-change draft is drawn with the NEW origin (never the borrowed old label).
-      label: (placement.type === "origin" ? undefined : original?.label) ?? (request && placement.leg === "return" && request.trip_type === "drop_off"
+      // REQ §13.112 (a): a plan-B draft reads "תוכנית ב׳ · <name>" (the car's drop-off block; the request itself stays unmet).
+      label: placement.type === "alternative" ? tv("sadranPlanB.draftLabel", { name: request?.requester_full_name ?? "" }) : (placement.type === "origin" ? undefined : original?.label) ?? (request && placement.leg === "return" && request.trip_type === "drop_off"
         // R5B11: a pickup draft reads "איסוף מ<place>" (never just "ל<place>").
         ? `${request.requester_full_name ?? ""} · ${tv("boardDrafts.pickupLabel", { place: request.destination_resolved_name ?? "" })} · ${tripTypeLabel(request.trip_type)}`
         : request

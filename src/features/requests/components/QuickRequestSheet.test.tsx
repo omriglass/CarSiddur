@@ -10,8 +10,12 @@ vi.mock("../hooks", () => ({
   useSubmitRequestMutation: () => ({ mutateAsync: mocks.submit, isPending: false }),
   useSubmitSeriesRequestMutation: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useMyRequests: () => ({ data: [] }),
+  // These tests cover the classic field-by-field layout (REQ §13.110); the sentence layout has its own spec.
+  useRequestFormLayout: () => "classic",
+  useRouteMinutesQuery: () => ({ data: undefined, isError: false }),
   useRequestCompanionsQuery: () => ({ data: [], isSuccess: true }),
   useRequestChildrenQuery: () => ({ data: [], isSuccess: true }),
+  useRecentCompanionsQuery: () => ({ data: [] }),
   useSetRequestCompanionsMutation: () => ({ mutateAsync: mocks.setCompanions }),
   useSetRequestChildrenMutation: () => ({ mutateAsync: mocks.setChildren }),
   useSaveRequestTemplateMutation: () => ({ mutateAsync: vi.fn() }),

@@ -75,6 +75,29 @@ export interface Flexibility {
   laterMin: number | 'day';
 }
 
+/**
+ * REQ §13.112 (a): a request's plan B — always a drop-off: be at the drop place by `arriveByMs`, and
+ * (when `pickupMs` is set) be picked up from the SAME place at `pickupMs`. Never changes how the main request is placed;
+ * the solver only tests, after the main placement, whether it could be served this way (`useAlternative`, SOLVER §3.15).
+ */
+export interface AlternativePlan {
+  /** list place, or the free-text sentinel when `dropPlaceIsFreeText` */
+  dropPlaceId: string;
+  dropPlaceIsFreeText?: boolean;
+  dropPlaceText?: string;
+  /** epoch ms, 15-min aligned: be at the drop place by this time */
+  arriveByMs: number;
+  /** epoch ms, 15-min aligned: leave the drop place (be picked up) at this time; absent = no pickup */
+  pickupMs?: number;
+  /** Pickup from another place than the drop place (REQ §13.112 a); absent = the drop place. */
+  pickupPlaceId?: string;
+  pickupPlaceIsFreeText?: boolean;
+  pickupPlaceText?: string;
+}
+
+/** = SQL request_fallback (REQ §13.112): what the member wants when no car is found. */
+export type RequestFallback = 'none' | 'alternative' | 'manage';
+
 export interface Request {
   /** Internal (dropOffSplit.ts, REQUIREMENTS §13.95 H2): id of the original request this half of a split drop-off-with-pickup came from. Never output. */
   splitFrom?: string;
@@ -123,6 +146,25 @@ export interface Request {
   returnMs?: number;
   flexDeparture: Flexibility;
   flexReturn: Flexibility;
+  /**
+   * REQ §13.112 (c): "N hours somewhere between A and B" — a single-day round trip whose car block keeps its
+   * length. Stored as the earliest block (`departureMs`..`returnMs`) with equal later-only flexibility on both
+   * ends (`flexDeparture.laterMin === flexReturn.laterMin`, early 0). Wherever the solver moves such a request
+   * (placement, relocation, a host's merge shift, a beyond-flexibility suggestion) both ends move by the same
+   * amount; only a `tripType === 'round_trip'` request honours it (docs/SOLVER.md §3.7a).
+   */
+  durationLocked?: boolean;
+  /**
+   * REQ §13.112 (a)/(b): `'alternative'` = the member stated a plan B (`alternative`); `'manage'` ("I will manage") = no useful
+   * fallback — the solver offers no `externalHint` for it (a `deny` stays). Undefined = `'none'`. Only a `round_trip` or
+   * `one_way` request has an active fallback; the bridge omits both fields otherwise.
+   */
+  fallback?: RequestFallback;
+  alternative?: AlternativePlan;
+  /** REQ §13.112 (a): an accepted plan B already serves this request (scoring only: it counts `alternativeServedWeight` served). */
+  servedByAlternative?: boolean;
+  /** REQ §13.112 (a): the pickup-leg sibling of a plan B with a pickup from another place — scoring only: the pair counts once (this request weighs 0). */
+  planBSibling?: boolean;
   passengers: Passengers;
   coRiderMemberIds: string[];
   luggage: boolean;
@@ -388,6 +430,7 @@ export type SuggestionKind =
   | 'chauffeur'
   | 'changeOrigin'
   | 'chainOneWay'
+  | 'useAlternative'
   | 'externalHint'
   | 'deny';
 
@@ -476,6 +519,20 @@ export type Suggestion =
       /** the ride the request follows, and the first request it serves (the other member) */
       afterRideId: string;
       afterRequestId?: string;
+    })
+  | (SuggestionBase & {
+      /**
+       * REQUIREMENTS §13.112 (a): the request is unmet but its plan B (a drop-off to the member's drop place) fits —
+       * `carId` takes the member to the drop place at `departSlot` (the car leaves with them, arriving by `arriveBy`),
+       * and, with a pickup, `returnCarId` (default `carId`) brings them home: `returnSlot` is when they are back
+       * (pickup time + the drive). Nothing is placed; SOLVER §3.15 maps this to proposal type `alternative`,
+       * payload `{ car_id, return_car_id?, depart_at, return_at? }` (Sadran-sent only, never automatic).
+       */
+      kind: 'useAlternative';
+      carId: string;
+      returnCarId?: string;
+      departSlot: Slot;
+      returnSlot?: Slot;
     })
   | (SuggestionBase & {
       kind: 'externalHint';

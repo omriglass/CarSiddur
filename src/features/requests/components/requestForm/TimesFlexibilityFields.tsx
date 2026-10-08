@@ -94,27 +94,41 @@ export function TimeFields({
         ) : null}
       </div>
 
-      {variant !== "carNow" && isQuickContext && tripShape === "one_way_from" ? <p className="text-xs text-muted-foreground">{t("quickRequest.arrivalHomeHelp")}</p> : null}
-      {variant !== "carNow" && isQuickContext && oneWay ? <p className="text-xs text-muted-foreground">{tv("quickRequest.vehicleWindow", { start: formatTime(new Date(startMs)), end: formatTime(new Date(endMs)) })}</p> : null}
-
-      {isQuickContext && !carIsFree ? (
-        <div className="space-y-1.5 rounded-md border-s-4 border-amber-500 bg-amber-50 p-3 text-sm text-amber-900">
-          <p>{isAway ? t("quickRequest.awayWarning") : t("quickRequest.overlapWarning")}</p>
-          {otherFreeCar ? (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => form.setValue("preferredCarId", otherFreeCar.id, { shouldDirty: true })}
-            >
-              {tv("quickRequest.overlapOfferOtherCar", { car: otherFreeCar.name })}
-            </Button>
-          ) : (
-            <p className="text-xs">{t("quickRequest.noCarFree")}</p>
-          )}
-        </div>
-      ) : null}
+      {variant !== "carNow" ? <QuickTimeHints isQuickContext={isQuickContext} tripShape={tripShape} oneWay={oneWay} startMs={startMs} endMs={endMs} /> : null}
+      <QuickFreeCarWarning form={form} isQuickContext={isQuickContext} carIsFree={carIsFree} isAway={isAway} otherFreeCar={otherFreeCar} />
     </>
+  );
+}
+
+/** Quick-variant helper lines under the time fields: arrival-home note and the car's vehicle window. */
+export function QuickTimeHints({ isQuickContext, tripShape, oneWay, startMs, endMs }: { isQuickContext: boolean; tripShape: RequestFormValues["tripShape"]; oneWay: boolean; startMs: number; endMs: number }) {
+  return (
+    <>
+      {isQuickContext && tripShape === "one_way_from" ? <p className="text-xs text-muted-foreground">{t("quickRequest.arrivalHomeHelp")}</p> : null}
+      {isQuickContext && oneWay ? <p className="text-xs text-muted-foreground">{tv("quickRequest.vehicleWindow", { start: formatTime(new Date(startMs)), end: formatTime(new Date(endMs)) })}</p> : null}
+    </>
+  );
+}
+
+/** Quick-variant "this car is busy / away" warning with the one-tap "another car is free" offer. */
+export function QuickFreeCarWarning({ form, isQuickContext, carIsFree, isAway, otherFreeCar }: Pick<TimeFieldsProps, "form" | "isQuickContext" | "carIsFree" | "isAway" | "otherFreeCar">) {
+  if (!isQuickContext || carIsFree) return null;
+  return (
+    <div className="space-y-1.5 rounded-md border-s-4 border-amber-500 bg-amber-50 p-3 text-sm text-amber-900">
+      <p>{isAway ? t("quickRequest.awayWarning") : t("quickRequest.overlapWarning")}</p>
+      {otherFreeCar ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => form.setValue("preferredCarId", otherFreeCar.id, { shouldDirty: true })}
+        >
+          {tv("quickRequest.overlapOfferOtherCar", { car: otherFreeCar.name })}
+        </Button>
+      ) : (
+        <p className="text-xs">{t("quickRequest.noCarFree")}</p>
+      )}
+    </div>
   );
 }
 

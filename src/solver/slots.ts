@@ -83,6 +83,8 @@ export interface NormalizedRequest {
   flexDep: [number, number];
   flexRet: [number, number];
   durationFixed: boolean;
+  /** REQ §13.112 (c): a window request — `[window.start, window.end]` may slide as one block within `flexDep`/`flexRet`, never stretch. Only ever set on a `keep` round trip. */
+  durationLocked?: boolean;
   travelSlots: number;
   passengers: Passengers;
   luggage: boolean;
@@ -513,6 +515,7 @@ export function normalize(input: SolverInput): NormalizeResult {
         flexDep: boundedFlex(flexDep, { ...dayWindow, end: day.endSlot - 1 }),
         flexRet: boundedFlex(flexRet, dayWindow),
         durationFixed: false,
+        durationLocked: request.durationLocked === true && tripType === 'round_trip',
         travelSlots,
         passengers: request.passengers,
         luggage: request.luggage,

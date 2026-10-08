@@ -35,7 +35,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { renderTemplate } from "../waLink";
 import { atTime, buildProposalPayload, resolveShiftTimes, seriesSpanOf } from "../buildProposalPayload";
-import { seriesOriginalOf } from "../../board/draftInput";
+import { alternativeTextInput, seriesOriginalOf } from "../../board/draftInput";
 import { combinedSummaryText, proposalTemplateVariant, externalSuggestionFor, proposalPreviewText, shiftTimesUnchanged } from "../proposalText";
 import { WhatsappDialog } from "./WhatsappDialog";
 import {
@@ -244,6 +244,8 @@ export function ProposalComposerScreen({ departmentId, weekStart }: ProposalComp
     driverName: hostRideQuery.data?.driver_name ?? "",
     reason: effectiveReason,
     externalSuggestion,
+    // REQ §13.112 (a): the plan B the text speaks of (the request's own `request_alternatives` row).
+    alternative: type === "alternative" ? alternativeTextInput(request) : undefined,
     combined: type === "merge" && combinedStart && combinedEnd ? {
       start: combinedStart, end: combinedEnd,
       passengerName: contactsQuery.data?.find((c) => c.id === request?.requester_id)?.full_name ?? "",
@@ -370,7 +372,7 @@ export function ProposalComposerScreen({ departmentId, weekStart }: ProposalComp
             <span className="font-medium">{he.sadranProposal.typeLabel}:</span>
             <Select value={type} disabled>
               <SelectTrigger className="w-48">
-                <SelectValue>{he.proposal.type[type as "shift" | "merge" | "deny" | "external" | "origin"]}</SelectValue>
+                <SelectValue>{he.proposal.type[type]}</SelectValue>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="shift">{he.proposal.type.shift}</SelectItem>
@@ -378,6 +380,7 @@ export function ProposalComposerScreen({ departmentId, weekStart }: ProposalComp
                 <SelectItem value="deny">{he.proposal.type.deny}</SelectItem>
                 <SelectItem value="external">{he.proposal.type.external}</SelectItem>
                 <SelectItem value="origin">{he.proposal.type.origin}</SelectItem>
+                <SelectItem value="alternative">{he.proposal.type.alternative}</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -385,7 +388,8 @@ export function ProposalComposerScreen({ departmentId, weekStart }: ProposalComp
           <ProposalSummary requesterName={request.requester_full_name} destination={destinationName}
             purpose={request.ride_type_name_he} departAt={request.depart_at} returnAt={request.return_at}
             hostDriverName={type === "merge" ? hostRideQuery.data?.driver_name : undefined}
-            originChange={type === "origin" ? { from: request.origin_resolved_name, to: newOriginName || null, car: originCarName || null } : undefined} />
+            originChange={type === "origin" ? { from: request.origin_resolved_name, to: newOriginName || null, car: originCarName || null } : undefined}
+            alternative={type === "alternative" ? alternativeTextInput(request) : undefined} />
 
           {type === "shift" && !proposalId ? <div className="flex flex-wrap gap-4">
             {departAt ? <label className="space-y-1 text-xs"><span className="block">{he.field.depart}</span><TimeField15 min="00:00" value={departOverride ?? formatTime(new Date(departAt))} onChange={(time) => { setDepartOverride(time); setEditedText(null); }} aria-label={he.field.depart} /></label> : null}

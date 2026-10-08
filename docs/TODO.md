@@ -869,8 +869,74 @@ Re-play of run 5's week after the run-5 batch. **Outcome on the same week: 1 req
 ### Tooling
 - `qa:sadran`: no command to place a series by hand (`series_edit_not_supported` on `place`); `merge` defaults to the out leg for round trips. `qa:member`: no add-passengers, `edit` ignores `needs_confirmation`, my-rides shows no "!" line.
 
+## QA run 9 findings (2026-10-07, seed 6632, week 11–17.10, department `qa-s6632`; **no QA Sadran** — QA user = Sonnet only, **Tuesday 13.10 via the UI**, focus: the new sentence request form, REQ §13.110 / UX_FLOWS §3.4a) — **owner triaged 2026-10-07; R9B/U/M items fixed (see ✅ lines)**
+
+~8 generator requests edited and ~9 new requests filed through the sentence form; every stored result checked with `qa:member my-rides`. Screenshots: the run's scratchpad `qa-ui/`. Worked: arrive-by → departure (09:30, 60 min → 08:30), home-by, split flexibility, one-way, הקפצה + pickup + large trunk, free-text place, out + return stops, who chip (member + child + guest), default origin, multi-day with notes and a specific car, repeat weekly, overlap dialog, validation (no destination, return before departure), `/my` "להגיע עד 13:30" / "יציאה מחדרה 15:00", classic ↔ sentence round trip (classic 12:30→12:45 moved the hidden arrive-by 13:30→13:45). Not tested: quick sheet and car-now (need a live week), saving a series leg, member search by name.
+
+### Bugs
+- **R9B1 — Editing a request with unnamed adults resets `adults` to 1 (data loss).** m18 f0fb9f99 (`adults=4` → 1 after a return-time edit), m16 8da29300 (2→1, time-only edit), m07 aaec0e93 (2→1). Seat counts are always recomputed as 1 + named people (`payloadSeatCounts`); **the classic form does the same** — only requests filed with a bare count (generator/CLI, older data, Sadran on behalf) are affected, but the solver then sees too few seats. ✅ 2026-10-07 — new `extraAdults` field; prefill `adults − 1 − named adults`, `payloadSeatCounts` adds it (seatCounts tests incl. 4 adults → edit → 4).
+- **R9B2 — A multi-day series leg opens as a plain single-day round trip** (m33 1d8ef57c, leg 1 of 13→15.10 shows "יום ג׳ 13.10 … בבית עד 23:59", no series context). Same as the classic form (series legs are not editable, REQ §13.77) — should say so instead of offering a misleading edit. ✅ — `/requests/:id/edit` of a series leg shows `SeriesRequestPanel` (span, shorten, cancel/withdraw) instead of the form.
+- **R9B3 — Stage-2 recap drops the multi-day range** (m28 67f2a0d7: chip "יום ג׳ 13.10 עד ה׳ 15.10", recap "ג׳ 13.10 · 08:00–12:00"). ✅ — stage-2 recap shows the day range.
+- **R9B4 — "+ עצירה בחזור" still uses the old popover combobox** (covers the sheet, English zone codes "north"/"haifa"); the out-stop and destination sheets use the new inline list. ✅ — "+ עצירה בחזור" opens the inline place sheet; return stops show as chips in the sentence.
+- **R9B5 — `/my` time ranges render reversed in RTL** ("ג׳ 13.10 · 23:15–20:00", m23) — missing LTR isolate, probably shared `RequestRow` code, not only the new form. ✅ — `TripSummary` range in an LTR isolate (+ the same for string-built ranges in RideChangeAnswers, BoardScreen, FullResolveAction); test added.
+
+### UI changes
+- **R9U1** Moving the departure silently moves the return by the same delta (the classic form's `shiftReturnByDepartureDelta`); surprising when the return is its own chip — keep, tell (a line in the sheet), or drop? ✅ — kept the shift, the time sheet says "גם החזרה זזה ל־HH:MM".
+- **R9U2** Chips say too little: asymmetric flexibility reads only "· גמישות"; the return stop is invisible on stage 1; a הקפצה with pickup reads just "הקפצה" while the return chip says "להיות בבית עד" (sheet: "איסוף משם") — show "+ איסוף". ✅ — asymmetric flexibility text, return-stop chips, "הקפצה + איסוף", pickup anchor label "איסוף, בבית עד".
+- **R9U3** The who sheet lists **all** the department's children (9 chips for m06, 7 of other families) — own children only, others through search. ✅ — own children as chips; others via search (members + children).
+- **R9U4** Stage 1 is ~55% empty; the two-line overlap warning sits above the footer and on stage 2 covers the "בקשה חוזרת" card; stage 2 scrolls at 390×844. ✅ — seat/overlap warnings moved into the page under the sentence (and under the stage-2 recap); stage-1 whitespace kept; notes rows moved to stage 1 (owner).
+- **R9U5** Details: the "דרך חדרה ×" stop chip is smaller than the others; a gap between "מ/ל/ב" and their chip; a line may start with ", " at 360 px; multi-day day sheet cramped (no month, "חזרה באותו יום" mid-row); flexibility pills wrap to 2 rows at 360 px; dark-mode chip text low contrast. ✅ — stop chip size, prefix glue, no commas, day sheet (day.month + own "same day" row), one-row flex pills, dark-mode chip contrast.
+- **R9U6** Choosing "רכב מסוים" preselects the first car instead of asking. ✅ — "רכב מסוים" starts empty with "בחר/י רכב"; `preferSpecificCar` + schema issue when empty.
+- **R9U7** Ride type stays "אחר" when children are on the request. ✅ — adding a child to a new request switches the untouched default type to childcare (`childcareType.ts`).
+
+### Missing obvious features
+- **R9M1** A way to add an adult without a name ("+ מבוגר/ת") — goes with R9B1. ✅ — "+ מבוגר/ת" stepper in the who sheet and the classic form.
+- **R9M2** The stage-2 recap mixes an arrive-by time and a home-by time as "09:30–13:00" without labels. ✅ — recap labels anchored times ("להגיע עד 09:30 · בבית עד 13:00").
+- **R9M3** No confirmation after submit/save (the form returns to `/my` with no toast seen). ✅ — "הבקשה נשלחה לסדרן/ית" / "השינויים נשמרו" when no outcome toast was shown.
+
+### Additional features
+- **R9F1** Suggest ride type "ילדים" when a child is on the request (with R9U7). ✅ — done with R9U7.
+- **R9F2** "Same as last time" shortcut (repeat a recent request's people/places).
+- **R9F3** "Start over" on the stage-2 recap.
+
+## QA run 10 findings (2026-10-08, seed 6632 again — run 9's week, department `qa-s6632`; **no QA Sadran** — QA user = Sonnet, members via the UI + the few Sadran steps via `qa:sadran`; **Sunday 11.10**; focus: plan B, REQ §13.112 a/b) — **awaiting owner triage**
+
+Before the run the plan-B time picker was moved onto the shared picker (`AnchorTimePicker`, "להגיע עד / לצאת ב־") and sheets with a time field got a minimum height (the hour list was clipped on the desktop card). Verified OK in the run: every hour 06–23 reachable in both plan-B pickers at 390/360/1280; the toggle + estimate; plan B not offered on a הקפצה main; free-text drop place; plan-B-only edit; drop points first in the place list and the Sadran can mark more in /admin/destinations; board card "ב׳: …" / "אסתדר" (no external button) / "תוכנית ב׳ אפשרית · להציע"; publish refused while a plan-B proposal is pending (also with `--allow-unanswered`); accept with a different pickup place → outbound + linked pickup request, both legs on the day view, one item on /my; member withdraw removes both; decline stays unmet; trip-type round trip → הקפצה → הלוך בלבד → round trip keeps plan B.
+
+### Bugs
+- **R10B1 — BLOCKER: `/my`, edit and the member CLI fail for any member with a plan B** (PGRST201): `drop_place:destinations(name)` in `src/features/requests/api.ts` (list select and `EDIT_SELECT`) is ambiguous since the pickup-place FK was added — needs the FK hint. The member sees "עוד אין לך בקשות" after submitting (m06).
+- **R10B2** Choosing "אסתדר" leaves the stale "בחר/י לאן להקפיץ" error under the line (m18 b251d148).
+- **R10B3** The publish screen lists unsent plan-B drafts twice — under "טיוטות הצעה שלא נשלחו" and under "תוכנית ב׳ שממתינה לתשובה" (e3b74472, 9f98807e).
+- **R10B4** The `published` notice lists still-waitlisted requests as "הנסיעות שלך: א׳ 11.10 08:00–17:00 · חיפה" (m06, m37, m18).
+- **R10B5** A request served by plan B also appears under "בקשות שלא שובצו" with "ברשימת המתנה" (m23 7ce9e028); the row offers "הפוך/י לחוזר", which makes no sense there; the "נשלחה" badge sits next to "שובצת בתוכנית ב׳" (m11).
+- **R10B6** Two sent plan-B proposals can hold the same car at overlapping times with no warning to the Sadran; the second acceptance is withdrawn as stale (m37 34cf4b2d, m23 ff764f78, m06 9f98807e — all the van). Behaviour follows "an answer stands"; the gap is the missing warning when sending.
+- **R10B7 (environment, verify)** `/p/<token>` said "ואיסוף משם" for a different pickup place (m11 403bb83b) — the disposable stack's `answer-proposal` edge function copy was stale; the repo version names the place.
+
+### UI changes
+- **R10U1** "ואיסוף" orphaned at the end of a row, "מ[פרדס חנה] [ב־19:00]" on the next — keep "ואיסוף מ[place]" together.
+- **R10U2** Stage-2 recap clips long plan-B text at 360 px.
+- **R10U3** The plan-B text on `/p/:token` is tiny grey (`text-xs`) though it is the main information.
+- **R10U4** Moving the drop time past the pickup shows an error half-covered by the open picker — shift the pickup along (like return-follows-departure)?
+- **R10U5** The plan-B drop sheet shows no toggle and no place name until a place is chosen; same for "ואיסוף משם".
+- **R10U6** The time-picker popover sits off-centre (touches the edge at 360 px) and shows only four hours with no visible scrollbar.
+- **R10U7** Removing a plan-B-served request: the dialog says "הבקשה תוסר ולא תישלח לסדרן/ית" (wrong for a placed request) and does not say the pickup request goes too.
+- **R10U8** `/my` "איסוף מפרדס חנה 19:30" vs "ב־19:30" elsewhere.
+- **R10U9** After accepting on `/p`, the thanks text is the same as after declining ("הסדרן/ית יעדכנו את הסידור") although the plan was applied.
+- **R10U10** The Sadran's `proposal_answered` notice does not say it was plan B (shows only the main trip).
+- **R10U11** Mobile board toolbar: the "⋮" is clipped at the left edge.
+
+### Missing obvious features
+- **R10M1** The classic form keeps a stored plan B silently — show a read-only line "יש לבקשה תוכנית ב׳ (עריכה בטופס החדש)".
+- **R10M2** Switching the main trip to הקפצה hides plan B without telling the member (it comes back on switching back).
+
+### Additional features
+- **R10F1** Warn when sending a plan B that would take a car another pending proposal holds (with R10B6).
+
 ## Owner hands-on testing (2026-10-06) — bugs to fix
 - **OB1 — A multi-day request cannot be placed by hand on the board.** Dropping its card on a car fails with "בקשה רב-יומית — אפשר לבטל ולהגיש מחדש, לא לערוך" (`series_edit_not_supported`, MDR02). The board's manual placement goes through `edit_ride`, which refuses any request with a `series_id` (the v1 rule "a series is cancelled and resubmitted, never edited", REQ §13.77) — but placing is not editing the request. Expected: dropping a series leg (or the series card) on a car places the **whole series** on that car for all its days (the same hold auto-fill makes, `place_series`), refused only when the car is not free on every day; moving a placed series to another car likewise moves all its days. The Sadran's other path today is "להציע פחות ימים" / auto-fill only. Seen on the showcase department (S19). **Fixed 2026-10-06:** `place_series_on_car(series, car)` (Sadran; private-car owner rule; refuses an already placed series) wraps `place_series`; the board drop of a multi-day card calls it ("הבקשה הרב-יומית שובצה ברכב הזה לכל ימיה"). Verified through the API (3 rides, all legs assigned; second placement and a member refused). Not covered: moving an already placed series to another car.
 
 ## Owner requests 2026-10-07
-- **OR1 — Request form overhaul: a short multi-step form.** Today's request form shows everything on one long page and overwhelms members. Split it into **3–4 screens** with a step indicator and back/next: (1) **where** — destination(s), origin, stops, trip type (round trip / one way / הקפצה); (2) **when** — day(s), departure and return, multi-day, flexibility; (3) **who** — adults, companions, named children/child seats/boosters, guests; (4) **details** — ride type, equipment (ציוד רב), notes, preferred car, repeat weekly — then a summary with submit. Keep one form component (`RequestForm`, weekly + quick variants; the quick "car now" sheet may stay one screen), keep validation per step (`useScrollToFirstError` within the step), defaults prefilled so a simple request is next-next-submit, and the edit flow opens on the summary. Needs a UX_FLOWS design pass and owner review before building.
+- **OR1 — Request form overhaul** — *superseded 2026-10-07 by the sentence form (REQ §13.110, docs/REQUEST_FORM_PLAN_2026-10.md, UX_FLOWS §3.4a); stage 1 in progress.* **~~Open (owner): the large-trunk requirement must be bypassable, possibly with a popup — by the Sadran when placing, or by the member?~~ ✅ Decided and built 2026-10-17 (REQ §13.111 a):** whoever places by hand (Sadran on the board, a member moving their own ride / car swap / own car / ride change) confirms "לשבץ בכל זאת?" and the request is marked waived (`requests.luggage_waived_at/by`); automatic placement never waives.  Member quick/car-now and ask-to-join paths and the `WeekGrid` waived chip were added the same day (`20261017100900`). Original text: a short multi-step form. Today's request form shows everything on one long page and overwhelms members. Split it into **3–4 screens** with a step indicator and back/next: (1) **where** — destination(s), origin, stops, trip type (round trip / one way / הקפצה); (2) **when** — day(s), departure and return, multi-day, flexibility; (3) **who** — adults, companions, named children/child seats/boosters, guests; (4) **details** — ride type, equipment (ציוד רב), notes, preferred car, repeat weekly — then a summary with submit. Keep one form component (`RequestForm`, weekly + quick variants; the quick "car now" sheet may stay one screen), keep validation per step (`useScrollToFirstError` within the step), defaults prefilled so a simple request is next-next-submit, and the edit flow opens on the summary. Needs a UX_FLOWS design pass and owner review before building.
+
+## Plan B and "אסתדר" (REQ §13.112 a/b, 2026-10-08)
+- **Built** (migrations `20261019100000`–`101100`, solver `alternative.ts`, board/publish/composer/`/p/:token`, sentence-form line, `/my`, `plan_b.sql`, API section `planb`). Not built / for the owner: flexibility on plan B times, plan B in repeating-request templates, an admin UI to undo an applied plan B (`_restore_original_main(request)` exists in SQL only), the owner marking the production drop points (`/admin/destinations` → "נקודת הקפצה").

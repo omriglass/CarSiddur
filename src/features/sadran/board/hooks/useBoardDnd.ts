@@ -11,6 +11,8 @@ import { useQuery } from "@tanstack/react-query";
 import { paths } from "@/app/routes";
 import { formatMinutes, parseHHMM } from "@/components/timeField15Format";
 import { he, tv } from "@/i18n/he";
+import { needsLargeTrunk } from "@/lib/luggageWaiver";
+import { askSmallTrunk } from "@/lib/smallTrunk";
 import { dateKey } from "@/lib/time";
 import { useSession } from "@/features/auth/useSession";
 import { useProfile } from "@/features/auth/useProfile";
@@ -35,8 +37,8 @@ import {
   privateCarBlocks,
   privateCarBlocksRide,
   seatsFit,
-  luggageBlocks,
   luggageCountOf,
+  luggageWarns,
   mergeRefusalReason,
   unavailable,
   unmetCandidateWindow,
@@ -128,6 +130,21 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
   const joinLegsMutation = useJoinDropOffLegsMutation();
   const unmergeRequestMutation = useUnmergeRequestMutation();
   const undoStack = useUndoStack<void>();
+  // REQ §13.111 (a): "צריך תא מטען גדול ... לשבץ בכל זאת?" - asked before a hand placement that would put a
+  // large-luggage request on a car without a large trunk (the server stays the decider: `needs_large_trunk`;
+  // a refusal it still raises is answered by the same dialog in `lib/smallTrunk.ts` `withSmallTrunkRetry`).
+  /** Resolves `true` when no waiver is needed (or the Sadran accepted it), `false` when declined. `waived` = the flag to send. */
+  async function confirmSmallTrunk(carId: string, people: readonly { requestId: string | null; name: string | null | undefined }[]): Promise<{ ok: boolean; waived: boolean }> {
+    if (people.length === 0 || !luggageWarns(dropCtx, carId, people.length)) return { ok: true, waived: false };
+    const car = carsData.find((c) => c.id === carId);
+    const accepted = await askSmallTrunk({
+      requestIds: people.flatMap((person) => (person.requestId ? [person.requestId] : [])),
+      names: people.map((person) => person.name ?? ""),
+      carId,
+      carName: car?.name ?? null,
+    });
+    return { ok: accepted, waived: accepted };
+  }
   const undoVersions = useRef(new Map<string, number>());
 
   // Reservation dialog's optional people picker (F3, docs/TODO.md, owner A5 2026-09-14):
@@ -247,7 +264,7 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
       let server;
       try { server = await fetchMergePreview(hostId, req.id, leg); } catch { return { leg: preferred, anchor }; }
       if (!server) return { leg: preferred, anchor };
-      if (server.ok) return { leg, anchor: leg === "return" ? "return" : leg === "out" && anchor === "return" ? null : anchor };
+      if (server.ok || server.waivable) return { leg, anchor: leg === "return" ? "return" : leg === "out" && anchor === "return" ? null : anchor };
       firstRefusal ??= mergeRefusalText(server.code, server.turnaroundSide);
     }
     toast.error(firstRefusal ?? he.mergedRide.invalid.unknown);
@@ -363,11 +380,20 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
     if (droppedOnRideId?.startsWith("merge:")) {
       droppedOnRideId = proposals.find((p) => p.id === droppedOnRideId!.slice(6))?.ride_id ?? undefined;
     }
+    // REQ §13.111 (a): a large-luggage request on a car without a large trunk - ask first, send the waiver with the placement.
+    const waiver = { allowSmallTrunk: false };
+    const askSmallTrunk = async (): Promise<boolean> => {
+      if (!needsLargeTrunk(req)) return true;
+      const asked = await confirmSmallTrunk(carId, [{ requestId: req.id, name: req.requester_full_name }]);
+      waiver.allowSmallTrunk = asked.waived;
+      return asked.ok;
+    };
     // OB1: a multi-day request is placed whole - every day on this car; the server refuses when the
     // car is not free on all of them (`series_car_unavailable`).
     if (req.series_id && !droppedOnRideId) {
+      if (!(await askSmallTrunk())) return;
       try {
-        await placeSeriesMutation.mutateAsync({ seriesId: req.series_id, carId, departmentId, weekStart });
+        await placeSeriesMutation.mutateAsync({ seriesId: req.series_id, carId, allowSmallTrunk: waiver.allowSmallTrunk, departmentId, weekStart });
         toast.success(he.sadranBoard.seriesPlaced);
       } catch { /* The mutation shows the error. */ }
       return;
@@ -377,7 +403,6 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
       toast.error(he.sadranBoard.invalidWindow);
       return;
     }
-    if (luggageBlocks(dropCtx, carId, req.has_luggage ? 1 : 0)) { toast.error(he.sadranBoard.luggageNeedsTrunkToast); return; }
     // R2B7: a drop ON a ride (any trip type) is a merge attempt: the merge flow when valid, else the reason.
     const dropHost = droppedOnRideId ? rides.find((ride) => ride.id === droppedOnRideId && ride.status !== "cancelled" && ride.car_id === carId && !servedOf(ride).some((entry) => entry.request_id === req.id)) : undefined;
     if (dropHost?.id && dropHost.starts_at && dropHost.ends_at) {
@@ -425,8 +450,9 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
     // Placement by the member-facing trip type and the request's own places (REQ §13.93).
     const placement = unmetPlacement(dropCtx, req, carId, window.startsAt);
     if (!placement) { toast.error(he.sadranBoard.invalidWindow); return; }
+    if (!(await askSmallTrunk())) return;
     if (!requestWithinFlex(req, window.startsAt, window.endsAt)) {
-      goToComposer({ requestId: req.id, rideId: null, type: "shift", payload: unmetShiftPayload(req, carId, window, placement, item.leg) });
+      goToComposer({ requestId: req.id, rideId: null, type: "shift", payload: { ...unmetShiftPayload(req, carId, window, placement, item.leg), ...(waiver.allowSmallTrunk ? { allow_small_trunk: true } : {}) } });
       return;
     }
     try {
@@ -444,6 +470,7 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
         is_pinned: true,
         pin_reason: "SADRAN_MANUAL",
         served: [{ request_id: req.id, ...placement.served }],
+        ...(waiver.allowSmallTrunk ? { allow_small_trunk: true } : {}),
       };
       let placedRideId = await editRideMutation.mutateAsync({ input: placeInput, departmentId, weekStart });
       // R2B7: undo works after a drop from the unmet list - it takes the placed ride back out (the request returns to the list).
@@ -575,9 +602,12 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
       toast.error(he.sadranBoard.seatMismatchToast);
       return;
     }
-    if (carId !== ride.car_id && luggageBlocks(dropCtx, carId, luggageCountOf(ride))) {
-      toast.error(he.sadranBoard.luggageNeedsTrunkToast);
-      return;
+    // REQ §13.111 (a): moving a ride with large luggage onto a car without a large trunk asks first.
+    let allowSmallTrunk = false;
+    if (carId !== ride.car_id && luggageCountOf(ride) > 0) {
+      const asked = await confirmSmallTrunk(carId, servedOf(ride).filter((entry) => entry.luggage && !entry.luggage_waived).map((entry) => ({ requestId: entry.request_id, name: entry.requester })));
+      if (!asked.ok) return;
+      allowSmallTrunk = asked.waived;
     }
     const otherRidesOnTargetCar = rides
       .filter((r) => r.id !== ride.id && r.car_id === carId && r.starts_at && r.ends_at)
@@ -613,6 +643,7 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
         is_pinned: true,
         allow_conflict: true,
         pin_reason: prevInput.pin_reason ?? "SADRAN_MANUAL",
+        ...(allowSmallTrunk ? { allow_small_trunk: true } : {}),
       };
       // Captured outside `applyMove` (a closure): TS's property-narrowing from the early
       // `!ride?.id` guard above does not carry into a nested function body.
@@ -665,7 +696,7 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
         requestId: driverRequest.id,
         rideId: ride.id,
         type: "shift",
-        payload: { car_id: carId, depart_at: newStartsAt, return_at: newEndsAt, origin_id: ride.origin_id, destination_id: ride.destination_id, ride_id: ride.id },
+        payload: { car_id: carId, depart_at: newStartsAt, return_at: newEndsAt, origin_id: ride.origin_id, destination_id: ride.destination_id, ride_id: ride.id, ...(allowSmallTrunk ? { allow_small_trunk: true } : {}) },
       });
     }
   }
@@ -765,6 +796,20 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
         goToComposer({
           requestId: item.request.id, rideId: null, type: "shift",
           payload: { car_id: suggestion.carId, ...(dropCtx.weekStartMs != null ? { depart_at: slotToIso(suggestion.window.start, dropCtx.weekStartMs) } : {}) },
+        });
+        return;
+      case "useAlternative":
+        // REQ §13.112 (a): the member's plan B as a proposal of type `alternative` (SOLVER §3.15) - the Sadran sends or
+        // drafts it; never automatic. The cars and the member's own two times; the plan's places come from the row.
+        if (dropCtx.weekStartMs == null) return;
+        goToComposer({
+          requestId: item.request.id, rideId: null, type: "alternative",
+          payload: {
+            car_id: suggestion.carId,
+            ...(suggestion.returnCarId ? { return_car_id: suggestion.returnCarId } : {}),
+            depart_at: slotToIso(suggestion.departSlot, dropCtx.weekStartMs),
+            ...(suggestion.returnSlot != null ? { return_at: slotToIso(suggestion.returnSlot, dropCtx.weekStartMs) } : {}),
+          },
         });
         return;
       case "changeOrigin":

@@ -16,6 +16,7 @@
 
 import { fromZonedTime } from "date-fns-tz";
 
+import { needsLargeTrunk } from "@/lib/luggageWaiver";
 import { isActiveStop } from "@/lib/routeStops";
 import { TZ } from "@/lib/time";
 import { effectiveWeekSettings } from "@/lib/weekSettings";
@@ -45,6 +46,18 @@ export type DestinationRow = Database["public"]["Tables"]["destinations"]["Row"]
 export type DepartmentSettingsRow = Database["public"]["Tables"]["department_settings"]["Row"];
 export type MaintenanceBlockRow = Database["public"]["Tables"]["car_maintenance_blocks"]["Row"];
 export type FairnessRow = Database["public"]["Functions"]["fairness_stats"]["Returns"][number];
+
+/** The columns of a `request_alternatives` row the solver bridge reads (REQ §13.112 a). */
+export interface AlternativeBridgeRow {
+  drop_place_id: string | null;
+  drop_place_text: string | null;
+  arrive_by: string;
+  pickup: boolean;
+  pickup_at: string | null;
+  pickup_place_id?: string | null;
+  pickup_place_text?: string | null;
+  applied_at?: string | null;
+}
 
 /** Sentinel destination id for requests with free-text (unclassified) destinations. */
 export const FREE_TEXT_DESTINATION_ID = "__free_text__";
@@ -143,6 +156,11 @@ export interface BuildSolverInputParams {
      * before this field existed.
      */
     stops?: { leg: "out" | "return"; position: number; active?: boolean; place_id: string | null }[];
+    /**
+     * `request_alternatives` row (REQ §13.112 a: plan B, one per request) -> `Request.alternative`; only read for a
+     * `fallback = 'alternative'` round trip / one-way request that is not yet served by it.
+     */
+    alternative?: AlternativeBridgeRow | null;
   })[];
   /** `ride_type_id -> code` (policy `rideType` rule params are keyed by `ride_types.code`, SOLVER.md §4.3). */
   rideTypeCodesById: Record<string, string>;
@@ -204,6 +222,32 @@ export interface BuildSolverInputParams {
   previousAssignments?: Pick<Assignment, "servedRequestIds" | "carId">[];
 }
 
+/** `Request.fallback` / `.alternative` / `.servedByAlternative` of one request row (REQ §13.112). */
+function fallbackOf(r: BuildSolverInputParams["requests"][number]): Pick<SolverRequest, "fallback" | "alternative" | "servedByAlternative"> {
+  const active = (r.trip_type === "round_trip" || r.trip_type === "one_way") && !r.series_id && !r.served_by_alternative;
+  const fallback = active && r.fallback !== "none" ? r.fallback : undefined;
+  const alt = r.alternative;
+  const alternative =
+    fallback === "alternative" && alt && !alt.applied_at && epochMs(alt.arrive_by) !== undefined
+      ? {
+          dropPlaceId: alt.drop_place_id ?? FREE_TEXT_DESTINATION_ID,
+          dropPlaceIsFreeText: !alt.drop_place_id,
+          dropPlaceText: alt.drop_place_text ?? undefined,
+          arriveByMs: epochMs(alt.arrive_by) as number,
+          pickupMs: alt.pickup ? epochMs(alt.pickup_at) : undefined,
+          ...(alt.pickup && alt.pickup_place_id ? { pickupPlaceId: alt.pickup_place_id } : {}),
+          ...(alt.pickup && !alt.pickup_place_id && alt.pickup_place_text ? { pickupPlaceIsFreeText: true, pickupPlaceText: alt.pickup_place_text } : {}),
+        }
+      : undefined;
+  return {
+    ...(fallback ? { fallback } : {}),
+    ...(alternative ? { alternative } : {}),
+    ...(r.served_by_alternative ? { servedByAlternative: true } : {}),
+    // the pickup-leg sibling of a plan B with a pickup from another place: the pair counts once (REQ §13.112 a)
+    ...(r.plan_b_parent_id ? { planBSibling: true } : {}),
+  };
+}
+
 function toSolverDestination(row: DestinationRow): SolverDestination {
   return {
     id: row.id,
@@ -244,7 +288,7 @@ export function buildSolverInput(params: BuildSolverInputParams): SolverInput {
 
   const destinationsById: Record<string, SolverDestination> = {};
   for (const row of params.destinations) destinationsById[row.id] = toSolverDestination(row);
-  const needsFreeTextEntry = params.requests.some((r) => !r.destination_id);
+  const needsFreeTextEntry = params.requests.some((r) => !r.destination_id || (r.alternative && !r.alternative.drop_place_id));
   if (needsFreeTextEntry && !destinationsById[FREE_TEXT_DESTINATION_ID]) {
     destinationsById[FREE_TEXT_DESTINATION_ID] = { id: FREE_TEXT_DESTINATION_ID, zone: "unknown" };
   }
@@ -287,9 +331,14 @@ export function buildSolverInput(params: BuildSolverInputParams): SolverInput {
         returnMs: epochMs(r.return_at),
         flexDeparture: flexOf(r.flex_depart_early, r.flex_depart_late),
         flexReturn: flexOf(r.flex_return_early, r.flex_return_late),
+        // REQ §13.112 (c): a window request ("N hours between A and B") moves as one block.
+        durationLocked: r.duration_locked ? true : undefined,
+        // REQ §13.112 (a)/(b): only a round trip / one-way (no multi-day series, not already served by its plan B) has an
+        // active fallback; a stored plan B of a request that became a הקפצה stays dormant (REQ §13.97).
+        ...fallbackOf(r),
         passengers: { adults: r.adults, childSeats: r.child_seats, boosters: r.boosters },
         coRiderMemberIds: params.companionsByRequestId?.[r.id] ?? [],
-        luggage: r.has_luggage,
+        luggage: needsLargeTrunk(r),   // REQ §13.111 (a): a waived request is solved as one without large luggage
         needsCarAtDestination: r.needs_car_at_destination,
         preferredCarId: params.cars.some((car) => car.id === r.preferred_car_id && car.department_id === r.department_id && car.type === "shared" && car.status === "active")
           ? r.preferred_car_id ?? undefined : undefined,

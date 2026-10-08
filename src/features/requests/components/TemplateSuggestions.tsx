@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
 import { toast } from "sonner";
 
 import { paths } from "@/app/routes";
@@ -11,6 +10,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { he } from "@/i18n/he";
 
 import type { TemplateSuggestion } from "../api";
+import { RequestLink } from "./RequestLink";
 import { useSnoozeTemplateMutation, useStopTemplateMutation, useTemplateSuggestionsQuery } from "../hooks";
 
 interface TemplateSuggestionsProps {
@@ -74,7 +74,7 @@ export function TemplateSuggestions({ weekStart }: TemplateSuggestionsProps) {
                         shown for — without it, `resolveWeekStart` silently falls back to the
                         earliest open week, which duplicates an existing request there once a
                         member has suggestions across more than one open week. */}
-                    <Link to={paths.requests.new({ template: row.templateId, week: row.weekStart })}>{he.request.useSuggestion}</Link>
+                    <RequestLink to={paths.requests.new({ template: row.templateId, week: row.weekStart })}>{he.request.useSuggestion}</RequestLink>
                   </Button>
                   <Button
                     size="sm"

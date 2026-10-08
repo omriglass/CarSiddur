@@ -44,6 +44,9 @@ const TEMPLATES: Record<string, string> = {
   SUGGEST_CHANGE_ORIGIN: 'יש רכב פנוי ב{origin} לאורך כל החלון המבוקש; ניתן להציע יציאה מ{origin} עם {car} — דורש הסכמה',
   SUGGEST_CHAIN_ONE_WAY: '{car} נשאר/ת ב{place} אחרי הנסיעה של {member}; אפשר לשבץ אותך עליו/ה ל{dest} ב-{dep} — דורש הסכמה',
   SUGGEST_CHAIN_ONE_WAY_ANON: '{car} נשאר/ת ב{place} אחרי נסיעה קודמת; אפשר לשבץ אותך עליו/ה ל{dest} ב-{dep} — דורש הסכמה',
+  SUGGEST_USE_ALTERNATIVE: 'תוכנית ב׳ של המבקש/ת: הקפצה ל{place} עד {arrive}{pickup} — דורש הסכמה',
+  SUGGEST_USE_ALTERNATIVE_PICKUP: ', ואיסוף משם ב-{pickup}',
+  SUGGEST_USE_ALTERNATIVE_PICKUP_FROM: ', ואיסוף מ{pickupPlace} ב-{pickup}',
   SUGGEST_EXTERNAL_CAB: 'ניתן להסתדר במונית לנסיעה זו',
   SUGGEST_EXTERNAL_RENTAL: 'משך הנסיעה ארוך; כדאי לשקול השכרת רכב',
   SUGGEST_EXTERNAL_PT: 'יש תחבורה ציבורית סבירה ל{dest}',
@@ -80,6 +83,7 @@ const PARAM_ERRORS: Record<string, string> = {
   DISTANCE_MAXKM_INVALID: 'פרמטר maxKm חסר או שגוי בכלל distance',
   PEOPLESERVED_CAP_INVALID: 'פרמטר cap חסר או שגוי בכלל peopleServed',
   FAIRNESS_LOOKBACK_INVALID: 'פרמטר lookbackWeeks חסר או שגוי בכלל fairness',
+  FAIRNESS_ALT_WEIGHT_INVALID: 'פרמטר alternativeServedWeight שגוי בכלל fairness (חייב להיות בין 0 ל-1)',
   SUBMISSIONTIME_LATEPENALTY_INVALID: 'פרמטר latePenalty חסר או שגוי בכלל submissionTime',
   FLEXIBILITYOFFERED_MINUTES_INVALID: 'פרמטר fullCreditMinutes חסר או שגוי בכלל flexibilityOffered',
 };

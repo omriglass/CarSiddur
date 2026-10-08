@@ -74,6 +74,9 @@ export function CarSwapDialog({ open, onOpenChange, departmentId, weekStart, day
     }
   }
 
+  const hardBlockers = preview?.blockers.filter((blocker) => !blocker.waivable) ?? [];
+  const waivableBlockers = preview?.blockers.filter((blocker) => blocker.waivable) ?? [];
+
   return (
     <ConfirmDialog
       open={open}
@@ -127,11 +130,22 @@ export function CarSwapDialog({ open, onOpenChange, departmentId, weekStart, day
               </div>
             ) : null}
 
-            {preview.blockers.length > 0 ? (
+            {hardBlockers.length > 0 ? (
               <div className="space-y-1 rounded-md border border-destructive/50 bg-destructive/5 p-2" data-testid="car-swap-blockers">
                 <p className="font-medium text-destructive">{he.carSwap.blockersTitle}</p>
                 <ul className="space-y-1 text-xs text-destructive">
-                  {preview.blockers.map((blocker, index) => (
+                  {hardBlockers.map((blocker, index) => (
+                    <li key={index}>{carSwapBlockerMessage(blocker, preview.rides, carNameById)}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+
+            {waivableBlockers.length > 0 ? (
+              <div className="space-y-1 rounded-md border border-amber-500/50 bg-amber-500/5 p-2" data-testid="car-swap-waivable">
+                <p className="font-medium">{he.smallTrunk.confirmTitle}</p>
+                <ul className="space-y-1 text-xs">
+                  {waivableBlockers.map((blocker, index) => (
                     <li key={index}>{carSwapBlockerMessage(blocker, preview.rides, carNameById)}</li>
                   ))}
                 </ul>

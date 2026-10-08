@@ -1,35 +1,50 @@
 import { describe, expect, it } from "vitest";
 
-import { luggageBlocks, swapLuggageBlocked } from "./dropValidity";
+import { luggageCountOf, luggageWarns, requestsNeedingSmallTrunkWaiver } from "./dropValidity";
 
 import type { BoardDropContext } from "./dropValidity";
+import type { BoardRide } from "../api";
 
-const ride = (id: string, carId: string, luggage: number, startsAt = "2026-10-12T07:00:00Z", endsAt = "2026-10-12T09:00:00Z") => ({
-  id, car_id: carId, status: "approved", starts_at: startsAt, ends_at: endsAt,
-  served: Array.from({ length: Math.max(1, luggage) }, (_, i) => ({ request_id: `${id}-${i}`, role: i === 0 ? "driver" : "passenger", luggage: i < luggage })),
-});
-const ctx = (rides: unknown[]) => ({
-  cars: [{ id: "big", features: ["large_trunk"] }, { id: "small", features: [] }, { id: "big2", features: ["large_trunk"] }],
-  rides,
-}) as unknown as Pick<BoardDropContext, "cars" | "rides">;
+const ride = (id: string, luggage: number, waived = 0) => ({
+  id,
+  served: Array.from({ length: Math.max(1, luggage) }, (_, i) => ({
+    request_id: `${id}-${i}`, role: i === 0 ? "driver" : "passenger", luggage: i < luggage, luggage_waived: i < waived,
+  })),
+}) as unknown as BoardRide;
+const ctx = {
+  cars: [{ id: "big", features: ["large_trunk"] }, { id: "small", features: [] }],
+} as unknown as Pick<BoardDropContext, "cars">;
 
-describe("luggageBlocks", () => {
-  it("refuses a car without large_trunk, allows one with it", () => {
-    expect(luggageBlocks(ctx([]), "small", 1)).toBe(true);
-    expect(luggageBlocks(ctx([]), "big", 1)).toBe(false);
-    expect(luggageBlocks(ctx([]), "small", 0)).toBe(false);
+describe("luggageWarns (REQ §13.111 a: a warning, no longer a refusal)", () => {
+  it("warns for a car without large_trunk, never for one with it or for no luggage", () => {
+    expect(luggageWarns(ctx, "small", 1)).toBe(true);
+    expect(luggageWarns(ctx, "big", 1)).toBe(false);
+    expect(luggageWarns(ctx, "small", 0)).toBe(false);
   });
   it("has no per-car count: any number of luggage requests fit one large-trunk car", () => {
-    const rides = [ride("a", "big", 5)];
-    expect(luggageBlocks(ctx(rides), "big", 3)).toBe(false);
-    expect(luggageBlocks(ctx(rides), "small", 1)).toBe(true);
+    expect(luggageWarns(ctx, "big", 5)).toBe(false);
+    expect(luggageWarns(ctx, "small", 5)).toBe(true);
   });
 });
 
-describe("swapLuggageBlocked", () => {
-  it("blocks moving a luggage ride to a car without a trunk", () => {
-    expect(swapLuggageBlocked(ctx([ride("a", "big", 1)]), "big", "small", "2026-10-12")).toBe(true);
-    expect(swapLuggageBlocked(ctx([ride("a", "big", 0)]), "big", "small", "2026-10-12")).toBe(false);
-    expect(swapLuggageBlocked(ctx([ride("a", "big", 4)]), "big", "big2", "2026-10-12")).toBe(false);
+describe("luggageCountOf", () => {
+  it("counts only the large-luggage requests that still need a large trunk", () => {
+    expect(luggageCountOf(ride("a", 3))).toBe(3);
+    expect(luggageCountOf(ride("a", 3, 2))).toBe(1);
+    expect(luggageCountOf(ride("a", 0))).toBe(0);
+  });
+});
+
+describe("requestsNeedingSmallTrunkWaiver", () => {
+  const requests = [
+    { id: "needs", has_luggage: true, luggage_waived_at: null },
+    { id: "waived", has_luggage: true, luggage_waived_at: "2026-10-17T08:00:00Z" },
+    { id: "none", has_luggage: false, luggage_waived_at: null },
+  ];
+  it("lists the requests that need the waiver on a small car", () => {
+    expect(requestsNeedingSmallTrunkWaiver(ctx, "small", requests).map((request) => request.id)).toEqual(["needs"]);
+  });
+  it("lists nothing on a large-trunk car", () => {
+    expect(requestsNeedingSmallTrunkWaiver(ctx, "big", requests)).toEqual([]);
   });
 });

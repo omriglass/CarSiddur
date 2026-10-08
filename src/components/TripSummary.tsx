@@ -28,7 +28,8 @@ export function TripSummary({ name, destination, purpose, departAt, returnAt }: 
         {dateLabel(anchor)} · {wholeDay ? <>
           {he.flex.anyTime}{lastDay && lastDay !== dateKey(departAt!) ? <> – {dateLabel(lastDay)}</> : null}
         </> : departAt && returnAt ? <>
-          <bdi>{formatTime(new Date(departAt))}</bdi>–{crossesDate ? <>{dateLabel(returnAt)} </> : null}<bdi>{formatTime(new Date(returnAt))}</bdi>
+          {/* R9B5: an LTR isolate, otherwise an RTL page shows the range reversed ("23:15–20:00"). */}
+          <span dir="ltr">{formatTime(new Date(departAt))}–{crossesDate ? <>{dateLabel(returnAt)} </> : null}{formatTime(new Date(returnAt))}</span>
         </> : <>{departAt ? he.field.depart : he.field.return} <bdi>{formatTime(new Date(anchor))}</bdi></>}
       </> : null}
       {purpose ? <>{anchor ? " · " : ""}{purpose}</> : null}

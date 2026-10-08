@@ -61,3 +61,18 @@ describe("shift payload never carries places", () => {
     expect(out).toEqual({ car_id: "c", depart_at: "2026-09-13T06:00:00.000Z", return_at: "2026-09-13T08:00:00.000Z" });
   });
 });
+
+describe("buildProposalPayload: alternative (REQ §13.112 a)", () => {
+  it("needs a car and the member's departure; carries the optional return and return car", () => {
+    expect(buildProposalPayload({ ...base, type: "alternative", prefillPayload: { car_id: "c1" } })).toBeNull();
+    expect(buildProposalPayload({ ...base, type: "alternative", prefillPayload: { depart_at: "2026-10-11T06:00:00.000Z" } })).toBeNull();
+    expect(buildProposalPayload({ ...base, type: "alternative", prefillPayload: { car_id: "c1", depart_at: "2026-10-11T06:00:00.000Z", extra: 1 } }))
+      .toEqual({ car_id: "c1", depart_at: "2026-10-11T06:00:00.000Z" });
+    expect(buildProposalPayload({ ...base, type: "alternative", prefillPayload: {
+      car_id: "c1", return_car_id: "c2", depart_at: "2026-10-11T06:00:00.000Z", return_at: "2026-10-11T16:00:00.000Z", allow_small_trunk: true } }))
+      .toEqual({ car_id: "c1", return_car_id: "c2", depart_at: "2026-10-11T06:00:00.000Z", return_at: "2026-10-11T16:00:00.000Z", allow_small_trunk: true });
+    // the same car for both legs needs no return car
+    expect(buildProposalPayload({ ...base, type: "alternative", prefillPayload: { car_id: "c1", return_car_id: "c1", depart_at: "2026-10-11T06:00:00.000Z" } }))
+      .toEqual({ car_id: "c1", depart_at: "2026-10-11T06:00:00.000Z" });
+  });
+});

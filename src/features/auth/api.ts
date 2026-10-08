@@ -19,6 +19,7 @@ export type ProfilePatch = Partial<
     | "home_week_preference"
     | "muted_events"
     | "does_not_drive"
+    | "classic_request_form"
   >
 >;
 
@@ -28,7 +29,7 @@ export type ProfilePatch = Partial<
  * `phone`) stays satisfied.
  */
 const PROFILE_COLUMNS_WITHOUT_PHONE =
-  "approval_status, approved_at, approved_by, avatar_url, created_at, default_boosters, default_child_seats, default_department_id, display_name, does_not_drive, email, full_name, google_name, home_week_preference, id, is_admin, muted_events, updated_at";
+  "approval_status, approved_at, approved_by, avatar_url, created_at, default_boosters, default_child_seats, default_department_id, display_name, does_not_drive, email, full_name, classic_request_form, google_name, home_week_preference, id, is_admin, muted_events, updated_at";
 
 type ProfileWithoutPhone = Omit<Profile, "phone">;
 

@@ -11,6 +11,8 @@ export const destinationSchema = z.object({
   travel_minutes: z.number().int().min(0).nullable(),
   public_transport_score: z.number().int().min(0).max(5).nullable(),
   is_approved: z.boolean(),
+  /** REQ §13.112 (a): members may name this place as the drop point of their plan B. */
+  is_drop_point: z.boolean(),
 }).refine((values) => (values.lat === null) === (values.lng === null), {
   message: he.adminDestinations.coordinatesPair, path: ["lng"],
 });

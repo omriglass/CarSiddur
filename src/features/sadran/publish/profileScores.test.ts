@@ -48,4 +48,26 @@ describe("publication policy scores", () => {
     const profiles = calculateProfileScores({ ...input, requests: [r1, free, s1, s2] }, new Set(["r1"]));
     expect(profiles.flatMap((p) => p.requests.map((q) => q.request_id)).sort()).toEqual(["free", "r1", "s1", "s2"]);
   });
+  it("a request served by its plan B counts the policy's alternativeServedWeight (default 0.1) of its priority (REQ §13.112 a)", () => {
+    const plain = calculateProfileScores(input, new Set(["r1"]))[0]!;
+    const viaPlanB = calculateProfileScores({ ...input, requests: [{ ...r1, servedByAlternative: true }, r2] }, new Set(["r1"]))[0]!;
+    expect(viaPlanB.priority_total).toBe(plain.priority_total);
+    expect(viaPlanB.served_count).toBe(1);
+    expect(viaPlanB.served_priority_total).toBeCloseTo(plain.served_priority_total * 0.1, 6);
+    expect(viaPlanB.requests.find((q) => q.request_id === "r1")?.weight).toBe(0.1);
+    expect(viaPlanB.requests.find((q) => q.request_id === "r2")?.weight).toBeUndefined();
+    const custom = calculateProfileScores({ ...input, requests: [{ ...r1, servedByAlternative: true }, r2],
+      policy: { ...input.policy, rules: [...input.policy.rules, { type: "fairness", weight: 0, params: { lookbackWeeks: 3, alternativeServedWeight: 0.5 } }] } }, new Set(["r1"]))[0]!;
+    expect(custom.requests.find((q) => q.request_id === "r1")?.weight).toBe(0.5);
+  });
+});
+
+describe("plan B pair counts once (REQ §13.112 a)", () => {
+  it("the pickup-leg sibling weighs 0 while its parent weighs the plan B weight", () => {
+    const base = makeRequest({ id: "p1", memberId: "m1", departureMs: slotMs(32), returnMs: slotMs(40) });
+    const input2 = baseInput({ cars: [makeCar("car")], requests: [{ ...base, servedByAlternative: true }, makeRequest({ id: "p2", memberId: "m1", departureMs: slotMs(60), returnMs: slotMs(64), servedByAlternative: true, planBSibling: true })] });
+    const rows = calculateProfileScores(input2, new Set(["p1", "p2"]))[0]!.requests;
+    expect(rows.find((r) => r.request_id === "p1")?.weight).toBe(0.1);
+    expect(rows.find((r) => r.request_id === "p2")?.weight).toBe(0);
+  });
 });

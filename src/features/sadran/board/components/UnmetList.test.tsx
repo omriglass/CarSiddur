@@ -86,3 +86,27 @@ describe("one-way unmet cards", () => {
     expect(screen.queryByRole("heading", { name: title })).not.toBeInTheDocument();
   });
 });
+
+describe("plan B and אסתדר on the unmet card (REQ §13.112)", () => {
+  const roundTrip = { ...request, id: "rt", trip_shape: "round_trip", trip_type: "round_trip", depart_at: "2026-09-10T05:00:00Z", return_at: "2026-09-10T09:00:00Z" } as WeekRequestRow;
+  const alt = { drop_place_id: "p", drop_place_text: null, arrive_by: "2026-09-10T05:00:00Z", pickup: true, pickup_at: "2026-09-10T16:00:00Z", applied_at: null, drop_place: { name: "צומת חריש" } };
+  const suggestion = { kind: "useAlternative" as const, requestId: "rt", carId: "c1", departSlot: 10, returnSlot: 20, reasonCode: "SUGGEST_USE_ALTERNATIVE", reason: "תוכנית ב׳ של המבקש/ת", cost: 0, confidence: 0.4 };
+  const solverInfo = { requestId: "rt", score: 0, blockers: [], reasonCode: "UNMET_NO_CAR", reason: "x", suggestions: [suggestion] };
+
+  it("shows the member's plan B, marks the suggestion 'possible' and proposes it", () => {
+    const onAction = vi.fn();
+    const planB = { destinationName: "Haifa", request: { ...roundTrip, fallback: "alternative", alternative: alt } as WeekRequestRow, solverInfo };
+    render(<UnmetList items={[planB]} onAction={onAction} onDecision={vi.fn()} />);
+    expect(screen.getByTestId("unmet-fallback")).toHaveTextContent("ב׳: הקפצה לצומת חריש עד 08:00, ואיסוף משם ב־19:00");
+    expect(screen.getByTestId("unmet-plan-b-possible")).toHaveTextContent(he.sadranPlanB.possible);
+    fireEvent.click(screen.getByTestId("unmet-plan-b-propose"));
+    expect(onAction).toHaveBeenCalledWith(planB, suggestion);
+    expect(screen.getByRole("button", { name: he.sadranProposal.solveOutside })).toBeInTheDocument();
+  });
+  it("אסתדר: shows the word and offers no outside-solution action", () => {
+    const manage = { destinationName: "Haifa", request: { ...roundTrip, fallback: "manage", alternative: null } as WeekRequestRow };
+    render(<UnmetList items={[manage]} onAction={vi.fn()} onDecision={vi.fn()} />);
+    expect(screen.getByTestId("unmet-fallback")).toHaveTextContent("אסתדר");
+    expect(screen.queryByRole("button", { name: he.sadranProposal.solveOutside })).not.toBeInTheDocument();
+  });
+});

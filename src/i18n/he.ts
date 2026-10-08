@@ -148,6 +148,17 @@ export const he = {
     successToast: "הרכבים הוחלפו",
     notifiedToast: "נשלחו {{count}} הודעות",
   },
+  /** REQ §13.111 (a): the large-trunk requirement waived by whoever places by hand ("allow_small_trunk"). */
+  smallTrunk: {
+    confirmTitle: "צריך תא מטען גדול",
+    confirmBody: "הבקשה של {{name}} צריכה תא מטען גדול, ול{{car}} אין. לשבץ בכל זאת?",
+    confirmBodyMany: "הבקשות של {{name}} צריכות תא מטען גדול, ול{{car}} אין. לשבץ בכל זאת?",
+    confirmAction: "לשבץ בכל זאת",
+    unknownName: "הנוסע/ת",
+    unknownCar: "רכב זה",
+    waivedLabel: "ציוד רב — ויתור על תא מטען גדול",
+    dropWarning: "אין תא מטען גדול ברכב — יידרש אישור",
+  },
   ...heMember,
   ...heAdmin,
   ...heSadran,
@@ -218,12 +229,12 @@ export const he = {
     tightSchedule: "לוח זמנים צפוף",
     combinedWindow: "שעות הנסיעה המשולבת",
     combinedConsent: "השינוי יוחל רק אחרי אישור הנהג/ת וכל הנוסעים המושפעים ממנו.",
-    combinedSummary: "נסיעה משולבת: {{driver}} מסיע/ה את {{passenger}} ל{{destination}}, ברכב {{car}}, בשעות {{start}}–{{end}}.",
-    combinedSummaryReturn: "נסיעה משולבת: {{driver}} אוסף/ת את {{passenger}} מ{{destination}}, ברכב {{car}}, בשעות {{start}}–{{end}}.",
+    combinedSummary: "נסיעה משולבת: {{driver}} מסיע/ה את {{passenger}} ל{{destination}}, ברכב {{car}}, בשעות ⁦{{start}}–{{end}}⁩.",
+    combinedSummaryReturn: "נסיעה משולבת: {{driver}} אוסף/ת את {{passenger}} מ{{destination}}, ברכב {{car}}, בשעות ⁦{{start}}–{{end}}⁩.",
     driverWanted: "נהג/ת שעוד לא נמצא/ה",
     /** R4U7: a merge into a ride still needing a driver names no driver. */
-    combinedSummaryNoDriver: "נסיעה משולבת: הנסיעה עוד מחפשת נהג/ת. {{passenger}} מצטרף/ת לנסיעה ל{{destination}}, ברכב {{car}}, בשעות {{start}}–{{end}}.",
-    combinedSummaryReturnNoDriver: "נסיעה משולבת: הנסיעה עוד מחפשת נהג/ת. {{passenger}} נאסף/ת מ{{destination}}, ברכב {{car}}, בשעות {{start}}–{{end}}.",
+    combinedSummaryNoDriver: "נסיעה משולבת: הנסיעה עוד מחפשת נהג/ת. {{passenger}} מצטרף/ת לנסיעה ל{{destination}}, ברכב {{car}}, בשעות ⁦{{start}}–{{end}}⁩.",
+    combinedSummaryReturnNoDriver: "נסיעה משולבת: הנסיעה עוד מחפשת נהג/ת. {{passenger}} נאסף/ת מ{{destination}}, ברכב {{car}}, בשעות ⁦{{start}}–{{end}}⁩.",
     separateDestinations: "יעדים לפי בקשה",
     /** REQ §13.93/SOLVER §3.15: the `origin` proposal's one-line summary (composer + `/p/:token`). */
     originChangeSummary: "יציאה מ{{to}} במקום מ{{from}}, ברכב {{car}}",
@@ -428,7 +439,7 @@ export const he = {
     luggage: "מטען גדול",
     flexDepart: "גמישות ביציאה",
     flexReturn: "גמישות בחזרה",
-    notes: "הערות לסדרן/ית",
+    notes: "הערות לעיני הסדרן בלבד",
     repeatWeekly: "חוזר כל שבוע",
   },
   flex: {
@@ -506,6 +517,8 @@ export const he = {
       external: "פתרון חיצוני",
       /** REQ §13.93/SOLVER §3.15: the `changeOrigin` suggestion -- "car free at a different place". */
       origin: "יציאה ממקום אחר",
+      /** REQ §13.112 a: the member's own plan B ("אין רכב — הקפצה ל…"). */
+      alternative: "תוכנית ב׳",
     },
     optOutFreed: "אל תציעו לי מקומות שמתפנים השבוע",
     recorded: {
@@ -527,7 +540,7 @@ export const he = {
     /** Vertical-board redesign (UX_FLOWS.md §20): shared by the Sadran board and the member siddur grid, so kept here rather than under `sadranBoard.*`. */
     showEarlyHours: "הצג שעות מוקדמות",
     hideEarlyHours: "הסתר שעות מוקדמות",
-    earlyMarkerTitle: "{{start}}–{{end}} (לפני טווח התצוגה)",
+    earlyMarkerTitle: "⁦{{start}}–{{end}}⁩ (לפני טווח התצוגה)",
   },
   admin: {
     members: {
@@ -638,6 +651,13 @@ export const he = {
     staleInput: "הבקשות או הנסיעות השתנו מאז הרצת הפתרון — יש להריץ את הפתרון מחדש",
     notAuthorized: "אין לך הרשאה לבצע פעולה זו",
     publicationDrafts: "לא ניתן לפרסם — בימים שנבחרו יש טיוטות הצעה שלא נשלחו. יש לשלוח או למחוק אותן בלוח.",
+    /** REQ §13.112 (a): publishing waits for every plan-B proposal of the day (not bypassable). */
+    publicationAlternativesPending: "לא ניתן לפרסם — בימים שנבחרו יש הצעות של תוכנית ב׳ שעוד לא נענו. יש להמתין לתשובה או לבטל אותן בלוח.",
+    alternativeNotApplicable: "אי אפשר להציע תוכנית ב׳ לבקשה הזאת (אין תוכנית ב׳, או שהבקשה כבר טופלה)",
+    alternativePayloadInvalid: "פרטי ההצעה של תוכנית ב׳ לא תקינים — הרכב או השעות אינם מתאימים לתוכנית שהמבקש/ת כתב/ה",
+    requestServedByAlternative: "הבקשה כבר שובצה בתוכנית ב׳ — אי אפשר לערוך אותה. אפשר לבטל אותה ולהגיש בקשה חדשה.",
+    alternativeChanged: "המבקש/ת שינה/תה את תוכנית ב׳ אחרי שההצעה נשלחה",
+    alternativeUnavailable: "תוכנית ב׳ כבר לא אפשרית — הרכב תפוס בשעות האלה",
     invalidRange: "טווח התאריכים אינו תקין (עד 400 ימים, סוף אחרי התחלה)",
     lastAdminRequired: "לא ניתן להסיר את ההרשאות של המנהל/ת האחרון/ה במערכת",
     weekNotOpen: "השבוע הזה סגור להגשת בקשות",
@@ -650,6 +670,14 @@ export const he = {
     joinOwnRide: "אי אפשר לבקש להצטרף לנסיעה שאת/ה כבר בה",
     /** REQ §13.95 (H3): `set_request_trip_type` — a round trip needs a return time. */
     tripTypeNeedsReturn: "אי אפשר לעבור להלוך-חזור — לבקשה אין שעת חזרה",
+    /** REQ §13.112 (c): the server refused a window request (not a single-day round trip, or the slack is not "later only, equal at both ends"). */
+    invalidDurationLock: "חלון הזמן שנבחר אינו תקין — צריך הלוך-חזור ביום אחד",
+    /** REQ §13.112 (a)/(b): `submit_request` refused the "אם אין רכב" line. */
+    invalidFallback: "האפשרות שנבחרה לשורת \"אם אין רכב\" אינה תקינה",
+    fallbackNotAllowed: "\"אם אין רכב\" אפשרי רק בהלוך-חזור או בהלוך בלבד, ביום אחד",
+    alternativeRequired: "בחר/י נקודת הקפצה ושעת הגעה לתוכנית ב׳",
+    invalidAlternative: "פרטי תוכנית ב׳ אינם תקינים — בדוק/י את הנקודה והשעות",
+    invalidAlternativeTime: "שעות תוכנית ב׳ צריכות להיות באותו יום, בקפיצות של רבע שעה, והאיסוף אחרי ההגעה",
     /** REQ §13.93/SOLVER §3.15: accepting a `changeOrigin` proposal found the car/window no longer free. */
     originChangeUnavailable: "הרכב כבר לא פנוי בנקודת היציאה הזו — יש להריץ הצעה חדשה",
     carNotAtLegOrigin: "הרכב לא נמצא בנקודת היציאה בשעה הזו",
@@ -662,6 +690,9 @@ export const he = {
     noEligibleDriver: "אין בנסיעה הזו מי שיכול/ה לנהוג",
     /** REQ §13.93 "Multi-stop rides": submit_request()'s stops payload failed validation. */
     invalidStops: "פרטי העצירות אינם תקינים",
+    /** REQ §13.110 (b): `submit_request` refused the anchor keys (`invalid_anchor`, `anchor_time_mismatch`). */
+    invalidAnchor: "אופן ציון השעה אינו תקין — נסה/י לבחור את השעה מחדש",
+    invalidAnchorTime: "השעה שצוינה אינה תקינה (יום, רבע שעה או סדר השעות)",
     invalidPlace: "המקום שנבחר אינו תקין",
     unmergeBaseRequest: "אי אפשר להוציא את הבקשה שהנסיעה נוצרה עבורה",
     joinLegsNotDropOff: "אפשר לחבר לנסיעה אחת רק הקפצה הלוך וחזור",
@@ -693,6 +724,7 @@ export const he = {
     rideDriverNotAssignable: "אי אפשר לשנות את הנהג/ת של הנסיעה הזו",
     driverNotMember: "הנהג/ת שנבחר/ה אינו/ה חבר/ה במחלקה",
     luggageCapacityViolation: "לרכב אין תא מטען גדול לציוד של הבקשה הזו",
+    needsLargeTrunk: "הבקשה צריכה תא מטען גדול, ולרכב אין. אפשר לשבץ בכל זאת באישור מפורש",
     rideSeatsExceeded: "אין מספיק מקום ברכב לכל האנשים שנבחרו",
     invalidRidePassenger: "פרטי הנוסע/ת אינם תקינים",
     rideDriverNotRemovable: "לא ניתן להסיר את הנהג/ת מהנסיעה — יש לבטל את הנסיעה במקום זאת",

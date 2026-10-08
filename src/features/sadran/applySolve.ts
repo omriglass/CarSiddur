@@ -58,9 +58,10 @@ import { solve } from "@/solver";
 import * as api from "./api";
 import { isoToSlot, slotToIso } from "./board/geometry";
 import { DEFAULT_STOP_MINUTES, homeTravelEdges, makeHop, type Hop } from "@/lib/rideRoute";
+import { needsLargeTrunk } from "@/lib/luggageWaiver";
 import { dateKey } from "@/lib/time";
 import { effectiveWeekSettings } from "@/lib/weekSettings";
-import { requestIdsWithOpenProposal, resolveDraftPlacements } from "./board/draftOverlay";
+import { alternativeLegs, requestIdsWithOpenProposal, resolveDraftPlacements } from "./board/draftOverlay";
 
 import type { BoardRide, ProposalRow, RequestRow, WeekRequestRow } from "./api";
 import type { Assignment, AssignmentLeg, FixedRide, Passengers, Policy, SolverInput, SolverOutput } from "@/solver";
@@ -141,7 +142,7 @@ export function boardRideToFixedRide(ride: BoardRide, weekStartMs: number): Fixe
     }),
     { adults: 0, childSeats: 0, boosters: 0 },
   );
-  const luggageCount = served.filter((s) => s.luggage).length;
+  const luggageCount = served.filter((s) => s.luggage && !s.luggage_waived).length;
 
   return {
     id: ride.id,
@@ -306,6 +307,23 @@ export function draftFixedRides(
       };
       continue;
     }
+    // REQ §13.112 (a): a plan-B draft holds the car for its drop-off and its pickup (two chauffeur blocks), nothing else of the request.
+    if (placement.type === "alternative") {
+      const proposal = proposals.find((p) => p.id === placement.proposalId);
+      const origin = placement.originId ?? homeDestinationId;
+      for (const leg of alternativeLegs((proposal?.payload ?? {}) as Record<string, unknown>)) {
+        const legWindow = { start: isoToSlot(leg.startsAt, weekStartMs), end: isoToSlot(leg.endsAt, weekStartMs) };
+        if (result.some((f) => f.carId === leg.carId && legWindow.start < f.window.end + bufferSlots && f.window.start < legWindow.end + bufferSlots)) continue;
+        result.push({
+          id: `draft:${placement.proposalId}:${leg.leg}`, carId: leg.carId, window: legWindow, originId: origin, destinationId: origin,
+          legs: [{ requestId: request.id, leg: leg.leg, carMode: "chauffeur", originId: origin, destinationId: placement.destinationId ?? origin, role: "passenger" }],
+          servedRequestIds: [request.id],
+          passengers: { adults: request.adults, childSeats: request.child_seats, boosters: request.boosters },
+          luggageCount: needsLargeTrunk(request) ? 1 : 0, overnightAck: false, kind: "pinned",
+        });
+      }
+      continue;
+    }
     // The draft's window replaces the request's own current ride (and the ride it explicitly replaces).
     for (let i = result.length - 1; i >= 0; i--) {
       const f = result[i]!;
@@ -334,7 +352,7 @@ export function draftFixedRides(
       }],
       servedRequestIds: [request.id],
       passengers: { adults: request.adults, childSeats: request.child_seats, boosters: request.boosters },
-      luggageCount: request.has_luggage ? 1 : 0,
+      luggageCount: needsLargeTrunk(request) ? 1 : 0,
       overnightAck: false,
       kind: "pinned",
     });

@@ -11,7 +11,7 @@ import type { BoardRide, ProposalRow, WeekRequestRow } from "../api";
 export interface DraftPlacement {
   proposalId: string;
   requestId: string;
-  type: "shift" | "merge" | "origin";
+  type: "shift" | "merge" | "origin" | "alternative";
   status: ProposalRow["status"];
   carId: string;
   startsAt: string;
@@ -24,6 +24,42 @@ export interface DraftPlacement {
   replacesRideId: string | null;
   /** Shift of ONE leg of a הקפצה (payload `leg`, else inferred from the single time it carries): the label says "איסוף מ..." for `return`. */
   leg?: "out" | "return" | null;
+}
+
+/** One leg of a plan-B (`alternative`) draft: the car's block for the drop-off (`out`) or the pickup (`return`). */
+export interface AlternativeLeg {
+  leg: "out" | "return";
+  carId: string;
+  startsAt: string;
+  endsAt: string;
+}
+
+const ALTERNATIVE_DWELL_MS = 10 * 60_000;
+
+/**
+ * REQ §13.112 (a): the car blocks of a plan-B proposal's payload (`create_proposal`'s completed payload). A drop-off ride
+ * is the car taking the member there and coming back empty (twice the drive plus the chauffeur dwell, rounded up to the
+ * quarter hour), starting when it leaves (`depart_at`); the pickup ride ends when the member is back (`return_at`).
+ */
+export function alternativeLegs(payload: Record<string, unknown>): AlternativeLeg[] {
+  const carId = str(payload.car_id);
+  const departAt = str(payload.depart_at);
+  const arriveBy = str(payload.arrive_by);
+  if (!carId || !departAt || !arriveBy) return [];
+  const total = (driveMs: number) => Math.ceil((2 * driveMs + ALTERNATIVE_DWELL_MS) / 900_000) * 900_000;
+  const outTotal = total(Math.max(0, Date.parse(arriveBy) - Date.parse(departAt)));
+  const legs: AlternativeLeg[] = [{ leg: "out", carId, startsAt: departAt, endsAt: new Date(Date.parse(departAt) + outTotal).toISOString() }];
+  const returnAt = str(payload.return_at);
+  const pickupAt = str(payload.pickup_at);
+  if (!returnAt && pickupAt && (str(payload.pickup_place_id) || str(payload.pickup_place_text))) {
+    // a pickup from another place: the car drives there empty first and brings the member home (same drive as the drop-off, estimated)
+    const drive = Math.max(0, Date.parse(arriveBy) - Date.parse(departAt));
+    legs.push({ leg: "return", carId: str(payload.return_car_id) ?? carId, startsAt: new Date(Date.parse(pickupAt) - drive - ALTERNATIVE_DWELL_MS).toISOString(), endsAt: new Date(Date.parse(pickupAt) + drive).toISOString() });
+  } else if (returnAt && pickupAt) {
+    const retTotal = total(Math.max(0, Date.parse(returnAt) - Date.parse(pickupAt)));
+    legs.push({ leg: "return", carId: str(payload.return_car_id) ?? carId, startsAt: new Date(Date.parse(returnAt) - retTotal).toISOString(), endsAt: returnAt });
+  }
+  return legs;
 }
 
 /** Per merge proposal id: the merged ride's window as the server's `merge_preview` computed it (REQ item 108 M1). */
@@ -71,6 +107,14 @@ export function resolveDraftPlacement(
     const endsAt = new Date(Math.max(Date.parse(server?.endsAt ?? preview?.endsAt ?? host.ends_at), Date.parse(str(payload.ends_at) ?? host.ends_at))).toISOString();
     return { ...common, type: "merge", carId: host.car_id, startsAt, endsAt,
       originId: host.origin_id, destinationId: host.destination_id, hostRideId: host.id, replacesRideId: null };
+  }
+
+  if (proposal.type === "alternative") {
+    // The board draws the drop-off block (the pickup block exists only for the solver, `alternativeLegs`).
+    const first = alternativeLegs(payload)[0];
+    if (!first) return null;
+    return { ...common, type: "alternative", carId: first.carId, startsAt: first.startsAt, endsAt: first.endsAt,
+      originId: request.origin_id ?? homeId ?? null, destinationId: str(payload.drop_place_id), hostRideId: null, replacesRideId: null, leg: "out" };
   }
 
   if (proposal.type === "origin") {

@@ -1,5 +1,6 @@
 import { Sheet, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { PortalSheetContent } from "@/components/PortalSheetContent";
+import { CENTERED_ON_DESKTOP } from "@/components/sheetLayout";
 import { he } from "@/i18n/he";
 
 import type { CarFreeWindow } from "@/features/siddur/freeWindows";
@@ -69,7 +70,7 @@ export function QuickRequestSheet({
           that is the origin line's button — and close the destination popover again. */}
       <PortalSheetContent
         side="bottom"
-        className="max-h-[85dvh] overflow-y-auto overscroll-contain"
+        className={`max-h-[85dvh] overflow-y-auto overscroll-contain ${CENTERED_ON_DESKTOP}`}
         onOpenAutoFocus={(event) => event.preventDefault()}
       >
         <SheetHeader className="sr-only">

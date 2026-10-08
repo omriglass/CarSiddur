@@ -4,6 +4,8 @@ import { dateKey, formatTime } from "@/lib/time";
 import { intervalToFlexValue, type FlexValue } from "./mapper";
 import { REQUEST_FORM_DEFAULTS, type RequestFormValues } from "./schema";
 import { routeStopsToDestinationValues } from "./stops";
+import { anchorFormFields } from "./timeAnchors";
+import { windowFormFields } from "./timeWindow";
 import { initialTripType } from "./tripType";
 
 import type { TemplateSuggestion } from "./api";
@@ -50,6 +52,8 @@ export function suggestionToFormValues(row: TemplateSuggestion, weekStart: strin
     dropOffPickup,
     departTime,
     returnTime,
+    ...anchorFormFields(row, timeFromInstant),
+    ...windowFormFields({ durationLocked: row.durationLocked, departAt: row.departAt, returnAt: row.returnAt, flexReturnLate: row.flexReturnLate }),
     returnNextDay: false,
     // REQ §88: the decided car mode is no longer copied into the form — the member never
     // chooses it, and `submit_request` re-derives it server-side on every submission.

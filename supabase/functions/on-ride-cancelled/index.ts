@@ -103,6 +103,8 @@ interface SolverRequest {
   returnMs?: number;
   flexDeparture: { earlierMin: number | 'day'; laterMin: number | 'day' };
   flexReturn: { earlierMin: number | 'day'; laterMin: number | 'day' };
+  /** REQ §13.112 (c): a window request slides as one block (solver `Request.durationLocked`). */
+  durationLocked?: boolean;
   passengers: Passengers;
   coRiderMemberIds: string[];
   luggage: boolean;
@@ -265,7 +267,7 @@ Deno.serve(async (req) => {
           'id, requester_id, department_id, destination_id, destination_text, trip_shape, depart_at, return_at, ' +
             'origin_id, origin_text, trip_type, ' +
             'adults, child_seats, boosters, has_luggage, needs_car_at_destination, ' +
-            'flex_depart_early, flex_depart_late, flex_return_early, flex_return_late, ' +
+            'flex_depart_early, flex_depart_late, flex_return_early, flex_return_late, duration_locked, ' +
             'submitted_at, created_at, is_late, manual_boost, manual_boost_reason, ride_types(code)',
         )
         .in('id', candidateIds),
@@ -471,6 +473,7 @@ Deno.serve(async (req) => {
     returnMs: r.return_at ? Date.parse(r.return_at as string) : undefined,
     flexDeparture: { earlierMin: parseFlexInterval(r.flex_depart_early as string), laterMin: parseFlexInterval(r.flex_depart_late as string) },
     flexReturn: { earlierMin: parseFlexInterval(r.flex_return_early as string), laterMin: parseFlexInterval(r.flex_return_late as string) },
+    durationLocked: r.duration_locked ? true : undefined,
     passengers: { adults: r.adults as number, childSeats: r.child_seats as number, boosters: r.boosters as number },
     coRiderMemberIds: [],
     luggage: r.has_luggage as boolean,

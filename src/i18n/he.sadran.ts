@@ -175,8 +175,6 @@ export const heSadran = {
     listModeUnmet: "לא שובצו",
     listModeProposals: "הצעות",
     locationBadge: "ב{{location}}",
-    luggageNeedsTrunkToast: "הבקשה כוללת ציוד גדול — אפשר לשבץ אותה רק לרכב עם תא מטען גדול",
-    luggageSwapToast: "אי אפשר להחליף: נסיעה עם ציוד גדול הייתה עוברת לרכב בלי תא מטען גדול",
     seatMismatchToast: "לרכב שנבחר אין מספיק מקומות לנוסעי הנסיעה הזו",
     overlapToast: "הזמן מתנגש עם נסיעה אחרת ברכב הזה",
     unmetEmptyDb: "כל הבקשות של השבוע שובצו",
@@ -275,6 +273,10 @@ export const heSadran = {
     timeReturnChange: "חזרה {{new}} במקום {{old}}",
     timeDepartDayChange: "יציאה ביום {{new}} במקום {{old}}",
     timeReturnDayChange: "חזרה ביום {{new}} במקום {{old}}",
+    // REQ §13.112 (a): plan B wording, identical to the SQL text_fragments `alt.pickup` / `alt.plan` (migration 20261019100700).
+    alternativePickup: ", ואיסוף משם ב־{{pickupTime}}",
+    alternativePickupFrom: ", ואיסוף מ{{pickupPlace}} ב־{{pickupTime}}",
+    alternativePlan: "הקפצה ל{{dropPlace}} עד {{dropTime}}{{pickupLine}}",
     timeDepartSet: "יציאה {{new}}",
     timeReturnSet: "חזרה {{new}}",
     windowReturn: "חזרה ב{{return}}",
@@ -417,6 +419,24 @@ export const heSadran = {
     publishOpenBoard: "לצפייה בלוח",
     publishBlockedDay: "יש טיוטות הצעה שלא נשלחו",
   },
+  /**
+   * Plan B ("תוכנית ב׳") and "אסתדר" on the board and the publish screen (REQ §13.112 a/b; UX_FLOWS §4.2):
+   * the unmet card shows the member's fallback, the solver's `useAlternative` suggestion is "תוכנית ב׳ אפשרית"
+   * with "להציע", and publishing waits for every plan-B proposal (never bypassable).
+   */
+  sadranPlanB: {
+    manage: "אסתדר",
+    line: "ב׳: {{plan}}",
+    possible: "תוכנית ב׳ אפשרית",
+    propose: "להציע",
+    publishTitle: "תוכנית ב׳ שממתינה לתשובה",
+    publishHelp: "אי אפשר לפרסם יום שיש בו הצעה של תוכנית ב׳ שעוד לא נענתה. אפשר להמתין לתשובה או לבטל את ההצעה בלוח.",
+    publishDay: "{{count}} הצעות של תוכנית ב׳",
+    publishDayOne: "הצעה אחת של תוכנית ב׳",
+    publishRow: "{{name}} · {{plan}}",
+    draftLabel: "תוכנית ב׳ · {{name}}",
+    servedTag: "שובץ/ה בתוכנית ב׳",
+  },
   /** REQ §13.94 (G10): a merge is one ride - marker, popup and the "take them out" path. */
   /** REQ §13.101 (j): propose fewer consecutive days of a multi-day request. */
   fewerDays: {
@@ -496,6 +516,8 @@ export const heSadran = {
       turnaround_conflict: "אי אפשר לצרף — הנסיעה המאוחדת לא משאירה זמן מעבר לפני הנסיעה הבאה ברכב",
       turnaround_conflict_previous: "אי אפשר לצרף — הנסיעה המאוחדת מתחילה מוקדם מדי ולא משאירה זמן מעבר אחרי הנסיעה הקודמת ברכב",
       already_on_ride: "הבקשה כבר בנסיעה הזו (או שהצעה זהה כבר נשלחה)",
+      /** REQ §13.112 (c): the ride serves a "N hours between A and B" request whose length never changes. */
+      window_locked: "אי אפשר לצרף — הנסיעה היא בחלון זמן קבוע והצירוף היה מאריך אותה",
       // REQ item 108 (M1): reasons only the server's `merge_preview` can give.
       window: "אי אפשר לצרף — הנסיעה המאוחדת תחרוג מהיום של הנסיעה",
       maintenance: "אי אפשר לצרף — הרכב בטיפול בשעות הנסיעה המאוחדת",
