@@ -1,5 +1,5 @@
 import * as PopoverPrimitive from "@radix-ui/react-popover";
-import { useContext, useState } from "react";
+import { useCallback, useContext, useState } from "react";
 
 import { Input } from "@/components/ui/input";
 import { SheetPortalContext } from "@/components/SheetPortalContext";
@@ -66,6 +66,14 @@ export function TimeField15({ value, min, max, onChange, disabled, ...rest }: Ti
 
   const [inlineOpen, setInlineOpen] = useState(false);
 
+  // R3B19: the list opens on the current hour. A STABLE callback ref, so it runs on mount only — an inline ref re-ran on every
+  // re-render (the input's blur-commit just before a tap re-renders the form) and snapped the list back to the selected hour
+  // between pointer-down and pointer-up, so the tapped hour moved away and the pick was lost.
+  const scrollToSelectedHour = useCallback((list: HTMLDivElement | null) => {
+    const selected = list?.querySelector<HTMLElement>("[data-selected='true']");
+    if (list && selected) list.scrollTop = Math.max(0, selected.offsetTop - 44);
+  }, []);
+
   // R11U10: inside a sheet the list is shorter (four and a half rows), so the rows below it stay clear of the sticky footer on a 360px phone.
   const picker = (inline: boolean) => (
 <div className="grid grid-cols-2 gap-2" dir="rtl">
@@ -85,13 +93,12 @@ export function TimeField15({ value, min, max, onChange, disabled, ...rest }: Ti
     ))}
   </div>
   {/* R10U6: six and a half rows high (the half row hints at the scroll) with a thin always-visible scrollbar and a fade at the foot, so it reads as scrollable. */}
-  <div className={cn("relative overflow-y-auto [scrollbar-color:hsl(var(--muted-foreground)/0.6)_transparent] [scrollbar-width:thin]", inline ? "max-h-[12.25rem]" : "max-h-72")} role="listbox" aria-label={he.timeField.hourListLabel} data-testid="time-hour-list">
+  <div className={cn("relative overflow-y-auto [scrollbar-color:hsl(var(--muted-foreground)/0.6)_transparent] [scrollbar-width:thin]", inline ? "max-h-[12.25rem]" : "max-h-72")} role="listbox" aria-label={he.timeField.hourListLabel} data-testid="time-hour-list" ref={scrollToSelectedHour}>
     {hours.map((h) => (
       <button
         key={h}
         type="button"
-        // R3B19: the list opens on the current hour, not on its first entry.
-        ref={draftHour === pad2(h) ? (el) => { if (el?.parentElement) el.parentElement.scrollTop = Math.max(0, el.offsetTop - 44); } : undefined}
+        data-selected={draftHour === pad2(h)}
         className={cn(
           "flex h-11 w-full min-w-11 items-center justify-center rounded text-sm hover:bg-accent",
           draftHour === pad2(h) && "bg-accent font-semibold",

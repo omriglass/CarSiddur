@@ -120,3 +120,28 @@ describe("popover outside a sheet", () => {
     expect(document.body.querySelector('[role="listbox"][aria-label="שעה"]')).not.toBeNull();
   });
 });
+
+describe("TimeField15 hour list pick (inline in a sheet)", () => {
+  it("a re-render (blur-commit before a tap) does not snap the list back to the selected hour, and the tapped hour is committed", () => {
+    const offsetTop = vi.spyOn(HTMLElement.prototype, "offsetTop", "get").mockReturnValue(500);
+    try {
+      const onChange = vi.fn();
+      const { container } = render(
+        <SheetPortalContext.Provider value={document.body}>
+          <TimeField15 value="12:00" onChange={onChange} aria-label="t" />
+        </SheetPortalContext.Provider>,
+      );
+      const input = container.querySelector("input") as HTMLInputElement;
+      fireEvent.click(input);
+      const list = screen.getByTestId("time-hour-list");
+      expect(list.scrollTop).toBe(456); // opens on the selected hour
+      list.scrollTop = 0; // the user scrolled up to 09
+      fireEvent.blur(input); // pointer-down on 09 blurs the input and re-renders
+      expect(list.scrollTop).toBe(0);
+      fireEvent.click(screen.getByRole("button", { name: "09" }));
+      expect(onChange).toHaveBeenLastCalledWith("09:00");
+    } finally {
+      offsetTop.mockRestore();
+    }
+  });
+});
