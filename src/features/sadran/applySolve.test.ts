@@ -187,6 +187,14 @@ describe("buildApplyPayload (driverless rides, REQ §13.88/§13.89)", () => {
     expect(payload.rides[0]).toMatchObject({ origin_id: "home", destination_id: "home" });
   });
 
+  it("a free-text-to-free-text series leg takes a real place from the same car, never the pseudo place (R8B1)", () => {
+    const payload = buildApplyPayload({ ...base, output: emptyOutput({ assignments: [
+      assignment({ id: "a1", window: { start: 10, end: 20 }, originId: "home", destinationId: "home", driverMemberId: "m" }),
+      assignment({ id: "a2", window: { start: 100, end: 120 }, originId: "__free_text__", destinationId: "__free_text__", driverMemberId: "m" }),
+    ] }) });
+    expect(payload.rides[1]).toMatchObject({ origin_id: "home", destination_id: "home" });
+  });
+
   it("keeps a driven ride as is: driver_id set, no relocation flag", () => {
     const payload = buildApplyPayload({ ...base, output: emptyOutput({ assignments: [assignment({ driverMemberId: "member-1" })] }) });
     expect(payload.rides[0]!.driver_id).toBe("member-1");

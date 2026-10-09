@@ -171,7 +171,6 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
               {driverCandidates && !isPlanning && !reservation && ride.id && ride.version != null && ride.status !== "cancelled"
                 && ride.ends_at && Date.parse(ride.ends_at) > nowMs && departmentId && weekStart ? (
                 <RideDriverPicker
-                  key={`${ride.id}:${ride.version}`}
                   rideId={ride.id}
                   version={ride.version}
                   needsDriver={!!ride.needs_driver}

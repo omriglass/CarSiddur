@@ -677,6 +677,15 @@ export function buildApplyPayload(params: {
   const { output, weekStartMs, policyVersionId, startedAtMs, finishedAtMs, inputHash, requestsById, mode = "full" } = params;
 
   const solverAssignments = output.assignments.filter((a) => a.source === "solver");
+  // A ride whose both ends are free text (a series leg starting where the previous free-text leg left the car)
+  // has no uuid at all; the nearest real place on the same car stands in (the car's other rides, else the ride's own).
+  const realPlaceOnCar = (carId: string): string | undefined => {
+    for (const other of [...solverAssignments].sort((x, y) => x.window.start - y.window.start)) {
+      if (other.carId !== carId) continue;
+      for (const place of [other.originId, other.destinationId]) if (place !== FREE_TEXT_DESTINATION_ID) return place;
+    }
+    return undefined;
+  };
   const rides: ApplyPayloadRide[] = solverAssignments.map((a) => {
     // `null`, never "" — apply_solver_result casts the value to uuid; a driverless ride
     // (non-driver requester, or the solver's relocation next to a lone relay leg) becomes
@@ -693,8 +702,8 @@ export function buildApplyPayload(params: {
       ends_at: exactEnd ?? roundedEnd,
       // A free-text request has no place id: the solver models it as the `__free_text__` pseudo
       // place, which is not a uuid. The car's recorded location falls back to the ride's other end.
-      origin_id: a.originId === FREE_TEXT_DESTINATION_ID ? a.destinationId : a.originId,
-      destination_id: a.destinationId === FREE_TEXT_DESTINATION_ID ? a.originId : a.destinationId,
+      origin_id: a.originId !== FREE_TEXT_DESTINATION_ID ? a.originId : a.destinationId !== FREE_TEXT_DESTINATION_ID ? a.destinationId : (realPlaceOnCar(a.carId) ?? a.originId),
+      destination_id: a.destinationId !== FREE_TEXT_DESTINATION_ID ? a.destinationId : a.originId !== FREE_TEXT_DESTINATION_ID ? a.originId : (realPlaceOnCar(a.carId) ?? a.destinationId),
       driver_id: driverMemberId,
       ...(driverMemberId === null && a.legs.length === 0 ? { auto_relocation: true } : {}),
       ...(a.turnaroundAfterMinutes !== undefined ? { turnaround_override_minutes: a.turnaroundAfterMinutes } : {}),

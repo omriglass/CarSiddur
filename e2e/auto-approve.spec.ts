@@ -27,10 +27,11 @@ test.describe("auto-approve on a free car (live week)", { tag: ["@request-form",
 
     await page.getByRole("radiogroup", { name: "סוג נסיעה" }).getByRole("radio").first().click();
 
-    // Thursday of the target week — free of every seeded ride in the Live week (only
+    // Saturday of the target week (the last day, so it is still upcoming — `/my` lists only upcoming
+    // requests, a past day would drop off) — free of every seeded ride in the Live week (only
     // Tuesday/Wednesday have any), so any of the three shared cars is free at the form's
     // default 08:00–12:00 window regardless of what other specs already did to this week.
-    await page.getByRole("radiogroup", { name: "יום" }).getByRole("radio").nth(4).click();
+    await page.getByRole("radiogroup", { name: "יום" }).getByRole("radio").nth(6).click();
 
     await submitRequestForm(page);
 

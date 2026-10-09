@@ -52,12 +52,18 @@ test.describe("scheduled maintenance", { tag: ["@maintenance"] }, () => {
     const client = serviceRoleClient();
     const liveWeekStart = await getWeekStart("live");
     const todayKey = formatInTimeZone(new Date(), TZ, "yyyy-MM-dd");
-    let day = todayKey;
-    if (day < liveWeekStart || day > shiftDayKey(liveWeekStart, 6)) day = shiftDayKey(todayKey, 1);
-    test.skip(day < liveWeekStart || day > shiftDayKey(liveWeekStart, 6), "no day today-or-later remains inside the seeded live week");
+    // Prefer tomorrow (never in the past at any hour); today only before 21:00, because shortening a
+    // 09:00–23:00 block by dragging must not move its end into the past.
+    const inWeek = (key: string) => key >= liveWeekStart && key <= shiftDayKey(liveWeekStart, 6);
+    const tomorrowKey = shiftDayKey(todayKey, 1);
+    const hourNow = Number(formatInTimeZone(new Date(), TZ, "H"));
+    const day = inWeek(tomorrowKey) ? tomorrowKey : todayKey;
+    test.skip(!inWeek(day) || (day === todayKey && hourNow >= 21), "no future day of the seeded live week left for a drag test");
+    // The block ends late in the evening so that shortening it by an hour stays in the future whenever the spec runs
+    // (an end moved into the past is refused).
     const at = (time: string) => fromZonedTime(`${day}T${time}:00`, TZ).toISOString();
     const { data: made, error } = await client.from("car_maintenance_blocks")
-      .insert({ car_id: CAR_ID, department_id: NEVO_DEPARTMENT_ID, starts_at: at("09:00"), ends_at: at("15:00"), reason: "SCHEDULED", created_by: PROFILE.member2 })
+      .insert({ car_id: CAR_ID, department_id: NEVO_DEPARTMENT_ID, starts_at: at("09:00"), ends_at: at("23:00"), reason: "SCHEDULED", created_by: PROFILE.member2 })
       .select("id").single();
     if (error) throw error;
     const blockId = made!.id as string;
@@ -76,15 +82,18 @@ test.describe("scheduled maintenance", { tag: ["@maintenance"] }, () => {
       // the responsible member (created by someone else) can drag the end handle upwards by one hour
       const handle = member1.page.locator(`[data-block-id="${blockId}"] [data-block-handle="end"]`);
       await expect(handle).toBeVisible();
+      await handle.scrollIntoViewIfNeeded();
       const box = (await handle.boundingBox())!;
-      await member1.page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      const startX = box.x + box.width / 2;
+      const startY = box.y + box.height / 2;
+      await member1.page.mouse.move(startX, startY);
       await member1.page.mouse.down();
-      await member1.page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 - 80, { steps: 8 });
+      await member1.page.mouse.move(startX, startY - 80, { steps: 8 });
       await member1.page.mouse.up();
       await expect.poll(async () => {
         const { data } = await client.from("car_maintenance_blocks").select("ends_at").eq("id", blockId).single();
         return data ? Date.parse(data.ends_at as string) : 0;
-      }).toBeLessThan(Date.parse(at("15:00")));
+      }).toBeLessThan(Date.parse(at("23:00")));
     } finally {
       await member1.context.close();
       await member2.context.close();

@@ -51,7 +51,8 @@ test.describe.serial("per-day autofill places a series; the publish picker ticks
     await page.getByRole("menuitem", { name: he.action.autoSolveRemaining, exact: true }).click();
     await page.getByTestId(`autofill-day-${THURSDAY}`).click();
     await page.getByRole("alertdialog").or(page.getByRole("dialog")).getByRole("button", { name: he.sadranBoard.autoFill.confirmAction, exact: true }).click();
-    expect((await applied).ok()).toBe(true);
+    const appliedRes = await applied;
+    expect(appliedRes.ok(), await appliedRes.text()).toBe(true);
 
     const { data: legs, error } = await service.from("requests").select("status, status_reason").eq("series_id", seriesId);
     if (error) throw error;

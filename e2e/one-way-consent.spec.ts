@@ -66,7 +66,9 @@ test("combined one-way consent preserves an orphaned passenger and lets a member
     if (linkError) throw linkError;
     const { data: proposalId, error: proposalError } = await admin.rpc("create_proposal", {
       p_request_id: requestIds[1], p_ride_id: rideId, p_type: "merge", p_reason_he: "E2E combined ride 07:00–10:00",
-      p_payload: { ride_id: rideId, starts_at: `${week}T07:00:00+02:00`, ends_at: `${week}T10:00:00+02:00`,
+      // REQ §13.102: apply uses the ride's own window unless the Sadran set one explicitly; this spec is about the
+      // consent over an explicit combined window, so it says so (`window_explicit`).
+      p_payload: { ride_id: rideId, window_explicit: true, starts_at: `${week}T07:00:00+02:00`, ends_at: `${week}T10:00:00+02:00`,
         legs: [{ ride_id: rideId, role: "passenger", leg: "out", car_mode: "passenger" }] },
       p_party_profile_ids: [], p_created_via: "sadran",
     });
@@ -80,7 +82,9 @@ test("combined one-way consent preserves an orphaned passenger and lets a member
     contexts.push(driver.context, passenger.context);
     await driver.page.goto(`/p/${sent.party_tokens[memberIds[0]!]}`);
     await expect(driver.page.getByText(he.rideCoordination.combinedWindow)).toBeVisible();
-    await expect(driver.page.getByText("07:00 → 10:00")).toBeVisible();
+    // R8B8 / REQ §13.116: the host sees the ride's window and the server's computed new window (`_merge_check`:
+    // the ride starts earlier only by the added out-leg driving, 0 for a free-text stop), not the payload's times.
+    await expect(driver.page.getByText("07:15 → 10:00").first()).toBeVisible();
     await driver.page.getByRole("button", { name: he.action.acceptProposal, exact: true }).click();
     const { data: before } = await service.from("rides").select("starts_at").eq("id", rideId).single();
     expect(new Date(before!.starts_at).toISOString()).toBe(`${week}T05:15:00.000Z`);

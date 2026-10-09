@@ -44,6 +44,13 @@ export interface RideDriverPickerProps {
 
 export function RideDriverPicker({ rideId, version, needsDriver, volunteerName, volunteerId, candidates, departmentId, weekStart, busyIds, placeName, homeDestinationId, disabled, published = true, onDone }: RideDriverPickerProps) {
   const [driverId, setDriverId] = useState("");
+  // A new ride or ride version (someone assigned/replaced the driver) starts with an empty choice. Derived during render, not via a
+  // `key` on the element: a keyed picker inside the sheet was rendered twice when a Select in the sheet opened.
+  const [seen, setSeen] = useState(`${rideId}:${version}`);
+  if (seen !== `${rideId}:${version}`) {
+    setSeen(`${rideId}:${version}`);
+    setDriverId("");
+  }
   const mutation = useSetRideDriverMutation();
   const drivers = sortFreeFirst(candidates.filter((candidate) => !candidate.doesNotDrive && candidate.id !== volunteerId), busyIds ?? new Set<string>());
 

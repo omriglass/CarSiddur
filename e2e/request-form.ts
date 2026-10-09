@@ -117,6 +117,9 @@ export async function removeWeek(service: SupabaseClient, week: string, options:
   await service.from("requests").delete().match(scope).not("plan_b_parent_id", "is", null);
   await service.from("requests").delete().match(scope);
   await service.from("notifications").delete().match(scope);
+  // An autofill/solve writes a `solver_runs` row that references the week (FK): without this the week row stayed behind as an
+  // `open` week and every later spec saw a stray open week (template suggestions, new-request window).
+  await service.from("solver_runs").delete().match(scope);
   if (!options.keepWeek) await service.from("weeks").delete().match(scope);
 }
 
