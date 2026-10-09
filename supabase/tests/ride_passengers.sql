@@ -71,12 +71,11 @@ begin
   -- Notification: newly-added member2 was notified once (reservation_added), not the
   -- acting Sadran, and re-calling with the same list notifies nobody again (idempotent).
   -- ---------------------------------------------------------------------------
-  assert exists(
+  -- R8B7 (REQ §13.109 a): this week is still `open`, so the day is unpublished and the newly named member is told nothing yet.
+  assert not exists(
     select 1 from public.notifications
     where recipient_id = member2 and event = 'outcome_changed' and data->>'variant' = 'reservation_added'
-      and data->>'ride_id' = ride1::text and data->>'url' = format('/siddur/%s/%s?ride=%s', dept, w, ride1)
-      and title_he not like '%{{%' and body_he not like '%{{%'
-  ), 'newly-named passenger was not notified with the reservation_added variant and a resolved url';
+  ), 'R8B7: a reservation on an unpublished day must not notify the named member';
   assert not exists(
     select 1 from public.notifications where recipient_id = sadran and data->>'variant' = 'reservation_added'
   ), 'the acting Sadran must never self-notify';
@@ -85,7 +84,7 @@ begin
   perform public.set_ride_passengers(ride1, ver,
     jsonb_build_array(jsonb_build_object('person_id', member2, 'display_name', 'חברה שנייה', 'seat_kind', 'adult')));
   select count(*) into n from public.notifications where recipient_id = member2 and data->>'variant' = 'reservation_added';
-  assert n = 1, format('re-saving the same passenger list must not re-notify them, found %s notifications', n);
+  assert n = 0, format('re-saving the same passenger list must not notify anyone on an unpublished day, found %s notifications', n);
 
   select version into ver from public.rides where id = ride1;
   assert ver = 3, 'the second (no-op-content) call must still bump the ride version';
@@ -169,10 +168,11 @@ begin
     jsonb_build_array(jsonb_build_object('person_id', member2, 'display_name', 'חברה שנייה', 'seat_kind', 'adult')));
   perform set_config('request.jwt.claims', jsonb_build_object('sub', sadran, 'role', 'authenticated')::text, true);
   perform public.cancel_ride_without_passengers(ride1, 'test_cleanup', (select version from public.rides where id = ride1));
-  assert exists(
+  -- R8B7: this week is unpublished, so the named person is told nothing (the published case is the second block below).
+  assert not exists(
     select 1 from public.notifications
     where recipient_id = member2 and event = 'outcome_changed' and data->>'variant' = 'ride_cancelled' and data->>'ride_id' = ride1::text
-  ), 'a named ride_passengers.person_id was not notified when the ride was cancelled';
+  ), 'R8B7: a named passenger of an unpublished-day ride is not told about its cancellation';
 end $$;
 
 -- ---------------------------------------------------------------------------

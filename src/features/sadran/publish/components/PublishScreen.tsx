@@ -173,7 +173,8 @@ export function PublishScreen({ departmentId, weekStart }: PublishScreenProps) {
             <span className="space-y-1">
               <span className="block font-medium">{dateLabel(day.day)}{day.published ? ` · ${he.publicationFlow.published}` : ""}</span>
               <span className="block text-xs text-muted-foreground">{day.ready ? he.publicationFlow.ready : [
-                day.unresolvedRequests ? countLabel(day.unresolvedRequests, "unresolved") : null,
+                day.unsolvedRequests ? (day.unsolvedRequests === 1 ? he.publicationFlow.unsolvedOne : tv("publicationFlow.unsolved", { count: String(day.unsolvedRequests) })) : null,
+                day.unresolvedRequests && !day.unsolvedRequests ? countLabel(day.unresolvedRequests, "unresolved") : null,
                 day.draftProposals ? tv("boardDrafts.publishDayDrafts", { count: String(day.draftProposals) }) : null,
                 day.alternativeProposals ? (day.alternativeProposals === 1 ? he.sadranPlanB.publishDayOne : tv("sadranPlanB.publishDay", { count: String(day.alternativeProposals) })) : null,
                 day.pendingProposals ? countLabel(day.pendingProposals, "pending") : null,

@@ -8,13 +8,10 @@ import { requestsKeys } from "@/features/requests/queryKeys";
 
 import {
   createCar,
-  createMaintenanceBlock,
-  endMaintenanceBlockNow,
   fetchCarIssues,
   fetchCarsAll,
   fetchMaintenanceBlocks,
   fetchSeatConfigs,
-  moveIssueToMaintenance,
   replaceSeatConfigs,
   resolveCarIssue,
   updateCar,
@@ -86,20 +83,9 @@ export function useMaintenanceBlocks() {
   return useQuery({ queryKey: [...carAdminKeys.maintenance(), departmentId], queryFn: async () => (await fetchMaintenanceBlocks()).filter((row) => row.department_id === departmentId), staleTime: 30_000 });
 }
 
-export function useCreateMaintenanceBlockMutation() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: createMaintenanceBlock,
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: carAdminKeys.maintenance() }),
-  });
-}
-
-export function useEndMaintenanceBlockMutation() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (blockId: string) => endMaintenanceBlockNow(blockId),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: carAdminKeys.maintenance() }),
-  });
+/** Every operational department's periods (the cars list shows each car's next one, REQ §13.114). */
+export function useAllMaintenanceBlocks() {
+  return useQuery({ queryKey: [...carAdminKeys.maintenance(), "all"], queryFn: fetchMaintenanceBlocks, staleTime: 30_000 });
 }
 
 export function useCarIssues() {
@@ -112,17 +98,5 @@ export function useResolveCarIssueMutation() {
   return useMutation({
     mutationFn: (issueId: string) => resolveCarIssue(issueId),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: carAdminKeys.issues() }),
-  });
-}
-
-export function useMoveIssueToMaintenanceMutation() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({ issueId, hours }: { issueId: string; hours: number }) => moveIssueToMaintenance(issueId, hours),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: carAdminKeys.issues() });
-      void queryClient.invalidateQueries({ queryKey: carAdminKeys.maintenance() });
-      void queryClient.invalidateQueries({ queryKey: carAdminKeys.list() });
-    },
   });
 }

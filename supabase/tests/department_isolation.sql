@@ -48,6 +48,7 @@ declare
   change_b uuid;
   v_result jsonb;
   v_status public.request_status; v_reason text; v_version int;
+  block_b uuid; issue_b uuid;
 begin
   -----------------------------------------------------------------------
   -- Fixtures: department B, entirely separate from department A (sadran_a is deliberately
@@ -199,6 +200,16 @@ begin
   -- cars / destinations ----------------------------------------------------
   perform pg_temp.expect_refused('cars.log_car_care', format('select public.log_car_care(%L, %L, null, null)', car_b, 'wash'));
   perform pg_temp.expect_refused('cars.report_car_issue', format('select public.report_car_issue(%L, %L, %L, null)', car_b, 'mechanical', 'attack'));
+  -- REQ §13.114: scheduled maintenance of department B's car, called as department A's Sadran.
+  insert into public.car_maintenance_blocks(car_id, department_id, starts_at, ends_at, reason, created_by)
+  values (car_b, dept_b, date_trunc('hour', now()) + interval '2 days', date_trunc('hour', now()) + interval '3 days', 'iso', admin_id) returning id into block_b;
+  insert into public.car_issues(car_id, department_id, reported_by, description, is_unsafe, category)
+  values (car_b, dept_b, member_b, 'iso', true, 'mechanical') returning id into issue_b;
+  perform pg_temp.expect_refused('cars.create_car_maintenance', format('select public.create_car_maintenance(%L, now() + interval ''5 days'', now() + interval ''6 days'')', car_b));
+  perform pg_temp.expect_refused('cars.update_car_maintenance', format('select public.update_car_maintenance(%L, null, now() + interval ''9 days'')', block_b));
+  perform pg_temp.expect_refused('cars.delete_car_maintenance', format('select public.delete_car_maintenance(%L)', block_b));
+  perform pg_temp.expect_refused('cars.report_car_issue_unsafe_maintenance', format('select public.report_car_issue_unsafe_maintenance(%L, now() + interval ''3 hours'')', issue_b));
+  assert exists(select 1 from public.car_maintenance_blocks where id = block_b and ends_at = date_trunc('hour', now()) + interval '3 days'), 'cross-department maintenance call changed a block';
   perform pg_temp.expect_refused('cars.car_mileage_totals', format('select * from public.car_mileage_totals(%L, %L, 4)', dept_b, week_b));
   perform pg_temp.expect_refused('destinations.merge_destination', format('select public.merge_destination(%L, %L)', other_dest_b, home_b));
   perform pg_temp.expect_refused('destinations.suggest_destination', format('select public.suggest_destination(%L, %L, %L)', dept_b, 'Intruder Place', 'unknown'));
@@ -343,7 +354,8 @@ declare
     'create_policy_version','set_policy_active','resolve_waitlist_group','cancel_waitlist_group',
     'place_travel_for_week','car_start_locations','set_my_default_origin','route_minutes_preview',
     'set_ride_driver','withdraw_duplicate_request','restore_duplicate_request','place_on_own_car','child_request_overlaps',
-    'mark_car_move','shorten_series','join_drop_off_legs','place_series_on_car'
+    'mark_car_move','shorten_series','join_drop_off_legs','place_series_on_car',
+    'create_car_maintenance','update_car_maintenance','delete_car_maintenance','report_car_issue_unsafe_maintenance'
   ];
   -- 'name:one-word-reason'. Duplicated names (day_date_label has two overloads) are fine —
   -- the completeness check below groups by proname.

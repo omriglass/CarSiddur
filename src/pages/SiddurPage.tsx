@@ -1,3 +1,4 @@
+import { useMaintenanceGridEditing } from "@/features/fleet/useMaintenanceGridEditing";
 import { useProfile } from "@/features/auth/useProfile";
 import { useActiveDepartment } from "@/features/auth/useActiveDepartment";
 import { parseTimeToMinutes } from "@/features/solverBridge/buildSolverInput";
@@ -454,6 +455,8 @@ export function SiddurPage() {
 
   // A private (temporary) car is shown only on days it has a ride (REQ §13.80, owner 2026-09-14).
   const weekGridVisibleCars = hideIdleTemporaryCars(weekGridCars, weekGridRides);
+  // REQ §13.114: maintenance bands in the car column; draggable by the car's current responsible person, the Sadran, the admin.
+  const maintenanceEditing = useMaintenanceGridEditing({ departmentId, blocks: maintenanceQuery.data ?? [], cars: carsQuery.data ?? [], day: activeDay });
 
   const weekGridDiscussionBlocks: WeekGridDiscussionBlock[] = activeDayWaitlistGroups.map((group) => ({
     id: group.id,
@@ -667,6 +670,9 @@ export function SiddurPage() {
             />
             <div className="mt-3">
               <WeekGrid
+                blocks={maintenanceEditing.gridBlocks}
+                onBlockChange={maintenanceEditing.onBlockChange}
+                onBlockClick={maintenanceEditing.onBlockClick}
                 zoom={tableZoom}
                 onZoomChange={setTableZoom}
                 cars={weekGridVisibleCars}
@@ -707,6 +713,7 @@ export function SiddurPage() {
           carB={{ id: carSwapPair.carB, name: weekGridCars.find((c) => c.id === carSwapPair.carB)?.name ?? "" }}
         />
       ) : null}
+      {maintenanceEditing.dialog}
       <RideDetailSheet
         ride={selectedRide}
         weekRides={rides}

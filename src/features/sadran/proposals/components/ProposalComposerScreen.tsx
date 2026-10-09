@@ -1,3 +1,4 @@
+import { externalHintFromSuggestion } from "@/features/sadran/proposals/externalHint";
 import { useState } from "react";
 import { X } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -131,7 +132,7 @@ export function ProposalComposerScreen({ departmentId, weekStart }: ProposalComp
   const [selectedType] = useState<ProposalType>(prefill?.type ?? "shift");
   const [rideId] = useState<string | null>(prefill?.rideId ?? null);
   const [externalHint, setExternalHint] = useState(
-    typeof prefill?.payload.hint === "string" ? prefill.payload.hint : "cab",
+    typeof prefill?.payload.hint === "string" ? externalHintFromSuggestion(prefill.payload.hint) : "cab",
   );
   const type: ProposalType = selectedType === "external" && externalHint === "waive" ? "deny" : selectedType;
 
@@ -479,12 +480,13 @@ export function ProposalComposerScreen({ departmentId, weekStart }: ProposalComp
           ) : null}
 
           {selectedType === "external" && !proposalId ? (
-            <Select value={externalHint} onValueChange={(value) => { setExternalHint(value); setEditedText(null); }}>
+            <Select value={externalHint} onValueChange={(value) => { setExternalHint(externalHintFromSuggestion(value)); setEditedText(null); }}>
               <SelectTrigger className="w-48">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="cab">{he.sadranProposal.hintCab}</SelectItem>
+                <SelectItem value="rental">{he.sadranProposal.hintRental}</SelectItem>
                 <SelectItem value="public_transport">{he.sadranProposal.hintPublicTransport}</SelectItem>
                 <SelectItem value="private">{he.sadranProposal.hintPrivate}</SelectItem>
                 <SelectItem value="waive">{he.sadranProposal.hintWaive}</SelectItem>

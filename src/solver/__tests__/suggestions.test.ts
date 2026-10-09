@@ -17,7 +17,9 @@ const HOME = 'home';
 const BUFFER_SLOTS = 2; // 30 min
 
 function ctxFor(cars: Car[], requestOverrides: Parameters<typeof makeRequest>[0]): { ctx: SuggestionContext; nr: ReturnType<typeof normalize>['normalized'][number]; timelines: Map<string, CarTimeline> } {
-  const input = baseInput({ cars, requests: [makeRequest({ id: 'R1', ...requestOverrides })] });
+  const base = baseInput({ cars, requests: [makeRequest({ id: 'R1', ...requestOverrides })] });
+  // R7B2: the chauffeur suggestion is hidden by default (pilot); these tests exercise the flagged-on code.
+  const input = { ...base, config: { ...base.config, chauffeurSuggestions: true } };
   const { normalized } = normalize(input);
   const nr = normalized[0]!;
   const timelines = buildTimelines(cars, BUFFER_SLOTS, 96 * 7, HOME);

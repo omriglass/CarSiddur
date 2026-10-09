@@ -6,6 +6,7 @@
 import type { TimeAnchor } from "@/lib/enums";
 
 import { minutesToTime, timeToMinutes } from "./duration";
+import { type RushWindows, stretchedMinutesFrom, stretchedMinutesUntil } from "./rushHours";
 
 const DAY_END_MINUTES = 24 * 60 - 1;
 
@@ -22,22 +23,42 @@ export function clampedTime(minutes: number): string {
   return minutesToTime(Math.min(Math.max(minutes, 0), DAY_END_MINUTES));
 }
 
-/** Outbound "arrive by": the car leaves `routeMinutes` earlier, rounded DOWN to 15 minutes. */
-export function departFromArriveBy(arriveBy: string, routeMinutes: number): string {
-  return clampedTime(floorToQuarter(timeToMinutes(arriveBy) - routeMinutes));
+/** Float noise guard before a quarter-hour floor/ceil of a stretched time. */
+const tidy = (minutes: number) => Math.round(minutes * 1e6) / 1e6;
+
+/**
+ * Clock minutes of a drive of `routeMinutes` base minutes that ends at / starts at `anchorMinute`,
+ * stretched by the rush-hour windows (REQ §13.113; none = the plain drive).
+ */
+function driveBefore(arriveMinute: number, routeMinutes: number, rush: RushWindows): number {
+  return rush.length ? stretchedMinutesUntil(arriveMinute, routeMinutes, rush) : routeMinutes;
+}
+function driveAfter(departMinute: number, routeMinutes: number, rush: RushWindows): number {
+  return rush.length ? stretchedMinutesFrom(departMinute, routeMinutes, rush) : routeMinutes;
 }
 
-/** Return "leave there at": the car is home `routeMinutes` later, rounded UP to 15 minutes (23:59 at most). */
-export function returnFromLeaveThere(leaveThere: string, routeMinutes: number): string {
-  return clampedTime(ceilToQuarter(timeToMinutes(leaveThere) + routeMinutes));
+/**
+ * Outbound "arrive by": the car leaves one drive earlier, rounded DOWN to 15 minutes. `rush` =
+ * the day's rush-hour windows: only the part of the drive inside a window is longer (REQ §13.113).
+ */
+export function departFromArriveBy(arriveBy: string, routeMinutes: number, rush: RushWindows = []): string {
+  const arrive = timeToMinutes(arriveBy);
+  return clampedTime(floorToQuarter(tidy(arrive - driveBefore(arrive, routeMinutes, rush))));
+}
+
+/** Return "leave there at": the car is home one drive later, rounded UP to 15 minutes (23:59 at most). */
+export function returnFromLeaveThere(leaveThere: string, routeMinutes: number, rush: RushWindows = []): string {
+  const leave = timeToMinutes(leaveThere);
+  return clampedTime(ceilToQuarter(tidy(leave + driveAfter(leave, routeMinutes, rush))));
 }
 
 /**
  * Plan B (REQ §13.112): the drop time is stored as an exact `arrive_by`. A member who thinks in
  * "leave at" terms gets `departure + route minutes`, rounded UP to 15 minutes (never later than 23:59).
  */
-export function arriveByFromDeparture(departure: string, routeMinutes: number): string {
-  return clampedTime(ceilToQuarter(timeToMinutes(departure) + routeMinutes));
+export function arriveByFromDeparture(departure: string, routeMinutes: number, rush: RushWindows = []): string {
+  const leave = timeToMinutes(departure);
+  return clampedTime(ceilToQuarter(tidy(leave + driveAfter(leave, routeMinutes, rush))));
 }
 
 export interface AnchorFormTimes {
@@ -66,14 +87,15 @@ export function enteredReturnTime(values: Pick<AnchorFormTimes, "returnAnchor" |
 export function resolveCarTimes(
   values: AnchorFormTimes,
   routes: { outMinutes: number | null; returnMinutes: number | null },
+  rush: RushWindows = [],
 ): { departTime: string | undefined; returnTime: string | undefined } {
   const departTime =
     values.departAnchor === "arrive" && values.arriveByTime && routes.outMinutes != null
-      ? departFromArriveBy(values.arriveByTime, routes.outMinutes)
+      ? departFromArriveBy(values.arriveByTime, routes.outMinutes, rush)
       : values.departTime;
   const returnTime =
     values.returnAnchor === "leave" && values.leaveDestTime && routes.returnMinutes != null
-      ? returnFromLeaveThere(values.leaveDestTime, routes.returnMinutes)
+      ? returnFromLeaveThere(values.leaveDestTime, routes.returnMinutes, rush)
       : values.returnTime;
   return { departTime, returnTime };
 }
@@ -84,7 +106,10 @@ export interface AnchorEstimate {
   kind: AnchorEstimateKind;
   /** "HH:MM" */
   time: string;
+  /** Drive minutes shown on the line: the stretched drive when `approx` (rounded). */
   minutes: number;
+  /** True when rush hours stretched the drive: the line says "כ־" and "הערכה בלבד" (REQ §13.113). */
+  approx: boolean;
 }
 
 /**
@@ -92,16 +117,19 @@ export interface AnchorEstimate {
  * out+arrive -> estimated departure, out+leave -> estimated arrival, return+leave -> estimated
  * arrival home, return+arrive -> estimated departure from the destination.
  */
-export function endEstimate(end: "out" | "return", anchor: TimeAnchor, entered: string, routeMinutes: number): AnchorEstimate {
+export function endEstimate(end: "out" | "return", anchor: TimeAnchor, entered: string, routeMinutes: number, rush: RushWindows = []): AnchorEstimate {
   const minutes = timeToMinutes(entered);
-  if (end === "out") {
-    return anchor === "arrive"
-      ? { kind: "departEstimate", time: departFromArriveBy(entered, routeMinutes), minutes: routeMinutes }
-      : { kind: "arriveEstimate", time: clampedTime(ceilToQuarter(minutes + routeMinutes)), minutes: routeMinutes };
+  // Only the two conversions stretch; the other two lines are fixed-time arithmetic (REQ §13.113).
+  if (end === "out" && anchor === "arrive") {
+    const drive = driveBefore(minutes, routeMinutes, rush);
+    return { kind: "departEstimate", time: departFromArriveBy(entered, routeMinutes, rush), minutes: Math.round(drive), approx: Math.round(drive) !== routeMinutes };
   }
-  return anchor === "leave"
-    ? { kind: "homeEstimate", time: returnFromLeaveThere(entered, routeMinutes), minutes: routeMinutes }
-    : { kind: "leaveEstimate", time: clampedTime(floorToQuarter(minutes - routeMinutes)), minutes: routeMinutes };
+  if (end === "return" && anchor === "leave") {
+    const drive = driveAfter(minutes, routeMinutes, rush);
+    return { kind: "homeEstimate", time: returnFromLeaveThere(entered, routeMinutes, rush), minutes: Math.round(drive), approx: Math.round(drive) !== routeMinutes };
+  }
+  if (end === "out") return { kind: "arriveEstimate", time: clampedTime(ceilToQuarter(minutes + routeMinutes)), minutes: routeMinutes, approx: false };
+  return { kind: "leaveEstimate", time: clampedTime(floorToQuarter(minutes - routeMinutes)), minutes: routeMinutes, approx: false };
 }
 
 export type AnchorLabelKey = "outLeave" | "outArrive" | "returnArrive" | "returnLeave" | "pickupLeave" | "pickupArrive";

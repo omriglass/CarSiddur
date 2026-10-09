@@ -14,7 +14,7 @@ declare
   typ uuid:='00000000-0000-0000-0000-000000000021';
   car1 uuid:='00000000-0000-0000-0000-000000000040';
   car2 uuid:='00000000-0000-0000-0000-000000000041';
-  w date:=public.current_week_start()+840;
+  w date:=public.current_week_start()+840; held1 uuid; held2 uuid;
   q uuid; q2 uuid; q3 uuid; ride uuid; x uuid; v int; res jsonb; r record; n int; frag text;
 begin
   insert into public.weeks(department_id,week_start,phase,open_at,close_at,publish_at)
@@ -105,6 +105,11 @@ begin
   insert into public.rides(department_id,week_start,car_id,starts_at,ends_at,origin_id,destination_id,driver_id,status,created_by,is_pinned,pin_reason)
     values(dept,w,car2,(w+3+time '09:00') at time zone 'Asia/Jerusalem',(w+3+time '12:00') at time zone 'Asia/Jerusalem',home,home,m1,'draft',manager,true,'TEST') returning id into x;
   insert into public.ride_requests(ride_id,request_id,role,leg,car_mode) values(x,q3,'driver','both','keep');
+  -- R8B12: every OTHER shared car is held by a reservation at that time, so nothing is free for the new shape.
+  insert into public.rides(department_id,week_start,car_id,starts_at,ends_at,origin_id,destination_id,status,created_by,is_pinned,pin_reason,notes)
+    values(dept,w,car1,(w+3+time '08:00') at time zone 'Asia/Jerusalem',(w+3+time '13:00') at time zone 'Asia/Jerusalem',home,home,'draft',manager,true,'TEST','held') returning id into held1;
+  insert into public.rides(department_id,week_start,car_id,starts_at,ends_at,origin_id,destination_id,status,created_by,is_pinned,pin_reason,notes)
+    values(dept,w,'00000000-0000-0000-0000-000000000042',(w+3+time '08:00') at time zone 'Asia/Jerusalem',(w+3+time '13:00') at time zone 'Asia/Jerusalem',home,home,'draft',manager,true,'TEST','held') returning id into held2;
   select version into v from public.requests where id=q3;
   res:=public.set_request_trip_type(q3,'one_way',v);
   assert res->>'status'='submitted' and res->>'ride_id' is null, format('returned to unmet, got %s',res);
@@ -112,6 +117,40 @@ begin
   assert (select status from public.rides where id=x)='cancelled', 'its ride is released';
   assert not exists(select 1 from public.ride_requests rr join public.rides d on d.id=rr.ride_id where rr.request_id=q3 and d.status<>'cancelled'), 'no live ride left';
   assert (select trip_type from public.requests where id=q3)='one_way', 'the new trip type is kept';
+
+  -- R8B12 (pilot fix round P2): a request with no car is placed on ANY free shared car when its trip type changes.
+  -- Release the held car (reservation deleted), switch back to a round trip: it lands on that free car.
+  delete from public.rides where id=held2;
+  select version into v from public.requests where id=q3;
+  res:=public.set_request_trip_type(q3,'round_trip',v);
+  assert res->>'status'='assigned' and res->>'ride_id' is not null, format('unplaced request placed on a free car, got %s',res);
+  assert exists(select 1 from public.ride_requests rr join public.rides d on d.id=rr.ride_id
+    where rr.request_id=q3 and d.status<>'cancelled' and d.car_id='00000000-0000-0000-0000-000000000042'), 'on the one free shared car';
+  -- ... and a non-driver's unplaced round trip changed to a drop-off: chauffeur rides, one per leg, on a free car
+  -- (needs-driver waiting list, exactly as a hand placement).
+  update public.profiles set does_not_drive=true where id=m2;
+  insert into public.requests(department_id,week_start,requester_id,filed_by,origin_id,destination_id,ride_type_id,depart_at,return_at,trip_shape,trip_type,needs_car_at_destination,status)
+    values(dept,w,m2,manager,home,haifa,typ,(w+5+time '08:00') at time zone 'Asia/Jerusalem',(w+5+time '15:00') at time zone 'Asia/Jerusalem','round_trip','round_trip',true,'submitted') returning id into q2;
+  select version into v from public.requests where id=q2;
+  res:=public.set_request_trip_type(q2,'drop_off',v);
+  assert res->>'ride_id' is not null, format('drop_off placed, got %s',res);
+  assert (select count(*) from public.ride_requests rr join public.rides d on d.id=rr.ride_id
+    where rr.request_id=q2 and d.status<>'cancelled' and rr.car_mode='chauffeur')>=1, 'chauffeur ride(s) placed';   -- (the cars stand in Haifa by now: the leg that fits is placed, the other stays open)
+
+  -- R8B13: the chauffeur duration is the one rule: ceil((route + direct + dwell) / 15) * 15 (no stops: route = direct).
+  declare v_route int; v_dwell int; v_min int;
+  begin
+    v_route:=coalesce(public.request_leg_route_minutes(q2,'out'),30);
+    select coalesce((w2.settings_overrides->>'chauffeur_dwell_minutes')::int,s2.chauffeur_dwell_minutes,10) into v_dwell
+      from public.department_settings s2 left join public.weeks w2 on w2.department_id=s2.department_id and w2.week_start=w
+      where s2.department_id=dept;
+    v_min:=public.chauffeur_ride_minutes(q2,'out');
+    assert v_min=greatest(15,ceil((2*v_route+v_dwell)/15.0)::int*15), format('chauffeur minutes %s for route %s dwell %s',v_min,v_route,v_dwell);
+    assert (select extract(epoch from (d.ends_at-d.starts_at))/60 from public.rides d join public.ride_requests rr on rr.ride_id=d.id
+      where rr.request_id=q2 and rr.leg='out' and rr.car_mode='chauffeur' and d.status<>'cancelled' limit 1) = v_min,
+      format('the placed chauffeur ride lasts exactly that (%s)',v_min);
+  end;
+  update public.profiles set does_not_drive=false where id=m2;
 
   -- 6) kept_return_at: round trip -> one_way -> round_trip restores the exact return time (set_request_trip_type)
   insert into public.requests(department_id,week_start,requester_id,filed_by,origin_id,destination_id,ride_type_id,depart_at,return_at,trip_shape,trip_type,needs_car_at_destination,status,flex_return_late)

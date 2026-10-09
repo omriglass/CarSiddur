@@ -71,6 +71,18 @@ begin
   insert into publication_ids values('conflict',r);
 end $$;
 set constraints all immediate;
+-- R8B2 (REQ §13.115): unsolved = still 'submitted'; run as the table owner (status updates), claims = the Sadran.
+do $$
+declare dept uuid:='00000000-0000-0000-0000-000000000001'; w date:=public.current_week_start()+210; ready jsonb;
+begin
+  ready:=public.publication_readiness(dept,w);
+  assert (select bool_and((item->>'unsolvedRequests')::int=0) from jsonb_array_elements(ready) item where (item->>'day')::date in (w+1,w+2)),'solved/proposed requests counted as unsolved';
+  update public.requests set status='submitted' where id=(select id from publication_ids where k='request3');
+  assert (select (item->>'unsolvedRequests')::int=1 and not(item->>'ready')::boolean from jsonb_array_elements(public.publication_readiness(dept,w)) item where (item->>'day')::date=w+2),'unsolved Tuesday request not reported';
+  update public.requests set status='waitlisted' where id=(select id from publication_ids where k='request3');
+  assert (select (item->>'unsolvedRequests')::int=0 from jsonb_array_elements(public.publication_readiness(dept,w)) item where (item->>'day')::date=w+2),'a waitlisted (solved, unmet) request still counts as unsolved';
+  update public.requests set status='proposed' where id=(select id from publication_ids where k='request3');
+end $$;
 set constraints all deferred;
 set local role authenticated;
 do $$

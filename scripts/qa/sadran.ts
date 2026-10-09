@@ -157,14 +157,14 @@ async function cmdWeek(board: Board): Promise<void> {
   console.log(`rides: ${board.rides.length} | proposals: ${board.proposals.length} ${[...propByStatus].map(([k, v]) => `${k}=${v}`).join(" ")} | cars: ${board.cars.length}`);
   let readiness: api.PublicationDay[] = [];
   try { readiness = await api.fetchPublicationReadiness(scope.departmentId, scope.weekStart); } catch (e) { console.log(`(publication readiness unavailable: ${(e as Error).message})`); }
-  console.log("DAY        rides unmet drafts | readiness: requests unresolved incomplete pending draftProp noDriver conflicts ready published");
+  console.log("DAY        rides unmet drafts | readiness: requests unresolved unsolved incomplete pending draftProp noDriver conflicts ready published");
   for (let i = 0; i < 7; i++) {
     const day = new Date(Date.parse(`${scope.weekStart}T12:00:00Z`) + i * 86_400_000).toISOString().slice(0, 10);
     const rides = board.rides.filter((r) => dayOf(r.starts_at) === day).length;
     const unmet = unmetItemsOf(board, day).length;
     const drafts = board.proposals.filter((p) => p.status === "draft" && board.requests.some((r) => r.id === p.request_id && dayOf(requestStart(r)) === day)).length;
     const rd = readiness.find((d) => d.day === day);
-    console.log(`${day} ${String(rides).padStart(5)} ${String(unmet).padStart(5)} ${String(drafts).padStart(6)} | ${rd ? `${rd.requestCount} ${rd.unresolvedRequests} ${rd.incompleteAssignments} ${rd.pendingProposals} ${rd.draftProposals} ${rd.missingDriverRides} ${rd.conflictRides} ${rd.ready ? "READY" : "not-ready"} ${rd.published ? "published" : "-"}` : "-"}`);
+    console.log(`${day} ${String(rides).padStart(5)} ${String(unmet).padStart(5)} ${String(drafts).padStart(6)} | ${rd ? `${rd.requestCount} ${rd.unresolvedRequests} ${rd.unsolvedRequests ?? 0} ${rd.incompleteAssignments} ${rd.pendingProposals} ${rd.draftProposals} ${rd.missingDriverRides} ${rd.conflictRides} ${rd.ready ? "READY" : "not-ready"} ${rd.published ? "published" : "-"}` : "-"}`);
   }
 }
 

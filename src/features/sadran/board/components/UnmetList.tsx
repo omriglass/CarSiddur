@@ -298,6 +298,7 @@ export function UnmetList({ items, onAction, onOpenProposal, onDecision, dayStar
                   name={item.request.requester_full_name ?? ""}
                   departmentId={tripTypeScope.departmentId}
                   weekStart={tripTypeScope.weekStart}
+                  wasUnplaced
                 />
               ) : null}
               {fewerDays && !item.pendingProposalId && item.request.series_id ? <FewerDaysAction request={item.request} support={fewerDays} /> : null}

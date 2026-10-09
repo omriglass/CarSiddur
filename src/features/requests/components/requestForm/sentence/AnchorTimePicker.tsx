@@ -5,11 +5,12 @@ import type { ReactNode } from "react";
 
 import { TimeField15 } from "@/components/TimeField15";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { he, tv } from "@/i18n/he";
+import { he } from "@/i18n/he";
 import type { TimeAnchor } from "@/lib/enums";
 
 import type { AnchorEstimate } from "../../../timeAnchors";
 import { FieldError } from "../FieldError";
+import { estimateLine } from "./estimateLine";
 import { LtrText } from "./LtrText";
 
 interface AnchorTimePickerProps {
@@ -65,7 +66,7 @@ export function AnchorTimePicker({
       {beforeEstimate}
       {estimate ? (
         <p className="text-center text-sm text-muted-foreground" data-testid={estimateTestId}>
-          <LtrText text={tv(`requestSentence.estimate.${estimate.kind}` as const, { time: estimate.time, minutes: String(estimate.minutes) })} />
+          <LtrText text={estimateLine(estimate)} />
         </p>
       ) : null}
     </>

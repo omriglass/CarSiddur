@@ -70,6 +70,7 @@ import {
 import { editReturnInstant, intervalToFlexValue, toInstant, toSubmitRequestPayload } from "../mapper";
 import { editSignature, isUnchangedEdit } from "../unchanged";
 import { requestFormSchema, type RequestFormValues } from "../schema";
+import { rushWindowsForDay } from "../rushHours";
 import { anchorFormFields, resolveCarTimes, switchOutAnchor, switchReturnAnchor } from "../timeAnchors";
 import { windowCarTimes, windowFormFields, windowModeActive } from "../timeWindow";
 import { recentDestinations } from "../recentDestinations";
@@ -652,6 +653,9 @@ export function RequestForm({
     [routeValues.origin, altPlaceValue ?? { freeText: "" }].map(destinationValueToPoint),
     anchorSyncActive && values.fallback === "alternative" && hasDestination(altPlaceValue),
   );
+  // REQ §13.113: the request day's rush-hour windows stretch the "arrive by" / "leave there at" conversions.
+  const rushSettings = settingsQuery.data;
+  const rushWindows = useMemo(() => rushWindowsForDay(rushSettings, day), [rushSettings, day]);
   // Unknown travel = 60 minutes (REQ §13.109), also when the preview call failed.
   const outMinutes = outRouteQuery.data ?? (outRouteQuery.isError ? DEFAULT_HOP_MINUTES : null);
   const returnMinutes = returnRouteQuery.data ?? (returnRouteQuery.isError ? DEFAULT_HOP_MINUTES : null);
@@ -681,10 +685,10 @@ export function RequestForm({
       }
       return;
     }
-    const times = resolveCarTimes(current, { outMinutes, returnMinutes });
+    const times = resolveCarTimes(current, { outMinutes, returnMinutes }, rushWindows);
     if (times.departTime !== current.departTime) form.setValue("departTime", times.departTime, { shouldDirty: true });
     if (times.returnTime !== current.returnTime) form.setValue("returnTime", times.returnTime, { shouldDirty: true });
-  }, [anchorSyncActive, isMultiDay, outMinutes, returnMinutes, watchedDepartAnchor, watchedArriveBy, watchedReturnAnchor, watchedLeaveDest, form]);
+  }, [anchorSyncActive, isMultiDay, outMinutes, returnMinutes, rushWindows, watchedDepartAnchor, watchedArriveBy, watchedReturnAnchor, watchedLeaveDest, form]);
   const guests = guestPassengerNames(values.guestNames ?? "");
   // The requester is always one adult; every selected member, named child aged eight or
   // older and guest name is another. Named children below eight use a child seat instead.
@@ -1199,6 +1203,7 @@ export function RequestForm({
           isMultiDay={isMultiDay}
           multiDaySpan={multiDaySpan}
           routeMinutes={{ out: outMinutes, return: returnMinutes, planB: planBMinutes }}
+          rush={rushWindows}
           mode={mode}
           notices={notices}
           onChildAdded={onChildAdded}

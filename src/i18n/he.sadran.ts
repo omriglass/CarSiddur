@@ -245,6 +245,9 @@ export const heSadran = {
     outOfRange: "מועד הסגירה חייב להיות בין פתיחת השבוע לפרסום שלו, ברבעי שעה עגולים",
   },
   sadranRideSheet: {
+    /** R8U2: a merge waits for the guest's answer; the ride itself stays editable. */
+    pendingMerge: "ממתינה תשובה על צירוף של {{name}} לנסיעה הזאת. אפשר לערוך את הנסיעה (נהג/ת, שעות); שינוי שעות עשוי לבטל את ההצעה.",
+    pendingMergeOpen: "פתיחת ההצעה",
     title: "פרטי הנסיעה",
     moveToCar: "העבר לרכב",
     car: "רכב",
@@ -494,6 +497,10 @@ export const heSadran = {
     assignedUnpublished: "{{name}} שובץ/ה כנהג/ת — נשמר (הנוסעים יעודכנו עם פרסום הסידור)",
     current: "נהג/ת מתנדב/ת: {{name}}",
     unassign: "הסר/י נהג/ת",
+    /** R8U1: replacing the volunteer in one step. */
+    replaceLabel: "החלפת הנהג/ת המתנדב/ת",
+    replace: "החלף/י נהג/ת",
+    replaced: "{{name}} שובץ/ה כנהג/ת במקום המתנדב/ת — הנוסעים עודכנו",
     unassigned: "הנהג/ת הוסר/ה — הנסיעה מחכה שוב לנהג/ת",
   },
   mergedRide: {
@@ -571,6 +578,8 @@ export const heSadran = {
     confirm: "שנה סוג נסיעה",
     stayed: "סוג הנסיעה של {{name}} שונה והבקשה נשארה על הרכב",
     unplaced: "סוג הנסיעה של {{name}} שונה והבקשה חזרה לרשימת הלא-משובצים",
+    /** R8B12: an unmet request found a free car after the change. */
+    placed: "סוג הנסיעה של {{name}} שונה והבקשה שובצה על רכב פנוי",
     returnRestored: "שעת החזרה {{time}} שוחזרה",
     /** REQ §13.98: no known return — set ~2 hours after arrival, flexible all day. */
     returnDefaulted: "שעת החזרה נקבעה ל-{{time}} (גמישות מלאה בחזרה — אפשר להזיז בלי לשאול)",

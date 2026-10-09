@@ -4,7 +4,7 @@ import type { FixedRide } from "@/solver";
 import { boardRideToFixedRide, buildApplyPayload, computeFullResolveDiff, draftFixedRides, restrictInputToDay, selectOpenRequests, servedOf } from "./applySolve";
 import { solve } from "@/solver";
 import { dateKey } from "@/lib/time";
-import { baseInput, makeCar, makeRequest, slotMs, WEEK_START_MS } from "@/solver/__fixtures__/gen";
+import { baseInput, makeCar, makeRequest, makeSeriesLegs, slotMs, WEEK_START_MS } from "@/solver/__fixtures__/gen";
 
 import type { RequestRow, BoardRide, ProposalRow } from "./api";
 import type { SolverContext } from "./applySolve";
@@ -361,5 +361,27 @@ describe("restrictInputToDay (per-day autofill, R7U1)", () => {
     const dayOfA = dateKey(new Date(slotMs(40)));
     restrictInputToDay(input, dayOfA);
     expect(input.requests.map((r) => r.id)).toEqual(["a"]);
+  });
+
+  it("autofilling the last day of a series places the whole series (R8B1)", () => {
+    const legs = makeSeriesLegs({ seriesId: "S1", seriesCount: 3, dayIndices: [0, 1, 2] });
+    const input = baseInput({ cars: [makeCar("C1")], requests: legs });
+    const lastDay = dateKey(new Date(legs[2]!.departureMs ?? legs[2]!.returnMs!));
+    restrictInputToDay(input, lastDay);
+    const out = solve(input);
+    expect(out.unmet).toHaveLength(0);
+    expect(out.assignments.filter((a) => a.seriesId === "S1")).toHaveLength(3);
+  });
+
+  it("lets a series touching the day through with all its days (R8B1)", () => {
+    const input = baseInput({ requests: [
+      makeRequest({ id: "s1", seriesId: "S", departureMs: slotMs(40) }),
+      makeRequest({ id: "s2", seriesId: "S", departureMs: slotMs(96 + 40) }),
+      makeRequest({ id: "s3", seriesId: "S", departureMs: slotMs(2 * 96 + 40) }),
+      makeRequest({ id: "other", seriesId: "T", departureMs: slotMs(96 + 40) }),
+      makeRequest({ id: "x", departureMs: slotMs(96 + 41) }),
+    ] });
+    restrictInputToDay(input, dateKey(new Date(slotMs(2 * 96 + 40))));
+    expect(input.requests.map((r) => r.id)).toEqual(["s1", "s2", "s3"]);
   });
 });

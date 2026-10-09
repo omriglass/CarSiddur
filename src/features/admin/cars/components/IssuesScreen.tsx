@@ -3,18 +3,17 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { EmptyState } from "@/components/EmptyState";
-import { FormDialog } from "@/components/FormDialog";
 import { PageHeader } from "@/components/PageHeader";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { MaintenancePeriodDialog, type MaintenancePeriodDialogTarget } from "@/features/fleet/components/MaintenancePeriodDialog";
 import { he } from "@/i18n/he";
 import { formatInTimeZone } from "date-fns-tz";
 import { TZ } from "@/lib/time";
 import { showErrorToast } from "@/lib/rpc";
 
-import { useCarIssues, useCarsAdmin, useMoveIssueToMaintenanceMutation, useResolveCarIssueMutation } from "../hooks";
+import { useCarIssues, useCarsAdmin, useResolveCarIssueMutation } from "../hooks";
 import { useAllProfiles } from "../../members/hooks";
 
 export function IssuesScreen() {
@@ -22,9 +21,7 @@ export function IssuesScreen() {
   const carsQuery = useCarsAdmin();
   const profilesQuery = useAllProfiles();
   const resolveMutation = useResolveCarIssueMutation();
-  const moveMutation = useMoveIssueToMaintenanceMutation();
-  const [moveTarget, setMoveTarget] = useState<string | null>(null);
-  const [hours, setHours] = useState(24);
+  const [moveTarget, setMoveTarget] = useState<MaintenancePeriodDialogTarget | null>(null);
 
   const carsById = new Map((carsQuery.data ?? []).map((c) => [c.id, c.name]));
   const profilesById = new Map((profilesQuery.data ?? []).map((p) => [p.id, p.full_name]));
@@ -77,7 +74,7 @@ export function IssuesScreen() {
                   >
                     {he.adminIssues.resolve}
                   </Button>
-                  <Button size="sm" onClick={() => setMoveTarget(issue.id)}>
+                  <Button size="sm" onClick={() => setMoveTarget({ mode: "unsafe", carName: carsById.get(issue.car_id) ?? "", issueId: issue.id })}>
                     {he.action.moveToMaintenance}
                   </Button>
                 </TableCell>
@@ -87,28 +84,7 @@ export function IssuesScreen() {
         </Table>
       )}
 
-      <FormDialog
-        open={!!moveTarget}
-        onOpenChange={(open) => !open && setMoveTarget(null)}
-        title={he.action.moveToMaintenance}
-        loading={moveMutation.isPending}
-        onSubmit={async () => {
-          if (!moveTarget) return;
-          try {
-            await moveMutation.mutateAsync({ issueId: moveTarget, hours });
-            toast.success(he.adminCommon.savedToast);
-            setMoveTarget(null);
-          } catch (error) {
-            showErrorToast(error);
-          }
-        }}
-      >
-        <p className="text-sm text-muted-foreground">{he.adminIssues.moveToMaintenanceConfirm}</p>
-        <label className="flex flex-col gap-1 text-sm">
-          {he.adminIssues.moveToMaintenanceHours}
-          <Input type="number" min={1} value={hours} onChange={(e) => setHours(Number(e.target.value))} />
-        </label>
-      </FormDialog>
+      <MaintenancePeriodDialog target={moveTarget} onOpenChange={(open) => !open && setMoveTarget(null)} />
     </div>
   );
 }

@@ -844,9 +844,9 @@ Re-play of run 5's week after the run-5 batch. **Outcome on the same week: 1 req
 - **R8B9 — decided (owner 2026-10-07): warn the Sadran, do not refuse** (the Sadran may have agreed it with the member on WhatsApp). Original: with the guest's times outside her window (cd934c7a: pickup 08:40 vs asked 10:15–10:30, return 17:50 past 17:30) — the Sadran is not warned and the server does not check the guest's flexibility.
 - **R8B10** A member who does not drive is addressed as the host of merges ("לצרף את טליה לנסיעה שלך", m12, ccfdd0dc/1b61a2e8).
 - **R8B11** No freed-car offer when a needs-driver (chauffeur) ride is cancelled (f819c890).
-- **R8B12** Changing a trip type (to הקפצה) does not place the request although a car was free (Sun 67c0daff).
-- **R8B13** Chauffeur durations disagree: placed by hand 09:30–10:45, solver 09:30–11:15.
-- **R8B14** Complementary one-way pairs get neither a pairing nor a `chainOneWay` suggestion; the reason "אין רכב פנוי שנמצא בגבעת חביבה" is wrong (cars idle there) (Sun 74feea8d/99d3a5bc, 67c0daff/dd63c2b1).
+- ✅ (2026-10-09, REQ §13.117) **R8B12** Changing a trip type (to הקפצה) does not place the request although a car was free (Sun 67c0daff).
+- ✅ (2026-10-09, REQ §13.117) **R8B13** Chauffeur durations disagree: placed by hand 09:30–10:45, solver 09:30–11:15.
+- ✅ (2026-10-09, REQ §13.117) **R8B14** Complementary one-way pairs get neither a pairing nor a `chainOneWay` suggestion; the reason "אין רכב פנוי שנמצא בגבעת חביבה" is wrong (cars idle there) (Sun 74feea8d/99d3a5bc, 67c0daff/dd63c2b1).
 - **R8B15** Publish-anyway dialog line truncated ("… · א׳ 11.10 · עד"); a "waive" external is labelled "דחייה"; a React duplicate-key warning on the ride sheet (f0fb8b66).
 
 ### UI changes
@@ -975,7 +975,7 @@ Order: finish the e2e runs → release what is in (`npm run release`) → a new 
 **Fix (before the pilot):**
 - **R8B2** publish day picker pre-ticks unsolved days as ready ("רק ימים מוכנים" could publish them); stale publish-anyway text.
 - **R8B1** per-day autofill must place a multi-day series: if the Sadran starts with Tuesday and the other days are still empty, a Monday–Thursday series must be placed (its whole span, `place_series`), not left `UNMET_SERIES_NO_CAR`.
-- **R7B2** → **hide chauffeur suggestions for the pilot** (no chauffeur-suggestion card actions / drafts / auto-proposals; keep the code).
+- **R7B2** → **hide chauffeur suggestions for the pilot** (no chauffeur-suggestion card actions / drafts / auto-proposals; keep the code). ✅ built 2026-10-09 (REQ §13.117 a): `SolverConfig.chauffeurSuggestions`, off by default.
 - **R8B7** no outcome notices before a day is published (accepting a merge, "שינוי בסידור שלך —" with an empty title, "כל הרכבים תפוסים", "שובצה").
 - **R8B8** host's `/p` page shows the guest's request as "הבקשה שלך"; a one-way join shown with a return.
 - **R8B5** ask-to-join on a private car never reaches the owner (`sent_at` null) and the Sadran has no in-app path.
@@ -985,9 +985,11 @@ Order: finish the e2e runs → release what is in (`npm run release`) → a new 
 - **R8B12** changing a trip type to הקפצה places the request when a car is free.
 - **R8B14** complementary one-way pairs get a pairing / `chainOneWay` suggestion; correct unmet reason.
 - **R8B10** a non-driver is never addressed as the host/driver of a merge.
+- **P3 done 2026-10-09 (REQ §13.116; migrations `20261022300000`–`300300`, `p3_notices.sql`, `e2e/proposal-merge-view.spec.ts`):** R8B7 (one gate in `enqueue_notification` + UI reason/series card), R8B8 (`proposal_viewer_merge` + page per reader), R8B5 (deferred trigger sends the owner's proposal), R7M2/R8M1 (`join_asked`, fellow-passenger `passenger_left`, `ride_cancelled` next step), R7U3 (hint mapping `publicTransport` -> `public_transport`, external texts/buttons), R8B10 (`merge_other` copy). Not done: the Sadran has no *new* action on a private-car ask (decided: proposals list + `proposal_answered`, REQ 116 c); series-card "שובצה" only partly reproduced (display fix by rule, not by a captured case).
 - **R8B13** chauffeur duration identical between hand placement and the solver.
 - **R8U1 / R8U2** replace a volunteer driver in one step; a host ride with a pending merge stays editable (no ghost).
 - **OB1 leftover** move an already placed multi-day series to another car (all days, all-or-nothing).
+- **P4 done 2026-10-09 (REQ §13.118; migration `20261022400000`, suites `p4_live_changes.sql` + `scripts/test-api.mjs` "live", `e2e/live-changes.spec.ts` (written, not run)):** R8B11 reproduced on `qa-s7012` (a member cancelling a chauffeur ride created no `freed_slot_offers` row — the Sadran path did; fix `_offer_freed_slot` called from every ended-ride path; after: offer created and resolved by `on-ride-cancelled`); R8U1 (`RideDriverPicker` replace picker, `rideDriver.replace*`); R8U2 (clicking a sent/accepted merge block opens the host ride sheet + `ride-pending-merge` banner, `board/mergeGhostClick.ts`; a time edit on such a ride was already accepted by the server); OB1 leftover: moving a placed series already worked (`edit_ride` -> `move_series`, board drag with confirmation, verified on QA week s7012: refused on a busy car, whole series moved onto the free van); only the docs said "not supported" - fixed, API test added.
 
 **Not now:** every other open B/C item (see the QA run sections).
 

@@ -12,6 +12,7 @@ import { assertInvariants } from './invariants';
 import { fits, luggageFits } from './seatFit';
 import { buildHostRides, findMergeHosts } from './merge';
 import { scoreRequests } from './policy/engine';
+import { oneWayUnmetCause, pairComplementaryOneWays } from './oneWayPairs';
 import { chauffeurShortDropOffs, chauffeurUnpairedRelayLegs, pairRelays, pickupFromCarAtX } from './relay';
 import { reason } from './reasons';
 import { applyFallbacks } from './alternative';
@@ -216,6 +217,11 @@ function solveExpanded(input: SolverInput): SolverOutput {
   // R4B1: this holds for every unmet pair unit (own connected pair or a cross-request relay pair): a
   // pair that fits on no car leaves its legs unpaired, so each leg gets the chauffeur path in this same
   // click — otherwise the next solve (partner now fixed) places them and auto-fill never finishes.
+  // R8B14: complementary explicit one-way legs (X -> Y with Y -> X) that blocked each other (the lone
+  // leg strands the car's next ride, the return finds no car at Y) go together onto one car.
+  const oneWayPairs = pairComplementaryOneWays(
+    improveResult.stillUnmetUnits.flatMap((u) => (u.kind === 'single' && u.single?.tripType === 'one_way' ? [u.single] : [])),
+    timelines, input, carsMap, scores);
   const ownPairFallback: NormalizedRequest[] = [];
   for (const u of improveResult.stillUnmetUnits) {
     if (u.kind !== 'pair' || !u.pair) continue;
@@ -242,7 +248,7 @@ function solveExpanded(input: SolverInput): SolverOutput {
   const healedNoDriverIds = new Set([...shortRides.healedIds, ...healedNoDriverSingleIds]);
   const stillPassengerOnly = passengerOnly.filter((nr) => !healedNoDriverIds.has(nr.id));
 
-  const assignments = [...fixedAssignments, ...solverAssignments, ...healed, ...healedNoDriver].sort((a, b) => byId({ id: a.rideId }, { id: b.rideId }));
+  const assignments = [...fixedAssignments, ...solverAssignments, ...oneWayPairs.healed, ...healed, ...healedNoDriver].sort((a, b) => byId({ id: a.rideId }, { id: b.rideId }));
 
   const servedRequestIds = new Set<string>();
   for (const a of assignments) for (const rid of a.servedRequestIds) servedRequestIds.add(rid);
@@ -254,7 +260,9 @@ function solveExpanded(input: SolverInput): SolverOutput {
   const unmetIds = new Map<string, NormalizedRequest>();
   const unmetSeriesUnits = improveResult.stillUnmetUnits.filter((u) => u.kind === 'series' && u.series);
   for (const u of improveResult.stillUnmetUnits) {
-    if (u.kind === 'single' && u.single) unmetIds.set(u.single.id, u.single);
+    if (u.kind === 'single' && u.single) {
+      if (!oneWayPairs.healedIds.has(u.single.id)) unmetIds.set(u.single.id, u.single);
+    }
     else if (u.kind === 'pair' && u.pair) {
       if (!healedIds.has(u.pair.outNr.id)) unmetIds.set(u.pair.outNr.id, u.pair.outNr);
       if (!healedIds.has(u.pair.retNr.id)) unmetIds.set(u.pair.retNr.id, u.pair.retNr);
@@ -296,6 +304,8 @@ function solveExpanded(input: SolverInput): SolverOutput {
           const fit = input.cars.filter((c) => c.type === 'shared' && fits(c, nr.passengers));
           return fit.length === 0 || fit.every((c) => !timelines.get(c.id)?.isFree(leg0.window, nr.originId));
         })();
+      // R8B14: an explicit one-way leg says why for real (stranded next ride vs no car at the origin vs busy).
+      const oneWayCause = nr.tripType === 'one_way' ? oneWayUnmetCause(nr, timelines, input) : { strands: false, atOrigin: false };
       const reasonCode = needsLargeTrunk
         ? 'UNMET_NEEDS_LARGE_TRUNK'
         : seatsBusy
@@ -305,7 +315,11 @@ function solveExpanded(input: SolverInput): SolverOutput {
         : stillUnpairedRelay.includes(nr)
           ? 'UNMET_NO_RELAY_PARTNER'
           : nr.tripType === 'one_way'
-            ? 'UNMET_NO_CAR_AT_ORIGIN'
+            ? oneWayCause.strands
+              ? 'UNMET_ONE_WAY_STRANDS_CAR'
+              : oneWayCause.atOrigin
+                ? 'UNMET_NO_CAR'
+                : 'UNMET_NO_CAR_AT_ORIGIN'
             : 'UNMET_NO_CAR';
       const reasonText =
         reasonCode === 'UNMET_NEEDS_LARGE_TRUNK'
@@ -316,6 +330,8 @@ function solveExpanded(input: SolverInput): SolverOutput {
           ? reason('UNMET_NO_RELAY_PARTNER', { dest: requestDestName(input, nr.request) })
           : reasonCode === 'UNMET_PASSENGER_NO_HOST'
             ? reason('UNMET_NEEDS_DRIVER', { dest: requestDestName(input, nr.request), dep: '' })
+            : reasonCode === 'UNMET_ONE_WAY_STRANDS_CAR'
+              ? reason('UNMET_ONE_WAY_STRANDS_CAR', { origin: requestOriginName(input, nr.request, nr.originId), dest: requestDestName(input, nr.request) })
             : reasonCode === 'UNMET_NO_CAR_AT_ORIGIN'
               ? reason('UNMET_NO_CAR_AT_ORIGIN', { origin: requestOriginName(input, nr.request, nr.originId), dest: requestDestName(input, nr.request) })
               : noCarReason(input, nr, timelines, blockers);

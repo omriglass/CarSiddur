@@ -49,6 +49,20 @@ describe("toDisplayRows", () => {
     expect(display!.seriesLegs).toHaveLength(3);
   });
 
+  it("R8B7: a series card shows a placement only when every day is published (an unpublished leg reads submitted)", () => {
+    const [mixed] = toDisplayRows([
+      request({ id: "a", seriesId: "s", seriesIndex: 1, status: "assigned", statusReason: "SERIES_PLACED" }),
+      request({ id: "b", seriesId: "s", seriesIndex: 2, status: "submitted" }),
+    ]);
+    expect(mixed!.status).toBe("submitted");
+    expect(mixed!.statusReason).toBeNull();
+    const [all] = toDisplayRows([
+      request({ id: "a", seriesId: "s2", seriesIndex: 1, status: "assigned" }),
+      request({ id: "b", seriesId: "s2", seriesIndex: 2, status: "assigned" }),
+    ]);
+    expect(all!.status).toBe("assigned");
+  });
+
   it("leaves an ordinary single-day request as its own row with no seriesLegs", () => {
     const [display] = toDisplayRows([request({ id: "solo" })]);
     expect(display!.id).toBe("solo");

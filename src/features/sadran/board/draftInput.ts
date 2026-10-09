@@ -1,3 +1,4 @@
+import { externalHintFromSuggestion } from "@/features/sadran/proposals/externalHint";
 // REQ §13.94: "טיוטה" on the board creates the proposal the composer would have created - same
 // payload (`buildProposalPayload`) and the same stored WhatsApp text (`proposalPreviewText`) -
 // without leaving the board. Pure: the caller supplies the already-loaded rows.
@@ -64,7 +65,7 @@ export function buildDraftInput(prefill: ComposerPrefill, ctx: DraftInputContext
   const request = ctx.requests.find((r) => r.id === prefill.requestId);
   if (!request) return { ok: false };
   const hostRide = prefill.rideId ? ctx.rides.find((ride) => ride.id === prefill.rideId) : undefined;
-  const hint = typeof prefill.payload.hint === "string" ? prefill.payload.hint : "cab";
+  const hint = typeof prefill.payload.hint === "string" ? externalHintFromSuggestion(prefill.payload.hint) : "cab";
   // Same switch as the composer: an external "waive" is stored as a plain denial.
   const type: ProposalType = prefill.type === "external" && hint === "waive" ? "deny" : prefill.type;
   const reasonRaw = typeof prefill.payload.reason === "string" ? prefill.payload.reason.trim() : "";

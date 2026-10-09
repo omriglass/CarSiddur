@@ -817,12 +817,6 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
       conflict: change.is_planning, pendingConsent: true, rideTypeCode: original?.rideTypeCode });
   }
 
-  const weekGridBlocks: WeekGridBlock[] = (maintenanceQuery.data ?? []).flatMap((block) => {
-    const startMinutes = (Date.parse(block.starts_at) - Date.parse(dayStartIso(selectedDay))) / 60_000;
-    const endMinutes = (Date.parse(block.ends_at) - Date.parse(dayStartIso(selectedDay))) / 60_000;
-    return startMinutes < 1440 && endMinutes > 0 ? [{ id: block.id, carId: block.car_id, startMinutes, endMinutes, kind: "maintenance" as const }] : [];
-  });
-
   // REQ §89 (owner 2026-09-15)/§13.93: the car is away from its base between a relay out-leg and
   // its return — draw an explicit, non-interactive "away" band instead of leaving that gap
   // looking like a free/vacant column (`conflictScan.awayByCarId`, computed by the same
@@ -990,7 +984,6 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
     draftPlacements,
     shadowedRideIds,
     weekGridRides,
-    weekGridBlocks,
     awayByCarId,
     awayWeekGridBlocks,
     dayWaitlistGroups,

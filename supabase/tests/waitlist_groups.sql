@@ -120,9 +120,9 @@ declare dept uuid := '00000000-0000-0000-0000-000000000001'; w date := public.cu
 begin
   ready := public.publication_readiness(dept, w);
   assert (select (item->>'unresolvedRequests')::int = 2 and (item->>'incompleteAssignments')::int = 0
-            and (item->>'ready')::boolean
+            and not (item->>'ready')::boolean and (item->>'unsolvedRequests')::int = 2
           from jsonb_array_elements(ready) item where (item->>'day')::date = w+1),
-    'unresolvedRequests must be informational: a day with only unplaced requests is still ready';
+    'R8B2: a day whose requests are all still submitted (nobody solved it) is not ready, but publish stays possible (unresolved is informational)';
 
   v := public.publish_siddur(dept, w, '[]'::jsonb, public.publish_scores_fingerprint(dept, w), '[]'::jsonb,
     array[w+1, w+2, w+3, w+4], false);

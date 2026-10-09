@@ -52,6 +52,14 @@ describe("publication choices", () => {
     expect(screen.getAllByRole("checkbox", { checked: true })).toHaveLength(5);
   });
 
+  it("an unsolved day is not pre-ticked and says so (R8B2)", () => {
+    mocks.readiness[2] = { ...mocks.readiness[2]!, ready: false, unresolvedRequests: 3, unsolvedRequests: 3 };
+    show();
+    fireEvent.click(screen.getByRole("button", { name: he.publicationFlow.selectDays }));
+    expect(screen.getAllByRole("checkbox", { checked: true })).toHaveLength(6);
+    expect(screen.getByText(/3 בקשות שטרם נפתרו/)).toBeTruthy();
+  });
+
   it("refuses a day with unsent drafts and says why (REQ §13.94)", () => {
     mocks.readiness = mocks.readiness.map((day, index) => index === 2 ? { ...day, ready: false, draftProposals: 1 } : day);
     show();

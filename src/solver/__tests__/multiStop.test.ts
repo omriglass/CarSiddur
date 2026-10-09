@@ -184,16 +184,17 @@ describe('chauffeur windows with stops, both candidates (REQUIREMENTS §13.93, O
     });
   }
 
-  it('drop-off candidate (car at the origin): [D, D + routeSlots + directSlots + dwell)', () => {
+  it('drop-off candidate (car at the origin): [D, D + ceil((route + direct + dwell) / 15))', () => {
     const input = baseInput({ cars: [makeCar('C1')], destinations, travel, requests: [request()] }); // car defaults to home
     const ride = solve(input).assignments.find((a) => a.servedRequestIds.includes('R1'));
     expect(ride?.reasonCode).toBe('PLACED_CHAUFFEUR_NO_RETURNER');
     expect(ride?.originId).toBe(HOME);
     expect(ride?.destinationId).toBe(HOME);
-    expect(ride?.window).toEqual({ start: 40, end: 40 + 4 + 3 + 1 }); // [40, 48)
+    // R8B13: rounded once from exact minutes: 50 + 45 + 10 = 105 min = 7 slots (not 4 + 3 + 1 = 8)
+    expect(ride?.window).toEqual({ start: 40, end: 47 });
   });
 
-  it('pickup candidate (car at the destination): [D - directSlots - dwell, D + routeSlots)', () => {
+  it('pickup candidate (car at the destination): ends at D + routeSlots, same total duration', () => {
     const input = baseInput({
       cars: [makeCar('C1', { startLocationId: 'destC' })], // not at home -> the drop-off candidate is unavailable
       destinations,
@@ -204,7 +205,7 @@ describe('chauffeur windows with stops, both candidates (REQUIREMENTS §13.93, O
     expect(ride?.reasonCode).toBe('PLACED_CHAUFFEUR_NO_RETURNER');
     expect(ride?.originId).toBe('destC');
     expect(ride?.destinationId).toBe('destC');
-    expect(ride?.window).toEqual({ start: 40 - 3 - 1, end: 40 + 4 }); // [36, 44)
+    expect(ride?.window).toEqual({ start: 40 + 4 - 7, end: 40 + 4 }); // [37, 44)
   });
 });
 

@@ -11,6 +11,10 @@ vi.mock("@/lib/rpc", async (importOriginal) => {
 });
 
 import {
+  createCarMaintenance,
+  deleteCarMaintenance,
+  markIssueUnsafeMaintenance,
+  updateCarMaintenance,
   fetchCars,
   fetchCarSeatConfigs,
   fetchDestinations,
@@ -153,6 +157,28 @@ describe("fetchMaintenanceBlocks", () => {
     mocks.from.mockReturnValue(builder);
     expect(await fetchMaintenanceBlocks("dept-1")).toEqual([]);
     expect(calls.eq).toEqual([["department_id", "dept-1"]]);
+  });
+});
+
+describe("scheduled maintenance RPCs (REQ §13.114)", () => {
+  it("create passes car, period and optional reason", async () => {
+    mocks.rpc.mockResolvedValueOnce("block-1");
+    expect(await createCarMaintenance({ carId: "car-1", startsAt: "2026-11-12T08:00:00Z", endsAt: "2026-11-12T17:00:00Z" })).toBe("block-1");
+    expect(mocks.rpc).toHaveBeenLastCalledWith("create_car_maintenance", { p_car_id: "car-1", p_starts_at: "2026-11-12T08:00:00Z", p_ends_at: "2026-11-12T17:00:00Z", p_reason: undefined });
+  });
+  it("update returns how many rides the server flagged", async () => {
+    mocks.rpc.mockResolvedValueOnce({ id: "b", flagged_rides: 2 });
+    expect(await updateCarMaintenance({ blockId: "b", startsAt: "s", endsAt: "e" })).toEqual({ flagged_rides: 2 });
+    mocks.rpc.mockResolvedValueOnce(null);
+    expect(await updateCarMaintenance({ blockId: "b", startsAt: "s", endsAt: "e" })).toEqual({ flagged_rides: 0 });
+  });
+  it("delete and the unsafe-issue entry point call their RPCs", async () => {
+    mocks.rpc.mockResolvedValueOnce(null);
+    await deleteCarMaintenance("b");
+    expect(mocks.rpc).toHaveBeenLastCalledWith("delete_car_maintenance", { p_block_id: "b" });
+    mocks.rpc.mockResolvedValueOnce("b2");
+    await markIssueUnsafeMaintenance({ issueId: "i", endsAt: "e" });
+    expect(mocks.rpc).toHaveBeenLastCalledWith("report_car_issue_unsafe_maintenance", { p_issue_id: "i", p_ends_at: "e" });
   });
 });
 

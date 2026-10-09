@@ -8,6 +8,7 @@ import type { DestinationValue } from "@/components/DestinationCombobox";
 import type { RequestFallbackValue } from "@/lib/enums";
 
 import type { RequestFormValues } from "./schema";
+import type { RushWindows } from "./rushHours";
 import { departFromArriveBy, returnFromLeaveThere } from "./timeAnchors";
 import { tripTypeToLegacyFields } from "./tripType";
 
@@ -206,10 +207,10 @@ export function dropOffFromPlanBPatch(plan: PlanBDetails, anchored: boolean): Pa
 }
 
 /** The car times of the plan-B הקפצה: leave early enough to arrive by plan B's time, back home after the pickup + drive. */
-export function dropOffCarTimes(plan: PlanBDetails, routes: { outMinutes: number; returnMinutes: number }): { departTime: string; returnTime?: string } {
+export function dropOffCarTimes(plan: PlanBDetails, routes: { outMinutes: number; returnMinutes: number }, rush: RushWindows = []): { departTime: string; returnTime?: string } {
   return {
-    departTime: departFromArriveBy(plan.arriveBy, routes.outMinutes),
-    returnTime: plan.pickup && plan.pickupAt ? returnFromLeaveThere(plan.pickupAt, routes.returnMinutes) : undefined,
+    departTime: departFromArriveBy(plan.arriveBy, routes.outMinutes, rush),
+    returnTime: plan.pickup && plan.pickupAt ? returnFromLeaveThere(plan.pickupAt, routes.returnMinutes, rush) : undefined,
   };
 }
 

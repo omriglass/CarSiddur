@@ -15,7 +15,7 @@ import { dayBoundsForSlot, formatSlotTime, minutesToSlots, travelSlotsFor, type 
 import type { SplitLegsContext } from './splitLegs';
 import { trySplitLegs } from './splitLegs';
 import { CarTimeline } from './timeline';
-import { chauffeurCandidates } from './travel';
+import { chauffeurCandidates, chauffeurTotalSlots, resolveStopMinutes } from './travel';
 import type { Assignment, Car, Destination, LegSide, SolverConfig, SolverInput, Suggestion, Window } from './types';
 
 export interface SuggestionContext {
@@ -55,12 +55,15 @@ function findChauffeurCar(
   point: number,
   ctx: SuggestionContext,
 ): { carId: string; window: Window } | null {
+  // R7B2: hidden for the pilot (owner 2026-10-08) behind `config.chauffeurSuggestions`; the code stays.
+  if (!ctx.input.config.chauffeurSuggestions) return null;
   const dwellSlots = minutesToSlots(ctx.input.config.chauffeurDwellMinutes);
   // Multi-stop rides (REQUIREMENTS §13.93 "Multi-stop rides"): nr.travelSlots
   // is already the leg's own route duration; the chauffeur's empty
   // repositioning drive never revisits the stops (directSlots).
   const directSlots = travelSlotsFor(ctx.input, nr.originId, nr.destinationId);
-  const candidates = chauffeurCandidates(side, point, nr.travelSlots, directSlots, dwellSlots, nr.originId, nr.destinationId);
+  const totalSlots = chauffeurTotalSlots(ctx.input, nr.request, side, nr.originId, nr.destinationId, resolveStopMinutes(ctx.input.config), ctx.input.config.chauffeurDwellMinutes);
+  const candidates = chauffeurCandidates(side, point, nr.travelSlots, directSlots, dwellSlots, nr.originId, nr.destinationId, totalSlots);
   const day = dayBoundsForSlot(ctx.input.week.days, point);
   const load = chauffeurLoad(nr.passengers);
   const sharedCars = ctx.input.cars.filter((c) => c.type === 'shared').sort((a, b) => (a.id < b.id ? -1 : 1));

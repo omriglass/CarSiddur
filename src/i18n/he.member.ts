@@ -343,6 +343,10 @@ export const heMember = {
     alreadyAnsweredBy: "התשובה שלך נרשמה",
     backHome: "לדף הבית",
     yourRequest: "הבקשה שלך",
+    guestRequest: "הבקשה של {{name}}",
+    rideBefore: "הנסיעה כעת",
+    externalAccept: "אסתדר/י בעצמי — לסגור את הבקשה",
+    externalStay: "להישאר ברשימת ההמתנה",
     before: "המקורי",
     after: "המוצע",
     reason: "סיבה",
@@ -625,6 +629,9 @@ export const heMember = {
       homeEstimate: "בבית בערך {{time}} · {{minutes}} דק׳ נסיעה",
       leaveEstimate: "יציאה משם בערך {{time}} · {{minutes}} דק׳ נסיעה",
     },
+    /** REQ §13.113: a drive stretched by rush hours is shown as "כ־56" with a short note (rush hours are never named). */
+    estimateApprox: "כ־{{minutes}}",
+    estimateNote: "הערכה בלבד",
     flexRowLabel: "± גמישות",
     flexChip: {
       "0": "בדיוק",
@@ -874,6 +881,41 @@ export const heMember = {
     whatsapp: "וואטסאפ",
     whatsappText: "היי {{driver}}, ראיתי שאת/ה נוסע/ת ל{{destination}} ביום {{day}} בשעה {{time}} — אפשר להצטרף לנסיעה?",
     stay: "להישאר ברשימת ההמתנה",
+  },
+  /**
+   * Scheduled car maintenance (REQ §13.114): the "תקופת טיפול" dialog, the "טיפול הבא" line on the car page /
+   * cars list, the label on a maintenance band in the siddur/board grid.
+   */
+  maintenancePeriod: {
+    title: "תקופת טיפול",
+    titleEdit: "עריכת תקופת טיפול",
+    titleUnsafe: "הרכב לא בטוח — עד מתי בטיפול?",
+    action: "תקופת טיפול",
+    from: "התחלה",
+    to: "סיום",
+    fromNow: "מיד",
+    reason: "הערה (לא חובה)",
+    save: "שמירה",
+    remove: "ביטול התקופה",
+    removeConfirm: "לבטל את תקופת הטיפול? הרכב יתפנה לנסיעות.",
+    savedToast: "תקופת הטיפול נשמרה",
+    removedToast: "תקופת הטיפול בוטלה",
+    next: "טיפול הבא: {{range}}",
+    none: "אין טיפול מתוכנן",
+    upcomingTitle: "טיפולים מתוכננים",
+    columnNext: "טיפול הבא",
+    blockLabel: "בטיפול",
+    blockTitle: "בטיפול {{range}}",
+    dragHint: "אפשר לגרור כדי להזיז או לשנות את התקופה",
+    flaggedToast: "{{count}} נסיעות הושפעו — הסדרן והנוסעים עודכנו",
+    reasonUnsafeIssue: "תקלה לא בטוחה",
+    reasonScheduled: "טיפול מתוכנן",
+    errors: {
+      invalid: "תקופת הטיפול אינה תקינה — הסיום חייב להיות אחרי ההתחלה",
+      inPast: "אי אפשר לקבוע תקופת טיפול שכבר עברה",
+      overlap: "כבר קיימת תקופת טיפול חופפת לרכב הזה",
+      finished: "תקופת הטיפול כבר הסתיימה או נמחקה",
+    },
   },
   /**
    * Full-screen fallback rendered by the router's `errorElement` when a

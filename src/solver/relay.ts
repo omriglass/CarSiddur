@@ -27,7 +27,7 @@ import { byId, dayBoundsForSlot, eligibleDriverMemberId, formatSlotTime, minutes
 import type { CarTimeline } from './timeline';
 import type { Assignment, Car, SolverInput, Window } from './types';
 import { chauffeurLoad, fits, luggageFits } from './seatFit';
-import { chauffeurCandidates, type ChauffeurCandidate } from './travel';
+import { chauffeurCandidates, chauffeurTotalSlots, resolveStopMinutes, type ChauffeurCandidate } from './travel';
 
 export interface RelayPair {
   id: string;
@@ -378,7 +378,8 @@ export function chauffeurUnpairedRelayLegs(
     // chauffeur's empty repositioning drive never revisits the stops, so it
     // uses the plain point-to-point `directSlots` instead.
     const directSlots = travelSlotsFor(input, nr.originId, nr.destinationId);
-    const candidates = chauffeurCandidates(side, point, nr.travelSlots, directSlots, dwellSlots, nr.originId, nr.destinationId);
+    const totalSlots = chauffeurTotalSlots(input, nr.request, side, nr.originId, nr.destinationId, resolveStopMinutes(input.config), input.config.chauffeurDwellMinutes);
+    const candidates = chauffeurCandidates(side, point, nr.travelSlots, directSlots, dwellSlots, nr.originId, nr.destinationId, totalSlots);
 
     let carId: string | null = null;
     let chosen: ChauffeurCandidate | null = null;
@@ -405,7 +406,7 @@ export function chauffeurUnpairedRelayLegs(
         if (at === nr.originId || at === nr.destinationId || at === input.homeLocationId) continue;
         const window = {
           start: point - travelSlotsFor(input, at, nr.originId),
-          end: point + nr.travelSlots + directSlots + dwellSlots + travelSlotsFor(input, nr.originId, at),
+          end: point + totalSlots + travelSlotsFor(input, nr.originId, at),
         };
         if (window.start < day.startSlot || window.end > day.endSlot) continue;
         if (!tl.isFree(window, at)) continue;

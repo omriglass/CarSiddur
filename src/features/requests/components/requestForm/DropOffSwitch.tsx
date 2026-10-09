@@ -12,6 +12,8 @@ import type { DestinationValue } from "@/components/DestinationCombobox";
 import { tv } from "@/i18n/he";
 import type { TripType } from "@/lib/enums";
 
+import { useDepartmentSettings } from "@/features/sadran/hooks";
+
 import { useRouteMinutesFetcher } from "../../hooks";
 import {
   dropOffCarTimes,
@@ -24,6 +26,7 @@ import {
   type PlanBDetails,
 } from "../../planB";
 import { destinationValueToPoint } from "../../routePoints";
+import { rushWindowsForDay } from "../../rushHours";
 import type { RequestFormValues } from "../../schema";
 import { DropOffSwitchDialog } from "./DropOffSwitchDialog";
 
@@ -53,6 +56,8 @@ export function useDropOffSwitch({ form, variant, departmentId, destinations, an
 } {
   const [dialogOpen, setDialogOpen] = useState(false);
   const fetchMinutes = useRouteMinutesFetcher(departmentId);
+  // REQ §13.113: the classic form's plan-B switch converts "arrive by" / "pickup" with the same rush-hour rule.
+  const settingsQuery = useDepartmentSettings(departmentId);
 
   function patch(values: Partial<RequestFormValues>) {
     for (const [key, value] of Object.entries(values)) {
@@ -74,7 +79,7 @@ export function useDropOffSwitch({ form, variant, departmentId, destinations, an
       fetchMinutes([origin, plan.place].map(destinationValueToPoint)),
       plan.pickup ? fetchMinutes([plan.place, origin].map(destinationValueToPoint)) : Promise.resolve(0),
     ]);
-    const times = dropOffCarTimes(plan, { outMinutes, returnMinutes });
+    const times = dropOffCarTimes(plan, { outMinutes, returnMinutes }, rushWindowsForDay(settingsQuery.data, current.day));
     form.setValue("departTime", times.departTime, { shouldDirty: true, shouldValidate: true });
     if (times.returnTime) form.setValue("returnTime", times.returnTime, { shouldDirty: true, shouldValidate: true });
   }

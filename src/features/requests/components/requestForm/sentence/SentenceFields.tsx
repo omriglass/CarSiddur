@@ -23,6 +23,7 @@ import { planBRecapLine } from "../../../fallbackLine";
 import { toInstant } from "../../../mapper";
 import { whoText } from "../../../whoLabel";
 import type { RequestFormValues } from "../../../schema";
+import type { RushWindows } from "../../../rushHours";
 import { anchorLabelKey, endEstimate, enteredOutTime, enteredReturnTime } from "../../../timeAnchors";
 import {
   WINDOW_EARLIEST_START,
@@ -48,6 +49,7 @@ import { PillChip } from "./PillChip";
 import { PlacePicker } from "./PlacePicker";
 import { SentenceChip } from "./SentenceChip";
 import { StageTwo } from "./StageTwo";
+import { estimateLine } from "./estimateLine";
 import { TimeAnchorSheet } from "./TimeAnchorSheet";
 import { TimeField15 } from "@/components/TimeField15";
 import { WhoSheet } from "./WhoSheet";
@@ -103,6 +105,8 @@ export interface SentenceFieldsProps {
   multiDaySpan: number | null;
   /** `route_minutes_preview` of each leg; `null` while unknown. */
   routeMinutes: { out: number | null; return: number | null; planB: number | null };
+  /** The request day's rush-hour windows (REQ §13.113); empty = none. */
+  rush: RushWindows;
   recentDestinations: DestinationValue[];
   /** Profile ids that travelled with the member on their own recent requests (newest first). */
   recentCompanionIds: readonly string[];
@@ -158,7 +162,7 @@ export function SentenceFields(props: SentenceFieldsProps) {
   const {
     form, variant, weekStart, departmentId, day, errors, destinations, rideTypes, preferredCars, initialPreferredCarName, members, childOptions,
     tripShape, tripType, dropOffPickup, canDrive, seeksDriver, isQuickContext, showReturnDayPicker,
-    returnAnotherDay, setReturnAnotherDay, isMultiDay, multiDaySpan, routeMinutes, recentDestinations, recentCompanionIds, stage, onStageChange,
+    returnAnotherDay, setReturnAnotherDay, isMultiDay, multiDaySpan, routeMinutes, rush, recentDestinations, recentCompanionIds, stage, onStageChange,
     invalidSignal, quickContext, quickWindow, notices, onChildAdded, mode,
   } = props;
   const control = form.control;
@@ -259,12 +263,10 @@ export function SentenceFields(props: SentenceFieldsProps) {
   // Derived line: only an end anchored away from the car time ("יציאה משוערת 08:45 · 45 דק׳ נסיעה").
   const derivedLines: string[] = [];
   if (!windowOn && anchorsEnabled && hasOut && departAnchor === "arrive" && routeMinutes.out != null) {
-    const estimate = endEstimate("out", "arrive", outTime, routeMinutes.out);
-    derivedLines.push(tv(`requestSentence.estimate.${estimate.kind}` as const, { time: estimate.time, minutes: String(estimate.minutes) }));
+    derivedLines.push(estimateLine(endEstimate("out", "arrive", outTime, routeMinutes.out, rush)));
   }
   if (!windowOn && anchorsEnabled && hasReturn && returnAnchor === "leave" && routeMinutes.return != null) {
-    const estimate = endEstimate("return", "leave", returnTime, routeMinutes.return);
-    derivedLines.push(tv(`requestSentence.estimate.${estimate.kind}` as const, { time: estimate.time, minutes: String(estimate.minutes) }));
+    derivedLines.push(estimateLine(endEstimate("return", "leave", returnTime, routeMinutes.return, rush)));
   }
 
   const textOrDash = (text: string | undefined) => (text && text.trim() ? text.trim() : he.requestSentence.empty);
@@ -548,7 +550,7 @@ export function SentenceFields(props: SentenceFieldsProps) {
         </div>
       ) : null}
 
-      {isWeekly ? <PlanBLine form={form} errors={errors} destinations={destinations} originPlaceId={originPresetId} sheet={sheet} setSheet={setSheet} routeMinutes={routeMinutes.planB} /> : null}
+      {isWeekly ? <PlanBLine form={form} errors={errors} destinations={destinations} originPlaceId={originPresetId} sheet={sheet} setSheet={setSheet} routeMinutes={routeMinutes.planB} rush={rush} /> : null}
 
       {notices}
 
@@ -713,6 +715,7 @@ export function SentenceFields(props: SentenceFieldsProps) {
           end="out"
           isPickup={false}
           routeMinutes={routeMinutes.out}
+          rush={rush}
           anchorsEnabled={anchorsEnabled}
           flexEnabled={flexEnabled}
           stopsEnabled={false}
@@ -731,6 +734,7 @@ export function SentenceFields(props: SentenceFieldsProps) {
           end="return"
           isPickup={isPickup}
           routeMinutes={routeMinutes.return}
+          rush={rush}
           anchorsEnabled={anchorsEnabled}
           flexEnabled={flexEnabled}
           stopsEnabled={variant !== "carNow"}

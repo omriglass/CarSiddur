@@ -1,3 +1,4 @@
+import { CarMaintenancePanel } from "@/features/fleet/components/CarMaintenancePanel";
 import { formatInTimeZone } from "date-fns-tz";
 import { CarFront, Droplets, History as HistoryIcon, Wrench } from "lucide-react";
 import type { ReactNode } from "react";
@@ -155,6 +156,8 @@ export function CarManageScreen({ car, isAdmin, viewerName, headerActions }: Car
         <span dir="ltr">{car.license_plate}</span>
         <StatusBadge kind="car" status={car.status} />
       </div>
+
+      <CarMaintenancePanel car={car} />
 
       <Tabs defaultValue="details">
         <TabsList>

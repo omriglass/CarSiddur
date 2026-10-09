@@ -104,15 +104,40 @@ export function chauffeurCandidates(
   dwellSlots: number,
   originId: string,
   destinationId: string,
+  /** R8B13: the ride's whole duration in slots, rounded once from exact minutes
+   *  (`chauffeurTotalSlots`). Absent = the old per-part slot sum. */
+  totalSlots?: number,
 ): ChauffeurCandidate[] {
-  const total = routeSlots + directSlots + dwellSlots;
+  const total = totalSlots ?? routeSlots + directSlots + dwellSlots;
   if (side === 'return') {
     return [{ window: { start: point - total, end: point }, carOriginId: originId }];
   }
   return [
     { window: { start: point, end: point + total }, carOriginId: originId },
-    { window: { start: point - directSlots - dwellSlots, end: point + routeSlots }, carOriginId: destinationId },
+    // Pickup: the ride ends when the car is back at B (D + the route), same total duration.
+    { window: { start: point + routeSlots - total, end: point + routeSlots }, carOriginId: destinationId },
   ];
+}
+
+/**
+ * R8B13 — THE chauffeur-ride duration rule, shared with SQL `chauffeur_ride_minutes()` (which the
+ * hand placement `place_request_on_car` uses): `ceil((route + direct + dwell) / 15) * 15` minutes,
+ * rounded ONCE from exact minutes (never per part: 31 min + 31 min + 10 min is 75, not 7 slots).
+ * `route` = the leg's own route minutes (stops included), `direct` = the empty drive back
+ * `origin <-> destination` (equal to `route` with no stops), `dwell` = `chauffeurDwellMinutes`.
+ */
+export function chauffeurTotalSlots(
+  lookup: TravelLookup,
+  request: Pick<Request, 'originId' | 'destinationId' | 'stops'>,
+  side: 'out' | 'return',
+  originId: string,
+  destinationId: string,
+  stopMinutes: number,
+  dwellMinutes: number,
+): number {
+  const route = legRouteMinutes(lookup, request, side, stopMinutes);
+  const direct = travelBetween(lookup, originId, destinationId).minutes;
+  return Math.max(1, Math.ceil((route + direct + Math.max(0, dwellMinutes)) / 15));
 }
 
 // --- Multi-stop rides (REQUIREMENTS §13.93 "Multi-stop rides", ORIGINS_PLAN §6.2/§6.3) ---

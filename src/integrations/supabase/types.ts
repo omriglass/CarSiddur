@@ -689,6 +689,12 @@ export type Database = {
           proposal_expiry_mode: string
           publish_dow: number
           publish_time: string
+          rush_afternoon_end: string
+          rush_afternoon_percent: number
+          rush_afternoon_start: string
+          rush_morning_end: string
+          rush_morning_percent: number
+          rush_morning_start: string
           stop_minutes: number
           turnaround_minutes: number
           updated_at: string | null
@@ -714,6 +720,12 @@ export type Database = {
           proposal_expiry_mode?: string
           publish_dow?: number
           publish_time?: string
+          rush_afternoon_end?: string
+          rush_afternoon_percent?: number
+          rush_afternoon_start?: string
+          rush_morning_end?: string
+          rush_morning_percent?: number
+          rush_morning_start?: string
           stop_minutes?: number
           turnaround_minutes?: number
           updated_at?: string | null
@@ -739,6 +751,12 @@ export type Database = {
           proposal_expiry_mode?: string
           publish_dow?: number
           publish_time?: string
+          rush_afternoon_end?: string
+          rush_afternoon_percent?: number
+          rush_afternoon_start?: string
+          rush_morning_end?: string
+          rush_morning_percent?: number
+          rush_morning_start?: string
           stop_minutes?: number
           turnaround_minutes?: number
           updated_at?: string | null
@@ -4348,6 +4366,10 @@ export type Database = {
         Args: { p_department_id: string; p_payload: Json; p_request_id: string }
         Returns: undefined
       }
+      _can_edit_car_maintenance: {
+        Args: { p_car_id: string }
+        Returns: boolean
+      }
       _day_car_swap_authorize: {
         Args: {
           p_actor: string
@@ -4435,6 +4457,8 @@ export type Database = {
         }
         Returns: Record<string, unknown>
       }
+      _maintenance_quarter_ceil: { Args: { p_t: string }; Returns: string }
+      _maintenance_quarter_floor: { Args: { p_t: string }; Returns: string }
       _merge_check: {
         Args: {
           p_leg?: Database["public"]["Enums"]["ride_leg"]
@@ -4457,6 +4481,18 @@ export type Database = {
         Args: { _new_end: string; _new_start: string; _ride_id: string }
         Returns: string
       }
+      _notice_is_unpublished_outcome: {
+        Args: {
+          _caller_days: string
+          _data: Json
+          _department_id: string
+          _event: Database["public"]["Enums"]["notification_event"]
+          _recipient: string
+          _week_start: string
+        }
+        Returns: boolean
+      }
+      _offer_freed_slot: { Args: { p_ride_id: string }; Returns: string }
       _proposal_car_conflicts: {
         Args: { p_proposal_id: string }
         Returns: Json
@@ -4825,6 +4861,15 @@ export type Database = {
         Args: { _car: string; _week: string }
         Returns: undefined
       }
+      create_car_maintenance: {
+        Args: {
+          p_car_id: string
+          p_ends_at: string
+          p_reason?: string
+          p_starts_at: string
+        }
+        Returns: string
+      }
       create_department: {
         Args: {
           p_name: string
@@ -4882,6 +4927,10 @@ export type Database = {
       day_date_label:
         | { Args: { _at: string }; Returns: string }
         | { Args: { _d: string }; Returns: string }
+      delete_car_maintenance: {
+        Args: { p_block_id: string }
+        Returns: undefined
+      }
       department_stats: {
         Args: { p_department_id: string; p_from: string; p_to: string }
         Returns: Json
@@ -5133,6 +5182,16 @@ export type Database = {
         }
         Returns: Json
       }
+      place_request_on_any_free_car: {
+        Args: {
+          p_actor: string
+          p_dep: string
+          p_reason: string
+          p_request_id: string
+          p_ret: string
+        }
+        Returns: string
+      }
       place_request_on_car: {
         Args: {
           p_actor: string
@@ -5235,6 +5294,10 @@ export type Database = {
         Args: { p_proposal_id: string; p_reason?: string; p_variant: string }
         Returns: undefined
       }
+      proposal_viewer_merge: {
+        Args: { p_profile_id: string; p_proposal_id: string }
+        Returns: Json
+      }
       publication_conflicting_ride_ids: {
         Args: {
           p_days: string[]
@@ -5332,6 +5395,10 @@ export type Database = {
           _description: string
           _photo_path?: string
         }
+        Returns: string
+      }
+      report_car_issue_unsafe_maintenance: {
+        Args: { p_ends_at: string; p_issue_id: string }
         Returns: string
       }
       report_car_issue_unsafe_to_maintenance: {
@@ -5661,6 +5728,10 @@ export type Database = {
           p_ride_id: string
         }
         Returns: undefined
+      }
+      update_car_maintenance: {
+        Args: { p_block_id: string; p_ends_at: string; p_starts_at: string }
+        Returns: Json
       }
       update_ride_public_notes: {
         Args: { p_expected_version: number; p_notes: string; p_ride_id: string }

@@ -32,5 +32,17 @@ export const departmentSettingsSchema = z.object({
   join_radius_km: z.number().min(0).max(100),
   /** REQUIREMENTS §13.93 "Multi-stop rides": dwell time per declared stop (`request_leg_route_minutes()`/`legRouteMinutes()`), default 5. */
   stop_minutes: z.number().int().min(0).max(60),
+  /** REQUIREMENTS §13.113: rush-hour windows (Sunday-Thursday) and the extra drive percentage inside each. */
+  rush_morning_start: z.string(),
+  rush_morning_end: z.string(),
+  rush_morning_percent: z.number().int().min(0).max(100),
+  rush_afternoon_start: z.string(),
+  rush_afternoon_end: z.string(),
+  rush_afternoon_percent: z.number().int().min(0).max(100),
+}).superRefine((v, ctx) => {
+  const m = (t: string) => t.slice(0, 5);
+  if (m(v.rush_morning_start) >= m(v.rush_morning_end)) ctx.addIssue({ code: "custom", path: ["rush_morning_end"], message: "rushWindow" });
+  if (m(v.rush_afternoon_start) >= m(v.rush_afternoon_end)) ctx.addIssue({ code: "custom", path: ["rush_afternoon_end"], message: "rushWindow" });
+  if (m(v.rush_morning_end) > m(v.rush_afternoon_start)) ctx.addIssue({ code: "custom", path: ["rush_afternoon_start"], message: "rushOrder" });
 });
 export type DepartmentSettingsFormValues = z.infer<typeof departmentSettingsSchema>;

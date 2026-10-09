@@ -12,6 +12,7 @@ import type { TimeAnchor } from "@/lib/enums";
 import { cn } from "@/lib/utils";
 
 import { earliestPickup, hasAltPlace, planBOffered } from "../../../planB";
+import type { RushWindows } from "../../../rushHours";
 import type { RequestFormValues } from "../../../schema";
 import { arriveByFromDeparture, departFromArriveBy, endEstimate } from "../../../timeAnchors";
 import { FieldError } from "../FieldError";
@@ -35,6 +36,8 @@ interface PlanBLineProps {
   setSheet: (sheet: PlanBSheet | null) => void;
   /** `route_minutes_preview` from the request's origin to the drop place; `null` while unknown. */
   routeMinutes: number | null;
+  /** The request day's rush-hour windows (REQ §13.113). */
+  rush: RushWindows;
 }
 
 /**
@@ -42,14 +45,14 @@ interface PlanBLineProps {
  * + estimate line. The stored value is always `arrive_by`; the chosen anchor and the typed
  * departure live only in this component's state, so reopening the sheet shows "להגיע עד" (no DB column).
  */
-function PlanBArriveBody({ arriveBy, routeMinutes, onChange, error }: { arriveBy: string; routeMinutes: number | null; onChange: (value: string) => string | null; error?: string }) {
+function PlanBArriveBody({ arriveBy, routeMinutes, rush, onChange, error }: { arriveBy: string; routeMinutes: number | null; rush: RushWindows; onChange: (value: string) => string | null; error?: string }) {
   const [anchor, setAnchor] = useState<TimeAnchor>("arrive");
-  const [departure, setDeparture] = useState(() => (routeMinutes != null ? departFromArriveBy(arriveBy, routeMinutes) : arriveBy));
+  const [departure, setDeparture] = useState(() => (routeMinutes != null ? departFromArriveBy(arriveBy, routeMinutes, rush) : arriveBy));
   // R10U4: set when the drop time pushed the pickup along.
   const [movedPickup, setMovedPickup] = useState<string | null>(null);
   const leave = anchor === "leave" && routeMinutes != null;
   const entered = leave ? departure : arriveBy;
-  const estimate = routeMinutes != null ? endEstimate("out", leave ? "leave" : "arrive", entered, routeMinutes) : null;
+  const estimate = routeMinutes != null ? endEstimate("out", leave ? "leave" : "arrive", entered, routeMinutes, rush) : null;
   return (
     <AnchorTimePicker
       anchors={["leave", "arrive"]}
@@ -58,14 +61,14 @@ function PlanBArriveBody({ arriveBy, routeMinutes, onChange, error }: { arriveBy
       anchor={anchor}
       anchorLabel={(option) => he.requestSentence.anchor[option === "arrive" ? "outArrive" : "outLeave"]}
       onAnchorChange={(next) => {
-        if (next === "leave" && routeMinutes != null) setDeparture(departFromArriveBy(arriveBy, routeMinutes));
+        if (next === "leave" && routeMinutes != null) setDeparture(departFromArriveBy(arriveBy, routeMinutes, rush));
         setAnchor(next);
       }}
       value={entered}
       onChange={(next) => {
         if (leave && routeMinutes != null) {
           setDeparture(next);
-          setMovedPickup(onChange(arriveByFromDeparture(next, routeMinutes)));
+          setMovedPickup(onChange(arriveByFromDeparture(next, routeMinutes, rush)));
         } else setMovedPickup(onChange(next));
       }}
       ariaLabel={he.planB.sheet.arrive}
@@ -93,7 +96,7 @@ function placeName(value: DestinationValue | undefined, destinations: PlanBLineP
   return value.freeText;
 }
 
-export function PlanBLine({ form, errors, destinations, originPlaceId, sheet, setSheet, routeMinutes }: PlanBLineProps) {
+export function PlanBLine({ form, errors, destinations, originPlaceId, sheet, setSheet, routeMinutes, rush }: PlanBLineProps) {
   const values = useWatch({ control: form.control });
   const scope = { tripType: values.tripType ?? "round_trip", day: values.day ?? "", returnDay: values.returnDay };
   if (!planBOffered(scope)) return null;
@@ -246,7 +249,7 @@ export function PlanBLine({ form, errors, destinations, originPlaceId, sheet, se
       </FieldSheet>
 
       <FieldSheet open={sheet === "planBArrive"} onOpenChange={(open) => !open && setSheet(null)} title={arriveTitle} testId="plan-b-arrive-sheet">
-        <PlanBArriveBody arriveBy={arriveBy} routeMinutes={routeMinutes} onChange={actions.setArriveBy} error={errors.altArriveBy?.message ?? errors.altPickupAt?.message} />
+        <PlanBArriveBody arriveBy={arriveBy} routeMinutes={routeMinutes} rush={rush} onChange={actions.setArriveBy} error={errors.altArriveBy?.message ?? errors.altPickupAt?.message} />
       </FieldSheet>
 
       <FieldSheet open={sheet === "planBPickup"} onOpenChange={(open) => !open && setSheet(null)} title={pickupTitle} testId="plan-b-pickup-sheet">

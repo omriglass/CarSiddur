@@ -120,7 +120,8 @@ describe('explicit one_way trip type (REQUIREMENTS §13.93 item 4)', () => {
     });
     const output = solve(input);
     const unmet = output.unmet.find((u) => u.requestId === 'R1');
-    expect(unmet?.reasonCode).toBe('UNMET_NO_CAR_AT_ORIGIN');
+    // R8B14: the true reason (a car IS at the origin; the leg would strand its next ride), not "no car at the origin"
+    expect(unmet?.reasonCode).toBe('UNMET_ONE_WAY_STRANDS_CAR');
     expect(output.assignments.some((a) => a.servedRequestIds.includes('R1'))).toBe(false);
   });
 

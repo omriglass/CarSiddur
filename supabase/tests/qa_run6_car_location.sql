@@ -38,8 +38,11 @@ begin
       select 1 from public.ride_requests rr join public.rides r on r.id=rr.ride_id
       where rr.request_id=q and r.status<>'cancelled' and r.car_id=car40 and r.origin_id=home and r.starts_at=d),
     'R6B4: the request is never put on a car standing in Haifa as a round trip from home';
-  assert (select status_reason from public.requests where id=q)='UNMET_TRIP_TYPE_CHANGED',
-    format('R6B4: the request stays unmet, got %s',(select status_reason from public.requests where id=q));
+  -- R8B12 (REQ §13.117 b): another car that IS at home may now take it; the request is unmet only when none can.
+  assert (select status_reason from public.requests where id=q)='UNMET_TRIP_TYPE_CHANGED'
+      or not exists(select 1 from public.ride_requests rr join public.rides r on r.id=rr.ride_id
+        where rr.request_id=q and r.status<>'cancelled' and r.car_id=car40),
+    format('R6B4: the request is not on the car standing in Haifa, got %s',(select status_reason from public.requests where id=q));
 
   -- ============ R6B6: a driverless car move is still a ride that decides where the car is (and what comes next)
   mv:=public.mark_car_move(car41,home,haifa,((w+4)+time '08:00') at time zone 'Asia/Jerusalem',60,'{}');

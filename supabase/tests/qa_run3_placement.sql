@@ -2,6 +2,17 @@
 -- Transactional (begin ... rollback) on the seeded נבו department (…0001, home …0010, destination …0011,
 -- Sadran …0102, members …0103/…0104, cars …0040/…0041) on far-future weeks.
 begin;
+create or replace function pg_temp.publish_week(p_dept uuid, p_w date, p_offsets int[]) returns void language plpgsql as $f$
+declare v uuid;
+begin
+  -- R8B7 (REQ §13.109 a): outcome notices exist only for published days, so a copy test publishes the day it checks first.
+  insert into public.siddur_versions(department_id,week_start,snapshot,published_by)
+    values(p_dept,p_w,'{}'::jsonb,(select id from public.profiles where is_admin limit 1)) returning id into v;
+  perform set_config('app.in_publish','on',true);
+  update public.weeks set phase='published', published_version_id=v, published_days=array(select p_w+i from unnest(p_offsets) i)
+    where department_id=p_dept and week_start=p_w;
+  perform set_config('app.in_publish','off',true);
+end $f$;
 
 -- (b) mark_car_move: a ride with no served request that DECIDES where the car is.
 do $$
@@ -154,6 +165,7 @@ begin
   end;
 
   -- R3B12: 103 cancels; the driver is told, and the ride (still 104's own) stays.
+  perform pg_temp.publish_week(dept,w,array[0,1,2,3,4,5,6]);   -- R8B7: the driver is told only on a published day
   perform set_config('request.jwt.claims',jsonb_build_object('sub',p103,'role','authenticated')::text,true);
   select version into ver from public.rides where id=rA;
   perform public.cancel_ride(rA,'PASSENGER_CANCELLED',ver);

@@ -1,3 +1,4 @@
+import { useMaintenanceGridEditing } from "@/features/fleet/useMaintenanceGridEditing";
 import { paths } from "@/app/routes";
 import { formatInTimeZone } from "date-fns-tz";
 import { useEffect, useRef, useState } from "react";
@@ -88,6 +89,8 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
   // Interactive/drag-drop state + every handler that mutates rides/proposals
   // from the board — `useBoardDnd`.
   const dnd = useBoardDnd(departmentId, weekStart, board);
+  // REQ §13.114: maintenance bands are drawn (and, for Sadranim/admins, draggable) from the full period rows.
+  const maintenanceEditing = useMaintenanceGridEditing({ departmentId, blocks: board.maintenanceQuery.data ?? [], cars: board.weekGridCars, day: board.selectedDay, staff: true });
   // Destructured locally (not read off `dnd.` at the point of use) purely so
   // TypeScript's null-narrowing survives into the nested closures below
   // (`onSave`'s `.then()`, etc.) exactly as it did when these were plain
@@ -365,6 +368,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
       ) : null}
 
       <WeekStrip weekStart={weekStart} counts={board.dayCounts} selected={board.selectedDay} onSelect={board.setSelectedDay} />
+      {maintenanceEditing.dialog}
 
       <div className={showLegend ? "" : "hidden lg:block"}>
         <RideTypeLegend types={(board.rideTypesQuery.data ?? []).map((rt) => ({ code: rt.code, nameHe: rt.name_he }))} />
@@ -377,7 +381,9 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
             onZoomChange={setTableZoom}
             cars={hideIdleTemporaryCars(board.weekGridCars, board.weekGridRides)}
             rides={board.weekGridRides}
-            blocks={[...board.weekGridBlocks, ...board.awayWeekGridBlocks]}
+            blocks={[...maintenanceEditing.gridBlocks, ...board.awayWeekGridBlocks]}
+            onBlockChange={maintenanceEditing.onBlockChange}
+            onBlockClick={maintenanceEditing.onBlockClick}
             dayStartMinutes={dayStartMinutes}
             dayEndMinutes={dayEndMinutes}
             readOnly={false}
@@ -634,6 +640,10 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
         }}
       />
       <RideSheet
+        pendingMerge={(() => {
+          const pending = selectedRide?.id && !selectedPlanningChange ? board.pendingMerges.find((merge) => merge.host.id === selectedRide.id && !merge.isDraft) : undefined;
+          return pending ? { guestName: pending.guest.requester_full_name ?? "", onOpen: () => { dnd.setSelectedRideId(null); dnd.setSelectedProposalId(pending.proposal.id); } } : null;
+        })()}
         driverCandidates={(dnd.reservationMembersQuery.data ?? []).map((m) => ({ ...m, homePlaceId: m.homeOriginId }))}
         otherRides={board.rides}
         key={selectedPlanningChange?.id ?? selectedRide?.id ?? "no-ride"}

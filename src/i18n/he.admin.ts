@@ -85,6 +85,16 @@ export const heAdmin = {
     fieldJoinRadiusKmHelp: 'לפני כניסה לרשימת המתנה, מוצעות נסיעות קיימות באותו יום ליעד במרחק זה או פחות.',
     /** REQUIREMENTS §13.93 "Multi-stop rides": `department_settings.stop_minutes`, default 5. */
     fieldStopMinutes: "דקות לעצירה",
+    /** REQUIREMENTS §13.113: `department_settings.rush_*` — the request form stretches the drive inside these windows (Sunday-Thursday). */
+    rushTitle: "שעות עומס (ראשון עד חמישי)",
+    rushHelp: "נסיעה שחלקה בתוך חלון עומס נמשכת יותר באחוז שמוגדר כאן. משפיע רק על חישוב שעת היציאה בבקשה כשחברים בוחרים \"להגיע עד\" או \"לצאת משם ב־\".",
+    rushMorning: "עומס בבוקר",
+    rushAfternoon: "עומס אחה״צ",
+    rushStart: "מתחיל",
+    rushEnd: "מסתיים",
+    rushPercent: "תוספת זמן נסיעה (%)",
+    rushWindowError: "שעת הסיום חייבת להיות אחרי שעת ההתחלה",
+    rushOrderError: "חלון אחה״צ חייב להתחיל אחרי סיום חלון הבוקר",
     fieldStopMinutesHelp: "זמן המתנה משוער בכל עצירה בדרך — משפיע על זמני ההגעה המשוערים ועל משך הנסיעה.",
   },
   adminMembers: {
@@ -232,8 +242,8 @@ export const heAdmin = {
     fieldTo: "מסתיים",
     fieldReason: "סיבה",
     columnCreatedBy: "נוצר על ידי",
-    end: "סיים חסימה",
-    endedToast: "החסימה הסתיימה",
+    edit: "עריכה",
+    pickCarTitle: "לאיזה רכב?",
     affectedRidesWarning: "החסימה הזו משפיעה על {{count}} נסיעות בשבוע פעיל/מפורסם",
   },
   adminErrors: {
@@ -261,8 +271,6 @@ export const heAdmin = {
     statusResolved: "טופלה",
     unsafe: "לא בטוח לנסיעה",
     resolve: "סמן כטופל",
-    moveToMaintenanceHours: "שעות חסימה",
-    moveToMaintenanceConfirm: "הרכב יועבר למצב \"בטיפול\" ותיווצר חסימה",
   },
   adminDestinations: {
     fieldLat: "קו רוחב (אופציונלי)",

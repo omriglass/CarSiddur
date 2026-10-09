@@ -249,15 +249,17 @@ export function selectOpenRequests<R extends { id: string; status: string }>(
 /**
  * Per-day autofill (REQ §13.109 b, R7U1): keep only the requests anchored on `day`
  * (`yyyy-MM-dd`, Jerusalem) — anchor = first departure, else the return. Every other day's rides
- * stay fixed because the context is built in `'remaining'` mode. A multi-day series request is
- * therefore handled only when its FIRST day is the chosen day (its legs on later days follow it);
- * the QA CLI (`scripts/qa/sadran.ts autofill --day`) calls this same function. Mutates `input`.
+ * stay fixed because the context is built in `'remaining'` mode. A multi-day series that touches
+ * the chosen day (R8B1) goes through with ALL its days (every leg row sharing its `seriesId`), so the
+ * solver places it over its whole span instead of `UNMET_SERIES_NO_CAR`; the QA CLI (`scripts/qa/sadran.ts autofill --day`) calls this same function. Mutates `input`.
  */
 export function restrictInputToDay(input: SolverInput, day: string): void {
-  input.requests = input.requests.filter((r) => {
+  const onDay = (r: SolverInput["requests"][number]) => {
     const anchor = r.departureMs ?? r.returnMs;
     return anchor != null && dateKey(new Date(anchor)) === day;
-  });
+  };
+  const seriesOnDay = new Set(input.requests.filter((r) => r.seriesId && onDay(r)).map((r) => r.seriesId));
+  input.requests = input.requests.filter((r) => onDay(r) || (r.seriesId != null && seriesOnDay.has(r.seriesId)));
 }
 
 /**

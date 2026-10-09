@@ -845,6 +845,8 @@ export interface PublicationDay {
   unresolvedRequests: number;
   /** The real defect split out of `unresolvedRequests`: an assigned/merged request whose legs are not all covered. `ready` keys off this, not `unresolvedRequests`. */
   incompleteAssignments: number;
+  /** R8B2 (REQ §13.115): requests of the day still `submitted` (nobody solved/reviewed them) - `ready` requires 0. Absent on an older server. */
+  unsolvedRequests?: number;
   /** R5U3: external/denied requests - answered, not "unresolved". */
   answeredRequests?: number;
   pendingProposals: number;

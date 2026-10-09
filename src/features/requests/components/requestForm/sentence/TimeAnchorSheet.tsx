@@ -9,6 +9,7 @@ import { he, tv } from "@/i18n/he";
 import type { TimeAnchor } from "@/lib/enums";
 
 import { shiftReturnByDepartureDelta } from "../../../duration";
+import type { RushWindows } from "../../../rushHours";
 import type { RequestFormValues } from "../../../schema";
 import {
   anchorLabelKey,
@@ -31,6 +32,8 @@ interface TimeAnchorSheetProps {
   isPickup: boolean;
   /** `route_minutes_preview` of this leg; `null` while unknown. */
   routeMinutes: number | null;
+  /** The request day's rush-hour windows (REQ §13.113). */
+  rush: RushWindows;
   /** Anchor toggle + derived line. Off for quick/car-now and multi-day requests (leave/home-by only). */
   anchorsEnabled: boolean;
   /** The flexibility row of this end (weekly, single-day). */
@@ -50,6 +53,7 @@ export function TimeAnchorSheet({
   end,
   isPickup,
   routeMinutes,
+  rush,
   anchorsEnabled,
   flexEnabled,
   stopsEnabled,
@@ -105,7 +109,7 @@ export function TimeAnchorSheet({
   }
 
   const options: TimeAnchor[] = end === "out" ? ["leave", "arrive"] : ["arrive", "leave"];
-  const estimate = anchorsEnabled && routeMinutes != null ? endEstimate(end, anchor, entered, routeMinutes) : null;
+  const estimate = anchorsEnabled && routeMinutes != null ? endEstimate(end, anchor, entered, routeMinutes, rush) : null;
   const ariaLabel = end === "out" ? he.field.depart : he.field.return;
 
   return (

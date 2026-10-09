@@ -121,6 +121,24 @@ export interface WeekGridBlock {
    * (`board/dropValidity.ts`).
    */
   kind?: "maintenance" | "away";
+  /**
+   * REQ §13.114: a maintenance period the viewer may move/resize (the car's current responsible person, the
+   * Sadran, the admin — decided by the caller; the server re-checks). Read-only bands omit it.
+   */
+  editable?: boolean;
+  /** The period starts before / ends after this grid's day: that edge has no resize handle here. `startMinutes`/`endMinutes` stay the true (unclamped) values. */
+  clippedStart?: boolean;
+  clippedEnd?: boolean;
+}
+
+/** Which part of a maintenance band a drag moved (REQ §13.114): the whole band, or one edge. */
+export type WeekGridBlockEdge = "move" | "start" | "end";
+
+interface BlockDragState {
+  blockId: string;
+  kind: WeekGridBlockEdge;
+  confirmed: boolean;
+  delta: number;
 }
 
 /**
@@ -195,6 +213,10 @@ export interface WeekGridProps {
    * Sadran board, which has no pinch requirement) — the ± buttons keep working either way.
    */
   onZoomChange?: (zoom: number) => void;
+  /** A maintenance band (`editable` ones only) was dragged: `deltaMinutes` (a 15-minute multiple) applies to the whole band or one edge. Layout-only like `onRideDrop` — the caller calls the server. */
+  onBlockChange?: (blockId: string, edge: WeekGridBlockEdge, deltaMinutes: number) => void;
+  /** An `editable` maintenance band was clicked / tapped / activated by keyboard (opens the period dialog — the non-drag path, also the only one on touch). */
+  onBlockClick?: (blockId: string) => void;
   /** Contested waiting-list groups for the displayed day (REQ §13.75); omit/empty to hide the lane entirely. */
   discussionBlocks?: readonly WeekGridDiscussionBlock[];
   onDiscussionClick?: (id: string) => void;
@@ -343,6 +365,8 @@ export function WeekGrid({
   zoom = 1,
   onZoomChange,
   discussionBlocks = [],
+  onBlockChange,
+  onBlockClick,
   onDiscussionClick,
   canSwapCars = false,
   onCarSwap,
@@ -377,6 +401,8 @@ export function WeekGrid({
   const [drag, setDrag] = useState<DragState | null>(null);
   const dragRef = useRef<DragState | null>(null);
   const suppressClick = useRef(false);
+  const [blockDrag, setBlockDrag] = useState<BlockDragState | null>(null);
+  const suppressBlockClick = useRef(false);
   const [carDrag, setCarDrag] = useState<CarDragState | null>(null);
   const carDragRef = useRef<CarDragState | null>(null);
   const carLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -735,6 +761,61 @@ export function WeekGrid({
     return shift;
   }
 
+  /**
+   * Maintenance band gesture (REQ §13.114): same Pointer Events + window-level listeners as the ride drag above
+   * (synthetic mouse input does not honour pointer capture). `kind` "move" shifts the whole band, "start"/"end" one
+   * edge; the delta is snapped to 15 minutes and clamped so the band never gets shorter than 15 minutes. Vertical only —
+   * a band belongs to its car. Touch only starts from the edge handles (the body must still scroll the grid); a tap on
+   * the body is a click.
+   */
+  function beginBlockDrag(event: ReactPointerEvent<HTMLElement>, block: WeekGridBlock, kind: WeekGridBlockEdge, colEl: HTMLElement | null) {
+    event.stopPropagation();
+    if (!colEl || !onBlockChange) return;
+    if (kind === "move" && event.pointerType === "touch") return;
+    const rect = colEl.getBoundingClientRect();
+    const total = dayEndMinutes - dayStartMinutes;
+    const pointerId = event.pointerId;
+    const startY = event.clientY;
+    const anchorScroll = verticalScroller()?.scrollTop ?? 0;
+    const duration = block.endMinutes - block.startMinutes;
+    let state: BlockDragState = { blockId: block.id, kind, confirmed: false, delta: 0 };
+    suppressBlockClick.current = false;
+    const compute = (clientY: number) => {
+      const scrolled = (verticalScroller()?.scrollTop ?? anchorScroll) - anchorScroll;
+      let delta = snapTimeShift(((clientY - startY + scrolled) / rect.height) * total);
+      if (kind === "start") delta = Math.min(delta, duration - 15);
+      if (kind === "end") delta = Math.max(delta, -(duration - 15));
+      return delta;
+    };
+    const cleanup = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onCancel);
+      setBlockDrag(null);
+    };
+    function onMove(e: PointerEvent) {
+      if (e.pointerId !== pointerId) return;
+      const confirmed = state.confirmed || Math.abs(e.clientY - startY) >= DRAG_START_THRESHOLD_PX;
+      state = { ...state, confirmed, delta: compute(e.clientY) };
+      setBlockDrag(state);
+      if (confirmed) e.preventDefault();
+    }
+    function onUp(e: PointerEvent) {
+      if (e.pointerId !== pointerId) return;
+      const finished = { ...state, delta: compute(e.clientY) };
+      cleanup();
+      if (!finished.confirmed) return; // a plain tap: the element's own onClick opens the dialog
+      suppressBlockClick.current = true;
+      if (finished.delta !== 0) onBlockChange?.(block.id, kind, finished.delta);
+    }
+    function onCancel(e: PointerEvent) {
+      if (e.pointerId === pointerId) cleanup();
+    }
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onCancel);
+  }
+
   function beginDrag(
     event: ReactPointerEvent<HTMLElement>,
     ride: WeekGridRide,
@@ -844,12 +925,21 @@ export function WeekGrid({
           />
         ))}
         {blocksFor(car.id).map((b) => {
-          const rect = clampRideVertical(b.startMinutes, b.endMinutes, dayStartMinutes, dayEndMinutes);
           const isAway = b.kind === "away";
+          const editable = !isAway && !!b.editable && !!onBlockChange;
+          const dragging = blockDrag?.blockId === b.id && blockDrag.confirmed ? blockDrag : null;
+          const shownStart = dragging && dragging.kind !== "end" ? b.startMinutes + dragging.delta : b.startMinutes;
+          const shownEnd = dragging && dragging.kind !== "start" ? b.endMinutes + dragging.delta : b.endMinutes;
+          const rect = clampRideVertical(shownStart, shownEnd, dayStartMinutes, dayEndMinutes);
+          const handleClass = "absolute inset-x-0 z-10 h-2.5 cursor-ns-resize touch-none border-foreground/30 bg-foreground/15";
           return (
             <div
               key={b.id}
               data-block-kind={b.kind ?? "maintenance"}
+              data-block-id={b.id}
+              data-block-editable={editable || undefined}
+              role={editable ? "button" : undefined}
+              tabIndex={editable ? 0 : undefined}
               className={cn(
                 "absolute inset-x-1 z-0 flex items-start overflow-clip rounded-sm border p-1 text-xs",
                 // R4U1: an away band is only a hint - it never takes clicks from a ride card on the same car.
@@ -857,11 +947,40 @@ export function WeekGrid({
                 isAway
                   ? "border-muted-foreground/50 bg-[repeating-linear-gradient(45deg,hsl(var(--muted-foreground)/0.25),hsl(var(--muted-foreground)/0.25)_4px,hsl(var(--muted-foreground)/0.08)_4px,hsl(var(--muted-foreground)/0.08)_8px)] text-muted-foreground"
                   : "border-maintenance/60 bg-[repeating-linear-gradient(45deg,hsl(var(--maintenance)/0.35),hsl(var(--maintenance)/0.35)_4px,hsl(var(--maintenance)/0.12)_4px,hsl(var(--maintenance)/0.12)_8px)]",
+                editable && "cursor-grab",
+                dragging && "z-20 opacity-80 ring-2 ring-primary",
               )}
               style={{ top: rect.top, height: rect.height }}
               title={b.label}
+              onPointerDown={editable ? (e) => beginBlockDrag(e, b, "move", e.currentTarget.parentElement) : undefined}
+              onClick={editable ? (e) => {
+                e.stopPropagation();
+                if (suppressBlockClick.current) { suppressBlockClick.current = false; return; }
+                onBlockClick?.(b.id);
+              } : undefined}
+              onKeyDown={editable ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onBlockClick?.(b.id); } } : undefined}
             >
-              {isAway ? <span className="whitespace-normal break-words">{b.label}</span> : null}
+              {isAway ? <span className="whitespace-normal break-words">{b.label}</span> : (
+                <span className="sticky whitespace-normal break-words font-medium" style={{ top: HEADER_ROW_HEIGHT_PX }}>{he.maintenancePeriod.blockLabel}</span>
+              )}
+              {editable && !b.clippedStart ? (
+                <span
+                  data-block-handle="start"
+                  className={cn(handleClass, "top-0 border-y")}
+                  aria-hidden="true"
+                  onClick={(e) => e.stopPropagation()}
+                  onPointerDown={(e) => beginBlockDrag(e, b, "start", e.currentTarget.parentElement?.parentElement ?? null)}
+                />
+              ) : null}
+              {editable && !b.clippedEnd ? (
+                <span
+                  data-block-handle="end"
+                  className={cn(handleClass, "bottom-0 border-y")}
+                  aria-hidden="true"
+                  onClick={(e) => e.stopPropagation()}
+                  onPointerDown={(e) => beginBlockDrag(e, b, "end", e.currentTarget.parentElement?.parentElement ?? null)}
+                />
+              ) : null}
             </div>
           );
         })}

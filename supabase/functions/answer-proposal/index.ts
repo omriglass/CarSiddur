@@ -80,6 +80,8 @@ interface ProposalSummary {
     /** R11M3: the car for the drop-off, when the car leaves (`depart_at`) and from where, the pickup car, when the member is back home. */
     carName?: string; departAt?: string | null; originName?: string | null; pickupCarName?: string | null; returnAt?: string | null;
   } | null;
+  /** `merge` only (REQ §13.116, R8B8): what THIS reader sees - the guest's own legs and times, or the ride they ride in. */
+  merge?: Record<string, unknown> | null;
   parties: PartySummary[];
 }
 
@@ -191,6 +193,14 @@ async function buildSummary(proposal: Record<string, unknown>, myProfileId: stri
     };
   }
 
+  // R8B8: a merge reads differently per party (guest / host / fellow passenger); computed in SQL with the same helpers
+  // the notification texts use, so the page never shows the guest's request as the reader's own.
+  let merge: ProposalSummary['merge'] = null;
+  if (proposal.type === 'merge' && myProfileId) {
+    const viewer = await client.rpc('proposal_viewer_merge', { p_proposal_id: proposalId, p_profile_id: myProfileId });
+    merge = (viewer.data as Record<string, unknown> | null) ?? null;
+  }
+
   return {
     proposalId,
     type: proposal.type as string,
@@ -217,6 +227,7 @@ async function buildSummary(proposal: Record<string, unknown>, myProfileId: stri
       : null,
     originChange,
     alternative,
+    merge,
     // Never include phone (ARCHITECTURE.md §10 / hard rule: only phone_of() reads it, and
     // only for members who share a department/ride — this public endpoint reveals neither).
     parties: (parties ?? []).map((p) => ({

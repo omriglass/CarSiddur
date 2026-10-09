@@ -91,8 +91,12 @@ export function toDisplayRows(rows: readonly MyRequestRow[]): DisplayRow[] {
     const first = legs[0]!;
     if (legs.length === 1) return first;
     const last = legs[legs.length - 1]!;
+    // R8B7: a placement outcome shows on the series card only when every day is published (an unpublished leg reads "submitted")
+    const status = first.status !== "submitted" && legs.some((leg) => leg.status === "submitted") ? "submitted" : first.status;
     return {
       ...first,
+      status,
+      statusReason: status === "submitted" ? null : first.statusReason,
       returnAt: last.returnAt ?? last.departAt,
       ride: legs.find((leg) => leg.ride)?.ride ?? null,
       seriesLegs: legs,

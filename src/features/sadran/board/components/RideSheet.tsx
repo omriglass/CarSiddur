@@ -81,6 +81,8 @@ interface RideSheetProps {
   onRemoveAddedPerson?: (requestId: string, name: string) => void;
   /** REQ §13.101 (c): department members for the volunteer-driver picker; omit to hide it. */
   driverCandidates?: readonly DriverCandidate[];
+  /** R8U2: a merge proposal waiting for the guest's answer on this ride; the ride stays editable, this links to the proposal. */
+  pendingMerge?: { guestName: string; onOpen: () => void } | null;
   /** Every ride of the week - lets the volunteer-driver picker mark who is busy then (R2U3). */
   otherRides?: readonly BoardRide[];
 }
@@ -91,7 +93,7 @@ interface RideSheetProps {
  * fallback for reassigning a car via the "העבר לרכב" select below instead of
  * dragging.
  */
-export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenChange, onSave, onTogglePin, onCancel, onUnassign, onJoinLegs, saving, tightSchedule, onClaimDriver, coordinatorNotes, isPlanning, requests = [], departmentId, weekStart, destinations, onSaveRoute, onRemoveAddedPerson, driverCandidates, otherRides = [] }: RideSheetProps) {
+export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenChange, onSave, onTogglePin, onCancel, onUnassign, onJoinLegs, saving, tightSchedule, onClaimDriver, coordinatorNotes, isPlanning, requests = [], departmentId, weekStart, destinations, onSaveRoute, onRemoveAddedPerson, driverCandidates, otherRides = [], pendingMerge }: RideSheetProps) {
   // Bug-fix pass (owner bug #2): the previous re-sync condition compared
   // `ride.car_id !== carId` to detect "a different ride opened" — but that's
   // exactly as true the moment the Sadran picks a *different* car for the
@@ -162,6 +164,10 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
                 <p className="font-semibold">{he.boardCoordination.needsDriver}</p><p>{he.boardCoordination.needsDriverHelp}</p>
                 {onClaimDriver ? <Button disabled={saving} onClick={onClaimDriver}>{he.boardCoordination.claimDriver}</Button> : null}
               </div> : null}
+              {pendingMerge ? <div className="space-y-2 rounded-md border border-dashed p-3" data-testid="ride-pending-merge">
+                <p>{tv("sadranRideSheet.pendingMerge", { name: pendingMerge.guestName })}</p>
+                <Button type="button" variant="outline" className="min-h-11" onClick={pendingMerge.onOpen}>{he.sadranRideSheet.pendingMergeOpen}</Button>
+              </div> : null}
               {driverCandidates && !isPlanning && !reservation && ride.id && ride.version != null && ride.status !== "cancelled"
                 && ride.ends_at && Date.parse(ride.ends_at) > nowMs && departmentId && weekStart ? (
                 <RideDriverPicker
@@ -170,6 +176,7 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
                   version={ride.version}
                   needsDriver={!!ride.needs_driver}
                   volunteerName={!ride.needs_driver && ride.driver_id && !servedEntries.some((entry) => entry.role === "driver") ? (driverName ?? ride.driver_name ?? "") : null}
+                  volunteerId={!ride.needs_driver && ride.driver_id && !servedEntries.some((entry) => entry.role === "driver") ? ride.driver_id : null}
                   candidates={driverCandidates}
                   busyIds={busyDriverIds(ride, otherRides, requests)}
                   placeName={(id) => destinations?.find((d) => d.id === id)?.name}

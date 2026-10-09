@@ -73,6 +73,12 @@ export function DepartmentForm({ department, onSaved, settingsOnly = false }: { 
           board_start_time: settingsQuery.data.board_start_time,
           join_radius_km: settingsQuery.data.join_radius_km,
           stop_minutes: settingsQuery.data.stop_minutes,
+          rush_morning_start: settingsQuery.data.rush_morning_start,
+          rush_morning_end: settingsQuery.data.rush_morning_end,
+          rush_morning_percent: settingsQuery.data.rush_morning_percent,
+          rush_afternoon_start: settingsQuery.data.rush_afternoon_start,
+          rush_afternoon_end: settingsQuery.data.rush_afternoon_end,
+          rush_afternoon_percent: settingsQuery.data.rush_afternoon_percent,
         }
       : undefined,
   });
@@ -446,6 +452,67 @@ export function DepartmentForm({ department, onSaved, settingsOnly = false }: { 
                   </FormItem>
                 )}
               />
+              <div className="col-span-2 space-y-3 rounded-md border p-3" data-testid="rush-hours-settings">
+                <div>
+                  <p className="font-medium">{he.adminDepartments.rushTitle}</p>
+                  <p className="text-sm text-muted-foreground">{he.adminDepartments.rushHelp}</p>
+                </div>
+                {(["morning", "afternoon"] as const).map((part) => {
+                  const startName = `rush_${part}_start` as const;
+                  const endName = `rush_${part}_end` as const;
+                  const percentName = `rush_${part}_percent` as const;
+                  const errorKey = settingsForm.formState.errors[endName]?.message ?? settingsForm.formState.errors[startName]?.message;
+                  return (
+                    <div key={part} className="space-y-2" data-testid={`rush-${part}`}>
+                      <p className="text-sm font-medium">{part === "morning" ? he.adminDepartments.rushMorning : he.adminDepartments.rushAfternoon}</p>
+                      <div className="grid grid-cols-3 gap-2">
+                        <FormField
+                          control={settingsForm.control}
+                          name={startName}
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>{he.adminDepartments.rushStart}</FormLabel>
+                              <FormControl>
+                                <TimeField15 value={field.value.slice(0, 5)} onChange={field.onChange} min="00:00" max="23:45" />
+                              </FormControl>
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={settingsForm.control}
+                          name={endName}
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>{he.adminDepartments.rushEnd}</FormLabel>
+                              <FormControl>
+                                <TimeField15 value={field.value.slice(0, 5)} onChange={field.onChange} min="00:15" max="23:59" />
+                              </FormControl>
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={settingsForm.control}
+                          name={percentName}
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>{he.adminDepartments.rushPercent}</FormLabel>
+                              <FormControl>
+                                <Input type="number" min={0} max={100} step={5} value={field.value} onChange={(e) => field.onChange(Number(e.target.value))} data-testid={`rush-${part}-percent`} />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+                      {errorKey ? (
+                        <p className="text-sm text-destructive" role="alert" data-testid={`rush-${part}-error`}>
+                          {errorKey === "rushOrder" ? he.adminDepartments.rushOrderError : he.adminDepartments.rushWindowError}
+                        </p>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
               <FormField
                 control={settingsForm.control}
                 name="auto_apply_accepted_proposals"

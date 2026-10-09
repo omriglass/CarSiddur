@@ -9,6 +9,17 @@
 --   * decline, a plan B changed after the offer (apply refused), "אסתדר" stored, fairness weight (0.1)
 -- Transactional; rolled back at the end. Seeded נבו department, far-future week.
 begin;
+create or replace function pg_temp.publish_week(p_dept uuid, p_w date, p_offsets int[]) returns void language plpgsql as $f$
+declare v uuid;
+begin
+  -- R8B7 (REQ §13.109 a): outcome notices exist only for published days, so a copy test publishes the day it checks first.
+  insert into public.siddur_versions(department_id,week_start,snapshot,published_by)
+    values(p_dept,p_w,'{}'::jsonb,(select id from public.profiles where is_admin limit 1)) returning id into v;
+  perform set_config('app.in_publish','on',true);
+  update public.weeks set phase='published', published_version_id=v, published_days=array(select p_w+i from unnest(p_offsets) i)
+    where department_id=p_dept and week_start=p_w;
+  perform set_config('app.in_publish','off',true);
+end $f$;
 
 do $$
 declare
@@ -180,6 +191,7 @@ begin
     'TEST 8 FAILED: pickupLine in the reader vars';
 
   -- TEST 9: accept -> applied: the request is now the plan-B הקפצה, the main trip is kept whole, rides exist on every leg.
+  perform pg_temp.publish_week(dept, w, array[2]);   -- R8B7: the member is told they were placed only once the day is published
   perform public.answer_proposal(toks -> 'party_tokens' ->> member1::text, true);
   select * into row_q from public.requests where id = q;
   select * into row_a from public.request_alternatives where request_id = q;
@@ -197,6 +209,9 @@ begin
   assert row_q.status in ('assigned', 'waitlisted'), format('TEST 9 FAILED: request placed (assigned / needs driver), is %s', row_q.status);
   assert exists (select 1 from public.notifications where recipient_id = member1 and event = 'outcome_changed' and data ->> 'variant' = 'alternative_applied'),
     'TEST 9 FAILED: the member is told they were placed by plan B';
+  perform set_config('app.in_publish', 'on', true);   -- later tests need the week unpublished again
+  update public.weeks set phase = 'open', published_version_id = null, published_days = '{}' where department_id = dept and week_start = w;
+  perform set_config('app.in_publish', 'off', true);
   assert exists (select 1 from public.notifications where recipient_id = manager and event = 'proposal_answered' and data ->> 'proposal_id' = prop::text),
     'TEST 9 FAILED: the Sadran is told the answer';
   -- R10U10: the Sadran's notice says it was plan B and names the plan

@@ -2,6 +2,17 @@
 -- told every time someone joins", fewer days for a multi-day request (`series_span`), large-luggage merge rule.
 -- Transactional; rolled back at the end. Uses the seeded נבו department and far-future weeks.
 begin;
+create or replace function pg_temp.publish_week(p_dept uuid, p_w date, p_offsets int[]) returns void language plpgsql as $f$
+declare v uuid;
+begin
+  -- R8B7 (REQ §13.109 a): outcome notices exist only for published days, so a copy test publishes the day it checks first.
+  insert into public.siddur_versions(department_id,week_start,snapshot,published_by)
+    values(p_dept,p_w,'{}'::jsonb,(select id from public.profiles where is_admin limit 1)) returning id into v;
+  perform set_config('app.in_publish','on',true);
+  update public.weeks set phase='published', published_version_id=v, published_days=array(select p_w+i from unnest(p_offsets) i)
+    where department_id=p_dept and week_start=p_w;
+  perform set_config('app.in_publish','off',true);
+end $f$;
 do $$
 declare
   dept uuid:='00000000-0000-0000-0000-000000000001';
@@ -73,6 +84,7 @@ begin
   end;
   perform set_config('request.jwt.claims',jsonb_build_object('sub',manager,'role','authenticated')::text,true);
 
+  perform pg_temp.publish_week(dept,w,array[1]);   -- only the merge's day (w+1); later cases need unpublished days
   perform public.record_answer_on_behalf(prop,m1,true);
   perform public.record_answer_on_behalf(prop,m2,true);
   perform public.record_answer_on_behalf(prop,admin_,true);
@@ -113,10 +125,12 @@ begin
   perform public.send_proposal(prop,'{}');
   select title_he,body_he into t,b from public.notifications where recipient_id=m1 and data->>'proposal_id'=prop::text;
   assert t like '%להזיז%' and b like '%09:15%09:00%' and b not like '%11:00%' and b not like '%{{%', format('shift: old -> new departure only, got [%s] [%s]',t,b);
+  perform pg_temp.publish_week(dept,w,array[1,3]);   -- R8B7: the shift's day (w+3) is published so the member is told
   perform public.record_answer_on_behalf(prop,m1,true);
   if (select status from public.proposals where id=prop)='accepted' then perform public.apply_proposal(prop); end if;
   select body_he into b from public.notifications where recipient_id=m1 and event='outcome_changed' and data->>'request_id'=qS::text and data->>'variant'='time_changed';
   assert b like '%09:15%09:00%', format('applied shift tells the requester old -> new, got %s',b);
+  perform pg_temp.publish_week(dept,w,array[1]);   -- the later cases need w+3 unpublished again
 
   insert into public.requests(department_id,week_start,requester_id,filed_by,origin_id,destination_id,ride_type_id,depart_at,return_at,trip_shape,trip_type,status)
     values(dept,w,m2,manager,zich,haifa,typ,d,d+interval '3 hours','round_trip','round_trip','waitlisted') returning id into qE;
@@ -197,7 +211,6 @@ begin
   assert (select count(*) from public.rides where series_id=sid and status<>'cancelled' and car_id=car40)=2, 'two kept days held on the car';
   assert (select min(starts_at) from public.rides where series_id=sid and status<>'cancelled')=((w+1)+time '09:00') at time zone 'Asia/Jerusalem'
      and (select max(ends_at) from public.rides where series_id=sid and status<>'cancelled')=((w+2)+time '17:00') at time zone 'Asia/Jerusalem', 'span times on the first/last ride';
-  assert exists(select 1 from public.notifications where recipient_id=m1 and event='outcome_changed' and data->>'variant'='time_changed' and data->>'request_id'=qS::text), 'requester told what changed';
 
   -- ============================================= luggage: a large-luggage request only on a large_trunk car, max two
   w:=public.current_week_start()+441;

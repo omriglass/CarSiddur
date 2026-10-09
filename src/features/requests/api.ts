@@ -367,7 +367,8 @@ function mapRow(row: RawRequestRow, profileId?: string): MyRequestRow {
     departmentId: row.department_id,
     weekStart: row.week_start,
     status: hidden ? "submitted" : row.status,
-    statusReason: hidden ? null : row.status_reason,
+    // R8B7: a leftover planning reason ("all cars taken") never shows on an unpublished day, even under `proposed`
+    statusReason: hidden || (!published && row.status === "proposed") ? null : row.status_reason,
     legs,
     isLate: row.is_late,
     changedSinceSolve: row.changed_since_solve,

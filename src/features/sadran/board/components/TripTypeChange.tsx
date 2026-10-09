@@ -27,9 +27,11 @@ export interface TripTypeChangeProps {
   departmentId: string;
   weekStart: string;
   disabled?: boolean;
+  /** R8B12: the request had no car (unmet card), so a placed result reads "placed", not "stayed on its car". */
+  wasUnplaced?: boolean;
 }
 
-export function TripTypeChange({ requestId, version, tripType, name, departmentId, weekStart, disabled }: TripTypeChangeProps) {
+export function TripTypeChange({ requestId, version, tripType, name, departmentId, weekStart, disabled, wasUnplaced }: TripTypeChangeProps) {
   const mutation = useSetRequestTripTypeMutation();
   // R2U2: choosing a type asks first; the select then shows the chosen type until the refetched row agrees.
   const [pending, setPending] = useState<TripType | null>(null);
@@ -49,7 +51,7 @@ export function TripTypeChange({ requestId, version, tripType, name, departmentI
         onSuccess: (result) => {
           setApplied(chosen);
           if (!result.changed) return;
-          const base = tv(result.rideId ? "tripTypeChange.stayed" : "tripTypeChange.unplaced", { name });
+          const base = tv(result.rideId ? (wasUnplaced ? "tripTypeChange.placed" : "tripTypeChange.stayed") : "tripTypeChange.unplaced", { name });
           const detail = result.restoredReturnAt
             ? tv("tripTypeChange.returnRestored", { time: formatTime(new Date(result.restoredReturnAt)) })
             : result.defaultedReturnAt

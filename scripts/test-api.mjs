@@ -17,6 +17,10 @@
 //   series   multi-day request auto-placed on a published week -> member shorten_series
 //   lifecycle (REQ 13.109) a drop-off cancelled with a merged guest releases both legs; ask-to-join own ride / origin = destination refused; volunteer driver replaced
 //   planb    (REQ 13.112) member files a request with a plan B; RLS on request_alternatives; Sadran proposes it, publish waits (even with allow_unanswered), member accepts in-app -> served by plan B
+//   asktojoin (REQ 13.116) ask-to-join on a private car is sent to its owner; the driver of a shared ride is told
+//   triptype (R8B12) the Sadran switches an unplaced request to a drop-off; a free car takes it
+//   maintenance (REQ 13.114) the responsible member creates / shortens a period, a plain member is refused; flagging; responsibility moves
+//   live     (REQ 13.118) a member cancelling a chauffeur ride frees its car; the Sadran replaces a volunteer driver in one step; a placed multi-day series moves to another car on every day or not at all
 //   neighbours a member reads v_ride_car_neighbours (next/previous ride on the car, tight gap) for a published ride
 import { resolveApi, serviceClient, signedInClient, ADMIN_PASSWORD } from "./qa/qa-common.mjs";
 
@@ -127,7 +131,7 @@ async function purge(weeks) {
 try {
   // ---------------------------------------------------------------------------------------------- cancel (R5B1)
   await section("cancel: passenger / chauffeur requester / driver / stranger", async () => {
-    await mkWeek(0, "solving");
+    await mkPublishedWeek(0);   // R8B7: notices about a ride exist only for published days
     {
       const r = await ride({ n: 0, car: CAR_A, day: 1, driver: m1Id });
       const qd = await request({ n: 0, requester: m1Id, day: 1, status: "assigned" }); await link(r.id, qd, "driver", "keep");
@@ -448,7 +452,7 @@ try {
 
   // ------------------------------------------------ request lifecycle (REQ 13.109 d/e/f: R7B9, R6B7, R7B12, R6B8)
   await section("lifecycle: cancel a drop-off with a guest, refusals, driver replacement", async () => {
-    const wk = await mkWeek(8, "solving");
+    const wk = await mkPublishedWeek(8);   // R8B7: notices about a ride exist only for published days
     {
       const q1 = must(await svc.from("requests").insert({
         department_id: DEPT, week_start: wk, requester_id: m1Id, filed_by: sadranId, destination_id: DEST, ride_type_id: TYPE,
@@ -561,6 +565,158 @@ try {
     const after = await reqRow(q);
     check("  note stored; same ride, still assigned, same reason", after.notes === "only a note" && (await rideOf()) === rideBefore && after.status === "assigned" && after.status_reason === before.status_reason,
       JSON.stringify([after.notes, after.status, after.status_reason]));
+  });
+
+  await section("readiness: a day nobody solved is not ready (R8B2, REQ 13.115)", async () => {
+    const wk = await mkWeek(21, "open");
+    const rS = await ride({ n: 21, car: CAR_A, day: 3, driver: m1Id, status: "draft" });
+    const qS = await request({ n: 21, requester: m1Id, day: 3, status: "assigned" }); await link(rS.id, qS, "driver", "keep");
+    await request({ n: 21, requester: m2Id, day: 2, status: "submitted" });
+    await request({ n: 21, requester: m2Id, day: 4, status: "waitlisted" });
+    const dayOf = (rows, n) => rows.find((r) => r.day === dayDate(21, n));
+    const denied = await m1.rpc("publication_readiness", { p_department_id: DEPT, p_week_start: wk });
+    check("a plain member cannot read the readiness", !!denied.error && /not_authorized/.test(denied.error.message), errText(denied));
+    const res = await sadran.rpc("publication_readiness", { p_department_id: DEPT, p_week_start: wk });
+    check("Sadran reads the readiness", !res.error && Array.isArray(res.data), errText(res));
+    const rows = res.data ?? [];
+    check("  the day with a submitted request: unsolved 1, not ready", dayOf(rows, 2)?.unsolvedRequests === 1 && dayOf(rows, 2)?.ready === false, JSON.stringify(dayOf(rows, 2)));
+    check("  the solved day (placed request) is ready", dayOf(rows, 3)?.unsolvedRequests === 0 && dayOf(rows, 3)?.ready === true, JSON.stringify(dayOf(rows, 3)));
+    check("  a waitlisted (solver-unmet) request counts as solved, informational only", dayOf(rows, 4)?.unsolvedRequests === 0 && dayOf(rows, 4)?.ready === true, JSON.stringify(dayOf(rows, 4)));
+  });
+
+  await section("ask-to-join: private car owner gets the proposal, shared-ride driver is told (R8B5, R8M1, REQ 13.116)", async () => {
+    const wk = await mkPublishedWeek(31);
+    const CAR_PRIVATE = "00000000-0000-0000-0000-000000000043"; // m2's own temporary car
+    const rPriv = await ride({ n: 31, car: CAR_PRIVATE, day: 2, driver: m2Id });
+    const joinPayload = (rideId, day) => ({ department_id: DEPT, week_start: wk, destination_id: DEST, ride_type_id: TYPE, trip_shape: "round_trip", depart_at: at(31, day, 6), return_at: at(31, day, 10), join_ride_id: rideId });
+    const ask = await m1.rpc("submit_request", { payload: joinPayload(rPriv.id, 2) });
+    check("member asks to join a private car", !ask.error, errText(ask));
+    const prop = must(await svc.from("proposals").select("id,status,sent_at,created_via").eq("request_id", ask.data?.request_id).eq("created_via", "ask_to_join"), "proposal");
+    check("  the proposal is SENT to the owner (not a draft)", prop.length === 1 && prop[0].status === "sent" && !!prop[0].sent_at, JSON.stringify(prop));
+    const told = must(await svc.from("notifications").select("id").eq("recipient_id", m2Id).eq("event", "proposal_received").eq("data->>proposal_id", prop[0]?.id), "owner notice").length;
+    check("  the owner is notified", told === 1, String(told));
+    const rShared = await ride({ n: 31, car: CAR_B, day: 3, driver: m2Id });
+    const ask2 = await m1.rpc("submit_request", { payload: joinPayload(rShared.id, 3) });
+    check("member asks to join a shared ride", !ask2.error, errText(ask2));
+    const driverTold = must(await svc.from("notifications").select("id,title_he").eq("recipient_id", m2Id).eq("data->>variant", "join_asked").eq("data->>ride_id", rShared.id), "driver notice");
+    check("  the driver is told someone asks to join", driverTold.length === 1 && /להצטרף/.test(driverTold[0].title_he), JSON.stringify(driverTold));
+  });
+
+  await section("trip type: the Sadran switches an unplaced request to a drop-off and a free car takes it (R8B12, REQ 13.117)", async () => {
+    await mkWeek(41, "open");
+    const q = await request({ n: 41, requester: m1Id, day: 2, status: "submitted" });
+    const before = await reqRow(q);
+    const denied = await m1.rpc("set_request_trip_type", { p_request_id: q, p_trip_type: "drop_off", p_expected_version: before.version });
+    check("a plain member cannot switch another request's trip type", !!denied.error, errText(denied));
+    const res = await sadran.rpc("set_request_trip_type", { p_request_id: q, p_trip_type: "drop_off", p_expected_version: before.version });
+    check("Sadran switches it to a drop-off", !res.error && res.data?.changed === true, errText(res));
+    const rides = must(await svc.from("ride_requests").select("leg,car_mode,rides!inner(status,car_id)").eq("request_id", q), "rides of the request")
+      .filter((r) => r.rides.status !== "cancelled");
+    check("  it was placed on a free shared car (no longer unmet)", !!res.data?.ride_id && rides.length >= 1, JSON.stringify([res.data, rides]));
+    const after = await reqRow(q);
+    check("  the new trip type is stored and the request is not 'submitted' any more", after.trip_type === "drop_off" && after.status !== "submitted", JSON.stringify([after.trip_type, after.status, after.status_reason]));
+  });
+
+  await section("maintenance: the responsible member creates and shortens a period, a plain member is refused (P6, REQ 13.114)", async () => {
+    const wk = await mkPublishedWeek(51);
+    const carBefore = must(await svc.from("cars").select("responsible_id").eq("id", CAR_A).single(), "car").responsible_id;
+    const blockIds = [];
+    try {
+      must(await svc.from("cars").update({ responsible_id: m1Id }).eq("id", CAR_A), "make m1 responsible for car A");
+      const denied = await m2.rpc("create_car_maintenance", { p_car_id: CAR_A, p_starts_at: at(51, 2, 6), p_ends_at: at(51, 2, 12) });
+      check("a plain member cannot create a period", !!denied.error && /not_authorized/.test(denied.error.message), errText(denied));
+      const directWrite = await m2.from("car_maintenance_blocks").insert({ car_id: CAR_A, department_id: DEPT, starts_at: at(51, 2, 6), ends_at: at(51, 2, 12), reason: "x", created_by: m2Id });
+      check("  nor write the table directly", !!directWrite.error, errText(directWrite));
+      const made = await m1.rpc("create_car_maintenance", { p_car_id: CAR_A, p_starts_at: at(51, 2, 6), p_ends_at: at(51, 2, 12) });
+      check("the responsible member creates a period", !made.error && !!made.data, errText(made));
+      const blockId = made.data; blockIds.push(blockId);
+      const readBack = must(await m2.from("car_maintenance_blocks").select("starts_at,ends_at,created_by").eq("id", blockId).single(), "block read by another member");
+      check("  other members read it (drawn on the siddur)", Date.parse(readBack.ends_at) === Date.parse(at(51, 2, 12)) && readBack.created_by === m1Id, JSON.stringify(readBack));
+      const shortened = await m1.rpc("update_car_maintenance", { p_block_id: blockId, p_starts_at: at(51, 2, 6), p_ends_at: at(51, 2, 9) });
+      check("  and shortens it", !shortened.error && Date.parse(must(await svc.from("car_maintenance_blocks").select("ends_at").eq("id", blockId).single(), "block").ends_at) === Date.parse(at(51, 2, 9)), errText(shortened));
+      const refusedEdit = await m2.rpc("update_car_maintenance", { p_block_id: blockId, p_starts_at: at(51, 2, 6), p_ends_at: at(51, 2, 7) });
+      check("a plain member cannot shorten it", !!refusedEdit.error && /not_authorized/.test(refusedEdit.error.message), errText(refusedEdit));
+      const refusedDelete = await m2.rpc("delete_car_maintenance", { p_block_id: blockId });
+      check("  nor remove it", !!refusedDelete.error && /not_authorized/.test(refusedDelete.error.message), errText(refusedDelete));
+      // a ride after the period is flagged (and its driver told) when the period is extended over it
+      const r = await ride({ n: 51, car: CAR_A, day: 2, driver: m2Id, hour: 10, endHour: 11 });
+      const extended = await m1.rpc("update_car_maintenance", { p_block_id: blockId, p_starts_at: at(51, 2, 6), p_ends_at: at(51, 2, 11) });
+      check("extending the period over a ride reports it", !extended.error && extended.data?.flagged_rides === 1, errText(extended));
+      check("  the ride is flagged for maintenance", (await rideRow(r.id)).status === "flagged" && (await rideRow(r.id)).flag_reason === "maintenance");
+      const told = must(await svc.from("notifications").select("id").eq("recipient_id", m2Id).eq("event", "maintenance_affects").eq("data->>ride_id", r.id), "notice").length;
+      check("  its driver is notified", told === 1, String(told));
+      await m1.rpc("update_car_maintenance", { p_block_id: blockId, p_starts_at: at(51, 2, 6), p_ends_at: at(51, 2, 9) });
+      check("  shortening back clears the flag", (await rideRow(r.id)).status === "confirmed");
+      // responsibility moves: the previous responsible person loses the right, the new one gets it, whoever created the block
+      must(await svc.from("cars").update({ responsible_id: m2Id }).eq("id", CAR_A), "move responsibility to m2");
+      const lost = await m1.rpc("update_car_maintenance", { p_block_id: blockId, p_starts_at: at(51, 2, 6), p_ends_at: at(51, 2, 8) });
+      check("the previous responsible member can no longer edit it", !!lost.error && /not_authorized/.test(lost.error.message), errText(lost));
+      const gained = await m2.rpc("update_car_maintenance", { p_block_id: blockId, p_starts_at: at(51, 2, 6), p_ends_at: at(51, 2, 8) });
+      check("  the current one can, although m1 created it", !gained.error, errText(gained));
+      // the Sadran creates for a car nobody is responsible for; unsafe issue entry point
+      const other = await sadran.rpc("create_car_maintenance", { p_car_id: CAR_B, p_starts_at: at(51, 3, 6), p_ends_at: at(51, 3, 12), p_reason: "MOT" });
+      check("the Sadran creates a period for any car of the department", !other.error && !!other.data, errText(other));
+      if (other.data) blockIds.push(other.data);
+      const removed = await sadran.rpc("delete_car_maintenance", { p_block_id: other.data });
+      check("  and removes it", !removed.error, errText(removed));
+    } finally {
+      await svc.from("car_maintenance_blocks").delete().in("id", blockIds);
+      await svc.from("car_maintenance_blocks").delete().eq("reason", "MOT").eq("department_id", DEPT);
+      await svc.from("cars").update({ responsible_id: carBefore }).eq("id", CAR_A);
+    }
+  });
+
+  // ------------------------------------------------------------------ live changes (REQ 13.118, pilot fix round P4)
+  await section("live: member cancels a chauffeur ride -> freed offer; volunteer replaced in one step; placed series moves all-or-nothing", async () => {
+    await mkPublishedWeek(61);
+    // R8B11: the passenger of a needs-driver ride cancels it -> the car is offered like any cancellation
+    {
+      const r = await ride({ n: 61, car: CAR_A, day: 1, needsDriver: true });
+      const q = await request({ n: 61, requester: m2Id, day: 1, status: "waitlisted" }); await link(r.id, q, "passenger", "chauffeur");
+      const cancel = await m2.rpc("cancel_ride", { p_ride_id: r.id, p_reason: "api test chauffeur", p_expected_version: await version(r.id) });
+      check("a passenger cancels a needs-driver (chauffeur) ride", !cancel.error, errText(cancel));
+      const offer = must(await svc.from("freed_slot_offers").select("id,car_id").eq("cancelled_ride_id", r.id).maybeSingle(), "offer");
+      check("  the freed car is offered like any cancellation (R8B11)", !!offer && offer.car_id === CAR_A, JSON.stringify(offer));
+    }
+    // R8U1: replace a volunteer driver without removing first
+    {
+      const r = await ride({ n: 61, car: CAR_B, day: 2, needsDriver: true });
+      const q = await request({ n: 61, requester: sadranId, day: 2, status: "waitlisted" }); await link(r.id, q, "passenger", "chauffeur");
+      const first = await sadran.rpc("set_ride_driver", { p_ride_id: r.id, p_driver_id: m1Id, p_expected_version: await version(r.id) });
+      check("the Sadran assigns a volunteer", !first.error && (await rideRow(r.id)).driver_id === m1Id, errText(first));
+      const swap = await sadran.rpc("set_ride_driver", { p_ride_id: r.id, p_driver_id: m2Id, p_expected_version: await version(r.id) });
+      const row = await rideRow(r.id);
+      check("  replaces the volunteer in one step (R8U1)", !swap.error && row.driver_id === m2Id && !row.needs_driver && row.status === "confirmed", errText(swap));
+    }
+    // OB1 leftover: a placed multi-day series moves to another car on every day, or not at all
+    {
+      const wk = weekStart(61);
+      const sub = await m2.rpc("submit_series_request", { payload: {
+        department_id: DEPT, week_start: wk, destination_id: DEST, ride_type_id: TYPE, trip_shape: "round_trip", depart_at: at(61, 3, 6), return_at: at(61, 5, 10),
+        adults: 1, child_seats: 0, boosters: 0, has_luggage: false, stops: [],
+      } });
+      const ids = sub.data?.request_ids ?? [];
+      check("a 3-day request is placed on a published week", !sub.error && ids.length === 3, errText(sub));
+      if (ids.length !== 3) return;
+      const legs = must(await svc.from("rides").select("id,car_id,version,starts_at,ends_at,origin_id,destination_id,week_start,series_id").in("series_id", [must(await svc.from("requests").select("series_id").eq("id", ids[0]).single(), "series").series_id]).neq("status", "cancelled").order("starts_at"), "legs");
+      check("  three rides on one car", legs.length === 3 && new Set(legs.map((l) => l.car_id)).size === 1, JSON.stringify(legs.map((l) => l.car_id)));
+      const from = legs[0].car_id;
+      const cars = must(await svc.from("cars").select("id").eq("department_id", DEPT).eq("type", "shared").eq("status", "active").neq("id", from), "cars").map((c) => c.id);
+      const target = cars[0], blocker = cars[1];
+      const payload = (leg, car) => ({ id: leg.id, department_id: DEPT, week_start: leg.week_start, starts_at: leg.starts_at, ends_at: leg.ends_at, origin_id: leg.origin_id, destination_id: leg.destination_id, car_id: car });
+      // block the target car on the middle day with another ride: the move must refuse and leave every day where it was
+      await ride({ n: 61, car: blocker, day: 4, driver: m1Id, hour: 7, endHour: 9 });
+      const busy = await ride({ n: 61, car: target, day: 4, driver: m1Id, hour: 7, endHour: 9 });
+      const refused = await sadran.rpc("edit_ride", { p_ride: payload(legs[0], target), p_expected_version: legs[0].version });
+      const afterRefusal = must(await svc.from("rides").select("car_id").eq("series_id", legs[0].series_id).neq("status", "cancelled"), "after refusal");
+      check("moving it onto a car busy on one day is refused (all-or-nothing)", !!refused.error && afterRefusal.every((r) => r.car_id === from), errText(refused));
+      must(await svc.from("rides").delete().eq("id", busy.id), "free the target car");
+      const moved = await sadran.rpc("edit_ride", { p_ride: payload(legs[0], target), p_expected_version: legs[0].version });
+      const afterMove = must(await svc.from("rides").select("car_id").eq("series_id", legs[0].series_id).neq("status", "cancelled"), "after move");
+      check("  moving it onto a free car moves every day", !moved.error && afterMove.length === 3 && afterMove.every((r) => r.car_id === target), errText(moved));
+      const plain = await m1.rpc("edit_ride", { p_ride: payload(legs[1], from), p_expected_version: (await rideRow(legs[1].id)).version });
+      check("  a plain member cannot move it", !!plain.error, errText(plain));
+    }
   });
 
 } finally {

@@ -1,3 +1,4 @@
+import { externalHintForCard, externalHintFromSuggestion } from "@/features/sadran/proposals/externalHint";
 // Extracted from `BoardScreen.tsx` (docs/TODO.md "Code review 2026-09-24" R9):
 // drag/drop + selection state, the ride-reservation dialog's own state, and
 // every handler that mutates rides/proposals from the board. Pure move —
@@ -20,6 +21,7 @@ import { useDepartmentMembers } from "@/features/auth/useDepartmentMembers";
 import { fetchChildren } from "@/features/requests/api";
 
 import { combineMergeLegs, defaultMergeLeg, mergeLegForCard, mergeLegOptions, mergePayload, mergePayloadFromLegs, mergePayloadLeg, mergePayloadLegs, mergeRefusalText, type MergeLeg } from "../mergeProposal";
+import { mergeGhostTarget } from "../mergeGhostClick";
 import { isDropOffWithPickup, legView, unmetItemId, unmetItemKey } from "../unmetLegs";
 import type { GuestDropTarget } from "@/components/GuestChips";
 import { requestStart, requestWithinFlex } from "../phantomLanes";
@@ -526,7 +528,12 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
     }
     if (id.startsWith("request:")) { setSelectedUnmetId(id.slice(8)); return; }
     // A draft block, or a sent/accepted merge ghost: its action sheet (REQ §13.94).
-    if (id.startsWith("merge:")) { setSelectedProposalId(id.slice(6)); return; }
+    // R8U2: a merge waiting for the guest's answer opens the host ride sheet (see mergeGhostClick.ts).
+    if (id.startsWith("merge:")) {
+      const target = mergeGhostTarget(proposals, id);
+      if (target.kind === "ride") setSelectedRideId(target.rideId); else setSelectedProposalId(target.proposalId);
+      return;
+    }
     if (id.startsWith("draft:")) { setSelectedProposalId(id.slice(6)); return; }
     // A ride with a sent/accepted shift proposal waiting for an answer: its proposal sheet (withdraw) (REQ §13.94).
     const awaiting = proposals.find((p) => p.type === "shift" && p.ride_id === id && (p.status === "sent" || p.status === "accepted"));
@@ -713,7 +720,7 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
   }
 
   function handleUnmetDecision(item: UnmetListItem, type: "deny" | "shift" | "external") {
-    goToComposer({ requestId: item.request.id, rideId: null, type, payload: {} });
+    goToComposer({ requestId: item.request.id, rideId: null, type, payload: type === "external" ? { hint: externalHintForCard(item.solverInfo?.suggestions) } : {} });
   }
 
   async function saveReservation() {
@@ -785,7 +792,7 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
         goToComposer({ requestId: item.request.id, rideId: null, type: "merge", payload: {} });
         return;
       case "externalHint":
-        goToComposer({ requestId: item.request.id, rideId: null, type: "external", payload: { hint: suggestion.hint } });
+        goToComposer({ requestId: item.request.id, rideId: null, type: "external", payload: { hint: externalHintFromSuggestion(suggestion.hint) } });
         return;
       case "deny":
         goToComposer({ requestId: item.request.id, rideId: null, type: "deny", payload: {} });

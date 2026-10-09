@@ -12,10 +12,11 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useOperationalDepartments } from "@/features/admin/useOperations";
+import { formatMaintenanceRange, nextMaintenance } from "@/features/fleet/maintenance";
 import { he } from "@/i18n/he";
 
 import { useAllDepartmentMembers, useAllProfiles } from "../../members/hooks";
-import { useCarsAdmin } from "../hooks";
+import { useAllMaintenanceBlocks, useCarsAdmin } from "../hooks";
 import { CarForm } from "./CarForm";
 import type { Car } from "../api";
 
@@ -24,6 +25,9 @@ export function CarsScreen({ initialCarId }: { initialCarId?: string } = {}) {
   const departmentsQuery = useOperationalDepartments();
   const profilesQuery = useAllProfiles();
   const deptMembersQuery = useAllDepartmentMembers();
+  const blocksQuery = useAllMaintenanceBlocks();
+  // Read once: render must stay pure (react-hooks/purity).
+  const [now] = useState(() => Date.now());
   const [editing, setEditing] = useState<Car | null | undefined>(undefined);
   // Deep-link support for `/admin/cars/:id` (UX_FLOWS §2.1 route table): open
   // that car's editor sheet once its row has loaded, without a fetch effect
@@ -73,10 +77,11 @@ export function CarsScreen({ initialCarId }: { initialCarId?: string } = {}) {
               <TableHead>{he.adminCars.fieldType}</TableHead>
               <TableHead>{he.adminCars.fieldStatus}</TableHead>
               <TableHead>{he.adminCars.columnResponsible}</TableHead>
+              <TableHead>{he.maintenancePeriod.columnNext}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            <TableRowsSkeleton columns={6} />
+            <TableRowsSkeleton columns={7} />
           </TableBody>
         </Table>
       ) : cars.length === 0 ? (
@@ -91,6 +96,7 @@ export function CarsScreen({ initialCarId }: { initialCarId?: string } = {}) {
               <TableHead>{he.adminCars.fieldType}</TableHead>
               <TableHead>{he.adminCars.fieldStatus}</TableHead>
               <TableHead>{he.adminCars.columnResponsible}</TableHead>
+              <TableHead>{he.maintenancePeriod.columnNext}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -113,6 +119,12 @@ export function CarsScreen({ initialCarId }: { initialCarId?: string } = {}) {
                   <StatusBadge kind="car" status={car.status} />
                 </TableCell>
                 <TableCell>{car.responsible_id ? profilesById.get(car.responsible_id) ?? car.responsible_id : he.adminCars.noResponsible}</TableCell>
+                <TableCell data-testid="car-next-maintenance-cell">
+                  {(() => {
+                    const next = nextMaintenance(blocksQuery.data ?? [], car.id, now);
+                    return next ? formatMaintenanceRange(next.starts_at, next.ends_at) : "—";
+                  })()}
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>

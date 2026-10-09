@@ -143,8 +143,9 @@ begin
   assert not exists(select 1 from public.ride_requests where ride_id=rA and request_id=qB), 'guest rows removed';
   assert (select status from public.requests where id=qB)='submitted' and (select status_reason from public.requests where id=qB)='UNMERGED_BY_SADRAN',
     'guest back to submitted (unmet)';
-  assert exists(select 1 from public.notifications where recipient_id=m2 and event='outcome_changed' and data->>'variant'='passenger_removed_you' and data->>'request_id'=qB::text),
-    'guest notified (outcome_changed / passenger_removed_you)';
+  -- R8B7: this week is unpublished, so the guest is told nothing (the notice itself is covered on published days by p3_notices.sql)
+  assert not exists(select 1 from public.notifications where recipient_id=m2 and event='outcome_changed' and data->>'variant'='passenger_removed_you' and data->>'request_id'=qB::text),
+    'R8B7: no unmerge notice on an unpublished day';
   assert (select count(*) from public.ride_route(rA))=4, 'route is the solo route again';
 
   -- 4) shift proposal with places/stops (ride-detail edit)

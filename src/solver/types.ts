@@ -328,6 +328,12 @@ export interface SolverConfig {
    * Optional; `resolveStopMinutes()` (`src/solver/travel.ts`) defaults it to 5.
    */
   stopMinutes?: number;
+  /**
+   * R7B2 (owner 2026-10-08): the `chauffeur` suggestion kind is hidden for the pilot. Absent/false = no
+   * chauffeur suggestion is produced (so no card action, draft or auto-proposal); `true` brings it back.
+   * Placement-time chauffeur rides (drop-off healing, `PLACED_CHAUFFEUR_*`) are unaffected.
+   */
+  chauffeurSuggestions?: boolean;
 }
 
 export interface SolverInput {

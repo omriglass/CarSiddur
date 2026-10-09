@@ -116,6 +116,17 @@ rollback;
 
 -- ===================== R2M2 split merge: out on ride A, return on ride B, one proposal
 begin;
+create or replace function pg_temp.publish_week(p_dept uuid, p_w date) returns void language plpgsql as $f$
+declare v uuid;
+begin
+  -- R8B7 (REQ §13.109 a): outcome notices exist only for published days, so a copy test publishes the day it checks first.
+  insert into public.siddur_versions(department_id,week_start,snapshot,published_by)
+    values(p_dept,p_w,'{}'::jsonb,(select id from public.profiles where is_admin limit 1)) returning id into v;
+  perform set_config('app.in_publish','on',true);
+  update public.weeks set phase='published', published_version_id=v, published_days=array(select p_w+i from generate_series(0,6) i)
+    where department_id=p_dept and week_start=p_w;
+  perform set_config('app.in_publish','off',true);
+end $f$;
 do $$
 declare
   dept uuid:='00000000-0000-0000-0000-000000000001';
@@ -162,6 +173,7 @@ begin
   assert rv->'vars'->>'joinLine' like '%הלוך%' and rv->'vars'->>'joinLine' like '%חזור%', format('both legs named, got %s',rv->'vars'->>'joinLine');
   assert (select body from public.proposal_party_texts(prop) where profile_id=m1) like '%{{link}}%', 'joiner WhatsApp text exists';
   assert (select variant from public.proposal_party_texts(prop) where profile_id=m2)='merge_host', 'host A reads its own ride';
+  perform pg_temp.publish_week(dept,w);
   tokens:=public.send_proposal(prop,'{}');
   perform public.answer_proposal(tokens->'party_tokens'->>m1::text,true);
   perform public.answer_proposal(tokens->'party_tokens'->>m2::text,true);

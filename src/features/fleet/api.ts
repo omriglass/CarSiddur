@@ -149,19 +149,45 @@ export async function fetchTurnaroundMinutes(departmentId: string): Promise<numb
 }
 
 export interface MaintenanceBlockWindow {
+  id: string;
   car_id: string;
   starts_at: string;
   ends_at: string;
+  reason: string;
 }
 
-/** Active maintenance blocks for every car in the department (member-readable, same RLS as above). */
+/** Maintenance periods of every car in the department (member-readable, same RLS as above). */
 export async function fetchMaintenanceBlocks(departmentId: string): Promise<MaintenanceBlockWindow[]> {
   const { data, error } = await supabase
     .from("car_maintenance_blocks")
-    .select("car_id, starts_at, ends_at")
-    .eq("department_id", departmentId);
+    .select("id, car_id, starts_at, ends_at, reason")
+    .eq("department_id", departmentId)
+    .order("starts_at", { ascending: true });
   if (error) throw toAppError(error);
   return data ?? [];
+}
+
+/**
+ * Scheduled maintenance (REQ §13.114). Writes go through RPCs that re-check "admin, the department's Sadran or
+ * the car's current responsible person" server-side (`_can_edit_car_maintenance`); the table's own policies
+ * only cover admin/Sadran, so the responsible person could not write directly.
+ */
+export async function createCarMaintenance(input: { carId: string; startsAt: string; endsAt: string; reason?: string }): Promise<string> {
+  return rpc("create_car_maintenance", { p_car_id: input.carId, p_starts_at: input.startsAt, p_ends_at: input.endsAt, p_reason: input.reason });
+}
+
+export async function updateCarMaintenance(input: { blockId: string; startsAt: string; endsAt: string }): Promise<{ flagged_rides: number }> {
+  const result = await rpc("update_car_maintenance", { p_block_id: input.blockId, p_starts_at: input.startsAt, p_ends_at: input.endsAt });
+  return { flagged_rides: Number((result as { flagged_rides?: number } | null)?.flagged_rides ?? 0) };
+}
+
+export async function deleteCarMaintenance(blockId: string): Promise<void> {
+  await rpc("delete_car_maintenance", { p_block_id: blockId });
+}
+
+/** From a car issue: the period starts now, `endsAt` is chosen. */
+export async function markIssueUnsafeMaintenance(input: { issueId: string; endsAt: string }): Promise<string> {
+  return rpc("report_car_issue_unsafe_maintenance", { p_issue_id: input.issueId, p_ends_at: input.endsAt });
 }
 
 /** My own temporary cars (Profile "רכב פרטי לשיתוף"). */

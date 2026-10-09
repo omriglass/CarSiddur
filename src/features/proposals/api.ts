@@ -46,6 +46,22 @@ export interface ProposalAlternativeSummary {
   returnAt?: string | null;
 }
 
+/** `merge` only (REQ §13.116, R8B8): what THIS reader sees, computed server-side by `proposal_viewer_merge`. */
+export interface ProposalMergeView {
+  role: "guest" | "host" | "other";
+  guestName: string;
+  driverName: string;
+  leg: "out" | "return" | "both";
+  rideStartsAt: string | null;
+  rideEndsAt: string | null;
+  newStartsAt: string | null;
+  newEndsAt: string | null;
+  guestDepartAt: string | null;
+  guestReturnAt: string | null;
+  ownDepartAt: string | null;
+  ownReturnAt: string | null;
+}
+
 export interface ProposalSummary {
   proposalId: string;
   type: ProposalType;
@@ -64,6 +80,7 @@ export interface ProposalSummary {
   /** `origin` proposals only (REQ §13.93) -- resolved place/car names, never raw ids (`answer-proposal/index.ts`'s `buildSummary()`). */
   originChange?: { from: string | null; to: string | null; car: string | null } | null;
   alternative?: ProposalAlternativeSummary | null;
+  merge?: ProposalMergeView | null;
   parties: ProposalPartySummary[];
 }
 

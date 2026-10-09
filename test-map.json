@@ -67,6 +67,7 @@
         "supabase/tests/origins_chain.sql",
         "supabase/tests/multi_stop.sql",
         "supabase/tests/request_anchors.sql",
+        "supabase/tests/department_rush_hours.sql",
         "supabase/migrations/**/*anchors*",
         "supabase/migrations/**/*route_minutes_preview*",
         "supabase/migrations/**/*classic_request_form*",
@@ -99,6 +100,7 @@
         "src/lib/routeLabel.test.ts",
         "e2e/multi-stop.spec.ts",
         "e2e/request-sentence.spec.ts",
+        "e2e/request-rush-hours.spec.ts",
         "src/features/requests/timeAnchors.ts",
         "src/features/requests/timeAnchors.test.ts",
         "src/features/requests/enteredTimes.ts",
@@ -149,6 +151,7 @@
         "origins_chain.sql",
         "multi_stop.sql",
         "request_anchors.sql",
+        "department_rush_hours.sql",
         "request_window.sql",
         "plan_b.sql",
         "qa_run11_noop_save.sql"
@@ -414,6 +417,7 @@
         "e2e/board-drafts.spec.ts",
         "e2e/merged-ride.spec.ts",
         "e2e/merge-verdict.spec.ts",
+        "e2e/pilot-p2-trip-type-placement.spec.ts",
         "src/lib/rideRoute.ts",
         "src/lib/rideRoute.test.ts",
         "src/features/rides/components/RideRoute.tsx",
@@ -453,7 +457,9 @@
         "src/components/SmallTrunkHost.tsx",
         "src/components/useSmallTrunkConfirm.tsx",
         "e2e/large-trunk-waiver.spec.ts",
-        "e2e/plan-b-cycle.spec.ts"
+        "e2e/plan-b-cycle.spec.ts",
+        "e2e/live-changes.spec.ts",
+        "supabase/tests/p4_live_changes.sql"
       ],
       "vitest": [
         "src/lib/smallTrunk.test.ts",
@@ -476,7 +482,8 @@
         "qa_run1_cancel_waitlist.sql",
         "placement_features.sql",
         "week_settings_source.sql",
-        "luggage_waiver.sql"
+        "luggage_waiver.sql",
+        "p4_live_changes.sql"
       ],
       "playwrightTags": [
         "@board"
@@ -486,7 +493,8 @@
         "13.80",
         "13.84",
         "13.89",
-        "13.92"
+        "13.92",
+        "13.118"
       ],
       "qaChecklist": [
         "Drag an unmet request onto a car column; confirm a ride is created (REQ §13.42)",
@@ -519,7 +527,9 @@
         "e2e/sadran.spec.ts",
         "src/pages/ProposalTokenPage.tsx",
         "supabase/migrations/**/*proposals_status_guard*",
-        "e2e/plan-b-cycle.spec.ts"
+        "e2e/plan-b-cycle.spec.ts",
+        "e2e/proposal-merge-view.spec.ts",
+        "supabase/tests/p3_notices.sql"
       ],
       "vitest": [
         "src/features/proposals",
@@ -528,7 +538,8 @@
       "sql": [
         "proposal_day_boundary.sql",
         "proposal_replacement.sql",
-        "withdraw_settles.sql"
+        "withdraw_settles.sql",
+        "p3_notices.sql"
       ],
       "playwrightTags": [
         "@proposals"
@@ -627,7 +638,8 @@
         "e2e/sadran.spec.ts",
         "e2e/waitlist-groups.spec.ts",
         "e2e/export.spec.ts",
-        "e2e/plan-b-cycle.spec.ts"
+        "e2e/plan-b-cycle.spec.ts",
+        "e2e/publish-autofill-series.spec.ts"
       ],
       "vitest": [
         "src/features/sadran/publish",
@@ -883,6 +895,41 @@
         "Report a car problem with a category; confirm the responsible person/admin sees it (REQ §13.69)",
         "Log a tire fill across all five positions; confirm all required (REQ §13.72)",
         "Export car-care history by date range to Excel (REQ §13.73)"
+      ]
+    },
+    {
+      "id": "maintenance",
+      "title": "Scheduled car maintenance",
+      "paths": [
+        "src/features/fleet/**",
+        "src/features/admin/cars/components/MaintenanceScreen.tsx",
+        "src/features/admin/cars/components/IssuesScreen.tsx",
+        "src/components/WeekGrid.maintenance.test.tsx",
+        "supabase/migrations/**/*maintenance*",
+        "supabase/tests/scheduled_maintenance.sql",
+        "e2e/maintenance.spec.ts"
+      ],
+      "vitest": [
+        "src/features/fleet",
+        "src/components/WeekGrid.maintenance.test.tsx"
+      ],
+      "sql": [
+        "scheduled_maintenance.sql",
+        "department_isolation.sql"
+      ],
+      "playwrightTags": [
+        "@maintenance"
+      ],
+      "reqRefs": [
+        "6.3",
+        "13.114"
+      ],
+      "qaChecklist": [
+        "As the car's responsible member, open the car page: 'טיפול הבא' line, 'תקופת טיפול' button; set a period over several days (REQ §13.114)",
+        "On the siddur and the board the period is a hatched band in the car's column, no extra icon; the responsible member / Sadran / admin can drag it, resize its top and bottom, or click it; another member sees it read-only",
+        "Extend a period over a booked ride: the ride is flagged, its driver and the Sadran are notified; shorten it back and the flag clears",
+        "Admin issues screen: 'העבר לטיפול' on an unsafe issue asks only for the end (start = now); the cars list shows 'טיפול הבא'",
+        "Request a ride on a car inside a period (live week): another car is chosen or the request is waitlisted — never placed inside the period"
       ]
     },
     {

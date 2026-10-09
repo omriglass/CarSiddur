@@ -57,12 +57,12 @@ the sentence layout (REQ §13.110: `requestForm/sentence/**`, `timeAnchors.ts`, 
 `queryKeys.ts` (all under `src/features/requests/`); `src/components/RideTypeChips.tsx`(+test); `src/i18n/he.member.ts`; migrations matching
 `*request_template*`, `*anchors*`, `*route_minutes_preview*`, `*classic_request_form*`, `*series*`, `*requests.sql`, `*request_edit*`, `*bulk_request_withdrawal*`,
 `*child*`, `*origin*` (origins/trip_type, REQ §13.93, steps O2/O3), `*stop*` (multi-stop rides, REQ §13.93, step O6); `e2e/multi-day.spec.ts`, `repeating-requests.spec.ts`, `member.spec.ts`,
-`auto-approve.spec.ts`, `upcoming-week.spec.ts`, `multi-stop.spec.ts`, `request-sentence.spec.ts`, `request-sentence-overlay.spec.ts`, `request-window.spec.ts`, `request-edit.spec.ts`, `plan-b-form.spec.ts`, `plan-b-cycle.spec.ts` (shared plumbing: `e2e/request-form.ts`);
+`auto-approve.spec.ts`, `upcoming-week.spec.ts`, `multi-stop.spec.ts`, `request-sentence.spec.ts`, `request-rush-hours.spec.ts` (REQ §13.113), `request-sentence-overlay.spec.ts`, `request-window.spec.ts`, `request-edit.spec.ts`, `plan-b-form.spec.ts`, `plan-b-cycle.spec.ts` (shared plumbing: `e2e/request-form.ts`);
 `src/features/requests/stops.ts`(+test via `requestForm/StopsField.test.tsx`), `src/lib/routeStops.ts`, `src/lib/routeLabel.ts`(+test).
 
 **Automated**:
 - Vitest: `npx vitest run src/features/requests`
-- SQL: `request_templates.sql`, `multi_day_series.sql`, `origins_schema.sql`, `origins_chain.sql`, `multi_stop.sql`, `request_anchors.sql` (REQ §13.110: time anchors, shift trigger, `route_minutes_preview`, `classic_request_form`), `plan_b.sql` (REQ §13.112 a/b: `destinations.is_drop_point`, `submit_request` `fallback`/`alternative` keys + validation, `request_alternatives` RLS, the `alternative` proposal create → publish gate (`publication_alternatives_pending`, not bypassable) → send → accept → applied with the main trip kept in `original_main` and restorable, decline, a stale plan B, fairness weight 0.1, publication score weights; API twin in `scripts/test-api.mjs` section `planb`; solver `src/solver/__tests__/alternative.test.ts`), `qa_run11_noop_save.sql` (REQ §13.101 l, R11B1: a save with no changes is `unchanged` and writes nothing — open week, waitlisted/submitted/assigned on a published week; probes report it; a real change still saves; `qa_run5_publish.sql` also covers R11B3, a waitlisted-only member's `published` notice; `scripts/test-api.mjs` section `request`/`planb`: no-op resave, `alternative_car_required`), `request_window.sql` (REQ §13.112 c/d: `duration_locked`, relaxed late-flex CHECKs, `requests_duration_lock_guard`, `submit_request` keys, templates, `merge_window_locked`, unnamed children counts) (run via `npm run db:test`, all-or-nothing)
+- SQL: `request_templates.sql`, `multi_day_series.sql`, `origins_schema.sql`, `origins_chain.sql`, `multi_stop.sql`, `department_rush_hours.sql` (REQ §13.113: `department_settings.rush_*` defaults, member read / no write, admin edit, CHECK refusals), `request_anchors.sql` (REQ §13.110: time anchors, shift trigger, `route_minutes_preview`, `classic_request_form`), `plan_b.sql` (REQ §13.112 a/b: `destinations.is_drop_point`, `submit_request` `fallback`/`alternative` keys + validation, `request_alternatives` RLS, the `alternative` proposal create → publish gate (`publication_alternatives_pending`, not bypassable) → send → accept → applied with the main trip kept in `original_main` and restorable, decline, a stale plan B, fairness weight 0.1, publication score weights; API twin in `scripts/test-api.mjs` section `planb`; solver `src/solver/__tests__/alternative.test.ts`), `qa_run11_noop_save.sql` (REQ §13.101 l, R11B1: a save with no changes is `unchanged` and writes nothing — open week, waitlisted/submitted/assigned on a published week; probes report it; a real change still saves; `qa_run5_publish.sql` also covers R11B3, a waitlisted-only member's `published` notice; `scripts/test-api.mjs` section `request`/`planb`: no-op resave, `alternative_car_required`), `request_window.sql` (REQ §13.112 c/d: `duration_locked`, relaxed late-flex CHECKs, `requests_duration_lock_guard`, `submit_request` keys, templates, `merge_window_locked`, unnamed children counts) (run via `npm run db:test`, all-or-nothing)
 - Playwright: `npx playwright test --grep "@request-form"` (`multi-day.spec.ts`,
   `repeating-requests.spec.ts`, `member.spec.ts`, `auto-approve.spec.ts`, `upcoming-week.spec.ts`,
   `multi-stop.spec.ts`, `request-sentence.spec.ts`; `e2e/global-setup.ts` opts the seeded accounts into the classic form, the sentence specs flip one member to the sentence layout for their run and restore it)
@@ -224,14 +224,14 @@ grid (item 2) — `hideIdleTemporaryCars()` is unit-tested in `weekGridCars.test
 `*board*`, `*coordinator*`, `*ride_edit*`, `*day_readiness*`, `*car_chain*`, `*car_swap*`, or
 content-matching `v_board_rides`/`publish_siddur`; `src/components/CarSwapDialog.tsx`(+test),
 `WeekGrid.carSwap.test.tsx`, `src/features/carSwap/**`; `e2e/board.spec.ts`, `board-mobile.spec.ts`,
-`board-coordination.spec.ts`, `board-drafts.spec.ts` (REQ §13.94 drafts), `merged-ride.spec.ts` (REQ §13.94 merged ride = one block, unmerge), `merge-verdict.spec.ts` (REQ §13.108 e: merge popup takes the server's `merge_preview` verdict), `export.spec.ts`, `weekly-permissions.spec.ts`, `ride-editing.spec.ts`, `large-trunk-waiver.spec.ts` (REQ §13.111 a: confirm/decline the small-car waiver on a hand drop), `plan-b-cycle.spec.ts`,
-`car-swap.spec.ts`, `multi-stop.spec.ts`; `src/features/rides/servedOf.ts`,
+`board-coordination.spec.ts`, `board-drafts.spec.ts` (REQ §13.94 drafts), `merged-ride.spec.ts` (REQ §13.94 merged ride = one block, unmerge), `merge-verdict.spec.ts` (REQ §13.108 e: merge popup takes the server's `merge_preview` verdict), `pilot-p2-trip-type-placement.spec.ts` (REQ §13.117: an unmet request changed to a drop-off is placed on a free car), `export.spec.ts`, `weekly-permissions.spec.ts`, `ride-editing.spec.ts`, `large-trunk-waiver.spec.ts` (REQ §13.111 a: confirm/decline the small-car waiver on a hand drop), `plan-b-cycle.spec.ts`,
+`car-swap.spec.ts`, `multi-stop.spec.ts`, `live-changes.spec.ts` (REQ §13.118: a pending merge keeps the host ride editable, a volunteer driver is replaced in one step); `src/features/rides/servedOf.ts`,
 `src/features/rides/components/RideRouteStops.tsx`, `src/lib/routeStops.ts` (multi-stop rides
 display, REQ §13.93, step O6); `src/features/rides/components/RideRoute.tsx`, `src/lib/rideRoute.ts`(+test) (ride route twin and display, REQ §13.94); `src/lib/weekSettings.ts`(+test) (week turnaround/dwell override, REQ §13.108 a).
 
 **Automated**:
 - Vitest: `npx vitest run src/features/sadran/board src/features/sadran/applySolve.test.ts src/features/sadran/unmetStatuses.test.ts src/features/sadran/deviations src/features/sadran/export src/lib/rideRoute.test.ts src/lib/weekSettings.test.ts`
-- SQL: `todo_board_semantics.sql`, `coordinator_planning.sql`, `solve_semantics.sql`, `car_chain_healing.sql`, `day_car_swap.sql`, `origins_chain.sql`, `qa_run1_proposals.sql`, `qa_run1_cancel_waitlist.sql` (QA run 1 fixes: proposals/merges/chain, cancellation/waiting list/status), `placement_features.sql` (REQ §13.101: luggage needs a large trunk, set_ride_driver, duplicate withdraw/restore, own-car placement, published-day edit, freed car to the contested group), `week_settings_source.sql` (REQ §13.108 a/b: week turnaround override, 60-minute unknown travel), `luggage_waiver.sql` (REQ §13.111 a: every manual placement path refuses with `needs_large_trunk` without `allow_small_trunk` and waives with it; merge_preview waivable verdict; waived request moves/merges/swaps later; automatic paths stay strict; editing luggage clears the waiver); Vitest `src/lib/smallTrunk.test.ts`, `src/lib/luggageWaiver.test.ts`
+- SQL: `p4_live_changes.sql` (REQ §13.118: a member cancelling a chauffeur ride frees its car; replace a volunteer driver), `todo_board_semantics.sql`, `coordinator_planning.sql`, `solve_semantics.sql`, `car_chain_healing.sql`, `day_car_swap.sql`, `origins_chain.sql`, `qa_run1_proposals.sql`, `qa_run1_cancel_waitlist.sql` (QA run 1 fixes: proposals/merges/chain, cancellation/waiting list/status), `placement_features.sql` (REQ §13.101: luggage needs a large trunk, set_ride_driver, duplicate withdraw/restore, own-car placement, published-day edit, freed car to the contested group), `week_settings_source.sql` (REQ §13.108 a/b: week turnaround override, 60-minute unknown travel), `luggage_waiver.sql` (REQ §13.111 a: every manual placement path refuses with `needs_large_trunk` without `allow_small_trunk` and waives with it; merge_preview waivable verdict; waived request moves/merges/swaps later; automatic paths stay strict; editing luggage clears the waiver); Vitest `src/lib/smallTrunk.test.ts`, `src/lib/luggageWaiver.test.ts`
 - Playwright: `npx playwright test --grep "@board"`
 
 **QA script**:
@@ -263,8 +263,9 @@ display, REQ §13.93, step O6); `src/features/rides/components/RideRoute.tsx`, `
     reads "ציוד רב — ויתור על תא מטען גדול" (REQ §13.111 a). Repeat with moving a ride that carries
     such a request, a merge onto a small car (popup note, then the confirmation on send/draft) and a
     car swap that would put it on a small car.
+11. (REQ §13.118) Click a block marked "· מאוחד" whose proposal was sent: the host ride's own sheet opens with the banner "ממתינה תשובה על צירוף של …"; change the driver or times there; "פתיחת ההצעה" opens the proposal. On a ride with a volunteer driver, pick another member under "החלפת הנהג/ת המתנדב/ת": the driver changes in one step. Drag one day of a placed multi-day request to another car: confirm moves every day; a car busy on any day refuses and nothing moves.
 
-**REQ**: §13.42, §13.80, §13.84, §13.89, §13.92, §13.93, §13.111.
+**REQ**: §13.42, §13.80, §13.84, §13.89, §13.92, §13.93, §13.111, §13.118.
 
 ### proposals — Proposals & /p/:token
 
@@ -331,11 +332,11 @@ no-named-people path (per `docs/E2E_AUDIT_2026-09-14.md`).
 **Paths**: `src/features/sadran/publish/**`, `lastUsedPolicy.ts`(+test); `src/solver/**` (shared
 fan-out); `src/i18n/he.sadran.ts`; migrations matching `*publish*`, `*siddur_version*`,
 `*publication*`, or content-matching `v_board_rides`/`publish_siddur`; `e2e/sadran.spec.ts`,
-`waitlist-groups.spec.ts`, `export.spec.ts`, `plan-b-cycle.spec.ts` (publishing waits for a pending plan-B proposal).
+`waitlist-groups.spec.ts`, `export.spec.ts`, `plan-b-cycle.spec.ts` (publishing waits for a pending plan-B proposal), `publish-autofill-series.spec.ts` (REQ §13.115: per-day autofill places a whole series; the picker pre-ticks only solved days).
 
 **Automated**:
 - Vitest: `npx vitest run src/features/sadran/publish src/features/sadran/lastUsedPolicy.test.ts`
-- SQL: `selected_day_publication.sql`, `board_drafts.sql` (draft proposals block publishing, discard/withdraw RPCs, re-solve keeps draft merge hosts), `merged_rides.sql` (ride route, merge apply window, `unmerge_request`, shift places/stops, manual handover), `proposals_copy_and_series_span.sql` (REQ §13.101: per-reader proposal/outcome copy, joined-ride notices, `series_span` fewer days, large-luggage merge refusal), `qa_run2_proposals.sql` (REQ §13.102: pending proposal answerable across publication, impossible one withdrawn + Sadran told, merge reason codes, split merge on two rides, no empty/non-change copy, external-accepted notice, placed -> external withdrawn, publish notice per changed ride old -> new), `qa_run3_proposals.sql` (REQ §13.103: a driver assigned to the host never makes an accepted merge stale, members who accepted are told when it falls through, return-only merge copy/preview stop time, split merge through a sent proposal extended by the other leg, old -> new in shift/merge texts), `qa_run4_proposals.sql` (REQ §13.104: one time source for a merge — `merge_preview` joiner times = the joiner's text = the host's window, the joiner keeps own stops and learns where the ride continues, old -> new + added minutes in every proposal title, no-driver copy, expired proposal answers `proposal_expired`), `qa_run5_proposals.sql` (REQ §13.105: a one-leg shift places only that leg, a member's notice never links a Sadran page, an accepted external resolves every unplaced leg of a series, a car at the same times is not "if we move", `join_drop_off_legs` by hand, fewer days down to a single day), `qa_run5_publish.sql` (REQ §13.105 e: readiness counts external/denied as answered and accepted external proposals as not pending, the `published` notice lists one line per ride with pickups and without external legs under a title naming the member's days, notice dates/times carry the weekday, `ask_to_join` notice variants)
+- SQL: `selected_day_publication.sql`, `board_drafts.sql` (draft proposals block publishing, discard/withdraw RPCs, re-solve keeps draft merge hosts), `merged_rides.sql` (ride route, merge apply window, `unmerge_request`, shift places/stops, manual handover), `proposals_copy_and_series_span.sql` (REQ §13.101: per-reader proposal/outcome copy, joined-ride notices, `series_span` fewer days, large-luggage merge refusal), `qa_run2_proposals.sql` (REQ §13.102: pending proposal answerable across publication, impossible one withdrawn + Sadran told, merge reason codes, split merge on two rides, no empty/non-change copy, external-accepted notice, placed -> external withdrawn, publish notice per changed ride old -> new), `qa_run3_proposals.sql` (REQ §13.103: a driver assigned to the host never makes an accepted merge stale, members who accepted are told when it falls through, return-only merge copy/preview stop time, split merge through a sent proposal extended by the other leg, old -> new in shift/merge texts), `qa_run4_proposals.sql` (REQ §13.104: one time source for a merge — `merge_preview` joiner times = the joiner's text = the host's window, the joiner keeps own stops and learns where the ride continues, old -> new + added minutes in every proposal title, no-driver copy, expired proposal answers `proposal_expired`), `qa_run5_proposals.sql` (REQ §13.105: a one-leg shift places only that leg, a member's notice never links a Sadran page, an accepted external resolves every unplaced leg of a series, a car at the same times is not "if we move", `join_drop_off_legs` by hand, fewer days down to a single day), `p3_notices.sql` (REQ §13.116, pilot fix round P3: no outcome notice before a day is published — the `enqueue_notification` gate; an ask-to-join on a private car is sent to its owner; the driver of a shared ride is told on an ask-to-join; fellow passengers told when one leaves; `proposal_viewer_merge` per reader; non-driver merge copy), `e2e/proposal-merge-view.spec.ts` (the `/p` page per reader of a merge with the server's `merge` block stubbed; external buttons), `qa_run5_publish.sql` (REQ §13.105 e: readiness counts external/denied as answered and accepted external proposals as not pending, the `published` notice lists one line per ride with pickups and without external legs under a title naming the member's days, notice dates/times carry the weekday, `ask_to_join` notice variants)
 - Playwright: `npx playwright test --grep "@publication"`
 
 **QA script**:
@@ -489,6 +490,30 @@ real-solver regression, QA CLIs — docs/QA_SIMULATION.md).
    history.
 
 **REQ**: §13.69, §13.70, §13.71, §13.72, §13.73.
+
+### maintenance — Scheduled car maintenance
+
+**Paths**: `src/features/fleet/**` (`maintenance.ts`, `MaintenancePeriodDialog`, `CarMaintenancePanel`,
+`useMaintenanceGridEditing`), `admin/cars` `MaintenanceScreen`/`IssuesScreen`, `WeekGrid` bands;
+migrations matching `*maintenance*`; `supabase/tests/scheduled_maintenance.sql`; `e2e/maintenance.spec.ts`.
+
+**Automated**:
+- Vitest: `npx vitest run src/features/fleet src/components/WeekGrid.maintenance.test.tsx`
+- SQL: `scheduled_maintenance.sql`, `department_isolation.sql`; API: `QA_API=1 npm run db:test` (section "maintenance")
+- Playwright: `npx playwright test --grep "@maintenance"`
+
+**QA script**:
+1. As the car's responsible member open the car page: "טיפול הבא" line; "תקופת טיפול" → a period over several days.
+2. On the siddur (wide screen / table view) and on the board the period is a hatched band in the car's
+   column, with no icon. Responsible member, Sadran and admin drag it, resize by the top/bottom handle
+   or click it; another member sees it read-only.
+3. Extend a period over a booked ride: the ride is flagged, the driver and the Sadran are notified;
+   shorten it back: the flag clears.
+4. `/admin/issues`: "העבר לטיפול" on an issue asks for the end only (start = now); `/admin/cars` shows
+   "טיפול הבא".
+5. In a live week request a ride at a time a car is inside a period: never placed on it.
+
+**REQ**: §6.3, §13.114.
 
 ### auth — Auth / onboarding / roles
 

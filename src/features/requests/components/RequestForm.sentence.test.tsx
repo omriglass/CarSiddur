@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { he } from "@/i18n/he";
+import { he, tv } from "@/i18n/he";
 
 import { RequestForm } from "./RequestForm";
 
@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   submit: vi.fn(),
   layout: { current: "sentence" as "sentence" | "classic" },
   routeMinutes: { current: 45 as number | undefined },
+  settings: { current: { chauffeur_dwell_minutes: 10 } as Record<string, unknown> },
   members: { current: [{ id: "dana", name: "Dana" }] as { id: string; name: string }[] },
 }));
 
@@ -45,7 +46,7 @@ vi.mock("@/features/fleet/hooks", () => ({
   useSuggestDestinationMutation: () => ({ mutate: vi.fn() }),
 }));
 vi.mock("@/features/sadran/hooks", () => ({
-  useDepartmentSettings: () => ({ data: { chauffeur_dwell_minutes: 10 } }),
+  useDepartmentSettings: () => ({ data: mocks.settings.current }),
   useWeekRow: () => ({ data: { settings_overrides: {} } }),
 }));
 vi.mock("sonner", () => ({ toast: Object.assign(vi.fn(), { success: vi.fn() }) }));
@@ -90,6 +91,7 @@ beforeEach(() => {
   mocks.submit.mockResolvedValue({ request_id: "request", status: "submitted" });
   mocks.layout.current = "sentence";
   mocks.routeMinutes.current = 45;
+  mocks.settings.current = { chauffeur_dwell_minutes: 10 };
   window.localStorage.clear();
   // jsdom has no layout engine: `useScrollToFirstError` scrolls the first bad chip into view.
   Element.prototype.scrollIntoView = vi.fn();
@@ -130,6 +132,30 @@ describe("RequestForm sentence layout (REQ §13.110)", () => {
       return_anchor: "arrive",
       leave_dest_at: null,
     });
+  });
+
+  it("rush hours (REQ §13.113): an arrive-by inside the morning window leaves earlier and the line says it is an estimate", async () => {
+    // 2044-01-03 is a Sunday; 60 base minutes entirely inside 07:00-09:30 (+30 %) = 78 clock minutes.
+    mocks.settings.current = {
+      chauffeur_dwell_minutes: 10,
+      rush_morning_start: "07:00:00", rush_morning_end: "09:30:00", rush_morning_percent: 30,
+      rush_afternoon_start: "15:30:00", rush_afternoon_end: "18:30:00", rush_afternoon_percent: 20,
+    };
+    mocks.routeMinutes.current = 60;
+    show();
+    pickSentenceDestination();
+    fireEvent.click(screen.getByTestId("chip-out"));
+    fireEvent.click(screen.getByRole("radio", { name: he.requestSentence.anchor.outArrive }));
+    setTime(he.field.depart, "09:00");
+    await waitFor(() => expect(screen.getByTestId("time-estimate-out")).toHaveTextContent("07:30"));
+    expect(screen.getByTestId("time-estimate-out")).toHaveTextContent(tv("requestSentence.estimateApprox", { minutes: "78" }));
+    expect(screen.getByTestId("time-estimate-out")).toHaveTextContent(he.requestSentence.estimateNote);
+    fireEvent.click(screen.getByRole("button", { name: he.requestSentence.sheetDone }));
+
+    await goToStageTwo();
+    fireEvent.click(screen.getByRole("button", { name: he.action.submitRequest }));
+    await waitFor(() => expect(mocks.submit).toHaveBeenCalledOnce());
+    expect(mocks.submit.mock.calls[0]![0]).toMatchObject({ depart_at: "2044-01-03T05:30:00.000Z", arrive_by: "2044-01-03T07:00:00.000Z" });
   });
 
   it("files a leave-there return: return_at = leave time + return route, rounded up", async () => {

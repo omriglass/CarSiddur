@@ -12,6 +12,7 @@ import {
   useProposalSummaryQuery,
   useSadranContactQuery,
 } from "@/features/proposals/hooks";
+import { mergePageModel } from "@/features/proposals/mergeView";
 import { planBLines } from "@/features/proposals/planBAnswer";
 import { classifyProposalScreenState } from "@/features/proposals/screenState";
 import { useSetFreedSlotOptOutMutation } from "@/features/requests/hooks";
@@ -217,17 +218,23 @@ function ProposalAnswerBody({
   // `alternative` (REQ §13.112 a) likewise: the member's own plan B is stated as a line under the request, not as times to compare.
   const isOriginVariant = summary.type === "origin" || summary.type === "alternative";
   const shift = readShiftPayload(summary.payload);
+  // R8B8: a merge reads differently per party (the host never sees the guest's request as "your request").
+  const mergeModel = mergePageModel(summary);
 
   return (
     <div className="space-y-4">
       <div className="space-y-1 text-sm text-muted-foreground">
-        {summary.request ? <p className="font-medium text-foreground">{he.proposalScreen.yourRequest}</p> : null}
+        {summary.request ? (
+          <p className="font-medium text-foreground">
+            {mergeModel?.heading === "guest" ? tv("proposalScreen.guestRequest", { name: mergeModel.guestName }) : he.proposalScreen.yourRequest}
+          </p>
+        ) : null}
         <ProposalSummaryView
           type={summary.type}
           destination={summary.request?.destination}
           purpose={summary.request?.rideType}
-          departAt={summary.request?.departAt ?? null}
-          returnAt={summary.request?.returnAt ?? null}
+          departAt={mergeModel ? mergeModel.trip.departAt : (summary.request?.departAt ?? null)}
+          returnAt={mergeModel ? mergeModel.trip.returnAt : (summary.request?.returnAt ?? null)}
           originChange={summary.originChange}
           alternative={summary.alternative}
         />
@@ -239,14 +246,14 @@ function ProposalAnswerBody({
         <div>
           <div className="flex gap-2">
             <BeforeAfterBox
-              label={he.proposalScreen.before}
-              depart={summary.request?.departAt ?? null}
-              ret={summary.request?.returnAt ?? null}
+              label={mergeModel?.rideWindow ? he.proposalScreen.rideBefore : he.proposalScreen.before}
+              depart={mergeModel ? mergeModel.before.departAt : (summary.request?.departAt ?? null)}
+              ret={mergeModel ? mergeModel.before.returnAt : (summary.request?.returnAt ?? null)}
             />
             <BeforeAfterBox
               label={summary.type === "merge" ? he.rideCoordination.combinedWindow : he.proposalScreen.after}
-              depart={(summary.type === "merge" ? shift.starts_at : shift.depart_at) ?? summary.request?.departAt ?? null}
-              ret={(summary.type === "merge" ? shift.ends_at : shift.return_at) ?? summary.request?.returnAt ?? null}
+              depart={mergeModel ? mergeModel.after.departAt : ((summary.type === "merge" ? shift.starts_at : shift.depart_at) ?? summary.request?.departAt ?? null)}
+              ret={mergeModel ? mergeModel.after.returnAt : ((summary.type === "merge" ? shift.ends_at : shift.return_at) ?? summary.request?.returnAt ?? null)}
             />
           </div>
           {summary.type === "merge" ? <p className="mt-2 text-sm text-muted-foreground">{he.rideCoordination.combinedConsent}</p> : null}
@@ -279,10 +286,10 @@ function ProposalAnswerBody({
           </label>
           <div className="flex flex-col gap-2">
             <Button variant="outline" onClick={onDecline} disabled={isSubmitting}>
-              {t("action.understood")}
+              {summary.type === "external" ? t("proposalScreen.externalStay") : t("action.understood")}
             </Button>
             <Button onClick={onAccept} disabled={isSubmitting}>
-              {summary.type === "external" ? t("action.acceptProposal") : t("action.foundExternal")}
+              {summary.type === "external" ? t("proposalScreen.externalAccept") : t("action.foundExternal")}
             </Button>
           </div>
         </div>

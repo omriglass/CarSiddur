@@ -1,6 +1,6 @@
 import { fetchOperationalDepartments } from "@/features/admin/api";
 import { supabase } from "@/integrations/supabase/client";
-import { rpc, toAppError } from "@/lib/rpc";
+import { toAppError } from "@/lib/rpc";
 
 import type { Database } from "@/integrations/supabase/types";
 import type { Passengers } from "@/solver";
@@ -8,9 +8,8 @@ import type { Passengers } from "@/solver";
 /**
  * The only file in `admin/cars` that calls `supabase.from`/`.rpc`.
  * `cars`, `car_seat_configs`, `car_maintenance_blocks` and `car_issues` are
- * admin-writable directly (DATA_MODEL.md §4.3); moving an unsafe issue to a
- * maintenance block is a multi-row operation, done via the
- * `report_car_issue_unsafe_to_maintenance` RPC.
+ * admin-writable directly (DATA_MODEL.md §4.3); maintenance periods are written through the
+ * `*_car_maintenance` RPCs in `features/fleet/api.ts` (REQ §13.114).
  */
 /**
  * `access_code`/`is_replaced`/`replacement_code` moved out of `cars` into
@@ -129,38 +128,6 @@ export async function fetchMaintenanceBlocks(): Promise<MaintenanceBlock[]> {
   return (data ?? []).filter((row) => departmentIds.has(row.department_id));
 }
 
-export async function createMaintenanceBlock(input: {
-  carId: string;
-  departmentId: string;
-  startsAt: string;
-  endsAt: string;
-  reason: string;
-}): Promise<MaintenanceBlock> {
-  const { data, error } = await supabase
-    .from("car_maintenance_blocks")
-    .insert({
-      car_id: input.carId,
-      department_id: input.departmentId,
-      starts_at: input.startsAt,
-      ends_at: input.endsAt,
-      reason: input.reason,
-      created_by: (await supabase.auth.getUser()).data.user?.id ?? "",
-    })
-    .select()
-    .single();
-  if (error) throw toAppError(error);
-  return data;
-}
-
-/** Ends a block now (shortens `ends_at` to now instead of deleting, keeping history). */
-export async function endMaintenanceBlockNow(blockId: string): Promise<void> {
-  const { error } = await supabase
-    .from("car_maintenance_blocks")
-    .update({ ends_at: new Date().toISOString() })
-    .eq("id", blockId);
-  if (error) throw toAppError(error);
-}
-
 export async function fetchCarIssues(): Promise<CarIssue[]> {
   const { data, error } = await supabase.from("car_issues").select("*").order("created_at", { ascending: false });
   if (error) throw toAppError(error);
@@ -180,6 +147,3 @@ export async function resolveCarIssue(issueId: string): Promise<void> {
   if (error) throw toAppError(error);
 }
 
-export async function moveIssueToMaintenance(issueId: string, hours: number): Promise<string> {
-  return rpc("report_car_issue_unsafe_to_maintenance", { p_issue_id: issueId, p_hours: hours });
-}

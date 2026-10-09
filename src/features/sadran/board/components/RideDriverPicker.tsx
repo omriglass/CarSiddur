@@ -1,5 +1,5 @@
 // REQ §13.101 (c, QM2): the Sadran assigns a volunteer driver (found by phone) to a ride that
-// needs one, or takes a volunteer off it again (`set_ride_driver`). The driver and the passengers
+// needs one, replaces a volunteer in one step (R8U1) or takes the volunteer off it again (`set_ride_driver`). The driver and the passengers
 // are notified by the RPC. A driver who has a request of their own on the ride is not removable.
 import { useState } from "react";
 import { toast } from "sonner";
@@ -25,6 +25,8 @@ export interface RideDriverPickerProps {
   needsDriver: boolean;
   /** The current driver of a driven ride that is removable (a volunteer), else null. */
   volunteerName: string | null;
+  /** R8U1: the volunteer's profile id, left out of the replacement list. */
+  volunteerId?: string | null;
   candidates: readonly DriverCandidate[];
   departmentId: string;
   weekStart: string;
@@ -40,10 +42,10 @@ export interface RideDriverPickerProps {
   onDone?: () => void;
 }
 
-export function RideDriverPicker({ rideId, version, needsDriver, volunteerName, candidates, departmentId, weekStart, busyIds, placeName, homeDestinationId, disabled, published = true, onDone }: RideDriverPickerProps) {
+export function RideDriverPicker({ rideId, version, needsDriver, volunteerName, volunteerId, candidates, departmentId, weekStart, busyIds, placeName, homeDestinationId, disabled, published = true, onDone }: RideDriverPickerProps) {
   const [driverId, setDriverId] = useState("");
   const mutation = useSetRideDriverMutation();
-  const drivers = sortFreeFirst(candidates.filter((candidate) => !candidate.doesNotDrive), busyIds ?? new Set<string>());
+  const drivers = sortFreeFirst(candidates.filter((candidate) => !candidate.doesNotDrive && candidate.id !== volunteerId), busyIds ?? new Set<string>());
 
   if (!needsDriver && !volunteerName) return null;
   const livesAway = (candidate: DriverCandidate) => (candidate.homePlaceId && candidate.homePlaceId !== homeDestinationId ? placeName?.(candidate.homePlaceId) ?? null : null);
@@ -52,7 +54,7 @@ export function RideDriverPicker({ rideId, version, needsDriver, volunteerName, 
     const chosen = drivers.find((candidate) => candidate.id === driverId);
     if (!chosen) return;
     mutation.mutate({ rideId, driverId: chosen.id, expectedVersion: version, departmentId, weekStart }, {
-      onSuccess: () => { setDriverId(""); toast.success(tv(published ? "rideDriver.assigned" : "rideDriver.assignedUnpublished", { name: chosen.name })); onDone?.(); },
+      onSuccess: () => { setDriverId(""); toast.success(tv(published ? (volunteerName ? "rideDriver.replaced" : "rideDriver.assigned") : "rideDriver.assignedUnpublished", { name: chosen.name })); onDone?.(); },
     });
   }
   function unassign() {
@@ -63,31 +65,28 @@ export function RideDriverPicker({ rideId, version, needsDriver, volunteerName, 
 
   return (
     <div className="space-y-2 rounded-md border p-3" data-testid="ride-driver-picker">
-      {needsDriver ? (
-        <>
-          <p className="text-xs text-muted-foreground">{he.rideDriver.assignLabel}</p>
-          <div className="flex items-center gap-2">
-            <Select value={driverId} onValueChange={setDriverId} disabled={disabled || mutation.isPending}>
-              <SelectTrigger className="min-h-11 flex-1" aria-label={he.rideDriver.selectAria} data-testid="ride-driver-select">
-                <SelectValue placeholder={he.rideDriver.placeholder} />
-              </SelectTrigger>
-              <SelectContent>
-                {drivers.map((candidate) => <SelectItem key={candidate.id} value={candidate.id}>{[candidate.name, livesAway(candidate), busyIds?.has(candidate.id) ? he.rideDriver.busy : null].filter(Boolean).join(" · ")}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            <Button type="button" className="min-h-11" disabled={!driverId || disabled || mutation.isPending} onClick={assign} data-testid="ride-driver-assign">
-              {he.rideDriver.assign}
-            </Button>
-          </div>
-        </>
-      ) : (
+      {volunteerName ? (
         <div className="flex items-center justify-between gap-2">
-          <p>{tv("rideDriver.current", { name: volunteerName ?? "" })}</p>
+          <p>{tv("rideDriver.current", { name: volunteerName })}</p>
           <Button type="button" variant="outline" className="min-h-11" disabled={disabled || mutation.isPending} onClick={unassign} data-testid="ride-driver-unassign">
             {he.rideDriver.unassign}
           </Button>
         </div>
-      )}
+      ) : null}
+      <p className="text-xs text-muted-foreground">{volunteerName ? he.rideDriver.replaceLabel : he.rideDriver.assignLabel}</p>
+      <div className="flex items-center gap-2">
+        <Select value={driverId} onValueChange={setDriverId} disabled={disabled || mutation.isPending}>
+          <SelectTrigger className="min-h-11 flex-1" aria-label={he.rideDriver.selectAria} data-testid="ride-driver-select">
+            <SelectValue placeholder={he.rideDriver.placeholder} />
+          </SelectTrigger>
+          <SelectContent>
+            {drivers.map((candidate) => <SelectItem key={candidate.id} value={candidate.id}>{[candidate.name, livesAway(candidate), busyIds?.has(candidate.id) ? he.rideDriver.busy : null].filter(Boolean).join(" · ")}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Button type="button" className="min-h-11" disabled={!driverId || disabled || mutation.isPending} onClick={assign} data-testid="ride-driver-assign">
+          {volunteerName ? he.rideDriver.replace : he.rideDriver.assign}
+        </Button>
+      </div>
     </div>
   );
 }

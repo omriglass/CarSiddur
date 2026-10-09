@@ -39,6 +39,10 @@ export type ErrorCode =
   | "car_now_week_not_live"
   | "series_edit_not_supported"
   | "series_car_unavailable"
+  | "maintenance_period_invalid"
+  | "maintenance_in_past"
+  | "maintenance_overlap"
+  | "maintenance_finished"
   | "not_authorized"
   | "invalid_range"
   | "last_admin_required"
@@ -251,6 +255,12 @@ const MESSAGE_TO_CODE: Record<string, ErrorCode> = {
   offer_not_found: "offer_not_found",
   car_unavailable: "ride_unavailable",
   ride_conflicts_with_maintenance: "ride_unavailable",
+  // REQ §13.114 scheduled maintenance (create/update/delete_car_maintenance).
+  invalid_maintenance_period: "maintenance_period_invalid",
+  maintenance_in_past: "maintenance_in_past",
+  maintenance_overlap: "maintenance_overlap",
+  maintenance_finished: "maintenance_finished",
+  maintenance_not_found: "maintenance_finished",
   ride_seats_do_not_fit: "ride_unavailable",
   ride_request_day_mismatch: "ride_wrong_day",
   ride_outside_week: "ride_wrong_day",
@@ -432,6 +442,10 @@ const CODE_TO_MESSAGE: Record<ErrorCode, string> = {
   car_now_week_not_live: he.errors.carNowWeekNotLive,
   series_edit_not_supported: he.errors.seriesEditNotSupported,
   series_car_unavailable: he.errors.seriesCarUnavailable,
+  maintenance_period_invalid: he.maintenancePeriod.errors.invalid,
+  maintenance_in_past: he.maintenancePeriod.errors.inPast,
+  maintenance_overlap: he.maintenancePeriod.errors.overlap,
+  maintenance_finished: he.maintenancePeriod.errors.finished,
   push_unsupported: he.errors.pushUnsupported,
   push_permission_denied: he.errors.pushPermissionDenied,
   push_vapid_key_invalid: he.errors.pushVapidKeyInvalid,
