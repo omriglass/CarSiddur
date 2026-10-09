@@ -491,9 +491,9 @@ on conflict (event,channel,(coalesce(variant,''))) do update set title=excluded.
 insert into public.notification_templates(event,channel,variant,title,body,default_title,default_body)
 select 'outcome_changed',channel,'ride_cancelled',
   '{{byName}} ביטל/ה נסיעה שהיית בה',
-  'יום {{day}} {{timeRange}}, {{car}} {{route}}.',
+  'יום {{day}} {{timeRange}}, {{car}} {{route}}. הבקשה שלך בוטלה יחד איתה — אפשר להגיש בקשה חדשה או לבקש להצטרף לנסיעה אחרת.',
   '{{byName}} ביטל/ה נסיעה שהיית בה',
-  'יום {{day}} {{timeRange}}, {{car}} {{route}}.'
+  'יום {{day}} {{timeRange}}, {{car}} {{route}}. הבקשה שלך בוטלה יחד איתה — אפשר להגיש בקשה חדשה או לבקש להצטרף לנסיעה אחרת.'
 from unnest(array['inbox','push']::public.notification_channel[]) channel
 on conflict (event,channel,(coalesce(variant,''))) do update set title=excluded.title,body=excluded.body,default_title=excluded.default_title,default_body=excluded.default_body;
 
