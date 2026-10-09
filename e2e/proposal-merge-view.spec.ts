@@ -29,14 +29,14 @@ test.describe("proposal page per reader", { tag: ["@proposals"] }, () => {
     await expect(page.getByText(he.proposalScreen.rideBefore)).toBeVisible();
   });
 
-  test("the guest sees their own request", async ({ page }) => {
+  test("the joining guest sees whose ride they join (R12B7)", async ({ page }) => {
     await stub(page, summary({ merge: {
       role: "guest", guestName: "נטע כהן", driverName: "נועה", leg: "both",
       rideStartsAt: "2030-01-07T09:00:00Z", rideEndsAt: "2030-01-07T16:00:00Z", newStartsAt: null, newEndsAt: null,
       guestDepartAt: "2030-01-07T09:00:00Z", guestReturnAt: "2030-01-07T15:00:00Z", ownDepartAt: "2030-01-07T08:45:00Z", ownReturnAt: "2030-01-07T15:00:00Z",
     } }));
     await page.goto(`/p/${TOKEN}`);
-    await expect(page.getByText(he.proposalScreen.yourRequest, { exact: true })).toBeVisible();
+    await expect(page.getByText(tv("proposalScreen.joinHost", { name: "נועה" }), { exact: true })).toBeVisible();
   });
 
   test("an external offer says what the two buttons do", async ({ page }) => {
