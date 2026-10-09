@@ -152,6 +152,7 @@ export const heMember = {
     /** R10U7: removing / cancelling a request that is already served by its plan B (REQ §13.112 a) — it is placed, not unsent. */
     withdrawPlanBBody: "הבקשה כבר שובצה בתוכנית ב׳. הסרתה מבטלת את ההקפצה שנקבעה.",
     withdrawPlanBPickupBody: "הבקשה כבר שובצה בתוכנית ב׳. הסרתה מבטלת את ההקפצה שנקבעה וגם את בקשת האיסוף הקשורה אליה.",
+    freedSlotThanks: "תודה! {{name}} יכול/ה להשתמש ברכב עכשיו 🙌",
     cancelConfirmTitle: "בטוח/ה שברצונך לבטל את הנסיעה?",
     cancelConfirmBodyFreed: "הרכב יוצע לחברים ברשימת ההמתנה.",
     cancelConfirmBodyRelay: "הסדרן/ית יקבלו הודעה — הרכב צריך לחזור הביתה.",
@@ -792,8 +793,10 @@ export const heMember = {
     tireNoteLabel: "הערה (לא חובה)",
     tireDone: "סיימתי",
     tireCelebration: "כל הכבוד על מילוי האוויר!",
-    washButton: "שטפתי את הרכב",
-    washCelebration: "הרכב נקי — תודה!",
+    washCelebration: "תודה ששטפת את המכונית!",
+    washWipePrompt: "סיימת לשטוף? נגב/י את כל כתמי הבוץ מהמכונית",
+    washSpotsLeft: "נשארו {{count}} כתמים",
+    washSkip: "דלג ותעד שטיפה",
   },
   /**
    * Car page (`/cars/:carId`, REQUIREMENTS §6.6, UX_FLOWS §5.11): the
@@ -824,6 +827,13 @@ export const heMember = {
     historyKindIssue: "תקלה",
     historyKindTireFill: "מילוי אוויר",
     historyKindWash: "שטיפה",
+    mood: {
+      happy: "נקייה ומבריקה! נשטפה ב־{{date}}",
+      ok: "נשטפה ב־{{date}}",
+      sad: "קצת מאובקת… אולי שטיפה?",
+      never: "עוד לא תיעדו שטיפה",
+      lastWash: "שטיפה אחרונה: {{date}}",
+    },
     historyReporter: "דיווח/ה",
     historyNote: "הערה",
     exportButton: "ייצוא לאקסל",

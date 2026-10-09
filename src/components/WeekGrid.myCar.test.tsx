@@ -20,5 +20,10 @@ describe("WeekGrid my-car header", () => {
     expect(names[0]).toHaveClass("font-bold");
     expect(names[1]).not.toHaveAttribute("data-my-car");
     expect(names[1]).toHaveClass("font-medium");
+    // Bold alone was not obvious on a phone: the header cell and my ride are tinted violet too.
+    expect(names[0]?.parentElement).toHaveClass("bg-mine/25");
+    expect(names[1]?.parentElement).not.toHaveClass("bg-mine/25");
+    expect(container.querySelector('[data-ride-id="r1"]')).toHaveClass("bg-mine/25");
+    expect(container.querySelector('[data-ride-id="r2"]')).not.toHaveClass("bg-mine/25");
   });
 });

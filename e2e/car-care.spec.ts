@@ -83,7 +83,7 @@ test("member logs car care (wash, tire fill, problem) and only the car's respons
       await expect(reportDialog).toBeVisible();
 
       await reportDialog.getByRole("button", { name: he.carCare.homeWashTitle }).click();
-      await reportDialog.getByRole("button", { name: he.carCare.washButton }).click();
+      await reportDialog.getByRole("button", { name: he.carCare.washSkip }).click();
       await expect(reportDialog.getByText(he.carCare.washCelebration)).toBeVisible();
 
       const { data: events, error } = await service

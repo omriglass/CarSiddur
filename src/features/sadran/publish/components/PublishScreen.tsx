@@ -32,6 +32,9 @@ import {
 import type { PolicyBoardScore } from "../profileScores";
 import { RideChangeAnswers } from "@/features/siddur/components/RideChangeAnswers";
 
+import { computeCelebrationStats } from "../celebrationStats";
+import { showPublishCelebration } from "./showPublishCelebration";
+
 interface PublishScreenProps {
   departmentId: string;
   weekStart: string;
@@ -141,7 +144,11 @@ export function PublishScreen({ departmentId, weekStart }: PublishScreenProps) {
 
   async function handlePublish(days: string[], allowUnanswered: boolean, allowDriverless = false) {
     try {
+      // The celebration counts the whole siddur as published after this step (already-published days too).
+      const publishedAfter = [...new Set([...days, ...readiness.filter((day) => day.published).map((day) => day.day)])];
+      const celebration = computeCelebrationStats(ridesQuery.data ?? [], publishedAfter);
       await publishMutation.mutateAsync({ departmentId, weekStart, days, allowUnanswered, allowDriverless });
+      showPublishCelebration(celebration);
       const labelled = days.map((day) => formatDayDate(`${day}T12:00:00Z`)).join(", ");
       toast.success(tv("sadranPublish.successDays", { days: labelled }));
       navigate(paths.sadran.board(departmentId, weekStart));

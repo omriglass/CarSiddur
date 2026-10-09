@@ -1013,6 +1013,8 @@ export function WeekGrid({
                 "absolute inset-x-1 flex flex-col overflow-clip rounded-sm border-s-4 text-start text-foreground shadow-sm transition-smooth",
                 typeColors.bg,
                 typeColors.border,
+                // My ride: violet fill + ring (the start border keeps the ride-type color); conflict/needs-driver styling below still wins.
+                ride.isMine && "bg-mine/25",
                 // Conflict/pinned styling always wins over the ride-type tint (kept last so `cn`/tailwind-merge overrides it).
                 ride.conflict &&
                   "border-2 border-destructive bg-[repeating-linear-gradient(45deg,hsl(var(--destructive)/0.25),hsl(var(--destructive)/0.25)_6px,hsl(var(--destructive)/0.08)_6px,hsl(var(--destructive)/0.08)_12px)]",
@@ -1022,7 +1024,7 @@ export function WeekGrid({
                 dragEnabled && (canDragRide?.(ride) ?? true) && "touch-none",
                 ride.shadowed && "opacity-50",
                 ride.isMine && "shadow-md",
-                ride.isMine && !ride.needsDriver && "ring-2 ring-primary/60",
+                ride.isMine && !ride.needsDriver && "ring-[3px] ring-mine",
                 ride.needsDriver && "border-2 border-dashed border-destructive bg-destructive/10",
                 ride.highlighted && "z-10 scroll-mt-24 ring-4 ring-destructive ring-offset-2",
                 isDragged && "opacity-50 ring-2 ring-primary",
@@ -1119,6 +1121,8 @@ export function WeekGrid({
             className={cn(
               "sticky top-0 z-20 flex flex-col justify-center gap-0.5 overflow-hidden border-b border-e bg-muted px-2 py-1 text-sm shadow-[0_2px_6px_-2px_hsl(var(--foreground)/0.12)]",
               car.group === "temporary" && "bg-background bg-gradient-to-b from-booked/10 to-booked/10",
+              // Owner 2026-10-09: bold alone was not obvious on a phone — the header of a car I ride in that day is tinted violet.
+              myCarIds.has(car.id) && "bg-mine/25 bg-none border-b-4 border-b-mine",
               i === sharedCars.length && temporaryCars.length > 0 && "border-s-2 border-s-border",
               swappable && "touch-none",
               isCarDragSource && "opacity-40",

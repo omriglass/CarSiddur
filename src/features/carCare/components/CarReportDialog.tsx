@@ -21,11 +21,12 @@ import {
   type CarIssueReportValues,
 } from "../schema";
 import { TireFillPanel } from "./TireFillPanel";
+import { WashCelebration, WashGame } from "./WashGame";
 
 type View = "home" | "problem" | "tires" | "wash" | "tiresDone" | "washDone";
 
 /** How long the wash/tire-fill celebration shows before the dialog auto-closes. */
-const CELEBRATION_MS = 1800;
+const CELEBRATION_MS = 3500;
 
 export interface CarReportDialogProps {
   carId: string;
@@ -206,25 +207,11 @@ export function CarReportDialog({ carId, carName, open, onOpenChange }: CarRepor
         ) : null}
 
         {view === "wash" ? (
-          <div className="flex flex-col gap-4">
-            <Button
-              type="button"
-              size="lg"
-              className="min-h-16 text-base"
-              disabled={logCarCareMutation.isPending}
-              onClick={submitWash}
-            >
-              <Droplets className="me-2 size-5" aria-hidden="true" />
-              {he.carCare.washButton}
-            </Button>
-            <Button type="button" variant="ghost" onClick={() => setView("home")}>
-              {he.common.back}
-            </Button>
-          </div>
+          <WashGame onDone={submitWash} disabled={logCarCareMutation.isPending} onBack={() => setView("home")} />
         ) : null}
 
         {view === "tiresDone" ? <CelebrationMessage message={he.carCare.tireCelebration} /> : null}
-        {view === "washDone" ? <CelebrationMessage message={he.carCare.washCelebration} /> : null}
+        {view === "washDone" ? <WashCelebration message={he.carCare.washCelebration} /> : null}
       </PortalDialogContent>
     </Dialog>
   );

@@ -394,6 +394,9 @@ export const heSadran = {
     },
     successTitle: "הסידור פורסם",
     successDays: "הסידור פורסם לימים: {{days}}",
+    celebrationTitle: "הסידור פורסם! 🎉",
+    celebrationTotals: "{{rides}} נסיעות · {{people}} אנשים · {{shared}} נסיעות משותפות",
+    celebrationDismiss: "סגירה",
     copySummarySuccess: "הסיכום הועתק",
     // REQ §13.75 / DATA_MODEL.md §7.4a: `unresolvedRequests` no longer blocks publication
     // (`incompleteAssignments` does) — this note explains why to the Sadran.

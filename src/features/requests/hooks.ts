@@ -10,6 +10,7 @@ import { sadranKeys } from "@/features/sadran/keys";
 import { useSession } from "@/features/auth/useSession";
 import { DEFAULT_HOP_MINUTES } from "@/lib/rideRoute";
 import { showErrorToast } from "@/lib/rpc";
+import { pollFreedSlotThanks } from "./freedSlotThanks";
 import { dateKey, weekStartFor } from "@/lib/time";
 
 import type { CarFreeWindow } from "@/features/siddur/freeWindows";
@@ -196,7 +197,8 @@ export function useCancelRideMutation() {
       reason: string;
       expectedVersion?: number;
     }) => cancelRide(rideId, reason, expectedVersion),
-    onSuccess: () => {
+    onSuccess: (_data, { rideId }) => {
+      pollFreedSlotThanks(rideId);
       queryClient.invalidateQueries({ queryKey: requestsKeys.mine(profileId) });
       queryClient.invalidateQueries({ queryKey: siddurKeys.all });
       queryClient.invalidateQueries({ queryKey: sadranKeys.all });

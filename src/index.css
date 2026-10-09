@@ -71,6 +71,10 @@ html {
     --ride-healthcare: 172 66% 40%;
     --ride-errands: 24 90% 50%;
     --ride-other: 220 9% 46%;
+
+    /* "Mine" highlight (siddur/board grid): the viewer's own rides and the header of every car they ride in that day.
+       Violet, because blue/green/amber/orange/pink/teal already mean primary/available/maintenance/ride types. */
+    --mine: 271 76% 53%;
   }
 }
 
@@ -135,6 +139,8 @@ html {
   --ride-healthcare: 172 55% 55%;
   --ride-errands: 24 85% 62%;
   --ride-other: 220 9% 65%;
+
+  --mine: 271 91% 72%;
 }
 
 @layer base {

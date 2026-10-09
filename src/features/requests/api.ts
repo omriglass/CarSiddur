@@ -29,6 +29,7 @@ import type {
 } from "@/lib/enums";
 import { isHiddenOutcome, isRequestDayPublished, type PlacedLeg } from "./publishedOutcome";
 import type { StoredAlternative } from "./planB";
+import type { RawFreedOfferOutcome } from "./freedSlotThanks";
 import type { RequestWindow } from "./window";
 
 /**
@@ -932,6 +933,16 @@ export async function cancelRide(
   expectedVersion?: number,
 ): Promise<void> {
   await rpc("cancel_ride", { p_ride_id: rideId, p_reason: reason, p_expected_version: expectedVersion });
+}
+
+/** Read-only: the offers a cancelled ride produced (status + the winner's name when the server auto-assigned one). Members may read their department's offers; the winner's request/profile are readable once placed on a public ride. */
+export async function fetchFreedOfferOutcome(rideId: string): Promise<RawFreedOfferOutcome[]> {
+  const { data, error } = await supabase
+    .from("freed_slot_offers")
+    .select("status, winning_request_id, winner:requests!freed_slot_offers_winning_request_id_fkey(requester:profiles!requests_requester_id_fkey(full_name))")
+    .eq("cancelled_ride_id", rideId);
+  if (error) throw toAppError(error);
+  return (data ?? []) as unknown as RawFreedOfferOutcome[];
 }
 
 /** "I still want it" on a freed-slot offer addressed to me (DATA_MODEL §3.10). */

@@ -38,7 +38,7 @@ describe("CarReportDialog", () => {
   it("the X closes the dialog without submitting anything", () => {
     const { onOpenChange } = show();
     fireEvent.click(screen.getByRole("button", { name: he.carCare.homeWashTitle }));
-    expect(screen.getByRole("button", { name: he.carCare.washButton })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: he.carCare.washSkip })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "סגור" }));
 
@@ -50,7 +50,7 @@ describe("CarReportDialog", () => {
   it("wash calls log_car_care('wash') exactly once and shows the celebration", async () => {
     show();
     fireEvent.click(screen.getByRole("button", { name: he.carCare.homeWashTitle }));
-    fireEvent.click(screen.getByRole("button", { name: he.carCare.washButton }));
+    fireEvent.click(screen.getByRole("button", { name: he.carCare.washSkip }));
 
     await waitFor(() => expect(mocks.logCarCare).toHaveBeenCalledOnce());
     expect(mocks.logCarCare).toHaveBeenCalledWith({ carId: "car-1", kind: "wash" });

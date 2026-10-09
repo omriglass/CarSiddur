@@ -69,6 +69,7 @@ export default {
         rideHealthcare: "hsl(var(--ride-healthcare))",
         rideErrands: "hsl(var(--ride-errands))",
         rideOther: "hsl(var(--ride-other))",
+        mine: "hsl(var(--mine))",
       },
       backgroundImage: {
         "gradient-hero": "var(--gradient-hero)",

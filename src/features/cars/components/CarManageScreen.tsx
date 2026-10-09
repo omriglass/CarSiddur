@@ -21,6 +21,7 @@ import { he } from "@/i18n/he";
 import { TZ } from "@/lib/time";
 
 import { CarExcelExportButton } from "./CarExcelExportButton";
+import { CarMoodCard } from "./CarMoodCard";
 import { useCarCareHistoryQuery, useCarIssueHistoryQuery } from "../hooks";
 import { filterCarHistory, mergeCarHistory, type CarHistoryEntry, type CarHistoryFilter } from "../lib/history";
 
@@ -156,6 +157,10 @@ export function CarManageScreen({ car, isAdmin, viewerName, headerActions }: Car
         <span dir="ltr">{car.license_plate}</span>
         <StatusBadge kind="car" status={car.status} />
       </div>
+
+      <CarMoodCard
+        lastWashAt={merged.find((entry) => entry.kind === "wash")?.createdAt ?? null}
+      />
 
       <CarMaintenancePanel car={car} />
 
