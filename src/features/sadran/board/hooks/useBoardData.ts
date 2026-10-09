@@ -87,7 +87,9 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
   const departmentsQuery = useDepartments();
   const department = (departmentsQuery.data ?? []).find((d) => d.id === departmentId);
   // REQ item 108 c: an admin may place over a maintenance block (SQL `rides_before_write`), so the drop checks let them.
-  const isAdmin = !!useProfile().data?.is_admin;
+  const profileData = useProfile().data;
+  const isAdmin = !!profileData?.is_admin;
+  const myProfileId = profileData?.id ?? null;
   // Mobile title switcher subtitle (UX_FLOWS.md §4.2): the department name only
   // shows there when the Sadran actually manages more than one.
   const myDepartmentsQuery = useMyDepartments();
@@ -683,6 +685,10 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
     .map((r) => ({
       id: r.id as string,
       carId: r.car_id as string,
+      // The viewer's own ride (driver, or one of their own requests on it): the block is marked like on
+      // the siddur and the car's header name is bold for that day (owner 2026-10-09).
+      isMine: !!myProfileId && (r.driver_id === myProfileId
+        || servedOf(r).some((entry) => boardRequests.find((request) => request.id === entry.request_id)?.requester_id === myProfileId)),
       startMinutes: Math.round((Date.parse(r.starts_at as string) - Date.parse(dayStartIso(selectedDay))) / 60_000),
       endMinutes: Math.round((Date.parse(r.ends_at as string) - Date.parse(dayStartIso(selectedDay))) / 60_000),
       requestedStartMinutes: (() => {

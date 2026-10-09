@@ -353,6 +353,8 @@ export function WeekGrid({
   );
 
   const sharedCars = cars.filter((c) => c.group !== "temporary" && c.group !== "phantom");
+  // Cars the viewer rides in on the shown day: their header name is bold (owner 2026-10-09).
+  const myCarIds = new Set(rides.filter((ride) => ride.isMine).map((ride) => ride.carId));
   const phantomCars = cars.filter((c) => c.group === "phantom");
   const temporaryCars = cars.filter((c) => c.group === "temporary");
   const allCars = [...sharedCars, ...temporaryCars, ...phantomCars];
@@ -1003,7 +1005,7 @@ export function WeekGrid({
             style={{ gridColumn: i + 2, gridRow: 1, scrollSnapAlign: "start" }}
             onPointerDown={swappable ? (e) => carPointerDownRef.current(car.id, e) : undefined}
           >
-            <span className="flex min-w-0 items-center justify-center gap-1 text-center text-sm font-medium md:text-base leading-tight" data-testid="week-grid-car-name">
+            <span className={cn("flex min-w-0 items-center justify-center gap-1 text-center text-sm md:text-base leading-tight", myCarIds.has(car.id) ? "font-bold" : "font-medium")} data-testid="week-grid-car-name" data-my-car={myCarIds.has(car.id) || undefined}>
               {renderCarName ? renderCarName(car) : (
                 <>
                   <CarFront className="size-3.5 shrink-0 text-primary md:size-4" aria-hidden="true" />

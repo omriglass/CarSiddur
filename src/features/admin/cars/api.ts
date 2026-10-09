@@ -169,9 +169,13 @@ export async function fetchCarIssues(): Promise<CarIssue[]> {
 }
 
 export async function resolveCarIssue(issueId: string): Promise<void> {
+  // `car_issues_resolution_ck`: resolved_by and resolved_at are set together (owner 2026-10-09: marking an
+  // issue handled failed with the generic constraint-violation message because resolved_by was missing).
+  const { data: auth } = await supabase.auth.getUser();
+  if (!auth.user) throw toAppError({ code: "42501", message: "not_authenticated" });
   const { error } = await supabase
     .from("car_issues")
-    .update({ status: "resolved", resolved_at: new Date().toISOString() })
+    .update({ status: "resolved", resolved_at: new Date().toISOString(), resolved_by: auth.user.id })
     .eq("id", issueId);
   if (error) throw toAppError(error);
 }
