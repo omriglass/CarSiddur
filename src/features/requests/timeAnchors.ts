@@ -178,3 +178,30 @@ export function anchorFormFields(
     leaveDestTime: leave ? timeOf(row.leaveDestAt as string) : undefined,
   };
 }
+
+/** R12B8: less time than this at the destination (a quarter hour) is flagged — a drive back that starts as the drive there ends. */
+export const MIN_TIME_AT_DESTINATION_MINUTES = 15;
+
+/**
+ * R12B8 (warning only, never changes a time): minutes between arriving at the destination and starting the drive
+ * back. Arrival = the typed "arrive by", else departure + the (rush-stretched) drive; leaving = the typed "leave there at",
+ * else the "home by" time minus the (rush-stretched) drive back. `null` when a round trip's routes are not known yet.
+ */
+export function minutesAtDestination(
+  values: Pick<AnchorFormTimes, "departAnchor" | "returnAnchor"> & { out: string; back: string },
+  routes: { outMinutes: number | null; returnMinutes: number | null },
+  rush: RushWindows = [],
+): number | null {
+  const arrive = values.departAnchor === "arrive"
+    ? timeToMinutes(values.out)
+    : routes.outMinutes == null ? null : timeToMinutes(values.out) + driveAfter(timeToMinutes(values.out), routes.outMinutes, rush);
+  const leave = values.returnAnchor === "leave"
+    ? timeToMinutes(values.back)
+    : routes.returnMinutes == null ? null : timeToMinutes(values.back) - driveBefore(timeToMinutes(values.back), routes.returnMinutes, rush);
+  return arrive == null || leave == null ? null : Math.round(leave - arrive);
+}
+
+/** True when a round trip leaves (almost) no time at the destination. */
+export function tooLittleTimeAtDestination(minutes: number | null): boolean {
+  return minutes != null && minutes < MIN_TIME_AT_DESTINATION_MINUTES;
+}

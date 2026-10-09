@@ -1,9 +1,10 @@
 import { MapPin } from "lucide-react";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { PortalSheetContent } from "@/components/PortalSheetContent";
 import { CarNameWithReport } from "@/features/carCare/components/CarNameWithReport";
 import { rideBlockLabel } from "@/lib/rideLabel";
@@ -105,6 +106,7 @@ interface RideDetailSheetProps {
  * joinable-rides dialog after a waiting-list outcome).
  */
 export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = null, onOpenChange, editor, coordinatorNotes, canEditPublicNotes, passengerSummary, onRemoveOwnRide, removingOwnRide = false, editRequestHref, showAddPassengers = false, weekRides }: RideDetailSheetProps) {
+  const [confirmCancel, setConfirmCancel] = useState(false);
   // `servedOf()` already maps `v_board_rides.served[].child_names` onto each entry's
   // `childNames` (`applySolve.ts`) — no more hand-rolled mapping needed here.
   const served: ServedEntry[] = ride ? servedOf(ride) : [];
@@ -201,9 +203,21 @@ export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = 
               ) : null}
 
               {onRemoveOwnRide ? (
-                <Button className="w-full" size="lg" variant="destructive" disabled={removingOwnRide} onClick={onRemoveOwnRide}>
-                  {t("action.cancelRide")}
-                </Button>
+                <>
+                  <Button className="w-full" size="lg" variant="destructive" disabled={removingOwnRide} onClick={() => setConfirmCancel(true)}>
+                    {t("action.cancelRide")}
+                  </Button>
+                  {/* R12M1: cancelling a ride is never one tap. */}
+                  <ConfirmDialog
+                    open={confirmCancel}
+                    onOpenChange={setConfirmCancel}
+                    title={he.request.cancelConfirmTitle}
+                    confirmLabel={t("action.cancelRide")}
+                    destructive
+                    loading={removingOwnRide}
+                    onConfirm={() => { setConfirmCancel(false); onRemoveOwnRide(); }}
+                  />
+                </>
               ) : null}
             </div>
           </>

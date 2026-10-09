@@ -152,7 +152,7 @@ export const heMember = {
     /** R10U7: removing / cancelling a request that is already served by its plan B (REQ §13.112 a) — it is placed, not unsent. */
     withdrawPlanBBody: "הבקשה כבר שובצה בתוכנית ב׳. הסרתה מבטלת את ההקפצה שנקבעה.",
     withdrawPlanBPickupBody: "הבקשה כבר שובצה בתוכנית ב׳. הסרתה מבטלת את ההקפצה שנקבעה וגם את בקשת האיסוף הקשורה אליה.",
-    cancelConfirmTitle: "לבטל את הנסיעה?",
+    cancelConfirmTitle: "בטוח/ה שברצונך לבטל את הנסיעה?",
     cancelConfirmBodyFreed: "הרכב יוצע לחברים ברשימת ההמתנה.",
     cancelConfirmBodyRelay: "הסדרן/ית יקבלו הודעה — הרכב צריך לחזור הביתה.",
     submitError: "לא ניתן היה לשלוח את הבקשה",
@@ -344,6 +344,10 @@ export const heMember = {
     backHome: "לדף הבית",
     yourRequest: "הבקשה שלך",
     guestRequest: "הבקשה של {{name}}",
+    /** R12B7: what a joining passenger is asked — the host's name, then what changes for them. */
+    joinHost: "להצטרף לנסיעה של {{name}}",
+    joinDepartChange: "יציאה {{to}} במקום {{from}}",
+    joinReturnChange: "חזרה {{to}} במקום {{from}}",
     rideBefore: "הנסיעה כעת",
     externalAccept: "אסתדר/י בעצמי — לסגור את הבקשה",
     externalStay: "להישאר ברשימת ההמתנה",
@@ -582,6 +586,8 @@ export const heMember = {
    * prefix letters ("מ" + chip, "ל" + chip); anchor labels are keyed by `anchorLabelKey()`.
    */
   requestSentence: {
+    /** R12B8: gentle, non-blocking — the round trip leaves (almost) no time at the destination. */
+    noTimeAtDestination: "אין זמן ביעד — כדאי לבדוק את שעת החזרה",
     hint: "אפשר ללחוץ על כל מילה מודגשת",
     hintDismiss: "הבנתי",
     /** The who chip's own label ("אני"); more names follow it (`joinNames`). */

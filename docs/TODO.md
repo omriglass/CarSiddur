@@ -998,14 +998,14 @@ Order: finish the e2e runs → release what is in (`npm run release`) → a new 
 Held up: per-day autofill incl. series, publish picker (unsolved days not pre-ticked), switch to הקפצה places (R8B12), drop points via UI, maintenance period set from the car page (rides flagged, "טיפול הבא", solver respects it, whole-block move), one-step volunteer replace (R8U1), pending-merge ride sheet (R8U2), car-conflict warning, needs-driver cancel creates an offer (R8B11), no placement notice before publish (R8B7), per-reader proposal page for the host, ask-to-join on a private car reaches the owner (R8B5), rush-hour estimates, window request, plan B / אסתדר in both forms, unnamed people, large trunk.
 
 ### Bugs
-- **R12B1** Resizing a maintenance block's edge on the board is refused ("הרכב אינו זמין או נמצא בטיפול בשעות שנבחרו"); moving the whole block works (Mon, Mazda).
-- **R12B2** `maintenance_affects` copy has an empty destination ("הנסיעה שלך ל ביום ב׳ 12.10 תשובץ מחדש", m17/m29) and is sent for unpublished days.
-- **R12B3** Freed-car offer stayed open after a member's cancel: `on-ride-cancelled` failed with `car_not_at_leg_place` (offer a094cca2, Thu, m14 req 146712c6); no retry, Sadran not told.
-- **R12B4** A person can be double-booked: m25 drives 16372c20 (Fri 13:30–23:59) and was merged as a passenger into 39891264 (15:15–17:15) via ask-to-join, no warning.
-- **R12B5** A merge onto a mismatched ride was sent without a verdict (proposal 629f20b6: Haifa→home 16:45 onto home→Haifa 09:30 boarding at the end place) — should refuse (`boards_at_end`/`window`).
-- **R12B6** Publish blocked by "conflicts=2" with no conflicting ride shown (Mon); moving daff0bcc to apparently free cars reported "planning conflict".
-- **R12B7** `/p/<token>` merge page for a joining passenger: no host/driver name, generic text, one-way shows "08:45 → —" (m14, m27).
-- **R12B8** Arrive-by far away keeps the default return: Jerusalem arrive 09:30 (144 min drive) with "בבית עד 12:00" — zero time there, no warning (m01; m22 Tel Aviv).
+- **R12B1** [fixed (package B): band handles above ride cards] Resizing a maintenance block's edge on the board is refused ("הרכב אינו זמין או נמצא בטיפול בשעות שנבחרו"); moving the whole block works (Mon, Mazda).
+- **R12B2** [fixed (package B): route filled, members only on published days] `maintenance_affects` copy has an empty destination ("הנסיעה שלך ל ביום ב׳ 12.10 תשובץ מחדש", m17/m29) and is sent for unpublished days.
+- **R12B3** Freed-car offer stayed open after a member's cancel: `on-ride-cancelled` failed with `car_not_at_leg_place` (offer a094cca2, Thu, m14 req 146712c6); no retry, Sadran not told. **FIXED 2026-10-09 (package A, REQ §13.120; `qa_run12_package_a.sql`).**
+- **R12B4** A person can be double-booked: m25 drives 16372c20 (Fri 13:30–23:59) and was merged as a passenger into 39891264 (15:15–17:15) via ask-to-join, no warning. **FIXED 2026-10-09 (package A, REQ §13.120; `qa_run12_package_a.sql`).**
+- **R12B5** A merge onto a mismatched ride was sent without a verdict (proposal 629f20b6: Haifa→home 16:45 onto home→Haifa 09:30 boarding at the end place) — should refuse (`boards_at_end`/`window`). **FIXED 2026-10-09 (package A, REQ §13.120; `qa_run12_package_a.sql`).**
+- **R12B6** Publish blocked by "conflicts=2" with no conflicting ride shown (Mon); moving daff0bcc to apparently free cars reported "planning conflict". **FIXED 2026-10-09 (package A, REQ §13.120; `qa_run12_package_a.sql`).**
+- **R12B7** [fixed (package B)] `/p/<token>` merge page for a joining passenger: no host/driver name, generic text, one-way shows "08:45 → —" (m14, m27).
+- **R12B8** [warning added, package B] Arrive-by far away keeps the default return: Jerusalem arrive 09:30 (144 min drive) with "בבית עד 12:00" — zero time there, no warning (m01; m22 Tel Aviv).
 
 ### UI changes
 - **R12U1** Plan B default "להיות שם עד" is later than the main arrive-by (m22, m01).
@@ -1017,9 +1017,9 @@ Held up: per-day autofill incl. series, publish picker (unsolved days not pre-ti
 - **R12U7** Ride sheet lists the passengers twice; publish headline doesn't say which day/ride conflicts; CLI prints UTC times in the car-conflict warning.
 
 ### Missing obvious features
-- **R12M1** No confirmation to the member who cancels a ride.
-- **R12M2** `qa:member request` cannot file plan B (and the generator files none) — plan-B proposals untested end to end in QA.
-- **R12M3** Chauffeur rides still created by the solver (R7B2 hid only suggestions) fill days with NEEDS-DRIVER rides that keep days "unanswered".
+- **R12M1** [fixed (package B)] No confirmation to the member who cancels a ride.
+- **R12M2** [fixed (package B)] `qa:member request` cannot file plan B (and the generator files none) — plan-B proposals untested end to end in QA.
+- **R12M3** Chauffeur rides still created by the solver (R7B2 hid only suggestions) fill days with NEEDS-DRIVER rides that keep days "unanswered". **FIXED 2026-10-09 (package A, REQ §13.120; `qa_run12_package_a.sql`).**
 
 ### Additional
 - **R12F1** Warn when filing a request that overlaps one's own driving/passenger slot.

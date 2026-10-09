@@ -53,6 +53,8 @@ export const sadranKeys = {
   mySadranDepartments: (profileId: string | undefined) => [...sadranKeys.all, "mine", profileId] as const,
   policyOptions: (departmentId: string) => [...sadranKeys.activePolicy(departmentId), "options"] as const,
   profilesByIds: (sortedJoinedIds: string) => [...sadranKeys.all, "profiles", sortedJoinedIds] as const,
+  publicationConflicts: (departmentId: string, weekStart: string, days: readonly string[]) =>
+    [...sadranKeys.week(departmentId, weekStart), "publicationConflicts", ...days] as const,
   publicationReadiness: (departmentId: string, weekStart: string) =>
     [...sadranKeys.week(departmentId, weekStart), "publicationReadiness"] as const,
   switchableWeeks: (departmentId: string, profileId: string | undefined, weekStarts: readonly string[]) =>

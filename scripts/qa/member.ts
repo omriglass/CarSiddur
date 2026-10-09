@@ -198,6 +198,28 @@ async function cmdEdit(args: Args): Promise<void> {
   console.log(`edited ${short(id)}: late=${result.is_late} warnings=${(result.warnings ?? []).join(",") || "-"}${result.status ? ` status=${result.status}` : ""}${result.ride_id ? ` ride=${short(result.ride_id)}` : ""}${result.reason ? ` reason=${result.reason}` : ""}`);
 }
 
+/** R12M2: `--fallback alternative|manage [--alt-place P --alt-arrive HH:MM [--alt-pickup-place P --alt-pickup HH:MM]]` -> `fallback`/`alternative` of `submit_request`. */
+function planBPayload(args: Args, day: string, destinations: { id: string; name: string }[]): Pick<requests.SubmitRequestPayload, "fallback" | "alternative"> {
+  const fallback = flag(args, "fallback");
+  if (!fallback || fallback === "none") return {};
+  if (fallback === "manage") return { fallback: "manage" };
+  if (fallback !== "alternative") throw new UsageError("--fallback alternative|manage");
+  const place = resolvePlaceToken(destinations, need(flag(args, "alt-place"), "--alt-place <place|free:text> (plan B drop place)"));
+  const arrive = need(flag(args, "alt-arrive"), "--alt-arrive HH:MM (plan B arrival)");
+  const pickupAt = flag(args, "alt-pickup");
+  const pickupPlace = placeOf(destinations, flag(args, "alt-pickup-place"));
+  return {
+    fallback: "alternative",
+    alternative: {
+      ...("presetId" in place ? { drop_place_id: place.presetId } : { drop_place_text: place.freeText }),
+      arrive_by: instantAt(day, arrive),
+      pickup: !!pickupAt,
+      pickup_at: pickupAt ? instantAt(day, pickupAt) : null,
+      ...(pickupAt && pickupPlace ? ("presetId" in pickupPlace ? { pickup_place_id: pickupPlace.presetId } : { pickup_place_text: pickupPlace.freeText }) : {}),
+    },
+  };
+}
+
 async function cmdRequest(args: Args, forceToday = false): Promise<void> {
   if (!SCOPE) throw new UsageError("department not found");
   const destinations = await fetchDestinations(SCOPE.departmentId);
@@ -219,7 +241,9 @@ async function cmdRequest(args: Args, forceToday = false): Promise<void> {
   if (!rideType) throw new UsageError(`ride type not found (have: ${rideTypes.map((r) => r.code).join(", ")})`);
   const returnDay = flag(args, "return-day");
   const f = flex(flag(args, "flex"));
+  const planB = planBPayload(args, day, destinations);
   const payload: requests.SubmitRequestPayload = {
+    ...planB,
     department_id: SCOPE.departmentId, week_start: weekOf(day),
     destination_id: "presetId" in dest ? dest.presetId : undefined, destination_text: "freeText" in dest ? dest.freeText : undefined,
     origin_id: origin && "presetId" in origin ? origin.presetId : undefined, origin_text: origin && "freeText" in origin ? origin.freeText : undefined,
@@ -324,6 +348,7 @@ function usage(): void {
   messages [--new] | reply <text> [--re X] | my-rides | siddur <day>
   request <day> --depart HH:MM [--return HH:MM] --dest <place|free:text> [--trip round_trip|one_way|drop_off] [--from] [--pickup] [--origin P] [--stop P]... [--return-stop P]...
           [--adults N --child-seats N --boosters N --luggage] [--flex 0|15|30|60|120|any | --flex-depart-early/-late/--flex-return-early/-late] [--return-day D] [--car ID] [--ride-type CODE] [--notes T] [--waitlist]
+          [--fallback alternative|manage --alt-place P --alt-arrive HH:MM [--alt-pickup-place P --alt-pickup HH:MM]]   (plan B / "I will manage")
   edit <req> [--day D --depart HH:MM --return HH:MM --dest P --origin P --trip-type T [--from|--pickup] --adults N --flex X --notes T --stop P... --clear-stops]
   groups | resolve-group <group> <member,...> [--driver X] (first listed drives)
   ask-to-join <ride> --day D [--dest P] [--adults N --notes T] | withdraw <req> | cancel <req> [reason] | shorten <req> <first-day> <HH:MM> <last-day> <HH:MM> | car-now --dest P [--hours N] [--adults N]`);

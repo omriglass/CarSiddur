@@ -858,7 +858,23 @@ export interface PublicationDay {
   conflictRides: number;
   ready: boolean;
 }
-export interface PublicationOptions { days?: string[]; allowUnanswered?: boolean }
+/** R12M3: `allowDriverless` = the Sadran confirmed "publish although some rides have no driver" (`p_allow_driverless`). */
+export interface PublicationOptions { days?: string[]; allowUnanswered?: boolean; allowDriverless?: boolean }
+
+/** R12B6 (REQ §13.119): one ride that blocks publication, with every reason (`publication_conflicts`). */
+export interface PublicationConflict {
+  ride_id: string;
+  car_id: string;
+  car_name: string;
+  starts_at: string;
+  ends_at: string;
+  reasons: string[];
+  other_ride_ids: string[];
+}
+
+export async function fetchPublicationConflicts(departmentId: string, weekStart: string, days: string[]): Promise<PublicationConflict[]> {
+  return await rpc("publication_conflicts", { p_department_id: departmentId, p_week_start: weekStart, p_days: days }) as unknown as PublicationConflict[];
+}
 
 export async function fetchPublicationReadiness(departmentId: string, weekStart: string): Promise<PublicationDay[]> {
   return await rpc("publication_readiness", { p_department_id: departmentId, p_week_start: weekStart }) as unknown as PublicationDay[];
@@ -882,7 +898,7 @@ export async function setWeekCloseAt(departmentId: string, weekStart: string, cl
 export async function publishSiddur(departmentId: string, weekStart: string, scores: Json, fingerprint: string, policyScores: Json, options: PublicationOptions = {}): Promise<string> {
   return rpc("publish_siddur", { p_department_id: departmentId, p_week_start: weekStart,
     p_profile_scores: scores, p_expected_fingerprint: fingerprint, p_policy_scores: policyScores,
-    p_days: options.days, p_allow_unanswered: options.allowUnanswered ?? false });
+    p_days: options.days, p_allow_unanswered: options.allowUnanswered ?? false, p_allow_driverless: options.allowDriverless ?? false });
 }
 
 /** All non-cancelled rides of the week, for the publish diff and blocking-conflicts checks (same RLS as the board). */

@@ -32,7 +32,7 @@ import { formatDayDate } from "@/lib/dayLabels";
 import { routeLabel } from "@/lib/routeLabel";
 import { formatTime } from "@/lib/time";
 import { DEFAULT_STOP_MINUTES, homeTravelEdges, makeHop, makeHopKm } from "@/lib/rideRoute";
-import { applyServerMergeTimes, mergeLegSummary, mergePayloadLeg, mergePayloadLegs, mergeVerdict, previewMerge } from "../../board/mergeProposal";
+import { applyServerMergeTimes, personOverlapWarning, mergeLegSummary, mergePayloadLeg, mergePayloadLegs, mergeVerdict, previewMerge } from "../../board/mergeProposal";
 import { useQuery } from "@tanstack/react-query";
 
 import { renderTemplate } from "../waLink";
@@ -494,6 +494,7 @@ export function ProposalComposerScreen({ departmentId, weekStart }: ProposalComp
             </Select>
           ) : null}
 
+          {type === "merge" && personOverlapWarning(serverMergeQuery.data) ? <p className="text-maintenance" role="status" data-testid="merge-person-overlap">{personOverlapWarning(serverMergeQuery.data)}</p> : null}
           {mergeGate?.status === "refused" ? (
             <p className="font-semibold text-destructive" role="alert" data-testid="composer-merge-invalid" data-code={mergeGate.code ?? undefined}>{mergeGate.message}</p>
           ) : mergeGate?.status === "loading" ? (

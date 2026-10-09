@@ -963,6 +963,7 @@ export type Database = {
         Row: {
           cancelled_ride_id: string
           car_id: string
+          close_reason: string | null
           created_at: string
           department_id: string
           ends_at: string
@@ -979,6 +980,7 @@ export type Database = {
         Insert: {
           cancelled_ride_id: string
           car_id: string
+          close_reason?: string | null
           created_at?: string
           department_id: string
           ends_at: string
@@ -995,6 +997,7 @@ export type Database = {
         Update: {
           cancelled_ride_id?: string
           car_id?: string
+          close_reason?: string | null
           created_at?: string
           department_id?: string
           ends_at?: string
@@ -4985,6 +4988,10 @@ export type Database = {
         Args: { _car: string; _week: string }
         Returns: undefined
       }
+      fail_freed_offer: {
+        Args: { p_offer_id: string; p_reason: string }
+        Returns: undefined
+      }
       fairness_stats: {
         Args: {
           p_department_id: string
@@ -5003,6 +5010,10 @@ export type Database = {
       form_waitlist_groups: {
         Args: { p_day: string; p_department_id: string; p_week_start: string }
         Returns: number
+      }
+      freed_candidate_placeable: {
+        Args: { p_offer_id: string; p_request_id: string }
+        Returns: boolean
       }
       freed_offer_group: { Args: { _offer: string }; Returns: string }
       freed_slot_candidates: {
@@ -5298,6 +5309,18 @@ export type Database = {
         Args: { p_profile_id: string; p_proposal_id: string }
         Returns: Json
       }
+      publication_conflict_details: {
+        Args: {
+          p_days: string[]
+          p_department_id: string
+          p_week_start: string
+        }
+        Returns: {
+          other_ride_id: string
+          reason: string
+          ride_id: string
+        }[]
+      }
       publication_conflicting_ride_ids: {
         Args: {
           p_days: string[]
@@ -5305,6 +5328,14 @@ export type Database = {
           p_week_start: string
         }
         Returns: string[]
+      }
+      publication_conflicts: {
+        Args: {
+          p_days?: string[]
+          p_department_id: string
+          p_week_start: string
+        }
+        Returns: Json
       }
       publication_readiness: {
         Args: { p_department_id: string; p_week_start: string }
@@ -5316,6 +5347,7 @@ export type Database = {
       }
       publish_siddur: {
         Args: {
+          p_allow_driverless?: boolean
           p_allow_unanswered?: boolean
           p_days?: string[]
           p_department_id: string

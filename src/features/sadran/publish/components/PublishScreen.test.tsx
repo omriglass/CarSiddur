@@ -3,11 +3,12 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { he } from "@/i18n/he";
-import type { PublicationDay } from "../../api";
+import type { PublicationConflict, PublicationDay } from "../../api";
 import { PublishScreen } from "./PublishScreen";
 
-const mocks = vi.hoisted(() => ({ readiness: [] as PublicationDay[], publish: vi.fn() }));
+const mocks = vi.hoisted(() => ({ readiness: [] as PublicationDay[], conflicts: [] as PublicationConflict[], publish: vi.fn() }));
 vi.mock("../../hooks", () => ({
+  usePublicationConflicts: () => ({ data: mocks.conflicts, isLoading: false, isError: false }),
   usePublicationReadiness: () => ({ data: mocks.readiness, isLoading: false, isError: false, refetch: vi.fn() }),
   useWeekRequestsWithNames: () => ({ data: [], isLoading: false, isError: false }),
   useAllWeekRides: () => ({ data: [], isLoading: false, isError: false }),
@@ -33,6 +34,7 @@ function show() {
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-09-12T08:00:00Z") });
+  mocks.conflicts = [];
   mocks.publish.mockReset().mockResolvedValue("published-version");
   mocks.readiness = days.map((day) => ({
     day, ready: true, published: false, requestCount: 1, unresolvedRequests: 0, incompleteAssignments: 0,
@@ -81,7 +83,7 @@ describe("publication choices", () => {
     show();
     expect(screen.getByText(he.publicationFlow.allReady)).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: he.publicationFlow.allYes }));
-    await waitFor(() => expect(mocks.publish).toHaveBeenCalledExactlyOnceWith({ departmentId, weekStart, days, allowUnanswered: false }));
+    await waitFor(() => expect(mocks.publish).toHaveBeenCalledExactlyOnceWith({ departmentId, weekStart, days, allowUnanswered: false, allowDriverless: false }));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     await screen.findByTestId("returned-to-board");
   });
@@ -96,11 +98,11 @@ describe("publication choices", () => {
     expect(screen.getAllByRole("checkbox", { checked: true })).toHaveLength(5);
     expect(screen.getAllByRole("checkbox", { checked: false })).toHaveLength(2);
     fireEvent.click(screen.getByRole("button", { name: he.publicationFlow.selectedPublish }));
-    await waitFor(() => expect(mocks.publish).toHaveBeenCalledExactlyOnceWith({ departmentId, weekStart, days: readyDays, allowUnanswered: false }));
+    await waitFor(() => expect(mocks.publish).toHaveBeenCalledExactlyOnceWith({ departmentId, weekStart, days: readyDays, allowUnanswered: false, allowDriverless: false }));
     await screen.findByTestId("returned-to-board");
   });
 
-  it.each(["incompleteAssignments", "pendingProposals", "missingDriverRides"] as const)("requires explicit confirmation before publishing days with %s", async (field) => {
+  it.each(["incompleteAssignments", "pendingProposals"] as const)("requires explicit confirmation before publishing days with %s", async (field) => {
     mocks.readiness[2] = { ...mocks.readiness[2]!, ready: false, [field]: 1 };
     show();
     fireEvent.click(screen.getByRole("button", { name: he.publicationFlow.allYes }));
@@ -111,8 +113,28 @@ describe("publication choices", () => {
     expect(mocks.publish).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: he.publicationFlow.allYes }));
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: he.publicationFlow.confirmUnresolved }));
-    await waitFor(() => expect(mocks.publish).toHaveBeenCalledExactlyOnceWith({ departmentId, weekStart, days, allowUnanswered: true }));
+    await waitFor(() => expect(mocks.publish).toHaveBeenCalledExactlyOnceWith({ departmentId, weekStart, days, allowUnanswered: true, allowDriverless: false }));
     await screen.findByTestId("returned-to-board");
+  });
+
+  it("driverless rides alone ask their own question and send allowDriverless, not allowUnanswered (R12M3)", async () => {
+    mocks.readiness[2] = { ...mocks.readiness[2]!, missingDriverRides: 1 };  // still "ready": driverless rides are informational
+    show();
+    fireEvent.click(screen.getByRole("button", { name: he.publicationFlow.allYes }));
+    expect(mocks.publish).not.toHaveBeenCalled();
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByText(he.publicationFlow.driverlessTitle)).toBeVisible();
+    fireEvent.click(within(dialog).getByRole("button", { name: he.publicationFlow.confirmUnresolved }));
+    await waitFor(() => expect(mocks.publish).toHaveBeenCalledExactlyOnceWith({ departmentId, weekStart, days, allowUnanswered: false, allowDriverless: true }));
+  });
+
+  it("names every ride behind a conflict: car, time and reason (R12B6)", () => {
+    mocks.readiness[2] = { ...mocks.readiness[2]!, ready: false, conflictRides: 1 };
+    mocks.conflicts = [{ ride_id: "r1", car_id: "c1", car_name: "קיה", starts_at: "2026-09-15T06:00:00Z", ends_at: "2026-09-15T08:00:00Z", reasons: ["car_overlap"], other_ride_ids: ["r2"] }];
+    show();
+    const row = screen.getByTestId("publish-conflict-row");
+    expect(row.textContent).toContain("קיה");
+    expect(row.textContent).toContain(he.sadranPublish.conflictReason.car_overlap);
   });
 
   it("does not allow a schedule conflict to use the unanswered-items override", () => {
@@ -134,6 +156,6 @@ describe("publication choices", () => {
     expect(screen.getByText(he.sadranPublish.unresolvedWillBeGrouped)).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: he.publicationFlow.allYes }));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    await waitFor(() => expect(mocks.publish).toHaveBeenCalledExactlyOnceWith({ departmentId, weekStart, days, allowUnanswered: false }));
+    await waitFor(() => expect(mocks.publish).toHaveBeenCalledExactlyOnceWith({ departmentId, weekStart, days, allowUnanswered: false, allowDriverless: false }));
   });
 });

@@ -931,7 +931,7 @@ export function WeekGrid({
           const shownStart = dragging && dragging.kind !== "end" ? b.startMinutes + dragging.delta : b.startMinutes;
           const shownEnd = dragging && dragging.kind !== "start" ? b.endMinutes + dragging.delta : b.endMinutes;
           const rect = clampRideVertical(shownStart, shownEnd, dayStartMinutes, dayEndMinutes);
-          const handleClass = "absolute inset-x-0 z-10 h-2.5 cursor-ns-resize touch-none border-foreground/30 bg-foreground/15";
+          const handleClass = "absolute inset-x-0 z-30 h-2.5 cursor-ns-resize touch-none border-foreground/30 bg-foreground/15";
           return (
             <div
               key={b.id}
@@ -941,7 +941,10 @@ export function WeekGrid({
               role={editable ? "button" : undefined}
               tabIndex={editable ? 0 : undefined}
               className={cn(
-                "absolute inset-x-1 z-0 flex items-start overflow-clip rounded-sm border p-1 text-xs",
+                // R12B1: an editable band makes no stacking context of its own (z-auto) so its edge handles (z-30) stay above a ride
+                // card that overlaps the band; with z-0 a neighbouring ride's own resize handle swallowed the drag.
+                "absolute inset-x-1 flex items-start overflow-clip rounded-sm border p-1 text-xs",
+                !editable && "z-0",
                 // R4U1: an away band is only a hint - it never takes clicks from a ride card on the same car.
                 isAway && "pointer-events-none",
                 isAway

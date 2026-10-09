@@ -2,7 +2,8 @@
 // drag paths and the suggestion path so they all build the SAME payload: legs only - the host
 // keeps its start and its end grows by the added driving (computed by `apply_proposal` from the
 // ride route; `src/lib/rideRoute.ts` is the TS twin used to preview it). No React, no Supabase.
-import { he } from "@/i18n/he";
+import { he, tv } from "@/i18n/he";
+import { formatTime } from "@/lib/time";
 import { fallbackRoute, mergePassengerIntoRoute, parseRideRoute, type Hop, type HopKm, type MergedRoute, type MergeInvalid } from "@/lib/rideRoute";
 
 import type { BoardRide, WeekRequestRow } from "../api";
@@ -174,6 +175,8 @@ export interface ServerMergePreview {
   turnaroundSide?: "previous" | "next" | null;
   /** REQ §13.111 (a): the only problem is a missing large trunk - the Sadran may accept it ("לשבץ בכל זאת", payload `allow_small_trunk`). */
   waivable?: boolean;
+  /** R12B4 (REQ §13.119): the guest's person is already on another live ride overlapping the merged ride - a warning, never a refusal. */
+  personOverlaps?: { rideId: string; startsAt: string; endsAt: string; role: string }[];
 }
 
 const isoOrNull = (value: unknown): string | null => (typeof value === "string" && value ? value : null);
@@ -190,7 +193,20 @@ export function parseServerMergePreview(raw: unknown): ServerMergePreview | null
     joinerReturnAt: isoOrNull(r.joiner_return_at),
     turnaroundSide: r.turnaround_side === "previous" || r.turnaround_side === "next" ? r.turnaround_side : null,
     waivable: r.waivable === true,
+    personOverlaps: Array.isArray(r.person_overlaps)
+      ? r.person_overlaps.flatMap((o): { rideId: string; startsAt: string; endsAt: string; role: string }[] => {
+        const row = o as Record<string, unknown>;
+        return typeof row.ride_id === "string" && typeof row.starts_at === "string" && typeof row.ends_at === "string"
+          ? [{ rideId: row.ride_id, startsAt: row.starts_at, endsAt: row.ends_at, role: typeof row.role === "string" ? row.role : "passenger" }] : [];
+      })
+      : [],
   };
+}
+
+/** R12B4: the warning line for a guest already booked on another ride at those hours, or `null`. */
+export function personOverlapWarning(server: ServerMergePreview | null | undefined): string | null {
+  const first = server?.personOverlaps?.[0];
+  return first ? tv("mergedRide.personOverlap", { time: `${formatTime(new Date(first.startsAt))}–${formatTime(new Date(first.endsAt))}` }) : null;
 }
 
 /** `preview` with the times the server computed (display only; the route and validity stay the twin's). */

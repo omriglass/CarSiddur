@@ -146,6 +146,12 @@ async function open(args: Args): Promise<{ scope: Scope; board: Board }> {
 
 // --- commands -------------------------------------------------------------------------------
 
+/** R12B6: name each ride that blocks publication (car, time, reasons), so a "conflicts=N" counter is never opaque. */
+async function printPublicationConflicts(board: Board, days: string[]): Promise<void> {
+  const conflicts = await api.fetchPublicationConflicts(board.scope.departmentId, board.scope.weekStart, days).catch(() => [] as api.PublicationConflict[]);
+  for (const c of conflicts) console.log(`  PUBLISH-BLOCKER ride ${short(c.ride_id)} ${c.car_name} ${dayOf(c.starts_at)} ${t(c.starts_at)}-${t(c.ends_at)}: ${c.reasons.join(", ")}${c.other_ride_ids.length ? ` (with ${c.other_ride_ids.map(short).join(", ")})` : ""}`);
+}
+
 async function cmdWeek(board: Board): Promise<void> {
   const { scope } = board;
   const byStatus = new Map<string, number>();
@@ -166,6 +172,8 @@ async function cmdWeek(board: Board): Promise<void> {
     const rd = readiness.find((d) => d.day === day);
     console.log(`${day} ${String(rides).padStart(5)} ${String(unmet).padStart(5)} ${String(drafts).padStart(6)} | ${rd ? `${rd.requestCount} ${rd.unresolvedRequests} ${rd.unsolvedRequests ?? 0} ${rd.incompleteAssignments} ${rd.pendingProposals} ${rd.draftProposals} ${rd.missingDriverRides} ${rd.conflictRides} ${rd.ready ? "READY" : "not-ready"} ${rd.published ? "published" : "-"}` : "-"}`);
   }
+  const blocked = readiness.filter((d) => d.conflictRides > 0).map((d) => d.day);
+  if (blocked.length) await printPublicationConflicts(board, blocked);
 }
 
 async function cmdDay(board: Board, day: string): Promise<void> {
@@ -186,6 +194,7 @@ async function cmdDay(board: Board, day: string): Promise<void> {
     if (away && day === dayOf(new Date(board.weekStartMs + 6 * 86_400_000 + 3_600_000).toISOString())) console.log(`  WARN car ends the week away at ${board.destName(away.locationId)}`);
   }
   console.log(`IDLE CARS: ${idle.join(", ") || "(none)"}`);
+  await printPublicationConflicts(board, [day]);
   const maint = board.maintenance.filter((m) => dayOf(m.starts_at) === day || dayOf(m.ends_at) === day);
   for (const m of maint) console.log(`MAINTENANCE ${board.carName(m.car_id)} ${t(m.starts_at)}-${t(m.ends_at)}`);
 
@@ -568,7 +577,7 @@ async function cmdPublish(board: Board, args: Args): Promise<void> {
   const days = flag(args, "days")?.split(",");
   const publishedDays = async () => (await api.fetchPublicationReadiness(board.scope.departmentId, board.scope.weekStart)).filter((d) => d.published).map((d) => d.day);
   const before = new Set(await publishedDays().catch(() => [] as string[]));
-  const id = await publishWithScores(board.scope.departmentId, board.scope.weekStart, { days, allowUnanswered: has(args, "allow-unanswered") });
+  const id = await publishWithScores(board.scope.departmentId, board.scope.weekStart, { days, allowUnanswered: has(args, "allow-unanswered"), allowDriverless: has(args, "allow-driverless") });
   // Report what was actually published (the RPC publishes every ready day when no --days is given), not what was asked for.
   const after = await publishedDays().catch(() => null);
   const newly = after ? after.filter((d) => !before.has(d)) : null;
@@ -687,7 +696,7 @@ function usage(): void {
   message <memberEmail> <text> | messages [--new]
   fewer-days <req> <first-day> <last-day> [--car C] [--draft] | withdraw-duplicate <req>
   assign-driver <ride> <member|none> | add-passengers <ride> <name>[:adult|child_seat|booster]... | contacts [<name>]
-  publish [--days d1,d2] [--allow-unanswered] | advance live`);
+  publish [--days d1,d2] [--allow-unanswered] [--allow-driverless] | advance live`);
 }
 
 run(async () => {

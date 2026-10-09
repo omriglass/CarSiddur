@@ -527,9 +527,27 @@ export async function generateWeek({ seed, out, apiUrl, tag, log = console.log, 
   const submitted = [];
   const failures = [];
   const rtDuplicates = new Set();
+  // R12M2: plan B ("if there is no car") / "I will manage" on a realistic share of single-day round trips. Its own seeded
+  // stream, so adding it never shifts the draws of an existing seed's world (deterministic per seed).
+  const planBRng = mulberry32((seed ^ 0x9b17c3) >>> 0);
   for (const p of plans) {
     const m = p.member;
     const payload = buildPayload(ctx, p.o);
+    if (payload.trip_shape === "round_trip" && !p.o.series && !p.o.privateCar && !p.o.returnDay) {
+      const roll = planBRng();
+      const place = pick(planBRng, ctx.near.concat(ctx.mid).filter((x) => x.id !== p.o.dest.id && x.id !== payload.origin_id));
+      const pickupRoll = planBRng();
+      const arrive = Math.min(p.o.depart + 15 * randInt(planBRng, 2, 6), p.o.ret - 30);
+      if (roll < 0.1) payload.fallback = "manage";
+      else if (roll < 0.25 && place && arrive > p.o.depart) {
+        payload.fallback = "alternative";
+        const pickupAt = pickupRoll < 0.5 && p.o.ret - 60 > arrive ? p.o.ret - 60 : null;
+        payload.alternative = {
+          drop_place_id: place.id, arrive_by: toInstant(ctx.day(p.o.day), arrive),
+          pickup: pickupAt != null, pickup_at: pickupAt != null ? toInstant(ctx.day(p.o.day), pickupAt) : null,
+        };
+      }
+    }
     if (payload.destination_id && payload.destination_id === (payload.origin_id ?? (m.originName ? ctx.byName.get(m.originName).id : ctx.home.id))) {
       payload.destination_id = ctx.home.id === payload.destination_id ? ctx.near[0].id : ctx.home.id;
     }
@@ -588,7 +606,7 @@ export async function generateWeek({ seed, out, apiUrl, tag, log = console.log, 
   // ---- outputs ----
   const personas = {
     seed, tag, department: { id: dept.id, slug: dept.slug }, weekStart,
-    note: "QA user agent ONLY - the QA Sadran must never read this file (docs/QA_SIMULATION.md section 0).",
+    note: "QA user agent ONLY - the QA Sadran must never read this file (docs/QA_SIMULATION.md section 0). About a quarter of single-day round trips carry a plan B (fallback 'alternative', ~15%) or 'I will manage' (fallback 'manage', ~10%), chosen deterministically per seed.",
     personaTagGlossary: QA_DATA.personaTags, liveEventTypes: QA_DATA.liveEventTypes,
     negotiationLines: QA_DATA.negotiationLines,
     members: members.map((m) => ({

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { makeHop } from "@/lib/rideRoute";
 
-import { addedGuestsOf, applyServerMergeTimes, combineMergeLegs, parseServerMergePreview, defaultMergeLeg, mergeLegForCard, mergeLegOptions, mergePayloadFromLegs, mergePayloadLegs, mergePayload, mergePayloadLeg, mergeRefusalText, mergeVerdict, previewMerge, type ServerMergePreview } from "./mergeProposal";
+import { addedGuestsOf, applyServerMergeTimes, combineMergeLegs, parseServerMergePreview, personOverlapWarning, defaultMergeLeg, mergeLegForCard, mergeLegOptions, mergePayloadFromLegs, mergePayloadLegs, mergePayload, mergePayloadLeg, mergeRefusalText, mergeVerdict, previewMerge, type ServerMergePreview } from "./mergeProposal";
 import { he } from "@/i18n/he";
 
 import type { BoardRide, WeekRequestRow } from "../api";
@@ -143,7 +143,10 @@ describe("server merge times (R5B5 / TODO U2)", () => {
     joiner_depart_at: "2026-10-11T04:00:00+00:00", joiner_return_at: null, joiner_old_depart_at: "2026-10-11T03:45:00+00:00",
   };
   it("parses merge_preview's jsonb into the fields the UI reads", () => {
-    expect(parseServerMergePreview(raw)).toEqual({ ok: true, code: null, newStartsAt: raw.new_starts_at, newEndsAt: raw.new_ends_at, joinerDepartAt: raw.joiner_depart_at, joinerReturnAt: null, turnaroundSide: null, waivable: false });
+    expect(parseServerMergePreview(raw)).toEqual({ ok: true, code: null, newStartsAt: raw.new_starts_at, newEndsAt: raw.new_ends_at, joinerDepartAt: raw.joiner_depart_at, joinerReturnAt: null, turnaroundSide: null, waivable: false, personOverlaps: [] });
+    expect(parseServerMergePreview({ ...raw, person_overlaps: [{ ride_id: "r2", starts_at: raw.new_starts_at, ends_at: raw.new_ends_at, role: "driver" }] })?.personOverlaps).toEqual([{ rideId: "r2", startsAt: raw.new_starts_at, endsAt: raw.new_ends_at, role: "driver" }]);
+    expect(personOverlapWarning(parseServerMergePreview({ ...raw, person_overlaps: [{ ride_id: "r2", starts_at: raw.new_starts_at, ends_at: raw.new_ends_at, role: "driver" }] }))).toContain("–");
+    expect(personOverlapWarning(parseServerMergePreview(raw))).toBeNull();
     expect(parseServerMergePreview(null)).toBeNull();
     expect(parseServerMergePreview([1])).toBeNull();
     expect(parseServerMergePreview({ ok: false, code: "seats" })?.ok).toBe(false);

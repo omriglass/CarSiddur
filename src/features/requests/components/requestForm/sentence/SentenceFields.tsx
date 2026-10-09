@@ -24,7 +24,7 @@ import { toInstant } from "../../../mapper";
 import { whoText } from "../../../whoLabel";
 import type { RequestFormValues } from "../../../schema";
 import type { RushWindows } from "../../../rushHours";
-import { anchorLabelKey, endEstimate, enteredOutTime, enteredReturnTime } from "../../../timeAnchors";
+import { anchorLabelKey, endEstimate, enteredOutTime, enteredReturnTime, minutesAtDestination, tooLittleTimeAtDestination } from "../../../timeAnchors";
 import {
   WINDOW_EARLIEST_START,
   WINDOW_LATEST_END,
@@ -268,6 +268,11 @@ export function SentenceFields(props: SentenceFieldsProps) {
   if (!windowOn && anchorsEnabled && hasReturn && returnAnchor === "leave" && routeMinutes.return != null) {
     derivedLines.push(estimateLine(endEstimate("return", "leave", returnTime, routeMinutes.return, rush)));
   }
+
+  // R12B8: warning only — a round trip with (almost) no time at the destination; no time is ever changed.
+  const noTimeAtDestination = !windowOn && hasOut && hasReturn && hasDestination && tooLittleTimeAtDestination(
+    minutesAtDestination({ departAnchor, returnAnchor, out: outTime, back: returnTime }, { outMinutes: routeMinutes.out, returnMinutes: routeMinutes.return }, rush),
+  );
 
   const textOrDash = (text: string | undefined) => (text && text.trim() ? text.trim() : he.requestSentence.empty);
 
@@ -548,6 +553,10 @@ export function SentenceFields(props: SentenceFieldsProps) {
         <div className="space-y-0.5 text-xs text-muted-foreground" data-testid="derived-line">
           {derivedLines.map((line) => <p key={line}><LtrText text={line} /></p>)}
         </div>
+      ) : null}
+
+      {variant !== "carNow" && noTimeAtDestination ? (
+        <p className="text-xs text-amber-700" role="status" data-testid="no-time-at-destination">{he.requestSentence.noTimeAtDestination}</p>
       ) : null}
 
       {isWeekly ? <PlanBLine form={form} errors={errors} destinations={destinations} originPlaceId={originPresetId} sheet={sheet} setSheet={setSheet} routeMinutes={routeMinutes.planB} rush={rush} /> : null}

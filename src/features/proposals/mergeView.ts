@@ -10,6 +10,16 @@ export interface MergePageModel {
   after: { departAt: string | null; returnAt: string | null };
   /** The ride's own window (before/after) rather than the guest's times. */
   rideWindow: boolean;
+  /** R12B7: the guest's per-reader text — the host/driver's name and which of their own times move (null when nothing moves). */
+  hostName: string;
+  change: { kind: "depart" | "return"; from: string; to: string } | null;
+}
+
+function guestChange(m: ProposalMergeView): MergePageModel["change"] {
+  const pick = (kind: "depart" | "return", from: string | null, to: string | null): MergePageModel["change"] =>
+    from && to && Date.parse(from) !== Date.parse(to) ? { kind, from, to } : null;
+  if (m.leg === "return") return pick("return", m.ownReturnAt, m.guestReturnAt);
+  return pick("depart", m.ownDepartAt, m.guestDepartAt) ?? (m.leg === "both" ? pick("return", m.ownReturnAt, m.guestReturnAt) : null);
 }
 
 /**
@@ -26,7 +36,7 @@ export function mergePageModel(summary: Pick<ProposalSummary, "type" | "merge" |
       trip: { departAt: m.ownDepartAt, returnAt: m.ownReturnAt },
       before: { departAt: m.ownDepartAt, returnAt: m.ownReturnAt },
       after: { departAt: m.guestDepartAt, returnAt: m.guestReturnAt },
-      rideWindow: false,
+      rideWindow: false, hostName: m.driverName, change: guestChange(m),
     };
   }
   return {
@@ -34,6 +44,6 @@ export function mergePageModel(summary: Pick<ProposalSummary, "type" | "merge" |
     trip: { departAt: m.guestDepartAt, returnAt: m.guestReturnAt },
     before: { departAt: m.rideStartsAt, returnAt: m.rideEndsAt },
     after: { departAt: m.newStartsAt ?? m.rideStartsAt, returnAt: m.newEndsAt ?? m.rideEndsAt },
-    rideWindow: true,
+    rideWindow: true, hostName: m.driverName, change: null,
   };
 }

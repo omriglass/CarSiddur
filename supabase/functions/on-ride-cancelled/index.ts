@@ -168,7 +168,7 @@ interface OfferRow {
   group_id: string | null;
 }
 
-Deno.serve(async (req) => {
+async function handle(req: Request, onOffer: (id: string) => void): Promise<Response> {
   const preflight = handleCorsPreflight(req);
   if (preflight) return preflight;
   if (req.method !== 'POST') return errorResponse(405, 'method_not_allowed', corsHeaders);
@@ -186,6 +186,7 @@ Deno.serve(async (req) => {
     return errorResponse(400, 'invalid_body', corsHeaders);
   }
   if (!body.offer_id) return errorResponse(400, 'missing_offer_id', corsHeaders);
+  onOffer(body.offer_id);
 
   const client = getServiceRoleClient();
 
@@ -527,4 +528,30 @@ Deno.serve(async (req) => {
     },
     { headers: corsHeaders },
   );
+}
+
+// R12B3 (REQ §13.119): a failed run is never silent - the offer is closed with the reason and the Sadranim are told
+// (`fail_freed_offer`), instead of staying open forever.
+async function closeFailed(offerId: string, reason: string): Promise<void> {
+  try {
+    await getServiceRoleClient().rpc('fail_freed_offer', { p_offer_id: offerId, p_reason: reason });
+  } catch (error) {
+    console.error('on-ride-cancelled fail_freed_offer', error instanceof Error ? error.message : String(error));
+  }
+}
+
+Deno.serve(async (req) => {
+  let offerId: string | null = null;
+  try {
+    const response = await handle(req, (id) => {
+      offerId = id;
+    });
+    if (response.status >= 500 && offerId) await closeFailed(offerId, `http_${response.status}`);
+    return response;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error('on-ride-cancelled failed', message);
+    if (offerId) await closeFailed(offerId, message);
+    return errorResponse(500, 'internal_error', corsHeaders);
+  }
 });

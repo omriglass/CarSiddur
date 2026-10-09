@@ -31,4 +31,10 @@ describe("mergePageModel", () => {
     expect(mergePageModel({ type: "shift", merge: base, request: null })).toBeNull();
     expect(mergePageModel({ type: "merge", request: null })).toBeNull();
   });
+  it("R12B7: the guest sees the host's name and the time that moves", () => {
+    const model = mergePageModel({ type: "merge", merge: { ...base, role: "guest", ownDepartAt: "2026-10-12T09:30:00Z", guestDepartAt: "2026-10-12T08:45:00Z" }, request: null });
+    expect(model?.hostName).toBe("נועה");
+    expect(model?.change).toEqual({ kind: "depart", from: "2026-10-12T09:30:00Z", to: "2026-10-12T08:45:00Z" });
+    expect(mergePageModel({ type: "merge", merge: { ...base, role: "guest" }, request: null })?.change).toBeNull();
+  });
 });

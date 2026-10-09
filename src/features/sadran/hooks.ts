@@ -543,8 +543,8 @@ export function useAllWeekRides(departmentId: string | undefined, weekStart: str
 export function usePublishSiddurMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ departmentId, weekStart, days, allowUnanswered }: { departmentId: string; weekStart: string; days?: string[]; allowUnanswered?: boolean }) =>
-      publishWithScores(departmentId, weekStart, { days, allowUnanswered }),
+    mutationFn: ({ departmentId, weekStart, days, allowUnanswered, allowDriverless }: { departmentId: string; weekStart: string; days?: string[]; allowUnanswered?: boolean; allowDriverless?: boolean }) =>
+      publishWithScores(departmentId, weekStart, { days, allowUnanswered, allowDriverless }),
     onSuccess: (_data, { departmentId, weekStart }) => {
       invalidateBoard(queryClient, departmentId, weekStart);
       queryClient.invalidateQueries({ queryKey: sadranKeys.siddurVersions(departmentId, weekStart) });
@@ -560,6 +560,16 @@ export function usePublicationReadiness(departmentId: string, weekStart: string)
     enabled: !!departmentId && !!weekStart,
     staleTime: 5_000,
     refetchInterval: 15_000,
+  });
+}
+
+/** R12B6: the rides that block publication of `days`, each with its reasons (`publication_conflicts`). */
+export function usePublicationConflicts(departmentId: string, weekStart: string, days: string[], enabled: boolean) {
+  return useQuery({
+    queryKey: sadranKeys.publicationConflicts(departmentId, weekStart, days),
+    queryFn: () => api.fetchPublicationConflicts(departmentId, weekStart, days),
+    enabled: enabled && !!departmentId && !!weekStart && days.length > 0,
+    staleTime: 5_000,
   });
 }
 

@@ -90,6 +90,7 @@ begin
   res:=public.update_car_maintenance(blk,day0+interval '10 hours',null);
   assert (res->>'flagged_rides')::int=1 and (select status='flagged' and flag_reason='maintenance' from public.rides where id=ride),'(d) extending over the ride flags it';
   assert exists(select 1 from public.notifications where event='maintenance_affects' and recipient_id=sadran and data->>'ride_id'=ride::text),'(d) the driver is notified';
+  assert (select body_he !~ '\s{2}' from public.notifications where event='maintenance_affects' and recipient_id=sadran and data->>'ride_id'=ride::text order by created_at desc limit 1),'(d) R12B2: the notice names the destination (no empty route)';
   perform public.update_car_maintenance(blk,day0+interval '14 hours',null);
   assert (select status='confirmed' and flag_reason is null from public.rides where id=ride),'(d) shrinking back clears the flag';
   perform public.delete_car_maintenance(blk);

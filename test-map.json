@@ -459,7 +459,9 @@
         "e2e/large-trunk-waiver.spec.ts",
         "e2e/plan-b-cycle.spec.ts",
         "e2e/live-changes.spec.ts",
-        "supabase/tests/p4_live_changes.sql"
+        "supabase/tests/p4_live_changes.sql",
+        "supabase/tests/qa_run12_package_a.sql",
+        "e2e/publish-driverless-conflicts.spec.ts"
       ],
       "vitest": [
         "src/lib/smallTrunk.test.ts",
@@ -483,7 +485,8 @@
         "placement_features.sql",
         "week_settings_source.sql",
         "luggage_waiver.sql",
-        "p4_live_changes.sql"
+        "p4_live_changes.sql",
+        "qa_run12_package_a.sql"
       ],
       "playwrightTags": [
         "@board"

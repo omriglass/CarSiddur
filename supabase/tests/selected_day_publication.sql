@@ -91,7 +91,7 @@ begin
   ready:=public.publication_readiness(dept,w);
   assert (select (item->>'ready')::boolean from jsonb_array_elements(ready) item where (item->>'day')::date=w+1),'ready Monday blocked by unrelated Tuesday';
   assert (select (item->>'conflictRides')::int>0 and (item->>'pendingProposals')::int>0 from jsonb_array_elements(ready) item where (item->>'day')::date=w+2),'Tuesday defects not reported';
-  assert (select (item->>'missingDriverRides')::int=1 and not(item->>'ready')::boolean from jsonb_array_elements(ready) item where (item->>'day')::date=w+3),'missing driver considered ready';
+  assert (select (item->>'missingDriverRides')::int=1 from jsonb_array_elements(ready) item where (item->>'day')::date=w+3),'missing driver not counted';
   assert (select (item->>'unresolvedRequests')::int=1 and not(item->>'ready')::boolean from jsonb_array_elements(ready) item where (item->>'day')::date=w+4),'partial roundtrip considered complete';
   scores:=pg_temp.publication_scores(dept,w);
   v:=public.publish_siddur(dept,w,scores->'profiles',public.publish_scores_fingerprint(dept,w),scores->'policies',array[w+1],false);
@@ -145,7 +145,7 @@ begin
   begin
     perform public.publish_siddur(dept,w,scores->'profiles',public.publish_scores_fingerprint(dept,w),scores->'policies',array[w+3],false);
     raise exception 'missing driver did not require acknowledgment';
-  exception when raise_exception then if sqlerrm<>'publication_unanswered' then raise;end if;end;
+  exception when raise_exception then if sqlerrm<>'publication_driverless' then raise;end if;end;  -- R12M3: its own gate
   perform public.publish_siddur(dept,w,scores->'profiles',public.publish_scores_fingerprint(dept,w),scores->'policies',array[w+3],true);
   assert (select status='flagged' and flag_reason='NEEDS_DRIVER' and needs_driver and driver_id is null from public.rides where id=(select id from publication_ids where k='ride4')),'missing-driver booking could not publish';
   select count(*) into ride_count from public.rides where department_id=dept and week_start=w;

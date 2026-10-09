@@ -22,6 +22,7 @@ import { computeDiffSummary } from "../diffSummary";
 import { placedTimes } from "../placedTimes";
 import {
   useAllWeekRides,
+  usePublicationConflicts,
   usePublicationReadiness,
   usePublishSiddurMutation,
   useProposalsForWeek,
@@ -41,6 +42,7 @@ export function PublishScreen({ departmentId, weekStart }: PublishScreenProps) {
   const navigate = useNavigate();
   const [selectedDays, setSelectedDays] = useState<string[] | null>(null);
   const [confirmDays, setConfirmDays] = useState<string[] | null>(null);
+  const [driverlessDays, setDriverlessDays] = useState<string[] | null>(null);
   const readinessQuery = usePublicationReadiness(departmentId, weekStart);
 
   const requestsQuery = useWeekRequestsWithNames(departmentId, weekStart);
@@ -77,6 +79,8 @@ export function PublishScreen({ departmentId, weekStart }: PublishScreenProps) {
   const chosenDays = selectedDays ?? allDays;
   const chosen = readiness.filter((day) => chosenDays.includes(day.day));
   const conflictCount = chosen.reduce((count, day) => count + day.conflictRides, 0);
+  // R12B6: name every ride behind the conflict counter (car, time, why).
+  const conflictsQuery = usePublicationConflicts(departmentId, weekStart, chosenDays, conflictCount > 0);
   const rides = (ridesQuery.data ?? []).filter((ride) => ride.starts_at && chosenDays.includes(dateKey(ride.starts_at)));
   const chosenRequests = (requestsQuery.data ?? []).filter((request) => {
     const anchor = request.trip_shape === "one_way_from" ? request.return_at : request.depart_at;
@@ -127,14 +131,17 @@ export function PublishScreen({ departmentId, weekStart }: PublishScreenProps) {
     if (chosen.some(blocksDay)) return;
     // `unresolvedRequests` no longer blocks publication (REQ §13.75) — an unresolved request is
     // auto-approved or grouped at publication time, `incompleteAssignments` is the real defect.
-    if (chosen.some((day) => day.incompleteAssignments > 0 || day.pendingProposals > 0 || day.missingDriverRides > 0)) {
+    if (chosen.some((day) => day.incompleteAssignments > 0 || day.pendingProposals > 0)) {
       setConfirmDays(days);
+    } else if (chosen.some((day) => day.missingDriverRides > 0)) {
+      // R12M3: driverless rides alone ask their own question and send p_allow_driverless.
+      setDriverlessDays(days);
     } else void handlePublish(days, false);
   }
 
-  async function handlePublish(days: string[], allowUnanswered: boolean) {
+  async function handlePublish(days: string[], allowUnanswered: boolean, allowDriverless = false) {
     try {
-      await publishMutation.mutateAsync({ departmentId, weekStart, days, allowUnanswered });
+      await publishMutation.mutateAsync({ departmentId, weekStart, days, allowUnanswered, allowDriverless });
       const labelled = days.map((day) => formatDayDate(`${day}T12:00:00Z`)).join(", ");
       toast.success(tv("sadranPublish.successDays", { days: labelled }));
       navigate(paths.sadran.board(departmentId, weekStart));
@@ -256,7 +263,26 @@ export function PublishScreen({ departmentId, weekStart }: PublishScreenProps) {
 
       {conflictCount > 0 ? (
         <Card className="border-destructive/50">
-          <CardContent className="p-4 text-sm text-destructive">{he.sadranPublish.blockedByConflicts}</CardContent>
+          <CardContent className="space-y-2 p-4 text-sm text-destructive" data-testid="publish-conflicts">
+            <p>{he.sadranPublish.blockedByConflicts}</p>
+            {(conflictsQuery.data ?? []).length ? (
+              <>
+                <p className="font-medium">{he.sadranPublish.conflictsTitle}</p>
+                <ul className="list-disc space-y-1 ps-5">
+                  {(conflictsQuery.data ?? []).map((conflict) => (
+                    <li key={conflict.ride_id} data-testid="publish-conflict-row">
+                      {tv("sadranPublish.conflictRow", {
+                        car: conflict.car_name,
+                        day: formatDayDate(conflict.starts_at),
+                        time: `${formatTime(new Date(conflict.starts_at))}–${formatTime(new Date(conflict.ends_at))}`,
+                        reasons: conflict.reasons.map((reason) => (he.sadranPublish.conflictReason as Record<string, string>)[reason] ?? reason).join("; "),
+                      })}
+                    </li>
+                  ))}
+                </ul>
+              </>
+            ) : null}
+          </CardContent>
         </Card>
       ) : null}
 
@@ -280,6 +306,19 @@ export function PublishScreen({ departmentId, weekStart }: PublishScreenProps) {
       {selectedDays ? <Button className="w-full" size="lg" onClick={() => proposePublish(selectedDays)} disabled={unavailable || !selectedDays.length || conflictCount > 0 || selectedDays.some((day) => draftDays.has(day))}>
         {publishMutation.isPending ? he.publishScores.calculating : he.publicationFlow.selectedPublish}
       </Button> : null}
+      <ConfirmDialog
+        open={!!driverlessDays}
+        onOpenChange={(open) => !open && setDriverlessDays(null)}
+        title={he.publicationFlow.driverlessTitle}
+        description={he.publicationFlow.driverlessHelp}
+        confirmLabel={he.publicationFlow.confirmUnresolved}
+        loading={publishMutation.isPending}
+        onConfirm={() => {
+          const days = driverlessDays;
+          setDriverlessDays(null);
+          if (days) void handlePublish(days, false, true);
+        }}
+      />
       <ConfirmDialog
         open={!!confirmDays}
         onOpenChange={(open) => !open && setConfirmDays(null)}

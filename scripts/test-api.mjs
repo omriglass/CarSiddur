@@ -584,6 +584,24 @@ try {
     check("  a waitlisted (solver-unmet) request counts as solved, informational only", dayOf(rows, 4)?.unsolvedRequests === 0 && dayOf(rows, 4)?.ready === true, JSON.stringify(dayOf(rows, 4)));
   });
 
+  await section("publish: driverless rides need the confirmation flag; conflicts are named (R12M3, R12B6, REQ 13.120)", async () => {
+    const wk = await mkWeek(71, "solving");
+    const date = dayDate(71, 3);
+    const rD = await ride({ n: 71, car: CAR_A, day: 3, driver: null, needsDriver: true, status: "flagged" });
+    const denied = await m1.rpc("publication_conflicts", { p_department_id: DEPT, p_week_start: wk, p_days: [date] });
+    check("a plain member cannot read the publication conflicts", !!denied.error && /not_authorized/.test(denied.error.message), errText(denied));
+    const named = await sadran.rpc("publication_conflicts", { p_department_id: DEPT, p_week_start: wk, p_days: [date] });
+    check("Sadran reads the conflicts (none for a driverless-only day)", !named.error && Array.isArray(named.data) && named.data.length === 0, errText(named));
+    const rd = (await sadran.rpc("publication_readiness", { p_department_id: DEPT, p_week_start: wk })).data?.find((r) => r.day === date);
+    check("  the driverless day is still ready, the ride is counted", rd?.ready === true && rd?.missingDriverRides === 1, JSON.stringify(rd));
+    const fp = await sadran.rpc("publish_scores_fingerprint", { p_department_id: DEPT, p_week_start: wk });
+    const publish = (extra) => sadran.rpc("publish_siddur", { p_department_id: DEPT, p_week_start: wk, p_profile_scores: [], p_expected_fingerprint: fp.data, p_policy_scores: [], p_days: [date], ...extra });
+    const refused = await publish({});
+    check("publishing without the flag is refused with publication_driverless", !!refused.error && /publication_driverless/.test(refused.error.message), errText(refused));
+    const ok = await publish({ p_allow_driverless: true });
+    check("with p_allow_driverless the day publishes and the ride keeps NEEDS_DRIVER", !ok.error && (await rideRow(rD.id)).needs_driver === true, errText(ok));
+  });
+
   await section("ask-to-join: private car owner gets the proposal, shared-ride driver is told (R8B5, R8M1, REQ 13.116)", async () => {
     const wk = await mkPublishedWeek(31);
     const CAR_PRIVATE = "00000000-0000-0000-0000-000000000043"; // m2's own temporary car

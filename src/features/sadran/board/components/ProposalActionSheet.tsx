@@ -11,7 +11,7 @@ import { he, tv } from "@/i18n/he";
 import { formatDayDate } from "@/lib/dayLabels";
 
 import { useMergePreview } from "../../hooks";
-import { mergePayloadLeg } from "../mergeProposal";
+import { mergePayloadLeg, personOverlapWarning } from "../mergeProposal";
 import { proposalChangeLines } from "../proposalChange";
 
 import type { ProposalRow, WeekRequestRow } from "../../api";
@@ -29,11 +29,13 @@ function ProposalChanges({ proposal, context }: { proposal: ProposalRow; context
   const leg = context.request ? mergePayloadLeg(payload, context.request) : "out";
   const server = useMergePreview(proposal.ride_id, proposal.request_id, leg, isMerge && !!proposal.ride_id && !!context.request);
   const lines = proposalChangeLines({ type: proposal.type, payload, request: context.request, oldCarName: context.oldCarName, newCarName: context.newCarName, server: server.data });
-  if (!lines.length) return null;
+  const overlapWarning = personOverlapWarning(server.data);
+  if (!lines.length && !overlapWarning) return null;
   return (
     <div className="space-y-1 rounded-md border p-3 text-sm" data-testid="proposal-changes">
       <p className="text-xs font-medium text-muted-foreground">{he.boardDrafts.changesTitle}</p>
       {lines.map((line) => <p key={line}>{line}</p>)}
+      {overlapWarning ? <p className="text-maintenance" role="status" data-testid="merge-person-overlap">{overlapWarning}</p> : null}
     </div>
   );
 }

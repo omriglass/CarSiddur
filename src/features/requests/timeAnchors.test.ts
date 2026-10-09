@@ -175,3 +175,20 @@ describe("rush hours", () => {
     expect(arriveByFromDeparture("23:30", 60, sunday)).toBe("23:59");
   });
 });
+
+import { minutesAtDestination, tooLittleTimeAtDestination } from "./timeAnchors";
+
+describe("R12B8 time at the destination", () => {
+  it("Jerusalem: arrive by 09:30 and home by 12:00 with a 144-minute drive leaves no time there", () => {
+    const m = minutesAtDestination({ departAnchor: "arrive", returnAnchor: "arrive", out: "09:30", back: "12:00" }, { outMinutes: 144, returnMinutes: 144 });
+    expect(m).toBe(6);
+    expect(tooLittleTimeAtDestination(m)).toBe(true);
+  });
+  it("derives the arrival from a plain departure and ignores unknown routes", () => {
+    expect(minutesAtDestination({ departAnchor: "leave", returnAnchor: "leave", out: "08:00", back: "12:00" }, { outMinutes: 60, returnMinutes: 60 })).toBe(180);
+    expect(minutesAtDestination({ departAnchor: "leave", returnAnchor: "arrive", out: "08:00", back: "12:00" }, { outMinutes: null, returnMinutes: 60 })).toBeNull();
+    expect(tooLittleTimeAtDestination(null)).toBe(false);
+    expect(tooLittleTimeAtDestination(-20)).toBe(true);
+    expect(tooLittleTimeAtDestination(120)).toBe(false);
+  });
+});

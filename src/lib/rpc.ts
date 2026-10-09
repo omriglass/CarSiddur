@@ -124,6 +124,7 @@ export type ErrorCode =
   | "publication_days_invalid"
   | "publication_conflicts"
   | "publication_unanswered"
+  | "publication_driverless"
   | "publication_drafts"
   | "publication_alternatives_pending"
   | "pending_ride_changes"
@@ -275,6 +276,7 @@ const MESSAGE_TO_CODE: Record<string, ErrorCode> = {
   invalid_publication_days: "publication_days_invalid",
   publication_conflicts: "publication_conflicts",
   publication_unanswered: "publication_unanswered",
+  publication_driverless: "publication_driverless",
   publication_drafts: "publication_drafts",
   publication_alternatives_pending: "publication_alternatives_pending",
   pending_ride_changes: "pending_ride_changes",
@@ -407,6 +409,7 @@ const CODE_TO_MESSAGE: Record<ErrorCode, string> = {
   publication_days_invalid: he.publicationFlow.noSelection,
   publication_conflicts: he.sadranPublish.blockedByConflicts,
   publication_unanswered: he.publicationFlow.unresolvedHelp,
+  publication_driverless: he.publicationFlow.driverlessTitle,
   publication_drafts: he.errors.publicationDrafts,
   publication_alternatives_pending: he.errors.publicationAlternativesPending,
   alternative_not_applicable: he.errors.alternativeNotApplicable,

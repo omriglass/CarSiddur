@@ -32,9 +32,10 @@ function BeforeAfterBox({ label, depart, ret }: { label: string; depart: string 
     <div className="flex-1 rounded-md border p-3 text-center">
       <p className="text-xs text-muted-foreground">{label}</p>
       <p dir="ltr" className="font-medium tabular-nums">
-        {depart ? formatTime(new Date(depart)) : "—"}
-        {" → "}
-        {ret ? formatTime(new Date(ret)) : "—"}
+        {/* R12B7: a one-way (or return-only) leg shows only the time it has, never a dangling "→ —". */}
+        {depart ? formatTime(new Date(depart)) : !ret ? "—" : null}
+        {depart && ret ? " → " : null}
+        {ret ? formatTime(new Date(ret)) : null}
       </p>
     </div>
   );
@@ -226,7 +227,14 @@ function ProposalAnswerBody({
       <div className="space-y-1 text-sm text-muted-foreground">
         {summary.request ? (
           <p className="font-medium text-foreground">
-            {mergeModel?.heading === "guest" ? tv("proposalScreen.guestRequest", { name: mergeModel.guestName }) : he.proposalScreen.yourRequest}
+            {mergeModel?.heading === "guest" ? tv("proposalScreen.guestRequest", { name: mergeModel.guestName })
+              : mergeModel?.hostName ? tv("proposalScreen.joinHost", { name: mergeModel.hostName }) : he.proposalScreen.yourRequest}
+          </p>
+        ) : null}
+        {mergeModel?.change ? (
+          <p className="font-medium text-foreground" data-testid="proposal-join-change">
+            {tv(mergeModel.change.kind === "depart" ? "proposalScreen.joinDepartChange" : "proposalScreen.joinReturnChange",
+              { to: formatTime(new Date(mergeModel.change.to)), from: formatTime(new Date(mergeModel.change.from)) })}
           </p>
         ) : null}
         <ProposalSummaryView
