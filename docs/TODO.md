@@ -993,6 +993,37 @@ Order: finish the e2e runs → release what is in (`npm run release`) → a new 
 
 **Not now:** every other open B/C item (see the QA run sections).
 
+## QA run 12 findings (2026-10-09, seed 9615, week 11–17.10, department `qa-s9615`; QA Sadran + QA user both Sonnet (token budget), Monday via UI; after the pilot fix round P1–P6) — **awaiting owner triage**
+
+Held up: per-day autofill incl. series, publish picker (unsolved days not pre-ticked), switch to הקפצה places (R8B12), drop points via UI, maintenance period set from the car page (rides flagged, "טיפול הבא", solver respects it, whole-block move), one-step volunteer replace (R8U1), pending-merge ride sheet (R8U2), car-conflict warning, needs-driver cancel creates an offer (R8B11), no placement notice before publish (R8B7), per-reader proposal page for the host, ask-to-join on a private car reaches the owner (R8B5), rush-hour estimates, window request, plan B / אסתדר in both forms, unnamed people, large trunk.
+
+### Bugs
+- **R12B1** Resizing a maintenance block's edge on the board is refused ("הרכב אינו זמין או נמצא בטיפול בשעות שנבחרו"); moving the whole block works (Mon, Mazda).
+- **R12B2** `maintenance_affects` copy has an empty destination ("הנסיעה שלך ל ביום ב׳ 12.10 תשובץ מחדש", m17/m29) and is sent for unpublished days.
+- **R12B3** Freed-car offer stayed open after a member's cancel: `on-ride-cancelled` failed with `car_not_at_leg_place` (offer a094cca2, Thu, m14 req 146712c6); no retry, Sadran not told.
+- **R12B4** A person can be double-booked: m25 drives 16372c20 (Fri 13:30–23:59) and was merged as a passenger into 39891264 (15:15–17:15) via ask-to-join, no warning.
+- **R12B5** A merge onto a mismatched ride was sent without a verdict (proposal 629f20b6: Haifa→home 16:45 onto home→Haifa 09:30 boarding at the end place) — should refuse (`boards_at_end`/`window`).
+- **R12B6** Publish blocked by "conflicts=2" with no conflicting ride shown (Mon); moving daff0bcc to apparently free cars reported "planning conflict".
+- **R12B7** `/p/<token>` merge page for a joining passenger: no host/driver name, generic text, one-way shows "08:45 → —" (m14, m27).
+- **R12B8** Arrive-by far away keeps the default return: Jerusalem arrive 09:30 (144 min drive) with "בבית עד 12:00" — zero time there, no warning (m01; m22 Tel Aviv).
+
+### UI changes
+- **R12U1** Plan B default "להיות שם עד" is later than the main arrive-by (m22, m01).
+- **R12U2** A space between the prefix letter and its chip ("ל בנימינה", "מ גבעת חביבה").
+- **R12U3** Ask-to-join asker must accept the same merge again after the owner accepts.
+- **R12U4** Series rows/notices show "00:00–17:30" on later days; "/my" "2 ימים" with no per-day breakdown.
+- **R12U5** Owner's "declined" notice names the origin, not the trip/person.
+- **R12U6** Destination dialog: "approved in list" checkbox right above the drop-point switch (easy to deactivate a place by mistake).
+- **R12U7** Ride sheet lists the passengers twice; publish headline doesn't say which day/ride conflicts; CLI prints UTC times in the car-conflict warning.
+
+### Missing obvious features
+- **R12M1** No confirmation to the member who cancels a ride.
+- **R12M2** `qa:member request` cannot file plan B (and the generator files none) — plan-B proposals untested end to end in QA.
+- **R12M3** Chauffeur rides still created by the solver (R7B2 hid only suggestions) fill days with NEEDS-DRIVER rides that keep days "unanswered".
+
+### Additional
+- **R12F1** Warn when filing a request that overlaps one's own driving/passenger slot.
+
 ## Owner hands-on testing (2026-10-06) — bugs to fix
 - **OB1 — A multi-day request cannot be placed by hand on the board.** Dropping its card on a car fails with "בקשה רב-יומית — אפשר לבטל ולהגיש מחדש, לא לערוך" (`series_edit_not_supported`, MDR02). The board's manual placement goes through `edit_ride`, which refuses any request with a `series_id` (the v1 rule "a series is cancelled and resubmitted, never edited", REQ §13.77) — but placing is not editing the request. Expected: dropping a series leg (or the series card) on a car places the **whole series** on that car for all its days (the same hold auto-fill makes, `place_series`), refused only when the car is not free on every day; moving a placed series to another car likewise moves all its days. The Sadran's other path today is "להציע פחות ימים" / auto-fill only. Seen on the showcase department (S19). **Fixed 2026-10-06:** `place_series_on_car(series, car)` (Sadran; private-car owner rule; refuses an already placed series) wraps `place_series`; the board drop of a multi-day card calls it ("הבקשה הרב-יומית שובצה ברכב הזה לכל ימיה"). Verified through the API (3 rides, all legs assigned; second placement and a member refused). Not covered: moving an already placed series to another car.
 
