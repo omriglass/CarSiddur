@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { he } from "../src/i18n/he";
-import { newSignedInPage, NEVO_DEPARTMENT_ID, SEEDED_USERS, serviceRoleClient } from "./helpers";
+import { newSignedInPage, NEVO_DEPARTMENT_ID, SEEDED_USERS, serviceRoleClient, scrollGridColumnTo } from "./helpers";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 /**
@@ -33,10 +33,7 @@ async function dragRequest(page: Page, requestId: string, carId: string, minutes
   const grip = page.locator(`[data-request-id="${requestId}"]:visible`).getByRole("button", { name: he.sadranBoard.dragHandleLabel });
   await grip.scrollIntoViewIfNeeded();
   const column = page.locator(`[data-car-col-id="${carId}"]`);
-  await column.evaluate((el, minute) => {
-    const scroller = el.closest<HTMLElement>(".overflow-auto")!;
-    scroller.scrollTop = Math.max(0, (minute - 360) / 1080 * el.scrollHeight - scroller.clientHeight / 2);
-  }, minutes);
+  await scrollGridColumnTo(column, minutes);
   const source = await grip.boundingBox();
   const target = await column.boundingBox();
   if (!source || !target) throw new Error("missing drag source/target");

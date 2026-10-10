@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { expect, type Browser, type BrowserContext, type Page } from "@playwright/test";
+import { expect, type Browser, type BrowserContext, type Locator, type Page } from "@playwright/test";
 import { t } from "../src/i18n/he";
 
 // Stage 3 hardening (docs/UX_FLOWS.md §16 item 5): shared e2e utilities so
@@ -183,4 +183,31 @@ export async function waitForCondition(
 export async function confirmAutoFillWholeWeek(page: Page): Promise<void> {
   await page.getByTestId("autofill-day-week").click();
   await page.getByRole("alertdialog").or(page.getByRole("dialog")).getByRole("button", { name: t("sadranBoard.autoFill.confirmAction"), exact: true }).click();
+}
+
+/**
+ * Scrolls the board/siddur grid so `minutes` (since midnight) of the car `column` is centred on screen, before a
+ * drag/click computes pointer coordinates from the column's box (a point outside the viewport never registers).
+ * The grid's vertical scroller is the page, not the grid box — `#main-content` on a computer (2026-10-06), the
+ * document on a phone (2026-10-10, `pageScroller()` in WeekGrid) — so this scrolls the nearest ancestor that
+ * really scrolls vertically, else the window. `gridStart`/`gridEnd` are the grid's shown range (06:00–24:00).
+ */
+export async function scrollGridColumnTo(column: Locator, minutes: number, gridStart = 360, gridEnd = 1440): Promise<void> {
+  await column.evaluate(
+    (el, { minutes, gridStart, gridEnd }) => {
+      let scroller: HTMLElement | null = el.parentElement;
+      while (scroller && !(/(auto|scroll)/.test(getComputedStyle(scroller).overflowY) && scroller.scrollHeight > scroller.clientHeight)) {
+        scroller = scroller.parentElement;
+      }
+      const rect = el.getBoundingClientRect();
+      const pointY = rect.top + ((minutes - gridStart) / (gridEnd - gridStart)) * rect.height;
+      if (scroller) {
+        const box = scroller.getBoundingClientRect();
+        scroller.scrollTop += pointY - (box.top + box.height / 2);
+      } else {
+        window.scrollBy(0, pointY - window.innerHeight / 2);
+      }
+    },
+    { minutes, gridStart, gridEnd },
+  );
 }

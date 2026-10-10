@@ -112,7 +112,7 @@ test("member logs car care (wash, tire fill, problem) and only the car's respons
       expect(washData.url).toBe(`/cars/${carId}`);
       washNotificationId = notif!.id as string;
 
-      await expect(reportDialog).not.toBeVisible({ timeout: 3_000 });
+      await expect(reportDialog).not.toBeVisible({ timeout: 6_000 }); // the celebration shows for 3.5 s (CELEBRATION_MS)
     });
 
     await test.step("tire fill: two low, one very_low, one ok, spare unchecked, plus a note", async () => {
@@ -168,7 +168,7 @@ test("member logs car care (wash, tire fill, problem) and only the car's respons
       expect(tireData.url).toBe(`/cars/${carId}`);
       tireNotificationId = notif!.id as string;
 
-      await expect(reportDialog).not.toBeVisible({ timeout: 3_000 });
+      await expect(reportDialog).not.toBeVisible({ timeout: 6_000 }); // the celebration shows for 3.5 s (CELEBRATION_MS)
     });
 
     await test.step("problem: mechanical category with an explanation", async () => {

@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { he, tv } from "../src/i18n/he";
-import { NEVO_DEPARTMENT_ID, newSignedInPage, SEEDED_USERS, serviceRoleClient } from "./helpers";
+import { NEVO_DEPARTMENT_ID, newSignedInPage, SEEDED_USERS, serviceRoleClient, scrollGridColumnTo } from "./helpers";
 import { publishedFixtureWeek } from "./published-week";
 
 test.use({ actionTimeout: 15_000 });
@@ -41,10 +41,7 @@ async function openQuickRequest(page: Page, week: string, carId: string, minutes
   await page.goto(`/siddur/${NEVO_DEPARTMENT_ID}/${week}`);
   const column = page.locator(`[data-car-col-id="${carId}"]`);
   await expect(column).toBeVisible();
-  await column.evaluate((el, minute) => {
-    const scroller = el.closest<HTMLElement>(".overflow-auto")!;
-    scroller.scrollTop = Math.max(0, (minute - 360) / 1080 * el.scrollHeight - scroller.clientHeight / 2);
-  }, minutes);
+  await scrollGridColumnTo(column, minutes);
   const bounds = await column.boundingBox();
   if (!bounds) throw new Error("missing car column");
   await column.click({ position: { x: bounds.width / 2, y: (minutes - 360) / 1080 * bounds.height } });

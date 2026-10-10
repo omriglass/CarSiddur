@@ -3,7 +3,7 @@ import { expect, type Locator, type Page } from "@playwright/test";
 import { formatInTimeZone } from "date-fns-tz";
 
 import { he } from "../src/i18n/he";
-import { getWeekStart, NEVO_DEPARTMENT_ID, serviceRoleClient } from "./helpers";
+import { getWeekStart, NEVO_DEPARTMENT_ID, serviceRoleClient, scrollGridColumnTo } from "./helpers";
 
 // Shared plumbing of the request-form / plan-B / large-trunk specs (REQ §13.110–§13.112): seeded ids,
 // the layout switch of a demo account, the member-facing "open week", fixture weeks that the specs own,
@@ -226,10 +226,7 @@ export async function dragRequestToCar(page: Page, requestId: string, carId: str
   const grip = page.locator(`[data-request-id="${requestId}"]:visible`).getByRole("button", { name: he.sadranBoard.dragHandleLabel });
   await grip.scrollIntoViewIfNeeded();
   const column = page.locator(`[data-car-col-id="${carId}"]`);
-  await column.evaluate((el, minute) => {
-    const scroller = el.closest<HTMLElement>(".overflow-auto");
-    if (scroller) scroller.scrollTop = Math.max(0, (minute - 360) / 1080 * el.scrollHeight - scroller.clientHeight / 2);
-  }, minutes);
+  await scrollGridColumnTo(column, minutes);
   const source = await grip.boundingBox();
   const target = await column.boundingBox();
   if (!source || !target) throw new Error("missing drag source/target");

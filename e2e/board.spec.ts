@@ -3,7 +3,7 @@ import { execSync } from "node:child_process";
 import { formatInTimeZone } from "date-fns-tz";
 import { expect, test, type Page } from "@playwright/test";
 
-import { NEVO_DEPARTMENT_ID, serviceRoleClient, primeLanding, confirmAutoFillWholeWeek } from "./helpers";
+import { NEVO_DEPARTMENT_ID, serviceRoleClient, primeLanding, confirmAutoFillWholeWeek, scrollGridColumnTo } from "./helpers";
 import resetDatabase from "./global-setup";
 import { he } from "../src/i18n/he";
 
@@ -54,17 +54,7 @@ async function selectDayFor(page: Page, iso: string): Promise<void> {
  * target time is centered before any pointer coordinates are computed.
  */
 async function scrollGridToMinutes(page: Page, carId: string, minutes: number): Promise<void> {
-  await page.locator(`[data-car-col-id="${carId}"]`).evaluate(
-    (el, { minutes, gridStart, gridEnd }) => {
-      const scrollParent = el.closest<HTMLElement>(".overflow-auto");
-      if (!scrollParent) return;
-      const fraction = (minutes - gridStart) / (gridEnd - gridStart);
-      const targetOffset = fraction * el.scrollHeight;
-      const desired = targetOffset - scrollParent.clientHeight / 2;
-      scrollParent.scrollTop = Math.max(0, Math.min(desired, scrollParent.scrollHeight - scrollParent.clientHeight));
-    },
-    { minutes, gridStart: GRID_START_MINUTES, gridEnd: GRID_END_MINUTES },
-  );
+  await scrollGridColumnTo(page.locator(`[data-car-col-id="${carId}"]`), minutes, GRID_START_MINUTES, GRID_END_MINUTES);
 }
 
 // Regression coverage for the bug-fix pass after the Sadran owner's manual
@@ -628,9 +618,14 @@ test.describe.serial("board (bug-fix pass regression, fake-week data)", { tag: [
     await page.getByRole("menuitemcheckbox", { name: he.board.showEarlyHours, exact: true }).click();
     await page.keyboard.press("Escape");
     const column = page.locator('[data-car-col-id]:not([data-car-col-id^="phantom:"]):visible').first();
+    // Scroll the grid's real vertical scroller (the page — see `scrollGridToMinutes`) back to the top so 00:30 is in view.
     await column.evaluate((element) => {
-      const scroller = element.closest<HTMLElement>(".overflow-auto");
+      let scroller: HTMLElement | null = element.parentElement;
+      while (scroller && !(/(auto|scroll)/.test(getComputedStyle(scroller).overflowY) && scroller.scrollHeight > scroller.clientHeight)) {
+        scroller = scroller.parentElement;
+      }
       if (scroller) scroller.scrollTop = 0;
+      else window.scrollTo(0, 0);
     });
     const columnBox = await column.boundingBox();
     if (!columnBox) throw new Error("car column not found");
