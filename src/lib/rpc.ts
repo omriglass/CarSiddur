@@ -39,6 +39,7 @@ export type ErrorCode =
   | "car_now_week_not_live"
   | "series_edit_not_supported"
   | "series_car_unavailable"
+  | "tires_none_checked"
   | "maintenance_period_invalid"
   | "maintenance_in_past"
   | "maintenance_overlap"
@@ -101,6 +102,8 @@ export type ErrorCode =
   | "ride_not_found"
   | "proposal_not_found"
   | "proposal_day_public"
+  | "proposal_day_published"
+  | "proposals_offline_disabled"
   | "private_car_owner_only"
   | "own_car_not_free"
   | "own_car_round_trip_only"
@@ -243,6 +246,8 @@ const MESSAGE_TO_CODE: Record<string, ErrorCode> = {
   ride_not_found: "ride_not_found",
   proposal_not_found: "proposal_not_found",
   proposal_day_public: "proposal_day_public",
+  proposal_day_published: "proposal_day_published",
+  proposals_offline_disabled: "proposals_offline_disabled",
   private_car_owner_only: "private_car_owner_only",
   own_car_not_free: "own_car_not_free",
   own_car_round_trip_only: "own_car_round_trip_only",
@@ -319,6 +324,7 @@ const MESSAGE_TO_CODE: Record<string, ErrorCode> = {
   car_now_week_not_live: "car_now_week_not_live",
   series_edit_not_supported: "series_edit_not_supported",
   series_car_unavailable: "series_car_unavailable",
+  tires_none_checked: "tires_none_checked",
   push_unsupported: "push_unsupported",
   push_permission_denied: "push_permission_denied",
   push_vapid_key_invalid: "push_vapid_key_invalid",
@@ -386,6 +392,8 @@ const CODE_TO_MESSAGE: Record<ErrorCode, string> = {
   ride_not_found: he.errors.rideNotFound,
   proposal_not_found: he.errors.proposalNotFound,
   proposal_day_public: he.errors.proposalDayPublic,
+  proposal_day_published: he.errors.proposalDayPublished,
+  proposals_offline_disabled: he.errors.proposalsOfflineDisabled,
   private_car_owner_only: he.errors.privateCarOwnerOnly,
   own_car_not_free: he.errors.ownCarNotFree,
   own_car_round_trip_only: he.errors.ownCarRoundTripOnly,
@@ -445,6 +453,7 @@ const CODE_TO_MESSAGE: Record<ErrorCode, string> = {
   car_now_week_not_live: he.errors.carNowWeekNotLive,
   series_edit_not_supported: he.errors.seriesEditNotSupported,
   series_car_unavailable: he.errors.seriesCarUnavailable,
+  tires_none_checked: he.errors.tiresNoneChecked,
   maintenance_period_invalid: he.maintenancePeriod.errors.invalid,
   maintenance_in_past: he.maintenancePeriod.errors.inPast,
   maintenance_overlap: he.maintenancePeriod.errors.overlap,

@@ -21,7 +21,7 @@ export function parseTireStates(value: unknown): TireStates | null {
   const result = {} as TireStates;
   for (const key of TIRE_KEYS) {
     const state = record[key];
-    if (state !== "ok" && state !== "low" && state !== "very_low") return null;
+    if (state !== "unchecked" && state !== "ok" && state !== "low" && state !== "very_low") return null;
     result[key] = state;
   }
   return result;

@@ -758,6 +758,17 @@ export async function discardProposal(proposalId: string): Promise<void> {
   await rpc("discard_proposal", { p_proposal_id: proposalId });
 }
 
+export type AgreeOfflineResult = { status: "applied" } | { status: "withdrawn_stale"; reason: string };
+
+/** REQ §13.123: the Sadran agreed the draft on WhatsApp — applies it, no member notifications. */
+export async function agreeProposalOffline(proposalId: string): Promise<AgreeOfflineResult> {
+  const data = await rpc("agree_proposal_offline", { p_proposal_id: proposalId });
+  const result = (data ?? {}) as { status?: string; reason?: string };
+  return result.status === "withdrawn_stale"
+    ? { status: "withdrawn_stale", reason: result.reason ?? "" }
+    : { status: "applied" };
+}
+
 /** REQ §13.94: Sadran cancels a sent/accepted proposal (`-> withdrawn`, tokens revoked, no message to the member). */
 export async function withdrawProposal(proposalId: string): Promise<void> {
   await rpc("withdraw_proposal", { p_proposal_id: proposalId });

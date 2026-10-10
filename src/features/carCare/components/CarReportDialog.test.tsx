@@ -60,9 +60,12 @@ describe("CarReportDialog", () => {
   it("submits a tire fill with the full five-position payload and an optional note", async () => {
     show();
     fireEvent.click(screen.getByRole("button", { name: he.carCare.homeTireFillTitle }));
-    fireEvent.click(
-      screen.getByLabelText(`${he.carCare.tirePosition.front_left} — ${he.carCare.tireLegendOk}`),
-    );
+    const done = screen.getByRole("button", { name: he.carCare.tireDone });
+    expect(done).toBeDisabled();
+    const frontLeft = () => screen.getByTestId("tire-front_left");
+    fireEvent.click(frontLeft()); // unchecked -> ok
+    fireEvent.click(frontLeft()); // ok -> low
+    expect(done).toBeEnabled();
     fireEvent.change(screen.getByLabelText(he.carCare.tireNoteLabel), { target: { value: "front left was soft" } });
     fireEvent.click(screen.getByRole("button", { name: he.carCare.tireDone }));
 
@@ -70,7 +73,13 @@ describe("CarReportDialog", () => {
     expect(mocks.logCarCare).toHaveBeenCalledWith({
       carId: "car-1",
       kind: "tire_fill",
-      tires: { front_left: "low", front_right: "ok", rear_left: "ok", rear_right: "ok", spare: "ok" },
+      tires: {
+        front_left: "low",
+        front_right: "unchecked",
+        rear_left: "unchecked",
+        rear_right: "unchecked",
+        spare: "unchecked",
+      },
       note: "front left was soft",
     });
     expect(screen.getByText(he.carCare.tireCelebration)).toBeInTheDocument();

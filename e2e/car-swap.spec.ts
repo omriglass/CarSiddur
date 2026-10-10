@@ -111,7 +111,7 @@ test.describe("car swap on the siddur (member, published day)", { tag: ["@siddur
       await expect(dayRadio).toHaveAttribute("aria-checked", "true");
 
       const headerA = member1.page.locator(`[data-car-header-id="${carA}"]`);
-      await headerA.getByRole("button", { name: he.carSwap.swapMenuLabel, exact: true }).click();
+      await headerA.getByTestId("week-grid-car-menu-trigger").click();
       // The siddur's own car names carry a "· קוד לא הוזן"/access-code suffix (`siddurCarName()`,
       // SiddurPage's own `weekGridCars`) that the plain `cars.name` column doesn't — match by
       // substring instead of reconstructing that suffix here.
@@ -286,7 +286,7 @@ test.describe("car swap on the board (Sadran)", { tag: ["@board"] }, () => {
 
       const names = await carNames(client, [sourceCar, targetCar]);
       const header = page.locator(`[data-car-header-id="${sourceCar}"]`);
-      await header.getByRole("button", { name: he.carSwap.swapMenuLabel, exact: true }).click();
+      await header.getByTestId("week-grid-car-menu-trigger").click();
       await page
         .getByRole("menuitem", { name: tv("carSwap.swapWithCar", { car: names.get(targetCar) ?? "" }), exact: true })
         .click();

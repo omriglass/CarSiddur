@@ -46,18 +46,24 @@ export type TirePosition = (typeof TIRE_POSITIONS)[number];
 export type TireStates = Record<TirePosition, TireState>;
 
 export const DEFAULT_TIRE_STATES: TireStates = {
-  front_left: "ok",
-  front_right: "ok",
-  rear_left: "ok",
-  rear_right: "ok",
-  spare: "ok",
+  front_left: "unchecked",
+  front_right: "unchecked",
+  rear_left: "unchecked",
+  rear_right: "unchecked",
+  spare: "unchecked",
 };
 
-/** ok → low → very_low → ok (tap-to-cycle, `TireFillPanel`). */
+/** True once at least one tire is marked ok/low/very_low ("סיימתי" stays disabled until then, REQ §13.124). */
+export function anyTireChecked(states: TireStates): boolean {
+  return TIRE_POSITIONS.some((position) => states[position] !== "unchecked");
+}
+
+/** unchecked → ok → low → very_low → unchecked (tap-to-cycle, `TireFillPanel`). */
 export function cycleTireState(state: TireState): TireState {
+  if (state === "unchecked") return "ok";
   if (state === "ok") return "low";
   if (state === "low") return "very_low";
-  return "ok";
+  return "unchecked";
 }
 
 export const tireFillSchema = z.object({

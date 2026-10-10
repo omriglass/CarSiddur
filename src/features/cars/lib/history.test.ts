@@ -48,6 +48,7 @@ describe("parseTireStates", () => {
   it("rejects null, non-objects and missing/invalid keys", () => {
     expect(parseTireStates(null)).toBeNull();
     expect(parseTireStates("wash")).toBeNull();
+    expect(parseTireStates({ front_left: "unchecked", front_right: "ok", rear_left: "ok", rear_right: "ok", spare: "unchecked" })?.spare).toBe("unchecked");
     expect(parseTireStates({ front_left: "ok" })).toBeNull();
     expect(parseTireStates({ front_left: "flat", front_right: "ok", rear_left: "ok", rear_right: "ok", spare: "ok" })).toBeNull();
   });

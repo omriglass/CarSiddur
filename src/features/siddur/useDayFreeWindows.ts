@@ -24,7 +24,7 @@ export interface DayFreeWindowsAway {
 
 export interface DayFreeWindowsResult {
   isLoading: boolean;
-  /** Every shared car's free windows for `day`'s 06:00–23:59 range. */
+  /** Every shared car's free windows for `day`'s `rangeStartTime`–23:59 range (06:00 by default). */
   freeWindows: CarFreeWindow[];
   /** Raw away-from-home windows (any car), for the quick-request sheet's more specific warning. */
   awayWindows: DayFreeWindowsAway[];
@@ -43,6 +43,8 @@ export function useDayFreeWindows(
   weekStart: string | undefined,
   day: string | undefined,
   now: Date,
+  /** Start of the day's range, "HH:MM". The grid's free slots start at 06:00; "a car now" passes "00:00" so it works after midnight too. */
+  rangeStartTime = "06:00",
 ): DayFreeWindowsResult {
   const carsQuery = useCars(departmentId);
   const boardRidesQuery = useBoardRides(departmentId, weekStart);
@@ -77,7 +79,7 @@ export function useDayFreeWindows(
             .map((b) => ({ startsAt: b.starts_at, endsAt: b.ends_at })),
           awayWindows: awayWindows.filter((w) => w.carId === c.id),
           turnaroundMinutes,
-          rangeStart: Date.parse(toInstant(day, "06:00", false)),
+          rangeStart: Date.parse(toInstant(day, rangeStartTime, false)),
           rangeEnd: Date.parse(toInstant(day, "23:59", false)),
           now: now.getTime(),
         });

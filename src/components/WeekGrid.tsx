@@ -1,4 +1,4 @@
-import { ArrowLeftRight, CarFront, Pin, Clock3, UserRoundX, Star } from "lucide-react";
+import { CarFront, ChevronDown, Pin, Clock3, UserRoundX, Star } from "lucide-react";
 import type { MouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState, useCallback, useSyncExternalStore } from "react";
 
@@ -9,12 +9,15 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { CarReportDialog } from "@/features/carCare/components/CarReportDialog";
 import { he, tv } from "@/i18n/he";
 import { rideTypeColorClasses } from "@/lib/rideTypeColors";
 import { cn } from "@/lib/utils";
 import { GuestChips, type GuestDropTarget, type WeekGridGuest } from "./GuestChips";
+import { bottomNavInset, pageScroller, scrollerViewport } from "./pageScroller";
 import { clampRideVertical, minutesFromClientY, snapTimeShift } from "./weekGridGeometry";
 
 /**
@@ -233,6 +236,13 @@ export interface WeekGridProps {
    * False/omitted leaves headers exactly as before (no drag, no menu).
    */
   canSwapCars?: boolean;
+  /**
+   * Shows "דיווח / טיפול ברכב" in each real car's header menu and owns the `CarReportDialog` it opens
+   * (member self-service: report a problem / tire fill / wash). The grid still never mutates by itself.
+   */
+  enableCarReport?: boolean;
+  /** Shows "דף הרכב" in each real car's header menu; the caller navigates (`paths.car(carId)`). */
+  onOpenCarPage?: (carId: string) => void;
   /** Header `carIdA` was dropped onto header `carIdB` (drag), or `carIdB` was chosen from `carIdA`'s own menu — the caller opens `CarSwapDialog` with these two ids. */
   onCarSwap?: (carIdA: string, carIdB: string) => void;
 }
@@ -244,8 +254,9 @@ export const CAR_COLUMN_ATTR = "data-car-col-id";
 
 const DEFAULT_START = 6 * 60;
 const DEFAULT_END = 24 * 60;
-const HOUR_COL_WIDTH_PX = 56;
-const CAR_COL_WIDTH_PX = 120;
+/** "23:00" in text-xs (12px) tabular-nums is ~31px wide (5 glyphs of ~6.1px, digits are the widest); +2px slack and 1px each side of padding (`px-px`) plus the 1px end border. Narrower than this clips the label. */
+const HOUR_COL_WIDTH_PX = 36;
+const CAR_COL_WIDTH_PX = 96;
 const HEADER_ROW_HEIGHT_PX = 48;
 const DESKTOP_QUERY = "(min-width: 1024px)";
 function subscribeDesktop(cb: () => void) {
@@ -254,6 +265,14 @@ function subscribeDesktop(cb: () => void) {
   mq.addEventListener("change", cb);
   return () => mq.removeEventListener("change", cb);
 }
+/**
+ * Owner 2026-10-10: on a phone the table scrolls with the page too (ONE scroller), exactly like `lg`+:
+ * no `max-h-[70dvh]` box, car names in a `sticky` strip outside the box. Set to `false` to restore the
+ * old phone behaviour (self-scrolling box bounded to 70dvh, in-grid sticky header) in one line.
+ * (`AppShell`'s `main` drops its own `overflow-y` below `lg` so the sticky strip tracks the document.)
+ */
+export const PAGE_SCROLL_ON_PHONE = true;
+
 /** Tailwind `lg` and up: the table is part of the page (see `WeekGrid`). */
 function useIsDesktop(): boolean {
   return useSyncExternalStore(subscribeDesktop, () => typeof window.matchMedia === "function" && window.matchMedia(DESKTOP_QUERY).matches, () => false);
@@ -328,14 +347,13 @@ interface CarDragState {
 }
 
 /**
- * One day, time × cars. Below `lg` (phones/tablets) the box is bounded to `max-h-[70dvh]` and
- * scrolls itself (`overflow-auto`, both axes): car headers `sticky top-0`, hour column `sticky
- * start-0`. `position: sticky` only tracks its *nearest* scroll container, so that bound is what
- * keeps the headers pinned on a phone. On a computer (`lg`+, owner 2026-10-06, REQ §13.106) the
- * table is part of the page: the box has no height bound and scrolls only horizontally, the app
- * shell's `main` scrolls vertically, and the car-name header row is rendered *outside* the box as a
- * `sticky top-0` strip (its `scrollLeft` follows the box's) so the names stay pinned at the top of
- * the screen. Drag auto-scroll, drag-anchor compensation and the initial scroll follow `main` there.
+ * One day, time × cars. At every width (owner 2026-10-10, `PAGE_SCROLL_ON_PHONE`; computers since
+ * 2026-10-06, REQ §13.106) the table is part of the page: the box has no height bound and scrolls only
+ * horizontally, the page scrolls vertically (`main#main-content` on `lg`+, the document below — see
+ * `pageScroller`), and the car-name header row is rendered *outside* the box as a `sticky` strip
+ * (`top-14` under the phone app header, `top-0` from `md`; its `scrollLeft` follows the box's).
+ * Drag auto-scroll, drag-anchor compensation and the initial scroll follow the page scroller.
+ * With the switch off the box is bounded to `max-h-[70dvh]` and scrolls itself below `lg`.
  * See UX_FLOWS.md "Page scrolling for the Siddur table".
  */
 export function WeekGrid({
@@ -370,6 +388,8 @@ export function WeekGrid({
   onDiscussionClick,
   canSwapCars = false,
   onCarSwap,
+  enableCarReport,
+  onOpenCarPage,
 }: WeekGridProps) {
   const hours = Array.from(
     { length: Math.ceil((dayEndMinutes - dayStartMinutes) / 60) },
@@ -388,14 +408,22 @@ export function WeekGrid({
   const scrollViewportRef = useRef<HTMLDivElement | null>(null);
   // REQ §13.106: on a computer the table is part of the page (the page scrolls vertically, the car
   // names are pinned above the box); below `lg` the box scrolls itself.
-  const desktop = useIsDesktop();
+  const isDesktopWidth = useIsDesktop();
+  /** Layout switch: the page scrolls vertically and the car names sit in a sticky strip above the box. */
+  const pageScroll = PAGE_SCROLL_ON_PHONE || isDesktopWidth;
   const headerRef = useRef<HTMLDivElement | null>(null);
   const setScrollViewport = useCallback((node: HTMLDivElement | null) => { scrollViewportRef.current = node; }, []);
-  /** The element that scrolls the table vertically: the app shell's `main` on a computer, else the box. */
+  /** The element that scrolls the table vertically: the page scroller (`main` on `lg`+, the document below) in page-scroll layout, else the box. */
   function verticalScroller(): HTMLElement | null {
     const box = scrollViewportRef.current;
     if (!box) return null;
-    return (desktop ? box.closest<HTMLElement>("#main-content") : null) ?? box;
+    return pageScroll ? pageScroller(box) : box;
+  }
+  /** Distance from the top of the visible page area to the bottom of the sticky car-name strip (0 in box layout). */
+  function stickyHeaderInset(): number {
+    const strip = headerRef.current;
+    if (!strip) return 0;
+    return (Number.parseFloat(getComputedStyle(strip).top) || 0) + strip.getBoundingClientRect().height;
   }
   const lastInitialScroll = useRef<number | null>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
@@ -404,6 +432,11 @@ export function WeekGrid({
   const [blockDrag, setBlockDrag] = useState<BlockDragState | null>(null);
   const suppressBlockClick = useRef(false);
   const [carDrag, setCarDrag] = useState<CarDragState | null>(null);
+  /** Car whose header menu is open / whose report dialog is open (controlled: Radix would open on pointerdown, which must stay free for the long-press swap drag). */
+  const [menuCarId, setMenuCarId] = useState<string | null>(null);
+  const [reportCarId, setReportCarId] = useState<string | null>(null);
+  /** A confirmed header drag ends with a click on the trigger; swallow it. */
+  const suppressCarClickRef = useRef(false);
   const carDragRef = useRef<CarDragState | null>(null);
   const carLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -421,15 +454,14 @@ export function WeekGrid({
     lastInitialScroll.current = target;
     const offset = ((target - dayStartMinutes) / 60) * HOUR_ROW_HEIGHT_PX * zoom;
     const box = scrollViewportRef.current;
-    const page = desktop ? box.closest<HTMLElement>("#main-content") : null;
+    const page = pageScroll ? pageScroller(box) : null;
     if (page) {
-      // The row `offset` below the box's top goes right under the pinned header.
-      const headerHeight = headerRef.current?.getBoundingClientRect().height ?? 0;
-      page.scrollTop += box.getBoundingClientRect().top + offset - page.getBoundingClientRect().top - headerHeight;
+      // The row `offset` below the box's top goes right under the pinned header (and the app header above it).
+      page.scrollTop += box.getBoundingClientRect().top + offset - scrollerViewport(page).top - stickyHeaderInset();
     } else {
       box.scrollTop = offset;
     }
-  }, [dayEndMinutes, dayStartMinutes, initialScrollMinutes, zoom, desktop]);
+  }, [dayEndMinutes, dayStartMinutes, initialScrollMinutes, zoom, pageScroll]);
 
   // Two-finger pinch-to-zoom (UX_FLOWS.md member siddur "pinch to zoom"). Registered once as
   // native listeners (never React's synthetic touch handlers, which Chromium treats as
@@ -501,10 +533,11 @@ export function WeekGrid({
       if (el && last) {
         const rect = el.getBoundingClientRect();
         const dx = edgeScrollStep(last.clientX, rect.left, rect.right);
-        const page = desktop ? el.closest<HTMLElement>("#main-content") : null;
-        const pageRect = page?.getBoundingClientRect();
-        const headerHeight = page ? (headerRef.current?.getBoundingClientRect().height ?? 0) : 0;
-        const dy = pageRect ? edgeScrollStep(last.clientY, pageRect.top + headerHeight, pageRect.bottom) : edgeScrollStep(last.clientY, rect.top, rect.bottom);
+        const page = pageScroll ? pageScroller(el) : null;
+        const pageView = page ? scrollerViewport(page) : null;
+        const dy = pageView
+          ? edgeScrollStep(last.clientY, pageView.top + stickyHeaderInset(), pageView.bottom - bottomNavInset())
+          : edgeScrollStep(last.clientY, rect.top, rect.bottom);
         if (dx || dy) {
           // R3B17: auto-scroll never brings the "missing car" lanes into view (they are drop targets
           // for un-assigning, reached on purpose, not by an edge scroll).
@@ -528,7 +561,7 @@ export function WeekGrid({
       window.removeEventListener("pointermove", onMove);
       cancelAnimationFrame(rafId);
     };
-  }, [dragActive, desktop]);
+  }, [dragActive, pageScroll]);
 
   function ridesFor(carId: string) {
     return rides.filter((r) => r.carId === carId);
@@ -599,6 +632,10 @@ export function WeekGrid({
     window.removeEventListener("pointermove", handleCarWindowMove);
     window.removeEventListener("pointerup", handleCarWindowUp);
     window.removeEventListener("pointercancel", handleCarWindowCancel);
+    if (finished?.confirmed) {
+      suppressCarClickRef.current = true;
+      setTimeout(() => { suppressCarClickRef.current = false; }, 100);
+    }
     if (!finished?.confirmed || !commit) return;
     if (isSwappableCarId(finished.hoverCarId) && finished.hoverCarId !== finished.carId) onCarSwap?.(finished.carId, finished.hoverCarId);
   }
@@ -866,7 +903,7 @@ export function WeekGrid({
   const carDragHoverId = carDrag?.confirmed ? carDrag.hoverCarId : null;
   const hasDiscussionLane = discussionBlocks.length > 0;
   const discussionColIndex = allCars.length + 2;
-  const gridTemplateRows = `${desktop ? "0px" : `minmax(${HEADER_ROW_HEIGHT_PX}px, auto)`} repeat(${hours.length}, ${HOUR_ROW_HEIGHT_PX}px)`;
+  const gridTemplateRows = `${pageScroll ? "0px" : `minmax(${HEADER_ROW_HEIGHT_PX}px, auto)`} repeat(${hours.length}, ${HOUR_ROW_HEIGHT_PX}px)`;
   const gridMinWidth = HOUR_COL_WIDTH_PX + (allCars.length + (hasDiscussionLane ? 1 : 0)) * CAR_COL_WIDTH_PX;
   const gridTemplateColumns = `${HOUR_COL_WIDTH_PX}px repeat(${allCars.length}, minmax(${CAR_COL_WIDTH_PX}px, 1fr))${hasDiscussionLane ? ` minmax(${CAR_COL_WIDTH_PX}px, 1fr)` : ""}`;
 
@@ -1112,6 +1149,7 @@ export function WeekGrid({
         <div className="sticky start-0 top-0 z-30 border-b border-e bg-muted shadow-[0_2px_6px_-2px_hsl(var(--foreground)/0.12)]" style={{ gridColumn: 1, gridRow: 1 }} />
         {allCars.map((car, i) => {
           const swappable = canSwapCars && !!onCarSwap && car.group !== "phantom";
+          const hasCarMenu = car.group !== "phantom" && (swappable || !!enableCarReport || !!onOpenCarPage);
           const isCarDragSource = swappable && carDrag?.confirmed && carDrag.carId === car.id;
           const isCarDropHover = swappable && carDragHoverId === car.id && carDrag?.carId !== car.id;
           return (
@@ -1132,34 +1170,52 @@ export function WeekGrid({
             onPointerDown={swappable ? (e) => carPointerDownRef.current(car.id, e) : undefined}
           >
             <span className={cn("flex min-w-0 items-center justify-center gap-1 text-center text-sm md:text-base leading-tight", myCarIds.has(car.id) ? "font-bold" : "font-medium")} data-testid="week-grid-car-name" data-my-car={myCarIds.has(car.id) || undefined}>
-              {renderCarName ? renderCarName(car) : (
-                <>
-                  <CarFront className="size-3.5 shrink-0 text-primary md:size-4" aria-hidden="true" />
-                  <span className="min-w-0 whitespace-normal break-words md:line-clamp-2" title={car.name}>{car.name}</span>
-                </>
-              )}
-              {swappable ? (
-                <DropdownMenu>
+              {renderCarName ? renderCarName(car) : hasCarMenu ? (
+                <DropdownMenu open={menuCarId === car.id} onOpenChange={(o) => { if (!o) setMenuCarId(null); }}>
                   <DropdownMenuTrigger asChild>
                     <button
                       type="button"
-                      className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
-                      aria-label={he.carSwap.swapMenuLabel}
-                      onPointerDown={(e) => e.stopPropagation()}
-                      onClick={(e) => e.stopPropagation()}
+                      className="flex min-h-8 min-w-0 max-w-full items-center gap-0.5 rounded px-0.5 text-center hover:bg-accent/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      aria-label={tv("carSwap.carMenuLabel", { car: car.name })}
+                      data-testid="week-grid-car-menu-trigger"
+                      // Radix opens on pointerdown; ours opens on click so a touch long-press (swap drag) never opens it.
+                      // Mouse: the click path still opens it; the header's own pointerdown (drag start) is left to bubble.
+                      onPointerDown={(e) => e.preventDefault()}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (suppressCarClickRef.current) return;
+                        setMenuCarId((cur) => (cur === car.id ? null : car.id));
+                      }}
                     >
-                      <ArrowLeftRight className="size-3.5 rtl:rotate-180" aria-hidden="true" />
+                      <span className="min-w-0 whitespace-normal break-words line-clamp-2" title={car.name}>{car.name}</span>
+                      <ChevronDown className="size-3 shrink-0 text-muted-foreground" aria-hidden="true" />
                     </button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="start">
-                    {allCars.filter((other) => other.id !== car.id && other.group !== "phantom").map((other) => (
+                    {swappable ? allCars.filter((other) => other.id !== car.id && other.group !== "phantom").map((other) => (
                       <DropdownMenuItem key={other.id} onSelect={() => onCarSwap?.(car.id, other.id)}>
                         {tv("carSwap.swapWithCar", { car: other.name })}
                       </DropdownMenuItem>
-                    ))}
+                    )) : null}
+                    {swappable && (enableCarReport || onOpenCarPage) ? <DropdownMenuSeparator /> : null}
+                    {enableCarReport ? (
+                      <DropdownMenuItem data-testid="car-name-report-menu-item" onSelect={() => setReportCarId(car.id)}>
+                        {he.carSwap.carReportItem}
+                      </DropdownMenuItem>
+                    ) : null}
+                    {onOpenCarPage ? (
+                      <DropdownMenuItem data-testid="car-page-menu-item" onSelect={() => onOpenCarPage(car.id)}>
+                        {he.carSwap.carPageItem}
+                      </DropdownMenuItem>
+                    ) : null}
                   </DropdownMenuContent>
                 </DropdownMenu>
-              ) : null}
+              ) : (
+                <>
+                  <CarFront className="size-3.5 shrink-0 text-primary md:size-4" aria-hidden="true" />
+                  <span className="min-w-0 whitespace-normal break-words line-clamp-2" title={car.name}>{car.name}</span>
+                </>
+              )}
             </span>
             {car.locationBadge ? <span className="truncate text-center text-xs text-muted-foreground">{car.locationBadge}</span> : null}
             {car.baseBadge ? <span className="truncate text-center text-[10px] text-muted-foreground">{car.baseBadge}</span> : null}
@@ -1168,6 +1224,10 @@ export function WeekGrid({
           </div>
           );
         })}
+        {reportCarId ? (() => {
+          const reportCar = allCars.find((c) => c.id === reportCarId);
+          return reportCar ? <CarReportDialog carId={reportCar.id} carName={reportCar.name} open onOpenChange={(o) => { if (!o) setReportCarId(null); }} /> : null;
+        })() : null}
         {hasDiscussionLane ? (
           <div
             className="sticky top-0 z-20 flex items-center justify-center border-b border-s-2 border-s-border bg-background bg-gradient-to-b from-maintenance/10 to-maintenance/10 px-2 py-1 text-sm shadow-[0_2px_6px_-2px_hsl(var(--foreground)/0.12)]"
@@ -1181,11 +1241,12 @@ export function WeekGrid({
 
   return (
     <div className="min-w-0">
-    {desktop ? (
+    {pageScroll ? (
       <div
         ref={headerRef}
         data-week-grid-header
-        className="sticky top-0 z-30 overflow-hidden rounded-t-md border border-b-0 bg-muted"
+        // Below `md` the app shell's own sticky `h-14` header sits above (top-14); from `md` it is hidden.
+        className="sticky top-14 z-30 md:top-0 overflow-hidden rounded-t-md border border-b-0 bg-muted"
       >
         <div className="grid" style={{ zoom, gridTemplateColumns, gridTemplateRows: `minmax(${HEADER_ROW_HEIGHT_PX}px, auto)`, minWidth: gridMinWidth }}>
           {headerCells}
@@ -1194,17 +1255,17 @@ export function WeekGrid({
     ) : null}
     <div
       ref={setScrollViewport}
-      className={cn("min-w-0 max-h-[70dvh] overflow-auto rounded-md border shadow-card lg:max-h-none lg:overflow-y-hidden lg:rounded-t-none", (dragActive || dragEnabled) && "select-none")}
-      onScroll={desktop ? (e) => { if (headerRef.current) headerRef.current.scrollLeft = e.currentTarget.scrollLeft; } : undefined}
+      className={cn("min-w-0 rounded-md border shadow-card", pageScroll ? "overflow-auto overflow-y-hidden rounded-t-none" : "max-h-[70dvh] overflow-auto", (dragActive || dragEnabled) && "select-none")}
+      onScroll={pageScroll ? (e) => { if (headerRef.current) headerRef.current.scrollLeft = e.currentTarget.scrollLeft; } : undefined}
       style={{ touchAction: "pan-x pan-y", scrollSnapType: "x proximity", scrollPaddingInlineStart: HOUR_COL_WIDTH_PX * zoom }}
       data-week-grid-scroll-viewport
     >
       <div className="grid" style={{ zoom, gridTemplateColumns, gridTemplateRows, minWidth: gridMinWidth }}>
-        {desktop ? null : headerCells}
+        {pageScroll ? null : headerCells}
         {hours.map((h, i) => (
           <div
             key={h}
-            className="sticky start-0 z-10 flex items-start justify-end border-b border-e bg-muted px-1.5 pt-0.5 text-xs font-medium text-muted-foreground shadow-[2px_0_6px_-2px_hsl(var(--foreground)/0.12)]"
+            className="sticky start-0 z-10 flex items-start justify-end border-b border-e bg-muted px-px pt-0.5 tabular-nums text-xs font-medium text-muted-foreground shadow-[2px_0_6px_-2px_hsl(var(--foreground)/0.12)]"
             style={{ gridColumn: 1, gridRow: i + 2 }}
           >
             <span dir="ltr">{formatMinutes(h * 60)}</span>

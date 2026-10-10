@@ -115,16 +115,21 @@ test("member logs car care (wash, tire fill, problem) and only the car's respons
       await expect(reportDialog).not.toBeVisible({ timeout: 3_000 });
     });
 
-    await test.step("tire fill: two low, one very_low, two ok, plus a note", async () => {
+    await test.step("tire fill: two low, one very_low, one ok, spare unchecked, plus a note", async () => {
       await rideSheet.getByTestId("car-name-report-trigger").click();
       await expect(reportDialog).toBeVisible();
       await reportDialog.getByRole("button", { name: he.carCare.homeTireFillTitle }).click();
 
-      // low x2 (one tap each), very_low x1 (two taps), ok x2 (untouched).
-      await reportDialog.getByTestId("tire-front_left").click();
-      await reportDialog.getByTestId("tire-front_right").click();
-      await reportDialog.getByTestId("tire-rear_left").click();
-      await reportDialog.getByTestId("tire-rear_left").click();
+      // REQ §13.124: tires start "unchecked"; the first tap is ok, then low, then very_low.
+      // "סיימתי" is disabled until one tire is marked.
+      await expect(reportDialog.getByRole("button", { name: he.carCare.tireDone })).toBeDisabled();
+      const tap = async (position: string, times: number) => {
+        for (let i = 0; i < times; i += 1) await reportDialog.getByTestId(`tire-${position}`).click();
+      };
+      await tap("front_left", 2); // low
+      await tap("front_right", 2); // low
+      await tap("rear_left", 3); // very_low
+      await tap("rear_right", 1); // ok; the spare stays unchecked
 
       await reportDialog.getByLabel(he.carCare.tireNoteLabel).fill("Front-left and front-right were soft; rear-left almost flat");
       await reportDialog.getByRole("button", { name: he.carCare.tireDone }).click();
@@ -145,7 +150,7 @@ test("member logs car care (wash, tire fill, problem) and only the car's respons
         front_right: "low",
         rear_left: "very_low",
         rear_right: "ok",
-        spare: "ok",
+        spare: "unchecked",
       });
       expect(events![0]!.note).toBe("Front-left and front-right were soft; rear-left almost flat");
 
@@ -239,12 +244,12 @@ test("member logs car care (wash, tire fill, problem) and only the car's respons
       }
     });
 
-    await test.step("a non-responsible member gets the not-authorized state", async () => {
+    await test.step("a non-responsible member opens the car page read-only", async () => {
       const { context, page: memberPage } = await newSignedInPage(browser, actorMember);
       try {
         await memberPage.goto(paths.car(carId));
-        await expect(memberPage.getByText(he.errors.notAuthorized)).toBeVisible();
-        await expect(memberPage.getByRole("heading", { name: carName })).not.toBeVisible();
+        await expect(memberPage.getByText(he.errors.notAuthorized)).not.toBeVisible();
+        await expect(memberPage.getByRole("button", { name: he.adminCommon.save })).toHaveCount(0);
       } finally {
         await context.close();
       }

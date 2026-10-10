@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { cycleTireState, TIRE_POSITIONS, type TirePosition, type TireState, type TireStates } from "../schema";
 
 const STATE_CLASSES: Record<TireState, string> = {
+  unchecked: "border-dashed border-muted-foreground/50 bg-muted text-muted-foreground opacity-70",
   ok: "border-available bg-available/20 text-available",
   low: "border-maintenance bg-maintenance/20 text-maintenance",
   very_low: "border-destructive bg-destructive/20 text-destructive",
@@ -19,6 +20,7 @@ const POSITION_STYLE: Record<TirePosition, string> = {
 };
 
 const TIRE_STATE_LABEL: Record<TireState, string> = {
+  unchecked: he.carCare.tireLegendUnchecked,
   ok: he.carCare.tireLegendOk,
   low: he.carCare.tireLegendLow,
   very_low: he.carCare.tireLegendVeryLow,
@@ -60,7 +62,7 @@ interface TireFillPanelProps {
 /**
  * Inline SVG top-down car schematic (REQUIREMENTS §6.6, §13.72): four wheel
  * buttons at the corners plus the spare in the trunk area, each cycling
- * ok → low → very_low → ok on tap. `TIRE_POSITIONS` order drives the
+ * unchecked → ok → low → very_low → unchecked on tap. `TIRE_POSITIONS` order drives the
  * component test's payload-shape assertion.
  */
 export function TireFillPanel({ value, onChange, note, onNoteChange }: TireFillPanelProps) {

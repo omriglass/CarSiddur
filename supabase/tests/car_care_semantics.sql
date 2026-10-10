@@ -101,6 +101,24 @@ begin
   exception when raise_exception then
     if sqlerrm <> 'tires_incomplete' then raise; end if;
   end;
+
+  -- REQ §13.124: 'unchecked' is accepted per tire and counts as neither low nor very_low.
+  fill_id := public.log_car_care(car_with_responsible, 'tire_fill'::public.car_care_kind,
+    jsonb_build_object('front_left', 'low', 'front_right', 'unchecked', 'rear_left', 'unchecked', 'rear_right', 'ok', 'spare', 'unchecked'));
+  assert (select tires->>'spare' from public.car_care_events where id = fill_id) = 'unchecked', 'unchecked was not stored';
+  assert (
+    select body_he from public.notifications
+    where recipient_id = responsible and data->>'car_care_event_id' = fill_id::text
+  ) like '%1 צמיגים נמוכים%0 נמוכים מאוד%', 'unchecked tires must not be counted as low/very_low';
+
+  -- All five unchecked is refused.
+  begin
+    perform public.log_car_care(car_with_responsible, 'tire_fill'::public.car_care_kind,
+      jsonb_build_object('front_left', 'unchecked', 'front_right', 'unchecked', 'rear_left', 'unchecked', 'rear_right', 'unchecked', 'spare', 'unchecked'));
+    raise exception 'all-unchecked tire state should be refused';
+  exception when raise_exception then
+    if sqlerrm <> 'tires_none_checked' then raise; end if;
+  end;
 end $$;
 
 -- ---------------------------------------------------------------------------
@@ -132,10 +150,10 @@ do $$
 begin
   assert (select notes from public.cars where id = '30000000-0000-0000-0000-000000000001') = 'RLS test note',
     'a plain member of the department must not be able to edit a car they are not responsible for';
-  -- car_care_events: an uninvolved member (not the reporter, not responsible, not admin)
-  -- sees none of this car's care/wash/issue history rows.
-  assert (select count(*) from public.car_care_events where car_id = '30000000-0000-0000-0000-000000000001') = 0,
-    'a plain, uninvolved member should not see this car''s care history';
+  -- car_care_events: since REQ §13.122 a (20261024090000) every department member reads the car's care
+  -- history read-only (last wash / tires); writes still go through log_car_care().
+  assert (select count(*) from public.car_care_events where car_id = '30000000-0000-0000-0000-000000000001') > 0,
+    'a plain department member should see this car''s care history (REQ 13.122 a)';
 end $$;
 
 reset role;

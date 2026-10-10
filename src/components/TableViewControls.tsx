@@ -1,4 +1,5 @@
 import { List, RotateCw, Table2, ZoomIn, ZoomOut } from "lucide-react";
+import { PINCH_ZOOM_MAX, PINCH_ZOOM_MIN, zoomIn, zoomOut } from "@/components/pinchZoom";
 import { Button } from "@/components/ui/button";
 import { useLandscapeToggle } from "@/components/useLandscapeToggle";
 import { he } from "@/i18n/he";
@@ -24,9 +25,9 @@ export function TableViewControls({ table, onTableChange, zoom, onZoomChange }: 
       <Button size="sm" variant={table ? "outline" : "default"} aria-pressed={!table} onClick={() => { onTableChange(false); void exitLandscape(); }}><List className="size-4" />{he.tableView.cards}</Button>
       <Button size="sm" variant={table ? "default" : "outline"} aria-pressed={table} onClick={() => onTableChange(true)}><Table2 className="size-4" />{he.tableView.table}</Button>
       {table ? <>
-        <Button size="icon" variant="outline" aria-label={he.tableView.zoomOut} disabled={zoom <= 0.5} onClick={() => onZoomChange(Math.max(0.5, Math.round((zoom - 0.1) * 10) / 10))}><ZoomOut className="size-4" /></Button>
+        <Button size="icon" variant="outline" aria-label={he.tableView.zoomOut} disabled={zoom <= PINCH_ZOOM_MIN} onClick={() => onZoomChange(zoomOut(zoom))}><ZoomOut className="size-4" /></Button>
         <Button size="sm" variant="ghost" aria-label={he.tableView.resetZoom} onClick={() => onZoomChange(1)}><span dir="ltr">{Math.round(zoom * 100)}%</span></Button>
-        <Button size="icon" variant="outline" aria-label={he.tableView.zoomIn} disabled={zoom >= 1.5} onClick={() => onZoomChange(Math.min(1.5, Math.round((zoom + 0.1) * 10) / 10))}><ZoomIn className="size-4" /></Button>
+        <Button size="icon" variant="outline" aria-label={he.tableView.zoomIn} disabled={zoom >= PINCH_ZOOM_MAX} onClick={() => onZoomChange(zoomIn(zoom))}><ZoomIn className="size-4" /></Button>
         <Button size="sm" variant="outline" aria-pressed={landscape} onClick={() => void (landscape ? exitLandscape() : enterLandscape())}><RotateCw className="size-4" />{landscape ? he.tableView.exitLandscape : he.tableView.landscape}</Button>
       </> : null}
     </div>

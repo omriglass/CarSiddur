@@ -11,6 +11,7 @@ import type { TireState } from "@/lib/enums";
 const copy = he.carPage;
 
 const TIRE_STATE_LABEL: Record<TireState, string> = {
+  unchecked: copy.exportTireStateUnchecked,
   ok: copy.exportTireStateOk,
   low: copy.exportTireStateLow,
   very_low: copy.exportTireStateVeryLow,

@@ -687,6 +687,7 @@ export type Database = {
           overrides: Json
           proposal_expiry_hours: number
           proposal_expiry_mode: string
+          proposals_offline: boolean
           publish_dow: number
           publish_time: string
           rush_afternoon_end: string
@@ -718,6 +719,7 @@ export type Database = {
           overrides?: Json
           proposal_expiry_hours?: number
           proposal_expiry_mode?: string
+          proposals_offline?: boolean
           publish_dow?: number
           publish_time?: string
           rush_afternoon_end?: string
@@ -749,6 +751,7 @@ export type Database = {
           overrides?: Json
           proposal_expiry_hours?: number
           proposal_expiry_mode?: string
+          proposals_offline?: boolean
           publish_dow?: number
           publish_time?: string
           rush_afternoon_end?: string
@@ -4659,6 +4662,7 @@ export type Database = {
         Returns: undefined
       }
       advance_week_phases: { Args: { p_now?: string }; Returns: number }
+      agree_proposal_offline: { Args: { p_proposal_id: string }; Returns: Json }
       alternative_served_weight: {
         Args: { p_department_id: string }
         Returns: number
@@ -5907,7 +5911,7 @@ export type Database = {
       role: "member" | "sadran" | "admin"
       solver_run_status: "succeeded" | "failed"
       time_anchor: "leave" | "arrive"
-      tire_state: "ok" | "low" | "very_low"
+      tire_state: "ok" | "low" | "very_low" | "unchecked"
       trip_shape: "round_trip" | "one_way_to" | "one_way_from"
       trip_type: "round_trip" | "one_way" | "drop_off"
       waitlist_group_status: "open" | "resolved" | "cancelled"
@@ -6145,7 +6149,7 @@ export const Constants = {
       role: ["member", "sadran", "admin"],
       solver_run_status: ["succeeded", "failed"],
       time_anchor: ["leave", "arrive"],
-      tire_state: ["ok", "low", "very_low"],
+      tire_state: ["ok", "low", "very_low", "unchecked"],
       trip_shape: ["round_trip", "one_way_to", "one_way_from"],
       trip_type: ["round_trip", "one_way", "drop_off"],
       waitlist_group_status: ["open", "resolved", "cancelled"],

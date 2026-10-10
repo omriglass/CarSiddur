@@ -17,6 +17,7 @@ import { useLogCarCareMutation, useReportCarIssueMutation } from "../hooks";
 import {
   CAR_ISSUE_CATEGORIES,
   carIssueReportSchema,
+  anyTireChecked,
   DEFAULT_TIRE_STATES,
   type CarIssueReportValues,
 } from "../schema";
@@ -199,7 +200,7 @@ export function CarReportDialog({ carId, carName, open, onOpenChange }: CarRepor
               <Button type="button" variant="ghost" onClick={() => setView("home")}>
                 {he.common.back}
               </Button>
-              <Button type="button" disabled={logCarCareMutation.isPending} onClick={submitTires}>
+              <Button type="button" disabled={logCarCareMutation.isPending || !anyTireChecked(tires)} onClick={submitTires}>
                 {he.carCare.tireDone}
               </Button>
             </div>

@@ -10,5 +10,6 @@ export const carKeys = {
   detail: (carId: string | undefined) => [...carKeys.all, "detail", carId] as const,
   issues: (carId: string | undefined) => [...carKeys.all, "issues", carId] as const,
   careEvents: (carId: string | undefined) => [...carKeys.all, "careEvents", carId] as const,
+  upcomingRides: (carId: string | undefined) => [...carKeys.all, "upcomingRides", carId] as const,
   myResponsible: (profileId: string | undefined) => [...carKeys.all, "myResponsible", profileId] as const,
 };

@@ -5,7 +5,7 @@ import { departmentSettingsSchema } from "./schema";
 const VALID = {
   open_dow: 0, open_time: "00:00", close_dow: 3, close_time: "12:00", publish_dow: 3, publish_time: "20:00",
   turnaround_minutes: 30, day_end_time: "23:59", chauffeur_dwell_minutes: 10, detour_limit_minutes: 20, detour_limit_km: 15,
-  closing_reminder_hours: [24, 2], auto_apply_accepted_proposals: true, board_start_time: "06:00", join_radius_km: 10, stop_minutes: 5,
+  closing_reminder_hours: [24, 2], auto_apply_accepted_proposals: true, proposals_offline: false, board_start_time: "06:00", join_radius_km: 10, stop_minutes: 5,
   rush_morning_start: "07:00", rush_morning_end: "09:30", rush_morning_percent: 30,
   rush_afternoon_start: "15:30", rush_afternoon_end: "18:30", rush_afternoon_percent: 20,
 };

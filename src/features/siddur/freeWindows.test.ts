@@ -19,6 +19,14 @@ describe("roundUpToQuarterHour", () => {
 });
 
 describe("computeCarFreeWindows", () => {
+  it("after midnight, a range starting at 00:00 makes a car free all day free now (car-now at 00:47)", () => {
+    const params = { carId: "car-1", rides: [], turnaroundMinutes: TURNAROUND_MIN, rangeEnd: DAY_END, now: at("00:47") };
+    // The grid's 06:00 range: the first free window starts at 06:00, so "free now" (01:00) fails.
+    expect(firstCarFreeNow(computeCarFreeWindows({ ...params, rangeStart: at("06:00") }), at("00:47"))).toBeNull();
+    const fromMidnight = computeCarFreeWindows({ ...params, rangeStart: at("00:00") });
+    expect(fromMidnight[0]?.start).toBe(at("01:00"));
+  });
+
   it("returns the whole range free when there is nothing on the car", () => {
     const windows = computeCarFreeWindows({
       carId: "car-1",

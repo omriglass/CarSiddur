@@ -276,7 +276,7 @@ matching `*proposal*`; `e2e/proposal.spec.ts`, `proposal-retry.spec.ts`, `board-
 
 **Automated**:
 - Vitest: `npx vitest run src/features/proposals src/features/sadran/proposals`
-- SQL: `proposal_day_boundary.sql`, `proposal_replacement.sql`, `withdraw_settles.sql`
+- SQL: `proposal_day_boundary.sql`, `proposal_replacement.sql`, `withdraw_settles.sql`, `proposals_offline.sql` (REQ §13.123: agreed-offline drafts apply silently)
 - Playwright: `npx playwright test --grep "@proposals"`
 
 **QA script**:

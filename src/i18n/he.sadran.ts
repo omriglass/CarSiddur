@@ -439,6 +439,12 @@ export const heSadran = {
     close: "סגירה",
     saved: "הטיוטה נשמרה בלוח — עדיין לא נשלח דבר",
     discarded: "הטיוטה נמחקה",
+    /** REQ §13.123: proposals handled offline (agreed on WhatsApp) on unpublished days. */
+    agreed: "סוכם בוואטסאפ",
+    notAgreed: "לא סוכם",
+    agreedApplied: "ההצעה הוחלה — לא נשלחו הודעות",
+    agreedStale: "ההצעה כבר לא תקפה ולא הוחלה: {{reason}}",
+    offlineHint: "הצעות בימים שטרם פורסמו מסוכמות בוואטסאפ — שמרו טיוטה ואז סמנו \"סוכם\" או \"לא סוכם\".",
     withdrawn: "ההצעה בוטלה",
     cannotDraft: "אי אפשר לשמור טיוטה — חסרים פרטים בהצעה",
     chooserTitle: "הכנת הצעה",

@@ -11,7 +11,7 @@ import { TimeField15 } from "@/components/TimeField15";
 import { useScrollToFirstError } from "@/components/useScrollToFirstError";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Sheet, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -70,6 +70,7 @@ export function DepartmentForm({ department, onSaved, settingsOnly = false }: { 
           detour_limit_km: settingsQuery.data.detour_limit_km,
           closing_reminder_hours: settingsQuery.data.closing_reminder_hours,
           auto_apply_accepted_proposals: settingsQuery.data.auto_apply_accepted_proposals,
+          proposals_offline: settingsQuery.data.proposals_offline,
           board_start_time: settingsQuery.data.board_start_time,
           join_radius_km: settingsQuery.data.join_radius_km,
           stop_minutes: settingsQuery.data.stop_minutes,
@@ -522,6 +523,21 @@ export function DepartmentForm({ department, onSaved, settingsOnly = false }: { 
                       <Checkbox checked={field.value} onCheckedChange={(v) => field.onChange(!!v)} />
                     </FormControl>
                     <FormLabel className="!mt-0">{he.adminDepartments.fieldAutoApply}</FormLabel>
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={settingsForm.control}
+                name="proposals_offline"
+                render={({ field }) => (
+                  <FormItem className="col-span-2 flex flex-col gap-1 space-y-0">
+                    <div className="flex flex-row items-center gap-2">
+                      <FormControl>
+                        <Checkbox checked={field.value} onCheckedChange={(v) => field.onChange(!!v)} data-testid="setting-proposals-offline" />
+                      </FormControl>
+                      <FormLabel className="!mt-0">{he.adminDepartments.fieldProposalsOffline}</FormLabel>
+                    </div>
+                    <FormDescription>{he.adminDepartments.fieldProposalsOfflineHelp}</FormDescription>
                   </FormItem>
                 )}
               />

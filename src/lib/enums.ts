@@ -301,6 +301,7 @@ assertSameEnum<CarCareKind, Enums<"car_care_kind">>();
 // tire_state
 // ---------------------------------------------------------------------------
 export const TIRE_STATES = [
+  "unchecked",
   "ok",
   "low",
   "very_low",

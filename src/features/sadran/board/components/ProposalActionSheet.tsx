@@ -49,13 +49,16 @@ export interface ProposalActionSheetProps {
   changes?: ProposalChangeContext;
   busy?: boolean;
   onOpenChange: (open: boolean) => void;
+  /** REQ §13.123: the day is handled offline — drafts get "סוכם בוואטסאפ" / "לא סוכם" instead of "שלח". */
+  offline?: boolean;
+  onAgree?: (proposal: ProposalRow) => void;
   onSend: (proposal: ProposalRow) => void;
   onEdit: (proposal: ProposalRow) => void;
   onDiscard: (proposal: ProposalRow) => void;
   onWithdraw: (proposal: ProposalRow) => void;
 }
 
-export function ProposalActionSheet({ proposal, requesterName, dayIso, changes, busy, onOpenChange, onSend, onEdit, onDiscard, onWithdraw }: ProposalActionSheetProps) {
+export function ProposalActionSheet({ proposal, requesterName, dayIso, changes, busy, offline, onAgree, onOpenChange, onSend, onEdit, onDiscard, onWithdraw }: ProposalActionSheetProps) {
   const [confirmWithdraw, setConfirmWithdraw] = useState(false);
   const isDraft = proposal?.status === "draft";
   const withdrawable = proposal?.status === "sent" || proposal?.status === "accepted";
@@ -73,14 +76,24 @@ export function ProposalActionSheet({ proposal, requesterName, dayIso, changes, 
               }) : ""}
             </SheetDescription>
           </SheetHeader>
+          {proposal && isDraft && offline ? <p className="text-xs text-muted-foreground" data-testid="draft-offline-hint">{he.boardDrafts.offlineHint}</p> : null}
           {proposal && changes ? <ProposalChanges proposal={proposal} context={changes} /> : null}
           {proposal ? (
             <div className="flex flex-wrap gap-2 py-3">
               {isDraft ? (
                 <>
-                  <Button disabled={busy} onClick={() => onSend(proposal)} data-testid="draft-send">{he.boardDrafts.send}</Button>
-                  <Button variant="outline" disabled={busy} onClick={() => onEdit(proposal)} data-testid="draft-edit">{he.boardDrafts.edit}</Button>
-                  <Button variant="destructive" disabled={busy} onClick={() => onDiscard(proposal)} data-testid="draft-discard">{he.boardDrafts.discard}</Button>
+                  {offline ? (
+                    <>
+                      <Button disabled={busy} onClick={() => onAgree?.(proposal)} data-testid="draft-agreed">{he.boardDrafts.agreed}</Button>
+                      <Button variant="destructive" disabled={busy} onClick={() => onDiscard(proposal)} data-testid="draft-not-agreed">{he.boardDrafts.notAgreed}</Button>
+                    </>
+                  ) : (
+                    <>
+                      <Button disabled={busy} onClick={() => onSend(proposal)} data-testid="draft-send">{he.boardDrafts.send}</Button>
+                      <Button variant="outline" disabled={busy} onClick={() => onEdit(proposal)} data-testid="draft-edit">{he.boardDrafts.edit}</Button>
+                      <Button variant="destructive" disabled={busy} onClick={() => onDiscard(proposal)} data-testid="draft-discard">{he.boardDrafts.discard}</Button>
+                    </>
+                  )}
                 </>
               ) : (
                 <>

@@ -232,6 +232,7 @@ begin
       jsonb_build_object('reason', 'attack')::text, 'attack', '{}', 'sadran'));
   perform pg_temp.expect_refused('proposals.send_proposal', format('select public.send_proposal(%L)', proposal_b));
   perform pg_temp.expect_refused('proposals.proposal_car_conflicts', format('select public.proposal_car_conflicts(%L)', proposal_b));
+  perform pg_temp.expect_refused('proposals.agree_proposal_offline', format('select public.agree_proposal_offline(%L)', proposal_b));
   perform pg_temp.expect_refused('proposals.discard_proposal', format('select public.discard_proposal(%L)', proposal_b));
   perform pg_temp.expect_refused('proposals.withdraw_proposal', format('select public.withdraw_proposal(%L)', proposal_b));
   perform pg_temp.expect_refused('proposals.apply_proposal', format('select public.apply_proposal(%L)', proposal_b));
@@ -348,7 +349,7 @@ declare
     'update_ride_public_notes','add_ride_passengers','set_ride_passengers','remove_ride_person',
     'log_car_care','report_car_issue','merge_destination','suggest_destination','car_mileage_totals',
     'admin_approve_member','admin_update_member','admin_set_sadran_assignments',
-    'create_proposal','send_proposal','proposal_car_conflicts','discard_proposal','withdraw_proposal','apply_proposal','record_answer_on_behalf','proposal_party_texts',
+    'create_proposal','send_proposal','agree_proposal_offline','proposal_car_conflicts','discard_proposal','withdraw_proposal','apply_proposal','record_answer_on_behalf','proposal_party_texts',
     'open_week','reopen_week','set_week_phase','set_week_close_at','ensure_department_weeks',
     'publication_readiness','publication_conflicts','publish_siddur','record_solver_preview','form_waitlist_groups',
     'publish_scores_fingerprint','sadran_contact_of','fairness_stats','department_stats','joinable_rides_for_request',

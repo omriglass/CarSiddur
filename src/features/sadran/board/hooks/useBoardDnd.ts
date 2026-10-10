@@ -21,6 +21,7 @@ import { useDepartmentMembers } from "@/features/auth/useDepartmentMembers";
 import { fetchChildren } from "@/features/requests/api";
 
 import { combineMergeLegs, defaultMergeLeg, mergeLegForCard, mergeLegOptions, mergePayload, mergePayloadFromLegs, mergePayloadLeg, mergePayloadLegs, mergeRefusalText, type MergeLeg } from "../mergeProposal";
+import { isOfflineProposalDay } from "../offlineProposals";
 import { mergeGhostTarget } from "../mergeGhostClick";
 import { isDropOffWithPickup, legView, unmetItemId, unmetItemKey } from "../unmetLegs";
 import type { GuestDropTarget } from "@/components/GuestChips";
@@ -54,6 +55,7 @@ import { isReservation } from "@/features/rides/servedOf";
 import { buildRidePassengerInputs, splitReservationDriverAndPassengers } from "../reservationPeople";
 import {
   useCreateProposalMutation,
+  useAgreeProposalOfflineMutation,
   useDiscardProposalMutation,
   useWhatsappTemplates,
   useWithdrawProposalMutation,
@@ -119,6 +121,7 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
   const createProposalMutation = useCreateProposalMutation();
   const discardProposalMutation = useDiscardProposalMutation();
   const withdrawProposalMutation = useWithdrawProposalMutation();
+  const agreeOfflineMutation = useAgreeProposalOfflineMutation();
   const templatesQuery = useWhatsappTemplates();
   const profileQuery = useProfile();
   const editRideMutation = useEditRideMutation();
@@ -167,6 +170,12 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
   const carsData = board.carsQuery.data ?? [];
   const department = board.department;
 
+  /** REQ §13.123: proposals are agreed on WhatsApp for this request's (unpublished) day. */
+  function isOfflineForRequest(requestId: string | null | undefined): boolean {
+    const req = requestsData.find((r) => r.id === requestId);
+    return isOfflineProposalDay(board.departmentSettingsQuery.data?.proposals_offline, board.weekRowQuery.data, req ? requestStart(req) : null);
+  }
+
   /** Opens the composer (the old `goToComposer`); `proposalId` set = view/send that existing proposal. */
   function openComposer(prefill: ComposerPrefill) {
     navigate(paths.sadran.composer(departmentId, weekStart), { state: { ...prefill, returnTo: location.pathname + location.search } });
@@ -178,6 +187,8 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
    */
   function goToComposer(prefill: ComposerPrefill) {
     if (prefill.proposalId) { openComposer(prefill); return; }
+    // REQ §13.123: offline-handled day — nothing is sent from the app, so save the draft directly.
+    if (isOfflineForRequest(prefill.requestId)) { void saveDraft(prefill); return; }
     setComposeChoice(prefill);
   }
 
@@ -357,6 +368,16 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
       await discardProposalMutation.mutateAsync({ proposalId: proposal.id, departmentId, weekStart });
       setSelectedProposalId(null);
       toast.success(he.boardDrafts.discarded);
+    } catch { /* toast shown by the mutation */ }
+  }
+
+  /** REQ §13.123 "סוכם בוואטסאפ": applies the draft with no notifications; a stale draft is withdrawn with its reason. */
+  async function agreeOffline(proposal: ProposalRow) {
+    try {
+      const result = await agreeOfflineMutation.mutateAsync({ proposalId: proposal.id, departmentId, weekStart });
+      setSelectedProposalId(null);
+      if (result.status === "applied") toast.success(he.boardDrafts.agreedApplied);
+      else toast.warning(tv("boardDrafts.agreedStale", { reason: result.reason }));
     } catch { /* toast shown by the mutation */ }
   }
 
@@ -907,9 +928,11 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
     sendDraft,
     editDraft,
     discardDraft,
+    agreeOffline,
+    isOfflineForRequest,
     withdrawSent,
     draftPending: createProposalMutation.isPending,
-    proposalActionPending: discardProposalMutation.isPending || withdrawProposalMutation.isPending || unmergeRequestMutation.isPending,
+    proposalActionPending: agreeOfflineMutation.isPending || discardProposalMutation.isPending || withdrawProposalMutation.isPending || unmergeRequestMutation.isPending,
     handlePlaceUnmetRequest,
     handleUnassignRide,
     handleRideClick,

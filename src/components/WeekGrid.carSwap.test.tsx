@@ -1,6 +1,6 @@
-import { fireEvent, render } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { he } from "@/i18n/he";
+import { he, tv } from "@/i18n/he";
 import { WeekGrid } from "./WeekGrid";
 
 const cars = [
@@ -60,13 +60,31 @@ describe("WeekGrid car-swap header drag", () => {
 
   it("renders no drag affordance or menu on any header when canSwapCars is omitted (default behavior unchanged)", () => {
     const { container } = render(<WeekGrid cars={cars} rides={[]} />);
-    expect(container.querySelector(`[aria-label="${he.carSwap.swapMenuLabel}"]`)).toBeNull();
+    expect(container.querySelector('[data-testid="week-grid-car-menu-trigger"]')).toBeNull();
   });
 
   it("offers the other real cars, excluding the phantom lane, from a header's own swap menu (keyboard/no-drag fallback)", () => {
     const { container } = render(<WeekGrid cars={cars} rides={[]} canSwapCars onCarSwap={vi.fn()} />);
-    const menuButtons = container.querySelectorAll(`[aria-label="${he.carSwap.swapMenuLabel}"]`);
+    const menuButtons = container.querySelectorAll('[data-testid="week-grid-car-menu-trigger"]');
     // One menu trigger per real (non-phantom) car header.
     expect(menuButtons).toHaveLength(2);
+  });
+
+  it("the car name is one menu: swap items, report and car page", () => {
+    const onCarSwap = vi.fn();
+    const onOpenCarPage = vi.fn();
+    const { container } = render(<WeekGrid cars={cars} rides={[]} canSwapCars onCarSwap={onCarSwap} enableCarReport onOpenCarPage={onOpenCarPage} />);
+    fireEvent.click(container.querySelector(`[aria-label="${tv("carSwap.carMenuLabel", { car: "Car A" })}"]`)!);
+    expect(screen.getByRole("menuitem", { name: tv("carSwap.swapWithCar", { car: "Car B" }) })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: he.carSwap.carReportItem })).toBeTruthy();
+    fireEvent.click(screen.getByRole("menuitem", { name: he.carSwap.carPageItem }));
+    expect(onOpenCarPage).toHaveBeenCalledWith("a");
+  });
+
+  it("without swap, only the page item shows and a tap on the name opens the menu", () => {
+    const { container } = render(<WeekGrid cars={cars} rides={[]} onOpenCarPage={vi.fn()} />);
+    fireEvent.click(container.querySelector('[data-testid="week-grid-car-menu-trigger"]')!);
+    expect(screen.queryByRole("menuitem", { name: tv("carSwap.swapWithCar", { car: "Car B" }) })).toBeNull();
+    expect(screen.getByRole("menuitem", { name: he.carSwap.carPageItem })).toBeTruthy();
   });
 });

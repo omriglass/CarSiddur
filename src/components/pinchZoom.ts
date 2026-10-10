@@ -9,13 +9,31 @@
  * No React/DOM here — `WeekGrid.tsx` wires this to native `touchstart`/
  * `touchmove` listeners on its scroll container.
  */
-export const PINCH_ZOOM_MIN = 0.5;
+/** Hard floor for any zoom (pinch or the − button), owner 2026-10-10: zoomed far out to glance at the whole day. */
+export const PINCH_ZOOM_MIN = 0.2;
+/**
+ * Soft floor: one pinch that starts above it stops here, so a single gesture cannot fling the
+ * table from full size to unreadable; a new pinch starting at or below it may go on to `PINCH_ZOOM_MIN`.
+ */
+export const PINCH_ZOOM_SOFT_MIN = 0.4;
 export const PINCH_ZOOM_MAX = 1.5;
 export const PINCH_ZOOM_STEP = 0.05;
+/** The − / + buttons' step. */
+export const ZOOM_BUTTON_STEP = 0.1;
+
+/** One − button press: 0.1 smaller, never below the hard floor. */
+export function zoomOut(zoom: number): number {
+  return Math.max(PINCH_ZOOM_MIN, Math.round((zoom - ZOOM_BUTTON_STEP) * 10) / 10);
+}
+
+/** One + button press: 0.1 larger, never above the maximum. */
+export function zoomIn(zoom: number): number {
+  return Math.min(PINCH_ZOOM_MAX, Math.round((zoom + ZOOM_BUTTON_STEP) * 10) / 10);
+}
 
 /**
- * The next zoom level for a pinch gesture, clamped to
- * `[PINCH_ZOOM_MIN, PINCH_ZOOM_MAX]` and rounded to the nearest
+ * The next zoom level for a pinch gesture, clamped to `[floor, PINCH_ZOOM_MAX]` — the floor is
+ * `PINCH_ZOOM_SOFT_MIN` for a gesture that started above it, else `PINCH_ZOOM_MIN` — and rounded to the nearest
  * `PINCH_ZOOM_STEP` (matching the ± buttons' own 0.05 increments,
  * `TableViewControls.tsx`). A degenerate `startDist` (0 or negative — the
  * second touch hasn't produced a real distance yet) returns `startZoom`
@@ -24,7 +42,8 @@ export const PINCH_ZOOM_STEP = 0.05;
 export function nextZoom(startZoom: number, startDist: number, dist: number): number {
   if (startDist <= 0) return startZoom;
   const raw = startZoom * (dist / startDist);
-  const clamped = Math.min(PINCH_ZOOM_MAX, Math.max(PINCH_ZOOM_MIN, raw));
+  const floor = startZoom > PINCH_ZOOM_SOFT_MIN ? PINCH_ZOOM_SOFT_MIN : PINCH_ZOOM_MIN;
+  const clamped = Math.min(PINCH_ZOOM_MAX, Math.max(floor, raw));
   const stepped = Math.round(clamped / PINCH_ZOOM_STEP) * PINCH_ZOOM_STEP;
   // Undo binary floating-point noise from the division/multiplication above
   // (e.g. 1.0500000000000001) so callers can compare/display the result directly.

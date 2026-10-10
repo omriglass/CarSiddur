@@ -433,6 +433,16 @@ export function useDiscardProposalMutation() {
   });
 }
 
+/** REQ §13.123: mark an offline-handled draft as agreed on WhatsApp. */
+export function useAgreeProposalOfflineMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ proposalId }: { proposalId: string; departmentId: string; weekStart: string }) => api.agreeProposalOffline(proposalId),
+    onSettled: (_data, _error, { departmentId, weekStart }) => invalidateBoard(queryClient, departmentId, weekStart),
+    onError: showErrorToast,
+  });
+}
+
 export function useWithdrawProposalMutation() {
   const queryClient = useQueryClient();
   return useMutation({

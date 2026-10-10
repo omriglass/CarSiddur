@@ -57,6 +57,8 @@ export interface MergePrefillDialogProps {
   draftNote?: "extends" | "replaces" | null;
   /** The merged ride (route twin); `null` when it cannot be computed. */
   preview: MergePreview | null;
+  /** REQ §13.123: offline-handled day — only "טיוטה" is offered, nothing is sent from the app. */
+  offline?: boolean;
   onConfirm: () => void;
   /** REQ §13.94: store the merge as an unsent draft and stay on the board. */
   onDraft: () => void;
@@ -119,7 +121,7 @@ function RideBlock({ testId, heading, label, startsAt, endsAt, preview, flex }: 
   );
 }
 
-export function MergePrefillDialog({ prefill, hostLabel, hostStartsAt, hostEndsAt, request, hostRequest, pair, requestRoute, leg, onLegChange, anchorLeg, legVerdicts, verdict, split, draftNote, preview, onConfirm, onDraft, busy, onCancel }: MergePrefillDialogProps) {
+export function MergePrefillDialog({ prefill, hostLabel, hostStartsAt, hostEndsAt, request, hostRequest, pair, requestRoute, leg, onLegChange, anchorLeg, legVerdicts, verdict, split, draftNote, preview, offline, onConfirm, onDraft, busy, onCancel }: MergePrefillDialogProps) {
   const options = request && !split ? mergeLegOptions(request, anchorLeg) : null;
   // The server decides; without a verdict (no host/request to ask about) the TS twin's validity is the fallback.
   const blocked = verdict ? verdict.status !== "ok" : (!!preview && !preview.valid) || (!!pair?.preview && !pair.preview.valid);
@@ -195,7 +197,7 @@ export function MergePrefillDialog({ prefill, hostLabel, hostStartsAt, hostEndsA
           </div>
         ) : null}
         <div className="flex flex-wrap gap-2">
-          <Button onClick={onConfirm} disabled={busy || blocked} className="min-h-11" data-testid="merge-prepare">{he.boardDrafts.prepare}</Button>
+          {offline ? null : <Button onClick={onConfirm} disabled={busy || blocked} className="min-h-11" data-testid="merge-prepare">{he.boardDrafts.prepare}</Button>}
           <Button variant="secondary" onClick={onDraft} disabled={busy || blocked} className="min-h-11" data-testid="merge-save-draft">{he.boardDrafts.draftButton}</Button>
           <Button variant="outline" onClick={onCancel} className="min-h-11">{he.common.cancel}</Button>
         </div>

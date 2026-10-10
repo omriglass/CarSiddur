@@ -1,5 +1,6 @@
 import { CarMaintenancePanel } from "@/features/fleet/components/CarMaintenancePanel";
 import { formatInTimeZone } from "date-fns-tz";
+import type { TireState } from "@/lib/enums";
 import { CarFront, Droplets, History as HistoryIcon, Wrench } from "lucide-react";
 import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
@@ -22,6 +23,7 @@ import { TZ } from "@/lib/time";
 
 import { CarExcelExportButton } from "./CarExcelExportButton";
 import { CarMoodCard } from "./CarMoodCard";
+import { CarPrivateSwitch } from "./CarPrivateSwitch";
 import { useCarCareHistoryQuery, useCarIssueHistoryQuery } from "../hooks";
 import { filterCarHistory, mergeCarHistory, type CarHistoryEntry, type CarHistoryFilter } from "../lib/history";
 
@@ -29,13 +31,15 @@ const TIRE_ORDER: readonly (keyof NonNullable<CarHistoryEntry["tires"]>)[] = [
   "front_left", "front_right", "rear_left", "rear_right", "spare",
 ];
 
-const TIRE_DOT_CLASS: Record<"ok" | "low" | "very_low", string> = {
+const TIRE_DOT_CLASS: Record<TireState, string> = {
+  unchecked: "border border-muted-foreground/50 bg-transparent",
   ok: "bg-available",
   low: "bg-maintenance",
   very_low: "bg-destructive",
 };
 
-const TIRE_STATE_LABEL: Record<"ok" | "low" | "very_low", string> = {
+const TIRE_STATE_LABEL: Record<TireState, string> = {
+  unchecked: he.carPage.exportTireStateUnchecked,
   ok: he.carPage.exportTireStateOk,
   low: he.carPage.exportTireStateLow,
   very_low: he.carPage.exportTireStateVeryLow,
@@ -99,6 +103,8 @@ function historyRow(entry: CarHistoryEntry) {
 interface CarManageScreenProps {
   car: Car;
   isAdmin: boolean;
+  /** Admin, the car's responsible person or the department's Sadran: may edit fields, the private switch, maintenance. Everyone else gets a read-only page. */
+  canEdit: boolean;
   /** The signed-in viewer's own name — used to show a read-only "אחראי/ת רכב" value when the viewer *is* the responsible person (not an admin, so the field can't be reassigned here, REQ §13.71). */
   viewerName: string;
   /**
@@ -111,7 +117,7 @@ interface CarManageScreenProps {
 }
 
 /** `/cars/:carId` (UX_FLOWS.md §5.11 "Car page"). */
-export function CarManageScreen({ car, isAdmin, viewerName, headerActions }: CarManageScreenProps) {
+export function CarManageScreen({ car, isAdmin, canEdit, viewerName, headerActions }: CarManageScreenProps) {
   const issuesQuery = useCarIssueHistoryQuery(car.id);
   const careEventsQuery = useCarCareHistoryQuery(car.id);
   // Department-members combobox candidates for the responsible-person picker — only fetched (and only
@@ -162,6 +168,8 @@ export function CarManageScreen({ car, isAdmin, viewerName, headerActions }: Car
         lastWashAt={merged.find((entry) => entry.kind === "wash")?.createdAt ?? null}
       />
 
+      <CarPrivateSwitch car={car} canEdit={canEdit} />
+
       <CarMaintenancePanel car={car} />
 
       <Tabs defaultValue="details">
@@ -177,6 +185,7 @@ export function CarManageScreen({ car, isAdmin, viewerName, headerActions }: Car
             showDepartmentField={false}
             canEditResponsible={isAdmin}
             canEditSeatConfigs={isAdmin}
+            readOnly={!canEdit}
             responsibleOptions={responsibleOptions}
             onSaved={() => undefined}
           />

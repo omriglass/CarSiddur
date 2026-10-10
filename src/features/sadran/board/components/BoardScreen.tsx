@@ -420,6 +420,8 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
             discussionBlocks={board.weekGridDiscussionBlocks}
             onDiscussionClick={dnd.setSelectedGroupId}
             canSwapCars={board.boardCanSwapCars}
+            enableCarReport
+            onOpenCarPage={(carId) => navigate(paths.car(carId))}
             onCarSwap={(carA, carB) => { dnd.setCarSwapPair({ carA, carB }); }}
           />
         </div>
@@ -549,6 +551,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
         split={mergeSplit}
         draftNote={dnd.mergePrefill?.draftNote}
         preview={mergePreview}
+        offline={dnd.isOfflineForRequest(dnd.mergePrefill?.requestId)}
         onConfirm={() => { void withMergeWaiver((prefill) => { dnd.openComposer(prefill); dnd.setMergePrefill(null); }); }}
         onDraft={() => { void withMergeWaiver((prefill) => dnd.saveDraft(prefill)); }}
         busy={dnd.draftPending}
@@ -569,6 +572,8 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
         changes={proposalChanges}
         busy={dnd.proposalActionPending}
         onOpenChange={(open) => !open && dnd.setSelectedProposalId(null)}
+        offline={dnd.selectedProposal ? dnd.isOfflineForRequest(dnd.selectedProposal.request_id) : false}
+        onAgree={(proposal) => void dnd.agreeOffline(proposal)}
         onSend={dnd.sendDraft}
         onEdit={dnd.editDraft}
         onDiscard={(proposal) => void dnd.discardDraft(proposal)}

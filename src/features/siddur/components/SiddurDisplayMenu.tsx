@@ -1,5 +1,6 @@
 import { Eye, List, RotateCw, Table2, ZoomIn, ZoomOut } from "lucide-react";
 
+import { PINCH_ZOOM_MAX, PINCH_ZOOM_MIN, zoomIn, zoomOut } from "@/components/pinchZoom";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -67,8 +68,8 @@ export function SiddurDisplayMenu({
           <>
             <DropdownMenuSeparator />
             <DropdownMenuItem
-              disabled={zoom <= 0.5}
-              onSelect={(e) => { e.preventDefault(); onZoomChange(Math.max(0.5, Math.round((zoom - 0.1) * 10) / 10)); }}
+              disabled={zoom <= PINCH_ZOOM_MIN}
+              onSelect={(e) => { e.preventDefault(); onZoomChange(zoomOut(zoom)); }}
             >
               <ZoomOut className="me-2 size-4" aria-hidden="true" />{he.tableView.zoomOut}
             </DropdownMenuItem>
@@ -76,8 +77,8 @@ export function SiddurDisplayMenu({
               <span className="me-2" dir="ltr">{Math.round(zoom * 100)}%</span>{he.tableView.resetZoom}
             </DropdownMenuItem>
             <DropdownMenuItem
-              disabled={zoom >= 1.5}
-              onSelect={(e) => { e.preventDefault(); onZoomChange(Math.min(1.5, Math.round((zoom + 0.1) * 10) / 10)); }}
+              disabled={zoom >= PINCH_ZOOM_MAX}
+              onSelect={(e) => { e.preventDefault(); onZoomChange(zoomIn(zoom)); }}
             >
               <ZoomIn className="me-2 size-4" aria-hidden="true" />{he.tableView.zoomIn}
             </DropdownMenuItem>

@@ -339,7 +339,8 @@ ALTER TYPE "public"."time_anchor" OWNER TO "postgres";
 CREATE TYPE "public"."tire_state" AS ENUM (
     'ok',
     'low',
-    'very_low'
+    'very_low',
+    'unchecked'
 );
 
 
@@ -2916,6 +2917,63 @@ $$;
 
 
 ALTER FUNCTION "public"."advance_week_phases"("p_now" timestamp with time zone) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."agree_proposal_offline"("p_proposal_id" "uuid") RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_p public.proposals%rowtype;
+  v_req public.requests%rowtype;
+  v_offline boolean;
+  v_prev_supp text := coalesce(current_setting('app.suppress_notifications', true), '');
+  v_prev_reason text := coalesce(current_setting('app.suppressed_reason', true), '');
+  v_day date; v_party record; v_status public.proposal_status; v_reason text;
+begin
+  select * into v_p from public.proposals where id = p_proposal_id;
+  if not found then raise exception 'proposal_not_found' using errcode = 'P0001'; end if;
+  if not public.can_manage_week(v_p.department_id, v_p.week_start) then
+    raise exception 'not_authorized' using errcode = 'P0001';
+  end if;
+  select coalesce(proposals_offline, false) into v_offline from public.department_settings where department_id = v_p.department_id;
+  if not coalesce(v_offline, false) then raise exception 'proposals_offline_disabled' using errcode = 'P0001'; end if;
+  if v_p.status not in ('draft', 'sent') then raise exception 'proposal_not_answerable' using errcode = 'P0001'; end if;
+  select * into v_req from public.requests where id = v_p.request_id;
+  -- Every day the proposal touches must still be unpublished: the request's own legs and any shifted times.
+  for v_day in
+    select distinct (t at time zone 'Asia/Jerusalem')::date from unnest(array[
+      v_req.depart_at, v_req.return_at,
+      nullif(v_p.payload ->> 'depart_at', '')::timestamptz, nullif(v_p.payload ->> 'return_at', '')::timestamptz]) t
+    where t is not null
+  loop
+    if public.is_day_public(v_p.department_id, v_p.week_start, v_day) then
+      raise exception 'proposal_day_published' using errcode = 'P0001';
+    end if;
+  end loop;
+
+  perform set_config('app.suppress_notifications', 'on', true);
+  perform set_config('app.suppressed_reason', '', true);
+  if v_p.status = 'draft' then
+    perform public.send_proposal(p_proposal_id);
+  end if;
+  for v_party in select profile_id from public.proposal_parties
+                 where proposal_id = p_proposal_id and response = 'pending' order by id loop
+    perform public.record_answer_on_behalf(p_proposal_id, v_party.profile_id, true, null);
+  end loop;
+  v_reason := nullif(current_setting('app.suppressed_reason', true), '');
+  perform set_config('app.suppress_notifications', v_prev_supp, true);
+  perform set_config('app.suppressed_reason', v_prev_reason, true);
+
+  select status into v_status from public.proposals where id = p_proposal_id;
+  if v_status = 'withdrawn' then
+    return jsonb_build_object('status', 'withdrawn_stale', 'reason', v_reason);
+  end if;
+  return jsonb_build_object('status', 'applied', 'proposal_status', v_status);
+end $$;
+
+
+ALTER FUNCTION "public"."agree_proposal_offline"("p_proposal_id" "uuid") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."alternative_served_weight"("p_department_id" "uuid") RETURNS numeric
@@ -6547,6 +6605,10 @@ declare
   v_sub record;
   v_caller_days text := nullif(coalesce(_vars, '{}'::jsonb) ->> 'days', '');
 begin
+  if coalesce(current_setting('app.suppress_notifications', true), '') = 'on' then
+    if _data ? 'reason' then perform set_config('app.suppressed_reason', _data ->> 'reason', true); end if;
+    return null;
+  end if;
   if _event = 'auto_approved' then return null; end if;
   _data := coalesce(_data, '{}'::jsonb);
   -- R8B7: no outcome notice before the day is published.
@@ -7809,6 +7871,7 @@ declare
   v_recipient uuid;
   v_low_count int := 0;
   v_very_low_count int := 0;
+  v_unchecked_count int := 0;
   v_key_count int;
   v_bad_key_count int;
   v_bad_value_count int;
@@ -7833,13 +7896,18 @@ begin
       raise exception 'tires_incomplete' using errcode = 'P0001';
     end if;
     select count(*) into v_bad_value_count from jsonb_each_text(_tires) e
-      where e.value not in ('ok', 'low', 'very_low');
+      where e.value not in ('ok', 'low', 'very_low', 'unchecked');
     if v_bad_value_count > 0 then
       raise exception 'invalid_tire_state' using errcode = 'P0001';
     end if;
-    select count(*) filter (where e.value = 'low'), count(*) filter (where e.value = 'very_low')
-      into v_low_count, v_very_low_count
+    select count(*) filter (where e.value = 'low'),
+           count(*) filter (where e.value = 'very_low'),
+           count(*) filter (where e.value = 'unchecked')
+      into v_low_count, v_very_low_count, v_unchecked_count
     from jsonb_each_text(_tires) e;
+    if v_unchecked_count = 5 then
+      raise exception 'tires_none_checked' using errcode = 'P0001';
+    end if;
     v_tires := _tires;
   else
     v_tires := null;
@@ -16308,6 +16376,7 @@ CREATE TABLE IF NOT EXISTS "public"."department_settings" (
     "rush_afternoon_start" time without time zone DEFAULT '15:30:00'::time without time zone NOT NULL,
     "rush_afternoon_end" time without time zone DEFAULT '18:30:00'::time without time zone NOT NULL,
     "rush_afternoon_percent" smallint DEFAULT 20 NOT NULL,
+    "proposals_offline" boolean DEFAULT false NOT NULL,
     CONSTRAINT "department_settings_close_dow_ck" CHECK ((("close_dow" >= 0) AND ("close_dow" <= 6))),
     CONSTRAINT "department_settings_expiry_mode_ck" CHECK (("proposal_expiry_mode" = ANY (ARRAY['at_publish'::"text", 'fixed_hours'::"text"]))),
     CONSTRAINT "department_settings_join_radius_km_ck" CHECK ((("join_radius_km" >= (0)::numeric) AND ("join_radius_km" <= (100)::numeric))),
@@ -16325,6 +16394,10 @@ ALTER TABLE ONLY "public"."department_settings" FORCE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."department_settings" OWNER TO "postgres";
+
+
+COMMENT ON COLUMN "public"."department_settings"."proposals_offline" IS 'REQ §13.123: proposals for unpublished days are agreed offline (WhatsApp) and applied silently via agree_proposal_offline().';
+
 
 
 CREATE OR REPLACE FUNCTION "public"."week_phase_timestamps"("p_settings" "public"."department_settings", "p_week_start" "date") RETURNS TABLE("open_at" timestamp with time zone, "close_at" timestamp with time zone, "publish_at" timestamp with time zone)
@@ -21027,6 +21100,10 @@ CREATE POLICY "car_care_events_select" ON "public"."car_care_events" FOR SELECT 
 
 
 
+CREATE POLICY "car_care_events_select_member" ON "public"."car_care_events" FOR SELECT TO "authenticated" USING ("public"."member_of"("department_id"));
+
+
+
 ALTER TABLE "public"."car_issues" ENABLE ROW LEVEL SECURITY;
 
 
@@ -22007,6 +22084,12 @@ GRANT ALL ON FUNCTION "public"."admin_update_member"("p_profile_id" "uuid", "p_d
 
 REVOKE ALL ON FUNCTION "public"."advance_week_phases"("p_now" timestamp with time zone) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."advance_week_phases"("p_now" timestamp with time zone) TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."agree_proposal_offline"("p_proposal_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."agree_proposal_offline"("p_proposal_id" "uuid") TO "service_role";
+GRANT ALL ON FUNCTION "public"."agree_proposal_offline"("p_proposal_id" "uuid") TO "authenticated";
 
 
 

@@ -64,3 +64,15 @@ export async function fetchMyResponsibleCars(profileId: string): Promise<Car[]> 
     flattenCarCodes,
   );
 }
+
+/** Upcoming non-cancelled rides of a car (for the "make private" warning). Reads only what RLS returns. */
+export async function fetchUpcomingCarRides(carId: string): Promise<{ id: string; driver_id: string | null }[]> {
+  const { data, error } = await supabase
+    .from("rides")
+    .select("id, driver_id")
+    .eq("car_id", carId)
+    .gt("ends_at", new Date().toISOString())
+    .neq("status", "cancelled");
+  if (error) throw toAppError(error);
+  return data ?? [];
+}

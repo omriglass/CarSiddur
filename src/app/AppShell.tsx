@@ -141,13 +141,14 @@ export function AppShell() {
           ) : null}
         </header>
         <OfflineNotice />
-        <main id="main-content" className="min-w-0 flex-1 overflow-y-auto pb-16 md:pb-0 lg:min-h-0">
+        <main id="main-content" className="min-w-0 flex-1 overflow-x-clip pb-16 md:pb-0 lg:min-h-0 lg:overflow-y-auto lg:overflow-x-hidden">
           <DepartmentContextSelector />
           <div key={context.departmentId}><Outlet /></div>
         </main>
 
         <nav
           aria-label={he.app.name}
+          data-app-bottom-nav
           className="fixed inset-x-0 bottom-0 z-40 flex min-h-16 border-t bg-background/95 pb-[env(safe-area-inset-bottom)] shadow-[0_-2px_10px_-2px_hsl(var(--foreground)/0.08)] backdrop-blur supports-[backdrop-filter]:bg-background/85 md:hidden"
         >
           <NavLinks items={navItems} orientation="horizontal" />

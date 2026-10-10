@@ -35,7 +35,6 @@ import { useSession } from "@/features/auth/useSession";
 import { useIsSadran } from "@/features/auth/useIsSadran";
 import { useMyRequests, useCancelRideMutation } from "@/features/requests/hooks";
 import { canEditRequest } from "@/features/requests/window";
-import { CarNameWithReport } from "@/features/carCare/components/CarNameWithReport";
 import { useCars, useDestinations, useRideTypes, useMaintenanceBlocks, useCarSeatConfigs } from "@/features/fleet/hooks";
 import { AddRideFab } from "@/features/requests/components/AddRideFab";
 import { CarNowButton } from "@/features/requests/components/CarNowButton";
@@ -691,7 +690,8 @@ export function SiddurPage() {
                 }}
                 onRideClick={setSelectedRideId}
                 onSlotClick={isMyDepartment ? handleSlotClick : undefined}
-                renderCarName={(car) => <CarNameWithReport carId={car.id} carName={car.name} className="min-w-0 items-center" nameClassName="whitespace-normal break-words md:line-clamp-2" />}
+                enableCarReport
+                onOpenCarPage={(carId) => navigate(paths.car(carId))}
                 discussionBlocks={weekGridDiscussionBlocks}
                 onDiscussionClick={setSelectedGroupId}
                 canSwapCars={canSwapCarsOnActiveDay}

@@ -28,6 +28,8 @@ export const departmentSettingsSchema = z.object({
   detour_limit_km: z.number().min(0),
   closing_reminder_hours: z.array(z.number().int().min(0)),
   auto_apply_accepted_proposals: z.boolean(),
+  /** REQ §13.123: proposals on unpublished days are agreed on WhatsApp, never sent from the app. */
+  proposals_offline: z.boolean(),
   board_start_time: z.string(),
   join_radius_km: z.number().min(0).max(100),
   /** REQUIREMENTS §13.93 "Multi-stop rides": dwell time per declared stop (`request_leg_route_minutes()`/`legRouteMinutes()`), default 5. */

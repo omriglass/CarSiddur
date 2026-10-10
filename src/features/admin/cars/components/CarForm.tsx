@@ -50,6 +50,8 @@ interface CarFormProps {
    * Defaults `true` (the admin screen, always admin).
    */
   canEditSeatConfigs?: boolean;
+  /** Read-only view (car page for a member who may not edit): every field disabled, no save button. */
+  readOnly?: boolean;
 }
 
 export function CarForm({
@@ -60,6 +62,7 @@ export function CarForm({
   canEditResponsible = true,
   responsibleOptions = [],
   canEditSeatConfigs = true,
+  readOnly = false,
 }: CarFormProps) {
   const createMutation = useCreateCarMutation();
   const updateMutation = useUpdateCarMutation();
@@ -116,6 +119,7 @@ export function CarForm({
   return (
     <Form {...form}>
       <form ref={formRef} className="flex flex-col gap-4" onSubmit={form.handleSubmit(onSubmit, onInvalid)}>
+        <fieldset disabled={readOnly} className="flex min-w-0 flex-col gap-4 border-0 p-0">
         <FormField
           control={form.control}
           name="name"
@@ -383,9 +387,12 @@ export function CarForm({
           </div>
         ) : null}
 
-        <Button type="submit" disabled={form.formState.isSubmitting}>
-          {he.adminCommon.save}
-        </Button>
+        {readOnly ? null : (
+          <Button type="submit" disabled={form.formState.isSubmitting}>
+            {he.adminCommon.save}
+          </Button>
+        )}
+        </fieldset>
       </form>
     </Form>
   );

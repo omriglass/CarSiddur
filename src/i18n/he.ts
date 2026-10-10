@@ -129,7 +129,9 @@ export const he = {
    * drag/menu affordance both read from here.
    */
   carSwap: {
-    swapMenuLabel: "החלף רכב",
+    carMenuLabel: "תפריט הרכב {{car}}",
+    carReportItem: "דיווח / טיפול ברכב",
+    carPageItem: "דף הרכב",
     swapWithCar: "החלפה עם {{car}}",
     dialogTitle: "החלפת {{carA}} ו{{carB}}",
     dialogDay: "ביום {{day}}",
@@ -712,6 +714,8 @@ export const he = {
     requestHasRide: "הבקשה כבר משובצת לנסיעה — יש לבטל את הנסיעה במקום למשוך את הבקשה",
     rideNotFound: "הנסיעה לא נמצאה",
     proposalNotFound: "ההצעה לא נמצאה",
+    proposalDayPublished: "היום כבר פורסם — הצעות ליום מפורסם נשלחות לחברים ולא מסכמים בוואטסאפ",
+    proposalsOfflineDisabled: "המחלקה לא מטפלת בהצעות בוואטסאפ",
     privateCarOwnerOnly: "רכב פרטי — רק הבעלים מוסיף/ה אליו בקשות (אפשר לבקש להצטרף אל הבעלים)",
     ownCarNotFree: "הרכב הפרטי שלך לא פנוי בשעות האלה",
     ownCarRoundTripOnly: "אפשר לשבץ על הרכב הפרטי רק נסיעה הלוך-חזור",
@@ -725,6 +729,7 @@ export const he = {
     waitlistSelectionInvalid: "הבחירה אינה תקפה — יש לרענן ולנסות שוב",
     seriesWeekNotOpen: "אפשר לשמור רכב עד שישה שבועות קדימה, ולא לימים שכבר עברו",
     seriesEditNotSupported: "בקשה רב-יומית אפשר לבטל ולהגיש מחדש, לא לערוך",
+    tiresNoneChecked: "סמנו לפחות צמיג אחד לפני השמירה",
     seriesCarUnavailable: "הרכב לא פנוי לכל ימי הבקשה הרב-יומית",
     rideDriverNotAssignable: "אי אפשר לשנות את הנהג/ת של הנסיעה הזו",
     driverNotMember: "הנהג/ת שנבחר/ה אינו/ה חבר/ה במחלקה",

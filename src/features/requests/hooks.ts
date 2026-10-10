@@ -352,7 +352,8 @@ export function useFreeCarsNowQuery(departmentId: string | undefined): FreeCarsN
   const now = new Date();
   const day = dateKey(now);
   const weekStart = dateKey(weekStartFor(now));
-  const dayFreeWindows = useDayFreeWindows(departmentId, weekStart, day, now);
+  // From midnight, not the grid's 06:00: at 00:47 a car free all day is free now (owner 2026-10-10).
+  const dayFreeWindows = useDayFreeWindows(departmentId, weekStart, day, now, "00:00");
   // REQUIREMENTS §13.93: "I need a car now" only ever offers a car based at the department
   // home — a car whose own base is elsewhere is never "free at home", even with no away window
   // of its own (it simply starts there, `carBaseIsHome`).

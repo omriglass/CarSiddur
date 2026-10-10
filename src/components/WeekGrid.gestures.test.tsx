@@ -10,7 +10,8 @@ beforeEach(() => {
   vi.stubGlobal("PointerEvent", MouseEvent);
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
     const left = this.getAttribute("data-car-col-id") === "b" ? 200 : 0;
-    return { x: left, y: 0, top: 0, bottom: 1440, left, right: left + 100, width: 100, height: 1440, toJSON() {} };
+    const height = this.hasAttribute("data-week-grid-header") ? 0 : 1440; // the sticky car-name strip is not part of the 1440px column mock
+    return { x: left, y: 0, top: 0, bottom: height, left, right: left + 100, width: 100, height, toJSON() {} };
   });
   Object.defineProperty(document, "elementFromPoint", { configurable: true, value: () => null });
 });
@@ -18,9 +19,10 @@ afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe("WeekGrid gestures", () => {
   it("opens a supplied time at the top of the visible time rows", () => {
-    const { container } = render(<WeekGrid cars={cars} rides={[]} dayStartMinutes={6 * 60} initialScrollMinutes={9 * 60} />);
+    render(<WeekGrid cars={cars} rides={[]} dayStartMinutes={6 * 60} initialScrollMinutes={9 * 60} />);
 
-    expect(container.querySelector<HTMLElement>("[data-week-grid-scroll-viewport]")?.scrollTop).toBe(3 * 80);
+    // One page scroller (PAGE_SCROLL_ON_PHONE): the document, not the box, is scrolled.
+    expect((document.scrollingElement ?? document.documentElement).scrollTop).toBe(3 * 80);
   });
 
   it("previews and drops the exact same snapped car/time while retaining the column DOM", () => {

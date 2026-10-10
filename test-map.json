@@ -532,7 +532,9 @@
         "supabase/migrations/**/*proposals_status_guard*",
         "e2e/plan-b-cycle.spec.ts",
         "e2e/proposal-merge-view.spec.ts",
-        "supabase/tests/p3_notices.sql"
+        "supabase/tests/p3_notices.sql",
+        "supabase/tests/proposals_offline.sql",
+        "supabase/migrations/**/*enqueue_notification*"
       ],
       "vitest": [
         "src/features/proposals",
@@ -542,7 +544,8 @@
         "proposal_day_boundary.sql",
         "proposal_replacement.sql",
         "withdraw_settles.sql",
-        "p3_notices.sql"
+        "p3_notices.sql",
+        "proposals_offline.sql"
       ],
       "playwrightTags": [
         "@proposals"
