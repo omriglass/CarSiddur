@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { useUnreadCount } from "@/features/inbox/hooks";
 
 import { rememberMainPage } from "./landing";
-import { he } from "@/i18n/he";
+import { he, tv } from "@/i18n/he";
 import { cn } from "@/lib/utils";
 
 interface NavItem {
@@ -97,6 +97,15 @@ export function AppShell() {
   const { isSadran } = useIsSadranAnywhere();
   const canManageOperations = !!useCanManageOperations().data;
   const unreadCount = useUnreadCount();
+  // Local `vite dev` only (`DEV` is false in every production build): show the
+  // active department's name plus a marker, so a renamed QA department is obvious.
+  const departmentName = context.departments.find((d) => d.id === context.departmentId)?.name;
+  const appName = import.meta.env.DEV && departmentName
+    ? `${tv("app.nameForDepartment", { department: departmentName })} - TESTING ONLY`
+    : he.app.name;
+  useEffect(() => {
+    if (import.meta.env.DEV) document.title = appName;
+  }, [appName]);
   const { pathname } = useLocation();
   // `/` opens the last main page opened on this device (REQ §13.87).
   useEffect(() => rememberMainPage(pathname), [pathname]);
@@ -125,7 +134,7 @@ export function AppShell() {
       >
         <div className="flex items-center gap-2 px-2 py-2">
           <AppLogoMark />
-          <span className="text-lg font-semibold leading-tight">{he.app.name}</span>
+          <span className="text-lg font-semibold leading-tight">{appName}</span>
         </div>
         <NavLinks items={desktopNavItems} orientation="vertical" />
       </nav>
@@ -133,7 +142,7 @@ export function AppShell() {
       <div className="flex min-w-0 flex-1 flex-col lg:min-h-0">
         <header className="sticky top-0 z-40 flex h-14 shrink-0 items-center gap-2 border-b bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/60 md:hidden">
           <AppLogoMark />
-          <span className="text-base font-semibold leading-tight">{he.app.name}</span>
+          <span className="text-base font-semibold leading-tight">{appName}</span>
           {canManageOperations ? (
             <Button asChild size="icon" variant="ghost" className="ms-auto">
               <Link to="/admin" aria-label={he.nav.admin}><Settings className="size-5" /></Link>

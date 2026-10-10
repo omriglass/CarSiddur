@@ -307,6 +307,7 @@ export const he = {
   },
   app: {
     name: "סידור רכב — נבו",
+    nameForDepartment: "סידור רכב — {{department}}",
     tagline: "תיאום הרכבים המשותפים של הקיבוץ, במקום אחד",
   },
   nav: {
