@@ -44,7 +44,8 @@ async function openQuickRequest(page: Page, week: string, carId: string, minutes
   await scrollGridColumnTo(column, minutes);
   const bounds = await column.boundingBox();
   if (!bounds) throw new Error("missing car column");
-  await column.click({ position: { x: bounds.width / 2, y: (minutes - 360) / 1080 * bounds.height } });
+  // Two taps on the same slot (owner 2026-10-11: first tap = start, second = end; the same slot = start only).
+  await column.dblclick({ position: { x: bounds.width / 2, y: (minutes - 360) / 1080 * bounds.height } });
   await expect(mainDialog(page)).toBeVisible();
 }
 

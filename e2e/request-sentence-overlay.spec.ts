@@ -4,7 +4,7 @@ import { paths } from "../src/app/routes";
 import { he, tv } from "../src/i18n/he";
 import { getWeekStart, NEVO_DEPARTMENT_ID, SEEDED_USERS, serviceRoleClient, signIn, submitRequestForm } from "./helpers";
 import {
-  chooseDestination, dayMonthLabel, dayOfWeek, deleteRequests, fillTimeField, jerusalemTime, keepOnlyWeeks, memberOpenWeek,
+  chooseDestination, dayMonthLabel, dismissGuide, dayOfWeek, deleteRequests, fillTimeField, jerusalemTime, keepOnlyWeeks, memberOpenWeek,
   PLACES, PROFILE_IDS, setClassicForm,
 } from "./request-form";
 
@@ -51,6 +51,7 @@ test.describe("request sentence overlay", { tag: ["@request-form"] }, () => {
         });
 
         await test.step("stage 1: day, destination, who, arrive-by", async () => {
+          await dismissGuide(page);
           await page.getByTestId("chip-day").click();
           await page.getByRole("radiogroup", { name: he.field.day }).first().getByRole("radio").nth(3).click();
           await page.getByRole("button", { name: he.requestSentence.sheetDone, exact: true }).click();
@@ -131,6 +132,7 @@ test.describe("request sentence overlay", { tag: ["@request-form"] }, () => {
       await signIn(page, SEEDED_USERS.member2);
       await page.goto(paths.requests.new({ week: week.weekStart, day: thursday }));
       await expect(page.getByTestId("request-overlay")).toBeVisible();
+      await dismissGuide(page);
       await expect(page.getByTestId("chip-day")).toContainText(dayMonthLabel(thursday));
     } finally {
       await week.cleanup();

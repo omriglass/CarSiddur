@@ -193,7 +193,23 @@ export async function pickPlace(page: Page, searchPlaceholder: string, place: st
 }
 
 /** Sentence form: open the destination chip's sheet and pick a seeded place. */
+/**
+ * A NEW request's sentence form opens a guided sheet on load (REQ §13.126 d: start time, end time, destination).
+ * Specs that are not about the guide dismiss it (Escape ends the guide) so the chips are clickable. Waits briefly for the
+ * sheet to open, then closes it; a no-op when the form opened without one (edit, suggestion, ask-to-join).
+ */
+export async function dismissGuide(page: Page): Promise<void> {
+  await expect(page.getByTestId("request-sentence")).toBeVisible();
+  // The form itself may be a dialog (the overlay card); a field sheet is a dialog that does not contain the sentence.
+  const sheet = page.getByRole("dialog").filter({ hasNot: page.getByTestId("request-sentence") });
+  if (await sheet.first().waitFor({ state: "visible", timeout: 2_000 }).then(() => true, () => false)) {
+    await page.keyboard.press("Escape");
+    await expect(sheet).toHaveCount(0);
+  }
+}
+
 export async function chooseDestination(page: Page, place: string): Promise<void> {
+  await dismissGuide(page);
   await page.getByTestId("chip-destination").click();
   await pickPlace(page, he.requestSentence.placeSearch, place);
   await expect(page.getByTestId("chip-destination")).toContainText(place);

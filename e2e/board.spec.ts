@@ -629,7 +629,8 @@ test.describe.serial("board (bug-fix pass regression, fake-week data)", { tag: [
     });
     const columnBox = await column.boundingBox();
     if (!columnBox) throw new Error("car column not found");
-    await column.click({ position: { x: columnBox.width / 2, y: 30 / 1440 * columnBox.height } });
+    // Two taps on the same slot (owner 2026-10-11: first tap = start, second = end; the same slot = start only).
+    await column.dblclick({ position: { x: columnBox.width / 2, y: 30 / 1440 * columnBox.height } });
     const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible();
     await dialog.getByLabel("יציאה", { exact: true }).fill("00:30");

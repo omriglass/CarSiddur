@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 
 import { he, tv } from "../src/i18n/he";
 import { SEEDED_USERS, serviceRoleClient, signIn, submitRequestForm } from "./helpers";
+import { dismissGuide } from "./request-form";
 
 // REQ §13.110 / UX_FLOWS §3.4a: the sentence layout of the request form. The seeded accounts use the
 // classic form (e2e/global-setup.ts), so this spec flips one member to the sentence layout for its run
@@ -20,6 +21,7 @@ test.describe("request sentence layout", { tag: ["@request-form"] }, () => {
   test("files an arrive-by request and /my shows how it was entered", async ({ page }) => {
     await signIn(page, SEEDED_USERS.member2);
     await page.goto("/requests/new");
+    await dismissGuide(page);
     await expect(page.getByTestId("request-overlay")).toBeVisible();
 
     const sentence = page.getByTestId("request-sentence");
@@ -50,6 +52,7 @@ test.describe("request sentence layout", { tag: ["@request-form"] }, () => {
   test("the who chip starts the sentence; stage 2 holds the modifiers and the recap goes back", async ({ page }) => {
     await signIn(page, SEEDED_USERS.member2);
     await page.goto("/requests/new");
+    await dismissGuide(page);
     const sentence = page.getByTestId("request-sentence");
     await expect(sentence.getByTestId("chip-who")).toHaveText(he.requestSentence.me);
 
@@ -81,6 +84,7 @@ test.describe("request sentence layout", { tag: ["@request-form"] }, () => {
   test("the profile switch brings the classic form back", async ({ page }) => {
     await signIn(page, SEEDED_USERS.member2);
     await page.goto("/requests/new");
+    await dismissGuide(page);
     await expect(page.getByTestId("request-sentence")).toBeVisible();
 
     await page.goto("/profile");

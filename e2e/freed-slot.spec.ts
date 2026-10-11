@@ -22,6 +22,13 @@ import {
 // auto-assigned and notified").
 const CANCELLED_RIDE_ID = "00000000-0000-0000-0000-000000000301";
 const CANDIDATE_REQUEST_ID = "00000000-0000-0000-0000-000000000204";
+/**
+ * Seeded member1 request ...203, `denied`, 07:00-20:00 on the live week's second day. A denied request is still offered
+ * freed cars (CLAUDE.md "external = denied for the waiting list"), so when the fixture is shifted onto that day (the
+ * evening of the week's first day) it would be a second candidate and the offer would wait for a claim instead of
+ * auto-assigning. The test withdraws it while it runs and restores it afterwards.
+ */
+const DENIED_REQUEST_ID = "00000000-0000-0000-0000-000000000203";
 /** The seeded request served by ride ...301 (`supabase/seed.sql`). */
 const FIXTURE_REQUEST_ID = "00000000-0000-0000-0000-000000000201";
 
@@ -52,7 +59,7 @@ test.describe("freed slot (live week, single candidate)", { tag: ["@waitlist", "
 
     const client = serviceRoleClient();
     const original = {
-      requests: (await client.from("requests").select("id, depart_at, return_at, status, status_reason").in("id", [FIXTURE_REQUEST_ID, CANDIDATE_REQUEST_ID])).data ?? [],
+      requests: (await client.from("requests").select("id, depart_at, return_at, status, status_reason").in("id", [FIXTURE_REQUEST_ID, CANDIDATE_REQUEST_ID, DENIED_REQUEST_ID])).data ?? [],
       links: (await client.from("ride_requests").select("*").eq("ride_id", CANCELLED_RIDE_ID)).data ?? [],
       ride: (await client.from("rides").select("starts_at, ends_at, blocked_until, car_id, status").eq("id", CANCELLED_RIDE_ID).single()).data,
     };
@@ -88,6 +95,11 @@ test.describe("freed slot (live week, single candidate)", { tag: ["@waitlist", "
       }
       await client.from("notifications").delete().contains("data", { request_id: CANDIDATE_REQUEST_ID });
     };
+
+    {
+      const { error } = await client.from("requests").update({ status: "withdrawn", status_reason: "WITHDRAWN_BY_MEMBER" }).eq("id", DENIED_REQUEST_ID);
+      if (error) throw error;
+    }
 
     // `/my` shows requests from today onward only (REQ §13.91). The seeded fixture — ride
     // ...301 with request ...201 and member2's overlapping waitlisted request ...204 — sits on

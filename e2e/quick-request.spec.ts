@@ -108,7 +108,8 @@ test.describe.serial("quick request from an empty slot (live week)", { tag: ["@q
     await expect(col).toBeVisible();
     const box = await col.boundingBox();
     if (!box) throw new Error("car column not found");
-    await col.click({ position: { x: box.width / 2, y: yForMinutes(600, box.height) } }); // 10:00
+    // Two taps on the same slot (owner 2026-10-11: first tap = start, second = end; the same slot = start only).
+    await col.dblclick({ position: { x: box.width / 2, y: yForMinutes(600, box.height) } }); // 10:00
 
     await expect(page.getByText(new RegExp(`לוקח/ת את ${VAN_NAME}`))).toBeVisible();
 
@@ -173,7 +174,8 @@ test.describe.serial("quick request from an empty slot (live week)", { tag: ["@q
     await expect(col.locator("button[data-ride-id]")).toBeVisible({ timeout: 10_000 });
     const box = await col.boundingBox();
     if (!box) throw new Error("car column not found");
-    await col.click({ position: { x: box.width / 2, y: yForMinutes(12 * 60 + 15, box.height) } });
+    // Two taps on the same slot (owner 2026-10-11: first tap = start, second = end; the same slot = start only).
+    await col.dblclick({ position: { x: box.width / 2, y: yForMinutes(12 * 60 + 15, box.height) } });
 
     await expect(page.getByText(new RegExp(`לוקח/ת את ${VAN_NAME}`))).toBeVisible();
     await expect(page.getByText("הרכב הזה תפוס (או קרוב מדי לנסיעה אחרת) בשעות האלה")).toBeVisible();
