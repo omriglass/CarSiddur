@@ -26,4 +26,26 @@ describe("WeekGrid my-car header", () => {
     expect(container.querySelector('[data-ride-id="r1"]')).toHaveClass("bg-mine/25");
     expect(container.querySelector('[data-ride-id="r2"]')).not.toHaveClass("bg-mine/25");
   });
+
+  it("marks today's column like my car (owner 2026-10-11, week view)", () => {
+    const { container } = render(<WeekGrid cars={[{ id: "sun", name: "א׳ 11.10", today: true }, { id: "mon", name: "ב׳ 12.10" }]} rides={[]} />);
+    const names = container.querySelectorAll('[data-testid="week-grid-car-name"]');
+    expect(names[0]).toHaveAttribute("data-today", "true");
+    expect(names[0]).toHaveClass("font-bold");
+    expect(names[0]?.parentElement).toHaveClass("bg-mine/25");
+    expect(names[1]).not.toHaveAttribute("data-today");
+    expect(names[1]?.parentElement).not.toHaveClass("bg-mine/25");
+  });
+
+  it("with markMyColumns off only today is marked, my rides keep their lilac", () => {
+    const rides = [{ id: "r1", carId: "mon", startMinutes: 480, endMinutes: 600, label: "mine", isMine: true }];
+    const { container } = render(
+      <WeekGrid cars={[{ id: "sun", name: "א׳ 11.10", today: true }, { id: "mon", name: "ב׳ 12.10" }]} rides={rides} markMyColumns={false} />,
+    );
+    const names = container.querySelectorAll('[data-testid="week-grid-car-name"]');
+    expect(names[0]?.parentElement).toHaveClass("bg-mine/25");
+    expect(names[1]?.parentElement).not.toHaveClass("bg-mine/25");
+    expect(names[1]).not.toHaveAttribute("data-my-car");
+    expect(container.querySelector('[data-ride-id="r1"]')).toHaveClass("bg-mine/25");
+  });
 });

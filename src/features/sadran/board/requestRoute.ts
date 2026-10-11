@@ -3,6 +3,7 @@
 // free-text origin always) plus the trip type (הלוך-חזור / הלוך בלבד / הקפצה).
 import { he } from "@/i18n/he";
 import type { TripType } from "@/lib/enums";
+import { keepCarTripLabel } from "@/features/requests/keepCar";
 import { routeLabel } from "@/lib/routeLabel";
 
 export function tripTypeLabel(tripType: TripType | null | undefined): string {
@@ -24,6 +25,8 @@ export interface RequestRouteInput {
   originText?: string | null;
   destination: string;
   tripType?: TripType | null;
+  /** REQ §13.126 (g): `requests.keep_car_at_destination` — read as a round trip with a note, never "הקפצה". */
+  keepCarAtDestination?: boolean | null;
   stops?: readonly string[];
 }
 
@@ -32,6 +35,6 @@ export function requestRouteLine(input: RequestRouteInput, homeDestinationId: st
   const origin = input.originName ?? input.originText ?? "";
   const originIsHome = !!input.originId && !!homeDestinationId && input.originId === homeDestinationId;
   const route = routeLabel({ destination: input.destination, origin, originIsHome: originIsHome || !origin, stops: input.stops });
-  const type = tripTypeLabel(input.tripType);
+  const type = input.tripType === "drop_off" && input.keepCarAtDestination ? keepCarTripLabel(input.destination) : tripTypeLabel(input.tripType);
   return type ? `${route} · ${type}` : route;
 }

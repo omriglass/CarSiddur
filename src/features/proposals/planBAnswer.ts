@@ -34,7 +34,7 @@ export function planBLines(alt: ProposalAlternativeSummary, request: ProposalReq
     : null;
   const original = request && request.departAt
     ? tv("proposalScreen.planB.originalTrip", {
-      trip: tripTypeText(request.tripType), place: request.destination ?? "",
+      trip: tripTypeText(request.tripType === "drop_off" && request.keepCarAtDestination ? "round_trip" : request.tripType), place: request.destination ?? "",
       times: `${time(request.departAt)}${request.returnAt ? `–${time(request.returnAt)}` : ""}`,
     }).replace(/\s+/g, " ").trim()
     : null;

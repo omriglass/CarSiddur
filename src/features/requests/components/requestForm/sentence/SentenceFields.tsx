@@ -20,6 +20,7 @@ import { CAR_NOW_DEFAULT_HOURS } from "../../../carNow";
 import { guestPassengerNames } from "../../../quickRequest";
 import { planBActive, planBOffered } from "../../../planB";
 import { planBRecapLine } from "../../../fallbackLine";
+import { keepCarActive, keepCarNote, keepCarOffered } from "../../../keepCar";
 import { toInstant } from "../../../mapper";
 import { whoText } from "../../../whoLabel";
 import type { RequestFormValues } from "../../../schema";
@@ -41,6 +42,7 @@ import { DayAndTripShapeFields } from "../DayAndTripShapeFields";
 import { FieldError } from "../FieldError";
 import { QuickFreeCarWarning, QuickTimeHints } from "../TimesFlexibilityFields";
 import { TripTypeFields } from "../TripTypeFields";
+import { KeepCarLine } from "./KeepCarLine";
 import { PlanBLine } from "./PlanBLine";
 import { FieldSheet } from "./FieldSheet";
 import { FlexibilityRow } from "./FlexibilityRow";
@@ -54,7 +56,7 @@ import { TimeAnchorSheet } from "./TimeAnchorSheet";
 import { TimeField15 } from "@/components/TimeField15";
 import { WhoSheet } from "./WhoSheet";
 import { flexBriefText } from "../../../flexText";
-import { flexBrief, invalidTargetOf, type SentenceSheet } from "./sentenceModel";
+import { flexBrief, guideSteps, invalidTargetOf, nextGuideStep, type GuideStep, type SentenceSheet } from "./sentenceModel";
 
 const HINT_STORAGE_KEY = "carshare.requestSentenceHintDismissed";
 const CAR_NOW_QUICK_HOURS = [1, 2, 3, 4, 6] as const;
@@ -117,6 +119,12 @@ export interface SentenceFieldsProps {
   invalidSignal: { field: string; n: number } | null;
   /** `new` / `edit` — the childcare ride-type suggestion only applies to a new request. */
   mode: "new" | "edit";
+  /**
+   * Owner 2026-10-11: a new request opens on what it still lacks — start time, then end time, then destination — and
+   * "אישור" moves on; dismissing a sheet stops the guide. `outKnown`/`returnKnown` = the time came with the opening
+   * (a grid tap). Absent = no guide (edit, a repeating-request suggestion, ask-to-join).
+   */
+  guide?: { outKnown: boolean; returnKnown: boolean };
   /** Seat-fit / overlap warnings, rendered right under the sentence (R9U4). */
   notices?: ReactNode;
   /** A named child was just added to the request (R9U7). */
@@ -163,7 +171,7 @@ export function SentenceFields(props: SentenceFieldsProps) {
     form, variant, weekStart, departmentId, day, errors, destinations, rideTypes, preferredCars, initialPreferredCarName, members, childOptions,
     tripShape, tripType, dropOffPickup, canDrive, seeksDriver, isQuickContext, showReturnDayPicker,
     returnAnotherDay, setReturnAnotherDay, isMultiDay, multiDaySpan, routeMinutes, rush, recentDestinations, recentCompanionIds, stage, onStageChange,
-    invalidSignal, quickContext, quickWindow, notices, onChildAdded, mode,
+    invalidSignal, quickContext, quickWindow, notices, onChildAdded, mode, guide,
   } = props;
   const control = form.control;
   const values = useWatch({ control });
@@ -194,6 +202,9 @@ export function SentenceFields(props: SentenceFieldsProps) {
   const windowScope = { tripType, tripShape, day, returnDay: values.returnDay };
   const canWindow = isWeekly && !isMultiDay && windowOffered(windowScope);
   const windowOn = canWindow && windowModeActive({ ...windowScope, timeMode: values.timeMode });
+  // REQ §13.126 (g): "הרכב זמין לשימוש ביעד" — a driver's single-day round trip, not in time-window mode.
+  const keepCarShown = isWeekly && !isMultiDay && !windowOn && keepCarOffered({ tripType, day, returnDay: values.returnDay }, canDrive);
+  const keepCarOn = keepCarShown && keepCarActive({ tripType, tripShape, day, returnDay: values.returnDay, keepCarAtDestination: values.keepCarAtDestination, timeMode: values.timeMode });
   const windowHours = values.windowHours ?? 4;
   const windowStart = values.windowStart ?? "08:00";
   const windowEnd = values.windowEnd ?? "12:00";
@@ -211,6 +222,29 @@ export function SentenceFields(props: SentenceFieldsProps) {
   const destinationName = hasDestination ? placeLabel(destinationValue, destinations) : he.requestSentence.destinationPlaceholder;
 
   const invalid = (...fields: string[]) => fields.some((field) => field in errors);
+
+  // The guided start of a new request (owner 2026-10-11): the first missing step opens on mount (adjusted during render).
+  const currentGuideSteps = guide
+    ? guideSteps({ ...guide, hasOut, hasReturn, timeChips: !windowOn && variant !== "carNow", hasDestination })
+    : [];
+  const [guideActive, setGuideActive] = useState(!!guide);
+  const [guideStarted, setGuideStarted] = useState(false);
+  if (guide && !guideStarted) {
+    setGuideStarted(true);
+    setSheet(currentGuideSteps[0] ?? null);
+    if (!currentGuideSteps.length) setGuideActive(false);
+  }
+  /** "אישור" on a guided step: open the next missing one, or close. */
+  function advanceGuide(step: GuideStep) {
+    const next = guideActive ? nextGuideStep(currentGuideSteps, step) : null;
+    setSheet(next);
+    if (!next) setGuideActive(false);
+  }
+  /** Dismissing a sheet (×, Escape, outside) ends the guide. */
+  function closeSheet() {
+    setGuideActive(false);
+    setSheet(null);
+  }
   const dayInstant = toInstant(day, "12:00", false);
   const returnDay = values.returnDay ?? day;
   const dayText = tv("requestSentence.dayChip", {
@@ -370,6 +404,7 @@ export function SentenceFields(props: SentenceFieldsProps) {
           <span className="min-w-0 flex-1 truncate">{he.requestSentence.from}{originName} {he.requestSentence.to}{destinationName}</span>
         </span>
         {viaPieces.length > 0 ? <span className="whitespace-normal break-words text-muted-foreground" data-testid="recap-via">{viaPieces.join(" · ")}</span> : null}
+        {keepCarOn ? <span className="whitespace-normal break-words text-muted-foreground" data-testid="recap-keep-car">{keepCarNote(hasDestination ? destinationName : null)}</span> : null}
         {planBLine ? <span className="whitespace-normal break-words text-muted-foreground" data-testid="recap-plan-b"><LtrText text={planBLine} /></span> : null}
         <span className="whitespace-normal break-words text-muted-foreground" data-testid="recap-when">
           {recapDay} · {windowOn
@@ -425,7 +460,7 @@ export function SentenceFields(props: SentenceFieldsProps) {
         {whoChip}
         {variant === "carNow" ? (
           <>
-            <Seg prefix={hasDestination ? he.requestSentence.to : undefined}>
+            <Seg prefix={he.requestSentence.to}>
               <SentenceChip field="destination" invalid={invalid("destination")} onClick={() => setSheet("destination")} data-testid="chip-destination">
                 {destinationName}
               </SentenceChip>
@@ -440,7 +475,7 @@ export function SentenceFields(props: SentenceFieldsProps) {
             <Seg prefix={he.requestSentence.from}>
               <SentenceChip field="origin" invalid={invalid("origin")} onClick={() => setSheet("origin")} data-testid="chip-origin">{originName}</SentenceChip>
             </Seg>
-            <Seg prefix={hasDestination ? he.requestSentence.to : undefined}>
+            <Seg prefix={he.requestSentence.to}>
               <SentenceChip field="destination" invalid={invalid("destination")} onClick={() => setSheet("destination")} data-testid="chip-destination">
                 {destinationName}
               </SentenceChip>
@@ -559,6 +594,8 @@ export function SentenceFields(props: SentenceFieldsProps) {
         <p className="text-xs text-amber-700" role="status" data-testid="no-time-at-destination">{he.requestSentence.noTimeAtDestination}</p>
       ) : null}
 
+      {keepCarShown ? <KeepCarLine form={form} on={keepCarOn} destinationName={hasDestination ? destinationName : ""} /> : null}
+
       {isWeekly ? <PlanBLine form={form} errors={errors} destinations={destinations} originPlaceId={originPresetId} sheet={sheet} setSheet={setSheet} routeMinutes={routeMinutes.planB} rush={rush} /> : null}
 
       {notices}
@@ -675,7 +712,7 @@ export function SentenceFields(props: SentenceFieldsProps) {
         />
       </FieldSheet>
 
-      <FieldSheet open={sheet === "destination"} onOpenChange={(open) => !open && setSheet(null)} title={he.requestSentence.sheet.destination} hideFooter>
+      <FieldSheet open={sheet === "destination"} onOpenChange={(open) => !open && closeSheet()} title={he.requestSentence.sheet.destination} hideFooter>
         <PlacePicker
           places={placesWithoutOrigin}
           value={hasDestination ? (destinationValue as DestinationValue) : null}
@@ -716,7 +753,8 @@ export function SentenceFields(props: SentenceFieldsProps) {
 
       <FieldSheet
         open={sheet === "out"}
-        onOpenChange={(open) => !open && setSheet(null)}
+        onOpenChange={(open) => !open && closeSheet()}
+        onDone={() => advanceGuide("out")}
         title={he.requestSentence.sheet.outTime}
       >
         <TimeAnchorSheet
@@ -735,7 +773,8 @@ export function SentenceFields(props: SentenceFieldsProps) {
 
       <FieldSheet
         open={sheet === "return"}
-        onOpenChange={(open) => !open && setSheet(null)}
+        onOpenChange={(open) => !open && closeSheet()}
+        onDone={() => advanceGuide("return")}
         title={isPickup ? he.requestSentence.sheet.pickupTime : he.requestSentence.sheet.returnTime}
       >
         <TimeAnchorSheet

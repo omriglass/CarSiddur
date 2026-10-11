@@ -34,6 +34,8 @@ export interface ServedEntry {
   origin_name?: string | null;
   /** REQUIREMENTS §13.93 `v_board_rides.served[].trip_type` — drives `src/lib/rideLabel.ts`'s driver-label wording. */
   trip_type?: "round_trip" | "one_way" | "drop_off" | null;
+  /** REQ §13.126 (g) `v_board_rides.served[].keep_car_at_destination`: a drop_off with the flag reads as a round trip with a note. */
+  keep_car_at_destination?: boolean;
   /**
    * Named children (`request_children` → `children.full_name`). Mapped directly from
    * `v_board_rides.served[].child_names`

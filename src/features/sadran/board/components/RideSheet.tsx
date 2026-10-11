@@ -34,6 +34,7 @@ import { namedPassengersOf, relayPartnerOf, servedOf, withChildNames } from "../
 import { peopleOf } from "@/features/rides/ridePeople";
 import { RidePassengersEditor } from "./RidePassengersEditor";
 import { RideRouteEditor } from "./RideRouteEditor";
+import { PlanSwitchButton } from "./PlanSwitchButton";
 import { TripTypeChange } from "./TripTypeChange";
 import { WithdrawDuplicateAction } from "./WithdrawDuplicateAction";
 import { busyDriverIds } from "../driverBusy";
@@ -224,7 +225,7 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
                     <li key={entry.request_id} className="space-y-1">
                       <span>
                         {entry.requester ? `${entry.requester}: ` : ""}
-                        {requestRouteLine({ originId: entry.origin_id, originName: entry.origin_name, originText: entry.origin_text, destination: entry.destination ?? "", tripType: entry.trip_type }, homeDestinationId)}
+                        {requestRouteLine({ originId: entry.origin_id, originName: entry.origin_name, originText: entry.origin_text, destination: entry.destination ?? "", tripType: entry.trip_type, keepCarAtDestination: entry.keep_car_at_destination }, homeDestinationId)}
                       </span>
                       {/* REQ §13.95 (H3): the Sadran changes the trip type directly. */}
                       {entry.request_id && entryRequest && departmentId && weekStart && !isPlanning && ride.status !== "cancelled" ? (
@@ -232,11 +233,16 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
                           requestId={entry.request_id}
                           version={entryRequest.version}
                           tripType={entryRequest.trip_type ?? entry.trip_type}
+                          keepCarAtDestination={entryRequest.keep_car_at_destination ?? entry.keep_car_at_destination}
+                          destination={entry.destination}
                           name={entry.requester ?? entryRequest.requester_full_name ?? ""}
                           departmentId={departmentId}
                           weekStart={weekStart}
                           disabled={saving}
                         />
+                      ) : null}
+                      {entryRequest && departmentId && weekStart && !isPlanning && ride.status !== "cancelled" ? (
+                        <PlanSwitchButton request={entryRequest} name={entry.requester ?? entryRequest.requester_full_name ?? ""} departmentId={departmentId} weekStart={weekStart} disabled={saving} />
                       ) : null}
                       {entry.request_id && entryRequest && !entryRequest.series_id && departmentId && weekStart && !isPlanning && ride.status !== "cancelled" ? (
                         <WithdrawDuplicateAction

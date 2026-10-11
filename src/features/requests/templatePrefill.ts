@@ -58,6 +58,8 @@ export function suggestionToFormValues(row: TemplateSuggestion, weekStart: strin
     // REQ §88: the decided car mode is no longer copied into the form — the member never
     // chooses it, and `submit_request` re-derives it server-side on every submission.
     needsCarAtDestination: row.needsCarAtDestination,
+    // REQ §13.126 (g): a repeated kept-car trip comes back as the same round trip with the car left at the destination.
+    keepCarAtDestination: tripType === "round_trip" && !!row.keepCarAtDestination,
     adults: row.adults,
     childSeats: row.childIds.length,
     legacyChildSeats: row.childIds.length ? 0 : row.childSeats,

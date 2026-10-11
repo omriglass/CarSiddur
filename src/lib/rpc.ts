@@ -76,6 +76,8 @@ export type ErrorCode =
   | "alternative_changed"
   | "request_served_by_alternative"
   | "alternative_unavailable"
+  | "plan_a_no_car"
+  | "alternative_not_applied"
   | "car_not_at_leg_origin"
   | "car_move_invalid"
   | "car_move_same_place"
@@ -217,6 +219,8 @@ const MESSAGE_TO_CODE: Record<string, ErrorCode> = {
   alternative_changed: "alternative_changed",
   request_served_by_alternative: "request_served_by_alternative",
   alternative_unavailable: "alternative_unavailable",
+  plan_a_no_car: "plan_a_no_car",
+  alternative_not_applied: "alternative_not_applied",
   car_not_at_leg_origin: "car_not_at_leg_origin",
   car_move_invalid: "car_move_invalid",
   car_move_same_place: "car_move_same_place",
@@ -426,6 +430,8 @@ const CODE_TO_MESSAGE: Record<ErrorCode, string> = {
   alternative_changed: he.errors.alternativeChanged,
   request_served_by_alternative: he.errors.requestServedByAlternative,
   alternative_unavailable: he.errors.alternativeUnavailable,
+  plan_a_no_car: he.errors.planANoCar,
+  alternative_not_applied: he.errors.planSwitchNotApplicable,
   pending_ride_changes: he.rideEditing.pendingPublish,
   request_window_closed: he.request.editWindowClosed,
   driver_unavailable: he.rideCoordination.driverBusy,

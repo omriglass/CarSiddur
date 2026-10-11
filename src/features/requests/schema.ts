@@ -151,6 +151,12 @@ export const requestFormSchema = z
      * Clock times on the main day; the fields of an inactive line are kept but not validated or sent (`planB.ts`).
      */
     fallback: requestFallbackSchema.optional(),
+    /**
+     * REQ §13.126 (g): "הרכב זמין לשימוש ביעד" — a driver's single-day round trip leaves the car at the destination.
+     * Sent as `trip_type: "drop_off"` + `keep_car_at_destination` (`mapper.ts`, `keepCar.ts`); the classic layout has no
+     * control but preserves a loaded value.
+     */
+    keepCarAtDestination: z.boolean().optional(),
     altPlace: originValueSchema.optional(),
     altArriveBy: timeStringSchema.optional(),
     altPickup: z.boolean().optional(),
@@ -323,6 +329,7 @@ export const REQUEST_FORM_DEFAULTS: Omit<RequestFormValues, "departmentId" | "we
   tripShape: "round_trip",
   tripType: "round_trip",
   dropOffPickup: false,
+  keepCarAtDestination: false,
   departTime: "08:00",
   returnTime: "12:00",
   departAnchor: "leave",
@@ -415,6 +422,8 @@ export const templateSuggestionRowSchema = z.object({
   flex_return_late: z.string(),
   /** REQ §13.112 (c); absent on rows from before the column. */
   duration_locked: z.boolean().nullish(),
+  /** REQ §13.126 (g): the repeated trip keeps the car at the destination. */
+  keep_car_at_destination: z.boolean().nullish(),
   preferred_car_id: z.string().nullable(),
   ride_description: z.string().nullable(),
   guest_passenger_names: z.array(z.string()),

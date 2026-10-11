@@ -35,6 +35,62 @@ function groupByWeek(rows: TemplateSuggestion[]): { weekStart: string; rows: Tem
 }
 
 /**
+ * The three actions of one suggestion — use ("הגש/י", prefilled new-request route), snooze ("לא השבוע") and stop
+ * repeating (behind a confirm). Shared by the list cards below and the "my rides" week view's suggestion sheet
+ * (owner 2026-10-11: tapping a suggestion block gives the same actions).
+ */
+export function TemplateSuggestionActions({ row, onDone }: { row: TemplateSuggestion; onDone?: () => void }) {
+  const snoozeMutation = useSnoozeTemplateMutation();
+  const stopMutation = useStopTemplateMutation();
+  const [stopOpen, setStopOpen] = useState(false);
+  return (
+    <>
+      <div className="flex flex-wrap gap-2 pt-1">
+        <Button asChild size="sm">
+          {/* `week` pins the submission to the week this suggestion was actually
+              shown for — without it, `resolveWeekStart` silently falls back to the
+              earliest open week, which duplicates an existing request there once a
+              member has suggestions across more than one open week. */}
+          <RequestLink to={paths.requests.new({ template: row.templateId, week: row.weekStart })}>{he.request.useSuggestion}</RequestLink>
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() =>
+            snoozeMutation.mutate(
+              { templateId: row.templateId, weekStart: row.weekStart },
+              { onSuccess: () => { toast.success(he.request.snoozed); onDone?.(); } },
+            )
+          }
+        >
+          {he.request.snoozeSuggestion}
+        </Button>
+        <Button size="sm" variant="ghost" onClick={() => setStopOpen(true)}>
+          {he.request.stopSuggestion}
+        </Button>
+      </div>
+      <ConfirmDialog
+        open={stopOpen}
+        onOpenChange={setStopOpen}
+        title={he.request.stopSuggestionConfirmTitle}
+        description={he.request.stopSuggestionConfirmBody}
+        destructive
+        loading={stopMutation.isPending}
+        onConfirm={() => {
+          stopMutation.mutate(row.templateId, {
+            onSuccess: () => {
+              toast.success(he.request.stopped);
+              setStopOpen(false);
+              onDone?.();
+            },
+          });
+        }}
+      />
+    </>
+  );
+}
+
+/**
  * Dismissable repeating-request suggestions (`v_request_template_suggestions`, REQ §76,
  * UX_FLOWS §3.3/§3.4) — one compact card per row; "הגש/י" navigates to the prefilled
  * new-request route, "לא השבוע" snoozes to next week, "הפסק/י לחזור" stops the template for
@@ -42,9 +98,6 @@ function groupByWeek(rows: TemplateSuggestion[]): { weekStart: string; rows: Tem
  */
 export function TemplateSuggestions({ weekStart }: TemplateSuggestionsProps) {
   const suggestionsQuery = useTemplateSuggestionsQuery();
-  const snoozeMutation = useSnoozeTemplateMutation();
-  const stopMutation = useStopTemplateMutation();
-  const [stopTarget, setStopTarget] = useState<TemplateSuggestion | null>(null);
 
   const rows = (suggestionsQuery.data ?? []).filter((row) => !weekStart || row.weekStart === weekStart);
   if (rows.length === 0) return null;
@@ -68,53 +121,13 @@ export function TemplateSuggestions({ weekStart }: TemplateSuggestionsProps) {
                   departAt={row.departAt}
                   returnAt={row.returnAt}
                 />
-                <div className="flex flex-wrap gap-2 pt-1">
-                  <Button asChild size="sm">
-                    {/* `week` pins the submission to the week this suggestion was actually
-                        shown for — without it, `resolveWeekStart` silently falls back to the
-                        earliest open week, which duplicates an existing request there once a
-                        member has suggestions across more than one open week. */}
-                    <RequestLink to={paths.requests.new({ template: row.templateId, week: row.weekStart })}>{he.request.useSuggestion}</RequestLink>
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() =>
-                      snoozeMutation.mutate(
-                        { templateId: row.templateId, weekStart: row.weekStart },
-                        { onSuccess: () => toast.success(he.request.snoozed) },
-                      )
-                    }
-                  >
-                    {he.request.snoozeSuggestion}
-                  </Button>
-                  <Button size="sm" variant="ghost" onClick={() => setStopTarget(row)}>
-                    {he.request.stopSuggestion}
-                  </Button>
-                </div>
+                <TemplateSuggestionActions row={row} />
               </CardContent>
             </Card>
           ))}
         </div>
       ))}
 
-      <ConfirmDialog
-        open={!!stopTarget}
-        onOpenChange={(open) => !open && setStopTarget(null)}
-        title={he.request.stopSuggestionConfirmTitle}
-        description={he.request.stopSuggestionConfirmBody}
-        destructive
-        loading={stopMutation.isPending}
-        onConfirm={() => {
-          if (!stopTarget) return;
-          stopMutation.mutate(stopTarget.templateId, {
-            onSuccess: () => {
-              toast.success(he.request.stopped);
-              setStopTarget(null);
-            },
-          });
-        }}
-      />
     </section>
   );
 }

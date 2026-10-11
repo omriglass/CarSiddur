@@ -56,7 +56,10 @@ export function initialTripType(row: {
   tripType?: TripType | null;
   tripShape: RequestTripShape;
   needsCarAtDestination: boolean;
+  keepCarAtDestination?: boolean | null;
 }): InitialTripType {
+  // REQ §13.126 (g): a two-way הקפצה that keeps the car at the destination is the member's round trip.
+  if (row.tripType === "drop_off" && row.keepCarAtDestination) return { tripType: "round_trip", dropOffPickup: false };
   if (row.tripType) {
     return { tripType: row.tripType, dropOffPickup: row.tripType === "drop_off" && row.tripShape === "round_trip" };
   }

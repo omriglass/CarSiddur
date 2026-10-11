@@ -1,10 +1,7 @@
 import type { ReactNode } from "react";
-import { useNavigate } from "react-router-dom";
-import { toast } from "sonner";
 
-import { paths } from "@/app/routes";
 import { Button, type ButtonProps } from "@/components/ui/button";
-import { useProposalLinkMutation } from "@/features/inbox/hooks";
+import { useOpenProposal } from "../useOpenProposal";
 import { he } from "@/i18n/he";
 
 interface OpenProposalButtonProps {
@@ -28,23 +25,7 @@ interface OpenProposalButtonProps {
  * found (e.g. it was deleted).
  */
 export function OpenProposalButton({ proposalId, size, variant = "outline", className, asChild, children }: OpenProposalButtonProps) {
-  const navigate = useNavigate();
-  const linkMutation = useProposalLinkMutation();
-
-  async function open() {
-    let url: string | null = null;
-    try {
-      url = await linkMutation.mutateAsync(proposalId);
-    } catch {
-      url = null;
-    }
-    if (url) {
-      navigate(url);
-    } else {
-      toast(he.proposal.openFallback);
-      navigate(paths.inbox());
-    }
-  }
+  const { open, pending } = useOpenProposal();
 
   return (
     <Button
@@ -52,8 +33,8 @@ export function OpenProposalButton({ proposalId, size, variant = "outline", clas
       size={size}
       variant={variant}
       className={className}
-      disabled={linkMutation.isPending}
-      onClick={() => void open()}
+      disabled={pending}
+      onClick={() => void open(proposalId)}
     >
       {children ?? he.proposal.open}
     </Button>

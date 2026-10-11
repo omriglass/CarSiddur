@@ -162,3 +162,34 @@ export function unnamedWhoLabel(adults: number, children: number, labels: Unname
   const childText = children === 1 ? labels.childOne : labels.childMany(children);
   return `${adultText} ${conjoin(labels.and, labels.andNumber, childText)}`;
 }
+
+/** A step of the guided start of a new request (owner 2026-10-11). */
+export type GuideStep = "out" | "return" | "destination";
+
+/**
+ * Owner 2026-10-11: a new request leads through what a ride must have and the member did not give yet — the start time,
+ * then the end time, then the destination — skipping whatever is already known (a two-tap span on a grid gives both
+ * times, a single tap only the start). A trip with no out leg / no return leg has no such time step; a time window
+ * (or the car-now duration) replaces both time steps.
+ */
+export function guideSteps(ctx: {
+  outKnown: boolean;
+  returnKnown: boolean;
+  hasOut: boolean;
+  hasReturn: boolean;
+  /** The two time chips are shown (not a time window, not the car-now duration). */
+  timeChips: boolean;
+  hasDestination: boolean;
+}): GuideStep[] {
+  const steps: GuideStep[] = [];
+  if (ctx.timeChips && ctx.hasOut && !ctx.outKnown) steps.push("out");
+  if (ctx.timeChips && ctx.hasReturn && !ctx.returnKnown) steps.push("return");
+  if (!ctx.hasDestination) steps.push("destination");
+  return steps;
+}
+
+/** The step after `step` in the current guide, or `null` when it was the last. */
+export function nextGuideStep(steps: readonly GuideStep[], step: GuideStep): GuideStep | null {
+  const index = steps.indexOf(step);
+  return index >= 0 ? steps[index + 1] ?? null : null;
+}

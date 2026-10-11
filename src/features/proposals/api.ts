@@ -30,6 +30,8 @@ export interface ProposalRequestSummary {
   boosters: number;
   /** Which request a plan-B answer replaces (REQ §13.112 a, R11M3); older cached responses omit it. */
   tripType?: string | null;
+  /** Kept-car request (REQ §13.126 g): a drop_off that reads as a round trip with a note; the edge function may omit it. */
+  keepCarAtDestination?: boolean | null;
 }
 
 /** `alternative` proposals only (REQ §13.112 a) -- the member's own plan B, drop place resolved to a name by the edge function. */

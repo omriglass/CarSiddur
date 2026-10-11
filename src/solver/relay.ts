@@ -178,8 +178,9 @@ export function pairRelays(
   // R5B8 (REQ §13.105, owner 2026-10-06): a SHORT wait (<= 2 x turnaround, the 104b threshold) never counts as
   // contested for the request's own pair — the two chauffeur wraps it would split into burn more car time than
   // the wait, and leave a driver-able member with two overlapping driverless rides on two cars.
+  // REQ §13.126 g: a keep-car request's own pair is never contested — the member keeps the car waiting on purpose.
   const contested = (c: Candidate): boolean =>
-    !(isOwn(c) && c.returnWindow.start - c.outWindow.end <= shortWaitSlots) &&
+    !(isOwn(c) && (c.out.request.keepCarAtDestination || c.returnWindow.start - c.outWindow.end <= shortWaitSlots)) &&
     waitContested([...requests, ...others], c.outWindow.end, c.returnWindow.start, [c.out, c.ret], sharedCars);
   for (let i = candidates.length - 1; i >= 0; i--) {
     const c = candidates[i];

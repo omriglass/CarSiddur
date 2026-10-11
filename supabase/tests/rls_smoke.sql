@@ -697,6 +697,7 @@ begin
     ('profiles', 'id', 'public'),
     ('profiles', 'is_admin', 'public'),
     ('profiles', 'muted_events', 'public'),
+    ('profiles', 'my_rides_week_view', 'public'),
     ('profiles', 'updated_at', 'public'),
     ('text_fragments', 'key', 'public'),
     ('text_fragments', 'body', 'public'),

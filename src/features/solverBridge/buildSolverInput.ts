@@ -224,7 +224,9 @@ export interface BuildSolverInputParams {
 
 /** `Request.fallback` / `.alternative` / `.servedByAlternative` of one request row (REQ §13.112). */
 function fallbackOf(r: BuildSolverInputParams["requests"][number]): Pick<SolverRequest, "fallback" | "alternative" | "servedByAlternative"> {
-  const active = (r.trip_type === "round_trip" || r.trip_type === "one_way") && !r.series_id && !r.served_by_alternative;
+  // REQ §13.126 g: a kept-car trip (two-way drop_off + keep_car_at_destination) carries a plan B like a round trip.
+  const planBTrip = r.trip_type === "round_trip" || r.trip_type === "one_way" || (r.trip_type === "drop_off" && !!r.keep_car_at_destination);
+  const active = planBTrip && !r.series_id && !r.served_by_alternative;
   const fallback = active && r.fallback !== "none" ? r.fallback : undefined;
   const alt = r.alternative;
   const alternative =
@@ -340,6 +342,8 @@ export function buildSolverInput(params: BuildSolverInputParams): SolverInput {
         coRiderMemberIds: params.companionsByRequestId?.[r.id] ?? [],
         luggage: needsLargeTrunk(r),   // REQ §13.111 (a): a waived request is solved as one without large luggage
         needsCarAtDestination: r.needs_car_at_destination,
+        // REQ §13.126 g: the car waits at the destination between the two legs on purpose.
+        keepCarAtDestination: r.keep_car_at_destination ? true : undefined,
         preferredCarId: params.cars.some((car) => car.id === r.preferred_car_id && car.department_id === r.department_id && car.type === "shared" && car.status === "active")
           ? r.preferred_car_id ?? undefined : undefined,
         submittedAtMs: epochMs(r.submitted_at ?? r.created_at) ?? weekStartMs,

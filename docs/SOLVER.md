@@ -392,6 +392,13 @@ A gap shorter than the buffer still pairs (owner 2026-09-24). The placed out-leg
 
 Greedy matching: candidate pairs sorted by `(idleSlots + shiftCost, outId, returnId)` — no scores, because pairing runs before scoring (§3.5); each request joins at most one pair. `idleSlots = b.start − o.end` is the time the car sits at the destination. A request whose round trip was split into two relay legs pairs **with itself** (car parked at the destination in between, free for third parties there) — this is the `relay+relay` resolution of §3.9 and is tried only when the fused `keep` block does not fit. Pairs whose match needs a shift beyond declared flexibility (≤ 2 h) are not formed but remembered, and surface as `shiftBeyondFlex` suggestions with `pairsWithRequestId` on the leg that would have to move. Unpaired relay candidates are handed to §3.6.1a next, before falling back to `unmet`.
 
+**Keep the car at the destination (REQUIREMENTS §13.126 g, owner 2026-10-11).** `Request.keepCarAtDestination` (bridge:
+`requests.keep_car_at_destination`) marks a member-driven two-way הקפצה whose own `#out`/`#ret` pair is **never contested** in
+`pairRelays` — the §13.103 a "wait needed elsewhere" test is skipped, so the legs connect on one car whenever a car takes both and
+the car waits at the destination (where trips that start and end there may use it, like any car standing there). SQL twin:
+`connect_drop_off_legs` skips `car_wait_needed_elsewhere` for the flag; `submit_request` places both legs on one car on a
+published/live day. A kept-car request may carry a plan B (`alternative.ts` and the bridge's `fallbackOf` treat it like a round trip). Tests: `relay.test.ts` ("a keep-car request connects even when …"), `alternative.test.ts` ("a kept-car trip … carries its plan B too").
+
 #### 3.6.1b QA run 4 rules (REQUIREMENTS §13.104; `relay.ts`, `greedy.ts`, `index.ts`)
 
 - **R4B1 — one click finishes.** Every unmet *pair* unit (an own connected pair **or** a cross-request relay pair) hands both legs to the chauffeur path in the same solve (`index.ts`); before, only own pairs did, so a leg whose cross partner stayed unplaced was lost and a second solve (partner now fixed) placed it. Test: `idempotent.test.ts` (solve, then solve with its own rides fixed adds nothing).

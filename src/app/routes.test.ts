@@ -25,6 +25,7 @@ const ROUTE_PATTERNS = [
   "/siddur/:dept/archive",
   "/my",
   "/my/history",
+  "/my/archive",
   "/requests",
   "/requests/new",
   "/requests/:id/edit",
@@ -104,6 +105,13 @@ describe("paths.my", () => {
   });
 });
 
+describe("paths.myArchive", () => {
+  it("matches /my/archive", () => {
+    expectRoutable(paths.myArchive());
+    expect(paths.myArchive()).toBe("/my/archive");
+  });
+});
+
 describe("paths.myHistory", () => {
   it("matches /my/history", () => {
     expectRoutable(paths.myHistory());
@@ -125,6 +133,10 @@ describe("paths.requests", () => {
   it("new() builds the expected query string", () => {
     expect(paths.requests.new({ week: "2027-01-10", day: "2027-01-12", time: "08:00" })).toBe(
       "/requests/new?week=2027-01-10&day=2027-01-12&time=08%3A00",
+    );
+    // A two-tap span on a grid (owner 2026-10-11): end = "להיות בבית עד", car = preferred car.
+    expect(paths.requests.new({ week: "2027-01-10", day: "2027-01-12", time: "08:00", end: "10:00", car: "car-1" })).toBe(
+      "/requests/new?week=2027-01-10&day=2027-01-12&time=08%3A00&end=10%3A00&car=car-1",
     );
     expect(paths.requests.new({ ride: "ride-1" })).toBe("/requests/new?ride=ride-1");
     expect(paths.requests.new({ week: "2027-01-10", day: "2027-01-12", waitlist: true })).toBe(

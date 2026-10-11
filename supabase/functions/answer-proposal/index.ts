@@ -93,7 +93,7 @@ async function findByToken(token: string) {
   // refuses a bare `destinations(name)` embed (PGRST201) — both embeds name their FK.
   const proposalSelect =
     'id, type, status, reason_he, expires_at, payload, request_id, department_id, week_start, ' +
-    'requests(id, requester_id, origin_id, origin_text, destination_id, destination_text, depart_at, return_at, adults, child_seats, boosters, ride_type_id, trip_type, ' +
+    'requests(id, requester_id, origin_id, origin_text, destination_id, destination_text, depart_at, return_at, adults, child_seats, boosters, ride_type_id, trip_type, keep_car_at_destination, ' +
     'destinations!requests_destination_id_fkey(name), ride_types(name_he), origin:destinations!requests_origin_id_fkey(name))';
 
   const byProposal = await client.from('proposals').select(proposalSelect).eq('token_hash', hash).maybeSingle();
@@ -136,6 +136,8 @@ async function buildSummary(proposal: Record<string, unknown>, myProfileId: stri
         child_seats: number;
         boosters: number;
         trip_type: string | null;
+        // REQ §13.126 g: a two-way drop_off that keeps the car at the destination reads as the member's round trip.
+        keep_car_at_destination: boolean | null;
         destinations: { name: string } | null;
         ride_types: { name_he: string } | null;
         origin: { name: string } | null;
@@ -223,6 +225,7 @@ async function buildSummary(proposal: Record<string, unknown>, myProfileId: stri
           childSeats: request.child_seats,
           boosters: request.boosters,
           tripType: request.trip_type,
+          keepCarAtDestination: request.keep_car_at_destination ?? false,
         }
       : null,
     originChange,

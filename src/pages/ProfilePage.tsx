@@ -1,3 +1,4 @@
+import { toast } from "sonner";
 import { useActiveDepartment } from "@/features/auth/useActiveDepartment";
 import { useState } from "react";
 import { Link } from "react-router-dom";
@@ -30,9 +31,10 @@ import {
   useRegisterTemporaryCarMutation,
 } from "@/features/fleet/hooks";
 import { MUTE_CATEGORIES } from "@/features/inbox/muteCategories";
-import { he } from "@/i18n/he";
+import { sendTestNotification } from "@/features/auth/api";
+import { he, tv } from "@/i18n/he";
 import { isPushSupported, subscribeToPush, unsubscribeFromPush } from "@/lib/push";
-import { showDiagnosticErrorToast } from "@/lib/rpc";
+import { showDiagnosticErrorToast, showErrorToast } from "@/lib/rpc";
 import { supabase } from "@/integrations/supabase/client";
 
 import type { HomeWeekPreference, NotificationEvent } from "@/lib/enums";
@@ -60,6 +62,22 @@ export function ProfilePage() {
 
   const pushStatus = usePushSubscriptionStatus();
   const [pushBusy, setPushBusy] = useState(false);
+  const [testBusy, setTestBusy] = useState(false);
+
+  /** Owner 2026-10-11: send myself a test notification; say how many devices it went to. */
+  async function sendTest() {
+    setTestBusy(true);
+    try {
+      const { devices } = await sendTestNotification();
+      if (devices === 0) toast(he.profileExtra.testNotificationNoDevice);
+      else if (devices === 1) toast.success(he.profileExtra.testNotificationSentOne);
+      else toast.success(tv("profileExtra.testNotificationSent", { n: String(devices) }));
+    } catch (error) {
+      showErrorToast(error);
+    } finally {
+      setTestBusy(false);
+    }
+  }
   const needsIosInstall =
     typeof navigator !== "undefined" && /iPhone|iPad|iPod/.test(navigator.userAgent) && !isStandalonePwa();
 
@@ -129,7 +147,14 @@ export function ProfilePage() {
               key={profileQuery.data?.display_name ?? ""}
               defaultValue={profileQuery.data?.display_name ?? ""}
               placeholder={profileQuery.data?.google_name ?? profileQuery.data?.full_name ?? ""}
-              onBlur={(e) => updateProfileMutation.mutate({ display_name: e.target.value })}
+              onBlur={(e) => {
+                // Owner 2026-10-11: say so once the name really changed (the field saves on leaving it).
+                const next = e.target.value.trim();
+                if (next === (profileQuery.data?.display_name ?? "").trim()) return;
+                updateProfileMutation.mutate({ display_name: e.target.value }, {
+                  onSuccess: () => toast.success(next ? he.profileExtra.displayNameSaved : he.profileExtra.displayNameCleared),
+                });
+              }}
             />
             <p className="text-xs text-muted-foreground">{he.profileExtra.displayNameHelp}</p>
           </div>
@@ -166,6 +191,18 @@ export function ProfilePage() {
               id="profile-classic-request-form"
               checked={profileQuery.data?.classic_request_form ?? false}
               onCheckedChange={(checked) => updateProfileMutation.mutate({ classic_request_form: checked })}
+            />
+          </div>
+          {/* Owner 2026-10-11: `/my` opens as the week grid (one column per day) instead of the list. */}
+          <div className="flex items-center justify-between border-t pt-3">
+            <div className="space-y-0.5">
+              <Label htmlFor="profile-my-rides-week-view">{he.profileExtra.myRidesWeekViewLabel}</Label>
+              <p className="text-xs text-muted-foreground">{he.profileExtra.myRidesWeekViewHelp}</p>
+            </div>
+            <Switch
+              id="profile-my-rides-week-view"
+              checked={profileQuery.data?.my_rides_week_view ?? false}
+              onCheckedChange={(checked) => updateProfileMutation.mutate({ my_rides_week_view: checked })}
             />
           </div>
         </CardContent>
@@ -289,6 +326,9 @@ export function ProfilePage() {
               />
             </div>
           ) : null}
+          <Button type="button" variant="outline" size="sm" className="w-full" disabled={testBusy} onClick={() => void sendTest()} data-testid="test-notification">
+            {he.profileExtra.testNotification}
+          </Button>
 
           <div className="space-y-2 border-t pt-3">
             {MUTE_CATEGORIES.map((category) => (

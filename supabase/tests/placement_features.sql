@@ -1,7 +1,8 @@
 -- REQ §13.101 (a)(c)(e)(f)(g)(h)(i) + QB14: placement / request features.
 --   luggage needs a large_trunk car (auto-approve, ride seat check)   set_ride_driver
 --   withdraw/restore duplicate request                                place_on_own_car
---   edit on a published day (move, confirm-release, drives others)    overlaps in submit_request
+--   edit on a published day (move, confirm-release, drives others,    overlaps in submit_request
+--     a הקפצה edit placed when a car is free — owner 2026-10-11)
 --   QB14 real destination in add_ride_passengers notices              QF7 freed car goes to the contested group first
 -- Transactional (begin ... rollback), like the other suites.
 begin;
@@ -314,5 +315,158 @@ begin
   assert (select group_id is null and status='open' from public.freed_slot_offers where id=off), 'QF7: a cancelled group releases the held offer';
 
   raise notice 'placement_features.sql: all assertions passed';
+end $$;
+
+-- ---- Owner 2026-10-11 (pilot bug): a published-day edit into a הקפצה is placed when a car is free ------------
+-- Before: the edit released the booking and went straight to the waiting list ("no car") with every car free.
+do $$
+declare
+  dept uuid:='00000000-0000-0000-0000-000000000001';
+  sadran uuid:='00000000-0000-0000-0000-000000000102';
+  m1 uuid:='00000000-0000-0000-0000-000000000103';
+  home uuid:='00000000-0000-0000-0000-000000000010';
+  dest uuid:='00000000-0000-0000-0000-000000000011';
+  typ uuid:='00000000-0000-0000-0000-000000000021';
+  w date:=public.current_week_start()+1197;
+  dt timestamptz; pub uuid; res jsonb; q1 uuid; rid uuid; old_car uuid;
+begin
+  insert into public.weeks(department_id,week_start,phase,open_at,close_at,publish_at)
+  values(dept,w,'solving',now()-interval '9 days',now()-interval '8 days',now()-interval '7 days');
+  insert into public.siddur_versions(department_id,week_start,snapshot,published_by) values(dept,w,'{}',sadran) returning id into pub;
+  perform set_config('app.in_publish','on',true);
+  update public.weeks set phase='published',published_version_id=pub,published_days=array[w,w+1,w+2,w+3,w+4,w+5,w+6] where department_id=dept and week_start=w;
+  perform set_config('app.in_publish','off',true);
+
+  dt:=((w+1)+time '09:00') at time zone 'Asia/Jerusalem';
+  perform set_config('request.jwt.claims',jsonb_build_object('sub',m1,'role','authenticated')::text,true);
+  res:=public.submit_request(jsonb_build_object('department_id',dept,'week_start',w,'destination_id',dest,'ride_type_id',typ,
+    'depart_at',dt,'return_at',dt+interval '3 hours','trip_type','round_trip','adults',1));
+  assert res->>'status'='assigned', format('drop-off edit setup: %s',res);
+  q1:=(res->>'request_id')::uuid; rid:=(res->>'ride_id')::uuid;
+  select car_id into old_car from public.rides where id=rid;
+
+  -- same day, same times, now a הקפצה with a pickup: placed straight away (no question, no waiting list)
+  res:=public.submit_request(jsonb_build_object('request_id',q1,'expected_version',(select version from public.requests where id=q1),
+    'department_id',dept,'week_start',w,'destination_id',dest,'ride_type_id',typ,
+    'depart_at',dt,'return_at',dt+interval '3 hours','trip_type','drop_off','adults',1));
+  assert res->>'status'='assigned' and not res ? 'needs_confirmation', format('drop-off edit: placed, got %s',res);
+  assert (select status::text from public.requests where id=q1)='assigned', 'drop-off edit: the request is assigned, not waitlisted';
+  assert (select trip_type::text from public.requests where id=q1)='drop_off', 'drop-off edit: the new trip type is stored';
+  assert exists(select 1 from public.ride_requests rr join public.rides r on r.id=rr.ride_id
+    where rr.request_id=q1 and r.status<>'cancelled' and r.car_id=old_car), 'drop-off edit: the old booking''s car is kept when it fits';
+  assert exists(select 1 from public.notifications where recipient_id=m1 and data->>'variant' in ('edit_applied','car_changed')
+    and data->>'request_id'=q1::text), 'drop-off edit: the member is told the edit was applied';
+  assert not exists(select 1 from public.notifications where recipient_id=m1 and data->>'variant'='edit_waitlisted'
+    and data->>'request_id'=q1::text), 'drop-off edit: no "waiting for a car" notice';
+
+  -- every shared car taken at the new time: asked first; confirmed -> waiting list (unchanged behaviour)
+  perform set_config('request.jwt.claims',jsonb_build_object('sub',sadran,'role','authenticated')::text,true);
+  insert into public.rides(department_id,week_start,car_id,starts_at,ends_at,origin_id,destination_id,driver_id,status,is_pinned,pin_reason,created_by)
+    select dept,w,c.id,dt+interval '1 day',dt+interval '1 day 4 hours',home,home,sadran,'confirmed',true,'SADRAN_MANUAL',sadran
+    from public.cars c where c.department_id=dept and c.status='active' and c.type='shared';
+  perform set_config('request.jwt.claims',jsonb_build_object('sub',m1,'role','authenticated')::text,true);
+  res:=public.submit_request(jsonb_build_object('request_id',q1,'expected_version',(select version from public.requests where id=q1),
+    'department_id',dept,'week_start',w,'destination_id',dest,'ride_type_id',typ,
+    'depart_at',dt+interval '1 day 1 hour','return_at',dt+interval '1 day 2 hours','trip_type','drop_off','adults',1));
+  assert res->>'needs_confirmation'='release_to_waitlist', format('drop-off edit, no car: asks first, got %s',res);
+  assert (select status::text from public.requests where id=q1)='assigned', 'drop-off edit, no car: the question changes nothing';
+  res:=public.submit_request(jsonb_build_object('request_id',q1,'expected_version',(select version from public.requests where id=q1),'confirm_release',true,
+    'department_id',dept,'week_start',w,'destination_id',dest,'ride_type_id',typ,
+    'depart_at',dt+interval '1 day 1 hour','return_at',dt+interval '1 day 2 hours','trip_type','drop_off','adults',1));
+  assert res->>'status'='waitlisted', format('drop-off edit, no car: confirmed -> waiting list, got %s',res);
+
+  raise notice 'placement_features.sql: published-day drop-off edit assertions passed';
+end $$;
+
+-- ---- Owner 2026-10-11: a member moves their own one-way (הלוך בלבד) like a ride that keeps the car -------------------
+-- Same day, same car (the car is the one left at the destination); never a הקפצה relay leg; never onto another car.
+do $$
+declare
+  dept uuid:='00000000-0000-0000-0000-000000000001';
+  sadran uuid:='00000000-0000-0000-0000-000000000102';
+  m1 uuid:='00000000-0000-0000-0000-000000000103';
+  home uuid:='00000000-0000-0000-0000-000000000010';
+  dest uuid:='00000000-0000-0000-0000-000000000011';
+  typ uuid:='00000000-0000-0000-0000-000000000021';
+  car40 uuid:='00000000-0000-0000-0000-000000000040';
+  car41 uuid:='00000000-0000-0000-0000-000000000041';
+  w date:=public.current_week_start()+1204;
+  dt timestamptz; pub uuid; q uuid; q2 uuid; rid uuid; rid2 uuid; input jsonb;
+begin
+  insert into public.weeks(department_id,week_start,phase,open_at,close_at,publish_at)
+  values(dept,w,'solving',now()-interval '9 days',now()-interval '8 days',now()-interval '7 days');
+  insert into public.siddur_versions(department_id,week_start,snapshot,published_by) values(dept,w,'{}',sadran) returning id into pub;
+  perform set_config('app.in_publish','on',true);
+  update public.weeks set phase='published',published_version_id=pub,published_days=array[w,w+1,w+2,w+3,w+4,w+5,w+6] where department_id=dept and week_start=w;
+  perform set_config('app.in_publish','off',true);
+
+  dt:=((w+1)+time '09:00') at time zone 'Asia/Jerusalem';
+  insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,depart_at,return_at,trip_shape,trip_type,one_way_car_mode,status,origin_id)
+    values(dept,w,m1,m1,dest,typ,dt,null,'one_way_to','one_way','relay','assigned',home) returning id into q;
+  insert into public.rides(department_id,week_start,car_id,starts_at,ends_at,origin_id,destination_id,driver_id,status,created_by)
+    values(dept,w,car40,dt,dt+interval '1 hour',home,dest,m1,'confirmed',sadran) returning id into rid;
+  insert into public.ride_requests(ride_id,request_id,role,leg,car_mode) values(rid,q,'driver','out','relay');
+
+  perform set_config('request.jwt.claims',jsonb_build_object('sub',m1,'role','authenticated')::text,true);
+  input:=jsonb_build_object('id',rid,'department_id',dept,'week_start',w,'car_id',car40,'origin_id',home,'destination_id',dest,'driver_id',m1);
+  perform public.edit_ride(input||jsonb_build_object('starts_at',dt+interval '2 hours','ends_at',dt+interval '3 hours'),(select version from public.rides where id=rid));
+  assert (select starts_at=dt+interval '2 hours' and car_id=car40 from public.rides where id=rid), 'own one-way: moved later on the same car';
+  begin
+    perform public.edit_ride(input||jsonb_build_object('car_id',car41,'starts_at',dt+interval '2 hours','ends_at',dt+interval '3 hours'),(select version from public.rides where id=rid));
+    raise exception 'own one-way moved onto another car';
+  exception when raise_exception then if sqlerrm<>'not_authorized' then raise; end if;
+  end;
+
+  -- a הקפצה relay leg (a partner picks this car up) stays the Sadran's
+  perform set_config('request.jwt.claims',jsonb_build_object('sub',sadran,'role','authenticated')::text,true);
+  insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,depart_at,return_at,trip_shape,trip_type,one_way_car_mode,status,origin_id)
+    values(dept,w,m1,m1,dest,typ,dt+interval '1 day',null,'one_way_to','drop_off','relay','assigned',home) returning id into q2;
+  insert into public.rides(department_id,week_start,car_id,starts_at,ends_at,origin_id,destination_id,driver_id,status,created_by)
+    values(dept,w,car41,dt+interval '1 day',dt+interval '1 day 1 hour',home,dest,m1,'confirmed',sadran) returning id into rid2;
+  insert into public.ride_requests(ride_id,request_id,role,leg,car_mode) values(rid2,q2,'driver','out','relay');
+  perform set_config('request.jwt.claims',jsonb_build_object('sub',m1,'role','authenticated')::text,true);
+  begin
+    perform public.edit_ride(jsonb_build_object('id',rid2,'department_id',dept,'week_start',w,'car_id',car41,'origin_id',home,'destination_id',dest,'driver_id',m1,
+      'starts_at',dt+interval '1 day 2 hours','ends_at',dt+interval '1 day 3 hours'),(select version from public.rides where id=rid2));
+    raise exception 'member moved a הקפצה relay leg';
+  exception when raise_exception then if sqlerrm<>'not_authorized' then raise; end if;
+  end;
+
+  raise notice 'placement_features.sql: own one-way move assertions passed';
+end $$;
+
+-- ---- Owner 2026-10-11: "keep both" on the overlap warning is placed like any request (no Sadran step) --------------
+do $$
+declare
+  dept uuid:='00000000-0000-0000-0000-000000000001';
+  sadran uuid:='00000000-0000-0000-0000-000000000102';
+  m1 uuid:='00000000-0000-0000-0000-000000000103';
+  dest uuid:='00000000-0000-0000-0000-000000000011';
+  typ uuid:='00000000-0000-0000-0000-000000000021';
+  w date:=public.current_week_start()+1211;
+  dt timestamptz; pub uuid; res jsonb; base jsonb;
+begin
+  insert into public.weeks(department_id,week_start,phase,open_at,close_at,publish_at)
+  values(dept,w,'solving',now()-interval '9 days',now()-interval '8 days',now()-interval '7 days');
+  insert into public.siddur_versions(department_id,week_start,snapshot,published_by) values(dept,w,'{}',sadran) returning id into pub;
+  perform set_config('app.in_publish','on',true);
+  update public.weeks set phase='published',published_version_id=pub,published_days=array[w,w+1,w+2,w+3,w+4,w+5,w+6] where department_id=dept and week_start=w;
+  perform set_config('app.in_publish','off',true);
+
+  dt:=((w+1)+time '09:00') at time zone 'Asia/Jerusalem';
+  perform set_config('request.jwt.claims',jsonb_build_object('sub',m1,'role','authenticated')::text,true);
+  base:=jsonb_build_object('department_id',dept,'week_start',w,'destination_id',dest,'ride_type_id',typ,'trip_type','round_trip','adults',1);
+  -- my own earlier request at that time is still waiting (no car yet); I cannot drive two cars, so it holds no ride
+  insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,depart_at,return_at,trip_shape,trip_type,status,status_reason,origin_id)
+    values(dept,w,m1,m1,dest,typ,dt,dt+interval '3 hours','round_trip','round_trip','waitlisted','WAITLISTED_NO_CAR','00000000-0000-0000-0000-000000000010');
+  -- without the confirmation the overlapping request waits for the Sadran (unchanged, REQ §13.100 QB8)
+  res:=public.submit_request(base||jsonb_build_object('depart_at',dt+interval '1 hour','return_at',dt+interval '2 hours'));
+  assert res->>'status'<>'assigned' and res->>'reason'='DUPLICATE_OVERLAP', format('unconfirmed overlap: left for the Sadran, got %s',res);
+  -- "keep both": placed straight away, the warning still reported
+  res:=public.submit_request(base||jsonb_build_object('depart_at',dt+interval '1 hour','return_at',dt+interval '2 hours','overlap_confirmed',true));
+  assert res->>'status'='assigned', format('confirmed overlap: placed, got %s',res);
+  assert res->'warnings' ? 'DUPLICATE_OVERLAP', 'confirmed overlap: the warning is still reported';
+
+  raise notice 'placement_features.sql: overlap_confirmed assertions passed';
 end $$;
 rollback;

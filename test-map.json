@@ -381,6 +381,52 @@
       ]
     },
     {
+      "id": "my-week",
+      "title": "My rides — week view (/my?view=week), profile default, calendar groundwork",
+      "paths": [
+        "src/features/requests/myWeek/**",
+        "src/features/calendar/**",
+        "src/pages/HomePage.tsx",
+        "src/pages/MyArchivePage.tsx",
+        "src/pages/ProfilePage.tsx",
+        "src/features/requests/components/TemplateSuggestions.tsx",
+        "src/features/proposals/useOpenProposal.ts",
+        "src/features/proposals/components/OpenProposalButton.tsx",
+        "src/i18n/he.member.ts",
+        "supabase/migrations/**/*my_rides_week_view*",
+        "supabase/tests/request_anchors.sql",
+        "src/features/rides/useMemberRideMoves.ts"
+      ],
+      "vitest": [
+        "src/features/requests/myWeek/assignLanes.test.ts",
+        "src/features/requests/myWeek/dayColumns.test.ts",
+        "src/features/requests/myWeek/myWeekItems.test.ts",
+        "src/features/calendar/ambientBlocks.test.ts",
+        "src/features/requests/myWeek/MyWeekView.test.tsx",
+        "src/features/requests/myWeek/MyWeekView.drag.test.tsx"
+      ],
+      "sql": [
+        "request_anchors.sql",
+        "rls_smoke.sql"
+      ],
+      "playwrightTags": [
+        "@my-week"
+      ],
+      "reqRefs": [
+        "13.126",
+        "5.5",
+        "13.91"
+      ],
+      "qaChecklist": [
+        "On /my switch to \"שבוע\": the grid has seven day columns (header e.g. \"א׳ 11.10\"), my rides carry the car name, sideways scroll and +/- zoom work",
+        "Tap a ride block: the same ride sheet as the siddur opens; tap a request block: its row with actions; tap a suggestion block (dotted, \"הצעה\"): use / snooze / stop; tap an orange block \"מחכה לתשובה שלך\": the proposal opens",
+        "Two items on one day overlapping in time sit side by side",
+        "Tap twice on empty space in an open week: the new-request form opens with that day, start and end; in an archive week nothing happens",
+        "Switch the week (this / next / ארכיון -> a past week): past weeks show rides only, read-only",
+        "Profile: the \"תצוגת שבוע\" switch makes /my open as the week view; \"רשימה\" on /my changes only this visit (?view=list)"
+      ]
+    },
+    {
       "id": "board",
       "title": "Board (Sadran) — drag/drop, reservations, policy chip/score",
       "paths": [
@@ -486,7 +532,9 @@
         "week_settings_source.sql",
         "luggage_waiver.sql",
         "p4_live_changes.sql",
-        "qa_run12_package_a.sql"
+        "qa_run12_package_a.sql",
+        "keep_car_at_destination.sql",
+        "plan_switch.sql"
       ],
       "playwrightTags": [
         "@board"

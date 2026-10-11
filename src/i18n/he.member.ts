@@ -230,7 +230,41 @@ export const heMember = {
     withdrawClaim: "בטל בקשת הצטרפות",
     freedSlotOffer: "התפנה רכב — {{car}}, {{day}} {{depart}}–{{return}}",
   },
+  /**
+   * Owner 2026-10-11: choosing a time span on a grid (siddur, Sadran board, "my rides" week view) — a first
+   * tap marks the start, a second tap the end (the same slot twice = only a start). `WeekGrid` `onSlotRange`.
+   */
+  slotRange: {
+    startHint: "התחלה {{time}} · הקש/י על שעת הסיום",
+    cancel: "ביטול בחירת השעה",
+  },
+  /** Owner 2026-10-11: the "my rides" week view (`/my`) — what kind of block it is, written on top of the block. */
+  myWeek: {
+    kind: {
+      suggestion: "הצעה",
+      proposal: "מחכה לתשובה שלך",
+      waiting: "ממתין לרכב",
+      request: "בקשה",
+    },
+    /** The list / week toggle on `/my` (`?view=`); changes the view for this visit only. */
+    archiveTitle: "ארכיון הנסיעות שלי",
+    viewToggleLabel: "תצוגה",
+    viewList: "רשימה",
+    viewWeek: "שבוע",
+    /** One line under the week switcher: what the grid shows and how to ask for a ride. */
+    hint: "הנסיעות, הבקשות וההצעות שלי לפי יום. הקש/י פעמיים על מקום פנוי כדי לבקש נסיעה.",
+    hintReadOnly: "שבוע שחלף: הנסיעות שלי בלבד, לצפייה.",
+    noPastWeeks: "אין עדיין שבועות קודמים",
+    /** `<car> · <route>` — a ride block carries its car because the columns are days. */
+    rideLabel: "{{car}} · {{route}}",
+    requestSheetTitle: "הבקשה שלי",
+    suggestionSheetTitle: "הצעה לבקשה חוזרת",
+    suggestionNote: "זו רק הצעה, עוד לא הוגשה בקשה.",
+    zoomLabel: "הגדלה והקטנה",
+  },
   siddur: {
+    /** Owner 2026-10-11: the hatched band while a car stands away from its base (after a one-way) — taken only from there. */
+    awayBand: "הרכב ב{{place}} — פנוי רק למי שיוצא/ת משם",
     myRide: "הנסיעה שלי",
     filterDestination: "יעד",
     filterEmpty: "אין נסיעות ל{{destination}} השבוע.",
@@ -378,6 +412,9 @@ export const heMember = {
     email: "אימייל",
     displayName: "שם לתצוגה (כינוי / שם בעברית)",
     displayNameHelp: "השם יופיע באפליקציה. השאירו ריק כדי להשתמש בשם מחשבון Google.",
+    /** Owner 2026-10-11: the toast after the display name was saved (the field saves on leaving it). */
+    displayNameSaved: "השם לתצוגה עודכן",
+    displayNameCleared: "השם לתצוגה הוסר — יוצג השם מחשבון Google",
     departmentsTitle: "מחלקות",
     defaultBadge: "ברירת מחדל",
     homeWeekTitle: "מסך הבית",
@@ -393,6 +430,11 @@ export const heMember = {
     defaultOriginHome: "בית (ברירת מחדל)",
     defaultOriginNoDepartment: "יש לבחור מחלקה כדי להגדיר נקודת יציאה",
     notificationsTitle: "התראות",
+    /** Owner 2026-10-11: send yourself a test notification (`send_test_notification`). */
+    testNotification: "שליחת התראת בדיקה",
+    testNotificationSent: "נשלחה התראת בדיקה ל־{{n}} מכשירים — היא אמורה להגיע בעוד רגע",
+    testNotificationSentOne: "נשלחה התראת בדיקה — היא אמורה להגיע בעוד רגע",
+    testNotificationNoDevice: "אין מכשיר שההתראות מופעלות בו — ההודעה נשלחה לתיבת ההודעות בלבד",
     pushEnabled: "מופעל",
     pushDisabled: "כבוי",
     pushEnable: "הפעל התראות",
@@ -417,6 +459,8 @@ export const heMember = {
     /** REQ §13.110 (e): the member's choice of the old field-by-field request form. */
     classicRequestFormLabel: "טופס הבקשה הקלאסי",
     classicRequestFormHelp: "הטופס הישן, שדה אחרי שדה",
+    myRidesWeekViewLabel: "תצוגת שבוע ב״הנסיעות שלי״",
+    myRidesWeekViewHelp: "מסך ״הנסיעות שלי״ נפתח כמו הסידור: שבוע שלם, עמודה לכל יום",
     historyLink: "היסטוריה וסטטיסטיקה",
     managementTitle: "ניהול",
     themeTitle: "מראה",
@@ -484,12 +528,29 @@ export const heMember = {
     hoursOptionOne: "שעה אחת",
   },
   /**
+   * REQ §13.126 (g): "הרכב זמין לשימוש ביעד" — a driver's single-day round trip may leave the car at the destination for
+   * others starting from there. To the member it stays a הלוך-חזור (never labelled "הקפצה"); stored as a two-way הקפצה.
+   */
+  keepCar: {
+    /** The link under the sentence that adds the line. */
+    link: "+ הרכב זמין לשימוש ביעד",
+    /** The line while on; `{{place}}` is "ל…" free: the destination name (or `placeEmpty`). */
+    line: "הרכב מחכה ב{{place}} ופנוי למי שיוצא/ת משם; אני חוזר/ת איתו",
+    placeEmpty: "יעד",
+    remove: "הסרת ״הרכב זמין לשימוש ביעד״",
+    /** The trip-type label of such a request on /my, the stage-2 recap and the board: "הלוך-חזור · הרכב נשאר ב<יעד>". */
+    note: "הרכב נשאר ב{{place}}",
+    noteNoPlace: "הרכב נשאר ביעד",
+  },
+  /**
    * REQ §13.112 (a)/(b): "אם אין רכב…" — plan B ("תוכנית ב׳": a הקפצה to a drop point, optionally with a pickup from the
    * same place) or "אסתדר" on a הלוך-חזור / הלוך בלבד request. Form line (`PlanBLine`), stage-2 recap, `/my` lines.
    */
   planB: {
     /** The link under the sentence that adds the line. */
     link: "+ אם אין רכב…",
+    /** The × at the end of the sentence line: removes plan B / "אסתדר" (back to `fallback = 'none'`). */
+    remove: "הסרת ״אם אין רכב״",
     prefix: "אם אין רכב,",
     kind: { alternative: "הקפצה", manage: "אסתדר" },
     /** Glue before the drop place chip ("ל" + chip), "עד" before the arrival chip, then the pickup words. */

@@ -22,6 +22,7 @@ describe("fallback line on the board (REQ §13.112)", () => {
     expect(fallbackLine({ fallback: "alternative", alternative: null, trip_type: "round_trip" })).toBeNull();
     expect(hasActiveFallback({ fallback: "manage", trip_type: "drop_off" })).toBe(false);
     expect(hasActiveFallback({ fallback: "manage", trip_type: "round_trip" })).toBe(true);
+    expect(hasActiveFallback({ fallback: "manage", trip_type: "drop_off", keep_car_at_destination: true })).toBe(true);
   });
 });
 

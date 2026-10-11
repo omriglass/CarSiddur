@@ -6,7 +6,6 @@ import { CalendarDays, Inbox } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
-import { useQueryClient } from "@tanstack/react-query";
 
 import { formatWeekRangeLabel, todayInJerusalem } from "@/components/dateFieldDates";
 import { CarSwapDialog } from "@/components/CarSwapDialog";
@@ -35,7 +34,7 @@ import { useSession } from "@/features/auth/useSession";
 import { useIsSadran } from "@/features/auth/useIsSadran";
 import { useMyRequests, useCancelRideMutation } from "@/features/requests/hooks";
 import { canEditRequest } from "@/features/requests/window";
-import { useCars, useDestinations, useRideTypes, useMaintenanceBlocks, useCarSeatConfigs } from "@/features/fleet/hooks";
+import { useCars, useDestinations, useRideTypes, useMaintenanceBlocks } from "@/features/fleet/hooks";
 import { AddRideFab } from "@/features/requests/components/AddRideFab";
 import { CarNowButton } from "@/features/requests/components/CarNowButton";
 import { QuickRequestSheet } from "@/features/requests/components/QuickRequestSheet";
@@ -45,9 +44,10 @@ import { rideCoordinatorNotes } from "@/lib/rideCoordinatorNotes";
 import { siddurCarName } from "@/lib/siddurCarName";
 import { RideDetailSheet } from "@/features/siddur/components/RideDetailSheet";
 import { MemberRideEditor } from "@/features/siddur/components/MemberRideEditor";
-import { conflictingRides, moveOnRideDay } from "@/features/siddur/rideEditing";
+import { useMemberRideMoves } from "@/features/rides/useMemberRideMoves";
+import { awayBandBlocks } from "@/features/siddur/awayBands";
 import { tightScheduleRideIds } from "@/features/sadran/board/geometry";
-import { useEditRideMutation, useDepartmentSettings, useWeekRequestsWithNames } from "@/features/sadran/hooks";
+import { useDepartmentSettings, useWeekRequestsWithNames } from "@/features/sadran/hooks";
 import { groupByDay } from "@/features/siddur/dayGrouping";
 import { carAwayPlaceAtDayStart, hideIdleTemporaryCars } from "@/components/weekGridCars";
 import { type CarFreeWindow } from "@/features/siddur/freeWindows";
@@ -59,7 +59,6 @@ import {
 } from "@/features/siddur/hooks";
 import {
   useRideChanges,
-  useRequestRideChangeMutation,
   useClaimRideDriverMutation,
 } from "@/features/rides/hooks";
 import { useDayFreeWindows, type DayFreeWindowsAway, type DayFreeWindowsCar } from "@/features/siddur/useDayFreeWindows";
@@ -68,9 +67,7 @@ import { useSiddurDisplayPrefs } from "@/features/siddur/useSiddurDisplayPrefs";
 import { resolveThisNextWeek } from "@/features/siddur/thisNextWeek";
 import { WeekSwitcherTitle } from "@/features/siddur/components/WeekSwitcherTitle";
 import { SiddurDisplayMenu } from "@/features/siddur/components/SiddurDisplayMenu";
-import { siddurKeys } from "@/features/siddur/queryKeys";
 import type { Week, BoardRide } from "@/features/siddur/api";
-import type { RideMove } from "@/features/rides/api";
 import { namedPassengersOf, representativeRideTypeCode, rideViaNames, servedOf } from "@/features/rides/servedOf";
 import { viaLabel } from "@/lib/routeLabel";
 import { peopleOf } from "@/features/rides/ridePeople";
@@ -127,7 +124,6 @@ export function SiddurPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const requestLinkProps = useRequestLinkProps();
-  const queryClient = useQueryClient();
 
   const { session } = useSession();
   const profileId = session?.user.id;
@@ -154,15 +150,11 @@ export function SiddurPage() {
   const waitlistGroupsQuery = useWaitlistGroupsQuery(departmentId, weekStart);
   const carsQuery = useCars(departmentId);
   const maintenanceQuery = useMaintenanceBlocks(departmentId);
-  const seatsQuery = useCarSeatConfigs(departmentId);
   const carLocationsQuery = useCarLocations(departmentId, weekStart);
   const rideTypesQuery = useRideTypes(departmentId);
   const settingsQuery = useDepartmentSettings(departmentId);
   const changesQuery = useRideChanges(departmentId, weekStart);
-  const editMutation = useEditRideMutation();
-  const changeMutation = useRequestRideChangeMutation();
   const claimMutation = useClaimRideDriverMutation();
-  const [collisionMove, setCollisionMove] = useState<(RideMove & { departmentId: string; weekStart: string }) | null>(null);
 
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [selectedRideId, setSelectedRideId] = useState<string | null>(null);
@@ -174,6 +166,8 @@ export function SiddurPage() {
     day: string;
     weekStart: string;
     time: string;
+    /** "להיות בבית עד" from a two-tap span (owner 2026-10-11). */
+    endTime?: string;
     showCarPicker?: boolean;
     cars: DayFreeWindowsCar[];
     freeWindows: CarFreeWindow[];
@@ -274,16 +268,23 @@ export function SiddurPage() {
   const now = new Date();
   const dayFreeWindows = useDayFreeWindows(departmentId, isLiveDay ? weekStart : undefined, isLiveDay ? (activeDay ?? undefined) : undefined, now);
 
-  function handleSlotClick(carId: string, minutes: number) {
+  /**
+   * Owner 2026-10-11: a two-tap span on an empty part of a car column (first tap = start, second = end) opens the
+   * request form with "לצאת ב־<start>", "להיות בבית עד <end>" and that car as the preferred car (a shared car only).
+   * The same slot twice gives only the start, with the form's default length.
+   */
+  function handleSlotRange(carId: string, startMinutes: number, endMinutes: number) {
     if (!weekStart || !activeDay) return;
-    const time = formatMinutes(minutes);
+    const time = formatMinutes(startMinutes);
+    const endTime = endMinutes > startMinutes ? formatMinutes(endMinutes) : undefined;
     if (isLiveDay) {
       setQuickRequestSlot({
-        carId, day: activeDay, weekStart, time,
+        carId, day: activeDay, weekStart, time, endTime,
         cars: dayFreeWindows.cars, freeWindows: dayFreeWindows.freeWindows, awayWindows: dayFreeWindows.awayWindows,
       });
     } else {
-      navigate(paths.requests.new({ week: weekStart, day: activeDay, time }), requestLinkProps);
+      const sharedCar = carsQuery.data?.some((car) => car.id === carId && car.type === "shared") ? carId : undefined;
+      navigate(paths.requests.new({ week: weekStart, day: activeDay, time, end: endTime, car: sharedCar }), requestLinkProps);
     }
   }
 
@@ -312,57 +313,13 @@ export function SiddurPage() {
   const turnaroundMinutes = effectiveWeekSettings(settingsQuery.data, resolvedWeek).turnaroundMinutes;
   const tightRideIds = tightScheduleRideIds(boardRidesQuery.data ?? [], turnaroundMinutes);
 
-  function ownsEditableRide(rideId: string) {
-    const ride = boardRidesQuery.data?.find((r) => r.id === rideId);
-    if (!ride) return false;
-    if (servedOf(ride).some((entry) => entry.role !== "driver" || entry.car_mode !== "keep")) return false;
-    return !!(canEditWeek && ride.driver_id === profileId && ride.starts_at && Date.parse(ride.starts_at) > now.getTime()
-      && !pendingChanges.some((c) => c.ride_id === rideId));
-  }
+  // Moving / resizing my own ride — shared with the "my rides" week view (owner 2026-10-11).
+  const rideMoves = useMemberRideMoves({
+    departmentId, weekStart, week: resolvedWeek, profileId, isMember: isMyDepartment, now,
+    onDone: () => setSelectedRideId(null),
+  });
+  const { ownsEditableRide, saveMove, moveRide } = rideMoves;
 
-  async function saveMove(move: RideMove) {
-    const ride = boardRidesQuery.data?.find((r) => r.id === move.rideId);
-    if (!ride || !ownsEditableRide(move.rideId) || !departmentId || !weekStart || !ride.origin_id || !ride.destination_id) return;
-    if (conflictingRides(move, boardRidesQuery.data ?? [], turnaroundMinutes).length) {
-      setCollisionMove({ ...move, departmentId, weekStart });
-      return;
-    }
-    try {
-      await editMutation.mutateAsync({
-        input: { id: move.rideId, department_id: departmentId, week_start: weekStart, car_id: move.carId,
-          starts_at: move.startsAt, ends_at: move.endsAt, origin_id: ride.origin_id, destination_id: ride.destination_id,
-          driver_id: ride.driver_id },
-        expectedVersion: move.expectedVersion, departmentId, weekStart,
-      });
-      await queryClient.invalidateQueries({ queryKey: siddurKeys.boardRides(departmentId, weekStart) });
-      await queryClient.invalidateQueries({ queryKey: siddurKeys.carLocations(departmentId, weekStart) });
-      setSelectedRideId(null);
-      toast.success(he.rideEditing.saved);
-    } catch { /* Mutation displays the database validation error. */ }
-  }
-
-  function moveRide(rideId: string, carId: string, startMinutes: number, endMinutes?: number) {
-    const ride = boardRidesQuery.data?.find((r) => r.id === rideId);
-    if (!ride?.starts_at || !ride.ends_at || !ownsEditableRide(rideId)) return;
-    const duration = (Date.parse(ride.ends_at) - Date.parse(ride.starts_at)) / 60_000;
-    const move = moveOnRideDay(ride, carId, startMinutes, endMinutes ?? startMinutes + duration);
-    if (move) void saveMove(move);
-  }
-
-  function validMemberTarget(rideId: string, carId: string, startMinutes: number, endMinutes: number) {
-    const ride = boardRidesQuery.data?.find((r) => r.id === rideId);
-    const car = carsQuery.data?.find((c) => c.id === carId);
-    if (!ride || !car || car.status !== "active" || (car.type === "temporary" && car.owner_id !== profileId)) return false;
-    const move = moveOnRideDay(ride, carId, startMinutes, endMinutes);
-    if (!move || Date.parse(move.startsAt) <= now.getTime()) return false;
-    const buffer = turnaroundMinutes;
-    if (conflictingRides(move, boardRidesQuery.data ?? [], buffer).length) return false;
-    if ((maintenanceQuery.data ?? []).some((block) => block.car_id === carId && Date.parse(move.startsAt) < Date.parse(block.ends_at)
-      && Date.parse(move.endsAt) + buffer * 60_000 > Date.parse(block.starts_at))) return false;
-    const served = servedOf(ride);
-    const need = served.reduce((sum, entry) => ({ adults: sum.adults + entry.adults, child: sum.child + entry.child_seats, boosters: sum.boosters + entry.boosters }), { adults: served.length && !served.some((entry) => entry.role === "driver") ? 1 : 0, child: 0, boosters: 0 });
-    return (seatsQuery.data ?? []).some((config) => config.car_id === carId && config.adults >= Math.max(1, need.adults) && config.child_seats >= need.child && config.boosters >= need.boosters);
-  }
   const selectedCar = selectedRide ? (carsQuery.data ?? []).find((c) => c.id === selectedRide.car_id) ?? null : null;
   const selectedLocation = selectedRide
     ? carLocationsQuery.data?.find((l) => l.car_id === selectedRide.car_id)?.location_name ?? null
@@ -455,6 +412,8 @@ export function SiddurPage() {
   // A private (temporary) car is shown only on days it has a ride (REQ §13.80, owner 2026-09-14).
   const weekGridVisibleCars = hideIdleTemporaryCars(weekGridCars, weekGridRides);
   // REQ §13.114: maintenance bands in the car column; draggable by the car's current responsible person, the Sadran, the admin.
+  // Owner 2026-10-11: the same hatched "car is at X" band as the board — not from home, but free for someone at X.
+  const awayBands = activeDay ? awayBandBlocks(carLocationsQuery.data ?? [], activeDay, (place) => tv("siddur.awayBand", { place })) : [];
   const maintenanceEditing = useMaintenanceGridEditing({ departmentId, blocks: maintenanceQuery.data ?? [], cars: carsQuery.data ?? [], day: activeDay });
 
   const weekGridDiscussionBlocks: WeekGridDiscussionBlock[] = activeDayWaitlistGroups.map((group) => ({
@@ -669,7 +628,7 @@ export function SiddurPage() {
             />
             <div className="mt-3">
               <WeekGrid
-                blocks={maintenanceEditing.gridBlocks}
+                blocks={[...maintenanceEditing.gridBlocks, ...awayBands]}
                 onBlockChange={maintenanceEditing.onBlockChange}
                 onBlockClick={maintenanceEditing.onBlockClick}
                 zoom={tableZoom}
@@ -680,16 +639,17 @@ export function SiddurPage() {
                 dayEndMinutes={dayEndMinutes}
                 initialScrollMinutes={initialGridScrollMinutes}
                 readOnly={!canEditWeek}
-                draggable={canEditWeek && !editMutation.isPending && !changeMutation.isPending}
+                draggable={canEditWeek && !rideMoves.saving}
                 canDragRide={(ride) => ownsEditableRide(ride.id)}
-                isDropTargetValid={validMemberTarget}
+                isDropTargetValid={rideMoves.isValidTarget}
                 onRideDrop={(rideId, carId, startMinutes) => moveRide(rideId, carId, startMinutes)}
                 onRideResize={(rideId, edge, minutes) => {
                   const ride = weekGridRides.find((r) => r.id === rideId);
                   if (ride) moveRide(rideId, ride.carId, edge === "start" ? minutes : ride.startMinutes, edge === "end" ? minutes : ride.endMinutes);
                 }}
                 onRideClick={setSelectedRideId}
-                onSlotClick={isMyDepartment ? handleSlotClick : undefined}
+                onSlotRange={isMyDepartment ? handleSlotRange : undefined}
+                rangeResetKey={activeDay ?? undefined}
                 enableCarReport
                 onOpenCarPage={(carId) => navigate(paths.car(carId))}
                 discussionBlocks={weekGridDiscussionBlocks}
@@ -738,7 +698,7 @@ export function SiddurPage() {
               });
             }}>{he.rideCoordination.volunteer}</Button>
           </div>
-        ) : selectedRide?.id && ownsEditableRide(selectedRide.id) ? <MemberRideEditor key={`${selectedRide.id}:${selectedRide.version}`} ride={selectedRide} cars={carsQuery.data ?? []} saving={editMutation.isPending || changeMutation.isPending} onSave={(move) => void saveMove(move)} /> : undefined}
+        ) : selectedRide?.id && ownsEditableRide(selectedRide.id) ? <MemberRideEditor key={`${selectedRide.id}:${selectedRide.version}`} ride={selectedRide} cars={carsQuery.data ?? []} saving={rideMoves.saving} onSave={(move) => void saveMove(move)} /> : undefined}
       />
 
       <WaitlistGroupSheet
@@ -750,20 +710,7 @@ export function SiddurPage() {
         onOpenChange={(open) => !open && setSelectedGroupId(null)}
       />
 
-      <ConfirmDialog
-        open={!!collisionMove}
-        onOpenChange={(open) => !open && setCollisionMove(null)}
-        title={he.rideEditing.collisionTitle}
-        description={he.rideEditing.collisionBody}
-        confirmLabel={he.rideEditing.acknowledge}
-        loading={changeMutation.isPending}
-        onConfirm={() => {
-          if (!collisionMove) return;
-          changeMutation.mutate(collisionMove, { onSuccess: () => {
-            setCollisionMove(null); setSelectedRideId(null); toast.success(he.rideEditing.requested);
-          } });
-        }}
-      />
+      <ConfirmDialog {...rideMoves.collisionDialog} />
 
       {isMyDepartment ? (
         <AddRideFab />
@@ -777,6 +724,7 @@ export function SiddurPage() {
           weekStart={quickRequestSlot.weekStart}
           day={quickRequestSlot.day}
           initialStartTime={quickRequestSlot.time}
+          initialEndTime={quickRequestSlot.endTime}
           initialCarId={quickRequestSlot.carId}
           showCarPicker={quickRequestSlot.showCarPicker}
           cars={quickRequestSlot.cars}

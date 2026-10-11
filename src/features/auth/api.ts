@@ -20,6 +20,7 @@ export type ProfilePatch = Partial<
     | "muted_events"
     | "does_not_drive"
     | "classic_request_form"
+    | "my_rides_week_view"
   >
 >;
 
@@ -29,7 +30,7 @@ export type ProfilePatch = Partial<
  * `phone`) stays satisfied.
  */
 const PROFILE_COLUMNS_WITHOUT_PHONE =
-  "approval_status, approved_at, approved_by, avatar_url, created_at, default_boosters, default_child_seats, default_department_id, display_name, does_not_drive, email, full_name, classic_request_form, google_name, home_week_preference, id, is_admin, muted_events, updated_at";
+  "approval_status, approved_at, approved_by, avatar_url, created_at, default_boosters, default_child_seats, default_department_id, display_name, does_not_drive, email, full_name, classic_request_form, google_name, home_week_preference, id, is_admin, muted_events, my_rides_week_view, updated_at";
 
 type ProfileWithoutPhone = Omit<Profile, "phone">;
 
@@ -141,6 +142,14 @@ export async function registerPushSubscription(input: {
     p_auth: input.auth,
     p_user_agent: input.userAgent,
   });
+}
+
+/** Owner 2026-10-11: one test notification to myself through the real pipeline; how many devices it was pushed to. */
+export async function sendTestNotification(): Promise<{ devices: number }> {
+  // A no-argument RPC (`Args: never`) — called directly, like `current_week_start`.
+  const { data, error } = await supabase.rpc("send_test_notification");
+  if (error) throw toAppError(error);
+  return { devices: Number((data as { devices?: number } | null)?.devices ?? 0) };
 }
 
 /**

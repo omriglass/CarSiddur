@@ -6,9 +6,10 @@ import { toast } from "sonner";
 
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { keepCarTripLabel } from "@/features/requests/keepCar";
 import { he, tv } from "@/i18n/he";
 import { formatTime } from "@/lib/time";
-import { TRIP_TYPES, type TripType } from "@/lib/enums";
+import type { TripType } from "@/lib/enums";
 
 import { useSetRequestTripTypeMutation } from "../../hooks";
 
@@ -23,6 +24,9 @@ export interface TripTypeChangeProps {
   /** The request's `version` (optimistic concurrency); the control is hidden without it. */
   version: number | null | undefined;
   tripType: TripType | null | undefined;
+  /** REQ §13.126 (g): a stored drop_off with this flag reads "הלוך-חזור · הרכב נשאר ב…" (never "הקפצה"). */
+  keepCarAtDestination?: boolean | null;
+  destination?: string | null;
   name: string;
   departmentId: string;
   weekStart: string;
@@ -31,22 +35,29 @@ export interface TripTypeChangeProps {
   wasUnplaced?: boolean;
 }
 
-export function TripTypeChange({ requestId, version, tripType, name, departmentId, weekStart, disabled, wasUnplaced }: TripTypeChangeProps) {
+/** The menu's choices: the three trip types plus "round trip, the car stays at the destination" (REQ §13.126 g). */
+type TripChoice = TripType | "keep_car";
+const KEEP_CAR = "keep_car" as const;
+const CHOICES: TripChoice[] = ["round_trip", KEEP_CAR, "one_way", "drop_off"];
+
+export function TripTypeChange({ requestId, version, tripType, keepCarAtDestination, destination, name, departmentId, weekStart, disabled, wasUnplaced }: TripTypeChangeProps) {
   const mutation = useSetRequestTripTypeMutation();
   // R2U2: choosing a type asks first; the select then shows the chosen type until the refetched row agrees.
-  const [pending, setPending] = useState<TripType | null>(null);
-  const [applied, setApplied] = useState<TripType | null>(null);
+  const [pending, setPending] = useState<TripChoice | null>(null);
+  const [applied, setApplied] = useState<TripChoice | null>(null);
   if (version == null || !tripType) return null;
+  const current: TripChoice = tripType === "drop_off" && keepCarAtDestination ? KEEP_CAR : tripType;
+  const labelOf = (choice: TripChoice): string => (choice === KEEP_CAR ? keepCarTripLabel(destination) : TRIP_TYPE_LABEL[choice]);
   function change(next: string) {
-    if (next === tripType || version == null) return;
-    const chosen = TRIP_TYPES.find((type) => type === next);
+    if (next === current || version == null) return;
+    const chosen = CHOICES.find((choice) => choice === next);
     if (chosen) setPending(chosen);
   }
-  function apply(chosen: TripType) {
+  function apply(chosen: TripChoice) {
     if (version == null) return;
     setPending(null);
     mutation.mutate(
-      { requestId, tripType: chosen, expectedVersion: version, departmentId, weekStart },
+      { requestId, tripType: chosen === KEEP_CAR ? "drop_off" : chosen, keepCar: chosen === KEEP_CAR, expectedVersion: version, departmentId, weekStart },
       {
         onSuccess: (result) => {
           setApplied(chosen);
@@ -62,16 +73,19 @@ export function TripTypeChange({ requestId, version, tripType, name, departmentI
       },
     );
   }
+  const shown: TripChoice = applied && applied !== current && mutation.isSuccess ? applied : current;
   return (
     <div className="flex items-center gap-2" data-testid="trip-type-change" data-trip-request-id={requestId}>
       <span className="shrink-0 text-xs text-muted-foreground">{he.tripTypeChange.label}</span>
-      <Select value={applied && applied !== tripType && mutation.isSuccess ? applied : tripType} onValueChange={change} disabled={disabled || mutation.isPending}>
+      <Select value={shown} onValueChange={change} disabled={disabled || mutation.isPending}>
         <SelectTrigger className="min-h-11 flex-1" aria-label={tv("tripTypeChange.aria", { name })} data-testid="trip-type-select">
-          <SelectValue />
+          <SelectValue>{labelOf(shown)}</SelectValue>
         </SelectTrigger>
         <SelectContent>
-          {TRIP_TYPES.map((type) => (
-            <SelectItem key={type} value={type} data-testid={`trip-type-option-${type}`}>{TRIP_TYPE_LABEL[type]}</SelectItem>
+          {CHOICES.map((choice) => (
+            <SelectItem key={choice} value={choice} data-testid={`trip-type-option-${choice}`}>
+              {labelOf(choice)}
+            </SelectItem>
           ))}
         </SelectContent>
       </Select>
@@ -79,7 +93,7 @@ export function TripTypeChange({ requestId, version, tripType, name, departmentI
         open={!!pending}
         onOpenChange={(open) => { if (!open) setPending(null); }}
         title={tv("tripTypeChange.confirmTitle", { name })}
-        description={pending ? tv("tripTypeChange.confirmBody", { name, type: TRIP_TYPE_LABEL[pending] }) : undefined}
+        description={pending ? tv("tripTypeChange.confirmBody", { name, type: labelOf(pending) }) : undefined}
         confirmLabel={he.tripTypeChange.confirm}
         onConfirm={() => { if (pending) apply(pending); }}
       />

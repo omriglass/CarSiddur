@@ -63,10 +63,19 @@ import { conflictingRides } from "@/features/siddur/rideEditing";
 import { useDepartmentSettings, useEditRideMutation } from "@/features/sadran/hooks";
 import { servedOf } from "@/features/rides/servedOf";
 import { OpenProposalButton } from "@/features/proposals/components/OpenProposalButton";
+import { useOpenProposal } from "@/features/proposals/useOpenProposal";
+import { MyWeekItemSheet } from "@/features/requests/myWeek/MyWeekItemSheet";
+import { MyWeekView } from "@/features/requests/myWeek/MyWeekView";
+import type { MyWeekTarget } from "@/features/requests/myWeek/myWeekItems";
+import type { TemplateSuggestion } from "@/features/requests/api";
+import { TemplateSuggestionActions } from "@/features/requests/components/TemplateSuggestions";
+import { TripSummary } from "@/components/TripSummary";
+import { MyWeekDisplayMenu } from "@/features/requests/myWeek/MyWeekDisplayMenu";
 import { he, t, tv } from "@/i18n/he";
 import { describeStatusReason } from "@/lib/statusReason";
 import { effectiveWeekSettings } from "@/lib/weekSettings";
 import { formatTime } from "@/lib/time";
+import { cn } from "@/lib/utils";
 import { paths } from "@/app/routes";
 
 import { isAwaitingAnswer } from "@/features/requests/pendingProposal";
@@ -122,6 +131,11 @@ export function HomePage() {
   const [collisionMove, setCollisionMove] = useState<(RideMove & { departmentId: string; weekStart: string }) | null>(null);
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
   const [shortenRow, setShortenRow] = useState<DisplayRow | null>(null);
+  // "My rides" week view (owner 2026-10-11): a tapped request / suggestion block opens its own sheet; a ride block
+  // reuses `selectedMyRide`, a proposal block navigates like `OpenProposalButton`.
+  const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
+  const [selectedSuggestion, setSelectedSuggestion] = useState<TemplateSuggestion | null>(null);
+  const openProposal = useOpenProposal();
   const cancelRideMutation = useCancelRideMutation();
   const editMutation = useEditRideMutation();
   const changeMutation = useRequestRideChangeMutation();
@@ -141,7 +155,7 @@ export function HomePage() {
 
   // `?focus=<request_id>` (notification deep link, `notification_default_url`'s `/my?focus=<id>`
   // case, formerly `/requests?focus=`): scroll the matching card into view and ring-highlight it.
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const focusedId = searchParams.get("focus");
   const highlightedRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
@@ -183,6 +197,20 @@ export function HomePage() {
 
   const upcomingRides = upcomingRidesQuery.data ?? [];
 
+  // `?view=week|list` wins for this visit; otherwise the profile default (`profiles.my_rides_week_view`, list unless set).
+  const weekView = (searchParams.get("view") ?? (profileQuery.data?.my_rides_week_view ? "week" : "list")) === "week";
+  function setView(next: "week" | "list") {
+    const params = new URLSearchParams(searchParams);
+    params.set("view", next);
+    setSearchParams(params, { replace: true });
+  }
+  function openWeekTarget(target: MyWeekTarget) {
+    if (target.type === "ride") setSelectedMyRide(target.ride);
+    else if (target.type === "request") setSelectedRequestId(target.row.id);
+    else if (target.type === "suggestion") setSelectedSuggestion(target.suggestion);
+    else if (target.row.pendingProposal) void openProposal.open(target.row.pendingProposal.id);
+  }
+
   const nextAction = requests.find((r) => r.status === "proposed" && r.pendingProposal && isAwaitingAnswer(r.pendingProposal));
   const unserved = requests.filter(
     // R10B5: a request served by its plan B is placed — never listed as unserved / waitlisted.
@@ -208,6 +236,10 @@ export function HomePage() {
   // QB13: a request shown in the "unserved" section is not listed a second time below.
   const unservedIds = new Set(unserved.map((r) => r.id));
   const upcomingWeeks = groupByWeek(toDisplayRows(requests.filter((r) => !unservedIds.has(r.id)))).sort((a, b) => a.weekStart.localeCompare(b.weekStart));
+  // The display row (series folded) a tapped week-view request block stands for — the same row the list renders.
+  const selectedWeekRow = selectedRequestId
+    ? toDisplayRows(requests).find((row) => row.id === selectedRequestId || row.seriesLegs?.some((leg) => leg.id === selectedRequestId)) ?? null
+    : null;
   const phaseOf = (weekStart: string) => weeks.find((w) => w.weekStart === weekStart)?.phase;
   const openOffers = (freedOffersQuery.data ?? []).filter(
     (o) => o.offerStatus === "open" && (o.claimStatus === "offered" || o.claimStatus === "claimed"),
@@ -220,11 +252,24 @@ export function HomePage() {
     : null;
   const editableWeek = (weeksQuery.data ?? []).find((week) => week.week_start === editableRide?.week_start) ?? null;
   const ownsEditableRide = !!editableRide &&
-    servedOf(editableRide).every((entry) => entry.role === "driver" && entry.car_mode === "keep") &&
+    // Same rule as `useMemberRideMoves`: a ride I drive keeping the car, or my own one-way (owner 2026-10-11).
+    servedOf(editableRide).every((entry) => entry.role === "driver" && (entry.car_mode === "keep" || (entry.car_mode === "relay" && entry.trip_type === "one_way"))) &&
     active.canSubmit && editableRide.driver_id === profileQuery.data?.id &&
     !!editableRide.starts_at && Date.parse(editableRide.starts_at) > now.getTime() &&
     (editableWeek?.phase === "published" || editableWeek?.phase === "live") &&
     !(selectedRideChangesQuery.data ?? []).some((change) => change.ride_id === editableRide.id);
+
+  // Owner 2026-10-11 (parity with the siddur's `editHrefForRide`): my own editable request served by the opened ride.
+  const selectedRideOwnRequest = selectedMyRide?.id
+    ? (requestsQuery.data ?? []).find((request) => request.ride?.id === selectedMyRide.id && canEditRequest(request))
+    : undefined;
+  const selectedRideEditHref = selectedRideOwnRequest ? paths.requests.edit(selectedRideOwnRequest.id) : undefined;
+  // Same gate as the siddur's public-notes editor: my own (or an admin's) future ride on a published/live week.
+  const selectedRidePhase = selectedMyRide?.week_start ? phaseOf(selectedMyRide.week_start) : undefined;
+  const canEditSelectedRideNotes = !!selectedMyRide && selectedMyRide.status !== "cancelled"
+    && !!selectedMyRide.ends_at && Date.parse(selectedMyRide.ends_at) > now.getTime()
+    && (selectedRidePhase === "published" || selectedRidePhase === "live")
+    && (selectedMyRide.driver_id === profileQuery.data?.id || !!selectedRideOwnRequest || !!profileQuery.data?.is_admin);
 
   async function saveMyRideMove(move: RideMove) {
     if (!editableRide || !ownsEditableRide || !editableRide.department_id || !editableRide.week_start || !editableRide.origin_id || !editableRide.destination_id) return;
@@ -275,7 +320,7 @@ export function HomePage() {
   }
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6 p-4 pb-24">
+    <div className={cn("mx-auto space-y-6 p-4 pb-24", weekView ? "max-w-5xl lg:max-w-none" : "max-w-2xl")}>
       <PageHeader
         title={t("screen.home.title")}
         subtitle={
@@ -283,6 +328,7 @@ export function HomePage() {
             ? tv("home.greeting", { name: profileQuery.data.full_name })
             : undefined
         }
+        actions={weekView ? undefined : <MyWeekDisplayMenu view="list" onViewChange={setView} />}
       />
 
       {!active.canSubmit && <p className="text-sm text-muted-foreground">{he.departmentContext.noMembership} <Link to={paths.siddur({ dept: active.departmentId })}>{he.nav.siddur}</Link></p>}
@@ -329,9 +375,23 @@ export function HomePage() {
         </OpenProposalButton>
       ) : null}
 
-      <TemplateSuggestions />
+      {weekView ? (
+        <MyWeekView
+          departmentId={defaultDepartmentId}
+          homeDestinationId={homeDestinationIds[defaultDepartmentId ?? ""]}
+          profileId={viewerId}
+          requests={requests}
+          weeks={weeksQuery.data ?? []}
+          homeWeekStart={homeWeek?.weekStart}
+          canSubmit={active.canSubmit}
+          onTarget={openWeekTarget}
+          onViewChange={setView}
+        />
+      ) : null}
 
-      <section className="space-y-3">
+      {!weekView ? <TemplateSuggestions /> : null}
+
+      {!weekView ? <section className="space-y-3">
         <h2 className="text-sm font-semibold text-muted-foreground">{t("home.upcomingRides")}</h2>
         {upcomingRidesQuery.isError ? (
           <ErrorState onRetry={() => void upcomingRidesQuery.refetch()} />
@@ -345,12 +405,12 @@ export function HomePage() {
             })}
           </div>
         )}
-      </section>
+      </section> : null}
 
       {/* R3U1: setup banners sit below the upcoming rides so they never push them off the first screen. */}
       <DeviceSetupPrompts />
 
-      {unserved.length > 0 || allPlaced ? <section className="space-y-3">
+      {!weekView && (unserved.length > 0 || allPlaced) ? <section className="space-y-3">
         <h2 className="text-sm font-semibold text-muted-foreground">{t("home.unservedRequests")}</h2>
         {unserved.length === 0 ? (
           <EmptyState icon={MessageCircleQuestion} message={t("home.emptyUnserved")} />
@@ -412,7 +472,7 @@ export function HomePage() {
         </section>
       ) : null}
 
-      <section className="space-y-3 border-t pt-4">
+      {!weekView ? <section className="space-y-3 border-t pt-4">
         <p className="text-sm text-muted-foreground">{t("home.weekRequests")}</p>
         {requests.length === 0 ? (
           <EmptyState
@@ -476,7 +536,7 @@ export function HomePage() {
             );
           })
         )}
-      </section>
+      </section> : null}
 
       <div className="border-t pt-4 text-center">
         <Link to={paths.myHistory()} className="text-sm font-medium text-primary underline">
@@ -501,6 +561,9 @@ export function HomePage() {
         showAddPassengers={!!selectedMyRide && selectedMyRide.status !== "cancelled"}
         onRemoveOwnRide={selectedMyRide?.id && selectedMyRide.version != null ? () => cancelRideMutation.mutate({ rideId: selectedMyRide.id!, expectedVersion: selectedMyRide.version!, reason: "CANCELLED_BY_MEMBER" }, { onSuccess: () => setSelectedMyRide(null) }) : undefined}
         removingOwnRide={cancelRideMutation.isPending}
+        // Owner 2026-10-11: the same "edit" button as on the siddur — opens my own request on this ride (day, stops, …).
+        editRequestHref={selectedRideEditHref}
+        canEditPublicNotes={canEditSelectedRideNotes}
         editor={editableRide && ownsEditableRide ? (
           <MemberRideEditor
             key={`${editableRide.id}:${editableRide.version}`}
@@ -511,6 +574,54 @@ export function HomePage() {
           />
         ) : undefined}
       />
+      {/* "My rides" week view: a tapped request opens the same row (and actions) the list shows; a tapped suggestion the same three actions. */}
+      <MyWeekItemSheet
+        open={!!selectedWeekRow}
+        title={he.myWeek.requestSheetTitle}
+        onOpenChange={(open) => { if (!open) setSelectedRequestId(null); }}
+      >
+        {selectedWeekRow ? (
+          <RequestRow
+            row={selectedWeekRow}
+            homeDestinationId={homeDestinationIds[selectedWeekRow.departmentId]}
+            handover={rowHandover(selectedWeekRow, neighboursByRide, viewerId)}
+            onWithdraw={(target) => { setSelectedRequestId(null); setConfirmAction({ kind: "withdraw", row: target }); }}
+            onCancelRide={(target) => { setSelectedRequestId(null); setConfirmAction({ kind: "cancel", row: target }); }}
+            onShorten={(target) => { setSelectedRequestId(null); setShortenRow(target); }}
+            onMakeRepeating={(target) =>
+              saveTemplateMutation.mutate(target.id, { onSuccess: () => toast.success(he.request.repeatSaved) })
+            }
+            makeRepeatingPending={saveTemplateMutation.isPending}
+            onOptOutChange={(target, optOut) => optOutMutation.mutate({ requestId: target.id, optOut })}
+            onPlaceOnOwnCar={(target, carId) =>
+              placeOnOwnCarMutation.mutate({ requestId: target.id, carId }, { onSuccess: () => toast.success(he.request.placedOnOwnCar) })
+            }
+            onRestoreDuplicate={(target) =>
+              restoreDuplicateMutation.mutate(target.id, { onSuccess: () => toast.success(he.request.notDuplicateRestored) })
+            }
+            ownCars={ownCars}
+            actionPending={placeOnOwnCarMutation.isPending || restoreDuplicateMutation.isPending}
+          />
+        ) : null}
+      </MyWeekItemSheet>
+      <MyWeekItemSheet
+        open={!!selectedSuggestion}
+        title={he.myWeek.suggestionSheetTitle}
+        onOpenChange={(open) => { if (!open) setSelectedSuggestion(null); }}
+      >
+        {selectedSuggestion ? (
+          <>
+            <p className="text-sm text-muted-foreground">{he.myWeek.suggestionNote}</p>
+            <TripSummary
+              destination={selectedSuggestion.destinationName ?? selectedSuggestion.destinationText ?? ""}
+              purpose={selectedSuggestion.rideTypeName ?? ""}
+              departAt={selectedSuggestion.departAt}
+              returnAt={selectedSuggestion.returnAt}
+            />
+            <TemplateSuggestionActions row={selectedSuggestion} onDone={() => setSelectedSuggestion(null)} />
+          </>
+        ) : null}
+      </MyWeekItemSheet>
       <ShortenSeriesDialog row={shortenRow} onOpenChange={(open) => { if (!open) setShortenRow(null); }} />
       <ConfirmDialog
         open={!!collisionMove}

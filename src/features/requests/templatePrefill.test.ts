@@ -125,4 +125,11 @@ describe("suggestionToFormValues", () => {
     ]);
     expect(values.returnStops).toEqual([{ freeText: "עצירה חופשית" }]);
   });
+
+  it("a repeated kept-car trip comes back as a round trip with the car left at the destination (REQ §13.126 g)", () => {
+    const values = suggestionToFormValues(baseRow({ tripType: "drop_off", keepCarAtDestination: true }), WEEK_START);
+    expect(values.tripType).toBe("round_trip");
+    expect(values.keepCarAtDestination).toBe(true);
+    expect(suggestionToFormValues(baseRow(), WEEK_START).keepCarAtDestination).toBe(false);
+  });
 });

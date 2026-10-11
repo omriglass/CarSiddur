@@ -665,6 +665,8 @@ export const he = {
     alternativeCarRequired: "בחר/י רכב להצעה של תוכנית ב׳ — המערכת לא בוחרת רכב בשבילך",
     requestServedByAlternative: "הבקשה כבר שובצה בתוכנית ב׳ — אי אפשר לערוך אותה. אפשר לבטל אותה ולהגיש בקשה חדשה.",
     alternativeChanged: "המבקש/ת שינה/תה את תוכנית ב׳ אחרי שההצעה נשלחה",
+    planANoCar: "אין רכב פנוי לנסיעה המקורית — הבקשה נשארת בתוכנית ב׳",
+    planSwitchNotApplicable: "אי אפשר להחליף תוכנית לבקשה הזו",
     alternativeUnavailable: "תוכנית ב׳ כבר לא אפשרית — הרכב תפוס בשעות האלה",
     invalidRange: "טווח התאריכים אינו תקין (עד 400 ימים, סוף אחרי התחלה)",
     lastAdminRequired: "לא ניתן להסיר את ההרשאות של המנהל/ת האחרון/ה במערכת",
@@ -808,6 +810,7 @@ export const he = {
     waitlist_resolved: "רשימת ההמתנה הוסדרה",
     window_changed: "מועד סגירת הבקשות השתנה",
     car_swapped: "הרכב שלך הוחלף",
+    test_notification: "התראת בדיקה",
   } satisfies Record<NotificationEvent, string>,
   car: {
     status: {

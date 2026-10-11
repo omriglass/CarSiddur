@@ -127,6 +127,8 @@ export interface MyRequestRow {
   /** REQ §13.93 "Multi-stop rides": out/return waypoints, already leg+position-ordered — `originDestinationLabel()` reads the out-leg names. */
   stops: RouteStop[];
   tripType: TripType;
+  /** REQ §13.126 (g): a round trip whose car stays at the destination (stored as a two-way הקפצה). */
+  keepCarAtDestination?: boolean;
   destination: string;
   rideTypeId: string;
   rideTypeName: string;
@@ -154,7 +156,7 @@ export interface MyRequestRow {
 const SELECT = `
   id, department_id, week_start, status, status_reason, is_late, changed_since_solve,
   depart_at, return_at, trip_shape, needs_car_at_destination, destination_id, destination_text, version, ride_type_id,
-  origin_id, origin_text, trip_type, depart_anchor, arrive_by, return_anchor, leave_dest_at,
+  origin_id, origin_text, trip_type, keep_car_at_destination, depart_anchor, arrive_by, return_anchor, leave_dest_at,
   freed_slot_opt_out, has_luggage, luggage_waived_at, preferred_car_id, template_id, series_id, series_index, series_count,
   duration_locked, flex_return_late, fallback, served_by_alternative, plan_b_parent_id,
   alternative:request_alternatives(drop_place_id, drop_place_text, arrive_by, pickup, pickup_at, original_main, drop_place:destinations!request_alternatives_place_fk(name), pickup_place_id, pickup_place_text, pickup_place:destinations!request_alternatives_pickup_place_fk(name)),
@@ -248,6 +250,7 @@ interface RawRequestRow {
   origin_id: string | null;
   origin_text: string | null;
   trip_type: TripType;
+  keep_car_at_destination?: boolean;
   template_id: string | null;
   series_id: string | null;
   series_index: number | null;
@@ -381,6 +384,7 @@ function mapRow(row: RawRequestRow, profileId?: string): MyRequestRow {
     originName: row.origin?.name ?? row.origin_text ?? null,
     stops: mapEmbeddedStops(row.stops, row.return_at != null),
     tripType: row.trip_type,
+    keepCarAtDestination: row.keep_car_at_destination ?? false,
     destination: row.destination?.name ?? row.destination_text ?? "",
     rideTypeId: row.ride_type_id,
     rideTypeName: row.ride_type?.name_he ?? "",
@@ -452,6 +456,8 @@ export interface RequestEditRow {
   outStops: DestinationValue[];
   returnStops: DestinationValue[];
   tripType: TripType;
+  /** REQ §13.126 (g): stored as a two-way הקפצה; the form reopens it as a round trip with the flag on. */
+  keepCarAtDestination?: boolean;
   departAt: string | null;
   returnAt: string | null;
   /** REQ §3.4: the return time a one-way request keeps (`requests.kept_return_at`), so switching back restores it. */
@@ -488,7 +494,7 @@ export interface RequestEditRow {
 const EDIT_SELECT = `
   id, department_id, week_start, status, version, destination_id, destination_text, ride_type_id,
   trip_shape, depart_at, return_at, kept_return_at, one_way_car_mode, needs_car_at_destination,
-  origin_id, origin_text, trip_type, depart_anchor, arrive_by, return_anchor, leave_dest_at, duration_locked,
+  origin_id, origin_text, trip_type, keep_car_at_destination, depart_anchor, arrive_by, return_anchor, leave_dest_at, duration_locked,
   fallback, served_by_alternative, plan_b_parent_id,
   alternative:request_alternatives(drop_place_id, drop_place_text, arrive_by, pickup, pickup_at, drop_place:destinations!request_alternatives_place_fk(name), pickup_place_id, pickup_place_text, pickup_place:destinations!request_alternatives_pickup_place_fk(name)),
   adults, child_seats, boosters, has_luggage,
@@ -533,6 +539,7 @@ export async function fetchRequestById(requestId: string, profileId: string): Pr
     origin_id: string | null;
     origin_text: string | null;
     trip_type: TripType;
+    keep_car_at_destination?: boolean;
     depart_at: string | null;
     return_at: string | null;
     one_way_car_mode: LegCarMode | null;
@@ -586,6 +593,7 @@ export async function fetchRequestById(requestId: string, profileId: string): Pr
     outStops,
     returnStops,
     tripType: row.trip_type,
+    keepCarAtDestination: row.keep_car_at_destination ?? false,
     departAt: row.depart_at,
     returnAt: row.return_at,
     keptReturnAt: row.kept_return_at ?? null,
@@ -645,6 +653,8 @@ export interface SubmitRequestPayload {
   trip_shape: TripShape;
   /** REQ §13.93: source of truth when sent — `submit_request` derives `trip_shape`/`needs_car_at_destination`/`one_way_car_mode` from it. */
   trip_type?: TripType;
+  /** REQ §13.126 (g): only with `trip_type: "drop_off"` and a return time — the car stays at the destination for others. */
+  keep_car_at_destination?: boolean;
   /** REQ §13.93: explicit origin; omitted to let `submit_request` default to the requester's own `default_origin_id`, else the department home. */
   origin_id?: string;
   origin_text?: string;
@@ -1094,6 +1104,8 @@ export interface TemplateSuggestion {
   leaveDestAt?: string | null;
   /** REQ §13.112 (c): the template's source was a window request. */
   durationLocked?: boolean;
+  /** REQ §13.126 (g): the repeated trip keeps the car at the destination. */
+  keepCarAtDestination?: boolean;
   needsCarAtDestination: boolean;
   adults: number;
   childSeats: number;
@@ -1139,6 +1151,7 @@ function mapTemplateSuggestion(row: TemplateSuggestionRow): TemplateSuggestion {
     returnAnchor: row.return_anchor ?? "arrive",
     leaveDestAt: row.leave_dest_at ?? null,
     durationLocked: row.duration_locked ?? false,
+    keepCarAtDestination: row.keep_car_at_destination ?? false,
     needsCarAtDestination: row.needs_car_at_destination ?? true,
     adults: row.adults,
     childSeats: row.child_seats,

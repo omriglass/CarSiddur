@@ -793,7 +793,7 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
         : request
         ? `${request.requester_full_name ?? ""} · ${requestRouteLine({ originId: placement.originId ?? request.origin_id,
           originName: placement.originId && placement.originId !== request.origin_id ? destinationNameById.get(placement.originId) ?? request.origin_resolved_name : request.origin_resolved_name,
-          originText: placement.originId && placement.originId !== request.origin_id ? null : request.origin_text, destination: request.destination_resolved_name ?? "", tripType: request.trip_type }, department?.home_destination_id)}`
+          originText: placement.originId && placement.originId !== request.origin_id ? null : request.origin_text, destination: request.destination_resolved_name ?? "", tripType: request.trip_type, keepCarAtDestination: request.keep_car_at_destination }, department?.home_destination_id)}`
         : ""),
       passengerSummary: original?.passengerSummary ?? (request ? ridePassengerSummary([{ ...request, requester: request.requester_full_name }]) : undefined),
       draft: true,
@@ -889,7 +889,7 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
     if (!window) return [];
     return [{ id: unmetItemId(item), startMinutes: (Date.parse(window.startsAt) - Date.parse(dayStartIso(selectedDay))) / 60_000,
       endMinutes: (Date.parse(window.endsAt) - Date.parse(dayStartIso(selectedDay))) / 60_000,
-      label: `${item.leg ? `${item.leg === "out" ? he.tripLegs.out : he.tripLegs.pickup} · ` : ""}${item.request.requester_full_name ?? ""} · ${requestRouteLine({ originId: item.request.origin_id, originName: item.request.origin_id ? item.request.origin_resolved_name : null, originText: item.request.origin_text, destination: item.destinationName, tripType: item.request.trip_type }, department?.home_destination_id)}`, rideTypeCode: item.request.ride_type_code,
+      label: `${item.leg ? `${item.leg === "out" ? he.tripLegs.out : he.tripLegs.pickup} · ` : ""}${item.request.requester_full_name ?? ""} · ${requestRouteLine({ originId: item.request.origin_id, originName: item.request.origin_id ? item.request.origin_resolved_name : null, originText: item.request.origin_text, destination: item.destinationName, tripType: item.request.trip_type, keepCarAtDestination: item.request.keep_car_at_destination }, department?.home_destination_id)}`, rideTypeCode: item.request.ride_type_code,
       passengerSummary: ridePassengerSummary([{ ...item.request, requester: item.request.requester_full_name }]) }];
   }));
   for (let lane = 0; lane <= Math.max(-1, ...phantomRides.map((ride) => ride.lane)); lane++) {

@@ -389,8 +389,29 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
     } catch { /* toast shown by the mutation */ }
   }
 
+  /**
+   * REQ §13.126 g: the other leg of a kept-car trip, when it is not on a ride yet — as the unmet card it would be, with its
+   * start in minutes of the shown day. `null` for anything else.
+   */
+  function keepCarTwinLeg(item: UnmetListItem): { item: UnmetListItem; minutes: number } | null {
+    if (!item.leg) return null;
+    const full = requestsData.find((r) => r.id === item.request.id);
+    if (!full?.keep_car_at_destination) return null;
+    const other = item.leg === "out" ? "return" : "out";
+    const covered = rides.some((ride) => ride.status !== "cancelled" && servedOf(ride).some((entry) =>
+      entry.request_id === full.id && (entry.leg === other || entry.leg === "both")));
+    if (covered) return null;
+    const view = legView(full, other);
+    const start = requestStart(view);
+    if (!start || dateKey(start) !== selectedDay) return null;
+    return {
+      item: { ...item, request: view, leg: other },
+      minutes: Math.round((Date.parse(start) - Date.parse(dayStartIso(selectedDay))) / 60_000),
+    };
+  }
+
   /** Assign a request leg or prepare a proposal when sharing/relay coordination is required. */
-  async function handlePlaceUnmetRequest(item: UnmetListItem, carId: string, minutes: number, droppedOnRideId?: string) {
+  async function handlePlaceUnmetRequest(item: UnmetListItem, carId: string, minutes: number, droppedOnRideId?: string, chainedLeg = false) {
     setUnmetDragHover(null);
     const req = item.request;
     if (carId.startsWith("phantom:")) return;
@@ -507,6 +528,10 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
       });
       const carName = carsData.find((c) => c.id === carId)?.name ?? "";
       toast.success(placement.driverIsRequester ? tv("sadranBoard.dragPlacedToast", { car: carName, start: formatMinutes(minutes) }) : connects ? he.connectedPair.saved : he.boardCoordination.standaloneSaved);
+      // REQ §13.126 g (owner 2026-10-11): a kept-car trip's two legs go together — placing one leg also tries the other leg
+      // on the same car at its own time (the server then connects them; a misfit is reported like any drop).
+      const twin = !chainedLeg ? keepCarTwinLeg(item) : null;
+      if (twin) await handlePlaceUnmetRequest(twin.item, carId, twin.minutes, undefined, true);
     } catch {
       // The mutation reports validation errors; keep the request on its phantom lane.
     }
@@ -619,6 +644,9 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
     if (unavailable(dropCtx, carId, newStartsAt, newEndsAt)) { toast.error(he.sadranBoard.maintenanceUnavailable); return; }
     const servedRequests = servedOf(ride).map((entry) => requestsData.find((req) => req.id === entry.request_id)).filter((req): req is WeekRequestRow => !!req);
     const withinDepartFlex = servedRequests.every((req) => requestWithinFlex(req, newStartsAt, newEndsAt, servedOf(ride).find((entry) => entry.request_id === req.id)?.leg, ride.driver_id !== req.requester_id));
+    // Owner 2026-10-11: my own ride (every request on it is mine) moves like a member's own drag — applied, never a
+    // proposal to myself.
+    const onlyMine = !!profileId && servedRequests.length > 0 && servedRequests.every((req) => req.requester_id === profileId);
 
     // Conflicts checked and reported in Hebrew *before* touching the DB
     // (owner bug report #2): overlap/buffer, maintenance and seat fit are checked here against the
@@ -642,7 +670,7 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
       .map((r) => ({ startsAt: r.starts_at as string, endsAt: r.ends_at as string }));
     const hasCollision = wouldOverlap({ startsAt: newStartsAt, endsAt: newEndsAt }, otherRidesOnTargetCar, 0);
 
-    if (withinDepartFlex || (hasCollision && ride.status !== "draft")) {
+    if (withinDepartFlex || onlyMine || (hasCollision && ride.status !== "draft")) {
       const prevInput: EditRideInput = {
         id: ride.id,
         department_id: departmentId,

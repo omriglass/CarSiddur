@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { applyCarChoice, carChoiceOf, flexBrief, hasCarAndLuggage, invalidTargetOf, isStageOneField, joinNames, joinWho, mergeFlex, sharedFlexValue, unnamedWhoLabel } from "./sentenceModel";
+import { applyCarChoice, carChoiceOf, flexBrief, guideSteps, hasCarAndLuggage, invalidTargetOf, isStageOneField, joinNames, joinWho, mergeFlex, nextGuideStep, sharedFlexValue, unnamedWhoLabel } from "./sentenceModel";
 
 describe("flexibility chips", () => {
   it("shares one value only when earlier and later agree", () => {
@@ -130,5 +130,21 @@ describe("unnamedWhoLabel / joinWho with unnamed children (REQ §13.112 d)", () 
     expect(invalidTargetOf("boosters")).toEqual({ kind: "sheet", sheet: "who" });
     expect(isStageOneField("legacyChildSeats")).toBe(true);
     expect(invalidTargetOf("windowEnd")).toEqual({ kind: "sheet", sheet: "windowEnd" });
+  });
+});
+
+describe("guideSteps (owner 2026-10-11: start time → end time → destination, skipping what is known)", () => {
+  const base = { outKnown: false, returnKnown: false, hasOut: true, hasReturn: true, timeChips: true, hasDestination: false };
+  it("a blank request walks all three", () => {
+    expect(guideSteps(base)).toEqual(["out", "return", "destination"]);
+    expect(nextGuideStep(guideSteps(base), "out")).toBe("return");
+    expect(nextGuideStep(guideSteps(base), "destination")).toBeNull();
+  });
+  it("skips known times, a missing leg, a time window and a chosen destination", () => {
+    expect(guideSteps({ ...base, outKnown: true })).toEqual(["return", "destination"]);
+    expect(guideSteps({ ...base, outKnown: true, returnKnown: true })).toEqual(["destination"]);
+    expect(guideSteps({ ...base, hasReturn: false })).toEqual(["out", "destination"]);
+    expect(guideSteps({ ...base, timeChips: false })).toEqual(["destination"]);
+    expect(guideSteps({ ...base, outKnown: true, returnKnown: true, hasDestination: true })).toEqual([]);
   });
 });

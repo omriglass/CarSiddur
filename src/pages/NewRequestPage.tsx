@@ -26,6 +26,9 @@ export function NewRequestPage() {
   // Sadran hasn't solved yet, so there is no car to target — only day/time carry over.
   const dayParam = searchParams.get("day") ?? undefined;
   const timeParam = searchParams.get("time") ?? undefined;
+  // Two-tap span on a grid (owner 2026-10-11): the end is "להיות בבית עד", the column's car the preferred car.
+  const endParam = searchParams.get("end") ?? undefined;
+  const carParam = searchParams.get("car") ?? undefined;
   const waitlist = searchParams.get("waitlist") === "1";
   // Repeating-request suggestion prefill (UX_FLOWS §3.4, REQ §76).
   const templateId = searchParams.get("template") ?? undefined;
@@ -84,7 +87,7 @@ export function NewRequestPage() {
           departmentId={departmentId}
           weekStart={weekStart}
           joinRide={joinRide}
-          slotPrefill={!joinRideId && dayParam && timeParam ? { day: dayParam, departTime: timeParam } : undefined}
+          slotPrefill={!joinRideId && dayParam && timeParam ? { day: dayParam, departTime: timeParam, returnTime: endParam, carId: carParam } : undefined}
           dayPrefill={!joinRideId && dayParam && !timeParam ? dayParam : undefined}
           waitlist={waitlist}
           templateSuggestion={templateSuggestion}

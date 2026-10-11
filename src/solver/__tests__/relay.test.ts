@@ -114,4 +114,9 @@ describe('pairRelays: own drop-off pair connects only when the wait is not conte
     expect(pairs).toHaveLength(0);
     expect(unpaired).toHaveLength(2);
   });
+  it('a keep-car request (REQ §13.126 g) connects even when another request needs the only car during the wait', () => {
+    const { normalized, cars } = normalizeAll([...own({ keepCarAtDestination: true }), makeRequest({ id: 'Z', destinationId: 'destB', departureMs: slotMs(44), returnMs: slotMs(50) })]);
+    const { pairs } = pairRelays(normalized.filter((n) => n.legs[0]?.side !== 'both'), cars, normalized.filter((n) => n.legs[0]?.side === 'both'));
+    expect(pairs).toHaveLength(1);
+  });
 });

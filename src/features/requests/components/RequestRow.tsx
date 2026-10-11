@@ -23,6 +23,7 @@ import { whoText } from "../whoLabel";
 import { RequestLink } from "./RequestLink";
 import { PlanBLines } from "./PlanBLines";
 import { WindowSummaryLine } from "./WindowSummaryLine";
+import { isKeepCarRow, keepCarTripLabel } from "../keepCar";
 import { isAwaitingAnswer } from "../pendingProposal";
 import { canPlaceOnOwnCar, isDuplicateWithdrawn } from "../overlap";
 import { FREED_SLOT_ELIGIBLE_STATUSES, canMakeRepeating, displayStatus, legStateLine, originDestinationLabel, ownLegWindow, type DisplayRow } from "../myRequestsRows";
@@ -140,7 +141,9 @@ export function RequestRow({
       <PlanBLines row={row} />
       {handover ? <CarHandoverNotice notes={handover.notes} ride={handover.span} /> : null}
       {row.ride?.needsDriver ? <p className="text-sm font-medium text-destructive">{he.rideCoordination.missingDriver}</p> : null}
-      {row.tripType !== "round_trip" ? <p className="text-xs text-muted-foreground">{TRIP_TYPE_LABEL[row.tripType]}</p> : null}
+      {isKeepCarRow(row) ? (
+        <p className="text-xs text-muted-foreground" data-testid="keep-car-note">{keepCarTripLabel(row.destination)}</p>
+      ) : row.tripType !== "round_trip" ? <p className="text-xs text-muted-foreground">{TRIP_TYPE_LABEL[row.tripType]}</p> : null}
       {row.hasLuggage ? <Badge variant="outline" className="w-fit" data-testid={row.luggageWaived ? "luggage-waived" : undefined}>{row.luggageWaived ? he.smallTrunk.waivedLabel : he.request.luggageChip}</Badge> : null}
       {row.preferredCarName ? <p className="text-xs text-muted-foreground">{he.request.preferredCar}: {row.preferredCarName}</p> : null}
       {others ? (

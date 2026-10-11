@@ -2665,7 +2665,7 @@ function pairRelays(requests, cars, others = [], shortWaitSlots = 0) {
   }
   const isOwn = (c) => c.out.request.splitFrom !== void 0 && c.out.request.splitFrom === c.ret.request.splitFrom;
   const sharedCars = cars.filter((c) => c.type === "shared").length;
-  const contested = (c) => !(isOwn(c) && c.returnWindow.start - c.outWindow.end <= shortWaitSlots) && waitContested([...requests, ...others], c.outWindow.end, c.returnWindow.start, [c.out, c.ret], sharedCars);
+  const contested = (c) => !(isOwn(c) && (c.out.request.keepCarAtDestination || c.returnWindow.start - c.outWindow.end <= shortWaitSlots)) && waitContested([...requests, ...others], c.outWindow.end, c.returnWindow.start, [c.out, c.ret], sharedCars);
   for (let i = candidates.length - 1; i >= 0; i--) {
     const c = candidates[i];
     if (c && contested(c)) candidates.splice(i, 1);
@@ -2960,7 +2960,8 @@ function planRequests(input, r) {
   const alt = r.alternative;
   if (!alt) return null;
   const tripType = effectiveTripType(r);
-  if (tripType !== "round_trip" && tripType !== "one_way" || r.seriesId !== void 0 || r.originIsFreeText) return null;
+  const planBTrip = tripType === "round_trip" || tripType === "one_way" || tripType === "drop_off" && r.keepCarAtDestination === true;
+  if (!planBTrip || r.seriesId !== void 0 || r.originIsFreeText) return null;
   const origin = originIdOf(r, input.homeLocationId);
   if (alt.dropPlaceId === origin) return null;
   const separatePickup = alt.pickupMs !== void 0 && (alt.pickupPlaceId !== void 0 || alt.pickupPlaceIsFreeText === true);

@@ -390,7 +390,9 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
             draggable
             canDragRide={(ride) => !ride.id.startsWith("merge:") && !ride.id.startsWith("draft:") && (!ride.id.startsWith("change:") || !!(board.rideChangesQuery.data ?? []).find((change) => change.is_planning && `change:${change.id}` === ride.id))}
             canResizeRide={(ride) => !ride.id.startsWith("request:") && !ride.id.startsWith("change:") && !ride.id.startsWith("merge:") && !ride.id.startsWith("draft:")}
-            onSlotClick={(carId, minutes) => !carId.startsWith("phantom:") && dnd.setReservation({ carId, start: formatMinutes(minutes), end: formatMinutes(Math.min(1439, minutes + 60)), notes: "", memberIds: [], childIds: [], kind: "reservation", toPlaceId: "" })}
+            // Owner 2026-10-11: a two-tap span (first tap = start, second = end) prefills the reservation dialog; the same slot twice keeps the 1-hour default.
+            onSlotRange={(carId, startMinutes, endMinutes) => !carId.startsWith("phantom:") && dnd.setReservation({ carId, start: formatMinutes(startMinutes), end: formatMinutes(Math.min(1439, endMinutes > startMinutes ? endMinutes : startMinutes + 60)), notes: "", memberIds: [], childIds: [], kind: "reservation", toPlaceId: "" })}
+            rangeResetKey={board.selectedDay}
             onRideClick={dnd.handleRideClick}
             onRideDrop={(rideId, carId, minutes, droppedOnRideId) => void dnd.handleRideDrop(rideId, carId, minutes, droppedOnRideId)}
             onRideResize={dnd.handleRideResize}
@@ -542,7 +544,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
           label: board.weekGridRides.find((ride) => ride.id === mergePair.mate.id)?.label ?? mergePair.mate.driver_name ?? "",
           startsAt: mergePair.mate.starts_at, endsAt: mergePair.mate.ends_at, preview: mergePairPreview,
         } : null}
-        requestRoute={mergeRequest ? requestRouteLine({ originId: mergeRequest.origin_id, originName: mergeRequest.origin_id ? mergeRequest.origin_resolved_name : null, originText: mergeRequest.origin_text, destination: mergeRequest.destination_resolved_name ?? mergeRequest.destination_text ?? "", tripType: mergeRequest.trip_type }, board.department?.home_destination_id) : ""}
+        requestRoute={mergeRequest ? requestRouteLine({ originId: mergeRequest.origin_id, originName: mergeRequest.origin_id ? mergeRequest.origin_resolved_name : null, originText: mergeRequest.origin_text, destination: mergeRequest.destination_resolved_name ?? mergeRequest.destination_text ?? "", tripType: mergeRequest.trip_type, keepCarAtDestination: mergeRequest.keep_car_at_destination }, board.department?.home_destination_id) : ""}
         leg={mergeLeg}
         onLegChange={dnd.setMergeLeg}
         anchorLeg={dnd.mergePrefill?.anchorLeg}

@@ -1,4 +1,4 @@
-import { CarFront, ChevronDown, Pin, Clock3, UserRoundX, Star } from "lucide-react";
+import { CarFront, ChevronDown, Pin, Clock3, UserRoundX, Star, X } from "lucide-react";
 import type { MouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState, useCallback, useSyncExternalStore } from "react";
 
@@ -55,6 +55,8 @@ export interface WeekGridCar {
    * day of the week.
    */
   weekEndAwayWarning?: string;
+  /** Owner 2026-10-11 ("my rides" week view, columns = days): today's column header is marked like "my car" (lilac, bold). */
+  today?: boolean;
 }
 
 export interface WeekGridRide {
@@ -107,6 +109,29 @@ export interface WeekGridRide {
    * resolved Hebrew text (e.g. "הרכב לא נמצא כאן — הוא בבנימינה").
    */
   chainBrokenWarning?: string;
+  /**
+   * Owner 2026-10-11, "my rides" week view: what the block is when it is not a placed ride — a repeating-request
+   * suggestion (dotted, pale, "הצעה" on top: never mistaken for a request), a Sadran proposal awaiting my answer,
+   * a request on the waiting list, or a filed request not placed yet. Absent = a ride, drawn as on the siddur.
+   */
+  kind?: WeekGridItemKind;
+  /** Side-by-side lanes for blocks that overlap in one column (a day can hold several of my items; a car never does). 0-based. */
+  lane?: number;
+  laneCount?: number;
+}
+
+export type WeekGridItemKind = "suggestion" | "proposal" | "waiting" | "request";
+
+/**
+ * A faint, non-interactive background block (owner 2026-10-11: the member's own calendar behind the "my rides" week
+ * view — `features/calendar`). Drawn under everything else, never a click or drop target.
+ */
+export interface WeekGridAmbientBlock {
+  id: string;
+  carId: string;
+  startMinutes: number;
+  endMinutes: number;
+  label: string;
 }
 
 export interface WeekGridBlock {
@@ -172,6 +197,22 @@ export interface WeekGridProps {
   readOnly?: boolean;
   onRideClick?: (rideId: string) => void;
   onSlotClick?: (carId: string, minutes: number) => void;
+  /**
+   * Owner 2026-10-11: choose a time span by tapping twice on empty space in one column — the first tap marks the start
+   * (a line + "התחלה 08:00 · הקש/י על שעת הסיום" + ×), the second the end. Tapping the start slot again gives
+   * `endMinutes === startMinutes` (the caller applies its default length). A tap in another column moves the start
+   * there; a ride tap, Escape, the × or a new `rangeResetKey` clears it. When set, it replaces `onSlotClick`.
+   */
+  onSlotRange?: (carId: string, startMinutes: number, endMinutes: number) => void;
+  /** Clears a half-chosen span when it changes (e.g. the caller's shown day). */
+  rangeResetKey?: string;
+  /** Faint background blocks (the member's calendar), under the rides. */
+  ambientBlocks?: readonly WeekGridAmbientBlock[];
+  /**
+   * Bold + lilac header for every column holding one of my rides (default). Off for the "my rides" week view, whose
+   * columns are days and every ride is mine — there only `WeekGridCar.today` is marked (owner 2026-10-11).
+   */
+  markMyColumns?: boolean;
   renderRide?: (ride: WeekGridRide) => ReactNode;
   /**
    * Replaces the plain car-name text (and its car icon) in each column
@@ -365,6 +406,10 @@ export function WeekGrid({
   readOnly = true,
   onRideClick,
   onSlotClick,
+  onSlotRange,
+  rangeResetKey,
+  ambientBlocks = [],
+  markMyColumns = true,
   renderRide,
   renderCarName,
   draggable = false,
@@ -398,7 +443,7 @@ export function WeekGrid({
 
   const sharedCars = cars.filter((c) => c.group !== "temporary" && c.group !== "phantom");
   // Cars the viewer rides in on the shown day: their header name is bold (owner 2026-10-09).
-  const myCarIds = new Set(rides.filter((ride) => ride.isMine).map((ride) => ride.carId));
+  const myCarIds = new Set(markMyColumns ? rides.filter((ride) => ride.isMine).map((ride) => ride.carId) : []);
   const phantomCars = cars.filter((c) => c.group === "phantom");
   const temporaryCars = cars.filter((c) => c.group === "temporary");
   const allCars = [...sharedCars, ...temporaryCars, ...phantomCars];
@@ -429,6 +474,22 @@ export function WeekGrid({
   const [drag, setDrag] = useState<DragState | null>(null);
   const dragRef = useRef<DragState | null>(null);
   const suppressClick = useRef(false);
+  /** Owner 2026-10-11: the first tap of a two-tap span (`onSlotRange`); `null` while none is half-chosen. */
+  const [rangeStart, setRangeStart] = useState<{ carId: string; minutes: number } | null>(null);
+  /** With a mouse (a computer), where the span would end if clicked now — the preview box follows the cursor. */
+  const [rangeHover, setRangeHover] = useState<number | null>(null);
+  const [lastRangeResetKey, setLastRangeResetKey] = useState(rangeResetKey);
+  if (rangeResetKey !== lastRangeResetKey) {
+    setLastRangeResetKey(rangeResetKey);
+    setRangeStart(null);
+    setRangeHover(null);
+  }
+  useEffect(() => {
+    if (!rangeStart) return;
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") { setRangeStart(null); setRangeHover(null); } };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [rangeStart]);
   const [blockDrag, setBlockDrag] = useState<BlockDragState | null>(null);
   const suppressBlockClick = useRef(false);
   const [carDrag, setCarDrag] = useState<CarDragState | null>(null);
@@ -572,9 +633,15 @@ export function WeekGrid({
 
   /** `onSlotClick` fires regardless of `readOnly` — the published siddur's quick-request-from-empty-slot flow (UX_FLOWS §18) needs it too; only drag/resize are gated by `readOnly`. */
   function handleColumnClick(carId: string, event: MouseEvent<HTMLDivElement>) {
-    if (!onSlotClick || suppressClick.current) { suppressClick.current = false; return; }
+    if ((!onSlotClick && !onSlotRange) || suppressClick.current) { suppressClick.current = false; return; }
     const rect = event.currentTarget.getBoundingClientRect();
-    onSlotClick(carId, minutesFromClientY(rect, event.clientY, dayStartMinutes, dayEndMinutes));
+    const minutes = minutesFromClientY(rect, event.clientY, dayStartMinutes, dayEndMinutes);
+    if (!onSlotRange) { onSlotClick?.(carId, minutes); return; }
+    // Two taps: the first marks the start (or moves it to another column), the second closes the span either way round.
+    setRangeHover(null);
+    if (!rangeStart || rangeStart.carId !== carId) { setRangeStart({ carId, minutes }); return; }
+    setRangeStart(null);
+    onSlotRange(carId, Math.min(rangeStart.minutes, minutes), Math.max(rangeStart.minutes, minutes));
   }
 
   const dragEnabled = draggable && !readOnly && !!onRideDrop;
@@ -933,7 +1000,13 @@ export function WeekGrid({
         )}
         style={{ gridColumn: colIndex + 2, gridRow: `2 / span ${hours.length}` }}
         onClick={(e) => handleColumnClick(car.id, e)}
-        role={onSlotClick ? "button" : undefined}
+        onPointerMove={rangeStart?.carId === car.id ? (e) => {
+          if (e.pointerType !== "mouse") return;
+          const next = minutesFromClientY(e.currentTarget.getBoundingClientRect(), e.clientY, dayStartMinutes, dayEndMinutes);
+          setRangeHover((prev) => (prev === next ? prev : next));
+        } : undefined}
+        onPointerLeave={rangeStart?.carId === car.id ? () => setRangeHover(null) : undefined}
+        role={onSlotClick || onSlotRange ? "button" : undefined}
       >
         {hours.map((h, hi) => {
           const bandRect = clampRideVertical(h * 60, (h + 1) * 60, dayStartMinutes, dayEndMinutes);
@@ -961,6 +1034,60 @@ export function WeekGrid({
             aria-hidden="true"
           />
         ))}
+        {ambientBlocks.filter((a) => a.carId === car.id).map((a) => {
+          const rect = clampRideVertical(a.startMinutes, a.endMinutes, dayStartMinutes, dayEndMinutes);
+          return (
+            <div
+              key={`ambient-${a.id}`}
+              data-ambient-id={a.id}
+              className="pointer-events-none absolute inset-x-0.5 z-0 overflow-hidden rounded-sm border border-muted-foreground/20 bg-muted-foreground/10 px-1 text-[10px] leading-tight text-muted-foreground/80"
+              style={{ top: rect.top, height: rect.height }}
+              aria-hidden="true"
+            >
+              {a.label}
+            </div>
+          );
+        })}
+        {rangeStart?.carId === car.id && rangeHover != null && rangeHover !== rangeStart.minutes ? (() => {
+          const from = Math.min(rangeStart.minutes, rangeHover);
+          const to = Math.max(rangeStart.minutes, rangeHover);
+          const rect = clampRideVertical(from, to, dayStartMinutes, dayEndMinutes);
+          return (
+            <div
+              data-testid="slot-range-preview"
+              className="pointer-events-none absolute inset-x-1 z-20 rounded-sm border-2 border-dashed border-primary bg-primary/15"
+              style={{ top: rect.top, height: rect.height }}
+              aria-hidden="true"
+            >
+              <span className="absolute inset-x-0 bottom-0.5 text-center text-[10px] font-semibold text-primary" dir="ltr">
+                {formatMinutes(from)}–{formatMinutes(to)}
+              </span>
+            </div>
+          );
+        })() : null}
+        {rangeStart?.carId === car.id ? (
+          <div
+            data-testid="slot-range-start"
+            className="pointer-events-none absolute inset-x-0 z-30"
+            style={{ top: clampRideVertical(rangeStart.minutes, rangeStart.minutes, dayStartMinutes, dayEndMinutes).top }}
+          >
+            <div className="h-0.5 bg-primary" aria-hidden="true" />
+            <div className="mx-0.5 mt-0.5 flex items-start gap-0.5 rounded-sm bg-primary px-1 py-0.5 text-[10px] font-medium leading-tight text-primary-foreground shadow">
+              <span className="min-w-0 flex-1 whitespace-normal break-words">
+                <span dir="ltr">{tv("slotRange.startHint", { time: formatMinutes(rangeStart.minutes) })}</span>
+              </span>
+              <button
+                type="button"
+                className="pointer-events-auto relative shrink-0 before:absolute before:-inset-2 before:content-['']"
+                aria-label={he.slotRange.cancel}
+                onClick={(event) => { event.stopPropagation(); setRangeStart(null); setRangeHover(null); }}
+                data-testid="slot-range-cancel"
+              >
+                <X className="size-3" aria-hidden="true" />
+              </button>
+            </div>
+          </div>
+        ) : null}
         {blocksFor(car.id).map((b) => {
           const isAway = b.kind === "away";
           const editable = !isAway && !!b.editable && !!onBlockChange;
@@ -1036,6 +1163,12 @@ export function WeekGrid({
           const isDragged = drag?.rideId === ride.id && drag.confirmed;
           const rect = clampRideVertical(ride.startMinutes, ride.endMinutes, dayStartMinutes, dayEndMinutes);
           const typeColors = rideTypeColorClasses(ride.rideTypeCode);
+          const laneCount = Math.max(1, ride.laneCount ?? 1);
+          const laned = laneCount > 1;
+          const lane = Math.min(Math.max(0, ride.lane ?? 0), laneCount - 1);
+          const laneStyle = laned
+            ? { insetInlineStart: `calc(${(lane / laneCount) * 100}% + 2px)`, width: `calc(${100 / laneCount}% - 4px)` }
+            : {};
           return (
             <button
               key={ride.id}
@@ -1046,8 +1179,10 @@ export function WeekGrid({
               data-merged={ride.merged || undefined}
               data-my-ride={ride.isMine || undefined}
               data-tight-schedule={ride.tightSchedule || undefined}
+              data-kind={ride.kind}
               className={cn(
-                "absolute inset-x-1 flex flex-col overflow-clip rounded-sm border-s-4 text-start text-foreground shadow-sm transition-smooth",
+                "absolute flex flex-col overflow-clip rounded-sm border-s-4 text-start text-foreground shadow-sm transition-smooth",
+                !laned && "inset-x-1",
                 typeColors.bg,
                 typeColors.border,
                 // My ride: violet fill + ring (the start border keeps the ride-type color); conflict/needs-driver styling below still wins.
@@ -1063,13 +1198,19 @@ export function WeekGrid({
                 ride.isMine && "shadow-md",
                 ride.isMine && !ride.needsDriver && "ring-[3px] ring-mine",
                 ride.needsDriver && "border-2 border-dashed border-destructive bg-destructive/10",
+                // Owner 2026-10-11 ("my rides" week view): anything that is not a placed ride must never read as one.
+                ride.kind === "suggestion" && "border-2 border-dotted border-muted-foreground/70 bg-background/70 text-muted-foreground opacity-75 shadow-none",
+                ride.kind === "proposal" && "border-2 border-amber-500 bg-amber-500/10",
+                ride.kind === "waiting" && "border-2 border-dashed border-muted-foreground bg-muted",
+                ride.kind === "request" && "border-2 border-primary/60 bg-background",
                 ride.highlighted && "z-10 scroll-mt-24 ring-4 ring-destructive ring-offset-2",
                 isDragged && "opacity-50 ring-2 ring-primary",
               )}
-              style={{ top: rect.top, height: rect.height, minHeight: RIDE_MIN_HEIGHT_PX }}
+              style={{ top: rect.top, height: rect.height, minHeight: RIDE_MIN_HEIGHT_PX, ...laneStyle }}
               title={rect.clampedStart ? `${formatMinutes(ride.startMinutes)}–${formatMinutes(ride.endMinutes)}` : undefined}
               onClick={(e) => {
                 e.stopPropagation();
+                setRangeStart(null);
                 if (suppressClick.current) { suppressClick.current = false; return; }
                 onRideClick?.(ride.id);
               }}
@@ -1079,7 +1220,7 @@ export function WeekGrid({
                 if (!rect2) return;
                 beginDrag(e, ride, "move", rect2);
               }}
-              aria-label={ride.isMine ? `${he.siddur.myRide} · ${ride.label}` : ride.draft ? `${he.boardDrafts.tag} · ${ride.label}` : ride.label}
+              aria-label={ride.kind ? `${he.myWeek.kind[ride.kind]} · ${ride.label}` : ride.isMine ? `${he.siddur.myRide} · ${ride.label}` : ride.draft ? `${he.boardDrafts.tag} · ${ride.label}` : ride.label}
             >
               {/* Sliding label (owner, 2026-09-14): everything readable in the block — badges, clamped-start
                   hint and the label itself — sits in one `sticky` wrapper offset by the header row, so on a
@@ -1090,7 +1231,15 @@ export function WeekGrid({
                   absolutely positioned outside the wrapper. */}
               <div className="sticky z-[1] flex w-full flex-col" style={{ top: HEADER_ROW_HEIGHT_PX }}>
               {ride.guests?.length ? <GuestChips guests={ride.guests} passClick={!!ride.draft} enabled={dragEnabled && !!onGuestDrop} resolveTarget={guestTargetAt} onHover={onGuestHover} onDrop={onGuestDrop} /> : null}
-              {(ride.isMine || ride.needsDriver || ride.tightSchedule || ride.chainBrokenWarning || ride.draft || ride.merged || ride.connected || ride.luggage) ? <span className="flex w-full flex-wrap gap-1 px-1.5 pt-1 text-[10px] leading-tight">
+              {(ride.kind || ride.isMine || ride.needsDriver || ride.tightSchedule || ride.chainBrokenWarning || ride.draft || ride.merged || ride.connected || ride.luggage) ? <span className="flex w-full flex-wrap gap-1 px-1.5 pt-1 text-[10px] leading-tight">
+                {ride.kind ? (
+                  <span
+                    className={cn("rounded-sm px-1 font-bold uppercase", ride.kind === "suggestion" ? "border border-dotted border-muted-foreground/70" : ride.kind === "proposal" ? "bg-amber-500 text-white" : "bg-foreground/10")}
+                    data-testid="kind-tag"
+                  >
+                    {he.myWeek.kind[ride.kind]}
+                  </span>
+                ) : null}
                 {ride.draft ? <span className="rounded-sm bg-primary px-1 font-semibold text-primary-foreground" data-testid="draft-tag">{he.boardDrafts.tag}</span> : null}
                 {ride.merged ? <span className="rounded-sm bg-foreground/10 px-1 font-medium" data-testid="merged-marker">{he.mergedRide.marker}</span> : null}
                 {ride.luggage ? <span className="rounded-sm bg-foreground/10 px-1 font-medium" data-testid="luggage-marker" data-waived={ride.luggageWaived ? "true" : undefined}>{ride.luggageWaived ? he.smallTrunk.waivedLabel : he.request.luggageChip}</span> : null}
@@ -1116,7 +1265,9 @@ export function WeekGrid({
                   aria-hidden="true"
                   onClick={(e) => e.stopPropagation()}
                   onPointerDown={(e) => {
-                    const rect2 = e.currentTarget.parentElement?.parentElement?.getBoundingClientRect();
+                    // The column, not `parentElement.parentElement`: this handle sits inside the sticky label wrapper, so that
+                    // was the ride block — every pixel counted ~9× (owner 2026-10-11, "dragging from above jumps").
+                    const rect2 = e.currentTarget.closest<HTMLElement>(`[${CAR_COLUMN_ATTR}]`)?.getBoundingClientRect();
                     if (!rect2) return;
                     beginDrag(e, ride, "resize-start", rect2);
                   }}
@@ -1130,7 +1281,7 @@ export function WeekGrid({
                   aria-hidden="true"
                   onClick={(e) => e.stopPropagation()}
                   onPointerDown={(e) => {
-                    const rect2 = e.currentTarget.parentElement?.parentElement?.getBoundingClientRect();
+                    const rect2 = e.currentTarget.closest<HTMLElement>(`[${CAR_COLUMN_ATTR}]`)?.getBoundingClientRect();
                     if (!rect2) return;
                     beginDrag(e, ride, "resize-end", rect2);
                   }}
@@ -1160,7 +1311,7 @@ export function WeekGrid({
               "sticky top-0 z-20 flex flex-col justify-center gap-0.5 overflow-hidden border-b border-e bg-muted px-2 py-1 text-sm shadow-[0_2px_6px_-2px_hsl(var(--foreground)/0.12)]",
               car.group === "temporary" && "bg-background bg-gradient-to-b from-booked/10 to-booked/10",
               // Owner 2026-10-09: bold alone was not obvious on a phone — the header of a car I ride in that day is tinted violet.
-              myCarIds.has(car.id) && "bg-mine/25 bg-none border-b-4 border-b-mine",
+              (myCarIds.has(car.id) || car.today) && "bg-mine/25 bg-none border-b-4 border-b-mine",
               i === sharedCars.length && temporaryCars.length > 0 && "border-s-2 border-s-border",
               swappable && "touch-none",
               isCarDragSource && "opacity-40",
@@ -1169,7 +1320,7 @@ export function WeekGrid({
             style={{ gridColumn: i + 2, gridRow: 1, scrollSnapAlign: "start" }}
             onPointerDown={swappable ? (e) => carPointerDownRef.current(car.id, e) : undefined}
           >
-            <span className={cn("flex min-w-0 items-center justify-center gap-1 text-center text-sm md:text-base leading-tight", myCarIds.has(car.id) ? "font-bold" : "font-medium")} data-testid="week-grid-car-name" data-my-car={myCarIds.has(car.id) || undefined}>
+            <span className={cn("flex min-w-0 items-center justify-center gap-1 text-center text-sm md:text-base leading-tight", myCarIds.has(car.id) || car.today ? "font-bold" : "font-medium")} data-testid="week-grid-car-name" data-my-car={myCarIds.has(car.id) || undefined} data-today={car.today || undefined}>
               {renderCarName ? renderCarName(car) : hasCarMenu ? (
                 <DropdownMenu open={menuCarId === car.id} onOpenChange={(o) => { if (!o) setMenuCarId(null); }}>
                   <DropdownMenuTrigger asChild>

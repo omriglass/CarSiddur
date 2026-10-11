@@ -553,6 +553,14 @@ select 'car_swapped'::public.notification_event, ch, null,
 from unnest(array['inbox','push']::public.notification_channel[]) ch
 on conflict(event,channel,coalesce(variant,'')) do nothing;
 
+-- Owner 2026-10-11 (REQ §13.125 f): the profile's test notification. Mirrors 20261024100600_send_test_notification.sql.
+insert into public.notification_templates(event,channel,variant,title,body,default_title,default_body)
+select 'test_notification'::public.notification_event, ch, null,
+  'התראת בדיקה', 'אם ההודעה הזאת הגיעה, ההתראות מגיעות אליך.',
+  'התראת בדיקה', 'אם ההודעה הזאת הגיעה, ההתראות מגיעות אליך.'
+from unnest(array['inbox','push']::public.notification_channel[]) ch
+on conflict(event,channel,coalesce(variant,'')) do nothing;
+
 -- REQ §13.100 (QA run 1): QB17 all-day fragment and the new notification variants; mirrors
 -- 20261006200200_notification_time_range_and_variants.sql (driver_cancelled copy: docs/COPY_DRAFT_2026-10.md §6).
 insert into public.text_fragments (key, body) values ('time.all_day', 'כל היום')

@@ -299,9 +299,21 @@ export function useUnmergeRequestMutation() {
 export function useSetRequestTripTypeMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ requestId, tripType, expectedVersion }: {
+    mutationFn: ({ requestId, tripType, expectedVersion, keepCar }: {
       requestId: string; tripType: TripType; expectedVersion: number; departmentId: string; weekStart: string;
-    }) => api.setRequestTripType(requestId, tripType, expectedVersion),
+      /** REQ §13.126 g: "round trip, the car stays at the destination" (with `tripType: "drop_off"`). */
+      keepCar?: boolean;
+    }) => api.setRequestTripType(requestId, tripType, expectedVersion, keepCar ?? false),
+    onSuccess: (_data, { departmentId, weekStart }) => invalidateWeekData(queryClient, departmentId, weekStart),
+    onError: showErrorToast,
+  });
+}
+
+export function useSwitchRequestPlanMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ requestId, to, expectedVersion }: { requestId: string; to: "alternative" | "main"; expectedVersion: number; departmentId: string; weekStart: string }) =>
+      api.switchRequestPlan(requestId, to, expectedVersion),
     onSuccess: (_data, { departmentId, weekStart }) => invalidateWeekData(queryClient, departmentId, weekStart),
     onError: showErrorToast,
   });

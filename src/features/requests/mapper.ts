@@ -3,6 +3,7 @@ import { fromZonedTime } from "date-fns-tz";
 
 import { TZ } from "@/lib/time";
 
+import { keepCarActive } from "./keepCar";
 import { hasAltPlace, planBActive, planBOffered } from "./planB";
 import { isSamePlace, type RequestFormValues } from "./schema";
 import { destinationValuesToStopPayload } from "./stops";
@@ -159,6 +160,9 @@ export function toSubmitRequestPayload(
   const needsDepart = values.tripShape !== "one_way_from";
   const needsReturn = values.tripShape !== "one_way_to";
   const isRoundTrip = values.tripShape === "round_trip";
+  // REQ §13.126 (g): a driver's round trip that leaves the car at the destination is stored as a two-way הקפצה
+  // with the member's own times; plan B is not sent (the line is hidden while it is on).
+  const keepCar = !options.isSeries && keepCarActive(values);
 
   return {
     department_id: values.departmentId,
@@ -170,7 +174,8 @@ export function toSubmitRequestPayload(
     // `submit_request` to resolve its own default — never an empty string origin_text.
     origin_id: values.origin && "presetId" in values.origin ? values.origin.presetId : undefined,
     origin_text: values.origin && "freeText" in values.origin && values.origin.freeText.trim() ? values.origin.freeText.trim() : undefined,
-    trip_type: values.tripType,
+    trip_type: keepCar ? "drop_off" : values.tripType,
+    ...(keepCar ? { keep_car_at_destination: true } : {}),
     ride_type_id: values.rideTypeId,
     preferred_car_id: values.preferredCarId || null,
     trip_shape: values.tripShape,
@@ -186,7 +191,7 @@ export function toSubmitRequestPayload(
     child_seats: values.childSeats,
     boosters: values.boosters,
     has_luggage: values.luggage,
-    needs_car_at_destination: isRoundTrip ? values.needsCarAtDestination : undefined,
+    needs_car_at_destination: isRoundTrip && !keepCar ? values.needsCarAtDestination : undefined,
     // REQ §88: the member no longer chooses a one-way car mode — `submit_request`
     // defaults it server-side from the requester's `does_not_drive` flag. The one
     // exception is the live-week quick one-way reservation (UX_FLOWS §18): it books a

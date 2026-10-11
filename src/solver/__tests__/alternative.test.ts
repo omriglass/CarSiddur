@@ -55,6 +55,14 @@ describe('plan B (useAlternative)', () => {
     expect(order[order.length - 1]).toBe('deny');
   });
 
+  it('a kept-car trip (REQ §13.126 g: two-way drop_off + keepCarAtDestination) carries its plan B too', () => {
+    const out = solve(input({ cars: [makeCar('C1')], fixedRides: [morningBlock()],
+      requests: [member({ tripType: 'drop_off', keepCarAtDestination: true })] }));
+    const u = out.unmet.find((x) => x.requestId === 'R1')!;
+    expect(u).toBeDefined();
+    expect(u.suggestions.find((s) => s.kind === 'useAlternative')).toMatchObject({ kind: 'useAlternative', requestId: 'R1', carId: 'C1' });
+  });
+
   it('names the drop place, the arrival and the pickup in the reason (no ids)', () => {
     const out = solve(input({ cars: [makeCar('C1')], fixedRides: [morningBlock()], requests: [member()] }));
     const alt = out.unmet[0]!.suggestions.find((s) => s.kind === 'useAlternative')!;

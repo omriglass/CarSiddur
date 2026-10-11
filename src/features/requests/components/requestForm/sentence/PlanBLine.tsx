@@ -2,7 +2,7 @@
 // הלוך-חזור / הלוך בלבד — "אם אין רכב, [הקפצה ▾] ל[צומת חריש] [עד 08:00] ואיסוף משם [ב־19:00]" or "אם אין רכב, [אסתדר ▾]".
 // Controlled by the sentence's sheet state (`SentenceFields`); writes the form fields `fallback`, `altPlace`,
 // `altArriveBy`, `altPickup`, `altPickupAt` (`planB.ts`).
-import { Check } from "lucide-react";
+import { Check, X } from "lucide-react";
 import { useState } from "react";
 import { useWatch, type FieldErrors, type UseFormReturn } from "react-hook-form";
 
@@ -201,6 +201,16 @@ export function PlanBLine({ form, errors, destinations, originPlaceId, sheet, se
               )}
             </>
           ) : null}
+          {/* The visible way out (owner 2026-10-11): "בלי" in the kind sheet alone was not found. */}
+          <button
+            type="button"
+            className="relative inline-flex size-6 items-center justify-center rounded-full text-muted-foreground before:absolute before:-inset-2 before:content-[''] hover:bg-accent hover:text-foreground"
+            aria-label={he.planB.remove}
+            onClick={() => choose("none")}
+            data-testid="plan-b-remove"
+          >
+            <X className="size-4" aria-hidden="true" />
+          </button>
         </div>
       )}
       {errorMessages.map((message) => <FieldError key={message} message={message} />)}

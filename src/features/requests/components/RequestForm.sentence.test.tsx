@@ -59,14 +59,19 @@ vi.mock("@/components/DestinationCombobox", () => ({
 }));
 vi.mock("@/components/CompanionPicker", () => ({ CompanionPicker: () => null }));
 
-function show() {
+function show(slotPrefill?: { day: string; departTime: string; returnTime?: string }) {
   return render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
       <MemoryRouter>
-        <RequestForm mode="new" departmentId="department" weekStart="2044-01-03" />
+        <RequestForm mode="new" departmentId="department" weekStart="2044-01-03" slotPrefill={slotPrefill} />
       </MemoryRouter>
     </QueryClientProvider>,
   );
+}
+
+/** The open sentence sheet's title (`FieldSheet`), or null. */
+function openSheetTitle(): string | null {
+  return screen.queryByRole("dialog")?.querySelector("h2")?.textContent ?? null;
 }
 
 /** Sentence layout: open the destination sheet and tap the one seeded place. */
@@ -100,6 +105,10 @@ beforeEach(() => {
 describe("RequestForm sentence layout (REQ §13.110)", () => {
   it("renders the sentence with chips that carry their rhf field name, and the first-visit hint once", () => {
     show();
+    // A new request opens on its start time (owner 2026-10-11); dismissing it stops the guide.
+    expect(openSheetTitle()).toBe(he.requestSentence.sheet.outTime);
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+    expect(openSheetTitle()).toBeNull();
     expect(screen.getByTestId("request-sentence")).toBeVisible();
     for (const field of ["tripType", "destination", "day", "departTime", "returnTime"]) {
       expect(document.querySelector(`[data-testid="request-sentence"] [data-field="${field}"]`)).not.toBeNull();
@@ -107,6 +116,32 @@ describe("RequestForm sentence layout (REQ §13.110)", () => {
     expect(screen.getByText(he.requestSentence.hint)).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: he.requestSentence.hintDismiss }));
     expect(screen.queryByText(he.requestSentence.hint)).not.toBeInTheDocument();
+  });
+
+  it("a new request leads through start time → end time → destination; 'אישור' moves on (owner 2026-10-11)", () => {
+    show();
+    expect(openSheetTitle()).toBe(he.requestSentence.sheet.outTime);
+    fireEvent.click(screen.getByRole("button", { name: he.requestSentence.sheetDone }));
+    expect(openSheetTitle()).toBe(he.requestSentence.sheet.returnTime);
+    fireEvent.click(screen.getByRole("button", { name: he.requestSentence.sheetDone }));
+    expect(openSheetTitle()).toBe(he.requestSentence.sheet.destination);
+    fireEvent.click(screen.getByText("Destination"));
+    expect(openSheetTitle()).toBeNull();
+    expect(screen.getByTestId("chip-destination")).toHaveTextContent("Destination");
+  });
+
+  it("skips what a grid tap already gave: start only → end time first; both times → destination", () => {
+    const first = show({ day: "2044-01-05", departTime: "08:00" });
+    expect(openSheetTitle()).toBe(he.requestSentence.sheet.returnTime);
+    first.unmount();
+    show({ day: "2044-01-05", departTime: "08:00", returnTime: "10:00" });
+    expect(openSheetTitle()).toBe(he.requestSentence.sheet.destination);
+  });
+
+  it("an empty destination still reads 'ל[בחר/י יעד]' (owner 2026-10-11)", () => {
+    show();
+    const destinationSeg = screen.getByTestId("chip-destination").parentElement!;
+    expect(destinationSeg).toHaveTextContent(he.requestSentence.to + he.requestSentence.destinationPlaceholder);
   });
 
   it("files an arrive-by request: the payload carries the anchors and the derived car time", async () => {

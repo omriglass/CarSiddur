@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { CAR_COLUMN_ATTR } from "@/components/WeekGrid";
 import { minutesFromClientY } from "@/components/weekGridGeometry";
 import { StatusBadge } from "@/components/StatusBadge";
+import { PlanSwitchButton } from "./PlanSwitchButton";
 import { TripTypeChange } from "./TripTypeChange";
 import { WithdrawDuplicateAction } from "./WithdrawDuplicateAction";
 import { FewerDaysAction, type FewerDaysSupport } from "./FewerDaysAction";
@@ -295,11 +296,16 @@ export function UnmetList({ items, onAction, onOpenProposal, onDecision, dayStar
                   requestId={item.request.id}
                   version={item.request.version}
                   tripType={item.request.trip_type}
+                  keepCarAtDestination={item.request.keep_car_at_destination}
+                  destination={item.destinationName}
                   name={item.request.requester_full_name ?? ""}
                   departmentId={tripTypeScope.departmentId}
                   weekStart={tripTypeScope.weekStart}
                   wasUnplaced
                 />
+              ) : null}
+              {tripTypeScope && !item.pendingProposalId ? (
+                <PlanSwitchButton request={item.request} name={item.request.requester_full_name ?? ""} departmentId={tripTypeScope.departmentId} weekStart={tripTypeScope.weekStart} />
               ) : null}
               {fewerDays && !item.pendingProposalId && item.request.series_id ? <FewerDaysAction request={item.request} support={fewerDays} /> : null}
               {tripTypeScope && !item.pendingProposalId && !item.request.series_id ? (
@@ -329,7 +335,7 @@ export function UnmetList({ items, onAction, onOpenProposal, onDecision, dayStar
                   department home — a free-text origin (never auto-placed, solver reason
                   `UNMET_FREE_TEXT_ORIGIN`) is visibly flagged rather than silently blended in. */}
               <p className="text-xs text-muted-foreground" data-testid="unmet-route-line">
-                {requestRouteLine({ originId: item.request.origin_id, originName: item.request.origin_id ? item.request.origin_resolved_name : null, destination: item.destinationName, tripType: item.request.trip_type }, homeDestinationId)}
+                {requestRouteLine({ originId: item.request.origin_id, originName: item.request.origin_id ? item.request.origin_resolved_name : null, destination: item.destinationName, tripType: item.request.trip_type, keepCarAtDestination: item.request.keep_car_at_destination }, homeDestinationId)}
               </p>
               {(() => {
                 const entered = enteredTimeLabels({

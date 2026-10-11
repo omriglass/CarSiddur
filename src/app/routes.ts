@@ -67,6 +67,8 @@ export const paths = {
 
   /** `/my/history` — read-only list of past requests/rides (REQ §13 item 91). */
   myHistory: (): string => "/my/history",
+  /** `/my/archive` — past weeks in the week grid, read-only (owner 2026-10-11). */
+  myArchive: (): string => "/my/archive",
 
   requests: {
     /**
@@ -79,14 +81,17 @@ export const paths = {
      * `/requests/new`; `ride` triggers the "ask to join" prefill, `day`/`time` the
      * quick-request-from-slot prefill, `template` the repeating-request-suggestion prefill
      * (`v_request_template_suggestions`, all mutually exclusive in practice), `waitlist=1` the
-     * waitlist checkbox.
+     * waitlist checkbox. `end` ("להיות בבית עד") and `car` (preferred car) come with `day`/`time` from a two-tap span
+     * on a grid (owner 2026-10-11).
      */
-    new: (params: { ride?: string; week?: string; day?: string; time?: string; waitlist?: boolean; template?: string } = {}) =>
+    new: (params: { ride?: string; week?: string; day?: string; time?: string; end?: string; car?: string; waitlist?: boolean; template?: string } = {}) =>
       withQuery("/requests/new", {
         ride: params.ride,
         week: params.week,
         day: params.day,
         time: params.time,
+        end: params.end,
+        car: params.car,
         waitlist: params.waitlist ? "1" : undefined,
         template: params.template,
       }),

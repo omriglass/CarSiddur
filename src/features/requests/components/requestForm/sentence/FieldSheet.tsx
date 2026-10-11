@@ -17,9 +17,11 @@ interface FieldSheetProps {
   /** Hide the "אישור" footer for sheets that close themselves on pick (places). */
   hideFooter?: boolean;
   testId?: string;
+  /** "אישור" — when set, it differs from dismissing (×, Escape, outside): the guided new request moves on (owner 2026-10-11). */
+  onDone?: () => void;
 }
 
-export function FieldSheet({ open, onOpenChange, title, children, hideFooter, testId }: FieldSheetProps) {
+export function FieldSheet({ open, onOpenChange, title, children, hideFooter, testId, onDone }: FieldSheetProps) {
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <PortalSheetContent
@@ -35,7 +37,7 @@ export function FieldSheet({ open, onOpenChange, title, children, hideFooter, te
         <div className="space-y-3 pb-1 pt-3">{children}</div>
         {hideFooter ? null : (
           <div className="sticky -bottom-4 -mx-4 -mb-4 border-t bg-background p-3">
-            <Button type="button" className="w-full" onClick={() => onOpenChange(false)}>
+            <Button type="button" className="w-full" onClick={() => (onDone ? onDone() : onOpenChange(false))}>
               {he.requestSentence.sheetDone}
             </Button>
           </div>

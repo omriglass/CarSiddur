@@ -59,6 +59,8 @@ export const NOTIFICATION_EVENT_META: Record<NotificationEvent, NotificationEven
   waitlist_resolved: { category: "freedSlot", memberMutable: true, sadranRole: false, weekScoped: false },
   window_changed: { category: "window", memberMutable: true, sadranRole: false, weekScoped: true },
   car_swapped: { category: "siddur", memberMutable: true, sadranRole: false, weekScoped: false },
+  // Owner 2026-10-11: the profile's "send me a test notification" — never muted.
+  test_notification: { category: "account", memberMutable: false, sadranRole: false, weekScoped: false },
 };
 
 /** Every mutable event, grouped by `category` — the source `muteCategories.ts` builds on. */

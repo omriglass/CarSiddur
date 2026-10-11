@@ -10,12 +10,15 @@ export interface FallbackRequest {
   alternative?: RequestAlternativeEmbed | null;
   trip_type: string;
   series_id?: string | null;
+  /** A kept-car request is stored as a drop_off but keeps its plan B (owner 2026-10-11). */
+  keep_car_at_destination?: boolean | null;
   served_by_alternative?: boolean | null;
 }
 
 /** An active fallback exists only on a round trip / one-way that is not a multi-day series (a stored plan B of a הקפצה stays dormant, REQ §13.97). */
 export function hasActiveFallback(request: FallbackRequest): boolean {
-  return (request.trip_type === "round_trip" || request.trip_type === "one_way") && !request.series_id && (request.fallback === "alternative" || request.fallback === "manage");
+  const kept = request.trip_type === "drop_off" && !!request.keep_car_at_destination;
+  return (request.trip_type === "round_trip" || request.trip_type === "one_way" || kept) && !request.series_id && (request.fallback === "alternative" || request.fallback === "manage");
 }
 
 /** "הקפצה לצומת חריש עד 08:00, ואיסוף משם ב־19:00". */

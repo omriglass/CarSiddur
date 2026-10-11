@@ -196,7 +196,8 @@ CREATE TYPE "public"."notification_event" AS ENUM (
     'waitlist_contested',
     'waitlist_resolved',
     'window_changed',
-    'car_swapped'
+    'car_swapped',
+    'test_notification'
 );
 
 
@@ -428,7 +429,7 @@ begin
   select * into q from public.requests where id = p.request_id for update;
   select * into a from public.request_alternatives where request_id = q.id for update;
   if a.id is null or q.fallback <> 'alternative' or q.served_by_alternative or a.applied_at is not null
-     or q.trip_type not in ('round_trip', 'one_way') or q.series_id is not null
+     or (q.trip_type not in ('round_trip', 'one_way') and not (q.trip_type = 'drop_off' and q.keep_car_at_destination)) or q.series_id is not null
      or q.status not in ('submitted', 'waitlisted', 'proposed')
      or exists (select 1 from public.ride_requests rr join public.rides r on r.id = rr.ride_id
                 where rr.request_id = q.id and r.status <> 'cancelled') then
@@ -453,57 +454,9 @@ begin
   v_pickup_at := a.pickup_at;
   if v_diff then v_ret := null; end if;
 
-  v_orig := jsonb_build_object(
-    'trip_type', q.trip_type, 'trip_shape', q.trip_shape, 'one_way_car_mode', q.one_way_car_mode,
-    'needs_car_at_destination', q.needs_car_at_destination,
-    'destination_id', q.destination_id, 'destination_text', q.destination_text,
-    'depart_at', q.depart_at, 'return_at', q.return_at, 'kept_return_at', q.kept_return_at,
-    'flex_depart_early', q.flex_depart_early::text, 'flex_depart_late', q.flex_depart_late::text,
-    'flex_return_early', q.flex_return_early::text, 'flex_return_late', q.flex_return_late::text,
-    'depart_anchor', q.depart_anchor, 'arrive_by', q.arrive_by, 'return_anchor', q.return_anchor, 'leave_dest_at', q.leave_dest_at,
-    'duration_locked', q.duration_locked, 'preferred_car_id', q.preferred_car_id,
-    'stops', coalesce((select jsonb_agg(jsonb_build_object('leg', s.leg, 'position', s."position",
-        'place_id', s.place_id, 'place_text', s.place_text) order by s.leg, s."position")
-      from public.request_stops s where s.request_id = q.id), '[]'::jsonb));
+  v_sib := public._convert_to_alternative(q.id, v_dep, v_ret);
+  if v_diff then v_sib_car := v_ret_car; end if;
 
-  perform set_config('app.request_anchors_explicit', 'on', true);
-  perform set_config('app.duration_lock_explicit', 'on', true);
-  update public.requests set
-    trip_type = 'drop_off',
-    trip_shape = case when a.pickup and not v_diff then 'round_trip'::public.trip_shape else 'one_way_to'::public.trip_shape end,
-    needs_car_at_destination = false,
-    one_way_car_mode = case when a.pickup and not v_diff then null
-      else (select case when pr.does_not_drive then 'passenger' else 'relay' end::public.leg_car_mode
-            from public.profiles pr where pr.id = q.requester_id) end,
-    destination_id = a.drop_place_id, destination_text = a.drop_place_text,
-    depart_at = v_dep, return_at = v_ret, kept_return_at = null,
-    flex_depart_early = '0', flex_depart_late = '0', flex_return_early = '0', flex_return_late = '0',
-    depart_anchor = 'arrive', arrive_by = a.arrive_by,
-    return_anchor = case when a.pickup and not v_diff then 'leave'::public.time_anchor else 'arrive'::public.time_anchor end,
-    leave_dest_at = case when a.pickup and not v_diff then a.pickup_at end,
-    duration_locked = false, preferred_car_id = null, served_by_alternative = true,
-    status = 'submitted', status_reason = 'ALTERNATIVE_PENDING_PLACEMENT'
-  where id = q.id;
-  perform set_config('app.request_anchors_explicit', 'off', true);
-  perform set_config('app.duration_lock_explicit', 'off', true);
-  -- the main trip's intermediate stops belong to the main route (they stay in original_main)
-  delete from public.request_stops where request_id = q.id;
-
-  if v_diff then
-    insert into public.requests (department_id, week_start, requester_id, filed_by, destination_id, destination_text, ride_type_id,
-      origin_id, origin_text, trip_type, trip_shape, depart_at, one_way_car_mode, needs_car_at_destination,
-      adults, child_seats, boosters, has_luggage, luggage_waived_at, luggage_waived_by, notes, is_late, submitted_at, status,
-      depart_anchor, return_anchor, served_by_alternative, plan_b_parent_id, ride_description, guest_passenger_names)
-    values (q.department_id, q.week_start, q.requester_id, q.filed_by, q.origin_id, q.origin_text, q.ride_type_id,
-      a.pickup_place_id, a.pickup_place_text, 'drop_off', 'one_way_to', v_pickup_at,
-      (select case when pr.does_not_drive then 'passenger' else 'relay' end::public.leg_car_mode from public.profiles pr where pr.id = q.requester_id),
-      false, q.adults, q.child_seats, q.boosters, q.has_luggage, q.luggage_waived_at, q.luggage_waived_by, q.notes, false, now(), 'submitted',
-      'leave', 'arrive', true, q.id, q.ride_description, q.guest_passenger_names)
-    returning id into v_sib;
-    insert into public.request_companions (request_id, profile_id) select v_sib, profile_id from public.request_companions where request_id = q.id;
-    insert into public.request_children (request_id, child_id) select v_sib, child_id from public.request_children where request_id = q.id;
-    v_sib_car := v_ret_car;
-  end if;
   if v_car = v_ret_car or not a.pickup or v_diff then
     v_ride := public.place_request_on_car(q.id, v_car, v_manual, p.created_by, null, v_dep, v_ret, 'PROPOSAL_APPLIED');
     if v_diff then
@@ -528,7 +481,6 @@ begin
     raise exception 'alternative_unavailable' using errcode = 'P0001';
   end if;
 
-  update public.request_alternatives set original_main = v_orig, applied_at = now() where id = a.id;
   return v_ride;
 end $$;
 
@@ -735,6 +687,82 @@ $$;
 
 
 ALTER FUNCTION "public"."_can_edit_car_maintenance"("p_car_id" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_convert_to_alternative"("p_request_id" "uuid", "p_dep" timestamp with time zone, "p_ret" timestamp with time zone) RETURNS "uuid"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  q public.requests%rowtype; a public.request_alternatives%rowtype; v_orig jsonb;
+  v_dep timestamptz := p_dep; v_ret timestamptz; v_diff boolean; v_pickup_at timestamptz; v_sib uuid;
+begin
+  select * into q from public.requests where id = p_request_id;
+  select * into a from public.request_alternatives where request_id = p_request_id;
+  v_diff := a.pickup and (a.pickup_place_id is not null or a.pickup_place_text is not null);
+  v_pickup_at := a.pickup_at;
+  v_ret := case when a.pickup and not v_diff then p_ret end;
+
+  v_orig := jsonb_build_object(
+    'trip_type', q.trip_type, 'trip_shape', q.trip_shape, 'one_way_car_mode', q.one_way_car_mode,
+    'needs_car_at_destination', q.needs_car_at_destination,
+    'destination_id', q.destination_id, 'destination_text', q.destination_text,
+    'depart_at', q.depart_at, 'return_at', q.return_at, 'kept_return_at', q.kept_return_at,
+    'flex_depart_early', q.flex_depart_early::text, 'flex_depart_late', q.flex_depart_late::text,
+    'flex_return_early', q.flex_return_early::text, 'flex_return_late', q.flex_return_late::text,
+    'depart_anchor', q.depart_anchor, 'arrive_by', q.arrive_by, 'return_anchor', q.return_anchor, 'leave_dest_at', q.leave_dest_at,
+    'duration_locked', q.duration_locked, 'preferred_car_id', q.preferred_car_id,
+    'keep_car_at_destination', q.keep_car_at_destination,
+    'stops', coalesce((select jsonb_agg(jsonb_build_object('leg', s.leg, 'position', s."position",
+        'place_id', s.place_id, 'place_text', s.place_text) order by s.leg, s."position")
+      from public.request_stops s where s.request_id = q.id), '[]'::jsonb));
+
+  perform set_config('app.request_anchors_explicit', 'on', true);
+  perform set_config('app.duration_lock_explicit', 'on', true);
+  update public.requests set
+    trip_type = 'drop_off',
+    -- REQ §13.126 g: the plan B is a plain הקפצה; the main trip's "car stays at the destination" lives on in original_main.
+    keep_car_at_destination = false,
+    trip_shape = case when a.pickup and not v_diff then 'round_trip'::public.trip_shape else 'one_way_to'::public.trip_shape end,
+    needs_car_at_destination = false,
+    one_way_car_mode = case when a.pickup and not v_diff then null
+      else (select case when pr.does_not_drive then 'passenger' else 'relay' end::public.leg_car_mode
+            from public.profiles pr where pr.id = q.requester_id) end,
+    destination_id = a.drop_place_id, destination_text = a.drop_place_text,
+    depart_at = v_dep, return_at = v_ret, kept_return_at = null,
+    flex_depart_early = '0', flex_depart_late = '0', flex_return_early = '0', flex_return_late = '0',
+    depart_anchor = 'arrive', arrive_by = a.arrive_by,
+    return_anchor = case when a.pickup and not v_diff then 'leave'::public.time_anchor else 'arrive'::public.time_anchor end,
+    leave_dest_at = case when a.pickup and not v_diff then a.pickup_at end,
+    duration_locked = false, preferred_car_id = null, served_by_alternative = true,
+    status = 'submitted', status_reason = 'ALTERNATIVE_PENDING_PLACEMENT'
+  where id = q.id;
+  perform set_config('app.request_anchors_explicit', 'off', true);
+  perform set_config('app.duration_lock_explicit', 'off', true);
+  -- the main trip's intermediate stops belong to the main route (they stay in original_main)
+  delete from public.request_stops where request_id = q.id;
+
+  if v_diff then
+    insert into public.requests (department_id, week_start, requester_id, filed_by, destination_id, destination_text, ride_type_id,
+      origin_id, origin_text, trip_type, trip_shape, depart_at, one_way_car_mode, needs_car_at_destination,
+      adults, child_seats, boosters, has_luggage, luggage_waived_at, luggage_waived_by, notes, is_late, submitted_at, status,
+      depart_anchor, return_anchor, served_by_alternative, plan_b_parent_id, ride_description, guest_passenger_names)
+    values (q.department_id, q.week_start, q.requester_id, q.filed_by, q.origin_id, q.origin_text, q.ride_type_id,
+      a.pickup_place_id, a.pickup_place_text, 'drop_off', 'one_way_to', v_pickup_at,
+      (select case when pr.does_not_drive then 'passenger' else 'relay' end::public.leg_car_mode from public.profiles pr where pr.id = q.requester_id),
+      false, q.adults, q.child_seats, q.boosters, q.has_luggage, q.luggage_waived_at, q.luggage_waived_by, q.notes, false, now(), 'submitted',
+      'leave', 'arrive', true, q.id, q.ride_description, q.guest_passenger_names)
+    returning id into v_sib;
+    insert into public.request_companions (request_id, profile_id) select v_sib, profile_id from public.request_companions where request_id = q.id;
+    insert into public.request_children (request_id, child_id) select v_sib, child_id from public.request_children where request_id = q.id;
+  end if;
+
+  update public.request_alternatives set original_main = v_orig, applied_at = now() where id = a.id;
+  return v_sib;
+end $$;
+
+
+ALTER FUNCTION "public"."_convert_to_alternative"("p_request_id" "uuid", "p_dep" timestamp with time zone, "p_ret" timestamp with time zone) OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."_day_car_swap_authorize"("p_department_id" "uuid", "p_week_start" "date", "p_day" "date", "p_car_a" "uuid", "p_car_b" "uuid", "p_actor" "uuid") RETURNS "jsonb"
@@ -1900,6 +1928,7 @@ begin
     depart_anchor = (o ->> 'depart_anchor')::public.time_anchor, arrive_by = nullif(o ->> 'arrive_by', '')::timestamptz,
     return_anchor = (o ->> 'return_anchor')::public.time_anchor, leave_dest_at = nullif(o ->> 'leave_dest_at', '')::timestamptz,
     duration_locked = (o ->> 'duration_locked')::boolean, preferred_car_id = nullif(o ->> 'preferred_car_id', '')::uuid,
+    keep_car_at_destination = coalesce((o ->> 'keep_car_at_destination')::boolean, false),
     served_by_alternative = false, status = 'submitted', status_reason = 'ALTERNATIVE_REVERTED'
   where id = q.id;
   perform set_config('app.request_anchors_explicit', 'off', true);
@@ -2210,7 +2239,7 @@ begin
   v_has_alt := coalesce(jsonb_typeof(v_alt) = 'object', false);
   v_explicit := (p_payload ? 'fallback' and q.fallback <> 'none') or v_has_alt;
 
-  if v_explicit and (q.trip_type not in ('round_trip', 'one_way') or q.series_id is not null) then
+  if v_explicit and ((q.trip_type not in ('round_trip', 'one_way') and not (q.trip_type = 'drop_off' and q.keep_car_at_destination)) or q.series_id is not null) then
     raise exception 'fallback_not_allowed' using errcode = 'P0001';
   end if;
   if q.fallback = 'alternative' and not v_has_alt and a.id is null then
@@ -2459,7 +2488,7 @@ begin
   select * into q from public.requests where id = p_request_id;
   select * into a from public.request_alternatives where request_id = p_request_id;
   if a.id is null or q.fallback <> 'alternative' or q.served_by_alternative or a.applied_at is not null
-     or q.trip_type not in ('round_trip', 'one_way') or q.series_id is not null
+     or (q.trip_type not in ('round_trip', 'one_way') and not (q.trip_type = 'drop_off' and q.keep_car_at_destination)) or q.series_id is not null
      or q.status not in ('submitted', 'waitlisted') then
     raise exception 'alternative_not_applicable' using errcode = 'P0001';
   end if;
@@ -5139,7 +5168,9 @@ begin
     -- (manual) placement of either leg is an explicit decision and is never undone by this rule (R4B2).
     -- R5B8 (REQ §13.105): a SHORT wait (<= 2 x turnaround, the §13.104 b threshold) never counts as needed elsewhere:
     -- two chauffeur wraps burn more car time than the wait and leave a member who can drive with two driverless rides.
-    if not c.manual and v_rs - v_oe > 2 * v_turnaround
+    -- REQ §13.126 g: "the car is available at the destination" — the member keeps it waiting there on purpose
+    -- (trips that start and end there may use it, below); the wait is never handed back for being needed elsewhere.
+    if not c.manual and not q.keep_car_at_destination and v_rs - v_oe > 2 * v_turnaround
        and public.car_wait_needed_elsewhere(q.department_id, q.week_start, v_oe, v_rs, array[q.id]) then
       continue;
     end if;
@@ -6404,7 +6435,12 @@ begin
       or (p_ride ? 'origin_id' and (p_ride->>'origin_id')::uuid is distinct from v_existing.origin_id)
       or (p_ride ? 'destination_id' and (p_ride->>'destination_id')::uuid is distinct from v_existing.destination_id)
       or ((p_ride->>'starts_at')::timestamptz at time zone 'Asia/Jerusalem')::date <> (v_existing.starts_at at time zone 'Asia/Jerusalem')::date
-      or exists (select 1 from public.ride_requests rr join public.requests q on q.id=rr.request_id where rr.ride_id=v_id and (q.requester_id <> (select auth.uid()) or rr.car_mode <> 'keep'))
+      or exists (select 1 from public.ride_requests rr join public.requests q on q.id=rr.request_id where rr.ride_id=v_id and (q.requester_id <> (select auth.uid())
+        -- Owner 2026-10-11: my own one-way (הלוך בלבד, a relay leg) moves like a ride that keeps the car — never a הקפצה relay leg.
+        or not (rr.car_mode = 'keep' or (rr.car_mode = 'relay' and q.trip_type = 'one_way'))))
+      -- A one-way leaves THIS car at its destination: it never moves to another car.
+      or ((p_ride->>'car_id')::uuid is distinct from v_existing.car_id and exists (select 1 from public.ride_requests rr
+        where rr.ride_id=v_id and rr.car_mode = 'relay'))
     then raise exception 'not_authorized'; end if;
   end if;
   if not exists (select 1 from public.cars where id=(p_ride->>'car_id')::uuid and status='active' and department_id=v_dept) then raise exception 'car_unavailable'; end if;
@@ -13328,6 +13364,7 @@ begin
       depart_anchor = q.depart_anchor, arrive_by_time = v_arrive_by_time,
       return_anchor = q.return_anchor, leave_dest_time = v_leave_dest_time,
       one_way_car_mode = q.one_way_car_mode, needs_car_at_destination = q.needs_car_at_destination,
+      keep_car_at_destination = q.keep_car_at_destination,
       adults = q.adults, child_seats = q.child_seats, boosters = q.boosters, has_luggage = q.has_luggage,
       flex_depart_early = q.flex_depart_early, flex_depart_late = q.flex_depart_late,
       flex_return_early = q.flex_return_early, flex_return_late = q.flex_return_late, duration_locked = q.duration_locked,
@@ -13340,7 +13377,7 @@ begin
     insert into public.request_templates (
       requester_id, department_id, destination_id, destination_text, origin_id, origin_text, trip_type,
       ride_type_id, trip_shape,
-      depart_dow, depart_time, return_dow, return_time, one_way_car_mode, needs_car_at_destination,
+      depart_dow, depart_time, return_dow, return_time, one_way_car_mode, needs_car_at_destination, keep_car_at_destination,
       depart_anchor, arrive_by_time, return_anchor, leave_dest_time,
       adults, child_seats, boosters, has_luggage,
       flex_depart_early, flex_depart_late, flex_return_early, flex_return_late, duration_locked,
@@ -13349,7 +13386,7 @@ begin
     ) values (
       q.requester_id, q.department_id, q.destination_id, q.destination_text, q.origin_id, q.origin_text, q.trip_type,
       q.ride_type_id, q.trip_shape,
-      v_depart_dow, v_depart_time, v_return_dow, v_return_time, q.one_way_car_mode, q.needs_car_at_destination,
+      v_depart_dow, v_depart_time, v_return_dow, v_return_time, q.one_way_car_mode, q.needs_car_at_destination, q.keep_car_at_destination,
       q.depart_anchor, v_arrive_by_time, q.return_anchor, v_leave_dest_time,
       q.adults, q.child_seats, q.boosters, q.has_luggage,
       q.flex_depart_early, q.flex_depart_late, q.flex_return_early, q.flex_return_late, q.duration_locked,
@@ -13532,6 +13569,29 @@ end $$;
 ALTER FUNCTION "public"."send_proposal"("p_proposal_id" "uuid", "p_sent_via" "public"."notification_channel"[], "p_replace_proposal_id" "uuid", "p_replace_expected_version" integer) OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."send_test_notification"() RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_me uuid := (select auth.uid());
+  v_devices int;
+begin
+  if v_me is null or not public.is_approved() then
+    raise exception 'not_authorized' using errcode = 'P0001';
+  end if;
+  select count(*) into v_devices from public.push_subscriptions where profile_id = v_me;
+  perform public.enqueue_notification(
+    v_me, 'test_notification', (select default_department_id from public.profiles where id = v_me), null,
+    '{}'::jsonb, '{}'::jsonb, format('test_notification:%s:%s', v_me, clock_timestamp()));
+  return jsonb_build_object('devices', v_devices);
+end;
+$$;
+
+
+ALTER FUNCTION "public"."send_test_notification"() OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."set_freed_slot_opt_out"("p_request_id" "uuid", "p_opt_out" boolean) RETURNS "void"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -13707,7 +13767,7 @@ end $$;
 ALTER FUNCTION "public"."set_request_companions"("p_request_id" "uuid", "p_profile_ids" "uuid"[]) OWNER TO "postgres";
 
 
-CREATE OR REPLACE FUNCTION "public"."set_request_trip_type"("p_request_id" "uuid", "p_trip_type" "public"."trip_type", "p_expected_version" integer) RETURNS "jsonb"
+CREATE OR REPLACE FUNCTION "public"."set_request_trip_type"("p_request_id" "uuid", "p_trip_type" "public"."trip_type", "p_expected_version" integer, "p_keep_car" boolean DEFAULT false) RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
@@ -13717,6 +13777,8 @@ declare
   v_car uuid; v_ride uuid; v_old record; v_old_cars uuid[] := '{}'; v_old_car uuid; v_prev_sys text;
   v_status public.request_status; v_placed boolean := false; v_driver_mode public.leg_car_mode;
   v_kept timestamptz; v_defaulted timestamptz; v_flex_any boolean := false;
+  -- REQ §13.126 g: the Sadran may also choose "round trip, the car stays at the destination" (a two-way הקפצה + the flag).
+  v_keep boolean := coalesce(p_keep_car, false); v_keep_car_id uuid;
 begin
   select * into q from public.requests where id = p_request_id for update;
   if q.id is null then raise exception 'request_not_found' using errcode = 'P0001'; end if;
@@ -13729,7 +13791,7 @@ begin
   if q.status in ('draft', 'cancelled', 'withdrawn', 'denied', 'external') then
     raise exception 'request_not_editable' using errcode = 'P0001';
   end if;
-  if q.trip_type = p_trip_type then
+  if q.trip_type = p_trip_type and q.keep_car_at_destination = v_keep then
     return jsonb_build_object('status', q.status, 'changed', false);
   end if;
 
@@ -13758,11 +13820,16 @@ begin
     v_shape := 'one_way_to'; v_needs := true; v_mode := 'relay';
   else
     v_needs := false;
+    if v_keep then v_ret := coalesce(v_ret, q.kept_return_at); end if;
     if v_ret is not null then v_kept := null; end if;
     if v_ret is not null and v_dep is not null then v_shape := 'round_trip'; v_mode := null;
     elsif v_ret is not null then v_shape := 'one_way_from'; v_mode := coalesce(q.one_way_car_mode, v_driver_mode);
     else v_shape := 'one_way_to'; v_mode := coalesce(q.one_way_car_mode, v_driver_mode);
     end if;
+  end if;
+  if v_keep and (p_trip_type <> 'drop_off' or v_shape <> 'round_trip'
+     or exists (select 1 from public.profiles p where p.id = q.requester_id and p.does_not_drive)) then
+    raise exception 'invalid_keep_car_at_destination' using errcode = 'P0001';
   end if;
   if p_trip_type <> 'drop_off' and public.eligible_leg_driver(q.id) is null then
     raise exception 'non_driver_needs_drop_off' using errcode = 'P0001';
@@ -13773,6 +13840,8 @@ begin
   perform set_config('app.system_status_transition', 'on', true);
 
   update public.requests set trip_type = p_trip_type, trip_shape = v_shape, needs_car_at_destination = v_needs,
+    -- REQ §13.126 g: "the car stays at the destination" only survives as a two-way הקפצה.
+    keep_car_at_destination = v_keep,
     one_way_car_mode = v_mode, depart_at = v_dep, return_at = v_ret, kept_return_at = v_kept,
     flex_return_early = case when v_flex_any then interval '1 day' else flex_return_early end,
     flex_return_late = case when v_flex_any then interval '1 day' else flex_return_late end
@@ -13807,7 +13876,26 @@ begin
   end if;
   -- R8B12: a request that had no car (or whose old car cannot take the new shape) is placed on any free shared car,
   -- exactly like the board's drop would; unplaced only when no car can take it.
-  if not v_placed then
+  if not v_placed and v_keep then
+    -- REQ §13.126 g: both legs on ONE car (connected by assert_car_chain), else unplaced.
+    for v_keep_car_id in
+      select c.id from public.cars c where c.department_id = q.department_id and c.status = 'active' and c.type = 'shared'
+      order by (c.id = q.preferred_car_id) desc nulls last, c.id
+    loop
+      begin
+        v_ride := public.place_request_on_car(q.id, v_keep_car_id, true, v_actor, null, v_dep, v_ret, 'TRIP_TYPE_CHANGED');
+        if coalesce(array_length(public.request_covered_legs(q.id), 1), 0) < 2
+           or exists (select 1 from public.ride_requests rr join public.rides r on r.id = rr.ride_id
+                      where rr.request_id = q.id and r.status <> 'cancelled' and r.car_id <> v_keep_car_id) then
+          raise exception 'keep_car_both_legs' using errcode = 'PXKC1';
+        end if;
+        v_placed := true;
+        exit;
+      exception when others then
+        v_ride := null;
+      end;
+    end loop;
+  elsif not v_placed then
     v_ride := public.place_request_on_any_free_car(q.id, v_actor, v_dep, v_ret, 'TRIP_TYPE_CHANGED');
     v_placed := v_ride is not null;
   end if;
@@ -13828,7 +13916,7 @@ end;
 $$;
 
 
-ALTER FUNCTION "public"."set_request_trip_type"("p_request_id" "uuid", "p_trip_type" "public"."trip_type", "p_expected_version" integer) OWNER TO "postgres";
+ALTER FUNCTION "public"."set_request_trip_type"("p_request_id" "uuid", "p_trip_type" "public"."trip_type", "p_expected_version" integer, "p_keep_car" boolean) OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."set_ride_driver"("p_ride_id" "uuid", "p_driver_id" "uuid", "p_expected_version" integer) RETURNS "jsonb"
@@ -14624,7 +14712,12 @@ declare
   v_eligible_driver uuid;
   v_kept timestamptz; v_prev_return timestamptz; v_prev_kept timestamptz;
   v_own_overlap boolean := false;
-  v_published_edit boolean := false; v_old_edit_car uuid;
+  -- Owner 2026-10-11: the requester answered "keep both" to the form's overlap warning (`overlap_confirmed`).
+  v_overlap_confirmed boolean := coalesce((payload ->> 'overlap_confirmed')::boolean, false);
+  -- REQ §13.126 g: "הרכב זמין לשימוש ביעד" — a member-driven round trip whose car waits at the destination.
+  v_keep_car boolean := coalesce((payload ->> 'keep_car_at_destination')::boolean, false);
+  v_keep_car_id uuid;
+  v_published_edit boolean := false; v_old_edit_car uuid; v_edit_ride uuid; v_edit_prev_sys text;
   v_confirm boolean := coalesce((payload ->> 'confirm_release')::boolean, false);
   v_booking jsonb;
   v_probe jsonb;
@@ -14739,6 +14832,11 @@ begin
   else
     v_trip_type := case when v_trip_shape = 'round_trip' and v_needs_car then 'round_trip'::public.trip_type else 'drop_off'::public.trip_type end;
   end if;
+  -- REQ §13.126 g: only a two-way trip the requester drives (stored as a הקפצה with a pickup) keeps the car at the destination.
+  if v_keep_car and (v_trip_type <> 'drop_off' or v_trip_shape <> 'round_trip'
+     or exists (select 1 from public.profiles p where p.id = v_requester_id and p.does_not_drive)) then
+    raise exception 'invalid_keep_car_at_destination' using errcode = 'P0001';
+  end if;
 
   if v_request_id is not null then
     select * into v_existing from public.requests where id = v_request_id for update;
@@ -14768,6 +14866,11 @@ begin
     -- placement-neutral edit on a published/live day: only notes / description / ride type / preferred car / plan B changed
     v_neutral := v_published_edit and not v_unchanged and public._request_save_unchanged(v_request_id, payload, v_trip_type, v_trip_shape, v_needs_car,
       v_one_way_mode, v_origin_id, v_origin_text, v_depart_at, v_return_at, true);
+    -- REQ §13.126 g: turning "the car is available at the destination" on or off changes how the trip is placed.
+    if v_existing.keep_car_at_destination is distinct from v_keep_car then
+      v_unchanged := false;
+      v_neutral := false;
+    end if;
     -- REQ §13.102 (f), R2B20: the form asks before saving whether an edit would lose the current booking.
     if v_probe_only then
       return jsonb_build_object('probe_only', true, 'request_id', v_request_id, 'unchanged', v_unchanged, 'placement_neutral', v_neutral,
@@ -14938,7 +15041,7 @@ begin
       flex_depart_early, flex_depart_late, flex_return_early, flex_return_late,
       notes, is_late, submitted_at, status, freed_slot_opt_out, join_ride_id, template_id, preferred_car_id,
       series_id, series_index, series_count, kept_return_at,
-      depart_anchor, arrive_by, return_anchor, leave_dest_at, duration_locked, fallback
+      depart_anchor, arrive_by, return_anchor, leave_dest_at, duration_locked, fallback, keep_car_at_destination
     ) values (
       v_department_id, v_week_start, v_requester_id, v_actor,
       nullif(payload ->> 'destination_id', '')::uuid, nullif(payload ->> 'destination_text', ''),
@@ -14955,7 +15058,7 @@ begin
       coalesce((payload ->> 'freed_slot_opt_out')::boolean, false),
       v_join_ride_id, nullif(payload ->> 'template_id', '')::uuid, v_preferred_car_id,
       v_series_id, v_series_index, v_series_count, v_kept,
-      v_depart_anchor, v_arrive_by, v_return_anchor, v_leave_dest_at, v_locked, v_fallback
+      v_depart_anchor, v_arrive_by, v_return_anchor, v_leave_dest_at, v_locked, v_fallback, v_keep_car
     ) returning id into v_request_id;
   else
     -- The shift trigger moves a stored entered time with depart_at/return_at unless this statement sets it.
@@ -14984,6 +15087,7 @@ begin
       depart_anchor = v_depart_anchor, arrive_by = v_arrive_by,
       return_anchor = v_return_anchor, leave_dest_at = v_leave_dest_at, duration_locked = v_locked,
       fallback = v_fallback,
+      keep_car_at_destination = v_keep_car,
       changed_since_solve = (v_week.phase not in ('open','solving'))
     where id = v_request_id
     returning status into v_status;
@@ -15148,7 +15252,8 @@ begin
       jsonb_build_object('requestId',v_request_id::text),jsonb_build_object('request_id',v_request_id,'ride_id',v_auto_result->>'ride_id'),
       format('waitlisted_request:%s',v_request_id)) from public.sadranim_of(v_department_id,v_week_start) as s(profile_id)
     where coalesce(current_setting('app.late_request_notice', true), 'off') <> 'on';
-  elsif v_own_overlap and v_week.phase in ('published', 'live') and v_trip_type in ('round_trip', 'one_way') then
+  elsif v_own_overlap and not (v_overlap_confirmed and v_requester_id = v_actor)
+    and v_week.phase in ('published', 'live') and v_trip_type in ('round_trip', 'one_way') then
     -- REQ §13.100 (QB8): never auto-approved onto another car while the member already has a ride or
     -- request in that time; it stays for the Sadran (waitlisted in a live week, submitted otherwise).
     if v_week.phase = 'live' then
@@ -15202,6 +15307,62 @@ begin
     v_auto_result := public.try_auto_approve(v_request_id);
     if v_waived_here and coalesce(v_auto_result ->> 'status', '') <> 'assigned' then
       update public.requests set luggage_waived_at = null, luggage_waived_by = null where id = v_request_id;
+    end if;
+  elsif v_week.phase in ('published', 'live') and v_trip_type = 'drop_off' and v_keep_car and v_series_id is null then
+    -- REQ §13.126 g: both legs on ONE car, connected (assert_car_chain → connect_drop_off_legs keeps the car waiting at the
+    -- destination for a keep-car request); the old booking's car first, then the preferred one. None takes both legs on
+    -- one car -> the waiting list (block below).
+    v_edit_ride := null;
+    v_edit_prev_sys := coalesce(nullif(current_setting('app.system_status_transition', true), ''), 'off');
+    perform set_config('app.system_status_transition', 'on', true);
+    for v_keep_car_id in
+      select c.id from public.cars c
+      where c.department_id = v_department_id and c.status = 'active' and c.type = 'shared'
+      order by (c.id = v_old_edit_car) desc nulls last, (c.id = v_preferred_car_id) desc nulls last, c.id
+    loop
+      begin
+        v_edit_ride := public.place_request_on_car(v_request_id, v_keep_car_id, false, v_actor, null, null, null, 'AUTO_APPROVED_FREE_CAR');
+        if coalesce(array_length(public.request_covered_legs(v_request_id), 1), 0) < 2
+           or exists (select 1 from public.ride_requests rr join public.rides r on r.id = rr.ride_id
+                      where rr.request_id = v_request_id and r.status <> 'cancelled' and r.car_id <> v_keep_car_id) then
+          raise exception 'keep_car_both_legs' using errcode = 'PXKC1';
+        end if;
+        exit;
+      exception when others then
+        v_edit_ride := null;
+      end;
+    end loop;
+    perform set_config('app.system_status_transition', v_edit_prev_sys, true);
+    if v_edit_ride is not null then
+      v_auto_result := jsonb_build_object('status', 'assigned', 'reason', 'AUTO_APPROVED_FREE_CAR', 'ride_id', v_edit_ride, 'car_id', v_keep_car_id);
+    else
+      perform set_config('app.system_status_transition', 'on', true);
+      update public.requests set status = 'waitlisted', status_reason = 'WAITLISTED_NO_CAR' where id = v_request_id;
+      perform set_config('app.system_status_transition', v_edit_prev_sys, true);
+      v_auto_result := jsonb_build_object('status', 'waitlisted', 'reason', 'WAITLISTED_NO_CAR');
+    end if;
+  elsif v_published_edit and v_trip_type = 'drop_off' then
+    -- Owner 2026-10-11: a member's edit into (or of) a הקפצה on a published/live day is placed when a car
+    -- is free — the old booking's car first, then any free shared car — like the Sadran's trip-type switch
+    -- (R8B12, REQ §13.117). Only when no car takes it does it go to the waiting list (block below).
+    v_edit_ride := null;
+    -- place_request_on_car moves the member's own request to `assigned` — a system step (requests_status_guard).
+    v_edit_prev_sys := coalesce(nullif(current_setting('app.system_status_transition', true), ''), 'off');
+    perform set_config('app.system_status_transition', 'on', true);
+    if v_old_edit_car is not null then
+      begin
+        v_edit_ride := public.place_request_on_car(v_request_id, v_old_edit_car, false, v_actor, null, null, null, 'AUTO_APPROVED_FREE_CAR');
+      exception when others then
+        v_edit_ride := null;
+      end;
+    end if;
+    if v_edit_ride is null then
+      v_edit_ride := public.place_request_on_any_free_car(v_request_id, v_actor, null, null, 'AUTO_APPROVED_FREE_CAR');
+    end if;
+    perform set_config('app.system_status_transition', v_edit_prev_sys, true);
+    if v_edit_ride is not null then
+      v_auto_result := jsonb_build_object('status', 'assigned', 'reason', 'AUTO_APPROVED_FREE_CAR', 'ride_id', v_edit_ride,
+        'car_id', (select car_id from public.rides where id = v_edit_ride));
     end if;
   elsif v_week.phase = 'live' then
     perform set_config('app.system_status_transition', 'on', true);
@@ -15508,6 +15669,117 @@ end $$;
 
 
 ALTER FUNCTION "public"."swap_day_cars"("p_department_id" "uuid", "p_week_start" "date", "p_day" "date", "p_car_a" "uuid", "p_car_b" "uuid", "p_expected_fingerprint" "text", "p_series_mode" "text", "p_allow_small_trunk" boolean) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."switch_request_plan"("p_request_id" "uuid", "p_to" "text", "p_expected_version" integer) RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  q public.requests%rowtype; a public.request_alternatives%rowtype; v_actor uuid := (select auth.uid());
+  v_day date; v_public boolean; v_dep timestamptz; v_ret timestamptz; v_out int; v_back int; v_sib uuid;
+  v_ride uuid; v_car uuid; v_prev text; v_status public.request_status; v_placed boolean := false;
+  v_alone boolean; v_prev_supp text := coalesce(current_setting('app.suppress_notifications', true), '');
+begin
+  if p_to not in ('alternative', 'main') then raise exception 'invalid_plan' using errcode = 'P0001'; end if;
+  select * into q from public.requests where id = p_request_id for update;
+  if q.id is null then raise exception 'request_not_found' using errcode = 'P0001'; end if;
+  if not public.can_manage_week(q.department_id, q.week_start) then raise exception 'not_authorized' using errcode = 'P0001'; end if;
+  if exists (select 1 from public.weeks w where w.department_id = q.department_id and w.week_start = q.week_start and w.phase = 'archived') then
+    raise exception 'week_archived' using errcode = 'P0001';
+  end if;
+  if p_expected_version is null or q.version <> p_expected_version then perform public.raise_stale_version(); end if;
+  select * into a from public.request_alternatives where request_id = q.id for update;
+  if a.id is null or q.fallback <> 'alternative' or q.series_id is not null or q.plan_b_parent_id is not null
+     or q.status in ('draft', 'cancelled', 'withdrawn') then
+    raise exception 'alternative_not_applicable' using errcode = 'P0001';
+  end if;
+  v_day := (coalesce(q.depart_at, q.return_at) at time zone 'Asia/Jerusalem')::date;
+  v_public := public.is_day_public(q.department_id, q.week_start, v_day);
+
+  -- Releasing the old plan's rides would tell the member "ride cancelled" right before "switched"; when nobody else rides on
+  -- them, those release notices are silenced (others on board still hear about their ride).
+  v_alone := not exists (
+    select 1 from public.ride_requests rr join public.ride_requests other on other.ride_id = rr.ride_id and other.request_id <> rr.request_id
+    join public.rides r on r.id = rr.ride_id
+    where rr.request_id in (select q.id union select x.id from public.requests x where x.plan_b_parent_id = q.id) and r.status <> 'cancelled')
+    and not exists (
+    select 1 from public.ride_requests rr join public.ride_passengers rp on rp.ride_id = rr.ride_id join public.rides r on r.id = rr.ride_id
+    where rr.request_id = q.id and r.status <> 'cancelled');
+  v_prev := coalesce(nullif(current_setting('app.system_status_transition', true), ''), 'off');
+  perform set_config('app.system_status_transition', 'on', true);
+  perform set_config('app.audit_reason', 'switch_request_plan', true);
+
+  if p_to = 'alternative' then
+    if q.served_by_alternative or a.applied_at is not null then raise exception 'alternative_not_applicable' using errcode = 'P0001'; end if;
+    if q.trip_type not in ('round_trip', 'one_way') and not (q.trip_type = 'drop_off' and q.keep_car_at_destination) then
+      raise exception 'alternative_not_applicable' using errcode = 'P0001';
+    end if;
+    -- times: be at the drop place by arrive_by (leave = arrive_by - the drive, quarter hour down); the pickup ride ends home
+    v_out := coalesce((select pt.travel_minutes from public.place_travel(q.origin_id, a.drop_place_id) pt), 60);
+    v_dep := to_timestamp(floor(extract(epoch from (a.arrive_by - make_interval(mins => v_out))) / 900) * 900);
+    if a.pickup then
+      v_back := coalesce((select pt.travel_minutes from public.place_travel(coalesce(a.pickup_place_id, a.drop_place_id), q.origin_id) pt), 60);
+      v_ret := to_timestamp(ceil(extract(epoch from (a.pickup_at + make_interval(mins => v_back))) / 900) * 900);
+    end if;
+    if v_alone then perform set_config('app.suppress_notifications', 'on', true); end if;
+    perform public.release_request_booking(q.id);
+    perform set_config('app.suppress_notifications', v_prev_supp, true);
+    -- the release may cancel plan A's ride and reset the system-transition flag; the conversion is a system step
+    perform set_config('app.system_status_transition', 'on', true);
+    v_sib := public._convert_to_alternative(q.id, v_dep, v_ret);
+    perform set_config('app.system_status_transition', 'on', true);
+    if v_public then
+      v_ride := public.place_request_on_any_free_car(q.id, v_actor, v_dep, case when a.pickup and v_sib is null then v_ret end, 'PLAN_B_SWITCH');
+      if v_sib is not null then
+        perform public.place_request_on_any_free_car(v_sib, v_actor, a.pickup_at, null, 'PLAN_B_SWITCH');
+      end if;
+      if v_ride is null then
+        update public.requests set status = 'waitlisted', status_reason = 'WAITLISTED_NO_CAR' where id = q.id;
+      end if;
+      perform public.enqueue_notification(q.requester_id, 'outcome_changed', q.department_id, q.week_start, '{}'::jsonb,
+        jsonb_build_object('variant', 'plan_b_switched', 'request_id', q.id), format('plan_b_switched:%s:%s', q.id, clock_timestamp()));
+    end if;
+  else
+    if not q.served_by_alternative then raise exception 'alternative_not_applied' using errcode = 'P0001'; end if;
+    if v_alone then perform set_config('app.suppress_notifications', 'on', true); end if;
+    perform public._restore_original_main(q.id);   -- releases plan B (and its sibling), the request is plan A again
+    perform set_config('app.suppress_notifications', v_prev_supp, true);
+    perform set_config('app.system_status_transition', 'on', true);
+    select * into q from public.requests where id = q.id;
+    if v_public then
+      if q.trip_type = 'drop_off' and q.keep_car_at_destination then
+        for v_car in
+          select c.id from public.cars c where c.department_id = q.department_id and c.status = 'active' and c.type = 'shared' order by c.id
+        loop
+          begin
+            v_ride := public.place_request_on_car(q.id, v_car, true, v_actor, null, null, null, 'PLAN_A_RESTORED');
+            if coalesce(array_length(public.request_covered_legs(q.id), 1), 0) < 2 then
+              raise exception 'keep_car_both_legs' using errcode = 'PXKC1';
+            end if;
+            v_placed := true;
+            exit;
+          exception when others then v_ride := null;
+          end;
+        end loop;
+      else
+        v_ride := public.place_request_on_any_free_car(q.id, v_actor, null, null, 'PLAN_A_RESTORED');
+        v_placed := v_ride is not null;
+      end if;
+      -- on a published day the member is never left without either plan
+      if not v_placed then raise exception 'plan_a_no_car' using errcode = 'P0001'; end if;
+      perform public.enqueue_notification(q.requester_id, 'outcome_changed', q.department_id, q.week_start, '{}'::jsonb,
+        jsonb_build_object('variant', 'plan_a_restored', 'request_id', q.id), format('plan_a_restored:%s:%s', q.id, clock_timestamp()));
+    end if;
+  end if;
+
+  perform set_config('app.system_status_transition', v_prev, true);
+  select status into v_status from public.requests where id = q.id;
+  return jsonb_strip_nulls(jsonb_build_object('status', v_status, 'ride_id', v_ride, 'plan', p_to, 'notified', v_public));
+end $$;
+
+
+ALTER FUNCTION "public"."switch_request_plan"("p_request_id" "uuid", "p_to" "text", "p_expected_version" integer) OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."sync_google_profile_name"() RETURNS "trigger"
@@ -17184,6 +17456,7 @@ CREATE TABLE IF NOT EXISTS "public"."profiles" (
     "display_name" "text",
     "does_not_drive" boolean DEFAULT false NOT NULL,
     "classic_request_form" boolean DEFAULT false NOT NULL,
+    "my_rides_week_view" boolean DEFAULT false NOT NULL,
     CONSTRAINT "profiles_default_boosters_ck" CHECK (("default_boosters" >= 0)),
     CONSTRAINT "profiles_default_child_seats_ck" CHECK (("default_child_seats" >= 0)),
     CONSTRAINT "profiles_phone_format" CHECK ((("phone" IS NULL) OR ("phone" ~ '^\+[1-9][0-9]{7,14}$'::"text")))
@@ -17414,6 +17687,7 @@ CREATE TABLE IF NOT EXISTS "public"."request_templates" (
     "return_anchor" "public"."time_anchor" DEFAULT 'arrive'::"public"."time_anchor" NOT NULL,
     "leave_dest_time" time without time zone,
     "duration_locked" boolean DEFAULT false NOT NULL,
+    "keep_car_at_destination" boolean DEFAULT false NOT NULL,
     CONSTRAINT "request_templates_adults_ck" CHECK (("adults" >= 1)),
     CONSTRAINT "request_templates_arrive_by_anchor_ck" CHECK ((("arrive_by_time" IS NULL) OR ("depart_anchor" = 'arrive'::"public"."time_anchor"))),
     CONSTRAINT "request_templates_arrive_by_qh_ck" CHECK ((("arrive_by_time" IS NULL) OR (((EXTRACT(minute FROM "arrive_by_time"))::integer % 15) = 0))),
@@ -17426,6 +17700,7 @@ CREATE TABLE IF NOT EXISTS "public"."request_templates" (
     CONSTRAINT "request_templates_flex_depart_late_ck" CHECK ((("flex_depart_late" = ANY (ARRAY['00:00:00'::interval, '00:15:00'::interval, '00:30:00'::interval, '01:00:00'::interval, '02:00:00'::interval, '1 day'::interval])) OR ("duration_locked" AND ("flex_depart_late" > '00:00:00'::interval) AND ("flex_depart_late" <= '1 day'::interval) AND (((EXTRACT(epoch FROM "flex_depart_late"))::bigint % (900)::bigint) = 0)))),
     CONSTRAINT "request_templates_flex_return_early_ck" CHECK (("flex_return_early" = ANY (ARRAY['00:00:00'::interval, '00:15:00'::interval, '00:30:00'::interval, '01:00:00'::interval, '02:00:00'::interval, '1 day'::interval]))),
     CONSTRAINT "request_templates_flex_return_late_ck" CHECK ((("flex_return_late" = ANY (ARRAY['00:00:00'::interval, '00:15:00'::interval, '00:30:00'::interval, '01:00:00'::interval, '02:00:00'::interval, '1 day'::interval])) OR ("duration_locked" AND ("flex_return_late" > '00:00:00'::interval) AND ("flex_return_late" <= '1 day'::interval) AND (((EXTRACT(epoch FROM "flex_return_late"))::bigint % (900)::bigint) = 0)))),
+    CONSTRAINT "request_templates_keep_car_at_destination_ck" CHECK (((NOT "keep_car_at_destination") OR (("trip_type" = 'drop_off'::"public"."trip_type") AND ("trip_shape" = 'round_trip'::"public"."trip_shape")))),
     CONSTRAINT "request_templates_leave_dest_anchor_ck" CHECK ((("leave_dest_time" IS NULL) OR ("return_anchor" = 'leave'::"public"."time_anchor"))),
     CONSTRAINT "request_templates_leave_dest_qh_ck" CHECK ((("leave_dest_time" IS NULL) OR (((EXTRACT(minute FROM "leave_dest_time"))::integer % 15) = 0))),
     CONSTRAINT "request_templates_one_way_mode_ck" CHECK (((("one_way_car_mode" IS NULL) = ("trip_shape" = 'round_trip'::"public"."trip_shape")) AND (("one_way_car_mode" IS NULL) OR ("one_way_car_mode" = ANY (ARRAY['relay'::"public"."leg_car_mode", 'passenger'::"public"."leg_car_mode"]))))),
@@ -17523,6 +17798,7 @@ CREATE TABLE IF NOT EXISTS "public"."requests" (
     "fallback" "public"."request_fallback" DEFAULT 'none'::"public"."request_fallback" NOT NULL,
     "served_by_alternative" boolean DEFAULT false NOT NULL,
     "plan_b_parent_id" "uuid",
+    "keep_car_at_destination" boolean DEFAULT false NOT NULL,
     CONSTRAINT "requests_adults_ck" CHECK (("adults" >= 1)),
     CONSTRAINT "requests_arrive_by_anchor_ck" CHECK ((("arrive_by" IS NULL) OR ("depart_anchor" = 'arrive'::"public"."time_anchor"))),
     CONSTRAINT "requests_arrive_by_qh_ck" CHECK ("public"."is_quarter_hour"("arrive_by")),
@@ -17535,6 +17811,7 @@ CREATE TABLE IF NOT EXISTS "public"."requests" (
     CONSTRAINT "requests_flex_depart_late_ck" CHECK ((("flex_depart_late" = ANY (ARRAY['00:00:00'::interval, '00:15:00'::interval, '00:30:00'::interval, '01:00:00'::interval, '02:00:00'::interval, '1 day'::interval])) OR ("duration_locked" AND ("flex_depart_late" > '00:00:00'::interval) AND ("flex_depart_late" <= '1 day'::interval) AND (((EXTRACT(epoch FROM "flex_depart_late"))::bigint % (900)::bigint) = 0)))),
     CONSTRAINT "requests_flex_return_early_ck" CHECK (("flex_return_early" = ANY (ARRAY['00:00:00'::interval, '00:15:00'::interval, '00:30:00'::interval, '01:00:00'::interval, '02:00:00'::interval, '1 day'::interval]))),
     CONSTRAINT "requests_flex_return_late_ck" CHECK ((("flex_return_late" = ANY (ARRAY['00:00:00'::interval, '00:15:00'::interval, '00:30:00'::interval, '01:00:00'::interval, '02:00:00'::interval, '1 day'::interval])) OR ("duration_locked" AND ("flex_return_late" > '00:00:00'::interval) AND ("flex_return_late" <= '1 day'::interval) AND (((EXTRACT(epoch FROM "flex_return_late"))::bigint % (900)::bigint) = 0)))),
+    CONSTRAINT "requests_keep_car_at_destination_ck" CHECK (((NOT "keep_car_at_destination") OR (("trip_type" = 'drop_off'::"public"."trip_type") AND ("trip_shape" = 'round_trip'::"public"."trip_shape")))),
     CONSTRAINT "requests_leave_dest_anchor_ck" CHECK ((("leave_dest_at" IS NULL) OR ("return_anchor" = 'leave'::"public"."time_anchor"))),
     CONSTRAINT "requests_leave_dest_qh_ck" CHECK ("public"."is_quarter_hour"("leave_dest_at")),
     CONSTRAINT "requests_luggage_waiver_ck" CHECK ((("luggage_waived_at" IS NULL) OR "has_luggage")),
@@ -17562,6 +17839,10 @@ COMMENT ON COLUMN "public"."requests"."kept_return_at" IS 'Last real return time
 
 
 COMMENT ON COLUMN "public"."requests"."luggage_waived_at" IS 'REQ §13.111 (a): set when a Sadran/member placing by hand accepted a car without a large trunk for this large-luggage request; cleared when has_luggage changes.';
+
+
+
+COMMENT ON COLUMN "public"."requests"."keep_car_at_destination" IS 'REQ §13.126 g: a member-driven round trip whose car stays at the destination between the legs (two connected relay legs on one car, never split by the wait-needed-elsewhere rule).';
 
 
 
@@ -18269,7 +18550,8 @@ CREATE OR REPLACE VIEW "public"."v_request_template_suggestions" WITH ("security
             END))::timestamp without time zone + ("tpl"."leave_dest_time")::interval) AT TIME ZONE 'Asia/Jerusalem'::"text")
             ELSE NULL::timestamp with time zone
         END AS "leave_dest_at",
-    "tpl"."duration_locked"
+    "tpl"."duration_locked",
+    "tpl"."keep_car_at_destination"
    FROM (( SELECT "existing_1"."template_id",
             "existing_1"."department_id",
             "existing_1"."week_start",
@@ -19621,7 +19903,7 @@ CREATE OR REPLACE VIEW "public"."v_board_rides" WITH ("security_invoker"='true')
             WHERE (("x"."ride_id" = "r_1_1_1_1"."id") AND ("x"."role" = 'driver'::"public"."ride_role"))))) AS "is_chauffeur",
             COALESCE("jsonb_agg"("jsonb_build_object"('request_id', "q"."id", 'role', "rr"."role", 'leg', "rr"."leg", 'car_mode', "rr"."car_mode", 'requester', "p"."full_name", 'destination', COALESCE("dst"."name", "q"."destination_text"), 'ride_type', "rt"."code", 'adults', "q"."adults", 'child_seats', "q"."child_seats", 'boosters', "q"."boosters", 'luggage', "q"."has_luggage", 'luggage_waived', ("q"."luggage_waived_at" IS NOT NULL), 'origin_id', "q"."origin_id", 'origin_text', "q"."origin_text", 'origin_name', ( SELECT "dd"."name"
              FROM "public"."destinations" "dd"
-            WHERE ("dd"."id" = "q"."origin_id")), 'trip_type', "q"."trip_type", 'child_names', COALESCE(( SELECT "array_agg"("c"."full_name" ORDER BY "c"."full_name") AS "array_agg"
+            WHERE ("dd"."id" = "q"."origin_id")), 'trip_type', "q"."trip_type", 'keep_car_at_destination', "q"."keep_car_at_destination", 'child_names', COALESCE(( SELECT "array_agg"("c"."full_name" ORDER BY "c"."full_name") AS "array_agg"
              FROM ("public"."request_children" "rc"
                JOIN "public"."children" "c" ON (("c"."id" = "rc"."child_id")))
             WHERE ("rc"."request_id" = "q"."id")), '{}'::"text"[]), 'ride_description', "q"."ride_description", 'guest_passenger_names', "q"."guest_passenger_names", 'companions', COALESCE(( SELECT "jsonb_agg"("jsonb_build_object"('profile_id', "p_1"."id", 'name', "p_1"."full_name") ORDER BY "p_1"."full_name", "p_1"."id") AS "jsonb_agg"
@@ -21793,6 +22075,11 @@ GRANT ALL ON FUNCTION "public"."_can_edit_car_maintenance"("p_car_id" "uuid") TO
 
 
 
+REVOKE ALL ON FUNCTION "public"."_convert_to_alternative"("p_request_id" "uuid", "p_dep" timestamp with time zone, "p_ret" timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_convert_to_alternative"("p_request_id" "uuid", "p_dep" timestamp with time zone, "p_ret" timestamp with time zone) TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."_day_car_swap_authorize"("p_department_id" "uuid", "p_week_start" "date", "p_day" "date", "p_car_a" "uuid", "p_car_b" "uuid", "p_actor" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_day_car_swap_authorize"("p_department_id" "uuid", "p_week_start" "date", "p_day" "date", "p_car_a" "uuid", "p_car_b" "uuid", "p_actor" "uuid") TO "service_role";
 
@@ -23588,6 +23875,12 @@ GRANT ALL ON FUNCTION "public"."send_proposal"("p_proposal_id" "uuid", "p_sent_v
 
 
 
+REVOKE ALL ON FUNCTION "public"."send_test_notification"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."send_test_notification"() TO "service_role";
+GRANT ALL ON FUNCTION "public"."send_test_notification"() TO "authenticated";
+
+
+
 REVOKE ALL ON FUNCTION "public"."set_freed_slot_opt_out"("p_request_id" "uuid", "p_opt_out" boolean) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."set_freed_slot_opt_out"("p_request_id" "uuid", "p_opt_out" boolean) TO "authenticated";
 GRANT ALL ON FUNCTION "public"."set_freed_slot_opt_out"("p_request_id" "uuid", "p_opt_out" boolean) TO "service_role";
@@ -23624,9 +23917,9 @@ GRANT ALL ON FUNCTION "public"."set_request_companions"("p_request_id" "uuid", "
 
 
 
-REVOKE ALL ON FUNCTION "public"."set_request_trip_type"("p_request_id" "uuid", "p_trip_type" "public"."trip_type", "p_expected_version" integer) FROM PUBLIC;
-GRANT ALL ON FUNCTION "public"."set_request_trip_type"("p_request_id" "uuid", "p_trip_type" "public"."trip_type", "p_expected_version" integer) TO "service_role";
-GRANT ALL ON FUNCTION "public"."set_request_trip_type"("p_request_id" "uuid", "p_trip_type" "public"."trip_type", "p_expected_version" integer) TO "authenticated";
+REVOKE ALL ON FUNCTION "public"."set_request_trip_type"("p_request_id" "uuid", "p_trip_type" "public"."trip_type", "p_expected_version" integer, "p_keep_car" boolean) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."set_request_trip_type"("p_request_id" "uuid", "p_trip_type" "public"."trip_type", "p_expected_version" integer, "p_keep_car" boolean) TO "service_role";
+GRANT ALL ON FUNCTION "public"."set_request_trip_type"("p_request_id" "uuid", "p_trip_type" "public"."trip_type", "p_expected_version" integer, "p_keep_car" boolean) TO "authenticated";
 
 
 
@@ -23725,6 +24018,12 @@ GRANT ALL ON FUNCTION "public"."suggest_destination"("p_department_id" "uuid", "
 REVOKE ALL ON FUNCTION "public"."swap_day_cars"("p_department_id" "uuid", "p_week_start" "date", "p_day" "date", "p_car_a" "uuid", "p_car_b" "uuid", "p_expected_fingerprint" "text", "p_series_mode" "text", "p_allow_small_trunk" boolean) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."swap_day_cars"("p_department_id" "uuid", "p_week_start" "date", "p_day" "date", "p_car_a" "uuid", "p_car_b" "uuid", "p_expected_fingerprint" "text", "p_series_mode" "text", "p_allow_small_trunk" boolean) TO "service_role";
 GRANT ALL ON FUNCTION "public"."swap_day_cars"("p_department_id" "uuid", "p_week_start" "date", "p_day" "date", "p_car_a" "uuid", "p_car_b" "uuid", "p_expected_fingerprint" "text", "p_series_mode" "text", "p_allow_small_trunk" boolean) TO "authenticated";
+
+
+
+REVOKE ALL ON FUNCTION "public"."switch_request_plan"("p_request_id" "uuid", "p_to" "text", "p_expected_version" integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."switch_request_plan"("p_request_id" "uuid", "p_to" "text", "p_expected_version" integer) TO "service_role";
+GRANT ALL ON FUNCTION "public"."switch_request_plan"("p_request_id" "uuid", "p_to" "text", "p_expected_version" integer) TO "authenticated";
 
 
 
@@ -24086,6 +24385,10 @@ GRANT SELECT("does_not_drive") ON TABLE "public"."profiles" TO "authenticated";
 
 
 GRANT SELECT("classic_request_form") ON TABLE "public"."profiles" TO "authenticated";
+
+
+
+GRANT SELECT("my_rides_week_view") ON TABLE "public"."profiles" TO "authenticated";
 
 
 

@@ -4,6 +4,7 @@ import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 
 import { DepartmentContextSelector } from "@/components/DepartmentContextSelector";
 import { useActiveDepartment } from "@/features/auth/useActiveDepartment";
+import { CalendarProvider } from "@/features/calendar/CalendarContext";
 import { OfflineNotice } from "@/components/OfflineNotice";
 import { AppLogoMark } from "@/components/AppLogoMark";
 import { useIsSadranAnywhere } from "@/features/auth/useIsSadran";
@@ -152,7 +153,7 @@ export function AppShell() {
         <OfflineNotice />
         <main id="main-content" className="min-w-0 flex-1 overflow-x-clip pb-16 md:pb-0 lg:min-h-0 lg:overflow-y-auto lg:overflow-x-hidden">
           <DepartmentContextSelector />
-          <div key={context.departmentId}><Outlet /></div>
+          <div key={context.departmentId}><CalendarProvider><Outlet /></CalendarProvider></div>
         </main>
 
         <nav

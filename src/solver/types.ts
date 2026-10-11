@@ -161,6 +161,11 @@ export interface Request {
    */
   fallback?: RequestFallback;
   alternative?: AlternativePlan;
+  /**
+   * REQ §13.126 g: "the car is available at the destination" — a member-driven two-way drop_off whose two legs always connect
+   * on one car (the car waits there); the wait is never handed back for being needed elsewhere (REQ §13.103 a).
+   */
+  keepCarAtDestination?: boolean;
   /** REQ §13.112 (a): an accepted plan B already serves this request (scoring only: it counts `alternativeServedWeight` served). */
   servedByAlternative?: boolean;
   /** REQ §13.112 (a): the pickup-leg sibling of a plan B with a pickup from another place — scoring only: the pair counts once (this request weighs 0). */

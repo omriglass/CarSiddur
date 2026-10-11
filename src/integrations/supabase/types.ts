@@ -1481,6 +1481,7 @@ export type Database = {
           id: string
           is_admin: boolean
           muted_events: Database["public"]["Enums"]["notification_event"][]
+          my_rides_week_view: boolean
           phone: string | null
           updated_at: string
         }
@@ -1503,6 +1504,7 @@ export type Database = {
           id: string
           is_admin?: boolean
           muted_events?: Database["public"]["Enums"]["notification_event"][]
+          my_rides_week_view?: boolean
           phone?: string | null
           updated_at?: string
         }
@@ -1525,6 +1527,7 @@ export type Database = {
           id?: string
           is_admin?: boolean
           muted_events?: Database["public"]["Enums"]["notification_event"][]
+          my_rides_week_view?: boolean
           phone?: string | null
           updated_at?: string
         }
@@ -2200,6 +2203,7 @@ export type Database = {
           has_luggage: boolean
           id: string
           is_active: boolean
+          keep_car_at_destination: boolean
           last_materialized_week: string | null
           leave_dest_time: string | null
           needs_car_at_destination: boolean
@@ -2246,6 +2250,7 @@ export type Database = {
           has_luggage?: boolean
           id?: string
           is_active?: boolean
+          keep_car_at_destination?: boolean
           last_materialized_week?: string | null
           leave_dest_time?: string | null
           needs_car_at_destination?: boolean
@@ -2292,6 +2297,7 @@ export type Database = {
           has_luggage?: boolean
           id?: string
           is_active?: boolean
+          keep_car_at_destination?: boolean
           last_materialized_week?: string | null
           leave_dest_time?: string | null
           needs_car_at_destination?: boolean
@@ -2400,6 +2406,7 @@ export type Database = {
           id: string
           is_late: boolean
           join_ride_id: string | null
+          keep_car_at_destination: boolean
           kept_return_at: string | null
           leave_dest_at: string | null
           luggage_waived_at: string | null
@@ -2459,6 +2466,7 @@ export type Database = {
           id?: string
           is_late?: boolean
           join_ride_id?: string | null
+          keep_car_at_destination?: boolean
           kept_return_at?: string | null
           leave_dest_at?: string | null
           luggage_waived_at?: string | null
@@ -2518,6 +2526,7 @@ export type Database = {
           id?: string
           is_late?: boolean
           join_ride_id?: string | null
+          keep_car_at_destination?: boolean
           kept_return_at?: string | null
           leave_dest_at?: string | null
           luggage_waived_at?: string | null
@@ -4168,6 +4177,7 @@ export type Database = {
           flex_return_late: string | null
           guest_passenger_names: string[] | null
           has_luggage: boolean | null
+          keep_car_at_destination: boolean | null
           leave_dest_at: string | null
           needs_car_at_destination: boolean | null
           notes: string | null
@@ -4375,6 +4385,10 @@ export type Database = {
       _can_edit_car_maintenance: {
         Args: { p_car_id: string }
         Returns: boolean
+      }
+      _convert_to_alternative: {
+        Args: { p_dep: string; p_request_id: string; p_ret: string }
+        Returns: string
       }
       _day_car_swap_authorize: {
         Args: {
@@ -5626,6 +5640,7 @@ export type Database = {
         }
         Returns: Json
       }
+      send_test_notification: { Args: never; Returns: Json }
       set_freed_slot_opt_out: {
         Args: { p_opt_out: boolean; p_request_id: string }
         Returns: undefined
@@ -5653,6 +5668,7 @@ export type Database = {
       set_request_trip_type: {
         Args: {
           p_expected_version: number
+          p_keep_car?: boolean
           p_request_id: string
           p_trip_type: Database["public"]["Enums"]["trip_type"]
         }
@@ -5733,6 +5749,10 @@ export type Database = {
           p_series_mode?: string
           p_week_start: string
         }
+        Returns: Json
+      }
+      switch_request_plan: {
+        Args: { p_expected_version: number; p_request_id: string; p_to: string }
         Returns: Json
       }
       sync_request_coverage: {
@@ -5876,6 +5896,7 @@ export type Database = {
         | "waitlist_resolved"
         | "window_changed"
         | "car_swapped"
+        | "test_notification"
       party_response: "pending" | "accepted" | "declined"
       proposal_status:
         | "draft"
@@ -6110,6 +6131,7 @@ export const Constants = {
         "waitlist_resolved",
         "window_changed",
         "car_swapped",
+        "test_notification",
       ],
       party_response: ["pending", "accepted", "declined"],
       proposal_status: [

@@ -18,6 +18,8 @@ export interface QuickRequestSheetProps {
   day: string;
   /** "HH:MM", prefilled start (still editable). */
   initialStartTime: string;
+  /** "HH:MM", prefilled "להיות בבית עד" from a two-tap span (owner 2026-10-11); absent = the default length. */
+  initialEndTime?: string;
   /** The car the sheet opened for — the row clicked, or the day-list's "next free" default. */
   initialCarId: string;
   /** Every shared car in the department, for the "another car is free" offer and the optional picker. */
@@ -55,6 +57,7 @@ export function QuickRequestSheet({
   weekStart,
   day,
   initialStartTime,
+  initialEndTime,
   initialCarId,
   cars,
   showCarPicker,
@@ -77,12 +80,12 @@ export function QuickRequestSheet({
           <SheetTitle>{he.quickRequest.submit}</SheetTitle>
         </SheetHeader>
         <RequestForm
-          key={`${initialCarId}:${day}:${initialStartTime}`}
+          key={`${initialCarId}:${day}:${initialStartTime}:${initialEndTime ?? ""}`}
           mode="new"
           variant={variant}
           departmentId={departmentId}
           weekStart={weekStart}
-          slotPrefill={{ day, departTime: initialStartTime, carId: initialCarId }}
+          slotPrefill={{ day, departTime: initialStartTime, returnTime: initialEndTime, carId: initialCarId }}
           quickContext={{ cars, freeWindows, awayWindows, showCarPicker, now }}
           onDone={() => onOpenChange(false)}
         />

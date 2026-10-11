@@ -242,6 +242,20 @@ describe("RequestForm plan B line (REQ §13.112 a/b)", () => {
     expect(mocks.submit.mock.calls[0]![0]).toMatchObject({ fallback: "none", alternative: null });
   });
 
+  it("the × at the end of the line removes a filled plan B and sends fallback none (owner 2026-10-11)", async () => {
+    show();
+    pickSentenceDestination();
+    fireEvent.click(screen.getByTestId("plan-b-link"));
+    fireEvent.click(screen.getByTestId("chip-plan-b-place"));
+    fireEvent.click(within(screen.getByTestId("plan-b-place-sheet")).getByText("Harish"));
+    fireEvent.click(screen.getByRole("button", { name: he.planB.remove }));
+    expect(screen.queryByTestId("plan-b-line")).not.toBeInTheDocument();
+    expect(screen.getByTestId("plan-b-link")).toBeVisible();
+    await submitFromStageOne();
+    await waitFor(() => expect(mocks.submit).toHaveBeenCalledOnce());
+    expect(mocks.submit.mock.calls[0]![0]).toMatchObject({ fallback: "none", alternative: null });
+  });
+
   it("'בלי איסוף' drops the pickup part", async () => {
     show();
     pickSentenceDestination();

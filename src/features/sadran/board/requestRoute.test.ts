@@ -15,4 +15,10 @@ describe("requestRouteLine", () => {
     expect(requestRouteLine({ originId: "x", originName: "Givat", destination: "Haifa", tripType: "drop_off" }, "h")).toContain("Givat");
     expect(requestRouteLine({ originText: "Somewhere", destination: "Haifa", tripType: "round_trip" }, "h")).toContain("Somewhere");
   });
+  it("reads a kept-car two-way הקפצה as a round trip with a note", () => {
+    const line = requestRouteLine({ originText: "Givat", destination: "Haifa", tripType: "drop_off", keepCarAtDestination: true }, "h");
+    expect(line).toContain(he.request.tripTypeRoundTrip);
+    expect(line).toContain("Haifa");
+    expect(line).not.toContain(he.request.tripTypeDropOff);
+  });
 });

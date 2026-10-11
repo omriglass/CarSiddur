@@ -47,6 +47,7 @@ export function servedByAlternativeLine(alt: StoredAlternative): string {
 /** The replaced main trip kept in `request_alternatives.original_main` (only the fields the line needs). */
 const originalMainSchema = z.object({
   trip_type: tripTypeSchema,
+  keep_car_at_destination: z.boolean().nullish(),
   destination_id: z.string().nullish(),
   destination_text: z.string().nullish(),
   depart_at: z.string().nullish(),
@@ -70,11 +71,13 @@ export function originalRequestLine(originalMain: unknown, context: OriginalMain
     one_way: he.request.tripTypeOneWay,
     drop_off: he.request.tripTypeDropOff,
   };
+  // A kept-car request (stored drop_off + flag) reads as the round trip it is to the member.
+  const keptCar = main.trip_type === "drop_off" && !!main.keep_car_at_destination;
   const dayInstant = main.depart_at ?? main.return_at;
   const ret = main.return_at ?? main.kept_return_at;
-  const times = [main.depart_at ? time(main.depart_at) : null, main.trip_type === "round_trip" && ret ? time(ret) : null].filter(Boolean).join("–");
+  const times = [main.depart_at ? time(main.depart_at) : null, (main.trip_type === "round_trip" || keptCar) && ret ? time(ret) : null].filter(Boolean).join("–");
   return tv("planB.original", {
-    route: tv("planB.originalRoute", { trip: tripLabel[main.trip_type], destination }),
+    route: tv("planB.originalRoute", { trip: tripLabel[keptCar ? "round_trip" : main.trip_type], destination }),
     day: dayInstant ? formatDayDate(dayInstant) : "",
     times,
   }).replace(/\s+/g, " ").trim();

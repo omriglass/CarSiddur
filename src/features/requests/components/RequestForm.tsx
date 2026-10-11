@@ -83,6 +83,7 @@ import { childOverlapMessage } from "../childOverlap";
 import { releaseConfirmation, shouldOfferJoinableRides, toastSeriesSubmitOutcome, toastSubmitOutcome } from "../submitOutcome";
 import { shouldSuggestChildcare } from "../childcareType";
 import { suggestionToFormValues } from "../templatePrefill";
+import { isKeepCarRow } from "../keepCar";
 import { canUseDrivingTripTypes, initialTripType, tripTypeToLegacyFields } from "../tripType";
 import { JoinableRidesDialog } from "./JoinableRidesDialog";
 import { CarPreferenceFields } from "./requestForm/CarPreferenceFields";
@@ -309,8 +310,10 @@ function mapEditRowToValues(row: RequestEditRow, weekStart: string, companions: 
     returnStops: row.returnStops ?? [],
     rideTypeId: row.rideTypeId,
     preferredCarId: row.preferredCarId ?? "",
-    tripShape: row.tripShape,
+    // A kept-car request reopens as a round trip, so its legacy fields are the round trip's.
+    tripShape: isKeepCarRow(row) ? "round_trip" : row.tripShape,
     ...initialTripType(row),
+    keepCarAtDestination: isKeepCarRow(row),
     departTime,
     returnTime: returnNextDay ? "23:59" : returnTime,
     ...anchorFormFields(row, timeFromInstant),
@@ -320,7 +323,7 @@ function mapEditRowToValues(row: RequestEditRow, weekStart: string, companions: 
     ...windowFormFields({ durationLocked: row.durationLocked, departAt: row.departAt, returnAt: row.returnAt, flexReturnLate: row.flexReturnLate }),
     returnNextDay: false,
     oneWayCarMode: (row.oneWayCarMode ?? undefined) as "relay" | "passenger" | undefined,
-    needsCarAtDestination: row.needsCarAtDestination,
+    needsCarAtDestination: isKeepCarRow(row) ? true : row.needsCarAtDestination,
     adults: row.adults,
     extraAdults,
     preferSpecificCar: !!row.preferredCarId,
@@ -452,6 +455,8 @@ export function RequestForm({
     mode: "onBlur",
   });
   const formRef = useRef<HTMLFormElement>(null);
+  /** Owner 2026-10-11: the member answered "keep both" to the overlap warning — the server then places it like any request. */
+  const overlapConfirmedRef = useRef(false);
   const onScrollToInvalid = useScrollToFirstError(form, formRef);
   // REQ §13.110 / UX_FLOWS §3.4a: one form state, two field arrangements (`profiles.classic_request_form`).
   const layout = useRequestFormLayout();
@@ -822,6 +827,7 @@ export function RequestForm({
   }
 
   async function onSubmit(formValues: RequestFormValues) {
+    overlapConfirmedRef.current = false;
     if (mode === "edit" && isUnchangedEdit(formValues, baselineSignature, { anchorSync: anchorSyncActive })) {
       finishUnchanged();
       return;
@@ -891,6 +897,8 @@ export function RequestForm({
       ),
       ...(waitlist ? { waitlist: true } : {}),
       ...(options.confirmRelease ? { confirm_release: true } : {}),
+      // Owner 2026-10-11: "keep both" was answered — not left for the Sadran as a duplicate.
+      ...(overlapConfirmedRef.current ? { overlap_confirmed: true } : {}),
       // REQ §13.111 (a): a quick / car-now request is placed right away - the server asks before using a car with no large trunk.
       ...(variant === "quick" || variant === "carNow" ? { ask_small_trunk: true } : {}),
       // Only a *new* request can link to an existing template on creation (`submit_request`'s
@@ -1212,6 +1220,7 @@ export function RequestForm({
           stage={twoStage ? stage : 1}
           onStageChange={setStage}
           invalidSignal={invalidSignal}
+          guide={mode === "new" && !joinRide && !templateSuggestion ? { outKnown: !!slotPrefill?.departTime, returnKnown: !!slotPrefill?.returnTime } : undefined}
           quickContext={quickContext ? { cars: quickContext.cars, showCarPicker: quickContext.showCarPicker } : undefined}
           quickWindow={{ startMs, endMs, carIsFree, isAway, otherFreeCar, oneWay }}
         />
@@ -1493,6 +1502,7 @@ export function RequestForm({
         onClick={() => {
           const values = pendingOverlapSubmit;
           setPendingOverlapSubmit(null);
+          overlapConfirmedRef.current = true;
           if (values) continueSubmit(values);
         }}
       >

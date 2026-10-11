@@ -1,6 +1,6 @@
 -- Sentence request form data (REQ §13.110, docs/REQUEST_FORM_PLAN_2026-10.md; DATA_MODEL §3.6, §7):
 -- time anchors on requests/templates, the shift trigger, submit_request payload keys,
--- route_minutes_preview, profiles.classic_request_form.
+-- route_minutes_preview, profiles.classic_request_form, profiles.my_rides_week_view.
 -- Transactional: every fixture row is rolled back at the end. Uses the seeded נבו department
 -- (home …0010, חיפה …0011, בנימינה …0012, זכרון יעקב …0013), manager …0102, members …0103/…0104.
 begin;
@@ -251,6 +251,33 @@ begin
     'TEST 7 FAILED: someone else''s value changed';
   assert not has_column_privilege('anon', 'public.profiles', 'classic_request_form', 'select'),
     'TEST 7 FAILED: anon must not read profiles.classic_request_form';
+end $$;
+
+-----------------------------------------------------------------------
+-- 8) profiles.my_rides_week_view: a member sets their own, not someone else's; anon has no access.
+-----------------------------------------------------------------------
+do $$
+declare
+  member1 uuid := '00000000-0000-0000-0000-000000000103';
+  member2 uuid := '00000000-0000-0000-0000-000000000104';
+  n int;
+begin
+  assert (select my_rides_week_view from public.profiles where id = member1) = false,
+    'TEST 8 FAILED: my_rides_week_view must default to false';
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', member1, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+  update public.profiles set my_rides_week_view = true where id = member1;
+  get diagnostics n = row_count;
+  assert n = 1, 'TEST 8 FAILED: a member must be able to set their own my_rides_week_view';
+  assert (select my_rides_week_view from public.profiles where id = member1), 'TEST 8 FAILED: own value must read back';
+  update public.profiles set my_rides_week_view = true where id = member2;
+  get diagnostics n = row_count;
+  assert n = 0, 'TEST 8 FAILED: a member must not update someone else''s my_rides_week_view';
+  execute 'reset role';
+  assert (select my_rides_week_view from public.profiles where id = member2) = false,
+    'TEST 8 FAILED: someone else''s value changed';
+  assert not has_column_privilege('anon', 'public.profiles', 'my_rides_week_view', 'select'),
+    'TEST 8 FAILED: anon must not read profiles.my_rides_week_view';
 end $$;
 
 rollback;

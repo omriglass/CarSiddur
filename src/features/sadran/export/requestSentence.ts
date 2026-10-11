@@ -9,6 +9,7 @@ import { formatTime } from "@/lib/time";
 import { flexBrief } from "../../requests/components/requestForm/sentence/sentenceModel";
 import { flexBriefText } from "../../requests/flexText";
 import { intervalToFlexValue } from "../../requests/mapper";
+import { keepCarTripLabel } from "../../requests/keepCar";
 import { windowSummary } from "../../requests/timeWindow";
 import { whoText } from "../../requests/whoLabel";
 import { fallbackLine } from "../board/planBLine";
@@ -26,7 +27,7 @@ function labelThen(label: string, value: string): string {
 }
 
 export type RequestSentenceInput = Pick<WeekRequestRow,
-  "trip_type" | "depart_at" | "return_at" | "arrive_by" | "leave_dest_at" | "depart_anchor" | "return_anchor" | "duration_locked"
+  "trip_type" | "keep_car_at_destination" | "depart_at" | "return_at" | "arrive_by" | "leave_dest_at" | "depart_anchor" | "return_anchor" | "duration_locked"
   | "flex_depart_early" | "flex_depart_late" | "flex_return_early" | "flex_return_late" | "adults" | "child_seats" | "boosters"
   | "has_luggage" | "notes" | "ride_description" | "template_id" | "fallback" | "served_by_alternative" | "series_id" | "series_index" | "series_count"
   | "destination_text" | "origin_text"> & Partial<Pick<WeekRequestRow,
@@ -48,7 +49,8 @@ export function requestSentenceText(row: RequestSentenceInput): string {
   const plural = names.length > 1 || extraAdults > 0 || unnamedChildren > 0;
   const who = whoText(names, extraAdults, unnamedChildren);
 
-  const trip = row.trip_type === "round_trip" ? he.request.tripTypeRoundTrip
+  const keepCar = row.trip_type === "drop_off" && !!row.keep_car_at_destination;
+  const trip = keepCar ? keepCarTripLabel(row.destination_resolved_name ?? row.destination_text) : row.trip_type === "round_trip" ? he.request.tripTypeRoundTrip
     : row.trip_type === "one_way" ? he.request.tripTypeOneWay
       : hasReturn ? he.requestSentence.tripDropOffPickup : he.request.tripTypeDropOff;
 
@@ -101,7 +103,7 @@ export function requestSentenceText(row: RequestSentenceInput): string {
   }
   if (row.preferred_car_name) modifiers.push(tv("excelExport.sentence.preferredCar", { name: row.preferred_car_name }));
   if (row.has_luggage) modifiers.push(he.requestSentence.carLuggage);
-  const plan = fallbackLine({ fallback: row.fallback, alternative: row.alternative ?? null, trip_type: row.trip_type, series_id: row.series_id, served_by_alternative: row.served_by_alternative });
+  const plan = fallbackLine({ fallback: row.fallback, alternative: row.alternative ?? null, trip_type: row.trip_type, keep_car_at_destination: row.keep_car_at_destination, series_id: row.series_id, served_by_alternative: row.served_by_alternative });
   if (plan) modifiers.push(plan);
   if (row.ride_type_name_he) modifiers.push(`${he.requestSentence.rideType}: ${row.ride_type_name_he}`);
   if (row.template_id) modifiers.push(he.request.repeating);

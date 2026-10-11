@@ -581,11 +581,21 @@ export interface SetTripTypeResult {
   defaultedReturnAt: string | null;
 }
 
-export async function setRequestTripType(requestId: string, tripType: TripType, expectedVersion: number): Promise<SetTripTypeResult> {
-  const raw = await rpc("set_request_trip_type", { p_request_id: requestId, p_trip_type: tripType, p_expected_version: expectedVersion });
+export async function setRequestTripType(requestId: string, tripType: TripType, expectedVersion: number, keepCar = false): Promise<SetTripTypeResult> {
+  const raw = await rpc("set_request_trip_type", { p_request_id: requestId, p_trip_type: tripType, p_expected_version: expectedVersion, p_keep_car: keepCar });
   const body = raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, Json | undefined>) : {};
   return { status: typeof body.status === "string" ? body.status : "", rideId: typeof body.ride_id === "string" ? body.ride_id : null, changed: body.changed !== false, restoredReturnAt: typeof body.restored_return_at === "string" ? body.restored_return_at : null,
     defaultedReturnAt: typeof body.defaulted_return_at === "string" ? body.defaulted_return_at : null };
+}
+
+export interface SwitchPlanResult { status: string; rideId: string | null; plan: string; notified: boolean }
+
+/** REQ §13.126 (h): the Sadran moves a request to its plan B (`alternative`) or back to the original trip (`main`). */
+export async function switchRequestPlan(requestId: string, to: "alternative" | "main", expectedVersion: number): Promise<SwitchPlanResult> {
+  const raw = await rpc("switch_request_plan", { p_request_id: requestId, p_to: to, p_expected_version: expectedVersion });
+  const body = raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, Json | undefined>) : {};
+  return { status: typeof body.status === "string" ? body.status : "", rideId: typeof body.ride_id === "string" ? body.ride_id : null,
+    plan: typeof body.plan === "string" ? body.plan : "", notified: body.notified === true };
 }
 
 /** One day (leg) of a multi-day request, as far as the Sadran's RLS lets this client see it. */

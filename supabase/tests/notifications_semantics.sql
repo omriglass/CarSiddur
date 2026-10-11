@@ -423,6 +423,42 @@ begin
   assert ctx->>'origin' = 'בנימינה', format('non-home-origin request should report its origin name, got %s', ctx->>'origin');
 end $$;
 
+-- Owner 2026-10-11 (REQ §13.125 f): the profile's test notification goes to the caller only, through the real
+-- pipeline (inbox row + one push_outbox row per device), even when the member muted everything; it reports the devices.
+do $$
+declare
+  member uuid := '00000000-0000-0000-0000-000000000104';
+  other uuid := '00000000-0000-0000-0000-000000000103';
+  res jsonb;
+  n int;
+begin
+  delete from public.push_subscriptions where profile_id = member;
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', member, 'role', 'authenticated')::text, true);
+  res := public.send_test_notification();
+  assert (res->>'devices')::int = 0, format('no device yet: expected 0 devices, got %s', res);
+  assert exists(select 1 from public.notifications where recipient_id = member and event = 'test_notification'
+    and title_he = 'התראת בדיקה'), 'the test notification reaches the inbox even with no device';
+
+  insert into public.push_subscriptions(profile_id, endpoint, p256dh, auth) values
+    (member, 'https://push.example/test-a', 'k', 'a'), (member, 'https://push.example/test-b', 'k', 'a');
+  update public.profiles set muted_events = enum_range(null::public.notification_event) where id = member;
+  select count(*) into n from public.notifications where event = 'test_notification';
+  res := public.send_test_notification();
+  assert (res->>'devices')::int = 2, format('two devices: expected 2, got %s', res);
+  assert (select count(*) from public.notifications where event = 'test_notification') = n + 1, 'one more inbox row, muted or not';
+  assert (select count(*) from public.push_outbox o join public.notifications x on x.id = o.notification_id
+    where x.recipient_id = member and x.event = 'test_notification') = 2, 'one push per device';
+  assert not exists(select 1 from public.notifications where recipient_id = other and event = 'test_notification'),
+    'nobody else gets it';
+
+  perform set_config('request.jwt.claims', '{}', true);
+  begin
+    perform public.send_test_notification();
+    raise exception 'an anonymous caller sent a test notification';
+  exception when raise_exception then if sqlerrm <> 'not_authorized' then raise; end if;
+  end;
+end $$;
+
 do $$
 declare v_bad text;
 begin

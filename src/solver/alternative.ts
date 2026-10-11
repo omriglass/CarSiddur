@@ -56,7 +56,9 @@ function planRequests(input: SolverInput, r: Request): { out: Request; pickup?: 
   const alt = r.alternative;
   if (!alt) return null;
   const tripType = effectiveTripType(r);
-  if ((tripType !== 'round_trip' && tripType !== 'one_way') || r.seriesId !== undefined || r.originIsFreeText) return null;
+  // REQ §13.126 g: a kept-car trip (a two-way drop_off the member drives) may carry a plan B like a round trip.
+  const planBTrip = tripType === 'round_trip' || tripType === 'one_way' || (tripType === 'drop_off' && r.keepCarAtDestination === true);
+  if (!planBTrip || r.seriesId !== undefined || r.originIsFreeText) return null;
   const origin = originIdOf(r, input.homeLocationId);
   if (alt.dropPlaceId === origin) return null;
   const separatePickup = alt.pickupMs !== undefined && (alt.pickupPlaceId !== undefined || alt.pickupPlaceIsFreeText === true);

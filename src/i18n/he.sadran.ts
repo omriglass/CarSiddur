@@ -494,6 +494,22 @@ export const heSadran = {
     noFreeCar: "אין רכב פנוי לכל הימים שנבחרו",
     invalidSpan: "צריך לבחור פחות ימים מהבקשה המקורית, ברצף",
   },
+  /** REQ §13.126 (h): the Sadran switches a request between plan A and plan B. */
+  planSwitch: {
+    toAlternative: "מעבר לתוכנית ב׳",
+    toMain: "חזרה לתוכנית א׳",
+    toAlternativeTitle: "מעבר לתוכנית ב׳ של {{name}}?",
+    toMainTitle: "החזרה לתוכנית א׳ של {{name}}?",
+    toAlternativeBody: "הנסיעה המקורית משתחררת, ותוכנית ב׳ ({{plan}}) משובצת אם יש רכב.",
+    toMainBody: "תוכנית ב׳ משתחררת והנסיעה המקורית חוזרת — רק אם יש לה רכב.",
+    notified: "{{name}} יקבל/תקבל הודעה.",
+    silent: "בלי הודעה.",
+    confirm: "החלף תוכנית",
+    placed: "{{name}} עברה לתוכנית ב׳ והיא שובצה",
+    waitlisted: "{{name}} עברה לתוכנית ב׳ והיא ברשימת ההמתנה",
+    unplaced: "{{name}} עברה לתוכנית ב׳ (עוד לא שובצה)",
+    backToMain: "{{name}} חזרה לתוכנית א׳",
+  },
   /** REQ §13.101 (e): the Sadran withdraws a request as a duplicate. */
   withdrawDuplicate: {
     action: "משיכה ככפילות",

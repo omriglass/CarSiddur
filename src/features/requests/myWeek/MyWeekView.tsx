@@ -1,0 +1,184 @@
+import { useMemo } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+
+import { useRequestLinkProps } from "@/app/overlayState";
+import { paths } from "@/app/routes";
+import { todayInJerusalem } from "@/components/dateFieldDates";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { ErrorState } from "@/components/ErrorState";
+import { formatMinutes, MAX_MINUTES } from "@/components/timeField15Format";
+import { WeekGrid, type WeekGridCar } from "@/components/WeekGrid";
+import { useCars } from "@/features/fleet/hooks";
+import { useDepartmentSettings } from "@/features/sadran/hooks";
+import { parseTimeToMinutes } from "@/features/solverBridge/buildSolverInput";
+import { useCalendarAmbientBlocks } from "@/features/calendar/useCalendarAmbientBlocks";
+import { useMemberRideMoves } from "@/features/rides/useMemberRideMoves";
+import { useBoardRides } from "@/features/siddur/hooks";
+import { pastWeeks, isPastWeek } from "@/features/siddur/pastWeeks";
+import { resolveThisNextWeek } from "@/features/siddur/thisNextWeek";
+import { useSiddurDisplayPrefs } from "@/features/siddur/useSiddurDisplayPrefs";
+import type { BoardRide, Week } from "@/features/siddur/api";
+import { he } from "@/i18n/he";
+import { formatDayDate } from "@/lib/dayLabels";
+import { dateKey } from "@/lib/time";
+
+import type { MyRequestRow, TemplateSuggestion } from "../api";
+import { useTemplateSuggestionsQuery } from "../hooks";
+import { weekDayKeys } from "./dayColumns";
+import {
+  isMyBoardRide,
+  requestBlocks,
+  rideBlocks,
+  rideRouteLabel,
+  rideWithCarLabel,
+  suggestionBlocks,
+  visibleStartMinutes,
+  withLanes,
+  type MyWeekTarget,
+} from "./myWeekItems";
+import { MyWeekDisplayMenu } from "./MyWeekDisplayMenu";
+import { MyWeekSwitcher } from "./MyWeekSwitcher";
+
+/** Weeks in which a tap on empty space may start a request (never `solving`, `upcoming` or any past week). */
+const REQUEST_PHASES = new Set<Week["phase"]>(["open", "published", "live"]);
+
+interface MyWeekViewProps {
+  departmentId: string | undefined;
+  homeDestinationId: string | null | undefined;
+  profileId: string | undefined;
+  /** Every request of mine (the same rows the list shows); unplaced ones are drawn as blocks. */
+  requests: readonly MyRequestRow[];
+  weeks: readonly Week[];
+  /** The week `profiles.home_week_preference` resolves to (`resolveHomeWeek`); the grid opens on it unless `?week=` says otherwise. */
+  homeWeekStart: string | undefined;
+  /** The member may file requests in this department (`useActiveDepartment().canSubmit`). */
+  canSubmit: boolean;
+  /** A tap does what the same item does on the list view — the page owns those flows. */
+  onTarget: (target: MyWeekTarget) => void;
+  /** `/my/archive`: past weeks only, read-only; no view toggle, the switcher lists the past weeks. */
+  archive?: boolean;
+  /** The list / week choice of the eye menu (current view only). */
+  onViewChange?: (view: "list" | "week") => void;
+}
+
+/**
+ * `/my?view=week` — the member's own week as a siddur-like grid with one column per day (owner 2026-10-11,
+ * UX_FLOWS.md "/my week view"). My rides (with their car in the label), my unplaced requests, repeating-request
+ * suggestions and proposals waiting for my answer, each on its exact day and times; overlapping items sit side by side.
+ * Past weeks (the archive) show rides only, read-only. Layout comes from `WeekGrid`; this component only maps data to it.
+ */
+export function MyWeekView({ departmentId, homeDestinationId, profileId, requests, weeks, homeWeekStart, canSubmit, onTarget, archive = false, onViewChange }: MyWeekViewProps) {
+  const navigate = useNavigate();
+  const requestLinkProps = useRequestLinkProps();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const today = todayInJerusalem();
+  const { thisWeekStart } = resolveThisNextWeek(weeks, today);
+  const newestPast = pastWeeks(weeks.filter((w) => w.phase !== "upcoming"), today)[0]?.week_start;
+  const weekStart = searchParams.get("week") ?? (archive ? newestPast : homeWeekStart) ?? thisWeekStart;
+  const week = weeks.find((w) => w.week_start === weekStart) ?? null;
+  const isPast = archive || isPastWeek({ week_start: weekStart, phase: week?.phase ?? "open" }, today);
+  const acceptsRequests = canSubmit && !!week && !isPast && REQUEST_PHASES.has(week.phase);
+
+  const { tableZoom, setTableZoom } = useSiddurDisplayPrefs();
+  const ridesQuery = useBoardRides(departmentId, weekStart);
+  const carsQuery = useCars(departmentId);
+  const settingsQuery = useDepartmentSettings(departmentId);
+  const suggestionsQuery = useTemplateSuggestionsQuery();
+  const ambientBlocks = useCalendarAmbientBlocks(weekStart);
+  // Owner 2026-10-11: my own rides drag / resize here exactly as on the siddur (one shared implementation) — within the
+  // ride's own day and car, since the columns here are days.
+  const rideMoves = useMemberRideMoves({ departmentId, weekStart, week, profileId, isMember: canSubmit && !isPast, now: new Date() });
+
+  const dayKeys = useMemo(() => weekDayKeys(weekStart), [weekStart]);
+  const boardStartMinutes = settingsQuery.data?.board_start_time ? parseTimeToMinutes(settingsQuery.data.board_start_time) : 6 * 60;
+
+  const entries = useMemo(() => {
+    const myRequestIds = new Set(requests.map((row) => row.id));
+    const carNameById = new Map((carsQuery.data ?? []).map((car) => [car.id, car.name]));
+    const mine = (ridesQuery.data ?? []).filter((ride: BoardRide) => isMyBoardRide(ride, profileId, myRequestIds));
+    const blocks = rideBlocks(mine, dayKeys, (ride) => rideWithCarLabel(ride.car_id ? carNameById.get(ride.car_id) ?? "" : "", rideRouteLabel(ride, homeDestinationId)));
+    if (!isPast) {
+      const sameDepartment = requests.filter((row) => row.departmentId === departmentId && row.weekStart === weekStart);
+      blocks.push(...requestBlocks(sameDepartment, dayKeys, homeDestinationId));
+      const suggestions = (suggestionsQuery.data ?? []).filter((s: TemplateSuggestion) => s.departmentId === departmentId && s.weekStart === weekStart);
+      blocks.push(...suggestionBlocks(suggestions, dayKeys, homeDestinationId));
+    }
+    return withLanes(blocks);
+  }, [carsQuery.data, dayKeys, departmentId, homeDestinationId, isPast, profileId, requests, ridesQuery.data, suggestionsQuery.data, weekStart]);
+
+  const targetById = useMemo(() => new Map(entries.map((entry) => [entry.block.id, entry.target])), [entries]);
+  const dayColumns: WeekGridCar[] = dayKeys.map((key) => ({ id: key, name: formatDayDate(`${key}T12:00:00Z`), today: key === today }));
+
+  /** A block id is `ride:<id>` (a ride's other-day segments carry `~n` and never move); anything else is not a ride. */
+  function rideOf(blockId: string): BoardRide | null {
+    if (!blockId.startsWith("ride:") || blockId.includes("~")) return null;
+    return (ridesQuery.data ?? []).find((ride) => ride.id === blockId.slice("ride:".length)) ?? null;
+  }
+  function canMove(blockId: string): boolean {
+    const ride = rideOf(blockId);
+    return !!ride?.id && rideMoves.ownsEditableRide(ride.id);
+  }
+  /** Only the ride's own day: a drop on another day's column is refused (the siddur rule — same local day). */
+  function sameDayCar(ride: BoardRide, dayKey: string): string | null {
+    return ride.starts_at && ride.car_id && dateKey(ride.starts_at) === dayKey ? ride.car_id : null;
+  }
+
+  function selectWeek(next: string) {
+    const params = new URLSearchParams(searchParams);
+    params.set("week", next);
+    setSearchParams(params, { replace: true });
+  }
+
+  function startRequest(dayKey: string, start: number, end: number) {
+    const time = formatMinutes(Math.min(start, MAX_MINUTES));
+    navigate(paths.requests.new({ week: weekStart, day: dayKey, time, end: end > start ? formatMinutes(Math.min(end, MAX_MINUTES)) : undefined }), requestLinkProps);
+  }
+
+  if (ridesQuery.isError) return <ErrorState onRetry={() => void ridesQuery.refetch()} />;
+
+  return (
+    <div className="space-y-3" data-testid="my-week-view" data-week-start={weekStart}>
+      <div className="flex items-center justify-between gap-2">
+        <MyWeekSwitcher weeks={weeks} activeWeekStart={weekStart} onSelect={selectWeek} onArchive={archive ? undefined : () => navigate(paths.myArchive())} />
+        {onViewChange && !archive ? <MyWeekDisplayMenu view="week" onViewChange={onViewChange} zoom={tableZoom} onZoomChange={setTableZoom} /> : null}
+      </div>
+      <p className="text-xs text-muted-foreground" data-testid="my-week-hint">{isPast ? he.myWeek.hintReadOnly : acceptsRequests ? he.myWeek.hint : null}</p>
+      <div data-testid="my-week-grid">
+        <WeekGrid
+          cars={dayColumns}
+          rides={entries.map((entry) => entry.block)}
+          dayStartMinutes={visibleStartMinutes(entries, boardStartMinutes)}
+          readOnly={isPast}
+          draggable={!isPast && !rideMoves.saving}
+          canDragRide={(block) => canMove(block.id)}
+          canResizeRide={(block) => canMove(block.id)}
+          isDropTargetValid={(blockId, dayKey, start, end) => {
+            const ride = rideOf(blockId);
+            const carId = ride ? sameDayCar(ride, dayKey) : null;
+            return !!ride?.id && !!carId && rideMoves.isValidTarget(ride.id, carId, start, end);
+          }}
+          onRideDrop={(blockId, dayKey, start) => {
+            const ride = rideOf(blockId);
+            const carId = ride ? sameDayCar(ride, dayKey) : null;
+            if (ride?.id && carId) rideMoves.moveRide(ride.id, carId, start);
+          }}
+          onRideResize={(blockId, edge, minutes) => {
+            const ride = rideOf(blockId);
+            const block = entries.find((entry) => entry.block.id === blockId)?.block;
+            if (!ride?.id || !ride.car_id || !block) return;
+            rideMoves.moveRide(ride.id, ride.car_id, edge === "start" ? minutes : block.startMinutes, edge === "end" ? minutes : block.endMinutes);
+          }}
+          markMyColumns={false}
+          zoom={tableZoom}
+          onZoomChange={setTableZoom}
+          onRideClick={(id) => { const target = targetById.get(id); if (target) onTarget(target); }}
+          onSlotRange={acceptsRequests ? startRequest : undefined}
+          rangeResetKey={weekStart}
+          ambientBlocks={ambientBlocks}
+          renderCarName={(column) => <span>{column.name}</span>}
+        />
+      </div>
+      <ConfirmDialog {...rideMoves.collisionDialog} />
+    </div>
+  );
+}

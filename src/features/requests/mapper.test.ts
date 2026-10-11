@@ -326,3 +326,25 @@ describe("flexIntervalToSend (R11B2)", () => {
     expect(payload.flex_depart_early).toBe("00:00:00");
   });
 });
+
+describe("keep car at destination (REQ §13.126 g)", () => {
+  it("sends a two-way הקפצה with the same times and the flag", () => {
+    const plain = toSubmitRequestPayload(baseValues(), { layout: "sentence", planB: true });
+    const payload = toSubmitRequestPayload(baseValues({ keepCarAtDestination: true }), { layout: "sentence", planB: true });
+    expect(payload.trip_type).toBe("drop_off");
+    expect(payload.keep_car_at_destination).toBe(true);
+    expect(payload.depart_at).toBe(plain.depart_at);
+    expect(payload.return_at).toBe(plain.return_at);
+    expect(payload.fallback).toBe(plain.fallback);
+  });
+  it("keeps plan B alongside the flag (owner 2026-10-11)", () => {
+    const payload = toSubmitRequestPayload(baseValues({ keepCarAtDestination: true, fallback: "manage" }), { layout: "sentence", planB: true });
+    expect(payload).toMatchObject({ trip_type: "drop_off", keep_car_at_destination: true, fallback: "manage" });
+  });
+  it("off (or not a round trip / series) sends nothing new", () => {
+    expect(toSubmitRequestPayload(baseValues({ keepCarAtDestination: false })).trip_type).toBe("round_trip");
+    expect(toSubmitRequestPayload(baseValues())).not.toHaveProperty("keep_car_at_destination");
+    expect(toSubmitRequestPayload(baseValues({ keepCarAtDestination: true, tripType: "one_way", tripShape: "one_way_to" }))).not.toHaveProperty("keep_car_at_destination");
+    expect(toSubmitRequestPayload(baseValues({ keepCarAtDestination: true }), { isSeries: true })).not.toHaveProperty("keep_car_at_destination");
+  });
+});
