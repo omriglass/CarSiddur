@@ -2,20 +2,22 @@ import { describe, expect, it } from "vitest";
 
 import { clampItemVisibility, itemVisibilityStyle } from "./itemVisibility";
 
-describe("itemVisibilityStyle (calendar visibility aid)", () => {
-  it("50 is the normal look", () => {
-    expect(itemVisibilityStyle(50)).toEqual({ fade: undefined, backing: 0 });
-    expect(itemVisibilityStyle(undefined)).toEqual({ fade: undefined, backing: 0 });
+describe("itemVisibilityStyle (calendar visibility aid, same for rides and requests)", () => {
+  it("the middle is the normal look: a 60% backing, no fade", () => {
+    expect(itemVisibilityStyle(50)).toEqual({ fade: 1, backing: 0.6 });
+    expect(itemVisibilityStyle(undefined)).toEqual({ fade: 1, backing: 0.6 });
   });
 
-  it("below 50 fades every item, down to 20% at 0", () => {
-    expect(itemVisibilityStyle(0)).toEqual({ fade: 0.2, backing: 0 });
-    expect(itemVisibilityStyle(25).fade).toBeCloseTo(0.6);
+  it("towards see-through: the backing thins and the whole block fades, to 40% at 0", () => {
+    expect(itemVisibilityStyle(0)).toEqual({ fade: 0.4, backing: 0 });
+    const quarter = itemVisibilityStyle(25);
+    expect(quarter.fade).toBeCloseTo(0.7);
+    expect(quarter.backing).toBeCloseTo(0.3);
   });
 
-  it("above 50 backs the see-through items, solid at 100", () => {
-    expect(itemVisibilityStyle(75)).toEqual({ fade: undefined, backing: 0.5 });
-    expect(itemVisibilityStyle(100)).toEqual({ fade: undefined, backing: 1 });
+  it("towards solid: the backing grows to fully opaque", () => {
+    expect(itemVisibilityStyle(75).backing).toBeCloseTo(0.8);
+    expect(itemVisibilityStyle(100)).toEqual({ fade: 1, backing: 1 });
   });
 
   it("clamps garbage to the range / default", () => {

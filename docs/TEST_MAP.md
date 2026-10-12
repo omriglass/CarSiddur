@@ -242,10 +242,10 @@ migration `*my_rides_week_view*`; `supabase/tests/request_anchors.sql` (TEST 8).
 6. (Local dev build, or a build with `VITE_GOOGLE_CLIENT_ID`.) Profile -> "אפשר תכונות ניסיוניות" off: no
    calendar button next to the eye. On: calendar button -> "יומן לדוגמה" (dev) or connect Google (unverified-app
    notice) -> events show faintly behind the week: hours + location by default, all-day events as "כל היום ·"
-   bands at the top, overlapping events side by side, my rides solid over them, requests see-through. Tick
+   bands at the top, overlapping events side by side, rides and requests equally see-through at the default. Tick
    participants / notes, switch "צבעי היומן" on (each calendar's own color, still faint) in light and dark mode;
-   "עזר ראייה" towards "שקוף יותר": rides and requests fade and the events behind show; towards "אטום יותר":
-   requests / waiting items become solid; "רגיל" returns to the middle; the choice stays after a reload.
+   "עזר ראייה" towards "שקוף יותר": rides and requests fade equally and the events behind show; towards "אטום
+   יותר": rides and requests become equally solid; "רגיל" returns to the middle; the choice stays after a reload.
    Reload: "הצגת היומן שלי" (Google) brings the same calendars back. "ניתוק היומן": the events disappear. Nothing
    on `/my/archive`.
 7. A request with "להגיע עד" shows that line on its week block. Drag a waiting / filed request to another day

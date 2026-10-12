@@ -1220,10 +1220,13 @@ export function WeekGrid({
             ? { insetInlineStart: `calc(${(lane / laneCount) * 100}% + 2px)`, width: `calc(${100 / laneCount}% - 4px)` }
             : {};
           // The member's "visibility aid" — only over a calendar; the dragged block keeps its own drag look.
+          // Over a calendar every block — ride or unplaced item alike — gets the same backing and fade (one setting
+          // must look the same on both); the block itself then carries only its color tint, borders and text.
           const visibility = ambientBlocks.length > 0 ? itemVisibilityStyle(itemVisibility) : null;
-          const fade = visibility?.fade != null && !isDragged ? { opacity: visibility.fade } : {};
-          // A ride is solid over the calendar (opaque backing); see-through items get a backing only above the middle.
-          const backingOpacity = !visibility ? 0 : !ride.kind ? 1 : visibility.backing;
+          // A suggestion stays paler than the rest (its own 75%), scaled by the same fade.
+          const baseOpacity = ride.kind === "suggestion" ? 0.75 : 1;
+          const fade = visibility && !isDragged && (visibility.fade < 1 || baseOpacity < 1) ? { opacity: visibility.fade * baseOpacity } : {};
+          const backingOpacity = visibility ? visibility.backing : 0;
           return (
             <Fragment key={ride.id}>
             {/* Owner 2026-10-12: over the member's calendar a ride stays solid (its tint over an opaque backing); only
@@ -1232,7 +1235,7 @@ export function WeekGrid({
               <div
                 aria-hidden="true"
                 className={cn("pointer-events-none absolute rounded-sm bg-background", !laned && "inset-x-1")}
-                style={{ top: rect.top, height: rect.height, minHeight: RIDE_MIN_HEIGHT_PX, ...laneStyle, opacity: backingOpacity * (fade.opacity ?? 1) }}
+                style={{ top: rect.top, height: rect.height, minHeight: RIDE_MIN_HEIGHT_PX, ...laneStyle, opacity: backingOpacity * (visibility && !isDragged ? visibility.fade : 1) }}
               />
             ) : null}
             <button
@@ -1268,6 +1271,8 @@ export function WeekGrid({
                 ride.kind === "proposal" && "border-2 border-amber-500 bg-amber-500/10",
                 ride.kind === "waiting" && "border-2 border-dashed border-muted-foreground bg-muted/45",
                 ride.kind === "request" && "border-2 border-primary/60 bg-background/40",
+                // Over a calendar the backing above provides the fill — no white fill of their own (same alpha as rides).
+                visibility && (ride.kind === "suggestion" || ride.kind === "request" || ride.kind === "waiting") && "bg-transparent",
                 ride.highlighted && "z-10 scroll-mt-24 ring-4 ring-destructive ring-offset-2",
                 isDragged && "opacity-50 ring-2 ring-primary",
               )}
