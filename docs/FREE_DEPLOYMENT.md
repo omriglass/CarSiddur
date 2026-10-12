@@ -180,11 +180,18 @@ explicit `--yes-remote`, mirroring `scripts/db-export.mjs`'s guard.
 also creates an annotated alias tag `v1.2` on the same commit, *after* the automatic
 tag, and pushes it. The automatic tag stays the release's identity (it is what the
 script and CI key on); the alias is for people — `git checkout v1.2`, the `/profile`
-version footer (`git describe` prefers the newest annotated tag on the commit), the
+version footer (which prefers an alias over the automatic tag on the same commit), the
 release notes. CI's tag trigger matches only the automatic pattern, so an alias never
 starts a second pipeline or a second `promote` approval. The name must start with `v`,
 may not look like `vYYYY.MM.DD-n`, and must not already exist locally or on `origin`
 (checked in preflight, before anything remote runs).
+
+**Version footer (owner 2026-10-10).** `/profile` shows `<tag> · <commit>` (e.g.
+`v2026.10.10-2 · de2c4dad`), or just the commit when it carries no release tag
+(`appVersion()` in `vite.config.ts`, baked in at build time). Cloudflare builds from a
+shallow clone without tags, so there the tag is looked up with `git ls-remote --tags
+origin` (no history needed); if that fails (no network / credentials in the build) the
+footer falls back to the commit alone.
 
 **Pushing the tag does not deploy the frontend.** It triggers CI
 (`.github/workflows/ci.yml`): `check` and `database` run against the tag,

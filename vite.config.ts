@@ -6,21 +6,57 @@ import { defineConfig } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
 
 // In-app version footer (docs/RUNBOOK_ROLLBACK.md, CLAUDE.md release tooling,
-// owner decision 2026-09-14 #5): baked in at build time so the profile screen
-// can show which release tag/commit is actually live. Prefers a real git
-// describe (works for a full local/CI checkout with tags); Cloudflare's Git
-// integration does a shallow clone with no tags, so it falls back to the
-// commit SHA Cloudflare exposes as a build env var, and finally "dev" for a
-// plain local `npm run dev`/build with neither available.
-function appVersion(): string {
+// owner decisions 2026-09-14 #5 and 2026-10-10): baked in at build time so the
+// profile screen shows which release is live — "<tag> · <commit>" when the
+// commit carries a release tag, else just the commit. Cloudflare's Git
+// integration builds a shallow clone with no tags (so `git describe` alone can
+// only give the commit): the tag is then looked up on the remote with
+// `git ls-remote --tags`, which needs no history. Every step is best effort —
+// any failure falls back to the commit, and finally "dev".
+function git(args: string): string {
+  return execSync(`git ${args}`, { stdio: ["ignore", "pipe", "ignore"], timeout: 8000 }).toString().trim();
+}
+
+/** Owner alias tags (e.g. v1.2) win over the automatic vYYYY.MM.DD-n tag on the same commit, like `git describe`. */
+function pickTag(tags: string[]): string | null {
+  const automatic = /^v\d{4}\.\d{2}\.\d{2}-\d+$/;
+  const sorted = [...new Set(tags)].sort().reverse();
+  return sorted.find((tag) => !automatic.test(tag)) ?? sorted[0] ?? null;
+}
+
+function releaseTag(fullSha: string): string | null {
   try {
-    return execSync("git describe --tags --always --dirty", { stdio: ["ignore", "pipe", "ignore"] })
-      .toString()
-      .trim();
+    const local = git(`tag --points-at ${fullSha}`).split("\n").filter(Boolean);
+    if (local.length) return pickTag(local);
+  } catch { /* no local tags */ }
+  try {
+    // Only a shallow clone (Cloudflare) lacks tags it should have; a full checkout already answered above.
+    if (git("rev-parse --is-shallow-repository") !== "true") return null;
+    // "<sha>\trefs/tags/<name>" lines; annotated tags also list the peeled commit as "<name>^{}".
+    const remote = git("ls-remote --tags origin")
+      .split("\n")
+      .map((line) => line.split("\t"))
+      .filter(([sha, ref]) => sha === fullSha && ref?.startsWith("refs/tags/"))
+      .map(([, ref]) => (ref ?? "").replace(/^refs\/tags\//, "").replace(/\^\{\}$/, ""));
+    return pickTag(remote);
   } catch {
-    const sha = process.env.WORKERS_CI_COMMIT_SHA ?? process.env.CF_PAGES_COMMIT_SHA;
-    return sha ? sha.slice(0, 8) : "dev";
+    return null;
   }
+}
+
+function appVersion(): string {
+  let fullSha: string | undefined;
+  let dirty = false;
+  try {
+    fullSha = git("rev-parse HEAD");
+    dirty = git("status --porcelain --untracked-files=no") !== "";
+  } catch {
+    fullSha = process.env.WORKERS_CI_COMMIT_SHA ?? process.env.CF_PAGES_COMMIT_SHA;
+  }
+  if (!fullSha) return "dev";
+  const commit = `${fullSha.slice(0, 8)}${dirty ? "-dirty" : ""}`;
+  const tag = releaseTag(fullSha);
+  return tag ? `${tag} · ${commit}` : commit;
 }
 
 // https://vitejs.dev/config/
