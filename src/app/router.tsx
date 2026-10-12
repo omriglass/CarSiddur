@@ -24,7 +24,7 @@ import { NotFoundPage } from "@/pages/NotFoundPage";
 import { OnboardingPage } from "@/pages/OnboardingPage";
 import { PendingPage } from "@/pages/PendingPage";
 import { RequestOverlayLayout } from "./RequestOverlayLayout";
-import { InboxPage, NewRequestPage, ProfilePage, ProposalTokenPage, SiddurPage } from "./lazyPages";
+import { InboxPage, LegalPage, NewRequestPage, ProfilePage, ProposalTokenPage, SiddurPage } from "./lazyPages";
 
 // Route list from UX_FLOWS.md §2.1, nested under the auth guards (features/auth/guards.tsx):
 // RequireAuth (no session -> /login) > RequireApproved (not approved -> /pending) >
@@ -94,6 +94,9 @@ export const router = createBrowserRouter([
         ],
       },
       { path: "/login", element: <LoginPage /> },
+      // Public, no sign-in (owner 2026-10-12): Google's OAuth consent screen links here.
+      { path: "/privacy", element: <Suspense fallback={<GuardLoading />}><LegalPage doc="privacy" /></Suspense> },
+      { path: "/terms", element: <Suspense fallback={<GuardLoading />}><LegalPage doc="terms" /></Suspense> },
       { path: "/pending", element: <PendingPage /> },
       { path: "/p/:token", element: <Suspense fallback={<GuardLoading />}><ProposalTokenPage /></Suspense> },
       { path: "*", element: <NotFoundPage /> },

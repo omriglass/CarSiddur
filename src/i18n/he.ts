@@ -11,6 +11,7 @@
  * `field.oneWayFrom`) — the Hebrew copy is unchanged, only the key shape.
  */
 import { heAdmin } from "./he.admin";
+import { heLegal } from "./he.legal";
 import { heMember } from "./he.member";
 import { heSadran } from "./he.sadran";
 
@@ -168,6 +169,7 @@ export const he = {
   ...heMember,
   ...heAdmin,
   ...heSadran,
+  ...heLegal,
   ridePublicDetails: {
     passengers: "נוסעים: {{summary}}",
     unnamedAdult: "מבוגר/ת 1",

@@ -75,6 +75,11 @@ html {
     /* "Mine" highlight (siddur/board grid): the viewer's own rides and the header of every car they ride in that day.
        Violet, because blue/green/amber/orange/pink/teal already mean primary/available/maintenance/ride types. */
     --mine: 271 76% 53%;
+
+    /* The member's own calendar behind the "my rides" week view (experimental, owner 2026-10-12): a soft sky blue that
+       sits next to the lilac "mine" without competing with it; drawn as a faint tint only, never as a ride. */
+    --calendar: 199 75% 45%;
+    --calendar-foreground: 199 80% 22%;
   }
 }
 
@@ -141,6 +146,9 @@ html {
   --ride-other: 220 9% 65%;
 
   --mine: 271 91% 72%;
+
+  --calendar: 199 80% 62%;
+  --calendar-foreground: 199 85% 86%;
 }
 
 @layer base {

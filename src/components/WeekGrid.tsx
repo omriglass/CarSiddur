@@ -1040,11 +1040,13 @@ export function WeekGrid({
             <div
               key={`ambient-${a.id}`}
               data-ambient-id={a.id}
-              className="pointer-events-none absolute inset-x-0.5 z-0 overflow-hidden rounded-sm border border-muted-foreground/20 bg-muted-foreground/10 px-1 text-[10px] leading-tight text-muted-foreground/80"
+              // Owner 2026-10-12: a sky tint next to the lilac (`--calendar`, both themes); title + hours centered in the box.
+              className="pointer-events-none absolute inset-x-0.5 z-0 flex flex-col items-center justify-center overflow-hidden rounded-sm border border-calendar/45 bg-calendar/15 px-1 text-center text-xs leading-tight text-calendar-foreground"
               style={{ top: rect.top, height: rect.height }}
               aria-hidden="true"
             >
-              {a.label}
+              <span className="line-clamp-2 font-medium">{a.label}</span>
+              <span className="text-[11px] opacity-80" dir="ltr">{formatMinutes(a.startMinutes)}–{formatMinutes(Math.min(a.endMinutes, 1440))}</span>
             </div>
           );
         })}
@@ -1199,10 +1201,11 @@ export function WeekGrid({
                 ride.isMine && !ride.needsDriver && "ring-[3px] ring-mine",
                 ride.needsDriver && "border-2 border-dashed border-destructive bg-destructive/10",
                 // Owner 2026-10-11 ("my rides" week view): anything that is not a placed ride must never read as one.
-                ride.kind === "suggestion" && "border-2 border-dotted border-muted-foreground/70 bg-background/70 text-muted-foreground opacity-75 shadow-none",
+                // Unplaced items are see-through (owner 2026-10-12) so the member's calendar shows behind them.
+                ride.kind === "suggestion" && "border-2 border-dotted border-muted-foreground/70 bg-background/40 text-muted-foreground opacity-75 shadow-none",
                 ride.kind === "proposal" && "border-2 border-amber-500 bg-amber-500/10",
-                ride.kind === "waiting" && "border-2 border-dashed border-muted-foreground bg-muted",
-                ride.kind === "request" && "border-2 border-primary/60 bg-background",
+                ride.kind === "waiting" && "border-2 border-dashed border-muted-foreground bg-muted/45",
+                ride.kind === "request" && "border-2 border-primary/60 bg-background/40",
                 ride.highlighted && "z-10 scroll-mt-24 ring-4 ring-destructive ring-offset-2",
                 isDragged && "opacity-50 ring-2 ring-primary",
               )}

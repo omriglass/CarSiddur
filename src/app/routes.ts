@@ -70,6 +70,11 @@ export const paths = {
   /** `/my/archive` — past weeks in the week grid, read-only (owner 2026-10-11). */
   myArchive: (): string => "/my/archive",
 
+  /** `/privacy` — public privacy policy, Hebrew or `?lang=en` (owner 2026-10-12; Google OAuth requirement). */
+  privacy: (lang?: "en"): string => withQuery("/privacy", { lang }),
+  /** `/terms` — public terms of use, Hebrew or `?lang=en` (owner 2026-10-12). */
+  terms: (lang?: "en"): string => withQuery("/terms", { lang }),
+
   requests: {
     /**
      * `/requests` — redirects to `.my()`, preserving `?focus=`

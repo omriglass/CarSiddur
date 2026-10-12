@@ -1,9 +1,10 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
-import { Navigate, useLocation } from "react-router-dom";
+import { Link, Navigate, useLocation } from "react-router-dom";
 import { z } from "zod";
 
+import { paths } from "@/app/routes";
 import { Button } from "@/components/ui/button";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
@@ -70,15 +71,22 @@ export function LoginPage() {
           <span className="flex size-14 items-center justify-center rounded-2xl bg-white/15">
             <AppLogoMark className="size-10 bg-transparent" />
           </span>
-          <h1 className="text-xl font-semibold">{he.app.name}</h1>
-          <p className="text-sm text-primary-foreground/85">{t("app.tagline")}</p>
+          {/* Owner 2026-10-12: this page is also the app's public home page (Google OAuth) — generic product name. */}
+          <h1 className="text-xl font-semibold">{he.legal.homeTitle}</h1>
+          <p className="text-sm text-primary-foreground/85">{he.legal.homeTagline}</p>
         </div>
         <div className="space-y-4 bg-card p-6">
+          <p className="text-sm leading-relaxed text-muted-foreground" data-testid="login-description">{he.legal.homeDescription}</p>
+          <p className="text-xs leading-relaxed text-muted-foreground" dir="ltr" lang="en">{he.legal.homeDescriptionEn}</p>
           <Button size="lg" className="w-full" onClick={handleGoogleSignIn} disabled={isSubmittingGoogle}>
             {t("action.signinGoogle")}
           </Button>
         </div>
       </div>
+      <nav className="flex gap-4 text-xs text-muted-foreground" data-testid="login-legal-links">
+        <Link to={paths.privacy()} className="underline-offset-2 hover:underline">{he.legal.privacyLink}</Link>
+        <Link to={paths.terms()} className="underline-offset-2 hover:underline">{he.legal.termsLink}</Link>
+      </nav>
 
       {import.meta.env.DEV ? (
         <div className="w-full max-w-sm space-y-4 rounded-xl border border-dashed bg-muted/60 p-4">

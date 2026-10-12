@@ -70,6 +70,7 @@ export default {
         rideErrands: "hsl(var(--ride-errands))",
         rideOther: "hsl(var(--ride-other))",
         mine: "hsl(var(--mine))",
+        calendar: { DEFAULT: "hsl(var(--calendar))", foreground: "hsl(var(--calendar-foreground))" },
       },
       backgroundImage: {
         "gradient-hero": "var(--gradient-hero)",

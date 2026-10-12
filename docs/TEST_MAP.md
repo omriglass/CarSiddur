@@ -554,7 +554,7 @@ migrations matching `*maintenance*`; `supabase/tests/scheduled_maintenance.sql`;
 ### auth — Auth / onboarding / roles
 
 **Paths**: `src/features/auth/**`; the shell and landing (`src/app/router.tsx`, `AppShell.tsx`,
-`landing.ts`(+test), `LandingRedirect.tsx`, `routes.ts`(+test), `src/features/member/routes.tsx`, `lazyPages.ts`, `src/pages/LoginPage.tsx` — REQ §13.87/§13.91); migrations matching `*identity*`,
+`landing.ts`(+test), `LandingRedirect.tsx`, `routes.ts`(+test), `src/features/member/routes.tsx`, `lazyPages.ts`, `src/pages/LoginPage.tsx` — REQ §13.87/§13.91; the public `/privacy` and `/terms` pages, `src/pages/LegalPage.tsx`, `src/i18n/he.legal.ts`/`he.legalDocs.ts` — REQ §13.130); migrations matching `*identity*`,
 `*weekly_sadran_permissions*`; `e2e/auth.spec.ts`, `device-setup.spec.ts`,
 `weekly-permissions.spec.ts`, `smoke.spec.ts`.
 
@@ -572,6 +572,10 @@ migrations matching `*maintenance*`; `supabase/tests/scheduled_maintenance.sql`;
    page appears, promising no email — check back or ask the Sadran (REQ §13.13/§60).
 3. Confirm a weekly-assigned Sadran only manages their assigned week/board, while a permanent
    Sadran retains access to all weeks and operational settings.
+4. Signed out, the sign-in page shows "סידור רכב", the generic description (no community name) and the
+   links "מדיניות פרטיות" / "תנאי שימוש"; both open without signing in, "English" switches to `?lang=en`,
+   the email is a mailto link, "חזרה לאפליקציה" returns to sign-in. Signed in, the profile footer links
+   to both and "חזרה לאפליקציה" returns to the app.
 
 **REQ**: §13.13, §13.25.
 

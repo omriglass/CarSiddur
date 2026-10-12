@@ -31,6 +31,8 @@ const ROUTE_PATTERNS = [
   "/requests/:id/edit",
   "/inbox",
   "/p/:token",
+  "/privacy",
+  "/terms",
   "/cars/:carId",
   "/stats/:dept",
   "/admin/errors",
@@ -102,6 +104,15 @@ describe("paths.my", () => {
     expectRoutable(paths.my("req-1"));
     expect(paths.my("req-1")).toBe("/my?focus=req-1");
     expect(paths.my()).toBe("/my");
+  });
+});
+
+describe("paths.privacy / paths.terms", () => {
+  it("builds the public legal pages, Hebrew by default and ?lang=en", () => {
+    expectRoutable(paths.privacy());
+    expectRoutable(paths.terms());
+    expect(paths.privacy()).toBe("/privacy");
+    expect(paths.terms("en")).toBe("/terms?lang=en");
   });
 });
 
