@@ -221,8 +221,16 @@ export const requestFormSchema = z
      * of `../mapper.ts`'s payload mapping, same pattern as `durationHours` above.
      */
     repeatWeekly: z.boolean(),
+    /**
+     * REQ §13.127 (a), sentence layout, new requests: "אני" in the who chip. `false` files the ride for the first named
+     * department member (`onBehalf.ts`); absent/true = the filer is the requester. Never sent as such (`requester_id` is).
+     */
+    includeMe: z.boolean().optional(),
   })
   .superRefine((value, ctx) => {
+    if (value.includeMe === false && value.companions.length === 0) {
+      ctx.addIssue({ code: "custom", path: ["companions"], message: he.requestSentence.whoNeedMember });
+    }
     const needsDepart = value.tripShape !== "one_way_from";
     const needsReturn = value.tripShape !== "one_way_to";
     // A multi-day span's return time is on a later calendar day, so the plain
@@ -355,6 +363,7 @@ export const REQUEST_FORM_DEFAULTS: Omit<RequestFormValues, "departmentId" | "we
   rideDescription: "",
   guestNames: "",
   repeatWeekly: false,
+  includeMe: true,
   outStops: [],
   returnStops: [],
 };

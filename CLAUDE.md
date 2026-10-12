@@ -79,6 +79,7 @@ src/
     stats/                     department statistics dashboard; `department_stats` RPC, zod-parsed at the api boundary (no generated row type for its jsonb return)
     waitlist/                  contested waiting-list groups (`v_waitlist_groups`, `resolve_waitlist_group`, `cancel_waitlist_group`)
     rides/                     shared by siddur + sadran (R8, 2026-09-24): ridePeople, servedOf, addPassengers, passenger/notes components, ride-change + passenger RPCs (api/hooks/keys), export/weekWorkbook, invalidateWeek.ts (`invalidateWeekData()` — the one week-scoped cache refresh after a ride/request change). ESLint forbids sadran ⇄ siddur internals imports; sadran may use only siddur/api, hooks, queryKeys, RideChangeAnswers
+    calendar/                  EXPERIMENTAL (2026-10-12, REQ §13.126 b): member's Google calendar faintly behind the /my week view; browser-only (GIS token in memory, picked calendar ids in localStorage), gated by the per-device profile switch `features/member/useExperimentalFeatures.ts` + `VITE_GOOGLE_CLIENT_ID`
     solverBridge/              buildSolverInput() (DB→solver mapper for board & admin policy preview)
     <feature>/components/      React components (shadcn + business logic)
     <feature>/hooks/           TanStack Query: use<X>Query, use<X>Mutation
@@ -349,6 +350,10 @@ scripts/
 ## Pilot fix round P2 — solver suggestions and placement (2026-10-09; REQ §13.117; `docs/PILOT_FIX_ROUND_2026-10.md`)
 
 - **Chauffeur suggestions are hidden** (`SolverConfig.chauffeurSuggestions`, absent = off; the bridge never sets it); placement-time chauffeur rides are unchanged. **One chauffeur-ride duration:** `ceil((route + direct + dwell) / 15) * 15` minutes, rounded once — solver `chauffeurTotalSlots()` (`travel.ts`), SQL `chauffeur_ride_minutes()` (used by `place_request_on_car`). **`set_request_trip_type` places an unplaced request** on any free shared car (`place_request_on_any_free_car`, internal). **Complementary unmet one-way legs** (`X→Y` + `Y→X`) are placed together on one car (`oneWayPairs.ts`, SOLVER §3.6.1d) and an unmet one-way leg says `UNMET_ONE_WAY_STRANDS_CAR` when a car stands at the origin but would be stranded. Looking for a function's current definition: grep `supabase/schema-current.sql` (a function may be redefined by a migration whose text does not match `function public.<name>`).
+
+## Rides on someone else's behalf (2026-10-12; REQ §13.127)
+
+- Taking "אני" out of the sentence form's who chip files the ride for the first named member who drives (`submit_request` `requester_id`, any approved department member; `filed_by` = the filer), after a confirmation shown to everyone. **"Related" is one rule per side:** SQL `request_related(request, actor)` / `ride_related(ride, actor)` (requester, `filed_by`, companion, driver, named passenger, the private car's owner) gate request edits, companions/children, shorten, member ride moves (`edit_ride_before_planning`), notes and private-car passengers; the browser asks `can_edit_request()`. Withdraw = requester / filer / Sadran; `cancel_ride` unchanged. A private car takes a request its owner filed (`assert_private_car_request`, trigger `rides_temp_car_owner_only`); "my rides" lists requests I filed ("הוגשה עבור / ע״י").
 
 ## Code review 2026-09-24 (docs/TODO.md "Code review 2026-09-24 — follow-ups", R1–R14)
 

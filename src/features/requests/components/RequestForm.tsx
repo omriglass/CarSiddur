@@ -20,7 +20,7 @@ import { useDepartmentMembers } from "@/features/auth/useDepartmentMembers";
 import { useMyDepartments } from "@/features/auth/useMyDepartments";
 import { useProfile } from "@/features/auth/useProfile";
 import { useSession } from "@/features/auth/useSession";
-import { useCars, useCarSeatConfigs, useDestinations, useRideTypes, useSuggestDestinationMutation } from "@/features/fleet/hooks";
+import { useCars, useCarSeatConfigs, useMyTemporaryCars, useDestinations, useRideTypes, useSuggestDestinationMutation } from "@/features/fleet/hooks";
 import { useDepartmentSettings, useWeekRow } from "@/features/sadran/hooks";
 import { isSlotFree, type CarFreeWindow } from "@/features/siddur/freeWindows";
 import { buildAddPassengerInputs } from "@/features/rides/addPassengers";
@@ -47,6 +47,7 @@ import { dayLabel } from "../dayLabel";
 import { CAR_NOW_DEFAULT_HOURS } from "../carNow";
 import { findOverlappingRequest } from "../duplicate";
 import { overlapCancelAction } from "../overlap";
+import { splitWho } from "../onBehalf";
 import { QUICK_REQUEST_DURATION_HOURS, endTimeForDuration } from "../duration";
 import { joinableRideDriverLabel } from "../joinableRides";
 import { guestPassengerNames, quickVehicleWindow, resolveQuickOrigin } from "../quickRequest";
@@ -387,6 +388,7 @@ export function RequestForm({
   const membersQuery = useDepartmentMembers(departmentId);
   const { session } = useSession();
   const profileQuery = useProfile();
+  const myPrivateCarsQuery = useMyTemporaryCars(profileQuery.data?.id);
   // REQ §13.93: origin defaults (the member's own `default_origin_id` for this department, the
   // department home) and the non-driver trip-type gate (REQ §13.88).
   const activeDepartmentsQuery = useActiveDepartment();
@@ -412,7 +414,9 @@ export function RequestForm({
   const withdrawMutation = useWithdrawRequestMutation();
   const cancelRideMutation = useCancelRideMutation();
 
-  const lastRequest = [...(myRequestsQuery.data ?? [])]
+  // REQ §13.127 (d): the list also holds requests I filed for others; my own history is only mine.
+  const ownRequests = (myRequestsQuery.data ?? []).filter((r) => r.requesterId === session?.user.id);
+  const lastRequest = [...ownRequests]
     .filter((r) => r.departAt)
     .sort((a, b) => new Date(b.departAt as string).getTime() - new Date(a.departAt as string).getTime())[0];
   const defaultRideTypeId = rideTypesQuery.data?.find((type) => type.code === "other")?.id ?? rideTypesQuery.data?.[0]?.id ?? "";
@@ -616,18 +620,39 @@ export function RequestForm({
     appliedOriginKeyRef.current = resolvedOriginKey;
   }, [form, shouldApplyOrigin, resolvedOriginKey]);
 
+  /** The department member the ride is filed for (null = me) and the companions left once the requester is out of the list. */
+  function whoOf(formValues: Pick<RequestFormValues, "includeMe" | "companions">) {
+    return mode === "new" && variant === "weekly" && !joinRide ? splitWho(formValues, membersQuery.data ?? []) : { requesterId: null, companions: [...formValues.companions] };
+  }
+  const onBehalfWho = whoOf({ includeMe: values.includeMe, companions: values.companions ?? [] });
+  const onBehalfName = onBehalfWho.requesterId ? (membersQuery.data ?? []).find((m) => m.id === onBehalfWho.requesterId)?.name ?? "" : "";
+  // REQ §13.127 (b): editing a request that is someone else's (I filed it, ride on it, own its car, ...).
+  const editingForOther = mode === "edit" && !!initial && !!session?.user.id && initial.requesterId !== session.user.id;
+  // REQ §13.127: whose overlapping requests the duplicate warning looks at.
+  const overlapRequesterId = editingForOther ? initial?.requesterId : onBehalfWho.requesterId ?? session?.user.id;
   // REQ §13.88/§13.93: a non-driver with no driving companion selected may only file a drop-off.
   const companionDoesNotDriveById = new Map((membersQuery.data ?? []).map((m) => [m.id, m.doesNotDrive]));
-  const canDrive = canUseDrivingTripTypes(profileQuery.data?.does_not_drive ?? false, values.companions ?? [], companionDoesNotDriveById);
+  // REQ §13.127 (a): with "אני" out the filer is not on the ride — a driving named member has to be the requester.
+  // Editing someone else's request: the requester's own driving decides, not mine.
+  const requesterDoesNotDrive = editingForOther && initial
+    ? companionDoesNotDriveById.get(initial.requesterId) ?? false
+    : (profileQuery.data?.does_not_drive ?? false) || values.includeMe === false;
+  // With "אני" out and nobody named yet the requester is not known: nothing is forced (else the trip turned into a
+  // הקפצה for good before the member picked a driver).
+  const requesterUnknown = values.includeMe === false && (values.companions ?? []).length === 0;
+  const canDrive = requesterUnknown || canUseDrivingTripTypes(requesterDoesNotDrive, values.companions ?? [], companionDoesNotDriveById);
   const tripType = values.tripType ?? "round_trip";
   const dropOffPickup = values.dropOffPickup ?? false;
-  if (!canDrive && tripType !== "drop_off") {
+  // In an effect, not during render: a render-time setValue is not seen by useWatch in the same render, so taking
+  // "אני" out (REQ §13.127) re-rendered forever (a profile that does not drive already starts as a הקפצה).
+  useEffect(() => {
+    if (canDrive || tripType === "drop_off") return;
     const forced = tripTypeToLegacyFields("drop_off", dropOffPickup);
     form.setValue("tripType", "drop_off", { shouldDirty: true });
     form.setValue("tripShape", forced.tripShape, { shouldDirty: true, shouldValidate: true });
     form.setValue("needsCarAtDestination", forced.needsCarAtDestination, { shouldDirty: true });
     form.setValue("oneWayCarMode", forced.oneWayCarMode, { shouldDirty: true });
-  }
+  }, [canDrive, tripType, dropOffPickup, form]);
   // Multi-day ("series") request (REQ §13.77, UX_FLOWS.md §3.4): the return-day picker only
   // makes sense for a brand-new weekly round trip — editing a series is not supported in v1,
   // and the quick/carNow variants are always about a single live day.
@@ -698,14 +723,32 @@ export function RequestForm({
   // The requester is always one adult; every selected member, named child aged eight or
   // older and guest name is another. Named children below eight use a child seat instead.
   const selectedChildren = (childrenQuery.data ?? []).filter((child) => values.children?.includes(child.id));
-  const namedAdultCount = 1 + (values.extraAdults ?? 0) + (values.companions?.length ?? 0) + selectedChildren.filter((child) => child.isAdultPassenger).length + guests.length;
+  const namedAdultCount = (values.includeMe === false ? 0 : 1) + (values.extraAdults ?? 0) + (values.companions?.length ?? 0) + selectedChildren.filter((child) => child.isAdultPassenger).length + guests.length;
   const selectedChildSeatCount = selectedChildren.filter((child) => !child.isAdultPassenger).length;
   // REQ §13.112 (d): unnamed child seats are on top of the named children (boosters are counted separately below).
   const namedChildCount = selectedChildSeatCount + (values.legacyChildSeats ?? 0);
   // R11U5: the origin place is never offered as destination, stop or plan-B place.
   const originPresetId = values.origin && "presetId" in values.origin ? values.origin.presetId : undefined;
   const destinationsWithoutOrigin = (destinationsQuery.data ?? []).filter((d) => d.id !== originPresetId);
-  const preferredCars = (carsQuery.data ?? []).filter((car) => car.type === "shared" && car.status === "active");
+  const sharedPreferredCars = (carsQuery.data ?? []).filter((car) => car.type === "shared" && car.status === "active");
+  // REQ §13.128: my own active private cars are choosable for a round trip (also when "אני" is out and
+  // the borrower drives it), never in ask-to-join. The server places the request straight on that car.
+  const myPrivateCars = (myPrivateCarsQuery.data ?? []).filter((car) => car.status === "active");
+  const offerPrivateCars = tripType === "round_trip" && !joinRide && !quickContext;
+  const preferredCars = offerPrivateCars
+    ? [
+        ...sharedPreferredCars,
+        ...myPrivateCars.map((car) => ({ id: car.id, name: tv("request.myPrivateCar", { name: car.name }) })),
+      ]
+    : sharedPreferredCars;
+  const preferredCarId = values.preferredCarId ?? "";
+  useEffect(() => {
+    // The private car only applies to a round trip: clear it when the trip type moves away.
+    if (!offerPrivateCars && preferredCarId && myPrivateCars.some((car) => car.id === preferredCarId)) {
+      form.setValue("preferredCarId", "", { shouldDirty: true });
+      form.setValue("preferSpecificCar", false, { shouldDirty: true });
+    }
+  }, [offerPrivateCars, preferredCarId, myPrivateCars, form]);
 
   const seatFitWarning = useMemo(() => {
     if (!carsQuery.data || !seatConfigsQuery.data) return false;
@@ -742,11 +785,12 @@ export function RequestForm({
       : tripShape !== "one_way_to" && values.returnTime
         ? toInstant(day, values.returnTime, false)
         : null;
+    // REQ §13.127: overlaps are the requester's own (a ride I filed for someone else is not mine).
     const candidates = (myRequestsQuery.data ?? []).filter(
-      (r) => r.departmentId === departmentId && !["withdrawn", "cancelled", "denied", "external"].includes(r.status),
+      (r) => r.requesterId === overlapRequesterId && r.departmentId === departmentId && !["withdrawn", "cancelled", "denied", "external"].includes(r.status),
     );
     return findOverlappingRequest({ departAt, returnAt }, candidates, initial?.id);
-  }, [day, tripShape, values.departTime, values.returnTime, values.timeMode, values.tripType, values.returnDay, values.windowHours, values.windowStart, values.windowEnd, myRequestsQuery.data, departmentId, initial?.id]);
+  }, [day, tripShape, values.departTime, values.returnTime, values.timeMode, values.tripType, values.returnDay, values.windowHours, values.windowStart, values.windowEnd, myRequestsQuery.data, departmentId, initial?.id, overlapRequesterId]);
 
   // Quick-variant-only: free-window pre-validation (server RPC remains the sole authority).
   const departTimeSafe = values.departTime || "08:00";
@@ -797,6 +841,8 @@ export function RequestForm({
   const [pendingSeriesSubmit, setPendingSeriesSubmit] = useState<RequestFormValues | null>(null);
   // REQ §13.101 g (QM7): the form values held while "overlaps one of your own rides" is asked.
   const [pendingOverlapSubmit, setPendingOverlapSubmit] = useState<RequestFormValues | null>(null);
+  // REQ §13.127 (a): the values held while "the ride will be created in <name>'s name" is confirmed (everyone, Sadranim included).
+  const [pendingOnBehalf, setPendingOnBehalf] = useState<RequestFormValues | null>(null);
   // REQ §13.101 f (QM5): the edit the server wants confirmed (release to the waiting list).
   // R2M4: named children already on another member's overlapping request — warn, allow anyway.
   const [pendingChildOverlap, setPendingChildOverlap] = useState<{ values: RequestFormValues; rows: ChildOverlapRow[] } | null>(null);
@@ -826,7 +872,16 @@ export function RequestForm({
     else navigate(paths.my());
   }
 
-  async function onSubmit(formValues: RequestFormValues) {
+  function onSubmit(formValues: RequestFormValues) {
+    // REQ §13.127 (a): always confirm a ride filed for someone else — Sadranim too.
+    if (whoOf(formValues).requesterId) {
+      setPendingOnBehalf(formValues);
+      return Promise.resolve();
+    }
+    return submitChecked(formValues);
+  }
+
+  async function submitChecked(formValues: RequestFormValues) {
     overlapConfirmedRef.current = false;
     if (mode === "edit" && isUnchangedEdit(formValues, baselineSignature, { anchorSync: anchorSyncActive })) {
       finishUnchanged();
@@ -871,7 +926,7 @@ export function RequestForm({
     // request had before; see `payloadSeatCounts` for the contract and the double-count bug.
     const previousChildIds = new Set(mode === "edit" ? (requestChildrenQuery.data ?? []) : []);
     const seatCounts = payloadSeatCounts({
-      companionsCount: formValues.companions.length,
+      companionsCount: whoOf(formValues).companions.length,
       guestsCount: guestNamesList.length,
       legacyChildSeats: formValues.legacyChildSeats,
       extraAdults: formValues.extraAdults,
@@ -883,6 +938,7 @@ export function RequestForm({
         {
           requestId: initial?.id,
           expectedVersion: initial?.version,
+          requesterId: whoOf(formValues).requesterId ?? undefined,
           joinRideId: mode === "new" ? joinRide?.rideId : undefined,
           guestPassengerNames: guestNamesList,
           reserveMissingDriver: variant === "quick" && isOneWayDropOff ? true : undefined,
@@ -989,7 +1045,7 @@ export function RequestForm({
       }
 
       if (requestId) {
-        await setCompanionsMutation.mutateAsync({ requestId, profileIds: formValues.companions });
+        await setCompanionsMutation.mutateAsync({ requestId, profileIds: whoOf(formValues).companions });
         await setChildrenMutation.mutateAsync({ requestId, childIds: formValues.children });
 
         // "Repeat weekly" (UX_FLOWS §3.3/§3.4, REQ §76): capture/refresh the template when the
@@ -997,7 +1053,10 @@ export function RequestForm({
         // Errors here are non-fatal to the request itself — each mutation's own `onError`
         // already surfaced a toast — so the request submission outcome below is unaffected.
         try {
-          if (formValues.repeatWeekly) {
+          // REQ §13.127 (a): a request filed for someone else — or edited by someone else — is never a repeating one.
+          if (whoOf(formValues).requesterId || editingForOther) {
+            // templates belong to the requester
+          } else if (formValues.repeatWeekly) {
             await saveTemplateMutation.mutateAsync(requestId);
             if (mode === "new") toast.success(t("request.repeatSaved"));
           } else if (existingTemplateId) {
@@ -1020,7 +1079,7 @@ export function RequestForm({
       // aware set the picker showed), not the plain `carsQuery` every variant also loads.
       const carLookup = quickContext?.cars ?? carsQuery.data ?? [];
       const outcomeToasted = toastSubmitOutcome(result, {
-        carName: (id) => carLookup.find((c) => c.id === id)?.name ?? "",
+        carName: (id) => carLookup.find((c) => c.id === id)?.name ?? myPrivateCars.find((c) => c.id === id)?.name ?? "",
         preferredCarId: formValues.preferredCarId,
         tripType: formValues.tripType,
         departTime: formValues.departTime,
@@ -1051,7 +1110,7 @@ export function RequestForm({
             setJoinRequestContext({
               requestId,
               peopleInputs: [
-                ...(selfId ? [{ person_id: selfId, display_name: profileQuery.data?.full_name ?? "", seat_kind: "adult" as const }] : []),
+                ...(selfId && !whoOf(formValues).requesterId ? [{ person_id: selfId, display_name: profileQuery.data?.full_name ?? "", seat_kind: "adult" as const }] : []),
                 ...buildAddPassengerInputs(formValues.companions, formValues.children, formValues.guestNames, membersQuery.data ?? [], childrenQuery.data ?? []),
               ],
             });
@@ -1198,6 +1257,8 @@ export function RequestForm({
           preferredCars={preferredCars}
           initialPreferredCarName={initial?.preferredCarName}
           members={membersQuery.data ?? []}
+          allowOnBehalf={mode === "new" && variant === "weekly" && !joinRide}
+          requesterName={editingForOther ? initial?.requesterName : null}
           childOptions={childrenQuery.data ?? []}
           tripShape={tripShape}
           tripType={tripType}
@@ -1215,7 +1276,7 @@ export function RequestForm({
           mode={mode}
           notices={notices}
           onChildAdded={onChildAdded}
-          recentDestinations={recentDestinations(myRequestsQuery.data ?? [])}
+          recentDestinations={recentDestinations(ownRequests)}
           recentCompanionIds={recentCompanionsQuery.data ?? []}
           stage={twoStage ? stage : 1}
           onStageChange={setStage}
@@ -1375,7 +1436,7 @@ export function RequestForm({
           </FormItem>
         ) : null}
 
-        {variant === "weekly" && !isMultiDay ? <RepeatWeeklyField control={form.control} /> : null}
+        {variant === "weekly" && !isMultiDay && !onBehalfWho.requesterId && values.includeMe !== false && !editingForOther ? <RepeatWeeklyField control={form.control} /> : null}
         </>
       )}
 
@@ -1434,6 +1495,20 @@ export function RequestForm({
       </div>
     </form>
     <ConfirmDialog
+      open={!!pendingOnBehalf}
+      onOpenChange={(open) => { if (!open) setPendingOnBehalf(null); }}
+      title={tv("request.onBehalfTitle", { name: onBehalfName })}
+      description={tv("request.onBehalfBody", { name: onBehalfName })}
+      confirmLabel={t("request.onBehalfConfirm")}
+      cancelLabel={t("request.overlapBack")}
+      loading={submitMutation.isPending}
+      onConfirm={() => {
+        const pending = pendingOnBehalf;
+        setPendingOnBehalf(null);
+        if (pending) void submitChecked(pending);
+      }}
+    />
+    <ConfirmDialog
       open={!!pendingLose}
       onOpenChange={(open) => { if (!open) setPendingLose(null); }}
       title={t("request.loseBookingTitle")}
@@ -1485,7 +1560,7 @@ export function RequestForm({
       confirmLabel={t("request.overlapCancelOther")}
       cancelLabel={t("request.overlapBack")}
       // R11U4: cancelling one leg of a multi-day request would cancel the whole series, so that option is not offered from here.
-      hideConfirm={overlapSeries}
+      hideConfirm={overlapSeries || !!onBehalfWho.requesterId}
       destructive
       loading={withdrawMutation.isPending || cancelRideMutation.isPending}
       onConfirm={() => void cancelOverlapAndSubmit()}

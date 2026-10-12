@@ -184,7 +184,7 @@ export function CarManageScreen({ car, isAdmin, canEdit, viewerName, headerActio
             car={car}
             showDepartmentField={false}
             canEditResponsible={isAdmin}
-            canEditSeatConfigs={isAdmin}
+            canEditSeatConfigs={isAdmin || (canEdit && car.type === "temporary")}
             readOnly={!canEdit}
             responsibleOptions={responsibleOptions}
             onSaved={() => undefined}

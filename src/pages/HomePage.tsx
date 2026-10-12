@@ -17,6 +17,7 @@ import { formatWeekRangeLabel } from "@/components/dateFieldDates";
 import { useProfile } from "@/features/auth/useProfile";
 import { DeviceSetupPrompts } from "@/features/member/components/DeviceSetupPrompts";
 import { useMyResponsibleCarsQuery } from "@/features/cars/hooks";
+import { isRideRelated, relatedRequestIdToEdit } from "@/features/rides/relatedRide";
 import { useCars, useMyTemporaryCars, useRideTypes } from "@/features/fleet/hooks";
 import { AddRideFab } from "@/features/requests/components/AddRideFab";
 import { CarNowButton } from "@/features/requests/components/CarNowButton";
@@ -52,7 +53,10 @@ import {
 } from "@/features/requests/myRequestsRows";
 import { isTodayOrLater } from "@/features/requests/upcoming";
 import { useBoardRides, useWeeks, useMyUpcomingRides } from "@/features/siddur/hooks";
-import { useCarNeighboursQuery, useRideChanges, useRequestRideChangeMutation } from "@/features/rides/hooks";
+import { useCarNeighboursQuery, useRideChanges, useRemoveRidePassengerMutation, useRequestRideChangeMutation } from "@/features/rides/hooks";
+import { isRideDayEditable } from "@/features/rides/rideDayEditable";
+import { useRideSheetCarActions } from "@/features/rides/useRideSheetCarActions";
+import { myRidePersonKey } from "@/features/rides/ridePeople";
 import { RideDetailSheet } from "@/features/siddur/components/RideDetailSheet";
 import { MemberRideEditor } from "@/features/siddur/components/MemberRideEditor";
 import type { BoardRide } from "@/features/siddur/api";
@@ -137,6 +141,7 @@ export function HomePage() {
   const [selectedSuggestion, setSelectedSuggestion] = useState<TemplateSuggestion | null>(null);
   const openProposal = useOpenProposal();
   const cancelRideMutation = useCancelRideMutation();
+  const removeMeMutation = useRemoveRidePassengerMutation();
   const editMutation = useEditRideMutation();
   const changeMutation = useRequestRideChangeMutation();
   const placeOnOwnCarMutation = usePlaceOnOwnCarMutation();
@@ -152,6 +157,14 @@ export function HomePage() {
   const selectedRideWeekStart = selectedMyRide?.week_start ?? undefined;
   const selectedRideWeekQuery = useBoardRides(defaultDepartmentId, selectedRideWeekStart);
   const selectedRideChangesQuery = useRideChanges(defaultDepartmentId, selectedRideWeekStart);
+  const sheetCarActions = useRideSheetCarActions({
+    departmentId: selectedMyRide?.department_id ?? undefined,
+    profileId: profileQuery.data?.id,
+    myRequestIds: new Set((requestsQuery.data ?? []).map((request) => request.id)),
+    week: (weeksQuery.data ?? []).find((week) => week.week_start === selectedMyRide?.week_start) ?? null,
+    isMember: active.canSubmit,
+    now,
+  });
 
   // `?focus=<request_id>` (notification deep link, `notification_default_url`'s `/my?focus=<id>`
   // case, formerly `/requests?focus=`): scroll the matching card into view and ring-highlight it.
@@ -251,11 +264,19 @@ export function HomePage() {
     ? selectedRideWeekQuery.data?.find((ride) => ride.id === selectedMyRide.id) ?? null
     : null;
   const editableWeek = (weeksQuery.data ?? []).find((week) => week.week_start === editableRide?.week_start) ?? null;
+  // REQ §13.127 (b): related = driver, a served request I made or filed, a named passenger, or the private car's owner.
+  const editableRideCar = editableRide ? (carsQuery.data ?? []).find((car) => car.id === editableRide.car_id) : undefined;
+  const editableRideRelated = !!editableRide && isRideRelated({
+    ride: editableRide,
+    profileId: profileQuery.data?.id,
+    myRequestIds: new Set((requestsQuery.data ?? []).map((request) => request.id)),
+    carOwnerId: editableRideCar?.type === "temporary" ? editableRideCar.owner_id : null,
+  });
   const ownsEditableRide = !!editableRide &&
     // Same rule as `useMemberRideMoves`: a ride I drive keeping the car, or my own one-way (owner 2026-10-11).
     servedOf(editableRide).every((entry) => entry.role === "driver" && (entry.car_mode === "keep" || (entry.car_mode === "relay" && entry.trip_type === "one_way"))) &&
-    active.canSubmit && editableRide.driver_id === profileQuery.data?.id &&
-    !!editableRide.starts_at && Date.parse(editableRide.starts_at) > now.getTime() &&
+    active.canSubmit && editableRideRelated &&
+    isRideDayEditable(editableRide.starts_at, now) &&
     (editableWeek?.phase === "published" || editableWeek?.phase === "live") &&
     !(selectedRideChangesQuery.data ?? []).some((change) => change.ride_id === editableRide.id);
 
@@ -263,13 +284,25 @@ export function HomePage() {
   const selectedRideOwnRequest = selectedMyRide?.id
     ? (requestsQuery.data ?? []).find((request) => request.ride?.id === selectedMyRide.id && canEditRequest(request))
     : undefined;
-  const selectedRideEditHref = selectedRideOwnRequest ? paths.requests.edit(selectedRideOwnRequest.id) : undefined;
+  // Not one of my own requests but related to the ride: its driver's request (the edit page asks the server, REQ §13.127 b).
+  const selectedRideCar = selectedMyRide ? (carsQuery.data ?? []).find((car) => car.id === selectedMyRide.car_id) : undefined;
+  const selectedRideRelatedRequestId = selectedMyRide && !selectedRideOwnRequest
+    && isRideRelated({
+      ride: selectedMyRide,
+      profileId: profileQuery.data?.id,
+      myRequestIds: new Set((requestsQuery.data ?? []).map((request) => request.id)),
+      carOwnerId: selectedRideCar?.type === "temporary" ? selectedRideCar.owner_id : null,
+    })
+    ? relatedRequestIdToEdit(selectedMyRide) : undefined;
+  const selectedRideEditHref = selectedRideOwnRequest
+    ? paths.requests.edit(selectedRideOwnRequest.id)
+    : selectedRideRelatedRequestId ? paths.requests.edit(selectedRideRelatedRequestId) : undefined;
   // Same gate as the siddur's public-notes editor: my own (or an admin's) future ride on a published/live week.
   const selectedRidePhase = selectedMyRide?.week_start ? phaseOf(selectedMyRide.week_start) : undefined;
   const canEditSelectedRideNotes = !!selectedMyRide && selectedMyRide.status !== "cancelled"
-    && !!selectedMyRide.ends_at && Date.parse(selectedMyRide.ends_at) > now.getTime()
+    && isRideDayEditable(selectedMyRide.starts_at, now)
     && (selectedRidePhase === "published" || selectedRidePhase === "live")
-    && (selectedMyRide.driver_id === profileQuery.data?.id || !!selectedRideOwnRequest || !!profileQuery.data?.is_admin);
+    && (selectedMyRide.driver_id === profileQuery.data?.id || !!selectedRideEditHref || !!profileQuery.data?.is_admin);
 
   async function saveMyRideMove(move: RideMove) {
     if (!editableRide || !ownsEditableRide || !editableRide.department_id || !editableRide.week_start || !editableRide.origin_id || !editableRide.destination_id) return;
@@ -420,6 +453,7 @@ export function HomePage() {
               <RequestRow
                 key={row.id}
                 row={row}
+                viewerId={viewerId}
                 highlighted={row.id === focusedId}
                 rowRef={row.id === focusedId ? highlightedRef : undefined}
                 homeDestinationId={homeDestinationIds[row.departmentId]}
@@ -510,6 +544,7 @@ export function HomePage() {
                   <RequestRow
                     key={row.id}
                     row={row}
+                    viewerId={viewerId}
                     highlighted={row.id === focusedId}
                     rowRef={row.id === focusedId ? highlightedRef : undefined}
                     homeDestinationId={homeDestinationIds[group.departmentId]}
@@ -549,6 +584,8 @@ export function HomePage() {
       ) : null}
 
       <RideDetailSheet
+        {...sheetCarActions.sheetProps(selectedMyRide, () => setSelectedMyRide(null))}
+        {...(editableRide && ownsEditableRide ? { moveToCarOptions: [] } : {})}
         ride={selectedMyRide}
         weekRides={selectedRideWeekQuery.data}
         car={selectedMyRide ? (carsQuery.data ?? []).find((car) => car.id === selectedMyRide.car_id) ?? null : null}
@@ -559,16 +596,24 @@ export function HomePage() {
         // once solved/published, before that only draft/manual-reservation pins do); the
         // RPC itself is the real gate (`week_archived`/`not_authorized` surface as toasts).
         showAddPassengers={!!selectedMyRide && selectedMyRide.status !== "cancelled"}
-        onRemoveOwnRide={selectedMyRide?.id && selectedMyRide.version != null ? () => cancelRideMutation.mutate({ rideId: selectedMyRide.id!, expectedVersion: selectedMyRide.version!, reason: "CANCELLED_BY_MEMBER" }, { onSuccess: () => setSelectedMyRide(null) }) : undefined}
+        onRemoveOwnRide={selectedMyRide?.id && selectedMyRide.driver_id === profileQuery.data?.id && selectedMyRide.version != null ? () => cancelRideMutation.mutate({ rideId: selectedMyRide.id!, expectedVersion: selectedMyRide.version!, reason: "CANCELLED_BY_MEMBER" }, { onSuccess: () => setSelectedMyRide(null) }) : undefined}
         removingOwnRide={cancelRideMutation.isPending}
+        onRemoveMe={(() => {
+          const myKey = selectedMyRide ? myRidePersonKey(selectedMyRide, profileQuery.data?.id) : null;
+          if (!selectedMyRide?.id || !myKey || selectedMyRide.version == null || !selectedMyRide.department_id || !selectedMyRide.week_start) return undefined;
+          const { id, version, department_id, week_start } = selectedMyRide;
+          return () => removeMeMutation.mutate({ rideId: id, expectedVersion: version, key: myKey, departmentId: department_id, weekStart: week_start }, { onSuccess: () => setSelectedMyRide(null) });
+        })()}
+        removingMe={removeMeMutation.isPending}
         // Owner 2026-10-11: the same "edit" button as on the siddur — opens my own request on this ride (day, stops, …).
         editRequestHref={selectedRideEditHref}
         canEditPublicNotes={canEditSelectedRideNotes}
         editor={editableRide && ownsEditableRide ? (
           <MemberRideEditor
-            key={`${editableRide.id}:${editableRide.version}`}
+            key={`${editableRide.id}:${editableRide.version}:editor`}
             ride={editableRide}
             cars={carsQuery.data ?? []}
+            viewerId={profileQuery.data?.id}
             saving={editMutation.isPending || changeMutation.isPending}
             onSave={(move) => void saveMyRideMove(move)}
           />
@@ -583,6 +628,7 @@ export function HomePage() {
         {selectedWeekRow ? (
           <RequestRow
             row={selectedWeekRow}
+            viewerId={viewerId}
             homeDestinationId={homeDestinationIds[selectedWeekRow.departmentId]}
             handover={rowHandover(selectedWeekRow, neighboursByRide, viewerId)}
             onWithdraw={(target) => { setSelectedRequestId(null); setConfirmAction({ kind: "withdraw", row: target }); }}

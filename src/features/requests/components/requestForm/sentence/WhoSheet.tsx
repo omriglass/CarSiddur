@@ -23,6 +23,11 @@ import { PillChip } from "./PillChip";
 interface WhoSheetProps {
   form: UseFormReturn<RequestFormValues>;
   members: { id: string; name: string }[];
+  /** REQ §13.127 (a): "אני" is on (default); a new weekly request may switch it off (`allowOnBehalf`). */
+  includeMe: boolean;
+  allowOnBehalf: boolean;
+  /** Edit of a request whose requester is someone else: shown instead of "אני", locked. */
+  requesterName?: string | null;
   childOptions: { id: string; name: string; age: number | null; isPriority?: boolean }[];
   recentCompanionIds: readonly string[];
   companions: readonly string[];
@@ -33,6 +38,8 @@ interface WhoSheetProps {
   unnamedChildSeats: number;
   boosters: number;
   guestNamesError?: string;
+  /** REQ §13.127 (a): "אני" is off and no department member is named. */
+  companionsError?: string;
   /** A named child was just added (suggests the childcare ride type, R9U7). */
   onChildAdded?: () => void;
 }
@@ -43,7 +50,7 @@ function toggle(list: readonly string[], id: string): string[] {
   return list.includes(id) ? list.filter((value) => value !== id) : [...list, id];
 }
 
-export function WhoSheet({ form, members, childOptions, recentCompanionIds, companions, children, guestNames, extraAdults, unnamedChildSeats, boosters, guestNamesError, onChildAdded }: WhoSheetProps) {
+export function WhoSheet({ form, members, includeMe, allowOnBehalf, requesterName, childOptions, recentCompanionIds, companions, children, guestNames, extraAdults, unnamedChildSeats, boosters, guestNamesError, companionsError, onChildAdded }: WhoSheetProps) {
   const [mode, setMode] = useState<"member" | "guest" | null>(null);
   const [guestDraft, setGuestDraft] = useState("");
   const guests = guestPassengerNames(guestNames);
@@ -79,7 +86,18 @@ export function WhoSheet({ form, members, childOptions, recentCompanionIds, comp
   return (
     <div className="space-y-3" data-testid="who-sheet" data-field="companions">
       <div className="flex flex-wrap gap-1.5">
-        <PillChip pressed disabled aria-disabled="true" data-testid="who-me">{he.requestSentence.me}</PillChip>
+        {allowOnBehalf ? (
+          <PillChip
+            pressed={includeMe}
+            aria-label={he.requestSentence.whoMeToggle}
+            onClick={() => form.setValue("includeMe", !includeMe, { shouldDirty: true, shouldValidate: true })}
+            data-testid="who-me"
+          >
+            {he.requestSentence.me}
+          </PillChip>
+        ) : (
+          <PillChip pressed disabled aria-disabled="true" data-testid="who-me">{requesterName ?? he.requestSentence.me}</PillChip>
+        )}
         {childChips.map((child) => (
           <PillChip
             key={child.id}
@@ -167,6 +185,7 @@ export function WhoSheet({ form, members, childOptions, recentCompanionIds, comp
         </form>
       ) : null}
       <FieldError message={guestNamesError} />
+      <FieldError message={companionsError} />
     </div>
   );
 }

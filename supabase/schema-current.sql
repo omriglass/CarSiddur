@@ -2576,8 +2576,11 @@ begin
   if not public.member_of(v_ride.department_id) then
     raise exception 'not_authorized' using errcode = 'P0001';
   end if;
-  -- REQ §13.99: only a private car's owner adds people to it.
-  perform public.assert_private_car_owner_only(v_ride.car_id, v_actor, null);
+  -- REQ §13.99: only a private car's owner adds people to it. REQ §13.127: and whoever the owner lent it to
+  -- (anyone related to the ride, e.g. its driver).
+  if not public.ride_related(p_ride_id, v_actor) then
+    perform public.assert_private_car_owner_only(v_ride.car_id, v_actor, null);
+  end if;
   if not (public.is_week_public(v_ride.department_id, v_ride.week_start) or public.can_manage_week(v_ride.department_id, v_ride.week_start)) then
     raise exception 'ride_week_not_public' using errcode = 'P0001';
   end if;
@@ -3861,6 +3864,23 @@ end $$;
 ALTER FUNCTION "public"."assert_private_car_owner_only"("p_car" "uuid", "p_actor" "uuid", "p_requester" "uuid") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."assert_private_car_request"("p_car" "uuid", "p_actor" "uuid", "p_request" "uuid") RETURNS "void"
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare v_owner uuid;
+begin
+  select c.owner_id into v_owner from public.cars c where c.id = p_car and c.type = 'temporary';
+  if v_owner is null or p_actor is not distinct from v_owner then return; end if;
+  if exists (select 1 from public.requests q where q.id = p_request and (q.requester_id = v_owner or q.filed_by = v_owner)) then return; end if;
+  if nullif(current_setting('app.edit_prefer_car', true), '') = p_car::text then return; end if;
+  raise exception 'private_car_owner_only' using errcode = 'P0001';
+end $$;
+
+
+ALTER FUNCTION "public"."assert_private_car_request"("p_car" "uuid", "p_actor" "uuid", "p_request" "uuid") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."assert_publication_scores"("p_department_id" "uuid", "p_week_start" "date", "p_scores" "jsonb") RETURNS "void"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -4140,6 +4160,19 @@ $$;
 
 
 ALTER FUNCTION "public"."bump_version"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."can_edit_request"("p_request" "uuid") RETURNS boolean
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select public.is_approved() and exists (
+    select 1 from public.requests q where q.id = p_request
+      and (public.request_related(q.id, (select auth.uid())) or public.can_manage_week(q.department_id, q.week_start)));
+$$;
+
+
+ALTER FUNCTION "public"."can_edit_request"("p_request" "uuid") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."can_manage_any_open_week"("p_department_id" "uuid") RETURNS boolean
@@ -6417,6 +6450,8 @@ declare
   v_car_row public.cars%rowtype;
   v_one jsonb; v_req public.requests%rowtype; v_leg public.ride_leg; v_min int;
   v_s timestamptz; v_e timestamptz; v_day date;
+  -- REQ §13.129 (a): a private car's owner moving someone's ride onto that car.
+  v_owner_move boolean := false;
 begin
   if not public.is_approved() then raise exception 'not_authorized'; end if;
   if v_id is not null then
@@ -6429,13 +6464,22 @@ begin
   v_manage := public.can_manage_week(v_dept,v_week);
   if exists (select 1 from public.weeks where department_id=v_dept and week_start=v_week and phase='archived') then raise exception 'week_archived'; end if;
   if not v_manage then
-    if v_id is null or v_existing.driver_id is distinct from (select auth.uid()) or not public.is_week_public(v_dept,v_week) then raise exception 'not_authorized'; end if;
-    if (p_ride->>'starts_at')::timestamptz <= now() then raise exception 'ride_in_past'; end if;
+    v_owner_move := v_id is not null and (p_ride->>'car_id')::uuid is distinct from v_existing.car_id
+      and exists (select 1 from public.cars c where c.id = (p_ride->>'car_id')::uuid and c.type = 'temporary' and c.owner_id = (select auth.uid()));
+    -- REQ §13.127: the driver, or anyone related to the ride (who filed it, a passenger, the private car's owner);
+    -- REQ §13.129 (a): or the owner of the private car the ride moves onto.
+    if v_id is null or not (v_existing.driver_id is not distinct from (select auth.uid()) or public.ride_related(v_id, (select auth.uid())) or v_owner_move)
+       or not public.is_week_public(v_dept,v_week) then raise exception 'not_authorized'; end if;
+    -- REQ §13.128 (a): editable until the ride's day is over (the day itself is fixed below), not only until it starts.
+    if (v_existing.starts_at at time zone 'Asia/Jerusalem')::date < (now() at time zone 'Asia/Jerusalem')::date then
+      raise exception 'ride_in_past';
+    end if;
     if (p_ride ? 'driver_id' and (p_ride->>'driver_id')::uuid is distinct from v_existing.driver_id)
       or (p_ride ? 'origin_id' and (p_ride->>'origin_id')::uuid is distinct from v_existing.origin_id)
       or (p_ride ? 'destination_id' and (p_ride->>'destination_id')::uuid is distinct from v_existing.destination_id)
       or ((p_ride->>'starts_at')::timestamptz at time zone 'Asia/Jerusalem')::date <> (v_existing.starts_at at time zone 'Asia/Jerusalem')::date
-      or exists (select 1 from public.ride_requests rr join public.requests q on q.id=rr.request_id where rr.ride_id=v_id and (q.requester_id <> (select auth.uid())
+      -- REQ §13.127: every request on the ride must be one the mover is related to (the requester's own, one they filed, …).
+      or exists (select 1 from public.ride_requests rr join public.requests q on q.id=rr.request_id where rr.ride_id=v_id and ((q.requester_id <> (select auth.uid()) and not public.request_related(q.id, (select auth.uid())) and not v_owner_move)
         -- Owner 2026-10-11: my own one-way (הלוך בלבד, a relay leg) moves like a ride that keeps the car — never a הקפצה relay leg.
         or not (rr.car_mode = 'keep' or (rr.car_mode = 'relay' and q.trip_type = 'one_way'))))
       -- A one-way leaves THIS car at its destination: it never moves to another car.
@@ -6544,6 +6588,17 @@ begin
   perform public.assert_ride_seats_fit(v_id);
   perform public.assert_car_chain((p_ride->>'car_id')::uuid,v_week);
   if v_existing.car_id is not null and v_existing.car_id<>(p_ride->>'car_id')::uuid then perform public.assert_car_chain(v_existing.car_id,v_week); end if;
+  -- REQ §13.129 (a): the people of the ride are told their ride moved onto the owner's private car.
+  if v_owner_move and public.is_day_public(v_dept, v_week, (v_existing.starts_at at time zone 'Asia/Jerusalem')::date) then
+    perform public.enqueue_notification(x.pid, 'outcome_changed', v_dept, v_week,
+      jsonb_build_object('changeLine', public._frag('change.car', jsonb_build_object(
+        'newCar', coalesce((select name from public.cars where id = (p_ride->>'car_id')::uuid), ''),
+        'oldCar', coalesce((select name from public.cars where id = v_existing.car_id), '')))),
+      jsonb_build_object('variant', 'car_changed', 'request_id', x.rid, 'ride_id', v_id),
+      format('owner_move:%s:%s:%s', v_id, x.pid, clock_timestamp()))
+    from (select distinct q.requester_id as pid, q.id as rid from public.ride_requests rr join public.requests q on q.id = rr.request_id
+          where rr.ride_id = v_id and q.requester_id is distinct from (select auth.uid())) x;
+  end if;
   return v_id;
 end $$;
 
@@ -7314,6 +7369,92 @@ end $$;
 
 
 ALTER FUNCTION "public"."guard_ride_driver_schedule"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."hand_over_own_ride"("p_ride_id" "uuid", "p_expected_version" integer, "p_new_driver" "uuid") RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  r public.rides%rowtype;
+  v_actor uuid := (select auth.uid());
+  v_req uuid;
+  v_was_companion boolean;
+  v_by text; v_driver_name text; v_route text; v_day text; v_car text;
+  p record;
+begin
+  if not public.is_approved() then raise exception 'not_authorized' using errcode = 'P0001'; end if;
+  select * into r from public.rides where id = p_ride_id for update;
+  if not found or r.status = 'cancelled' then raise exception 'ride_not_found' using errcode = 'P0001'; end if;
+  if p_expected_version is null or r.version <> p_expected_version then perform public.raise_stale_version(); end if;
+  if r.driver_id is distinct from v_actor then raise exception 'not_authorized' using errcode = 'P0001'; end if;
+  if exists (select 1 from public.weeks w where w.department_id = r.department_id and w.week_start = r.week_start and w.phase = 'archived') then
+    raise exception 'week_archived' using errcode = 'P0001';
+  end if;
+  if (r.starts_at at time zone 'Asia/Jerusalem')::date < (now() at time zone 'Asia/Jerusalem')::date then
+    raise exception 'ride_in_past' using errcode = 'P0001';
+  end if;
+  if r.series_id is not null
+     or not exists (select 1 from public.ride_requests rr where rr.ride_id = r.id)
+     or exists (select 1 from public.ride_requests rr join public.requests q on q.id = rr.request_id
+                where rr.ride_id = r.id and (q.requester_id is distinct from v_actor or q.series_id is not null))
+     -- the request is not held by another live ride too (a הקפצה's other leg)
+     or exists (select 1 from public.ride_requests rr join public.ride_requests rr2 on rr2.request_id = rr.request_id and rr2.ride_id <> rr.ride_id
+                join public.rides o on o.id = rr2.ride_id
+                where rr.ride_id = r.id and o.status <> 'cancelled') then
+    raise exception 'handover_not_possible' using errcode = 'P0001';
+  end if;
+  if p_new_driver is null or p_new_driver = v_actor
+     or not exists (select 1 from public.profiles pr where pr.id = p_new_driver and pr.approval_status = 'approved' and not pr.does_not_drive)
+     or not exists (select 1 from public.department_members dm where dm.department_id = r.department_id and dm.profile_id = p_new_driver and dm.removed_at is null)
+     or not (exists (select 1 from public.ride_requests rr join public.request_companions rc on rc.request_id = rr.request_id
+                     where rr.ride_id = r.id and rc.profile_id = p_new_driver)
+             or exists (select 1 from public.ride_passengers rp where rp.ride_id = r.id and rp.person_id = p_new_driver)) then
+    raise exception 'handover_driver_invalid' using errcode = 'P0001';
+  end if;
+
+  perform set_config('app.audit_reason', 'hand_over_own_ride', true);
+  for v_req in select rr.request_id from public.ride_requests rr where rr.ride_id = r.id order by rr.request_id loop
+    delete from public.request_companions where request_id = v_req and profile_id = p_new_driver;
+    v_was_companion := found;
+    -- the leaver's seat goes; a companion was already counted, an added passenger moves into the request
+    update public.requests set requester_id = p_new_driver,
+      adults = case when v_was_companion then greatest(adults - 1, 1) else adults end
+    where id = v_req;
+  end loop;
+  delete from public.ride_passengers where ride_id = r.id and person_id = p_new_driver;
+  update public.rides set driver_id = p_new_driver where id = r.id;
+  perform public.assert_ride_driver(r.id);
+  perform public.assert_ride_seats_fit(r.id);
+
+  if public.is_day_public(r.department_id, r.week_start, (r.starts_at at time zone 'Asia/Jerusalem')::date) then
+    select full_name into v_by from public.profiles where id = v_actor;
+    select full_name into v_driver_name from public.profiles where id = p_new_driver;
+    select name into v_car from public.cars where id = r.car_id;
+    v_route := coalesce(public.request_route_label((select rr.request_id from public.ride_requests rr where rr.ride_id = r.id order by rr.request_id limit 1)), '');
+    v_day := public.day_date_label(r.starts_at);
+    perform public.enqueue_notification(p_new_driver, 'outcome_changed', r.department_id, r.week_start,
+      jsonb_build_object('byName', coalesce(v_by, ''), 'route', v_route, 'day', v_day,
+        'depart', to_char(r.starts_at at time zone 'Asia/Jerusalem', 'HH24:MI'), 'return', to_char(r.ends_at at time zone 'Asia/Jerusalem', 'HH24:MI'),
+        'car', coalesce(v_car, '')),
+      jsonb_build_object('variant', 'driver_assigned', 'ride_id', r.id),
+      format('driver_assigned:%s:%s:%s', r.id, r.version, p_new_driver));
+    for p in
+      select rc.profile_id as pid from public.ride_requests rr join public.request_companions rc on rc.request_id = rr.request_id where rr.ride_id = r.id
+      union select rp.person_id from public.ride_passengers rp where rp.ride_id = r.id and rp.person_id is not null
+    loop
+      continue when p.pid = p_new_driver or p.pid = v_actor;
+      perform public.enqueue_notification(p.pid, 'outcome_changed', r.department_id, r.week_start,
+        jsonb_build_object('driverName', coalesce(v_driver_name, ''), 'route', v_route, 'day', v_day, 'car', coalesce(v_car, '')),
+        jsonb_build_object('variant', 'driver_changed_passenger', 'ride_id', r.id),
+        format('driver_handover_passenger:%s:%s:%s', r.id, r.version, p.pid));
+    end loop;
+  end if;
+  return jsonb_build_object('ride_id', r.id, 'driver_id', p_new_driver);
+end $$;
+
+
+ALTER FUNCTION "public"."hand_over_own_ride"("p_ride_id" "uuid", "p_expected_version" integer, "p_new_driver" "uuid") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."handle_new_user"() RETURNS "trigger"
@@ -9137,7 +9278,10 @@ begin
   perform public._small_trunk_mode(p_allow_small_trunk);   -- REQ §13.111 (a)
   select * into v_req from public.requests where id = p_request_id for update;
   if v_req.id is null then raise exception 'request_not_found' using errcode = 'P0001'; end if;
-  if v_req.requester_id is distinct from v_actor then raise exception 'not_authorized' using errcode = 'P0001'; end if;
+  -- REQ §13.127 (c): the owner may also put a request they filed for someone else (or are related to) on their car.
+  if v_req.requester_id is distinct from v_actor and not public.request_related(p_request_id, v_actor) then
+    raise exception 'not_authorized' using errcode = 'P0001';
+  end if;
   select * into v_car from public.cars where id = p_car_id;
   if v_car.id is null or v_car.department_id <> v_req.department_id then raise exception 'not_authorized' using errcode = 'P0001'; end if;
   if v_car.type <> 'temporary' or v_car.owner_id is distinct from v_actor then raise exception 'private_car_owner_only' using errcode = 'P0001'; end if;
@@ -9267,7 +9411,8 @@ begin
     raise exception 'shift_car_invalid' using errcode = 'P0001';
   end if;
   -- REQ §13.99: only the owner puts requests on a private car (the owner's own request on it is fine).
-  perform public.assert_private_car_owner_only(v_car, p_actor, q.requester_id);
+  -- REQ §13.127 (c): so is a request the owner filed for someone else.
+  perform public.assert_private_car_request(v_car, p_actor, p_request_id);
   v_manual := coalesce(p_manual, false);
   v_public := public.is_week_public(q.department_id, q.week_start);
   v_dep := case when q.trip_shape = 'one_way_from' then null else coalesce(p_dep, q.depart_at) end;
@@ -11826,6 +11971,23 @@ $$;
 ALTER FUNCTION "public"."request_needs_large_trunk"("p_request_id" "uuid") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."request_related"("p_request" "uuid", "p_actor" "uuid") RETURNS boolean
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select p_actor is not null and exists (
+    select 1 from public.requests q
+    where q.id = p_request and (
+      q.requester_id = p_actor or q.filed_by = p_actor
+      or exists (select 1 from public.request_companions rc where rc.request_id = q.id and rc.profile_id = p_actor)
+      or exists (select 1 from public.ride_requests rr join public.rides r on r.id = rr.ride_id
+                 where rr.request_id = q.id and r.status <> 'cancelled' and public.ride_related(r.id, p_actor))));
+$$;
+
+
+ALTER FUNCTION "public"."request_related"("p_request" "uuid", "p_actor" "uuid") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."request_ride_change"("p_ride_id" "uuid", "p_car_id" "uuid", "p_starts_at" timestamp with time zone, "p_ends_at" timestamp with time zone, "p_expected_version" integer, "p_allow_small_trunk" boolean DEFAULT false) RETURNS "uuid"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -11836,7 +11998,8 @@ begin
   if not found then raise exception 'ride_not_found'; end if;
   if not public.is_approved() or r.driver_id is distinct from (select auth.uid()) or not public.is_week_public(r.department_id,r.week_start) then raise exception 'not_authorized'; end if;
   if r.status='cancelled' or r.version<>p_expected_version then perform public.raise_stale_version(); end if;
-  if p_starts_at<=now() or p_ends_at<=p_starts_at or (p_starts_at at time zone 'Asia/Jerusalem')::date<>(r.starts_at at time zone 'Asia/Jerusalem')::date then raise exception 'ride_request_day_mismatch'; end if;
+  -- REQ §13.128 (a): a ride of today may still change (the day itself must stay the same, below).
+  if (r.starts_at at time zone 'Asia/Jerusalem')::date < (now() at time zone 'Asia/Jerusalem')::date or p_ends_at<=p_starts_at or (p_starts_at at time zone 'Asia/Jerusalem')::date<>(r.starts_at at time zone 'Asia/Jerusalem')::date then raise exception 'ride_request_day_mismatch'; end if;
   if not (public.week_range(r.week_start) @> tstzrange(p_starts_at,p_ends_at,'[)')) then raise exception 'ride_outside_week'; end if;
   if exists(select 1 from public.ride_requests rr join public.requests q on q.id=rr.request_id where rr.ride_id=r.id and (q.requester_id<>r.driver_id or rr.car_mode='relay')) then raise exception 'shared_ride_requires_sadran'; end if;
   -- REQ §13.111 (a): the driver may accept a car without a large trunk for their own large-luggage request(s); the
@@ -12177,7 +12340,8 @@ begin
     raise exception 'invalid_request_status_transition' using errcode = 'P0001',
       detail = format('request %s status %s is terminal', old.id, old.status);
   end if;
-  if (select auth.uid()) = old.requester_id then
+  -- REQ §13.127: whoever filed the request (or is related to it) moves it like the requester.
+  if (select auth.uid()) = old.requester_id or public.request_related(old.id, (select auth.uid())) then
     -- Unchanged from 20260907092800: a requester may move their own request only to
     -- withdrawn/cancelled, unless they can also manage the week (Sadran/admin acting on
     -- their own request).
@@ -12687,6 +12851,25 @@ $$;
 ALTER FUNCTION "public"."ride_notice_route"("p_ride_id" "uuid") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."ride_related"("p_ride" "uuid", "p_actor" "uuid") RETURNS boolean
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select p_actor is not null and exists (
+    select 1 from public.rides r left join public.cars c on c.id = r.car_id
+    where r.id = p_ride and (
+      r.driver_id = p_actor
+      or (c.type = 'temporary' and c.owner_id = p_actor)
+      or exists (select 1 from public.ride_passengers rp where rp.ride_id = r.id and rp.person_id = p_actor)
+      or exists (select 1 from public.ride_requests rr join public.requests q on q.id = rr.request_id
+                 where rr.ride_id = r.id and (q.requester_id = p_actor or q.filed_by = p_actor
+                   or exists (select 1 from public.request_companions rc where rc.request_id = q.id and rc.profile_id = p_actor)))));
+$$;
+
+
+ALTER FUNCTION "public"."ride_related"("p_ride" "uuid", "p_actor" "uuid") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."ride_requests_dept_week_match"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -13109,10 +13292,21 @@ CREATE OR REPLACE FUNCTION "public"."rides_temp_car_owner_only"() RETURNS "trigg
 declare v_type public.car_type; v_owner uuid;
 begin
   select type, owner_id into v_type, v_owner from public.cars where id = new.car_id;
-  if v_type = 'temporary' and new.driver_id is distinct from v_owner then
-    raise exception 'temporary_car_owner_only' using errcode = 'P0001';
+  if v_type is distinct from 'temporary' or new.driver_id is not distinct from v_owner then return new; end if;
+  -- consent was given when the ride got onto the car with this driver
+  if tg_op = 'UPDATE' and old.car_id = new.car_id and old.driver_id is not distinct from new.driver_id then return new; end if;
+  -- the owner is the one doing it (REQ §13.129 a), or an edit re-places a ride on the private car it was on
+  if (select auth.uid()) is not distinct from v_owner
+     or nullif(current_setting('app.edit_prefer_car', true), '') = new.car_id::text then return new; end if;
+  -- someone the owner filed a live request for that day (REQ §13.127 c)
+  if exists (
+       select 1 from public.requests q
+       where q.requester_id = new.driver_id and q.filed_by = v_owner and q.department_id = new.department_id
+         and q.status not in ('withdrawn', 'cancelled')
+         and (q.depart_at at time zone 'Asia/Jerusalem')::date = (new.starts_at at time zone 'Asia/Jerusalem')::date) then
+    return new;
   end if;
-  return new;
+  raise exception 'temporary_car_owner_only' using errcode = 'P0001';
 end;
 $$;
 
@@ -13693,7 +13887,9 @@ declare
 begin
   select * into q from public.requests where id = p_request_id for update;
   if not found then raise exception 'request_not_found'; end if;
-  if q.requester_id <> auth.uid() and not public.can_manage_week(q.department_id, q.week_start) then
+  -- REQ §13.127: everyone related to the request may change who rides in it.
+  if q.requester_id <> auth.uid() and not public.request_related(q.id, auth.uid())
+     and not public.can_manage_week(q.department_id, q.week_start) then
     raise exception 'not_authorized';
   end if;
   if coalesce(cardinality(p_child_ids), 0) is distinct from (
@@ -13748,7 +13944,9 @@ declare q public.requests%rowtype;
 begin
   select * into q from public.requests where id = p_request_id for update;
   if not found then raise exception 'request_not_found' using errcode = 'P0001'; end if;
-  if q.requester_id <> (select auth.uid()) and not public.can_manage_week(q.department_id, q.week_start) then
+  -- REQ §13.127: everyone related to the request may change who rides in it.
+  if q.requester_id <> (select auth.uid()) and not public.request_related(q.id, (select auth.uid()))
+     and not public.can_manage_week(q.department_id, q.week_start) then
     raise exception 'not_authorized' using errcode = 'P0001';
   end if;
   if q.status in ('withdrawn', 'cancelled') then
@@ -14548,7 +14746,10 @@ declare
 begin
   select * into q from public.requests where id = p_request_id;
   if q.id is null or q.series_id is null then raise exception 'request_not_found' using errcode = 'P0001'; end if;
-  if q.requester_id is distinct from v_actor then raise exception 'not_authorized' using errcode = 'P0001'; end if;
+  -- REQ §13.127: everyone related to the request may shorten it.
+  if q.requester_id is distinct from v_actor and not public.request_related(p_request_id, v_actor) then
+    raise exception 'not_authorized' using errcode = 'P0001';
+  end if;
   select id into v_head from public.requests where series_id = q.series_id and series_index = 1;
   select r.car_id into v_car from public.rides r where r.series_id = q.series_id and r.status <> 'cancelled' order by r.starts_at limit 1;
   if v_car is null or p_depart_at is null or p_return_at is null then raise exception 'series_span_invalid' using errcode = 'P0001'; end if;
@@ -14732,14 +14933,30 @@ declare
   v_is_edit boolean := nullif(payload ->> 'request_id', '') is not null;
   v_prev_fallback public.request_fallback := 'none'; v_prev_depart timestamptz;
   v_unchanged boolean := false; v_neutral boolean := false;
+  -- REQ §13.127: filed for someone else; a member doing so follows the member's own flow (the requester's).
+  v_on_behalf boolean;
+  v_member_flow boolean;
+  -- REQ §13.128 (c): a private car chosen in the form (the car's owner is the filer, the requester or who filed it).
+  v_own_car uuid; v_own_turnaround int; v_own_by text;
 begin
-  if v_requester_id <> v_actor then
-    if not public.can_manage_week(v_department_id, v_week_start) then
-      raise exception 'not_authorized' using errcode = 'P0001';
-    end if;
-    v_can_manage := true;
-  else
-    v_can_manage := public.can_manage_week(v_department_id, v_week_start);
+  -- REQ §13.127: an edit without `requester_id` keeps the stored requester (the editor may be anyone related).
+  if v_request_id is not null and nullif(payload ->> 'requester_id', '') is null then
+    select requester_id into v_requester_id from public.requests where id = v_request_id;
+    v_requester_id := coalesce(v_requester_id, v_actor);
+  end if;
+  -- REQ §13.127: any approved member of the department may file for another member of it (checked below);
+  -- before, only a Sadran could.
+  v_can_manage := public.can_manage_week(v_department_id, v_week_start);
+  v_on_behalf := v_actor is not null and v_requester_id <> v_actor;
+  -- null (not false) for a session without a user, exactly like the `v_requester_id = v_actor` it replaces.
+  v_member_flow := v_requester_id = v_actor or (v_on_behalf and not v_can_manage);
+  -- REQ §13.128 (c): a private car is a preference only for its owner's requests (the owner files it, is the requester,
+  -- or filed the request being edited); anyone else's private car (e.g. a grid tap on its column) is dropped, not refused.
+  if v_preferred_car_id is not null and exists (
+       select 1 from public.cars c where c.id = v_preferred_car_id and c.type = 'temporary'
+         and c.owner_id is distinct from v_actor and c.owner_id is distinct from v_requester_id
+         and (v_request_id is null or c.owner_id is distinct from (select q.filed_by from public.requests q where q.id = v_request_id))) then
+    v_preferred_car_id := null;
   end if;
 
   select * into v_week from public.weeks where department_id = v_department_id and week_start = v_week_start;
@@ -14843,7 +15060,9 @@ begin
     if v_existing is null then
       raise exception 'request_not_found' using errcode = 'P0001';
     end if;
-    if v_existing.requester_id <> v_actor and not public.can_manage_week(v_existing.department_id, v_existing.week_start) then
+    -- REQ §13.127: everyone related to the request may edit it, not only the requester.
+    if v_existing.requester_id <> v_actor and not public.request_related(v_request_id, v_actor)
+       and not public.can_manage_week(v_existing.department_id, v_existing.week_start) then
       raise exception 'not_authorized' using errcode = 'P0001';
     end if;
     if v_existing.department_id is distinct from v_department_id or v_existing.week_start is distinct from v_week_start or v_existing.requester_id is distinct from v_requester_id then raise exception 'not_authorized'; end if;
@@ -14854,7 +15073,9 @@ begin
     -- REQ §13.101 (f): on a published/live day the requester may edit their own request; the new
     -- version is placed (or released to the waiting list after a confirmation). A closed, unpublished
     -- day keeps request_window_closed (the member contacts the Sadran).
-    v_published_edit := v_week.phase in ('published', 'live') and v_requester_id = v_actor;
+    -- REQ §13.127: so may anyone related to it (who filed it, a companion, someone on its ride, the private car's owner).
+    v_published_edit := v_week.phase in ('published', 'live')
+      and (v_requester_id = v_actor or (v_actor is not null and public.request_related(v_request_id, v_actor)));
     if v_published_edit then
       if coalesce(v_existing.return_at, v_existing.depart_at) < now() then raise exception 'request_not_editable'; end if;
     elsif not v_can_manage and (v_week.phase not in ('open','solving') or now() > v_week.close_at or now() < v_week.open_at) then raise exception 'request_window_closed'; end if;
@@ -14893,7 +15114,7 @@ begin
         notes = case when payload ? 'notes' then nullif(payload ->> 'notes', '') else notes end,
         ride_type_id = coalesce((payload ->> 'ride_type_id')::uuid, ride_type_id),
         ride_description = case when payload ? 'ride_description' then payload ->> 'ride_description' else ride_description end,
-        preferred_car_id = case when payload ? 'preferred_car_id' then nullif(payload ->> 'preferred_car_id', '')::uuid else preferred_car_id end,
+        preferred_car_id = case when payload ? 'preferred_car_id' then v_preferred_car_id else preferred_car_id end,
         fallback = public._request_fallback_from_payload(payload, fallback)
       where id = v_request_id;
       if payload ? 'fallback' or payload ? 'alternative' or v_existing.fallback <> 'none' then
@@ -15009,7 +15230,7 @@ begin
   end if;
 
   if coalesce((payload->>'reserve_missing_driver')::boolean,false) and (
-    v_request_id is not null or v_requester_id is distinct from v_actor or v_week.phase<>'live' or v_trip_shape='round_trip' or v_trip_type<>'drop_off' or v_join_ride_id is not null
+    v_request_id is not null or (v_requester_id is distinct from v_actor and not coalesce(v_member_flow, false)) or v_week.phase<>'live' or v_trip_shape='round_trip' or v_trip_type<>'drop_off' or v_join_ride_id is not null
   ) then raise exception 'invalid_quick_reservation';end if;
   if v_request_id is not null then perform public.release_request_draft_rides(v_request_id); end if;
   if v_request_id is not null and v_published_edit and coalesce((v_booking ->> 'has_booking')::boolean, false) then
@@ -15030,7 +15251,7 @@ begin
 
   perform set_config('app.audit_reason', 'submit_request', true);
 
-  perform set_config('app.reset_request_baseline',case when v_requester_id=v_actor then 'on' else 'off' end,true);
+  perform set_config('app.reset_request_baseline',case when v_member_flow then 'on' else 'off' end,true);
   if v_request_id is null then
     v_status := 'submitted';
     insert into public.requests (
@@ -15243,6 +15464,25 @@ begin
     end if;
   end if;
 
+  -- REQ §13.128 (c): a private car chosen in the form takes the round trip at once, in any week phase (never another
+  -- car instead); a busy car refuses the submit so the member can pick other times.
+  if v_preferred_car_id is not null and v_trip_type = 'round_trip' and v_series_id is null and v_join_ride_id is null
+     and coalesce((payload->>'reserve_missing_driver')::boolean, false) = false
+     and exists (select 1 from public.cars c join public.requests q on q.id = v_request_id
+                 where c.id = v_preferred_car_id and c.type = 'temporary' and c.status = 'active'
+                   and c.owner_id in (v_actor, q.requester_id, q.filed_by)) then
+    v_own_car := v_preferred_car_id;
+    if v_depart_at < now() then raise exception 'ride_in_past' using errcode = 'P0001'; end if;
+    v_own_turnaround := coalesce(public.required_turnaround_minutes(v_department_id, v_week_start), 30);
+    if exists (select 1 from public.rides r where r.car_id = v_own_car and r.status <> 'cancelled'
+               and not exists (select 1 from public.ride_requests rr where rr.ride_id = r.id and rr.request_id = v_request_id)
+               and tstzrange(r.starts_at, r.blocked_until, '[)') && tstzrange(v_depart_at, v_return_at + make_interval(mins => v_own_turnaround), '[)'))
+       or exists (select 1 from public.car_maintenance_blocks b where b.car_id = v_own_car
+               and tstzrange(b.starts_at, b.ends_at, '[)') && tstzrange(v_depart_at, v_return_at, '[)')) then
+      raise exception 'own_car_not_free' using errcode = 'P0001';
+    end if;
+  end if;
+
   -- Placement on submit (REQ §13.93/§13.94): only round_trip and an explicit one_way ("I take the
   -- car") go through try_auto_approve() once a week is published/live. Every drop_off, with or
   -- without a pickup, is two separate trips for the Sadran/solver: waitlisted in a live week.
@@ -15252,7 +15492,7 @@ begin
       jsonb_build_object('requestId',v_request_id::text),jsonb_build_object('request_id',v_request_id,'ride_id',v_auto_result->>'ride_id'),
       format('waitlisted_request:%s',v_request_id)) from public.sadranim_of(v_department_id,v_week_start) as s(profile_id)
     where coalesce(current_setting('app.late_request_notice', true), 'off') <> 'on';
-  elsif v_own_overlap and not (v_overlap_confirmed and v_requester_id = v_actor)
+  elsif v_own_overlap and not (v_overlap_confirmed and v_member_flow)
     and v_week.phase in ('published', 'live') and v_trip_type in ('round_trip', 'one_way') then
     -- REQ §13.100 (QB8): never auto-approved onto another car while the member already has a ride or
     -- request in that time; it stays for the Sadran (waitlisted in a live week, submitted otherwise).
@@ -15269,6 +15509,26 @@ begin
     where coalesce(current_setting('app.late_request_notice', true), 'off') <> 'on';
     v_auto_result := jsonb_build_object('status', case when v_week.phase = 'live' then 'waitlisted' else 'submitted' end,
       'reason', 'DUPLICATE_OVERLAP');
+  elsif v_own_car is not null then
+    -- REQ §13.128 (c): on the chosen private car (pending proposals of the request are settled like place_on_own_car).
+    perform set_config('app.audit_reason', 'own_car_from_form', true);
+    update public.proposals p set status = 'withdrawn'
+    where p.status in ('draft', 'sent')
+      and (p.request_id = v_request_id or exists (select 1 from public.proposal_parties pp where pp.proposal_id = p.id and pp.request_id = v_request_id));
+    v_edit_prev_sys := coalesce(nullif(current_setting('app.system_status_transition', true), ''), 'off');
+    perform set_config('app.system_status_transition', 'on', true);
+    v_edit_ride := public.place_request_on_car(v_request_id, v_own_car, false, v_actor, null, null, null, 'OWN_CAR');
+    perform set_config('app.system_status_transition', v_edit_prev_sys, true);
+    v_auto_result := jsonb_build_object('status', 'assigned', 'reason', 'OWN_CAR', 'ride_id', v_edit_ride, 'car_id', v_own_car);
+    select full_name into v_own_by from public.profiles where id = v_actor;
+    perform public.enqueue_notification(s.profile_id, 'outcome_changed', v_department_id, v_week_start,
+      jsonb_build_object('byName', coalesce(v_own_by, ''), 'route', coalesce(public.request_route_label(v_request_id), ''),
+        'day', public.day_date_label(v_depart_at), 'car', (select name from public.cars where id = v_own_car)),
+      jsonb_build_object('variant', 'own_car_placed', 'request_id', v_request_id, 'ride_id', v_edit_ride,
+        'url', format('/sadran/%s/%s/board', v_department_id, v_week_start)),
+      format('own_car_placed:%s:%s:%s', v_request_id, s.profile_id, clock_timestamp()))
+    from public.sadranim_of(v_department_id, v_week_start) as s(profile_id)
+    where s.profile_id is distinct from v_actor and v_week.phase in ('published', 'live');
   elsif v_series_id is not null then
     -- REQ §13.77: placement is all-or-nothing across every leg — try_auto_approve_series()
     -- is called once by submit_series_request() after the last leg exists.
@@ -15304,7 +15564,25 @@ begin
         v_waived_here := true;
       end if;
     end if;
-    v_auto_result := public.try_auto_approve(v_request_id);
+    -- REQ §13.127 (c): an edited round trip that was booked on a private car goes back on that car when it still
+    -- fits (try_auto_approve only knows shared cars); place_request_on_car checks the owner's consent.
+    if v_published_edit and v_trip_type = 'round_trip' and v_old_edit_car is not null
+       and exists (select 1 from public.cars c where c.id = v_old_edit_car and c.type = 'temporary') then
+      v_edit_prev_sys := coalesce(nullif(current_setting('app.system_status_transition', true), ''), 'off');
+      perform set_config('app.system_status_transition', 'on', true);
+      begin
+        v_edit_ride := public.place_request_on_car(v_request_id, v_old_edit_car, false, v_actor, null, null, null, 'OWN_CAR');
+      exception when others then
+        v_edit_ride := null;
+      end;
+      perform set_config('app.system_status_transition', v_edit_prev_sys, true);
+      if v_edit_ride is not null then
+        v_auto_result := jsonb_build_object('status', 'assigned', 'reason', 'OWN_CAR', 'ride_id', v_edit_ride, 'car_id', v_old_edit_car);
+      end if;
+    end if;
+    if v_auto_result is null then
+      v_auto_result := public.try_auto_approve(v_request_id);
+    end if;
     if v_waived_here and coalesce(v_auto_result ->> 'status', '') <> 'assigned' then
       update public.requests set luggage_waived_at = null, luggage_waived_by = null where id = v_request_id;
     end if;
@@ -16448,6 +16726,8 @@ begin
       or not public.is_week_public(ride_row.department_id, ride_row.week_start)
       or not (
         ride_row.driver_id is not distinct from (select auth.uid())
+        -- REQ §13.127: anyone related to the ride (who filed it, a passenger, the private car's owner).
+        or public.ride_related(ride_row.id, (select auth.uid()))
         or exists (
           select 1 from public.ride_requests rr
           join public.requests q on q.id = rr.request_id
@@ -16461,7 +16741,8 @@ begin
   where department_id = ride_row.department_id and week_start = ride_row.week_start
   for share;
   if week_phase = 'archived' then raise exception 'week_archived'; end if;
-  if ride_row.ends_at <= now() then raise exception 'ride_in_past'; end if;
+  -- REQ §13.128 (a): until the end of the ride's day.
+  if (ride_row.starts_at at time zone 'Asia/Jerusalem')::date < (now() at time zone 'Asia/Jerusalem')::date then raise exception 'ride_in_past'; end if;
   if p_expected_version is null or ride_row.version <> p_expected_version then
     perform public.raise_stale_version();
   end if;
@@ -16502,9 +16783,11 @@ CREATE OR REPLACE FUNCTION "public"."validate_preferred_car"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
+declare v_filed_by uuid := case when tg_table_name = 'requests' then (to_jsonb(new) ->> 'filed_by')::uuid end;
 begin
   if new.preferred_car_id is null then return new; end if;
-  if not exists(select 1 from public.cars c where c.id=new.preferred_car_id and c.department_id=new.department_id and c.type='shared') then
+  if not exists(select 1 from public.cars c where c.id=new.preferred_car_id and c.department_id=new.department_id
+      and (c.type='shared' or (c.type='temporary' and c.owner_id in (new.requester_id, v_filed_by)))) then
     raise exception 'invalid_preferred_car';
   end if;
   if (tg_op='INSERT' or new.preferred_car_id is distinct from old.preferred_car_id)
@@ -16916,7 +17199,10 @@ declare
 begin
   select * into v_req from public.requests where id = p_request_id for update;
   if v_req is null then raise exception 'request_not_found' using errcode = 'P0001'; end if;
-  if v_req.requester_id <> (select auth.uid()) and not public.can_manage_week(v_req.department_id, v_req.week_start) then
+  -- REQ §13.127: whoever filed the request may withdraw it too (not every related person: a passenger leaves with
+  -- "remove me" instead).
+  if v_req.requester_id <> (select auth.uid()) and v_req.filed_by is distinct from (select auth.uid())
+     and not public.can_manage_week(v_req.department_id, v_req.week_start) then
     raise exception 'not_authorized' using errcode = 'P0001';
   end if;
   if p_expected_version is null or v_req.version <> p_expected_version then perform public.raise_stale_version(); end if;
@@ -22434,6 +22720,11 @@ GRANT ALL ON FUNCTION "public"."assert_private_car_owner_only"("p_car" "uuid", "
 
 
 
+REVOKE ALL ON FUNCTION "public"."assert_private_car_request"("p_car" "uuid", "p_actor" "uuid", "p_request" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."assert_private_car_request"("p_car" "uuid", "p_actor" "uuid", "p_request" "uuid") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."assert_publication_scores"("p_department_id" "uuid", "p_week_start" "date", "p_scores" "jsonb") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."assert_publication_scores"("p_department_id" "uuid", "p_week_start" "date", "p_scores" "jsonb") TO "service_role";
 
@@ -22473,6 +22764,12 @@ GRANT ALL ON FUNCTION "public"."audit_row"() TO "service_role";
 REVOKE ALL ON FUNCTION "public"."bump_version"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."bump_version"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."bump_version"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."can_edit_request"("p_request" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."can_edit_request"("p_request" "uuid") TO "service_role";
+GRANT ALL ON FUNCTION "public"."can_edit_request"("p_request" "uuid") TO "authenticated";
 
 
 
@@ -22931,6 +23228,12 @@ GRANT ALL ON FUNCTION "public"."grant_admin"("p_profile_id" "uuid") TO "service_
 
 REVOKE ALL ON FUNCTION "public"."guard_ride_driver_schedule"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."guard_ride_driver_schedule"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."hand_over_own_ride"("p_ride_id" "uuid", "p_expected_version" integer, "p_new_driver" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."hand_over_own_ride"("p_ride_id" "uuid", "p_expected_version" integer, "p_new_driver" "uuid") TO "service_role";
+GRANT ALL ON FUNCTION "public"."hand_over_own_ride"("p_ride_id" "uuid", "p_expected_version" integer, "p_new_driver" "uuid") TO "authenticated";
 
 
 
@@ -23533,6 +23836,11 @@ GRANT ALL ON FUNCTION "public"."request_needs_large_trunk"("p_request_id" "uuid"
 
 
 
+REVOKE ALL ON FUNCTION "public"."request_related"("p_request" "uuid", "p_actor" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."request_related"("p_request" "uuid", "p_actor" "uuid") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."request_ride_change"("p_ride_id" "uuid", "p_car_id" "uuid", "p_starts_at" timestamp with time zone, "p_ends_at" timestamp with time zone, "p_expected_version" integer, "p_allow_small_trunk" boolean) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."request_ride_change"("p_ride_id" "uuid", "p_car_id" "uuid", "p_starts_at" timestamp with time zone, "p_ends_at" timestamp with time zone, "p_expected_version" integer, "p_allow_small_trunk" boolean) TO "service_role";
 GRANT ALL ON FUNCTION "public"."request_ride_change"("p_ride_id" "uuid", "p_car_id" "uuid", "p_starts_at" timestamp with time zone, "p_ends_at" timestamp with time zone, "p_expected_version" integer, "p_allow_small_trunk" boolean) TO "authenticated";
@@ -23698,6 +24006,11 @@ GRANT ALL ON FUNCTION "public"."ride_notice_request"("p_ride_id" "uuid") TO "ser
 
 REVOKE ALL ON FUNCTION "public"."ride_notice_route"("p_ride_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."ride_notice_route"("p_ride_id" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."ride_related"("p_ride" "uuid", "p_actor" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."ride_related"("p_ride" "uuid", "p_actor" "uuid") TO "service_role";
 
 
 

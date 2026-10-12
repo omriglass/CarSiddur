@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => ({
   layout: { current: "sentence" as "sentence" | "classic" },
   routeMinutes: { current: 45 as number | undefined },
   settings: { current: { chauffeur_dwell_minutes: 10 } as Record<string, unknown> },
-  members: { current: [{ id: "dana", name: "Dana" }] as { id: string; name: string }[] },
+  members: { current: [{ id: "dana", name: "Dana", doesNotDrive: false }] as { id: string; name: string; doesNotDrive?: boolean }[] },
 }));
 
 vi.mock("../hooks", () => ({
@@ -43,6 +43,7 @@ vi.mock("@/features/fleet/hooks", () => ({
   useRideTypes: () => ({ data: [{ id: "type", code: "other", name_he: "other-type" }] }),
   useCars: () => ({ data: [] }),
   useCarSeatConfigs: () => ({ data: [] }),
+  useMyTemporaryCars: () => ({ data: [] }),
   useSuggestDestinationMutation: () => ({ mutate: vi.fn() }),
 }));
 vi.mock("@/features/sadran/hooks", () => ({
@@ -254,6 +255,19 @@ describe("RequestForm sentence layout (REQ §13.110)", () => {
     fireEvent.change(screen.getByLabelText(he.requestSentence.whoGuestPlaceholder), { target: { value: "Noa" } });
     fireEvent.click(screen.getByRole("button", { name: he.requestSentence.whoGuestAdd }));
     expect(screen.getByTestId("chip-who")).toHaveTextContent(`${he.requestSentence.me}, Dana ${he.requestSentence.and}Noa`);
+  });
+
+  it("REQ §13.127: taking 'אני' out before naming anyone does not crash; naming a member files it for them", async () => {
+    show();
+    fireEvent.click(screen.getByTestId("chip-who"));
+    fireEvent.click(screen.getByTestId("who-me"));
+    expect(screen.getByTestId("chip-who")).toHaveTextContent(he.requestSentence.whoNeedMember);
+    fireEvent.click(screen.getByTestId("who-add-member"));
+    fireEvent.click(screen.getByText("Dana"));
+    expect(screen.getByTestId("chip-who")).toHaveTextContent("Dana");
+    expect(screen.getByTestId("chip-who")).not.toHaveTextContent(he.requestSentence.me);
+    // the brief "nobody named yet" moment must not have turned the round trip into a הקפצה for good
+    expect(screen.getByTestId("chip-trip")).toHaveTextContent(he.request.tripTypeRoundTrip);
   });
 });
 

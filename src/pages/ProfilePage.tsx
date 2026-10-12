@@ -3,6 +3,8 @@ import { useActiveDepartment } from "@/features/auth/useActiveDepartment";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 
+import { paths } from "@/app/routes";
+
 import { PassengerStepper } from "@/components/PassengerStepper";
 import { InstallHint } from "@/components/InstallHint";
 import { isStandalonePwa } from "@/lib/pwaPlatform";
@@ -21,6 +23,7 @@ import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useIsSadranAnywhere } from "@/features/auth/useIsSadran";
 import { useTheme, type ThemePreference } from "@/hooks/useTheme";
+import { useExperimentalFeatures } from "@/features/member/useExperimentalFeatures";
 import { useMyDepartments, useSetMyDefaultOriginMutation } from "@/features/auth/useMyDepartments";
 import { useProfile, useUpdateProfileMutation } from "@/features/auth/useProfile";
 import { usePushSubscriptionStatus } from "@/features/auth/usePushSubscriptionStatus";
@@ -54,6 +57,7 @@ export function ProfilePage() {
   const { isSadran } = useIsSadranAnywhere();
   const isAdmin = !!profileQuery.data?.is_admin;
   const { preference: themePreference, setPreference: setThemePreference } = useTheme();
+  const experimental = useExperimentalFeatures();
 
   // REQ §13.93: "נקודת יציאה קבועה" for the active department — `department_members.default_origin_id`.
   const originDestinationsQuery = useDestinations(active.departmentId);
@@ -83,6 +87,8 @@ export function ProfilePage() {
 
   const temporaryCarsQuery = useMyTemporaryCars(profileId);
   const registerCarMutation = useRegisterTemporaryCarMutation();
+  const hasCars = (temporaryCarsQuery.data ?? []).length > 0;
+  const [addingCar, setAddingCar] = useState(false);
   const [carName, setCarName] = useState("");
   const [carPlate, setCarPlate] = useState("");
   const [carSeats, setCarSeats] = useState({ adults: 4, childSeats: 0, boosters: 0 });
@@ -125,6 +131,7 @@ export function ProfilePage() {
     });
     setCarName("");
     setCarPlate("");
+    setAddingCar(false);
   }
 
   return (
@@ -307,6 +314,22 @@ export function ProfilePage() {
         </CardContent>
       </Card>
 
+      {/* Owner 2026-10-12: per-device opt-in (localStorage, no account data) for features still being tried out. */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">{he.profileExtra.experimentalTitle}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-between gap-3">
+            <div className="space-y-0.5">
+              <Label htmlFor="profile-experimental">{he.profileExtra.experimentalLabel}</Label>
+              <p className="text-xs text-muted-foreground">{he.profileExtra.experimentalHelp}</p>
+            </div>
+            <Switch id="profile-experimental" checked={experimental.enabled} onCheckedChange={experimental.setEnabled} data-testid="profile-experimental" />
+          </div>
+        </CardContent>
+      </Card>
+
       <Card>
         <CardHeader>
           <CardTitle className="text-base">{he.profileExtra.notificationsTitle}</CardTitle>
@@ -353,13 +376,25 @@ export function ProfilePage() {
           <CardTitle className="text-base">{he.profileExtra.tempCarTitle}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          {(temporaryCarsQuery.data ?? []).length === 0 ? (
+          {!hasCars ? (
             <p className="text-sm text-muted-foreground">{he.profileExtra.tempCarNone}</p>
           ) : (
             <ul className="space-y-1 text-sm">
               {(temporaryCarsQuery.data ?? []).map((car) => (
-                <li key={car.id} className="flex items-center justify-between">
-                  <span>{car.name}</span>
+                <li key={car.id} className="flex min-h-11 items-center justify-between gap-2">
+                  <Link
+                    to={paths.car(car.id)}
+                    className="flex min-h-11 flex-wrap items-center gap-1 rounded-md border px-3 py-2 hover:bg-muted"
+                    data-testid="my-private-car"
+                  >
+                    <span>{car.name}</span>
+                    {car.license_plate ? (
+                      <>
+                        <span aria-hidden>·</span>
+                        <span dir="ltr">{car.license_plate}</span>
+                      </>
+                    ) : null}
+                  </Link>
                   {car.status === "retired" ? (
                     <span className="text-xs text-muted-foreground">{he.profileExtra.tempCarRevoked}</span>
                   ) : null}
@@ -367,25 +402,32 @@ export function ProfilePage() {
               ))}
             </ul>
           )}
-          <div className="space-y-2 border-t pt-3">
-            <div className="space-y-1">
-              <Label htmlFor="temporary-car-name">{he.profileExtra.tempCarNickname}</Label>
-              <Input id="temporary-car-name" value={carName} onChange={(e) => setCarName(e.target.value)} />
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="temporary-car-plate">{he.profileExtra.tempCarPlate}</Label>
-              <Input id="temporary-car-plate" dir="ltr" value={carPlate} onChange={(e) => setCarPlate(e.target.value)} />
-            </div>
-            <Label>{he.profileExtra.tempCarSeats}</Label>
-            <PassengerStepper value={carSeats} onChange={setCarSeats} />
-            <Button
-              size="sm"
-              disabled={!active.canSubmit || !carName || !carPlate || registerCarMutation.isPending}
-              onClick={handleRegisterCar}
-            >
-              {he.action.registerTempCar}
+          {hasCars && !addingCar ? (
+            <Button size="sm" variant="outline" onClick={() => setAddingCar(true)}>
+              {he.profileExtra.tempCarAddAnother}
             </Button>
-          </div>
+          ) : null}
+          {!hasCars || addingCar ? (
+            <div className="space-y-2 border-t pt-3">
+              <div className="space-y-1">
+                <Label htmlFor="temporary-car-name">{he.profileExtra.tempCarNickname}</Label>
+                <Input id="temporary-car-name" value={carName} onChange={(e) => setCarName(e.target.value)} />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="temporary-car-plate">{he.profileExtra.tempCarPlate}</Label>
+                <Input id="temporary-car-plate" dir="ltr" value={carPlate} onChange={(e) => setCarPlate(e.target.value)} />
+              </div>
+              <Label>{he.profileExtra.tempCarSeats}</Label>
+              <PassengerStepper value={carSeats} onChange={setCarSeats} />
+              <Button
+                size="sm"
+                disabled={!active.canSubmit || !carName || !carPlate || registerCarMutation.isPending}
+                onClick={handleRegisterCar}
+              >
+                {he.action.registerTempCar}
+              </Button>
+            </div>
+          ) : null}
         </CardContent>
       </Card>
 

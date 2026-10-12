@@ -10,25 +10,29 @@ import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/PageHeader";
 import { SeriesRequestPanel } from "@/features/requests/components/SeriesRequestPanel";
 import { RequestForm } from "@/features/requests/components/RequestForm";
-import { useRequestQuery } from "@/features/requests/hooks";
+import { useCanEditRequestQuery, useRequestQuery } from "@/features/requests/hooks";
 import { he } from "@/i18n/he";
 
 /** `/requests/:id/edit` (UX_FLOWS.md §3.4 "Edit mode"). */
 export function EditRequestPage() {
   const { id } = useParams<{ id: string }>();
   const requestQuery = useRequestQuery(id);
+  // REQ §13.127 (b): the server decides who is related to the request.
+  const canEditQuery = useCanEditRequestQuery(id);
 
   const profileQuery = useProfile();
   const close = useCloseRequestOverlay();
   const overlay = !!profileQuery.data && !profileQuery.data.classic_request_form;
 
-  const body = requestQuery.isLoading ? (
+  const body = requestQuery.isLoading || canEditQuery.isLoading ? (
     <div className="space-y-3 p-4">
       <div className="h-11 animate-pulse rounded-md bg-muted" />
       <div className="h-11 animate-pulse rounded-md bg-muted" />
     </div>
-  ) : requestQuery.isError || !requestQuery.data ? (
-    <p role="alert" className="p-4">{requestQuery.isError ? he.request.submitError : he.request.notFound}</p>
+  ) : requestQuery.isError || canEditQuery.isError ? (
+    <p role="alert" className="p-4">{he.request.submitError}</p>
+  ) : !requestQuery.data || !canEditQuery.data ? (
+    <p role="alert" className="p-4">{he.request.notFound}</p>
   ) : requestQuery.data.seriesId ? (
     // A multi-day request is never edited, only shortened or cancelled (REQ §13.77).
     <SeriesRequestPanel seriesId={requestQuery.data.seriesId} />

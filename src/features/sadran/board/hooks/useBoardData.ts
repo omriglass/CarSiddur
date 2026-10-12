@@ -925,6 +925,7 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
     // REQ item 108 c/D3: the maintenance check follows SQL (admin exempt, turnaround counted after the ride only).
     turnaroundMinutes: weekSettings.turnaroundMinutes,
     isAdmin,
+    viewerId: profileData?.id,
     awayByCarId: conflictScan?.awayByCarId,
     weekStartMs,
     // REQUIREMENTS §13.93: each car's own base, already defaulted to the department home.

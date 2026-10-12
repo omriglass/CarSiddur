@@ -156,8 +156,10 @@ begin
   result:=public.submit_request(to_jsonb(q)||jsonb_build_object('request_id',q.id,'expected_version',q.version,'preferred_car_id',null));
   select * into q from public.requests where id=q.id;
   assert q.preferred_car_id is null,'explicit null did not clear preference';
-  begin perform public.submit_request(to_jsonb(q)||jsonb_build_object('request_id',q.id,'expected_version',q.version,'preferred_car_id','00000000-0000-0000-0000-000000000043'));
-    raise exception 'temporary preferred car allowed';exception when raise_exception then if sqlerrm<>'invalid_preferred_car' then raise;end if;end;
+  -- REQ §13.128 (c): someone else's private car is dropped as a preference (not refused, not kept).
+  result:=public.submit_request(to_jsonb(q)||jsonb_build_object('request_id',q.id,'expected_version',q.version,'preferred_car_id','00000000-0000-0000-0000-000000000043'));
+  select * into q from public.requests where id=q.id;
+  assert q.preferred_car_id is null,'someone else''s private car kept as a preference';
   begin
     update public.cars set status='retired' where id=car2;
     perform public.submit_request(to_jsonb(q)||jsonb_build_object('request_id',q.id,'expected_version',q.version,'preferred_car_id',car2));

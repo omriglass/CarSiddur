@@ -13,6 +13,7 @@ import {
   claimRideDriver,
   fetchCarNeighbours,
   fetchRideChanges,
+  handOverOwnRide,
   removeRidePerson,
   requestRideChange,
   respondRideChange,
@@ -70,6 +71,19 @@ export function useRemoveRidePassengerMutation() {
     mutationFn: ({ rideId, expectedVersion, key }: {
       rideId: string; expectedVersion: number; key: string; departmentId: string; weekStart: string;
     }) => removeRidePerson(rideId, expectedVersion, key),
+    onSuccess: (_data, { departmentId, weekStart }) => {
+      void invalidateWeekData(client, departmentId, weekStart);
+    },
+    onError: showErrorToast,
+  });
+}
+
+/** REQ §13.129 (b): "remove me — <name> drives". */
+export function useHandOverOwnRideMutation() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ rideId, expectedVersion, newDriver }: { rideId: string; expectedVersion: number; newDriver: string; departmentId: string; weekStart: string }) =>
+      handOverOwnRide(rideId, expectedVersion, newDriver),
     onSuccess: (_data, { departmentId, weekStart }) => {
       void invalidateWeekData(client, departmentId, weekStart);
     },

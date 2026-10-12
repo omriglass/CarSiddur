@@ -348,3 +348,8 @@ describe("keep car at destination (REQ §13.126 g)", () => {
     expect(toSubmitRequestPayload(baseValues({ keepCarAtDestination: true }), { isSeries: true })).not.toHaveProperty("keep_car_at_destination");
   });
 });
+
+it("sends requester_id only when filing for another member (REQ §13.127 a)", () => {
+  expect(toSubmitRequestPayload(baseValues()).requester_id).toBeUndefined();
+  expect(toSubmitRequestPayload(baseValues(), { requesterId: "member-1" }).requester_id).toBe("member-1");
+});

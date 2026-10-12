@@ -30,6 +30,11 @@ export async function claimRideDriver(rideId: string, expectedVersion: number): 
   await rpc("claim_ride_driver", { p_ride_id: rideId, p_expected_version: expectedVersion });
 }
 
+/** REQ §13.129 (b): the driver hands their own ride to a driving companion/added passenger and leaves it. */
+export async function handOverOwnRide(rideId: string, expectedVersion: number, newDriver: string): Promise<void> {
+  await rpc("hand_over_own_ride", { p_ride_id: rideId, p_expected_version: expectedVersion, p_new_driver: newDriver });
+}
+
 /** Public ride information only; does not modify scheduling, passengers or consent. */
 export async function updateRidePublicNotes(rideId: string, expectedVersion: number, notes: string | null): Promise<void> {
   await rpc("update_ride_public_notes", { p_ride_id: rideId, p_expected_version: expectedVersion, p_notes: notes ?? "" });

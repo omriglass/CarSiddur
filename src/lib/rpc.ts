@@ -39,6 +39,8 @@ export type ErrorCode =
   | "car_now_week_not_live"
   | "series_edit_not_supported"
   | "series_car_unavailable"
+  | "handover_not_possible"
+  | "handover_driver_invalid"
   | "tires_none_checked"
   | "maintenance_period_invalid"
   | "maintenance_in_past"
@@ -328,6 +330,8 @@ const MESSAGE_TO_CODE: Record<string, ErrorCode> = {
   car_now_week_not_live: "car_now_week_not_live",
   series_edit_not_supported: "series_edit_not_supported",
   series_car_unavailable: "series_car_unavailable",
+  handover_not_possible: "handover_not_possible",
+  handover_driver_invalid: "handover_driver_invalid",
   tires_none_checked: "tires_none_checked",
   push_unsupported: "push_unsupported",
   push_permission_denied: "push_permission_denied",
@@ -459,6 +463,8 @@ const CODE_TO_MESSAGE: Record<ErrorCode, string> = {
   car_now_week_not_live: he.errors.carNowWeekNotLive,
   series_edit_not_supported: he.errors.seriesEditNotSupported,
   series_car_unavailable: he.errors.seriesCarUnavailable,
+  handover_not_possible: he.errors.handoverNotPossible,
+  handover_driver_invalid: he.errors.handoverDriverInvalid,
   tires_none_checked: he.errors.tiresNoneChecked,
   maintenance_period_invalid: he.maintenancePeriod.errors.invalid,
   maintenance_in_past: he.maintenancePeriod.errors.inPast,

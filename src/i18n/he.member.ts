@@ -72,6 +72,7 @@ export const heMember = {
     preferredCar: "רכב מועדף (לא חובה)",
     noPreferredCar: "ללא העדפה",
     preferredCarHelper: "ננסה לשבץ את הרכב שבחרת. אם לא יתאפשר, אפשר לשבץ רכב אחר.",
+    myPrivateCar: "{{name}} (הרכב הפרטי שלי)",
     preferredCarUnavailable: "הרכב שנבחר אינו זמין — בחרו רכב אחר או ללא העדפה",
     rideTypeRequired: "יש לבחור סוג נסיעה",
     destinationRequired: "יש לבחור או להזין יעד",
@@ -86,6 +87,13 @@ export const heMember = {
     overlapCancelOther: "בטל/י את הקודמת והגש/י",
     overlapKeepBoth: "השאר/י את שתיהן",
     overlapBack: "חזרה",
+    /** REQ §13.127 (d): "my rides" row lines for a request filed by / for someone else. */
+    filedBy: "הוגשה ע״י {{name}}",
+    filedFor: "הוגשה עבור {{name}}",
+    /** REQ §13.127 (a): confirmation before a ride is filed for someone else (everyone, Sadranim included). */
+    onBehalfTitle: "הנסיעה תיווצר בשם {{name}}",
+    onBehalfBody: "הנסיעה תופיע אצל {{name}} ב״הנסיעות שלי״ והוא/היא יוכל/תוכל לערוך אותה.",
+    onBehalfConfirm: "יצירת הנסיעה",
     /** The overlap dialog names the other request ("חיפה · ד׳ 13.10 07:30–12:00"); a multi-day one cannot be cancelled from here. */
     overlapOther: "הבקשה החופפת: {{name}}",
     overlapSeriesBody: "הבקשה החופפת היא חלק מבקשה רב-יומית ({{count}} ימים), ואי אפשר לבטל אותה מכאן. אפשר להשאיר את שתיהן או לחזור לעריכה.",
@@ -262,6 +270,19 @@ export const heMember = {
     suggestionNote: "זו רק הצעה, עוד לא הוגשה בקשה.",
     zoomLabel: "הגדלה והקטנה",
   },
+  /** Owner 2026-10-12, EXPERIMENTAL: the member's Google calendar drawn faintly behind the "my rides" week view. */
+  calendar: {
+    menuItem: "היומן שלי (ניסיוני)",
+    title: "היומן שלי ב-Google",
+    description: "האירועים שלך יופיעו בעמעום מאחורי הנסיעות, לפי היומנים שתבחר/י.",
+    connect: "התחברות ליומן Google",
+    reconnect: "הצגת היומן שלי",
+    disconnect: "ניתוק היומן",
+    close: "סגירה",
+    loadFailed: "לא הצלחנו לטעון את רשימת היומנים",
+    connectFailed: "החיבור ליומן Google לא הצליח",
+    privacy: "היומן נקרא רק בדפדפן הזה ולא נשמר אצלנו. בחירת היומנים נשמרת במכשיר הזה.",
+  },
   siddur: {
     /** Owner 2026-10-11: the hatched band while a car stands away from its base (after a one-way) — taken only from there. */
     awayBand: "הרכב ב{{place}} — פנוי רק למי שיוצא/ת משם",
@@ -302,6 +323,14 @@ export const heMember = {
     arrivesFromCarMove: "הרכב מועבר אליך ב-{{time}}, ממש לפני הנסיעה שלך",
   },
   rideDetail: {
+    removeMe: "הסר אותי",
+    removeMeConfirmTitle: "להסיר אותך מהנסיעה?",
+    /** REQ §13.129 (a): the private car's owner moves the ride onto their own car. */
+    moveToMyCar: "העבר לרכב שלי",
+    moveToCar: "העבר ל{{car}}",
+    /** REQ §13.129 (b): the driver leaves the ride, a companion/added passenger who drives takes over. */
+    handOverOption: "להסיר אותי — {{name}} ינהג/תנהג",
+    cancelForAll: "ביטול הנסיעה לכולם",
     title: "פרטי הנסיעה",
     driver: "נהג/ת",
     chauffeur: "הסעה · מסיע/ה",
@@ -450,6 +479,7 @@ export const heMember = {
     tempCarPlate: "מספר רישוי",
     tempCarSeats: "תצורת מושבים",
     tempCarActiveUntil: "פעיל עד",
+    tempCarAddAnother: "+ רכב נוסף",
     tempCarNone: "עדיין לא נרשם רכב פרטי.",
     tempCarRevoked: "הוצא משימוש על ידי המנהל/ת",
     /** REQ §88 (owner 2026-09-15): a member marks themselves as never driving; the solver
@@ -468,6 +498,10 @@ export const heMember = {
     themeLight: "בהיר",
     themeDark: "כהה",
     themeSystem: "לפי המכשיר",
+    /** Owner 2026-10-12: per-device opt-in for features still being tried out (today: the Google calendar on "my rides"). */
+    experimentalTitle: "ניסיוני",
+    experimentalLabel: "אפשר תכונות ניסיוניות",
+    experimentalHelp: "תכונות חדשות שעוד בבדיקה, במכשיר הזה בלבד. כרגע: הצגת יומן Google בתצוגת השבוע של ״הנסיעות שלי״.",
     /** Version footer label (docs/RUNBOOK_ROLLBACK.md); the release tag/short commit itself is rendered separately, `dir="ltr"`. */
     version: "גרסה",
   },
@@ -739,6 +773,10 @@ export const heMember = {
     whoChildMany: "{{n}} ילדים",
     whoAddGuest: "+ אורח/ת",
     whoMemberSearch: "חיפוש חבר/ה או ילד/ה",
+    /** REQ §13.127 (a): "אני" taken out — a department member must be named. */
+    whoNeedMember: "יש לבחור לפחות חבר/ה אחד/ת מהמחלקה",
+    /** The "אני" chip toggle's accessible hint. */
+    whoMeToggle: "אני נוסע/ת ברכב",
     whoGuestPlaceholder: "שם האורח/ת",
     whoGuestAdd: "הוספה",
     whoNoMembers: "לא נמצאו חברים",

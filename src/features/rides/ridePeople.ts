@@ -122,3 +122,14 @@ export function canRemoveRidePerson(
 ): boolean {
   return person.removable && options.canManagePeople && !options.rideCancelled;
 }
+
+/**
+ * The `key` of the viewer's own non-driver row on the ride (REQ §13.128 "הסר אותי"), or `null` when
+ * the viewer is not on the ride or is its driver (the driver cancels the ride instead).
+ */
+export function myRidePersonKey(ride: Pick<BoardRide, "people" | "driver_id">, profileId: string | null | undefined): string | null {
+  if (!profileId || ride.driver_id === profileId) return null;
+  const people = peopleOf(ride);
+  if (people.some((person) => person.person_id === profileId && person.source === "driver")) return null;
+  return people.find((person) => person.person_id === profileId && person.source !== "driver")?.key ?? null;
+}

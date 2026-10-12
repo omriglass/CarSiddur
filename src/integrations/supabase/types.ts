@@ -4730,6 +4730,10 @@ export type Database = {
         Args: { p_actor: string; p_car: string; p_requester: string }
         Returns: undefined
       }
+      assert_private_car_request: {
+        Args: { p_actor: string; p_car: string; p_request: string }
+        Returns: undefined
+      }
       assert_publication_scores: {
         Args: { p_department_id: string; p_scores: Json; p_week_start: string }
         Returns: undefined
@@ -4744,6 +4748,7 @@ export type Database = {
         Args: { p_end: string; p_start: string }
         Returns: undefined
       }
+      can_edit_request: { Args: { p_request: string }; Returns: boolean }
       can_manage_any_open_week: {
         Args: { p_department_id: string }
         Returns: boolean
@@ -5051,6 +5056,14 @@ export type Database = {
       gen_salt: { Args: { type: string }; Returns: string }
       generate_token: { Args: never; Returns: string }
       grant_admin: { Args: { p_profile_id: string }; Returns: undefined }
+      hand_over_own_ride: {
+        Args: {
+          p_expected_version: number
+          p_new_driver: string
+          p_ride_id: string
+        }
+        Returns: Json
+      }
       haversine_km: {
         Args: { lat1: number; lat2: number; lng1: number; lng2: number }
         Returns: number
@@ -5503,6 +5516,10 @@ export type Database = {
         Args: { p_request_id: string }
         Returns: boolean
       }
+      request_related: {
+        Args: { p_actor: string; p_request: string }
+        Returns: boolean
+      }
       request_ride_change: {
         Args: {
           p_allow_small_trunk?: boolean
@@ -5585,6 +5602,10 @@ export type Database = {
       ride_notice_destination: { Args: { p_ride_id: string }; Returns: string }
       ride_notice_request: { Args: { p_ride_id: string }; Returns: string }
       ride_notice_route: { Args: { p_ride_id: string }; Returns: string }
+      ride_related: {
+        Args: { p_actor: string; p_ride: string }
+        Returns: boolean
+      }
       ride_route: {
         Args: { p_ride_id: string }
         Returns: {

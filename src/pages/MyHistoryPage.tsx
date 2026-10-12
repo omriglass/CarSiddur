@@ -5,6 +5,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { formatWeekRangeLabel } from "@/components/dateFieldDates";
 import { CardListSkeleton } from "@/components/skeletons/CardListSkeleton";
 import { useActiveDepartment } from "@/features/auth/useActiveDepartment";
+import { useSession } from "@/features/auth/useSession";
 import { RequestRow } from "@/features/requests/components/RequestRow";
 import { useMyRequests } from "@/features/requests/hooks";
 import { groupByWeek, toDisplayRows } from "@/features/requests/myRequestsRows";
@@ -19,6 +20,7 @@ import { he } from "@/i18n/he";
  */
 export function MyHistoryPage() {
   const requestsQuery = useMyRequests();
+  const viewerId = useSession().session?.user.id;
   // REQ §13.93: `departments.home_destination_id` per department, for `RequestRow`'s "מ<origin>
   // ל<destination>" display.
   const active = useActiveDepartment();
@@ -53,7 +55,7 @@ export function MyHistoryPage() {
               {formatWeekRangeLabel(weekStart)}
             </h2>
             <div className="space-y-2">
-              {rows.map((row) => <RequestRow key={row.id} row={row} homeDestinationId={homeDestinationIds[departmentId]} readOnly />)}
+              {rows.map((row) => <RequestRow key={row.id} row={row} homeDestinationId={homeDestinationIds[departmentId]} viewerId={viewerId} readOnly />)}
             </div>
           </section>
         ))

@@ -375,7 +375,8 @@ export function CarForm({
           )}
         />
 
-        {canEditSeatConfigs ? (
+        {/* The editor takes `initial` once: wait for the stored configs, or it starts empty and a save could drop them. */}
+        {canEditSeatConfigs && (!car?.id || seatConfigsQuery.isSuccess) ? (
           <div className="border-t pt-4">
             <SeatConfigEditor
               key={car?.id ?? "new"}

@@ -45,6 +45,7 @@ vi.mock("@/features/fleet/hooks", () => ({
   useRideTypes: () => ({ data: [{ id: "type", code: "other", name_he: "other-type" }] }),
   useCars: () => ({ data: [] }),
   useCarSeatConfigs: () => ({ data: [] }),
+  useMyTemporaryCars: () => ({ data: [] }),
   useSuggestDestinationMutation: () => ({ mutate: vi.fn() }),
 }));
 vi.mock("@/features/sadran/hooks", () => ({

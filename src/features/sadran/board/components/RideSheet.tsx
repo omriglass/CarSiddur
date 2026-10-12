@@ -304,7 +304,7 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
               </div>
 
               {isPlanning ? <p className="text-destructive">{he.boardCoordination.planning}</p> : ride.id && ride.version != null && ride.status !== "cancelled" && ride.ends_at && Date.parse(ride.ends_at) > nowMs && departmentId && weekStart ? (
-                <RidePublicNotesEditor key={`${ride.id}:${ride.version}`} rideId={ride.id} expectedVersion={ride.version} initialNotes={ride.notes} departmentId={departmentId} weekStart={weekStart} />
+                <RidePublicNotesEditor key={`${ride.id}:${ride.version}:notes`} rideId={ride.id} expectedVersion={ride.version} initialNotes={ride.notes} departmentId={departmentId} weekStart={weekStart} />
               ) : ride.notes ? <p className="whitespace-pre-wrap break-words">{ride.notes}</p> : null}
 
               {/* F3 (20260914120000_ride_passengers.sql): editing named people on an

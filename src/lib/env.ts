@@ -12,6 +12,8 @@ const envSchema = z.object({
   VITE_SUPABASE_ANON_KEY: z.string().min(1),
   VITE_VAPID_PUBLIC_KEY: z.string().min(1),
   VITE_APP_URL: z.string().url(),
+  /** Google OAuth Web client id for the experimental calendar (public; docs/FREE_DEPLOYMENT.md §5). Absent/empty = the feature stays hidden. */
+  VITE_GOOGLE_CLIENT_ID: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

@@ -216,10 +216,10 @@ grid (item 2) — `hideIdleTemporaryCars()` is unit-tested in `weekGridCars.test
 
 **REQ**: §13.42, §13.56, §13.80, §13.92, §13.108.
 
-### my-week — My rides week view (`/my?view=week`), profile default, calendar groundwork
+### my-week — My rides week view (`/my?view=week`), profile default, experimental Google calendar
 
 **Paths**: `src/features/requests/myWeek/**` (`assignLanes`, `dayColumns`, `myWeekItems`, `MyWeekView`,
-`MyWeekSwitcher`, `MyWeekItemSheet`), `src/features/calendar/**` (not connected yet),
+`MyWeekSwitcher`, `MyWeekItemSheet`), `src/features/calendar/**` (experimental Google calendar), `src/features/member/useExperimentalFeatures.ts`, `public/_headers`,
 `src/pages/HomePage.tsx`, `src/pages/MyArchivePage.tsx`, `src/pages/ProfilePage.tsx`, `components/TemplateSuggestions.tsx`
 (`TemplateSuggestionActions`), `src/features/proposals/useOpenProposal.ts`; `src/i18n/he.member.ts`;
 migration `*my_rides_week_view*`; `supabase/tests/request_anchors.sql` (TEST 8).
@@ -239,10 +239,16 @@ migration `*my_rides_week_view*`; `supabase/tests/request_anchors.sql` (TEST 8).
    On `/my/archive` (week switcher -> ארכיון) nothing happens and only rides show.
 5. Profile -> "תצוגת שבוע ב״הנסיעות שלי״" on: `/my` opens as the week view; "רשימה" on `/my` only
    changes this visit.
+6. (Build with `VITE_GOOGLE_CLIENT_ID`.) Profile -> "אפשר תכונות ניסיוניות" off: no calendar item in the
+   eye menu. On: eye menu -> "היומן שלי (ניסיוני)" -> connect -> Google popup (unverified-app notice) ->
+   the primary calendar is ticked and its timed events show faintly behind the week; untick / tick
+   another calendar updates the grid. Reload: "הצגת היומן שלי" appears, one tap brings the same
+   calendars back. "ניתוק היומן": the events disappear and the picks are forgotten. Nothing on `/my/archive`.
 
 **Coverage gap**: no Playwright spec yet for the week view (hand-off to `e2e-tester`); test ids:
 `my-display-menu-trigger`, `my-view-list`, `my-view-week`, `my-week-view`, `my-week-grid`, `my-week-switcher`,
-`my-week-option-this|next|past`, `my-week-hint`; blocks carry `data-ride-id` and `data-kind`.
+`my-week-option-this|next|past`, `my-week-hint`, `profile-experimental`, `my-calendar-item`, `calendar-dialog`,
+`calendar-connect`, `calendar-disconnect`, `calendar-reconnect`; blocks carry `data-ride-id` and `data-kind`.
 
 **REQ**: §5.5, §13.91 (the lead adds the week-view item, owner request 2026-10-11 — add it here).
 
@@ -261,7 +267,7 @@ display, REQ §13.93, step O6); `src/features/rides/components/RideRoute.tsx`, `
 
 **Automated**:
 - Vitest: `npx vitest run src/features/sadran/board src/features/sadran/applySolve.test.ts src/features/sadran/unmetStatuses.test.ts src/features/sadran/deviations src/features/sadran/export src/lib/rideRoute.test.ts src/lib/weekSettings.test.ts`
-- SQL: `plan_switch.sql` (REQ §13.126 h: the Sadran's plan A ⇄ plan B switch — published day: notice, placement, plan A refused without a car; unpublished: silent), `keep_car_at_destination.sql` (REQ §13.126 g: a keep-car two-way הקפצה lands on one car, connected, and a trip from the destination takes the waiting car; refused on other trips / for non-drivers), `qa_run12_package_a.sql` (REQ §13.120: freed-offer failsafe, merge leg/window refusal + person-overlap warning, named publication conflicts, driverless publish gate; e2e `publish-driverless-conflicts.spec.ts`), `p4_live_changes.sql` (REQ §13.118: a member cancelling a chauffeur ride frees its car; replace a volunteer driver), `todo_board_semantics.sql`, `coordinator_planning.sql`, `solve_semantics.sql`, `car_chain_healing.sql`, `day_car_swap.sql`, `origins_chain.sql`, `qa_run1_proposals.sql`, `qa_run1_cancel_waitlist.sql` (QA run 1 fixes: proposals/merges/chain, cancellation/waiting list/status), `placement_features.sql` (REQ §13.101: luggage needs a large trunk, set_ride_driver, duplicate withdraw/restore, own-car placement, published-day edit, freed car to the contested group), `week_settings_source.sql` (REQ §13.108 a/b: week turnaround override, 60-minute unknown travel), `luggage_waiver.sql` (REQ §13.111 a: every manual placement path refuses with `needs_large_trunk` without `allow_small_trunk` and waives with it; merge_preview waivable verdict; waived request moves/merges/swaps later; automatic paths stay strict; editing luggage clears the waiver); Vitest `src/lib/smallTrunk.test.ts`, `src/lib/luggageWaiver.test.ts`
+- SQL: `on_behalf_requests.sql` (REQ §13.127–§13.129: an owner moves any ride onto the private car; a driver hands the ride to a driving companion; a member files for another member; the private car chosen in the form takes the ride; a ride that started today is still moved/noted; the filer, companions and people on the ride edit, an unrelated member is refused; withdraw = requester/filer; the owner puts a request they filed on their private car, the borrower drives and adds passengers, a published-day edit keeps the private car), `plan_switch.sql` (REQ §13.126 h: the Sadran's plan A ⇄ plan B switch — published day: notice, placement, plan A refused without a car; unpublished: silent), `keep_car_at_destination.sql` (REQ §13.126 g: a keep-car two-way הקפצה lands on one car, connected, and a trip from the destination takes the waiting car; refused on other trips / for non-drivers), `qa_run12_package_a.sql` (REQ §13.120: freed-offer failsafe, merge leg/window refusal + person-overlap warning, named publication conflicts, driverless publish gate; e2e `publish-driverless-conflicts.spec.ts`), `p4_live_changes.sql` (REQ §13.118: a member cancelling a chauffeur ride frees its car; replace a volunteer driver), `todo_board_semantics.sql`, `coordinator_planning.sql`, `solve_semantics.sql`, `car_chain_healing.sql`, `day_car_swap.sql`, `origins_chain.sql`, `qa_run1_proposals.sql`, `qa_run1_cancel_waitlist.sql` (QA run 1 fixes: proposals/merges/chain, cancellation/waiting list/status), `placement_features.sql` (REQ §13.101: luggage needs a large trunk, set_ride_driver, duplicate withdraw/restore, own-car placement, published-day edit, freed car to the contested group), `week_settings_source.sql` (REQ §13.108 a/b: week turnaround override, 60-minute unknown travel), `luggage_waiver.sql` (REQ §13.111 a: every manual placement path refuses with `needs_large_trunk` without `allow_small_trunk` and waives with it; merge_preview waivable verdict; waived request moves/merges/swaps later; automatic paths stay strict; editing luggage clears the waiver); Vitest `src/lib/smallTrunk.test.ts`, `src/lib/luggageWaiver.test.ts`
 - Playwright: `npx playwright test --grep "@board"`
 
 **QA script**:

@@ -47,6 +47,8 @@ interface RequestRowProps {
    * passed is read-only (REQ §13 item 91).
    */
   readOnly?: boolean;
+  /** The signed-in member: tells a request filed for someone else (REQ §13.127 d) from the member's own. */
+  viewerId?: string;
   onWithdraw?: (row: DisplayRow) => void;
   onCancelRide?: (row: DisplayRow) => void;
   /** REQ §13.103 c: "קיצור הבקשה" on a multi-day request. */
@@ -93,6 +95,7 @@ export function RequestRow({
   rowRef,
   homeDestinationId,
   readOnly,
+  viewerId,
   onWithdraw,
   onCancelRide,
   onShorten,
@@ -107,6 +110,16 @@ export function RequestRow({
 }: RequestRowProps) {
   // R11U2: every other person on the request — member companions, named children, guests, then the unnamed counts.
   const others = whoText([...(row.companionNames ?? []), ...(row.childNames ?? []), ...(row.guestNames ?? [])], row.extraAdults ?? 0, row.unnamedChildren ?? 0);
+  // REQ §13.127 (d): who filed it / who it is for. Repeating, duplicate restore, freed-slot opt-out and
+  // cancelling the ride stay with the requester (the server refuses them for the filer).
+  const filedByOther = !!viewerId && !!row.filedById && !!row.requesterId && row.filedById !== row.requesterId;
+  const iAmRequester = !!viewerId && row.requesterId === viewerId;
+  const notRequester = !!viewerId && !!row.requesterId && row.requesterId !== viewerId;
+  const filedLine = filedByOther && iAmRequester && row.filerName
+    ? tv("request.filedBy", { name: row.filerName })
+    : filedByOther && row.filedById === viewerId && notRequester && row.requesterName
+      ? tv("request.filedFor", { name: row.requesterName })
+      : null;
   return (
     <div
       ref={rowRef}
@@ -146,6 +159,7 @@ export function RequestRow({
       ) : row.tripType !== "round_trip" ? <p className="text-xs text-muted-foreground">{TRIP_TYPE_LABEL[row.tripType]}</p> : null}
       {row.hasLuggage ? <Badge variant="outline" className="w-fit" data-testid={row.luggageWaived ? "luggage-waived" : undefined}>{row.luggageWaived ? he.smallTrunk.waivedLabel : he.request.luggageChip}</Badge> : null}
       {row.preferredCarName ? <p className="text-xs text-muted-foreground">{he.request.preferredCar}: {row.preferredCarName}</p> : null}
+      {filedLine ? <p className="text-xs text-muted-foreground" data-testid="request-filed-line"><bdi>{filedLine}</bdi></p> : null}
       {others ? (
         <p className="text-xs text-muted-foreground" data-testid="request-other-people">{tv("ridePublicDetails.companions", { names: others })}</p>
       ) : null}
@@ -162,7 +176,7 @@ export function RequestRow({
       {knownStatusReason(row.statusReason) ? (
         <p className="text-xs text-muted-foreground">{knownStatusReason(row.statusReason)}</p>
       ) : null}
-      {!readOnly && !row.servedByAlternative && FREED_SLOT_ELIGIBLE_STATUSES.has(row.status) && onOptOutChange ? (
+      {!readOnly && !notRequester && !row.servedByAlternative && FREED_SLOT_ELIGIBLE_STATUSES.has(row.status) && onOptOutChange ? (
         <label className="flex items-center gap-2 text-xs text-muted-foreground">
           <input
             type="checkbox"
@@ -191,7 +205,7 @@ export function RequestRow({
               <RequestLink to={paths.requests.edit(row.id)}>{he.requestsList.edit}</RequestLink>
             </Button>
           ) : null}
-          {isDuplicateWithdrawn(row) && onRestoreDuplicate ? (
+          {isDuplicateWithdrawn(row) && onRestoreDuplicate && !notRequester ? (
             <Button size="sm" variant="outline" disabled={actionPending} onClick={() => onRestoreDuplicate(row)}>
               {he.request.notDuplicate}
             </Button>
@@ -213,12 +227,12 @@ export function RequestRow({
               {he.request.shortenSeries}
             </Button>
           ) : null}
-          {row.ride && row.ride.status !== "cancelled" && onCancelRide ? (
+          {row.ride && row.ride.status !== "cancelled" && onCancelRide && !notRequester ? (
             <Button size="sm" variant="outline" onClick={() => onCancelRide(row)}>
               {he.requestsList.cancelRide}
             </Button>
           ) : null}
-          {canMakeRepeating(row) && onMakeRepeating ? (
+          {canMakeRepeating(row) && onMakeRepeating && !notRequester ? (
             <Button size="sm" variant="outline" disabled={makeRepeatingPending} onClick={() => onMakeRepeating(row)}>
               {he.request.makeRepeating}
             </Button>

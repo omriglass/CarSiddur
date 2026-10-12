@@ -80,6 +80,11 @@ export interface MyRequestAlternative extends StoredAlternative {
 }
 
 export interface MyRequestRow {
+  /** REQ §13.127 (d): who the ride is for and who filed it (a request filed for someone else), with names. */
+  requesterId?: string;
+  filedById?: string | null;
+  requesterName?: string | null;
+  filerName?: string | null;
   preferredCarId?: string | null;
   preferredCarName?: string | null;
   hasPublishedRide?: boolean;
@@ -154,7 +159,8 @@ export interface MyRequestRow {
 }
 
 const SELECT = `
-  id, department_id, week_start, status, status_reason, is_late, changed_since_solve,
+  id, requester_id, filed_by, requester:profiles!requests_requester_id_fkey(full_name), filer:profiles!requests_filed_by_fkey(full_name),
+  department_id, week_start, status, status_reason, is_late, changed_since_solve,
   depart_at, return_at, trip_shape, needs_car_at_destination, destination_id, destination_text, version, ride_type_id,
   origin_id, origin_text, trip_type, keep_car_at_destination, depart_anchor, arrive_by, return_anchor, leave_dest_at,
   freed_slot_opt_out, has_luggage, luggage_waived_at, preferred_car_id, template_id, series_id, series_index, series_count,
@@ -215,6 +221,10 @@ function mapAlternative(raw: RawAlternative | RawAlternative[] | null | undefine
 }
 
 interface RawRequestRow {
+  requester_id?: string;
+  filed_by?: string | null;
+  requester?: { full_name: string | null } | null;
+  filer?: { full_name: string | null } | null;
   preferred_car_id: string | null;
   preferred_car: { name: string } | null;
   window: RequestWindow | null;
@@ -347,6 +357,10 @@ function mapRow(row: RawRequestRow, profileId?: string): MyRequestRow {
   const { pending: pendingProposal, answeredWaiting } = splitMemberProposals(row.proposals, profileId);
 
   return {
+    requesterId: row.requester_id,
+    filedById: row.filed_by ?? null,
+    requesterName: row.requester?.full_name ?? null,
+    filerName: row.filer?.full_name ?? null,
     preferredCarId: row.preferred_car_id,
     preferredCarName: row.preferred_car?.name ?? null,
     window: row.window,
@@ -433,6 +447,10 @@ function mapRow(row: RawRequestRow, profileId?: string): MyRequestRow {
 }
 
 export interface RequestEditRow {
+  /** REQ §13.127: the person the ride is for (not always the caller) and who filed it. */
+  requesterId: string;
+  requesterName: string | null;
+  filedById: string | null;
   preferredCarId?: string | null;
   preferredCarName?: string | null;
   window?: RequestWindow | null;
@@ -492,7 +510,8 @@ export interface RequestEditRow {
 }
 
 const EDIT_SELECT = `
-  id, department_id, week_start, status, version, destination_id, destination_text, ride_type_id,
+  id, requester_id, filed_by, requester:profiles!requests_requester_id_fkey(full_name),
+  department_id, week_start, status, version, destination_id, destination_text, ride_type_id,
   trip_shape, depart_at, return_at, kept_return_at, one_way_car_mode, needs_car_at_destination,
   origin_id, origin_text, trip_type, keep_car_at_destination, depart_anchor, arrive_by, return_anchor, leave_dest_at, duration_locked,
   fallback, served_by_alternative, plan_b_parent_id,
@@ -507,12 +526,18 @@ const EDIT_SELECT = `
   ride_requests(ride:rides(status))
 `;
 
-/** Explicit owner filter: published-request RLS also permits reading other members' requests. */
-export async function fetchRequestById(requestId: string, profileId: string): Promise<RequestEditRow | null> {
-  const { data, error } = await supabase.from("requests").select(EDIT_SELECT).eq("id", requestId).eq("requester_id", profileId).maybeSingle();
+/**
+ * REQ §13.127 (b): no owner filter any more — published-request RLS also lets anyone read other members' requests,
+ * so the edit page gates on `canEditRequest()` (the server's `request_related()` rule) before it opens the form.
+ */
+export async function fetchRequestById(requestId: string): Promise<RequestEditRow | null> {
+  const { data, error } = await supabase.from("requests").select(EDIT_SELECT).eq("id", requestId).maybeSingle();
   if (error) throw toAppError(error);
   if (!data) return null;
   const row = data as unknown as {
+    requester_id: string;
+    filed_by: string | null;
+    requester: { full_name: string | null } | null;
     preferred_car_id: string | null;
     preferred_car: { name: string } | null;
     window: RequestWindow | null;
@@ -572,6 +597,9 @@ export async function fetchRequestById(requestId: string, profileId: string): Pr
     .sort((a, b) => a.position - b.position)
     .map((s) => (s.place_id ? { presetId: s.place_id, name: s.place?.name ?? "" } : { freeText: s.place_text ?? "" }));
   return {
+    requesterId: row.requester_id,
+    requesterName: row.requester?.full_name ?? null,
+    filedById: row.filed_by,
     preferredCarId: row.preferred_car_id,
     preferredCarName: row.preferred_car?.name ?? null,
     window: row.window,
@@ -631,7 +659,8 @@ function isDuplicateWithdrawn(row: { status: string; status_reason: string | nul
 }
 
 export async function fetchMyRequests(profileId: string, departmentId?: string): Promise<MyRequestRow[]> {
-  let query = supabase.from("requests").select(SELECT).eq("requester_id", profileId);
+  // REQ §13.127 (d): the requests I filed for others are listed besides my own.
+  let query = supabase.from("requests").select(SELECT).or(`requester_id.eq.${profileId},filed_by.eq.${profileId}`);
   if (departmentId) query = query.eq("department_id", departmentId);
   const { data, error } = await query.order("depart_at", { ascending: true, nullsFirst: false });
   if (error) throw toAppError(error);
@@ -642,6 +671,11 @@ export async function fetchMyRequests(profileId: string, departmentId?: string):
     .filter((row) => !row.plan_b_parent_id)
     .filter((row) => !["withdrawn", "cancelled"].includes(row.status) || isDuplicateWithdrawn(row))
     .map((row) => mapRow(row, profileId));
+}
+
+/** REQ §13.127 (b): may the caller edit this request (requester, filer, companion, anyone on its ride, private-car owner, Sadran). */
+export async function canEditRequest(requestId: string): Promise<boolean> {
+  return rpc("can_edit_request", { p_request: requestId });
 }
 
 export interface SubmitRequestPayload {
@@ -713,6 +747,7 @@ export interface SubmitRequestPayload {
   request_id?: string;
   expected_version?: number;
   join_ride_id?: string;
+  /** REQ §13.127 (a): file for another department member (new requests only; the server keeps the stored requester on edit). */
   requester_id?: string;
   /**
    * Optional shared-car preference from the normal form or quick request (UX_FLOWS.md §21).

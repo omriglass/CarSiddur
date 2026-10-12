@@ -28,4 +28,8 @@ describe("private car rule (QB20)", () => {
     expect(privateCarBlocks(ctx, "priv", "owner")).toBe(false);
     expect(privateCarBlocks(ctx, "pub", "u")).toBe(false);
   });
+  it("privateCarBlocks: the viewer who owns the car may place anyone (REQ §13.129)", () => {
+    expect(privateCarBlocks({ cars, viewerId: "owner" } as never, "priv", "u")).toBe(false);
+    expect(privateCarBlocks({ cars, viewerId: "someone" } as never, "priv", "u")).toBe(true);
+  });
 });

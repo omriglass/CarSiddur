@@ -32,6 +32,7 @@ vi.mock("@/features/fleet/hooks", () => ({
   useRideTypes: () => ({ data: [{ id: "type", code: "other", name_he: "אחר" }] }),
   useCars: () => ({ data: [] }),
   useCarSeatConfigs: () => ({ data: [] }),
+  useMyTemporaryCars: () => ({ data: [] }),
   useSuggestDestinationMutation: () => ({ mutate: vi.fn() }),
 }));
 vi.mock("@/features/sadran/hooks", () => ({ useDepartmentSettings: () => ({ data: { chauffeur_dwell_minutes: 10 } }), useWeekRow: () => ({ data: { settings_overrides: {} } }) }));

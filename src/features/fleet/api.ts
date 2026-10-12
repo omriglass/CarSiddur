@@ -112,6 +112,7 @@ export async function registerTemporaryCar(input: {
     .insert({
       department_id: input.departmentId,
       owner_id: input.ownerId,
+      responsible_id: input.ownerId,
       name: input.name,
       license_plate: input.licensePlate,
       type: "temporary",

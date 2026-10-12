@@ -2,7 +2,7 @@ import { useMaintenanceGridEditing } from "@/features/fleet/useMaintenanceGridEd
 import { paths } from "@/app/routes";
 import { formatInTimeZone } from "date-fns-tz";
 import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Navigate, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
 import { formatWeekRangeLabel } from "@/components/dateFieldDates";
@@ -38,6 +38,8 @@ import { he, tv } from "@/i18n/he";
 import { askSmallTrunk } from "@/lib/smallTrunk";
 import { formatDayDate } from "@/lib/dayLabels";
 import { TZ, dateKey, formatTime } from "@/lib/time";
+import { useWeeks } from "@/features/siddur/hooks";
+import { isPastWeek } from "@/lib/pastWeek";
 import { ridePublicDetails } from "@/lib/ridePublicDetails";
 import { ridePassengerSummary } from "@/lib/ridePassengerSummary";
 import { rideCoordinatorNotes } from "@/lib/rideCoordinatorNotes";
@@ -76,6 +78,10 @@ interface BoardScreenProps {
 /** `/sadran/:dept/:week/board` — the board (UX_FLOWS.md §4.2). */
 export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
   const navigate = useNavigate();
+  // REQ §13.128: past/archived weeks never open on the board — they are read-only in the siddur.
+  const weeksQuery = useWeeks(departmentId);
+  const thisWeekRow = (weeksQuery.data ?? []).find((week) => week.week_start === weekStart);
+  const weekIsPast = !!thisWeekRow && isPastWeek(thisWeekRow, dateKey(new Date()));
 
   const boardRef = useRef<HTMLDivElement>(null);
   const [conflictJump, setConflictJump] = useState<{ rideId: string; sequence: number } | null>(null);
@@ -203,6 +209,10 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
   }
   const mergeHostDriverEntry = mergeHost ? (servedOf(mergeHost).find((entry) => entry.role === "driver") ?? servedOf(mergeHost)[0]) : undefined;
   const mergeHostRequest = mergeHostDriverEntry ? board.boardRequests.find((request) => request.id === mergeHostDriverEntry.request_id) : undefined;
+
+  if (weekIsPast) {
+    return <Navigate to={paths.siddur({ dept: departmentId, week: weekStart })} replace />;
+  }
 
   if (board.requestsQuery.isError || board.ridesQuery.isError) {
     return <ErrorState onRetry={() => board.ridesQuery.refetch()} />;
@@ -634,6 +644,14 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
           dnd.setSeriesMoveConfirm(null);
           if (confirmed) void confirmed.run();
         }}
+      />
+      <ConfirmDialog
+        open={!!dnd.ownCarAsk}
+        onOpenChange={(open) => { if (!open) dnd.answerOwnCarAsk(false); }}
+        title={tv("rideEditing.ownCarMoveTitle", { name: dnd.ownCarAsk?.name ?? "" })}
+        description={tv("rideEditing.ownCarMoveBody", { name: dnd.ownCarAsk?.name ?? "", car: dnd.ownCarAsk?.carName ?? "" })}
+        confirmLabel={he.rideEditing.ownCarMoveConfirm}
+        onConfirm={() => dnd.answerOwnCarAsk(true)}
       />
       <ConfirmDialog
         open={!!dnd.invalidDropConfirm}

@@ -38,9 +38,10 @@ export const CAR_SWAP_BLOCKER_CODES = ["seats", "maintenance", "private_car", "n
 export type CarSwapBlockerCode = (typeof CAR_SWAP_BLOCKER_CODES)[number];
 export const carSwapBlockerSchema = z.object({
   code: z.enum(CAR_SWAP_BLOCKER_CODES),
-  ride_id: z.string().nullable(),
-  car_id: z.string().nullable(),
-  detail: z.string().nullable(),
+  // `not_allowed` / `past` blockers carry only `detail`; `private_car` has no ride — absent keys are fine.
+  ride_id: z.string().nullish(),
+  car_id: z.string().nullish(),
+  detail: z.string().nullish(),
   /** REQ §13.111 (a): a luggage blocker the Sadran may accept (`swap_day_cars` with `allow_small_trunk`). */
   waivable: z.boolean().optional(),
   request_ids: z.array(z.string()).optional(),

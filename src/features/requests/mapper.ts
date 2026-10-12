@@ -60,6 +60,8 @@ export function toInstant(day: string, time: string, nextDay: boolean): string {
 export interface SubmitPayloadOptions {
   requestId?: string;
   expectedVersion?: number;
+  /** REQ §13.127 (a): file for this department member (new requests only). */
+  requesterId?: string;
   joinRideId?: string;
   /** Parsed non-member passengers (`guestPassengerNames()`, `../quickRequest.ts`). */
   guestPassengerNames?: string[];
@@ -207,6 +209,7 @@ export function toSubmitRequestPayload(
     guest_passenger_names: options.guestPassengerNames?.length ? options.guestPassengerNames : undefined,
     reserve_missing_driver: options.reserveMissingDriver || undefined,
     request_id: options.requestId,
+    requester_id: options.requesterId,
     expected_version: options.expectedVersion,
     join_ride_id: options.joinRideId,
     // REQ §13.93 "Multi-stop rides": always sent (even `[]`) so an edit can clear a

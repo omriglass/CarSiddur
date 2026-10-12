@@ -92,7 +92,13 @@ export interface SentenceFieldsProps {
   rideTypes: { id: string; name_he: string; code?: string | null }[];
   preferredCars: { id: string; name: string }[];
   initialPreferredCarName: string | null | undefined;
-  members: { id: string; name: string }[];
+  members: { id: string; name: string; doesNotDrive?: boolean }[];
+  /**
+   * REQ §13.127 (a): a new weekly request may leave "אני" out (it is filed for the first named member). In edit mode of
+   * a request whose requester is someone else, `requesterName` is shown as the first, locked chip instead of "אני".
+   */
+  allowOnBehalf?: boolean;
+  requesterName?: string | null;
   childOptions: { id: string; name: string; age: number | null; isPriority?: boolean }[];
   tripShape: RequestFormValues["tripShape"];
   tripType: RequestFormValues["tripType"];
@@ -168,7 +174,7 @@ function Seg({ prefix, suffix, loose, spaced, children }: { prefix?: string; suf
 
 export function SentenceFields(props: SentenceFieldsProps) {
   const {
-    form, variant, weekStart, departmentId, day, errors, destinations, rideTypes, preferredCars, initialPreferredCarName, members, childOptions,
+    form, variant, weekStart, departmentId, day, errors, destinations, rideTypes, preferredCars, initialPreferredCarName, members, allowOnBehalf, requesterName, childOptions,
     tripShape, tripType, dropOffPickup, canDrive, seeksDriver, isQuickContext, showReturnDayPicker,
     returnAnotherDay, setReturnAnotherDay, isMultiDay, multiDaySpan, routeMinutes, rush, recentDestinations, recentCompanionIds, stage, onStageChange,
     invalidSignal, quickContext, quickWindow, notices, onChildAdded, mode, guide,
@@ -259,8 +265,9 @@ export function SentenceFields(props: SentenceFieldsProps) {
   const companionIds = (values.companions ?? []) as string[];
   const childIds = (values.children ?? []) as string[];
   const guests = guestPassengerNames(values.guestNames ?? "");
+  const includeMe = values.includeMe !== false;
   const travellers = [
-    he.requestSentence.me,
+    ...(includeMe ? [requesterName ?? he.requestSentence.me] : []),
     ...companionIds.map((id) => memberName.get(id)).filter((name): name is string => !!name),
     ...childIds.map((id) => childName.get(id)).filter((name): name is string => !!name),
     ...guests,
@@ -439,7 +446,7 @@ export function SentenceFields(props: SentenceFieldsProps) {
   const whoChip = (
     <>
       <SentenceChip field="companions" invalid={invalid("companions", "children", "guestNames")} onClick={() => setSheet("who")} data-testid="chip-who">
-        <span className="truncate">{whoLabel}</span>
+        <span className="truncate">{whoLabel || he.requestSentence.whoNeedMember}</span>
       </SentenceChip>
       <span>{needsVerb}</span>
     </>
@@ -686,6 +693,9 @@ export function SentenceFields(props: SentenceFieldsProps) {
         <WhoSheet
           form={form}
           members={members}
+          includeMe={includeMe}
+          allowOnBehalf={!!allowOnBehalf}
+          requesterName={requesterName}
           childOptions={childOptions}
           recentCompanionIds={recentCompanionIds}
           companions={companionIds}
@@ -695,6 +705,7 @@ export function SentenceFields(props: SentenceFieldsProps) {
           unnamedChildSeats={unnamedChildSeats}
           boosters={unnamedBoosters}
           guestNamesError={errors.guestNames?.message}
+          companionsError={errors.companions?.message}
           onChildAdded={mode === "new" ? onChildAdded : undefined}
         />
       </FieldSheet>

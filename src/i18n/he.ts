@@ -263,6 +263,10 @@ export const he = {
   rideEditing: {
     edit: "שינוי הרכב והשעות",
     saved: "הנסיעה עודכנה",
+    /** REQ §13.129 (a): a private car's owner moves someone's ride onto their own car — verification notice. */
+    ownCarMoveTitle: "להעביר את הנסיעה של {{name}} לרכב שלך?",
+    ownCarMoveBody: "{{name}} ינהג/תנהג ברכב {{car}}. כל מי שבנסיעה יקבל/תקבל הודעה.",
+    ownCarMoveConfirm: "העברה לרכב שלי",
     collisionTitle: "כבר קיימת נסיעה בזמן הזה",
     collisionBody: "אפשר לבקש מהנהגים/ות לפנות את הזמן. הנסיעה הקיימת תישאר בתוקף עד שכולם יאשרו את הביטול. השינוי שלך יופיע בהמתנה לאישור.",
     acknowledge: "אני מודע/ת — שליחת בקשה",
@@ -734,6 +738,8 @@ export const he = {
     seriesEditNotSupported: "בקשה רב-יומית אפשר לבטל ולהגיש מחדש, לא לערוך",
     tiresNoneChecked: "סמנו לפחות צמיג אחד לפני השמירה",
     seriesCarUnavailable: "הרכב לא פנוי לכל ימי הבקשה הרב-יומית",
+    handoverNotPossible: "אי אפשר להעביר את הנסיעה הזו לנהג/ת אחר/ת",
+    handoverDriverInvalid: "האדם שנבחר אינו יכול לנהוג בנסיעה הזו",
     rideDriverNotAssignable: "אי אפשר לשנות את הנהג/ת של הנסיעה הזו",
     driverNotMember: "הנהג/ת שנבחר/ה אינו/ה חבר/ה במחלקה",
     luggageCapacityViolation: "לרכב אין תא מטען גדול לציוד של הבקשה הזו",

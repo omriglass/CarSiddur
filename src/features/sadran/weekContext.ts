@@ -5,6 +5,8 @@ import { fetchCanManageWeek } from "@/features/auth/api";
 import { useMyDepartments } from "@/features/auth/useMyDepartments";
 import { useSession } from "@/features/auth/useSession";
 import { fetchWeeks } from "@/features/siddur/api";
+import { isPastWeek } from "@/lib/pastWeek";
+import { dateKey } from "@/lib/time";
 
 import { sadranKeys } from "./keys";
 
@@ -35,7 +37,7 @@ export function useDefaultSadranWeek() {
       for (const departmentId of departmentIds) {
         const weeks = await fetchWeeks(departmentId);
         const candidates = weeks
-          .filter((w) => w.phase in PHASE_PRIORITY)
+          .filter((w) => w.phase in PHASE_PRIORITY && !isPastWeek(w, dateKey(new Date())))
           .sort((a, b) => (PHASE_PRIORITY[a.phase] ?? 99) - (PHASE_PRIORITY[b.phase] ?? 99));
         for (const week of candidates) {
           const allowed = await fetchCanManageWeek(departmentId, week.week_start);

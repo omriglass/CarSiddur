@@ -11,10 +11,12 @@ import { useMyDepartments } from "@/features/auth/useMyDepartments";
 import { useSession } from "@/features/auth/useSession";
 import { sadranKeys } from "@/features/sadran/keys";
 import { fetchWeeks } from "@/features/siddur/api";
+import { isPastWeek } from "@/lib/pastWeek";
 import { useWeeks } from "@/features/siddur/hooks";
 import { siddurKeys } from "@/features/siddur/queryKeys";
 import { he } from "@/i18n/he";
 import { showErrorToast } from "@/lib/rpc";
+import { dateKey } from "@/lib/time";
 
 const PHASE_PRIORITY: Record<string, number> = { open: 0, solving: 1, published: 2, live: 3, archived: 4 };
 
@@ -46,7 +48,9 @@ export function useBoardWeekSwitcher(departmentId: string, weekStart: string) {
   const availableWeeksQuery = useQuery({
     queryKey: sadranKeys.switchableWeeks(departmentId, profileId, (weeksQuery.data ?? []).map((week) => week.week_start)),
     queryFn: async () => {
-      const weeks = weeksQuery.data ?? [];
+      // REQ §13.128: past/archived weeks never show on the board (they live in the read-only siddur archive).
+      const today = dateKey(new Date());
+      const weeks = (weeksQuery.data ?? []).filter((week) => !isPastWeek(week, today));
       const allowed = await Promise.all(weeks.map((week) => canManage(departmentId, week.week_start)));
       return weeks.filter((_, index) => allowed[index]);
     },
@@ -65,7 +69,8 @@ export function useBoardWeekSwitcher(departmentId: string, weekStart: string) {
       const weeks = await queryClient.fetchQuery({
         queryKey: siddurKeys.weeks(nextDepartment), queryFn: () => fetchWeeks(nextDepartment), staleTime: 60_000,
       });
-      const candidates = [...weeks].sort((a, b) =>
+      const today = dateKey(new Date());
+      const candidates = weeks.filter((week) => !isPastWeek(week, today)).sort((a, b) =>
         Number(b.week_start === weekStart) - Number(a.week_start === weekStart)
         || (PHASE_PRIORITY[a.phase] ?? 99) - (PHASE_PRIORITY[b.phase] ?? 99)
         || a.week_start.localeCompare(b.week_start));

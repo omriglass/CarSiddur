@@ -3,10 +3,10 @@ import { createContext } from "react";
 import type { CalendarSource } from "./types";
 
 export interface CalendarContextValue {
-  /** `null` until a later version connects one. */
+  /** `null` until the member connects one (experimental; `useGoogleCalendar`). */
   source: CalendarSource | null;
   setSource: (source: CalendarSource | null) => void;
-  /** The calendars the member picked to show. */
+  /** The calendars the member picked to show; remembered on this device (`selectedCalendars.ts`). */
   selectedCalendarIds: readonly string[];
   setSelectedCalendarIds: (ids: readonly string[]) => void;
 }

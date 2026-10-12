@@ -77,6 +77,22 @@ describe("RequestRow", () => {
     expect(onCancelRide).toHaveBeenCalledTimes(1);
   });
 
+  it("tells the requester who filed the ride, and the filer who it was filed for (REQ §13.127 d)", () => {
+    const row = request({ requesterId: "me", filedById: "other", filerName: "Dana", requesterName: "Me" });
+    const first = show(row, { viewerId: "me" });
+    expect(screen.getByTestId("request-filed-line")).toHaveTextContent(/Dana/);
+    first.unmount();
+    show(request({ requesterId: "them", filedById: "me", filerName: "Me", requesterName: "Yossi" }), { viewerId: "me", onMakeRepeating: vi.fn(), onCancelRide: vi.fn() });
+    expect(screen.getByTestId("request-filed-line")).toHaveTextContent(/Yossi/);
+    expect(screen.queryByRole("button", { name: he.request.makeRepeating })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: he.requestsList.edit })).toBeInTheDocument();
+  });
+
+  it("shows no filed line on the member's own request", () => {
+    show(request({ requesterId: "me", filedById: "me" }), { viewerId: "me" });
+    expect(screen.queryByTestId("request-filed-line")).not.toBeInTheDocument();
+  });
+
   it("hides make-repeating and edit for a multi-day series card", () => {
     const [display] = toDisplayRows([
       request({ id: "leg-1", seriesId: "series-1", seriesIndex: 1, seriesCount: 2, status: "submitted", templateId: null }),

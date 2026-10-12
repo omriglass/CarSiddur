@@ -1,4 +1,5 @@
-import { useMemo } from "react";
+import { CalendarDays } from "lucide-react";
+import { useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
 import { useRequestLinkProps } from "@/app/overlayState";
@@ -6,12 +7,15 @@ import { paths } from "@/app/routes";
 import { todayInJerusalem } from "@/components/dateFieldDates";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ErrorState } from "@/components/ErrorState";
+import { Button } from "@/components/ui/button";
 import { formatMinutes, MAX_MINUTES } from "@/components/timeField15Format";
 import { WeekGrid, type WeekGridCar } from "@/components/WeekGrid";
 import { useCars } from "@/features/fleet/hooks";
 import { useDepartmentSettings } from "@/features/sadran/hooks";
 import { parseTimeToMinutes } from "@/features/solverBridge/buildSolverInput";
+import { CalendarDialog } from "@/features/calendar/CalendarDialog";
 import { useCalendarAmbientBlocks } from "@/features/calendar/useCalendarAmbientBlocks";
+import { useGoogleCalendar } from "@/features/calendar/useGoogleCalendar";
 import { useMemberRideMoves } from "@/features/rides/useMemberRideMoves";
 import { useBoardRides } from "@/features/siddur/hooks";
 import { pastWeeks, isPastWeek } from "@/features/siddur/pastWeeks";
@@ -84,10 +88,13 @@ export function MyWeekView({ departmentId, homeDestinationId, profileId, request
   const carsQuery = useCars(departmentId);
   const settingsQuery = useDepartmentSettings(departmentId);
   const suggestionsQuery = useTemplateSuggestionsQuery();
-  const ambientBlocks = useCalendarAmbientBlocks(weekStart);
+  // Experimental (owner 2026-10-12): the member's Google calendar behind the week, current weeks only.
+  const calendar = useGoogleCalendar();
+  const [calendarOpen, setCalendarOpen] = useState(false);
+  const ambientBlocks = useCalendarAmbientBlocks(calendar.available && !archive ? weekStart : undefined);
   // Owner 2026-10-11: my own rides drag / resize here exactly as on the siddur (one shared implementation) — within the
   // ride's own day and car, since the columns here are days.
-  const rideMoves = useMemberRideMoves({ departmentId, weekStart, week, profileId, isMember: canSubmit && !isPast, now: new Date() });
+  const rideMoves = useMemberRideMoves({ departmentId, weekStart, week, profileId, myRequestIds: new Set(requests.map((request) => request.id)), isMember: canSubmit && !isPast, now: new Date() });
 
   const dayKeys = useMemo(() => weekDayKeys(weekStart), [weekStart]);
   const boardStartMinutes = settingsQuery.data?.board_start_time ? parseTimeToMinutes(settingsQuery.data.board_start_time) : 6 * 60;
@@ -140,9 +147,14 @@ export function MyWeekView({ departmentId, homeDestinationId, profileId, request
     <div className="space-y-3" data-testid="my-week-view" data-week-start={weekStart}>
       <div className="flex items-center justify-between gap-2">
         <MyWeekSwitcher weeks={weeks} activeWeekStart={weekStart} onSelect={selectWeek} onArchive={archive ? undefined : () => navigate(paths.myArchive())} />
-        {onViewChange && !archive ? <MyWeekDisplayMenu view="week" onViewChange={onViewChange} zoom={tableZoom} onZoomChange={setTableZoom} /> : null}
+        {onViewChange && !archive ? <MyWeekDisplayMenu view="week" onViewChange={onViewChange} zoom={tableZoom} onZoomChange={setTableZoom} onCalendar={calendar.available ? () => setCalendarOpen(true) : undefined} /> : null}
       </div>
       <p className="text-xs text-muted-foreground" data-testid="my-week-hint">{isPast ? he.myWeek.hintReadOnly : acceptsRequests ? he.myWeek.hint : null}</p>
+      {calendar.needsReconnect && !archive ? (
+        <Button type="button" variant="outline" size="sm" onClick={() => void calendar.connect()} disabled={calendar.connecting} data-testid="calendar-reconnect">
+          <CalendarDays className="me-2 size-4" aria-hidden="true" />{he.calendar.reconnect}
+        </Button>
+      ) : null}
       <div data-testid="my-week-grid">
         <WeekGrid
           cars={dayColumns}
@@ -179,6 +191,7 @@ export function MyWeekView({ departmentId, homeDestinationId, profileId, request
         />
       </div>
       <ConfirmDialog {...rideMoves.collisionDialog} />
+      {calendar.available ? <CalendarDialog open={calendarOpen} onOpenChange={setCalendarOpen} /> : null}
     </div>
   );
 }

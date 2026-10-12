@@ -65,6 +65,8 @@ export interface BoardDropContext {
    * `rides_before_write`, REQ item 108 c). Everyone else is refused.
    */
   isAdmin?: boolean;
+  /** The signed-in profile: the owner of a private car may place anything on their own car (REQ §13.129). */
+  viewerId?: string;
   /**
    * Per car, windows where the car is away from its base (REQUIREMENTS §13.93;
    * `board/geometry.ts`'s `scanBoardConflicts` — same data the grid's "away" band draws).
@@ -113,13 +115,15 @@ export function carLocationAt(ctx: BoardDropContext, carId: string, atIso: strin
  * `carId` is a temporary car and `requesterId` is not its owner - the Sadran may not drop or
  * merge that request onto it (ask-to-join goes to the owner instead).
  */
-export function privateCarBlocks(ctx: Pick<BoardDropContext, "cars">, carId: string, requesterId: string | null | undefined): boolean {
+export function privateCarBlocks(ctx: Pick<BoardDropContext, "cars" | "viewerId">, carId: string, requesterId: string | null | undefined): boolean {
   const car = ctx.cars.find((c) => c.id === carId);
+  // REQ §13.129 (a): the viewer owns this private car - they may place anyone's request/ride on it (after a confirmation).
+  if (car?.type === "temporary" && !!ctx.viewerId && car.owner_id === ctx.viewerId) return false;
   return !!car && car.type === "temporary" && (!requesterId || car.owner_id !== requesterId);
 }
 
 /** Same rule for a ride moved to another car: its driver must be the car's owner. */
-export function privateCarBlocksRide(ctx: Pick<BoardDropContext, "cars">, ride: Pick<BoardRide, "car_id" | "driver_id">, carId: string): boolean {
+export function privateCarBlocksRide(ctx: Pick<BoardDropContext, "cars" | "viewerId">, ride: Pick<BoardRide, "car_id" | "driver_id">, carId: string): boolean {
   return ride.car_id !== carId && privateCarBlocks(ctx, carId, ride.driver_id);
 }
 

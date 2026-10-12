@@ -1,7 +1,7 @@
-// Calendar groundwork (owner 2026-10-11) — NOT connected yet. Later versions will let a member show their own Google
-// calendars faintly behind the "my rides" week view. Everything here is browser-only: a `CalendarSource` reads the
-// events in the member's browser, nothing is stored on the server, and no token is ever persisted (see
-// `CalendarContext.tsx`). No provider (Google or otherwise) exists in this change.
+// The member's own calendars, drawn faintly behind the "my rides" week view (groundwork owner 2026-10-11; Google
+// connected 2026-10-12 as an EXPERIMENTAL feature, behind the profile's "allow experimental features" switch).
+// Everything here is browser-only: a `CalendarSource` reads the events in the member's browser, nothing is stored on
+// the server, and no token is ever persisted (see `CalendarContext.tsx`). Provider: `googleSource.ts`.
 
 export interface CalendarInfo {
   id: string;
@@ -26,4 +26,6 @@ export interface CalendarEvent {
 export interface CalendarSource {
   listCalendars(): Promise<CalendarInfo[]>;
   listEvents(calendarIds: readonly string[], fromIso: string, toIso: string): Promise<CalendarEvent[]>;
+  /** Revokes the access the member granted (Google: the token). Optional; dropping the source is always enough locally. */
+  disconnect?(): void;
 }

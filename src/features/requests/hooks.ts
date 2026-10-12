@@ -16,6 +16,7 @@ import { dateKey, weekStartFor } from "@/lib/time";
 import type { CarFreeWindow } from "@/features/siddur/freeWindows";
 
 import {
+  canEditRequest,
   cancelRide,
   claimFreedSlot,
   placeOnOwnCar,
@@ -213,8 +214,17 @@ export function useRequestQuery(requestId: string | undefined) {
   const profileId = session?.user.id;
   return useQuery({
     queryKey: [...requestsKeys.byId(requestId), profileId],
-    queryFn: () => fetchRequestById(requestId as string, profileId as string),
+    queryFn: () => fetchRequestById(requestId as string),
     enabled: !!requestId && !!profileId,
+  });
+}
+
+/** REQ §13.127 (b): the server's `can_edit_request()` — the edit page opens the form only on `true`. */
+export function useCanEditRequestQuery(requestId: string | undefined) {
+  return useQuery({
+    queryKey: [...requestsKeys.byId(requestId), "can-edit"],
+    queryFn: () => canEditRequest(requestId as string),
+    enabled: !!requestId,
   });
 }
 

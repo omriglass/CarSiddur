@@ -1032,3 +1032,9 @@ Held up: per-day autofill incl. series, publish picker (unsolved days not pre-ti
 
 ## Plan B and "אסתדר" (REQ §13.112 a/b, 2026-10-08)
 - **Built** (migrations `20261019100000`–`101100`, solver `alternative.ts`, board/publish/composer/`/p/:token`, sentence-form line, `/my`, `plan_b.sql`, API section `planb`). Not built / for the owner: flexibility on plan B times, plan B in repeating-request templates, an admin UI to undo an applied plan B (`_restore_original_main(request)` exists in SQL only), the owner marking the production drop points (`/admin/destinations` → "נקודת הקפצה").
+
+## Next version — known gaps (owner 2026-10-12)
+
+- **Editing a ride of today through the request form.** REQ §13.128 (a) keeps today's rides editable from the ride sheet / grid (times, passengers, notes, remove me) until the day ends; the request form still stops when the ride starts. An edit in the form may move the request to another car, and re-placing a trip whose start is already in the past touches the placement functions (`try_auto_approve`, `place_request_on_car`, the release-and-re-place probe in `submit_request`) — too risky for the pilot. Handle with the past-ride lock (lock from the day after the ride): allow form edits of today's rides that keep the car, and decide what a destination / trip-type change of a ride under way means.
+
+- **Driver leaving a ride with passengers — the rest of the agreed spec.** REQ §13.129 (b) covers a driver handing their own ride (only their own request on it, no series) to a companion / added passenger who drives (`hand_over_own_ride`). Still next version: a merged ride carrying other members' requests ("cancel for all" vs "remove me, X drives" with X picked from the other requests' people), and handing over to a non-driver (the ride becomes a chauffeur ride needing a driver); the Sadran can remove the driver the same way.

@@ -382,10 +382,12 @@
     },
     {
       "id": "my-week",
-      "title": "My rides — week view (/my?view=week), profile default, calendar groundwork",
+      "title": "My rides — week view (/my?view=week), profile default, experimental Google calendar",
       "paths": [
         "src/features/requests/myWeek/**",
         "src/features/calendar/**",
+        "src/features/member/useExperimentalFeatures.ts",
+        "public/_headers",
         "src/pages/HomePage.tsx",
         "src/pages/MyArchivePage.tsx",
         "src/pages/ProfilePage.tsx",
@@ -402,6 +404,7 @@
         "src/features/requests/myWeek/dayColumns.test.ts",
         "src/features/requests/myWeek/myWeekItems.test.ts",
         "src/features/calendar/ambientBlocks.test.ts",
+        "src/features/calendar/googleSource.test.ts",
         "src/features/requests/myWeek/MyWeekView.test.tsx",
         "src/features/requests/myWeek/MyWeekView.drag.test.tsx"
       ],
@@ -534,7 +537,8 @@
         "p4_live_changes.sql",
         "qa_run12_package_a.sql",
         "keep_car_at_destination.sql",
-        "plan_switch.sql"
+        "plan_switch.sql",
+        "on_behalf_requests.sql"
       ],
       "playwrightTags": [
         "@board"

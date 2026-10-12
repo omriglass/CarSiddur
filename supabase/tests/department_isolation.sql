@@ -389,6 +389,11 @@ declare
     -- REQ §13.94: per-ride route JSON read inside `v_board_rides` (security_invoker view; rows already
     -- filtered by rides_select, the function re-checks visibility and returns [] otherwise).
     'ride_route_json:read-helper',
+    -- REQ §13.127: "may I open this request in the edit form" for the caller only (request_related / can_manage_week of the
+    -- request's own week); returns a boolean, writes nothing.
+    'can_edit_request:self-only',
+    -- REQ §13.129 (b): refused unless the caller drives the ride (so it is the caller's own department's ride).
+    'hand_over_own_ride:inspected',
     'claim_freed_slot:self-only', 'register_push_subscription:self-only', 'send_test_notification:self-only',
     'resume_request_template:self-only', 'save_request_template:self-only',
     'snooze_request_template:self-only', 'stop_request_template:self-only',
