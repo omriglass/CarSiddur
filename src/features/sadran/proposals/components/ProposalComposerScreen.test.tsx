@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 
@@ -25,6 +25,7 @@ vi.mock("@/features/auth/useActiveDepartment", () => ({
 vi.mock("@/features/siddur/api", () => ({ fetchBoardRideById: vi.fn() }));
 
 const createMutateAsync = vi.fn().mockResolvedValue("draft-1");
+const sendMutateAsync = vi.fn().mockResolvedValue({ party_tokens: {} });
 
 vi.mock("../../hooks", async () => {
   const actual = await vi.importActual<typeof import("../../hooks")>("../../hooks");
@@ -54,7 +55,9 @@ vi.mock("../../hooks", async () => {
     useProposalParties: () => ({ data: [] }),
     useProfilesByIds: () => ({ data: [{ id: "member-1", full_name: "יוסי", phone: null }] }),
     useCreateProposalMutation: () => ({ mutateAsync: createMutateAsync, isPending: false }),
-    useSendProposalMutation: () => ({ mutateAsync: vi.fn().mockResolvedValue({ party_tokens: {} }), isPending: false }),
+    useSendProposalMutation: () => ({ mutateAsync: sendMutateAsync, isPending: false }),
+    // No car conflicts — without this the real hook hit the network after the test ended (flaky unhandled rejection).
+    useProposalCarConflictsMutation: () => ({ mutateAsync: vi.fn().mockResolvedValue([]), isPending: false }),
     useRecordAnswerOnBehalfMutation: () => ({ mutate: vi.fn() }),
     useApplyProposalMutation: () => ({ mutate: vi.fn(), isPending: false }),
   };
@@ -95,7 +98,7 @@ describe("ProposalComposerScreen — origin type", () => {
     expect(textarea.value.replace("{{link}}", "")).not.toMatch(/\{\{\w+\}\}/);
   });
 
-  it("sends the prefilled { origin_id, car_id } payload unchanged on propose", () => {
+  it("sends the prefilled { origin_id, car_id } payload unchanged on propose", async () => {
     renderComposer();
     fireEvent.click(screen.getByRole("button", { name: t("action.propose") }));
     expect(createMutateAsync).toHaveBeenCalledWith(expect.objectContaining({
@@ -104,6 +107,8 @@ describe("ProposalComposerScreen — origin type", () => {
       type: "origin",
       payload: { origin_id: "dest-haifa", car_id: "car-1" },
     }));
+    // Let the whole create → conflicts → send chain settle inside the test.
+    await waitFor(() => expect(sendMutateAsync).toHaveBeenCalledWith(expect.objectContaining({ proposalId: "draft-1" })));
   });
 
   it("labels the type selector with the origin proposal's Hebrew name", () => {
