@@ -8,6 +8,7 @@ import { env } from "@/lib/env";
 
 import { googleIdentityIfLoaded, loadGoogleIdentity, requestCalendarToken } from "./googleIdentity";
 import { createGoogleCalendarSource } from "./googleSource";
+import { SAMPLE_CALENDAR_IDS, createSampleCalendarSource } from "./sampleSource";
 import { useCalendar } from "./useCalendar";
 
 /**
@@ -19,18 +20,22 @@ import { useCalendar } from "./useCalendar";
 export function useGoogleCalendar() {
   const { enabled } = useExperimentalFeatures();
   const clientId = env.VITE_GOOGLE_CLIENT_ID;
-  const available = enabled && !!clientId;
+  const googleAvailable = enabled && !!clientId;
+  // Dev builds can also use the fake sample calendar (`sampleSource.ts`), so the view is testable without a client id;
+  // `import.meta.env.DEV` is false in production builds, which therefore never offer it.
+  const sampleAvailable = enabled && import.meta.env.DEV;
+  const available = googleAvailable || sampleAvailable;
   const { source, setSource, selectedCalendarIds, setSelectedCalendarIds } = useCalendar();
   // Only a hint for Google's account picker, so read without requiring a provider (unit tests render without one).
   const session = useContext(SessionContext)?.session ?? null;
   const [connecting, setConnecting] = useState(false);
 
   useEffect(() => {
-    if (available) loadGoogleIdentity().catch(() => {});
-  }, [available]);
+    if (googleAvailable) loadGoogleIdentity().catch(() => {});
+  }, [googleAvailable]);
 
   async function connect(): Promise<void> {
-    if (!available || !clientId || connecting) return;
+    if (!googleAvailable || !clientId || connecting) return;
     setConnecting(true);
     try {
       const oauth2 = googleIdentityIfLoaded() ?? (await loadGoogleIdentity());
@@ -50,6 +55,13 @@ export function useGoogleCalendar() {
     }
   }
 
+  /** Dev only: swap in the sample calendar and tick its three calendars. */
+  function connectSample() {
+    if (!sampleAvailable) return;
+    setSource(createSampleCalendarSource());
+    setSelectedCalendarIds([...SAMPLE_CALENDAR_IDS]);
+  }
+
   function disconnect() {
     source?.disconnect?.();
     setSource(null);
@@ -58,11 +70,14 @@ export function useGoogleCalendar() {
 
   return {
     available,
+    googleAvailable,
+    sampleAvailable,
     connected: available && !!source,
     connecting,
     /** Calendars were picked on this device, but the page was reloaded (the token is gone) — one tap brings them back. */
-    needsReconnect: available && !source && selectedCalendarIds.length > 0,
+    needsReconnect: googleAvailable && !source && selectedCalendarIds.length > 0,
     connect,
+    connectSample,
     disconnect,
   };
 }

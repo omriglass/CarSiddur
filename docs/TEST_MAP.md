@@ -239,16 +239,24 @@ migration `*my_rides_week_view*`; `supabase/tests/request_anchors.sql` (TEST 8).
    On `/my/archive` (week switcher -> ארכיון) nothing happens and only rides show.
 5. Profile -> "תצוגת שבוע ב״הנסיעות שלי״" on: `/my` opens as the week view; "רשימה" on `/my` only
    changes this visit.
-6. (Build with `VITE_GOOGLE_CLIENT_ID`.) Profile -> "אפשר תכונות ניסיוניות" off: no calendar item in the
-   eye menu. On: eye menu -> "היומן שלי (ניסיוני)" -> connect -> Google popup (unverified-app notice) ->
-   the primary calendar is ticked and its timed events show faintly behind the week; untick / tick
-   another calendar updates the grid. Reload: "הצגת היומן שלי" appears, one tap brings the same
-   calendars back. "ניתוק היומן": the events disappear and the picks are forgotten. Nothing on `/my/archive`.
+6. (Local dev build, or a build with `VITE_GOOGLE_CLIENT_ID`.) Profile -> "אפשר תכונות ניסיוניות" off: no
+   calendar button next to the eye. On: calendar button -> "יומן לדוגמה" (dev) or connect Google (unverified-app
+   notice) -> events show faintly behind the week: hours + location by default, all-day events as "כל היום ·"
+   bands at the top, overlapping events side by side, my rides solid over them, requests see-through. Tick
+   participants / notes, switch "צבעי היומן" on (each calendar's own color, still faint) in light and dark mode;
+   "עזר ראייה" towards "שקוף יותר": rides and requests fade and the events behind show; towards "אטום יותר":
+   requests / waiting items become solid; "רגיל" returns to the middle; the choice stays after a reload.
+   Reload: "הצגת היומן שלי" (Google) brings the same calendars back. "ניתוק היומן": the events disappear. Nothing
+   on `/my/archive`.
+7. A request with "להגיע עד" shows that line on its week block. Drag a waiting / filed request to another day
+   and resize its end: the card list shows the new times and "להגיע עד" moved by the same amount; a multi-day or
+   time-window request does not drag; a day before today refuses the drop.
 
 **Coverage gap**: no Playwright spec yet for the week view (hand-off to `e2e-tester`); test ids:
 `my-display-menu-trigger`, `my-view-list`, `my-view-week`, `my-week-view`, `my-week-grid`, `my-week-switcher`,
-`my-week-option-this|next|past`, `my-week-hint`, `profile-experimental`, `my-calendar-item`, `calendar-dialog`,
-`calendar-connect`, `calendar-disconnect`, `calendar-reconnect`; blocks carry `data-ride-id` and `data-kind`.
+`my-week-option-this|next|past`, `my-week-hint`, `profile-experimental`, `calendar-dialog`,
+`calendar-connect`, `calendar-disconnect`, `calendar-reconnect`, `my-calendar-button`, `calendar-sample`,
+`calendar-field-hours|location|participants|notes`, `calendar-use-colors`, `calendar-visibility-aid`; blocks carry `data-ride-id` and `data-kind`.
 
 **REQ**: §5.5, §13.91 (the lead adds the week-view item, owner request 2026-10-11 — add it here).
 

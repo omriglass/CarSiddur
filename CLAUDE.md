@@ -79,7 +79,7 @@ src/
     stats/                     department statistics dashboard; `department_stats` RPC, zod-parsed at the api boundary (no generated row type for its jsonb return)
     waitlist/                  contested waiting-list groups (`v_waitlist_groups`, `resolve_waitlist_group`, `cancel_waitlist_group`)
     rides/                     shared by siddur + sadran (R8, 2026-09-24): ridePeople, servedOf, addPassengers, passenger/notes components, ride-change + passenger RPCs (api/hooks/keys), export/weekWorkbook, invalidateWeek.ts (`invalidateWeekData()` — the one week-scoped cache refresh after a ride/request change). ESLint forbids sadran ⇄ siddur internals imports; sadran may use only siddur/api, hooks, queryKeys, RideChangeAnswers
-    calendar/                  EXPERIMENTAL (2026-10-12, REQ §13.126 b): member's Google calendar faintly behind the /my week view; browser-only (GIS token in memory, picked calendar ids in localStorage), gated by the per-device profile switch `features/member/useExperimentalFeatures.ts` + `VITE_GOOGLE_CLIENT_ID`
+    calendar/                  EXPERIMENTAL (2026-10-12, REQ §13.126 b): member's Google calendar faintly behind the /my week view; browser-only (GIS token in memory, picked calendar ids in localStorage), gated by the per-device profile switch `features/member/useExperimentalFeatures.ts` + `VITE_GOOGLE_CLIENT_ID`; own calendar button next to the eye menu (fields, colors, all-day bands — REQ §13.131); `sampleSource.ts` = a fake week for local dev builds only
     solverBridge/              buildSolverInput() (DB→solver mapper for board & admin policy preview)
     <feature>/components/      React components (shadcn + business logic)
     <feature>/hooks/           TanStack Query: use<X>Query, use<X>Mutation

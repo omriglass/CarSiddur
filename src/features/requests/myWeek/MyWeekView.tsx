@@ -1,6 +1,7 @@
 import { CalendarDays } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { toast } from "sonner";
 
 import { useRequestLinkProps } from "@/app/overlayState";
 import { paths } from "@/app/routes";
@@ -14,6 +15,7 @@ import { useCars } from "@/features/fleet/hooks";
 import { useDepartmentSettings } from "@/features/sadran/hooks";
 import { parseTimeToMinutes } from "@/features/solverBridge/buildSolverInput";
 import { CalendarDialog } from "@/features/calendar/CalendarDialog";
+import { useCalendar } from "@/features/calendar/useCalendar";
 import { useCalendarAmbientBlocks } from "@/features/calendar/useCalendarAmbientBlocks";
 import { useGoogleCalendar } from "@/features/calendar/useGoogleCalendar";
 import { useMemberRideMoves } from "@/features/rides/useMemberRideMoves";
@@ -22,13 +24,14 @@ import { pastWeeks, isPastWeek } from "@/features/siddur/pastWeeks";
 import { resolveThisNextWeek } from "@/features/siddur/thisNextWeek";
 import { useSiddurDisplayPrefs } from "@/features/siddur/useSiddurDisplayPrefs";
 import type { BoardRide, Week } from "@/features/siddur/api";
-import { he } from "@/i18n/he";
+import { he, t } from "@/i18n/he";
 import { formatDayDate } from "@/lib/dayLabels";
 import { dateKey } from "@/lib/time";
 
 import type { MyRequestRow, TemplateSuggestion } from "../api";
-import { useTemplateSuggestionsQuery } from "../hooks";
-import { weekDayKeys } from "./dayColumns";
+import { useMoveRequestMutation, useTemplateSuggestionsQuery } from "../hooks";
+import { toastSubmitOutcome } from "../submitOutcome";
+import { minutesOfDay, weekDayKeys } from "./dayColumns";
 import {
   isMyBoardRide,
   requestBlocks,
@@ -92,9 +95,12 @@ export function MyWeekView({ departmentId, homeDestinationId, profileId, request
   const calendar = useGoogleCalendar();
   const [calendarOpen, setCalendarOpen] = useState(false);
   const ambientBlocks = useCalendarAmbientBlocks(calendar.available && !archive ? weekStart : undefined);
+  const { displayPrefs: calendarPrefs } = useCalendar();
   // Owner 2026-10-11: my own rides drag / resize here exactly as on the siddur (one shared implementation) — within the
   // ride's own day and car, since the columns here are days.
   const rideMoves = useMemberRideMoves({ departmentId, weekStart, week, profileId, myRequestIds: new Set(requests.map((request) => request.id)), isMember: canSubmit && !isPast, now: new Date() });
+  // Owner 2026-10-12: my unplaced requests drag / resize too, onto any day of the shown week.
+  const moveRequest = useMoveRequestMutation();
 
   const dayKeys = useMemo(() => weekDayKeys(weekStart), [weekStart]);
   const boardStartMinutes = settingsQuery.data?.board_start_time ? parseTimeToMinutes(settingsQuery.data.board_start_time) : 6 * 60;
@@ -103,7 +109,8 @@ export function MyWeekView({ departmentId, homeDestinationId, profileId, request
     const myRequestIds = new Set(requests.map((row) => row.id));
     const carNameById = new Map((carsQuery.data ?? []).map((car) => [car.id, car.name]));
     const mine = (ridesQuery.data ?? []).filter((ride: BoardRide) => isMyBoardRide(ride, profileId, myRequestIds));
-    const blocks = rideBlocks(mine, dayKeys, (ride) => rideWithCarLabel(ride.car_id ? carNameById.get(ride.car_id) ?? "" : "", rideRouteLabel(ride, homeDestinationId)));
+    const myRequestsById = new Map(requests.map((row) => [row.id, row]));
+    const blocks = rideBlocks(mine, dayKeys, (ride) => rideWithCarLabel(ride.car_id ? carNameById.get(ride.car_id) ?? "" : "", rideRouteLabel(ride, homeDestinationId)), myRequestsById);
     if (!isPast) {
       const sameDepartment = requests.filter((row) => row.departmentId === departmentId && row.weekStart === weekStart);
       blocks.push(...requestBlocks(sameDepartment, dayKeys, homeDestinationId));
@@ -130,6 +137,49 @@ export function MyWeekView({ departmentId, homeDestinationId, profileId, request
     return ride.starts_at && ride.car_id && dateKey(ride.starts_at) === dayKey ? ride.car_id : null;
   }
 
+  /** An unplaced request block (`request:<id>` / `waiting:<id>`; a midnight-crossing block's later segments never move). */
+  function requestOf(blockId: string): MyRequestRow | null {
+    if (blockId.includes("~")) return null;
+    const match = /^(request|waiting):(.+)$/.exec(blockId);
+    return match ? requests.find((row) => row.id === match[2]) ?? null : null;
+  }
+  /**
+   * Movable: the week takes requests, and the request is a plain single-day one — not a multi-day series, not a time
+   * window ("יש לי חלון זמן", its block is not its times), not crossing midnight, and not on a day already over.
+   */
+  function canMoveRequest(row: MyRequestRow): boolean {
+    const anchor = row.departAt ?? row.returnAt;
+    if (!acceptsRequests || !anchor || row.seriesId || row.durationLocked) return false;
+    if (row.departAt && row.returnAt && dateKey(row.departAt) !== dateKey(row.returnAt)) return false;
+    return dateKey(anchor) >= today;
+  }
+  function canDrag(blockId: string): boolean {
+    const row = requestOf(blockId);
+    return row ? canMoveRequest(row) : canMove(blockId);
+  }
+  /** Only a request with both ends can be stretched; a one-way block is a fixed hour. */
+  function canResize(blockId: string): boolean {
+    const row = requestOf(blockId);
+    return row ? canMoveRequest(row) && !!row.departAt && !!row.returnAt : canMove(blockId);
+  }
+  function requestTargetValid(dayKey: string, start: number, end: number): boolean {
+    if (!dayKeys.includes(dayKey) || dayKey < today || start < 0 || end > 24 * 60) return false;
+    return dayKey !== today || start >= minutesOfDay(new Date());
+  }
+  function saveRequestMove(row: MyRequestRow, move: Parameters<typeof moveRequest.mutate>[0]["move"]) {
+    moveRequest.mutate({ requestId: row.id, move }, {
+      onSuccess: (result) => {
+        if (result?.unchanged) return;
+        const carName = (id: string | null | undefined) => (carsQuery.data ?? []).find((car) => car.id === id)?.name ?? "";
+        if (!toastSubmitOutcome(result, { carName, preferredCarId: row.preferredCarId, tripType: row.tripType })) toast.success(t("request.submitSaved"));
+      },
+    });
+  }
+  function dropRequest(row: MyRequestRow, dayKey: string, start: number, duration: number) {
+    if (row.departAt) saveRequestMove(row, { day: dayKey, departMinutes: start, returnMinutes: row.returnAt ? start + duration : null });
+    else saveRequestMove(row, { day: dayKey, departMinutes: null, returnMinutes: start });
+  }
+
   function selectWeek(next: string) {
     const params = new URLSearchParams(searchParams);
     params.set("week", next);
@@ -147,7 +197,16 @@ export function MyWeekView({ departmentId, homeDestinationId, profileId, request
     <div className="space-y-3" data-testid="my-week-view" data-week-start={weekStart}>
       <div className="flex items-center justify-between gap-2">
         <MyWeekSwitcher weeks={weeks} activeWeekStart={weekStart} onSelect={selectWeek} onArchive={archive ? undefined : () => navigate(paths.myArchive())} />
-        {onViewChange && !archive ? <MyWeekDisplayMenu view="week" onViewChange={onViewChange} zoom={tableZoom} onZoomChange={setTableZoom} onCalendar={calendar.available ? () => setCalendarOpen(true) : undefined} /> : null}
+        {onViewChange && !archive ? (
+          <div className="flex items-center gap-2">
+            {calendar.available ? (
+              <Button type="button" variant="outline" size="icon" aria-label={he.calendar.openButton} onClick={() => setCalendarOpen(true)} data-testid="my-calendar-button">
+                <CalendarDays className="size-4" />
+              </Button>
+            ) : null}
+            <MyWeekDisplayMenu view="week" onViewChange={onViewChange} zoom={tableZoom} onZoomChange={setTableZoom} />
+          </div>
+        ) : null}
       </div>
       <p className="text-xs text-muted-foreground" data-testid="my-week-hint">{isPast ? he.myWeek.hintReadOnly : acceptsRequests ? he.myWeek.hint : null}</p>
       {calendar.needsReconnect && !archive ? (
@@ -161,22 +220,34 @@ export function MyWeekView({ departmentId, homeDestinationId, profileId, request
           rides={entries.map((entry) => entry.block)}
           dayStartMinutes={visibleStartMinutes(entries, boardStartMinutes)}
           readOnly={isPast}
-          draggable={!isPast && !rideMoves.saving}
-          canDragRide={(block) => canMove(block.id)}
-          canResizeRide={(block) => canMove(block.id)}
+          draggable={!isPast && !rideMoves.saving && !moveRequest.isPending}
+          canDragRide={(block) => canDrag(block.id)}
+          canResizeRide={(block) => canResize(block.id)}
           isDropTargetValid={(blockId, dayKey, start, end) => {
+            if (requestOf(blockId)) return requestTargetValid(dayKey, start, end);
             const ride = rideOf(blockId);
             const carId = ride ? sameDayCar(ride, dayKey) : null;
             return !!ride?.id && !!carId && rideMoves.isValidTarget(ride.id, carId, start, end);
           }}
           onRideDrop={(blockId, dayKey, start) => {
+            const block = entries.find((entry) => entry.block.id === blockId)?.block;
+            const row = requestOf(blockId);
+            if (row && block) {
+              if (requestTargetValid(dayKey, start, start + (block.endMinutes - block.startMinutes))) dropRequest(row, dayKey, start, block.endMinutes - block.startMinutes);
+              return;
+            }
             const ride = rideOf(blockId);
             const carId = ride ? sameDayCar(ride, dayKey) : null;
             if (ride?.id && carId) rideMoves.moveRide(ride.id, carId, start);
           }}
           onRideResize={(blockId, edge, minutes) => {
-            const ride = rideOf(blockId);
             const block = entries.find((entry) => entry.block.id === blockId)?.block;
+            const row = requestOf(blockId);
+            if (row && block && row.departAt) {
+              saveRequestMove(row, { day: dateKey(row.departAt), departMinutes: edge === "start" ? minutes : null, returnMinutes: edge === "end" ? minutes : null });
+              return;
+            }
+            const ride = rideOf(blockId);
             if (!ride?.id || !ride.car_id || !block) return;
             rideMoves.moveRide(ride.id, ride.car_id, edge === "start" ? minutes : block.startMinutes, edge === "end" ? minutes : block.endMinutes);
           }}
@@ -187,6 +258,7 @@ export function MyWeekView({ departmentId, homeDestinationId, profileId, request
           onSlotRange={acceptsRequests ? startRequest : undefined}
           rangeResetKey={weekStart}
           ambientBlocks={ambientBlocks}
+          itemVisibility={calendarPrefs.itemVisibility}
           renderCarName={(column) => <span>{column.name}</span>}
         />
       </div>

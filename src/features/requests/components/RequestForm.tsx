@@ -68,15 +68,15 @@ import {
   useCancelRideMutation,
   useWithdrawRequestMutation,
 } from "../hooks";
-import { editReturnInstant, intervalToFlexValue, toInstant, toSubmitRequestPayload } from "../mapper";
+import { editRowToFormValues } from "../editRowValues";
+import { toInstant, toSubmitRequestPayload } from "../mapper";
 import { editSignature, isUnchangedEdit } from "../unchanged";
 import { requestFormSchema, type RequestFormValues } from "../schema";
 import { rushWindowsForDay } from "../rushHours";
-import { anchorFormFields, resolveCarTimes, switchOutAnchor, switchReturnAnchor } from "../timeAnchors";
-import { windowCarTimes, windowFormFields, windowModeActive } from "../timeWindow";
+import { resolveCarTimes, switchOutAnchor, switchReturnAnchor } from "../timeAnchors";
+import { windowCarTimes, windowModeActive } from "../timeWindow";
 import { recentDestinations } from "../recentDestinations";
 import { destinationValueToPoint, hasDestination, outboundRoutePoints, returnRoutePoints } from "../routePoints";
-import { planBFormFields } from "../planB";
 import { isSeriesSubmission, seriesSpanDays } from "../series";
 import { extraAdultsFromStored, payloadSeatCounts, unnamedChildSeatsFromStored } from "../seatCounts";
 import { overlapNames } from "../overlapNames";
@@ -84,8 +84,7 @@ import { childOverlapMessage } from "../childOverlap";
 import { releaseConfirmation, shouldOfferJoinableRides, toastSeriesSubmitOutcome, toastSubmitOutcome } from "../submitOutcome";
 import { shouldSuggestChildcare } from "../childcareType";
 import { suggestionToFormValues } from "../templatePrefill";
-import { isKeepCarRow } from "../keepCar";
-import { canUseDrivingTripTypes, initialTripType, tripTypeToLegacyFields } from "../tripType";
+import { canUseDrivingTripTypes, tripTypeToLegacyFields } from "../tripType";
 import { JoinableRidesDialog } from "./JoinableRidesDialog";
 import { CarPreferenceFields } from "./requestForm/CarPreferenceFields";
 import { DayAndTripShapeFields } from "./requestForm/DayAndTripShapeFields";
@@ -278,71 +277,6 @@ function buildJoinRideValues(
     returnTime: joinRide.isRelay ? undefined : timeFromInstant(joinRide.endsAt),
     oneWayCarMode: joinRide.isRelay ? "passenger" : undefined,
     needsCarAtDestination: !joinRide.isRelay,
-  };
-}
-
-function mapEditRowToValues(row: RequestEditRow, weekStart: string, companions: string[], children: string[], extraAdults: number, unnamedChildSeats: number): RequestFormValues {
-  const day = row.departAt ? dayFromInstant(row.departAt) : row.returnAt ? dayFromInstant(row.returnAt) : weekStart;
-  const dates = datesOfWeek(weekStart);
-  const departTime = row.departAt ? timeFromInstant(row.departAt) : undefined;
-  const returnInstant = editReturnInstant(row);
-  const returnTime = returnInstant ? timeFromInstant(returnInstant) : undefined;
-  const returnNextDay = !!(
-    row.departAt &&
-    row.returnAt &&
-    dayFromInstant(row.returnAt) !== dayFromInstant(row.departAt)
-  );
-
-  return {
-    departmentId: row.departmentId,
-    weekStart,
-    day,
-    dayIndex: Math.max(dates.indexOf(day), 0),
-    // Editing an existing (single-day) request never shows the return-day picker
-    // (multi-day editing is not supported in v1, REQ §13.77) — kept equal to `day`.
-    returnDay: day,
-    destination: row.destinationId
-      ? { presetId: row.destinationId, name: row.destinationName ?? "" }
-      : { freeText: row.destinationText ?? "" },
-    origin: row.originId
-      ? { presetId: row.originId, name: row.originName ?? "" }
-      : { freeText: row.originText ?? "" },
-    outStops: row.outStops ?? [],
-    returnStops: row.returnStops ?? [],
-    rideTypeId: row.rideTypeId,
-    preferredCarId: row.preferredCarId ?? "",
-    // A kept-car request reopens as a round trip, so its legacy fields are the round trip's.
-    tripShape: isKeepCarRow(row) ? "round_trip" : row.tripShape,
-    ...initialTripType(row),
-    keepCarAtDestination: isKeepCarRow(row),
-    departTime,
-    returnTime: returnNextDay ? "23:59" : returnTime,
-    ...anchorFormFields(row, timeFromInstant),
-    // REQ §13.112 (a)/(b): the stored "אם אין רכב" line reopens as it was saved.
-    ...planBFormFields(row, timeFromInstant),
-    // REQ §13.112 (c): a window request reopens in window mode (the fixed fields keep the nominal block).
-    ...windowFormFields({ durationLocked: row.durationLocked, departAt: row.departAt, returnAt: row.returnAt, flexReturnLate: row.flexReturnLate }),
-    returnNextDay: false,
-    oneWayCarMode: (row.oneWayCarMode ?? undefined) as "relay" | "passenger" | undefined,
-    needsCarAtDestination: isKeepCarRow(row) ? true : row.needsCarAtDestination,
-    adults: row.adults,
-    extraAdults,
-    preferSpecificCar: !!row.preferredCarId,
-    childSeats: children.length,
-    // REQ §13.112 (d): the stored child seats minus the seat-using named children are the unnamed ones.
-    legacyChildSeats: unnamedChildSeats,
-    boosters: row.boosters,
-    companions,
-    children,
-    luggage: row.hasLuggage,
-    flexDepartEarly: intervalToFlexValue(row.flexDepartEarly),
-    flexDepartLate: intervalToFlexValue(row.flexDepartLate),
-    flexReturnEarly: intervalToFlexValue(row.flexReturnEarly),
-    flexReturnLate: intervalToFlexValue(row.flexReturnLate),
-    notes: row.notes ?? "",
-    rideDescription: row.rideDescription ?? "",
-    guestNames: (row.guestPassengerNames ?? []).join("\n"),
-    repeatWeekly: !!row.templateId,
   };
 }
 
@@ -543,7 +477,7 @@ export function RequestForm({
       // Children whose age is unknown (the catalog failed to load) are taken as seat children, like `set_request_children` does.
       const unknownSeatChildren = childrenQuery.data ? 0 : requestChildrenQuery.data.length;
       const unnamedChildSeats = unnamedChildSeatsFromStored({ storedChildSeats: initial.childSeats, seatChildrenCount: linkedSeatChildren + unknownSeatChildren });
-      const mapped = mapEditRowToValues(initial, weekStart, companionsQuery.data, requestChildrenQuery.data, extraAdults, unnamedChildSeats);
+      const mapped = editRowToFormValues(initial, weekStart, companionsQuery.data, requestChildrenQuery.data, extraAdults, unnamedChildSeats);
       form.reset(mapped);
       // R11B1: the loaded request in the same normalized form the save compares against (parsed like a submit would be).
       const parsed = requestFormSchema.safeParse(mapped);

@@ -5,18 +5,24 @@
 import { useMemo, useState, type ReactNode } from "react";
 
 import { CalendarContext } from "./calendarContextValue";
+import { readDisplayPrefs, writeDisplayPrefs, type CalendarDisplayPrefs } from "./displayPrefs";
 import { readSelectedCalendarIds, writeSelectedCalendarIds } from "./selectedCalendars";
 import type { CalendarSource } from "./types";
 
 export function CalendarProvider({ children }: { children: ReactNode }) {
   const [source, setSource] = useState<CalendarSource | null>(null);
   const [selectedCalendarIds, setSelectedState] = useState<readonly string[]>(readSelectedCalendarIds);
+  const [displayPrefs, setDisplayState] = useState<CalendarDisplayPrefs>(readDisplayPrefs);
   const value = useMemo(() => {
     function setSelectedCalendarIds(ids: readonly string[]) {
       setSelectedState(ids);
       writeSelectedCalendarIds(ids);
     }
-    return { source, setSource, selectedCalendarIds, setSelectedCalendarIds };
-  }, [source, selectedCalendarIds]);
+    function setDisplayPrefs(prefs: CalendarDisplayPrefs) {
+      setDisplayState(prefs);
+      writeDisplayPrefs(prefs);
+    }
+    return { source, setSource, selectedCalendarIds, setSelectedCalendarIds, displayPrefs, setDisplayPrefs };
+  }, [source, selectedCalendarIds, displayPrefs]);
   return <CalendarContext.Provider value={value}>{children}</CalendarContext.Provider>;
 }

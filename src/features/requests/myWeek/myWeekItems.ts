@@ -11,7 +11,9 @@ import { rideBlockLabel } from "@/lib/rideLabel";
 import { viaLabel } from "@/lib/routeLabel";
 
 import type { MyRequestRow, TemplateSuggestion } from "../api";
+import { enteredTimeLabels } from "../enteredTimes";
 import { waitingFallbackLine } from "../fallbackLine";
+import { windowSummary } from "../timeWindow";
 import { displayStatus, originDestinationLabel } from "../myRequestsRows";
 import { isAwaitingAnswer } from "../pendingProposal";
 import { assignLanes } from "./assignLanes";
@@ -87,6 +89,8 @@ export function rideBlocks(
   rides: readonly BoardRide[],
   dayKeys: readonly string[],
   labelOf: (ride: BoardRide) => string,
+  /** My own requests by id: a ride serving one shows its "להגיע עד …" lines too (owner 2026-10-12). */
+  myRequestsById?: ReadonlyMap<string, MyRequestRow>,
 ): MyWeekBlock[] {
   const out: MyWeekBlock[] = [];
   for (const ride of rides) {
@@ -96,7 +100,13 @@ export function rideBlocks(
     // Owner 2026-10-11: the ride's public notes ("notes for everyone") and passengers, exactly as the siddur block shows
     // them — they explain what the app's fields cannot. A reservation's notes are already its label.
     const served = servedOf(ride);
-    const description = [served.length ? ride.notes : null, ridePublicDetails(served, {
+    const myDetails = myRequestsById
+      ? served.flatMap((entry) => {
+          const row = entry.request_id ? myRequestsById.get(entry.request_id) : undefined;
+          return row ? requestDetailLines(row) : [];
+        })
+      : [];
+    const description = [...new Set(myDetails), served.length ? ride.notes : null, ridePublicDetails(served, {
       includeCompanions: true,
       addedNames: peopleOf(ride).filter((person) => person.source === "added").map((person) => person.display_name),
     })].filter(Boolean).join("\n") || undefined;
@@ -122,6 +132,23 @@ export function rideBlocks(
   return out;
 }
 
+/**
+ * The request's own time details, exactly as its `/my` card shows them (owner 2026-10-12: "להגיע עד 15:30" must be
+ * visible at a glance on the week view too): how each end was entered (`enteredTimes.ts`) and a time window's summary.
+ */
+export function requestDetailLines(row: MyRequestRow): string[] {
+  const entered = enteredTimeLabels({
+    departAnchor: row.departAnchor,
+    arriveBy: row.arriveBy,
+    returnAnchor: row.returnAnchor,
+    leaveDestAt: row.leaveDestAt,
+    destinationName: row.destination,
+    isPickup: row.tripType === "drop_off",
+  });
+  const window = windowSummary({ durationLocked: row.durationLocked, departAt: row.departAt, returnAt: row.returnAt, flexReturnLate: row.flexReturnLate });
+  return [entered.out, entered.return, window].filter((line): line is string => !!line);
+}
+
 /** Where an unplaced request (or suggestion) sits: out time to return time, or a one-hour block at its only time. */
 function requestSpan(row: { departAt: string | null; returnAt: string | null }): { start: string; end: string | null } | null {
   if (row.departAt) return { start: row.departAt, end: row.returnAt };
@@ -141,7 +168,7 @@ export function requestBlocks(
     const span = requestSpan(row);
     if (!kind || !span) continue;
     const label = originDestinationLabel(row, homeDestinationId);
-    const description = kind === "proposal" ? undefined : waitingFallbackLine(row) ?? undefined;
+    const description = [...requestDetailLines(row), kind === "proposal" ? null : waitingFallbackLine(row)].filter(Boolean).join("\n") || undefined;
     daySegments(span.start, span.end, dayKeys).forEach((segment, index) => {
       out.push({
         target: kind === "proposal" ? { type: "proposal", row } : { type: "request", row },

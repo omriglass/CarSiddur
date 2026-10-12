@@ -45,7 +45,9 @@ import {
   type JoinableRideRow,
   type RoutePreviewPoint,
   type SubmitRequestPayload,
+  type SubmitRequestResult,
 } from "./api";
+import { movedRequestPayload, type RequestMove } from "./myWeek/requestMove";
 import { requestsKeys } from "./queryKeys";
 import { recentCompanionIds } from "./recentCompanions";
 
@@ -78,6 +80,24 @@ export function useSubmitRequestMutation() {
       queryClient.invalidateQueries({ queryKey: siddurKeys.carLocations(payload.department_id, payload.week_start) });
     },
     onError: showErrorToast,
+  });
+}
+
+/**
+ * Owner 2026-10-12: drag / resize one of my requests on the "my rides" week view — loads the stored request and sends
+ * the same edit the form would with only the times changed (`myWeek/requestMove.ts`). Resolves with the RPC result
+ * (the caller toasts the outcome).
+ */
+export function useMoveRequestMutation() {
+  const submit = useSubmitRequestMutation();
+  return useMutation({
+    mutationFn: async ({ requestId, move }: { requestId: string; move: RequestMove }) => {
+      const row = await fetchRequestById(requestId);
+      if (!row) throw new Error("request_not_found");
+      const raw = await submit.mutateAsync(movedRequestPayload(row, row.weekStart, move));
+      return raw as unknown as SubmitRequestResult | null;
+    },
+    // No `onError` here: the inner submit already toasts its own failure (and invalidates on success).
   });
 }
 

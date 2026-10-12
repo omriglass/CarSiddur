@@ -1,4 +1,4 @@
-import { CalendarDays, Eye, List, Table2, ZoomIn, ZoomOut } from "lucide-react";
+import { Eye, List, Table2, ZoomIn, ZoomOut } from "lucide-react";
 
 import { PINCH_ZOOM_MAX, PINCH_ZOOM_MIN, zoomIn, zoomOut } from "@/components/pinchZoom";
 import { Button } from "@/components/ui/button";
@@ -20,15 +20,13 @@ interface MyWeekDisplayMenuProps {
   /** Only in the week view (the list has nothing to zoom). */
   zoom?: number;
   onZoomChange?: (zoom: number) => void;
-  /** Experimental (owner 2026-10-12): opens the Google calendar dialog; absent while the feature is off. */
-  onCalendar?: () => void;
 }
 
 /**
  * The "eye" menu of `/my` (owner 2026-10-11), same pattern and styling as the siddur's `SiddurDisplayMenu`: the
  * list / week choice (this visit only, `?view=`) and, in the week view, the zoom out / reset / in items.
  */
-export function MyWeekDisplayMenu({ view, onViewChange, zoom, onZoomChange, onCalendar }: MyWeekDisplayMenuProps) {
+export function MyWeekDisplayMenu({ view, onViewChange, zoom, onZoomChange }: MyWeekDisplayMenuProps) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -53,14 +51,6 @@ export function MyWeekDisplayMenu({ view, onViewChange, zoom, onZoomChange, onCa
             </DropdownMenuItem>
             <DropdownMenuItem disabled={zoom >= PINCH_ZOOM_MAX} onSelect={(e) => { e.preventDefault(); onZoomChange(zoomIn(zoom)); }}>
               <ZoomIn className="me-2 size-4" aria-hidden="true" />{he.tableView.zoomIn}
-            </DropdownMenuItem>
-          </>
-        ) : null}
-        {view === "week" && onCalendar ? (
-          <>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onSelect={onCalendar} data-testid="my-calendar-item">
-              <CalendarDays className="me-2 size-4" aria-hidden="true" />{he.calendar.menuItem}
             </DropdownMenuItem>
           </>
         ) : null}

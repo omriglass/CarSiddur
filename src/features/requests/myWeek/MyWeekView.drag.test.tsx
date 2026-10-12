@@ -6,6 +6,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { WeekGridProps } from "@/components/WeekGrid";
 import type { BoardRide, Week } from "@/features/siddur/api";
 
+import type { MyRequestRow } from "../api";
+
 import { MyWeekView } from "./MyWeekView";
 
 // Owner 2026-10-11: my own rides drag on "my rides" exactly as on the siddur — the same `useMemberRideMoves` — but only
@@ -15,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   moveRide: vi.fn(),
   isValidTarget: vi.fn(() => true),
   owns: vi.fn(() => true),
+  moveRequest: vi.fn(),
 }));
 
 vi.mock("@/components/WeekGrid", () => ({
@@ -23,7 +26,7 @@ vi.mock("@/components/WeekGrid", () => ({
 vi.mock("@/features/siddur/hooks", () => ({ useBoardRides: () => ({ data: [ride], isError: false }) }));
 vi.mock("@/features/fleet/hooks", () => ({ useCars: () => ({ data: [{ id: "car1", name: "קורולה" }] }) }));
 vi.mock("@/features/sadran/hooks", () => ({ useDepartmentSettings: () => ({ data: { board_start_time: "06:00:00" } }) }));
-vi.mock("../hooks", () => ({ useTemplateSuggestionsQuery: () => ({ data: [] }) }));
+vi.mock("../hooks", () => ({ useTemplateSuggestionsQuery: () => ({ data: [] }), useMoveRequestMutation: () => ({ mutate: mocks.moveRequest, isPending: false }) }));
 vi.mock("@/components/dateFieldDates", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/components/dateFieldDates")>()),
   todayInJerusalem: () => "2026-10-12",
@@ -41,11 +44,20 @@ const ride = {
 } as unknown as BoardRide;
 const weeks = [{ week_start: "2026-10-11", phase: "published" }] as Week[];
 
-function grid(): WeekGridProps {
+// A waiting-list round trip, Tue 2026-10-13 09:00-12:00 Jerusalem.
+const waiting = {
+  id: "req1", departmentId: "dept", weekStart: "2026-10-11", status: "waitlisted", statusReason: null, isLate: false, changedSinceSolve: false,
+  departAt: "2026-10-13T06:00:00Z", returnAt: "2026-10-13T09:00:00Z", tripShape: "round_trip", tripType: "round_trip",
+  originId: null, originText: null, originName: null, stops: [], destination: "חיפה", rideTypeId: "rt", rideTypeName: "", rideTypeCode: null,
+  needsCarAtDestination: true, version: 1, freedSlotOptOut: false, ride: null, pendingProposal: null, templateId: null,
+  seriesId: null, seriesIndex: null, seriesCount: null, departAnchor: "arrive", arriveBy: "2026-10-13T07:00:00Z",
+} as unknown as MyRequestRow;
+
+function grid(requests: MyRequestRow[] = []): WeekGridProps {
   render(
     <QueryClientProvider client={new QueryClient()}>
       <MemoryRouter>
-        <MyWeekView departmentId="dept" homeDestinationId="home" profileId="me" requests={[]} weeks={weeks} homeWeekStart="2026-10-11" canSubmit onTarget={vi.fn()} />
+        <MyWeekView departmentId="dept" homeDestinationId="home" profileId="me" requests={requests} weeks={weeks} homeWeekStart="2026-10-11" canSubmit onTarget={vi.fn()} />
       </MemoryRouter>
     </QueryClientProvider>,
   );
@@ -79,5 +91,33 @@ describe("MyWeekView dragging my rides", () => {
     // Ride 08:00-11:00 Jerusalem; pulling its end to 12:00 keeps the start.
     props.onRideResize?.("ride:ride1", "end", 720);
     expect(mocks.moveRide).toHaveBeenLastCalledWith("ride1", "car1", 480, 720);
+  });
+
+  it("shows how the request was entered on its block", () => {
+    const block = grid([waiting]).rides.find((r) => r.id === "waiting:req1")!;
+    expect(block.description).toContain("להגיע עד 10:00");
+  });
+
+  it("drags my waiting request to another day and resizes it (owner 2026-10-12)", () => {
+    const props = grid([waiting]);
+    const block = props.rides.find((r) => r.id === "waiting:req1")!;
+    expect(props.canDragRide?.(block)).toBe(true);
+    expect(props.canResizeRide?.(block)).toBe(true);
+    expect(props.isDropTargetValid?.("waiting:req1", "2026-10-15", 600, 780)).toBe(true);
+    // Before today (2026-10-12) is refused.
+    expect(props.isDropTargetValid?.("waiting:req1", "2026-10-11", 600, 780)).toBe(false);
+    props.onRideDrop?.("waiting:req1", "2026-10-15", 600);
+    expect(mocks.moveRequest).toHaveBeenLastCalledWith({ requestId: "req1", move: { day: "2026-10-15", departMinutes: 600, returnMinutes: 780 } }, expect.anything());
+    props.onRideResize?.("waiting:req1", "end", 840);
+    expect(mocks.moveRequest).toHaveBeenLastCalledWith({ requestId: "req1", move: { day: "2026-10-13", departMinutes: null, returnMinutes: 840 } }, expect.anything());
+    expect(mocks.moveRide).not.toHaveBeenCalled();
+  });
+
+  it("never drags a multi-day or time-window request", () => {
+    for (const row of [{ ...waiting, seriesId: "s1" }, { ...waiting, durationLocked: true }] as MyRequestRow[]) {
+      const props = grid([row]);
+      const block = props.rides.find((r) => r.id === "waiting:req1")!;
+      expect(props.canDragRide?.(block)).toBe(false);
+    }
   });
 });

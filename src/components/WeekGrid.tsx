@@ -1,6 +1,6 @@
 import { CarFront, ChevronDown, Pin, Clock3, UserRoundX, Star, X } from "lucide-react";
 import type { MouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
-import { useEffect, useMemo, useRef, useState, useCallback, useSyncExternalStore } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, useCallback, useSyncExternalStore } from "react";
 
 import { edgeScrollStep } from "@/components/dragAutoScroll";
 import { nextZoom } from "@/components/pinchZoom";
@@ -18,6 +18,7 @@ import { rideTypeColorClasses } from "@/lib/rideTypeColors";
 import { cn } from "@/lib/utils";
 import { GuestChips, type GuestDropTarget, type WeekGridGuest } from "./GuestChips";
 import { bottomNavInset, pageScroller, scrollerViewport } from "./pageScroller";
+import { itemVisibilityStyle } from "./itemVisibility";
 import { clampRideVertical, minutesFromClientY, snapTimeShift } from "./weekGridGeometry";
 
 /**
@@ -131,8 +132,21 @@ export interface WeekGridAmbientBlock {
   carId: string;
   startMinutes: number;
   endMinutes: number;
+  /** The event title. */
   label: string;
+  /** Extra lines under the title, already formatted, in display order (hours, location, participants, notes). */
+  lines?: string[];
+  /** CSS color of the event; used only when present (the caller applies the member's "use calendar colors" choice). */
+  color?: string;
+  /** Drawn as a thin band at the top of the day instead of a timed block (`startMinutes`/`endMinutes` are ignored). */
+  allDay?: boolean;
+  /** Side-by-side lanes for overlapping events of one day (0-based), like `WeekGridRide.lane`. */
+  lane?: number;
+  laneCount?: number;
 }
+
+/** Height of one stacked all-day band, px. */
+const ALL_DAY_BAND_PX = 18;
 
 export interface WeekGridBlock {
   id: string;
@@ -208,6 +222,8 @@ export interface WeekGridProps {
   rangeResetKey?: string;
   /** Faint background blocks (the member's calendar), under the rides. */
   ambientBlocks?: readonly WeekGridAmbientBlock[];
+  /** "Visibility aid" over `ambientBlocks` (owner 2026-10-12): 0–100, 50 = normal (`itemVisibility.ts`); absent = 50. */
+  itemVisibility?: number;
   /**
    * Bold + lilac header for every column holding one of my rides (default). Off for the "my rides" week view, whose
    * columns are days and every ride is mine — there only `WeekGridCar.today` is marked (owner 2026-10-11).
@@ -409,6 +425,7 @@ export function WeekGrid({
   onSlotRange,
   rangeResetKey,
   ambientBlocks = [],
+  itemVisibility,
   markMyColumns = true,
   renderRide,
   renderCarName,
@@ -1034,22 +1051,53 @@ export function WeekGrid({
             aria-hidden="true"
           />
         ))}
-        {ambientBlocks.filter((a) => a.carId === car.id).map((a) => {
-          const rect = clampRideVertical(a.startMinutes, a.endMinutes, dayStartMinutes, dayEndMinutes);
-          return (
-            <div
-              key={`ambient-${a.id}`}
-              data-ambient-id={a.id}
-              // Owner 2026-10-12: a sky tint next to the lilac (`--calendar`, both themes); title + hours centered in the box.
-              className="pointer-events-none absolute inset-x-0.5 z-0 flex flex-col items-center justify-center overflow-hidden rounded-sm border border-calendar/45 bg-calendar/15 px-1 text-center text-xs leading-tight text-calendar-foreground"
-              style={{ top: rect.top, height: rect.height }}
-              aria-hidden="true"
-            >
-              <span className="line-clamp-2 font-medium">{a.label}</span>
-              <span className="text-[11px] opacity-80" dir="ltr">{formatMinutes(a.startMinutes)}–{formatMinutes(Math.min(a.endMinutes, 1440))}</span>
-            </div>
-          );
-        })}
+        {(() => {
+          let allDayIndex = 0;
+          return ambientBlocks.filter((a) => a.carId === car.id).map((a) => {
+            // Owner 2026-10-12: a sky tint next to the lilac (`--calendar`, both themes) or, when the member chose the
+            // calendar's own colors, that color faintly; title (+ lines) centered; always under the rides.
+            const tint = a.color
+              ? { backgroundColor: `color-mix(in srgb, ${a.color} 16%, transparent)`, borderColor: `color-mix(in srgb, ${a.color} 50%, transparent)` }
+              : undefined;
+            const tone = a.color ? "text-foreground/80" : "text-calendar-foreground";
+            const colorClasses = a.color ? "" : "border-calendar/45 bg-calendar/15";
+            if (a.allDay) {
+              const top = allDayIndex++ * ALL_DAY_BAND_PX;
+              return (
+                <div
+                  key={`ambient-${a.id}`}
+                  data-ambient-id={a.id}
+                  className={`pointer-events-none absolute inset-x-0.5 z-0 flex items-center justify-center overflow-hidden rounded-sm border px-1 text-center text-[11px] leading-none ${colorClasses} ${tone}`}
+                  style={{ top, height: ALL_DAY_BAND_PX, ...tint }}
+                  aria-hidden="true"
+                >
+                  <span className="truncate font-medium">{tv("calendar.allDay", { title: a.label })}</span>
+                </div>
+              );
+            }
+            // Entirely outside the shown hours (e.g. the after-midnight part of a late event): nothing to draw.
+            if (a.endMinutes <= dayStartMinutes || a.startMinutes >= dayEndMinutes) return null;
+            const rect = clampRideVertical(a.startMinutes, a.endMinutes, dayStartMinutes, dayEndMinutes);
+            const laneCount = Math.max(1, a.laneCount ?? 1);
+            const laneStyle = laneCount > 1
+              ? { insetInlineStart: `calc(${((a.lane ?? 0) / laneCount) * 100}% + 2px)`, width: `calc(${100 / laneCount}% - 4px)` }
+              : {};
+            return (
+              <div
+                key={`ambient-${a.id}`}
+                data-ambient-id={a.id}
+                className={`pointer-events-none absolute ${laneCount > 1 ? "" : "inset-x-0.5"} z-0 flex flex-col items-center justify-center overflow-hidden rounded-sm border px-1 text-center text-xs leading-tight ${colorClasses} ${tone}`}
+                style={{ top: rect.top, height: rect.height, ...laneStyle, ...tint }}
+                aria-hidden="true"
+              >
+                <span className="line-clamp-2 text-xs font-medium">{a.label}</span>
+                {a.lines?.map((line, index) => (
+                  <span key={index} className="line-clamp-1 text-[11px] opacity-80" dir="auto">{line}</span>
+                ))}
+              </div>
+            );
+          });
+        })()}
         {rangeStart?.carId === car.id && rangeHover != null && rangeHover !== rangeStart.minutes ? (() => {
           const from = Math.min(rangeStart.minutes, rangeHover);
           const to = Math.max(rangeStart.minutes, rangeHover);
@@ -1171,9 +1219,23 @@ export function WeekGrid({
           const laneStyle = laned
             ? { insetInlineStart: `calc(${(lane / laneCount) * 100}% + 2px)`, width: `calc(${100 / laneCount}% - 4px)` }
             : {};
+          // The member's "visibility aid" — only over a calendar; the dragged block keeps its own drag look.
+          const visibility = ambientBlocks.length > 0 ? itemVisibilityStyle(itemVisibility) : null;
+          const fade = visibility?.fade != null && !isDragged ? { opacity: visibility.fade } : {};
+          // A ride is solid over the calendar (opaque backing); see-through items get a backing only above the middle.
+          const backingOpacity = !visibility ? 0 : !ride.kind ? 1 : visibility.backing;
           return (
+            <Fragment key={ride.id}>
+            {/* Owner 2026-10-12: over the member's calendar a ride stays solid (its tint over an opaque backing); only
+                unplaced items (`kind`) are see-through. */}
+            {backingOpacity > 0 ? (
+              <div
+                aria-hidden="true"
+                className={cn("pointer-events-none absolute rounded-sm bg-background", !laned && "inset-x-1")}
+                style={{ top: rect.top, height: rect.height, minHeight: RIDE_MIN_HEIGHT_PX, ...laneStyle, opacity: backingOpacity * (fade.opacity ?? 1) }}
+              />
+            ) : null}
             <button
-              key={ride.id}
               type="button"
               data-ride-id={ride.id}
               data-needs-driver={ride.needsDriver || undefined}
@@ -1209,7 +1271,7 @@ export function WeekGrid({
                 ride.highlighted && "z-10 scroll-mt-24 ring-4 ring-destructive ring-offset-2",
                 isDragged && "opacity-50 ring-2 ring-primary",
               )}
-              style={{ top: rect.top, height: rect.height, minHeight: RIDE_MIN_HEIGHT_PX, ...laneStyle }}
+              style={{ top: rect.top, height: rect.height, minHeight: RIDE_MIN_HEIGHT_PX, ...laneStyle, ...fade }}
               title={rect.clampedStart ? `${formatMinutes(ride.startMinutes)}–${formatMinutes(ride.endMinutes)}` : undefined}
               onClick={(e) => {
                 e.stopPropagation();
@@ -1291,6 +1353,7 @@ export function WeekGrid({
                 />
               ) : null}
             </button>
+            </Fragment>
           );
         })}
       </div>

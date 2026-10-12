@@ -6,6 +6,8 @@
 export interface CalendarInfo {
   id: string;
   name: string;
+  /** CSS hex color of the calendar (Google `backgroundColor`). */
+  color?: string;
 }
 
 export interface CalendarEvent {
@@ -17,6 +19,13 @@ export interface CalendarEvent {
   start: string;
   end: string;
   allDay: boolean;
+  location?: string;
+  /** Display names (else emails) of the other attendees; self and rooms excluded. */
+  attendees?: string[];
+  /** First non-empty line of the description, HTML stripped. */
+  description?: string;
+  /** CSS hex color of the event (its own palette color, else the calendar's). */
+  color?: string;
 }
 
 /**
