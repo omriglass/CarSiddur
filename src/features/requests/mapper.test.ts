@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { editReturnInstant, flexIntervalToSend, flexValueToInterval, intervalToFlexValue, toInstant, toSubmitRequestPayload } from "./mapper";
+import { editReturnInstant, flexIntervalToSend, flexValueToInterval, intervalToFlexValue, toInstant, toInstantMs, toSubmitRequestPayload } from "./mapper";
 import { REQUEST_FORM_DEFAULTS, type RequestFormValues } from "./schema";
 
 // What Postgres echoes back (`select '15 min'::interval` etc.) for each literal
@@ -35,6 +35,18 @@ describe("flexValueToInterval / intervalToFlexValue", () => {
 
   it("maps '1 day' to the 'any' sentinel", () => {
     expect(intervalToFlexValue("1 day")).toBe("any");
+  });
+});
+
+describe("toInstantMs", () => {
+  it("matches toInstant for a well-formed day and time", () => {
+    expect(toInstantMs("2026-09-15", "08:00")).toBe(Date.parse(toInstant("2026-09-15", "08:00", false)));
+  });
+
+  it("is NaN, never a throw, for a malformed day or time", () => {
+    expect(toInstantMs("2026-09-15", "NaN:NaN")).toBeNaN();
+    expect(toInstantMs("2026-09-15", "8:00")).toBeNaN();
+    expect(toInstantMs("", "08:00")).toBeNaN();
   });
 });
 

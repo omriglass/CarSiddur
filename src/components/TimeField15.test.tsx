@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { SheetPortalContext } from "./SheetPortalContext";
 import { TimeField15 } from "./TimeField15";
-import { formatMinutes, parseHHMM, snapToQuarterHour } from "./timeField15Format";
+import { formatMinutes, normalizeTypedTime, parseHHMM, snapToQuarterHour } from "./timeField15Format";
 
 describe("parseHHMM", () => {
   it("parses well-formed HH:MM", () => {
@@ -110,6 +110,71 @@ describe("inside a sheet or dialog", () => {
     fireEvent.click(screen.getByLabelText("time"));
     fireEvent.click(screen.getByRole("button", { name: "22" }));
     expect(onChange).toHaveBeenCalledWith("22:00");
+  });
+  it("keeps the lists open when Safari moves focus to the sheet itself, so the tapped hour still commits", () => {
+    // Safari never focuses a tapped <button>: the input's blur names the nearest focusable ancestor instead.
+    const onChange = vi.fn();
+    const sheet = document.createElement("div");
+    sheet.tabIndex = -1;
+    document.body.appendChild(sheet);
+    render(
+      <SheetPortalContext.Provider value={sheet}>
+        <TimeField15 value="08:00" onChange={onChange} aria-label="time" />
+      </SheetPortalContext.Provider>,
+      { container: sheet },
+    );
+    const input = screen.getByLabelText("time");
+    fireEvent.click(input);
+    fireEvent.blur(input, { relatedTarget: sheet });
+    fireEvent.click(screen.getByRole("button", { name: "10" }));
+    expect(onChange).toHaveBeenLastCalledWith("10:00");
+    document.body.removeChild(sheet);
+  });
+
+  it("closes the lists when focus moves to another field", () => {
+    const other = document.createElement("input");
+    document.body.appendChild(other);
+    render(
+      <SheetPortalContext.Provider value={document.body}>
+        <TimeField15 value="08:00" onChange={vi.fn()} aria-label="time" />
+      </SheetPortalContext.Provider>,
+    );
+    const input = screen.getByLabelText("time");
+    fireEvent.click(input);
+    fireEvent.blur(input, { relatedTarget: other });
+    expect(screen.queryAllByRole("listbox")).toHaveLength(0);
+    document.body.removeChild(other);
+  });
+
+  it("commits a time typed on the iPhone number pad (no colon)", () => {
+    const onChange = vi.fn();
+    render(
+      <SheetPortalContext.Provider value={document.body}>
+        <TimeField15 value="08:00" onChange={onChange} aria-label="time" />
+      </SheetPortalContext.Provider>,
+    );
+    const input = screen.getByLabelText("time");
+    fireEvent.change(input, { target: { value: "1145" } });
+    fireEvent.blur(input);
+    expect(onChange).toHaveBeenLastCalledWith("11:45");
+  });
+});
+
+describe("normalizeTypedTime", () => {
+  it("reads digits alone and . or , as the colon", () => {
+    expect(normalizeTypedTime("9")).toBe("9:00");
+    expect(normalizeTypedTime("17")).toBe("17:00");
+    expect(normalizeTypedTime("930")).toBe("9:30");
+    expect(normalizeTypedTime("0930")).toBe("09:30");
+    expect(normalizeTypedTime("9.30")).toBe("9:30");
+    expect(normalizeTypedTime("9,30")).toBe("9:30");
+    expect(normalizeTypedTime(" 08:15 ")).toBe("08:15");
+  });
+
+  it("leaves anything else for parseHHMM to reject", () => {
+    expect(snapToQuarterHour(normalizeTypedTime("12345"))).toBeNull();
+    expect(snapToQuarterHour(normalizeTypedTime("abc"))).toBeNull();
+    expect(snapToQuarterHour(normalizeTypedTime("2560"))).toBeNull();
   });
 });
 

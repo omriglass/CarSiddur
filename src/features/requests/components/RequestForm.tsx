@@ -69,7 +69,7 @@ import {
   useWithdrawRequestMutation,
 } from "../hooks";
 import { editRowToFormValues } from "../editRowValues";
-import { toInstant, toSubmitRequestPayload } from "../mapper";
+import { toInstantMs, toSubmitRequestPayload } from "../mapper";
 import { editSignature, isUnchangedEdit } from "../unchanged";
 import { requestFormSchema, type RequestFormValues } from "../schema";
 import { rushWindowsForDay } from "../rushHours";
@@ -524,7 +524,7 @@ export function RequestForm({
     if (variant === "quick" && quickContext) {
       if (!homeDestinationId) return null;
       const carId = values.preferredCarId || "";
-      const atMs = Date.parse(toInstant(day, values.departTime || "08:00", false));
+      const atMs = toInstantMs(day, values.departTime || "08:00");
       const car = quickContext.cars.find((c) => c.id === carId);
       return resolveQuickOrigin({
         carId,
@@ -711,13 +711,18 @@ export function RequestForm({
     if (!values.departTime && !values.returnTime) return null;
     // REQ §13.112 (c): a window request overlaps whatever its earliest block overlaps (the member's own other requests).
     const windowTimes = windowModeActive({ timeMode: values.timeMode, tripType: values.tripType, tripShape, day, returnDay: values.returnDay }) ? windowCarTimes({ windowHours: values.windowHours, windowStart: values.windowStart, windowEnd: values.windowEnd }) : null;
+    // A malformed day/time gives no overlap hint instead of an `Invalid Date` crash (Safari, 2026-10-13).
+    const isoAt = (time: string) => {
+      const ms = toInstantMs(day, time);
+      return Number.isNaN(ms) ? null : new Date(ms).toISOString();
+    };
     const departAt = windowTimes
-      ? toInstant(day, windowTimes.departTime, false)
-      : tripShape !== "one_way_from" && values.departTime ? toInstant(day, values.departTime, false) : null;
+      ? isoAt(windowTimes.departTime)
+      : tripShape !== "one_way_from" && values.departTime ? isoAt(values.departTime) : null;
     const returnAt = windowTimes
-      ? toInstant(day, windowTimes.returnTime, false)
+      ? isoAt(windowTimes.returnTime)
       : tripShape !== "one_way_to" && values.returnTime
-        ? toInstant(day, values.returnTime, false)
+        ? isoAt(values.returnTime)
         : null;
     // REQ §13.127: overlaps are the requester's own (a ride I filed for someone else is not mine).
     const candidates = (myRequestsQuery.data ?? []).filter(
@@ -730,8 +735,8 @@ export function RequestForm({
   const departTimeSafe = values.departTime || "08:00";
   const returnTimeSafe = values.returnTime || "12:00";
   const primaryTime = tripShape === "one_way_from" ? (values.returnTime ?? "") : (values.departTime ?? "");
-  const selectedMs = Date.parse(toInstant(day, tripShape === "one_way_from" ? returnTimeSafe : departTimeSafe, false));
-  const roundTripEndMs = Date.parse(toInstant(day, returnTimeSafe, false));
+  const selectedMs = toInstantMs(day, tripShape === "one_way_from" ? returnTimeSafe : departTimeSafe);
+  const roundTripEndMs = toInstantMs(day, returnTimeSafe);
   const destinationId = values.destination && "presetId" in values.destination ? values.destination.presetId : undefined;
   const travelMinutes = destinationsQuery.data?.find((d) => d.id === destinationId)?.travel_minutes ?? DEFAULT_HOP_MINUTES;
   const dwellMinutes = effectiveWeekSettings(settingsQuery.data, weekRowQuery.data).chauffeurDwellMinutes;
@@ -753,7 +758,7 @@ export function RequestForm({
   const otherFreeCar =
     quickContext && !carIsFree ? quickContext.cars.find((c) => c.id !== quickCarId && isSlotFree(quickContext.freeWindows, c.id, startMs, endMs)) : undefined;
   const isPast = !!quickContext && selectedMs < quickContext.now.getTime();
-  const outsideDay = !!quickContext && (startMs < Date.parse(toInstant(day, "00:00", false)) || endMs > Date.parse(toInstant(day, "23:59", false)));
+  const outsideDay = !!quickContext && (startMs < toInstantMs(day, "00:00") || endMs > toInstantMs(day, "23:59"));
   const invalidTime = !!quickContext && (endMs <= startMs || outsideDay);
 
   // R9U7/R9F1: a child on a new request suggests the childcare ride type while the member has not picked one.

@@ -57,6 +57,17 @@ export function toInstant(day: string, time: string, nextDay: boolean): string {
   return fromZonedTime(`${base}T${time}:00`, TZ).toISOString();
 }
 
+/**
+ * `toInstant` as epoch ms, or `NaN` when the day/time cannot form an instant. For the form's live
+ * previews (overlap hint, free-car check), which must never crash the form on a half-typed or
+ * malformed value — `toInstant` throws a `RangeError` there (`Invalid Date`.toISOString()).
+ */
+export function toInstantMs(day: string, time: string, nextDay = false): number {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || !/^\d{2}:\d{2}$/.test(time)) return Number.NaN;
+  const base = nextDay ? format(addDays(parseISO(day), 1), "yyyy-MM-dd") : day;
+  return fromZonedTime(`${base}T${time}:00`, TZ).getTime();
+}
+
 export interface SubmitPayloadOptions {
   requestId?: string;
   expectedVersion?: number;

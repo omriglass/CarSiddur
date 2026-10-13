@@ -13,6 +13,12 @@ import { clampRideVertical, minutesFromClientY, snapTimeShift } from "./weekGrid
 // `minutesFromClientY` must produce identical results regardless of the
 // page's `dir`, asserted below for both.
 describe("minutesFromClientY", () => {
+  it("never leaves the column's hours, even for a point measured outside it", () => {
+    const rect = { top: 200, height: 1000 };
+    expect(minutesFromClientY(rect, -400, 360, 1439)).toBe(360);
+    expect(minutesFromClientY(rect, 5000, 360, 1439)).toBe(1439);
+  });
+
   const dayStart = 6 * 60;
   const dayEnd = 24 * 60;
   const rect = { top: 200, height: 1440 }; // 06:00..24:00, 18h

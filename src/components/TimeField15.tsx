@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { SheetPortalContext } from "@/components/SheetPortalContext";
 import { he } from "@/i18n/he";
 import { cn } from "@/lib/utils";
-import { MAX_MINUTES, MIN_MINUTES, pad2, parseHHMM, snapToQuarterHour } from "./timeField15Format";
+import { MAX_MINUTES, MIN_MINUTES, normalizeTypedTime, pad2, parseHHMM, snapToQuarterHour } from "./timeField15Format";
 
 const Popover = PopoverPrimitive.Root;
 const PopoverTrigger = PopoverPrimitive.Trigger;
@@ -49,7 +49,7 @@ export function TimeField15({ value, min, max, onChange, disabled, ...rest }: Ti
   const bounds = { min: minMinutes, max: maxMinutes };
 
   function commit(next: string) {
-    const snapped = snapToQuarterHour(next, bounds);
+    const snapped = snapToQuarterHour(normalizeTypedTime(next), bounds);
     if (snapped) {
       setDraft(snapped);
       onChange(snapped);
@@ -120,7 +120,10 @@ export function TimeField15({ value, min, max, onChange, disabled, ...rest }: Ti
       <div
         className="space-y-1"
         onBlur={(event) => {
-          if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget as Node)) setInlineOpen(false);
+          // Safari never focuses a tapped <button>: focus goes to the nearest focusable ancestor (the sheet itself),
+          // so focus landing on an ancestor is not "left the field" — closing then would drop the tapped hour/minute.
+          const next = event.relatedTarget as Node | null;
+          if (next && !event.currentTarget.contains(next) && !next.contains(event.currentTarget)) setInlineOpen(false);
         }}
       >
         <Input

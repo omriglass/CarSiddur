@@ -22,6 +22,19 @@ export function formatMinutes(totalMinutes: number): string {
 }
 
 /**
+ * What a member typed, as `"HH:MM"` when it can be read as a time. The iPhone number pad has no
+ * colon, so digits alone count (`"9"`, `"930"`, `"0930"`), and `.`/`,` stand in for the colon.
+ * Anything else comes back unchanged (and then fails `parseHHMM`).
+ */
+export function normalizeTypedTime(value: string): string {
+  const trimmed = value.trim().replace(/[.,]/, ":");
+  if (trimmed.includes(":")) return trimmed;
+  if (!/^\d{1,4}$/.test(trimmed)) return trimmed;
+  if (trimmed.length <= 2) return `${trimmed}:00`;
+  return `${trimmed.slice(0, -2)}:${trimmed.slice(-2)}`;
+}
+
+/**
  * Rounds `"HH:MM"` to the nearest 15-minute mark and clamps to `[min, max]`
  * (default 06:00–23:45). End fields may explicitly allow 23:59.
  * Returns `null` for unparsable

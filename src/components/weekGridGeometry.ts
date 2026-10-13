@@ -16,11 +16,15 @@ export function clampRideVertical(startMinutes: number, endMinutes: number, grid
   return { top: `${top}%`, height: `${Math.max(height, 0.5)}%`, clampedStart: startMinutes < gridStart };
 }
 
-/** Physical-top-to-minutes mapping (dir-independent — vertical position is never mirrored by `dir`). Exported for unit tests. */
+/**
+ * Physical-top-to-minutes mapping (dir-independent — vertical position is never mirrored by `dir`). Clamped to
+ * the column's own hours: a tap is always inside the column, so a result outside them is a mis-measured point
+ * (an iPhone with the page zoomed in sent `time=-6:-30` to the request form, 2026-10-13). Exported for unit tests.
+ */
 export function minutesFromClientY(rect: { top: number; height: number }, clientY: number, dayStartMinutes: number, dayEndMinutes: number): number {
   const ratio = rect.height === 0 ? 0 : (clientY - rect.top) / rect.height;
   const minutes = dayStartMinutes + ratio * (dayEndMinutes - dayStartMinutes);
-  return Math.round(minutes / 15) * 15;
+  return Math.min(Math.max(Math.round(minutes / 15) * 15, dayStartMinutes), dayEndMinutes);
 }
 
 /** Snap a raw (unsnapped) minutes delta to 15 minutes, zeroing anything under half a slot (a car-only, i.e. purely horizontal, drag must not shift time at all). */

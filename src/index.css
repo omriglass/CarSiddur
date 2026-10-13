@@ -159,3 +159,17 @@ html {
     @apply bg-background text-foreground;
   }
 }
+
+/*
+ * iOS Safari zooms the whole page in when a field under 16px gets focus, and keeps it zoomed —
+ * the form's edges then sit off-screen (iPhone 13 mini, 2026-10-13). `-webkit-touch-callout`
+ * exists only on iOS, so desktop and Android keep the 14px `text-sm` fields. Unlayered and
+ * `!important`, to beat the `text-sm` utility on the generated `components/ui` inputs.
+ */
+@supports (-webkit-touch-callout: none) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}

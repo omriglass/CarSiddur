@@ -5,6 +5,7 @@ import { RequestOverlay } from "@/app/RequestOverlay";
 import { useCloseRequestOverlay } from "@/app/overlayState";
 import { formatWeekRangeLabel } from "@/components/dateFieldDates";
 import { PageHeader } from "@/components/PageHeader";
+import { parseHHMM } from "@/components/timeField15Format";
 import { useMyDepartments } from "@/features/auth/useMyDepartments";
 import { useProfile } from "@/features/auth/useProfile";
 import { resolveWeekStart } from "@/features/requests/resolveWeekStart";
@@ -13,6 +14,13 @@ import { TemplateSuggestions } from "@/features/requests/components/TemplateSugg
 import { useTemplateSuggestionsQuery } from "@/features/requests/hooks";
 import { useCarForRide, useBoardRideById, useWeeks } from "@/features/siddur/hooks";
 import { he } from "@/i18n/he";
+
+const isDayKey = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value);
+const isTimeOfDay = (value: string) => /^\d{2}:\d{2}$/.test(value) && parseHHMM(value) !== null;
+
+function validParam(value: string | null, valid: (value: string) => boolean): string | undefined {
+  return value && valid(value) ? value : undefined;
+}
 
 /**
  * `/requests/new` (UX_FLOWS.md §3.4). `?ride=<id>` prefills an "ask to join"
@@ -24,10 +32,11 @@ export function NewRequestPage() {
   const weekOverride = searchParams.get("week") ?? undefined;
   // Quick-request-from-empty-slot on an Open/Solving-week siddur (UX_FLOWS.md §18): the
   // Sadran hasn't solved yet, so there is no car to target — only day/time carry over.
-  const dayParam = searchParams.get("day") ?? undefined;
-  const timeParam = searchParams.get("time") ?? undefined;
+  // A malformed value is dropped here, never handed to the form (an `Invalid Date` there crashed Safari, 2026-10-13).
+  const dayParam = validParam(searchParams.get("day"), isDayKey);
+  const timeParam = validParam(searchParams.get("time"), isTimeOfDay);
   // Two-tap span on a grid (owner 2026-10-11): the end is "להיות בבית עד", the column's car the preferred car.
-  const endParam = searchParams.get("end") ?? undefined;
+  const endParam = validParam(searchParams.get("end"), isTimeOfDay);
   const carParam = searchParams.get("car") ?? undefined;
   const waitlist = searchParams.get("waitlist") === "1";
   // Repeating-request suggestion prefill (UX_FLOWS §3.4, REQ §76).
