@@ -3,6 +3,7 @@ import type { Ref } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { RideCard, type RideCardData } from "@/components/RideCard";
 import { StatusBadge } from "@/components/StatusBadge";
 import { TripSummary } from "@/components/TripSummary";
 import { CarHandoverNotice } from "@/features/rides/components/CarHandoverNotice";
@@ -64,6 +65,12 @@ interface RequestRowProps {
   actionPending?: boolean;
   /** REQ §13.108 f: "be back on time" note for this row (see `rowHandover()`); the parent fetches the neighbours once for all rows. */
   handover?: { notes: CarHandoverNotes; span: { startsAt: string; endsAt: string } } | null;
+  /**
+   * `/my` one item per trip (owner 2026-10-13): the rides serving this request, shown as their ride cards
+   * (car, driver, times, handover note) in place of the request's own summary line; a tap opens the ride.
+   */
+  rides?: RideCardData[];
+  onOpenRide?: (rideId: string) => void;
 }
 
 /**
@@ -107,6 +114,8 @@ export function RequestRow({
   onRestoreDuplicate,
   actionPending,
   handover,
+  rides,
+  onOpenRide,
 }: RequestRowProps) {
   // R11U2: every other person on the request — member companions, named children, guests, then the unnamed counts.
   const others = whoText([...(row.companionNames ?? []), ...(row.childNames ?? []), ...(row.guestNames ?? [])], row.extraAdults ?? 0, row.unnamedChildren ?? 0);
@@ -120,26 +129,38 @@ export function RequestRow({
     : filedByOther && row.filedById === viewerId && notRequester && row.requesterName
       ? tv("request.filedFor", { name: row.requesterName })
       : null;
+  const badges = (
+    <>
+      {row.seriesLegs ? <Badge variant="outline">{tv("request.multiDayBadge", { count: String(row.seriesLegs.length) })}</Badge> : null}
+      {row.status === "proposed" && row.acceptedAwaitingOthers
+        ? <Badge variant="outline" data-testid="request-accepted-waiting">{he.request.acceptedWaitingOthers}</Badge>
+        : planBServedWithoutOutcome(row) ? null : <StatusBadge kind="request" status={displayStatus(row)} />}
+    </>
+  );
   return (
     <div
       ref={rowRef}
       data-request-id={row.id}
       className={cn("space-y-2 rounded-md border p-3 text-sm", highlighted && "ring-2 ring-primary")}
     >
-      <div className="flex items-start justify-between gap-2">
-        <TripSummary
-          destination={originDestinationLabel(row, homeDestinationId)}
-          purpose={row.rideTypeName}
-          departAt={ownLegWindow(row).departAt}
-          returnAt={ownLegWindow(row).returnAt}
-        />
-        <div className="flex shrink-0 items-center gap-2">
-          {row.seriesLegs ? <Badge variant="outline">{tv("request.multiDayBadge", { count: String(row.seriesLegs.length) })}</Badge> : null}
-          {row.status === "proposed" && row.acceptedAwaitingOthers
-            ? <Badge variant="outline" data-testid="request-accepted-waiting">{he.request.acceptedWaitingOthers}</Badge>
-            : planBServedWithoutOutcome(row) ? null : <StatusBadge kind="request" status={displayStatus(row)} />}
+      {rides?.length ? (
+        <>
+          <div className="flex items-center justify-end gap-2">{badges}</div>
+          {rides.map((ride) => (
+            <RideCard key={ride.id} ride={ride} onClick={onOpenRide ? () => onOpenRide(ride.id) : undefined} />
+          ))}
+        </>
+      ) : (
+        <div className="flex items-start justify-between gap-2">
+          <TripSummary
+            destination={originDestinationLabel(row, homeDestinationId)}
+            purpose={row.rideTypeName}
+            departAt={ownLegWindow(row).departAt}
+            returnAt={ownLegWindow(row).returnAt}
+          />
+          <div className="flex shrink-0 items-center gap-2">{badges}</div>
         </div>
-      </div>
+      )}
       <EnteredTimes
         labels={enteredTimeLabels({
           departAnchor: row.departAnchor,
@@ -152,8 +173,8 @@ export function RequestRow({
       />
       <WindowSummaryLine row={{ durationLocked: row.durationLocked, departAt: row.departAt, returnAt: row.returnAt, flexReturnLate: row.flexReturnLate }} />
       <PlanBLines row={row} />
-      {handover ? <CarHandoverNotice notes={handover.notes} ride={handover.span} /> : null}
-      {row.ride?.needsDriver ? <p className="text-sm font-medium text-destructive">{he.rideCoordination.missingDriver}</p> : null}
+      {handover && !rides?.length ? <CarHandoverNotice notes={handover.notes} ride={handover.span} /> : null}
+      {row.ride?.needsDriver && !rides?.length ? <p className="text-sm font-medium text-destructive">{he.rideCoordination.missingDriver}</p> : null}
       {isKeepCarRow(row) ? (
         <p className="text-xs text-muted-foreground" data-testid="keep-car-note">{keepCarTripLabel(row.destination)}</p>
       ) : row.tripType !== "round_trip" ? <p className="text-xs text-muted-foreground">{TRIP_TYPE_LABEL[row.tripType]}</p> : null}

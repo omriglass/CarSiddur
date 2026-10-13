@@ -32,6 +32,7 @@ import type { MyRequestRow, TemplateSuggestion } from "../api";
 import { useMoveRequestMutation, useTemplateSuggestionsQuery } from "../hooks";
 import { toastSubmitOutcome } from "../submitOutcome";
 import { minutesOfDay, weekDayKeys } from "./dayColumns";
+import { useNowQuarter } from "./useNowQuarter";
 import {
   isMyBoardRide,
   requestBlocks,
@@ -87,6 +88,7 @@ export function MyWeekView({ departmentId, homeDestinationId, profileId, request
   const acceptsRequests = canSubmit && !!week && !isPast && REQUEST_PHASES.has(week.phase);
 
   const { tableZoom, setTableZoom } = useSiddurDisplayPrefs();
+  const nowQuarter = useNowQuarter();
   const ridesQuery = useBoardRides(departmentId, weekStart);
   const carsQuery = useCars(departmentId);
   const settingsQuery = useDepartmentSettings(departmentId);
@@ -252,6 +254,7 @@ export function MyWeekView({ departmentId, homeDestinationId, profileId, request
             rideMoves.moveRide(ride.id, ride.car_id, edge === "start" ? minutes : block.startMinutes, edge === "end" ? minutes : block.endMinutes);
           }}
           markMyColumns={false}
+          nowQuarterMinutes={dayColumns.some((column) => column.today) ? nowQuarter : null}
           zoom={tableZoom}
           onZoomChange={setTableZoom}
           onRideClick={(id) => { const target = targetById.get(id); if (target) onTarget(target); }}

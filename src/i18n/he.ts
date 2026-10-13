@@ -473,15 +473,13 @@ export const he = {
     greeting: "שלום, {{name}}",
     nextAction: "מחכה לתשובה שלך",
     myRides: "הנסיעות שלי",
+    collapsedCount: "({{count}})",
     unplaced: "בקשות שעדיין לא שובצו",
-    upcomingRides: "הנסיעות הקרובות שלי",
     unservedRequests: "בקשות שלא שובצו",
-    emptyUpcoming: "אין לך נסיעות קרובות.",
     emptyUnserved: "כל הבקשות שלך שובצו 🎉",
     emptyRequestsOpen: "עוד אין לך בקשות לשבוע {{weekLabel}}.",
     emptyRequestsPublished:
       "לא הגשת בקשות לשבוע הזה. אפשר להגיש בקשה חדשה — אם יש רכב פנוי היא תאושר מיד.",
-    weekRequests: "כל הבקשות שלי לשבוע זה",
   },
   auth: {
     devSectionTitle: "כניסת פיתוח (dev בלבד)",

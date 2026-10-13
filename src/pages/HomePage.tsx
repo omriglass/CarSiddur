@@ -1,5 +1,5 @@
 import { useActiveDepartment } from "@/features/auth/useActiveDepartment";
-import { CalendarClock, Inbox, MessageCircleQuestion, CarFront } from "lucide-react";
+import { ChevronDown, Inbox, MessageCircleQuestion, CarFront } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
@@ -44,14 +44,15 @@ import {
   confirmDialogDescription,
   confirmDialogLabel,
   confirmDialogTitle,
-  groupByWeek,
   requestStart,
   toDisplayRows,
   displayStatus,
   type DisplayRow,
   type ConfirmAction,
 } from "@/features/requests/myRequestsRows";
+import { buildTripWeeks, ridesByRequestRow } from "@/features/requests/myTrips";
 import { isTodayOrLater } from "@/features/requests/upcoming";
+import { useCollapsedWeeks } from "@/features/requests/useCollapsedWeeks";
 import { useBoardRides, useWeeks, useMyUpcomingRides } from "@/features/siddur/hooks";
 import { useCarNeighboursQuery, useRideChanges, useRemoveRidePassengerMutation, useRequestRideChangeMutation } from "@/features/rides/hooks";
 import { isRideDayEditable } from "@/features/rides/rideDayEditable";
@@ -132,6 +133,7 @@ export function HomePage() {
   // made an available car look unavailable.
   const now = new Date();
   const [selectedMyRide, setSelectedMyRide] = useState<BoardRide | null>(null);
+  const collapsedWeeks = useCollapsedWeeks();
   const [collisionMove, setCollisionMove] = useState<(RideMove & { departmentId: string; weekStart: string }) | null>(null);
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
   const [shortenRow, setShortenRow] = useState<DisplayRow | null>(null);
@@ -248,7 +250,16 @@ export function HomePage() {
   // and the new-request entry point talk about.
   // QB13: a request shown in the "unserved" section is not listed a second time below.
   const unservedIds = new Set(unserved.map((r) => r.id));
-  const upcomingWeeks = groupByWeek(toDisplayRows(requests.filter((r) => !unservedIds.has(r.id)))).sort((a, b) => a.weekStart.localeCompare(b.weekStart));
+  // Owner 2026-10-13: one item per trip — a request carries the rides serving it; a ride none of my requests
+  // reaches (I drive someone else's request, a reservation names me) is its own item in its week.
+  const rideRequestIds = (ride: BoardRide) => servedOf(ride).flatMap((entry) => (entry.request_id ? [entry.request_id] : []));
+  const tripWeeks = buildTripWeeks(toDisplayRows(requests.filter((r) => !unservedIds.has(r.id))), unserved, upcomingRides, rideRequestIds);
+  const unservedRides = ridesByRequestRow(unserved, upcomingRides, rideRequestIds);
+  const rideCardOf = (ride: (typeof upcomingRides)[number]) =>
+    myRideCard(ride, requests, rideTypesQuery.data ?? [], { viewerId, neighbours: ride.id ? neighboursByRide?.get(ride.id) : undefined });
+  const rideCardsOf = (rides: readonly (typeof upcomingRides)[number][] | undefined) =>
+    (rides ?? []).flatMap((ride) => { const data = rideCardOf(ride); return data ? [data] : []; });
+  const openRide = (rideId: string) => setSelectedMyRide(upcomingRides.find((ride) => ride.id === rideId) ?? null);
   // The display row (series folded) a tapped week-view request block stands for — the same row the list renders.
   const selectedWeekRow = selectedRequestId
     ? toDisplayRows(requests).find((row) => row.id === selectedRequestId || row.seriesLegs?.some((leg) => leg.id === selectedRequestId)) ?? null
@@ -424,23 +435,7 @@ export function HomePage() {
 
       {!weekView ? <TemplateSuggestions /> : null}
 
-      {!weekView ? <section className="space-y-3">
-        <h2 className="text-sm font-semibold text-muted-foreground">{t("home.upcomingRides")}</h2>
-        {upcomingRidesQuery.isError ? (
-          <ErrorState onRetry={() => void upcomingRidesQuery.refetch()} />
-        ) : upcomingRides.length === 0 ? (
-          <EmptyState icon={CalendarClock} message={t("home.emptyUpcoming")} />
-        ) : (
-          <div className="space-y-2">
-            {upcomingRides.map((row) => {
-              const data = myRideCard(row, requests, rideTypesQuery.data ?? [], { viewerId, neighbours: row.id ? neighboursByRide?.get(row.id) : undefined });
-              return data ? <RideCard key={row.id} ride={data} onClick={() => setSelectedMyRide(row)} /> : null;
-            })}
-          </div>
-        )}
-      </section> : null}
-
-      {/* R3U1: setup banners sit below the upcoming rides so they never push them off the first screen. */}
+      {/* R3U1: setup banners sit below the next action so they never push it off the first screen. */}
       <DeviceSetupPrompts />
 
       {!weekView && (unserved.length > 0 || allPlaced) ? <section className="space-y-3">
@@ -457,6 +452,8 @@ export function HomePage() {
                 highlighted={row.id === focusedId}
                 rowRef={row.id === focusedId ? highlightedRef : undefined}
                 homeDestinationId={homeDestinationIds[row.departmentId]}
+                rides={rideCardsOf(unservedRides.get(row.id))}
+                onOpenRide={openRide}
                 onWithdraw={(target) => setConfirmAction({ kind: "withdraw", row: target })}
                 onCancelRide={(target) => setConfirmAction({ kind: "cancel", row: target })}
                 onShorten={setShortenRow}
@@ -507,8 +504,9 @@ export function HomePage() {
       ) : null}
 
       {!weekView ? <section className="space-y-3 border-t pt-4">
-        <p className="text-sm text-muted-foreground">{t("home.weekRequests")}</p>
-        {requests.length === 0 ? (
+        <h2 className="text-sm font-semibold text-muted-foreground">{t("home.myRides")}</h2>
+        {upcomingRidesQuery.isError ? <ErrorState onRetry={() => void upcomingRidesQuery.refetch()} /> : null}
+        {tripWeeks.length === 0 ? (
           <EmptyState
             icon={Inbox}
             message={
@@ -521,16 +519,28 @@ export function HomePage() {
             action={active.canSubmit && <NewRequestButton variant="inline" />}
           />
         ) : (
-          upcomingWeeks.map((group) => {
+          tripWeeks.map((group) => {
             const phase = phaseOf(group.weekStart);
+            const weekKey = `${group.weekStart}:${group.departmentId}`;
+            const collapsed = collapsedWeeks.isCollapsed(weekKey);
             return (
-              <div key={`${group.weekStart}:${group.departmentId}`} className="space-y-2" data-week-start={group.weekStart}>
-                <div className="flex items-center justify-between">
-                  <span className="font-medium" dir="ltr">
-                    {formatWeekRangeLabel(group.weekStart)}
+              <div key={weekKey} className="space-y-2" data-week-start={group.weekStart}>
+                {/* Owner 2026-10-13: a week folds to its heading (remembered on this device). */}
+                <button
+                  type="button"
+                  className="flex min-h-11 w-full items-center justify-between gap-2 rounded-md text-start"
+                  aria-expanded={!collapsed}
+                  onClick={() => collapsedWeeks.toggle(weekKey)}
+                  data-testid="my-week-toggle"
+                >
+                  <span className="flex items-center gap-1 font-medium">
+                    <ChevronDown className={cn("size-4 shrink-0 transition-transform", collapsed && "rotate-90")} aria-hidden="true" />
+                    <span dir="ltr">{formatWeekRangeLabel(group.weekStart)}</span>
+                    {collapsed ? <span className="text-sm font-normal text-muted-foreground">{tv("home.collapsedCount", { count: String(group.items.length) })}</span> : null}
                   </span>
                   {phase ? <span className="text-sm text-muted-foreground">{he.phase[phase]}</span> : null}
-                </div>
+                </button>
+                {collapsed ? null : <>
                 {group.rows.some((row) => canEditRequest(row) && !isPublishedDayWindow(row.window)) ? (
                   <Button
                     size="sm"
@@ -540,33 +550,43 @@ export function HomePage() {
                     {he.requestsList.withdrawAll}
                   </Button>
                 ) : null}
-                {group.rows.map((row) => (
-                  <RequestRow
-                    key={row.id}
-                    row={row}
-                    viewerId={viewerId}
-                    highlighted={row.id === focusedId}
-                    rowRef={row.id === focusedId ? highlightedRef : undefined}
-                    homeDestinationId={homeDestinationIds[group.departmentId]}
-                    handover={rowHandover(row, neighboursByRide, viewerId)}
-                    onWithdraw={(target) => setConfirmAction({ kind: "withdraw", row: target })}
-                    onCancelRide={(target) => setConfirmAction({ kind: "cancel", row: target })}
-                onShorten={setShortenRow}
-                    onMakeRepeating={(target) =>
-                      saveTemplateMutation.mutate(target.id, { onSuccess: () => toast.success(he.request.repeatSaved) })
-                    }
-                    makeRepeatingPending={saveTemplateMutation.isPending}
-                    onOptOutChange={(target, optOut) => optOutMutation.mutate({ requestId: target.id, optOut })}
-                  onPlaceOnOwnCar={(target, carId) =>
-                    placeOnOwnCarMutation.mutate({ requestId: target.id, carId }, { onSuccess: () => toast.success(he.request.placedOnOwnCar) })
+                {group.items.map((item) => {
+                  if (item.kind === "ride") {
+                    const data = rideCardOf(item.ride);
+                    return data ? <RideCard key={data.id} ride={data} onClick={() => setSelectedMyRide(item.ride)} /> : null;
                   }
-                  onRestoreDuplicate={(target) =>
-                    restoreDuplicateMutation.mutate(target.id, { onSuccess: () => toast.success(he.request.notDuplicateRestored) })
-                  }
-                  ownCars={ownCars}
-                  actionPending={placeOnOwnCarMutation.isPending || restoreDuplicateMutation.isPending}
-                  />
-                ))}
+                  const row = item.row;
+                  return (
+                    <RequestRow
+                      key={row.id}
+                      row={row}
+                      viewerId={viewerId}
+                      highlighted={row.id === focusedId}
+                      rowRef={row.id === focusedId ? highlightedRef : undefined}
+                      homeDestinationId={homeDestinationIds[group.departmentId]}
+                      handover={rowHandover(row, neighboursByRide, viewerId)}
+                      rides={rideCardsOf(item.rides)}
+                      onOpenRide={openRide}
+                      onWithdraw={(target) => setConfirmAction({ kind: "withdraw", row: target })}
+                      onCancelRide={(target) => setConfirmAction({ kind: "cancel", row: target })}
+                      onShorten={setShortenRow}
+                      onMakeRepeating={(target) =>
+                        saveTemplateMutation.mutate(target.id, { onSuccess: () => toast.success(he.request.repeatSaved) })
+                      }
+                      makeRepeatingPending={saveTemplateMutation.isPending}
+                      onOptOutChange={(target, optOut) => optOutMutation.mutate({ requestId: target.id, optOut })}
+                      onPlaceOnOwnCar={(target, carId) =>
+                        placeOnOwnCarMutation.mutate({ requestId: target.id, carId }, { onSuccess: () => toast.success(he.request.placedOnOwnCar) })
+                      }
+                      onRestoreDuplicate={(target) =>
+                        restoreDuplicateMutation.mutate(target.id, { onSuccess: () => toast.success(he.request.notDuplicateRestored) })
+                      }
+                      ownCars={ownCars}
+                      actionPending={placeOnOwnCarMutation.isPending || restoreDuplicateMutation.isPending}
+                    />
+                  );
+                })}
+                </>}
               </div>
             );
           })

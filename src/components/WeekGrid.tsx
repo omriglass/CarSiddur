@@ -264,6 +264,11 @@ export interface WeekGridProps {
   onGuestDrop?: (guest: WeekGridGuest, target: GuestDropTarget) => void;
   /** Minutes-since-midnight for "now", only when the grid's day is today — draws a thin primary line across every column (visual pass). Omit/`null` to hide it (e.g. a past or future day). */
   nowMinutes?: number | null;
+  /**
+   * Start of the quarter hour "now" is in (07:58 → 07:45), when the grid shows today: that quarter of the
+   * hour column is tinted lilac and labelled, like today's column header (owner 2026-10-13, `/my` week view).
+   */
+  nowQuarterMinutes?: number | null;
   /** When supplied, initially position the grid so this time is the first visible hour below the car headers. */
   initialScrollMinutes?: number | null;
   zoom?: number;
@@ -441,6 +446,7 @@ export function WeekGrid({
   onGuestHover,
   onGuestDrop,
   nowMinutes = null,
+  nowQuarterMinutes = null,
   initialScrollMinutes = null,
   zoom = 1,
   onZoomChange,
@@ -1484,15 +1490,29 @@ export function WeekGrid({
     >
       <div className="grid" style={{ zoom, gridTemplateColumns, gridTemplateRows, minWidth: gridMinWidth }}>
         {pageScroll ? null : headerCells}
-        {hours.map((h, i) => (
-          <div
-            key={h}
-            className="sticky start-0 z-10 flex items-start justify-end border-b border-e bg-muted px-px pt-0.5 tabular-nums text-xs font-medium text-muted-foreground shadow-[2px_0_6px_-2px_hsl(var(--foreground)/0.12)]"
-            style={{ gridColumn: 1, gridRow: i + 2 }}
-          >
-            <span dir="ltr">{formatMinutes(h * 60)}</span>
-          </div>
-        ))}
+        {hours.map((h, i) => {
+          const quarterHere = nowQuarterMinutes != null && Math.floor(nowQuarterMinutes / 60) === h ? nowQuarterMinutes : null;
+          return (
+            <div
+              key={h}
+              className="sticky start-0 z-10 flex items-start justify-end border-b border-e bg-muted px-px pt-0.5 tabular-nums text-xs font-medium text-muted-foreground shadow-[2px_0_6px_-2px_hsl(var(--foreground)/0.12)]"
+              style={{ gridColumn: 1, gridRow: i + 2 }}
+            >
+              {/* On the hour the band covers the label's place and carries the same time: one label, not two on top of each other. */}
+              {quarterHere != null && quarterHere % 60 === 0 ? null : <span dir="ltr">{formatMinutes(h * 60)}</span>}
+              {quarterHere != null ? (
+                <span
+                  className="absolute inset-x-0 flex items-center justify-center border-y border-mine bg-mine/25 text-[10px] font-bold text-foreground"
+                  style={{ top: `${((quarterHere % 60) / 60) * 100}%`, height: "25%" }}
+                  data-testid="week-grid-now-quarter"
+                  dir="ltr"
+                >
+                  {formatMinutes(quarterHere)}
+                </span>
+              ) : null}
+            </div>
+          );
+        })}
         {allCars.map((car, i) => (
           Column({ car, colIndex: i })
         ))}

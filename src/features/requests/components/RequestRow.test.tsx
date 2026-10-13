@@ -51,6 +51,21 @@ describe("RequestRow", () => {
     expect(screen.getByTestId("request-description")).toHaveTextContent("With grandma");
   });
 
+  it("shows the serving ride as its ride card (car, driver) and opens it on tap (owner 2026-10-13: one item per trip)", () => {
+    const onOpenRide = vi.fn();
+    const { container } = show(request({ status: "assigned" }), {
+      onOpenRide,
+      rides: [{
+        id: "ride-1", startsAt: "2026-09-15T08:00:00+03:00", endsAt: "2026-09-15T12:00:00+03:00",
+        originName: "Home", destinationName: "Destination", carName: "Corolla", driverName: "Dana", isMine: true,
+      }],
+    });
+    expect(screen.getByText("Corolla")).toBeInTheDocument();
+    expect(screen.getByText(new RegExp("Dana"))).toBeInTheDocument();
+    fireEvent.click(container.querySelector('[data-ride-id="ride-1"]')!);
+    expect(onOpenRide).toHaveBeenCalledWith("ride-1");
+  });
+
   it("renders no action buttons when readOnly", () => {
     show(request(), { readOnly: true, onWithdraw: vi.fn() });
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
