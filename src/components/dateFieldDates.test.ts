@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { datesFrom, datesOfWeek, formatWeekRangeLabel } from "./dateFieldDates";
+import { calendarCells, datesFrom, datesOfWeek, formatWeekRangeLabel, weekdayOfDate } from "./dateFieldDates";
 
 describe("formatWeekRangeLabel", () => {
   it("reads start-to-end as one left-to-right isolate, month once when it is the same", () => {
@@ -43,5 +43,26 @@ describe("datesOfWeek", () => {
     const dates = datesOfWeek("2026-09-27");
     expect(dates[0]).toBe("2026-09-27");
     expect(dates[6]).toBe("2026-10-03");
+  });
+});
+
+describe("calendarCells", () => {
+  it("a plain Sunday week is one row with nothing greyed", () => {
+    const cells = calendarCells("2026-10-11", 7);
+    expect(cells.map((c) => c.date)).toEqual(datesOfWeek("2026-10-11"));
+    expect(cells.every((c) => c.selectable)).toBe(true);
+  });
+
+  it("a range starting on a Friday greys Sunday–Thursday before it and pads the last week (owner 2026-10-13)", () => {
+    // 2026-10-16 is a Friday.
+    expect(weekdayOfDate("2026-10-16")).toBe(5);
+    const cells = calendarCells("2026-10-16", 13);
+    expect(cells).toHaveLength(21);
+    expect(cells[0]).toEqual({ date: "2026-10-11", selectable: false });
+    expect(cells.slice(0, 5).every((c) => !c.selectable)).toBe(true);
+    expect(cells[5]).toEqual({ date: "2026-10-16", selectable: true });
+    expect(cells[17]).toEqual({ date: "2026-10-28", selectable: true });
+    expect(cells.slice(18).every((c) => !c.selectable)).toBe(true);
+    expect(weekdayOfDate(cells[7]!.date)).toBe(0);
   });
 });

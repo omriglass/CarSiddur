@@ -8,12 +8,17 @@ import { Button } from "@/components/ui/button";
 import { FormItem } from "@/components/ui/form";
 import { Label } from "@/components/ui/label";
 import { DateField } from "@/components/DateField";
-import { datesOfWeek } from "@/components/dateFieldDates";
+import { datesFrom, datesOfWeek } from "@/components/dateFieldDates";
 import { t, tv } from "@/i18n/he";
 
 import { returnDayAfterDayChange } from "../../series";
 import type { RequestFormValues } from "../../schema";
 import { TripTypeFields } from "./TripTypeFields";
+
+/** The calendar day after `day` (`yyyy-MM-dd`): a multi-day return is never on the departure day itself. */
+function nextDay(day: string): string {
+  return datesFrom(day, 2)[1] ?? day;
+}
 
 export interface DayAndTripShapeFieldsProps {
   control: Control<RequestFormValues>;
@@ -118,10 +123,11 @@ export function DayAndTripShapeFields({
             name="returnDay"
             render={({ field }) => (
               <DateField
-                weekStart={day}
+                weekStart={nextDay(day)}
                 value={field.value ?? day}
+                rangeStart={day}
                 onChange={field.onChange}
-                dayCount={14}
+                dayCount={13}
                 ariaLabel={t("request.returnDay")}
               />
             )}

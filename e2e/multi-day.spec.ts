@@ -30,9 +30,9 @@ test.describe("multi-day requests", { tag: ["@request-form"] }, () => {
     await page.getByRole("button", { name: t("request.returnAnotherDay"), exact: true }).click();
     const returnPicker = page.getByRole("radiogroup", { name: t("request.returnDay") });
     await expect(returnPicker).toBeVisible();
-    // `DateField` for the return day starts counting from the departure day itself (index 0);
-    // index 2 is two calendar days later — a 3-day span (REQ §13.77).
-    await returnPicker.getByRole("radio").nth(2).click();
+    // The return-day `DateField` offers the days after the departure (index 0 = the next day; the
+    // departure's own week before it is greyed, not a radio); index 1 is a 3-day span (REQ §13.77).
+    await returnPicker.getByRole("radio").nth(1).click();
     await expect(page.getByText(tv("request.multiDayBadge", { count: "3" }))).toBeVisible();
 
     await submitRequestForm(page);

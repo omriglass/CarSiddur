@@ -8,6 +8,30 @@ export function datesFrom(start: string, count: number): string[] {
   return Array.from({ length: count }, (_, i) => format(addDays(startDate, i), "yyyy-MM-dd"));
 }
 
+/** 0 (Sunday) .. 6 (Saturday) of a calendar date `yyyy-MM-dd` — the date itself, independent of any time zone. */
+export function weekdayOfDate(date: string): number {
+  return new Date(`${date}T12:00:00Z`).getUTCDay();
+}
+
+export interface CalendarCell {
+  date: string;
+  /** False for the padding before `first` / after the last day: shown greyed so the columns stay Sunday..Saturday. */
+  selectable: boolean;
+}
+
+/**
+ * `count` selectable days from `first`, laid out in whole Sunday..Saturday weeks: a range starting on a
+ * Thursday shows Sunday–Wednesday greyed before it (owner 2026-10-13: a multi-day return picker starting
+ * mid-week labelled its first day "Sunday").
+ */
+export function calendarCells(first: string, count: number): CalendarCell[] {
+  const lead = weekdayOfDate(first);
+  const last = format(addDays(parseISO(first), count - 1), "yyyy-MM-dd");
+  const trail = 6 - weekdayOfDate(last);
+  const start = format(addDays(parseISO(first), -lead), "yyyy-MM-dd");
+  return datesFrom(start, lead + count + trail).map((date, i) => ({ date, selectable: i >= lead && i < lead + count }));
+}
+
 /** The 7 calendar dates (`yyyy-MM-dd`) of the week starting `weekStart` (a Sunday). */
 export function datesOfWeek(weekStart: string): string[] {
   return datesFrom(weekStart, 7);
