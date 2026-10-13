@@ -148,7 +148,8 @@ test.describe("freed slot (live week, single candidate)", { tag: ["@waitlist", "
     // home-week preference (a ride today/tomorrow picks the live week).
     await member1.page.goto("/my");
 
-    await member1.page.getByRole("button", { name: "בטל נסיעה" }).first().click();
+    // Owner 2026-10-13: one red "ביטול" on the /my item (it cancels the ride once placed).
+    await member1.page.locator("[data-request-id]").getByRole("button", { name: "ביטול", exact: true }).first().click();
     await expect(member1.page.getByRole("heading", { name: "לבטל את הנסיעה?" })).toBeVisible();
     await member1.page.getByRole("dialog").getByRole("button", { name: "בטל נסיעה" }).click();
 

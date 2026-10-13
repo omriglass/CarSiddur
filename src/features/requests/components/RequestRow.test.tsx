@@ -72,24 +72,27 @@ describe("RequestRow", () => {
     expect(screen.queryByRole("link", { name: he.requestsList.edit })).not.toBeInTheDocument();
   });
 
-  it("calls onWithdraw only after the caller wires it, for a request with no ride", () => {
+  it("the red ביטול removes a request with no ride (onWithdraw), and is the only cancel button (owner 2026-10-13)", () => {
     const onWithdraw = vi.fn();
     show(request(), { onWithdraw });
-    fireEvent.click(screen.getByRole("button", { name: he.requestsList.withdraw }));
+    const cancel = screen.getByRole("button", { name: he.requestsList.cancel });
+    expect(cancel.className).toContain("text-destructive");
+    fireEvent.click(cancel);
     expect(onWithdraw).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("button", { name: he.requestsList.withdraw })).not.toBeInTheDocument();
   });
 
-  it("shows cancel-ride instead of withdraw once a ride exists", () => {
+  it("the same ביטול cancels the ride once one exists (onCancelRide)", () => {
     const onCancelRide = vi.fn();
     show(request({
       ride: {
         id: "ride-1", startsAt: "2026-09-15T08:00:00+03:00", endsAt: "2026-09-15T12:00:00+03:00", status: "confirmed",
         originName: "Home", destinationName: "Home", carName: "Car", carType: "shared", driverName: "Driver", isChauffeur: false, role: "driver", version: 1,
       },
-    }), { onCancelRide });
-    expect(screen.queryByRole("button", { name: he.requestsList.withdraw })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: he.requestsList.cancelRide }));
+    }), { onCancelRide, onWithdraw: vi.fn() });
+    fireEvent.click(screen.getByRole("button", { name: he.requestsList.cancel }));
     expect(onCancelRide).toHaveBeenCalledTimes(1);
+    expect(screen.getAllByRole("button", { name: he.requestsList.cancel })).toHaveLength(1);
   });
 
   it("tells the requester who filed the ride, and the filer who it was filed for (REQ §13.127 d)", () => {
@@ -97,9 +100,8 @@ describe("RequestRow", () => {
     const first = show(row, { viewerId: "me" });
     expect(screen.getByTestId("request-filed-line")).toHaveTextContent(/Dana/);
     first.unmount();
-    show(request({ requesterId: "them", filedById: "me", filerName: "Me", requesterName: "Yossi" }), { viewerId: "me", onMakeRepeating: vi.fn(), onCancelRide: vi.fn() });
+    show(request({ requesterId: "them", filedById: "me", filerName: "Me", requesterName: "Yossi" }), { viewerId: "me", onCancelRide: vi.fn() });
     expect(screen.getByTestId("request-filed-line")).toHaveTextContent(/Yossi/);
-    expect(screen.queryByRole("button", { name: he.request.makeRepeating })).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: he.requestsList.edit })).toBeInTheDocument();
   });
 
@@ -108,14 +110,13 @@ describe("RequestRow", () => {
     expect(screen.queryByTestId("request-filed-line")).not.toBeInTheDocument();
   });
 
-  it("hides make-repeating and edit for a multi-day series card", () => {
+  it("hides edit for a multi-day series card", () => {
     const [display] = toDisplayRows([
       request({ id: "leg-1", seriesId: "series-1", seriesIndex: 1, seriesCount: 2, status: "submitted", templateId: null }),
       request({ id: "leg-2", seriesId: "series-1", seriesIndex: 2, seriesCount: 2, status: "submitted", templateId: null }),
     ]);
     vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-09-07T12:00:00Z"));
-    render(<MemoryRouter><RequestRow row={display!} onMakeRepeating={vi.fn()} /></MemoryRouter>);
-    expect(screen.queryByRole("button", { name: he.request.makeRepeating })).not.toBeInTheDocument();
+    render(<MemoryRouter><RequestRow row={display!} /></MemoryRouter>);
     expect(screen.queryByRole("link", { name: he.requestsList.edit })).not.toBeInTheDocument();
   });
   it("shows the 'be back on time' note with an accessible '!' when the parent passes one (REQ §13.108 f)", () => {
@@ -136,11 +137,10 @@ describe("RequestRow", () => {
       pickup: true, pickupAt: "2026-09-15T16:00:00Z", pickupPlaceId: "p2", pickupPlaceText: null, pickupPlaceName: "Pardes", originalMain: null,
     };
 
-    it("shows no pending pill, no make-repeating and no waiting-list opt-out", () => {
-      show(request({ status: "waitlisted", servedByAlternative: true, fallback: "alternative", alternative }), { onMakeRepeating: vi.fn(), onOptOutChange: vi.fn() });
+    it("shows no pending pill and no waiting-list opt-out", () => {
+      show(request({ status: "waitlisted", servedByAlternative: true, fallback: "alternative", alternative }), { onOptOutChange: vi.fn() });
       expect(screen.queryByText(he.status.waitlisted)).not.toBeInTheDocument();
       expect(screen.queryByText(he.status.submitted)).not.toBeInTheDocument();
-      expect(screen.queryByRole("button", { name: he.request.makeRepeating })).not.toBeInTheDocument();
       expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
       expect(screen.getByText(he.status.assigned)).toBeInTheDocument();
       expect(screen.getByTestId("request-served-by-plan-b")).toBeInTheDocument();

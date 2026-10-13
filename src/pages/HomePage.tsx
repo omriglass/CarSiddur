@@ -32,7 +32,6 @@ import {
   useClaimFreedSlotMutation,
   useMyFreedSlotOffers,
   useMyRequests,
-  useSaveRequestTemplateMutation,
   useSetFreedSlotOptOutMutation,
   useWithdrawAllRequestsMutation,
   useWithdrawFreedSlotClaimMutation,
@@ -155,7 +154,6 @@ export function HomePage() {
   const claimMutation = useClaimFreedSlotMutation();
   const withdrawClaimMutation = useWithdrawFreedSlotClaimMutation();
   const optOutMutation = useSetFreedSlotOptOutMutation();
-  const saveTemplateMutation = useSaveRequestTemplateMutation();
   const selectedRideWeekStart = selectedMyRide?.week_start ?? undefined;
   const selectedRideWeekQuery = useBoardRides(defaultDepartmentId, selectedRideWeekStart);
   const selectedRideChangesQuery = useRideChanges(defaultDepartmentId, selectedRideWeekStart);
@@ -403,7 +401,8 @@ export function HomePage() {
         </section>
       ) : null}
 
-      {active.canSubmit && defaultDepartmentId ? <CarNowButton departmentId={defaultDepartmentId} /> : null}
+      {/* Owner 2026-10-13: the week view needs no "רוצה רכב עכשיו!" — tapping "now" in the grid does the same. */}
+      {active.canSubmit && defaultDepartmentId && !weekView ? <CarNowButton departmentId={defaultDepartmentId} /> : null}
 
       {nextAction?.pendingProposal ? (
         <OpenProposalButton
@@ -570,10 +569,6 @@ export function HomePage() {
                       onWithdraw={(target) => setConfirmAction({ kind: "withdraw", row: target })}
                       onCancelRide={(target) => setConfirmAction({ kind: "cancel", row: target })}
                       onShorten={setShortenRow}
-                      onMakeRepeating={(target) =>
-                        saveTemplateMutation.mutate(target.id, { onSuccess: () => toast.success(he.request.repeatSaved) })
-                      }
-                      makeRepeatingPending={saveTemplateMutation.isPending}
                       onOptOutChange={(target, optOut) => optOutMutation.mutate({ requestId: target.id, optOut })}
                       onPlaceOnOwnCar={(target, carId) =>
                         placeOnOwnCarMutation.mutate({ requestId: target.id, carId }, { onSuccess: () => toast.success(he.request.placedOnOwnCar) })
@@ -654,10 +649,6 @@ export function HomePage() {
             onWithdraw={(target) => { setSelectedRequestId(null); setConfirmAction({ kind: "withdraw", row: target }); }}
             onCancelRide={(target) => { setSelectedRequestId(null); setConfirmAction({ kind: "cancel", row: target }); }}
             onShorten={(target) => { setSelectedRequestId(null); setShortenRow(target); }}
-            onMakeRepeating={(target) =>
-              saveTemplateMutation.mutate(target.id, { onSuccess: () => toast.success(he.request.repeatSaved) })
-            }
-            makeRepeatingPending={saveTemplateMutation.isPending}
             onOptOutChange={(target, optOut) => optOutMutation.mutate({ requestId: target.id, optOut })}
             onPlaceOnOwnCar={(target, carId) =>
               placeOnOwnCarMutation.mutate({ requestId: target.id, carId }, { onSuccess: () => toast.success(he.request.placedOnOwnCar) })

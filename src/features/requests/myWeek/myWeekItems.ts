@@ -9,6 +9,7 @@ import { peopleOf } from "@/features/rides/ridePeople";
 import { ridePublicDetails } from "@/lib/ridePublicDetails";
 import { rideBlockLabel } from "@/lib/rideLabel";
 import { viaLabel } from "@/lib/routeLabel";
+import { dateKey } from "@/lib/time";
 
 import type { MyRequestRow, TemplateSuggestion } from "../api";
 import { enteredTimeLabels } from "../enteredTimes";
@@ -163,6 +164,8 @@ export function requestBlocks(
   now: number = Date.now(),
 ): MyWeekBlock[] {
   const out: MyWeekBlock[] = [];
+  // Owner 2026-10-13: a request on a day already gone is no useful information — only today onward (rides stay).
+  const today = dateKey(now);
   for (const row of rows) {
     const kind = requestBlockKind(row, now);
     const span = requestSpan(row);
@@ -170,6 +173,7 @@ export function requestBlocks(
     const label = originDestinationLabel(row, homeDestinationId);
     const description = [...requestDetailLines(row), kind === "proposal" ? null : waitingFallbackLine(row)].filter(Boolean).join("\n") || undefined;
     daySegments(span.start, span.end, dayKeys).forEach((segment, index) => {
+      if (segment.dayKey < today) return;
       out.push({
         target: kind === "proposal" ? { type: "proposal", row } : { type: "request", row },
         block: {

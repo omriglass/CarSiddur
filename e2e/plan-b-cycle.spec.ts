@@ -163,7 +163,7 @@ test.describe.serial("plan B cycle: unmet card, proposal, publish block, member 
 
     await test.step("removing the request removes the linked pickup request too", async () => {
       const row = page.locator(`[data-request-id="${requestId}"]`);
-      await row.getByRole("button", { name: he.requestsList.withdraw, exact: true }).click();
+      await row.getByRole("button", { name: he.requestsList.cancel, exact: true }).click();
       const dialog = page.getByRole("dialog").filter({ hasText: he.request.withdrawConfirmTitle });
       await expect(dialog).toContainText(he.request.withdrawPlanBPickupBody);
       await dialog.getByRole("button", { name: he.requestsList.withdraw, exact: true }).click();

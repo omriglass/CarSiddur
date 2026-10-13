@@ -130,7 +130,7 @@ test("combined one-way consent preserves an orphaned passenger and lets a member
     // ui-dev scope).
     await driver.page.goto("/my");
     const ownCard = driver.page.locator(`[data-request-id="${requestIds[0]}"]`);
-    await ownCard.getByRole("button", { name: he.requestsList.cancelRide, exact: true }).click();
+    await ownCard.getByRole("button", { name: he.requestsList.cancel, exact: true }).click();
     await driver.page.getByRole("dialog").getByRole("button", { name: he.requestsList.cancelRide, exact: true }).click();
     await expect(driver.page.getByRole("dialog")).not.toBeVisible();
     const { data: orphan } = await service.from("rides").select("needs_driver,driver_id,status").eq("id", rideId).single();

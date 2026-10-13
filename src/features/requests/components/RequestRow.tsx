@@ -27,7 +27,9 @@ import { WindowSummaryLine } from "./WindowSummaryLine";
 import { isKeepCarRow, keepCarTripLabel } from "../keepCar";
 import { isAwaitingAnswer } from "../pendingProposal";
 import { canPlaceOnOwnCar, isDuplicateWithdrawn } from "../overlap";
-import { FREED_SLOT_ELIGIBLE_STATUSES, canMakeRepeating, displayStatus, legStateLine, originDestinationLabel, ownLegWindow, type DisplayRow } from "../myRequestsRows";
+import { FREED_SLOT_ELIGIBLE_STATUSES, displayStatus, legStateLine, originDestinationLabel, ownLegWindow, type DisplayRow } from "../myRequestsRows";
+
+const CANCEL_CLASS = "border-destructive/50 text-destructive hover:bg-destructive/10 hover:text-destructive";
 
 /** REQ §13.93: shown whenever a request is not a plain round trip (the mundane default). */
 const TRIP_TYPE_LABEL: Record<TripType, string> = {
@@ -54,8 +56,6 @@ interface RequestRowProps {
   onCancelRide?: (row: DisplayRow) => void;
   /** REQ §13.103 c: "קיצור הבקשה" on a multi-day request. */
   onShorten?: (row: DisplayRow) => void;
-  onMakeRepeating?: (row: DisplayRow) => void;
-  makeRepeatingPending?: boolean;
   onOptOutChange?: (row: DisplayRow, optOut: boolean) => void;
   /** REQ §13.101 h (QM8): the member's own active private cars in this department. */
   ownCars?: { id: string; name: string }[];
@@ -106,8 +106,6 @@ export function RequestRow({
   onWithdraw,
   onCancelRide,
   onShorten,
-  onMakeRepeating,
-  makeRepeatingPending,
   onOptOutChange,
   ownCars = [],
   onPlaceOnOwnCar,
@@ -129,6 +127,11 @@ export function RequestRow({
     : filedByOther && row.filedById === viewerId && notRequester && row.requesterName
       ? tv("request.filedFor", { name: row.requesterName })
       : null;
+  // Owner 2026-10-13: one red "ביטול" — removes a request with no ride yet (`onWithdraw`), cancels its ride once placed
+  // (`onCancelRide`, the requester's own); each keeps its own confirmation dialog. "Repeat weekly" lives in the edit form.
+  const cancelAction = row.ride && row.ride.status !== "cancelled"
+    ? (onCancelRide && !notRequester ? () => onCancelRide(row) : null)
+    : row.status !== "withdrawn" && row.status !== "cancelled" && onWithdraw ? () => onWithdraw(row) : null;
   const badges = (
     <>
       {row.seriesLegs ? <Badge variant="outline">{tv("request.multiDayBadge", { count: String(row.seriesLegs.length) })}</Badge> : null}
@@ -238,24 +241,14 @@ export function RequestRow({
                 </Button>
               ))
             : null}
-          {row.status !== "withdrawn" && row.status !== "cancelled" && !row.ride && onWithdraw ? (
-            <Button size="sm" variant="outline" onClick={() => onWithdraw(row)}>
-              {he.requestsList.withdraw}
-            </Button>
-          ) : null}
           {row.seriesLegs && row.status !== "withdrawn" && row.status !== "cancelled" && onShorten ? (
             <Button size="sm" variant="outline" onClick={() => onShorten(row)}>
               {he.request.shortenSeries}
             </Button>
           ) : null}
-          {row.ride && row.ride.status !== "cancelled" && onCancelRide && !notRequester ? (
-            <Button size="sm" variant="outline" onClick={() => onCancelRide(row)}>
-              {he.requestsList.cancelRide}
-            </Button>
-          ) : null}
-          {canMakeRepeating(row) && onMakeRepeating && !notRequester ? (
-            <Button size="sm" variant="outline" disabled={makeRepeatingPending} onClick={() => onMakeRepeating(row)}>
-              {he.request.makeRepeating}
+          {cancelAction ? (
+            <Button size="sm" variant="outline" className={CANCEL_CLASS} onClick={cancelAction}>
+              {he.requestsList.cancel}
             </Button>
           ) : null}
         </div>

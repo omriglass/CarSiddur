@@ -64,7 +64,7 @@ test.describe("multi-day requests", { tag: ["@request-form"] }, () => {
     await expect(card.getByText(tv("request.multiDayBadge", { count: "3" }))).toBeVisible();
 
     // Withdrawing the card cascades to every leg.
-    await card.getByRole("button", { name: he.requestsList.withdraw, exact: true }).click();
+    await card.getByRole("button", { name: he.requestsList.cancel, exact: true }).click();
     await expect(page.getByRole("heading", { name: he.request.withdrawConfirmTitle })).toBeVisible();
     await page.getByRole("button", { name: he.requestsList.withdraw, exact: true }).last().click();
     await expect(page.getByText(DESTINATION)).toHaveCount(0);

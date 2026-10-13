@@ -63,6 +63,13 @@ describe("requestBlocks", () => {
     expect(entry?.target).toMatchObject({ type: "request" });
   });
 
+  it("drops a request on a day already gone, keeping today onward (owner 2026-10-13)", () => {
+    const tuesdayMorning = Date.parse("2026-10-13T06:00:00Z");
+    expect(requestBlocks([request({})], week, null, tuesdayMorning)).toEqual([]);
+    const today = requestBlocks([request({ departAt: "2026-10-13T08:00:00+03:00", returnAt: "2026-10-13T12:00:00+03:00" })], week, null, tuesdayMorning);
+    expect(today).toHaveLength(1);
+  });
+
   it("gives a one-way request a one-hour block", () => {
     const [entry] = requestBlocks([request({ returnAt: null })], week, null, NOW);
     expect(entry?.block).toMatchObject({ startMinutes: 480, endMinutes: 540 });

@@ -186,7 +186,6 @@ export const heMember = {
     stopSuggestionConfirmTitle: "להפסיק לחזור על הבקשה הזו?",
     stopSuggestionConfirmBody: "לא נציע לך יותר את הבקשה הזו בשבועות הבאים. אפשר להתחיל לחזור עליה מחדש מבקשה חדשה.",
     stopped: "הבקשה החוזרת הופסקה",
-    makeRepeating: "הפוך/י לחוזר",
     repeating: "חוזר כל שבוע",
     /**
      * Multi-day requests ("series", REQ §13.77, UX_FLOWS.md §3.4/§3.3, built 2026-09-10):
@@ -234,6 +233,8 @@ export const heMember = {
     edit: "ערוך",
     withdraw: "הסר בקשה",
     cancelRide: "בטל נסיעה",
+    /** Owner 2026-10-13: the one red cancel button on a /my item — removes the request, or cancels its ride once placed. */
+    cancel: "ביטול",
     stillWantIt: "אני עדיין רוצה",
     withdrawClaim: "בטל בקשת הצטרפות",
     freedSlotOffer: "התפנה רכב — {{car}}, {{day}} {{depart}}–{{return}}",

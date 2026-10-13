@@ -18,15 +18,6 @@ import { isPartiallyPlaced, legCoverage, ownTimesFromLegs } from "./publishedOut
 // "external" (solved outside — public transport, cab) is treated like "denied" (owner 2026-10-05).
 export const FREED_SLOT_ELIGIBLE_STATUSES = new Set<MyRequestRow["status"]>(["waitlisted", "denied", "external"]);
 
-/** "הפוך/י לחוזר" is only meaningful once the request is a real, still-relevant filing —
- * mirrors the statuses a repeating request could plausibly resubmit as (REQ §76). */
-export const MAKE_REPEATING_STATUSES = new Set<MyRequestRow["status"]>(["submitted", "assigned"]);
-
-/** R10B5: "הפוך/י לחוזר" makes no sense for a request that is now its plan B (a plan B holds absolute clock times and a place). */
-export function canMakeRepeating(row: Pick<DisplayRow, "status" | "templateId" | "seriesLegs" | "servedByAlternative">): boolean {
-  return !row.templateId && !row.seriesLegs && !row.servedByAlternative && MAKE_REPEATING_STATUSES.has(row.status);
-}
-
 /**
  * "מ<origin> ל<destination>" / "מ<origin> דרך <stops> ל<destination>" (REQ §13.93, §13.93
  * "Multi-stop rides") — the origin is shown only when it is not the department home (a
