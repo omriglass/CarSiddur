@@ -461,12 +461,12 @@ real-solver regression, QA CLIs — docs/QA_SIMULATION.md).
 
 ### stats — Statistics
 
-**Paths**: `src/features/stats/**`; `src/i18n/he.admin.ts`, `he.sadran.ts`; migrations matching
+**Paths**: `src/features/stats/**`, `src/features/policyView/**`, `src/pages/PolicyPage.tsx` (the member policy view, REQ §13.133); `src/i18n/he.admin.ts`, `he.sadran.ts`; migrations matching
 `*stats*`. No dedicated Playwright spec exists yet (see coverage gap).
 
 **Automated**:
-- Vitest: `npx vitest run src/features/stats`
-- SQL: `department_stats.sql`
+- Vitest: `npx vitest run src/features/stats src/features/policyView`
+- SQL: `department_stats.sql`, `policy_week_alignment.sql`
 - Playwright: none yet — **manual-only** until a spec is added.
 
 **QA script**:

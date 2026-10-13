@@ -80,6 +80,9 @@ html {
        sits next to the lilac "mine" without competing with it; drawn as a faint tint only, never as a ride. */
     --calendar: 199 75% 45%;
     --calendar-foreground: 199 80% 22%;
+    /* Policy pie (REQ §13.133): the validated 8-hue categorical order, one fixed slot per rule type (dataviz validator, light card surface). */
+    --chart-1: #2a78d6; --chart-2: #eb6834; --chart-3: #1baf7a; --chart-4: #eda100;
+    --chart-5: #e87ba4; --chart-6: #008300; --chart-7: #6250d6; --chart-8: #e34948;
   }
 }
 
@@ -149,6 +152,9 @@ html {
 
   --calendar: 199 80% 62%;
   --calendar-foreground: 199 85% 86%;
+  /* Same eight hues stepped for the dark card surface (validator: all checks pass). */
+  --chart-1: #3987e5; --chart-2: #d95926; --chart-3: #199e70; --chart-4: #c98500;
+  --chart-5: #d55181; --chart-6: #008300; --chart-7: #9085e9; --chart-8: #e66767;
 }
 
 @layer base {

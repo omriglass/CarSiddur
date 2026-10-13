@@ -3,7 +3,7 @@ import type { RouteObject } from "react-router-dom";
 
 import { GuardLoading } from "@/features/auth/guards";
 import { RequestsRedirect } from "@/pages/RequestsRedirect";
-import { CarPage, MyArchivePage, MyHistoryPage, SiddurArchivePage, SiddurPage, StatsPage } from "./lazyPages";
+import { CarPage, MyArchivePage, MyHistoryPage, PolicyPage, SiddurArchivePage, SiddurPage, StatsPage } from "./lazyPages";
 
 
 /**
@@ -27,4 +27,5 @@ export const memberRoutes: RouteObject[] = [
   { path: "/siddur/:dept/:week", element: <Suspense fallback={<GuardLoading />}><SiddurPage /></Suspense> },
   { path: "/cars/:carId", element: <Suspense fallback={<GuardLoading />}><CarPage /></Suspense> },
   { path: "/stats/:dept", element: <Suspense fallback={<GuardLoading />}><StatsPage /></Suspense> },
+  { path: "/policy/:dept", element: <Suspense fallback={<GuardLoading />}><PolicyPage /></Suspense> },
 ];

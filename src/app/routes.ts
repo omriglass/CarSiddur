@@ -128,4 +128,7 @@ export const paths = {
    * reachable by more than one role — the page itself gates access.
    */
   stats: (departmentId: string): string => `/stats/${departmentId}`,
+
+  /** `/policy/:dept` — "הצג מדיניות": any member reads the department's policies (REQ §13.133); linked from the siddur's eye menu. */
+  policy: (departmentId: string): string => `/policy/${departmentId}`,
 };

@@ -5282,6 +5282,7 @@ export type Database = {
           travel_minutes: number
         }[]
       }
+      policy_week_alignment: { Args: { p_policy_id: string }; Returns: Json }
       prepare_manual_ride_window: {
         Args: {
           p_car_id: string

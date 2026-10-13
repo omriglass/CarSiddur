@@ -35,6 +35,7 @@ const ROUTE_PATTERNS = [
   "/terms",
   "/cars/:carId",
   "/stats/:dept",
+  "/policy/:dept",
   "/admin/errors",
 ];
 
@@ -182,6 +183,8 @@ describe("paths.stats", () => {
   it("matches /stats/:dept", () => {
     expectRoutable(paths.stats("dept-1"));
     expect(paths.stats("dept-1")).toBe("/stats/dept-1");
+    expectRoutable(paths.policy("dept-1"));
+    expect(paths.policy("dept-1")).toBe("/policy/dept-1");
   });
 });
 

@@ -261,6 +261,7 @@ begin
   perform pg_temp.expect_refused('children.child_request_overlaps', format('select * from public.child_request_overlaps(%L, array[%L], now(), now() + interval ''1 hour'')', dept_b, 'x'));
   perform pg_temp.expect_refused('policies.create_policy_version', format('select public.create_policy_version(%L, %L::jsonb, null, %L::jsonb)', policy_b, '[]', '{}'));
   perform pg_temp.expect_refused('policies.set_policy_active', format('select public.set_policy_active(%L, false)', policy_b));
+  perform pg_temp.expect_refused('policies.policy_week_alignment', format('select public.policy_week_alignment(%L)', policy_b));
 
   -- waitlist groups -------------------------------------------------------
   perform pg_temp.expect_refused('waitlist.resolve_waitlist_group',
@@ -354,7 +355,7 @@ declare
     'open_week','reopen_week','set_week_phase','set_week_close_at','ensure_department_weeks',
     'publication_readiness','publication_conflicts','publish_siddur','record_solver_preview','form_waitlist_groups',
     'publish_scores_fingerprint','sadran_contact_of','fairness_stats','department_stats','joinable_rides_for_request',
-    'create_policy_version','set_policy_active','resolve_waitlist_group','cancel_waitlist_group',
+    'create_policy_version','set_policy_active','policy_week_alignment','resolve_waitlist_group','cancel_waitlist_group',
     'place_travel_for_week','car_start_locations','set_my_default_origin','route_minutes_preview',
     'set_ride_driver','withdraw_duplicate_request','restore_duplicate_request','place_on_own_car','child_request_overlaps',
     'mark_car_move','shorten_series','join_drop_off_legs','place_series_on_car',

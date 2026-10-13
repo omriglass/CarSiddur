@@ -486,6 +486,7 @@ export function SiddurPage() {
           onZoomChange={setTableZoom}
           showEarlyHours={showEarlyHours}
           onShowEarlyHoursChange={setShowEarlyHours}
+          departmentId={departmentId}
         />
       </div>
       {departmentSwitcher ? <div className="md:hidden">{departmentSwitcher}</div> : null}
@@ -530,6 +531,7 @@ export function SiddurPage() {
               onZoomChange={setTableZoom}
               showEarlyHours={showEarlyHours}
               onShowEarlyHoursChange={setShowEarlyHours}
+              departmentId={departmentId}
             />
           </div>
           <div className={tableView ? "hidden" : "lg:hidden"}>

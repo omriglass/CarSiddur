@@ -847,16 +847,21 @@
       "title": "Statistics",
       "paths": [
         "src/features/stats/**",
+        "src/features/policyView/**",
+        "src/pages/PolicyPage.tsx",
         "src/i18n/he.admin.ts",
         "src/i18n/he.sadran.ts",
         "supabase/migrations/**/*stats*",
-        "supabase/tests/department_stats.sql"
+        "supabase/tests/department_stats.sql",
+        "supabase/tests/policy_week_alignment.sql"
       ],
       "vitest": [
-        "src/features/stats"
+        "src/features/stats",
+        "src/features/policyView"
       ],
       "sql": [
-        "department_stats.sql"
+        "department_stats.sql",
+        "policy_week_alignment.sql"
       ],
       "playwrightTags": [
         "@stats"

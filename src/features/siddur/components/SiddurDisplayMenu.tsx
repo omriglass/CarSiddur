@@ -1,4 +1,5 @@
-import { Eye, List, RotateCw, Table2, ZoomIn, ZoomOut } from "lucide-react";
+import { Eye, List, RotateCw, Scale, Table2, ZoomIn, ZoomOut } from "lucide-react";
+import { Link } from "react-router-dom";
 
 import { PINCH_ZOOM_MAX, PINCH_ZOOM_MIN, zoomIn, zoomOut } from "@/components/pinchZoom";
 import { Button } from "@/components/ui/button";
@@ -14,6 +15,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useLandscapeToggle } from "@/components/useLandscapeToggle";
+import { paths } from "@/app/routes";
 import { he } from "@/i18n/he";
 
 interface SiddurDisplayMenuProps {
@@ -23,6 +25,8 @@ interface SiddurDisplayMenuProps {
   onZoomChange: (zoom: number) => void;
   showEarlyHours: boolean;
   onShowEarlyHoursChange: (value: boolean) => void;
+  /** The siddur's department: "הצג מדיניות" opens its policies (REQ §13.133). */
+  departmentId?: string;
 }
 
 /**
@@ -35,7 +39,7 @@ interface SiddurDisplayMenuProps {
  * desktop row.
  */
 export function SiddurDisplayMenu({
-  table, onTableChange, zoom, onZoomChange, showEarlyHours, onShowEarlyHoursChange,
+  table, onTableChange, zoom, onZoomChange, showEarlyHours, onShowEarlyHoursChange, departmentId,
 }: SiddurDisplayMenuProps) {
   const { landscape, rotateHint, enterLandscape, exitLandscape } = useLandscapeToggle(onTableChange);
 
@@ -96,6 +100,16 @@ export function SiddurDisplayMenu({
           </>
         ) : null}
         {rotateHint ? <p role="status" className="px-2 py-1.5 text-xs text-muted-foreground">{he.tableView.rotateHint}</p> : null}
+        {departmentId ? (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem asChild>
+              <Link to={paths.policy(departmentId)} data-testid="siddur-show-policy">
+                <Scale className="me-2 size-4" aria-hidden="true" />{he.policyView.menuLink}
+              </Link>
+            </DropdownMenuItem>
+          </>
+        ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
   );

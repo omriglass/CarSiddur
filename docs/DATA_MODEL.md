@@ -915,6 +915,8 @@ Immutable (`forbid_mutation()`). `weeks.published_version_id` points to the curr
 
 **Live board preview (owner, 2026-09-14):** the Sadran board also previews each policy's `alignment_ratio` ("weighted coverage") client-side, next to and inside the policy chip's versions dialog (`src/features/sadran/board/policyScore.ts`, `useBoardPolicyScores.ts`, UX_FLOWS.md §4.2 `PolicyChip`) — computed the same way `publishWithScores.ts` does, from data the board already has loaded; nothing is stored until an actual publish writes `siddur_versions.snapshot.policy_scores`.
 
+**`policy_week_alignment(p_policy_id uuid) returns jsonb`** (`20261024102000_policy_week_alignment.sql`; `stable security definer`, granted to `authenticated`; member-facing "הצג מדיניות" page, owner 2026-10-13). Authorization: `is_admin()` or `member_of(policy.department_id)`, else `not_authorized`. Reads the department's most recent week (`week_start <= today` Jerusalem) whose latest `siddur_versions` row carries a `snapshot.policy_scores[]` element for the policy; none -> `null`. Over that element's `profiles[].requests[]` it counts contested pairs (one served, one not served, same Jerusalem day, overlapping `[coalesce(depart_at,return_at), coalesce(return_at,depart_at))`, different requesters, not the same series) and how many were decided in score order. Shape: `{"week_start": date, "pairs": int, "followed": int, "reversed": int, "tied": int}` (scores equal within 1e-9 = tied). Aggregates only; no ids, names or per-request data. Suite `policy_week_alignment.sql`; isolation-tested in `department_isolation.sql`.
+
 ### 3.10 Live changes (REQUIREMENTS §8)
 
 #### `freed_slot_offers`
