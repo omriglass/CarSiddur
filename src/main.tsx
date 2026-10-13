@@ -42,6 +42,22 @@ window.addEventListener("unhandledrejection", (event) => {
   }
 });
 
+// A page opened before a deploy asks for a lazy chunk the new build no longer has; the Worker answers with
+// index.html ("'text/html' is not a valid JavaScript MIME type", 2026-10-13). Reload once to pick up the new
+// build instead of showing the error screen; a second failure within a minute is a real error and falls through.
+window.addEventListener("vite:preloadError", (event) => {
+  const key = "app.chunkReloadAt";
+  try {
+    const last = Number(sessionStorage.getItem(key) ?? 0);
+    if (Date.now() - last < 60_000) return;
+    sessionStorage.setItem(key, String(Date.now()));
+  } catch {
+    return;
+  }
+  event.preventDefault();
+  window.location.reload();
+});
+
 // Uncaught synchronous exceptions outside React's render (event handlers, timers, scripts).
 window.addEventListener("error", (event) => {
   const where = event.filename ? `${event.filename}:${event.lineno}:${event.colno}` : undefined;
