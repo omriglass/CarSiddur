@@ -56,6 +56,7 @@ import { type CarFreeWindow } from "@/features/siddur/freeWindows";
 import {
   useBoardRides,
   useCarLocations,
+  useCarStartLocations,
   useDepartments,
   useWeeks,
 } from "@/features/siddur/hooks";
@@ -156,6 +157,7 @@ export function SiddurPage() {
   const carsQuery = useCars(departmentId);
   const maintenanceQuery = useMaintenanceBlocks(departmentId);
   const carLocationsQuery = useCarLocations(departmentId, weekStart);
+  const carStartLocationsQuery = useCarStartLocations(departmentId, weekStart);
   const rideTypesQuery = useRideTypes(departmentId);
   const settingsQuery = useDepartmentSettings(departmentId);
   const changesQuery = useRideChanges(departmentId, weekStart);
@@ -347,7 +349,7 @@ export function SiddurPage() {
         carId: c.id,
         dayStartIso: fromZonedTime(`${activeDay ?? weekStart}T00:00:00`, TZ).toISOString(),
         rides: boardRidesQuery.data ?? [],
-        weekStartLocationId: carLocationsQuery.data?.find((l) => l.car_id === c.id)?.location_id,
+        weekStartLocationId: carStartLocationsQuery.data?.[c.id],
         baseLocationId: c.base_location_id,
         homeId: homeDestinationId,
         names: destinationNameById,

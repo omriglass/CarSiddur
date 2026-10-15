@@ -191,5 +191,11 @@ export async function fetchCarLocations(departmentId: string, weekStart: string)
   return data ?? [];
 }
 
+/** `car_start_locations()` (REQ §13.93): where each car stands at the week's start, keyed by car id (location null-safe). */
+export async function fetchCarStartLocationIds(departmentId: string, weekStart: string): Promise<Record<string, string>> {
+  const rows = await rpc("car_start_locations", { p_department_id: departmentId, p_week_start: weekStart });
+  return Object.fromEntries((rows ?? []).map((row) => [row.car_id, row.location_id]));
+}
+
 // `RidePassengerInput`, `addRidePassengers()`, `removeRidePerson()` moved to
 // `src/features/rides/api.ts` alongside `RideMove`/`RideChange` (R8, same reason).

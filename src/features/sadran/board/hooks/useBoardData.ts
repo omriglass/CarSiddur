@@ -591,7 +591,7 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
               turnaroundMinutes: r.turnaround_override_minutes ?? undefined,
               locationNeutral: isReservation(r),
             })),
-            carIds: [...new Set(validRides.map((r) => r.car_id))],
+            carIds: [...new Set([...validRides.map((r) => r.car_id), ...(carsQuery.data ?? []).map((c) => c.id)])],
             weekStartMs,
             bufferMinutes: weekSettings.turnaroundMinutes,
             homeLocationId: department.home_destination_id,
@@ -661,7 +661,11 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
       // instant), not the week's first away interval; with no scan yet, the stored location.
       locationBadge: conflictScan
         ? awayLocationAt(conflictScan.awayByCarId.get(c.id), weekStartMs, dayStartIso(selectedDay), destinationNameById)
-        : carLocationsQuery.data?.find((l) => l.car_id === c.id)?.location_name ?? undefined,
+        : (() => {
+          // No scan yet: the week-start place (never a later in-week move), unless it is the car's base.
+          const at = carStartLocationsQuery.data?.[c.id]?.locationId;
+          return at && at !== (c.base_location_id ?? department?.home_destination_id) ? destinationNameById.get(at) : undefined;
+        })(),
       // REQUIREMENTS §13.93: the car's own base, shown only when it isn't the department home.
       baseBadge: base && base !== department?.home_destination_id
         ? tv("sadranBoard.carBase", { place: destinationNameById.get(base) ?? "" })
@@ -930,6 +934,7 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
     weekStartMs,
     // REQUIREMENTS §13.93: each car's own base, already defaulted to the department home.
     carBaseLocationId: new Map((carsQuery.data ?? []).map((c) => [c.id, c.base_location_id ?? department?.home_destination_id ?? ""])),
+    carStartLocationId: new Map(Object.entries(carStartLocationsQuery.data ?? {}).map(([id, l]) => [id, l.locationId])),
     homeDestinationId: department?.home_destination_id ?? undefined,
     route: routeCtx,
   };

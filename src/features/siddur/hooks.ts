@@ -8,6 +8,7 @@ import {
   fetchBoardRides,
   fetchCarForRide,
   fetchCarLocations,
+  fetchCarStartLocationIds,
   fetchCurrentWeekStart,
   fetchDepartments,
   fetchWeeks,
@@ -85,6 +86,16 @@ export function useCarLocations(departmentId: string | undefined, weekStart: str
   return useQuery({
     queryKey: siddurKeys.carLocations(departmentId, weekStart),
     queryFn: () => fetchCarLocations(departmentId as string, weekStart as string),
+    enabled: !!departmentId && !!weekStart,
+    staleTime: 30_000,
+  });
+}
+
+/** Where each car stands at the week's start (`car_start_locations()`), car id -> place id. */
+export function useCarStartLocations(departmentId: string | undefined, weekStart: string | undefined) {
+  return useQuery({
+    queryKey: siddurKeys.carStartLocations(departmentId, weekStart),
+    queryFn: () => fetchCarStartLocationIds(departmentId as string, weekStart as string),
     enabled: !!departmentId && !!weekStart,
     staleTime: 30_000,
   });

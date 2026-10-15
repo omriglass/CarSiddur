@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  carLocationAt,
   chauffeurCarElsewhere,
   connectsOtherLeg,
   isDropTargetValid,
@@ -435,5 +436,30 @@ describe("R3B3/R3B4 (QA run 3)", () => {
       rides: [ride({ id: "busy", car_id: "car1", starts_at: "2026-09-13T07:30:00.000Z", ends_at: "2026-09-13T08:10:00.000Z", status: "confirmed" })],
     });
     expect(unmetCandidateWindow(busy, item, 675, false, "car1")?.startsAt).toBe("2026-09-13T08:15:00.000Z");
+  });
+});
+
+describe("carLocationAt - week-start location (REQ §13.93)", () => {
+  const WEEK_START_MS = Date.parse("2026-09-13T00:00:00.000Z");
+  const at = slotToIso(36, WEEK_START_MS);
+  it("a car with no scan entry (no rides this week) stands where the week started, not at its base", () => {
+    const ctx = baseContext({
+      awayByCarId: new Map(),
+      carStartLocationId: new Map([["car1", "harish"]]),
+      carBaseLocationId: new Map([["car1", "home"]]),
+      weekStartMs: WEEK_START_MS,
+      homeDestinationId: "home",
+    });
+    expect(carLocationAt(ctx, "car1", at)).toBe("harish");
+  });
+  it("a scanned car with no away window here is at its base", () => {
+    const ctx = baseContext({
+      awayByCarId: new Map([["car1", []]]),
+      carStartLocationId: new Map([["car1", "harish"]]),
+      carBaseLocationId: new Map([["car1", "home"]]),
+      weekStartMs: WEEK_START_MS,
+      homeDestinationId: "home",
+    });
+    expect(carLocationAt(ctx, "car1", at)).toBe("home");
   });
 });

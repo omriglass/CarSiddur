@@ -77,6 +77,8 @@ export interface BoardDropContext {
   weekStartMs?: number;
   /** Each car's own base (REQUIREMENTS §13.93), already defaulted to the department home by the caller. */
   carBaseLocationId?: Map<string, string>;
+  /** Where each car stands at the week's start (`car_start_locations()`); the fallback for a car the away scan has no entry for. */
+  carStartLocationId?: ReadonlyMap<string, string>;
   /** The department home — the implicit origin of a request with no `origin_id` of its own. */
   homeDestinationId?: string;
   /**
@@ -107,6 +109,11 @@ export function carLocationAt(ctx: BoardDropContext, carId: string, atIso: strin
     return start <= at && at < end;
   });
   if (away) return away.locationId;
+  // A car with no entry in the away scan (no rides this week) still stands where last week left it.
+  if (!ctx.awayByCarId?.has(carId)) {
+    const start = ctx.carStartLocationId?.get(carId);
+    if (start) return start;
+  }
   return ctx.carBaseLocationId?.get(carId) ?? ctx.homeDestinationId ?? null;
 }
 

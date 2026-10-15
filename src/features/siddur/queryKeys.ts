@@ -8,6 +8,8 @@ export const siddurKeys = {
     ["siddur", "boardRides", departmentId, weekStart] as const,
   boardRideById: (rideId: string | undefined) => ["siddur", "boardRideById", rideId] as const,
   carForRide: (carId: string | undefined) => ["siddur", "carForRide", carId] as const,
+  carStartLocations: (departmentId: string | undefined, weekStart: string | undefined) =>
+    ["siddur", "carStartLocations", departmentId, weekStart] as const,
   carLocations: (departmentId: string | undefined, weekStart: string | undefined) =>
     ["siddur", "carLocations", departmentId, weekStart] as const,
   myUpcomingRides: (profileId: string | undefined, departmentId: string | undefined) =>
