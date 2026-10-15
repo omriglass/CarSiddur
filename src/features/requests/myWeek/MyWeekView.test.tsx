@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { BoardRide, Week } from "@/features/siddur/api";
 
@@ -51,7 +51,9 @@ function renderView(onTarget = vi.fn()) {
 }
 
 describe("MyWeekView", () => {
-  beforeEach(() => vi.clearAllMocks());
+  // The same day as the mocked `todayInJerusalem`: the view hides past requests by the real clock (af5dafb).
+  beforeEach(() => { vi.clearAllMocks(); vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(new Date("2026-10-12T06:00:00Z")); });
+  afterEach(() => vi.useRealTimers());
 
   it("draws seven day columns, my ride with its car, and my request side by side on the same day", () => {
     renderView();

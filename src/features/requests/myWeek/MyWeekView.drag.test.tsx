@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { WeekGridProps } from "@/components/WeekGrid";
 import type { BoardRide, Week } from "@/features/siddur/api";
@@ -65,7 +65,9 @@ function grid(requests: MyRequestRow[] = []): WeekGridProps {
 }
 
 describe("MyWeekView dragging my rides", () => {
-  beforeEach(() => { vi.clearAllMocks(); mocks.owns.mockReturnValue(true); });
+  // The same day as the mocked `todayInJerusalem`: the view hides past requests by the real clock (af5dafb).
+  beforeEach(() => { vi.clearAllMocks(); mocks.owns.mockReturnValue(true); vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(new Date("2026-10-12T06:00:00Z")); });
+  afterEach(() => vi.useRealTimers());
 
   it("lets me drag and resize my own ride; other blocks stay put", () => {
     const props = grid();
