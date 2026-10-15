@@ -245,6 +245,7 @@ begin
   perform pg_temp.expect_refused('weeks.reopen_week', format('select public.reopen_week(%L, %L, %L, %L)', dept_b, week_b, 'open', 'bogus'));
   perform pg_temp.expect_refused('weeks.set_week_phase', format('select public.set_week_phase(%L, %L, %L)', dept_b, week_b, 'solving'));
   perform pg_temp.expect_refused('weeks.set_week_close_at', format('select public.set_week_close_at(%L, %L, %L)', dept_b, week_b, now()));
+  perform pg_temp.expect_refused('weeks.close_week_requests', format('select public.close_week_requests(%L, %L)', dept_b, week_b));
   perform pg_temp.expect_refused('weeks.ensure_department_weeks', format('select public.ensure_department_weeks(%L)', dept_b));
   perform pg_temp.expect_refused('weeks.publication_conflicts', format('select public.publication_conflicts(%L, %L)', dept_b, week_b));
   perform pg_temp.expect_refused('weeks.publication_readiness', format('select public.publication_readiness(%L, %L)', dept_b, week_b));
@@ -352,7 +353,7 @@ declare
     'log_car_care','report_car_issue','merge_destination','suggest_destination','car_mileage_totals',
     'admin_approve_member','admin_update_member','admin_set_sadran_assignments',
     'create_proposal','send_proposal','agree_proposal_offline','proposal_car_conflicts','discard_proposal','withdraw_proposal','apply_proposal','record_answer_on_behalf','proposal_party_texts',
-    'open_week','reopen_week','set_week_phase','set_week_close_at','ensure_department_weeks',
+    'open_week','reopen_week','set_week_phase','set_week_close_at','close_week_requests','ensure_department_weeks',
     'publication_readiness','publication_conflicts','publish_siddur','record_solver_preview','form_waitlist_groups',
     'publish_scores_fingerprint','sadran_contact_of','fairness_stats','department_stats','joinable_rides_for_request',
     'create_policy_version','set_policy_active','policy_week_alignment','resolve_waitlist_group','cancel_waitlist_group',

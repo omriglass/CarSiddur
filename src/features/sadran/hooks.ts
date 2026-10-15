@@ -616,6 +616,17 @@ export function useSetWeekCloseAtMutation() {
   });
 }
 
+/** Close the request window now without publishing (`CloseWeekRequestsAction`, board kebab menu). */
+export function useCloseWeekRequestsMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ departmentId, weekStart }: { departmentId: string; weekStart: string }) =>
+      api.closeWeekRequests(departmentId, weekStart),
+    onSuccess: (_data, { departmentId, weekStart }) => invalidateBoard(queryClient, departmentId, weekStart),
+    onError: showErrorToast,
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Change log
 // ---------------------------------------------------------------------------

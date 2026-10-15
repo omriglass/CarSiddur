@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { BarChart3, Clock, Download, History, ListChecks, MoreVertical, PlayCircle, RefreshCw, XCircle } from "lucide-react";
+import { BarChart3, Clock, Download, History, ListChecks, Lock, MoreVertical, PlayCircle, RefreshCw, XCircle } from "lucide-react";
 
 import { paths } from "@/app/routes";
 import {
@@ -18,6 +18,7 @@ import { he } from "@/i18n/he";
 
 import { AutoFillDialog } from "./AutoFillDialog";
 import { FullResolveAction } from "./FullResolveAction";
+import { CloseWeekRequestsAction } from "./CloseWeekRequestsAction";
 import { SetWeekCloseAction } from "./SetWeekCloseAction";
 
 import type { ActivePolicy } from "../../api";
@@ -87,6 +88,16 @@ export function BoardActionsMenu({
             <DropdownMenuItem onSelect={(e) => { e.preventDefault(); onClick(); }}>
               <Clock className="me-2 size-4" aria-hidden="true" />
               {he.weekClose.menuItem}
+            </DropdownMenuItem>
+          )}
+        />
+        <CloseWeekRequestsAction
+          departmentId={departmentId}
+          weekStart={weekStart}
+          renderTrigger={({ onClick }) => (
+            <DropdownMenuItem onSelect={(e) => { e.preventDefault(); onClick(); }}>
+              <Lock className="me-2 size-4" aria-hidden="true" />
+              {he.weekClose.closeNow}
             </DropdownMenuItem>
           )}
         />

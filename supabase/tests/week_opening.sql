@@ -121,4 +121,37 @@ begin
   exception when raise_exception then if sqlerrm<>'week_close_not_editable' then raise; end if; end;
 end $$;
 
+-- close_week_requests (2026-10-15): a reopened (open) week closes without publishing.
+do $$
+declare
+  d uuid:=gen_random_uuid();
+  sadran_id uuid:='00000000-0000-0000-0000-000000000102';
+  member_id uuid:='00000000-0000-0000-0000-000000000103';
+  w date:=public.current_week_start()+714;
+  base timestamptz:=date_trunc('hour',now());
+begin
+  perform set_config('request.jwt.claims','{}',true);
+  insert into public.departments(id,name,slug) values(d,'Close now test','close-now-test');
+  insert into public.department_members(department_id,profile_id,role) values(d,sadran_id,'sadran'),(d,member_id,'member');
+  insert into public.sadran_assignments(department_id,profile_id,week_start) values(d,sadran_id,null);
+  insert into public.weeks(department_id,week_start,phase,open_at,close_at,publish_at)
+    values(d,w,'open',now()-interval '1 second',base+interval '9 days',base+interval '9 days');
+
+  perform set_config('request.jwt.claims',json_build_object('sub',member_id,'role','authenticated')::text,true);
+  begin
+    perform public.close_week_requests(d,w);
+    raise exception 'member closed the week';
+  exception when raise_exception then if sqlerrm<>'not_authorized' then raise; end if; end;
+  perform set_config('request.jwt.claims',json_build_object('sub',sadran_id,'role','authenticated')::text,true);
+  perform public.close_week_requests(d,w);
+  assert (select phase='solving' and close_at<=now() from public.weeks where department_id=d and week_start=w),
+    'close_week_requests must move open to solving with close_at = now';
+  assert exists(select 1 from public.notifications where department_id=d and week_start=w and event='window_closed_solve_now' and recipient_id=sadran_id),
+    'sadran must be notified';
+  begin
+    perform public.close_week_requests(d,w);
+    raise exception 'closed a non-open week';
+  exception when raise_exception then if sqlerrm<>'week_close_not_editable' then raise; end if; end;
+end $$;
+
 rollback;

@@ -4879,6 +4879,10 @@ export type Database = {
         Returns: undefined
       }
       close_offer: { Args: { p_offer_id: string }; Returns: undefined }
+      close_week_requests: {
+        Args: { p_department_id: string; p_week_start: string }
+        Returns: undefined
+      }
       compute_week_stats: {
         Args: { p_department_id: string; p_week_start: string }
         Returns: undefined

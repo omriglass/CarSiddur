@@ -916,6 +916,11 @@ export async function setWeekCloseAt(departmentId: string, weekStart: string, cl
   await rpc("set_week_close_at", { p_department_id: departmentId, p_week_start: weekStart, p_close_at: closeAt });
 }
 
+/** Close an open (e.g. reopened) week's request window now, without publishing (`close_week_requests`). */
+export async function closeWeekRequests(departmentId: string, weekStart: string): Promise<void> {
+  await rpc("close_week_requests", { p_department_id: departmentId, p_week_start: weekStart });
+}
+
 export async function publishSiddur(departmentId: string, weekStart: string, scores: Json, fingerprint: string, policyScores: Json, options: PublicationOptions = {}): Promise<string> {
   return rpc("publish_siddur", { p_department_id: departmentId, p_week_start: weekStart,
     p_profile_scores: scores, p_expected_fingerprint: fingerprint, p_policy_scores: policyScores,
