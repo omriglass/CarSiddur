@@ -58,6 +58,28 @@ window.addEventListener("vite:preloadError", (event) => {
   window.location.reload();
 });
 
+// An installed app can stay open in the background for days on an old build (client_errors 2026-10-14 came
+// from builds 2–5 days old). Coming back to the foreground asks for a newer service worker (at most every
+// 5 minutes); once a new build has taken over, the page reloads the next time it is hidden - never on a
+// form (`/new`, `/edit`), so an unsent request is not lost; the chunk handler above covers the rest.
+if ("serviceWorker" in navigator) {
+  const hadController = !!navigator.serviceWorker.controller;
+  let newBuild = false;
+  let lastCheck = Date.now();
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (hadController) newBuild = true;
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") {
+      if (newBuild && !/\/(new|edit)$/.test(window.location.pathname)) window.location.reload();
+      return;
+    }
+    if (Date.now() - lastCheck < 5 * 60_000) return;
+    lastCheck = Date.now();
+    navigator.serviceWorker.getRegistration().then((registration) => registration?.update()).catch(() => undefined);
+  });
+}
+
 // Uncaught synchronous exceptions outside React's render (event handlers, timers, scripts).
 window.addEventListener("error", (event) => {
   const where = event.filename ? `${event.filename}:${event.lineno}:${event.colno}` : undefined;
