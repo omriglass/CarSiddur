@@ -1,7 +1,8 @@
 // Runs before the app (index.html). If one of the app's own scripts fails to load — a page kept from before a deploy
 // asks for an asset the deploy removed, and the Worker answers it with index.html ("'text/html' is not a valid
 // JavaScript MIME type"), so the app never starts and the window stays blank (Safari, 2026-10-16) — reload once;
-// if it fails again within a minute, drop the stored app (service worker + caches) and reload a last time.
+// if it fails again within a minute, empty the stored app's caches (the service worker stays, so push keeps working)
+// and reload a last time.
 // The app's own "vite:preloadError" handler (src/main.tsx) covers lazy pages once the app is running.
 // Plain script, no Hebrew, no dependencies: it must work when nothing else does.
 (function () {
@@ -19,9 +20,11 @@
     try { sessionStorage.setItem(KEY, JSON.stringify({ at: now, n: attempt })); } catch (e) { /* storage blocked */ }
     if (attempt === 1) { location.reload(); return; }
     var steps = [];
+    // Keep the service worker registered: unregistering it would cancel this device's push subscription.
+    // Emptying its caches is enough — a precache miss falls back to the network, so the page comes fresh.
     if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
       steps.push(navigator.serviceWorker.getRegistrations().then(function (regs) {
-        return Promise.all(regs.map(function (r) { return r.unregister(); }));
+        return Promise.all(regs.map(function (r) { return r.update().catch(function () {}); }));
       }));
     }
     if (window.caches && caches.keys) {
