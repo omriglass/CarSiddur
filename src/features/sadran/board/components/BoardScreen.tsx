@@ -34,6 +34,7 @@ import { CalendarDays, Redo2, Undo2 } from "lucide-react";
 import { RideTypeLegend } from "@/components/RideTypeLegend";
 import { BoardGridSkeleton } from "@/components/skeletons/BoardGridSkeleton";
 import { PublishButton } from "../../publish/components/BoardPublicationActions";
+import { CloseWeekRequestsAction } from "./CloseWeekRequestsAction";
 import { he, tv } from "@/i18n/he";
 import { askSmallTrunk } from "@/lib/smallTrunk";
 import { formatDayDate } from "@/lib/dayLabels";
@@ -302,7 +303,11 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
           undo/redo, display ("eye") and actions (kebab) menus on the end side — never on
           the title line. */}
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <PublishButton departmentId={departmentId} weekStart={weekStart} />
+        {/* Owner 2026-10-16: "סגירה לבקשות" sits next to publish while the week is open. */}
+        <div className="flex items-center gap-2">
+          <PublishButton departmentId={departmentId} weekStart={weekStart} />
+          <CloseWeekRequestsAction departmentId={departmentId} weekStart={weekStart} />
+        </div>
         {/* R10U11: the chip may wrap onto its own line; the four icon buttons stay together, so the "⋮" is never pushed past the screen edge. */}
         <div className="flex min-w-0 max-w-full flex-wrap items-center justify-end gap-2">
           <PolicyChip

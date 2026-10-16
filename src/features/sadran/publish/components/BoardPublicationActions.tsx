@@ -12,14 +12,14 @@ import { fetchPublishFingerprint } from "../../api";
 import { useReopenWeekMutation, useWeekRow } from "../../hooks";
 import { sadranKeys } from "../../keys";
 
-/** The board's primary publish / close-and-publish button — always visible in the header, at every width. */
+/** The board's primary publish button — always visible in the header, at every width (publishing an open week closes its requests too). */
 export function PublishButton({ departmentId, weekStart }: { departmentId: string; weekStart: string }) {
   const navigate = useNavigate();
   const weekQuery = useWeekRow(departmentId, weekStart);
   const archived = weekQuery.data?.phase === "archived";
   return (
     <Button disabled={archived || weekQuery.isLoading} onClick={() => navigate(paths.sadran.publish(departmentId, weekStart))}>
-      {weekQuery.data?.phase === "open" ? he.publicationFlow.closeAndPublish : he.action.publish}
+      {he.action.publish}
     </Button>
   );
 }
@@ -30,14 +30,17 @@ interface CancelPublicationActionProps {
   /**
    * Custom trigger rendering (the board's kebab "actions" menu, UX_FLOWS.md
    * §4.2): defaults to the original inline outline `Button`. Returns `null`
-   * entirely — same as before — once the week is `open` or `archived`
-   * (nothing to cancel), so the menu hides the item exactly as the old
-   * inline row hid the button.
+   * entirely once the week is `open` or `archived` (nothing to cancel). The
+   * label depends on the phase: "ביטול הפרסום" when published, "פתיחה מחדש
+   * לבקשות" when closed but not published (`solving`, owner 2026-10-16).
    */
-  renderTrigger?: (props: { onClick: () => void }) => ReactNode;
+  renderTrigger?: (props: { onClick: () => void; label: string }) => ReactNode;
 }
 
-/** Reversible "cancel publication" (reopen for requests, or unpublish back to solving) with its confirm dialog. */
+/**
+ * Reversible "cancel publication" (reopen for requests, or unpublish back to solving) with its confirm dialog.
+ * A closed, unpublished week (`solving`) has nothing to unpublish: the action only reopens it for requests.
+ */
 export function CancelPublicationAction({ departmentId, weekStart, renderTrigger }: CancelPublicationActionProps) {
   const weekQuery = useWeekRow(departmentId, weekStart);
   const reopenMutation = useReopenWeekMutation();
@@ -50,29 +53,32 @@ export function CancelPublicationAction({ departmentId, weekStart, renderTrigger
   });
   const archived = weekQuery.data?.phase === "archived";
   if (!weekQuery.data || weekQuery.data.phase === "open" || archived) return null;
+  const closedOnly = weekQuery.data.phase === "solving";
+  const target = closedOnly ? "open" : phase;
+  const label = closedOnly ? he.publicationFlow.reopen : he.publicationFlow.cancel;
   return <>
-    {renderTrigger ? renderTrigger({ onClick: () => setCancelOpen(true) })
-      : <Button variant="outline" onClick={() => setCancelOpen(true)}>{he.publicationFlow.cancel}</Button>}
+    {renderTrigger ? renderTrigger({ onClick: () => setCancelOpen(true), label })
+      : <Button variant="outline" onClick={() => setCancelOpen(true)}>{label}</Button>}
     <ConfirmDialog
       open={cancelOpen}
       onOpenChange={setCancelOpen}
-      title={he.publicationFlow.cancelTitle}
-      description={phase === "open" ? he.publicationFlow.reopenHelp : he.publicationFlow.unpublishHelp}
-      confirmLabel={he.publicationFlow.confirmCancel}
+      title={closedOnly ? he.publicationFlow.reopen : he.publicationFlow.cancelTitle}
+      description={closedOnly ? he.publicationFlow.reopenClosedHelp : phase === "open" ? he.publicationFlow.reopenHelp : he.publicationFlow.unpublishHelp}
+      confirmLabel={closedOnly ? he.publicationFlow.reopen : he.publicationFlow.confirmCancel}
       destructive
       loading={reopenMutation.isPending}
       confirmDisabled={!fingerprint.data || fingerprint.isFetching || fingerprint.isError}
       onConfirm={() => {
         if (!fingerprint.data) return;
-        reopenMutation.mutate({ departmentId, weekStart, phase, expectedFingerprint: fingerprint.data }, {
-          onSuccess: () => { setCancelOpen(false); toast.success(he.publicationFlow.cancelled); },
+        reopenMutation.mutate({ departmentId, weekStart, phase: target, expectedFingerprint: fingerprint.data }, {
+          onSuccess: () => { setCancelOpen(false); toast.success(closedOnly ? he.publicationFlow.reopened : he.publicationFlow.cancelled); },
         });
       }}
     >
-      <Select value={phase} onValueChange={(value) => setPhase(value as "open" | "solving")}>
+      {closedOnly ? null : <Select value={phase} onValueChange={(value) => setPhase(value as "open" | "solving")}>
         <SelectTrigger aria-label={he.publicationFlow.cancelTitle}><SelectValue /></SelectTrigger>
         <SelectContent><SelectItem value="open">{he.publicationFlow.reopen}</SelectItem><SelectItem value="solving">{he.publicationFlow.unpublish}</SelectItem></SelectContent>
-      </Select>
+      </Select>}
       {fingerprint.isError ? <ErrorState onRetry={() => void fingerprint.refetch()} /> : null}
     </ConfirmDialog>
   </>;

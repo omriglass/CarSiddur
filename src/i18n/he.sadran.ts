@@ -234,7 +234,7 @@ export const heSadran = {
    */
   weekClose: {
     menuItem: "שינוי מועד סגירת הבקשות",
-    closeNow: "סגירת הבקשות עכשיו",
+    closeNow: "סגירה לבקשות",
     closeNowHelp: "חלון הבקשות ייסגר בלי לפרסם. אפשר להמשיך לעבוד בלוח ולפרסם אחר כך.",
     closedNow: "חלון הבקשות נסגר",
     dialogTitle: "מועד סגירת הבקשות",

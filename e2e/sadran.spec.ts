@@ -135,8 +135,7 @@ test.describe("sadran", { tag: ["@proposals", "@publication"] }, () => {
     }
     await page.reload();
 
-    await page.getByRole("button", { name: he.publicationFlow.closeAndPublish, exact: true })
-      .or(page.getByRole("button", { name: he.action.publish, exact: true })).click();
+    await page.getByRole("button", { name: he.action.publish, exact: true }).click();
     await expect(page).toHaveURL(`${weekUrl}/publish`);
     await expect(page.getByRole("heading", { name: he.screen.publish.title })).toBeVisible();
     await page.getByRole("button", { name: he.publicationFlow.allYes, exact: true }).click();

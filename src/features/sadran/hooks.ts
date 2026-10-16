@@ -616,7 +616,7 @@ export function useSetWeekCloseAtMutation() {
   });
 }
 
-/** Close the request window now without publishing (`CloseWeekRequestsAction`, board kebab menu). */
+/** Close the request window now without publishing (`CloseWeekRequestsAction`, next to the publish button). */
 export function useCloseWeekRequestsMutation() {
   const queryClient = useQueryClient();
   return useMutation({
