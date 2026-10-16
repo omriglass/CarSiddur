@@ -57,6 +57,13 @@ describe("requestBlockKind", () => {
 });
 
 describe("requestBlocks", () => {
+  it("skips a request already served by a ride drawn in the view, per request id, series legs included (one item per trip)", () => {
+    expect(requestBlocks([request({})], week, null, NOW, new Set(["r1"]))).toEqual([]);
+    const leg2 = request({ id: "leg2", seriesId: "s", seriesIndex: 2, seriesCount: 2 });
+    expect(requestBlocks([request({}), leg2], week, null, NOW, new Set(["leg2"]))).toHaveLength(1);
+    expect(requestBlocks([request({})], week, null, NOW, new Set(["other"]))).toHaveLength(1);
+  });
+
   it("draws a request from its out time to its return time on its day", () => {
     const [entry] = requestBlocks([request({})], week, null, NOW);
     expect(entry?.block).toMatchObject({ id: "request:r1", carId: "2026-10-12", startMinutes: 480, endMinutes: 720, kind: "request" });

@@ -114,6 +114,8 @@ export interface WeekGridRide {
   chainBrokenWarning?: string;
   /** Owner 2026-10-16: the same driver is on another overlapping ride (warning only, never blocks). */
   driverOverlapWarning?: string;
+  /** Owner 2026-10-16, "my rides" week view: the "!" be-back-on-time lines (already worded, `carHandoverLines`). */
+  handoverLines?: readonly string[];
   /**
    * Owner 2026-10-11, "my rides" week view: what the block is when it is not a placed ride — a repeating-request
    * suggestion (dotted, pale, "הצעה" on top: never mistaken for a request), a Sadran proposal awaiting my answer,
@@ -1312,7 +1314,7 @@ export function WeekGrid({
                   absolutely positioned outside the wrapper. */}
               <div className="sticky z-[1] flex w-full flex-col" style={{ top: HEADER_ROW_HEIGHT_PX }}>
               {ride.guests?.length ? <GuestChips guests={ride.guests} passClick={!!ride.draft} enabled={dragEnabled && !!onGuestDrop} resolveTarget={guestTargetAt} onHover={onGuestHover} onDrop={onGuestDrop} /> : null}
-              {(ride.kind || ride.isMine || ride.needsDriver || ride.tightSchedule || ride.chainBrokenWarning || ride.driverOverlapWarning || ride.draft || ride.merged || ride.connected || ride.luggage) ? <span className="flex w-full flex-wrap gap-1 px-1.5 pt-1 text-[10px] leading-tight">
+              {(ride.kind || ride.isMine || ride.needsDriver || ride.tightSchedule || ride.chainBrokenWarning || ride.driverOverlapWarning || ride.handoverLines?.length || ride.draft || ride.merged || ride.connected || ride.luggage) ? <span className="flex w-full flex-wrap gap-1 px-1.5 pt-1 text-[10px] leading-tight">
                 {ride.kind ? (
                   <span
                     className={cn("rounded-sm px-1 font-bold uppercase", ride.kind === "suggestion" ? "border border-dotted border-muted-foreground/70" : ride.kind === "proposal" ? "bg-amber-500 text-white" : "bg-foreground/10")}
@@ -1330,6 +1332,7 @@ export function WeekGrid({
                 {ride.tightSchedule ? <span className="flex items-center gap-1 text-amber-700" title={he.boardCoordination.tightHelp}><Clock3 className="size-3 shrink-0" aria-hidden="true" />{he.boardCoordination.tight}</span> : null}
                 {ride.driverOverlapWarning ? <span className="flex items-center gap-1 font-medium text-amber-700" title={ride.driverOverlapWarning}>{ride.driverOverlapWarning}</span> : null}
                 {ride.chainBrokenWarning ? <span className="flex items-center gap-1 font-medium text-amber-700" title={ride.chainBrokenWarning}><CarFront className="size-3 shrink-0" aria-hidden="true" />{ride.chainBrokenWarning}</span> : null}
+                {ride.handoverLines?.map((line) => <span key={line} className="flex items-start gap-1 font-medium text-amber-700" title={line} data-testid="handover-line"><span aria-label={he.carHandover.alertLabel} role="img" className="font-bold">!</span><span className="line-clamp-2 min-w-0">{line}</span></span>)}
               </span> : null}
               {ride.pinned ? (
                 <span className="absolute end-1 top-1 z-10 text-foreground/70" aria-hidden="true">

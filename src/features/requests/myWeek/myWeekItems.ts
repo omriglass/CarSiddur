@@ -98,6 +98,8 @@ export function rideBlocks(
     tightIds?: ReadonlySet<string>;
     /** Read-only rides of my children / their other guardians (not mine): muted, named, never `isMine`. */
     related?: ReadonlyMap<string, readonly RelatedRideLabel[]>;
+    /** Owner 2026-10-16: the "!" be-back-on-time lines per ride id (already worded). */
+    handoverLines?: ReadonlyMap<string, readonly string[]>;
   } = {},
 ): MyWeekBlock[] {
   const out: MyWeekBlock[] = [];
@@ -134,6 +136,7 @@ export function rideBlocks(
           muted: !!relatedNames,
           tightSchedule: !relatedNames && !!extras.tightIds?.has(ride.id!),
           needsDriver: !!ride.needs_driver,
+          handoverLines: !relatedNames ? extras.handoverLines?.get(ride.id!) : undefined,
           rideTypeCode: representativeRideTypeCode(servedOf(ride)),
           seriesIndex: ride.series_index,
           seriesCount: ride.series_count,
@@ -173,11 +176,14 @@ export function requestBlocks(
   dayKeys: readonly string[],
   homeDestinationId: string | null | undefined,
   now: number = Date.now(),
+  /** Requests served by a ride drawn in this view (`servedOf`): one item per trip — their own block is skipped (owner 2026-10-16). */
+  servedRequestIds: ReadonlySet<string> = new Set(),
 ): MyWeekBlock[] {
   const out: MyWeekBlock[] = [];
   // Owner 2026-10-13: a request on a day already gone is no useful information — only today onward (rides stay).
   const today = dateKey(now);
   for (const row of rows) {
+    if (servedRequestIds.has(row.id)) continue; // series legs are separate rows here, each matched by its own id
     const kind = requestBlockKind(row, now);
     const span = requestSpan(row);
     if (!kind || !span) continue;

@@ -19,6 +19,9 @@ import { useCalendar } from "@/features/calendar/useCalendar";
 import { useCalendarAmbientBlocks } from "@/features/calendar/useCalendarAmbientBlocks";
 import { useGoogleCalendar } from "@/features/calendar/useGoogleCalendar";
 import { selectRelatedRides, type RelatedRideLabel } from "@/features/rides/myRides";
+import { carHandoverLines, carHandoverNotes, neighboursFromRides } from "@/features/rides/carHandover";
+import { useCarNeighboursQuery } from "@/features/rides/hooks";
+import { servedOf } from "@/features/rides/servedOf";
 import { tightRideIdsOf } from "@/features/rides/tightSchedule";
 import { effectiveWeekSettings } from "@/lib/weekSettings";
 import { useMemberRideMoves } from "@/features/rides/useMemberRideMoves";
@@ -116,6 +119,13 @@ export function MyWeekView({ departmentId, homeDestinationId, profileId, request
   const dayKeys = useMemo(() => weekDayKeys(weekStart), [weekStart]);
   const boardStartMinutes = settingsQuery.data?.board_start_time ? parseTimeToMinutes(settingsQuery.data.board_start_time) : 6 * 60;
 
+  // "!" be-back-on-time lines (owner 2026-10-16): the server view on published days, the client mirror elsewhere.
+  const myHandoverRideIds = useMemo(() => {
+    const ids = new Set(requests.map((row) => row.id));
+    return (ridesQuery.data ?? []).flatMap((ride) => (ride.id && isMyBoardRide(ride, profileId, ids) ? [ride.id] : []));
+  }, [profileId, requests, ridesQuery.data]);
+  const serverNeighbours = useCarNeighboursQuery(myHandoverRideIds).data;
+
   const entries = useMemo(() => {
     const myRequestIds = new Set(requests.map((row) => row.id));
     // Owner 2026-10-16: the siddur's tight-schedule marker on my rides (also on an unpublished day I manage).
@@ -126,15 +136,24 @@ export function MyWeekView({ departmentId, homeDestinationId, profileId, request
     const carNameById = new Map((carsQuery.data ?? []).map((car) => [car.id, car.name]));
     const mine = (ridesQuery.data ?? []).filter((ride: BoardRide) => isMyBoardRide(ride, profileId, myRequestIds) || (!!ride.id && related.has(ride.id)));
     const myRequestsById = new Map(requests.map((row) => [row.id, row]));
-    const blocks = rideBlocks(mine, dayKeys, (ride) => rideWithCarLabel(ride.car_id ? carNameById.get(ride.car_id) ?? "" : "", rideRouteLabel(ride, homeDestinationId)), myRequestsById, { tightIds, related });
+    const turnaround = effectiveWeekSettings(settingsQuery.data, week).turnaroundMinutes;
+    const handoverLines = new Map<string, string[]>();
+    for (const ride of mine) {
+      if (!ride.id || !ride.starts_at || !ride.ends_at || related.has(ride.id)) continue;
+      const neighbours = serverNeighbours?.get(ride.id) ?? neighboursFromRides(ridesQuery.data ?? [], ride.id, turnaround);
+      const lines = carHandoverLines(carHandoverNotes(neighbours, profileId, profileId ? [profileId] : []), { startsAt: ride.starts_at, endsAt: ride.ends_at });
+      if (lines.length) handoverLines.set(ride.id, lines.map((line) => `${line.before}${line.day ? `${line.day} ` : ""}${line.time}${line.after}`));
+    }
+    const blocks = rideBlocks(mine, dayKeys, (ride) => rideWithCarLabel(ride.car_id ? carNameById.get(ride.car_id) ?? "" : "", rideRouteLabel(ride, homeDestinationId)), myRequestsById, { tightIds, related, handoverLines });
     if (!isPast) {
       const sameDepartment = requests.filter((row) => row.departmentId === departmentId && row.weekStart === weekStart);
-      blocks.push(...requestBlocks(sameDepartment, dayKeys, homeDestinationId));
+      const servedRequestIds = new Set(mine.flatMap((ride) => servedOf(ride).flatMap((entry) => (entry.request_id ? [entry.request_id] : []))));
+      blocks.push(...requestBlocks(sameDepartment, dayKeys, homeDestinationId, undefined, servedRequestIds));
       const suggestions = (suggestionsQuery.data ?? []).filter((s: TemplateSuggestion) => s.departmentId === departmentId && s.weekStart === weekStart);
       blocks.push(...suggestionBlocks(suggestions, dayKeys, homeDestinationId));
     }
     return withLanes(blocks);
-  }, [carsQuery.data, childIds, dayKeys, guardianIds, departmentId, homeDestinationId, isPast, profileId, requests, ridesQuery.data, showKidsRides, settingsQuery.data, suggestionsQuery.data, week, weekStart]);
+  }, [carsQuery.data, childIds, dayKeys, guardianIds, departmentId, homeDestinationId, isPast, profileId, requests, ridesQuery.data, showKidsRides, serverNeighbours, settingsQuery.data, suggestionsQuery.data, week, weekStart]);
 
   const targetById = useMemo(() => new Map(entries.map((entry) => [entry.block.id, entry.target])), [entries]);
   const dayColumns: WeekGridCar[] = dayKeys.map((key) => ({ id: key, name: formatDayDate(`${key}T12:00:00Z`), today: key === today }));

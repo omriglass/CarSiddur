@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { carHandoverLines, carHandoverNotes, combineSeriesNeighbours, mapCarNeighbours, type CarNeighbour, type CarNeighbours } from "./carHandover";
+import { carHandoverLines, carHandoverNotes, combineSeriesNeighbours, mapCarNeighbours, neighboursFromRides, type CarNeighbour, type CarNeighbours } from "./carHandover";
 
 const VIEWER = "viewer";
 function neighbour(overrides: Partial<CarNeighbour> = {}): CarNeighbour {
@@ -84,5 +84,39 @@ describe("carHandoverLines", () => {
     const [line] = carHandoverLines({ arrivesFrom: neighbour({ at: "2026-10-12T07:45:00+03:00", name: "Avi" }) }, ride);
     expect(line).toMatchObject({ id: "arrivesFrom", day: "", time: "07:45" });
     expect(line!.before + line!.after).toContain("Avi");
+  });
+});
+
+describe("neighboursFromRides", () => {
+  const day = "2026-10-18";
+  const ride = (id: string, from: string, to: string, extra: Record<string, unknown> = {}) => ({
+    id, car_id: "car", starts_at: `${day}T${from}:00+03:00`, ends_at: `${day}T${to}:00+03:00`, status: "draft", planning_conflict: false,
+    series_id: null, auto_relocation: false, pin_reason: null, driver_id: null, driver_name: null, served: [], people: [], ...extra,
+  }) as Parameters<typeof neighboursFromRides>[0][number];
+
+  it("marks two back-to-back reservations tight both ways", () => {
+    const a = ride("a", "08:00", "10:00", { driver_name: "Avi", driver_id: "pa" });
+    const b = ride("b", "10:00", "12:00", { driver_name: "Bat", driver_id: "pb" });
+    const fromA = neighboursFromRides([a, b], "a", 30);
+    expect(fromA.next).toMatchObject({ rideId: "b", kind: "reservation", name: "Bat", people: ["pb"], gapMinutes: 0, tight: true });
+    expect(fromA.prev).toBeNull();
+    expect(neighboursFromRides([a, b], "b", 30).prev).toMatchObject({ rideId: "a", gapMinutes: 0, tight: true });
+  });
+
+  it("uses the 30 minute floor, <=, and picks the nearest ride on the same car only", () => {
+    const a = ride("a", "08:00", "10:00");
+    const near = ride("near", "10:30", "11:00");
+    const far = ride("far", "13:00", "14:00");
+    const other = ride("other", "10:15", "11:00", { car_id: "x" });
+    expect(neighboursFromRides([a, far, near, other], "a", 15).next).toMatchObject({ rideId: "near", tight: true, gapMinutes: 30 });
+    expect(neighboursFromRides([a, far], "a", 15).next).toMatchObject({ rideId: "far", tight: false });
+    expect(neighboursFromRides([a, ride("late", "10:31", "11:00")], "a", 30).next?.tight).toBe(false);
+  });
+
+  it("skips cancelled, planning conflicts and rides of the same series; flags car moves", () => {
+    const a = ride("a", "08:00", "10:00", { series_id: "s" });
+    const rides = [a, ride("c", "10:00", "11:00", { status: "cancelled" }), ride("p", "10:00", "11:00", { planning_conflict: true }),
+      ride("s2", "10:00", "11:00", { series_id: "s" }), ride("m", "10:30", "11:00", { auto_relocation: true, pin_reason: "CAR_MOVE" })];
+    expect(neighboursFromRides(rides, "a", 30).next).toMatchObject({ rideId: "m", kind: "car_move" });
   });
 });

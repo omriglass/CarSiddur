@@ -3,6 +3,10 @@ import type { Database } from "@/integrations/supabase/types";
 import { formatDayDate } from "@/lib/dayLabels";
 import { dateKey, formatTime } from "@/lib/time";
 
+import { peopleOf } from "./ridePeople";
+import { servedOf } from "./servedOf";
+import type { BoardRide } from "@/features/siddur/api";
+
 /**
  * "Be back on time" (REQ §13.108 f, docs/TODO.md U3): the ride right before / after a ride on the same
  * car, read from `v_ride_car_neighbours` (the one SQL source — what counts as a neighbour and the
@@ -44,6 +48,52 @@ export function mapCarNeighbours(row: CarNeighbourRow): CarNeighbours {
       ? { rideId: row.prev_ride_id, at: row.prev_ends_at, kind: kindOf(row.prev_kind), name: row.prev_name,
           people: row.prev_people ?? [], gapMinutes: row.prev_gap_minutes ?? 0, tight: !!row.prev_tight }
       : null,
+  };
+}
+
+type NeighbourRide = Pick<BoardRide, "id" | "car_id" | "starts_at" | "ends_at" | "status" | "planning_conflict" | "series_id" | "auto_relocation" | "pin_reason" | "driver_id" | "driver_name" | "served" | "people">;
+
+/** The view's threshold: the week override / department turnaround, never below 30 minutes. */
+const MIN_TIGHT_MINUTES = 30;
+
+function neighbourOf(ride: NeighbourRide, at: string, gapMs: number, thresholdMs: number): CarNeighbour {
+  const served = servedOf(ride as BoardRide);
+  const people = peopleOf(ride);
+  const kind: CarNeighbourKind = ride.auto_relocation && ride.pin_reason === "CAR_MOVE" ? "car_move"
+    : !ride.auto_relocation && served.length === 0 ? "reservation" : "ride";
+  const ids = new Set<string>();
+  if (ride.driver_id) ids.add(ride.driver_id);
+  for (const person of people) if (person.person_id) ids.add(person.person_id);
+  const name = ride.driver_name
+    ?? served.find((entry) => entry.requester)?.requester
+    ?? people.find((person) => person.source === "added")?.display_name
+    ?? null;
+  return { rideId: ride.id as string, at, kind, name, people: [...ids], gapMinutes: Math.round(gapMs / 60_000), tight: gapMs <= thresholdMs };
+}
+
+/**
+ * Client mirror of `v_ride_car_neighbours` for days the view hides (unpublished days the viewer manages, owner
+ * 2026-10-16): same car, another ride, not a planning conflict, a different series; the next ride is the earliest
+ * starting at/after this one's end, the previous the latest ending at/before its start; tight = gap <=
+ * max(turnaround, 30). Unlike the view, `draft` rides count too (the viewer sees them because they manage the day).
+ */
+export function neighboursFromRides(rides: readonly NeighbourRide[], rideId: string, turnaroundMinutes: number): CarNeighbours {
+  const self = rides.find((ride) => ride.id === rideId);
+  if (!self?.car_id || !self.starts_at || !self.ends_at) return { next: null, prev: null };
+  const start = new Date(self.starts_at).getTime();
+  const end = new Date(self.ends_at).getTime();
+  const thresholdMs = Math.max(turnaroundMinutes, MIN_TIGHT_MINUTES) * 60_000;
+  const others = rides.filter((other) => other.id && other.id !== rideId && other.car_id === self.car_id && other.starts_at && other.ends_at
+    && (other.status === "confirmed" || other.status === "flagged" || other.status === "draft")
+    && !other.planning_conflict && (!self.series_id || other.series_id !== self.series_id));
+  const byId = (a: NeighbourRide, b: NeighbourRide) => (a.id as string).localeCompare(b.id as string);
+  const next = others.filter((o) => new Date(o.starts_at as string).getTime() >= end)
+    .sort((a, b) => new Date(a.starts_at as string).getTime() - new Date(b.starts_at as string).getTime() || byId(a, b))[0];
+  const prev = others.filter((o) => new Date(o.ends_at as string).getTime() <= start)
+    .sort((a, b) => new Date(b.ends_at as string).getTime() - new Date(a.ends_at as string).getTime() || byId(a, b))[0];
+  return {
+    next: next ? neighbourOf(next, next.starts_at as string, new Date(next.starts_at as string).getTime() - end, thresholdMs) : null,
+    prev: prev ? neighbourOf(prev, prev.ends_at as string, start - new Date(prev.ends_at as string).getTime(), thresholdMs) : null,
   };
 }
 

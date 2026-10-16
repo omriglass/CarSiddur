@@ -139,7 +139,7 @@ export function HomePage() {
   const guardianIds = new Set(coGuardiansQuery.data ?? []);
   // The rides query waits for the co-guardian lookup so it runs once with both id lists.
   const kidsRidesQuery = useMyChildrenRidesQuery([...myChildIds].sort(), displayPrefs.showKidsRides && !weekView && !coGuardiansQuery.isFetching, [...guardianIds].sort());
-  const tightRideIds = useTightRideIds(defaultDepartmentId, upcomingRidesQuery.data ?? [], weeksQuery.data ?? [], settingsQuery.data, homeDestinationIds[defaultDepartmentId ?? ""], carsQuery.data ?? []);
+  const { tight: tightRideIds, mirrorNeighbours } = useTightRideIds(defaultDepartmentId, upcomingRidesQuery.data ?? [], weeksQuery.data ?? [], settingsQuery.data, homeDestinationIds[defaultDepartmentId ?? ""], carsQuery.data ?? []);
 
   // Show the immediate-car entry point for the current week even before its
   // Siddur has been published. In that case the same request is filed for the
@@ -199,7 +199,16 @@ export function HomePage() {
     }))),
     ...(upcomingRidesQuery.data ?? []).flatMap((ride) => (ride.id ? [ride.id] : [])),
   ];
-  const neighboursByRide = useCarNeighboursQuery(handoverRideIds).data;
+  const serverNeighbours = useCarNeighboursQuery(handoverRideIds).data;
+  // Owner 2026-10-16: on a day the view hides (unpublished, managed by the viewer) the client mirror fills in.
+  const neighboursByRide = serverNeighbours ? new Map(serverNeighbours) : undefined;
+  if (neighboursByRide) {
+    for (const id of new Set(handoverRideIds)) {
+      if (neighboursByRide.has(id)) continue;
+      const mirrored = mirrorNeighbours(id);
+      if (mirrored) neighboursByRide.set(id, mirrored);
+    }
+  }
 
   const isLoading = active.isLoading || profileQuery.isLoading || requestsQuery.isLoading || upcomingRidesQuery.isLoading || weeksQuery.isLoading;
 
