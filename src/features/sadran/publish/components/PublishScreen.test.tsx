@@ -12,6 +12,7 @@ vi.mock("../../hooks", () => ({
   usePublicationReadiness: () => ({ data: mocks.readiness, isLoading: false, isError: false, refetch: vi.fn() }),
   useWeekRequestsWithNames: () => ({ data: [], isLoading: false, isError: false }),
   useAllWeekRides: () => ({ data: [], isLoading: false, isError: false }),
+  useCarsForDepartment: () => ({ data: [], isLoading: false, isError: false }),
   useProposalsForWeek: () => ({ data: [], isLoading: false, isError: false }),
   useSiddurVersions: () => ({ data: [], isLoading: false, isError: false }),
   usePublishSiddurMutation: () => ({ mutateAsync: mocks.publish, isPending: false }),

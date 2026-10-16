@@ -10761,12 +10761,6 @@ begin
     select other.id into o from public.rides other where other.id<>r.id and other.status<>'cancelled' and other.car_id=r.car_id
       and tstzrange(other.starts_at,other.ends_at,'[)') && tstzrange(r.starts_at,r.ends_at,'[)') order by other.starts_at limit 1;
     if o is not null then reason:='car_overlap'; other_ride_id:=o; return next; end if;
-    o:=null;
-    if r.driver_id is not null then
-      select other.id into o from public.rides other where other.id<>r.id and other.status<>'cancelled' and other.driver_id=r.driver_id
-        and tstzrange(other.starts_at,other.ends_at,'[)') && tstzrange(r.starts_at,r.ends_at,'[)') order by other.starts_at limit 1;
-      if o is not null then reason:='driver_overlap'; other_ride_id:=o; return next; end if;
-    end if;
     other_ride_id:=null;
     if exists(select 1 from public.car_maintenance_blocks b where b.car_id=r.car_id
       and tstzrange(b.starts_at,b.ends_at,'[)') && tstzrange(r.starts_at,r.ends_at,'[)')) then reason:='maintenance'; return next; end if;

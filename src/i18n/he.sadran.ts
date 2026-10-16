@@ -90,6 +90,7 @@ export const heSadran = {
     missingDriverPublish: "יש נסיעות שממתינות לנהג/ת. הן יסומנו באדום גם בסידור שיפורסם.",
   },
   sadranBoard: {
+    driverOverlapWarning: "הנהג/ת בנסיעה נוספת באותן שעות",
     autoFill: {
       title: "השלמה אוטומטית",
       description: "בחרו איזה יום להשלים. רק בקשות פתוחות ישובצו; שיבוצים קיימים לא ישתנו.",
@@ -381,11 +382,12 @@ export const heSadran = {
     groupMessageLabel: "הודעה כללית לצירוף (אופציונלי)",
     blockedByConflicts: "לא ניתן לפרסם — יש התנגשויות בלוח",
     conflictsTitle: "נסיעות שחוסמות את הפרסום",
+    driverOverlapTitle: "שימו לב: הנהג/ת בשתי נסיעות באותן שעות (לא חוסם פרסום)",
+    driverOverlapRow: "{{car}} · {{day}} {{time}}",
     conflictRow: "{{car}} · {{day}} {{time}} — {{reasons}}",
     conflictReason: {
       bad_window: "שעות הנסיעה לא תקינות (חוצה יום, אחרי 23:59 או מחוץ לשבוע)",
       car_overlap: "נסיעה אחרת ברכב באותן שעות",
-      driver_overlap: "הנהג/ת משובץ/ת לנסיעה אחרת באותן שעות",
       maintenance: "הרכב בטיפול באותן שעות",
       car_unavailable: "הרכב אינו פעיל",
       car_not_at_origin: "הרכב לא נמצא בנקודת היציאה",

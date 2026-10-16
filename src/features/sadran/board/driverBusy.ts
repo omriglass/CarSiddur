@@ -44,7 +44,7 @@ export function sortFreeFirst<T extends { id: string }>(candidates: readonly T[]
 
 /**
  * Ride ids whose driver is also the driver of another non-cancelled ride with an overlapping
- * half-open window - the server's publish refusal `driver_overlap` (owner 2026-10-16). Marks only;
+ * half-open window - a warning only (owner 2026-10-16: never blocks publishing). Marks only;
  * drafts count (the board shows them), nothing is blocked.
  */
 export function driverOverlapRideIds(

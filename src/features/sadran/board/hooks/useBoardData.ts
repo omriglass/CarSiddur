@@ -618,11 +618,10 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
     const original = rides.find((ride) => ride.id === change.ride_id);
     return original ? [{ ...original, id: `change:${change.id}`, car_id: change.car_id, starts_at: change.starts_at, ends_at: change.ends_at }] : [];
   });
-  // Owner 2026-10-16: the same driver on two overlapping rides (the server refuses to publish it).
+  // Owner 2026-10-16: the same driver on two overlapping rides is a warning only (amber line), never a conflict.
   const driverOverlapIds = driverOverlapRideIds(rides.filter((ride) => !(ride.id && mergeGuestRideIds.has(ride.id))));
   const conflictRideIds = new Set([
     ...(conflictScan?.conflictRideIds ?? []),
-    ...driverOverlapIds,
     ...requestDayMismatchRideIds(rides, requestsQuery.data ?? []),
     ...planningRows.map((ride) => ride.id),
     ...rides.filter((ride) => ride.starts_at && ride.ends_at && (
@@ -759,7 +758,7 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
       rideTypeCode: representativeRideTypeCode(servedOf(r)),
       seriesIndex: r.series_index,
       seriesCount: r.series_count,
-      driverOverlapWarning: r.id && driverOverlapIds.has(r.id) ? t("sadranPublish.conflictReason.driver_overlap") : undefined,
+      driverOverlapWarning: r.id && driverOverlapIds.has(r.id) ? t("sadranBoard.driverOverlapWarning") : undefined,
       chainBrokenWarning: r.id && chainBreakByRideId.has(r.id)
         ? tv("sadranBoard.carNotHereWarning", {
           // R5U6: name the ride (time + who) so the warning is readable away from its block (list mode, tooltips, screen readers).

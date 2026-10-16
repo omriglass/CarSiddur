@@ -110,7 +110,7 @@ export interface WeekGridRide {
    * resolved Hebrew text (e.g. "הרכב לא נמצא כאן — הוא בבנימינה").
    */
   chainBrokenWarning?: string;
-  /** Owner 2026-10-16: the same driver is on another overlapping ride (server `driver_overlap`). */
+  /** Owner 2026-10-16: the same driver is on another overlapping ride (warning only, never blocks). */
   driverOverlapWarning?: string;
   /**
    * Owner 2026-10-11, "my rides" week view: what the block is when it is not a placed ride — a repeating-request
@@ -1325,7 +1325,7 @@ export function WeekGrid({
                 {ride.isMine ? <span className={cn("flex items-center gap-1 font-bold", ride.needsDriver ? "text-destructive" : "text-foreground")}><Star className="size-3 shrink-0 fill-current" aria-hidden="true" />{he.siddur.myRide}</span> : null}
                 {ride.needsDriver ? <span className="flex items-center gap-1 font-semibold text-destructive"><UserRoundX className="size-3 shrink-0" aria-hidden="true" />{he.boardCoordination.needsDriver}</span> : null}
                 {ride.tightSchedule ? <span className="flex items-center gap-1 text-amber-700" title={he.boardCoordination.tightHelp}><Clock3 className="size-3 shrink-0" aria-hidden="true" />{he.boardCoordination.tight}</span> : null}
-                {ride.driverOverlapWarning ? <span className="flex items-center gap-1 font-medium text-destructive" title={ride.driverOverlapWarning}>{ride.driverOverlapWarning}</span> : null}
+                {ride.driverOverlapWarning ? <span className="flex items-center gap-1 font-medium text-amber-700" title={ride.driverOverlapWarning}>{ride.driverOverlapWarning}</span> : null}
                 {ride.chainBrokenWarning ? <span className="flex items-center gap-1 font-medium text-amber-700" title={ride.chainBrokenWarning}><CarFront className="size-3 shrink-0" aria-hidden="true" />{ride.chainBrokenWarning}</span> : null}
               </span> : null}
               {ride.pinned ? (

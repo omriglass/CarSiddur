@@ -15,6 +15,7 @@ import { he, t, tv, type TranslationKey } from "@/i18n/he";
 import { formatDayDate } from "@/lib/dayLabels";
 import { dateKey, formatTime } from "@/lib/time";
 import { alternativePlanText } from "@/features/sadran/board/planBLine";
+import { driverOverlapRideIds } from "@/features/sadran/board/driverBusy";
 import { requestStart } from "@/features/sadran/board/phantomLanes";
 import type { PublicationDay } from "../../api";
 
@@ -22,6 +23,7 @@ import { computeDiffSummary } from "../diffSummary";
 import { placedTimes } from "../placedTimes";
 import {
   useAllWeekRides,
+  useCarsForDepartment,
   usePublicationConflicts,
   usePublicationReadiness,
   usePublishSiddurMutation,
@@ -50,6 +52,7 @@ export function PublishScreen({ departmentId, weekStart }: PublishScreenProps) {
 
   const requestsQuery = useWeekRequestsWithNames(departmentId, weekStart);
   const ridesQuery = useAllWeekRides(departmentId, weekStart);
+  const carsQuery = useCarsForDepartment(departmentId);
   const versionsQuery = useSiddurVersions(departmentId, weekStart);
   const proposalsQuery = useProposalsForWeek(departmentId, weekStart);
   const publishMutation = usePublishSiddurMutation();
@@ -85,6 +88,8 @@ export function PublishScreen({ departmentId, weekStart }: PublishScreenProps) {
   // R12B6: name every ride behind the conflict counter (car, time, why).
   const conflictsQuery = usePublicationConflicts(departmentId, weekStart, chosenDays, conflictCount > 0);
   const rides = (ridesQuery.data ?? []).filter((ride) => ride.starts_at && chosenDays.includes(dateKey(ride.starts_at)));
+  const driverOverlapIds = driverOverlapRideIds(ridesQuery.data ?? []);
+  const driverOverlapRides = rides.filter((ride) => ride.id && ride.ends_at && driverOverlapIds.has(ride.id));
   const chosenRequests = (requestsQuery.data ?? []).filter((request) => {
     const anchor = request.trip_shape === "one_way_from" ? request.return_at : request.depart_at;
     return anchor && chosenDays.includes(dateKey(anchor));
@@ -267,6 +272,25 @@ export function PublishScreen({ departmentId, weekStart }: PublishScreenProps) {
       </Card>
 
       {rides.some((ride) => ride.needs_driver) ? <Card className="border-destructive/50"><CardContent className="p-4 text-sm text-destructive">{he.boardCoordination.missingDriverPublish}</CardContent></Card> : null}
+
+      {driverOverlapRides.length ? (
+        <Card className="border-amber-500/60" data-testid="publish-driver-overlap">
+          <CardContent className="space-y-2 p-4 text-sm text-amber-700">
+            <p className="font-medium">{he.sadranPublish.driverOverlapTitle}</p>
+            <ul className="list-disc space-y-1 ps-5">
+              {driverOverlapRides.map((ride) => (
+                <li key={ride.id}>
+                  {tv("sadranPublish.driverOverlapRow", {
+                    car: (carsQuery.data ?? []).find((car) => car.id === ride.car_id)?.name ?? "",
+                    day: formatDayDate(ride.starts_at as string),
+                    time: `${formatTime(new Date(ride.starts_at as string))}–${formatTime(new Date(ride.ends_at as string))}`,
+                  })}
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      ) : null}
 
       {conflictCount > 0 ? (
         <Card className="border-destructive/50">
