@@ -151,6 +151,9 @@ export const heSadran = {
     nextConflict: "מעבר להתנגשות הבאה",
     conflictLocation: "התנגשות {{index}} מתוך {{count}} · {{date}} · {{time}} · {{car}}",
     unmetTitle: "לא שובצו ({{count}})",
+    /** Owner 2026-10-16: the side list of unplaced requests can be hidden and shown again. */
+    hideUnmetPanel: "הסתרת רשימת הממתינים",
+    showUnmetPanel: "הצגת רשימת הממתינים ({{count}})",
     preferredCar: "ביקש/ה רכב מסוים: {{car}}",
     /** REQUIREMENTS §13.93: an unmet request card's own origin, shown only when it isn't the department home. */
     unmetOrigin: "יוצא/ת מ{{place}}",

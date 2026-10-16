@@ -15,9 +15,11 @@ interface BoardDisplayPrefsValue {
   tableZoom: number;
   showEarlyHours: boolean;
   showLegend: boolean;
+  /** Owner 2026-10-16: the side list of unplaced requests can be hidden so it does not take room from the grid. */
+  showUnmetPanel: boolean;
 }
 
-const DEFAULT_PREFS: BoardDisplayPrefsValue = { tableView: false, tableZoom: 1, showEarlyHours: false, showLegend: true };
+const DEFAULT_PREFS: BoardDisplayPrefsValue = { tableView: false, tableZoom: 1, showEarlyHours: false, showLegend: true, showUnmetPanel: true };
 
 function readPrefs(): BoardDisplayPrefsValue {
   try {
@@ -29,6 +31,7 @@ function readPrefs(): BoardDisplayPrefsValue {
       tableZoom: typeof parsed.tableZoom === "number" ? parsed.tableZoom : DEFAULT_PREFS.tableZoom,
       showEarlyHours: typeof parsed.showEarlyHours === "boolean" ? parsed.showEarlyHours : DEFAULT_PREFS.showEarlyHours,
       showLegend: typeof parsed.showLegend === "boolean" ? parsed.showLegend : DEFAULT_PREFS.showLegend,
+      showUnmetPanel: typeof parsed.showUnmetPanel === "boolean" ? parsed.showUnmetPanel : DEFAULT_PREFS.showUnmetPanel,
     };
   } catch {
     // Private browsing / restrictive webviews may deny storage or hold garbage — today's
@@ -65,5 +68,7 @@ export function useBoardDisplayPrefs() {
     setShowEarlyHours: (showEarlyHours: boolean) => update({ showEarlyHours }),
     showLegend: prefs.showLegend,
     setShowLegend: (showLegend: boolean) => update({ showLegend }),
+    showUnmetPanel: prefs.showUnmetPanel,
+    setShowUnmetPanel: (showUnmetPanel: boolean) => update({ showUnmetPanel }),
   };
 }

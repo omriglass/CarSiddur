@@ -30,7 +30,8 @@ import { UNMET_DROP_ZONE_ATTR, WeekGrid } from "@/components/WeekGrid";
 import { WeekStrip } from "@/components/WeekStrip";
 import { WaitlistGroupCard } from "@/features/waitlist/components/WaitlistGroupCard";
 import { WaitlistGroupSheet } from "@/features/waitlist/components/WaitlistGroupSheet";
-import { CalendarDays, Redo2, Undo2 } from "lucide-react";
+import { CalendarDays, PanelLeftClose, PanelLeftOpen, Redo2, Undo2 } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { RideTypeLegend } from "@/components/RideTypeLegend";
 import { BoardGridSkeleton } from "@/components/skeletons/BoardGridSkeleton";
 import { PublishButton } from "../../publish/components/BoardPublicationActions";
@@ -114,7 +115,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
   // in the "eye" `BoardDisplayMenu`, at every width (owner correction,
   // 2026-09-10) — the standalone toggle button and `TableViewControls` row
   // are gone.
-  const { tableView, setTableView, tableZoom, setTableZoom, showEarlyHours, setShowEarlyHours, showLegend, setShowLegend } = useBoardDisplayPrefs();
+  const { tableView, setTableView, tableZoom, setTableZoom, showEarlyHours, setShowEarlyHours, showLegend, setShowLegend, showUnmetPanel, setShowUnmetPanel } = useBoardDisplayPrefs();
   const boardStartMinutes = board.departmentSettingsQuery.data?.board_start_time
     ? parseTimeToMinutes(board.departmentSettingsQuery.data.board_start_time) : 6 * 60;
   const dayStartMinutes = showEarlyHours ? 0 : boardStartMinutes;
@@ -389,8 +390,15 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
         <RideTypeLegend types={(board.rideTypesQuery.data ?? []).map((rt) => ({ code: rt.code, nameHe: rt.name_he }))} />
       </div>
 
-      <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_340px]">
+      <div className={cn("grid gap-3", showUnmetPanel && "lg:grid-cols-[minmax(0,1fr)_340px]")}>
         <div className={tableView ? "min-w-0" : "hidden min-w-0 lg:block"}>
+          {/* Owner 2026-10-16: the hidden side list comes back from here (the board remembers the choice on this device). */}
+          {showUnmetPanel ? null : (
+            <Button type="button" variant="outline" size="sm" className="mb-2" onClick={() => setShowUnmetPanel(true)} data-testid="board-show-unmet">
+              <PanelLeftOpen className="me-1 size-4" aria-hidden="true" />
+              {tv("sadranBoard.showUnmetPanel", { count: String(board.unmetItems.length) })}
+            </Button>
+          )}
           <WeekGrid
             zoom={tableZoom}
             onZoomChange={setTableZoom}
@@ -522,10 +530,15 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
           // overflow-auto` side-by-side (UX_FLOWS.md §20) — without this the panel grows with
           // the page, forcing a page-level scroll to reach lower unmet cards that also pushes
           // the grid itself off-screen.
-          className={tableView ? "min-w-0" : "hidden min-w-0 lg:sticky lg:top-0 lg:block lg:max-h-[100dvh] lg:self-start lg:overflow-auto"}
+          className={!showUnmetPanel ? "hidden" : tableView ? "min-w-0" : "hidden min-w-0 lg:sticky lg:top-0 lg:block lg:max-h-[100dvh] lg:self-start lg:overflow-auto"}
           {...{ [UNMET_DROP_ZONE_ATTR]: "true" }}
         >
-          <h2 className="mb-2 font-semibold">{tv("sadranBoard.unmetTitle", { count: String(board.unmetItems.length) })}</h2>
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <h2 className="font-semibold">{tv("sadranBoard.unmetTitle", { count: String(board.unmetItems.length) })}</h2>
+            <Button type="button" variant="ghost" size="icon" onClick={() => setShowUnmetPanel(false)} aria-label={he.sadranBoard.hideUnmetPanel} title={he.sadranBoard.hideUnmetPanel} data-testid="board-hide-unmet">
+              <PanelLeftClose className="size-4" aria-hidden="true" />
+            </Button>
+          </div>
           {board.unmetItems.length === 0 ? (
             <EmptyState icon={CalendarDays} message={he.sadranBoard.noSuggestions} />
           ) : (
