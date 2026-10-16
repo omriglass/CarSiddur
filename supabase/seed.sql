@@ -561,6 +561,25 @@ select 'test_notification'::public.notification_event, ch, null,
 from unnest(array['inbox','push']::public.notification_channel[]) ch
 on conflict(event,channel,coalesce(variant,'')) do nothing;
 
+-- Owner 2026-10-16 (REQ §13.135): a member named as a companion on someone else's request is told. Mirrors
+-- 20261026100100_companion_added_emitter.sql (`no_return` = no return time, so no "–{{return}}").
+insert into public.notification_templates(event,channel,variant,title,body,default_title,default_body)
+select 'companion_added'::public.notification_event, ch, t.variant, t.title, t.body, t.title, t.body
+from (values
+  (null::text, 'נרשמת כנוסע/ת בבקשה של {{name}}',
+   '{{name}} הגיש/ה בקשה שבה את/ה נוסע/ת: ביום {{day}} {{depart}}–{{return}} {{route}}. אם זה לא נכון, כדאי ליצור קשר עם {{name}}.'),
+  ('no_return', 'נרשמת כנוסע/ת בבקשה של {{name}}',
+   '{{name}} הגיש/ה בקשה שבה את/ה נוסע/ת: ביום {{day}} {{depart}} {{route}}. אם זה לא נכון, כדאי ליצור קשר עם {{name}}.')
+) t(variant,title,body) cross join unnest(array['inbox','push']::public.notification_channel[]) ch
+on conflict(event,channel,coalesce(variant,'')) do nothing;
+
+-- Owner 2026-10-16 (REQ §13.135): a Sadran edited your request. Mirrors 20261026100200_notify_requester_when_sadran_edits.sql.
+insert into public.notification_templates(event,channel,variant,title,body,default_title,default_body)
+select 'request_changed'::public.notification_event, ch, 'by_sadran', t.title, t.body, t.title, t.body
+from (values ('הסדרן/ית עדכן/ה את הבקשה שלך', '{{byName}} עדכן/ה את הבקשה שלך ליום {{day}}: {{route}} {{timeRange}}.')) t(title,body)
+cross join unnest(array['inbox','push']::public.notification_channel[]) ch
+on conflict(event,channel,coalesce(variant,'')) do nothing;
+
 -- REQ §13.100 (QA run 1): QB17 all-day fragment and the new notification variants; mirrors
 -- 20261006200200_notification_time_range_and_variants.sql (driver_cancelled copy: docs/COPY_DRAFT_2026-10.md §6).
 insert into public.text_fragments (key, body) values ('time.all_day', 'כל היום')

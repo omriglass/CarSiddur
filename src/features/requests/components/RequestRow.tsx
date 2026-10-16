@@ -129,7 +129,7 @@ export function RequestRow({
       : null;
   // Owner 2026-10-13: one red "ביטול" — removes a request with no ride yet (`onWithdraw`), cancels its ride once placed
   // (`onCancelRide`, the requester's own); each keeps its own confirmation dialog. "Repeat weekly" lives in the edit form.
-  const cancelAction = row.ride && row.ride.status !== "cancelled"
+  const cancelAction = row.companionOf ? null : row.ride && row.ride.status !== "cancelled"
     ? (onCancelRide && !notRequester ? () => onCancelRide(row) : null)
     : row.status !== "withdrawn" && row.status !== "cancelled" && onWithdraw ? () => onWithdraw(row) : null;
   const badges = (
@@ -184,6 +184,7 @@ export function RequestRow({
       {row.hasLuggage ? <Badge variant="outline" className="w-fit" data-testid={row.luggageWaived ? "luggage-waived" : undefined}>{row.luggageWaived ? he.smallTrunk.waivedLabel : he.request.luggageChip}</Badge> : null}
       {row.preferredCarName ? <p className="text-xs text-muted-foreground">{he.request.preferredCar}: {row.preferredCarName}</p> : null}
       {filedLine ? <p className="text-xs text-muted-foreground" data-testid="request-filed-line"><bdi>{filedLine}</bdi></p> : null}
+      {row.companionOf ? <p className="text-xs text-muted-foreground" data-testid="request-companion-line"><bdi>{tv("request.companionAddedBy", { name: row.companionOf })}</bdi></p> : null}
       {others ? (
         <p className="text-xs text-muted-foreground" data-testid="request-other-people">{tv("ridePublicDetails.companions", { names: others })}</p>
       ) : null}

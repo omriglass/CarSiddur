@@ -85,6 +85,8 @@ export interface MyRequestRow {
   filedById?: string | null;
   requesterName?: string | null;
   filerName?: string | null;
+  /** Owner 2026-10-16 (REQ §13.135): set when I am only named as a companion on someone else's request — who added me (filer, else requester). */
+  companionOf?: string | null;
   preferredCarId?: string | null;
   preferredCarName?: string | null;
   hasPublishedRide?: boolean;
@@ -361,6 +363,9 @@ function mapRow(row: RawRequestRow, profileId?: string): MyRequestRow {
     filedById: row.filed_by ?? null,
     requesterName: row.requester?.full_name ?? null,
     filerName: row.filer?.full_name ?? null,
+    companionOf: profileId && row.requester_id !== profileId && row.filed_by !== profileId
+      ? (row.filer?.full_name ?? row.requester?.full_name ?? "")
+      : null,
     preferredCarId: row.preferred_car_id,
     preferredCarName: row.preferred_car?.name ?? null,
     window: row.window,
@@ -660,7 +665,12 @@ function isDuplicateWithdrawn(row: { status: string; status_reason: string | nul
 
 export async function fetchMyRequests(profileId: string, departmentId?: string): Promise<MyRequestRow[]> {
   // REQ §13.127 (d): the requests I filed for others are listed besides my own.
-  let query = supabase.from("requests").select(SELECT).or(`requester_id.eq.${profileId},filed_by.eq.${profileId}`);
+  // Owner 2026-10-16 (REQ §13.135): requests that name me as a companion are listed too (RLS lets a companion read them).
+  const { data: companionLinks, error: companionError } = await supabase.from("request_companions").select("request_id").eq("profile_id", profileId);
+  if (companionError) throw toAppError(companionError);
+  const companionIds = (companionLinks ?? []).map((link) => link.request_id);
+  const mine = `requester_id.eq.${profileId},filed_by.eq.${profileId}`;
+  let query = supabase.from("requests").select(SELECT).or(companionIds.length ? `${mine},id.in.(${companionIds.join(",")})` : mine);
   if (departmentId) query = query.eq("department_id", departmentId);
   const { data, error } = await query.order("depart_at", { ascending: true, nullsFirst: false });
   if (error) throw toAppError(error);
@@ -670,6 +680,9 @@ export async function fetchMyRequests(profileId: string, departmentId?: string):
   return ((data ?? []) as unknown as RawRequestRow[])
     .filter((row) => !row.plan_b_parent_id)
     .filter((row) => !["withdrawn", "cancelled"].includes(row.status) || isDuplicateWithdrawn(row))
+    // A request I am only a companion on shows while it is unplaced; once placed on a published day the ride itself lists me.
+    .filter((row) => row.requester_id === profileId || row.filed_by === profileId
+      || !(["assigned", "merged"].includes(row.status) && isRequestDayPublished(row.window, row.depart_at, row.return_at)))
     .map((row) => mapRow(row, profileId));
 }
 

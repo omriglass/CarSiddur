@@ -822,6 +822,7 @@ export const he = {
     window_changed: "מועד סגירת הבקשות השתנה",
     car_swapped: "הרכב שלך הוחלף",
     test_notification: "התראת בדיקה",
+    companion_added: "נרשמת כנוסע/ת בבקשה של מישהו",
   } satisfies Record<NotificationEvent, string>,
   car: {
     status: {

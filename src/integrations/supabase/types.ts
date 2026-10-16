@@ -4521,6 +4521,10 @@ export type Database = {
         }
         Returns: boolean
       }
+      _notify_request_edited_by_manager: {
+        Args: { p_actor: string; p_request: string }
+        Returns: undefined
+      }
       _offer_freed_slot: { Args: { p_ride_id: string }; Returns: string }
       _proposal_car_conflicts: {
         Args: { p_proposal_id: string }
@@ -5940,6 +5944,7 @@ export type Database = {
         | "window_changed"
         | "car_swapped"
         | "test_notification"
+        | "companion_added"
       party_response: "pending" | "accepted" | "declined"
       proposal_status:
         | "draft"
@@ -6175,6 +6180,7 @@ export const Constants = {
         "window_changed",
         "car_swapped",
         "test_notification",
+        "companion_added",
       ],
       party_response: ["pending", "accepted", "declined"],
       proposal_status: [

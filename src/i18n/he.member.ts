@@ -90,7 +90,7 @@ export const heMember = {
     /** REQ §13.127 (d): "my rides" row lines for a request filed by / for someone else. */
     filedBy: "הוגשה ע״י {{name}}",
     filedFor: "הוגשה עבור {{name}}",
-    /** Owner 2026-10-16 (REQ §13.128): /my row of a request that names me as a companion. */
+    /** Owner 2026-10-16 (REQ §13.135): /my row of a request that names me as a companion. */
     companionAddedBy: "{{name}} הוסיף/ה אותך כנוסע/ת",
     /** REQ §13.127 (a): confirmation before a ride is filed for someone else (everyone, Sadranim included). */
     onBehalfTitle: "הנסיעה תיווצר בשם {{name}}",

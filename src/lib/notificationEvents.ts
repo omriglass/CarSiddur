@@ -61,6 +61,8 @@ export const NOTIFICATION_EVENT_META: Record<NotificationEvent, NotificationEven
   car_swapped: { category: "siddur", memberMutable: true, sadranRole: false, weekScoped: false },
   // Owner 2026-10-11: the profile's "send me a test notification" — never muted.
   test_notification: { category: "account", memberMutable: false, sadranRole: false, weekScoped: false },
+  // Owner 2026-10-16 (REQ §13.135): someone named you as a passenger on their request.
+  companion_added: { category: "siddur", memberMutable: true, sadranRole: false, weekScoped: true },
 };
 
 /** Every mutable event, grouped by `category` — the source `muteCategories.ts` builds on. */

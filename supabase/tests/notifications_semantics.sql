@@ -459,6 +459,100 @@ begin
   end;
 end $$;
 
+-- Owner 2026-10-16 (REQ §13.135): `companion_added` — a member named as a companion on someone else's request is told once.
+do $$
+declare
+  dept uuid := '00000000-0000-0000-0000-000000000001';
+  filer uuid := '00000000-0000-0000-0000-000000000103';
+  comp uuid := '00000000-0000-0000-0000-000000000104';
+  comp2 uuid := '00000000-0000-0000-0000-000000000102';
+  haifa uuid := '00000000-0000-0000-0000-000000000011';
+  typ uuid := '00000000-0000-0000-0000-000000000021';
+  w date := public.current_week_start() + 1400;
+  dt timestamptz; base jsonb; q uuid; n notifications%rowtype;
+begin
+  insert into public.weeks(department_id,week_start,phase,open_at,close_at,publish_at)
+  values(dept,w,'open',now()-interval '1 day',now()+interval '5 days',now()+interval '6 days');
+  update public.profiles set does_not_drive = false, muted_events = '{}' where id in (filer, comp, comp2);
+  dt := ((w+1)+time '08:00') at time zone 'Asia/Jerusalem';
+  base := jsonb_build_object('department_id',dept,'week_start',w,'ride_type_id',typ,'adults',2,'destination_id',haifa,'trip_type','round_trip');
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', filer, 'role', 'authenticated')::text, true);
+
+  q := (public.submit_request(base || jsonb_build_object('depart_at', dt, 'return_at', dt + interval '3 hours', 'companion_ids', jsonb_build_array(comp)))->>'request_id')::uuid;
+  assert (select count(*) from public.notifications where recipient_id = comp and event = 'companion_added') = 1, 'companion_added: the named companion gets one notice';
+  select * into n from public.notifications where recipient_id = comp and event = 'companion_added';
+  assert n.title_he like 'נרשמת כנוסע/ת בבקשה של %' and n.body_he like '%–%' and n.title_he not like '%{{%' and n.body_he not like '%{{%',
+    format('companion_added copy not rendered: %s / %s', n.title_he, n.body_he);
+  assert n.data->>'url' = public.notification_default_url('companion_added', n.data, dept, w, comp) and n.data->>'url' like '%focus=' || q::text,
+    'companion_added deep-links to the request on /my';
+  assert not exists (select 1 from public.notifications where recipient_id = filer and event = 'companion_added'), 'the filer is not told';
+
+  -- an edit that deletes and re-adds the same companion does not notify again; a new companion is told
+  perform public.set_request_companions(q, array[comp]);
+  perform public.set_request_companions(q, array[comp, comp2]);
+  assert (select count(*) from public.notifications where recipient_id = comp and event = 'companion_added') = 1, 'companion_added: a kept companion is not re-notified';
+  assert (select count(*) from public.notifications where recipient_id = comp2 and event = 'companion_added') = 1, 'companion_added: a newly added companion is notified';
+
+  -- one way without a return time: the no_return variant has no dash range
+  perform public.submit_request(base || jsonb_build_object('trip_type', 'one_way', 'depart_at', dt + interval '1 day', 'companion_ids', jsonb_build_array(comp)));
+  select * into n from public.notifications where recipient_id = comp and event = 'companion_added' and data->>'variant' = 'no_return';
+  assert (select count(*) from public.notifications where recipient_id = comp and event = 'companion_added') = 2, 'companion_added: a second request notifies again';
+  assert n.body_he not like '%–%', format('companion_added no_return variant still shows a return range: %s', n.body_he);
+
+  -- the filer filing for the requester and naming themselves is not notified
+  perform public.submit_request(base || jsonb_build_object('requester_id', comp, 'depart_at', dt + interval '2 days', 'return_at', dt + interval '2 days 3 hours', 'companion_ids', jsonb_build_array(filer)));
+  assert not exists (select 1 from public.notifications where recipient_id = filer and event = 'companion_added'), 'companion_added: the filer naming themselves is not told';
+
+  -- a withdrawn request notifies nobody new
+  q := (public.submit_request(base || jsonb_build_object('depart_at', dt + interval '3 days', 'return_at', dt + interval '3 days 3 hours'))->>'request_id')::uuid;
+  update public.requests set status = 'withdrawn' where id = q;
+  delete from public.notifications where recipient_id = comp2 and event = 'companion_added';
+  insert into public.request_companions(request_id, profile_id) values (q, comp2);
+  assert not exists (select 1 from public.notifications where recipient_id = comp2 and event = 'companion_added'), 'companion_added: nothing for a withdrawn request';
+
+  -- the companion reads the request through RLS (so /my can list it); an unrelated member does not (before it is on a public ride)
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', comp, 'role', 'authenticated')::text, true);
+  set local role authenticated;
+  assert exists (select 1 from public.requests r where r.id = (select request_id from public.request_companions where profile_id = comp limit 1)), 'companion_added: a companion reads the request they are named on';
+  reset role;
+  perform set_config('request.jwt.claims', '{}', true);
+end $$;
+
+-- Owner 2026-10-16 (REQ §13.135): a Sadran editing a member's request tells the requester (and the filer), never themselves.
+do $$
+declare
+  dept uuid := '00000000-0000-0000-0000-000000000001';
+  sadran uuid := '00000000-0000-0000-0000-000000000102';
+  req uuid := '00000000-0000-0000-0000-000000000103';
+  fil uuid := '00000000-0000-0000-0000-000000000104';
+  haifa uuid := '00000000-0000-0000-0000-000000000011';
+  typ uuid := '00000000-0000-0000-0000-000000000021';
+  w date := public.current_week_start() + 1407;
+  dt timestamptz; base jsonb; q uuid; n notifications%rowtype;
+begin
+  insert into public.weeks(department_id,week_start,phase,open_at,close_at,publish_at)
+  values(dept,w,'open',now()-interval '1 day',now()+interval '5 days',now()+interval '6 days');
+  update public.profiles set does_not_drive = false, muted_events = '{}' where id in (req, fil, sadran);
+  dt := ((w+1)+time '08:00') at time zone 'Asia/Jerusalem';
+  base := jsonb_build_object('department_id',dept,'week_start',w,'ride_type_id',typ,'adults',1,'destination_id',haifa,'trip_type','round_trip');
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', fil, 'role', 'authenticated')::text, true);
+  q := (public.submit_request(base || jsonb_build_object('requester_id', req, 'depart_at', dt, 'return_at', dt + interval '3 hours'))->>'request_id')::uuid;
+  assert not exists (select 1 from public.notifications where event = 'request_changed' and data->>'variant' = 'by_sadran'), 'by_sadran: nothing before a Sadran edit';
+
+  -- the filer's own edit does not notify (actor = filer)
+  perform public.submit_request(base || jsonb_build_object('request_id', q, 'expected_version', (select version from public.requests where id = q), 'depart_at', dt + interval '1 hour', 'return_at', dt + interval '4 hours'));
+  assert not exists (select 1 from public.notifications where event = 'request_changed' and data->>'variant' = 'by_sadran'), 'by_sadran: a filer edit is not a Sadran edit';
+
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', sadran, 'role', 'authenticated')::text, true);
+  perform public.submit_request(base || jsonb_build_object('request_id', q, 'expected_version', (select version from public.requests where id = q), 'depart_at', dt + interval '2 hours', 'return_at', dt + interval '5 hours'));
+  assert (select count(*) from public.notifications where event = 'request_changed' and data->>'variant' = 'by_sadran' and recipient_id = req) = 1, 'by_sadran: the requester is told';
+  assert (select count(*) from public.notifications where event = 'request_changed' and data->>'variant' = 'by_sadran' and recipient_id = fil) = 1, 'by_sadran: the filer is told';
+  assert not exists (select 1 from public.notifications where event = 'request_changed' and data->>'variant' = 'by_sadran' and recipient_id = sadran), 'by_sadran: the Sadran is not told';
+  select * into n from public.notifications where event = 'request_changed' and data->>'variant' = 'by_sadran' and recipient_id = req;
+  assert n.title_he = 'הסדרן/ית עדכן/ה את הבקשה שלך' and n.body_he not like '%{{%' and n.body_he like '%–%', format('by_sadran copy: %s / %s', n.title_he, n.body_he);
+  perform set_config('request.jwt.claims', '{}', true);
+end $$;
+
 do $$
 declare v_bad text;
 begin

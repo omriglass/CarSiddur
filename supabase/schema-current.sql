@@ -197,7 +197,8 @@ CREATE TYPE "public"."notification_event" AS ENUM (
     'waitlist_resolved',
     'window_changed',
     'car_swapped',
-    'test_notification'
+    'test_notification',
+    'companion_added'
 );
 
 
@@ -1606,6 +1607,38 @@ end $$;
 
 
 ALTER FUNCTION "public"."_notice_is_unpublished_outcome"("_event" "public"."notification_event", "_data" "jsonb", "_recipient" "uuid", "_department_id" "uuid", "_week_start" "date", "_caller_days" "text") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_notify_request_edited_by_manager"("p_request" "uuid", "p_actor" "uuid") RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  q public.requests%rowtype;
+  v_name text;
+  v_to uuid;
+begin
+  select * into q from public.requests where id = p_request;
+  if not found or p_actor is null
+     or p_actor is not distinct from q.requester_id
+     or p_actor is not distinct from q.filed_by
+     or not public.can_manage_week(q.department_id, q.week_start) then
+    return;
+  end if;
+  select full_name into v_name from public.profiles where id = p_actor;
+  for v_to in
+    select distinct x from unnest(array[q.requester_id, q.filed_by]) x where x is not null and x <> p_actor
+  loop
+    perform public.enqueue_notification(v_to, 'request_changed', q.department_id, q.week_start,
+      jsonb_build_object('byName', coalesce(v_name, '')),
+      jsonb_build_object('request_id', q.id, 'variant', 'by_sadran'),
+      format('request_changed_by_sadran:%s:%s:%s', q.id, v_to, now()));
+  end loop;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."_notify_request_edited_by_manager"("p_request" "uuid", "p_actor" "uuid") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."_offer_freed_slot"("p_ride_id" "uuid") RETURNS "uuid"
@@ -9089,6 +9122,45 @@ end $$;
 ALTER FUNCTION "public"."notify_week_sadran_assigned"() OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."on_request_companion_added"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  q public.requests%rowtype;
+  v_actor uuid;
+  v_name text;
+  v_at timestamptz;
+begin
+  select * into q from public.requests where id = new.request_id;
+  if not found
+     or q.status in ('withdrawn', 'cancelled')
+     or q.plan_b_parent_id is not null
+     or new.profile_id = q.requester_id
+     or new.profile_id = coalesce(q.filed_by, q.requester_id) then
+    return new;
+  end if;
+  v_actor := coalesce(q.filed_by, q.requester_id);
+  select full_name into v_name from public.profiles where id = v_actor;
+  v_at := coalesce(q.depart_at, q.return_at);
+  perform public.enqueue_notification(
+    new.profile_id, 'companion_added', q.department_id, q.week_start,
+    jsonb_build_object(
+      'name', coalesce(v_name, ''),
+      'day', public.day_date_label(v_at),
+      'depart', to_char(v_at at time zone 'Asia/Jerusalem', 'HH24:MI'),
+      'return', coalesce(to_char(case when q.depart_at is not null then q.return_at end at time zone 'Asia/Jerusalem', 'HH24:MI'), '')),
+    jsonb_build_object('request_id', q.id)
+      || case when q.depart_at is not null and q.return_at is not null then '{}'::jsonb else jsonb_build_object('variant', 'no_return') end,
+    'companion_added:' || coalesce(q.series_id, q.id)::text || ':' || new.profile_id::text);
+  return new;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."on_request_companion_added"() OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."open_week"("p_department_id" "uuid", "p_week_start" "date") RETURNS "uuid"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -15317,6 +15389,7 @@ begin
         jsonb_build_object('requestId', v_request_id::text), jsonb_build_object('request_id', v_request_id),
         format('request_changed:%s:%s', v_request_id, now()))
       from public.sadranim_of(v_department_id, v_week_start) as s(profile_id);
+      perform public._notify_request_edited_by_manager(v_request_id, v_actor);
       return jsonb_build_object('ok', true, 'placement_neutral', true, 'unchanged', false, 'request_id', v_request_id,
         'status', v_existing.status, 'is_late', v_existing.is_late, 'warnings', '[]'::jsonb, 'overlaps', '[]'::jsonb);
     end if;
@@ -15514,6 +15587,7 @@ begin
         format('request_changed:%s:%s', v_request_id, now()))
       from public.sadranim_of(v_department_id, v_week_start) as s(profile_id);
     end if;
+    perform public._notify_request_edited_by_manager(v_request_id, v_actor);
   end if;
 
   perform set_config('app.reset_request_baseline','off',true);
@@ -20752,6 +20826,10 @@ CREATE OR REPLACE TRIGGER "push_outbox_notify_dispatch" AFTER INSERT ON "public"
 
 
 
+CREATE OR REPLACE TRIGGER "request_companion_added_notify" AFTER INSERT ON "public"."request_companions" FOR EACH ROW EXECUTE FUNCTION "public"."on_request_companion_added"();
+
+
+
 CREATE OR REPLACE TRIGGER "request_companions_not_requester" BEFORE INSERT OR UPDATE ON "public"."request_companions" FOR EACH ROW EXECUTE FUNCTION "public"."request_companions_not_requester"();
 
 
@@ -22702,6 +22780,11 @@ GRANT ALL ON FUNCTION "public"."_notice_is_unpublished_outcome"("_event" "public
 
 
 
+REVOKE ALL ON FUNCTION "public"."_notify_request_edited_by_manager"("p_request" "uuid", "p_actor" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_notify_request_edited_by_manager"("p_request" "uuid", "p_actor" "uuid") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."_offer_freed_slot"("p_ride_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_offer_freed_slot"("p_ride_id" "uuid") TO "service_role";
 
@@ -23685,6 +23768,11 @@ GRANT ALL ON FUNCTION "public"."notify_week_opened"() TO "service_role";
 
 REVOKE ALL ON FUNCTION "public"."notify_week_sadran_assigned"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."notify_week_sadran_assigned"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."on_request_companion_added"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."on_request_companion_added"() TO "service_role";
 
 
 
