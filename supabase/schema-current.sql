@@ -15201,7 +15201,7 @@ declare
   -- REQ §13.127: filed for someone else; a member doing so follows the member's own flow (the requester's).
   v_on_behalf boolean;
   v_member_flow boolean;
-  -- REQ §13.128 (c): a private car chosen in the form (the car's owner is the filer, the requester or who filed it).
+  -- REQ §13.135 (c): a private car chosen in the form (the car's owner is the filer, the requester or who filed it).
   v_own_car uuid; v_own_turnaround int; v_own_by text;
 begin
   -- REQ §13.127: an edit without `requester_id` keeps the stored requester (the editor may be anyone related).
@@ -15215,7 +15215,7 @@ begin
   v_on_behalf := v_actor is not null and v_requester_id <> v_actor;
   -- null (not false) for a session without a user, exactly like the `v_requester_id = v_actor` it replaces.
   v_member_flow := v_requester_id = v_actor or (v_on_behalf and not v_can_manage);
-  -- REQ §13.128 (c): a private car is a preference only for its owner's requests (the owner files it, is the requester,
+  -- REQ §13.135 (c): a private car is a preference only for its owner's requests (the owner files it, is the requester,
   -- or filed the request being edited); anyone else's private car (e.g. a grid tap on its column) is dropped, not refused.
   if v_preferred_car_id is not null and exists (
        select 1 from public.cars c where c.id = v_preferred_car_id and c.type = 'temporary'
@@ -15731,7 +15731,7 @@ begin
     end if;
   end if;
 
-  -- REQ §13.128 (c): a private car chosen in the form takes the round trip at once, in any week phase (never another
+  -- REQ §13.135 (c): a private car chosen in the form takes the round trip at once, in any week phase (never another
   -- car instead); a busy car refuses the submit so the member can pick other times.
   if v_preferred_car_id is not null and v_trip_type = 'round_trip' and v_series_id is null and v_join_ride_id is null
      and coalesce((payload->>'reserve_missing_driver')::boolean, false) = false
@@ -15777,7 +15777,7 @@ begin
     v_auto_result := jsonb_build_object('status', case when v_week.phase = 'live' then 'waitlisted' else 'submitted' end,
       'reason', 'DUPLICATE_OVERLAP');
   elsif v_own_car is not null then
-    -- REQ §13.128 (c): on the chosen private car (pending proposals of the request are settled like place_on_own_car).
+    -- REQ §13.135 (c): on the chosen private car (pending proposals of the request are settled like place_on_own_car).
     perform set_config('app.audit_reason', 'own_car_from_form', true);
     update public.proposals p set status = 'withdrawn'
     where p.status in ('draft', 'sent')
