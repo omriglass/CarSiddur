@@ -52,7 +52,7 @@ import {
 import { buildTripWeeks, ridesByRequestRow } from "@/features/requests/myTrips";
 import { isTodayOrLater } from "@/features/requests/upcoming";
 import { useCollapsedWeeks } from "@/features/requests/useCollapsedWeeks";
-import { useBoardRides, useWeeks, useMyUpcomingRides, useMyChildrenQuery, useMyChildrenRidesQuery } from "@/features/siddur/hooks";
+import { useBoardRides, useWeeks, useMyUpcomingRides, useMyChildrenQuery, useMyChildrenRidesQuery, useMyCoGuardiansQuery } from "@/features/siddur/hooks";
 import { useCarNeighboursQuery, useRideChanges, useRemoveRidePassengerMutation, useRequestRideChangeMutation } from "@/features/rides/hooks";
 import { isRideDayEditable } from "@/features/rides/rideDayEditable";
 import { useRideSheetCarActions } from "@/features/rides/useRideSheetCarActions";
@@ -135,8 +135,11 @@ export function HomePage() {
   const weekView = (searchParams.get("view") ?? displayPrefs.view) === "week";
   const myChildrenQuery = useMyChildrenQuery(displayPrefs.showKidsRides);
   const myChildIds = new Set((myChildrenQuery.data ?? []).map((child) => child.id));
-  const kidsRidesQuery = useMyChildrenRidesQuery([...myChildIds].sort(), displayPrefs.showKidsRides && !weekView);
-  const tightRideIds = useTightRideIds(defaultDepartmentId, upcomingRidesQuery.data ?? [], weeksQuery.data ?? [], settingsQuery.data);
+  const coGuardiansQuery = useMyCoGuardiansQuery(displayPrefs.showKidsRides);
+  const guardianIds = new Set(coGuardiansQuery.data ?? []);
+  // The rides query waits for the co-guardian lookup so it runs once with both id lists.
+  const kidsRidesQuery = useMyChildrenRidesQuery([...myChildIds].sort(), displayPrefs.showKidsRides && !weekView && !coGuardiansQuery.isFetching, [...guardianIds].sort());
+  const tightRideIds = useTightRideIds(defaultDepartmentId, upcomingRidesQuery.data ?? [], weeksQuery.data ?? [], settingsQuery.data, homeDestinationIds[defaultDepartmentId ?? ""], carsQuery.data ?? []);
 
   // Show the immediate-car entry point for the current week even before its
   // Siddur has been published. In that case the same request is filed for the
@@ -264,7 +267,7 @@ export function HomePage() {
   // Owner 2026-10-16: read-only rides of my children (display option), muted and named, listed with mine.
   const myRequestIds = new Set((requestsQuery.data ?? []).map((request) => request.id));
   const relatedByRide = displayPrefs.showKidsRides && !weekView
-    ? selectRelatedRides(kidsRidesQuery.data ?? [], { profileId: viewerId, childIds: myChildIds, guardianIds: new Set() }, myRequestIds)
+    ? selectRelatedRides(kidsRidesQuery.data ?? [], { profileId: viewerId, childIds: myChildIds, guardianIds }, myRequestIds)
     : new Map<string, { kind: "child" | "guardian"; name: string }[]>();
   const relatedRides = (kidsRidesQuery.data ?? []).filter((ride) => !!ride.id && relatedByRide.has(ride.id) && !upcomingRides.some((mine) => mine.id === ride.id));
   const listedRides = [...upcomingRides, ...relatedRides];
@@ -457,6 +460,7 @@ export function HomePage() {
           showKidsRides={displayPrefs.showKidsRides}
           onShowKidsRidesChange={displayPrefs.setShowKidsRides}
           childIds={myChildIds}
+          guardianIds={guardianIds}
         />
       ) : null}
 

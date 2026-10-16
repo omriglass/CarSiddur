@@ -137,14 +137,23 @@ export async function fetchMyChildren(profileId: string): Promise<MyChild[]> {
 
 /**
  * Display-only "children's rides" (owner 2026-10-16, REQ §13.128): upcoming published rides with one of my children
- * on them (`people` child row — a request's `request_children` included). Rides of the children's OTHER guardians
- * are not fetched: `child_guardians` hides other guardians' rows from members (RLS) — needs a DB-side reader.
+ * on them (`people` child row — a request's `request_children` included), plus the rides of the children's OTHER
+ * guardians (`guardianIds` from `my_co_guardians`: `child_guardians` hides their rows from members under RLS).
  */
-export async function fetchMyChildrenRides(childIds: readonly string[], departmentId?: string): Promise<MyUpcomingRide[]> {
+export async function fetchMyChildrenRides(childIds: readonly string[], departmentId?: string, guardianIds: readonly string[] = []): Promise<MyUpcomingRide[]> {
   if (!childIds.length) return [];
   const now = new Date().toISOString();
-  const lists = await Promise.all(childIds.map((id) => fetchRidesWithPerson({ child_id: id }, now, ["confirmed", "flagged"])));
+  const lists = await Promise.all([
+    ...childIds.map((id) => fetchRidesWithPerson({ child_id: id }, now, ["confirmed", "flagged"])),
+    ...guardianIds.map((id) => fetchRidesWithPerson({ person_id: id }, now, ["confirmed", "flagged"])),
+  ]);
   return withCarNames(lists.flat(), departmentId);
+}
+
+/** Profile ids of the other guardians of my children in the department (REQ §13.134); empty when none. */
+export async function fetchMyCoGuardianIds(departmentId: string): Promise<string[]> {
+  const rows = await rpc("my_co_guardians", { p_department_id: departmentId });
+  return [...new Set((rows ?? []).map((row) => row.profile_id))].sort();
 }
 
 // `RideChange`, `RideMove` and the ride-change/passenger-list/notes RPCs moved to

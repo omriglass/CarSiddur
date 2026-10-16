@@ -122,6 +122,35 @@ begin
   delete from public.rides where id in (rid,rid2);
   delete from public.requests where id in (q1,q2);
 
+  -- ---- (c2) owner 2026-10-16: replacing a driver who drives their OWN request moves the request ----------------------
+  dt:=((w+2)+time '09:00') at time zone 'Asia/Jerusalem';
+  perform set_config('request.jwt.claims',jsonb_build_object('sub',sadran,'role','authenticated')::text,true);
+  -- m2 drives own request (adults 2: m2 + companion m1); the Sadran replaces m2 by the companion m1
+  insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,depart_at,return_at,trip_shape,status,origin_id,trip_type,adults)
+    values(dept,w,m2,m2,dest,typ,dt,dt+interval '3 hours','round_trip','assigned',home,'round_trip',2) returning id into q1;
+  insert into public.request_companions(request_id,profile_id) values(q1,m1);
+  insert into public.rides(department_id,week_start,car_id,starts_at,ends_at,origin_id,destination_id,driver_id,status,is_pinned,pin_reason,created_by)
+    values(dept,w,car40,dt,dt+interval '3 hours',home,home,m2,'confirmed',true,'SADRAN_MANUAL',sadran) returning id into rid;
+  insert into public.ride_requests(ride_id,request_id,role,leg,car_mode) values(rid,q1,'driver','both','keep');
+  res:=public.set_ride_driver(rid,m1,(select version from public.rides where id=rid));
+  assert (select driver_id=m1 from public.rides where id=rid), 'own-request transfer: ride driver is the new one';
+  assert (select requester_id=m1 and filed_by=m2 and adults=1 from public.requests where id=q1), 'own-request transfer: requester moved, filed_by kept, companion removed, adults-1';
+  assert not exists(select 1 from public.request_companions where request_id=q1 and profile_id=m1), 'own-request transfer: new driver no longer a companion';
+  assert exists(select 1 from public.ride_requests where ride_id=rid and request_id=q1 and role='driver'), 'own-request transfer: role stays driver';
+  assert exists(select 1 from public.notifications where recipient_id=m2 and data->>'variant'='driver_replaced_you'), 'own-request transfer: old driver told';
+  -- plain replacement (not a companion): adults unchanged
+  res:=public.set_ride_driver(rid,sadran,(select version from public.rides where id=rid));
+  assert (select requester_id=sadran and filed_by=m2 and adults=1 from public.requests where id=q1), 'own-request transfer: adults unchanged without companion';
+  delete from public.ride_requests where ride_id=rid; delete from public.rides where id=rid; delete from public.requests where id=q1;
+  -- a multi-day series request is refused
+  insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,depart_at,return_at,trip_shape,status,origin_id,trip_type,series_id,series_index,series_count)
+    values(dept,w,m2,m2,dest,typ,dt,dt+interval '3 hours','round_trip','assigned',home,'round_trip',gen_random_uuid(),1,2) returning id into q1;
+  insert into public.rides(department_id,week_start,car_id,starts_at,ends_at,origin_id,destination_id,driver_id,status,is_pinned,pin_reason,created_by)
+    values(dept,w,car40,dt,dt+interval '3 hours',home,home,m2,'confirmed',true,'SADRAN_MANUAL',sadran) returning id into rid;
+  insert into public.ride_requests(ride_id,request_id,role,leg,car_mode) values(rid,q1,'driver','both','keep');
+  perform pg_temp.expect_err(format('select public.set_ride_driver(%L,%L,%s)',rid,m1,(select version from public.rides where id=rid)),'ride_driver_not_assignable');
+  delete from public.ride_requests where ride_id=rid; delete from public.rides where id=rid; delete from public.requests where id=q1;
+
   -- ---- (e) duplicate withdraw / restore ------------------------------------------------------------------
   dt:=((w+3)+time '09:00') at time zone 'Asia/Jerusalem';
   insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,depart_at,return_at,trip_shape,status,origin_id,trip_type,status_reason)

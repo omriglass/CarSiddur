@@ -547,6 +547,10 @@ export const heSadran = {
     replace: "החלף/י נהג/ת",
     replaced: "{{name}} שובץ/ה כנהג/ת במקום המתנדב/ת — הנוסעים עודכנו",
     unassigned: "הנהג/ת הוסר/ה — הנסיעה מחכה שוב לנהג/ת",
+    /** Owner 2026-10-16: the current driver drives their own request; replacing moves the request to the new driver. */
+    replaceOwnLabel: "החלפת הנהג/ת ({{name}}) — הבקשה שלו/ה עוברת לנהג/ת החדש/ה",
+    replaceOwnTitle: "להחליף את הנהג/ת?",
+    replaceOwnConfirm: "הבקשה תעבור ל{{name}} ו{{old}} יישאר/תישאר כמגיש/ה שלה. {{old}} לא יהיה/תהיה בנסיעה — אפשר להוסיף ב״+ נוסעים״.",
   },
   mergedRide: {
     personOverlap: "שימו לב: החבר/ה כבר משובץ/ת לנסיעה אחרת באותן שעות ({{time}}). אפשר להמשיך.",

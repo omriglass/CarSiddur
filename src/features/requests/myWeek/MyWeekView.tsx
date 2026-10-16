@@ -19,7 +19,7 @@ import { useCalendar } from "@/features/calendar/useCalendar";
 import { useCalendarAmbientBlocks } from "@/features/calendar/useCalendarAmbientBlocks";
 import { useGoogleCalendar } from "@/features/calendar/useGoogleCalendar";
 import { selectRelatedRides, type RelatedRideLabel } from "@/features/rides/myRides";
-import { tightScheduleRideIds } from "@/features/sadran/board/geometry";
+import { tightRideIdsOf } from "@/features/rides/tightSchedule";
 import { effectiveWeekSettings } from "@/lib/weekSettings";
 import { useMemberRideMoves } from "@/features/rides/useMemberRideMoves";
 import { useBoardRides } from "@/features/siddur/hooks";
@@ -74,6 +74,8 @@ interface MyWeekViewProps {
   showKidsRides?: boolean;
   onShowKidsRidesChange?: (show: boolean) => void;
   childIds?: ReadonlySet<string>;
+  /** The other guardians of my children (`my_co_guardians`), for the same option. */
+  guardianIds?: ReadonlySet<string>;
 }
 
 /**
@@ -82,7 +84,7 @@ interface MyWeekViewProps {
  * suggestions and proposals waiting for my answer, each on its exact day and times; overlapping items sit side by side.
  * Past weeks (the archive) show rides only, read-only. Layout comes from `WeekGrid`; this component only maps data to it.
  */
-export function MyWeekView({ departmentId, homeDestinationId, profileId, requests, weeks, homeWeekStart, canSubmit, onTarget, archive = false, onViewChange, showKidsRides = false, onShowKidsRidesChange, childIds }: MyWeekViewProps) {
+export function MyWeekView({ departmentId, homeDestinationId, profileId, requests, weeks, homeWeekStart, canSubmit, onTarget, archive = false, onViewChange, showKidsRides = false, onShowKidsRidesChange, childIds, guardianIds }: MyWeekViewProps) {
   const navigate = useNavigate();
   const requestLinkProps = useRequestLinkProps();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -117,9 +119,9 @@ export function MyWeekView({ departmentId, homeDestinationId, profileId, request
   const entries = useMemo(() => {
     const myRequestIds = new Set(requests.map((row) => row.id));
     // Owner 2026-10-16: the siddur's tight-schedule marker on my rides (also on an unpublished day I manage).
-    const tightIds = tightScheduleRideIds(ridesQuery.data ?? [], effectiveWeekSettings(settingsQuery.data, week).turnaroundMinutes);
+    const tightIds = tightRideIdsOf(ridesQuery.data ?? [], effectiveWeekSettings(settingsQuery.data, week).turnaroundMinutes, homeDestinationId, carsQuery.data ?? []);
     const related = showKidsRides && childIds?.size
-      ? selectRelatedRides(ridesQuery.data ?? [], { profileId, childIds, guardianIds: new Set() }, myRequestIds)
+      ? selectRelatedRides(ridesQuery.data ?? [], { profileId, childIds, guardianIds: guardianIds ?? new Set() }, myRequestIds)
       : new Map<string, RelatedRideLabel[]>();
     const carNameById = new Map((carsQuery.data ?? []).map((car) => [car.id, car.name]));
     const mine = (ridesQuery.data ?? []).filter((ride: BoardRide) => isMyBoardRide(ride, profileId, myRequestIds) || (!!ride.id && related.has(ride.id)));
@@ -132,7 +134,7 @@ export function MyWeekView({ departmentId, homeDestinationId, profileId, request
       blocks.push(...suggestionBlocks(suggestions, dayKeys, homeDestinationId));
     }
     return withLanes(blocks);
-  }, [carsQuery.data, childIds, dayKeys, departmentId, homeDestinationId, isPast, profileId, requests, ridesQuery.data, showKidsRides, settingsQuery.data, suggestionsQuery.data, week, weekStart]);
+  }, [carsQuery.data, childIds, dayKeys, guardianIds, departmentId, homeDestinationId, isPast, profileId, requests, ridesQuery.data, showKidsRides, settingsQuery.data, suggestionsQuery.data, week, weekStart]);
 
   const targetById = useMemo(() => new Map(entries.map((entry) => [entry.block.id, entry.target])), [entries]);
   const dayColumns: WeekGridCar[] = dayKeys.map((key) => ({ id: key, name: formatDayDate(`${key}T12:00:00Z`), today: key === today }));

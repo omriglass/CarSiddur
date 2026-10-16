@@ -147,6 +147,7 @@ begin
   perform pg_temp.expect_refused('requests.set_manual_boost', format('select public.set_manual_boost(%L, 5, %L)', req_b, 'x'));
   perform pg_temp.expect_refused('requests.set_freed_slot_opt_out', format('select public.set_freed_slot_opt_out(%L, true)', req_b));
   perform pg_temp.expect_refused('requests.set_request_children', format('select public.set_request_children(%L, array[%L]::uuid[])', req_b3, child_b));
+  perform pg_temp.expect_refused('children.my_co_guardians', format('select * from public.my_co_guardians(%L)', dept_b));
   perform pg_temp.expect_refused('requests.set_request_companions', format('select public.set_request_companions(%L, array[%L]::uuid[])', req_b3, member_b2));
   perform pg_temp.expect_refused('requests.withdraw_all_requests', format('select public.withdraw_all_requests(%L, %L)', dept_b, week_b));
   perform pg_temp.expect_refused('requests.submit_series_request',
@@ -358,7 +359,7 @@ declare
     'publish_scores_fingerprint','sadran_contact_of','fairness_stats','department_stats','joinable_rides_for_request',
     'create_policy_version','set_policy_active','policy_week_alignment','resolve_waitlist_group','cancel_waitlist_group',
     'place_travel_for_week','car_start_locations','set_my_default_origin','route_minutes_preview',
-    'set_ride_driver','withdraw_duplicate_request','restore_duplicate_request','place_on_own_car','child_request_overlaps',
+    'my_co_guardians','set_ride_driver','withdraw_duplicate_request','restore_duplicate_request','place_on_own_car','child_request_overlaps',
     'mark_car_move','shorten_series','join_drop_off_legs','place_series_on_car',
     'create_car_maintenance','update_car_maintenance','delete_car_maintenance','report_car_issue_unsafe_maintenance'
   ];

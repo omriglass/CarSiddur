@@ -5178,6 +5178,14 @@ export type Database = {
         }
         Returns: Json
       }
+      my_co_guardians: {
+        Args: { p_department_id: string }
+        Returns: {
+          child_id: string
+          display_name: string
+          profile_id: string
+        }[]
+      }
       notification_context: {
         Args: {
           _data: Json

@@ -103,3 +103,26 @@ begin
   execute 'reset role';
 end $$;
 rollback;
+-- REQ §13.134: my_co_guardians returns only the OTHER active guardians of my children.
+begin;
+do $$
+declare
+  dept uuid:='00000000-0000-0000-0000-000000000001';
+  g1 uuid:='00000000-0000-0000-0000-000000000103'; g2 uuid:='00000000-0000-0000-0000-000000000104';
+  outsider uuid:='00000000-0000-0000-0000-000000000102';
+  kid uuid; n int;
+begin
+  insert into public.children(department_id, full_name) values (dept, 'CG kid') returning id into kid;
+  insert into public.child_guardians(child_id, profile_id) values (kid, g1), (kid, g2);
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', g1, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+  select count(*) into n from public.my_co_guardians(dept) where profile_id = g2 and child_id = kid and display_name <> '';
+  assert n = 1, 'my_co_guardians: the other guardian is listed';
+  select count(*) into n from public.my_co_guardians(dept) where profile_id = g1;
+  assert n = 0, 'my_co_guardians: never myself';
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', outsider, 'role', 'authenticated')::text, true);
+  select count(*) into n from public.my_co_guardians(dept);
+  assert n = 0, 'my_co_guardians: a non-guardian gets nothing';
+  execute 'reset role';
+end $$;
+rollback;

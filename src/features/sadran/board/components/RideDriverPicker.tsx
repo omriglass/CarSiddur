@@ -1,9 +1,11 @@
 // REQ §13.101 (c, QM2): the Sadran assigns a volunteer driver (found by phone) to a ride that
 // needs one, replaces a volunteer in one step (R8U1) or takes the volunteer off it again (`set_ride_driver`). The driver and the passengers
-// are notified by the RPC. A driver who has a request of their own on the ride is not removable.
+// are notified by the RPC. A driver who drives their own request is replaceable too (owner 2026-10-16: the request moves to the
+// new driver, the old one stays its filer) after a confirm line, but is not removable.
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { he, tv } from "@/i18n/he";
@@ -27,6 +29,8 @@ export interface RideDriverPickerProps {
   volunteerName: string | null;
   /** R8U1: the volunteer's profile id, left out of the replacement list. */
   volunteerId?: string | null;
+  /** The current driver drives their own request on this ride: replacing moves that request to the new driver (confirm first); no removal. */
+  ownRequest?: boolean;
   candidates: readonly DriverCandidate[];
   departmentId: string;
   weekStart: string;
@@ -42,8 +46,9 @@ export interface RideDriverPickerProps {
   onDone?: () => void;
 }
 
-export function RideDriverPicker({ rideId, version, needsDriver, volunteerName, volunteerId, candidates, departmentId, weekStart, busyIds, placeName, homeDestinationId, disabled, published = true, onDone }: RideDriverPickerProps) {
+export function RideDriverPicker({ rideId, version, needsDriver, volunteerName, volunteerId, ownRequest, candidates, departmentId, weekStart, busyIds, placeName, homeDestinationId, disabled, published = true, onDone }: RideDriverPickerProps) {
   const [driverId, setDriverId] = useState("");
+  const [confirming, setConfirming] = useState(false);
   // A new ride or ride version (someone assigned/replaced the driver) starts with an empty choice. Derived during render, not via a
   // `key` on the element: a keyed picker inside the sheet was rendered twice when a Select in the sheet opened.
   const [seen, setSeen] = useState(`${rideId}:${version}`);
@@ -58,6 +63,7 @@ export function RideDriverPicker({ rideId, version, needsDriver, volunteerName, 
   const livesAway = (candidate: DriverCandidate) => (candidate.homePlaceId && candidate.homePlaceId !== homeDestinationId ? placeName?.(candidate.homePlaceId) ?? null : null);
 
   function assign() {
+    setConfirming(false);
     const chosen = drivers.find((candidate) => candidate.id === driverId);
     if (!chosen) return;
     mutation.mutate({ rideId, driverId: chosen.id, expectedVersion: version, departmentId, weekStart }, {
@@ -72,7 +78,7 @@ export function RideDriverPicker({ rideId, version, needsDriver, volunteerName, 
 
   return (
     <div className="space-y-2 rounded-md border p-3" data-testid="ride-driver-picker">
-      {volunteerName ? (
+      {volunteerName && !ownRequest ? (
         <div className="flex items-center justify-between gap-2">
           <p>{tv("rideDriver.current", { name: volunteerName })}</p>
           <Button type="button" variant="outline" className="min-h-11" disabled={disabled || mutation.isPending} onClick={unassign} data-testid="ride-driver-unassign">
@@ -80,7 +86,7 @@ export function RideDriverPicker({ rideId, version, needsDriver, volunteerName, 
           </Button>
         </div>
       ) : null}
-      <p className="text-xs text-muted-foreground">{volunteerName ? he.rideDriver.replaceLabel : he.rideDriver.assignLabel}</p>
+      <p className="text-xs text-muted-foreground">{volunteerName ? (ownRequest ? tv("rideDriver.replaceOwnLabel", { name: volunteerName }) : he.rideDriver.replaceLabel) : he.rideDriver.assignLabel}</p>
       <div className="flex items-center gap-2">
         <Select value={driverId} onValueChange={setDriverId} disabled={disabled || mutation.isPending}>
           <SelectTrigger className="min-h-11 flex-1" aria-label={he.rideDriver.selectAria} data-testid="ride-driver-select">
@@ -90,10 +96,13 @@ export function RideDriverPicker({ rideId, version, needsDriver, volunteerName, 
             {drivers.map((candidate) => <SelectItem key={candidate.id} value={candidate.id}>{[candidate.name, livesAway(candidate), busyIds?.has(candidate.id) ? he.rideDriver.busy : null].filter(Boolean).join(" · ")}</SelectItem>)}
           </SelectContent>
         </Select>
-        <Button type="button" className="min-h-11" disabled={!driverId || disabled || mutation.isPending} onClick={assign} data-testid="ride-driver-assign">
+        <Button type="button" className="min-h-11" disabled={!driverId || disabled || mutation.isPending} onClick={ownRequest ? () => setConfirming(true) : assign} data-testid="ride-driver-assign">
           {volunteerName ? he.rideDriver.replace : he.rideDriver.assign}
         </Button>
       </div>
+      <ConfirmDialog open={confirming} onOpenChange={setConfirming} title={he.rideDriver.replaceOwnTitle}
+        description={tv("rideDriver.replaceOwnConfirm", { name: drivers.find((candidate) => candidate.id === driverId)?.name ?? "", old: volunteerName ?? "" })}
+        confirmLabel={he.rideDriver.replace} loading={mutation.isPending} onConfirm={assign} />
     </div>
   );
 }

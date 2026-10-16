@@ -6,6 +6,7 @@ import {
   fetchBoardRideById,
   fetchMyChildren,
   fetchMyChildrenRides,
+  fetchMyCoGuardianIds,
   fetchMyUpcomingRides,
   fetchBoardRides,
   fetchCarForRide,
@@ -72,13 +73,24 @@ export function useMyChildrenQuery(enabled: boolean) {
 }
 
 /** Upcoming rides with one of my children on them — read-only extras of `/my` (owner 2026-10-16). */
-export function useMyChildrenRidesQuery(childIds: readonly string[], enabled: boolean) {
+export function useMyChildrenRidesQuery(childIds: readonly string[], enabled: boolean, guardianIds: readonly string[] = []) {
   const { departmentId } = useActiveDepartment();
   return useQuery({
-    queryKey: siddurKeys.myChildrenRides(departmentId, childIds),
-    queryFn: () => fetchMyChildrenRides(childIds, departmentId),
+    queryKey: siddurKeys.myChildrenRides(departmentId, childIds, guardianIds),
+    queryFn: () => fetchMyChildrenRides(childIds, departmentId, guardianIds),
     enabled: enabled && childIds.length > 0,
     staleTime: 30_000,
+  });
+}
+
+/** The other guardians of my children (REQ §13.134); fetched only with the "children's rides" option on. */
+export function useMyCoGuardiansQuery(enabled: boolean) {
+  const { departmentId } = useActiveDepartment();
+  return useQuery({
+    queryKey: siddurKeys.myCoGuardians(departmentId),
+    queryFn: () => fetchMyCoGuardianIds(departmentId as string),
+    enabled: enabled && !!departmentId,
+    staleTime: 5 * 60_000,
   });
 }
 
