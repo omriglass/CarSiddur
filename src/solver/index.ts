@@ -8,6 +8,7 @@
 
 import { buildUnits, runGreedy, sortUnits, toAssignments, type Placed, type PlacedSingle } from './greedy';
 import { runImprove } from './improve';
+import { runPooling } from './pooling';
 import { assertInvariants } from './invariants';
 import { fits, luggageFits } from './seatFit';
 import { buildHostRides, findMergeHosts } from './merge';
@@ -203,7 +204,15 @@ function solveExpanded(input: SolverInput): SolverOutput {
   const placedSingles = placed.filter((p): p is PlacedSingle => p.kind === 'single');
   const improveResult = runImprove(unmetUnits, placedSingles, timelines, input, scores);
 
-  const finalPlaced: Placed[] = [...placed, ...improveResult.newlyPlaced];
+  // REQ §136 a (SOLVER §3.6.4): pooling pass, then the unmet units retry on the freed capacity.
+  // Pooling runs after the improvement pass, so a host or guest is never relocated by `runImprove`.
+  let finalPlaced: Placed[] = [...placed, ...improveResult.newlyPlaced];
+  let stillUnmetUnits = improveResult.stillUnmetUnits;
+  if (input.config.sharedRides !== false) {
+    const pooling = runPooling(finalPlaced, stillUnmetUnits, timelines, input, scores, carsMap);
+    finalPlaced = pooling.placed;
+    stillUnmetUnits = pooling.unmetUnits;
+  }
   const solverAssignments = toAssignments(finalPlaced, input, carsMap);
 
   // REQUIREMENTS §13.88/§13.89 (rule made precise 2026-09-16): an unpaired relay
@@ -220,10 +229,10 @@ function solveExpanded(input: SolverInput): SolverOutput {
   // R8B14: complementary explicit one-way legs (X -> Y with Y -> X) that blocked each other (the lone
   // leg strands the car's next ride, the return finds no car at Y) go together onto one car.
   const oneWayPairs = pairComplementaryOneWays(
-    improveResult.stillUnmetUnits.flatMap((u) => (u.kind === 'single' && u.single?.tripType === 'one_way' ? [u.single] : [])),
+    stillUnmetUnits.flatMap((u) => (u.kind === 'single' && u.single?.tripType === 'one_way' ? [u.single] : [])),
     timelines, input, carsMap, scores);
   const ownPairFallback: NormalizedRequest[] = [];
-  for (const u of improveResult.stillUnmetUnits) {
+  for (const u of stillUnmetUnits) {
     if (u.kind !== 'pair' || !u.pair) continue;
     ownPairFallback.push(u.pair.outNr, u.pair.retNr);
   }
@@ -258,8 +267,8 @@ function solveExpanded(input: SolverInput): SolverOutput {
   // get shift/merge/split/etc. suggestions (SOLVER §3.x): all-or-nothing, every
   // leg becomes UNMET_SERIES_NO_CAR with no suggestions.
   const unmetIds = new Map<string, NormalizedRequest>();
-  const unmetSeriesUnits = improveResult.stillUnmetUnits.filter((u) => u.kind === 'series' && u.series);
-  for (const u of improveResult.stillUnmetUnits) {
+  const unmetSeriesUnits = stillUnmetUnits.filter((u) => u.kind === 'series' && u.series);
+  for (const u of stillUnmetUnits) {
     if (u.kind === 'single' && u.single) {
       if (!oneWayPairs.healedIds.has(u.single.id)) unmetIds.set(u.single.id, u.single);
     }

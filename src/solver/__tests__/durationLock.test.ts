@@ -150,6 +150,8 @@ describe('durationLocked in solve()', () => {
         const out = solve(week([...rest, locked], cars));
         for (const a of out.assignments) {
           if (!a.servedRequestIds.includes('Z-window')) continue;
+          // REQ §136 a: a window request seated as a passenger rides the host's window (checked by the merge rule)
+          if (a.legs.some((l) => l.requestId === 'Z-window' && l.role === 'passenger' && l.carMode === 'passenger')) continue;
           expect(a.window.end - a.window.start).toBe(length);
           expect(a.window.start).toBeGreaterThanOrEqual(lockedStart);
           expect(a.window.end).toBeLessThanOrEqual(lockedStart + length + slackSlots);

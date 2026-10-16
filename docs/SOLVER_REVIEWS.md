@@ -11,6 +11,15 @@ One section per reviewed week, newest first. How to run one: `.claude/skills/sol
 - **First run → current state:** placed 78 → 80, driverless 8 → 6. Of 114 live requests: 47 unchanged, 20 moved to another car, 3 moved in time, 8 unplaced by hand, 10 placed by hand, 26 unmet on both sides.
 - **Against the spreadsheet:** the coordinator served all but about 10 requests with the same cars (plus a 9th "elections" car on Tue/Wed). See REQUIREMENTS item 136 for the per-day comparison.
 
+### Changes measured on this replay
+
+| Change | Served | Driverless | Difference from production's first run |
+|---|---|---|---|
+| Baseline (`v2026.10.16-2`) | 78 | 8 | identical |
+| 136 (a) shared rides, whole round trips (2026-10-17) | 79 | 8 | Sunday: Galfi rides with Aviv (Rita); the freed Tosia serves Yan (was unmet). Everything else unchanged. A first version also pooled two different free-text places (Yakum into "the north", Ya'ar HaMeginim into Hof HaCarmel) — fixed in `merge.ts` before commit. |
+
+Why (a) alone moves little here: most of the coordinator's sharing needed times outside the members' declared flexibility (agreed on WhatsApp), was one direction only (drop-offs, one-way legs — 136 b/d), or involved free-text places that cannot be matched.
+
 ### Chains of manual changes
 
 | Day | What the Sadran did | Principle |

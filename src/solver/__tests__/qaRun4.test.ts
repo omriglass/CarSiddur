@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { solve } from '../index';
 import { pairRelays } from '../relay';
 import { normalize } from '../slots';
-import { baseInput, makeCar, makeDestinations, makeRequest, passengers, slotMs } from '../__fixtures__/gen';
+import { baseInput, defaultConfig, makeCar, makeDestinations, makeRequest, passengers, slotMs } from '../__fixtures__/gen';
 
 // REQ §13.104 (QA run 4): a, b, c, R4B7.
 const out = (id: string, dep: number, extra: Parameters<typeof makeRequest>[0] = {}) =>
@@ -42,7 +42,7 @@ describe('104c: child seats go to children', () => {
     const cars = [makeCar('A-kids', { seatConfigs: [passengers(4, 2, 0)] }), makeCar('B-plain')];
     const adult = makeRequest({ id: 'ADULT', destinationId: 'destB', departureMs: slotMs(36), returnMs: slotMs(48) });
     const kid = makeRequest({ id: 'KID', destinationId: 'destB', departureMs: slotMs(36), returnMs: slotMs(48), passengers: passengers(1, 1) });
-    const o = solve(baseInput({ cars, requests: [adult, kid] }));
+    const o = solve(baseInput({ config: defaultConfig({ sharedRides: false }), cars, requests: [adult, kid] })); // REQ §136 a: not about pooling
     expect(o.unmet).toEqual([]);
     expect(o.assignments.find((a) => a.servedRequestIds.includes('ADULT'))?.carId).toBe('B-plain');
     expect(o.assignments.find((a) => a.servedRequestIds.includes('KID'))?.carId).toBe('A-kids');

@@ -27,7 +27,7 @@ import {
   type SeriesLeg,
   type SeriesUnit,
 } from './slots';
-import { fits, luggageFits, slack } from './seatFit';
+import { fits, luggageFits, slack, sum } from './seatFit';
 import { CarTimeline } from './timeline';
 import type { Assignment, Car, SolverInput, Window } from './types';
 
@@ -241,6 +241,8 @@ export interface PlacedSingle {
   /** F5 (docs/SOLVER.md §3.6.2): the mileage tie-break, not an earlier
    *  consideration, is what chose `carId` over an otherwise-equal car. */
   balancedMileage?: boolean;
+  /** REQ §136 a (docs/SOLVER.md §3.6.4): round trips seated in this ride by the pooling pass (`pooling.ts`). */
+  guests?: NormalizedRequest[];
 }
 export interface PlacedPair {
   kind: 'pair';
@@ -663,9 +665,16 @@ export function toAssignments(placed: Placed[], input: SolverInput, carsById: Ma
       // `carId` over an otherwise-equal car, that overrides the ordinary
       // PLACED_PREFERRED/PLACED_SHIFTED reason (shift, if any, still applied —
       // the Hebrew just explains the car choice instead).
-      const code = !canDrive ? 'PLACED_NEEDS_DRIVER' : p.balancedMileage ? 'CAR_BALANCED_MILEAGE' : shiftReasonCode(shift);
+      const guests = p.guests ?? [];
+      const code = guests.length > 0 ? 'PLACED_SHARED' : !canDrive ? 'PLACED_NEEDS_DRIVER' : p.balancedMileage ? 'CAR_BALANCED_MILEAGE' : shiftReasonCode(shift);
       const text =
-        code === 'PLACED_NEEDS_DRIVER'
+        code === 'PLACED_SHARED'
+          ? reason('PLACED_SHARED', {
+              car: car?.name ?? '',
+              host: memberName(input, nr.request.memberId),
+              guests: guests.map((g) => memberName(input, g.request.memberId)).filter(Boolean).join(', '),
+            })
+          : code === 'PLACED_NEEDS_DRIVER'
           ? reason('PLACED_NEEDS_DRIVER', { car: car?.name ?? '' })
           : code === 'CAR_BALANCED_MILEAGE'
             ? reason('CAR_BALANCED_MILEAGE', { car: car?.name ?? '' })
@@ -693,10 +702,18 @@ export function toAssignments(placed: Placed[], input: SolverInput, carsById: Ma
             destinationId: isOneWay ? legDestinationId : nr.destinationId,
             role: canDrive ? 'driver' : 'passenger',
           },
+          ...guests.map((g) => ({
+            requestId: g.id,
+            leg: 'both' as const,
+            carMode: 'passenger' as const,
+            originId: g.originId,
+            destinationId: g.destinationId,
+            role: 'passenger' as const,
+          })),
         ],
-        servedRequestIds: [nr.id],
-        passengers: nr.passengers,
-        luggageCount: nr.luggage ? 1 : 0,
+        servedRequestIds: [nr.id, ...guests.map((g) => g.id)],
+        passengers: sum(nr.passengers, ...guests.map((g) => g.passengers)),
+        luggageCount: (nr.luggage ? 1 : 0) + guests.filter((g) => g.luggage).length,
         shift,
         source: 'solver',
         reasonCode: code,

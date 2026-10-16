@@ -110,6 +110,8 @@ describe('solver properties (fast-check)', () => {
           for (const requestId of a.servedRequestIds) {
             const nr = byId.get(requestId);
             if (!nr) continue;
+            // REQ §136 a: a pooled guest rides the host's window; its own boarding/arrival times are checked by the merge rule
+            if (a.legs.some((l) => l.requestId === requestId && l.carMode === 'passenger')) continue;
             expect(a.window.start).toBeGreaterThanOrEqual(nr.flexDep[0]);
             expect(a.window.start).toBeLessThanOrEqual(nr.flexDep[1]);
             expect(a.window.end).toBeGreaterThanOrEqual(nr.flexRet[0]);

@@ -339,6 +339,11 @@ export interface SolverConfig {
    * Placement-time chauffeur rides (drop-off healing, `PLACED_CHAUFFEUR_*`) are unaffected.
    */
   chauffeurSuggestions?: boolean;
+  /**
+   * REQ §136 a (docs/SOLVER.md §3.6.4): the pooling pass seats placed round trips as passengers of
+   * another placed ride going the same way, inside everyone's flexibility. Absent = on; `false` = off.
+   */
+  sharedRides?: boolean;
 }
 
 export interface SolverInput {

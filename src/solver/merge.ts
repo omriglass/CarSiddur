@@ -254,6 +254,10 @@ function sideFor(
 export function findMergeHosts(params: MergeSearchParams): MergeCandidate[] {
   const { guest, leg, hosts, cars } = params;
   const candidates: MergeCandidate[] = [];
+  // A free-text place is not a managed place (SOLVER §1.3b): every free-text destination shares one
+  // pseudo id, so two different typed-in places would look identical. Never merge to or from one
+  // (same rule as relay pairing, relay.ts).
+  if (guest.request.destinationIsFreeText) return candidates;
 
   for (const host of hosts) {
     // REQ §13.99: only a private car's owner puts requests on it — never merge anyone into a temporary car's ride.
@@ -267,6 +271,7 @@ export function findMergeHosts(params: MergeSearchParams): MergeCandidate[] {
     if (!fits(car, combinedPassengers) || !luggageFits(car, combinedLuggage)) continue;
 
     const hostNr = params.hostDriverRequests.get(host.rideId);
+    if (hostNr?.request.destinationIsFreeText) continue;
     const hostRequest: Pick<Request, 'originId' | 'destinationId' | 'stops'> = hostNr
       ? hostNr.request
       : { originId: host.originId, destinationId: host.requestDestinationId };

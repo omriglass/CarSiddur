@@ -48,6 +48,7 @@ var TEMPLATES = {
   PLACED_PREFERRED: "\u05E9\u05D5\u05D1\u05E5 \u05DC{car} \u05D1\u05D6\u05DE\u05DF \u05D4\u05DE\u05D1\u05D5\u05E7\u05E9",
   PLACED_SHIFTED: "\u05E9\u05D5\u05D1\u05E5 \u05DC{car} \u05E2\u05DD \u05D4\u05D6\u05D6\u05D4 \u05E9\u05DC {dep} \u05D3\u05E7' \u05D1\u05D9\u05E6\u05D9\u05D0\u05D4 \u05D5-{ret} \u05D3\u05E7' \u05D1\u05D7\u05D6\u05E8\u05D4, \u05D1\u05EA\u05D5\u05DA \u05D4\u05D2\u05DE\u05D9\u05E9\u05D5\u05EA \u05E9\u05D4\u05D5\u05E6\u05D4\u05E8\u05D4",
   PLACED_RELAY_PAIR: "\u05E9\u05D5\u05D1\u05E5 \u05DC{car}: {member} \u05E0\u05D5\u05D4\u05D2/\u05EA \u05DC{dest} \u05D1-{dep} \u05D5\u05DE\u05E9\u05D0\u05D9\u05E8/\u05D4 \u05D0\u05EA \u05D4\u05E8\u05DB\u05D1; {partner} \u05DE\u05D7\u05D6\u05D9\u05E8/\u05D4 \u05D0\u05D5\u05EA\u05D5 \u05D1-{ret}",
+  PLACED_SHARED: "\u05E0\u05E1\u05D9\u05E2\u05D4 \u05DE\u05E9\u05D5\u05EA\u05E4\u05EA \u05D1{car}: {guests} \u05DE\u05E6\u05D8\u05E8\u05E3/\u05EA \u05DC\u05E0\u05E1\u05D9\u05E2\u05D4 \u05E9\u05DC {host}",
   PLACED_FIXED: "\u05E0\u05E1\u05D9\u05E2\u05D4 \u05E7\u05D1\u05D5\u05E2\u05D4 \u05E9\u05E0\u05E7\u05D1\u05E2\u05D4 \u05DE\u05E8\u05D0\u05E9",
   PLACED_SERIES: "\u05E9\u05D5\u05D1\u05E5/\u05D4 \u05DB\u05D7\u05DC\u05E7 \u05DE\u05D1\u05E7\u05E9\u05D4 \u05E8\u05D1-\u05D9\u05D5\u05DE\u05D9\u05EA \u05DC{car} ({index}/{count})",
   CAR_BALANCED_MILEAGE: "\u05E0\u05D1\u05D7\u05E8 {car} \u05DC\u05D0\u05D9\u05D6\u05D5\u05DF \u05E7\u05D9\u05DC\u05D5\u05DE\u05D8\u05E8\u05D0\u05D6\u05F3 \u05D1\u05D9\u05DF \u05D4\u05E8\u05DB\u05D1\u05D9\u05DD",
@@ -1089,8 +1090,13 @@ function toAssignments(placed, input, carsById) {
       const legOriginId = leg?.originId ?? input.homeLocationId;
       const legDestinationId = leg?.destinationId ?? input.homeLocationId;
       const canDrive = nr.request.canDrive ?? true;
-      const code = !canDrive ? "PLACED_NEEDS_DRIVER" : p.balancedMileage ? "CAR_BALANCED_MILEAGE" : shiftReasonCode(shift);
-      const text = code === "PLACED_NEEDS_DRIVER" ? reason("PLACED_NEEDS_DRIVER", { car: car?.name ?? "" }) : code === "CAR_BALANCED_MILEAGE" ? reason("CAR_BALANCED_MILEAGE", { car: car?.name ?? "" }) : code === "PLACED_PREFERRED" ? reason("PLACED_PREFERRED", { car: car?.name ?? "" }) : reason("PLACED_SHIFTED", {
+      const guests = p.guests ?? [];
+      const code = guests.length > 0 ? "PLACED_SHARED" : !canDrive ? "PLACED_NEEDS_DRIVER" : p.balancedMileage ? "CAR_BALANCED_MILEAGE" : shiftReasonCode(shift);
+      const text = code === "PLACED_SHARED" ? reason("PLACED_SHARED", {
+        car: car?.name ?? "",
+        host: memberName(input, nr.request.memberId),
+        guests: guests.map((g) => memberName(input, g.request.memberId)).filter(Boolean).join(", ")
+      }) : code === "PLACED_NEEDS_DRIVER" ? reason("PLACED_NEEDS_DRIVER", { car: car?.name ?? "" }) : code === "CAR_BALANCED_MILEAGE" ? reason("CAR_BALANCED_MILEAGE", { car: car?.name ?? "" }) : code === "PLACED_PREFERRED" ? reason("PLACED_PREFERRED", { car: car?.name ?? "" }) : reason("PLACED_SHIFTED", {
         car: car?.name ?? "",
         dep: String(Math.abs(shift.departureMin)),
         ret: String(Math.abs(shift.returnMin))
@@ -1111,11 +1117,19 @@ function toAssignments(placed, input, carsById) {
             originId: legOriginId,
             destinationId: isOneWay ? legDestinationId : nr.destinationId,
             role: canDrive ? "driver" : "passenger"
-          }
+          },
+          ...guests.map((g) => ({
+            requestId: g.id,
+            leg: "both",
+            carMode: "passenger",
+            originId: g.originId,
+            destinationId: g.destinationId,
+            role: "passenger"
+          }))
         ],
-        servedRequestIds: [nr.id],
-        passengers: nr.passengers,
-        luggageCount: nr.luggage ? 1 : 0,
+        servedRequestIds: [nr.id, ...guests.map((g) => g.id)],
+        passengers: sum(nr.passengers, ...guests.map((g) => g.passengers)),
+        luggageCount: (nr.luggage ? 1 : 0) + guests.filter((g) => g.luggage).length,
         shift,
         source: "solver",
         reasonCode: code,
@@ -1520,6 +1534,344 @@ function ejectionCandidate(nr, car, blocker, tl) {
   };
 }
 
+// src/solver/merge.ts
+function requestOriginOfLeg(leg) {
+  return leg.leg === "return" ? leg.destinationId : leg.originId;
+}
+function requestDestinationOfLeg(leg) {
+  return leg.leg === "return" ? leg.originId : leg.destinationId;
+}
+function buildHostRides(assignments, cars) {
+  const hosts2 = [];
+  for (const a of assignments) {
+    if (a.seriesId) continue;
+    const driverLeg = a.legs.find((l) => l.role === "driver");
+    if (!driverLeg || !a.driverRequestId) continue;
+    const car = cars.get(a.carId);
+    hosts2.push({
+      rideId: a.rideId,
+      carId: a.carId,
+      window: a.window,
+      driverRequestId: a.driverRequestId,
+      legSide: driverLeg.leg,
+      destinationId: driverLeg.destinationId,
+      originId: requestOriginOfLeg(driverLeg),
+      requestDestinationId: requestDestinationOfLeg(driverLeg),
+      passengers: a.passengers,
+      luggageCount: a.luggageCount,
+      guestCount: a.legs.filter((l) => l.role === "passenger").length,
+      isFixed: a.source === "fixed",
+      isTemporary: car?.type === "temporary"
+    });
+  }
+  return hosts2;
+}
+function legCompatible(guestLeg, hostLeg) {
+  if (guestLeg === "both") return hostLeg === "both";
+  if (guestLeg === "out") return hostLeg === "both" || hostLeg === "out";
+  return hostLeg === "both" || hostLeg === "return";
+}
+function routeCost(lookup, route, stopMinutes) {
+  let t = 0;
+  let km = 0;
+  const arrival = [0];
+  for (let i = 0; i < route.length - 1; i++) {
+    const x = route[i];
+    const y = route[i + 1];
+    if (!x.locationId || !y.locationId) {
+      t += lookup.config.defaultTravelMinutes;
+      km = void 0;
+    } else {
+      const hop = travelBetween(lookup, x.locationId, y.locationId);
+      t += hop.minutes;
+      km = km === void 0 || hop.km === void 0 ? void 0 : km + hop.km;
+    }
+    arrival.push(t);
+    if (i + 1 < route.length - 1) t += stopMinutes;
+  }
+  return { minutes: t, km, arrival };
+}
+function cheapestInsertion(lookup, route, a, b, stopMinutes, limits) {
+  const last = route.length - 1;
+  const base = routeCost(lookup, route, stopMinutes);
+  const idxA = route.findIndex((r) => r.locationId === a);
+  const idxB = route.findIndex((r) => r.locationId === b);
+  if (idxA === last) return null;
+  if (idxA !== -1 && idxB !== -1 && idxB <= idxA) return null;
+  let best = null;
+  const boardEdges = idxA !== -1 ? [-1] : Array.from({ length: last }, (_, i) => i);
+  for (const be of boardEdges) {
+    const withA = be === -1 ? route : [...route.slice(0, be + 1), { locationId: a }, ...route.slice(be + 1)];
+    const aIdx = be === -1 ? idxA : be + 1;
+    const existingB = withA.findIndex((r) => r.locationId === b);
+    const alightEdges = existingB !== -1 ? [-1] : Array.from({ length: withA.length - 1 - aIdx }, (_, k) => aIdx + k);
+    for (const ae of alightEdges) {
+      const full = ae === -1 ? withA : [...withA.slice(0, ae + 1), { locationId: b }, ...withA.slice(ae + 1)];
+      const bIdx = ae === -1 ? existingB : ae + 1;
+      if (bIdx <= aIdx) continue;
+      const cost = routeCost(lookup, full, stopMinutes);
+      const added = Math.max(0, cost.minutes - base.minutes);
+      const addedKm = cost.km === void 0 || base.km === void 0 ? void 0 : Math.max(0, cost.km - base.km);
+      if (added > limits.maxMinutes) continue;
+      if (addedKm !== void 0 && addedKm > limits.maxKm) continue;
+      if (best && best.addedMinutes <= added) continue;
+      best = {
+        addedMinutes: added,
+        addedKm,
+        boardArrivalMinutes: cost.arrival[aIdx],
+        alightTailMinutes: cost.minutes - cost.arrival[bIdx],
+        boardTailMinutes: cost.minutes - cost.arrival[aIdx]
+      };
+    }
+  }
+  return best;
+}
+var slotsCeil = (minutes) => minutes <= 0 ? 0 : Math.ceil(minutes / 15);
+function sideFor(params, hostRequest, guest, dir, forward = dir === "out") {
+  const lookup = { travel: params.travel, homeLocationId: params.homeLocationId, destinations: params.destinations, config: params.config };
+  const route = legRoute(lookup, hostRequest, dir);
+  const a = forward ? guest.originId : guest.destinationId;
+  const b = forward ? guest.destinationId : guest.originId;
+  const insertion = cheapestInsertion(lookup, route, a, b, resolveStopMinutes(params.config), params.config.detour);
+  if (!insertion) return null;
+  return { insertion, addedSlots: slotsCeil(insertion.addedMinutes) };
+}
+function findMergeHosts(params) {
+  const { guest, leg, hosts: hosts2, cars } = params;
+  const candidates = [];
+  if (guest.request.destinationIsFreeText) return candidates;
+  for (const host of hosts2) {
+    if (host.isTemporary) continue;
+    if (!legCompatible(leg, host.legSide)) continue;
+    const car = cars.get(host.carId);
+    if (!car) continue;
+    const combinedPassengers = sum(host.passengers, guest.passengers);
+    const combinedLuggage = host.luggageCount + (guest.luggage ? 1 : 0);
+    if (!fits(car, combinedPassengers) || !luggageFits(car, combinedLuggage)) continue;
+    const hostNr = params.hostDriverRequests.get(host.rideId);
+    if (hostNr?.request.destinationIsFreeText) continue;
+    const hostRequest = hostNr ? hostNr.request : { originId: host.originId, destinationId: host.requestDestinationId };
+    const lookup = { travel: params.travel, homeLocationId: params.homeLocationId, destinations: params.destinations, config: params.config };
+    const hostOutRoute = legRoute(lookup, hostRequest, "out");
+    const hostReturnRoute = legRoute(lookup, hostRequest, "return");
+    const reversed = leg === "out" && guest.request.tripShape === "one_way_to" && host.legSide === "both" && !!guest.originId && !!guest.destinationId && guest.originId === hostOutRoute[hostOutRoute.length - 1]?.locationId && guest.destinationId === hostReturnRoute[hostReturnRoute.length - 1]?.locationId;
+    const mergesOut = !reversed && (leg === "out" || leg === "both");
+    const mergesReturn = reversed || leg === "return" || leg === "both";
+    const out = mergesOut ? sideFor(params, hostRequest, guest, "out") : null;
+    const ret = mergesReturn ? sideFor(params, hostRequest, guest, "return", reversed) : null;
+    if (mergesOut && !out || mergesReturn && !ret) continue;
+    const addOut = out?.addedSlots ?? 0;
+    const addRet = ret?.addedSlots ?? 0;
+    const etaOutOf = (baseStart2) => baseStart2 - addOut + Math.round((out?.insertion.boardArrivalMinutes ?? 0) / 15);
+    const retTail = reversed ? ret?.insertion.boardTailMinutes ?? 0 : ret?.insertion.alightTailMinutes ?? 0;
+    const retFlex = reversed ? guest.flexDep : guest.flexRet;
+    const etaRetOf = (baseEnd2) => baseEnd2 + addRet - Math.round(retTail / 15);
+    const okOut = !out || etaOutOf(host.window.start) >= guest.flexDep[0] && etaOutOf(host.window.start) <= guest.flexDep[1];
+    const okRet = !ret || etaRetOf(host.window.end) >= retFlex[0] && etaRetOf(host.window.end) <= retFlex[1];
+    if (hostNr?.durationLocked && (addOut > 0 || addRet > 0)) continue;
+    let baseStart = host.window.start;
+    let baseEnd = host.window.end;
+    let hostShift;
+    if (!okOut || !okRet) {
+      if (host.isFixed || host.legSide !== "both" || !hostNr) continue;
+      const clamp2 = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
+      const bootOut = Math.round((out?.insertion.boardArrivalMinutes ?? 0) / 15);
+      const tailRet = Math.round(retTail / 15);
+      if (hostNr.durationLocked) {
+        let lo = -Infinity;
+        let hi = Infinity;
+        if (out) {
+          lo = Math.max(lo, guest.flexDep[0] + addOut - bootOut - baseStart);
+          hi = Math.min(hi, guest.flexDep[1] + addOut - bootOut - baseStart);
+        }
+        if (ret) {
+          lo = Math.max(lo, retFlex[0] - addRet + tailRet - baseEnd);
+          hi = Math.min(hi, retFlex[1] - addRet + tailRet - baseEnd);
+        }
+        if (lo > hi) continue;
+        const s = clamp2(0, lo, hi);
+        baseStart += s;
+        baseEnd += s;
+      } else {
+        if (out) baseStart = clamp2(baseStart, guest.flexDep[0] + addOut - bootOut, guest.flexDep[1] + addOut - bootOut);
+        if (ret) baseEnd = clamp2(baseEnd, retFlex[0] - addRet + tailRet, retFlex[1] - addRet + tailRet);
+      }
+      if (baseEnd - baseStart < hostNr.minDurationSlots) continue;
+      if (baseStart < hostNr.flexDep[0] || baseStart > hostNr.flexDep[1]) continue;
+      if (baseEnd < hostNr.flexRet[0] || baseEnd > hostNr.flexRet[1]) continue;
+      hostShift = {
+        departureMin: slotsToMinutes(baseStart - host.window.start),
+        returnMin: slotsToMinutes(baseEnd - host.window.end)
+      };
+    }
+    const window = { start: baseStart - addOut, end: baseEnd + addRet };
+    if (window.start < 0) continue;
+    if (window.start !== host.window.start || window.end !== host.window.end) {
+      const tl = params.hostTimelines.get(host.carId);
+      const block = tl?.allBlocks().find((x) => x.rideId === host.rideId);
+      if (tl && block) {
+        tl.remove(host.rideId);
+        const free = tl.isFree(window, block.startLocationId, block.relayPairId, block.endLocationId);
+        tl.restore(block, host.isFixed);
+        if (!free) continue;
+      }
+    }
+    const hostNeedsCar = hostNr?.request.needsCarAtDestination ?? true;
+    const guestNeedsCar = guest.request.needsCarAtDestination;
+    const proposedDriverRequestId = !hostNeedsCar && guestNeedsCar ? guest.id : host.driverRequestId;
+    const detourMinutes = Math.max(out?.insertion.addedMinutes ?? 0, ret?.insertion.addedMinutes ?? 0);
+    const kmOut = out?.insertion.addedKm;
+    const kmRet = ret?.insertion.addedKm;
+    const detourKm = Math.max(kmOut ?? 0, kmRet ?? 0);
+    const guestStartEta = out ? etaOutOf(baseStart) : void 0;
+    const guestEndEta = ret ? etaRetOf(baseEnd) : void 0;
+    if (guest.durationLocked) {
+      if (guestStartEta === void 0 || guestEndEta === void 0 || guestEndEta - guestStartEta < guest.window.end - guest.window.start) continue;
+    }
+    const shiftCostGuest = (guestStartEta === void 0 ? 0 : slotsToMinutes(Math.abs(guestStartEta - guest.window.start))) + (guestEndEta === void 0 ? 0 : slotsToMinutes(Math.abs(guestEndEta - (reversed ? guest.window.start : guest.window.end))));
+    const shiftCostHost = hostShift ? Math.abs(hostShift.departureMin) + Math.abs(hostShift.returnMin) : 0;
+    const addedTotal = (out?.insertion.addedMinutes ?? 0) + (ret?.insertion.addedMinutes ?? 0);
+    const cost = addedTotal + shiftCostGuest + shiftCostHost;
+    const confidence = Math.max(
+      0,
+      1 - 0.4 * (detourMinutes / Math.max(1, params.config.detour.maxMinutes)) - 0.1 * host.guestCount - shiftCostGuest / 480
+    );
+    candidates.push({
+      hostRideId: host.rideId,
+      carId: host.carId,
+      window,
+      hostShift,
+      detourMinutes,
+      detourKm,
+      cost,
+      confidence,
+      proposedDriverRequestId,
+      boardAtLocationId: leg === "return" ? guest.destinationId : guest.originId,
+      reversedOneWay: reversed || void 0,
+      hostWindowBefore: window.start !== host.window.start || window.end !== host.window.end ? host.window : void 0,
+      addedOutMinutes: out && out.insertion.addedMinutes > 0 ? out.insertion.addedMinutes : void 0,
+      addedReturnMinutes: ret && ret.insertion.addedMinutes > 0 ? ret.insertion.addedMinutes : void 0
+    });
+  }
+  candidates.sort((a, b) => a.cost - b.cost || (a.hostRideId < b.hostRideId ? -1 : 1));
+  return candidates;
+}
+
+// src/solver/pooling.ts
+var rideIdOf = (nr) => `ride:${nr.id}`;
+function isRoundTripSingle(nr) {
+  return nr.legs[0]?.side === "both" && nr.tripType === "round_trip" && !nr.isPassengerOnly && !nr.request.seriesId;
+}
+function isGuestCandidate(p) {
+  return isRoundTripSingle(p.nr) && (p.guests?.length ?? 0) === 0;
+}
+function isHostCandidate(p, cars) {
+  return isRoundTripSingle(p.nr) && p.nr.request.canDrive !== false && cars.get(p.carId)?.type === "shared";
+}
+function hostRideOf(p) {
+  const guests = p.guests ?? [];
+  return {
+    rideId: rideIdOf(p.nr),
+    carId: p.carId,
+    window: p.window,
+    driverRequestId: p.nr.id,
+    legSide: "both",
+    destinationId: p.nr.destinationId,
+    originId: p.nr.originId,
+    requestDestinationId: p.nr.destinationId,
+    passengers: sum(p.nr.passengers, ...guests.map((g) => g.passengers)),
+    luggageCount: (p.nr.luggage ? 1 : 0) + guests.filter((g) => g.luggage).length,
+    guestCount: guests.length,
+    isFixed: false,
+    isTemporary: false
+  };
+}
+function tryPool(guest, guestPlaced, placed, timelines, input, carsMap) {
+  const hostPlaced = placed.filter((h) => h.kind === "single").filter((h) => h !== guestPlaced && isHostCandidate(h, carsMap) && h.nr.dayIndex === guest.dayIndex);
+  if (hostPlaced.length === 0) return false;
+  const hostNrByRide = new Map(hostPlaced.map((h) => [rideIdOf(h.nr), h.nr]));
+  const hostByRide = new Map(hostPlaced.map((h) => [rideIdOf(h.nr), h]));
+  const guestTl = guestPlaced ? timelines.get(guestPlaced.carId) : void 0;
+  const guestBlock = guestPlaced ? guestTl?.remove(rideIdOf(guest)) : void 0;
+  const restoreGuest = () => {
+    if (guestBlock) guestTl?.restore(guestBlock);
+  };
+  const candidates = findMergeHosts({
+    guest,
+    leg: "both",
+    hosts: hostPlaced.map(hostRideOf),
+    destinations: input.destinations,
+    config: input.config,
+    cars: carsMap,
+    hostDriverRequests: hostNrByRide,
+    hostTimelines: timelines,
+    homeLocationId: input.homeLocationId,
+    travel: input.travel
+  });
+  const best = candidates.find((c) => {
+    const h = hostByRide.get(c.hostRideId);
+    return !!h && c.window.start >= h.nr.flexDep[0] && c.window.end <= h.nr.flexRet[1] && c.window.start >= h.nr.dayWindow.start && c.window.end <= h.nr.dayWindow.end;
+  });
+  const hostPl = best ? hostByRide.get(best.hostRideId) : void 0;
+  if (!best || !hostPl) {
+    restoreGuest();
+    return false;
+  }
+  const hostTl = timelines.get(hostPl.carId);
+  const hostBlock = hostTl?.remove(rideIdOf(hostPl.nr));
+  if (hostTl && hostBlock) {
+    if (!hostTl.isFree(best.window, hostBlock.startLocationId, hostBlock.relayPairId, hostBlock.endLocationId)) {
+      hostTl.restore(hostBlock);
+      restoreGuest();
+      return false;
+    }
+    hostTl.add({ ...hostBlock, window: best.window });
+  }
+  hostPl.window = best.window;
+  hostPl.shift = {
+    departureMin: (best.window.start - hostPl.nr.window.start) * 15,
+    returnMin: (best.window.end - hostPl.nr.window.end) * 15
+  };
+  hostPl.balancedMileage = false;
+  hostPl.guests = [...hostPl.guests ?? [], guest];
+  if (guestPlaced) placed.splice(placed.indexOf(guestPlaced), 1);
+  return true;
+}
+var unitPriority = (nr, scores) => ({
+  kind: "single",
+  id: nr.id,
+  score: scores.get(nr.id)?.total ?? 0,
+  submittedAtMs: nr.request.submittedAtMs,
+  single: nr
+});
+function poolRound(placed, timelines, input, scores, carsMap, pooled) {
+  const guestsOrder = placed.filter((p) => p.kind === "single").filter((p) => isGuestCandidate(p) && !pooled.has(p.nr.id)).sort((a, b) => compareUnitsByPriority(unitPriority(b.nr, scores), unitPriority(a.nr, scores)));
+  let count = 0;
+  for (const guestPlaced of guestsOrder) {
+    if ((guestPlaced.guests?.length ?? 0) > 0 || !placed.includes(guestPlaced)) continue;
+    if (tryPool(guestPlaced.nr, guestPlaced, placed, timelines, input, carsMap)) {
+      pooled.add(guestPlaced.nr.id);
+      count++;
+    }
+  }
+  return count;
+}
+function runPooling(placed, unmetUnits, timelines, input, scores, carsMap) {
+  const pooledRequestIds = /* @__PURE__ */ new Set();
+  let current = [...placed];
+  let unmet = [...unmetUnits];
+  for (; ; ) {
+    const pooledNow = poolRound(current, timelines, input, scores, carsMap, pooledRequestIds);
+    if (pooledNow === 0) break;
+    if (unmet.length > 0) {
+      const retry = runGreedy(unmet, timelines, input);
+      current = [...current, ...retry.placed];
+      unmet = retry.unmetUnits;
+    }
+  }
+  return { placed: current, unmetUnits: unmet, pooledRequestIds };
+}
+
 // src/solver/timeline.ts
 function tooClose(aStart, aEnd, bStart, bEnd, buffer) {
   return aStart < bEnd + buffer && bStart < aEnd + buffer;
@@ -1915,227 +2267,6 @@ function assertInvariants(input, output) {
       }
     }
   }
-}
-
-// src/solver/merge.ts
-function requestOriginOfLeg(leg) {
-  return leg.leg === "return" ? leg.destinationId : leg.originId;
-}
-function requestDestinationOfLeg(leg) {
-  return leg.leg === "return" ? leg.originId : leg.destinationId;
-}
-function buildHostRides(assignments, cars) {
-  const hosts2 = [];
-  for (const a of assignments) {
-    if (a.seriesId) continue;
-    const driverLeg = a.legs.find((l) => l.role === "driver");
-    if (!driverLeg || !a.driverRequestId) continue;
-    const car = cars.get(a.carId);
-    hosts2.push({
-      rideId: a.rideId,
-      carId: a.carId,
-      window: a.window,
-      driverRequestId: a.driverRequestId,
-      legSide: driverLeg.leg,
-      destinationId: driverLeg.destinationId,
-      originId: requestOriginOfLeg(driverLeg),
-      requestDestinationId: requestDestinationOfLeg(driverLeg),
-      passengers: a.passengers,
-      luggageCount: a.luggageCount,
-      guestCount: a.legs.filter((l) => l.role === "passenger").length,
-      isFixed: a.source === "fixed",
-      isTemporary: car?.type === "temporary"
-    });
-  }
-  return hosts2;
-}
-function legCompatible(guestLeg, hostLeg) {
-  if (guestLeg === "both") return hostLeg === "both";
-  if (guestLeg === "out") return hostLeg === "both" || hostLeg === "out";
-  return hostLeg === "both" || hostLeg === "return";
-}
-function routeCost(lookup, route, stopMinutes) {
-  let t = 0;
-  let km = 0;
-  const arrival = [0];
-  for (let i = 0; i < route.length - 1; i++) {
-    const x = route[i];
-    const y = route[i + 1];
-    if (!x.locationId || !y.locationId) {
-      t += lookup.config.defaultTravelMinutes;
-      km = void 0;
-    } else {
-      const hop = travelBetween(lookup, x.locationId, y.locationId);
-      t += hop.minutes;
-      km = km === void 0 || hop.km === void 0 ? void 0 : km + hop.km;
-    }
-    arrival.push(t);
-    if (i + 1 < route.length - 1) t += stopMinutes;
-  }
-  return { minutes: t, km, arrival };
-}
-function cheapestInsertion(lookup, route, a, b, stopMinutes, limits) {
-  const last = route.length - 1;
-  const base = routeCost(lookup, route, stopMinutes);
-  const idxA = route.findIndex((r) => r.locationId === a);
-  const idxB = route.findIndex((r) => r.locationId === b);
-  if (idxA === last) return null;
-  if (idxA !== -1 && idxB !== -1 && idxB <= idxA) return null;
-  let best = null;
-  const boardEdges = idxA !== -1 ? [-1] : Array.from({ length: last }, (_, i) => i);
-  for (const be of boardEdges) {
-    const withA = be === -1 ? route : [...route.slice(0, be + 1), { locationId: a }, ...route.slice(be + 1)];
-    const aIdx = be === -1 ? idxA : be + 1;
-    const existingB = withA.findIndex((r) => r.locationId === b);
-    const alightEdges = existingB !== -1 ? [-1] : Array.from({ length: withA.length - 1 - aIdx }, (_, k) => aIdx + k);
-    for (const ae of alightEdges) {
-      const full = ae === -1 ? withA : [...withA.slice(0, ae + 1), { locationId: b }, ...withA.slice(ae + 1)];
-      const bIdx = ae === -1 ? existingB : ae + 1;
-      if (bIdx <= aIdx) continue;
-      const cost = routeCost(lookup, full, stopMinutes);
-      const added = Math.max(0, cost.minutes - base.minutes);
-      const addedKm = cost.km === void 0 || base.km === void 0 ? void 0 : Math.max(0, cost.km - base.km);
-      if (added > limits.maxMinutes) continue;
-      if (addedKm !== void 0 && addedKm > limits.maxKm) continue;
-      if (best && best.addedMinutes <= added) continue;
-      best = {
-        addedMinutes: added,
-        addedKm,
-        boardArrivalMinutes: cost.arrival[aIdx],
-        alightTailMinutes: cost.minutes - cost.arrival[bIdx],
-        boardTailMinutes: cost.minutes - cost.arrival[aIdx]
-      };
-    }
-  }
-  return best;
-}
-var slotsCeil = (minutes) => minutes <= 0 ? 0 : Math.ceil(minutes / 15);
-function sideFor(params, hostRequest, guest, dir, forward = dir === "out") {
-  const lookup = { travel: params.travel, homeLocationId: params.homeLocationId, destinations: params.destinations, config: params.config };
-  const route = legRoute(lookup, hostRequest, dir);
-  const a = forward ? guest.originId : guest.destinationId;
-  const b = forward ? guest.destinationId : guest.originId;
-  const insertion = cheapestInsertion(lookup, route, a, b, resolveStopMinutes(params.config), params.config.detour);
-  if (!insertion) return null;
-  return { insertion, addedSlots: slotsCeil(insertion.addedMinutes) };
-}
-function findMergeHosts(params) {
-  const { guest, leg, hosts: hosts2, cars } = params;
-  const candidates = [];
-  for (const host of hosts2) {
-    if (host.isTemporary) continue;
-    if (!legCompatible(leg, host.legSide)) continue;
-    const car = cars.get(host.carId);
-    if (!car) continue;
-    const combinedPassengers = sum(host.passengers, guest.passengers);
-    const combinedLuggage = host.luggageCount + (guest.luggage ? 1 : 0);
-    if (!fits(car, combinedPassengers) || !luggageFits(car, combinedLuggage)) continue;
-    const hostNr = params.hostDriverRequests.get(host.rideId);
-    const hostRequest = hostNr ? hostNr.request : { originId: host.originId, destinationId: host.requestDestinationId };
-    const lookup = { travel: params.travel, homeLocationId: params.homeLocationId, destinations: params.destinations, config: params.config };
-    const hostOutRoute = legRoute(lookup, hostRequest, "out");
-    const hostReturnRoute = legRoute(lookup, hostRequest, "return");
-    const reversed = leg === "out" && guest.request.tripShape === "one_way_to" && host.legSide === "both" && !!guest.originId && !!guest.destinationId && guest.originId === hostOutRoute[hostOutRoute.length - 1]?.locationId && guest.destinationId === hostReturnRoute[hostReturnRoute.length - 1]?.locationId;
-    const mergesOut = !reversed && (leg === "out" || leg === "both");
-    const mergesReturn = reversed || leg === "return" || leg === "both";
-    const out = mergesOut ? sideFor(params, hostRequest, guest, "out") : null;
-    const ret = mergesReturn ? sideFor(params, hostRequest, guest, "return", reversed) : null;
-    if (mergesOut && !out || mergesReturn && !ret) continue;
-    const addOut = out?.addedSlots ?? 0;
-    const addRet = ret?.addedSlots ?? 0;
-    const etaOutOf = (baseStart2) => baseStart2 - addOut + Math.round((out?.insertion.boardArrivalMinutes ?? 0) / 15);
-    const retTail = reversed ? ret?.insertion.boardTailMinutes ?? 0 : ret?.insertion.alightTailMinutes ?? 0;
-    const retFlex = reversed ? guest.flexDep : guest.flexRet;
-    const etaRetOf = (baseEnd2) => baseEnd2 + addRet - Math.round(retTail / 15);
-    const okOut = !out || etaOutOf(host.window.start) >= guest.flexDep[0] && etaOutOf(host.window.start) <= guest.flexDep[1];
-    const okRet = !ret || etaRetOf(host.window.end) >= retFlex[0] && etaRetOf(host.window.end) <= retFlex[1];
-    if (hostNr?.durationLocked && (addOut > 0 || addRet > 0)) continue;
-    let baseStart = host.window.start;
-    let baseEnd = host.window.end;
-    let hostShift;
-    if (!okOut || !okRet) {
-      if (host.isFixed || host.legSide !== "both" || !hostNr) continue;
-      const clamp2 = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
-      const bootOut = Math.round((out?.insertion.boardArrivalMinutes ?? 0) / 15);
-      const tailRet = Math.round(retTail / 15);
-      if (hostNr.durationLocked) {
-        let lo = -Infinity;
-        let hi = Infinity;
-        if (out) {
-          lo = Math.max(lo, guest.flexDep[0] + addOut - bootOut - baseStart);
-          hi = Math.min(hi, guest.flexDep[1] + addOut - bootOut - baseStart);
-        }
-        if (ret) {
-          lo = Math.max(lo, retFlex[0] - addRet + tailRet - baseEnd);
-          hi = Math.min(hi, retFlex[1] - addRet + tailRet - baseEnd);
-        }
-        if (lo > hi) continue;
-        const s = clamp2(0, lo, hi);
-        baseStart += s;
-        baseEnd += s;
-      } else {
-        if (out) baseStart = clamp2(baseStart, guest.flexDep[0] + addOut - bootOut, guest.flexDep[1] + addOut - bootOut);
-        if (ret) baseEnd = clamp2(baseEnd, retFlex[0] - addRet + tailRet, retFlex[1] - addRet + tailRet);
-      }
-      if (baseEnd - baseStart < hostNr.minDurationSlots) continue;
-      if (baseStart < hostNr.flexDep[0] || baseStart > hostNr.flexDep[1]) continue;
-      if (baseEnd < hostNr.flexRet[0] || baseEnd > hostNr.flexRet[1]) continue;
-      hostShift = {
-        departureMin: slotsToMinutes(baseStart - host.window.start),
-        returnMin: slotsToMinutes(baseEnd - host.window.end)
-      };
-    }
-    const window = { start: baseStart - addOut, end: baseEnd + addRet };
-    if (window.start < 0) continue;
-    if (window.start !== host.window.start || window.end !== host.window.end) {
-      const tl = params.hostTimelines.get(host.carId);
-      const block = tl?.allBlocks().find((x) => x.rideId === host.rideId);
-      if (tl && block) {
-        tl.remove(host.rideId);
-        const free = tl.isFree(window, block.startLocationId, block.relayPairId, block.endLocationId);
-        tl.restore(block, host.isFixed);
-        if (!free) continue;
-      }
-    }
-    const hostNeedsCar = hostNr?.request.needsCarAtDestination ?? true;
-    const guestNeedsCar = guest.request.needsCarAtDestination;
-    const proposedDriverRequestId = !hostNeedsCar && guestNeedsCar ? guest.id : host.driverRequestId;
-    const detourMinutes = Math.max(out?.insertion.addedMinutes ?? 0, ret?.insertion.addedMinutes ?? 0);
-    const kmOut = out?.insertion.addedKm;
-    const kmRet = ret?.insertion.addedKm;
-    const detourKm = Math.max(kmOut ?? 0, kmRet ?? 0);
-    const guestStartEta = out ? etaOutOf(baseStart) : void 0;
-    const guestEndEta = ret ? etaRetOf(baseEnd) : void 0;
-    if (guest.durationLocked) {
-      if (guestStartEta === void 0 || guestEndEta === void 0 || guestEndEta - guestStartEta < guest.window.end - guest.window.start) continue;
-    }
-    const shiftCostGuest = (guestStartEta === void 0 ? 0 : slotsToMinutes(Math.abs(guestStartEta - guest.window.start))) + (guestEndEta === void 0 ? 0 : slotsToMinutes(Math.abs(guestEndEta - (reversed ? guest.window.start : guest.window.end))));
-    const shiftCostHost = hostShift ? Math.abs(hostShift.departureMin) + Math.abs(hostShift.returnMin) : 0;
-    const addedTotal = (out?.insertion.addedMinutes ?? 0) + (ret?.insertion.addedMinutes ?? 0);
-    const cost = addedTotal + shiftCostGuest + shiftCostHost;
-    const confidence = Math.max(
-      0,
-      1 - 0.4 * (detourMinutes / Math.max(1, params.config.detour.maxMinutes)) - 0.1 * host.guestCount - shiftCostGuest / 480
-    );
-    candidates.push({
-      hostRideId: host.rideId,
-      carId: host.carId,
-      window,
-      hostShift,
-      detourMinutes,
-      detourKm,
-      cost,
-      confidence,
-      proposedDriverRequestId,
-      boardAtLocationId: leg === "return" ? guest.destinationId : guest.originId,
-      reversedOneWay: reversed || void 0,
-      hostWindowBefore: window.start !== host.window.start || window.end !== host.window.end ? host.window : void 0,
-      addedOutMinutes: out && out.insertion.addedMinutes > 0 ? out.insertion.addedMinutes : void 0,
-      addedReturnMinutes: ret && ret.insertion.addedMinutes > 0 ? ret.insertion.addedMinutes : void 0
-    });
-  }
-  candidates.sort((a, b) => a.cost - b.cost || (a.hostRideId < b.hostRideId ? -1 : 1));
-  return candidates;
 }
 
 // src/solver/rules/types.ts
@@ -3877,17 +4008,23 @@ function solveExpanded(input) {
   const { placed, unmetUnits } = runGreedy(units, timelines, input);
   const placedSingles = placed.filter((p) => p.kind === "single");
   const improveResult = runImprove(unmetUnits, placedSingles, timelines, input, scores);
-  const finalPlaced = [...placed, ...improveResult.newlyPlaced];
+  let finalPlaced = [...placed, ...improveResult.newlyPlaced];
+  let stillUnmetUnits = improveResult.stillUnmetUnits;
+  if (input.config.sharedRides !== false) {
+    const pooling = runPooling(finalPlaced, stillUnmetUnits, timelines, input, scores, carsMap);
+    finalPlaced = pooling.placed;
+    stillUnmetUnits = pooling.unmetUnits;
+  }
   const solverAssignments = toAssignments(finalPlaced, input, carsMap);
   const oneWayPairs = pairComplementaryOneWays(
-    improveResult.stillUnmetUnits.flatMap((u) => u.kind === "single" && u.single?.tripType === "one_way" ? [u.single] : []),
+    stillUnmetUnits.flatMap((u) => u.kind === "single" && u.single?.tripType === "one_way" ? [u.single] : []),
     timelines,
     input,
     carsMap,
     scores
   );
   const ownPairFallback = [];
-  for (const u of improveResult.stillUnmetUnits) {
+  for (const u of stillUnmetUnits) {
     if (u.kind !== "pair" || !u.pair) continue;
     ownPairFallback.push(u.pair.outNr, u.pair.retNr);
   }
@@ -3913,8 +4050,8 @@ function solveExpanded(input) {
   const servedRequestIds = /* @__PURE__ */ new Set();
   for (const a of assignments) for (const rid of a.servedRequestIds) servedRequestIds.add(rid);
   const unmetIds = /* @__PURE__ */ new Map();
-  const unmetSeriesUnits = improveResult.stillUnmetUnits.filter((u) => u.kind === "series" && u.series);
-  for (const u of improveResult.stillUnmetUnits) {
+  const unmetSeriesUnits = stillUnmetUnits.filter((u) => u.kind === "series" && u.series);
+  for (const u of stillUnmetUnits) {
     if (u.kind === "single" && u.single) {
       if (!oneWayPairs.healedIds.has(u.single.id)) unmetIds.set(u.single.id, u.single);
     } else if (u.kind === "pair" && u.pair) {

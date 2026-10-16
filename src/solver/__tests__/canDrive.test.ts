@@ -17,7 +17,7 @@
 import { describe, expect, it } from 'vitest';
 import { solve } from '../index';
 import { normalize } from '../slots';
-import { baseInput, makeCar, makeRequest, passengers, slotMs } from '../__fixtures__/gen';
+import { baseInput, defaultConfig, makeCar, makeRequest, passengers, slotMs } from '../__fixtures__/gen';
 
 describe('canDrive === false: round trips (REQUIREMENTS §13.88)', () => {
   it('places a non-driver round trip driverless on a free car', () => {
@@ -38,6 +38,7 @@ describe('canDrive === false: round trips (REQUIREMENTS §13.88)', () => {
 
   it('never gives a non-driver the driver role, even alone with a free car and default canDrive on others', () => {
     const input = baseInput({
+      config: defaultConfig({ sharedRides: false }), // REQ §136 a: pooling would seat the non-driver in the other ride
       cars: [makeCar('C1'), makeCar('C2')],
       requests: [
         makeRequest({ id: 'driver', departureMs: slotMs(32), returnMs: slotMs(48) }),

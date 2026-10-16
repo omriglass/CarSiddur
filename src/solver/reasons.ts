@@ -11,6 +11,7 @@ const TEMPLATES: Record<string, string> = {
   PLACED_PREFERRED: 'שובץ ל{car} בזמן המבוקש',
   PLACED_SHIFTED: "שובץ ל{car} עם הזזה של {dep} דק' ביציאה ו-{ret} דק' בחזרה, בתוך הגמישות שהוצהרה",
   PLACED_RELAY_PAIR: 'שובץ ל{car}: {member} נוהג/ת ל{dest} ב-{dep} ומשאיר/ה את הרכב; {partner} מחזיר/ה אותו ב-{ret}',
+  PLACED_SHARED: 'נסיעה משותפת ב{car}: {guests} מצטרף/ת לנסיעה של {host}',
   PLACED_FIXED: 'נסיעה קבועה שנקבעה מראש',
   PLACED_SERIES: 'שובץ/ה כחלק מבקשה רב-יומית ל{car} ({index}/{count})',
   CAR_BALANCED_MILEAGE: 'נבחר {car} לאיזון קילומטראז׳ בין הרכבים',
