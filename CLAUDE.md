@@ -60,7 +60,7 @@ Guidance for Claude Code working in this repository.
 
 ```
 test-map.json                  machine-readable twin of docs/TEST_MAP.md (same area ids); consumed by scripts/impact.mjs (`npm run impact`)
-docs/                          REQUIREMENTS, ARCHITECTURE, DATA_MODEL, SOLVER, UX_FLOWS, MAINTENANCE, TEST_MAP (change→tests→QA impact map, by area not feature folder), TODO (owner backlog), REFACTOR_BACKLOG (code-audit findings), HARDENING_2026-09 (production hardening audit trail), RELEASES (release notes / incident log, newest first), RUNBOOK_ROLLBACK (per-layer rollback decision tree + commands)
+docs/                          REQUIREMENTS, ARCHITECTURE, DATA_MODEL, SOLVER, UX_FLOWS, MAINTENANCE, TEST_MAP (change→tests→QA impact map, by area not feature folder), TODO (owner backlog), REFACTOR_BACKLOG (code-audit findings), HARDENING_2026-09 (production hardening audit trail), RELEASES (release notes / incident log, newest first), RUNBOOK_ROLLBACK (per-layer rollback decision tree + commands), SOLVER_REVIEWS (periodic replays of real weeks: first solver run vs the Sadran's final week)
 src/
   app/                         router.tsx (route patterns, all routes), routes.ts (matching path builders — `paths.sadran.*`/`paths.siddur`/`paths.requests.*`; routes.test.ts checks them against the real patterns), providers (Query, Auth, RTL), shell
   pages/                       route-level components (member, sadran, admin sections)
@@ -216,7 +216,7 @@ scripts/
   check-migrations.mjs         `node scripts/check-migrations.mjs <base-ref>` — flags a new migration that drops/renames without a matching `supabase/rollback/<ts>_down.sql`
   impact.test.mjs              Vitest: the glob matcher, migrationContentRules, and test-map.json/docs/TEST_MAP.md area-id consistency
 .claude/
-  skills/                      10 playbooks with exact steps and file paths (incl. `/qa-week`, the QA simulation — docs/QA_SIMULATION.md)
+  skills/                      11 playbooks with exact steps and file paths (incl. `/qa-week`, the QA simulation — docs/QA_SIMULATION.md)
   agents/                      5 specialized agents: solver-dev, db-migrator, ui-dev, docs-keeper, e2e-tester
 ```
 
@@ -293,6 +293,7 @@ scripts/
 | Small bug report / regression | `/bugfixer` | none (or a cheap model) |
 | Playwright coverage | — | e2e-tester |
 | Mock week / end-to-end QA with role-played members | `/qa-week` (docs/QA_SIMULATION.md) | QA Sadran (opus) + QA user (sonnet) |
+| Periodic review of a real week: replay it, first solver run vs the Sadran's final week | `/solver-review` (scripts/replay/README.md, docs/SOLVER_REVIEWS.md) | lead reviews; solver-dev for accepted changes |
 
 ## Owner batch 2026-10-04 — origins, three trip types, cars stay where they are left (REQ §13.93; `docs/ORIGINS_PLAN_2026-10.md`; docs/TODO.md O1–O6)
 
