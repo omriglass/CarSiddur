@@ -5,12 +5,25 @@
 // docs/ARCHITECTURE.md §3, §9). Precaching is Workbox; push handling is
 // hand-written and intentionally small.
 
-import { precacheAndRoute } from "workbox-precaching";
+import { matchPrecache, precacheAndRoute } from "workbox-precaching";
 import type { PrecacheEntry } from "workbox-precaching";
+import { NavigationRoute, registerRoute } from "workbox-routing";
 
 declare const self: ServiceWorkerGlobalScope & {
   __WB_MANIFEST: Array<PrecacheEntry | string>;
 };
+
+// Pages come from the network first; the precached index.html is only the offline fallback. Served cache-first,
+// a page from before a deploy asked for assets the deploy had removed: the Worker answers those with index.html
+// ("'text/html' is not a valid JavaScript MIME type") and the app stayed blank (Safari, 2026-10-16). Registered
+// before the precache route so it wins for navigations.
+registerRoute(new NavigationRoute(async ({ request }) => {
+  try {
+    return await fetch(request);
+  } catch {
+    return (await matchPrecache("/index.html")) ?? Response.error();
+  }
+}));
 
 precacheAndRoute(self.__WB_MANIFEST);
 
