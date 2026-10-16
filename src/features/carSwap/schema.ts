@@ -34,7 +34,7 @@ export const carSwapSeriesSchema = z.object({
 export type CarSwapSeries = z.infer<typeof carSwapSeriesSchema>;
 
 /** A4: refused on `seats`/`maintenance`/`private_car`/`not_allowed`; `past` covers a day already archived-by-time. */
-export const CAR_SWAP_BLOCKER_CODES = ["seats", "maintenance", "private_car", "not_allowed", "past", "luggage"] as const;
+export const CAR_SWAP_BLOCKER_CODES = ["seats", "maintenance", "private_car", "not_allowed", "past", "luggage", "series_other_day_busy"] as const;
 export type CarSwapBlockerCode = (typeof CAR_SWAP_BLOCKER_CODES)[number];
 export const carSwapBlockerSchema = z.object({
   code: z.enum(CAR_SWAP_BLOCKER_CODES),
@@ -45,6 +45,12 @@ export const carSwapBlockerSchema = z.object({
   /** REQ §13.111 (a): a luggage blocker the Sadran may accept (`swap_day_cars` with `allow_small_trunk`). */
   waivable: z.boolean().optional(),
   request_ids: z.array(z.string()).optional(),
+  /** `series_other_day_busy` (REQ §13.92, 2026-10-16): refuses only the "whole" series mode; the "day" mode stays available. */
+  whole_only: z.boolean().optional(),
+  /** `series_other_day_busy`: the conflicting ride of the target car (`day` = yyyy-MM-dd). */
+  day: z.string().optional(),
+  starts_at: z.string().optional(),
+  ends_at: z.string().optional(),
 });
 export type CarSwapBlocker = z.infer<typeof carSwapBlockerSchema>;
 
@@ -64,6 +70,8 @@ export const carSwapPreviewSchema = z.object({
   blockers: z.array(carSwapBlockerSchema),
   notices: z.array(carSwapNoticeSchema),
   can_swap: z.boolean(),
+  /** True when a series leg on another day collides with the target car — only "day" mode can go ahead. */
+  whole_blocked: z.boolean().optional(),
   /** REQ §13.111 (a): the swap can go ahead, but a large-luggage request would land on a car without a large trunk. */
   needs_small_trunk: z.boolean().optional(),
   notify: z.boolean(),

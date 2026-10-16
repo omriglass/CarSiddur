@@ -996,6 +996,48 @@ $$;
 ALTER FUNCTION "public"."_day_car_swap_rides_json"("p_ride_ids" "uuid"[]) OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."_day_car_swap_series_day_blockers"("p_ride_ids" "uuid"[], "p_day" "date", "p_car_a" "uuid", "p_car_b" "uuid") RETURNS "jsonb"
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_blockers jsonb := '[]'::jsonb;
+  r record;
+begin
+  for r in
+    select rd.id as ride_id, o.id as other_id, o.starts_at, o.blocked_until, o.car_id as new_car_id,
+           (rd.starts_at at time zone 'Asia/Jerusalem')::date as ride_day,
+           (o.starts_at at time zone 'Asia/Jerusalem')::date as other_day,
+           c.name as car_name
+    from public.rides rd
+    join public.rides o
+      on o.car_id = (case when rd.car_id = p_car_a then p_car_b else p_car_a end)
+     and o.id <> rd.id
+    join public.cars c on c.id = o.car_id
+    where rd.id = any(p_ride_ids) and rd.status <> 'cancelled' and rd.car_id in (p_car_a, p_car_b)
+      and (rd.starts_at at time zone 'Asia/Jerusalem')::date <> p_day
+      and o.status <> 'cancelled'
+      and not (o.id = any(p_ride_ids))
+      and not rd.planning_conflict and not o.planning_conflict
+      and tstzrange(rd.starts_at, rd.blocked_until, '[)') && tstzrange(o.starts_at, o.blocked_until, '[)')
+    order by rd.starts_at, o.starts_at, o.id
+  loop
+    v_blockers := v_blockers || jsonb_build_array(jsonb_build_object(
+      'code', 'series_other_day_busy', 'whole_only', true,
+      'ride_id', r.ride_id, 'car_id', r.new_car_id, 'day', r.other_day,
+      'starts_at', r.starts_at, 'ends_at', r.blocked_until,
+      'detail', format('%s is busy on %s %s-%s - swap only this day',
+        r.car_name, public.day_date_label(r.starts_at),
+        to_char(r.starts_at at time zone 'Asia/Jerusalem', 'HH24:MI'),
+        to_char(r.blocked_until at time zone 'Asia/Jerusalem', 'HH24:MI'))));
+  end loop;
+  return v_blockers;
+end $$;
+
+
+ALTER FUNCTION "public"."_day_car_swap_series_day_blockers"("p_ride_ids" "uuid"[], "p_day" "date", "p_car_a" "uuid", "p_car_b" "uuid") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."_day_car_swap_series_ids"("p_ride_ids" "uuid"[]) RETURNS "uuid"[]
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -10068,7 +10110,8 @@ begin
     v_whole_ids := public._day_car_swap_expand_whole(v_day_ids);
     v_blockers := v_blockers
       || public._day_car_swap_private_car_blockers(p_car_a, p_car_b, v_actor)
-      || public._day_car_swap_physical_blockers(v_whole_ids, p_car_a, p_car_b);
+      || public._day_car_swap_physical_blockers(v_whole_ids, p_car_a, p_car_b)
+      || public._day_car_swap_series_day_blockers(v_whole_ids, p_day, p_car_a, p_car_b);
     if coalesce(array_length(v_day_ids, 1), 0) > 0 then
       v_notices := public._day_car_swap_notices(v_day_ids, p_car_a, p_car_b, p_day);
     end if;
@@ -10078,7 +10121,9 @@ begin
   end if;
 
   -- REQ §13.111 (a): a luggage-only blocker is waivable, so the swap can still go ahead (with allow_small_trunk).
-  v_can_swap := not exists (select 1 from jsonb_array_elements(v_blockers) b where not coalesce((b ->> 'waivable')::boolean, false));
+  -- REQ §13.92 (2026-10-16): a whole_only blocker refuses only the 'whole' series mode; 'day' mode stays available.
+  v_can_swap := not exists (select 1 from jsonb_array_elements(v_blockers) b
+    where not coalesce((b ->> 'waivable')::boolean, false) and not coalesce((b ->> 'whole_only')::boolean, false));
 
   return jsonb_build_object(
     'fingerprint', public._day_car_swap_fingerprint(v_day_ids),
@@ -10087,6 +10132,7 @@ begin
     'blockers', v_blockers,
     'notices', v_notices,
     'can_swap', v_can_swap,
+    'whole_blocked', exists (select 1 from jsonb_array_elements(v_blockers) b where coalesce((b ->> 'whole_only')::boolean, false)),
     'needs_small_trunk', exists (select 1 from jsonb_array_elements(v_blockers) b where coalesce((b ->> 'waivable')::boolean, false)),
     'notify', v_notify
   );
@@ -16004,6 +16050,9 @@ begin
 
   v_phys_blockers := public._day_car_swap_private_car_blockers(p_car_a, p_car_b, v_actor)
     || public._day_car_swap_physical_blockers(v_moving, p_car_a, p_car_b);
+  if p_series_mode = 'whole' then
+    v_phys_blockers := v_phys_blockers || public._day_car_swap_series_day_blockers(v_moving, p_day, p_car_a, p_car_b);
+  end if;
   -- REQ §13.111 (a): a luggage blocker is waivable; everything else still refuses.
   select coalesce(jsonb_agg(b), '[]'::jsonb) into v_hard from jsonb_array_elements(v_phys_blockers) b
   where not coalesce((b ->> 'waivable')::boolean, false);
@@ -16060,7 +16109,12 @@ begin
   ) then
     raise exception 'ride_turnaround_conflict' using errcode = '23P01';
   end if;
-  set constraints public.rides_no_overlap_per_car immediate;
+  begin
+    set constraints public.rides_no_overlap_per_car immediate;
+  exception when exclusion_violation then
+    -- Safety net: never leak the raw exclusion error (REQ §13.92, 2026-10-16).
+    raise exception 'day_car_swap_blocked' using errcode = 'P0001', detail = jsonb_build_object('code', 'overlap')::text;
+  end;
 
   v_moved := coalesce(array_length(v_moving, 1), 0);
 
@@ -22550,6 +22604,11 @@ GRANT ALL ON FUNCTION "public"."_day_car_swap_private_car_blockers"("p_car_a" "u
 
 REVOKE ALL ON FUNCTION "public"."_day_car_swap_rides_json"("p_ride_ids" "uuid"[]) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_day_car_swap_rides_json"("p_ride_ids" "uuid"[]) TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_day_car_swap_series_day_blockers"("p_ride_ids" "uuid"[], "p_day" "date", "p_car_a" "uuid", "p_car_b" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_day_car_swap_series_day_blockers"("p_ride_ids" "uuid"[], "p_day" "date", "p_car_a" "uuid", "p_car_b" "uuid") TO "service_role";
 
 
 

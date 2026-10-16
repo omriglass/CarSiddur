@@ -1,4 +1,6 @@
 import { he, tv } from "@/i18n/he";
+import { formatDayDate } from "@/lib/dayLabels";
+import { formatTime } from "@/lib/time";
 
 import type { CarSwapBlocker, CarSwapRide } from "./schema";
 
@@ -32,6 +34,12 @@ export function carSwapBlockerMessage(
       return tv("carSwap.blockerMaintenance", { car: carName, ride: rideLabel });
     case "luggage":
       return tv("carSwap.blockerLuggage", { ride: rideLabel, car: carName });
+    case "series_other_day_busy":
+      return tv("carSwap.blockerSeriesOtherDayBusy", {
+        car: carName,
+        day: blocker.day ? formatDayDate(blocker.day) : "",
+        time: blocker.starts_at && blocker.ends_at ? `${formatTime(new Date(blocker.starts_at))}–${formatTime(new Date(blocker.ends_at))}` : "",
+      });
     case "private_car":
       return he.carSwap.blockerPrivateCar;
     case "past":

@@ -4440,6 +4440,15 @@ export type Database = {
         Args: { p_ride_ids: string[] }
         Returns: Json
       }
+      _day_car_swap_series_day_blockers: {
+        Args: {
+          p_car_a: string
+          p_car_b: string
+          p_day: string
+          p_ride_ids: string[]
+        }
+        Returns: Json
+      }
       _day_car_swap_series_ids: {
         Args: { p_ride_ids: string[] }
         Returns: string[]

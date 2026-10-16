@@ -37,6 +37,6 @@ export function carSwapSeriesRangeLabel(series: readonly CarSwapSeries[]): strin
 }
 
 /** The confirm button is disabled whenever there is no preview yet, or the preview itself says the swap can't go through. */
-export function carSwapConfirmDisabled(preview: CarSwapPreview | undefined): boolean {
-  return !preview || !preview.can_swap;
+export function carSwapConfirmDisabled(preview: CarSwapPreview | undefined, seriesMode: "whole" | "day" = "day"): boolean {
+  return !preview || !preview.can_swap || (seriesMode === "whole" && preview.whole_blocked === true);
 }

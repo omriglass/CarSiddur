@@ -52,6 +52,8 @@ export function CarSwapDialog({ open, onOpenChange, departmentId, weekStart, day
   const mutation = useCarSwapMutation();
 
   const preview = previewQuery.data;
+  // A series leg colliding with the target car on another day (REQ §13.92, 2026-10-16) leaves only "day".
+  const effectiveMode: CarSwapSeriesMode = preview?.whole_blocked ? "day" : seriesMode;
   const carNameById: Record<string, string> = { [carA.id]: carA.name, [carB.id]: carB.name };
   const groups = preview ? groupCarSwapRidesByCar(preview.rides, carA, carB) : [];
 
@@ -61,7 +63,7 @@ export function CarSwapDialog({ open, onOpenChange, departmentId, weekStart, day
       const result = await mutation.mutateAsync({
         departmentId, weekStart, day, carA: carA.id, carB: carB.id,
         expectedFingerprint: preview.fingerprint,
-        seriesMode,
+        seriesMode: effectiveMode,
       });
       toast.success(he.carSwap.successToast);
       if (result.notified > 0) toast(tv("carSwap.notifiedToast", { count: String(result.notified) }));
@@ -74,7 +76,8 @@ export function CarSwapDialog({ open, onOpenChange, departmentId, weekStart, day
     }
   }
 
-  const hardBlockers = preview?.blockers.filter((blocker) => !blocker.waivable) ?? [];
+  const hardBlockers = preview?.blockers.filter((blocker) => !blocker.waivable && !blocker.whole_only) ?? [];
+  const wholeOnlyBlockers = preview?.blockers.filter((blocker) => blocker.whole_only) ?? [];
   const waivableBlockers = preview?.blockers.filter((blocker) => blocker.waivable) ?? [];
 
   return (
@@ -83,7 +86,7 @@ export function CarSwapDialog({ open, onOpenChange, departmentId, weekStart, day
       onOpenChange={onOpenChange}
       title={tv("carSwap.dialogTitle", { carA: carA.name, carB: carB.name })}
       description={tv("carSwap.dialogDay", { day: formatDayDate(day) })}
-      confirmDisabled={carSwapConfirmDisabled(preview) || mutation.isPending}
+      confirmDisabled={carSwapConfirmDisabled(preview, effectiveMode) || mutation.isPending}
       loading={mutation.isPending}
       onConfirm={() => void handleConfirm()}
     >
@@ -117,9 +120,9 @@ export function CarSwapDialog({ open, onOpenChange, departmentId, weekStart, day
             {preview.series.length > 0 ? (
               <div className="space-y-2 rounded-md border p-2" data-testid="car-swap-series-choice">
                 <p className="font-medium">{he.carSwap.seriesQuestion}</p>
-                <RadioGroup value={seriesMode} onValueChange={(value) => setSeriesMode(value as CarSwapSeriesMode)} className="gap-2">
+                <RadioGroup value={effectiveMode} onValueChange={(value) => setSeriesMode(value as CarSwapSeriesMode)} className="gap-2">
                   <label className="flex min-h-11 items-center gap-2 rounded-md border p-2 text-sm">
-                    <RadioGroupItem value="whole" />
+                    <RadioGroupItem value="whole" disabled={preview.whole_blocked === true} />
                     {tv("carSwap.seriesWhole", { range: carSwapSeriesRangeLabel(preview.series) })}
                   </label>
                   <label className="flex min-h-11 items-center gap-2 rounded-md border p-2 text-sm">
@@ -127,6 +130,11 @@ export function CarSwapDialog({ open, onOpenChange, departmentId, weekStart, day
                     {he.carSwap.seriesDayOnly}
                   </label>
                 </RadioGroup>
+                {wholeOnlyBlockers.map((blocker, index) => (
+                  <p key={index} className="text-xs text-destructive" data-testid="car-swap-whole-blocked">
+                    {carSwapBlockerMessage(blocker, preview.rides, carNameById)}
+                  </p>
+                ))}
               </div>
             ) : null}
 

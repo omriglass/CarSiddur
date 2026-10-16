@@ -145,6 +145,7 @@ export const he = {
     blockerSeats: "הנסיעה {{ride}} לא נכנסת לרכב {{car}} (מקומות/מטען)",
     blockerLuggage: "הנסיעה {{ride}} כוללת ציוד גדול, ולרכב {{car}} אין תא מטען גדול",
     blockerMaintenance: "לרכב {{car}} מתוכנן טיפול בזמן הנסיעה {{ride}}",
+    blockerSeriesOtherDayBusy: "{{car}} תפוס ביום {{day}} {{time}} — אפשר להחליף רק את היום הזה",
     blockerPrivateCar: "רכב פרטי — רק הבעלים יכול/ה להחליף",
     blockerPast: "הנסיעה {{ride}} כבר עברה",
     blockerNotAllowedRide: "לא ניתן להחליף את הנסיעה {{ride}}",

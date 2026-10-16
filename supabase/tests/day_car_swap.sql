@@ -612,6 +612,74 @@ begin
   raise notice '(h) passed';
 end $$;
 
+-- ---------------------------------------------------------------------------
+-- (i) REQ §13.92 (owner 2026-10-16): 'whole' mode where car_b has a ride on ANOTHER day of the
+-- series overlapping a leg that would move onto it: a series_other_day_busy blocker (preview
+-- keeps can_swap, whole_blocked = true) and a friendly day_car_swap_blocked, never a raw 23P01;
+-- the 'day' mode still works.
+-- ---------------------------------------------------------------------------
+do $$
+declare
+  dept uuid := '00000000-0000-0000-0000-000000000001';
+  home uuid := '00000000-0000-0000-0000-000000000010';
+  sadran uuid := '00000000-0000-0000-0000-000000000102';
+  member1 uuid := '00000000-0000-0000-0000-000000000103';
+  member2 uuid := '00000000-0000-0000-0000-000000000104';
+  ride_type uuid := '00000000-0000-0000-0000-000000000021';
+  car_a uuid := '00000000-0000-0000-0000-000000000040';
+  car_b uuid := '00000000-0000-0000-0000-000000000041';
+  w date := public.current_week_start() + 560;
+  series uuid; submit_result jsonb; preview jsonb; result jsonb; r_other uuid; code text; st text;
+begin
+  insert into public.weeks(department_id, week_start, phase, open_at, close_at, publish_at)
+    values (dept, w, 'open', now() - interval '1 day', now() + interval '1 day', now() + interval '2 days');
+  set constraints all immediate;
+  set constraints all deferred;
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', member1, 'role', 'authenticated')::text, true);
+  submit_result := public.submit_series_request(jsonb_build_object(
+    'department_id', dept, 'week_start', w, 'destination_text', 'בדיקת חפיפה רב-יומית', 'ride_type_id', ride_type,
+    'trip_shape', 'round_trip', 'adults', 1,
+    'depart_at', ((w + 1) + time '09:00') at time zone 'Asia/Jerusalem',
+    'return_at', ((w + 3) + time '17:00') at time zone 'Asia/Jerusalem'));
+  series := (submit_result ->> 'series_id')::uuid;
+  set constraints all immediate;
+  set constraints all deferred;
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', sadran, 'role', 'authenticated')::text, true);
+  perform public.place_series(series, car_a, false, null);
+  set constraints all immediate;
+  set constraints all deferred;
+
+  -- car_b: a short ride on the series' third day, inside the leg's window.
+  insert into public.rides(department_id, week_start, car_id, starts_at, ends_at, origin_id, destination_id,
+    driver_id, status, created_by)
+  values (dept, w, car_b, ((w + 3) + time '12:00') at time zone 'Asia/Jerusalem', ((w + 3) + time '12:15') at time zone 'Asia/Jerusalem',
+    home, home, member2, 'confirmed', sadran)
+  returning id into r_other;
+  set constraints all immediate;
+  set constraints all deferred;
+
+  preview := public.preview_day_car_swap(dept, w, w + 2, car_a, car_b);
+  assert exists (select 1 from jsonb_array_elements(preview -> 'blockers') b
+                 where b ->> 'code' = 'series_other_day_busy' and (b ->> 'car_id')::uuid = car_b and b ->> 'day' = (w + 3)::text),
+    format('(i) preview must report series_other_day_busy for car_b on day 3, got %s', preview -> 'blockers');
+  assert (preview ->> 'whole_blocked')::boolean and (preview ->> 'can_swap')::boolean,
+    '(i) whole mode blocked but the swap itself (day mode) must stay possible';
+
+  begin
+    perform public.swap_day_cars(dept, w, w + 2, car_a, car_b, preview ->> 'fingerprint', 'whole');
+    assert false, '(i) whole swap must be refused';
+  exception when others then
+    get stacked diagnostics code = returned_sqlstate, st = message_text;
+    assert code = 'P0001' and st = 'day_car_swap_blocked', format('(i) expected friendly day_car_swap_blocked, got %s %s', code, st);
+  end;
+
+  result := public.swap_day_cars(dept, w, w + 2, car_a, car_b, preview ->> 'fingerprint', 'day');
+  assert (select car_id from public.rides where status <> 'cancelled' and series_id is null
+            and (starts_at at time zone 'Asia/Jerusalem')::date = w + 2 and driver_id = member1) = car_b,
+    '(i) day mode must still move the swapped day';
+  raise notice '(i) passed';
+end $$;
+
 do $$ begin raise notice 'day_car_swap.sql: all assertions passed'; end $$;
 
 -- Flush deferred constraint triggers here, exactly where a committing request would hit
