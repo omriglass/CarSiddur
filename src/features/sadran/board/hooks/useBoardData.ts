@@ -8,7 +8,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { datesOfWeek, todayInJerusalem } from "@/components/dateFieldDates";
-import { tv } from "@/i18n/he";
+import { t, tv } from "@/i18n/he";
 import { luggageMarker } from "@/lib/luggageWaiver";
 import { TZ, dateKey, formatTime } from "@/lib/time";
 import { ridePublicDetails } from "@/lib/ridePublicDetails";
@@ -36,6 +36,7 @@ import { addedGuestsOf, mergePayloadLeg, previewMerge } from "../mergeProposal";
 import { connectedPairRideIds, unmetItemId, unmetRequestViews, viewsOnDay } from "../unmetLegs";
 import { isUnmetStatus } from "../../unmetStatuses";
 import { requestRouteLine, tripTypeLabel } from "../requestRoute";
+import { driverOverlapRideIds } from "../driverBusy";
 import { resolveDraftPlacements } from "../draftOverlay";
 import { awayLocationAt } from "../geometry";
 import { packPhantomLanes, requestStart, requestWindow, standaloneChauffeurWindow, withRouteTravelMinutes } from "../phantomLanes";
@@ -617,8 +618,11 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
     const original = rides.find((ride) => ride.id === change.ride_id);
     return original ? [{ ...original, id: `change:${change.id}`, car_id: change.car_id, starts_at: change.starts_at, ends_at: change.ends_at }] : [];
   });
+  // Owner 2026-10-16: the same driver on two overlapping rides (the server refuses to publish it).
+  const driverOverlapIds = driverOverlapRideIds(rides.filter((ride) => !(ride.id && mergeGuestRideIds.has(ride.id))));
   const conflictRideIds = new Set([
     ...(conflictScan?.conflictRideIds ?? []),
+    ...driverOverlapIds,
     ...requestDayMismatchRideIds(rides, requestsQuery.data ?? []),
     ...planningRows.map((ride) => ride.id),
     ...rides.filter((ride) => ride.starts_at && ride.ends_at && (
@@ -755,6 +759,7 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
       rideTypeCode: representativeRideTypeCode(servedOf(r)),
       seriesIndex: r.series_index,
       seriesCount: r.series_count,
+      driverOverlapWarning: r.id && driverOverlapIds.has(r.id) ? t("sadranPublish.conflictReason.driver_overlap") : undefined,
       chainBrokenWarning: r.id && chainBreakByRideId.has(r.id)
         ? tv("sadranBoard.carNotHereWarning", {
           // R5U6: name the ride (time + who) so the warning is readable away from its block (list mode, tooltips, screen readers).

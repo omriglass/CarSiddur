@@ -41,3 +41,32 @@ export function busyDriverIds(
 export function sortFreeFirst<T extends { id: string }>(candidates: readonly T[], busy: ReadonlySet<string>): T[] {
   return [...candidates.filter((c) => !busy.has(c.id)), ...candidates.filter((c) => busy.has(c.id))];
 }
+
+/**
+ * Ride ids whose driver is also the driver of another non-cancelled ride with an overlapping
+ * half-open window - the server's publish refusal `driver_overlap` (owner 2026-10-16). Marks only;
+ * drafts count (the board shows them), nothing is blocked.
+ */
+export function driverOverlapRideIds(
+  rides: readonly Pick<BoardRide, "id" | "driver_id" | "status" | "starts_at" | "ends_at">[],
+): Set<string> {
+  const result = new Set<string>();
+  const byDriver = new Map<string, { id: string; start: number; end: number }[]>();
+  for (const ride of rides) {
+    if (!ride.id || !ride.driver_id || ride.status === "cancelled" || !ride.starts_at || !ride.ends_at) continue;
+    const list = byDriver.get(ride.driver_id) ?? [];
+    list.push({ id: ride.id, start: Date.parse(ride.starts_at), end: Date.parse(ride.ends_at) });
+    byDriver.set(ride.driver_id, list);
+  }
+  for (const list of byDriver.values()) {
+    for (let i = 0; i < list.length; i++) {
+      for (let j = i + 1; j < list.length; j++) {
+        if (overlaps(list[i]!.start, list[i]!.end, list[j]!.start, list[j]!.end)) {
+          result.add(list[i]!.id);
+          result.add(list[j]!.id);
+        }
+      }
+    }
+  }
+  return result;
+}

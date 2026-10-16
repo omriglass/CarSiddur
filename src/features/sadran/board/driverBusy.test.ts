@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { busyDriverIds, sortFreeFirst } from "./driverBusy";
+import { busyDriverIds, driverOverlapRideIds, sortFreeFirst } from "./driverBusy";
 
 import type { BoardRide, WeekRequestRow } from "../api";
 
@@ -24,5 +24,20 @@ describe("busyDriverIds (R2U3)", () => {
   });
   it("sorts free first", () => {
     expect(sortFreeFirst([{ id: "a" }, { id: "b" }, { id: "c" }], new Set(["a"])).map((c) => c.id)).toEqual(["b", "c", "a"]);
+  });
+});
+
+describe("driverOverlapRideIds (owner 2026-10-16)", () => {
+  it("marks both rides of one driver with overlapping windows, drafts included, not touching or cancelled ones", () => {
+    const ids = driverOverlapRideIds([
+      ride({ id: "a", driver_id: "p1" }),
+      ride({ id: "b", driver_id: "p1", status: "draft", starts_at: "2026-10-12T09:00:00.000Z", ends_at: "2026-10-12T11:00:00.000Z" }),
+      ride({ id: "c", driver_id: "p1", starts_at: "2026-10-12T11:00:00.000Z", ends_at: "2026-10-12T12:00:00.000Z" }),
+      ride({ id: "d", driver_id: "p1", status: "cancelled" }),
+      ride({ id: "e", driver_id: "p2" }),
+      ride({ id: "f", driver_id: null }),
+      ride({ id: "g", driver_id: null }),
+    ]);
+    expect([...ids].sort()).toEqual(["a", "b"]);
   });
 });
