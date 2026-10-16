@@ -1,6 +1,6 @@
 import { useQueries } from "@tanstack/react-query";
 
-import { tightScheduleRideIds } from "@/features/sadran/board/geometry";
+import { tightRideIdsOf } from "@/features/rides/tightSchedule";
 import { fetchBoardRides, type BoardRide, type Week } from "@/features/siddur/api";
 import { siddurKeys } from "@/features/siddur/queryKeys";
 import { effectiveWeekSettings } from "@/lib/weekSettings";
@@ -15,6 +15,8 @@ export function useTightRideIds(
   rides: readonly Pick<BoardRide, "week_start">[],
   weeks: readonly Pick<Week, "week_start" | "settings_overrides">[],
   departmentSettings: Parameters<typeof effectiveWeekSettings>[0],
+  homeLocationId: string | null | undefined,
+  cars: readonly { id: string; base_location_id?: string | null }[],
 ): Set<string> {
   const weekStarts = [...new Set(rides.flatMap((ride) => (ride.week_start ? [ride.week_start] : [])))].sort();
   const results = useQueries({
@@ -30,7 +32,7 @@ export function useTightRideIds(
     const data = results[index]?.data;
     if (!data) return;
     const turnaround = effectiveWeekSettings(departmentSettings, weeks.find((week) => week.week_start === weekStart)).turnaroundMinutes;
-    for (const id of tightScheduleRideIds(data, turnaround)) tight.add(id);
+    for (const id of tightRideIdsOf(data, turnaround, homeLocationId, cars)) tight.add(id);
   });
   return tight;
 }

@@ -48,7 +48,7 @@ import { isRideRelated, relatedRequestIdToEdit } from "@/features/rides/relatedR
 import { useMemberRideMoves } from "@/features/rides/useMemberRideMoves";
 import { useRideSheetCarActions } from "@/features/rides/useRideSheetCarActions";
 import { awayBandBlocks } from "@/features/siddur/awayBands";
-import { tightScheduleRideIds } from "@/features/sadran/board/geometry";
+import { tightRideIdsOf } from "@/features/rides/tightSchedule";
 import { useDepartmentSettings, useWeekRequestsWithNames } from "@/features/sadran/hooks";
 import { groupByDay } from "@/features/siddur/dayGrouping";
 import { carAwayPlaceAtDayStart, hideIdleTemporaryCars } from "@/components/weekGridCars";
@@ -322,7 +322,7 @@ export function SiddurPage() {
   const shadowedRideIds = new Set(pendingChanges.flatMap((c) => [c.ride_id, ...c.parties.map((p) => p.ride_id)]));
   // REQ §13.108 D1: the shown week's override of the turnaround buffer wins over the department's.
   const turnaroundMinutes = effectiveWeekSettings(settingsQuery.data, resolvedWeek).turnaroundMinutes;
-  const tightRideIds = tightScheduleRideIds(boardRidesQuery.data ?? [], turnaroundMinutes);
+  const tightRideIds = tightRideIdsOf(boardRidesQuery.data ?? [], turnaroundMinutes, homeDestinationId, carsQuery.data ?? []);
 
   // Moving / resizing my own ride — shared with the "my rides" week view (owner 2026-10-11).
   const rideMoves = useMemberRideMoves({
