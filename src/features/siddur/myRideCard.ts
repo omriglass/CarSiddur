@@ -13,7 +13,7 @@ export function myRideCard(
   requests: readonly MyRequestRow[],
   rideTypes: readonly { code: string; name_he: string }[],
   /** REQ §13.108 f: the signed-in member and this ride's neighbours on its car — enables the "be back on time" note. */
-  handover?: { viewerId: string | undefined; neighbours: CarNeighbours | undefined },
+  handover?: { viewerId: string | undefined; neighbours: CarNeighbours | undefined; tight?: boolean; relatedLabel?: string },
 ): RideCardData | null {
   if (!ride.id || !ride.starts_at) return null;
   const served = servedOf(ride);
@@ -39,9 +39,11 @@ export function myRideCard(
   // The viewer drives it or requested it (their own request is among its served entries).
   const viewerId = handover?.viewerId;
   const participates = !!viewerId && (ride.driver_id === viewerId || !!ownEntry);
-  const handoverNotes = participates ? carHandoverNotes(handover?.neighbours, viewerId, [viewerId]) : undefined;
+  const handoverNotes = participates && !handover?.relatedLabel ? carHandoverNotes(handover?.neighbours, viewerId, [viewerId]) : undefined;
   return {
     handover: handoverNotes,
+    tightSchedule: handover?.tight || undefined,
+    relatedLabel: handover?.relatedLabel,
     id: ride.id, startsAt: ride.starts_at, endsAt: ride.ends_at,
     originName: ride.origin_name ?? "", destinationName: destination,
     label: chauffeur ? chauffeurRideLabel(ride.needs_driver ? null : ride.driver_name, passengers, ride.starts_at, ride.origin_id ?? undefined,
@@ -54,7 +56,7 @@ export function myRideCard(
       addedNames: peopleOf(ride).filter((person) => person.source === "added").map((person) => person.display_name),
     })].filter(Boolean).join("\n"),
     driverName: ride.driver_name, carName: ride.car_name, carId: ride.car_id, carType: ride.car_type ?? undefined,
-    isChauffeur: chauffeur, needsDriver: !!ride.needs_driver, isMine: true,
+    isChauffeur: chauffeur, needsDriver: !!ride.needs_driver, isMine: !handover?.relatedLabel,
     rideTypeCode: ownRequest?.rideTypeCode ?? served[0]?.ride_type,
     seriesIndex: ride.series_index, seriesCount: ride.series_count,
   };

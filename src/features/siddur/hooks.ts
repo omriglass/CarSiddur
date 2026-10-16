@@ -4,6 +4,8 @@ import { useSession } from "@/features/auth/useSession";
 
 import {
   fetchBoardRideById,
+  fetchMyChildren,
+  fetchMyChildrenRides,
   fetchMyUpcomingRides,
   fetchBoardRides,
   fetchCarForRide,
@@ -54,6 +56,29 @@ export function useWeeks(departmentId: string | undefined) {
     queryFn: () => fetchWeeks(departmentId as string),
     enabled: !!departmentId,
     staleTime: 60_000,
+  });
+}
+
+/** My children (`child_guardians`); needed only by the "children's rides" display option. */
+export function useMyChildrenQuery(enabled: boolean) {
+  const { session } = useSession();
+  const profileId = session?.user.id;
+  return useQuery({
+    queryKey: siddurKeys.myChildren(profileId),
+    queryFn: () => fetchMyChildren(profileId as string),
+    enabled: enabled && !!profileId,
+    staleTime: 5 * 60_000,
+  });
+}
+
+/** Upcoming rides with one of my children on them — read-only extras of `/my` (owner 2026-10-16). */
+export function useMyChildrenRidesQuery(childIds: readonly string[], enabled: boolean) {
+  const { departmentId } = useActiveDepartment();
+  return useQuery({
+    queryKey: siddurKeys.myChildrenRides(departmentId, childIds),
+    queryFn: () => fetchMyChildrenRides(childIds, departmentId),
+    enabled: enabled && childIds.length > 0,
+    staleTime: 30_000,
   });
 }
 

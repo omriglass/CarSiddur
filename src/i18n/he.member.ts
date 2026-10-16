@@ -260,6 +260,10 @@ export const heMember = {
     viewToggleLabel: "תצוגה",
     viewList: "רשימה",
     viewWeek: "שבוע",
+    /** Owner 2026-10-16: display-only option in the eye menu (per device). */
+    showKidsRides: "הצגת נסיעות הילדים",
+    /** Muted tag on a read-only ride that is a child's / another guardian's, not mine. */
+    kidRideOf: "נסיעה של {{name}}",
     /** One line under the week switcher: what the grid shows and how to ask for a ride. */
     hint: "הנסיעות, הבקשות וההצעות שלי לפי יום. הקש/י פעמיים על מקום פנוי כדי לבקש נסיעה.",
     hintReadOnly: "שבוע שחלף: הנסיעות שלי בלבד, לצפייה.",
@@ -532,8 +536,6 @@ export const heMember = {
     /** REQ §13.110 (e): the member's choice of the old field-by-field request form. */
     classicRequestFormLabel: "טופס הבקשה הקלאסי",
     classicRequestFormHelp: "הטופס הישן, שדה אחרי שדה",
-    myRidesWeekViewLabel: "תצוגת שבוע ב״הנסיעות שלי״",
-    myRidesWeekViewHelp: "מסך ״הנסיעות שלי״ נפתח כמו הסידור: שבוע שלם, עמודה לכל יום",
     historyLink: "היסטוריה וסטטיסטיקה",
     managementTitle: "ניהול",
     themeTitle: "מראה",

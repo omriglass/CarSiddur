@@ -97,6 +97,8 @@ export interface WeekGridRide {
   /** REQ §13.111 (a): all of the ride's large luggage was waived by hand - the chip reads `he.smallTrunk.waivedLabel`. */
   luggageWaived?: boolean;
   isMine?: boolean;
+  /** Owner 2026-10-16: a read-only ride of my child / their other guardian on "my rides" — drawn faded, never "mine". */
+  muted?: boolean;
   highlighted?: boolean;
   tightSchedule?: boolean;
   /** `ride_types.code` of the ride's driver request (falls back to any served request, then `"other"`) — tints the block (visual pass, `src/lib/rideTypeColors.ts`). */
@@ -1270,6 +1272,7 @@ export function WeekGrid({
                 onRideClick && "cursor-pointer",
                 dragEnabled && (canDragRide?.(ride) ?? true) && "touch-none",
                 ride.shadowed && "opacity-50",
+                ride.muted && "border-dotted opacity-70 shadow-none",
                 ride.isMine && "shadow-md",
                 ride.isMine && !ride.needsDriver && "ring-[3px] ring-mine",
                 ride.needsDriver && "border-2 border-dashed border-destructive bg-destructive/10",

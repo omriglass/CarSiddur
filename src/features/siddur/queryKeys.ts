@@ -14,6 +14,9 @@ export const siddurKeys = {
     ["siddur", "carLocations", departmentId, weekStart] as const,
   myUpcomingRides: (profileId: string | undefined, departmentId: string | undefined) =>
     ["siddur", "myUpcomingRides", profileId, departmentId] as const,
+  myChildren: (profileId: string | undefined) => ["siddur", "myChildren", profileId] as const,
+  myChildrenRides: (departmentId: string | undefined, childIds: readonly string[]) =>
+    ["siddur", "myChildrenRides", departmentId, ...childIds] as const,
   // `rideChanges` moved to `src/features/rides/keys.ts` (R8: the query moved to `rides/hooks.ts`).
   weekExport: (departmentId: string, weekStart: string) =>
     ["siddur", "weekExport", departmentId, weekStart] as const,

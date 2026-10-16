@@ -18,6 +18,9 @@ import { CalendarDialog } from "@/features/calendar/CalendarDialog";
 import { useCalendar } from "@/features/calendar/useCalendar";
 import { useCalendarAmbientBlocks } from "@/features/calendar/useCalendarAmbientBlocks";
 import { useGoogleCalendar } from "@/features/calendar/useGoogleCalendar";
+import { selectRelatedRides, type RelatedRideLabel } from "@/features/rides/myRides";
+import { tightScheduleRideIds } from "@/features/sadran/board/geometry";
+import { effectiveWeekSettings } from "@/lib/weekSettings";
 import { useMemberRideMoves } from "@/features/rides/useMemberRideMoves";
 import { useBoardRides } from "@/features/siddur/hooks";
 import { pastWeeks, isPastWeek } from "@/features/siddur/pastWeeks";
@@ -67,6 +70,10 @@ interface MyWeekViewProps {
   archive?: boolean;
   /** The list / week choice of the eye menu (current view only). */
   onViewChange?: (view: "list" | "week") => void;
+  /** Owner 2026-10-16: the eye menu's "children's rides" option (read-only extras); `childIds` = my `child_guardians`. */
+  showKidsRides?: boolean;
+  onShowKidsRidesChange?: (show: boolean) => void;
+  childIds?: ReadonlySet<string>;
 }
 
 /**
@@ -75,7 +82,7 @@ interface MyWeekViewProps {
  * suggestions and proposals waiting for my answer, each on its exact day and times; overlapping items sit side by side.
  * Past weeks (the archive) show rides only, read-only. Layout comes from `WeekGrid`; this component only maps data to it.
  */
-export function MyWeekView({ departmentId, homeDestinationId, profileId, requests, weeks, homeWeekStart, canSubmit, onTarget, archive = false, onViewChange }: MyWeekViewProps) {
+export function MyWeekView({ departmentId, homeDestinationId, profileId, requests, weeks, homeWeekStart, canSubmit, onTarget, archive = false, onViewChange, showKidsRides = false, onShowKidsRidesChange, childIds }: MyWeekViewProps) {
   const navigate = useNavigate();
   const requestLinkProps = useRequestLinkProps();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -109,10 +116,15 @@ export function MyWeekView({ departmentId, homeDestinationId, profileId, request
 
   const entries = useMemo(() => {
     const myRequestIds = new Set(requests.map((row) => row.id));
+    // Owner 2026-10-16: the siddur's tight-schedule marker on my rides (also on an unpublished day I manage).
+    const tightIds = tightScheduleRideIds(ridesQuery.data ?? [], effectiveWeekSettings(settingsQuery.data, week).turnaroundMinutes);
+    const related = showKidsRides && childIds?.size
+      ? selectRelatedRides(ridesQuery.data ?? [], { profileId, childIds, guardianIds: new Set() }, myRequestIds)
+      : new Map<string, RelatedRideLabel[]>();
     const carNameById = new Map((carsQuery.data ?? []).map((car) => [car.id, car.name]));
-    const mine = (ridesQuery.data ?? []).filter((ride: BoardRide) => isMyBoardRide(ride, profileId, myRequestIds));
+    const mine = (ridesQuery.data ?? []).filter((ride: BoardRide) => isMyBoardRide(ride, profileId, myRequestIds) || (!!ride.id && related.has(ride.id)));
     const myRequestsById = new Map(requests.map((row) => [row.id, row]));
-    const blocks = rideBlocks(mine, dayKeys, (ride) => rideWithCarLabel(ride.car_id ? carNameById.get(ride.car_id) ?? "" : "", rideRouteLabel(ride, homeDestinationId)), myRequestsById);
+    const blocks = rideBlocks(mine, dayKeys, (ride) => rideWithCarLabel(ride.car_id ? carNameById.get(ride.car_id) ?? "" : "", rideRouteLabel(ride, homeDestinationId)), myRequestsById, { tightIds, related });
     if (!isPast) {
       const sameDepartment = requests.filter((row) => row.departmentId === departmentId && row.weekStart === weekStart);
       blocks.push(...requestBlocks(sameDepartment, dayKeys, homeDestinationId));
@@ -120,7 +132,7 @@ export function MyWeekView({ departmentId, homeDestinationId, profileId, request
       blocks.push(...suggestionBlocks(suggestions, dayKeys, homeDestinationId));
     }
     return withLanes(blocks);
-  }, [carsQuery.data, dayKeys, departmentId, homeDestinationId, isPast, profileId, requests, ridesQuery.data, suggestionsQuery.data, weekStart]);
+  }, [carsQuery.data, childIds, dayKeys, departmentId, homeDestinationId, isPast, profileId, requests, ridesQuery.data, showKidsRides, settingsQuery.data, suggestionsQuery.data, week, weekStart]);
 
   const targetById = useMemo(() => new Map(entries.map((entry) => [entry.block.id, entry.target])), [entries]);
   const dayColumns: WeekGridCar[] = dayKeys.map((key) => ({ id: key, name: formatDayDate(`${key}T12:00:00Z`), today: key === today }));
@@ -132,6 +144,7 @@ export function MyWeekView({ departmentId, homeDestinationId, profileId, request
   }
   function canMove(blockId: string): boolean {
     const ride = rideOf(blockId);
+    // Read-only extras (my children's rides) are not mine, so `ownsEditableRide` already refuses them.
     return !!ride?.id && rideMoves.ownsEditableRide(ride.id);
   }
   /** Only the ride's own day: a drop on another day's column is refused (the siddur rule — same local day). */
@@ -206,7 +219,7 @@ export function MyWeekView({ departmentId, homeDestinationId, profileId, request
                 <CalendarDays className="size-4" />
               </Button>
             ) : null}
-            <MyWeekDisplayMenu view="week" onViewChange={onViewChange} zoom={tableZoom} onZoomChange={setTableZoom} />
+            <MyWeekDisplayMenu view="week" onViewChange={onViewChange} zoom={tableZoom} onZoomChange={setTableZoom} showKidsRides={showKidsRides} onShowKidsRidesChange={onShowKidsRidesChange} />
           </div>
         ) : null}
       </div>

@@ -101,19 +101,32 @@ describe("suggestionBlocks", () => {
 });
 
 describe("rideBlocks", () => {
-  it("labels each ride with its car and skips cancelled and unpublished rides", () => {
+  it("labels each ride with its car and skips cancelled rides (a draft ride only arrives here when it is mine)", () => {
     const blocks = rideBlocks(
       [ride({}), ride({ id: "x", status: "cancelled" }), ride({ id: "y", status: "draft" })],
       week,
       () => "route",
     );
-    expect(blocks.map((b) => b.block.id)).toEqual(["ride:ride1"]);
+    expect(blocks.map((b) => b.block.id)).toEqual(["ride:ride1", "ride:y"]);
     // Owner 2026-10-11: a served ride carries its public notes, as on the siddur; a reservation's notes are its label.
     const served = [{ request_id: "q1", role: "driver", requester: "דנה", adults: 1, child_seats: 0, boosters: 0, car_mode: "keep", leg: "both" }];
     const noted = rideBlocks([ride({ notes: "המפתח אצל דנה", served } as unknown as Partial<BoardRide>)], week, () => "route");
     expect(noted[0]?.block.description).toContain("המפתח אצל דנה");
     expect(rideBlocks([ride({ notes: "שמירת זמן" })], week, () => "route")[0]?.block.description ?? "").not.toContain("שמירת זמן");
     expect(blocks[0]?.block).toMatchObject({ carId: "2026-10-13", startMinutes: 480, endMinutes: 660, isMine: true });
+  });
+
+  it("marks tight rides and draws related rides muted, named and never mine", () => {
+    const blocks = rideBlocks(
+      [ride({ id: "a" }), ride({ id: "b" })],
+      week,
+      () => "route",
+      undefined,
+      { tightIds: new Set(["a"]), related: new Map([["b", [{ kind: "child" as const, name: "Noa" }]]]) },
+    );
+    expect(blocks[0]?.block).toMatchObject({ tightSchedule: true, isMine: true, muted: false });
+    expect(blocks[1]?.block).toMatchObject({ tightSchedule: false, isMine: false, muted: true });
+    expect(blocks[1]?.block.label).toContain("Noa");
   });
 
   it("includes the car name in the label", () => {
@@ -128,6 +141,8 @@ describe("isMyBoardRide", () => {
     expect(isMyBoardRide(ride({ driver_id: "me" }), "me", ids)).toBe(true);
     expect(isMyBoardRide(ride({ served: [{ request_id: "mine", role: "passenger" }] as unknown as BoardRide["served"] }), "me", ids)).toBe(true);
     expect(isMyBoardRide(ride({ passengers: [{ person_id: "me" }] as unknown as BoardRide["passengers"] }), "me", ids)).toBe(true);
+    // Owner 2026-10-16: a companion on someone else's request is on the ride's people list.
+    expect(isMyBoardRide(ride({ driver_id: "other", people: [{ key: "companion:me", source: "companion", request_id: "q", ride_passenger_id: null, person_id: "me", child_id: null, display_name: "Me", seat_kind: "adult", added_by: null, removable: true }] as unknown as BoardRide["people"] }), "me", ids)).toBe(true);
     expect(isMyBoardRide(ride({ driver_id: "other" }), "me", ids)).toBe(false);
     expect(isMyBoardRide(ride({ driver_id: "me" }), undefined, ids)).toBe(false);
   });

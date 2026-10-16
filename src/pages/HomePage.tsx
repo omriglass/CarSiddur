@@ -52,11 +52,12 @@ import {
 import { buildTripWeeks, ridesByRequestRow } from "@/features/requests/myTrips";
 import { isTodayOrLater } from "@/features/requests/upcoming";
 import { useCollapsedWeeks } from "@/features/requests/useCollapsedWeeks";
-import { useBoardRides, useWeeks, useMyUpcomingRides } from "@/features/siddur/hooks";
+import { useBoardRides, useWeeks, useMyUpcomingRides, useMyChildrenQuery, useMyChildrenRidesQuery } from "@/features/siddur/hooks";
 import { useCarNeighboursQuery, useRideChanges, useRemoveRidePassengerMutation, useRequestRideChangeMutation } from "@/features/rides/hooks";
 import { isRideDayEditable } from "@/features/rides/rideDayEditable";
 import { useRideSheetCarActions } from "@/features/rides/useRideSheetCarActions";
 import { myRidePersonKey } from "@/features/rides/ridePeople";
+import { isRideOfMine, selectRelatedRides } from "@/features/rides/myRides";
 import { RideDetailSheet } from "@/features/siddur/components/RideDetailSheet";
 import { MemberRideEditor } from "@/features/siddur/components/MemberRideEditor";
 import type { BoardRide } from "@/features/siddur/api";
@@ -74,6 +75,8 @@ import type { MyWeekTarget } from "@/features/requests/myWeek/myWeekItems";
 import type { TemplateSuggestion } from "@/features/requests/api";
 import { TemplateSuggestionActions } from "@/features/requests/components/TemplateSuggestions";
 import { TripSummary } from "@/components/TripSummary";
+import { useMyDisplayPrefs } from "@/features/requests/myWeek/myDisplayPrefs";
+import { useTightRideIds } from "@/features/requests/myWeek/useTightRideIds";
 import { MyWeekDisplayMenu } from "@/features/requests/myWeek/MyWeekDisplayMenu";
 import { he, t, tv } from "@/i18n/he";
 import { describeStatusReason } from "@/lib/statusReason";
@@ -125,6 +128,15 @@ export function HomePage() {
   const weeksQuery = useWeeks(defaultDepartmentId);
   const carsQuery = useCars(defaultDepartmentId);
   const settingsQuery = useDepartmentSettings(defaultDepartmentId);
+  // Owner 2026-10-16: list/table choice and the "children's rides" option are remembered on this device.
+  const displayPrefs = useMyDisplayPrefs();
+  const [searchParams, setSearchParams] = useSearchParams();
+  // `?view=week|list` wins for this visit; otherwise the last choice made on this device (list by default).
+  const weekView = (searchParams.get("view") ?? displayPrefs.view) === "week";
+  const myChildrenQuery = useMyChildrenQuery(displayPrefs.showKidsRides);
+  const myChildIds = new Set((myChildrenQuery.data ?? []).map((child) => child.id));
+  const kidsRidesQuery = useMyChildrenRidesQuery([...myChildIds].sort(), displayPrefs.showKidsRides && !weekView);
+  const tightRideIds = useTightRideIds(defaultDepartmentId, upcomingRidesQuery.data ?? [], weeksQuery.data ?? [], settingsQuery.data);
 
   // Show the immediate-car entry point for the current week even before its
   // Siddur has been published. In that case the same request is filed for the
@@ -168,7 +180,6 @@ export function HomePage() {
 
   // `?focus=<request_id>` (notification deep link, `notification_default_url`'s `/my?focus=<id>`
   // case, formerly `/requests?focus=`): scroll the matching card into view and ring-highlight it.
-  const [searchParams, setSearchParams] = useSearchParams();
   const focusedId = searchParams.get("focus");
   const highlightedRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
@@ -210,11 +221,11 @@ export function HomePage() {
 
   const upcomingRides = upcomingRidesQuery.data ?? [];
 
-  // `?view=week|list` wins for this visit; otherwise the profile default (`profiles.my_rides_week_view`, list unless set).
-  const weekView = (searchParams.get("view") ?? (profileQuery.data?.my_rides_week_view ? "week" : "list")) === "week";
   function setView(next: "week" | "list") {
+    displayPrefs.setView(next);
+    // The picked view is remembered; a `?view=` of this visit must not override it any more.
     const params = new URLSearchParams(searchParams);
-    params.set("view", next);
+    params.delete("view");
     setSearchParams(params, { replace: true });
   }
   function openWeekTarget(target: MyWeekTarget) {
@@ -250,14 +261,28 @@ export function HomePage() {
   const unservedIds = new Set(unserved.map((r) => r.id));
   // Owner 2026-10-13: one item per trip — a request carries the rides serving it; a ride none of my requests
   // reaches (I drive someone else's request, a reservation names me) is its own item in its week.
+  // Owner 2026-10-16: read-only rides of my children (display option), muted and named, listed with mine.
+  const myRequestIds = new Set((requestsQuery.data ?? []).map((request) => request.id));
+  const relatedByRide = displayPrefs.showKidsRides && !weekView
+    ? selectRelatedRides(kidsRidesQuery.data ?? [], { profileId: viewerId, childIds: myChildIds, guardianIds: new Set() }, myRequestIds)
+    : new Map<string, { kind: "child" | "guardian"; name: string }[]>();
+  const relatedRides = (kidsRidesQuery.data ?? []).filter((ride) => !!ride.id && relatedByRide.has(ride.id) && !upcomingRides.some((mine) => mine.id === ride.id));
+  const listedRides = [...upcomingRides, ...relatedRides];
   const rideRequestIds = (ride: BoardRide) => servedOf(ride).flatMap((entry) => (entry.request_id ? [entry.request_id] : []));
-  const tripWeeks = buildTripWeeks(toDisplayRows(requests.filter((r) => !unservedIds.has(r.id))), unserved, upcomingRides, rideRequestIds);
+  const tripWeeks = buildTripWeeks(toDisplayRows(requests.filter((r) => !unservedIds.has(r.id))), unserved, listedRides, rideRequestIds);
   const unservedRides = ridesByRequestRow(unserved, upcomingRides, rideRequestIds);
-  const rideCardOf = (ride: (typeof upcomingRides)[number]) =>
-    myRideCard(ride, requests, rideTypesQuery.data ?? [], { viewerId, neighbours: ride.id ? neighboursByRide?.get(ride.id) : undefined });
+  const rideCardOf = (ride: (typeof upcomingRides)[number]) => {
+    const related = ride.id ? relatedByRide.get(ride.id) : undefined;
+    return myRideCard(ride, requests, rideTypesQuery.data ?? [], {
+      viewerId,
+      neighbours: ride.id ? neighboursByRide?.get(ride.id) : undefined,
+      tight: !!ride.id && tightRideIds.has(ride.id),
+      relatedLabel: related?.length ? tv("myWeek.kidRideOf", { name: related.map((entry) => entry.name).join(", ") }) : undefined,
+    });
+  };
   const rideCardsOf = (rides: readonly (typeof upcomingRides)[number][] | undefined) =>
     (rides ?? []).flatMap((ride) => { const data = rideCardOf(ride); return data ? [data] : []; });
-  const openRide = (rideId: string) => setSelectedMyRide(upcomingRides.find((ride) => ride.id === rideId) ?? null);
+  const openRide = (rideId: string) => setSelectedMyRide(listedRides.find((ride) => ride.id === rideId) ?? null);
   // The display row (series folded) a tapped week-view request block stands for — the same row the list renders.
   const selectedWeekRow = selectedRequestId
     ? toDisplayRows(requests).find((row) => row.id === selectedRequestId || row.seriesLegs?.some((leg) => leg.id === selectedRequestId)) ?? null
@@ -370,7 +395,7 @@ export function HomePage() {
             ? tv("home.greeting", { name: profileQuery.data.full_name })
             : undefined
         }
-        actions={weekView ? undefined : <MyWeekDisplayMenu view="list" onViewChange={setView} />}
+        actions={weekView ? undefined : <MyWeekDisplayMenu view="list" onViewChange={setView} showKidsRides={displayPrefs.showKidsRides} onShowKidsRidesChange={displayPrefs.setShowKidsRides} />}
       />
 
       {!active.canSubmit && <p className="text-sm text-muted-foreground">{he.departmentContext.noMembership} <Link to={paths.siddur({ dept: active.departmentId })}>{he.nav.siddur}</Link></p>}
@@ -429,6 +454,9 @@ export function HomePage() {
           canSubmit={active.canSubmit}
           onTarget={openWeekTarget}
           onViewChange={setView}
+          showKidsRides={displayPrefs.showKidsRides}
+          onShowKidsRidesChange={displayPrefs.setShowKidsRides}
+          childIds={myChildIds}
         />
       ) : null}
 
@@ -610,7 +638,7 @@ export function HomePage() {
         // still-upcoming rides — in practice always in a published/live week (rides exist
         // once solved/published, before that only draft/manual-reservation pins do); the
         // RPC itself is the real gate (`week_archived`/`not_authorized` surface as toasts).
-        showAddPassengers={!!selectedMyRide && selectedMyRide.status !== "cancelled"}
+        showAddPassengers={!!selectedMyRide && selectedMyRide.status !== "cancelled" && isRideOfMine(selectedMyRide, viewerId, myRequestIds)}
         onRemoveOwnRide={selectedMyRide?.id && selectedMyRide.driver_id === profileQuery.data?.id && selectedMyRide.version != null ? () => cancelRideMutation.mutate({ rideId: selectedMyRide.id!, expectedVersion: selectedMyRide.version!, reason: "CANCELLED_BY_MEMBER" }, { onSuccess: () => setSelectedMyRide(null) }) : undefined}
         removingOwnRide={cancelRideMutation.isPending}
         onRemoveMe={(() => {

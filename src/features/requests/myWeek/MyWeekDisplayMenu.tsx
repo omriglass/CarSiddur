@@ -4,6 +4,7 @@ import { PINCH_ZOOM_MAX, PINCH_ZOOM_MIN, zoomIn, zoomOut } from "@/components/pi
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
@@ -20,13 +21,16 @@ interface MyWeekDisplayMenuProps {
   /** Only in the week view (the list has nothing to zoom). */
   zoom?: number;
   onZoomChange?: (zoom: number) => void;
+  /** Owner 2026-10-16: also show my children's rides (read-only), saved per device. Omitted = no such option. */
+  showKidsRides?: boolean;
+  onShowKidsRidesChange?: (show: boolean) => void;
 }
 
 /**
  * The "eye" menu of `/my` (owner 2026-10-11), same pattern and styling as the siddur's `SiddurDisplayMenu`: the
- * list / week choice (this visit only, `?view=`) and, in the week view, the zoom out / reset / in items.
+ * list / week choice (remembered on this device; `?view=` wins for one visit) and, in the week view, the zoom out / reset / in items.
  */
-export function MyWeekDisplayMenu({ view, onViewChange, zoom, onZoomChange }: MyWeekDisplayMenuProps) {
+export function MyWeekDisplayMenu({ view, onViewChange, zoom, onZoomChange, showKidsRides, onShowKidsRidesChange }: MyWeekDisplayMenuProps) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -40,6 +44,14 @@ export function MyWeekDisplayMenu({ view, onViewChange, zoom, onZoomChange }: My
           <DropdownMenuRadioItem value="list" data-testid="my-view-list"><List className="me-2 size-4" aria-hidden="true" />{he.myWeek.viewList}</DropdownMenuRadioItem>
           <DropdownMenuRadioItem value="week" data-testid="my-view-week"><Table2 className="me-2 size-4" aria-hidden="true" />{he.myWeek.viewWeek}</DropdownMenuRadioItem>
         </DropdownMenuRadioGroup>
+        {onShowKidsRidesChange ? (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuCheckboxItem checked={!!showKidsRides} onCheckedChange={(checked) => onShowKidsRidesChange(checked === true)} onSelect={(e) => e.preventDefault()} data-testid="my-show-kids-rides">
+              {he.myWeek.showKidsRides}
+            </DropdownMenuCheckboxItem>
+          </>
+        ) : null}
         {view === "week" && zoom !== undefined && onZoomChange ? (
           <>
             <DropdownMenuSeparator />

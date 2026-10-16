@@ -36,6 +36,8 @@ export interface RideCardData {
   needsDriver?: boolean;
   conflict?: boolean;
   isMine?: boolean;
+  /** Owner 2026-10-16: "נסיעה של <name>" — a read-only ride of my child / their other guardian on `/my`; the card is muted. */
+  relatedLabel?: string;
   highlighted?: boolean;
   tightSchedule?: boolean;
   carName: string | null;
@@ -80,6 +82,7 @@ export function RideCard({ ride, onClick }: RideCardProps) {
         "bg-gradient-card shadow-card transition-smooth",
         onClick && "cursor-pointer hover:shadow-elegant",
         ride.isMine && "shadow-md",
+        ride.relatedLabel && "border-dashed opacity-75 shadow-none",
         ride.isMine && !ride.needsDriver && "ring-2 ring-primary/60",
         ride.needsDriver && "border-2 border-dashed border-destructive bg-destructive/5",
         ride.conflict && "border-destructive bg-destructive/5",
@@ -113,6 +116,7 @@ export function RideCard({ ride, onClick }: RideCardProps) {
             ) : null}
           </div>
 
+          {ride.relatedLabel ? <span className="flex items-center gap-1 text-xs font-medium text-muted-foreground" data-testid="related-ride-label">{ride.relatedLabel}</span> : null}
           {ride.isMine ? <span className={cn("flex items-center gap-1 text-xs font-bold", ride.needsDriver ? "text-destructive" : "text-primary")}><Star className="size-3 fill-current" aria-hidden="true" />{he.siddur.myRide}</span> : null}
           {ride.seriesCount && ride.seriesCount > 1 ? (
             <span className="text-xs text-muted-foreground">

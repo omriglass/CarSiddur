@@ -3,7 +3,8 @@
 // `target` of each block so a tap does what the same item does on the list view.
 import type { WeekGridItemKind, WeekGridRide } from "@/components/WeekGrid";
 import type { BoardRide } from "@/features/siddur/api";
-import { namedPassengersOf, representativeRideTypeCode, rideViaNames, servedOf } from "@/features/rides/servedOf";
+import { isRideOfMine, type RelatedRideLabel } from "@/features/rides/myRides";
+import { representativeRideTypeCode, rideViaNames, servedOf } from "@/features/rides/servedOf";
 import { tv } from "@/i18n/he";
 import { peopleOf } from "@/features/rides/ridePeople";
 import { ridePublicDetails } from "@/lib/ridePublicDetails";
@@ -50,12 +51,12 @@ export function requestBlockKind(row: MyRequestRow, now: number = Date.now()): W
   return null;
 }
 
-/** A ride is mine when I drive it, ride as a passenger on one of my requests, or am named on it (a reservation). */
+/**
+ * A ride is mine when I am anywhere on it — driver, passenger/companion of a request, named or added person (owner
+ * 2026-10-16) — or one of my requests is served by it. One rule with the list (`features/rides/myRides.ts`).
+ */
 export function isMyBoardRide(ride: BoardRide, profileId: string | undefined, myRequestIds: ReadonlySet<string>): boolean {
-  if (!profileId) return false;
-  return ride.driver_id === profileId
-    || servedOf(ride).some((entry) => !!entry.request_id && myRequestIds.has(entry.request_id))
-    || namedPassengersOf(ride).some((entry) => entry.person_id === profileId);
+  return isRideOfMine(ride, profileId, myRequestIds);
 }
 
 /** The ride's route text, same recipe as the siddur grid (`rideBlockLabel`, multi-stop "· דרך …"). */
@@ -92,12 +93,20 @@ export function rideBlocks(
   labelOf: (ride: BoardRide) => string,
   /** My own requests by id: a ride serving one shows its "להגיע עד …" lines too (owner 2026-10-12). */
   myRequestsById?: ReadonlyMap<string, MyRequestRow>,
+  extras: {
+    /** Rides drawn as the siddur's "tight schedule" marker (`tightScheduleRideIds`). */
+    tightIds?: ReadonlySet<string>;
+    /** Read-only rides of my children / their other guardians (not mine): muted, named, never `isMine`. */
+    related?: ReadonlyMap<string, readonly RelatedRideLabel[]>;
+  } = {},
 ): MyWeekBlock[] {
   const out: MyWeekBlock[] = [];
   for (const ride of rides) {
-    if (!ride.id || !ride.starts_at || !ride.ends_at || ride.status === "cancelled" || ride.status === "draft") continue;
+    // A draft ride (unpublished day) reaches here only when it is mine as driver / named person (`isRideOfMine`).
+    if (!ride.id || !ride.starts_at || !ride.ends_at || ride.status === "cancelled") continue;
+    const relatedNames = extras.related?.get(ride.id)?.map((entry) => entry.name).join(", ");
     const segments = daySegments(ride.starts_at, ride.ends_at, dayKeys);
-    const label = labelOf(ride);
+    const label = relatedNames ? `${tv("myWeek.kidRideOf", { name: relatedNames })} · ${labelOf(ride)}` : labelOf(ride);
     // Owner 2026-10-11: the ride's public notes ("notes for everyone") and passengers, exactly as the siddur block shows
     // them — they explain what the app's fields cannot. A reservation's notes are already its label.
     const served = servedOf(ride);
@@ -121,7 +130,9 @@ export function rideBlocks(
           endMinutes: segment.endMinutes,
           label,
           description,
-          isMine: true,
+          isMine: !relatedNames,
+          muted: !!relatedNames,
+          tightSchedule: !relatedNames && !!extras.tightIds?.has(ride.id!),
           needsDriver: !!ride.needs_driver,
           rideTypeCode: representativeRideTypeCode(servedOf(ride)),
           seriesIndex: ride.series_index,

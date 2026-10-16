@@ -200,18 +200,6 @@ export function ProfilePage() {
               onCheckedChange={(checked) => updateProfileMutation.mutate({ classic_request_form: checked })}
             />
           </div>
-          {/* Owner 2026-10-11: `/my` opens as the week grid (one column per day) instead of the list. */}
-          <div className="flex items-center justify-between border-t pt-3">
-            <div className="space-y-0.5">
-              <Label htmlFor="profile-my-rides-week-view">{he.profileExtra.myRidesWeekViewLabel}</Label>
-              <p className="text-xs text-muted-foreground">{he.profileExtra.myRidesWeekViewHelp}</p>
-            </div>
-            <Switch
-              id="profile-my-rides-week-view"
-              checked={profileQuery.data?.my_rides_week_view ?? false}
-              onCheckedChange={(checked) => updateProfileMutation.mutate({ my_rides_week_view: checked })}
-            />
-          </div>
         </CardContent>
       </Card>
 
