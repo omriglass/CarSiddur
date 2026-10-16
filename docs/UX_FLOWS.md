@@ -86,7 +86,7 @@ Week parameter `:week` is the target week's Sunday as `YYYY-MM-DD`. `:dept` is t
 
 Badges: הודעות shows unread count; הבקשות שלי shows a dot when a proposal awaits an answer. A floating "+" (בקשה חדשה) sits above the bar on הסידור and הבקשות שלי.
 
-**Member (≥ md):** the same four items as a top nav bar; content constrained to `max-w-5xl`.
+**Member (≥ md):** the same four items as a top nav bar; content constrained to `max-w-5xl`. The ≥ md side navigation (`AppShell`) folds to a 64 px icon rail with a toggle at its bottom ("צמצום התפריט" / "הרחבת התפריט"; labels become tooltips, badges stay), remembered per device (`app.nav.collapsed`, owner 2026-10-16).
 
 **Sadran:** while assigned to at least one department/week, a fifth tab **סדרן** appears (rightmost after הסידור on phone; on desktop it is a highlighted top-nav item). It opens `/sadran`, which redirects straight to the board. Inside the Sadran area a secondary segmented header switches לוח / הצעות / פרסום / יומן. Sadran alerts also land in the regular inbox.
 

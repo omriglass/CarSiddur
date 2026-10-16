@@ -318,6 +318,9 @@ export const he = {
     tagline: "תיאום הרכבים המשותפים של הקיבוץ, במקום אחד",
   },
   nav: {
+    /** Owner 2026-10-16: the computer-width side nav folds to an icon rail. */
+    collapse: "צמצום התפריט",
+    expand: "הרחבת התפריט",
     siddur: "הסידור",
     myRequests: "הבקשות שלי",
     inbox: "הודעות",

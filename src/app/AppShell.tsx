@@ -1,5 +1,5 @@
-import { Bell, CalendarDays, ClipboardList, Settings, User, Users } from "lucide-react";
-import { type ComponentType, useEffect } from "react";
+import { Bell, CalendarDays, ClipboardList, PanelRightClose, PanelRightOpen, Settings, User, Users } from "lucide-react";
+import { type ComponentType, useEffect, useState } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 
 import { DepartmentContextSelector } from "@/components/DepartmentContextSelector";
@@ -40,9 +40,12 @@ const BASE_NAV_ITEMS: readonly NavItem[] = [
 function NavLinks({
   items,
   orientation,
+  collapsed = false,
 }: {
   items: readonly NavItem[];
   orientation: "horizontal" | "vertical";
+  /** md+ side nav folded to an icon rail (owner 2026-10-16): labels become tooltips. */
+  collapsed?: boolean;
 }) {
   return (
     <>
@@ -50,12 +53,13 @@ function NavLinks({
         <NavLink
           key={to}
           to={to}
+          title={collapsed ? label : undefined}
           className={({ isActive }) =>
             cn(
               "relative flex min-h-11 items-center gap-2 rounded-md text-sm font-medium transition-smooth",
               orientation === "horizontal"
                 ? "flex-1 flex-col gap-0.5 py-2 text-xs"
-                : "px-3 py-2",
+                : collapsed ? "justify-center px-2 py-2" : "px-3 py-2",
               isActive
                 ? orientation === "horizontal"
                   ? "text-primary"
@@ -74,7 +78,7 @@ function NavLinks({
                   </span>
                 ) : null}
               </span>
-              <span>{label}</span>
+              <span className={collapsed ? "sr-only" : undefined}>{label}</span>
               {orientation === "horizontal" ? (
                 <span
                   className={cn(
@@ -90,6 +94,19 @@ function NavLinks({
       ))}
     </>
   );
+}
+
+const NAV_COLLAPSED_KEY = "app.nav.collapsed";
+
+/** md+ side nav folded to icons (owner 2026-10-16), remembered on this device. */
+function useNavCollapsed(): [boolean, (value: boolean) => void] {
+  const [collapsed, setCollapsed] = useState(() => {
+    try { return localStorage.getItem(NAV_COLLAPSED_KEY) === "1"; } catch { return false; }
+  });
+  return [collapsed, (value: boolean) => {
+    setCollapsed(value);
+    try { localStorage.setItem(NAV_COLLAPSED_KEY, value ? "1" : "0"); } catch { /* a convenience only */ }
+  }];
 }
 
 /** App-wide layout: skip link, offline banner, top bar / md+ side nav, mobile bottom tab bar, `<Outlet>`. */
@@ -108,6 +125,7 @@ export function AppShell() {
     if (import.meta.env.DEV) document.title = appName;
   }, [appName]);
   const { pathname } = useLocation();
+  const [navCollapsed, setNavCollapsed] = useNavCollapsed();
   // `/` opens the last main page opened on this device (REQ §13.87).
   useEffect(() => rememberMainPage(pathname), [pathname]);
 
@@ -131,13 +149,26 @@ export function AppShell() {
 
       <nav
         aria-label={he.app.name}
-        className="hidden shrink-0 border-e bg-card md:flex md:w-56 md:flex-col md:gap-1 md:p-3"
+        className={cn("hidden shrink-0 border-e bg-card md:flex md:flex-col md:gap-1", navCollapsed ? "md:w-16 md:p-2" : "md:w-56 md:p-3")}
       >
-        <div className="flex items-center gap-2 px-2 py-2">
+        <div className={cn("flex items-center gap-2 py-2", navCollapsed ? "justify-center px-0" : "px-2")}>
           <AppLogoMark />
-          <span className="text-lg font-semibold leading-tight">{appName}</span>
+          {navCollapsed ? null : <span className="text-lg font-semibold leading-tight">{appName}</span>}
         </div>
-        <NavLinks items={desktopNavItems} orientation="vertical" />
+        <NavLinks items={desktopNavItems} orientation="vertical" collapsed={navCollapsed} />
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className={cn("mt-auto text-muted-foreground", navCollapsed ? "self-center" : "self-end")}
+          onClick={() => setNavCollapsed(!navCollapsed)}
+          aria-label={navCollapsed ? he.nav.expand : he.nav.collapse}
+          title={navCollapsed ? he.nav.expand : he.nav.collapse}
+          aria-expanded={!navCollapsed}
+          data-testid="nav-collapse"
+        >
+          {navCollapsed ? <PanelRightOpen className="size-5" aria-hidden="true" /> : <PanelRightClose className="size-5" aria-hidden="true" />}
+        </Button>
       </nav>
 
       <div className="flex min-w-0 flex-1 flex-col lg:min-h-0">
