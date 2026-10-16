@@ -21,6 +21,9 @@ scripts/.diag-solve/
 # db-export.mjs output (contains member PII — never commit)
 backups/
 
+# scripts/replay: the replay stack's supabase copy and exported production weeks (member data — never commit)
+.replay/
+
 # tests
 coverage/
 test-results/

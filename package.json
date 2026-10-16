@@ -38,7 +38,11 @@
     "qa:regression": "node scripts/qa/regression.mjs",
     "qa:sadran": "node scripts/qa/run.mjs sadran",
     "qa:member": "node scripts/qa/run.mjs member",
-    "qa:ui": "node scripts/qa/ui.mjs"
+    "qa:ui": "node scripts/qa/ui.mjs",
+    "replay:stack": "node scripts/replay/stack.mjs",
+    "replay:load": "node scripts/replay/load-week.mjs",
+    "replay:compare": "node scripts/replay/compare.mjs",
+    "replay:explain": "node scripts/replay/explain.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "5.9.1",

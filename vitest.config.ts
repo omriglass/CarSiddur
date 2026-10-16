@@ -22,7 +22,7 @@ export default defineConfig({
     // not Vitest. supabase/tests/*.test.mjs are plain-Node smoke tests run
     // by `npm run functions:bundle` (assert-based, no describe/it) — Vitest's
     // default glob otherwise picks them up and fails with "no test suite".
-    exclude: ["**/node_modules/**", "**/dist/**", "e2e/**", "supabase/**"],
+    exclude: ["**/node_modules/**", "**/dist/**", "e2e/**", "supabase/**", ".replay/**"],
     // Two inline projects replace the deprecated `environmentMatchGlobs`
     // (Vitest 3.2): plain *.test.ts / *.test.mjs run under node (solver, lib,
     // scripts — faster and closest to how the edge functions execute);

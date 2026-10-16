@@ -757,7 +757,8 @@
         "supabase/migrations/**/*route_minutes*",
         "supabase/migrations/**/*route_helpers*",
         "supabase/tests/multi_stop.sql",
-        "scripts/qa/**"
+        "scripts/qa/**",
+        "scripts/replay/**"
       ],
       "vitest": [
         "src/solver",

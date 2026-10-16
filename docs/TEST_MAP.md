@@ -406,7 +406,8 @@ migrations matching `*polic*`, `*fairness*`, `*mileage*`, `*apply_solver_result*
 `src/solver/__tests__/oneWayPairingParity.test.ts` (one-way pairing golden cases, run against both the
 solver and SQL `pair_one_way_legs`; the SQL side is the last step of `db:test`); `supabase/tests/multi_stop.sql`;
 `e2e/auto-approve.spec.ts`, `freed-slot.spec.ts`, `board.spec.ts`; `scripts/qa/**` (the QA simulation: week generator,
-real-solver regression, QA CLIs — docs/QA_SIMULATION.md).
+real-solver regression, QA CLIs — docs/QA_SIMULATION.md); `scripts/replay/**` (re-running a production week on a
+local replay stack and comparing it with the production solve — scripts/replay/README.md).
 
 **Automated**:
 - Vitest: `npx vitest run src/solver src/features/solverBridge`
