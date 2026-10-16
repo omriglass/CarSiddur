@@ -33,7 +33,8 @@ test.describe("proposal round trip", { tag: ["@proposals"] }, () => {
     await page.getByRole("radio").nth(5).click();
     const unmetCard = page.locator(`[data-request-id="${PROPOSAL_REQUEST_ID}"]`);
     await expect(unmetCard).toBeVisible();
-    await unmetCard.getByRole("button", { name: he.sadranProposal.suggestTimes, exact: true }).click();
+    await unmetCard.getByTestId("unmet-menu").first().click();
+    await page.getByTestId("unmet-shift").click();
 
     await page.getByTestId("draft-choice-compose").click(); // REQ §13.94 chooser: "הכן הצעה"
     await expect(page).toHaveURL(/\/proposals\/new$/);

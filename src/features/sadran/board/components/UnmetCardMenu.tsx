@@ -33,6 +33,8 @@ export interface UnmetCardMenuProps {
   /** Hidden when the member said "אסתדר" (REQ §13.112 b) or no decision handler exists. */
   onExternal?: () => void;
   onDeny?: () => void;
+  /** "הצעת שעות אחרות" (owner 2026-10-16: in the menu, not on the card). */
+  onShift?: () => void;
 }
 
 /** Mounted only while the menu is open, so the phone number is fetched on demand (never for every card). */
@@ -50,7 +52,7 @@ function WhatsappItem({ request, destinationName }: { request: WeekRequestRow; d
   );
 }
 
-export function UnmetCardMenu({ request, destinationName, proposalOut, tripTypeScope, fewerDays, onExternal, onDeny }: UnmetCardMenuProps) {
+export function UnmetCardMenu({ request, destinationName, proposalOut, tripTypeScope, fewerDays, onExternal, onDeny, onShift }: UnmetCardMenuProps) {
   const navigate = useNavigate();
   const link = useRequestLinkProps();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -73,6 +75,7 @@ export function UnmetCardMenu({ request, destinationName, proposalOut, tripTypeS
           </DropdownMenuItem>
           {scoped ? <DropdownMenuItem className="min-h-11" data-testid="unmet-change-trip-type" onSelect={open("tripType")}>{he.unmetCard.changeTripType}</DropdownMenuItem> : null}
           {scoped && canSwitchRequestPlan(request) ? <DropdownMenuItem className="min-h-11" data-testid="unmet-plan-switch" onSelect={open("plan")}>{request.served_by_alternative ? he.planSwitch.toMain : he.planSwitch.toAlternative}</DropdownMenuItem> : null}
+          {onShift && !proposalOut ? <DropdownMenuItem className="min-h-11" data-testid="unmet-shift" onSelect={onShift}>{he.sadranProposal.suggestTimes}</DropdownMenuItem> : null}
           {onExternal && !proposalOut ? <DropdownMenuItem className="min-h-11" data-testid="unmet-external" onSelect={onExternal}>{he.unmetCard.proposeExternal}</DropdownMenuItem> : null}
           {onDeny && !proposalOut ? <DropdownMenuItem className="min-h-11" data-testid="unmet-deny" onSelect={onDeny}>{he.unmetCard.proposeDeny}</DropdownMenuItem> : null}
           {scoped && !request.series_id ? <DropdownMenuItem className="min-h-11" data-testid="unmet-duplicate" onSelect={open("duplicate")}>{he.unmetCard.markDuplicate}</DropdownMenuItem> : null}

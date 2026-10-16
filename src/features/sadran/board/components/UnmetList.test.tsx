@@ -45,11 +45,13 @@ describe("one-way unmet cards", () => {
     fireEvent.pointerUp(window, { clientX: 200, clientY: 600 });
     expect(drop).toHaveBeenCalledWith(item, "car", 600, undefined);
   });
-  it("offers the time proposal inline; external / deny / edit live in the ⋮ menu", () => {
+  it("keeps other times / external / deny / edit in the ⋮ menu only (owner 2026-10-16)", () => {
     const decide = vi.fn();
     render(<UnmetList items={[item]} onAction={vi.fn()} onDecision={decide} />);
-    fireEvent.click(screen.getByRole("button", { name: he.sadranProposal.suggestTimes }));
+    expect(screen.queryByRole("button", { name: he.sadranProposal.suggestTimes })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: he.sadranProposal.solveOutside })).not.toBeInTheDocument();
+    openMenu();
+    fireEvent.click(screen.getByTestId("unmet-shift"));
     openMenu();
     expect(screen.getByTestId("unmet-edit")).toHaveTextContent(he.unmetCard.editRequest);
     expect(screen.getByTestId("unmet-deny")).toHaveTextContent(he.unmetCard.proposeDeny);

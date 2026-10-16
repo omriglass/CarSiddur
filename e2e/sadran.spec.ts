@@ -74,9 +74,8 @@ test.describe("sadran", { tag: ["@proposals", "@publication"] }, () => {
     try {
       await page.setViewportSize({ width: 1440, height: 900 });
       await page.goto(`${fixture.baseUrl}/board`);
-      await page.locator(`[data-request-id="${fixture.request.id}"]`).getByRole("button", {
-        name: he.sadranProposal.suggestTimes, exact: true,
-      }).click();
+      await page.locator(`[data-request-id="${fixture.request.id}"]`).getByTestId("unmet-menu").first().click();
+      await page.getByTestId("unmet-shift").click();
       await page.getByTestId("draft-choice-compose").click(); // REQ §13.94 chooser: "הכן הצעה"
       await expect(page).toHaveURL(/\/proposals\/new$/);
       await page.getByRole("button", { name: he.action.propose, exact: true }).click();

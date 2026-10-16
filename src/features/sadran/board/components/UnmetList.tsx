@@ -281,6 +281,7 @@ export function UnmetList({ items, onAction, onOpenProposal, onDecision, dayStar
                   fewerDays={fewerDays}
                   onExternal={onDecision && !(item.request.fallback === "manage" && hasActiveFallback(item.request)) ? () => onDecision(item, "external") : undefined}
                   onDeny={onDecision ? () => onDecision(item, "deny") : undefined}
+                  onShift={() => (onDecision ? onDecision(item, "shift") : onAction(item, null))}
                 />
               </div>
               <p className="font-medium" data-testid="unmet-when">
@@ -319,9 +320,10 @@ export function UnmetList({ items, onAction, onOpenProposal, onDecision, dayStar
                   {tv("unmetCard.notPlacedBecause", { reason: item.solverInfo.reason })}
                 </p>
               ) : null}
-              {/* 3. Suggestions as buttons (+ the plain "other times" proposal). */}
+              {/* 3. The solver's placing suggestions as buttons. Owner 2026-10-16: external (cab / public transport),
+                  deny and "other times" are only in the ⋮ menu, never on the card. */}
               <div className="space-y-1">
-                {item.solverInfo?.suggestions.map((suggestion, index) => (
+                {item.solverInfo?.suggestions.map((suggestion, index) => suggestion.kind === "externalHint" || suggestion.kind === "deny" ? null : (
                   <div key={index} className="flex items-center justify-between gap-2 text-xs" data-suggestion-kind={suggestion.kind}>
                     <span>
                       {suggestion.kind === "useAlternative" ? <span className="me-1 rounded-sm bg-muted px-1 font-medium" data-testid="unmet-plan-b-possible">{he.sadranPlanB.possible}</span> : null}
@@ -331,7 +333,6 @@ export function UnmetList({ items, onAction, onOpenProposal, onDecision, dayStar
                     <Button size="sm" variant="outline" className="min-h-11 shrink-0" onClick={() => onAction(item, suggestion)} data-testid={suggestion.kind === "useAlternative" ? "unmet-plan-b-propose" : undefined}>{suggestion.kind === "useAlternative" ? he.sadranPlanB.propose : he.action.propose}</Button>
                   </div>
                 ))}
-                <Button size="sm" variant="outline" className="min-h-11" onClick={() => onDecision ? onDecision(item, "shift") : onAction(item, null)}>{he.sadranProposal.suggestTimes}</Button>
               </div>
               {/* 5. Less important details, last and muted. */}
               {mutedParts.length || dragNote ? (

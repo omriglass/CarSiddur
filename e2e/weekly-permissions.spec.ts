@@ -103,7 +103,8 @@ test("weekly member manages only their assigned board while permanent Sadran ret
         await temporary.page.getByRole("radio").nth(0).click();
         const unmetCard = temporary.page.locator(`[data-request-id="${fixtureRequest!.id}"]`);
         await expect(unmetCard).toBeVisible();
-        await unmetCard.getByRole("button", { name: he.sadranProposal.suggestTimes, exact: true }).click();
+        await unmetCard.getByTestId("unmet-menu").first().click();
+        await temporary.page.getByTestId("unmet-shift").click();
         await temporary.page.getByTestId("draft-choice-compose").click(); // REQ §13.94 chooser: "הכן הצעה"
         await expect(temporary.page).toHaveURL(/\/proposals\/new$/);
         const sent = temporary.page.waitForResponse((response) =>

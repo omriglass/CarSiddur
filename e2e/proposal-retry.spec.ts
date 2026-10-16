@@ -83,7 +83,9 @@ async function proposalFixture(week: string, label: string) {
 async function composeFromBoard(page: Page, baseUrl: string, requestId: string) {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(`${baseUrl}/board`);
-  await page.locator(`[data-request-id="${requestId}"]`).getByRole("button", { name: he.sadranProposal.suggestTimes, exact: true }).click();
+  // Owner 2026-10-16: "הצעת שעות אחרות" is in the unplaced card's ⋮ menu.
+  await page.locator(`[data-request-id="${requestId}"]`).getByTestId("unmet-menu").first().click();
+  await page.getByTestId("unmet-shift").click();
   await page.getByTestId("draft-choice-compose").click(); // REQ §13.94 chooser: "הכן הצעה"
   await expect(page).toHaveURL(/\/proposals\/new$/);
 }
