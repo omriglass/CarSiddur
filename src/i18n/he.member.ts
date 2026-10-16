@@ -90,6 +90,8 @@ export const heMember = {
     /** REQ §13.127 (d): "my rides" row lines for a request filed by / for someone else. */
     filedBy: "הוגשה ע״י {{name}}",
     filedFor: "הוגשה עבור {{name}}",
+    /** Owner 2026-10-16 (REQ §13.128): /my row of a request that names me as a companion. */
+    companionAddedBy: "{{name}} הוסיף/ה אותך כנוסע/ת",
     /** REQ §13.127 (a): confirmation before a ride is filed for someone else (everyone, Sadranim included). */
     onBehalfTitle: "הנסיעה תיווצר בשם {{name}}",
     onBehalfBody: "הנסיעה תופיע אצל {{name}} ב״הנסיעות שלי״ והוא/היא יוכל/תוכל לערוך אותה.",
@@ -544,6 +546,8 @@ export const heMember = {
     themeDark: "כהה",
     themeSystem: "לפי המכשיר",
     /** Owner 2026-10-12: per-device opt-in for features still being tried out (today: the Google calendar on "my rides"). */
+    noAutoDialogsLabel: "לא לפתוח חלונות אוטומטית בבקשה חדשה",
+    noAutoDialogsHelp: "בבקשה חדשה לא ייפתחו בזה אחר זה בחירת היום, השעות והיעד. במכשיר הזה בלבד.",
     experimentalTitle: "ניסיוני",
     experimentalLabel: "אפשר תכונות ניסיוניות",
     experimentalHelp: "תכונות חדשות שעוד בבדיקה, במכשיר הזה בלבד. כרגע: הצגת יומן Google בתצוגת השבוע של ״הנסיעות שלי״.",

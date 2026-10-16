@@ -134,17 +134,20 @@ describe("unnamedWhoLabel / joinWho with unnamed children (REQ §13.112 d)", () 
 });
 
 describe("guideSteps (owner 2026-10-11: start time → end time → destination, skipping what is known)", () => {
-  const base = { outKnown: false, returnKnown: false, hasOut: true, hasReturn: true, timeChips: true, hasDestination: false };
+  const base = { dayKnown: false, outKnown: false, returnKnown: false, hasOut: true, hasReturn: true, timeChips: true, hasDestination: false };
   it("a blank request walks all three", () => {
-    expect(guideSteps(base)).toEqual(["out", "return", "destination"]);
+    expect(guideSteps(base)).toEqual(["day", "out", "return", "destination"]);
     expect(nextGuideStep(guideSteps(base), "out")).toBe("return");
     expect(nextGuideStep(guideSteps(base), "destination")).toBeNull();
   });
   it("skips known times, a missing leg, a time window and a chosen destination", () => {
-    expect(guideSteps({ ...base, outKnown: true })).toEqual(["return", "destination"]);
-    expect(guideSteps({ ...base, outKnown: true, returnKnown: true })).toEqual(["destination"]);
-    expect(guideSteps({ ...base, hasReturn: false })).toEqual(["out", "destination"]);
-    expect(guideSteps({ ...base, timeChips: false })).toEqual(["destination"]);
-    expect(guideSteps({ ...base, outKnown: true, returnKnown: true, hasDestination: true })).toEqual([]);
+    expect(guideSteps({ ...base, outKnown: true })).toEqual(["day", "return", "destination"]);
+    expect(guideSteps({ ...base, outKnown: true, returnKnown: true })).toEqual(["day", "destination"]);
+    expect(guideSteps({ ...base, hasReturn: false })).toEqual(["day", "out", "destination"]);
+    expect(guideSteps({ ...base, timeChips: false })).toEqual(["day", "destination"]);
+    expect(guideSteps({ ...base, outKnown: true, returnKnown: true, hasDestination: true })).toEqual(["day"])
+    expect(guideSteps({ ...base, dayKnown: true, outKnown: true, returnKnown: true, hasDestination: true })).toEqual([])
+    expect(guideSteps({ ...base, dayKnown: true })).toEqual(["out", "return", "destination"])
+    expect(guideSteps({ ...base, dayChip: false })).toEqual(["out", "return", "destination"]);
   });
 });

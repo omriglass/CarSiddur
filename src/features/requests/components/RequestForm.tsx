@@ -96,6 +96,7 @@ import { StopsField } from "./requestForm/StopsField";
 import { FlexibilityFields, TimeFields } from "./requestForm/TimesFlexibilityFields";
 import { PassengersFields } from "./requestForm/PassengersFields";
 import { RepeatWeeklyField } from "./requestForm/RepeatWeeklyField";
+import { readNoAutoDialogs } from "@/features/member/useNoAutoDialogs";
 import { SentenceFields } from "./requestForm/sentence/SentenceFields";
 import { STAGE_ONE_FIELDS, isStageOneField } from "./requestForm/sentence/sentenceModel";
 
@@ -1220,7 +1221,7 @@ export function RequestForm({
           stage={twoStage ? stage : 1}
           onStageChange={setStage}
           invalidSignal={invalidSignal}
-          guide={mode === "new" && !joinRide && !templateSuggestion ? { outKnown: !!slotPrefill?.departTime, returnKnown: !!slotPrefill?.returnTime } : undefined}
+          guide={mode === "new" && !joinRide && !templateSuggestion && !readNoAutoDialogs() ? { dayKnown: !!slotPrefill || !!dayPrefill, outKnown: !!slotPrefill?.departTime, returnKnown: !!slotPrefill?.returnTime } : undefined}
           quickContext={quickContext ? { cars: quickContext.cars, showCarPicker: quickContext.showCarPicker } : undefined}
           quickWindow={{ startMs, endMs, carIsFree, isAway, otherFreeCar, oneWay }}
         />

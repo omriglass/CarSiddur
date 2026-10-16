@@ -130,7 +130,7 @@ export interface SentenceFieldsProps {
    * "אישור" moves on; dismissing a sheet stops the guide. `outKnown`/`returnKnown` = the time came with the opening
    * (a grid tap). Absent = no guide (edit, a repeating-request suggestion, ask-to-join).
    */
-  guide?: { outKnown: boolean; returnKnown: boolean };
+  guide?: { dayKnown: boolean; outKnown: boolean; returnKnown: boolean };
   /** Seat-fit / overlap warnings, rendered right under the sentence (R9U4). */
   notices?: ReactNode;
   /** A named child was just added to the request (R9U7). */
@@ -231,7 +231,7 @@ export function SentenceFields(props: SentenceFieldsProps) {
 
   // The guided start of a new request (owner 2026-10-11): the first missing step opens on mount (adjusted during render).
   const currentGuideSteps = guide
-    ? guideSteps({ ...guide, hasOut, hasReturn, timeChips: !windowOn && variant !== "carNow", hasDestination })
+    ? guideSteps({ ...guide, dayChip: isWeekly, hasOut, hasReturn, timeChips: !windowOn && variant !== "carNow", hasDestination })
     : [];
   const [guideActive, setGuideActive] = useState(!!guide);
   const [guideStarted, setGuideStarted] = useState(false);
@@ -741,7 +741,7 @@ export function SentenceFields(props: SentenceFieldsProps) {
         <PlacePicker places={placesWithoutOrigin} value={null} onPick={addReturnStop} placeholder={he.requestSentence.placeSearch} />
       </FieldSheet>
 
-      <FieldSheet open={sheet === "day"} onOpenChange={(open) => !open && setSheet(null)} title={he.requestSentence.sheet.day}>
+      <FieldSheet open={sheet === "day"} onOpenChange={(open) => !open && closeSheet()} onDone={() => advanceGuide("day")} title={he.requestSentence.sheet.day}>
         <DayAndTripShapeFields
           control={control}
           form={form}

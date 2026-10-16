@@ -23,6 +23,7 @@ import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useIsSadranAnywhere } from "@/features/auth/useIsSadran";
 import { useTheme, type ThemePreference } from "@/hooks/useTheme";
+import { useNoAutoDialogs } from "@/features/member/useNoAutoDialogs";
 import { useExperimentalFeatures } from "@/features/member/useExperimentalFeatures";
 import { useMyDepartments, useSetMyDefaultOriginMutation } from "@/features/auth/useMyDepartments";
 import { useProfile, useUpdateProfileMutation } from "@/features/auth/useProfile";
@@ -58,6 +59,7 @@ export function ProfilePage() {
   const isAdmin = !!profileQuery.data?.is_admin;
   const { preference: themePreference, setPreference: setThemePreference } = useTheme();
   const experimental = useExperimentalFeatures();
+  const noAutoDialogs = useNoAutoDialogs();
 
   // REQ §13.93: "נקודת יציאה קבועה" for the active department — `department_members.default_origin_id`.
   const originDestinationsQuery = useDestinations(active.departmentId);
@@ -314,6 +316,19 @@ export function ProfilePage() {
               <p className="text-xs text-muted-foreground">{he.profileExtra.experimentalHelp}</p>
             </div>
             <Switch id="profile-experimental" checked={experimental.enabled} onCheckedChange={experimental.setEnabled} data-testid="profile-experimental" />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Owner 2026-10-16: per-device, turns the new-request guided start off. */}
+      <Card>
+        <CardContent className="pt-6">
+          <div className="flex items-center justify-between gap-3">
+            <div className="space-y-0.5">
+              <Label htmlFor="profile-no-auto-dialogs">{he.profileExtra.noAutoDialogsLabel}</Label>
+              <p className="text-xs text-muted-foreground">{he.profileExtra.noAutoDialogsHelp}</p>
+            </div>
+            <Switch id="profile-no-auto-dialogs" checked={noAutoDialogs.enabled} onCheckedChange={noAutoDialogs.setEnabled} data-testid="profile-no-auto-dialogs" />
           </div>
         </CardContent>
       </Card>
