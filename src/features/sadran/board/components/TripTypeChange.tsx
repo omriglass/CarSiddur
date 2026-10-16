@@ -5,6 +5,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { keepCarTripLabel } from "@/features/requests/keepCar";
 import { he, tv } from "@/i18n/he";
@@ -33,6 +34,9 @@ export interface TripTypeChangeProps {
   disabled?: boolean;
   /** R8B12: the request had no car (unmet card), so a placed result reads "placed", not "stayed on its car". */
   wasUnplaced?: boolean;
+  /** Controlled mode (the unmet card's "⋮" menu opens it): no inline trigger button is rendered. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
 /** The menu's choices: the three trip types plus "round trip, the car stays at the destination" (REQ §13.126 g). */
@@ -40,7 +44,7 @@ type TripChoice = TripType | "keep_car";
 const KEEP_CAR = "keep_car" as const;
 const CHOICES: TripChoice[] = ["round_trip", KEEP_CAR, "one_way", "drop_off"];
 
-export function TripTypeChange({ requestId, version, tripType, keepCarAtDestination, destination, name, departmentId, weekStart, disabled, wasUnplaced }: TripTypeChangeProps) {
+export function TripTypeChange({ requestId, version, tripType, keepCarAtDestination, destination, name, departmentId, weekStart, disabled, wasUnplaced, open: menuOpen, onOpenChange: onMenuOpenChange }: TripTypeChangeProps) {
   const mutation = useSetRequestTripTypeMutation();
   // R2U2: choosing a type asks first; the select then shows the chosen type until the refetched row agrees.
   const [pending, setPending] = useState<TripChoice | null>(null);
@@ -73,7 +77,42 @@ export function TripTypeChange({ requestId, version, tripType, keepCarAtDestinat
       },
     );
   }
+  const controlled = onMenuOpenChange !== undefined;
   const shown: TripChoice = applied && applied !== current && mutation.isSuccess ? applied : current;
+  const confirmDialog = (
+    <ConfirmDialog
+      open={!!pending}
+      onOpenChange={(open) => { if (!open) setPending(null); }}
+      title={tv("tripTypeChange.confirmTitle", { name })}
+      description={pending ? tv("tripTypeChange.confirmBody", { name, type: labelOf(pending) }) : undefined}
+      confirmLabel={he.tripTypeChange.confirm}
+      onConfirm={() => { if (pending) apply(pending); }}
+    />
+  );
+  // Menu mode (the unmet card's "⋮"): a picker dialog, then the same confirmation.
+  if (controlled) {
+    return (
+      <>
+        <ConfirmDialog
+          open={!!menuOpen}
+          onOpenChange={onMenuOpenChange}
+          title={tv("unmetCard.changeTripTypeTitle", { name })}
+          hideConfirm
+          onConfirm={() => undefined}
+        >
+          <div className="flex flex-col gap-2" data-testid="trip-type-change" data-trip-request-id={requestId}>
+            {CHOICES.map((choice) => (
+              <Button key={choice} type="button" variant={choice === current ? "secondary" : "outline"} className="min-h-11 justify-start" disabled={disabled || mutation.isPending || choice === current}
+                data-testid={`trip-type-option-${choice}`} onClick={() => { onMenuOpenChange(false); change(choice); }}>
+                {labelOf(choice)}
+              </Button>
+            ))}
+          </div>
+        </ConfirmDialog>
+        {confirmDialog}
+      </>
+    );
+  }
   return (
     <div className="flex items-center gap-2" data-testid="trip-type-change" data-trip-request-id={requestId}>
       <span className="shrink-0 text-xs text-muted-foreground">{he.tripTypeChange.label}</span>
@@ -89,14 +128,7 @@ export function TripTypeChange({ requestId, version, tripType, keepCarAtDestinat
           ))}
         </SelectContent>
       </Select>
-      <ConfirmDialog
-        open={!!pending}
-        onOpenChange={(open) => { if (!open) setPending(null); }}
-        title={tv("tripTypeChange.confirmTitle", { name })}
-        description={pending ? tv("tripTypeChange.confirmBody", { name, type: labelOf(pending) }) : undefined}
-        confirmLabel={he.tripTypeChange.confirm}
-        onConfirm={() => { if (pending) apply(pending); }}
-      />
+      {confirmDialog}
     </div>
   );
 }

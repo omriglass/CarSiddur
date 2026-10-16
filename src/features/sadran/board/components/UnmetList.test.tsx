@@ -1,8 +1,23 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render as rtlRender, screen } from "@testing-library/react";
+import type { ReactElement } from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { WeekRequestRow } from "../../api";
 import { he, tv } from "@/i18n/he";
 import { UnmetList } from "./UnmetList";
+
+/** The card's "⋮" menu navigates to the edit form, so every render sits in a router. */
+function render(ui: ReactElement) {
+  const client = new QueryClient();
+  const wrap = (node: ReactElement) => <QueryClientProvider client={client}><MemoryRouter>{node}</MemoryRouter></QueryClientProvider>;
+  const result = rtlRender(wrap(ui));
+  return { ...result, rerender: (next: ReactElement) => result.rerender(wrap(next)) };
+}
+
+function openMenu() {
+  fireEvent.pointerDown(screen.getByTestId("unmet-menu"), { button: 0, ctrlKey: false });
+}
 
 const request = {
   id: "return-request", trip_shape: "one_way_from", depart_at: null, return_at: "2026-09-10T06:00:00Z",
@@ -30,14 +45,24 @@ describe("one-way unmet cards", () => {
     fireEvent.pointerUp(window, { clientX: 200, clientY: 600 });
     expect(drop).toHaveBeenCalledWith(item, "car", 600, undefined);
   });
-  it("offers only time changes and outside-siddur solutions without a solver suggestion", () => {
+  it("offers the time proposal inline; external / deny / edit live in the ⋮ menu", () => {
     const decide = vi.fn();
     render(<UnmetList items={[item]} onAction={vi.fn()} onDecision={decide} />);
-    expect(screen.getAllByRole("button")).toHaveLength(2);
     fireEvent.click(screen.getByRole("button", { name: he.sadranProposal.suggestTimes }));
-    fireEvent.click(screen.getByRole("button", { name: he.sadranProposal.solveOutside }));
+    expect(screen.queryByRole("button", { name: he.sadranProposal.solveOutside })).not.toBeInTheDocument();
+    openMenu();
+    expect(screen.getByTestId("unmet-edit")).toHaveTextContent(he.unmetCard.editRequest);
+    expect(screen.getByTestId("unmet-deny")).toHaveTextContent(he.unmetCard.proposeDeny);
+    fireEvent.click(screen.getByTestId("unmet-external"));
     expect(decide.mock.calls).toEqual([[item, "shift"], [item, "external"]]);
-    expect(screen.queryByRole("button", { name: he.action.deny })).not.toBeInTheDocument();
+  });
+
+  it("states the trip type as a chip and the solver reason in its own prefixed box, only when there is one", () => {
+    const { rerender } = render(<UnmetList items={[{ ...item, request: { ...request, trip_type: "one_way" } as WeekRequestRow }]} onAction={vi.fn()} />);
+    expect(screen.getByTestId("unmet-trip-type")).toHaveTextContent(he.request.tripTypeOneWay);
+    expect(screen.queryByTestId("unmet-reason")).not.toBeInTheDocument();
+    rerender(<UnmetList items={[{ ...item, solverInfo: { requestId: "return-request", score: 0, blockers: [], reasonCode: "UNMET_NO_CAR", reason: "אין רכב פנוי", suggestions: [] } }]} onAction={vi.fn()} />);
+    expect(screen.getByTestId("unmet-reason")).toHaveTextContent(tv("unmetCard.notPlacedBecause", { reason: "אין רכב פנוי" }));
   });
 
   it("a click on the grip never places a request", () => {
@@ -101,12 +126,14 @@ describe("plan B and אסתדר on the unmet card (REQ §13.112)", () => {
     expect(screen.getByTestId("unmet-plan-b-possible")).toHaveTextContent(he.sadranPlanB.possible);
     fireEvent.click(screen.getByTestId("unmet-plan-b-propose"));
     expect(onAction).toHaveBeenCalledWith(planB, suggestion);
-    expect(screen.getByRole("button", { name: he.sadranProposal.solveOutside })).toBeInTheDocument();
+    openMenu();
+    expect(screen.getByTestId("unmet-external")).toBeInTheDocument();
   });
   it("אסתדר: shows the word and offers no outside-solution action", () => {
     const manage = { destinationName: "Haifa", request: { ...roundTrip, fallback: "manage", alternative: null } as WeekRequestRow };
     render(<UnmetList items={[manage]} onAction={vi.fn()} onDecision={vi.fn()} />);
     expect(screen.getByTestId("unmet-fallback")).toHaveTextContent("אסתדר");
-    expect(screen.queryByRole("button", { name: he.sadranProposal.solveOutside })).not.toBeInTheDocument();
+    openMenu();
+    expect(screen.queryByTestId("unmet-external")).not.toBeInTheDocument();
   });
 });

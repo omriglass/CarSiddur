@@ -17,9 +17,9 @@ for (const scenario of [
     try {
       await page.setViewportSize({ width: 1440, height: 900 });
       await page.goto(`${fixture.baseUrl}/board`);
-      await page.locator(`[data-request-id="${fixture.request.id}"]`).getByRole("button", {
-        name: he.sadranProposal.solveOutside, exact: true,
-      }).click();
+      // Owner 2026-10-16: the external proposal moved into the unplaced card's "⋮" menu.
+      await page.locator(`[data-request-id="${fixture.request.id}"]`).getByTestId("unmet-menu").first().click();
+      await page.getByTestId("unmet-external").click();
       await page.getByTestId("draft-choice-compose").click(); // REQ §13.94 chooser: "הכן הצעה"
       await expect(page).toHaveURL(/\/proposals\/new$/);
       const tripSummary = page.locator("[data-trip-summary]");

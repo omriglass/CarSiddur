@@ -76,6 +76,8 @@ export interface WeekRequestRow extends RequestRow {
   /** Named children (`request_children` → `children.full_name`), distinct from the guessed "unnamed child" fallback (`he.ridePublicDetails.unnamedChild`). */
   childNames?: string[];
   requester_full_name: string | null;
+  /** Owner 2026-10-16: who filed the request when that is not the requester (`requests.filed_by`); the unmet card's detail line. */
+  filer_full_name: string | null;
   /** REQ §88 (owner 2026-09-15): `profiles.does_not_drive` for the requester. */
   requester_does_not_drive: boolean;
   /** REQ §13.88 (owner 2026-09-16, E1): ids of named companions (`request_companions`) who are eligible drivers. */
@@ -98,6 +100,7 @@ export interface WeekRequestRow extends RequestRow {
 
 const WEEK_REQUEST_SELECT = `*,
   requester:profiles!requests_requester_id_fkey(full_name, does_not_drive),
+  filer:profiles!requests_filed_by_fkey(full_name),
   destination:destinations!requests_destination_id_fkey(name, travel_minutes),
   origin:destinations!requests_origin_id_fkey(name),
   ride_type:ride_types(code, name_he),
@@ -112,6 +115,7 @@ interface WeekRequestJoinRow extends RequestRow {
   companions: { profile_id: string; profile: { full_name: string; does_not_drive: boolean } | null }[];
   request_children: { child: { full_name: string } | null }[];
   requester: { full_name: string; does_not_drive: boolean } | null;
+  filer: { full_name: string } | null;
   destination: { name: string; travel_minutes: number | null } | null;
   origin: { name: string } | null;
   ride_type: { code: string; name_he: string } | null;
@@ -125,10 +129,11 @@ function drivingCompanionIdsOf(companions: { profile_id: string; profile: { does
 }
 
 function flattenWeekRequest(row: WeekRequestJoinRow): WeekRequestRow {
-  const { requester, destination, origin, ride_type, preferred_car, companions, request_children, ...rest } = row;
+  const { requester, filer, destination, origin, ride_type, preferred_car, companions, request_children, ...rest } = row;
   return {
     ...rest,
     requester_full_name: requester?.full_name ?? null,
+    filer_full_name: filer?.full_name ?? null,
     /** REQ §88: `Request.canDrive = !requester.does_not_drive` (solverBridge/buildSolverInput.ts). */
     requester_does_not_drive: requester?.does_not_drive ?? false,
     /** REQ §13.88 (owner 2026-09-16, E1): -> solver `Request.drivingCompanionIds`. */

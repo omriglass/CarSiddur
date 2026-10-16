@@ -519,6 +519,21 @@ export const heSadran = {
     backToMain: "{{name}} חזרה לתוכנית א׳",
   },
   /** REQ §13.101 (e): the Sadran withdraws a request as a duplicate. */
+  /** Owner 2026-10-16: the redesigned unplaced-request card (UX_FLOWS §4.2). */
+  unmetCard: {
+    notPlacedBecause: "לא שובץ אוטומטית כי: {{reason}}",
+    menuAria: "פעולות נוספות לבקשה של {{name}}",
+    editRequest: "עריכת הבקשה",
+    changeTripType: "שינוי סוג נסיעה",
+    changeTripTypeTitle: "שינוי סוג הנסיעה של {{name}}",
+    proposeDeny: "הצעת דחייה",
+    proposeExternal: "הצעה חיצונית",
+    markDuplicate: "סימון ככפולה",
+    whatsapp: "הודעה בוואטסאפ",
+    whatsappGreeting: "היי {{name}}, אני פונה אליך בכובע של הסידור לגבי הבקשה ל{{destination}} ב{{day}}.",
+    filedAt: "הוגשה {{when}}",
+    scoreLine: "ציון {{score}}",
+  },
   withdrawDuplicate: {
     action: "משיכה ככפילות",
     title: "למשוך את הבקשה של {{name}} ככפילות?",

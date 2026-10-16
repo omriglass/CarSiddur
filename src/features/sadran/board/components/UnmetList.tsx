@@ -4,14 +4,12 @@ import { useRef, useState } from "react";
 import { CAR_COLUMN_ATTR } from "@/components/WeekGrid";
 import { minutesFromClientY } from "@/components/weekGridGeometry";
 import { StatusBadge } from "@/components/StatusBadge";
-import { PlanSwitchButton } from "./PlanSwitchButton";
-import { TripTypeChange } from "./TripTypeChange";
-import { WithdrawDuplicateAction } from "./WithdrawDuplicateAction";
-import { FewerDaysAction, type FewerDaysSupport } from "./FewerDaysAction";
+import { UnmetCardMenu } from "./UnmetCardMenu";
+import type { FewerDaysSupport } from "./FewerDaysAction";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { he, tv } from "@/i18n/he";
-import { weekdayLabel } from "@/lib/dayLabels";
+import { formatDayDate } from "@/lib/dayLabels";
 import { rideTypeColorClasses } from "@/lib/rideTypeColors";
 import { formatTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
@@ -21,11 +19,10 @@ import { enteredTimeLabels } from "@/features/requests/enteredTimes";
 import { WindowSummaryLine } from "@/features/requests/components/WindowSummaryLine";
 import { requestStart, requestWindow, tripTypeOf } from "../phantomLanes";
 import { unmetItemKey } from "../unmetLegs";
-import { requestRouteLine } from "../requestRoute";
+import { requestRouteLine, tripTypeLabel } from "../requestRoute";
 import { fallbackLine, hasActiveFallback } from "../planBLine";
 
 import type { WeekRequestRow } from "../../api";
-import { viaLabel } from "@/lib/routeLabel";
 import { isActiveStop } from "@/lib/routeStops";
 
 /** An unmet request's own active stops by name, per leg in route order (raw `request_stops` rows). */
@@ -61,12 +58,6 @@ export interface UnmetListItem {
    * that boards the guest somewhere other than the host's own origin, `null`/absent otherwise.
    */
   suggestionBoardAt?: (string | null)[];
-}
-
-/** "יום ג' 09:00" — Asia/Jerusalem-zoned, never a raw `getDay()` (CLAUDE.md hard rule 6). */
-function dayTimeLabel(departAt: string | null): string {
-  if (!departAt) return "—";
-  return `${weekdayLabel(departAt, "short")} ${formatTime(new Date(departAt))}`;
 }
 
 /** Below this many pixels of raw movement, a touch pointerdown is still a scroll attempt — cancel the pending long-press. */
@@ -233,6 +224,23 @@ export function UnmetList({ items, onAction, onOpenProposal, onDecision, dayStar
       {sorted.map((item) => {
         const isDraggable = dragEnabled;
         const isDragged = drag?.confirmed && unmetItemKey(drag.item) === unmetItemKey(item);
+        const { request } = item;
+        const tripLabel = request.trip_type === "drop_off" && request.keep_car_at_destination ? he.request.tripTypeRoundTrip : request.trip_type ? tripTypeLabel(request.trip_type) : "";
+        const start = requestStart(request);
+        const win = requestWindow(request);
+        const departureOnly = request.trip_shape === "one_way_to" || (request.trip_shape === "round_trip" && !request.return_at);
+        const timeText = departureOnly && start ? formatTime(new Date(start)) : win ? `${formatTime(new Date(win.startsAt))}–${formatTime(new Date(win.endsAt))}` : "—";
+        const entered = enteredTimeLabels({ departAnchor: request.depart_anchor, arriveBy: request.arrive_by, returnAnchor: request.return_anchor, leaveDestAt: request.leave_dest_at, destinationName: item.destinationName, isPickup: request.trip_type === "drop_off" });
+        const viaNames = unmetViaNames(request.stops, request.return_at != null);
+        const routeText = requestRouteLine({ originId: request.origin_id, originName: request.origin_id ? request.origin_resolved_name : null, destination: item.destinationName, stops: [...viaNames.out, ...viaNames.return] }, homeDestinationId);
+        const mutedParts = [
+          request.filed_by && request.filed_by !== request.requester_id && request.filer_full_name ? tv("request.filedBy", { name: request.filer_full_name }) : null,
+          request.created_at ? tv("unmetCard.filedAt", { when: `${formatDayDate(request.created_at)} ${formatTime(new Date(request.created_at))}` }) : null,
+          item.solverInfo ? `${he.sadranBoard.scoreLabel} ${item.solverInfo.score.toFixed(2)}` : null,
+          request.is_late ? he.flag.late : null,
+          request.changed_since_solve ? he.flag.changed : null,
+        ].filter((part): part is string => !!part);
+        const dragNote = dragEnabled && tripTypeOf(request) !== "round_trip";
         return (
           <Card
             key={unmetItemKey(item)}
@@ -240,9 +248,10 @@ export function UnmetList({ items, onAction, onOpenProposal, onDecision, dayStar
             data-unmet-leg={item.leg}
             className={cn("bg-gradient-card shadow-card transition-smooth", isDragged && "opacity-50")}
           >
-            <CardContent className="space-y-2 p-3 text-sm">
-              <div className="flex items-center justify-between gap-2">
-                <span className="flex min-w-0 items-center gap-1.5">
+            <CardContent className="space-y-2 p-3 text-sm text-foreground">
+              {/* 1. Top block: who, what kind of ride, when, where, who rides - all foreground text. */}
+              <div className="flex items-start justify-between gap-2">
+                <span className="flex min-w-0 flex-wrap items-center gap-1.5">
                   <span
                     className={cn("size-2.5 shrink-0 rounded-full", rideTypeColorClasses(item.request.ride_type_code).dot)}
                     aria-hidden="true"
@@ -257,65 +266,46 @@ export function UnmetList({ items, onAction, onOpenProposal, onDecision, dayStar
                       <GripVertical className="size-4" aria-hidden="true" />
                     </span>
                   ) : null}
-                  <span className="whitespace-normal break-words font-medium">
+                  <span className="whitespace-normal break-words font-semibold">
                     {item.leg ? <span className="me-1 rounded-sm bg-muted px-1 text-xs" data-testid="unmet-leg-tag">{item.leg === "out" ? he.tripLegs.out : he.tripLegs.pickup}</span> : null}
-                    {item.request.requester_full_name ?? "—"} · {item.destinationName}
+                    {item.request.requester_full_name ?? "—"}
                   </span>
+                  {tripLabel ? <span className="rounded-full border border-foreground/40 px-2 py-0.5 text-xs font-medium" data-testid="unmet-trip-type">{tripLabel}</span> : null}
+                  <StatusBadge kind="request" status={item.request.status} />
                 </span>
-                <StatusBadge kind="request" status={item.request.status} />
+                <UnmetCardMenu
+                  request={item.request}
+                  destinationName={item.destinationName}
+                  proposalOut={!!item.pendingProposalId}
+                  tripTypeScope={tripTypeScope}
+                  fewerDays={fewerDays}
+                  onExternal={onDecision && !(item.request.fallback === "manage" && hasActiveFallback(item.request)) ? () => onDecision(item, "external") : undefined}
+                  onDeny={onDecision ? () => onDecision(item, "deny") : undefined}
+                />
               </div>
-              <div className="flex items-center justify-between text-xs text-muted-foreground">
-                <span dir="ltr">{dayTimeLabel(requestStart(item.request))}</span>
-                <span>
-                  {item.request.ride_type_name_he ?? ""}
-                  {/* The stops by name, like the ride cards (owner 2026-10-05: not a count). */}
-                  {(() => {
-                    const via = viaLabel(unmetViaNames(item.request.stops, item.request.return_at != null));
-                    return via ? ` · ${via}` : "";
-                  })()}
-                </span>
-                {item.solverInfo ? (
-                  <span dir="ltr">
-                    {he.sadranBoard.scoreLabel} {item.solverInfo.score.toFixed(2)}
-                  </span>
-                ) : null}
-              </div>
-              <p className="text-xs text-muted-foreground" dir="ltr">
-                {requestWindow(item.request) ? `${formatTime(new Date(requestWindow(item.request)!.startsAt))}–${formatTime(new Date(requestWindow(item.request)!.endsAt))}` : "—"}
-                {item.request.trip_shape !== "round_trip" ? ` · ${(item.request.trip_shape === "one_way_from" ? he.request.tripShapeOneWayFrom : he.request.tripShapeOneWayTo)} · ${he.sadranBoard.estimatedDuration}` : ""}
+              <p className="font-medium" data-testid="unmet-when">
+                {start ? <>{formatDayDate(start)} · <span dir="ltr">{timeText}</span></> : <span dir="ltr">{timeText}</span>}
+                {entered.out || entered.return ? <span data-testid="unmet-entered-times">{" · "}{[entered.out, entered.return].filter(Boolean).join(" · ")}</span> : null}
               </p>
-              <div className="flex flex-wrap gap-1">
-                <Button size="sm" variant="outline" onClick={() => onDecision ? onDecision(item, "shift") : onAction(item, null)}>{he.sadranProposal.suggestTimes}</Button>
-                {/* REQ §13.112 (b): "אסתדר" -- no external / public-transport actions on this card (the Sadran can still refuse it). */}
-                {item.request.fallback === "manage" && hasActiveFallback(item.request) ? null : (
-                  <Button size="sm" variant="outline" disabled={!onDecision} onClick={() => onDecision?.(item, "external")}>{he.sadranProposal.solveOutside}</Button>
-                )}
-              </div>
-              {tripTypeScope && !item.pendingProposalId ? (
-                <TripTypeChange
-                  requestId={item.request.id}
-                  version={item.request.version}
-                  tripType={item.request.trip_type}
-                  keepCarAtDestination={item.request.keep_car_at_destination}
-                  destination={item.destinationName}
-                  name={item.request.requester_full_name ?? ""}
-                  departmentId={tripTypeScope.departmentId}
-                  weekStart={tripTypeScope.weekStart}
-                  wasUnplaced
-                />
-              ) : null}
-              {tripTypeScope && !item.pendingProposalId ? (
-                <PlanSwitchButton request={item.request} name={item.request.requester_full_name ?? ""} departmentId={tripTypeScope.departmentId} weekStart={tripTypeScope.weekStart} />
-              ) : null}
-              {fewerDays && !item.pendingProposalId && item.request.series_id ? <FewerDaysAction request={item.request} support={fewerDays} /> : null}
-              {tripTypeScope && !item.pendingProposalId && !item.request.series_id ? (
-                <WithdrawDuplicateAction
-                  requestId={item.request.id}
-                  version={item.request.version}
-                  name={item.request.requester_full_name ?? ""}
-                  departmentId={tripTypeScope.departmentId}
-                  weekStart={tripTypeScope.weekStart}
-                />
+              <p data-testid="unmet-route-line">
+                {routeText}
+                {item.request.ride_type_name_he ? <span className="text-muted-foreground">{` · ${item.request.ride_type_name_he}`}</span> : null}
+              </p>
+              <p className="whitespace-pre-wrap break-words">
+                {ridePassengerSummary([{ ...item.request, requester: item.request.requester_full_name }])}
+                {item.request.has_luggage ? <span className="ms-1 font-medium" data-testid="unmet-luggage">{` · ${item.request.luggage_waived_at ? he.smallTrunk.waivedLabel : he.request.luggageChip}`}</span> : null}
+              </p>
+              {item.request.preferred_car_name ? <p>{tv("sadranBoard.preferredCar", { car: item.request.preferred_car_name })}</p> : null}
+              {item.request.ride_description ? <p className="whitespace-pre-wrap break-words">{item.request.ride_description}</p> : null}
+              {item.request.notes ? <p className="whitespace-pre-wrap break-words"><span className="font-medium">{he.field.notes}: </span>{item.request.notes}</p> : null}
+              {fallbackLine(item.request) ? <p className="font-medium" data-testid="unmet-fallback">{fallbackLine(item.request)}</p> : null}
+              <WindowSummaryLine
+                row={{ durationLocked: item.request.duration_locked, departAt: item.request.depart_at, returnAt: item.request.return_at, flexReturnLate: item.request.flex_return_late }}
+                testId="unmet-window"
+              />
+              {/* REQUIREMENTS §13.93: a free-text origin (never auto-placed, solver reason `UNMET_FREE_TEXT_ORIGIN`) is visibly flagged. */}
+              {!item.request.origin_id && item.request.origin_text ? (
+                <p className="font-medium text-destructive">{tv("sadranBoard.unmetFreeTextOrigin", { place: item.request.origin_text })}</p>
               ) : null}
               {item.pendingProposalId && onOpenProposal ? (
                 <div className="flex items-center justify-between gap-2 rounded-md border border-dashed border-maintenance p-2 text-xs" data-testid="unmet-proposal-out">
@@ -323,69 +313,33 @@ export function UnmetList({ items, onAction, onOpenProposal, onDecision, dayStar
                   <Button size="sm" variant="outline" className="min-h-11" onClick={() => onOpenProposal(item.pendingProposalId as string)} data-testid="unmet-withdraw">{he.boardDrafts.withdraw}</Button>
                 </div>
               ) : null}
-              {item.request.has_luggage ? <span className="text-xs font-medium" data-testid="unmet-luggage">{item.request.luggage_waived_at ? he.smallTrunk.waivedLabel : he.request.luggageChip}</span> : null}
-              {item.request.is_late ? <span className="text-xs font-medium text-maintenance">{he.flag.late}</span> : null}
-              {item.request.changed_since_solve ? <span className="text-xs font-medium text-booked">{he.flag.changed}</span> : null}
-              {item.request.preferred_car_name ? (
-                <p className="text-xs text-muted-foreground">
-                  {tv("sadranBoard.preferredCar", { car: item.request.preferred_car_name })}
+              {/* 2. The solver's reason, only when there is one, in its own amber box. */}
+              {item.solverInfo?.reason ? (
+                <p className="rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-950 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-100" data-testid="unmet-reason">
+                  {tv("unmetCard.notPlacedBecause", { reason: item.solverInfo.reason })}
                 </p>
               ) : null}
-              {/* REQUIREMENTS §13.93: the request's own origin, shown only when it isn't the
-                  department home — a free-text origin (never auto-placed, solver reason
-                  `UNMET_FREE_TEXT_ORIGIN`) is visibly flagged rather than silently blended in. */}
-              <p className="text-xs text-muted-foreground" data-testid="unmet-route-line">
-                {requestRouteLine({ originId: item.request.origin_id, originName: item.request.origin_id ? item.request.origin_resolved_name : null, destination: item.destinationName, tripType: item.request.trip_type, keepCarAtDestination: item.request.keep_car_at_destination }, homeDestinationId)}
-              </p>
-              {(() => {
-                const entered = enteredTimeLabels({
-                  departAnchor: item.request.depart_anchor,
-                  arriveBy: item.request.arrive_by,
-                  returnAnchor: item.request.return_anchor,
-                  leaveDestAt: item.request.leave_dest_at,
-                  destinationName: item.destinationName,
-                  isPickup: item.request.trip_type === "drop_off",
-                });
-                return entered.out || entered.return ? (
-                  <p className="text-xs font-medium" data-testid="unmet-entered-times">{[entered.out, entered.return].filter(Boolean).join(" · ")}</p>
-                ) : null;
-              })()}
-              {fallbackLine(item.request) ? (
-                <p className="text-xs font-medium" data-testid="unmet-fallback">{fallbackLine(item.request)}</p>
-              ) : null}
-              <WindowSummaryLine
-                row={{ durationLocked: item.request.duration_locked, departAt: item.request.depart_at, returnAt: item.request.return_at, flexReturnLate: item.request.flex_return_late }}
-                testId="unmet-window"
-              />
-              {!item.request.origin_id && item.request.origin_text ? (
-                <p className="text-xs font-medium text-destructive">
-                  {tv("sadranBoard.unmetFreeTextOrigin", { place: item.request.origin_text })}
+              {/* 3. Suggestions as buttons (+ the plain "other times" proposal). */}
+              <div className="space-y-1">
+                {item.solverInfo?.suggestions.map((suggestion, index) => (
+                  <div key={index} className="flex items-center justify-between gap-2 text-xs" data-suggestion-kind={suggestion.kind}>
+                    <span>
+                      {suggestion.kind === "useAlternative" ? <span className="me-1 rounded-sm bg-muted px-1 font-medium" data-testid="unmet-plan-b-possible">{he.sadranPlanB.possible}</span> : null}
+                      {suggestion.reason}
+                      {item.suggestionBoardAt?.[index] ? ` · ${item.suggestionBoardAt[index]}` : ""}
+                    </span>
+                    <Button size="sm" variant="outline" className="min-h-11 shrink-0" onClick={() => onAction(item, suggestion)} data-testid={suggestion.kind === "useAlternative" ? "unmet-plan-b-propose" : undefined}>{suggestion.kind === "useAlternative" ? he.sadranPlanB.propose : he.action.propose}</Button>
+                  </div>
+                ))}
+                <Button size="sm" variant="outline" className="min-h-11" onClick={() => onDecision ? onDecision(item, "shift") : onAction(item, null)}>{he.sadranProposal.suggestTimes}</Button>
+              </div>
+              {/* 5. Less important details, last and muted. */}
+              {mutedParts.length || dragNote ? (
+                <p className="text-xs text-muted-foreground" data-testid="unmet-details">
+                  {mutedParts.join(" · ")}
+                  {dragNote ? `${mutedParts.length ? " · " : ""}${he.sadranBoard.dragOneWayUnsupported}` : ""}
                 </p>
               ) : null}
-              <p className="whitespace-pre-wrap break-words text-xs">{ridePassengerSummary([{ ...item.request, requester: item.request.requester_full_name }])}</p>
-              {item.request.ride_description ? <p className="whitespace-pre-wrap break-words text-xs">{item.request.ride_description}</p> : null}
-              {item.request.notes ? <p className="whitespace-pre-wrap break-words text-xs text-muted-foreground"><span className="font-medium">{he.field.notes}: </span>{item.request.notes}</p> : null}
-              {item.solverInfo?.reason ? <p className="text-xs text-muted-foreground">{item.solverInfo.reason}</p> : null}
-              {item.solverInfo?.suggestions.length ? (
-                <div className="space-y-1 border-t pt-1">
-                  <p className="text-xs font-medium text-muted-foreground">{he.sadranBoard.suggestionsLabel}</p>
-                  {item.solverInfo.suggestions.map((suggestion, index) => (
-                    <div key={index} className="flex items-center justify-between gap-2 text-xs text-muted-foreground" data-suggestion-kind={suggestion.kind}>
-                      <span>
-                        {suggestion.kind === "useAlternative" ? <span className="me-1 rounded-sm bg-muted px-1 font-medium text-foreground" data-testid="unmet-plan-b-possible">{he.sadranPlanB.possible}</span> : null}
-                        {suggestion.reason}
-                        {item.suggestionBoardAt?.[index] ? ` · ${item.suggestionBoardAt[index]}` : ""}
-                      </span>
-                      <Button size="sm" variant="ghost" onClick={() => onAction(item, suggestion)} data-testid={suggestion.kind === "useAlternative" ? "unmet-plan-b-propose" : undefined}>{suggestion.kind === "useAlternative" ? he.sadranPlanB.propose : he.action.propose}</Button>
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-              {dragEnabled && tripTypeOf(item.request) !== "round_trip" ? (
-                <p className="text-xs text-muted-foreground">{he.sadranBoard.dragOneWayUnsupported}</p>
-              ) : null}
-
-
             </CardContent>
           </Card>
         );

@@ -10,25 +10,10 @@ import { he, tv } from "@/i18n/he";
 import { dateKey } from "@/lib/time";
 
 import { alternativePlanText } from "../planBLine";
-import type { RequestAlternativeEmbed } from "../../api";
+import { canSwitchPlan, type PlanSwitchRequest } from "../planSwitch";
+
+export type { PlanSwitchRequest };
 import { useSwitchRequestPlanMutation, useWeekRow } from "../../hooks";
-
-export interface PlanSwitchRequest {
-  id: string;
-  version: number | null | undefined;
-  fallback?: string | null;
-  alternative?: RequestAlternativeEmbed | null;
-  served_by_alternative?: boolean | null;
-  series_id?: string | null;
-  plan_b_parent_id?: string | null;
-  depart_at?: string | null;
-  return_at?: string | null;
-}
-
-/** Does the request have a plan B the Sadran may switch to/from? */
-function canSwitchPlan(request: PlanSwitchRequest): boolean {
-  return request.fallback === "alternative" && !!request.alternative && !request.series_id && !request.plan_b_parent_id && request.version != null;
-}
 
 const PUBLIC_PHASES: ReadonlySet<string> = new Set(["published", "live", "archived"]);
 
@@ -38,10 +23,16 @@ export interface PlanSwitchButtonProps {
   departmentId: string;
   weekStart: string;
   disabled?: boolean;
+  /** Controlled mode (the unmet card's "⋮" menu opens it): no inline trigger button is rendered. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
-export function PlanSwitchButton({ request, name, departmentId, weekStart, disabled }: PlanSwitchButtonProps) {
-  const [open, setOpen] = useState(false);
+export function PlanSwitchButton({ request, name, departmentId, weekStart, disabled, open: controlledOpen, onOpenChange }: PlanSwitchButtonProps) {
+  const [localOpen, setLocalOpen] = useState(false);
+  const controlled = onOpenChange !== undefined;
+  const open = controlled ? !!controlledOpen : localOpen;
+  const setOpen = controlled ? onOpenChange : setLocalOpen;
   const mutation = useSwitchRequestPlanMutation();
   const weekRow = useWeekRow(departmentId, weekStart).data;
   if (!canSwitchPlan(request) || !request.alternative) return null;
@@ -66,9 +57,11 @@ export function PlanSwitchButton({ request, name, departmentId, weekStart, disab
 
   return (
     <>
-      <Button type="button" size="sm" variant="outline" className="min-h-11" disabled={disabled || mutation.isPending} onClick={() => setOpen(true)} data-testid="plan-switch" data-plan-request-id={request.id}>
-        {toAlternative ? he.planSwitch.toAlternative : he.planSwitch.toMain}
-      </Button>
+      {controlled ? null : (
+        <Button type="button" size="sm" variant="outline" className="min-h-11" disabled={disabled || mutation.isPending} onClick={() => setOpen(true)} data-testid="plan-switch" data-plan-request-id={request.id}>
+          {toAlternative ? he.planSwitch.toAlternative : he.planSwitch.toMain}
+        </Button>
+      )}
       <ConfirmDialog
         open={open}
         onOpenChange={setOpen}

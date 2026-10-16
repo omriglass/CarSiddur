@@ -17,10 +17,16 @@ export interface WithdrawDuplicateActionProps {
   departmentId: string;
   weekStart: string;
   disabled?: boolean;
+  /** Controlled mode (the unmet card's "⋮" menu opens it): no inline trigger button is rendered. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
-export function WithdrawDuplicateAction({ requestId, version, name, departmentId, weekStart, disabled }: WithdrawDuplicateActionProps) {
-  const [open, setOpen] = useState(false);
+export function WithdrawDuplicateAction({ requestId, version, name, departmentId, weekStart, disabled, open: controlledOpen, onOpenChange }: WithdrawDuplicateActionProps) {
+  const [localOpen, setLocalOpen] = useState(false);
+  const controlled = onOpenChange !== undefined;
+  const open = controlled ? !!controlledOpen : localOpen;
+  const setOpen = controlled ? onOpenChange : setLocalOpen;
   const mutation = useWithdrawDuplicateRequestMutation();
   if (version == null) return null;
   const expectedVersion = version;
@@ -31,10 +37,12 @@ export function WithdrawDuplicateAction({ requestId, version, name, departmentId
   }
   return (
     <>
-      <Button type="button" size="sm" variant="outline" className="min-h-11" disabled={disabled || mutation.isPending} onClick={() => setOpen(true)}
-        data-testid="withdraw-duplicate" data-duplicate-request-id={requestId}>
-        {he.withdrawDuplicate.action}
-      </Button>
+      {controlled ? null : (
+        <Button type="button" size="sm" variant="outline" className="min-h-11" disabled={disabled || mutation.isPending} onClick={() => setOpen(true)}
+          data-testid="withdraw-duplicate" data-duplicate-request-id={requestId}>
+          {he.withdrawDuplicate.action}
+        </Button>
+      )}
       <ConfirmDialog
         open={open}
         onOpenChange={setOpen}

@@ -52,8 +52,9 @@ test("changing an unmet request to a drop-off places it on a free car", { tag: [
     const page = sadran.page;
     await page.setViewportSize({ width: 1600, height: 1100 });
     await page.goto(boardUrl);
-    const control = page.locator(`[data-testid="trip-type-change"][data-trip-request-id="${request.id}"]:visible`);
-    await control.getByTestId("trip-type-select").click();
+    // Owner 2026-10-16: on the unplaced card the trip-type change sits in the "⋮" menu.
+    await page.locator(`[data-request-id="${request.id}"]:visible`).getByTestId("unmet-menu").first().click();
+    await page.getByTestId("unmet-change-trip-type").click();
     await page.getByTestId("trip-type-option-drop_off").click();
     await page.getByRole("dialog").getByRole("button", { name: he.tripTypeChange.confirm, exact: true }).click();
 

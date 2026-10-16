@@ -1,9 +1,10 @@
-import { Link, useParams } from "react-router-dom";
+import { Link, useLocation, useParams } from "react-router-dom";
 
 import { RequestOverlay } from "@/app/RequestOverlay";
-import { useCloseRequestOverlay } from "@/app/overlayState";
+import { readOverlayFrom, useCloseRequestOverlay } from "@/app/overlayState";
 import { paths } from "@/app/routes";
 import { formatWeekRangeLabel } from "@/components/dateFieldDates";
+import { useIsSadran } from "@/features/auth/useIsSadran";
 import { useProfile } from "@/features/auth/useProfile";
 import { canEditRequest } from "@/features/requests/window";
 import { Button } from "@/components/ui/button";
@@ -22,6 +23,10 @@ export function EditRequestPage() {
 
   const profileQuery = useProfile();
   const close = useCloseRequestOverlay();
+  // Owner 2026-10-16: opened from the board's unplaced card -> save returns there; the Sadran (can_manage_week)
+  // edits regardless of the member's closing time (the server allows it: submit_request `v_can_manage`).
+  const cameFromPage = !!readOverlayFrom(useLocation().state);
+  const sadran = useIsSadran(requestQuery.data?.departmentId, requestQuery.data?.weekStart).isSadran;
   const overlay = !!profileQuery.data && !profileQuery.data.classic_request_form;
 
   const body = requestQuery.isLoading || canEditQuery.isLoading ? (
@@ -36,7 +41,7 @@ export function EditRequestPage() {
   ) : requestQuery.data.seriesId ? (
     // A multi-day request is never edited, only shortened or cancelled (REQ §13.77).
     <SeriesRequestPanel seriesId={requestQuery.data.seriesId} />
-  ) : !canEditRequest(requestQuery.data) ? (
+  ) : !(sadran && requestQuery.data.status !== "withdrawn" && requestQuery.data.status !== "cancelled") && !canEditRequest(requestQuery.data) ? (
     <div className="space-y-3 p-4">
       <p>{he.request.editWindowClosed}</p>
       <Button asChild variant="outline"><Link to={paths.my()} replace={overlay}>{he.requestsList.title}</Link></Button>
@@ -47,7 +52,7 @@ export function EditRequestPage() {
       departmentId={requestQuery.data.departmentId}
       weekStart={requestQuery.data.weekStart}
       initial={requestQuery.data}
-      onDone={overlay ? close : undefined}
+      onDone={overlay || cameFromPage ? close : undefined}
     />
   );
 

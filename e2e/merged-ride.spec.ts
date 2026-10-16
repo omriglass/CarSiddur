@@ -301,8 +301,9 @@ test("the Sadran changes an unmet request's trip type directly from its card (RE
     const page = sadran.page;
     await page.setViewportSize({ width: 1600, height: 1100 });
     await page.goto(boardUrl);
-    const control = page.locator(`[data-testid="trip-type-change"][data-trip-request-id="${guestRequestId}"]:visible`);
-    await control.getByTestId("trip-type-select").click();
+    // Owner 2026-10-16: on the unplaced card the trip-type change sits in the "⋮" menu.
+    await page.locator(`[data-request-id="${guestRequestId}"]:visible`).getByTestId("unmet-menu").first().click();
+    await page.getByTestId("unmet-change-trip-type").click();
     await page.getByTestId("trip-type-option-drop_off").click();
     // REQ §13.102 h (R2U2): the change asks first.
     await page.getByRole("dialog").getByRole("button", { name: he.tripTypeChange.confirm, exact: true }).click();

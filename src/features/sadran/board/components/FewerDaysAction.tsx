@@ -30,10 +30,16 @@ export interface FewerDaysSupport {
 export interface FewerDaysActionProps {
   request: Pick<WeekRequestRow, "id" | "series_id" | "has_luggage" | "luggage_waived_at" | "origin_id" | "requester_full_name">;
   support: FewerDaysSupport;
+  /** Controlled mode (the unmet card's "⋮" menu opens it): no inline trigger button is rendered. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
-export function FewerDaysAction({ request, support }: FewerDaysActionProps) {
-  const [open, setOpen] = useState(false);
+export function FewerDaysAction({ request, support, open: controlledOpen, onOpenChange }: FewerDaysActionProps) {
+  const [localOpen, setLocalOpen] = useState(false);
+  const controlled = onOpenChange !== undefined;
+  const open = controlled ? !!controlledOpen : localOpen;
+  const setOpen = controlled ? onOpenChange : setLocalOpen;
   const [from, setFrom] = useState<number | null>(null);
   const [to, setTo] = useState<number | null>(null);
   const [carChoice, setCarChoice] = useState<string | null>(null);
@@ -64,9 +70,11 @@ export function FewerDaysAction({ request, support }: FewerDaysActionProps) {
 
   return (
     <>
-      <Button type="button" size="sm" variant="outline" className="min-h-11" onClick={() => reset(true)} data-testid="fewer-days">
-        {he.fewerDays.action}
-      </Button>
+      {controlled ? null : (
+        <Button type="button" size="sm" variant="outline" className="min-h-11" onClick={() => reset(true)} data-testid="fewer-days">
+          {he.fewerDays.action}
+        </Button>
+      )}
       <ConfirmDialog
         open={open}
         onOpenChange={reset}
