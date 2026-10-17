@@ -1,5 +1,5 @@
 /**
- * Pure two-finger pinch-to-zoom math for `WeekGrid`'s CSS `zoom` (UX_FLOWS.md
+ * Pure two-finger pinch-to-zoom math for `WeekGrid`'s scale (`weekGridScale.ts`) (UX_FLOWS.md
  * member siddur "pinch to zoom" — mobile phones can shrink/grow the table
  * without the ± buttons). `startZoom`/`startDist` are captured once, the
  * instant a second finger touches down; every later `touchmove` recomputes

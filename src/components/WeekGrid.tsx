@@ -4,6 +4,7 @@ import { Fragment, useEffect, useMemo, useRef, useState, useCallback, useSyncExt
 
 import { edgeScrollStep } from "@/components/dragAutoScroll";
 import { nextZoom } from "@/components/pinchZoom";
+import { ScaledGrid } from "@/components/ScaledGrid";
 import { formatMinutes } from "@/components/timeField15Format";
 import {
   DropdownMenu,
@@ -1485,9 +1486,9 @@ export function WeekGrid({
         // Below `md` the app shell's own sticky `h-14` header sits above (top-14); from `md` it is hidden.
         className="sticky top-14 z-30 md:top-0 overflow-hidden rounded-t-md border border-b-0 bg-muted"
       >
-        <div className="grid" style={{ zoom, gridTemplateColumns, gridTemplateRows: `minmax(${HEADER_ROW_HEIGHT_PX}px, auto)`, minWidth: gridMinWidth }}>
+        <ScaledGrid zoom={zoom} gridTemplateColumns={gridTemplateColumns} gridTemplateRows={`minmax(${HEADER_ROW_HEIGHT_PX}px, auto)`} minWidth={gridMinWidth}>
           {headerCells}
-        </div>
+        </ScaledGrid>
       </div>
     ) : null}
     <div
@@ -1497,7 +1498,7 @@ export function WeekGrid({
       style={{ touchAction: "pan-x pan-y", scrollSnapType: "x proximity", scrollPaddingInlineStart: HOUR_COL_WIDTH_PX * zoom }}
       data-week-grid-scroll-viewport
     >
-      <div className="grid" style={{ zoom, gridTemplateColumns, gridTemplateRows, minWidth: gridMinWidth }}>
+      <ScaledGrid zoom={zoom} gridTemplateColumns={gridTemplateColumns} gridTemplateRows={gridTemplateRows} minWidth={gridMinWidth}>
         {pageScroll ? null : headerCells}
         {hours.map((h, i) => {
           const quarterHere = nowQuarterMinutes != null && Math.floor(nowQuarterMinutes / 60) === h ? nowQuarterMinutes : null;
@@ -1565,7 +1566,7 @@ export function WeekGrid({
             })}
           </div>
         ) : null}
-      </div>
+      </ScaledGrid>
       {carDrag?.confirmed ? (
         <div
           data-car-swap-drag-preview
