@@ -161,3 +161,64 @@ describe('shared rides: pooling pass (REQ 136 a)', () => {
     expect(solve(input)).toEqual(solve(input));
   });
 });
+
+describe('unmet round trips take a seat directly (REQ 136 a)', () => {
+  it('an unmet round trip joins a ride going the same way instead of waiting for a merge suggestion', () => {
+    const one = (extra: Partial<SolverInput> = {}) =>
+      baseInput({ cars: [makeCar('C1', { seatConfigs: [passengers(4)] })], requests: [rq('A'), rq('B')], ...extra });
+    const without = solve(one({ config: off }));
+    expect(without.unmet.map((u) => u.requestId)).toEqual(['B']);
+    expect(without.unmet[0]?.suggestions.some((s) => s.kind === 'merge')).toBe(true);
+    const input = one();
+    const o = solve(input);
+    assertInvariants(input, o);
+    expect(o.unmet).toEqual([]);
+    expect(o.assignments).toHaveLength(1);
+    expect(o.assignments[0]?.reasonCode).toBe('PLACED_SHARED');
+    expect(o.assignments[0]?.legs.find((l) => l.requestId === 'B')?.carMode).toBe('passenger');
+  });
+
+  it('unmet requests compete for seats in priority order: the higher one gets the last seat', () => {
+    const cars = [makeCar('C1', { seatConfigs: [passengers(2)] })];
+    const o = solve(baseInput({ cars, requests: [rq('A'), rq('B'), rq('C')] }));
+    expect(o.assignments).toHaveLength(1);
+    expect(o.assignments[0]?.servedRequestIds).toEqual(['A', 'B']);
+    expect(o.unmet.map((u) => u.requestId)).toEqual(['C']);
+  });
+});
+
+describe('merge suggestions see the host request by ride id (host shift, durationLocked)', () => {
+  const travel = [{ fromId: 'destA', toId: 'destB', travelMinutes: 20, distanceKm: 10 }];
+  const oneCar = (requests: ReturnType<typeof rq>[]) =>
+    baseInput({ cars: [makeCar('C1', { seatConfigs: [passengers(4)] })], travel, requests });
+  const guest = (extra: Parameters<typeof makeRequest>[0] = {}) =>
+    rq('G', { destinationId: 'destA', canDrive: false, departureMs: slotMs(DEP + 1), returnMs: slotMs(RET + 3), submittedAtMs: 9, ...extra });
+
+  it('a merge that needs the host to shift inside its flexibility is suggested (not placed: the added driving leaves the host window)', () => {
+    const host = rq('H', { destinationId: 'destB', rideType: 'healthcare', submittedAtMs: 1, flexDeparture: flex(0, 30), flexReturn: flex(0, 30) });
+    const o = solve(oneCar([host, guest()]));
+    const unmet = o.unmet.find((u) => u.requestId === 'G');
+    expect(unmet).toBeDefined();
+    const merge = unmet?.suggestions.find((s) => s.kind === 'merge');
+    expect(merge).toBeDefined();
+    if (merge?.kind === 'merge') {
+      expect(merge.hostShift?.departureMin).toBe(30);
+      expect(merge.hostShift?.returnMin).toBe(30);
+    }
+  });
+
+  it('a durationLocked host is refused a merge that adds driving', () => {
+    const lockedHost = rq('H', {
+      destinationId: 'destB', rideType: 'healthcare', submittedAtMs: 1, durationLocked: true,
+      flexDeparture: flex(0, 60), flexReturn: flex(0, 60),
+    });
+    const o = solve(oneCar([lockedHost, guest({ departureMs: slotMs(DEP), returnMs: slotMs(RET), flexDeparture: flex(30, 30), flexReturn: flex(30, 30) })]));
+    const unmet = o.unmet.find((u) => u.requestId === 'G');
+    expect(unmet).toBeDefined();
+    expect(unmet?.suggestions.some((s) => s.kind === 'merge')).toBe(false);
+    // control: the same host without the lock may take the merge suggestion
+    const free = solve(oneCar([{ ...lockedHost, durationLocked: false }, guest({ departureMs: slotMs(DEP), returnMs: slotMs(RET), flexDeparture: flex(30, 30), flexReturn: flex(30, 30) })]));
+    expect(free.unmet.find((u) => u.requestId === 'G')?.suggestions.some((s) => s.kind === 'merge')).toBe(true);
+  });
+});
+

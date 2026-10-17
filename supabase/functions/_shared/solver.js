@@ -1844,13 +1844,22 @@ var unitPriority = (nr, scores) => ({
   submittedAtMs: nr.request.submittedAtMs,
   single: nr
 });
-function poolRound(placed, timelines, input, scores, carsMap, pooled) {
+function poolRound(placed, unmet, timelines, input, scores, carsMap, pooled) {
   const guestsOrder = placed.filter((p) => p.kind === "single").filter((p) => isGuestCandidate(p) && !pooled.has(p.nr.id)).sort((a, b) => compareUnitsByPriority(unitPriority(b.nr, scores), unitPriority(a.nr, scores)));
   let count = 0;
   for (const guestPlaced of guestsOrder) {
     if ((guestPlaced.guests?.length ?? 0) > 0 || !placed.includes(guestPlaced)) continue;
     if (tryPool(guestPlaced.nr, guestPlaced, placed, timelines, input, carsMap)) {
       pooled.add(guestPlaced.nr.id);
+      count++;
+    }
+  }
+  const unmetOrder = unmet.filter((u) => u.kind === "single" && !!u.single && isRoundTripSingle(u.single) && !pooled.has(u.single.id)).sort(compareUnitsByPriority);
+  for (const unit of unmetOrder) {
+    if (!unit.single) continue;
+    if (tryPool(unit.single, void 0, placed, timelines, input, carsMap)) {
+      pooled.add(unit.single.id);
+      unmet.splice(unmet.indexOf(unit), 1);
       count++;
     }
   }
@@ -1861,7 +1870,7 @@ function runPooling(placed, unmetUnits, timelines, input, scores, carsMap) {
   let current = [...placed];
   let unmet = [...unmetUnits];
   for (; ; ) {
-    const pooledNow = poolRound(current, timelines, input, scores, carsMap, pooledRequestIds);
+    const pooledNow = poolRound(current, unmet, timelines, input, scores, carsMap, pooledRequestIds);
     if (pooledNow === 0) break;
     if (unmet.length > 0) {
       const retry = runGreedy(unmet, timelines, input);
@@ -4063,11 +4072,17 @@ function solveExpanded(input) {
   for (const nr of stillPassengerOnly) unmetIds.set(nr.id, nr);
   for (const nr of normalized) if (!servedRequestIds.has(nr.id)) unmetIds.set(nr.id, unmetIds.get(nr.id) ?? nr);
   const hosts2 = buildHostRides(assignments, carsMap);
+  const hostRequestsByRide = /* @__PURE__ */ new Map();
+  for (const a of assignments) {
+    if (a.source !== "solver" || !a.driverRequestId) continue;
+    const nr = byRequestId.get(a.driverRequestId);
+    if (nr) hostRequestsByRide.set(a.rideId, nr);
+  }
   const suggestionCtx = {
     input,
     assignments,
     timelines,
-    hostDriverRequests: byRequestId,
+    hostDriverRequests: hostRequestsByRide,
     unpairedRelay: stillUnpairedRelay,
     ejectionSuggestions: improveResult.ejectionSuggestions
   };
@@ -4134,7 +4149,7 @@ function solveExpanded(input) {
       destinations: input.destinations,
       config: input.config,
       cars: carsMap,
-      hostDriverRequests: byRequestId,
+      hostDriverRequests: hostRequestsByRide,
       hostTimelines: timelines,
       homeLocationId: input.homeLocationId,
       travel: input.travel

@@ -53,7 +53,7 @@ describe('canDrive === false: round trips (REQUIREMENTS §13.88)', () => {
     expect(nonDriverRide?.driverRequestId).toBeUndefined();
   });
 
-  it('offers a merge suggestion (seats in another ride) when a non-driver round trip cannot get its own car', () => {
+  it('seats a non-driver round trip that cannot get its own car directly in the other ride (REQ §136 a)', () => {
     const input = baseInput({
       cars: [makeCar('C1', { seatConfigs: [passengers(4)] })],
       requests: [
@@ -62,13 +62,29 @@ describe('canDrive === false: round trips (REQUIREMENTS §13.88)', () => {
       ],
     });
     const output = solve(input);
+    expect(output.unmet).toEqual([]);
+    const ride = output.assignments.find((a) => a.servedRequestIds.includes('guest'));
+    expect(ride?.reasonCode).toBe('PLACED_SHARED');
+    expect(ride?.driverRequestId).toBe('host');
+    expect(ride?.legs.find((l) => l.requestId === 'guest')?.role).toBe('passenger');
+  });
+
+  it('still offers a merge suggestion when the seat would move the host outside its own flexibility', () => {
+    // host to destB (no flexibility), guest to destA on the way: +10 min per leg, so only a consented merge
+    const input = baseInput({
+      cars: [makeCar('C1', { seatConfigs: [passengers(4)] })],
+      travel: [{ fromId: 'destA', toId: 'destB', travelMinutes: 20, distanceKm: 10 }],
+      requests: [
+        makeRequest({ id: 'host', destinationId: 'destB', rideType: 'healthcare', departureMs: slotMs(32), returnMs: slotMs(48), submittedAtMs: 0 }),
+        makeRequest({ id: 'guest', canDrive: false, destinationId: 'destA', departureMs: slotMs(32), returnMs: slotMs(48), submittedAtMs: 1, flexDeparture: { earlierMin: 30, laterMin: 30 }, flexReturn: { earlierMin: 30, laterMin: 30 } }),
+      ],
+    });
+    const output = solve(input);
     const guestUnmet = output.unmet.find((u) => u.requestId === 'guest');
     expect(guestUnmet).toBeDefined();
     const merge = guestUnmet?.suggestions.find((s) => s.kind === 'merge');
     expect(merge).toBeDefined();
-    if (merge?.kind === 'merge') {
-      expect(merge.guestRequestIds).toEqual(['guest']);
-    }
+    if (merge?.kind === 'merge') expect(merge.guestRequestIds).toEqual(['guest']);
   });
 });
 

@@ -4,8 +4,8 @@
 import { describe, expect, it } from 'vitest';
 import { solve } from '../index';
 import { placeName } from '../names';
-import { baseInput, flex, makeCar, makeRequest, passengers, slotMs } from '../__fixtures__/gen';
-import type { Destination, SolverOutput } from '../types';
+import { baseInput, defaultConfig, flex, makeCar, makeRequest, passengers, slotMs } from '../__fixtures__/gen';
+import type { Destination, SolverInput, SolverOutput } from '../types';
 
 const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
@@ -38,13 +38,14 @@ function texts(out: SolverOutput): string[] {
   return t;
 }
 
-function scenario(): SolverOutput {
+function scenario(config: Partial<SolverInput['config']> = {}): SolverOutput {
   const req = (n: number, extra: Parameters<typeof makeRequest>[0]) =>
     makeRequest({ id: id(100 + n), memberId: id(200 + n), memberName: `Member ${n}`, ...extra });
   const rt = (n: number, dest: string, d: number, r: number, extra = {}) =>
     req(n, { destinationId: dest, departureMs: slotMs(d), returnMs: slotMs(r), ...extra });
   const input = baseInput({
     homeLocationId: HOME,
+    config: defaultConfig(config),
     destinations: destinations(),
     cars: [makeCar(id(50), { name: 'Car One' }), makeCar(id(51), { name: 'Car Two' })],
     requests: [
@@ -65,7 +66,8 @@ function scenario(): SolverOutput {
 }
 
 describe('reason texts never contain raw ids (G1)', () => {
-  const out = scenario();
+  // REQ §136 a: pooling would seat the unmet round trips directly; this block covers the unmet/suggestion texts
+  const out = scenario({ sharedRides: false });
   const codes = new Set<string>();
   for (const a of out.assignments) codes.add(a.reasonCode);
   for (const u of out.unmet) {
@@ -85,6 +87,12 @@ describe('reason texts never contain raw ids (G1)', () => {
 
   it('no rendered text contains a uuid', () => {
     for (const t of texts(out)) expect(t, t).not.toMatch(UUID);
+  });
+
+  it('shared-ride reasons (pooling on) never contain a uuid either', () => {
+    const shared = scenario();
+    expect(shared.assignments.some((a) => a.reasonCode === 'PLACED_SHARED')).toBe(true);
+    for (const t of texts(shared)) expect(t, t).not.toMatch(UUID);
   });
 });
 

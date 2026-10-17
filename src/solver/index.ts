@@ -283,11 +283,18 @@ function solveExpanded(input: SolverInput): SolverOutput {
   for (const nr of normalized) if (!servedRequestIds.has(nr.id)) unmetIds.set(nr.id, unmetIds.get(nr.id) ?? nr);
 
   const hosts = buildHostRides(assignments, carsMap);
+  // `findMergeHosts` looks a host's own request up by ride id (fixed hosts have none and stay absent).
+  const hostRequestsByRide = new Map<string, NormalizedRequest>();
+  for (const a of assignments) {
+    if (a.source !== 'solver' || !a.driverRequestId) continue;
+    const nr = byRequestId.get(a.driverRequestId);
+    if (nr) hostRequestsByRide.set(a.rideId, nr);
+  }
   const suggestionCtx: SuggestionContext = {
     input,
     assignments,
     timelines,
-    hostDriverRequests: byRequestId,
+    hostDriverRequests: hostRequestsByRide,
     unpairedRelay: stillUnpairedRelay,
     ejectionSuggestions: improveResult.ejectionSuggestions,
   };
@@ -401,7 +408,7 @@ function solveExpanded(input: SolverInput): SolverOutput {
       destinations: input.destinations,
       config: input.config,
       cars: carsMap,
-      hostDriverRequests: byRequestId,
+      hostDriverRequests: hostRequestsByRide,
       hostTimelines: timelines,
       homeLocationId: input.homeLocationId,
       travel: input.travel,

@@ -528,6 +528,7 @@
     }
   },
   "config": {
+    "sharedRides": false,
     "bufferMinutes": 30,
     "detour": {
       "maxMinutes": 20,

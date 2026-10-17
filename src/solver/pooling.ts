@@ -140,12 +140,13 @@ const unitPriority = (nr: NormalizedRequest, scores: Map<string, { total: number
 });
 
 /**
- * One pooling round; returns how many placed guests were seated (lowest priority first). Mutates `placed`,
- * `timelines` and host entries. Unmet units are not guests: they only get the cars this frees, and a merge
- * suggestion otherwise (SOLVER §3.8).
+ * One pooling round; returns how many guests were seated. Mutates `placed`, `unmet`, `timelines` and host
+ * entries. Placed guests come first (lowest priority first); then still-unmet round trips (highest priority
+ * first, they compete for seats) take a seat directly instead of waiting for a car or a merge suggestion.
  */
 function poolRound(
   placed: Placed[],
+  unmet: Unit[],
   timelines: Map<string, CarTimeline>,
   input: SolverInput,
   scores: Map<string, { total: number }>,
@@ -164,6 +165,17 @@ function poolRound(
     if ((guestPlaced.guests?.length ?? 0) > 0 || !placed.includes(guestPlaced)) continue;
     if (tryPool(guestPlaced.nr, guestPlaced, placed, timelines, input, carsMap)) {
       pooled.add(guestPlaced.nr.id);
+      count++;
+    }
+  }
+  const unmetOrder = unmet
+    .filter((u) => u.kind === 'single' && !!u.single && isRoundTripSingle(u.single) && !pooled.has(u.single.id))
+    .sort(compareUnitsByPriority);
+  for (const unit of unmetOrder) {
+    if (!unit.single) continue;
+    if (tryPool(unit.single, undefined, placed, timelines, input, carsMap)) {
+      pooled.add(unit.single.id);
+      unmet.splice(unmet.indexOf(unit), 1);
       count++;
     }
   }
@@ -186,7 +198,7 @@ export function runPooling(
   let current = [...placed];
   let unmet = [...unmetUnits];
   for (;;) {
-    const pooledNow = poolRound(current, timelines, input, scores, carsMap, pooledRequestIds);
+    const pooledNow = poolRound(current, unmet, timelines, input, scores, carsMap, pooledRequestIds);
     if (pooledNow === 0) break;
     // the freed capacity may serve a still-unmet unit; whatever it places is a candidate in the next round
     if (unmet.length > 0) {
