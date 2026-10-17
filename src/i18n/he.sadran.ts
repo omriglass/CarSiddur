@@ -480,6 +480,10 @@ export const heSadran = {
     line: "תוכנית ב׳: {{plan}}",
     possible: "תוכנית ב׳ אפשרית",
     propose: "להציע",
+    /** Item 136 (g): a proposal to the member who rides now, to take their own plan B / manage, so the unmet request fits. */
+    switchAlternative: "הצע/י ל{{name}} את תוכנית ב׳",
+    switchManage: "הצע/י ל{{name}} להסתדר",
+    switchOther: "חבר/ה אחר/ת",
     publishTitle: "תוכנית ב׳ שממתינה לתשובה",
     publishHelp: "אי אפשר לפרסם יום שיש בו הצעה של תוכנית ב׳ שעוד לא נענתה. אפשר להמתין לתשובה או לבטל את ההצעה בלוח.",
     publishDay: "{{count}} הצעות של תוכנית ב׳",

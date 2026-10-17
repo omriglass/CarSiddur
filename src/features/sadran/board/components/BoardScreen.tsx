@@ -250,6 +250,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
     ...board.pendingMerges.filter((merge) => merge.isDraft).map((merge) => `merge:${merge.proposal.id}`),
     ...board.draftPlacements.filter((placement) => placement.type !== "merge").map((placement) => `draft:${placement.proposalId}`),
   ]);
+  const requesterNameOf = (requestId: string) => board.requestsQuery.data?.find((request) => request.id === requestId)?.requester_full_name?.split(" ")[0] || undefined;
   const selectedProposalRequest = board.requestsQuery.data?.find((request) => request.id === dnd.selectedProposal?.request_id);
   // R5U1: the sheet states old -> new times and car (the car the request rides now vs the proposal's / host's car).
   const proposalChanges = (() => {
@@ -551,6 +552,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
               homeDestinationId={board.department?.home_destination_id ?? undefined}
               tripTypeScope={{ departmentId, weekStart }}
               fewerDays={fewerDays}
+              requesterNameOf={requesterNameOf}
               dayStartMinutes={dayStartMinutes}
               dayEndMinutes={dayEndMinutes}
               onDragHover={(item, carId, minutes, hostRideId) => dnd.setUnmetDragHover(carId && minutes != null ? { item, carId, minutes, hostRideId } : null)}
@@ -629,7 +631,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
       />
       <Sheet open={!!selectedUnmet} onOpenChange={(open) => !open && dnd.setSelectedUnmetId(null)}>
         <SheetContent side="bottom"><SheetHeader><SheetTitle>{he.board.unmet}</SheetTitle></SheetHeader>
-          {selectedUnmet ? <UnmetList items={[selectedUnmet]} onAction={dnd.handleUnmetAction} onDecision={dnd.handleUnmetDecision} onOpenProposal={dnd.setSelectedProposalId} homeDestinationId={board.department?.home_destination_id ?? undefined} tripTypeScope={{ departmentId, weekStart }} fewerDays={fewerDays} /> : null}
+          {selectedUnmet ? <UnmetList items={[selectedUnmet]} onAction={dnd.handleUnmetAction} onDecision={dnd.handleUnmetDecision} onOpenProposal={dnd.setSelectedProposalId} homeDestinationId={board.department?.home_destination_id ?? undefined} tripTypeScope={{ departmentId, weekStart }} fewerDays={fewerDays} requesterNameOf={requesterNameOf} /> : null}
         </SheetContent>
       </Sheet>
 

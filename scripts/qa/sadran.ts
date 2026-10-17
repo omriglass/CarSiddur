@@ -117,6 +117,7 @@ function describeSuggestion(board: Board, s: Suggestion, index: number): string 
     case "chauffeur": return `${base} leg=${s.leg} car=${board.carName(s.carId)} window=${w(s.window)} volunteers=${s.volunteerCandidateMemberIds.length}`;
     case "changeOrigin": return `${base} origin=${board.destName(s.originId)} car=${board.carName(s.carId)}`;
     case "useAlternative": return `${base} car=${board.carName(s.carId)}${s.returnCarId ? ` return-car=${board.carName(s.returnCarId)}` : ""} depart=${t(slotToIso(s.departSlot, board.weekStartMs))}${s.returnSlot != null ? ` back=${t(slotToIso(s.returnSlot, board.weekStartMs))}` : ""} (${s.reasonCode})`;
+    case "planBSwitch": return `${base} other=${short(s.otherRequestId)} fallback=${s.fallback} car=${board.carName(s.carId)} window=${w(s.window)} (${s.reasonCode})`;
     case "externalHint": return `${base} hint=${s.hint}`;
     case "splitLegs": return `${base} out(${s.outbound.carMode}${s.outbound.hostRideId ? ` host ${short(s.outbound.hostRideId)}` : ""}) return(${s.return.carMode}${s.return.hostRideId ? ` host ${short(s.return.hostRideId)}` : ""})`;
     default: return `${base} (${s.reasonCode})`;

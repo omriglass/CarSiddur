@@ -101,6 +101,8 @@ interface UnmetListProps {
   showHeading?: boolean;
   /** REQUIREMENTS §13.93: shows "מ<origin>" on a card whose request origin isn't the department home. */
   homeDestinationId?: string;
+  /** REQ item 136 (g): the first name of a request's requester, for the "הצע/י ל<name> …" plan-B-switch action. */
+  requesterNameOf?: (requestId: string) => string | undefined;
 }
 
 /**
@@ -108,7 +110,7 @@ interface UnmetListProps {
  * week with no ride (bug #1), sorted by policy score when a solver preview
  * exists for it, otherwise by departure time.
  */
-export function UnmetList({ items, onAction, onOpenProposal, onDecision, dayStartMinutes = 6 * 60, dayEndMinutes = 23 * 60 + 59, onDragHover, onDragDrop, showHeading = true, homeDestinationId, tripTypeScope, fewerDays }: UnmetListProps) {
+export function UnmetList({ items, onAction, onOpenProposal, onDecision, dayStartMinutes = 6 * 60, dayEndMinutes = 23 * 60 + 59, onDragHover, onDragDrop, showHeading = true, homeDestinationId, tripTypeScope, fewerDays, requesterNameOf }: UnmetListProps) {
   const dragEnabled = !!onDragDrop;
   const [drag, setDrag] = useState<DragState | null>(null);
   const dragRef = useRef<DragState | null>(null);
@@ -331,7 +333,7 @@ export function UnmetList({ items, onAction, onOpenProposal, onDecision, dayStar
                       {suggestion.reason}
                       {item.suggestionBoardAt?.[index] ? ` · ${item.suggestionBoardAt[index]}` : ""}
                     </span>
-                    <Button size="sm" variant="outline" className="min-h-11 shrink-0" onClick={() => onAction(item, suggestion)} data-testid={suggestion.kind === "useAlternative" ? "unmet-plan-b-propose" : undefined}>{suggestion.kind === "useAlternative" ? he.sadranPlanB.propose : isDisplacementSuggestion(suggestion) ? he.displacement.open : he.action.propose}</Button>
+                    <Button size="sm" variant="outline" className="min-h-11 shrink-0" onClick={() => onAction(item, suggestion)} data-testid={suggestion.kind === "useAlternative" ? "unmet-plan-b-propose" : suggestion.kind === "planBSwitch" ? "unmet-plan-b-switch" : undefined}>{suggestion.kind === "useAlternative" ? he.sadranPlanB.propose : suggestion.kind === "planBSwitch" ? tv(suggestion.fallback === "manage" ? "sadranPlanB.switchManage" : "sadranPlanB.switchAlternative", { name: requesterNameOf?.(suggestion.otherRequestId) ?? he.sadranPlanB.switchOther }) : isDisplacementSuggestion(suggestion) ? he.displacement.open : he.action.propose}</Button>
                   </div>
                 ))}
               </div>

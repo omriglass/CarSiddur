@@ -51,6 +51,7 @@ import {
 } from "../dropValidity";
 import type { UnmetListItem } from "../components/UnmetList";
 import { slotToIso, wouldOverlap } from "../geometry";
+import { planBSwitchPrefill } from "../planBSwitch";
 import { seriesSpanSuggestionPrefill } from "../seriesSpan";
 import { buildDisplacementSteps, checklistRideIds, isDisplacementSuggestion, type ChecklistStep, type DisplacementSuggestion } from "../displacementChecklist";
 import { isReservation } from "@/features/rides/servedOf";
@@ -895,6 +896,13 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
           },
         });
         return;
+      case "planBSwitch": {
+        // REQ item 136 (g): the proposal goes to the OTHER member (their plan B / "אסתדר"), freeing the car for this request.
+        if (dropCtx.weekStartMs == null) return;
+        const switchPrefill = planBSwitchPrefill(suggestion, dropCtx.weekStartMs);
+        if (switchPrefill) goToComposer(switchPrefill);
+        return;
+      }
       case "changeOrigin":
         // REQUIREMENTS §13.93 (ORIGINS_PLAN §3 "O4b"): the solver's "car free at a different
         // place" suggestion becomes an `origin` proposal — same send-from-the-board path as
