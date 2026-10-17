@@ -77,7 +77,7 @@ describe('travelBetween() (REQUIREMENTS §13.93, ORIGINS_PLAN §4)', () => {
 describe('explicit one_way trip type (REQUIREMENTS §13.93 item 4)', () => {
   it('places as a single relay leg, no pairing obligation, car ends at the destination', () => {
     const input = baseInput({
-      cars: [makeCar('C1')],
+      cars: [makeCar('C1', { baseLocationId: 'destB' })],
       requests: [
         makeRequest({ id: 'R1', tripType: 'one_way', tripShape: 'one_way_to', destinationId: 'destB', departureMs: slotMs(32) }),
       ],
@@ -127,7 +127,7 @@ describe('explicit one_way trip type (REQUIREMENTS §13.93 item 4)', () => {
 
   it('without the later fixed ride, the identical one-way request places fine (control case)', () => {
     const input = baseInput({
-      cars: [makeCar('C1')],
+      cars: [makeCar('C1', { baseLocationId: 'destB' })],
       requests: [
         makeRequest({ id: 'R1', tripType: 'one_way', tripShape: 'one_way_to', destinationId: 'destB', departureMs: slotMs(32) }),
       ],
@@ -331,7 +331,7 @@ describe('car location persists across days and weeks regardless of origin (REQU
 
   it('a one_way to Haifa on Tuesday makes a Wednesday round trip from home impossible on that car', () => {
     const input = baseInput({
-      cars: [makeCar('C1')],
+      cars: [makeCar('C1', { baseLocationId: 'HAIFA' })],
       destinations,
       requests: [
         makeRequest({ id: 'TUE', tripType: 'one_way', tripShape: 'one_way_to', destinationId: 'HAIFA', departureMs: slotMs(192 + 32) }),
@@ -345,7 +345,7 @@ describe('car location persists across days and weeks regardless of origin (REQU
 
   it('...but the same Wednesday round trip from Haifa is possible on that car', () => {
     const input = baseInput({
-      cars: [makeCar('C1')],
+      cars: [makeCar('C1', { baseLocationId: 'HAIFA' })],
       destinations,
       requests: [
         makeRequest({ id: 'TUE', tripType: 'one_way', tripShape: 'one_way_to', destinationId: 'HAIFA', departureMs: slotMs(192 + 32) }),

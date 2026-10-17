@@ -79,7 +79,7 @@ describe('reason texts never contain raw ids (G1)', () => {
   it('covers unmet reasons, suggestions and warnings', () => {
     expect(out.unmet.length).toBeGreaterThan(0);
     expect(codes.has('UNMET_NO_CAR')).toBe(true);
-    for (const c of ['SUGGEST_DENY', 'SUGGEST_EXTERNAL_PT', 'UNMET_NO_CAR_AT_ORIGIN', 'CAR_AWAY_AT_WEEK_END', 'PLACED_RELAY_PAIR']) {
+    for (const c of ['SUGGEST_DENY', 'SUGGEST_EXTERNAL_PT', 'UNMET_NO_CAR_AT_ORIGIN', 'UNMET_ONE_WAY_AWAY_AT_WEEK_END', 'PLACED_RELAY_PAIR']) {
       expect(codes.has(c), c).toBe(true);
     }
     expect([...codes].some((c) => c.startsWith('SUGGEST_MERGE'))).toBe(true);

@@ -413,7 +413,7 @@ export function runGreedy(
         if (!fits(car, nr.passengers) || !luggageFits(car, nr.luggage ? 1 : 0)) continue;
         const tl = timelines.get(car.id);
         if (!tl) continue;
-        if (withinRequestDay(nr, nr.window) && tl.isFree(nr.window, leg.originId, undefined, leg.destinationId)) {
+        if (withinRequestDay(nr, nr.window) && tl.isFree(nr.window, leg.originId, undefined, leg.destinationId, { baseAtWeekEnd: true })) {
           const key: CarKey = {
             shiftCost: 0,
             preference: carPreferenceRank(car.id, [nr.request.preferredCarId]),
@@ -445,7 +445,7 @@ export function runGreedy(
           // pass the end-check — `bestPlacementWithinFlex` only bounds the
           // candidate inside a free gap, it does not look at what follows it.
           // A no-op re-check for any 'both'/keep leg (originId === destinationId).
-          if (!tl.isFree(placement.window, leg.originId, undefined, leg.destinationId)) continue;
+          if (!tl.isFree(placement.window, leg.originId, undefined, leg.destinationId, { baseAtWeekEnd: true })) continue;
           const key: CarKey = {
             shiftCost: placement.cost,
             preference: carPreferenceRank(car.id, [nr.request.preferredCarId]),

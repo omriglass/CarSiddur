@@ -193,11 +193,12 @@ export function oneWayUnmetCause(
   nr: NormalizedRequest,
   timelines: Map<string, CarTimeline>,
   input: SolverInput,
-): { strands: boolean; atOrigin: boolean } {
+): { strands: boolean; atOrigin: boolean; awayAtWeekEnd: boolean } {
   const leg = nr.legs[0];
-  if (!leg) return { strands: false, atOrigin: false };
+  if (!leg) return { strands: false, atOrigin: false, awayAtWeekEnd: false };
   const fitting = input.cars.filter((c) => c.type === 'shared' && fits(c, nr.passengers) && luggageFits(c, nr.luggage ? 1 : 0));
   let strands = false;
+  let awayAtWeekEnd = false;
   let atOrigin = false;
   for (const car of fitting) {
     const tl = timelines.get(car.id);
@@ -210,8 +211,10 @@ export function oneWayUnmetCause(
       const start = Math.max(gap.window.start, spanStart, nr.dayWindow.start);
       const end = start + nr.minDurationSlots;
       if (end > Math.min(gap.window.end, nr.dayWindow.end) || start > Math.max(nr.flexDep[1], nr.window.start)) continue;
-      if (tl.isFree({ start, end }, nr.originId) && !tl.isFree({ start, end }, nr.originId, undefined, leg.destinationId)) strands = true;
+      if (!tl.isFree({ start, end }, nr.originId)) continue;
+      if (!tl.isFree({ start, end }, nr.originId, undefined, leg.destinationId)) strands = true;
+      else if (!tl.isFree({ start, end }, nr.originId, undefined, leg.destinationId, { baseAtWeekEnd: true })) awayAtWeekEnd = true;
     }
   }
-  return { strands, atOrigin };
+  return { strands, atOrigin, awayAtWeekEnd };
 }

@@ -321,7 +321,7 @@ function solveExpanded(input: SolverInput): SolverOutput {
           return fit.length === 0 || fit.every((c) => !timelines.get(c.id)?.isFree(leg0.window, nr.originId));
         })();
       // R8B14: an explicit one-way leg says why for real (stranded next ride vs no car at the origin vs busy).
-      const oneWayCause = nr.tripType === 'one_way' ? oneWayUnmetCause(nr, timelines, input) : { strands: false, atOrigin: false };
+      const oneWayCause = nr.tripType === 'one_way' ? oneWayUnmetCause(nr, timelines, input) : { strands: false, atOrigin: false, awayAtWeekEnd: false };
       const reasonCode = needsLargeTrunk
         ? 'UNMET_NEEDS_LARGE_TRUNK'
         : seatsBusy
@@ -333,6 +333,8 @@ function solveExpanded(input: SolverInput): SolverOutput {
           : nr.tripType === 'one_way'
             ? oneWayCause.strands
               ? 'UNMET_ONE_WAY_STRANDS_CAR'
+              : oneWayCause.awayAtWeekEnd
+              ? 'UNMET_ONE_WAY_AWAY_AT_WEEK_END'
               : oneWayCause.atOrigin
                 ? 'UNMET_NO_CAR'
                 : 'UNMET_NO_CAR_AT_ORIGIN'
@@ -348,6 +350,8 @@ function solveExpanded(input: SolverInput): SolverOutput {
             ? reason('UNMET_NEEDS_DRIVER', { dest: requestDestName(input, nr.request), dep: '' })
             : reasonCode === 'UNMET_ONE_WAY_STRANDS_CAR'
               ? reason('UNMET_ONE_WAY_STRANDS_CAR', { origin: requestOriginName(input, nr.request, nr.originId), dest: requestDestName(input, nr.request) })
+            : reasonCode === 'UNMET_ONE_WAY_AWAY_AT_WEEK_END'
+              ? reason('UNMET_ONE_WAY_AWAY_AT_WEEK_END', { dest: requestDestName(input, nr.request) })
             : reasonCode === 'UNMET_NO_CAR_AT_ORIGIN'
               ? reason('UNMET_NO_CAR_AT_ORIGIN', { origin: requestOriginName(input, nr.request, nr.originId), dest: requestDestName(input, nr.request) })
               : noCarReason(input, nr, timelines, blockers);

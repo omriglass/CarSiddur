@@ -67,6 +67,7 @@ var TEMPLATES = {
   UNMET_NEEDS_DRIVER: "\u05D0\u05D9\u05DF \u05E0\u05E1\u05D9\u05E2\u05D4 \u05DE\u05EA\u05D0\u05D9\u05DE\u05D4 \u05DC\u05D4\u05E6\u05D8\u05E8\u05E3 \u05D0\u05DC\u05D9\u05D4; \u05D3\u05E8\u05D5\u05E9/\u05D4 \u05E0\u05D4\u05D2/\u05EA \u05DE\u05EA\u05E0\u05D3\u05D1/\u05EA \u05DC\u05D4\u05E1\u05E2\u05D4 \u05DC{dest}",
   UNMET_SERIES_NO_CAR: "\u05D0\u05D9\u05DF \u05E8\u05DB\u05D1 \u05E4\u05E0\u05D5\u05D9 \u05DC\u05DB\u05DC \u05D9\u05DE\u05D9 \u05D4\u05D1\u05E7\u05E9\u05D4 \u05D4\u05E8\u05D1-\u05D9\u05D5\u05DE\u05D9\u05EA ({index}/{count})",
   UNMET_NO_CAR_AT_ORIGIN: "\u05D0\u05D9\u05DF \u05E8\u05DB\u05D1 \u05E4\u05E0\u05D5\u05D9 \u05E9\u05E0\u05DE\u05E6\u05D0 \u05D1{origin} \u05DB\u05D3\u05D9 \u05DC\u05E6\u05D0\u05EA \u05DE\u05E9\u05DD \u05DC{dest}",
+  UNMET_ONE_WAY_AWAY_AT_WEEK_END: "\u05E0\u05E1\u05D9\u05E2\u05D4 \u05D1\u05DB\u05D9\u05D5\u05D5\u05DF \u05D0\u05D7\u05D3 \u05DC{dest} \u05EA\u05E9\u05D0\u05D9\u05E8 \u05D0\u05EA \u05D4\u05E8\u05DB\u05D1 \u05E9\u05DD \u05D1\u05E1\u05D5\u05E3 \u05D4\u05E9\u05D1\u05D5\u05E2, \u05D5\u05D0\u05D9\u05DF \u05E0\u05E1\u05D9\u05E2\u05D4 \u05E9\u05DE\u05D7\u05D6\u05D9\u05E8\u05D4 \u05D0\u05D5\u05EA\u05D5; \u05D0\u05E4\u05E9\u05E8 \u05DC\u05D1\u05E7\u05E9 \u05D4\u05DC\u05D5\u05DA-\u05D7\u05D6\u05D5\u05E8 \u05D0\u05D5 \u05DC\u05E6\u05E8\u05E3 \u05E0\u05E1\u05D9\u05E2\u05D4 \u05D7\u05D5\u05D6\u05E8\u05EA \u05DE{dest}",
   UNMET_ONE_WAY_STRANDS_CAR: "\u05D9\u05E9 \u05E8\u05DB\u05D1 \u05E4\u05E0\u05D5\u05D9 \u05D1{origin}, \u05D0\u05D1\u05DC \u05E0\u05E1\u05D9\u05E2\u05D4 \u05D1\u05DB\u05D9\u05D5\u05D5\u05DF \u05D0\u05D7\u05D3 \u05DC{dest} \u05EA\u05E9\u05D0\u05D9\u05E8 \u05D0\u05D5\u05EA\u05D5 \u05E9\u05DD \u05D5\u05D4\u05D5\u05D0 \u05E0\u05D3\u05E8\u05E9 \u05DC\u05E0\u05E1\u05D9\u05E2\u05D4 \u05D4\u05D1\u05D0\u05D4 \u05E9\u05DC\u05D5; \u05D0\u05E4\u05E9\u05E8 \u05DC\u05E9\u05D1\u05E5 \u05D9\u05D7\u05D3 \u05E2\u05DD \u05E0\u05E1\u05D9\u05E2\u05D4 \u05D7\u05D5\u05D6\u05E8\u05EA \u05DE{dest}",
   UNMET_FREE_TEXT_ORIGIN: "\u05E0\u05E7\u05D5\u05D3\u05EA \u05D4\u05D9\u05E6\u05D9\u05D0\u05D4 \u05D4\u05D9\u05D0 \u05D8\u05E7\u05E1\u05D8 \u05D7\u05D5\u05E4\u05E9\u05D9 \u05D5\u05DC\u05D0 \u05DE\u05E7\u05D5\u05DD \u05DE\u05D5\u05DB\u05E8; \u05DC\u05D0 \u05E0\u05D9\u05EA\u05DF \u05DC\u05E9\u05D1\u05E5 \u05E0\u05E1\u05D9\u05E2\u05D4 \u05DE\u05DE\u05E0\u05D4 \u05D0\u05D5\u05D8\u05D5\u05DE\u05D8\u05D9\u05EA",
   // Suggestions
@@ -895,7 +896,7 @@ function runGreedy(units, timelines, input) {
           if (!fits(car, nr.passengers) || !luggageFits(car, nr.luggage ? 1 : 0)) continue;
           const tl2 = timelines.get(car.id);
           if (!tl2) continue;
-          if (withinRequestDay(nr, nr.window) && tl2.isFree(nr.window, leg.originId, void 0, leg.destinationId)) {
+          if (withinRequestDay(nr, nr.window) && tl2.isFree(nr.window, leg.originId, void 0, leg.destinationId, { baseAtWeekEnd: true })) {
             const key = {
               shiftCost: 0,
               preference: carPreferenceRank(car.id, [nr.request.preferredCarId]),
@@ -920,7 +921,7 @@ function runGreedy(units, timelines, input) {
             if (!tl2) continue;
             const placement = bestPlacementWithinFlex(tl2, nr);
             if (!placement) continue;
-            if (!tl2.isFree(placement.window, leg.originId, void 0, leg.destinationId)) continue;
+            if (!tl2.isFree(placement.window, leg.originId, void 0, leg.destinationId, { baseAtWeekEnd: true })) continue;
             const key = {
               shiftCost: placement.cost,
               preference: carPreferenceRank(car.id, [nr.request.preferredCarId]),
@@ -1332,10 +1333,14 @@ function runImprove(unmetUnits, placedSingles, timelines, input, scores) {
   }
   return { newlyPlaced, stillUnmetUnits, relocationsApplied, ejectionSuggestions, budgetExhausted: budgetState.exhausted };
 }
+var WEEK_END_AWAY = "\0weekEndAway";
 function chainBreakIds(tl) {
-  return new Set(tl.chainBreaks().map((c) => c.rideId));
+  const ids = new Set(tl.chainBreaks().map((c) => c.rideId));
+  if (tl.weekEndAway()) ids.add(WEEK_END_AWAY);
+  return ids;
 }
 function addsChainBreak(tl, baseline) {
+  if (tl.weekEndAway() && !baseline.has(WEEK_END_AWAY)) return true;
   return tl.chainBreaks().some((c) => !baseline.has(c.rideId));
 }
 function tryRelocateSetAndPlace(nr, car, blockers, sharedCars, timelines, input, budgetState, spend) {
@@ -1932,15 +1937,17 @@ var CarTimeline = class {
    * at `endLocationId`; otherwise committing to this candidate would strand
    * that later block expecting the car where it no longer is. A candidate
    * ending where it started (the common case: keep/chauffeur/round trips)
-   * never triggers this check.
+   * never triggers this check. With `opts.baseAtWeekEnd`, no later block also
+   * requires the end place to be the car's base (item 136 c).
    */
-  isFree(w, originId, relayPairId, endLocationId) {
+  isFree(w, originId, relayPairId, endLocationId, opts) {
     if (w.end <= w.start) return false;
     if (this.overlapsAnything(w.start, w.end, void 0, void 0, relayPairId)) return false;
     if (this.locationAt(w.start) !== originId) return false;
     if (endLocationId !== void 0 && endLocationId !== originId) {
       const next = this.blocks.filter((b) => b.window.start >= w.end && !b.locationNeutral).sort((a, b) => a.window.start - b.window.start)[0];
       if (next && next.startLocationId !== endLocationId) return false;
+      if (!next && opts?.baseAtWeekEnd && originId === this.baseLocation && endLocationId !== this.baseLocation) return false;
     }
     return true;
   }
@@ -2710,9 +2717,10 @@ function pairComplementaryOneWays(unmet, timelines, input, carsById, scores) {
 }
 function oneWayUnmetCause(nr, timelines, input) {
   const leg = nr.legs[0];
-  if (!leg) return { strands: false, atOrigin: false };
+  if (!leg) return { strands: false, atOrigin: false, awayAtWeekEnd: false };
   const fitting = input.cars.filter((c) => c.type === "shared" && fits(c, nr.passengers) && luggageFits(c, nr.luggage ? 1 : 0));
   let strands = false;
+  let awayAtWeekEnd = false;
   let atOrigin = false;
   for (const car of fitting) {
     const tl = timelines.get(car.id);
@@ -2725,10 +2733,12 @@ function oneWayUnmetCause(nr, timelines, input) {
       const start = Math.max(gap.window.start, spanStart, nr.dayWindow.start);
       const end = start + nr.minDurationSlots;
       if (end > Math.min(gap.window.end, nr.dayWindow.end) || start > Math.max(nr.flexDep[1], nr.window.start)) continue;
-      if (tl.isFree({ start, end }, nr.originId) && !tl.isFree({ start, end }, nr.originId, void 0, leg.destinationId)) strands = true;
+      if (!tl.isFree({ start, end }, nr.originId)) continue;
+      if (!tl.isFree({ start, end }, nr.originId, void 0, leg.destinationId)) strands = true;
+      else if (!tl.isFree({ start, end }, nr.originId, void 0, leg.destinationId, { baseAtWeekEnd: true })) awayAtWeekEnd = true;
     }
   }
-  return { strands, atOrigin };
+  return { strands, atOrigin, awayAtWeekEnd };
 }
 
 // src/solver/relay.ts
@@ -2862,7 +2872,7 @@ function pickupFromCarAtX(unpaired, timelines, input, carsById, scores) {
     const car = sharedCars.find((c) => {
       if (!fits(c, nr.passengers) || !luggageFits(c, luggageCount)) return false;
       const tl2 = timelines.get(c.id);
-      return !!tl2 && tl2.isFree(leg.window, leg.originId, void 0, leg.destinationId);
+      return !!tl2 && tl2.isFree(leg.window, leg.originId, void 0, leg.destinationId, { baseAtWeekEnd: true });
     });
     if (!car) continue;
     const tl = timelines.get(car.id);
@@ -4099,9 +4109,9 @@ function solveExpanded(input) {
       const fit = input.cars.filter((c) => c.type === "shared" && fits(c, nr.passengers));
       return fit.length === 0 || fit.every((c) => !timelines.get(c.id)?.isFree(leg0.window, nr.originId));
     })();
-    const oneWayCause = nr.tripType === "one_way" ? oneWayUnmetCause(nr, timelines, input) : { strands: false, atOrigin: false };
-    const reasonCode = needsLargeTrunk ? "UNMET_NEEDS_LARGE_TRUNK" : seatsBusy ? "UNMET_NO_CAR_SEATS_BUSY" : stillPassengerOnly.includes(nr) ? "UNMET_PASSENGER_NO_HOST" : stillUnpairedRelay.includes(nr) ? "UNMET_NO_RELAY_PARTNER" : nr.tripType === "one_way" ? oneWayCause.strands ? "UNMET_ONE_WAY_STRANDS_CAR" : oneWayCause.atOrigin ? "UNMET_NO_CAR" : "UNMET_NO_CAR_AT_ORIGIN" : "UNMET_NO_CAR";
-    const reasonText = reasonCode === "UNMET_NEEDS_LARGE_TRUNK" ? reason("UNMET_NEEDS_LARGE_TRUNK") : reasonCode === "UNMET_NO_CAR_SEATS_BUSY" ? reason("UNMET_NO_CAR_SEATS_BUSY") : reasonCode === "UNMET_NO_RELAY_PARTNER" ? reason("UNMET_NO_RELAY_PARTNER", { dest: requestDestName(input, nr.request) }) : reasonCode === "UNMET_PASSENGER_NO_HOST" ? reason("UNMET_NEEDS_DRIVER", { dest: requestDestName(input, nr.request), dep: "" }) : reasonCode === "UNMET_ONE_WAY_STRANDS_CAR" ? reason("UNMET_ONE_WAY_STRANDS_CAR", { origin: requestOriginName(input, nr.request, nr.originId), dest: requestDestName(input, nr.request) }) : reasonCode === "UNMET_NO_CAR_AT_ORIGIN" ? reason("UNMET_NO_CAR_AT_ORIGIN", { origin: requestOriginName(input, nr.request, nr.originId), dest: requestDestName(input, nr.request) }) : noCarReason(input, nr, timelines, blockers);
+    const oneWayCause = nr.tripType === "one_way" ? oneWayUnmetCause(nr, timelines, input) : { strands: false, atOrigin: false, awayAtWeekEnd: false };
+    const reasonCode = needsLargeTrunk ? "UNMET_NEEDS_LARGE_TRUNK" : seatsBusy ? "UNMET_NO_CAR_SEATS_BUSY" : stillPassengerOnly.includes(nr) ? "UNMET_PASSENGER_NO_HOST" : stillUnpairedRelay.includes(nr) ? "UNMET_NO_RELAY_PARTNER" : nr.tripType === "one_way" ? oneWayCause.strands ? "UNMET_ONE_WAY_STRANDS_CAR" : oneWayCause.awayAtWeekEnd ? "UNMET_ONE_WAY_AWAY_AT_WEEK_END" : oneWayCause.atOrigin ? "UNMET_NO_CAR" : "UNMET_NO_CAR_AT_ORIGIN" : "UNMET_NO_CAR";
+    const reasonText = reasonCode === "UNMET_NEEDS_LARGE_TRUNK" ? reason("UNMET_NEEDS_LARGE_TRUNK") : reasonCode === "UNMET_NO_CAR_SEATS_BUSY" ? reason("UNMET_NO_CAR_SEATS_BUSY") : reasonCode === "UNMET_NO_RELAY_PARTNER" ? reason("UNMET_NO_RELAY_PARTNER", { dest: requestDestName(input, nr.request) }) : reasonCode === "UNMET_PASSENGER_NO_HOST" ? reason("UNMET_NEEDS_DRIVER", { dest: requestDestName(input, nr.request), dep: "" }) : reasonCode === "UNMET_ONE_WAY_STRANDS_CAR" ? reason("UNMET_ONE_WAY_STRANDS_CAR", { origin: requestOriginName(input, nr.request, nr.originId), dest: requestDestName(input, nr.request) }) : reasonCode === "UNMET_ONE_WAY_AWAY_AT_WEEK_END" ? reason("UNMET_ONE_WAY_AWAY_AT_WEEK_END", { dest: requestDestName(input, nr.request) }) : reasonCode === "UNMET_NO_CAR_AT_ORIGIN" ? reason("UNMET_NO_CAR_AT_ORIGIN", { origin: requestOriginName(input, nr.request, nr.originId), dest: requestDestName(input, nr.request) }) : noCarReason(input, nr, timelines, blockers);
     return {
       requestId: nr.id,
       score: scores.get(nr.id)?.total ?? 0,

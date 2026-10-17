@@ -16,7 +16,7 @@ const boost = (value: number) => (value > 0 ? { value, reason: 'test' } : undefi
 function twoRequests(bDepSlot: number, boostA: number, boostB: number) {
   const A = makeRequest({ id: 'A', tripType: 'one_way', tripShape: 'one_way_to', destinationId: 'HAIFA', departureMs: slotMs(29), manualBoost: boost(boostA) });
   const B = makeRequest({ id: 'B', originId: 'HAIFA', destinationId: 'AFULA', departureMs: slotMs(bDepSlot), returnMs: slotMs(48), manualBoost: boost(boostB) });
-  return baseInput({ cars: [makeCar('C1')], destinations, travel, requests: [A, B] });
+  return baseInput({ cars: [makeCar('C1', { baseLocationId: 'HAIFA' })], destinations, travel, requests: [A, B] });
 }
 
 describe('retry passes: a car moved by a one-way leg unlocks requests at the new place', () => {
@@ -43,7 +43,7 @@ describe('retry passes: a car moved by a one-way leg unlocks requests at the new
     const r1 = makeRequest({ id: 'R1', tripType: 'one_way', tripShape: 'one_way_to', destinationId: 'HAIFA', departureMs: slotMs(29) });
     const r2 = makeRequest({ id: 'R2', tripType: 'one_way', tripShape: 'one_way_to', originId: 'HAIFA', destinationId: 'AFULA', departureMs: slotMs(35) });
     const r3 = makeRequest({ id: 'R3', originId: 'AFULA', destinationId: 'HAIFA', departureMs: slotMs(42), returnMs: slotMs(52), manualBoost: boost(9) });
-    const input = baseInput({ cars: [makeCar('C1')], destinations, travel: [...travel, { fromId: 'AFULA', toId: 'HAIFA', distanceKm: 30, travelMinutes: 30 }], requests: [r1, r2, r3] });
+    const input = baseInput({ cars: [makeCar('C1', { baseLocationId: 'AFULA' })], destinations, travel: [...travel, { fromId: 'AFULA', toId: 'HAIFA', distanceKm: 30, travelMinutes: 30 }], requests: [r1, r2, r3] });
     const out = solve(input);
     expect(served(out)).toEqual(['R1', 'R2', 'R3']);
     expect(out.unmet).toEqual([]);

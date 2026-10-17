@@ -265,7 +265,7 @@ export function pickupFromCarAtX(
     const car = sharedCars.find((c) => {
       if (!fits(c, nr.passengers) || !luggageFits(c, luggageCount)) return false;
       const tl = timelines.get(c.id);
-      return !!tl && tl.isFree(leg.window, leg.originId, undefined, leg.destinationId);
+      return !!tl && tl.isFree(leg.window, leg.originId, undefined, leg.destinationId, { baseAtWeekEnd: true });
     });
     if (!car) continue;
     const tl = timelines.get(car.id);

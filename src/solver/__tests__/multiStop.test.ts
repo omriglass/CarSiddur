@@ -129,7 +129,7 @@ describe('one_way relay window with stops (REQUIREMENTS §13.93)', () => {
     const travel: TravelEdge[] = [{ fromId: 'STOP', toId: 'destC', travelMinutes: 30, distanceKm: 20 }];
 
     const withStops = baseInput({
-      cars: [makeCar('C1')],
+      cars: [makeCar('C1', { baseLocationId: 'destC' })], // base = destination: item 136 (c) is tested in weekEndHome.test.ts
       destinations,
       travel,
       requests: [
@@ -149,7 +149,7 @@ describe('one_way relay window with stops (REQUIREMENTS §13.93)', () => {
     expect(ride?.window).toEqual({ start: 32, end: 36 });
 
     const withoutStops = baseInput({
-      cars: [makeCar('C1')],
+      cars: [makeCar('C1', { baseLocationId: 'destC' })],
       destinations,
       travel,
       requests: [

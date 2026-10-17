@@ -89,7 +89,8 @@ describe('105a: complementary explicit one-way legs are suggested onto one car (
     makeRequest({ id: 'B', memberId: 'mB', tripType: 'one_way', tripShape: 'one_way_to', originId: 'destA', destinationId: 'home', departureMs: slotMs(dep), ...extra });
 
   it('offers a chainOneWay suggestion on the car that stays at X when B is a quarter hour too early', () => {
-    const o = solve(baseInput({ cars: [makeCar('C1')], requests: [A, B(39)] }));
+    // base = X so that A alone is not a week-end-away placement (item 136 c)
+    const o = solve(baseInput({ cars: [makeCar('C1', { baseLocationId: 'destA' })], requests: [A, B(39)] }));
     const u = o.unmet.find((x) => x.requestId === 'B');
     expect(u).toBeDefined();
     const s = u?.suggestions.find((x) => x.kind === 'chainOneWay');

@@ -17,6 +17,8 @@ One section per reviewed week, newest first. How to run one: `.claude/skills/sol
 |---|---|---|---|
 | Baseline (`v2026.10.16-2`) | 78 | 8 | identical |
 | 136 (a) shared rides, whole round trips (2026-10-17) | 79 | 8 | Sunday: Galfi rides with Aviv (Rita); the freed Tosia serves Yan (was unmet). Everything else unchanged. A first version also pooled two different free-text places (Yakum into "the north", Ya'ar HaMeginim into Hof HaCarmel) — fixed in `merge.ts` before commit. |
+| 136 (a) follow-ups: unmet round trips take a seat; merge suggestions may shift the host (2026-10-17) | 79 | 8 | no further change on this week (no unmet round trip fits a passing ride inside everyone's flexibility) |
+| 136 (c) solver side: never away from base at week end (2026-10-17) | 77 | 8 | Friday: the one-way to Nahariya stays unplaced. Thursday: Yan's one-way to Binyamina (nothing would bring the car back) and the driverless ride that depended on it stay unplaced; the capacity serves Omri Glass (Rita). All 8 cars end the week at home. 36 rides moved car as a knock-on of the placement order. |
 
 Why (a) alone moves little here: most of the coordinator's sharing needed times outside the members' declared flexibility (agreed on WhatsApp), was one direction only (drop-offs, one-way legs — 136 b/d), or involved free-text places that cannot be matched.
 

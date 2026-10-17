@@ -111,9 +111,16 @@ export class CarTimeline {
    * at `endLocationId`; otherwise committing to this candidate would strand
    * that later block expecting the car where it no longer is. A candidate
    * ending where it started (the common case: keep/chauffeur/round trips)
-   * never triggers this check.
+   * never triggers this check. With `opts.baseAtWeekEnd`, no later block also
+   * requires the end place to be the car's base (item 136 c).
    */
-  isFree(w: Window, originId: string, relayPairId?: string, endLocationId?: string): boolean {
+  isFree(
+    w: Window,
+    originId: string,
+    relayPairId?: string,
+    endLocationId?: string,
+    opts?: { baseAtWeekEnd?: boolean },
+  ): boolean {
     if (w.end <= w.start) return false;
     if (this.overlapsAnything(w.start, w.end, undefined, undefined, relayPairId)) return false;
     if (this.locationAt(w.start) !== originId) return false;
@@ -122,6 +129,11 @@ export class CarTimeline {
         .filter((b) => b.window.start >= w.end && !b.locationNeutral)
         .sort((a, b) => a.window.start - b.window.start)[0];
       if (next && next.startLocationId !== endLocationId) return false;
+      // REQUIREMENTS item 136 (c): an automatic placement that leaves a car standing at its base
+      // somewhere else, with no later block in the week, must end at the base. `baseAtWeekEnd` is
+      // set by single (non-paired) automatic placements only; a pair's out-leg, a series and every
+      // suggestion check do not set it. A car that is away already is not made worse.
+      if (!next && opts?.baseAtWeekEnd && originId === this.baseLocation && endLocationId !== this.baseLocation) return false;
     }
     return true;
   }

@@ -32,6 +32,7 @@ const TEMPLATES: Record<string, string> = {
   UNMET_NEEDS_DRIVER: 'אין נסיעה מתאימה להצטרף אליה; דרוש/ה נהג/ת מתנדב/ת להסעה ל{dest}',
   UNMET_SERIES_NO_CAR: 'אין רכב פנוי לכל ימי הבקשה הרב-יומית ({index}/{count})',
   UNMET_NO_CAR_AT_ORIGIN: 'אין רכב פנוי שנמצא ב{origin} כדי לצאת משם ל{dest}',
+  UNMET_ONE_WAY_AWAY_AT_WEEK_END: 'נסיעה בכיוון אחד ל{dest} תשאיר את הרכב שם בסוף השבוע, ואין נסיעה שמחזירה אותו; אפשר לבקש הלוך-חזור או לצרף נסיעה חוזרת מ{dest}',
   UNMET_ONE_WAY_STRANDS_CAR: 'יש רכב פנוי ב{origin}, אבל נסיעה בכיוון אחד ל{dest} תשאיר אותו שם והוא נדרש לנסיעה הבאה שלו; אפשר לשבץ יחד עם נסיעה חוזרת מ{dest}',
   UNMET_FREE_TEXT_ORIGIN: 'נקודת היציאה היא טקסט חופשי ולא מקום מוכר; לא ניתן לשבץ נסיעה ממנה אוטומטית',
 
