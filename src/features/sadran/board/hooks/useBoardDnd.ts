@@ -52,6 +52,7 @@ import {
 import type { UnmetListItem } from "../components/UnmetList";
 import { slotToIso, wouldOverlap } from "../geometry";
 import { seriesSpanSuggestionPrefill } from "../seriesSpan";
+import { buildDisplacementSteps, checklistRideIds, isDisplacementSuggestion, type ChecklistStep, type DisplacementSuggestion } from "../displacementChecklist";
 import { isReservation } from "@/features/rides/servedOf";
 import { buildRidePassengerInputs, splitReservationDriverAndPassengers } from "../reservationPeople";
 import {
@@ -119,6 +120,9 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
   // REQ §13.129 (a): the owner of a private car (here: the Sadran) is asked before someone else's request/ride lands on it.
   const [ownCarAsk, setOwnCarAsk] = useState<{ name: string; carName: string; resolve: (ok: boolean) => void } | null>(null);
   const [guestHover, setGuestHover] = useState<{ guest: { requestId: string; name: string }; target: GuestDropTarget | null } | null>(null);
+  // Item 136 (e): the open displacement checklist - a snapshot of the card and its suggestion (the card itself may
+  // vanish from the unmet list while the Sadran works through the steps).
+  const [displacement, setDisplacement] = useState<{ item: UnmetListItem; suggestion: DisplacementSuggestion } | null>(null);
   const [unmetDragHover, setUnmetDragHover] = useState<{ item: UnmetListItem; carId: string; minutes: number; hostRideId?: string } | null>(null);
 
   const createProposalMutation = useCreateProposalMutation();
@@ -833,6 +837,10 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
       return;
     }
     switch (suggestion.kind) {
+      case "shiftWithinFlex":
+        // Item 136 (e): a displacement (unplace / move other rides, then place) is a checklist the Sadran works by hand.
+        if (isDisplacementSuggestion(suggestion)) setDisplacement({ item, suggestion });
+        return;
       case "shiftBeyondFlex": {
         // REQ §13.136 (e): a series head's whole-span suggestion is a `series_span` shift, never single-day times.
         const spanPrefill = dropCtx.weekStartMs != null ? seriesSpanSuggestionPrefill(item.request.id, suggestion, dropCtx.weekStartMs) : null;
@@ -896,6 +904,24 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
       default:
         return;
     }
+  }
+
+  const displacementSteps = displacement ? buildDisplacementSteps(displacement.suggestion, rides, displacement.item.request.id) : [];
+  const displacementRideIds = checklistRideIds(displacementSteps);
+  /** Minutes since the selected day's midnight of a solver slot (`null` while the week start is unknown). */
+  function slotMinutesOnSelectedDay(slot: number): number | null {
+    return dropCtx.weekStartMs == null ? null : Math.round((Date.parse(slotToIso(slot, dropCtx.weekStartMs)) - Date.parse(dayStartIso(selectedDay))) / 60_000);
+  }
+  /** Same path as dragging the ride onto the target car at the suggested time. */
+  async function displacementMove(step: Extract<ChecklistStep, { kind: "move" }>) {
+    const rideId = step.rideIds[0];
+    const minutes = slotMinutesOnSelectedDay(step.window.start);
+    if (rideId && minutes != null) await handleRideDrop(rideId, step.toCarId, minutes);
+  }
+  /** Same path as dropping the request (or, for a multi-day trip, the whole series) on the car. */
+  async function displacementPlace(step: Extract<ChecklistStep, { kind: "place" }>) {
+    const minutes = slotMinutesOnSelectedDay(step.window.start);
+    if (displacement && minutes != null) await handlePlaceUnmetRequest(displacement.item, step.carId, minutes);
   }
 
   async function handleUndo() {
@@ -990,6 +1016,12 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
     handleUnmetDecision,
     saveReservation,
     handleUnmetAction,
+    displacement,
+    setDisplacement,
+    displacementSteps,
+    displacementRideIds,
+    displacementMove,
+    displacementPlace,
     handleUndo,
     handleRedo,
     selectedPlanningChange,

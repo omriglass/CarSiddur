@@ -24,6 +24,7 @@ import { fallbackLine, hasActiveFallback } from "../planBLine";
 
 import type { WeekRequestRow } from "../../api";
 import { isActiveStop } from "@/lib/routeStops";
+import { isDisplacementSuggestion } from "../displacementChecklist";
 
 /** An unmet request's own active stops by name, per leg in route order (raw `request_stops` rows). */
 function unmetViaNames(
@@ -330,7 +331,7 @@ export function UnmetList({ items, onAction, onOpenProposal, onDecision, dayStar
                       {suggestion.reason}
                       {item.suggestionBoardAt?.[index] ? ` · ${item.suggestionBoardAt[index]}` : ""}
                     </span>
-                    <Button size="sm" variant="outline" className="min-h-11 shrink-0" onClick={() => onAction(item, suggestion)} data-testid={suggestion.kind === "useAlternative" ? "unmet-plan-b-propose" : undefined}>{suggestion.kind === "useAlternative" ? he.sadranPlanB.propose : he.action.propose}</Button>
+                    <Button size="sm" variant="outline" className="min-h-11 shrink-0" onClick={() => onAction(item, suggestion)} data-testid={suggestion.kind === "useAlternative" ? "unmet-plan-b-propose" : undefined}>{suggestion.kind === "useAlternative" ? he.sadranPlanB.propose : isDisplacementSuggestion(suggestion) ? he.displacement.open : he.action.propose}</Button>
                   </div>
                 ))}
               </div>

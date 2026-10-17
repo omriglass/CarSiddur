@@ -62,6 +62,7 @@ import { BoardDisplayMenu } from "./BoardDisplayMenu";
 import { BoardListMode } from "./BoardListMode";
 import { BoardTitleSwitcher } from "./BoardTitleSwitcher";
 import { BoardWeekSwitcher } from "./BoardWeekSwitcher";
+import { DisplacementChecklist } from "./DisplacementChecklist";
 import { DraftChoiceDialog } from "./DraftChoiceDialog";
 import type { FewerDaysSupport } from "./FewerDaysAction";
 import type { ComposerPrefill } from "../draftInput";
@@ -503,7 +504,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
                 driverName: r.driver_name,
                 needsDriver: !!r.needs_driver,
                 conflict: board.conflictRideIds.has(r.id as string),
-                highlighted: board.focusedConflict?.id === r.id,
+                highlighted: board.focusedConflict?.id === r.id || dnd.displacementRideIds.has(r.id as string),
                 tightSchedule: board.tightRideIds.has(r.id as string),
                 isChauffeur: !!r.is_chauffeur,
                 carName: (board.carsQuery.data ?? []).find((c) => c.id === r.car_id)?.name ?? null,
@@ -587,6 +588,23 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
         busy={dnd.draftPending}
         onCancel={() => dnd.setMergePrefill(null)}
       />
+      {dnd.displacement ? (
+        <DisplacementChecklist
+          steps={dnd.displacementSteps}
+          weekStartMs={board.dropCtx.weekStartMs ?? null}
+          selectedDay={board.selectedDay}
+          carName={(carId) => (board.carsQuery.data ?? []).find((c) => c.id === carId)?.name ?? ""}
+          requesterName={(requestId) => (board.requestsQuery.data ?? []).find((r) => r.id === requestId)?.requester_full_name ?? ""}
+          series={!!dnd.displacement.item.request.series_id}
+          busy={dnd.unassignRideMutation.isPending || dnd.editRideMutation.isPending}
+          onGoToDay={board.setSelectedDay}
+          onUnplace={dnd.handleUnassignRide}
+          onMove={dnd.displacementMove}
+          onPlace={dnd.displacementPlace}
+          onShow={(rideId) => document.querySelector(`[data-ride-id="${rideId}"]`)?.scrollIntoView({ block: "center", inline: "center", behavior: "smooth" })}
+          onClose={() => dnd.setDisplacement(null)}
+        />
+      ) : null}
       <DraftChoiceDialog
         choice={dnd.composeChoice}
         requesterName={board.requestsQuery.data?.find((request) => request.id === dnd.composeChoice?.requestId)?.requester_full_name}
