@@ -66,6 +66,7 @@
         "supabase/tests/origins_schema.sql",
         "supabase/tests/origins_chain.sql",
         "supabase/tests/week_end_home.sql",
+        "supabase/tests/place_linking.sql",
         "supabase/tests/multi_stop.sql",
         "supabase/tests/request_anchors.sql",
         "supabase/tests/department_rush_hours.sql",
@@ -147,6 +148,7 @@
       ],
       "sql": [
         "request_templates.sql",
+        "place_linking.sql",
         "multi_day_series.sql",
         "upcoming_weeks.sql",
         "origins_schema.sql",

@@ -5157,6 +5157,10 @@ export type Database = {
         }
         Returns: string
       }
+      match_department_place: {
+        Args: { p_department_id: string; p_text: string }
+        Returns: string
+      }
       materialize_department_weeks: {
         Args: { p_department_id: string; p_now: string }
         Returns: number
@@ -5203,6 +5207,7 @@ export type Database = {
           profile_id: string
         }[]
       }
+      normalize_place_text: { Args: { p_text: string }; Returns: string }
       notification_context: {
         Args: {
           _data: Json

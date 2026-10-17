@@ -828,6 +828,7 @@ The `SeatConfigEditor` validates that every row is a non-dominated combination (
 ### 5.6 Destinations (`/admin/destinations`)
 Tabs **רשימה** / **טקסט חופשי לסיווג (n)**.
 - List: name, aliases (chips), zone, distance km, travel minutes, public-transport score (0–5 as in DATA_MODEL §3.3, with labels אין / חלש מאוד / חלש / סביר / טוב / מצוין), usage count, active. Since QA run 11 (R11U12/R11F3) a **"נקודת הקפצה"** column shows a badge on each drop point (`destination-drop-point-badge`).
+- Approving a suggested place (or renaming it / editing its aliases while approved) links every waiting request, stop and repeating template of the department whose typed text equals it (REQ §13.137); placed requests and archived weeks are left alone, an ambiguous text stays text. No extra step for the admin.
 - Free-text queue: every distinct free-text destination members typed, with count and last used; per row **מזג לתוך…** (combobox of presets — the string becomes an alias and past requests are relinked) or **צור יעד חדש** (opens the editor prefilled). This is how the list grows without admins predicting everything.
 
 ### 5.7 Ride types (`/admin/ride-types`)

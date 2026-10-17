@@ -22,8 +22,8 @@ Solver mapping (`src/features/solverBridge/buildSolverInput.ts`): `publicTranspo
 - [ ] `docs/DATA_MODEL.md` §3.3: update only if the column semantics or zone vocabulary changed (not per row). If you added a zone, list it in DATA_MODEL §3.3 and UX_FLOWS §5.6 Destinations.
 
 ## B. Approve a member-suggested (free-text) destination
-- In the app: members' free text calls `suggest_destination()` RPC → row with `is_approved = false`; Admin → Destinations → "Suggested" tab → set zone/distance/travel/PT score → approve; matching `requests.destination_id` are back-filled.
-- Code only if that UI is missing: `src/features/admin/destinations/components/ApproveDestinationDialog.tsx`, RPC `approve_destination(id, zone, distance_km, travel_minutes, pt_score)` (admin only), `docs/UX_FLOWS.md` §5.6 Destinations.
+- In the app: members' free text calls `suggest_destination()` RPC → row with `is_approved = false`; Admin → Destinations → fill zone/distance/travel/PT score and set "מאושר ברשימה" (a plain `destinations` update, admin RLS).
+- Back-fill is automatic (REQ §13.137): the `destinations_link_typed_places` trigger (`link_typed_places_on_approval()`, `20261026120200`) links waiting requests (draft/submitted/waitlisted/denied/external, non-archived week), their stops and the department's repeating templates whose typed text equals the name or an alias; placed requests and ambiguous texts stay as typed. There is no `approve_destination` RPC. Test: `supabase/tests/place_linking.sql`.
 
 ## C. Change how destinations affect priority
 - That is a rule or a weight, not data: `distance` and `publicTransport` rule types (SOLVER.md §4.3) read `distanceKm` / `publicTransportScore`. Change weights in Admin → Policies; change the curve via `/add-priority-rule` (edit the rule file + SOLVER.md §4.3).

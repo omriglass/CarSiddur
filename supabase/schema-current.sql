@@ -13,6 +13,7 @@
 
 
 
+
 SET statement_timeout = 0;
 SET lock_timeout = 0;
 SET idle_in_transaction_session_timeout = 0;
@@ -8174,6 +8175,62 @@ $$;
 ALTER FUNCTION "public"."joinable_rides_for_request"("p_request_id" "uuid") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."link_typed_places_on_approval"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare v_prev text := coalesce(current_setting('app.audit_reason', true), '');
+begin
+  perform set_config('app.audit_reason', 'place_linked', true);
+
+  -- one UPDATE per request, so the version bumps once
+  update public.requests q set
+    destination_id = case when q.destination_id is null and q.destination_text is not null
+                           and public.match_department_place(q.department_id, q.destination_text) = new.id
+                          then new.id else q.destination_id end,
+    destination_text = case when q.destination_id is null and q.destination_text is not null
+                             and public.match_department_place(q.department_id, q.destination_text) = new.id
+                            then null else q.destination_text end,
+    origin_id = case when q.origin_id is null and q.origin_text is not null
+                      and public.match_department_place(q.department_id, q.origin_text) = new.id
+                     then new.id else q.origin_id end,
+    origin_text = case when q.origin_id is null and q.origin_text is not null
+                        and public.match_department_place(q.department_id, q.origin_text) = new.id
+                       then null else q.origin_text end
+  where q.department_id = new.department_id
+    and q.status in ('draft', 'submitted', 'waitlisted', 'denied', 'external')
+    and ((q.destination_id is null and q.destination_text is not null)
+         or (q.origin_id is null and q.origin_text is not null))
+    and exists (select 1 from public.weeks w where w.department_id = q.department_id
+                and w.week_start = q.week_start and w.phase <> 'archived')
+    and not exists (select 1 from public.proposals p where p.request_id = q.id and p.status in ('sent', 'accepted'))
+    and (public.match_department_place(q.department_id, q.destination_text) = new.id
+         or public.match_department_place(q.department_id, q.origin_text) = new.id);
+
+  update public.request_stops s set place_id = new.id, place_text = null
+  from public.requests q
+  where q.id = s.request_id and s.department_id = new.department_id
+    and s.place_id is null and s.place_text is not null
+    and q.status in ('draft', 'submitted', 'waitlisted', 'denied', 'external')
+    and exists (select 1 from public.weeks w where w.department_id = q.department_id
+                and w.week_start = q.week_start and w.phase <> 'archived')
+    and public.match_department_place(s.department_id, s.place_text) = new.id;
+
+  update public.request_templates t set destination_id = new.id, destination_text = null
+  where t.department_id = new.department_id and t.destination_id is null and t.destination_text is not null
+    and public.match_department_place(t.department_id, t.destination_text) = new.id;
+  update public.request_templates t set origin_id = new.id, origin_text = null
+  where t.department_id = new.department_id and t.origin_id is null and t.origin_text is not null
+    and public.match_department_place(t.department_id, t.origin_text) = new.id;
+
+  perform set_config('app.audit_reason', v_prev, true);
+  return null;
+end $$;
+
+
+ALTER FUNCTION "public"."link_typed_places_on_approval"() OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."log_car_care"("_car_id" "uuid", "_kind" "public"."car_care_kind", "_tires" "jsonb" DEFAULT NULL::"jsonb", "_note" "text" DEFAULT NULL::"text") RETURNS "uuid"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -8320,6 +8377,26 @@ end $$;
 
 
 ALTER FUNCTION "public"."mark_car_move"("p_car_id" "uuid", "p_from_place" "uuid", "p_to_place" "uuid", "p_at" timestamp with time zone, "p_minutes" integer, "p_people" "uuid"[]) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."match_department_place"("p_department_id" "uuid", "p_text" "text") RETURNS "uuid"
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare v_norm text := public.normalize_place_text(p_text); v_ids uuid[];
+begin
+  if v_norm is null or p_department_id is null then return null; end if;
+  select array_agg(d.id) into v_ids
+  from public.destinations d
+  where d.department_id = p_department_id and d.is_approved
+    and (public.normalize_place_text(d.name) = v_norm
+         or exists (select 1 from unnest(d.aliases) a where public.normalize_place_text(a) = v_norm));
+  if v_ids is null or cardinality(v_ids) <> 1 then return null; end if;
+  return v_ids[1];
+end $$;
+
+
+ALTER FUNCTION "public"."match_department_place"("p_department_id" "uuid", "p_text" "text") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."materialize_department_weeks"("p_department_id" "uuid", "p_now" timestamp with time zone) RETURNS integer
@@ -8747,6 +8824,17 @@ end $$;
 
 
 ALTER FUNCTION "public"."my_co_guardians"("p_department_id" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."normalize_place_text"("p_text" "text") RETURNS "text"
+    LANGUAGE "sql" IMMUTABLE
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select nullif(lower(btrim(regexp_replace(coalesce(p_text, ''), '\s+', ' ', 'g'))), '')
+$$;
+
+
+ALTER FUNCTION "public"."normalize_place_text"("p_text" "text") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."normalize_public_request_details"() RETURNS "trigger"
@@ -12416,6 +12504,24 @@ $$;
 ALTER FUNCTION "public"."request_stop_etas"("p_request_id" "uuid") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."request_stops_link_typed_places"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare v_id uuid;
+begin
+  if new.place_id is null and new.place_text is not null
+     and (tg_op = 'INSERT' or new.place_text is distinct from old.place_text) then
+    v_id := public.match_department_place(new.department_id, new.place_text);
+    if v_id is not null then new.place_id := v_id; new.place_text := null; end if;
+  end if;
+  return new;
+end $$;
+
+
+ALTER FUNCTION "public"."request_stops_link_typed_places"() OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."request_stops_with_eta"("p_request_id" "uuid") RETURNS TABLE("leg" "public"."ride_leg", "position" smallint, "place_id" "uuid", "place_text" "text", "eta" timestamp with time zone, "active" boolean)
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -12431,6 +12537,29 @@ $$;
 
 
 ALTER FUNCTION "public"."request_stops_with_eta"("p_request_id" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."request_templates_link_typed_places"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare v_id uuid;
+begin
+  if new.destination_id is null and new.destination_text is not null
+     and (tg_op = 'INSERT' or new.destination_text is distinct from old.destination_text) then
+    v_id := public.match_department_place(new.department_id, new.destination_text);
+    if v_id is not null then new.destination_id := v_id; new.destination_text := null; end if;
+  end if;
+  if new.origin_id is null and new.origin_text is not null
+     and (tg_op = 'INSERT' or new.origin_text is distinct from old.origin_text) then
+    v_id := public.match_department_place(new.department_id, new.origin_text);
+    if v_id is not null then new.origin_id := v_id; new.origin_text := null; end if;
+  end if;
+  return new;
+end $$;
+
+
+ALTER FUNCTION "public"."request_templates_link_typed_places"() OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."requests_awaiting_driver_status"() RETURNS "trigger"
@@ -12526,6 +12655,29 @@ end $$;
 
 
 ALTER FUNCTION "public"."requests_duration_lock_guard"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."requests_link_typed_places"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare v_id uuid;
+begin
+  if new.destination_id is null and new.destination_text is not null
+     and (tg_op = 'INSERT' or new.destination_text is distinct from old.destination_text) then
+    v_id := public.match_department_place(new.department_id, new.destination_text);
+    if v_id is not null then new.destination_id := v_id; new.destination_text := null; end if;
+  end if;
+  if new.origin_id is null and new.origin_text is not null
+     and (tg_op = 'INSERT' or new.origin_text is distinct from old.origin_text) then
+    v_id := public.match_department_place(new.department_id, new.origin_text);
+    if v_id is not null then new.origin_id := v_id; new.origin_text := null; end if;
+  end if;
+  return new;
+end $$;
+
+
+ALTER FUNCTION "public"."requests_link_typed_places"() OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."requests_notify_join_asked"() RETURNS "trigger"
@@ -20772,6 +20924,10 @@ CREATE OR REPLACE TRIGGER "departments_create_settings" AFTER INSERT ON "public"
 
 
 
+CREATE OR REPLACE TRIGGER "destinations_link_typed_places" AFTER UPDATE ON "public"."destinations" FOR EACH ROW WHEN (("new"."is_approved" AND ((NOT "old"."is_approved") OR ("new"."name" IS DISTINCT FROM "old"."name") OR ("new"."aliases" IS DISTINCT FROM "old"."aliases")))) EXECUTE FUNCTION "public"."link_typed_places_on_approval"();
+
+
+
 CREATE OR REPLACE TRIGGER "destinations_normalize_name" BEFORE INSERT OR UPDATE OF "name" ON "public"."destinations" FOR EACH ROW EXECUTE FUNCTION "public"."destinations_normalize_name"();
 
 
@@ -20880,7 +21036,15 @@ CREATE OR REPLACE TRIGGER "request_companions_valid" BEFORE INSERT OR UPDATE ON 
 
 
 
+CREATE OR REPLACE TRIGGER "request_stops_link_typed_places" BEFORE INSERT OR UPDATE OF "place_id", "place_text" ON "public"."request_stops" FOR EACH ROW EXECUTE FUNCTION "public"."request_stops_link_typed_places"();
+
+
+
 CREATE OR REPLACE TRIGGER "request_templates_default_origin" BEFORE INSERT ON "public"."request_templates" FOR EACH ROW EXECUTE FUNCTION "public"."requests_default_origin"();
+
+
+
+CREATE OR REPLACE TRIGGER "request_templates_link_typed_places" BEFORE INSERT OR UPDATE OF "destination_id", "destination_text", "origin_id", "origin_text" ON "public"."request_templates" FOR EACH ROW EXECUTE FUNCTION "public"."request_templates_link_typed_places"();
 
 
 
@@ -20897,6 +21061,10 @@ CREATE OR REPLACE TRIGGER "requests_default_origin" BEFORE INSERT ON "public"."r
 
 
 CREATE OR REPLACE TRIGGER "requests_duration_lock_guard" BEFORE INSERT OR UPDATE ON "public"."requests" FOR EACH ROW EXECUTE FUNCTION "public"."requests_duration_lock_guard"();
+
+
+
+CREATE OR REPLACE TRIGGER "requests_link_typed_places" BEFORE INSERT OR UPDATE OF "destination_id", "destination_text", "origin_id", "origin_text" ON "public"."requests" FOR EACH ROW EXECUTE FUNCTION "public"."requests_link_typed_places"();
 
 
 
@@ -23689,6 +23857,11 @@ GRANT ALL ON FUNCTION "public"."joinable_rides_for_request"("p_request_id" "uuid
 
 
 
+REVOKE ALL ON FUNCTION "public"."link_typed_places_on_approval"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."link_typed_places_on_approval"() TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."log_car_care"("_car_id" "uuid", "_kind" "public"."car_care_kind", "_tires" "jsonb", "_note" "text") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."log_car_care"("_car_id" "uuid", "_kind" "public"."car_care_kind", "_tires" "jsonb", "_note" "text") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."log_car_care"("_car_id" "uuid", "_kind" "public"."car_care_kind", "_tires" "jsonb", "_note" "text") TO "service_role";
@@ -23703,6 +23876,11 @@ GRANT ALL ON FUNCTION "public"."maintenance_refresh_flags"() TO "service_role";
 REVOKE ALL ON FUNCTION "public"."mark_car_move"("p_car_id" "uuid", "p_from_place" "uuid", "p_to_place" "uuid", "p_at" timestamp with time zone, "p_minutes" integer, "p_people" "uuid"[]) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."mark_car_move"("p_car_id" "uuid", "p_from_place" "uuid", "p_to_place" "uuid", "p_at" timestamp with time zone, "p_minutes" integer, "p_people" "uuid"[]) TO "service_role";
 GRANT ALL ON FUNCTION "public"."mark_car_move"("p_car_id" "uuid", "p_from_place" "uuid", "p_to_place" "uuid", "p_at" timestamp with time zone, "p_minutes" integer, "p_people" "uuid"[]) TO "authenticated";
+
+
+
+REVOKE ALL ON FUNCTION "public"."match_department_place"("p_department_id" "uuid", "p_text" "text") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."match_department_place"("p_department_id" "uuid", "p_text" "text") TO "service_role";
 
 
 
@@ -23764,6 +23942,11 @@ GRANT ALL ON FUNCTION "public"."move_series"("p_series_id" "uuid", "p_new_car_id
 REVOKE ALL ON FUNCTION "public"."my_co_guardians"("p_department_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."my_co_guardians"("p_department_id" "uuid") TO "service_role";
 GRANT ALL ON FUNCTION "public"."my_co_guardians"("p_department_id" "uuid") TO "authenticated";
+
+
+
+REVOKE ALL ON FUNCTION "public"."normalize_place_text"("p_text" "text") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."normalize_place_text"("p_text" "text") TO "service_role";
 
 
 
@@ -24229,9 +24412,19 @@ GRANT ALL ON FUNCTION "public"."request_stop_etas"("p_request_id" "uuid") TO "au
 
 
 
+REVOKE ALL ON FUNCTION "public"."request_stops_link_typed_places"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."request_stops_link_typed_places"() TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."request_stops_with_eta"("p_request_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."request_stops_with_eta"("p_request_id" "uuid") TO "service_role";
 GRANT ALL ON FUNCTION "public"."request_stops_with_eta"("p_request_id" "uuid") TO "authenticated";
+
+
+
+REVOKE ALL ON FUNCTION "public"."request_templates_link_typed_places"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."request_templates_link_typed_places"() TO "service_role";
 
 
 
@@ -24252,6 +24445,11 @@ GRANT ALL ON FUNCTION "public"."requests_default_origin"() TO "service_role";
 
 REVOKE ALL ON FUNCTION "public"."requests_duration_lock_guard"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."requests_duration_lock_guard"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."requests_link_typed_places"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."requests_link_typed_places"() TO "service_role";
 
 
 
