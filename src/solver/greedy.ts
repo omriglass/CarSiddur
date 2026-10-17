@@ -270,6 +270,8 @@ export interface PlacedSingle {
   preferredCar?: boolean;
   /** REQ §136 a (docs/SOLVER.md §3.6.4): round trips seated in this ride by the pooling pass (`pooling.ts`). */
   guests?: NormalizedRequest[];
+  /** REQ item 136 (b): guests that ride only one leg of this ride (a drop-off / pickup), by request id; absent = 'both'. */
+  guestLegs?: Record<string, 'out' | 'return'>;
 }
 export interface PlacedPair {
   kind: 'pair';
@@ -733,14 +735,18 @@ export function toAssignments(placed: Placed[], input: SolverInput, carsById: Ma
             destinationId: isOneWay ? legDestinationId : nr.destinationId,
             role: canDrive ? 'driver' : 'passenger',
           },
-          ...guests.map((g) => ({
-            requestId: g.id,
-            leg: 'both' as const,
-            carMode: 'passenger' as const,
-            originId: g.originId,
-            destinationId: g.destinationId,
-            role: 'passenger' as const,
-          })),
+          ...guests.map((g) => {
+            const guestLeg = p.guestLegs?.[g.id];
+            const gl = g.legs[0];
+            return {
+              requestId: g.id,
+              leg: guestLeg ?? ('both' as const),
+              carMode: 'passenger' as const,
+              originId: guestLeg && gl ? gl.originId : g.originId,
+              destinationId: guestLeg && gl ? gl.destinationId : g.destinationId,
+              role: 'passenger' as const,
+            };
+          }),
         ],
         servedRequestIds: [nr.id, ...guests.map((g) => g.id)],
         passengers: sum(nr.passengers, ...guests.map((g) => g.passengers)),

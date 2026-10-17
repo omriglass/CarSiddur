@@ -9,7 +9,8 @@
 import { runSeriesRepair, suggestForSeries } from './seriesRepair';
 import { buildUnits, runGreedy, sortUnits, toAssignments, type Placed, type PlacedSingle } from './greedy';
 import { runImprove } from './improve';
-import { runPooling } from './pooling';
+import { runPooling, runRideAlong, seatAsGuest } from './pooling';
+import { evictDriverlessForDrivers } from './driverFirst';
 import { runPreferenceSwaps } from './preferenceSwaps';
 import { assertInvariants } from './invariants';
 import { fits, luggageFits } from './seatFit';
@@ -20,7 +21,7 @@ import { chauffeurShortDropOffs, chauffeurUnpairedRelayLegs, pairRelays, pickupF
 import { reason } from './reasons';
 import { applyFallbacks } from './alternative';
 import { expandDropOffs, restoreDropOffIds } from './dropOffSplit';
-import { carName, placeName, rideHostLabel, requestDestName, requestOriginName } from './names';
+import { carName, memberName, placeName, rideHostLabel, requestDestName, requestOriginName } from './names';
 import { byId, normalize, type NormalizedRequest } from './slots';
 import { buildSuggestions, type SuggestionContext } from './suggestions';
 import { buildTimelines, CarTimeline } from './timeline';
@@ -219,10 +220,21 @@ function solveExpanded(input: SolverInput): SolverOutput {
     finalPlaced = pooling.placed;
     stillUnmetUnits = pooling.unmetUnits;
   }
+  // REQ item 136 (b) (SOLVER §3.6.6): a drop-off leg first tries to ride along as a passenger in a placed ride
+  // passing by, before it can become a chauffeur ride (the healing below only sees the legs nobody passes by).
+  const ownPairFallback: NormalizedRequest[] = [];
+  for (const u of stillUnmetUnits) {
+    if (u.kind !== 'pair' || !u.pair) continue;
+    ownPairFallback.push(u.pair.outNr, u.pair.retNr);
+  }
+  const rideAlongPool = new Map<string, NormalizedRequest>();
+  for (const nr of [...unpaired, ...ownPairFallback, ...passengerOnly]) rideAlongPool.set(nr.id, nr);
+  const rideAlongIds = input.config.sharedRides !== false
+    ? runRideAlong([...rideAlongPool.values()], finalPlaced, timelines, input, scores, carsMap)
+    : new Set<string>();
   // REQ item 136 (f) (SOLVER §3.6.5): the fixing stage — on the finished plan, swap cars between placed rides
   // when that answers more preferences (window-preserving, never unplaces, never breaks a requirement).
   const preferenceSwaps = runPreferenceSwaps(finalPlaced, timelines, input, scores, carsMap).swaps;
-  const solverAssignments = toAssignments(finalPlaced, input, carsMap);
 
   // REQUIREMENTS §13.88/§13.89 (rule made precise 2026-09-16): an unpaired relay
   // candidate is never placed as a lone relay leg (that would leave the car
@@ -240,33 +252,49 @@ function solveExpanded(input: SolverInput): SolverOutput {
   const oneWayPairs = pairComplementaryOneWays(
     stillUnmetUnits.flatMap((u) => (u.kind === 'single' && u.single?.tripType === 'one_way' ? [u.single] : [])),
     timelines, input, carsMap, scores);
-  const ownPairFallback: NormalizedRequest[] = [];
-  for (const u of stillUnmetUnits) {
-    if (u.kind !== 'pair' || !u.pair) continue;
-    ownPairFallback.push(u.pair.outNr, u.pair.retNr);
-  }
   // REQ §13.105 b: a pickup from X on a car already standing at X, driven home by the requester, comes first.
-  const pickupCandidates = [...unpaired, ...ownPairFallback];
+  const pickupCandidates = [...unpaired, ...ownPairFallback].filter((nr) => !rideAlongIds.has(nr.id));
   const pickups = pickupFromCarAtX(pickupCandidates, timelines, input, carsMap, scores);
   const chauffeured = chauffeurUnpairedRelayLegs(
     pickupCandidates.filter((nr) => !pickups.healedIds.has(nr.id)), timelines, input, carsMap, scores);
   const healed = [...pickups.healed, ...chauffeured.healed];
-  const healedIds = new Set([...pickups.healedIds, ...chauffeured.healedIds]);
+  const healedIds = new Set([...rideAlongIds, ...pickups.healedIds, ...chauffeured.healedIds]);
   const stillUnpairedRelay = unpaired.filter((nr) => !healedIds.has(nr.id));
   // REQUIREMENTS §13.88 (owner 2026-09-24, docs/TODO.md Q7): a one-way leg with no eligible
   // driver on board gets the same missing-driver chauffeur ride the SQL healing gives it
   // (`try_widen_one_way_leg`), instead of staying unmet; only when no car has room does it
   // keep the UNMET_PASSENGER_NO_HOST path and its merge suggestions.
   // REQ §13.104b: a short drop-off + pickup with nobody needing the car meanwhile is one chauffeur ride.
-  const shortRides = chauffeurShortDropOffs(passengerOnly, normalized, timelines, input, scores);
-  const remainingPassengerOnly = passengerOnly.filter((nr) => !shortRides.healedIds.has(nr.id));
+  const passengerOnlyLeft = passengerOnly.filter((nr) => !rideAlongIds.has(nr.id));
+  const shortRides = chauffeurShortDropOffs(passengerOnlyLeft, normalized, timelines, input, scores);
+  const remainingPassengerOnly = passengerOnlyLeft.filter((nr) => !shortRides.healedIds.has(nr.id));
   const { healed: healedNoDriverSingles, healedIds: healedNoDriverSingleIds } =
     chauffeurUnpairedRelayLegs(remainingPassengerOnly, timelines, input, carsMap, scores, 'noDriver');
   const healedNoDriver = [...shortRides.healed, ...healedNoDriverSingles];
-  const healedNoDriverIds = new Set([...shortRides.healedIds, ...healedNoDriverSingleIds]);
-  const stillPassengerOnly = passengerOnly.filter((nr) => !healedNoDriverIds.has(nr.id));
+  const healedNoDriverIds = new Set([...rideAlongIds, ...shortRides.healedIds, ...healedNoDriverSingleIds]);
 
-  const assignments = [...fixedAssignments, ...solverAssignments, ...oneWayPairs.healed, ...healed, ...healedNoDriver].sort((a, b) => byId({ id: a.rideId }, { id: b.rideId }));
+  // REQ item 136 (b) (SOLVER §3.6.7): a driverless ride never takes a car a driver needs.
+  const driverFirst = evictDriverlessForDrivers(stillUnmetUnits, finalPlaced, [...healed, ...healedNoDriver], timelines, input);
+  const evictedIds = driverFirst.evicted;
+  // an evicted leg first tries to ride along with the driver who took its car (or any other ride passing by)
+  const survivors = finalPlaced.filter((p) => !(p.kind === 'single' && driverFirst.removedRideIds.has(`ride:${p.nr.id}`)));
+  const hostsAfter: Placed[] = [...survivors, ...driverFirst.newPlaced];
+  const evictedOrder = [...evictedIds.keys()]
+    .map((id) => byRequestId.get(id))
+    .filter((nr): nr is NormalizedRequest => !!nr)
+    .sort((a, b) => ((scores.get(b.id)?.total ?? 0) - (scores.get(a.id)?.total ?? 0)) || byId(a, b));
+  if (input.config.sharedRides !== false) {
+    for (const nr of evictedOrder) {
+      const side = nr.legs[0]?.side ?? 'both';
+      if (seatAsGuest(nr, side, hostsAfter, timelines, input, carsMap)) evictedIds.delete(nr.id);
+    }
+  }
+  const solverAssignments = toAssignments(hostsAfter, input, carsMap);
+  const stillPassengerOnly = passengerOnly.filter((nr) => !healedNoDriverIds.has(nr.id) || evictedIds.has(nr.id));
+  stillUnmetUnits = stillUnmetUnits.filter((u) => !driverFirst.placedUnitIds.has(u.id));
+  const notEvicted = (a: Assignment): boolean => !driverFirst.removedRideIds.has(a.rideId);
+
+  const assignments = [...fixedAssignments, ...solverAssignments, ...oneWayPairs.healed, ...healed.filter(notEvicted), ...healedNoDriver.filter(notEvicted)].sort((a, b) => byId({ id: a.rideId }, { id: b.rideId }));
 
   const servedRequestIds = new Set<string>();
   for (const a of assignments) for (const rid of a.servedRequestIds) servedRequestIds.add(rid);
@@ -288,6 +316,10 @@ function solveExpanded(input: SolverInput): SolverOutput {
   }
   for (const nr of stillUnpairedRelay) unmetIds.set(nr.id, nr);
   for (const nr of stillPassengerOnly) unmetIds.set(nr.id, nr);
+  for (const id of evictedIds.keys()) {
+    const nr = byRequestId.get(id);
+    if (nr) unmetIds.set(id, nr);
+  }
   // Anything normalized but not served and not otherwise captured (defensive).
   for (const nr of normalized) if (!servedRequestIds.has(nr.id)) unmetIds.set(nr.id, unmetIds.get(nr.id) ?? nr);
 
@@ -331,7 +363,10 @@ function solveExpanded(input: SolverInput): SolverOutput {
         })();
       // R8B14: an explicit one-way leg says why for real (stranded next ride vs no car at the origin vs busy).
       const oneWayCause = nr.tripType === 'one_way' ? oneWayUnmetCause(nr, timelines, input) : { strands: false, atOrigin: false, awayAtWeekEnd: false };
-      const reasonCode = needsLargeTrunk
+      const takenBy = evictedIds.get(nr.id);
+      const reasonCode = takenBy !== undefined
+        ? 'UNMET_CAR_TO_DRIVER'
+        : needsLargeTrunk
         ? 'UNMET_NEEDS_LARGE_TRUNK'
         : seatsBusy
         ? 'UNMET_NO_CAR_SEATS_BUSY'
@@ -349,7 +384,9 @@ function solveExpanded(input: SolverInput): SolverOutput {
                 : 'UNMET_NO_CAR_AT_ORIGIN'
             : 'UNMET_NO_CAR';
       const reasonText =
-        reasonCode === 'UNMET_NEEDS_LARGE_TRUNK'
+        reasonCode === 'UNMET_CAR_TO_DRIVER'
+          ? reason('UNMET_CAR_TO_DRIVER', { member: memberName(input, byRequestId.get(takenBy ?? '')?.request.memberId), dest: requestDestName(input, nr.request) })
+          : reasonCode === 'UNMET_NEEDS_LARGE_TRUNK'
           ? reason('UNMET_NEEDS_LARGE_TRUNK')
           : reasonCode === 'UNMET_NO_CAR_SEATS_BUSY'
           ? reason('UNMET_NO_CAR_SEATS_BUSY')

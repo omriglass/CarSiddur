@@ -132,9 +132,17 @@ function denySuggestion(nr: NormalizedRequest, blockers: string[], input: Solver
   };
 }
 
-function mergeSuggestions(nr: NormalizedRequest, leg: LegSide, ctx: SuggestionContext, hosts: HostRide[]): Suggestion[] {
+/** REQ item 136 (b): a leg that fits no ride passing by inside its flexibility may still be offered one with its
+ *  time moved by up to this many minutes beyond it (both directions) — a merge proposal, consent asked anyway. */
+export const BEYOND_FLEX_MERGE_MINUTES = 30;
+
+function mergeSuggestions(nr: NormalizedRequest, leg: LegSide, ctx: SuggestionContext, hosts: HostRide[], beyondFlex = false): Suggestion[] {
+  const widen = minutesToSlots(BEYOND_FLEX_MERGE_MINUTES);
+  const guest: NormalizedRequest = beyondFlex
+    ? { ...nr, flexDep: [nr.flexDep[0] - widen, nr.flexDep[1] + widen], flexRet: [nr.flexRet[0] - widen, nr.flexRet[1] + widen] }
+    : nr;
   const candidates = findMergeHosts({
-    guest: nr,
+    guest,
     leg,
     hosts,
     destinations: ctx.input.destinations,
@@ -149,7 +157,7 @@ function mergeSuggestions(nr: NormalizedRequest, leg: LegSide, ctx: SuggestionCo
   return candidates.map((c) => {
     const day = dayBoundsForSlot(ctx.input.week.days, c.window.start);
     const carName = carNameOf(ctx.input.cars, c.carId);
-    const code = c.detourMinutes === 0 ? 'SUGGEST_MERGE' : 'SUGGEST_MERGE_DETOUR';
+    const code = beyondFlex ? 'SUGGEST_MERGE_BEYOND_FLEX' : c.detourMinutes === 0 ? 'SUGGEST_MERGE' : 'SUGGEST_MERGE_DETOUR';
     return {
       kind: 'merge' as const,
       requestId: nr.id,
@@ -167,16 +175,23 @@ function mergeSuggestions(nr: NormalizedRequest, leg: LegSide, ctx: SuggestionCo
         dest: requestDestName(ctx.input, nr.request),
         dep: formatSlotTime(c.window.start, day),
         ret: formatSlotTime(c.window.end, day),
-        minutes: c.detourMinutes,
+        minutes: beyondFlex ? BEYOND_FLEX_MERGE_MINUTES : c.detourMinutes,
       }),
       cost: c.cost,
-      confidence: c.confidence,
+      confidence: beyondFlex ? Math.min(c.confidence, 0.5) : c.confidence,
       boardAtLocationId: c.boardAtLocationId,
       hostWindowBefore: c.hostWindowBefore,
       addedOutMinutes: c.addedOutMinutes,
       addedReturnMinutes: c.addedReturnMinutes,
     };
   });
+}
+
+/** Merge suggestions that need the guest's time moved beyond its flexibility (REQ item 136 b); hosts already offered
+ *  inside the flexibility are not repeated. */
+function beyondFlexMerges(nr: NormalizedRequest, leg: LegSide, ctx: SuggestionContext, hosts: HostRide[], inFlex: Suggestion[]): Suggestion[] {
+  const offered = new Set(inFlex.flatMap((m) => (m.kind === 'merge' ? [m.hostRideId] : [])));
+  return mergeSuggestions(nr, leg, ctx, hosts, true).filter((m) => m.kind === 'merge' && !offered.has(m.hostRideId));
 }
 
 function shiftBeyondFlexSuggestion(nr: NormalizedRequest, ctx: SuggestionContext): Suggestion | null {
@@ -267,6 +282,7 @@ export function buildSuggestions(nr: NormalizedRequest, ctx: SuggestionContext, 
     const side: LegSide = leg?.side === 'return' ? 'return' : 'out';
     const merges = mergeSuggestions(nr, side, ctx, hosts);
     suggestions.push(...merges);
+    suggestions.push(...beyondFlexMerges(nr, side, ctx, hosts, merges));
     if (merges.length === 0) {
       const point = side === 'out' ? nr.window.start : nr.window.end;
       const candidate = findChauffeurCar(nr, side, point, ctx);
@@ -293,6 +309,10 @@ export function buildSuggestions(nr: NormalizedRequest, ctx: SuggestionContext, 
   } else if (isRelay(nr)) {
     // Unpaired relay leg (§3.11 item 5): no shift/merge is meaningful (the car
     // would end the day away regardless), go straight to convertToRoundTrip / chauffeur.
+    // REQ item 136 (b): a ride passing by with the time moved up to 30 min beyond the flexibility comes first.
+    const relaySide: LegSide = leg?.side === 'return' ? 'return' : 'out';
+    const relayMerges = mergeSuggestions(nr, relaySide, ctx, hosts);
+    suggestions.push(...relayMerges, ...beyondFlexMerges(nr, relaySide, ctx, hosts, relayMerges));
     if (leg?.side === 'out') {
       const day = dayBoundsForSlot(ctx.input.week.days, leg.window.start);
       const sharedCars = ctx.input.cars.filter((c) => c.type === 'shared').sort((a, b) => (a.id < b.id ? -1 : 1));

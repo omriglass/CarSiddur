@@ -111,7 +111,7 @@ describe('one-way requests without a stated mode (REQUIREMENTS §13.88)', () => 
     expect(output.stats.needsDriver).toBe(1);
   });
 
-  it('a non-driver defaults to passenger and merges into a same-way host', () => {
+  it('a non-driver defaults to passenger and rides along in a same-way host (REQ item 136 b: placed directly, no suggestion)', () => {
     const input = baseInput({
       cars: [makeCar('C1')],
       requests: [
@@ -122,6 +122,22 @@ describe('one-way requests without a stated mode (REQUIREMENTS §13.88)', () => 
     const nr = normalize(input).normalized.find((r) => r.id === 'guest')!;
     expect(nr.isPassengerOnly).toBe(true);
 
+    const output = solve(input);
+    expect(output.unmet).toEqual([]);
+    const ride = output.assignments.find((a) => a.servedRequestIds.includes('guest'));
+    expect(ride?.driverRequestId).toBe('host');
+    expect(ride?.legs.find((l) => l.requestId === 'guest')).toMatchObject({ leg: 'out', carMode: 'passenger', role: 'passenger' });
+  });
+
+  it('a non-driver one-way leg that fits no host inside its flexibility still gets a merge suggestion when the car is busy', () => {
+    const input = baseInput({
+      cars: [makeCar('C1')],
+      requests: [
+        makeRequest({ id: 'host', departureMs: slotMs(32), returnMs: slotMs(48), flexDeparture: { earlierMin: 0, laterMin: 0 } }),
+        // 15 min after the host leaves; the host has no flexibility, the guest none either: no seat, the car is busy
+        makeRequest({ id: 'guest', tripShape: 'one_way_to', canDrive: false, departureMs: slotMs(33) }),
+      ],
+    });
     const output = solve(input);
     const guestUnmet = output.unmet.find((u) => u.requestId === 'guest');
     expect(guestUnmet).toBeDefined();

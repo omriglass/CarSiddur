@@ -12,7 +12,7 @@ import { findMergeHosts, type HostRide } from './merge';
 import { sum } from './seatFit';
 import type { NormalizedRequest } from './slots';
 import type { CarTimeline } from './timeline';
-import type { Car, SolverInput } from './types';
+import type { Car, LegSide, SolverInput } from './types';
 
 export interface PoolingResult {
   placed: Placed[];
@@ -69,6 +69,8 @@ function tryPool(
   timelines: Map<string, CarTimeline>,
   input: SolverInput,
   carsMap: Map<string, Car>,
+  /** 'both' = a whole round trip (pooling); 'out' / 'return' = one leg rides along (REQ item 136 b). */
+  leg: LegSide = 'both',
 ): boolean {
   const hostPlaced = placed
     .filter((h): h is PlacedSingle => h.kind === 'single')
@@ -84,7 +86,7 @@ function tryPool(
   };
   const candidates = findMergeHosts({
     guest,
-    leg: 'both',
+    leg,
     hosts: hostPlaced.map(hostRideOf),
     destinations: input.destinations,
     config: input.config,
@@ -99,6 +101,8 @@ function tryPool(
     const h = hostByRide.get(c.hostRideId);
     return (
       !!h &&
+      // a ride-along guest never moves a host that already carries guests (their boarding/alighting times hold)
+      (leg === 'both' || (h.guests?.length ?? 0) === 0 || (c.window.start === h.window.start && c.window.end === h.window.end)) &&
       c.window.start >= h.nr.flexDep[0] &&
       c.window.end <= h.nr.flexRet[1] &&
       c.window.start >= h.nr.dayWindow.start &&
@@ -127,6 +131,7 @@ function tryPool(
   };
   hostPl.balancedMileage = false;
   hostPl.guests = [...(hostPl.guests ?? []), guest];
+  if (leg !== 'both') hostPl.guestLegs = { ...(hostPl.guestLegs ?? {}), [guest.id]: leg };
   if (guestPlaced) placed.splice(placed.indexOf(guestPlaced), 1);
   return true;
 }
@@ -208,4 +213,43 @@ export function runPooling(
     }
   }
   return { placed: current, unmetUnits: unmet, pooledRequestIds };
+}
+
+/**
+ * REQ item 136 (b) (docs/SOLVER.md §3.6.6): a drop-off leg (a `#out`/`#ret` half, a one-leg drop-off, or a
+ * passenger-only one-way leg) first tries to ride as a passenger in a placed ride passing by, before it can become a
+ * chauffeur ride. Same validity as pooling (`findMergeHosts` with the leg + the "not drastic" host rule); priority
+ * order (score, submission, id), so the higher-priority leg takes the seat first. Returns the ids seated. Mutates
+ * `placed` host entries and `timelines` (a host's window may grow by the detour); the legs have no block of their own.
+ */
+export function runRideAlong(
+  candidates: NormalizedRequest[],
+  placed: Placed[],
+  timelines: Map<string, CarTimeline>,
+  input: SolverInput,
+  scores: Map<string, { total: number }>,
+  carsMap: Map<string, Car>,
+): Set<string> {
+  const seated = new Set<string>();
+  const order = [...candidates]
+    .filter((nr) => nr.legs[0]?.side === 'out' || nr.legs[0]?.side === 'return')
+    .sort((a, b) => compareUnitsByPriority(unitPriority(a, scores), unitPriority(b, scores)));
+  for (const nr of order) {
+    if (seated.has(nr.id)) continue;
+    const side = nr.legs[0]?.side === 'return' ? 'return' : 'out';
+    if (tryPool(nr, undefined, placed, timelines, input, carsMap, side)) seated.add(nr.id);
+  }
+  return seated;
+}
+
+/** Seats one request (a whole round trip when `leg` is 'both', else one leg) as a guest of a placed ride, if one fits. */
+export function seatAsGuest(
+  guest: NormalizedRequest,
+  leg: LegSide,
+  placed: Placed[],
+  timelines: Map<string, CarTimeline>,
+  input: SolverInput,
+  carsMap: Map<string, Car>,
+): boolean {
+  return tryPool(guest, undefined, placed, timelines, input, carsMap, leg);
 }
