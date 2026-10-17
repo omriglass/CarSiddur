@@ -6,7 +6,11 @@
 
 import { describe, expect, it } from 'vitest';
 import { solve } from '../index';
+import { buildTimelines, CarTimeline } from '../index';
 import { assertInvariants } from '../invariants';
+import { buildUnits, runGreedy, type PlacedSingle } from '../greedy';
+import { normalize, minutesToSlots } from '../slots';
+import { suggestSeriesDisplacement, MIN_FIRST_DAY_SLOTS } from '../seriesRepair';
 import type { FixedRide, Request, SolverInput } from '../types';
 import { baseInput, flex, makeCar, makeRequest, makeSeriesLegs, passengers, slotMs } from '../__fixtures__/gen';
 
@@ -137,5 +141,137 @@ describe('series repair (item 136 e)', () => {
     const clear = check(baseInput({ cars: [makeCar('C1')], requests: [...legs, middleDay({ manualBoost: { value: 1, reason: 'test' } })] }));
     expect(clear.assignments.some((a) => a.servedRequestIds.includes('MID'))).toBe(true);
     expect(clear.unmet.map((u) => u.requestId)).toEqual(['S-leg1', 'S-leg2', 'S-leg3']);
+  });
+
+  it('suggests the trip without its first day when the nearest free start leaves < 2 h of the first day', () => {
+    const legs = thursdaySeries();
+    // C1 is busy (fixed) until Thursday 23:00 + 30 min turnaround = 23:30: the nearest start would be 23:30
+    const input = baseInput({
+      cars: [makeCar('C1')],
+      requests: legs,
+      fixedRides: [fixed('F', 'C1', THU * DAY + 30, THU * DAY + 92)],
+    });
+    const output = check(input);
+    const head = output.unmet.find((u) => u.requestId === 'S-leg1');
+    expect(head?.suggestions).toHaveLength(1);
+    const s = head?.suggestions[0];
+    if (s?.kind !== 'shiftBeyondFlex') throw new Error('expected shiftBeyondFlex');
+    expect(s.reasonCode).toBe('SUGGEST_SERIES_SPAN_FEWER_DAYS');
+    expect(s.carId).toBe('C1');
+    expect(s.window.start).toBe((THU + 1) * DAY);
+    expect(s.reason).toContain('חמישי');
+    expect(s.reason).toContain('יום אחד פחות');
+    expect(output.unmet.filter((u) => u.requestId !== 'S-leg1').every((u) => u.suggestions.length === 0)).toBe(true);
+  });
+
+  it('offers a start later on the first day only while at least 2 h of it remain', () => {
+    expect(MIN_FIRST_DAY_SLOTS).toBe(8);
+    const legs = thursdaySeries();
+    // free from Thursday 21:30 (fixed ends 21:00): 2 h 30 min of the day remain, still a start-later suggestion
+    const ok = check(baseInput({ cars: [makeCar('C1')], requests: legs, fixedRides: [fixed('F', 'C1', THU * DAY + 30, THU * DAY + 84)] }));
+    const s = ok.unmet.find((u) => u.requestId === 'S-leg1')?.suggestions[0];
+    expect(s?.reasonCode).toBe('SUGGEST_SERIES_SPAN_START');
+    // free from 22:30 (fixed ends 22:00): only 1 h 30 min remain, next-day option instead
+    const late = check(baseInput({ cars: [makeCar('C1')], requests: legs, fixedRides: [fixed('F', 'C1', THU * DAY + 30, THU * DAY + 88)] }));
+    expect(late.unmet.find((u) => u.requestId === 'S-leg1')?.suggestions[0]?.reasonCode).toBe('SUGGEST_SERIES_SPAN_FEWER_DAYS');
+  });
+
+  it('offers nothing when the next-day span is blocked too', () => {
+    const legs = thursdaySeries();
+    const output = check(
+      baseInput({
+        cars: [makeCar('C1')],
+        requests: legs,
+        fixedRides: [fixed('F', 'C1', THU * DAY + 30, THU * DAY + 92), fixed('G', 'C1', (THU + 1) * DAY + 40, (THU + 1) * DAY + 50)],
+      }),
+    );
+    expect(output.unmet.find((u) => u.requestId === 'S-leg1')?.suggestions).toEqual([]);
+  });
+
+  it('never offers displacement of a fixed or a higher-priority ride', () => {
+    const legs = thursdaySeries();
+    const fixedBlock = check(baseInput({ cars: [makeCar('C1')], requests: legs, fixedRides: [fixed('F', 'C1', THU * DAY + 32, THU * DAY + 40)] }));
+    expect(fixedBlock.unmet.find((u) => u.requestId === 'S-leg1')?.suggestions.some((s) => s.reasonCode === 'SUGGEST_SERIES_DISPLACE')).toBe(false);
+    const boosted = check(baseInput({ cars: [makeCar('C1')], requests: [...legs, thursdayRide()] }));
+    expect(boosted.unmet.find((u) => u.requestId === 'S-leg1')?.suggestions.some((s) => s.reasonCode === 'SUGGEST_SERIES_DISPLACE')).toBe(false);
+  });
+});
+
+/** Places `singles` greedily with the given scores (as if they were placed before the series), then asks for the displacement. */
+function displacement(input: SolverInput, scoreOf: Record<string, number>, seriesScore = 1) {
+  const { normalized, seriesUnits } = normalize(input);
+  const su = seriesUnits[0]!;
+  const timelines = buildTimelines(input.cars, minutesToSlots(input.config.bufferMinutes), input.week.days.at(-1)!.endSlot, input.homeLocationId);
+  const scores = new Map<string, { total: number }>([[su.scoreProxy.id, { total: seriesScore }]]);
+  for (const nr of normalized) scores.set(nr.id, { total: scoreOf[nr.id] ?? 0 });
+  const byId = new Map(normalized.map((nr) => [nr.id, nr]));
+  const { placed } = runGreedy(buildUnits(normalized, [], byId, scores), timelines, input);
+  const singles = placed.filter((p): p is PlacedSingle => p.kind === 'single');
+  return { su, singles, timelines, scores, out: suggestSeriesDisplacement(su, singles, timelines, input, scores) };
+}
+
+describe('series displacement suggestion (item 136 e, 2026-10-17)', () => {
+  const withName = (r: Request, name: string): Request => ({ ...r, memberName: name });
+
+  it('names an equal-priority non-flexible blocker; relocations list it with toCarId empty', () => {
+    const legs = thursdaySeries();
+    const eq = withName(thursdayRide({ id: 'EQ', manualBoost: undefined, preferredCarId: undefined }), 'דנה');
+    const input = baseInput({ cars: [makeCar('C1')], requests: [...legs, eq] });
+    const { out, singles, timelines } = displacement(input, { EQ: 1 });
+    expect(singles.map((p) => p.nr.id)).toEqual(['EQ']);
+    if (out?.kind !== 'shiftWithinFlex') throw new Error('expected shiftWithinFlex');
+    expect(out.reasonCode).toBe('SUGGEST_SERIES_DISPLACE');
+    expect(out.carId).toBe('C1');
+    expect(out.relocations).toEqual([expect.objectContaining({ rideId: 'ride:EQ', fromCarId: 'C1', toCarId: '' })]);
+    expect(out.reason).toContain('דנה');
+    expect(out.reason).not.toContain('EQ');
+    // dry run: the timeline is left exactly as it was
+    const tl = timelines.get('C1') as CarTimeline;
+    expect(tl.isFree({ start: THU * DAY + 32, end: THU * DAY + 40 }, input.homeLocationId)).toBe(false);
+  });
+
+  it('is deterministic', () => {
+    const input = baseInput({ cars: [makeCar('C1')], requests: [...thursdaySeries(), thursdayRide({ id: 'EQ', manualBoost: undefined })] });
+    expect(displacement(input, { EQ: 1 }).out).toEqual(displacement(input, { EQ: 1 }).out);
+  });
+
+  it('refuses a clearly higher-priority blocker (above the series score + SERIES_EARLY_BONUS)', () => {
+    const input = baseInput({ cars: [makeCar('C1')], requests: [...thursdaySeries(), thursdayRide({ id: 'HI', manualBoost: undefined })] });
+    expect(displacement(input, { HI: 2.5 }).out).toBeNull();
+  });
+
+  it('offers a blocker of similar priority (within SERIES_EARLY_BONUS of the series) — the greedy order\'s own measure', () => {
+    const input = baseInput({ cars: [makeCar('C1')], requests: [...thursdaySeries(), thursdayRide({ id: 'HI', manualBoost: undefined })] });
+    const out = displacement(input, { HI: 1.5 }).out;
+    expect(out?.kind).toBe('shiftWithinFlex');
+    expect(out?.kind === 'shiftWithinFlex' ? out.relocations : []).toEqual([expect.objectContaining({ rideId: 'ride:HI', toCarId: '' })]);
+  });
+
+  it('relocates what can move inside its flexibility and displaces only the rest', () => {
+    const legs = thursdaySeries();
+    const movable = withName(
+      thursdayRide({ id: 'MOVE', memberId: 'm-move', manualBoost: undefined, preferredCarId: 'C1', flexDeparture: flex(0, 240), flexReturn: flex(0, 240) }),
+      'משה',
+    );
+    // large luggage: only C1 takes it, so it cannot move to C2
+    const stuck = withName(
+      thursdayRide({
+        id: 'STUCK', memberId: 'm-stuck', manualBoost: undefined, preferredCarId: 'C1', luggage: true, destinationId: 'destA',
+        departureMs: slotMs((THU + 1) * DAY + 32), returnMs: slotMs((THU + 1) * DAY + 40),
+      }),
+      'שרה',
+    );
+    const input = baseInput({
+      cars: [makeCar('C1'), makeCar('C2', { luggageCapacity: 0 })],
+      requests: [...legs, movable, stuck],
+    });
+    const { out } = displacement(input, { MOVE: 1, STUCK: 0.5 });
+    if (out?.kind !== 'shiftWithinFlex') throw new Error('expected shiftWithinFlex');
+    expect(out.carId).toBe('C1');
+    const byRide = new Map(out.relocations.map((r) => [r.rideId, r]));
+    expect(byRide.get('ride:MOVE')?.toCarId).toBe('C2');
+    expect(byRide.get('ride:STUCK')?.toCarId).toBe('');
+    expect(out.reason).toContain('שרה');
+    expect(out.reason).not.toContain('משה');
   });
 });

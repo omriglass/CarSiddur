@@ -50,7 +50,7 @@ export function seriesSpanPrefill(headRequestId: string, carId: string, span: Se
 }
 
 /** Solver reason codes of the one whole-series `shiftBeyondFlex` suggestion on a series head (SOLVER §3.16). */
-export const SERIES_SPAN_REASON_CODES: readonly string[] = ["SUGGEST_SERIES_SPAN_START", "SUGGEST_SERIES_SPAN_END", "SUGGEST_SERIES_SPAN_BOTH"];
+export const SERIES_SPAN_REASON_CODES: readonly string[] = ["SUGGEST_SERIES_SPAN_START", "SUGGEST_SERIES_SPAN_END", "SUGGEST_SERIES_SPAN_BOTH", "SUGGEST_SERIES_SPAN_FEWER_DAYS"];
 
 export function isSeriesSpanSuggestion(suggestion: { reasonCode: string }): boolean {
   return SERIES_SPAN_REASON_CODES.includes(suggestion.reasonCode);

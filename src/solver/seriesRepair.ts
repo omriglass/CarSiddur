@@ -17,14 +17,17 @@
 
 import { carPreferenceRank, carsByPreference } from './carPreference';
 import { bestPlacementWithinFlex } from './flexibility';
-import { addSeriesBlocks, trySeriesOnCar, type PlacedSeries, type PlacedSingle, type SeriesPlacement, type Unit } from './greedy';
+import { SERIES_EARLY_BONUS, addSeriesBlocks, trySeriesOnCar, type PlacedSeries, type PlacedSingle, type SeriesPlacement, type Unit } from './greedy';
 import { addsChainBreak, chainBreakIds } from './improve';
-import { carName } from './names';
+import { carName, memberName } from './names';
 import { dayBoundsForSlot, formatSlotTime, minutesToSlots, type NormalizedRequest } from './slots';
 import { fits, luggageFits } from './seatFit';
-import { reason, weekdayName } from './reasons';
+import { joinNames, reason, weekdayName } from './reasons';
 import type { Block, CarTimeline } from './timeline';
 import type { Car, Relocation, SolverInput, Suggestion } from './types';
+
+/** A first-day start that leaves less than this many slots (2 h) of the day is never suggested (item 136 e, 2026-10-17). */
+export const MIN_FIRST_DAY_SLOTS = 8;
 
 /** Most blockers moved off one car for one series (bounds the search; see SOLVER §3.16). */
 export const MAX_SERIES_BLOCKERS = 6;
@@ -271,7 +274,9 @@ export function suggestSeriesSpan(
   const last = su.legs[su.legs.length - 1];
   if (!first || !last || first.seriesIndex !== 1) return null;
   const canEnd = last.seriesIndex === su.seriesCount;
-  const maxStartShift = Math.max(0, first.window.end - first.window.start - 1);
+  const firstDay = dayBoundsForSlot(input.week.days, first.window.start);
+  // never a start that leaves < 2 h of the first day (the next-day option below covers that case)
+  const maxStartShift = Math.max(0, Math.min(first.window.end - first.window.start - 1, firstDay.endSlot - MIN_FIRST_DAY_SLOTS - first.window.start));
   const maxEndShift = canEnd ? Math.min(minutesToSlots(input.config.beyondFlexMaxMinutes), Math.max(0, last.window.end - last.window.start - 1)) : 0;
 
   let best: { car: Car; D: number; R: number; cost: number } | null = null;
@@ -293,7 +298,7 @@ export function suggestSeriesSpan(
       }
     }
   }
-  if (!best) return null;
+  if (!best) return suggestNextDayStart(su, timelines, input);
 
   const days = input.week.days;
   const depDay = dayBoundsForSlot(days, best.D);
@@ -319,4 +324,212 @@ export function suggestSeriesSpan(
     cost: best.cost,
     confidence: Math.max(0, 0.5 - best.cost / 480),
   };
+}
+
+/**
+ * Item 136 (e), owner 2026-10-17: the trip without its first day. The new start is the second in-week leg's
+ * 00:00 (the car leaves from where the series started), the end stays; some shared car must be free for that
+ * whole span. Maps to the "fewer days" `shift` proposal with `series_span` on the head (SOLVER §3.15).
+ */
+function suggestNextDayStart(
+  su: import('./slots').SeriesUnit,
+  timelines: Map<string, CarTimeline>,
+  input: SolverInput,
+): Suggestion | null {
+  const first = su.legs[0];
+  const second = su.legs[1];
+  const last = su.legs[su.legs.length - 1];
+  if (!first || !second || !last || first.seriesIndex !== 1) return null;
+  const D = second.window.start;
+  const R = last.window.end;
+  if (R <= D) return null;
+  let bestCar: Car | null = null;
+  for (const car of [...input.cars].filter((c) => c.type === 'shared').sort((a, b) => (a.id < b.id ? -1 : 1))) {
+    if (!su.legs.slice(1).every((leg) => fits(car, leg.passengers) && luggageFits(car, leg.luggage ? 1 : 0))) continue;
+    const tl = timelines.get(car.id);
+    if (!tl || !tl.isFree({ start: D, end: R }, first.originId, undefined, last.destinationId)) continue;
+    bestCar = car;
+    break;
+  }
+  if (!bestCar) return null;
+  const depDay = dayBoundsForSlot(input.week.days, D);
+  const cost = (D - first.window.start) * 15;
+  return {
+    kind: 'shiftBeyondFlex',
+    requestId: first.requestId,
+    carId: bestCar.id,
+    window: { start: D, end: R },
+    shift: { departureMin: cost, returnMin: 0 },
+    reasonCode: 'SUGGEST_SERIES_SPAN_FEWER_DAYS',
+    reason: reason('SUGGEST_SERIES_SPAN_FEWER_DAYS', { car: carName(input.cars, bestCar.id), depDay: weekdayName(depDay.dayIndex) }),
+    cost,
+    confidence: 0.25,
+  };
+}
+
+/** Most displaced rides one displacement suggestion may name (bounds the search). */
+export const MAX_DISPLACED = MAX_SERIES_BLOCKERS;
+
+interface DisplaceTrial {
+  car: Car;
+  placement: SeriesPlacement;
+  moves: Move[];
+  displaced: PlacedSingle[];
+  shiftTotal: number;
+}
+
+/**
+ * Item 136 (e), owner 2026-10-17: the displacement suggestion (Sadran only, never applied automatically, REQ
+ * §13.19). The car where unplacing the fewest solver rides of EQUAL OR LOWER priority frees the whole span —
+ * "equal" as the greedy order measures it for a series: score <= the series' score + SERIES_EARLY_BONUS (a ride
+ * of the series' own score would otherwise always outrank it here, since the series was ranked with that bonus)
+ * frees the whole span; blockers that can move inside their own flexibility are relocated first, only the rest
+ * are displaced (`toCarId: ''`, the shape `improve.ts` uses). Fixed rides, series, relay pairs, one-way/chauffeur
+ * rides, pooled hosts and anything of higher priority are never touched: such a car is skipped. Dry run only —
+ * every timeline change is rolled back.
+ */
+export function suggestSeriesDisplacement(
+  su: import('./slots').SeriesUnit,
+  placedSingles: PlacedSingle[],
+  timelines: Map<string, CarTimeline>,
+  input: SolverInput,
+  scores: Map<string, { total: number }>,
+): Suggestion | null {
+  const first = su.legs[0];
+  const last = su.legs[su.legs.length - 1];
+  if (!first || !last || first.seriesIndex !== 1) return null;
+  const seriesScore = scores.get(su.scoreProxy.id)?.total ?? 0;
+  const sharedCars = [...input.cars].filter((c) => c.type === 'shared').sort((a, b) => (a.id < b.id ? -1 : 1));
+  const bufferSlots = Math.round(input.config.bufferMinutes / 15);
+  const scoreOf = (p: PlacedSingle): number => scores.get(p.nr.id)?.total ?? 0;
+  const trials: DisplaceTrial[] = [];
+
+  for (const car of sharedCars) {
+    if (!su.legs.every((leg) => fits(car, leg.passengers) && luggageFits(car, leg.luggage ? 1 : 0))) continue;
+    const tl = timelines.get(car.id);
+    if (!tl) continue;
+    const blockers = placedSingles
+      .filter((p) => p.carId === car.id && overlapsSpan(p.window.start, p.window.end, first.window.start, last.window.end, bufferSlots))
+      .sort((a, b) => scoreOf(b) - scoreOf(a) || (a.nr.id < b.nr.id ? -1 : 1));
+    if (blockers.length === 0 || blockers.length > MAX_DISPLACED) continue;
+    if (blockers.some((b) => !isRelocatable(b) || scoreOf(b) > seriesScore + SERIES_EARLY_BONUS + 1e-9)) continue;
+
+    const baselines = new Map<string, Set<string>>([[car.id, chainBreakIds(tl)]]);
+    const baselineOf = (id: string, t: CarTimeline): Set<string> => {
+      let b = baselines.get(id);
+      if (!b) {
+        b = chainBreakIds(t);
+        baselines.set(id, b);
+      }
+      return b;
+    };
+    const removed: Block[] = [];
+    const added: { carId: string; rideId: string }[] = [];
+    let seriesAdded = false;
+    const rollback = (): void => {
+      for (const a of added) timelines.get(a.carId)?.remove(a.rideId);
+      if (seriesAdded) for (const leg of su.legs) tl.remove(`ride:${leg.requestId}`);
+      for (const b of removed) tl.restore(b);
+    };
+
+    for (const b of blockers) {
+      const blk = tl.remove(rideIdOf(b.nr));
+      if (blk) removed.push(blk);
+    }
+    const placement = trySeriesOnCar(tl, su.legs, su.seriesCount);
+    if (!placement) {
+      rollback();
+      continue;
+    }
+    addSeriesBlocks(tl, su, placement);
+    seriesAdded = true;
+    if (addsChainBreak(tl, baselineOf(car.id, tl))) {
+      rollback();
+      continue;
+    }
+
+    const moves: Move[] = [];
+    const displaced: PlacedSingle[] = [];
+    for (const b of blockers) {
+      let best: Move | null = null;
+      for (const target of carsByPreference(sharedCars, b.nr.request.preferredCarId)) {
+        if (!fits(target, b.nr.passengers) || !luggageFits(target, b.nr.luggage ? 1 : 0)) continue;
+        const targetTl = timelines.get(target.id);
+        if (!targetTl) continue;
+        const place = bestPlacementWithinFlex(targetTl, b.nr);
+        if (!place) continue;
+        if (best && place.cost >= best.cost) continue;
+        const probe = blockOf(b, input, place.window);
+        targetTl.add(probe);
+        const broke = addsChainBreak(targetTl, baselineOf(target.id, targetTl));
+        targetTl.remove(probe.rideId);
+        if (broke) continue;
+        best = { blocker: b, toCarId: target.id, window: place.window, cost: place.cost };
+      }
+      if (!best) {
+        displaced.push(b);
+        continue;
+      }
+      timelines.get(best.toCarId)?.add(blockOf(b, input, best.window));
+      added.push({ carId: best.toCarId, rideId: rideIdOf(b.nr) });
+      const stays = best.toCarId === car.id && best.window.start === b.window.start && best.window.end === b.window.end;
+      if (!stays) moves.push(best);
+    }
+    const stable = displaced.length > 0 && !addsChainBreak(tl, baselineOf(car.id, tl));
+    const shiftTotal = placement.shiftCost + moves.reduce((s, m) => s + m.cost, 0);
+    rollback();
+    if (stable) trials.push({ car, placement, moves, displaced, shiftTotal });
+  }
+
+  const prefs = su.legs.map((l) => l.request.preferredCarId);
+  trials.sort(
+    (a, b) =>
+      a.displaced.length - b.displaced.length ||
+      a.moves.length - b.moves.length ||
+      a.shiftTotal - b.shiftTotal ||
+      carPreferenceRank(a.car.id, prefs) - carPreferenceRank(b.car.id, prefs) ||
+      (a.car.id < b.car.id ? -1 : 1),
+  );
+  const t = trials[0];
+  if (!t) return null;
+  const relocations: Relocation[] = [
+    ...t.moves.map((m) => ({ rideId: rideIdOf(m.blocker.nr), fromCarId: t.car.id, toCarId: m.toCarId, window: m.window })),
+    ...t.displaced.map((d) => ({ rideId: rideIdOf(d.nr), fromCarId: t.car.id, toCarId: '', window: d.window })),
+  ].sort((a, b) => (a.rideId < b.rideId ? -1 : a.rideId > b.rideId ? 1 : 0));
+  const names = joinNames(
+    t.displaced.map((d) => memberName(input, d.nr.request.memberId)),
+    reason('SERIES_DISPLACED_UNNAMED'),
+  );
+  const cost = t.shiftTotal + t.displaced.length * 1000 + t.moves.length * 10;
+  return {
+    kind: 'shiftWithinFlex',
+    requestId: first.requestId,
+    carId: t.car.id,
+    window: { start: t.placement.firstWindow.start, end: t.placement.lastWindow.end },
+    shift: {
+      departureMin: (t.placement.firstWindow.start - first.window.start) * 15,
+      returnMin: (t.placement.lastWindow.end - last.window.end) * 15,
+    },
+    relocations,
+    reasonCode: 'SUGGEST_SERIES_DISPLACE',
+    reason: reason('SUGGEST_SERIES_DISPLACE', { car: carName(input.cars, t.car.id), names }),
+    cost,
+    confidence: 0.3,
+  };
+}
+
+/** The head leg's suggestions for a still-unmet series, in order: displacement first, then the time suggestion. */
+export function suggestForSeries(
+  su: import('./slots').SeriesUnit,
+  placedSingles: PlacedSingle[],
+  timelines: Map<string, CarTimeline>,
+  input: SolverInput,
+  scores: Map<string, { total: number }>,
+): Suggestion[] {
+  const out: Suggestion[] = [];
+  const displace = suggestSeriesDisplacement(su, placedSingles, timelines, input, scores);
+  if (displace) out.push(displace);
+  const span = suggestSeriesSpan(su, timelines, input);
+  if (span) out.push(span);
+  return out;
 }

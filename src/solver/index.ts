@@ -6,7 +6,7 @@
 // assertInvariants -> SolverOutput. See src/solver/README.md for an overview
 // and CLAUDE.md hard rule 5 for the purity contract this package upholds.
 
-import { runSeriesRepair, suggestSeriesSpan } from './seriesRepair';
+import { runSeriesRepair, suggestForSeries } from './seriesRepair';
 import { buildUnits, runGreedy, sortUnits, toAssignments, type Placed, type PlacedSingle } from './greedy';
 import { runImprove } from './improve';
 import { runPooling } from './pooling';
@@ -394,13 +394,20 @@ function solveExpanded(input: SolverInput): SolverOutput {
     const su = u.series;
     if (!su) continue;
     const seriesScore = scores.get(su.scoreProxy.id)?.total ?? 0;
-    const spanSuggestion = suggestSeriesSpan(su, timelines, input);
+    const headSuggestions = suggestForSeries(
+      su,
+      finalPlaced.filter((p): p is PlacedSingle => p.kind === 'single'),
+      timelines,
+      input,
+      scores,
+    );
+    const headRequestId = su.legs[0]?.requestId;
     for (const leg of su.legs) {
       unmet.push({
         requestId: leg.requestId,
         score: seriesScore,
         blockers: [],
-        suggestions: spanSuggestion && spanSuggestion.requestId === leg.requestId ? [spanSuggestion] : [],
+        suggestions: leg.requestId === headRequestId ? headSuggestions : [],
         reasonCode: 'UNMET_SERIES_NO_CAR',
         reason: reason('UNMET_SERIES_NO_CAR', { index: leg.seriesIndex, count: su.seriesCount }),
       });

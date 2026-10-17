@@ -45,6 +45,9 @@ const TEMPLATES: Record<string, string> = {
   SUGGEST_SERIES_SPAN_START: 'ב{car} יש רכב פנוי לכל ימי הנסיעה אם היציאה תהיה ביום {depDay} ב-{dep} — דורש הסכמה',
   SUGGEST_SERIES_SPAN_END: 'ב{car} יש רכב פנוי לכל ימי הנסיעה אם החזרה תהיה ביום {retDay} ב-{ret} — דורש הסכמה',
   SUGGEST_SERIES_SPAN_BOTH: 'ב{car} יש רכב פנוי לכל ימי הנסיעה אם היציאה תהיה ביום {depDay} ב-{dep} והחזרה ביום {retDay} ב-{ret} — דורש הסכמה',
+  SUGGEST_SERIES_SPAN_FEWER_DAYS: 'ב{car} יש רכב פנוי אם הנסיעה תתחיל ביום {depDay} (יום אחד פחות) — דורש הסכמה',
+  SUGGEST_SERIES_DISPLACE: 'אפשר לשבץ ב{car} אם מוציאים את {names} (עדיפות שווה או נמוכה) — החלטת הסדרן/ית',
+  SERIES_DISPLACED_UNNAMED: 'בקשה אחרת',
   SUGGEST_SPLIT_LEGS: 'פיצול הנסיעה: הלוך {outbound} וחזור {return} בנפרד — דורש הסכמה',
   SUGGEST_ROUND_TRIP: 'במקום להשאיר את הרכב ב{dest}: לקחת אותו הלוך ושוב ולחזור ב-{ret} — דורש הסכמה',
   SUGGEST_CHAUFFEUR: 'הסעה: נהג/ת מתנדב/ת מסיע/ה ל{dest} ב-{dep} וחוזר/ת עם הרכב (כ-{minutes} דק׳); הסדרן/ית משבץ/ת נהג/ת',
@@ -116,6 +119,16 @@ const WEEKDAY_NAMES = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמ
 /** Hebrew weekday name for a day index (0 = Sunday). */
 export function weekdayName(dayIndex: number): string {
   return WEEKDAY_NAMES[dayIndex] ?? '';
+}
+
+/** Hebrew list of names: "A", "A ו-B", "A, B ו-C" (an empty name reads as an unnamed request). */
+export function joinNames(names: string[], unnamed: string): string {
+  const list = names.map((n) => (n === '' ? unnamed : n));
+  if (list.length <= 1) return list[0] ?? '';
+  const last = list[list.length - 1] ?? '';
+  // Hebrew attaches "ו" directly to a Hebrew word ("ושחר"); before Latin letters or digits it takes a hyphen ("ו-Noga").
+  const and = /^[\u05d0-\u05ea]/.test(last) ? 'ו' : 'ו-';
+  return `${list.slice(0, -1).join(', ')} ${and}${last}`;
 }
 
 /** Hebrew description of a rule type, for the admin policy editor. */

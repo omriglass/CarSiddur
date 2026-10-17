@@ -73,3 +73,13 @@ describe('R7B5: no reason ends on an empty time', () => {
     expect(reason('UNMET_NEEDS_DRIVER', { dest: 'חריש' }).trim().endsWith('ב-')).toBe(false);
   });
 });
+
+describe('joinNames', () => {
+  it('attaches ו to a Hebrew name and hyphenates it before a Latin one', async () => {
+    const { joinNames } = await import('../reasons');
+    expect(joinNames(['עמית', 'שחר'], '?')).toBe('עמית ושחר');
+    expect(joinNames(['עמית', 'Noga Saphier'], '?')).toBe('עמית ו-Noga Saphier');
+    expect(joinNames(['א', 'ב', 'ג'], '?')).toBe('א, ב וג');
+    expect(joinNames(['שחר'], '?')).toBe('שחר');
+  });
+});
