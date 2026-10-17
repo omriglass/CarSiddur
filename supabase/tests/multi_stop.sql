@@ -208,6 +208,16 @@ begin
   perform set_config('app.in_publish', 'off', true);
 
   perform set_config('request.jwt.claims', jsonb_build_object('sub', manager, 'role', 'authenticated')::text, true);
+  -- REQ §13.136 c: an automatic one-way ends away from base only when the car's next ride starts there -- give
+  -- car1 a later haifa-based ride that evening.
+  declare v_pq uuid; v_pr uuid;
+  begin
+    insert into public.requests(department_id,week_start,requester_id,filed_by,origin_id,destination_id,ride_type_id,depart_at,return_at,trip_shape,trip_type,needs_car_at_destination,status)
+      values(dept,w,manager,manager,haifa,home,ride_type,(w+4+time '20:00') at time zone 'Asia/Jerusalem',(w+4+time '21:00') at time zone 'Asia/Jerusalem','round_trip','round_trip',true,'assigned') returning id into v_pq;
+    insert into public.rides(department_id,week_start,car_id,starts_at,ends_at,origin_id,destination_id,driver_id,status,is_pinned,pin_reason,created_by)
+      values(dept,w,car1,(w+4+time '20:00') at time zone 'Asia/Jerusalem',(w+4+time '21:00') at time zone 'Asia/Jerusalem',haifa,haifa,manager,'confirmed',true,'TEST_BLOCKER',manager) returning id into v_pr;
+    insert into public.ride_requests(ride_id,request_id,role,leg,car_mode) values(v_pr,v_pq,'driver','both','keep');
+  end;
   v_route_minutes := v_home_binyamina_min + v_binyamina_haifa_min + 5;
   v_result := public.submit_request(jsonb_build_object(
     'department_id', dept, 'week_start', w, 'requester_id', member1, 'destination_id', haifa, 'ride_type_id', ride_type,

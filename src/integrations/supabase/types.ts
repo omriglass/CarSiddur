@@ -4860,6 +4860,10 @@ export type Database = {
         }
         Returns: boolean
       }
+      car_week_end_ok: {
+        Args: { _after: string; _car: string; _end_place: string }
+        Returns: boolean
+      }
       chauffeur_ride_minutes: {
         Args: {
           p_leg: Database["public"]["Enums"]["ride_leg"]

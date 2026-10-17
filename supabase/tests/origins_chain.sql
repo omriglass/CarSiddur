@@ -77,6 +77,16 @@ begin
   --    a published week is auto-approved on a car free and AT HOME (its origin) with no later
   --    ride that week breaking the chain.
   -----------------------------------------------------------------------
+  -- REQ §13.136 c: an automatic one-way may leave a car away from its base only when the car's next ride starts
+  -- there -- so car …0040 gets a later haifa-based ride that evening (the one-way below then ends where it starts).
+  declare v_pq uuid; v_pr uuid;
+  begin
+    insert into public.requests(department_id,week_start,requester_id,filed_by,origin_id,destination_id,ride_type_id,depart_at,return_at,trip_shape,trip_type,needs_car_at_destination,status)
+      values(dept,w,manager,manager,haifa,home,ride_type,(w+2+time '20:00') at time zone 'Asia/Jerusalem',(w+2+time '21:00') at time zone 'Asia/Jerusalem','round_trip','round_trip',true,'assigned') returning id into v_pq;
+    insert into public.rides(department_id,week_start,car_id,starts_at,ends_at,origin_id,destination_id,driver_id,status,is_pinned,pin_reason,created_by)
+      values(dept,w,car1,(w+2+time '20:00') at time zone 'Asia/Jerusalem',(w+2+time '21:00') at time zone 'Asia/Jerusalem',haifa,haifa,manager,'confirmed',true,'TEST_BLOCKER',manager) returning id into v_pr;
+    insert into public.ride_requests(ride_id,request_id,role,leg,car_mode) values(v_pr,v_pq,'driver','both','keep');
+  end;
   v_result := public.submit_request(jsonb_build_object(
     'department_id', dept, 'week_start', w, 'requester_id', member1, 'destination_id', haifa, 'ride_type_id', ride_type,
     'trip_type', 'one_way', 'depart_at', (w+2+time '08:00') at time zone 'Asia/Jerusalem'));

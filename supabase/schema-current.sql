@@ -4872,6 +4872,22 @@ $$;
 ALTER FUNCTION "public"."car_wait_needed_elsewhere"("p_dept" "uuid", "p_week" "date", "p_from" timestamp with time zone, "p_to" timestamp with time zone, "p_exclude" "uuid"[]) OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."car_week_end_ok"("_car" "uuid", "_after" timestamp with time zone, "_end_place" "uuid") RETURNS boolean
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select case
+    when n.origin_id is not null then n.origin_id is not distinct from _end_place
+    else public.car_base_location(_car) is null
+         or public.car_base_location(_car) is not distinct from _end_place
+  end
+  from (select public.car_next_ride_origin(_car, _after) as origin_id) n;
+$$;
+
+
+ALTER FUNCTION "public"."car_week_end_ok"("_car" "uuid", "_after" timestamp with time zone, "_end_place" "uuid") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."cars_protect_owner_editable_fields"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -9651,6 +9667,13 @@ begin
     if coalesce(public.car_next_ride_origin(v_car, v_end), q.destination_id) <> q.destination_id then
       raise exception 'car_next_ride_elsewhere' using errcode = 'P0001';
     end if;
+    -- REQ §13.136 c: an automatic placement never leaves a shared car away from its base with nothing bringing it
+    -- back. A Sadran's manual placement and an accepted proposal (a human decision) stay allowed.
+    if not v_manual and p_reason <> 'PROPOSAL_APPLIED'
+       and exists(select 1 from public.cars where id = v_car and type = 'shared')
+       and not public.car_week_end_ok(v_car, v_end, q.destination_id) then
+      raise exception 'car_week_end_away' using errcode = 'P0001';
+    end if;
     v_gap := null;
     if v_manual then v_gap := public.prepare_manual_ride_window(v_car, q.week_start, v_dep, v_end, null); end if;
     insert into public.rides(department_id, week_start, car_id, starts_at, ends_at, origin_id, destination_id, driver_id,
@@ -9714,7 +9737,10 @@ begin
           or exists(select 1 from public.car_maintenance_blocks b where b.car_id = v_car
             and tstzrange(b.starts_at, b.ends_at, '[)') && tstzrange(v_s, v_e, '[)'))
           or (c = 0 and (not public.car_fits(v_car, q.adults, q.child_seats, q.boosters)
-            or coalesce(public.car_next_ride_origin(v_car, v_e), q.origin_id) <> q.origin_id));
+            or coalesce(public.car_next_ride_origin(v_car, v_e), q.origin_id) <> q.origin_id
+            -- REQ §13.136 c: the pickup relay ends the car at the origin; automatic, so never away from base
+            or (not v_manual and p_reason <> 'PROPOSAL_APPLIED'
+                and not public.car_week_end_ok(v_car, v_e, q.origin_id))));
         v_ok := true; exit;
       end loop;
       continue when not v_ok;
@@ -16463,7 +16489,7 @@ begin
   -- Preferred car first: same eligibility rules as the fallback query below (shared,
   -- active, seats fit, at the request's origin at departure, no overlap incl. the
   -- turnaround buffer, and -- for a one-way leg -- no later ride on that car starting
-  -- anywhere but the destination), scoped to that single car.
+  -- anywhere but the destination, and none -> the destination must be the car's base, REQ §13.136 c), scoped to that single car.
   v_pref := coalesce(v_req.preferred_car_id, nullif(current_setting('app.edit_prefer_car', true), '')::uuid);
   if v_pref is not null then
     select c.* into v_car
@@ -16485,7 +16511,7 @@ begin
         where b.car_id = c.id
           and tstzrange(b.starts_at, b.ends_at, '[)') && tstzrange(v_req.depart_at, v_end + v_turnaround, '[)')
       )
-      and (not v_is_one_way or coalesce(public.car_next_ride_origin(c.id, v_end), v_req.destination_id) = v_req.destination_id)
+      and (not v_is_one_way or public.car_week_end_ok(c.id, v_end, v_req.destination_id))   -- REQ §13.136 c: no next ride -> the base
     order by c.id limit 1;
     v_preferred_ok := v_car.id is not null;
   end if;
@@ -16509,7 +16535,7 @@ begin
         where b.car_id = c.id
           and tstzrange(b.starts_at, b.ends_at, '[)') && tstzrange(v_req.depart_at, v_end + v_turnaround, '[)')
       )
-      and (not v_is_one_way or coalesce(public.car_next_ride_origin(c.id, v_end), v_req.destination_id) = v_req.destination_id)
+      and (not v_is_one_way or public.car_week_end_ok(c.id, v_end, v_req.destination_id))   -- REQ §13.136 c: no next ride -> the base
     order by c.id limit 1;
   end if;
 
@@ -23186,6 +23212,11 @@ GRANT ALL ON FUNCTION "public"."car_takes_luggage"("_car" "uuid", "_count" integ
 
 REVOKE ALL ON FUNCTION "public"."car_wait_needed_elsewhere"("p_dept" "uuid", "p_week" "date", "p_from" timestamp with time zone, "p_to" timestamp with time zone, "p_exclude" "uuid"[]) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."car_wait_needed_elsewhere"("p_dept" "uuid", "p_week" "date", "p_from" timestamp with time zone, "p_to" timestamp with time zone, "p_exclude" "uuid"[]) TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."car_week_end_ok"("_car" "uuid", "_after" timestamp with time zone, "_end_place" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."car_week_end_ok"("_car" "uuid", "_after" timestamp with time zone, "_end_place" "uuid") TO "service_role";
 
 
 
