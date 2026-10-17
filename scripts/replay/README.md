@@ -37,6 +37,10 @@ an ISO timestamp. Unaudited rows (stops, children, companions, plan B) are loade
 Rows land exactly as exported (`session_replication_role = replica`: no triggers, no FK checks);
 pg_cron is paused on the replay stack so the week never moves by itself.
 
+`--owner-stack` loads into the owner's own local stack instead (`supabase_db_carshare-nevo`, the :8080 dev server) —
+only when the owner asks for it. The department is added next to the seed data (nothing else is touched), pg_cron
+keeps running there, and the solve is run from the board by hand. Logins go to `.replay/out-owner/`.
+
 Every loaded member gets a local login — `sadran@replay.local` (the week's Sadran), `admin1@…`,
 `m1@…` (by name) — password `replay-local-1234`, and a placeholder phone;
 `.replay/out/<dept>-<week>/world.json` holds the week's Sadran for the QA CLI and `logins.json`

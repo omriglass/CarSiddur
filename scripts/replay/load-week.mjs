@@ -25,7 +25,11 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { REPLAY_API, ROOT, psql } from "./lib.mjs";
+import { OWNER_DB_CONTAINER, REPLAY_API, ROOT, psql as psqlOn } from "./lib.mjs";
+
+// Target database: the replay stack, or the owner's own stack with --owner-stack (set in main()).
+let target = {};
+const psql = (sql) => psqlOn(sql, target);
 
 export const REPLAY_PASSWORD = "replay-local-1234";
 
@@ -39,9 +43,10 @@ function parseArgs(argv) {
     else if (a === "--at") out.at = argv[++i];
     else if (a === "--week") out.week = argv[++i];
     else if (a === "--out") out.out = argv[++i];
+    else if (a === "--owner-stack") out.ownerStack = true;
     else throw new Error(`unknown argument ${a}`);
   }
-  if (!out.export) throw new Error("usage: load-week.mjs --export <file.json|file.csv> [--at <point>] [--week YYYY-MM-DD] [--out <dir>]");
+  if (!out.export) throw new Error("usage: load-week.mjs --export <file.json|file.csv> [--at <point>] [--week YYYY-MM-DD] [--out <dir>] [--owner-stack]");
   return out;
 }
 
@@ -302,6 +307,9 @@ function describeRuns(runs) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
+  // --owner-stack: load into the owner's own local stack (:8080), only when the owner asked for it. The
+  // department is added next to the seed data; nothing outside this department is touched and pg_cron is left running.
+  if (args.ownerStack) target = { container: OWNER_DB_CONTAINER, ownerStack: true };
   const t = readExport(path.resolve(args.export));
   const dept = t.departments[0]?.id;
   if (!dept) throw new Error("export: no department row");
@@ -359,7 +367,7 @@ async function main() {
   for (const table of LOAD_ORDER) sql += insertSql(table, rebuilt[table] ?? [], columns[table]);
   sql += "set session_replication_role = origin;\n";
   // Keep the replayed week still: no phase advance, reminders, expiries or housekeeping.
-  sql += "select cron.alter_job(jobid, active := false) from cron.job where active;\n";
+  if (!args.ownerStack) sql += "select cron.alter_job(jobid, active := false) from cron.job where active;\n";
   sql += "commit;\n";
   psql(sql);
 
@@ -369,7 +377,7 @@ async function main() {
   const phase = psql(`select phase from public.weeks where department_id = ${quoteLiteral(dept)} and week_start = ${quoteLiteral(week)};`).trim();
 
   const nameOf = (id) => { const p = (t.profiles ?? []).find((x) => x.id === id); return p?.display_name ?? p?.full_name ?? id; };
-  const out = path.resolve(args.out ?? path.join(ROOT, ".replay", "out", `${dept.slice(0, 8)}-${week}`));
+  const out = path.resolve(args.out ?? path.join(ROOT, ".replay", args.ownerStack ? "out-owner" : "out", `${dept.slice(0, 8)}-${week}`));
   mkdirSync(out, { recursive: true });
   const home = t.departments[0].home_destination_id;
   writeFileSync(path.join(out, "world.json"), JSON.stringify({
@@ -388,7 +396,9 @@ async function main() {
   console.log(`solver runs in the export:\n${describeRuns(t.solver_runs) || "  (none)"}`);
   console.log(`local logins (password ${REPLAY_PASSWORD}; full list in ${path.join(out, "logins.json")}):`);
   for (const l of logins.filter((x) => x.admin || x.email.startsWith("sadran@"))) console.log(`  ${l.email.padEnd(24)} ${l.name}${l.admin ? " (admin)" : ""}`);
-  console.log(`re-run the solver: QA_API_URL=${REPLAY_API} npm run qa:sadran -- autofill --out ${path.relative(ROOT, out)}`);
+  console.log(args.ownerStack
+    ? "loaded into your own stack: open the board (:8080) as the Sadran and run auto-fill there"
+    : `re-run the solver: QA_API_URL=${REPLAY_API} npm run qa:sadran -- autofill --out ${path.relative(ROOT, out)}`);
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
