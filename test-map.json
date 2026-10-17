@@ -115,6 +115,7 @@
         "src/features/requests/components/WindowSummaryLine.tsx",
         "supabase/tests/request_window.sql",
         "supabase/tests/plan_b.sql",
+        "supabase/tests/plan_b_switch.sql",
         "supabase/tests/qa_run11_noop_save.sql",
         "src/features/proposals/planBAnswer.ts",
         "src/features/proposals/planBAnswer.test.ts",
@@ -156,6 +157,7 @@
         "department_rush_hours.sql",
         "request_window.sql",
         "plan_b.sql",
+        "plan_b_switch.sql",
         "qa_run11_noop_save.sql"
       ],
       "playwrightTags": [

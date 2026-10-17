@@ -431,10 +431,20 @@ begin
   select * into a from public.request_alternatives where request_id = q.id for update;
   if a.id is null or q.fallback <> 'alternative' or q.served_by_alternative or a.applied_at is not null
      or (q.trip_type not in ('round_trip', 'one_way') and not (q.trip_type = 'drop_off' and q.keep_car_at_destination)) or q.series_id is not null
-     or q.status not in ('submitted', 'waitlisted', 'proposed')
-     or exists (select 1 from public.ride_requests rr join public.rides r on r.id = rr.ride_id
-                where rr.request_id = q.id and r.status <> 'cancelled') then
+     or q.status not in ('submitted', 'waitlisted', 'proposed', 'assigned', 'merged') then
     raise exception 'alternative_not_applicable' using errcode = 'P0001';
+  end if;
+  -- REQ §13.136 g: a request that is placed right now (the solver offers "switch to your plan B so someone without one gets
+  -- the car") gives up its booking first, exactly as a cancel / withdraw does; the main trip is then kept whole in
+  -- original_main by _convert_to_alternative below, as for an unmet request.
+  if exists (select 1 from public.ride_requests rr join public.rides r on r.id = rr.ride_id
+             where rr.request_id = q.id and r.status <> 'cancelled') then
+    perform public.release_request_booking(q.id);
+    select * into q from public.requests where id = q.id;
+    if exists (select 1 from public.ride_requests rr join public.rides r on r.id = rr.ride_id
+               where rr.request_id = q.id and r.status <> 'cancelled') then
+      raise exception 'alternative_not_applicable' using errcode = 'P0001';
+    end if;
   end if;
   -- the member changed the plan after the offer: what they accepted is not what is stored any more
   if a.arrive_by is distinct from (p.payload ->> 'arrive_by')::timestamptz
@@ -2564,7 +2574,7 @@ begin
   select * into a from public.request_alternatives where request_id = p_request_id;
   if a.id is null or q.fallback <> 'alternative' or q.served_by_alternative or a.applied_at is not null
      or (q.trip_type not in ('round_trip', 'one_way') and not (q.trip_type = 'drop_off' and q.keep_car_at_destination)) or q.series_id is not null
-     or q.status not in ('submitted', 'waitlisted') then
+     or q.status not in ('submitted', 'waitlisted', 'assigned', 'merged') then   -- REQ §13.136 g: a placed request may be offered its plan B
     raise exception 'alternative_not_applicable' using errcode = 'P0001';
   end if;
   v_car := nullif(p_payload ->> 'car_id', '')::uuid;
@@ -3214,6 +3224,12 @@ begin
     update public.requests set status = 'denied', status_reason = coalesce(v_prop.payload ->> 'reason', 'DENIED_BY_SADRAN')
     where id = v_prop.request_id;
   elsif v_prop.type = 'external' then
+    -- REQ §13.136 g: "manage on your own" for a request that is placed right now (the solver offers it so someone without
+    -- a car gets this one) gives the booking up first, as a withdraw does; an unplaced request has nothing to release.
+    if exists (select 1 from public.ride_requests rr join public.rides rd on rd.id = rr.ride_id
+               where rr.request_id = v_req.id and rd.status <> 'cancelled') then
+      perform public.release_request_booking(v_req.id);
+    end if;
     update public.requests set status = 'external', status_reason = coalesce(v_prop.payload ->> 'reason', 'EXTERNAL')
     where id = v_prop.request_id;
     -- REQ §13.105 / QA run 5 R5B6: "no car" for one leg of a multi-day request is "no car" for the whole trip - every other
