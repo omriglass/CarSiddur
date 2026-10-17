@@ -51,6 +51,7 @@ import {
 } from "../dropValidity";
 import type { UnmetListItem } from "../components/UnmetList";
 import { slotToIso, wouldOverlap } from "../geometry";
+import { seriesSpanSuggestionPrefill } from "../seriesSpan";
 import { isReservation } from "@/features/rides/servedOf";
 import { buildRidePassengerInputs, splitReservationDriverAndPassengers } from "../reservationPeople";
 import {
@@ -832,7 +833,10 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
       return;
     }
     switch (suggestion.kind) {
-      case "shiftBeyondFlex":
+      case "shiftBeyondFlex": {
+        // REQ §13.136 (e): a series head's whole-span suggestion is a `series_span` shift, never single-day times.
+        const spanPrefill = dropCtx.weekStartMs != null ? seriesSpanSuggestionPrefill(item.request.id, suggestion, dropCtx.weekStartMs) : null;
+        if (spanPrefill) { goToComposer(spanPrefill); return; }
         // REQ §13.105 / QA run 6 R5B3: the card's own car (and, on one card of a split הקפצה, its leg) goes with the
         // shift, so accepting it places exactly that leg on that car (`_shift_place_on_car`) instead of leaving it unmet.
         goToComposer({
@@ -844,6 +848,7 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
             : { car_id: suggestion.carId, ...(item.leg ? { leg: item.leg } : {}) },
         });
         return;
+      }
       case "convertToRoundTrip":
         goToComposer({ requestId: item.request.id, rideId: null, type: "shift", payload: {} });
         return;

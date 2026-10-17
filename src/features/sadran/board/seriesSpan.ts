@@ -4,6 +4,7 @@ import { dateKey, formatTime, TZ } from "@/lib/time";
 import { fromZonedTime } from "date-fns-tz";
 
 import type { SeriesLeg } from "../api";
+import { slotToIso } from "./geometry";
 
 export interface SeriesSpan {
   depart_at: string;
@@ -46,4 +47,27 @@ export function buildSeriesSpan(legs: readonly SeriesLeg[], from: number, to: nu
 /** The proposal prefill (`type: 'shift'`) carrying `car_id` and `series_span` (no single-day times). */
 export function seriesSpanPrefill(headRequestId: string, carId: string, span: SeriesSpan) {
   return { requestId: headRequestId, rideId: null, type: "shift" as const, payload: { car_id: carId, series_span: span } };
+}
+
+/** Solver reason codes of the one whole-series `shiftBeyondFlex` suggestion on a series head (SOLVER §3.16). */
+export const SERIES_SPAN_REASON_CODES: readonly string[] = ["SUGGEST_SERIES_SPAN_START", "SUGGEST_SERIES_SPAN_END", "SUGGEST_SERIES_SPAN_BOTH"];
+
+export function isSeriesSpanSuggestion(suggestion: { reasonCode: string }): boolean {
+  return SERIES_SPAN_REASON_CODES.includes(suggestion.reasonCode);
+}
+
+/**
+ * REQ §13.136 (e): the solver's series-head `shiftBeyondFlex` (window = the whole span) becomes the same
+ * `shift` + `car_id` + `series_span` prefill as "fewer days"; `null` when it is not a series-span suggestion.
+ */
+export function seriesSpanSuggestionPrefill(
+  headRequestId: string,
+  suggestion: { reasonCode: string; carId: string; window: { start: number; end: number } },
+  weekStartMs: number,
+) {
+  if (!isSeriesSpanSuggestion(suggestion)) return null;
+  return seriesSpanPrefill(headRequestId, suggestion.carId, {
+    depart_at: slotToIso(suggestion.window.start, weekStartMs),
+    return_at: slotToIso(suggestion.window.end, weekStartMs),
+  });
 }

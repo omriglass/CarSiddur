@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { buildProposalPayload, isPlaceOnlyShift, resolveShiftTimes } from "./buildProposalPayload";
+import { seriesSpanSuggestionPrefill } from "../board/seriesSpan";
 
 const request = { depart_at: "2026-10-11T07:00:00.000Z", return_at: "2026-10-11T12:00:00.000Z", trip_shape: "round_trip" };
 const base = { prefillPayload: {}, request, rideId: null, effectiveReason: "r", externalHint: "cab" } as const;
@@ -9,6 +10,18 @@ describe("buildProposalPayload", () => {
   it("shift keeps prefill keys and the proposed times", () => {
     const payload = buildProposalPayload({ ...base, type: "shift", prefillPayload: { car_id: "c1" }, proposedDepartAt: request.depart_at, proposedReturnAt: request.return_at });
     expect(payload).toEqual({ car_id: "c1", depart_at: request.depart_at, return_at: request.return_at });
+  });
+  it("a series head's whole-span shiftBeyondFlex becomes shift + car_id + series_span (REQ 136 e)", () => {
+    const weekStartMs = Date.parse("2026-10-11T00:00:00Z");
+    const prefill = seriesSpanSuggestionPrefill("head", { reasonCode: "SUGGEST_SERIES_SPAN_BOTH", carId: "c1", window: { start: 4, end: 400 } }, weekStartMs)!;
+    expect(prefill).toMatchObject({ requestId: "head", type: "shift" });
+    const payload = buildProposalPayload({ ...base, type: prefill.type, prefillPayload: prefill.payload, proposedDepartAt: request.depart_at, proposedReturnAt: request.return_at });
+    expect(payload).toEqual({ car_id: "c1", series_span: prefill.payload.series_span });
+    expect(payload).not.toHaveProperty("depart_at");
+    expect(Date.parse((payload!.series_span as { return_at: string }).return_at)).toBeGreaterThan(Date.parse((payload!.series_span as { depart_at: string }).depart_at));
+  });
+  it("an ordinary shiftBeyondFlex is not a series-span prefill and stays a plain shift", () => {
+    expect(seriesSpanSuggestionPrefill("r", { reasonCode: "SUGGEST_SHIFT", carId: "c1", window: { start: 4, end: 40 } }, 0)).toBeNull();
   });
   it("shift rejects a return before the departure and an empty change", () => {
     expect(buildProposalPayload({ ...base, type: "shift", proposedDepartAt: request.return_at, proposedReturnAt: request.depart_at })).toBeNull();
