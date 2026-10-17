@@ -46,6 +46,7 @@ function chauffeurLoad(served) {
 var TEMPLATES = {
   // Assignment reasons
   PLACED_PREFERRED: "\u05E9\u05D5\u05D1\u05E5 \u05DC{car} \u05D1\u05D6\u05DE\u05DF \u05D4\u05DE\u05D1\u05D5\u05E7\u05E9",
+  PLACED_PREFERRED_CAR: "\u05E9\u05D5\u05D1\u05E5 \u05DC{car}, \u05D4\u05E8\u05DB\u05D1 \u05D4\u05DE\u05D5\u05E2\u05D3\u05E3",
   PLACED_SHIFTED: "\u05E9\u05D5\u05D1\u05E5 \u05DC{car} \u05E2\u05DD \u05D4\u05D6\u05D6\u05D4 \u05E9\u05DC {dep} \u05D3\u05E7' \u05D1\u05D9\u05E6\u05D9\u05D0\u05D4 \u05D5-{ret} \u05D3\u05E7' \u05D1\u05D7\u05D6\u05E8\u05D4, \u05D1\u05EA\u05D5\u05DA \u05D4\u05D2\u05DE\u05D9\u05E9\u05D5\u05EA \u05E9\u05D4\u05D5\u05E6\u05D4\u05E8\u05D4",
   PLACED_RELAY_PAIR: "\u05E9\u05D5\u05D1\u05E5 \u05DC{car}: {member} \u05E0\u05D5\u05D4\u05D2/\u05EA \u05DC{dest} \u05D1-{dep} \u05D5\u05DE\u05E9\u05D0\u05D9\u05E8/\u05D4 \u05D0\u05EA \u05D4\u05E8\u05DB\u05D1; {partner} \u05DE\u05D7\u05D6\u05D9\u05E8/\u05D4 \u05D0\u05D5\u05EA\u05D5 \u05D1-{ret}",
   PLACED_SHARED: "\u05E0\u05E1\u05D9\u05E2\u05D4 \u05DE\u05E9\u05D5\u05EA\u05E4\u05EA \u05D1{car}: {guests} \u05DE\u05E6\u05D8\u05E8\u05E3/\u05EA \u05DC\u05E0\u05E1\u05D9\u05E2\u05D4 \u05E9\u05DC {host}",
@@ -1113,12 +1114,12 @@ function toAssignments(placed, input, carsById) {
       const legDestinationId = leg?.destinationId ?? input.homeLocationId;
       const canDrive = nr.request.canDrive ?? true;
       const guests = p.guests ?? [];
-      const code = guests.length > 0 ? "PLACED_SHARED" : !canDrive ? "PLACED_NEEDS_DRIVER" : p.balancedMileage ? "CAR_BALANCED_MILEAGE" : shiftReasonCode(shift);
+      const code = guests.length > 0 ? "PLACED_SHARED" : !canDrive ? "PLACED_NEEDS_DRIVER" : p.preferredCar ? "PLACED_PREFERRED_CAR" : p.balancedMileage ? "CAR_BALANCED_MILEAGE" : shiftReasonCode(shift);
       const text = code === "PLACED_SHARED" ? reason("PLACED_SHARED", {
         car: car?.name ?? "",
         host: memberName(input, nr.request.memberId),
         guests: guests.map((g) => memberName(input, g.request.memberId)).filter(Boolean).join(", ")
-      }) : code === "PLACED_NEEDS_DRIVER" ? reason("PLACED_NEEDS_DRIVER", { car: car?.name ?? "" }) : code === "CAR_BALANCED_MILEAGE" ? reason("CAR_BALANCED_MILEAGE", { car: car?.name ?? "" }) : code === "PLACED_PREFERRED" ? reason("PLACED_PREFERRED", { car: car?.name ?? "" }) : reason("PLACED_SHIFTED", {
+      }) : code === "PLACED_NEEDS_DRIVER" ? reason("PLACED_NEEDS_DRIVER", { car: car?.name ?? "" }) : code === "PLACED_PREFERRED_CAR" ? reason("PLACED_PREFERRED_CAR", { car: car?.name ?? "" }) : code === "CAR_BALANCED_MILEAGE" ? reason("CAR_BALANCED_MILEAGE", { car: car?.name ?? "" }) : code === "PLACED_PREFERRED" ? reason("PLACED_PREFERRED", { car: car?.name ?? "" }) : reason("PLACED_SHIFTED", {
         car: car?.name ?? "",
         dep: String(Math.abs(shift.departureMin)),
         ret: String(Math.abs(shift.returnMin))
@@ -2115,6 +2116,110 @@ function runPooling(placed, unmetUnits, timelines, input, scores, carsMap) {
     }
   }
   return { placed: current, unmetUnits: unmet, pooledRequestIds };
+}
+
+// src/solver/preferenceSwaps.ts
+var MAX_SWAP_PARTNERS = 2;
+var rideIdOf3 = (p) => `ride:${p.nr.id}`;
+var byIdAsc = (a, b) => a < b ? -1 : a > b ? 1 : 0;
+var satisfied = (p, carId = p.carId) => p.nr.request.preferredCarId !== void 0 && p.nr.request.preferredCarId === carId ? 1 : 0;
+function loadOf(p) {
+  const guests = p.guests ?? [];
+  return {
+    passengers: sum(p.nr.passengers, ...guests.map((g) => g.passengers)),
+    luggage: (p.nr.luggage ? 1 : 0) + guests.filter((g) => g.luggage).length
+  };
+}
+function seatsAll(p, car) {
+  const load = loadOf(p);
+  return fits(car, load.passengers) && luggageFits(car, load.luggage);
+}
+function runPreferenceSwaps(placed, timelines, input, scores, carsMap) {
+  const singles = placed.filter((p) => p.kind === "single");
+  const byRide = new Map(singles.map((p) => [rideIdOf3(p), p]));
+  const bufferSlots = minutesToSlots(input.config.bufferMinutes);
+  const scoreOf = (p) => scores.get(p.nr.id)?.total ?? 0;
+  let swaps = 0;
+  const tryCandidate = (r) => {
+    const prefId = r.nr.request.preferredCarId;
+    if (!prefId || r.carId === prefId) return false;
+    const pCar = carsMap.get(prefId);
+    const cCar = carsMap.get(r.carId);
+    const pTl = timelines.get(prefId);
+    const cTl = timelines.get(r.carId);
+    if (!pCar || !cCar || !pTl || !cTl || pCar.type !== "shared" || cCar.type !== "shared") return false;
+    if (!seatsAll(r, pCar)) return false;
+    const overlapping = pTl.allBlocks().filter((b) => b.window.start < r.window.end + bufferSlots && r.window.start < b.window.end + bufferSlots);
+    const partners = [];
+    for (const b of overlapping) {
+      const q = byRide.get(b.rideId);
+      if (!q || q.carId !== prefId || q.window.start !== b.window.start || q.window.end !== b.window.end) return false;
+      partners.push(q);
+    }
+    if (partners.length > MAX_SWAP_PARTNERS) return false;
+    if (!partners.every((q) => seatsAll(q, cCar))) return false;
+    const before = satisfied(r) + partners.reduce((s, q) => s + satisfied(q), 0);
+    const after = satisfied(r, prefId) + partners.reduce((s, q) => s + satisfied(q, r.carId), 0);
+    if (after <= before) return false;
+    const cBase = chainBreakIds(cTl);
+    const pBase = chainBreakIds(pTl);
+    const removedR = cTl.remove(rideIdOf3(r));
+    const removedPartners = partners.map((q) => pTl.remove(rideIdOf3(q)));
+    const addedToC = [];
+    let addedToP = false;
+    const rollback = () => {
+      if (addedToP) pTl.remove(rideIdOf3(r));
+      for (const id of addedToC) cTl.remove(id);
+      for (const b of removedPartners) if (b) pTl.restore(b);
+      if (removedR) cTl.restore(removedR);
+    };
+    if (!removedR || removedPartners.some((b) => !b)) {
+      rollback();
+      return false;
+    }
+    const canAdd = (tl, b) => !b.locationNeutral && tl.isFree(b.window, b.startLocationId, b.relayPairId, b.endLocationId, { baseAtWeekEnd: true });
+    const movers = removedPartners.slice().sort((a, b) => a.window.start - b.window.start || byIdAsc(a.rideId, b.rideId));
+    for (const b of movers) {
+      if (!canAdd(cTl, b)) {
+        rollback();
+        return false;
+      }
+      cTl.add(b);
+      addedToC.push(b.rideId);
+    }
+    if (!canAdd(pTl, removedR)) {
+      rollback();
+      return false;
+    }
+    pTl.add(removedR);
+    addedToP = true;
+    if (addsChainBreak(cTl, cBase) || addsChainBreak(pTl, pBase)) {
+      rollback();
+      return false;
+    }
+    for (const q of partners) {
+      q.carId = r.carId;
+      q.balancedMileage = false;
+      q.preferredCar = satisfied(q) === 1;
+    }
+    r.carId = prefId;
+    r.balancedMileage = false;
+    r.preferredCar = true;
+    return true;
+  };
+  const maxRounds = singles.length + 1;
+  for (let round = 0; round < maxRounds; round++) {
+    const order = singles.filter((p) => p.nr.request.preferredCarId !== void 0 && p.carId !== p.nr.request.preferredCarId).sort((a, b) => scoreOf(b) - scoreOf(a) || byIdAsc(a.nr.id, b.nr.id));
+    let changed = false;
+    for (const r of order) {
+      if (tryCandidate(r)) {
+        swaps++;
+        changed = true;
+      }
+    }
+    if (!changed) break;
+  }
+  return { swaps };
 }
 
 // src/solver/timeline.ts
@@ -4266,6 +4371,7 @@ function solveExpanded(input) {
     finalPlaced = pooling.placed;
     stillUnmetUnits = pooling.unmetUnits;
   }
+  const preferenceSwaps = runPreferenceSwaps(finalPlaced, timelines, input, scores, carsMap).swaps;
   const solverAssignments = toAssignments(finalPlaced, input, carsMap);
   const oneWayPairs = pairComplementaryOneWays(
     stillUnmetUnits.flatMap((u) => u.kind === "single" && u.single?.tripType === "one_way" ? [u.single] : []),
@@ -4437,6 +4543,7 @@ function solveExpanded(input) {
       unmet: unmet.length,
       needsDriver,
       relocations: improveResult.relocationsApplied.length + seriesRepair.relocations.length,
+      ...preferenceSwaps > 0 ? { preferenceSwaps } : {},
       budgetExhausted: improveResult.budgetExhausted,
       elapsedMs: startedAt !== void 0 ? (input.now?.() ?? startedAt) - startedAt : 0
     }

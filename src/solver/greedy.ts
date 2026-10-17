@@ -266,6 +266,8 @@ export interface PlacedSingle {
   /** F5 (docs/SOLVER.md §3.6.2): the mileage tie-break, not an earlier
    *  consideration, is what chose `carId` over an otherwise-equal car. */
   balancedMileage?: boolean;
+  /** REQ item 136 (f) (docs/SOLVER.md §3.6.5): the preference-swap pass moved this ride onto its preferred car. */
+  preferredCar?: boolean;
   /** REQ §136 a (docs/SOLVER.md §3.6.4): round trips seated in this ride by the pooling pass (`pooling.ts`). */
   guests?: NormalizedRequest[];
 }
@@ -693,7 +695,7 @@ export function toAssignments(placed: Placed[], input: SolverInput, carsById: Ma
       // PLACED_PREFERRED/PLACED_SHIFTED reason (shift, if any, still applied —
       // the Hebrew just explains the car choice instead).
       const guests = p.guests ?? [];
-      const code = guests.length > 0 ? 'PLACED_SHARED' : !canDrive ? 'PLACED_NEEDS_DRIVER' : p.balancedMileage ? 'CAR_BALANCED_MILEAGE' : shiftReasonCode(shift);
+      const code = guests.length > 0 ? 'PLACED_SHARED' : !canDrive ? 'PLACED_NEEDS_DRIVER' : p.preferredCar ? 'PLACED_PREFERRED_CAR' : p.balancedMileage ? 'CAR_BALANCED_MILEAGE' : shiftReasonCode(shift);
       const text =
         code === 'PLACED_SHARED'
           ? reason('PLACED_SHARED', {
@@ -703,6 +705,8 @@ export function toAssignments(placed: Placed[], input: SolverInput, carsById: Ma
             })
           : code === 'PLACED_NEEDS_DRIVER'
           ? reason('PLACED_NEEDS_DRIVER', { car: car?.name ?? '' })
+          : code === 'PLACED_PREFERRED_CAR'
+            ? reason('PLACED_PREFERRED_CAR', { car: car?.name ?? '' })
           : code === 'CAR_BALANCED_MILEAGE'
             ? reason('CAR_BALANCED_MILEAGE', { car: car?.name ?? '' })
             : code === 'PLACED_PREFERRED'

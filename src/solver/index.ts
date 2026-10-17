@@ -10,6 +10,7 @@ import { runSeriesRepair, suggestSeriesSpan } from './seriesRepair';
 import { buildUnits, runGreedy, sortUnits, toAssignments, type Placed, type PlacedSingle } from './greedy';
 import { runImprove } from './improve';
 import { runPooling } from './pooling';
+import { runPreferenceSwaps } from './preferenceSwaps';
 import { assertInvariants } from './invariants';
 import { fits, luggageFits } from './seatFit';
 import { buildHostRides, findMergeHosts } from './merge';
@@ -218,6 +219,9 @@ function solveExpanded(input: SolverInput): SolverOutput {
     finalPlaced = pooling.placed;
     stillUnmetUnits = pooling.unmetUnits;
   }
+  // REQ item 136 (f) (SOLVER §3.6.5): the fixing stage — on the finished plan, swap cars between placed rides
+  // when that answers more preferences (window-preserving, never unplaces, never breaks a requirement).
+  const preferenceSwaps = runPreferenceSwaps(finalPlaced, timelines, input, scores, carsMap).swaps;
   const solverAssignments = toAssignments(finalPlaced, input, carsMap);
 
   // REQUIREMENTS §13.88/§13.89 (rule made precise 2026-09-16): an unpaired relay
@@ -471,6 +475,7 @@ function solveExpanded(input: SolverInput): SolverOutput {
       unmet: unmet.length,
       needsDriver,
       relocations: improveResult.relocationsApplied.length + seriesRepair.relocations.length,
+      ...(preferenceSwaps > 0 ? { preferenceSwaps } : {}),
       budgetExhausted: improveResult.budgetExhausted,
       elapsedMs: startedAt !== undefined ? (input.now?.() ?? startedAt) - startedAt : 0,
     },

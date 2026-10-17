@@ -9,6 +9,7 @@
 const TEMPLATES: Record<string, string> = {
   // Assignment reasons
   PLACED_PREFERRED: 'שובץ ל{car} בזמן המבוקש',
+  PLACED_PREFERRED_CAR: 'שובץ ל{car}, הרכב המועדף',
   PLACED_SHIFTED: "שובץ ל{car} עם הזזה של {dep} דק' ביציאה ו-{ret} דק' בחזרה, בתוך הגמישות שהוצהרה",
   PLACED_RELAY_PAIR: 'שובץ ל{car}: {member} נוהג/ת ל{dest} ב-{dep} ומשאיר/ה את הרכב; {partner} מחזיר/ה אותו ב-{ret}',
   PLACED_SHARED: 'נסיעה משותפת ב{car}: {guests} מצטרף/ת לנסיעה של {host}',

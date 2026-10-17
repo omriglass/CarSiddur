@@ -579,6 +579,8 @@ export interface SolverOutput {
     unmet: number;
     needsDriver: number;
     relocations: number;
+    /** rides moved by the preference-swap fixing stage (item 136 f); absent when none */
+    preferenceSwaps?: number;
     budgetExhausted: boolean;
     elapsedMs: number;
   };
