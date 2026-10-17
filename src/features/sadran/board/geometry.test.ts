@@ -334,3 +334,25 @@ describe("awayLocationAt (QB21)", () => {
     expect(awayLocationAt(undefined, weekStartMs, "2026-10-13T06:00:00Z", names)).toBeUndefined();
   });
 });
+
+describe("scanBoardConflicts - multi-day series (REQ §13.77)", () => {
+  const H = 3600_000;
+  const scan = (rides: Parameters<typeof scanBoardConflicts>[0]["rides"]) =>
+    scanBoardConflicts({ rides, carIds: ["c"], weekStartMs: WEEK_START_MS, bufferMinutes: 30, homeLocationId: "home", days: DAYS });
+
+  it("consecutive days of one series (ends 23:59, next starts 00:00) need no turnaround", () => {
+    const result = scan([
+      { id: "d1", carId: "c", startsAt: iso(12 * H), endsAt: iso(24 * H - 60_000), originId: "home", destinationId: "home", seriesId: "s" },
+      { id: "d2", carId: "c", startsAt: iso(24 * H), endsAt: iso(48 * H - 60_000), originId: "home", destinationId: "home", seriesId: "s" },
+    ]);
+    expect(result.conflictRideIds.size).toBe(0);
+  });
+
+  it("a different ride right after a series day still needs the turnaround", () => {
+    const result = scan([
+      { id: "d1", carId: "c", startsAt: iso(12 * H), endsAt: iso(24 * H - 60_000), originId: "home", destinationId: "home", seriesId: "s" },
+      { id: "x", carId: "c", startsAt: iso(24 * H), endsAt: iso(26 * H), originId: "home", destinationId: "home" },
+    ]);
+    expect(result.conflictRideIds.has("x")).toBe(true);
+  });
+});

@@ -67,6 +67,8 @@ export interface BoardRideForConflict {
   turnaroundMinutes?: number;
   /** REQ §13.96: a reservation holds the car for time only - its places never move the car. */
   locationNeutral?: boolean;
+  /** Multi-day series (REQ §13.77): consecutive days of one series need no turnaround between them (solver CarTimeline, SQL alike). */
+  seriesId?: string;
 }
 
 /** Per car: its base location (REQUIREMENTS §13.93, default home) and its location at the
@@ -226,7 +228,10 @@ export function scanBoardConflicts(params: {
     // ended, away from the car's base, has no turnaround to protect (a real overlap is still
     // flagged by the pairwise pass above).
     const handover = !!previous && !neutral && !previous.locationNeutral && isHandoverPair(previous, ride, params.carLocationsById?.get(ride.carId)?.baseLocationId ?? params.homeLocationId);
-    const bufferConflict = !!previous && !handover && Date.parse(ride.startsAt) < Date.parse(previous.endsAt) + previousBuffer * 60_000;
+    // The days of one multi-day series follow each other with no turnaround (Thu ends 23:59, Fri starts 00:00);
+    // only a real overlap between them counts, which the pairwise pass above already flags.
+    const sameSeries = !!previous?.seriesId && previous.seriesId === ride.seriesId;
+    const bufferConflict = !!previous && !handover && !sameSeries && Date.parse(ride.startsAt) < Date.parse(previous.endsAt) + previousBuffer * 60_000;
     previousByCar.set(ride.carId, ride);
     const free = (handover || tl.isFree(window, originId)) && !bufferConflict;
     if (!free) conflictRideIds.add(ride.id);

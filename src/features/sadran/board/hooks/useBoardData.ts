@@ -591,6 +591,7 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
               destinationId: r.destination_id,
               turnaroundMinutes: r.turnaround_override_minutes ?? undefined,
               locationNeutral: isReservation(r),
+              seriesId: r.series_id ?? undefined,
             })),
             carIds: [...new Set([...validRides.map((r) => r.car_id), ...(carsQuery.data ?? []).map((c) => c.id)])],
             weekStartMs,
