@@ -41,6 +41,9 @@ const TEMPLATES: Record<string, string> = {
   SUGGEST_MERGE: 'הצטרפות לנסיעה של {host} ל{dest} ביציאה {dep} ובחזרה {ret}, ללא סטייה',
   SUGGEST_MERGE_DETOUR: 'הצטרפות לנסיעה של {host} ל{dest} ביציאה {dep} ובחזרה {ret}, עם סטייה של כ-{minutes} דק׳',
   SUGGEST_BEYOND_FLEX: "הזזה של {dep} דק' מעבר לגמישות שהוצהרה — דורש הסכמה",
+  SUGGEST_SERIES_SPAN_START: 'ב{car} יש רכב פנוי לכל ימי הנסיעה אם היציאה תהיה ביום {depDay} ב-{dep} — דורש הסכמה',
+  SUGGEST_SERIES_SPAN_END: 'ב{car} יש רכב פנוי לכל ימי הנסיעה אם החזרה תהיה ביום {retDay} ב-{ret} — דורש הסכמה',
+  SUGGEST_SERIES_SPAN_BOTH: 'ב{car} יש רכב פנוי לכל ימי הנסיעה אם היציאה תהיה ביום {depDay} ב-{dep} והחזרה ביום {retDay} ב-{ret} — דורש הסכמה',
   SUGGEST_SPLIT_LEGS: 'פיצול הנסיעה: הלוך {outbound} וחזור {return} בנפרד — דורש הסכמה',
   SUGGEST_ROUND_TRIP: 'במקום להשאיר את הרכב ב{dest}: לקחת אותו הלוך ושוב ולחזור ב-{ret} — דורש הסכמה',
   SUGGEST_CHAUFFEUR: 'הסעה: נהג/ת מתנדב/ת מסיע/ה ל{dest} ב-{dep} וחוזר/ת עם הרכב (כ-{minutes} דק׳); הסדרן/ית משבץ/ת נהג/ת',
@@ -105,6 +108,13 @@ export function reason(code: string, params: Record<string, string | number> = {
     const value = params[key];
     return value === undefined ? match : String(value);
   });
+}
+
+const WEEKDAY_NAMES = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
+
+/** Hebrew weekday name for a day index (0 = Sunday). */
+export function weekdayName(dayIndex: number): string {
+  return WEEKDAY_NAMES[dayIndex] ?? '';
 }
 
 /** Hebrew description of a rule type, for the admin policy editor. */

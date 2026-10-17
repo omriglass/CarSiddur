@@ -151,14 +151,14 @@ export function runImprove(
 /** Ride ids whose recorded origin does not match where the car is (pre-existing breaks are tolerated, new ones are not). */
 const WEEK_END_AWAY = '\u0000weekEndAway';
 
-function chainBreakIds(tl: CarTimeline): Set<string> {
+export function chainBreakIds(tl: CarTimeline): Set<string> {
   const ids = new Set(tl.chainBreaks().map((c) => c.rideId));
   // item 136 (c): a car already away at week end is tolerated, a relocation must not newly strand one.
   if (tl.weekEndAway()) ids.add(WEEK_END_AWAY);
   return ids;
 }
 
-function addsChainBreak(tl: CarTimeline, baseline: Set<string>): boolean {
+export function addsChainBreak(tl: CarTimeline, baseline: Set<string>): boolean {
   if (tl.weekEndAway() && !baseline.has(WEEK_END_AWAY)) return true;
   return tl.chainBreaks().some((c) => !baseline.has(c.rideId));
 }

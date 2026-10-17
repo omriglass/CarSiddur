@@ -75,6 +75,9 @@ var TEMPLATES = {
   SUGGEST_MERGE: "\u05D4\u05E6\u05D8\u05E8\u05E4\u05D5\u05EA \u05DC\u05E0\u05E1\u05D9\u05E2\u05D4 \u05E9\u05DC {host} \u05DC{dest} \u05D1\u05D9\u05E6\u05D9\u05D0\u05D4 {dep} \u05D5\u05D1\u05D7\u05D6\u05E8\u05D4 {ret}, \u05DC\u05DC\u05D0 \u05E1\u05D8\u05D9\u05D9\u05D4",
   SUGGEST_MERGE_DETOUR: "\u05D4\u05E6\u05D8\u05E8\u05E4\u05D5\u05EA \u05DC\u05E0\u05E1\u05D9\u05E2\u05D4 \u05E9\u05DC {host} \u05DC{dest} \u05D1\u05D9\u05E6\u05D9\u05D0\u05D4 {dep} \u05D5\u05D1\u05D7\u05D6\u05E8\u05D4 {ret}, \u05E2\u05DD \u05E1\u05D8\u05D9\u05D9\u05D4 \u05E9\u05DC \u05DB-{minutes} \u05D3\u05E7\u05F3",
   SUGGEST_BEYOND_FLEX: "\u05D4\u05D6\u05D6\u05D4 \u05E9\u05DC {dep} \u05D3\u05E7' \u05DE\u05E2\u05D1\u05E8 \u05DC\u05D2\u05DE\u05D9\u05E9\u05D5\u05EA \u05E9\u05D4\u05D5\u05E6\u05D4\u05E8\u05D4 \u2014 \u05D3\u05D5\u05E8\u05E9 \u05D4\u05E1\u05DB\u05DE\u05D4",
+  SUGGEST_SERIES_SPAN_START: "\u05D1{car} \u05D9\u05E9 \u05E8\u05DB\u05D1 \u05E4\u05E0\u05D5\u05D9 \u05DC\u05DB\u05DC \u05D9\u05DE\u05D9 \u05D4\u05E0\u05E1\u05D9\u05E2\u05D4 \u05D0\u05DD \u05D4\u05D9\u05E6\u05D9\u05D0\u05D4 \u05EA\u05D4\u05D9\u05D4 \u05D1\u05D9\u05D5\u05DD {depDay} \u05D1-{dep} \u2014 \u05D3\u05D5\u05E8\u05E9 \u05D4\u05E1\u05DB\u05DE\u05D4",
+  SUGGEST_SERIES_SPAN_END: "\u05D1{car} \u05D9\u05E9 \u05E8\u05DB\u05D1 \u05E4\u05E0\u05D5\u05D9 \u05DC\u05DB\u05DC \u05D9\u05DE\u05D9 \u05D4\u05E0\u05E1\u05D9\u05E2\u05D4 \u05D0\u05DD \u05D4\u05D7\u05D6\u05E8\u05D4 \u05EA\u05D4\u05D9\u05D4 \u05D1\u05D9\u05D5\u05DD {retDay} \u05D1-{ret} \u2014 \u05D3\u05D5\u05E8\u05E9 \u05D4\u05E1\u05DB\u05DE\u05D4",
+  SUGGEST_SERIES_SPAN_BOTH: "\u05D1{car} \u05D9\u05E9 \u05E8\u05DB\u05D1 \u05E4\u05E0\u05D5\u05D9 \u05DC\u05DB\u05DC \u05D9\u05DE\u05D9 \u05D4\u05E0\u05E1\u05D9\u05E2\u05D4 \u05D0\u05DD \u05D4\u05D9\u05E6\u05D9\u05D0\u05D4 \u05EA\u05D4\u05D9\u05D4 \u05D1\u05D9\u05D5\u05DD {depDay} \u05D1-{dep} \u05D5\u05D4\u05D7\u05D6\u05E8\u05D4 \u05D1\u05D9\u05D5\u05DD {retDay} \u05D1-{ret} \u2014 \u05D3\u05D5\u05E8\u05E9 \u05D4\u05E1\u05DB\u05DE\u05D4",
   SUGGEST_SPLIT_LEGS: "\u05E4\u05D9\u05E6\u05D5\u05DC \u05D4\u05E0\u05E1\u05D9\u05E2\u05D4: \u05D4\u05DC\u05D5\u05DA {outbound} \u05D5\u05D7\u05D6\u05D5\u05E8 {return} \u05D1\u05E0\u05E4\u05E8\u05D3 \u2014 \u05D3\u05D5\u05E8\u05E9 \u05D4\u05E1\u05DB\u05DE\u05D4",
   SUGGEST_ROUND_TRIP: "\u05D1\u05DE\u05E7\u05D5\u05DD \u05DC\u05D4\u05E9\u05D0\u05D9\u05E8 \u05D0\u05EA \u05D4\u05E8\u05DB\u05D1 \u05D1{dest}: \u05DC\u05E7\u05D7\u05EA \u05D0\u05D5\u05EA\u05D5 \u05D4\u05DC\u05D5\u05DA \u05D5\u05E9\u05D5\u05D1 \u05D5\u05DC\u05D7\u05D6\u05D5\u05E8 \u05D1-{ret} \u2014 \u05D3\u05D5\u05E8\u05E9 \u05D4\u05E1\u05DB\u05DE\u05D4",
   SUGGEST_CHAUFFEUR: "\u05D4\u05E1\u05E2\u05D4: \u05E0\u05D4\u05D2/\u05EA \u05DE\u05EA\u05E0\u05D3\u05D1/\u05EA \u05DE\u05E1\u05D9\u05E2/\u05D4 \u05DC{dest} \u05D1-{dep} \u05D5\u05D7\u05D5\u05D6\u05E8/\u05EA \u05E2\u05DD \u05D4\u05E8\u05DB\u05D1 (\u05DB-{minutes} \u05D3\u05E7\u05F3); \u05D4\u05E1\u05D3\u05E8\u05DF/\u05D9\u05EA \u05DE\u05E9\u05D1\u05E5/\u05EA \u05E0\u05D4\u05D2/\u05EA",
@@ -127,6 +130,10 @@ function reason(code, params = {}) {
     const value = params[key];
     return value === void 0 ? match : String(value);
   });
+}
+var WEEKDAY_NAMES = ["\u05E8\u05D0\u05E9\u05D5\u05DF", "\u05E9\u05E0\u05D9", "\u05E9\u05DC\u05D9\u05E9\u05D9", "\u05E8\u05D1\u05D9\u05E2\u05D9", "\u05D7\u05DE\u05D9\u05E9\u05D9", "\u05E9\u05D9\u05E9\u05D9", "\u05E9\u05D1\u05EA"];
+function weekdayName(dayIndex) {
+  return WEEKDAY_NAMES[dayIndex] ?? "";
 }
 function ruleDescription(code) {
   return reason(code);
@@ -736,8 +743,22 @@ function compareUnitsByPriority(a, b) {
   if (a.submittedAtMs !== b.submittedAtMs) return a.submittedAtMs - b.submittedAtMs;
   return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
 }
+var SERIES_EARLY_BONUS = 1;
+function greedySortKey(u) {
+  return u.kind === "series" ? u.score + SERIES_EARLY_BONUS : u.score;
+}
+function compareUnitsForGreedy(a, b) {
+  const ka = greedySortKey(a);
+  const kb = greedySortKey(b);
+  if (ka !== kb) return kb - ka;
+  const sa = a.kind === "series" ? 1 : 0;
+  const sb = b.kind === "series" ? 1 : 0;
+  if (sa !== sb) return sa - sb;
+  if (a.submittedAtMs !== b.submittedAtMs) return a.submittedAtMs - b.submittedAtMs;
+  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+}
 function sortUnits(units) {
-  return [...units].sort(compareUnitsByPriority);
+  return [...units].sort(compareUnitsForGreedy);
 }
 function fragmentationFor(tl, window) {
   for (const gap of tl.gaps()) {
@@ -845,6 +866,18 @@ function trySeriesOnCar(tl, legs, seriesCount) {
     }
   }
   return best;
+}
+function addSeriesBlocks(tl, su, placement) {
+  for (const leg of su.legs) {
+    tl.add({
+      rideId: `ride:${leg.requestId}`,
+      window: seriesLegWindow(leg, su.legs, placement),
+      startLocationId: leg.originId,
+      endLocationId: leg.destinationId,
+      overnightAck: true,
+      seriesId: su.seriesId
+    });
+  }
 }
 function seriesLegWindow(leg, legs, placement) {
   if (leg === legs[0]) return placement.firstWindow;
@@ -1050,19 +1083,7 @@ function runGreedy(units, timelines, input) {
         }
         const { car, placement } = best;
         const tl = timelines.get(car.id);
-        for (const leg of legs) {
-          const window = seriesLegWindow(leg, legs, placement);
-          tl?.add({
-            rideId: `ride:${leg.requestId}`,
-            window,
-            startLocationId: leg.originId,
-            endLocationId: leg.destinationId,
-            // A series leg legitimately leaves the car away overnight at the
-            // destination between legs — never a day-end violation.
-            overnightAck: true,
-            seriesId: su.seriesId
-          });
-        }
+        if (tl) addSeriesBlocks(tl, su, placement);
         progress = true;
         placed.push({ kind: "series", series: su, carId: car.id, firstWindow: placement.firstWindow, lastWindow: placement.lastWindow });
         continue;
@@ -1539,6 +1560,216 @@ function ejectionCandidate(nr, car, blocker, tl) {
   };
 }
 
+// src/solver/seriesRepair.ts
+var MAX_SERIES_BLOCKERS = 6;
+var rideIdOf = (nr) => `ride:${nr.id}`;
+function isRelocatable(p) {
+  return p.nr.legs[0]?.side === "both" && p.nr.tripType === "round_trip" && !p.nr.isPassengerOnly && !p.nr.request.seriesId && (p.guests?.length ?? 0) === 0;
+}
+function overlapsSpan(aStart, aEnd, bStart, bEnd, bufferSlots) {
+  return aStart < bEnd + bufferSlots && bStart < aEnd + bufferSlots;
+}
+function blockOf(p, input, window = p.window) {
+  const leg = p.nr.legs[0];
+  return {
+    rideId: rideIdOf(p.nr),
+    window,
+    startLocationId: leg?.originId ?? input.homeLocationId,
+    endLocationId: leg?.destinationId ?? input.homeLocationId,
+    overnightAck: false
+  };
+}
+function tryRepairOnCar(su, car, blockers, sharedCars, timelines, input, budget, commit) {
+  const tl = timelines.get(car.id);
+  if (!tl) return null;
+  const baselines = /* @__PURE__ */ new Map([[car.id, chainBreakIds(tl)]]);
+  const baselineOf = (id, t) => {
+    let b = baselines.get(id);
+    if (!b) {
+      b = chainBreakIds(t);
+      baselines.set(id, b);
+    }
+    return b;
+  };
+  const removed = [];
+  const addedTargets = [];
+  let seriesAdded = false;
+  const rollback = () => {
+    for (const a of addedTargets) timelines.get(a.carId)?.remove(a.rideId);
+    if (seriesAdded) for (const leg of su.legs) tl.remove(`ride:${leg.requestId}`);
+    for (const b of removed) tl.restore(b);
+  };
+  for (const b of blockers) {
+    const blk = tl.remove(rideIdOf(b.nr));
+    if (blk) removed.push(blk);
+  }
+  const placement = trySeriesOnCar(tl, su.legs, su.seriesCount);
+  if (!placement) {
+    rollback();
+    return null;
+  }
+  addSeriesBlocks(tl, su, placement);
+  seriesAdded = true;
+  if (addsChainBreak(tl, baselineOf(car.id, tl))) {
+    rollback();
+    return null;
+  }
+  const moves = [];
+  for (const b of blockers) {
+    let best = null;
+    for (const target of carsByPreference(sharedCars, b.nr.request.preferredCarId)) {
+      if (budget.left <= 0) break;
+      budget.left--;
+      if (!fits(target, b.nr.passengers) || !luggageFits(target, b.nr.luggage ? 1 : 0)) continue;
+      const targetTl = timelines.get(target.id);
+      if (!targetTl) continue;
+      const place = bestPlacementWithinFlex(targetTl, b.nr);
+      if (!place) continue;
+      if (best && place.cost >= best.cost) continue;
+      const baseline = baselineOf(target.id, targetTl);
+      const probe = blockOf(b, input, place.window);
+      targetTl.add(probe);
+      const broke = addsChainBreak(targetTl, baseline);
+      targetTl.remove(probe.rideId);
+      if (broke) continue;
+      best = { blocker: b, toCarId: target.id, window: place.window, cost: place.cost };
+    }
+    if (!best) {
+      rollback();
+      return null;
+    }
+    timelines.get(best.toCarId)?.add(blockOf(b, input, best.window));
+    addedTargets.push({ carId: best.toCarId, rideId: rideIdOf(b.nr) });
+    moves.push(best);
+  }
+  const shiftTotal = placement.shiftCost + moves.reduce((s, m) => s + m.cost, 0);
+  const trial = { car, placement, moves, shiftTotal };
+  if (!commit) {
+    rollback();
+    return trial;
+  }
+  for (const m of moves) {
+    const b = m.blocker;
+    b.carId = m.toCarId;
+    b.window = m.window;
+    b.shift = {
+      departureMin: (m.window.start - b.nr.window.start) * 15,
+      returnMin: (m.window.end - b.nr.window.end) * 15
+    };
+    b.balancedMileage = false;
+  }
+  return trial;
+}
+function runSeriesRepair(unmetUnits, placedSingles, timelines, input) {
+  const sharedCars = [...input.cars].filter((c) => c.type === "shared").sort((a, b) => a.id < b.id ? -1 : 1);
+  const bufferSlots = Math.round(input.config.bufferMinutes / 15);
+  const result = { newlyPlaced: [], relocations: [], stillUnmetUnits: [] };
+  const budget = { left: input.config.improvementBudget };
+  for (const unit of unmetUnits) {
+    const su = unit.series;
+    const first = su?.legs[0];
+    const last = su?.legs[su.legs.length - 1];
+    if (unit.kind !== "series" || !su || !first || !last || budget.left <= 0) {
+      result.stillUnmetUnits.push(unit);
+      continue;
+    }
+    const spanStart = first.window.start;
+    const spanEnd = last.window.end;
+    const perUnit = { left: Math.min(input.config.perRequestBudget, budget.left) };
+    const startBudget = perUnit.left;
+    const trials = [];
+    for (const car of sharedCars) {
+      if (perUnit.left <= 0) break;
+      if (!su.legs.every((leg) => fits(car, leg.passengers) && luggageFits(car, leg.luggage ? 1 : 0))) continue;
+      const blockers2 = placedSingles.filter(
+        (p) => p.carId === car.id && isRelocatable(p) && overlapsSpan(p.window.start, p.window.end, spanStart, spanEnd, bufferSlots)
+      ).sort((a, b) => a.nr.id < b.nr.id ? -1 : 1);
+      if (blockers2.length === 0 || blockers2.length > MAX_SERIES_BLOCKERS) continue;
+      const trial = tryRepairOnCar(su, car, blockers2, sharedCars, timelines, input, perUnit, false);
+      if (trial) trials.push(trial);
+    }
+    budget.left -= startBudget - perUnit.left;
+    trials.sort(
+      (a, b) => a.moves.length - b.moves.length || a.shiftTotal - b.shiftTotal || carPreferenceRank(a.car.id, su.legs.map((l) => l.request.preferredCarId)) - carPreferenceRank(b.car.id, su.legs.map((l) => l.request.preferredCarId)) || (a.car.id < b.car.id ? -1 : 1)
+    );
+    const chosen = trials[0];
+    if (!chosen) {
+      result.stillUnmetUnits.push(unit);
+      continue;
+    }
+    const blockers = chosen.moves.map((m) => m.blocker);
+    const fromCar = chosen.car.id;
+    const applied = tryRepairOnCar(su, chosen.car, blockers, sharedCars, timelines, input, { left: Number.POSITIVE_INFINITY }, true);
+    if (!applied) {
+      result.stillUnmetUnits.push(unit);
+      continue;
+    }
+    for (const m of applied.moves) {
+      result.relocations.push({ rideId: rideIdOf(m.blocker.nr), fromCarId: fromCar, toCarId: m.toCarId, window: m.window });
+    }
+    result.newlyPlaced.push({
+      kind: "series",
+      series: su,
+      carId: chosen.car.id,
+      firstWindow: applied.placement.firstWindow,
+      lastWindow: applied.placement.lastWindow
+    });
+  }
+  return result;
+}
+function suggestSeriesSpan(su, timelines, input) {
+  const first = su.legs[0];
+  const last = su.legs[su.legs.length - 1];
+  if (!first || !last || first.seriesIndex !== 1) return null;
+  const canEnd = last.seriesIndex === su.seriesCount;
+  const maxStartShift = Math.max(0, first.window.end - first.window.start - 1);
+  const maxEndShift = canEnd ? Math.min(minutesToSlots(input.config.beyondFlexMaxMinutes), Math.max(0, last.window.end - last.window.start - 1)) : 0;
+  let best = null;
+  for (const car2 of [...input.cars].filter((c) => c.type === "shared").sort((a, b) => a.id < b.id ? -1 : 1)) {
+    if (!su.legs.every((leg) => fits(car2, leg.passengers) && luggageFits(car2, leg.luggage ? 1 : 0))) continue;
+    const tl = timelines.get(car2.id);
+    if (!tl) continue;
+    for (let ds = 0; ds <= maxStartShift; ds++) {
+      for (let rs = 0; rs <= maxEndShift; rs++) {
+        const cost = (ds + rs) * 15;
+        if (best && cost >= best.cost) break;
+        if (ds === 0 && rs === 0) continue;
+        const D = first.window.start + ds;
+        const R = last.window.end - rs;
+        if (R <= D) break;
+        if (!tl.isFree({ start: D, end: R }, first.originId, void 0, last.destinationId)) continue;
+        best = { car: car2, D, R, cost };
+        break;
+      }
+    }
+  }
+  if (!best) return null;
+  const days = input.week.days;
+  const depDay = dayBoundsForSlot(days, best.D);
+  const retDay = dayBoundsForSlot(days, Math.max(best.D, best.R - 1));
+  const startMoved = best.D !== first.window.start;
+  const endMoved = best.R !== last.window.end;
+  const car = carName(input.cars, best.car.id);
+  const code = startMoved && endMoved ? "SUGGEST_SERIES_SPAN_BOTH" : startMoved ? "SUGGEST_SERIES_SPAN_START" : "SUGGEST_SERIES_SPAN_END";
+  return {
+    kind: "shiftBeyondFlex",
+    requestId: first.requestId,
+    carId: best.car.id,
+    window: { start: best.D, end: best.R },
+    shift: { departureMin: (best.D - first.window.start) * 15, returnMin: (best.R - last.window.end) * 15 },
+    reasonCode: code,
+    reason: reason(code, {
+      car,
+      depDay: weekdayName(depDay.dayIndex),
+      dep: formatSlotTime(best.D, depDay),
+      retDay: weekdayName(retDay.dayIndex),
+      ret: formatSlotTime(best.R, retDay)
+    }),
+    cost: best.cost,
+    confidence: Math.max(0, 0.5 - best.cost / 480)
+  };
+}
+
 // src/solver/merge.ts
 function requestOriginOfLeg(leg) {
   return leg.leg === "return" ? leg.destinationId : leg.originId;
@@ -1763,7 +1994,7 @@ function findMergeHosts(params) {
 }
 
 // src/solver/pooling.ts
-var rideIdOf = (nr) => `ride:${nr.id}`;
+var rideIdOf2 = (nr) => `ride:${nr.id}`;
 function isRoundTripSingle(nr) {
   return nr.legs[0]?.side === "both" && nr.tripType === "round_trip" && !nr.isPassengerOnly && !nr.request.seriesId;
 }
@@ -1776,7 +2007,7 @@ function isHostCandidate(p, cars) {
 function hostRideOf(p) {
   const guests = p.guests ?? [];
   return {
-    rideId: rideIdOf(p.nr),
+    rideId: rideIdOf2(p.nr),
     carId: p.carId,
     window: p.window,
     driverRequestId: p.nr.id,
@@ -1794,10 +2025,10 @@ function hostRideOf(p) {
 function tryPool(guest, guestPlaced, placed, timelines, input, carsMap) {
   const hostPlaced = placed.filter((h) => h.kind === "single").filter((h) => h !== guestPlaced && isHostCandidate(h, carsMap) && h.nr.dayIndex === guest.dayIndex);
   if (hostPlaced.length === 0) return false;
-  const hostNrByRide = new Map(hostPlaced.map((h) => [rideIdOf(h.nr), h.nr]));
-  const hostByRide = new Map(hostPlaced.map((h) => [rideIdOf(h.nr), h]));
+  const hostNrByRide = new Map(hostPlaced.map((h) => [rideIdOf2(h.nr), h.nr]));
+  const hostByRide = new Map(hostPlaced.map((h) => [rideIdOf2(h.nr), h]));
   const guestTl = guestPlaced ? timelines.get(guestPlaced.carId) : void 0;
-  const guestBlock = guestPlaced ? guestTl?.remove(rideIdOf(guest)) : void 0;
+  const guestBlock = guestPlaced ? guestTl?.remove(rideIdOf2(guest)) : void 0;
   const restoreGuest = () => {
     if (guestBlock) guestTl?.restore(guestBlock);
   };
@@ -1823,7 +2054,7 @@ function tryPool(guest, guestPlaced, placed, timelines, input, carsMap) {
     return false;
   }
   const hostTl = timelines.get(hostPl.carId);
-  const hostBlock = hostTl?.remove(rideIdOf(hostPl.nr));
+  const hostBlock = hostTl?.remove(rideIdOf2(hostPl.nr));
   if (hostTl && hostBlock) {
     if (!hostTl.isFree(best.window, hostBlock.startLocationId, hostBlock.relayPairId, hostBlock.endLocationId)) {
       hostTl.restore(hostBlock);
@@ -4027,8 +4258,9 @@ function solveExpanded(input) {
   const { placed, unmetUnits } = runGreedy(units, timelines, input);
   const placedSingles = placed.filter((p) => p.kind === "single");
   const improveResult = runImprove(unmetUnits, placedSingles, timelines, input, scores);
-  let finalPlaced = [...placed, ...improveResult.newlyPlaced];
-  let stillUnmetUnits = improveResult.stillUnmetUnits;
+  const seriesRepair = runSeriesRepair(improveResult.stillUnmetUnits, [...placedSingles, ...improveResult.newlyPlaced], timelines, input);
+  let finalPlaced = [...placed, ...improveResult.newlyPlaced, ...seriesRepair.newlyPlaced];
+  let stillUnmetUnits = seriesRepair.stillUnmetUnits;
   if (input.config.sharedRides !== false) {
     const pooling = runPooling(finalPlaced, stillUnmetUnits, timelines, input, scores, carsMap);
     finalPlaced = pooling.placed;
@@ -4135,12 +4367,13 @@ function solveExpanded(input) {
     const su = u.series;
     if (!su) continue;
     const seriesScore = scores.get(su.scoreProxy.id)?.total ?? 0;
+    const spanSuggestion = suggestSeriesSpan(su, timelines, input);
     for (const leg of su.legs) {
       unmet.push({
         requestId: leg.requestId,
         score: seriesScore,
         blockers: [],
-        suggestions: [],
+        suggestions: spanSuggestion && spanSuggestion.requestId === leg.requestId ? [spanSuggestion] : [],
         reasonCode: "UNMET_SERIES_NO_CAR",
         reason: reason("UNMET_SERIES_NO_CAR", { index: leg.seriesIndex, count: su.seriesCount })
       });
@@ -4203,7 +4436,7 @@ function solveExpanded(input) {
       served: servedRequestIds.size,
       unmet: unmet.length,
       needsDriver,
-      relocations: improveResult.relocationsApplied.length,
+      relocations: improveResult.relocationsApplied.length + seriesRepair.relocations.length,
       budgetExhausted: improveResult.budgetExhausted,
       elapsedMs: startedAt !== void 0 ? (input.now?.() ?? startedAt) - startedAt : 0
     }

@@ -100,8 +100,33 @@ export function compareUnitsByPriority(a: Unit, b: Unit): number {
   return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
 }
 
+/**
+ * REQUIREMENTS item 136 (e), docs/SOLVER.md §3.16: a multi-day series needs one car for its whole span, so it
+ * is placed EARLY. Its sort key is its own score plus this bonus: it is ranked ahead of every unit whose score
+ * is lower than `series score + SERIES_EARLY_BONUS` and yields only to clearly higher-priority units.
+ * This is the ONLY place the rule lives; `compareUnitsByPriority` stays the plain comparator.
+ */
+export const SERIES_EARLY_BONUS = 1.0;
+
+function greedySortKey(u: Unit): number {
+  return u.kind === 'series' ? u.score + SERIES_EARLY_BONUS : u.score;
+}
+
+/** The greedy pass order: `compareUnitsByPriority` over the effective key (series bonus). Ties: non-series first
+ *  (a series only outranks scores strictly lower than its own + bonus), then submission time, then id. */
+export function compareUnitsForGreedy(a: Unit, b: Unit): number {
+  const ka = greedySortKey(a);
+  const kb = greedySortKey(b);
+  if (ka !== kb) return kb - ka;
+  const sa = a.kind === 'series' ? 1 : 0;
+  const sb = b.kind === 'series' ? 1 : 0;
+  if (sa !== sb) return sa - sb;
+  if (a.submittedAtMs !== b.submittedAtMs) return a.submittedAtMs - b.submittedAtMs;
+  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+}
+
 export function sortUnits(units: Unit[]): Unit[] {
-  return [...units].sort(compareUnitsByPriority);
+  return [...units].sort(compareUnitsForGreedy);
 }
 
 function fragmentationFor(tl: CarTimeline, window: Window): number {
@@ -281,7 +306,7 @@ function candidatesByDistance(bounds: [number, number], preferred: number): numb
   return out;
 }
 
-interface SeriesPlacement {
+export interface SeriesPlacement {
   firstWindow: Window;
   lastWindow: Window;
   shiftCost: number;
@@ -308,7 +333,7 @@ function shortRelayGapMinutes(outWindow: Window, returnWindow: Window, bufferMin
  * ordinary buffer rule at its outer edges is equivalent to checking every
  * leg individually.
  */
-function trySeriesOnCar(tl: CarTimeline, legs: SeriesLeg[], seriesCount: number): SeriesPlacement | null {
+export function trySeriesOnCar(tl: CarTimeline, legs: SeriesLeg[], seriesCount: number): SeriesPlacement | null {
   const first = legs[0];
   const last = legs[legs.length - 1];
   if (!first || !last) return null;
@@ -335,8 +360,22 @@ function trySeriesOnCar(tl: CarTimeline, legs: SeriesLeg[], seriesCount: number)
   return best;
 }
 
+/** Adds every in-week leg of a placed series to `tl` (one contiguous composite, overnight at the destination is legitimate). */
+export function addSeriesBlocks(tl: CarTimeline, su: SeriesUnit, placement: SeriesPlacement): void {
+  for (const leg of su.legs) {
+    tl.add({
+      rideId: `ride:${leg.requestId}`,
+      window: seriesLegWindow(leg, su.legs, placement),
+      startLocationId: leg.originId,
+      endLocationId: leg.destinationId,
+      overnightAck: true,
+      seriesId: su.seriesId,
+    });
+  }
+}
+
 /** The actual window of `leg` after any within-flex shift of the outer boundary legs. */
-function seriesLegWindow(leg: SeriesLeg, legs: SeriesLeg[], placement: SeriesPlacement): Window {
+export function seriesLegWindow(leg: SeriesLeg, legs: SeriesLeg[], placement: SeriesPlacement): Window {
   if (leg === legs[0]) return placement.firstWindow;
   if (leg === legs[legs.length - 1]) return placement.lastWindow;
   return leg.window;
@@ -596,19 +635,7 @@ export function runGreedy(
       }
       const { car, placement } = best;
       const tl = timelines.get(car.id);
-      for (const leg of legs) {
-        const window = seriesLegWindow(leg, legs, placement);
-        tl?.add({
-          rideId: `ride:${leg.requestId}`,
-          window,
-          startLocationId: leg.originId,
-          endLocationId: leg.destinationId,
-          // A series leg legitimately leaves the car away overnight at the
-          // destination between legs — never a day-end violation.
-          overnightAck: true,
-          seriesId: su.seriesId,
-        });
-      }
+      if (tl) addSeriesBlocks(tl, su, placement);
       // F5 (docs/SOLVER.md §3.6.2): a multi-day series' in-week legs are not
       // added to `assignedKmByCar` — a middle day's own "ride" block has the
       // car parked away with no travel that day (`originId === destinationId`

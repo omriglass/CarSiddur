@@ -6,6 +6,7 @@
 // assertInvariants -> SolverOutput. See src/solver/README.md for an overview
 // and CLAUDE.md hard rule 5 for the purity contract this package upholds.
 
+import { runSeriesRepair, suggestSeriesSpan } from './seriesRepair';
 import { buildUnits, runGreedy, sortUnits, toAssignments, type Placed, type PlacedSingle } from './greedy';
 import { runImprove } from './improve';
 import { runPooling } from './pooling';
@@ -204,10 +205,14 @@ function solveExpanded(input: SolverInput): SolverOutput {
   const placedSingles = placed.filter((p): p is PlacedSingle => p.kind === 'single');
   const improveResult = runImprove(unmetUnits, placedSingles, timelines, input, scores);
 
+  // REQ item 136 (e) (SOLVER §3.16): a multi-day series that still has no car moves the short rides blocking one
+  // (inside their own flexibility). Runs before pooling, so no pooled host/guest is ever a blocker.
+  const seriesRepair = runSeriesRepair(improveResult.stillUnmetUnits, [...placedSingles, ...improveResult.newlyPlaced], timelines, input);
+
   // REQ §136 a (SOLVER §3.6.4): pooling pass, then the unmet units retry on the freed capacity.
   // Pooling runs after the improvement pass, so a host or guest is never relocated by `runImprove`.
-  let finalPlaced: Placed[] = [...placed, ...improveResult.newlyPlaced];
-  let stillUnmetUnits = improveResult.stillUnmetUnits;
+  let finalPlaced: Placed[] = [...placed, ...improveResult.newlyPlaced, ...seriesRepair.newlyPlaced];
+  let stillUnmetUnits = seriesRepair.stillUnmetUnits;
   if (input.config.sharedRides !== false) {
     const pooling = runPooling(finalPlaced, stillUnmetUnits, timelines, input, scores, carsMap);
     finalPlaced = pooling.placed;
@@ -379,19 +384,19 @@ function solveExpanded(input: SolverInput): SolverOutput {
     });
   }
 
-  // Multi-day series (SOLVER §3.x): all-or-nothing, no suggestions — every leg
-  // of a series that could not be placed on one car becomes its own
-  // UnmetRequest with an empty suggestions list.
+  // Multi-day series (SOLVER §3.x): all-or-nothing — every leg of a series that could not be placed on one car
+  // becomes its own UnmetRequest; the head leg carries the nearest-start/end suggestion (item 136 e), if any.
   for (const u of unmetSeriesUnits) {
     const su = u.series;
     if (!su) continue;
     const seriesScore = scores.get(su.scoreProxy.id)?.total ?? 0;
+    const spanSuggestion = suggestSeriesSpan(su, timelines, input);
     for (const leg of su.legs) {
       unmet.push({
         requestId: leg.requestId,
         score: seriesScore,
         blockers: [],
-        suggestions: [],
+        suggestions: spanSuggestion && spanSuggestion.requestId === leg.requestId ? [spanSuggestion] : [],
         reasonCode: 'UNMET_SERIES_NO_CAR',
         reason: reason('UNMET_SERIES_NO_CAR', { index: leg.seriesIndex, count: su.seriesCount }),
       });
@@ -465,7 +470,7 @@ function solveExpanded(input: SolverInput): SolverOutput {
       served: servedRequestIds.size,
       unmet: unmet.length,
       needsDriver,
-      relocations: improveResult.relocationsApplied.length,
+      relocations: improveResult.relocationsApplied.length + seriesRepair.relocations.length,
       budgetExhausted: improveResult.budgetExhausted,
       elapsedMs: startedAt !== undefined ? (input.now?.() ?? startedAt) - startedAt : 0,
     },
