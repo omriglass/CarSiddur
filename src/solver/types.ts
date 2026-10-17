@@ -447,6 +447,7 @@ export type SuggestionKind =
   | 'changeOrigin'
   | 'chainOneWay'
   | 'useAlternative'
+  | 'planBSwitch'
   | 'externalHint'
   | 'deny';
 
@@ -549,6 +550,22 @@ export type Suggestion =
       returnCarId?: string;
       departSlot: Slot;
       returnSlot?: Slot;
+    })
+  | (SuggestionBase & {
+      /**
+       * REQUIREMENTS item 136 (g): this unmet request (no plan B) fits if `otherRequestId` — a placed single with a
+       * plan B (`fallback: 'alternative'`) or "manage" (`'manage'`) — switches to that fallback. `carId`/`window` are where
+       * THIS request would then sit (on the other request's car); for a plan B, `alternative` carries the other member's
+       * plan-B placement (same numbers as a `useAlternative` for them). Nothing is placed. SOLVER §3.15 maps this to a
+       * proposal TO the other member: type `alternative` (payload from `alternative`, request = `otherRequestId`) or
+       * `external` (`manage`); after they accept, this request is placed by the Sadran / the next auto-fill.
+       */
+      kind: 'planBSwitch';
+      otherRequestId: string;
+      fallback: 'alternative' | 'manage';
+      carId: string;
+      window: Window;
+      alternative?: { carId: string; returnCarId?: string; departSlot: Slot; returnSlot?: Slot };
     })
   | (SuggestionBase & {
       kind: 'externalHint';

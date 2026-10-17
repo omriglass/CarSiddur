@@ -40,6 +40,12 @@ export interface RelayPair {
   returnWindow: Window;
   idleSlots: number;
   shiftCost: number; // minutes
+  /**
+   * REQ item 136 (d): the same member's out `X -> Y` and later back `Y' -> X` as one pair unit (explicit one-way or
+   * drop-off legs). `returnWindow` is the car's block (it starts `hop` slots before the member leaves Y' when
+   * Y' != Y); `returnLegStart` is the member's own departure from Y'. The legs keep their own side labels.
+   */
+  outAndBack?: { returnLegOriginId: string; returnLegStart: number };
 }
 
 // A `tripType === 'one_way'` request (REQUIREMENTS §13.93) never enters pairing —

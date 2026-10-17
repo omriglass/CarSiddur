@@ -16,7 +16,7 @@ import { assertInvariants } from './invariants';
 import { fits, luggageFits } from './seatFit';
 import { buildHostRides, findMergeHosts } from './merge';
 import { scoreRequests } from './policy/engine';
-import { oneWayUnmetCause, pairComplementaryOneWays } from './oneWayPairs';
+import { oneWayUnmetCause, pairComplementaryOneWays, pairSameMemberOutAndBack } from './oneWayPairs';
 import { chauffeurShortDropOffs, chauffeurUnpairedRelayLegs, pairRelays, pickupFromCarAtX } from './relay';
 import { reason } from './reasons';
 import { applyFallbacks } from './alternative';
@@ -176,12 +176,20 @@ function solveExpanded(input: SolverInput): SolverOutput {
   // end-check only) alongside ordinary 'both'/keep round trips, never through
   // relay pairing/chauffeur healing (which stays scoped to `drop_off`, the
   // legacy-derived default for every one-way/needsCarAtDestination=false case).
-  const roundTrips = normalized.filter((nr) => nr.legs[0]?.side === 'both' || nr.tripType === 'one_way');
+  const roundTripsAll = normalized.filter((nr) => nr.legs[0]?.side === 'both' || nr.tripType === 'one_way');
   const oneWay = normalized.filter((nr) => nr.legs[0]?.side !== 'both' && nr.tripType !== 'one_way');
   const passengerOnly = oneWay.filter((nr) => nr.isPassengerOnly);
   const relayEligible = oneWay.filter((nr) => !nr.isPassengerOnly);
 
-  const { pairs, unpaired } = pairRelays(relayEligible, input.cars, normalized.filter((nr) => !relayEligible.includes(nr)), 2 * bufferSlots);
+  const relayResult = pairRelays(relayEligible, input.cars, normalized.filter((nr) => !relayEligible.includes(nr)), 2 * bufferSlots);
+  // REQ item 136 (d) (SOLVER §3.6.1d): the same member's out and back is a pair unit of the greedy pass
+  // (ranked by the higher leg score), formed from the explicit one-way legs and the unpaired relay legs.
+  const outAndBack = input.cars.some((c) => c.type === 'shared')
+    ? pairSameMemberOutAndBack([...roundTripsAll.filter((nr) => nr.tripType === 'one_way'), ...relayResult.unpaired], input, normalized)
+    : { pairs: [], usedIds: new Set<string>() };
+  const pairs = [...relayResult.pairs, ...outAndBack.pairs];
+  const unpaired = relayResult.unpaired.filter((nr) => !outAndBack.usedIds.has(nr.id));
+  const roundTrips = roundTripsAll.filter((nr) => !outAndBack.usedIds.has(nr.id));
 
   const relayPairPeople = new Map<string, number>();
   for (const pair of pairs) {
@@ -225,6 +233,12 @@ function solveExpanded(input: SolverInput): SolverOutput {
   const ownPairFallback: NormalizedRequest[] = [];
   for (const u of stillUnmetUnits) {
     if (u.kind !== 'pair' || !u.pair) continue;
+    // an out-and-back pair (item 136 d) that fits no car: explicit one-way legs are never chauffeured
+    // (the post-pass below gets them), drop-off legs take the ordinary healing paths
+    if (u.pair.pair.outAndBack) {
+      for (const nr of [u.pair.outNr, u.pair.retNr]) if (nr.tripType !== 'one_way') ownPairFallback.push(nr);
+      continue;
+    }
     ownPairFallback.push(u.pair.outNr, u.pair.retNr);
   }
   const rideAlongPool = new Map<string, NormalizedRequest>();
@@ -249,16 +263,21 @@ function solveExpanded(input: SolverInput): SolverOutput {
   // click — otherwise the next solve (partner now fixed) places them and auto-fill never finishes.
   // R8B14: complementary explicit one-way legs (X -> Y with Y -> X) that blocked each other (the lone
   // leg strands the car's next ride, the return finds no car at Y) go together onto one car.
+  // REQ item 136 (d) (SOLVER §3.6.1d): the same member's out and back (also overnight, nearby places) and an
+  // unpaired one-leg drop-off join the same pass.
   const oneWayPairs = pairComplementaryOneWays(
-    stillUnmetUnits.flatMap((u) => (u.kind === 'single' && u.single?.tripType === 'one_way' ? [u.single] : [])),
-    timelines, input, carsMap, scores);
+    [...stillUnmetUnits.flatMap((u) => (u.kind === 'single' && u.single?.tripType === 'one_way' ? [u.single] : [])),
+      ...unpaired.filter((nr) => !rideAlongIds.has(nr.id)),
+      ...stillUnmetUnits.flatMap((u) => (u.kind === 'pair' && u.pair?.pair.outAndBack ? [u.pair.outNr, u.pair.retNr] : []))
+        .filter((nr) => !rideAlongIds.has(nr.id))],
+    timelines, input, carsMap, scores, normalized);
   // REQ §13.105 b: a pickup from X on a car already standing at X, driven home by the requester, comes first.
-  const pickupCandidates = [...unpaired, ...ownPairFallback].filter((nr) => !rideAlongIds.has(nr.id));
+  const pickupCandidates = [...unpaired, ...ownPairFallback].filter((nr) => !rideAlongIds.has(nr.id) && !oneWayPairs.healedIds.has(nr.id));
   const pickups = pickupFromCarAtX(pickupCandidates, timelines, input, carsMap, scores);
   const chauffeured = chauffeurUnpairedRelayLegs(
     pickupCandidates.filter((nr) => !pickups.healedIds.has(nr.id)), timelines, input, carsMap, scores);
   const healed = [...pickups.healed, ...chauffeured.healed];
-  const healedIds = new Set([...rideAlongIds, ...pickups.healedIds, ...chauffeured.healedIds]);
+  const healedIds = new Set([...rideAlongIds, ...oneWayPairs.healedIds, ...pickups.healedIds, ...chauffeured.healedIds]);
   const stillUnpairedRelay = unpaired.filter((nr) => !healedIds.has(nr.id));
   // REQUIREMENTS §13.88 (owner 2026-09-24, docs/TODO.md Q7): a one-way leg with no eligible
   // driver on board gets the same missing-driver chauffeur ride the SQL healing gives it

@@ -774,8 +774,13 @@ export function toAssignments(placed: Placed[], input: SolverInput, carsById: Ma
         partner: memberName(input, retDriverMemberId ?? retNr.request.memberId),
         ret: formatSlotTime(pair.returnWindow.end, dayRet),
       });
+      const oab = pair.outAndBack;
       const outShift = { departureMin: (pair.outWindow.start - outNr.window.start) * 15, returnMin: 0 };
-      const retShift = { departureMin: 0, returnMin: (pair.returnWindow.end - retNr.window.end) * 15 };
+      const retShift = oab
+        ? { departureMin: (oab.returnLegStart - retNr.window.start) * 15, returnMin: 0 }
+        : { departureMin: 0, returnMin: (pair.returnWindow.end - retNr.window.end) * 15 };
+      const outLegLabel: 'out' | 'return' = oab && outNr.legs[0]?.side === 'return' ? 'return' : 'out';
+      const retLegLabel: 'out' | 'return' = oab && retNr.legs[0]?.side !== 'return' ? 'out' : 'return';
       const outRideId = `ride:${outNr.id}`;
       const retRideId = `ride:${retNr.id}`;
       out.push({
@@ -789,7 +794,7 @@ export function toAssignments(placed: Placed[], input: SolverInput, carsById: Ma
         legs: [
           {
             requestId: outNr.id,
-            leg: 'out',
+            leg: outLegLabel,
             carMode: 'relay',
             originId: pair.originId,
             destinationId: pair.destinationId,
@@ -817,9 +822,9 @@ export function toAssignments(placed: Placed[], input: SolverInput, carsById: Ma
         legs: [
           {
             requestId: retNr.id,
-            leg: 'return',
+            leg: retLegLabel,
             carMode: 'relay',
-            originId: pair.destinationId,
+            originId: oab?.returnLegOriginId ?? pair.destinationId,
             destinationId: pair.originId,
             role: retDriverMemberId === retNr.request.memberId ? 'driver' : 'passenger',
           },
