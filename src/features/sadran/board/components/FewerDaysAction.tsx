@@ -1,7 +1,7 @@
 // REQ §13.101 (j, QF5): on an unmet multi-day request the Sadran may propose fewer consecutive
 // days on one car ("2 days instead of 3"). Picks the first/last day and a car (default: a car free
 // for the span), then hands a `shift` prefill with `series_span` to the board's proposal flow
-// (טיוטה / הכן הצעה via DraftChoiceDialog).
+// (the "דיברת עם X?" question via DraftChoiceDialog, REQ §13.138 a).
 import { useState } from "react";
 
 import { ConfirmDialog } from "@/components/ConfirmDialog";

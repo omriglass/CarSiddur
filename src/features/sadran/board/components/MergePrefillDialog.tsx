@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 
 import { mergeLegOptions, type MergeLeg, type MergePreview, type MergeVerdict } from "../mergeProposal";
 import { requestFlexLines } from "../mergeFlex";
+import { talkedTitle } from "../talkedTitle";
 
 import type { ComposerPrefill as MergePrefill } from "../draftInput";
 import type { WeekRequestRow } from "../../api";
@@ -57,10 +58,13 @@ export interface MergePrefillDialogProps {
   draftNote?: "extends" | "replaces" | null;
   /** The merged ride (route twin); `null` when it cannot be computed. */
   preview: MergePreview | null;
-  /** REQ §13.123: offline-handled day — only "טיוטה" is offered, nothing is sent from the app. */
-  offline?: boolean;
+  /** REQ §13.138 (a): the people the merge needs — "דיברת עם X על השינוי?". */
+  partyNames: readonly string[];
+  /** "כן, כבר סיכמנו": applied now, no proposal. */
+  onAgree: () => void;
+  /** "צריך לדבר — שלח עכשיו": the composer. */
   onConfirm: () => void;
-  /** REQ §13.94: store the merge as an unsent draft and stay on the board. */
+  /** "צריך לדבר — אני עוד עובד/ת על הטיוטה": store the merge as an unsent draft and stay on the board. */
   onDraft: () => void;
   busy?: boolean;
   onCancel: () => void;
@@ -121,7 +125,7 @@ function RideBlock({ testId, heading, label, startsAt, endsAt, preview, flex }: 
   );
 }
 
-export function MergePrefillDialog({ prefill, hostLabel, hostStartsAt, hostEndsAt, request, hostRequest, pair, requestRoute, leg, onLegChange, anchorLeg, legVerdicts, verdict, split, draftNote, preview, offline, onConfirm, onDraft, busy, onCancel }: MergePrefillDialogProps) {
+export function MergePrefillDialog({ prefill, hostLabel, hostStartsAt, hostEndsAt, request, hostRequest, pair, requestRoute, leg, onLegChange, anchorLeg, legVerdicts, verdict, split, draftNote, preview, partyNames, onAgree, onConfirm, onDraft, busy, onCancel }: MergePrefillDialogProps) {
   const options = request && !split ? mergeLegOptions(request, anchorLeg) : null;
   // The server decides; without a verdict (no host/request to ask about) the TS twin's validity is the fallback.
   const blocked = verdict ? verdict.status !== "ok" : (!!preview && !preview.valid) || (!!pair?.preview && !pair.preview.valid);
@@ -196,9 +200,11 @@ export function MergePrefillDialog({ prefill, hostLabel, hostStartsAt, hostEndsA
             )}
           </div>
         ) : null}
-        <div className="flex flex-wrap gap-2">
-          {offline ? null : <Button onClick={onConfirm} disabled={busy || blocked} className="min-h-11" data-testid="merge-prepare">{he.boardDrafts.prepare}</Button>}
-          <Button variant="secondary" onClick={onDraft} disabled={busy || blocked} className="min-h-11" data-testid="merge-save-draft">{he.boardDrafts.draftButton}</Button>
+        <p className="font-medium" data-testid="merge-talked-title">{talkedTitle(partyNames)}</p>
+        <div className="flex flex-col gap-2">
+          <Button onClick={onAgree} disabled={busy || blocked} className="min-h-11" data-testid="merge-agreed">{he.boardDrafts.talkedYes}</Button>
+          <Button variant="secondary" onClick={onDraft} disabled={busy || blocked} className="min-h-11 whitespace-normal" data-testid="merge-save-draft">{he.boardDrafts.talkedDraft}</Button>
+          <Button variant="secondary" onClick={onConfirm} disabled={busy || blocked} className="min-h-11 whitespace-normal" data-testid="merge-prepare">{he.boardDrafts.talkedSendNow}</Button>
           <Button variant="outline" onClick={onCancel} className="min-h-11">{he.common.cancel}</Button>
         </div>
       </DialogContent>

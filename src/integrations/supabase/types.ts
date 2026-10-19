@@ -5686,6 +5686,14 @@ export type Database = {
       }
       sadranim_of: { Args: { _dept: string; _week: string }; Returns: string[] }
       save_request_template: { Args: { p_request_id: string }; Returns: string }
+      send_draft_proposals: {
+        Args: {
+          p_days?: string[]
+          p_department_id: string
+          p_week_start: string
+        }
+        Returns: Json
+      }
       send_due_reminders: { Args: { p_now?: string }; Returns: number }
       send_proposal: {
         Args: {

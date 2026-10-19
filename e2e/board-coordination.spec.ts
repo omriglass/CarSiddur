@@ -114,7 +114,7 @@ test("one-way drop persists a missing-driver ride, tight edits remain publishabl
     await expect(page.getByRole("dialog")).toContainText("07:15");
     await expect(page.getByRole("dialog")).not.toContainText("07:00–10:00");
     await expect(page.getByTestId("merge-leg-fixed")).toHaveText(he.mergedRide.legOut);
-    await page.getByRole("button", { name: he.boardDrafts.prepare, exact: true }).click();
+    await page.getByTestId("merge-prepare").click(); // REQ §13.138 a: "צריך לדבר — שלח עכשיו"
     await page.getByRole("button", { name: he.action.propose, exact: true }).click();
     await expect(page).toHaveURL(boardUrl);
     // One merged block on the host's car (no ghost + shadowed host): the host's own block is replaced.

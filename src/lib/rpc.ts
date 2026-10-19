@@ -107,7 +107,6 @@ export type ErrorCode =
   | "proposal_not_found"
   | "proposal_day_public"
   | "proposal_day_published"
-  | "proposals_offline_disabled"
   | "private_car_owner_only"
   | "own_car_not_free"
   | "own_car_round_trip_only"
@@ -253,7 +252,6 @@ const MESSAGE_TO_CODE: Record<string, ErrorCode> = {
   proposal_not_found: "proposal_not_found",
   proposal_day_public: "proposal_day_public",
   proposal_day_published: "proposal_day_published",
-  proposals_offline_disabled: "proposals_offline_disabled",
   private_car_owner_only: "private_car_owner_only",
   own_car_not_free: "own_car_not_free",
   own_car_round_trip_only: "own_car_round_trip_only",
@@ -401,7 +399,6 @@ const CODE_TO_MESSAGE: Record<ErrorCode, string> = {
   proposal_not_found: he.errors.proposalNotFound,
   proposal_day_public: he.errors.proposalDayPublic,
   proposal_day_published: he.errors.proposalDayPublished,
-  proposals_offline_disabled: he.errors.proposalsOfflineDisabled,
   private_car_owner_only: he.errors.privateCarOwnerOnly,
   own_car_not_free: he.errors.ownCarNotFree,
   own_car_round_trip_only: he.errors.ownCarRoundTripOnly,

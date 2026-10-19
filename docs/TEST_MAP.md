@@ -268,7 +268,7 @@ migration `*my_rides_week_view*`; `supabase/tests/request_anchors.sql` (TEST 8).
 `*board*`, `*coordinator*`, `*ride_edit*`, `*day_readiness*`, `*car_chain*`, `*car_swap*`, or
 content-matching `v_board_rides`/`publish_siddur`; `src/components/CarSwapDialog.tsx`(+test),
 `WeekGrid.carSwap.test.tsx`, `src/features/carSwap/**`; `e2e/board.spec.ts`, `board-mobile.spec.ts`,
-`board-coordination.spec.ts`, `board-drafts.spec.ts` (REQ §13.94 drafts), `merged-ride.spec.ts` (REQ §13.94 merged ride = one block, unmerge), `merge-verdict.spec.ts` (REQ §13.108 e: merge popup takes the server's `merge_preview` verdict), `pilot-p2-trip-type-placement.spec.ts` (REQ §13.117: an unmet request changed to a drop-off is placed on a free car), `export.spec.ts`, `weekly-permissions.spec.ts`, `ride-editing.spec.ts`, `large-trunk-waiver.spec.ts` (REQ §13.111 a: confirm/decline the small-car waiver on a hand drop), `plan-b-cycle.spec.ts`,
+`board-coordination.spec.ts`, `board-drafts.spec.ts` (REQ §13.94 drafts; REQ §13.138 "כן, כבר סיכמנו" + "שלח את כל ההצעות"), `merged-ride.spec.ts` (REQ §13.94 merged ride = one block, unmerge), `merge-verdict.spec.ts` (REQ §13.108 e: merge popup takes the server's `merge_preview` verdict), `pilot-p2-trip-type-placement.spec.ts` (REQ §13.117: an unmet request changed to a drop-off is placed on a free car), `export.spec.ts`, `weekly-permissions.spec.ts`, `ride-editing.spec.ts`, `large-trunk-waiver.spec.ts` (REQ §13.111 a: confirm/decline the small-car waiver on a hand drop), `plan-b-cycle.spec.ts`,
 `car-swap.spec.ts`, `multi-stop.spec.ts`, `live-changes.spec.ts` (REQ §13.118: a pending merge keeps the host ride editable, a volunteer driver is replaced in one step); `src/features/rides/servedOf.ts`,
 `src/features/rides/components/RideRouteStops.tsx`, `src/lib/routeStops.ts` (multi-stop rides
 display, REQ §13.93, step O6); `src/features/rides/components/RideRoute.tsx`, `src/lib/rideRoute.ts`(+test) (ride route twin and display, REQ §13.94); `src/lib/weekSettings.ts`(+test) (week turnaround/dwell override, REQ §13.108 a).
@@ -320,7 +320,7 @@ matching `*proposal*`; `e2e/proposal.spec.ts`, `proposal-retry.spec.ts`, `board-
 
 **Automated**:
 - Vitest: `npx vitest run src/features/proposals src/features/sadran/proposals`
-- SQL: `proposal_day_boundary.sql`, `proposal_replacement.sql`, `withdraw_settles.sql`, `proposals_offline.sql` (REQ §13.123: agreed-offline drafts apply silently)
+- SQL: `proposal_day_boundary.sql`, `proposal_replacement.sql`, `withdraw_settles.sql`, `proposals_offline.sql` (REQ §13.138 a/b/d: "כן, כבר סיכמנו" on any day, `send_draft_proposals`)
 - Playwright: `npx playwright test --grep "@proposals"`
 
 **QA script**:

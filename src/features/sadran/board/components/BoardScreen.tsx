@@ -46,6 +46,7 @@ import { ridePublicDetails } from "@/lib/ridePublicDetails";
 import { ridePassengerSummary } from "@/lib/ridePassengerSummary";
 import { rideCoordinatorNotes } from "@/lib/rideCoordinatorNotes";
 
+import { peopleNames, peopleOf } from "@/features/rides/ridePeople";
 import { resolveRideRealDestination } from "../rideLabel";
 import { duplicateChildRuns, groupDuplicateRuns } from "../duplicateChildRuns";
 import { connectedMateOf, unmetItemId } from "../unmetLegs";
@@ -64,6 +65,7 @@ import { BoardTitleSwitcher } from "./BoardTitleSwitcher";
 import { BoardWeekSwitcher } from "./BoardWeekSwitcher";
 import { DisplacementChecklist } from "./DisplacementChecklist";
 import { DraftChoiceDialog } from "./DraftChoiceDialog";
+import type { PendingDraft } from "./SendAllDialog";
 import type { FewerDaysSupport } from "./FewerDaysAction";
 import type { ComposerPrefill } from "../draftInput";
 import { MergePrefillDialog } from "./MergePrefillDialog";
@@ -141,6 +143,21 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
   }, [conflictJump]);
 
   // REQ §13.94 (G10): the merge popup's base ride, added request and merged-ride preview.
+  /** REQ §13.138 (d): the week's unsent Sadran drafts, by their request's day — "שלח את כל ההצעות". */
+  const pendingDrafts: PendingDraft[] = (board.proposalsQuery.data ?? []).flatMap((proposal) => {
+    if (proposal.status !== "draft" || proposal.created_via !== "sadran") return [];
+    const request = board.requestsQuery.data?.find((row) => row.id === proposal.request_id);
+    const start = request ? requestStart(request) : null;
+    return start ? [{ proposal, day: dateKey(start), requesterName: request?.requester_full_name ?? "" }] : [];
+  });
+  /** REQ §13.138 (a): the people "דיברת עם X על השינוי?" names — the requester, and for a merge everyone on the ride(s). */
+  function partyNamesFor(prefill: ComposerPrefill | null): string[] {
+    if (!prefill) return [];
+    const requester = board.requestsQuery.data?.find((request) => request.id === prefill.requestId)?.requester_full_name ?? "";
+    if (prefill.type !== "merge") return [requester];
+    const rideIds = new Set([...mergePayloadLegs(prefill.payload).map((entry) => entry.ride_id), ...(prefill.rideId ? [prefill.rideId] : [])]);
+    return [requester, ...board.rides.filter((ride) => ride.id && rideIds.has(ride.id)).flatMap((ride) => peopleNames(peopleOf(ride)))];
+  }
   const mergeRequest = board.boardRequests.find((request) => request.id === dnd.mergePrefill?.requestId);
   const mergeLegs = mergePayloadLegs(dnd.mergePrefill?.payload);
   // REQ §13.102 (d): a split merge carries two rides (out on A, return on B), previewed each with its own leg.
@@ -349,6 +366,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
             days={board.days}
             selectedDay={board.selectedDay}
             openCount={board.openRequestCount}
+            drafts={pendingDrafts}
           />
           </div>
         </div>
@@ -584,9 +602,10 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
         split={mergeSplit}
         draftNote={dnd.mergePrefill?.draftNote}
         preview={mergePreview}
-        offline={dnd.isOfflineForRequest(dnd.mergePrefill?.requestId)}
+        partyNames={partyNamesFor(dnd.mergePrefill)}
+        onAgree={() => { void withMergeWaiver((prefill) => dnd.agreeChoice(prefill)); }}
         onConfirm={() => { void withMergeWaiver((prefill) => { dnd.openComposer(prefill); dnd.setMergePrefill(null); }); }}
-        onDraft={() => { void withMergeWaiver((prefill) => dnd.saveDraft(prefill)); }}
+        onDraft={() => { void withMergeWaiver(async (prefill) => { await dnd.saveDraft(prefill); }); }}
         busy={dnd.draftPending}
         onCancel={() => dnd.setMergePrefill(null)}
       />
@@ -609,7 +628,8 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
       ) : null}
       <DraftChoiceDialog
         choice={dnd.composeChoice}
-        requesterName={board.requestsQuery.data?.find((request) => request.id === dnd.composeChoice?.requestId)?.requester_full_name}
+        partyNames={partyNamesFor(dnd.composeChoice)}
+        onAgree={() => { if (dnd.composeChoice) void dnd.agreeChoice(dnd.composeChoice); }}
         onCompose={dnd.composeFromChoice}
         onDraft={() => { if (dnd.composeChoice) void dnd.saveDraft(dnd.composeChoice); }}
         busy={dnd.draftPending}
@@ -622,7 +642,6 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
         changes={proposalChanges}
         busy={dnd.proposalActionPending}
         onOpenChange={(open) => !open && dnd.setSelectedProposalId(null)}
-        offline={dnd.selectedProposal ? dnd.isOfflineForRequest(dnd.selectedProposal.request_id) : false}
         onAgree={(proposal) => void dnd.agreeOffline(proposal)}
         onSend={dnd.sendDraft}
         onEdit={dnd.editDraft}

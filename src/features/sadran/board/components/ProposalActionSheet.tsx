@@ -1,6 +1,6 @@
 // REQ §13.94: tapping a draft block (or a sent/accepted merge ghost) on the board opens this
-// small sheet. Draft: שלח (composer on that draft, whose send is `send_proposal`), ערוך
-// (composer, editable), מחק טיוטה (`discard_proposal`). Sent/accepted: open it (composer view)
+// small sheet. Draft: שלח (composer on that draft, whose send is `send_proposal`), סיכמנו (REQ §13.138 b:
+// `agree_proposal_offline`, applied with no proposal), ערוך (composer, editable), מחק טיוטה (`discard_proposal`). Sent/accepted: open it (composer view)
 // or בטל הצעה (`withdraw_proposal`, no message to the member).
 import { useState } from "react";
 
@@ -49,16 +49,15 @@ export interface ProposalActionSheetProps {
   changes?: ProposalChangeContext;
   busy?: boolean;
   onOpenChange: (open: boolean) => void;
-  /** REQ §13.123: the day is handled offline — drafts get "סוכם בוואטסאפ" / "לא סוכם" instead of "שלח". */
-  offline?: boolean;
-  onAgree?: (proposal: ProposalRow) => void;
+  /** REQ §13.138 (b): "סיכמנו" — the Sadran already talked with them; applied with no proposal. */
+  onAgree: (proposal: ProposalRow) => void;
   onSend: (proposal: ProposalRow) => void;
   onEdit: (proposal: ProposalRow) => void;
   onDiscard: (proposal: ProposalRow) => void;
   onWithdraw: (proposal: ProposalRow) => void;
 }
 
-export function ProposalActionSheet({ proposal, requesterName, dayIso, changes, busy, offline, onAgree, onOpenChange, onSend, onEdit, onDiscard, onWithdraw }: ProposalActionSheetProps) {
+export function ProposalActionSheet({ proposal, requesterName, dayIso, changes, busy, onAgree, onOpenChange, onSend, onEdit, onDiscard, onWithdraw }: ProposalActionSheetProps) {
   const [confirmWithdraw, setConfirmWithdraw] = useState(false);
   const isDraft = proposal?.status === "draft";
   const withdrawable = proposal?.status === "sent" || proposal?.status === "accepted";
@@ -76,24 +75,15 @@ export function ProposalActionSheet({ proposal, requesterName, dayIso, changes, 
               }) : ""}
             </SheetDescription>
           </SheetHeader>
-          {proposal && isDraft && offline ? <p className="text-xs text-muted-foreground" data-testid="draft-offline-hint">{he.boardDrafts.offlineHint}</p> : null}
           {proposal && changes ? <ProposalChanges proposal={proposal} context={changes} /> : null}
           {proposal ? (
             <div className="flex flex-wrap gap-2 py-3">
               {isDraft ? (
                 <>
-                  {offline ? (
-                    <>
-                      <Button disabled={busy} onClick={() => onAgree?.(proposal)} data-testid="draft-agreed">{he.boardDrafts.agreed}</Button>
-                      <Button variant="destructive" disabled={busy} onClick={() => onDiscard(proposal)} data-testid="draft-not-agreed">{he.boardDrafts.notAgreed}</Button>
-                    </>
-                  ) : (
-                    <>
-                      <Button disabled={busy} onClick={() => onSend(proposal)} data-testid="draft-send">{he.boardDrafts.send}</Button>
-                      <Button variant="outline" disabled={busy} onClick={() => onEdit(proposal)} data-testid="draft-edit">{he.boardDrafts.edit}</Button>
-                      <Button variant="destructive" disabled={busy} onClick={() => onDiscard(proposal)} data-testid="draft-discard">{he.boardDrafts.discard}</Button>
-                    </>
-                  )}
+                  <Button disabled={busy} onClick={() => onSend(proposal)} data-testid="draft-send">{he.boardDrafts.send}</Button>
+                  <Button variant="secondary" disabled={busy} onClick={() => onAgree(proposal)} data-testid="draft-agreed">{he.boardDrafts.agreed}</Button>
+                  <Button variant="outline" disabled={busy} onClick={() => onEdit(proposal)} data-testid="draft-edit">{he.boardDrafts.edit}</Button>
+                  <Button variant="destructive" disabled={busy} onClick={() => onDiscard(proposal)} data-testid="draft-discard">{he.boardDrafts.discard}</Button>
                 </>
               ) : (
                 <>

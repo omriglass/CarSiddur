@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { BarChart3, Clock, Download, History, ListChecks, MoreVertical, PlayCircle, RefreshCw, XCircle } from "lucide-react";
+import { BarChart3, Clock, Download, History, ListChecks, MoreVertical, PlayCircle, RefreshCw, Send, XCircle } from "lucide-react";
 
 import { paths } from "@/app/routes";
 import {
@@ -14,10 +14,11 @@ import { Button } from "@/components/ui/button";
 import { RequestDeviationsDialog } from "../../deviations/RequestDeviationsDialog";
 import { useWeekExcelExport } from "../../export/useWeekExcelExport";
 import { CancelPublicationAction } from "../../publish/components/BoardPublicationActions";
-import { he } from "@/i18n/he";
+import { he, tv } from "@/i18n/he";
 
 import { AutoFillDialog } from "./AutoFillDialog";
 import { FullResolveAction } from "./FullResolveAction";
+import { SendAllDialog, type PendingDraft } from "./SendAllDialog";
 import { SetWeekCloseAction } from "./SetWeekCloseAction";
 
 import type { ActivePolicy } from "../../api";
@@ -34,23 +35,26 @@ interface BoardActionsMenuProps {
   selectedDay: string;
   openCount: (day: string | null) => number;
   autoSolving: boolean;
+  /** REQ §13.138 (d): the week's unsent Sadran drafts — "שלח את כל ההצעות" and the counter on the ⋮ button. */
+  drafts: readonly PendingDraft[];
 }
 
 /**
  * Board "actions" kebab menu (UX_FLOWS.md §4.2, owner spec 2026-09-10),
  * rendered at every width: export, request deviations, auto-solve
- * remaining, full re-solve, cancel publication, and links to the change log
+ * remaining, "שלח את כל ההצעות" (REQ §13.138 d), full re-solve, cancel publication, and links to the change log
  * / proposals list. The primary publish button stays outside this menu,
  * always visible (`PublishButton`). Items that don't apply today (e.g.
  * cancel publication before anything is published) are hidden, same as the
  * old inline row.
  */
 export function BoardActionsMenu({
-  departmentId, weekStart, homeDestinationId, policy, onPolicyUsed, onAutoSolveRemaining, autoSolving, days, selectedDay, openCount,
+  departmentId, weekStart, homeDestinationId, policy, onPolicyUsed, onAutoSolveRemaining, autoSolving, days, selectedDay, openCount, drafts,
 }: BoardActionsMenuProps) {
   const navigate = useNavigate();
   const [deviationsOpen, setDeviationsOpen] = useState(false);
   const [autoFillOpen, setAutoFillOpen] = useState(false);
+  const [sendAllOpen, setSendAllOpen] = useState(false);
   // Controlled so opening a dialog that lives outside the menu also closes the menu (a menu left
   // open keeps the rest of the board aria-hidden after the dialog closes).
   const [menuOpen, setMenuOpen] = useState(false);
@@ -59,8 +63,13 @@ export function BoardActionsMenu({
   return <>
     <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
       <DropdownMenuTrigger asChild>
-        <Button type="button" variant="outline" size="icon" aria-label={he.sadranBoard.actionsMenu} data-testid="board-actions-menu-trigger">
+        <Button type="button" variant="outline" size="icon" aria-label={he.sadranBoard.actionsMenu} data-testid="board-actions-menu-trigger" className="relative">
           <MoreVertical className="size-4" />
+          {drafts.length ? (
+            <span className="absolute -end-1.5 -top-1.5 min-w-4 rounded-full bg-primary px-1 text-[10px] leading-4 text-primary-foreground" data-testid="board-pending-count" title={tv("sendAll.menuCount", { count: String(drafts.length) })}>
+              {drafts.length}
+            </span>
+          ) : null}
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-64">
@@ -72,6 +81,11 @@ export function BoardActionsMenu({
           {exporting ? he.excelExport.loading : he.excelExport.button}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
+        <DropdownMenuItem onSelect={(e) => { e.preventDefault(); setMenuOpen(false); setSendAllOpen(true); }} data-testid="board-send-all">
+          <Send className="me-2 size-4" aria-hidden="true" />
+          {he.sendAll.menuItem}
+          {drafts.length ? <span className="ms-auto text-xs text-muted-foreground">{tv("sendAll.menuCount", { count: String(drafts.length) })}</span> : null}
+        </DropdownMenuItem>
         <DropdownMenuItem disabled={autoSolving} onSelect={(e) => { e.preventDefault(); setMenuOpen(false); setAutoFillOpen(true); }}>
           <PlayCircle className="me-2 size-4" aria-hidden="true" />
           {autoSolving ? he.sadranDashboard.solving : he.action.autoSolveRemaining}
@@ -138,6 +152,7 @@ export function BoardActionsMenu({
       loading={autoSolving}
       onConfirm={(day) => { onAutoSolveRemaining(day); setAutoFillOpen(false); }}
     />
+    <SendAllDialog open={sendAllOpen} onOpenChange={setSendAllOpen} departmentId={departmentId} weekStart={weekStart} drafts={drafts} />
     <RequestDeviationsDialog departmentId={departmentId} weekStart={weekStart} open={deviationsOpen} onOpenChange={setDeviationsOpen} />
   </>;
 }

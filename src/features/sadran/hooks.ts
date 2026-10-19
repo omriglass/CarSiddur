@@ -455,6 +455,17 @@ export function useAgreeProposalOfflineMutation() {
   });
 }
 
+/** REQ §13.138 (d): "שלח את כל ההצעות" for the ticked days. */
+export function useSendDraftProposalsMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ departmentId, weekStart, days }: { departmentId: string; weekStart: string; days: string[] | null }) =>
+      api.sendDraftProposals(departmentId, weekStart, days),
+    onSettled: (_data, _error, { departmentId, weekStart }) => invalidateBoard(queryClient, departmentId, weekStart),
+    onError: showErrorToast,
+  });
+}
+
 export function useWithdrawProposalMutation() {
   const queryClient = useQueryClient();
   return useMutation({

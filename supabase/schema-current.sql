@@ -3043,34 +3043,34 @@ CREATE OR REPLACE FUNCTION "public"."agree_proposal_offline"("p_proposal_id" "uu
 declare
   v_p public.proposals%rowtype;
   v_req public.requests%rowtype;
-  v_offline boolean;
   v_prev_supp text := coalesce(current_setting('app.suppress_notifications', true), '');
   v_prev_reason text := coalesce(current_setting('app.suppressed_reason', true), '');
-  v_day date; v_party record; v_status public.proposal_status; v_reason text;
+  v_prev_defer text := coalesce(current_setting('app.defer_proposal_apply', true), '');
+  v_prev_auto text := coalesce(current_setting('app.auto_applying_proposal', true), '');
+  v_prev_sst text := coalesce(current_setting('app.system_status_transition', true), '');
+  v_prev_applying text := coalesce(current_setting('app.applying_proposal', true), '');
+  v_day date; v_public boolean := false; v_party record; v_status public.proposal_status; v_reason text;
 begin
   select * into v_p from public.proposals where id = p_proposal_id;
   if not found then raise exception 'proposal_not_found' using errcode = 'P0001'; end if;
   if not public.can_manage_week(v_p.department_id, v_p.week_start) then
     raise exception 'not_authorized' using errcode = 'P0001';
   end if;
-  select coalesce(proposals_offline, false) into v_offline from public.department_settings where department_id = v_p.department_id;
-  if not coalesce(v_offline, false) then raise exception 'proposals_offline_disabled' using errcode = 'P0001'; end if;
   if v_p.status not in ('draft', 'sent') then raise exception 'proposal_not_answerable' using errcode = 'P0001'; end if;
   select * into v_req from public.requests where id = v_p.request_id;
-  -- Every day the proposal touches must still be unpublished: the request's own legs and any shifted times.
+  -- The request's own legs and any shifted times: is any of those days already public?
   for v_day in
     select distinct (t at time zone 'Asia/Jerusalem')::date from unnest(array[
       v_req.depart_at, v_req.return_at,
       nullif(v_p.payload ->> 'depart_at', '')::timestamptz, nullif(v_p.payload ->> 'return_at', '')::timestamptz]) t
     where t is not null
   loop
-    if public.is_day_public(v_p.department_id, v_p.week_start, v_day) then
-      raise exception 'proposal_day_published' using errcode = 'P0001';
-    end if;
+    if public.is_day_public(v_p.department_id, v_p.week_start, v_day) then v_public := true; end if;
   end loop;
 
   perform set_config('app.suppress_notifications', 'on', true);
   perform set_config('app.suppressed_reason', '', true);
+  perform set_config('app.defer_proposal_apply', 'on', true);
   if v_p.status = 'draft' then
     perform public.send_proposal(p_proposal_id);
   end if;
@@ -3078,7 +3078,26 @@ begin
                  where proposal_id = p_proposal_id and response = 'pending' order by id loop
     perform public.record_answer_on_behalf(p_proposal_id, v_party.profile_id, true, null);
   end loop;
-  v_reason := nullif(current_setting('app.suppressed_reason', true), '');
+  perform set_config('app.defer_proposal_apply', v_prev_defer, true);
+
+  select status into v_status from public.proposals where id = p_proposal_id;
+  if v_status = 'accepted' then
+    if v_public then perform set_config('app.suppress_notifications', v_prev_supp, true); end if;
+    begin
+      perform set_config('app.auto_applying_proposal', 'on', true);
+      perform public.apply_proposal(p_proposal_id);
+      perform set_config('app.auto_applying_proposal', v_prev_auto, true);
+    exception when others then
+      v_reason := sqlerrm;
+      perform set_config('app.auto_applying_proposal', v_prev_auto, true);
+      perform set_config('app.system_status_transition', v_prev_sst, true);
+      perform set_config('app.applying_proposal', v_prev_applying, true);
+      -- Nobody was ever asked, so nobody is told the answer no longer stands: the Sadran gets the reason on the spot.
+      perform set_config('app.suppress_notifications', 'on', true);
+      perform public.proposal_system_withdraw(p_proposal_id, 'withdrawn_stale', v_reason);
+    end;
+  end if;
+  v_reason := coalesce(v_reason, nullif(current_setting('app.suppressed_reason', true), ''));
   perform set_config('app.suppress_notifications', v_prev_supp, true);
   perform set_config('app.suppressed_reason', v_prev_reason, true);
 
@@ -8452,6 +8471,9 @@ declare v_prop record; v_auto boolean; v_msg text;
   v_prev_sst text := coalesce(current_setting('app.system_status_transition', true), '');
   v_prev_applying text := coalesce(current_setting('app.applying_proposal', true), '');
 begin
+  if coalesce(current_setting('app.defer_proposal_apply', true), '') = 'on' then
+    return;
+  end if;
   select * into v_prop from public.proposals where id = p_proposal_id;
   if v_prop is null or v_prop.status <> 'accepted' then
     return;
@@ -14035,6 +14057,44 @@ $$;
 ALTER FUNCTION "public"."save_request_template"("p_request_id" "uuid") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."send_draft_proposals"("p_department_id" "uuid", "p_week_start" "date", "p_days" "date"[] DEFAULT NULL::"date"[]) RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_p record;
+  v_prev public.proposals%rowtype;
+  v_res jsonb;
+  v_out jsonb := '[]'::jsonb;
+begin
+  if not public.can_manage_week(p_department_id, p_week_start) then
+    raise exception 'not_authorized' using errcode = 'P0001';
+  end if;
+  for v_p in
+    select p.id, p.request_id, (coalesce(q.depart_at, q.return_at) at time zone 'Asia/Jerusalem')::date as day
+    from public.proposals p
+    join public.requests q on q.id = p.request_id
+    where p.department_id = p_department_id and p.week_start = p_week_start
+      and p.status = 'draft' and p.created_via = 'sadran'
+    order by p.created_at, p.id
+  loop
+    continue when p_days is not null and not (v_p.day = any(p_days));
+    select * into v_prev from public.proposals where request_id = v_p.request_id and status = 'sent' and id <> v_p.id;
+    begin
+      v_res := public.send_proposal(v_p.id, '{}'::public.notification_channel[], v_prev.id, v_prev.version);
+      v_out := v_out || jsonb_build_array(jsonb_build_object('proposal_id', v_p.id, 'day', v_p.day, 'ok', true,
+        'party_tokens', coalesce(v_res -> 'party_tokens', '{}'::jsonb), 'car_conflicts', coalesce(v_res -> 'car_conflicts', '[]'::jsonb)));
+    exception when others then
+      v_out := v_out || jsonb_build_array(jsonb_build_object('proposal_id', v_p.id, 'day', v_p.day, 'ok', false, 'error', sqlerrm));
+    end;
+  end loop;
+  return v_out;
+end $$;
+
+
+ALTER FUNCTION "public"."send_draft_proposals"("p_department_id" "uuid", "p_week_start" "date", "p_days" "date"[]) OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."send_due_reminders"("p_now" timestamp with time zone DEFAULT "now"()) RETURNS integer
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -17419,7 +17479,7 @@ ALTER TABLE ONLY "public"."department_settings" FORCE ROW LEVEL SECURITY;
 ALTER TABLE "public"."department_settings" OWNER TO "postgres";
 
 
-COMMENT ON COLUMN "public"."department_settings"."proposals_offline" IS 'REQ §13.123: proposals for unpublished days are agreed offline (WhatsApp) and applied silently via agree_proposal_offline().';
+COMMENT ON COLUMN "public"."department_settings"."proposals_offline" IS 'Deprecated (REQ §13.138, 2026-10-19): no longer read. "כן, כבר סיכמנו" (agree_proposal_offline) works on every day.';
 
 
 
@@ -24730,6 +24790,12 @@ GRANT ALL ON FUNCTION "public"."sadranim_of"("_dept" "uuid", "_week" "date") TO 
 REVOKE ALL ON FUNCTION "public"."save_request_template"("p_request_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."save_request_template"("p_request_id" "uuid") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."save_request_template"("p_request_id" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."send_draft_proposals"("p_department_id" "uuid", "p_week_start" "date", "p_days" "date"[]) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."send_draft_proposals"("p_department_id" "uuid", "p_week_start" "date", "p_days" "date"[]) TO "service_role";
+GRANT ALL ON FUNCTION "public"."send_draft_proposals"("p_department_id" "uuid", "p_week_start" "date", "p_days" "date"[]) TO "authenticated";
 
 
 

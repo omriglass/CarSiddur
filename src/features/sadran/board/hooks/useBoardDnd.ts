@@ -21,7 +21,6 @@ import { useDepartmentMembers } from "@/features/auth/useDepartmentMembers";
 import { fetchChildren } from "@/features/requests/api";
 
 import { combineMergeLegs, defaultMergeLeg, mergeLegForCard, mergeLegOptions, mergePayload, mergePayloadFromLegs, mergePayloadLeg, mergePayloadLegs, mergeRefusalText, type MergeLeg } from "../mergeProposal";
-import { isOfflineProposalDay } from "../offlineProposals";
 import { mergeGhostTarget } from "../mergeGhostClick";
 import { isDropOffWithPickup, legView, unmetItemId, unmetItemKey } from "../unmetLegs";
 import type { GuestDropTarget } from "@/components/GuestChips";
@@ -98,8 +97,8 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
   // Sadran is allowed on any non-archived day (planning, no notifications).
   const [carSwapPair, setCarSwapPair] = useState<{ carA: string; carB: string } | null>(null);
   const [mergePrefill, setMergePrefill] = useState<ComposerPrefill | null>(null);
-  // REQ §13.94: every board popup that leads to the composer first offers "טיוטה" (store the
-  // proposal unsent and stay on the board) next to "הכן הצעה" (open the composer).
+  // REQ §13.138 (a): every board popup that leads to the composer first asks "דיברת עם X על השינוי?" —
+  // agreed (apply now), draft (store unsent, stay on the board) or send now (open the composer).
   const [composeChoice, setComposeChoice] = useState<ComposerPrefill | null>(null);
   // Tapped draft block / sent merge ghost -> its action sheet (send, edit, discard / withdraw).
   const [selectedProposalId, setSelectedProposalId] = useState<string | null>(null);
@@ -188,12 +187,6 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
   const carsData = board.carsQuery.data ?? [];
   const department = board.department;
 
-  /** REQ §13.123: proposals are agreed on WhatsApp for this request's (unpublished) day. */
-  function isOfflineForRequest(requestId: string | null | undefined): boolean {
-    const req = requestsData.find((r) => r.id === requestId);
-    return isOfflineProposalDay(board.departmentSettingsQuery.data?.proposals_offline, board.weekRowQuery.data, req ? requestStart(req) : null);
-  }
-
   /** Opens the composer (the old `goToComposer`); `proposalId` set = view/send that existing proposal. */
   function openComposer(prefill: ComposerPrefill) {
     navigate(paths.sadran.composer(departmentId, weekStart), { state: { ...prefill, returnTo: location.pathname + location.search } });
@@ -201,17 +194,18 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
 
   /**
    * Every board path that leads to a suggestion goes through here: an existing proposal opens
-   * directly, a new one first asks "טיוטה" / "הכן הצעה" (REQ §13.94).
+   * directly, a new one first asks "דיברת עם X על השינוי?" (REQ §13.138 a).
    */
   function goToComposer(prefill: ComposerPrefill) {
     if (prefill.proposalId) { openComposer(prefill); return; }
-    // REQ §13.123: offline-handled day — nothing is sent from the app, so save the draft directly.
-    if (isOfflineForRequest(prefill.requestId)) { void saveDraft(prefill); return; }
     setComposeChoice(prefill);
   }
 
-  /** "טיוטה": `create_proposal` with the payload and text the composer would have built; stays on the board. */
-  async function saveDraft(prefill: ComposerPrefill) {
+  /**
+   * "צריך לדבר — אני עוד עובד/ת על הטיוטה": `create_proposal` with the payload and text the composer would have built;
+   * stays on the board. Resolves the new proposal's id (`null` when it could not be saved). `quiet`: no success toast.
+   */
+  async function saveDraft(prefill: ComposerPrefill, quiet = false): Promise<string | null> {
     // R5B5: the draft's stored text reads the server's merge preview, like the popup and the composer.
     const serverMerge = prefill.type === "merge" && prefill.rideId
       ? await fetchMergePreview(prefill.rideId, prefill.requestId, mergePayloadLeg(prefill.payload, requestsData.find((r) => r.id === prefill.requestId) ?? { trip_shape: "round_trip" })).catch(() => null)
@@ -227,15 +221,24 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
       route: board.routeCtx,
       serverMerge,
     });
-    if (!built.ok) { toast.error(he.boardDrafts.cannotDraft); return; }
+    if (!built.ok) { toast.error(he.boardDrafts.cannotDraft); return null; }
     try {
-      await createProposalMutation.mutateAsync({ ...built.input, departmentId, weekStart });
+      const id = await createProposalMutation.mutateAsync({ ...built.input, departmentId, weekStart });
       setComposeChoice(null);
       setMergePrefill(null);
-      toast.success(he.boardDrafts.saved);
+      if (!quiet) toast.success(he.boardDrafts.saved);
+      return id;
     } catch {
       // the mutation already showed the error toast; keep the popup open
+      return null;
     }
+  }
+
+  /** "כן, כבר סיכמנו" (REQ §13.138 a, b): the draft is saved and applied at once, with no proposal. */
+  async function agreeChoice(prefill: ComposerPrefill) {
+    const id = await saveDraft(prefill, true);
+    if (!id) return;
+    await agreeProposalById(id);
   }
 
   function composeFromChoice() {
@@ -389,14 +392,18 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
     } catch { /* toast shown by the mutation */ }
   }
 
-  /** REQ §13.123 "סוכם בוואטסאפ": applies the draft with no notifications; a stale draft is withdrawn with its reason. */
-  async function agreeOffline(proposal: ProposalRow) {
+  /** REQ §13.138 (b) "סיכמנו": applies the draft with no proposal; a stale draft is withdrawn with its reason. */
+  async function agreeProposalById(proposalId: string) {
     try {
-      const result = await agreeOfflineMutation.mutateAsync({ proposalId: proposal.id, departmentId, weekStart });
+      const result = await agreeOfflineMutation.mutateAsync({ proposalId, departmentId, weekStart });
       setSelectedProposalId(null);
       if (result.status === "applied") toast.success(he.boardDrafts.agreedApplied);
       else toast.warning(tv("boardDrafts.agreedStale", { reason: result.reason }));
     } catch { /* toast shown by the mutation */ }
+  }
+
+  function agreeOffline(proposal: ProposalRow) {
+    return agreeProposalById(proposal.id);
   }
 
   async function withdrawSent(proposal: ProposalRow) {
@@ -1012,9 +1019,9 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
     editDraft,
     discardDraft,
     agreeOffline,
-    isOfflineForRequest,
+    agreeChoice,
     withdrawSent,
-    draftPending: createProposalMutation.isPending,
+    draftPending: createProposalMutation.isPending || agreeOfflineMutation.isPending,
     proposalActionPending: agreeOfflineMutation.isPending || discardProposalMutation.isPending || withdrawProposalMutation.isPending || unmergeRequestMutation.isPending,
     handlePlaceUnmetRequest,
     handleUnassignRide,

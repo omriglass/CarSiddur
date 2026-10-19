@@ -727,7 +727,6 @@ export const he = {
     rideNotFound: "הנסיעה לא נמצאה",
     proposalNotFound: "ההצעה לא נמצאה",
     proposalDayPublished: "היום כבר פורסם — הצעות ליום מפורסם נשלחות לחברים ולא מסכמים בוואטסאפ",
-    proposalsOfflineDisabled: "המחלקה לא מטפלת בהצעות בוואטסאפ",
     privateCarOwnerOnly: "רכב פרטי — רק הבעלים מוסיף/ה אליו בקשות (אפשר לבקש להצטרף אל הבעלים)",
     ownCarNotFree: "הרכב הפרטי שלך לא פנוי בשעות האלה",
     ownCarRoundTripOnly: "אפשר לשבץ על הרכב הפרטי רק נסיעה הלוך-חזור",

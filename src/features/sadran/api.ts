@@ -775,13 +775,26 @@ export async function discardProposal(proposalId: string): Promise<void> {
 
 export type AgreeOfflineResult = { status: "applied" } | { status: "withdrawn_stale"; reason: string };
 
-/** REQ §13.123: the Sadran agreed the draft on WhatsApp — applies it, no member notifications. */
+/**
+ * REQ §13.138 (a, b) "כן, כבר סיכמנו": applies the draft (or sent proposal) as if every party accepted, on any day; no
+ * proposal or answer notice. A proposal that no longer applies comes back `withdrawn_stale` with the reason.
+ */
 export async function agreeProposalOffline(proposalId: string): Promise<AgreeOfflineResult> {
   const data = await rpc("agree_proposal_offline", { p_proposal_id: proposalId });
   const result = (data ?? {}) as { status?: string; reason?: string };
   return result.status === "withdrawn_stale"
     ? { status: "withdrawn_stale", reason: result.reason ?? "" }
     : { status: "applied" };
+}
+
+export type SendDraftResult =
+  | { proposal_id: string; day: string; ok: true; party_tokens: Record<string, string>; car_conflicts: unknown[] }
+  | { proposal_id: string; day: string; ok: false; error: string };
+
+/** REQ §13.138 (d) "שלח את כל ההצעות": sends the week's Sadran drafts for `days` (null = every day), one result each. */
+export async function sendDraftProposals(departmentId: string, weekStart: string, days: string[] | null): Promise<SendDraftResult[]> {
+  const data = await rpc("send_draft_proposals", { p_department_id: departmentId, p_week_start: weekStart, p_days: days ?? undefined });
+  return (Array.isArray(data) ? data : []) as unknown as SendDraftResult[];
 }
 
 /** REQ §13.94: Sadran cancels a sent/accepted proposal (`-> withdrawn`, tokens revoked, no message to the member). */
