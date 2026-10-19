@@ -398,8 +398,18 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
       const result = await agreeOfflineMutation.mutateAsync({ proposalId, departmentId, weekStart });
       setSelectedProposalId(null);
       if (result.status === "applied") toast.success(he.boardDrafts.agreedApplied);
+      else if (result.status === "waiting") toast.info(tv("boardDrafts.agreedWaiting", { names: waitingNames(result.waitingFor) }));
       else toast.warning(tv("boardDrafts.agreedStale", { reason: result.reason }));
     } catch { /* toast shown by the mutation */ }
+  }
+
+  /** REQ §13.138 (f): the requesters of the proposals a waiting one waits for. */
+  function waitingNames(proposalIds: readonly string[]): string {
+    const ids = new Set(proposalIds);
+    const names = proposals.filter((p) => ids.has(p.id))
+      .map((p) => requestsData.find((r) => r.id === p.request_id)?.requester_full_name ?? "")
+      .filter((name) => name !== "");
+    return [...new Set(names)].join(", ");
   }
 
   function agreeOffline(proposal: ProposalRow) {
@@ -1020,6 +1030,7 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
     discardDraft,
     agreeOffline,
     agreeChoice,
+    waitingNames,
     withdrawSent,
     draftPending: createProposalMutation.isPending || agreeOfflineMutation.isPending,
     proposalActionPending: agreeOfflineMutation.isPending || discardProposalMutation.isPending || withdrawProposalMutation.isPending || unmergeRequestMutation.isPending,

@@ -773,7 +773,11 @@ export async function discardProposal(proposalId: string): Promise<void> {
   await rpc("discard_proposal", { p_proposal_id: proposalId });
 }
 
-export type AgreeOfflineResult = { status: "applied" } | { status: "withdrawn_stale"; reason: string };
+export type AgreeOfflineResult =
+  | { status: "applied" }
+  | { status: "withdrawn_stale"; reason: string }
+  /** REQ §13.138 (f): agreed, but another pending proposal still holds its room — applied as soon as that one applies. */
+  | { status: "waiting"; waitingFor: string[] };
 
 /**
  * REQ §13.138 (a, b) "כן, כבר סיכמנו": applies the draft (or sent proposal) as if every party accepted, on any day; no
@@ -781,7 +785,8 @@ export type AgreeOfflineResult = { status: "applied" } | { status: "withdrawn_st
  */
 export async function agreeProposalOffline(proposalId: string): Promise<AgreeOfflineResult> {
   const data = await rpc("agree_proposal_offline", { p_proposal_id: proposalId });
-  const result = (data ?? {}) as { status?: string; reason?: string };
+  const result = (data ?? {}) as { status?: string; reason?: string; waiting_for?: string[] };
+  if (result.status === "waiting") return { status: "waiting", waitingFor: result.waiting_for ?? [] };
   return result.status === "withdrawn_stale"
     ? { status: "withdrawn_stale", reason: result.reason ?? "" }
     : { status: "applied" };

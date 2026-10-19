@@ -648,6 +648,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
         dayIso={selectedProposalRequest ? requestStart(selectedProposalRequest) : null}
         changes={proposalChanges}
         busy={dnd.proposalActionPending}
+        waitingNames={dnd.selectedProposal?.waiting_for?.length ? dnd.waitingNames(dnd.selectedProposal.waiting_for) : undefined}
         onOpenChange={(open) => !open && dnd.setSelectedProposalId(null)}
         onAgree={(proposal) => void dnd.agreeOffline(proposal)}
         onSend={dnd.sendDraft}

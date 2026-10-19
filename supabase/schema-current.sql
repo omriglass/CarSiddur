@@ -499,6 +499,124 @@ end $$;
 ALTER FUNCTION "public"."_apply_alternative"("p_proposal_id" "uuid") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."_apply_or_wait"("p_proposal_id" "uuid", "p_silent" boolean DEFAULT false) RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_msg text;
+  v_block uuid[];
+  v_prev_auto text := coalesce(current_setting('app.auto_applying_proposal', true), '');
+  v_prev_sst text := coalesce(current_setting('app.system_status_transition', true), '');
+  v_prev_applying text := coalesce(current_setting('app.applying_proposal', true), '');
+  v_prev_supp text := coalesce(current_setting('app.suppress_notifications', true), '');
+begin
+  begin
+    perform set_config('app.auto_applying_proposal', 'on', true);
+    perform public.apply_proposal(p_proposal_id);
+    perform set_config('app.auto_applying_proposal', v_prev_auto, true);
+    update public.proposals set waiting_for = '{}'::uuid[] where id = p_proposal_id and waiting_for <> '{}'::uuid[];
+    return jsonb_build_object('status', 'applied');
+  exception when others then
+    v_msg := sqlerrm;
+    perform set_config('app.auto_applying_proposal', v_prev_auto, true);
+    perform set_config('app.system_status_transition', v_prev_sst, true);
+    perform set_config('app.applying_proposal', v_prev_applying, true);
+  end;
+  v_block := public._proposal_blockers(p_proposal_id);
+  if cardinality(v_block) > 0 then
+    if public._apply_proposal_group(p_proposal_id) then
+      return jsonb_build_object('status', 'applied');
+    end if;
+    update public.proposals set waiting_for = v_block where id = p_proposal_id;
+    return jsonb_build_object('status', 'waiting', 'waiting_for', to_jsonb(v_block));
+  end if;
+  if p_silent then perform set_config('app.suppress_notifications', 'on', true); end if;
+  perform public.proposal_system_withdraw(p_proposal_id, 'withdrawn_stale', v_msg);
+  perform set_config('app.suppress_notifications', v_prev_supp, true);
+  return jsonb_build_object('status', 'withdrawn', 'reason', v_msg);
+end $$;
+
+
+ALTER FUNCTION "public"."_apply_or_wait"("p_proposal_id" "uuid", "p_silent" boolean) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_apply_proposal_group"("p_proposal_id" "uuid") RETURNS boolean
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_group uuid[] := array[p_proposal_id];
+  v_more uuid[];
+  v_id uuid;
+  v_grew boolean := true;
+  v_order uuid[];
+  v_try integer;
+  v_prev_auto text := coalesce(current_setting('app.auto_applying_proposal', true), '');
+  v_prev_sst text := coalesce(current_setting('app.system_status_transition', true), '');
+  v_prev_applying text := coalesce(current_setting('app.applying_proposal', true), '');
+  v_prev_group text := coalesce(current_setting('app.applying_proposal_group', true), '');
+  v_prev_swap text := coalesce(current_setting('app.day_car_swap', true), '');
+begin
+  while v_grew loop
+    v_grew := false;
+    foreach v_id in array v_group loop
+      v_more := array(select x from unnest(public._proposal_blockers(v_id)) x where not (x = any(v_group)));
+      if cardinality(v_more) > 0 then
+        v_group := v_group || v_more;
+        v_grew := true;
+      end if;
+    end loop;
+  end loop;
+  if cardinality(v_group) < 2 or exists (select 1 from public.proposals where id = any(v_group) and status <> 'accepted') then
+    return false;
+  end if;
+  v_order := array(select id from public.proposals where id = any(v_group) order by created_at, id);
+  for v_try in 1 .. 2 loop
+    begin
+      set constraints public.rides_no_overlap_per_car deferred;
+      perform set_config('app.applying_proposal_group', 'on', true);
+      perform set_config('app.auto_applying_proposal', 'on', true);
+      perform set_config('app.day_car_swap', 'on', true);
+      foreach v_id in array v_order loop
+        perform public.apply_proposal(v_id);
+      end loop;
+      perform set_config('app.day_car_swap', v_prev_swap, true);
+      if exists (
+        select 1
+        from public.proposals p
+        join public.ride_requests rr on rr.request_id = p.request_id
+        join public.rides r1 on r1.id = rr.ride_id
+        join public.rides r2 on r2.car_id = r1.car_id and r2.id <> r1.id
+        where p.id = any(v_group) and r1.status <> 'cancelled' and r2.status <> 'cancelled'
+          and not r1.planning_conflict and not r2.planning_conflict
+          and not (r1.series_id is not null and r1.series_id = r2.series_id)
+          and tstzrange(r1.starts_at, r1.blocked_until, '[)') && tstzrange(r2.starts_at, r2.blocked_until, '[)')
+      ) then
+        raise exception 'ride_turnaround_conflict' using errcode = '23P01';
+      end if;
+      set constraints public.rides_no_overlap_per_car immediate;
+      perform set_config('app.auto_applying_proposal', v_prev_auto, true);
+      perform set_config('app.applying_proposal_group', v_prev_group, true);
+      update public.proposals set waiting_for = '{}'::uuid[] where id = any(v_group) and waiting_for <> '{}'::uuid[];
+      return true;
+    exception when others then
+      set constraints public.rides_no_overlap_per_car immediate;
+      perform set_config('app.day_car_swap', v_prev_swap, true);
+      perform set_config('app.auto_applying_proposal', v_prev_auto, true);
+      perform set_config('app.system_status_transition', v_prev_sst, true);
+      perform set_config('app.applying_proposal', v_prev_applying, true);
+      perform set_config('app.applying_proposal_group', v_prev_group, true);
+    end;
+    v_order := array(select x from unnest(v_order) with ordinality t(x, n) order by n desc);
+  end loop;
+  return false;
+end $$;
+
+
+ALTER FUNCTION "public"."_apply_proposal_group"("p_proposal_id" "uuid") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."_apply_series_span"("p_request_id" "uuid", "p_span" "jsonb", "p_car_id" "uuid") RETURNS "uuid"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -1880,6 +1998,26 @@ end $$;
 
 
 ALTER FUNCTION "public"."_plan_b_pair_cascade"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_proposal_blockers"("p_proposal_id" "uuid") RETURNS "uuid"[]
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select coalesce(array_agg(distinct o.id), '{}'::uuid[])
+  from public.proposals p
+  cross join lateral public._proposal_car_holds(p.payload, p.type) mine
+  cross join lateral (select make_interval(mins => coalesce(public.required_turnaround_minutes(p.department_id, p.week_start), 30)) as buf) b
+  join public.rides r on r.car_id = mine.car_id and r.status <> 'cancelled'
+    and tstzrange(r.starts_at, r.ends_at, '[)') && tstzrange(mine.from_at - b.buf, mine.to_at + b.buf, '[)')
+  join public.ride_requests rr on rr.ride_id = r.id
+  join public.proposals o on o.request_id = rr.request_id and o.id <> p.id and o.request_id <> p.request_id
+    and o.department_id = p.department_id and o.week_start = p.week_start and o.status in ('draft', 'sent', 'accepted')
+  where p.id = p_proposal_id
+$$;
+
+
+ALTER FUNCTION "public"."_proposal_blockers"("p_proposal_id" "uuid") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."_proposal_car_conflicts"("p_proposal_id" "uuid") RETURNS "jsonb"
@@ -3283,10 +3421,8 @@ declare
   v_prev_supp text := coalesce(current_setting('app.suppress_notifications', true), '');
   v_prev_reason text := coalesce(current_setting('app.suppressed_reason', true), '');
   v_prev_defer text := coalesce(current_setting('app.defer_proposal_apply', true), '');
-  v_prev_auto text := coalesce(current_setting('app.auto_applying_proposal', true), '');
-  v_prev_sst text := coalesce(current_setting('app.system_status_transition', true), '');
-  v_prev_applying text := coalesce(current_setting('app.applying_proposal', true), '');
   v_day date; v_public boolean := false; v_party record; v_status public.proposal_status; v_reason text;
+  v_result jsonb;
 begin
   select * into v_p from public.proposals where id = p_proposal_id;
   if not found then raise exception 'proposal_not_found' using errcode = 'P0001'; end if;
@@ -3319,25 +3455,18 @@ begin
 
   select status into v_status from public.proposals where id = p_proposal_id;
   if v_status = 'accepted' then
+    -- Not public yet: the apply stays silent (members learn it at publish); public: its ordinary notices go out.
     if v_public then perform set_config('app.suppress_notifications', v_prev_supp, true); end if;
-    begin
-      perform set_config('app.auto_applying_proposal', 'on', true);
-      perform public.apply_proposal(p_proposal_id);
-      perform set_config('app.auto_applying_proposal', v_prev_auto, true);
-    exception when others then
-      v_reason := sqlerrm;
-      perform set_config('app.auto_applying_proposal', v_prev_auto, true);
-      perform set_config('app.system_status_transition', v_prev_sst, true);
-      perform set_config('app.applying_proposal', v_prev_applying, true);
-      -- Nobody was ever asked, so nobody is told the answer no longer stands: the Sadran gets the reason on the spot.
-      perform set_config('app.suppress_notifications', 'on', true);
-      perform public.proposal_system_withdraw(p_proposal_id, 'withdrawn_stale', v_reason);
-    end;
+    v_result := public._apply_or_wait(p_proposal_id, true);
+    v_reason := v_result ->> 'reason';
   end if;
   v_reason := coalesce(v_reason, nullif(current_setting('app.suppressed_reason', true), ''));
   perform set_config('app.suppress_notifications', v_prev_supp, true);
   perform set_config('app.suppressed_reason', v_prev_reason, true);
 
+  if v_result ->> 'status' = 'waiting' then
+    return jsonb_build_object('status', 'waiting', 'waiting_for', v_result -> 'waiting_for');
+  end if;
   select status into v_status from public.proposals where id = p_proposal_id;
   if v_status = 'withdrawn' then
     return jsonb_build_object('status', 'withdrawn_stale', 'reason', v_reason);
@@ -8793,11 +8922,7 @@ CREATE OR REPLACE FUNCTION "public"."maybe_apply_accepted_proposal"("p_proposal_
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
-declare v_prop record; v_auto boolean; v_msg text;
-  -- Restore the caller's flags after a failed apply, never force them off (CLAUDE.md, code review 2026-09-24).
-  v_prev_auto text := coalesce(current_setting('app.auto_applying_proposal', true), '');
-  v_prev_sst text := coalesce(current_setting('app.system_status_transition', true), '');
-  v_prev_applying text := coalesce(current_setting('app.applying_proposal', true), '');
+declare v_prop record; v_auto boolean;
 begin
   if coalesce(current_setting('app.defer_proposal_apply', true), '') = 'on' then
     return;
@@ -8809,18 +8934,9 @@ begin
   select auto_apply_accepted_proposals into v_auto from public.department_settings where department_id = v_prop.department_id;
   if v_auto then
     -- REQ §13.102 R2B1: the member's answer always stands. If the proposal can no longer be applied (the ride moved,
-    -- a turnaround or seat limit now fails, ...) it is withdrawn and the Sadran is told, instead of the answer failing.
-    begin
-      perform set_config('app.auto_applying_proposal', 'on', true);
-      perform public.apply_proposal(p_proposal_id);
-      perform set_config('app.auto_applying_proposal', v_prev_auto, true);
-    exception when others then
-      v_msg := sqlerrm;
-      perform set_config('app.auto_applying_proposal', v_prev_auto, true);
-      perform set_config('app.system_status_transition', v_prev_sst, true);
-      perform set_config('app.applying_proposal', v_prev_applying, true);
-      perform public.proposal_system_withdraw(p_proposal_id, 'withdrawn_stale', v_msg);
-    end;
+    -- a turnaround or seat limit now fails, ...) it is withdrawn and the Sadran is told, instead of the answer failing;
+    -- REQ §13.138 (f): unless another pending proposal still holds its room — then it waits for it.
+    perform public._apply_or_wait(p_proposal_id);
   end if;
 end;
 $$;
@@ -10602,6 +10718,8 @@ CREATE OR REPLACE FUNCTION "public"."prepare_manual_ride_window"("p_car_id" "uui
     AS $$
 begin
   perform pg_advisory_xact_lock(hashtextextended(p_car_id::text,0));
+  -- REQ §13.138 (f): a swap applied as one group checks overlap and turnaround on the final state (_apply_proposal_group).
+  if coalesce(current_setting('app.day_car_swap',true),'')='on' then return null; end if;
   if coalesce(current_setting('app.coordinator_planning',true),'')='on'
     and exists(select 1 from public.cars c where c.id=p_car_id and public.can_manage_week(c.department_id,p_week_start))
     and exists(select 1 from public.rides r where r.car_id=p_car_id and r.id is distinct from p_ride_id and r.status<>'cancelled'
@@ -11161,14 +11279,15 @@ begin
   where proposal_id = p_proposal_id;
   select coalesce(array_agg(s.profile_id), '{}') into v_sadranim from public.sadranim_of(v_p.department_id, v_p.week_start) as s(profile_id);
   -- REQ §13.103 R3B1: the members who accepted are told their answer no longer leads anywhere.
-  if p_variant in ('withdrawn_stale', 'withdrawn_ride') then
+  if p_variant in ('withdrawn_stale', 'withdrawn_ride', 'withdrawn_dependency') then
     for v_to in select pp.profile_id from public.proposal_parties pp
                 where pp.proposal_id = v_p.id and pp.response = 'accepted'
                   and pp.profile_id is distinct from v_p.created_by and not (pp.profile_id = any(v_sadranim)) loop
       v_rv := public.proposal_reader_vars(v_p.id, v_to);
       perform public.enqueue_notification(v_to, 'outcome_changed', v_p.department_id, v_p.week_start,
         jsonb_build_object('route', coalesce(v_rv->'vars'->>'route', ''), 'day', coalesce(v_rv->'vars'->>'day', '')),
-        jsonb_build_object('variant', 'proposal_withdrawn_stale', 'proposal_id', v_p.id, 'request_id', v_p.request_id),
+        jsonb_build_object('variant', case when p_variant = 'withdrawn_dependency' then 'proposal_withdrawn_dependency'
+          else 'proposal_withdrawn_stale' end, 'proposal_id', v_p.id, 'request_id', v_p.request_id),
         format('proposal_withdrawn_member:%s:%s', v_p.id, v_to));
     end loop;
   end if;
@@ -11290,6 +11409,34 @@ end $$;
 
 
 ALTER FUNCTION "public"."proposals_clear_inbox"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."proposals_release_waiters"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare w record;
+begin
+  if new.status = old.status or coalesce(current_setting('app.applying_proposal_group', true), '') = 'on' then
+    return null;
+  end if;
+  if new.status = 'applied' then
+    for w in select id from public.proposals where status = 'accepted' and new.id = any(waiting_for) order by created_at, id loop
+      update public.proposals set waiting_for = array_remove(waiting_for, new.id) where id = w.id;
+      if (select status from public.proposals where id = w.id) = 'accepted' then
+        perform public._apply_or_wait(w.id);
+      end if;
+    end loop;
+  elsif new.status in ('declined', 'withdrawn', 'expired') then
+    for w in select id from public.proposals where status = 'accepted' and new.id = any(waiting_for) order by created_at, id loop
+      perform public.proposal_system_withdraw(w.id, 'withdrawn_dependency', null);
+    end loop;
+  end if;
+  return null;
+end $$;
+
+
+ALTER FUNCTION "public"."proposals_release_waiters"() OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."proposals_send_ask_to_join"() RETURNS "trigger"
@@ -18720,6 +18867,7 @@ CREATE TABLE IF NOT EXISTS "public"."proposals" (
     "version" integer DEFAULT 1 NOT NULL,
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "waiting_for" "uuid"[] DEFAULT '{}'::"uuid"[] NOT NULL,
     CONSTRAINT "proposals_created_via_ck" CHECK (("created_via" = ANY (ARRAY['sadran'::"text", 'ask_to_join'::"text"]))),
     CONSTRAINT "proposals_payload_shape_ck" CHECK ("public"."validate_proposal_payload"("type", "payload"))
 );
@@ -18728,6 +18876,10 @@ ALTER TABLE ONLY "public"."proposals" FORCE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."proposals" OWNER TO "postgres";
+
+
+COMMENT ON COLUMN "public"."proposals"."waiting_for" IS 'REQ §13.138 (f): an accepted proposal that cannot apply until these pending proposals apply (empty = not waiting).';
+
 
 
 CREATE TABLE IF NOT EXISTS "public"."push_outbox" (
@@ -21504,6 +21656,10 @@ CREATE OR REPLACE TRIGGER "proposals_clear_inbox" AFTER UPDATE OF "status" ON "p
 
 
 
+CREATE OR REPLACE TRIGGER "proposals_release_waiters" AFTER UPDATE OF "status" ON "public"."proposals" FOR EACH ROW EXECUTE FUNCTION "public"."proposals_release_waiters"();
+
+
+
 CREATE CONSTRAINT TRIGGER "proposals_send_ask_to_join" AFTER INSERT ON "public"."proposals" DEFERRABLE INITIALLY DEFERRED FOR EACH ROW WHEN ((("new"."created_via" = 'ask_to_join'::"text") AND ("new"."reason_he" = 'ASK_TO_JOIN_TEMP_CAR'::"text"))) EXECUTE FUNCTION "public"."proposals_send_ask_to_join"();
 
 
@@ -23369,6 +23525,16 @@ GRANT ALL ON FUNCTION "public"."_apply_alternative"("p_proposal_id" "uuid") TO "
 
 
 
+REVOKE ALL ON FUNCTION "public"."_apply_or_wait"("p_proposal_id" "uuid", "p_silent" boolean) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_apply_or_wait"("p_proposal_id" "uuid", "p_silent" boolean) TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_apply_proposal_group"("p_proposal_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_apply_proposal_group"("p_proposal_id" "uuid") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."_apply_series_span"("p_request_id" "uuid", "p_span" "jsonb", "p_car_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_apply_series_span"("p_request_id" "uuid", "p_span" "jsonb", "p_car_id" "uuid") TO "service_role";
 
@@ -23571,6 +23737,11 @@ GRANT ALL ON FUNCTION "public"."_offer_freed_slot"("p_ride_id" "uuid") TO "servi
 
 REVOKE ALL ON FUNCTION "public"."_plan_b_pair_cascade"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_plan_b_pair_cascade"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_proposal_blockers"("p_proposal_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_proposal_blockers"("p_proposal_id" "uuid") TO "service_role";
 
 
 
@@ -24764,6 +24935,11 @@ GRANT ALL ON FUNCTION "public"."proposals_accepted_withdrawn_notice"() TO "servi
 
 REVOKE ALL ON FUNCTION "public"."proposals_clear_inbox"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."proposals_clear_inbox"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."proposals_release_waiters"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."proposals_release_waiters"() TO "service_role";
 
 
 

@@ -449,6 +449,9 @@ export const heSadran = {
     agreed: "סיכמנו",
     agreedApplied: "השינוי הוחל — לא נשלחה הצעה",
     agreedStale: "השינוי כבר לא תקף ולא הוחל: {{reason}}",
+    /** REQ §13.138 (f): it needs room another pending change frees. */
+    agreedWaiting: "סוכם — יוחל אוטומטית ברגע שהשינוי של {{names}} יוחל",
+    waitingFor: "ממתינה לשינוי של: {{names}}",
     withdrawn: "ההצעה בוטלה",
     cannotDraft: "אי אפשר לשמור טיוטה — חסרים פרטים בהצעה",
     /** REQ §13.138 (a): the question every consent-needing board change asks. */

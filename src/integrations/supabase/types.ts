@@ -1741,6 +1741,7 @@ export type Database = {
           type: Database["public"]["Enums"]["proposal_type"]
           updated_at: string
           version: number
+          waiting_for: string[]
           week_start: string
         }
         Insert: {
@@ -1768,6 +1769,7 @@ export type Database = {
           type: Database["public"]["Enums"]["proposal_type"]
           updated_at?: string
           version?: number
+          waiting_for?: string[]
           week_start: string
         }
         Update: {
@@ -1795,6 +1797,7 @@ export type Database = {
           type?: Database["public"]["Enums"]["proposal_type"]
           updated_at?: string
           version?: number
+          waiting_for?: string[]
           week_start?: string
         }
         Relationships: [
@@ -4506,6 +4509,14 @@ export type Database = {
         Returns: Json
       }
       _apply_alternative: { Args: { p_proposal_id: string }; Returns: string }
+      _apply_or_wait: {
+        Args: { p_proposal_id: string; p_silent?: boolean }
+        Returns: Json
+      }
+      _apply_proposal_group: {
+        Args: { p_proposal_id: string }
+        Returns: boolean
+      }
       _apply_series_span: {
         Args: { p_car_id: string; p_request_id: string; p_span: Json }
         Returns: string
@@ -4687,6 +4698,7 @@ export type Database = {
         Returns: undefined
       }
       _offer_freed_slot: { Args: { p_ride_id: string }; Returns: string }
+      _proposal_blockers: { Args: { p_proposal_id: string }; Returns: string[] }
       _proposal_car_conflicts: {
         Args: { p_proposal_id: string }
         Returns: Json

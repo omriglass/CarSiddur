@@ -48,6 +48,8 @@ export interface ProposalActionSheetProps {
   /** R5U1: old -> new times and car (shift / merge). */
   changes?: ProposalChangeContext;
   busy?: boolean;
+  /** REQ §13.138 (f): an accepted proposal waiting for these people's changes (names), if any. */
+  waitingNames?: string;
   onOpenChange: (open: boolean) => void;
   /** REQ §13.138 (b): "סיכמנו" — the Sadran already talked with them; applied with no proposal. */
   onAgree: (proposal: ProposalRow) => void;
@@ -57,7 +59,7 @@ export interface ProposalActionSheetProps {
   onWithdraw: (proposal: ProposalRow) => void;
 }
 
-export function ProposalActionSheet({ proposal, requesterName, dayIso, changes, busy, onAgree, onOpenChange, onSend, onEdit, onDiscard, onWithdraw }: ProposalActionSheetProps) {
+export function ProposalActionSheet({ proposal, requesterName, dayIso, changes, busy, waitingNames, onAgree, onOpenChange, onSend, onEdit, onDiscard, onWithdraw }: ProposalActionSheetProps) {
   const [confirmWithdraw, setConfirmWithdraw] = useState(false);
   const isDraft = proposal?.status === "draft";
   const withdrawable = proposal?.status === "sent" || proposal?.status === "accepted";
@@ -75,6 +77,9 @@ export function ProposalActionSheet({ proposal, requesterName, dayIso, changes, 
               }) : ""}
             </SheetDescription>
           </SheetHeader>
+          {proposal && waitingNames ? (
+            <p className="text-sm text-muted-foreground" data-testid="proposal-waiting-for">{tv("boardDrafts.waitingFor", { names: waitingNames })}</p>
+          ) : null}
           {proposal && changes ? <ProposalChanges proposal={proposal} context={changes} /> : null}
           {proposal ? (
             <div className="flex flex-wrap gap-2 py-3">
