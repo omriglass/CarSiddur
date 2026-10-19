@@ -451,7 +451,10 @@ export function ProfilePage() {
       </div>
 
       <footer className="space-y-1 pt-2 text-center text-xs text-muted-foreground">
-        <div>{he.profileExtra.version} <span dir="ltr">{__APP_VERSION__}</span></div>
+        {/* REQ §13.139 (c): the version line opens every changelog, newest first. */}
+        <Link to={paths.changelog()} className="block underline-offset-2 hover:underline" data-testid="profile-version-changelog">
+          {he.profileExtra.version} <span dir="ltr">{__APP_VERSION__}</span> · {he.changelog.versionLink}
+        </Link>
         <div className="flex justify-center gap-4">
           <Link to={paths.privacy()} className="underline-offset-2 hover:underline">{he.legal.privacyLink}</Link>
           <Link to={paths.terms()} className="underline-offset-2 hover:underline">{he.legal.termsLink}</Link>

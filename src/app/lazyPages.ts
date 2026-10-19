@@ -16,5 +16,6 @@ export const SiddurPage = lazy(() => import("@/pages/SiddurPage").then((m) => ({
 export const NewRequestPage = lazy(() => import("@/pages/NewRequestPage").then((m) => ({ default: m.NewRequestPage })));
 export const InboxPage = lazy(() => import("@/pages/InboxPage").then((m) => ({ default: m.InboxPage })));
 export const ProfilePage = lazy(() => import("@/pages/ProfilePage").then((m) => ({ default: m.ProfilePage })));
+export const ChangelogPage = lazy(() => import("@/pages/ChangelogPage").then((m) => ({ default: m.ChangelogPage })));
 export const ProposalTokenPage = lazy(() => import("@/pages/ProposalTokenPage").then((m) => ({ default: m.ProposalTokenPage })));
 export const LegalPage = lazy(() => import("@/pages/LegalPage").then((m) => ({ default: m.LegalPage })));

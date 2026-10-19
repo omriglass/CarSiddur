@@ -829,14 +829,24 @@
         "src/lib/notificationEvents.ts",
         "src/lib/notificationEvents.test.ts",
         "src/pages/InboxPage.tsx",
-        "supabase/migrations/**/*notification_event_meta*"
+        "supabase/migrations/**/*notification_event_meta*",
+        "src/features/changelog/**",
+        "src/i18n/he.changelog.ts",
+        "src/pages/ChangelogPage.tsx",
+        "supabase/migrations/**/*changelog*",
+        "supabase/tests/changelog.sql",
+        "e2e/changelog.spec.ts",
+        "scripts/changelog-check.mjs"
       ],
       "vitest": [
-        "src/features/inbox"
+        "src/features/inbox",
+        "src/features/changelog",
+        "scripts/changelog-check.test.mjs"
       ],
       "sql": [
         "notifications_semantics.sql",
-        "status_notifications.sql"
+        "status_notifications.sql",
+        "changelog.sql"
       ],
       "playwrightTags": [
         "@notifications"

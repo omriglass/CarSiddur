@@ -45,8 +45,8 @@ const ARRAYS: Record<string, { array: readonly string[]; schema: { options: read
 };
 
 describe("enums.ts arrays", () => {
-  it("covers the 28 canonical notification events (UX_FLOWS.md §6.1)", () => {
-    expect(enums.NOTIFICATION_EVENTS).toHaveLength(28);
+  it("covers the 29 canonical notification events (UX_FLOWS.md §6.1)", () => {
+    expect(enums.NOTIFICATION_EVENTS).toHaveLength(29);
   });
 
   it("orders week_phase with upcoming first (2026-09-10 alter type … add value … before 'open')", () => {

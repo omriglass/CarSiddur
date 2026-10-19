@@ -49,6 +49,7 @@
 // Never touches ../commucar-share.
 
 import { execFileSync } from "node:child_process";
+import { checkChangelog } from "./changelog-check.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import readline from "node:readline/promises";
@@ -293,12 +294,14 @@ function printPlan(args = {}) {
   console.log(`Working tree: ${status.trim() ? "NOT clean (would abort at step 1)" : "clean"}`);
   console.log(`Last release tag: ${tag ?? "(none yet)"}`);
   console.log(`Next release tag would be: ${tagName}`);
+  const changelog = checkChangelog(tag);
+  console.log(`Changelog ("מה חדש", REQ §13.139): ${changelog.ok ? "OK — " : "MISSING (would abort at step 1) — "}${changelog.message}`);
   if (args.alias) {
     const where = aliasExists(args.alias, { askOrigin: false });
     console.log(`Alias tag (--tag): ${args.alias}${where ? ` — ALREADY EXISTS ${where === "local" ? "locally" : "on origin"} (would abort at step 1)` : ""}`);
   }
   console.log("\nSteps this would run for real (in order):");
-  console.log("  1. Verify clean tree on main, up to date with origin/main");
+  console.log("  1. Verify clean tree on main, up to date with origin/main, and a new changelog entry since the last tag");
   console.log("  2. npm run check" + (args.skipCheck ? " (skipped: --skip-check)" : ""));
   console.log("  3. npm run functions:bundle — verify supabase/functions/_shared/solver.js is fresh");
   console.log("  4. node scripts/db-export.mjs --linked --yes-remote — backup, then copy to Google Drive");
@@ -397,6 +400,10 @@ async function main() {
     console.log(`OK: alias tag ${args.alias} is free locally and on origin.`);
   }
   console.log("OK: clean, on main, matches origin/main.");
+  // REQ §13.139 (a): no release without a "מה חדש" entry (skill: write-changelog).
+  const changelog = checkChangelog(lastTag());
+  if (!changelog.ok) return fail(changelog.message);
+  console.log(`OK: ${changelog.message}`);
   stepDone("preflight");
 
   // Step 2 — npm run check.

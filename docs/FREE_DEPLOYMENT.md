@@ -167,6 +167,11 @@ release is:
 npm run release -- --yes-remote   # flags go after "--" or npm swallows them; add --dry-run first to preview, --status to check where things stand
 ```
 
+**Changelog first (REQ §13.139).** Before releasing, add the "מה חדש" entry at the top of `src/i18n/he.changelog.ts`
+(skill `/write-changelog`). The release's preflight refuses without a new top entry since the last tag
+(`scripts/changelog-check.mjs`); `--dry-run` shows the check. Members get it as a quiet inbox message the first time
+they open the new version — never a push.
+
 `scripts/release.mjs` runs the full sequence — clean-tree check, `npm run
 check`, solver-bundle freshness, a pre-release database backup
 (`scripts/db-export.mjs --linked --yes-remote`; **copy the three files to

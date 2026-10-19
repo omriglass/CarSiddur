@@ -485,6 +485,16 @@ export const heMember = {
     empty: "אין הודעות עדיין. כשהסידור יפורסם או תתקבל הצעה — זה יופיע כאן.",
     sadranChip: "סדרן",
   },
+  /** REQ §13.139: "מה חדש" — the changelog page and the quiet inbox message. */
+  changelog: {
+    title: "מה חדש",
+    intro: "מה השתנה בכל גרסה, מהחדשה לישנה.",
+    users: "לכולם",
+    sadran: "לסדרנים",
+    admin: "למנהלים",
+    inboxTitle: "מה חדש: {{title}}",
+    versionLink: "מה חדש?",
+  },
   profileExtra: {
     detailsTitle: "פרטים",
     email: "אימייל",

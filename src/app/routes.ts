@@ -118,6 +118,9 @@ export const paths = {
     errors: (): string => "/admin/errors",
   },
 
+  /** `/changelog` — every "מה חדש" entry, newest first (REQ §13.139 c). */
+  changelog: (): string => "/changelog",
+
   /** `/inbox`; `?change=<rideChangeId>` is produced by `deepLinkFor` for `ride_change_id` notifications. */
   inbox: (changeId?: string) => withQuery("/inbox", { change: changeId }),
 

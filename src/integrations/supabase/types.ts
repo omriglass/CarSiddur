@@ -5163,6 +5163,10 @@ export type Database = {
         Args: { p_block_id: string }
         Returns: undefined
       }
+      deliver_changelog: {
+        Args: { p_body: string; p_entry_id: string; p_title: string }
+        Returns: boolean
+      }
       department_stats: {
         Args: { p_department_id: string; p_from: string; p_to: string }
         Returns: Json
@@ -6159,6 +6163,7 @@ export type Database = {
         | "car_swapped"
         | "test_notification"
         | "companion_added"
+        | "changelog"
       party_response: "pending" | "accepted" | "declined"
       proposal_status:
         | "draft"
@@ -6395,6 +6400,7 @@ export const Constants = {
         "car_swapped",
         "test_notification",
         "companion_added",
+        "changelog",
       ],
       party_response: ["pending", "accepted", "declined"],
       proposal_status: [

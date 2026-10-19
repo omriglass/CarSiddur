@@ -30,6 +30,7 @@ const ROUTE_PATTERNS = [
   "/requests/new",
   "/requests/:id/edit",
   "/inbox",
+  "/changelog",
   "/p/:token",
   "/privacy",
   "/terms",
@@ -66,6 +67,12 @@ describe("paths.sadran", () => {
   it("proposals() appends ?proposal= only when an id is given", () => {
     expect(paths.sadran.proposals("d", "2027-01-10")).toBe("/sadran/d/2027-01-10/proposals");
     expect(paths.sadran.proposals("d", "2027-01-10", "p1")).toBe("/sadran/d/2027-01-10/proposals?proposal=p1");
+  });
+});
+
+describe("paths.changelog", () => {
+  it("matches its registered pattern", () => {
+    expectRoutable(paths.changelog());
   });
 });
 

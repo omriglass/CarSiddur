@@ -399,7 +399,7 @@ declare
     'can_edit_request:self-only',
     -- REQ §13.129 (b): refused unless the caller drives the ride (so it is the caller's own department's ride).
     'hand_over_own_ride:inspected',
-    'claim_freed_slot:self-only', 'register_push_subscription:self-only', 'send_test_notification:self-only',
+    'claim_freed_slot:self-only', 'register_push_subscription:self-only', 'send_test_notification:self-only', 'deliver_changelog:self-only',
     'resume_request_template:self-only', 'save_request_template:self-only',
     'snooze_request_template:self-only', 'stop_request_template:self-only',
     'withdraw_freed_slot_claim:self-only',

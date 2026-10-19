@@ -1,3 +1,4 @@
+import { useDeliverChangelog } from "@/features/changelog/useDeliverChangelog";
 import { Bell, CalendarDays, ClipboardList, PanelRightClose, PanelRightOpen, Settings, User, Users } from "lucide-react";
 import { type ComponentType, useEffect, useState } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
@@ -115,6 +116,8 @@ export function AppShell() {
   const { isSadran } = useIsSadranAnywhere();
   const canManageOperations = !!useCanManageOperations().data;
   const unreadCount = useUnreadCount();
+  // REQ §13.139 (b): a new version's "מה חדש" lands in the inbox, quietly.
+  useDeliverChangelog();
   // Local `vite dev` only (`DEV` is false in every production build): show the
   // active department's name plus a marker, so a renamed QA department is obvious.
   const departmentName = context.departments.find((d) => d.id === context.departmentId)?.name;

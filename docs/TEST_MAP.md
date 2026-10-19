@@ -442,7 +442,7 @@ local replay stack and comparing it with the production solve — scripts/replay
 
 **Automated**:
 - Vitest: `npx vitest run src/features/inbox`
-- SQL: `notifications_semantics.sql`, `status_notifications.sql`
+- SQL: `notifications_semantics.sql`, `status_notifications.sql`, `changelog.sql` (REQ §13.139: "מה חדש" once per entry, never pushed); e2e `changelog.spec.ts` (inbox message + `/changelog` from the profile's version line); Vitest `src/features/changelog`, `scripts/changelog-check.test.mjs`
 - Playwright: `npx playwright test --grep "@notifications"` (real push delivery is manual-only per
   `.claude/agents/e2e-tester.md` — specs assert the inbox row / template text, not a real push)
 

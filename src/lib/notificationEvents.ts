@@ -63,6 +63,7 @@ export const NOTIFICATION_EVENT_META: Record<NotificationEvent, NotificationEven
   test_notification: { category: "account", memberMutable: false, sadranRole: false, weekScoped: false },
   // Owner 2026-10-16 (REQ §13.135): someone named you as a passenger on their request.
   companion_added: { category: "siddur", memberMutable: true, sadranRole: false, weekScoped: true },
+  changelog: { category: "account", memberMutable: false, sadranRole: false, weekScoped: false },
 };
 
 /** Every mutable event, grouped by `category` — the source `muteCategories.ts` builds on. */

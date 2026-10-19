@@ -165,7 +165,7 @@ export function InboxPage() {
                         </span>
                       ) : null}
                     </span>
-                    <span className="block text-muted-foreground">{n.body_he}</span>
+                    <span className="block whitespace-pre-line text-muted-foreground">{n.body_he}</span>
                     <span className="block text-xs text-muted-foreground" dir="ltr">
                       {formatTime(new Date(n.created_at))}
                     </span>

@@ -198,7 +198,8 @@ CREATE TYPE "public"."notification_event" AS ENUM (
     'window_changed',
     'car_swapped',
     'test_notification',
-    'companion_added'
+    'companion_added',
+    'changelog'
 );
 
 
@@ -6203,6 +6204,34 @@ end $$;
 
 
 ALTER FUNCTION "public"."delete_car_maintenance"("p_block_id" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."deliver_changelog"("p_entry_id" "text", "p_title" "text", "p_body" "text") RETURNS boolean
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $_$
+declare
+  v_me uuid := (select auth.uid());
+  v_id uuid;
+begin
+  if v_me is null or not public.is_approved() then
+    raise exception 'not_authorized' using errcode = 'P0001';
+  end if;
+  if p_entry_id is null or p_entry_id !~ '^[a-z0-9][a-z0-9._-]{0,63}$'
+     or nullif(btrim(p_title), '') is null or length(p_title) > 200
+     or nullif(btrim(p_body), '') is null or length(p_body) > 4000 then
+    raise exception 'invalid_changelog' using errcode = 'P0001';
+  end if;
+  insert into public.notifications (recipient_id, department_id, week_start, event, title_he, body_he, data, dedupe_key)
+  values (v_me, (select default_department_id from public.profiles where id = v_me), null, 'changelog', btrim(p_title), btrim(p_body),
+    jsonb_build_object('url', '/changelog', 'entry', p_entry_id), 'changelog:' || p_entry_id)
+  on conflict (recipient_id, dedupe_key) where dedupe_key is not null do nothing
+  returning id into v_id;
+  return v_id is not null;
+end $_$;
+
+
+ALTER FUNCTION "public"."deliver_changelog"("p_entry_id" "text", "p_title" "text", "p_body" "text") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."department_stats"("p_department_id" "uuid", "p_from" "date", "p_to" "date") RETURNS "jsonb"
@@ -24297,6 +24326,12 @@ GRANT ALL ON FUNCTION "public"."day_date_label"("_at" timestamp with time zone) 
 REVOKE ALL ON FUNCTION "public"."delete_car_maintenance"("p_block_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."delete_car_maintenance"("p_block_id" "uuid") TO "service_role";
 GRANT ALL ON FUNCTION "public"."delete_car_maintenance"("p_block_id" "uuid") TO "authenticated";
+
+
+
+REVOKE ALL ON FUNCTION "public"."deliver_changelog"("p_entry_id" "text", "p_title" "text", "p_body" "text") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."deliver_changelog"("p_entry_id" "text", "p_title" "text", "p_body" "text") TO "service_role";
+GRANT ALL ON FUNCTION "public"."deliver_changelog"("p_entry_id" "text", "p_title" "text", "p_body" "text") TO "authenticated";
 
 
 

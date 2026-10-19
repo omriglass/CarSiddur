@@ -53,7 +53,7 @@ Guidance for Claude Code working in this repository.
 | `npm run db:test` | Run RLS, solver persistence and TODO regression suites in the configured local Docker container; `SUPABASE_DB_CONTAINER` selects a disposable test container |
 | `npm run functions:serve` | `supabase functions serve --env-file supabase/functions/.env` |
 | `npm run functions:bundle` | Bundle `src/solver` into `supabase/functions/_shared/solver.js` (the only generated file there) and run the bundle test |
-| `npm run release` | `node scripts/release.mjs [--dry-run\|--yes-remote\|--yes\|--skip-check\|--status] [--tag <name>]` — the one path from checked-in `main` to a pushed `vYYYY.MM.DD-n` release tag: preflight, `check`, bundle freshness, backup, migrations, changed edge functions, tag + push. `--tag v1.2` adds the owner's own alias tag on the same commit, created and pushed *after* the automatic tag (the footer shows the alias; CI only listens to the automatic pattern). Refuses to touch the hosted project without `--yes-remote`; `--dry-run` only prints the plan. Pushing the tag triggers CI; it does **not** deploy the frontend — that needs the owner's approval on CI's `promote` job (`docs/FREE_DEPLOYMENT.md` §8, `docs/RUNBOOK_ROLLBACK.md`) |
+| `npm run release` | `node scripts/release.mjs [--dry-run\|--yes-remote\|--yes\|--skip-check\|--status] [--tag <name>]` — the one path from checked-in `main` to a pushed `vYYYY.MM.DD-n` release tag: preflight (incl. a new "מה חדש" entry on top of `src/i18n/he.changelog.ts` since the last tag — `/write-changelog`, REQ §13.139), `check`, bundle freshness, backup, migrations, changed edge functions, tag + push. `--tag v1.2` adds the owner's own alias tag on the same commit, created and pushed *after* the automatic tag (the footer shows the alias; CI only listens to the automatic pattern). Refuses to touch the hosted project without `--yes-remote`; `--dry-run` only prints the plan. Pushing the tag triggers CI; it does **not** deploy the frontend — that needs the owner's approval on CI's `promote` job (`docs/FREE_DEPLOYMENT.md` §8, `docs/RUNBOOK_ROLLBACK.md`) |
 | `node scripts/check-migrations.mjs <base-ref>` | Flags a new migration (since `<base-ref>`) that drops/renames without a matching tested `supabase/rollback/<ts>_down.sql` — CI's `check` job and `npm run release` both run it (forward-fix rule, owner decision 2026-09-14 #4) |
 
 ## Folder map
@@ -216,7 +216,7 @@ scripts/
   check-migrations.mjs         `node scripts/check-migrations.mjs <base-ref>` — flags a new migration that drops/renames without a matching `supabase/rollback/<ts>_down.sql`
   impact.test.mjs              Vitest: the glob matcher, migrationContentRules, and test-map.json/docs/TEST_MAP.md area-id consistency
 .claude/
-  skills/                      11 playbooks with exact steps and file paths (incl. `/qa-week`, the QA simulation — docs/QA_SIMULATION.md)
+  skills/                      12 playbooks with exact steps and file paths (incl. `/qa-week`, the QA simulation — docs/QA_SIMULATION.md; `/write-changelog`, the release's "מה חדש")
   agents/                      5 specialized agents: solver-dev, db-migrator, ui-dev, docs-keeper, e2e-tester
 ```
 
@@ -271,7 +271,7 @@ scripts/
 | Tables, enums, RLS matrix, migration plan | `docs/DATA_MODEL.md` §2, §3, §4.3, §6 |
 | Request / proposal / week / ride states | REQ §5.2, §7.3, §4; `ARCHITECTURE.md` §5; `src/lib/enums.ts` |
 | Rule types, scoring, suggestion order | `docs/SOLVER.md` §4.3, §3.11; `src/solver/rules/` |
-| Notification events (canonical list + copy), pipeline, templates | `UX_FLOWS.md` §6 (canonical 28 events); `ARCHITECTURE.md` §9; `DATA_MODEL.md` §3.11 (`enqueue_notification`, `notifications`, `push_outbox`, `notification_templates`); REQ §9 |
+| Notification events (canonical list + copy), pipeline, templates | `UX_FLOWS.md` §6 (canonical 29 events); `ARCHITECTURE.md` §9; `DATA_MODEL.md` §3.11 (`enqueue_notification`, `notifications`, `push_outbox`, `notification_templates`); REQ §9 |
 | Weekly cycle, cron | REQ §4; `ARCHITECTURE.md` §10 (`app.tick()`); `DATA_MODEL.md` `department_settings`, `weeks`, §6 step 17 `20260907091600_cron.sql` |
 | Suggestion kind → proposal type | `SOLVER.md` §3.15 |
 | Screens, routes, Hebrew copy, i18n key plan | `docs/UX_FLOWS.md` §2.1 routes, §3–5 screens, §6 notification/WhatsApp copy, §10 i18n keys; `src/i18n/he.ts` |
@@ -293,6 +293,7 @@ scripts/
 | Small bug report / regression | `/bugfixer` | none (or a cheap model) |
 | Playwright coverage | — | e2e-tester |
 | Mock week / end-to-end QA with role-played members | `/qa-week` (docs/QA_SIMULATION.md) | QA Sadran (opus) + QA user (sonnet) |
+| "מה חדש" for the next release (required by `npm run release`), WhatsApp what's-new text | `/write-changelog` (src/i18n/he.changelog.ts, REQ §13.139) | none |
 | Periodic review of a real week: replay it, first solver run vs the Sadran's final week | `/solver-review` (scripts/replay/README.md, docs/SOLVER_REVIEWS.md) | lead reviews; solver-dev for accepted changes |
 
 ## Owner batch 2026-10-04 — origins, three trip types, cars stay where they are left (REQ §13.93; `docs/ORIGINS_PLAN_2026-10.md`; docs/TODO.md O1–O6)
@@ -421,7 +422,7 @@ Final; applied across all docs, skills and agents. Do not relitigate — if code
 2. Seed file is `supabase/seed.sql` (Supabase CLI default); demo seed data is described in DATA_MODEL §6.
 3. Migrations use the Supabase CLI form `YYYYMMDDHHMMSS_short_name.sql`; the 18-step initial plan starts at `20260907090000_extensions_and_enums.sql` (DATA_MODEL §6).
 4. `week_phase` = `upcoming, open, solving, published, live, archived`; after the target week ends the week is `archived` (read-only, kept for fairness stats). No `closed`. `upcoming` (2026-09-10, REQ §13.77) is a `weeks` row materialized early — by `ensure_upcoming_week()` from `submit_series_request()` — for a week beyond the department's normal opening horizon that a multi-day series leg needs; it is invisible to members, closed to ordinary requests, and promoted to `open` automatically at its normal opening time.
-5. One canonical `notification_event` list: the 28 events of UX_FLOWS §6.1 (incl. `car_care`, 2026-09-09; `waitlist_contested` + `waitlist_resolved`, 2026-09-10; `window_changed`, 2026-09-14; `car_swapped`, 2026-09-24; `test_notification`, 2026-10-11; `companion_added`, 2026-10-16) (enum value = snake_case of the `notif.*` key suffix); DATA_MODEL §2 and ARCHITECTURE §9 list exactly those; REQ §9 prose names nothing outside it.
+5. One canonical `notification_event` list: the 29 events of UX_FLOWS §6.1 (incl. `changelog`, 2026-10-19 — the quiet "מה חדש" message, inbox only, never pushed; `car_care`, 2026-09-09; `waitlist_contested` + `waitlist_resolved`, 2026-09-10; `window_changed`, 2026-09-14; `car_swapped`, 2026-09-24; `test_notification`, 2026-10-11; `companion_added`, 2026-10-16) (enum value = snake_case of the `notif.*` key suffix); DATA_MODEL §2 and ARCHITECTURE §9 list exactly those; REQ §9 prose names nothing outside it.
 6. Notification plumbing: `enqueue_notification(...)` writes one `notifications` row (inbox) plus one `push_outbox` row per active push subscription; pg_net/`drain_push_outbox()` deliver via the `push-dispatch` edge function with retries and 404/410 pruning; mutes in `profiles.muted_events notification_event[]` (Sadran-role events unmutable while assigned, enforced in enqueue); copy in the admin-editable `notification_templates` table (event, channel, variant, title, body) seeded from UX_FLOWS §6. No `notification_prefs`, no templates in `app_settings`.
 7. Exactly one pg_cron entry: `app.tick()` every 15 minutes computes Asia/Jerusalem time and calls `advance_week_phases()`, `send_due_reminders()`, `expire_proposals()`, `remind_unsent_board_changes()` (REQ §13.138 h, 2026-10-19), `drain_push_outbox()`, `housekeeping()`; there is no keep-alive workflow — `docs/FREE_DEPLOYMENT.md` §9 explicitly says not to rely on one, and the Supabase Free project may pause after a week of API inactivity (owner-accepted, un-pause manually in the dashboard).
 8. Requests are created/edited only via the `submit_request(payload jsonb)` SECURITY DEFINER RPC (validates §5.3, computes `is_late`, duplicate warning, versioning, audit; in `live` weeks calls `try_auto_approve`). Members SELECT own requests directly; no direct INSERT/UPDATE policies on `requests`.
