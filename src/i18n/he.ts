@@ -667,6 +667,7 @@ export const he = {
     staleInput: "הבקשות או הנסיעות השתנו מאז הרצת הפתרון — יש להריץ את הפתרון מחדש",
     notAuthorized: "אין לך הרשאה לבצע פעולה זו",
     publicationDrafts: "לא ניתן לפרסם — בימים שנבחרו יש טיוטות הצעה שלא נשלחו. יש לשלוח או למחוק אותן בלוח.",
+    publicationHeldNotices: "לא ניתן לפרסם — בימים שנבחרו יש שינויים מהלוח שעוד לא נשלחו. שלחו אותם (\"שלח את כל ההצעות\" בתפריט ⋮ שבלוח).",
     /** REQ §13.112 (a): publishing waits for every plan-B proposal of the day (not bypassable). */
     publicationAlternativesPending: "לא ניתן לפרסם — בימים שנבחרו יש הצעות של תוכנית ב׳ שעוד לא נענו. יש להמתין לתשובה או לבטל אותן בלוח.",
     alternativeNotApplicable: "אי אפשר להציע תוכנית ב׳ לבקשה הזאת (אין תוכנית ב׳, או שהבקשה כבר טופלה)",

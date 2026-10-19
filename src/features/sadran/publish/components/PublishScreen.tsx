@@ -68,7 +68,8 @@ export function PublishScreen({ departmentId, weekStart }: PublishScreenProps) {
     const anchor = request ? requestStart(request) : null;
     return anchor ? [{ id: proposal.id, name: request?.requester_full_name ?? "", type: proposal.type, day: dateKey(anchor) }] : [];
   });
-  const draftDays = new Set(readiness.filter((day) => day.draftProposals > 0).map((day) => day.day));
+  // REQ §13.138 (g): board updates not yet sent hold their day back the same way.
+  const draftDays = new Set(readiness.filter((day) => day.draftProposals > 0 || (day.heldNotices ?? 0) > 0).map((day) => day.day));
   // REQ §13.112 (a): a SENT plan-B proposal that nobody answered yet holds its day back (server: publication_alternatives_pending,
   // never bypassable). An unsent plan-B draft is listed once, with the other drafts above (R10B3).
   const alternativeRows = (proposalsQuery.data ?? []).filter((proposal) => proposal.type === "alternative" && ["sent", "accepted"].includes(proposal.status)).flatMap((proposal) => {
@@ -76,7 +77,7 @@ export function PublishScreen({ departmentId, weekStart }: PublishScreenProps) {
     const anchor = request ? requestStart(request) : null;
     return request && anchor ? [{ id: proposal.id, name: request.requester_full_name ?? "", day: dateKey(anchor), plan: request.alternative ? alternativePlanText(request.alternative) : "" }] : [];
   });
-  const blocksDay = (day: PublicationDay) => day.conflictRides > 0 || day.draftProposals > 0 || (day.alternativeProposals ?? 0) > 0;
+  const blocksDay = (day: PublicationDay) => day.conflictRides > 0 || day.draftProposals > 0 || (day.heldNotices ?? 0) > 0 || (day.alternativeProposals ?? 0) > 0;
   const allDays = readiness.map((day) => day.day);
   const readyDays = readiness.filter((day) => day.ready).map((day) => day.day);
   // R7U2: the "choose days" list pre-ticks only days that are ready, not yet published and not past.
@@ -195,6 +196,7 @@ export function PublishScreen({ departmentId, weekStart }: PublishScreenProps) {
                 day.unsolvedRequests ? (day.unsolvedRequests === 1 ? he.publicationFlow.unsolvedOne : tv("publicationFlow.unsolved", { count: String(day.unsolvedRequests) })) : null,
                 day.unresolvedRequests && !day.unsolvedRequests ? countLabel(day.unresolvedRequests, "unresolved") : null,
                 day.draftProposals ? tv("boardDrafts.publishDayDrafts", { count: String(day.draftProposals) }) : null,
+                day.heldNotices ? tv("sendAll.publishDayUpdates", { count: String(day.heldNotices) }) : null,
                 day.alternativeProposals ? (day.alternativeProposals === 1 ? he.sadranPlanB.publishDayOne : tv("sadranPlanB.publishDay", { count: String(day.alternativeProposals) })) : null,
                 day.pendingProposals ? countLabel(day.pendingProposals, "pending") : null,
                 day.missingDriverRides ? countLabel(day.missingDriverRides, "missingDriver") : null,

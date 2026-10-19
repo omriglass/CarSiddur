@@ -598,6 +598,8 @@
         "e2e/proposal-merge-view.spec.ts",
         "supabase/tests/p3_notices.sql",
         "supabase/tests/proposals_offline.sql",
+        "supabase/tests/held_notices.sql",
+        "src/lib/appSurface.ts",
         "supabase/migrations/**/*enqueue_notification*"
       ],
       "vitest": [
@@ -609,7 +611,8 @@
         "proposal_replacement.sql",
         "withdraw_settles.sql",
         "p3_notices.sql",
-        "proposals_offline.sql"
+        "proposals_offline.sql",
+        "held_notices.sql"
       ],
       "playwrightTags": [
         "@proposals"

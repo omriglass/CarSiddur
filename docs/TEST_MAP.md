@@ -320,7 +320,7 @@ matching `*proposal*`; `e2e/proposal.spec.ts`, `proposal-retry.spec.ts`, `board-
 
 **Automated**:
 - Vitest: `npx vitest run src/features/proposals src/features/sadran/proposals`
-- SQL: `proposal_day_boundary.sql`, `proposal_replacement.sql`, `withdraw_settles.sql`, `proposals_offline.sql` (REQ §13.138 a/b/d: "כן, כבר סיכמנו" on any day, `send_draft_proposals`)
+- SQL: `proposal_day_boundary.sql`, `proposal_replacement.sql`, `withdraw_settles.sql`, `proposals_offline.sql` (REQ §13.138 a/b/d: "כן, כבר סיכמנו" on any day, `send_draft_proposals`), `held_notices.sql` (REQ §13.138 c/e/g/h: board notices held, flushed once with the final result, publish block, reminder)
 - Playwright: `npx playwright test --grep "@proposals"`
 
 **QA script**:

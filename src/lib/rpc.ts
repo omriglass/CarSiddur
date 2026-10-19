@@ -132,6 +132,7 @@ export type ErrorCode =
   | "publication_unanswered"
   | "publication_driverless"
   | "publication_drafts"
+  | "publication_held_notices"
   | "publication_alternatives_pending"
   | "pending_ride_changes"
   | "request_window_closed"
@@ -287,6 +288,7 @@ const MESSAGE_TO_CODE: Record<string, ErrorCode> = {
   publication_unanswered: "publication_unanswered",
   publication_driverless: "publication_driverless",
   publication_drafts: "publication_drafts",
+  publication_held_notices: "publication_held_notices",
   publication_alternatives_pending: "publication_alternatives_pending",
   pending_ride_changes: "pending_ride_changes",
   request_window_closed: "request_window_closed",
@@ -424,6 +426,7 @@ const CODE_TO_MESSAGE: Record<ErrorCode, string> = {
   publication_unanswered: he.publicationFlow.unresolvedHelp,
   publication_driverless: he.publicationFlow.driverlessTitle,
   publication_drafts: he.errors.publicationDrafts,
+  publication_held_notices: he.errors.publicationHeldNotices,
   publication_alternatives_pending: he.errors.publicationAlternativesPending,
   alternative_not_applicable: he.errors.alternativeNotApplicable,
   alternative_payload_invalid: he.errors.alternativePayloadInvalid,

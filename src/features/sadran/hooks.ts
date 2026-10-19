@@ -455,12 +455,24 @@ export function useAgreeProposalOfflineMutation() {
   });
 }
 
-/** REQ §13.138 (d): "שלח את כל ההצעות" for the ticked days. */
+/** REQ §13.138 (c): the week's held board notices. */
+export function useHeldNoticesQuery(departmentId: string | undefined, weekStart: string | undefined) {
+  return useQuery({
+    queryKey: sadranKeys.heldNotices(departmentId ?? "", weekStart ?? ""),
+    queryFn: () => api.fetchHeldNotices(departmentId as string, weekStart as string),
+    enabled: !!departmentId && !!weekStart,
+  });
+}
+
+/** REQ §13.138 (d): "שלח את כל ההצעות" for the ticked days — the drafts, then the held board notices. */
 export function useSendDraftProposalsMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ departmentId, weekStart, days }: { departmentId: string; weekStart: string; days: string[] | null }) =>
-      api.sendDraftProposals(departmentId, weekStart, days),
+    mutationFn: async ({ departmentId, weekStart, days }: { departmentId: string; weekStart: string; days: string[] | null }) => {
+      const proposals = await api.sendDraftProposals(departmentId, weekStart, days);
+      const delivered = await api.flushHeldNotices(departmentId, weekStart, days);
+      return { proposals, delivered };
+    },
     onSettled: (_data, _error, { departmentId, weekStart }) => invalidateBoard(queryClient, departmentId, weekStart),
     onError: showErrorToast,
   });

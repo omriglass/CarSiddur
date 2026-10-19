@@ -682,6 +682,40 @@ $$;
 ALTER FUNCTION "public"."_assert_shift_places"("p_request_id" "uuid", "p_department_id" "uuid", "p_payload" "jsonb") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."_board_hold_applies"("_recipient" "uuid", "_event" "public"."notification_event", "_department_id" "uuid", "_week_start" "date") RETURNS boolean
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_headers text := nullif(current_setting('request.headers', true), '');
+  v_actor uuid := (select auth.uid());
+  v_surface text;
+begin
+  if v_headers is null or v_actor is null or _recipient is null or _department_id is null or _week_start is null then
+    return false;
+  end if;
+  if coalesce(current_setting('app.flushing_held_notices', true), '') = 'on'
+     or coalesce(current_setting('app.publishing', true), '') = 'on' then
+    return false;
+  end if;
+  if _event not in ('outcome_changed', 'car_swapped', 'waitlist_resolved') or _recipient = v_actor then
+    return false;
+  end if;
+  begin
+    v_surface := v_headers::json ->> 'x-app-surface';
+  exception when others then
+    return false;
+  end;
+  if v_surface is distinct from 'board' or not public.can_manage_week(_department_id, _week_start) then
+    return false;
+  end if;
+  return not exists (select 1 from public.sadranim_of(_department_id, _week_start) s where s = _recipient);
+end $$;
+
+
+ALTER FUNCTION "public"."_board_hold_applies"("_recipient" "uuid", "_event" "public"."notification_event", "_department_id" "uuid", "_week_start" "date") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."_can_edit_car_maintenance"("p_car_id" "uuid") RETURNS boolean
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -1216,6 +1250,64 @@ $$;
 ALTER FUNCTION "public"."_frag"("_key" "text", "_vars" "jsonb") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."_held_request_view"("p_request" "uuid") RETURNS "jsonb"
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select jsonb_build_object('status', q.status, 'trip_type', q.trip_type, 'depart_at', q.depart_at, 'return_at', q.return_at)
+  from public.requests q where q.id = p_request
+$$;
+
+
+ALTER FUNCTION "public"."_held_request_view"("p_request" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_held_ride_view"("p_ride" "uuid") RETURNS "jsonb"
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select jsonb_build_object('status', r.status, 'starts_at', r.starts_at, 'ends_at', r.ends_at, 'car_id', r.car_id, 'driver_id', r.driver_id)
+  from public.rides r where r.id = p_ride
+$$;
+
+
+ALTER FUNCTION "public"."_held_ride_view"("p_ride" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_held_view_of_row"("p_kind" "text", "p_row" "jsonb") RETURNS "jsonb"
+    LANGUAGE "sql" IMMUTABLE
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select case when p_row is null then null
+    when p_kind = 'ride' then jsonb_build_object('status', p_row -> 'status', 'starts_at', p_row -> 'starts_at',
+      'ends_at', p_row -> 'ends_at', 'car_id', p_row -> 'car_id', 'driver_id', p_row -> 'driver_id')
+    else jsonb_build_object('status', p_row -> 'status', 'trip_type', p_row -> 'trip_type',
+      'depart_at', p_row -> 'depart_at', 'return_at', p_row -> 'return_at') end
+$$;
+
+
+ALTER FUNCTION "public"."_held_view_of_row"("p_kind" "text", "p_row" "jsonb") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_held_views_equal"("a" "jsonb", "b" "jsonb") RETURNS boolean
+    LANGUAGE "sql" IMMUTABLE
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select a is not null and b is not null
+    and (a ->> 'status') is not distinct from (b ->> 'status')
+    and (a ->> 'car_id') is not distinct from (b ->> 'car_id')
+    and (a ->> 'driver_id') is not distinct from (b ->> 'driver_id')
+    and (a ->> 'trip_type') is not distinct from (b ->> 'trip_type')
+    and nullif(coalesce(a ->> 'starts_at', a ->> 'depart_at'), '')::timestamptz
+        is not distinct from nullif(coalesce(b ->> 'starts_at', b ->> 'depart_at'), '')::timestamptz
+    and nullif(coalesce(a ->> 'ends_at', a ->> 'return_at'), '')::timestamptz
+        is not distinct from nullif(coalesce(b ->> 'ends_at', b ->> 'return_at'), '')::timestamptz
+$$;
+
+
+ALTER FUNCTION "public"."_held_views_equal"("a" "jsonb", "b" "jsonb") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."_hhmm"("_at" timestamp with time zone) RETURNS "text"
     LANGUAGE "sql" STABLE
     SET "search_path" TO 'public', 'pg_temp'
@@ -1223,6 +1315,58 @@ CREATE OR REPLACE FUNCTION "public"."_hhmm"("_at" timestamp with time zone) RETU
 
 
 ALTER FUNCTION "public"."_hhmm"("_at" timestamp with time zone) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_hold_notice"("_recipient" "uuid", "_event" "public"."notification_event", "_department_id" "uuid", "_week_start" "date", "_vars" "jsonb", "_data" "jsonb", "_dedupe_key" "text") RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_ride uuid := nullif(_data ->> 'ride_id', '')::uuid;
+  v_req uuid := nullif(_data ->> 'request_id', '')::uuid;
+  v_prop uuid := nullif(_data ->> 'proposal_id', '')::uuid;
+  v_variant text := coalesce(nullif(_data ->> 'variant', ''), '');
+  v_kind text := 'other'; v_sid uuid; v_day date; v_after jsonb; v_before jsonb; v_change text; v_table text;
+  v_audit record;
+begin
+  if v_req is null and v_prop is not null then
+    select request_id into v_req from public.proposals where id = v_prop;
+  end if;
+  if _event <> 'waitlist_resolved' and v_ride is not null and exists (select 1 from public.rides where id = v_ride) then
+    v_kind := 'ride'; v_sid := v_ride; v_table := 'rides';
+    select (starts_at at time zone 'Asia/Jerusalem')::date into v_day from public.rides where id = v_ride;
+    v_after := public._held_ride_view(v_ride);
+  elsif _event <> 'waitlist_resolved' and v_req is not null and exists (select 1 from public.requests where id = v_req) then
+    v_kind := 'request'; v_sid := v_req; v_table := 'requests';
+    select (coalesce(depart_at, return_at) at time zone 'Asia/Jerusalem')::date into v_day from public.requests where id = v_req;
+    v_after := public._held_request_view(v_req);
+  elsif v_req is not null then
+    select (coalesce(depart_at, return_at) at time zone 'Asia/Jerusalem')::date into v_day from public.requests where id = v_req;
+  end if;
+  v_change := case
+    when v_variant in ('merged', 'merged_no_driver', 'merged_split', 'joined_ride', 'placed_by_sadran', 'driver_assigned',
+      'passenger_added_you', 'reservation_added', 'alternative_applied', 'own_car_placed') then 'joins'
+    when v_variant in ('ride_cancelled', 'passenger_removed_you', 'driver_unassigned', 'driver_replaced_you', 'child_removed',
+      'join_ride_cancelled', 'driver_cancelled', 'driver_cancelled_plain') then 'leaves'
+    else 'changes' end;
+  if v_kind <> 'other' and not exists (select 1 from public.held_notices h
+      where h.recipient_id = _recipient and h.subject_kind = v_kind and h.subject_id = v_sid) then
+    -- The first update of the subject in this transaction (= this request); `app.held_audit_floor` (an audit_log id)
+    -- lets a transactional test start a fresh "request" inside one transaction.
+    select a.before into v_audit from public.audit_log a
+    where a.table_name = v_table and a.row_id = v_sid::text and a.at = now() and a.action = 'update'
+      and a.id > coalesce(nullif(current_setting('app.held_audit_floor', true), '')::bigint, 0)
+    order by a.id limit 1;
+    v_before := case when found then public._held_view_of_row(v_kind, v_audit.before) else v_after end;
+  end if;
+  insert into public.held_notices (department_id, week_start, day, recipient_id, actor_id, event, vars, data, dedupe_key,
+    subject_kind, subject_id, change_kind, before_view, after_view)
+  values (_department_id, _week_start, v_day, _recipient, (select auth.uid()), _event, coalesce(_vars, '{}'::jsonb),
+    coalesce(_data, '{}'::jsonb), _dedupe_key, v_kind, v_sid, v_change, v_before, v_after);
+end $$;
+
+
+ALTER FUNCTION "public"."_hold_notice"("_recipient" "uuid", "_event" "public"."notification_event", "_department_id" "uuid", "_week_start" "date", "_vars" "jsonb", "_data" "jsonb", "_dedupe_key" "text") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."_joiner_times"("_ride_id" "uuid", "_request_id" "uuid", "_leg" "public"."ride_leg", OUT "dep" timestamp with time zone, OUT "ret" timestamp with time zone) RETURNS "record"
@@ -2397,6 +2541,99 @@ end $$;
 
 
 ALTER FUNCTION "public"."_save_request_alternative"("p_request_id" "uuid", "p_payload" "jsonb", "p_old_depart" timestamp with time zone) OWNER TO "postgres";
+
+SET default_tablespace = '';
+
+SET default_table_access_method = "heap";
+
+
+CREATE TABLE IF NOT EXISTS "public"."held_notices" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "seq" bigint NOT NULL,
+    "department_id" "uuid" NOT NULL,
+    "week_start" "date" NOT NULL,
+    "day" "date",
+    "recipient_id" "uuid" NOT NULL,
+    "actor_id" "uuid",
+    "event" "public"."notification_event" NOT NULL,
+    "vars" "jsonb" DEFAULT '{}'::"jsonb" NOT NULL,
+    "data" "jsonb" DEFAULT '{}'::"jsonb" NOT NULL,
+    "dedupe_key" "text",
+    "subject_kind" "text" NOT NULL,
+    "subject_id" "uuid",
+    "change_kind" "text" NOT NULL,
+    "before_view" "jsonb",
+    "after_view" "jsonb",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "held_notices_change_kind_check" CHECK (("change_kind" = ANY (ARRAY['joins'::"text", 'leaves'::"text", 'changes'::"text"]))),
+    CONSTRAINT "held_notices_subject_kind_check" CHECK (("subject_kind" = ANY (ARRAY['ride'::"text", 'request'::"text", 'other'::"text"])))
+);
+
+ALTER TABLE ONLY "public"."held_notices" FORCE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."held_notices" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."held_notices" IS 'REQ §13.138 (c, e): notices of a Sadran''s board change, held until "שלח את כל ההצעות" (flush_held_notices).';
+
+
+
+CREATE OR REPLACE FUNCTION "public"."_send_board_changes"("h" "public"."held_notices", "p_before" "jsonb", "p_now" "jsonb") RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_lines text[] := '{}';
+  v_line text;
+  v_starts timestamptz := nullif(p_now ->> 'starts_at', '')::timestamptz;
+  v_route text;
+begin
+  v_line := nullif(public._time_change_line(nullif(p_before ->> 'starts_at', '')::timestamptz, nullif(p_before ->> 'ends_at', '')::timestamptz,
+    v_starts, nullif(p_now ->> 'ends_at', '')::timestamptz), '');
+  if v_line is not null then v_lines := v_lines || v_line; end if;
+  if (p_before ->> 'car_id') is distinct from (p_now ->> 'car_id') and (p_now ->> 'car_id') is not null then
+    v_lines := v_lines || public._frag('change.car', jsonb_build_object(
+      'newCar', coalesce((select name from public.cars where id = (p_now ->> 'car_id')::uuid), ''),
+      'oldCar', coalesce((select name from public.cars where id = nullif(p_before ->> 'car_id', '')::uuid), '')));
+  end if;
+  if (p_before ->> 'driver_id') is distinct from (p_now ->> 'driver_id') and (p_now ->> 'driver_id') is not null then
+    v_lines := v_lines || public._frag('change.driver', jsonb_build_object(
+      'driverName', coalesce((select full_name from public.profiles where id = (p_now ->> 'driver_id')::uuid), '')));
+  end if;
+  if cardinality(v_lines) = 0 then
+    perform public._send_held(h);
+    return;
+  end if;
+  if v_starts is not null and not public.is_day_public(h.department_id, h.week_start, (v_starts at time zone 'Asia/Jerusalem')::date) then
+    return;
+  end if;
+  select public.request_route_label(q.id) into v_route
+  from public.ride_requests rr join public.requests q on q.id = rr.request_id
+  where rr.ride_id = h.subject_id and (q.requester_id = h.recipient_id or q.filed_by = h.recipient_id)
+  order by q.id limit 1;
+  perform public.enqueue_notification(h.recipient_id, 'outcome_changed', h.department_id, h.week_start,
+    jsonb_build_object('changes', array_to_string(v_lines, ' · '), 'route', coalesce(v_route, ''),
+      'day', case when v_starts is null then '' else public.day_date_label(v_starts) end),
+    jsonb_build_object('variant', 'board_changes', 'ride_id', h.subject_id),
+    format('board_changes:%s:%s:%s', h.subject_id, h.recipient_id, extract(epoch from clock_timestamp())));
+end $$;
+
+
+ALTER FUNCTION "public"."_send_board_changes"("h" "public"."held_notices", "p_before" "jsonb", "p_now" "jsonb") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_send_held"("h" "public"."held_notices") RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+begin
+  perform public.enqueue_notification(h.recipient_id, h.event, h.department_id, h.week_start, h.vars, h.data, h.dedupe_key);
+end $$;
+
+
+ALTER FUNCTION "public"."_send_held"("h" "public"."held_notices") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."_shift_place_on_car"("p_proposal_id" "uuid") RETURNS "uuid"
@@ -5449,10 +5686,6 @@ end $$;
 
 ALTER FUNCTION "public"."create_car_maintenance"("p_car_id" "uuid", "p_starts_at" timestamp with time zone, "p_ends_at" timestamp with time zone, "p_reason" "text") OWNER TO "postgres";
 
-SET default_tablespace = '';
-
-SET default_table_access_method = "heap";
-
 
 CREATE TABLE IF NOT EXISTS "public"."departments" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
@@ -6863,6 +7096,11 @@ begin
   if public._notice_is_unpublished_outcome(_event, _data, _recipient, _department_id, _week_start, v_caller_days) then
     return null;
   end if;
+  -- REQ §13.138 (c): a change made on the Sadran board is told on "שלח את כל ההצעות" (flush_held_notices).
+  if public._board_hold_applies(_recipient, _event, _department_id, _week_start) then
+    perform public._hold_notice(_recipient, _event, _department_id, _week_start, _vars, _data, _dedupe_key);
+    return null;
+  end if;
   if nullif(_data ->> 'url', '') is null then
     _data := _data || jsonb_build_object('url', public.notification_default_url(_event, _data, _department_id, _week_start, _recipient));
   end if;
@@ -7274,6 +7512,96 @@ $$;
 
 
 ALTER FUNCTION "public"."flag_rides_in_maintenance"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."flush_held_notices"("p_department_id" "uuid", "p_week_start" "date", "p_days" "date"[] DEFAULT NULL::"date"[]) RETURNS integer
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_prev text := coalesce(current_setting('app.flushing_held_notices', true), '');
+  g record;
+  v_first public.held_notices%rowtype;
+  v_last public.held_notices%rowtype;
+  v_mem public.held_notices%rowtype;
+  v_row public.held_notices%rowtype;
+  v_now jsonb; v_now_related boolean; v_before_related boolean;
+  v_sent integer := 0;
+begin
+  if not public.can_manage_week(p_department_id, p_week_start) then
+    raise exception 'not_authorized' using errcode = 'P0001';
+  end if;
+  perform set_config('app.flushing_held_notices', 'on', true);
+
+  for v_row in
+    select * from public.held_notices
+    where department_id = p_department_id and week_start = p_week_start and subject_kind = 'other'
+      and (p_days is null or day is null or day = any(p_days))
+    order by seq
+  loop
+    perform public._send_held(v_row);
+    v_sent := v_sent + 1;
+    delete from public.held_notices where id = v_row.id;
+  end loop;
+
+  for g in
+    select recipient_id, subject_kind, subject_id, array_agg(id order by seq) as ids
+    from public.held_notices
+    where department_id = p_department_id and week_start = p_week_start and subject_kind <> 'other'
+    group by recipient_id, subject_kind, subject_id
+    having p_days is null or bool_or(day is null or day = any(p_days))
+  loop
+    select * into v_first from public.held_notices where id = g.ids[1];
+    select * into v_last from public.held_notices where id = g.ids[cardinality(g.ids)];
+    if g.subject_kind = 'request' then
+      v_now := public._held_request_view(g.subject_id);
+      if not public._held_views_equal(v_first.before_view, v_now) then
+        for v_row in
+          select distinct on (event, coalesce(data ->> 'variant', '')) * from public.held_notices
+          where id = any(g.ids) order by event, coalesce(data ->> 'variant', ''), seq desc
+        loop
+          perform public._send_held(v_row);
+          v_sent := v_sent + 1;
+        end loop;
+      end if;
+    else
+      v_now := public._held_ride_view(g.subject_id);
+      v_now_related := v_now is not null and (v_now ->> 'status') <> 'cancelled'
+        and public.ride_related(g.subject_id, g.recipient_id);
+      v_before_related := v_first.change_kind <> 'joins';
+      if v_before_related = v_now_related
+         and (not v_now_related or public._held_views_equal(v_first.before_view, v_now)) then
+        null;  -- nothing they would notice
+      else
+        v_mem := null;
+        select * into v_mem from public.held_notices
+        where id = any(g.ids) and change_kind in ('joins', 'leaves') order by seq desc limit 1;
+        if v_mem.id is null then
+          if cardinality(g.ids) = 1 and public._held_views_equal(v_first.after_view, v_now) then
+            perform public._send_held(v_first);
+          else
+            perform public._send_board_changes(v_last, v_first.before_view, v_now);
+          end if;
+          v_sent := v_sent + 1;
+        else
+          perform public._send_held(v_mem);
+          v_sent := v_sent + 1;
+          if v_now_related and v_mem.change_kind = 'joins' and not public._held_views_equal(v_mem.after_view, v_now) then
+            perform public._send_board_changes(v_last, v_mem.after_view, v_now);
+            v_sent := v_sent + 1;
+          end if;
+        end if;
+      end if;
+    end if;
+    delete from public.held_notices where id = any(g.ids);
+  end loop;
+
+  perform set_config('app.flushing_held_notices', v_prev, true);
+  return v_sent;
+end $$;
+
+
+ALTER FUNCTION "public"."flush_held_notices"("p_department_id" "uuid", "p_week_start" "date", "p_days" "date"[]) OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."forbid_mutation"() RETURNS "trigger"
@@ -11133,7 +11461,7 @@ CREATE OR REPLACE FUNCTION "public"."publication_readiness"("p_department_id" "u
     LANGUAGE "plpgsql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
-declare result jsonb:='[]'; d date; requests_n int; unresolved_n int; incomplete_n int; placed_n int; awaiting_n int; answered_n int; pending_n int; draft_n int; missing_n int; conflicts_n int; alt_n int; unsolved_n int;
+declare result jsonb:='[]'; d date; requests_n int; unresolved_n int; incomplete_n int; placed_n int; awaiting_n int; answered_n int; pending_n int; draft_n int; missing_n int; conflicts_n int; alt_n int; unsolved_n int; held_n int;
 begin
   if not public.can_manage_week(p_department_id,p_week_start) then raise exception 'not_authorized';end if;
   if exists(select 1 from public.weeks w where w.department_id=p_department_id and w.week_start=p_week_start and w.phase='upcoming') then raise exception 'week_not_open'; end if;
@@ -11174,11 +11502,14 @@ begin
     -- denied/external, so 'submitted' = untouched since filing (or re-opened by a re-solve, or filed after the last solve).
     select count(*) into unsolved_n from public.requests q where q.department_id=p_department_id and q.week_start=p_week_start
       and q.status='submitted' and (coalesce(q.depart_at,q.return_at) at time zone 'Asia/Jerusalem')::date=d;
+    -- REQ §13.138 (g): board changes not yet told ("שלח את כל ההצעות") block the day like drafts.
+    select count(distinct (h.recipient_id, h.subject_kind, coalesce(h.subject_id, h.id))) into held_n from public.held_notices h
+      where h.department_id=p_department_id and h.week_start=p_week_start and h.day=d;
     select count(distinct id) into conflicts_n from public.publication_conflicting_ride_ids(p_department_id,p_week_start,array[d]) id;
     result:=result||jsonb_build_array(jsonb_build_object('day',d,'published',public.is_day_public(p_department_id,p_week_start,d),
       'requestCount',requests_n,'unresolvedRequests',unresolved_n,'placedRequests',placed_n,'answeredRequests',answered_n,'awaitingDriverRequests',awaiting_n,'incompleteAssignments',incomplete_n,'unsolvedRequests',unsolved_n,
-      'pendingProposals',pending_n,'draftProposals',draft_n,'alternativeProposals',alt_n,'missingDriverRides',missing_n,'conflictRides',conflicts_n,
-      'ready',unsolved_n=0 and incomplete_n=0 and pending_n=0 and draft_n=0 and alt_n=0 and conflicts_n=0));
+      'pendingProposals',pending_n,'draftProposals',draft_n,'heldNotices',held_n,'alternativeProposals',alt_n,'missingDriverRides',missing_n,'conflictRides',conflicts_n,
+      'ready',unsolved_n=0 and incomplete_n=0 and pending_n=0 and draft_n=0 and held_n=0 and alt_n=0 and conflicts_n=0));
   end loop;
   return result;
 end;
@@ -11229,11 +11560,14 @@ declare
   v_phase public.week_phase;
   v_req record;
   v_notified int := 0;
+  v_prev_publishing text := coalesce(current_setting('app.publishing', true), '');
   v_prev_status text;
   v_event public.notification_event;
   policy_score jsonb;
   n int; served_n int; total numeric; served_total numeric;
 begin
+  -- REQ §13.138 (c): publishing's own notices are never held as board changes.
+  perform set_config('app.publishing', 'on', true);
   if not public.can_manage_week(p_department_id, p_week_start) then
     raise exception 'not_authorized' using errcode = 'P0001';
   end if;
@@ -11269,6 +11603,10 @@ begin
   if exists(select 1 from jsonb_array_elements(readiness) item
     where (item->>'day')::date=any(v_days) and (item->>'draftProposals')::int>0)
   then raise exception 'publication_drafts';end if;
+  -- REQ §13.138 (g): board changes not yet told block the day, not bypassable either.
+  if exists(select 1 from jsonb_array_elements(readiness) item
+    where (item->>'day')::date=any(v_days) and coalesce((item->>'heldNotices')::int,0)>0)
+  then raise exception 'publication_held_notices';end if;
   if not coalesce(p_allow_unanswered,false) and exists(select 1 from jsonb_array_elements(readiness) item
     where (item->>'day')::date=any(v_days) and ((item->>'incompleteAssignments')::int>0 or (item->>'pendingProposals')::int>0))
   then raise exception 'publication_unanswered';end if;
@@ -11507,6 +11845,7 @@ begin
   -- now instead of leaving it for the next app.tick().
   perform public.expire_proposals();
 
+  perform set_config('app.publishing', v_prev_publishing, true);
   return v_version_id;
 end;
 $$;
@@ -11742,6 +12081,44 @@ end $$;
 
 
 ALTER FUNCTION "public"."release_request_draft_rides"("p_request_id" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."remind_unsent_board_changes"("p_now" timestamp with time zone DEFAULT "now"()) RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  r record;
+begin
+  for r in
+    select x.actor, x.department_id, x.week_start, max(x.created_at) as newest_due
+    from (
+      select h.actor_id as actor, h.department_id, h.week_start, h.created_at from public.held_notices h where h.actor_id is not null
+      union all
+      select p.created_by, p.department_id, p.week_start, p.created_at from public.proposals p
+      where p.status = 'draft' and p.created_via = 'sadran' and p.created_by is not null
+    ) x
+    join public.department_settings ds on ds.department_id = x.department_id
+    join public.weeks w on w.department_id = x.department_id and w.week_start = x.week_start and w.phase <> 'archived'
+    where x.created_at <= p_now - make_interval(mins => ds.send_all_reminder_minutes)
+    group by x.actor, x.department_id, x.week_start
+  loop
+    if exists (select 1 from public.unsent_change_reminders u
+               where u.profile_id = r.actor and u.department_id = r.department_id and u.week_start = r.week_start
+                 and u.last_reminded_at >= r.newest_due) then
+      continue;
+    end if;
+    perform public.enqueue_notification(r.actor, 'publish_reminder', r.department_id, r.week_start, '{}'::jsonb,
+      jsonb_build_object('variant', 'unsent_changes', 'url', format('/sadran/%s/%s/board', r.department_id, r.week_start)),
+      format('unsent_changes:%s:%s:%s:%s', r.actor, r.department_id, r.week_start, extract(epoch from p_now)));
+    insert into public.unsent_change_reminders (profile_id, department_id, week_start, last_reminded_at)
+    values (r.actor, r.department_id, r.week_start, p_now)
+    on conflict (profile_id, department_id, week_start) do update set last_reminded_at = excluded.last_reminded_at;
+  end loop;
+end $$;
+
+
+ALTER FUNCTION "public"."remind_unsent_board_changes"("p_now" timestamp with time zone) OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."remove_ride_person"("p_ride_id" "uuid", "p_expected_version" integer, "p_key" "text") RETURNS "void"
@@ -17460,6 +17837,7 @@ CREATE TABLE IF NOT EXISTS "public"."department_settings" (
     "rush_afternoon_end" time without time zone DEFAULT '18:30:00'::time without time zone NOT NULL,
     "rush_afternoon_percent" smallint DEFAULT 20 NOT NULL,
     "proposals_offline" boolean DEFAULT false NOT NULL,
+    "send_all_reminder_minutes" integer DEFAULT 30 NOT NULL,
     CONSTRAINT "department_settings_close_dow_ck" CHECK ((("close_dow" >= 0) AND ("close_dow" <= 6))),
     CONSTRAINT "department_settings_expiry_mode_ck" CHECK (("proposal_expiry_mode" = ANY (ARRAY['at_publish'::"text", 'fixed_hours'::"text"]))),
     CONSTRAINT "department_settings_join_radius_km_ck" CHECK ((("join_radius_km" >= (0)::numeric) AND ("join_radius_km" <= (100)::numeric))),
@@ -17469,6 +17847,7 @@ CREATE TABLE IF NOT EXISTS "public"."department_settings" (
     CONSTRAINT "department_settings_rush_morning_ck" CHECK (("rush_morning_start" < "rush_morning_end")),
     CONSTRAINT "department_settings_rush_order_ck" CHECK (("rush_morning_end" <= "rush_afternoon_start")),
     CONSTRAINT "department_settings_rush_percent_ck" CHECK (((("rush_morning_percent" >= 0) AND ("rush_morning_percent" <= 100)) AND (("rush_afternoon_percent" >= 0) AND ("rush_afternoon_percent" <= 100)))),
+    CONSTRAINT "department_settings_send_all_reminder_minutes_check" CHECK ((("send_all_reminder_minutes" >= 5) AND ("send_all_reminder_minutes" <= 1440))),
     CONSTRAINT "department_settings_stop_minutes_ck" CHECK ((("stop_minutes" >= 0) AND ("stop_minutes" <= 60))),
     CONSTRAINT "department_settings_turnaround_ck" CHECK (((("turnaround_minutes" % 15) = 0) AND (("turnaround_minutes" >= 0) AND ("turnaround_minutes" <= 120))))
 );
@@ -17480,6 +17859,10 @@ ALTER TABLE "public"."department_settings" OWNER TO "postgres";
 
 
 COMMENT ON COLUMN "public"."department_settings"."proposals_offline" IS 'Deprecated (REQ §13.138, 2026-10-19): no longer read. "כן, כבר סיכמנו" (agree_proposal_offline) works on every day.';
+
+
+
+COMMENT ON COLUMN "public"."department_settings"."send_all_reminder_minutes" IS 'REQ §13.138 (h): minutes an unsent board draft / held change may wait before its Sadran is reminded once.';
 
 
 
@@ -18106,6 +18489,17 @@ ALTER TABLE ONLY "public"."freed_slot_offers" FORCE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."freed_slot_offers" OWNER TO "postgres";
+
+
+ALTER TABLE "public"."held_notices" ALTER COLUMN "seq" ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME "public"."held_notices_seq_seq"
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
 
 
 CREATE TABLE IF NOT EXISTS "public"."member_invites" (
@@ -18884,6 +19278,22 @@ ALTER TABLE ONLY "public"."text_fragments" FORCE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."text_fragments" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."unsent_change_reminders" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "profile_id" "uuid" NOT NULL,
+    "department_id" "uuid" NOT NULL,
+    "week_start" "date" NOT NULL,
+    "last_reminded_at" timestamp with time zone NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL
+);
+
+ALTER TABLE ONLY "public"."unsent_change_reminders" FORCE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."unsent_change_reminders" OWNER TO "postgres";
 
 
 CREATE OR REPLACE VIEW "public"."v_board_rides" AS
@@ -19847,6 +20257,11 @@ ALTER TABLE ONLY "public"."freed_slot_offers"
 
 
 
+ALTER TABLE ONLY "public"."held_notices"
+    ADD CONSTRAINT "held_notices_pkey" PRIMARY KEY ("id");
+
+
+
 ALTER TABLE ONLY "public"."member_invites"
     ADD CONSTRAINT "member_invites_email_key" UNIQUE ("email");
 
@@ -20062,6 +20477,16 @@ ALTER TABLE ONLY "public"."text_fragments"
 
 
 
+ALTER TABLE ONLY "public"."unsent_change_reminders"
+    ADD CONSTRAINT "unsent_change_reminders_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."unsent_change_reminders"
+    ADD CONSTRAINT "unsent_change_reminders_profile_id_department_id_week_start_key" UNIQUE ("profile_id", "department_id", "week_start");
+
+
+
 ALTER TABLE ONLY "public"."waitlist_group_members"
     ADD CONSTRAINT "waitlist_group_members_pkey" PRIMARY KEY ("id");
 
@@ -20153,6 +20578,14 @@ CREATE INDEX "freed_slot_offers_group_idx" ON "public"."freed_slot_offers" USING
 
 
 CREATE UNIQUE INDEX "freed_slot_offers_one_live_per_ride_idx" ON "public"."freed_slot_offers" USING "btree" ("cancelled_ride_id") WHERE ("status" = ANY (ARRAY['open'::"public"."freed_offer_status", 'pending_approval'::"public"."freed_offer_status"]));
+
+
+
+CREATE INDEX "held_notices_subject_idx" ON "public"."held_notices" USING "btree" ("recipient_id", "subject_kind", "subject_id");
+
+
+
+CREATE INDEX "held_notices_week_idx" ON "public"."held_notices" USING "btree" ("department_id", "week_start", "day");
 
 
 
@@ -21295,6 +21728,10 @@ CREATE OR REPLACE TRIGGER "set_updated_at" BEFORE UPDATE ON "public"."destinatio
 
 
 
+CREATE OR REPLACE TRIGGER "set_updated_at" BEFORE UPDATE ON "public"."held_notices" FOR EACH ROW EXECUTE FUNCTION "public"."set_updated_at"();
+
+
+
 CREATE OR REPLACE TRIGGER "set_updated_at" BEFORE UPDATE ON "public"."notification_event_meta" FOR EACH ROW EXECUTE FUNCTION "public"."set_updated_at"();
 
 
@@ -21348,6 +21785,10 @@ CREATE OR REPLACE TRIGGER "set_updated_at" BEFORE UPDATE ON "public"."rides" FOR
 
 
 CREATE OR REPLACE TRIGGER "set_updated_at" BEFORE UPDATE ON "public"."text_fragments" FOR EACH ROW EXECUTE FUNCTION "public"."set_updated_at"();
+
+
+
+CREATE OR REPLACE TRIGGER "set_updated_at" BEFORE UPDATE ON "public"."unsent_change_reminders" FOR EACH ROW EXECUTE FUNCTION "public"."set_updated_at"();
 
 
 
@@ -21623,6 +22064,21 @@ ALTER TABLE ONLY "public"."freed_slot_offers"
 
 ALTER TABLE ONLY "public"."freed_slot_offers"
     ADD CONSTRAINT "freed_slot_offers_winning_request_id_fkey" FOREIGN KEY ("winning_request_id") REFERENCES "public"."requests"("id");
+
+
+
+ALTER TABLE ONLY "public"."held_notices"
+    ADD CONSTRAINT "held_notices_actor_id_fkey" FOREIGN KEY ("actor_id") REFERENCES "public"."profiles"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."held_notices"
+    ADD CONSTRAINT "held_notices_department_id_week_start_fkey" FOREIGN KEY ("department_id", "week_start") REFERENCES "public"."weeks"("department_id", "week_start") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."held_notices"
+    ADD CONSTRAINT "held_notices_recipient_id_fkey" FOREIGN KEY ("recipient_id") REFERENCES "public"."profiles"("id") ON DELETE CASCADE;
 
 
 
@@ -22096,6 +22552,16 @@ ALTER TABLE ONLY "public"."solver_runs"
 
 
 
+ALTER TABLE ONLY "public"."unsent_change_reminders"
+    ADD CONSTRAINT "unsent_change_reminders_department_id_week_start_fkey" FOREIGN KEY ("department_id", "week_start") REFERENCES "public"."weeks"("department_id", "week_start") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."unsent_change_reminders"
+    ADD CONSTRAINT "unsent_change_reminders_profile_id_fkey" FOREIGN KEY ("profile_id") REFERENCES "public"."profiles"("id") ON DELETE CASCADE;
+
+
+
 ALTER TABLE ONLY "public"."waitlist_group_members"
     ADD CONSTRAINT "waitlist_group_members_department_id_fkey" FOREIGN KEY ("department_id") REFERENCES "public"."departments"("id") ON DELETE CASCADE;
 
@@ -22462,6 +22928,13 @@ CREATE POLICY "freed_slot_offers_delete" ON "public"."freed_slot_offers" FOR DEL
 
 
 CREATE POLICY "freed_slot_offers_select" ON "public"."freed_slot_offers" FOR SELECT TO "authenticated" USING (("public"."member_of"("department_id") OR "public"."is_admin"()));
+
+
+
+ALTER TABLE "public"."held_notices" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "held_notices_select" ON "public"."held_notices" FOR SELECT TO "authenticated" USING ("public"."can_manage_week"("department_id", "week_start"));
 
 
 
@@ -22837,6 +23310,13 @@ CREATE POLICY "text_fragments_update" ON "public"."text_fragments" FOR UPDATE TO
 
 
 
+ALTER TABLE "public"."unsent_change_reminders" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "unsent_change_reminders_select" ON "public"."unsent_change_reminders" FOR SELECT TO "authenticated" USING (("profile_id" = ( SELECT "auth"."uid"() AS "uid")));
+
+
+
 ALTER TABLE "public"."waitlist_group_members" ENABLE ROW LEVEL SECURITY;
 
 
@@ -22901,6 +23381,11 @@ GRANT ALL ON FUNCTION "public"."_ask_to_join_ride_label"("p_ride_id" "uuid") TO 
 
 REVOKE ALL ON FUNCTION "public"."_assert_shift_places"("p_request_id" "uuid", "p_department_id" "uuid", "p_payload" "jsonb") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_assert_shift_places"("p_request_id" "uuid", "p_department_id" "uuid", "p_payload" "jsonb") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_board_hold_applies"("_recipient" "uuid", "_event" "public"."notification_event", "_department_id" "uuid", "_week_start" "date") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_board_hold_applies"("_recipient" "uuid", "_event" "public"."notification_event", "_department_id" "uuid", "_week_start" "date") TO "service_role";
 
 
 
@@ -22994,8 +23479,33 @@ GRANT ALL ON FUNCTION "public"."_frag"("_key" "text", "_vars" "jsonb") TO "servi
 
 
 
+REVOKE ALL ON FUNCTION "public"."_held_request_view"("p_request" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_held_request_view"("p_request" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_held_ride_view"("p_ride" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_held_ride_view"("p_ride" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_held_view_of_row"("p_kind" "text", "p_row" "jsonb") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_held_view_of_row"("p_kind" "text", "p_row" "jsonb") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_held_views_equal"("a" "jsonb", "b" "jsonb") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_held_views_equal"("a" "jsonb", "b" "jsonb") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."_hhmm"("_at" timestamp with time zone) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_hhmm"("_at" timestamp with time zone) TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_hold_notice"("_recipient" "uuid", "_event" "public"."notification_event", "_department_id" "uuid", "_week_start" "date", "_vars" "jsonb", "_data" "jsonb", "_dedupe_key" "text") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_hold_notice"("_recipient" "uuid", "_event" "public"."notification_event", "_department_id" "uuid", "_week_start" "date", "_vars" "jsonb", "_data" "jsonb", "_dedupe_key" "text") TO "service_role";
 
 
 
@@ -23146,6 +23656,21 @@ GRANT ALL ON FUNCTION "public"."_route_hop_minutes"("p_from" "uuid", "p_to" "uui
 
 REVOKE ALL ON FUNCTION "public"."_save_request_alternative"("p_request_id" "uuid", "p_payload" "jsonb", "p_old_depart" timestamp with time zone) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_save_request_alternative"("p_request_id" "uuid", "p_payload" "jsonb", "p_old_depart" timestamp with time zone) TO "service_role";
+
+
+
+GRANT SELECT,MAINTAIN ON TABLE "public"."held_notices" TO "authenticated";
+GRANT ALL ON TABLE "public"."held_notices" TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_send_board_changes"("h" "public"."held_notices", "p_before" "jsonb", "p_now" "jsonb") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_send_board_changes"("h" "public"."held_notices", "p_before" "jsonb", "p_now" "jsonb") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_send_held"("h" "public"."held_notices") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_send_held"("h" "public"."held_notices") TO "service_role";
 
 
 
@@ -23732,6 +24257,12 @@ GRANT ALL ON FUNCTION "public"."flag_car_chain_breaks"("p_car" "uuid", "p_week" 
 REVOKE ALL ON FUNCTION "public"."flag_rides_in_maintenance"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."flag_rides_in_maintenance"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."flag_rides_in_maintenance"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."flush_held_notices"("p_department_id" "uuid", "p_week_start" "date", "p_days" "date"[]) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."flush_held_notices"("p_department_id" "uuid", "p_week_start" "date", "p_days" "date"[]) TO "service_role";
+GRANT ALL ON FUNCTION "public"."flush_held_notices"("p_department_id" "uuid", "p_week_start" "date", "p_days" "date"[]) TO "authenticated";
 
 
 
@@ -24327,6 +24858,11 @@ GRANT ALL ON FUNCTION "public"."release_request_booking"("p_request_id" "uuid") 
 
 REVOKE ALL ON FUNCTION "public"."release_request_draft_rides"("p_request_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."release_request_draft_rides"("p_request_id" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."remind_unsent_board_changes"("p_now" timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."remind_unsent_board_changes"("p_now" timestamp with time zone) TO "service_role";
 
 
 
@@ -25207,6 +25743,12 @@ GRANT ALL ON TABLE "public"."freed_slot_offers" TO "service_role";
 
 
 
+GRANT ALL ON SEQUENCE "public"."held_notices_seq_seq" TO "anon";
+GRANT ALL ON SEQUENCE "public"."held_notices_seq_seq" TO "authenticated";
+GRANT ALL ON SEQUENCE "public"."held_notices_seq_seq" TO "service_role";
+
+
+
 GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE "public"."member_invites" TO "authenticated";
 GRANT ALL ON TABLE "public"."member_invites" TO "service_role";
 
@@ -25430,6 +25972,11 @@ GRANT ALL ON TABLE "public"."solver_runs" TO "service_role";
 
 GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE "public"."text_fragments" TO "authenticated";
 GRANT ALL ON TABLE "public"."text_fragments" TO "service_role";
+
+
+
+GRANT SELECT,MAINTAIN ON TABLE "public"."unsent_change_reminders" TO "authenticated";
+GRANT ALL ON TABLE "public"."unsent_change_reminders" TO "service_role";
 
 
 

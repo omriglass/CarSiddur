@@ -1,6 +1,7 @@
-// REQ §13.138 (d): "שלח את כל ההצעות" — the board's ⋮ menu item. Lists the week's unsent Sadran drafts per day (every day
-// ticked; untick a day still being worked on), sends them in one `send_draft_proposals` call, then shows what could not be
-// sent (with the reason) and the optional WhatsApp messages, one per party, exactly as the composer would write them.
+// REQ §13.138 (d): "שלח את כל ההצעות" — the board's ⋮ menu item. Lists, per day, the week's unsent Sadran drafts and held
+// board updates (every day ticked; untick a day still being worked on), sends the drafts (`send_draft_proposals`) and
+// delivers the updates (`flush_held_notices`), then shows what could not be sent (with the reason) and the optional
+// WhatsApp messages, one per party, exactly as the composer would write them.
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -13,11 +14,12 @@ import { formatDayDate } from "@/lib/dayLabels";
 import { env } from "@/lib/env";
 import { toAppError } from "@/lib/rpc";
 
-import { fetchProposalPartyTexts, type ProposalRow, type SendDraftResult } from "../../api";
+import { fetchProposalPartyTexts, type HeldNotice, type ProposalRow, type SendDraftResult } from "../../api";
 import { useProfilesByIds, useSendDraftProposalsMutation } from "../../hooks";
 import { sadranKeys } from "../../keys";
 import { WhatsappDialog } from "../../proposals/components/WhatsappDialog";
 import { renderTemplate } from "../../proposals/waLink";
+import { heldUpdateCount } from "../heldUpdates";
 
 /** One unsent Sadran draft, with the day it belongs to (its request's day) and who it is for. */
 export interface PendingDraft {
@@ -33,10 +35,16 @@ export interface SendAllDialogProps {
   departmentId: string;
   weekStart: string;
   drafts: readonly PendingDraft[];
+  /** REQ §13.138 (c): held board notices (a person on a ride/request = one update). */
+  held: readonly HeldNotice[];
 }
 
-export function SendAllDialog({ open, onOpenChange, departmentId, weekStart, drafts }: SendAllDialogProps) {
-  const days = useMemo(() => [...new Set(drafts.map((draft) => draft.day))].sort(), [drafts]);
+export function SendAllDialog({ open, onOpenChange, departmentId, weekStart, drafts, held }: SendAllDialogProps) {
+  const days = useMemo(
+    () => [...new Set([...drafts.map((draft) => draft.day), ...held.flatMap((row) => (row.day ? [row.day] : []))])].sort(),
+    [drafts, held],
+  );
+  const weekLevel = heldUpdateCount(held, null);
   const [unticked, setUnticked] = useState<ReadonlySet<string>>(new Set());
   const [results, setResults] = useState<SendDraftResult[] | null>(null);
   // Results outlive the drafts list (sent drafts leave it), so remember what each sent proposal was.
@@ -54,11 +62,11 @@ export function SendAllDialog({ open, onOpenChange, departmentId, weekStart, dra
   async function send() {
     const byId = new Map(drafts.map((draft) => [draft.proposal.id, draft]));
     try {
-      const sent = await sendMutation.mutateAsync({ departmentId, weekStart, days: ticked.length === days.length ? null : ticked });
+      const { proposals: sent, delivered } = await sendMutation.mutateAsync({ departmentId, weekStart, days: ticked.length === days.length ? null : ticked });
       setSentDrafts(byId);
       setResults(sent);
       const okCount = sent.filter((row) => row.ok).length;
-      if (okCount) toast.success(tv("sendAll.sent", { count: String(okCount) }));
+      if (okCount || delivered) toast.success(tv("sendAll.sent", { count: String(okCount), updates: String(delivered) }));
     } catch { /* toast shown by the mutation */ }
   }
 
@@ -71,12 +79,15 @@ export function SendAllDialog({ open, onOpenChange, departmentId, weekStart, dra
         </DialogHeader>
         {results ? (
           <SendAllResults results={results} drafts={sentDrafts} />
-        ) : days.length === 0 ? (
+        ) : days.length === 0 && weekLevel === 0 ? (
           <p className="text-sm text-muted-foreground">{he.sendAll.none}</p>
         ) : (
           <ul className="space-y-2">
+            {held.length ? <li className="text-xs text-muted-foreground">{he.sendAll.updatesHint}</li> : null}
+            {weekLevel ? <li className="text-sm">{tv("sendAll.weekUpdates", { count: String(weekLevel) })}</li> : null}
             {days.map((day) => {
               const ofDay = drafts.filter((draft) => draft.day === day);
+              const updates = heldUpdateCount(held, day);
               return (
                 <li key={day} className="rounded-md border p-2">
                   <label className="flex items-center gap-2 font-medium">
@@ -89,11 +100,15 @@ export function SendAllDialog({ open, onOpenChange, departmentId, weekStart, dra
                         return next;
                       })}
                     />
-                    {tv("sendAll.dayRow", { day: formatDayDate(day), count: String(ofDay.length) })}
+                    {[formatDayDate(day),
+                      ofDay.length ? tv("sendAll.dayProposals", { count: String(ofDay.length) }) : null,
+                      updates ? tv("sendAll.dayUpdates", { count: String(updates) }) : null].filter(Boolean).join(" · ")}
                   </label>
-                  <p className="ps-6 text-xs text-muted-foreground">
-                    {ofDay.map((draft) => `${draft.requesterName} · ${he.proposal.type[draft.proposal.type]}`).join(" | ")}
-                  </p>
+                  {ofDay.length ? (
+                    <p className="ps-6 text-xs text-muted-foreground">
+                      {ofDay.map((draft) => `${draft.requesterName} · ${he.proposal.type[draft.proposal.type]}`).join(" | ")}
+                    </p>
+                  ) : null}
                 </li>
               );
             })}
@@ -105,7 +120,7 @@ export function SendAllDialog({ open, onOpenChange, departmentId, weekStart, dra
           ) : (
             <>
               <Button variant="outline" onClick={() => close(false)}>{he.common.cancel}</Button>
-              <Button onClick={() => void send()} disabled={ticked.length === 0 || sendMutation.isPending} data-testid="send-all-confirm">
+              <Button onClick={() => void send()} disabled={(ticked.length === 0 && weekLevel === 0) || sendMutation.isPending} data-testid="send-all-confirm">
                 {sendMutation.isPending ? he.sendAll.sending : he.sendAll.send}
               </Button>
             </>

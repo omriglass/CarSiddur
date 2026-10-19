@@ -696,6 +696,7 @@ export type Database = {
           rush_morning_end: string
           rush_morning_percent: number
           rush_morning_start: string
+          send_all_reminder_minutes: number
           stop_minutes: number
           turnaround_minutes: number
           updated_at: string | null
@@ -728,6 +729,7 @@ export type Database = {
           rush_morning_end?: string
           rush_morning_percent?: number
           rush_morning_start?: string
+          send_all_reminder_minutes?: number
           stop_minutes?: number
           turnaround_minutes?: number
           updated_at?: string | null
@@ -760,6 +762,7 @@ export type Database = {
           rush_morning_end?: string
           rush_morning_percent?: number
           rush_morning_start?: string
+          send_all_reminder_minutes?: number
           stop_minutes?: number
           turnaround_minutes?: number
           updated_at?: string | null
@@ -1112,6 +1115,91 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "v_my_requests"
             referencedColumns: ["request_id"]
+          },
+        ]
+      }
+      held_notices: {
+        Row: {
+          actor_id: string | null
+          after_view: Json | null
+          before_view: Json | null
+          change_kind: string
+          created_at: string
+          data: Json
+          day: string | null
+          dedupe_key: string | null
+          department_id: string
+          event: Database["public"]["Enums"]["notification_event"]
+          id: string
+          recipient_id: string
+          seq: number
+          subject_id: string | null
+          subject_kind: string
+          updated_at: string
+          vars: Json
+          week_start: string
+        }
+        Insert: {
+          actor_id?: string | null
+          after_view?: Json | null
+          before_view?: Json | null
+          change_kind: string
+          created_at?: string
+          data?: Json
+          day?: string | null
+          dedupe_key?: string | null
+          department_id: string
+          event: Database["public"]["Enums"]["notification_event"]
+          id?: string
+          recipient_id: string
+          seq?: never
+          subject_id?: string | null
+          subject_kind: string
+          updated_at?: string
+          vars?: Json
+          week_start: string
+        }
+        Update: {
+          actor_id?: string | null
+          after_view?: Json | null
+          before_view?: Json | null
+          change_kind?: string
+          created_at?: string
+          data?: Json
+          day?: string | null
+          dedupe_key?: string | null
+          department_id?: string
+          event?: Database["public"]["Enums"]["notification_event"]
+          id?: string
+          recipient_id?: string
+          seq?: never
+          subject_id?: string | null
+          subject_kind?: string
+          updated_at?: string
+          vars?: Json
+          week_start?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "held_notices_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "held_notices_department_id_week_start_fkey"
+            columns: ["department_id", "week_start"]
+            isOneToOne: false
+            referencedRelation: "weeks"
+            referencedColumns: ["department_id", "week_start"]
+          },
+          {
+            foreignKeyName: "held_notices_recipient_id_fkey"
+            columns: ["recipient_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -3567,6 +3655,51 @@ export type Database = {
         }
         Relationships: []
       }
+      unsent_change_reminders: {
+        Row: {
+          created_at: string
+          department_id: string
+          id: string
+          last_reminded_at: string
+          profile_id: string
+          updated_at: string
+          week_start: string
+        }
+        Insert: {
+          created_at?: string
+          department_id: string
+          id?: string
+          last_reminded_at: string
+          profile_id: string
+          updated_at?: string
+          week_start: string
+        }
+        Update: {
+          created_at?: string
+          department_id?: string
+          id?: string
+          last_reminded_at?: string
+          profile_id?: string
+          updated_at?: string
+          week_start?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "unsent_change_reminders_department_id_week_start_fkey"
+            columns: ["department_id", "week_start"]
+            isOneToOne: false
+            referencedRelation: "weeks"
+            referencedColumns: ["department_id", "week_start"]
+          },
+          {
+            foreignKeyName: "unsent_change_reminders_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       waitlist_group_members: {
         Row: {
           adults: number
@@ -4382,6 +4515,15 @@ export type Database = {
         Args: { p_department_id: string; p_payload: Json; p_request_id: string }
         Returns: undefined
       }
+      _board_hold_applies: {
+        Args: {
+          _department_id: string
+          _event: Database["public"]["Enums"]["notification_event"]
+          _recipient: string
+          _week_start: string
+        }
+        Returns: boolean
+      }
       _can_edit_car_maintenance: {
         Args: { p_car_id: string }
         Returns: boolean
@@ -4477,7 +4619,26 @@ export type Database = {
       }
       _flex_floor: { Args: { i: string }; Returns: string }
       _frag: { Args: { _key: string; _vars?: Json }; Returns: string }
+      _held_request_view: { Args: { p_request: string }; Returns: Json }
+      _held_ride_view: { Args: { p_ride: string }; Returns: Json }
+      _held_view_of_row: {
+        Args: { p_kind: string; p_row: Json }
+        Returns: Json
+      }
+      _held_views_equal: { Args: { a: Json; b: Json }; Returns: boolean }
       _hhmm: { Args: { _at: string }; Returns: string }
+      _hold_notice: {
+        Args: {
+          _data: Json
+          _dedupe_key: string
+          _department_id: string
+          _event: Database["public"]["Enums"]["notification_event"]
+          _recipient: string
+          _vars: Json
+          _week_start: string
+        }
+        Returns: undefined
+      }
       _joiner_times: {
         Args: {
           _leg: Database["public"]["Enums"]["ride_leg"]
@@ -4636,6 +4797,18 @@ export type Database = {
       }
       _save_request_alternative: {
         Args: { p_old_depart: string; p_payload: Json; p_request_id: string }
+        Returns: undefined
+      }
+      _send_board_changes: {
+        Args: {
+          h: Database["public"]["Tables"]["held_notices"]["Row"]
+          p_before: Json
+          p_now: Json
+        }
+        Returns: undefined
+      }
+      _send_held: {
+        Args: { h: Database["public"]["Tables"]["held_notices"]["Row"] }
         Returns: undefined
       }
       _shift_place_on_car: { Args: { p_proposal_id: string }; Returns: string }
@@ -5051,6 +5224,14 @@ export type Database = {
         Args: { p_car: string; p_week: string }
         Returns: number
       }
+      flush_held_notices: {
+        Args: {
+          p_days?: string[]
+          p_department_id: string
+          p_week_start: string
+        }
+        Returns: number
+      }
       form_waitlist_groups: {
         Args: { p_day: string; p_department_id: string; p_week_start: string }
         Returns: number
@@ -5458,6 +5639,10 @@ export type Database = {
       }
       release_request_draft_rides: {
         Args: { p_request_id: string }
+        Returns: undefined
+      }
+      remind_unsent_board_changes: {
+        Args: { p_now?: string }
         Returns: undefined
       }
       remove_ride_person: {

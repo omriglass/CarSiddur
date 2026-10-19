@@ -73,6 +73,7 @@ export function DepartmentForm({ department, onSaved, settingsOnly = false }: { 
           board_start_time: settingsQuery.data.board_start_time,
           join_radius_km: settingsQuery.data.join_radius_km,
           stop_minutes: settingsQuery.data.stop_minutes,
+          send_all_reminder_minutes: settingsQuery.data.send_all_reminder_minutes,
           rush_morning_start: settingsQuery.data.rush_morning_start,
           rush_morning_end: settingsQuery.data.rush_morning_end,
           rush_morning_percent: settingsQuery.data.rush_morning_percent,
@@ -522,6 +523,26 @@ export function DepartmentForm({ department, onSaved, settingsOnly = false }: { 
                       <Checkbox checked={field.value} onCheckedChange={(v) => field.onChange(!!v)} />
                     </FormControl>
                     <FormLabel className="!mt-0">{he.adminDepartments.fieldAutoApply}</FormLabel>
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={settingsForm.control}
+                name="send_all_reminder_minutes"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{he.adminDepartments.fieldSendAllReminder}</FormLabel>
+                    <FormControl>
+                      <Input
+                        data-testid="setting-send-all-reminder"
+                        type="number"
+                        min={5}
+                        max={1440}
+                        value={field.value}
+                        onChange={(e) => field.onChange(Number(e.target.value))}
+                      />
+                    </FormControl>
+                    <p className="text-sm text-muted-foreground">{he.adminDepartments.fieldSendAllReminderHelp}</p>
                   </FormItem>
                 )}
               />

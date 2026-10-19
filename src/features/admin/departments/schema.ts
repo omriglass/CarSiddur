@@ -32,6 +32,8 @@ export const departmentSettingsSchema = z.object({
   join_radius_km: z.number().min(0).max(100),
   /** REQUIREMENTS §13.93 "Multi-stop rides": dwell time per declared stop (`request_leg_route_minutes()`/`legRouteMinutes()`), default 5. */
   stop_minutes: z.number().int().min(0).max(60),
+  /** REQ §13.138 (h): minutes an unsent board draft / update may wait before its Sadran is reminded once (default 30). */
+  send_all_reminder_minutes: z.number().int().min(5).max(1440),
   /** REQUIREMENTS §13.113: rush-hour windows (Sunday-Thursday) and the extra drive percentage inside each. */
   rush_morning_start: z.string(),
   rush_morning_end: z.string(),

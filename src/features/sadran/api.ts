@@ -797,6 +797,21 @@ export async function sendDraftProposals(departmentId: string, weekStart: string
   return (Array.isArray(data) ? data : []) as unknown as SendDraftResult[];
 }
 
+/** REQ §13.138 (c): one held board notice — who it is for, what about, which day (null = week-level). */
+export type HeldNotice = Pick<Database["public"]["Tables"]["held_notices"]["Row"], "id" | "day" | "recipient_id" | "subject_kind" | "subject_id">;
+
+export async function fetchHeldNotices(departmentId: string, weekStart: string): Promise<HeldNotice[]> {
+  const { data, error } = await supabase.from("held_notices").select("id, day, recipient_id, subject_kind, subject_id")
+    .eq("department_id", departmentId).eq("week_start", weekStart);
+  if (error) throw toAppError(error);
+  return data ?? [];
+}
+
+/** REQ §13.138 (d, e): delivers the held board notices of `days` (null = all); resolves how many notices went out. */
+export async function flushHeldNotices(departmentId: string, weekStart: string, days: string[] | null): Promise<number> {
+  return await rpc("flush_held_notices", { p_department_id: departmentId, p_week_start: weekStart, p_days: days ?? undefined });
+}
+
 /** REQ §13.94: Sadran cancels a sent/accepted proposal (`-> withdrawn`, tokens revoked, no message to the member). */
 export async function withdrawProposal(proposalId: string): Promise<void> {
   await rpc("withdraw_proposal", { p_proposal_id: proposalId });
@@ -891,6 +906,8 @@ export interface PublicationDay {
   pendingProposals: number;
   /** REQ §13.94: unsent draft proposals of this day — `ready` requires 0 and `publish_siddur` raises `publication_drafts`. */
   draftProposals: number;
+  /** REQ §13.138 (g): board updates not yet sent ("שלח את כל ההצעות") — `ready` requires 0, `publish_siddur` raises `publication_held_notices`. Absent on an older server. */
+  heldNotices?: number;
   /** REQ §13.112 (a): plan-B proposals (draft / sent / accepted) not yet answered - `ready` requires 0 and `publish_siddur` raises `publication_alternatives_pending` (not bypassable). */
   alternativeProposals?: number;
   missingDriverRides: number;

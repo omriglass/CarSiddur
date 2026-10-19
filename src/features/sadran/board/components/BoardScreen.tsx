@@ -54,7 +54,9 @@ import { applyServerMergeTimes, mergeInvalidReason, mergeLegOptions, mergePayloa
 import { requestRouteLine } from "../requestRoute";
 import { parseTimeToMinutes } from "@/features/solverBridge/buildSolverInput";
 import { representativeRideTypeCode, servedOf, servedToEditRideLegs, withChildNames } from "../../solverRun";
-import { useMergePreview, useMergePreviews, type MergePreviewSpec } from "../../hooks";
+import { useHeldNoticesQuery, useMergePreview, useMergePreviews, type MergePreviewSpec } from "../../hooks";
+import { heldUpdateCount } from "../heldUpdates";
+import { useBoardSurface, useUnsentLeaveGuard } from "../useBoardSurface";
 import { useBoardData } from "../hooks/useBoardData";
 import { useBoardDnd } from "../hooks/useBoardDnd";
 import { useBoardDisplayPrefs } from "../useBoardDisplayPrefs";
@@ -97,6 +99,9 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
   // computed there from `conflictJump.rideId` since almost every other value
   // is keyed off the same day/board data bundle.
   const board = useBoardData(departmentId, weekStart, conflictJump?.rideId);
+  // REQ §13.138 (c, h): changes made here are told on "שלח את כל ההצעות"; leaving with anything unsent asks first.
+  useBoardSurface();
+  const heldNotices = useHeldNoticesQuery(departmentId, weekStart).data ?? [];
   // Interactive/drag-drop state + every handler that mutates rides/proposals
   // from the board — `useBoardDnd`.
   const dnd = useBoardDnd(departmentId, weekStart, board);
@@ -150,6 +155,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
     const start = request ? requestStart(request) : null;
     return start ? [{ proposal, day: dateKey(start), requesterName: request?.requester_full_name ?? "" }] : [];
   });
+  const leaveBlocker = useUnsentLeaveGuard(departmentId, weekStart, pendingDrafts.length + heldUpdateCount(heldNotices));
   /** REQ §13.138 (a): the people "דיברת עם X על השינוי?" names — the requester, and for a merge everyone on the ride(s). */
   function partyNamesFor(prefill: ComposerPrefill | null): string[] {
     if (!prefill) return [];
@@ -367,6 +373,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
             selectedDay={board.selectedDay}
             openCount={board.openRequestCount}
             drafts={pendingDrafts}
+            held={heldNotices}
           />
           </div>
         </div>
@@ -686,6 +693,15 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
         carLocationId={dnd.reservationFromId}
         onSave={() => void dnd.saveReservation()}
         saving={dnd.editRideMutation.isPending || dnd.setRidePassengersMutation.isPending || dnd.markCarMoveMutation.isPending}
+      />
+      <ConfirmDialog
+        open={leaveBlocker.state === "blocked"}
+        onOpenChange={(open) => { if (!open && leaveBlocker.state === "blocked") leaveBlocker.reset(); }}
+        title={he.sendAll.leaveTitle}
+        description={tv("sendAll.leaveBody", { count: String(pendingDrafts.length + heldUpdateCount(heldNotices)) })}
+        confirmLabel={he.sendAll.leaveConfirm}
+        cancelLabel={he.sendAll.leaveStay}
+        onConfirm={() => { if (leaveBlocker.state === "blocked") leaveBlocker.proceed(); }}
       />
       <ConfirmDialog
         open={!!dnd.seriesMoveConfirm}

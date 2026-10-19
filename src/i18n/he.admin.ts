@@ -85,6 +85,7 @@ export const heAdmin = {
     fieldJoinRadiusKmHelp: 'לפני כניסה לרשימת המתנה, מוצעות נסיעות קיימות באותו יום ליעד במרחק זה או פחות.',
     /** REQUIREMENTS §13.93 "Multi-stop rides": `department_settings.stop_minutes`, default 5. */
     fieldStopMinutes: "דקות לעצירה",
+    fieldSendAllReminder: "תזכורת לסדרן/ית על שינויים שלא נשלחו (דקות)",
     /** REQUIREMENTS §13.113: `department_settings.rush_*` — the request form stretches the drive inside these windows (Sunday-Thursday). */
     rushTitle: "שעות עומס (ראשון עד חמישי)",
     rushHelp: "נסיעה שחלקה בתוך חלון עומס נמשכת יותר באחוז שמוגדר כאן. משפיע רק על חישוב שעת היציאה בבקשה כשחברים בוחרים \"להגיע עד\" או \"לצאת משם ב־\".",
@@ -95,6 +96,7 @@ export const heAdmin = {
     rushPercent: "תוספת זמן נסיעה (%)",
     rushWindowError: "שעת הסיום חייבת להיות אחרי שעת ההתחלה",
     rushOrderError: "חלון אחה״צ חייב להתחיל אחרי סיום חלון הבוקר",
+    fieldSendAllReminderHelp: "טיוטה או עדכון מהלוח שלא נשלחו (\"שלח את כל ההצעות\") אחרי כך וכך דקות — הסדרן/ית מקבל/ת תזכורת אחת. כדאי לכוון לפי הזמן שלוקח לסדרנים במחלקה לסיים טיוטה.",
     fieldStopMinutesHelp: "זמן המתנה משוער בכל עצירה בדרך — משפיע על זמני ההגעה המשוערים ועל משך הנסיעה.",
   },
   adminMembers: {

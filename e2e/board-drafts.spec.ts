@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { he } from "../src/i18n/he";
 import { newSignedInPage, NEVO_DEPARTMENT_ID, SEEDED_USERS, serviceRoleClient, scrollGridColumnTo } from "./helpers";
+import { publishedFixtureWeek } from "./published-week";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 /**
@@ -9,7 +10,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  * would produce and the request leaves the unmet list; publishing is refused while it exists,
  * and allowed again once it is discarded. NOT RUN by the author (written, not executed).
  * REQ §13.138: the chooser asks "דיברת עם X על השינוי?" — "כן, כבר סיכמנו" applies at once with no proposal,
- * a draft waits for "שלח את כל ההצעות" in the ⋮ menu (second test).
+ * a draft waits for "שלח את כל ההצעות" in the ⋮ menu (second test); on a published day the member's notice of a change
+ * made on the board is held until "שלח את כל ההצעות" (third test).
  */
 async function ensureUnpublishedWeek(service: SupabaseClient, week: string): Promise<void> {
   const { data: existing } = await service.from("weeks").select("phase").eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", week).maybeSingle();
@@ -183,6 +185,71 @@ test("\"already agreed\" applies at once with no proposal; drafts go out togethe
     await expect.poll(async () => (await service.from("proposals").select("status").eq("id", draftB!.id).single()).data?.status).toBe("sent");
     const { data: received } = await service.from("notifications").select("id").eq("recipient_id", memberB).eq("event", "proposal_received");
     expect(received).toHaveLength(1);
+    await dialog.getByRole("button", { name: he.sendAll.done }).click();
+    await expect(page.getByTestId("board-pending-count")).toHaveCount(0);
+  } finally {
+    for (const context of contexts) await context.close().catch(() => undefined);
+    await cleanupFixture();
+  }
+});
+
+test("a board change on a published day reaches the member only with \"send all\"", { tag: ["@board", "@proposals", "@publication"] }, async ({ browser }) => {
+  test.slow();
+  const service = serviceRoleClient();
+  const week = "2042-01-26";
+  const memberB = "00000000-0000-0000-0000-000000000104";
+  const { data: cars } = await service.from("cars").select("id").eq("department_id", NEVO_DEPARTMENT_ID).eq("type", "shared").eq("status", "active").limit(1);
+  const at = (time: string) => `${week}T${time}:00+02:00`;
+  const boardUrl = `/sadran/${NEVO_DEPARTMENT_ID}/${week}/board`;
+  const contexts: { close: () => Promise<void> }[] = [];
+  async function cleanupFixture() {
+    await service.from("held_notices").delete().eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", week);
+    await service.from("proposals").delete().eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", week);
+    const { data: leftovers } = await service.from("rides").select("id").eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", week);
+    if (leftovers?.length) await service.from("ride_requests").delete().in("ride_id", leftovers.map((ride) => ride.id));
+    await service.from("rides").delete().eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", week);
+    await service.from("requests").delete().eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", week);
+    await service.from("notifications").delete().eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", week);
+  }
+  await cleanupFixture();
+  await publishedFixtureWeek(week);
+  try {
+    const { data: request, error } = await service.from("requests").insert({
+      department_id: NEVO_DEPARTMENT_ID, week_start: week, requester_id: memberB, filed_by: memberB,
+      ride_type_id: "00000000-0000-0000-0000-000000000021", destination_id: "00000000-0000-0000-0000-000000000011",
+      trip_shape: "round_trip", trip_type: "round_trip", depart_at: at("07:00"), return_at: at("10:00"), status: "waitlisted",
+      flex_depart_early: "00:00:00", flex_depart_late: "00:00:00", flex_return_early: "00:00:00", flex_return_late: "00:00:00",
+    }).select("id").single();
+    if (error) throw error;
+
+    const sadran = await newSignedInPage(browser, SEEDED_USERS.sadran);
+    contexts.push(sadran.context);
+    const page = sadran.page;
+    await page.setViewportSize({ width: 1600, height: 1100 });
+    await page.goto(boardUrl);
+
+    await dragRequest(page, request.id, cars![0]!.id, 540);
+    await page.getByTestId("draft-choice-agreed").click();
+    await expect.poll(async () => (await service.from("ride_requests").select("ride_id").eq("request_id", request.id)).data?.length ?? 0).toBeGreaterThan(0);
+
+    // Held, not sent: nothing in the member's inbox yet, the ⋮ counter shows the update.
+    await expect.poll(async () => (await service.from("held_notices").select("id").eq("recipient_id", memberB).eq("week_start", week)).data?.length ?? 0).toBeGreaterThan(0);
+    const { data: early } = await service.from("notifications").select("id").eq("recipient_id", memberB).eq("week_start", week).eq("event", "outcome_changed");
+    expect(early).toHaveLength(0);
+    await expect(page.getByTestId("board-pending-count")).toBeVisible();
+
+    // The publish screen holds the day back until it is sent.
+    await page.goto(`/sadran/${NEVO_DEPARTMENT_ID}/${week}/publish`);
+    await expect(page.getByText(he.boardDrafts.publishBlockedDay)).toBeVisible();
+
+    await page.goto(boardUrl);
+    await page.getByTestId("board-actions-menu-trigger").click();
+    await page.getByTestId("board-send-all").click();
+    const dialog = page.getByTestId("send-all-dialog");
+    await dialog.getByTestId("send-all-confirm").click();
+    await expect.poll(async () => (await service.from("notifications").select("id").eq("recipient_id", memberB).eq("week_start", week).eq("event", "outcome_changed")).data?.length ?? 0).toBeGreaterThan(0);
+    const { data: left } = await service.from("held_notices").select("id").eq("week_start", week);
+    expect(left).toHaveLength(0);
     await dialog.getByRole("button", { name: he.sendAll.done }).click();
     await expect(page.getByTestId("board-pending-count")).toHaveCount(0);
   } finally {

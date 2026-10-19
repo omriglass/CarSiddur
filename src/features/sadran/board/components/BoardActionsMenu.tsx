@@ -18,10 +18,11 @@ import { he, tv } from "@/i18n/he";
 
 import { AutoFillDialog } from "./AutoFillDialog";
 import { FullResolveAction } from "./FullResolveAction";
+import { heldUpdateCount } from "../heldUpdates";
 import { SendAllDialog, type PendingDraft } from "./SendAllDialog";
 import { SetWeekCloseAction } from "./SetWeekCloseAction";
 
-import type { ActivePolicy } from "../../api";
+import type { ActivePolicy, HeldNotice } from "../../api";
 
 interface BoardActionsMenuProps {
   departmentId: string;
@@ -37,6 +38,8 @@ interface BoardActionsMenuProps {
   autoSolving: boolean;
   /** REQ §13.138 (d): the week's unsent Sadran drafts — "שלח את כל ההצעות" and the counter on the ⋮ button. */
   drafts: readonly PendingDraft[];
+  /** REQ §13.138 (c): held board notices, sent with the drafts. */
+  held: readonly HeldNotice[];
 }
 
 /**
@@ -49,8 +52,9 @@ interface BoardActionsMenuProps {
  * old inline row.
  */
 export function BoardActionsMenu({
-  departmentId, weekStart, homeDestinationId, policy, onPolicyUsed, onAutoSolveRemaining, autoSolving, days, selectedDay, openCount, drafts,
+  departmentId, weekStart, homeDestinationId, policy, onPolicyUsed, onAutoSolveRemaining, autoSolving, days, selectedDay, openCount, drafts, held,
 }: BoardActionsMenuProps) {
+  const pending = drafts.length + heldUpdateCount(held);
   const navigate = useNavigate();
   const [deviationsOpen, setDeviationsOpen] = useState(false);
   const [autoFillOpen, setAutoFillOpen] = useState(false);
@@ -65,9 +69,9 @@ export function BoardActionsMenu({
       <DropdownMenuTrigger asChild>
         <Button type="button" variant="outline" size="icon" aria-label={he.sadranBoard.actionsMenu} data-testid="board-actions-menu-trigger" className="relative">
           <MoreVertical className="size-4" />
-          {drafts.length ? (
-            <span className="absolute -end-1.5 -top-1.5 min-w-4 rounded-full bg-primary px-1 text-[10px] leading-4 text-primary-foreground" data-testid="board-pending-count" title={tv("sendAll.menuCount", { count: String(drafts.length) })}>
-              {drafts.length}
+          {pending ? (
+            <span className="absolute -end-1.5 -top-1.5 min-w-4 rounded-full bg-primary px-1 text-[10px] leading-4 text-primary-foreground" data-testid="board-pending-count" title={tv("sendAll.menuCount", { count: String(pending) })}>
+              {pending}
             </span>
           ) : null}
         </Button>
@@ -84,7 +88,7 @@ export function BoardActionsMenu({
         <DropdownMenuItem onSelect={(e) => { e.preventDefault(); setMenuOpen(false); setSendAllOpen(true); }} data-testid="board-send-all">
           <Send className="me-2 size-4" aria-hidden="true" />
           {he.sendAll.menuItem}
-          {drafts.length ? <span className="ms-auto text-xs text-muted-foreground">{tv("sendAll.menuCount", { count: String(drafts.length) })}</span> : null}
+          {pending ? <span className="ms-auto text-xs text-muted-foreground">{tv("sendAll.menuCount", { count: String(pending) })}</span> : null}
         </DropdownMenuItem>
         <DropdownMenuItem disabled={autoSolving} onSelect={(e) => { e.preventDefault(); setMenuOpen(false); setAutoFillOpen(true); }}>
           <PlayCircle className="me-2 size-4" aria-hidden="true" />
@@ -152,7 +156,7 @@ export function BoardActionsMenu({
       loading={autoSolving}
       onConfirm={(day) => { onAutoSolveRemaining(day); setAutoFillOpen(false); }}
     />
-    <SendAllDialog open={sendAllOpen} onOpenChange={setSendAllOpen} departmentId={departmentId} weekStart={weekStart} drafts={drafts} />
+    <SendAllDialog open={sendAllOpen} onOpenChange={setSendAllOpen} departmentId={departmentId} weekStart={weekStart} drafts={drafts} held={held} />
     <RequestDeviationsDialog departmentId={departmentId} weekStart={weekStart} open={deviationsOpen} onOpenChange={setDeviationsOpen} />
   </>;
 }

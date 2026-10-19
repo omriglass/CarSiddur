@@ -21,6 +21,9 @@ export const sadranKeys = {
   mileageTotals: (departmentId: string, weekStart: string) =>
     [...sadranKeys.week(departmentId, weekStart), "mileageTotals"] as const,
   /** REQUIREMENTS §13.93 (ORIGINS_PLAN §2 item 7): `car_start_locations()`. */
+  /** REQ §13.138 (c): the week's held board notices (counter, send-all dialog). */
+  heldNotices: (departmentId: string, weekStart: string) =>
+    [...sadranKeys.week(departmentId, weekStart), "heldNotices"] as const,
   carStartLocations: (departmentId: string, weekStart: string) =>
     [...sadranKeys.week(departmentId, weekStart), "carStartLocations"] as const,
   /** R5B5: the server's `merge_preview` for one ride/request/leg. */
