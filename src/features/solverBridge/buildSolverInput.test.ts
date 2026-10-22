@@ -151,6 +151,21 @@ describe("buildWeek", () => {
     expect(days[1]!.startSlot).toBe(96);
   });
 
+  it("gives the autumn clock-change Sunday 25 hours and starts every later day at its own midnight", () => {
+    // 2026-10-25: Israel moves back from UTC+3 to UTC+2 at 02:00 — a ride to Wednesday 23:59 stays in Wednesday.
+    const { startMs, days } = buildWeek("2026-10-25", "23:59:00");
+    expect(days[0]).toEqual({ dayIndex: 0, startSlot: 0, endSlot: 100, dayEndSlot: 99 }); // 23:45 local
+    expect(days[3]).toEqual({ dayIndex: 3, startSlot: 292, endSlot: 388, dayEndSlot: 387 });
+    expect(startMs + days[3]!.endSlot * 15 * 60_000).toBe(Date.parse("2026-10-28T22:00:00Z")); // Thursday 00:00 local
+  });
+
+  it("gives the spring clock-change Friday 23 hours", () => {
+    // 2027-03-26 (Friday): Israel moves forward from UTC+2 to UTC+3 at 02:00.
+    const { days } = buildWeek("2027-03-21", "23:59:00");
+    expect(days[5]!.endSlot - days[5]!.startSlot).toBe(92);
+    expect(days[6]!.startSlot).toBe(5 * 96 + 92);
+  });
+
   it("respects an earlier day_end_time", () => {
     const { days } = buildWeek(WEEK_START, "20:00:00");
     // 20:00 = 1200 min -> slot 80 within the day

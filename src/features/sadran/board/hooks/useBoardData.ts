@@ -15,6 +15,7 @@ import { ridePublicDetails } from "@/lib/ridePublicDetails";
 import { ridePassengerSummary } from "@/lib/ridePassengerSummary";
 import { fetchCarSeatConfigs } from "@/features/fleet/api";
 import { useDestinations, useRideTypes } from "@/features/fleet/hooks";
+import { buildWeek } from "@/features/solverBridge/buildSolverInput";
 import { useCarLocations, useDepartments } from "@/features/siddur/hooks";
 import { useRideChanges } from "@/features/rides/hooks";
 import { isReservation } from "@/features/rides/servedOf";
@@ -578,12 +579,7 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
             (r): r is typeof r & { id: string; car_id: string; starts_at: string; ends_at: string; origin_id: string; destination_id: string } =>
               !!r.id && !!r.car_id && !!r.starts_at && !!r.ends_at && !!r.origin_id && !!r.destination_id && !mergeGuestRideIds.has(r.id),
           );
-          const days96 = Array.from({ length: 7 }, (_, i) => ({
-            dayIndex: i as 0 | 1 | 2 | 3 | 4 | 5 | 6,
-            startSlot: i * 96,
-            endSlot: i * 96 + 96,
-            dayEndSlot: i * 96 + 95,
-          }));
+          const weekDays = buildWeek(weekStart, daySettings.day_end_time).days;
           return scanBoardConflicts({
             rides: validRides.map((r) => ({
               id: r.id,
@@ -600,7 +596,7 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
             weekStartMs,
             bufferMinutes: weekSettings.turnaroundMinutes,
             homeLocationId: department.home_destination_id,
-            days: days96,
+            days: weekDays,
             // REQUIREMENTS §13.93: each car's own base (`cars.base_location_id`) and its
             // location at week start (`car_start_locations()`) — the away band and the
             // chain-break/week-end-away warnings are relative to these, not always home.

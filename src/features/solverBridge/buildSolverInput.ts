@@ -14,6 +14,7 @@
 // the board) fetch the rows and pass them in; this module is pure data
 // shaping, safe to unit test with plain fixtures.
 
+import { addDays, format, parseISO } from "date-fns";
 import { fromZonedTime } from "date-fns-tz";
 
 import { needsLargeTrunk } from "@/lib/luggageWaiver";
@@ -101,17 +102,26 @@ function slotIndex(dateStr: string, weekStartMs: number): number {
  * this mapper only powers an ad-hoc client-side preview, never the persisted
  * board (UX_FLOWS.md §12 stage 2c note).
  */
+/**
+ * The week's days in slots from its Sunday 00:00 (Asia/Jerusalem). Each day starts at its own local midnight, so the
+ * week the clocks change has one 25-hour (autumn) or 23-hour (spring) day — 2026-10-22: fixed 96-slot days put every
+ * day after the autumn change an hour early, and a ride to 23:59 "crossed its day" (`RIDE_OUTSIDE_DAY`).
+ */
 export function buildWeek(weekStart: string, dayEndTime: string): { startMs: number; days: DayBounds[] } {
   const startMs = fromZonedTime(`${weekStart}T00:00:00`, TZ).getTime();
-  const dayEndMinutes = parseTimeToMinutes(dayEndTime);
-  const dayEndSlotInDay = Math.min(SLOTS_PER_DAY - 1, Math.floor(dayEndMinutes / 15));
+  const dayEndMinutes = Math.min(SLOTS_PER_DAY - 1, Math.floor(parseTimeToMinutes(dayEndTime) / 15)) * 15;
+  const dayEndClock = `${String(Math.floor(dayEndMinutes / 60)).padStart(2, "0")}:${String(dayEndMinutes % 60).padStart(2, "0")}:00`;
+  // Slot of a local wall-clock time on the week's `dayIndex`-th day (floored: a time in the skipped spring hour lands before it).
+  const localSlot = (dayIndex: number, clock: string) =>
+    Math.floor((fromZonedTime(`${format(addDays(parseISO(weekStart), dayIndex), "yyyy-MM-dd")}T${clock}`, TZ).getTime() - startMs) / SLOT_MS);
   const days: DayBounds[] = Array.from({ length: 7 }, (_, dayIndex) => {
-    const start = dayIndex * SLOTS_PER_DAY;
+    const start = localSlot(dayIndex, "00:00:00");
+    const end = localSlot(dayIndex + 1, "00:00:00");
     return {
       dayIndex: dayIndex as DayBounds["dayIndex"],
       startSlot: start,
-      endSlot: start + SLOTS_PER_DAY,
-      dayEndSlot: start + dayEndSlotInDay,
+      endSlot: end,
+      dayEndSlot: Math.min(end - 1, localSlot(dayIndex, dayEndClock)),
     };
   });
   return { startMs, days };
