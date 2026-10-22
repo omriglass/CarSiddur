@@ -8,6 +8,7 @@ import { env } from "@/lib/env";
 
 import { googleIdentityIfLoaded, loadGoogleIdentity, requestCalendarToken } from "./googleIdentity";
 import { createGoogleCalendarSource } from "./googleSource";
+import { readStoredCalendarToken, writeStoredCalendarToken } from "./storedToken";
 import { SAMPLE_CALENDAR_IDS, createSampleCalendarSource } from "./sampleSource";
 import { useCalendar } from "./useCalendar";
 
@@ -30,16 +31,26 @@ export function useGoogleCalendar() {
   const session = useContext(SessionContext)?.session ?? null;
   const [connecting, setConnecting] = useState(false);
 
+  const userId = session?.user.id ?? null;
+
   useEffect(() => {
     if (googleAvailable) loadGoogleIdentity().catch(() => {});
   }, [googleAvailable]);
+
+  // Owner 2026-10-22: a reload reconnects with the token remembered on this device while it is still valid.
+  useEffect(() => {
+    if (!googleAvailable || source || !userId) return;
+    const token = readStoredCalendarToken(userId, Date.now());
+    if (token) setSource(createGoogleCalendarSource(token));
+  }, [googleAvailable, source, userId, setSource]);
 
   async function connect(): Promise<void> {
     if (!googleAvailable || !clientId || connecting) return;
     setConnecting(true);
     try {
       const oauth2 = googleIdentityIfLoaded() ?? (await loadGoogleIdentity());
-      const token = await requestCalendarToken(oauth2, clientId, session?.user.email ?? undefined);
+      const { token, expiresInSeconds } = await requestCalendarToken(oauth2, clientId, session?.user.email ?? undefined);
+      if (userId) writeStoredCalendarToken({ token, expiresAt: Date.now() + expiresInSeconds * 1000, userId });
       const next = createGoogleCalendarSource(token);
       setSource(next);
       // First connection on this device: start with the member's own (primary) calendar.
@@ -74,7 +85,7 @@ export function useGoogleCalendar() {
     sampleAvailable,
     connected: available && !!source,
     connecting,
-    /** Calendars were picked on this device, but the page was reloaded (the token is gone) — one tap brings them back. */
+    /** Calendars were picked on this device, but the token is gone (expired or rejected) — one tap brings them back. */
     needsReconnect: googleAvailable && !source && selectedCalendarIds.length > 0,
     connect,
     connectSample,

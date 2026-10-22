@@ -20,7 +20,7 @@ export interface LegalDocument {
 
 const privacyHe: LegalDocument = {
   title: "מדיניות פרטיות",
-  updated: "עודכן לאחרונה: 12 באוקטובר 2026",
+  updated: "עודכן לאחרונה: 22 באוקטובר 2026",
   intro:
     "סידור רכב (CarSiddur) היא אפליקציה לניהול רכבים משותפים בקהילה, בארגון או בקבוצה. מסמך זה מסביר אילו פרטים האפליקציה שומרת, למה, מי רואה אותם ומה הזכויות שלך. את האפליקציה מפעיל עמרי גלס באופן אישי (\"המפעיל\", \"אנחנו\").",
   sections: [
@@ -39,7 +39,7 @@ const privacyHe: LegalDocument = {
       heading: "2. יומן Google (תכונה ניסיונית, לפי בחירה)",
       paragraphs: [
         "אם בחרת לחבר את יומן Google, האפליקציה מבקשת הרשאת קריאה בלבד (calendar.readonly) כדי להציג בעמעום את האירועים שלך מאחורי לוח הנסיעות שלך.",
-        "האירועים נקראים ישירות מ-Google בדפדפן שלך, ואינם נשלחים לשרתים שלנו ואינם נשמרים אצלנו. אסימון הגישה נשמר רק בזיכרון של הכרטיסייה הפתוחה ונמחק כשהיא נסגרת. במכשיר נשמרת רק רשימת היומנים שבחרת.",
+        "האירועים נקראים ישירות מ-Google בדפדפן שלך, ואינם נשלחים לשרתים שלנו ואינם נשמרים אצלנו. אסימון הגישה (לקריאה בלבד, תקף כשעה) נשמר רק בדפדפן שלך במכשיר הזה, כדי שהיומן לא ייעלם בכל טעינה של הדף, ונמחק כשתוקפו פג או כשמנתקים את היומן. במכשיר נשמרת גם רשימת היומנים שבחרת.",
         "אפשר לנתק בכל עת ב\"ניתוק היומן\" באפליקציה, או לבטל את ההרשאה בחשבון Google שלך (myaccount.google.com/permissions).",
         "השימוש של סידור רכב במידע המתקבל מממשקי Google ובהעברתו עומד במדיניות נתוני המשתמש של שירותי ה-API של Google (Google API Services User Data Policy), כולל דרישות השימוש המוגבל (Limited Use). איננו משתמשים במידע הזה לפרסום, איננו מוכרים אותו ואיננו מעבירים אותו לאיש.",
       ],
@@ -100,7 +100,7 @@ const privacyHe: LegalDocument = {
 
 const privacyEn: LegalDocument = {
   title: "Privacy Policy",
-  updated: "Last updated: October 12, 2026",
+  updated: "Last updated: October 22, 2026",
   intro:
     "CarSiddur (סידור רכב) is an app for managing shared vehicles in a community, organization or group. This policy explains what the app stores, why, who sees it and what your rights are. The app is operated by Omri Glass personally (\"the operator\", \"we\").",
   sections: [
@@ -119,7 +119,7 @@ const privacyEn: LegalDocument = {
       heading: "2. Google Calendar (experimental, optional)",
       paragraphs: [
         "If you choose to connect Google Calendar, the app asks for read-only access (calendar.readonly) to show your events faintly behind your own ride schedule.",
-        "Events are read directly from Google in your browser; they are never sent to our servers and never stored by us. The access token is kept only in the memory of the open browser tab and is gone when it closes. Only the list of calendars you picked is remembered on your device.",
+        "Events are read directly from Google in your browser; they are never sent to our servers and never stored by us. The access token (read-only, valid for about an hour) is kept only in your browser on this device, so the calendar does not disappear on every page reload, and is deleted when it expires or when you disconnect the calendar. The list of calendars you picked is remembered on your device too.",
         "You can disconnect at any time with \"ניתוק היומן\" (disconnect calendar) in the app, or revoke access in your Google Account (myaccount.google.com/permissions).",
         "CarSiddur's use and transfer of information received from Google APIs adheres to the Google API Services User Data Policy, including the Limited Use requirements. We do not use this information for advertising, do not sell it and do not share it with anyone.",
       ],
