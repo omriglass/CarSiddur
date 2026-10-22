@@ -21,7 +21,8 @@ interface SetWeekCloseActionProps {
 
 /**
  * F2 (docs/TODO.md 2026-09-14): Sadran-only "change this week's request-closing time"
- * (`set_week_close_at` RPC) — a day picker bounded to `[open_at, publish_at]` plus a
+ * (`set_week_close_at` RPC) — a day picker from `open_at`'s day to the Saturday before the week (REQ §13.141,
+ * owner 2026-10-22: the planned publish time no longer limits it — the server moves it along) plus a
  * `TimeField15`, prefilled with the current `close_at` (both rendered in Asia/Jerusalem via
  * `src/lib/time.ts`, never raw `Date` methods per CLAUDE.md hard rule 6). Rarely used, so it
  * lives behind the board's kebab menu rather than on the main screen — hidden entirely once
@@ -56,8 +57,7 @@ export function SetWeekCloseAction({ departmentId, weekStart, renderTrigger }: S
   }
 
   const openDay = dateKey(week.open_at);
-  const publishDay = dateKey(week.publish_at);
-  const dayCount = Math.max(1, differenceInCalendarDays(parseISO(publishDay), parseISO(openDay)) + 1);
+  const dayCount = Math.max(1, differenceInCalendarDays(parseISO(weekStart), parseISO(openDay)));
   const settings = settingsQuery.data;
 
   return <>

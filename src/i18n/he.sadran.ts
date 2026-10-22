@@ -250,7 +250,7 @@ export const heSadran = {
     confirm: "עדכון מועד הסגירה",
     saved: "מועד סגירת הבקשות עודכן",
     notEditable: "אי אפשר לשנות את מועד הסגירה בשלב הזה של השבוע",
-    outOfRange: "מועד הסגירה חייב להיות בין פתיחת השבוע לפרסום שלו, ברבעי שעה עגולים",
+    outOfRange: "מועד הסגירה חייב להיות בין פתיחת השבוע לתחילתו, ברבעי שעה עגולים",
   },
   sadranRideSheet: {
     /** R8U2: a merge waits for the guest's answer; the ride itself stays editable. */

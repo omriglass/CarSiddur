@@ -91,9 +91,13 @@ begin
     perform public.set_week_close_at(d,w,v_open_at-interval '1 minute');
     raise exception 'accepted a close_at at/before open_at';
   exception when raise_exception then if sqlerrm<>'week_close_out_of_range' then raise; end if; end;
+  -- REQ §13.141: a close_at after the planned publish time is fine — publish_at moves along with it.
+  perform public.set_week_close_at(d,w,v_publish_at+interval '1 day');
+  assert (select k.close_at=v_publish_at+interval '1 day' and k.publish_at=v_publish_at+interval '1 day'
+    from public.weeks k where k.department_id=d and k.week_start=w), 'a close_at after publish_at must move publish_at along';
   begin
-    perform public.set_week_close_at(d,w,v_publish_at+interval '1 minute');
-    raise exception 'accepted a close_at after publish_at';
+    perform public.set_week_close_at(d,w,(w::timestamp at time zone 'Asia/Jerusalem')+interval '15 minutes');
+    raise exception 'accepted a close_at after the week started';
   exception when raise_exception then if sqlerrm<>'week_close_out_of_range' then raise; end if; end;
   begin
     perform public.set_week_close_at(d,w,v_close_at+interval '5 minutes');
@@ -152,6 +156,21 @@ begin
     perform public.close_week_requests(d,w);
     raise exception 'closed a non-open week';
   exception when raise_exception then if sqlerrm<>'week_close_not_editable' then raise; end if; end;
+end $$;
+
+-- REQ §13.141: a department default that closes after it publishes (Thursday close, Wednesday publish)
+-- still yields a valid week — publish_at is moved to the closing time.
+do $$
+declare
+  s public.department_settings;
+  t record;
+  w date := public.current_week_start() + 728;
+begin
+  select * into s from public.department_settings limit 1;
+  s.close_dow := 4; s.close_time := time '12:00'; s.publish_dow := 3; s.publish_time := time '20:00';
+  select * into t from public.week_phase_timestamps(s, w);
+  assert t.close_at = ((w - 7 + 4) + time '12:00') at time zone 'Asia/Jerusalem', 'close_at follows the setting';
+  assert t.publish_at = t.close_at, 'publish_at must move to a later close_at';
 end $$;
 
 rollback;

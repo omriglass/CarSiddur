@@ -9813,7 +9813,7 @@ begin
 
   v_open_at := ((p_week_start - 7 + v_settings.open_dow) + v_settings.open_time) at time zone 'Asia/Jerusalem';
   v_close_at := ((p_week_start - 7 + v_settings.close_dow) + v_settings.close_time) at time zone 'Asia/Jerusalem';
-  v_publish_at := ((p_week_start - 7 + v_settings.publish_dow) + v_settings.publish_time) at time zone 'Asia/Jerusalem';
+  v_publish_at := greatest(((p_week_start - 7 + v_settings.publish_dow) + v_settings.publish_time) at time zone 'Asia/Jerusalem', v_close_at);
 
   perform set_config('app.audit_reason', 'open_week', true);
   insert into public.weeks (department_id, week_start, phase, open_at, close_at, publish_at, opened_by)
@@ -15502,7 +15502,9 @@ begin
     raise exception 'week_close_not_editable';
   end if;
 
-  if p_close_at is null or p_close_at <= w.open_at or p_close_at > w.publish_at or not public.is_quarter_hour(p_close_at) then
+  if p_close_at is null or p_close_at <= w.open_at
+    or p_close_at > (p_week_start::timestamp at time zone 'Asia/Jerusalem')
+    or not public.is_quarter_hour(p_close_at) then
     raise exception 'week_close_out_of_range';
   end if;
 
@@ -15514,7 +15516,7 @@ begin
   end if;
 
   perform set_config('app.audit_reason', 'set_week_close_at', true);
-  update public.weeks set close_at = p_close_at, phase = v_new_phase
+  update public.weeks set close_at = p_close_at, publish_at = greatest(publish_at, p_close_at), phase = v_new_phase
     where department_id = p_department_id and week_start = p_week_start;
 
   -- Same transition, same event and recipients as advance_week_phases()'s own open->solving
@@ -18067,10 +18069,11 @@ CREATE OR REPLACE FUNCTION "public"."week_phase_timestamps"("p_settings" "public
     LANGUAGE "sql" STABLE
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
-  select
-    ((p_week_start - 7 + p_settings.open_dow) + p_settings.open_time) at time zone 'Asia/Jerusalem',
-    ((p_week_start - 7 + p_settings.close_dow) + p_settings.close_time) at time zone 'Asia/Jerusalem',
-    ((p_week_start - 7 + p_settings.publish_dow) + p_settings.publish_time) at time zone 'Asia/Jerusalem';
+  select o, c, greatest(p, c)
+  from (select
+    ((p_week_start - 7 + p_settings.open_dow) + p_settings.open_time) at time zone 'Asia/Jerusalem' as o,
+    ((p_week_start - 7 + p_settings.close_dow) + p_settings.close_time) at time zone 'Asia/Jerusalem' as c,
+    ((p_week_start - 7 + p_settings.publish_dow) + p_settings.publish_time) at time zone 'Asia/Jerusalem' as p) t;
 $$;
 
 
