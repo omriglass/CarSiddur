@@ -663,6 +663,14 @@ export interface ApplyPayload {
  * about to affect, and nothing is left pointing at a ride that no longer
  * exists.
  */
+/**
+ * Rides in `payload` that end after 23:59 of their start day (REQ §13.140, owner 2026-10-22 — temporary): the
+ * server cuts them at 23:59 (`clamp_ride_end_to_day()`), and the Sadran is told how many so they can check them.
+ */
+export function ridesPastDayEnd(payload: Pick<ApplyPayload, "rides">): number {
+  return payload.rides.filter((ride) => dateKey(ride.ends_at) !== dateKey(ride.starts_at) && Date.parse(ride.ends_at) > Date.parse(ride.starts_at)).length;
+}
+
 export function buildApplyPayload(params: {
   output: SolverOutput;
   weekStartMs: number;

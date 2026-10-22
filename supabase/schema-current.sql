@@ -5488,6 +5488,27 @@ end $$;
 ALTER FUNCTION "public"."claim_ride_driver"("p_ride_id" "uuid", "p_expected_version" integer) OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."clamp_ride_end_to_day"() RETURNS "trigger"
+    LANGUAGE "plpgsql"
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_day_end timestamptz;
+begin
+  if new.starts_at is null or new.ends_at is null or new.status = 'cancelled' then
+    return new;
+  end if;
+  v_day_end := ((new.starts_at at time zone 'Asia/Jerusalem')::date + time '23:59') at time zone 'Asia/Jerusalem';
+  if new.ends_at > v_day_end and new.starts_at < v_day_end then
+    new.ends_at := v_day_end;
+  end if;
+  return new;
+end $$;
+
+
+ALTER FUNCTION "public"."clamp_ride_end_to_day"() OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."cleanup_removed_department_member"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -21833,6 +21854,10 @@ CREATE CONSTRAINT TRIGGER "ride_seat_fit_on_car_change" AFTER UPDATE OF "car_id"
 
 
 
+CREATE OR REPLACE TRIGGER "rides_at_day_end" BEFORE INSERT OR UPDATE OF "starts_at", "ends_at", "status" ON "public"."rides" FOR EACH ROW EXECUTE FUNCTION "public"."clamp_ride_end_to_day"();
+
+
+
 CREATE OR REPLACE TRIGGER "rides_before_write" BEFORE INSERT OR UPDATE OF "starts_at", "ends_at", "car_id", "department_id", "status", "turnaround_override_minutes", "planning_conflict" ON "public"."rides" FOR EACH ROW EXECUTE FUNCTION "public"."rides_before_write"();
 
 
@@ -24229,6 +24254,11 @@ GRANT ALL ON FUNCTION "public"."claim_freed_slot"("p_offer_id" "uuid", "p_reques
 REVOKE ALL ON FUNCTION "public"."claim_ride_driver"("p_ride_id" "uuid", "p_expected_version" integer) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."claim_ride_driver"("p_ride_id" "uuid", "p_expected_version" integer) TO "authenticated";
 GRANT ALL ON FUNCTION "public"."claim_ride_driver"("p_ride_id" "uuid", "p_expected_version" integer) TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."clamp_ride_end_to_day"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."clamp_ride_end_to_day"() TO "service_role";
 
 
 

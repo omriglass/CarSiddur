@@ -229,6 +229,7 @@ export const heSadran = {
     seriesMoveBody: "הנסיעה היא יום {{index}} מתוך {{count}}. כל הימים יועברו ל{{car}} אם הוא פנוי בכולם.",
     seriesUnassignHint: "בקשה רב-יומית: אפשר לבטל את כל הימים או להעביר לרכב אחר",
     skippedSeries: "{{count}} בקשות רב-יומיות לא שובצו (אין רכב פנוי לכל הימים)",
+    ridesCutAtDayEnd: "{{count}} נסיעות היו מסתיימות אחרי חצות ונקטעו ב־23:59 — כדאי לבדוק אותן",
   },
   /**
    * F2 (docs/TODO.md 2026-09-14): per-week custom request-closing time,

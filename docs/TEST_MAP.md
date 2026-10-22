@@ -411,7 +411,7 @@ local replay stack and comparing it with the production solve — scripts/replay
 
 **Automated**:
 - Vitest: `npx vitest run src/solver src/features/solverBridge`
-- SQL: `solve_semantics.sql`, `car_mileage.sql`, `multi_stop.sql`
+- SQL: `solve_semantics.sql`, `car_mileage.sql`, `multi_stop.sql`, `ride_day_end.sql` (REQ §13.140: a ride end after 23:59 is cut to 23:59 on insert/update; Vitest `ridesPastDayEnd` in `src/features/sadran/applySolve.test.ts`)
 - Playwright: `npx playwright test --grep "@solver"` (indirect coverage only — the solver itself is
   pure and has no UI of its own; these specs exercise it end to end)
 - **Extended (opt-in, disposable stack only):** `npm run qa:regression -- --seed 7` (or `QA_REGRESSION=1 QA_API_URL=<disposable api> npm run db:test`) generates the seeded QA week, solves it with the real solver, applies it as the QA Sadran and checks the invariants (docs/QA_SIMULATION.md §5). CI's database job runs it as a non-blocking "Extended" step.

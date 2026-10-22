@@ -13,7 +13,7 @@ import type { Json } from "@/integrations/supabase/types";
 import type { ActivePolicy } from "../../api";
 import { useApplySolverResultMutation, useWeekRow } from "../../hooks";
 import {
-  buildApplyPayload, computeFullResolveDiff, gatherSolverContext, hashSolverInput,
+  buildApplyPayload, computeFullResolveDiff, gatherSolverContext, hashSolverInput, ridesPastDayEnd,
   nowMs, relayPartnerOf, runSolve, servedOf, type FullResolveDiff,
 } from "../../solverRun";
 
@@ -83,6 +83,8 @@ export function FullResolveAction({ departmentId, weekStart, homeDestinationId, 
       if (summary.skippedSeries?.length) {
         toast(tv("sadranBoard.skippedSeries", { count: String(summary.skippedSeries.length) }));
       }
+      const cut = ridesPastDayEnd(preview.payload);
+      if (cut) toast.warning(tv("sadranBoard.ridesCutAtDayEnd", { count: String(cut) }));
       setPreview(null);
     } catch { /* The mutation reports validation/staleness errors. */ }
   }

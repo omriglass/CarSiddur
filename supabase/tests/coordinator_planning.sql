@@ -91,13 +91,16 @@ begin
   -- Simulate a pre-migration overnight reservation, then restore the guard.
   set constraints all immediate;
   alter table public.rides disable trigger rides_within_week;
+  alter table public.rides disable trigger rides_at_day_end;
   insert into public.rides(department_id,week_start,car_id,starts_at,ends_at,origin_id,destination_id,status,created_by,notes)
     values(dept,w,car2,((w+4)+time '23:00') at time zone 'Asia/Jerusalem',((w+5)+time '01:00') at time zone 'Asia/Jerusalem',home,home,'draft',manager,'Legacy reservation') returning id into legacy;
+  alter table public.rides enable trigger rides_at_day_end;
   alter table public.rides enable trigger rides_within_week;
   update public.rides set notes='Legacy metadata updated' where id=legacy;
   assert (select notes='Legacy metadata updated' from public.rides where id=legacy),'legacy metadata was invalidated';
-  begin update public.rides set ends_at=ends_at+interval '15 minutes' where id=legacy;raise exception 'legacy overnight schedule mutated';
-  exception when raise_exception then if sqlerrm<>'ride_must_end_same_day' then raise;end if;end;
+  -- REQ §13.140: rescheduling a legacy overnight ride no longer fails — its end is cut at 23:59 of its start day.
+  update public.rides set ends_at=ends_at+interval '15 minutes' where id=legacy;
+  assert (select ends_at=((w+4)+time '23:59') at time zone 'Asia/Jerusalem' from public.rides where id=legacy),'legacy overnight schedule not cut at 23:59';
 end $$;
 set constraints all immediate;
 set local role authenticated;

@@ -768,6 +768,8 @@
         "supabase/migrations/**/*route_minutes*",
         "supabase/migrations/**/*route_helpers*",
         "supabase/tests/multi_stop.sql",
+        "supabase/tests/ride_day_end.sql",
+        "supabase/migrations/**/*ride_end_to_day*",
         "scripts/qa/**",
         "scripts/replay/**"
       ],
@@ -778,7 +780,8 @@
       "sql": [
         "solve_semantics.sql",
         "car_mileage.sql",
-        "multi_stop.sql"
+        "multi_stop.sql",
+        "ride_day_end.sql"
       ],
       "playwrightTags": [
         "@solver"

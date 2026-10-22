@@ -56,6 +56,7 @@ import {
 } from "../../hooks";
 import {
   buildApplyPayload,
+  ridesPastDayEnd,
   buildSolverContextFromData,
   gatherSolverContext,
   hashSolverInput,
@@ -374,6 +375,8 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
       if (summary.skippedSeries?.length) {
         toast(tv("sadranBoard.skippedSeries", { count: String(summary.skippedSeries.length) }));
       }
+      const cut = ridesPastDayEnd(payload);
+      if (cut) toast.warning(tv("sadranBoard.ridesCutAtDayEnd", { count: String(cut) }));
     } catch {
       // toast already shown by the mutation, or silently a no-op if nothing was open
     } finally {

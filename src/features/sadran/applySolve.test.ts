@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { FixedRide } from "@/solver";
-import { boardRideToFixedRide, buildApplyPayload, computeFullResolveDiff, draftFixedRides, restrictInputToDay, selectOpenRequests, servedOf } from "./applySolve";
+import { boardRideToFixedRide, buildApplyPayload, computeFullResolveDiff, draftFixedRides, restrictInputToDay, ridesPastDayEnd, selectOpenRequests, servedOf } from "./applySolve";
 import { solve } from "@/solver";
 import { dateKey } from "@/lib/time";
 import { baseInput, makeCar, makeRequest, makeSeriesLegs, slotMs, WEEK_START_MS } from "@/solver/__fixtures__/gen";
@@ -391,5 +391,16 @@ describe("restrictInputToDay (per-day autofill, R7U1)", () => {
     ] });
     restrictInputToDay(input, dateKey(new Date(slotMs(2 * 96 + 40))));
     expect(input.requests.map((r) => r.id)).toEqual(["s1", "s2", "s3"]);
+  });
+});
+
+describe("ridesPastDayEnd (REQ §13.140)", () => {
+  it("counts rides that would end after 23:59 of their start day (Asia/Jerusalem)", () => {
+    const ride = (starts_at: string, ends_at: string) => ({ starts_at, ends_at }) as Parameters<typeof ridesPastDayEnd>[0]["rides"][number];
+    expect(ridesPastDayEnd({ rides: [
+      ride("2026-10-27T21:00:00Z", "2026-10-27T22:15:00Z"), // 23:00–00:15 Jerusalem (UTC+2 after 25.10): past midnight
+      ride("2026-10-27T06:00:00Z", "2026-10-27T21:59:00Z"), // 08:00–23:59: fine
+      ride("2026-10-27T05:00:00Z", "2026-10-27T07:00:00Z"),
+    ] })).toBe(1);
   });
 });
