@@ -178,8 +178,6 @@ export const heMember = {
     extraAdultsMore: "עוד מבוגר/ת",
     extraAdultsLess: "פחות מבוגרים",
     /** R9B2: `/requests/:id/edit` of a multi-day request. */
-    seriesPanelTitle: "בקשה רב-יומית · {{from}}–{{to}}",
-    seriesPanelBody: "בקשה רב-יומית לא נערכת — אפשר רק לקצר אותה או לבטל אותה.",
     suggestionsTitle: "בקשות חוזרות לשבוע שנפתח",
     useSuggestion: "הגש/י",
     snoozeSuggestion: "לא השבוע",

@@ -211,3 +211,12 @@ export async function scrollGridColumnTo(column: Locator, minutes: number, gridS
     { minutes, gridStart, gridEnd },
   );
 }
+
+/**
+ * Opens a ride's details (owner 2026-10-22): the first click on a ride block shows its summary popup, the popup's
+ * "פרטי הנסיעה" button opens the ride sheet / editor.
+ */
+export async function openRideDetails(page: Page, ride: Locator): Promise<void> {
+  await ride.click();
+  await page.getByTestId("ride-peek-open").click();
+}

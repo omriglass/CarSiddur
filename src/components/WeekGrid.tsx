@@ -23,7 +23,6 @@ import { GuestChips, type GuestDropTarget, type WeekGridGuest } from "./GuestChi
 import { bottomNavInset, pageScroller, scrollerViewport } from "./pageScroller";
 import { itemVisibilityStyle } from "./itemVisibility";
 import { RideNotes } from "./RideNotes";
-import { rideNotesTruncated } from "./rideNotesTruncated";
 import { clampRideVertical, minutesFromClientY, snapTimeShift } from "./weekGridGeometry";
 
 /**
@@ -360,6 +359,8 @@ const RIDE_MIN_HEIGHT_PX = 32;
 const SHORT_RIDE_MINUTES = 30;
 /** Below this many pixels of movement, a pointerdown/up pair is a click, not a drag. */
 const DRAG_START_THRESHOLD_PX = 4;
+/** A scroll this soon after the ride popup opened does not close it (layout settling, not the user). */
+const PEEK_SCROLL_GRACE_MS = 300;
 /**
  * Car-header drag (REQ §13.92): same touch-vs-mouse gesture split as
  * `UnmetList`'s own drag-and-drop (`sadran/board/components/UnmetList.tsx`)
@@ -372,11 +373,6 @@ const CAR_TOUCH_SCROLL_CANCEL_PX = 10;
 const CAR_LONG_PRESS_MS = 350;
 const CAR_MOUSE_DRAG_CONFIRM_PX = 6;
 
-/** A phone/tablet (no hover): the notes popup replaces the hover title there. */
-function touchPrimary(): boolean {
-  return typeof window.matchMedia === "function" && window.matchMedia("(hover: none)").matches;
-}
-
 function defaultRenderRide(ride: WeekGridRide) {
   return (
     <span className="flex min-h-0 w-full shrink flex-col items-start overflow-hidden px-1.5 py-1 text-start text-xs font-medium text-foreground">
@@ -385,7 +381,7 @@ function defaultRenderRide(ride: WeekGridRide) {
         <span className="w-full shrink-0 truncate text-xs opacity-90">{tv("ride.seriesDay", { index: String(ride.seriesIndex ?? 1), count: String(ride.seriesCount) })}</span>
       ) : null}
       {ride.passengerSummary ? <span className="w-full shrink-0 whitespace-normal break-words text-xs" title={ride.passengerSummary}>{ride.passengerSummary}</span> : null}
-      {/* Owner 2026-10-22: notes take whatever height the block leaves (they were cut at two lines); a phone tap on cut notes shows them whole first. */}
+      {/* Owner 2026-10-22: notes take whatever height the block leaves (they were cut at two lines); the click popup shows them whole. */}
       {ride.description || ride.coordinatorNotes ? (
         <RideNotes>
           {ride.description ? <span className="w-full whitespace-pre-wrap break-words text-xs" title={ride.description}>{ride.description}</span> : null}
@@ -500,6 +496,35 @@ export function WeekGrid({
   const colRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const scrollViewportRef = useRef<HTMLDivElement | null>(null);
   const [notesPeek, setNotesPeek] = useState<{ rideId: string; el: HTMLElement } | null>(null);
+  const notesPeekRef = useRef<HTMLDivElement | null>(null);
+  // Owner 2026-10-22: the popup never blocks the screen — any scroll (page or grid, not the popup's own) closes it,
+  // and so does a finger drag on a phone even when nothing scrolls (a page edge, a ride being dragged on the board).
+  useEffect(() => {
+    if (!notesPeek) return;
+    const insidePopup = (event: Event) => event.target instanceof Node && !!notesPeekRef.current?.contains(event.target);
+    // The grid itself may still be settling (header scroll sync, the board re-rendering) right after the tap.
+    const openedAt = Date.now();
+    const close = (event: Event) => {
+      if (!insidePopup(event) && Date.now() - openedAt > PEEK_SCROLL_GRACE_MS) setNotesPeek(null);
+    };
+    let touchStart: { x: number; y: number } | null = null;
+    const onTouchStart = (event: TouchEvent) => {
+      const t = event.touches[0];
+      touchStart = t && !insidePopup(event) ? { x: t.clientX, y: t.clientY } : null;
+    };
+    const onTouchMove = (event: TouchEvent) => {
+      const t = event.touches[0];
+      if (touchStart && t && Math.hypot(t.clientX - touchStart.x, t.clientY - touchStart.y) > DRAG_START_THRESHOLD_PX * 2) setNotesPeek(null);
+    };
+    window.addEventListener("scroll", close, { capture: true, passive: true });
+    window.addEventListener("touchstart", onTouchStart, { capture: true, passive: true });
+    window.addEventListener("touchmove", onTouchMove, { capture: true, passive: true });
+    return () => {
+      window.removeEventListener("scroll", close, { capture: true });
+      window.removeEventListener("touchstart", onTouchStart, { capture: true });
+      window.removeEventListener("touchmove", onTouchMove, { capture: true });
+    };
+  }, [notesPeek]);
   // REQ §13.106: on a computer the table is part of the page (the page scrolls vertically, the car
   // names are pinned above the box); below `lg` the box scrolls itself.
   const isDesktopWidth = useIsDesktop();
@@ -869,13 +894,13 @@ export function WeekGrid({
   }
 
   /**
-   * Opens a ride (owner 2026-10-22): on a touch screen, a first tap on a block whose notes are cut off shows the
-   * notes in a small popup (`notesPeek`); the next tap on the same block, or the popup's button, opens the ride.
-   * A mouse keeps the hover title and opens the ride at once.
+   * Opens a ride (owner 2026-10-22): a first click or tap on a block shows its summary in a small popup (`notesPeek`
+   * — label, time, people, notes in full); the popup's button, or a second click on the same block, opens the ride
+   * (its details / edit sheet via `onRideClick`).
    */
   function openRide(rideId: string) {
     const el = scrollViewportRef.current?.querySelector<HTMLElement>(`[data-ride-id="${rideId.replace(/"/g, '\\"')}"]`) ?? null;
-    if (el && notesPeek?.rideId !== rideId && touchPrimary() && rideNotesTruncated(el)) {
+    if (el && notesPeek?.rideId !== rideId) {
       setNotesPeek({ rideId, el });
       return;
     }
@@ -1521,17 +1546,24 @@ export function WeekGrid({
       <Popover open onOpenChange={(open) => { if (!open) setNotesPeek(null); }}>
         <PopoverAnchor virtualRef={{ current: notesPeek.el }} />
         <PopoverContent
+          ref={notesPeekRef}
+          // Focus stays on the ride: moving it into the popup could scroll the page, and a scroll closes the popup.
+          onOpenAutoFocus={(e) => e.preventDefault()}
           className="flex max-h-[60dvh] w-72 max-w-[calc(100vw-2rem)] flex-col gap-2 overflow-y-auto p-3 text-sm"
           // The second tap on the same block must reach it (it opens the ride), not just close the popup.
           onInteractOutside={(e) => { if (e.target instanceof Node && notesPeek.el.contains(e.target)) e.preventDefault(); }}
           data-testid="ride-notes-peek"
         >
           <p className="font-medium">{peekRide.label}</p>
+          <p className="text-xs text-muted-foreground" dir="ltr">{formatMinutes(peekRide.startMinutes)}–{formatMinutes(peekRide.endMinutes)}</p>
+          {peekRide.passengerSummary ? <p className="whitespace-pre-wrap break-words">{peekRide.passengerSummary}</p> : null}
           {peekRide.description ? <p className="whitespace-pre-wrap break-words">{peekRide.description}</p> : null}
           {peekRide.coordinatorNotes ? <p className="whitespace-pre-wrap break-words">{he.field.notes}: {peekRide.coordinatorNotes}</p> : null}
-          <Button type="button" size="sm" variant="outline" className="self-start" onClick={() => { setNotesPeek(null); onRideClick?.(peekRide.id); }}>
-            {he.screen.ride.detail}
-          </Button>
+          {onRideClick ? (
+            <Button type="button" size="sm" variant="outline" className="self-start" data-testid="ride-peek-open" onClick={() => { setNotesPeek(null); onRideClick(peekRide.id); }}>
+              {he.screen.ride.detail}
+            </Button>
+          ) : null}
         </PopoverContent>
       </Popover>
     ) : null}

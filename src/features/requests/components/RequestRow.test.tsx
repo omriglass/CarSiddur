@@ -110,14 +110,14 @@ describe("RequestRow", () => {
     expect(screen.queryByTestId("request-filed-line")).not.toBeInTheDocument();
   });
 
-  it("hides edit for a multi-day series card", () => {
+  it("offers edit for a multi-day series card (REQ §13.142)", () => {
     const [display] = toDisplayRows([
       request({ id: "leg-1", seriesId: "series-1", seriesIndex: 1, seriesCount: 2, status: "submitted", templateId: null }),
       request({ id: "leg-2", seriesId: "series-1", seriesIndex: 2, seriesCount: 2, status: "submitted", templateId: null }),
     ]);
     vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-09-07T12:00:00Z"));
     render(<MemoryRouter><RequestRow row={display!} /></MemoryRouter>);
-    expect(screen.queryByRole("link", { name: he.requestsList.edit })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: he.requestsList.edit })).toBeInTheDocument();
   });
   it("shows the 'be back on time' note with an accessible '!' when the parent passes one (REQ §13.108 f)", () => {
     show(request(), {

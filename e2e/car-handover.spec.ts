@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import { he, tv } from "../src/i18n/he";
-import { NEVO_DEPARTMENT_ID, newSignedInPage, SEEDED_USERS, serviceRoleClient } from "./helpers";
+import { NEVO_DEPARTMENT_ID, newSignedInPage, SEEDED_USERS, serviceRoleClient, openRideDetails } from "./helpers";
 import { publishedFixtureWeek } from "./published-week";
 
 /**
@@ -104,7 +104,7 @@ test.describe("be back on time (!) note", { tag: ["@siddur"] }, () => {
       await test.step("member1 sees the same note in the siddur ride sheet", async () => {
         await member1.page.setViewportSize({ width: 1440, height: 900 });
         await member1.page.goto(`/siddur/${NEVO_DEPARTMENT_ID}/${WEEK}`);
-        await member1.page.locator(`[data-ride-id="${rideIds[0]}"]:visible`).click();
+        await openRideDetails(member1.page, member1.page.locator(`[data-ride-id="${rideIds[0]}"]:visible`));
         const sheet = member1.page.getByRole("dialog");
         await expect(sheet.getByTestId("car-handover-notice")).toContainText(returnBy);
       });
@@ -115,7 +115,7 @@ test.describe("be back on time (!) note", { tag: ["@siddur"] }, () => {
         await expect(member2.page.getByTestId("car-handover-notice").filter({ hasText: returnBy })).toHaveCount(0);
         await member2.page.setViewportSize({ width: 1440, height: 900 });
         await member2.page.goto(`/siddur/${NEVO_DEPARTMENT_ID}/${WEEK}`);
-        await member2.page.locator(`[data-ride-id="${rideIds[1]}"]:visible`).click();
+        await openRideDetails(member2.page, member2.page.locator(`[data-ride-id="${rideIds[1]}"]:visible`));
         await expect(member2.page.getByRole("dialog").getByTestId("car-handover-notice")).toContainText(arrivesFrom);
       });
     } finally {
@@ -145,7 +145,7 @@ test.describe("be back on time (!) note", { tag: ["@siddur"] }, () => {
       await test.step("no note in the ride sheet", async () => {
         await member1.page.setViewportSize({ width: 1440, height: 900 });
         await gotoAfterNeighbours(member1.page, `/siddur/${NEVO_DEPARTMENT_ID}/${WEEK}`, async () => {
-          await member1.page.locator(`[data-ride-id="${rideIds[0]}"]:visible`).click();
+          await openRideDetails(member1.page, member1.page.locator(`[data-ride-id="${rideIds[0]}"]:visible`));
         });
         const sheet = member1.page.getByRole("dialog");
         await expect(sheet).toBeVisible();

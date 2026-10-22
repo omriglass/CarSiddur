@@ -1,3 +1,4 @@
+import { formatInTimeZone } from "date-fns-tz";
 import { expect, test } from "@playwright/test";
 
 import { paths } from "../src/app/routes";
@@ -46,12 +47,14 @@ test.describe.serial("publishing with driverless rides and named conflicts", { t
   test("a conflicting day names each blocking ride (R12B6)", async ({ browser }) => {
     // Tuesday: two overlapping rides on the same car (inserted with triggers bypassed through the service role is not possible,
     // so the second ride sits outside the car's opening hours: a same-day-crossing window is a conflict the RPC names).
-    const { error } = await service.from("rides").insert({
+    const { data: stored, error } = await service.from("rides").insert({
       department_id: NEVO_DEPARTMENT_ID, week_start: WEEK, car_id: CAR, origin_id: PLACES.home.id, destination_id: PLACES.home.id,
       created_by: PROFILE_IDS.sadran, driver_id: PROFILE_IDS.member1, status: "draft", is_pinned: true, pin_reason: "SADRAN_MANUAL",
       starts_at: winterAt(TUESDAY, "22:00"), ends_at: winterAt(dayOfWeek(WEEK, 3), "01:00"),
-    });
-    test.skip(!!error, "the database refuses to even store a day-crossing ride on this stack; the SQL suite covers the naming");
+    }).select("ends_at").single();
+    // REQ §13.140: a ride that would end after midnight is stored cut at 23:59, so no day-crossing ride exists to name.
+    if (!error) expect(formatInTimeZone(stored!.ends_at, "Asia/Jerusalem", "yyyy-MM-dd HH:mm")).toBe(`${TUESDAY} 23:59`);
+    test.skip(true, "a day-crossing ride can no longer be stored (cut at 23:59, REQ §13.140); the SQL suite covers the naming");
     const { page, context } = await newSignedInPage(browser, SEEDED_USERS.sadran);
     await page.goto(paths.sadran.publish(NEVO_DEPARTMENT_ID, WEEK));
     await expect(page.getByTestId("publish-conflict-row").first()).toContainText(he.sadranPublish.conflictReason.bad_window);

@@ -3,7 +3,7 @@ import { execSync } from "node:child_process";
 import { formatInTimeZone } from "date-fns-tz";
 import { expect, test, type Page } from "@playwright/test";
 
-import { NEVO_DEPARTMENT_ID, serviceRoleClient, primeLanding, confirmAutoFillWholeWeek, scrollGridColumnTo } from "./helpers";
+import { NEVO_DEPARTMENT_ID, serviceRoleClient, primeLanding, confirmAutoFillWholeWeek, scrollGridColumnTo, openRideDetails } from "./helpers";
 import resetDatabase from "./global-setup";
 import { he } from "../src/i18n/he";
 
@@ -353,14 +353,14 @@ test.describe.serial("board (bug-fix pass regression, fake-week data)", { tag: [
       await expect(radio).toHaveAttribute("aria-checked", "true");
     }
     await expect(rideLocator).toBeVisible({ timeout: 10_000 });
-    await rideLocator.click();
+    await openRideDetails(page, rideLocator);
     await expect(page.getByRole("heading", { name: "פרטי הנסיעה" })).toBeVisible();
 
     // "העבר לרכב" select (bug #2's no-drag/touch fallback). Under load the board re-renders while the sheet opens (the
     // solver preview lands), detaching the select mid-click: retry the whole open-select-save sequence, re-opening the
     // ride sheet when it was closed by the re-render.
     await expect(async () => {
-      if (!(await page.getByRole("heading", { name: "פרטי הנסיעה" }).isVisible())) await rideLocator.click({ timeout: 5_000 });
+      if (!(await page.getByRole("heading", { name: "פרטי הנסיעה" }).isVisible())) await openRideDetails(page, rideLocator);
       await page.getByTestId("ride-car-select").click({ timeout: 5_000 });
       await page.getByRole("option", { name: chosenCar?.name, exact: true }).click({ timeout: 5_000 });
       await page.getByRole("button", { name: "שמור שינויים" }).click({ timeout: 5_000 });
@@ -657,7 +657,7 @@ test.describe.serial("board (bug-fix pass regression, fake-week data)", { tag: [
       expect(minutesSinceMidnight(after!.ends_at)).toBe(105);
     }).toPass();
     await expect(block).toContainText("00:30–01:45");
-    await block.click();
+    await openRideDetails(page, block);
     await page.getByRole("button", { name: "הסר שיבוץ" }).click();
     await expect(block).toHaveCount(0);
   });

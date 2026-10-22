@@ -2,12 +2,12 @@ import { useEffect, useRef, type ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
 
-import { RIDE_NOTES_ATTR, RIDE_NOTES_TRUNCATED_ATTR as TRUNCATED_ATTR } from "./rideNotesTruncated";
+import { RIDE_NOTES_ATTR, RIDE_NOTES_TRUNCATED_ATTR as TRUNCATED_ATTR } from "./rideNotesAttrs";
 
 /**
  * A ride block's notes (owner 2026-10-22): as much as the block's height leaves — the block's own flex column
  * shrinks this part first, so the label and the time stay — instead of a fixed two lines. When the text is cut,
- * the bottom fades out and the element carries `data-truncated` (a phone tap then shows the whole text first).
+ * the bottom fades out and the element carries `data-truncated` (the click popup shows the whole text).
  */
 export function RideNotes({ children, className }: { children: ReactNode; className?: string }) {
   const ref = useRef<HTMLSpanElement>(null);

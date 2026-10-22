@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { publishedFixtureWeek } from "./published-week";
 import { he } from "../src/i18n/he";
-import { NEVO_DEPARTMENT_ID, newSignedInPage, SEEDED_USERS, serviceRoleClient } from "./helpers";
+import { NEVO_DEPARTMENT_ID, newSignedInPage, SEEDED_USERS, serviceRoleClient, openRideDetails } from "./helpers";
 
 test.use({ actionTimeout: 15_000 });
 
@@ -42,17 +42,17 @@ test("members resize owned rides and resolve a shadow collision through explicit
     await page.goto(`/siddur/${NEVO_DEPARTMENT_ID}/${week}`);
     const own = page.locator(`[data-ride-id="${rideIds[0]}"]:visible`);
     const other = page.locator(`[data-ride-id="${rideIds[1]}"]:visible`);
-    await other.click();
+    await openRideDetails(page, other);
     await expect(page.getByText(he.rideEditing.edit, { exact: true })).toHaveCount(0);
     await page.keyboard.press("Escape");
-    await own.click();
+    await openRideDetails(page, own);
     await page.getByRole("dialog").getByLabel(he.field.return, { exact: true }).fill("11:30");
     await page.getByRole("dialog").getByRole("button", { name: he.common.save, exact: true }).click();
     await expect(page.getByRole("dialog")).not.toBeVisible();
     const { data: resized } = await service.from("rides").select("ends_at").eq("id", rideIds[0]).single();
     expect(new Date(resized!.ends_at).toISOString()).toBe("2041-01-06T09:30:00.000Z");
 
-    await own.click();
+    await openRideDetails(page, own);
     await page.getByRole("dialog").getByLabel(he.field.return, { exact: true }).fill("14:00");
     await page.getByRole("dialog").getByLabel(he.field.depart, { exact: true }).fill("12:00");
     await page.getByRole("dialog").getByRole("button", { name: he.common.save, exact: true }).click();

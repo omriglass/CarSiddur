@@ -2,7 +2,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { expect, test } from "@playwright/test";
 
 import { he } from "../src/i18n/he";
-import { NEVO_DEPARTMENT_ID, newSignedInPage, SEEDED_USERS, SUPABASE_ANON_KEY, SUPABASE_URL, serviceRoleClient } from "./helpers";
+import { NEVO_DEPARTMENT_ID, newSignedInPage, SEEDED_USERS, SUPABASE_ANON_KEY, SUPABASE_URL, serviceRoleClient, openRideDetails } from "./helpers";
 
 /**
  * Pilot fix round P4 (REQ §13.118; docs/TODO.md R8U1, R8U2). NOT RUN by the author (written, not executed).
@@ -86,7 +86,7 @@ test("a host ride with a merge waiting for an answer opens its own sheet with a 
     // the pending merge is still drawn as one marked block; clicking it opens the RIDE (not only the proposal)
     const merged = page.locator('button[data-merged="true"]:visible');
     await expect(merged).toHaveCount(1);
-    await merged.click();
+    await openRideDetails(page, merged);
     const pending = page.getByTestId("ride-pending-merge");
     await expect(pending).toBeVisible();
     await expect(page.getByText(he.sadranRideSheet.title)).toBeVisible();
@@ -126,7 +126,7 @@ test("the ride sheet replaces a volunteer driver in one step (R8U1)", { tag: ["@
     await page.goto(boardUrl);
 
     const pick = async (index: number, button: string) => {
-      await page.locator(`button[data-ride-id="${ride.id}"]:visible`).click();
+      await openRideDetails(page, page.locator(`button[data-ride-id="${ride.id}"]:visible`));
       const picker = page.getByTestId("ride-driver-picker");
       await expect(picker).toBeVisible();
       await picker.getByTestId("ride-driver-select").click();
@@ -138,7 +138,7 @@ test("the ride sheet replaces a volunteer driver in one step (R8U1)", { tag: ["@
     const first = (await service.from("rides").select("driver_id").eq("id", ride.id).single()).data!.driver_id;
 
     // volunteer assigned: the sheet offers "remove" AND a replacement picker; replacing needs no remove first
-    await page.locator(`button[data-ride-id="${ride.id}"]:visible`).click();
+    await openRideDetails(page, page.locator(`button[data-ride-id="${ride.id}"]:visible`));
     await expect(page.getByTestId("ride-driver-unassign")).toBeVisible();
     await expect(page.getByText(he.rideDriver.replaceLabel)).toBeVisible();
     await page.keyboard.press("Escape");

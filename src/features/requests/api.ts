@@ -460,6 +460,8 @@ export interface RequestEditRow {
   window?: RequestWindow | null;
   hasPublishedRide?: boolean;
   seriesId?: string | null;
+  /** A multi-day request (owner 2026-10-22, editing): the last day's return — the row itself is the first day. */
+  seriesReturnAt?: string | null;
   id: string;
   departmentId: string;
   weekStart: string;
@@ -534,7 +536,24 @@ const EDIT_SELECT = `
  * REQ §13.127 (b): no owner filter any more — published-request RLS also lets anyone read other members' requests,
  * so the edit page gates on `canEditRequest()` (the server's `request_related()` rule) before it opens the form.
  */
+/**
+ * One request in the edit form's shape. A leg of a multi-day request comes back as the series' first active day,
+ * with `seriesReturnAt` = its last day's return (owner 2026-10-22: the whole series is edited at once).
+ */
 export async function fetchRequestById(requestId: string): Promise<RequestEditRow | null> {
+  const row = await fetchRequestRowById(requestId);
+  if (!row?.seriesId) return row;
+  const { data: legs, error } = await supabase.from("requests").select("id, series_index, return_at")
+    .eq("series_id", row.seriesId).not("status", "in", "(withdrawn,cancelled)").order("series_index");
+  if (error) throw toAppError(error);
+  const first = legs?.[0];
+  const last = legs?.[legs.length - 1];
+  const head = first && first.id !== row.id ? await fetchRequestRowById(first.id) : row;
+  return head ? { ...head, seriesReturnAt: last?.return_at ?? head.returnAt } : row;
+}
+
+/** Exactly this request row (a series leg stays that leg) — for moving one day's request. */
+export async function fetchRequestRowById(requestId: string): Promise<RequestEditRow | null> {
   const { data, error } = await supabase.from("requests").select(EDIT_SELECT).eq("id", requestId).maybeSingle();
   if (error) throw toAppError(error);
   if (!data) return null;

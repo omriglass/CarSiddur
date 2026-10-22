@@ -25,6 +25,7 @@ import {
   fetchMyFreedSlotOffers,
   fetchMyRequests,
   fetchRequestById,
+  fetchRequestRowById,
   fetchRecentCompanionRows,
   fetchRequestCompanionIds,
   fetchRequestChildIds,
@@ -92,7 +93,7 @@ export function useMoveRequestMutation() {
   const submit = useSubmitRequestMutation();
   return useMutation({
     mutationFn: async ({ requestId, move }: { requestId: string; move: RequestMove }) => {
-      const row = await fetchRequestById(requestId);
+      const row = await fetchRequestRowById(requestId);
       if (!row) throw new Error("request_not_found");
       const raw = await submit.mutateAsync(movedRequestPayload(row, row.weekStart, move));
       return raw as unknown as SubmitRequestResult | null;

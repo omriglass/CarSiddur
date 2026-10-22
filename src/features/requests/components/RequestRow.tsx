@@ -225,7 +225,8 @@ export function RequestRow({
               day={(row.departAt ?? row.returnAt) as string}
             />
           ) : null}
-          {canEditRequest(row) && !row.seriesLegs ? (
+          {/* Owner 2026-10-22 (REQ §13.142): a multi-day request is edited too — over its whole span. */}
+          {canEditRequest(row) ? (
             <Button asChild size="sm" variant="outline">
               <RequestLink to={paths.requests.edit(row.id)}>{he.requestsList.edit}</RequestLink>
             </Button>

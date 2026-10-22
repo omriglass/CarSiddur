@@ -69,9 +69,15 @@ describe("MyWeekView", () => {
 
   it("hands a tapped block's own item to the page", () => {
     const onTarget = renderView();
-    fireEvent.click(document.querySelector('[data-ride-id="ride:ride1"]') as HTMLElement);
+    // Owner 2026-10-22: the first click shows the block's summary popup, the second opens it.
+    const ride = document.querySelector('[data-ride-id="ride:ride1"]') as HTMLElement;
+    fireEvent.click(ride);
+    expect(onTarget).not.toHaveBeenCalled();
+    fireEvent.click(ride);
     expect(onTarget).toHaveBeenCalledWith(expect.objectContaining({ type: "ride" }));
-    fireEvent.click(document.querySelector('[data-ride-id="request:r1"]') as HTMLElement);
+    const request = document.querySelector('[data-ride-id="request:r1"]') as HTMLElement;
+    fireEvent.click(request);
+    fireEvent.click(request);
     expect(onTarget).toHaveBeenCalledWith(expect.objectContaining({ type: "request" }));
   });
 });

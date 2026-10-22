@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { he } from "../src/i18n/he";
-import { newSignedInPage, NEVO_DEPARTMENT_ID, SEEDED_USERS, serviceRoleClient, scrollGridColumnTo } from "./helpers";
+import { newSignedInPage, NEVO_DEPARTMENT_ID, SEEDED_USERS, serviceRoleClient, scrollGridColumnTo, openRideDetails } from "./helpers";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 /**
@@ -95,7 +95,7 @@ test("one-way drop persists a missing-driver ride, tight edits remain publishabl
     expect(standalone!.driver_id).toBeNull();
     expect(Date.parse(standalone!.ends_at) - Date.parse(standalone!.starts_at)).toBe(Math.ceil((40 + settings!.chauffeur_dwell_minutes) / 15) * 15 * 60000);
 
-    await page.locator(`button[data-ride-id="${rides![1]!.id}"]:visible`).click();
+    await openRideDetails(page, page.locator(`button[data-ride-id="${rides![1]!.id}"]:visible`));
     await page.getByRole("dialog").getByLabel(he.sadranRideSheet.depart, { exact: true }).fill("10:00");
     await page.getByRole("dialog").getByRole("button", { name: he.sadranRideSheet.save, exact: true }).click();
     await expect(page.getByRole("dialog")).not.toBeVisible();

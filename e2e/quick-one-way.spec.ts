@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { he, tv } from "../src/i18n/he";
-import { NEVO_DEPARTMENT_ID, newSignedInPage, SEEDED_USERS, serviceRoleClient, scrollGridColumnTo } from "./helpers";
+import { NEVO_DEPARTMENT_ID, newSignedInPage, SEEDED_USERS, serviceRoleClient, scrollGridColumnTo, openRideDetails } from "./helpers";
 import { publishedFixtureWeek } from "./published-week";
 
 test.use({ actionTimeout: 15_000 });
@@ -179,7 +179,7 @@ test("quick round-trip metadata persists when the member reopens and saves the r
     const { data: ride } = await fixture.service.from("rides").select("id,driver_id,needs_driver").eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", week).single();
     expect(ride!.driver_id).toBe("00000000-0000-0000-0000-000000000103");
     expect(ride!.needs_driver).toBe(false);
-    await member.page.locator(`[data-ride-id="${ride!.id}"]:visible`).click();
+    await openRideDetails(member.page, member.page.locator(`[data-ride-id="${ride!.id}"]:visible`));
     await expect(mainDialog(member.page)).toContainText(description);
     await expect(mainDialog(member.page)).toContainText(guestNames[0]!);
     // Editing the owned live ride must retain its request's public metadata.
@@ -189,7 +189,7 @@ test("quick round-trip metadata persists when the member reopens and saves the r
     const { data: saved } = await fixture.service.from("requests").select("ride_description,guest_passenger_names,adults").eq("id", request!.id).single();
     expect(saved).toEqual({ ride_description: description, guest_passenger_names: guestNames, adults: 3 });
     await member.page.reload();
-    await member.page.locator(`[data-ride-id="${ride!.id}"]:visible`).click();
+    await openRideDetails(member.page, member.page.locator(`[data-ride-id="${ride!.id}"]:visible`));
     await expect(mainDialog(member.page)).toContainText(description);
     await expect(mainDialog(member.page)).toContainText(guestNames[0]!);
   } finally {

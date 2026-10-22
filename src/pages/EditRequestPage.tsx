@@ -9,7 +9,6 @@ import { useProfile } from "@/features/auth/useProfile";
 import { canEditRequest } from "@/features/requests/window";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/PageHeader";
-import { SeriesRequestPanel } from "@/features/requests/components/SeriesRequestPanel";
 import { RequestForm } from "@/features/requests/components/RequestForm";
 import { useCanEditRequestQuery, useRequestQuery } from "@/features/requests/hooks";
 import { he } from "@/i18n/he";
@@ -38,9 +37,6 @@ export function EditRequestPage() {
     <p role="alert" className="p-4">{he.request.submitError}</p>
   ) : !requestQuery.data || !canEditQuery.data ? (
     <p role="alert" className="p-4">{he.request.notFound}</p>
-  ) : requestQuery.data.seriesId ? (
-    // A multi-day request is never edited, only shortened or cancelled (REQ §13.77).
-    <SeriesRequestPanel seriesId={requestQuery.data.seriesId} />
   ) : !(sadran && requestQuery.data.status !== "withdrawn" && requestQuery.data.status !== "cancelled") && !canEditRequest(requestQuery.data) ? (
     <div className="space-y-3 p-4">
       <p>{he.request.editWindowClosed}</p>

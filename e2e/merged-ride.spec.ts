@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { he } from "../src/i18n/he";
-import { newSignedInPage, NEVO_DEPARTMENT_ID, SEEDED_USERS, serviceRoleClient, scrollGridColumnTo } from "./helpers";
+import { newSignedInPage, NEVO_DEPARTMENT_ID, SEEDED_USERS, serviceRoleClient, scrollGridColumnTo, openRideDetails } from "./helpers";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 /**
@@ -188,7 +188,7 @@ test("the sheet button \"הוצא מהנסיעה\" remains the fallback (phone l
     await page.setViewportSize({ width: 1600, height: 1100 });
     await page.goto(boardUrl);
     const block = page.locator(`button[data-ride-id="${rideId}"]:visible`);
-    await block.click();
+    await openRideDetails(page, block);
     const sheet = page.getByRole("dialog");
     await expect(sheet.getByTestId("ride-added-person")).toHaveCount(1);
     await sheet.getByTestId("ride-added-person").getByRole("button").click();

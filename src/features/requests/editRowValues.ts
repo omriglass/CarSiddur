@@ -37,9 +37,8 @@ export function editRowToFormValues(row: RequestEditRow, weekStart: string, comp
     weekStart,
     day,
     dayIndex: Math.max(dates.indexOf(day), 0),
-    // Editing an existing (single-day) request never shows the return-day picker
-    // (multi-day editing is not supported in v1, REQ §13.77) — kept equal to `day`.
-    returnDay: day,
+    // A multi-day request reopens over its whole span (owner 2026-10-22): the last day; else equal to `day`.
+    returnDay: row.seriesId && row.seriesReturnAt ? dayFromInstant(row.seriesReturnAt) : day,
     destination: row.destinationId
       ? { presetId: row.destinationId, name: row.destinationName ?? "" }
       : { freeText: row.destinationText ?? "" },
@@ -55,7 +54,7 @@ export function editRowToFormValues(row: RequestEditRow, weekStart: string, comp
     ...initialTripType(row),
     keepCarAtDestination: isKeepCarRow(row),
     departTime,
-    returnTime: returnNextDay ? "23:59" : returnTime,
+    returnTime: row.seriesId && row.seriesReturnAt ? timeFromInstant(row.seriesReturnAt) : returnNextDay ? "23:59" : returnTime,
     ...anchorFormFields(row, timeFromInstant),
     // REQ §13.112 (a)/(b): the stored "אם אין רכב" line reopens as it was saved.
     ...planBFormFields(row, timeFromInstant),

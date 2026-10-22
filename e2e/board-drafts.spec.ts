@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { he } from "../src/i18n/he";
-import { newSignedInPage, NEVO_DEPARTMENT_ID, SEEDED_USERS, serviceRoleClient, scrollGridColumnTo } from "./helpers";
+import { newSignedInPage, NEVO_DEPARTMENT_ID, SEEDED_USERS, serviceRoleClient, scrollGridColumnTo, openRideDetails } from "./helpers";
 import { publishedFixtureWeek } from "./published-week";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -97,7 +97,7 @@ test("a draft is drawn dashed on the board, blocks publishing, and publishing wo
 
     // Discard it from the board's draft sheet -> the request is unmet again, publishing is allowed.
     await page.goto(boardUrl);
-    await page.locator('button[data-draft="true"]:visible').click();
+    await openRideDetails(page, page.locator('button[data-draft="true"]:visible'));
     await page.getByTestId("draft-discard").click();
     await expect(page.locator('button[data-draft="true"]:visible')).toHaveCount(0);
     await expect(page.locator(`[data-request-id="${request.id}"]:visible`).first()).toBeVisible();

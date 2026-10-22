@@ -104,7 +104,7 @@ test.describe("waitlist groups", { tag: ["@waitlist", "@publication"] }, () => {
     try {
       await memberA.page.setViewportSize({ width: 390, height: 844 });
       await memberA.page.goto(`/siddur/${NEVO_DEPARTMENT_ID}/${weekStart}`);
-      await memberA.page.getByRole("radio", { name: "ג", exact: true }).click();
+      await memberA.page.getByRole("radio", { name: /^ג׳/ }).click();
       const discussionCard = memberA.page.getByRole("button", { name: /בדיון:/ });
       await expect(discussionCard).toBeVisible({ timeout: 10_000 });
       await discussionCard.click();
@@ -189,7 +189,7 @@ test.describe("waitlist groups", { tag: ["@waitlist", "@publication"] }, () => {
       try {
         await outsider.page.setViewportSize({ width: 390, height: 844 });
         await outsider.page.goto(`/siddur/${NEVO_DEPARTMENT_ID}/${weekStart}`);
-        await outsider.page.getByRole("radio", { name: "ג", exact: true }).click();
+        await outsider.page.getByRole("radio", { name: /^ג׳/ }).click();
         const discussionCard = outsider.page.getByRole("button", { name: /בדיון:/ });
         await expect(discussionCard).toBeVisible({ timeout: 10_000 });
         await discussionCard.click();

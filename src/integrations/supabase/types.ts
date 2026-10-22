@@ -4628,6 +4628,7 @@ export type Database = {
         }
         Returns: boolean
       }
+      _edit_series_request: { Args: { payload: Json }; Returns: Json }
       _flex_floor: { Args: { i: string }; Returns: string }
       _frag: { Args: { _key: string; _vars?: Json }; Returns: string }
       _held_request_view: { Args: { p_request: string }; Returns: Json }

@@ -588,14 +588,15 @@ export function RequestForm({
     form.setValue("needsCarAtDestination", forced.needsCarAtDestination, { shouldDirty: true });
     form.setValue("oneWayCarMode", forced.oneWayCarMode, { shouldDirty: true });
   }, [canDrive, tripType, dropOffPickup, form]);
-  // Multi-day ("series") request (REQ §13.77, UX_FLOWS.md §3.4): the return-day picker only
-  // makes sense for a brand-new weekly round trip — editing a series is not supported in v1,
-  // and the quick/carNow variants are always about a single live day.
-  const showReturnDayPicker = variant === "weekly" && mode === "new" && tripShape === "round_trip";
+  // Multi-day ("series") request (REQ §13.77, UX_FLOWS.md §3.4): the return-day picker is for a weekly round trip —
+  // a new one, or editing a multi-day request over its whole span (owner 2026-10-22, REQ §13.142); the quick/carNow
+  // variants are always about a single live day.
+  const seriesEdit = mode === "edit" && !!initial?.seriesId;
+  const showReturnDayPicker = variant === "weekly" && (mode === "new" || seriesEdit) && tripShape === "round_trip";
   const returnDayValue = values.returnDay ?? day;
   // The return-day picker is collapsed behind a small "return another day" link because
-  // multi-day requests are rare; a later return day keeps it expanded (UX_FLOWS.md §3.4).
-  const [returnAnotherDay, setReturnAnotherDay] = useState(false);
+  // multi-day requests are rare; a later return day keeps it expanded (UX_FLOWS.md §3.4). A series edit opens with it.
+  const [returnAnotherDay, setReturnAnotherDay] = useState(seriesEdit);
   const isMultiDay = showReturnDayPicker && returnAnotherDay && returnDayValue !== day;
   const multiDaySpan = isMultiDay ? seriesSpanDays(day, returnDayValue) : null;
 
@@ -829,7 +830,7 @@ export function RequestForm({
     }
     if (duplicate && !waitlist) {
       // The server may know better than the client check (`unchanged: true` on its probe): then there is nothing to ask.
-      if (mode === "edit" && !isSeriesSubmit(formValues)) {
+      if (mode === "edit" && !isSeriesSubmit(formValues) && !seriesEdit) {
         try {
           const probe = await probeSubmitRequest(buildPayload(formValues, {}));
           if (probe?.unchanged) {
@@ -907,8 +908,9 @@ export function RequestForm({
   async function performSubmit(formValues: RequestFormValues, options: { confirmRelease?: boolean; confirmLose?: boolean; ignoreChildOverlap?: boolean } = {}) {
     if (quickContext && (isPast || invalidTime)) return;
     setSubmitError(null);
-    const isSeriesRequest = isSeriesSubmit(formValues);
-    const payload = buildPayload(formValues, options);
+    // Editing a multi-day request always replaces the whole series, even when it shrinks to one day (REQ §13.142).
+    const isSeriesRequest = isSeriesSubmit(formValues) || seriesEdit;
+    const payload = { ...buildPayload(formValues, options), ...(seriesEdit && initial?.seriesId ? { series_id: initial.seriesId } : {}) };
 
     // The request this template link/unlink applies to, resolved once so both the "on" and
     // "off" branches below agree: an edit keeps its own row's template, a prefilled new
@@ -954,6 +956,12 @@ export function RequestForm({
         // on each day's ride, not just the first.
         const raw = await submitSeriesMutation.mutateAsync(payload);
         const seriesResult = raw as unknown as SubmitSeriesRequestResult | null;
+        // REQ §13.142: an edit that would lose a booking changed nothing yet — ask, then resubmit with `confirm_release`.
+        const seriesRelease = releaseConfirmation(raw as unknown as SubmitRequestResult | null);
+        if (seriesRelease) {
+          setPendingRelease({ values: formValues, ...seriesRelease });
+          return;
+        }
         for (const requestId of seriesResult?.request_ids ?? []) {
           await setCompanionsMutation.mutateAsync({ requestId, profileIds: formValues.companions });
           await setChildrenMutation.mutateAsync({ requestId, childIds: formValues.children });
@@ -961,7 +969,7 @@ export function RequestForm({
         if ("freeText" in formValues.destination && formValues.destination.freeText.trim()) {
           suggestDestinationMutation.mutate({ name: formValues.destination.freeText.trim() });
         }
-        if (!toastSeriesSubmitOutcome(seriesResult)) toast.success(t("request.submitSent"));
+        if (!toastSeriesSubmitOutcome(seriesResult)) toast.success(t(seriesEdit ? "request.submitSaved" : "request.submitSent"));
         if (onDone) onDone(null);
         else navigate(paths.my());
         return;
