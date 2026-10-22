@@ -427,6 +427,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
             </Button>
           )}
           <WeekGrid
+            surface="drafting"
             zoom={tableZoom}
             onZoomChange={setTableZoom}
             cars={hideIdleTemporaryCars(board.weekGridCars, board.weekGridRides)}

@@ -98,7 +98,7 @@ export function CarForm({
 
   async function onSubmit(values: CarFormValues) {
     try {
-      const payload = { ...values, replacement_code: values.is_replaced ? values.replacement_code : null };
+      const payload = { ...values, access_code: values.access_code || null, replacement_code: values.is_replaced ? values.replacement_code : null };
       let carId = car?.id;
       if (car) {
         await updateMutation.mutateAsync({ id: car.id, patch: payload });
@@ -155,6 +155,7 @@ export function CarForm({
               <FormControl>
                 <Input {...field} type="text" inputMode="numeric" dir="ltr" maxLength={5} autoComplete="off" />
               </FormControl>
+              <FormDescription>{he.adminCars.accessCodeHelp}</FormDescription>
               <FormMessage />
             </FormItem>
           )}
@@ -177,6 +178,7 @@ export function CarForm({
                 />
               </FormControl>
               <FormLabel>{he.adminCars.fieldIsReplaced}</FormLabel>
+              <FormMessage />
             </FormItem>
           )}
         />

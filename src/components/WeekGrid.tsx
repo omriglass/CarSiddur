@@ -13,6 +13,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Button } from "@/components/ui/button";
+import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import { CarReportDialog } from "@/features/carCare/components/CarReportDialog";
 import { he, tv } from "@/i18n/he";
 import { rideTypeColorClasses } from "@/lib/rideTypeColors";
@@ -20,6 +22,8 @@ import { cn } from "@/lib/utils";
 import { GuestChips, type GuestDropTarget, type WeekGridGuest } from "./GuestChips";
 import { bottomNavInset, pageScroller, scrollerViewport } from "./pageScroller";
 import { itemVisibilityStyle } from "./itemVisibility";
+import { RideNotes } from "./RideNotes";
+import { rideNotesTruncated } from "./rideNotesTruncated";
 import { clampRideVertical, minutesFromClientY, snapTimeShift } from "./weekGridGeometry";
 
 /**
@@ -279,6 +283,8 @@ export interface WeekGridProps {
   /** When supplied, initially position the grid so this time is the first visible hour below the car headers. */
   initialScrollMinutes?: number | null;
   zoom?: number;
+  /** Owner 2026-10-22: `drafting` (the Sadran board) draws the grid lines as wide-gap dashes — a drafting table. */
+  surface?: "published" | "drafting";
   /**
    * Two-finger pinch on the grid's own scroll container calls this with the live zoom
    * (`components/pinchZoom.ts`, clamped 0.5–1.5). Omit to leave pinch disabled (e.g. the
@@ -366,17 +372,27 @@ const CAR_TOUCH_SCROLL_CANCEL_PX = 10;
 const CAR_LONG_PRESS_MS = 350;
 const CAR_MOUSE_DRAG_CONFIRM_PX = 6;
 
+/** A phone/tablet (no hover): the notes popup replaces the hover title there. */
+function touchPrimary(): boolean {
+  return typeof window.matchMedia === "function" && window.matchMedia("(hover: none)").matches;
+}
+
 function defaultRenderRide(ride: WeekGridRide) {
   return (
-    <span className="flex w-full flex-col items-start overflow-hidden px-1.5 py-1 text-start text-xs font-medium text-foreground">
-      <span className={cn("w-full whitespace-normal break-words leading-snug", ride.isMine && "font-bold")}>{ride.label}</span>
+    <span className="flex min-h-0 w-full shrink flex-col items-start overflow-hidden px-1.5 py-1 text-start text-xs font-medium text-foreground">
+      <span className={cn("w-full shrink-0 whitespace-normal break-words leading-snug", ride.isMine && "font-bold")}>{ride.label}</span>
       {ride.seriesCount && ride.seriesCount > 1 ? (
-        <span className="w-full truncate text-xs opacity-90">{tv("ride.seriesDay", { index: String(ride.seriesIndex ?? 1), count: String(ride.seriesCount) })}</span>
+        <span className="w-full shrink-0 truncate text-xs opacity-90">{tv("ride.seriesDay", { index: String(ride.seriesIndex ?? 1), count: String(ride.seriesCount) })}</span>
       ) : null}
-      {ride.passengerSummary ? <span className="w-full whitespace-normal break-words text-xs" title={ride.passengerSummary}>{ride.passengerSummary}</span> : null}
-      {ride.description ? <span className="line-clamp-2 w-full whitespace-pre-wrap break-words text-xs" title={ride.description}>{ride.description}</span> : null}
-      {ride.coordinatorNotes ? <span className="line-clamp-2 w-full whitespace-pre-wrap break-words text-xs" title={`${he.field.notes}: ${ride.coordinatorNotes}`}>{he.field.notes}: {ride.coordinatorNotes}</span> : null}
-      <span className={cn("w-full truncate text-[10px] opacity-90", ride.isMine ? "font-bold" : "font-normal")} dir="ltr">
+      {ride.passengerSummary ? <span className="w-full shrink-0 whitespace-normal break-words text-xs" title={ride.passengerSummary}>{ride.passengerSummary}</span> : null}
+      {/* Owner 2026-10-22: notes take whatever height the block leaves (they were cut at two lines); a phone tap on cut notes shows them whole first. */}
+      {ride.description || ride.coordinatorNotes ? (
+        <RideNotes>
+          {ride.description ? <span className="w-full whitespace-pre-wrap break-words text-xs" title={ride.description}>{ride.description}</span> : null}
+          {ride.coordinatorNotes ? <span className="w-full whitespace-pre-wrap break-words text-xs" title={`${he.field.notes}: ${ride.coordinatorNotes}`}>{he.field.notes}: {ride.coordinatorNotes}</span> : null}
+        </RideNotes>
+      ) : null}
+      <span className={cn("w-full shrink-0 truncate text-[10px] opacity-90", ride.isMine ? "font-bold" : "font-normal")} dir="ltr">
         {formatMinutes(ride.startMinutes)}–{formatMinutes(ride.endMinutes)}
       </span>
     </span>
@@ -456,6 +472,7 @@ export function WeekGrid({
   nowQuarterMinutes = null,
   initialScrollMinutes = null,
   zoom = 1,
+  surface = "published",
   onZoomChange,
   discussionBlocks = [],
   onBlockChange,
@@ -466,6 +483,7 @@ export function WeekGrid({
   enableCarReport,
   onOpenCarPage,
 }: WeekGridProps) {
+  const drafting = surface === "drafting";
   const hours = Array.from(
     { length: Math.ceil((dayEndMinutes - dayStartMinutes) / 60) },
     (_, i) => Math.floor(dayStartMinutes / 60) + i,
@@ -481,6 +499,7 @@ export function WeekGrid({
   const rideById = useMemo(() => new Map(rides.map((r) => [r.id, r])), [rides]);
   const colRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const scrollViewportRef = useRef<HTMLDivElement | null>(null);
+  const [notesPeek, setNotesPeek] = useState<{ rideId: string; el: HTMLElement } | null>(null);
   // REQ §13.106: on a computer the table is part of the page (the page scrolls vertically, the car
   // names are pinned above the box); below `lg` the box scrolls itself.
   const isDesktopWidth = useIsDesktop();
@@ -849,6 +868,21 @@ export function WeekGrid({
     if (confirmed) event.preventDefault();
   }
 
+  /**
+   * Opens a ride (owner 2026-10-22): on a touch screen, a first tap on a block whose notes are cut off shows the
+   * notes in a small popup (`notesPeek`); the next tap on the same block, or the popup's button, opens the ride.
+   * A mouse keeps the hover title and opens the ride at once.
+   */
+  function openRide(rideId: string) {
+    const el = scrollViewportRef.current?.querySelector<HTMLElement>(`[data-ride-id="${rideId.replace(/"/g, '\\"')}"]`) ?? null;
+    if (el && notesPeek?.rideId !== rideId && touchPrimary() && rideNotesTruncated(el)) {
+      setNotesPeek({ rideId, el });
+      return;
+    }
+    setNotesPeek(null);
+    onRideClick?.(rideId);
+  }
+
   /** A plain tap (never confirmed into a drag) still opens the ride via `onRideClick` here rather than relying on the native `click` event, matching the previous implementation's own reasoning for that (Chromium suppresses `click` synthesis after any captured/`preventDefault`-ed pointer sequence). */
   function handleWindowUp(event: PointerEvent) {
     const current = dragRef.current;
@@ -858,7 +892,7 @@ export function WeekGrid({
     suppressClick.current = true;
     finishDrag();
     if (!finished.confirmed) {
-      if (finished.kind === "move") onRideClick?.(finished.rideId);
+      if (finished.kind === "move") openRide(finished.rideId);
       return;
     }
 
@@ -1022,7 +1056,8 @@ export function WeekGrid({
         }}
         data-car-col-id={car.id}
         className={cn(
-          "relative border-e transition-smooth",
+          "relative transition-smooth",
+          !drafting && "border-e",
           car.group === "temporary" && "bg-booked/[0.04]",
           car.group === "phantom" && "border-dashed bg-maintenance/5",
           isFirstTemporary && "border-s-2 border-s-border",
@@ -1038,6 +1073,7 @@ export function WeekGrid({
         onPointerLeave={rangeStart?.carId === car.id ? () => setRangeHover(null) : undefined}
         role={onSlotClick || onSlotRange ? "button" : undefined}
       >
+        {drafting ? <div className="draft-line-v pointer-events-none absolute inset-y-0 end-0 w-px" aria-hidden="true" /> : null}
         {hours.map((h, hi) => {
           const bandRect = clampRideVertical(h * 60, (h + 1) * 60, dayStartMinutes, dayEndMinutes);
           return (
@@ -1059,7 +1095,7 @@ export function WeekGrid({
         {hours.map((h) => (
           <div
             key={h}
-            className="absolute inset-x-0 border-b border-border"
+            className={cn("absolute inset-x-0", drafting ? "draft-line-h h-px" : "border-b border-border")}
             style={{ top: clampRideVertical(h * 60, h * 60, dayStartMinutes, dayEndMinutes).top }}
             aria-hidden="true"
           />
@@ -1296,7 +1332,7 @@ export function WeekGrid({
                 e.stopPropagation();
                 setRangeStart(null);
                 if (suppressClick.current) { suppressClick.current = false; return; }
-                onRideClick?.(ride.id);
+                openRide(ride.id);
               }}
               onPointerDown={(e) => {
                 if (!dragEnabled || !(canDragRide?.(ride) ?? true)) return;
@@ -1313,7 +1349,7 @@ export function WeekGrid({
                   viewport is the nearest scroll container: the button clips with `overflow-clip`, which,
                   unlike `overflow-hidden`, does not create a new scroll container. Resize handles stay
                   absolutely positioned outside the wrapper. */}
-              <div className="sticky z-[1] flex w-full flex-col" style={{ top: HEADER_ROW_HEIGHT_PX }}>
+              <div className="sticky z-[1] flex min-h-0 w-full flex-col" style={{ top: HEADER_ROW_HEIGHT_PX }}>
               {ride.guests?.length ? <GuestChips guests={ride.guests} passClick={!!ride.draft} enabled={dragEnabled && !!onGuestDrop} resolveTarget={guestTargetAt} onHover={onGuestHover} onDrop={onGuestDrop} /> : null}
               {(ride.kind || ride.isMine || ride.needsDriver || ride.tightSchedule || ride.chainBrokenWarning || ride.driverOverlapWarning || ride.handoverLines?.length || ride.draft || ride.merged || ride.connected || ride.luggage) ? <span className="flex w-full flex-wrap gap-1 px-1.5 pt-1 text-[10px] leading-tight">
                 {ride.kind ? (
@@ -1477,8 +1513,28 @@ export function WeekGrid({
       </>
   );
 
+  const peekRide = notesPeek ? rides.find((r) => r.id === notesPeek.rideId) : undefined;
+
   return (
     <div className="min-w-0">
+    {notesPeek && peekRide ? (
+      <Popover open onOpenChange={(open) => { if (!open) setNotesPeek(null); }}>
+        <PopoverAnchor virtualRef={{ current: notesPeek.el }} />
+        <PopoverContent
+          className="flex max-h-[60dvh] w-72 max-w-[calc(100vw-2rem)] flex-col gap-2 overflow-y-auto p-3 text-sm"
+          // The second tap on the same block must reach it (it opens the ride), not just close the popup.
+          onInteractOutside={(e) => { if (e.target instanceof Node && notesPeek.el.contains(e.target)) e.preventDefault(); }}
+          data-testid="ride-notes-peek"
+        >
+          <p className="font-medium">{peekRide.label}</p>
+          {peekRide.description ? <p className="whitespace-pre-wrap break-words">{peekRide.description}</p> : null}
+          {peekRide.coordinatorNotes ? <p className="whitespace-pre-wrap break-words">{he.field.notes}: {peekRide.coordinatorNotes}</p> : null}
+          <Button type="button" size="sm" variant="outline" className="self-start" onClick={() => { setNotesPeek(null); onRideClick?.(peekRide.id); }}>
+            {he.screen.ride.detail}
+          </Button>
+        </PopoverContent>
+      </Popover>
+    ) : null}
     {pageScroll ? (
       <div
         ref={headerRef}
@@ -1493,7 +1549,7 @@ export function WeekGrid({
     ) : null}
     <div
       ref={setScrollViewport}
-      className={cn("min-w-0 rounded-md border shadow-card", pageScroll ? "overflow-auto overflow-y-hidden rounded-t-none" : "max-h-[70dvh] overflow-auto", (dragActive || dragEnabled) && "select-none")}
+      className={cn("min-w-0 rounded-md border shadow-card", drafting && "bg-card", pageScroll ? "overflow-auto overflow-y-hidden rounded-t-none" : "max-h-[70dvh] overflow-auto", (dragActive || dragEnabled) && "select-none")}
       onScroll={pageScroll ? (e) => { if (headerRef.current) headerRef.current.scrollLeft = e.currentTarget.scrollLeft; } : undefined}
       style={{ touchAction: "pan-x pan-y", scrollSnapType: "x proximity", scrollPaddingInlineStart: HOUR_COL_WIDTH_PX * zoom }}
       data-week-grid-scroll-viewport

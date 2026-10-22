@@ -122,7 +122,6 @@ export const he = {
   siddurCar: {
     replacementName: "{{name}} (חלופי)",
     withCode: "{{name}} · {{code}}",
-    withoutCode: "{{name}} · קוד לא הוזן",
   },
   /**
    * Swap cars on a day by dragging car names (REQ §13.92, owner batch

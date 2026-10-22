@@ -8,12 +8,15 @@ const DEMO_ANON =
 const DEMO_SERVICE =
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU";
 
-/** Throws unless `url` is a loopback API that is not the owner's stack (port 54321). */
+/**
+ * Throws unless `url` is a loopback API that is not the owner's stack (port 54321) — unless the owner asked for
+ * demo data there with `QA_OWNER_STACK=1` (owner 2026-10-22, same opt-in as `qa-common.mjs`).
+ */
 export function assertDisposable(url) {
   let parsed;
   try { parsed = new URL(url); } catch { throw new Error(`QA tooling: invalid API url ${url}`); }
   const port = parsed.port || (parsed.protocol === "https:" ? "443" : "80");
-  if (port === "54321") {
+  if (port === "54321" && process.env.QA_OWNER_STACK !== "1") {
     console.error("REFUSED: 127.0.0.1:54321 / localhost:54321 is the owner's own Supabase stack. QA tooling only runs on the disposable stack (default http://127.0.0.1:57321).");
     process.exit(3);
   }

@@ -20,5 +20,10 @@ export function weekdayLabel(instant: Date | string | number, style: "long" | "s
  * is ever shown without its weekday, UX_FLOWS.md §1 / TODO.md B4).
  */
 export function formatDayDate(instant: Date | string | number): string {
-  return `${weekdayLabel(instant, "short")}${he.days.geresh} ${formatInTimeZone(instant, TZ, "d.M")}`;
+  return `${weekdayLabel(instant, "short")}${he.days.geresh} ${formatDayMonth(instant)}`;
+}
+
+/** The `d.M` half of `formatDayDate`, for places that already show the weekday next to it (the `WeekStrip` chips). */
+export function formatDayMonth(instant: Date | string | number): string {
+  return formatInTimeZone(instant, TZ, "d.M");
 }

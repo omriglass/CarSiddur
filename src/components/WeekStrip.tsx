@@ -1,5 +1,6 @@
 import { datesOfWeek } from "@/components/dateFieldDates";
 import { he } from "@/i18n/he";
+import { formatDayMonth } from "@/lib/dayLabels";
 import { cn } from "@/lib/utils";
 import { isToday } from "./weekStripToday";
 
@@ -52,7 +53,7 @@ export function WeekStrip({ weekStart, counts, selected, onSelect }: WeekStripPr
               />
             ) : null}
             <span className="flex items-center gap-1">
-              {he.days.short[index]}
+              {he.days.short[index]}{he.days.geresh}
               {today ? (
                 <span
                   className="size-1.5 rounded-full bg-primary"
@@ -61,6 +62,7 @@ export function WeekStrip({ weekStart, counts, selected, onSelect }: WeekStripPr
                 />
               ) : null}
             </span>
+            <span className="text-[10px] leading-none text-muted-foreground" dir="ltr">{formatDayMonth(`${date}T12:00:00Z`)}</span>
             {dayCounts && dayCounts.unmet > 0 ? (
               <span className="text-[10px] text-destructive" dir="ltr">
                 {dayCounts.unmet}

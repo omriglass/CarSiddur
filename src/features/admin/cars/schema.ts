@@ -9,7 +9,8 @@ export type CarFeature = (typeof CAR_FEATURES)[number];
 export const carSchema = z.object({
   name: z.string().trim().min(1),
   license_plate: z.string().trim().min(1),
-  access_code: z.string().regex(/^[0-9]{4,5}$/, he.adminCars.codeDigitsRequired),
+  /** Empty = the car has no code (owner 2026-10-21); `CarForm` stores it as null. */
+  access_code: z.string().trim().regex(/^([0-9]{4,5})?$/, he.adminCars.codeDigitsRequired),
   is_replaced: z.boolean(),
   replacement_code: z.string().nullable(),
   department_id: z.string().uuid(),
@@ -28,6 +29,10 @@ export const carSchema = z.object({
   base_location_id: z.string().uuid().nullable(),
 }).superRefine((values, ctx) => {
   if (!values.is_replaced) return;
+  if (!values.access_code) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["is_replaced"], message: he.adminCars.replacementNeedsCode });
+    return;
+  }
   if (!values.replacement_code || !/^[0-9]{4,5}$/.test(values.replacement_code)) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["replacement_code"], message: he.adminCars.codeDigitsRequired });
   } else if (values.replacement_code === values.access_code) {

@@ -106,7 +106,6 @@ async function withCarNames(rideList: BoardRide[], departmentId?: string): Promi
       cars.set(car.id, {
         label: siddurCarName({
           name: car.name,
-          type: car.type,
           access_code: codes?.access_code ?? null,
           is_replaced: codes?.is_replaced ?? false,
           replacement_code: codes?.replacement_code ?? null,

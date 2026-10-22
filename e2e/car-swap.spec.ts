@@ -112,7 +112,7 @@ test.describe("car swap on the siddur (member, published day)", { tag: ["@siddur
 
       const headerA = member1.page.locator(`[data-car-header-id="${carA}"]`);
       await headerA.getByTestId("week-grid-car-menu-trigger").click();
-      // The siddur's own car names carry a "· קוד לא הוזן"/access-code suffix (`siddurCarName()`,
+      // The siddur's own car names may carry an access-code suffix (`siddurCarName()`,
       // SiddurPage's own `weekGridCars`) that the plain `cars.name` column doesn't — match by
       // substring instead of reconstructing that suffix here.
       await member1.page.getByRole("menuitem", { name: new RegExp(names.get(carB) ?? "") }).click();

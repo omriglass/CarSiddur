@@ -161,6 +161,17 @@ html {
   * {
     @apply border-border;
   }
+}
+
+/* The Sadran board's grid lines (owner 2026-10-22, "a drafting table"): dashes with wide gaps — a CSS `dashed`
+   border cannot set its gap, so the lines are 1px gradients (`WeekGrid surface="drafting"`). */
+@layer components {
+  .draft-line-h {
+    background-image: repeating-linear-gradient(to left, hsl(var(--muted-foreground) / 0.36) 0 5px, transparent 5px 12px);
+  }
+  .draft-line-v {
+    background-image: repeating-linear-gradient(to bottom, hsl(var(--muted-foreground) / 0.36) 0 5px, transparent 5px 12px);
+  }
   body {
     @apply bg-background text-foreground;
   }

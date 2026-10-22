@@ -48,7 +48,9 @@ export function need<T>(value: T | undefined | null | "", what: string): T {
 
 export function assertStack(): void {
   const url = new URL(env.VITE_SUPABASE_URL);
-  if (url.port === "54321" || !["127.0.0.1", "localhost"].includes(url.hostname)) {
+  // The owner's stack (54321) only with their explicit `QA_OWNER_STACK=1` (owner 2026-10-22, demo data for QA).
+  const ownerStack = url.port === "54321" && process.env.QA_OWNER_STACK !== "1";
+  if (ownerStack || !["127.0.0.1", "localhost"].includes(url.hostname)) {
     console.error(`REFUSED: ${env.VITE_SUPABASE_URL} is not a disposable QA stack.`);
     process.exit(3);
   }

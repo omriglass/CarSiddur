@@ -429,7 +429,6 @@ function mapRow(row: RawRequestRow, profileId?: string): MyRequestRow {
             carName: ride.car
               ? siddurCarName({
                   name: ride.car.name,
-                  type: ride.car.type,
                   ...(Array.isArray(ride.car.codes) ? ride.car.codes[0] : ride.car.codes),
                 })
               : null,

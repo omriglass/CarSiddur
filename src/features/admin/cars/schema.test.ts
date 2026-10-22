@@ -11,7 +11,7 @@ const car = {
 describe("car access codes", () => {
   it("preserves leading zeros and requires four or five ASCII digits", () => {
     expect(carSchema.parse(car).access_code).toBe("01234");
-    for (const access_code of ["", "123", "123456", "12ab", "١٢٣٤"]) {
+    for (const access_code of ["123", "123456", "12ab", "١٢٣٤"]) {
       expect(carSchema.safeParse({ ...car, access_code }).success).toBe(false);
     }
   });
@@ -21,5 +21,10 @@ describe("car access codes", () => {
     expect(carSchema.safeParse({ ...car, is_replaced: true, replacement_code: "01234" }).success).toBe(false);
     expect(carSchema.parse({ ...car, is_replaced: true, replacement_code: "0567" }).replacement_code).toBe("0567");
     expect(carSchema.safeParse(car).success).toBe(true);
+  });
+
+  it("allows a car with no code, but not a replacement for it", () => {
+    expect(carSchema.parse({ ...car, access_code: "" }).access_code).toBe("");
+    expect(carSchema.safeParse({ ...car, access_code: "", is_replaced: true, replacement_code: "0567" }).success).toBe(false);
   });
 });
