@@ -227,7 +227,9 @@ export function buildPayload(ctx, o) {
   if (isRound) payload.return_at = toInstant(ctx.day(o.returnDay ?? o.day), o.ret);
   if (o.dest.text) payload.destination_text = o.dest.text; else payload.destination_id = o.dest.id;
   if (o.origin) {
-    if (o.origin.text) payload.origin_text = o.origin.text; else if (o.origin.id !== o.defaultOriginId) payload.origin_id = o.origin.id;
+    // R13B20: always explicit — a plan's `defaultOriginId` may assume home while the member's real default is elsewhere,
+    // and an omitted origin then filed the trip from the wrong place (sometimes its own destination).
+    if (o.origin.text) payload.origin_text = o.origin.text; else payload.origin_id = o.origin.id;
   }
   if (o.notes) payload.notes = o.notes;
   if (o.preferredCarId) payload.preferred_car_id = o.preferredCarId;
@@ -538,8 +540,11 @@ export async function generateWeek({ seed, out, apiUrl, tag, log = console.log, 
       const place = pick(planBRng, ctx.near.concat(ctx.mid).filter((x) => x.id !== p.o.dest.id && x.id !== payload.origin_id));
       const pickupRoll = planBRng();
       const arrive = Math.min(p.o.depart + 15 * randInt(planBRng, 2, 6), p.o.ret - 30);
-      if (roll < 0.1) payload.fallback = "manage";
-      else if (roll < 0.25 && place && arrive > p.o.depart) {
+      // R13B20: a הקפצה with a pickup is a round-trip shape too, but plan B is for round trips only
+      // (`fallback_not_allowed`); the draws above still happen so a seed's later draws do not move.
+      const planBAllowed = payload.trip_type === "round_trip";
+      if (planBAllowed && roll < 0.1) payload.fallback = "manage";
+      else if (planBAllowed && roll < 0.25 && place && arrive > p.o.depart) {
         payload.fallback = "alternative";
         const pickupAt = pickupRoll < 0.5 && p.o.ret - 60 > arrive ? p.o.ret - 60 : null;
         payload.alternative = {
