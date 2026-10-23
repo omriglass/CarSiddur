@@ -45,12 +45,13 @@ export async function updateRidePublicNotes(rideId: string, expectedVersion: num
   await rpc("update_ride_public_notes", { p_ride_id: rideId, p_expected_version: expectedVersion, p_notes: notes ?? "" });
 }
 
-export async function fetchRideChanges(departmentId?: string, weekStart?: string): Promise<RideChange[]> {
+export async function fetchRideChanges(departmentId?: string, weekStart?: string, fromWeek?: string): Promise<RideChange[]> {
   let query = supabase.from("ride_change_requests")
     .select("*, requester:profiles!ride_change_requests_requester_id_fkey(full_name), parties:ride_change_parties(*)")
     .eq("status", "pending");
   if (departmentId) query = query.eq("department_id", departmentId);
   if (weekStart) query = query.eq("week_start", weekStart);
+  if (fromWeek) query = query.gte("week_start", fromWeek);
   const { data, error } = await query.order("created_at");
   if (error) throw toAppError(error);
   return (data ?? []) as RideChange[];

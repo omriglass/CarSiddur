@@ -8,8 +8,8 @@ export const ridesKeys = {
    * `siddurKeys.all` or `invalidateWeekData()` must also refresh pending ride changes — the
    * member's "change:" blocks on the siddur grid disappear otherwise (e2e/ride-editing.spec.ts).
    */
-  rideChanges: (userId: string | undefined, departmentId: string | undefined, weekStart: string | undefined) =>
-    [siddurKeys.all[0], "rideChanges", userId, departmentId, weekStart] as const,
+  rideChanges: (userId: string | undefined, departmentId: string | undefined, weekStart: string | undefined, fromWeek?: string) =>
+    [siddurKeys.all[0], "rideChanges", userId, departmentId, weekStart, fromWeek] as const,
   /**
    * Under the `siddur` root like `rideChanges`: every ride/request change already refreshes the siddur
    * family, which keeps the "be back on time" neighbours (REQ §13.108 f) fresh with no extra wiring.

@@ -125,14 +125,16 @@ interface RideChangesOptions {
   scoped?: boolean;
   /** Poll/fetch only while the result is shown or acted on (e.g. a ride sheet is open). */
   enabled?: boolean;
+  /** Unscoped screens (Inbox): only changes of this week (Sunday key) or later; older ones can no longer be answered. */
+  fromWeek?: string;
 }
 
 export function useRideChanges(departmentId?: string, weekStart?: string, options: RideChangesOptions = {}) {
   const { session } = useSession();
   const ready = !options.scoped || (!!departmentId && !!weekStart);
   return useQuery({
-    queryKey: ridesKeys.rideChanges(session?.user.id, departmentId, weekStart),
-    queryFn: () => fetchRideChanges(departmentId, weekStart),
+    queryKey: ridesKeys.rideChanges(session?.user.id, departmentId, weekStart, options.fromWeek),
+    queryFn: () => fetchRideChanges(departmentId, weekStart, options.fromWeek),
     enabled: !!session && ready && (options.enabled ?? true),
     refetchInterval: RIDE_CHANGES_POLL_MS,
   });

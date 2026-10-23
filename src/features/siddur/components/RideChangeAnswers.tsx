@@ -3,12 +3,15 @@ import { Button } from "@/components/ui/button";
 import { useSession } from "@/features/auth/useSession";
 import { he, tv } from "@/i18n/he";
 import { formatDayDate } from "@/lib/dayLabels";
-import { formatTime } from "@/lib/time";
+import { dateKey, formatTime, weekStartFor } from "@/lib/time";
 import { useRideChanges, useRespondRideChangeMutation, useCancelRideChangeMutation } from "@/features/rides/hooks";
 
 export function RideChangeAnswers({ departmentId, weekStart, canManage = false }: { departmentId?: string; weekStart?: string; canManage?: boolean }) {
   const { session } = useSession();
-  const changes = useRideChanges(departmentId, weekStart);
+  // Publish passes its week (scoped, waits for both ids). Inbox has no week: the person's own pending
+  // changes from the current week on (RLS already limits them to what they may see; past weeks are moot).
+  const scoped = !!departmentId || !!weekStart;
+  const changes = useRideChanges(departmentId, weekStart, { scoped, fromWeek: scoped ? undefined : dateKey(weekStartFor(new Date())) });
   const answer = useRespondRideChangeMutation();
   const cancel = useCancelRideChangeMutation();
   const mine = (changes.data ?? []).filter((change) => change.parties.some((p) => p.profile_id === session?.user.id && p.accepted === null));

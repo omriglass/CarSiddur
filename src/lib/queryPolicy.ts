@@ -3,55 +3,84 @@ import { MutationCache, QueryClient, type Query, type QueryKey } from "@tanstack
 /**
  * Cache policy per query family (docs/ARCHITECTURE.md "Browser data and caching").
  *
- * Identity, permission and catalog data (who I am, which departments I belong to, whether I may
- * manage a week/operations, cars, destinations, ride types, department settings, policies) changes
- * rarely and only through mutations that invalidate it. It stays fresh for 10 minutes and is NOT
- * refetched when the window regains focus. Everything else (rides, requests, board data, inbox)
- * keeps the QueryClient default (30 s, refetch on focus).
+ * Every family refetches when the window regains focus (a PWA resumed from the background must catch
+ * up); `staleTime` gates it, so a quick tab flip costs nothing but a resume after the window has
+ * expired refreshes at once. Tiers:
+ *  - permissions: who I am / what I may manage / who the members are: 1 min
+ *  - weeks: week rows and their phase (published/live): 2 min
+ *  - catalogs: cars, destinations, ride types, seat configs, department settings, policies,
+ *    templates, profile: 10 min
+ *  - everything else (rides, requests, board data, inbox): 30 s
+ *
+ * Classification matches EXACT key positions (never "any part of the key"), so a future week-scoped
+ * key that happens to contain a catalog word stays on the 30 s default. `queryPolicy.test.ts`
+ * enumerates every builder of the involved key factories and fails on an unclassified one.
  *
  * `invalidateQueries` ignores `staleTime`, so a mutation that invalidates one of these families
  * still refreshes it at once for the person who made the change.
  */
 export const DEFAULT_STALE_MS = 30_000;
-export const STABLE_STALE_MS = 10 * 60_000;
-/** Week rows carry the phase (published/live), which members wait for: shorter than the catalogs. */
+export const PERMISSIONS_STALE_MS = 60_000;
 export const WEEKS_STALE_MS = 2 * 60_000;
+export const CATALOG_STALE_MS = 10 * 60_000;
 
-const AUTH_STABLE = new Set(["profile", "departments", "isSadran", "isSadranAnywhere", "departmentMembers"]);
-const FLEET_STABLE = new Set(["cars", "destinations", "rideTypes", "seatConfigs", "turnaroundMinutes"]);
-/** `sadranKeys` put the tag either right after the root or last (`[root, dept, "cars"]`). */
-const SADRAN_STABLE = new Set([
-  "cars", "seatConfigs", "destinations", "rideTypes", "settings", "activePolicy", "whatsappTemplates", "mine", "switchableWeeks",
-]);
+export type QueryTier = "permissions" | "weeks" | "catalog" | "live";
 
-function isWeeksKey(key: QueryKey): boolean {
-  return key[0] === "siddur" && key[1] === "weeks";
+const AUTH_PERMISSIONS = new Set(["departments", "isSadran", "isSadranAnywhere", "departmentMembers"]);
+const FLEET_CATALOG = new Set(["cars", "destinations", "rideTypes", "seatConfigs", "turnaroundMinutes"]);
+/** `["sadran", <tag>, ...]`: department-independent tags. */
+const SADRAN_GLOBAL_CATALOG = new Set(["destinations", "rideTypes", "whatsappTemplates"]);
+/** `["sadran", <departmentId>, <tag>, ...]`. */
+const SADRAN_DEPT_CATALOG = new Set(["cars", "seatConfigs", "settings", "activePolicy"]);
+const SADRAN_DEPT_PERMISSIONS = new Set(["members", "switchableWeeks"]);
+
+/** The freshness tier of a query key. */
+export function queryTier(key: QueryKey): QueryTier {
+  const [root, tag] = key;
+  const third = key[2];
+  if (root === "context" || root === "operations") return "permissions";
+  if (root === "auth") {
+    if (tag === "profile") return "catalog";
+    return typeof tag === "string" && AUTH_PERMISSIONS.has(tag) ? "permissions" : "live";
+  }
+  if (root === "fleet") return typeof tag === "string" && FLEET_CATALOG.has(tag) ? "catalog" : "live";
+  if (root === "siddur") {
+    if (tag === "weeks") return "weeks";
+    return tag === "departments" ? "permissions" : "live";
+  }
+  if (root === "sadran") {
+    if (typeof tag !== "string") return "live";
+    if (tag === "mine") return "permissions";
+    if (SADRAN_GLOBAL_CATALOG.has(tag)) return "catalog";
+    if (typeof third === "string") {
+      if (SADRAN_DEPT_CATALOG.has(third)) return "catalog";
+      if (SADRAN_DEPT_PERMISSIONS.has(third)) return "permissions";
+      if (key[3] === "weekRow") return "weeks";
+    }
+  }
+  return "live";
 }
 
-/** True for identity/permission/catalog query families (see file header). */
+const TIER_STALE_MS: Record<QueryTier, number> = {
+  permissions: PERMISSIONS_STALE_MS,
+  weeks: WEEKS_STALE_MS,
+  catalog: CATALOG_STALE_MS,
+  live: DEFAULT_STALE_MS,
+};
+
+/** True for every family that is not on the 30 s default (identity, permission, week-row and catalog data). */
 export function isStableQuery(key: QueryKey): boolean {
-  const [root, tag] = key;
-  if (root === "context" || root === "operations") return true;
-  if (root === "auth") return typeof tag === "string" && AUTH_STABLE.has(tag);
-  if (root === "fleet") return typeof tag === "string" && FLEET_STABLE.has(tag);
-  if (root === "siddur") return tag === "departments";
-  if (root === "sadran") return key.some((part, index) => index > 0 && typeof part === "string" && SADRAN_STABLE.has(part));
-  return false;
+  return queryTier(key) !== "live";
 }
 
 export function queryStaleTime(query: Pick<Query, "queryKey">): number {
-  if (isWeeksKey(query.queryKey)) return WEEKS_STALE_MS;
-  return isStableQuery(query.queryKey) ? STABLE_STALE_MS : DEFAULT_STALE_MS;
-}
-
-export function queryRefetchesOnFocus(query: Pick<Query, "queryKey">): boolean {
-  return !isStableQuery(query.queryKey) && !isWeeksKey(query.queryKey);
+  return TIER_STALE_MS[queryTier(query.queryKey)];
 }
 
 /** After a successful admin-area mutation, refresh every catalog/permission family at once. */
 export function invalidateStableQueries(client: QueryClient): void {
   void client.invalidateQueries({
-    predicate: (query) => isStableQuery(query.queryKey) || isWeeksKey(query.queryKey),
+    predicate: (query) => isStableQuery(query.queryKey),
   });
 }
 
@@ -62,13 +91,13 @@ export function createQueryClient(): QueryClient {
       queries: {
         retry: 1,
         staleTime: queryStaleTime,
-        refetchOnWindowFocus: queryRefetchesOnFocus,
+        refetchOnWindowFocus: true,
       },
     },
     mutationCache: new MutationCache({
       onSuccess: () => {
         // Admin screens edit memberships, roles, cars, settings, policies, destinations: the board/siddur
-        // caches of those families (other key roots than the admin ones) must not wait 10 minutes.
+        // caches of those families (other key roots than the admin ones) must not wait for their staleTime.
         if (typeof window !== "undefined" && window.location.pathname.startsWith("/admin")) invalidateStableQueries(client);
       },
     }),

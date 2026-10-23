@@ -513,15 +513,18 @@ Not part of the tick: `sadran_contact_of(department_id, week_start)` (§8) is a 
 
 One policy in `src/lib/queryPolicy.ts` (installed by `createQueryClient()` in `main.tsx`), chosen per query-key family, so a hook does not set its own `staleTime` for these:
 
-| Family | Keys | Fresh for | Refetch on window focus |
-|---|---|---|---|
-| Identity, permissions, catalogs | `auth` (profile incl. phone, departments, isSadran, isSadranAnywhere, departmentMembers), `context`, `operations`, `fleet` (cars, destinations, rideTypes, seatConfigs), `sadran` cars/seatConfigs/destinations/rideTypes/settings/activePolicy (+ options)/whatsappTemplates/switchableWeeks | 10 min | no |
-| Week rows (`siddur`/`weeks`) | phase changes members wait for | 2 min | no |
-| Everything else (rides, board, requests, inbox, proposals) | | 30 s | yes |
+Every family refetches when the window regains focus (a resumed PWA catches up); `staleTime` gates it. Keys are classified by exact position (`queryTier()`), and `queryPolicy.test.ts` enumerates every builder of the involved key factories, so an unclassified new key fails the test.
 
-Edits still show at once for the person who made them: `invalidateQueries` ignores `staleTime`, and any successful mutation made on an `/admin/**` page invalidates all stable families (`MutationCache.onSuccess`). Other writers (the Sadran on the board, members' profile) already invalidate their own keys.
+| Family | Keys | Fresh for |
+|---|---|---|
+| Permissions / context | `auth` (departments, isSadran, isSadranAnywhere, departmentMembers), `context`, `operations`, `siddur`/`departments`, `sadran` `mine`, `[sadran, dept, members]`, `[sadran, dept, switchableWeeks]` | 1 min |
+| Week rows (phase) | `siddur`/`weeks`, `[sadran, dept, week, weekRow]` | 2 min |
+| Catalogs | `auth` profile, `fleet` (cars, destinations, rideTypes, seatConfigs, turnaroundMinutes), `sadran` cars/seatConfigs/destinations/rideTypes/settings/activePolicy (+ options)/whatsappTemplates | 10 min |
+| Everything else (rides, board, requests, inbox, proposals) | | 30 s |
 
-Polling: pending ride changes (`useRideChanges`) every 60 s, and only on screens that show or act on them (week-scoped screens wait for department and week, so there is no unscoped first fetch; Home polls only while a ride sheet is open); unread-notification count 60 s; publication readiness 15 s (publish screen only). Idle screens otherwise make no requests.
+Edits still show at once for the person who made them: `invalidateQueries` ignores `staleTime`, and any successful mutation made on an `/admin/**` page invalidates all non-30 s families (`MutationCache.onSuccess`). Other writers (the Sadran on the board, members' profile) already invalidate their own keys.
+
+Polling: pending ride changes (`useRideChanges`) every 60 s, and only on screens that show or act on them (week-scoped screens wait for department and week, so there is no unscoped first fetch; Home polls only while a ride sheet is open; the Inbox answer block is not scoped by department, because RLS limits it to what the person may see in all their departments, but it only asks for the current week onward; Publish is scoped to its week); unread-notification count 60 s; publication readiness 15 s (publish screen only). Idle screens otherwise make no requests.
 
 `ensure_department_weeks` (catch-up of week rows) runs at most once per department per session (30 min TTL for a long-lived PWA, cleared on sign-out — `features/siddur/ensureWeeksCache.ts`), not before every week read. The profile row and `phone_of` are fetched in parallel inside the cached profile query. The admin members list takes phones from the single `profile_phones` call in `fetchAllProfiles`. The active policy is derived from the policy-options query (one request), turnaround minutes from the department-settings query, and `useDepartments` shares `useActiveDepartment`'s department list.
 
