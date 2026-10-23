@@ -497,6 +497,16 @@ select 'outcome_changed',channel,'ride_cancelled',
 from unnest(array['inbox','push']::public.notification_channel[]) channel
 on conflict (event,channel,(coalesce(variant,''))) do update set title=excluded.title,body=excluded.body,default_title=excluded.default_title,default_body=excluded.default_body;
 
+-- R14B1: the Sadran took the member off a ride (board "הסר שיבוץ" / removed from a ride's list).
+insert into public.notification_templates(event,channel,variant,title,body,default_title,default_body)
+select 'outcome_changed',channel,'unassigned_by_sadran',
+  'השיבוץ שלך בנסיעה הוסר',
+  '{{byName}} הסיר/ה אותך מהנסיעה ביום {{day}} {{timeRange}}, {{car}} {{route}}. הבקשה שלך חזרה לרשימת ההמתנה — נעדכן אם יימצא לך שיבוץ אחר.',
+  'השיבוץ שלך בנסיעה הוסר',
+  '{{byName}} הסיר/ה אותך מהנסיעה ביום {{day}} {{timeRange}}, {{car}} {{route}}. הבקשה שלך חזרה לרשימת ההמתנה — נעדכן אם יימצא לך שיבוץ אחר.'
+from unnest(array['inbox','push']::public.notification_channel[]) channel
+on conflict (event,channel,(coalesce(variant,''))) do update set title=excluded.title,body=excluded.body,default_title=excluded.default_title,default_body=excluded.default_body;
+
 -- Named reservation passengers (F3, 20260914120000_ride_passengers.sql): a Sadran-picked
 -- reservation passenger (or, later, anyone added via "+ נוסעים") is notified once.
 insert into public.notification_templates(event,channel,variant,title,body,default_title,default_body)

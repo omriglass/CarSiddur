@@ -32,6 +32,8 @@ import type { Json } from "@/integrations/supabase/types";
 import type { Suggestion } from "@/solver";
 import { createClient } from "@supabase/supabase-js";
 
+import { setAppSurface } from "@/lib/appSurface";
+
 import { loadBoard, dropCtxOf, draftHiddenRideIds, solverPreview, unmetItemsOf, type Board } from "./lib/board";
 import {
   UsageError, appendMail, resolvePlaceToken, flag, flagAll, has, mailFor, need, outDir, parseArgs, printMail, resolveId, resolveScope, run, sadranFromPersonas, short, signIn, DEMO_PASSWORD,
@@ -141,6 +143,11 @@ async function open(args: Args): Promise<{ scope: Scope; board: Board }> {
   const password = flag(args, "password") ?? process.env.QA_SADRAN_PASSWORD ?? fromFile?.password ?? DEMO_PASSWORD;
   await signIn({ email, password });
   SADRAN_EMAIL = email;
+  // R14M4: this tool plays the Sadran board, so its calls carry `x-app-surface: board` like the browser board does and
+  // the notices of its changes are held until `send-held` (= "שלח את כל ההצעות"). `--surface none` acts like the siddur.
+  const surface = flag(args, "surface") ?? "board";
+  if (surface !== "board" && surface !== "none") throw new UsageError("--surface board|none");
+  setAppSurface(surface === "board" ? "board" : null);
   const scope = await resolveScope(args, fromFile ?? {});
   return { scope, board: await loadBoard(scope) };
 }
@@ -716,7 +723,7 @@ async function cmdAdvanceLive(board: Board): Promise<void> {
 }
 
 function usage(): void {
-  console.log(`qa:sadran <command> [--out DIR] [--email E --password P] [--dept NAME|ID] [--week YYYY-MM-DD]
+  console.log(`qa:sadran <command> [--out DIR] [--surface board|none] [--email E --password P] [--dept NAME|ID] [--week YYYY-MM-DD]
   week | day <date> | requests [<date>] [--status S] | proposals
   autofill [--day D] [--dry-run] | resolve-full [--dry-run]
   place <req> <car> <HH:MM> [--leg out|return] [--force]
@@ -730,6 +737,7 @@ function usage(): void {
   message <memberEmail> <text> | messages [--new]
   fewer-days <req> <first-day> <last-day> [--car C] [--draft] | withdraw-duplicate <req>
   assign-driver <ride> <member|none> | add-passengers <ride> <name>[:adult|child_seat|booster]... | contacts [<name>]
+  send-held [--days d1,d2]   (the board's "שלח את כל ההצעות" notices part; every command holds its member notices unless --surface none)
   publish [--days d1,d2] [--allow-unanswered] [--allow-driverless] | advance live`);
 }
 
@@ -771,6 +779,11 @@ run(async () => {
       console.log(`message to ${to} written to the mailbox`); return;
     }
     case "messages": printMail(mailFor(OUT, SADRAN_EMAIL, has(args, "new"), ["sadran"])); return;
+    case "send-held": {
+      const days = flag(args, "days");
+      const sent = await api.flushHeldNotices(board.scope.departmentId, board.scope.weekStart, days ? days.split(",") : null);
+      console.log(`held board notices sent: ${sent}`); return;
+    }
     case "publish": return cmdPublish(board, args);
     case "advance": if (args.pos[0] === "live") return cmdAdvanceLive(board); throw new UsageError("advance live");
     default: usage(); throw new UsageError(`unknown command ${args.cmd}`);

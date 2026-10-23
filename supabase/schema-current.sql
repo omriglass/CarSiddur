@@ -1597,7 +1597,7 @@ begin
     when v_variant in ('merged', 'merged_no_driver', 'merged_split', 'joined_ride', 'placed_by_sadran', 'driver_assigned',
       'passenger_added_you', 'reservation_added', 'alternative_applied', 'own_car_placed') then 'joins'
     when v_variant in ('ride_cancelled', 'passenger_removed_you', 'driver_unassigned', 'driver_replaced_you', 'child_removed',
-      'join_ride_cancelled', 'driver_cancelled', 'driver_cancelled_plain') then 'leaves'
+      'join_ride_cancelled', 'driver_cancelled', 'driver_cancelled_plain', 'unassigned_by_sadran') then 'leaves'
     else 'changes' end;
   if v_kind <> 'other' and not exists (select 1 from public.held_notices h
       where h.recipient_id = _recipient and h.subject_kind = v_kind and h.subject_id = v_sid) then
@@ -2016,7 +2016,7 @@ begin
     'driver_replaced_you', 'driver_unassigned', 'car_changed', 'time_changed', 'edit_applied', 'edit_waitlisted',
     'alternative_applied', 'own_car_placed', 'passenger_added_you', 'passenger_joined', 'passenger_left',
     'passenger_removed_request', 'passenger_removed_you', 'passengers_added', 'passengers_removed',
-    'reservation_added', 'ride_cancelled', 'child_removed', 'join_ride_cancelled', 'join_asked'
+    'reservation_added', 'ride_cancelled', 'unassigned_by_sadran', 'child_removed', 'join_ride_cancelled', 'join_asked'
   ) then
     return false;
   end if;
@@ -7245,6 +7245,7 @@ CREATE OR REPLACE FUNCTION "public"."edit_ride_before_planning"("p_ride" "jsonb"
     AS $$
 declare
   v_prev_reason text;
+  v_left record;
   v_id uuid := nullif(p_ride->>'id', '')::uuid;
   v_dept uuid := (p_ride->>'department_id')::uuid;
   v_week date := (p_ride->>'week_start')::date;
@@ -7384,8 +7385,24 @@ begin
           format('placed_by_sadran:%s:%s',(v_served->>'request_id')::uuid,v_id));
       end if;
     end loop;
-    update public.requests q set status='waitlisted',status_reason='SADRAN_UNASSIGNED'
-    where q.id=any(v_old_requests) and not exists(select 1 from public.ride_requests rr join public.rides r on r.id=rr.ride_id where rr.request_id=q.id and r.status<>'cancelled');
+    -- R14B1: a member the Sadran takes off this ride (and who is on no other ride) is told, once: held on the board
+    -- (REQ §13.138 c) so it nets against the ride they are put on next; sent at once off the board. Nobody is told
+    -- about a request that already ended, nor about their own action.
+    for v_left in
+      with u as (
+        update public.requests q set status='waitlisted',status_reason='SADRAN_UNASSIGNED'
+        where q.id=any(v_old_requests) and q.status not in ('cancelled','withdrawn','denied','external')
+          and not exists(select 1 from public.ride_requests rr join public.rides r on r.id=rr.ride_id where rr.request_id=q.id and r.status<>'cancelled')
+        returning q.id, q.requester_id)
+      select u.id, u.requester_id from u order by u.id
+    loop
+      if v_left.requester_id is distinct from (select auth.uid()) then
+        perform public.enqueue_notification(v_left.requester_id,'outcome_changed',v_dept,v_week,
+          jsonb_build_object('byName',coalesce((select full_name from public.profiles where id=(select auth.uid())),'')),
+          jsonb_build_object('variant','unassigned_by_sadran','request_id',v_left.id,'ride_id',v_id),
+          format('unassigned_by_sadran:%s:%s:%s',v_id,v_left.id,clock_timestamp()));
+      end if;
+    end loop;
   end if;
   perform public.assert_ride_driver(v_id);
   if v_manage then
@@ -7951,6 +7968,10 @@ declare
   v_row public.held_notices%rowtype;
   v_now jsonb; v_now_related boolean; v_before_related boolean;
   v_sent integer := 0;
+  k record; gm record; v_f public.held_notices%rowtype;
+  v_fb boolean; v_nr boolean; v_vw jsonb;
+  v_l_first uuid[]; v_j_first uuid[]; v_l_sorted uuid[]; v_j_sorted uuid[];
+  v_lf public.held_notices%rowtype; v_jf public.held_notices%rowtype; v_jlast public.held_notices%rowtype; v_i integer;
 begin
   if not public.can_manage_week(p_department_id, p_week_start) then
     raise exception 'not_authorized' using errcode = 'P0001';
@@ -7966,6 +7987,56 @@ begin
     perform public._send_held(v_row);
     v_sent := v_sent + 1;
     delete from public.held_notices where id = v_row.id;
+  end loop;
+
+  -- R14B2: a member taken off one ride and put on another in the same batch (unassign, then place again) is ONE change
+  -- of that member's ride, not a "left" notice plus a "joined" notice. Per (recipient, request) the rides they net-left
+  -- are paired with the rides they net-joined (by start time): same car/start/end/driver as before = nothing is sent,
+  -- otherwise one board_changes notice old -> new. Unpaired ones fall through to the per-ride logic below.
+  for k in
+    select distinct h.recipient_id, h.data ->> 'request_id' as req
+    from public.held_notices h
+    where h.department_id = p_department_id and h.week_start = p_week_start and h.subject_kind = 'ride'
+      and h.change_kind in ('joins', 'leaves') and nullif(h.data ->> 'request_id', '') is not null
+  loop
+    v_l_first := '{}'; v_j_first := '{}';
+    for gm in
+      select h.subject_id, array_agg(h.id order by h.seq) as ids, bool_or(h.day is null or p_days is null or h.day = any(p_days)) as in_days
+      from public.held_notices h
+      where h.department_id = p_department_id and h.week_start = p_week_start and h.subject_kind = 'ride'
+        and h.recipient_id = k.recipient_id
+        and h.subject_id in (select h2.subject_id from public.held_notices h2
+          where h2.recipient_id = k.recipient_id and h2.subject_kind = 'ride' and h2.change_kind in ('joins', 'leaves')
+            and h2.data ->> 'request_id' = k.req)
+      group by h.subject_id
+    loop
+      continue when not gm.in_days;
+      select * into v_f from public.held_notices where id = gm.ids[1];
+      v_vw := public._held_ride_view(gm.subject_id);
+      v_nr := v_vw is not null and (v_vw ->> 'status') <> 'cancelled' and public.ride_related(gm.subject_id, k.recipient_id);
+      v_fb := v_f.change_kind <> 'joins';
+      if v_fb and not v_nr then v_l_first := v_l_first || v_f.id;
+      elsif not v_fb and v_nr then v_j_first := v_j_first || v_f.id;
+      end if;
+    end loop;
+    if cardinality(v_l_first) = 0 or cardinality(v_l_first) <> cardinality(v_j_first) then continue; end if;
+    select array_agg(f.id order by nullif(f.before_view ->> 'starts_at', '')::timestamptz, f.id) into v_l_sorted
+      from public.held_notices f where f.id = any(v_l_first);
+    select array_agg(f.id order by nullif(public._held_ride_view(f.subject_id) ->> 'starts_at', '')::timestamptz, f.id) into v_j_sorted
+      from public.held_notices f where f.id = any(v_j_first);
+    for v_i in 1 .. cardinality(v_l_sorted) loop
+      select * into v_lf from public.held_notices where id = v_l_sorted[v_i];
+      select * into v_jf from public.held_notices where id = v_j_sorted[v_i];
+      v_vw := public._held_ride_view(v_jf.subject_id);
+      if not public._held_views_equal(v_lf.before_view, v_vw) then
+        select * into v_jlast from public.held_notices
+          where recipient_id = k.recipient_id and subject_kind = 'ride' and subject_id = v_jf.subject_id order by seq desc limit 1;
+        perform public._send_board_changes(v_jlast, v_lf.before_view, v_vw);
+        v_sent := v_sent + 1;
+      end if;
+      delete from public.held_notices
+        where recipient_id = k.recipient_id and subject_kind = 'ride' and subject_id in (v_lf.subject_id, v_jf.subject_id);
+    end loop;
   end loop;
 
   for g in
@@ -18122,7 +18193,10 @@ CREATE OR REPLACE FUNCTION "public"."unassign_ride"("p_ride_id" "uuid", "p_expec
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
-declare r public.rides%rowtype; ids uuid[];
+declare
+  r public.rides%rowtype; ids uuid[];
+  v_actor uuid := (select auth.uid());
+  v_actor_name text; v_who record;
 begin
   select * into r from public.rides where id=p_ride_id for update;
   if not found or r.status='cancelled' then raise exception 'ride_not_found'; end if;
@@ -18131,7 +18205,29 @@ begin
   if exists(select 1 from public.weeks where department_id=r.department_id and week_start=r.week_start and phase='archived') then raise exception 'week_archived'; end if;
   perform set_config('app.audit_reason','unassign_ride',true);
   select array_agg(request_id) into ids from public.ride_requests where ride_id=r.id;
-  update public.rides set status='cancelled',cancelled_at=now(),cancelled_by=(select auth.uid()),cancel_reason='SADRAN_UNASSIGNED' where id=r.id;
+  select full_name into v_actor_name from public.profiles where id=v_actor;
+  for v_who in
+    select q.id as request_id, q.requester_id
+    from public.ride_requests rr join public.requests q on q.id=rr.request_id
+    where rr.ride_id=r.id and q.requester_id is distinct from v_actor
+      and q.status not in ('cancelled','withdrawn','denied','external')
+    order by q.id
+  loop
+    perform public.enqueue_notification(v_who.requester_id,'outcome_changed',r.department_id,r.week_start,
+      jsonb_build_object('byName',coalesce(v_actor_name,'')),
+      jsonb_build_object('variant','unassigned_by_sadran','request_id',v_who.request_id,'ride_id',r.id),
+      format('unassigned_by_sadran:%s:%s:%s',r.id,v_who.request_id,clock_timestamp()));
+  end loop;
+  for v_who in
+    select rp.person_id from public.ride_passengers rp
+    where rp.ride_id=r.id and rp.person_id is not null and rp.person_id is distinct from v_actor
+  loop
+    perform public.enqueue_notification(v_who.person_id,'outcome_changed',r.department_id,r.week_start,
+      jsonb_build_object('byName',coalesce(v_actor_name,'')),
+      jsonb_build_object('variant','ride_cancelled','ride_id',r.id),
+      format('ride_cancelled:%s:%s:%s',r.id,r.version,v_who.person_id));
+  end loop;
+  update public.rides set status='cancelled',cancelled_at=now(),cancelled_by=v_actor,cancel_reason='SADRAN_UNASSIGNED' where id=r.id;
   delete from public.ride_requests where ride_id=r.id;
   update public.requests q set status='waitlisted',status_reason='SADRAN_UNASSIGNED' where id=any(ids)
     and q.status not in ('cancelled','withdrawn','denied','external')   -- R7B9: a request that already ended stays ended
