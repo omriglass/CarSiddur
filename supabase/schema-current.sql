@@ -9789,6 +9789,94 @@ end $$;
 ALTER FUNCTION "public"."my_co_guardians"("p_department_id" "uuid") OWNER TO "postgres";
 
 
+CREATE OR REPLACE VIEW "public"."v_board_rides" AS
+SELECT
+    NULL::"uuid" AS "id",
+    NULL::"uuid" AS "department_id",
+    NULL::"date" AS "week_start",
+    NULL::"uuid" AS "car_id",
+    NULL::timestamp with time zone AS "starts_at",
+    NULL::timestamp with time zone AS "ends_at",
+    NULL::timestamp with time zone AS "blocked_until",
+    NULL::"public"."ride_status" AS "status",
+    NULL::boolean AS "is_pinned",
+    NULL::"text" AS "pin_reason",
+    NULL::integer AS "version",
+    NULL::"uuid" AS "origin_id",
+    NULL::"text" AS "origin_name",
+    NULL::"uuid" AS "destination_id",
+    NULL::"text" AS "destination_name",
+    NULL::boolean AS "overflow_allowed",
+    NULL::"uuid" AS "overnight_ack_by",
+    NULL::"uuid" AS "driver_id",
+    NULL::"text" AS "driver_name",
+    NULL::boolean AS "is_chauffeur",
+    NULL::"jsonb" AS "served",
+    NULL::"text" AS "notes",
+    NULL::boolean AS "needs_driver",
+    NULL::smallint AS "turnaround_override_minutes",
+    NULL::boolean AS "planning_conflict",
+    NULL::"uuid" AS "series_id",
+    NULL::smallint AS "series_index",
+    NULL::smallint AS "series_count",
+    NULL::"jsonb" AS "passengers",
+    NULL::"jsonb" AS "people",
+    NULL::boolean AS "auto_relocation",
+    NULL::"jsonb" AS "relay_partner",
+    NULL::"jsonb" AS "route";
+
+
+ALTER VIEW "public"."v_board_rides" OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."my_upcoming_rides"("p_department_id" "uuid" DEFAULT NULL::"uuid", "p_now" timestamp with time zone DEFAULT "now"()) RETURNS SETOF "public"."v_board_rides"
+    LANGUAGE "plpgsql" STABLE
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_me uuid := (select auth.uid());
+  v_ids uuid[];
+begin
+  -- The ids go into an array first: a literal `id = any(array)` is pushed down through the view's
+  -- GROUP BY into the rides scan, an `id in (subquery)` is not (the whole week is aggregated first).
+  select coalesce(array_agg(x.id), '{}'::uuid[]) into v_ids
+  from (
+    select r.id
+      from public.rides r
+     where r.driver_id = v_me
+       and r.status in ('confirmed', 'flagged', 'draft')
+       and r.ends_at > p_now
+    union
+    select rr.ride_id
+      from public.requests q
+      join public.ride_requests rr on rr.request_id = q.id
+     where q.requester_id = v_me
+    union
+    select rr.ride_id
+      from public.request_companions rc
+      join public.ride_requests rr on rr.request_id = rc.request_id
+     where rc.profile_id = v_me
+    union
+    select rp.ride_id
+      from public.ride_passengers rp
+     where rp.person_id = v_me
+  ) x;
+
+  return query
+  select v.*
+    from public.v_board_rides v
+   where v.id = any(v_ids)
+     and v.status in ('confirmed', 'flagged', 'draft')
+     and v.ends_at > p_now
+     and (p_department_id is null or v.department_id = p_department_id)
+   order by v.starts_at, v.id;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."my_upcoming_rides"("p_department_id" "uuid", "p_now" timestamp with time zone) OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."normalize_place_text"("p_text" "text") RETURNS "text"
     LANGUAGE "sql" IMMUTABLE
     SET "search_path" TO 'public', 'pg_temp'
@@ -20255,46 +20343,6 @@ ALTER TABLE ONLY "public"."unsent_change_reminders" FORCE ROW LEVEL SECURITY;
 ALTER TABLE "public"."unsent_change_reminders" OWNER TO "postgres";
 
 
-CREATE OR REPLACE VIEW "public"."v_board_rides" AS
-SELECT
-    NULL::"uuid" AS "id",
-    NULL::"uuid" AS "department_id",
-    NULL::"date" AS "week_start",
-    NULL::"uuid" AS "car_id",
-    NULL::timestamp with time zone AS "starts_at",
-    NULL::timestamp with time zone AS "ends_at",
-    NULL::timestamp with time zone AS "blocked_until",
-    NULL::"public"."ride_status" AS "status",
-    NULL::boolean AS "is_pinned",
-    NULL::"text" AS "pin_reason",
-    NULL::integer AS "version",
-    NULL::"uuid" AS "origin_id",
-    NULL::"text" AS "origin_name",
-    NULL::"uuid" AS "destination_id",
-    NULL::"text" AS "destination_name",
-    NULL::boolean AS "overflow_allowed",
-    NULL::"uuid" AS "overnight_ack_by",
-    NULL::"uuid" AS "driver_id",
-    NULL::"text" AS "driver_name",
-    NULL::boolean AS "is_chauffeur",
-    NULL::"jsonb" AS "served",
-    NULL::"text" AS "notes",
-    NULL::boolean AS "needs_driver",
-    NULL::smallint AS "turnaround_override_minutes",
-    NULL::boolean AS "planning_conflict",
-    NULL::"uuid" AS "series_id",
-    NULL::smallint AS "series_index",
-    NULL::smallint AS "series_count",
-    NULL::"jsonb" AS "passengers",
-    NULL::"jsonb" AS "people",
-    NULL::boolean AS "auto_relocation",
-    NULL::"jsonb" AS "relay_partner",
-    NULL::"jsonb" AS "route";
-
-
-ALTER VIEW "public"."v_board_rides" OWNER TO "postgres";
-
-
 CREATE OR REPLACE VIEW "public"."v_car_locations" WITH ("security_invoker"='true') AS
  SELECT "r"."car_id",
     "r"."department_id",
@@ -25567,6 +25615,17 @@ GRANT ALL ON FUNCTION "public"."my_co_guardians"("p_department_id" "uuid") TO "a
 
 
 
+GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE "public"."v_board_rides" TO "authenticated";
+GRANT ALL ON TABLE "public"."v_board_rides" TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."my_upcoming_rides"("p_department_id" "uuid", "p_now" timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."my_upcoming_rides"("p_department_id" "uuid", "p_now" timestamp with time zone) TO "service_role";
+GRANT ALL ON FUNCTION "public"."my_upcoming_rides"("p_department_id" "uuid", "p_now" timestamp with time zone) TO "authenticated";
+
+
+
 REVOKE ALL ON FUNCTION "public"."normalize_place_text"("p_text" "text") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."normalize_place_text"("p_text" "text") TO "service_role";
 
@@ -27030,11 +27089,6 @@ GRANT ALL ON TABLE "public"."text_fragments" TO "service_role";
 
 GRANT SELECT,MAINTAIN ON TABLE "public"."unsent_change_reminders" TO "authenticated";
 GRANT ALL ON TABLE "public"."unsent_change_reminders" TO "service_role";
-
-
-
-GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE "public"."v_board_rides" TO "authenticated";
-GRANT ALL ON TABLE "public"."v_board_rides" TO "service_role";
 
 
 

@@ -2,6 +2,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { AppError, rpc, toAppError } from "@/lib/rpc";
 import { isMyDraftRide } from "@/features/rides/myRides";
 import { siddurCarName } from "@/lib/siddurCarName";
+import { ensureOncePerSession } from "./ensureWeeksCache";
 
 import type { Database } from "@/integrations/supabase/types";
 import type { CarType } from "@/lib/enums";
@@ -21,58 +22,21 @@ export type MyUpcomingRide = BoardRide & {
 };
 
 /**
- * Every upcoming/ongoing requested leg, plus designated-driver rides without
- * an own request, plus rides I'm named on as a `ride_passengers.person_id`
- * (F3, 20260914120000_ride_passengers.sql — a Sadran-made reservation with no
- * request behind it, e.g.). Four calls, none of them a client-side paging
- * loop (docs/HARDENING_2026-09.md §3 item 5): (1) one embedded
- * `ride_requests` query for the ride ids a request of mine reaches,
- * restricted to upcoming public-status rides before the id list is ever
- * built; (1b) the same, for `ride_passengers`; (2) one `v_board_rides` read
- * for those ids plus every ride I drive — kept as a second call because the
- * view carries the joined display fields (`served`, names, …) a plain FK
- * embed on `rides` cannot reach and, being a view, offers no FK embed of its
- * own; (3) one `cars` lookup for the resulting car ids. A member's
- * upcoming-ride set is always small enough for a single `.in()`/`.or()`
- * each — the old 500/100-row loops guarded against an unbounded id list
- * that never actually occurs here.
+ * Every upcoming/ongoing ride I am on: I drive it, a request of mine (as requester or companion) is on it,
+ * or I am named on it as a `ride_passengers.person_id` (F3, 20260914120000_ride_passengers.sql — a
+ * Sadran-made reservation with no request behind it, e.g.). Two calls: (1) the `my_upcoming_rides` RPC
+ * (security invoker, so RLS decides visibility exactly as for a direct view read) — it collects my ride
+ * ids first and reads the `v_board_rides` view for just those, instead of aggregating every ride of the
+ * week and filtering `people` afterwards; (2) one `cars` lookup for the resulting car ids.
  */
 export async function fetchMyUpcomingRides(profileId: string, departmentId?: string): Promise<MyUpcomingRide[]> {
   const now = new Date().toISOString();
-
-  const { data: passengerRows, error: passengerError } = await supabase
-    .from("ride_requests")
-    .select("ride_id, request:requests!ride_requests_request_id_fkey!inner(requester_id), ride:rides!ride_requests_ride_id_fkey!inner(ends_at, status)")
-    .eq("request.requester_id", profileId)
-    .gt("ride.ends_at", now)
-    .in("ride.status", ["confirmed", "flagged"]);
-  if (passengerError) throw toAppError(passengerError);
-
-  // A Sadran-named reservation may sit on an unpublished day (`draft`, visible to the managers only by RLS).
-  const { data: namedPassengerRows, error: namedPassengerError } = await supabase
-    .from("ride_passengers")
-    .select("ride_id, ride:rides!ride_passengers_ride_id_fkey!inner(ends_at, status)")
-    .eq("person_id", profileId)
-    .gt("ride.ends_at", now)
-    .in("ride.status", ["confirmed", "flagged", "draft"]);
-  if (namedPassengerError) throw toAppError(namedPassengerError);
-
-  const passengerRideIds = [...new Set([
-    ...(passengerRows ?? []).map((row) => row.ride_id),
-    ...(namedPassengerRows ?? []).map((row) => row.ride_id),
-  ])];
-
-  // Owner 2026-10-16: a Sadran sees his own rides on unpublished days too (`draft`; RLS hides them from members).
-  let boardQuery = supabase.from("v_board_rides").select("*")
-    .in("status", ["confirmed", "flagged", "draft"]).gt("ends_at", now)
-    .order("starts_at").order("id");
-  boardQuery = passengerRideIds.length
-    ? boardQuery.or(`driver_id.eq.${profileId},id.in.(${passengerRideIds.join(",")})`)
-    : boardQuery.eq("driver_id", profileId);
-  const [{ data: rideRows, error: rideError }, peopleRows] = await Promise.all([boardQuery, fetchRidesWithPerson({ person_id: profileId }, now, ["confirmed", "flagged", "draft"])]);
-  if (rideError) throw toAppError(rideError);
+  // One call: `my_upcoming_rides` (20261028110000, security invoker — same RLS as the old queries) finds my ride ids
+  // (driver / own or companion request / named passenger) first and reads `v_board_rides` for just those.
+  const { data, error } = await supabase.rpc("my_upcoming_rides", { p_department_id: departmentId, p_now: now });
+  if (error) throw toAppError(error);
   const rides: BoardRide[] = [];
-  for (const ride of [...(rideRows ?? []), ...peopleRows]) {
+  for (const ride of data ?? []) {
     // The one selection rule (`features/rides/myRides.ts`): a draft ride only when I drive or am named on it.
     if (ride.id && (ride.status !== "draft" || isMyDraftRide(ride, profileId))) rides.push(ride);
   }
@@ -173,13 +137,18 @@ export async function fetchCurrentWeekStart(): Promise<string> {
   return data;
 }
 
-export async function ensureDepartmentWeeks(departmentId: string): Promise<void> {
+async function runEnsureDepartmentWeeks(departmentId: string): Promise<void> {
   try {
     await rpc("ensure_department_weeks", { p_department_id: departmentId });
   } catch (error) {
     // Published schedules remain readable across departments; catch-up only mutates memberships.
     if (!(error instanceof AppError) || error.code !== "not_authorized") throw error;
   }
+}
+
+/** At most once per department per session (`ensureWeeksCache.ts`), not before every week read. */
+export function ensureDepartmentWeeks(departmentId: string): Promise<void> {
+  return ensureOncePerSession(departmentId, runEnsureDepartmentWeeks);
 }
 
 export async function fetchWeeks(departmentId: string): Promise<Week[]> {

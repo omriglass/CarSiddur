@@ -188,7 +188,7 @@ migrations `*ride_car_neighbours*`, `supabase/tests/car_handover_notes.sql` ("be
 
 **Automated**:
 - Vitest: `npx vitest run src/features/siddur src/features/rides/carHandover.test.ts src/features/requests/rowHandover.test.ts src/components/WeekGrid.test.ts src/components/WeekGrid.gestures.test.tsx src/components/weekGridCars.test.ts`
-- SQL: `selected_day_publication.sql`, `day_car_swap.sql`, `car_handover_notes.sql`
+- SQL: `selected_day_publication.sql`, `day_car_swap.sql`, `car_handover_notes.sql`, `my_upcoming_rides.sql` (the "my rides" read: same visibility as the old people filter)
 - Playwright: `npx playwright test --grep "@siddur"`
 
 **QA script**:

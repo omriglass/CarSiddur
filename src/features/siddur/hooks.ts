@@ -1,5 +1,6 @@
 import { useActiveDepartment } from "@/features/auth/useActiveDepartment";
 import { useQuery } from "@tanstack/react-query";
+import { contextKeys } from "@/features/auth/queryKeys";
 import { useSession } from "@/features/auth/useSession";
 
 import {
@@ -23,23 +24,26 @@ import { siddurKeys } from "./queryKeys";
 // sadran import cycle) — they are shared by both the siddur and sadran board, not siddur-specific.
 
 export function useMyUpcomingRides() {
-  const { departmentId } = useActiveDepartment();
+  const { departmentId, isLoading: departmentLoading } = useActiveDepartment();
   const { session } = useSession();
   const profileId = session?.user.id;
   return useQuery({
     queryKey: siddurKeys.myUpcomingRides(profileId, departmentId),
     queryFn: () => fetchMyUpcomingRides(profileId as string, departmentId),
-    enabled: !!profileId,
+    // The department is undefined until its queries land; fetching (and keying) before that ran the whole fetch twice.
+    enabled: !!profileId && !departmentLoading,
     staleTime: 30_000,
     refetchInterval: 30_000,
   });
 }
 
+/** Same query (and cache entry) as `useActiveDepartment`'s department list: one fetch per session. */
 export function useDepartments() {
+  const { session } = useSession();
   return useQuery({
-    queryKey: siddurKeys.departments(),
+    queryKey: contextKeys.departments(session?.user.id),
     queryFn: fetchDepartments,
-    staleTime: 10 * 60_000,
+    enabled: !!session,
   });
 }
 
@@ -56,7 +60,6 @@ export function useWeeks(departmentId: string | undefined) {
     queryKey: siddurKeys.weeks(departmentId),
     queryFn: () => fetchWeeks(departmentId as string),
     enabled: !!departmentId,
-    staleTime: 60_000,
   });
 }
 

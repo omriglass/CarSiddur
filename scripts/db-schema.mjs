@@ -43,10 +43,12 @@ function main() {
   const tmpDir = mkdtempSync(path.join(tmpdir(), "db-schema-"));
   const tmpFile = path.join(tmpDir, "schema.sql");
   try {
-    console.log(`Running: npx supabase db dump --local --schema public -f ${tmpFile}`);
+    // Optional SUPABASE_WORKDIR: dump a disposable stack instead of the default local one.
+    const workdir = process.env.SUPABASE_WORKDIR ? ["--workdir", process.env.SUPABASE_WORKDIR] : [];
+    console.log(`Running: npx supabase db dump --local --schema public -f ${tmpFile} ${workdir.join(" ")}`);
     execFileSync(
       "npx",
-      ["supabase", "db", "dump", "--local", "--schema", "public", "-f", tmpFile],
+      ["supabase", "db", "dump", "--local", "--schema", "public", "-f", tmpFile, ...workdir],
       { stdio: "inherit" },
     );
 
