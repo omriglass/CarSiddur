@@ -16621,6 +16621,13 @@ begin
   end if;
 
   v_is_late := now() > v_week.close_at;
+  -- R13M3: the Sadran editing someone else's request after the closing time does not make it late — it keeps its
+  -- own lateness (no "late request" notice either; R13B15 already keeps the acting Sadran out of the Sadran notices).
+  if v_request_id is not null and v_can_manage then   -- an edit (v_existing is only loaded for one)
+    if v_existing.requester_id is distinct from v_actor then
+      v_is_late := coalesce(v_existing.is_late, false);
+    end if;
+  end if;
   -- R2U4: a late request tells the Sadranim once (below), with its outcome, instead of late + waitlisted + contested.
   perform set_config('app.late_request_notice', case when v_is_late and v_series_id is null and not coalesce((payload->>'reserve_missing_driver')::boolean,false) then 'on' else 'off' end, true);
 

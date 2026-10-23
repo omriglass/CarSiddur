@@ -167,5 +167,20 @@ begin
   assert not exists (select 1 from public.notifications n where n.recipient_id = manager
     and n.event in ('late_request', 'waitlisted_request') and n.data ->> 'request_id' = v_res ->> 'request_id'),
     'R13B15: the Sadran who filed it must not be told about their own late request';
+
+  ---------------------------------------------------------------- R13M3 the Sadran's edit of an on-time request keeps it on time
+  insert into public.requests(department_id, week_start, requester_id, filed_by, destination_id, ride_type_id, origin_id, trip_type, trip_shape,
+    depart_at, return_at, status, is_late)
+  values (dept, w + 14, m1, m1, dest, typ, home, 'round_trip', 'round_trip',
+    (((w + 14) + 4) + time '09:00') at time zone 'Asia/Jerusalem', (((w + 14) + 4) + time '11:00') at time zone 'Asia/Jerusalem', 'submitted', false)
+  returning id into v_other;
+  v_res := public.submit_request(jsonb_build_object('department_id', dept, 'week_start', w + 14, 'request_id', v_other,
+    'expected_version', (select version from public.requests where id = v_other), 'destination_id', dest, 'ride_type_id', typ,
+    'origin_id', home, 'trip_type', 'round_trip',
+    'depart_at', (((w + 14) + 4) + time '09:30') at time zone 'Asia/Jerusalem',
+    'return_at', (((w + 14) + 4) + time '11:30') at time zone 'Asia/Jerusalem'));
+  assert not (select is_late from public.requests where id = v_other), 'R13M3: a Sadran edit does not make the request late: ' || v_res::text;
+  assert not exists (select 1 from public.notifications n where n.event = 'late_request' and n.data ->> 'request_id' = v_other::text),
+    'R13M3: no late-request notice for a Sadran edit';
 end $$;
 rollback;

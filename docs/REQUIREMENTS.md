@@ -351,7 +351,7 @@ Cab ordering/booking and payment; rental-car booking; private-car lending beyond
 3. **Consent for shifts within declared flexibility is not required** (the member already declared it); the member is informed.
 4. **Merges always need consent of everyone in the ride**, even when both declared flexibility. **Amended 2026-10-16 (item 136 a):** a shared ride that keeps everyone inside their declared flexibility and the detour limit is placed directly, like a shift within flexibility; only a merge that changes a request drastically needs consent.
 5. **Time granularity is 15 minutes** (reference app used 30).
-6. **A late request** (after Wednesday 12:00, before publish) is accepted but gets a policy penalty and is flagged.
+6. **A late request** (after Wednesday 12:00, before publish) is accepted but gets a policy penalty and is flagged. A Sadran editing someone else's request after the closing time does not make it late — it keeps the lateness it had (QA run 13 R13M3, 2026-10-23).
 7. **Denied requests stay eligible** for freed-slot offers until the member opts out or the week ends.
 8. **Destination list carries** name, aliases, zone, approximate distance/travel time from the kibbutz, public-transport score. Free-text destinations get zone "unknown" and no distance until an admin classifies them.
 9. **The driver is the requester** unless the Sadran sets another member as driver (e.g. in a merge, the one who owns the original ride drives).

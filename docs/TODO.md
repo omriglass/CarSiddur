@@ -1067,7 +1067,7 @@ Whole-week autofill in the clock-change week now runs (89 rides, all 7 multi-day
 **Missing obvious features**
 - R13M1 — An origin proposal cannot carry a new time.
 - R13M2 — External/deny proposals are refused on published days (WhatsApp is the only path).
-- R13M3 — A Sadran edit should not count as "late" (see R13B15).
+- ✅ R13M3 — A Sadran edit should not count as "late" (see R13B15). **Fixed 2026-10-23:** `submit_request` keeps the request's own `is_late` when the editor manages the week and is not the requester; no late notice either (`20261028091400`, `qa_run2_placement.sql`). A new request the Sadran files is still late after the closing time.
 - R13M4 — /my does not say a multi-day series is unplaced or why; only day 1 of a placed series shows ("יום 1/3").
 - R13M5 — A passenger whose driver cancelled has no "I can drive" / "find another ride" action.
 - R13M6 — A private-car owner told "place it ברכב שלי from הנסיעות שלי" finds no such action on /my rows in an open week.
