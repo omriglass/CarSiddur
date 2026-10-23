@@ -16,6 +16,7 @@ import { formatDayDate } from "@/lib/dayLabels";
 import { dateKey, formatTime } from "@/lib/time";
 import { alternativePlanText } from "@/features/sadran/board/planBLine";
 import { driverOverlapRideIds } from "@/features/sadran/board/driverBusy";
+import { expiresAtPublish } from "../expiresAtPublish";
 import { requestStart } from "@/features/sadran/board/phantomLanes";
 import type { PublicationDay } from "../../api";
 
@@ -95,16 +96,16 @@ export function PublishScreen({ departmentId, weekStart }: PublishScreenProps) {
     const anchor = request.trip_shape === "one_way_from" ? request.return_at : request.depart_at;
     return anchor && chosenDays.includes(dateKey(anchor));
   });
-  // R4U4: sent deny/external proposals on the published days expire at publication - list them in the confirmation.
-  const expiringProposals = (proposalsQuery.data ?? []).filter((proposal) => (proposal.type === "deny" || proposal.type === "external") && proposal.status === "sent")
+  // R4U4, R13B10: sent proposals publishing expires (all but a Sadran-made shift/merge, `expire_proposals`) - list them.
+  const expiringProposals = (proposalsQuery.data ?? []).filter((proposal) => expiresAtPublish(proposal) && proposal.status === "sent")
     .flatMap((proposal) => {
       const request = (requestsQuery.data ?? []).find((r) => r.id === proposal.request_id);
       const anchor = request ? requestStart(request) : null;
       return request && anchor && (confirmDays ?? []).includes(dateKey(anchor))
         ? [{ id: proposal.id, name: request.requester_full_name ?? "", type: proposal.type, day: dateKey(anchor) }] : [];
     });
-  // R5U3: sent proposals other than deny/external (those expire at publication, listed above) stay pending; show who and until when.
-  const pendingProposalRows = (proposalsQuery.data ?? []).filter((proposal) => proposal.type !== "deny" && proposal.type !== "external" && proposal.status === "sent")
+  // R5U3: the sent proposals publishing keeps (a Sadran-made shift/merge) stay pending; show who and until when.
+  const pendingProposalRows = (proposalsQuery.data ?? []).filter((proposal) => !expiresAtPublish(proposal) && proposal.status === "sent")
     .flatMap((proposal) => {
       const request = (requestsQuery.data ?? []).find((r) => r.id === proposal.request_id);
       const anchor = request ? requestStart(request) : null;
@@ -378,7 +379,7 @@ export function PublishScreen({ departmentId, weekStart }: PublishScreenProps) {
         {pendingProposalRows.length ? (
           <div className="mt-3 space-y-1 text-sm" data-testid="publish-pending-proposals">
             <p className="font-medium">{he.publicationFlow.pendingTitle}</p>
-            <ul className="list-disc ps-5">{pendingProposalRows.map((row) => <li key={row.id}>{tv("publicationFlow.pendingRow", {
+            <ul className="list-disc ps-5">{pendingProposalRows.map((row) => <li key={row.id}>{tv(row.expires ? "publicationFlow.pendingRow" : "publicationFlow.pendingRowNoExpiry", {
               name: row.name, type: t(`proposal.type.${row.type}` as TranslationKey), day: dateLabel(row.day),
               expires: row.expires ? formatDayDate(row.expires) + " " + formatTime(new Date(row.expires)) : "",
             })}</li>)}</ul>
