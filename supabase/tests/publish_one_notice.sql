@@ -41,6 +41,14 @@ begin
     insert into public.ride_requests(ride_id,request_id,role,leg,car_mode) values(r,q,'driver','both','keep');
     insert into pon_ids values('m2ride'||n, r);
   end loop;
+  -- m2 has a push device (publish notices push once, merged ones stay quiet); a Friday ride reached on two legs (R14B4)
+  insert into public.push_subscriptions(profile_id,endpoint,p256dh,auth) values(m2,'https://push.example/m2','k','a');
+  dt:=((w+5)+time '12:00') at time zone 'Asia/Jerusalem';
+  insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,origin_id,ride_type_id,trip_shape,trip_type,depart_at,return_at,status)
+    values(dept,w,m2,m2,dest,home,typ,'round_trip','round_trip',dt,dt+interval '2 hours','assigned') returning id into q;
+  insert into public.rides(department_id,week_start,car_id,starts_at,ends_at,origin_id,destination_id,driver_id,status,created_by)
+    values(dept,w,car,dt,dt+interval '2 hours',home,home,m2,'draft',manager) returning id into r;
+  insert into public.ride_requests(ride_id,request_id,role,leg,car_mode) values(r,q,'passenger','out','passenger'),(r,q,'passenger','return','passenger');
 end $$;
 set constraints all immediate;
 set constraints all deferred;
@@ -89,8 +97,12 @@ do $$
 declare w date:=public.current_week_start()+238; m2 uuid:='00000000-0000-0000-0000-000000000104'; body text; n int;
 begin
   select string_agg(body_he, ' || ') into body from public.notifications where recipient_id=m2 and week_start=w and event in ('published','outcome_changed');
-  assert (select count(*) from public.notifications where recipient_id=m2 and week_start=w and event in ('published','outcome_changed'))=2,
-    'm2: one notice per publish (two publishes), got: '||coalesce(body,'<none>');
+  -- R14B3: the second publish's notice replaces the unread first one and lists both; it does not push again
+  assert (select count(*) from public.notifications where recipient_id=m2 and week_start=w and event in ('published','outcome_changed'))=1,
+    'm2: one merged notice for two publishes, got: '||coalesce(body,'<none>');
+  -- (the first notice's pending push went with it; the merged notice queues none)
+  assert not exists(select 1 from public.push_outbox o join public.notifications n on n.id=o.notification_id where n.recipient_id=m2 and n.week_start=w),
+    'the merged notice is inbox only';
   select body_he into body from public.notifications where recipient_id=m2 and week_start=w and event='published'
     and body_he like '%'||public.day_date_label(w+4)||'%';
   assert body is not null and body like '%'||public.day_date_label(w+1)||'%',
@@ -98,5 +110,29 @@ begin
   -- Monday was published again: m1's lapsed offer there (proposed -> waitlisted at the first publish) is not news
   assert (select count(*) from public.notifications where recipient_id='00000000-0000-0000-0000-000000000103' and week_start=w
           and event not in ('window_open','proposal_received'))=1, 'republishing does not tell m1 again about the offer that lapsed: '||(select string_agg(event||' '||coalesce(body_he,''),' || ') from public.notifications where recipient_id='00000000-0000-0000-0000-000000000103' and week_start=w and event not in ('window_open','proposal_received'));
+end $$;
+-- R14B3: a third publish after the member OPENED the notice: it stays, and the new notice pushes once. R14B4: the
+-- Friday ride is reached on two legs and is listed once.
+update public.notifications set read_at=now() where recipient_id='00000000-0000-0000-0000-000000000104' and event='published'
+  and week_start=public.current_week_start()+238;
+set local role authenticated;
+do $$
+declare dept uuid:='00000000-0000-0000-0000-000000000001'; w date:=public.current_week_start()+238;
+begin
+  perform public.publish_siddur(dept,w,'[]'::jsonb,public.publish_scores_fingerprint(dept,w),'[]'::jsonb,array[w+5],true);
+end $$;
+reset role;
+do $$
+declare w date:=public.current_week_start()+238; m2 uuid:='00000000-0000-0000-0000-000000000104'; body text; n int; fri text;
+begin
+  assert (select count(*) from public.notifications where recipient_id=m2 and week_start=w and event='published')=2,
+    'the opened notice stays and the new one is separate';
+  select body_he into body from public.notifications where recipient_id=m2 and week_start=w and event='published' and read_at is null;
+  fri:=public.day_date_label(w+5);
+  assert body like '%'||fri||'%', 'the Friday notice lists the Friday ride: '||coalesce(body,'<none>');
+  assert (length(body)-length(replace(body,fri,'')))/length(fri)=1, 'the Friday ride is listed once: '||body;
+  assert body not like '%'||public.day_date_label(w+4)||'%', 'the opened notice''s Thursday line is not repeated: '||body;
+  assert (select count(*) from public.push_outbox o join public.notifications nn on nn.id=o.notification_id
+          where nn.recipient_id=m2 and nn.week_start=w and nn.event='published' and nn.read_at is null)=1, 'the new notice pushes once';
 end $$;
 rollback;

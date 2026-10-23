@@ -2014,7 +2014,7 @@ begin
     'merged', 'merged_no_driver', 'merged_split', 'joined_ride', 'placed_by_sadran', 'driver_assigned',
     'driver_assigned_passenger', 'driver_cancelled', 'driver_cancelled_plain', 'driver_changed_passenger',
     'driver_replaced_you', 'driver_unassigned', 'car_changed', 'time_changed', 'edit_applied', 'edit_waitlisted',
-    'alternative_applied', 'own_car_placed', 'passenger_added_you', 'passenger_joined', 'passenger_left',
+    'alternative_applied', 'own_car_placed', 'passenger_added_you', 'passenger_joined', 'passenger_left', 'passenger_left_many',
     'passenger_removed_request', 'passenger_removed_you', 'passengers_added', 'passengers_removed',
     'reservation_added', 'ride_cancelled', 'unassigned_by_sadran', 'child_removed', 'join_ride_cancelled', 'join_asked'
   ) then
@@ -2065,6 +2065,45 @@ $$;
 
 
 ALTER FUNCTION "public"."_notify_request_edited_by_manager"("p_request" "uuid", "p_actor" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_notify_rider_left"("p_recipient" "uuid", "p_ride_id" "uuid", "p_leaver_name" "text", "p_route" "text", "p_day" "text", "p_dedupe" "text") RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  r public.rides%rowtype; v_old record; v_old_ids uuid[]; v_leavers jsonb := to_jsonb(array[coalesce(p_leaver_name, '')]);
+  v_names text; v_notif uuid;
+begin
+  select * into r from public.rides where id = p_ride_id;
+  for v_old in
+    select n.id, n.data from public.notifications n
+    where n.recipient_id = p_recipient and n.event = 'outcome_changed' and n.read_at is null
+      and n.data ->> 'variant' in ('passenger_left', 'passenger_left_many') and n.data ->> 'ride_id' = p_ride_id::text
+      and n.data ? 'leavers' order by n.created_at, n.id
+  loop
+    v_old_ids := array_append(v_old_ids, v_old.id);
+    v_leavers := (v_old.data -> 'leavers') || v_leavers;
+  end loop;
+  -- each name once, first mention first
+  select jsonb_agg(nm order by o) into v_leavers
+  from (select nm, min(o) as o from jsonb_array_elements_text(v_leavers) with ordinality u(nm, o) group by nm) x;
+  select case when jsonb_array_length(v_leavers) = 1 then v_leavers ->> 0
+    else array_to_string(array(select jsonb_array_elements_text(v_leavers) offset 0 limit jsonb_array_length(v_leavers) - 1), ', ')
+         || public._frag('list.and') || (v_leavers ->> (jsonb_array_length(v_leavers) - 1)) end into v_names;
+  v_notif := public.enqueue_notification(p_recipient, 'outcome_changed', r.department_id, r.week_start,
+    jsonb_build_object('names', v_names, 'route', coalesce(p_route, ''), 'day', p_day),
+    jsonb_build_object('variant', case when jsonb_array_length(v_leavers) > 1 then 'passenger_left_many' else 'passenger_left' end,
+      'ride_id', r.id, 'leavers', v_leavers),
+    p_dedupe);
+  if v_notif is not null and v_old_ids is not null then
+    delete from public.notifications where id = any(v_old_ids);
+    delete from public.push_outbox where notification_id = v_notif;
+  end if;
+end $$;
+
+
+ALTER FUNCTION "public"."_notify_rider_left"("p_recipient" "uuid", "p_ride_id" "uuid", "p_leaver_name" "text", "p_route" "text", "p_day" "text", "p_dedupe" "text") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."_offer_freed_slot"("p_ride_id" "uuid") RETURNS "uuid"
@@ -12146,6 +12185,7 @@ declare
   v_phase public.week_phase;
   v_req record;
   v_notified int := 0;
+  v_items jsonb; v_dates date[]; v_extra text; v_old_ids uuid[]; v_old record; v_notif uuid; v_lines text; v_days_txt text;
   v_prev_publishing text := coalesce(current_setting('app.publishing', true), '');
   v_prev_status text;
   v_event public.notification_event;
@@ -12371,7 +12411,8 @@ begin
     ), pub_ride_lines as (
       -- R5U4: one line per ride the member is on (a pickup is its own ride and its own line); a request with
       -- no live ride keeps its single requested-time line. Rides outside the published days are not listed.
-      select c.requester_id, c.id as request_id, c.request_day, x.starts_at as line_start,
+      -- R14B4: one line per ride, even when the request rides it on two legs (two ride_requests rows).
+      select distinct on (c.id, x.id) c.requester_id, c.id as request_id, c.request_day, x.starts_at as line_start,
         public._publish_ride_line(c.id, x.id) as line
       from classified c
       join public.ride_requests rr on rr.request_id = c.id
@@ -12388,7 +12429,8 @@ begin
         and not exists (select 1 from public.ride_requests rr join public.rides x on x.id = rr.ride_id
                         where rr.request_id = c.id and x.status <> 'cancelled')
     ), days_agg as (
-      select requester_id, event_kind, string_agg(public.day_date_label(request_day), ', ' order by request_day) as days_list
+      select requester_id, event_kind, string_agg(public.day_date_label(request_day), ', ' order by request_day) as days_list,
+        array_agg(request_day order by request_day) as days_arr
       from (select distinct c.requester_id, c.event_kind, c.request_day from classified c where c.event_kind is not null
         and (c.event_kind <> 'published' or c.status = 'waitlisted' or c.offer_lapses or exists (select 1 from public.ride_requests rr join public.rides x on x.id = rr.ride_id
                 where rr.request_id = c.id and x.status <> 'cancelled'))) d
@@ -12401,19 +12443,23 @@ begin
       from ride_chg rc join classified cl on cl.id = rc.request_id and cl.event_kind = 'outcome_changed'
       where rc.line_change <> ''
     ), lines_agg as (
+      -- R14B4: an identical line (the same ride reached by two of the member's requests) appears once.
       select requester_id, 'published'::text as event_kind,
-        string_agg(line, chr(10) order by line_start, request_id) as lines,
-        (array_agg(request_id order by line_start, request_id))[1] as first_id
-      from pub_ride_lines
+        string_agg(line, chr(10) order by line_start, line) as lines,
+        (array_agg(request_id order by line_start, request_id))[1] as first_id,
+        jsonb_agg(jsonb_build_object('t', line_start, 'line', line) order by line_start, line) as items
+      from (select requester_id, line, min(line_start) as line_start, (array_agg(request_id order by line_start, request_id))[1] as request_id
+            from pub_ride_lines group by requester_id, line) pl
       group by requester_id
       union all
       select cl.requester_id, 'outcome_changed',
         string_agg(cl.line, chr(10) order by cl.rn) filter (where cl.rn <= 3)
           || case when max(cl.tot) > 3 then chr(10) || public._frag('publish.more', jsonb_build_object('count', (max(cl.tot) - 3)::text)) else '' end,
-        (array_agg(cl.request_id order by cl.rn))[1]
+        (array_agg(cl.request_id order by cl.rn))[1],
+        null::jsonb
       from chg_lines cl group by cl.requester_id
     ), per_kind as (
-      select l.requester_id, l.event_kind, d.days_list, l.lines, l.first_id
+      select l.requester_id, l.event_kind, d.days_list, d.days_arr, l.lines, l.first_id, l.items
       from lines_agg l join days_agg d using (requester_id, event_kind)
     )
     -- R13U9: ONE notice per member per publish — newly published days and changes on days already public share it
@@ -12422,14 +12468,53 @@ begin
       case when bool_or(k.event_kind = 'published') then 'published' else 'outcome_changed' end as event_kind,
       string_agg(k.days_list, ', ' order by k.event_kind desc) as days_list,
       string_agg(k.lines, chr(10) order by k.event_kind desc) as lines,
-      (array_agg(k.first_id order by k.event_kind desc))[1] as first_id
+      (array_agg(k.first_id order by k.event_kind desc))[1] as first_id,
+      (array_agg(k.items) filter (where k.event_kind = 'published'))[1] as items,
+      (array_agg(k.lines) filter (where k.event_kind = 'outcome_changed'))[1] as extra,
+      (select array_agg(distinct d order by d) from per_kind k2 cross join lateral unnest(k2.days_arr) d where k2.requester_id = k.requester_id) as days_arr
     from per_kind k group by k.requester_id
   loop
     v_event := v_req.event_kind::public.notification_event;
-    perform public.enqueue_notification(v_req.requester_id, v_event, p_department_id, p_week_start,
-      case when v_event = 'published' then jsonb_build_object('days', v_req.days_list, 'outcomeLine', v_req.lines)
-        else jsonb_build_object('days', v_req.days_list, 'diffLine', v_req.lines) end,
-      jsonb_build_object('request_id', v_req.first_id), format('%s:%s:%s', v_event, v_version_id, v_req.requester_id));
+    v_items := coalesce(v_req.items, '[]'::jsonb); v_dates := v_req.days_arr; v_extra := v_req.extra; v_old_ids := null;
+    if v_event = 'published' then
+      -- R14B3 (owner 2026-10-23, "merge if unread"): publishing in several calls must not send several notices. An
+      -- earlier `published` notice of this week that the member has not opened is replaced by this one, which lists
+      -- the lines and days of both (identical lines once, in day order); the member was already pushed for it, so the
+      -- merged notice is inbox only. One the member opened stays, and the new notice pushes once.
+      for v_old in
+        select n.id, n.data from public.notifications n
+        where n.recipient_id = v_req.requester_id and n.event = 'published' and n.week_start = p_week_start
+          and n.read_at is null and n.data ? 'pub_items' order by n.created_at, n.id
+      loop
+        v_old_ids := array_append(v_old_ids, v_old.id);
+        v_items := (v_old.data -> 'pub_items') || v_items;
+        v_dates := array(select distinct d from unnest(v_dates || array(select jsonb_array_elements_text(v_old.data -> 'pub_days')::date)) d order by d);
+        if coalesce(v_old.data ->> 'pub_extra', '') <> '' then
+          v_extra := concat_ws(chr(10), v_old.data ->> 'pub_extra', v_extra);
+        end if;
+      end loop;
+      select string_agg(line, chr(10) order by t, line) into v_lines
+      from (select e ->> 'line' as line, min((e ->> 't')::timestamptz) as t from jsonb_array_elements(v_items) e group by e ->> 'line') x;
+      if v_extra is not null then
+        select string_agg(l, chr(10) order by o) into v_extra
+        from (select l, min(o) as o from unnest(string_to_array(v_extra, chr(10))) with ordinality u(l, o) group by l) y;
+        v_lines := concat_ws(chr(10), v_lines, v_extra);
+      end if;
+    else
+      v_lines := v_req.lines;
+    end if;
+    select string_agg(public.day_date_label(d), ', ' order by d) into v_days_txt from unnest(v_dates) d;
+    v_notif := public.enqueue_notification(v_req.requester_id, v_event, p_department_id, p_week_start,
+      case when v_event = 'published' then jsonb_build_object('days', v_days_txt, 'outcomeLine', v_lines)
+        else jsonb_build_object('days', v_days_txt, 'diffLine', v_lines) end,
+      case when v_event = 'published' then jsonb_build_object('request_id', v_req.first_id, 'pub_items', v_items,
+             'pub_days', to_jsonb(v_dates), 'pub_extra', v_extra)
+        else jsonb_build_object('request_id', v_req.first_id) end,
+      format('%s:%s:%s', v_event, v_version_id, v_req.requester_id));
+    if v_notif is not null and v_old_ids is not null then
+      delete from public.notifications where id = any(v_old_ids);
+      delete from public.push_outbox where notification_id = v_notif;
+    end if;
     v_notified := v_notified + 1;
   end loop;
 
@@ -14415,10 +14500,8 @@ begin
     where rr.ride_id = old.ride_id and q.requester_id is distinct from v_leaver and q.requester_id is distinct from r.driver_id
       and q.status not in ('cancelled', 'withdrawn')
   loop
-    perform public.enqueue_notification(v_fellow.requester_id, 'outcome_changed', r.department_id, r.week_start,
-      jsonb_build_object('names', coalesce(v_name, ''), 'route', coalesce(public.request_route_label(old.request_id), ''),
-        'day', public.day_date_label(r.starts_at)),
-      jsonb_build_object('variant', 'passenger_left', 'ride_id', r.id),
+    perform public._notify_rider_left(v_fellow.requester_id, r.id, v_name, coalesce(public.request_route_label(old.request_id), ''),
+      public.day_date_label(r.starts_at),
       format('passenger_left:%s:%s:%s', r.id, old.request_id, v_fellow.requester_id));
   end loop;
   return null;
@@ -24422,6 +24505,11 @@ GRANT ALL ON FUNCTION "public"."_notice_is_unpublished_outcome"("_event" "public
 
 REVOKE ALL ON FUNCTION "public"."_notify_request_edited_by_manager"("p_request" "uuid", "p_actor" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_notify_request_edited_by_manager"("p_request" "uuid", "p_actor" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_notify_rider_left"("p_recipient" "uuid", "p_ride_id" "uuid", "p_leaver_name" "text", "p_route" "text", "p_day" "text", "p_dedupe" "text") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_notify_rider_left"("p_recipient" "uuid", "p_ride_id" "uuid", "p_leaver_name" "text", "p_route" "text", "p_day" "text", "p_dedupe" "text") TO "service_role";
 
 
 

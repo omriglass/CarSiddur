@@ -853,6 +853,9 @@
         "supabase/tests/qa_run13_rides.sql",
         "supabase/tests/publish_one_notice.sql",
         "supabase/tests/offer_replaces_notice.sql",
+        "supabase/tests/leave_notices_merge.sql",
+        "supabase/migrations/**/*publish_notice_merges_unread*",
+        "supabase/migrations/**/*leave_notices_merge_unread*",
         "supabase/migrations/**/*one_notice_per_publish*",
         "supabase/migrations/**/*offer_replaces_unopened_notice*"
       ],
@@ -867,7 +870,8 @@
         "changelog.sql",
         "qa_run13_rides.sql",
         "publish_one_notice.sql",
-        "offer_replaces_notice.sql"
+        "offer_replaces_notice.sql",
+        "leave_notices_merge.sql"
       ],
       "playwrightTags": [
         "@notifications"

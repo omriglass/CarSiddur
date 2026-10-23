@@ -4702,6 +4702,17 @@ export type Database = {
         Args: { p_actor: string; p_request: string }
         Returns: undefined
       }
+      _notify_rider_left: {
+        Args: {
+          p_day: string
+          p_dedupe: string
+          p_leaver_name: string
+          p_recipient: string
+          p_ride_id: string
+          p_route: string
+        }
+        Returns: undefined
+      }
       _offer_freed_slot: { Args: { p_ride_id: string }; Returns: string }
       _proposal_apply_trial: {
         Args: { p_proposal_id: string }
