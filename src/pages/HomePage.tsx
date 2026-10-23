@@ -248,7 +248,8 @@ export function HomePage() {
   }
 
   const nextAction = requests.find((r) => r.status === "proposed" && r.pendingProposal && isAwaitingAnswer(r.pendingProposal));
-  const unserved = requests.filter(
+  // R13M4: a multi-day request is one card here too (folded first), not one card per day.
+  const unserved = toDisplayRows(requests).filter(
     // R10B5: a request served by its plan B is placed — never listed as unserved / waitlisted.
     (r) => !r.servedByAlternative && UNSERVED_STATUSES.has(displayStatus(r)) && r.id !== nextAction?.id,
   );
@@ -270,7 +271,7 @@ export function HomePage() {
   // onward, already filtered above). `homeWeek` still decides which week the empty-state copy
   // and the new-request entry point talk about.
   // QB13: a request shown in the "unserved" section is not listed a second time below.
-  const unservedIds = new Set(unserved.map((r) => r.id));
+  const unservedIds = new Set(unserved.flatMap((r) => [r.id, ...(r.seriesLegs ?? []).map((leg) => leg.id)]));
   // Owner 2026-10-13: one item per trip — a request carries the rides serving it; a ride none of my requests
   // reaches (I drive someone else's request, a reservation names me) is its own item in its week.
   // Owner 2026-10-16: read-only rides of my children (display option), muted and named, listed with mine.

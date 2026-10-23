@@ -208,6 +208,7 @@ export const heMember = {
     seriesAssigned: "הרכב שמור לך לכל הימים",
     seriesWaitlisted: "אין רכב פנוי לכל הימים — נכנסת לרשימת ההמתנה",
     multiDayBadge: "{{count}} ימים",
+    seriesSpan: "{{from}} – {{to}} · אותו רכב כל הימים",
     seriesCancelBody: "הביטול חל על כל ימי הבקשה הרב-יומית.",
     stopEqualsOrigin: "העצירה זהה למקום היציאה",
     stopEqualsDestination: "העצירה זהה ליעד",

@@ -27,7 +27,7 @@ import { WindowSummaryLine } from "./WindowSummaryLine";
 import { isKeepCarRow, keepCarTripLabel } from "../keepCar";
 import { isAwaitingAnswer } from "../pendingProposal";
 import { canPlaceOnOwnCar, isDuplicateWithdrawn } from "../overlap";
-import { FREED_SLOT_ELIGIBLE_STATUSES, displayStatus, legStateLine, originDestinationLabel, ownLegWindow, type DisplayRow } from "../myRequestsRows";
+import { FREED_SLOT_ELIGIBLE_STATUSES, displayStatus, legStateLine, originDestinationLabel, ownLegWindow, seriesSpanLine, type DisplayRow } from "../myRequestsRows";
 
 const CANCEL_CLASS = "border-destructive/50 text-destructive hover:bg-destructive/10 hover:text-destructive";
 
@@ -152,6 +152,7 @@ export function RequestRow({
           {rides.map((ride) => (
             <RideCard key={ride.id} ride={ride} onClick={onOpenRide ? () => onOpenRide(ride.id) : undefined} />
           ))}
+          {seriesSpanLine(row) ? <p className="text-xs text-muted-foreground" data-testid="request-series-span"><bdi>{seriesSpanLine(row)}</bdi></p> : null}
         </>
       ) : (
         <div className="flex items-start justify-between gap-2">

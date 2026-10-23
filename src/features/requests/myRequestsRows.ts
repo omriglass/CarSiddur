@@ -1,4 +1,6 @@
 import { he, tv } from "@/i18n/he";
+import { formatDayDate } from "@/lib/dayLabels";
+import { formatTime } from "@/lib/time";
 import { routeLabel } from "@/lib/routeLabel";
 import { routeStopNames } from "@/lib/routeStops";
 import type { MyRequestRow } from "./api";
@@ -87,12 +89,29 @@ export function toDisplayRows(rows: readonly MyRequestRow[]): DisplayRow[] {
     return {
       ...first,
       status,
-      statusReason: status === "submitted" ? null : first.statusReason,
+      // R13M4: an unplaced series always says why (any day's reason, else "no car for every day").
+      statusReason: status === "submitted" ? null
+        : first.statusReason ?? legs.find((leg) => leg.statusReason)?.statusReason ?? (status === "waitlisted" ? "WAITLISTED_SERIES_NO_CAR" : null),
       returnAt: last.returnAt ?? last.departAt,
       ride: legs.find((leg) => leg.ride)?.ride ?? null,
       seriesLegs: legs,
     };
   });
+}
+
+/**
+ * R13M4: a placed series card shows only its next ride ("יום 1/3"), so it also says the whole span —
+ * "ד׳ 28.10 08:00 – ו׳ 30.10 17:00 · אותו רכב כל הימים". Null for a single-day row.
+ */
+export function seriesSpanLine(row: Pick<DisplayRow, "seriesLegs">): string | null {
+  const legs = row.seriesLegs;
+  if (!legs?.length) return null;
+  const start = legs[0]!.departAt ?? legs[0]!.returnAt;
+  const last = legs[legs.length - 1]!;
+  const end = last.returnAt ?? last.departAt;
+  if (!start || !end) return null;
+  const at = (instant: string) => `${formatDayDate(instant)} ${formatTime(new Date(instant))}`;
+  return tv("request.seriesSpan", { from: at(start), to: at(end) });
 }
 
 export type ConfirmAction =

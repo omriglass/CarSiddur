@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { he, tv } from "@/i18n/he";
 import type { MyRequestRow } from "./api";
-import { confirmDialogDescription, displayStatus, legStateLine, originDestinationLabel, ownLegWindow, requestStart, toDisplayRows } from "./myRequestsRows";
+import { confirmDialogDescription, displayStatus, legStateLine, originDestinationLabel, ownLegWindow, requestStart, seriesSpanLine, toDisplayRows } from "./myRequestsRows";
 
 function request(overrides: Partial<MyRequestRow> = {}): MyRequestRow {
   return {
@@ -61,6 +61,28 @@ describe("toDisplayRows", () => {
       request({ id: "b", seriesId: "s2", seriesIndex: 2, status: "assigned" }),
     ]);
     expect(all!.status).toBe("assigned");
+  });
+
+  it("R13M4: an unplaced series card always says why", () => {
+    const [noReason] = toDisplayRows([
+      request({ id: "a", seriesId: "s", seriesIndex: 1, status: "waitlisted" }),
+      request({ id: "b", seriesId: "s", seriesIndex: 2, status: "waitlisted" }),
+    ]);
+    expect(noReason!.statusReason).toBe("WAITLISTED_SERIES_NO_CAR");
+    const [laterDay] = toDisplayRows([
+      request({ id: "a", seriesId: "s", seriesIndex: 1, status: "waitlisted" }),
+      request({ id: "b", seriesId: "s", seriesIndex: 2, status: "waitlisted", statusReason: "SERIES_CAR_UNAVAILABLE" }),
+    ]);
+    expect(laterDay!.statusReason).toBe("SERIES_CAR_UNAVAILABLE");
+  });
+
+  it("R13M4: a series card names its whole span; a single day has none", () => {
+    const [series] = toDisplayRows([
+      request({ id: "a", seriesId: "s", seriesIndex: 1, departAt: "2026-09-16T08:00:00+03:00", returnAt: "2026-09-16T23:59:00+03:00" }),
+      request({ id: "b", seriesId: "s", seriesIndex: 2, departAt: "2026-09-18T00:00:00+03:00", returnAt: "2026-09-18T17:00:00+03:00" }),
+    ]);
+    expect(seriesSpanLine(series!)).toBe(tv("request.seriesSpan", { from: "ד׳ 16.9 08:00", to: "ו׳ 18.9 17:00" }));
+    expect(seriesSpanLine(toDisplayRows([request()])[0]!)).toBeNull();
   });
 
   it("leaves an ordinary single-day request as its own row with no seriesLegs", () => {
