@@ -1096,7 +1096,7 @@ Run notes: autofill placed 135/165; the QA Sadran published Fri, Thu, Sun+Wed+Sa
 - R14B7 — `place 3fcd4674 פיג'ו 13:45` placed at 13:30–16:30 without saying the time moved.
 - R14B8 — A late Monday request (Amit Abutbul 164984d3, Mon unpublished) answered "assigned ride f17596cc", then `my-rides` showed "submitted LATE", no notice.
 - R14B9 — CLI `day` lists SENT proposals under "DRAFT PLACEMENTS (unsent…)" (heading only; the board draws them once).
-- ✅ R14B10 — Cancels: each co-rider gets one "X לא נוסע/ת איתך יותר" per cancelling person (Uri Malka and Maya Barak 2 each within a minute); the canceller gets no confirmation. Separate events, but no combined notice. *Fixed 2026-10-23: fellow riders' leave notices merge while unread into one "X ו-Y לא נוסעים איתך יותר" (variant passenger_left_many), migration 20261028092600; the driver's own passenger_left is not merged.*
+- ✅ R14B10 — Cancels: each co-rider gets one "X לא נוסע/ת איתך יותר" per cancelling person (Uri Malka and Maya Barak 2 each within a minute); the canceller gets no confirmation. Separate events, but no combined notice. *Fixed 2026-10-23: fellow riders' leave notices merge while unread into one "X ו-Y לא נוסעים איתך יותר" (variant passenger_left_many), migration 20261028092600; driver's notices too (20261028092700: `cancel_ride_before_series`, `release_request_booking` use the same helper).*
 
 **UI changes**
 - R14U1 — The mobile board's cars list is not in time order; sort by start (or group by car with a header).

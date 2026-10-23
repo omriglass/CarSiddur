@@ -5001,11 +5001,8 @@ begin
     end if;
     if r.driver_id is not null and r.driver_id is distinct from (select auth.uid()) then
       select string_agg(p.full_name,', ') into v_driver_name from public.profiles p where p.id=(select auth.uid());
-      perform public.enqueue_notification(r.driver_id,'outcome_changed',r.department_id,r.week_start,
-        jsonb_build_object('names',coalesce(v_driver_name,''),'route',coalesce(public.request_route_label(own_requests[1]),''),
-          'day',public.day_date_label(r.starts_at)),
-        jsonb_build_object('variant','passenger_left','ride_id',r.id,'request_id',own_requests[1]),
-        format('passenger_left:%s:%s:%s',r.id,own_requests[1],r.version));
+      perform public._notify_rider_left(r.driver_id,r.id,v_driver_name,coalesce(public.request_route_label(own_requests[1]),''),
+        public.day_date_label(r.starts_at),format('passenger_left:%s:%s:%s',r.id,own_requests[1],r.version));
     end if;
     perform set_config('app.system_status_transition','off',true);
     return;
@@ -12741,11 +12738,8 @@ begin
       perform set_config('app.system_status_transition', v_prev, true);
       if r.driver_id is not null then
         select full_name into v_names from public.profiles where id = v_req.requester_id;
-        perform public.enqueue_notification(r.driver_id, 'outcome_changed', r.department_id, r.week_start,
-          jsonb_build_object('names', coalesce(v_names, ''), 'route', coalesce(public.request_route_label(p_request_id), ''),
-            'day', public.day_date_label(r.starts_at)),
-          jsonb_build_object('variant', 'passenger_left', 'ride_id', r.id, 'request_id', p_request_id),
-          format('passenger_left:%s:%s:%s', r.id, p_request_id, r.version));
+        perform public._notify_rider_left(r.driver_id, r.id, v_names, coalesce(public.request_route_label(p_request_id), ''),
+          public.day_date_label(r.starts_at), format('passenger_left:%s:%s:%s', r.id, p_request_id, r.version));
       end if;
     end if;
   end loop;
