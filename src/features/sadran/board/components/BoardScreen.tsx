@@ -558,6 +558,8 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
             homeDestinationId={board.department?.home_destination_id ?? undefined}
             tripTypeScope={{ departmentId, weekStart }}
             fewerDays={fewerDays}
+            placeableCarsOf={(item) => carsFreeForRequest(board.dropCtx, item)}
+            onPlaceOnCar={(item, carId) => { const minutes = placementMinutes(board.dropCtx, item); if (minutes != null) void dnd.handlePlaceUnmetRequest(item, carId, minutes); }}
           />
 
         </div>
@@ -593,10 +595,10 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
               dayEndMinutes={dayEndMinutes}
               onDragHover={(item, carId, minutes, hostRideId) => dnd.setUnmetDragHover(carId && minutes != null ? { item, carId, minutes, hostRideId } : null)}
               onDragDrop={(item, carId, minutes, hostRideId) => void dnd.handlePlaceUnmetRequest(item, carId, minutes, hostRideId)}
-              // The `<h2>` right above already renders this exact title — avoid duplicating it.
-              showHeading={false}
               placeableCarsOf={(item) => carsFreeForRequest(board.dropCtx, item)}
               onPlaceOnCar={(item, carId) => { const minutes = placementMinutes(board.dropCtx, item); if (minutes != null) void dnd.handlePlaceUnmetRequest(item, carId, minutes); }}
+              // The `<h2>` right above already renders this exact title — avoid duplicating it.
+              showHeading={false}
             />
           )}
         </div>
