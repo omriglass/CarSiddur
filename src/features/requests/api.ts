@@ -847,6 +847,8 @@ export interface SubmitRequestResult {
    */
   needs_confirmation?: "release_to_waitlist";
   drives_others?: boolean;
+  /** R14U4: with `needs_confirmation`: the other people on the ride the member drives (names). */
+  affected_names?: string[];
   /** With `needs_confirmation`: a car is free at the new hours — asked only because the member drives others. */
   would_place?: boolean;
   /** REQ §13.101 g (QM7): the member's own rides/requests overlapping the submitted one. */

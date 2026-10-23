@@ -2,8 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { tv } from "@/i18n/he";
 
-const mocks = vi.hoisted(() => ({ toast: vi.fn(), success: vi.fn() }));
-vi.mock("sonner", () => ({ toast: Object.assign(mocks.toast, { success: mocks.success }) }));
+const mocks = vi.hoisted(() => ({ toast: vi.fn(), success: vi.fn(), warning: vi.fn() }));
+vi.mock("sonner", () => ({ toast: Object.assign(mocks.toast, { success: mocks.success, warning: mocks.warning }) }));
 
 import { releaseConfirmation, shouldOfferJoinableRides, toastSeriesSubmitOutcome, toastSubmitOutcome } from "./submitOutcome";
 import type { SubmitRequestResult, SubmitSeriesRequestResult } from "./api";
@@ -12,6 +12,7 @@ import { t } from "@/i18n/he";
 beforeEach(() => {
   mocks.toast.mockClear();
   mocks.success.mockClear();
+  mocks.warning.mockClear();
 });
 
 const CAR_NAME = (id: string | null | undefined) => (id === "car" ? "Car" : id === "preferred" ? "Preferred" : "");
@@ -33,6 +34,12 @@ describe("toastSubmitOutcome", () => {
     expect(mocks.success).toHaveBeenCalledWith(t("request.submitSent"));
     expect(mocks.success).toHaveBeenCalledTimes(1);
     expect(shouldOfferJoinableRides({ ...result, status: "waitlisted" })).toBe(false);
+  });
+
+  it("R14U5: a late request overlapping another of the member's own names it even without a reason", () => {
+    const result: SubmitRequestResult = { request_id: "r", is_late: true, warnings: ["DUPLICATE_OVERLAP"], status: "waitlisted" };
+    expect(toastSubmitOutcome(result, ctx({ overlapNames: ["bank"] }))).toBe(true);
+    expect(mocks.warning).toHaveBeenCalledTimes(1);
   });
 
   it("stays silent for a null/undefined result", () => {
@@ -127,9 +134,9 @@ describe("shouldOfferJoinableRides", () => {
 describe("releaseConfirmation", () => {
   const base = { request_id: "r", is_late: false, warnings: [] };
   it("maps a needs_confirmation result", () => {
-    expect(releaseConfirmation({ ...base, needs_confirmation: "release_to_waitlist", drives_others: true })).toEqual({ drivesOthers: true, wouldPlace: false });
-    expect(releaseConfirmation({ ...base, needs_confirmation: "release_to_waitlist" })).toEqual({ drivesOthers: false, wouldPlace: false });
-    expect(releaseConfirmation({ ...base, needs_confirmation: "release_to_waitlist", drives_others: true, would_place: true })).toEqual({ drivesOthers: true, wouldPlace: true });
+    expect(releaseConfirmation({ ...base, needs_confirmation: "release_to_waitlist", drives_others: true })).toEqual({ drivesOthers: true, wouldPlace: false, names: [] });
+    expect(releaseConfirmation({ ...base, needs_confirmation: "release_to_waitlist", affected_names: ["x"] })).toEqual({ drivesOthers: false, wouldPlace: false, names: [] });
+    expect(releaseConfirmation({ ...base, needs_confirmation: "release_to_waitlist", drives_others: true, would_place: true, affected_names: ["Dana", " "] })).toEqual({ drivesOthers: true, wouldPlace: true, names: ["Dana"] });
   });
   it("is null for an ordinary result", () => {
     expect(releaseConfirmation({ ...base, status: "assigned" })).toBeNull();

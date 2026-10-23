@@ -803,7 +803,7 @@ export function RequestForm({
   const [pendingChildOverlap, setPendingChildOverlap] = useState<{ values: RequestFormValues; rows: ChildOverlapRow[] } | null>(null);
   // R2B20 / REQ §102 f: an open-week edit the probe says would lose the member's current car.
   const [pendingLose, setPendingLose] = useState<RequestFormValues | null>(null);
-  const [pendingRelease, setPendingRelease] = useState<{ values: RequestFormValues; drivesOthers: boolean; wouldPlace: boolean } | null>(null);
+  const [pendingRelease, setPendingRelease] = useState<{ values: RequestFormValues; drivesOthers: boolean; wouldPlace: boolean; names: string[] } | null>(null);
   // F4 (docs/TODO.md, owner A8-A10): a `waitlisted` outcome with nearby joinable rides holds off
   // the normal onDone/navigate — `afterJoinableDialog` runs it once the member picks "ask to
   // join" or "stay on the waiting list". State (not a ref): it's only ever set from an event
@@ -1518,6 +1518,9 @@ export function RequestForm({
       }}
     >
       {pendingRelease?.drivesOthers && !pendingRelease.wouldPlace ? <p className="text-sm">{t("request.releaseDrivesOthers")}</p> : null}
+      {pendingRelease && pendingRelease.names.length > 0 ? (
+        <p className="text-sm">{tv("request.releaseAffected", { names: pendingRelease.names.join(", ") })}</p>
+      ) : null}
     </ConfirmDialog>
     <ConfirmDialog
       open={!!pendingOverlapSubmit}

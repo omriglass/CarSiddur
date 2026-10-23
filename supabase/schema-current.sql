@@ -13198,7 +13198,7 @@ CREATE OR REPLACE FUNCTION "public"."request_booking_info"("p_request_id" "uuid"
     LANGUAGE "plpgsql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
-declare v_has boolean := false; v_drives_others boolean := false; r record;
+declare v_has boolean := false; v_drives_others boolean := false; r record; v_names jsonb := '[]'::jsonb;
 begin
   for r in
     select rd.id, rd.driver_id, q.requester_id
@@ -13214,9 +13214,21 @@ begin
       or exists (select 1 from public.ride_passengers rp where rp.ride_id = r.id and rp.person_id is distinct from r.driver_id)
     ) then
       v_drives_others := true;
+      -- R14U4: who else is on the ride (the other requesters and the named passengers), for the confirmation.
+      select coalesce(jsonb_agg(n.name order by n.name), '[]'::jsonb) || v_names into v_names from (
+        select distinct p.full_name as name
+        from public.ride_requests x
+        join public.requests xq on xq.id = x.request_id and xq.requester_id is distinct from r.driver_id
+        join public.profiles p on p.id = xq.requester_id
+        where x.ride_id = r.id
+        union
+        select distinct rp.display_name
+        from public.ride_passengers rp
+        where rp.ride_id = r.id and rp.person_id is distinct from r.driver_id
+      ) n;
     end if;
   end loop;
-  return jsonb_build_object('has_booking', v_has, 'drives_others', v_drives_others);
+  return jsonb_build_object('has_booking', v_has, 'drives_others', v_drives_others, 'affected_names', v_names);
 end $$;
 
 
@@ -16840,7 +16852,8 @@ begin
         -- would_place: the probe found a car (only asked because the member drives others).
         return jsonb_build_object('needs_confirmation', 'release_to_waitlist', 'unchanged', false,
           'drives_others', (v_booking ->> 'drives_others')::boolean,
-          'would_place', coalesce(v_probe ->> 'status', '') = 'assigned');
+          'would_place', coalesce(v_probe ->> 'status', '') = 'assigned',
+          'affected_names', coalesce(v_booking -> 'affected_names', '[]'::jsonb));
       end if;
     end if;
   end if;

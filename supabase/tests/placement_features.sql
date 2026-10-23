@@ -264,6 +264,8 @@ begin
     'department_id',dept,'week_start',w,'destination_id',dest,'ride_type_id',typ,
     'depart_at',dt+interval '5 hours','return_at',dt+interval '7 hours','trip_type','round_trip','adults',1));
   assert res->>'needs_confirmation'='release_to_waitlist' and (res->>'drives_others')::boolean, format('drives others: asks first, got %s',res);
+  -- R14U4: the question names the other people on the ride
+  assert res->'affected_names' ? (select full_name from public.profiles where id=m2), format('drives others: names the passenger, got %s',res);
   res:=public.submit_request(jsonb_build_object('request_id',q1,'expected_version',(select version from public.requests where id=q1),'confirm_release',true,
     'department_id',dept,'week_start',w,'destination_id',dest,'ride_type_id',typ,
     'depart_at',dt+interval '5 hours','return_at',dt+interval '7 hours','trip_type','round_trip','adults',1));

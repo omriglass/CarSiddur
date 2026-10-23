@@ -33,7 +33,9 @@ export interface SubmitOutcomeContext {
 export function toastSubmitOutcome(result: SubmitRequestResult | null | undefined, ctx: SubmitOutcomeContext): boolean {
   if (!result) return false;
 
-  if (result.reason === "DUPLICATE_OVERLAP") {
+  // R14U5: a late request that overlaps one of the member's own is parked by the Sadran-side flow, so the result may
+  // carry the warning without a `reason`; name the other request in that case too.
+  if (result.reason === "DUPLICATE_OVERLAP" || (result.is_late && result.warnings?.includes("DUPLICATE_OVERLAP") && (ctx.overlapNames?.length ?? 0) > 0)) {
     toast.warning(overlapRefusalMessage(ctx.overlapNames ?? []));
     return true;
   }
@@ -113,7 +115,11 @@ export function toastSeriesSubmitOutcome(result: SubmitSeriesRequestResult | nul
  */
 export function releaseConfirmation(
   result: SubmitRequestResult | null | undefined,
-): { drivesOthers: boolean; wouldPlace: boolean } | null {
+): { drivesOthers: boolean; wouldPlace: boolean; names: string[] } | null {
   if (result?.needs_confirmation !== "release_to_waitlist") return null;
-  return { drivesOthers: result.drives_others === true, wouldPlace: result.would_place === true };
+  return {
+    drivesOthers: result.drives_others === true,
+    wouldPlace: result.would_place === true,
+    names: result.drives_others === true ? (result.affected_names ?? []).filter((n) => n.trim() !== "") : [],
+  };
 }
