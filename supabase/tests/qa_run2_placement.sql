@@ -156,5 +156,16 @@ begin
   assert v_n = 1, 'late request produced ' || v_n || ' Sadran notifications';
   assert exists (select 1 from public.notifications n where n.recipient_id = manager and n.event = 'late_request'
     and n.data ->> 'variant' = 'late_waitlisted' and n.data ->> 'request_id' = v_res ->> 'request_id'), 'late notice lacks the outcome variant';
+
+  ---------------------------------------------------------------- R13B15 the Sadran's own late filing tells nobody about it twice
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', manager, 'role', 'authenticated')::text, true);
+  v_res := public.submit_request(jsonb_build_object('department_id', dept, 'week_start', w + 14, 'destination_id', dest,
+    'requester_id', m1, 'ride_type_id', typ, 'origin_id', (select d2.id from public.destinations d2 where d2.department_id = dept and d2.id not in (home, dest) limit 1), 'trip_type', 'round_trip',
+    'depart_at', (((w + 14) + 2) + time '15:00') at time zone 'Asia/Jerusalem',
+    'return_at', (((w + 14) + 2) + time '17:00') at time zone 'Asia/Jerusalem'));
+  assert (v_res ->> 'is_late')::boolean, 'R13B15: still a late request: ' || v_res::text;
+  assert not exists (select 1 from public.notifications n where n.recipient_id = manager
+    and n.event in ('late_request', 'waitlisted_request') and n.data ->> 'request_id' = v_res ->> 'request_id'),
+    'R13B15: the Sadran who filed it must not be told about their own late request';
 end $$;
 rollback;

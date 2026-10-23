@@ -17005,7 +17005,8 @@ begin
         jsonb_build_object('requestId', v_request_id::text), jsonb_build_object('request_id', v_request_id),
         format('waitlisted_request:%s', v_request_id))
       from public.sadranim_of(v_department_id, v_week_start) as s(profile_id)
-    where coalesce(current_setting('app.late_request_notice', true), 'off') <> 'on';
+    where coalesce(current_setting('app.late_request_notice', true), 'off') <> 'on'
+      and s.profile_id is distinct from (select auth.uid());
       v_auto_result := coalesce(v_auto_result, '{}'::jsonb)
         || jsonb_build_object('status', 'waitlisted', 'reason', coalesce(v_auto_result ->> 'reason', 'WAITLISTED_EDITED'));
     end if;
@@ -17028,7 +17029,9 @@ begin
         || case when v_join_ride_id is not null then jsonb_build_object('rideLabel', public._ask_to_join_ride_label(v_join_ride_id)) else '{}'::jsonb end,
       jsonb_build_object('request_id', v_request_id) || case when v_late_variant is null then '{}'::jsonb else jsonb_build_object('variant', v_late_variant) end,
       format('late_request:%s', v_request_id))
-    from public.sadranim_of(v_department_id, v_week_start) as s(profile_id);
+    from public.sadranim_of(v_department_id, v_week_start) as s(profile_id)
+    -- R13B15: the Sadran who made the change is not told about it.
+    where s.profile_id is distinct from (select auth.uid());
   end if;
   perform set_config('app.late_request_notice', 'off', true);
 
