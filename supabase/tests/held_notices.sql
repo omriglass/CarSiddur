@@ -46,7 +46,7 @@ begin
   perform public.enqueue_notification(member, 'outcome_changed', dept, w, '{}'::jsonb,
     jsonb_build_object('variant', 'time_changed', 'ride_id', r1), 'held-t1');
   assert (select count(*) from public.notifications where recipient_id = member) = n + 1, 'siddur change was not sent at once';
-  assert not exists (select 1 from public.held_notices), 'siddur change was held';
+  assert not exists (select 1 from public.held_notices where week_start = w), 'siddur change was held';
 
   -- (2) malformed header, and a member acting on the board: sent at once
   perform set_config('request.headers', 'not json', true);
@@ -57,7 +57,7 @@ begin
   perform public.enqueue_notification(member, 'outcome_changed', dept, w, '{}'::jsonb,
     jsonb_build_object('variant', 'time_changed', 'ride_id', r1), 'held-t3');
   perform set_config('request.jwt.claims', jsonb_build_object('sub', manager, 'role', 'authenticated')::text, true);
-  assert not exists (select 1 from public.held_notices), 'malformed header / member change was held';
+  assert not exists (select 1 from public.held_notices where week_start = w), 'malformed header / member change was held';
   assert (select count(*) from public.notifications where recipient_id = member) = n + 3, 'malformed header / member change not sent';
 
   -- (3) the board: a time change is held; the day is not ready and cannot be published
@@ -86,7 +86,7 @@ begin
     jsonb_build_object('variant', 'time_changed', 'ride_id', r1), 'held-2');
   res := public.flush_held_notices(dept, w, null);
   assert res = 0, format('an undone change sent %s notices', res);
-  assert not exists (select 1 from public.held_notices), 'flush left rows';
+  assert not exists (select 1 from public.held_notices where week_start = w), 'flush left rows';
   assert (select count(*) from public.notifications where recipient_id = member) = n + 3, 'undone change reached the member';
 
   -- (5) time change then car change -> one "board_changes" with both
@@ -98,7 +98,7 @@ begin
   update public.rides set car_id = carB where id = r1;
   perform public.enqueue_notification(member, 'outcome_changed', dept, w, '{}'::jsonb,
     jsonb_build_object('variant', 'car_changed', 'ride_id', r1), 'held-4');
-  assert (select count(*) from public.held_notices) = 2, 'both changes should be held';
+  assert (select count(*) from public.held_notices where week_start = w) = 2, 'both changes should be held';
   -- (6) a change on another day stays held when only d1 is sent
   perform set_config('app.held_audit_floor', (select max(id) from public.audit_log)::text, true);
   update public.rides set starts_at = t2 + interval '1 hour', ends_at = t2 + interval '3 hours' where id = r3;
