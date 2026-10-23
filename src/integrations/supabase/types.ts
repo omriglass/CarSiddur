@@ -4703,6 +4703,10 @@ export type Database = {
         Returns: undefined
       }
       _offer_freed_slot: { Args: { p_ride_id: string }; Returns: string }
+      _proposal_apply_trial: {
+        Args: { p_proposal_id: string }
+        Returns: string
+      }
       _proposal_blockers: { Args: { p_proposal_id: string }; Returns: string[] }
       _proposal_car_conflicts: {
         Args: { p_proposal_id: string }

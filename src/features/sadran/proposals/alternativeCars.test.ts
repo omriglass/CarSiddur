@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { alternativeLegWindows, carsFreeForWindow } from "./alternativeCars";
+import { alternativeLegWindows, carsFreeForWindow, shiftCarWindow } from "./alternativeCars";
 
 const t = (hhmm: string) => new Date(`2026-10-13T${hhmm}:00.000Z`).toISOString();
 const ms = (hhmm: string) => Date.parse(t(hhmm));
@@ -36,5 +36,16 @@ describe("carsFreeForWindow", () => {
   it("a ride that only touches the window does not make a car busy", () => {
     const rides = [{ car_id: "a", starts_at: t("07:00"), ends_at: t("09:00"), status: "confirmed" }];
     expect(carsFreeForWindow(cars, rides, win, null).map((c) => c.id)).toEqual(["a", "b"]);
+  });
+});
+
+describe("shiftCarWindow (R5B3)", () => {
+  const dep = "2026-10-28T08:00:00Z";
+  const ret = "2026-10-28T11:00:00Z";
+  it("is the whole new span for both times, one hour for a single leg", () => {
+    expect(shiftCarWindow(dep, ret, null)).toEqual({ startMs: Date.parse(dep), endMs: Date.parse(ret) });
+    expect(shiftCarWindow(null, ret, "return")).toEqual({ startMs: Date.parse(ret) - 3_600_000, endMs: Date.parse(ret) });
+    expect(shiftCarWindow(dep, ret, "out")).toEqual({ startMs: Date.parse(dep), endMs: Date.parse(dep) + 3_600_000 });
+    expect(shiftCarWindow(null, null, null)).toBeNull();
   });
 });

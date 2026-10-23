@@ -806,6 +806,14 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
   }
 
   function handleUnmetDecision(item: UnmetListItem, type: "deny" | "shift" | "external") {
+    if (type === "shift") {
+      // R5B3 / R6U1: the card's leg (a pickup card shifts the pickup only) and the car its suggestion named, if any —
+      // the composer offers the free cars with it preselected.
+      const suggested = item.solverInfo?.suggestions.find((s) => s.kind === "shiftBeyondFlex" || s.kind === "chainOneWay");
+      const carId = suggested && "carId" in suggested ? suggested.carId : undefined;
+      goToComposer({ requestId: item.request.id, rideId: null, type, payload: { ...(item.leg ? { leg: item.leg } : {}), ...(carId ? { car_id: carId } : {}) } });
+      return;
+    }
     goToComposer({ requestId: item.request.id, rideId: null, type, payload: type === "external" ? { hint: externalHintForCard(item.solverInfo?.suggestions) } : {} });
   }
 

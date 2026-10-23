@@ -2154,6 +2154,31 @@ end $$;
 ALTER FUNCTION "public"."_plan_b_pair_cascade"() OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."_proposal_apply_trial"("p_proposal_id" "uuid") RETURNS "text"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_err text;
+  v_prev text := coalesce(current_setting('app.system_status_transition', true), 'off');
+begin
+  begin
+    perform set_config('app.system_status_transition', 'on', true);
+    update public.proposals set status = 'sent' where id = p_proposal_id and status = 'draft';
+    update public.proposals set status = 'accepted' where id = p_proposal_id and status = 'sent';
+    perform public.apply_proposal(p_proposal_id);
+    raise exception 'proposal_trial_ok';
+  exception when others then
+    v_err := sqlerrm;
+  end;
+  perform set_config('app.system_status_transition', v_prev, true);
+  return nullif(v_err, 'proposal_trial_ok');
+end $$;
+
+
+ALTER FUNCTION "public"."_proposal_apply_trial"("p_proposal_id" "uuid") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."_proposal_blockers"("p_proposal_id" "uuid") RETURNS "uuid"[]
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -11610,8 +11635,12 @@ begin
   select * into v_p from public.proposals where id = p_proposal_id for update;
   if not found or v_p.status not in ('sent','accepted') then return; end if;
   perform set_config('app.audit_reason', 'proposal_system_withdraw', true);
+  -- R5B3 noise: this function tells the Sadran (and, for these variants, the members who accepted) itself, so the
+  -- accepted-withdrawn trigger's "still needs a driver" notices would be a second notice about the same thing.
+  perform set_config('app.system_withdraw_notifies', case when p_variant in ('withdrawn_stale', 'withdrawn_ride', 'withdrawn_dependency') then 'all' else 'sadran' end, true);
   update public.proposals set status = 'withdrawn', token_hash = encode(digest(public.generate_token(), 'sha256'), 'hex')
   where id = p_proposal_id;
+  perform set_config('app.system_withdraw_notifies', '', true);
   update public.proposal_parties set token_hash = encode(digest(public.generate_token(), 'sha256'), 'hex')
   where proposal_id = p_proposal_id;
   select coalesce(array_agg(s.profile_id), '{}') into v_sadranim from public.sadranim_of(v_p.department_id, v_p.week_start) as s(profile_id);
@@ -11714,7 +11743,7 @@ begin
     v_day := public.day_date_label(r.starts_at);
     select coalesce(p.full_name, '') into v_names from public.requests q join public.profiles p on p.id = q.requester_id where q.id = new.request_id;
     select q.requester_id into v_to from public.requests q where q.id = new.request_id;
-    if v_to is not null then
+    if v_to is not null and coalesce(current_setting('app.system_withdraw_notifies', true), '') <> 'all' then
       perform public.enqueue_notification(v_to, 'outcome_changed', r.department_id, r.week_start,
         jsonb_build_object('route', v_route, 'day', v_day),
         jsonb_build_object('variant', 'ride_still_needs_driver', 'ride_id', r.ride_id, 'request_id', new.request_id, 'proposal_id', new.id),
@@ -11725,7 +11754,8 @@ begin
       jsonb_build_object('variant', 'ride_still_needs_driver_sadran', 'ride_id', r.ride_id, 'request_id', new.request_id, 'proposal_id', new.id),
       format('ride_still_needs_driver_sadran:%s:%s', new.id, s.profile_id))
     from public.sadranim_of(r.department_id, r.week_start) as s(profile_id)
-    where s.profile_id is distinct from (select auth.uid());
+    where s.profile_id is distinct from (select auth.uid())
+      and coalesce(current_setting('app.system_withdraw_notifies', true), '') = '';
   end loop;
   return new;
 end $$;
@@ -15087,6 +15117,15 @@ begin
         end if;
       end if;
     end loop;
+  end if;
+  -- R5B3 (QA run 13 re-check, 2026-10-23): a Sadran shift that names a car is tried now (applied and rolled back), so a
+  -- car that cannot take it — elsewhere at that time, too small, busy — is refused here with the reason, instead of
+  -- the member accepting and the proposal being withdrawn as stale afterwards (several notices, nothing placed).
+  -- ("כבר סיכמנו" — agree_proposal_offline — applies right after sending and handles a failure itself.)
+  if v_prop.type='shift' and v_prop.created_via='sadran' and v_prop.payload ? 'car_id'
+     and coalesce(current_setting('app.defer_proposal_apply', true), '') <> 'on' then
+    v_leg_txt := public._proposal_apply_trial(v_prop.id);
+    if v_leg_txt is not null then raise exception '%', v_leg_txt using errcode='P0001'; end if;
   end if;
   select * into v_previous from public.proposals where request_id=v_request_id and status='sent';
   -- REQ §13.103 R3B11: a Sadran merge draft that extends the sent merge (the other leg of a split merge) replaces it
@@ -24253,6 +24292,11 @@ GRANT ALL ON FUNCTION "public"."_offer_freed_slot"("p_ride_id" "uuid") TO "servi
 
 REVOKE ALL ON FUNCTION "public"."_plan_b_pair_cascade"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_plan_b_pair_cascade"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_proposal_apply_trial"("p_proposal_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_proposal_apply_trial"("p_proposal_id" "uuid") TO "service_role";
 
 
 

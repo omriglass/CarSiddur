@@ -225,7 +225,12 @@ async function cmdDay(board: Board, day: string): Promise<void> {
     const req = board.requests.find((r) => r.id === p.request_id);
     console.log(`  prop ${short(p.id)} ${p.type} ${p.status} req=${short(p.request_id)} (${req?.requester_full_name ?? "?"}) ride=${short(p.ride_id)}${p.answered_at ? ` answered=${p.answered_via}` : ""} v${p.version}`);
   }
-  if (output && output.warnings.length) for (const w of output.warnings.slice(0, 5)) console.log(`SOLVER WARNING ${w.code}: ${w.message}`);
+  // R5U6: each warning names its request (short id, requester, times) so the Sadran can find it.
+  if (output && output.warnings.length) for (const w of output.warnings.slice(0, 5)) {
+    const req = w.requestId ? board.requests.find((r) => r.id === w.requestId) : undefined;
+    const about = req ? ` — req ${short(req.id)} (${req.requester_full_name ?? "?"}, ${t(req.depart_at)}-${t(req.return_at)})` : w.requestId ? ` — req ${short(w.requestId)}` : "";
+    console.log(`SOLVER WARNING ${w.code}: ${w.message}${about}`);
+  }
 }
 
 async function cmdRequests(board: Board, args: Args): Promise<void> {

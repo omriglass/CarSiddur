@@ -95,6 +95,17 @@ begin
   update public.proposals set status='withdrawn' where id=p;
   select count(*) into n from public.notifications where data->>'proposal_id'=p::text and data->>'variant' like 'ride_still_needs_driver%';
   assert n=0, 'R5B10: a merely sent proposal withdrawn raises no driver notice';
+  -- R5B3 re-check (no bursts): an accepted proposal withdrawn as stale tells the member once and the Sadran once
+  insert into public.proposals(department_id,week_start,type,status,request_id,ride_id,payload,reason_he,previous_status,token_hash,expires_at,created_by)
+    values(dept,w,'shift','sent',q2,rB,jsonb_build_object('car_id',carB),'Test stale shift','waitlisted',gen_random_uuid()::text,now()+interval '1 day',sadran) returning id into p;
+  insert into public.proposal_parties(proposal_id,request_id,profile_id,response,token_hash)
+    values(p,q2,m2,'accepted',gen_random_uuid()::text);
+  update public.proposals set status='accepted' where id=p;
+  perform public.proposal_system_withdraw(p,'withdrawn_stale','car_not_at_leg_place');
+  select count(*) into n from public.notifications where recipient_id=m2 and data->>'proposal_id'=p::text;
+  assert n=1, format('R5B3: the member gets one notice for a stale withdrawal, got %s', n);
+  select count(*) into n from public.notifications where recipient_id=sadran and data->>'proposal_id'=p::text;
+  assert n=1, format('R5B3: the Sadran gets one notice, got %s', n);
 
   -- ===== REQ §13.109 (d)(e)(f): request lifecycle (QA run 7 group C) ===============================
   -- ---- R7B9: a הקפצה requester (driver of both legs) cancels the return ride: the outbound ride, which carries a

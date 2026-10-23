@@ -117,6 +117,29 @@ begin
     'R13M5: the requester and the named guest ride on the other ride, got '||(select string_agg(display_name,', ') from public.ride_passengers where ride_id=pub);
   assert (select status from public.rides where id=rid)='cancelled', 'R13M5: the held ride nobody is left on is released';
   assert (select status from public.requests where id=qg) in ('cancelled','withdrawn'), 'R13M5: the old request ends';
+  set constraints all immediate; set constraints all deferred;
+
+  -- R5B3 re-check: a Sadran shift naming a car that cannot take it is refused when sent (it used to be withdrawn as
+  -- stale after the member accepted); one that fits is sent, and the send-time trial leaves nothing behind.
+  dt:=((w+6)+time '16:00') at time zone 'Asia/Jerusalem';
+  insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,depart_at,return_at,trip_shape,status,status_reason,origin_id,adults)
+    values(dept,w,d1,d1,haifa,typ,dt,dt+interval '2 hours','round_trip','waitlisted','WAITLISTED_NO_CAR',home,6) returning id into qd;
+  perform set_config('request.jwt.claims',jsonb_build_object('sub',sadran,'role','authenticated')::text,true);
+  pub:=public.create_proposal(qd,null,'shift',jsonb_build_object('car_id','00000000-0000-0000-0000-000000000040','depart_at',dt+interval '30 minutes','return_at',dt+interval '150 minutes'),'x');
+  begin
+    perform public.send_proposal(pub,'{}');
+    assert false, 'R5B3: a 5-seat car cannot take 6 people - refused at send';
+  exception when others then
+    assert sqlerrm='seat_config_violation', 'R5B3: the apply''s own reason, got '||sqlerrm;
+  end;
+  assert (select status from public.proposals where id=pub)='draft', 'R5B3: the refused proposal stays a draft';
+  perform public.discard_proposal(pub);
+  pub:=public.create_proposal(qd,null,'shift',jsonb_build_object('car_id',car,'depart_at',dt+interval '30 minutes','return_at',dt+interval '150 minutes'),'x');
+  perform public.send_proposal(pub,'{}');
+  perform set_config('request.jwt.claims','{}',true);
+  assert (select status from public.proposals where id=pub)='sent' and (select status from public.requests where id=qd)='proposed',
+    'R5B3: a car that fits is sent as before';
+  assert not exists(select 1 from public.ride_requests where request_id=qd), 'R5B3: the send-time trial leaves no ride';
   set constraints all immediate;
 end $$;
 rollback;

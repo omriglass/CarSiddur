@@ -302,6 +302,9 @@ export const heSadran = {
     altBackLine: "חזרה ב־{{back}}",
     altOtherCar: "רכב אחר לאיסוף",
     altNoCar: "בחר/י רכב",
+    /** R5B3 / R6U1: the car a shift of an unplaced request (or of a pickup leg) places it on. */
+    shiftCar: "רכב",
+    shiftNoCar: "בלי רכב — רק שינוי שעות",
     carConflictSend: "לשלוח בכל זאת",
     carConflictBack: "חזרה",
     timeDepartSet: "יציאה {{new}}",

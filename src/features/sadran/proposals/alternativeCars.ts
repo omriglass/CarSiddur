@@ -47,3 +47,17 @@ export function carsFreeForWindow<C extends CarLike>(cars: readonly C[], rides: 
     .filter((car) => car.id === keepId || (car.status === "active" && car.type !== "temporary" && !busy.has(car.id)))
     .sort((a, b) => a.name.localeCompare(b.name, "he") || a.id.localeCompare(b.id));
 }
+
+/** Unknown drive time for one leg (the app's default for an unknown route, ARCHITECTURE "unknown travel = 60 min"). */
+const ONE_LEG_MS = 60 * 60_000;
+
+/**
+ * R5B3 / R6U1: the window a car must be free for to take a shift proposal — the whole new span, or for one leg (a
+ * pickup card's `return`, an out-leg's `out`, or a request with only one time) that leg's hour. A pre-filter only: the
+ * server places the request on the car on apply (`_shift_place_on_car`) and refuses what does not fit.
+ */
+export function shiftCarWindow(departAt: string | null, returnAt: string | null, leg: "out" | "return" | null): TimeWindow | null {
+  if (leg === "return" || (!departAt && returnAt)) return returnAt ? { startMs: Date.parse(returnAt) - ONE_LEG_MS, endMs: Date.parse(returnAt) } : null;
+  if (leg === "out" || (departAt && !returnAt)) return departAt ? { startMs: Date.parse(departAt), endMs: Date.parse(departAt) + ONE_LEG_MS } : null;
+  return departAt && returnAt ? { startMs: Date.parse(departAt), endMs: Date.parse(returnAt) } : null;
+}

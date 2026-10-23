@@ -36,9 +36,9 @@ import { applyServerMergeTimes, personOverlapWarning, mergeLegSummary, mergePayl
 import { useQuery } from "@tanstack/react-query";
 
 import { renderTemplate } from "../waLink";
-import { atTime, buildProposalPayload, resolveShiftTimes, seriesSpanOf } from "../buildProposalPayload";
+import { atTime, buildProposalPayload, isPlaceOnlyShift, resolveShiftTimes, seriesSpanOf } from "../buildProposalPayload";
 import { alternativeTextInput, seriesOriginalOf } from "../../board/draftInput";
-import { alternativeLegWindows, carsFreeForWindow } from "../alternativeCars";
+import { alternativeLegWindows, carsFreeForWindow, shiftCarWindow } from "../alternativeCars";
 import { combinedSummaryText, proposalTemplateVariant, externalSuggestionFor, proposalPreviewText, shiftTimesUnchanged } from "../proposalText";
 import { WhatsappDialog } from "./WhatsappDialog";
 import {
@@ -90,13 +90,14 @@ interface ProposalComposerScreenProps {
 }
 
 /** A car chooser for one plan-B leg (R11M1): the cars free for that leg's window, the chosen one always included. */
-function AltCarSelect({ cars, value, onChange, disabled, testId }: {
+function AltCarSelect({ cars, value, onChange, disabled, testId, placeholder = he.sadranProposal.altNoCar }: {
   cars: readonly { id: string; name: string }[]; value: string | null; onChange: (carId: string) => void; disabled: boolean; testId: string;
+  placeholder?: string;
 }) {
   return (
     <Select value={value ?? ""} onValueChange={onChange} disabled={disabled}>
       <SelectTrigger className="w-56" data-testid={testId}>
-        <SelectValue placeholder={he.sadranProposal.altNoCar}>{cars.find((car) => car.id === value)?.name}</SelectValue>
+        <SelectValue placeholder={placeholder}>{cars.find((car) => car.id === value)?.name}</SelectValue>
       </SelectTrigger>
       <SelectContent>
         {cars.map((car) => <SelectItem key={car.id} value={car.id}>{car.name}</SelectItem>)}
@@ -296,7 +297,16 @@ export function ProposalComposerScreen({ departmentId, weekStart }: ProposalComp
   const [altPickupOverride, setAltPickupOverride] = useState<string | null>(null);
   const altOutCar = altOutOverride ?? altStoredOut;
   const altPickupCar = altPickupOverride ?? (altOutOverride && altStoredPickup === altStoredOut ? altOutOverride : altStoredPickup);
-  const altRidesQuery = useAllWeekRides(type === "alternative" ? departmentId : undefined, weekStart);
+  // R5B3 / R6U1: a shift on an unplaced request — or on one leg of it (a pickup card) — names the car it places on,
+  // so accepting it places that leg instead of only moving its time; the card's suggestion car is preselected.
+  const shiftPrefill = type === "shift" && !proposalId ? prefill?.payload : undefined;
+  const shiftLeg = shiftPrefill?.leg === "out" || shiftPrefill?.leg === "return" ? shiftPrefill.leg : null;
+  const shiftPicksCar = !!shiftPrefill && !seriesSpanOf(shiftPrefill) && !isPlaceOnlyShift(shiftPrefill)
+    && (!!shiftLeg || typeof shiftPrefill.car_id === "string" || (!!request && request.status !== "assigned" && request.status !== "merged"));
+  const [shiftCarOverride, setShiftCarOverride] = useState<string | null>(null);
+  const shiftCar = shiftCarOverride ?? (typeof shiftPrefill?.car_id === "string" ? shiftPrefill.car_id : null);
+  const shiftWindow = shiftPicksCar ? shiftCarWindow(proposedDepartAt ?? null, proposedReturnAt ?? null, shiftLeg) : null;
+  const altRidesQuery = useAllWeekRides(type === "alternative" || shiftPicksCar ? departmentId : undefined, weekStart);
   const altRow = type === "alternative" ? request?.alternative : null;
   const altDepartAt = typeof altSource?.depart_at === "string" ? altSource.depart_at : null;
   const altReturnAt = typeof altSource?.return_at === "string" ? altSource.return_at : null;
@@ -305,7 +315,8 @@ export function ProposalComposerScreen({ departmentId, weekStart }: ProposalComp
     : null;
 
   const payload = buildProposalPayload({
-    type, prefillPayload: type === "alternative" && !proposalId ? { ...prefill?.payload, car_id: altOutCar ?? undefined, return_car_id: altPickupCar ?? undefined } : prefill?.payload,
+    type, prefillPayload: type === "alternative" && !proposalId ? { ...prefill?.payload, car_id: altOutCar ?? undefined, return_car_id: altPickupCar ?? undefined }
+      : shiftPicksCar && shiftCar ? { ...prefill?.payload, car_id: shiftCar } : prefill?.payload,
     request, rideId, proposedDepartAt, proposedReturnAt,
     effectiveReason, externalHint, originAway,
   });
@@ -467,6 +478,14 @@ export function ProposalComposerScreen({ departmentId, weekStart }: ProposalComp
             </div>
           ) : null}
 
+          {shiftPicksCar && shiftWindow ? (
+            <label className="block space-y-1 text-xs" data-testid="composer-shift-car">
+              <span className="block">{he.sadranProposal.shiftCar}</span>
+              <AltCarSelect testId="composer-shift-car-select" value={shiftCar} disabled={false} placeholder={he.sadranProposal.shiftNoCar}
+                cars={carsFreeForWindow(carsQuery.data ?? [], (altRidesQuery.data ?? []).filter((ride) => !servedOf(ride).some((entry) => entry.request_id === request?.id)), shiftWindow, shiftCar)}
+                onChange={(id) => { setShiftCarOverride(id); setEditedText(null); }} />
+            </label>
+          ) : null}
           {type === "shift" && !proposalId ? <div className="flex flex-wrap gap-4">
             {departAt ? <label className="space-y-1 text-xs"><span className="block">{he.field.depart}</span><TimeField15 min="00:00" value={departOverride ?? formatTime(new Date(departAt))} onChange={(time) => { setDepartOverride(time); setEditedText(null); }} aria-label={he.field.depart} /></label> : null}
             {returnAt ? <label className="space-y-1 text-xs"><span className="block">{he.field.return}</span><TimeField15 min="00:00" max="23:59" value={returnOverride ?? formatTime(new Date(returnAt))} onChange={(time) => { setReturnOverride(time); setEditedText(null); }} aria-label={he.field.return} /></label> : null}
