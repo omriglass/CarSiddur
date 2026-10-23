@@ -98,13 +98,21 @@ export async function openAs(email, opts = {}) {
 }
 
 /**
- * Selects a day: the board's day strip shows only the weekday letter and a count, so the n-th
- * single-letter button (n = weekday, Sunday = 0) is clicked; if there is none, a button whose
- * label contains the date as `d.M` (the siddur's day headers). Best effort, returns whether it clicked.
+ * Selects a day: the day strip (`WeekStrip`, a radiogroup of seven day radios "א׳ 25.10") gets its n-th radio
+ * (n = weekday, Sunday = 0) clicked — R13B21: matching the date text first hit the week switcher's "25.10–31.10".
+ * Older layouts: the n-th single-letter button, else a button whose label holds the date as `d.M` (the siddur's
+ * day headers). Best effort, returns whether it clicked.
  */
 export async function selectDay(page, day) {
   const [year, month, date] = day.split("-").map(Number);
   const weekday = new Date(Date.UTC(year, month - 1, date)).getUTCDay();
+  const groups = page.locator('[role="radiogroup"]');
+  for (let i = 0; i < await groups.count(); i++) {
+    const radios = groups.nth(i).locator('[role="radio"]');
+    if ((await radios.count()) === 7 && await radios.nth(weekday).isVisible()) {
+      await radios.nth(weekday).click(); await page.waitForTimeout(800); return true;
+    }
+  }
   const letters = page.locator("button").filter({ hasText: /^\s*[\u05d0-\u05ea]['\u05f3]?\s*\d*\s*$/ });
   if ((await letters.count()) >= 7) { await letters.nth(weekday).click(); await page.waitForTimeout(800); return true; }
   const dated = page.locator('[role="tab"], button').filter({ hasText: new RegExp(`(^|\\D)${date}\\.${month}(\\D|$)`) }).first();
