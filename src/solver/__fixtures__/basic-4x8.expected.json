@@ -345,7 +345,7 @@
         }
       ],
       "reasonCode": "UNMET_NO_CAR",
-      "reason": "אין רכב פנוי בחלון המבוקש; חוסמים: Picanto, Octavia, Corolla, Staria"
+      "reason": "אין רכב פנוי בחלון המבוקש"
     }
   ],
   "mergeOpportunities": [],

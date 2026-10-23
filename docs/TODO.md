@@ -1104,6 +1104,7 @@ Run notes: autofill placed 135/165; the QA Sadran published Fri, Thu, Sun+Wed+Sa
 - ~~R14U3~~ **done 2026-10-23** — Send All dialog lines ("עידו סופר · איחוד נסיעות | אסף שרון · …") hard to read on a phone — one line per item.
 - ~~R14U4~~ **done 2026-10-23** — A member editing a published ride (Nir Dahan bb149878 +30 min) is told only "the server asks first"; say who else is affected and that the new time cannot be placed.
 - ~~R14U5~~ **done 2026-10-23** — A late request that is a duplicate overlap is only a status (`DUPLICATE_OVERLAP`), no message naming the other request.
+- ~~R14U4/U5 follow-ups~~ **done 2026-10-23** — the first edit dialog ("השינוי יוריד אותך מהרכב") names the affected people too (probe returns `affected_names`, migration `20261028100100`); Send All shows "הצעה אחת"/"עדכון אחד" for 1; driver picker hides the empty select when nothing matches; `UNMET_NO_CAR` no longer lists blocking cars (`UNMET_NO_CAR_BUSY` removed).
 
 **Missing obvious features**
 - R14M1 (done 2026-10-23) — Mobile unplaced card ⋮ has no "place on a car" — a Sadran on a phone can unassign but not undo.

@@ -81,7 +81,7 @@ import { isSeriesSubmission, seriesSpanDays } from "../series";
 import { extraAdultsFromStored, payloadSeatCounts, unnamedChildSeatsFromStored } from "../seatCounts";
 import { overlapNames } from "../overlapNames";
 import { childOverlapMessage } from "../childOverlap";
-import { releaseConfirmation, shouldOfferJoinableRides, toastSeriesSubmitOutcome, toastSubmitOutcome } from "../submitOutcome";
+import { affectedNames, releaseConfirmation, shouldOfferJoinableRides, toastSeriesSubmitOutcome, toastSubmitOutcome } from "../submitOutcome";
 import { shouldSuggestChildcare } from "../childcareType";
 import { suggestionToFormValues } from "../templatePrefill";
 import { canUseDrivingTripTypes, tripTypeToLegacyFields } from "../tripType";
@@ -802,7 +802,7 @@ export function RequestForm({
   // R2M4: named children already on another member's overlapping request — warn, allow anyway.
   const [pendingChildOverlap, setPendingChildOverlap] = useState<{ values: RequestFormValues; rows: ChildOverlapRow[] } | null>(null);
   // R2B20 / REQ §102 f: an open-week edit the probe says would lose the member's current car.
-  const [pendingLose, setPendingLose] = useState<RequestFormValues | null>(null);
+  const [pendingLose, setPendingLose] = useState<{ values: RequestFormValues; names: string[] } | null>(null);
   const [pendingRelease, setPendingRelease] = useState<{ values: RequestFormValues; drivesOthers: boolean; wouldPlace: boolean; names: string[] } | null>(null);
   // F4 (docs/TODO.md, owner A8-A10): a `waitlisted` outcome with nearby joinable rides holds off
   // the normal onDone/navigate — `afterJoinableDialog` runs it once the member picks "ask to
@@ -959,7 +959,7 @@ export function RequestForm({
             return;
           }
           if (probe?.would_lose_booking) {
-            setPendingLose(formValues);
+            setPendingLose({ values: formValues, names: affectedNames(probe) });
             return;
           }
         } catch { /* advisory only */ }
@@ -1482,11 +1482,15 @@ export function RequestForm({
       description={t("request.loseBookingBody")}
       loading={submitMutation.isPending}
       onConfirm={() => {
-        const values = pendingLose;
+        const values = pendingLose?.values;
         setPendingLose(null);
         if (values) void performSubmit(values, { confirmLose: true, ignoreChildOverlap: true });
       }}
-    />
+    >
+      {pendingLose && pendingLose.names.length > 0 ? (
+        <p className="text-sm">{tv("request.releaseAffected", { names: pendingLose.names.join(", ") })}</p>
+      ) : null}
+    </ConfirmDialog>
     <ConfirmDialog
       open={!!pendingChildOverlap}
       onOpenChange={(open) => { if (!open) setPendingChildOverlap(null); }}

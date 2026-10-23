@@ -120,6 +120,11 @@ export function releaseConfirmation(
   return {
     drivesOthers: result.drives_others === true,
     wouldPlace: result.would_place === true,
-    names: result.drives_others === true ? (result.affected_names ?? []).filter((n) => n.trim() !== "") : [],
+    names: affectedNames(result),
   };
+}
+
+/** R14U4: the other people on a ride the member drives (empty when they drive nobody), from a probe or a release answer. */
+export function affectedNames(result: SubmitRequestResult | null | undefined): string[] {
+  return result?.drives_others === true ? (result.affected_names ?? []).filter((n) => n.trim() !== "") : [];
 }

@@ -489,10 +489,13 @@ export const heSadran = {
     title: "שליחת כל ההצעות",
     help: "ההצעות והעדכונים בימים המסומנים יישלחו עכשיו (התראה ותיבת הודעות). בטלו סימון של יום שעוד עובדים עליו.",
     dayProposals: "{{count}} הצעות",
+    dayProposalsOne: "הצעה אחת",
     dayUpdates: "{{count}} עדכונים",
+    dayUpdatesOne: "עדכון אחד",
     /** REQ §13.138 (e): a changed ride's people get one message with the final result. */
     updatesHint: "עדכון = שינוי שעשיתם בלוח בנסיעה של מישהו. כל אחד יקבל הודעה אחת עם התוצאה הסופית; שינוי שבוטל לא יישלח.",
     weekUpdates: "{{count}} עדכונים לכל השבוע",
+    weekUpdatesOne: "עדכון אחד לכל השבוע",
     none: "אין הצעות או עדכונים שממתינים לשליחה",
     send: "שלח",
     sending: "שולח…",

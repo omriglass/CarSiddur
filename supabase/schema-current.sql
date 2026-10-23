@@ -16804,7 +16804,9 @@ begin
       return jsonb_build_object('probe_only', true, 'request_id', v_request_id, 'unchanged', v_unchanged, 'placement_neutral', v_neutral,
         'would_lose_booking', not v_unchanged and not v_neutral and (v_existing.status in ('assigned', 'merged', 'proposed') or exists (
           select 1 from public.ride_requests rr join public.rides r on r.id = rr.ride_id
-          where rr.request_id = v_request_id and r.status <> 'cancelled')));
+          where rr.request_id = v_request_id and r.status <> 'cancelled')),
+        'drives_others', coalesce((public.request_booking_info(v_request_id) ->> 'drives_others')::boolean, false),
+        'affected_names', coalesce(public.request_booking_info(v_request_id) -> 'affected_names', '[]'::jsonb));
     end if;
     if not (payload ? 'expected_version') then perform public.raise_stale_version(); end if;
     if v_existing.version is distinct from (payload ->> 'expected_version')::int then

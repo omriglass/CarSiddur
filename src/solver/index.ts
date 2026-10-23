@@ -111,13 +111,12 @@ function fittingCarFree(input: SolverInput, nr: NormalizedRequest, timelines: Ma
  * R2B11, R13B17: the real cause of a plain "no car", as a code with matching text. The cars that could take the
  * request in time are looked at first: a fitting car free elsewhere → "no car at the origin"; no fitting car free
  * at all while the request needs something only some cars have (seats, child seats, a large trunk) → that need,
- * naming the busy cars that have it; everything busy → the blockers.
+ * naming the busy cars that have it; everything busy → plain `UNMET_NO_CAR` (no list of cars).
  */
 function noCarReason(
   input: SolverInput,
   nr: NormalizedRequest,
   timelines: Map<string, CarTimeline>,
-  blockers: { carId: string; rideIds: string[] }[],
 ): { code: string; text: string } {
   const shared = input.cars.filter((c) => c.type === 'shared');
   if (shared.length === 0) return { code: 'UNMET_NO_CAR_NONE', text: reason('UNMET_NO_CAR_NONE') };
@@ -143,14 +142,8 @@ function noCarReason(
       return { code: 'UNMET_LARGE_TRUNK_BUSY', text: reason('UNMET_LARGE_TRUNK_BUSY', { cars: seatCarNames(input, nr) }) };
     }
   }
-  // One-way legs carry no blockers list: name the fitting cars that are busy for them.
-  const blockerIds = blockers.length > 0
-    ? blockers.map((b) => b.carId)
-    : fitting.filter((c) => !carFreeForRequest(timelines.get(c.id), nr, true)).map((c) => c.id);
-  const names = blockerIds.map((id) => carName(input.cars, id)).filter(Boolean).join(', ');
-  return names
-    ? { code: 'UNMET_NO_CAR', text: reason('UNMET_NO_CAR', { blockers: names }) }
-    : { code: 'UNMET_NO_CAR_BUSY', text: reason('UNMET_NO_CAR_BUSY') };
+  // R14 follow-up (owner): no list of busy cars — it is noise on the unplaced card.
+  return { code: 'UNMET_NO_CAR', text: reason('UNMET_NO_CAR') };
 }
 
 /**
@@ -459,7 +452,7 @@ function solveExpanded(input: SolverInput): SolverOutput {
         ? { code: 'UNMET_ONE_WAY_STRANDS_CAR', text: reason('UNMET_ONE_WAY_STRANDS_CAR', { origin, dest }) }
         : oneWayCause.awayAtWeekEnd
         ? { code: 'UNMET_ONE_WAY_AWAY_AT_WEEK_END', text: reason('UNMET_ONE_WAY_AWAY_AT_WEEK_END', { dest }) }
-        : noCarReason(input, nr, timelines, blockers);
+        : noCarReason(input, nr, timelines);
       return {
         requestId: nr.id,
         score: scores.get(nr.id)?.total ?? 0,

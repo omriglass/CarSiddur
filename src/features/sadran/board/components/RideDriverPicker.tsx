@@ -107,14 +107,14 @@ export function RideDriverPicker({ rideId, version, needsDriver, volunteerName, 
       ) : null}
       {shown.length === 0 ? <p className="text-xs text-muted-foreground" data-testid="ride-driver-no-match">{he.rideDriver.noMatch}</p> : null}
       <div className="flex items-center gap-2">
-        <Select value={driverId} onValueChange={setDriverId} disabled={disabled || mutation.isPending}>
+        {shown.length > 0 ? <Select value={driverId} onValueChange={setDriverId} disabled={disabled || mutation.isPending}>
           <SelectTrigger className="min-h-11 flex-1" aria-label={he.rideDriver.selectAria} data-testid="ride-driver-select">
             <SelectValue placeholder={he.rideDriver.placeholder} />
           </SelectTrigger>
           <SelectContent>
             {shown.map((candidate) => <SelectItem key={candidate.id} value={candidate.id}>{[candidate.name, livesAway(candidate), busyIds?.has(candidate.id) ? he.rideDriver.busy : null].filter(Boolean).join(" · ")}</SelectItem>)}
           </SelectContent>
-        </Select>
+        </Select> : <span className="flex-1" />}
         <Button type="button" className="min-h-11" disabled={!driverId || disabled || mutation.isPending} onClick={ownRequest ? () => setConfirming(true) : assign} data-testid="ride-driver-assign">
           {volunteerName ? he.rideDriver.replace : he.rideDriver.assign}
         </Button>

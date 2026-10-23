@@ -20,6 +20,7 @@ import { sadranKeys } from "../../keys";
 import { WhatsappDialog } from "../../proposals/components/WhatsappDialog";
 import { renderTemplate } from "../../proposals/waLink";
 import { heldUpdateCount } from "../heldUpdates";
+import { sendAllCount } from "../sendAllCount";
 
 /** One unsent Sadran draft, with the day it belongs to (its request's day) and who it is for. */
 export interface PendingDraft {
@@ -84,7 +85,7 @@ export function SendAllDialog({ open, onOpenChange, departmentId, weekStart, dra
         ) : (
           <ul className="space-y-2">
             {held.length ? <li className="text-xs text-muted-foreground">{he.sendAll.updatesHint}</li> : null}
-            {weekLevel ? <li className="text-sm">{tv("sendAll.weekUpdates", { count: String(weekLevel) })}</li> : null}
+            {weekLevel ? <li className="text-sm">{sendAllCount("weekUpdates", weekLevel)}</li> : null}
             {days.map((day) => {
               const ofDay = drafts.filter((draft) => draft.day === day);
               const updates = heldUpdateCount(held, day);
@@ -101,8 +102,8 @@ export function SendAllDialog({ open, onOpenChange, departmentId, weekStart, dra
                       })}
                     />
                     {[formatDayDate(day),
-                      ofDay.length ? tv("sendAll.dayProposals", { count: String(ofDay.length) }) : null,
-                      updates ? tv("sendAll.dayUpdates", { count: String(updates) }) : null].filter(Boolean).join(" · ")}
+                      ofDay.length ? sendAllCount("dayProposals", ofDay.length) : null,
+                      updates ? sendAllCount("dayUpdates", updates) : null].filter(Boolean).join(" · ")}
                   </label>
                   {ofDay.length ? (
                     <ul className="ps-6 text-xs text-muted-foreground" data-testid={`send-all-items-${day}`}>

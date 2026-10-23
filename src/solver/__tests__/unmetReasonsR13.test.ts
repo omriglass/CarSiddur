@@ -55,7 +55,7 @@ describe('R13B17 unmet reasons name the real blocker', () => {
     expect(u?.reason).toContain('Van');
   });
 
-  it('every car busy: the blockers, with a matching code', () => {
+  it('every car busy: plain no-car text without a list of cars', () => {
     const out = solve(baseInput({
       cars: [makeCar('C1'), makeCar('C2')],
       requests: [makeRequest({ id: 'R1', ...trip })],
@@ -63,7 +63,8 @@ describe('R13B17 unmet reasons name the real blocker', () => {
     }));
     const u = out.unmet.find((x) => x.requestId === 'R1');
     expect(u?.reasonCode).toBe('UNMET_NO_CAR');
-    expect(u?.reason).toContain('C1');
+    expect(u?.reason).not.toContain('C1');
+    expect(u?.reason).not.toContain('חוסמים');
   });
 
   it('a car free only elsewhere still says there is no car at the origin', () => {

@@ -5,7 +5,7 @@ import { tv } from "@/i18n/he";
 const mocks = vi.hoisted(() => ({ toast: vi.fn(), success: vi.fn(), warning: vi.fn() }));
 vi.mock("sonner", () => ({ toast: Object.assign(mocks.toast, { success: mocks.success, warning: mocks.warning }) }));
 
-import { releaseConfirmation, shouldOfferJoinableRides, toastSeriesSubmitOutcome, toastSubmitOutcome } from "./submitOutcome";
+import { affectedNames, releaseConfirmation, shouldOfferJoinableRides, toastSeriesSubmitOutcome, toastSubmitOutcome } from "./submitOutcome";
 import type { SubmitRequestResult, SubmitSeriesRequestResult } from "./api";
 import { t } from "@/i18n/he";
 
@@ -141,5 +141,14 @@ describe("releaseConfirmation", () => {
   it("is null for an ordinary result", () => {
     expect(releaseConfirmation({ ...base, status: "assigned" })).toBeNull();
     expect(releaseConfirmation(null)).toBeNull();
+  });
+});
+
+describe("affectedNames", () => {
+  const base = { request_id: "r", is_late: false, warnings: [] };
+  it("names the people only when the member drives others (probe answer too)", () => {
+    expect(affectedNames({ ...base, drives_others: true, affected_names: ["Dana", " "] })).toEqual(["Dana"]);
+    expect(affectedNames({ ...base, affected_names: ["Dana"] })).toEqual([]);
+    expect(affectedNames(null)).toEqual([]);
   });
 });
