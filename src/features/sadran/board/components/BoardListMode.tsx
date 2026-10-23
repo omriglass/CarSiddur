@@ -2,9 +2,13 @@ import { useState } from "react";
 
 import { RideCard, type RideCardData } from "@/components/RideCard";
 import { he } from "@/i18n/he";
+import { formatDayDate } from "@/lib/dayLabels";
 import { cn } from "@/lib/utils";
 
+import { groupRidesByDay } from "../listOrder";
+
 import { UnmetList, type UnmetListItem } from "./UnmetList";
+import type { PlaceableCar } from "../placeOnCar";
 import type { FewerDaysSupport } from "./FewerDaysAction";
 
 import type { Suggestion } from "@/solver";
@@ -32,10 +36,13 @@ interface BoardListModeProps {
   tripTypeScope?: { departmentId: string; weekStart: string };
   fewerDays?: FewerDaysSupport;
   requesterNameOf?: (requestId: string) => string | undefined;
+  /** R14M1: forwarded to `UnmetList` for the ⋮ "שבץ ברכב…" picker. */
+  placeableCarsOf?: (item: UnmetListItem) => readonly PlaceableCar[];
+  onPlaceOnCar?: (item: UnmetListItem, carId: string) => void;
 }
 
 /** Phone fallback for the board (UX_FLOWS.md §4.2 "Phone fallback — list mode"): רכבים / לא שובצו / הצעות segments. */
-export function BoardListMode({ rides, pendingRides = [], draftRideIds, shadowedRideIds, onRideClick, unmetItems, onUnmetAction, onUnmetDecision, onOpenProposal, onOpenProposals, pendingProposalsCount = 0, homeDestinationId, tripTypeScope, fewerDays, requesterNameOf }: BoardListModeProps) {
+export function BoardListMode({ rides, pendingRides = [], draftRideIds, shadowedRideIds, onRideClick, unmetItems, onUnmetAction, onUnmetDecision, onOpenProposal, onOpenProposals, pendingProposalsCount = 0, homeDestinationId, tripTypeScope, fewerDays, requesterNameOf, placeableCarsOf, onPlaceOnCar }: BoardListModeProps) {
   const [segment, setSegment] = useState<Segment>("cars");
 
   return (
@@ -78,15 +85,20 @@ export function BoardListMode({ rides, pendingRides = [], draftRideIds, shadowed
             <p className="px-2 text-xs text-muted-foreground">{draftRideIds?.has(ride.id) ? he.boardDrafts.tag : he.boardDrafts.proposalOut}</p>
             <RideCard ride={ride} onClick={() => onRideClick(ride.id)} />
           </div>)}
-          {rides.map((ride) => (
-            <div key={ride.id} data-ride-id={ride.id} tabIndex={-1} className={shadowedRideIds?.has(ride.id) ? "opacity-50" : undefined}>
-              <RideCard ride={ride} onClick={() => onRideClick(ride.id)} />
-            </div>
+          {groupRidesByDay(rides).map((group) => (
+            <section key={group.day} className="space-y-2" data-testid={`board-list-day-${group.day}`}>
+              <h3 className="px-1 pt-1 text-sm font-semibold text-muted-foreground">{formatDayDate(group.day)}</h3>
+              {group.rides.map((ride) => (
+                <div key={ride.id} data-ride-id={ride.id} tabIndex={-1} className={shadowedRideIds?.has(ride.id) ? "opacity-50" : undefined}>
+                  <RideCard ride={ride} onClick={() => onRideClick(ride.id)} />
+                </div>
+              ))}
+            </section>
           ))}
         </div>
       ) : null}
 
-      {segment === "unmet" ? <UnmetList items={unmetItems} tripTypeScope={tripTypeScope} fewerDays={fewerDays} onAction={onUnmetAction} onDecision={onUnmetDecision} onOpenProposal={onOpenProposal} homeDestinationId={homeDestinationId} requesterNameOf={requesterNameOf} /> : null}
+      {segment === "unmet" ? <UnmetList items={unmetItems} tripTypeScope={tripTypeScope} fewerDays={fewerDays} onAction={onUnmetAction} onDecision={onUnmetDecision} onOpenProposal={onOpenProposal} homeDestinationId={homeDestinationId} requesterNameOf={requesterNameOf} placeableCarsOf={placeableCarsOf} onPlaceOnCar={onPlaceOnCar} /> : null}
     </div>
   );
 }

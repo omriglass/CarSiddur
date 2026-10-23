@@ -7,13 +7,15 @@ import { toast } from "sonner";
 
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { he, tv } from "@/i18n/he";
 import { formatTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
 import { useSetRideDriverMutation } from "../../hooks";
-import { sortFreeFirst, type PersonDayEntry } from "../driverBusy";
+import { filterDriverCandidates, sortFreeFirst, type PersonDayEntry } from "../driverBusy";
 
 export interface DriverCandidate {
   id: string;
@@ -53,6 +55,8 @@ export interface RideDriverPickerProps {
 export function RideDriverPicker({ rideId, version, needsDriver, volunteerName, volunteerId, ownRequest, candidates, departmentId, weekStart, busyIds, dayEntriesOf, placeName, homeDestinationId, disabled, published = true, onDone }: RideDriverPickerProps) {
   const [driverId, setDriverId] = useState("");
   const [confirming, setConfirming] = useState(false);
+  const [query, setQuery] = useState("");
+  const [freeOnly, setFreeOnly] = useState(false);
   // A new ride or ride version (someone assigned/replaced the driver) starts with an empty choice. Derived during render, not via a
   // `key` on the element: a keyed picker inside the sheet was rendered twice when a Select in the sheet opened.
   const [seen, setSeen] = useState(`${rideId}:${version}`);
@@ -62,6 +66,9 @@ export function RideDriverPicker({ rideId, version, needsDriver, volunteerName, 
   }
   const mutation = useSetRideDriverMutation();
   const drivers = sortFreeFirst(candidates.filter((candidate) => !candidate.doesNotDrive && candidate.id !== volunteerId), busyIds ?? new Set<string>());
+
+  // The chosen person stays in the list even when the filter would hide them.
+  const shown = filterDriverCandidates(drivers, query, freeOnly, busyIds ?? new Set<string>()).concat(drivers.filter((d) => d.id === driverId && !filterDriverCandidates(drivers, query, freeOnly, busyIds ?? new Set<string>()).includes(d)));
 
   if (!needsDriver && !volunteerName) return null;
   const livesAway = (candidate: DriverCandidate) => (candidate.homePlaceId && candidate.homePlaceId !== homeDestinationId ? placeName?.(candidate.homePlaceId) ?? null : null);
@@ -91,13 +98,21 @@ export function RideDriverPicker({ rideId, version, needsDriver, volunteerName, 
         </div>
       ) : null}
       <p className="text-xs text-muted-foreground">{volunteerName ? (ownRequest ? tv("rideDriver.replaceOwnLabel", { name: volunteerName }) : he.rideDriver.replaceLabel) : he.rideDriver.assignLabel}</p>
+      <Input value={query} onChange={(event) => setQuery(event.target.value)} className="min-h-11" placeholder={he.rideDriver.searchPlaceholder} aria-label={he.rideDriver.searchPlaceholder} data-testid="ride-driver-search" />
+      {busyIds?.size ? (
+        <label className="flex min-h-9 items-center gap-2 text-sm">
+          <Checkbox checked={freeOnly} onCheckedChange={(value) => setFreeOnly(value === true)} data-testid="ride-driver-free-only" />
+          {he.rideDriver.freeOnly}
+        </label>
+      ) : null}
+      {shown.length === 0 ? <p className="text-xs text-muted-foreground" data-testid="ride-driver-no-match">{he.rideDriver.noMatch}</p> : null}
       <div className="flex items-center gap-2">
         <Select value={driverId} onValueChange={setDriverId} disabled={disabled || mutation.isPending}>
           <SelectTrigger className="min-h-11 flex-1" aria-label={he.rideDriver.selectAria} data-testid="ride-driver-select">
             <SelectValue placeholder={he.rideDriver.placeholder} />
           </SelectTrigger>
           <SelectContent>
-            {drivers.map((candidate) => <SelectItem key={candidate.id} value={candidate.id}>{[candidate.name, livesAway(candidate), busyIds?.has(candidate.id) ? he.rideDriver.busy : null].filter(Boolean).join(" · ")}</SelectItem>)}
+            {shown.map((candidate) => <SelectItem key={candidate.id} value={candidate.id}>{[candidate.name, livesAway(candidate), busyIds?.has(candidate.id) ? he.rideDriver.busy : null].filter(Boolean).join(" · ")}</SelectItem>)}
           </SelectContent>
         </Select>
         <Button type="button" className="min-h-11" disabled={!driverId || disabled || mutation.isPending} onClick={ownRequest ? () => setConfirming(true) : assign} data-testid="ride-driver-assign">

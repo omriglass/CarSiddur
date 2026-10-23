@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { busyDriverIds, driverOverlapRideIds, personDayEntries, sortFreeFirst } from "./driverBusy";
+import { busyDriverIds, driverOverlapRideIds, filterDriverCandidates, personDayEntries, sortFreeFirst } from "./driverBusy";
 
 import type { BoardRide, WeekRequestRow } from "../api";
 
@@ -62,5 +62,15 @@ describe("personDayEntries (R13F2)", () => {
       ["rides", "2026-10-12T14:00:00.000Z", "עפולה", false],
       ["request", "2026-10-12T16:00:00.000Z", "קיסריה", false],
     ]);
+  });
+});
+
+describe("filterDriverCandidates (R14U2)", () => {
+  const people = [{ id: "1", name: "Dana Levi" }, { id: "2", name: "עידו סופר" }, { id: "3", name: "dan Cohen" }];
+  it("filters by name case-insensitively and by free-only", () => {
+    expect(filterDriverCandidates(people, "DAN", false, new Set()).map((p) => p.id)).toEqual(["1", "3"]);
+    expect(filterDriverCandidates(people, " סופר ", false, new Set()).map((p) => p.id)).toEqual(["2"]);
+    expect(filterDriverCandidates(people, "", true, new Set(["1", "2"])).map((p) => p.id)).toEqual(["3"]);
+    expect(filterDriverCandidates(people, "", false, new Set(["1"]))).toHaveLength(3);
   });
 });

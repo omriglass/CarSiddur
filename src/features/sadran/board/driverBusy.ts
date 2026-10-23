@@ -94,6 +94,17 @@ export function sortFreeFirst<T extends { id: string }>(candidates: readonly T[]
   return [...candidates.filter((c) => !busy.has(c.id)), ...candidates.filter((c) => busy.has(c.id))];
 }
 
+/** R14U2: the picker's search box (name, case-insensitive) and "free only" toggle (hides people busy in the ride's window). */
+export function filterDriverCandidates<T extends { id: string; name: string }>(
+  candidates: readonly T[],
+  query: string,
+  freeOnly: boolean,
+  busy: ReadonlySet<string>,
+): T[] {
+  const needle = query.trim().toLowerCase();
+  return candidates.filter((c) => (!needle || c.name.toLowerCase().includes(needle)) && !(freeOnly && busy.has(c.id)));
+}
+
 /**
  * Ride ids whose driver is also the driver of another non-cancelled ride with an overlapping
  * half-open window - a warning only (owner 2026-10-16: never blocks publishing). Marks only;

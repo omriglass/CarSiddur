@@ -1099,9 +1099,9 @@ Run notes: autofill placed 135/165; the QA Sadran published Fri, Thu, Sun+Wed+Sa
 - ✅ R14B10 — Cancels: each co-rider gets one "X לא נוסע/ת איתך יותר" per cancelling person (Uri Malka and Maya Barak 2 each within a minute); the canceller gets no confirmation. Separate events, but no combined notice. *Fixed 2026-10-23: fellow riders' leave notices merge while unread into one "X ו-Y לא נוסעים איתך יותר" (variant passenger_left_many), migration 20261028092600; driver's notices too (20261028092700: `cancel_ride_before_series`, `release_request_booking` use the same helper).*
 
 **UI changes**
-- R14U1 — The mobile board's cars list is not in time order; sort by start (or group by car with a header).
-- R14U2 — Driver picker: add a search / "free now" filter (36 names).
-- R14U3 — Send All dialog lines ("עידו סופר · איחוד נסיעות | אסף שרון · …") hard to read on a phone — one line per item.
+- ~~R14U1~~ **done 2026-10-23** — The mobile board's cars list is not in time order; sort by start (or group by car with a header).
+- ~~R14U2~~ **done 2026-10-23** — Driver picker: add a search / "free now" filter (36 names).
+- ~~R14U3~~ **done 2026-10-23** — Send All dialog lines ("עידו סופר · איחוד נסיעות | אסף שרון · …") hard to read on a phone — one line per item.
 - R14U4 — A member editing a published ride (Nir Dahan bb149878 +30 min) is told only "the server asks first"; say who else is affected and that the new time cannot be placed.
 - R14U5 — A late request that is a duplicate overlap is only a status (`DUPLICATE_OVERLAP`), no message naming the other request.
 

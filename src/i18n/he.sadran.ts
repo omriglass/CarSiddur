@@ -621,6 +621,10 @@ export const heSadran = {
   },
   /** REQ §13.101 (c): the Sadran assigns a volunteer driver to a ride that needs one. */
   rideDriver: {
+    /** R14U2: search box and free-only toggle above the driver list. */
+    searchPlaceholder: "חיפוש לפי שם",
+    freeOnly: "פנויים בלבד",
+    noMatch: "אין מי שמתאים לחיפוש",
     busy: "תפוס/ה בשעות האלה",
     /** R13F2: the chosen candidate's other rides and requests that day. */
     dayTitle: "מה יש ל{{name}} ביום הזה",

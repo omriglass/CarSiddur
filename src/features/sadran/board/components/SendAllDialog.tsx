@@ -105,9 +105,9 @@ export function SendAllDialog({ open, onOpenChange, departmentId, weekStart, dra
                       updates ? tv("sendAll.dayUpdates", { count: String(updates) }) : null].filter(Boolean).join(" · ")}
                   </label>
                   {ofDay.length ? (
-                    <p className="ps-6 text-xs text-muted-foreground">
-                      {ofDay.map((draft) => `${draft.requesterName} · ${he.proposal.type[draft.proposal.type]}`).join(" | ")}
-                    </p>
+                    <ul className="ps-6 text-xs text-muted-foreground" data-testid={`send-all-items-${day}`}>
+                      {ofDay.map((draft) => <li key={draft.proposal.id}>{`${draft.requesterName} · ${he.proposal.type[draft.proposal.type]}`}</li>)}
+                    </ul>
                   ) : null}
                 </li>
               );
