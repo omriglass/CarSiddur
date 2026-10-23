@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { connectedPairRideIds, unmetItemId, unmetItemKey, unmetRequestViews, viewsOnDay } from "./unmetLegs";
+import { connectedMateOf, connectedPairRideIds, unmetItemId, unmetItemKey, unmetRequestViews, viewsOnDay } from "./unmetLegs";
 
 import type { BoardRide, WeekRequestRow } from "../api";
 
@@ -66,5 +66,11 @@ describe("connectedPairRideIds (REQ §13.95 H2)", () => {
     expect(connectedPairRideIds([driven("a", "out"), ride("return", { id: "b", car_id: "c1", needs_driver: true } as Partial<BoardRide>)]).size).toBe(0);
     expect(connectedPairRideIds([driven("a", "out"), driven("b", "return", "c2")]).size).toBe(0);
     expect(connectedPairRideIds([driven("a", "out"), driven("b", "out")]).size).toBe(0);
+  });
+  it("QB3 (re-checked 2026-10-23): a 'both ways' merge popup finds the pair's other ride and the leg each ride carries", () => {
+    const rides = [driven("a", "out"), driven("b", "return"), driven("x", "out", "c2")];
+    expect(connectedMateOf(rides, rides[0]!)).toMatchObject({ mate: { id: "b" }, rideLeg: "out", mateLeg: "return" });
+    expect(connectedMateOf(rides, rides[1]!)).toMatchObject({ mate: { id: "a" }, rideLeg: "return", mateLeg: "out" });
+    expect(connectedMateOf(rides, rides[2]!)).toBeNull();
   });
 });
