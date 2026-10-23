@@ -1082,6 +1082,40 @@ Whole-week autofill in the clock-change week now runs (89 rides, all 7 multi-day
 
 **Not tested:** car-now (the QA week is not the current week), Google calendar (no client id), car with no code (no admin pass), finger-drag closing the popup (desktop only).
 
+## QA run 14 findings (2026-10-23, seed 6595, week 25–31.10, department `qa-r14`; QA Sadran + QA user both Sonnet (owner: tokens), **Monday via the mobile UI**; emphasis notification noise + the 2026-10-23 board fixes) — **awaiting owner triage**
+
+Run notes: autofill placed 135/165; the QA Sadran published Fri, Thu, Sun+Wed+Sat (three calls), left Mon/Tue unpublished, went live, assigned 32 volunteer drivers by hand. Re-check of today's fixes on the Monday mobile board: ✅ a sent time change is one block "הצעה נשלחה וממתינה לתשובה" (sheet: סיכמנו / WhatsApp / בטל הצעה); ✅ a re-offer does not stack (one open offer, one notice); ✅ a sent merge shows once; ✅ the driver picker lists the chosen person's day. ❌ "off a car and back on = one update" could not be shown because of R14B1.
+
+**Bugs**
+- R14B1 — **A member taken off a published ride on the board is never told.** Fri, עמית ברק req 878abdbc (Swift 10:45): board "הסר שיבוץ" → `waitlisted SADRAN_UNASSIGNED`, no notice and nothing held (`held_notices` empty, Send All "nothing to send"). Lead-verified on the DB. Had the Sadran not put him back he would have lost his ride silently.
+- R14B2 — **Put back = a new "שובצת" each time, even when nothing changed** (same request, twice: two identical `outcome_changed placed_by_sadran` 14:48/14:49, CLI place). Net effect vs the published notice: none. (With R14B1 fixed, the board's held path should net unassign + place to nothing.)
+- R14B3 — **Three publish calls = up to three "הסידור פורסם" per member within minutes** (78 publish notices to 37 members). Each lists only its own days; still a burst.
+- R14B4 — A member's publish notice lists one ride twice (עמית ברק, Wed 28.10 "10:00–13:15 · לעין שמר · ואן" ×2; his request there is `merged` — likely one line per leg of the same ride).
+- R14B5 — After Roi Dahan accepted shift 4ba8e96c (09:45, applied), a re-offer 90289555 (09:30) 2 min later replaced the earlier notice (by design since 2c79ca5); after he declined it, /my showed the request "submitted 11:45, no ride" — the applied 09:45 placement looks lost, and he was never told the outcome. Needs a repro.
+- R14B6 — A failed or racing `move --propose` / `propose --draft` leaves a stray draft (Mon 5389dea6 → draft 5fa1d20e; racing an accept → bare "unknown error" + draft baf6f610). Refuse at creation and say why; discard the leftover.
+- R14B7 — `place 3fcd4674 פיג'ו 13:45` placed at 13:30–16:30 without saying the time moved.
+- R14B8 — A late Monday request (Amit Abutbul 164984d3, Mon unpublished) answered "assigned ride f17596cc", then `my-rides` showed "submitted LATE", no notice.
+- R14B9 — CLI `day` lists SENT proposals under "DRAFT PLACEMENTS (unsent…)" (heading only; the board draws them once).
+- R14B10 — Cancels: each co-rider gets one "X לא נוסע/ת איתך יותר" per cancelling person (Uri Malka and Maya Barak 2 each within a minute); the canceller gets no confirmation. Separate events, but no combined notice.
+
+**UI changes**
+- R14U1 — The mobile board's cars list is not in time order; sort by start (or group by car with a header).
+- R14U2 — Driver picker: add a search / "free now" filter (36 names).
+- R14U3 — Send All dialog lines ("עידו סופר · איחוד נסיעות | אסף שרון · …") hard to read on a phone — one line per item.
+- R14U4 — A member editing a published ride (Nir Dahan bb149878 +30 min) is told only "the server asks first"; say who else is affected and that the new time cannot be placed.
+- R14U5 — A late request that is a duplicate overlap is only a status (`DUPLICATE_OVERLAP`), no message naming the other request.
+
+**Missing obvious features**
+- R14M1 — Mobile unplaced card ⋮ has no "place on a car" — a Sadran on a phone can unassign but not undo.
+- R14M2 — "Assign volunteer drivers for the day" suggesting free members (32 rides by hand this run).
+- R14M3 — Two unmet one-way legs of one member (Wed 39df186d out + return) are two separate cards.
+- R14M4 — QA tooling: `qa:sadran --surface board` (to test held notices from the CLI) and a `notices [--member X]` command.
+
+**Additional features**
+- R14F1 — Send All / Publish dialog: how many notices each person will get.
+- R14F2 — Collapse repeated notices (same member, same request, same event within minutes) / mark superseded.
+- R14F3 — After an accepted shift applies, an explicit "your ride is now X" notice (see R14B5).
+
 ## Owner hands-on testing (2026-10-06) — bugs to fix
 - **OB1 — A multi-day request cannot be placed by hand on the board.** Dropping its card on a car fails with "בקשה רב-יומית — אפשר לבטל ולהגיש מחדש, לא לערוך" (`series_edit_not_supported`, MDR02). The board's manual placement goes through `edit_ride`, which refuses any request with a `series_id` (the v1 rule "a series is cancelled and resubmitted, never edited", REQ §13.77) — but placing is not editing the request. Expected: dropping a series leg (or the series card) on a car places the **whole series** on that car for all its days (the same hold auto-fill makes, `place_series`), refused only when the car is not free on every day; moving a placed series to another car likewise moves all its days. The Sadran's other path today is "להציע פחות ימים" / auto-fill only. Seen on the showcase department (S19). **Fixed 2026-10-06:** `place_series_on_car(series, car)` (Sadran; private-car owner rule; refuses an already placed series) wraps `place_series`; the board drop of a multi-day card calls it ("הבקשה הרב-יומית שובצה ברכב הזה לכל ימיה"). Verified through the API (3 rides, all legs assigned; second placement and a member refused). Not covered: moving an already placed series to another car.
 
