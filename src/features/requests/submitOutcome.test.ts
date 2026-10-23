@@ -27,6 +27,14 @@ describe("toastSubmitOutcome", () => {
     expect(mocks.success).not.toHaveBeenCalled();
   });
 
+  it("R14B8: an outcome on a day that is not published yet is not announced, only 'request sent'", () => {
+    const result: SubmitRequestResult = { request_id: "r", is_late: true, warnings: [], status: "assigned", car_id: "car", outcome_hidden: true };
+    expect(toastSubmitOutcome(result, ctx())).toBe(true);
+    expect(mocks.success).toHaveBeenCalledWith(t("request.submitSent"));
+    expect(mocks.success).toHaveBeenCalledTimes(1);
+    expect(shouldOfferJoinableRides({ ...result, status: "waitlisted" })).toBe(false);
+  });
+
   it("stays silent for a null/undefined result", () => {
     toastSubmitOutcome(null, ctx());
     toastSubmitOutcome(undefined, ctx());

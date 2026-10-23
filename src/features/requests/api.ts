@@ -824,6 +824,11 @@ export interface SubmitRequestResult {
   car_id?: string;
   reason?: string;
   needs_driver?: boolean;
+  /**
+   * R14B8: the day is not published yet and the caller is a member, so the placement result in this object is not
+   * theirs to see (/my reads "submitted" until publication, REQ §13.109 a) - the form shows only "request sent".
+   */
+  outcome_hidden?: boolean;
   starts_at?: string;
   ends_at?: string;
   /**

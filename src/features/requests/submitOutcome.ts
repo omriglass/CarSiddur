@@ -38,6 +38,12 @@ export function toastSubmitOutcome(result: SubmitRequestResult | null | undefine
     return true;
   }
 
+  // R14B8: a placement on a day that is not published yet is not announced (it reads "submitted" on /my until then).
+  if (result.outcome_hidden) {
+    toast.success(t("request.submitSent"));
+    return true;
+  }
+
   if (result.car_was_free) {
     toast.success(tv("quickRequest.successCarWasFree", { car: ctx.carName(result.car_id) }));
     return true;
@@ -77,7 +83,7 @@ export function toastSubmitOutcome(result: SubmitRequestResult | null | undefine
  * different outcome (assigned, needs-driver, car-was-free).
  */
 export function shouldOfferJoinableRides(result: SubmitRequestResult | null | undefined): boolean {
-  return result?.status === "waitlisted";
+  return result?.status === "waitlisted" && !result.outcome_hidden;
 }
 
 /**

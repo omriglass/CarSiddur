@@ -2023,6 +2023,14 @@ begin
   if _recipient is not null and exists (select 1 from public.sadranim_of(_department_id, _week_start) s where s = _recipient) then
     return false;
   end if;
+  -- R14B5: a member who accepted an offer in the app is told what it did, published day or not: the answer was
+  -- theirs, so the result is not planning news to hide. (The accepted party row is set before the proposal is applied.)
+  if v_request_id is not null and _recipient is not null and exists (
+       select 1 from public.proposals p join public.proposal_parties pp on pp.proposal_id = p.id
+       where p.request_id = v_request_id and p.status = 'applied' and p.applied_at = now()
+         and pp.profile_id = _recipient and pp.response = 'accepted' and pp.responded_via in ('token', 'session')) then
+    return false;
+  end if;
   if v_ride_id is not null then select r.starts_at into v_at from public.rides r where r.id = v_ride_id; end if;
   if v_at is null and v_request_id is not null then
     select coalesce(q.depart_at, q.return_at) into v_at from public.requests q where q.id = v_request_id;
@@ -2321,6 +2329,27 @@ end $$;
 
 
 ALTER FUNCTION "public"."_publish_ride_line"("p_request_id" "uuid", "p_ride_id" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_request_booked_times"("p_request" "uuid") RETURNS TABLE("dep" timestamp with time zone, "ret" timestamp with time zone)
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare q public.requests%rowtype; v_n int; v_s timestamptz; v_e timestamptz;
+begin
+  select * into q from public.requests where id = p_request;
+  dep := q.depart_at; ret := q.return_at;
+  if q.depart_at is not null and q.return_at is not null then
+    select count(*), min(r.starts_at), max(r.ends_at) into v_n, v_s, v_e
+    from public.ride_requests rr join public.rides r on r.id = rr.ride_id
+    where rr.request_id = p_request and r.status <> 'cancelled' and rr.role = 'driver' and rr.leg = 'both';
+    if v_n = 1 then dep := v_s; ret := v_e; end if;
+  end if;
+  return next;
+end $$;
+
+
+ALTER FUNCTION "public"."_request_booked_times"("p_request" "uuid") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."_request_fallback_from_payload"("p_payload" "jsonb", "p_current" "public"."request_fallback") RETURNS "public"."request_fallback"
@@ -3819,7 +3848,8 @@ begin
     perform public._small_trunk_mode(true);
   end if;
   -- Old values for the old -> new notification lines (REQ §13.101 b), taken before anything changes.
-  v_old_dep := v_req.depart_at; v_old_ret := v_req.return_at;
+  -- R14B5: "old" is what the member holds now - the booked ride's times once a ride carries the request.
+  select bt.dep, bt.ret into v_old_dep, v_old_ret from public._request_booked_times(v_req.id) bt;
   select rd.car_id into v_old_car from public.rides rd join public.ride_requests rr on rr.ride_id = rd.id
   where rr.request_id = v_req.id and rd.status <> 'cancelled' order by rd.starts_at limit 1;
 
@@ -11550,7 +11580,9 @@ begin
       v_time_change := public._time_change_line(v_old_dep, v_old_ret,
         (v_span ->> 'depart_at')::timestamptz, (v_span ->> 'return_at')::timestamptz, true);
     else
-      v_time_change := public._time_change_line(q.depart_at, q.return_at,
+      -- R14B5: against the booked ride's times when one carries the request (an earlier accepted shift moved the ride, not the request).
+      select bt.dep, bt.ret into v_old_dep, v_old_ret from public._request_booked_times(q.id) bt;
+      v_time_change := public._time_change_line(v_old_dep, v_old_ret,
         nullif(pr.payload ->> 'depart_at', '')::timestamptz, nullif(pr.payload ->> 'return_at', '')::timestamptz);
     end if;
     v_title_change := public._frag('title.change', jsonb_build_object('change',
@@ -17387,6 +17419,16 @@ begin
         '{}'::jsonb, jsonb_build_object('variant', 'edit_applied', 'request_id', v_request_id, 'ride_id', v_auto_result->>'ride_id'),
         format('edit_applied:%s:%s', v_request_id, clock_timestamp()));
     end if;
+  end if;
+
+  -- R14B8: /my reads "submitted" until the day is published (REQ §13.109 a), so a member's form must not announce
+  -- "you got car X" for it: the result keeps its fields (tests, the Sadran) and says `outcome_hidden`; the form then
+  -- shows the plain "request sent" confirmation.
+  if not coalesce(v_can_manage, false) and v_auto_result ? 'status'
+     and v_auto_result->>'status' in ('assigned', 'merged', 'waitlisted', 'denied', 'external')
+     and not public.is_day_public(v_department_id, v_week_start,
+       (coalesce(v_depart_at, v_return_at) at time zone 'Asia/Jerusalem')::date) then
+    v_auto_result := v_auto_result || jsonb_build_object('outcome_hidden', true);
   end if;
 
   return jsonb_build_object('request_id', v_request_id, 'is_late', v_is_late, 'warnings', v_warnings, 'overlaps', v_overlaps)
@@ -24539,6 +24581,11 @@ GRANT ALL ON FUNCTION "public"."_proposal_car_holds"("p_payload" "jsonb", "p_typ
 
 REVOKE ALL ON FUNCTION "public"."_publish_ride_line"("p_request_id" "uuid", "p_ride_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_publish_ride_line"("p_request_id" "uuid", "p_ride_id" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_request_booked_times"("p_request" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_request_booked_times"("p_request" "uuid") TO "service_role";
 
 
 

@@ -4738,6 +4738,13 @@ export type Database = {
         Args: { p_request_id: string; p_ride_id: string }
         Returns: string
       }
+      _request_booked_times: {
+        Args: { p_request: string }
+        Returns: {
+          dep: string
+          ret: string
+        }[]
+      }
       _request_fallback_from_payload: {
         Args: {
           p_current: Database["public"]["Enums"]["request_fallback"]
