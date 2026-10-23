@@ -162,7 +162,7 @@ export interface MyRequestRow {
 
 const SELECT = `
   id, requester_id, filed_by, requester:profiles!requests_requester_id_fkey(full_name), filer:profiles!requests_filed_by_fkey(full_name),
-  department_id, week_start, status, status_reason, is_late, changed_since_solve,
+  department_id, week_start, status, status_reason, waitlist_cause, is_late, changed_since_solve,
   depart_at, return_at, trip_shape, needs_car_at_destination, destination_id, destination_text, version, ride_type_id,
   origin_id, origin_text, trip_type, keep_car_at_destination, depart_anchor, arrive_by, return_anchor, leave_dest_at,
   freed_slot_opt_out, has_luggage, luggage_waived_at, preferred_car_id, template_id, series_id, series_index, series_count,
@@ -235,6 +235,8 @@ interface RawRequestRow {
   week_start: string;
   status: RequestStatus;
   status_reason: string | null;
+  /** R13B17: computed field — the current cause of a `WAITLISTED_NO_CAR` wait (`waitlist_cause()`), else null. */
+  waitlist_cause?: string | null;
   is_late: boolean;
   changed_since_solve: boolean;
   depart_at: string | null;
@@ -391,7 +393,7 @@ function mapRow(row: RawRequestRow, profileId?: string): MyRequestRow {
     weekStart: row.week_start,
     status: hidden ? "submitted" : row.status,
     // R8B7: a leftover planning reason ("all cars taken") never shows on an unpublished day, even under `proposed`
-    statusReason: hidden || (!published && row.status === "proposed") ? null : row.status_reason,
+    statusReason: hidden || (!published && row.status === "proposed") ? null : row.waitlist_cause ?? row.status_reason,
     legs,
     isLate: row.is_late,
     changedSinceSolve: row.changed_since_solve,

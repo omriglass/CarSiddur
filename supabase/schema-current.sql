@@ -853,6 +853,34 @@ $$;
 ALTER FUNCTION "public"."_can_edit_car_maintenance"("p_car_id" "uuid") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."_car_free_for_request"("p_car" "uuid", "p_request" "uuid", "p_at_origin" "uuid") RETURNS boolean
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  q public.requests%rowtype;
+  v_ta interval;
+  v_end timestamptz;
+begin
+  select * into q from public.requests where id = p_request;
+  if q.id is null or q.depart_at is null then return false; end if;
+  v_ta := make_interval(mins => coalesce(public.required_turnaround_minutes(q.department_id, q.week_start), 30));
+  v_end := coalesce(q.return_at, q.depart_at + make_interval(mins => greatest(coalesce(public.request_leg_route_minutes(q.id, 'out'), 60), 15)));
+  return (p_at_origin is null or public.car_location_at(p_car, q.depart_at) = p_at_origin)
+    and not exists (
+      select 1 from public.rides r
+      where r.car_id = p_car and r.status <> 'cancelled' and not r.planning_conflict
+        and not exists (select 1 from public.ride_requests rr where rr.ride_id = r.id and rr.request_id = q.id)
+        and tstzrange(r.starts_at, r.blocked_until, '[)') && tstzrange(q.depart_at, v_end + v_ta, '[)'))
+    and not exists (
+      select 1 from public.car_maintenance_blocks b
+      where b.car_id = p_car and tstzrange(b.starts_at, b.ends_at, '[)') && tstzrange(q.depart_at, v_end, '[)'));
+end $$;
+
+
+ALTER FUNCTION "public"."_car_free_for_request"("p_car" "uuid", "p_request" "uuid", "p_at_origin" "uuid") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."_convert_to_alternative"("p_request_id" "uuid", "p_dep" timestamp with time zone, "p_ret" timestamp with time zone) RETURNS "uuid"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -18069,6 +18097,162 @@ end $$;
 ALTER FUNCTION "public"."validate_request_companion"() OWNER TO "postgres";
 
 
+CREATE TABLE IF NOT EXISTS "public"."requests" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "department_id" "uuid" NOT NULL,
+    "week_start" "date" NOT NULL,
+    "requester_id" "uuid" NOT NULL,
+    "filed_by" "uuid" NOT NULL,
+    "destination_id" "uuid",
+    "destination_text" "text",
+    "ride_type_id" "uuid" NOT NULL,
+    "trip_shape" "public"."trip_shape" DEFAULT 'round_trip'::"public"."trip_shape" NOT NULL,
+    "depart_at" timestamp with time zone,
+    "return_at" timestamp with time zone,
+    "one_way_car_mode" "public"."leg_car_mode",
+    "needs_car_at_destination" boolean DEFAULT true NOT NULL,
+    "adults" smallint DEFAULT 1 NOT NULL,
+    "child_seats" smallint DEFAULT 0 NOT NULL,
+    "boosters" smallint DEFAULT 0 NOT NULL,
+    "has_luggage" boolean DEFAULT false NOT NULL,
+    "flex_depart_early" interval DEFAULT '00:00:00'::interval NOT NULL,
+    "flex_depart_late" interval DEFAULT '00:00:00'::interval NOT NULL,
+    "flex_return_early" interval DEFAULT '00:00:00'::interval NOT NULL,
+    "flex_return_late" interval DEFAULT '00:00:00'::interval NOT NULL,
+    "notes" "text",
+    "is_late" boolean DEFAULT false NOT NULL,
+    "submitted_at" timestamp with time zone,
+    "status" "public"."request_status" DEFAULT 'draft'::"public"."request_status" NOT NULL,
+    "status_reason" "text",
+    "changed_since_solve" boolean DEFAULT false NOT NULL,
+    "freed_slot_opt_out" boolean DEFAULT false NOT NULL,
+    "manual_boost" numeric(6,2) DEFAULT 0 NOT NULL,
+    "manual_boost_reason" "text",
+    "join_ride_id" "uuid",
+    "template_id" "uuid",
+    "version" integer DEFAULT 1 NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "preferred_car_id" "uuid",
+    "original_depart_at" timestamp with time zone,
+    "original_return_at" timestamp with time zone,
+    "ride_description" "text",
+    "guest_passenger_names" "text"[] DEFAULT '{}'::"text"[] NOT NULL,
+    "series_id" "uuid",
+    "series_index" smallint,
+    "series_count" smallint,
+    "origin_id" "uuid",
+    "origin_text" "text",
+    "trip_type" "public"."trip_type" DEFAULT 'round_trip'::"public"."trip_type" NOT NULL,
+    "kept_return_at" timestamp with time zone,
+    "depart_anchor" "public"."time_anchor" DEFAULT 'leave'::"public"."time_anchor" NOT NULL,
+    "arrive_by" timestamp with time zone,
+    "return_anchor" "public"."time_anchor" DEFAULT 'arrive'::"public"."time_anchor" NOT NULL,
+    "leave_dest_at" timestamp with time zone,
+    "luggage_waived_at" timestamp with time zone,
+    "luggage_waived_by" "uuid",
+    "duration_locked" boolean DEFAULT false NOT NULL,
+    "fallback" "public"."request_fallback" DEFAULT 'none'::"public"."request_fallback" NOT NULL,
+    "served_by_alternative" boolean DEFAULT false NOT NULL,
+    "plan_b_parent_id" "uuid",
+    "keep_car_at_destination" boolean DEFAULT false NOT NULL,
+    CONSTRAINT "requests_adults_ck" CHECK (("adults" >= 1)),
+    CONSTRAINT "requests_arrive_by_anchor_ck" CHECK ((("arrive_by" IS NULL) OR ("depart_anchor" = 'arrive'::"public"."time_anchor"))),
+    CONSTRAINT "requests_arrive_by_qh_ck" CHECK ("public"."is_quarter_hour"("arrive_by")),
+    CONSTRAINT "requests_boosters_ck" CHECK (("boosters" >= 0)),
+    CONSTRAINT "requests_child_seats_ck" CHECK (("child_seats" >= 0)),
+    CONSTRAINT "requests_depart_presence_ck" CHECK ((("depart_at" IS NOT NULL) = ("trip_shape" <> 'one_way_from'::"public"."trip_shape"))),
+    CONSTRAINT "requests_depart_qh_ck" CHECK ("public"."is_quarter_hour"("depart_at")),
+    CONSTRAINT "requests_destination_ck" CHECK ((("destination_id" IS NOT NULL) OR ("destination_text" IS NOT NULL))),
+    CONSTRAINT "requests_flex_depart_early_ck" CHECK (("flex_depart_early" = ANY (ARRAY['00:00:00'::interval, '00:15:00'::interval, '00:30:00'::interval, '01:00:00'::interval, '02:00:00'::interval, '1 day'::interval]))),
+    CONSTRAINT "requests_flex_depart_late_ck" CHECK ((("flex_depart_late" = ANY (ARRAY['00:00:00'::interval, '00:15:00'::interval, '00:30:00'::interval, '01:00:00'::interval, '02:00:00'::interval, '1 day'::interval])) OR ("duration_locked" AND ("flex_depart_late" > '00:00:00'::interval) AND ("flex_depart_late" <= '1 day'::interval) AND (((EXTRACT(epoch FROM "flex_depart_late"))::bigint % (900)::bigint) = 0)))),
+    CONSTRAINT "requests_flex_return_early_ck" CHECK (("flex_return_early" = ANY (ARRAY['00:00:00'::interval, '00:15:00'::interval, '00:30:00'::interval, '01:00:00'::interval, '02:00:00'::interval, '1 day'::interval]))),
+    CONSTRAINT "requests_flex_return_late_ck" CHECK ((("flex_return_late" = ANY (ARRAY['00:00:00'::interval, '00:15:00'::interval, '00:30:00'::interval, '01:00:00'::interval, '02:00:00'::interval, '1 day'::interval])) OR ("duration_locked" AND ("flex_return_late" > '00:00:00'::interval) AND ("flex_return_late" <= '1 day'::interval) AND (((EXTRACT(epoch FROM "flex_return_late"))::bigint % (900)::bigint) = 0)))),
+    CONSTRAINT "requests_keep_car_at_destination_ck" CHECK (((NOT "keep_car_at_destination") OR (("trip_type" = 'drop_off'::"public"."trip_type") AND ("trip_shape" = 'round_trip'::"public"."trip_shape")))),
+    CONSTRAINT "requests_leave_dest_anchor_ck" CHECK ((("leave_dest_at" IS NULL) OR ("return_anchor" = 'leave'::"public"."time_anchor"))),
+    CONSTRAINT "requests_leave_dest_qh_ck" CHECK ("public"."is_quarter_hour"("leave_dest_at")),
+    CONSTRAINT "requests_luggage_waiver_ck" CHECK ((("luggage_waived_at" IS NULL) OR "has_luggage")),
+    CONSTRAINT "requests_manual_boost_ck" CHECK ((("manual_boost" = (0)::numeric) OR ("manual_boost_reason" IS NOT NULL))),
+    CONSTRAINT "requests_one_way_mode_ck" CHECK (((("one_way_car_mode" IS NULL) = ("trip_shape" = 'round_trip'::"public"."trip_shape")) AND (("one_way_car_mode" IS NULL) OR ("one_way_car_mode" = ANY (ARRAY['relay'::"public"."leg_car_mode", 'passenger'::"public"."leg_car_mode"]))))),
+    CONSTRAINT "requests_origin_ck" CHECK ((("origin_id" IS NOT NULL) OR ("origin_text" IS NOT NULL))),
+    CONSTRAINT "requests_return_after_depart_ck" CHECK ((("depart_at" IS NULL) OR ("return_at" IS NULL) OR ("return_at" > "depart_at"))),
+    CONSTRAINT "requests_return_presence_ck" CHECK ((("return_at" IS NOT NULL) = ("trip_shape" <> 'one_way_to'::"public"."trip_shape"))),
+    CONSTRAINT "requests_return_qh_ck" CHECK (("public"."is_quarter_hour"("return_at") OR "public"."is_same_day_end"("return_at"))),
+    CONSTRAINT "requests_series_ck" CHECK (((("series_id" IS NULL) AND ("series_index" IS NULL) AND ("series_count" IS NULL)) OR (("series_id" IS NOT NULL) AND ("series_index" IS NOT NULL) AND ("series_count" IS NOT NULL) AND ("series_count" >= 2) AND ("series_index" >= 1) AND ("series_index" <= "series_count"))))
+);
+
+ALTER TABLE ONLY "public"."requests" FORCE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."requests" OWNER TO "postgres";
+
+
+COMMENT ON COLUMN "public"."requests"."preferred_car_id" IS 'Optional car the member asked for when filing (quick-request-from-empty-slot flow, UX_FLOWS.md §18). try_auto_approve() tries it first in live weeks, then falls back to any free car exactly as before; visible to the Sadran alongside the request, never required.';
+
+
+
+COMMENT ON COLUMN "public"."requests"."kept_return_at" IS 'Last real return time while return_at is cleared by a switch to one-way; restored by set_request_trip_type / submit_request, cleared once return_at is stored again.';
+
+
+
+COMMENT ON COLUMN "public"."requests"."luggage_waived_at" IS 'REQ §13.111 (a): set when a Sadran/member placing by hand accepted a car without a large trunk for this large-luggage request; cleared when has_luggage changes.';
+
+
+
+COMMENT ON COLUMN "public"."requests"."keep_car_at_destination" IS 'REQ §13.126 g: a member-driven round trip whose car stays at the destination between the legs (two connected relay legs on one car, never split by the wait-needed-elsewhere rule).';
+
+
+
+CREATE OR REPLACE FUNCTION "public"."waitlist_cause"("r" "public"."requests") RETURNS "text"
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  q public.requests%rowtype;
+  v_origin uuid;
+  v_luggage int;
+  v_shared int;
+  v_seat_ok int;
+  v_fitting int;
+  v_seat_ids uuid[];
+  v_fit_ids uuid[];
+begin
+  select * into q from public.requests where id = r.id;
+  if q.id is null or q.status <> 'waitlisted' or q.status_reason is distinct from 'WAITLISTED_NO_CAR' then return null; end if;
+  if not (public.request_related(q.id, (select auth.uid())) or public.can_manage_week(q.department_id, q.week_start)) then
+    return null;
+  end if;
+  v_origin := coalesce(q.origin_id, (select d.home_destination_id from public.departments d where d.id = q.department_id));
+  v_luggage := case when q.has_luggage and q.luggage_waived_at is null then 1 else 0 end;
+
+  select array_agg(c.id) filter (where public.car_fits(c.id, q.adults, q.child_seats, q.boosters)),
+         array_agg(c.id) filter (where public.car_fits(c.id, q.adults, q.child_seats, q.boosters)
+                                   and public.car_takes_luggage(c.id, v_luggage)),
+         count(*)
+  into v_seat_ids, v_fit_ids, v_shared
+  from public.cars c
+  where c.department_id = q.department_id and c.status = 'active' and c.type = 'shared';
+  v_seat_ok := coalesce(cardinality(v_seat_ids), 0);
+  v_fitting := coalesce(cardinality(v_fit_ids), 0);
+
+  if v_fitting = 0 then return 'WAITLISTED_NO_FITTING_CAR'; end if;
+  if exists (select 1 from unnest(v_fit_ids) f(id) where public._car_free_for_request(f.id, q.id, v_origin)) then
+    return null;
+  end if;
+  if exists (select 1 from unnest(v_fit_ids) f(id) where public._car_free_for_request(f.id, q.id, null)) then
+    return 'WAITLISTED_NOT_AT_ORIGIN';
+  end if;
+  if v_seat_ok < v_shared then
+    return case when q.child_seats + q.boosters > 0 then 'WAITLISTED_CHILD_SEAT_CARS_BUSY' else 'WAITLISTED_SEAT_CARS_BUSY' end;
+  end if;
+  if v_fitting < v_seat_ok then return 'WAITLISTED_LARGE_TRUNK_BUSY'; end if;
+  return null;
+end $$;
+
+
+ALTER FUNCTION "public"."waitlist_cause"("r" "public"."requests") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."waitlist_group_leave"("p_request_id" "uuid") RETURNS "void"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -19278,112 +19462,6 @@ COMMENT ON COLUMN "public"."request_templates"."stopped_at" IS 'Soft "stop repea
 
 
 COMMENT ON COLUMN "public"."request_templates"."child_ids" IS 'Named children (public.children) selected on the request this template was captured from, mirroring request_children — not re-validated against seat counts here since adults/child_seats are copied verbatim from the request that already passed that check.';
-
-
-
-CREATE TABLE IF NOT EXISTS "public"."requests" (
-    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
-    "department_id" "uuid" NOT NULL,
-    "week_start" "date" NOT NULL,
-    "requester_id" "uuid" NOT NULL,
-    "filed_by" "uuid" NOT NULL,
-    "destination_id" "uuid",
-    "destination_text" "text",
-    "ride_type_id" "uuid" NOT NULL,
-    "trip_shape" "public"."trip_shape" DEFAULT 'round_trip'::"public"."trip_shape" NOT NULL,
-    "depart_at" timestamp with time zone,
-    "return_at" timestamp with time zone,
-    "one_way_car_mode" "public"."leg_car_mode",
-    "needs_car_at_destination" boolean DEFAULT true NOT NULL,
-    "adults" smallint DEFAULT 1 NOT NULL,
-    "child_seats" smallint DEFAULT 0 NOT NULL,
-    "boosters" smallint DEFAULT 0 NOT NULL,
-    "has_luggage" boolean DEFAULT false NOT NULL,
-    "flex_depart_early" interval DEFAULT '00:00:00'::interval NOT NULL,
-    "flex_depart_late" interval DEFAULT '00:00:00'::interval NOT NULL,
-    "flex_return_early" interval DEFAULT '00:00:00'::interval NOT NULL,
-    "flex_return_late" interval DEFAULT '00:00:00'::interval NOT NULL,
-    "notes" "text",
-    "is_late" boolean DEFAULT false NOT NULL,
-    "submitted_at" timestamp with time zone,
-    "status" "public"."request_status" DEFAULT 'draft'::"public"."request_status" NOT NULL,
-    "status_reason" "text",
-    "changed_since_solve" boolean DEFAULT false NOT NULL,
-    "freed_slot_opt_out" boolean DEFAULT false NOT NULL,
-    "manual_boost" numeric(6,2) DEFAULT 0 NOT NULL,
-    "manual_boost_reason" "text",
-    "join_ride_id" "uuid",
-    "template_id" "uuid",
-    "version" integer DEFAULT 1 NOT NULL,
-    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "preferred_car_id" "uuid",
-    "original_depart_at" timestamp with time zone,
-    "original_return_at" timestamp with time zone,
-    "ride_description" "text",
-    "guest_passenger_names" "text"[] DEFAULT '{}'::"text"[] NOT NULL,
-    "series_id" "uuid",
-    "series_index" smallint,
-    "series_count" smallint,
-    "origin_id" "uuid",
-    "origin_text" "text",
-    "trip_type" "public"."trip_type" DEFAULT 'round_trip'::"public"."trip_type" NOT NULL,
-    "kept_return_at" timestamp with time zone,
-    "depart_anchor" "public"."time_anchor" DEFAULT 'leave'::"public"."time_anchor" NOT NULL,
-    "arrive_by" timestamp with time zone,
-    "return_anchor" "public"."time_anchor" DEFAULT 'arrive'::"public"."time_anchor" NOT NULL,
-    "leave_dest_at" timestamp with time zone,
-    "luggage_waived_at" timestamp with time zone,
-    "luggage_waived_by" "uuid",
-    "duration_locked" boolean DEFAULT false NOT NULL,
-    "fallback" "public"."request_fallback" DEFAULT 'none'::"public"."request_fallback" NOT NULL,
-    "served_by_alternative" boolean DEFAULT false NOT NULL,
-    "plan_b_parent_id" "uuid",
-    "keep_car_at_destination" boolean DEFAULT false NOT NULL,
-    CONSTRAINT "requests_adults_ck" CHECK (("adults" >= 1)),
-    CONSTRAINT "requests_arrive_by_anchor_ck" CHECK ((("arrive_by" IS NULL) OR ("depart_anchor" = 'arrive'::"public"."time_anchor"))),
-    CONSTRAINT "requests_arrive_by_qh_ck" CHECK ("public"."is_quarter_hour"("arrive_by")),
-    CONSTRAINT "requests_boosters_ck" CHECK (("boosters" >= 0)),
-    CONSTRAINT "requests_child_seats_ck" CHECK (("child_seats" >= 0)),
-    CONSTRAINT "requests_depart_presence_ck" CHECK ((("depart_at" IS NOT NULL) = ("trip_shape" <> 'one_way_from'::"public"."trip_shape"))),
-    CONSTRAINT "requests_depart_qh_ck" CHECK ("public"."is_quarter_hour"("depart_at")),
-    CONSTRAINT "requests_destination_ck" CHECK ((("destination_id" IS NOT NULL) OR ("destination_text" IS NOT NULL))),
-    CONSTRAINT "requests_flex_depart_early_ck" CHECK (("flex_depart_early" = ANY (ARRAY['00:00:00'::interval, '00:15:00'::interval, '00:30:00'::interval, '01:00:00'::interval, '02:00:00'::interval, '1 day'::interval]))),
-    CONSTRAINT "requests_flex_depart_late_ck" CHECK ((("flex_depart_late" = ANY (ARRAY['00:00:00'::interval, '00:15:00'::interval, '00:30:00'::interval, '01:00:00'::interval, '02:00:00'::interval, '1 day'::interval])) OR ("duration_locked" AND ("flex_depart_late" > '00:00:00'::interval) AND ("flex_depart_late" <= '1 day'::interval) AND (((EXTRACT(epoch FROM "flex_depart_late"))::bigint % (900)::bigint) = 0)))),
-    CONSTRAINT "requests_flex_return_early_ck" CHECK (("flex_return_early" = ANY (ARRAY['00:00:00'::interval, '00:15:00'::interval, '00:30:00'::interval, '01:00:00'::interval, '02:00:00'::interval, '1 day'::interval]))),
-    CONSTRAINT "requests_flex_return_late_ck" CHECK ((("flex_return_late" = ANY (ARRAY['00:00:00'::interval, '00:15:00'::interval, '00:30:00'::interval, '01:00:00'::interval, '02:00:00'::interval, '1 day'::interval])) OR ("duration_locked" AND ("flex_return_late" > '00:00:00'::interval) AND ("flex_return_late" <= '1 day'::interval) AND (((EXTRACT(epoch FROM "flex_return_late"))::bigint % (900)::bigint) = 0)))),
-    CONSTRAINT "requests_keep_car_at_destination_ck" CHECK (((NOT "keep_car_at_destination") OR (("trip_type" = 'drop_off'::"public"."trip_type") AND ("trip_shape" = 'round_trip'::"public"."trip_shape")))),
-    CONSTRAINT "requests_leave_dest_anchor_ck" CHECK ((("leave_dest_at" IS NULL) OR ("return_anchor" = 'leave'::"public"."time_anchor"))),
-    CONSTRAINT "requests_leave_dest_qh_ck" CHECK ("public"."is_quarter_hour"("leave_dest_at")),
-    CONSTRAINT "requests_luggage_waiver_ck" CHECK ((("luggage_waived_at" IS NULL) OR "has_luggage")),
-    CONSTRAINT "requests_manual_boost_ck" CHECK ((("manual_boost" = (0)::numeric) OR ("manual_boost_reason" IS NOT NULL))),
-    CONSTRAINT "requests_one_way_mode_ck" CHECK (((("one_way_car_mode" IS NULL) = ("trip_shape" = 'round_trip'::"public"."trip_shape")) AND (("one_way_car_mode" IS NULL) OR ("one_way_car_mode" = ANY (ARRAY['relay'::"public"."leg_car_mode", 'passenger'::"public"."leg_car_mode"]))))),
-    CONSTRAINT "requests_origin_ck" CHECK ((("origin_id" IS NOT NULL) OR ("origin_text" IS NOT NULL))),
-    CONSTRAINT "requests_return_after_depart_ck" CHECK ((("depart_at" IS NULL) OR ("return_at" IS NULL) OR ("return_at" > "depart_at"))),
-    CONSTRAINT "requests_return_presence_ck" CHECK ((("return_at" IS NOT NULL) = ("trip_shape" <> 'one_way_to'::"public"."trip_shape"))),
-    CONSTRAINT "requests_return_qh_ck" CHECK (("public"."is_quarter_hour"("return_at") OR "public"."is_same_day_end"("return_at"))),
-    CONSTRAINT "requests_series_ck" CHECK (((("series_id" IS NULL) AND ("series_index" IS NULL) AND ("series_count" IS NULL)) OR (("series_id" IS NOT NULL) AND ("series_index" IS NOT NULL) AND ("series_count" IS NOT NULL) AND ("series_count" >= 2) AND ("series_index" >= 1) AND ("series_index" <= "series_count"))))
-);
-
-ALTER TABLE ONLY "public"."requests" FORCE ROW LEVEL SECURITY;
-
-
-ALTER TABLE "public"."requests" OWNER TO "postgres";
-
-
-COMMENT ON COLUMN "public"."requests"."preferred_car_id" IS 'Optional car the member asked for when filing (quick-request-from-empty-slot flow, UX_FLOWS.md §18). try_auto_approve() tries it first in live weeks, then falls back to any free car exactly as before; visible to the Sadran alongside the request, never required.';
-
-
-
-COMMENT ON COLUMN "public"."requests"."kept_return_at" IS 'Last real return time while return_at is cleared by a switch to one-way; restored by set_request_trip_type / submit_request, cleared once return_at is stored again.';
-
-
-
-COMMENT ON COLUMN "public"."requests"."luggage_waived_at" IS 'REQ §13.111 (a): set when a Sadran/member placing by hand accepted a car without a large trunk for this large-luggage request; cleared when has_luggage changes.';
-
-
-
-COMMENT ON COLUMN "public"."requests"."keep_car_at_destination" IS 'REQ §13.126 g: a member-driven round trip whose car stays at the destination between the legs (two connected relay legs on one car, never split by the wait-needed-elsewhere rule).';
 
 
 
@@ -23745,6 +23823,11 @@ GRANT ALL ON FUNCTION "public"."_can_edit_car_maintenance"("p_car_id" "uuid") TO
 
 
 
+REVOKE ALL ON FUNCTION "public"."_car_free_for_request"("p_car" "uuid", "p_request" "uuid", "p_at_origin" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_car_free_for_request"("p_car" "uuid", "p_request" "uuid", "p_at_origin" "uuid") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."_convert_to_alternative"("p_request_id" "uuid", "p_dep" timestamp with time zone, "p_ret" timestamp with time zone) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_convert_to_alternative"("p_request_id" "uuid", "p_dep" timestamp with time zone, "p_ret" timestamp with time zone) TO "service_role";
 
@@ -25946,6 +26029,17 @@ GRANT ALL ON FUNCTION "public"."validate_request_companion"() TO "service_role";
 
 
 
+GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE "public"."requests" TO "authenticated";
+GRANT ALL ON TABLE "public"."requests" TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."waitlist_cause"("r" "public"."requests") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."waitlist_cause"("r" "public"."requests") TO "service_role";
+GRANT ALL ON FUNCTION "public"."waitlist_cause"("r" "public"."requests") TO "authenticated";
+
+
+
 REVOKE ALL ON FUNCTION "public"."waitlist_group_leave"("p_request_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."waitlist_group_leave"("p_request_id" "uuid") TO "service_role";
 
@@ -26294,11 +26388,6 @@ GRANT ALL ON TABLE "public"."request_stops" TO "service_role";
 
 GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE "public"."request_templates" TO "authenticated";
 GRANT ALL ON TABLE "public"."request_templates" TO "service_role";
-
-
-
-GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE "public"."requests" TO "authenticated";
-GRANT ALL ON TABLE "public"."requests" TO "service_role";
 
 
 

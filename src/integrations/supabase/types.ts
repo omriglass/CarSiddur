@@ -4539,6 +4539,10 @@ export type Database = {
         Args: { p_car_id: string }
         Returns: boolean
       }
+      _car_free_for_request: {
+        Args: { p_at_origin: string; p_car: string; p_request: string }
+        Returns: boolean
+      }
       _convert_to_alternative: {
         Args: { p_dep: string; p_request_id: string; p_ret: string }
         Returns: string
@@ -6066,6 +6070,10 @@ export type Database = {
           _type: Database["public"]["Enums"]["proposal_type"]
         }
         Returns: boolean
+      }
+      waitlist_cause: {
+        Args: { r: Database["public"]["Tables"]["requests"]["Row"] }
+        Returns: string
       }
       waitlist_group_leave: {
         Args: { p_request_id: string }

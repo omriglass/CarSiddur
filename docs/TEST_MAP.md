@@ -122,7 +122,7 @@ the sentence layout (REQ §13.110: `requestForm/sentence/**`, `timeAnchors.ts`, 
 
 **Automated**:
 - Vitest: `npx vitest run src/features/waitlist src/features/requests/joinableRides.test.ts`
-- SQL: `waitlist_groups.sql`, `joinable_rides.sql`, `withdraw_settles.sql`
+- SQL: `waitlist_groups.sql`, `joinable_rides.sql`, `withdraw_settles.sql`, `waitlist_cause.sql` (R13B17: the member's waiting reason names the blocker — large trunk, child seats, seats, not at the origin)
 - Playwright: `npx playwright test --grep "@waitlist"`
 
 **QA script**:
@@ -140,8 +140,9 @@ the sentence layout (REQ §13.110: `requestForm/sentence/**`, `timeAnchors.ts`, 
    served; confirm they form one **"בדיון: …"** contested waiting-list block, both members are
    notified, and either the Sadran or a participant can resolve it (`resolve_waitlist_group`) into
    one combined ride (first ticked = driver) or the Sadran can drop it (`cancel_waitlist_group`).
+6. Waitlist a request with "ציוד רב" on a published day while the large-trunk car is busy and a small car is free. Expected on `/my`: "הרכבים עם תא מטען גדול תפוסים בשעות אלה…", not "כל הרכבים תפוסים" (R13B17).
 
-**REQ**: §13.7, §13.33, §13.66, §13.75, §13.83.
+**REQ**: §13.7, §13.33, §13.66, §13.75, §13.83, §13.143.
 
 ### new-request-window — New-request button & week window (incl. Sadran closing time)
 

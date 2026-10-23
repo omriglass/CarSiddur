@@ -242,7 +242,8 @@
         "supabase/tests/joinable_rides.sql",
         "supabase/tests/withdraw_settles.sql",
         "e2e/waitlist-groups.spec.ts",
-        "e2e/freed-slot.spec.ts"
+        "e2e/freed-slot.spec.ts",
+        "supabase/tests/waitlist_cause.sql"
       ],
       "vitest": [
         "src/features/waitlist",
@@ -251,7 +252,8 @@
       "sql": [
         "waitlist_groups.sql",
         "joinable_rides.sql",
-        "withdraw_settles.sql"
+        "withdraw_settles.sql",
+        "waitlist_cause.sql"
       ],
       "playwrightTags": [
         "@waitlist"
@@ -262,13 +264,15 @@
         "13.66",
         "13.75",
         "13.83",
-        "13.90"
+        "13.90",
+        "13.143"
       ],
       "qaChecklist": [
         "Submit against a published day with no free car; confirm waitlist + joinable-rides dialog (REQ §13.83)",
         "Tap the join-ride button; confirm it joins the ride and withdraws the waitlisted request (REQ §13.83)",
         "Cancel a live-week ride; confirm an overlapping waitlisted request auto-assigns (REQ §13.66)",
-        "Create two overlapping unresolvable requests; confirm one contested discussion group (REQ §13.75)"
+        "Create two overlapping unresolvable requests; confirm one contested discussion group (REQ §13.75)",
+        "Waitlist a large-luggage request while the big-trunk car is busy; /my names the trunk, not 'all cars busy' (REQ §13.143)"
       ]
     },
     {
@@ -805,7 +809,8 @@
         "13.63",
         "13.64",
         "13.65",
-        "13.84"
+        "13.84",
+        "13.143"
       ],
       "qaChecklist": [
         "Change policy weights; confirm resulting order changes on the board (REQ §13.19)",

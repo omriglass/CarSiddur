@@ -397,6 +397,9 @@ declare
     -- REQ §13.127: "may I open this request in the edit form" for the caller only (request_related / can_manage_week of the
     -- request's own week); returns a boolean, writes nothing.
     'can_edit_request:self-only',
+    -- R13B17: a waitlisted request's current cause, only for the request's related people / the week's Sadran (null otherwise;
+    -- waitlist_cause.sql (2)); reads, writes nothing.
+    'waitlist_cause:self-only',
     -- REQ §13.129 (b): refused unless the caller drives the ride (so it is the caller's own department's ride).
     'hand_over_own_ride:inspected',
     'claim_freed_slot:self-only', 'register_push_subscription:self-only', 'send_test_notification:self-only', 'deliver_changelog:self-only',
