@@ -77,6 +77,7 @@ import { PolicyChip } from "./PolicyChip";
 import { ReservationDialog } from "./ReservationDialog";
 import { RideSheet } from "./RideSheet";
 import { UnmetList } from "./UnmetList";
+import { carsFreeForRequest, placementMinutes } from "../placeOnCar";
 
 interface BoardScreenProps {
   departmentId: string;
@@ -594,6 +595,8 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
               onDragDrop={(item, carId, minutes, hostRideId) => void dnd.handlePlaceUnmetRequest(item, carId, minutes, hostRideId)}
               // The `<h2>` right above already renders this exact title — avoid duplicating it.
               showHeading={false}
+              placeableCarsOf={(item) => carsFreeForRequest(board.dropCtx, item)}
+              onPlaceOnCar={(item, carId) => { const minutes = placementMinutes(board.dropCtx, item); if (minutes != null) void dnd.handlePlaceUnmetRequest(item, carId, minutes); }}
             />
           )}
         </div>

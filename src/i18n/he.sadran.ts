@@ -576,6 +576,11 @@ export const heSadran = {
     whatsappGreeting: "היי {{name}}, אני פונה אליך בכובע של הסידור לגבי הבקשה ל{{destination}} ב{{day}}.",
     filedAt: "הוגשה {{when}}",
     scoreLine: "ציון {{score}}",
+    placeOnCar: "שבץ ברכב…",
+    placeOnCarTitle: "שיבוץ של {{name}} ברכב",
+    placeOnCarHint: "רכבים שפנויים בשעה המבוקשת. השיבוץ זהה לגרירה של הבקשה אל הרכב.",
+    placeOnCarNone: "אין רכב פנוי בשעה המבוקשת",
+    pairHeader: "{{name}} · שני כיווני נסיעה",
   },
   /** REQ item 136 (e), owner 2026-10-17: a displacement suggestion as a guided checklist (UX_FLOWS §4.2). */
   displacement: {

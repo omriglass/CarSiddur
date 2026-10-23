@@ -19,6 +19,9 @@ import { enteredTimeLabels } from "@/features/requests/enteredTimes";
 import { WindowSummaryLine } from "@/features/requests/components/WindowSummaryLine";
 import { requestStart, requestWindow, tripTypeOf } from "../phantomLanes";
 import { unmetItemKey } from "../unmetLegs";
+import { PlaceOnCarDialog } from "./PlaceOnCarDialog";
+import type { PlaceableCar } from "../placeOnCar";
+import { groupComplementaryLegs } from "../unmetGroups";
 import { requestRouteLine, tripTypeLabel } from "../requestRoute";
 import { fallbackLine, hasActiveFallback } from "../planBLine";
 
@@ -103,6 +106,9 @@ interface UnmetListProps {
   homeDestinationId?: string;
   /** REQ item 136 (g): the first name of a request's requester, for the "הצע/י ל<name> …" plan-B-switch action. */
   requesterNameOf?: (requestId: string) => string | undefined;
+  /** R14M1: cars the card can be placed on at its own time; with `onPlaceOnCar` the ⋮ menu offers "שבץ ברכב…". */
+  placeableCarsOf?: (item: UnmetListItem) => readonly PlaceableCar[];
+  onPlaceOnCar?: (item: UnmetListItem, carId: string) => void;
 }
 
 /**
@@ -110,7 +116,8 @@ interface UnmetListProps {
  * week with no ride (bug #1), sorted by policy score when a solver preview
  * exists for it, otherwise by departure time.
  */
-export function UnmetList({ items, onAction, onOpenProposal, onDecision, dayStartMinutes = 6 * 60, dayEndMinutes = 23 * 60 + 59, onDragHover, onDragDrop, showHeading = true, homeDestinationId, tripTypeScope, fewerDays, requesterNameOf }: UnmetListProps) {
+export function UnmetList({ items, onAction, onOpenProposal, onDecision, dayStartMinutes = 6 * 60, dayEndMinutes = 23 * 60 + 59, onDragHover, onDragDrop, showHeading = true, homeDestinationId, tripTypeScope, fewerDays, requesterNameOf, placeableCarsOf, onPlaceOnCar }: UnmetListProps) {
+  const [placing, setPlacing] = useState<UnmetListItem | null>(null);
   const dragEnabled = !!onDragDrop;
   const [drag, setDrag] = useState<DragState | null>(null);
   const dragRef = useRef<DragState | null>(null);
@@ -221,10 +228,34 @@ export function UnmetList({ items, onAction, onOpenProposal, onDecision, dayStar
     }
   }
 
+  const groups = groupComplementaryLegs(sorted, homeDestinationId);
+
   return (
     <div className="space-y-2">
       {showHeading ? <h2 className="text-sm font-medium">{tv("sadranBoard.unmetTitle", { count: String(items.length) })}</h2> : null}
-      {sorted.map((item) => {
+      {groups.map((group) => group.items.length === 1 ? renderCard(group.items[0] as UnmetListItem) : (
+        <div key={group.key} className="space-y-2 rounded-lg border border-dashed p-2" data-testid="unmet-leg-group">
+          <p className="px-1 text-xs font-medium text-muted-foreground">{tv("unmetCard.pairHeader", { name: group.items[0]?.request.requester_full_name ?? "—" })}</p>
+          {group.items.map((item) => renderCard(item))}
+        </div>
+      ))}
+      {placing && placeableCarsOf && onPlaceOnCar ? (
+        <PlaceOnCarDialog item={placing} cars={placeableCarsOf(placing)} onClose={() => setPlacing(null)} onPick={(carId) => { const picked = placing; setPlacing(null); onPlaceOnCar(picked, carId); }} />
+      ) : null}
+      {drag?.confirmed ? (
+        <div
+          className="pointer-events-none fixed z-50 -translate-x-1/2 -translate-y-1/2 rounded-md border bg-popover opacity-50 px-3 py-1.5 text-xs shadow-lg"
+          style={{ left: drag.clientX, top: drag.clientY }}
+        >
+          {drag.item.request.requester_full_name ?? "—"} · {drag.item.destinationName}
+        </div>
+      ) : null}
+    </div>
+  );
+
+  function renderCard(item: UnmetListItem) {
+    {
+      {
         const isDraggable = dragEnabled;
         const isDragged = drag?.confirmed && unmetItemKey(drag.item) === unmetItemKey(item);
         const { request } = item;
@@ -285,6 +316,7 @@ export function UnmetList({ items, onAction, onOpenProposal, onDecision, dayStar
                   onExternal={onDecision && !(item.request.fallback === "manage" && hasActiveFallback(item.request)) ? () => onDecision(item, "external") : undefined}
                   onDeny={onDecision ? () => onDecision(item, "deny") : undefined}
                   onShift={() => (onDecision ? onDecision(item, "shift") : onAction(item, null))}
+                  onPlaceOnCar={onPlaceOnCar && placeableCarsOf ? () => setPlacing(item) : undefined}
                 />
               </div>
               <p className="font-medium" data-testid="unmet-when">
@@ -347,15 +379,7 @@ export function UnmetList({ items, onAction, onOpenProposal, onDecision, dayStar
             </CardContent>
           </Card>
         );
-      })}
-      {drag?.confirmed ? (
-        <div
-          className="pointer-events-none fixed z-50 -translate-x-1/2 -translate-y-1/2 rounded-md border bg-popover opacity-50 px-3 py-1.5 text-xs shadow-lg"
-          style={{ left: drag.clientX, top: drag.clientY }}
-        >
-          {drag.item.request.requester_full_name ?? "—"} · {drag.item.destinationName}
-        </div>
-      ) : null}
-    </div>
-  );
+      }
+    }
+  }
 }

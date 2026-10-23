@@ -35,6 +35,8 @@ export interface UnmetCardMenuProps {
   onDeny?: () => void;
   /** "הצעת שעות אחרות" (owner 2026-10-16: in the menu, not on the card). */
   onShift?: () => void;
+  /** R14M1: "שבץ ברכב…" - opens the car picker (the phone has no usable drag). */
+  onPlaceOnCar?: () => void;
 }
 
 /** Mounted only while the menu is open, so the phone number is fetched on demand (never for every card). */
@@ -52,7 +54,7 @@ function WhatsappItem({ request, destinationName }: { request: WeekRequestRow; d
   );
 }
 
-export function UnmetCardMenu({ request, destinationName, proposalOut, tripTypeScope, fewerDays, onExternal, onDeny, onShift }: UnmetCardMenuProps) {
+export function UnmetCardMenu({ request, destinationName, proposalOut, tripTypeScope, fewerDays, onExternal, onDeny, onShift, onPlaceOnCar }: UnmetCardMenuProps) {
   const navigate = useNavigate();
   const link = useRequestLinkProps();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -73,6 +75,7 @@ export function UnmetCardMenu({ request, destinationName, proposalOut, tripTypeS
           <DropdownMenuItem className="min-h-11" data-testid="unmet-edit" onSelect={() => navigate(paths.requests.edit(request.id), { state: link.state })}>
             {he.unmetCard.editRequest}
           </DropdownMenuItem>
+          {onPlaceOnCar && !proposalOut ? <DropdownMenuItem className="min-h-11" data-testid="unmet-place-on-car" onSelect={onPlaceOnCar}>{he.unmetCard.placeOnCar}</DropdownMenuItem> : null}
           {scoped ? <DropdownMenuItem className="min-h-11" data-testid="unmet-change-trip-type" onSelect={open("tripType")}>{he.unmetCard.changeTripType}</DropdownMenuItem> : null}
           {scoped && canSwitchRequestPlan(request) ? <DropdownMenuItem className="min-h-11" data-testid="unmet-plan-switch" onSelect={open("plan")}>{request.served_by_alternative ? he.planSwitch.toMain : he.planSwitch.toAlternative}</DropdownMenuItem> : null}
           {onShift && !proposalOut ? <DropdownMenuItem className="min-h-11" data-testid="unmet-shift" onSelect={onShift}>{he.sadranProposal.suggestTimes}</DropdownMenuItem> : null}

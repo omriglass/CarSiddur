@@ -1106,9 +1106,9 @@ Run notes: autofill placed 135/165; the QA Sadran published Fri, Thu, Sun+Wed+Sa
 - R14U5 — A late request that is a duplicate overlap is only a status (`DUPLICATE_OVERLAP`), no message naming the other request.
 
 **Missing obvious features**
-- R14M1 — Mobile unplaced card ⋮ has no "place on a car" — a Sadran on a phone can unassign but not undo.
+- R14M1 (done 2026-10-23) — Mobile unplaced card ⋮ has no "place on a car" — a Sadran on a phone can unassign but not undo.
 - R14M2 — "Assign volunteer drivers for the day" suggesting free members (32 rides by hand this run).
-- R14M3 — Two unmet one-way legs of one member (Wed 39df186d out + return) are two separate cards.
+- R14M3 (done 2026-10-23) — Two unmet one-way legs of one member (Wed 39df186d out + return) are two separate cards.
 - R14M4 (half done 2026-10-23: `qa:sadran` carries `x-app-surface: board` by default, `--surface none`, `send-held`; `notices` still open) — QA tooling: `qa:sadran --surface board` (to test held notices from the CLI) and a `notices [--member X]` command.
 
 **Additional features**
