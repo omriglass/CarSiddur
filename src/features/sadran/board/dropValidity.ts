@@ -21,7 +21,7 @@ import type { Car } from "@/features/fleet/api";
 
 import { servedOf } from "../applySolve";
 import { isReservation } from "@/features/rides/servedOf";
-import { slotToIso, wouldOverlap } from "./geometry";
+import { isoToDayMinutes, slotToIso, wouldOverlap } from "./geometry";
 import { defaultMergeLeg, mergeInvalidReason, mergeLegForCard, previewMerge, type MergeLeg, type MergeRouteContext } from "./mergeProposal";
 import { unmetItemId } from "./unmetLegs";
 import { requestStart, requestWindow, requesterDrives, standaloneChauffeurWindow, tripTypeOf } from "./phantomLanes";
@@ -224,13 +224,6 @@ export function mergeCandidateForRide(ctx: BoardDropContext, rideId: string, car
   return window ? { host, source, request, window } : null;
 }
 
-/** Same conversion as `BoardScreen`'s own `dayStartIso` (kept there too, for grid-layout
- * arithmetic outside the drop-validity cluster) — duplicated rather than imported so this
- * module has no dependency back on the component. */
-function dayStartIso(day: string): string {
-  return fromZonedTime(`${day}T00:00:00`, TZ).toISOString();
-}
-
 /** Shared timestamp conversion for the current day and snapped preview/drop windows. */
 export function minutesIso(ctx: Pick<BoardDropContext, "selectedDay">, minutes: number): string {
   const date = new Date(`${ctx.selectedDay}T12:00:00Z`);
@@ -289,7 +282,7 @@ export function unmetCandidateWindow(ctx: BoardDropContext, item: UnmetListItem,
   const original = chauffeur ? standaloneChauffeurWindow(req, ctx.chauffeurDwellMinutes) : passenger;
   if (!original || !passenger || !requestStart(req) || dateKey(new Date(requestStart(req)!)) !== ctx.selectedDay) return null;
   const duration = (Date.parse(original.endsAt) - Date.parse(original.startsAt)) / 60_000;
-  const requestedMinutes = (Date.parse(passenger.startsAt) - Date.parse(dayStartIso(ctx.selectedDay))) / 60_000;
+  const requestedMinutes = isoToDayMinutes(passenger.startsAt, ctx.selectedDay);
   const offset = chauffeur && req.trip_shape === "one_way_from" ? (Date.parse(passenger.startsAt) - Date.parse(original.startsAt)) / 60_000 : 0;
   const windowAt = (at: number) => {
     const start = at - offset;

@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   awayLocationAt,
   isHandoverPair,
-  isoToMinutesSinceMidnight,
+  isoToDayMinutes,
   isoToSlot,
   scanBoardConflicts,
   tightScheduleRideIds,
@@ -26,14 +26,6 @@ describe("isoToSlot / slotToIso", () => {
   it("rounds a near-boundary timestamp to the nearest slot", () => {
     const iso = new Date(WEEK_START_MS + 15 * 60_000 - 10).toISOString();
     expect(isoToSlot(iso, WEEK_START_MS)).toBe(1);
-  });
-});
-
-describe("isoToMinutesSinceMidnight", () => {
-  it("computes minutes since a given day start", () => {
-    const dayStart = "2026-09-15T00:00:00.000Z";
-    const at = "2026-09-15T08:30:00.000Z";
-    expect(isoToMinutesSinceMidnight(at, dayStart)).toBe(510);
   });
 });
 
@@ -354,5 +346,19 @@ describe("scanBoardConflicts - multi-day series (REQ §13.77)", () => {
       { id: "x", carId: "c", startsAt: iso(24 * H), endsAt: iso(26 * H), originId: "home", destinationId: "home" },
     ]);
     expect(result.conflictRideIds.has("x")).toBe(true);
+  });
+});
+
+describe("isoToDayMinutes (R13B1: wall clock, not elapsed time)", () => {
+  it("reads 08:15 as 495 on the autumn clock-change Sunday (25 hours long)", () => {
+    // 2026-10-25: 00:00 is UTC+3, 08:15 is UTC+2 — elapsed time since midnight would say 555.
+    expect(isoToDayMinutes("2026-10-25T06:15:00Z", "2026-10-25")).toBe(8 * 60 + 15);
+    expect(isoToDayMinutes("2026-10-25T21:59:00Z", "2026-10-25")).toBe(23 * 60 + 59);
+  });
+
+  it("counts the next day from 1440 and an ordinary day plainly", () => {
+    expect(isoToDayMinutes("2026-10-25T22:00:00Z", "2026-10-25")).toBe(1440);
+    expect(isoToDayMinutes("2026-10-27T07:30:00Z", "2026-10-27")).toBe(9 * 60 + 30);
+    expect(isoToDayMinutes("2026-10-26T21:00:00Z", "2026-10-27")).toBe(-60);
   });
 });

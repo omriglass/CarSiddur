@@ -43,8 +43,10 @@ describe("canEditRequest on a published day (REQ §13.101 f)", () => {
   it("allows a single-day request whose day has not passed", () => {
     expect(canEditRequest(base, now)).toBe(true);
   });
-  it("refuses a series, a past day and a terminal status", () => {
-    expect(canEditRequest({ ...base, seriesId: "s1" }, now)).toBe(false);
+  it("allows a multi-day request too (REQ §13.142, R13B3)", () => {
+    expect(canEditRequest({ ...base, seriesId: "s1" }, now)).toBe(true);
+  });
+  it("refuses a past day and a terminal status", () => {
     expect(canEditRequest({ ...base, departAt: "2026-09-08T06:00:00Z", returnAt: "2026-09-08T09:00:00Z" }, now)).toBe(false);
     expect(canEditRequest({ ...base, status: "withdrawn" }, now)).toBe(false);
   });

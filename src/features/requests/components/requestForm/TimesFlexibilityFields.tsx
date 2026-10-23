@@ -14,7 +14,7 @@ import { TimeField15 } from "@/components/TimeField15";
 import { t, tv } from "@/i18n/he";
 import { formatTime } from "@/lib/time";
 
-import { shiftReturnByDepartureDelta } from "../../duration";
+import { returnFollowsDeparture, shiftReturnByDepartureDelta } from "../../duration";
 import type { RequestFormValues } from "../../schema";
 import { FieldError } from "./FieldError";
 
@@ -64,6 +64,7 @@ export function TimeFields({
                   onChange={(next) => {
                     const previous = field.value ?? "08:00";
                     field.onChange(next);
+                    if (!returnFollowsDeparture({ day: form.getValues("day"), returnDay: form.getValues("returnDay") })) return;
                     const currentReturn = form.getValues("returnTime");
                     const shifted = shiftReturnByDepartureDelta(previous, next, currentReturn);
                     if (shifted !== currentReturn) form.setValue("returnTime", shifted, { shouldDirty: true, shouldValidate: true });

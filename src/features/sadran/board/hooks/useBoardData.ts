@@ -28,7 +28,7 @@ import type { Window } from "@/solver";
 import { fetchCarMileageTotals, fetchCarStartLocations, fetchFairnessStats, fetchPlaceTravelForWeek } from "../../api";
 import { readLastUsedPolicyVersion, rememberLastUsedPolicyVersion } from "../../lastUsedPolicy";
 import { sadranKeys } from "../../keys";
-import { scanBoardConflicts, slotToIso, requestDayMismatchRideIds, tightScheduleRideIds } from "../geometry";
+import { isoToDayMinutes, scanBoardConflicts, slotToIso, requestDayMismatchRideIds, tightScheduleRideIds } from "../geometry";
 import { rideBlockLabel } from "../rideLabel";
 import { DEFAULT_STOP_MINUTES, homeTravelEdges, makeHop, makeHopKm, parseRideRoute } from "@/lib/rideRoute";
 import { viaLabel } from "@/lib/routeLabel";
@@ -696,13 +696,13 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
       // the siddur and the car's header name is bold for that day (owner 2026-10-09).
       isMine: !!myProfileId && (r.driver_id === myProfileId
         || servedOf(r).some((entry) => boardRequests.find((request) => request.id === entry.request_id)?.requester_id === myProfileId)),
-      startMinutes: Math.round((Date.parse(r.starts_at as string) - Date.parse(dayStartIso(selectedDay))) / 60_000),
-      endMinutes: Math.round((Date.parse(r.ends_at as string) - Date.parse(dayStartIso(selectedDay))) / 60_000),
+      startMinutes: isoToDayMinutes(r.starts_at as string, selectedDay),
+      endMinutes: isoToDayMinutes(r.ends_at as string, selectedDay),
       requestedStartMinutes: (() => {
         const entry = servedOf(r).find((served) => served.role === "driver") ?? servedOf(r)[0];
         const request = boardRequests.find((request) => request.id === entry?.request_id);
         const window = request ? standaloneChauffeurWindow(request, weekSettings.chauffeurDwellMinutes) : null;
-        return window ? (Date.parse(window.startsAt) - Date.parse(dayStartIso(selectedDay))) / 60_000 : undefined;
+        return window ? isoToDayMinutes(window.startsAt, selectedDay) : undefined;
       })(),
       // Owner bug report #3: a round-trip ride is stored as one row with
       // origin_id === destination_id === the department's home location
@@ -774,8 +774,8 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
     if (dateKey(merge.startsAt) !== selectedDay) continue;
     const host = weekGridRides.find((ride) => ride.id === merge.host.id);
     weekGridRides.push({ id: `merge:${merge.proposal.id}`, carId: merge.host.car_id!,
-      startMinutes: Math.round((Date.parse(merge.startsAt) - Date.parse(dayStartIso(selectedDay))) / 60_000),
-      endMinutes: Math.round((Date.parse(merge.endsAt) - Date.parse(dayStartIso(selectedDay))) / 60_000),
+      startMinutes: isoToDayMinutes(merge.startsAt, selectedDay),
+      endMinutes: isoToDayMinutes(merge.endsAt, selectedDay),
       label: `${host?.label ?? merge.host.driver_name ?? ""} · ${merge.guest.requester_full_name ?? ""}`,
       passengerSummary: host?.passengerSummary,
       merged: true, guests: [{ requestId: merge.guest.id, rideId: merge.host.id as string, name: merge.guest.requester_full_name ?? "" }],
@@ -791,8 +791,8 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
     weekGridRides.push({
       id: `draft:${placement.proposalId}`,
       carId: placement.carId,
-      startMinutes: Math.round((Date.parse(placement.startsAt) - Date.parse(dayStartIso(selectedDay))) / 60_000),
-      endMinutes: Math.round((Date.parse(placement.endsAt) - Date.parse(dayStartIso(selectedDay))) / 60_000),
+      startMinutes: isoToDayMinutes(placement.startsAt, selectedDay),
+      endMinutes: isoToDayMinutes(placement.endsAt, selectedDay),
       // R3B19: an origin-change draft is drawn with the NEW origin (never the borrowed old label).
       // REQ §13.112 (a): a plan-B draft reads "תוכנית ב׳ · <name>" (the car's drop-off block; the request itself stays unmet).
       label: placement.type === "alternative" ? tv("sadranPlanB.draftLabel", { name: request?.requester_full_name ?? "" }) : (placement.type === "origin" ? undefined : original?.label) ?? (request && placement.leg === "return" && request.trip_type === "drop_off"
@@ -818,8 +818,8 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
     if (dateKey(change.starts_at) !== selectedDay) continue;
     const original = weekGridRides.find((ride) => ride.id === change.ride_id);
     weekGridRides.push({ id: `change:${change.id}`, carId: change.car_id,
-      startMinutes: (Date.parse(change.starts_at) - Date.parse(dayStartIso(selectedDay))) / 60_000,
-      endMinutes: (Date.parse(change.ends_at) - Date.parse(dayStartIso(selectedDay))) / 60_000,
+      startMinutes: isoToDayMinutes(change.starts_at, selectedDay),
+      endMinutes: isoToDayMinutes(change.ends_at, selectedDay),
       label: `${original?.label ?? change.requester?.full_name ?? ""} · ${change.is_planning ? he.boardCoordination.planning : he.rideEditing.pending}`,
       requestedStartMinutes: original?.requestedStartMinutes,
       conflict: change.is_planning, pendingConsent: true, rideTypeCode: original?.rideTypeCode });
@@ -835,8 +835,8 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
     windows.flatMap((away, index) => {
       const startsAt = slotToIso(away.window.start, weekStartMs);
       const endsAt = slotToIso(away.window.end, weekStartMs);
-      const startMinutes = (Date.parse(startsAt) - Date.parse(dayStartIso(selectedDay))) / 60_000;
-      const endMinutes = (Date.parse(endsAt) - Date.parse(dayStartIso(selectedDay))) / 60_000;
+      const startMinutes = isoToDayMinutes(startsAt, selectedDay);
+      const endMinutes = isoToDayMinutes(endsAt, selectedDay);
       if (startMinutes >= 1440 || endMinutes <= 0) return [];
       // R4U5: a car based away is not "away" while it stands at the kibbutz itself.
       if (away.locationId === homeId) return [];
@@ -851,8 +851,8 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
   const dayWaitlistGroups = (waitlistGroupsQuery.data ?? []).filter((group) => group.day === selectedDay);
   const weekGridDiscussionBlocks: WeekGridDiscussionBlock[] = dayWaitlistGroups.map((group) => ({
     id: group.id,
-    startMinutes: Math.round((Date.parse(group.starts_at) - Date.parse(dayStartIso(selectedDay))) / 60_000),
-    endMinutes: Math.round((Date.parse(group.ends_at) - Date.parse(dayStartIso(selectedDay))) / 60_000),
+    startMinutes: isoToDayMinutes(group.starts_at, selectedDay),
+    endMinutes: isoToDayMinutes(group.ends_at, selectedDay),
     label: tv("waitlist.blockLabel", { names: group.members.map((member) => member.name).join(", ") }),
   }));
 
@@ -895,8 +895,8 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
   const phantomRides = packPhantomLanes(unmetItems.filter((item) => item.request.status !== "denied" && item.request.status !== "external").flatMap((item) => {
     const window = requestWindow(item.request);
     if (!window) return [];
-    return [{ id: unmetItemId(item), startMinutes: (Date.parse(window.startsAt) - Date.parse(dayStartIso(selectedDay))) / 60_000,
-      endMinutes: (Date.parse(window.endsAt) - Date.parse(dayStartIso(selectedDay))) / 60_000,
+    return [{ id: unmetItemId(item), startMinutes: isoToDayMinutes(window.startsAt, selectedDay),
+      endMinutes: isoToDayMinutes(window.endsAt, selectedDay),
       label: `${item.leg ? `${item.leg === "out" ? he.tripLegs.out : he.tripLegs.pickup} · ` : ""}${item.request.requester_full_name ?? ""} · ${requestRouteLine({ originId: item.request.origin_id, originName: item.request.origin_id ? item.request.origin_resolved_name : null, originText: item.request.origin_text, destination: item.destinationName, tripType: item.request.trip_type, keepCarAtDestination: item.request.keep_car_at_destination }, department?.home_destination_id)}`, rideTypeCode: item.request.ride_type_code,
       passengerSummary: ridePassengerSummary([{ ...item.request, requester: item.request.requester_full_name }]) }];
   }));

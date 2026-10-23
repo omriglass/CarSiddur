@@ -152,4 +152,34 @@ begin
     '(e) the new span waits for a car';
 end $$;
 
+-- (f) R13B5: open week — a series the Sadran placed (draft) keeps its car through a member's edit when the car is free.
+do $$
+declare
+  dept uuid := '00000000-0000-0000-0000-000000000001';
+  member uuid := '00000000-0000-0000-0000-000000000103';
+  dest uuid := '00000000-0000-0000-0000-000000000011';
+  ride_type uuid := '00000000-0000-0000-0000-000000000021';
+  car uuid := '00000000-0000-0000-0000-000000000041';
+  w date := public.current_week_start() + 427;
+  base jsonb; s0 uuid; edited jsonb;
+begin
+  insert into public.weeks(department_id, week_start, phase, open_at, close_at, publish_at)
+    values (dept, w, 'open', now() - interval '1 day', now() + interval '1 day', now() + interval '2 days');
+  base := jsonb_build_object('department_id', dept, 'week_start', w, 'destination_id', dest, 'ride_type_id', ride_type,
+    'trip_shape', 'round_trip', 'trip_type', 'round_trip', 'adults', 1);
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', member, 'role', 'authenticated')::text, true);
+  s0 := (public.submit_series_request(base || jsonb_build_object(
+    'depart_at', ((w + 1) + time '09:00') at time zone 'Asia/Jerusalem',
+    'return_at', ((w + 2) + time '17:00') at time zone 'Asia/Jerusalem')) ->> 'series_id')::uuid;
+  perform set_config('request.jwt.claims', '{}', true);
+  perform public.place_series(s0, car, false, null);           -- the Sadran's (solver's) draft placement
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', member, 'role', 'authenticated')::text, true);
+  edited := public.submit_series_request(base || jsonb_build_object('series_id', s0,
+    'depart_at', ((w + 1) + time '10:00') at time zone 'Asia/Jerusalem',
+    'return_at', ((w + 3) + time '17:00') at time zone 'Asia/Jerusalem'));
+  assert (select bool_and(rd.car_id = car) and count(*) = 3 from public.ride_requests rr join public.rides rd on rd.id = rr.ride_id
+          join public.requests q on q.id = rr.request_id where q.series_id = (edited ->> 'series_id')::uuid and rd.status <> 'cancelled'),
+    '(f) the edited series keeps its draft car in an open week';
+end $$;
+
 rollback;

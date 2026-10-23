@@ -43,6 +43,14 @@ export function endTimeForDuration(start: string, hours: number): DurationEnd {
  * (23:59) and floored at its first (00:00); does nothing when there is no return time to
  * shift (e.g. a one-way-to request with no return field shown).
  */
+/**
+ * R13B2 (QA run 13): the return follows the departure only on the same day — a multi-day request's last-day
+ * return is its own time and never moves with the first day's departure.
+ */
+export function returnFollowsDeparture(values: { day?: string; returnDay?: string }): boolean {
+  return !values.returnDay || !values.day || values.returnDay === values.day;
+}
+
 export function shiftReturnByDepartureDelta(
   previousDepartTime: string,
   nextDepartTime: string,

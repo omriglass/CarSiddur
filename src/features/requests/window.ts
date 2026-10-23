@@ -22,7 +22,8 @@ export function isPublishedDayWindow(window: RequestWindow | null | undefined): 
  * Draft solver placements remain editable until the submission deadline. On a published/live
  * week a single-day request is editable too (REQ §13.101 f, QM5) until its day has passed;
  * `submit_request` then answers `needs_confirmation: "release_to_waitlist"` when the new hours
- * have no free car. Multi-day series are never editable (`series_edit_not_supported`).
+ * have no free car. A multi-day series is edited as a whole on the same terms (REQ §13.142,
+ * `submit_series_request` with `series_id`; R13B3).
  */
 export function canEditRequest(request: {
   status: RequestStatus;
@@ -38,7 +39,6 @@ export function canEditRequest(request: {
   if (["withdrawn", "cancelled"].includes(request.status)) return false;
   if (request.servedByAlternative) return false;
   if (isPublishedDayWindow(request.window)) {
-    if (request.seriesId) return false;
     const end = Math.max(
       request.departAt ? Date.parse(request.departAt) : Number.NEGATIVE_INFINITY,
       request.returnAt ? Date.parse(request.returnAt) : Number.NEGATIVE_INFINITY,

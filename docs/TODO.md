@@ -1024,16 +1024,16 @@ Held up: per-day autofill incl. series, publish picker (unsolved days not pre-ti
 ### Additional
 - **R12F1** Warn when filing a request that overlaps one's own driving/passenger slot.
 
-## QA run 13 findings (2026-10-23, seed 8722, week 25–31.10 = the autumn clock change, department `qa-s8722`; QA Sadran = Opus, **Sunday, Wednesday, Friday via UI**; QA user = Sonnet; emphasis: multi-day requests + the 2026-10-22 batch — REQ §13.140–§13.142, ride popup, notes, closing time) — **awaiting owner triage**
+## QA run 13 findings (2026-10-23, seed 8722, week 25–31.10 = the autumn clock change, department `qa-s8722`; QA Sadran = Opus, **Sunday, Wednesday, Friday via UI**; QA user = Sonnet; emphasis: multi-day requests + the 2026-10-22 batch — REQ §13.140–§13.142, ride popup, notes, closing time) — **owner 2026-10-23: R13B1–B5 fixed (✅); popups stay grid-only (R13U1); the rest triaged one by one**
 
 Whole-week autofill in the clock-change week now runs (89 rides, all 7 multi-day series placed). Week published and run live. [T] = about the 2026-10-22 batch.
 
 **Bugs**
-- **R13B1 [T] — The Sadran board draws Sunday 25.10 an hour late** (blocks, labels, popup; a drop at the 08:15 line places 08:30, toast 08:30, block 09:30). The member siddur is right. Same root as the e2e `board.spec` reservation-resize failure (00:30 preview 02:45). Board geometry still does minutes-from-midnight on the 25-hour day. **Pilot week — fix first.**
-- **R13B2 [T] — The edit form moves a multi-day request's last-day return with the first-day departure** (anchor sync shifts both chips): Yonatan 2da21316 14:15→17:00 also moved Sat's return 20:45→23:30.
-- **R13B3 [T] — Editing a placed multi-day request on a published/live week is impossible from /my:** `canEditRequest` (`features/requests/window.ts`) still excludes series on a published-day window (its comment says series are never editable). The release question on published days is therefore unreachable from the UI.
-- **R13B4 [T] — Spurious overlap prompt when the first day of a series moves later:** the overlap check counts the series' own old days (m07, m18). "השאר/י את שתיהן" saves correctly.
-- **R13B5 [T] — An open-week series edit drops the Sadran's draft placement** even when the same car is still free (Nir; Omer extended 3→4 days and lost all 3); no notice to the Sadran. (Spec re-places only on published weeks.)
+- ✅ **R13B1 [T] — The Sadran board draws Sunday 25.10 an hour late** (blocks, labels, popup; a drop at the 08:15 line places 08:30, toast 08:30, block 09:30). The member siddur is right. Same root as the e2e `board.spec` reservation-resize failure (00:30 preview 02:45). Board geometry still does minutes-from-midnight on the 25-hour day. **Pilot week — fix first.**
+- ✅ **R13B2 [T] — The edit form moves a multi-day request's last-day return with the first-day departure** (anchor sync shifts both chips): Yonatan 2da21316 14:15→17:00 also moved Sat's return 20:45→23:30.
+- ✅ **R13B3 [T] — Editing a placed multi-day request on a published/live week is impossible from /my:** `canEditRequest` (`features/requests/window.ts`) still excludes series on a published-day window (its comment says series are never editable). The release question on published days is therefore unreachable from the UI.
+- ✅ **R13B4 [T] — Spurious overlap prompt when the first day of a series moves later:** the overlap check counts the series' own old days (m07, m18). "השאר/י את שתיהן" saves correctly.
+- ✅ **R13B5 [T] — An open-week series edit drops the Sadran's draft placement** even when the same car is still free (Nir; Omer extended 3→4 days and lost all 3); no notice to the Sadran. (Spec re-places only on published weeks.)
 - **R13B6 — An accepted series-start shift (SUGGEST_SERIES_SPAN_START) places only day 1**; the other days stay waitlisted and the request's departure is not updated (a59fd797).
 - **R13B7 — `place` on one leg of a series answers the old `series_edit_not_supported` "אפשר לבטל ולהגיש מחדש, לא לערוך"** (wording outdated since REQ §13.142; the board should place the whole series).
 - **R13B8 — `shorten_series` / "קיצור" fails with a misleading `series_span_invalid` when the series has no ride** (migration `20261009200200`: raises when `v_car` is null); "קיצור" is offered on unplaced series.

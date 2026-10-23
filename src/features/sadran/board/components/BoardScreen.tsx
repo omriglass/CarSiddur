@@ -23,6 +23,7 @@ import {
   seatsFit,
   unmetPreviewWindow,
 } from "../dropValidity";
+import { isoToDayMinutes } from "../geometry";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { hideIdleTemporaryCars } from "@/components/weekGridCars";
@@ -453,15 +454,15 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
               if (carId.startsWith("phantom:")) return { startMinutes, endMinutes };
               const window = item ? unmetPreviewWindow(board.dropCtx, item, carId, startMinutes, hostRideId)
                 : mergeCandidateForRide(board.dropCtx, ride.id, carId, minutesIso(board.dropCtx, startMinutes), minutesIso(board.dropCtx, endMinutes), hostRideId)?.window;
-              return window ? { startMinutes: (Date.parse(window.startsAt) - Date.parse(board.dayStartIso(board.selectedDay))) / 60_000,
-                endMinutes: (Date.parse(window.endsAt) - Date.parse(board.dayStartIso(board.selectedDay))) / 60_000 } : { startMinutes, endMinutes };
+              return window ? { startMinutes: isoToDayMinutes(window.startsAt, board.selectedDay),
+                endMinutes: isoToDayMinutes(window.endsAt, board.selectedDay) } : { startMinutes, endMinutes };
             }}
             externalDropTarget={
               dnd.unmetDragHover
                 ? {
                     carId: dnd.unmetDragHover.carId,
-                    startMinutes: unmetPreview ? (Date.parse(unmetPreview.startsAt) - Date.parse(board.dayStartIso(board.selectedDay))) / 60_000 : dnd.unmetDragHover.minutes,
-                    endMinutes: unmetPreview ? (Date.parse(unmetPreview.endsAt) - Date.parse(board.dayStartIso(board.selectedDay))) / 60_000 : dnd.unmetDragHover.minutes + 30,
+                    startMinutes: unmetPreview ? isoToDayMinutes(unmetPreview.startsAt, board.selectedDay) : dnd.unmetDragHover.minutes,
+                    endMinutes: unmetPreview ? isoToDayMinutes(unmetPreview.endsAt, board.selectedDay) : dnd.unmetDragHover.minutes + 30,
                     label: `${dnd.unmetDragHover.item.request.requester_full_name ?? ""} · ${dnd.unmetDragHover.item.destinationName}`,
                     valid: isUnmetDropValid(board.dropCtx, dnd.unmetDragHover.item, dnd.unmetDragHover.carId, dnd.unmetDragHover.minutes, dnd.unmetDragHover.hostRideId),
                   }

@@ -727,11 +727,13 @@ export function RequestForm({
         ? isoAt(values.returnTime)
         : null;
     // REQ §13.127: overlaps are the requester's own (a ride I filed for someone else is not mine).
+    // R13B4: editing a multi-day request never overlaps its own days (they are replaced on save).
     const candidates = (myRequestsQuery.data ?? []).filter(
-      (r) => r.requesterId === overlapRequesterId && r.departmentId === departmentId && !["withdrawn", "cancelled", "denied", "external"].includes(r.status),
+      (r) => r.requesterId === overlapRequesterId && r.departmentId === departmentId && !["withdrawn", "cancelled", "denied", "external"].includes(r.status)
+        && !(initial?.seriesId && r.seriesId === initial.seriesId),
     );
     return findOverlappingRequest({ departAt, returnAt }, candidates, initial?.id);
-  }, [day, tripShape, values.departTime, values.returnTime, values.timeMode, values.tripType, values.returnDay, values.windowHours, values.windowStart, values.windowEnd, myRequestsQuery.data, departmentId, initial?.id, overlapRequesterId]);
+  }, [day, tripShape, values.departTime, values.returnTime, values.timeMode, values.tripType, values.returnDay, values.windowHours, values.windowStart, values.windowEnd, myRequestsQuery.data, departmentId, initial?.id, initial?.seriesId, overlapRequesterId]);
 
   // Quick-variant-only: free-window pre-validation (server RPC remains the sole authority).
   const departTimeSafe = values.departTime || "08:00";

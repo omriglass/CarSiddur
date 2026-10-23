@@ -16999,6 +16999,14 @@ begin
     if v_auto is null then
       v_auto := public.try_auto_approve_series(v_series);
     end if;
+  elsif nullif(current_setting('app.series_prefer_car', true), '') is not null then
+    -- R13B5: before publishing, an edited series keeps the Sadran's draft car when it is still free for the
+    -- whole span (as the solver places a series: not pinned); else it waits for the next solve like any request.
+    begin
+      perform public.place_series(v_series, nullif(current_setting('app.series_prefer_car', true), '')::uuid, false, null);
+    exception when others then
+      null;
+    end;
   end if;
 
   return jsonb_build_object('series_id', v_series, 'request_ids', to_jsonb(v_ids), 'warnings', v_warnings)

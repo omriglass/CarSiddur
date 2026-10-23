@@ -49,7 +49,7 @@ import {
   unmetShiftPayload,
 } from "../dropValidity";
 import type { UnmetListItem } from "../components/UnmetList";
-import { slotToIso, wouldOverlap } from "../geometry";
+import { isoToDayMinutes, slotToIso, wouldOverlap } from "../geometry";
 import { planBSwitchPrefill } from "../planBSwitch";
 import { seriesSpanSuggestionPrefill } from "../seriesSpan";
 import { buildDisplacementSteps, checklistRideIds, isDisplacementSuggestion, type ChecklistStep, type DisplacementSuggestion } from "../displacementChecklist";
@@ -182,7 +182,7 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
     enabled: !!departmentId && !!profileId,
   });
 
-  const { selectedDay, dayStartIso, dropCtx, rides } = board;
+  const { selectedDay, dropCtx, rides } = board;
   const requestsData = board.requestsQuery.data ?? [];
   const carsData = board.carsQuery.data ?? [];
   const department = board.department;
@@ -441,7 +441,7 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
     if (!start || dateKey(start) !== selectedDay) return null;
     return {
       item: { ...item, request: view, leg: other },
-      minutes: Math.round((Date.parse(start) - Date.parse(dayStartIso(selectedDay))) / 60_000),
+      minutes: isoToDayMinutes(start, selectedDay),
     };
   }
 
@@ -667,8 +667,8 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
       return;
     }
 
-    const oldStartMinutes = Math.round((Date.parse(ride.starts_at) - Date.parse(dayStartIso(selectedDay))) / 60_000);
-    const oldEndMinutes = Math.round((Date.parse(ride.ends_at) - Date.parse(dayStartIso(selectedDay))) / 60_000);
+    const oldStartMinutes = isoToDayMinutes(ride.starts_at, selectedDay);
+    const oldEndMinutes = isoToDayMinutes(ride.ends_at, selectedDay);
     const durationMinutes = oldEndMinutes - oldStartMinutes;
     const rawEndMinutes = resizedEndMinutes ?? startMinutes + durationMinutes;
     const newEndMinutes = rawEndMinutes === 1439 ? 1439 : Math.round(rawEndMinutes / 15) * 15;
@@ -797,8 +797,8 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
   function handleRideResize(rideId: string, edge: "start" | "end", minutes: number) {
     const ride = rides.find((r) => r.id === rideId);
     if (!ride?.car_id) return;
-    const oldStartMinutes = Math.round((Date.parse(ride.starts_at as string) - Date.parse(dayStartIso(selectedDay))) / 60_000);
-    const oldEndMinutes = Math.round((Date.parse(ride.ends_at as string) - Date.parse(dayStartIso(selectedDay))) / 60_000);
+    const oldStartMinutes = isoToDayMinutes(ride.starts_at as string, selectedDay);
+    const oldEndMinutes = isoToDayMinutes(ride.ends_at as string, selectedDay);
     const newStart = edge === "start" ? minutes : oldStartMinutes;
     const newEnd = edge === "end" ? minutes : oldEndMinutes;
     if (newEnd <= newStart) return;
@@ -935,7 +935,7 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
   const displacementRideIds = checklistRideIds(displacementSteps);
   /** Minutes since the selected day's midnight of a solver slot (`null` while the week start is unknown). */
   function slotMinutesOnSelectedDay(slot: number): number | null {
-    return dropCtx.weekStartMs == null ? null : Math.round((Date.parse(slotToIso(slot, dropCtx.weekStartMs)) - Date.parse(dayStartIso(selectedDay))) / 60_000);
+    return dropCtx.weekStartMs == null ? null : isoToDayMinutes(slotToIso(slot, dropCtx.weekStartMs), selectedDay);
   }
   /** Same path as dragging the ride onto the target car at the suggested time. */
   async function displacementMove(step: Extract<ChecklistStep, { kind: "move" }>) {

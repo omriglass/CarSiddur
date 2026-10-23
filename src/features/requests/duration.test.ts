@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { endTimeForDuration, shiftReturnByDepartureDelta } from "./duration";
+import { endTimeForDuration, returnFollowsDeparture, shiftReturnByDepartureDelta } from "./duration";
 
 describe("endTimeForDuration", () => {
   it("adds whole hours within the same day", () => {
@@ -46,5 +46,13 @@ describe("shiftReturnByDepartureDelta", () => {
 
   it("preserves the special 23:59 same-day-end literal as a shift source", () => {
     expect(shiftReturnByDepartureDelta("20:00", "21:00", "23:59")).toBe("23:59");
+  });
+});
+
+describe("returnFollowsDeparture (R13B2)", () => {
+  it("only on the same day — a multi-day request's last-day return stays put", () => {
+    expect(returnFollowsDeparture({ day: "2026-10-28", returnDay: "2026-10-28" })).toBe(true);
+    expect(returnFollowsDeparture({ day: "2026-10-28" })).toBe(true);
+    expect(returnFollowsDeparture({ day: "2026-10-28", returnDay: "2026-10-31" })).toBe(false);
   });
 });

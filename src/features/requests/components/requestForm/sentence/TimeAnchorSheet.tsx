@@ -8,7 +8,7 @@ import { useWatch, type UseFormReturn } from "react-hook-form";
 import { he, tv } from "@/i18n/he";
 import type { TimeAnchor } from "@/lib/enums";
 
-import { shiftReturnByDepartureDelta } from "../../../duration";
+import { returnFollowsDeparture, shiftReturnByDepartureDelta } from "../../../duration";
 import type { RushWindows } from "../../../rushHours";
 import type { RequestFormValues } from "../../../schema";
 import {
@@ -93,7 +93,7 @@ export function TimeAnchorSheet({
       form.setValue(departAnchor === "arrive" ? "arriveByTime" : "departTime", next, { shouldDirty: true, shouldValidate: true });
       // "Return follows departure": moving the *departure* moves the typed return by the same delta.
       // R11U11: only a typed departure counts — an "arrive by" time (and switching the anchor) never moves the return.
-      if (departAnchor === "arrive") {
+      if (departAnchor === "arrive" || !returnFollowsDeparture({ day: form.getValues("day"), returnDay: form.getValues("returnDay") })) {
         setMovedReturn(null);
         return;
       }

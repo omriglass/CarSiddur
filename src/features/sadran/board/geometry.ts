@@ -6,7 +6,7 @@
 // `buildTimelines` — docs/SOLVER.md §3.2) rather than reimplemented, per the
 // stage 2b brief ("reuse solver helpers"). No React, no Supabase here.
 
-import { dateKey } from "@/lib/time";
+import { dateKey, formatTime } from "@/lib/time";
 import { buildTimelines } from "@/solver";
 
 import type { Car as SolverCar, DayBounds, Window } from "@/solver";
@@ -24,9 +24,16 @@ export function slotToIso(slot: number, weekStartMs: number): string {
   return new Date(weekStartMs + slot * SLOT_MS).toISOString();
 }
 
-/** Minutes since Asia/Jerusalem local midnight of the ride's own day, for `WeekGrid`'s per-day layout. */
-export function isoToMinutesSinceMidnight(iso: string, dayStartIso: string): number {
-  return Math.round((Date.parse(iso) - Date.parse(dayStartIso)) / 60_000);
+/**
+ * Wall-clock minutes of `iso` on the board day `day` (`yyyy-MM-dd`, Asia/Jerusalem): 08:15 that day = 495, 00:00 the
+ * next day = 1440, the day before negative. The inverse of `minutesIso` (`dropValidity.ts`). Elapsed time since
+ * midnight is not the same on the day the clocks change (QA run 13, R13B1: the board drew 25.10 an hour late).
+ */
+export function isoToDayMinutes(iso: string, day: string): number {
+  const ms = Date.parse(iso);
+  const [h, m] = formatTime(new Date(ms)).split(":").map(Number);
+  const dayDiff = Math.round((Date.parse(`${dateKey(ms)}T12:00:00Z`) - Date.parse(`${day}T12:00:00Z`)) / 86_400_000);
+  return dayDiff * 1440 + (h ?? 0) * 60 + (m ?? 0);
 }
 
 export function snapMinutesTo15(minutes: number): number {
