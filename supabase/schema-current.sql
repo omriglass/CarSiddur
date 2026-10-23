@@ -10423,11 +10423,12 @@ begin
   -- REQ §13.127 (c): so is a request the owner filed for someone else.
   perform public.assert_private_car_request(v_car, p_actor, p_request_id);
   v_manual := coalesce(p_manual, false);
-  v_public := public.is_week_public(q.department_id, q.week_start);
   v_dep := case when q.trip_shape = 'one_way_from' then null else coalesce(p_dep, q.depart_at) end;
   v_ret := case when q.trip_type = 'one_way' or q.trip_shape = 'one_way_to' then null
                 else coalesce(p_ret, q.return_at) end;
   if v_dep is null and v_ret is null then raise exception 'shift_car_invalid' using errcode = 'P0001'; end if;
+  -- R13B14: confirmed only on a published day; the rest of the week's rides are drafts.
+  v_public := public.is_day_public(q.department_id, q.week_start, (coalesce(v_dep, v_ret) at time zone 'Asia/Jerusalem')::date);
   if v_dep is distinct from q.depart_at or v_ret is distinct from q.return_at then
     update public.requests set depart_at = v_dep, return_at = v_ret where id = q.id;
   end if;
@@ -17506,6 +17507,7 @@ declare
   v_travel int;
   v_driver uuid;
   v_pref uuid;
+  v_status public.ride_status;
 begin
   select * into v_req from public.requests where id = p_request_id for update;
   if v_req.id is null or v_req.status not in ('submitted', 'waitlisted') then
@@ -17628,11 +17630,15 @@ begin
   end if;
 
   perform set_config('app.audit_reason', 'try_auto_approve:assigned', true);
+  -- R13B14: a ride on a day that is not published yet is a draft, like every other ride there.
+  v_status := case when public.is_day_public(v_req.department_id, v_req.week_start,
+                      (v_req.depart_at at time zone 'Asia/Jerusalem')::date)
+              then 'confirmed'::public.ride_status else 'draft'::public.ride_status end;
   if v_is_one_way then
     insert into public.rides (department_id, week_start, car_id, starts_at, ends_at, origin_id, destination_id,
       driver_id, status, is_pinned, pin_reason, created_by)
     values (v_req.department_id, v_req.week_start, v_car.id, v_req.depart_at, v_end, v_req.origin_id, v_req.destination_id,
-      v_driver, 'confirmed', true, 'AUTO_APPROVED', v_req.requester_id)
+      v_driver, v_status, true, 'AUTO_APPROVED', v_req.requester_id)
     returning id into v_ride_id;
 
     insert into public.ride_requests (ride_id, request_id, role, leg, car_mode)
@@ -17643,7 +17649,7 @@ begin
     insert into public.rides (department_id, week_start, car_id, starts_at, ends_at, origin_id, destination_id,
       driver_id, status, is_pinned, pin_reason, created_by)
     values (v_req.department_id, v_req.week_start, v_car.id, v_req.depart_at, v_req.return_at, v_req.origin_id, v_req.origin_id,
-      v_req.requester_id, 'confirmed', true, 'AUTO_APPROVED', v_req.requester_id)
+      v_req.requester_id, v_status, true, 'AUTO_APPROVED', v_req.requester_id)
     returning id into v_ride_id;
 
     insert into public.ride_requests (ride_id, request_id, role, leg, car_mode)
