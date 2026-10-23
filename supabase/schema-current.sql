@@ -9882,7 +9882,8 @@ CREATE OR REPLACE FUNCTION "public"."notifications_protect_fields"() RETURNS "tr
     AS $$
 begin
   if new.title_he is distinct from old.title_he or new.body_he is distinct from old.body_he
-     or new.event is distinct from old.event or new.data is distinct from old.data
+     or new.event is distinct from old.event
+     or (new.data is distinct from old.data and new.data is distinct from coalesce(old.data, '{}'::jsonb) || jsonb_build_object('cleared_by', 'system'))
      or new.dedupe_key is distinct from old.dedupe_key or new.recipient_id is distinct from old.recipient_id then
     raise exception 'notification_fields_locked' using errcode = 'P0001';
   end if;
@@ -11769,7 +11770,7 @@ CREATE OR REPLACE FUNCTION "public"."proposals_clear_inbox"() RETURNS "trigger"
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
 begin
-  update public.notifications set read_at = now()
+  update public.notifications set read_at = now(), data = coalesce(data, '{}'::jsonb) || jsonb_build_object('cleared_by', 'system')
   where event = 'proposal_received' and read_at is null and data ->> 'proposal_id' = new.id::text;
   return new;
 end $$;
@@ -14569,6 +14570,24 @@ end $$;
 ALTER FUNCTION "public"."rides_driverless_not_confirmed"() OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."rides_drop_held_joins"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare v_ride uuid := case when tg_op = 'DELETE' then old.id else new.id end;
+begin
+  delete from public.held_notices h
+  where h.subject_kind = 'ride' and h.subject_id = v_ride
+    and (select f.change_kind from public.held_notices f
+         where f.recipient_id = h.recipient_id and f.subject_kind = 'ride' and f.subject_id = v_ride
+         order by f.seq limit 1) = 'joins';
+  return null;
+end $$;
+
+
+ALTER FUNCTION "public"."rides_drop_held_joins"() OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."rides_location_ends"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -15071,6 +15090,7 @@ declare
   v_party_tokens jsonb:='{}';
   v_party record;
   v_reader jsonb; v_check jsonb; v_h record; v_leg_txt text; v_ext boolean := false;
+  v_old_notices uuid[]; v_quiet boolean; v_notification uuid;
 begin
   select request_id into v_request_id from public.proposals where id=p_proposal_id;
   if v_request_id is null then raise exception 'proposal_not_found'; end if;
@@ -15171,10 +15191,26 @@ begin
   for v_party in select profile_id from public.proposal_parties where proposal_id=p_proposal_id loop
     -- REQ §13.101 b: one text per reader (variant + old -> new variables), never the whole WhatsApp text.
     v_reader:=public.proposal_reader_vars(p_proposal_id,v_party.profile_id);
-    perform public.enqueue_notification(v_party.profile_id,'proposal_received',v_prop.department_id,v_prop.week_start,
+    -- Owner 2026-10-23 (notification noise): a new offer on the same request replaces this person's earlier offer
+    -- notices - the inbox keeps only the latest - and is quiet (no push) while none of them was opened. "Opened" =
+    -- read by the member, not cleared by the system when the offer ended (proposals_clear_inbox tags that).
+    select array_agg(n.id),
+           bool_and(n.read_at is null or coalesce(n.data->>'cleared_by','')='system')
+      into v_old_notices, v_quiet
+    from public.notifications n
+    join public.proposals op on op.id::text=n.data->>'proposal_id'
+    where n.recipient_id=v_party.profile_id and n.event='proposal_received'
+      and op.request_id=v_prop.request_id and op.id<>p_proposal_id;
+    if v_old_notices is not null then
+      delete from public.notifications where id=any(v_old_notices);
+    end if;
+    v_notification:=public.enqueue_notification(v_party.profile_id,'proposal_received',v_prop.department_id,v_prop.week_start,
       coalesce(v_reader->'vars','{}'::jsonb),
       jsonb_build_object('proposal_id',p_proposal_id,'url','/p/'||(v_party_tokens->>v_party.profile_id::text),'variant',v_reader->>'variant'),
       format('proposal_received:%s:%s',p_proposal_id,v_party.profile_id));
+    if coalesce(v_quiet,false) and v_notification is not null then
+      delete from public.push_outbox where notification_id=v_notification;
+    end if;
   end loop;
   -- QA run 10 (R10B6 / R10F1): informational only — the board has already shown the warning and the Sadran confirmed.
   return jsonb_build_object('proposal_token',v_proposal_token,'party_tokens',v_party_tokens,
@@ -22369,6 +22405,14 @@ CREATE OR REPLACE TRIGGER "rides_driverless_not_confirmed" BEFORE INSERT OR UPDA
 
 
 
+CREATE OR REPLACE TRIGGER "rides_drop_held_joins_cancel" AFTER UPDATE OF "status" ON "public"."rides" FOR EACH ROW WHEN ((("new"."status" = 'cancelled'::"public"."ride_status") AND ("old"."status" IS DISTINCT FROM "new"."status"))) EXECUTE FUNCTION "public"."rides_drop_held_joins"();
+
+
+
+CREATE OR REPLACE TRIGGER "rides_drop_held_joins_delete" AFTER DELETE ON "public"."rides" FOR EACH ROW EXECUTE FUNCTION "public"."rides_drop_held_joins"();
+
+
+
 CREATE CONSTRAINT TRIGGER "rides_location_ends" AFTER INSERT OR UPDATE OF "origin_id", "destination_id" ON "public"."rides" DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION "public"."rides_location_ends"();
 
 
@@ -26000,6 +26044,11 @@ GRANT ALL ON FUNCTION "public"."rides_driver_check"() TO "service_role";
 
 REVOKE ALL ON FUNCTION "public"."rides_driverless_not_confirmed"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."rides_driverless_not_confirmed"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."rides_drop_held_joins"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."rides_drop_held_joins"() TO "service_role";
 
 
 

@@ -75,7 +75,7 @@ export function BoardListMode({ rides, pendingRides = [], draftRideIds, shadowed
       {segment === "cars" ? (
         <div className="space-y-2">
           {pendingRides.map((ride) => <div key={ride.id} className="rounded-md border-2 border-dashed p-1">
-            <p className="px-2 text-xs text-muted-foreground">{draftRideIds?.has(ride.id) ? he.boardDrafts.tag : he.rideEditing.pending}</p>
+            <p className="px-2 text-xs text-muted-foreground">{draftRideIds?.has(ride.id) ? he.boardDrafts.tag : he.boardDrafts.proposalOut}</p>
             <RideCard ride={ride} onClick={() => onRideClick(ride.id)} />
           </div>)}
           {rides.map((ride) => (

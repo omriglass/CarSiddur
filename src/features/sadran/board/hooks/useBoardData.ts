@@ -804,7 +804,8 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
           originText: placement.originId && placement.originId !== request.origin_id ? null : request.origin_text, destination: request.destination_resolved_name ?? "", tripType: request.trip_type, keepCarAtDestination: request.keep_car_at_destination }, department?.home_destination_id)}`
         : ""),
       passengerSummary: original?.passengerSummary ?? (request ? ridePassengerSummary([{ ...request, requester: request.requester_full_name }]) : undefined),
-      draft: true,
+      draft: placement.status === "draft",
+      pendingConsent: placement.status !== "draft",
       needsDriver: false,
       rideTypeCode: original?.rideTypeCode ?? request?.ride_type_code,
     });

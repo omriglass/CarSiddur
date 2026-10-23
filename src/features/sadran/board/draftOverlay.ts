@@ -194,7 +194,11 @@ export function requestIdsWithOpenProposal(proposals: readonly Pick<ProposalRow,
   return new Set(proposals.filter(hasOpenProposal).flatMap((p) => (p.request_id ? [p.request_id] : [])));
 }
 
-/** Placements of every `draft` proposal that resolves to a car + window. */
+/**
+ * Placements of every `draft` proposal that resolves to a car + window, and of every sent/accepted shift or origin
+ * change (owner 2026-10-23: a time change sent to the member is ONE block on its car at the new time, not the old ride
+ * plus an unplaced card). Sent merges are drawn separately (`pendingMerges`).
+ */
 export function resolveDraftPlacements(
   proposals: readonly ProposalRow[],
   requests: readonly WeekRequestRow[],
@@ -204,7 +208,8 @@ export function resolveDraftPlacements(
   serverMergeWindows?: ServerMergeWindows,
 ): DraftPlacement[] {
   return proposals
-    .filter((proposal) => proposal.status === "draft")
+    .filter((proposal) => proposal.status === "draft"
+      || ((proposal.status === "sent" || proposal.status === "accepted") && (proposal.type === "shift" || proposal.type === "origin")))
     .flatMap((proposal) => {
       const placement = resolveDraftPlacement(proposal, requests, rides, homeId, route, serverMergeWindows);
       return placement ? [placement] : [];

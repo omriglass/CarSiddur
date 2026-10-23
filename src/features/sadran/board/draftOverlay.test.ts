@@ -84,9 +84,15 @@ describe("resolveDraftPlacement", () => {
 });
 
 describe("draft helpers", () => {
-  it("resolveDraftPlacements skips sent proposals", () => {
-    const sent = proposal({ id: "p2", status: "sent", payload: { car_id: "carB", depart_at: "2026-10-11T08:00:00.000Z" } });
-    expect(resolveDraftPlacements([sent], [request()], [])).toEqual([]);
+  it("owner 2026-10-23: a sent/accepted shift is one block at the new time replacing the ride; other sent types are not drawn here", () => {
+    const sent = proposal({ id: "p2", status: "sent", ride_id: "ride1", payload: { car_id: "carA", depart_at: "2026-10-11T07:00:00.000Z", return_at: "2026-10-11T09:00:00.000Z" } });
+    const accepted = proposal({ id: "p3", status: "accepted", request_id: "req2", payload: { car_id: "carB", depart_at: "2026-10-11T08:00:00.000Z" } });
+    const sentMerge = proposal({ id: "p4", type: "merge", status: "sent", ride_id: "ride1" });
+    const sentExternal = proposal({ id: "p5", type: "external", status: "sent", payload: { hint: "x" } });
+    const withdrawn = proposal({ id: "p6", status: "withdrawn", payload: { car_id: "carB", depart_at: "2026-10-11T08:00:00.000Z" } });
+    const placements = resolveDraftPlacements([sent, accepted, sentMerge, sentExternal, withdrawn], [request(), request({ id: "req2" })], [ride()]);
+    expect(placements.map((p) => [p.proposalId, p.status, p.replacesRideId])).toEqual([["p2", "sent", "ride1"], ["p3", "accepted", null]]);
+    expect(placements[0]).toMatchObject({ carId: "carA", startsAt: "2026-10-11T07:00:00.000Z", endsAt: "2026-10-11T09:00:00.000Z" });
   });
   it("requestIdsWithOpenProposal covers draft/sent/accepted only", () => {
     const ids = requestIdsWithOpenProposal([

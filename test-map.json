@@ -852,7 +852,9 @@
         "scripts/changelog-check.mjs",
         "supabase/tests/qa_run13_rides.sql",
         "supabase/tests/publish_one_notice.sql",
-        "supabase/migrations/**/*one_notice_per_publish*"
+        "supabase/tests/offer_replaces_notice.sql",
+        "supabase/migrations/**/*one_notice_per_publish*",
+        "supabase/migrations/**/*offer_replaces_unopened_notice*"
       ],
       "vitest": [
         "src/features/inbox",
@@ -864,7 +866,8 @@
         "status_notifications.sql",
         "changelog.sql",
         "qa_run13_rides.sql",
-        "publish_one_notice.sql"
+        "publish_one_notice.sql",
+        "offer_replaces_notice.sql"
       ],
       "playwrightTags": [
         "@notifications"

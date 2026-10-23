@@ -280,7 +280,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
 
   const draftRideIds = new Set([
     ...board.pendingMerges.filter((merge) => merge.isDraft).map((merge) => `merge:${merge.proposal.id}`),
-    ...board.draftPlacements.filter((placement) => placement.type !== "merge").map((placement) => `draft:${placement.proposalId}`),
+    ...board.draftPlacements.filter((placement) => placement.type !== "merge" && placement.status === "draft").map((placement) => `draft:${placement.proposalId}`),
   ]);
   const requesterNameOf = (requestId: string) => board.requestsQuery.data?.find((request) => request.id === requestId)?.requester_full_name?.split(" ")[0] || undefined;
   const selectedProposalRequest = board.requestsQuery.data?.find((request) => request.id === dnd.selectedProposal?.request_id);
