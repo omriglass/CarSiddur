@@ -32,8 +32,7 @@ export function useMyUpcomingRides() {
     queryFn: () => fetchMyUpcomingRides(profileId as string, departmentId),
     // The department is undefined until its queries land; fetching (and keying) before that ran the whole fetch twice.
     enabled: !!profileId && !departmentLoading,
-    staleTime: 30_000,
-    refetchInterval: 30_000,
+    // No timer (REQ item 149): /my watches its weeks' change counters (`useWeekChangeWatch`) and refreshes on a change.
   });
 }
 

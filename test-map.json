@@ -1124,6 +1124,40 @@
       ]
     },
     {
+      "id": "live-sync",
+      "title": "Live updates: change counters, version check, Realtime",
+      "paths": [
+        "src/features/liveSync/**",
+        "supabase/migrations/**/*week_change*",
+        "supabase/tests/week_change_seq.sql",
+        "e2e/live-sync.spec.ts",
+        "src/pages/SiddurPage.tsx",
+        "src/pages/HomePage.tsx",
+        "src/features/sadran/board/components/BoardScreen.tsx",
+        "src/features/sadran/publish/components/PublishScreen.tsx",
+        "supabase/config.toml"
+      ],
+      "vitest": [
+        "src/features/liveSync"
+      ],
+      "sql": [
+        "week_change_seq.sql"
+      ],
+      "playwrightTags": [
+        "@live-sync"
+      ],
+      "reqRefs": [
+        "149"
+      ],
+      "qaChecklist": [
+        "Two devices: a Sadran changes a published day; the member's open siddur and /my show it within a few seconds without reload (REQ item 149 a)",
+        "Two Sadran tabs on the same board: a change in one shows in the other (REQ item 149 a)",
+        "A change on an unpublished day does not refresh members' screens; publishing does (REQ item 149 c)",
+        "Block the websocket (network devtools): changes still show within ~15 s (REQ item 149 b)",
+        "Leave a tab in the background > 30 s: its Realtime connection closes; bring it back: it reconnects and catches up (REQ item 149 e)"
+      ]
+    },
+    {
       "id": "rls-security",
       "title": "RLS / security",
       "paths": [

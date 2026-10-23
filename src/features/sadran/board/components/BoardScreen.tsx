@@ -1,4 +1,5 @@
 import { useMaintenanceGridEditing } from "@/features/fleet/useMaintenanceGridEditing";
+import { useWeekChangeWatch } from "@/features/liveSync/useWeekChangeWatch";
 import { paths } from "@/app/routes";
 import { formatInTimeZone } from "date-fns-tz";
 import { useEffect, useRef, useState } from "react";
@@ -91,6 +92,8 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
   const weeksQuery = useWeeks(departmentId);
   const thisWeekRow = (weeksQuery.data ?? []).find((week) => week.week_start === weekStart);
   const weekIsPast = !!thisWeekRow && isPastWeek(thisWeekRow, dateKey(new Date()));
+  // REQ item 149: every change of this week by anyone else (another Sadran, members, the cron) shows without a reload.
+  useWeekChangeWatch(departmentId, [weekStart], "sadran");
 
   const boardRef = useRef<HTMLDivElement>(null);
   const [conflictJump, setConflictJump] = useState<{ rideId: string; sequence: number } | null>(null);

@@ -1,4 +1,5 @@
 import { useNavigate } from "react-router-dom";
+import { useWeekChangeWatch } from "@/features/liveSync/useWeekChangeWatch";
 import { toast } from "sonner";
 
 import { paths } from "@/app/routes";
@@ -51,6 +52,8 @@ export function PublishScreen({ departmentId, weekStart }: PublishScreenProps) {
   const [confirmDays, setConfirmDays] = useState<string[] | null>(null);
   const [driverlessDays, setDriverlessDays] = useState<string[] | null>(null);
   const readinessQuery = usePublicationReadiness(departmentId, weekStart);
+  // REQ item 149: readiness and the lists below refresh when anyone changes the week (replaces the 15 s readiness poll).
+  useWeekChangeWatch(departmentId, [weekStart], "sadran");
 
   const requestsQuery = useWeekRequestsWithNames(departmentId, weekStart);
   const ridesQuery = useAllWeekRides(departmentId, weekStart);

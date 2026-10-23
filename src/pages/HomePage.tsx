@@ -1,4 +1,5 @@
 import { useActiveDepartment } from "@/features/auth/useActiveDepartment";
+import { useWeekChangeWatch } from "@/features/liveSync/useWeekChangeWatch";
 import { ChevronDown, Inbox, MessageCircleQuestion, CarFront } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
@@ -127,6 +128,9 @@ export function HomePage() {
   const defaultDepartmentId =
     active.departmentId;
   const weeksQuery = useWeeks(defaultDepartmentId);
+  // REQ item 149: "my rides" shows changes others make to its weeks (published days, sent proposals) without a reload.
+  const watchedWeeks = (weeksQuery.data ?? []).filter((week) => week.phase !== "archived" && week.phase !== "upcoming").map((week) => week.week_start);
+  useWeekChangeWatch(defaultDepartmentId, watchedWeeks, "public", { realtime: active.canSubmit });
   const carsQuery = useCars(defaultDepartmentId);
   const settingsQuery = useDepartmentSettings(defaultDepartmentId);
   // Owner 2026-10-16: list/table choice and the "children's rides" option are remembered on this device.

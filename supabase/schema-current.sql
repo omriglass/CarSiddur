@@ -3228,6 +3228,175 @@ end $$;
 ALTER FUNCTION "public"."_validate_alternative_payload"("p_request_id" "uuid", "p_payload" "jsonb") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."_wcs_capture"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $_$
+declare
+  v_tables text[] := case TG_OP when 'INSERT' then array['new_rows'] when 'DELETE' then array['old_rows']
+                                else array['new_rows', 'old_rows'] end;
+  v_tpl text;
+  v_dept_tpl text;
+  t text;
+  k record;
+begin
+  case TG_TABLE_NAME
+    when 'rides' then
+      v_tpl := 'select department_id d, week_start w, (starts_at at time zone ''Asia/Jerusalem'')::date d2,
+                       case when status <> ''draft'' then 1 else 0 end m from %1$I';
+    when 'requests' then
+      v_tpl := 'select r.department_id d, r.week_start w, v.day d2, 1 m from %1$I r
+                  cross join lateral (values ((r.depart_at at time zone ''Asia/Jerusalem'')::date),
+                                             ((r.return_at at time zone ''Asia/Jerusalem'')::date)) v(day)';
+    when 'ride_requests' then
+      v_tpl := 'select coalesce(ri.department_id, q.department_id) d, coalesce(ri.week_start, q.week_start) w,
+                       (ri.starts_at at time zone ''Asia/Jerusalem'')::date d2,
+                       case when ri.id is not null and ri.status <> ''draft'' then 1 else 0 end m
+                  from %1$I x left join public.rides ri on ri.id = x.ride_id
+                  left join public.requests q on q.id = x.request_id';
+    when 'request_companions', 'request_children', 'request_stops', 'request_alternatives' then
+      v_tpl := 'select q.department_id d, q.week_start w, v.day d2, 1 m
+                  from %1$I x join public.requests q on q.id = x.request_id
+                  cross join lateral (values ((q.depart_at at time zone ''Asia/Jerusalem'')::date),
+                                             ((q.return_at at time zone ''Asia/Jerusalem'')::date)) v(day)';
+    when 'ride_passengers' then
+      v_tpl := 'select x.department_id d, x.week_start w, (ri.starts_at at time zone ''Asia/Jerusalem'')::date d2,
+                       case when ri.id is not null and ri.status <> ''draft'' then 1 else 0 end m
+                  from %1$I x left join public.rides ri on ri.id = x.ride_id';
+    when 'proposals' then
+      v_tpl := 'select department_id d, week_start w, null::date d2, case when status <> ''draft'' then 2 else 0 end m from %1$I';
+    when 'proposal_parties' then
+      v_tpl := 'select p.department_id d, p.week_start w, null::date d2, case when p.status <> ''draft'' then 2 else 0 end m
+                  from %1$I x join public.proposals p on p.id = x.proposal_id';
+    when 'ride_change_requests', 'freed_slot_offers' then
+      v_tpl := 'select department_id d, week_start w, (starts_at at time zone ''Asia/Jerusalem'')::date d2, 1 m from %1$I';
+    when 'freed_slot_claims' then
+      v_tpl := 'select o.department_id d, o.week_start w, (o.starts_at at time zone ''Asia/Jerusalem'')::date d2, 1 m
+                  from %1$I x join public.freed_slot_offers o on o.id = x.offer_id';
+    when 'waitlist_groups' then
+      v_tpl := 'select department_id d, week_start w, day d2, 1 m from %1$I';
+    when 'held_notices' then
+      -- Holding a notice is Sadran-only; deleting (flush_held_notices, or a dropped notice) tells members.
+      v_tpl := 'select department_id d, week_start w, null::date d2, case when $1 = ''DELETE'' then 2 else 0 end m from %1$I';
+    when 'siddur_versions' then
+      v_tpl := 'select department_id d, week_start w, null::date d2, 2 m from %1$I';
+    when 'weeks' then
+      if TG_OP = 'UPDATE' then
+        -- Member-visible only when what members see of the week changed (phase, published days,
+        -- request window, published version); version/reminder bookkeeping is Sadran-only.
+        for k in
+          select n.department_id d, n.week_start w,
+                 bool_or((n.phase, n.published_days, n.open_at, n.close_at, n.publish_at, n.published_version_id)
+                         is distinct from (o.phase, o.published_days, o.open_at, o.close_at, o.publish_at, o.published_version_id)) pub
+            from new_rows n join old_rows o on o.department_id = n.department_id and o.week_start = n.week_start
+           group by 1, 2
+        loop
+          perform public._wcs_note('w', k.d, k.w, k.pub);
+        end loop;
+        return null;
+      end if;
+      v_tpl := 'select department_id d, week_start w, null::date d2, 2 m from %1$I';
+    when 'cars', 'car_maintenance_blocks', 'department_settings', 'department_members', 'policies' then
+      v_dept_tpl := 'select distinct department_id d from %1$I';
+    when 'policy_versions' then
+      v_dept_tpl := 'select distinct p.department_id d from %1$I x join public.policies p on p.id = x.policy_id';
+    else
+      raise warning '_wcs_capture: no template for table %', TG_TABLE_NAME;
+      return null;
+  end case;
+
+  foreach t in array v_tables loop
+    if v_dept_tpl is not null then
+      for k in execute format(v_dept_tpl, t) loop
+        perform public._wcs_note('d', k.d, null, false);
+      end loop;
+    else
+      for k in execute format(
+        'select x.d, x.w, bool_or(case x.m when 2 then true
+                                           when 1 then x.d2 is not null and public.is_day_public(x.d, x.w, x.d2)
+                                           else false end) pub
+           from (select distinct d, w, d2, m from (' || v_tpl || ') s where d is not null and w is not null) x
+          group by x.d, x.w
+          order by x.d, x.w', t) using TG_OP
+      loop
+        perform public._wcs_note('w', k.d, k.w, k.pub);
+      end loop;
+    end if;
+  end loop;
+  return null;
+end;
+$_$;
+
+
+ALTER FUNCTION "public"."_wcs_capture"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_wcs_flush"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_state jsonb := coalesce(nullif(current_setting('app.wcs_state', true), ''), '{}')::jsonb;
+  k record;
+  v_dept uuid; v_week date; v_pub boolean;
+begin
+  perform set_config('app.wcs_state', '', true);
+  perform set_config('app.wcs_registered', '', true);
+  delete from public.week_change_pending where id = new.id;
+  for k in select key, value from jsonb_each_text(v_state) order by key loop
+    begin
+      v_dept := split_part(k.key, '|', 2)::uuid;
+      v_pub := k.value = '1';
+      if split_part(k.key, '|', 1) = 'w' then
+        v_week := split_part(k.key, '|', 3)::date;
+        insert into public.week_change_seq as c (department_id, week_start, seq, public_seq)
+        values (v_dept, v_week, 1, case when v_pub then 1 else 0 end)
+        on conflict (department_id, week_start) do update
+          set seq = c.seq + 1,
+              public_seq = c.public_seq + case when v_pub then 1 else 0 end,
+              updated_at = now();
+      else
+        insert into public.department_change_seq as c (department_id, seq)
+        values (v_dept, 1)
+        on conflict (department_id) do update set seq = c.seq + 1, updated_at = now();
+      end if;
+    exception when others then
+      -- A counter must never fail the user's write; the screens' focus refetch still catches up.
+      raise warning '_wcs_flush: % (%)', sqlerrm, k.key;
+    end;
+  end loop;
+  return null;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."_wcs_flush"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_wcs_note"("p_kind" "text", "p_department_id" "uuid", "p_week_start" "date", "p_public" boolean) RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_state jsonb := coalesce(nullif(current_setting('app.wcs_state', true), ''), '{}')::jsonb;
+  v_key text := p_kind || '|' || p_department_id::text || '|' || coalesce(p_week_start::text, '');
+  v_prev text := v_state ->> v_key;
+begin
+  if p_department_id is null or (p_kind = 'w' and p_week_start is null) then return; end if;
+  if v_prev = '1' or (v_prev = '0' and not coalesce(p_public, false)) then return; end if;
+  v_state := v_state || jsonb_build_object(v_key, case when coalesce(p_public, false) then 1 else 0 end);
+  perform set_config('app.wcs_state', v_state::text, true);
+  if coalesce(current_setting('app.wcs_registered', true), '') <> 'on' then
+    insert into public.week_change_pending default values;
+    perform set_config('app.wcs_registered', 'on', true);
+  end if;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."_wcs_note"("p_kind" "text", "p_department_id" "uuid", "p_week_start" "date", "p_public" boolean) OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."_window_text"("_dep" timestamp with time zone, "_ret" timestamp with time zone) RETURNS "text"
     LANGUAGE "sql" STABLE
     SET "search_path" TO 'public', 'pg_temp'
@@ -19134,6 +19303,20 @@ $$;
 ALTER FUNCTION "public"."week_board_rides"("p_department_id" "uuid", "p_week_start" "date") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."week_change_seqs"("p_department_id" "uuid", "p_weeks" "date"[]) RETURNS TABLE("week_start" "date", "seq" bigint, "public_seq" bigint, "dept_seq" bigint)
+    LANGUAGE "sql" STABLE
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select w.week_start, coalesce(c.seq, 0), coalesce(c.public_seq, 0),
+         coalesce((select d.seq from public.department_change_seq d where d.department_id = p_department_id), 0)
+    from unnest(p_weeks) as w(week_start)
+    left join public.week_change_seq c on c.department_id = p_department_id and c.week_start = w.week_start;
+$$;
+
+
+ALTER FUNCTION "public"."week_change_seqs"("p_department_id" "uuid", "p_weeks" "date"[]) OWNER TO "postgres";
+
+
 CREATE TABLE IF NOT EXISTS "public"."department_settings" (
     "department_id" "uuid" NOT NULL,
     "turnaround_minutes" integer DEFAULT 30 NOT NULL,
@@ -19745,6 +19928,23 @@ ALTER TABLE "public"."client_errors" ALTER COLUMN "id" ADD GENERATED ALWAYS AS I
     NO MAXVALUE
     CACHE 1
 );
+
+
+
+CREATE TABLE IF NOT EXISTS "public"."department_change_seq" (
+    "department_id" "uuid" NOT NULL,
+    "seq" bigint DEFAULT 0 NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL
+);
+
+ALTER TABLE ONLY "public"."department_change_seq" FORCE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."department_change_seq" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."department_change_seq" IS 'REQ 149: per-department catalog change counter (cars, maintenance, settings, members, policies). Written only by _wcs_flush().';
 
 
 
@@ -21283,6 +21483,40 @@ COMMENT ON TABLE "public"."waitlist_groups" IS 'A set of overlapping round-trip 
 
 
 
+CREATE TABLE IF NOT EXISTS "public"."week_change_pending" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL
+);
+
+ALTER TABLE ONLY "public"."week_change_pending" FORCE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."week_change_pending" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."week_change_pending" IS 'REQ 149: one transient row per writing transaction; its deferred constraint trigger runs _wcs_flush() at commit and deletes it.';
+
+
+
+CREATE TABLE IF NOT EXISTS "public"."week_change_seq" (
+    "department_id" "uuid" NOT NULL,
+    "week_start" "date" NOT NULL,
+    "seq" bigint DEFAULT 0 NOT NULL,
+    "public_seq" bigint DEFAULT 0 NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL
+);
+
+ALTER TABLE ONLY "public"."week_change_seq" FORCE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."week_change_seq" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."week_change_seq" IS 'REQ 149: per (department, week) change counters. seq = any change (Sadran screens); public_seq = member-visible changes. Written only by _wcs_flush() at commit; not audited.';
+
+
+
 CREATE TABLE IF NOT EXISTS "public"."week_stats" (
     "department_id" "uuid" NOT NULL,
     "week_start" "date" NOT NULL,
@@ -21400,6 +21634,11 @@ ALTER TABLE ONLY "public"."children"
 
 ALTER TABLE ONLY "public"."client_errors"
     ADD CONSTRAINT "client_errors_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."department_change_seq"
+    ADD CONSTRAINT "department_change_seq_pkey" PRIMARY KEY ("department_id");
 
 
 
@@ -21700,6 +21939,16 @@ ALTER TABLE ONLY "public"."waitlist_group_members"
 
 ALTER TABLE ONLY "public"."waitlist_groups"
     ADD CONSTRAINT "waitlist_groups_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."week_change_pending"
+    ADD CONSTRAINT "week_change_pending_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."week_change_seq"
+    ADD CONSTRAINT "week_change_seq_pkey" PRIMARY KEY ("department_id", "week_start");
 
 
 
@@ -23061,6 +23310,286 @@ CREATE OR REPLACE TRIGGER "waitlist_members_withdraw_external" AFTER INSERT ON "
 
 
 
+CREATE OR REPLACE TRIGGER "wcs_del" AFTER DELETE ON "public"."car_maintenance_blocks" REFERENCING OLD TABLE AS "old_rows" FOR EACH STATEMENT EXECUTE FUNCTION "public"."_wcs_capture"();
+
+
+
+CREATE OR REPLACE TRIGGER "wcs_del" AFTER DELETE ON "public"."cars" REFERENCING OLD TABLE AS "old_rows" FOR EACH STATEMENT EXECUTE FUNCTION "public"."_wcs_capture"();
+
+
+
+CREATE OR REPLACE TRIGGER "wcs_del" AFTER DELETE ON "public"."department_members" REFERENCING OLD TABLE AS "old_rows" FOR EACH STATEMENT EXECUTE FUNCTION "public"."_wcs_capture"();
+
+
+
+CREATE OR REPLACE TRIGGER "wcs_del" AFTER DELETE ON "public"."department_settings" REFERENCING OLD TABLE AS "old_rows" FOR EACH STATEMENT EXECUTE FUNCTION "public"."_wcs_capture"();
+
+
+
+CREATE OR REPLACE TRIGGER "wcs_del" AFTER DELETE ON "public"."freed_slot_claims" REFERENCING OLD TABLE AS "old_rows" FOR EACH STATEMENT EXECUTE FUNCTION "public"."_wcs_capture"();
+
+
+
+CREATE OR REPLACE TRIGGER "wcs_del" AFTER DELETE ON "public"."freed_slot_offers" REFERENCING OLD TABLE AS "old_rows" FOR EACH STATEMENT EXECUTE FUNCTION "public"."_wcs_capture"();
+
+
+
+CREATE OR REPLACE TRIGGER "wcs_del" AFTER DELETE ON "public"."held_notices" REFERENCING OLD TABLE AS "old_rows" FOR EACH STATEMENT EXECUTE FUNCTION "public"."_wcs_capture"();
+
+
+
+CREATE OR REPLACE TRIGGER "wcs_del" AFTER DELETE ON "public"."policies" REFERENCING OLD TABLE AS "old_rows" FOR EACH STATEMENT EXECUTE FUNCTION "public"."_wcs_capture"();
+
+
+
+CREATE OR REPLACE TRIGGER "wcs_del" AFTER DELETE ON "public"."policy_versions" REFERENCING OLD TABLE AS "old_rows" FOR EACH STATEMENT EXECUTE FUNCTION "public"."_wcs_capture"();
+
+
+
+CREATE OR REPLACE TRIGGER "wcs_del" AFTER DELETE ON "public"."proposal_parties" REFERENCING OLD TABLE AS "old_rows" FOR EACH STATEMENT EXECUTE FUNCTION "public"."_wcs_capture"();
+
+
+
+CREATE OR REPLACE TRIGGER "wcs_del" AFTER DELETE ON "public"."proposals" REFERENCING OLD TABLE AS "old_rows" FOR EACH STATEMENT EXECUTE FUNCTION "public"."_wcs_capture"();
+
+
+
+CREATE OR REPLACE TRIGGER "wcs_del" AFTER DELETE ON "public"."request_alternatives" REFERENCING OLD TABLE AS "old_rows" FOR EACH STATEMENT EXECUTE FUNCTION "public"."_wcs_capture"();
+
+
+
+CREATE OR REPLACE TRIGGER "wcs_del" AFTER DELETE ON "public"."request_children" REFERENCING OLD TABLE AS "old_rows" FOR EACH STATEMENT EXECUTE FUNCTION "public"."_wcs_capture"();
+
+
+
+CREATE OR REPLACE TRIGGER "wcs_del" AFTER DELETE ON "public"."request_companions" REFERENCING OLD TABLE AS "old_rows" FOR EACH STATEMENT EXECUTE FUNCTION "public"."_wcs_capture"();
+
+
+
+CREATE OR REPLACE TRIGGER "wcs_del" AFTER DELETE ON "public"."request_stops" REFERENCING OLD TABLE AS "old_rows" FOR EACH STATEMENT EXECUTE FUNCTION "public"."_wcs_capture"();
+
+
+
+CREATE OR REPLACE TRIGGER "wcs_del" AFTER DELETE ON "public"."requests" REFERENCING OLD TABLE AS "old_rows" FOR EACH STATEMENT EXECUTE FUNCTION "public"."_wcs_capture"();
+
+
+
+CREATE OR REPLACE TRIGGER "wcs_del" AFTER DELETE ON "public"."ride_change_requests" REFERENCING OLD TABLE AS "old_rows" FOR EACH STATEMENT EXECUTE FUNCTION "public"."_wcs_capture"();
+
+
+
+CREATE OR REPLACE TRIGGER "wcs_del" AFTER DELETE ON "public"."ride_passengers" REFERENCING OLD TABLE AS "old_rows" FOR EACH STATEMENT EXECUTE FUNCTION "public"."_wcs_capture"();
+
+
+
+CREATE OR REPLACE TRIGGER "wcs_del" AFTER DELETE ON "public"."ride_requests" REFERENCING OLD TABLE AS "old_rows" FOR EACH STATEMENT EXECUTE FUNCTION "public"."_wcs_capture"();
+
+
+
+CREATE OR REPLACE TRIGGER "wcs_del" AFTER DELETE ON "public"."rides" REFERENCING OLD TABLE AS "old_rows" FOR EACH STATEMENT EXECUTE FUNCTION "public"."_wcs_capture"();
+
+
+
+CREATE OR REPLACE TRIGGER "wcs_del" AFTER DELETE ON "public"."siddur_versions" REFERENCING OLD TABLE AS "old_rows" FOR EACH STATEMENT EXECUTE FUNCTION "public"."_wcs_capture"();
+
+
+
+CREATE OR REPLACE TRIGGER "wcs_del" AFTER DELETE ON "public"."waitlist_groups" REFERENCING OLD TABLE AS "old_rows" FOR EACH STATEMENT EXECUTE FUNCTION "public"."_wcs_capture"();
+
+
+
+CREATE OR REPLACE TRIGGER "wcs_del" AFTER DELETE ON "public"."weeks" REFERENCING OLD TABLE AS "old_rows" FOR EACH STATEMENT EXECUTE FUNCTION "public"."_wcs_capture"();
+
+
+
+CREATE OR REPLACE TRIGGER "wcs_ins" AFTER INSERT ON "public"."car_maintenance_blocks" REFERENCING NEW TABLE AS "new_rows" FOR EACH STATEMENT EXECUTE FUNCTION "public"."_wcs_capture"();
+
+
+
+CREATE OR REPLACE TRIGGER "wcs_ins" AFTER INSERT ON "public"."cars" REFERENCING NEW TABLE AS "new_rows" FOR EACH STATEMENT EXECUTE FUNCTION "public"."_wcs_capture"();
+
+
+
+CREATE OR REPLACE TRIGGER "wcs_ins" AFTER INSERT ON "public"."department_members" REFERENCING NEW TABLE AS "new_rows" FOR EACH STATEMENT EXECUTE FUNCTION "public"."_wcs_capture"();
+
+
+
+CREATE OR REPLACE TRIGGER "wcs_ins" AFTER INSERT ON "public"."department_settings" REFERENCING NEW TABLE AS "new_rows" FOR EACH STATEMENT EXECUTE FUNCTION "public"."_wcs_capture"();
+
+
+
+CREATE OR REPLACE TRIGGER "wcs_ins" AFTER INSERT ON "public"."freed_slot_claims" REFERENCING NEW TABLE AS "new_rows" FOR EACH STATEMENT EXECUTE FUNCTION "public"."_wcs_capture"();
+
+
+
+CREATE OR REPLACE TRIGGER "wcs_ins" AFTER INSERT ON "public"."freed_slot_offers" REFERENCING NEW TABLE AS "new_rows" FOR EACH STATEMENT EXECUTE FUNCTION "public"."_wcs_capture"();
+
+
+
+CREATE OR REPLACE TRIGGER "wcs_ins" AFTER INSERT ON "public"."held_notices" REFERENCING NEW TABLE AS "new_rows" FOR EACH STATEMENT EXECUTE FUNCTION "public"."_wcs_capture"();
+
+
+
+CREATE OR REPLACE TRIGGER "wcs_ins" AFTER INSERT ON "public"."policies" REFERENCING NEW TABLE AS "new_rows" FOR EACH STATEMENT EXECUTE FUNCTION "public"."_wcs_capture"();
+
+
+
+CREATE OR REPLACE TRIGGER "wcs_ins" AFTER INSERT ON "public"."policy_versions" REFERENCING NEW TABLE AS "new_rows" FOR EACH STATEMENT EXECUTE FUNCTION "public"."_wcs_capture"();
+
+
+
+CREATE OR REPLACE TRIGGER "wcs_ins" AFTER INSERT ON "public"."proposal_parties" REFERENCING NEW TABLE AS "new_rows" FOR EACH STATEMENT EXECUTE FUNCTION "public"."_wcs_capture"();
+
+
+
+CREATE OR REPLACE TRIGGER "wcs_ins" AFTER INSERT ON "public"."proposals" REFERENCING NEW TABLE AS "new_rows" FOR EACH STATEMENT EXECUTE FUNCTION "public"."_wcs_capture"();
+
+
+
+CREATE OR REPLACE TRIGGER "wcs_ins" AFTER INSERT ON "public"."request_alternatives" REFERENCING NEW TABLE AS "new_rows" FOR EACH STATEMENT EXECUTE FUNCTION "public"."_wcs_capture"();
+
+
+
+CREATE OR REPLACE TRIGGER "wcs_ins" AFTER INSERT ON "public"."request_children" REFERENCING NEW TABLE AS "new_rows" FOR EACH STATEMENT EXECUTE FUNCTION "public"."_wcs_capture"();
+
+
+
+CREATE OR REPLACE TRIGGER "wcs_ins" AFTER INSERT ON "public"."request_companions" REFERENCING NEW TABLE AS "new_rows" FOR EACH STATEMENT EXECUTE FUNCTION "public"."_wcs_capture"();
+
+
+
+CREATE OR REPLACE TRIGGER "wcs_ins" AFTER INSERT ON "public"."request_stops" REFERENCING NEW TABLE AS "new_rows" FOR EACH STATEMENT EXECUTE FUNCTION "public"."_wcs_capture"();
+
+
+
+CREATE OR REPLACE TRIGGER "wcs_ins" AFTER INSERT ON "public"."requests" REFERENCING NEW TABLE AS "new_rows" FOR EACH STATEMENT EXECUTE FUNCTION "public"."_wcs_capture"();
+
+
+
+CREATE OR REPLACE TRIGGER "wcs_ins" AFTER INSERT ON "public"."ride_change_requests" REFERENCING NEW TABLE AS "new_rows" FOR EACH STATEMENT EXECUTE FUNCTION "public"."_wcs_capture"();
+
+
+
+CREATE OR REPLACE TRIGGER "wcs_ins" AFTER INSERT ON "public"."ride_passengers" REFERENCING NEW TABLE AS "new_rows" FOR EACH STATEMENT EXECUTE FUNCTION "public"."_wcs_capture"();
+
+
+
+CREATE OR REPLACE TRIGGER "wcs_ins" AFTER INSERT ON "public"."ride_requests" REFERENCING NEW TABLE AS "new_rows" FOR EACH STATEMENT EXECUTE FUNCTION "public"."_wcs_capture"();
+
+
+
+CREATE OR REPLACE TRIGGER "wcs_ins" AFTER INSERT ON "public"."rides" REFERENCING NEW TABLE AS "new_rows" FOR EACH STATEMENT EXECUTE FUNCTION "public"."_wcs_capture"();
+
+
+
+CREATE OR REPLACE TRIGGER "wcs_ins" AFTER INSERT ON "public"."siddur_versions" REFERENCING NEW TABLE AS "new_rows" FOR EACH STATEMENT EXECUTE FUNCTION "public"."_wcs_capture"();
+
+
+
+CREATE OR REPLACE TRIGGER "wcs_ins" AFTER INSERT ON "public"."waitlist_groups" REFERENCING NEW TABLE AS "new_rows" FOR EACH STATEMENT EXECUTE FUNCTION "public"."_wcs_capture"();
+
+
+
+CREATE OR REPLACE TRIGGER "wcs_ins" AFTER INSERT ON "public"."weeks" REFERENCING NEW TABLE AS "new_rows" FOR EACH STATEMENT EXECUTE FUNCTION "public"."_wcs_capture"();
+
+
+
+CREATE OR REPLACE TRIGGER "wcs_upd" AFTER UPDATE ON "public"."car_maintenance_blocks" REFERENCING OLD TABLE AS "old_rows" NEW TABLE AS "new_rows" FOR EACH STATEMENT EXECUTE FUNCTION "public"."_wcs_capture"();
+
+
+
+CREATE OR REPLACE TRIGGER "wcs_upd" AFTER UPDATE ON "public"."cars" REFERENCING OLD TABLE AS "old_rows" NEW TABLE AS "new_rows" FOR EACH STATEMENT EXECUTE FUNCTION "public"."_wcs_capture"();
+
+
+
+CREATE OR REPLACE TRIGGER "wcs_upd" AFTER UPDATE ON "public"."department_members" REFERENCING OLD TABLE AS "old_rows" NEW TABLE AS "new_rows" FOR EACH STATEMENT EXECUTE FUNCTION "public"."_wcs_capture"();
+
+
+
+CREATE OR REPLACE TRIGGER "wcs_upd" AFTER UPDATE ON "public"."department_settings" REFERENCING OLD TABLE AS "old_rows" NEW TABLE AS "new_rows" FOR EACH STATEMENT EXECUTE FUNCTION "public"."_wcs_capture"();
+
+
+
+CREATE OR REPLACE TRIGGER "wcs_upd" AFTER UPDATE ON "public"."freed_slot_claims" REFERENCING OLD TABLE AS "old_rows" NEW TABLE AS "new_rows" FOR EACH STATEMENT EXECUTE FUNCTION "public"."_wcs_capture"();
+
+
+
+CREATE OR REPLACE TRIGGER "wcs_upd" AFTER UPDATE ON "public"."freed_slot_offers" REFERENCING OLD TABLE AS "old_rows" NEW TABLE AS "new_rows" FOR EACH STATEMENT EXECUTE FUNCTION "public"."_wcs_capture"();
+
+
+
+CREATE OR REPLACE TRIGGER "wcs_upd" AFTER UPDATE ON "public"."held_notices" REFERENCING OLD TABLE AS "old_rows" NEW TABLE AS "new_rows" FOR EACH STATEMENT EXECUTE FUNCTION "public"."_wcs_capture"();
+
+
+
+CREATE OR REPLACE TRIGGER "wcs_upd" AFTER UPDATE ON "public"."policies" REFERENCING OLD TABLE AS "old_rows" NEW TABLE AS "new_rows" FOR EACH STATEMENT EXECUTE FUNCTION "public"."_wcs_capture"();
+
+
+
+CREATE OR REPLACE TRIGGER "wcs_upd" AFTER UPDATE ON "public"."policy_versions" REFERENCING OLD TABLE AS "old_rows" NEW TABLE AS "new_rows" FOR EACH STATEMENT EXECUTE FUNCTION "public"."_wcs_capture"();
+
+
+
+CREATE OR REPLACE TRIGGER "wcs_upd" AFTER UPDATE ON "public"."proposal_parties" REFERENCING OLD TABLE AS "old_rows" NEW TABLE AS "new_rows" FOR EACH STATEMENT EXECUTE FUNCTION "public"."_wcs_capture"();
+
+
+
+CREATE OR REPLACE TRIGGER "wcs_upd" AFTER UPDATE ON "public"."proposals" REFERENCING OLD TABLE AS "old_rows" NEW TABLE AS "new_rows" FOR EACH STATEMENT EXECUTE FUNCTION "public"."_wcs_capture"();
+
+
+
+CREATE OR REPLACE TRIGGER "wcs_upd" AFTER UPDATE ON "public"."request_alternatives" REFERENCING OLD TABLE AS "old_rows" NEW TABLE AS "new_rows" FOR EACH STATEMENT EXECUTE FUNCTION "public"."_wcs_capture"();
+
+
+
+CREATE OR REPLACE TRIGGER "wcs_upd" AFTER UPDATE ON "public"."request_children" REFERENCING OLD TABLE AS "old_rows" NEW TABLE AS "new_rows" FOR EACH STATEMENT EXECUTE FUNCTION "public"."_wcs_capture"();
+
+
+
+CREATE OR REPLACE TRIGGER "wcs_upd" AFTER UPDATE ON "public"."request_companions" REFERENCING OLD TABLE AS "old_rows" NEW TABLE AS "new_rows" FOR EACH STATEMENT EXECUTE FUNCTION "public"."_wcs_capture"();
+
+
+
+CREATE OR REPLACE TRIGGER "wcs_upd" AFTER UPDATE ON "public"."request_stops" REFERENCING OLD TABLE AS "old_rows" NEW TABLE AS "new_rows" FOR EACH STATEMENT EXECUTE FUNCTION "public"."_wcs_capture"();
+
+
+
+CREATE OR REPLACE TRIGGER "wcs_upd" AFTER UPDATE ON "public"."requests" REFERENCING OLD TABLE AS "old_rows" NEW TABLE AS "new_rows" FOR EACH STATEMENT EXECUTE FUNCTION "public"."_wcs_capture"();
+
+
+
+CREATE OR REPLACE TRIGGER "wcs_upd" AFTER UPDATE ON "public"."ride_change_requests" REFERENCING OLD TABLE AS "old_rows" NEW TABLE AS "new_rows" FOR EACH STATEMENT EXECUTE FUNCTION "public"."_wcs_capture"();
+
+
+
+CREATE OR REPLACE TRIGGER "wcs_upd" AFTER UPDATE ON "public"."ride_passengers" REFERENCING OLD TABLE AS "old_rows" NEW TABLE AS "new_rows" FOR EACH STATEMENT EXECUTE FUNCTION "public"."_wcs_capture"();
+
+
+
+CREATE OR REPLACE TRIGGER "wcs_upd" AFTER UPDATE ON "public"."ride_requests" REFERENCING OLD TABLE AS "old_rows" NEW TABLE AS "new_rows" FOR EACH STATEMENT EXECUTE FUNCTION "public"."_wcs_capture"();
+
+
+
+CREATE OR REPLACE TRIGGER "wcs_upd" AFTER UPDATE ON "public"."rides" REFERENCING OLD TABLE AS "old_rows" NEW TABLE AS "new_rows" FOR EACH STATEMENT EXECUTE FUNCTION "public"."_wcs_capture"();
+
+
+
+CREATE OR REPLACE TRIGGER "wcs_upd" AFTER UPDATE ON "public"."siddur_versions" REFERENCING OLD TABLE AS "old_rows" NEW TABLE AS "new_rows" FOR EACH STATEMENT EXECUTE FUNCTION "public"."_wcs_capture"();
+
+
+
+CREATE OR REPLACE TRIGGER "wcs_upd" AFTER UPDATE ON "public"."waitlist_groups" REFERENCING OLD TABLE AS "old_rows" NEW TABLE AS "new_rows" FOR EACH STATEMENT EXECUTE FUNCTION "public"."_wcs_capture"();
+
+
+
+CREATE OR REPLACE TRIGGER "wcs_upd" AFTER UPDATE ON "public"."weeks" REFERENCING OLD TABLE AS "old_rows" NEW TABLE AS "new_rows" FOR EACH STATEMENT EXECUTE FUNCTION "public"."_wcs_capture"();
+
+
+
+CREATE CONSTRAINT TRIGGER "week_change_pending_flush" AFTER INSERT ON "public"."week_change_pending" DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION "public"."_wcs_flush"();
+
+
+
 CREATE OR REPLACE TRIGGER "weeks_guard_published_version" BEFORE UPDATE OF "published_version_id" ON "public"."weeks" FOR EACH ROW EXECUTE FUNCTION "public"."weeks_guard_published_version"();
 
 
@@ -23186,6 +23715,11 @@ ALTER TABLE ONLY "public"."children"
 
 ALTER TABLE ONLY "public"."client_errors"
     ADD CONSTRAINT "client_errors_profile_id_fkey" FOREIGN KEY ("profile_id") REFERENCES "public"."profiles"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."department_change_seq"
+    ADD CONSTRAINT "department_change_seq_department_id_fkey" FOREIGN KEY ("department_id") REFERENCES "public"."departments"("id") ON DELETE CASCADE;
 
 
 
@@ -23824,6 +24358,11 @@ ALTER TABLE ONLY "public"."waitlist_groups"
 
 
 
+ALTER TABLE ONLY "public"."week_change_seq"
+    ADD CONSTRAINT "week_change_seq_department_id_fkey" FOREIGN KEY ("department_id") REFERENCES "public"."departments"("id") ON DELETE CASCADE;
+
+
+
 ALTER TABLE ONLY "public"."week_stats"
     ADD CONSTRAINT "week_stats_week_fk" FOREIGN KEY ("department_id", "week_start") REFERENCES "public"."weeks"("department_id", "week_start");
 
@@ -24049,6 +24588,13 @@ CREATE POLICY "client_errors_insert" ON "public"."client_errors" FOR INSERT TO "
 
 
 CREATE POLICY "client_errors_select" ON "public"."client_errors" FOR SELECT TO "authenticated" USING ("public"."is_admin"());
+
+
+
+ALTER TABLE "public"."department_change_seq" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "department_change_seq_select" ON "public"."department_change_seq" FOR SELECT TO "authenticated" USING (("public"."member_of"("department_id") OR "public"."is_admin"()));
 
 
 
@@ -24548,6 +25094,16 @@ CREATE POLICY "waitlist_groups_select" ON "public"."waitlist_groups" FOR SELECT 
 
 
 
+ALTER TABLE "public"."week_change_pending" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."week_change_seq" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "week_change_seq_select" ON "public"."week_change_seq" FOR SELECT TO "authenticated" USING (("public"."member_of"("department_id") OR "public"."is_admin"() OR ("public"."is_approved"() AND "public"."is_week_public"("department_id", "week_start"))));
+
+
+
 ALTER TABLE "public"."week_stats" ENABLE ROW LEVEL SECURITY;
 
 
@@ -24963,6 +25519,21 @@ GRANT ALL ON FUNCTION "public"."_time_change_line"("_old_start" timestamp with t
 
 REVOKE ALL ON FUNCTION "public"."_validate_alternative_payload"("p_request_id" "uuid", "p_payload" "jsonb") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_validate_alternative_payload"("p_request_id" "uuid", "p_payload" "jsonb") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_wcs_capture"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_wcs_capture"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_wcs_flush"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_wcs_flush"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_wcs_note"("p_kind" "text", "p_department_id" "uuid", "p_week_start" "date", "p_public" boolean) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_wcs_note"("p_kind" "text", "p_department_id" "uuid", "p_week_start" "date", "p_public" boolean) TO "service_role";
 
 
 
@@ -26892,6 +27463,12 @@ GRANT ALL ON FUNCTION "public"."week_board_rides"("p_department_id" "uuid", "p_w
 
 
 
+REVOKE ALL ON FUNCTION "public"."week_change_seqs"("p_department_id" "uuid", "p_weeks" "date"[]) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."week_change_seqs"("p_department_id" "uuid", "p_weeks" "date"[]) TO "service_role";
+GRANT ALL ON FUNCTION "public"."week_change_seqs"("p_department_id" "uuid", "p_weeks" "date"[]) TO "authenticated";
+
+
+
 GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE "public"."department_settings" TO "authenticated";
 GRANT ALL ON TABLE "public"."department_settings" TO "service_role";
 
@@ -27037,6 +27614,11 @@ GRANT ALL ON TABLE "public"."client_errors" TO "service_role";
 GRANT ALL ON SEQUENCE "public"."client_errors_id_seq" TO "anon";
 GRANT ALL ON SEQUENCE "public"."client_errors_id_seq" TO "authenticated";
 GRANT ALL ON SEQUENCE "public"."client_errors_id_seq" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."department_change_seq" TO "service_role";
+GRANT SELECT ON TABLE "public"."department_change_seq" TO "authenticated";
 
 
 
@@ -27334,6 +27916,15 @@ GRANT ALL ON TABLE "public"."waitlist_group_members" TO "service_role";
 
 GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE "public"."waitlist_groups" TO "authenticated";
 GRANT ALL ON TABLE "public"."waitlist_groups" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."week_change_pending" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."week_change_seq" TO "service_role";
+GRANT SELECT ON TABLE "public"."week_change_seq" TO "authenticated";
 
 
 

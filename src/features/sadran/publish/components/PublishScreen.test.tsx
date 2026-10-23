@@ -18,6 +18,7 @@ vi.mock("../../hooks", () => ({
   usePublishSiddurMutation: () => ({ mutateAsync: mocks.publish, isPending: false }),
 }));
 vi.mock("@/features/siddur/components/RideChangeAnswers", () => ({ RideChangeAnswers: () => null }));
+vi.mock("@/features/liveSync/useWeekChangeWatch", () => ({ useWeekChangeWatch: () => undefined }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn() } }));
 
 const departmentId = "department";

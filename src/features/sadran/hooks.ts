@@ -612,7 +612,7 @@ export function usePublicationReadiness(departmentId: string, weekStart: string)
     queryFn: () => api.fetchPublicationReadiness(departmentId, weekStart),
     enabled: !!departmentId && !!weekStart,
     staleTime: 5_000,
-    refetchInterval: 15_000,
+    // No timer (REQ item 149): the publish screen watches the week's Sadran counter and refreshes readiness on any change.
   });
 }
 

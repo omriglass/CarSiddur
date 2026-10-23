@@ -610,6 +610,35 @@ export type Database = {
           },
         ]
       }
+      department_change_seq: {
+        Row: {
+          created_at: string
+          department_id: string
+          seq: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          department_id: string
+          seq?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          department_id?: string
+          seq?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "department_change_seq_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: true
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       department_members: {
         Row: {
           added_by: string | null
@@ -3929,6 +3958,56 @@ export type Database = {
           },
         ]
       }
+      week_change_pending: {
+        Row: {
+          created_at: string
+          id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+        }
+        Relationships: []
+      }
+      week_change_seq: {
+        Row: {
+          created_at: string
+          department_id: string
+          public_seq: number
+          seq: number
+          updated_at: string
+          week_start: string
+        }
+        Insert: {
+          created_at?: string
+          department_id: string
+          public_seq?: number
+          seq?: number
+          updated_at?: string
+          week_start: string
+        }
+        Update: {
+          created_at?: string
+          department_id?: string
+          public_seq?: number
+          seq?: number
+          updated_at?: string
+          week_start?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "week_change_seq_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       week_stats: {
         Row: {
           active_hours: number
@@ -4874,6 +4953,15 @@ export type Database = {
       _validate_alternative_payload: {
         Args: { p_payload: Json; p_request_id: string }
         Returns: Json
+      }
+      _wcs_note: {
+        Args: {
+          p_department_id: string
+          p_kind: string
+          p_public: boolean
+          p_week_start: string
+        }
+        Returns: undefined
       }
       _window_text: { Args: { _dep: string; _ret: string }; Returns: string }
       add_ride_passengers: {
@@ -6196,6 +6284,15 @@ export type Database = {
           isOneToOne: false
           isSetofReturn: true
         }
+      }
+      week_change_seqs: {
+        Args: { p_department_id: string; p_weeks: string[] }
+        Returns: {
+          dept_seq: number
+          public_seq: number
+          seq: number
+          week_start: string
+        }[]
       }
       week_phase_timestamps: {
         Args: {

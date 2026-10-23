@@ -117,7 +117,11 @@ export function useJoinOtherRideMutation() {
   });
 }
 
-/** Pending ride-change polling interval; ride changes also refresh through every ride/request mutation. */
+/**
+ * Pending ride-change polling interval, for the unscoped Inbox list only. Week-scoped screens (siddur, board,
+ * /my, publish) have no timer: their week change watch refreshes ride changes (REQ item 149), and every
+ * ride/request mutation refreshes them too.
+ */
 export const RIDE_CHANGES_POLL_MS = 60_000;
 
 interface RideChangesOptions {
@@ -136,7 +140,7 @@ export function useRideChanges(departmentId?: string, weekStart?: string, option
     queryKey: ridesKeys.rideChanges(session?.user.id, departmentId, weekStart, options.fromWeek),
     queryFn: () => fetchRideChanges(departmentId, weekStart, options.fromWeek),
     enabled: !!session && ready && (options.enabled ?? true),
-    refetchInterval: RIDE_CHANGES_POLL_MS,
+    refetchInterval: options.scoped ? false : RIDE_CHANGES_POLL_MS,
   });
 }
 

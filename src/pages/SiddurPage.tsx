@@ -1,4 +1,5 @@
 import { useMaintenanceGridEditing } from "@/features/fleet/useMaintenanceGridEditing";
+import { useWeekChangeWatch } from "@/features/liveSync/useWeekChangeWatch";
 import { useProfile } from "@/features/auth/useProfile";
 import { useActiveDepartment } from "@/features/auth/useActiveDepartment";
 import { parseTimeToMinutes } from "@/features/solverBridge/buildSolverInput";
@@ -187,6 +188,8 @@ export function SiddurPage() {
   const dayEndMinutes = 24 * 60;
 
   const isMyDepartment = (myDepartmentsQuery.data ?? []).some((d) => d.department_id === departmentId);
+  // REQ item 149: show other people's changes to this week without a reload (Sadran: every change; members: what they can see).
+  useWeekChangeWatch(departmentId, weekStart ? [weekStart] : [], isSadran ? "sadran" : "public", { realtime: isMyDepartment || isSadran });
   const homeDestinationId = (departmentsQuery.data ?? []).find((d) => d.id === departmentId)?.home_destination_id ?? null;
 
   const rides = boardRidesQuery.data ?? [];

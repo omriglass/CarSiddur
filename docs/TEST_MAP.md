@@ -614,6 +614,24 @@ migrations matching `*maintenance*`; `supabase/tests/scheduled_maintenance.sql`;
 
 **REQ**: §13.35, §13.36, §13.37.
 
+### live-sync — Live updates: change counters, version check, Realtime
+
+**Paths**: `src/features/liveSync/**` (`watcher.ts` state machine, `invalidation.ts` lean key set, `useWeekChangeWatch.ts`, `api.ts`, `realtime.ts`), migrations matching `*week_change*`, `supabase/tests/week_change_seq.sql`, `e2e/live-sync.spec.ts`, the screens that mount the watch (`SiddurPage.tsx`, `HomePage.tsx`, `BoardScreen.tsx`, `PublishScreen.tsx`), `supabase/config.toml` (`[realtime]`).
+
+**Automated**:
+- Vitest: `src/features/liveSync` — timings with fake timers (60 s live / 15 s without, 30 s hidden disconnect, immediate check on visible/online, 500 ms broadcast debounce, 0–3 s member jitter, backoff + one refusal report) and the exact lean key set per scope.
+- SQL: `week_change_seq.sql` — one bump per transaction (90 statements; one statement over 90 rows; a real `publish_siddur`), unpublished day / draft ride → `seq` only, published day / flush / phase change → `public_seq`, catalogs → department counter, rolled-back subtransaction → nothing, RLS and grants on the counters, and (D2) the Realtime messages and `realtime.messages` authorization.
+- Playwright: `@live-sync` (`e2e/live-sync.spec.ts`).
+
+**QA script**:
+1. Two devices: the Sadran changes a ride on a published day; the member's open siddur and "my rides" show it within a few seconds, without reload.
+2. Two Sadran tabs on one board: a change in one appears in the other.
+3. A change on an unpublished day does not refresh members' screens; publishing that day does.
+4. Block the websocket (devtools → network → block `/realtime/`): changes still appear within ~15 s.
+5. Leave a tab in the background for more than 30 s, change something elsewhere, bring the tab back: it catches up at once.
+
+**REQ**: item 149.
+
 ### rls-security — RLS / security
 
 **Paths**: `src/integrations/supabase/types.ts`, `src/lib/rpc.ts`, `src/lib/enums.ts`(+test), `scripts/test-db.mjs`; migrations matching `*rls*`, `*helpers*`, `*secure*`, `*grant*`, `*protect*`, `*guard*`,

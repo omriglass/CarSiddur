@@ -1124,6 +1124,35 @@ Insert-only for `authenticated` (rate-limited to 20 rows per profile per hour by
 
 ---
 
+### 3.13 Change counters and live updates (REQ item 149, `20261028130000`)
+
+Open screens learn that someone else changed a week by reading a counter, not by re-fetching lists on a timer (ARCHITECTURE §12.1).
+
+- **`week_change_seq`** `(department_id, week_start)` pk, `seq bigint`, `public_seq bigint`, `created_at`, `updated_at`. `seq` moves on **any** change of the week (Sadran screens watch it); `public_seq` only on a change members can see. Not audited, no `bump_version` — deliberately **not** columns on `weeks` (its version/audit triggers would move `expected_version` under the Sadran, and every writer of the week would hold its row lock).
+- **`department_change_seq`** `department_id` pk, `seq`: catalog changes of the department (`cars`, `car_maintenance_blocks`, `department_settings`, `department_members`, `policies`, `policy_versions`).
+- **`week_change_pending`** `id`, `created_at`: one transient row per writing transaction (see below); no policies, no grants.
+
+**Who moves what.** `AFTER … FOR EACH STATEMENT` triggers with transition tables (`wcs_ins` / `wcs_upd` / `wcs_del`; a trigger with transition tables takes one event) call **`_wcs_capture()`** on `rides`, `ride_requests`, `requests`, `request_companions`, `request_children`, `request_stops`, `request_alternatives`, `ride_passengers`, `proposals`, `proposal_parties`, `ride_change_requests`, `waitlist_groups`, `freed_slot_offers`, `freed_slot_claims`, `held_notices`, `weeks`, `siddur_versions` (week counter) and the catalog tables above (department counter). Per statement, one set-based query derives `(department, week, member-visible?)` from the changed rows (old and new); tables without `department_id`/`week_start` are joined to their ride / request / proposal / offer. Member-visible (`public_seq`) means:
+
+| Change | `public_seq`? |
+|---|---|
+| a ride (not `draft`) / its `ride_requests` / `ride_passengers` on a day `is_day_public()` | yes |
+| a request (or its companions, children, stops, plan B) whose departure or return day is public | yes |
+| a `ride_change_requests`, `freed_slot_offers` (+ claims), `waitlist_groups` row on a public day | yes |
+| a proposal / proposal party whose proposal is not `draft` (sent proposals reach members on any day) | yes |
+| `held_notices` delete (`flush_held_notices`, a dropped notice) | yes — holding one (insert/update) is Sadran-only |
+| `weeks` insert/delete, or an update of `phase`, `published_days`, `open_at`, `close_at`, `publish_at`, `published_version_id` | yes — other `weeks` updates (reminder stamps, version) are Sadran-only |
+| `siddur_versions` insert (publish) | yes |
+| anything on an unpublished day, a `draft` ride, a draft proposal | no (`seq` only) |
+
+Rows whose parent is already gone (a cascade) count as Sadran-only; the parent's own trigger covers members.
+
+**Once per transaction, at commit.** `_wcs_capture()` only notes keys in a transaction-local setting (`app.wcs_state`, `{"w|<dept>|<week>": 0|1, "d|<dept>|": 0}`) through **`_wcs_note()`**; the first note inserts one `week_change_pending` row whose `DEFERRABLE INITIALLY DEFERRED` constraint trigger `week_change_pending_flush` runs **`_wcs_flush()`** at commit: it upserts each noted counter **once** (`seq + 1`, `public_seq + 1` when member-visible; keys in a fixed order so two committers cannot deadlock), deletes the pending row and clears the state (a later deferred write re-registers). So a solve or a publish touching 90 rows is one bump, and the counter rows are locked only for the instant of the commit — writers of the same week never wait on each other during their transactions. A rolled-back (sub)transaction rolls back its notes with its rows. A flush error is a `WARNING`, never a failed write. All three functions are `SECURITY DEFINER`, executable by nobody (triggers only).
+
+**`week_change_seqs(p_department_id uuid, p_weeks date[]) returns table(week_start, seq, public_seq, dept_seq)`** — the browser's version check: one row per asked week (zeros when no counter row exists or RLS hides it). `SECURITY INVOKER`, `grant execute … to authenticated` only.
+
+**RLS.** Enabled + forced on all three. `week_change_seq_select`: `member_of(department_id) or is_admin() or (is_approved() and is_week_public(department_id, week_start))` (same reach as `weeks_select` — counters carry no row data); `department_change_seq_select`: `member_of(department_id) or is_admin()`. No write policies and no write grants: only `_wcs_flush()` writes. Suite: `supabase/tests/week_change_seq.sql`.
+
 ## 4. Row-level security
 
 ### 4.1 Principles
@@ -1340,6 +1369,9 @@ Legend: **own** = row's profile column = `auth.uid()`; **dept** = `member_of(dep
 | push_subscriptions | own | own | own | own; svc (`push-dispatch` on 404/410) |
 | client_errors | admin | own (`profile_id = auth.uid()` or null), rate-limited | — | svc (`housekeeping()`) |
 | audit_log | admin (all); sadran: rows with their dept ∧ week; member: `subject_profile_id = auth.uid()` | triggers (definer) | — | svc (retention) |
+| week_change_seq | `member_of` ∨ admin ∨ (approved ∧ `is_week_public`) | `_wcs_flush()` (definer, at commit) only | same | — |
+| department_change_seq | `member_of` ∨ admin | `_wcs_flush()` only | same | — |
+| week_change_pending | — | `_wcs_note()` (definer) only | — | `_wcs_flush()` |
 
 Service role bypasses RLS and is used only for: the `push-dispatch` edge function (reads `push_outbox`, updates status, deletes dead subscriptions), the `answer-proposal` and `on-ride-cancelled` edge functions (call exactly the RPCs listed above), the `app.tick()` sub-functions via pg_cron (these run as the function owner anyway), and the `auth.users` trigger.
 
