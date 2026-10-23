@@ -102,7 +102,9 @@ async function whatsappToken(page: Page): Promise<string> {
   return token!;
 }
 
-test("board proposal action shows the sent proposal and explicitly replaces it with a valid new token", async ({ browser }) => {
+// R13B22: since the unplaced-card redesign (owner 2026-10-16) a request with a sent proposal shows "הצעה בחוץ" and its ⋮
+// menu has no "other times": the Sadran withdraws the sent proposal from its sheet, then proposes again with a new token.
+test("a sent proposal shows on the unplaced card; withdrawing it and proposing again gives a valid new token", async ({ browser }) => {
   const fixture = await proposalFixture("2043-01-04", "E2E explicit proposal replacement");
   const admin = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { persistSession: false } });
   const contexts: { close: () => Promise<void> }[] = [];
@@ -119,22 +121,29 @@ test("board proposal action shows the sent proposal and explicitly replaces it w
     const page = coordinator.page;
     const errors: string[] = [];
     page.on("response", (response) => { if (response.url().includes("/rest/v1/rpc/") && response.status() >= 400) errors.push(`${response.status()} ${response.url()}`); });
-    await composeFromBoard(page, fixture.baseUrl, fixture.request.id);
-    await expect(page.getByText(he.sadranProposal.pendingProposalNote)).toBeVisible();
-    await page.getByRole("button", { name: he.sadranProposal.viewPendingProposal, exact: true }).click();
-    await expect(page.getByText(he.sadranProposal.pushNote)).toBeVisible();
-    expect((await fixture.service.from("proposals").select("id").eq("request_id", fixture.request.id)).data).toHaveLength(1);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(`${fixture.baseUrl}/board`);
+    const card = page.locator(`[data-request-id="${fixture.request.id}"]`).first();
+    await expect(card.getByTestId("unmet-proposal-out")).toBeVisible();
+    await card.getByTestId("unmet-menu").click();
+    await expect(page.getByTestId("unmet-edit")).toBeVisible();
+    await expect(page.getByTestId("unmet-shift")).toHaveCount(0);
+    await page.keyboard.press("Escape");
+
+    await card.getByTestId("unmet-withdraw").click();
+    await page.getByTestId("proposal-withdraw").click();
+    await page.getByRole("dialog").filter({ hasText: he.boardDrafts.withdrawConfirmTitle })
+      .getByRole("button", { name: he.boardDrafts.withdraw, exact: true }).click();
+    await expect.poll(async () => (await fixture.service.from("proposals").select("status").eq("id", oldId).single()).data?.status).toBe("withdrawn");
 
     await composeFromBoard(page, fixture.baseUrl, fixture.request.id);
-    await page.setViewportSize({ width: 390, height: 844 });
-    await page.getByRole("button", { name: he.sadranProposal.replaceAndSend, exact: true }).click();
+    await page.getByRole("button", { name: he.action.propose, exact: true }).click();
     await expect(page).toHaveURL(`${fixture.baseUrl}/board`);
     await page.getByRole("button", { name: he.sadranProposal.openSentProposal, exact: true }).click();
     await expect(page.getByText(he.sadranProposal.pushNote)).toBeVisible();
     const { data: proposals, error: readError } = await fixture.service.from("proposals").select("id,status").eq("request_id", fixture.request.id);
     if (readError) throw readError;
     expect(proposals).toHaveLength(2);
-    expect(proposals!.find((proposal) => proposal.id === oldId)?.status).toBe("expired");
     expect(proposals!.filter((proposal) => proposal.status === "sent")).toHaveLength(1);
     const token = await whatsappToken(page);
     expect(token).not.toBe(oldSent.party_tokens[fixture.memberId]);
@@ -146,7 +155,6 @@ test("board proposal action shows the sent proposal and explicitly replaces it w
     await recipient.goto(`/p/${token}`);
     await expect(recipient.getByRole("button", { name: he.action.acceptProposal, exact: true })).toBeVisible();
     await recipient.goto(`/p/${oldSent.party_tokens[fixture.memberId]}`);
-    await expect(recipient.getByText(he.proposalScreen.alreadyAnsweredBy)).toBeVisible();
     await expect(recipient.getByRole("button", { name: he.action.acceptProposal, exact: true })).toHaveCount(0);
   } finally {
     for (const context of contexts) await context.close().catch(() => undefined);

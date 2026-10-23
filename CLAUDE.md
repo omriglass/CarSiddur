@@ -187,7 +187,7 @@ e2e/
   plan-b-cycle.spec.ts           plan B end to end (serial): unmet card "תוכנית ב׳ אפשרית" → alternative proposal → publish blocked → `/p/<token>` accept → "שובצת בתוכנית ב׳" → removal also removes the pickup request (REQ §13.112)
   plan-b-form.spec.ts            plan B on the sentence form (other pickup place, "אסתדר", switch to הקפצה uses/restores it or asks) and the classic "+ תוכנית ב׳" section
   proposal.spec.ts               proposal round trip
-  proposal-retry.spec.ts         resend/replace a sent proposal's token; retry a failed send
+  proposal-retry.spec.ts         a sent proposal on the unplaced card: withdraw + propose again with a new token; retry a failed send
   quick-one-way.spec.ts          quick round-trip/one-way metadata persists on reopen/save
   quick-request.spec.ts          quick request from an empty slot (live week)
   repeating-requests.spec.ts     repeat-weekly template: suggestion card, snooze, use, stop repeating

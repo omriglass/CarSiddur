@@ -75,8 +75,8 @@ test.describe("multi-stop rides", { tag: ["@request-form", "@board"] }, () => {
         .filter({ hasText: SEEDED_USERS.member1.fullName })
         .filter({ hasText: HAIFA });
       await expect(unmetCard).toHaveCount(1);
-      // The stops by name, not a count (owner 2026-10-05).
-      await expect(unmetCard.getByText(tv("route.viaStops", { stops: BINYAMINA }), { exact: false })).toBeVisible();
+      // The stops by name, not a count (owner 2026-10-05); the redesigned card (2026-10-16) reads "דרך בנימינה לחיפה".
+      await expect(unmetCard.getByText(tv("route.toVia", { stops: BINYAMINA, destination: HAIFA }), { exact: false })).toBeVisible();
     } finally {
       await context.close();
     }
