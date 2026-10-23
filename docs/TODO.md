@@ -1024,6 +1024,62 @@ Held up: per-day autofill incl. series, publish picker (unsolved days not pre-ti
 ### Additional
 - **R12F1** Warn when filing a request that overlaps one's own driving/passenger slot.
 
+## QA run 13 findings (2026-10-23, seed 8722, week 25–31.10 = the autumn clock change, department `qa-s8722`; QA Sadran = Opus, **Sunday, Wednesday, Friday via UI**; QA user = Sonnet; emphasis: multi-day requests + the 2026-10-22 batch — REQ §13.140–§13.142, ride popup, notes, closing time) — **awaiting owner triage**
+
+Whole-week autofill in the clock-change week now runs (89 rides, all 7 multi-day series placed). Week published and run live. [T] = about the 2026-10-22 batch.
+
+**Bugs**
+- **R13B1 [T] — The Sadran board draws Sunday 25.10 an hour late** (blocks, labels, popup; a drop at the 08:15 line places 08:30, toast 08:30, block 09:30). The member siddur is right. Same root as the e2e `board.spec` reservation-resize failure (00:30 preview 02:45). Board geometry still does minutes-from-midnight on the 25-hour day. **Pilot week — fix first.**
+- **R13B2 [T] — The edit form moves a multi-day request's last-day return with the first-day departure** (anchor sync shifts both chips): Yonatan 2da21316 14:15→17:00 also moved Sat's return 20:45→23:30.
+- **R13B3 [T] — Editing a placed multi-day request on a published/live week is impossible from /my:** `canEditRequest` (`features/requests/window.ts`) still excludes series on a published-day window (its comment says series are never editable). The release question on published days is therefore unreachable from the UI.
+- **R13B4 [T] — Spurious overlap prompt when the first day of a series moves later:** the overlap check counts the series' own old days (m07, m18). "השאר/י את שתיהן" saves correctly.
+- **R13B5 [T] — An open-week series edit drops the Sadran's draft placement** even when the same car is still free (Nir; Omer extended 3→4 days and lost all 3); no notice to the Sadran. (Spec re-places only on published weeks.)
+- **R13B6 — An accepted series-start shift (SUGGEST_SERIES_SPAN_START) places only day 1**; the other days stay waitlisted and the request's departure is not updated (a59fd797).
+- **R13B7 — `place` on one leg of a series answers the old `series_edit_not_supported` "אפשר לבטל ולהגיש מחדש, לא לערוך"** (wording outdated since REQ §13.142; the board should place the whole series).
+- **R13B8 — `shorten_series` / "קיצור" fails with a misleading `series_span_invalid` when the series has no ride** (migration `20261009200200`: raises when `v_car` is null); "קיצור" is offered on unplaced series.
+- **R13B9 — Merging a הקפצה pickup leg into a ride that already passes the place is refused** `ride_wrong_day` (Hila Azulai 03133f33 return leg onto van ride a347d588 06:15–17:15 via חריש) — CLI and UI; leg stays uncovered.
+- **R13B10 — Publishing expired 3 origin proposals that its own dialog listed as "will not be cancelled"**; the waiting proposals show "· עד" with no date.
+- **R13B11 — A shift proposal with `--depart` and `--return` on a two-leg הקפצה kept the old return** (Tamar Dahan cb319b8e): on accept only the out-leg is placed, request stays waitlisted.
+- **R13B12 — When a host cancels, the guest's ride keeps the host's window** (Ido Chayun Wed 09:45–11:45 vs request 10:00–13:00; Hila Oren Thu).
+- **R13B13 — A driver cancel leaves passengers "waitlisted(UNMET_NEEDS_DRIVER)" on a flagged ride;** a passenger who then cancels is still listed (bc16ae41) and the other passenger's notice names the wrong person (m18 told "נטע טל לא נוסע/ת איתך" though m09 cancelled).
+- **R13B14 — An accepted origin proposal creates a `confirmed` ride on an unpublished day** (others there are `draft`).
+- **R13B15 — The Sadran's own series edit raises a `late_request` notice to the Sadran.**
+- **R13B16 — A 45-minute round trip גבעת חביבה→תל אביב was accepted** and autofill would place it — no duration vs travel-time check.
+- **R13B17 — Misleading unmet reasons:** "אין רכב פנוי שנמצא בחדרה" when the blocker was large luggage (eededfba, the Yaris idle all day); "…בגבעת חביבה" when it was 2 child seats.
+- **R13B18 — `merge --leg out` accepted for a pickup-only request** (bc16ae41 after its out-leg was cancelled).
+- **R13B19 — A member's CLI edit of a merged request returned the generic `constraint_violation`** (m18 17674ae2); a live-week edit by m21 (d0289c88 07:00→07:30) reported "edited" but nothing changed and no notice.
+- **R13B20 — Generator filing failures:** 5 × `fallback_not_allowed` (plan B on kids/drop-off plans), 1 × `origin_equals_destination` — generator, not app.
+- **R13B21 [T] — QA tooling:** `uiSession.selectDay` and `qa:ui shot --day` no longer find the day chips (they show dates now).
+- **R13B22 — e2e drift since 2026-10-16 (unplaced-card redesign):** `proposal-retry.spec.ts:105` expects "unmet-shift" in the ⋮ menu while a proposal is out (hidden by `!proposalOut`); `multi-stop.spec.ts:79` expects "דרך: בנימינה" but the card shows "דרך בנימינה לחיפה".
+
+**UI changes**
+- R13U1 [T] — The ride popup works on the board and the grid views; on the phone siddur day list and /my list a tap opens the sheet directly (list views have no popup — decide). On desktop the popup can cover the car header and legend.
+- R13U2 [T] — The closing-time dialog cannot show a current close_at outside its day range (the generated week's 25.10 23:37 after week start); "later than publish" untested (this week's publish_at is after the week start).
+- R13U3 — Publish summary says both "131 בקשות ללא שינוי לא יקבלו הודעה" and "מי יקבל/תקבל הודעה (131)".
+- R13U4 — "דיברת עם X?" for "הצע" does not say where/which car; the card offers a far origin (תל אביב) to a זכרון יעקב resident.
+- R13U5 — Composer WhatsApp text starts with a "נסיעה משולבת:" line before "היי …".
+- R13U6 — Ride sheet tells a dropped-off passenger "הרכב נשאר איתי ביעד".
+- R13U7 — `window_changed` copy uses "25/10/26" instead of "א׳ 25.10".
+- R13U8 — Origin-proposal copy: body "מחיפה לגבעת חביבה · … · במקום מחיפה" never names the new origin (חדרה); `qa:member proposals` prints empty text for it.
+- R13U9 — 5 separate "ההצעה שקיבלת פגה" notices at publish to one member — a digest.
+- R13U10 [T] — The multi-day date picker's return grid shows two weeks with no marker of the first day; the /my week grid on a phone starts at 00:00.
+
+**Missing obvious features**
+- R13M1 — An origin proposal cannot carry a new time.
+- R13M2 — External/deny proposals are refused on published days (WhatsApp is the only path).
+- R13M3 — A Sadran edit should not count as "late" (see R13B15).
+- R13M4 — /my does not say a multi-day series is unplaced or why; only day 1 of a placed series shows ("יום 1/3").
+- R13M5 — A passenger whose driver cancelled has no "I can drive" / "find another ride" action.
+- R13M6 — A private-car owner told "place it ברכב שלי from הנסיעות שלי" finds no such action on /my rows in an open week.
+
+**Additional features**
+- R13F1 — Suggest a member's own private car (or its owner as driver) for out-of-town members.
+- R13F2 — Show a person's other rides when assigning a driver (Amit Dahan's pickup clashed).
+- R13F3 — Character count/limit for "מידע נוסף לכולם".
+- R13F4 — In a multi-day edit, preview which old days are released / which car is kept.
+
+**Not tested:** car-now (the QA week is not the current week), Google calendar (no client id), car with no code (no admin pass), finger-drag closing the popup (desktop only).
+
 ## Owner hands-on testing (2026-10-06) — bugs to fix
 - **OB1 — A multi-day request cannot be placed by hand on the board.** Dropping its card on a car fails with "בקשה רב-יומית — אפשר לבטל ולהגיש מחדש, לא לערוך" (`series_edit_not_supported`, MDR02). The board's manual placement goes through `edit_ride`, which refuses any request with a `series_id` (the v1 rule "a series is cancelled and resubmitted, never edited", REQ §13.77) — but placing is not editing the request. Expected: dropping a series leg (or the series card) on a car places the **whole series** on that car for all its days (the same hold auto-fill makes, `place_series`), refused only when the car is not free on every day; moving a placed series to another car likewise moves all its days. The Sadran's other path today is "להציע פחות ימים" / auto-fill only. Seen on the showcase department (S19). **Fixed 2026-10-06:** `place_series_on_car(series, car)` (Sadran; private-car owner rule; refuses an already placed series) wraps `place_series`; the board drop of a multi-day card calls it ("הבקשה הרב-יומית שובצה ברכב הזה לכל ימיה"). Verified through the API (3 rides, all legs assigned; second placement and a member refused). Not covered: moving an already placed series to another car.
 
