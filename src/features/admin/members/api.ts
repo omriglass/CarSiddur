@@ -84,17 +84,6 @@ export async function updateChild(childId: string, departmentId: string, fullNam
   if (guardianError) throw toAppError(guardianError);
 }
 
-/** `phone` is column-privilege-revoked from `authenticated` (DATA_MODEL.md §4.2) — read it through `phone_of()`. */
-export async function fetchPhones(profileIds: string[]): Promise<Record<string, string | null>> {
-  const entries = await Promise.all(
-    profileIds.map(async (id) => {
-      const data = await rpc("phone_of", { _profile: id });
-      return [id, data] as const;
-    }),
-  );
-  return Object.fromEntries(entries);
-}
-
 export async function approveMember(profileId: string, departmentId: string): Promise<void> {
   await rpc("admin_approve_member", { p_profile_id: profileId, p_department_id: departmentId });
 }

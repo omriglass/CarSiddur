@@ -117,13 +117,24 @@ export function useJoinOtherRideMutation() {
   });
 }
 
-export function useRideChanges(departmentId?: string, weekStart?: string) {
+/** Pending ride-change polling interval; ride changes also refresh through every ride/request mutation. */
+export const RIDE_CHANGES_POLL_MS = 60_000;
+
+interface RideChangesOptions {
+  /** A week-scoped screen: wait for both ids instead of first fetching every department/week (the cold double fetch). */
+  scoped?: boolean;
+  /** Poll/fetch only while the result is shown or acted on (e.g. a ride sheet is open). */
+  enabled?: boolean;
+}
+
+export function useRideChanges(departmentId?: string, weekStart?: string, options: RideChangesOptions = {}) {
   const { session } = useSession();
+  const ready = !options.scoped || (!!departmentId && !!weekStart);
   return useQuery({
     queryKey: ridesKeys.rideChanges(session?.user.id, departmentId, weekStart),
     queryFn: () => fetchRideChanges(departmentId, weekStart),
-    enabled: !!session,
-    refetchInterval: 15_000,
+    enabled: !!session && ready && (options.enabled ?? true),
+    refetchInterval: RIDE_CHANGES_POLL_MS,
   });
 }
 

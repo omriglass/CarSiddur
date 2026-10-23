@@ -48,7 +48,6 @@ export function useCarsForDepartment(departmentId: string | undefined) {
     queryKey: sadranKeys.cars(departmentId ?? ""),
     queryFn: () => fetchCars(departmentId as string),
     enabled: !!departmentId,
-    staleTime: 60_000,
   });
 }
 
@@ -57,7 +56,6 @@ export function useDepartmentSettings(departmentId: string | undefined) {
     queryKey: sadranKeys.departmentSettings(departmentId ?? ""),
     queryFn: () => api.fetchDepartmentSettings(departmentId as string),
     enabled: !!departmentId,
-    staleTime: 60_000,
   });
 }
 
@@ -111,13 +109,24 @@ export function useMaintenanceBlocks(departmentId: string | undefined) {
   });
 }
 
+/**
+ * The active policy is one entry of the department's policy list: derived from the same query
+ * as `usePolicyOptions` (one request, not two selects over `policies`). The list's key is nested
+ * under `sadranKeys.activePolicy`, so invalidating the active policy refreshes both.
+ */
 export function useActivePolicy(departmentId: string | undefined) {
   return useQuery({
-    queryKey: sadranKeys.activePolicy(departmentId ?? ""),
-    queryFn: () => api.fetchActivePolicy(departmentId as string),
+    queryKey: sadranKeys.policyOptions(departmentId ?? ""),
+    queryFn: () => api.fetchPolicyOptions(departmentId as string),
     enabled: !!departmentId,
-    staleTime: 60_000,
+    select: activePolicyOf,
   });
+}
+
+export function activePolicyOf(options: api.PolicyOption[]): api.ActivePolicy | null {
+  const active = options.find((option) => option.isActive);
+  if (!active) return null;
+  return { policyId: active.policyId, name: active.name, policyVersionId: active.policyVersionId, versionNo: active.versionNo, rules: active.rules, settings: active.settings };
 }
 
 export function usePolicyOptions(departmentId: string | undefined) {
@@ -125,7 +134,6 @@ export function usePolicyOptions(departmentId: string | undefined) {
     queryKey: sadranKeys.policyOptions(departmentId ?? ""),
     queryFn: () => api.fetchPolicyOptions(departmentId as string),
     enabled: !!departmentId,
-    staleTime: 60_000,
   });
 }
 

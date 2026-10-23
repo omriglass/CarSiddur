@@ -42,7 +42,7 @@ async function invalidateCarQueries(queryClient: QueryClient) {
 
 export function useCarsAdmin() {
   const { departmentId } = useActiveDepartment();
-  return useQuery({ queryKey: [...carAdminKeys.list(), departmentId], queryFn: async () => (await fetchCarsAll()).filter((row) => row.department_id === departmentId), staleTime: 60_000 });
+  return useQuery({ queryKey: [...carAdminKeys.list(), departmentId], queryFn: async () => (departmentId ? fetchCarsAll(departmentId) : []), staleTime: 60_000 });
 }
 
 export function useSeatConfigs(carId: string | undefined) {
@@ -80,17 +80,23 @@ export function useReplaceSeatConfigsMutation() {
 
 export function useMaintenanceBlocks() {
   const { departmentId } = useActiveDepartment();
-  return useQuery({ queryKey: [...carAdminKeys.maintenance(), departmentId], queryFn: async () => (await fetchMaintenanceBlocks()).filter((row) => row.department_id === departmentId), staleTime: 30_000 });
+  // One cached read of every operational department's periods (`useAllMaintenanceBlocks`), filtered here.
+  return useQuery({
+    queryKey: [...carAdminKeys.maintenance(), "all"],
+    queryFn: () => fetchMaintenanceBlocks(),
+    select: (rows) => rows.filter((row) => row.department_id === departmentId),
+    staleTime: 30_000,
+  });
 }
 
 /** Every operational department's periods (the cars list shows each car's next one, REQ §13.114). */
 export function useAllMaintenanceBlocks() {
-  return useQuery({ queryKey: [...carAdminKeys.maintenance(), "all"], queryFn: fetchMaintenanceBlocks, staleTime: 30_000 });
+  return useQuery({ queryKey: [...carAdminKeys.maintenance(), "all"], queryFn: () => fetchMaintenanceBlocks(), staleTime: 30_000 });
 }
 
 export function useCarIssues() {
   const { departmentId } = useActiveDepartment();
-  return useQuery({ queryKey: [...carAdminKeys.issues(), departmentId], queryFn: async () => (await fetchCarIssues()).filter((row) => row.department_id === departmentId), staleTime: 30_000 });
+  return useQuery({ queryKey: [...carAdminKeys.issues(), departmentId], queryFn: async () => (departmentId ? fetchCarIssues(departmentId) : []), staleTime: 30_000 });
 }
 
 export function useResolveCarIssueMutation() {

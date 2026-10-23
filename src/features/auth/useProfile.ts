@@ -18,7 +18,6 @@ export function useProfile(options: UseProfileOptions = {}) {
     queryKey: authKeys.profile(profileId),
     queryFn: () => fetchProfile(profileId as string),
     enabled: !!profileId,
-    staleTime: 60_000,
     refetchInterval: options.refetchInterval,
   });
 }

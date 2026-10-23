@@ -1,5 +1,5 @@
 import { DirectionProvider } from "@radix-ui/react-direction";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { RouterProvider } from "react-router-dom";
@@ -13,6 +13,7 @@ import { errorToReport, reportClientError } from "@/features/diagnostics/reportC
 import { applyTheme, getStoredPreference } from "@/hooks/useTheme";
 import { he } from "@/i18n/he";
 import { captureInstallPrompt } from "@/lib/installPrompt";
+import { createQueryClient } from "@/lib/queryPolicy";
 import { AppError, showErrorToast } from "@/lib/rpc";
 
 import "@/index.css";
@@ -90,14 +91,7 @@ window.addEventListener("error", (event) => {
   );
 });
 
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      retry: 1,
-      staleTime: 30_000,
-    },
-  },
-});
+const queryClient = createQueryClient();
 
 const rootElement = document.getElementById("root");
 if (!rootElement) {

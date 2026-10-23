@@ -13,7 +13,6 @@ export function useMyDepartments() {
     queryKey: authKeys.myDepartments(profileId),
     queryFn: () => fetchMyDepartments(profileId as string),
     enabled: !!profileId,
-    staleTime: 5 * 60_000,
   });
 }
 

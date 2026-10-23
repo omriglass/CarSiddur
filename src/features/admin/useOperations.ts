@@ -1,5 +1,5 @@
 import { useActiveDepartment } from "@/features/auth/useActiveDepartment";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSession } from "@/features/auth/useSession";
 import { fetchCanManageOperations, fetchOperationalDepartments } from "./api";
 import { operationsKeys } from "./queryKeys";
@@ -12,7 +12,6 @@ export function useCanManageOperations(departmentOverride?: string) {
     queryKey: operationsKeys.access(session?.user.id, departmentId),
     queryFn: () => fetchCanManageOperations(departmentId),
     enabled: !!session && !!departmentId,
-    staleTime: 60_000,
   });
   return { ...query, isLoading: active.isLoading || query.isLoading };
 }
@@ -20,10 +19,14 @@ export function useCanManageOperations(departmentOverride?: string) {
 export function useOperationalDepartments() {
   const { departmentId } = useActiveDepartment();
   const { session } = useSession();
+  const queryClient = useQueryClient();
   return useQuery({
     queryKey: operationsKeys.departments(session?.user.id, departmentId),
-    queryFn: async () => (await fetchOperationalDepartments()).filter((department) => department.id === departmentId),
+    // Shares the `useCanManageOperations` cache entry instead of asking the server a second time.
+    queryFn: () => fetchOperationalDepartments(departmentId as string, () => queryClient.ensureQueryData({
+      queryKey: operationsKeys.access(session?.user.id, departmentId),
+      queryFn: () => fetchCanManageOperations(departmentId),
+    })),
     enabled: !!session && !!departmentId,
-    staleTime: 60_000,
   });
 }

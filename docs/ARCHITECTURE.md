@@ -509,6 +509,22 @@ Not part of the tick: `sadran_contact_of(department_id, week_start)` (§8) is a 
 - **Undo on the board** is client-side history of applied mutations replayed with version checks; it never bypasses RPC.
 - Errors are logged to Supabase logs; a small `client_errors` table receives uncaught front-end errors (rate-limited, RLS insert-only). Written since E1 (2026-10-07) by `reportClientError()` (`src/features/diagnostics/`) from the global `error`/`unhandledrejection` handlers, `ErrorScreen` and `toAppError` (unexpected `unknown`/`network` codes only, never expected business refusals); deduped per message for 60 s and capped at 20 reports per page session client-side, plus the 20/hour/profile DB trigger; URLs are sanitised (`/p/<token>` masked). Admins read the latest 200 at `/admin/errors` (UX_FLOWS §5.13). A lazy chunk that fails to load after a deploy (the Worker answers the old chunk's URL with `index.html`: "'text/html' is not a valid JavaScript MIME type") reloads the page once instead of showing the error screen — `vite:preloadError` in `src/main.tsx`, at most once a minute per tab (2026-10-13). An installed app left open in the background on an old build checks for a newer service worker when it returns to the foreground (at most every 5 minutes); once a new build has taken over, the page reloads the next time it is hidden, except on a form page (`/new`, `/edit`) (2026-10-15). The service worker serves page navigations network-first (precached `index.html` only offline), so a page from before a deploy is no longer served cache-first; and `public/boot-recover.js` (first script in `index.html`, plain JS, allowed by `script-src 'self'`) catches a failed load of the app's own `/assets/` scripts — the blank-page case, before `main.tsx` can run — and reloads once, then once more after emptying the caches (the service worker stays registered — unregistering it would cancel the device's push subscription; localStorage is never touched), then gives up (no loop) (Safari, 2026-10-16).
 
+### 12.1 Browser data caching and polling (2026-10-23, perf/redundant-calls)
+
+One policy in `src/lib/queryPolicy.ts` (installed by `createQueryClient()` in `main.tsx`), chosen per query-key family, so a hook does not set its own `staleTime` for these:
+
+| Family | Keys | Fresh for | Refetch on window focus |
+|---|---|---|---|
+| Identity, permissions, catalogs | `auth` (profile incl. phone, departments, isSadran, isSadranAnywhere, departmentMembers), `context`, `operations`, `fleet` (cars, destinations, rideTypes, seatConfigs), `sadran` cars/seatConfigs/destinations/rideTypes/settings/activePolicy (+ options)/whatsappTemplates/switchableWeeks | 10 min | no |
+| Week rows (`siddur`/`weeks`) | phase changes members wait for | 2 min | no |
+| Everything else (rides, board, requests, inbox, proposals) | | 30 s | yes |
+
+Edits still show at once for the person who made them: `invalidateQueries` ignores `staleTime`, and any successful mutation made on an `/admin/**` page invalidates all stable families (`MutationCache.onSuccess`). Other writers (the Sadran on the board, members' profile) already invalidate their own keys.
+
+Polling: pending ride changes (`useRideChanges`) every 60 s, and only on screens that show or act on them (week-scoped screens wait for department and week, so there is no unscoped first fetch; Home polls only while a ride sheet is open); unread-notification count 60 s; publication readiness 15 s (publish screen only). Idle screens otherwise make no requests.
+
+`ensure_department_weeks` (catch-up of week rows) runs at most once per department per session (30 min TTL for a long-lived PWA, cleared on sign-out — `features/siddur/ensureWeeksCache.ts`), not before every week read. The profile row and `phone_of` are fetched in parallel inside the cached profile query. The admin members list takes phones from the single `profile_phones` call in `fetchAllProfiles`. The active policy is derived from the policy-options query (one request), turnaround minutes from the department-settings query, and `useDepartments` shares `useActiveDepartment`'s department list.
+
 ---
 
 ## 13. Environment variables

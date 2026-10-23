@@ -32,7 +32,6 @@ import {
   useGrantAdminMutation,
   useImportAllowListMutation,
   useMemberInvites,
-  usePhones,
   useRejectMemberMutation,
   useRevokeAdminMutation,
   useSetMemberRoleMutation,
@@ -99,8 +98,6 @@ function MembersTab() {
   const [editing, setEditing] = useState<{ profileId: string; fullName: string; displayName: string; removedDepartmentIds: string[]; phone: string; departmentId?: string; doesNotDrive: boolean } | null>(null);
 
   const approvedProfiles = (profilesQuery.data ?? []).filter((p) => p.approval_status !== "pending");
-  const profileIds = approvedProfiles.map((p) => p.id);
-  const phonesQuery = usePhones(profileIds);
 
   const departmentsById = useMemo(
     () => new Map((departmentsQuery.data ?? []).map((d) => [d.id, d.name])),
@@ -152,11 +149,11 @@ function MembersTab() {
             <TableRow key={profile.id}>
               <TableCell>
                 <Button variant="link" className="h-auto p-0" onClick={() => setEditing({
-                  profileId: profile.id, fullName: profile.google_name, displayName: profile.display_name ?? "", removedDepartmentIds: [], phone: phonesQuery.data?.[profile.id] ?? "", doesNotDrive: profile.does_not_drive,
-                })} disabled={phonesQuery.isPending || phonesQuery.isError}>{profile.full_name}</Button>
+                  profileId: profile.id, fullName: profile.google_name, displayName: profile.display_name ?? "", removedDepartmentIds: [], phone: profile.phone ?? "", doesNotDrive: profile.does_not_drive,
+                })}>{profile.full_name}</Button>
               </TableCell>
               <TableCell dir="ltr">{profile.email}</TableCell>
-              <TableCell dir="ltr">{phonesQuery.data?.[profile.id] ?? "—"}</TableCell>
+              <TableCell dir="ltr">{profile.phone ?? "—"}</TableCell>
               <TableCell>
                 <div className="flex flex-wrap gap-1">
                   {memberships.map((m) => (

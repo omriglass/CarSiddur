@@ -108,7 +108,7 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
   const maintenanceQuery = useMaintenanceBlocks(departmentId);
   const requestsQuery = useWeekRequestsWithNames(departmentId, weekStart);
   const ridesQuery = useAllWeekRides(departmentId, weekStart);
-  const rideChangesQuery = useRideChanges(departmentId, weekStart);
+  const rideChangesQuery = useRideChanges(departmentId, weekStart, { scoped: true });
   const proposalsQuery = useProposalsForWeek(departmentId, weekStart);
   const waitlistGroupsQuery = useWaitlistGroupsQuery(departmentId, weekStart);
   const departmentSettingsQuery = useDepartmentSettings(departmentId);
@@ -118,7 +118,6 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
     queryKey: sadranKeys.seatConfigs(departmentId),
     queryFn: () => fetchCarSeatConfigs(departmentId),
     enabled: !!departmentId,
-    staleTime: 60_000,
   });
   // The solver preview (`computePreview` below) needs destinations too, but
   // the board itself never otherwise reads them — cached here (60s) rather

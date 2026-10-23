@@ -23,7 +23,6 @@ export function useIsSadran(
     queryKey: authKeys.isSadran(profileId, departmentId ?? "", weekStart ?? ""),
     queryFn: () => fetchCanManageWeek(departmentId as string, weekStart as string),
     enabled: !!profileId && !!departmentId && !!weekStart,
-    staleTime: 60_000,
   });
 
   return {
@@ -52,7 +51,6 @@ export function useIsSadranAnywhere(): IsSadranResult {
     // + permanent-operations-rights semantics, computed server-side.
     queryFn: () => fetchCanManageAnyOpenWeek(active.departmentId as string),
     enabled: !!profileId && departmentsQuery.isSuccess && !!active.departmentId,
-    staleTime: 60_000,
   });
 
   return {

@@ -34,15 +34,15 @@ const PROFILE_COLUMNS_WITHOUT_PHONE =
 type ProfileWithoutPhone = Omit<Profile, "phone">;
 
 export async function fetchProfile(profileId: string): Promise<Profile | null> {
-  const { data, error } = await supabase
-    .from("profiles")
-    .select(PROFILE_COLUMNS_WITHOUT_PHONE)
-    .eq("id", profileId)
-    .maybeSingle();
+  // The row and the phone are independent reads: run them in parallel (one round-trip of latency, not two).
+  const [{ data, error }, phoneResult] = await Promise.all([
+    supabase.from("profiles").select(PROFILE_COLUMNS_WITHOUT_PHONE).eq("id", profileId).maybeSingle(),
+    rpc("phone_of", { _profile: profileId }).then((phone) => ({ phone }), (phoneError: unknown) => ({ phoneError })),
+  ]);
   if (error) throw toAppError(error);
   if (!data) return null;
-  const phone = await rpc("phone_of", { _profile: profileId });
-  return { ...(data as ProfileWithoutPhone), phone };
+  if ("phoneError" in phoneResult) throw phoneResult.phoneError;
+  return { ...(data as ProfileWithoutPhone), phone: phoneResult.phone };
 }
 
 export async function updateProfile(profileId: string, patch: ProfilePatch): Promise<Profile> {

@@ -159,7 +159,7 @@ export function SiddurPage() {
   const carStartLocationsQuery = useCarStartLocations(departmentId, weekStart);
   const rideTypesQuery = useRideTypes(departmentId);
   const settingsQuery = useDepartmentSettings(departmentId);
-  const changesQuery = useRideChanges(departmentId, weekStart);
+  const changesQuery = useRideChanges(departmentId, weekStart, { scoped: true });
 
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [selectedRideId, setSelectedRideId] = useState<string | null>(null);

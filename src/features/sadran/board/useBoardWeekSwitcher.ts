@@ -41,7 +41,7 @@ export function useBoardWeekSwitcher(departmentId: string, weekStart: string) {
     if (!profileId) return false;
     return queryClient.fetchQuery({
       queryKey: authKeys.isSadran(profileId, department, week),
-      queryFn: () => fetchCanManageWeek(department, week), staleTime: 60_000,
+      queryFn: () => fetchCanManageWeek(department, week),
     });
   }
 
@@ -55,7 +55,6 @@ export function useBoardWeekSwitcher(departmentId: string, weekStart: string) {
       return weeks.filter((_, index) => allowed[index]);
     },
     enabled: !!profileId && weeksQuery.isSuccess,
-    staleTime: 60_000,
   });
 
   function goToWeek(nextWeekStart: string) {
@@ -67,7 +66,7 @@ export function useBoardWeekSwitcher(departmentId: string, weekStart: string) {
     setSwitching(true);
     try {
       const weeks = await queryClient.fetchQuery({
-        queryKey: siddurKeys.weeks(nextDepartment), queryFn: () => fetchWeeks(nextDepartment), staleTime: 60_000,
+        queryKey: siddurKeys.weeks(nextDepartment), queryFn: () => fetchWeeks(nextDepartment),
       });
       const today = dateKey(new Date());
       const candidates = weeks.filter((week) => !isPastWeek(week, today)).sort((a, b) =>

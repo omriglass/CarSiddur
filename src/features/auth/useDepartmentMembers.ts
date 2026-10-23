@@ -13,6 +13,5 @@ export function useDepartmentMembers(departmentId: string | undefined) {
     queryKey: authKeys.departmentMembers(departmentId),
     queryFn: () => fetchDepartmentMembers(departmentId as string, profileId as string),
     enabled: !!departmentId && !!profileId,
-    staleTime: 5 * 60_000,
   });
 }

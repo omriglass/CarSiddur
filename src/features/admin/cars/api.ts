@@ -44,10 +44,13 @@ export function flattenCarCodes<T extends { codes?: CarCodes | CarCodes[] | null
   } as Omit<T, "codes"> & CarCodes;
 }
 
-export async function fetchCarsAll(): Promise<Car[]> {
-  const { data, error } = await supabase.from("cars").select(CARS_WITH_CODES_SELECT).order("name", { ascending: true });
+/** `departmentId` limits the read (and the permission check) to one department; omitted = every department the caller manages. */
+export async function fetchCarsAll(departmentId?: string): Promise<Car[]> {
+  let query = supabase.from("cars").select(CARS_WITH_CODES_SELECT).order("name", { ascending: true });
+  if (departmentId) query = query.eq("department_id", departmentId);
+  const { data, error } = await query;
   if (error) throw toAppError(error);
-  const departmentIds = new Set((await fetchOperationalDepartments()).map((department) => department.id));
+  const departmentIds = new Set((await fetchOperationalDepartments(departmentId)).map((department) => department.id));
   return ((data ?? []) as unknown as (Database["public"]["Tables"]["cars"]["Row"] & { codes: CarCodes | CarCodes[] | null })[])
     .filter((row) => departmentIds.has(row.department_id))
     .map(flattenCarCodes);
@@ -118,20 +121,21 @@ export async function replaceSeatConfigs(carId: string, configs: Passengers[]): 
   if (ins.error) throw toAppError(ins.error);
 }
 
-export async function fetchMaintenanceBlocks(): Promise<MaintenanceBlock[]> {
-  const { data, error } = await supabase
-    .from("car_maintenance_blocks")
-    .select("*")
-    .order("starts_at", { ascending: false });
+export async function fetchMaintenanceBlocks(departmentId?: string): Promise<MaintenanceBlock[]> {
+  let query = supabase.from("car_maintenance_blocks").select("*").order("starts_at", { ascending: false });
+  if (departmentId) query = query.eq("department_id", departmentId);
+  const { data, error } = await query;
   if (error) throw toAppError(error);
-  const departmentIds = new Set((await fetchOperationalDepartments()).map((department) => department.id));
+  const departmentIds = new Set((await fetchOperationalDepartments(departmentId)).map((department) => department.id));
   return (data ?? []).filter((row) => departmentIds.has(row.department_id));
 }
 
-export async function fetchCarIssues(): Promise<CarIssue[]> {
-  const { data, error } = await supabase.from("car_issues").select("*").order("created_at", { ascending: false });
+export async function fetchCarIssues(departmentId?: string): Promise<CarIssue[]> {
+  let query = supabase.from("car_issues").select("*").order("created_at", { ascending: false });
+  if (departmentId) query = query.eq("department_id", departmentId);
+  const { data, error } = await query;
   if (error) throw toAppError(error);
-  const departmentIds = new Set((await fetchOperationalDepartments()).map((department) => department.id));
+  const departmentIds = new Set((await fetchOperationalDepartments(departmentId)).map((department) => department.id));
   return (data ?? []).filter((row) => departmentIds.has(row.department_id));
 }
 

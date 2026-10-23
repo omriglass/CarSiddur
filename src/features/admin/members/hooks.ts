@@ -9,7 +9,6 @@ import {
   fetchManagedChildren,
   createChild,
   updateChild,
-  fetchPhones,
   grantAdmin,
   importAllowList,
   rejectMember,
@@ -49,15 +48,6 @@ export function useCreateChildMutation() {
 export function useUpdateChildMutation() {
   const invalidate = useInvalidateMembers();
   return useMutation({ mutationFn: ({ childId, departmentId, fullName, birthYear, guardianIds }: { childId: string; departmentId: string; fullName: string; birthYear: number | null; guardianIds: string[] }) => updateChild(childId, departmentId, fullName, birthYear, guardianIds), onSuccess: invalidate });
-}
-
-export function usePhones(profileIds: string[]) {
-  return useQuery({
-    queryKey: memberAdminKeys.phones(profileIds),
-    queryFn: () => fetchPhones(profileIds),
-    enabled: profileIds.length > 0,
-    staleTime: 60_000,
-  });
 }
 
 function useInvalidateMembers() {

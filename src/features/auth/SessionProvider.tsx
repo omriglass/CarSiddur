@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { Session } from "@supabase/supabase-js";
 
+import { resetEnsuredWeeks } from "@/features/siddur/ensureWeeksCache";
 import { supabase } from "@/integrations/supabase/client";
 import { SessionContext, type SessionContextValue } from "./SessionContext";
 
@@ -28,6 +29,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       if (!isMounted) return;
+      if (!nextSession) resetEnsuredWeeks();
       setSession(nextSession);
       setIsLoading(false);
     });

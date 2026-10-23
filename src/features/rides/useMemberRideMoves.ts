@@ -41,7 +41,7 @@ export interface MemberRideMovesOptions {
 export function useMemberRideMoves({ departmentId, weekStart, week, profileId, myRequestIds, isMember, now, onDone }: MemberRideMovesOptions) {
   const queryClient = useQueryClient();
   const boardRidesQuery = useBoardRides(departmentId, weekStart);
-  const changesQuery = useRideChanges(departmentId, weekStart);
+  const changesQuery = useRideChanges(departmentId, weekStart, { scoped: true });
   const carsQuery = useCars(departmentId);
   const maintenanceQuery = useMaintenanceBlocks(departmentId);
   const seatsQuery = useCarSeatConfigs(departmentId);

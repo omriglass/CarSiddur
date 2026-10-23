@@ -172,7 +172,7 @@ export function HomePage() {
   const optOutMutation = useSetFreedSlotOptOutMutation();
   const selectedRideWeekStart = selectedMyRide?.week_start ?? undefined;
   const selectedRideWeekQuery = useBoardRides(defaultDepartmentId, selectedRideWeekStart);
-  const selectedRideChangesQuery = useRideChanges(defaultDepartmentId, selectedRideWeekStart);
+  const selectedRideChangesQuery = useRideChanges(defaultDepartmentId, selectedRideWeekStart, { scoped: true, enabled: !!selectedMyRide });
   const sheetCarActions = useRideSheetCarActions({
     departmentId: selectedMyRide?.department_id ?? undefined,
     profileId: profileQuery.data?.id,
