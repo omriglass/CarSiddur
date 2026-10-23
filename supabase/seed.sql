@@ -593,6 +593,13 @@ from (values
    '{{route}} · {{day}} {{timeRange}}. הנסיעה נשמרת וממתינה לנהג/ת.'),
   ('outcome_changed', 'driver_cancelled_sadran', '{{driverName}} ביטל/ה — הנסיעה נשארה בלי נהג/ת',
    '{{car}} · {{day}} {{timeRange}}'),
+  -- R13B12 (20261028090800): a guest who drives takes over the ride
+  ('outcome_changed', 'driver_cancelled_you_drive', '{{driverName}} ביטל/ה — עכשיו את/ה נוהג/ת',
+   '{{route}} · {{day}} {{timeRange}}. הרכב נשאר שמור לנסיעה שלך, בשעות שביקשת.'),
+  ('outcome_changed', 'driver_cancelled_new_driver', '{{driverName}} ביטל/ה — {{newDriver}} נוהג/ת עכשיו',
+   '{{route}} · {{day}} {{timeRange}}. הנסיעה נשארת, בשעות החדשות.'),
+  ('outcome_changed', 'driver_cancelled_sadran_new_driver', '{{driverName}} ביטל/ה — {{newDriver}} נוהג/ת עכשיו',
+   '{{car}} · {{day}} {{timeRange}}'),
   ('outcome_changed', 'passenger_joined', 'הצטרפות לנסיעה שלך',
    '{{byName}} הצטרף/ה לנסיעה שלך ביום {{day}} {{route}}'),
   ('waitlist_contested', 'single', 'רשימת המתנה משותפת ליום {{day}}',

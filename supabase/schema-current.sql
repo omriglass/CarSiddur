@@ -4886,6 +4886,7 @@ CREATE OR REPLACE FUNCTION "public"."cancel_ride_before_series"("p_ride_id" "uui
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
 declare r public.rides%rowtype; v_gone record; own_requests uuid[]; passenger record; v_driver_name text; v_legs jsonb;
+  v_new_start timestamptz; v_new_end timestamptz; v_pick record; v_new_driver uuid; v_new_name text;
 begin
   select * into r from public.rides where id=p_ride_id for update;
   if not found or r.status='cancelled' then raise exception 'ride_not_found'; end if;
@@ -4952,6 +4953,61 @@ begin
   update public.rides set driver_id=null,needs_driver=true,is_pinned=true,pin_reason='MISSING_DRIVER',
     status=case when status='draft' then 'draft'::public.ride_status else 'flagged'::public.ride_status end,flag_reason='NEEDS_DRIVER' where id=r.id;
   update public.requests set status='waitlisted',status_reason='UNMET_NEEDS_DRIVER' where id in(select request_id from public.ride_requests where ride_id=r.id);
+  -- R13B12 (owner 2026-10-23): the ride now serves only the guests, so it takes their own times (earliest departure to
+  -- latest return) instead of the driver's; and a guest who drives (a round trip on the whole ride, not marked "does
+  -- not drive") becomes its driver. Each step is tried on its own and skipped when the car cannot take it.
+  select min(q.depart_at), max(q.return_at) into v_new_start, v_new_end
+  from public.ride_requests rr join public.requests q on q.id=rr.request_id
+  where rr.ride_id=r.id and q.depart_at is not null and q.return_at is not null;
+  if v_new_start is not null and v_new_end > v_new_start
+     and (v_new_start at time zone 'Asia/Jerusalem')::date=(r.starts_at at time zone 'Asia/Jerusalem')::date
+     and ((v_new_end - interval '1 minute') at time zone 'Asia/Jerusalem')::date=(r.starts_at at time zone 'Asia/Jerusalem')::date
+     and (v_new_start, v_new_end) is distinct from (r.starts_at, r.ends_at) then
+    begin
+      update public.rides set starts_at=v_new_start, ends_at=v_new_end where id=r.id;
+      perform public.assert_ride_seats_fit(r.id);
+    exception when others then
+      null;   -- the car is not free for the guests' own times: the ride keeps its window
+    end;
+  end if;
+  select q.id, q.requester_id into v_pick
+  from public.ride_requests rr join public.requests q on q.id=rr.request_id join public.profiles p on p.id=q.requester_id
+  where rr.ride_id=r.id and rr.leg='both' and q.trip_type='round_trip' and not coalesce(p.does_not_drive,false)
+  order by q.depart_at, q.id limit 1;
+  if v_pick.id is not null then
+    begin
+      update public.rides set driver_id=v_pick.requester_id, needs_driver=false, pin_reason='SADRAN_MANUAL',
+        status=r.status, flag_reason=r.flag_reason where id=r.id;
+      update public.ride_requests set role='driver', car_mode='keep' where ride_id=r.id and request_id=v_pick.id;
+      update public.requests set status='assigned', status_reason='GUEST_NOW_DRIVES' where id=v_pick.id;
+      update public.requests set status='merged', status_reason='GUEST_NOW_DRIVES'
+      where id in (select request_id from public.ride_requests where ride_id=r.id) and id<>v_pick.id;
+      perform public.assert_ride_driver(r.id);
+      v_new_driver := v_pick.requester_id;
+    exception when others then
+      v_new_driver := null;   -- e.g. a seat rule: the ride stays held for a volunteer driver
+    end;
+  end if;
+  select full_name into v_driver_name from public.profiles where id = r.driver_id;
+  if v_new_driver is not null then
+    select full_name into v_new_name from public.profiles where id = v_new_driver;
+    for passenger in select q.requester_id from public.ride_requests rr join public.requests q on q.id=rr.request_id where rr.ride_id=r.id
+        union select rp.person_id from public.ride_passengers rp where rp.ride_id=r.id and rp.person_id is not null loop
+      continue when passenger.requester_id is not distinct from r.driver_id;
+      perform public.enqueue_notification(passenger.requester_id,'outcome_changed',r.department_id,r.week_start,
+        jsonb_build_object('driverName',coalesce(v_driver_name,''),'byName',coalesce(v_driver_name,''),'newDriver',coalesce(v_new_name,'')),
+        jsonb_build_object('ride_id',r.id,'variant',case when passenger.requester_id=v_new_driver then 'driver_cancelled_you_drive' else 'driver_cancelled_new_driver' end),
+        format('driver_cancelled:%s:%s:%s',r.id,r.version,passenger.requester_id));
+    end loop;
+    perform public.enqueue_notification(s.profile_id,'outcome_changed',r.department_id,r.week_start,
+      jsonb_build_object('driverName',coalesce(v_driver_name,''),'byName',coalesce(v_driver_name,''),'newDriver',coalesce(v_new_name,'')),
+      jsonb_build_object('ride_id',r.id,'variant','driver_cancelled_sadran_new_driver'),
+      format('driver_cancelled_sadran:%s:%s:%s',r.id,r.version,s.profile_id))
+    from public.sadranim_of(r.department_id,r.week_start) as s(profile_id)
+    where s.profile_id is distinct from (select auth.uid());
+    perform set_config('app.system_status_transition','off',true);
+    return;
+  end if;
   if r.origin_id<>r.destination_id then
     update public.rides set status=case when status='draft' then 'draft'::public.ride_status else 'flagged'::public.ride_status end,flag_reason='relay_driver_missing'
     where car_id=r.car_id and week_start=r.week_start and id<>r.id and status<>'cancelled' and starts_at>=r.ends_at;

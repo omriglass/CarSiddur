@@ -267,8 +267,9 @@ begin
   res:=public.submit_request(jsonb_build_object('request_id',q1,'expected_version',(select version from public.requests where id=q1),'confirm_release',true,
     'department_id',dept,'week_start',w,'destination_id',dest,'ride_type_id',typ,
     'depart_at',dt+interval '5 hours','return_at',dt+interval '7 hours','trip_type','round_trip','adults',1));
-  assert (select needs_driver and driver_id is null and status<>'cancelled' from public.rides where id=rid), 'drives others: passengers keep a needs-driver ride';
-  assert exists(select 1 from public.notifications where recipient_id=m2 and data->>'variant' in ('driver_cancelled','driver_cancelled_plain')), 'drives others: passenger told (QB6 path)';
+  -- R13B12: the passenger, who drives, takes the ride over (a non-driver keeps a needs-driver ride: qa_run13_rides.sql)
+  assert (select not needs_driver and driver_id=m2 and status<>'cancelled' from public.rides where id=rid), 'drives others: the passenger who drives keeps the ride as its driver';
+  assert exists(select 1 from public.notifications where recipient_id=m2 and data->>'variant'='driver_cancelled_you_drive'), 'drives others: passenger told they drive now';
   -- a passenger simply leaves; the driver is told
   perform set_config('request.jwt.claims',jsonb_build_object('sub',sadran,'role','authenticated')::text,true);
   update public.rides set driver_id=m1,needs_driver=false,status='confirmed',flag_reason=null where id=rid;

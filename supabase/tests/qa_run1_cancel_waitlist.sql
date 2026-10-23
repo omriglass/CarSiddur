@@ -41,6 +41,8 @@ begin
     values(dept,w,carA,dt,dt+interval '4 hours',home,home,m1,'confirmed',true,'SADRAN_MANUAL',sadran) returning id into rA;
   insert into public.ride_requests(ride_id,request_id,role,leg,car_mode) values(rA,q1,'driver','both','keep');
   insert into public.ride_requests(ride_id,request_id,role,leg,car_mode) values(rA,q2,'passenger','both','passenger');
+  -- R13B12: a guest who drives would take the ride over (qa_run13_rides.sql); this case is the volunteer-driver path
+  update public.profiles set does_not_drive=true where id=m2;
   perform set_config('request.jwt.claims',jsonb_build_object('sub',m1,'role','authenticated')::text,true);
   perform public.cancel_ride(rA,'test driver cancel',(select version from public.rides where id=rA));
   select count(*) into n from public.notifications where recipient_id=m2 and event='outcome_changed' and data->>'variant'='driver_cancelled';
@@ -56,6 +58,7 @@ begin
   select status::text, status_reason into st, rs from public.requests where id=q2;
   assert st='waitlisted' and rs='UNMET_NEEDS_DRIVER', format('QB6: passenger request must read as missing driver, got %s/%s',st,rs);
   assert (select needs_driver and driver_id is null from public.rides where id=rA), 'QB6: ride kept, needs a driver';
+  update public.profiles set does_not_drive=false where id=m2;
 
   -- ---- QB13: a driver arrives -> the request is assigned (no longer waitlisted) ----------------
   perform set_config('request.jwt.claims',jsonb_build_object('sub',sadran,'role','authenticated')::text,true);

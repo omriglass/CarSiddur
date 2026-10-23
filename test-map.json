@@ -849,7 +849,8 @@
         "supabase/migrations/**/*changelog*",
         "supabase/tests/changelog.sql",
         "e2e/changelog.spec.ts",
-        "scripts/changelog-check.mjs"
+        "scripts/changelog-check.mjs",
+        "supabase/tests/qa_run13_rides.sql"
       ],
       "vitest": [
         "src/features/inbox",
@@ -859,7 +860,8 @@
       "sql": [
         "notifications_semantics.sql",
         "status_notifications.sql",
-        "changelog.sql"
+        "changelog.sql",
+        "qa_run13_rides.sql"
       ],
       "playwrightTags": [
         "@notifications"
@@ -869,7 +871,8 @@
         "13.41",
         "13.61",
         "13.67",
-        "13.68"
+        "13.68",
+        "13.145"
       ],
       "qaChecklist": [
         "Trigger a canonical event; confirm inbox row matches the seeded template and deep link (REQ §13.41)",
