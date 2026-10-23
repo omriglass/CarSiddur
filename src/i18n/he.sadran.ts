@@ -616,6 +616,12 @@ export const heSadran = {
   /** REQ §13.101 (c): the Sadran assigns a volunteer driver to a ride that needs one. */
   rideDriver: {
     busy: "תפוס/ה בשעות האלה",
+    /** R13F2: the chosen candidate's other rides and requests that day. */
+    dayTitle: "מה יש ל{{name}} ביום הזה",
+    dayNone: "אין נסיעות או בקשות אחרות ביום הזה",
+    dayKind: { drives: "נוהג/ת", rides: "נוסע/ת", request: "בקשה שעוד לא שובצה" },
+    dayDestination: "ל{{place}}",
+    dayOverlap: "חופף לנסיעה הזו",
     assignLabel: "שיבוץ נהג/ת מתנדב/ת",
     placeholder: "בחר/י נהג/ת",
     selectAria: "נהג/ת לנסיעה",

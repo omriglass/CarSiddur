@@ -9,9 +9,11 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { he, tv } from "@/i18n/he";
+import { formatTime } from "@/lib/time";
+import { cn } from "@/lib/utils";
 
 import { useSetRideDriverMutation } from "../../hooks";
-import { sortFreeFirst } from "../driverBusy";
+import { sortFreeFirst, type PersonDayEntry } from "../driverBusy";
 
 export interface DriverCandidate {
   id: string;
@@ -36,6 +38,8 @@ export interface RideDriverPickerProps {
   weekStart: string;
   /** R2U3: members busy during the ride (own ride/request overlapping); marked, and listed after the free ones. */
   busyIds?: ReadonlySet<string>;
+  /** R13F2: the candidate's other rides and requests on the ride's day, shown once one is chosen. */
+  dayEntriesOf?: (personId: string) => PersonDayEntry[];
   /** R4U5: where members live, shown next to the name when not the department home. */
   placeName?: (placeId: string) => string | undefined;
   homeDestinationId?: string | null;
@@ -46,7 +50,7 @@ export interface RideDriverPickerProps {
   onDone?: () => void;
 }
 
-export function RideDriverPicker({ rideId, version, needsDriver, volunteerName, volunteerId, ownRequest, candidates, departmentId, weekStart, busyIds, placeName, homeDestinationId, disabled, published = true, onDone }: RideDriverPickerProps) {
+export function RideDriverPicker({ rideId, version, needsDriver, volunteerName, volunteerId, ownRequest, candidates, departmentId, weekStart, busyIds, dayEntriesOf, placeName, homeDestinationId, disabled, published = true, onDone }: RideDriverPickerProps) {
   const [driverId, setDriverId] = useState("");
   const [confirming, setConfirming] = useState(false);
   // A new ride or ride version (someone assigned/replaced the driver) starts with an empty choice. Derived during render, not via a
@@ -100,9 +104,30 @@ export function RideDriverPicker({ rideId, version, needsDriver, volunteerName, 
           {volunteerName ? he.rideDriver.replace : he.rideDriver.assign}
         </Button>
       </div>
+      {driverId && dayEntriesOf ? <DayEntries name={drivers.find((candidate) => candidate.id === driverId)?.name ?? ""} entries={dayEntriesOf(driverId)} /> : null}
       <ConfirmDialog open={confirming} onOpenChange={setConfirming} title={he.rideDriver.replaceOwnTitle}
         description={tv("rideDriver.replaceOwnConfirm", { name: drivers.find((candidate) => candidate.id === driverId)?.name ?? "", old: volunteerName ?? "" })}
         confirmLabel={he.rideDriver.replace} loading={mutation.isPending} onConfirm={assign} />
+    </div>
+  );
+}
+
+/** Exported for its test: the Radix Select is impractical to drive in jsdom. */
+export function DayEntries({ name, entries }: { name: string; entries: readonly PersonDayEntry[] }) {
+  return (
+    <div className="space-y-1 text-xs" data-testid="ride-driver-day">
+      <p className="text-muted-foreground">{tv("rideDriver.dayTitle", { name })}</p>
+      {entries.length ? (
+        <ul className="space-y-0.5">
+          {entries.map((entry) => (
+            <li key={`${entry.kind}:${entry.startsAt}`} className={cn(entry.overlaps && "font-semibold text-destructive")} data-testid="ride-driver-day-entry">
+              {he.rideDriver.dayKind[entry.kind]} · <span dir="ltr" className="tabular-nums">{formatTime(new Date(entry.startsAt))}–{formatTime(new Date(entry.endsAt))}</span>
+              {entry.destination ? ` · ${tv("rideDriver.dayDestination", { place: entry.destination })}` : ""}
+              {entry.overlaps ? ` · ${he.rideDriver.dayOverlap}` : ""}
+            </li>
+          ))}
+        </ul>
+      ) : <p className="text-muted-foreground">{he.rideDriver.dayNone}</p>}
     </div>
   );
 }

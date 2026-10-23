@@ -1076,7 +1076,7 @@ Whole-week autofill in the clock-change week now runs (89 rides, all 7 multi-day
 
 **Additional features**
 - R13F1 — Suggest a member's own private car (or its owner as driver) for out-of-town members.
-- R13F2 — Show a person's other rides when assigning a driver (Amit Dahan's pickup clashed).
+- ✅ R13F2 — Show a person's other rides when assigning a driver (Amit Dahan's pickup clashed). **Done 2026-10-23:** the driver picker shows the chosen person's rides and unplaced requests that day, overlaps marked (`personDayEntries`, `RideDriverPicker`).
 - R13F3 — Character count/limit for "מידע נוסף לכולם".
 - R13F4 — In a multi-day edit, preview which old days are released / which car is kept.
 

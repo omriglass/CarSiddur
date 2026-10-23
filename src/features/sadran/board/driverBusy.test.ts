@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { busyDriverIds, driverOverlapRideIds, sortFreeFirst } from "./driverBusy";
+import { busyDriverIds, driverOverlapRideIds, personDayEntries, sortFreeFirst } from "./driverBusy";
 
 import type { BoardRide, WeekRequestRow } from "../api";
 
@@ -39,5 +39,28 @@ describe("driverOverlapRideIds (owner 2026-10-16)", () => {
       ride({ id: "g", driver_id: null }),
     ]);
     expect([...ids].sort()).toEqual(["a", "b"]);
+  });
+});
+
+describe("personDayEntries (R13F2)", () => {
+  const req = (over: Record<string, unknown>) => ({ id: "q", status: "assigned", requester_id: "p1", trip_shape: "round_trip",
+    depart_at: "2026-10-12T12:00:00.000Z", return_at: "2026-10-12T13:00:00.000Z", destination_resolved_name: "חדרה", ...over }) as unknown as WeekRequestRow;
+  it("lists the person's rides (driving or riding) and unplaced requests that day, by time, marking overlaps", () => {
+    const target = ride({ id: "t" });
+    const entries = personDayEntries("p1", target, [
+      target,
+      ride({ id: "a", driver_id: "p1", starts_at: "2026-10-12T09:00:00.000Z", ends_at: "2026-10-12T11:00:00.000Z", served: [{ request_id: "q1" }] }),
+      ride({ id: "b", driver_id: "p9", starts_at: "2026-10-12T14:00:00.000Z", ends_at: "2026-10-12T15:00:00.000Z",
+        people: [{ key: "x", source: "added", request_id: null, ride_passenger_id: "rp", person_id: "p1", child_id: null, display_name: "P1", seat_kind: "adult", added_by: null, removable: true }], served: [{ request_id: "q2" }] }),
+      ride({ id: "c", driver_id: "p1", status: "cancelled" }),
+      ride({ id: "d", driver_id: "p1", starts_at: "2026-10-13T09:00:00.000Z", ends_at: "2026-10-13T10:00:00.000Z" }),
+    ], [req({ id: "q1" }), req({ id: "q2", requester_id: "p9", destination_resolved_name: "עפולה" }),
+        req({ id: "q3", status: "waitlisted", depart_at: "2026-10-12T16:00:00.000Z", return_at: "2026-10-12T17:00:00.000Z", destination_resolved_name: "קיסריה" }),
+        req({ id: "q4", status: "withdrawn" })]);
+    expect(entries.map((e) => [e.kind, e.startsAt, e.destination, e.overlaps])).toEqual([
+      ["drives", "2026-10-12T09:00:00.000Z", "חדרה", true],
+      ["rides", "2026-10-12T14:00:00.000Z", "עפולה", false],
+      ["request", "2026-10-12T16:00:00.000Z", "קיסריה", false],
+    ]);
   });
 });

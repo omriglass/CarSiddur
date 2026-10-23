@@ -37,7 +37,7 @@ import { RideRouteEditor } from "./RideRouteEditor";
 import { PlanSwitchButton } from "./PlanSwitchButton";
 import { TripTypeChange } from "./TripTypeChange";
 import { WithdrawDuplicateAction } from "./WithdrawDuplicateAction";
-import { busyDriverIds } from "../driverBusy";
+import { busyDriverIds, personDayEntries } from "../driverBusy";
 import { RideDriverPicker, type DriverCandidate } from "./RideDriverPicker";
 import { initialRouteEditValues, type RouteEditValues } from "../rideRouteEdit";
 
@@ -180,6 +180,7 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
                   volunteerId={!ride.needs_driver && ride.driver_id ? ride.driver_id : null}
                   candidates={driverCandidates}
                   busyIds={busyDriverIds(ride, otherRides, requests)}
+                  dayEntriesOf={(personId) => personDayEntries(personId, ride, otherRides, requests)}
                   placeName={(id) => destinations?.find((d) => d.id === id)?.name}
                   homeDestinationId={homeDestinationId}
                   departmentId={departmentId}
