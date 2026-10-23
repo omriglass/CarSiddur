@@ -1,3 +1,4 @@
+import { shouldDiscardAfterFailedSend } from "../sendFailure";
 import { externalHintFromSuggestion } from "@/features/sadran/proposals/externalHint";
 import { useState } from "react";
 import { X } from "lucide-react";
@@ -55,6 +56,7 @@ import {
   useRecordAnswerOnBehalfMutation,
   useProposalCarConflictsMutation,
   useSendProposalMutation,
+  useDiscardProposalMutation,
   useSeriesLegsQuery,
   useWeekRequestsWithNames,
   useWhatsappTemplates,
@@ -175,6 +177,7 @@ export function ProposalComposerScreen({ departmentId, weekStart }: ProposalComp
 
   const createMutation = useCreateProposalMutation();
   const sendMutation = useSendProposalMutation();
+  const discardMutation = useDiscardProposalMutation();
   const conflictsMutation = useProposalCarConflictsMutation();
   // R10B6/R10F1: the car(s) another pending proposal holds; the Sadran may send anyway.
   const [carConflicts, setCarConflicts] = useState<ProposalCarConflict[] | null>(null);
@@ -323,6 +326,7 @@ export function ProposalComposerScreen({ departmentId, weekStart }: ProposalComp
 
   async function handleCreateAndSend(confirmedConflicts = false) {
     if (!request || (!proposalId && !payload) || busy) return;
+    let createdId: string | null = null;
     try {
       const draftId = proposalId ?? await createMutation.mutateAsync({
         requestId: request.id,
@@ -334,6 +338,7 @@ export function ProposalComposerScreen({ departmentId, weekStart }: ProposalComp
         departmentId,
         weekStart,
       });
+      if (!proposalId) createdId = draftId;
       // Keep the successful creation even if sending fails. Retrying must send
       // this draft, rather than create a second proposal for the same request.
       setProposalId(draftId);
@@ -359,8 +364,12 @@ export function ProposalComposerScreen({ departmentId, weekStart }: ProposalComp
           } }),
         },
       });
-    } catch {
+    } catch (error) {
       // toasts already shown by the mutations
+      // R14B6: a draft this click created and the server refused to send is discarded, not left on the board.
+      if (createdId && shouldDiscardAfterFailedSend(error, true)) {
+        try { await discardMutation.mutateAsync({ proposalId: createdId, departmentId, weekStart }); setProposalId(null); return; } catch { /* keep the draft */ }
+      }
       setSendFailed(true);
     }
   }

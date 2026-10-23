@@ -186,6 +186,7 @@ export const heSadran = {
     dragHandleLabel: "גרור/י ללוח",
     dragOneWayUnsupported: "גרירה תשבץ נסיעה חד־כיוונית או תכין הצעת איחוד או חלופה לפי זמינות הרכב",
     dragPlacedToast: "שובץ/ה ל{{car}} {{start}}",
+    dragPlacedMovedToast: "שובץ/ה ל{{car}} ב-{{start}} (השעה שהבקשה ביקשה, לא {{asked}})",
     placementOverlap: "אי אפשר לשבץ שם — הבקשה מתנגשת בנסיעה אחרת באותו רכב",
     dragInvalidSeatsToast: "לרכב הזה אין מספיק מקומות לנוסעי הבקשה הזו",
     dropOnDraftBlock: "זו טיוטה שעדיין לא נשלחה — אפשר לשחרר על נסיעה אחרת, או לפתוח את הטיוטה",

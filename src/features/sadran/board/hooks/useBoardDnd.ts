@@ -44,6 +44,7 @@ import {
   mergeRefusalReason,
   unavailable,
   unmetCandidateWindow,
+  placedStartVersusDrop,
   unmetPlacement,
   unmetRequestPassengers,
   unmetShiftPayload,
@@ -563,7 +564,13 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
         redo: async () => { placedRideId = await editRideMutation.mutateAsync({ input: placeInput, departmentId, weekStart }); },
       });
       const carName = carsData.find((c) => c.id === carId)?.name ?? "";
-      toast.success(placement.driverIsRequester ? tv("sadranBoard.dragPlacedToast", { car: carName, start: formatMinutes(minutes) }) : connects ? he.connectedPair.saved : he.boardCoordination.standaloneSaved);
+      const placedAt = placedStartVersusDrop(dropCtx, window, minutes);
+      // R14B7: say so when the ride starts at another time than the drop (snapped to the requested time).
+      toast.success(placement.driverIsRequester
+        ? placedAt.moved
+          ? tv("sadranBoard.dragPlacedMovedToast", { car: carName, start: formatMinutes(placedAt.startMinutes), asked: formatMinutes(minutes) })
+          : tv("sadranBoard.dragPlacedToast", { car: carName, start: formatMinutes(minutes) })
+        : connects ? he.connectedPair.saved : he.boardCoordination.standaloneSaved);
       // REQ §13.126 g (owner 2026-10-11): a kept-car trip's two legs go together — placing one leg also tries the other leg
       // on the same car at its own time (the server then connects them; a misfit is reported like any drop).
       const twin = !chainedLeg ? keepCarTwinLeg(item) : null;

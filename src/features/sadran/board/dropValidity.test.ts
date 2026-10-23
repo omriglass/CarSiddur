@@ -11,6 +11,8 @@ import {
   strandsNextRide,
   unavailable,
   unmetCandidateWindow,
+  placedStartVersusDrop,
+  minutesIso,
   unmetMergeHost,
   unmetPlacement,
   unmetRequestPassengers,
@@ -461,5 +463,14 @@ describe("carLocationAt - week-start location (REQ §13.93)", () => {
       homeDestinationId: "home",
     });
     expect(carLocationAt(ctx, "car1", at)).toBe("home");
+  });
+});
+
+describe("placedStartVersusDrop (R14B7)", () => {
+  it("reports a drop that snapped to another start, and a drop that did not", () => {
+    const ctx = { selectedDay: "2026-09-13" };
+    const at = (m: number) => minutesIso(ctx, m);
+    expect(placedStartVersusDrop(ctx, { startsAt: at(810) }, 825)).toEqual({ startMinutes: 810, moved: true });
+    expect(placedStartVersusDrop(ctx, { startsAt: at(825) }, 825)).toEqual({ startMinutes: 825, moved: false });
   });
 });

@@ -299,6 +299,15 @@ export function unmetCandidateWindow(ctx: BoardDropContext, item: UnmetListItem,
   return windowAt(minutes);
 }
 
+/**
+ * R14B7: the minute of the day a placed window really starts at, and whether that differs from the minute the Sadran
+ * dropped it on (a drop within 15 minutes of the requested time snaps to it; a chauffeur window may start earlier).
+ */
+export function placedStartVersusDrop(ctx: Pick<BoardDropContext, "selectedDay">, window: { startsAt: string }, droppedMinutes: number): { startMinutes: number; moved: boolean } {
+  const startMinutes = isoToDayMinutes(window.startsAt, ctx.selectedDay);
+  return { startMinutes, moved: startMinutes !== droppedMinutes };
+}
+
 /** The car is in maintenance/inactive or already has a ride overlapping `window`. */
 function carBusy(ctx: BoardDropContext, carId: string, window: { startsAt: string; endsAt: string }): boolean {
   return unavailable(ctx, carId, window.startsAt, window.endsAt)

@@ -1,6 +1,8 @@
 // `npm run qa:sadran -- <command>` — what the board does, as the QA Sadran, through the app's own
 // api functions / RPCs (so behaviour matches the UI). Output is compact English text for an LLM.
 import { formatTime, dateKey } from "@/lib/time";
+import { toAppError } from "@/lib/rpc";
+import { shouldDiscardAfterFailedSend } from "@/features/sadran/proposals/sendFailure";
 import { formatMinutes, parseHHMM } from "@/components/timeField15Format";
 import { fromZonedTime } from "date-fns-tz";
 import { TZ } from "@/lib/time";
@@ -16,7 +18,7 @@ import { publishWithScores } from "@/features/sadran/publish/publishWithScores";
 import { buildDraftInput, type ComposerPrefill } from "@/features/sadran/board/draftInput";
 import {
   connectsOtherLeg, isUnmetDropValid, minutesIso, originMismatch, passengersOf, privateCarBlocks, seatsFit, strandsNextRide,
-  unavailable, unmetCandidateWindow, unmetPlacement, unmetRequestPassengers, unmetShiftPayload, carLocationAt,
+  unavailable, unmetCandidateWindow, placedStartVersusDrop, unmetPlacement, unmetRequestPassengers, unmetShiftPayload, carLocationAt,
 } from "@/features/sadran/board/dropValidity";
 import { mergeInvalidReason, mergePayload, mergePayloadLeg, type MergeLeg } from "@/features/sadran/board/mergeProposal";
 import { requestStart, requestWithinFlex, tripTypeOf } from "@/features/sadran/board/phantomLanes";
@@ -42,6 +44,8 @@ import {
 
 // --- small helpers --------------------------------------------------------------------------
 
+/** R14B9: a drawn proposal placement is "draft" (unsent) or the status of the sent/accepted one. */
+const placementStatusLabel = (status: string | undefined): string => (status === "sent" ? "SENT " : status === "accepted" ? "ACCEPTED" : "draft");
 const t = (iso: string | null | undefined): string => (iso ? formatTime(new Date(iso)) : "--:--");
 const dayOf = (iso: string | null | undefined): string => (iso ? dateKey(new Date(iso)) : "");
 const minutesOfDay = (day: string, hhmm: string): number => {
@@ -208,8 +212,8 @@ async function cmdDay(board: Board, day: string): Promise<void> {
 
   const dayPlacements = board.draftPlacements.filter((p) => dayOf(p.startsAt) === day);
   if (dayPlacements.length) {
-    console.log("DRAFT PLACEMENTS (unsent proposals drawn as their result)");
-    for (const p of dayPlacements) console.log(`  draft ${short(p.proposalId)} ${p.type} req=${short(p.requestId)} car=${board.carName(p.carId)} ${t(p.startsAt)}-${t(p.endsAt)}${p.replacesRideId ? ` replaces ride ${short(p.replacesRideId)}` : ""}`);
+    console.log("PROPOSAL PLACEMENTS (proposals drawn as their result: draft = unsent, sent/accepted = awaiting or applying)");
+    for (const p of dayPlacements) console.log(`  ${placementStatusLabel(board.proposals.find((q) => q.id === p.proposalId)?.status)} ${short(p.proposalId)} ${p.type} req=${short(p.requestId)} car=${board.carName(p.carId)} ${t(p.startsAt)}-${t(p.endsAt)}${p.replacesRideId ? ` replaces ride ${short(p.replacesRideId)}` : ""}`);
   }
   const unmet = unmetItemsOf(board, day, output);
   console.log(`UNMET (${unmet.length})`);
@@ -324,6 +328,9 @@ async function cmdPlace(board: Board, args: Args): Promise<void> {
     needs_driver: !placement.driverIsRequester, allow_conflict: true, is_pinned: true, pin_reason: "SADRAN_MANUAL",
     served: [{ request_id: req.id, ...placement.served }],
   });
+  // R14B7: the drop snaps to the request's own time when within 15 minutes of it - say so.
+  const moved = placedStartVersusDrop(dctx, window, minutes);
+  if (moved.moved) console.log(`note: you asked for ${formatMinutes(minutes)}; placed at ${t(window.startsAt)} (the request's own time, or the chauffeur window's start)`);
   console.log(`placed ${req.requester_full_name} on ${car.name} ${t(window.startsAt)}-${t(window.endsAt)} -> ride ${short(rideId)}${placement.driverIsRequester ? "" : " (chauffeur ride, needs a driver)"}${connects ? " (connected to the other leg)" : ""}`);
 }
 
@@ -380,7 +387,18 @@ async function createProposalFrom(board: Board, prefill: ComposerPrefill, draft:
   const pending = board.proposals.find((p) => p.request_id === prefill.requestId && p.status === "sent");
   const id = await api.createProposal(built.input);
   if (draft) { console.log(`draft proposal ${short(id)} (${prefill.type}) created; send it with: send ${short(id)}`); return id; }
-  const sent = await api.sendProposal(id, [], pending ? { id: pending.id, version: pending.version } : undefined);
+  // R14B6: like the composer, a proposal this call created and the server refuses to send is discarded, not left as a draft.
+  let sent: api.SendProposalResult;
+  try {
+    sent = await api.sendProposal(id, [], pending ? { id: pending.id, version: pending.version } : undefined);
+  } catch (error) {
+    const reason = toAppError(error);
+    let left = "";
+    if (shouldDiscardAfterFailedSend(error, true)) {
+      try { await api.discardProposal(id); left = `; the draft ${short(id)} was discarded`; } catch { left = `; the draft ${short(id)} is still there (discard failed)`; }
+    }
+    throw new UsageError(`not sent: ${reason.message}${reason.description ? ` (${reason.description})` : ""}${left}`);
+  }
   printCarConflicts(sent);
   console.log(`proposal ${short(id)} (${prefill.type}) sent to ${Object.keys(sent.party_tokens).length || 1} party/ies${pending ? ` (replaced ${short(pending.id)})` : ""}`);
   return id;

@@ -599,7 +599,9 @@ export function toAppError(error: unknown): AppError {
     console.error("Unmapped database error", {
       code: pgError?.code, message: pgError?.message, details: pgError?.details, hint: pgError?.hint,
     });
-    const description = pgError?.details || pgError?.hint || undefined;
+    // R14B6: a bare machine code ("some_refusal") from a raise exception is the real reason - show it, not nothing.
+    const bareCode = pgError?.message && /^[a-z][a-z0-9_]{2,60}$/.test(pgError.message) ? pgError.message : undefined;
+    const description = pgError?.details || pgError?.hint || bareCode || undefined;
     return new AppError(code, message, description ?? undefined);
   }
   return new AppError(code, message, undefined, code === "needs_large_trunk" ? (pgError?.details ?? undefined) : undefined);

@@ -56,6 +56,7 @@ vi.mock("../../hooks", async () => {
     useProfilesByIds: () => ({ data: [{ id: "member-1", full_name: "יוסי", phone: null }] }),
     useCreateProposalMutation: () => ({ mutateAsync: createMutateAsync, isPending: false }),
     useSendProposalMutation: () => ({ mutateAsync: sendMutateAsync, isPending: false }),
+    useDiscardProposalMutation: () => ({ mutateAsync: vi.fn(), isPending: false }),
     // No car conflicts — without this the real hook hit the network after the test ended (flaky unhandled rejection).
     useProposalCarConflictsMutation: () => ({ mutateAsync: vi.fn().mockResolvedValue([]), isPending: false }),
     useRecordAnswerOnBehalfMutation: () => ({ mutate: vi.fn() }),
