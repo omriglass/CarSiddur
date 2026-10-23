@@ -17,7 +17,7 @@
           "confidence": 1
         }
       ],
-      "reasonCode": "UNMET_NO_CAR",
+      "reasonCode": "UNMET_NO_CAR_NONE",
       "reason": "אין רכבים משותפים זמינים לשיבוץ"
     },
     {
@@ -34,7 +34,7 @@
           "confidence": 1
         }
       ],
-      "reasonCode": "UNMET_NO_CAR",
+      "reasonCode": "UNMET_NO_CAR_NONE",
       "reason": "אין רכבים משותפים זמינים לשיבוץ"
     }
   ],

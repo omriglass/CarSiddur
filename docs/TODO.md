@@ -1045,7 +1045,7 @@ Whole-week autofill in the clock-change week now runs (89 rides, all 7 multi-day
 - **R13B14 — An accepted origin proposal creates a `confirmed` ride on an unpublished day** (others there are `draft`).
 - **R13B15 — The Sadran's own series edit raises a `late_request` notice to the Sadran.**
 - **R13B16 — A 45-minute round trip גבעת חביבה→תל אביב was accepted** and autofill would place it — no duration vs travel-time check.
-- **R13B17 — Misleading unmet reasons:** "אין רכב פנוי שנמצא בחדרה" when the blocker was large luggage (eededfba, the Yaris idle all day); "…בגבעת חביבה" when it was 2 child seats.
+- ✅ **R13B17 — Misleading unmet reasons:** "אין רכב פנוי שנמצא בחדרה" when the blocker was large luggage (eededfba, the Yaris idle all day); "…בגבעת חביבה" when it was 2 child seats. **Fixed 2026-10-23 (solver):** one classifier `noCarReason()` names the real blocker (need busy / no car at the origin / busy cars) and the code matches the text (SOLVER.md §6); unpaired drop-off legs say "no relay partner" only when a fitting car is free.
 - **R13B18 — `merge --leg out` accepted for a pickup-only request** (bc16ae41 after its out-leg was cancelled).
 - **R13B19 — A member's CLI edit of a merged request returned the generic `constraint_violation`** (m18 17674ae2); a live-week edit by m21 (d0289c88 07:00→07:30) reported "edited" but nothing changed and no notice.
 - **R13B20 — Generator filing failures:** 5 × `fallback_not_allowed` (plan B on kids/drop-off plans), 1 × `origin_equals_destination` — generator, not app.

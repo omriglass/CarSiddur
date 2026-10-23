@@ -66,32 +66,91 @@ function computeBlockers(nr: NormalizedRequest, timelines: Map<string, CarTimeli
   return blockers;
 }
 
-/** R2B11: name the real cause of a plain "no car" (never an empty blockers list). */
+/** A time the request could start: its own departure plus every start inside its departure flexibility. */
+function candidateStarts(nr: NormalizedRequest): number[] {
+  const from = Math.min(nr.flexDep[0], nr.window.start);
+  const to = Math.max(nr.flexDep[1], nr.window.start);
+  const starts: number[] = [];
+  for (let s = from; s <= to; s++) {
+    if (s >= nr.dayWindow.start && s < nr.dayWindow.end) starts.push(s);
+  }
+  return starts;
+}
+
+/** Whether `car` is free for the request at some candidate start — standing at its origin, or (with `anywhere`) wherever it is. */
+function carFreeForRequest(tl: CarTimeline | undefined, nr: NormalizedRequest, anywhere: boolean): boolean {
+  if (!tl) return false;
+  return candidateStarts(nr).some((s) => {
+    const w = { start: s, end: Math.min(s + nr.minDurationSlots, nr.dayWindow.end) };
+    return tl.isFree(w, anywhere ? tl.locationAt(s) : nr.originId);
+  });
+}
+
+/** Seats the request needs, its driver included. */
+function seatCount(nr: NormalizedRequest): number {
+  return nr.passengers.adults + nr.passengers.childSeats + nr.passengers.boosters;
+}
+
+/** The shared cars that seat the request and take its luggage, by name (R13B17: the busy ones the reason names). */
+function seatCarNames(input: SolverInput, nr: NormalizedRequest): string {
+  return input.cars
+    .filter((c) => c.type === 'shared' && fits(c, nr.passengers) && luggageFits(c, nr.luggage ? 1 : 0))
+    .map((c) => carName(input.cars, c.id))
+    .filter(Boolean)
+    .join(', ');
+}
+
+/** Some shared car that seats the request and takes its luggage is free for it, wherever it stands. */
+function fittingCarFree(input: SolverInput, nr: NormalizedRequest, timelines: Map<string, CarTimeline>): boolean {
+  return input.cars.some(
+    (c) => c.type === 'shared' && fits(c, nr.passengers) && luggageFits(c, nr.luggage ? 1 : 0) && carFreeForRequest(timelines.get(c.id), nr, true),
+  );
+}
+
+/**
+ * R2B11, R13B17: the real cause of a plain "no car", as a code with matching text. The cars that could take the
+ * request in time are looked at first: a fitting car free elsewhere → "no car at the origin"; no fitting car free
+ * at all while the request needs something only some cars have (seats, child seats, a large trunk) → that need,
+ * naming the busy cars that have it; everything busy → the blockers.
+ */
 function noCarReason(
   input: SolverInput,
   nr: NormalizedRequest,
   timelines: Map<string, CarTimeline>,
   blockers: { carId: string; rideIds: string[] }[],
-): string {
+): { code: string; text: string } {
   const shared = input.cars.filter((c) => c.type === 'shared');
-  if (shared.length === 0) return reason('UNMET_NO_CAR_NONE');
+  if (shared.length === 0) return { code: 'UNMET_NO_CAR_NONE', text: reason('UNMET_NO_CAR_NONE') };
   const seatOk = shared.filter((c) => fits(c, nr.passengers));
-  if (shared.length > 0 && seatOk.length === 0) return reason('UNMET_NO_CAR_SEATS');
+  if (seatOk.length === 0) return { code: 'UNMET_NO_CAR_SEATS', text: reason('UNMET_NO_CAR_SEATS') };
   const fitting = seatOk.filter((c) => luggageFits(c, nr.luggage ? 1 : 0));
-  if (shared.length > 0 && fitting.length === 0) return reason('UNMET_NO_CAR_LUGGAGE');
-  const atOrigin = fitting.some((c) =>
-    (timelines.get(c.id)?.gaps() ?? []).some(
-      (g) => g.locationId === nr.originId && g.window.start < nr.window.end && nr.window.start < g.window.end,
-    ),
-  );
-  if (!atOrigin) {
-    return reason('UNMET_NO_CAR_AT_ORIGIN', {
-      origin: requestOriginName(input, nr.request, nr.originId),
-      dest: requestDestName(input, nr.request),
-    });
+  if (fitting.length === 0) return { code: 'UNMET_NO_CAR_LUGGAGE', text: reason('UNMET_NO_CAR_LUGGAGE') };
+  const where = { origin: requestOriginName(input, nr.request, nr.originId), dest: requestDestName(input, nr.request) };
+  if (!fitting.some((c) => carFreeForRequest(timelines.get(c.id), nr, false))) {
+    const spanStart = Math.min(nr.flexDep[0], nr.window.start);
+    const spanEnd = Math.max(nr.flexDep[1], nr.window.start) + nr.minDurationSlots;
+    const standsAtOrigin = fitting.some((c) =>
+      (timelines.get(c.id)?.gaps() ?? []).some((g) => g.locationId === nr.originId && g.window.start < spanEnd && spanStart < g.window.end),
+    );
+    if (!standsAtOrigin && fitting.some((c) => carFreeForRequest(timelines.get(c.id), nr, true))) {
+      return { code: 'UNMET_NO_CAR_AT_ORIGIN', text: reason('UNMET_NO_CAR_AT_ORIGIN', where) };
+    }
+    if (seatOk.length < shared.length) {
+      const code = nr.passengers.childSeats + nr.passengers.boosters > 0 ? 'UNMET_NO_CAR_SEATS_BUSY' : 'UNMET_SEATS_CARS_BUSY';
+      return { code, text: reason(code, { cars: seatCarNames(input, nr), count: seatCount(nr) }) };
+    }
+    if (fitting.length < seatOk.length) {
+      return { code: 'UNMET_LARGE_TRUNK_BUSY', text: reason('UNMET_LARGE_TRUNK_BUSY', { cars: seatCarNames(input, nr) }) };
+    }
   }
-  const names = blockers.map((b) => carName(input.cars, b.carId)).filter(Boolean).join(', ');
-  return names ? reason('UNMET_NO_CAR', { blockers: names }) : reason('UNMET_NO_CAR_BUSY');
+  // One-way legs carry no blockers list: name the fitting cars that are busy for them.
+  const blockerIds = blockers.length > 0
+    ? blockers.map((b) => b.carId)
+    : fitting.filter((c) => !carFreeForRequest(timelines.get(c.id), nr, true)).map((c) => c.id);
+  const names = blockerIds.map((id) => carName(input.cars, id)).filter(Boolean).join(', ');
+  return names
+    ? { code: 'UNMET_NO_CAR', text: reason('UNMET_NO_CAR', { blockers: names }) }
+    : { code: 'UNMET_NO_CAR_BUSY', text: reason('UNMET_NO_CAR_BUSY') };
 }
 
 /**
@@ -383,43 +442,24 @@ function solveExpanded(input: SolverInput): SolverOutput {
       // R8B14: an explicit one-way leg says why for real (stranded next ride vs no car at the origin vs busy).
       const oneWayCause = nr.tripType === 'one_way' ? oneWayUnmetCause(nr, timelines, input) : { strands: false, atOrigin: false, awayAtWeekEnd: false };
       const takenBy = evictedIds.get(nr.id);
-      const reasonCode = takenBy !== undefined
-        ? 'UNMET_CAR_TO_DRIVER'
+      const origin = requestOriginName(input, nr.request, nr.originId);
+      const dest = requestDestName(input, nr.request);
+      // R13B17: the code always matches the text; the plain "no car" path names the real blocker.
+      const { code: reasonCode, text: reasonText } = takenBy !== undefined
+        ? { code: 'UNMET_CAR_TO_DRIVER', text: reason('UNMET_CAR_TO_DRIVER', { member: memberName(input, byRequestId.get(takenBy)?.request.memberId), dest }) }
         : needsLargeTrunk
-        ? 'UNMET_NEEDS_LARGE_TRUNK'
+        ? { code: 'UNMET_NEEDS_LARGE_TRUNK', text: reason('UNMET_NEEDS_LARGE_TRUNK') }
         : seatsBusy
-        ? 'UNMET_NO_CAR_SEATS_BUSY'
+        ? { code: 'UNMET_NO_CAR_SEATS_BUSY', text: reason('UNMET_NO_CAR_SEATS_BUSY', { cars: seatCarNames(input, nr), count: seatCount(nr) }) }
         : stillPassengerOnly.includes(nr)
-        ? 'UNMET_PASSENGER_NO_HOST'
-        : stillUnpairedRelay.includes(nr)
-          ? 'UNMET_NO_RELAY_PARTNER'
-          : nr.tripType === 'one_way'
-            ? oneWayCause.strands
-              ? 'UNMET_ONE_WAY_STRANDS_CAR'
-              : oneWayCause.awayAtWeekEnd
-              ? 'UNMET_ONE_WAY_AWAY_AT_WEEK_END'
-              : oneWayCause.atOrigin
-                ? 'UNMET_NO_CAR'
-                : 'UNMET_NO_CAR_AT_ORIGIN'
-            : 'UNMET_NO_CAR';
-      const reasonText =
-        reasonCode === 'UNMET_CAR_TO_DRIVER'
-          ? reason('UNMET_CAR_TO_DRIVER', { member: memberName(input, byRequestId.get(takenBy ?? '')?.request.memberId), dest: requestDestName(input, nr.request) })
-          : reasonCode === 'UNMET_NEEDS_LARGE_TRUNK'
-          ? reason('UNMET_NEEDS_LARGE_TRUNK')
-          : reasonCode === 'UNMET_NO_CAR_SEATS_BUSY'
-          ? reason('UNMET_NO_CAR_SEATS_BUSY')
-          : reasonCode === 'UNMET_NO_RELAY_PARTNER'
-          ? reason('UNMET_NO_RELAY_PARTNER', { dest: requestDestName(input, nr.request) })
-          : reasonCode === 'UNMET_PASSENGER_NO_HOST'
-            ? reason('UNMET_NEEDS_DRIVER', { dest: requestDestName(input, nr.request), dep: '' })
-            : reasonCode === 'UNMET_ONE_WAY_STRANDS_CAR'
-              ? reason('UNMET_ONE_WAY_STRANDS_CAR', { origin: requestOriginName(input, nr.request, nr.originId), dest: requestDestName(input, nr.request) })
-            : reasonCode === 'UNMET_ONE_WAY_AWAY_AT_WEEK_END'
-              ? reason('UNMET_ONE_WAY_AWAY_AT_WEEK_END', { dest: requestDestName(input, nr.request) })
-            : reasonCode === 'UNMET_NO_CAR_AT_ORIGIN'
-              ? reason('UNMET_NO_CAR_AT_ORIGIN', { origin: requestOriginName(input, nr.request, nr.originId), dest: requestDestName(input, nr.request) })
-              : noCarReason(input, nr, timelines, blockers);
+        ? { code: 'UNMET_PASSENGER_NO_HOST', text: reason('UNMET_NEEDS_DRIVER', { dest, dep: '' }) }
+        : stillUnpairedRelay.includes(nr) && fittingCarFree(input, nr, timelines)
+        ? { code: 'UNMET_NO_RELAY_PARTNER', text: reason('UNMET_NO_RELAY_PARTNER', { dest }) }
+        : oneWayCause.strands
+        ? { code: 'UNMET_ONE_WAY_STRANDS_CAR', text: reason('UNMET_ONE_WAY_STRANDS_CAR', { origin, dest }) }
+        : oneWayCause.awayAtWeekEnd
+        ? { code: 'UNMET_ONE_WAY_AWAY_AT_WEEK_END', text: reason('UNMET_ONE_WAY_AWAY_AT_WEEK_END', { dest }) }
+        : noCarReason(input, nr, timelines, blockers);
       return {
         requestId: nr.id,
         score: scores.get(nr.id)?.total ?? 0,
