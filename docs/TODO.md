@@ -1058,7 +1058,7 @@ Whole-week autofill in the clock-change week now runs (89 rides, all 7 multi-day
 - ✅ R13U3 — Publish summary says both "131 בקשות ללא שינוי לא יקבלו הודעה" and "מי יקבל/תקבל הודעה (131)". **Fixed 2026-10-23:** both come from `publishNotices.ts` (the server's rule): the list counts people, one notice each, and lists only those told; also fixed a repeat notice the next publish would have sent for every lapsed offer (snapshot status).
 - R13U4 — "דיברת עם X?" for "הצע" does not say where/which car; the card offers a far origin (תל אביב) to a זכרון יעקב resident.
 - R13U5 — Composer WhatsApp text starts with a "נסיעה משולבת:" line before "היי …".
-- R13U6 — Ride sheet tells a dropped-off passenger "הרכב נשאר איתי ביעד".
+- ✅ R13U6 — Ride sheet tells a dropped-off passenger "הרכב נשאר איתי ביעד". **Fixed 2026-10-23:** the line is the driver's only (`siddur/carModeLine.ts` + test); chauffeur rides keep their line for everyone.
 - R13U7 — `window_changed` copy uses "25/10/26" instead of "א׳ 25.10".
 - R13U8 — Origin-proposal copy: body "מחיפה לגבעת חביבה · … · במקום מחיפה" never names the new origin (חדרה); `qa:member proposals` prints empty text for it.
 - ✅ R13U9 — 5 separate "ההצעה שקיבלת פגה" notices at publish to one member — a digest. **Fixed 2026-10-23 (owner: first priority, REQ §13.148):** measured on seed 8722 — a member with offers out got one notice per offer and no publish notice; the Sadran one per proposal. Now one notice per member per publish (lapsed offers are lines; new days + republished changes together), none per proposal to the publishing Sadran (`20261028091300`, `publish_one_notice.sql`).

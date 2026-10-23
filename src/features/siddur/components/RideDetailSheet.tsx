@@ -1,3 +1,5 @@
+import { carModeLabel } from "../carModeLine";
+import { useSession } from "@/features/auth/useSession";
 import { Car as CarIcon, MapPin } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
@@ -59,19 +61,6 @@ function headerLabel(ride: BoardRide, served: readonly ServedEntry[], homeDestin
   });
 }
 
-/**
- * A round trip's extra explanatory line ("הרכב נשאר איתי ביעד" / chauffeur). A one-way/relay/
- * drop_off leg (`origin_id !== destination_id`) no longer gets a second, possibly-conflicting
- * line here — REQUIREMENTS §13.93's precise driver-label wording (`src/lib/rideLabel.ts`'s
- * "הרכב נשאר שם" / "משאיר/ה את הרכב ב…" / "הרכב מחכה ב…") already lives in `headerLabel` above.
- */
-function carModeLabel(ride: BoardRide): string {
-  if (ride.origin_id === ride.destination_id) {
-    return ride.is_chauffeur ? he.rideDetail.carModeChauffeur : he.rideDetail.carModeKeep;
-  }
-  return "";
-}
-
 interface RideDetailSheetProps {
   /** The week's rides, so a relay label never names a passenger on a needs-driver partner ride (R2B19). */
   weekRides?: readonly BoardRide[];
@@ -120,6 +109,7 @@ interface RideDetailSheetProps {
  */
 export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = null, onOpenChange, editor, coordinatorNotes, canEditPublicNotes, onRemoveOwnRide, removingOwnRide = false, onRemoveMe, removingMe = false, editRequestHref, showAddPassengers = false, weekRides, moveToCarOptions = [], onMoveToCar, movingToCar = false, handOverOptions = [], onHandOver, handingOver = false }: RideDetailSheetProps) {
   const [confirmCancel, setConfirmCancel] = useState(false);
+  const viewerId = useSession().session?.user.id;
   const [confirmRemoveMe, setConfirmRemoveMe] = useState(false);
   const [moveCarId, setMoveCarId] = useState<string | null>(null);
   // `servedOf()` already maps `v_board_rides.served[].child_names` onto each entry's
@@ -172,7 +162,7 @@ export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = 
                 </p>
               ) : null}
 
-              {carModeLabel(ride) ? <p className="text-muted-foreground">{carModeLabel(ride)}</p> : null}
+              {carModeLabel(ride, viewerId) ? <p className="text-muted-foreground">{carModeLabel(ride, viewerId)}</p> : null}
               {routeHasIntermediates(parseRideRoute(ride.route)) ? <RideRoute route={ride.route} served={served} /> : <RideRouteStops served={served} />}
               {canEditPublicNotes && ride.id && ride.version != null ? (
                 <RidePublicNotesEditor key={`${ride.id}:${ride.version}:notes`} rideId={ride.id} expectedVersion={ride.version} initialNotes={ride.notes} departmentId={ride.department_id ?? ""} weekStart={ride.week_start ?? ""} />
