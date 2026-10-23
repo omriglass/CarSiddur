@@ -475,7 +475,11 @@ async function cmdPropose(board: Board, args: Args): Promise<void> {
     // carries the car and that leg only, so the other leg stays where it is.
     const oneLegArg = flag(args, "leg") as "out" | "return" | undefined;
     const oneLeg = tripTypeOf(request) === "drop_off" ? (oneLegArg ?? (flag(args, "return") && !flag(args, "depart") ? "return" : flag(args, "depart") && !flag(args, "return") ? "out" : undefined)) : undefined;
-    if (oneLeg && flag(args, "car")) {
+    if (!oneLeg && tripTypeOf(request) === "drop_off" && flag(args, "car") && flag(args, "depart") && flag(args, "return")) {
+      // R13B11: both legs of a הקפצה at new times - the server places both (`_shift_place_on_car` without `leg`); the
+      // board's one-leg payload (`unmetShiftPayload`) would carry only the departure and keep the old pickup.
+      Object.assign(payload, { car_id: resolveCar(board, flag(args, "car")!).id, depart_at: startsAt, return_at: endsAt });
+    } else if (oneLeg && flag(args, "car")) {
       payload.car_id = resolveCar(board, flag(args, "car")!).id;
       payload.leg = oneLeg;
       if (oneLeg === "return") payload.return_at = endsAt; else payload.depart_at = startsAt;

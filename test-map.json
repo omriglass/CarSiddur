@@ -608,7 +608,8 @@
         "supabase/tests/held_notices.sql",
         "supabase/tests/proposal_dependencies.sql",
         "src/lib/appSurface.ts",
-        "supabase/migrations/**/*enqueue_notification*"
+        "supabase/migrations/**/*enqueue_notification*",
+        "supabase/tests/qa_run13_proposals.sql"
       ],
       "vitest": [
         "src/features/proposals",
@@ -621,7 +622,8 @@
         "p3_notices.sql",
         "proposals_offline.sql",
         "held_notices.sql",
-        "proposal_dependencies.sql"
+        "proposal_dependencies.sql",
+        "qa_run13_proposals.sql"
       ],
       "playwrightTags": [
         "@proposals"
