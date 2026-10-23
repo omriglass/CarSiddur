@@ -5323,6 +5323,14 @@ export type Database = {
         }
         Returns: string
       }
+      join_other_ride: {
+        Args: {
+          p_expected_version: number
+          p_request_id: string
+          p_ride_id: string
+        }
+        Returns: undefined
+      }
       join_waitlist_group: { Args: { p_request_id: string }; Returns: string }
       joinable_rides_for_request: {
         Args: { p_request_id: string }

@@ -26,6 +26,11 @@ export interface RideMove {
   expectedVersion: number;
 }
 
+/** R13M5: moves my request's people onto another ride (`joinable_rides_for_request`) and releases my seat on the held one. */
+export async function joinOtherRide(requestId: string, rideId: string, expectedVersion: number): Promise<void> {
+  await rpc("join_other_ride", { p_request_id: requestId, p_ride_id: rideId, p_expected_version: expectedVersion });
+}
+
 export async function claimRideDriver(rideId: string, expectedVersion: number): Promise<void> {
   await rpc("claim_ride_driver", { p_ride_id: rideId, p_expected_version: expectedVersion });
 }

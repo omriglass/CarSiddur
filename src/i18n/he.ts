@@ -237,6 +237,9 @@ export const he = {
     volunteer: "אני אנהג בנסיעה הזו",
     volunteerHelp: "ההתנדבות כוללת את הסעת הנוסעים והחזרת הרכב, לפי השעות המוצגות.",
     volunteered: "שובצת כנהג/ת הנסיעה",
+    // R13M5: a passenger whose driver cancelled, on the held ride's /my card
+    findOtherRide: "נסיעה אחרת",
+    noOtherRide: "אין כרגע נסיעה קרובה עם מקום פנוי. נשארת ברשימת ההמתנה.",
     noLongerMissing: "הנסיעה כבר שובצה לנהג/ת או השתנתה. יש לרענן את הסידור.",
     driverBusy: "כבר שובצת לנהיגה בנסיעה אחרת בשעות האלה.",
     past: "לא ניתן לשנות נסיעה שכבר הסתיימה.",

@@ -65,5 +65,58 @@ begin
   select * into rec from public.rides where id=rid;
   assert rec.status='confirmed' and rec.is_pinned and rec.pin_reason='REQUEST_RELEASED', format('R13B19: the ride stays, pinned with a reason, got %s', row_to_json(rec));
   assert not exists(select 1 from public.ride_requests where ride_id=rid and request_id=qg), 'R13B19: the guest left the ride';
+
+  -- R13M5 follow-up: a passenger cancelling their own seat on a ride that keeps other people (no pin reason yet) works
+  dt:=((w+4)+time '15:00') at time zone 'Asia/Jerusalem';
+  insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,depart_at,return_at,trip_shape,status,origin_id)
+    values(dept,w,d1,d1,haifa,typ,dt,dt+interval '2 hours','round_trip','assigned',home) returning id into qd;
+  insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,depart_at,return_at,trip_shape,status,origin_id)
+    values(dept,w,g2,g2,haifa,typ,dt,dt+interval '2 hours','round_trip','merged',home) returning id into qg;
+  insert into public.rides(department_id,week_start,car_id,starts_at,ends_at,origin_id,destination_id,driver_id,status,created_by)
+    values(dept,w,car,dt,dt+interval '2 hours',home,home,d1,'confirmed',sadran) returning id into rid;
+  insert into public.ride_requests(ride_id,request_id,role,leg,car_mode) values(rid,qd,'driver','both','keep'),(rid,qg,'passenger','both','passenger');
+  perform set_config('request.jwt.claims',jsonb_build_object('sub',g2,'role','authenticated')::text,true);
+  perform public.cancel_ride(rid,'CANCELLED_BY_MEMBER',(select version from public.rides where id=rid));
+  perform set_config('request.jwt.claims','{}',true);
+  select * into rec from public.rides where id=rid;
+  assert rec.status='confirmed' and rec.is_pinned and rec.pin_reason='PASSENGER_CANCELLED' and (select status from public.requests where id=qg)='cancelled',
+    format('a passenger leaves a ride that keeps its driver, got %s', row_to_json(rec));
+
+  -- R13M5: a guest whose driver cancelled (nobody left drives) finds another ride: joining it takes the request's own
+  -- people there and releases the held ride (nobody left on it -> cancelled); only the requester may do it.
+  update public.profiles set does_not_drive=false where id=g1;   -- g1 drives the case (1) ride above
+  dt:=((w+5)+time '09:45') at time zone 'Asia/Jerusalem';
+  insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,depart_at,return_at,trip_shape,status,origin_id)
+    values(dept,w,d1,d1,haifa,typ,dt,dt+interval '2 hours','round_trip','assigned',home) returning id into qd;
+  insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,depart_at,return_at,trip_shape,status,origin_id,adults,guest_passenger_names)
+    values(dept,w,g2,g2,haifa,typ,dt,dt+interval '2 hours','round_trip','merged',home,2,array['Guest X']) returning id into qg;
+  insert into public.rides(department_id,week_start,car_id,starts_at,ends_at,origin_id,destination_id,driver_id,status,created_by)
+    values(dept,w,car,dt,dt+interval '2 hours',home,home,d1,'confirmed',sadran) returning id into rid;
+  insert into public.ride_requests(ride_id,request_id,role,leg,car_mode) values(rid,qd,'driver','both','keep'),(rid,qg,'passenger','both','passenger');
+  -- the other ride: the Sadran drives to Haifa at the same time on another car
+  insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,depart_at,return_at,trip_shape,status,origin_id)
+    values(dept,w,sadran,sadran,haifa,typ,dt,dt+interval '2 hours','round_trip','assigned',home) returning id into qg2;
+  insert into public.rides(department_id,week_start,car_id,starts_at,ends_at,origin_id,destination_id,driver_id,status,created_by)
+    values(dept,w,'00000000-0000-0000-0000-000000000040',dt,dt+interval '2 hours',home,home,sadran,'confirmed',sadran) returning id into pub;
+  insert into public.ride_requests(ride_id,request_id,role,leg,car_mode) values(pub,qg2,'driver','both','keep');
+  set constraints all immediate; set constraints all deferred;
+  perform set_config('request.jwt.claims',jsonb_build_object('sub',d1,'role','authenticated')::text,true);
+  perform public.cancel_ride(rid,null,(select version from public.rides where id=rid));
+  assert (select needs_driver from public.rides where id=rid) and (select status from public.requests where id=qg)='waitlisted', 'R13M5: the ride is held for a driver';
+  begin
+    perform public.join_other_ride(qg, pub, (select version from public.rides where id=pub));
+    assert false, 'R13M5: only the requester moves the request';
+  exception when others then
+    assert sqlerrm='not_authorized', 'R13M5: not_authorized, got '||sqlerrm;
+  end;
+  perform set_config('request.jwt.claims',jsonb_build_object('sub',g2,'role','authenticated')::text,true);
+  assert exists(select 1 from public.joinable_rides_for_request(qg) j where j.ride_id=pub), 'R13M5: the other ride is offered';
+  perform public.join_other_ride(qg, pub, (select version from public.rides where id=pub));
+  perform set_config('request.jwt.claims','{}',true);
+  assert (select count(*) from public.ride_passengers where ride_id=pub and (person_id=g2 or display_name='Guest X'))=2,
+    'R13M5: the requester and the named guest ride on the other ride, got '||(select string_agg(display_name,', ') from public.ride_passengers where ride_id=pub);
+  assert (select status from public.rides where id=rid)='cancelled', 'R13M5: the held ride nobody is left on is released';
+  assert (select status from public.requests where id=qg) in ('cancelled','withdrawn'), 'R13M5: the old request ends';
+  set constraints all immediate;
 end $$;
 rollback;

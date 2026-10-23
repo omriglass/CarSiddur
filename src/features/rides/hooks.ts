@@ -11,6 +11,7 @@ import {
   addRidePassengers,
   cancelRideChange,
   claimRideDriver,
+  joinOtherRide,
   fetchCarNeighbours,
   fetchRideChanges,
   handOverOwnRide,
@@ -95,6 +96,19 @@ export function useClaimRideDriverMutation() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: ({ rideId, expectedVersion }: { rideId: string; expectedVersion: number }) => claimRideDriver(rideId, expectedVersion),
+    onSuccess: () => {
+      for (const key of [siddurKeys.all, sadranKeys.all, requestsKeys.all, inboxKeys.all])
+        void client.invalidateQueries({ queryKey: key });
+    },
+    onError: showErrorToast,
+  });
+}
+
+export function useJoinOtherRideMutation() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ requestId, rideId, expectedVersion }: { requestId: string; rideId: string; expectedVersion: number }) =>
+      joinOtherRide(requestId, rideId, expectedVersion),
     onSuccess: () => {
       for (const key of [siddurKeys.all, sadranKeys.all, requestsKeys.all, inboxKeys.all])
         void client.invalidateQueries({ queryKey: key });

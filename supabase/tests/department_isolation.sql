@@ -400,6 +400,8 @@ declare
     -- R13B17: a waitlisted request's current cause, only for the request's related people / the week's Sadran (null otherwise;
     -- waitlist_cause.sql (2)); reads, writes nothing.
     'waitlist_cause:self-only',
+    -- R13M5: moves the caller's own request (requester only) onto a ride of the request's department.
+    'join_other_ride:self-only',
     -- REQ §13.129 (b): refused unless the caller drives the ride (so it is the caller's own department's ride).
     'hand_over_own_ride:inspected',
     'claim_freed_slot:self-only', 'register_push_subscription:self-only', 'send_test_notification:self-only', 'deliver_changelog:self-only',

@@ -8,6 +8,9 @@ import { toDisplayRows } from "../myRequestsRows";
 import { RequestRow } from "./RequestRow";
 
 vi.mock("@/features/fleet/hooks", () => ({ useDestinations: () => ({ data: [] }) }));
+vi.mock("./DriverlessRideActions", () => ({
+  DriverlessRideActions: ({ canDrive }: { canDrive: boolean }) => <div data-testid="driverless-actions" data-can-drive={String(canDrive)} />,
+}));
 
 function request(overrides: Partial<MyRequestRow> = {}): MyRequestRow {
   return {
@@ -30,6 +33,25 @@ function show(row: MyRequestRow, props: Partial<Parameters<typeof RequestRow>[0]
 }
 
 describe("RequestRow", () => {
+  it("R13M5: a request whose driver cancelled (the ride needs a driver) offers its requester 'I'll drive' / 'another ride'", () => {
+    const held = request({
+      status: "waitlisted", statusReason: "UNMET_NEEDS_DRIVER", requesterId: "me", tripType: "round_trip",
+      window: { phase: "published", open_at: "2026-09-01T00:00:00Z", close_at: "2026-09-05T23:00:00Z" },
+      ride: {
+        id: "ride", startsAt: "2026-09-15T08:00:00+03:00", endsAt: "2026-09-15T12:00:00+03:00", status: "flagged", needsDriver: true,
+        originName: "Home", destinationName: "Home", carName: "Car", carType: "shared", driverName: null, isChauffeur: false, role: "passenger",
+      },
+    });
+    const { unmount } = show(held, { viewerId: "me", viewerDrives: false });
+    expect(screen.getByTestId("driverless-actions").dataset.canDrive).toBe("false");
+    unmount();
+    const other = show(held, { viewerId: "someone-else" });
+    expect(screen.queryByTestId("driverless-actions")).toBeNull();
+    other.unmount();
+    show({ ...held, tripType: "drop_off" }, { viewerId: "me" });
+    expect(screen.queryByTestId("driverless-actions")).toBeNull();
+  });
+
   it("ring-highlights when `highlighted` is set", () => {
     const { container } = show(request(), { highlighted: true });
     expect(container.querySelector('[data-request-id="request-1"]')?.className).toContain("ring-2");

@@ -5,7 +5,6 @@ import { parseTimeToMinutes } from "@/features/solverBridge/buildSolverInput";
 import { CalendarDays, Inbox } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { toast } from "sonner";
 
 import { formatWeekRangeLabel, todayInJerusalem } from "@/components/dateFieldDates";
 import { CarSwapDialog } from "@/components/CarSwapDialog";
@@ -42,6 +41,7 @@ import { ridePublicDetails } from "@/lib/ridePublicDetails";
 import { ridePassengerSummary } from "@/lib/ridePassengerSummary";
 import { rideCoordinatorNotes } from "@/lib/rideCoordinatorNotes";
 import { siddurCarName } from "@/lib/siddurCarName";
+import { VolunteerDriverPanel } from "@/features/rides/components/VolunteerDriverPanel";
 import { RideDetailSheet } from "@/features/siddur/components/RideDetailSheet";
 import { MemberRideEditor } from "@/features/siddur/components/MemberRideEditor";
 import { isRideRelated, relatedRequestIdToEdit } from "@/features/rides/relatedRide";
@@ -62,7 +62,6 @@ import {
 } from "@/features/siddur/hooks";
 import {
   useRideChanges,
-  useClaimRideDriverMutation,
   useRemoveRidePassengerMutation,
 } from "@/features/rides/hooks";
 import { useDayFreeWindows, type DayFreeWindowsAway, type DayFreeWindowsCar } from "@/features/siddur/useDayFreeWindows";
@@ -161,7 +160,6 @@ export function SiddurPage() {
   const rideTypesQuery = useRideTypes(departmentId);
   const settingsQuery = useDepartmentSettings(departmentId);
   const changesQuery = useRideChanges(departmentId, weekStart);
-  const claimMutation = useClaimRideDriverMutation();
 
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [selectedRideId, setSelectedRideId] = useState<string | null>(null);
@@ -712,15 +710,7 @@ export function SiddurPage() {
         removingMe={removeMeMutation.isPending}
         editRequestHref={editHrefForRide}
         editor={selectedRide?.needs_driver && canEditWeek && selectedRide.ends_at && Date.parse(selectedRide.ends_at) > now.getTime() ? (
-          <div className="space-y-2 rounded-md border border-destructive/50 p-3">
-            <p className="font-semibold text-destructive">{he.rideCoordination.missingDriver}</p>
-            <p>{he.rideCoordination.volunteerHelp}</p>
-            <Button className="w-full" disabled={claimMutation.isPending} onClick={() => {
-              if (selectedRide.id && selectedRide.version != null) claimMutation.mutate({ rideId: selectedRide.id, expectedVersion: selectedRide.version }, {
-                onSuccess: () => { setSelectedRideId(null); toast.success(he.rideCoordination.volunteered); },
-              });
-            }}>{he.rideCoordination.volunteer}</Button>
-          </div>
+          <VolunteerDriverPanel ride={selectedRide} onDone={() => setSelectedRideId(null)} />
         ) : selectedRide?.id && ownsEditableRide(selectedRide.id) ? <MemberRideEditor key={`${selectedRide.id}:${selectedRide.version}:editor`} ride={selectedRide} cars={carsQuery.data ?? []} viewerId={profileId} saving={rideMoves.saving} onSave={(move) => void saveMove(move)} /> : undefined}
       />
 

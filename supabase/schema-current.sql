@@ -4933,7 +4933,7 @@ begin
       perform public.flag_car_chain_breaks(r.car_id,r.week_start);
       perform public._offer_freed_slot(r.id);   -- R8B11: the released slot is offered like any cancellation
     else
-      update public.rides set is_pinned=true where id=r.id;
+      update public.rides set is_pinned=true, pin_reason=coalesce(pin_reason,'PASSENGER_CANCELLED') where id=r.id;   -- rides_pin_reason_ck
     end if;
     if r.driver_id is not null and r.driver_id is distinct from (select auth.uid()) then
       select string_agg(p.full_name,', ') into v_driver_name from public.profiles p where p.id=(select auth.uid());
@@ -8714,6 +8714,72 @@ end $$;
 
 
 ALTER FUNCTION "public"."join_drop_off_legs"("p_request_id" "uuid", "p_ride_id" "uuid", "p_expected_version" integer, "p_allow_small_trunk" boolean) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."join_other_ride"("p_request_id" "uuid", "p_ride_id" "uuid", "p_expected_version" integer) RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  q public.requests%rowtype;
+  v_actor uuid := (select auth.uid());
+  v_year int;
+  v_people jsonb;
+  v_held record;
+begin
+  select * into q from public.requests where id = p_request_id for update;
+  if not found then raise exception 'request_not_found' using errcode = 'P0001'; end if;
+  if q.requester_id is distinct from v_actor then raise exception 'not_authorized' using errcode = 'P0001'; end if;
+  if q.status in ('draft', 'withdrawn', 'cancelled') or q.series_id is not null then
+    raise exception 'request_not_joinable' using errcode = 'P0001';
+  end if;
+  if not exists (select 1 from public.rides where id = p_ride_id and department_id = q.department_id) then
+    raise exception 'ride_not_found' using errcode = 'P0001';
+  end if;
+  if exists (select 1 from public.ride_requests where request_id = q.id and ride_id = p_ride_id) then
+    raise exception 'already_on_ride' using errcode = 'P0001';
+  end if;
+  -- only a request whose every ride lost its driver moves: a driver keeps their own ride (cancel it instead), and a
+  -- הקפצה whose other leg still has a driver is not taken off that leg
+  if exists (select 1 from public.ride_requests rr join public.rides r on r.id = rr.ride_id
+             where rr.request_id = q.id and r.status <> 'cancelled' and (rr.role = 'driver' or r.driver_id is not null)) then
+    raise exception 'request_has_ride' using errcode = 'P0001';
+  end if;
+
+  v_year := extract(year from (coalesce(q.depart_at, q.return_at) at time zone 'Asia/Jerusalem'))::int;
+  select coalesce(jsonb_agg(person order by ord, name), '[]'::jsonb) into v_people from (
+    select 0 as ord, p.full_name as name,
+      jsonb_build_object('person_id', p.id, 'display_name', p.full_name, 'seat_kind', 'adult') as person
+    from public.profiles p where p.id = q.requester_id
+    union all
+    select 1, p.full_name, jsonb_build_object('person_id', p.id, 'display_name', p.full_name, 'seat_kind', 'adult')
+    from public.request_companions rc join public.profiles p on p.id = rc.profile_id where rc.request_id = q.id
+    union all
+    -- the app's rule (src/lib/childAge.ts): a named child rides as an adult passenger from age eight
+    select 2, c.full_name, jsonb_build_object('child_id', c.id, 'display_name', c.full_name,
+      'seat_kind', case when c.birth_year is not null and v_year - c.birth_year >= 8 then 'adult' else 'child_seat' end)
+    from public.request_children rc join public.children c on c.id = rc.child_id where rc.request_id = q.id
+    union all
+    select 3, g.name, jsonb_build_object('display_name', g.name, 'seat_kind', 'adult')
+    from unnest(coalesce(q.guest_passenger_names, '{}'::text[])) as g(name) where nullif(trim(g.name), '') is not null
+  ) people;
+
+  perform public.add_ride_passengers(p_ride_id, p_expected_version, v_people);
+
+  for v_held in
+    select r.id, r.version from public.ride_requests rr join public.rides r on r.id = rr.ride_id
+    where rr.request_id = q.id and r.status <> 'cancelled' order by r.starts_at, r.id
+  loop
+    perform public.cancel_ride(v_held.id, null, v_held.version);
+  end loop;
+  -- a request that held no seat anywhere (plain waiting list) is withdrawn instead
+  if (select status from public.requests where id = q.id) not in ('withdrawn', 'cancelled') then
+    perform public.withdraw_request(q.id, (select version from public.requests where id = q.id));
+  end if;
+end $$;
+
+
+ALTER FUNCTION "public"."join_other_ride"("p_request_id" "uuid", "p_ride_id" "uuid", "p_expected_version" integer) OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."join_waitlist_group"("p_request_id" "uuid") RETURNS "uuid"
@@ -25065,6 +25131,12 @@ GRANT ALL ON FUNCTION "public"."is_week_public"("_dept" "uuid", "_week" "date") 
 REVOKE ALL ON FUNCTION "public"."join_drop_off_legs"("p_request_id" "uuid", "p_ride_id" "uuid", "p_expected_version" integer, "p_allow_small_trunk" boolean) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."join_drop_off_legs"("p_request_id" "uuid", "p_ride_id" "uuid", "p_expected_version" integer, "p_allow_small_trunk" boolean) TO "service_role";
 GRANT ALL ON FUNCTION "public"."join_drop_off_legs"("p_request_id" "uuid", "p_ride_id" "uuid", "p_expected_version" integer, "p_allow_small_trunk" boolean) TO "authenticated";
+
+
+
+REVOKE ALL ON FUNCTION "public"."join_other_ride"("p_request_id" "uuid", "p_ride_id" "uuid", "p_expected_version" integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."join_other_ride"("p_request_id" "uuid", "p_ride_id" "uuid", "p_expected_version" integer) TO "service_role";
+GRANT ALL ON FUNCTION "public"."join_other_ride"("p_request_id" "uuid", "p_ride_id" "uuid", "p_expected_version" integer) TO "authenticated";
 
 
 

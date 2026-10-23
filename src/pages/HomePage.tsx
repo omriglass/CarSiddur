@@ -58,6 +58,7 @@ import { isRideDayEditable } from "@/features/rides/rideDayEditable";
 import { useRideSheetCarActions } from "@/features/rides/useRideSheetCarActions";
 import { myRidePersonKey } from "@/features/rides/ridePeople";
 import { isRideOfMine, selectRelatedRides } from "@/features/rides/myRides";
+import { VolunteerDriverPanel } from "@/features/rides/components/VolunteerDriverPanel";
 import { RideDetailSheet } from "@/features/siddur/components/RideDetailSheet";
 import { MemberRideEditor } from "@/features/siddur/components/MemberRideEditor";
 import type { BoardRide } from "@/features/siddur/api";
@@ -490,6 +491,7 @@ export function HomePage() {
                 key={row.id}
                 row={row}
                 viewerId={viewerId}
+                viewerDrives={!profileQuery.data?.does_not_drive}
                 highlighted={row.id === focusedId}
                 rowRef={row.id === focusedId ? highlightedRef : undefined}
                 homeDestinationId={homeDestinationIds[row.departmentId]}
@@ -602,6 +604,7 @@ export function HomePage() {
                       key={row.id}
                       row={row}
                       viewerId={viewerId}
+                      viewerDrives={!profileQuery.data?.does_not_drive}
                       highlighted={row.id === focusedId}
                       rowRef={row.id === focusedId ? highlightedRef : undefined}
                       homeDestinationId={homeDestinationIds[group.departmentId]}
@@ -665,7 +668,10 @@ export function HomePage() {
         // Owner 2026-10-11: the same "edit" button as on the siddur — opens my own request on this ride (day, stops, …).
         editRequestHref={selectedRideEditHref}
         canEditPublicNotes={canEditSelectedRideNotes}
-        editor={editableRide && ownsEditableRide ? (
+        editor={selectedMyRide?.needs_driver && selectedMyRide.status !== "cancelled" && !profileQuery.data?.does_not_drive ? (
+          // R13M5: a passenger whose driver cancelled can take the wheel from "my rides" too.
+          <VolunteerDriverPanel ride={selectedMyRide} onDone={() => setSelectedMyRide(null)} />
+        ) : editableRide && ownsEditableRide ? (
           <MemberRideEditor
             key={`${editableRide.id}:${editableRide.version}:editor`}
             ride={editableRide}
@@ -686,6 +692,7 @@ export function HomePage() {
           <RequestRow
             row={selectedWeekRow}
             viewerId={viewerId}
+            viewerDrives={!profileQuery.data?.does_not_drive}
             homeDestinationId={homeDestinationIds[selectedWeekRow.departmentId]}
             handover={rowHandover(selectedWeekRow, neighboursByRide, viewerId)}
             onWithdraw={(target) => { setSelectedRequestId(null); setConfirmAction({ kind: "withdraw", row: target }); }}

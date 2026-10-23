@@ -21,6 +21,7 @@ import type { CarHandoverNotes } from "@/features/rides/carHandover";
 import { enteredTimeLabels, type EnteredTimeLabels } from "../enteredTimes";
 import { canEditRequest } from "../window";
 import { whoText } from "../whoLabel";
+import { DriverlessRideActions } from "./DriverlessRideActions";
 import { RequestLink } from "./RequestLink";
 import { PlanBLines } from "./PlanBLines";
 import { WindowSummaryLine } from "./WindowSummaryLine";
@@ -52,6 +53,8 @@ interface RequestRowProps {
   readOnly?: boolean;
   /** The signed-in member: tells a request filed for someone else (REQ §13.127 d) from the member's own. */
   viewerId?: string;
+  /** R13M5: false for a member marked "does not drive" (no "I'll drive" on a ride that lost its driver). */
+  viewerDrives?: boolean;
   onWithdraw?: (row: DisplayRow) => void;
   onCancelRide?: (row: DisplayRow) => void;
   /** REQ §13.103 c: "קיצור הבקשה" on a multi-day request. */
@@ -103,6 +106,7 @@ export function RequestRow({
   homeDestinationId,
   readOnly,
   viewerId,
+  viewerDrives = true,
   onWithdraw,
   onCancelRide,
   onShorten,
@@ -248,6 +252,10 @@ export function RequestRow({
             <Button size="sm" variant="outline" onClick={() => onShorten(row)}>
               {he.request.shortenSeries}
             </Button>
+          ) : null}
+          {/* R13M5: the driver cancelled and nobody left on the ride drives. */}
+          {iAmRequester && row.status === "waitlisted" && row.ride?.needsDriver && row.ride.id && !row.seriesLegs && row.tripType !== "drop_off" ? (
+            <DriverlessRideActions requestId={row.id} departmentId={row.departmentId} rideId={row.ride.id} canDrive={viewerDrives} />
           ) : null}
           {cancelAction ? (
             <Button size="sm" variant="outline" className={CANCEL_CLASS} onClick={cancelAction}>
