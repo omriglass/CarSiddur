@@ -68,6 +68,7 @@ export type ErrorCode =
   | "merge_luggage_needs_large_trunk"
   | "merge_turnaround_conflict"
   | "merge_already_on_ride"
+  | "merge_leg_missing"
   | "series_span_invalid"
   | "series_span_requires_series_head"
   | "series_span_shared_ride"
@@ -211,6 +212,7 @@ const MESSAGE_TO_CODE: Record<string, ErrorCode> = {
   merge_luggage_needs_large_trunk: "merge_luggage_needs_large_trunk",
   merge_turnaround_conflict: "merge_turnaround_conflict",
   merge_already_on_ride: "merge_already_on_ride",
+  merge_leg_missing: "merge_leg_missing",
   series_span_invalid: "series_span_invalid",
   series_span_requires_series_head: "series_span_requires_series_head",
   series_span_shared_ride: "series_span_shared_ride",
@@ -369,6 +371,7 @@ const CODE_TO_MESSAGE: Record<ErrorCode, string> = {
   merge_luggage_needs_large_trunk: he.mergedRide.invalid.luggage_needs_large_trunk,
   merge_turnaround_conflict: he.mergedRide.invalid.turnaround_conflict,
   merge_already_on_ride: he.mergedRide.invalid.already_on_ride,
+  merge_leg_missing: he.mergedRide.invalid.leg_missing,
   series_span_invalid: he.mergedRide.invalid.series_span_invalid,
   series_span_requires_series_head: he.mergedRide.invalid.series_span_head,
   series_span_shared_ride: he.mergedRide.invalid.series_span_shared,

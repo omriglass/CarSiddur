@@ -198,6 +198,7 @@ describe("mergeVerdict / mergeRefusalText (REQ item 108 M1: the server decides)"
     expect(mergeRefusalText("turnaround", "previous")).toBe(he.mergedRide.invalid.turnaround_conflict_previous);
     expect(mergeRefusalText("turnaround", "next")).toBe(he.mergedRide.invalid.turnaround_conflict);
     expect(mergeRefusalText("already_on_ride")).toBe(he.mergedRide.invalid.already_on_ride);
+    expect(mergeRefusalText("leg_missing")).toBe(he.mergedRide.invalid.leg_missing);
     expect(mergeRefusalText("something_new")).toBe(he.mergedRide.invalid.unknown);
     expect(mergeRefusalText(null)).toBe(he.mergedRide.invalid.unknown);
   });

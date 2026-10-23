@@ -1703,6 +1703,14 @@ begin
     v_err := 'merge_already_on_ride';
   end if;
 
+  -- R13B18 (QA run 13): a leg the request does not have cannot join — a pickup-only request (its drop-off leg
+  -- cancelled: `one_way_from`, no departure) has no out leg, a request with no return time has no return leg.
+  if v_err is null and exists(select 1 from public.requests q where q.id = p_request_id and (
+       (p_leg = 'out' and (q.depart_at is null or q.trip_shape = 'one_way_from'))
+    or (p_leg = 'return' and q.return_at is null))) then
+    v_err := 'merge_leg_missing';
+  end if;
+
   -- REQ item 21 (2026-10-07): large luggage is a yes/no match - a large-luggage (ציוד רב) request
   -- rides only on a `large_trunk` car, and any number of them may share that car (no count cap).
   select coalesce(c.features, '{}') into v_features from public.cars c where c.id = v_ride.car_id;
@@ -1887,6 +1895,7 @@ CREATE OR REPLACE FUNCTION "public"."_merge_error_code"("_err" "text") RETURNS "
     when 'private_car_owner_only' then 'private_car'
     when 'merge_turnaround_conflict' then 'turnaround'
     when 'merge_already_on_ride' then 'already_on_ride'
+    when 'merge_leg_missing' then 'leg_missing'
     when 'merge_window_locked' then 'window_locked'
     when 'ride_conflicts_with_maintenance' then 'maintenance'
     when 'ride_not_found' then 'ride_not_found'

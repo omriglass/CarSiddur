@@ -245,6 +245,7 @@ const MERGE_CODE_TEXT: Record<string, string> = {
   private_car: he.mergedRide.invalid.private_car,
   turnaround: he.mergedRide.invalid.turnaround_conflict,
   already_on_ride: he.mergedRide.invalid.already_on_ride,
+  leg_missing: he.mergedRide.invalid.leg_missing,
   window: he.mergedRide.invalid.window,
   time_far: he.mergedRide.invalid.time_far,
   window_locked: he.mergedRide.invalid.window_locked,

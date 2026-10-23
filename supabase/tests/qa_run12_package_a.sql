@@ -50,7 +50,9 @@ begin
     values(dept,w,m2,manager,haifa,home,typ,d0+interval '7 hours 15 minutes','one_way_to','one_way',false,'passenger','waitlisted') returning id into qG;
   foreach l in array array['out','return','both'] loop
     pv:=public.merge_preview(rH,qG,l::public.ride_leg);
-    assert (pv->>'ok')::boolean=false and pv->>'code'='boards_at_end', format('R12B5: guest leg %s onto a one-way ride must be refused boards_at_end, got %s',l,pv);
+    -- R13B18: the one-way guest has no return leg at all, so 'return' is refused leg_missing first
+    assert (pv->>'ok')::boolean=false and pv->>'code'=case when l='return' then 'leg_missing' else 'boards_at_end' end,
+      format('R12B5: guest leg %s onto a one-way ride must be refused, got %s',l,pv);
   end loop;
   -- round-trip host 09:30-12:00; the reversed guest at 16:45 is hours away from the return leg: window refusal
   update public.requests set trip_shape='round_trip',trip_type='round_trip',one_way_car_mode=null,return_at=d0+interval '2 hours 30 minutes' where id=qH;

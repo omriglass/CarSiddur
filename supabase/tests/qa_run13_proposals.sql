@@ -1,6 +1,7 @@
 -- QA run 13 (2026-10-23 bug round): R13B11 — a shift of a הקפצה with both new times (no `leg`)
 -- moves both legs. R13B14 — a ride placed on a day not yet published is a draft, also in a week with
--- other days published (accepted origin proposal, `try_auto_approve`, `place_request_on_car`). Transactional; rolled back. Seeded נבו department.
+-- other days published (accepted origin proposal, `try_auto_approve`, `place_request_on_car`). R13B18 — a
+-- merge of a leg the request no longer has (the out leg of a pickup-only request) is refused. Transactional; rolled back. Seeded נבו department.
 begin;
 do $$
 declare
@@ -14,7 +15,7 @@ declare
   car42 uuid:='00000000-0000-0000-0000-000000000042';
   w date:=public.current_week_start()+1309;
   w2 date:=public.current_week_start()+1316;
-  d timestamptz; q uuid; prop uuid; tokens jsonb; res jsonb; pub uuid;
+  d timestamptz; q uuid; prop uuid; tokens jsonb; res jsonb; pub uuid; host uuid; hride uuid; pv jsonb; msg text;
 begin
   perform set_config('request.jwt.claims',jsonb_build_object('sub',manager,'role','authenticated')::text,true);
   insert into public.weeks(department_id,week_start,phase,open_at,close_at,publish_at)
@@ -68,5 +69,27 @@ begin
   perform public.place_request_on_car(q,car42,true,manager,null,null,null);
   assert (select r.status from public.ride_requests rr join public.rides r on r.id=rr.ride_id
           where rr.request_id=q and r.status<>'cancelled')='draft', 'R13B14 (c): place_request_on_car makes a draft on an unpublished day';
+
+  -- ============ R13B18: a round-trip host home->Haifa 09:00-13:00; a pickup-only guest (drop-off cancelled) from Haifa at 12:00
+  d:=((w+3)+time '09:00') at time zone 'Asia/Jerusalem';
+  insert into public.requests(department_id,week_start,requester_id,filed_by,origin_id,destination_id,ride_type_id,depart_at,return_at,trip_shape,trip_type,status)
+    values(dept,w,manager,manager,home,haifa,typ,d,d+interval '4 hours','round_trip','round_trip','assigned') returning id into host;
+  insert into public.rides(department_id,week_start,car_id,starts_at,ends_at,origin_id,destination_id,driver_id,status,created_by)
+    values(dept,w,car40,d,d+interval '4 hours',home,home,manager,'draft',manager) returning id into hride;
+  insert into public.ride_requests(ride_id,request_id,role,leg,car_mode) values(hride,host,'driver','both','keep');
+  insert into public.requests(department_id,week_start,requester_id,filed_by,origin_id,destination_id,ride_type_id,depart_at,return_at,trip_shape,trip_type,status)
+    values(dept,w,m1,m1,home,haifa,typ,d,d+interval '3 hours','round_trip','drop_off','waitlisted') returning id into q;
+  -- what cancelling the drop-off leg leaves (cancel_ride_before_series, R4B8)
+  update public.requests set trip_shape='one_way_from', needs_car_at_destination=false, depart_at=null, one_way_car_mode='relay' where id=q;
+  pv:=public.merge_preview(hride,q,'out');
+  assert (pv->>'ok')::boolean=false and pv->>'code'='leg_missing', format('R13B18: the out leg of a pickup-only request is refused leg_missing, got %s',pv);
+  pv:=public.merge_preview(hride,q,'return');
+  assert coalesce(pv->>'code','')<>'leg_missing', format('R13B18: its pickup leg is not leg_missing, got %s',pv);
+  begin
+    perform public.create_proposal(q,hride,'merge',jsonb_build_object('legs',jsonb_build_array(jsonb_build_object('ride_id',hride,'leg','out'))),'x');
+    msg:='created';
+  exception when others then msg:=sqlerrm;
+  end;
+  assert msg like '%merge_leg_missing%', format('R13B18: create_proposal refuses the missing leg, got %s',msg);
 end $$;
 rollback;

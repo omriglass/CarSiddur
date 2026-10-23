@@ -670,6 +670,8 @@ export const heSadran = {
       turnaround_conflict: "אי אפשר לצרף — הנסיעה המאוחדת לא משאירה זמן מעבר לפני הנסיעה הבאה ברכב",
       turnaround_conflict_previous: "אי אפשר לצרף — הנסיעה המאוחדת מתחילה מוקדם מדי ולא משאירה זמן מעבר אחרי הנסיעה הקודמת ברכב",
       already_on_ride: "הבקשה כבר בנסיעה הזו (או שהצעה זהה כבר נשלחה)",
+      /** R13B18: e.g. the out leg of a pickup-only request (its drop-off was cancelled). */
+      leg_missing: "אי אפשר לצרף — לבקשה אין את הכיוון הזה (אולי בוטל)",
       /** REQ §13.112 (c): the ride serves a "N hours between A and B" request whose length never changes. */
       window_locked: "אי אפשר לצרף — הנסיעה היא בחלון זמן קבוע והצירוף היה מאריך אותה",
       // REQ item 108 (M1): reasons only the server's `merge_preview` can give.
