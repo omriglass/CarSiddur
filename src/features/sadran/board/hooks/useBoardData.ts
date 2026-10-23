@@ -857,7 +857,13 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
   }));
 
   // REQ §13.94 (G4): a drop-off with a pickup is two cards (drop-off / pickup), each placed on its own.
-  const allUnmetViews = unmetRequestViews(boardRequests, rides, { awaitingDriverRequestIds, draftPlacedRequestIds });
+  // Owner 2026-10-23: a sent/accepted merge is listed once — as its block on the host's car, not also as the guest's card.
+  const boardShownLegs = new Map<string, Set<"out" | "return" | "both">>();
+  for (const merge of pendingMerges) {
+    if (merge.isDraft || !merge.guest.id) continue;
+    boardShownLegs.set(merge.guest.id, new Set([...(boardShownLegs.get(merge.guest.id) ?? []), merge.leg]));
+  }
+  const allUnmetViews = unmetRequestViews(boardRequests, rides, { awaitingDriverRequestIds, draftPlacedRequestIds, boardShownLegs });
   const dayCounts = days.map((d) => ({
     rides: rides.filter((r) => r.starts_at && dateKey(new Date(r.starts_at)) === d).length,
     unmet: viewsOnDay(allUnmetViews, d, (iso) => dateKey(new Date(iso))).length,

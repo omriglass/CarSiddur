@@ -65,20 +65,30 @@ const PARTLY_PLACED_STATUSES = new Set(["assigned", "merged"]);
 export function unmetRequestViews(
   requests: readonly WeekRequestRow[],
   rides: readonly BoardRide[],
-  opts: { awaitingDriverRequestIds: ReadonlySet<string | null>; draftPlacedRequestIds: ReadonlySet<string | null> },
+  opts: {
+    awaitingDriverRequestIds: ReadonlySet<string | null>;
+    draftPlacedRequestIds: ReadonlySet<string | null>;
+    /**
+     * Owner 2026-10-23: a sent/accepted merge already shows as its block on the host's car, so the guest's card for
+     * those legs is not listed a second time (`both` covers both legs; a one-leg merge leaves the other leg's card).
+     */
+    boardShownLegs?: ReadonlyMap<string, ReadonlySet<"out" | "return" | "both">>;
+  },
 ): UnmetRequestView[] {
   const views: UnmetRequestView[] = [];
   for (const request of requests) {
     if (opts.draftPlacedRequestIds.has(request.id)) continue;
+    const shown = opts.boardShownLegs?.get(request.id);
+    const legShown = (leg: "out" | "return") => !!shown && (shown.has("both") || shown.has(leg));
     if (isDropOffWithPickup(request) && (isUnmetStatus(request.status) || PARTLY_PLACED_STATUSES.has(request.status) || opts.awaitingDriverRequestIds.has(request.id))) {
       if (request.status === "denied" || request.status === "external") { views.push({ request }); continue; }
       const covered = coveredLegs(rides, request.id);
       if (covered.out && covered.return) continue;
-      if (!covered.out) views.push({ request: legView(request, "out"), leg: "out" });
-      if (!covered.return) views.push({ request: legView(request, "return"), leg: "return" });
+      if (!covered.out && !legShown("out")) views.push({ request: legView(request, "out"), leg: "out" });
+      if (!covered.return && !legShown("return")) views.push({ request: legView(request, "return"), leg: "return" });
       continue;
     }
-    if (isUnmetStatus(request.status) && !opts.awaitingDriverRequestIds.has(request.id)) views.push({ request });
+    if (isUnmetStatus(request.status) && !opts.awaitingDriverRequestIds.has(request.id) && !shown?.size) views.push({ request });
   }
   return views;
 }

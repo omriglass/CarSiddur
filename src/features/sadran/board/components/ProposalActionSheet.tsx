@@ -1,7 +1,7 @@
 // REQ §13.94: tapping a draft block (or a sent/accepted merge ghost) on the board opens this
 // small sheet. Draft: שלח (composer on that draft, whose send is `send_proposal`), סיכמנו (REQ §13.138 b:
 // `agree_proposal_offline`, applied with no proposal), ערוך (composer, editable), מחק טיוטה (`discard_proposal`). Sent/accepted: open it (composer view)
-// or בטל הצעה (`withdraw_proposal`, no message to the member).
+// or בטל הצעה (`withdraw_proposal`, no message to the member); a sent one also סיכמנו (owner 2026-10-23).
 import { useState } from "react";
 
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -92,6 +92,10 @@ export function ProposalActionSheet({ proposal, requesterName, dayIso, changes, 
                 </>
               ) : (
                 <>
+                  {/* Owner 2026-10-23: a sent proposal can be marked agreed too ("כבר סיכמנו" — agree_proposal_offline takes a sent one). */}
+                  {proposal.status === "sent" ? (
+                    <Button variant="secondary" disabled={busy} onClick={() => onAgree(proposal)} data-testid="sent-agreed">{he.boardDrafts.agreed}</Button>
+                  ) : null}
                   <Button variant="outline" disabled={busy} onClick={() => onSend(proposal)}>{he.sadranProposal.openSentProposal}</Button>
                   {withdrawable ? (
                     <Button variant="destructive" disabled={busy} onClick={() => setConfirmWithdraw(true)} data-testid="proposal-withdraw">{he.boardDrafts.withdraw}</Button>

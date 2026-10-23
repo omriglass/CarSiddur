@@ -26,6 +26,13 @@ describe("unmetRequestViews", () => {
     expect(views.map((v) => v.leg)).toEqual(["return"]);
   });
 
+  it("owner 2026-10-23: a sent merge shown on the board hides the guest's card for its legs only", () => {
+    const outOnly = unmetRequestViews([request()], [], { ...none, boardShownLegs: new Map([["r1", new Set(["out" as const])]]) });
+    expect(outOnly.map((v) => v.leg)).toEqual(["return"]);
+    expect(unmetRequestViews([request({ trip_type: "round_trip" })], [], { ...none, boardShownLegs: new Map([["r1", new Set(["both" as const])]]) })).toEqual([]);
+    expect(unmetRequestViews([request({ trip_type: "round_trip" })], [], none)).toHaveLength(1);
+  });
+
   it("both legs covered -> nothing; an assigned request with a missing leg still shows it", () => {
     expect(unmetRequestViews([request({ status: "assigned" })], [ride("both")], none)).toEqual([]);
     expect(unmetRequestViews([request({ status: "assigned" })], [ride("return")], none).map((v) => v.leg)).toEqual(["out"]);
