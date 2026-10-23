@@ -51,7 +51,7 @@ import { peopleNames, peopleOf } from "@/features/rides/ridePeople";
 import { resolveRideRealDestination } from "../rideLabel";
 import { duplicateChildRuns, groupDuplicateRuns } from "../duplicateChildRuns";
 import { connectedMateOf, unmetItemId } from "../unmetLegs";
-import { applyServerMergeTimes, mergeInvalidReason, mergeLegOptions, mergePayloadLeg, mergePayloadLegs, mergeVerdict, previewMerge, type MergeLeg, type MergeVerdict } from "../mergeProposal";
+import { applyServerMergeTimes, mergeInvalidReason, mergeLegOptions, mergePayloadLeg, mergePayloadLegs, mergeVerdict, previewMerge, timeFarWarning, type MergeLeg, type MergeVerdict } from "../mergeProposal";
 import { requestRouteLine } from "../requestRoute";
 import { parseTimeToMinutes } from "@/features/solverBridge/buildSolverInput";
 import { representativeRideTypeCode, servedOf, servedToEditRideLegs, withChildNames } from "../../solverRun";
@@ -93,6 +93,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
 
   const boardRef = useRef<HTMLDivElement>(null);
   const [conflictJump, setConflictJump] = useState<{ rideId: string; sequence: number } | null>(null);
+  const [timeFarAsk, setTimeFarAsk] = useState<{ text: string; resolve: (accepted: boolean) => void } | null>(null);
 
   // Board queries + the pure derivation of the week-grid data (cars/rides/
   // blocks/unmet list/policy preview) — `useBoardData` (docs/TODO.md "Code
@@ -221,6 +222,13 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
   async function withMergeWaiver(next: (prefill: ComposerPrefill) => void | Promise<void>) {
     const prefill = dnd.mergePrefill;
     if (!prefill) return;
+    // R13B9: far from the member's own time - allowed, but the Sadran confirms it first.
+    if (mergeVerdictNow?.status === "ok" && mergeVerdictNow.timeFar) {
+      const timeFar = mergeVerdictNow.timeFar;
+      const accepted = await new Promise<boolean>((resolve) => setTimeFarAsk({ text: timeFarWarning(timeFar) ?? "", resolve }));
+      setTimeFarAsk(null);
+      if (!accepted) return;
+    }
     if (mergeVerdictNow?.status === "ok" && mergeVerdictNow.waivable) {
       const accepted = await askSmallTrunk({
         requestIds: mergeRequest ? [mergeRequest.id] : [],
@@ -705,6 +713,14 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
         confirmLabel={he.sendAll.leaveConfirm}
         cancelLabel={he.sendAll.leaveStay}
         onConfirm={() => { if (leaveBlocker.state === "blocked") leaveBlocker.proceed(); }}
+      />
+      <ConfirmDialog
+        open={!!timeFarAsk}
+        onOpenChange={(open) => { if (!open) timeFarAsk?.resolve(false); }}
+        title={he.mergedRide.timeFarTitle}
+        description={timeFarAsk?.text}
+        confirmLabel={he.mergedRide.timeFarConfirm}
+        onConfirm={() => timeFarAsk?.resolve(true)}
       />
       <ConfirmDialog
         open={!!dnd.seriesMoveConfirm}

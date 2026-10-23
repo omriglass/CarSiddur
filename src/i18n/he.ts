@@ -750,7 +750,7 @@ export const he = {
     waitlistGroupClosed: "הדיון על הרכב כבר הוכרע",
     waitlistSelectionInvalid: "הבחירה אינה תקפה — יש לרענן ולנסות שוב",
     seriesWeekNotOpen: "אפשר לשמור רכב עד שישה שבועות קדימה, ולא לימים שכבר עברו",
-    seriesEditNotSupported: "בקשה רב-יומית אפשר לבטל ולהגיש מחדש, לא לערוך",
+    seriesEditNotSupported: "בקשה רב-יומית משנים כולה — בעריכת הבקשה, או בשיבוץ או הצעה לכל ימיה",
     tiresNoneChecked: "סמנו לפחות צמיג אחד לפני השמירה",
     seriesCarUnavailable: "הרכב לא פנוי לכל ימי הבקשה הרב-יומית",
     handoverNotPossible: "אי אפשר להעביר את הנסיעה הזו לנהג/ת אחר/ת",

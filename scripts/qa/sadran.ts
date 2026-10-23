@@ -266,6 +266,12 @@ async function cmdPlace(board: Board, args: Args): Promise<void> {
   const [reqToken, carToken, time] = [need(args.pos[0], "<requestId>"), need(args.pos[1], "<car>"), need(args.pos[2], "<HH:MM>")];
   const request = resolveRequest(board, reqToken);
   const car = resolveCar(board, carToken);
+  // R13B7: a multi-day request is placed whole, as the board's drop does (`place_series_on_car`), never one leg.
+  if (request.series_id) {
+    await api.placeSeriesOnCar(request.series_id, car.id, has(args, "force"));
+    console.log(`placed the whole multi-day request ${short(request.id)} (${request.requester_full_name}) on ${car.name}`);
+    return;
+  }
   const wantLeg = flag(args, "leg") as "out" | "return" | undefined;
   const anchorDay = dayOf(requestStart(request)) || dayOf(request.depart_at);
   const ctx = dropCtxOf(board, anchorDay);
@@ -442,6 +448,24 @@ async function cmdPropose(board: Board, args: Args): Promise<void> {
   const day = dayOf(requestStart(request)) || board.scope.weekStart;
   const rideId = flag(args, "ride") ? resolveRide(board, flag(args, "ride")!).id ?? null : null;
   const payload: Record<string, unknown> = {};
+  if (type === "shift" && request.series_id && !rideId && (flag(args, "depart") || flag(args, "return"))) {
+    // R13B6: new times for a multi-day request move its whole span, as the board's series suggestion does: --depart is
+    // the time on the series' first day, --return on its last day; the proposal goes on the series head.
+    const legs = activeSeriesLegs(await api.fetchSeriesLegs(request.series_id));
+    const head = seriesHead(legs);
+    const first = legs[0];
+    const last = legs[legs.length - 1];
+    if (!head || !first || !last) throw new UsageError("the multi-day request has no active days");
+    const span = {
+      depart_at: flag(args, "depart") ? instantAt(dayOf(first.departAt), flag(args, "depart")!) : first.departAt,
+      return_at: flag(args, "return") ? instantAt(dayOf(last.returnAt), flag(args, "return")!) : last.returnAt,
+    };
+    const carId = flag(args, "car") ? resolveCar(board, flag(args, "car")!).id : null;
+    if (!carId) throw new UsageError("a multi-day shift needs --car (the car for the whole span)");
+    console.log(`multi-day shift ${t(span.depart_at)} ${dayOf(span.depart_at)} .. ${t(span.return_at)} ${dayOf(span.return_at)} (proposal on the series head ${short(head.id)})`);
+    await createProposalFrom(board, seriesSpanPrefill(head.id, carId, span), draft);
+    return;
+  }
   if (type === "shift") {
     const day0 = flag(args, "day") ?? day;
     const startsAt = flag(args, "depart") ? instantAt(day0, flag(args, "depart")!) : request.depart_at;

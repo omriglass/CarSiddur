@@ -1689,6 +1689,7 @@ declare
   v_add_min int[] := array[0, 0]; v_add_km numeric[] := array[0, 0]; v_ix int;
   v_err text; v_start timestamptz; v_end timestamptz; v_day date; v_unknown boolean;
   v_features text[]; v_luggage boolean; v_guest public.requests%rowtype; v_swap boolean; v_boarding timestamptz; v_anchor timestamptz; v_tol interval; v_overlaps jsonb := '[]'::jsonb; v_conflict boolean := false; v_side text; v_lug_problem boolean := false;
+  v_time_far boolean := false; v_far_eta timestamptz; v_far_wanted timestamptz; v_soft_far boolean;
 begin
   select * into v_ride from public.rides where id = p_ride_id;
   if v_ride.id is null then return jsonb_build_object('ok', false, 'error', 'ride_not_found', 'code', 'ride_not_found'); end if;
@@ -1785,7 +1786,17 @@ begin
         v_tol := greatest(interval '2 hours', v_guest.flex_return_early, v_guest.flex_return_late);
         v_anchor := v_guest.return_at;
       end if;
-      if abs(extract(epoch from (v_boarding - v_anchor))) > extract(epoch from v_tol) then v_err := 'ride_request_day_mismatch'; exit; end if;
+      -- R13B9 (owner 2026-10-23): far from the guest's own time is a refusal of its own (`merge_time_far`, never
+      -- "wrong day"); a Sadran (and the apply of a Sadran-made proposal the member accepted) may still propose it -
+      -- then it is only reported (`time_far`) and the board warns that it is unlikely.
+      if abs(extract(epoch from (v_boarding - v_anchor))) > extract(epoch from v_tol) then
+        v_time_far := true; v_far_eta := v_boarding; v_far_wanted := v_anchor;
+        v_soft_far := public.can_manage_week(v_ride.department_id, v_ride.week_start)
+          or exists (select 1 from public.proposals p where p.id::text = nullif(current_setting('app.applying_proposal', true), '')
+                     and p.created_via = 'sadran');
+        if not v_soft_far then v_err := 'merge_time_far'; end if;
+        exit;
+      end if;
     end loop;
   end if;
 
@@ -1847,7 +1858,8 @@ begin
   ) x;
 
   return jsonb_build_object('ok', v_err is null, 'error', v_err, 'code', public._merge_error_code(v_err),
-    'person_overlaps', v_overlaps, 'luggage_problem', v_lug_problem, 'turnaround_conflict', v_conflict, 'turnaround_side', v_side,
+    'person_overlaps', v_overlaps, 'luggage_problem', v_lug_problem,
+    'time_far', v_time_far, 'time_far_eta', v_far_eta, 'time_far_wanted', v_far_wanted, 'turnaround_conflict', v_conflict, 'turnaround_side', v_side,
     'added_out_minutes', v_add_min[1], 'added_return_minutes', v_add_min[2],
     'added_out_km', round(v_add_km[1], 1), 'added_return_km', round(v_add_km[2], 1),
     'starts_at', v_ride.starts_at, 'new_starts_at', v_start,
@@ -1870,6 +1882,7 @@ CREATE OR REPLACE FUNCTION "public"."_merge_error_code"("_err" "text") RETURNS "
     when 'merge_detour_too_long' then 'detour'
     when 'merge_boards_at_end' then 'boards_at_end'
     when 'ride_request_day_mismatch' then 'window'
+    when 'merge_time_far' then 'time_far'
     when 'seat_config_violation' then 'seats'
     when 'private_car_owner_only' then 'private_car'
     when 'merge_turnaround_conflict' then 'turnaround'
@@ -6205,6 +6218,11 @@ begin
     exception when others then
       if sqlerrm<>'series_span_probe_ok' then raise; end if;
     end;
+  elsif p_type='shift' and v_req.series_id is not null and p_payload->>'ride_id' is null
+        and (p_payload ? 'depart_at' or p_payload ? 'return_at') then
+    -- R13B6: new times for a multi-day request move the whole span (`series_span` on the head, above); a plain
+    -- one-day shift would place day 1 only and leave the other days waiting.
+    raise exception 'series_edit_not_supported' using errcode='MDR02';
   elsif p_type='shift' and (p_payload ? 'origin_id' or p_payload ? 'origin_text' or p_payload ? 'destination_id'
         or p_payload ? 'destination_text' or p_payload ? 'stops') then
     perform public._assert_shift_places(v_req.id, v_req.department_id, p_payload);
@@ -15977,7 +15995,7 @@ begin
   end if;
   select id into v_head from public.requests where series_id = q.series_id and series_index = 1;
   select r.car_id into v_car from public.rides r where r.series_id = q.series_id and r.status <> 'cancelled' order by r.starts_at limit 1;
-  if v_car is null or p_depart_at is null or p_return_at is null then raise exception 'series_span_invalid' using errcode = 'P0001'; end if;
+  if p_depart_at is null or p_return_at is null then raise exception 'series_span_invalid' using errcode = 'P0001'; end if;
   v_first := (p_depart_at at time zone 'Asia/Jerusalem')::date;
   v_last := (p_return_at at time zone 'Asia/Jerusalem')::date;
   select count(*) filter (where d between v_first and v_last), min(d), max(d) into v_n_in, v_d_min, v_d_max
@@ -15994,7 +16012,41 @@ begin
   end if;
   perform set_config('app.audit_reason', 'shorten_series', true);
 
-  if v_first = v_last then
+  if v_car is null then
+    -- R13B8: a series with no ride yet is shortened without placing anything: the dropped days are withdrawn, the
+    -- kept ones renumbered with the new first/last times (one kept day leaves the series as an ordinary request);
+    -- each keeps its status (submitted / waitlisted) and waits for the solver or the Sadran as before.
+    perform 1 from public.requests where series_id = q.series_id order by id for update;
+    perform set_config('app.system_status_transition', 'on', true);
+    for v_prop in select p.id from public.proposals p
+        where p.request_id in (select x.id from public.requests x where x.series_id = q.series_id)
+          and p.status in ('draft', 'sent', 'accepted') and p.id::text <> v_applying order by p.id loop
+      if exists (select 1 from public.proposals where id = v_prop and status = 'draft') then
+        update public.proposals set status = 'withdrawn' where id = v_prop;
+      else
+        perform public.proposal_system_withdraw(v_prop, 'withdrawn_edit');
+      end if;
+    end loop;
+    update public.requests set status = 'withdrawn', status_reason = 'SERIES_SHORTENED', series_id = null, series_index = null, series_count = null
+    where series_id = q.series_id and status not in ('withdrawn', 'cancelled')
+      and (depart_at at time zone 'Asia/Jerusalem')::date not between v_first and v_last;
+    if v_first = v_last then
+      select x.id into v_kept from public.requests x where x.series_id = q.series_id and x.status not in ('withdrawn', 'cancelled');
+      update public.requests set series_id = null, series_index = null, series_count = null,
+        depart_at = p_depart_at, return_at = p_return_at where id = v_kept;
+    else
+      update public.requests x set
+        series_index = k.i, series_count = k.n,
+        depart_at = case when k.i = 1 then p_depart_at else (k.d::timestamp at time zone 'Asia/Jerusalem') end,
+        return_at = case when k.i = k.n then p_return_at else ((k.d + time '23:59') at time zone 'Asia/Jerusalem') end
+      from (select y.id, (y.depart_at at time zone 'Asia/Jerusalem')::date as d,
+                   row_number() over (order by y.depart_at, y.id)::int as i, count(*) over ()::int as n
+            from public.requests y where y.series_id = q.series_id and y.status not in ('withdrawn', 'cancelled')) k
+      where x.id = k.id;
+      select x.id into v_head from public.requests x where x.series_id = q.series_id and x.series_index = 1;
+    end if;
+    perform set_config('app.system_status_transition', v_prev_flag, true);
+  elsif v_first = v_last then
     perform 1 from public.requests where series_id = q.series_id order by id for update;
     perform set_config('app.system_status_transition', 'on', true);
     for v_prop in select p.id from public.proposals p

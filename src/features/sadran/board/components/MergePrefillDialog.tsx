@@ -10,7 +10,7 @@ import { he, tv } from "@/i18n/he";
 import { formatTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
-import { mergeLegOptions, type MergeLeg, type MergePreview, type MergeVerdict } from "../mergeProposal";
+import { mergeLegOptions, timeFarWarning, type MergeLeg, type MergePreview, type MergeVerdict } from "../mergeProposal";
 import { requestFlexLines } from "../mergeFlex";
 import { talkedTitle } from "../talkedTitle";
 
@@ -175,6 +175,9 @@ export function MergePrefillDialog({ prefill, hostLabel, hostStartsAt, hostEndsA
                   <p className="font-medium" data-testid="merge-leg-fixed">{LEG_LABEL[options.choices[0]!]}</p>
                 )}
               </div>
+            ) : null}
+            {verdict?.status === "ok" && verdict.timeFar ? (
+              <p className="font-medium text-amber-700 dark:text-amber-400" data-testid="merge-time-far">{timeFarWarning(verdict.timeFar)}</p>
             ) : null}
             {verdict?.status === "ok" && verdict.waivable ? (
               <p className="font-medium text-amber-700 dark:text-amber-400" data-testid="merge-waivable">{he.smallTrunk.dropWarning}</p>

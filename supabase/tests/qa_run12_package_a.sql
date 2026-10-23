@@ -57,7 +57,14 @@ begin
   update public.rides set ends_at=d0+interval '2 hours 30 minutes', destination_id=home where id=rH;
   update public.ride_requests set leg='both',car_mode='keep' where ride_id=rH;
   pv:=public.merge_preview(rH,qG,'out');
-  assert (pv->>'ok')::boolean=false and pv->>'code'='window', format('R12B5: a guest hours away from the ride is a window refusal, got %s',pv);
+  -- R13B9 (owner 2026-10-23): for the Sadran it is allowed with a warning (time_far), never "wrong day"
+  assert (pv->>'ok')::boolean and (pv->>'time_far')::boolean and pv->>'time_far_wanted' is not null,
+    format('R13B9: a guest hours away from the ride is a time_far warning for the Sadran, got %s',pv);
+  -- anyone else (no Sadran) is refused with its own code
+  perform set_config('request.jwt.claims', '{}', true);
+  pv:=public._merge_check(rH,qG,'out');
+  assert (pv->>'ok')::boolean=false and pv->>'code'='time_far', format('R13B9: without a Sadran a far guest is refused time_far, got %s',pv);
+  perform set_config('request.jwt.claims', jsonb_build_object('sub',manager,'role','authenticated')::text, true);
   -- the same guest at a time near the return leg is accepted
   update public.requests set depart_at=d0+interval '2 hours' where id=qG;
   pv:=public.merge_preview(rH,qG,'out');

@@ -182,4 +182,76 @@ begin
     '(f) the edited series keeps its draft car in an open week';
 end $$;
 
+
+-- (g) R13B6: a plain time shift on a multi-day request is refused (MDR02); new times go through `series_span`.
+do $$
+declare
+  dept uuid := '00000000-0000-0000-0000-000000000001';
+  member uuid := '00000000-0000-0000-0000-000000000103';
+  sadran uuid := '00000000-0000-0000-0000-000000000102';
+  dest uuid := '00000000-0000-0000-0000-000000000011';
+  ride_type uuid := '00000000-0000-0000-0000-000000000021';
+  car uuid := '00000000-0000-0000-0000-000000000041';
+  w date := public.current_week_start() + 434;
+  s0 uuid; head uuid; ok boolean := false;
+begin
+  insert into public.weeks(department_id, week_start, phase, open_at, close_at, publish_at)
+    values (dept, w, 'open', now() - interval '1 day', now() + interval '1 day', now() + interval '2 days');
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', member, 'role', 'authenticated')::text, true);
+  s0 := (public.submit_series_request(jsonb_build_object('department_id', dept, 'week_start', w, 'destination_id', dest,
+    'ride_type_id', ride_type, 'trip_shape', 'round_trip', 'trip_type', 'round_trip', 'adults', 1,
+    'depart_at', ((w + 1) + time '09:00') at time zone 'Asia/Jerusalem',
+    'return_at', ((w + 3) + time '17:00') at time zone 'Asia/Jerusalem')) ->> 'series_id')::uuid;
+  select id into head from public.requests where series_id = s0 and series_index = 1;
+  perform set_config('request.jwt.claims', '{}', true);
+  update public.weeks set phase = 'solving' where department_id = dept and week_start = w;
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', sadran, 'role', 'authenticated')::text, true);
+  begin
+    perform public.create_proposal(head, null, 'shift', jsonb_build_object('car_id', car,
+      'depart_at', ((w + 1) + time '11:00') at time zone 'Asia/Jerusalem'), 'x');
+  exception when sqlstate 'MDR02' then ok := true;
+  end;
+  assert ok, '(g) a plain time shift on a series must be refused with MDR02';
+  -- the whole-span form is accepted
+  assert public.create_proposal(head, null, 'shift', jsonb_build_object('car_id', car, 'series_span', jsonb_build_object(
+    'depart_at', ((w + 1) + time '11:00') at time zone 'Asia/Jerusalem',
+    'return_at', ((w + 3) + time '17:00') at time zone 'Asia/Jerusalem')), 'x') is not null, '(g) series_span shift accepted';
+end $$;
+
+
+-- (h) R13B8: shortening a series that has no ride yet works (no series_span_invalid) and places nothing.
+do $$
+declare
+  dept uuid := '00000000-0000-0000-0000-000000000001';
+  member uuid := '00000000-0000-0000-0000-000000000103';
+  dest uuid := '00000000-0000-0000-0000-000000000011';
+  ride_type uuid := '00000000-0000-0000-0000-000000000021';
+  w date := public.current_week_start() + 441;
+  s0 uuid; head uuid; second uuid; n int;
+begin
+  insert into public.weeks(department_id, week_start, phase, open_at, close_at, publish_at)
+    values (dept, w, 'open', now() - interval '1 day', now() + interval '1 day', now() + interval '2 days');
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', member, 'role', 'authenticated')::text, true);
+  s0 := (public.submit_series_request(jsonb_build_object('department_id', dept, 'week_start', w, 'destination_id', dest,
+    'ride_type_id', ride_type, 'trip_shape', 'round_trip', 'trip_type', 'round_trip', 'adults', 1,
+    'depart_at', ((w + 1) + time '09:00') at time zone 'Asia/Jerusalem',
+    'return_at', ((w + 3) + time '17:00') at time zone 'Asia/Jerusalem')) ->> 'series_id')::uuid;
+  select id into second from public.requests where series_id = s0 and series_index = 2;
+  -- days 2..3, leaving day 2 at 10:00
+  assert public.shorten_series(second, ((w + 2) + time '10:00') at time zone 'Asia/Jerusalem',
+    ((w + 3) + time '17:00') at time zone 'Asia/Jerusalem') is null, '(h) nothing is placed';
+  select count(*) into n from public.requests where series_id = s0 and status not in ('withdrawn', 'cancelled');
+  assert n = 2, format('(h) two days kept, got %s', n);
+  select id into head from public.requests where series_id = s0 and series_index = 1;
+  assert head = second and (select depart_at from public.requests where id = head) = ((w + 2) + time '10:00') at time zone 'Asia/Jerusalem'
+    and (select series_count from public.requests where id = head) = 2, '(h) the day-2 leg is the new head with the new departure';
+  assert (select status from public.requests where series_index is null and status_reason = 'SERIES_SHORTENED'
+          and depart_at = ((w + 1) + time '09:00') at time zone 'Asia/Jerusalem' and requester_id = member limit 1) = 'withdrawn',
+    '(h) the dropped day is withdrawn';
+  -- down to one day: an ordinary request
+  perform public.shorten_series(head, ((w + 2) + time '10:00') at time zone 'Asia/Jerusalem', ((w + 2) + time '17:00') at time zone 'Asia/Jerusalem');
+  assert (select series_id is null and status = 'submitted' and return_at = ((w + 2) + time '17:00') at time zone 'Asia/Jerusalem'
+          from public.requests where id = head), '(h) one kept day is an ordinary submitted request';
+end $$;
+
 rollback;

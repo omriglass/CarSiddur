@@ -177,6 +177,8 @@ export interface ServerMergePreview {
   waivable?: boolean;
   /** R12B4 (REQ §13.119): the guest's person is already on another live ride overlapping the merged ride - a warning, never a refusal. */
   personOverlaps?: { rideId: string; startsAt: string; endsAt: string; role: string }[];
+  /** R13B9: the ride passes the guest's place far from the guest's own time - allowed for the Sadran, but unlikely. */
+  timeFar?: { eta: string; wanted: string } | null;
 }
 
 const isoOrNull = (value: unknown): string | null => (typeof value === "string" && value ? value : null);
@@ -200,7 +202,14 @@ export function parseServerMergePreview(raw: unknown): ServerMergePreview | null
           ? [{ rideId: row.ride_id, startsAt: row.starts_at, endsAt: row.ends_at, role: typeof row.role === "string" ? row.role : "passenger" }] : [];
       })
       : [],
+    timeFar: r.time_far === true && typeof r.time_far_eta === "string" && typeof r.time_far_wanted === "string"
+      ? { eta: r.time_far_eta, wanted: r.time_far_wanted } : null,
   };
+}
+
+/** R13B9: "the ride passes there at {eta}, the member asked for {wanted}" for a far-off merge, or `null`. */
+export function timeFarWarning(timeFar: { eta: string; wanted: string } | null | undefined): string | null {
+  return timeFar ? tv("mergedRide.timeFar", { eta: formatTime(new Date(timeFar.eta)), wanted: formatTime(new Date(timeFar.wanted)) }) : null;
 }
 
 /** R12B4: the warning line for a guest already booked on another ride at those hours, or `null`. */
@@ -237,6 +246,7 @@ const MERGE_CODE_TEXT: Record<string, string> = {
   turnaround: he.mergedRide.invalid.turnaround_conflict,
   already_on_ride: he.mergedRide.invalid.already_on_ride,
   window: he.mergedRide.invalid.window,
+  time_far: he.mergedRide.invalid.time_far,
   window_locked: he.mergedRide.invalid.window_locked,
   maintenance: he.mergedRide.invalid.maintenance,
 };
@@ -255,7 +265,7 @@ export function mergeRefusalText(code: string | null | undefined, turnaroundSide
 export type MergeVerdict =
   | { status: "loading" }
   /** `waivable`: allowed, but only after the Sadran accepts a car without a large trunk for a large-luggage request (REQ §13.111 a). */
-  | { status: "ok"; waivable?: boolean }
+  | { status: "ok"; waivable?: boolean; timeFar?: { eta: string; wanted: string } }
   | { status: "refused"; message: string; code: string | null; source: "server" | "twin" };
 
 /** What `useQuery` says about one `merge_preview` call (a subset, so tests need no React). */
@@ -272,8 +282,10 @@ export interface MergePreviewState {
 export function mergeVerdict(states: readonly MergePreviewState[], twinInvalid: MergeInvalid | null): MergeVerdict {
   let loading = false;
   let waivable = false;
+  let timeFar: { eta: string; wanted: string } | undefined;
   for (const state of states) {
     if (state.data) {
+      if (state.data.timeFar && (state.data.ok || state.data.waivable)) timeFar ??= state.data.timeFar;
       if (!state.data.ok && state.data.waivable) waivable = true;
       else if (!state.data.ok) return { status: "refused", message: mergeRefusalText(state.data.code, state.data.turnaroundSide), code: state.data.code, source: "server" };
     } else if (state.isError || state.data === null) {
@@ -282,7 +294,8 @@ export function mergeVerdict(states: readonly MergePreviewState[], twinInvalid: 
       loading = true;
     }
   }
-  return loading ? { status: "loading" } : waivable ? { status: "ok", waivable: true } : { status: "ok" };
+  if (loading) return { status: "loading" };
+  return { status: "ok", ...(waivable ? { waivable: true } : {}), ...(timeFar ? { timeFar } : {}) };
 }
 
 /**

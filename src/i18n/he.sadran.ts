@@ -631,6 +631,10 @@ export const heSadran = {
   },
   mergedRide: {
     personOverlap: "שימו לב: החבר/ה כבר משובץ/ת לנסיעה אחרת באותן שעות ({{time}}). אפשר להמשיך.",
+    /** R13B9: the ride passes the member's place far from the member's own time. */
+    timeFar: "הנסיעה עוברת שם ב-{{eta}}, והחבר/ה ביקש/ה {{wanted}} — רחוק מהשעה, סביר שלא יתאים.",
+    timeFarTitle: "רחוק מהשעה המבוקשת",
+    timeFarConfirm: "להציע בכל זאת",
     marker: "· מאוחד",
     base: "נסיעה בסיס",
     added: "מצטרף/ת לנסיעה",
@@ -670,6 +674,7 @@ export const heSadran = {
       window_locked: "אי אפשר לצרף — הנסיעה היא בחלון זמן קבוע והצירוף היה מאריך אותה",
       // REQ item 108 (M1): reasons only the server's `merge_preview` can give.
       window: "אי אפשר לצרף — הנסיעה המאוחדת תחרוג מהיום של הנסיעה",
+      time_far: "אי אפשר לצרף — הנסיעה עוברת שם בשעה רחוקה מהשעה המבוקשת",
       maintenance: "אי אפשר לצרף — הרכב בטיפול בשעות הנסיעה המאוחדת",
       unknown: "אי אפשר לצרף את הבקשה לנסיעה הזו",
     },
