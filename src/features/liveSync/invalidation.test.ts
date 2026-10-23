@@ -43,6 +43,8 @@ describe("isWatchedWeekQuery (lean set)", () => {
     ["Sadran board data", sadranKeys.boardRides(D, W)],
     ["catalogs", siddurKeys.myChildren("me")],
     ["inbox", ["inbox", "unread", "me"]],
+    ["an open request form", requestsKeys.byId("q1")],
+    ["a request's companions", requestsKeys.companions("q1")],
   ])("member scope leaves %s alone", (_label, key) => {
     expect(isWatchedWeekQuery(key, D, weeks, "public")).toBe(false);
   });

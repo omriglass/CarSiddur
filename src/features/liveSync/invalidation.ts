@@ -15,14 +15,16 @@ import type { WatchChange, WatchScope } from "./watcher";
  *  - `["siddur", "weeks", dept]`, `["siddur", "myUpcomingRides", profile, dept]`, `["siddur", "myChildrenRides", dept, ...]`
  *  - `["siddur", "rideChanges", user, dept?, week?, fromWeek?]` (the unscoped Inbox form too), `["siddur", "carNeighbours", ...]`,
  *    `["siddur", "boardRideById", id]`
- *  - `["requests", "mine"|"freedOffers"|"byId"|"companions", ...]`
+ *  - `["requests", "mine"|"freedOffers", ...]` (not a single request's form data)
  *  - `["waitlist", dept, week]`
  *  - Sadran scope only: `["sadran", dept, week, ...]` (board, requests, proposals, held notices, readiness, …)
  *    and the not-week-keyed `["sadran", "mergePreview"|"seriesLegs"|"proposalParties"|"freedClaims"|"proposalHostRide", ...]`.
  */
 const WEEK_KEYED_SIDDUR = new Set<unknown>(["boardRides", "carLocations", "carStartLocations"]);
 const ANY_WEEK_SIDDUR = new Set<unknown>(["carNeighbours", "boardRideById"]);
-const REQUEST_FAMILIES = new Set<unknown>(["mine", "freedOffers", "byId", "companions"]);
+// Not `byId`/`companions`: they feed an open request form, which must not reload under the member's hands
+// (a conflicting change still surfaces as stale_version on save, as before).
+const REQUEST_FAMILIES = new Set<unknown>(["mine", "freedOffers"]);
 const SADRAN_UNSCOPED = new Set<unknown>(["mergePreview", "seriesLegs", "proposalParties", "freedClaims", "proposalHostRide"]);
 
 export function isWatchedWeekQuery(key: QueryKey, departmentId: string, weeks: ReadonlySet<string>, scope: WatchScope): boolean {
