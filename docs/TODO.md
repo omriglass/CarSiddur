@@ -1024,7 +1024,7 @@ Held up: per-day autofill incl. series, publish picker (unsolved days not pre-ti
 ### Additional
 - **R12F1** Warn when filing a request that overlaps one's own driving/passenger slot.
 
-## QA run 13 findings (2026-10-23, seed 8722, week 25–31.10 = the autumn clock change, department `qa-s8722`; QA Sadran = Opus, **Sunday, Wednesday, Friday via UI**; QA user = Sonnet; emphasis: multi-day requests + the 2026-10-22 batch — REQ §13.140–§13.142, ride popup, notes, closing time) — **owner 2026-10-23: R13B1–B5 fixed (✅); popups stay grid-only (R13U1); the rest triaged one by one**
+## QA run 13 findings (2026-10-23, seed 8722, week 25–31.10 = the autumn clock change, department `qa-s8722`; QA Sadran = Opus, **Sunday, Wednesday, Friday via UI**; QA user = Sonnet; emphasis: multi-day requests + the 2026-10-22 batch — REQ §13.140–§13.142, ride popup, notes, closing time) — **owner 2026-10-23: R13B1–B5 fixed (✅); popups stay grid-only (R13U1). Bug triage: fix all of R13B6–B22 next round; R13B17 = name the real blocker AND audit every unmet reason; R13B10 = publishing expires them — fix the dialog text instead; R13B16 = warn the member in the form (not refuse); R13B18 = the server refuses a merge of a leg that no longer exists (it came from the CLI; the board did not offer it). U/M/F not triaged yet.**
 
 Whole-week autofill in the clock-change week now runs (89 rides, all 7 multi-day series placed). Week published and run live. [T] = about the 2026-10-22 batch.
 
