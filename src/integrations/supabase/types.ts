@@ -6153,6 +6153,50 @@ export type Database = {
         Args: { p_request_id: string }
         Returns: undefined
       }
+      week_board_rides: {
+        Args: { p_department_id: string; p_week_start: string }
+        Returns: {
+          auto_relocation: boolean | null
+          blocked_until: string | null
+          car_id: string | null
+          department_id: string | null
+          destination_id: string | null
+          destination_name: string | null
+          driver_id: string | null
+          driver_name: string | null
+          ends_at: string | null
+          id: string | null
+          is_chauffeur: boolean | null
+          is_pinned: boolean | null
+          needs_driver: boolean | null
+          notes: string | null
+          origin_id: string | null
+          origin_name: string | null
+          overflow_allowed: boolean | null
+          overnight_ack_by: string | null
+          passengers: Json | null
+          people: Json | null
+          pin_reason: string | null
+          planning_conflict: boolean | null
+          relay_partner: Json | null
+          route: Json | null
+          series_count: number | null
+          series_id: string | null
+          series_index: number | null
+          served: Json | null
+          starts_at: string | null
+          status: Database["public"]["Enums"]["ride_status"] | null
+          turnaround_override_minutes: number | null
+          version: number | null
+          week_start: string | null
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "v_board_rides"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
       week_phase_timestamps: {
         Args: {
           p_settings: Database["public"]["Tables"]["department_settings"]["Row"]

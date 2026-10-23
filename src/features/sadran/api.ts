@@ -967,13 +967,10 @@ export async function publishSiddur(departmentId: string, weekStart: string, sco
     p_days: options.days, p_allow_unanswered: options.allowUnanswered ?? false, p_allow_driverless: options.allowDriverless ?? false });
 }
 
-/** All non-cancelled rides of the week, for the publish diff and blocking-conflicts checks (same RLS as the board). */
+/** All non-cancelled rides of the week, for the board, the publish diff and blocking-conflicts checks (`week_board_rides` = the week's `v_board_rides` rows, same RLS). */
 export async function fetchAllWeekRides(departmentId: string, weekStart: string): Promise<BoardRide[]> {
   const { data, error } = await supabase
-    .from("v_board_rides")
-    .select("*")
-    .eq("department_id", departmentId)
-    .eq("week_start", weekStart);
+    .rpc("week_board_rides", { p_department_id: departmentId, p_week_start: weekStart });
   if (error) throw toAppError(error);
   return data ?? [];
 }

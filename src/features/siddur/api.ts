@@ -178,13 +178,13 @@ export async function fetchOpenAndLiveWeekStarts(departmentId: string): Promise<
   return (data ?? []).map((row) => row.week_start);
 }
 
-/** Published siddur rides for a department/week (`v_board_rides`, security_invoker RLS). */
+/**
+ * The rides of a department/week as the caller may see them — exactly the `v_board_rides` rows for that
+ * week, read through `week_board_rides` (20261028120000, security invoker: same RLS, each table read once).
+ */
 export async function fetchBoardRides(departmentId: string, weekStart: string): Promise<BoardRide[]> {
   const { data, error } = await supabase
-    .from("v_board_rides")
-    .select("*")
-    .eq("department_id", departmentId)
-    .eq("week_start", weekStart)
+    .rpc("week_board_rides", { p_department_id: departmentId, p_week_start: weekStart })
     .order("starts_at", { ascending: true });
   if (error) throw toAppError(error);
   return data ?? [];

@@ -528,6 +528,8 @@ Polling: pending ride changes (`useRideChanges`) every 60 s, and only on screens
 
 `ensure_department_weeks` (catch-up of week rows) runs at most once per department per session (30 min TTL for a long-lived PWA, cleared on sign-out — `features/siddur/ensureWeeksCache.ts`), not before every week read. The profile row and `phone_of` are fetched in parallel inside the cached profile query. The admin members list takes phones from the single `profile_phones` call in `fetchAllProfiles`. The active policy is derived from the policy-options query (one request), turnaround minutes from the department-settings query, and `useDepartments` shares `useActiveDepartment`'s department list.
 
+Week ride reads (siddur, board, `/my` week view, member export, publish diff) call `week_board_rides(dept, week)` instead of filtering `v_board_rides`: same rows and content, same RLS (security invoker), but each table's policy runs once per row instead of at every nested reference of the view (DATA_MODEL `week_board_rides`). Single-ride reads (`?ride=`) and "my rides" (`my_upcoming_rides`, which reads the view by an id array) stay on the view.
+
 ---
 
 ## 13. Environment variables
