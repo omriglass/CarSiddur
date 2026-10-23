@@ -5789,6 +5789,7 @@ export type Database = {
         Returns: string
       }
       raise_stale_version: { Args: never; Returns: undefined }
+      realtime_topic_authorized: { Args: { p_topic: string }; Returns: boolean }
       record_answer_on_behalf: {
         Args: {
           p_accept: boolean

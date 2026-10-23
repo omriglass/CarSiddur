@@ -284,4 +284,86 @@ exception when insufficient_privilege then
 end $$;
 reset role;
 
+-- 10) D2 (20261028140000): one Realtime broadcast per bumped topic, sent from the commit-time flush.
+do $$
+declare
+  dept uuid := (select v::uuid from wcs_ctx where k = 'dept');
+  wn date := (select v::date from wcs_ctx where k = 'wn');
+  wo date := (select v::date from wcs_ctx where k = 'wo');
+  t_pub text := 'week:' || dept || ':' || wn || ':public';
+  t_sad text := 'week:' || dept || ':' || wn || ':sadran';
+  t_osad text := 'week:' || dept || ':' || wo || ':sadran';
+  t_opub text := 'week:' || dept || ':' || wo || ':public';
+  n_pub int; n_sad int; n_osad int; n_opub int;
+begin
+  if to_regclass('realtime.messages') is null then
+    raise notice 'week_change_seq.sql: realtime schema absent, broadcast checks skipped';
+    return;
+  end if;
+  assert exists (select 1 from pg_policy where polrelid = 'realtime.messages'::regclass and polname = 'week_topics_select'),
+    '10: the realtime.messages join policy is missing (20261028140000 ran before the realtime schema existed?)';
+  insert into wcs_ctx values ('t_pub', t_pub), ('t_sad', t_sad), ('t_osad', t_osad);
+  select count(*) filter (where topic = t_pub), count(*) filter (where topic = t_sad),
+         count(*) filter (where topic = t_osad), count(*) filter (where topic = t_opub)
+    into n_pub, n_sad, n_osad, n_opub from realtime.messages;
+  -- A published-day change of wn: one more message on each topic, payload = the new counter.
+  update public.rides set notes = 'wcs broadcast' where department_id = dept and week_start = wn;
+  update public.rides set notes = 'wcs broadcast 2' where department_id = dept and week_start = wn;
+  -- An open week's request: the Sadran topic only.
+  update public.requests set notes = 'wcs open' where department_id = dept and week_start = wo;
+  perform pg_temp.flush();
+  assert (select count(*) from realtime.messages where topic = t_pub) = n_pub + 1, '10: one public broadcast per transaction';
+  assert (select count(*) from realtime.messages where topic = t_sad) = n_sad + 1, '10: one sadran broadcast per transaction';
+  assert (select count(*) from realtime.messages where topic = t_osad) = n_osad + 1, '10: an open-week change reaches the Sadran topic';
+  assert (select count(*) from realtime.messages where topic = t_opub) = n_opub, '10: an open-week change must not reach the public topic';
+  assert exists (select 1 from realtime.messages where topic = t_pub and (payload ->> 'seq')::bigint = pg_temp.pseq(dept, wn)),
+    '10: the public payload carries public_seq';
+  assert exists (select 1 from realtime.messages where topic = t_sad and (payload ->> 'seq')::bigint = pg_temp.seq(dept, wn)),
+    '10: the sadran payload carries seq';
+  assert (select bool_and(private and event = 'changed' and extension = 'broadcast' and (payload - 'id') ?| array['seq'] and (payload - 'id' - 'seq') = '{}'::jsonb)
+            from realtime.messages where topic in (t_pub, t_sad)), '10: private, tiny payload, no row data';
+  raise notice 'week_change_seq.sql: broadcasts passed';
+end $$;
+
+-- 11) Joining a topic = RLS on realtime.messages: member -> own department's public topic only; Sadran -> the
+--     week's sadran topic; another department's member -> neither; malformed topics -> false.
+create function pg_temp.can_join(_user text, _topic text) returns boolean language plpgsql as $$
+declare v int;
+begin
+  perform set_config('request.jwt.claims', json_build_object('sub', _user, 'role', 'authenticated')::text, true);
+  perform set_config('realtime.topic', _topic, true);
+  set local role authenticated;
+  select count(*) into v from realtime.messages where topic = _topic;
+  reset role;
+  perform set_config('realtime.topic', '', true);
+  return v > 0;
+end $$;
+
+do $$
+declare
+  dept uuid := (select v::uuid from wcs_ctx where k = 'dept');
+  t_pub text := (select v from wcs_ctx where k = 't_pub');
+  t_sad text := (select v from wcs_ctx where k = 't_sad');
+  outsider text := (select v from wcs_ctx where k = 'outsider');
+  member text := '00000000-0000-0000-0000-000000000103';
+  sadran text := '00000000-0000-0000-0000-000000000102';
+  admin_id text := '00000000-0000-0000-0000-000000000101';
+begin
+  if t_pub is null then return; end if;
+  assert pg_temp.can_join(member, t_pub), '11: a member must authorize the own department''s public topic';
+  assert not pg_temp.can_join(member, t_sad), '11: a member must not authorize the sadran topic';
+  assert pg_temp.can_join(sadran, t_sad) and pg_temp.can_join(sadran, t_pub), '11: the Sadran authorizes both topics';
+  assert pg_temp.can_join(admin_id, t_sad), '11: an admin authorizes the sadran topic';
+  assert not pg_temp.can_join(outsider, t_pub), '11: another department''s member must not authorize the public topic';
+  assert not pg_temp.can_join(outsider, t_sad), '11: another department''s member must not authorize the sadran topic';
+  perform set_config('request.jwt.claims', json_build_object('sub', member, 'role', 'authenticated')::text, true);
+  assert not public.realtime_topic_authorized(null)
+     and not public.realtime_topic_authorized('week:not-a-uuid:2026-01-04:public')
+     and not public.realtime_topic_authorized('week:' || dept || ':2026-13-45:public')
+     and not public.realtime_topic_authorized('week:' || dept || ':2026-01-04:other')
+     and not public.realtime_topic_authorized('realtime:' || dept), '11: malformed topics are refused, never an error';
+  perform set_config('request.jwt.claims', '', true);
+  raise notice 'week_change_seq.sql: realtime authorization passed';
+end $$;
+
 rollback;

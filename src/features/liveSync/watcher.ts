@@ -47,6 +47,8 @@ export interface WatcherDeps {
   random(): number;
   /** Called at most once per page session for a refused/failed channel (the caller reports it). */
   reportRefusal?(detail: string): void;
+  /** Every live channel of the screen joined (true) or not (false); for the test hook / diagnostics. */
+  onLiveState?(live: boolean): void;
 }
 
 export interface WatchTarget {
@@ -108,6 +110,7 @@ export class ChangeWatcher {
   private checking = false;
   private recheck = false;
   private stopped = false;
+  private lastLive: boolean | null = null;
 
   constructor(
     private readonly target: WatchTarget,
@@ -130,6 +133,7 @@ export class ChangeWatcher {
     this.clear("invalidateTimer");
     for (const channel of this.channels.values()) this.closeChannel(channel);
     this.channels.clear();
+    this.emitLive();
   }
 
   setVisible(visible: boolean): void {
@@ -150,6 +154,7 @@ export class ChangeWatcher {
           channel.status = "closed";
           channel.attempts = 0;
         }
+        this.emitLive();
       }, HIDDEN_DISCONNECT_MS);
     }
   }
@@ -290,6 +295,7 @@ export class ChangeWatcher {
           this.scheduleRetry(week, channel);
         }
         if (this.pollInterval() !== before) this.schedulePoll();
+        this.emitLive();
       },
     });
     const close = channel.close;
@@ -297,6 +303,13 @@ export class ChangeWatcher {
       current = false;
       close?.();
     };
+  }
+
+  private emitLive(): void {
+    const live = !this.stopped && this.allLive();
+    if (live === this.lastLive) return;
+    this.lastLive = live;
+    this.deps.onLiveState?.(live);
   }
 
   private scheduleRetry(week: string, channel: Channel): void {

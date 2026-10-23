@@ -3339,6 +3339,8 @@ declare
   v_state jsonb := coalesce(nullif(current_setting('app.wcs_state', true), ''), '{}')::jsonb;
   k record;
   v_dept uuid; v_week date; v_pub boolean;
+  v_seq bigint; v_public_seq bigint;
+  v_topic text;
 begin
   perform set_config('app.wcs_state', '', true);
   perform set_config('app.wcs_registered', '', true);
@@ -3354,17 +3356,25 @@ begin
         on conflict (department_id, week_start) do update
           set seq = c.seq + 1,
               public_seq = c.public_seq + case when v_pub then 1 else 0 end,
-              updated_at = now();
+              updated_at = now()
+        returning c.seq, c.public_seq into v_seq, v_public_seq;
+        v_topic := 'week:' || v_dept::text || ':' || v_week::text;
+        perform realtime.send(jsonb_build_object('seq', v_seq), 'changed', v_topic || ':sadran', true);
+        if v_pub then
+          perform realtime.send(jsonb_build_object('seq', v_public_seq), 'changed', v_topic || ':public', true);
+        end if;
       else
         insert into public.department_change_seq as c (department_id, seq)
         values (v_dept, 1)
         on conflict (department_id) do update set seq = c.seq + 1, updated_at = now();
       end if;
     exception when others then
-      -- A counter must never fail the user's write; the screens' focus refetch still catches up.
+      -- A counter or broadcast must never fail the user's write; the screens' version check catches up.
       raise warning '_wcs_flush: % (%)', sqlerrm, k.key;
     end;
   end loop;
+  -- realtime.send sets `realtime.topic` for the rest of the transaction; leave no trace for later statements.
+  perform set_config('realtime.topic', '', true);
   return null;
 end;
 $$;
@@ -12858,6 +12868,35 @@ $$;
 
 
 ALTER FUNCTION "public"."raise_stale_version"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."realtime_topic_authorized"("p_topic" "text") RETURNS boolean
+    LANGUAGE "plpgsql" STABLE
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $_$
+declare
+  v_parts text[];
+  v_dept uuid; v_week date;
+begin
+  if p_topic is null or p_topic !~ '^week:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:[0-9]{4}-[0-9]{2}-[0-9]{2}:(public|sadran)$' then
+    return false;
+  end if;
+  v_parts := string_to_array(p_topic, ':');
+  v_dept := v_parts[2]::uuid;
+  begin
+    v_week := v_parts[3]::date;
+  exception when others then
+    return false;
+  end;
+  if v_parts[4] = 'sadran' then
+    return coalesce(public.can_manage_week(v_dept, v_week), false);
+  end if;
+  return coalesce(public.member_of(v_dept) or public.is_admin(), false);
+end;
+$_$;
+
+
+ALTER FUNCTION "public"."realtime_topic_authorized"("p_topic" "text") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."record_answer_on_behalf"("p_proposal_id" "uuid", "p_profile_id" "uuid", "p_accept" boolean, "p_note" "text" DEFAULT NULL::"text") RETURNS "void"
@@ -26681,6 +26720,12 @@ GRANT ALL ON FUNCTION "public"."push_outbox_notify_dispatch"() TO "service_role"
 
 REVOKE ALL ON FUNCTION "public"."raise_stale_version"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."raise_stale_version"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."realtime_topic_authorized"("p_topic" "text") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."realtime_topic_authorized"("p_topic" "text") TO "service_role";
+GRANT ALL ON FUNCTION "public"."realtime_topic_authorized"("p_topic" "text") TO "authenticated";
 
 
 

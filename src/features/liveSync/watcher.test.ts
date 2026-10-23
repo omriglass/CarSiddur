@@ -308,6 +308,18 @@ describe("ChangeWatcher live channels", () => {
     watcher.stop();
   });
 
+  it("reports the live state for the test hook", async () => {
+    const h = harness();
+    const states: boolean[] = [];
+    const watcher = new ChangeWatcher(target("public"), { ...h.deps, onLiveState: (live) => states.push(live) });
+    watcher.start();
+    await flush();
+    ch(h, 0).handlers.onStatus("live");
+    ch(h, 0).handlers.onStatus("failed", "CLOSED");
+    watcher.stop();
+    expect(states).toEqual([true, false]);
+  });
+
   it("does not open channels when the screen may not (realtime: false)", async () => {
     const h = harness();
     const watcher = new ChangeWatcher(target("public", false), h.deps);
