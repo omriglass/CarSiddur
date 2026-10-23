@@ -12452,7 +12452,8 @@ begin
         perform public.flag_car_chain_breaks(r.car_id, r.week_start);   -- R2B6
         perform public._offer_freed_slot(r.id);   -- R8B11
       else
-        update public.rides set is_pinned = true where id = r.id;
+        -- R13B19: a pinned ride needs a reason (rides_pin_reason_ck); keep the one it has.
+        update public.rides set is_pinned = true, pin_reason = coalesce(pin_reason, 'REQUEST_RELEASED') where id = r.id;
       end if;
       perform set_config('app.system_status_transition', v_prev, true);
       if r.driver_id is not null then

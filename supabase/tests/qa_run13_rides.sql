@@ -1,6 +1,7 @@
 -- QA run 13 R13B12 (owner 2026-10-23): when the driver cancels a ride that carries guests, the ride takes the guests'
 -- own times and a guest who drives becomes the driver; with no such guest it stays held for a volunteer driver (still at
--- the guests' times). Transactional; rolled back. Seeded נבו department plus one extra member.
+-- the guests' times). R13B19: a guest leaving a ride (release_request_booking) pins it with a reason.
+-- Transactional; rolled back. Seeded נבו department plus one extra member.
 begin;
 do $$
 declare
@@ -50,5 +51,19 @@ begin
       assert (select status from public.requests where id=qg)='waitlisted', '(2) guests wait for a driver';
     end if;
   end loop;
+
+  -- R13B19: a guest's booking released (an edit of a merged request on a published day) pins the ride with a reason
+  dt:=((w+6)+time '09:45') at time zone 'Asia/Jerusalem';
+  insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,depart_at,return_at,trip_shape,status,origin_id)
+    values(dept,w,d1,d1,haifa,typ,dt,dt+interval '2 hours','round_trip','assigned',home) returning id into qd;
+  insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,depart_at,return_at,trip_shape,status,origin_id)
+    values(dept,w,g1,g1,haifa,typ,dt,dt+interval '2 hours','round_trip','merged',home) returning id into qg;
+  insert into public.rides(department_id,week_start,car_id,starts_at,ends_at,origin_id,destination_id,driver_id,status,created_by)
+    values(dept,w,car,dt,dt+interval '2 hours',home,home,d1,'confirmed',sadran) returning id into rid;
+  insert into public.ride_requests(ride_id,request_id,role,leg,car_mode) values(rid,qd,'driver','both','keep'),(rid,qg,'passenger','both','passenger');
+  perform public.release_request_booking(qg);
+  select * into rec from public.rides where id=rid;
+  assert rec.status='confirmed' and rec.is_pinned and rec.pin_reason='REQUEST_RELEASED', format('R13B19: the ride stays, pinned with a reason, got %s', row_to_json(rec));
+  assert not exists(select 1 from public.ride_requests where ride_id=rid and request_id=qg), 'R13B19: the guest left the ride';
 end $$;
 rollback;

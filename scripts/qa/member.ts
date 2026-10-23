@@ -194,7 +194,16 @@ async function cmdEdit(args: Args): Promise<void> {
     stops: [...destinationValuesToStopPayload(outStops, "out"), ...destinationValuesToStopPayload(returnStops, "return")],
   };
   if (payload.preferred_car_id && flag(args, "car")) throw new UsageError("--car takes a car id here (members do not see the board); omit it to keep the preference");
-  const result = await requests.submitRequest(payload) as unknown as requests.SubmitRequestResult;
+  let result = await requests.submitRequest(payload) as unknown as requests.SubmitRequestResult;
+  // R13B19: a published/live-day edit that would lose the booking changed nothing yet — the form asks, so does the CLI.
+  if (result.needs_confirmation) {
+    if (!has(args, "confirm-release")) {
+      console.log(`NOT edited ${short(id)}: the server asks first (${result.needs_confirmation}, drives_others=${!!result.drives_others}, would_place=${!!result.would_place}) — nothing changed; rerun with --confirm-release to release the current ride`);
+      return;
+    }
+    result = await requests.submitRequest({ ...payload, confirm_release: true }) as unknown as requests.SubmitRequestResult;
+  }
+  if (result.unchanged) { console.log(`unchanged ${short(id)}: the edit changes nothing`); return; }
   console.log(`edited ${short(id)}: late=${result.is_late} warnings=${(result.warnings ?? []).join(",") || "-"}${result.status ? ` status=${result.status}` : ""}${result.ride_id ? ` ride=${short(result.ride_id)}` : ""}${result.reason ? ` reason=${result.reason}` : ""}`);
 }
 
@@ -349,7 +358,7 @@ function usage(): void {
   request <day> --depart HH:MM [--return HH:MM] --dest <place|free:text> [--trip round_trip|one_way|drop_off] [--from] [--pickup] [--origin P] [--stop P]... [--return-stop P]...
           [--adults N --child-seats N --boosters N --luggage] [--flex 0|15|30|60|120|any | --flex-depart-early/-late/--flex-return-early/-late] [--return-day D] [--car ID] [--ride-type CODE] [--notes T] [--waitlist]
           [--fallback alternative|manage --alt-place P --alt-arrive HH:MM [--alt-pickup-place P --alt-pickup HH:MM]]   (plan B / "I will manage")
-  edit <req> [--day D --depart HH:MM --return HH:MM --dest P --origin P --trip-type T [--from|--pickup] --adults N --flex X --notes T --stop P... --clear-stops]
+  edit <req> [--day D --depart HH:MM --return HH:MM --dest P --origin P --trip-type T [--from|--pickup] --adults N --flex X --notes T --stop P... --clear-stops] [--confirm-release]
   groups | resolve-group <group> <member,...> [--driver X] (first listed drives)
   ask-to-join <ride> --day D [--dest P] [--adults N --notes T] | withdraw <req> | cancel <req> [reason] | shorten <req> <first-day> <HH:MM> <last-day> <HH:MM> | car-now --dest P [--hours N] [--adults N]`);
 }
