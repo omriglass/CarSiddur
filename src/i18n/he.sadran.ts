@@ -381,8 +381,11 @@ export const heSadran = {
     diffNewRides: "{{count}} נסיעות חדשות",
     diffChangedTimes: "{{count}} שעות שונו",
     diffCancelled: "{{count}} נסיעה בוטלה",
-    diffUnnotified: "{{count}} בקשות ללא שינוי לא יקבלו הודעה",
-    notifyListTitle: "מי יקבל/תקבל הודעה ({{count}})",
+    // R13U3: counted by the server's own rule (`publishNotices.ts`) — a republished day tells only what changed.
+    diffUnnotified: "{{count}} בקשות לא יקבלו הודעה (אין בהן שינוי או שיבוץ)",
+    /** R13U9 (REQ §13.148): one notice per member per publish. */
+    notifyListTitle: "מי יקבל/תקבל הודעה: {{count}} — הודעה אחת לכל אחד/ת",
+    notifyOfferLapses: "ההצעה תפוג — ברשימת המתנה",
     groupMessageLabel: "הודעה כללית לצירוף (אופציונלי)",
     blockedByConflicts: "לא ניתן לפרסם — יש התנגשויות בלוח",
     conflictsTitle: "נסיעות שחוסמות את הפרסום",

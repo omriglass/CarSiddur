@@ -16,6 +16,7 @@ import { formatDayDate } from "@/lib/dayLabels";
 import { dateKey, formatTime } from "@/lib/time";
 import { alternativePlanText } from "@/features/sadran/board/planBLine";
 import { driverOverlapRideIds } from "@/features/sadran/board/driverBusy";
+import { publishNotices } from "../publishNotices";
 import { expiresAtPublish } from "../expiresAtPublish";
 import { requestStart } from "@/features/sadran/board/phantomLanes";
 import type { PublicationDay } from "../../api";
@@ -119,7 +120,7 @@ export function PublishScreen({ departmentId, weekStart }: PublishScreenProps) {
   const dateLabel = (day: string) => formatDayDate(`${day}T12:00:00Z`);
 
   const previousSnapshot = previousVersion?.snapshot as
-    | { published_days?: string[]; rides?: { id: string; starts_at: string; ends_at: string; car_id: string; status: string }[]; requests?: { id: string; status: string; status_reason: string | null }[] }
+    | { published_days?: string[]; rides?: { id: string; starts_at: string; ends_at: string; car_id: string; status: string; driver_id?: string | null }[]; requests?: { id: string; status: string; status_reason: string | null }[] }
     | undefined;
 
   const diff = computeDiffSummary({
@@ -133,7 +134,20 @@ export function PublishScreen({ departmentId, weekStart }: PublishScreenProps) {
       .map((r) => ({ id: r.id, status: r.status, status_reason: r.status_reason })),
   });
 
-  const notifyList = chosenRequests.filter((r) => r.status !== "draft" && r.status !== "withdrawn");
+  // R13U3 / R13U9: the people this publish tells — one notice each, by the server's own rule (`publishNotices`).
+  const lapsingRequestIds = new Set((proposalsQuery.data ?? []).filter((proposal) => proposal.status === "sent" && expiresAtPublish(proposal))
+    .map((proposal) => proposal.request_id));
+  const notices = publishNotices({
+    requests: chosenRequests.flatMap((r) => {
+      const anchor = r.trip_shape === "one_way_from" ? r.return_at : r.depart_at;
+      return anchor ? [{ ...r, day: dateKey(anchor) }] : [];
+    }),
+    rides: ridesQuery.data ?? [],
+    priorPublishedDays: previousVersion ? (previousSnapshot?.published_days ?? []) : null,
+    previousStatuses: new Map((previousSnapshot?.requests ?? []).map((r) => [r.id, r.status])),
+    previousRides: previousSnapshot?.rides ?? [],
+    lapsingRequestIds,
+  });
 
   function proposePublish(days: string[]) {
     if (!days.length) return;
@@ -269,7 +283,7 @@ export function PublishScreen({ departmentId, weekStart }: PublishScreenProps) {
             <li>{tv("sadranPublish.diffNewRides", { count: String(diff.newRides) })}</li>
             <li>{tv("sadranPublish.diffChangedTimes", { count: String(diff.changedTimeRides) })}</li>
             <li>{tv("sadranPublish.diffCancelled", { count: String(diff.cancelledRides) })}</li>
-            <li>{tv("sadranPublish.diffUnnotified", { count: String(diff.unnotifiedCount) })}</li>
+            <li>{tv("sadranPublish.diffUnnotified", { count: String(notices.unnotifiedCount) })}</li>
           </ul>
         </CardContent>
       </Card>
@@ -322,17 +336,21 @@ export function PublishScreen({ departmentId, weekStart }: PublishScreenProps) {
 
       <Card>
         <CardContent className="space-y-2 p-4 text-sm">
-          <h2 className="font-medium">{tv("sadranPublish.notifyListTitle", { count: String(notifyList.length) })}</h2>
-          <ul className="space-y-1 text-muted-foreground">
-            {notifyList.map((r) => {
-              const placed = placedTimes(r, ridesQuery.data ?? []);
-              return (
-              <li key={r.id}>
-                <TripSummary name={r.requester_full_name} destination={r.destination_resolved_name ?? r.destination_text} purpose={r.ride_type_name_he} departAt={placed.departAt} returnAt={placed.returnAt} />
-                {he.status[r.status as keyof typeof he.status] ?? r.status}
+          <h2 className="font-medium" data-testid="publish-notify-title">{tv("sadranPublish.notifyListTitle", { count: String(notices.notified.length) })}</h2>
+          <ul className="space-y-2 text-muted-foreground" data-testid="publish-notify-list">
+            {notices.notified.map((person) => (
+              <li key={person.requesterId} className="space-y-0.5">
+                {person.requests.map((r) => {
+                  const placed = placedTimes(r, ridesQuery.data ?? []);
+                  return (
+                    <div key={r.id}>
+                      <TripSummary name={r.requester_full_name} destination={r.destination_resolved_name ?? r.destination_text} purpose={r.ride_type_name_he} departAt={placed.departAt} returnAt={placed.returnAt} />
+                      {lapsingRequestIds.has(r.id) ? he.sadranPublish.notifyOfferLapses : he.status[r.status as keyof typeof he.status] ?? r.status}
+                    </div>
+                  );
+                })}
               </li>
-              );
-            })}
+            ))}
           </ul>
         </CardContent>
       </Card>

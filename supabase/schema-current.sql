@@ -7677,6 +7677,7 @@ CREATE OR REPLACE FUNCTION "public"."expire_proposals"("_now" timestamp with tim
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
 declare v_count int := 0; request_row record; r record; v_today date;
+  v_publishing boolean := coalesce(current_setting('app.publishing', true), '') = 'on';
 begin
   perform public.assert_not_direct_rpc('expire_proposals');
   v_today := (_now at time zone 'Asia/Jerusalem')::date;
@@ -7697,14 +7698,19 @@ begin
         returning id, department_id, week_start, request_id, previous_status, created_by
       loop
         v_count := v_count + 1;
-        -- the member is told the offer lapsed and what happens now (REQ §13.109)
-        perform public.enqueue_notification((select q.requester_id from public.requests q where q.id = r.request_id),
-          'outcome_changed', r.department_id, r.week_start, '{}'::jsonb,
-          jsonb_build_object('variant', 'offer_expired', 'request_id', r.request_id),
-          format('offer_expired:%s', r.id));
-        perform public.enqueue_notification(r.created_by, 'proposal_answered', r.department_id, r.week_start,
-          '{}'::jsonb, jsonb_build_object('variant', 'expired', 'request_id', r.request_id),
-          format('proposal_expired:%s', r.id));
+        -- the member is told the offer lapsed and what happens now (REQ §13.109). R13U9: while publishing, that is a
+        -- line of the one publish notice instead, and the publishing Sadran (who saw the list in the dialog) is not told.
+        if not v_publishing then
+          perform public.enqueue_notification((select q.requester_id from public.requests q where q.id = r.request_id),
+            'outcome_changed', r.department_id, r.week_start, '{}'::jsonb,
+            jsonb_build_object('variant', 'offer_expired', 'request_id', r.request_id),
+            format('offer_expired:%s', r.id));
+        end if;
+        if not v_publishing or r.created_by is distinct from (select auth.uid()) then
+          perform public.enqueue_notification(r.created_by, 'proposal_answered', r.department_id, r.week_start,
+            '{}'::jsonb, jsonb_build_object('variant', 'expired', 'request_id', r.request_id),
+            format('proposal_expired:%s', r.id));
+        end if;
       end loop;
     end if;
   end loop;
@@ -12096,8 +12102,17 @@ begin
     'scores_fingerprint',p_expected_fingerprint,
     'rides', (select coalesce(jsonb_agg(to_jsonb(r)), '[]') from public.rides r
               where r.department_id = p_department_id and r.week_start = p_week_start and r.status <> 'cancelled'),
+    -- R13U9: a request whose offer lapses at this publish is stored with the status it returns to (the offer's
+    -- previous_status), so the next publish does not report "proposed -> waitlisted" as news.
     'requests', (select coalesce(jsonb_agg(jsonb_build_object(
-                    'id', q.id, 'requester_id', q.requester_id, 'status', q.status, 'status_reason', q.status_reason)), '[]')
+                    'id', q.id, 'requester_id', q.requester_id,
+                    'status', coalesce(case when q.status = 'proposed'
+                        and (coalesce(q.depart_at,q.return_at) at time zone 'Asia/Jerusalem')::date = any(v_days) then
+                      (select pp.previous_status from public.proposals pp where pp.request_id = q.id and pp.status = 'sent'
+                         and (pp.type not in ('shift','merge') or pp.created_via <> 'sadran'
+                              or (coalesce(q.depart_at,q.return_at) at time zone 'Asia/Jerusalem')::date < (now() at time zone 'Asia/Jerusalem')::date)
+                       order by pp.created_at limit 1) end, q.status),
+                    'status_reason', q.status_reason)), '[]')
                  from public.requests q where q.department_id = p_department_id and q.week_start = p_week_start),
     'cars', (select coalesce(jsonb_agg(to_jsonb(c)), '[]') from public.cars c where c.department_id = p_department_id),
     'blocks', (select coalesce(jsonb_agg(to_jsonb(b)), '[]') from public.car_maintenance_blocks b where b.department_id = p_department_id)
@@ -12126,7 +12141,11 @@ begin
         coalesce(rd.starts_at,q.depart_at,q.return_at) as line_dt,
         coalesce(rd.starts_at,q.depart_at) as line_depart,
         coalesce(rd.ends_at,q.return_at) as line_return,
-        coalesce(c.name,dest.name,q.destination_text,'') as line_place
+        coalesce(c.name,dest.name,q.destination_text,'') as line_place,
+        -- R13U9: an offer this publish lapses (the rule of expire_proposals) — its line goes in this notice
+        q.status = 'proposed' and exists (select 1 from public.proposals pp where pp.request_id = q.id and pp.status = 'sent'
+          and (pp.type not in ('shift','merge') or pp.created_via <> 'sadran'
+               or (coalesce(q.depart_at,q.return_at) at time zone 'Asia/Jerusalem')::date < (now() at time zone 'Asia/Jerusalem')::date)) as offer_lapses
       from public.requests q
       left join lateral (
         select rr.ride_id from public.ride_requests rr join public.rides x on x.id = rr.ride_id
@@ -12174,9 +12193,10 @@ begin
             or exists (select 1 from ride_chg rc where rc.request_id = s.id and rc.line_change <> '') then 'outcome_changed'
           else null end as event_kind,
         concat_ws(' · ',
+          -- a one-way request has no return: its line keeps the day and departure (was: the whole part went null)
           public.day_date_label(line_dt) || ' ' ||
-            to_char(line_depart at time zone 'Asia/Jerusalem','HH24:MI') || '–' ||
-            to_char(line_return at time zone 'Asia/Jerusalem','HH24:MI'),
+            concat_ws('–', to_char(line_depart at time zone 'Asia/Jerusalem','HH24:MI'),
+                           to_char(line_return at time zone 'Asia/Jerusalem','HH24:MI')),
           nullif(line_place,'')
         ) as request_line
       from scoped s
@@ -12193,15 +12213,16 @@ begin
       union all
       -- R10B4: a request with no live ride is not one of "your rides"; a waitlisted one gets its own line
       -- ("on the waiting list: ..."), any other (denied, still open) is left out.
-      select c.requester_id, c.id, c.request_day, coalesce(c.line_depart, c.line_dt), public._frag('publish.waitlisted', jsonb_build_object('line', c.request_line))
+      select c.requester_id, c.id, c.request_day, coalesce(c.line_depart, c.line_dt),
+        public._frag(case when c.offer_lapses then 'publish.offer_expired' else 'publish.waitlisted' end, jsonb_build_object('line', c.request_line))
       from classified c
-      where c.event_kind = 'published' and c.status = 'waitlisted'
+      where c.event_kind = 'published' and (c.status = 'waitlisted' or c.offer_lapses)
         and not exists (select 1 from public.ride_requests rr join public.rides x on x.id = rr.ride_id
                         where rr.request_id = c.id and x.status <> 'cancelled')
     ), days_agg as (
       select requester_id, event_kind, string_agg(public.day_date_label(request_day), ', ' order by request_day) as days_list
       from (select distinct c.requester_id, c.event_kind, c.request_day from classified c where c.event_kind is not null
-        and (c.event_kind <> 'published' or c.status = 'waitlisted' or exists (select 1 from public.ride_requests rr join public.rides x on x.id = rr.ride_id
+        and (c.event_kind <> 'published' or c.status = 'waitlisted' or c.offer_lapses or exists (select 1 from public.ride_requests rr join public.rides x on x.id = rr.ride_id
                 where rr.request_id = c.id and x.status <> 'cancelled'))) d
       group by requester_id, event_kind
     ), chg_lines as (
@@ -12223,9 +12244,18 @@ begin
           || case when max(cl.tot) > 3 then chr(10) || public._frag('publish.more', jsonb_build_object('count', (max(cl.tot) - 3)::text)) else '' end,
         (array_agg(cl.request_id order by cl.rn))[1]
       from chg_lines cl group by cl.requester_id
+    ), per_kind as (
+      select l.requester_id, l.event_kind, d.days_list, l.lines, l.first_id
+      from lines_agg l join days_agg d using (requester_id, event_kind)
     )
-    select l.requester_id, l.event_kind, d.days_list, l.lines, l.first_id
-    from lines_agg l join days_agg d using (requester_id, event_kind)
+    -- R13U9: ONE notice per member per publish — newly published days and changes on days already public share it
+    -- (`published` first; its days are disjoint from the changed ones).
+    select k.requester_id,
+      case when bool_or(k.event_kind = 'published') then 'published' else 'outcome_changed' end as event_kind,
+      string_agg(k.days_list, ', ' order by k.event_kind desc) as days_list,
+      string_agg(k.lines, chr(10) order by k.event_kind desc) as lines,
+      (array_agg(k.first_id order by k.event_kind desc))[1] as first_id
+    from per_kind k group by k.requester_id
   loop
     v_event := v_req.event_kind::public.notification_event;
     perform public.enqueue_notification(v_req.requester_id, v_event, p_department_id, p_week_start,

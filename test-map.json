@@ -850,7 +850,9 @@
         "supabase/tests/changelog.sql",
         "e2e/changelog.spec.ts",
         "scripts/changelog-check.mjs",
-        "supabase/tests/qa_run13_rides.sql"
+        "supabase/tests/qa_run13_rides.sql",
+        "supabase/tests/publish_one_notice.sql",
+        "supabase/migrations/**/*one_notice_per_publish*"
       ],
       "vitest": [
         "src/features/inbox",
@@ -861,7 +863,8 @@
         "notifications_semantics.sql",
         "status_notifications.sql",
         "changelog.sql",
-        "qa_run13_rides.sql"
+        "qa_run13_rides.sql",
+        "publish_one_notice.sql"
       ],
       "playwrightTags": [
         "@notifications"

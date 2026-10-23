@@ -443,7 +443,7 @@ local replay stack and comparing it with the production solve — scripts/replay
 
 **Automated**:
 - Vitest: `npx vitest run src/features/inbox`
-- SQL: `notifications_semantics.sql`, `status_notifications.sql`, `changelog.sql` (REQ §13.139: "מה חדש" once per entry, never pushed); e2e `changelog.spec.ts` (inbox message + `/changelog` from the profile's version line); Vitest `src/features/changelog`, `scripts/changelog-check.test.mjs`, `qa_run13_rides.sql` (R13B12: the driver cancels — the ride takes the guests' times, a guest who drives takes over; R13B19: a guest leaving pins the ride with a reason)
+- SQL: `notifications_semantics.sql`, `status_notifications.sql`, `changelog.sql` (REQ §13.139: "מה חדש" once per entry, never pushed), `publish_one_notice.sql` (R13U9, REQ §13.148: one notice per member per publish — lapsed offers as lines, no per-proposal expiry notice to the publishing Sadran, new days and republished changes together); e2e `changelog.spec.ts` (inbox message + `/changelog` from the profile's version line); Vitest `src/features/changelog`, `scripts/changelog-check.test.mjs`, `qa_run13_rides.sql` (R13B12: the driver cancels — the ride takes the guests' times, a guest who drives takes over; R13B19: a guest leaving pins the ride with a reason)
 - Playwright: `npx playwright test --grep "@notifications"` (real push delivery is manual-only per
   `.claude/agents/e2e-tester.md` — specs assert the inbox row / template text, not a real push)
 

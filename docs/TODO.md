@@ -1055,13 +1055,13 @@ Whole-week autofill in the clock-change week now runs (89 rides, all 7 multi-day
 **UI changes**
 - R13U1 [T] — The ride popup works on the board and the grid views; on the phone siddur day list and /my list a tap opens the sheet directly (list views have no popup — decide). On desktop the popup can cover the car header and legend.
 - R13U2 [T] — The closing-time dialog cannot show a current close_at outside its day range (the generated week's 25.10 23:37 after week start); "later than publish" untested (this week's publish_at is after the week start).
-- R13U3 — Publish summary says both "131 בקשות ללא שינוי לא יקבלו הודעה" and "מי יקבל/תקבל הודעה (131)".
+- ✅ R13U3 — Publish summary says both "131 בקשות ללא שינוי לא יקבלו הודעה" and "מי יקבל/תקבל הודעה (131)". **Fixed 2026-10-23:** both come from `publishNotices.ts` (the server's rule): the list counts people, one notice each, and lists only those told; also fixed a repeat notice the next publish would have sent for every lapsed offer (snapshot status).
 - R13U4 — "דיברת עם X?" for "הצע" does not say where/which car; the card offers a far origin (תל אביב) to a זכרון יעקב resident.
 - R13U5 — Composer WhatsApp text starts with a "נסיעה משולבת:" line before "היי …".
 - R13U6 — Ride sheet tells a dropped-off passenger "הרכב נשאר איתי ביעד".
 - R13U7 — `window_changed` copy uses "25/10/26" instead of "א׳ 25.10".
 - R13U8 — Origin-proposal copy: body "מחיפה לגבעת חביבה · … · במקום מחיפה" never names the new origin (חדרה); `qa:member proposals` prints empty text for it.
-- R13U9 — 5 separate "ההצעה שקיבלת פגה" notices at publish to one member — a digest.
+- ✅ R13U9 — 5 separate "ההצעה שקיבלת פגה" notices at publish to one member — a digest. **Fixed 2026-10-23 (owner: first priority, REQ §13.148):** measured on seed 8722 — a member with offers out got one notice per offer and no publish notice; the Sadran one per proposal. Now one notice per member per publish (lapsed offers are lines; new days + republished changes together), none per proposal to the publishing Sadran (`20261028091300`, `publish_one_notice.sql`).
 - R13U10 [T] — The multi-day date picker's return grid shows two weeks with no marker of the first day; the /my week grid on a phone starts at 00:00.
 
 **Missing obvious features**
