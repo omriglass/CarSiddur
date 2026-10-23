@@ -151,6 +151,7 @@ export const heMember = {
     weekEndBlockingError: "נסיעה שמסתיימת אחרי שבת — פנה/י לסדרן/ית",
     returnBeforeDeparture: "שעת החזרה חייבת להיות אחרי שעת היציאה",
     seatFitWarning: "הרכבים במחלקה לא מתאימים למספר הנוסעים שביקשת; הסדרן/ית יטפלו בכך.",
+    tooShortWarning: "הנסיעה לשם ובחזרה לוקחת בערך {{minutes}} דקות — יותר מכל זמן הבקשה. כדאי לבדוק את השעות.",
     duplicateWarning: "יש לך כבר בקשה חופפת בזמנים האלה — אולי כדאי לערוך אותה במקום לפתוח בקשה חדשה.",
     editRequestLink: "לעריכת הבקשה",
     changedSinceSolveBanner: "השבוע כבר בהכנה — השינוי יסומן לסדרן/ית",

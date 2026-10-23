@@ -98,6 +98,7 @@ import { PassengersFields } from "./requestForm/PassengersFields";
 import { RepeatWeeklyField } from "./requestForm/RepeatWeeklyField";
 import { readNoAutoDialogs } from "@/features/member/useNoAutoDialogs";
 import { SentenceFields } from "./requestForm/sentence/SentenceFields";
+import { roundTripTooShort } from "../tooShort";
 import { STAGE_ONE_FIELDS, isStageOneField } from "./requestForm/sentence/sentenceModel";
 
 export interface JoinRidePrefill {
@@ -609,7 +610,14 @@ export function RequestForm({
     outStops: (values.outStops ?? []) as DestinationValue[],
     returnStops: (values.returnStops ?? []) as DestinationValue[],
   };
-  const routesWanted = anchorSyncActive && hasDestination(routeValues.destination);
+  // R13B16: the classic layout also needs both drives of a same-day round trip between list places (an empty
+  // origin = home), to warn when the request is shorter than the drive there and back. The sentence layout
+  // already says "אין זמן ביעד" for it (REQ §13.119 e).
+  const isListPlace = (value: DestinationValue, emptyOk: boolean) =>
+    "presetId" in value ? !!value.presetId : emptyOk && value.freeText.trim() === "";
+  const durationCheckWanted = !isSentence && tripType === "round_trip" && !isMultiDay
+    && isListPlace(routeValues.origin, true) && isListPlace(routeValues.destination, false);
+  const routesWanted = (anchorSyncActive || durationCheckWanted) && hasDestination(routeValues.destination);
   const outRouteQuery = useRouteMinutesQuery(departmentId, outboundRoutePoints(routeValues), routesWanted);
   const returnRouteQuery = useRouteMinutesQuery(departmentId, returnRoutePoints(routeValues), routesWanted && needsReturn);
   // Plan B (REQ §13.112): origin -> drop place, for the drop time sheet's "leave at" anchor.
@@ -626,6 +634,10 @@ export function RequestForm({
   const outMinutes = outRouteQuery.data ?? (outRouteQuery.isError ? DEFAULT_HOP_MINUTES : null);
   const returnMinutes = returnRouteQuery.data ?? (returnRouteQuery.isError ? DEFAULT_HOP_MINUTES : null);
   const planBMinutes = planBRouteQuery.data ?? (planBRouteQuery.isError ? DEFAULT_HOP_MINUTES : null);
+  // Only a known drive warns (a failed preview's 60-minute guess does not).
+  const tooShortDrive = durationCheckWanted
+    ? roundTripTooShort({ tripType, departTime: values.departTime, returnTime: values.returnTime, outMinutes: outRouteQuery.data ?? null, returnMinutes: returnRouteQuery.data ?? null })
+    : null;
 
   // Keeps `departTime`/`returnTime` (what is submitted) equal to the car times implied by the
   // typed anchors; a multi-day request has no anchors (its legs share one payload).
@@ -1147,6 +1159,10 @@ export function RequestForm({
   // R11U4: "edit it instead of opening a new request" is a new-request hint — never on the edit screen (the save asks instead).
   const duplicateHint = duplicate && mode !== "edit";
   const overlapSeries = !!duplicate && !!duplicate.seriesId && (duplicate.seriesCount ?? 0) > 1;
+  // Classic layout only (in the footer, with the seat-fit line).
+  const tooShortLine = tooShortDrive != null
+    ? <p className="text-sm text-amber-700" data-testid="too-short-warning">⚠ {tv("request.tooShortWarning", { minutes: String(tooShortDrive) })}</p>
+    : null;
   const notices =
     seatFitWarning || duplicateHint ? (
       <div className="space-y-1" data-testid="form-notices">
@@ -1405,6 +1421,7 @@ export function RequestForm({
         <div className="mx-auto max-w-2xl space-y-2">
           {isSentence ? null : (
             <>
+              {tooShortLine}
               {seatFitWarning ? <p className="text-sm text-amber-700">⚠ {t("request.seatFitWarning")}</p> : null}
               {duplicateHint ? <p className="text-sm text-amber-700">{t("request.duplicateWarning")}</p> : null}
             </>

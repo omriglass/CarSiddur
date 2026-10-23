@@ -326,3 +326,24 @@ describe("RequestForm plan B line (REQ §13.112 a/b)", () => {
     expect(mocks.submit.mock.calls[0]![0]).toMatchObject({ fallback: "manage", alternative: null });
   });
 });
+
+// Shares this file's form harness (classic layout, mocked route minutes).
+describe("RequestForm too-short round trip (R13B16)", () => {
+  it("the classic layout warns when the request is shorter than the drive there and back, and never blocks", async () => {
+    mocks.layout.current = "classic";
+    mocks.routeMinutes.current = 150; // default window 08:00–12:00 = 240 minutes
+    show();
+    fireEvent.click(screen.getByText("pick-destination"));
+    expect(await screen.findByTestId("too-short-warning")).toHaveTextContent("300");
+    fireEvent.click(screen.getByRole("button", { name: he.action.submitRequest }));
+    await waitFor(() => expect(mocks.submit).toHaveBeenCalledOnce());
+  });
+
+  it("is quiet when the window covers both drives", () => {
+    mocks.layout.current = "classic";
+    mocks.routeMinutes.current = 45;
+    show();
+    fireEvent.click(screen.getByText("pick-destination"));
+    expect(screen.queryByTestId("too-short-warning")).not.toBeInTheDocument();
+  });
+});
