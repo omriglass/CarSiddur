@@ -9643,7 +9643,7 @@ begin
 
   v_trip_type := coalesce((select body from public.text_fragments where key = 'trip_type.' || q.trip_type::text), '');
 
-  v:=jsonb_build_object('weekLabel',to_char(_week_start,'DD/MM/YY'),
+  v:=jsonb_build_object('weekLabel',public.week_range_label(_week_start),
     'closeTime',public._dt_label(w.close_at),
     'firstName',coalesce(fullname,''),'destination',coalesce(dest,q.destination_text,''),
     'origin',v_origin,'route',coalesce(v_route,''),'tripType',v_trip_type,
@@ -15781,7 +15781,7 @@ begin
   -- this copy wants.
   perform public.enqueue_notification(dm.profile_id, 'window_changed', p_department_id, p_week_start,
     jsonb_build_object(
-      'closeDay', public.weekday_short_label((p_close_at at time zone 'Asia/Jerusalem')::date),
+      'closeDay', public.day_date_label((p_close_at at time zone 'Asia/Jerusalem')::date),
       'closeTime', to_char(p_close_at at time zone 'Asia/Jerusalem', 'HH24:MI')
     ),
     '{}'::jsonb,
@@ -18568,6 +18568,19 @@ $$;
 
 
 ALTER FUNCTION "public"."week_range"("_week_start" "date") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."week_range_label"("_week_start" "date") RETURNS "text"
+    LANGUAGE "sql" IMMUTABLE
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select chr(8294) || case when extract(month from _week_start) = extract(month from _week_start + 6)
+                 then to_char(_week_start, 'FMDD') else to_char(_week_start, 'FMDD.FMMM') end
+         || '–' || to_char(_week_start + 6, 'FMDD.FMMM') || chr(8297);
+$$;
+
+
+ALTER FUNCTION "public"."week_range_label"("_week_start" "date") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."week_state_fingerprint"("p_department_id" "uuid", "p_week_start" "date") RETURNS "text"
@@ -26227,6 +26240,11 @@ GRANT ALL ON FUNCTION "public"."week_phase_timestamps"("p_settings" "public"."de
 
 REVOKE ALL ON FUNCTION "public"."week_range"("_week_start" "date") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."week_range"("_week_start" "date") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."week_range_label"("_week_start" "date") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."week_range_label"("_week_start" "date") TO "service_role";
 
 
 

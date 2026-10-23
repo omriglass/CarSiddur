@@ -213,9 +213,10 @@ export function shiftTimesUnchanged(input: Pick<ProposalTextInput, "type" | "req
 export function proposalPreviewText(input: ProposalTextInput): string {
   const { type, template } = input;
   if (!template) return "";
+  // R13U5: the message opens with the template's greeting ("היי X, …"); the merged-ride summary follows it.
   return [
-    combinedSummaryText(input),
     renderTemplate(template.body, proposalTemplateVars(input)),
+    combinedSummaryText(input),
     // Older/custom templates may not have these placeholders. Include the selected alternative
     // and optional explanation in the member's message.
     (type === "deny" || type === "external") && !template.body.includes("{{reason}}") && !template.body.includes("{{reasonLine}}") && !template.body.includes("{{reasonNote}}") ? input.reason : "",

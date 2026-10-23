@@ -112,3 +112,14 @@ describe("proposalPreviewText alternative (REQ §13.112 a)", () => {
     expect(text).not.toContain("ואיסוף");
   });
 });
+
+describe("proposalPreviewText merge (R13U5)", () => {
+  it("opens with the template's greeting; the merged-ride summary follows", () => {
+    const text = proposalPreviewText({
+      ...base, type: "merge", template: { body: "היי {{firstName}}\nlink" }, driverName: "Noa",
+      combined: { start: "2026-09-13T06:00:00.000Z", end: "2026-09-13T08:00:00.000Z", passengerName: "Dan", hostCarName: "Kia" },
+    });
+    expect(text.startsWith("היי")).toBe(true);
+    expect(text).toContain("נסיעה משולבת");
+  });
+});

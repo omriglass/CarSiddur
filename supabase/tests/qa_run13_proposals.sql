@@ -1,7 +1,7 @@
 -- QA run 13 (2026-10-23 bug round): R13B11 — a shift of a הקפצה with both new times (no `leg`)
 -- moves both legs. R13B14 — a ride placed on a day not yet published is a draft, also in a week with
 -- other days published (accepted origin proposal, `try_auto_approve`, `place_request_on_car`). R13B18 — a
--- merge of a leg the request no longer has (the out leg of a pickup-only request) is refused. Transactional; rolled back. Seeded נבו department.
+-- merge of a leg the request no longer has (the out leg of a pickup-only request) is refused. R13U7/R13U8 copy. Transactional; rolled back. Seeded נבו department.
 begin;
 do $$
 declare
@@ -51,6 +51,10 @@ begin
   prop:=public.create_proposal(q,null,'origin',jsonb_build_object('origin_id',home,'car_id',car40),'x');
   tokens:=public.send_proposal(prop,'{}');
   perform public.answer_proposal(tokens->'party_tokens'->>m1::text,true);
+  -- R13U8: the member's notice body names the new starting place
+  assert (select n.body_he from public.notifications n where n.recipient_id=m1 and n.event='proposal_received' and n.data->>'proposal_id'=prop::text)
+         like '%'||(select name from public.destinations where id=home)||'%',
+    format('R13U8: the origin offer body names the new origin, got %s',(select n.body_he from public.notifications n where n.recipient_id=m1 and n.event='proposal_received' and n.data->>'proposal_id'=prop::text));
   assert (select status from public.proposals where id=prop)='applied', format('R13B14 (a): applied, got %s',(select status from public.proposals where id=prop));
   assert (select r.status from public.ride_requests rr join public.rides r on r.id=rr.ride_id
           where rr.request_id=q and r.status<>'cancelled')='draft',
@@ -91,5 +95,10 @@ begin
   exception when others then msg:=sqlerrm;
   end;
   assert msg like '%merge_leg_missing%', format('R13B18: create_proposal refuses the missing leg, got %s',msg);
+
+  -- ============ R13U7: a week reads as the app writes it ("25–31.10", "27.9–3.10"), not "25/10/26"
+  assert public.week_range_label('2026-10-25')=chr(8294)||'25–31.10'||chr(8297), 'R13U7: one-month week label';
+  assert public.week_range_label('2026-09-27')=chr(8294)||'27.9–3.10'||chr(8297), 'R13U7: cross-month week label';
+  assert (public.notification_context(m1,dept,w,'{}'::jsonb)->>'weekLabel')=public.week_range_label(w), 'R13U7: {{weekLabel}} uses it';
 end $$;
 rollback;

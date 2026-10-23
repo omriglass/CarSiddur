@@ -6091,6 +6091,7 @@ export type Database = {
         }[]
       }
       week_range: { Args: { _week_start: string }; Returns: unknown }
+      week_range_label: { Args: { _week_start: string }; Returns: string }
       week_state_fingerprint: {
         Args: { p_department_id: string; p_week_start: string }
         Returns: string

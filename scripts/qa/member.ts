@@ -80,12 +80,18 @@ async function proposalType(id: string): Promise<string> {
 async function cmdProposals(): Promise<void> {
   const mine = await requests.fetchMyRequests(ME, SCOPE?.departmentId);
   const pending = mine.filter((r) => r.pendingProposal);
-  for (const r of pending) console.log(`proposal ${short(r.pendingProposal!.id)} ${r.pendingProposal!.type} on ${reqLine(r)}`);
+  const inbox = await fetchNotifications(ME);
+  // R13U8: show what the member was actually told about it (the inbox title and body), not only the request line.
+  const toldAbout = (proposalId: string) => {
+    const n = inbox.find((x) => x.event === "proposal_received" && (x.data as { proposal_id?: string } | null)?.proposal_id === proposalId);
+    return n ? ` | ${oneLine(n.title_he)} | ${oneLine(n.body_he)}` : "";
+  };
+  for (const r of pending) console.log(`proposal ${short(r.pendingProposal!.id)} ${r.pendingProposal!.type} on ${reqLine(r)}${toldAbout(r.pendingProposal!.id)}`);
   // R5B9: answered by me, still waiting for the other parties - never listed as pending.
   const waiting = mine.filter((r) => !r.pendingProposal && r.acceptedAwaitingOthers);
   for (const r of waiting) console.log(`accepted, waiting for the others: ${reqLine(r)}`);
   // Merge proposals also address other parties (host/driver); their copy lives in the inbox.
-  const notes = (await fetchNotifications(ME)).filter((n) => n.event === "proposal_received" && !n.read_at);
+  const notes = inbox.filter((n) => n.event === "proposal_received" && !n.read_at);
   for (const n of notes) {
     const id = (n.data as { proposal_id?: string } | null)?.proposal_id;
     if (id && !pending.some((r) => r.pendingProposal!.id === id)) console.log(`proposal ${short(id)}/${await proposalType(id)} (inbox, unread) ${oneLine(n.title_he)} | ${oneLine(n.body_he)}`);
