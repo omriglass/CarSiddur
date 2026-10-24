@@ -18,6 +18,7 @@ import { formatWeekRangeLabel } from "@/components/dateFieldDates";
 import { useProfile } from "@/features/auth/useProfile";
 import { useIsSadranAnywhere } from "@/features/auth/useIsSadran";
 import { DeviceSetupPrompts } from "@/features/member/components/DeviceSetupPrompts";
+import { useMyChecklistPromptsQuery } from "@/features/cars/checklist/hooks";
 import { useMyResponsibleCarsQuery } from "@/features/cars/hooks";
 import { isRideRelated, relatedRequestIdToEdit } from "@/features/rides/relatedRide";
 import { useCars, useMyTemporaryCars, useRideTypes } from "@/features/fleet/hooks";
@@ -127,6 +128,8 @@ export function HomePage() {
   const upcomingRidesQuery = useMyUpcomingRides();
   const rideTypesQuery = useRideTypes();
   const myCarsQuery = useMyResponsibleCarsQuery();
+  // REQ item 150 (d): cars I became responsible for and have not yet completed a checklist for.
+  const checklistPromptCarIds = new Set((useMyChecklistPromptsQuery().data ?? []).map((prompt) => prompt.car_id));
   const freedOffersQuery = useMyFreedSlotOffers();
 
   const defaultDepartmentId =
@@ -437,6 +440,9 @@ export function HomePage() {
                       <div>
                         <p className="font-medium">{car.name}</p>
                         <p className="text-xs text-muted-foreground" dir="ltr">{car.license_plate}</p>
+                        {checklistPromptCarIds.has(car.id) ? (
+                          <p className="text-xs font-medium text-primary" data-testid="home-checklist-prompt">{he.carChecklist.promptCard}</p>
+                        ) : null}
                       </div>
                     </div>
                     <StatusBadge kind="car" status={car.status} />

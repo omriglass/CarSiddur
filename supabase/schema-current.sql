@@ -74,6 +74,16 @@ CREATE TYPE "public"."car_care_kind" AS ENUM (
 ALTER TYPE "public"."car_care_kind" OWNER TO "postgres";
 
 
+CREATE TYPE "public"."car_checklist_item_kind" AS ENUM (
+    'yes_no',
+    'number',
+    'date'
+);
+
+
+ALTER TYPE "public"."car_checklist_item_kind" OWNER TO "postgres";
+
+
 CREATE TYPE "public"."car_issue_category" AS ENUM (
     'warning_light',
     'mechanical',
@@ -111,6 +121,27 @@ CREATE TYPE "public"."car_status" AS ENUM (
 
 
 ALTER TYPE "public"."car_status" OWNER TO "postgres";
+
+
+CREATE TYPE "public"."car_task_kind" AS ENUM (
+    'tire_fill',
+    'wash',
+    'kilometrage',
+    'other'
+);
+
+
+ALTER TYPE "public"."car_task_kind" OWNER TO "postgres";
+
+
+CREATE TYPE "public"."car_task_status" AS ENUM (
+    'open',
+    'done',
+    'withdrawn'
+);
+
+
+ALTER TYPE "public"."car_task_status" OWNER TO "postgres";
 
 
 CREATE TYPE "public"."car_type" AS ENUM (
@@ -208,7 +239,8 @@ CREATE TYPE "public"."notification_event" AS ENUM (
     'car_swapped',
     'test_notification',
     'companion_added',
-    'changelog'
+    'changelog',
+    'car_task'
 );
 
 
@@ -897,6 +929,161 @@ $$;
 
 
 ALTER FUNCTION "public"."_car_last_km"("p_car_id" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_car_mileage_estimate"("p_department_id" "uuid", "p_week_start" "date", "p_weeks" integer) RETURNS TABLE("car_id" "uuid", "km" numeric)
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+begin
+  return query
+    select c.id,
+      coalesce(sum(
+        case served.leg
+          when 'both' then coalesce(public.request_leg_route_km(served.request_id, 'out'), 0)
+                           + coalesce(public.request_leg_route_km(served.request_id, 'return'), 0)
+          when 'out' then coalesce(public.request_leg_route_km(served.request_id, 'out'), 0)
+          when 'return' then coalesce(public.request_leg_route_km(served.request_id, 'return'), 0)
+          else 0
+        end
+      ), 0)::numeric as km
+    from public.cars c
+    left join public.rides r
+      on r.car_id = c.id
+      and r.status <> 'cancelled'
+      and r.week_start >= p_week_start - (p_weeks * 7)
+      and r.week_start <= p_week_start
+      and (r.week_start < p_week_start or r.status = 'confirmed')
+    left join lateral (
+      select rq.request_id, rq.leg
+      from public.ride_requests rq
+      where rq.ride_id = r.id
+      order by case when rq.role = 'driver' then 0 else 1 end, rq.request_id
+      limit 1
+    ) served on true
+    where c.department_id = p_department_id and c.type = 'shared' and c.status = 'active'
+    group by c.id;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."_car_mileage_estimate"("p_department_id" "uuid", "p_week_start" "date", "p_weeks" integer) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_car_mileage_readings"("p_department_id" "uuid", "p_week_start" "date", "p_weeks" integer) RETURNS TABLE("car_id" "uuid", "km" numeric, "usable" boolean)
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  with bounds as (
+    select ((p_week_start - p_weeks * 7)::timestamp at time zone 'Asia/Jerusalem') as ws,
+           ((p_week_start + 7)::timestamp at time zone 'Asia/Jerusalem') as we
+  ),
+  pts as (
+    select r.car_id, r.km, r.kind, r.recorded_at, r.id
+    from public.car_odometer_readings r, bounds b
+    where r.department_id = p_department_id and r.recorded_at >= b.ws and r.recorded_at < b.we
+    union all
+    (select distinct on (r.car_id) r.car_id, r.km, r.kind, r.recorded_at, r.id
+     from public.car_odometer_readings r, bounds b
+     where r.department_id = p_department_id and r.recorded_at < b.ws
+     order by r.car_id, r.recorded_at desc, r.id desc)
+  ),
+  seq as (
+    select p.car_id, p.km, p.kind, p.recorded_at,
+           lag(p.km) over w as pkm, lag(p.recorded_at) over w as pat
+    from pts p
+    window w as (partition by p.car_id order by p.recorded_at, p.id)
+  ),
+  tr as (
+    select s.car_id, s.recorded_at,
+      case when s.pkm is null or s.kind = 'correction' then null
+           else greatest(s.km - s.pkm, 0) * case
+             when s.pat < b.ws then extract(epoch from (s.recorded_at - b.ws))
+                                    / nullif(extract(epoch from (s.recorded_at - s.pat)), 0)
+             else 1 end
+      end as d
+    from seq s, bounds b
+  ),
+  agg as (
+    select t.car_id, coalesce(sum(t.d), 0) as km, count(t.d) as steps,
+           max(t.recorded_at) - greatest(min(t.recorded_at), (select ws from bounds)) as covered
+    from tr t group by t.car_id
+  )
+  select c.id, coalesce(a.km, 0)::numeric,
+         coalesce(a.steps >= 1 and a.covered >= interval '7 days', false)
+  from public.cars c left join agg a on a.car_id = c.id
+  where c.department_id = p_department_id and c.type = 'shared' and c.status = 'active';
+$$;
+
+
+ALTER FUNCTION "public"."_car_mileage_readings"("p_department_id" "uuid", "p_week_start" "date", "p_weeks" integer) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_car_task_label"("p_kind" "public"."car_task_kind", "p_note" "text") RETURNS "text"
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select case when p_kind = 'other' then coalesce(p_note, '')
+              else coalesce((select body from public.text_fragments where key = 'car_task.' || p_kind::text), '') end;
+$$;
+
+
+ALTER FUNCTION "public"."_car_task_label"("p_kind" "public"."car_task_kind", "p_note" "text") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_car_task_notice_tasks"("p_ride_id" "uuid") RETURNS "text"
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select coalesce(string_agg(public._car_task_label(t.kind, t.note), ', ' order by t.requested_at, t.id), '')
+  from public.rides r
+  join public.car_tasks t on t.car_id = r.car_id and t.status = 'open'
+    and r.ends_at + interval '15 minutes' > t.requested_at
+  where r.id = p_ride_id;
+$$;
+
+
+ALTER FUNCTION "public"."_car_task_notice_tasks"("p_ride_id" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_car_tasks_for_profile"("p_profile_id" "uuid", "p_now" timestamp with time zone) RETURNS TABLE("task_id" "uuid", "department_id" "uuid", "car_id" "uuid", "car_name" "text", "kind" "public"."car_task_kind", "note" "text", "requested_at" timestamp with time zone, "requested_by" "uuid", "requested_by_name" "text", "ride_id" "uuid", "ride_starts_at" timestamp with time zone, "ride_ends_at" timestamp with time zone, "window_starts_at" timestamp with time zone, "window_ends_at" timestamp with time zone)
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select t.id, t.department_id, t.car_id, c.name, t.kind, t.note, t.requested_at, t.requested_by, p.full_name,
+         r.id, r.starts_at, r.ends_at, r.starts_at - interval '15 minutes', r.ends_at + interval '15 minutes'
+  from public.car_tasks t
+  join public.cars c on c.id = t.car_id
+  join public.profiles p on p.id = t.requested_by
+  join public.rides r on r.car_id = t.car_id and r.status in ('confirmed', 'flagged')
+    and p_now >= r.starts_at - interval '15 minutes'
+    and p_now <= r.ends_at + interval '15 minutes'
+    and r.ends_at + interval '15 minutes' > t.requested_at
+  where t.status = 'open'
+    and p_profile_id in (select public._ride_task_people(r.id))
+  order by r.starts_at, t.requested_at, t.id;
+$$;
+
+
+ALTER FUNCTION "public"."_car_tasks_for_profile"("p_profile_id" "uuid", "p_now" timestamp with time zone) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_complete_car_tasks"("p_car_id" "uuid", "p_kind" "public"."car_task_kind", "p_by" "uuid", "p_care_event_id" "uuid" DEFAULT NULL::"uuid", "p_odometer_id" "uuid" DEFAULT NULL::"uuid") RETURNS integer
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare n integer;
+begin
+  update public.car_tasks
+    set status = 'done', done_by = p_by, done_at = clock_timestamp(),
+        done_care_event_id = p_care_event_id, done_odometer_reading_id = p_odometer_id
+    where car_id = p_car_id and kind = p_kind and status = 'open';
+  get diagnostics n = row_count;
+  return n;
+end $$;
+
+
+ALTER FUNCTION "public"."_complete_car_tasks"("p_car_id" "uuid", "p_kind" "public"."car_task_kind", "p_by" "uuid", "p_care_event_id" "uuid", "p_odometer_id" "uuid") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."_convert_to_alternative"("p_request_id" "uuid", "p_dep" timestamp with time zone, "p_ret" timestamp with time zone) RETURNS "uuid"
@@ -2349,6 +2536,40 @@ end $$;
 ALTER FUNCTION "public"."_publish_ride_line"("p_request_id" "uuid", "p_ride_id" "uuid") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."_refresh_car_task_notices"("p_car_id" "uuid") RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  rec record;
+  v_tasks text;
+  v_notif uuid;
+begin
+  for rec in
+    select n.ride_id, n.profile_id, n.notification_id, r.department_id
+    from public.car_task_notices n
+    join public.rides r on r.id = n.ride_id
+    join public.notifications nt on nt.id = n.notification_id and nt.read_at is null
+    where r.car_id = p_car_id and r.ends_at + interval '15 minutes' > now()
+  loop
+    v_tasks := public._car_task_notice_tasks(rec.ride_id);
+    continue when v_tasks = '';
+    v_notif := public.enqueue_notification(rec.profile_id, 'car_task', rec.department_id, null,
+      jsonb_build_object('tasks', v_tasks),
+      jsonb_build_object('ride_id', rec.ride_id, 'url', '/my'),
+      format('car_task:%s:%s:%s', rec.ride_id, rec.profile_id, gen_random_uuid()));
+    continue when v_notif is null;
+    delete from public.push_outbox where notification_id = v_notif;
+    delete from public.notifications where id = rec.notification_id;
+    update public.car_task_notices set notification_id = v_notif
+      where ride_id = rec.ride_id and profile_id = rec.profile_id;
+  end loop;
+end $$;
+
+
+ALTER FUNCTION "public"."_refresh_car_task_notices"("p_car_id" "uuid") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."_request_booked_times"("p_request" "uuid") RETURNS TABLE("dep" timestamp with time zone, "ret" timestamp with time zone)
     LANGUAGE "plpgsql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -2773,6 +2994,29 @@ $$;
 
 
 ALTER FUNCTION "public"."_ride_route_with"("p_ride_id" "uuid", "p_extra_request" "uuid", "p_extra_leg" "public"."ride_leg") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_ride_task_people"("p_ride_id" "uuid") RETURNS SETOF "uuid"
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  with r as (select id, driver_id from public.rides where id = p_ride_id)
+  select r.driver_id from r where r.driver_id is not null
+  union
+  select x.pid from r cross join lateral (
+    select q.requester_id as pid
+      from public.ride_requests rr join public.requests q on q.id = rr.request_id where rr.ride_id = r.id
+    union
+    select rc.profile_id
+      from public.ride_requests rr join public.request_companions rc on rc.request_id = rr.request_id where rr.ride_id = r.id
+    union
+    select rp.person_id from public.ride_passengers rp where rp.ride_id = r.id and rp.person_id is not null
+  ) x
+  where r.driver_id is null and x.pid is not null;
+$$;
+
+
+ALTER FUNCTION "public"."_ride_task_people"("p_ride_id" "uuid") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."_round5"("_at" timestamp with time zone) RETURNS timestamp with time zone
@@ -5101,6 +5345,17 @@ $$;
 ALTER FUNCTION "public"."bump_version"() OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."can_define_car_checklist"("p_department_id" "uuid") RETURNS boolean
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select public.is_admin() or public.is_car_admin(p_department_id);
+$$;
+
+
+ALTER FUNCTION "public"."can_define_car_checklist"("p_department_id" "uuid") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."can_edit_request"("p_request" "uuid") RETURNS boolean
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -5703,42 +5958,27 @@ $$;
 ALTER FUNCTION "public"."car_maintenance_blocks_set_department"() OWNER TO "postgres";
 
 
-CREATE OR REPLACE FUNCTION "public"."car_mileage_totals"("p_department_id" "uuid", "p_week_start" "date", "p_weeks" integer DEFAULT 4) RETURNS TABLE("car_id" "uuid", "km" numeric)
+CREATE OR REPLACE FUNCTION "public"."car_mileage_totals"("p_department_id" "uuid", "p_week_start" "date", "p_weeks" integer DEFAULT 4) RETURNS TABLE("car_id" "uuid", "km" numeric, "source" "text")
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
+declare
+  v_use_readings boolean;
 begin
   if not public.member_of(p_department_id) then
     raise exception 'not_authorized' using errcode = 'P0001';
   end if;
 
-  return query
-    select c.id,
-      coalesce(sum(
-        case served.leg
-          when 'both' then coalesce(public.request_leg_route_km(served.request_id, 'out'), 0)
-                           + coalesce(public.request_leg_route_km(served.request_id, 'return'), 0)
-          when 'out' then coalesce(public.request_leg_route_km(served.request_id, 'out'), 0)
-          when 'return' then coalesce(public.request_leg_route_km(served.request_id, 'return'), 0)
-          else 0
-        end
-      ), 0)::numeric as km
-    from public.cars c
-    left join public.rides r
-      on r.car_id = c.id
-      and r.status <> 'cancelled'
-      and r.week_start >= p_week_start - (p_weeks * 7)
-      and r.week_start <= p_week_start
-      and (r.week_start < p_week_start or r.status = 'confirmed')
-    left join lateral (
-      select rq.request_id, rq.leg
-      from public.ride_requests rq
-      where rq.ride_id = r.id
-      order by case when rq.role = 'driver' then 0 else 1 end, rq.request_id
-      limit 1
-    ) served on true
-    where c.department_id = p_department_id and c.type = 'shared' and c.status = 'active'
-    group by c.id;
+  select count(*) > 0 and bool_and(rd.usable) into v_use_readings
+  from public._car_mileage_readings(p_department_id, p_week_start, p_weeks) rd;
+
+  if v_use_readings then
+    return query select rd.car_id, rd.km, 'readings'::text
+      from public._car_mileage_readings(p_department_id, p_week_start, p_weeks) rd;
+  else
+    return query select e.car_id, e.km, 'estimate'::text
+      from public._car_mileage_estimate(p_department_id, p_week_start, p_weeks) e;
+  end if;
 end;
 $$;
 
@@ -5760,6 +6000,38 @@ $$;
 
 
 ALTER FUNCTION "public"."car_next_ride_origin"("_car" "uuid", "_after" timestamp with time zone) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."car_responsible_changed"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_has_items boolean;
+begin
+  if new.responsible_id is null or new.type <> 'shared' or new.status = 'retired' then
+    delete from public.car_checklist_prompts where car_id = new.id;
+    return new;
+  end if;
+  select exists (select 1 from public.car_checklist_items where department_id = new.department_id and active) into v_has_items;
+  if not v_has_items then
+    delete from public.car_checklist_prompts where car_id = new.id;
+    return new;
+  end if;
+  insert into public.car_checklist_prompts (car_id, department_id, profile_id, requested_at, done_at)
+  values (new.id, new.department_id, new.responsible_id, clock_timestamp(), null)
+  on conflict (car_id) do update set profile_id = excluded.profile_id, department_id = excluded.department_id,
+    requested_at = excluded.requested_at, done_at = null;
+  perform public.enqueue_notification(new.responsible_id, 'car_care', new.department_id, null,
+    jsonb_build_object('carName', new.name),
+    jsonb_build_object('variant', 'checklist_requested', 'car_id', new.id),
+    format('car_care:checklist_requested:%s:%s:%s', new.id, new.responsible_id, (extract(epoch from clock_timestamp()) * 1000)::bigint));
+  return new;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."car_responsible_changed"() OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."car_start_locations"("p_department_id" "uuid", "p_week_start" "date") RETURNS TABLE("car_id" "uuid", "location_id" "uuid", "base_location_id" "uuid")
@@ -6151,6 +6423,28 @@ $$;
 
 
 ALTER FUNCTION "public"."close_week_requests"("p_department_id" "uuid", "p_week_start" "date") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."complete_car_task"("p_task_id" "uuid") RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  t public.car_tasks%rowtype;
+begin
+  select * into t from public.car_tasks where id = p_task_id for update;
+  if not found then raise exception 'task_not_found' using errcode = 'P0001'; end if;
+  if t.kind <> 'other' then raise exception 'task_not_manual' using errcode = 'P0001'; end if;
+  if not exists (select 1 from public._car_tasks_for_profile((select auth.uid()), now()) x where x.task_id = p_task_id) then
+    raise exception 'not_authorized' using errcode = 'P0001';
+  end if;
+  if t.status <> 'open' then raise exception 'task_not_open' using errcode = 'P0001'; end if;
+  update public.car_tasks set status = 'done', done_by = (select auth.uid()), done_at = clock_timestamp()
+    where id = p_task_id;
+end $$;
+
+
+ALTER FUNCTION "public"."complete_car_task"("p_task_id" "uuid") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."compute_week_stats"("p_department_id" "uuid", "p_week_start" "date") RETURNS "void"
@@ -6763,6 +7057,23 @@ $$;
 
 
 ALTER FUNCTION "public"."day_date_label"("_at" timestamp with time zone) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."delete_car_checklist_item"("p_item_id" "uuid") RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare v_dept uuid;
+begin
+  select department_id into v_dept from public.car_checklist_items where id = p_item_id for update;
+  if v_dept is null then raise exception 'not_found' using errcode = 'P0001'; end if;
+  if not public.can_define_car_checklist(v_dept) then raise exception 'not_authorized' using errcode = 'P0001'; end if;
+  delete from public.car_checklist_items where id = p_item_id;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."delete_car_checklist_item"("p_item_id" "uuid") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."delete_car_maintenance"("p_block_id" "uuid") RETURNS "void"
@@ -9539,6 +9850,7 @@ begin
   insert into public.car_care_events (department_id, car_id, kind, tires, note, reported_by)
   values (v_dept, _car_id, _kind, v_tires, _note, (select auth.uid()))
   returning id into v_event_id;
+  perform public._complete_car_tasks(_car_id, _kind::text::public.car_task_kind, (select auth.uid()), v_event_id, null);
 
   select full_name into v_by_name from public.profiles where id = (select auth.uid());
 
@@ -9578,6 +9890,7 @@ begin
   insert into public.car_odometer_readings (department_id, car_id, km, kind, recorded_by)
   values (v_dept, p_car_id, p_km, 'reading', (select auth.uid()))
   returning id into v_id;
+  perform public._complete_car_tasks(p_car_id, 'kilometrage', (select auth.uid()), null, v_id);
   return v_id;
 end;
 $$;
@@ -9986,6 +10299,42 @@ end $$;
 ALTER FUNCTION "public"."merge_short_drop_off_rides"("_car" "uuid", "_week" "date") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."move_car_checklist_item"("p_item_id" "uuid", "p_direction" integer) RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_item public.car_checklist_items%rowtype;
+  v_other public.car_checklist_items%rowtype;
+begin
+  select * into v_item from public.car_checklist_items where id = p_item_id for update;
+  if v_item.id is null then raise exception 'not_found' using errcode = 'P0001'; end if;
+  if not public.can_define_car_checklist(v_item.department_id) then raise exception 'not_authorized' using errcode = 'P0001'; end if;
+  if p_direction not in (-1, 1) then raise exception 'invalid_input' using errcode = 'P0001'; end if;
+  select * into v_other from public.car_checklist_items
+  where department_id = v_item.department_id and id <> v_item.id
+    and ((p_direction = -1 and (position, id) < (v_item.position, v_item.id))
+      or (p_direction = 1 and (position, id) > (v_item.position, v_item.id)))
+  order by case when p_direction = -1 then position end desc, case when p_direction = -1 then id end desc,
+           case when p_direction = 1 then position end asc, case when p_direction = 1 then id end asc
+  limit 1 for update;
+  if v_other.id is null then return; end if;
+  -- Equal positions would not swap: renumber the whole list first.
+  with ordered as (
+    select id, row_number() over (order by position, id) - 1 as rn
+    from public.car_checklist_items where department_id = v_item.department_id)
+  update public.car_checklist_items i set position = ordered.rn from ordered where i.id = ordered.id;
+  select * into v_item from public.car_checklist_items where id = p_item_id;
+  select * into v_other from public.car_checklist_items where id = v_other.id;
+  update public.car_checklist_items set position = v_other.position where id = v_item.id;
+  update public.car_checklist_items set position = v_item.position where id = v_other.id;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."move_car_checklist_item"("p_item_id" "uuid", "p_direction" integer) OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."move_series"("p_series_id" "uuid", "p_new_car_id" "uuid", "p_expected_version" integer DEFAULT NULL::integer) RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -10069,6 +10418,18 @@ end $$;
 
 
 ALTER FUNCTION "public"."move_series"("p_series_id" "uuid", "p_new_car_id" "uuid", "p_expected_version" integer) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."my_car_tasks"() RETURNS TABLE("task_id" "uuid", "department_id" "uuid", "car_id" "uuid", "car_name" "text", "kind" "public"."car_task_kind", "note" "text", "requested_at" timestamp with time zone, "requested_by" "uuid", "requested_by_name" "text", "ride_id" "uuid", "ride_starts_at" timestamp with time zone, "ride_ends_at" timestamp with time zone, "window_starts_at" timestamp with time zone, "window_ends_at" timestamp with time zone)
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select * from public._car_tasks_for_profile((select auth.uid()), now())
+  where public.is_approved();
+$$;
+
+
+ALTER FUNCTION "public"."my_car_tasks"() OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."my_co_guardians"("p_department_id" "uuid") RETURNS TABLE("profile_id" "uuid", "child_id" "uuid", "display_name" "text")
@@ -13658,6 +14019,40 @@ end $$;
 ALTER FUNCTION "public"."request_booking_info"("p_request_id" "uuid") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."request_car_tasks"("p_car_id" "uuid", "p_kinds" "public"."car_task_kind"[], "p_note" "text" DEFAULT NULL::"text") RETURNS integer
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_dept uuid;
+  v_kind public.car_task_kind;
+  v_note text := nullif(left(trim(coalesce(p_note, '')), 300), '');
+  v_count integer := 0;
+begin
+  select department_id into v_dept from public.cars where id = p_car_id;
+  if v_dept is null then raise exception 'car_not_found' using errcode = 'P0001'; end if;
+  if not public.can_manage_car(p_car_id) then raise exception 'not_authorized' using errcode = 'P0001'; end if;
+  if p_kinds is null or cardinality(p_kinds) = 0 then raise exception 'invalid_input' using errcode = 'P0001'; end if;
+  foreach v_kind in array (select array_agg(distinct k) from unnest(p_kinds) k) loop
+    if v_kind = 'other' then
+      if v_note is null then raise exception 'task_note_required' using errcode = 'P0001'; end if;
+      insert into public.car_tasks (department_id, car_id, kind, note, requested_by)
+      values (v_dept, p_car_id, 'other', v_note, (select auth.uid()));
+      v_count := v_count + 1;
+    elsif not exists (select 1 from public.car_tasks t where t.car_id = p_car_id and t.kind = v_kind and t.status = 'open') then
+      insert into public.car_tasks (department_id, car_id, kind, requested_by)
+      values (v_dept, p_car_id, v_kind, (select auth.uid()));
+      v_count := v_count + 1;
+    end if;
+  end loop;
+  if v_count > 0 then perform public._refresh_car_task_notices(p_car_id); end if;
+  return v_count;
+end $$;
+
+
+ALTER FUNCTION "public"."request_car_tasks"("p_car_id" "uuid", "p_kinds" "public"."car_task_kind"[], "p_note" "text") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."request_companions_not_requester"() RETURNS "trigger"
     LANGUAGE "plpgsql"
     AS $$
@@ -15610,6 +16005,94 @@ $$;
 ALTER FUNCTION "public"."save_request_template"("p_request_id" "uuid") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."send_car_checklist_date_reminders"("p_now" timestamp with time zone DEFAULT "now"()) RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_today date := (p_now at time zone 'Asia/Jerusalem')::date;
+  v_rec record;
+begin
+  for v_rec in
+    with latest as (
+      select distinct on (c.car_id) c.id, c.car_id from public.car_checklists c order by c.car_id, c.completed_at desc, c.id desc),
+    due as (
+      select l.car_id, a.item_id, a.department_id, a.answer_date, a.label, c.name as car_name, c.responsible_id
+      from latest l
+      join public.car_checklist_answers a on a.checklist_id = l.id and a.kind = 'date' and a.answer_date is not null
+      join public.car_checklist_items i on i.id = a.item_id and i.active and i.remind_days_before is not null
+      join public.cars c on c.id = l.car_id and c.type = 'shared' and c.status <> 'retired'
+      where v_today between a.answer_date - i.remind_days_before and a.answer_date),
+    fresh as (
+      insert into public.car_checklist_date_reminders (car_id, item_id, date_value, department_id)
+      select d.car_id, d.item_id, d.answer_date, d.department_id from due d
+      on conflict do nothing
+      returning car_id, item_id, date_value),
+    lines as (
+      select d.department_id,
+             d.label || ' · ' || d.car_name || ' · ' || public.day_date_label(d.answer_date) as line, r.recipient
+      from fresh f
+      join due d on d.car_id = f.car_id and d.item_id = f.item_id and d.answer_date = f.date_value
+      cross join lateral (
+        select d.responsible_id as recipient where d.responsible_id is not null
+        union
+        select dm.profile_id from public.department_members dm
+          join public.profiles p on p.id = dm.profile_id and p.approval_status = 'approved'
+          where dm.department_id = d.department_id and dm.removed_at is null and dm.is_car_admin) r)
+    select recipient, (array_agg(department_id))[1] as department_id, string_agg(line, E'\n' order by line) as list
+    from lines group by recipient
+  loop
+  perform public.enqueue_notification(v_rec.recipient, 'car_care', v_rec.department_id, null,
+      jsonb_build_object('list', v_rec.list),
+      jsonb_build_object('variant', 'checklist_dates'),
+      format('car_care:checklist_dates:%s:%s', v_rec.recipient, (extract(epoch from p_now) * 1000)::bigint));
+  end loop;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."send_car_checklist_date_reminders"("p_now" timestamp with time zone) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."send_car_task_notices"("p_now" timestamp with time zone DEFAULT "now"()) RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  rec record;
+  v_tasks text;
+  v_notice uuid;
+begin
+  for rec in
+    select distinct r.id as ride_id, r.department_id, p.pid as profile_id
+    from public.rides r
+    join public.car_tasks t on t.car_id = r.car_id and t.status = 'open'
+      and r.ends_at + interval '15 minutes' > t.requested_at
+    cross join lateral (select public._ride_task_people(r.id) as pid) p
+    join public.profiles pr on pr.id = p.pid and pr.approval_status = 'approved'
+    where r.status in ('confirmed', 'flagged')
+      and r.starts_at > p_now and r.starts_at <= p_now + interval '30 minutes'
+      and not exists (select 1 from public.car_task_notices n where n.ride_id = r.id and n.profile_id = p.pid)
+    order by r.id, p.pid
+  loop
+    v_tasks := public._car_task_notice_tasks(rec.ride_id);
+    continue when v_tasks = '';
+    insert into public.car_task_notices (ride_id, profile_id) values (rec.ride_id, rec.profile_id)
+    on conflict do nothing;
+    continue when not found;
+    v_notice := public.enqueue_notification(rec.profile_id, 'car_task', rec.department_id, null,
+      jsonb_build_object('tasks', v_tasks),
+      jsonb_build_object('ride_id', rec.ride_id, 'url', '/my'),
+      format('car_task:%s:%s', rec.ride_id, rec.profile_id));
+    update public.car_task_notices set notification_id = v_notice
+      where ride_id = rec.ride_id and profile_id = rec.profile_id;
+  end loop;
+end $$;
+
+
+ALTER FUNCTION "public"."send_car_task_notices"("p_now" timestamp with time zone) OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."send_draft_proposals"("p_department_id" "uuid", "p_week_start" "date", "p_days" "date"[] DEFAULT NULL::"date"[]) RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -17041,6 +17524,100 @@ $$;
 
 
 ALTER FUNCTION "public"."stop_request_template"("p_template_id" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."submit_car_checklist"("p_car_id" "uuid", "p_answers" "jsonb") RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $_$
+declare
+  v_dept uuid;
+  v_today date := (now() at time zone 'Asia/Jerusalem')::date;
+  v_item record;
+  v_ans jsonb;
+  v_val jsonb;
+  v_note text;
+  v_bool boolean;
+  v_num numeric;
+  v_date date;
+  v_outcome text;
+  v_failures jsonb := '[]'::jsonb;
+  v_checklist_id uuid;
+  v_count integer := 0;
+  v_rows jsonb := '[]'::jsonb;
+  v_row jsonb;
+begin
+  select department_id into v_dept from public.cars where id = p_car_id for update;
+  if v_dept is null then raise exception 'car_not_found' using errcode = 'P0001'; end if;
+  if not public.can_manage_car(p_car_id) then raise exception 'not_authorized' using errcode = 'P0001'; end if;
+  if p_answers is null or jsonb_typeof(p_answers) <> 'array' then raise exception 'invalid_input' using errcode = 'P0001'; end if;
+  if exists (select 1 from jsonb_array_elements(p_answers) e
+             where not exists (select 1 from public.car_checklist_items i
+                               where i.id::text = e ->> 'item_id' and i.department_id = v_dept and i.active)) then
+    raise exception 'invalid_answer' using errcode = 'P0001';
+  end if;
+
+  for v_item in select * from public.car_checklist_items where department_id = v_dept and active order by position, id loop
+    v_count := v_count + 1;
+    select e into v_ans from jsonb_array_elements(p_answers) e where e ->> 'item_id' = v_item.id::text limit 1;
+    v_val := case when v_ans is null then null else v_ans -> 'value' end;
+    if v_val is not null and jsonb_typeof(v_val) = 'null' then v_val := null; end if;
+    v_note := nullif(left(trim(coalesce(v_ans ->> 'note', '')), 300), '');
+    v_bool := null; v_num := null; v_date := null;
+    if v_val is null then
+      if v_item.required then raise exception 'checklist_incomplete' using errcode = 'P0001'; end if;
+      v_outcome := 'skipped';
+    elsif v_item.kind = 'yes_no' then
+      if jsonb_typeof(v_val) <> 'boolean' then raise exception 'invalid_answer' using errcode = 'P0001'; end if;
+      v_bool := (v_val #>> '{}')::boolean;
+      v_outcome := case when v_bool then 'pass' else 'fail_no' end;
+    elsif v_item.kind = 'number' then
+      if jsonb_typeof(v_val) <> 'number' then raise exception 'invalid_answer' using errcode = 'P0001'; end if;
+      v_num := (v_val #>> '{}')::numeric;
+      if v_num < 0 or v_num > 99999999 then raise exception 'invalid_answer' using errcode = 'P0001'; end if;
+      v_outcome := 'pass';
+    else
+      if jsonb_typeof(v_val) <> 'string' or (v_val #>> '{}') !~ '^\d{4}-\d{2}-\d{2}$' then
+        raise exception 'invalid_answer' using errcode = 'P0001';
+      end if;
+      begin v_date := (v_val #>> '{}')::date; exception when others then
+        raise exception 'invalid_answer' using errcode = 'P0001';
+      end;
+      v_outcome := case when v_date < v_today then 'fail_expired' else 'pass' end;
+    end if;
+    if v_outcome in ('fail_no', 'fail_expired') then
+      v_failures := v_failures || jsonb_build_array(jsonb_build_object(
+        'item_id', v_item.id, 'label', v_item.label, 'kind', v_item.kind::text,
+        'reason', case when v_outcome = 'fail_no' then 'no' else 'expired' end));
+    end if;
+    v_rows := v_rows || jsonb_build_array(jsonb_build_object(
+      'item_id', v_item.id, 'position', v_item.position, 'label', v_item.label, 'kind', v_item.kind::text,
+      'required', v_item.required, 'bool', v_bool, 'num', v_num, 'date', v_date, 'note', v_note, 'outcome', v_outcome));
+  end loop;
+  if v_count = 0 then raise exception 'checklist_empty' using errcode = 'P0001'; end if;
+
+  insert into public.car_checklists (department_id, car_id, completed_by, green, failures)
+  values (v_dept, p_car_id, (select auth.uid()), jsonb_array_length(v_failures) = 0, v_failures)
+  returning id into v_checklist_id;
+
+  for v_row in select * from jsonb_array_elements(v_rows) loop
+    insert into public.car_checklist_answers (checklist_id, department_id, car_id, item_id, position, label, kind, required,
+      answer_bool, answer_number, answer_date, note, outcome)
+    values (v_checklist_id, v_dept, p_car_id, (v_row ->> 'item_id')::uuid, (v_row ->> 'position')::int, v_row ->> 'label',
+      (v_row ->> 'kind')::public.car_checklist_item_kind, (v_row ->> 'required')::boolean,
+      (v_row ->> 'bool')::boolean, (v_row ->> 'num')::numeric, (v_row ->> 'date')::date, v_row ->> 'note', v_row ->> 'outcome');
+  end loop;
+
+  -- Completing the handover checklist answers the prompt of the person who was asked.
+  update public.car_checklist_prompts set done_at = clock_timestamp()
+  where car_id = p_car_id and profile_id = (select auth.uid()) and done_at is null;
+
+  return jsonb_build_object('checklist_id', v_checklist_id, 'green', jsonb_array_length(v_failures) = 0, 'failures', v_failures);
+end;
+$_$;
+
+
+ALTER FUNCTION "public"."submit_car_checklist"("p_car_id" "uuid", "p_answers" "jsonb") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."submit_request"("payload" "jsonb") RETURNS "jsonb"
@@ -19019,6 +19596,45 @@ $$;
 ALTER FUNCTION "public"."update_ride_public_notes"("p_ride_id" "uuid", "p_expected_version" integer, "p_notes" "text") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."upsert_car_checklist_item"("p_department_id" "uuid", "p_item_id" "uuid", "p_label" "text", "p_kind" "public"."car_checklist_item_kind", "p_required" boolean, "p_remind_days_before" integer, "p_active" boolean DEFAULT true) RETURNS "uuid"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_id uuid;
+  v_dept uuid;
+  v_label text := trim(coalesce(p_label, ''));
+begin
+  if p_item_id is not null then
+    select department_id into v_dept from public.car_checklist_items where id = p_item_id for update;
+    if v_dept is null then raise exception 'not_found' using errcode = 'P0001'; end if;
+    p_department_id := v_dept;
+  end if;
+  if p_department_id is null then raise exception 'invalid_input' using errcode = 'P0001'; end if;
+  if not public.can_define_car_checklist(p_department_id) then raise exception 'not_authorized' using errcode = 'P0001'; end if;
+  if length(v_label) = 0 or length(v_label) > 120 or p_kind is null then raise exception 'invalid_input' using errcode = 'P0001'; end if;
+  if p_remind_days_before is not null and (p_kind <> 'date' or p_remind_days_before < 0 or p_remind_days_before > 365) then
+    raise exception 'invalid_input' using errcode = 'P0001';
+  end if;
+  if p_item_id is null then
+    insert into public.car_checklist_items (department_id, position, label, kind, required, active, remind_days_before)
+    values (p_department_id,
+            coalesce((select max(position) + 1 from public.car_checklist_items where department_id = p_department_id), 0),
+            v_label, p_kind, coalesce(p_required, true), coalesce(p_active, true), p_remind_days_before)
+    returning id into v_id;
+  else
+    update public.car_checklist_items set label = v_label, kind = p_kind, required = coalesce(p_required, true),
+      active = coalesce(p_active, true), remind_days_before = p_remind_days_before
+    where id = p_item_id returning id into v_id;
+  end if;
+  return v_id;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."upsert_car_checklist_item"("p_department_id" "uuid", "p_item_id" "uuid", "p_label" "text", "p_kind" "public"."car_checklist_item_kind", "p_required" boolean, "p_remind_days_before" integer, "p_active" boolean) OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."validate_policy_rules"("_rules" "jsonb") RETURNS boolean
     LANGUAGE "sql" IMMUTABLE
     AS $$
@@ -19711,6 +20327,26 @@ end $$;
 ALTER FUNCTION "public"."withdraw_all_requests"("p_department_id" "uuid", "p_week_start" "date") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."withdraw_car_task"("p_task_id" "uuid") RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  t public.car_tasks%rowtype;
+begin
+  select * into t from public.car_tasks where id = p_task_id for update;
+  if not found then raise exception 'task_not_found' using errcode = 'P0001'; end if;
+  if not public.can_manage_car(t.car_id) then raise exception 'not_authorized' using errcode = 'P0001'; end if;
+  if t.status <> 'open' then raise exception 'task_not_open' using errcode = 'P0001'; end if;
+  update public.car_tasks set status = 'withdrawn', withdrawn_by = (select auth.uid()), withdrawn_at = clock_timestamp()
+    where id = p_task_id;
+  perform public._refresh_car_task_notices(t.car_id);
+end $$;
+
+
+ALTER FUNCTION "public"."withdraw_car_task"("p_task_id" "uuid") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."withdraw_duplicate_request"("p_request_id" "uuid", "p_expected_version" integer) RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -19992,6 +20628,117 @@ ALTER TABLE ONLY "public"."car_care_events" FORCE ROW LEVEL SECURITY;
 ALTER TABLE "public"."car_care_events" OWNER TO "postgres";
 
 
+CREATE TABLE IF NOT EXISTS "public"."car_checklist_answers" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "checklist_id" "uuid" NOT NULL,
+    "department_id" "uuid" NOT NULL,
+    "car_id" "uuid" NOT NULL,
+    "item_id" "uuid",
+    "position" integer NOT NULL,
+    "label" "text" NOT NULL,
+    "kind" "public"."car_checklist_item_kind" NOT NULL,
+    "required" boolean NOT NULL,
+    "answer_bool" boolean,
+    "answer_number" numeric,
+    "answer_date" "date",
+    "note" "text",
+    "outcome" "text" NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "car_checklist_answers_note_ck" CHECK ((("note" IS NULL) OR ("length"("note") <= 300))),
+    CONSTRAINT "car_checklist_answers_outcome_ck" CHECK (("outcome" = ANY (ARRAY['pass'::"text", 'fail_no'::"text", 'fail_expired'::"text", 'skipped'::"text"])))
+);
+
+ALTER TABLE ONLY "public"."car_checklist_answers" FORCE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."car_checklist_answers" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."car_checklist_date_reminders" (
+    "car_id" "uuid" NOT NULL,
+    "item_id" "uuid" NOT NULL,
+    "date_value" "date" NOT NULL,
+    "department_id" "uuid" NOT NULL,
+    "sent_at" timestamp with time zone DEFAULT "now"() NOT NULL
+);
+
+ALTER TABLE ONLY "public"."car_checklist_date_reminders" FORCE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."car_checklist_date_reminders" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."car_checklist_items" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "department_id" "uuid" NOT NULL,
+    "position" integer DEFAULT 0 NOT NULL,
+    "label" "text" NOT NULL,
+    "kind" "public"."car_checklist_item_kind" NOT NULL,
+    "required" boolean DEFAULT true NOT NULL,
+    "active" boolean DEFAULT true NOT NULL,
+    "remind_days_before" integer,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "car_checklist_items_label_ck" CHECK ((("length"(TRIM(BOTH FROM "label")) >= 1) AND ("length"(TRIM(BOTH FROM "label")) <= 120))),
+    CONSTRAINT "car_checklist_items_remind_ck" CHECK ((("remind_days_before" IS NULL) OR (("kind" = 'date'::"public"."car_checklist_item_kind") AND (("remind_days_before" >= 0) AND ("remind_days_before" <= 365)))))
+);
+
+ALTER TABLE ONLY "public"."car_checklist_items" FORCE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."car_checklist_items" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."car_checklist_prompts" (
+    "car_id" "uuid" NOT NULL,
+    "department_id" "uuid" NOT NULL,
+    "profile_id" "uuid" NOT NULL,
+    "requested_at" timestamp with time zone DEFAULT "clock_timestamp"() NOT NULL,
+    "done_at" timestamp with time zone,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL
+);
+
+ALTER TABLE ONLY "public"."car_checklist_prompts" FORCE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."car_checklist_prompts" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."car_checklists" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "department_id" "uuid" NOT NULL,
+    "car_id" "uuid" NOT NULL,
+    "completed_by" "uuid" NOT NULL,
+    "completed_at" timestamp with time zone DEFAULT "clock_timestamp"() NOT NULL,
+    "green" boolean NOT NULL,
+    "failures" "jsonb" DEFAULT '[]'::"jsonb" NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL
+);
+
+ALTER TABLE ONLY "public"."car_checklists" FORCE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."car_checklists" OWNER TO "postgres";
+
+
+CREATE OR REPLACE VIEW "public"."car_checklist_status" WITH ("security_invoker"='true') AS
+ SELECT DISTINCT ON ("car_id") "car_id",
+    "department_id",
+    "id" AS "checklist_id",
+    "completed_at",
+    "completed_by",
+    "green",
+    "failures"
+   FROM "public"."car_checklists" "c"
+  ORDER BY "car_id", "completed_at" DESC, "id" DESC;
+
+
+ALTER VIEW "public"."car_checklist_status" OWNER TO "postgres";
+
+
 CREATE TABLE IF NOT EXISTS "public"."car_odometer_readings" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "department_id" "uuid" NOT NULL,
@@ -20085,6 +20832,48 @@ ALTER TABLE ONLY "public"."car_seat_configs" FORCE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."car_seat_configs" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."car_task_notices" (
+    "ride_id" "uuid" NOT NULL,
+    "profile_id" "uuid" NOT NULL,
+    "notification_id" "uuid",
+    "notified_at" timestamp with time zone DEFAULT "now"() NOT NULL
+);
+
+ALTER TABLE ONLY "public"."car_task_notices" FORCE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."car_task_notices" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."car_tasks" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "department_id" "uuid" NOT NULL,
+    "car_id" "uuid" NOT NULL,
+    "kind" "public"."car_task_kind" NOT NULL,
+    "note" "text",
+    "status" "public"."car_task_status" DEFAULT 'open'::"public"."car_task_status" NOT NULL,
+    "requested_by" "uuid" NOT NULL,
+    "requested_at" timestamp with time zone DEFAULT "clock_timestamp"() NOT NULL,
+    "done_by" "uuid",
+    "done_at" timestamp with time zone,
+    "done_care_event_id" "uuid",
+    "done_odometer_reading_id" "uuid",
+    "withdrawn_by" "uuid",
+    "withdrawn_at" timestamp with time zone,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "car_tasks_done_ck" CHECK ((("status" = 'done'::"public"."car_task_status") = (("done_by" IS NOT NULL) AND ("done_at" IS NOT NULL)))),
+    CONSTRAINT "car_tasks_note_ck" CHECK ((("note" IS NULL) OR ("length"("note") <= 300))),
+    CONSTRAINT "car_tasks_other_note_ck" CHECK ((("kind" <> 'other'::"public"."car_task_kind") OR (NULLIF(TRIM(BOTH FROM COALESCE("note", ''::"text")), ''::"text") IS NOT NULL))),
+    CONSTRAINT "car_tasks_withdrawn_ck" CHECK ((("status" = 'withdrawn'::"public"."car_task_status") = (("withdrawn_by" IS NOT NULL) AND ("withdrawn_at" IS NOT NULL))))
+);
+
+ALTER TABLE ONLY "public"."car_tasks" FORCE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."car_tasks" OWNER TO "postgres";
 
 
 CREATE TABLE IF NOT EXISTS "public"."cars" (
@@ -21831,6 +22620,31 @@ ALTER TABLE ONLY "public"."car_care_events"
 
 
 
+ALTER TABLE ONLY "public"."car_checklist_answers"
+    ADD CONSTRAINT "car_checklist_answers_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."car_checklist_date_reminders"
+    ADD CONSTRAINT "car_checklist_date_reminders_pkey" PRIMARY KEY ("car_id", "item_id", "date_value");
+
+
+
+ALTER TABLE ONLY "public"."car_checklist_items"
+    ADD CONSTRAINT "car_checklist_items_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."car_checklist_prompts"
+    ADD CONSTRAINT "car_checklist_prompts_pkey" PRIMARY KEY ("car_id");
+
+
+
+ALTER TABLE ONLY "public"."car_checklists"
+    ADD CONSTRAINT "car_checklists_pkey" PRIMARY KEY ("id");
+
+
+
 ALTER TABLE ONLY "public"."car_issues"
     ADD CONSTRAINT "car_issues_pkey" PRIMARY KEY ("id");
 
@@ -21853,6 +22667,16 @@ ALTER TABLE ONLY "public"."car_seat_configs"
 
 ALTER TABLE ONLY "public"."car_seat_configs"
     ADD CONSTRAINT "car_seat_configs_unique" UNIQUE ("car_id", "adults", "child_seats", "boosters");
+
+
+
+ALTER TABLE ONLY "public"."car_task_notices"
+    ADD CONSTRAINT "car_task_notices_pkey" PRIMARY KEY ("ride_id", "profile_id");
+
+
+
+ALTER TABLE ONLY "public"."car_tasks"
+    ADD CONSTRAINT "car_tasks_pkey" PRIMARY KEY ("id");
 
 
 
@@ -22236,6 +23060,34 @@ CREATE INDEX "car_care_events_car_created_idx" ON "public"."car_care_events" USI
 
 
 
+CREATE INDEX "car_checklist_answers_car_idx" ON "public"."car_checklist_answers" USING "btree" ("car_id");
+
+
+
+CREATE INDEX "car_checklist_answers_checklist_idx" ON "public"."car_checklist_answers" USING "btree" ("checklist_id", "position");
+
+
+
+CREATE INDEX "car_checklist_answers_department_idx" ON "public"."car_checklist_answers" USING "btree" ("department_id");
+
+
+
+CREATE INDEX "car_checklist_items_department_idx" ON "public"."car_checklist_items" USING "btree" ("department_id", "position", "id");
+
+
+
+CREATE INDEX "car_checklist_prompts_profile_idx" ON "public"."car_checklist_prompts" USING "btree" ("profile_id") WHERE ("done_at" IS NULL);
+
+
+
+CREATE INDEX "car_checklists_car_idx" ON "public"."car_checklists" USING "btree" ("car_id", "completed_at" DESC, "id");
+
+
+
+CREATE INDEX "car_checklists_department_idx" ON "public"."car_checklists" USING "btree" ("department_id");
+
+
+
 CREATE INDEX "car_issues_open_idx" ON "public"."car_issues" USING "btree" ("car_id") WHERE ("status" = 'open'::"public"."car_issue_status");
 
 
@@ -22249,6 +23101,18 @@ CREATE INDEX "car_odometer_readings_car_idx" ON "public"."car_odometer_readings"
 
 
 CREATE INDEX "car_odometer_readings_department_idx" ON "public"."car_odometer_readings" USING "btree" ("department_id");
+
+
+
+CREATE INDEX "car_tasks_car_idx" ON "public"."car_tasks" USING "btree" ("car_id", "requested_at" DESC, "id");
+
+
+
+CREATE INDEX "car_tasks_department_idx" ON "public"."car_tasks" USING "btree" ("department_id");
+
+
+
+CREATE INDEX "car_tasks_open_idx" ON "public"."car_tasks" USING "btree" ("car_id") WHERE ("status" = 'open'::"public"."car_task_status");
 
 
 
@@ -23091,6 +23955,10 @@ CREATE OR REPLACE TRIGGER "cars_protect_owner_editable_fields" BEFORE UPDATE ON 
 
 
 
+CREATE OR REPLACE TRIGGER "cars_responsible_changed" AFTER UPDATE OF "responsible_id" ON "public"."cars" FOR EACH ROW WHEN (("new"."responsible_id" IS DISTINCT FROM "old"."responsible_id")) EXECUTE FUNCTION "public"."car_responsible_changed"();
+
+
+
 CREATE OR REPLACE TRIGGER "cars_track_retired_at" BEFORE INSERT OR UPDATE ON "public"."cars" FOR EACH ROW EXECUTE FUNCTION "public"."cars_track_retired_at"();
 
 
@@ -23443,7 +24311,27 @@ CREATE OR REPLACE TRIGGER "set_updated_at" BEFORE UPDATE ON "public"."car_care_e
 
 
 
+CREATE OR REPLACE TRIGGER "set_updated_at" BEFORE UPDATE ON "public"."car_checklist_answers" FOR EACH ROW EXECUTE FUNCTION "public"."set_updated_at"();
+
+
+
+CREATE OR REPLACE TRIGGER "set_updated_at" BEFORE UPDATE ON "public"."car_checklist_items" FOR EACH ROW EXECUTE FUNCTION "public"."set_updated_at"();
+
+
+
+CREATE OR REPLACE TRIGGER "set_updated_at" BEFORE UPDATE ON "public"."car_checklist_prompts" FOR EACH ROW EXECUTE FUNCTION "public"."set_updated_at"();
+
+
+
+CREATE OR REPLACE TRIGGER "set_updated_at" BEFORE UPDATE ON "public"."car_checklists" FOR EACH ROW EXECUTE FUNCTION "public"."set_updated_at"();
+
+
+
 CREATE OR REPLACE TRIGGER "set_updated_at" BEFORE UPDATE ON "public"."car_odometer_readings" FOR EACH ROW EXECUTE FUNCTION "public"."set_updated_at"();
+
+
+
+CREATE OR REPLACE TRIGGER "set_updated_at" BEFORE UPDATE ON "public"."car_tasks" FOR EACH ROW EXECUTE FUNCTION "public"."set_updated_at"();
 
 
 
@@ -23903,6 +24791,76 @@ ALTER TABLE ONLY "public"."car_care_events"
 
 
 
+ALTER TABLE ONLY "public"."car_checklist_answers"
+    ADD CONSTRAINT "car_checklist_answers_car_id_fkey" FOREIGN KEY ("car_id") REFERENCES "public"."cars"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."car_checklist_answers"
+    ADD CONSTRAINT "car_checklist_answers_checklist_id_fkey" FOREIGN KEY ("checklist_id") REFERENCES "public"."car_checklists"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."car_checklist_answers"
+    ADD CONSTRAINT "car_checklist_answers_department_id_fkey" FOREIGN KEY ("department_id") REFERENCES "public"."departments"("id");
+
+
+
+ALTER TABLE ONLY "public"."car_checklist_answers"
+    ADD CONSTRAINT "car_checklist_answers_item_id_fkey" FOREIGN KEY ("item_id") REFERENCES "public"."car_checklist_items"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."car_checklist_date_reminders"
+    ADD CONSTRAINT "car_checklist_date_reminders_car_id_fkey" FOREIGN KEY ("car_id") REFERENCES "public"."cars"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."car_checklist_date_reminders"
+    ADD CONSTRAINT "car_checklist_date_reminders_department_id_fkey" FOREIGN KEY ("department_id") REFERENCES "public"."departments"("id");
+
+
+
+ALTER TABLE ONLY "public"."car_checklist_date_reminders"
+    ADD CONSTRAINT "car_checklist_date_reminders_item_id_fkey" FOREIGN KEY ("item_id") REFERENCES "public"."car_checklist_items"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."car_checklist_items"
+    ADD CONSTRAINT "car_checklist_items_department_id_fkey" FOREIGN KEY ("department_id") REFERENCES "public"."departments"("id");
+
+
+
+ALTER TABLE ONLY "public"."car_checklist_prompts"
+    ADD CONSTRAINT "car_checklist_prompts_car_id_fkey" FOREIGN KEY ("car_id") REFERENCES "public"."cars"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."car_checklist_prompts"
+    ADD CONSTRAINT "car_checklist_prompts_department_id_fkey" FOREIGN KEY ("department_id") REFERENCES "public"."departments"("id");
+
+
+
+ALTER TABLE ONLY "public"."car_checklist_prompts"
+    ADD CONSTRAINT "car_checklist_prompts_profile_id_fkey" FOREIGN KEY ("profile_id") REFERENCES "public"."profiles"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."car_checklists"
+    ADD CONSTRAINT "car_checklists_car_id_fkey" FOREIGN KEY ("car_id") REFERENCES "public"."cars"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."car_checklists"
+    ADD CONSTRAINT "car_checklists_completed_by_fkey" FOREIGN KEY ("completed_by") REFERENCES "public"."profiles"("id");
+
+
+
+ALTER TABLE ONLY "public"."car_checklists"
+    ADD CONSTRAINT "car_checklists_department_id_fkey" FOREIGN KEY ("department_id") REFERENCES "public"."departments"("id");
+
+
+
 ALTER TABLE ONLY "public"."car_issues"
     ADD CONSTRAINT "car_issues_car_id_fkey" FOREIGN KEY ("car_id") REFERENCES "public"."cars"("id") ON DELETE CASCADE;
 
@@ -23955,6 +24913,56 @@ ALTER TABLE ONLY "public"."car_odometer_readings"
 
 ALTER TABLE ONLY "public"."car_seat_configs"
     ADD CONSTRAINT "car_seat_configs_car_id_fkey" FOREIGN KEY ("car_id") REFERENCES "public"."cars"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."car_task_notices"
+    ADD CONSTRAINT "car_task_notices_notification_id_fkey" FOREIGN KEY ("notification_id") REFERENCES "public"."notifications"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."car_task_notices"
+    ADD CONSTRAINT "car_task_notices_profile_id_fkey" FOREIGN KEY ("profile_id") REFERENCES "public"."profiles"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."car_task_notices"
+    ADD CONSTRAINT "car_task_notices_ride_id_fkey" FOREIGN KEY ("ride_id") REFERENCES "public"."rides"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."car_tasks"
+    ADD CONSTRAINT "car_tasks_car_id_fkey" FOREIGN KEY ("car_id") REFERENCES "public"."cars"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."car_tasks"
+    ADD CONSTRAINT "car_tasks_department_id_fkey" FOREIGN KEY ("department_id") REFERENCES "public"."departments"("id");
+
+
+
+ALTER TABLE ONLY "public"."car_tasks"
+    ADD CONSTRAINT "car_tasks_done_by_fkey" FOREIGN KEY ("done_by") REFERENCES "public"."profiles"("id");
+
+
+
+ALTER TABLE ONLY "public"."car_tasks"
+    ADD CONSTRAINT "car_tasks_done_care_event_id_fkey" FOREIGN KEY ("done_care_event_id") REFERENCES "public"."car_care_events"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."car_tasks"
+    ADD CONSTRAINT "car_tasks_done_odometer_reading_id_fkey" FOREIGN KEY ("done_odometer_reading_id") REFERENCES "public"."car_odometer_readings"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."car_tasks"
+    ADD CONSTRAINT "car_tasks_requested_by_fkey" FOREIGN KEY ("requested_by") REFERENCES "public"."profiles"("id");
+
+
+
+ALTER TABLE ONLY "public"."car_tasks"
+    ADD CONSTRAINT "car_tasks_withdrawn_by_fkey" FOREIGN KEY ("withdrawn_by") REFERENCES "public"."profiles"("id");
 
 
 
@@ -24695,11 +25703,11 @@ CREATE POLICY "audit_log_select" ON "public"."audit_log" FOR SELECT TO "authenti
 ALTER TABLE "public"."car_access_codes" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "car_access_codes_delete" ON "public"."car_access_codes" FOR DELETE TO "authenticated" USING ("public"."can_manage_operations"("department_id"));
+CREATE POLICY "car_access_codes_delete" ON "public"."car_access_codes" FOR DELETE TO "authenticated" USING (("public"."can_manage_operations"("department_id") OR "public"."can_manage_car"("car_id")));
 
 
 
-CREATE POLICY "car_access_codes_insert" ON "public"."car_access_codes" FOR INSERT TO "authenticated" WITH CHECK ("public"."can_manage_operations"("department_id"));
+CREATE POLICY "car_access_codes_insert" ON "public"."car_access_codes" FOR INSERT TO "authenticated" WITH CHECK (("public"."can_manage_operations"("department_id") OR "public"."can_manage_car"("car_id")));
 
 
 
@@ -24707,7 +25715,7 @@ CREATE POLICY "car_access_codes_select" ON "public"."car_access_codes" FOR SELEC
 
 
 
-CREATE POLICY "car_access_codes_update" ON "public"."car_access_codes" FOR UPDATE TO "authenticated" USING ("public"."can_manage_operations"("department_id")) WITH CHECK ("public"."can_manage_operations"("department_id"));
+CREATE POLICY "car_access_codes_update" ON "public"."car_access_codes" FOR UPDATE TO "authenticated" USING (("public"."can_manage_operations"("department_id") OR "public"."can_manage_car"("car_id"))) WITH CHECK (("public"."can_manage_operations"("department_id") OR "public"."can_manage_car"("car_id")));
 
 
 
@@ -24719,6 +25727,37 @@ CREATE POLICY "car_care_events_select" ON "public"."car_care_events" FOR SELECT 
 
 
 CREATE POLICY "car_care_events_select_member" ON "public"."car_care_events" FOR SELECT TO "authenticated" USING ("public"."member_of"("department_id"));
+
+
+
+ALTER TABLE "public"."car_checklist_answers" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "car_checklist_answers_select" ON "public"."car_checklist_answers" FOR SELECT TO "authenticated" USING (("public"."member_of"("department_id") OR "public"."is_admin"()));
+
+
+
+ALTER TABLE "public"."car_checklist_date_reminders" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."car_checklist_items" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "car_checklist_items_select" ON "public"."car_checklist_items" FOR SELECT TO "authenticated" USING (("public"."member_of"("department_id") OR "public"."is_admin"()));
+
+
+
+ALTER TABLE "public"."car_checklist_prompts" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "car_checklist_prompts_select" ON "public"."car_checklist_prompts" FOR SELECT TO "authenticated" USING ((("profile_id" = ( SELECT "auth"."uid"() AS "uid")) OR "public"."can_manage_car"("car_id")));
+
+
+
+ALTER TABLE "public"."car_checklists" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "car_checklists_select" ON "public"."car_checklists" FOR SELECT TO "authenticated" USING (("public"."member_of"("department_id") OR "public"."is_admin"()));
 
 
 
@@ -24799,6 +25838,16 @@ CREATE POLICY "car_seat_configs_update" ON "public"."car_seat_configs" FOR UPDAT
   WHERE (("managed_car"."id" = "car_seat_configs"."car_id") AND "public"."can_manage_operations"("managed_car"."department_id")))) OR (EXISTS ( SELECT 1
    FROM "public"."cars" "c"
   WHERE (("c"."id" = "car_seat_configs"."car_id") AND ("c"."type" = 'temporary'::"public"."car_type") AND ("c"."owner_id" = ( SELECT "auth"."uid"() AS "uid")))))));
+
+
+
+ALTER TABLE "public"."car_task_notices" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."car_tasks" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "car_tasks_select_manager" ON "public"."car_tasks" FOR SELECT TO "authenticated" USING ("public"."can_manage_car"("car_id"));
 
 
 
@@ -25478,6 +26527,36 @@ GRANT ALL ON FUNCTION "public"."_car_last_km"("p_car_id" "uuid") TO "service_rol
 
 
 
+REVOKE ALL ON FUNCTION "public"."_car_mileage_estimate"("p_department_id" "uuid", "p_week_start" "date", "p_weeks" integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_car_mileage_estimate"("p_department_id" "uuid", "p_week_start" "date", "p_weeks" integer) TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_car_mileage_readings"("p_department_id" "uuid", "p_week_start" "date", "p_weeks" integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_car_mileage_readings"("p_department_id" "uuid", "p_week_start" "date", "p_weeks" integer) TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_car_task_label"("p_kind" "public"."car_task_kind", "p_note" "text") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_car_task_label"("p_kind" "public"."car_task_kind", "p_note" "text") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_car_task_notice_tasks"("p_ride_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_car_task_notice_tasks"("p_ride_id" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_car_tasks_for_profile"("p_profile_id" "uuid", "p_now" timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_car_tasks_for_profile"("p_profile_id" "uuid", "p_now" timestamp with time zone) TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_complete_car_tasks"("p_car_id" "uuid", "p_kind" "public"."car_task_kind", "p_by" "uuid", "p_care_event_id" "uuid", "p_odometer_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_complete_car_tasks"("p_car_id" "uuid", "p_kind" "public"."car_task_kind", "p_by" "uuid", "p_care_event_id" "uuid", "p_odometer_id" "uuid") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."_convert_to_alternative"("p_request_id" "uuid", "p_dep" timestamp with time zone, "p_ret" timestamp with time zone) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_convert_to_alternative"("p_request_id" "uuid", "p_dep" timestamp with time zone, "p_ret" timestamp with time zone) TO "service_role";
 
@@ -25693,6 +26772,11 @@ GRANT ALL ON FUNCTION "public"."_publish_ride_line"("p_request_id" "uuid", "p_ri
 
 
 
+REVOKE ALL ON FUNCTION "public"."_refresh_car_task_notices"("p_car_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_refresh_car_task_notices"("p_car_id" "uuid") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."_request_booked_times"("p_request" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_request_booked_times"("p_request" "uuid") TO "service_role";
 
@@ -25740,6 +26824,11 @@ GRANT ALL ON FUNCTION "public"."_ride_route_visible"("p_ride_id" "uuid") TO "ser
 
 REVOKE ALL ON FUNCTION "public"."_ride_route_with"("p_ride_id" "uuid", "p_extra_request" "uuid", "p_extra_leg" "public"."ride_leg") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_ride_route_with"("p_ride_id" "uuid", "p_extra_request" "uuid", "p_extra_leg" "public"."ride_leg") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_ride_task_people"("p_ride_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_ride_task_people"("p_ride_id" "uuid") TO "service_role";
 
 
 
@@ -25980,6 +27069,12 @@ GRANT ALL ON FUNCTION "public"."bump_version"() TO "service_role";
 
 
 
+REVOKE ALL ON FUNCTION "public"."can_define_car_checklist"("p_department_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."can_define_car_checklist"("p_department_id" "uuid") TO "service_role";
+GRANT ALL ON FUNCTION "public"."can_define_car_checklist"("p_department_id" "uuid") TO "authenticated";
+
+
+
 REVOKE ALL ON FUNCTION "public"."can_edit_request"("p_request" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."can_edit_request"("p_request" "uuid") TO "service_role";
 GRANT ALL ON FUNCTION "public"."can_edit_request"("p_request" "uuid") TO "authenticated";
@@ -26103,6 +27198,11 @@ GRANT ALL ON FUNCTION "public"."car_next_ride_origin"("_car" "uuid", "_after" ti
 
 
 
+REVOKE ALL ON FUNCTION "public"."car_responsible_changed"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."car_responsible_changed"() TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."car_start_locations"("p_department_id" "uuid", "p_week_start" "date") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."car_start_locations"("p_department_id" "uuid", "p_week_start" "date") TO "service_role";
 GRANT ALL ON FUNCTION "public"."car_start_locations"("p_department_id" "uuid", "p_week_start" "date") TO "authenticated";
@@ -26196,6 +27296,12 @@ GRANT ALL ON FUNCTION "public"."close_week_requests"("p_department_id" "uuid", "
 
 
 
+REVOKE ALL ON FUNCTION "public"."complete_car_task"("p_task_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."complete_car_task"("p_task_id" "uuid") TO "service_role";
+GRANT ALL ON FUNCTION "public"."complete_car_task"("p_task_id" "uuid") TO "authenticated";
+
+
+
 REVOKE ALL ON FUNCTION "public"."compute_week_stats"("p_department_id" "uuid", "p_week_start" "date") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."compute_week_stats"("p_department_id" "uuid", "p_week_start" "date") TO "service_role";
 
@@ -26261,6 +27367,12 @@ GRANT ALL ON FUNCTION "public"."day_date_label"("_d" "date") TO "authenticated";
 REVOKE ALL ON FUNCTION "public"."day_date_label"("_at" timestamp with time zone) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."day_date_label"("_at" timestamp with time zone) TO "service_role";
 GRANT ALL ON FUNCTION "public"."day_date_label"("_at" timestamp with time zone) TO "authenticated";
+
+
+
+REVOKE ALL ON FUNCTION "public"."delete_car_checklist_item"("p_item_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."delete_car_checklist_item"("p_item_id" "uuid") TO "service_role";
+GRANT ALL ON FUNCTION "public"."delete_car_checklist_item"("p_item_id" "uuid") TO "authenticated";
 
 
 
@@ -26693,9 +27805,21 @@ GRANT ALL ON FUNCTION "public"."merge_short_drop_off_rides"("_car" "uuid", "_wee
 
 
 
+REVOKE ALL ON FUNCTION "public"."move_car_checklist_item"("p_item_id" "uuid", "p_direction" integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."move_car_checklist_item"("p_item_id" "uuid", "p_direction" integer) TO "service_role";
+GRANT ALL ON FUNCTION "public"."move_car_checklist_item"("p_item_id" "uuid", "p_direction" integer) TO "authenticated";
+
+
+
 REVOKE ALL ON FUNCTION "public"."move_series"("p_series_id" "uuid", "p_new_car_id" "uuid", "p_expected_version" integer) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."move_series"("p_series_id" "uuid", "p_new_car_id" "uuid", "p_expected_version" integer) TO "authenticated";
 GRANT ALL ON FUNCTION "public"."move_series"("p_series_id" "uuid", "p_new_car_id" "uuid", "p_expected_version" integer) TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."my_car_tasks"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."my_car_tasks"() TO "service_role";
+GRANT ALL ON FUNCTION "public"."my_car_tasks"() TO "authenticated";
 
 
 
@@ -27106,6 +28230,12 @@ GRANT ALL ON FUNCTION "public"."request_awaits_driver"("p_request_id" "uuid") TO
 
 REVOKE ALL ON FUNCTION "public"."request_booking_info"("p_request_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."request_booking_info"("p_request_id" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."request_car_tasks"("p_car_id" "uuid", "p_kinds" "public"."car_task_kind"[], "p_note" "text") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."request_car_tasks"("p_car_id" "uuid", "p_kinds" "public"."car_task_kind"[], "p_note" "text") TO "service_role";
+GRANT ALL ON FUNCTION "public"."request_car_tasks"("p_car_id" "uuid", "p_kinds" "public"."car_task_kind"[], "p_note" "text") TO "authenticated";
 
 
 
@@ -27526,6 +28656,16 @@ GRANT ALL ON FUNCTION "public"."save_request_template"("p_request_id" "uuid") TO
 
 
 
+REVOKE ALL ON FUNCTION "public"."send_car_checklist_date_reminders"("p_now" timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."send_car_checklist_date_reminders"("p_now" timestamp with time zone) TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."send_car_task_notices"("p_now" timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."send_car_task_notices"("p_now" timestamp with time zone) TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."send_draft_proposals"("p_department_id" "uuid", "p_week_start" "date", "p_days" "date"[]) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."send_draft_proposals"("p_department_id" "uuid", "p_week_start" "date", "p_days" "date"[]) TO "service_role";
 GRANT ALL ON FUNCTION "public"."send_draft_proposals"("p_department_id" "uuid", "p_week_start" "date", "p_days" "date"[]) TO "authenticated";
@@ -27671,6 +28811,12 @@ GRANT ALL ON FUNCTION "public"."stop_request_template"("p_template_id" "uuid") T
 
 
 
+REVOKE ALL ON FUNCTION "public"."submit_car_checklist"("p_car_id" "uuid", "p_answers" "jsonb") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."submit_car_checklist"("p_car_id" "uuid", "p_answers" "jsonb") TO "service_role";
+GRANT ALL ON FUNCTION "public"."submit_car_checklist"("p_car_id" "uuid", "p_answers" "jsonb") TO "authenticated";
+
+
+
 REVOKE ALL ON FUNCTION "public"."submit_request"("payload" "jsonb") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."submit_request"("payload" "jsonb") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."submit_request"("payload" "jsonb") TO "service_role";
@@ -27747,6 +28893,12 @@ GRANT ALL ON FUNCTION "public"."update_car_maintenance"("p_block_id" "uuid", "p_
 REVOKE ALL ON FUNCTION "public"."update_ride_public_notes"("p_ride_id" "uuid", "p_expected_version" integer, "p_notes" "text") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."update_ride_public_notes"("p_ride_id" "uuid", "p_expected_version" integer, "p_notes" "text") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."update_ride_public_notes"("p_ride_id" "uuid", "p_expected_version" integer, "p_notes" "text") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."upsert_car_checklist_item"("p_department_id" "uuid", "p_item_id" "uuid", "p_label" "text", "p_kind" "public"."car_checklist_item_kind", "p_required" boolean, "p_remind_days_before" integer, "p_active" boolean) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."upsert_car_checklist_item"("p_department_id" "uuid", "p_item_id" "uuid", "p_label" "text", "p_kind" "public"."car_checklist_item_kind", "p_required" boolean, "p_remind_days_before" integer, "p_active" boolean) TO "service_role";
+GRANT ALL ON FUNCTION "public"."upsert_car_checklist_item"("p_department_id" "uuid", "p_item_id" "uuid", "p_label" "text", "p_kind" "public"."car_checklist_item_kind", "p_required" boolean, "p_remind_days_before" integer, "p_active" boolean) TO "authenticated";
 
 
 
@@ -27854,6 +29006,12 @@ GRANT ALL ON FUNCTION "public"."withdraw_all_requests"("p_department_id" "uuid",
 
 
 
+REVOKE ALL ON FUNCTION "public"."withdraw_car_task"("p_task_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."withdraw_car_task"("p_task_id" "uuid") TO "service_role";
+GRANT ALL ON FUNCTION "public"."withdraw_car_task"("p_task_id" "uuid") TO "authenticated";
+
+
+
 REVOKE ALL ON FUNCTION "public"."withdraw_duplicate_request"("p_request_id" "uuid", "p_expected_version" integer) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."withdraw_duplicate_request"("p_request_id" "uuid", "p_expected_version" integer) TO "service_role";
 GRANT ALL ON FUNCTION "public"."withdraw_duplicate_request"("p_request_id" "uuid", "p_expected_version" integer) TO "authenticated";
@@ -27913,6 +29071,36 @@ GRANT ALL ON TABLE "public"."car_care_events" TO "service_role";
 
 
 
+GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE "public"."car_checklist_answers" TO "authenticated";
+GRANT ALL ON TABLE "public"."car_checklist_answers" TO "service_role";
+
+
+
+GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE "public"."car_checklist_date_reminders" TO "authenticated";
+GRANT ALL ON TABLE "public"."car_checklist_date_reminders" TO "service_role";
+
+
+
+GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE "public"."car_checklist_items" TO "authenticated";
+GRANT ALL ON TABLE "public"."car_checklist_items" TO "service_role";
+
+
+
+GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE "public"."car_checklist_prompts" TO "authenticated";
+GRANT ALL ON TABLE "public"."car_checklist_prompts" TO "service_role";
+
+
+
+GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE "public"."car_checklists" TO "authenticated";
+GRANT ALL ON TABLE "public"."car_checklists" TO "service_role";
+
+
+
+GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE "public"."car_checklist_status" TO "authenticated";
+GRANT ALL ON TABLE "public"."car_checklist_status" TO "service_role";
+
+
+
 GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE "public"."car_odometer_readings" TO "authenticated";
 GRANT ALL ON TABLE "public"."car_odometer_readings" TO "service_role";
 
@@ -27935,6 +29123,16 @@ GRANT ALL ON TABLE "public"."car_maintenance_blocks" TO "service_role";
 
 GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE "public"."car_seat_configs" TO "authenticated";
 GRANT ALL ON TABLE "public"."car_seat_configs" TO "service_role";
+
+
+
+GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE "public"."car_task_notices" TO "authenticated";
+GRANT ALL ON TABLE "public"."car_task_notices" TO "service_role";
+
+
+
+GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE "public"."car_tasks" TO "authenticated";
+GRANT ALL ON TABLE "public"."car_tasks" TO "service_role";
 
 
 

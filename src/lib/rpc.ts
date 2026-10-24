@@ -44,6 +44,9 @@ export type ErrorCode =
   | "tires_none_checked"
   | "kilometrage_lower_than_last"
   | "invalid_kilometrage"
+  | "checklist_incomplete"
+  | "checklist_empty"
+  | "invalid_answer"
   | "task_note_required"
   | "task_not_open"
   | "task_not_found"
@@ -342,6 +345,9 @@ const MESSAGE_TO_CODE: Record<string, ErrorCode> = {
   tires_none_checked: "tires_none_checked",
   kilometrage_lower_than_last: "kilometrage_lower_than_last",
   invalid_kilometrage: "invalid_kilometrage",
+  checklist_incomplete: "checklist_incomplete",
+  checklist_empty: "checklist_empty",
+  invalid_answer: "invalid_answer",
   task_note_required: "task_note_required",
   task_not_open: "task_not_open",
   task_not_found: "task_not_found",
@@ -481,6 +487,9 @@ const CODE_TO_MESSAGE: Record<ErrorCode, string> = {
   tires_none_checked: he.errors.tiresNoneChecked,
   kilometrage_lower_than_last: he.errors.kilometrageLowerThanLast,
   invalid_kilometrage: he.errors.invalidKilometrage,
+  checklist_incomplete: he.carChecklist.errors.incomplete,
+  checklist_empty: he.carChecklist.errors.empty,
+  invalid_answer: he.carChecklist.errors.invalidAnswer,
   task_note_required: he.carTasks.errors.noteRequired,
   task_not_open: he.carTasks.errors.notOpen,
   task_not_found: he.carTasks.errors.notFound,

@@ -12,9 +12,10 @@ import { lazy } from "react";
  * (a non-component file, lint-exempt) clears the warning without changing
  * behavior (eslint.config.js react-refresh cleanup, 2026-09-14).
  */
+export const CarChecklistEditorPage = lazy(() => import("@/pages/CarChecklistEditorPage").then((m) => ({ default: m.CarChecklistEditorPage })));
 export const CarPage = lazy(() => import("@/pages/CarPage").then((m) => ({ default: m.CarPage })));
-export const EditRequestPage = lazy(() => import("@/pages/EditRequestPage").then((m) => ({ default: m.EditRequestPage })));
 export const CarsOverviewPage = lazy(() => import("@/pages/CarsOverviewPage").then((m) => ({ default: m.CarsOverviewPage })));
+export const EditRequestPage = lazy(() => import("@/pages/EditRequestPage").then((m) => ({ default: m.EditRequestPage })));
 export const MyArchivePage = lazy(() => import("@/pages/MyArchivePage").then((m) => ({ default: m.MyArchivePage })));
 export const PolicyPage = lazy(() => import("@/pages/PolicyPage").then((m) => ({ default: m.PolicyPage })));
 export const MyHistoryPage = lazy(() => import("@/pages/MyHistoryPage").then((m) => ({ default: m.MyHistoryPage })));

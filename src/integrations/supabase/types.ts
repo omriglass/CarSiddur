@@ -5242,6 +5242,21 @@ export type Database = {
         Returns: boolean
       }
       _car_last_km: { Args: { p_car_id: string }; Returns: number }
+      _car_mileage_estimate: {
+        Args: { p_department_id: string; p_week_start: string; p_weeks: number }
+        Returns: {
+          car_id: string
+          km: number
+        }[]
+      }
+      _car_mileage_readings: {
+        Args: { p_department_id: string; p_week_start: string; p_weeks: number }
+        Returns: {
+          car_id: string
+          km: number
+          usable: boolean
+        }[]
+      }
       _car_task_label: {
         Args: {
           p_kind: Database["public"]["Enums"]["car_task_kind"]
@@ -5807,6 +5822,7 @@ export type Database = {
         Returns: {
           car_id: string
           km: number
+          source: string
         }[]
       }
       car_next_ride_origin: {

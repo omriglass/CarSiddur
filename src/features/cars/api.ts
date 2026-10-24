@@ -102,3 +102,12 @@ export async function fetchUpcomingCarRides(carId: string): Promise<{ id: string
   if (error) throw toAppError(error);
   return data ?? [];
 }
+
+/**
+ * Status-only update (REQ item 150 a): a car administrator of a private (temporary) car may change nothing else, the
+ * `cars_protect_owner_editable_fields` trigger enforces it; this never touches the access-code row.
+ */
+export async function setCarStatusOnly(carId: string, status: Database["public"]["Enums"]["car_status"]): Promise<void> {
+  const { error } = await supabase.from("cars").update({ status }).eq("id", carId);
+  if (error) throw toAppError(error);
+}

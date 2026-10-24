@@ -517,12 +517,12 @@ local replay stack and comparing it with the production solve — scripts/replay
 **Paths**: `src/features/carCare/**`, `src/features/cars/**`; `src/i18n/he.member.ts` (`carCare.*`,
 `carPage.*`), `he.admin.ts`; migrations matching `*car_care*`, `*car_issue*`, `*car_responsible*`,
 `*car_admin*`, `*can_manage_car*`, `*car_odometer*` (REQ item 150 a/c), `*car_task*` (b); `src/features/carTasks/**`, `src/i18n/he.carTasks.ts`; `src/features/carsOverview/**`, `src/i18n/he.carsOverview.ts`, `src/pages/CarsOverviewPage.tsx` (all-cars dashboard `/cars`, REQ item 150 e); `src/features/admin/members/**`;
-`e2e/car-care.spec.ts`, `e2e/car-admin.spec.ts`, `e2e/car-tasks.spec.ts`, `e2e/cars-overview.spec.ts`.
+`e2e/car-care.spec.ts`, `e2e/car-admin.spec.ts`, `e2e/car-tasks.spec.ts`, `e2e/cars-overview.spec.ts`, `e2e/car-checklist.spec.ts` (handover checklist, `*car_checklist*` migrations, `src/i18n/he.carChecklist.ts`, `src/pages/CarChecklistEditorPage.tsx`).
 
 **Automated**:
 - Vitest: `npx vitest run src/features/carCare src/features/cars src/features/carTasks src/features/carsOverview`
-- SQL: `car_care_semantics.sql`, `car_administration.sql`, `car_tasks.sql`, `department_isolation.sql`
-- Playwright: `npx playwright test --grep "@car-care|@car-admin|@car-tasks"`
+- SQL: `car_care_semantics.sql`, `car_administration.sql`, `car_tasks.sql`, `car_checklists.sql`, `department_isolation.sql`
+- Playwright: `npx playwright test --grep "@car-care|@car-admin|@car-tasks|@car-checklist"`
 
 **QA script**:
 1. As `member1`, from a car's page report a problem ("דיווח על תקלה"), choosing a category (אור

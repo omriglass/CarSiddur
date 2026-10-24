@@ -251,7 +251,9 @@ from (values
   ('issue_lighting', '{{byName}} דיווח/ה על תקלת תאורה ברכב {{carName}}', '{{description}}'),
   ('issue_physical_damage', '{{byName}} דיווח/ה על נזק לרכב {{carName}}', '{{description}}'),
   ('tire_fill', '{{byName}} מילא/ה אוויר בצמיגי {{carName}}', '{{lowCount}} צמיגים נמוכים, {{veryLowCount}} נמוכים מאוד'),
-  ('wash', '{{byName}} שטף/ה את {{carName}}', '{{carName}} נקי/ה ומוכן/ה לנסיעה')
+  ('wash', '{{byName}} שטף/ה את {{carName}}', '{{carName}} נקי/ה ומוכן/ה לנסיעה'),
+  ('checklist_requested', 'את/ה אחראי/ת על {{carName}} — צריך למלא בדיקת רכב', 'נא למלא את רשימת הבדיקה של {{carName}} בדף הרכב (״בדיקת רכב״).'),
+  ('checklist_dates', 'מועדים מתקרבים ברכבים', '{{list}}')
 ) as t(variant, title, body)
 cross join unnest(array['inbox', 'push']::public.notification_channel[]) as ch
 on conflict (event, channel, coalesce(variant, '')) do nothing;

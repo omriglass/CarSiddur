@@ -1010,7 +1010,12 @@
         "e2e/car-care.spec.ts",
         "e2e/car-admin.spec.ts",
         "e2e/car-tasks.spec.ts",
-        "e2e/cars-overview.spec.ts"
+        "e2e/cars-overview.spec.ts",
+        "e2e/car-checklist.spec.ts",
+        "supabase/migrations/**/*car_checklist*",
+        "supabase/tests/car_checklists.sql",
+        "src/i18n/he.carChecklist.ts",
+        "src/pages/CarChecklistEditorPage.tsx"
       ],
       "vitest": [
         "src/features/carCare",
@@ -1022,12 +1027,14 @@
         "car_care_semantics.sql",
         "car_administration.sql",
         "car_tasks.sql",
+        "car_checklists.sql",
         "department_isolation.sql"
       ],
       "playwrightTags": [
         "@car-care",
         "@car-admin",
-        "@car-tasks"
+        "@car-tasks",
+        "@car-checklist"
       ],
       "reqRefs": [
         "13.69",

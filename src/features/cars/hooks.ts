@@ -13,6 +13,7 @@ import {
   fetchCarOdometerHistory,
   fetchMyResponsibleCars,
   fetchUpcomingCarRides,
+  setCarStatusOnly,
 } from "./api";
 import { carKeys } from "./keys";
 
@@ -99,6 +100,15 @@ export function useSetCarPrivateMutation() {
           replacement_code: car.replacement_code,
         },
       }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: carKeys.all }),
+  });
+}
+
+/** Status-only change (a car administrator on a private car). */
+export function useSetCarStatusMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ carId, status }: { carId: string; status: Car["status"] }) => setCarStatusOnly(carId, status),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: carKeys.all }),
   });
 }

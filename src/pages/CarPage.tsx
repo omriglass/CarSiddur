@@ -69,6 +69,10 @@ export function CarPage() {
   // open or save a car); the responsible person keeps the limited view.
   const canManage = isAdmin || isDepartmentSadran;
   const canEdit = canEditCar(car);
+  // REQ item 150 (d): the department's checklist items are defined by admins and car administrators.
+  const canDefineChecklist = isAdmin || isCarAdminHere;
+  // REQ item 150 (a): a car administrator of a private car may change only the status.
+  const canSetStatusOnly = isCarAdminHere && car.type === "temporary" && !isAdmin && car.responsible_id !== profile?.id && car.owner_id !== profile?.id;
 
   return (
     <CarManageScreen
@@ -76,6 +80,8 @@ export function CarPage() {
       isAdmin={canManage}
       canEdit={canEdit}
       canManageCar={canManageCar}
+      canDefineChecklist={canDefineChecklist}
+      canSetStatusOnly={canSetStatusOnly}
       viewerName={profile?.full_name ?? ""}
     />
   );

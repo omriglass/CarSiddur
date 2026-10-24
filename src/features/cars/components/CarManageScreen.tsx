@@ -26,7 +26,9 @@ import { TZ } from "@/lib/time";
 import { CarExcelExportButton } from "./CarExcelExportButton";
 import { CarMoodCard } from "./CarMoodCard";
 import { CarKilometrageCard } from "./CarKilometrageCard";
+import { CarChecklistCard } from "../checklist/components/CarChecklistCard";
 import { CarPrivateSwitch } from "./CarPrivateSwitch";
+import { CarStatusSelect } from "./CarStatusSelect";
 import { useCarCareHistoryQuery, useCarCurrentKmQuery, useCarIssueHistoryQuery, useCarOdometerHistoryQuery } from "../hooks";
 import { formatKm } from "../lib/kilometrage";
 import { filterCarHistory, mergeCarHistory, type CarHistoryEntry, type CarHistoryFilter } from "../lib/history";
@@ -130,6 +132,10 @@ interface CarManageScreenProps {
   isAdmin: boolean;
   /** REQ item 150 (a), `can_manage_car`: admin, the car's responsible person or (shared car) a department car administrator — may correct the kilometrage. */
   canManageCar: boolean;
+  /** REQ item 150 (d): admin or a car administrator of the car's department — may edit the department's checklist items. */
+  canDefineChecklist?: boolean;
+  /** REQ item 150 (a): a car administrator (not admin/responsible) looking at a private car — may change only its status. */
+  canSetStatusOnly?: boolean;
   /** Admin, the car's responsible person or the department's Sadran: may edit fields, the private switch, maintenance. Everyone else gets a read-only page. */
   canEdit: boolean;
   /** The signed-in viewer's own name — used to show a read-only "אחראי/ת רכב" value when the viewer *is* the responsible person (not an admin, so the field can't be reassigned here, REQ §13.71). */
@@ -144,7 +150,7 @@ interface CarManageScreenProps {
 }
 
 /** `/cars/:carId` (UX_FLOWS.md §5.11 "Car page"). */
-export function CarManageScreen({ car, isAdmin, canEdit, canManageCar, viewerName, headerActions }: CarManageScreenProps) {
+export function CarManageScreen({ car, isAdmin, canEdit, canManageCar, canDefineChecklist = false, canSetStatusOnly = false, viewerName, headerActions }: CarManageScreenProps) {
   const issuesQuery = useCarIssueHistoryQuery(car.id);
   const careEventsQuery = useCarCareHistoryQuery(car.id);
   const odometerQuery = useCarOdometerHistoryQuery(car.id);
@@ -204,7 +210,11 @@ export function CarManageScreen({ car, isAdmin, canEdit, canManageCar, viewerNam
 
       {canManageCar ? <CarTasksManagerCard car={car} /> : null}
 
+      <CarChecklistCard car={car} canManageCar={canManageCar} canDefine={canDefineChecklist} />
+
       <CarPrivateSwitch car={car} canEdit={canEdit} />
+
+      {canSetStatusOnly && !canEdit ? <CarStatusSelect car={car} /> : null}
 
       <CarMaintenancePanel car={car} />
 
