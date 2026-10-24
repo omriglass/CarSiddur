@@ -226,5 +226,76 @@ begin
 end;
 $$;
 
+-- Odometer readings path (REQ item 150 g): readings replace the ride-distance estimate only when ALL active
+-- shared cars of the department have usable readings (>= 1 non-correction step, >= 7 days covered).
+do $$
+declare
+  dept uuid := '00000000-0000-0000-0000-000000000001';
+  member1 uuid := '00000000-0000-0000-0000-000000000103';
+  car_a uuid := '00000000-0000-0000-0000-000000000040';
+  car_b uuid := '00000000-0000-0000-0000-000000000041';
+  car_c uuid := '00000000-0000-0000-0000-000000000042';
+  w date := public.current_week_start() - 903;
+  ws timestamptz := ((public.current_week_start() - 903 - 28)::timestamp at time zone 'Asia/Jerusalem');
+  km_a numeric; km_b numeric; km_c numeric; src_a text; src_c text;
+begin
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', member1, 'role', 'authenticated')::text, true);
+
+  -- car_a: baseline before the window (1000) and one reading inside (1100) -> half of the 100 km step lies inside.
+  insert into public.car_odometer_readings (department_id, car_id, km, kind, recorded_by, recorded_at) values
+    (dept, car_a, 1000, 'reading', member1, ws - interval '10 days'),
+    (dept, car_a, 1100, 'reading', member1, ws + interval '10 days');
+  -- car_b: 500 -> 560 (+60), correction to 100 (counts nothing, new baseline), 130 (+30) = 90.
+  insert into public.car_odometer_readings (department_id, car_id, km, kind, recorded_by, recorded_at) values
+    (dept, car_b, 500, 'reading', member1, ws + interval '1 day'),
+    (dept, car_b, 560, 'reading', member1, ws + interval '9 days'),
+    (dept, car_b, 100, 'correction', member1, ws + interval '12 days'),
+    (dept, car_b, 130, 'reading', member1, ws + interval '20 days');
+
+  -- (6) car_c has no readings at all -> the whole department stays on the estimate.
+  execute 'set local role authenticated';
+  select km, source into km_a, src_a from public.car_mileage_totals(dept, w, 4) where car_id = car_a;
+  select km into km_c from public.car_mileage_totals(dept, w, 4) where car_id = car_c;
+  execute 'reset role';
+  assert src_a = 'estimate' and km_a = 48 and km_c = 13,
+    format('(6) mixed department must use the estimate for all: got %s/%s/%s', src_a, km_a, km_c);
+
+  -- (7) car_c: a single reading, then two readings only 2 days apart (< 7 days covered) -> still the estimate.
+  insert into public.car_odometer_readings (department_id, car_id, km, kind, recorded_by, recorded_at) values
+    (dept, car_c, 200, 'reading', member1, ws + interval '2 days');
+  execute 'set local role authenticated';
+  select source into src_c from public.car_mileage_totals(dept, w, 4) where car_id = car_c;
+  execute 'reset role';
+  assert src_c = 'estimate', '(7a) one reading is not usable';
+  insert into public.car_odometer_readings (department_id, car_id, km, kind, recorded_by, recorded_at) values
+    (dept, car_c, 200, 'reading', member1, ws + interval '4 days');
+  execute 'set local role authenticated';
+  select source into src_c from public.car_mileage_totals(dept, w, 4) where car_id = car_c;
+  execute 'reset role';
+  assert src_c = 'estimate', '(7b) two readings 2 days apart are not usable';
+
+  -- (8) a third reading 10 days after the first -> every car is usable -> readings for all.
+  insert into public.car_odometer_readings (department_id, car_id, km, kind, recorded_by, recorded_at) values
+    (dept, car_c, 200, 'reading', member1, ws + interval '12 days');
+  execute 'set local role authenticated';
+  select km, source into km_a, src_a from public.car_mileage_totals(dept, w, 4) where car_id = car_a;
+  select km into km_b from public.car_mileage_totals(dept, w, 4) where car_id = car_b;
+  select km into km_c from public.car_mileage_totals(dept, w, 4) where car_id = car_c;
+  execute 'reset role';
+  assert src_a = 'readings', '(8) all cars usable -> source readings';
+  assert km_a = 50, format('(8a) baseline step prorated to the window: got %s, expected 50', km_a);
+  assert km_b = 90, format('(8b) correction starts a new baseline: got %s, expected 90', km_b);
+  assert km_c = 0, format('(8c) unchanged odometer -> 0 km: got %s', km_c);
+
+  -- (9) readings after the target week's end (future) and the temporary car never matter.
+  insert into public.car_odometer_readings (department_id, car_id, km, kind, recorded_by, recorded_at) values
+    (dept, car_a, 9000, 'reading', member1, ws + interval '60 days');
+  execute 'set local role authenticated';
+  select km into km_a from public.car_mileage_totals(dept, w, 4) where car_id = car_a;
+  execute 'reset role';
+  assert km_a = 50, format('(9) a reading after the window end must be ignored: got %s', km_a);
+end;
+$$;
+
 reset role;
 rollback;

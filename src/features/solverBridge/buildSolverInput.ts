@@ -184,7 +184,8 @@ export interface BuildSolverInputParams {
   companionsByRequestId?: Record<string, string[]>;
   /**
    * `car_mileage_totals()` rows (F5, docs/SOLVER.md §3.6.2): rolling-window
-   * km per car, keyed by `car_id`. Omit entirely (or pass `{}`) to leave
+   * km per car, keyed by `car_id` (odometer-derived for the whole department
+   * or the ride-distance estimate for all — the SQL decides, REQ item 150 g). Omit entirely (or pass `{}`) to leave
    * every car's `mileageKm` undefined — car choice is then identical to
    * before this feature existed (docs/SOLVER.md §3.6.2 "opt-in").
    */

@@ -206,6 +206,24 @@ describe("buildSolverInput", () => {
     expect(input.destinations["dest-a"]!.publicTransportScore).toBeCloseTo(0.4);
   });
 
+  it("maps car_mileage_totals km (readings or estimate, REQ §150 g) onto Car.mileageKm; omitted -> undefined", () => {
+    const base = {
+      weekStart: WEEK_START,
+      homeDestinationId: HOME,
+      departmentSettings: DEFAULT_SETTINGS,
+      requests: [],
+      rideTypeCodesById: {},
+      cars: [carRow(), carRow({ id: "car-2" })],
+      seatConfigsByCarId: {},
+      destinations: [],
+      policy: { id: "p1", version: 1, rules: [] },
+    };
+    const withKm = buildSolverInput({ ...base, mileageKmByCarId: { "car-1": 50, "car-2": 0 } });
+    expect(withKm.cars.map((c) => c.mileageKm)).toEqual([50, 0]);
+    const without = buildSolverInput(base);
+    expect(without.cars.map((c) => c.mileageKm)).toEqual([undefined, undefined]);
+  });
+
   it("maps requester_does_not_drive to canDrive: false (REQ §88); leaves canDrive undefined otherwise", () => {
     const input = buildSolverInput({
       weekStart: WEEK_START,
