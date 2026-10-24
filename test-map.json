@@ -994,30 +994,42 @@
         "supabase/migrations/**/*car_care*",
         "supabase/migrations/**/*car_issue*",
         "supabase/migrations/**/*car_responsible*",
+        "supabase/migrations/**/*car_admin*",
+        "supabase/migrations/**/*can_manage_car*",
+        "supabase/migrations/**/*car_odometer*",
         "supabase/tests/car_care_semantics.sql",
-        "e2e/car-care.spec.ts"
+        "supabase/tests/car_administration.sql",
+        "src/features/admin/members/**",
+        "e2e/car-care.spec.ts",
+        "e2e/car-admin.spec.ts"
       ],
       "vitest": [
         "src/features/carCare",
         "src/features/cars"
       ],
       "sql": [
-        "car_care_semantics.sql"
+        "car_care_semantics.sql",
+        "car_administration.sql",
+        "department_isolation.sql"
       ],
       "playwrightTags": [
-        "@car-care"
+        "@car-care",
+        "@car-admin"
       ],
       "reqRefs": [
         "13.69",
         "13.70",
         "13.71",
         "13.72",
-        "13.73"
+        "13.73",
+        "150"
       ],
       "qaChecklist": [
         "Report a car problem with a category; confirm the responsible person/admin sees it (REQ §13.69)",
         "Log a tire fill across all five positions; confirm all required (REQ §13.72)",
-        "Export car-care history by date range to Excel (REQ §13.73)"
+        "Export car-care history by date range to Excel (REQ §13.73)",
+        "Admin sets 'מנהל/ת רכבים' on a membership; that member's /my lists only cars they are responsible for, and they can correct kilometrage on a shared car (REQ item 150 a)",
+        "Log a kilometrage reading; a lower one is refused; a manager's correction may lower it; history and export list both (REQ item 150 c)"
       ]
     },
     {

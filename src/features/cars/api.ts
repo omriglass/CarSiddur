@@ -17,6 +17,11 @@ import type { Database } from "@/integrations/supabase/types";
  */
 export type CarCareEvent = Database["public"]["Tables"]["car_care_events"]["Row"];
 
+export type CarOdometerReading = Database["public"]["Tables"]["car_odometer_readings"]["Row"];
+export type CarOdometerReadingWithReporter = CarOdometerReading & ReporterName;
+/** `car_current_km` view row (REQ item 150 c): the car's latest reading or correction. */
+export type CarCurrentKm = Pick<CarOdometerReading, "car_id" | "km" | "kind" | "recorded_at">;
+
 interface ReporterName {
   reported_by_profile: { full_name: string } | null;
 }
@@ -49,6 +54,27 @@ export async function fetchCarCareHistory(carId: string): Promise<CarCareEventWi
     .order("created_at", { ascending: false });
   if (error) throw toAppError(error);
   return (data ?? []) as unknown as CarCareEventWithReporter[];
+}
+
+export async function fetchCarOdometerHistory(carId: string): Promise<CarOdometerReadingWithReporter[]> {
+  const { data, error } = await supabase
+    .from("car_odometer_readings")
+    .select("*, reported_by_profile:profiles!car_odometer_readings_recorded_by_fkey(full_name)")
+    .eq("car_id", carId)
+    .order("recorded_at", { ascending: false });
+  if (error) throw toAppError(error);
+  return (data ?? []) as unknown as CarOdometerReadingWithReporter[];
+}
+
+/** The car's current kilometrage (`car_current_km` view) or null when no reading exists yet. */
+export async function fetchCarCurrentKm(carId: string): Promise<CarCurrentKm | null> {
+  const { data, error } = await supabase
+    .from("car_current_km")
+    .select("car_id, km, kind, recorded_at")
+    .eq("car_id", carId)
+    .maybeSingle();
+  if (error) throw toAppError(error);
+  return (data as CarCurrentKm | null) ?? null;
 }
 
 /** Cars for the "הרכבים באחריותי" Home card — every non-retired car whose `responsible_id` is me. */

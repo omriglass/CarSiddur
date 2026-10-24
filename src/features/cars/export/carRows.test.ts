@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { he } from "@/i18n/he";
 
-import { issueRows, tireFillRows, washRows } from "./carRows";
+import { issueRows, kilometrageRows, tireFillRows, washRows } from "./carRows";
 
 import type { CarCareEventWithReporter, CarIssueWithReporter } from "../api";
 
@@ -82,5 +82,15 @@ describe("washRows", () => {
     const rows = washRows([careEvent({ kind: "tire_fill" }), careEvent({ id: "wash-2", kind: "wash" })]);
     expect(rows).toHaveLength(2);
     expect(rows[1]?.[1]).toBe("יוסי");
+  });
+});
+
+describe("kilometrageRows (REQ item 150 f)", () => {
+  it("one row per reading or correction with its kind and note", () => {
+    const rows = kilometrageRows([
+      { id: "k1", car_id: "c", department_id: "d", km: 5000, kind: "correction", recorded_by: "p1", recorded_at: "2026-09-01T10:00:00Z", note: "fix", created_at: "", updated_at: "", reported_by_profile: { full_name: "דנה" } },
+    ]);
+    expect(rows[0]).toEqual([he.carPage.exportColumnDate, he.carPage.exportColumnReporter, he.carPage.exportColumnKm, he.carPage.exportColumnKind, he.carPage.exportColumnNote]);
+    expect(rows[1]!.slice(1)).toEqual(["דנה", 5000, he.carPage.exportKindCorrection, "fix"]);
   });
 });

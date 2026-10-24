@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { carKeys } from "@/features/cars/keys";
 import { showErrorToast } from "@/lib/rpc";
 
-import { logCarCare, reportCarIssue } from "./api";
+import { logCarCare, logCarKilometrage, reportCarIssue, setCarKilometrage } from "./api";
 import { carCareKeys } from "./keys";
 
 /**
@@ -35,6 +35,32 @@ export function useLogCarCareMutation() {
     onSuccess: (_result, { carId }) => {
       void queryClient.invalidateQueries({ queryKey: carCareKeys.events(carId) });
       void queryClient.invalidateQueries({ queryKey: carKeys.careEvents(carId) });
+    },
+    onError: showErrorToast,
+  });
+}
+
+/** A kilometrage reading (member) — refreshes the car's current km and its history list. */
+export function useLogCarKilometrageMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: logCarKilometrage,
+    onSuccess: (_result, { carId }) => {
+      void queryClient.invalidateQueries({ queryKey: carKeys.currentKm(carId) });
+      void queryClient.invalidateQueries({ queryKey: carKeys.odometer(carId) });
+    },
+    onError: showErrorToast,
+  });
+}
+
+/** A manager's kilometrage correction (`can_manage_car`). */
+export function useSetCarKilometrageMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: setCarKilometrage,
+    onSuccess: (_result, { carId }) => {
+      void queryClient.invalidateQueries({ queryKey: carKeys.currentKm(carId) });
+      void queryClient.invalidateQueries({ queryKey: carKeys.odometer(carId) });
     },
     onError: showErrorToast,
   });

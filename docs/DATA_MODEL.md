@@ -271,7 +271,7 @@ Admin pre-loaded allow-list. When a Google account signs in with a matching emai
 | removed_at | timestamptz | | | null = active |
 | created_at | timestamptz | NN | now() | |
 
-PK `(department_id, profile_id)`. Index `(profile_id) where removed_at is null`. `default_origin_id uuid` (added `20261004100100`, REQ §13.93) — composite FK `(department_id, default_origin_id)` → `destinations(department_id, id)`, must be an approved place of this department; null = the department home. `department_members_update` is admin-only (§4.3), so a member sets their own via `set_my_default_origin(p_department_id, p_origin_id)` (SECURITY DEFINER: `member_of()`, destination belongs to the department and `is_approved`; null clears); an admin may still update the column directly through the member editor.
+PK `(department_id, profile_id)`. Index `(profile_id) where removed_at is null`. `default_origin_id uuid` (added `20261004100100`, REQ §13.93) — composite FK `(department_id, default_origin_id)` → `destinations(department_id, id)`, must be an approved place of this department; null = the department home. `department_members_update` is admin-only (§4.3), so a member sets their own via `set_my_default_origin(p_department_id, p_origin_id)` (SECURITY DEFINER: `member_of()`, destination belongs to the department and `is_approved`; null clears); an admin may still update the column directly through the member editor. `is_car_admin boolean not null default false` (`20261028160000`, REQ item 150 a) — the **car administrator** flag of this membership, combinable with `member`/`sadran` (not a `role` value); set only by the admin-only RPC `admin_set_car_admin(p_department_id, p_profile_id, p_is_car_admin)` (admin members screen, a per-department switch "מנהל/ת רכבים"); a `BEFORE UPDATE OF removed_at` trigger (`department_members_clear_car_admin`) clears it when the membership is removed, so re-adding never silently restores it. Read through `is_car_admin(dept)` (§4.2). `department_members_select` is department-scoped, so no `rls_smoke` TEST 18 entry.
 
 #### `sadran_assignments` (§3 "per department per target week, with an optional standing default")
 
@@ -391,6 +391,27 @@ Index `(car_id) where status = 'open'`. Insert-only via `report_car_issue(_car_i
 | created_at / updated_at | timestamptz | NN | now() | |
 
 Index `(car_id, created_at desc)` (history view, exportable by date, §6.6). Insert-only via `log_car_care(_car_id, _kind, _tires, _note)` (SECURITY DEFINER) — no direct INSERT policy; tire keys/values are validated inside the RPC, not by a CHECK constraint (a plain SQLSTATE the caller can render, matching `submit_request`'s style). Enqueues `car_care` (variant `tire_fill`/`wash`) to `car_care_recipients(_car_id)`, with `{{lowCount}}`/`{{veryLowCount}}` vars for `tire_fill`. No update/delete policy for any role — like `siddur_versions`, immutable in practice without a separate `forbid_mutation()` trigger.
+
+#### `car_odometer_readings` (REQ item 150 c, `20261028160200`)
+
+Kilometrage history of a car: a reading is a number (no photo). Append-only — a correction is a new row.
+
+| column | type | null | default | notes |
+|---|---|---|---|---|
+| id | uuid | NN | gen_random_uuid() | PK |
+| department_id | uuid | NN | | FK departments, set from the car by the RPCs |
+| car_id | uuid | NN | | FK cars ON DELETE CASCADE |
+| km | integer | NN | | CHECK `0 <= km <= 9999999` |
+| kind | car_odometer_kind | NN | `reading` | enum `reading` (a member's reading, never below the car's last value) \| `correction` (a car manager's, any value) |
+| recorded_by | uuid | NN | | FK profiles |
+| recorded_at | timestamptz | NN | `clock_timestamp()` | ordering key (several rows in one transaction still order correctly) |
+| note | text | | | optional (corrections), CHECK length <= 300 |
+| created_at / updated_at | timestamptz | NN | now() | |
+
+Index `(car_id, recorded_at desc, id)`. RLS enabled + forced; **SELECT only**: `member_of(department_id) ∨ is_admin()`; no INSERT/UPDATE/DELETE policy — rows are written only by the RPCs below. **`car_current_km`** is a `security_invoker` view, one row per car with a reading: `car_id, department_id, km, kind, recorded_at, recorded_by` of its **latest** row (`recorded_at desc, id desc`) — a correction may be lower than the reading before it. Internal helper `_car_last_km(car)` (service role only).
+
+- `log_car_kilometrage(p_car_id, p_km) returns uuid` — SECURITY DEFINER; `member_of(car's department)` (the rule of `log_car_care`); locks the car row, refuses `p_km` below the car's last value with `kilometrage_lower_than_last` (equal is fine), out-of-range/null with `invalid_kilometrage`, a missing car with `car_not_found`, a non-member with `not_authorized`. Sends no notification.
+- `set_car_kilometrage(p_car_id, p_km, p_note default null) returns uuid` — SECURITY DEFINER; `can_manage_car(p_car_id)` only; any value, recorded as `kind = 'correction'`.
 
 ### 3.3 Catalogs (REQUIREMENTS §5.1, §13.8)
 
@@ -1260,18 +1281,51 @@ language sql stable security definer set search_path = public, pg_temp as $$
     select 1 from public.cars c where c.id = _car_id and c.responsible_id = (select auth.uid()));
 $$;
 
--- Recipients of car_care notifications for a car: its responsible person if set, else
--- every approved global admin ("car admin" = admin for now, REQ §13.71 — there is no
--- department-scoped admin role to narrow the fallback to).
+-- Recipients of car_care notifications for a car (REQ item 150 a, `20261028160100`): its responsible person if set,
+-- else (shared cars only) the department's car administrators, else every approved global admin.
 create or replace function public.car_care_recipients(_car_id uuid) returns setof uuid
 language sql stable security definer set search_path = public, pg_temp as $$
-  select c.responsible_id from public.cars c
-  where c.id = _car_id and c.responsible_id is not null
-  union all
-  select p.id from public.cars c
-  join public.profiles p on p.is_admin and p.approval_status = 'approved'
-  where c.id = _car_id and c.responsible_id is null;
+  with car as (select c.id, c.department_id, c.type, c.responsible_id from public.cars c where c.id = _car_id),
+  responsible as (select responsible_id as id from car where responsible_id is not null),
+  car_admins as (
+    select dm.profile_id as id from car
+    join public.department_members dm on dm.department_id = car.department_id
+      and dm.removed_at is null and dm.is_car_admin
+    join public.profiles p on p.id = dm.profile_id and p.approval_status = 'approved'
+    where car.responsible_id is null and car.type = 'shared'),
+  admins as (
+    select p.id from car
+    join public.profiles p on p.is_admin and p.approval_status = 'approved'
+    where car.responsible_id is null and not exists (select 1 from car_admins))
+  select id from responsible union all select id from car_admins union all select id from admins;
 $$;
+
+-- Car administration (REQ item 150 a, `20261028160000`/`20261028160100`). `is_car_admin(dept)`: the signed-in,
+-- approved user's active membership of `dept` carries `is_car_admin`. `can_manage_car(car)` is THE rule for "may
+-- manage this car" (car page edits, maintenance periods, kilometrage correction; phase 2/3: tasks, checklists,
+-- dashboard): admin, OR the car's responsible person, OR (the car is shared AND `is_car_admin` of its department).
+-- The Sadran is deliberately not part of it — what a Sadran may do on cars (`can_manage_operations` in the cars
+-- policies, the protect trigger, `_can_edit_car_maintenance`) is unchanged.
+create or replace function public.is_car_admin(_dept uuid) returns boolean
+language sql stable security definer set search_path = public, pg_temp as $$
+  select public.is_approved() and exists (
+    select 1 from public.department_members dm
+    where dm.department_id = _dept and dm.profile_id = (select auth.uid())
+      and dm.removed_at is null and dm.is_car_admin);
+$$;
+create or replace function public.can_manage_car(p_car_id uuid) returns boolean
+language sql stable security definer set search_path = public, pg_temp as $$
+  select public.is_admin() or (public.is_approved() and exists (
+    select 1 from public.cars c
+    where c.id = p_car_id
+      and (c.responsible_id = (select auth.uid())
+           or (c.type = 'shared' and public.is_car_admin(c.department_id)))));
+$$;
+-- `_can_edit_car_maintenance(car)` = can_manage_car(car) ∨ admin ∨ can_manage_operations/is_sadran_any(department).
+-- `cars_update_car_admin` policy (§4.3) + `cars_protect_owner_editable_fields()`: a car administrator (who is not admin,
+-- responsible, Sadran or the temporary car's owner) may update every column of a SHARED car of the department (not
+-- move it to another department) and ONLY `status` (and the derived `retired_at`) of a private (temporary) car;
+-- anything else raises `car_fields_locked`.
 
 -- Requests I am allowed to see beyond my own: served by a non-draft ride in a public week of a dept I belong to,
 -- or where I am a companion, or where I share a ride.
@@ -1330,14 +1384,15 @@ Legend: **own** = row's profile column = `auth.uid()`; **dept** = `member_of(dep
 | app_secrets | svc / SECURITY DEFINER only (no policy at all — RLS enabled + forced) | svc / SECURITY DEFINER only | svc / SECURITY DEFINER only | svc / SECURITY DEFINER only |
 | profiles | approved users, via an explicit column grant excluding `phone` (`id, email, full_name, default_department_id, approval_status, approved_at, approved_by, is_admin, default_child_seats, default_boosters, home_week_preference, muted_events, avatar_url, created_at, updated_at, google_name, display_name, does_not_drive, classic_request_form, my_rides_week_view`) — `select *` fails for members by design (`20260910100000`); phone read via `phone_of(uuid)` (own/admin/sadran/shares-a-ride) or the set-returning `profile_phones(uuid[])` for member-list/contact-sheet use | svc (auth trigger) | own (name, phone, default_department_id, defaults, home_week_preference, classic_request_form, my_rides_week_view, muted_events only — trigger rejects changes to `is_admin`, `approval_status`, `email`) ∨ admin | — (cascade from auth.users by admin via svc) |
 | member_invites | admin | admin | admin | admin |
-| department_members | own ∨ dept ∨ admin | admin | admin | admin (soft-remove preferred) |
+| department_members | own ∨ dept ∨ admin | admin | admin (`is_car_admin` also through `admin_set_car_admin()`, REQ item 150 a) | admin (soft-remove preferred) |
 | sadran_assignments | dept ∨ admin | admin | admin | admin |
-| cars | **approved users** (any department — published siddurim of other departments are readable, REQ §13.52); no longer carries `access_code`/`replacement_code`/`is_replaced` (moved out, `20260910099900`, see §1.3) | admin; **own temporary car**: `type='temporary' and owner_id = auth.uid() and member_of(department_id)` (any member, REQ §13.53) | admin (incl. revoking a temporary car → `retired`); owner (temporary, own) — status/notes/features only; **`is_car_responsible(id)`: every column, incl. `owner_id`/`type`/`responsible_id`** (§6.6, `cars_update_responsible` policy, separate from `cars_update` — Postgres ORs permissive policies for the same command) | admin; owner (temporary) if no non-cancelled rides |
+| cars | **approved users** (any department — published siddurim of other departments are readable, REQ §13.52); no longer carries `access_code`/`replacement_code`/`is_replaced` (moved out, `20260910099900`, see §1.3) | admin; **own temporary car**: `type='temporary' and owner_id = auth.uid() and member_of(department_id)` (any member, REQ §13.53) | admin (incl. revoking a temporary car → `retired`); owner (temporary, own) — status/notes/features only; **`is_car_responsible(id)`: every column, incl. `owner_id`/`type`/`responsible_id`** (§6.6, `cars_update_responsible` policy, separate from `cars_update` — Postgres ORs permissive policies for the same command); **`is_car_admin(department_id)`** (`cars_update_car_admin`, REQ item 150 a): every column of a shared car, only `status` of a private one (trigger) | admin; owner (temporary) if no non-cancelled rides |
 | car_access_codes | `member_of(department_id) ∨ can_manage_operations(department_id)` — codes for another department's car do not come back, so the siddur/board render that car's name with no code (`20260910099900`) | `can_manage_operations(department_id)` | `can_manage_operations(department_id)` | `can_manage_operations(department_id)` |
 | car_seat_configs | approved users | admin; temp-car owner for own car | same | same |
 | car_maintenance_blocks | dept ∨ admin | admin ∨ sadran_any(dept); **RPC** `create_car_maintenance` also for the car's responsible person | admin ∨ sadran_any; **RPC** `update_car_maintenance` also for the responsible person | admin ∨ sadran_any; **RPC** `delete_car_maintenance` also for the responsible person |
 | car_issues | dept ∨ admin; **`is_car_responsible(car_id)`** (`car_issues_select_responsible`, may be outside the department) | **RPC only** — `report_car_issue()` (§6.6); the pre-portal direct `dept ∧ reported_by=own` policy was dropped 2026-09-09 (unused in `src/`) | admin ∨ sadran_any (resolve, any column); reporter of an open report: only `description`/`photo_path` — trigger `car_issues_protect_resolution_fields` also locks `status`/`resolved_by`/`resolved_at`/`is_unsafe`/`category`/`car_id`/`department_id`/`reported_by` (`20260910099800`) | admin |
 | car_care_events | `member_of(department_id)` (policy `car_care_events_select_member`, `20261024090000`, REQ §13.122 a: every department member reads the care log read-only) ∨ `is_car_responsible(car_id)` ∨ admin ∨ `reported_by = auth.uid()` (§6.6) | **RPC only** — `log_car_care()` | — (no update policy for any role; immutable in practice) | — |
+| car_odometer_readings | `member_of(department_id)` ∨ admin | **RPC only** — `log_car_kilometrage()` (member, monotonic), `set_car_kilometrage()` (`can_manage_car`, correction) | — | — |
 | destinations | approved users | admin; RPC `suggest_destination()` for members (inserts `is_approved=false`) | admin; RPC `merge_destination()` (admin-only, repoints references then deletes/deactivates the source, §6.1 item 14) | admin (RESTRICT if referenced) |
 | ride_types | approved users | admin | admin | — (deactivate) |
 | weekday_labels | approved users (`is_approved()`); global, not department-scoped | — (none) | — (none) | — (none) |
@@ -2919,6 +2974,7 @@ QA run 6 group F, car location / shape (migration `20261013170000_car_location_f
 
 - **Rides on someone else's behalf, editing by everyone related, REQ §13.127** (2026-10-12, `20261024101500_on_behalf_requests.sql`, suite `on_behalf_requests.sql`; no schema change). Internal `ride_related(ride, actor)` (driver, named passenger, private car's owner, requester / filer / companion of a served request) and `request_related(request, actor)` (requester, `filed_by`, companion, or `ride_related` to a live serving ride); browser `can_edit_request(request)` (`request_related` or `can_manage_week`; exempt `self-only` in `department_isolation.sql`). `submit_request`: `requester_id` from any approved member of the department for another member of it (before: Sadran only); an edit without `requester_id` keeps the stored requester; edits by anyone related (a related member follows the requester's flow — published-day edit, `overlap_confirmed`, quick reservation, original-times baseline); a published-day edit of a booked private-car round trip is re-placed on that car first (`OWN_CAR`). `set_request_companions` / `set_request_children` / `shorten_series`: anyone related; `withdraw_request`: requester, `filed_by`, Sadran; `requests_status_guard`: a related caller moves a request like its requester. `edit_ride_before_planning` member branch: the driver or anyone `ride_related`, every served request `request_related` (car-mode rules unchanged); `add_ride_passengers` on a private car: owner or `ride_related`; `update_ride_public_notes`: also `ride_related`. Private car consent: `assert_private_car_request(car, actor, request)` (owner = actor, requester or `filed_by`), used by `place_request_on_car`; trigger `rides_temp_car_owner_only` also accepts a driver the owner filed a live request for on the ride's day. `cancel_ride` is unchanged.
 - **Submit follow-ups write only on change (2026-10-24, `20261028150000_submit_followup_noop_skips.sql`, suite `request_window.sql` TEST 9; no schema or signature change).** `set_request_children` rewrites `request_children` only when the set differs and updates `requests.adults`/`child_seats` only when they change; `save_request_template` updates `requests.template_id` only when the link changes. A no-op call no longer bumps `requests.version`/`updated_at` or fires the `requests` triggers.
+- **Car administration, phase 1 (2026-10-28, REQ item 150 a/c; migrations `20261028160000_car_admin_flag.sql`, `160100_can_manage_car.sql`, `160200_car_odometer_readings.sql`; suite `car_administration.sql`).** `department_members.is_car_admin` + `is_car_admin(dept)` + `admin_set_car_admin()`; `can_manage_car(car)` (§4.2) with `_can_edit_car_maintenance`, the `cars_update_car_admin` policy, `cars_protect_owner_editable_fields()` (private car: status only) and `car_care_recipients()` (responsible → car admins → admins) rewritten; table `car_odometer_readings` (§3.2), enum `car_odometer_kind`, view `car_current_km`, RPCs `log_car_kilometrage` / `set_car_kilometrage`. Phases 2/3 (tasks for the next user, handover checklists, all-cars dashboard) build on `can_manage_car`. `department_isolation.sql` classifies `log_car_kilometrage`/`set_car_kilometrage` as covered and `admin_set_car_admin`, `can_manage_car`, `is_car_admin` as exempt (admin-only / read helpers). Not changed: `car_access_codes` writes stay `can_manage_operations` (a car admin saving the car form on a shared car gets the same access-code behaviour as the responsible person).
 
 - **REQ §13.128** (2026-10-12, `20261024101600_today_rides_editable.sql`, `20261024101700_private_car_owner_responsible.sql`, the private-car parts in `20261024101500_on_behalf_requests.sql`; suite `on_behalf_requests.sql` TEST 10–11, `one_way_lifecycle.sql` updated). Today's rides: `edit_ride_before_planning` member branch, `request_ride_change` and `update_ride_public_notes` refuse only a ride of an earlier Jerusalem date (`ride_in_past`), not one that started / ended today. Private car chosen in the form: `submit_request` keeps a temporary `preferred_car_id` only when its owner is the caller, the requester or the request's `filed_by` (else it is dropped to null), and a round trip with one is placed on it at once in any phase (`OWN_CAR`, Sadranim told `own_car_placed` on a published/live week) or refused with `own_car_not_free` / `ride_in_past`; trigger `validate_preferred_car` accepts such a car (requests: requester or `filed_by`; templates: requester). Private cars registered from the profile carry `responsible_id = owner_id` (backfilled for existing ones whose responsible was empty), so the owner edits them on the car page.
 

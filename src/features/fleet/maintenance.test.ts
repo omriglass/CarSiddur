@@ -64,6 +64,10 @@ describe("canEditMaintenance", () => {
     expect(canEditMaintenance({ isAdmin: false, isDepartmentSadran: true, profileId: "a", carResponsibleId: null })).toBe(true);
     expect(canEditMaintenance({ isAdmin: false, isDepartmentSadran: false, profileId: "a", carResponsibleId: "a" })).toBe(true);
   });
+  it("a car administrator of a shared car (REQ item 150 a)", () => {
+    expect(canEditMaintenance({ isAdmin: false, isDepartmentSadran: false, profileId: "a", carResponsibleId: "b", isCarAdminOfSharedCar: true })).toBe(true);
+    expect(canEditMaintenance({ isAdmin: false, isDepartmentSadran: false, profileId: "a", carResponsibleId: "b", isCarAdminOfSharedCar: false })).toBe(false);
+  });
   it("nobody else", () => {
     expect(canEditMaintenance({ isAdmin: false, isDepartmentSadran: false, profileId: "a", carResponsibleId: "b" })).toBe(false);
     expect(canEditMaintenance({ isAdmin: false, isDepartmentSadran: false, profileId: "a", carResponsibleId: null })).toBe(false);

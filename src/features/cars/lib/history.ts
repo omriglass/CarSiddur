@@ -1,8 +1,8 @@
 import { dateKey } from "@/lib/time";
 
-import type { CarCareEventWithReporter, CarIssueWithReporter } from "../api";
+import type { CarCareEventWithReporter, CarIssueWithReporter, CarOdometerReadingWithReporter } from "../api";
 
-import type { CarIssueCategory, CarIssueStatus, TireState } from "@/lib/enums";
+import type { CarIssueCategory, CarIssueStatus, CarOdometerKind, TireState } from "@/lib/enums";
 
 export interface TireStates {
   front_left: TireState;
@@ -28,7 +28,7 @@ export function parseTireStates(value: unknown): TireStates | null {
 }
 
 /** One row of the merged, date-descending car history list (`CarManageScreen`'s History section). */
-export type CarHistoryKind = "issue" | "tire_fill" | "wash";
+export type CarHistoryKind = "issue" | "tire_fill" | "wash" | "kilometrage";
 
 export interface CarHistoryEntry {
   id: string;
@@ -42,12 +42,16 @@ export interface CarHistoryEntry {
   isUnsafe?: boolean;
   tires?: TireStates | null;
   note?: string | null;
+  /** `kilometrage` entries: the odometer value and whether it is a member's reading or a manager's correction. */
+  km?: number;
+  odometerKind?: CarOdometerKind;
 }
 
-/** Merges issues and care events into one date-descending list, `id` tie-break for determinism. */
+/** Merges issues, care events and kilometrage readings into one date-descending list, `id` tie-break for determinism. */
 export function mergeCarHistory(
   issues: readonly CarIssueWithReporter[],
   careEvents: readonly CarCareEventWithReporter[],
+  odometer: readonly CarOdometerReadingWithReporter[] = [],
 ): CarHistoryEntry[] {
   const entries: CarHistoryEntry[] = [
     ...issues.map((issue) => ({
@@ -69,6 +73,16 @@ export function mergeCarHistory(
       reporterName: event.reported_by_profile?.full_name ?? null,
       tires: parseTireStates(event.tires),
       note: event.note,
+    })),
+    ...odometer.map((reading) => ({
+      id: reading.id,
+      kind: "kilometrage" as const,
+      createdAt: reading.recorded_at,
+      reporterId: reading.recorded_by,
+      reporterName: reading.reported_by_profile?.full_name ?? null,
+      km: reading.km,
+      odometerKind: reading.kind,
+      note: reading.note,
     })),
   ];
   return entries.sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));

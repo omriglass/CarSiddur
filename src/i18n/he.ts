@@ -759,6 +759,8 @@ export const he = {
     seriesWeekNotOpen: "אפשר לשמור רכב עד שישה שבועות קדימה, ולא לימים שכבר עברו",
     seriesEditNotSupported: "בקשה רב-יומית משנים כולה — בעריכת הבקשה, או בשיבוץ או הצעה לכל ימיה",
     tiresNoneChecked: "סמנו לפחות צמיג אחד לפני השמירה",
+    kilometrageLowerThanLast: "הקילומטראז׳ נמוך מהקריאה האחרונה. אם הקריאה האחרונה שגויה, אחראי/ת הרכב או מנהל/ת הרכבים יכולים לתקן אותה",
+    invalidKilometrage: "יש להזין קילומטראז׳ תקין (מספר שלם)",
     seriesCarUnavailable: "הרכב לא פנוי לכל ימי הבקשה הרב-יומית",
     handoverNotPossible: "אי אפשר להעביר את הנסיעה הזו לנהג/ת אחר/ת",
     handoverDriverInvalid: "האדם שנבחר אינו יכול לנהוג בנסיעה הזו",

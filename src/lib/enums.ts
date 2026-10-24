@@ -298,6 +298,17 @@ export const carCareKindSchema = z.enum(CAR_CARE_KINDS);
 assertSameEnum<CarCareKind, Enums<"car_care_kind">>();
 
 // ---------------------------------------------------------------------------
+// car_odometer_kind (REQ item 150 c): a member's reading vs a manager's correction
+// ---------------------------------------------------------------------------
+export const CAR_ODOMETER_KINDS = [
+  "reading",
+  "correction",
+] as const satisfies readonly Enums<"car_odometer_kind">[];
+export type CarOdometerKind = (typeof CAR_ODOMETER_KINDS)[number];
+export const carOdometerKindSchema = z.enum(CAR_ODOMETER_KINDS);
+assertSameEnum<CarOdometerKind, Enums<"car_odometer_kind">>();
+
+// ---------------------------------------------------------------------------
 // tire_state
 // ---------------------------------------------------------------------------
 export const TIRE_STATES = [

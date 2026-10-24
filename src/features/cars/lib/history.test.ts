@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { filterCarHistory, mergeCarHistory, parseTireStates } from "./history";
 
-import type { CarCareEventWithReporter, CarIssueWithReporter } from "../api";
+import type { CarCareEventWithReporter, CarIssueWithReporter, CarOdometerReadingWithReporter } from "../api";
 
 function issue(overrides: Partial<CarIssueWithReporter> = {}): CarIssueWithReporter {
   return {
@@ -103,5 +103,33 @@ describe("filterCarHistory", () => {
   it("filters by an inclusive Asia/Jerusalem date range", () => {
     expect(filterCarHistory(entries, "all", { from: "2026-09-02", to: "2026-09-02" }).map((entry) => entry.id)).toEqual(["wash-1"]);
     expect(filterCarHistory(entries, "all", { from: "2026-09-03" }).map((entry) => entry.id)).toEqual(["tire-1"]);
+  });
+});
+
+describe("mergeCarHistory with kilometrage (REQ item 150 c)", () => {
+  const reading = (overrides: Partial<CarOdometerReadingWithReporter> = {}): CarOdometerReadingWithReporter => ({
+    id: "km-1",
+    car_id: "car-1",
+    department_id: "dept-1",
+    km: 12000,
+    kind: "reading",
+    recorded_by: "profile-3",
+    reported_by_profile: { full_name: "רון" },
+    recorded_at: "2026-09-03T10:00:00Z",
+    note: null,
+    created_at: "2026-09-03T10:00:00Z",
+    updated_at: "2026-09-03T10:00:00Z",
+    ...overrides,
+  } as CarOdometerReadingWithReporter);
+
+  it("lists readings and corrections with the other entries, newest first", () => {
+    const merged = mergeCarHistory(
+      [issue({ created_at: "2026-09-01T10:00:00Z" })],
+      [careEvent({ created_at: "2026-09-02T10:00:00Z" })],
+      [reading(), reading({ id: "km-2", kind: "correction", km: 11500, recorded_at: "2026-09-04T10:00:00Z", note: "misread" })],
+    );
+    expect(merged.map((entry) => entry.id)).toEqual(["km-2", "km-1", "care-1", "issue-1"]);
+    expect(merged[0]).toMatchObject({ kind: "kilometrage", odometerKind: "correction", km: 11500, note: "misread", reporterName: "רון" });
+    expect(filterCarHistory(merged, "kilometrage")).toHaveLength(2);
   });
 });

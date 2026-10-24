@@ -5,7 +5,15 @@ import { useSession } from "@/features/auth/useSession";
 import { useUpdateCarMutation } from "@/features/admin/cars/hooks";
 import type { Car } from "@/features/admin/cars/api";
 
-import { fetchCarById, fetchUpcomingCarRides, fetchCarCareHistory, fetchCarIssueHistory, fetchMyResponsibleCars } from "./api";
+import {
+  fetchCarById,
+  fetchCarCareHistory,
+  fetchCarCurrentKm,
+  fetchCarIssueHistory,
+  fetchCarOdometerHistory,
+  fetchMyResponsibleCars,
+  fetchUpcomingCarRides,
+} from "./api";
 import { carKeys } from "./keys";
 
 export function useCarQuery(carId: string | undefined) {
@@ -29,6 +37,24 @@ export function useCarCareHistoryQuery(carId: string | undefined) {
     queryKey: carKeys.careEvents(carId),
     queryFn: () => fetchCarCareHistory(carId as string),
     enabled: !!carId,
+  });
+}
+
+export function useCarOdometerHistoryQuery(carId: string | undefined) {
+  return useQuery({
+    queryKey: carKeys.odometer(carId),
+    queryFn: () => fetchCarOdometerHistory(carId as string),
+    enabled: !!carId,
+  });
+}
+
+/** The car's current kilometrage (null = no reading yet); refetched on open so the form shows the latest. */
+export function useCarCurrentKmQuery(carId: string | undefined, enabled = true) {
+  return useQuery({
+    queryKey: carKeys.currentKm(carId),
+    queryFn: () => fetchCarCurrentKm(carId as string),
+    enabled: !!carId && enabled,
+    staleTime: 0,
   });
 }
 

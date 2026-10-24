@@ -16,8 +16,8 @@ import { he } from "@/i18n/he";
 /**
  * `/cars/:carId` — car page (car care portal, REQUIREMENTS §6.6,
  * UX_FLOWS.md §5.11). Every approved member may open it read-only; admins, the permanent Sadranim of
- * the car's department (the `can_manage_operations` rule of the `cars` RLS policies) and the car's
- * `responsible_id` can edit (`canEdit`, via `useCanEditMaintenance`).
+ * the car's department (the `can_manage_operations` rule of the `cars` RLS policies), the car's
+ * `responsible_id` and, on shared cars, the department's car administrators can edit (`canEdit`, via `useCanEditMaintenance`).
  */
 export function CarPage() {
   const { carId } = useParams<{ carId: string }>();
@@ -58,6 +58,13 @@ export function CarPage() {
   const isDepartmentSadran = (myDepartmentsQuery.data ?? []).some(
     (membership) => membership.department_id === car.department_id && membership.role === "sadran",
   );
+  // REQ item 150 (a): `can_manage_car` — admin, the car's responsible person, or (shared car) a car administrator
+  // of its department. The Sadran is not part of it (kilometrage corrections, tasks, checklists).
+  const isCarAdminHere = (myDepartmentsQuery.data ?? []).some(
+    (membership) => membership.department_id === car.department_id && membership.is_car_admin,
+  );
+  const canManageCar =
+    isAdmin || (!!profile?.id && car.responsible_id === profile.id) || (isCarAdminHere && car.type === "shared");
   // Admins and the department's Sadranim manage every field (owner 2026-10-08: a Sadran could not
   // open or save a car); the responsible person keeps the limited view.
   const canManage = isAdmin || isDepartmentSadran;
@@ -68,6 +75,7 @@ export function CarPage() {
       car={car}
       isAdmin={canManage}
       canEdit={canEdit}
+      canManageCar={canManageCar}
       viewerName={profile?.full_name ?? ""}
     />
   );

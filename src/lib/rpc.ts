@@ -42,6 +42,8 @@ export type ErrorCode =
   | "handover_not_possible"
   | "handover_driver_invalid"
   | "tires_none_checked"
+  | "kilometrage_lower_than_last"
+  | "invalid_kilometrage"
   | "maintenance_period_invalid"
   | "maintenance_in_past"
   | "maintenance_overlap"
@@ -335,6 +337,8 @@ const MESSAGE_TO_CODE: Record<string, ErrorCode> = {
   handover_not_possible: "handover_not_possible",
   handover_driver_invalid: "handover_driver_invalid",
   tires_none_checked: "tires_none_checked",
+  kilometrage_lower_than_last: "kilometrage_lower_than_last",
+  invalid_kilometrage: "invalid_kilometrage",
   push_unsupported: "push_unsupported",
   push_permission_denied: "push_permission_denied",
   push_vapid_key_invalid: "push_vapid_key_invalid",
@@ -469,6 +473,8 @@ const CODE_TO_MESSAGE: Record<ErrorCode, string> = {
   handover_not_possible: he.errors.handoverNotPossible,
   handover_driver_invalid: he.errors.handoverDriverInvalid,
   tires_none_checked: he.errors.tiresNoneChecked,
+  kilometrage_lower_than_last: he.errors.kilometrageLowerThanLast,
+  invalid_kilometrage: he.errors.invalidKilometrage,
   maintenance_period_invalid: he.maintenancePeriod.errors.invalid,
   maintenance_in_past: he.maintenancePeriod.errors.inPast,
   maintenance_overlap: he.maintenancePeriod.errors.overlap,

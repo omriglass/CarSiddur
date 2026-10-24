@@ -109,6 +109,8 @@ export const heAdmin = {
     departmentMembershipHelp: "גם מנהל/ת יכול/ה להצטרף למחלקה כחבר/ה ולהגיש בקשות. הרשאות הניהול נשמרות.",
     editDetails: "עריכת פרטי משתמש",
     /** REQ §88 (owner 2026-09-15): admin-editable mirror of the member's own profile switch. */
+    carAdmin: "מנהל/ת רכבים",
+    carAdminHelp: "מנהל/ת הרכבים של המחלקה: מטפל/ת בכל הרכבים המשותפים כמו אחראי/ת הרכב. ברכב פרטי אפשר רק לשנות סטטוס.",
     doesNotDrive: "לא נוהג/ת",
     doesNotDriveHelp: "החבר/ה לא ישובץ/תשובץ כנהג/ת; אפשר להביא נהג/ת אורח/ת",
     /** Per-membership "נקודת יציאה קבועה" select (REQ §13.93), next to each department chip. */

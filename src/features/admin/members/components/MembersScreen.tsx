@@ -34,6 +34,7 @@ import {
   useMemberInvites,
   useRejectMemberMutation,
   useRevokeAdminMutation,
+  useSetMemberCarAdminMutation,
   useSetMemberRoleMutation,
   useUpdateMemberDefaultOriginMutation,
   useManagedChildren,
@@ -94,6 +95,7 @@ function MembersTab() {
   const revokeAdminMutation = useRevokeAdminMutation();
   const setRoleMutation = useSetMemberRoleMutation();
   const setDefaultOriginMutation = useUpdateMemberDefaultOriginMutation();
+  const setCarAdminMutation = useSetMemberCarAdminMutation();
   const updateDetailsMutation = useUpdateMemberDetailsMutation();
   const [editing, setEditing] = useState<{ profileId: string; fullName: string; displayName: string; removedDepartmentIds: string[]; phone: string; departmentId?: string; doesNotDrive: boolean } | null>(null);
 
@@ -104,10 +106,10 @@ function MembersTab() {
     [departmentsQuery.data],
   );
   const membershipsByProfile = useMemo(() => {
-    const map = new Map<string, { departmentId: string; role: "member" | "sadran" | "admin"; defaultOriginId: string | null }[]>();
+    const map = new Map<string, { departmentId: string; role: "member" | "sadran" | "admin"; defaultOriginId: string | null; isCarAdmin: boolean }[]>();
     for (const dm of deptMembersQuery.data ?? []) {
       const list = map.get(dm.profile_id) ?? [];
-      list.push({ departmentId: dm.department_id, role: dm.role, defaultOriginId: dm.default_origin_id });
+      list.push({ departmentId: dm.department_id, role: dm.role, defaultOriginId: dm.default_origin_id, isCarAdmin: dm.is_car_admin });
       map.set(dm.profile_id, list);
     }
     return map;
@@ -243,6 +245,23 @@ function MembersTab() {
                 }))}>{removing ? he.adminMembers.undoRemoval : he.adminMembers.removeDepartment}</Button>
               </div>
               {!removing && editing ? (
+                <div className="flex items-center justify-between gap-2">
+                  <Label htmlFor={`admin-member-car-admin-${membership.departmentId}`} className="text-sm font-normal">{he.adminMembers.carAdmin}</Label>
+                  <Switch
+                    id={`admin-member-car-admin-${membership.departmentId}`}
+                    data-testid={`member-car-admin-${membership.departmentId}`}
+                    checked={membership.isCarAdmin}
+                    disabled={setCarAdminMutation.isPending}
+                    onCheckedChange={(checked) =>
+                      setCarAdminMutation.mutate(
+                        { departmentId: membership.departmentId, profileId: editing.profileId, isCarAdmin: checked },
+                        { onSuccess: () => toast.success(he.adminCommon.savedToast), onError: showErrorToast },
+                      )
+                    }
+                  />
+                </div>
+              ) : null}
+              {!removing && editing ? (
                 <MembershipOriginSelect
                   departmentId={membership.departmentId}
                   value={membership.defaultOriginId}
@@ -257,6 +276,7 @@ function MembersTab() {
               ) : null}
             </div>;
           })}
+          <p className="text-sm text-muted-foreground">{he.adminMembers.carAdminHelp}</p>
           <p className="text-sm text-muted-foreground">{he.adminMembers.removalHelp}</p>
           <label htmlFor="member-add-department">{he.adminMembers.addDepartment}</label>
           <Select value={editing?.departmentId ?? "none"} onValueChange={(value) => setEditing((old) => old && ({ ...old, departmentId: value === "none" ? undefined : value }))}>

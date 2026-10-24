@@ -78,14 +78,16 @@ export function shiftMaintenance(
 
 /**
  * Who may move / resize / remove a period — mirror of the server rule (`_can_edit_car_maintenance`): an admin,
- * the department's Sadranim, and the car's CURRENT responsible person. The server re-checks every call.
+ * the department's Sadranim, the car's CURRENT responsible person and, on shared cars, the department's car administrators. The server re-checks every call.
  */
 export function canEditMaintenance(input: {
   isAdmin: boolean;
   isDepartmentSadran: boolean;
   profileId: string | undefined;
   carResponsibleId: string | null | undefined;
+  /** REQ item 150 (a): the viewer is a car administrator of a SHARED car's department (`can_manage_car`). */
+  isCarAdminOfSharedCar?: boolean;
 }): boolean {
-  if (input.isAdmin || input.isDepartmentSadran) return true;
+  if (input.isAdmin || input.isDepartmentSadran || input.isCarAdminOfSharedCar) return true;
   return !!input.profileId && !!input.carResponsibleId && input.profileId === input.carResponsibleId;
 }

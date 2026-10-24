@@ -62,6 +62,8 @@ export interface DepartmentMembership {
   role: Role;
   /** REQ §13.93: the member's fixed origin for this department (`set_my_default_origin`), null = department home. */
   default_origin_id: string | null;
+  /** REQ item 150 (a): this membership carries the car-administrator flag (`department_members.is_car_admin`). */
+  is_car_admin: boolean;
   department: { id: string; name: string; slug: string };
 }
 
@@ -69,7 +71,7 @@ export interface DepartmentMembership {
 export async function fetchMyDepartments(profileId: string): Promise<DepartmentMembership[]> {
   const { data, error } = await supabase
     .from("department_members")
-    .select("department_id, role, default_origin_id, department:departments(id, name, slug)")
+    .select("department_id, role, default_origin_id, is_car_admin, department:departments(id, name, slug)")
     .eq("profile_id", profileId)
     .is("removed_at", null);
   if (error) throw toAppError(error);

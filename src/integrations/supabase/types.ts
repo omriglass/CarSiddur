@@ -389,6 +389,67 @@ export type Database = {
           },
         ]
       }
+      car_odometer_readings: {
+        Row: {
+          car_id: string
+          created_at: string
+          department_id: string
+          id: string
+          kind: Database["public"]["Enums"]["car_odometer_kind"]
+          km: number
+          note: string | null
+          recorded_at: string
+          recorded_by: string
+          updated_at: string
+        }
+        Insert: {
+          car_id: string
+          created_at?: string
+          department_id: string
+          id?: string
+          kind?: Database["public"]["Enums"]["car_odometer_kind"]
+          km: number
+          note?: string | null
+          recorded_at?: string
+          recorded_by: string
+          updated_at?: string
+        }
+        Update: {
+          car_id?: string
+          created_at?: string
+          department_id?: string
+          id?: string
+          kind?: Database["public"]["Enums"]["car_odometer_kind"]
+          km?: number
+          note?: string | null
+          recorded_at?: string
+          recorded_by?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "car_odometer_readings_car_id_fkey"
+            columns: ["car_id"]
+            isOneToOne: false
+            referencedRelation: "cars"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "car_odometer_readings_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "car_odometer_readings_recorded_by_fkey"
+            columns: ["recorded_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       car_seat_configs: {
         Row: {
           adults: number
@@ -645,6 +706,7 @@ export type Database = {
           created_at: string
           default_origin_id: string | null
           department_id: string
+          is_car_admin: boolean
           profile_id: string
           removed_at: string | null
           role: Database["public"]["Enums"]["role"]
@@ -654,6 +716,7 @@ export type Database = {
           created_at?: string
           default_origin_id?: string | null
           department_id: string
+          is_car_admin?: boolean
           profile_id: string
           removed_at?: string | null
           role?: Database["public"]["Enums"]["role"]
@@ -663,6 +726,7 @@ export type Database = {
           created_at?: string
           default_origin_id?: string | null
           department_id?: string
+          is_car_admin?: boolean
           profile_id?: string
           removed_at?: string | null
           role?: Database["public"]["Enums"]["role"]
@@ -4163,6 +4227,39 @@ export type Database = {
       }
     }
     Views: {
+      car_current_km: {
+        Row: {
+          car_id: string | null
+          department_id: string | null
+          kind: Database["public"]["Enums"]["car_odometer_kind"] | null
+          km: number | null
+          recorded_at: string | null
+          recorded_by: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "car_odometer_readings_car_id_fkey"
+            columns: ["car_id"]
+            isOneToOne: false
+            referencedRelation: "cars"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "car_odometer_readings_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "car_odometer_readings_recorded_by_fkey"
+            columns: ["recorded_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       v_board_rides: {
         Row: {
           auto_relocation: boolean | null
@@ -4622,6 +4719,7 @@ export type Database = {
         Args: { p_at_origin: string; p_car: string; p_request: string }
         Returns: boolean
       }
+      _car_last_km: { Args: { p_car_id: string }; Returns: number }
       _convert_to_alternative: {
         Args: { p_dep: string; p_request_id: string; p_ret: string }
         Returns: string
@@ -4976,6 +5074,14 @@ export type Database = {
         Args: { p_department_id: string; p_profile_id: string }
         Returns: undefined
       }
+      admin_set_car_admin: {
+        Args: {
+          p_department_id: string
+          p_is_car_admin: boolean
+          p_profile_id: string
+        }
+        Returns: undefined
+      }
       admin_set_sadran_assignments: {
         Args: {
           p_department_id: string
@@ -5066,6 +5172,7 @@ export type Database = {
         Args: { p_department_id: string }
         Returns: boolean
       }
+      can_manage_car: { Args: { p_car_id: string }; Returns: boolean }
       can_manage_operations: {
         Args: { p_department_id?: string }
         Returns: boolean
@@ -5409,6 +5516,7 @@ export type Database = {
       invoke_on_ride_cancelled: { Args: { _offer: string }; Returns: undefined }
       is_admin: { Args: never; Returns: boolean }
       is_approved: { Args: never; Returns: boolean }
+      is_car_admin: { Args: { _dept: string }; Returns: boolean }
       is_car_responsible: { Args: { _car_id: string }; Returns: boolean }
       is_day_public: {
         Args: { p_day: string; p_department_id: string; p_week_start: string }
@@ -5464,6 +5572,10 @@ export type Database = {
           _note?: string
           _tires?: Json
         }
+        Returns: string
+      }
+      log_car_kilometrage: {
+        Args: { p_car_id: string; p_km: number }
         Returns: string
       }
       mark_car_move: {
@@ -6074,6 +6186,10 @@ export type Database = {
         Returns: Json
       }
       send_test_notification: { Args: never; Returns: Json }
+      set_car_kilometrage: {
+        Args: { p_car_id: string; p_km: number; p_note?: string }
+        Returns: string
+      }
       set_freed_slot_opt_out: {
         Args: { p_opt_out: boolean; p_request_id: string }
         Returns: undefined
@@ -6342,6 +6458,7 @@ export type Database = {
         | "lighting"
         | "physical_damage"
       car_issue_status: "open" | "resolved"
+      car_odometer_kind: "reading" | "correction"
       car_status: "active" | "maintenance" | "retired"
       car_type: "shared" | "temporary"
       freed_claim_status:
@@ -6577,6 +6694,7 @@ export const Constants = {
         "physical_damage",
       ],
       car_issue_status: ["open", "resolved"],
+      car_odometer_kind: ["reading", "correction"],
       car_status: ["active", "maintenance", "retired"],
       car_type: ["shared", "temporary"],
       freed_claim_status: [

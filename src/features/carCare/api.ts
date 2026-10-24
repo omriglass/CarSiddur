@@ -48,3 +48,13 @@ export async function logCarCare(input: {
     _note: input.note,
   });
 }
+
+/** `log_car_kilometrage(p_car_id, p_km)` — a reading; refused (`kilometrage_lower_than_last`) when below the car's last value. */
+export async function logCarKilometrage(input: { carId: string; km: number }): Promise<string> {
+  return rpc("log_car_kilometrage", { p_car_id: input.carId, p_km: input.km });
+}
+
+/** `set_car_kilometrage(p_car_id, p_km, p_note)` — the car's managers (`can_manage_car`) set any value, recorded as a correction. */
+export async function setCarKilometrage(input: { carId: string; km: number; note?: string }): Promise<string> {
+  return rpc("set_car_kilometrage", { p_car_id: input.carId, p_km: input.km, p_note: input.note });
+}

@@ -4,7 +4,7 @@ import { he } from "@/i18n/he";
 
 import { parseTireStates, type TireStates } from "../lib/history";
 
-import type { CarCareEventWithReporter, CarIssueWithReporter } from "../api";
+import type { CarCareEventWithReporter, CarIssueWithReporter, CarOdometerReadingWithReporter } from "../api";
 
 import type { TireState } from "@/lib/enums";
 
@@ -76,13 +76,29 @@ export function washRows(events: readonly CarCareEventWithReporter[]): ExcelCell
   ];
 }
 
+/** "קילומטראז׳" sheet rows — one row per reading or correction, newest first as given. */
+export function kilometrageRows(readings: readonly CarOdometerReadingWithReporter[]): ExcelCell[][] {
+  return [
+    [copy.exportColumnDate, copy.exportColumnReporter, copy.exportColumnKm, copy.exportColumnKind, copy.exportColumnNote],
+    ...readings.map((reading) => [
+      jerusalemExcelDate(reading.recorded_at),
+      reading.reported_by_profile?.full_name ?? reading.recorded_by,
+      reading.km,
+      reading.kind === "correction" ? copy.exportKindCorrection : copy.exportKindReading,
+      reading.note,
+    ]),
+  ];
+}
+
 export function carExportSheets(
   issues: readonly CarIssueWithReporter[],
   careEvents: readonly CarCareEventWithReporter[],
+  odometer: readonly CarOdometerReadingWithReporter[] = [],
 ): ExcelSheet[] {
   return [
     { name: copy.exportIssuesSheet, rows: issueRows(issues) },
     { name: copy.exportTireFillsSheet, rows: tireFillRows(careEvents) },
     { name: copy.exportWashesSheet, rows: washRows(careEvents) },
+    { name: copy.exportKilometrageSheet, rows: kilometrageRows(odometer) },
   ];
 }

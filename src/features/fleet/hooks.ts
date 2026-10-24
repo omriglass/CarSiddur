@@ -157,11 +157,18 @@ export function useCanEditMaintenance(departmentId: string | undefined, forceSta
   const profile = useProfile().data;
   const memberships = useMyDepartments().data;
   const isDepartmentSadran = forceStaff || (memberships ?? []).some((m) => m.department_id === departmentId && m.role === "sadran");
+  const isCarAdmin = (memberships ?? []).some((m) => m.department_id === departmentId && m.is_car_admin);
   const isAdmin = !!profile?.is_admin;
   const profileId = profile?.id;
   return useCallback(
-    (car: { responsible_id?: string | null } | undefined) =>
-      canEditMaintenance({ isAdmin, isDepartmentSadran, profileId, carResponsibleId: car?.responsible_id }),
-    [isAdmin, isDepartmentSadran, profileId],
+    (car: { responsible_id?: string | null; type?: string } | undefined) =>
+      canEditMaintenance({
+        isAdmin,
+        isDepartmentSadran,
+        profileId,
+        carResponsibleId: car?.responsible_id,
+        isCarAdminOfSharedCar: isCarAdmin && car?.type === "shared",
+      }),
+    [isAdmin, isDepartmentSadran, isCarAdmin, profileId],
   );
 }

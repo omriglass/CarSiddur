@@ -8,11 +8,18 @@ import { CarReportDialog } from "./CarReportDialog";
 const mocks = vi.hoisted(() => ({
   reportIssue: vi.fn(),
   logCarCare: vi.fn(),
+  logKilometrage: vi.fn(),
+  currentKm: { data: null as null | { km: number; recorded_at: string }, isLoading: false },
 }));
 
 vi.mock("../hooks", () => ({
   useReportCarIssueMutation: () => ({ mutateAsync: mocks.reportIssue, isPending: false }),
   useLogCarCareMutation: () => ({ mutateAsync: mocks.logCarCare, isPending: false }),
+  useLogCarKilometrageMutation: () => ({ mutateAsync: mocks.logKilometrage, isPending: false }),
+}));
+
+vi.mock("@/features/cars/hooks", () => ({
+  useCarCurrentKmQuery: () => mocks.currentKm,
 }));
 
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
@@ -20,6 +27,8 @@ vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 beforeEach(() => {
   mocks.reportIssue.mockReset().mockResolvedValue("issue-1");
   mocks.logCarCare.mockReset().mockResolvedValue("event-1");
+  mocks.logKilometrage.mockReset().mockResolvedValue("reading-1");
+  mocks.currentKm.data = null;
 });
 
 function show(onOpenChange = vi.fn()) {
@@ -33,6 +42,25 @@ describe("CarReportDialog", () => {
     expect(screen.getByText(he.carCare.homeProblemTitle)).toBeInTheDocument();
     expect(screen.getByText(he.carCare.homeTireFillTitle)).toBeInTheDocument();
     expect(screen.getByText(he.carCare.homeWashTitle)).toBeInTheDocument();
+    expect(screen.getByText(he.carCare.homeKilometrageTitle)).toBeInTheDocument();
+  });
+
+  it("kilometrage: shows the last reading, keeps save disabled for non-numbers and logs a whole number", async () => {
+    mocks.currentKm.data = { km: 12345, recorded_at: "2026-10-20T10:00:00Z" };
+    const { onOpenChange } = show();
+    fireEvent.click(screen.getByRole("button", { name: he.carCare.homeKilometrageTitle }));
+    expect(screen.getByTestId("car-km-last")).toHaveTextContent("12,345");
+    const save = screen.getByRole("button", { name: he.carCare.kmSave });
+    expect(save).toBeDisabled();
+    fireEvent.change(screen.getByTestId("car-km-input"), { target: { value: "12.5" } });
+    expect(save).toBeDisabled();
+    expect(screen.getByText(he.carCare.kmInvalid)).toBeInTheDocument();
+    fireEvent.change(screen.getByTestId("car-km-input"), { target: { value: "12,400" } });
+    expect(save).toBeEnabled();
+    fireEvent.click(save);
+
+    await waitFor(() => expect(mocks.logKilometrage).toHaveBeenCalledWith({ carId: "car-1", km: 12400 }));
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
   });
 
   it("the X closes the dialog without submitting anything", () => {

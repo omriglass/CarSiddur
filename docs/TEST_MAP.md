@@ -515,13 +515,14 @@ local replay stack and comparing it with the production solve — scripts/replay
 ### car-care — Car care
 
 **Paths**: `src/features/carCare/**`, `src/features/cars/**`; `src/i18n/he.member.ts` (`carCare.*`,
-`carPage.*`), `he.admin.ts`; migrations matching `*car_care*`, `*car_issue*`, `*car_responsible*`;
-`e2e/car-care.spec.ts`.
+`carPage.*`), `he.admin.ts`; migrations matching `*car_care*`, `*car_issue*`, `*car_responsible*`,
+`*car_admin*`, `*can_manage_car*`, `*car_odometer*` (REQ item 150 a/c); `src/features/admin/members/**`;
+`e2e/car-care.spec.ts`, `e2e/car-admin.spec.ts`.
 
 **Automated**:
 - Vitest: `npx vitest run src/features/carCare src/features/cars`
-- SQL: `car_care_semantics.sql`
-- Playwright: `npx playwright test --grep "@car-care"`
+- SQL: `car_care_semantics.sql`, `car_administration.sql`, `department_isolation.sql`
+- Playwright: `npx playwright test --grep "@car-care|@car-admin"`
 
 **QA script**:
 1. As `member1`, from a car's page report a problem ("דיווח על תקלה"), choosing a category (אור
@@ -534,8 +535,14 @@ local replay stack and comparing it with the production solve — scripts/replay
 4. As the car's responsible person or `admin`, open "היסטוריה" on the car page, filter by
    date/kind, and export to Excel ("ייצוא לאקסל"); confirm the exported sheet matches the filtered
    history.
+5. As `admin`, `/admin/members` → a member's editor: switch "מנהל/ת רכבים" on for a department. As that
+   member, `/my` still lists only the cars they are personally responsible for; on a shared car's page
+   (not theirs) "תיקון הקילומטראז׳" is offered, and on a private car's page the page stays read-only.
+6. Open a car's report dialog → "קריאת קילומטראז׳": the last reading shows; save a higher number; a
+   lower one is refused ("הקילומטראז׳ נמוך מהקריאה האחרונה…"). The history tab lists readings and
+   corrections; the Excel export has a "קילומטראז׳" sheet.
 
-**REQ**: §13.69, §13.70, §13.71, §13.72, §13.73.
+**REQ**: §13.69, §13.70, §13.71, §13.72, §13.73, item 150 (a), (c).
 
 ### maintenance — Scheduled car maintenance
 

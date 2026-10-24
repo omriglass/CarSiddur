@@ -202,6 +202,9 @@ begin
   -- cars / destinations ----------------------------------------------------
   perform pg_temp.expect_refused('cars.log_car_care', format('select public.log_car_care(%L, %L, null, null)', car_b, 'wash'));
   perform pg_temp.expect_refused('cars.report_car_issue', format('select public.report_car_issue(%L, %L, %L, null)', car_b, 'mechanical', 'attack'));
+  perform pg_temp.expect_refused('cars.log_car_kilometrage', format('select public.log_car_kilometrage(%L, 1000)', car_b));
+  perform pg_temp.expect_refused('cars.set_car_kilometrage', format('select public.set_car_kilometrage(%L, 1000, null)', car_b));
+  assert not exists(select 1 from public.car_odometer_readings where car_id = car_b), 'cross-department kilometrage call wrote a reading';
   -- REQ §13.114: scheduled maintenance of department B's car, called as department A's Sadran.
   insert into public.car_maintenance_blocks(car_id, department_id, starts_at, ends_at, reason, created_by)
   values (car_b, dept_b, date_trunc('hour', now()) + interval '2 days', date_trunc('hour', now()) + interval '3 days', 'iso', admin_id) returning id into block_b;
@@ -353,7 +356,7 @@ declare
     'set_request_companions','withdraw_all_requests','submit_series_request','enter_waiting_list','apply_solver_result',
     'edit_ride','cancel_ride','unassign_ride','unmerge_request','merge_preview','set_request_trip_type','switch_request_plan','ride_route','request_ride_change','respond_ride_change','cancel_ride_change',
     'update_ride_public_notes','add_ride_passengers','set_ride_passengers','remove_ride_person',
-    'log_car_care','report_car_issue','merge_destination','suggest_destination','car_mileage_totals',
+    'log_car_care','report_car_issue','log_car_kilometrage','set_car_kilometrage','merge_destination','suggest_destination','car_mileage_totals',
     'admin_approve_member','admin_update_member','admin_set_sadran_assignments',
     'create_proposal','send_proposal','send_draft_proposals','flush_held_notices','agree_proposal_offline','proposal_car_conflicts','discard_proposal','withdraw_proposal','apply_proposal','record_answer_on_behalf','proposal_party_texts',
     'open_week','reopen_week','set_week_phase','set_week_close_at','close_week_requests','ensure_department_weeks',
@@ -379,7 +382,7 @@ declare
     'rides_location_ends:trigger', 'rides_temp_car_never_relays:trigger',
     'rides_temp_car_owner_only:trigger', 'sadran_assignments_require_roster_role:trigger',
     'waitlist_group_membership_sync:trigger',
-    'can_manage_any_open_week:read-helper', 'can_manage_operations:read-helper', 'car_base_location:read-helper',
+    'can_manage_any_open_week:read-helper', 'can_manage_operations:read-helper', 'can_manage_car:read-helper', 'is_car_admin:read-helper', 'admin_set_car_admin:admin-only', 'car_base_location:read-helper',
     'can_manage_week:read-helper', 'day_date_label:read-helper', 'is_admin:read-helper',
     'is_approved:read-helper', 'is_car_responsible:read-helper', 'is_day_public:read-helper',
     'is_proposal_party:read-helper', 'is_request_companion:read-helper', 'is_sadran:read-helper',

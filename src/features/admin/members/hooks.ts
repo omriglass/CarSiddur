@@ -13,6 +13,7 @@ import {
   importAllowList,
   rejectMember,
   revokeAdmin,
+  setMemberCarAdmin,
   setMemberRole,
   updateMemberDefaultOrigin,
   type ImportRow,
@@ -90,6 +91,15 @@ export function useSetMemberRoleMutation() {
   return useMutation({
     mutationFn: ({ departmentId, profileId, role }: { departmentId: string; profileId: string; role: Role }) =>
       setMemberRole(departmentId, profileId, role),
+    onSuccess: invalidate,
+  });
+}
+
+export function useSetMemberCarAdminMutation() {
+  const invalidate = useInvalidateMembers();
+  return useMutation({
+    mutationFn: ({ departmentId, profileId, isCarAdmin }: { departmentId: string; profileId: string; isCarAdmin: boolean }) =>
+      setMemberCarAdmin(departmentId, profileId, isCarAdmin),
     onSuccess: invalidate,
   });
 }

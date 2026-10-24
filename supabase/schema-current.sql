@@ -94,6 +94,15 @@ CREATE TYPE "public"."car_issue_status" AS ENUM (
 ALTER TYPE "public"."car_issue_status" OWNER TO "postgres";
 
 
+CREATE TYPE "public"."car_odometer_kind" AS ENUM (
+    'reading',
+    'correction'
+);
+
+
+ALTER TYPE "public"."car_odometer_kind" OWNER TO "postgres";
+
+
 CREATE TYPE "public"."car_status" AS ENUM (
     'active',
     'maintenance',
@@ -839,14 +848,11 @@ CREATE OR REPLACE FUNCTION "public"."_can_edit_car_maintenance"("p_car_id" "uuid
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
-  select exists (
+  select public.can_manage_car(p_car_id) or exists (
     select 1 from public.cars c
     where c.id = p_car_id
-      and (public.is_admin()
-        or (public.is_approved()
-          and (public.can_manage_operations(c.department_id) or public.is_sadran_any(c.department_id)
-            or c.responsible_id = (select auth.uid()))))
-  );
+      and public.is_approved()
+      and (public.can_manage_operations(c.department_id) or public.is_sadran_any(c.department_id)));
 $$;
 
 
@@ -879,6 +885,18 @@ end $$;
 
 
 ALTER FUNCTION "public"."_car_free_for_request"("p_car" "uuid", "p_request" "uuid", "p_at_origin" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_car_last_km"("p_car_id" "uuid") RETURNS integer
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select r.km from public.car_odometer_readings r
+  where r.car_id = p_car_id order by r.recorded_at desc, r.id desc limit 1;
+$$;
+
+
+ALTER FUNCTION "public"."_car_last_km"("p_car_id" "uuid") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."_convert_to_alternative"("p_request_id" "uuid", "p_dep" timestamp with time zone, "p_ret" timestamp with time zone) RETURNS "uuid"
@@ -3705,6 +3723,24 @@ $$;
 ALTER FUNCTION "public"."admin_approve_member"("p_profile_id" "uuid", "p_department_id" "uuid") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."admin_set_car_admin"("p_department_id" "uuid", "p_profile_id" "uuid", "p_is_car_admin" boolean) RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+begin
+  if not public.is_admin() then raise exception 'not_authorized' using errcode = 'P0001'; end if;
+  if p_is_car_admin is null then raise exception 'invalid_input' using errcode = 'P0001'; end if;
+  perform set_config('app.audit_reason', 'admin_set_car_admin', true);
+  update public.department_members set is_car_admin = p_is_car_admin
+    where department_id = p_department_id and profile_id = p_profile_id and removed_at is null;
+  if not found then raise exception 'member_not_found' using errcode = 'P0001'; end if;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."admin_set_car_admin"("p_department_id" "uuid", "p_profile_id" "uuid", "p_is_car_admin" boolean) OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."admin_set_sadran_assignments"("p_department_id" "uuid", "p_profile_ids" "uuid"[], "p_week_start" "date" DEFAULT NULL::"date") RETURNS "void"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -5095,6 +5131,21 @@ $$;
 ALTER FUNCTION "public"."can_manage_any_open_week"("p_department_id" "uuid") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."can_manage_car"("p_car_id" "uuid") RETURNS boolean
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select public.is_admin() or (public.is_approved() and exists (
+    select 1 from public.cars c
+    where c.id = p_car_id
+      and (c.responsible_id = (select auth.uid())
+           or (c.type = 'shared' and public.is_car_admin(c.department_id)))));
+$$;
+
+
+ALTER FUNCTION "public"."can_manage_car"("p_car_id" "uuid") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."can_manage_operations"("p_department_id" "uuid" DEFAULT NULL::"uuid") RETURNS boolean
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -5541,12 +5592,20 @@ CREATE OR REPLACE FUNCTION "public"."car_care_recipients"("_car_id" "uuid") RETU
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
-  select c.responsible_id from public.cars c
-  where c.id = _car_id and c.responsible_id is not null
-  union all
-  select p.id from public.cars c
-  join public.profiles p on p.is_admin and p.approval_status = 'approved'
-  where c.id = _car_id and c.responsible_id is null;
+  with car as (select c.id, c.department_id, c.type, c.responsible_id from public.cars c where c.id = _car_id),
+  responsible as (
+    select responsible_id as id from car where responsible_id is not null),
+  car_admins as (
+    select dm.profile_id as id from car
+    join public.department_members dm on dm.department_id = car.department_id
+      and dm.removed_at is null and dm.is_car_admin
+    join public.profiles p on p.id = dm.profile_id and p.approval_status = 'approved'
+    where car.responsible_id is null and car.type = 'shared'),
+  admins as (
+    select p.id from car
+    join public.profiles p on p.is_admin and p.approval_status = 'approved'
+    where car.responsible_id is null and not exists (select 1 from car_admins))
+  select id from responsible union all select id from car_admins union all select id from admins;
 $$;
 
 
@@ -5781,6 +5840,18 @@ begin
         and (new.department_id is not distinct from old.department_id
              or public.can_manage_operations(new.department_id)))
   ) then
+    if public.is_car_admin(old.department_id) and old.owner_id is distinct from (select auth.uid()) then
+      -- Acting as a car administrator only.
+      if new.department_id is distinct from old.department_id then
+        raise exception 'car_fields_locked' using errcode = 'P0001';
+      end if;
+      if old.type = 'temporary'
+         and (to_jsonb(new) - 'status' - 'retired_at' - 'updated_at')
+             is distinct from (to_jsonb(old) - 'status' - 'retired_at' - 'updated_at') then
+        raise exception 'car_fields_locked' using errcode = 'P0001';
+      end if;
+      return new;
+    end if;
     if new.name is distinct from old.name
        or new.license_plate is distinct from old.license_plate
        or new.department_id is distinct from old.department_id
@@ -6737,6 +6808,20 @@ end $_$;
 
 
 ALTER FUNCTION "public"."deliver_changelog"("p_entry_id" "text", "p_title" "text", "p_body" "text") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."department_members_clear_car_admin"() RETURNS "trigger"
+    LANGUAGE "plpgsql"
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+begin
+  if new.removed_at is not null then new.is_car_admin := false; end if;
+  return new;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."department_members_clear_car_admin"() OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."department_stats"("p_department_id" "uuid", "p_from" "date", "p_to" "date") RETURNS "jsonb"
@@ -8861,6 +8946,20 @@ $$;
 ALTER FUNCTION "public"."is_approved"() OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."is_car_admin"("_dept" "uuid") RETURNS boolean
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select public.is_approved() and exists (
+    select 1 from public.department_members dm
+    where dm.department_id = _dept and dm.profile_id = (select auth.uid())
+      and dm.removed_at is null and dm.is_car_admin);
+$$;
+
+
+ALTER FUNCTION "public"."is_car_admin"("_dept" "uuid") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."is_car_responsible"("_car_id" "uuid") RETURNS boolean
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -9457,6 +9556,34 @@ $$;
 
 
 ALTER FUNCTION "public"."log_car_care"("_car_id" "uuid", "_kind" "public"."car_care_kind", "_tires" "jsonb", "_note" "text") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."log_car_kilometrage"("p_car_id" "uuid", "p_km" integer) RETURNS "uuid"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_dept uuid;
+  v_last integer;
+  v_id uuid;
+begin
+  select department_id into v_dept from public.cars where id = p_car_id for update;
+  if v_dept is null then raise exception 'car_not_found' using errcode = 'P0001'; end if;
+  if not public.member_of(v_dept) then raise exception 'not_authorized' using errcode = 'P0001'; end if;
+  if p_km is null or p_km < 0 or p_km > 9999999 then raise exception 'invalid_kilometrage' using errcode = 'P0001'; end if;
+  v_last := public._car_last_km(p_car_id);
+  if v_last is not null and p_km < v_last then
+    raise exception 'kilometrage_lower_than_last' using errcode = 'P0001';
+  end if;
+  insert into public.car_odometer_readings (department_id, car_id, km, kind, recorded_by)
+  values (v_dept, p_car_id, p_km, 'reading', (select auth.uid()))
+  returning id into v_id;
+  return v_id;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."log_car_kilometrage"("p_car_id" "uuid", "p_km" integer) OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."maintenance_refresh_flags"() RETURNS "trigger"
@@ -15735,6 +15862,29 @@ $$;
 ALTER FUNCTION "public"."send_test_notification"() OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."set_car_kilometrage"("p_car_id" "uuid", "p_km" integer, "p_note" "text" DEFAULT NULL::"text") RETURNS "uuid"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_dept uuid;
+  v_id uuid;
+begin
+  select department_id into v_dept from public.cars where id = p_car_id for update;
+  if v_dept is null then raise exception 'car_not_found' using errcode = 'P0001'; end if;
+  if not public.can_manage_car(p_car_id) then raise exception 'not_authorized' using errcode = 'P0001'; end if;
+  if p_km is null or p_km < 0 or p_km > 9999999 then raise exception 'invalid_kilometrage' using errcode = 'P0001'; end if;
+  insert into public.car_odometer_readings (department_id, car_id, km, kind, recorded_by, note)
+  values (v_dept, p_car_id, p_km, 'correction', (select auth.uid()), nullif(left(trim(coalesce(p_note, '')), 300), ''))
+  returning id into v_id;
+  return v_id;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."set_car_kilometrage"("p_car_id" "uuid", "p_km" integer, "p_note" "text") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."set_freed_slot_opt_out"("p_request_id" "uuid", "p_opt_out" boolean) RETURNS "void"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -19842,6 +19992,41 @@ ALTER TABLE ONLY "public"."car_care_events" FORCE ROW LEVEL SECURITY;
 ALTER TABLE "public"."car_care_events" OWNER TO "postgres";
 
 
+CREATE TABLE IF NOT EXISTS "public"."car_odometer_readings" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "department_id" "uuid" NOT NULL,
+    "car_id" "uuid" NOT NULL,
+    "km" integer NOT NULL,
+    "kind" "public"."car_odometer_kind" DEFAULT 'reading'::"public"."car_odometer_kind" NOT NULL,
+    "recorded_by" "uuid" NOT NULL,
+    "recorded_at" timestamp with time zone DEFAULT "clock_timestamp"() NOT NULL,
+    "note" "text",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "car_odometer_readings_km_ck" CHECK ((("km" >= 0) AND ("km" <= 9999999))),
+    CONSTRAINT "car_odometer_readings_note_ck" CHECK ((("note" IS NULL) OR ("length"("note") <= 300)))
+);
+
+ALTER TABLE ONLY "public"."car_odometer_readings" FORCE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."car_odometer_readings" OWNER TO "postgres";
+
+
+CREATE OR REPLACE VIEW "public"."car_current_km" WITH ("security_invoker"='true') AS
+ SELECT DISTINCT ON ("car_id") "car_id",
+    "department_id",
+    "km",
+    "kind",
+    "recorded_at",
+    "recorded_by"
+   FROM "public"."car_odometer_readings" "r"
+  ORDER BY "car_id", "recorded_at" DESC, "id" DESC;
+
+
+ALTER VIEW "public"."car_current_km" OWNER TO "postgres";
+
+
 CREATE TABLE IF NOT EXISTS "public"."car_issues" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "car_id" "uuid" NOT NULL,
@@ -20010,6 +20195,7 @@ CREATE TABLE IF NOT EXISTS "public"."department_members" (
     "removed_at" timestamp with time zone,
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     "default_origin_id" "uuid",
+    "is_car_admin" boolean DEFAULT false NOT NULL,
     CONSTRAINT "department_members_role_ck" CHECK (("role" = ANY (ARRAY['member'::"public"."role", 'sadran'::"public"."role"])))
 );
 
@@ -20017,6 +20203,10 @@ ALTER TABLE ONLY "public"."department_members" FORCE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."department_members" OWNER TO "postgres";
+
+
+COMMENT ON COLUMN "public"."department_members"."is_car_admin" IS 'REQ 150 (a): this member administers the department''s shared cars (can_manage_car). Not a role value; cleared when the membership is removed.';
+
 
 
 CREATE TABLE IF NOT EXISTS "public"."destinations" (
@@ -21651,6 +21841,11 @@ ALTER TABLE ONLY "public"."car_maintenance_blocks"
 
 
 
+ALTER TABLE ONLY "public"."car_odometer_readings"
+    ADD CONSTRAINT "car_odometer_readings_pkey" PRIMARY KEY ("id");
+
+
+
 ALTER TABLE ONLY "public"."car_seat_configs"
     ADD CONSTRAINT "car_seat_configs_pkey" PRIMARY KEY ("id");
 
@@ -22046,6 +22241,14 @@ CREATE INDEX "car_issues_open_idx" ON "public"."car_issues" USING "btree" ("car_
 
 
 CREATE INDEX "car_maintenance_blocks_gist_idx" ON "public"."car_maintenance_blocks" USING "gist" ("car_id", "tstzrange"("starts_at", "ends_at", '[)'::"text"));
+
+
+
+CREATE INDEX "car_odometer_readings_car_idx" ON "public"."car_odometer_readings" USING "btree" ("car_id", "recorded_at" DESC, "id");
+
+
+
+CREATE INDEX "car_odometer_readings_department_idx" ON "public"."car_odometer_readings" USING "btree" ("department_id");
 
 
 
@@ -22916,6 +23119,10 @@ CREATE CONSTRAINT TRIGGER "companions_named_passenger_counts" AFTER INSERT OR DE
 
 
 
+CREATE OR REPLACE TRIGGER "department_members_clear_car_admin" BEFORE UPDATE OF "removed_at" ON "public"."department_members" FOR EACH ROW EXECUTE FUNCTION "public"."department_members_clear_car_admin"();
+
+
+
 CREATE OR REPLACE TRIGGER "departments_create_settings" AFTER INSERT ON "public"."departments" FOR EACH ROW EXECUTE FUNCTION "public"."departments_create_settings"();
 
 
@@ -23233,6 +23440,10 @@ CREATE OR REPLACE TRIGGER "set_updated_at" BEFORE UPDATE ON "public"."car_access
 
 
 CREATE OR REPLACE TRIGGER "set_updated_at" BEFORE UPDATE ON "public"."car_care_events" FOR EACH ROW EXECUTE FUNCTION "public"."set_updated_at"();
+
+
+
+CREATE OR REPLACE TRIGGER "set_updated_at" BEFORE UPDATE ON "public"."car_odometer_readings" FOR EACH ROW EXECUTE FUNCTION "public"."set_updated_at"();
 
 
 
@@ -23724,6 +23935,21 @@ ALTER TABLE ONLY "public"."car_maintenance_blocks"
 
 ALTER TABLE ONLY "public"."car_maintenance_blocks"
     ADD CONSTRAINT "car_maintenance_blocks_department_id_fkey" FOREIGN KEY ("department_id") REFERENCES "public"."departments"("id");
+
+
+
+ALTER TABLE ONLY "public"."car_odometer_readings"
+    ADD CONSTRAINT "car_odometer_readings_car_id_fkey" FOREIGN KEY ("car_id") REFERENCES "public"."cars"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."car_odometer_readings"
+    ADD CONSTRAINT "car_odometer_readings_department_id_fkey" FOREIGN KEY ("department_id") REFERENCES "public"."departments"("id");
+
+
+
+ALTER TABLE ONLY "public"."car_odometer_readings"
+    ADD CONSTRAINT "car_odometer_readings_recorded_by_fkey" FOREIGN KEY ("recorded_by") REFERENCES "public"."profiles"("id");
 
 
 
@@ -24534,6 +24760,13 @@ CREATE POLICY "car_maintenance_blocks_update" ON "public"."car_maintenance_block
 
 
 
+ALTER TABLE "public"."car_odometer_readings" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "car_odometer_readings_select" ON "public"."car_odometer_readings" FOR SELECT TO "authenticated" USING (("public"."member_of"("department_id") OR "public"."is_admin"()));
+
+
+
 ALTER TABLE "public"."car_seat_configs" ENABLE ROW LEVEL SECURITY;
 
 
@@ -24587,6 +24820,10 @@ CREATE POLICY "cars_select" ON "public"."cars" FOR SELECT TO "authenticated" USI
 
 
 CREATE POLICY "cars_update" ON "public"."cars" FOR UPDATE TO "authenticated" USING (("public"."can_manage_operations"("department_id") OR (("type" = 'temporary'::"public"."car_type") AND ("owner_id" = ( SELECT "auth"."uid"() AS "uid"))))) WITH CHECK (("public"."can_manage_operations"("department_id") OR (("type" = 'temporary'::"public"."car_type") AND ("owner_id" = ( SELECT "auth"."uid"() AS "uid")))));
+
+
+
+CREATE POLICY "cars_update_car_admin" ON "public"."cars" FOR UPDATE TO "authenticated" USING ("public"."is_car_admin"("department_id")) WITH CHECK ("public"."is_car_admin"("department_id"));
 
 
 
@@ -25236,6 +25473,11 @@ GRANT ALL ON FUNCTION "public"."_car_free_for_request"("p_car" "uuid", "p_reques
 
 
 
+REVOKE ALL ON FUNCTION "public"."_car_last_km"("p_car_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_car_last_km"("p_car_id" "uuid") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."_convert_to_alternative"("p_request_id" "uuid", "p_dep" timestamp with time zone, "p_ret" timestamp with time zone) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_convert_to_alternative"("p_request_id" "uuid", "p_dep" timestamp with time zone, "p_ret" timestamp with time zone) TO "service_role";
 
@@ -25608,6 +25850,12 @@ GRANT ALL ON FUNCTION "public"."admin_approve_member"("p_profile_id" "uuid", "p_
 
 
 
+REVOKE ALL ON FUNCTION "public"."admin_set_car_admin"("p_department_id" "uuid", "p_profile_id" "uuid", "p_is_car_admin" boolean) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."admin_set_car_admin"("p_department_id" "uuid", "p_profile_id" "uuid", "p_is_car_admin" boolean) TO "service_role";
+GRANT ALL ON FUNCTION "public"."admin_set_car_admin"("p_department_id" "uuid", "p_profile_id" "uuid", "p_is_car_admin" boolean) TO "authenticated";
+
+
+
 REVOKE ALL ON FUNCTION "public"."admin_set_sadran_assignments"("p_department_id" "uuid", "p_profile_ids" "uuid"[], "p_week_start" "date") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."admin_set_sadran_assignments"("p_department_id" "uuid", "p_profile_ids" "uuid"[], "p_week_start" "date") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."admin_set_sadran_assignments"("p_department_id" "uuid", "p_profile_ids" "uuid"[], "p_week_start" "date") TO "service_role";
@@ -25741,6 +25989,12 @@ GRANT ALL ON FUNCTION "public"."can_edit_request"("p_request" "uuid") TO "authen
 REVOKE ALL ON FUNCTION "public"."can_manage_any_open_week"("p_department_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."can_manage_any_open_week"("p_department_id" "uuid") TO "service_role";
 GRANT ALL ON FUNCTION "public"."can_manage_any_open_week"("p_department_id" "uuid") TO "authenticated";
+
+
+
+REVOKE ALL ON FUNCTION "public"."can_manage_car"("p_car_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."can_manage_car"("p_car_id" "uuid") TO "service_role";
+GRANT ALL ON FUNCTION "public"."can_manage_car"("p_car_id" "uuid") TO "authenticated";
 
 
 
@@ -26022,6 +26276,11 @@ GRANT ALL ON FUNCTION "public"."deliver_changelog"("p_entry_id" "text", "p_title
 
 
 
+REVOKE ALL ON FUNCTION "public"."department_members_clear_car_admin"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."department_members_clear_car_admin"() TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."department_stats"("p_department_id" "uuid", "p_from" "date", "p_to" "date") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."department_stats"("p_department_id" "uuid", "p_from" "date", "p_to" "date") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."department_stats"("p_department_id" "uuid", "p_from" "date", "p_to" "date") TO "service_role";
@@ -26269,6 +26528,12 @@ GRANT ALL ON FUNCTION "public"."is_approved"() TO "service_role";
 
 
 
+REVOKE ALL ON FUNCTION "public"."is_car_admin"("_dept" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."is_car_admin"("_dept" "uuid") TO "service_role";
+GRANT ALL ON FUNCTION "public"."is_car_admin"("_dept" "uuid") TO "authenticated";
+
+
+
 REVOKE ALL ON FUNCTION "public"."is_car_responsible"("_car_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."is_car_responsible"("_car_id" "uuid") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."is_car_responsible"("_car_id" "uuid") TO "service_role";
@@ -26354,6 +26619,12 @@ GRANT ALL ON FUNCTION "public"."link_typed_places_on_approval"() TO "service_rol
 REVOKE ALL ON FUNCTION "public"."log_car_care"("_car_id" "uuid", "_kind" "public"."car_care_kind", "_tires" "jsonb", "_note" "text") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."log_car_care"("_car_id" "uuid", "_kind" "public"."car_care_kind", "_tires" "jsonb", "_note" "text") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."log_car_care"("_car_id" "uuid", "_kind" "public"."car_care_kind", "_tires" "jsonb", "_note" "text") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."log_car_kilometrage"("p_car_id" "uuid", "p_km" integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."log_car_kilometrage"("p_car_id" "uuid", "p_km" integer) TO "service_role";
+GRANT ALL ON FUNCTION "public"."log_car_kilometrage"("p_car_id" "uuid", "p_km" integer) TO "authenticated";
 
 
 
@@ -27278,6 +27549,12 @@ GRANT ALL ON FUNCTION "public"."send_test_notification"() TO "authenticated";
 
 
 
+REVOKE ALL ON FUNCTION "public"."set_car_kilometrage"("p_car_id" "uuid", "p_km" integer, "p_note" "text") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."set_car_kilometrage"("p_car_id" "uuid", "p_km" integer, "p_note" "text") TO "service_role";
+GRANT ALL ON FUNCTION "public"."set_car_kilometrage"("p_car_id" "uuid", "p_km" integer, "p_note" "text") TO "authenticated";
+
+
+
 REVOKE ALL ON FUNCTION "public"."set_freed_slot_opt_out"("p_request_id" "uuid", "p_opt_out" boolean) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."set_freed_slot_opt_out"("p_request_id" "uuid", "p_opt_out" boolean) TO "authenticated";
 GRANT ALL ON FUNCTION "public"."set_freed_slot_opt_out"("p_request_id" "uuid", "p_opt_out" boolean) TO "service_role";
@@ -27633,6 +27910,16 @@ GRANT ALL ON TABLE "public"."car_access_codes" TO "service_role";
 
 GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE "public"."car_care_events" TO "authenticated";
 GRANT ALL ON TABLE "public"."car_care_events" TO "service_role";
+
+
+
+GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE "public"."car_odometer_readings" TO "authenticated";
+GRANT ALL ON TABLE "public"."car_odometer_readings" TO "service_role";
+
+
+
+GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE "public"."car_current_km" TO "authenticated";
+GRANT ALL ON TABLE "public"."car_current_km" TO "service_role";
 
 
 

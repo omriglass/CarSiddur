@@ -1,19 +1,23 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { AlertTriangle, Droplets, Gauge } from "lucide-react";
+import { AlertTriangle, Droplets, Gauge, Route } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 
 import { PortalDialogContent } from "@/components/PortalDialogContent";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Dialog, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
 import { useScrollToFirstError } from "@/components/useScrollToFirstError";
+import { useCarCurrentKmQuery } from "@/features/cars/hooks";
 import { he, tv } from "@/i18n/he";
+import { formatKm, parseKm } from "@/features/cars/lib/kilometrage";
+import { formatDayDate } from "@/lib/dayLabels";
 
-import { useLogCarCareMutation, useReportCarIssueMutation } from "../hooks";
+import { useLogCarCareMutation, useLogCarKilometrageMutation, useReportCarIssueMutation } from "../hooks";
 import {
   CAR_ISSUE_CATEGORIES,
   carIssueReportSchema,
@@ -24,7 +28,7 @@ import {
 import { TireFillPanel } from "./TireFillPanel";
 import { WashCelebration, WashGame } from "./WashGame";
 
-type View = "home" | "problem" | "tires" | "wash" | "tiresDone" | "washDone";
+type View = "home" | "problem" | "tires" | "wash" | "km" | "tiresDone" | "washDone";
 
 /** How long the wash/tire-fill celebration shows before the dialog auto-closes. */
 const CELEBRATION_MS = 3500;
@@ -47,9 +51,13 @@ export function CarReportDialog({ carId, carName, open, onOpenChange }: CarRepor
   const [view, setView] = useState<View>("home");
   const [tires, setTires] = useState(DEFAULT_TIRE_STATES);
   const [tireNote, setTireNote] = useState("");
+  const [kmText, setKmText] = useState("");
 
   const reportIssueMutation = useReportCarIssueMutation();
   const logCarCareMutation = useLogCarCareMutation();
+  const logKilometrageMutation = useLogCarKilometrageMutation();
+  const currentKmQuery = useCarCurrentKmQuery(carId, open && view === "km");
+  const kmValue = parseKm(kmText);
 
   const form = useForm<CarIssueReportValues>({
     resolver: zodResolver(carIssueReportSchema),
@@ -65,6 +73,7 @@ export function CarReportDialog({ carId, carName, open, onOpenChange }: CarRepor
       setView("home");
       setTires(DEFAULT_TIRE_STATES);
       setTireNote("");
+      setKmText("");
       form.reset({ category: undefined, description: "" });
     }
   }
@@ -107,6 +116,17 @@ export function CarReportDialog({ carId, carName, open, onOpenChange }: CarRepor
     }
   }
 
+  async function submitKm() {
+    if (kmValue === null) return;
+    try {
+      await logKilometrageMutation.mutateAsync({ carId, km: kmValue });
+      toast.success(he.carCare.kmSaved);
+      handleOpenChange(false);
+    } catch {
+      // already toasted by useLogCarKilometrageMutation's onError
+    }
+  }
+
   const title = tv("carCare.dialogTitle", { car: carName });
 
   return (
@@ -141,6 +161,14 @@ export function CarReportDialog({ carId, carName, open, onOpenChange }: CarRepor
             >
               <Droplets className="size-6 shrink-0 text-booked" aria-hidden="true" />
               <span className="font-medium">{he.carCare.homeWashTitle}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setView("km")}
+              className="flex min-h-16 items-center gap-3 rounded-lg border p-4 text-start transition-smooth hover:bg-accent/40"
+            >
+              <Route className="size-6 shrink-0 text-primary" aria-hidden="true" />
+              <span className="font-medium">{he.carCare.homeKilometrageTitle}</span>
             </button>
           </div>
         ) : null}
@@ -209,6 +237,44 @@ export function CarReportDialog({ carId, carName, open, onOpenChange }: CarRepor
 
         {view === "wash" ? (
           <WashGame onDone={submitWash} disabled={logCarCareMutation.isPending} onBack={() => setView("home")} />
+        ) : null}
+
+        {view === "km" ? (
+          <div className="flex flex-col gap-4">
+            <p className="text-sm text-muted-foreground" data-testid="car-km-last">
+              {currentKmQuery.data
+                ? tv("carCare.kmLast", {
+                    km: formatKm(currentKmQuery.data.km),
+                    date: formatDayDate(currentKmQuery.data.recorded_at),
+                  })
+                : currentKmQuery.isLoading
+                  ? ""
+                  : he.carCare.kmNone}
+            </p>
+            <label className="grid gap-2 text-sm">
+              {he.carCare.kmLabel}
+              <Input
+                data-testid="car-km-input"
+                type="text"
+                inputMode="numeric"
+                dir="ltr"
+                value={kmText}
+                onChange={(event) => setKmText(event.target.value)}
+                aria-invalid={kmText.trim() !== "" && kmValue === null}
+              />
+            </label>
+            {kmText.trim() !== "" && kmValue === null ? (
+              <p className="text-sm text-destructive">{he.carCare.kmInvalid}</p>
+            ) : null}
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="ghost" onClick={() => setView("home")}>
+                {he.common.back}
+              </Button>
+              <Button type="button" disabled={logKilometrageMutation.isPending || kmValue === null} onClick={submitKm}>
+                {he.carCare.kmSave}
+              </Button>
+            </div>
+          </div>
         ) : null}
 
         {view === "tiresDone" ? <CelebrationMessage message={he.carCare.tireCelebration} /> : null}

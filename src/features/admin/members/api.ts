@@ -125,6 +125,11 @@ export async function updateMemberDefaultOrigin(departmentId: string, profileId:
   if (error) throw toAppError(error);
 }
 
+/** REQ item 150 (a): per-department "מנהל/ת רכבים" switch (admin-only RPC `admin_set_car_admin`). */
+export async function setMemberCarAdmin(departmentId: string, profileId: string, isCarAdmin: boolean): Promise<void> {
+  await rpc("admin_set_car_admin", { p_department_id: departmentId, p_profile_id: profileId, p_is_car_admin: isCarAdmin });
+}
+
 export async function setMemberRole(departmentId: string, profileId: string, role: Role): Promise<void> {
   const { error } = await supabase
     .from("department_members")
