@@ -41,6 +41,7 @@ import type { Car as SolverCar } from "@/solver/types";
 
 import type { DestinationValue } from "@/components/DestinationCombobox";
 
+import { invalidateSubmittedRequest } from "../submitInvalidation";
 import { fetchChildRequestOverlaps, fetchChildren, fetchRequestVersion, probeSubmitRequest } from "../api";
 import type { ChildOverlapRow, JoinableRideRow, RequestEditRow, SubmitRequestResult, SubmitSeriesRequestResult, TemplateSuggestion } from "../api";
 import { dayLabel } from "../dayLabel";
@@ -335,13 +336,14 @@ export function RequestForm({
   const settingsQuery = useDepartmentSettings(departmentId);
   const weekRowQuery = useWeekRow(departmentId, weekStart);
 
-  const submitMutation = useSubmitRequestMutation();
-  const submitSeriesMutation = useSubmitSeriesRequestMutation();
+  // One refresh after the follow-up calls (`refreshAfterSubmit`), not one per call.
+  const submitMutation = useSubmitRequestMutation({ deferInvalidation: true });
+  const submitSeriesMutation = useSubmitSeriesRequestMutation({ deferInvalidation: true });
   const joinableRidesMutation = useJoinableRidesMutation();
-  const setCompanionsMutation = useSetRequestCompanionsMutation();
-  const setChildrenMutation = useSetRequestChildrenMutation();
+  const setCompanionsMutation = useSetRequestCompanionsMutation({ deferInvalidation: true });
+  const setChildrenMutation = useSetRequestChildrenMutation({ deferInvalidation: true });
   const suggestDestinationMutation = useSuggestDestinationMutation(departmentId);
-  const saveTemplateMutation = useSaveRequestTemplateMutation();
+  const saveTemplateMutation = useSaveRequestTemplateMutation({ deferInvalidation: true });
   const stopTemplateMutation = useStopTemplateMutation();
   // Joinable-rides dialog "הצטרפות לנסיעה" (REQ §13.85, owner decision 2026-09-14): joins the
   // chosen ride directly via `add_ride_passengers()` with the just-filed request's own people,
@@ -919,6 +921,32 @@ export function RequestForm({
     };
   }
 
+  /** Edit mode compares with what the request already has; a new request only needs the call when somebody is named. */
+  function companionsChanged(ids: readonly string[]): boolean {
+    if (mode !== "edit") return ids.length > 0;
+    const before = companionsQuery.data;
+    return !before || before.length !== ids.length || !ids.every((id) => before.includes(id));
+  }
+  /** `set_request_children` also re-adds the children's seats, which the payload's counts leave out — so any named child needs it. */
+  function childrenChanged(ids: readonly string[]): boolean {
+    if (ids.length > 0) return true;
+    return mode === "edit" && (requestChildrenQuery.data?.length ?? 1) > 0;
+  }
+
+  /**
+   * The one cache refresh after a submit and its follow-up calls. Leaving the form (navigate) only marks the
+   * queries stale — the next screen's mount refetches them — so the still-mounted form does not reload its own
+   * catalogs; an overlay that stays on its page (`onDone`) refetches the active ones.
+   */
+  function refreshAfterSubmit(
+    payload: { department_id: string; week_start: string },
+    requestId: string | null,
+    options: { peopleChanged?: boolean; templateChanged?: boolean; broad?: boolean } = {},
+  ) {
+    const refetchType = onDone ? "active" : "none";
+    invalidateSubmittedRequest(queryClient, session?.user.id, { departmentId: payload.department_id, weekStart: payload.week_start, requestId }, { ...options, refetchType });
+  }
+
   async function performSubmit(formValues: RequestFormValues, options: { confirmRelease?: boolean; confirmLose?: boolean; ignoreChildOverlap?: boolean } = {}) {
     if (quickContext && (isPast || invalidTime)) return;
     setSubmitError(null);
@@ -930,6 +958,7 @@ export function RequestForm({
     // "off" branches below agree: an edit keeps its own row's template, a prefilled new
     // request inherits the suggestion's.
     const existingTemplateId = mode === "edit" ? (initial?.templateId ?? undefined) : templateSuggestion?.templateId;
+    let submittedWeek = false;
 
     try {
       // R2M4: warn (never block) when a named child is on someone else's overlapping request.
@@ -976,10 +1005,16 @@ export function RequestForm({
           setPendingRelease({ values: formValues, ...seriesRelease });
           return;
         }
-        for (const requestId of seriesResult?.request_ids ?? []) {
-          await setCompanionsMutation.mutateAsync({ requestId, profileIds: formValues.companions });
-          await setChildrenMutation.mutateAsync({ requestId, childIds: formValues.children });
+        // All legs and both calls in parallel; a brand-new series with nobody named has nothing to set.
+        submittedWeek = true;
+        const seriesPeople = seriesEdit || formValues.companions.length > 0 || formValues.children.length > 0;
+        if (seriesPeople) {
+          await Promise.all((seriesResult?.request_ids ?? []).flatMap((requestId) => [
+            setCompanionsMutation.mutateAsync({ requestId, profileIds: formValues.companions }),
+            setChildrenMutation.mutateAsync({ requestId, childIds: formValues.children }),
+          ]));
         }
+        refreshAfterSubmit(payload, null, { broad: true });
         if ("freeText" in formValues.destination && formValues.destination.freeText.trim()) {
           suggestDestinationMutation.mutate({ name: formValues.destination.freeText.trim() });
         }
@@ -1006,9 +1041,18 @@ export function RequestForm({
         return;
       }
 
+      submittedWeek = true;
+      let peopleChanged = false;
+      let templateChanged = false;
       if (requestId) {
-        await setCompanionsMutation.mutateAsync({ requestId, profileIds: whoOf(formValues).companions });
-        await setChildrenMutation.mutateAsync({ requestId, childIds: formValues.children });
+        // Companions and children in parallel, and only when something is named or changed (a request with
+        // nobody named would make two no-op round trips); the template reads both, so it comes after.
+        const companionIds = whoOf(formValues).companions;
+        const people: Promise<unknown>[] = [];
+        if (companionsChanged(companionIds)) people.push(setCompanionsMutation.mutateAsync({ requestId, profileIds: companionIds }));
+        if (childrenChanged(formValues.children)) people.push(setChildrenMutation.mutateAsync({ requestId, childIds: formValues.children }));
+        peopleChanged = people.length > 0;
+        await Promise.all(people);
 
         // "Repeat weekly" (UX_FLOWS §3.3/§3.4, REQ §76): capture/refresh the template when the
         // switch is on, or stop a template this request was already linked to when it's off.
@@ -1019,13 +1063,16 @@ export function RequestForm({
           if (whoOf(formValues).requesterId || editingForOther) {
             // templates belong to the requester
           } else if (formValues.repeatWeekly) {
+            templateChanged = true;
             await saveTemplateMutation.mutateAsync(requestId);
             if (mode === "new") toast.success(t("request.repeatSaved"));
           } else if (existingTemplateId) {
+            templateChanged = true;
             await stopTemplateMutation.mutateAsync(existingTemplateId);
           }
         } catch { /* already toasted by the mutation itself */ }
       }
+      refreshAfterSubmit(payload, requestId ?? null, { peopleChanged, templateChanged });
       if ("freeText" in formValues.destination && formValues.destination.freeText.trim()) {
         suggestDestinationMutation.mutate({ name: formValues.destination.freeText.trim() });
       }
@@ -1084,6 +1131,8 @@ export function RequestForm({
 
       proceed();
     } catch {
+      // The request itself may already be filed (a follow-up call failed): show what is there.
+      if (submittedWeek) refreshAfterSubmit(payload, null, { broad: true });
       setSubmitError(variant === "quick" || variant === "carNow" ? t("quickRequest.submitError") : t("request.submitError"));
     }
   }

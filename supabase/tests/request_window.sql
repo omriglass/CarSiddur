@@ -16,7 +16,7 @@ declare
   w date := public.current_week_start() + 1204;   -- far-future Sunday, collides with no other suite
   v_result jsonb; req uuid; req2 uuid; tpl uuid;
   v_a timestamptz; v_n interval := interval '4 hours'; v_row public.requests%rowtype;
-  v_threw boolean; base jsonb; v_child uuid; v_ride uuid;
+  v_threw boolean; base jsonb; v_child uuid; v_ride uuid; v_ver int; v_adults int; v_seats int;
   home uuid := '00000000-0000-0000-0000-000000000010'; binyamina uuid := '00000000-0000-0000-0000-000000000012';
 begin
   insert into public.weeks(department_id, week_start, phase, open_at, close_at, publish_at) values
@@ -137,6 +137,30 @@ begin
     select * into v_row from public.requests where id = req;
     assert v_row.child_seats = 1 and v_row.boosters = 1 and v_row.adults = 2, 'TEST 8 FAILED: unlinking the named child must restore the unnamed counts';
   end if;
+
+  -- TEST 9 (perf, submit follow-ups): a no-op set_request_children / save_request_template touches nothing —
+  -- no version bump, no extra `requests` write; a real change still counts and still works.
+  if v_child is null then
+    insert into public.children(department_id, full_name, birth_year) values (dept, 'TEST 9 child', 2020) returning id into v_child;
+  end if;
+  if v_child is not null then
+    perform public.set_request_children(req, array[v_child]);
+    select * into v_row from public.requests where id = req;
+    v_ver := v_row.version; v_adults := v_row.adults; v_seats := v_row.child_seats;
+    perform public.set_request_children(req, array[v_child]);
+    select * into v_row from public.requests where id = req;
+    assert v_row.version = v_ver and v_row.adults = v_adults and v_row.child_seats = v_seats,
+      'TEST 9 FAILED: an unchanged set_request_children rewrote the request';
+    assert (select count(*) from public.request_children where request_id = req and child_id = v_child) = 1,
+      'TEST 9 FAILED: the named child link disappeared';
+  end if;
+  tpl := public.save_request_template(req);
+  select * into v_row from public.requests where id = req;
+  assert v_row.template_id = tpl, 'TEST 9 FAILED: the template link was not stored';
+  v_ver := v_row.version;
+  assert public.save_request_template(req) = tpl, 'TEST 9 FAILED: saving the template again must return the same template';
+  select * into v_row from public.requests where id = req;
+  assert v_row.version = v_ver and v_row.template_id = tpl, 'TEST 9 FAILED: re-saving the same template rewrote the request';
 
   raise notice 'request_window.sql: all tests passed';
 end $$;

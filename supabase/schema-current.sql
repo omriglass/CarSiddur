@@ -15471,7 +15471,10 @@ begin
     ) returning id into v_template_id;
   end if;
 
-  update public.requests set template_id = v_template_id where id = q.id;
+  -- Perf: an unchanged link needs no write (it fires every `requests` trigger).
+  if q.template_id is distinct from v_template_id then
+    update public.requests set template_id = v_template_id where id = q.id;
+  end if;
   return v_template_id;
 end;
 $$;
@@ -15866,15 +15869,27 @@ begin
   v_legacy_adults := greatest(1, q.adults - v_old_adult_children);
   v_legacy_child_seats := greatest(0, q.child_seats - v_old_child_seat_children);
 
-  delete from public.request_children where request_id = q.id;
-  insert into public.request_children(request_id, child_id)
-    select q.id, child_id from unnest(coalesce(p_child_ids, '{}'::uuid[])) as u(child_id);
+  -- Perf (submit follow-ups): only write what changes. The form calls this after every submit, mostly with the
+  -- same children the request already has; the unconditional delete/insert/update fired every `requests` trigger
+  -- (audit, version, change counters) for nothing.
+  if exists (select 1 from public.request_children rc where rc.request_id = q.id and rc.child_id <> all (coalesce(p_child_ids, '{}'::uuid[])))
+     or exists (
+       select 1 from unnest(coalesce(p_child_ids, '{}'::uuid[])) as u(child_id)
+       where not exists (select 1 from public.request_children rc where rc.request_id = q.id and rc.child_id = u.child_id)
+     ) then
+    delete from public.request_children where request_id = q.id;
+    insert into public.request_children(request_id, child_id)
+      select q.id, child_id from unnest(coalesce(p_child_ids, '{}'::uuid[])) as u(child_id);
+  end if;
 
-  update public.requests
-  set adults = v_legacy_adults + v_new_adult_children,
-      child_seats = v_legacy_child_seats + v_new_child_seat_children,
-      updated_at = now()
-  where id = q.id;
+  if q.adults is distinct from v_legacy_adults + v_new_adult_children
+     or q.child_seats is distinct from v_legacy_child_seats + v_new_child_seat_children then
+    update public.requests
+    set adults = v_legacy_adults + v_new_adult_children,
+        child_seats = v_legacy_child_seats + v_new_child_seat_children,
+        updated_at = now()
+    where id = q.id;
+  end if;
 end;
 $$;
 

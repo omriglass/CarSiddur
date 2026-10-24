@@ -50,6 +50,7 @@ import {
 } from "./api";
 import { movedRequestPayload, type RequestMove } from "./myWeek/requestMove";
 import { requestsKeys } from "./queryKeys";
+import { invalidateSubmittedRequest } from "./submitInvalidation";
 import { recentCompanionIds } from "./recentCompanions";
 
 export function useMyRequests() {
@@ -65,7 +66,11 @@ export function useMyRequests() {
   });
 }
 
-export function useSubmitRequestMutation() {
+/**
+ * `deferInvalidation`: the request form refreshes once, itself, after its follow-up calls (companions,
+ * children, template) — see `RequestForm.performSubmit` — instead of once per call.
+ */
+export function useSubmitRequestMutation(options: { deferInvalidation?: boolean } = {}) {
   const { session } = useSession();
   const profileId = session?.user.id;
   const queryClient = useQueryClient();
@@ -73,12 +78,8 @@ export function useSubmitRequestMutation() {
   return useMutation({
     mutationFn: (payload: SubmitRequestPayload) => submitRequest(payload),
     onSuccess: (_result, payload) => {
-      queryClient.invalidateQueries({ queryKey: requestsKeys.mine(profileId) });
-      queryClient.invalidateQueries({ queryKey: siddurKeys.myUpcomingRides(undefined, undefined).slice(0, 2) });
-      if (payload.request_id) queryClient.invalidateQueries({ queryKey: requestsKeys.byId(payload.request_id) });
-      queryClient.invalidateQueries({ queryKey: sadranKeys.week(payload.department_id, payload.week_start) });
-      queryClient.invalidateQueries({ queryKey: siddurKeys.boardRides(payload.department_id, payload.week_start) });
-      queryClient.invalidateQueries({ queryKey: siddurKeys.carLocations(payload.department_id, payload.week_start) });
+      if (options.deferInvalidation) return;
+      invalidateSubmittedRequest(queryClient, profileId, { departmentId: payload.department_id, weekStart: payload.week_start, requestId: payload.request_id });
     },
     onError: showErrorToast,
   });
@@ -108,7 +109,7 @@ export function useMoveRequestMutation() {
  * so this invalidates broadly (`requests`/`siddur`/`sadran` root keys) rather than the single
  * `(department_id, week_start)` pair `useSubmitRequestMutation` targets.
  */
-export function useSubmitSeriesRequestMutation() {
+export function useSubmitSeriesRequestMutation(options: { deferInvalidation?: boolean } = {}) {
   const { session } = useSession();
   const profileId = session?.user.id;
   const queryClient = useQueryClient();
@@ -116,6 +117,7 @@ export function useSubmitSeriesRequestMutation() {
   return useMutation({
     mutationFn: (payload: SubmitRequestPayload) => submitSeriesRequest(payload),
     onSuccess: () => {
+      if (options.deferInvalidation) return;
       queryClient.invalidateQueries({ queryKey: requestsKeys.all });
       queryClient.invalidateQueries({ queryKey: siddurKeys.all });
       queryClient.invalidateQueries({ queryKey: sadranKeys.all });
@@ -276,23 +278,24 @@ export function useRequestChildrenQuery(requestId: string | undefined) {
   });
 }
 
-export function useSetRequestCompanionsMutation() {
+export function useSetRequestCompanionsMutation(options: { deferInvalidation?: boolean } = {}) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ requestId, profileIds }: { requestId: string; profileIds: string[] }) =>
       setRequestCompanions(requestId, profileIds),
     onSuccess: () => {
+      if (options.deferInvalidation) return;
       for (const key of [siddurKeys.all, sadranKeys.all, requestsKeys.all]) void queryClient.invalidateQueries({ queryKey: key });
     },
     onError: showErrorToast,
   });
 }
 
-export function useSetRequestChildrenMutation() {
+export function useSetRequestChildrenMutation(options: { deferInvalidation?: boolean } = {}) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ requestId, childIds }: { requestId: string; childIds: string[] }) => setRequestChildren(requestId, childIds),
-    onSuccess: () => { void queryClient.invalidateQueries({ queryKey: requestsKeys.all }); },
+    onSuccess: () => { if (options.deferInvalidation) return; void queryClient.invalidateQueries({ queryKey: requestsKeys.all }); },
     onError: showErrorToast,
   });
 }
@@ -421,7 +424,7 @@ export function useTemplateSuggestionsQuery() {
   });
 }
 
-export function useSaveRequestTemplateMutation() {
+export function useSaveRequestTemplateMutation(options: { deferInvalidation?: boolean } = {}) {
   const { session } = useSession();
   const profileId = session?.user.id;
   const queryClient = useQueryClient();
@@ -429,6 +432,7 @@ export function useSaveRequestTemplateMutation() {
   return useMutation({
     mutationFn: (requestId: string) => saveRequestTemplate(requestId),
     onSuccess: () => {
+      if (options.deferInvalidation) return;
       queryClient.invalidateQueries({ queryKey: requestsKeys.templateSuggestions(profileId) });
       queryClient.invalidateQueries({ queryKey: requestsKeys.mine(profileId) });
     },
