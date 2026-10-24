@@ -1002,8 +1002,10 @@
         "supabase/migrations/**/*car_admin*",
         "supabase/migrations/**/*can_manage_car*",
         "supabase/migrations/**/*car_odometer*",
+        "supabase/migrations/**/*car_task*",
         "supabase/tests/car_care_semantics.sql",
         "supabase/tests/car_administration.sql",
+        "supabase/tests/car_tasks.sql",
         "src/features/admin/members/**",
         "e2e/car-care.spec.ts",
         "e2e/car-admin.spec.ts",
@@ -1019,11 +1021,13 @@
       "sql": [
         "car_care_semantics.sql",
         "car_administration.sql",
+        "car_tasks.sql",
         "department_isolation.sql"
       ],
       "playwrightTags": [
         "@car-care",
-        "@car-admin"
+        "@car-admin",
+        "@car-tasks"
       ],
       "reqRefs": [
         "13.69",

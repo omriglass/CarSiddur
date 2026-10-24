@@ -48,7 +48,7 @@ declare
   change_b uuid;
   v_result jsonb;
   v_status public.request_status; v_reason text; v_version int;
-  block_b uuid; issue_b uuid;
+  block_b uuid; issue_b uuid; task_b uuid;
 begin
   -----------------------------------------------------------------------
   -- Fixtures: department B, entirely separate from department A (sadran_a is deliberately
@@ -205,6 +205,12 @@ begin
   perform pg_temp.expect_refused('cars.log_car_kilometrage', format('select public.log_car_kilometrage(%L, 1000)', car_b));
   perform pg_temp.expect_refused('cars.set_car_kilometrage', format('select public.set_car_kilometrage(%L, 1000, null)', car_b));
   assert not exists(select 1 from public.car_odometer_readings where car_id = car_b), 'cross-department kilometrage call wrote a reading';
+  -- REQ 150 (b): tasks for the next user of department B's car.
+  perform pg_temp.expect_refused('cars.request_car_tasks', format('select public.request_car_tasks(%L, array[''wash'']::public.car_task_kind[])', car_b));
+  insert into public.car_tasks (department_id, car_id, kind, requested_by) values (dept_b, car_b, 'wash', member_b) returning id into task_b;
+  perform pg_temp.expect_refused('cars.withdraw_car_task', format('select public.withdraw_car_task(%L)', task_b));
+  perform pg_temp.expect_refused('cars.complete_car_task', format('select public.complete_car_task(%L)', task_b));
+  assert (select status = 'open' from public.car_tasks where id = task_b), 'cross-department task call changed the task';
   -- REQ §13.114: scheduled maintenance of department B's car, called as department A's Sadran.
   insert into public.car_maintenance_blocks(car_id, department_id, starts_at, ends_at, reason, created_by)
   values (car_b, dept_b, date_trunc('hour', now()) + interval '2 days', date_trunc('hour', now()) + interval '3 days', 'iso', admin_id) returning id into block_b;
@@ -356,7 +362,7 @@ declare
     'set_request_companions','withdraw_all_requests','submit_series_request','enter_waiting_list','apply_solver_result',
     'edit_ride','cancel_ride','unassign_ride','unmerge_request','merge_preview','set_request_trip_type','switch_request_plan','ride_route','request_ride_change','respond_ride_change','cancel_ride_change',
     'update_ride_public_notes','add_ride_passengers','set_ride_passengers','remove_ride_person',
-    'log_car_care','report_car_issue','log_car_kilometrage','set_car_kilometrage','merge_destination','suggest_destination','car_mileage_totals',
+    'log_car_care','report_car_issue','log_car_kilometrage','set_car_kilometrage','request_car_tasks','withdraw_car_task','complete_car_task','merge_destination','suggest_destination','car_mileage_totals',
     'admin_approve_member','admin_update_member','admin_set_sadran_assignments',
     'create_proposal','send_proposal','send_draft_proposals','flush_held_notices','agree_proposal_offline','proposal_car_conflicts','discard_proposal','withdraw_proposal','apply_proposal','record_answer_on_behalf','proposal_party_texts',
     'open_week','reopen_week','set_week_phase','set_week_close_at','close_week_requests','ensure_department_weeks',
@@ -371,6 +377,7 @@ declare
   -- 'name:one-word-reason'. Duplicated names (day_date_label has two overloads) are fine —
   -- the completeness check below groups by proname.
   iso_exempt text[] := array[
+    'my_car_tasks:caller_scoped',
     'audit_row:trigger', 'car_issues_protect_resolution_fields:trigger',
     'cars_protect_owner_editable_fields:trigger', 'client_errors_rate_limit:trigger',
     'flag_rides_in_maintenance:trigger', 'handle_new_user:trigger',

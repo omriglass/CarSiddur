@@ -9,6 +9,7 @@ import { Sheet, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { PortalSheetContent } from "@/components/PortalSheetContent";
 import { CarNameWithReport } from "@/features/carCare/components/CarNameWithReport";
+import { MyCarTasksCard } from "@/features/carTasks/components/MyCarTasksCard";
 import { rideBlockLabel } from "@/lib/rideLabel";
 import { siddurCarName } from "@/lib/siddurCarName";
 import { ridePassengerParts } from "@/lib/ridePassengerSummary";
@@ -150,6 +151,9 @@ export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = 
               </div>
 
               <RideCarHandover ride={ride} />
+
+              {/* REQ item 150 b: this ride's car tasks for me, inside its window only (member surfaces; the board has its own sheet). */}
+              {ride.id ? <MyCarTasksCard rideId={ride.id} /> : null}
 
               <div className="flex items-center gap-1 font-medium">
                 <MapPin className="size-4 shrink-0 text-muted-foreground" />

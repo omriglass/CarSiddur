@@ -617,3 +617,15 @@ from (values
 ) as t(event, variant, title, body)
 cross join unnest(array['inbox', 'push']::public.notification_channel[]) as ch
 on conflict (event, channel, coalesce(variant, '')) do nothing;
+
+-- REQ 150 (b): car tasks for the next user (mirrors 20261028170100_car_tasks.sql).
+insert into public.text_fragments (key, body) values
+  ('car_task.tire_fill', 'למלא אוויר בצמיגים'),
+  ('car_task.wash', 'לשטוף את הרכב'),
+  ('car_task.kilometrage', 'לרשום את הקילומטראז׳')
+on conflict (key) do nothing;
+insert into public.notification_templates (event, channel, variant, title, body, default_title, default_body)
+select 'car_task'::public.notification_event, ch, null, t.title, t.body, t.title, t.body
+from (values ('לפני הנסיעה ברכב {{car}} ב-{{depart}}', '{{tasks}}')) as t(title, body)
+cross join unnest(array['inbox', 'push']::public.notification_channel[]) as ch
+on conflict (event, channel, coalesce(variant, '')) do nothing;

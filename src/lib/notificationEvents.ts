@@ -54,6 +54,7 @@ export const NOTIFICATION_EVENT_META: Record<NotificationEvent, NotificationEven
   access_request: { category: "account", memberMutable: false, sadranRole: false, weekScoped: false },
   access_approved: { category: "account", memberMutable: false, sadranRole: false, weekScoped: false },
   status_changed: { category: "account", memberMutable: false, sadranRole: false, weekScoped: false },
+  car_task: { category: "maintenance", memberMutable: true, sadranRole: false, weekScoped: false },
   car_care: { category: "maintenance", memberMutable: true, sadranRole: false, weekScoped: false },
   waitlist_contested: { category: "freedSlot", memberMutable: true, sadranRole: false, weekScoped: false },
   waitlist_resolved: { category: "freedSlot", memberMutable: true, sadranRole: false, weekScoped: false },

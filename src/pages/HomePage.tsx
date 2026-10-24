@@ -61,6 +61,7 @@ import { useRideSheetCarActions } from "@/features/rides/useRideSheetCarActions"
 import { myRidePersonKey } from "@/features/rides/ridePeople";
 import { isRideOfMine, selectRelatedRides } from "@/features/rides/myRides";
 import { VolunteerDriverPanel } from "@/features/rides/components/VolunteerDriverPanel";
+import { MyCarTasksCard } from "@/features/carTasks/components/MyCarTasksCard";
 import { RideDetailSheet } from "@/features/siddur/components/RideDetailSheet";
 import { MemberRideEditor } from "@/features/siddur/components/MemberRideEditor";
 import type { BoardRide } from "@/features/siddur/api";
@@ -446,6 +447,9 @@ export function HomePage() {
           </div>
         </section>
       ) : null}
+
+      {/* REQ item 150 b: tasks the car's managers asked of the next user — only inside the ride's window. */}
+      <MyCarTasksCard />
 
       {/* Owner 2026-10-13: the week view needs no "רוצה רכב עכשיו!" — tapping "now" in the grid does the same. */}
       {active.canSubmit && defaultDepartmentId && !weekView ? <CarNowButton departmentId={defaultDepartmentId} /> : null}

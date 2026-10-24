@@ -413,6 +413,33 @@ Index `(car_id, recorded_at desc, id)`. RLS enabled + forced; **SELECT only**: `
 - `log_car_kilometrage(p_car_id, p_km) returns uuid` — SECURITY DEFINER; `member_of(car's department)` (the rule of `log_car_care`); locks the car row, refuses `p_km` below the car's last value with `kilometrage_lower_than_last` (equal is fine), out-of-range/null with `invalid_kilometrage`, a missing car with `car_not_found`, a non-member with `not_authorized`. Sends no notification.
 - `set_car_kilometrage(p_car_id, p_km, p_note default null) returns uuid` — SECURITY DEFINER; `can_manage_car(p_car_id)` only; any value, recorded as `kind = 'correction'`.
 
+#### `car_tasks` and `car_task_notices` (REQ item 150 b, `20261028170100`–`170400`)
+
+Tasks a car's manager asks of whoever uses the car next. Enums `car_task_kind` (`tire_fill` \| `wash` \| `kilometrage` \| `other`) and `car_task_status` (`open` \| `done` \| `withdrawn`).
+
+| column | type | null | default | notes |
+|---|---|---|---|---|
+| id | uuid | NN | gen_random_uuid() | PK |
+| department_id | uuid | NN | | FK departments (from the car) |
+| car_id | uuid | NN | | FK cars ON DELETE CASCADE |
+| kind | car_task_kind | NN | | |
+| note | text | | | required (non-blank) for `other`, CHECK length <= 300 |
+| status | car_task_status | NN | `open` | CHECKs tie `done_by/done_at` to `done` and `withdrawn_by/withdrawn_at` to `withdrawn` |
+| requested_by / requested_at | uuid / timestamptz | NN | `clock_timestamp()` | |
+| done_by / done_at | uuid / timestamptz | | | |
+| done_care_event_id / done_odometer_reading_id | uuid | | | the log that completed it (ON DELETE SET NULL) |
+| withdrawn_by / withdrawn_at | uuid / timestamptz | | | |
+
+RLS enabled + forced; **SELECT only** for `can_manage_car(car_id)` (managers read the list and history); members never read the table, they read `my_car_tasks()`. `car_task_notices (ride_id, profile_id, notification_id, notified_at)` (PK ride+profile) is internal (RLS forced, no policy): one row per (ride, person) already notified.
+
+**Who sees a task, and when (the rule lives in SQL, not the UI).** `_car_tasks_for_profile(profile, now)` (internal) / `my_car_tasks()` (browser, `authenticated`) return one row per (open task, qualifying ride): the ride is on the task's car, `status in ('confirmed','flagged')` (**published rides only** - an unpublished `draft` day is invisible to members; cancelled never), `now` lies in `[starts_at - 15 min, ends_at + 15 min]`, and that window was not already over when the task was requested (`ends_at + 15 min > requested_at`). The people of a ride (`_ride_task_people(ride)`): its driver when set, otherwise the requesters and companions of the requests it serves plus named member passengers (`ride_passengers.person_id`). Outside every window nothing is returned; the task simply waits for the car's next ride. A task requested mid-ride is therefore visible at once to that ride's people.
+
+- `request_car_tasks(p_car_id, p_kinds car_task_kind[], p_note default null) returns integer` - `can_manage_car`; `other` needs a note (`task_note_required`); an open task of the same non-`other` kind is not duplicated; returns the number created; refreshes unread notices.
+- `withdraw_car_task(p_task_id)` - `can_manage_car`; only an open task (`task_not_open`).
+- `complete_car_task(p_task_id)` - `other` tasks only (`task_not_manual`), by a person who currently sees it (`not_authorized` otherwise).
+- Auto-completion: `log_car_care` (`tire_fill` / `wash`) and `log_car_kilometrage` call `_complete_car_tasks(car, kind, by, event, reading)` - anyone's log of that kind on that car completes the open task of that kind. A manager's `set_car_kilometrage` correction does not.
+- Notice: tick step `send_car_task_notices(p_now)` (inside `app.tick()`, redefined in `20261028170300`): for rides starting within the next 30 minutes it sends event `car_task` once per (ride, person), listing every open task of the car (`{{tasks}}`, labels from `text_fragments` `car_task.*`, `other` = its note), `data = {ride_id, url: '/my'}`, week-less, mutable category `maintenance`. A task added or withdrawn later replaces the person's still-unread entry (`_refresh_car_task_notices`: new notification, its push dropped, old one deleted - `notifications` text is locked against updates); never a second push. No notice goes to the requester.
+
 ### 3.3 Catalogs (REQUIREMENTS §5.1, §13.8)
 
 #### `destinations`
@@ -1393,6 +1420,7 @@ Legend: **own** = row's profile column = `auth.uid()`; **dept** = `member_of(dep
 | car_issues | dept ∨ admin; **`is_car_responsible(car_id)`** (`car_issues_select_responsible`, may be outside the department) | **RPC only** — `report_car_issue()` (§6.6); the pre-portal direct `dept ∧ reported_by=own` policy was dropped 2026-09-09 (unused in `src/`) | admin ∨ sadran_any (resolve, any column); reporter of an open report: only `description`/`photo_path` — trigger `car_issues_protect_resolution_fields` also locks `status`/`resolved_by`/`resolved_at`/`is_unsafe`/`category`/`car_id`/`department_id`/`reported_by` (`20260910099800`) | admin |
 | car_care_events | `member_of(department_id)` (policy `car_care_events_select_member`, `20261024090000`, REQ §13.122 a: every department member reads the care log read-only) ∨ `is_car_responsible(car_id)` ∨ admin ∨ `reported_by = auth.uid()` (§6.6) | **RPC only** — `log_car_care()` | — (no update policy for any role; immutable in practice) | — |
 | car_odometer_readings | `member_of(department_id)` ∨ admin | **RPC only** — `log_car_kilometrage()` (member, monotonic), `set_car_kilometrage()` (`can_manage_car`, correction) | — | — |
+| car_tasks | `can_manage_car(car_id)` (members read via `my_car_tasks()`) | **RPC only** - `request_car_tasks()`, `withdraw_car_task()`, `complete_car_task()`, auto-completion in `log_car_care()`/`log_car_kilometrage()` | - | - |
 | destinations | approved users | admin; RPC `suggest_destination()` for members (inserts `is_approved=false`) | admin; RPC `merge_destination()` (admin-only, repoints references then deletes/deactivates the source, §6.1 item 14) | admin (RESTRICT if referenced) |
 | ride_types | approved users | admin | admin | — (deactivate) |
 | weekday_labels | approved users (`is_approved()`); global, not department-scoped | — (none) | — (none) | — (none) |

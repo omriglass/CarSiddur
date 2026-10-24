@@ -44,6 +44,9 @@ export type ErrorCode =
   | "tires_none_checked"
   | "kilometrage_lower_than_last"
   | "invalid_kilometrage"
+  | "task_note_required"
+  | "task_not_open"
+  | "task_not_found"
   | "maintenance_period_invalid"
   | "maintenance_in_past"
   | "maintenance_overlap"
@@ -339,6 +342,9 @@ const MESSAGE_TO_CODE: Record<string, ErrorCode> = {
   tires_none_checked: "tires_none_checked",
   kilometrage_lower_than_last: "kilometrage_lower_than_last",
   invalid_kilometrage: "invalid_kilometrage",
+  task_note_required: "task_note_required",
+  task_not_open: "task_not_open",
+  task_not_found: "task_not_found",
   push_unsupported: "push_unsupported",
   push_permission_denied: "push_permission_denied",
   push_vapid_key_invalid: "push_vapid_key_invalid",
@@ -475,6 +481,9 @@ const CODE_TO_MESSAGE: Record<ErrorCode, string> = {
   tires_none_checked: he.errors.tiresNoneChecked,
   kilometrage_lower_than_last: he.errors.kilometrageLowerThanLast,
   invalid_kilometrage: he.errors.invalidKilometrage,
+  task_note_required: he.carTasks.errors.noteRequired,
+  task_not_open: he.carTasks.errors.notOpen,
+  task_not_found: he.carTasks.errors.notFound,
   maintenance_period_invalid: he.maintenancePeriod.errors.invalid,
   maintenance_in_past: he.maintenancePeriod.errors.inPast,
   maintenance_overlap: he.maintenancePeriod.errors.overlap,

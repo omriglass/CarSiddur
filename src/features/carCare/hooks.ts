@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { carKeys } from "@/features/cars/keys";
+import { carTaskKeys } from "@/features/carTasks/keys";
 import { showErrorToast } from "@/lib/rpc";
 
 import { logCarCare, logCarKilometrage, reportCarIssue, setCarKilometrage } from "./api";
@@ -35,6 +36,7 @@ export function useLogCarCareMutation() {
     onSuccess: (_result, { carId }) => {
       void queryClient.invalidateQueries({ queryKey: carCareKeys.events(carId) });
       void queryClient.invalidateQueries({ queryKey: carKeys.careEvents(carId) });
+      void queryClient.invalidateQueries({ queryKey: carTaskKeys.all }); // a log completes the car's matching open task
     },
     onError: showErrorToast,
   });
@@ -48,6 +50,7 @@ export function useLogCarKilometrageMutation() {
     onSuccess: (_result, { carId }) => {
       void queryClient.invalidateQueries({ queryKey: carKeys.currentKm(carId) });
       void queryClient.invalidateQueries({ queryKey: carKeys.odometer(carId) });
+      void queryClient.invalidateQueries({ queryKey: carTaskKeys.all });
     },
     onError: showErrorToast,
   });

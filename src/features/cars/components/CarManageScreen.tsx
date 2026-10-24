@@ -1,7 +1,7 @@
 import { CarMaintenancePanel } from "@/features/fleet/components/CarMaintenancePanel";
 import { formatInTimeZone } from "date-fns-tz";
 import type { TireState } from "@/lib/enums";
-import { CarFront, Droplets, History as HistoryIcon, Route, Wrench } from "lucide-react";
+import { CarFront, ClipboardList, Droplets, History as HistoryIcon, Route, Wrench } from "lucide-react";
 import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
 
@@ -18,6 +18,8 @@ import { CarForm, type ResponsibleOption } from "@/features/admin/cars/component
 import type { Car } from "@/features/admin/cars/api";
 import { useAllDepartmentMembers, useAllProfiles } from "@/features/admin/members/hooks";
 import { CarNameWithReport } from "@/features/carCare/components/CarNameWithReport";
+import { CarTasksManagerCard } from "@/features/carTasks/components/CarTasksManagerCard";
+import { useCarTasksQuery } from "@/features/carTasks/hooks";
 import { he, tv } from "@/i18n/he";
 import { TZ } from "@/lib/time";
 
@@ -65,7 +67,7 @@ function TireDots({ tires }: { tires: NonNullable<CarHistoryEntry["tires"]> }) {
 
 function historyRow(entry: CarHistoryEntry) {
   const timestamp = formatInTimeZone(new Date(entry.createdAt), TZ, "dd/MM/yyyy HH:mm");
-  const icon = entry.kind === "issue" ? Wrench : entry.kind === "tire_fill" ? CarFront : entry.kind === "kilometrage" ? Route : Droplets;
+  const icon = entry.kind === "issue" ? Wrench : entry.kind === "tire_fill" ? CarFront : entry.kind === "kilometrage" ? Route : entry.kind === "task" ? ClipboardList : Droplets;
   const Icon = icon;
   return (
     <Card key={`${entry.kind}:${entry.id}`} className="bg-gradient-card shadow-card">
@@ -76,7 +78,7 @@ function historyRow(entry: CarHistoryEntry) {
         <div className="flex-1 space-y-1">
           <div className="flex items-center justify-between gap-2">
             <span className="font-medium">
-              {entry.kind === "issue" && entry.category ? he.carCare.category[entry.category] : he.carPage[
+              {entry.kind === "task" ? he.carTasks.historyKind : entry.kind === "issue" && entry.category ? he.carCare.category[entry.category] : he.carPage[
                 entry.kind === "issue"
                   ? "historyKindIssue"
                   : entry.kind === "tire_fill"
@@ -100,8 +102,20 @@ function historyRow(entry: CarHistoryEntry) {
           {entry.kind === "kilometrage" && entry.km !== undefined ? (
             <p className="text-foreground/80" dir="ltr" data-testid="car-history-km">{tv("carPage.historyKm", { km: formatKm(entry.km) })}</p>
           ) : null}
+          {entry.kind === "task" && entry.taskKind ? (
+            <>
+              <p className="text-foreground/80" data-testid="car-history-task">{entry.taskKind === "other" ? entry.note : he.carTasks.kind[entry.taskKind]}</p>
+              <p className="text-xs text-muted-foreground">
+                {entry.taskStatus === "done"
+                  ? tv("carTasks.statusDone", { name: entry.closedByName ?? "", date: entry.closedAt ? formatInTimeZone(new Date(entry.closedAt), TZ, "dd/MM/yyyy HH:mm") : "" })
+                  : entry.taskStatus === "withdrawn"
+                    ? tv("carTasks.statusWithdrawn", { date: entry.closedAt ? formatInTimeZone(new Date(entry.closedAt), TZ, "dd/MM/yyyy HH:mm") : "" })
+                    : he.carTasks.statusOpen}
+              </p>
+            </>
+          ) : null}
           {entry.kind === "tire_fill" && entry.tires ? <TireDots tires={entry.tires} /> : null}
-          {entry.note ? <p className="text-xs text-muted-foreground">{entry.note}</p> : null}
+          {entry.note && entry.kind !== "task" ? <p className="text-xs text-muted-foreground">{entry.note}</p> : null}
           <p className="text-xs text-muted-foreground">
             {he.carPage.historyReporter} {entry.reporterName ?? entry.reporterId}
           </p>
@@ -135,6 +149,7 @@ export function CarManageScreen({ car, isAdmin, canEdit, canManageCar, viewerNam
   const careEventsQuery = useCarCareHistoryQuery(car.id);
   const odometerQuery = useCarOdometerHistoryQuery(car.id);
   const currentKmQuery = useCarCurrentKmQuery(car.id);
+  const tasksQuery = useCarTasksQuery(car.id, canManageCar);
   // Department-members combobox candidates for the responsible-person picker — only fetched (and only
   // rendered as a picker by `CarForm`) when the viewer is an admin; the responsible viewer sees their
   // own name read-only, no fetch needed (`car.responsible_id` already is their own id).
@@ -156,7 +171,7 @@ export function CarManageScreen({ car, isAdmin, canEdit, canManageCar, viewerNam
       .filter((option, index, all) => all.findIndex((o) => o.id === option.id) === index);
   }, [isAdmin, car.responsible_id, car.department_id, viewerName, deptMembersQuery.data, profilesQuery.data]);
 
-  const merged = mergeCarHistory(issuesQuery.data ?? [], careEventsQuery.data ?? [], odometerQuery.data ?? []);
+  const merged = mergeCarHistory(issuesQuery.data ?? [], careEventsQuery.data ?? [], odometerQuery.data ?? [], tasksQuery.data ?? []);
   const filtered = filterCarHistory(merged, filter, { from: dateFrom || undefined, to: dateTo || undefined });
   const historyLoading = issuesQuery.isLoading || careEventsQuery.isLoading || odometerQuery.isLoading;
   const historyError = issuesQuery.isError || careEventsQuery.isError || odometerQuery.isError;
@@ -167,6 +182,7 @@ export function CarManageScreen({ car, isAdmin, canEdit, canManageCar, viewerNam
     { value: "tire_fill", label: he.carPage.historyFilterTireFill },
     { value: "wash", label: he.carPage.historyFilterWash },
     { value: "kilometrage", label: he.carPage.historyFilterKilometrage },
+    ...(canManageCar ? [{ value: "task" as const, label: he.carTasks.historyFilter }] : []),
   ];
 
   return (
@@ -185,6 +201,8 @@ export function CarManageScreen({ car, isAdmin, canEdit, canManageCar, viewerNam
       />
 
       <CarKilometrageCard car={car} current={currentKmQuery.data ?? null} loading={currentKmQuery.isLoading} canCorrect={canManageCar} />
+
+      {canManageCar ? <CarTasksManagerCard car={car} /> : null}
 
       <CarPrivateSwitch car={car} canEdit={canEdit} />
 
@@ -252,6 +270,7 @@ export function CarManageScreen({ car, isAdmin, canEdit, canManageCar, viewerNam
             issues={issuesQuery.data ?? []}
             careEvents={careEventsQuery.data ?? []}
             odometer={odometerQuery.data ?? []}
+            tasks={tasksQuery.data ?? []}
             loading={historyLoading}
           />
         </TabsContent>

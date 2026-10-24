@@ -5,6 +5,7 @@ import { he } from "@/i18n/he";
 
 import { createCarWorkbook } from "../export/carWorkbook";
 
+import type { CarTaskRow } from "@/features/carTasks/api";
 import type { CarCareEventWithReporter, CarIssueWithReporter, CarOdometerReadingWithReporter } from "../api";
 
 interface CarExcelExportButtonProps {
@@ -12,13 +13,14 @@ interface CarExcelExportButtonProps {
   issues: readonly CarIssueWithReporter[];
   careEvents: readonly CarCareEventWithReporter[];
   odometer?: readonly CarOdometerReadingWithReporter[];
+  tasks?: readonly CarTaskRow[];
   loading?: boolean;
 }
 
 /** One workbook, four sheets ("תקלות"/"מילוי אוויר"/"שטיפות"/"קילומטראז׳"), same download pattern as `WeekExcelExportButton`. */
-export function CarExcelExportButton({ carName, issues, careEvents, odometer = [], loading = false }: CarExcelExportButtonProps) {
+export function CarExcelExportButton({ carName, issues, careEvents, odometer = [], tasks = [], loading = false }: CarExcelExportButtonProps) {
   function download() {
-    const bytes = createCarWorkbook(issues, careEvents, odometer);
+    const bytes = createCarWorkbook(issues, careEvents, odometer, tasks);
     const blob = new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");

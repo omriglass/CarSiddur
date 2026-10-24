@@ -38,6 +38,8 @@ export interface CarReportDialogProps {
   carName: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Opens straight on one flow (REQ item 150 b: a car task's button), "back" still leads to the menu. */
+  initialView?: "tires" | "wash" | "km";
 }
 
 /**
@@ -47,8 +49,8 @@ export interface CarReportDialogProps {
  * fields need a picker portal today, but the dialog-hosting convention is
  * "use it unless proven unnecessary", CLAUDE.md Conventions).
  */
-export function CarReportDialog({ carId, carName, open, onOpenChange }: CarReportDialogProps) {
-  const [view, setView] = useState<View>("home");
+export function CarReportDialog({ carId, carName, open, onOpenChange, initialView }: CarReportDialogProps) {
+  const [view, setView] = useState<View>(initialView ?? "home");
   const [tires, setTires] = useState(DEFAULT_TIRE_STATES);
   const [tireNote, setTireNote] = useState("");
   const [kmText, setKmText] = useState("");
@@ -70,7 +72,7 @@ export function CarReportDialog({ carId, carName, open, onOpenChange }: CarRepor
   function handleOpenChange(next: boolean) {
     onOpenChange(next);
     if (!next) {
-      setView("home");
+      setView(initialView ?? "home");
       setTires(DEFAULT_TIRE_STATES);
       setTireNote("");
       setKmText("");

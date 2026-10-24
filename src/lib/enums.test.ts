@@ -41,12 +41,14 @@ const ARRAYS: Record<string, { array: readonly string[]; schema: { options: read
   PUSH_OUTBOX_STATUSES: { array: enums.PUSH_OUTBOX_STATUSES, schema: enums.pushOutboxStatusSchema },
   ANSWER_CHANNELS: { array: enums.ANSWER_CHANNELS, schema: enums.answerChannelSchema },
   AUDIT_ACTIONS: { array: enums.AUDIT_ACTIONS, schema: enums.auditActionSchema },
+  CAR_TASK_KINDS: { array: enums.CAR_TASK_KINDS, schema: enums.carTaskKindSchema },
+  CAR_TASK_STATUSES: { array: enums.CAR_TASK_STATUSES, schema: enums.carTaskStatusSchema },
   WAITLIST_GROUP_STATUSES: { array: enums.WAITLIST_GROUP_STATUSES, schema: enums.waitlistGroupStatusSchema },
 };
 
 describe("enums.ts arrays", () => {
-  it("covers the 29 canonical notification events (UX_FLOWS.md §6.1)", () => {
-    expect(enums.NOTIFICATION_EVENTS).toHaveLength(29);
+  it("covers the 30 canonical notification events (UX_FLOWS.md §6.1)", () => {
+    expect(enums.NOTIFICATION_EVENTS).toHaveLength(30);
   });
 
   it("orders week_phase with upcoming first (2026-09-10 alter type … add value … before 'open')", () => {

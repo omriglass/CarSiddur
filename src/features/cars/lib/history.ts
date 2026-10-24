@@ -1,8 +1,9 @@
 import { dateKey } from "@/lib/time";
 
+import type { CarTaskRow } from "@/features/carTasks/api";
 import type { CarCareEventWithReporter, CarIssueWithReporter, CarOdometerReadingWithReporter } from "../api";
 
-import type { CarIssueCategory, CarIssueStatus, CarOdometerKind, TireState } from "@/lib/enums";
+import type { CarIssueCategory, CarIssueStatus, CarOdometerKind, CarTaskKind, CarTaskStatus, TireState } from "@/lib/enums";
 
 export interface TireStates {
   front_left: TireState;
@@ -28,7 +29,7 @@ export function parseTireStates(value: unknown): TireStates | null {
 }
 
 /** One row of the merged, date-descending car history list (`CarManageScreen`'s History section). */
-export type CarHistoryKind = "issue" | "tire_fill" | "wash" | "kilometrage";
+export type CarHistoryKind = "issue" | "tire_fill" | "wash" | "kilometrage" | "task";
 
 export interface CarHistoryEntry {
   id: string;
@@ -45,6 +46,11 @@ export interface CarHistoryEntry {
   /** `kilometrage` entries: the odometer value and whether it is a member's reading or a manager's correction. */
   km?: number;
   odometerKind?: CarOdometerKind;
+  /** `task` entries (REQ item 150 b): what was asked, how it ended and by whom. */
+  taskKind?: CarTaskKind;
+  taskStatus?: CarTaskStatus;
+  closedAt?: string | null;
+  closedByName?: string | null;
 }
 
 /** Merges issues, care events and kilometrage readings into one date-descending list, `id` tie-break for determinism. */
@@ -52,6 +58,7 @@ export function mergeCarHistory(
   issues: readonly CarIssueWithReporter[],
   careEvents: readonly CarCareEventWithReporter[],
   odometer: readonly CarOdometerReadingWithReporter[] = [],
+  tasks: readonly CarTaskRow[] = [],
 ): CarHistoryEntry[] {
   const entries: CarHistoryEntry[] = [
     ...issues.map((issue) => ({
@@ -83,6 +90,18 @@ export function mergeCarHistory(
       km: reading.km,
       odometerKind: reading.kind,
       note: reading.note,
+    })),
+    ...tasks.map((task) => ({
+      id: task.id,
+      kind: "task" as const,
+      createdAt: task.requested_at,
+      reporterId: task.requested_by,
+      reporterName: task.requested_by_profile?.full_name ?? null,
+      taskKind: task.kind,
+      taskStatus: task.status,
+      note: task.note,
+      closedAt: task.status === "done" ? task.done_at : task.withdrawn_at,
+      closedByName: task.done_by_profile?.full_name ?? null,
     })),
   ];
   return entries.sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));

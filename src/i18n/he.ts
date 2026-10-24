@@ -842,6 +842,7 @@ export const he = {
     access_approved: "ההרשמה אושרה",
     status_changed: "שינוי בסטטוס או בתפקיד",
     car_care: "טיפול ברכב",
+    car_task: "משימה לפני הנסיעה ברכב",
     waitlist_contested: "רשימת המתנה משותפת",
     waitlist_resolved: "רשימת ההמתנה הוסדרה",
     window_changed: "מועד סגירת הבקשות השתנה",

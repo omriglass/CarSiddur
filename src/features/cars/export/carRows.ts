@@ -4,6 +4,7 @@ import { he } from "@/i18n/he";
 
 import { parseTireStates, type TireStates } from "../lib/history";
 
+import type { CarTaskRow } from "@/features/carTasks/api";
 import type { CarCareEventWithReporter, CarIssueWithReporter, CarOdometerReadingWithReporter } from "../api";
 
 import type { TireState } from "@/lib/enums";
@@ -90,15 +91,34 @@ export function kilometrageRows(readings: readonly CarOdometerReadingWithReporte
   ];
 }
 
+/** "בקשות מהנוסע הבא" sheet rows (REQ item 150 b): asked, by whom, how it ended and when. */
+export function taskRows(tasks: readonly CarTaskRow[]): ExcelCell[][] {
+  const t = he.carTasks;
+  return [
+    [copy.exportColumnDate, copy.exportColumnReporter, t.exportColumnTask, copy.exportColumnNote, t.exportColumnStatus, t.exportColumnDoneBy, t.exportColumnClosedAt],
+    ...tasks.map((task) => [
+      jerusalemExcelDate(task.requested_at),
+      task.requested_by_profile?.full_name ?? task.requested_by,
+      t.kind[task.kind],
+      task.note,
+      task.status === "done" ? t.exportStatusDone : task.status === "withdrawn" ? t.exportStatusWithdrawn : t.exportStatusOpen,
+      task.done_by_profile?.full_name ?? null,
+      task.status === "done" && task.done_at ? jerusalemExcelDate(task.done_at) : task.status === "withdrawn" && task.withdrawn_at ? jerusalemExcelDate(task.withdrawn_at) : null,
+    ]),
+  ];
+}
+
 export function carExportSheets(
   issues: readonly CarIssueWithReporter[],
   careEvents: readonly CarCareEventWithReporter[],
   odometer: readonly CarOdometerReadingWithReporter[] = [],
+  tasks: readonly CarTaskRow[] = [],
 ): ExcelSheet[] {
   return [
     { name: copy.exportIssuesSheet, rows: issueRows(issues) },
     { name: copy.exportTireFillsSheet, rows: tireFillRows(careEvents) },
     { name: copy.exportWashesSheet, rows: washRows(careEvents) },
     { name: copy.exportKilometrageSheet, rows: kilometrageRows(odometer) },
+    { name: he.carTasks.exportSheet, rows: taskRows(tasks) },
   ];
 }

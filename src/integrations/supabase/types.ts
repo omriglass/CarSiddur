@@ -260,6 +260,302 @@ export type Database = {
           },
         ]
       }
+      car_checklist_answers: {
+        Row: {
+          answer_bool: boolean | null
+          answer_date: string | null
+          answer_number: number | null
+          car_id: string
+          checklist_id: string
+          created_at: string
+          department_id: string
+          id: string
+          item_id: string | null
+          kind: Database["public"]["Enums"]["car_checklist_item_kind"]
+          label: string
+          note: string | null
+          outcome: string
+          position: number
+          required: boolean
+          updated_at: string
+        }
+        Insert: {
+          answer_bool?: boolean | null
+          answer_date?: string | null
+          answer_number?: number | null
+          car_id: string
+          checklist_id: string
+          created_at?: string
+          department_id: string
+          id?: string
+          item_id?: string | null
+          kind: Database["public"]["Enums"]["car_checklist_item_kind"]
+          label: string
+          note?: string | null
+          outcome: string
+          position: number
+          required: boolean
+          updated_at?: string
+        }
+        Update: {
+          answer_bool?: boolean | null
+          answer_date?: string | null
+          answer_number?: number | null
+          car_id?: string
+          checklist_id?: string
+          created_at?: string
+          department_id?: string
+          id?: string
+          item_id?: string | null
+          kind?: Database["public"]["Enums"]["car_checklist_item_kind"]
+          label?: string
+          note?: string | null
+          outcome?: string
+          position?: number
+          required?: boolean
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "car_checklist_answers_car_id_fkey"
+            columns: ["car_id"]
+            isOneToOne: false
+            referencedRelation: "cars"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "car_checklist_answers_checklist_id_fkey"
+            columns: ["checklist_id"]
+            isOneToOne: false
+            referencedRelation: "car_checklist_status"
+            referencedColumns: ["checklist_id"]
+          },
+          {
+            foreignKeyName: "car_checklist_answers_checklist_id_fkey"
+            columns: ["checklist_id"]
+            isOneToOne: false
+            referencedRelation: "car_checklists"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "car_checklist_answers_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "car_checklist_answers_item_id_fkey"
+            columns: ["item_id"]
+            isOneToOne: false
+            referencedRelation: "car_checklist_items"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      car_checklist_date_reminders: {
+        Row: {
+          car_id: string
+          date_value: string
+          department_id: string
+          item_id: string
+          sent_at: string
+        }
+        Insert: {
+          car_id: string
+          date_value: string
+          department_id: string
+          item_id: string
+          sent_at?: string
+        }
+        Update: {
+          car_id?: string
+          date_value?: string
+          department_id?: string
+          item_id?: string
+          sent_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "car_checklist_date_reminders_car_id_fkey"
+            columns: ["car_id"]
+            isOneToOne: false
+            referencedRelation: "cars"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "car_checklist_date_reminders_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "car_checklist_date_reminders_item_id_fkey"
+            columns: ["item_id"]
+            isOneToOne: false
+            referencedRelation: "car_checklist_items"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      car_checklist_items: {
+        Row: {
+          active: boolean
+          created_at: string
+          department_id: string
+          id: string
+          kind: Database["public"]["Enums"]["car_checklist_item_kind"]
+          label: string
+          position: number
+          remind_days_before: number | null
+          required: boolean
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          department_id: string
+          id?: string
+          kind: Database["public"]["Enums"]["car_checklist_item_kind"]
+          label: string
+          position?: number
+          remind_days_before?: number | null
+          required?: boolean
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          department_id?: string
+          id?: string
+          kind?: Database["public"]["Enums"]["car_checklist_item_kind"]
+          label?: string
+          position?: number
+          remind_days_before?: number | null
+          required?: boolean
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "car_checklist_items_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      car_checklist_prompts: {
+        Row: {
+          car_id: string
+          created_at: string
+          department_id: string
+          done_at: string | null
+          profile_id: string
+          requested_at: string
+          updated_at: string
+        }
+        Insert: {
+          car_id: string
+          created_at?: string
+          department_id: string
+          done_at?: string | null
+          profile_id: string
+          requested_at?: string
+          updated_at?: string
+        }
+        Update: {
+          car_id?: string
+          created_at?: string
+          department_id?: string
+          done_at?: string | null
+          profile_id?: string
+          requested_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "car_checklist_prompts_car_id_fkey"
+            columns: ["car_id"]
+            isOneToOne: true
+            referencedRelation: "cars"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "car_checklist_prompts_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "car_checklist_prompts_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      car_checklists: {
+        Row: {
+          car_id: string
+          completed_at: string
+          completed_by: string
+          created_at: string
+          department_id: string
+          failures: Json
+          green: boolean
+          id: string
+          updated_at: string
+        }
+        Insert: {
+          car_id: string
+          completed_at?: string
+          completed_by: string
+          created_at?: string
+          department_id: string
+          failures?: Json
+          green: boolean
+          id?: string
+          updated_at?: string
+        }
+        Update: {
+          car_id?: string
+          completed_at?: string
+          completed_by?: string
+          created_at?: string
+          department_id?: string
+          failures?: Json
+          green?: boolean
+          id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "car_checklists_car_id_fkey"
+            columns: ["car_id"]
+            isOneToOne: false
+            referencedRelation: "cars"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "car_checklists_completed_by_fkey"
+            columns: ["completed_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "car_checklists_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       car_issues: {
         Row: {
           car_id: string
@@ -478,6 +774,198 @@ export type Database = {
             columns: ["car_id"]
             isOneToOne: false
             referencedRelation: "cars"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      car_task_notices: {
+        Row: {
+          notification_id: string | null
+          notified_at: string
+          profile_id: string
+          ride_id: string
+        }
+        Insert: {
+          notification_id?: string | null
+          notified_at?: string
+          profile_id: string
+          ride_id: string
+        }
+        Update: {
+          notification_id?: string | null
+          notified_at?: string
+          profile_id?: string
+          ride_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "car_task_notices_notification_id_fkey"
+            columns: ["notification_id"]
+            isOneToOne: false
+            referencedRelation: "notifications"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "car_task_notices_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "car_task_notices_ride_id_fkey"
+            columns: ["ride_id"]
+            isOneToOne: false
+            referencedRelation: "rides"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "car_task_notices_ride_id_fkey"
+            columns: ["ride_id"]
+            isOneToOne: false
+            referencedRelation: "v_board_rides"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "car_task_notices_ride_id_fkey"
+            columns: ["ride_id"]
+            isOneToOne: false
+            referencedRelation: "v_car_locations"
+            referencedColumns: ["leaving_ride_id"]
+          },
+          {
+            foreignKeyName: "car_task_notices_ride_id_fkey"
+            columns: ["ride_id"]
+            isOneToOne: false
+            referencedRelation: "v_my_requests"
+            referencedColumns: ["ride_id"]
+          },
+          {
+            foreignKeyName: "car_task_notices_ride_id_fkey"
+            columns: ["ride_id"]
+            isOneToOne: false
+            referencedRelation: "v_ride_car_neighbours"
+            referencedColumns: ["next_ride_id"]
+          },
+          {
+            foreignKeyName: "car_task_notices_ride_id_fkey"
+            columns: ["ride_id"]
+            isOneToOne: false
+            referencedRelation: "v_ride_car_neighbours"
+            referencedColumns: ["prev_ride_id"]
+          },
+          {
+            foreignKeyName: "car_task_notices_ride_id_fkey"
+            columns: ["ride_id"]
+            isOneToOne: false
+            referencedRelation: "v_ride_car_neighbours"
+            referencedColumns: ["ride_id"]
+          },
+        ]
+      }
+      car_tasks: {
+        Row: {
+          car_id: string
+          created_at: string
+          department_id: string
+          done_at: string | null
+          done_by: string | null
+          done_care_event_id: string | null
+          done_odometer_reading_id: string | null
+          id: string
+          kind: Database["public"]["Enums"]["car_task_kind"]
+          note: string | null
+          requested_at: string
+          requested_by: string
+          status: Database["public"]["Enums"]["car_task_status"]
+          updated_at: string
+          withdrawn_at: string | null
+          withdrawn_by: string | null
+        }
+        Insert: {
+          car_id: string
+          created_at?: string
+          department_id: string
+          done_at?: string | null
+          done_by?: string | null
+          done_care_event_id?: string | null
+          done_odometer_reading_id?: string | null
+          id?: string
+          kind: Database["public"]["Enums"]["car_task_kind"]
+          note?: string | null
+          requested_at?: string
+          requested_by: string
+          status?: Database["public"]["Enums"]["car_task_status"]
+          updated_at?: string
+          withdrawn_at?: string | null
+          withdrawn_by?: string | null
+        }
+        Update: {
+          car_id?: string
+          created_at?: string
+          department_id?: string
+          done_at?: string | null
+          done_by?: string | null
+          done_care_event_id?: string | null
+          done_odometer_reading_id?: string | null
+          id?: string
+          kind?: Database["public"]["Enums"]["car_task_kind"]
+          note?: string | null
+          requested_at?: string
+          requested_by?: string
+          status?: Database["public"]["Enums"]["car_task_status"]
+          updated_at?: string
+          withdrawn_at?: string | null
+          withdrawn_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "car_tasks_car_id_fkey"
+            columns: ["car_id"]
+            isOneToOne: false
+            referencedRelation: "cars"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "car_tasks_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "car_tasks_done_by_fkey"
+            columns: ["done_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "car_tasks_done_care_event_id_fkey"
+            columns: ["done_care_event_id"]
+            isOneToOne: false
+            referencedRelation: "car_care_events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "car_tasks_done_odometer_reading_id_fkey"
+            columns: ["done_odometer_reading_id"]
+            isOneToOne: false
+            referencedRelation: "car_odometer_readings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "car_tasks_requested_by_fkey"
+            columns: ["requested_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "car_tasks_withdrawn_by_fkey"
+            columns: ["withdrawn_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
         ]
@@ -4227,6 +4715,40 @@ export type Database = {
       }
     }
     Views: {
+      car_checklist_status: {
+        Row: {
+          car_id: string | null
+          checklist_id: string | null
+          completed_at: string | null
+          completed_by: string | null
+          department_id: string | null
+          failures: Json | null
+          green: boolean | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "car_checklists_car_id_fkey"
+            columns: ["car_id"]
+            isOneToOne: false
+            referencedRelation: "cars"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "car_checklists_completed_by_fkey"
+            columns: ["completed_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "car_checklists_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       car_current_km: {
         Row: {
           car_id: string | null
@@ -4720,6 +5242,43 @@ export type Database = {
         Returns: boolean
       }
       _car_last_km: { Args: { p_car_id: string }; Returns: number }
+      _car_task_label: {
+        Args: {
+          p_kind: Database["public"]["Enums"]["car_task_kind"]
+          p_note: string
+        }
+        Returns: string
+      }
+      _car_task_notice_tasks: { Args: { p_ride_id: string }; Returns: string }
+      _car_tasks_for_profile: {
+        Args: { p_now: string; p_profile_id: string }
+        Returns: {
+          car_id: string
+          car_name: string
+          department_id: string
+          kind: Database["public"]["Enums"]["car_task_kind"]
+          note: string
+          requested_at: string
+          requested_by: string
+          requested_by_name: string
+          ride_ends_at: string
+          ride_id: string
+          ride_starts_at: string
+          task_id: string
+          window_ends_at: string
+          window_starts_at: string
+        }[]
+      }
+      _complete_car_tasks: {
+        Args: {
+          p_by: string
+          p_car_id: string
+          p_care_event_id?: string
+          p_kind: Database["public"]["Enums"]["car_task_kind"]
+          p_odometer_id?: string
+        }
+        Returns: number
+      }
       _convert_to_alternative: {
         Args: { p_dep: string; p_request_id: string; p_ret: string }
         Returns: string
@@ -4915,6 +5474,10 @@ export type Database = {
         Args: { p_request_id: string; p_ride_id: string }
         Returns: string
       }
+      _refresh_car_task_notices: {
+        Args: { p_car_id: string }
+        Returns: undefined
+      }
       _request_booked_times: {
         Args: { p_request: string }
         Returns: {
@@ -4991,6 +5554,7 @@ export type Database = {
           request_id: string
         }[]
       }
+      _ride_task_people: { Args: { p_ride_id: string }; Returns: string[] }
       _round_up_ride_end: {
         Args: { p_end: string; p_start: string }
         Returns: string
@@ -5167,6 +5731,10 @@ export type Database = {
         Args: { p_end: string; p_start: string }
         Returns: undefined
       }
+      can_define_car_checklist: {
+        Args: { p_department_id: string }
+        Returns: boolean
+      }
       can_edit_request: { Args: { p_request: string }; Returns: boolean }
       can_manage_any_open_week: {
         Args: { p_department_id: string }
@@ -5307,6 +5875,7 @@ export type Database = {
         Args: { p_department_id: string; p_week_start: string }
         Returns: undefined
       }
+      complete_car_task: { Args: { p_task_id: string }; Returns: undefined }
       compute_week_stats: {
         Args: { p_department_id: string; p_week_start: string }
         Returns: undefined
@@ -5381,6 +5950,10 @@ export type Database = {
       day_date_label:
         | { Args: { _at: string }; Returns: string }
         | { Args: { _d: string }; Returns: string }
+      delete_car_checklist_item: {
+        Args: { p_item_id: string }
+        Returns: undefined
+      }
       delete_car_maintenance: {
         Args: { p_block_id: string }
         Returns: undefined
@@ -5623,6 +6196,10 @@ export type Database = {
         Args: { _car: string; _week: string }
         Returns: undefined
       }
+      move_car_checklist_item: {
+        Args: { p_direction: number; p_item_id: string }
+        Returns: undefined
+      }
       move_series: {
         Args: {
           p_expected_version?: number
@@ -5630,6 +6207,25 @@ export type Database = {
           p_series_id: string
         }
         Returns: Json
+      }
+      my_car_tasks: {
+        Args: never
+        Returns: {
+          car_id: string
+          car_name: string
+          department_id: string
+          kind: Database["public"]["Enums"]["car_task_kind"]
+          note: string
+          requested_at: string
+          requested_by: string
+          requested_by_name: string
+          ride_ends_at: string
+          ride_id: string
+          ride_starts_at: string
+          task_id: string
+          window_ends_at: string
+          window_starts_at: string
+        }[]
       }
       my_co_guardians: {
         Args: { p_department_id: string }
@@ -5989,6 +6585,14 @@ export type Database = {
         Returns: boolean
       }
       request_booking_info: { Args: { p_request_id: string }; Returns: Json }
+      request_car_tasks: {
+        Args: {
+          p_car_id: string
+          p_kinds: Database["public"]["Enums"]["car_task_kind"][]
+          p_note?: string
+        }
+        Returns: number
+      }
       request_covered_legs: {
         Args: { p_request_id: string }
         Returns: string[]
@@ -6167,6 +6771,11 @@ export type Database = {
       }
       sadranim_of: { Args: { _dept: string; _week: string }; Returns: string[] }
       save_request_template: { Args: { p_request_id: string }; Returns: string }
+      send_car_checklist_date_reminders: {
+        Args: { p_now?: string }
+        Returns: undefined
+      }
+      send_car_task_notices: { Args: { p_now?: string }; Returns: undefined }
       send_draft_proposals: {
         Args: {
           p_days?: string[]
@@ -6281,6 +6890,10 @@ export type Database = {
         Args: { p_template_id: string }
         Returns: undefined
       }
+      submit_car_checklist: {
+        Args: { p_answers: Json; p_car_id: string }
+        Returns: Json
+      }
       submit_request: { Args: { payload: Json }; Returns: Json }
       submit_series_request: { Args: { payload: Json }; Returns: Json }
       suggest_destination: {
@@ -6341,6 +6954,18 @@ export type Database = {
       update_ride_public_notes: {
         Args: { p_expected_version: number; p_notes: string; p_ride_id: string }
         Returns: undefined
+      }
+      upsert_car_checklist_item: {
+        Args: {
+          p_active?: boolean
+          p_department_id: string
+          p_item_id: string
+          p_kind: Database["public"]["Enums"]["car_checklist_item_kind"]
+          p_label: string
+          p_remind_days_before: number
+          p_required: boolean
+        }
+        Returns: string
       }
       validate_policy_rules: { Args: { _rules: Json }; Returns: boolean }
       validate_proposal_payload: {
@@ -6433,6 +7058,7 @@ export type Database = {
         Args: { p_department_id: string; p_week_start: string }
         Returns: number
       }
+      withdraw_car_task: { Args: { p_task_id: string }; Returns: undefined }
       withdraw_duplicate_request: {
         Args: { p_expected_version: number; p_request_id: string }
         Returns: Json
@@ -6452,6 +7078,7 @@ export type Database = {
       approval_status: "pending" | "approved" | "blocked"
       audit_action: "insert" | "update" | "delete"
       car_care_kind: "tire_fill" | "wash"
+      car_checklist_item_kind: "yes_no" | "number" | "date"
       car_issue_category:
         | "warning_light"
         | "mechanical"
@@ -6460,6 +7087,8 @@ export type Database = {
       car_issue_status: "open" | "resolved"
       car_odometer_kind: "reading" | "correction"
       car_status: "active" | "maintenance" | "retired"
+      car_task_kind: "tire_fill" | "wash" | "kilometrage" | "other"
+      car_task_status: "open" | "done" | "withdrawn"
       car_type: "shared" | "temporary"
       freed_claim_status:
         | "offered"
@@ -6507,6 +7136,7 @@ export type Database = {
         | "test_notification"
         | "companion_added"
         | "changelog"
+        | "car_task"
       party_response: "pending" | "accepted" | "declined"
       proposal_status:
         | "draft"
@@ -6687,6 +7317,7 @@ export const Constants = {
       approval_status: ["pending", "approved", "blocked"],
       audit_action: ["insert", "update", "delete"],
       car_care_kind: ["tire_fill", "wash"],
+      car_checklist_item_kind: ["yes_no", "number", "date"],
       car_issue_category: [
         "warning_light",
         "mechanical",
@@ -6696,6 +7327,8 @@ export const Constants = {
       car_issue_status: ["open", "resolved"],
       car_odometer_kind: ["reading", "correction"],
       car_status: ["active", "maintenance", "retired"],
+      car_task_kind: ["tire_fill", "wash", "kilometrage", "other"],
+      car_task_status: ["open", "done", "withdrawn"],
       car_type: ["shared", "temporary"],
       freed_claim_status: [
         "offered",
@@ -6745,6 +7378,7 @@ export const Constants = {
         "test_notification",
         "companion_added",
         "changelog",
+        "car_task",
       ],
       party_response: ["pending", "accepted", "declined"],
       proposal_status: [

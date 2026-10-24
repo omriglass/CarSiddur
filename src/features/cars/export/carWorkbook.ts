@@ -2,6 +2,7 @@ import { createXlsx } from "@/lib/xlsx";
 
 import { carExportSheets } from "./carRows";
 
+import type { CarTaskRow } from "@/features/carTasks/api";
 import type { CarCareEventWithReporter, CarIssueWithReporter, CarOdometerReadingWithReporter } from "../api";
 
 /** Same writer as `WeekExcelExportButton` (`src/lib/xlsx.ts`): stored-zip OpenXML, RTL sheet view, no macros/formulas. */
@@ -9,6 +10,7 @@ export function createCarWorkbook(
   issues: readonly CarIssueWithReporter[],
   careEvents: readonly CarCareEventWithReporter[],
   odometer: readonly CarOdometerReadingWithReporter[] = [],
+  tasks: readonly CarTaskRow[] = [],
 ): Uint8Array<ArrayBuffer> {
-  return createXlsx(carExportSheets(issues, careEvents, odometer));
+  return createXlsx(carExportSheets(issues, careEvents, odometer, tasks));
 }

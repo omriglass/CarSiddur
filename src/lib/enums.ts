@@ -298,6 +298,28 @@ export const carCareKindSchema = z.enum(CAR_CARE_KINDS);
 assertSameEnum<CarCareKind, Enums<"car_care_kind">>();
 
 // ---------------------------------------------------------------------------
+// car_task_kind / car_task_status (REQ item 150 b)
+// ---------------------------------------------------------------------------
+export const CAR_TASK_KINDS = [
+  "tire_fill",
+  "wash",
+  "kilometrage",
+  "other",
+] as const satisfies readonly Enums<"car_task_kind">[];
+export type CarTaskKind = (typeof CAR_TASK_KINDS)[number];
+export const carTaskKindSchema = z.enum(CAR_TASK_KINDS);
+assertSameEnum<CarTaskKind, Enums<"car_task_kind">>();
+
+export const CAR_TASK_STATUSES = [
+  "open",
+  "done",
+  "withdrawn",
+] as const satisfies readonly Enums<"car_task_status">[];
+export type CarTaskStatus = (typeof CAR_TASK_STATUSES)[number];
+export const carTaskStatusSchema = z.enum(CAR_TASK_STATUSES);
+assertSameEnum<CarTaskStatus, Enums<"car_task_status">>();
+
+// ---------------------------------------------------------------------------
 // car_odometer_kind (REQ item 150 c): a member's reading vs a manager's correction
 // ---------------------------------------------------------------------------
 export const CAR_ODOMETER_KINDS = [
@@ -401,6 +423,7 @@ export const NOTIFICATION_EVENTS = [
   "access_approved",
   "status_changed",
   "car_care",
+  "car_task",
   "waitlist_contested",
   "waitlist_resolved",
   "window_changed",
