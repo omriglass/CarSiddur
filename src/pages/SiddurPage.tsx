@@ -147,7 +147,7 @@ export function SiddurPage() {
   const weeks = weeksQuery.data ?? [];
   const resolvedWeek = params.week ? weeks.find((w) => w.week_start === params.week) ?? null : resolveSiddurWeek(weeks);
   const weekStart = resolvedWeek?.week_start;
-  const { isSadran } = useIsSadran(departmentId, weekStart);
+  const { isSadran, isLoading: isSadranLoading } = useIsSadran(departmentId, weekStart);
   const coordinatorRequestsQuery = useWeekRequestsWithNames(isSadran ? departmentId : undefined, weekStart);
   const myRequestsQuery = useMyRequests();
   const coordinatorRequests = isSadran ? coordinatorRequestsQuery.data ?? [] : [];
@@ -189,7 +189,7 @@ export function SiddurPage() {
 
   const isMyDepartment = (myDepartmentsQuery.data ?? []).some((d) => d.department_id === departmentId);
   // REQ item 149: show other people's changes to this week without a reload (Sadran: every change; members: what they can see).
-  useWeekChangeWatch(departmentId, weekStart ? [weekStart] : [], isSadran ? "sadran" : "public", { realtime: isMyDepartment || isSadran });
+  useWeekChangeWatch(departmentId, weekStart ? [weekStart] : [], isSadran ? "sadran" : "public", { realtime: isMyDepartment || isSadran, gate: !isSadranLoading });
   const homeDestinationId = (departmentsQuery.data ?? []).find((d) => d.id === departmentId)?.home_destination_id ?? null;
 
   const rides = boardRidesQuery.data ?? [];

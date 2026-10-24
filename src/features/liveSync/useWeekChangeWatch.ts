@@ -1,7 +1,9 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { errorToReport, reportClientError } from "@/features/diagnostics/reportClientError";
+
+import { registerWatch } from "@/lib/counterGate";
 
 import { fetchWeekChangeSeqs } from "./api";
 import { invalidateWatchedChange } from "./invalidation";
@@ -21,6 +23,12 @@ function markLive(live: boolean): void {
 export interface WeekChangeWatchOptions {
   /** May this screen open live channels (the viewer is a member/Sadran of the department)? Default true. */
   realtime?: boolean;
+  /**
+   * Does this scope's counter fully describe what the viewer reads (default true)? When it does, the
+   * week's ride/board queries skip their focus refetch while this watcher runs (`lib/counterGate.ts`).
+   * False for a manager on a public-scope screen (draft rides never move `public_seq`) or while the role is unknown.
+   */
+  gate?: boolean;
 }
 
 /**
@@ -38,13 +46,22 @@ export function useWeekChangeWatch(
   const client = useQueryClient();
   const weeksKey = [...new Set(weeks)].sort().join(",");
   const realtime = options.realtime ?? true;
+  const gate = options.gate ?? true;
+  // Returning to the tab re-renders the screen: clock-derived marks (now/past, car-now, tight "!") are computed
+  // in render from the clock, and the focus refetch that used to re-render it is skipped for counter-covered queries.
+  const [, setReturns] = useState(0);
 
   useEffect(() => {
     if (!departmentId || !weeksKey) return;
+    const gateHandle = registerWatch({ departmentId, weeks: weeksKey.split(","), scope, gate });
     const watcher = new ChangeWatcher(
       { departmentId, weeks: weeksKey.split(","), scope, realtime },
       {
-        fetchSeqs: fetchWeekChangeSeqs,
+        fetchSeqs: async (dept, weekList) => {
+          const rows = await fetchWeekChangeSeqs(dept, weekList);
+          gateHandle.markReady();
+          return rows;
+        },
         subscribe: (dept, week, watchScope, handlers) =>
           subscribeWeekTopic(dept, week, watchScope, {
             onStatus: handlers.onStatus,
@@ -62,7 +79,11 @@ export function useWeekChangeWatch(
         random: Math.random,
       },
     );
-    const onVisibility = () => watcher.setVisible(document.visibilityState === "visible");
+    const onVisibility = () => {
+      const visible = document.visibilityState === "visible";
+      if (visible) setReturns((n) => n + 1);
+      watcher.setVisible(visible);
+    };
     const onOnline = () => watcher.online();
     document.addEventListener("visibilitychange", onVisibility);
     window.addEventListener("online", onOnline);
@@ -71,6 +92,7 @@ export function useWeekChangeWatch(
       document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("online", onOnline);
       watcher.stop();
+      gateHandle.unregister();
     };
-  }, [client, departmentId, weeksKey, scope, realtime]);
+  }, [client, departmentId, weeksKey, scope, realtime, gate]);
 }

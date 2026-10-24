@@ -16,6 +16,7 @@ import { CardListSkeleton } from "@/components/skeletons/CardListSkeleton";
 import { StatusBadge } from "@/components/StatusBadge";
 import { formatWeekRangeLabel } from "@/components/dateFieldDates";
 import { useProfile } from "@/features/auth/useProfile";
+import { useIsSadranAnywhere } from "@/features/auth/useIsSadran";
 import { DeviceSetupPrompts } from "@/features/member/components/DeviceSetupPrompts";
 import { useMyResponsibleCarsQuery } from "@/features/cars/hooks";
 import { isRideRelated, relatedRequestIdToEdit } from "@/features/rides/relatedRide";
@@ -120,6 +121,8 @@ export function HomePage() {
   // ל<destination>" display (`active.departments` already lists every active department).
   const homeDestinationIds = Object.fromEntries(active.departments.map((d) => [d.id, d.home_destination_id]));
   const requestsQuery = useMyRequests();
+  // A manager reads draft rides that never move the public counter: no return-to-tab gating for them (lib/counterGate.ts).
+  const sadranAnywhere = useIsSadranAnywhere();
   const upcomingRidesQuery = useMyUpcomingRides();
   const rideTypesQuery = useRideTypes();
   const myCarsQuery = useMyResponsibleCarsQuery();
@@ -130,7 +133,7 @@ export function HomePage() {
   const weeksQuery = useWeeks(defaultDepartmentId);
   // REQ item 149: "my rides" shows changes others make to its weeks (published days, sent proposals) without a reload.
   const watchedWeeks = (weeksQuery.data ?? []).filter((week) => week.phase !== "archived" && week.phase !== "upcoming").map((week) => week.week_start);
-  useWeekChangeWatch(defaultDepartmentId, watchedWeeks, "public", { realtime: active.canSubmit });
+  useWeekChangeWatch(defaultDepartmentId, watchedWeeks, "public", { realtime: active.canSubmit, gate: !sadranAnywhere.isLoading && !sadranAnywhere.isSadran });
   const carsQuery = useCars(defaultDepartmentId);
   const settingsQuery = useDepartmentSettings(defaultDepartmentId);
   // Owner 2026-10-16: list/table choice and the "children's rides" option are remembered on this device.

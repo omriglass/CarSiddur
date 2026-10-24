@@ -366,4 +366,52 @@ begin
   raise notice 'week_change_seq.sql: realtime authorization passed';
 end $$;
 
+-- 12: the counter must cover every table the gated week reads depend on (REQ item 149: on return to the tab,
+-- week ride queries refetch only when the counter moved, so a table read by week_board_rides /
+-- my_upcoming_rides / v_board_rides without a wcs_* trigger would silently go stale). Derived, not listed:
+-- base tables under v_board_rides (pg_depend through pg_rewrite, nested views included) plus every public
+-- base table named in the two functions' bodies. Display-name catalogs are exempt on purpose: they carry no
+-- week state and are not what the counter is for (their rename shows within the 5-minute safety cap).
+do $$
+declare
+  missing text;
+  stale_exempt text;
+  exempt text[] := array['children', 'destinations', 'profiles', 'ride_types'];
+begin
+  with recursive deps as (
+    select c.oid from pg_class c join pg_namespace n on n.oid = c.relnamespace
+     where n.nspname = 'public' and c.relname = 'v_board_rides'
+    union
+    select d.refobjid from deps
+      join pg_rewrite r on r.ev_class = deps.oid
+      join pg_depend d on d.objid = r.oid and d.classid = 'pg_rewrite'::regclass
+                      and d.refclassid = 'pg_class'::regclass and d.refobjid <> deps.oid
+  ), read_tables as (
+    select c.relname from deps join pg_class c on c.oid = deps.oid where c.relkind in ('r', 'p')
+    union
+    select c.relname
+      from pg_class c
+      join pg_namespace n on n.oid = c.relnamespace and n.nspname = 'public' and c.relkind in ('r', 'p')
+      join pg_proc p on p.proname in ('week_board_rides', 'my_upcoming_rides')
+      join pg_namespace pn on pn.oid = p.pronamespace and pn.nspname = 'public'
+     where p.prosrc ~ ('\m' || c.relname || '\M')
+  )
+  select string_agg(relname, ', ' order by relname) into missing
+    from read_tables rt
+   where relname <> all (exempt)
+     and not exists (select 1 from pg_trigger t
+                      where t.tgrelid = ('public.' || rt.relname)::regclass and t.tgname = 'wcs_upd');
+  assert missing is null,
+    '12: tables read by week_board_rides/my_upcoming_rides/v_board_rides without a wcs_* counter trigger: ' || missing
+    || ' (add them to the trigger list of a new migration, or to this test''s exempt list with a reason)';
+
+  -- an exemption that is no longer read, or got a trigger, is dead weight: keep the list honest
+  select string_agg(e, ', ') into stale_exempt
+    from unnest(exempt) e
+   where not exists (select 1 from pg_class c join pg_namespace n on n.oid = c.relnamespace
+                      where n.nspname = 'public' and c.relname = e);
+  assert stale_exempt is null, '12: exempt table does not exist: ' || stale_exempt;
+  raise notice 'week_change_seq.sql: counter coverage of the week reads passed';
+end $$;
+
 rollback;

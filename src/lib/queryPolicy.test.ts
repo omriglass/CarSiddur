@@ -92,10 +92,14 @@ describe("query cache policy: freshness", () => {
     }
   });
 
-  it("installs the policy as the client's defaults and refetches on focus everywhere", () => {
+  it("installs the policy as the client's defaults and refetches on focus everywhere (counter-gated week reads excepted)", () => {
     const defaults = createQueryClient().getDefaultOptions().queries;
     expect(defaults?.staleTime).toBe(queryStaleTime);
-    expect(defaults?.refetchOnWindowFocus).toBe(true);
+    const onFocus = defaults?.refetchOnWindowFocus as (query: { queryKey: readonly unknown[]; state: { dataUpdatedAt: number } }) => boolean;
+    // No watcher registered here (counterGate.test.ts covers the gating): every family refetches when stale.
+    for (const key of [["siddur", "boardRides", "d", "w"], ["siddur", "weeks", "d"], ["auth", "profile", "u"], ["sadran", "d", "w", "boardRides"]]) {
+      expect(onFocus({ queryKey: key, state: { dataUpdatedAt: Date.now() } }), key.join("/")).toBe(true);
+    }
   });
 
   it("invalidates stable families (and only them) on demand", () => {

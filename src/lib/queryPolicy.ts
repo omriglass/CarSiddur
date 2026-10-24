@@ -1,5 +1,7 @@
 import { MutationCache, QueryClient, type Query, type QueryKey } from "@tanstack/react-query";
 
+import { gatesFocusRefetch } from "./counterGate";
+
 /**
  * Cache policy per query family (docs/ARCHITECTURE.md "Browser data and caching").
  *
@@ -15,6 +17,10 @@ import { MutationCache, QueryClient, type Query, type QueryKey } from "@tanstack
  * Classification matches EXACT key positions (never "any part of the key"), so a future week-scoped
  * key that happens to contain a catalog word stays on the 30 s default. `queryPolicy.test.ts`
  * enumerates every builder of the involved key factories and fails on an unclassified one.
+ *
+ * Exception (`counterGate.ts`): a week's ride/board queries that a mounted `useWeekChangeWatch` covers skip the
+ * focus refetch (the watcher checks the week's change counter on return and refreshes what moved), up to
+ * a 5-minute safety cap.
  *
  * `invalidateQueries` ignores `staleTime`, so a mutation that invalidates one of these families
  * still refreshes it at once for the person who made the change.
@@ -91,7 +97,8 @@ export function createQueryClient(): QueryClient {
       queries: {
         retry: 1,
         staleTime: queryStaleTime,
-        refetchOnWindowFocus: true,
+        // true = refetch when stale; a counter-covered week query waits for the watcher's counter check instead.
+        refetchOnWindowFocus: (query: Query) => !gatesFocusRefetch(query),
       },
     },
     mutationCache: new MutationCache({
