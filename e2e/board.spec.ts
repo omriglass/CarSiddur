@@ -109,8 +109,11 @@ test.describe.serial("board (bug-fix pass regression, fake-week data)", { tag: [
     execSync("node scripts/fake-week.mjs --count 40 --clear --seed 42", { stdio: "inherit" });
   });
 
-  test.afterAll(() => {
-    resetDatabase();
+  // Awaited: the reset also re-applies the seeded accounts' classic-form opt-in (global-setup), which
+  // later specs rely on; fire-and-forget left it racing the next spec.
+  test.afterAll(async () => {
+    test.setTimeout(240_000); // db reset + opt-in retries outlast the 60 s hook default
+    await resetDatabase();
   });
 
   test("unmet requests and phantom lanes show only the selected day, before any solve", async ({ page }) => {
