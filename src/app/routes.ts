@@ -113,6 +113,12 @@ export const paths = {
    */
   car: (carId: string) => `/cars/${carId}`,
 
+  /** `/cars` — all-cars dashboard for car administrators and admins (REQ item 150 e, UX_FLOWS.md §5.14). */
+  cars: (): string => "/cars",
+
+  /** `/cars/checklist/:dept` — the department's handover checklist editor for car administrators and admins (REQ item 150 d, UX_FLOWS.md §5.15). */
+  carChecklist: (dept: string): string => `/cars/checklist/${dept}`,
+
   admin: {
     /** `/admin/errors` — admin-only list of browser errors from `client_errors` (E1, UX_FLOWS.md §5.13). */
     errors: (): string => "/admin/errors",

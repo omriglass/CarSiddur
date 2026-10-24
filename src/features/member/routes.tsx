@@ -3,7 +3,7 @@ import type { RouteObject } from "react-router-dom";
 
 import { GuardLoading } from "@/features/auth/guards";
 import { RequestsRedirect } from "@/pages/RequestsRedirect";
-import { CarPage, MyArchivePage, MyHistoryPage, PolicyPage, SiddurArchivePage, SiddurPage, StatsPage } from "./lazyPages";
+import { CarChecklistEditorPage, CarPage, CarsOverviewPage, MyArchivePage, MyHistoryPage, PolicyPage, SiddurArchivePage, SiddurPage, StatsPage } from "./lazyPages";
 
 
 /**
@@ -25,6 +25,8 @@ export const memberRoutes: RouteObject[] = [
   { path: "/siddur/:dept", element: <Suspense fallback={<GuardLoading />}><SiddurPage /></Suspense> },
   { path: "/siddur/:dept/archive", element: <Suspense fallback={<GuardLoading />}><SiddurArchivePage /></Suspense> },
   { path: "/siddur/:dept/:week", element: <Suspense fallback={<GuardLoading />}><SiddurPage /></Suspense> },
+  { path: "/cars", element: <Suspense fallback={<GuardLoading />}><CarsOverviewPage /></Suspense> },
+  { path: "/cars/checklist/:dept", element: <Suspense fallback={<GuardLoading />}><CarChecklistEditorPage /></Suspense> },
   { path: "/cars/:carId", element: <Suspense fallback={<GuardLoading />}><CarPage /></Suspense> },
   { path: "/stats/:dept", element: <Suspense fallback={<GuardLoading />}><StatsPage /></Suspense> },
   { path: "/policy/:dept", element: <Suspense fallback={<GuardLoading />}><PolicyPage /></Suspense> },

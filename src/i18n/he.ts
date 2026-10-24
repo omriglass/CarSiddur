@@ -11,6 +11,9 @@
  * `field.oneWayFrom`) — the Hebrew copy is unchanged, only the key shape.
  */
 import { heAdmin } from "./he.admin";
+import { heCarChecklist } from "./he.carChecklist";
+import { heCarsOverview } from "./he.carsOverview";
+import { heCarTasks } from "./he.carTasks";
 import { heLegal } from "./he.legal";
 import { heMember } from "./he.member";
 import { heSadran } from "./he.sadran";
@@ -175,6 +178,9 @@ export const he = {
     dropWarning: "אין תא מטען גדול ברכב — יידרש אישור",
   },
   ...heMember,
+  ...heCarTasks,
+  ...heCarChecklist,
+  ...heCarsOverview,
   ...heAdmin,
   ...heSadran,
   ...heLegal,

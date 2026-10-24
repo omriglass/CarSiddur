@@ -14,6 +14,7 @@ import { lazy } from "react";
  */
 export const CarPage = lazy(() => import("@/pages/CarPage").then((m) => ({ default: m.CarPage })));
 export const EditRequestPage = lazy(() => import("@/pages/EditRequestPage").then((m) => ({ default: m.EditRequestPage })));
+export const CarsOverviewPage = lazy(() => import("@/pages/CarsOverviewPage").then((m) => ({ default: m.CarsOverviewPage })));
 export const MyArchivePage = lazy(() => import("@/pages/MyArchivePage").then((m) => ({ default: m.MyArchivePage })));
 export const PolicyPage = lazy(() => import("@/pages/PolicyPage").then((m) => ({ default: m.PolicyPage })));
 export const MyHistoryPage = lazy(() => import("@/pages/MyHistoryPage").then((m) => ({ default: m.MyHistoryPage })));

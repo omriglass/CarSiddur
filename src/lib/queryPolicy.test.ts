@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { authKeys, contextKeys } from "@/features/auth/queryKeys";
 import { operationsKeys } from "@/features/admin/queryKeys";
+import { carsOverviewKeys } from "@/features/carsOverview/keys";
 import { fleetKeys } from "@/features/fleet/queryKeys";
 import { ridesKeys } from "@/features/rides/keys";
 import { sadranKeys } from "@/features/sadran/keys";
@@ -45,6 +46,7 @@ describe("query cache policy: key factories", () => {
     profile: "catalog", myDepartments: "permissions", isSadran: "permissions", isSadranAnywhere: "permissions",
     departmentMembers: "permissions", pushSubscriptionCount: "live",
   });
+  checkFactory("carsOverviewKeys", carsOverviewKeys, { department: "catalog", checklists: "catalog" });
   checkFactory("contextKeys", contextKeys, { departments: "permissions" });
   checkFactory("operationsKeys", operationsKeys, { access: "permissions", departments: "permissions" });
   checkFactory("fleetKeys", fleetKeys, {

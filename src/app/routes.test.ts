@@ -34,6 +34,7 @@ const ROUTE_PATTERNS = [
   "/p/:token",
   "/privacy",
   "/terms",
+  "/cars",
   "/cars/:carId",
   "/stats/:dept",
   "/policy/:dept",
@@ -180,6 +181,20 @@ describe("paths.inbox", () => {
 });
 
 describe("paths.car", () => {
+describe("paths.cars", () => {
+  it("matches /cars", () => {
+    expectRoutable(paths.cars());
+    expect(paths.cars()).toBe("/cars");
+  });
+});
+
+describe("paths.carChecklist", () => {
+  it("matches /cars/checklist/:dept", () => {
+    expectRoutable(paths.carChecklist("dept-1"));
+    expect(paths.carChecklist("dept-1")).toBe("/cars/checklist/dept-1");
+  });
+});
+
   it("matches /cars/:carId", () => {
     expectRoutable(paths.car("car-1"));
     expect(paths.car("car-1")).toBe("/cars/car-1");

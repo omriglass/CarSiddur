@@ -989,6 +989,11 @@
       "paths": [
         "src/features/carCare/**",
         "src/features/cars/**",
+        "src/features/carTasks/**",
+        "src/i18n/he.carTasks.ts",
+        "src/features/carsOverview/**",
+        "src/i18n/he.carsOverview.ts",
+        "src/pages/CarsOverviewPage.tsx",
         "src/i18n/he.member.ts",
         "src/i18n/he.admin.ts",
         "supabase/migrations/**/*car_care*",
@@ -1001,11 +1006,15 @@
         "supabase/tests/car_administration.sql",
         "src/features/admin/members/**",
         "e2e/car-care.spec.ts",
-        "e2e/car-admin.spec.ts"
+        "e2e/car-admin.spec.ts",
+        "e2e/car-tasks.spec.ts",
+        "e2e/cars-overview.spec.ts"
       ],
       "vitest": [
         "src/features/carCare",
-        "src/features/cars"
+        "src/features/cars",
+        "src/features/carTasks",
+        "src/features/carsOverview"
       ],
       "sql": [
         "car_care_semantics.sql",

@@ -10,7 +10,7 @@ import { gatesFocusRefetch } from "./counterGate";
  * expired refreshes at once. Tiers:
  *  - permissions: who I am / what I may manage / who the members are: 1 min
  *  - weeks: week rows and their phase (published/live): 2 min
- *  - catalogs: cars, destinations, ride types, seat configs, department settings, policies,
+ *  - catalogs: cars (incl. the all-cars dashboard, `carsOverview`), destinations, ride types, seat configs, department settings, policies,
  *    templates, profile: 10 min
  *  - everything else (rides, requests, board data, inbox): 30 s
  *
@@ -45,6 +45,7 @@ export function queryTier(key: QueryKey): QueryTier {
   const [root, tag] = key;
   const third = key[2];
   if (root === "context" || root === "operations") return "permissions";
+  if (root === "carsOverview") return "catalog";
   if (root === "auth") {
     if (tag === "profile") return "catalog";
     return typeof tag === "string" && AUTH_PERMISSIONS.has(tag) ? "permissions" : "live";

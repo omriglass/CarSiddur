@@ -1,5 +1,5 @@
 import { useDeliverChangelog } from "@/features/changelog/useDeliverChangelog";
-import { Bell, CalendarDays, ClipboardList, PanelRightClose, PanelRightOpen, Settings, User, Users } from "lucide-react";
+import { Bell, CalendarDays, CarFront, ClipboardList, PanelRightClose, PanelRightOpen, Settings, User, Users } from "lucide-react";
 import { type ComponentType, useEffect, useState } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 
@@ -10,6 +10,7 @@ import { OfflineNotice } from "@/components/OfflineNotice";
 import { AppLogoMark } from "@/components/AppLogoMark";
 import { useIsSadranAnywhere } from "@/features/auth/useIsSadran";
 import { useCanManageOperations } from "@/features/admin/useOperations";
+import { useCanViewCarsOverview } from "@/features/carsOverview/hooks";
 import { Button } from "@/components/ui/button";
 import { useUnreadCount } from "@/features/inbox/hooks";
 
@@ -115,6 +116,8 @@ export function AppShell() {
   const context = useActiveDepartment();
   const { isSadran } = useIsSadranAnywhere();
   const canManageOperations = !!useCanManageOperations().data;
+  // REQ item 150 (e): the all-cars dashboard for admins and car administrators (who need not reach /admin).
+  const canViewCarsOverview = useCanViewCarsOverview().allowed;
   const unreadCount = useUnreadCount();
   // REQ §13.139 (b): a new version's "מה חדש" lands in the inbox, quietly.
   useDeliverChangelog();
@@ -138,6 +141,7 @@ export function AppShell() {
   ];
   const desktopNavItems: NavItem[] = [
     ...navItems,
+    ...(canViewCarsOverview ? [{ to: "/cars", label: he.carsOverview.navLabel, icon: CarFront }] : []),
     ...(canManageOperations ? [{ to: "/admin", label: he.nav.admin, icon: Settings }] : []),
   ];
 
@@ -178,8 +182,13 @@ export function AppShell() {
         <header className="sticky top-0 z-40 flex h-14 shrink-0 items-center gap-2 border-b bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/60 md:hidden">
           <AppLogoMark />
           <span className="text-base font-semibold leading-tight">{appName}</span>
+          {canViewCarsOverview ? (
+            <Button asChild size="icon" variant="ghost" className="ms-auto" data-testid="nav-cars-overview">
+              <Link to="/cars" aria-label={he.carsOverview.navLabel}><CarFront className="size-5" /></Link>
+            </Button>
+          ) : null}
           {canManageOperations ? (
-            <Button asChild size="icon" variant="ghost" className="ms-auto">
+            <Button asChild size="icon" variant="ghost" className={canViewCarsOverview ? undefined : "ms-auto"}>
               <Link to="/admin" aria-label={he.nav.admin}><Settings className="size-5" /></Link>
             </Button>
           ) : null}
