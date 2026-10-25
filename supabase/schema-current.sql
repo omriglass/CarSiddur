@@ -21077,6 +21077,23 @@ ALTER TABLE "public"."held_notices" ALTER COLUMN "seq" ADD GENERATED ALWAYS AS I
 
 
 
+CREATE TABLE IF NOT EXISTS "public"."ignored_place_texts" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "department_id" "uuid" NOT NULL,
+    "text" "text" NOT NULL,
+    "text_key" "text" GENERATED ALWAYS AS ("lower"("btrim"("regexp_replace"("text", '\s+'::"text", ' '::"text", 'g'::"text")))) STORED,
+    "created_by" "uuid" DEFAULT "auth"."uid"(),
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "ignored_place_texts_text_ck" CHECK ((("length"("btrim"("text")) >= 1) AND ("length"("btrim"("text")) <= 200)))
+);
+
+ALTER TABLE ONLY "public"."ignored_place_texts" FORCE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."ignored_place_texts" OWNER TO "postgres";
+
+
 CREATE TABLE IF NOT EXISTS "public"."member_invites" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "email" "text" NOT NULL,
@@ -22775,6 +22792,16 @@ ALTER TABLE ONLY "public"."held_notices"
 
 
 
+ALTER TABLE ONLY "public"."ignored_place_texts"
+    ADD CONSTRAINT "ignored_place_texts_key_uq" UNIQUE ("department_id", "text_key");
+
+
+
+ALTER TABLE ONLY "public"."ignored_place_texts"
+    ADD CONSTRAINT "ignored_place_texts_pkey" PRIMARY KEY ("id");
+
+
+
 ALTER TABLE ONLY "public"."member_invites"
     ADD CONSTRAINT "member_invites_email_key" UNIQUE ("email");
 
@@ -23999,6 +24026,10 @@ CREATE OR REPLACE TRIGGER "destinations_link_typed_places" AFTER UPDATE ON "publ
 
 
 
+CREATE OR REPLACE TRIGGER "destinations_link_typed_places_insert" AFTER INSERT ON "public"."destinations" FOR EACH ROW WHEN ("new"."is_approved") EXECUTE FUNCTION "public"."link_typed_places_on_approval"();
+
+
+
 CREATE OR REPLACE TRIGGER "destinations_normalize_name" BEFORE INSERT OR UPDATE OF "name" ON "public"."destinations" FOR EACH ROW EXECUTE FUNCTION "public"."destinations_normalize_name"();
 
 
@@ -24348,6 +24379,10 @@ CREATE OR REPLACE TRIGGER "set_updated_at" BEFORE UPDATE ON "public"."destinatio
 
 
 CREATE OR REPLACE TRIGGER "set_updated_at" BEFORE UPDATE ON "public"."held_notices" FOR EACH ROW EXECUTE FUNCTION "public"."set_updated_at"();
+
+
+
+CREATE OR REPLACE TRIGGER "set_updated_at" BEFORE UPDATE ON "public"."ignored_place_texts" FOR EACH ROW EXECUTE FUNCTION "public"."set_updated_at"();
 
 
 
@@ -25118,6 +25153,16 @@ ALTER TABLE ONLY "public"."held_notices"
 
 ALTER TABLE ONLY "public"."held_notices"
     ADD CONSTRAINT "held_notices_recipient_id_fkey" FOREIGN KEY ("recipient_id") REFERENCES "public"."profiles"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."ignored_place_texts"
+    ADD CONSTRAINT "ignored_place_texts_created_by_fkey" FOREIGN KEY ("created_by") REFERENCES "public"."profiles"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."ignored_place_texts"
+    ADD CONSTRAINT "ignored_place_texts_department_id_fkey" FOREIGN KEY ("department_id") REFERENCES "public"."departments"("id") ON DELETE CASCADE;
 
 
 
@@ -26038,6 +26083,21 @@ ALTER TABLE "public"."held_notices" ENABLE ROW LEVEL SECURITY;
 
 
 CREATE POLICY "held_notices_select" ON "public"."held_notices" FOR SELECT TO "authenticated" USING ("public"."can_manage_week"("department_id", "week_start"));
+
+
+
+ALTER TABLE "public"."ignored_place_texts" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "ignored_place_texts_delete" ON "public"."ignored_place_texts" FOR DELETE TO "authenticated" USING ("public"."can_manage_operations"("department_id"));
+
+
+
+CREATE POLICY "ignored_place_texts_insert" ON "public"."ignored_place_texts" FOR INSERT TO "authenticated" WITH CHECK ("public"."can_manage_operations"("department_id"));
+
+
+
+CREATE POLICY "ignored_place_texts_select" ON "public"."ignored_place_texts" FOR SELECT TO "authenticated" USING ("public"."can_manage_operations"("department_id"));
 
 
 
@@ -29190,6 +29250,11 @@ GRANT ALL ON TABLE "public"."freed_slot_offers" TO "service_role";
 GRANT ALL ON SEQUENCE "public"."held_notices_seq_seq" TO "anon";
 GRANT ALL ON SEQUENCE "public"."held_notices_seq_seq" TO "authenticated";
 GRANT ALL ON SEQUENCE "public"."held_notices_seq_seq" TO "service_role";
+
+
+
+GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE "public"."ignored_place_texts" TO "authenticated";
+GRANT ALL ON TABLE "public"."ignored_place_texts" TO "service_role";
 
 
 

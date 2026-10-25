@@ -954,7 +954,9 @@
         "e2e/department-context.spec.ts",
         "src/features/admin/departments/schema.ts",
         "src/features/admin/departments/components/DepartmentsScreen.tsx",
-        "e2e/destinations-drop-points.spec.ts"
+        "e2e/destinations-drop-points.spec.ts",
+        "supabase/migrations/**/*place_texts*",
+        "supabase/tests/ignored_place_texts.sql"
       ],
       "vitest": [
         "src/features/admin",
@@ -966,7 +968,8 @@
         "admin_department_membership.sql",
         "department_catalogs.sql",
         "member_identity.sql",
-        "origins_schema.sql"
+        "origins_schema.sql",
+        "ignored_place_texts.sql"
       ],
       "playwrightTags": [
         "@admin"
@@ -974,13 +977,15 @@
       "reqRefs": [
         "13.2",
         "13.8",
-        "13.25"
+        "13.25",
+        "13.152"
       ],
       "qaChecklist": [
         "Create a car, destination and policy version; confirm each appears in its list/history (REQ §13.2)",
         "Assign a weekly (non-permanent) Sadran; confirm scoped permissions (REQ §13.8)",
         "Switch department context to one you don't belong to; confirm read-only (REQ §13.25)",
-        "As admin open /admin/errors; recent browser errors list with time, user, version, page and stack (REQ §13.40/E1)"
+        "As admin open /admin/errors; recent browser errors list with time, user, version, page and stack (REQ §13.40/E1)",
+        "Admin → יעדים → טקסט חופשי לסיווג: merge a text, create a place from another under a different name, ignore a third; all three leave the queue, the ignored one is under 'התעלמת' and 'החזר' brings it back (REQ §13.152)"
       ]
     },
     {

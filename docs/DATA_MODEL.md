@@ -475,7 +475,22 @@ RLS enabled + forced; **SELECT only** for `can_manage_car(car_id)` (managers rea
 | created_by | uuid | | | FK profiles |
 | created_at / updated_at | timestamptz | NN | now() | |
 
-Free-text requests keep `requests.destination_text` until the text matches a place. **Place linking** (REQ §13.137, `20261026120200_link_typed_places.sql`): (a) BEFORE INSERT/UPDATE triggers on `requests` (`destination_*`, `origin_*`), `request_stops` (`place_*`) and `request_templates` store a typed text as the place (`*_id` set, text cleared) when `match_department_place(department_id, text)` finds exactly one **approved** destination of the same department whose name or any alias equals it after `normalize_place_text` (trim, collapse inner whitespace, lower case); none or several matches leave the text (destinations are always department-scoped, there are no global rows). On UPDATE only a changed text is matched, so re-saving a placed request never rewrites it. (b) AFTER UPDATE trigger `destinations_link_typed_places` (when `is_approved` turns true, or `name`/`aliases` change while approved) runs `link_typed_places_on_approval()`: links requests of that department in status `draft/submitted/waitlisted/denied/external`, in a week that is not `archived`, without a sent/accepted proposal (`proposed`, assigned, merged, withdrawn, cancelled are left as typed), their `request_stops`, and every template; one UPDATE per request (one version bump, `app.audit_reason = 'place_linked'`). The matcher, normalizer and trigger functions are internal (no grants; `rls_smoke.sql` TEST 14). "Promote to list" in the admin screen is simply creating/approving a destination.
+Free-text requests keep `requests.destination_text` until the text matches a place. **Place linking** (REQ §13.137, `20261026120200_link_typed_places.sql`): (a) BEFORE INSERT/UPDATE triggers on `requests` (`destination_*`, `origin_*`), `request_stops` (`place_*`) and `request_templates` store a typed text as the place (`*_id` set, text cleared) when `match_department_place(department_id, text)` finds exactly one **approved** destination of the same department whose name or any alias equals it after `normalize_place_text` (trim, collapse inner whitespace, lower case); none or several matches leave the text (destinations are always department-scoped, there are no global rows). On UPDATE only a changed text is matched, so re-saving a placed request never rewrites it. (b) AFTER UPDATE trigger `destinations_link_typed_places` (when `is_approved` turns true, or `name`/`aliases` change while approved) runs `link_typed_places_on_approval()`: links requests of that department in status `draft/submitted/waitlisted/denied/external`, in a week that is not `archived`, without a sent/accepted proposal (`proposed`, assigned, merged, withdrawn, cancelled are left as typed), their `request_stops`, and every template; one UPDATE per request (one version bump, `app.audit_reason = 'place_linked'`). The matcher, normalizer and trigger functions are internal (no grants; `rls_smoke.sql` TEST 14). "Promote to list" in the admin screen is simply creating/approving a destination. Since `20261028200000` (REQ §13.152 b) the same function also runs AFTER INSERT (`destinations_link_typed_places_insert`, when the new row `is_approved`), so creating a place links waiting requests too.
+
+#### `ignored_place_texts` (added `20261028200000`, REQ §13.152 c)
+
+Typed place texts the admin chose to hide from the free-text queue. Read only by the admin destinations screen; nothing else (requests, solver, linking) looks at it.
+
+| column | type | null | default | notes |
+|---|---|---|---|---|
+| id | uuid | NN | gen_random_uuid() | PK |
+| department_id | uuid | NN | | FK departments, on delete cascade |
+| text | text | NN | | as typed (trimmed by the client); CHECK 1–200 chars after trim |
+| text_key | text | | generated | `lower(btrim(regexp_replace(text, '\s+', ' ', 'g')))` stored — `normalize_place_text()` inlined (a generated column runs with the writer's rights; the helper is closed). UNIQUE `(department_id, text_key)` |
+| created_by | uuid | | `auth.uid()` | FK profiles, on delete set null |
+| created_at / updated_at | timestamptz | NN | now() | `set_updated_at` |
+
+RLS enable + force; **SELECT / INSERT / DELETE** = `can_manage_operations(department_id)` (the destinations editors); no UPDATE policy (ignore = insert, undo = delete). Grants: `select, insert, delete` to authenticated. Department-scoped, so not in the rls_smoke TEST 18 pin list; no RPC (direct table writes), so nothing to classify in `department_isolation.sql`. Suite: `ignored_place_texts.sql`.
 
 **Destinations double as the location table** (REQ §5.4, §13.57): `rides.origin_id`/`rides.destination_id` and `departments.home_destination_id` reference this table, so "where is the car" is always a destination row. Relay pairing matches on the exact `destination_id` (REQ §13.58); free-text destinations (no row) therefore never relay.
 
@@ -1440,6 +1455,7 @@ Legend: **own** = row's profile column = `auth.uid()`; **dept** = `member_of(dep
 | car_checklist_prompts | prompted profile ∨ `can_manage_car(car_id)` | trigger `cars_responsible_changed`; cleared by `submit_car_checklist()` | — | — |
 | car_tasks | `can_manage_car(car_id)` (members read via `my_car_tasks()`) | **RPC only** - `request_car_tasks()`, `withdraw_car_task()`, `complete_car_task()`, auto-completion in `log_car_care()`/`log_car_kilometrage()` | - | - |
 | destinations | approved users | admin; RPC `suggest_destination()` for members (inserts `is_approved=false`) | admin; RPC `merge_destination()` (admin-only, repoints references then deletes/deactivates the source, §6.1 item 14) | admin (RESTRICT if referenced) |
+| ignored_place_texts | `can_manage_operations(dept)` | `can_manage_operations(dept)` | — | `can_manage_operations(dept)` |
 | ride_types | approved users | admin | admin | — (deactivate) |
 | weekday_labels | approved users (`is_approved()`); global, not department-scoped | — (none) | — (none) | — (none) |
 | text_fragments | approved users (`is_approved()`); global, not department-scoped | admin | admin | admin |

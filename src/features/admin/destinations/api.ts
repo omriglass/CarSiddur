@@ -5,6 +5,8 @@ import { he } from "@/i18n/he";
 
 import type { Database } from "@/integrations/supabase/types";
 
+import { groupFreeTexts, type FreeTextGroup } from "./freeTextQueue";
+
 /**
  * The only file in `admin/destinations` that calls `supabase.from`.
  * `destinations` is admin-writable directly (DATA_MODEL.md §4.3).
@@ -31,41 +33,42 @@ export async function updateDestination(id: string, patch: DestinationUpdate): P
   return data;
 }
 
-export interface FreeTextGroup {
-  text: string;
-  count: number;
-  lastUsedAt: string;
-}
+export type IgnoredPlaceText = Database["public"]["Tables"]["ignored_place_texts"]["Row"];
 
 /**
- * Distinct free-text destinations members typed (`requests.destination_text`
- * where `destination_id is null`), grouped client-side (small table, no view
- * for this yet — see the stage 2c report). `requests` SELECT is open to
- * admin directly (DATA_MODEL.md §4.3), unlike its RPC-only writes.
+ * Every typed place text (destination or origin with no list place) of the department's requests, one row per use;
+ * grouped and filtered by `freeTextQueue.ts` (REQ §13.152). `requests` SELECT is open to admin directly
+ * (DATA_MODEL.md §4.3), unlike its RPC-only writes.
  */
 export async function fetchFreeTextQueue(departmentId: string): Promise<FreeTextGroup[]> {
   const { data, error } = await supabase
     .from("requests")
-    .select("destination_text, created_at")
+    .select("destination_id, destination_text, origin_id, origin_text, created_at")
     .eq("department_id", departmentId)
-    .is("destination_id", null)
-    .not("destination_text", "is", null);
+    .or("and(destination_id.is.null,destination_text.not.is.null),and(origin_id.is.null,origin_text.not.is.null)");
   if (error) throw toAppError(error);
+  return groupFreeTexts((data ?? []).flatMap((row) => [
+    ...(row.destination_id == null && row.destination_text ? [{ text: row.destination_text, createdAt: row.created_at }] : []),
+    ...(row.origin_id == null && row.origin_text ? [{ text: row.origin_text, createdAt: row.created_at }] : []),
+  ]));
+}
 
-  const groups = new Map<string, FreeTextGroup>();
-  for (const row of data ?? []) {
-    const text = (row.destination_text ?? "").trim();
-    if (!text) continue;
-    const key = text.toLowerCase();
-    const existing = groups.get(key);
-    if (existing) {
-      existing.count += 1;
-      if (row.created_at > existing.lastUsedAt) existing.lastUsedAt = row.created_at;
-    } else {
-      groups.set(key, { text, count: 1, lastUsedAt: row.created_at });
-    }
-  }
-  return [...groups.values()].sort((a, b) => b.lastUsedAt.localeCompare(a.lastUsedAt));
+export async function fetchIgnoredPlaceTexts(departmentId: string): Promise<IgnoredPlaceText[]> {
+  const { data, error } = await supabase.from("ignored_place_texts").select("*").eq("department_id", departmentId);
+  if (error) throw toAppError(error);
+  return data ?? [];
+}
+
+/** "התעלם": hides a typed text from the queue (an already ignored spelling is fine — unique per normalized text). */
+export async function ignorePlaceText(departmentId: string, text: string): Promise<void> {
+  const { error } = await supabase.from("ignored_place_texts")
+    .upsert({ department_id: departmentId, text: text.trim() }, { onConflict: "department_id,text_key", ignoreDuplicates: true });
+  if (error) throw toAppError(error);
+}
+
+export async function unignorePlaceText(id: string): Promise<void> {
+  const { error } = await supabase.from("ignored_place_texts").delete().eq("id", id);
+  if (error) throw toAppError(error);
 }
 
 /**

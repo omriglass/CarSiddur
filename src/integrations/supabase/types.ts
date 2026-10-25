@@ -1784,6 +1784,51 @@ export type Database = {
           },
         ]
       }
+      ignored_place_texts: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          department_id: string
+          id: string
+          text: string
+          text_key: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          department_id: string
+          id?: string
+          text: string
+          text_key?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          department_id?: string
+          id?: string
+          text?: string
+          text_key?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ignored_place_texts_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ignored_place_texts_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       member_invites: {
         Row: {
           consumed_at: string | null

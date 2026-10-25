@@ -318,7 +318,12 @@ export const heAdmin = {
     queueMergeTarget: "מיזוג לתוך יעד קיים",
     queueMergeSubmit: "מזג",
     queueMergeNote:
-      "היעד הזה יתווסף ככינוי ליעד הנבחר; בקשות עתידיות עם אותו טקסט יזוהו אוטומטית. בקשות עבר לא משויכות מחדש (מגבלה נוכחית, ראו הערת יישום).",
+      "מיזוג או יצירת יעד: הטקסט נשמר ככינוי של היעד, בקשות שעוד לא שובצו עם אותו טקסט מקושרות אליו, והוא יורד מהרשימה. טקסט שלא צריך — ״התעלם״.",
+    /** REQ §13.152: hide a typed text the admin does not care about (typo, one-off); undo under "התעלמת". */
+    queueIgnore: "התעלם",
+    queueIgnoredToast: "הוסתר מהרשימה",
+    queueIgnoredTitle: "התעלמת ({{count}})",
+    queueUnignore: "החזר",
     queueCreateNote: "פותח עורך יעד חדש עם השם הזה ממולא מראש",
   },
   adminRideTypes: {

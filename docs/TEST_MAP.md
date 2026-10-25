@@ -487,14 +487,14 @@ local replay stack and comparing it with the production solve — scripts/replay
 
 **Paths**: `src/features/admin/**`, `src/features/fleet/**`, `src/features/diagnostics/**` (client errors, `/admin/errors`),
 `supabase/functions/destination-route/**`; `src/i18n/he.admin.ts`; migrations matching `*admin*`,
-`*catalog*`, `*member_identity*`, `*department_membership*`, `*origin*`, `*place_distances*`
+`*catalog*`, `*member_identity*`, `*department_membership*`, `*origin*`, `*place_distances*`, `*place_texts*`
 (cars' base location / members' default origin / `place_distances`, REQ §13.93, steps O2/O3);
 `e2e/admin.spec.ts`, `admin-department.spec.ts`, `admin-errors.spec.ts`, `department-context.spec.ts`, `destinations-drop-points.spec.ts` (REQ §13.112: the "נקודת הקפצה" switch and column, admin and Sadran).
 
 **Automated**:
 - Vitest: `npx vitest run src/features/admin src/features/fleet src/features/diagnostics`
 - SQL: `admin_member_fixes.sql`, `admin_department_membership.sql`, `department_catalogs.sql`,
-  `member_identity.sql`, `origins_schema.sql`
+  `member_identity.sql`, `origins_schema.sql`, `ignored_place_texts.sql` (REQ §13.152: ignored typed texts — Sadran/admin only, normalized key, one per text; creating an approved place links waiting requests, never archived-week ones)
 - Playwright: `npx playwright test --grep "@admin"`
 
 **QA script**:

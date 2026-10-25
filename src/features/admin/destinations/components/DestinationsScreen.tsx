@@ -1,7 +1,7 @@
 import { useActiveDepartment } from "@/features/auth/useActiveDepartment";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { formatInTimeZone } from "date-fns-tz";
-import { MapPin, Plus } from "lucide-react";
+import { ChevronDown, MapPin, Plus } from "lucide-react";
 import { useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -19,8 +19,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { he } from "@/i18n/he";
+import { he, tv } from "@/i18n/he";
 import { TZ } from "@/lib/time";
+import { cn } from "@/lib/utils";
 import { showErrorToast } from "@/lib/rpc";
 
 import {
@@ -28,11 +29,15 @@ import {
   useCalculateDestinationRouteMutation,
   useDestinationsAdmin,
   useFreeTextQueue,
+  useIgnoredPlaceTexts,
+  useIgnorePlaceTextMutation,
   useMergeFreeTextMutation,
+  useUnignorePlaceTextMutation,
   useUpdateDestinationMutation,
 } from "../hooks";
 import { aliasesTextToArray, destinationSchema, type DestinationFormValues } from "../schema";
 import type { Destination } from "../api";
+import { aliasesWithQueueText, splitFreeTextQueue } from "../freeTextQueue";
 
 const PT_SCORES = [0, 1, 2, 3, 4, 5] as const;
 
@@ -64,7 +69,8 @@ function DestinationForm({ destination, prefillName, onSaved }: { destination: D
   async function onSubmit(values: DestinationFormValues) {
     const patch = {
       name: values.name,
-      aliases: aliasesTextToArray(values.aliasesText),
+      // REQ §13.152: a place created from a queue text keeps that text as an alias, so it leaves the queue and links.
+      aliases: destination ? aliasesTextToArray(values.aliasesText) : aliasesWithQueueText(values.name, aliasesTextToArray(values.aliasesText), prefillName),
       zone: values.zone,
       lat: values.lat,
       lng: values.lng,
@@ -321,14 +327,52 @@ function ListTab() {
 function FreeTextQueueTab() {
   const queueQuery = useFreeTextQueue();
   const destinationsQuery = useDestinationsAdmin();
+  const ignoredQuery = useIgnoredPlaceTexts();
   const mergeMutation = useMergeFreeTextMutation();
+  const ignoreMutation = useIgnorePlaceTextMutation();
+  const unignoreMutation = useUnignorePlaceTextMutation();
   const [mergeTargets, setMergeTargets] = useState<Record<string, string>>({});
   const [createFrom, setCreateFrom] = useState<string | null>(null);
+  const [showIgnored, setShowIgnored] = useState(false);
 
-  const queue = queueQuery.data ?? [];
+  const { pending: queue, ignored } = splitFreeTextQueue(queueQuery.data ?? [], destinationsQuery.data ?? [], ignoredQuery.data ?? []);
+
+  const ignoredSection = ignored.length > 0 ? (
+    <section className="flex flex-col gap-2 border-t pt-3" data-testid="free-text-ignored">
+      <button
+        type="button"
+        className="flex min-h-11 items-center gap-1 self-start text-sm font-medium text-muted-foreground"
+        aria-expanded={showIgnored}
+        onClick={() => setShowIgnored((open) => !open)}
+      >
+        <ChevronDown className={cn("size-4 transition-transform", !showIgnored && "rotate-90")} aria-hidden="true" />
+        {tv("adminDestinations.queueIgnoredTitle", { count: String(ignored.length) })}
+      </button>
+      {showIgnored ? (
+        <ul className="flex flex-col gap-1">
+          {ignored.map((row) => (
+            <li key={row.id} className="flex items-center justify-between gap-2 text-sm">
+              <span className="text-muted-foreground">
+                {row.text}
+                {row.count > 0 ? <span dir="ltr" className="ms-1">({row.count})</span> : null}
+              </span>
+              <Button size="sm" variant="ghost" disabled={unignoreMutation.isPending} onClick={() => unignoreMutation.mutate(row.id, { onError: showErrorToast })}>
+                {he.adminDestinations.queueUnignore}
+              </Button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </section>
+  ) : null;
 
   if (queue.length === 0) {
-    return <EmptyState icon={MapPin} message={he.adminDestinations.emptyQueue} />;
+    return (
+      <div className="flex flex-col gap-4">
+        <EmptyState icon={MapPin} message={he.adminDestinations.emptyQueue} />
+        {ignoredSection}
+      </div>
+    );
   }
 
   return (
@@ -345,7 +389,7 @@ function FreeTextQueueTab() {
         </TableHeader>
         <TableBody>
           {queue.map((row) => (
-            <TableRow key={row.text}>
+            <TableRow key={row.key}>
               <TableCell>{row.text}</TableCell>
               <TableCell dir="ltr">{row.count}</TableCell>
               <TableCell dir="ltr">{formatInTimeZone(new Date(row.lastUsedAt), TZ, "dd/MM/yyyy")}</TableCell>
@@ -382,6 +426,15 @@ function FreeTextQueueTab() {
                 <Button size="sm" variant="outline" onClick={() => setCreateFrom(row.text)}>
                   {he.action.createDestination}
                 </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={ignoreMutation.isPending}
+                  data-testid="free-text-ignore"
+                  onClick={() => ignoreMutation.mutate(row.text, { onSuccess: () => toast.success(he.adminDestinations.queueIgnoredToast), onError: showErrorToast })}
+                >
+                  {he.adminDestinations.queueIgnore}
+                </Button>
               </TableCell>
             </TableRow>
           ))}
@@ -400,6 +453,7 @@ function FreeTextQueueTab() {
           </div>
         </SheetContent>
       </Sheet>
+      {ignoredSection}
     </div>
   );
 }
