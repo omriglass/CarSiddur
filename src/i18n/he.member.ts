@@ -362,6 +362,11 @@ export const heMember = {
     archive: "ארכיון",
     archiveTitle: "ארכיון סידורים",
     archiveEmpty: "אין עדיין סידורים בארכיון",
+    /** Archive date search (owner 2026-10-25): one date = its week; with "עד" = every week in the range. */
+    archiveDate: "תאריך",
+    archiveDateTo: "עד (לא חובה)",
+    archiveDateClear: "ניקוי",
+    archiveNoMatch: "אין סידורים בתאריכים האלה",
     archivedWeekHint: "סידור מהארכיון (לצפייה בלבד)",
   },
   // REQ §13.108 f: "be back on time" — who takes the car next / where it arrives from (display only).

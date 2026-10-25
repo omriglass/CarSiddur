@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { isPastWeek, pastWeeks } from "./pastWeeks";
+import { isPastWeek, pastWeeks, weeksInDateRange } from "./pastWeeks";
 
 describe("isPastWeek", () => {
   // 2026-09-10 is a Thursday; the Jerusalem week containing it starts Sunday 2026-09-06.
@@ -42,5 +42,19 @@ describe("pastWeeks", () => {
   it("returns an empty list when there is nothing past yet", () => {
     const weeks = [{ week_start: "2026-09-06", phase: "live" as const }];
     expect(pastWeeks(weeks, today)).toEqual([]);
+  });
+});
+
+describe("weeksInDateRange", () => {
+  const weeks = [{ week_start: "2026-10-18" }, { week_start: "2026-10-11" }, { week_start: "2026-10-04" }];
+  it("one date finds the week containing it", () => {
+    expect(weeksInDateRange(weeks, "2026-10-14")).toEqual([{ week_start: "2026-10-11" }]);
+    expect(weeksInDateRange(weeks, "2026-10-17")).toEqual([{ week_start: "2026-10-11" }]);
+    expect(weeksInDateRange(weeks, "2026-10-18")).toEqual([{ week_start: "2026-10-18" }]);
+  });
+  it("a range finds every overlapping week; nothing set = all", () => {
+    expect(weeksInDateRange(weeks, "2026-10-10", "2026-10-12").map((w) => w.week_start)).toEqual(["2026-10-11", "2026-10-04"]);
+    expect(weeksInDateRange(weeks, null, null)).toHaveLength(3);
+    expect(weeksInDateRange(weeks, "2026-11-01")).toEqual([]);
   });
 });

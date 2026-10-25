@@ -50,6 +50,16 @@ const PDI = "\u2069"; // pop directional isolate
  * a left-to-right isolate so it reads start-to-end inside RTL text and headers (a bare
  * `"24.10 – 18.10"` rendering was the bug); callers need no `dir` of their own.
  */
+/** The archive's week label with the year (owner 2026-10-25): "18–24.10.2026", "27.9–3.10.2026", "28.12.2025–3.1.2026". */
+export function formatWeekRangeLabelWithYear(weekStart: string): string {
+  const start = parseISO(weekStart);
+  const end = addDays(start, 6);
+  const sameYear = format(start, "yyyy") === format(end, "yyyy");
+  const sameMonth = sameYear && format(start, "M") === format(end, "M");
+  const from = sameMonth ? format(start, "d") : sameYear ? format(start, "d.M") : format(start, "d.M.yyyy");
+  return `${LRI}${from}–${format(end, "d.M.yyyy")}${PDI}`;
+}
+
 export function formatWeekRangeLabel(weekStart: string): string {
   const start = parseISO(weekStart);
   const end = addDays(start, 6);

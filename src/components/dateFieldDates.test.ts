@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { calendarCells, datesFrom, datesOfWeek, formatWeekRangeLabel, weekdayOfDate } from "./dateFieldDates";
+import { calendarCells, datesFrom, datesOfWeek, formatWeekRangeLabel, formatWeekRangeLabelWithYear, weekdayOfDate } from "./dateFieldDates";
 
 describe("formatWeekRangeLabel", () => {
   it("reads start-to-end as one left-to-right isolate, month once when it is the same", () => {
@@ -64,5 +64,14 @@ describe("calendarCells", () => {
     expect(cells[17]).toEqual({ date: "2026-10-28", selectable: true });
     expect(cells.slice(18).every((c) => !c.selectable)).toBe(true);
     expect(weekdayOfDate(cells[7]!.date)).toBe(0);
+  });
+});
+
+describe("formatWeekRangeLabelWithYear", () => {
+  const strip = (s: string) => s.replace(/[⁦-⁩]/g, "");
+  it("adds the year once, or to both ends across a new year", () => {
+    expect(strip(formatWeekRangeLabelWithYear("2026-10-18"))).toBe("18–24.10.2026");
+    expect(strip(formatWeekRangeLabelWithYear("2026-09-27"))).toBe("27.9–3.10.2026");
+    expect(strip(formatWeekRangeLabelWithYear("2025-12-28"))).toBe("28.12.2025–3.1.2026");
   });
 });
