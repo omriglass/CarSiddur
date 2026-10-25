@@ -23,6 +23,7 @@ import { useMyResponsibleCarsQuery } from "@/features/cars/hooks";
 import { isRideRelated, relatedRequestIdToEdit } from "@/features/rides/relatedRide";
 import { useCars, useMyTemporaryCars, useRideTypes } from "@/features/fleet/hooks";
 import { AddRideFab } from "@/features/requests/components/AddRideFab";
+import { RequestDeadlineNote } from "@/features/requests/components/RequestDeadlineNote";
 import { CarNowButton } from "@/features/requests/components/CarNowButton";
 import { NewRequestButton } from "@/features/requests/components/NewRequestButton";
 import { RequestRow } from "@/features/requests/components/RequestRow";
@@ -576,7 +577,10 @@ export function HomePage() {
                     weekLabel: formatWeekRangeLabel(homeWeek.weekStart),
                   })
             }
-            action={active.canSubmit && <NewRequestButton variant="inline" />}
+            action={<>
+              <RequestDeadlineNote week={weeksQuery.data?.find((w) => w.week_start === homeWeek?.weekStart)} />
+              {active.canSubmit && <NewRequestButton variant="inline" />}
+            </>}
           />
         ) : (
           tripWeeks.map((group) => {
@@ -600,6 +604,7 @@ export function HomePage() {
                   </span>
                   {phase ? <span className="text-sm text-muted-foreground">{he.phase[phase]}</span> : null}
                 </button>
+                <RequestDeadlineNote week={group.departmentId === defaultDepartmentId ? weeksQuery.data?.find((w) => w.week_start === group.weekStart) : null} className="-mt-1" />
                 {collapsed ? null : <>
                 {group.rows.some((row) => canEditRequest(row) && !isPublishedDayWindow(row.window)) ? (
                   <Button

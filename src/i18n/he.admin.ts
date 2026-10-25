@@ -308,6 +308,7 @@ export const heAdmin = {
     fieldTravelMinutes: "זמן נסיעה (דק')",
     fieldPtScore: "ציון תחבורה ציבורית",
     fieldApproved: "מאושר ברשימה",
+    approvedHelp: "בלי סימון — המקום לא מוצג לחברים ברשימת היעדים.",
     /** REQ §13.112 (a): a place members may choose as the drop point of their plan B ("אם אין רכב, הקפצה ל…"). */
     fieldDropPoint: "נקודת הקפצה",
     dropPointHelp: "חברים יכולים לבחור את המקום הזה כנקודת הקפצה בתוכנית ב׳ של בקשה.",

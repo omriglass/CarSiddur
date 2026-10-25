@@ -59,8 +59,8 @@ export function requestSentenceText(row: RequestSentenceInput): string {
   const origin = row.origin_resolved_name ?? row.origin_text ?? "";
   const destination = row.destination_resolved_name ?? row.destination_text ?? "";
   const outVia = stopNames("out");
-  const route = [origin ? `${he.requestSentence.from}${origin}` : "", outVia.length ? `${he.requestSentence.via} ${outVia.join(", ")}` : "",
-    destination ? `${he.requestSentence.to}${destination}` : ""].filter(Boolean).join(" ");
+  const route = [origin ? `${he.rideLabel.from}${origin}` : "", outVia.length ? `${he.requestSentence.via} ${outVia.join(", ")}` : "",
+    destination ? `${he.rideLabel.to}${destination}` : ""].filter(Boolean).join(" ");
 
   const first = row.depart_at ?? row.return_at;
   const last = row.return_at ?? row.depart_at;

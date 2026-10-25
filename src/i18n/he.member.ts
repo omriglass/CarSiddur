@@ -251,6 +251,10 @@ export const heMember = {
     cancel: "ביטול בחירת השעה",
   },
   /** Owner 2026-10-11: the "my rides" week view (`/my`) — what kind of block it is, written on top of the block. */
+  /** The week's request closing time on the siddur and /my while the week is open (`features/requests/deadline.ts`). */
+  requestDeadline: {
+    line: "אפשר להגיש בקשות עד יום {{day}} בשעה {{time}}",
+  },
   myWeek: {
     kind: {
       suggestion: "הצעה",
@@ -648,10 +652,10 @@ export const heMember = {
     prefix: "אם אין רכב,",
     kind: { alternative: "הקפצה", manage: "אסתדר" },
     /** Glue before the drop place chip ("ל" + chip), "עד" before the arrival chip, then the pickup words. */
-    toPrefix: "ל",
+    toPrefix: "ל־",
     untilPrefix: "עד",
     pickupWords: "ואיסוף",
-    pickupFromPrefix: "מ",
+    pickupFromPrefix: "מ־",
     /** The pickup place chip while it is the drop place itself. */
     samePlaceChip: "משם",
     atPrefix: "ב־",
@@ -750,8 +754,9 @@ export const heMember = {
     me: "אני",
     needs: "צריך/ה",
     needsPlural: "צריכים",
-    from: "מ",
-    to: "ל",
+    /** Prefixes glued to a place chip with a maqaf ("ל־[בנימינה]", R12U2); plain text uses `rideLabel.from/to`. */
+    from: "מ־",
+    to: "ל־",
     on: "ב",
     via: "דרך",
     /** Stage-2 recap: the stops of the return leg. */

@@ -7,6 +7,7 @@ import { ChevronDown } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { Controller, useWatch, type FieldErrors, type UseFormReturn } from "react-hook-form";
 
+import { CharCount } from "@/components/CharCount";
 import type { DestinationPreset, DestinationValue } from "@/components/DestinationCombobox";
 import { RideTypeChips } from "@/components/RideTypeChips";
 import { FormItem } from "@/components/ui/form";
@@ -408,7 +409,7 @@ export function SentenceFields(props: SentenceFieldsProps) {
       <span className="flex min-w-0 flex-col gap-0.5 text-[13px]">
         <span className="flex min-w-0 items-center gap-1.5">
           <span className="shrink-0 font-medium">{tripLabel}</span>
-          <span className="min-w-0 flex-1 truncate">{he.requestSentence.from}{originName} {he.requestSentence.to}{destinationName}</span>
+          <span className="min-w-0 flex-1 truncate">{he.rideLabel.from}{originName} {he.rideLabel.to}{destinationName}</span>
         </span>
         {viaPieces.length > 0 ? <span className="whitespace-normal break-words text-muted-foreground" data-testid="recap-via">{viaPieces.join(" · ")}</span> : null}
         {keepCarOn ? <span className="whitespace-normal break-words text-muted-foreground" data-testid="recap-keep-car">{keepCarNote(hasDestination ? destinationName : null)}</span> : null}
@@ -467,22 +468,22 @@ export function SentenceFields(props: SentenceFieldsProps) {
         {whoChip}
         {variant === "carNow" ? (
           <>
-            <Seg prefix={he.requestSentence.to}>
+            <Seg prefix={he.requestSentence.to} loose>
               <SentenceChip field="destination" invalid={invalid("destination")} onClick={() => setSheet("destination")} data-testid="chip-destination">
                 {destinationName}
               </SentenceChip>
             </Seg>
-            <Seg prefix={he.requestSentence.to}>
+            <Seg prefix={he.requestSentence.to} loose>
               <SentenceChip field="durationHours" onClick={() => setSheet("duration")} data-testid="chip-duration">{carNowDurationLabel}</SentenceChip>
             </Seg>
           </>
         ) : (
           <>
             <SentenceChip field="tripType" invalid={invalid("tripType", "tripShape")} onClick={() => setSheet("trip")} data-testid="chip-trip">{tripLabel}</SentenceChip>
-            <Seg prefix={he.requestSentence.from}>
+            <Seg prefix={he.requestSentence.from} loose>
               <SentenceChip field="origin" invalid={invalid("origin")} onClick={() => setSheet("origin")} data-testid="chip-origin">{originName}</SentenceChip>
             </Seg>
-            <Seg prefix={he.requestSentence.to}>
+            <Seg prefix={he.requestSentence.to} loose>
               <SentenceChip field="destination" invalid={invalid("destination")} onClick={() => setSheet("destination")} data-testid="chip-destination">
                 {destinationName}
               </SentenceChip>
@@ -617,7 +618,7 @@ export function SentenceFields(props: SentenceFieldsProps) {
             testId="row-description"
           >
             <FormItem data-field="rideDescription">
-              <Controller control={control} name="rideDescription" render={({ field }) => <Textarea {...field} id="request-description" rows={2} maxLength={1000} aria-label={he.requestSentence.description} />} />
+              <Controller control={control} name="rideDescription" render={({ field }) => <><Textarea {...field} id="request-description" rows={2} maxLength={1000} aria-label={he.requestSentence.description} /><CharCount value={field.value} max={1000} /></>} />
               <p className="text-xs text-muted-foreground">{t("quickRequest.rideDescriptionHelp")}</p>
               <FieldError message={errors.rideDescription?.message} />
             </FormItem>
@@ -670,7 +671,7 @@ export function SentenceFields(props: SentenceFieldsProps) {
             testId="row-description"
           >
             <FormItem data-field="rideDescription">
-              <Controller control={control} name="rideDescription" render={({ field }) => <Textarea {...field} id="request-description" rows={2} maxLength={1000} aria-label={he.requestSentence.description} />} />
+              <Controller control={control} name="rideDescription" render={({ field }) => <><Textarea {...field} id="request-description" rows={2} maxLength={1000} aria-label={he.requestSentence.description} /><CharCount value={field.value} max={1000} /></>} />
               <p className="text-xs text-muted-foreground">{t("quickRequest.rideDescriptionHelp")}</p>
               <FieldError message={errors.rideDescription?.message} />
             </FormItem>

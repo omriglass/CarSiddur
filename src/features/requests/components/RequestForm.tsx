@@ -7,6 +7,7 @@ import type { FieldErrors } from "react-hook-form";
 
 import { toast } from "sonner";
 
+import { CharCount } from "@/components/CharCount";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { SheetPortalContext } from "@/components/SheetPortalContext";
@@ -1438,7 +1439,7 @@ export function RequestForm({
         {variant !== "carNow" ? (
           <FormItem data-field="rideDescription">
             <Label htmlFor="request-description">{t("quickRequest.rideDescription")}</Label>
-            <Controller control={form.control} name="rideDescription" render={({ field }) => <Textarea {...field} id="request-description" rows={2} maxLength={1000} aria-describedby="request-description-help" />} />
+            <Controller control={form.control} name="rideDescription" render={({ field }) => <><Textarea {...field} id="request-description" rows={2} maxLength={1000} aria-describedby="request-description-help" /><CharCount value={field.value} max={1000} /></>} />
             <p id="request-description-help" className="text-xs text-muted-foreground">{t("quickRequest.rideDescriptionHelp")}</p>
             <FieldError message={form.formState.errors.rideDescription?.message} />
           </FormItem>

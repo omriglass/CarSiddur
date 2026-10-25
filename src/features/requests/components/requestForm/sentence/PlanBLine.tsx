@@ -169,7 +169,7 @@ export function PlanBLine({ form, errors, destinations, originPlaceId, sheet, se
           {alternative ? (
             <>
               <span className="inline-flex max-w-full items-center whitespace-nowrap">
-                <span className="-me-1">{he.planB.toPrefix}</span>
+                <span>{he.planB.toPrefix}</span>
                 <SentenceChip field="altPlace" invalid={invalid("altPlace")} onClick={() => setSheet("planBPlace")} data-testid="chip-plan-b-place">
                   {hasAltPlace(place) ? placeName(place, destinations) : he.planB.placeEmpty}
                 </SentenceChip>
@@ -184,7 +184,7 @@ export function PlanBLine({ form, errors, destinations, originPlaceId, sheet, se
                   <span className="inline-flex max-w-full items-center gap-1.5 whitespace-nowrap">
                     <span>{he.planB.pickupWords}</span>
                     <span className="inline-flex min-w-0 items-center">
-                      {hasPickupPlace ? <span className="-me-1">{he.planB.pickupFromPrefix}</span> : null}
+                      {hasPickupPlace ? <span>{he.planB.pickupFromPrefix}</span> : null}
                       <SentenceChip field="altPickupPlace" invalid={invalid("altPickupPlace")} onClick={() => setSheet("planBPickupPlace")} data-testid="chip-plan-b-pickup-place">
                         {hasPickupPlace ? placeName(pickupPlace, destinations) : he.planB.samePlaceChip}
                       </SentenceChip>

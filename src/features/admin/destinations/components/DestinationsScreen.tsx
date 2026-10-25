@@ -117,6 +117,22 @@ function DestinationForm({ destination, prefillName, onSaved }: { destination: D
             </FormItem>
           )}
         />
+        {/* R12U6: kept at the top, away from the drop-point switch — unticking it hides the place from members. */}
+        <FormField
+          control={form.control}
+          name="is_approved"
+          render={({ field }) => (
+            <FormItem className="flex flex-row items-start gap-2 space-y-0">
+              <FormControl>
+                <Checkbox checked={field.value} onCheckedChange={(v) => field.onChange(!!v)} className="mt-0.5" />
+              </FormControl>
+              <div className="space-y-0.5">
+                <FormLabel className="!mt-0">{he.adminDestinations.fieldApproved}</FormLabel>
+                <p className="text-xs text-muted-foreground">{he.adminDestinations.approvedHelp}</p>
+              </div>
+            </FormItem>
+          )}
+        />
         <FormField
           control={form.control}
           name="zone"
@@ -212,18 +228,6 @@ function DestinationForm({ destination, prefillName, onSaved }: { destination: D
                   ))}
                 </SelectContent>
               </Select>
-            </FormItem>
-          )}
-        />
-        <FormField
-          control={form.control}
-          name="is_approved"
-          render={({ field }) => (
-            <FormItem className="flex flex-row items-center gap-2 space-y-0">
-              <FormControl>
-                <Checkbox checked={field.value} onCheckedChange={(v) => field.onChange(!!v)} />
-              </FormControl>
-              <FormLabel className="!mt-0">{he.adminDestinations.fieldApproved}</FormLabel>
             </FormItem>
           )}
         />

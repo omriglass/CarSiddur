@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { CharCount } from "@/components/CharCount";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -30,6 +31,7 @@ export function RidePublicNotesEditor({ rideId, expectedVersion, initialNotes, d
     }}>
       <Label htmlFor={fieldId}>{he.ridePublicDetails.label}</Label>
       <Textarea id={fieldId} rows={3} maxLength={1000} value={notes} disabled={mutation.isPending} onChange={(event) => setNotes(event.target.value)} aria-describedby={`${fieldId}-help`} />
+      <CharCount value={notes} max={1000} />
       <p id={`${fieldId}-help`} className="text-xs text-muted-foreground">{he.ridePublicDetails.help}</p>
       <Button type="submit" disabled={!changed || mutation.isPending}>{he.ridePublicDetails.save}</Button>
     </form>

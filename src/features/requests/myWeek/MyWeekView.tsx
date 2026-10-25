@@ -51,6 +51,7 @@ import {
   type MyWeekTarget,
 } from "./myWeekItems";
 import { MyWeekDisplayMenu } from "./MyWeekDisplayMenu";
+import { RequestDeadlineNote } from "../components/RequestDeadlineNote";
 import { MyWeekSwitcher } from "./MyWeekSwitcher";
 
 /** Weeks in which a tap on empty space may start a request (never `solving`, `upcoming` or any past week). */
@@ -244,6 +245,7 @@ export function MyWeekView({ departmentId, homeDestinationId, profileId, request
           </div>
         ) : null}
       </div>
+      {isPast ? null : <RequestDeadlineNote week={week} />}
       <p className="text-xs text-muted-foreground" data-testid="my-week-hint">{isPast ? he.myWeek.hintReadOnly : acceptsRequests ? he.myWeek.hint : null}</p>
       {calendar.needsReconnect && !archive ? (
         <Button type="button" variant="outline" size="sm" onClick={() => void calendar.connect()} disabled={calendar.connecting} data-testid="calendar-reconnect">

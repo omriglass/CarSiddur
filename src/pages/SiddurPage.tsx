@@ -36,6 +36,7 @@ import { useMyRequests, useCancelRideMutation } from "@/features/requests/hooks"
 import { canEditRequest } from "@/features/requests/window";
 import { useCars, useDestinations, useRideTypes, useMaintenanceBlocks } from "@/features/fleet/hooks";
 import { AddRideFab } from "@/features/requests/components/AddRideFab";
+import { RequestDeadlineNote } from "@/features/requests/components/RequestDeadlineNote";
 import { CarNowButton } from "@/features/requests/components/CarNowButton";
 import { QuickRequestSheet } from "@/features/requests/components/QuickRequestSheet";
 import { ridePublicDetails } from "@/lib/ridePublicDetails";
@@ -517,9 +518,12 @@ export function SiddurPage() {
           icon={Inbox}
           message={tv("siddur.notPublishedYet", { weekLabel: formatWeekRangeLabel(resolvedWeek.week_start) })}
           action={
-            <a href={paths.my()} className="text-sm font-medium text-primary underline">
-              {he.siddur.notPublishedAction}
-            </a>
+            <>
+              <RequestDeadlineNote week={resolvedWeek} className="text-sm" />
+              <a href={paths.my()} className="text-sm font-medium text-primary underline">
+                {he.siddur.notPublishedAction}
+              </a>
+            </>
           }
         />
       ) : (

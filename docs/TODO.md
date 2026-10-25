@@ -1010,11 +1010,11 @@ Held up: per-day autofill incl. series, publish picker (unsolved days not pre-ti
 
 ### UI changes
 - **R12U1** Plan B default "להיות שם עד" is later than the main arrive-by (m22, m01).
-- **R12U2** A space between the prefix letter and its chip ("ל בנימינה", "מ גבעת חביבה").
+- ✅ **R12U2** (2026-10-25: maqaf "ל־[chip]", REQ §13.151 b) A space between the prefix letter and its chip ("ל בנימינה", "מ גבעת חביבה").
 - **R12U3** Ask-to-join asker must accept the same merge again after the owner accepts.
 - **R12U4** Series rows/notices show "00:00–17:30" on later days; "/my" "2 ימים" with no per-day breakdown.
 - **R12U5** Owner's "declined" notice names the origin, not the trip/person.
-- **R12U6** Destination dialog: "approved in list" checkbox right above the drop-point switch (easy to deactivate a place by mistake).
+- ✅ **R12U6** (2026-10-25: moved to the top with a help line, REQ §13.151 c) Destination dialog: "approved in list" checkbox right above the drop-point switch (easy to deactivate a place by mistake).
 - **R12U7** Ride sheet lists the passengers twice; publish headline doesn't say which day/ride conflicts; CLI prints UTC times in the car-conflict warning.
 
 ### Missing obvious features
@@ -1077,7 +1077,7 @@ Whole-week autofill in the clock-change week now runs (89 rides, all 7 multi-day
 **Additional features**
 - R13F1 — Suggest a member's own private car (or its owner as driver) for out-of-town members.
 - ✅ R13F2 — Show a person's other rides when assigning a driver (Amit Dahan's pickup clashed). **Done 2026-10-23:** the driver picker shows the chosen person's rides and unplaced requests that day, overlaps marked (`personDayEntries`, `RideDriverPicker`).
-- R13F3 — Character count/limit for "מידע נוסף לכולם".
+- ✅ R13F3 (2026-10-25: quiet counter from 800 chars, REQ §13.151 d) — Character count/limit for "מידע נוסף לכולם".
 - R13F4 — In a multi-day edit, preview which old days are released / which car is kept.
 
 **Not tested:** car-now (the QA week is not the current week), Google calendar (no client id), car with no code (no admin pass), finger-drag closing the popup (desktop only).
