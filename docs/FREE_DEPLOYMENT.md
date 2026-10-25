@@ -167,8 +167,9 @@ release is:
 npm run release -- --yes-remote   # flags go after "--" or npm swallows them; add --dry-run first to preview, --status to check where things stand
 ```
 
-**Changelog first (REQ §13.139).** Before releasing, add the "מה חדש" entry at the top of `src/i18n/he.changelog.ts`
-(skill `/write-changelog`). The release's preflight refuses without a new top entry since the last tag
+**Changelog first, unless minor (REQ §13.139).** Before an announced release, add the "מה חדש" entry at the top of
+`src/i18n/he.changelog.ts` (skill `/write-changelog`). A minor release (small fixes, UI touch-ups) has no entry: the
+preflight prints `MINOR` and goes on, and nobody is told. It refuses only a new entry that is not the top one
 (`scripts/changelog-check.mjs`); `--dry-run` shows the check. Members get it as a quiet inbox message the first time
 they open the new version — never a push.
 

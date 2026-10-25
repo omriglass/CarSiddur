@@ -12,8 +12,9 @@ describe("changelog-check", () => {
     expect(evaluateChangelog(file("a"), file("b", "a")).ok).toBe(true);
     expect(evaluateChangelog("", file("a")).ok).toBe(true);
   });
-  it("refuses a release without a new entry", () => {
-    expect(evaluateChangelog(file("a"), file("a")).ok).toBe(false);
+  it("lets a release without a new entry through as a quiet minor release", () => {
+    expect(evaluateChangelog(file("a"), file("a"))).toMatchObject({ ok: true, minor: true });
+    expect(evaluateChangelog(file("a"), file("b", "a"))).toMatchObject({ ok: true, minor: false });
   });
   it("refuses a new entry that is not on top", () => {
     expect(evaluateChangelog(file("a"), file("a", "b")).ok).toBe(false);

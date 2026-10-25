@@ -1,7 +1,8 @@
-// REQ §13.139: "מה חדש" — one entry per release, newest first (the top entry is the one delivered to the inbox).
+// REQ §13.139: "מה חדש" — one entry per announced release, newest first (the top entry is the one delivered to the inbox);
+// a minor release (small fixes, UI touch-ups) adds no entry, so nobody is told.
 // Written with the `write-changelog` skill (.claude/skills/write-changelog/SKILL.md): short, for the people who use the
 // app; Sadran and admin lines very brief; technical work only as "תיקוני באגים" / "שיפורי ביצועים". `npm run release`
-// refuses to release without a new entry (scripts/changelog-check.mjs). `id` is stable and unique (it dedupes the inbox
+// refuses only a new entry that is not on top (scripts/changelog-check.mjs). `id` is stable and unique (it dedupes the inbox
 // message): lowercase letters, digits, `.`, `_`, `-`. Entries before 2026-10-19 are retroactive milestones.
 
 export interface ChangelogEntry {
