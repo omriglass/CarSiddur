@@ -6697,6 +6697,13 @@ export type Database = {
         Args: { p_request_id: string }
         Returns: boolean
       }
+      request_notes: {
+        Args: { p_request_ids: string[] }
+        Returns: {
+          notes: string
+          request_id: string
+        }[]
+      }
       request_related: {
         Args: { p_actor: string; p_request: string }
         Returns: boolean
@@ -6740,6 +6747,13 @@ export type Database = {
           place_id: string
           place_text: string
           position: number
+        }[]
+      }
+      request_waitlist_causes: {
+        Args: { p_request_ids: string[] }
+        Returns: {
+          cause: string
+          request_id: string
         }[]
       }
       required_turnaround_minutes: {

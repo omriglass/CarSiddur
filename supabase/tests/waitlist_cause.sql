@@ -44,8 +44,10 @@ begin
   -- (2) someone unrelated gets nothing
   perform pg_temp.as_user(m2);
   assert public.waitlist_cause(r) is null, '(2) an unrelated member must not get a cause';
+  assert not exists (select 1 from public.request_waitlist_causes(array[q])), '(2) request_waitlist_causes: nothing for an unrelated member';
   perform pg_temp.as_user(sadran);
   assert public.waitlist_cause(r) = 'WAITLISTED_LARGE_TRUNK_BUSY', '(2) the Sadran gets it';
+  assert (select cause from public.request_waitlist_causes(array[q])) = 'WAITLISTED_LARGE_TRUNK_BUSY', '(2) request_waitlist_causes: the Sadran gets it (REQ §13.153)';
 
   -- (3) six people: only the van seats them
   update public.requests set has_luggage = false, adults = 6 where id = q;

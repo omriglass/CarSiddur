@@ -182,6 +182,19 @@ try {
     check("  the member reads their own request back (status submitted)", !mine.error && mine.data.status === "submitted" && mine.data.requester_id === m1Id, mine.error?.message ?? mine.data?.status);
     check("  another member cannot read it", ((await m2.from("requests").select("id").eq("id", requestId)).data ?? []).length === 0);
 
+    // REQ §13.153: the note to the Sadran is not a readable column; request_notes gives it to those who may edit.
+    const noted = await m1.rpc("submit_request", { payload: payload({ request_id: requestId, expected_version: mine.data.version, notes: "api private note" }) });
+    check("  the member saves a note to the Sadran", !noted.error, errText(noted));
+    const direct = await m1.from("requests").select("notes").eq("id", requestId);
+    check("  nobody selects requests.notes directly (column closed)", !!direct.error, direct.error ? undefined : "select succeeded");
+    const own = await m1.rpc("request_notes", { p_request_ids: [requestId] });
+    check("  the member reads their own note through request_notes", !own.error && own.data?.[0]?.notes === "api private note", errText(own));
+    const otherNote = await m2.rpc("request_notes", { p_request_ids: [requestId] });
+    check("  another member gets no note", !otherNote.error && (otherNote.data ?? []).length === 0, errText(otherNote));
+    const plain = await m1.from("requests").select("id,ride_description,version").eq("id", requestId).single();
+    check("  the other columns stay readable", !plain.error, plain.error?.message);
+    mine.data.version = plain.data?.version ?? mine.data.version;
+
     const edit = await m1.rpc("submit_request", { payload: payload({ request_id: requestId, expected_version: mine.data.version, adults: 2, return_at: at(1, 2, 11) }) });
     check("member edits it with the expected version", !edit.error, errText(edit));
     const edited = await m1.from("requests").select("adults,return_at,version").eq("id", requestId).single();

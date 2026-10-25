@@ -296,7 +296,7 @@ declare
   v_profiles jsonb; v_policies jsonb;
 begin
   with requests as (
-    select q.*,exists(select 1 from public.ride_requests rr join public.rides r on r.id=rr.ride_id where rr.request_id=q.id and r.status<>'cancelled') as served
+    select q.id,q.requester_id,exists(select 1 from public.ride_requests rr join public.rides r on r.id=rr.ride_id where rr.request_id=q.id and r.status<>'cancelled') as served
     from public.requests q where department_id='00000000-0000-0000-0000-000000000001' and week_start=v_open_week and status not in ('draft','withdrawn','cancelled')
   ), profiles as (
     select jsonb_build_object('profile_id',requester_id,'request_count',count(*),'served_count',count(*) filter(where served),'priority_total',count(*),'served_priority_total',count(*) filter(where served),
@@ -781,5 +781,48 @@ begin
 
   raise notice 'TEST 18 PASSED: every column readable across departments is pinned and classified (DATA_MODEL.md §4.4)';
 end $$;
+
+-- TEST 19 (REQ §13.153): the note to the Sadran is private. `authenticated` may read every column of `requests` except
+-- `notes` (a new column must be granted explicitly — this fails until it is, or until it is classified as private here),
+-- and `request_notes()` returns a note only to someone who may edit the request.
+do $$
+declare v_missing text; v_note_count int;
+  dept uuid := '00000000-0000-0000-0000-000000000001';
+  r uuid;
+begin
+  assert not has_column_privilege('authenticated', 'public.requests', 'notes', 'SELECT'),
+    'TEST 19 FAILED: authenticated can SELECT requests.notes';
+  select string_agg(c.column_name, ', ') into v_missing
+  from information_schema.columns c
+  where c.table_schema = 'public' and c.table_name = 'requests' and c.column_name <> 'notes'
+    and not has_column_privilege('authenticated', 'public.requests', c.column_name, 'SELECT');
+  assert v_missing is null, format('TEST 19 FAILED: requests column(s) %s not granted SELECT to authenticated -- grant them '
+    '(and add them to src/lib/requestColumns.ts), or classify them as private here', v_missing);
+
+  select id into r from public.requests where department_id = dept and requester_id = '00000000-0000-0000-0000-000000000103' limit 1;
+  update public.requests set notes = 'private note to the sadran' where id = r;
+  perform set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000104","role":"authenticated"}', true);
+  select count(*) into v_note_count from public.request_notes(array[r]);
+  assert v_note_count = 0, 'TEST 19 FAILED: another member got the note through request_notes';
+  perform set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000103","role":"authenticated"}', true);
+  assert (select notes from public.request_notes(array[r])) = 'private note to the sadran', 'TEST 19 FAILED: the requester must get their own note';
+  perform set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000102","role":"authenticated"}', true);
+  assert (select count(*) from public.request_notes(array[r])) = 1, 'TEST 19 FAILED: the Sadran must get the note';
+  raise notice 'TEST 19 PASSED: requests.notes closed to members; request_notes only to those who may edit';
+end $$;
+
+-- the column grant itself: a member selecting notes directly is refused
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000104","role":"authenticated"}', true);
+set local role authenticated;
+do $$ begin
+  begin
+    perform notes from public.requests limit 1;
+    raise exception 'TEST 19 FAILED: a member selected requests.notes directly';
+  exception when insufficient_privilege then null;
+  end;
+  perform id, ride_description from public.requests limit 1;
+  raise notice 'TEST 19 PASSED: direct SELECT of requests.notes refused, other columns readable';
+end $$;
+reset role;
 
 rollback;

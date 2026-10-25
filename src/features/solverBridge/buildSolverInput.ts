@@ -39,8 +39,10 @@ import type {
 } from "@/solver";
 
 import type { Database, Json } from "@/integrations/supabase/types";
+import type { ReadableRequestRow } from "@/lib/requestColumns";
 
-export type RequestRow = Database["public"]["Tables"]["requests"]["Row"];
+/** Every readable column — the solver never needs the private note (REQ §13.153). */
+export type RequestRow = ReadableRequestRow;
 export type CarRow = Database["public"]["Tables"]["cars"]["Row"];
 export type SeatConfigRow = Database["public"]["Tables"]["car_seat_configs"]["Row"];
 export type DestinationRow = Database["public"]["Tables"]["destinations"]["Row"];

@@ -176,7 +176,7 @@ declare
   v_profiles jsonb; v_policies jsonb; v_version uuid;
 begin
   with requests as (
-    select q.*, exists(select 1 from public.ride_requests rr join public.rides r on r.id = rr.ride_id where rr.request_id = q.id and r.status <> 'cancelled') as served
+    select q.id, q.requester_id, exists(select 1 from public.ride_requests rr join public.rides r on r.id = rr.ride_id where rr.request_id = q.id and r.status <> 'cancelled') as served
     from public.requests q where department_id = dept and week_start = wn and status not in ('draft','withdrawn','cancelled')
   ), profiles as (
     select jsonb_build_object('profile_id', requester_id, 'request_count', count(*), 'served_count', count(*) filter (where served),

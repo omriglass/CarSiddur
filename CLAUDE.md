@@ -248,6 +248,7 @@ scripts/
 - Every table: `id uuid pk default gen_random_uuid()`, `created_at/updated_at timestamptz not null default now()` + `set_updated_at()`. State tables also `bump_version()` (optimistic concurrency) and `audit_row()`.
 - `department_id` denormalized onto every department-scoped row; week-scoped rows carry `(department_id, week_start)` with a composite FK to `weeks`, so RLS never joins.
 - Policies use `(select auth.uid())`; helpers are `security definer stable set search_path = public, pg_temp`.
+- `requests.notes` (the note to the Sadran) is closed by column grants (REQ §13.153): browser code never `select("*")`s `requests` — use `REQUEST_COLUMNS` (`src/lib/requestColumns.ts`) and `request_notes(ids)` for the note; a new `requests` column needs `grant select (col) … to authenticated` plus an entry there (`rls_smoke.sql` TEST 19). Security-invoker SQL reading `requests` names its columns too.
 - Immutable history: `policy_versions`, `siddur_versions` (`forbid_mutation()`).
 
 **React / UI**

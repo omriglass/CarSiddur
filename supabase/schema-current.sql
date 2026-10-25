@@ -14295,6 +14295,18 @@ $$;
 ALTER FUNCTION "public"."request_needs_large_trunk"("p_request_id" "uuid") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."request_notes"("p_request_ids" "uuid"[]) RETURNS TABLE("request_id" "uuid", "notes" "text")
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select q.id, q.notes from public.requests q
+   where q.id = any(p_request_ids) and q.notes is not null and public.can_edit_request(q.id);
+$$;
+
+
+ALTER FUNCTION "public"."request_notes"("p_request_ids" "uuid"[]) OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."request_related"("p_request" "uuid", "p_actor" "uuid") RETURNS boolean
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -14510,6 +14522,20 @@ end $$;
 
 
 ALTER FUNCTION "public"."request_templates_link_typed_places"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."request_waitlist_causes"("p_request_ids" "uuid"[]) RETURNS TABLE("request_id" "uuid", "cause" "text")
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select c.id, c.cause from (
+    select q.id, public.waitlist_cause(q) as cause from public.requests q
+     where q.id = any(p_request_ids) and q.status = 'waitlisted'
+  ) c where c.cause is not null;
+$$;
+
+
+ALTER FUNCTION "public"."request_waitlist_causes"("p_request_ids" "uuid"[]) OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."requests_awaiting_driver_status"() RETURNS "trigger"
@@ -19942,7 +19968,20 @@ CREATE OR REPLACE FUNCTION "public"."week_board_rides"("p_department_id" "uuid",
     select x.* from public.ride_requests x where x.ride_id in (select vr.id from vr)
   ),
   vq as materialized (
-    select q.* from public.requests q where q.id in (select vrr.request_id from vrr)
+    -- every column but notes (REQ §13.153: closed to members); the view body never reads it
+    select q.id, q.department_id, q.week_start, q.requester_id, q.filed_by, q.destination_id,
+           q.destination_text, q.ride_type_id, q.trip_shape, q.depart_at, q.return_at,
+           q.one_way_car_mode, q.needs_car_at_destination, q.adults, q.child_seats, q.boosters,
+           q.has_luggage, q.flex_depart_early, q.flex_depart_late, q.flex_return_early,
+           q.flex_return_late, q.is_late, q.submitted_at, q.status, q.status_reason,
+           q.changed_since_solve, q.freed_slot_opt_out, q.manual_boost, q.manual_boost_reason,
+           q.join_ride_id, q.template_id, q.version, q.created_at, q.updated_at, q.preferred_car_id,
+           q.original_depart_at, q.original_return_at, q.ride_description, q.guest_passenger_names,
+           q.series_id, q.series_index, q.series_count, q.origin_id, q.origin_text, q.trip_type,
+           q.kept_return_at, q.depart_anchor, q.arrive_by, q.return_anchor, q.leave_dest_at,
+           q.luggage_waived_at, q.luggage_waived_by, q.duration_locked, q.fallback,
+           q.served_by_alternative, q.plan_b_parent_id, q.keep_car_at_destination
+      from public.requests q where q.id in (select vrr.request_id from vrr)
   ),
   vrc as materialized (
     select c.* from public.request_companions c where c.request_id in (select vq.id from vq)
@@ -28355,6 +28394,12 @@ GRANT ALL ON FUNCTION "public"."request_needs_large_trunk"("p_request_id" "uuid"
 
 
 
+REVOKE ALL ON FUNCTION "public"."request_notes"("p_request_ids" "uuid"[]) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."request_notes"("p_request_ids" "uuid"[]) TO "service_role";
+GRANT ALL ON FUNCTION "public"."request_notes"("p_request_ids" "uuid"[]) TO "authenticated";
+
+
+
 REVOKE ALL ON FUNCTION "public"."request_related"("p_request" "uuid", "p_actor" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."request_related"("p_request" "uuid", "p_actor" "uuid") TO "service_role";
 
@@ -28402,6 +28447,12 @@ GRANT ALL ON FUNCTION "public"."request_stops_with_eta"("p_request_id" "uuid") T
 
 REVOKE ALL ON FUNCTION "public"."request_templates_link_typed_places"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."request_templates_link_typed_places"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."request_waitlist_causes"("p_request_ids" "uuid"[]) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."request_waitlist_causes"("p_request_ids" "uuid"[]) TO "service_role";
+GRANT ALL ON FUNCTION "public"."request_waitlist_causes"("p_request_ids" "uuid"[]) TO "authenticated";
 
 
 
@@ -28984,8 +29035,236 @@ GRANT ALL ON FUNCTION "public"."validate_request_companion"() TO "service_role";
 
 
 
-GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE "public"."requests" TO "authenticated";
+GRANT INSERT,DELETE,MAINTAIN,UPDATE ON TABLE "public"."requests" TO "authenticated";
 GRANT ALL ON TABLE "public"."requests" TO "service_role";
+
+
+
+GRANT SELECT("id") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("department_id") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("week_start") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("requester_id") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("filed_by") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("destination_id") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("destination_text") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("ride_type_id") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("trip_shape") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("depart_at") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("return_at") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("one_way_car_mode") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("needs_car_at_destination") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("adults") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("child_seats") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("boosters") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("has_luggage") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("flex_depart_early") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("flex_depart_late") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("flex_return_early") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("flex_return_late") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("is_late") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("submitted_at") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("status") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("status_reason") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("changed_since_solve") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("freed_slot_opt_out") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("manual_boost") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("manual_boost_reason") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("join_ride_id") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("template_id") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("version") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("created_at") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("updated_at") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("preferred_car_id") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("original_depart_at") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("original_return_at") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("ride_description") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("guest_passenger_names") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("series_id") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("series_index") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("series_count") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("origin_id") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("origin_text") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("trip_type") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("kept_return_at") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("depart_anchor") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("arrive_by") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("return_anchor") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("leave_dest_at") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("luggage_waived_at") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("luggage_waived_by") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("duration_locked") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("fallback") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("served_by_alternative") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("plan_b_parent_id") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("keep_car_at_destination") ON TABLE "public"."requests" TO "authenticated";
 
 
 

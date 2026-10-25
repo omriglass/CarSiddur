@@ -1,5 +1,8 @@
 -- TODO regressions. Transactional fixtures; safe against an existing seeded database.
 begin;
+-- The whole fixture row (incl. the private `notes`, REQ §13.153) for tests that resubmit it as a member: read as owner.
+create function pg_temp.request_row(_id uuid) returns public.requests language sql security definer as $$ select * from public.requests where id=_id $$;
+grant execute on function pg_temp.request_row(uuid) to authenticated;
 create temporary table todo_ids(k text primary key,id uuid);
 grant all on todo_ids to authenticated;
 do $$
@@ -34,7 +37,7 @@ do $$
 declare r public.rides%rowtype; q public.requests%rowtype; ch uuid; other public.rides%rowtype;
 begin
   select * into r from public.rides where id=(select id from todo_ids where k='ride1');
-  select * into q from public.requests where id=(select id from todo_ids where k='request1');
+  select id, depart_at, flex_depart_late into q.id, q.depart_at, q.flex_depart_late from public.requests where id=(select id from todo_ids where k='request1');
   perform public.edit_ride(to_jsonb(r)||jsonb_build_object('starts_at',r.starts_at+interval '1 hour','ends_at',r.ends_at+interval '1 hour'),r.version);
   assert (select depart_at=q.depart_at and flex_depart_late=q.flex_depart_late from public.requests where id=q.id),'moving ride changed flexibility anchor';
   select * into r from public.rides where id=r.id;
@@ -145,7 +148,7 @@ select set_config('request.jwt.claims','{"sub":"00000000-0000-0000-0000-00000000
 do $$
 declare q public.requests%rowtype; result jsonb; n int;
 begin
-  select * into q from public.requests where id=(select id from todo_ids where k='draft_req1');
+  q:=pg_temp.request_row((select id from todo_ids where k='draft_req1'));
   begin
     perform public.submit_request(to_jsonb(q)||jsonb_build_object('request_id',q.id,'expected_version',null,'depart_at',q.depart_at+interval '1 hour'));
     raise exception 'null expected_version bypassed concurrency check';

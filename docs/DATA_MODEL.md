@@ -634,7 +634,7 @@ PK `(department_id, week_start)`. CHECK `open_at < close_at and close_at <= publ
 | flex_depart_late | interval | NN | '0' | same domain |
 | flex_return_early | interval | NN | '0' | same domain |
 | flex_return_late | interval | NN | '0' | same domain |
-| notes | text | | | for the Sadran |
+| notes | text | | | for the Sadran. **Private (REQ §13.153, `20261028210000`):** `authenticated` has a column-level SELECT grant on every other column of `requests` but not this one (a new `requests` column needs its own `grant select (col)` and an entry in `src/lib/requestColumns.ts` — `rls_smoke.sql` TEST 19 fails until both exist); the browser reads it only through `request_notes(p_request_ids uuid[]) → (request_id, notes)` (SECURITY DEFINER, rows where `can_edit_request(id)`: requester, filer, related people, the week's Sadran, admin). Browser queries name columns (`REQUEST_COLUMNS`), never `select *`; `week_board_rides` likewise. The computed field `waitlist_cause(requests)` (whole-row argument) is likewise out of reach of the browser; "my rides" gets it from `request_waitlist_causes(p_request_ids uuid[]) → (request_id, cause)` (SECURITY DEFINER, same self-gating). Definer functions and the service role read it as before. |
 | is_late | boolean | NN | false | computed by `submit_request()` when submitted after `weeks.close_at` (§13.6) |
 | submitted_at | timestamptz | | | set on draft → submitted |
 | status | request_status | NN | 'draft' | |

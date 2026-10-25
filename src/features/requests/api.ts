@@ -162,7 +162,7 @@ export interface MyRequestRow {
 
 const SELECT = `
   id, requester_id, filed_by, requester:profiles!requests_requester_id_fkey(full_name), filer:profiles!requests_filed_by_fkey(full_name),
-  department_id, week_start, status, status_reason, waitlist_cause, is_late, changed_since_solve,
+  department_id, week_start, status, status_reason, is_late, changed_since_solve,
   depart_at, return_at, trip_shape, needs_car_at_destination, destination_id, destination_text, version, ride_type_id,
   origin_id, origin_text, trip_type, keep_car_at_destination, depart_anchor, arrive_by, return_anchor, leave_dest_at,
   freed_slot_opt_out, has_luggage, luggage_waived_at, preferred_car_id, template_id, series_id, series_index, series_count,
@@ -235,7 +235,7 @@ interface RawRequestRow {
   week_start: string;
   status: RequestStatus;
   status_reason: string | null;
-  /** R13B17: computed field — the current cause of a `WAITLISTED_NO_CAR` wait (`waitlist_cause()`), else null. */
+  /** R13B17: the current cause of a `WAITLISTED_NO_CAR` wait (`request_waitlist_causes()`, merged in `fetchMyRequests`), else null. */
   waitlist_cause?: string | null;
   is_late: boolean;
   changed_since_solve: boolean;
@@ -525,7 +525,7 @@ const EDIT_SELECT = `
   fallback, served_by_alternative, plan_b_parent_id,
   alternative:request_alternatives(drop_place_id, drop_place_text, arrive_by, pickup, pickup_at, drop_place:destinations!request_alternatives_place_fk(name), pickup_place_id, pickup_place_text, pickup_place:destinations!request_alternatives_pickup_place_fk(name)),
   adults, child_seats, boosters, has_luggage,
-  flex_depart_early, flex_depart_late, flex_return_early, flex_return_late, notes, ride_description, guest_passenger_names, changed_since_solve, preferred_car_id, template_id, series_id,
+  flex_depart_early, flex_depart_late, flex_return_early, flex_return_late, ride_description, guest_passenger_names, changed_since_solve, preferred_car_id, template_id, series_id,
   preferred_car:cars!requests_preferred_car_id_fkey(name),
   destination:destinations!requests_destination_id_fkey(name),
   origin:destinations!requests_origin_id_fkey(name),
@@ -554,11 +554,22 @@ export async function fetchRequestById(requestId: string): Promise<RequestEditRo
   return head ? { ...head, seriesReturnAt: last?.return_at ?? head.returnAt } : row;
 }
 
+/**
+ * REQ §13.153: the note to the Sadran is not a readable column of `requests` (closed by grants); `request_notes` returns
+ * it for the requests the caller may edit (`can_edit_request`), so the edit form still loads and re-saves it.
+ */
+export async function fetchRequestNotes(requestIds: readonly string[]): Promise<Map<string, string>> {
+  if (requestIds.length === 0) return new Map();
+  const data = await rpc("request_notes", { p_request_ids: [...requestIds] });
+  return new Map((data ?? []).map((row) => [row.request_id, row.notes]));
+}
+
 /** Exactly this request row (a series leg stays that leg) — for moving one day's request. */
 export async function fetchRequestRowById(requestId: string): Promise<RequestEditRow | null> {
   const { data, error } = await supabase.from("requests").select(EDIT_SELECT).eq("id", requestId).maybeSingle();
   if (error) throw toAppError(error);
   if (!data) return null;
+  const notesById = await fetchRequestNotes([requestId]);
   const row = data as unknown as {
     requester_id: string;
     filed_by: string | null;
@@ -668,7 +679,7 @@ export async function fetchRequestRowById(requestId: string): Promise<RequestEdi
     flexDepartLate: row.flex_depart_late,
     flexReturnEarly: row.flex_return_early,
     flexReturnLate: row.flex_return_late,
-    notes: row.notes,
+    notes: notesById.get(requestId) ?? null,
     rideDescription: row.ride_description,
     guestPassengerNames: row.guest_passenger_names ?? [],
     changedSinceSolve: row.changed_since_solve,
@@ -694,10 +705,15 @@ export async function fetchMyRequests(profileId: string, departmentId?: string):
   if (departmentId) query = query.eq("department_id", departmentId);
   const { data, error } = await query.order("depart_at", { ascending: true, nullsFirst: false });
   if (error) throw toAppError(error);
+  const rows = (data ?? []) as unknown as RawRequestRow[];
+  // REQ §13.153: `waitlist_cause(requests)` takes the whole row, which a browser may no longer read (the private note).
+  const waitlisted = rows.filter((row) => row.status === "waitlisted").map((row) => row.id);
+  const causes = waitlisted.length ? await rpc("request_waitlist_causes", { p_request_ids: waitlisted }) : [];
+  const causeById = new Map((causes ?? []).map((row) => [row.request_id, row.cause]));
   // A withdrawn/cancelled request is terminal and no longer actionable.  Keep
   // it out of the member feed even when it was withdrawn by a coordinator on
   // the member's behalf.
-  return ((data ?? []) as unknown as RawRequestRow[])
+  return rows.map((row) => ({ ...row, waitlist_cause: causeById.get(row.id) ?? null }))
     .filter((row) => !row.plan_b_parent_id)
     .filter((row) => !["withdrawn", "cancelled"].includes(row.status) || isDuplicateWithdrawn(row))
     // A request I am only a companion on shows while it is unplaced; once placed on a published day the ride itself lists me.

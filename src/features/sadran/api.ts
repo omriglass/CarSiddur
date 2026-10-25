@@ -1,5 +1,6 @@
 import { ensureDepartmentWeeks } from "@/features/siddur/api";
 import { supabase } from "@/integrations/supabase/client";
+import { REQUEST_COLUMNS, type ReadableRequestRow } from "@/lib/requestColumns";
 import { rpc, toAppError } from "@/lib/rpc";
 import { withSmallTrunkRetry } from "@/lib/smallTrunk";
 
@@ -15,7 +16,8 @@ import type { LegCarMode, NotificationChannel, ProposalType, RideLeg, RideRole, 
  * same `(departmentId, weekStart)` scope and many of the same tables.
  */
 export type WeekRow = Database["public"]["Tables"]["weeks"]["Row"];
-export type RequestRow = Database["public"]["Tables"]["requests"]["Row"];
+/** A request as the board reads it: the readable columns plus the private note from `request_notes` (REQ §13.153). */
+export type RequestRow = ReadableRequestRow & { notes: string | null };
 export type DepartmentSettingsRow = Database["public"]["Tables"]["department_settings"]["Row"];
 export type MaintenanceBlockRow = Database["public"]["Tables"]["car_maintenance_blocks"]["Row"];
 export type SolverRunRow = Database["public"]["Tables"]["solver_runs"]["Row"];
@@ -98,7 +100,7 @@ export interface WeekRequestRow extends RequestRow {
   stops: { leg: "out" | "return"; position: number; active?: boolean; place_id: string | null; place_text?: string | null; place?: { name: string } | null }[];
 }
 
-const WEEK_REQUEST_SELECT = `*,
+const WEEK_REQUEST_SELECT = `${REQUEST_COLUMNS},
   requester:profiles!requests_requester_id_fkey(full_name, does_not_drive),
   filer:profiles!requests_filed_by_fkey(full_name),
   destination:destinations!requests_destination_id_fkey(name, travel_minutes),
@@ -195,7 +197,7 @@ export type RequestRowWithDriverFlag = RequestRow & {
 export async function fetchWeekRequests(departmentId: string, weekStart: string): Promise<RequestRowWithDriverFlag[]> {
   const { data, error } = await supabase
     .from("requests")
-    .select(`*,
+    .select(`${REQUEST_COLUMNS},
       requester:profiles!requests_requester_id_fkey(full_name, does_not_drive),
       companions:request_companions(profile_id, profile:profiles!request_companions_profile_id_fkey(does_not_drive)),
       stops:request_stops(leg, position, place_id, place_text, place:destinations(name)),
@@ -203,13 +205,15 @@ export async function fetchWeekRequests(departmentId: string, weekStart: string)
     .eq("department_id", departmentId)
     .eq("week_start", weekStart);
   if (error) throw toAppError(error);
-  return ((data ?? []) as unknown as (RequestRow & {
+  const notes = await fetchRequestNotes((data ?? []).map((row) => (row as unknown as { id: string }).id));
+  return ((data ?? []) as unknown as (ReadableRequestRow & {
     requester: { full_name: string; does_not_drive: boolean } | null;
     companions: { profile_id: string; profile: { does_not_drive: boolean } | null }[];
     stops: { leg: "out" | "return"; position: number; active?: boolean; place_id: string | null; place_text?: string | null; place?: { name: string } | null }[];
   })[]).map(
     ({ requester, companions, ...rest }) => ({
       ...rest,
+      notes: notes.get(rest.id) ?? null,
       requester_does_not_drive: requester?.does_not_drive ?? false,
       requester_full_name: requester?.full_name ?? null,
       driving_companion_ids: drivingCompanionIdsOf(companions ?? []),
@@ -235,7 +239,19 @@ export async function fetchWeekRequestsWithNames(
     .eq("department_id", departmentId)
     .eq("week_start", weekStart);
   if (error) throw toAppError(error);
-  return ((data ?? []) as unknown as WeekRequestJoinRow[]).map(flattenWeekRequest);
+  const rows = (data ?? []) as unknown as Omit<WeekRequestJoinRow, "notes">[];
+  const notes = await fetchRequestNotes(rows.map((row) => row.id));
+  return rows.map((row) => flattenWeekRequest({ ...row, notes: notes.get(row.id) ?? null }));
+}
+
+/**
+ * REQ §13.153: `requests.notes` is not readable as a column; `request_notes` returns the notes of the requests the
+ * caller may edit (the week's Sadran: all of them).
+ */
+async function fetchRequestNotes(requestIds: readonly string[]): Promise<Map<string, string>> {
+  if (requestIds.length === 0) return new Map();
+  const data = await rpc("request_notes", { p_request_ids: [...requestIds] });
+  return new Map((data ?? []).map((row) => [row.request_id, row.notes]));
 }
 
 // ---------------------------------------------------------------------------

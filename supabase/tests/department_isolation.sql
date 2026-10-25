@@ -236,6 +236,9 @@ begin
   perform pg_temp.expect_refused('origins.car_start_locations', format('select * from public.car_start_locations(%L, %L)', dept_b, week_b));
   perform pg_temp.expect_refused('origins.set_my_default_origin', format('select public.set_my_default_origin(%L, %L)', dept_b, other_dest_b));
   perform pg_temp.expect_refused('requests.route_minutes_preview', format('select public.route_minutes_preview(%L, %L::jsonb)', dept_b, '[]'));
+  -- REQ §13.153: request_notes filters (never raises) — another department's note never comes back
+  update public.requests set notes = 'B private note' where id = req_b;
+  assert not exists (select 1 from public.request_notes(array[req_b])), 'requests.request_notes: FAILED cross-department note returned';
   perform pg_temp.expect_refused('requests.route_minutes_preview_place', format('select public.route_minutes_preview(%L, jsonb_build_array(jsonb_build_object(''place_id'', %L), jsonb_build_object(''place_id'', %L)))', dept_a, home_b, other_dest_b));
 
   -- members / admin (is_admin()-gated, sadran_a is not admin) ---------------
@@ -375,7 +378,7 @@ declare
     'publication_readiness','publication_conflicts','publish_siddur','record_solver_preview','form_waitlist_groups',
     'publish_scores_fingerprint','sadran_contact_of','fairness_stats','department_stats','joinable_rides_for_request',
     'create_policy_version','set_policy_active','policy_week_alignment','resolve_waitlist_group','cancel_waitlist_group',
-    'place_travel_for_week','car_start_locations','set_my_default_origin','route_minutes_preview',
+    'place_travel_for_week','car_start_locations','set_my_default_origin','route_minutes_preview','request_notes',
     'my_co_guardians','set_ride_driver','withdraw_duplicate_request','restore_duplicate_request','place_on_own_car','child_request_overlaps',
     'mark_car_move','shorten_series','join_drop_off_legs','place_series_on_car',
     'create_car_maintenance','update_car_maintenance','delete_car_maintenance','report_car_issue_unsafe_maintenance'
@@ -415,7 +418,7 @@ declare
     'can_edit_request:self-only',
     -- R13B17: a waitlisted request's current cause, only for the request's related people / the week's Sadran (null otherwise;
     -- waitlist_cause.sql (2)); reads, writes nothing.
-    'waitlist_cause:self-only',
+    'waitlist_cause:self-only', 'request_waitlist_causes:self-only',
     -- R13M5: moves the caller's own request (requester only) onto a ride of the request's department.
     'join_other_ride:self-only',
     -- REQ §13.129 (b): refused unless the caller drives the ride (so it is the caller's own department's ride).

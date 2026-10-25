@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
+import { REQUEST_COLUMNS, type ReadableRequestRow } from "@/lib/requestColumns";
 import { rpc, toAppError } from "@/lib/rpc";
 
 import type { Database, Json } from "@/integrations/supabase/types";
@@ -100,13 +101,13 @@ export async function fetchLastTestableWeek(departmentId: string): Promise<strin
   return data?.[0]?.week_start ?? null;
 }
 
-export type RequestRow = Database["public"]["Tables"]["requests"]["Row"];
+export type RequestRow = ReadableRequestRow;
 
 /** All requests filed for one department/week (admin SELECT is open on `requests`, DATA_MODEL.md §4.3). */
 export async function fetchWeekRequests(departmentId: string, weekStart: string): Promise<RequestRow[]> {
   const { data, error } = await supabase
     .from("requests")
-    .select("*")
+    .select(REQUEST_COLUMNS)
     .eq("department_id", departmentId)
     .eq("week_start", weekStart);
   if (error) throw toAppError(error);
