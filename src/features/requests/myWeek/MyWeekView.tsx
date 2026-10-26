@@ -158,7 +158,9 @@ export function MyWeekView({ departmentId, homeDestinationId, profileId, request
   }, [carsQuery.data, childIds, dayKeys, guardianIds, departmentId, homeDestinationId, isPast, profileId, requests, ridesQuery.data, showKidsRides, serverNeighbours, settingsQuery.data, suggestionsQuery.data, week, weekStart]);
 
   const targetById = useMemo(() => new Map(entries.map((entry) => [entry.block.id, entry.target])), [entries]);
-  const dayColumns: WeekGridCar[] = dayKeys.map((key) => ({ id: key, name: formatDayDate(`${key}T12:00:00Z`), today: key === today }));
+  // Owner 2026-10-26: a day whose siddur is not published yet carries a draft stamp over its column (past weeks never).
+  const dayPublished = (key: string) => isPast || ((week?.phase === "published" || week?.phase === "live") && (week.published_days?.includes(key) ?? true));
+  const dayColumns: WeekGridCar[] = dayKeys.map((key) => ({ id: key, name: formatDayDate(`${key}T12:00:00Z`), today: key === today, unpublished: !dayPublished(key) }));
 
   /** A block id is `ride:<id>` (a ride's other-day segments carry `~n` and never move); anything else is not a ride. */
   function rideOf(blockId: string): BoardRide | null {

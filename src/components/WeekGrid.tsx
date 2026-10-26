@@ -21,6 +21,7 @@ import { rideTypeColorClasses } from "@/lib/rideTypeColors";
 import { cn } from "@/lib/utils";
 import { GuestChips, type GuestDropTarget, type WeekGridGuest } from "./GuestChips";
 import { bottomNavInset, pageScroller, scrollerViewport } from "./pageScroller";
+import { DraftWatermark } from "./DraftWatermark";
 import { itemVisibilityStyle } from "./itemVisibility";
 import { RideNotes } from "./RideNotes";
 import { clampRideVertical, minutesFromClientY, snapTimeShift } from "./weekGridGeometry";
@@ -62,6 +63,8 @@ export interface WeekGridCar {
   weekEndAwayWarning?: string;
   /** Owner 2026-10-11 ("my rides" week view, columns = days): today's column header is marked like "my car" (lilac, bold). */
   today?: boolean;
+  /** Owner 2026-10-26 (`/my` week view, columns = days): this day is not published yet — a draft stamp over its column. */
+  unpublished?: boolean;
 }
 
 export interface WeekGridRide {
@@ -279,6 +282,8 @@ export interface WeekGridProps {
    * hour column is tinted lilac and labelled, like today's column header (owner 2026-10-13, `/my` week view).
    */
   nowQuarterMinutes?: number | null;
+  /** Owner 2026-10-26: the shown day is not published yet — a draft stamp over the whole grid (siddur table view). */
+  watermark?: boolean;
   /** When supplied, initially position the grid so this time is the first visible hour below the car headers. */
   initialScrollMinutes?: number | null;
   zoom?: number;
@@ -466,6 +471,7 @@ export function WeekGrid({
   onGuestDrop,
   nowMinutes = null,
   nowQuarterMinutes = null,
+  watermark = false,
   initialScrollMinutes = null,
   zoom = 1,
   surface = "published",
@@ -1099,6 +1105,7 @@ export function WeekGrid({
         role={onSlotClick || onSlotRange ? "button" : undefined}
       >
         {drafting ? <div className="draft-line-v pointer-events-none absolute inset-y-0 end-0 w-px" aria-hidden="true" /> : null}
+        {car.unpublished ? <DraftWatermark compact /> : null}
         {hours.map((h, hi) => {
           const bandRect = clampRideVertical(h * 60, (h + 1) * 60, dayStartMinutes, dayEndMinutes);
           return (
@@ -1464,11 +1471,12 @@ export function WeekGrid({
               swappable && "touch-none",
               isCarDragSource && "opacity-40",
               isCarDropHover && "bg-primary/10 ring-2 ring-inset ring-primary",
+              car.unpublished && "text-muted-foreground",
             )}
             style={{ gridColumn: i + 2, gridRow: 1, scrollSnapAlign: "start" }}
             onPointerDown={swappable ? (e) => carPointerDownRef.current(car.id, e) : undefined}
           >
-            <span className={cn("flex min-w-0 items-center justify-center gap-1 text-center text-sm md:text-base leading-tight", myCarIds.has(car.id) || car.today ? "font-bold" : "font-medium")} data-testid="week-grid-car-name" data-my-car={myCarIds.has(car.id) || undefined} data-today={car.today || undefined}>
+            <span className={cn("flex min-w-0 items-center justify-center gap-1 text-center text-sm md:text-base leading-tight", myCarIds.has(car.id) || car.today ? "font-bold" : "font-medium")} data-testid="week-grid-car-name" data-my-car={myCarIds.has(car.id) || undefined} data-today={car.today || undefined} data-unpublished={car.unpublished || undefined}>
               {renderCarName ? renderCarName(car) : hasCarMenu ? (
                 <DropdownMenu open={menuCarId === car.id} onOpenChange={(o) => { if (!o) setMenuCarId(null); }}>
                   <DropdownMenuTrigger asChild>
@@ -1519,6 +1527,7 @@ export function WeekGrid({
             {car.locationBadge ? <span className="truncate text-center text-xs text-muted-foreground">{car.locationBadge}</span> : null}
             {car.baseBadge ? <span className="truncate text-center text-[10px] text-muted-foreground">{car.baseBadge}</span> : null}
             {car.weekEndAwayWarning ? <span className="truncate text-center text-[10px] font-medium text-amber-700">{car.weekEndAwayWarning}</span> : null}
+            {car.unpublished ? <span className="truncate text-center text-[10px] font-medium">{he.publicationFlow.watermarkShort}</span> : null}
             {car.group === "temporary" ? <span className="truncate text-center text-[10px] text-booked">{he.car.type.temporary}</span> : null}
           </div>
           );
@@ -1614,6 +1623,11 @@ export function WeekGrid({
         {allCars.map((car, i) => (
           Column({ car, colIndex: i })
         ))}
+        {watermark ? (
+          <div className="pointer-events-none relative" style={{ gridColumn: "2 / -1", gridRow: `2 / span ${hours.length}` }}>
+            <DraftWatermark />
+          </div>
+        ) : null}
         {hasDiscussionLane ? (
           <div
             className="relative border-s-2 border-s-border bg-maintenance/5"

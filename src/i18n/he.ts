@@ -129,6 +129,9 @@ export const he = {
     backToBoard: "חזרה ללוח",
     partialHint: "רק הימים שנבחרו יפורסמו. אפשר להוסיף ימים בהמשך.",
     dayUnpublished: "הסידור ליום הזה עדיין לא פורסם",
+    /** The diagonal stamp repeated over a day that is not published yet (owner 2026-10-26: not a banner one can ignore). */
+    watermark: "טיוטה · טרם פורסם",
+    watermarkShort: "טרם פורסם",
   },
   siddurCar: {
     replacementName: "{{name}} (חלופי)",

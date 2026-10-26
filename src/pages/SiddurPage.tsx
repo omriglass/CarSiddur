@@ -9,6 +9,7 @@ import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 
 import { formatWeekRangeLabel, todayInJerusalem } from "@/components/dateFieldDates";
 import { CarSwapDialog } from "@/components/CarSwapDialog";
+import { DraftWatermark } from "@/components/DraftWatermark";
 import { EmptyState } from "@/components/EmptyState";
 import { PageHeader } from "@/components/PageHeader";
 import { RideCard, type RideCardData } from "@/components/RideCard";
@@ -531,7 +532,6 @@ export function SiddurPage() {
         />
       ) : (
         <>
-          {!activeDayPublished ? <p className="rounded-md border bg-muted/40 p-3 text-sm">{he.publicationFlow.dayUnpublished}</p> : null}
           {/* Desktop: the same display menu as mobile; "show early hours" lives only here. */}
           <div className="hidden md:flex md:justify-end md:gap-2">
             {departmentId ? <LongRangeMenu departmentId={departmentId} /> : null}
@@ -546,7 +546,9 @@ export function SiddurPage() {
           </div>
           <div className={tableView ? "hidden" : "lg:hidden"}>
             <WeekStrip weekStart={weekStart as string} counts={dayCounts} selected={activeDay ?? ""} onSelect={setSelectedDay} />
-            <div className="mt-3 space-y-2">
+            {/* Owner 2026-10-26: an unpublished day is stamped all over, not a banner one can scroll past. */}
+            <div className={cn("relative mt-3 space-y-2", !activeDayPublished && "min-h-[60vh]")}>
+              {!activeDayPublished ? <DraftWatermark /> : null}
               {isMyDepartment ? (
                 <div className="grid grid-cols-2 gap-2">
                   {departmentId ? <CarNowButton departmentId={departmentId} className="w-full" /> : null}
@@ -679,6 +681,7 @@ export function SiddurPage() {
                 onDiscussionClick={setSelectedGroupId}
                 canSwapCars={canSwapCarsOnActiveDay}
                 onCarSwap={(carA, carB) => setCarSwapPair({ carA, carB })}
+                watermark={!activeDayPublished}
               />
             </div>
           </div>
