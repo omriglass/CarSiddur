@@ -33,6 +33,8 @@ export const hePlanning = {
     countRides: "{{n}} נסיעות",
     countRequests: "{{n}} בקשות",
     noReservations: "אין טיוטות בקשה ליום הזה",
+    calendarTitle: "ביומן שלך",
+    allDay: "כל היום",
     reserveDay: "טיוטת בקשה ליום הזה",
     requestDay: "בקשה חדשה ליום הזה",
     dayPast: "היום הזה כבר עבר",

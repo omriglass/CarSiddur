@@ -12,6 +12,8 @@ import { he, tv } from "@/i18n/he";
 import { formatDayDate } from "@/lib/dayLabels";
 import { formatTime } from "@/lib/time";
 
+import type { MonthEventBlock } from "@/features/calendar/monthBlocks";
+
 import type { PlanningDay, PlanningReservation } from "../api";
 import { useCancelReservationMutation } from "../hooks";
 import { placeOf, reservationSummary } from "../summary";
@@ -85,6 +87,8 @@ interface PlanningDaySheetProps {
   reservations: PlanningReservation[];
   plannable: boolean;
   isPast: boolean;
+  /** The member's calendar events that day (experimental calendar; empty when off). */
+  events: readonly MonthEventBlock[];
   onOpenChange: (open: boolean) => void;
 }
 
@@ -93,7 +97,7 @@ interface PlanningDaySheetProps {
  * request, read only (no ask-to-join); my own reservation can be edited or cancelled. A plannable day offers a new
  * reservation; a day of an open week offers a normal request.
  */
-export function PlanningDaySheet({ departmentId, date, day, reservations, plannable, isPast, onOpenChange }: PlanningDaySheetProps) {
+export function PlanningDaySheet({ departmentId, date, day, reservations, plannable, isPast, events, onOpenChange }: PlanningDaySheetProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selected = reservations.find((r) => r.id === selectedId) ?? null;
   const close = (open: boolean) => { if (!open) setSelectedId(null); onOpenChange(open); };
@@ -143,6 +147,21 @@ export function PlanningDaySheet({ departmentId, date, day, reservations, planna
                     <Plus className="me-2 size-4" aria-hidden="true" />{he.planning.requestDay}
                   </Link>
                 </Button>
+              ) : null}
+              {events.length > 0 ? (
+                <section className="space-y-1" data-testid="planning-day-events">
+                  <h3 className="text-sm font-semibold text-muted-foreground">{he.planning.calendarTitle}</h3>
+                  <ul className="space-y-1">
+                    {events.map((event, i) => (
+                      <li key={`${event.id}-${i}`} className="flex items-baseline gap-2 rounded-md bg-violet-100/70 px-2 py-1.5 text-sm text-violet-950 dark:bg-violet-900/40 dark:text-violet-50">
+                        <span className="w-24 shrink-0 text-xs" dir="ltr">
+                          {event.allDay ? he.planning.allDay : `${formatTime(new Date(event.start))}–${formatTime(new Date(event.end))}`}
+                        </span>
+                        <span className="min-w-0 break-words">{event.title}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
               ) : null}
             </>
           )}

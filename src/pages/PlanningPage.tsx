@@ -193,6 +193,7 @@ export function PlanningPage() {
           reservations={openReservations}
           plannable={openDay ? plannable(openDay) : false}
           isPast={!!openDate && openDate <= today}
+          events={openDate ? (events.get(openDate) ?? []) : []}
           onOpenChange={(open) => { if (!open) setOpenDate(null); }}
         />
       ) : null}
