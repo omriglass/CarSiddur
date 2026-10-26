@@ -1,4 +1,7 @@
-import { Eye, List, Table2, ZoomIn, ZoomOut } from "lucide-react";
+import { CalendarRange, Eye, List, Table2, ZoomIn, ZoomOut } from "lucide-react";
+import { Link } from "react-router-dom";
+
+import { paths } from "@/app/routes";
 
 import { PINCH_ZOOM_MAX, PINCH_ZOOM_MIN, zoomIn, zoomOut } from "@/components/pinchZoom";
 import { Button } from "@/components/ui/button";
@@ -24,13 +27,15 @@ interface MyWeekDisplayMenuProps {
   /** Owner 2026-10-16: also show my children's rides (read-only), saved per device. Omitted = no such option. */
   showKidsRides?: boolean;
   onShowKidsRidesChange?: (show: boolean) => void;
+  /** REQ §13.154: the department whose "תכנון קדימה" the menu links to; omitted = no link. */
+  planningDepartmentId?: string;
 }
 
 /**
  * The "eye" menu of `/my` (owner 2026-10-11), same pattern and styling as the siddur's `SiddurDisplayMenu`: the
  * list / week choice (remembered on this device; `?view=` wins for one visit) and, in the week view, the zoom out / reset / in items.
  */
-export function MyWeekDisplayMenu({ view, onViewChange, zoom, onZoomChange, showKidsRides, onShowKidsRidesChange }: MyWeekDisplayMenuProps) {
+export function MyWeekDisplayMenu({ view, onViewChange, zoom, onZoomChange, showKidsRides, onShowKidsRidesChange, planningDepartmentId }: MyWeekDisplayMenuProps) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -63,6 +68,16 @@ export function MyWeekDisplayMenu({ view, onViewChange, zoom, onZoomChange, show
             </DropdownMenuItem>
             <DropdownMenuItem disabled={zoom >= PINCH_ZOOM_MAX} onSelect={(e) => { e.preventDefault(); onZoomChange(zoomIn(zoom)); }}>
               <ZoomIn className="me-2 size-4" aria-hidden="true" />{he.tableView.zoomIn}
+            </DropdownMenuItem>
+          </>
+        ) : null}
+        {planningDepartmentId ? (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem asChild>
+              <Link to={paths.plan(planningDepartmentId)} data-testid="my-planning">
+                <CalendarRange className="me-2 size-4" aria-hidden="true" />{he.planning.menuLink}
+              </Link>
             </DropdownMenuItem>
           </>
         ) : null}

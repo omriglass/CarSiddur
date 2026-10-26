@@ -527,6 +527,7 @@ const EDIT_SELECT = `
   adults, child_seats, boosters, has_luggage,
   flex_depart_early, flex_depart_late, flex_return_early, flex_return_late, notes, ride_description, guest_passenger_names, changed_since_solve, preferred_car_id, template_id, series_id,
   preferred_car:cars!requests_preferred_car_id_fkey(name),
+  template:request_templates!requests_template_id_fkey(schedule),
   destination:destinations!requests_destination_id_fkey(name),
   origin:destinations!requests_origin_id_fkey(name),
   stops:request_stops(leg, position, place_id, place_text, place:destinations(name)),
@@ -607,6 +608,7 @@ export async function fetchRequestRowById(requestId: string): Promise<RequestEdi
     guest_passenger_names: string[];
     changed_since_solve: boolean;
     template_id: string | null;
+    template?: { schedule: "weekly" | "dated" } | null;
     destination: { name: string } | null;
     origin: { name: string } | null;
     stops: { leg: "out" | "return"; position: number; active?: boolean; place_id: string | null; place_text: string | null; place: { name: string } | null }[];
@@ -672,7 +674,9 @@ export async function fetchRequestRowById(requestId: string): Promise<RequestEdi
     rideDescription: row.ride_description,
     guestPassengerNames: row.guest_passenger_names ?? [],
     changedSinceSolve: row.changed_since_solve,
-    templateId: row.template_id,
+    // REQ §13.154: a request filed from a reservation is not a repeating one — its "repeat weekly" switch starts off and
+    // turning it off never touches the reservation.
+    templateId: row.template?.schedule === "dated" ? null : row.template_id,
   };
 }
 
@@ -1196,6 +1200,10 @@ export interface TemplateSuggestion {
   rideDescription: string | null;
   guestPassengerNames: string[];
   notes: string | null;
+  /** REQ §13.154: a reservation (`dated`) or a repeating request (`weekly`, the default when absent). */
+  schedule?: "weekly" | "dated";
+  /** REQ §13.154: a multi-day reservation's last day (`yyyy-MM-dd`); null = one day. */
+  plannedUntil?: string | null;
 }
 
 function mapTemplateSuggestion(row: TemplateSuggestionRow): TemplateSuggestion {
@@ -1242,6 +1250,8 @@ function mapTemplateSuggestion(row: TemplateSuggestionRow): TemplateSuggestion {
     rideDescription: row.ride_description,
     guestPassengerNames: row.guest_passenger_names,
     notes: row.notes,
+    schedule: row.schedule ?? "weekly",
+    plannedUntil: row.planned_until ?? null,
   };
 }
 
@@ -1251,7 +1261,8 @@ const TEMPLATE_SUGGESTION_SELECT = `
   depart_dow, depart_time, return_dow, return_time,
   depart_at, return_at, depart_anchor, arrive_by, return_anchor, leave_dest_at, one_way_car_mode, needs_car_at_destination, adults, child_seats, boosters,
   child_ids, companion_ids, has_luggage, flex_depart_early, flex_depart_late, flex_return_early,
-  flex_return_late, duration_locked, preferred_car_id, ride_description, guest_passenger_names, notes, stops
+  flex_return_late, duration_locked, preferred_car_id, ride_description, guest_passenger_names, notes, stops,
+  schedule, planned_date, planned_until
 `;
 
 /** Repeating-request suggestions for the caller's own open week(s) (REQ §76, DATA_MODEL §3.6). */

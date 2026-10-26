@@ -11,11 +11,15 @@ const mocks = vi.hoisted(() => ({
   suggestions: vi.fn(),
   snooze: vi.fn(),
   stop: vi.fn(),
+  cancelReservation: vi.fn(),
 }));
 vi.mock("../hooks", () => ({
   useTemplateSuggestionsQuery: () => mocks.suggestions(),
   useSnoozeTemplateMutation: () => ({ mutate: mocks.snooze, isPending: false }),
   useStopTemplateMutation: () => ({ mutate: mocks.stop, isPending: false }),
+}));
+vi.mock("@/features/planning/hooks", () => ({
+  useCancelReservationMutation: () => ({ mutate: mocks.cancelReservation, isPending: false }),
 }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn() } }));
 
@@ -74,6 +78,7 @@ beforeEach(() => {
   mocks.suggestions.mockReset();
   mocks.snooze.mockReset();
   mocks.stop.mockReset();
+  mocks.cancelReservation.mockReset();
 });
 
 describe("TemplateSuggestions", () => {
@@ -114,5 +119,14 @@ describe("TemplateSuggestions", () => {
   it("filters to a single week when weekStart is given", () => {
     show([row({ templateId: "t1", weekStart: "2027-01-10" }), row({ templateId: "t2", weekStart: "2027-01-17" })], "2027-01-17");
     expect(screen.getAllByRole("link", { name: he.request.useSuggestion })).toHaveLength(1);
+  });
+
+  it("a reservation's suggestion is marked, offers 'use' and 'not needed' (cancels it), never snooze or stop", () => {
+    show([row({ templateId: "reservation-1", schedule: "dated" })]);
+    expect(screen.getByTestId("reservation-suggestion")).toHaveTextContent(he.planning.suggestionBadge);
+    expect(screen.queryByText(he.request.snoozeSuggestion)).toBeNull();
+    expect(screen.queryByText(he.request.stopSuggestion)).toBeNull();
+    fireEvent.click(screen.getByTestId("reservation-not-needed"));
+    expect(mocks.cancelReservation).toHaveBeenCalledWith("reservation-1", expect.anything());
   });
 });

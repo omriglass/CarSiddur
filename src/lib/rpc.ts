@@ -58,6 +58,9 @@ export type ErrorCode =
   | "invalid_range"
   | "last_admin_required"
   | "week_not_open"
+  | "reservation_out_of_range"
+  | "reservation_week_open"
+  | "reservation_self_only"
   | "one_way_car_mode_required"
   | "non_driver_cannot_drive"
   | "non_driver_needs_drop_off"
@@ -202,6 +205,9 @@ const MESSAGE_TO_CODE: Record<string, ErrorCode> = {
   invalid_range: "invalid_range",
   last_admin_required: "last_admin_required",
   week_not_open: "week_not_open",
+  reservation_out_of_range: "reservation_out_of_range",
+  reservation_week_open: "reservation_week_open",
+  reservation_self_only: "reservation_self_only",
   one_way_car_mode_required: "one_way_car_mode_required",
   non_driver_cannot_drive: "non_driver_cannot_drive",
   non_driver_needs_drop_off: "non_driver_needs_drop_off",
@@ -369,6 +375,9 @@ const CODE_TO_MESSAGE: Record<ErrorCode, string> = {
   invalid_range: he.errors.invalidRange,
   last_admin_required: he.errors.lastAdminRequired,
   week_not_open: he.errors.weekNotOpen,
+  reservation_out_of_range: he.errors.reservationOutOfRange,
+  reservation_week_open: he.errors.reservationWeekOpen,
+  reservation_self_only: he.errors.reservationSelfOnly,
   one_way_car_mode_required: he.errors.oneWayCarModeRequired,
   non_driver_cannot_drive: he.errors.nonDriverCannotDrive,
   non_driver_needs_drop_off: he.errors.nonDriverNeedsDropOff,

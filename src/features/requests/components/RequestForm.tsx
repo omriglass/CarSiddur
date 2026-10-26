@@ -30,6 +30,7 @@ import type { RidePassengerInput } from "@/features/rides/api";
 import { useAddRidePassengersMutation } from "@/features/rides/hooks";
 import { siddurKeys } from "@/features/siddur/queryKeys";
 import { paths } from "@/app/routes";
+import { useSaveReservationMutation } from "@/features/planning/hooks";
 import { he, t, tv } from "@/i18n/he";
 import { dateKey, formatTime, weekdayIndex } from "@/lib/time";
 import { DEFAULT_HOP_MINUTES } from "@/lib/rideRoute";
@@ -185,6 +186,11 @@ interface RequestFormProps {
   quickContext?: QuickRequestContext;
   /** Called after a successful submit instead of the default `navigate(paths.my())`. */
   onDone?: (result: SubmitRequestResult | null) => void;
+  /**
+   * REQ §13.154 (a): the form fills a reservation instead of a request — same fields, saved by `save_reservation` (with
+   * `id`: editing that reservation). Plan B, "repeat weekly" and "on someone else's behalf" are not offered.
+   */
+  reservation?: { id?: string };
 }
 
 function dayFromInstant(instant: string): string {
@@ -314,7 +320,9 @@ export function RequestForm({
   templateSuggestion,
   quickContext,
   onDone,
+  reservation,
 }: RequestFormProps) {
+  const isReservation = !!reservation;
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
@@ -345,6 +353,7 @@ export function RequestForm({
   const setChildrenMutation = useSetRequestChildrenMutation({ deferInvalidation: true });
   const suggestDestinationMutation = useSuggestDestinationMutation(departmentId);
   const saveTemplateMutation = useSaveRequestTemplateMutation({ deferInvalidation: true });
+  const saveReservationMutation = useSaveReservationMutation();
   const stopTemplateMutation = useStopTemplateMutation();
   // Joinable-rides dialog "הצטרפות לנסיעה" (REQ §13.85, owner decision 2026-09-14): joins the
   // chosen ride directly via `add_ride_passengers()` with the just-filed request's own people,
@@ -561,7 +570,7 @@ export function RequestForm({
 
   /** The department member the ride is filed for (null = me) and the companions left once the requester is out of the list. */
   function whoOf(formValues: Pick<RequestFormValues, "includeMe" | "companions">) {
-    return mode === "new" && variant === "weekly" && !joinRide ? splitWho(formValues, membersQuery.data ?? []) : { requesterId: null, companions: [...formValues.companions] };
+    return mode === "new" && variant === "weekly" && !joinRide && !isReservation ? splitWho(formValues, membersQuery.data ?? []) : { requesterId: null, companions: [...formValues.companions] };
   }
   const onBehalfWho = whoOf({ includeMe: values.includeMe, companions: values.companions ?? [] });
   const onBehalfName = onBehalfWho.requesterId ? (membersQuery.data ?? []).find((m) => m.id === onBehalfWho.requesterId)?.name ?? "" : "";
@@ -600,7 +609,8 @@ export function RequestForm({
   const returnDayValue = values.returnDay ?? day;
   // The return-day picker is collapsed behind a small "return another day" link because
   // multi-day requests are rare; a later return day keeps it expanded (UX_FLOWS.md §3.4). A series edit opens with it.
-  const [returnAnotherDay, setReturnAnotherDay] = useState(seriesEdit);
+  // REQ §13.154: a multi-day reservation (or its suggestion) opens with its last day picked.
+  const [returnAnotherDay, setReturnAnotherDay] = useState(seriesEdit || !!templateSuggestion?.plannedUntil);
   const isMultiDay = showReturnDayPicker && returnAnotherDay && returnDayValue !== day;
   const multiDaySpan = isMultiDay ? seriesSpanDays(day, returnDayValue) : null;
 
@@ -902,7 +912,7 @@ export function RequestForm({
           reserveMissingDriver: variant === "quick" && isOneWayDropOff ? true : undefined,
           layout,
           isSeries: isSeriesRequest,
-          planB: variant === "weekly",
+          planB: variant === "weekly" && !isReservation,
           // R11B2: a flexibility the member did not touch keeps its exact stored value (a window's slack is not a form value).
           storedFlex: mode === "edit" && initial
             ? { departEarly: initial.flexDepartEarly, departLate: initial.flexDepartLate, returnEarly: initial.flexReturnEarly, returnLate: initial.flexReturnLate }
@@ -960,6 +970,27 @@ export function RequestForm({
     // request inherits the suggestion's.
     const existingTemplateId = mode === "edit" ? (initial?.templateId ?? undefined) : templateSuggestion?.templateId;
     let submittedWeek = false;
+
+    // REQ §13.154 (a): a reservation is saved as a dated saved request — no probes, overlaps or follow-up calls; the
+    // named people go with it (a reservation has no request to set them on).
+    if (isReservation) {
+      const reservationPayload: Record<string, unknown> = { ...payload };
+      delete reservationPayload.template_id;
+      try {
+        await saveReservationMutation.mutateAsync({
+          payload: reservationPayload,
+          companionIds: whoOf(formValues).companions,
+          childIds: formValues.children,
+          reservationId: reservation?.id,
+        });
+        toast.success(he.planning.saved);
+        if (onDone) onDone(null);
+        else navigate(paths.plan(departmentId));
+      } catch {
+        setSubmitError(t("request.submitError"));
+      }
+      return;
+    }
 
     try {
       // R2M4: warn (never block) when a named child is on someone else's overlapping request.
@@ -1273,7 +1304,8 @@ export function RequestForm({
           preferredCars={preferredCars}
           initialPreferredCarName={initial?.preferredCarName}
           members={membersQuery.data ?? []}
-          allowOnBehalf={mode === "new" && variant === "weekly" && !joinRide}
+          allowOnBehalf={mode === "new" && variant === "weekly" && !joinRide && !isReservation}
+          reservation={isReservation}
           requesterName={editingForOther ? initial?.requesterName : null}
           childOptions={childrenQuery.data ?? []}
           tripShape={tripShape}
@@ -1390,7 +1422,7 @@ export function RequestForm({
         ) : null}
 
         {/* REQ §13.112 (e): the classic layout's own plan-B section (the sentence layout has the "אם אין רכב" line). */}
-        {variant === "weekly" ? <PlanBFields form={form} errors={form.formState.errors} destinations={destinationsWithoutOrigin} /> : null}
+        {variant === "weekly" && !isReservation ? <PlanBFields form={form} errors={form.formState.errors} destinations={destinationsWithoutOrigin} /> : null}
 
         <PassengersFields
           control={form.control}
@@ -1452,7 +1484,7 @@ export function RequestForm({
           </FormItem>
         ) : null}
 
-        {variant === "weekly" && !isMultiDay && !onBehalfWho.requesterId && values.includeMe !== false && !editingForOther ? <RepeatWeeklyField control={form.control} /> : null}
+        {variant === "weekly" && !isReservation && !isMultiDay && !onBehalfWho.requesterId && values.includeMe !== false && !editingForOther ? <RepeatWeeklyField control={form.control} /> : null}
         </>
       )}
 
@@ -1495,10 +1527,12 @@ export function RequestForm({
             type="submit"
             className="w-full"
             size="lg"
-            disabled={submitMutation.isPending || submitSeriesMutation.isPending || (!!quickContext && (isPast || invalidTime))}
+            disabled={submitMutation.isPending || submitSeriesMutation.isPending || saveReservationMutation.isPending || (!!quickContext && (isPast || invalidTime))}
             title={quickContext && isPast ? t("quickRequest.pastSlotTooltip") : undefined}
           >
-            {mode === "edit"
+            {isReservation
+              ? he.planning.saveButton
+              : mode === "edit"
               ? t("action.saveRequest")
               : waitlist
                 ? t("action.submitWaitlist")

@@ -99,6 +99,8 @@ export interface SentenceFieldsProps {
    * a request whose requester is someone else, `requesterName` is shown as the first, locked chip instead of "אני".
    */
   allowOnBehalf?: boolean;
+  /** REQ §13.154 (a): the sentence fills a reservation — no plan B and no "repeat weekly". */
+  reservation?: boolean;
   requesterName?: string | null;
   childOptions: { id: string; name: string; age: number | null; isPriority?: boolean }[];
   tripShape: RequestFormValues["tripShape"];
@@ -175,7 +177,7 @@ function Seg({ prefix, suffix, loose, spaced, children }: { prefix?: string; suf
 
 export function SentenceFields(props: SentenceFieldsProps) {
   const {
-    form, variant, weekStart, departmentId, day, errors, destinations, rideTypes, preferredCars, initialPreferredCarName, members, allowOnBehalf, requesterName, childOptions,
+    form, variant, weekStart, departmentId, day, errors, destinations, rideTypes, preferredCars, initialPreferredCarName, members, allowOnBehalf, reservation, requesterName, childOptions,
     tripShape, tripType, dropOffPickup, canDrive, seeksDriver, isQuickContext, showReturnDayPicker,
     returnAnotherDay, setReturnAnotherDay, isMultiDay, multiDaySpan, routeMinutes, rush, recentDestinations, recentCompanionIds, stage, onStageChange,
     invalidSignal, quickContext, quickWindow, notices, onChildAdded, mode, guide,
@@ -397,7 +399,7 @@ export function SentenceFields(props: SentenceFieldsProps) {
       : formatDayDate(dayInstant);
     // REQ §13.112 (a)/(b): the "אם אין רכב" line, when the request offers one.
     const planBScope = { tripType, day, returnDay: values.returnDay };
-    const planBLine = planBOffered(planBScope)
+    const planBLine = !reservation && planBOffered(planBScope)
       ? planBRecapLine({ fallback: values.fallback, altArriveBy: values.altArriveBy, altPickup: values.altPickup, altPickupAt: values.altPickupAt }, planBActive({ ...planBScope, fallback: values.fallback }) ? placeLabel(values.altPlace as DestinationValue | undefined, destinations) : "", values.altPickup ? placeLabel(values.altPickupPlace as DestinationValue | undefined, destinations) : "")
       : null;
     // R11U6: the stops of each leg ("דרך חדרה", "בחזור דרך …") belong to the recap too.
@@ -428,7 +430,7 @@ export function SentenceFields(props: SentenceFieldsProps) {
         rideTypes={rideTypes}
         preferredCars={preferredCars}
         initialPreferredCarName={initialPreferredCarName}
-        showRepeatWeekly={!isMultiDay}
+        showRepeatWeekly={!isMultiDay && !reservation}
         recap={recap}
         notices={notices}
         onBack={() => onStageChange(1)}
@@ -604,7 +606,7 @@ export function SentenceFields(props: SentenceFieldsProps) {
 
       {keepCarShown ? <KeepCarLine form={form} on={keepCarOn} destinationName={hasDestination ? destinationName : ""} /> : null}
 
-      {isWeekly ? <PlanBLine form={form} errors={errors} destinations={destinations} originPlaceId={originPresetId} sheet={sheet} setSheet={setSheet} routeMinutes={routeMinutes.planB} rush={rush} /> : null}
+      {isWeekly && !reservation ? <PlanBLine form={form} errors={errors} destinations={destinations} originPlaceId={originPresetId} sheet={sheet} setSheet={setSheet} routeMinutes={routeMinutes.planB} rush={rush} /> : null}
 
       {notices}
 

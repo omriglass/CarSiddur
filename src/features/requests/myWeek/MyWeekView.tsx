@@ -241,7 +241,7 @@ export function MyWeekView({ departmentId, homeDestinationId, profileId, request
                 <CalendarDays className="size-4" />
               </Button>
             ) : null}
-            <MyWeekDisplayMenu view="week" onViewChange={onViewChange} zoom={tableZoom} onZoomChange={setTableZoom} showKidsRides={showKidsRides} onShowKidsRidesChange={onShowKidsRidesChange} />
+            <MyWeekDisplayMenu view="week" onViewChange={onViewChange} zoom={tableZoom} onZoomChange={setTableZoom} showKidsRides={showKidsRides} onShowKidsRidesChange={onShowKidsRidesChange} planningDepartmentId={departmentId} />
           </div>
         ) : null}
       </div>

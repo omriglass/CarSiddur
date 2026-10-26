@@ -421,7 +421,7 @@ export function HomePage() {
             ? tv("home.greeting", { name: profileQuery.data.full_name })
             : undefined
         }
-        actions={weekView ? undefined : <MyWeekDisplayMenu view="list" onViewChange={setView} showKidsRides={displayPrefs.showKidsRides} onShowKidsRidesChange={displayPrefs.setShowKidsRides} />}
+        actions={weekView ? undefined : <MyWeekDisplayMenu view="list" onViewChange={setView} showKidsRides={displayPrefs.showKidsRides} onShowKidsRidesChange={displayPrefs.setShowKidsRides} planningDepartmentId={active.canSubmit ? active.departmentId ?? undefined : undefined} />}
       />
 
       {!active.canSubmit && <p className="text-sm text-muted-foreground">{he.departmentContext.noMembership} <Link to={paths.siddur({ dept: active.departmentId })}>{he.nav.siddur}</Link></p>}

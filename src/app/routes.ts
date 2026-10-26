@@ -140,4 +140,11 @@ export const paths = {
 
   /** `/policy/:dept` — "הצג מדיניות": any member reads the department's policies (REQ §13.133); linked from the siddur's eye menu. */
   policy: (departmentId: string): string => `/policy/${departmentId}`,
+
+  /** `/plan/:dept` — "תכנון קדימה" (REQ §13.154): the month view, reservations and "מתי הכי פנוי?"; linked from the siddur's and /my's eye menus. */
+  plan: (departmentId: string): string => `/plan/${departmentId}`,
+  /** `/plan/:dept/new?day=` — a new reservation for that day. */
+  planReserve: (departmentId: string, day: string): string => `/plan/${departmentId}/new?day=${encodeURIComponent(day)}`,
+  /** `/plan/:dept/:reservationId/edit` — edit one of my reservations. */
+  planEdit: (departmentId: string, reservationId: string): string => `/plan/${departmentId}/${reservationId}/edit`,
 };

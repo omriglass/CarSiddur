@@ -1,4 +1,4 @@
-import { Eye, List, RotateCw, Scale, Table2, ZoomIn, ZoomOut } from "lucide-react";
+import { CalendarRange, Eye, List, RotateCw, Scale, Table2, ZoomIn, ZoomOut } from "lucide-react";
 import { Link } from "react-router-dom";
 
 import { PINCH_ZOOM_MAX, PINCH_ZOOM_MIN, zoomIn, zoomOut } from "@/components/pinchZoom";
@@ -106,6 +106,11 @@ export function SiddurDisplayMenu({
             <DropdownMenuItem asChild>
               <Link to={paths.policy(departmentId)} data-testid="siddur-show-policy">
                 <Scale className="me-2 size-4" aria-hidden="true" />{he.policyView.menuLink}
+              </Link>
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild>
+              <Link to={paths.plan(departmentId)} data-testid="siddur-planning">
+                <CalendarRange className="me-2 size-4" aria-hidden="true" />{he.planning.menuLink}
               </Link>
             </DropdownMenuItem>
           </>

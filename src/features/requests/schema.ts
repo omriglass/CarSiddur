@@ -439,6 +439,10 @@ export const templateSuggestionRowSchema = z.object({
   notes: z.string().nullable(),
   /** REQ §13.93 "Multi-stop rides": `request_templates.stops`, prefill only. */
   stops: z.array(requestStopRowSchema),
+  /** REQ §13.154: absent on rows from before the column. */
+  schedule: z.enum(["weekly", "dated"]).nullish(),
+  planned_date: z.string().nullish(),
+  planned_until: z.string().nullish(),
 });
 
 export type TemplateSuggestionRow = z.infer<typeof templateSuggestionRowSchema>;
