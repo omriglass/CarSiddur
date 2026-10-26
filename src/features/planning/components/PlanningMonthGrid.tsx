@@ -1,4 +1,5 @@
 import { Car } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 
 import type { MonthEventBlock } from "@/features/calendar/monthBlocks";
 import { he, tv } from "@/i18n/he";
@@ -6,6 +7,7 @@ import { cn } from "@/lib/utils";
 
 import type { PlanningDay } from "../api";
 import { monthGridDates } from "../monthGrid";
+import { planningPinchZoom } from "../zoom";
 import type { StarTier } from "../rank";
 
 const STARS: Record<StarTier, string> = { 3: "★★★", 2: "★★", 1: "★" };
@@ -19,6 +21,9 @@ interface PlanningMonthGridProps {
   stars: ReadonlyMap<string, StarTier>;
   events: ReadonlyMap<string, MonthEventBlock[]>;
   onDayClick: (date: string) => void;
+  /** 1 = the whole month on screen; larger scrolls (− / + on the page, or a two-finger pinch here). */
+  zoom: number;
+  onZoomChange: (zoom: number) => void;
 }
 
 /**
@@ -26,11 +31,58 @@ interface PlanningMonthGridProps {
  * when none); past days and weeks already open are grey with their rides (published) or requests count; the helper's
  * best options carry an orange top bar and stars; the member's calendar events are faint blocks, one per event.
  */
-export function PlanningMonthGrid({ month, days, plannable, loadOf, stars, events, onDayClick }: PlanningMonthGridProps) {
+export function PlanningMonthGrid({ month, days, plannable, loadOf, stars, events, onDayClick, zoom, onZoomChange }: PlanningMonthGridProps) {
   const dates = monthGridDates(month);
   const weeks = Array.from({ length: dates.length / 7 }, (_, i) => dates.slice(i * 7, i * 7 + 7));
+  const viewportRef = useRef<HTMLDivElement>(null);
+  // The grid keeps the viewport's own width before zooming, so zooming in widens it (and scrolls) instead of squeezing.
+  const [baseWidth, setBaseWidth] = useState<number | null>(null);
+  useEffect(() => {
+    const el = viewportRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => setBaseWidth(el.clientWidth));
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+  // Same pinch wiring as `WeekGrid`: refs so the listeners survive the re-renders the gesture itself causes.
+  const zoomRef = useRef(zoom);
+  useEffect(() => { zoomRef.current = zoom; }, [zoom]);
+  const onZoomChangeRef = useRef(onZoomChange);
+  useEffect(() => { onZoomChangeRef.current = onZoomChange; }, [onZoomChange]);
+  useEffect(() => {
+    const el = viewportRef.current;
+    if (!el) return;
+    let pinch: { startDist: number; startZoom: number } | null = null;
+    let rafId = 0;
+    const distance = (touches: TouchList) => {
+      const a = touches.item(0);
+      const b = touches.item(1);
+      return a && b ? Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY) : 0;
+    };
+    const onStart = (e: TouchEvent) => { if (e.touches.length === 2) pinch = { startDist: distance(e.touches), startZoom: zoomRef.current }; };
+    const onMove = (e: TouchEvent) => {
+      if (e.touches.length !== 2 || !pinch) return;
+      e.preventDefault();
+      const dist = distance(e.touches);
+      cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => { if (pinch) onZoomChangeRef.current(planningPinchZoom(pinch.startZoom, pinch.startDist, dist)); });
+    };
+    const onEnd = (e: TouchEvent) => { if (e.touches.length < 2) pinch = null; };
+    el.addEventListener("touchstart", onStart, { passive: true });
+    el.addEventListener("touchmove", onMove, { passive: false });
+    el.addEventListener("touchend", onEnd, { passive: true });
+    el.addEventListener("touchcancel", onEnd, { passive: true });
+    return () => {
+      cancelAnimationFrame(rafId);
+      el.removeEventListener("touchstart", onStart);
+      el.removeEventListener("touchmove", onMove);
+      el.removeEventListener("touchend", onEnd);
+      el.removeEventListener("touchcancel", onEnd);
+    };
+  }, []);
   return (
-    <div className="space-y-1.5" data-testid="planning-month">
+    <div ref={viewportRef} className="overflow-auto" style={{ touchAction: "pan-x pan-y" }} data-testid="planning-month-viewport">
+    <div className="space-y-1.5" style={{ zoom, width: baseWidth && zoom > 1 ? `${baseWidth}px` : undefined }} data-testid="planning-month">
       <div className="flex gap-1 lg:gap-1.5">
         {he.days.short.map((letter, i) => (
           <span key={i} className="flex-1 text-center text-xs font-semibold text-muted-foreground lg:text-sm">
@@ -98,6 +150,7 @@ export function PlanningMonthGrid({ month, days, plannable, loadOf, stars, event
           })}
         </div>
       ))}
+    </div>
     </div>
   );
 }

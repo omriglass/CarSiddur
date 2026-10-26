@@ -68,7 +68,9 @@ interface Option {
 /**
  * The best options for `picks` (weekday → part), as date → star tier. "and": every picked weekday of one week together;
  * "or": any single picked day. An option at or above the "full" share gets nothing; score = week cost × weeks ahead +
- * how far the option is above "good" (lower is better), then the emptier, then the earlier.
+ * how far the option is above "good" (lower is better), then the emptier, then the earlier. When every option is
+ * "full", the least full one (then the earliest) still gets ★ — there is always a best day (owner 2026-10-26), unless no
+ * option has a car at all.
  */
 export function rankOptions(
   days: readonly PlanningDay[],
@@ -92,9 +94,16 @@ export function rankOptions(
   }
 
   const options: Option[] = [];
+  let leastFull: Option | null = null;
   const add = (week: string, chosen: { day: PlanningDay; pick: DayPick }[]) => {
     const occ = Math.max(...chosen.map(({ day, pick }) => occupancy(day, pick, ctx)));
-    if (occ >= ctx.settings.full) return;
+    if (occ >= ctx.settings.full) {
+      const dates = chosen.map(({ day }) => day.date);
+      if (Number.isFinite(occ) && (!leastFull || occ < leastFull.occupancy || (occ === leastFull.occupancy && dates[0]! < leastFull.dates[0]!))) {
+        leastFull = { dates, occupancy: occ, score: Number.POSITIVE_INFINITY };
+      }
+      return;
+    }
     const score = ctx.settings.weekCost * weeksBetween(thisWeek, week) + Math.max(0, occ - ctx.settings.good);
     options.push({ dates: chosen.map(({ day }) => day.date), occupancy: occ, score });
   };
@@ -110,6 +119,10 @@ export function rankOptions(
     }
   }
 
+  if (options.length === 0 && leastFull) {
+    for (const date of (leastFull as Option).dates) result.set(date, 1);
+    return result;
+  }
   options.sort((a, b) => a.score - b.score || a.occupancy - b.occupancy || a.dates[0]!.localeCompare(b.dates[0]!));
   options.slice(0, TIERS.length).forEach((option, i) => {
     for (const date of option.dates) if (!result.has(date)) result.set(date, TIERS[i]!);

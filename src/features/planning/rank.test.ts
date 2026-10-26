@@ -76,4 +76,14 @@ describe("planning/rank", () => {
   it("nothing picked, nothing marked", () => {
     expect(rankOptions(weeks(), {}, "and", CTX, TODAY).size).toBe(0);
   });
+
+  it("when every option is full, the least full one still gets one star", () => {
+    const stars = rankOptions(weeks((date) => ({ m: date === "2026-11-17" ? 3.5 : 4 })), { 2: "m" }, "and", CTX, TODAY);
+    expect([...stars.entries()]).toEqual([["2026-11-17", 1]]);
+  });
+
+  it("no star at all when no option has a car", () => {
+    const noCars = weeks().map((d) => ({ ...d, available: { m: 0, a: 0, e: 0 } }));
+    expect(rankOptions(noCars, { 2: "m" }, "and", CTX, TODAY).size).toBe(0);
+  });
 });

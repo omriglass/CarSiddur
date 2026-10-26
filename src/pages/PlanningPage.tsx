@@ -1,5 +1,5 @@
 import { useQueries } from "@tanstack/react-query";
-import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
+import { CalendarDays, ChevronLeft, ChevronRight, ZoomIn, ZoomOut } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 
@@ -18,6 +18,7 @@ import { PlanningMonthGrid } from "@/features/planning/components/PlanningMonthG
 import { monthGridDates } from "@/features/planning/monthGrid";
 import { usePlanningSettingsQuery, useTypicalUsageQuery } from "@/features/planning/hooks";
 import { planningKeys } from "@/features/planning/keys";
+import { PLANNING_ZOOM_MAX, PLANNING_ZOOM_MIN, planningZoomIn, planningZoomOut, readPlanningZoom, writePlanningZoom } from "@/features/planning/zoom";
 import { dayLoad, isPlannable, rankOptions, type DayPick, type PickJoin, type RankContext, type RankMode } from "@/features/planning/rank";
 import { he, tv } from "@/i18n/he";
 
@@ -50,6 +51,8 @@ export function PlanningPage() {
   const [join, setJoin] = useState<PickJoin>("and");
   const [mode, setMode] = useState<RankMode>("reservations");
   const [openDate, setOpenDate] = useState<string | null>(null);
+  const [zoom, setZoomState] = useState(readPlanningZoom);
+  const setZoom = (next: number) => { setZoomState(next); writePlanningZoom(next); };
 
   const monthData = useQueries({
     queries: months.map((month) => {
@@ -141,9 +144,20 @@ export function PlanningPage() {
             <Button type="button" variant="ghost" size="icon" aria-label={he.planning.prevMonth} disabled={monthIndex === 0} onClick={() => setMonthIndex((i) => i - 1)}>
               <ChevronRight className="size-5" aria-hidden="true" />
             </Button>
-            <h2 className="text-lg font-bold lg:text-xl" data-testid="planning-month-title">
-              {tv("planning.monthTitle", { month: he.planning.months[monthNo - 1] ?? "", year: String(year) })}
-            </h2>
+            <div className="flex items-center gap-1">
+              <h2 className="text-lg font-bold lg:text-xl" data-testid="planning-month-title">
+                {tv("planning.monthTitle", { month: he.planning.months[monthNo - 1] ?? "", year: String(year) })}
+              </h2>
+              <Button type="button" variant="ghost" size="icon" className="size-8" aria-label={he.tableView.zoomOut} disabled={zoom <= PLANNING_ZOOM_MIN} onClick={() => setZoom(planningZoomOut(zoom))} data-testid="planning-zoom-out">
+                <ZoomOut className="size-4" aria-hidden="true" />
+              </Button>
+              <button type="button" className="min-w-10 text-xs text-muted-foreground" aria-label={he.tableView.resetZoom} onClick={() => setZoom(PLANNING_ZOOM_MIN)} dir="ltr">
+                {Math.round(zoom * 100)}%
+              </button>
+              <Button type="button" variant="ghost" size="icon" className="size-8" aria-label={he.tableView.zoomIn} disabled={zoom >= PLANNING_ZOOM_MAX} onClick={() => setZoom(planningZoomIn(zoom))} data-testid="planning-zoom-in">
+                <ZoomIn className="size-4" aria-hidden="true" />
+              </Button>
+            </div>
             <Button type="button" variant="ghost" size="icon" aria-label={he.planning.nextMonth} disabled={monthIndex >= months.length - 1} onClick={() => setMonthIndex((i) => i + 1)} data-testid="planning-next-month">
               <ChevronLeft className="size-5" aria-hidden="true" />
             </Button>
@@ -159,6 +173,8 @@ export function PlanningPage() {
               stars={stars}
               events={events}
               onDayClick={setOpenDate}
+              zoom={zoom}
+              onZoomChange={setZoom}
             />
           )}
           <ul className="space-y-1 px-1 text-xs text-muted-foreground lg:hidden">
