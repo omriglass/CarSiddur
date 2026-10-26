@@ -1163,3 +1163,53 @@ Phased (each phase leaves `npm run check` + `db:test` green and changes nothing 
   - Open: the checklist column reads the checklist agent's `car_checklist_status` view (separate, non-blocking read) - verify against a stack that has that migration; tyre/wash use the latest 1000 events per kind (older cars show "טרם בוצע"); a plain Sadran who is not a car admin has no dashboard (REQ 150 e names only car admins and admins) - say so if the Sadran should.
 - ✅ **Phase 3a — handover checklist (d) + phase-1 follow-ups, 2026-10-24.** `car_checklist_items/checklists/answers/prompts`, `car_checklist_status` view, `upsert/move/delete_car_checklist_item`, `submit_car_checklist`, handover prompt (`cars_responsible_changed`, `car_care` variant `checklist_requested`), date reminders (`send_car_checklist_date_reminders` in `app.tick()`, variant `checklist_dates`), editor `/cars/checklist/:dept`, car page card + dialog, `/my` prompt, car-admin status select on private cars, `car_access_codes` writes for `can_manage_car`. Suite `car_checklists.sql`, `e2e/car-checklist.spec.ts`. Green rule: DATA_MODEL "Handover checklist".
 - ☐ **Phase 3 — (checklist done above) handover checklist (d), all-cars dashboard (e), history export of tasks and checklists (f), real kilometrage for the solver (g).** Checklist items defined by car admins; green / not green as of its date; date reminders; dashboard rows read `car_current_km` and `car_access_codes.is_replaced`; the solver's `Car.mileageKm` prefers kilometres driven from the readings (needs a REQ §84 note and `npm run functions:bundle`).
+
+## QA run 15 findings (2026-10-26, seed 7921, department `qa-r15`, week 1–7.11; main @ 5293e6a)
+
+Thin run on today's blast zones: planning ahead (REQ §13.154), the partly published week (§13.155), the private note (§13.153), recurring and multi-day requests, `submit_request` basics. QA Sadran + QA user both Sonnet; UI day **Tuesday 3.11** (busiest, 33 requests). The Sadran published Tue 3.11 + Fri 6.11 first, members checked the partial state, then the rest was published and the week went live. **The live phase was cut short** (the session ended mid-phase; its reports were lost): freed-car offers, live cancellations/edits and ask-to-join are **not covered** by this run. Car-now not testable (the QA week is not the current week).
+
+**Passed:** "טרם פורסם" stamp on unpublished days only (phone siddur, desktop grid, `/my` week view; none on published days or the fully open week 8.11); members refused on unpublished days (`day_not_published`, CLI and UI, clear Hebrew), published days accept and auto-approve, the Sadran can still file there; another member's note to the Sadran never visible (siddur, ride sheet, `v_board_rides`, column grant); planning: file (single and multi-day), counts, read-only for others, owner edit/cancel, helper always stars, "not enough history" in the usage mode; recurring: suggestion for 8.11 with use / "לא השבוע"; multi-day: one card, same car across days, shorten, withdraw cascades, UI edit saves; late requests on published days flagged and placed; non-drivers refused one-way legs.
+
+**Bugs**
+- R15B1 — Reversed time range in RTL: the overlap dialog line "הבקשה החופפת: רעננה · ו׳ 6.11 · 09:45–08:45" (the toast is right), and the planning draft detail "ד׳ 18.11 · 12:00–08:00" (`PlanningDaySheet` `whenLine`; the day list is right). Wrap the range in `dir="ltr"`.
+- R15B2 — `/my?view=week` opens 8–14.11 headed "השבוע שלי" while the switcher calls 1–7.11 "שבוע הבא" and does not list 8.11 (two weeks open at once: the QA lead opened 8.11 early; check the default week and its label when two weeks are open).
+- R15B3 — Planning day sheet: "1 טיוטות בקשה" — singular form needed ("טיוטת בקשה אחת").
+- R15B4 — The Sadran cannot file for a member on an unpublished day of a partly published week from the UI: `/requests/new?day=2026-11-04` opens week 8.11 and ignores `day` (1–7.11 is no longer the open week); the board's empty-slot double-click offers only "שמירת זמן" / car move. Only the API path works.
+- R15B5 — `qa:sadran propose … shift --car` printed "USAGE: not sent: הרכב אינו זמין…" yet created the draft (tooling message reads as a failure).
+
+**UI changes**
+- R15U1 — `/my` offers "ערוך" / "ביטול" on a request whose day is unpublished; saving is then refused. Say up front that the day is not published (or disable), like the refusal text.
+- R15U2 — A multi-day request spanning an unpublished day (3–6.11) is refused without naming which day.
+- R15U3 — The board shows no published / unpublished marker per day; after a partial publish the Sadran cannot see which days members already see.
+- R15U4 — Publishing with `--days` blocked by a pending proposal does not name it (the Sadran had to search `proposals`).
+- R15U5 — After "שמירת טיוטה" the month view returns to the current month instead of the draft's month; the helper's stars may sit in a later month with nothing pointing there.
+- R15U6 — A multi-day planning draft shows as identical separate rows on each of its days, with no span marker.
+- R15U7 — On the draft edit page the side nav highlights "הסידור" instead of the planning page.
+- R15U8 — The "הבקשה תוצע לך גם בשבועות הבאים" toast shows again when submitting the recurring suggestion itself.
+- R15U9 — "רוצה רכב עכשיו!" still shows on the siddur of an unpublished day.
+- R15U10 — Editing a draft's departure 08:00 → 09:00 moved the return 12:00 → 13:00 (duration kept) — confirm intended.
+- R15U11 — Board desktop: the drag handle (⠿) is tiny; dragging by the card text selects text.
+- R15U12 — A car based away from home (Mazda, חדרה) idle all week makes `changeOrigin … car=Mazda` the first suggestion on every unmet card of the weekend days — useful once, noise ×10.
+
+**Missing obvious features**
+- R15M1 — A Sadran request form "for member X" on a specific day, including unpublished days of a partly published week (R15B4). **Owner 2026-10-27:** the board's empty-slot double-click offers a request (for a member) as well as "שמירת זמן" / car move.
+
+**Additional features**
+- R15F1 — Board: a per-day published badge and a "publish now" indicator.
+- R15F2 — Planning day sheet: also show the week's other days' drafts/rides.
+
+**Live phase (2026-10-27, resumed after the session restart on the same live week; personas improvised):** ~8 member events (3 cancellations, 3 edits incl. a published-day edit that released its booking after confirmation, 4 late requests, 2 ask-to-join, a waiting-list entry) and ~15 minutes of Sadran handling. Passed: freed car offered to two waitlisted members, the Sadran approved one in `/claims` (`claim_approved`, ride on the freed car), the other got `claim_declined`; a driver cancelling hands the ride to the passenger who drives ("עכשיו את/ה נוהג/ת") or flags it `NEEDS_DRIVER` for a non-driver; no "טרם פורסם" stamp left once the whole week was published.
+
+- R15B6 — **Empty variables in notification copy** (confirmed in `notifications.body_he`): `freed_slot` ", יום ג׳ 3.11 08:00–12:00." (car / place before the comma missing); `claim_contested` to the Sadran ", יום  ." (car, day and time all empty); `claim_declined` "הבקשה ל נשארת ברשימת ההמתנה" (destination missing); `outcome_changed` after a driver cancels "ל · ג׳ 3.11 13:45–17:45" (destination missing). `claim_approved` is complete. Likely the `on-ride-cancelled` path / these variants not passing `car`, `day`, `timeRange`, `route`. Repro: cancel a confirmed ride on a live day with two waitlisted members overlapping it.
+- R15B7 — One freed car offered with different windows: one claimant was told 08:00–10:45, the other 08:00–12:00, and the board's claim card shows "00:00–12:00" (the whole free gap).
+- R15B8 — A failed `on-ride-cancelled` call leaves the offer `open` forever with no Sadran notice (the `freed_failed` template exists but is not sent). Seen when the edge call failed with 503 "name resolution failed" after the stack restart (environment), but the app-side gap is real: no timeout / retry / notice.
+- R15B9 — After `advance live`, re-publishing the remaining days set the week back to `published` (the Sadran had to advance again). Check whether `publish_siddur` should keep a `live` week live.
+- R15U13 — Sadran notification links (`late_request`, `request_changed`, `claim_contested`) open the member route `/requests?focus=…`, not the board / claims screen.
+- R15U14 — Board ride sheet: the first "בטל נסיעה" click only reveals the reason field, with no hint; the cancel and "הסר שיבוץ" buttons sit close together.
+- R15U15 — The freed-slot card on Home names no day (built with `day: ""`), unlike the notification.
+- R15M2 — In a live week a board cancellation is held until "שלח את כל ההצעות" (REQ §13.138 by design), so the affected member hears late and the board shows nothing pending — decide whether live-day cancellations should notify at once, or show a "notices waiting" marker.
+- R15M3 — Freed-car claims: no "offer the next claimant" / undo, and no visible state for an offer stuck `open` (R15B8).
+- R15F3 — Retry button for a stuck freed-car offer; tell the claimant who did not get the car why (`claim_declined` only says it went to someone else).
+- Not covered by the live phase: proposals answered through `/p/<token>` (none arrived for the checked members), car-now, the freed-slot claim UI while an offer is still open (R15 user saw no "מקום התפנה" section once the offer had closed — unconfirmed).
+
+**Noted, not a bug:** editing a multi-day request through the UI changes all its request ids (cancel + resubmit by design, REQ §13.77); the CLI `edit` refuses a series. A first report of "no stamp on the phone siddur" was a false positive (the agent read the page as text; its screenshot shows the stamp).
