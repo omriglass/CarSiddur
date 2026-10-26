@@ -277,6 +277,12 @@ begin
   perform pg_temp.expect_refused('weeks.fairness_stats', format('select * from public.fairness_stats(%L, %L, 3)', dept_b, week_b));
   perform pg_temp.expect_refused('weeks.department_stats', format('select public.department_stats(%L, %L, %L)', dept_b, week_b, week_b + 6));
   perform pg_temp.expect_refused('weeks.joinable_rides_for_request', format('select * from public.joinable_rides_for_request(%L)', req_b));
+  -- REQ §13.154: the month view, typical usage and saving a reservation are department-scoped.
+  perform pg_temp.expect_refused('planning.planning_month', format('select public.planning_month(%L, %L, %L)', dept_b, week_b, week_b + 6));
+  perform pg_temp.expect_refused('planning.typical_usage', format('select public.typical_usage(%L)', dept_b));
+  perform pg_temp.expect_refused('planning.save_reservation',
+    format('select public.save_reservation(%L::jsonb)', jsonb_build_object('department_id', dept_b, 'trip_shape', 'round_trip',
+      'depart_at', now() + interval '20 days', 'return_at', now() + interval '20 days 2 hours')::text));
   perform pg_temp.expect_refused('children.child_request_overlaps', format('select * from public.child_request_overlaps(%L, array[%L], now(), now() + interval ''1 hour'')', dept_b, 'x'));
   perform pg_temp.expect_refused('policies.create_policy_version', format('select public.create_policy_version(%L, %L::jsonb, null, %L::jsonb)', policy_b, '[]', '{}'));
   perform pg_temp.expect_refused('policies.set_policy_active', format('select public.set_policy_active(%L, false)', policy_b));
@@ -374,6 +380,7 @@ declare
     'open_week','reopen_week','set_week_phase','set_week_close_at','close_week_requests','ensure_department_weeks',
     'publication_readiness','publication_conflicts','publish_siddur','record_solver_preview','form_waitlist_groups',
     'publish_scores_fingerprint','sadran_contact_of','fairness_stats','department_stats','joinable_rides_for_request',
+    'planning_month','typical_usage','save_reservation',
     'create_policy_version','set_policy_active','policy_week_alignment','resolve_waitlist_group','cancel_waitlist_group',
     'place_travel_for_week','car_start_locations','set_my_default_origin','route_minutes_preview',
     'my_co_guardians','set_ride_driver','withdraw_duplicate_request','restore_duplicate_request','place_on_own_car','child_request_overlaps',
@@ -423,6 +430,8 @@ declare
     'claim_freed_slot:self-only', 'register_push_subscription:self-only', 'send_test_notification:self-only', 'deliver_changelog:self-only',
     'resume_request_template:self-only', 'save_request_template:self-only',
     'snooze_request_template:self-only', 'stop_request_template:self-only',
+    -- REQ §13.154: cancels only the caller's own reservation (requester_id = auth.uid()).
+    'cancel_reservation:self-only',
     'withdraw_freed_slot_claim:self-only',
     'answer_proposal:token-auth',
     'create_department:admin-global', 'grant_admin:admin-global', 'initialize_department_catalogs:admin-global',
