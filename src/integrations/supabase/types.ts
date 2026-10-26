@@ -1266,6 +1266,10 @@ export type Database = {
           open_dow: number
           open_time: string
           overrides: Json
+          planning_car_multiplier: number
+          planning_full_pct: number
+          planning_good_pct: number
+          planning_week_cost_pct: number
           proposal_expiry_hours: number
           proposal_expiry_mode: string
           proposals_offline: boolean
@@ -1299,6 +1303,10 @@ export type Database = {
           open_dow?: number
           open_time?: string
           overrides?: Json
+          planning_car_multiplier?: number
+          planning_full_pct?: number
+          planning_good_pct?: number
+          planning_week_cost_pct?: number
           proposal_expiry_hours?: number
           proposal_expiry_mode?: string
           proposals_offline?: boolean
@@ -1332,6 +1340,10 @@ export type Database = {
           open_dow?: number
           open_time?: string
           overrides?: Json
+          planning_car_multiplier?: number
+          planning_full_pct?: number
+          planning_good_pct?: number
+          planning_week_cost_pct?: number
           proposal_expiry_hours?: number
           proposal_expiry_mode?: string
           proposals_offline?: boolean
@@ -2901,6 +2913,7 @@ export type Database = {
           adults: number
           arrive_by_time: string | null
           boosters: number
+          cancelled_at: string | null
           child_ids: string[]
           child_seats: number
           companion_ids: string[]
@@ -2929,6 +2942,8 @@ export type Database = {
           origin_id: string | null
           origin_text: string | null
           paused_until: string | null
+          planned_date: string | null
+          planned_until: string | null
           preferred_car_id: string | null
           requester_id: string
           return_anchor: Database["public"]["Enums"]["time_anchor"]
@@ -2936,6 +2951,7 @@ export type Database = {
           return_time: string | null
           ride_description: string | null
           ride_type_id: string
+          schedule: Database["public"]["Enums"]["template_schedule"]
           snoozed_until_week: string | null
           source_request_id: string | null
           stopped_at: string | null
@@ -2948,6 +2964,7 @@ export type Database = {
           adults?: number
           arrive_by_time?: string | null
           boosters?: number
+          cancelled_at?: string | null
           child_ids?: string[]
           child_seats?: number
           companion_ids?: string[]
@@ -2976,6 +2993,8 @@ export type Database = {
           origin_id?: string | null
           origin_text?: string | null
           paused_until?: string | null
+          planned_date?: string | null
+          planned_until?: string | null
           preferred_car_id?: string | null
           requester_id: string
           return_anchor?: Database["public"]["Enums"]["time_anchor"]
@@ -2983,6 +3002,7 @@ export type Database = {
           return_time?: string | null
           ride_description?: string | null
           ride_type_id: string
+          schedule?: Database["public"]["Enums"]["template_schedule"]
           snoozed_until_week?: string | null
           source_request_id?: string | null
           stopped_at?: string | null
@@ -2995,6 +3015,7 @@ export type Database = {
           adults?: number
           arrive_by_time?: string | null
           boosters?: number
+          cancelled_at?: string | null
           child_ids?: string[]
           child_seats?: number
           companion_ids?: string[]
@@ -3023,6 +3044,8 @@ export type Database = {
           origin_id?: string | null
           origin_text?: string | null
           paused_until?: string | null
+          planned_date?: string | null
+          planned_until?: string | null
           preferred_car_id?: string | null
           requester_id?: string
           return_anchor?: Database["public"]["Enums"]["time_anchor"]
@@ -3030,6 +3053,7 @@ export type Database = {
           return_time?: string | null
           ride_description?: string | null
           ride_type_id?: string
+          schedule?: Database["public"]["Enums"]["template_schedule"]
           snoozed_until_week?: string | null
           source_request_id?: string | null
           stopped_at?: string | null
@@ -3140,6 +3164,7 @@ export type Database = {
           plan_b_parent_id: string | null
           preferred_car_id: string | null
           requester_id: string
+          reserved_at: string | null
           return_anchor: Database["public"]["Enums"]["time_anchor"]
           return_at: string | null
           ride_description: string | null
@@ -3200,6 +3225,7 @@ export type Database = {
           plan_b_parent_id?: string | null
           preferred_car_id?: string | null
           requester_id: string
+          reserved_at?: string | null
           return_anchor?: Database["public"]["Enums"]["time_anchor"]
           return_at?: string | null
           ride_description?: string | null
@@ -3260,6 +3286,7 @@ export type Database = {
           plan_b_parent_id?: string | null
           preferred_car_id?: string | null
           requester_id?: string
+          reserved_at?: string | null
           return_anchor?: Database["public"]["Enums"]["time_anchor"]
           return_at?: string | null
           ride_description?: string | null
@@ -5064,6 +5091,8 @@ export type Database = {
           origin_id: string | null
           origin_name: string | null
           origin_text: string | null
+          planned_date: string | null
+          planned_until: string | null
           preferred_car_id: string | null
           return_anchor: Database["public"]["Enums"]["time_anchor"] | null
           return_at: string | null
@@ -5072,6 +5101,7 @@ export type Database = {
           ride_description: string | null
           ride_type_id: string | null
           ride_type_name: string | null
+          schedule: Database["public"]["Enums"]["template_schedule"] | null
           stops: Json | null
           template_id: string | null
           trip_shape: Database["public"]["Enums"]["trip_shape"] | null
@@ -5809,6 +5839,7 @@ export type Database = {
         Args: { _dept: string; _week: string }
         Returns: boolean
       }
+      cancel_reservation: { Args: { p_id: string }; Returns: undefined }
       cancel_ride: {
         Args: {
           p_expected_version?: number
@@ -6449,6 +6480,10 @@ export type Database = {
           travel_minutes: number
         }[]
       }
+      planning_month: {
+        Args: { p_department_id: string; p_from: string; p_to: string }
+        Returns: Json
+      }
       policy_week_alignment: { Args: { p_policy_id: string }; Returns: Json }
       prepare_manual_ride_window: {
         Args: {
@@ -6846,6 +6881,15 @@ export type Database = {
       }
       sadranim_of: { Args: { _dept: string; _week: string }; Returns: string[] }
       save_request_template: { Args: { p_request_id: string }; Returns: string }
+      save_reservation: {
+        Args: {
+          p_child_ids?: string[]
+          p_companion_ids?: string[]
+          p_id?: string
+          p_payload: Json
+        }
+        Returns: string
+      }
       send_car_checklist_date_reminders: {
         Args: { p_now?: string }
         Returns: undefined
@@ -7010,6 +7054,7 @@ export type Database = {
         }
         Returns: string
       }
+      typical_usage: { Args: { p_department_id: string }; Returns: Json }
       unassign_ride: {
         Args: { p_expected_version: number; p_ride_id: string }
         Returns: undefined
@@ -7246,6 +7291,7 @@ export type Database = {
       ride_status: "draft" | "confirmed" | "flagged" | "cancelled"
       role: "member" | "sadran" | "admin"
       solver_run_status: "succeeded" | "failed"
+      template_schedule: "weekly" | "dated"
       time_anchor: "leave" | "arrive"
       tire_state: "ok" | "low" | "very_low" | "unchecked"
       trip_shape: "round_trip" | "one_way_to" | "one_way_from"
@@ -7492,6 +7538,7 @@ export const Constants = {
       ride_status: ["draft", "confirmed", "flagged", "cancelled"],
       role: ["member", "sadran", "admin"],
       solver_run_status: ["succeeded", "failed"],
+      template_schedule: ["weekly", "dated"],
       time_anchor: ["leave", "arrive"],
       tire_state: ["ok", "low", "very_low", "unchecked"],
       trip_shape: ["round_trip", "one_way_to", "one_way_from"],

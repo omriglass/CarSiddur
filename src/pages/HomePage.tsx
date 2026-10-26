@@ -84,6 +84,7 @@ import { TripSummary } from "@/components/TripSummary";
 import { useMyDisplayPrefs } from "@/features/requests/myWeek/myDisplayPrefs";
 import { useTightRideIds } from "@/features/requests/myWeek/useTightRideIds";
 import { MyWeekDisplayMenu } from "@/features/requests/myWeek/MyWeekDisplayMenu";
+import { LongRangeMenu } from "@/features/planning/components/LongRangeMenu";
 import { he, t, tv } from "@/i18n/he";
 import { describeStatusReason } from "@/lib/statusReason";
 import { effectiveWeekSettings } from "@/lib/weekSettings";
@@ -421,7 +422,12 @@ export function HomePage() {
             ? tv("home.greeting", { name: profileQuery.data.full_name })
             : undefined
         }
-        actions={weekView ? undefined : <MyWeekDisplayMenu view="list" onViewChange={setView} showKidsRides={displayPrefs.showKidsRides} onShowKidsRidesChange={displayPrefs.setShowKidsRides} />}
+        actions={weekView ? undefined : (
+          <div className="flex items-center gap-2">
+            {active.canSubmit && active.departmentId ? <LongRangeMenu departmentId={active.departmentId} /> : null}
+            <MyWeekDisplayMenu view="list" onViewChange={setView} showKidsRides={displayPrefs.showKidsRides} onShowKidsRidesChange={displayPrefs.setShowKidsRides} />
+          </div>
+        )}
       />
 
       {!active.canSubmit && <p className="text-sm text-muted-foreground">{he.departmentContext.noMembership} <Link to={paths.siddur({ dept: active.departmentId })}>{he.nav.siddur}</Link></p>}

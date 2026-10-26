@@ -178,6 +178,11 @@ export interface Request {
   submittedAtMs: number;
   isLate: boolean;
   manualBoost?: { value: number; reason: string };
+  /**
+   * REQ §13.154 (g): the request was filed from a reservation made at `reservedAtMs`; `weekdays` = the Jerusalem weekdays
+   * (0 = Sunday) of the request's days, supplied by the bridge. Read only by the `plannedAhead` rule.
+   */
+  plannedAhead?: { reservedAtMs: number; weekdays: number[] };
   preferredCarId?: string;
   /**
    * Whether this member may be given a driver role (REQUIREMENTS §13.88, owner

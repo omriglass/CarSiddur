@@ -5,8 +5,10 @@ import { paths } from "@/app/routes";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { formatWeekRangeLabel } from "@/components/dateFieldDates";
 import { TripSummary } from "@/components/TripSummary";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { useCancelReservationMutation } from "@/features/planning/hooks";
 import { he } from "@/i18n/he";
 
 import type { TemplateSuggestion } from "../api";
@@ -42,7 +44,27 @@ function groupByWeek(rows: TemplateSuggestion[]): { weekStart: string; rows: Tem
 export function TemplateSuggestionActions({ row, onDone }: { row: TemplateSuggestion; onDone?: () => void }) {
   const snoozeMutation = useSnoozeTemplateMutation();
   const stopMutation = useStopTemplateMutation();
+  const cancelReservationMutation = useCancelReservationMutation();
   const [stopOpen, setStopOpen] = useState(false);
+  // REQ §13.154 (b): a reservation's suggestion — use it, or "not needed" (cancels the reservation).
+  if (row.schedule === "dated") {
+    return (
+      <div className="flex flex-wrap gap-2 pt-1">
+        <Button asChild size="sm">
+          <RequestLink to={paths.requests.new({ template: row.templateId, week: row.weekStart })}>{he.request.useSuggestion}</RequestLink>
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={cancelReservationMutation.isPending}
+          onClick={() => cancelReservationMutation.mutate(row.templateId, { onSuccess: () => { toast.success(he.planning.cancelled); onDone?.(); } })}
+          data-testid="reservation-not-needed"
+        >
+          {he.planning.suggestionNotNeeded}
+        </Button>
+      </div>
+    );
+  }
   return (
     <>
       <div className="flex flex-wrap gap-2 pt-1">
@@ -115,6 +137,7 @@ export function TemplateSuggestions({ weekStart }: TemplateSuggestionsProps) {
           {group.rows.map((row) => (
             <Card key={row.templateId} className="bg-gradient-card shadow-card">
               <CardContent className="space-y-2 p-3 text-sm">
+                {row.schedule === "dated" ? <Badge variant="outline" data-testid="reservation-suggestion">{he.planning.suggestionBadge}</Badge> : null}
                 <TripSummary
                   destination={row.destinationName ?? row.destinationText ?? ""}
                   purpose={row.rideTypeName ?? ""}

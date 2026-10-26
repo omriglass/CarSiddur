@@ -1,4 +1,5 @@
 import { Input } from "@/components/ui/input";
+import { he } from "@/i18n/he";
 import { cn } from "@/lib/utils";
 
 /**
@@ -56,6 +57,28 @@ export function RuleParamsEditor({
                 onChange={(e) => onChange({ ...params, [key]: Number(e.target.value) })}
               />
             </label>
+          );
+        }
+        // REQ §13.154 (g): seven booleans = one switch per weekday (Sunday first), e.g. `plannedAhead.days`.
+        if (Array.isArray(value) && value.length === 7 && value.every((v) => typeof v === "boolean")) {
+          const days = value as boolean[];
+          return (
+            <div key={key} className="flex flex-col gap-1">
+              <span className="text-xs text-muted-foreground">{paramLabels?.[key] ?? key}</span>
+              <div className="flex gap-1">
+                {days.map((on, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    aria-pressed={on}
+                    className={cn("size-9 rounded-md border text-sm", on ? "border-primary bg-primary text-primary-foreground" : "bg-background")}
+                    onClick={() => onChange({ ...params, [key]: days.map((d, j) => (j === i ? !d : d)) })}
+                  >
+                    {he.days.short[i]}
+                  </button>
+                ))}
+              </div>
+            </div>
           );
         }
         if (value && typeof value === "object" && !Array.isArray(value)) {

@@ -92,6 +92,7 @@ const RULE_DESCRIPTIONS: Record<string, string> = {
   RULE_SUBMISSIONTIME_DESC: 'מעניק יתרון קל להגשה מוקדמת וקנס להגשה מאוחרת',
   RULE_FLEXIBILITYOFFERED_DESC: 'מעניק בונוס להצהרת גמישות בזמנים',
   RULE_MANUALBOOST_DESC: 'בונוס חד-פעמי שניתן ידנית על ידי הסדרן/ית',
+  RULE_PLANNEDAHEAD_DESC: 'מעניק עדיפות לבקשה שהוגשה מטיוטת בקשה שהוכנה מספיק זמן מראש, בימים שנבחרו',
 };
 
 /** PolicyParamsError messages keyed by error code. */
@@ -103,6 +104,8 @@ const PARAM_ERRORS: Record<string, string> = {
   FAIRNESS_LOOKBACK_INVALID: 'פרמטר lookbackWeeks חסר או שגוי בכלל fairness',
   FAIRNESS_ALT_WEIGHT_INVALID: 'פרמטר alternativeServedWeight שגוי בכלל fairness (חייב להיות בין 0 ל-1)',
   SUBMISSIONTIME_LATEPENALTY_INVALID: 'פרמטר latePenalty חסר או שגוי בכלל submissionTime',
+  PLANNEDAHEAD_DAYS_INVALID: 'פרמטר days חסר או שגוי בכלל plannedAhead (שבעה ימים, כן/לא)',
+  PLANNEDAHEAD_LEAD_INVALID: 'פרמטר minLeadDays חסר או שגוי בכלל plannedAhead',
   FLEXIBILITYOFFERED_MINUTES_INVALID: 'פרמטר fullCreditMinutes חסר או שגוי בכלל flexibilityOffered',
 };
 

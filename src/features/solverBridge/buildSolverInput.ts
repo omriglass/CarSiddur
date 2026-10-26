@@ -19,7 +19,7 @@ import { fromZonedTime } from "date-fns-tz";
 
 import { needsLargeTrunk } from "@/lib/luggageWaiver";
 import { isActiveStop } from "@/lib/routeStops";
-import { TZ } from "@/lib/time";
+import { TZ, weekdayIndex } from "@/lib/time";
 import { effectiveWeekSettings } from "@/lib/weekSettings";
 
 import type {
@@ -308,6 +308,14 @@ export function buildSolverInput(params: BuildSolverInputParams): SolverInput {
     destinationsById[FREE_TEXT_DESTINATION_ID] = { id: FREE_TEXT_DESTINATION_ID, zone: "unknown" };
   }
 
+  // REQ §13.154 (g): the Jerusalem weekdays of each request — of every leg of a multi-day request together.
+  const weekdaysByKey = new Map<string, Set<number>>();
+  for (const r of params.requests) {
+    const days = weekdaysByKey.get(r.series_id ?? r.id) ?? new Set<number>();
+    for (const at of [r.depart_at, r.return_at]) if (at) days.add(weekdayIndex(at));
+    weekdaysByKey.set(r.series_id ?? r.id, days);
+  }
+
   const requests: SolverRequest[] = params.requests
     .filter((r) => r.status !== "draft")
     .map((r) => {
@@ -365,6 +373,9 @@ export function buildSolverInput(params: BuildSolverInputParams): SolverInput {
           r.manual_boost && r.manual_boost !== 0
             ? { value: r.manual_boost, reason: r.manual_boost_reason ?? "" }
             : undefined,
+        plannedAhead: r.reserved_at
+          ? { reservedAtMs: Date.parse(r.reserved_at), weekdays: [...(weekdaysByKey.get(r.series_id ?? r.id) ?? [])].sort() }
+          : undefined,
         // Multi-day series (SOLVER.md §3.x): one request row per calendar day
         // sharing series_id; the solver only sees the legs inside this week.
         // Legs in another week are handled by SQL's place_series() after

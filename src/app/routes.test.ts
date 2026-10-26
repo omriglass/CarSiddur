@@ -39,6 +39,9 @@ const ROUTE_PATTERNS = [
   "/cars/checklist/:dept",
   "/stats/:dept",
   "/policy/:dept",
+  "/plan/:dept",
+  "/plan/:dept/new",
+  "/plan/:dept/:reservationId/edit",
   "/admin/errors",
 ];
 
@@ -208,6 +211,9 @@ describe("paths.stats", () => {
     expect(paths.stats("dept-1")).toBe("/stats/dept-1");
     expectRoutable(paths.policy("dept-1"));
     expect(paths.policy("dept-1")).toBe("/policy/dept-1");
+    expectRoutable(paths.plan("dept-1"));
+    expectRoutable(paths.planReserve("dept-1", "2026-11-10"));
+    expectRoutable(paths.planEdit("dept-1", "r-1"));
   });
 });
 

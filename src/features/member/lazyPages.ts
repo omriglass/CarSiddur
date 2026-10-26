@@ -17,6 +17,8 @@ export const CarPage = lazy(() => import("@/pages/CarPage").then((m) => ({ defau
 export const CarsOverviewPage = lazy(() => import("@/pages/CarsOverviewPage").then((m) => ({ default: m.CarsOverviewPage })));
 export const EditRequestPage = lazy(() => import("@/pages/EditRequestPage").then((m) => ({ default: m.EditRequestPage })));
 export const MyArchivePage = lazy(() => import("@/pages/MyArchivePage").then((m) => ({ default: m.MyArchivePage })));
+export const PlanningPage = lazy(() => import("@/pages/PlanningPage").then((m) => ({ default: m.PlanningPage })));
+export const ReservationFormPage = lazy(() => import("@/pages/ReservationFormPage").then((m) => ({ default: m.ReservationFormPage })));
 export const PolicyPage = lazy(() => import("@/pages/PolicyPage").then((m) => ({ default: m.PolicyPage })));
 export const MyHistoryPage = lazy(() => import("@/pages/MyHistoryPage").then((m) => ({ default: m.MyHistoryPage })));
 export const SiddurArchivePage = lazy(() => import("@/pages/SiddurArchivePage").then((m) => ({ default: m.SiddurArchivePage })));

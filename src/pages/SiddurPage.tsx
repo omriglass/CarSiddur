@@ -71,6 +71,7 @@ import { isPastWeek } from "@/features/siddur/pastWeeks";
 import { useSiddurDisplayPrefs } from "@/features/siddur/useSiddurDisplayPrefs";
 import { resolveThisNextWeek } from "@/features/siddur/thisNextWeek";
 import { WeekSwitcherTitle } from "@/features/siddur/components/WeekSwitcherTitle";
+import { LongRangeMenu } from "@/features/planning/components/LongRangeMenu";
 import { SiddurDisplayMenu } from "@/features/siddur/components/SiddurDisplayMenu";
 import type { Week, BoardRide } from "@/features/siddur/api";
 import { representativeRideTypeCode, rideViaNames, servedOf } from "@/features/rides/servedOf";
@@ -483,15 +484,17 @@ export function SiddurPage() {
             between "השבוע"/"שבוע הבא" as the week switcher itself. */}
         <h1 className="sr-only">{t("screen.siddur.title")}</h1>
         <WeekSwitcherTitle resolution={thisNextWeek} activeWeekStart={weekStart} onSelect={(next) => goTo(departmentId as string, next)} onArchive={goToArchive} />
-        <SiddurDisplayMenu
-          table={tableView}
-          onTableChange={setTableView}
-          zoom={tableZoom}
-          onZoomChange={setTableZoom}
-          showEarlyHours={showEarlyHours}
-          onShowEarlyHoursChange={setShowEarlyHours}
-          departmentId={departmentId}
-        />
+        <div className="flex items-center gap-2">
+          {departmentId ? <LongRangeMenu departmentId={departmentId} /> : null}
+          <SiddurDisplayMenu
+            table={tableView}
+            onTableChange={setTableView}
+            zoom={tableZoom}
+            onZoomChange={setTableZoom}
+            showEarlyHours={showEarlyHours}
+            onShowEarlyHoursChange={setShowEarlyHours}
+          />
+        </div>
       </div>
       {departmentSwitcher ? <div className="md:hidden">{departmentSwitcher}</div> : null}
 
@@ -530,7 +533,8 @@ export function SiddurPage() {
         <>
           {!activeDayPublished ? <p className="rounded-md border bg-muted/40 p-3 text-sm">{he.publicationFlow.dayUnpublished}</p> : null}
           {/* Desktop: the same display menu as mobile; "show early hours" lives only here. */}
-          <div className="hidden md:flex md:justify-end">
+          <div className="hidden md:flex md:justify-end md:gap-2">
+            {departmentId ? <LongRangeMenu departmentId={departmentId} /> : null}
             <SiddurDisplayMenu
               table={tableView}
               onTableChange={setTableView}
@@ -538,7 +542,6 @@ export function SiddurPage() {
               onZoomChange={setTableZoom}
               showEarlyHours={showEarlyHours}
               onShowEarlyHoursChange={setShowEarlyHours}
-              departmentId={departmentId}
             />
           </div>
           <div className={tableView ? "hidden" : "lg:hidden"}>

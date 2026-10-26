@@ -122,7 +122,8 @@ var RULE_DESCRIPTIONS = {
   RULE_FAIRNESS_DESC: "\u05DE\u05E2\u05E0\u05D9\u05E7 \u05E2\u05D3\u05D9\u05E4\u05D5\u05EA \u05DC\u05D7\u05D1\u05E8\u05D9\u05DD \u05E9\u05E7\u05D9\u05D1\u05DC\u05D5 \u05E4\u05D7\u05D5\u05EA \u05E9\u05E2\u05D5\u05EA \u05E0\u05E1\u05D9\u05E2\u05D4 \u05DE\u05D0\u05D5\u05E9\u05E8\u05D5\u05EA \u05D1\u05E9\u05D1\u05D5\u05E2\u05D5\u05EA \u05D4\u05D0\u05D7\u05E8\u05D5\u05E0\u05D9\u05DD",
   RULE_SUBMISSIONTIME_DESC: "\u05DE\u05E2\u05E0\u05D9\u05E7 \u05D9\u05EA\u05E8\u05D5\u05DF \u05E7\u05DC \u05DC\u05D4\u05D2\u05E9\u05D4 \u05DE\u05D5\u05E7\u05D3\u05DE\u05EA \u05D5\u05E7\u05E0\u05E1 \u05DC\u05D4\u05D2\u05E9\u05D4 \u05DE\u05D0\u05D5\u05D7\u05E8\u05EA",
   RULE_FLEXIBILITYOFFERED_DESC: "\u05DE\u05E2\u05E0\u05D9\u05E7 \u05D1\u05D5\u05E0\u05D5\u05E1 \u05DC\u05D4\u05E6\u05D4\u05E8\u05EA \u05D2\u05DE\u05D9\u05E9\u05D5\u05EA \u05D1\u05D6\u05DE\u05E0\u05D9\u05DD",
-  RULE_MANUALBOOST_DESC: "\u05D1\u05D5\u05E0\u05D5\u05E1 \u05D7\u05D3-\u05E4\u05E2\u05DE\u05D9 \u05E9\u05E0\u05D9\u05EA\u05DF \u05D9\u05D3\u05E0\u05D9\u05EA \u05E2\u05DC \u05D9\u05D3\u05D9 \u05D4\u05E1\u05D3\u05E8\u05DF/\u05D9\u05EA"
+  RULE_MANUALBOOST_DESC: "\u05D1\u05D5\u05E0\u05D5\u05E1 \u05D7\u05D3-\u05E4\u05E2\u05DE\u05D9 \u05E9\u05E0\u05D9\u05EA\u05DF \u05D9\u05D3\u05E0\u05D9\u05EA \u05E2\u05DC \u05D9\u05D3\u05D9 \u05D4\u05E1\u05D3\u05E8\u05DF/\u05D9\u05EA",
+  RULE_PLANNEDAHEAD_DESC: "\u05DE\u05E2\u05E0\u05D9\u05E7 \u05E2\u05D3\u05D9\u05E4\u05D5\u05EA \u05DC\u05D1\u05E7\u05E9\u05D4 \u05E9\u05D4\u05D5\u05D2\u05E9\u05D4 \u05DE\u05D8\u05D9\u05D5\u05D8\u05EA \u05D1\u05E7\u05E9\u05D4 \u05E9\u05D4\u05D5\u05DB\u05E0\u05D4 \u05DE\u05E1\u05E4\u05D9\u05E7 \u05D6\u05DE\u05DF \u05DE\u05E8\u05D0\u05E9, \u05D1\u05D9\u05DE\u05D9\u05DD \u05E9\u05E0\u05D1\u05D7\u05E8\u05D5"
 };
 var PARAM_ERRORS = {
   RIDETYPE_WEIGHTS_INVALID: "\u05E4\u05E8\u05DE\u05D8\u05E8 weights \u05D7\u05E1\u05E8 \u05D0\u05D5 \u05E9\u05D2\u05D5\u05D9 \u05D1\u05DB\u05DC\u05DC rideType",
@@ -132,6 +133,8 @@ var PARAM_ERRORS = {
   FAIRNESS_LOOKBACK_INVALID: "\u05E4\u05E8\u05DE\u05D8\u05E8 lookbackWeeks \u05D7\u05E1\u05E8 \u05D0\u05D5 \u05E9\u05D2\u05D5\u05D9 \u05D1\u05DB\u05DC\u05DC fairness",
   FAIRNESS_ALT_WEIGHT_INVALID: "\u05E4\u05E8\u05DE\u05D8\u05E8 alternativeServedWeight \u05E9\u05D2\u05D5\u05D9 \u05D1\u05DB\u05DC\u05DC fairness (\u05D7\u05D9\u05D9\u05D1 \u05DC\u05D4\u05D9\u05D5\u05EA \u05D1\u05D9\u05DF 0 \u05DC-1)",
   SUBMISSIONTIME_LATEPENALTY_INVALID: "\u05E4\u05E8\u05DE\u05D8\u05E8 latePenalty \u05D7\u05E1\u05E8 \u05D0\u05D5 \u05E9\u05D2\u05D5\u05D9 \u05D1\u05DB\u05DC\u05DC submissionTime",
+  PLANNEDAHEAD_DAYS_INVALID: "\u05E4\u05E8\u05DE\u05D8\u05E8 days \u05D7\u05E1\u05E8 \u05D0\u05D5 \u05E9\u05D2\u05D5\u05D9 \u05D1\u05DB\u05DC\u05DC plannedAhead (\u05E9\u05D1\u05E2\u05D4 \u05D9\u05DE\u05D9\u05DD, \u05DB\u05DF/\u05DC\u05D0)",
+  PLANNEDAHEAD_LEAD_INVALID: "\u05E4\u05E8\u05DE\u05D8\u05E8 minLeadDays \u05D7\u05E1\u05E8 \u05D0\u05D5 \u05E9\u05D2\u05D5\u05D9 \u05D1\u05DB\u05DC\u05DC plannedAhead",
   FLEXIBILITYOFFERED_MINUTES_INVALID: "\u05E4\u05E8\u05DE\u05D8\u05E8 fullCreditMinutes \u05D7\u05E1\u05E8 \u05D0\u05D5 \u05E9\u05D2\u05D5\u05D9 \u05D1\u05DB\u05DC\u05DC flexibilityOffered"
 };
 var ALL = { ...TEMPLATES, ...RULE_DESCRIPTIONS, ...PARAM_ERRORS };
@@ -3000,6 +3003,34 @@ var peopleServed = {
   }
 };
 
+// src/solver/rules/plannedAhead.ts
+var DAY_MS = 24 * 60 * 60 * 1e3;
+var plannedAhead = {
+  type: "plannedAhead",
+  normalization: "unit",
+  defaultParams: { days: [false, false, false, false, false, true, true], minLeadDays: 14 },
+  validateParams(raw) {
+    const days = raw?.days;
+    if (!Array.isArray(days) || days.length !== 7 || !days.every((d) => typeof d === "boolean")) {
+      throw new PolicyParamsError("PLANNEDAHEAD_DAYS_INVALID");
+    }
+    return {
+      days: [...days],
+      minLeadDays: validatePositiveNumberParam(raw, "minLeadDays", "PLANNEDAHEAD_LEAD_INVALID", { allowZero: true })
+    };
+  },
+  describe() {
+    return ruleDescription("RULE_PLANNEDAHEAD_DESC");
+  },
+  score(ctx, request) {
+    const planned = request.request.plannedAhead;
+    if (!planned) return 0;
+    const startMs = request.request.departureMs ?? request.request.returnMs;
+    if (startMs === void 0 || startMs - planned.reservedAtMs < ctx.params.minLeadDays * DAY_MS) return 0;
+    return planned.weekdays.some((day) => ctx.params.days[day] === true) ? 1 : 0;
+  }
+};
+
 // src/solver/rules/publicTransport.ts
 var publicTransport = {
   type: "publicTransport",
@@ -3097,7 +3128,8 @@ var ruleRegistry = {
   fairness,
   submissionTime,
   flexibilityOffered,
-  manualBoost
+  manualBoost,
+  plannedAhead
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- heterogeneous Rule<P> registry, see SOLVER.md §4.1
 };
 

@@ -14,6 +14,7 @@ import { heAdmin } from "./he.admin";
 import { heCarChecklist } from "./he.carChecklist";
 import { heCarsOverview } from "./he.carsOverview";
 import { heCarTasks } from "./he.carTasks";
+import { hePlanning } from "./he.planning";
 import { heLegal } from "./he.legal";
 import { heMember } from "./he.member";
 import { heSadran } from "./he.sadran";
@@ -179,6 +180,7 @@ export const he = {
   },
   ...heMember,
   ...heCarTasks,
+  ...hePlanning,
   ...heCarChecklist,
   ...heCarsOverview,
   ...heAdmin,
@@ -686,6 +688,9 @@ export const he = {
   statusReasonUnknown: "עדכון סטטוס ללא פירוט",
   // SQLSTATE / RPC-message → Hebrew toast (src/lib/rpc.ts `toAppError`).
   errors: {
+    reservationOutOfRange: "טיוטת בקשה אפשר להכין ממחר והלאה, עד שלושה חודשים קדימה",
+    reservationWeekOpen: "השבוע הזה כבר פתוח לבקשות: הגש/י בקשה רגילה",
+    reservationSelfOnly: "טיוטת בקשה היא תמיד בשמך",
     staleVersion: "מישהו אחר שינה את זה בינתיים — טען/י את הגרסה החדשה ונסה/י שוב",
     staleInput: "הבקשות או הנסיעות השתנו מאז הרצת הפתרון — יש להריץ את הפתרון מחדש",
     notAuthorized: "אין לך הרשאה לבצע פעולה זו",
