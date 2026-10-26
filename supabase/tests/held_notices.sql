@@ -275,4 +275,54 @@ begin
     and data ->> 'variant' = 'unassigned_by_sadran') = 1, 'edit-removal not held';
   raise notice 'held_notices.sql (unassign): all assertions passed';
 end $$;
+
+-- R15M2 (owner 2026-10-27): a ride cancelled on the board in a LIVE week is told at once; in a published (not live)
+-- week it is still held; the flag does not outlive the cancellation.
+do $$
+declare
+  dept uuid := '00000000-0000-0000-0000-000000000001';
+  manager uuid := '00000000-0000-0000-0000-000000000102';
+  member uuid := '00000000-0000-0000-0000-000000000103';
+  home uuid := '00000000-0000-0000-0000-000000000010';
+  dest uuid := '00000000-0000-0000-0000-000000000011';
+  typ uuid := '00000000-0000-0000-0000-000000000021';
+  carA uuid := '00000000-0000-0000-0000-000000000040';
+  wk date; ph text; t timestamptz; pub uuid; q uuid; r uuid; n int;
+  board text := '{"x-app-surface":"board"}';
+begin
+  foreach ph in array array['live', 'published'] loop
+    wk := public.current_week_start() + case ph when 'live' then 1337 else 1344 end;
+    t := ((wk + 2) + time '09:00') at time zone 'Asia/Jerusalem';
+    insert into public.weeks(department_id, week_start, phase, open_at, close_at, publish_at)
+      values (dept, wk, 'solving', now() - interval '9 days', now() - interval '8 days', now() - interval '7 days');
+    insert into public.siddur_versions(department_id, week_start, snapshot, published_by) values (dept, wk, '{}', manager) returning id into pub;
+    perform set_config('app.in_publish', 'on', true);
+    update public.weeks set phase = ph::public.week_phase, published_version_id = pub, published_at = now(),
+      published_days = array[wk, wk + 1, wk + 2, wk + 3, wk + 4, wk + 5, wk + 6] where department_id = dept and week_start = wk;
+    perform set_config('app.in_publish', 'off', true);
+    insert into public.requests(department_id, week_start, requester_id, filed_by, destination_id, ride_type_id, depart_at, return_at, trip_shape, status, origin_id, trip_type)
+      values (dept, wk, member, member, dest, typ, t, t + interval '3 hours', 'round_trip', 'assigned', home, 'round_trip') returning id into q;
+    insert into public.rides(department_id, week_start, car_id, starts_at, ends_at, origin_id, destination_id, driver_id, status, created_by)
+      values (dept, wk, carA, t, t + interval '3 hours', home, home, member, 'confirmed', manager) returning id into r;
+    insert into public.ride_requests(ride_id, request_id, role, leg, car_mode) values (r, q, 'driver', 'both', 'keep');
+
+    perform set_config('request.jwt.claims', jsonb_build_object('sub', manager, 'role', 'authenticated')::text, true);
+    perform set_config('request.headers', board, true);
+    perform set_config('app.held_audit_floor', (select max(id) from public.audit_log)::text, true);
+    select count(*) into n from public.notifications where recipient_id = member and week_start = wk;
+    perform public.cancel_ride(r, 'R15M2 test', (select version from public.rides where id = r));
+    if ph = 'live' then
+      assert (select count(*) from public.notifications where recipient_id = member and week_start = wk) > n,
+        'R15M2: a live-week board cancellation must notify at once';
+      assert not exists (select 1 from public.held_notices where week_start = wk and recipient_id = member),
+        'R15M2: a live-week board cancellation must not be held';
+      assert coalesce(nullif(current_setting('app.notify_now', true), ''), 'off') = 'off', 'R15M2: notify_now outlived the cancellation';
+    else
+      assert exists (select 1 from public.held_notices where week_start = wk and recipient_id = member),
+        'R15M2: a published (not live) week board cancellation is still held';
+    end if;
+    perform set_config('request.headers', '', true);
+  end loop;
+  raise notice 'held_notices.sql (live cancellation): all assertions passed';
+end $$;
 rollback;

@@ -19,7 +19,7 @@ import type { TripType } from "@/lib/enums";
 import type { CarHandoverNotes } from "@/features/rides/carHandover";
 
 import { enteredTimeLabels, type EnteredTimeLabels } from "../enteredTimes";
-import { canEditRequest } from "../window";
+import { canEditRequest, isOnUnpublishedDay } from "../window";
 import { whoText } from "../whoLabel";
 import { DriverlessRideActions } from "./DriverlessRideActions";
 import { RequestLink } from "./RequestLink";
@@ -133,7 +133,8 @@ export function RequestRow({
       : null;
   // Owner 2026-10-13: one red "ביטול" — removes a request with no ride yet (`onWithdraw`), cancels its ride once placed
   // (`onCancelRide`, the requester's own); each keeps its own confirmation dialog. "Repeat weekly" lives in the edit form.
-  const cancelAction = row.companionOf ? null : row.ride && row.ride.status !== "cancelled"
+  // R15U1: no edit / cancel on a day of a partly published week that is not published yet (the server refuses it).
+  const cancelAction = row.companionOf || isOnUnpublishedDay(row) ? null : row.ride && row.ride.status !== "cancelled"
     ? (onCancelRide && !notRequester ? () => onCancelRide(row) : null)
     : row.status !== "withdrawn" && row.status !== "cancelled" && onWithdraw ? () => onWithdraw(row) : null;
   const badges = (

@@ -66,6 +66,25 @@ test.describe("unpublished days of a partly published week", { tag: ["@siddur", 
     await expect(page.locator("[data-unpublished]")).toHaveCount(0);
   });
 
+  test("the Sadran's empty-slot double-click on an unpublished day offers a request for that day and hours (R15M1)", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 860 });
+    await signIn(page, SEEDED_USERS.sadran);
+    const day = addDays(week, 2);
+    await page.goto(paths.sadran.board(NEVO_DEPARTMENT_ID, week));
+    await page.getByText(`${Number(day.slice(8))}.${Number(day.slice(5, 7))}`, { exact: true }).locator("visible=true").first().click();
+    const column = page.locator('[data-car-col-id]:not([data-car-col-id^="phantom:"]):visible').first();
+    await column.scrollIntoViewIfNeeded();
+    const box = await column.boundingBox();
+    if (!box) throw new Error("car column not found");
+    await column.dblclick({ position: { x: box.width / 2, y: Math.min(box.height - 10, 200) } });
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+    await dialog.getByTestId("reservation-new-request").click();
+    await expect(page).toHaveURL(new RegExp(`/requests/new\\?.*week=${week}.*day=${day}`));
+    // The form opens on that week with the slot's day picked (the classic layout's day radios read "ג 03").
+    await expect(page.getByRole("radiogroup", { name: "יום" }).getByRole("radio", { checked: true })).toContainText(day.slice(8));
+  });
+
   test("a member's request for the unpublished day is refused", async () => {
     const member = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { persistSession: false } });
     const { error: authError } = await member.auth.signInWithPassword(SEEDED_USERS.member1);

@@ -6,6 +6,7 @@ import { withoutPrivateCarOffers } from "../privateCarOffers";
 import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useSearchParams } from "react-router-dom";
 
 import { datesOfWeek, todayInJerusalem } from "@/components/dateFieldDates";
 import { t, tv } from "@/i18n/he";
@@ -141,7 +142,11 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
   // R3B15: the picked day outlives the board's own unmounting (the composer is a separate route), so
   // the day is also kept per department+week in sessionStorage and restored on mount.
   const dayStorageKey = `board-day:${departmentId}:${weekStart}`;
-  const [selectedDayOverride, setSelectedDayOverrideState] = useState<string | null>(() => readStoredBoardDay(dayStorageKey));
+  // R15U13: a Sadran notice opens the board on its request's day (`?day=yyyy-mm-dd`), ahead of the remembered day.
+  const [searchParams] = useSearchParams();
+  const urlDay = searchParams.get("day");
+  const [selectedDayOverride, setSelectedDayOverrideState] = useState<string | null>(() =>
+    urlDay && /^\d{4}-\d{2}-\d{2}$/.test(urlDay) ? urlDay : readStoredBoardDay(dayStorageKey));
   const setSelectedDayOverride = (day: string | null) => {
     setSelectedDayOverrideState(day);
     writeStoredBoardDay(dayStorageKey, day);

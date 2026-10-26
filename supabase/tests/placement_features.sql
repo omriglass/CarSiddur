@@ -346,6 +346,27 @@ begin
   perform public.cancel_waitlist_group(g,(select version from public.waitlist_groups where id=g));
   assert (select group_id is null and status='open' from public.freed_slot_offers where id=off), 'QF7: a cancelled group releases the held offer';
 
+  -- ---- R15B6 (QA run 15): the freed-car notices name the car, the day and the route --------------------------------
+  perform public.resolve_freed_offer(off,jsonb_build_array(
+    jsonb_build_object('request_id',q1,'requester_id',m1),jsonb_build_object('request_id',q2,'requester_id',m2)));
+  select body_he into v from public.notifications where recipient_id=m1 and event='freed_slot' and data->>'offer_id'=off::text;
+  assert v like (select name from public.cars where id=car40)||', %', format('R15B6: freed_slot names the car, got %s',v);
+  select body_he into v from public.notifications where recipient_id=sadran and event='claim_contested' and data->>'offer_id'=off::text
+    and coalesce(data->>'variant','')='';
+  assert v like (select name from public.cars where id=car40)||', יום '||public.day_date_label(dt)||' %', format('R15B6: claim_contested names car and day, got %s',v);
+  assert (select data->>'url' from public.notifications where recipient_id=sadran and event='claim_contested' and data->>'offer_id'=off::text
+          and coalesce(data->>'variant','')='') = format('/sadran/%s/%s/claims/%s',dept,w,off), 'R15U13: claim_contested opens the claims page';
+  assert public.notification_default_url('late_request',jsonb_build_object('request_id',q1),dept,w,sadran) = format('/sadran/%s/%s/board?day=%s',dept,w,w+2),
+    'R15U13: a late request opens the board on its day for the Sadran';
+  assert public.notification_default_url('late_request',jsonb_build_object('request_id',q1),dept,w,m1) like '/requests?focus=%',
+    'R15U13: a member keeps the member link';
+  perform public.approve_claim(off,q1);
+  select body_he into v from public.notifications where recipient_id=m2 and event='claim_declined' and data->>'offer_id'=off::text;
+  assert v like '%'||dest_name||'%', format('R15B6: claim_declined names the route, got %s',v);
+  -- a notice naming only a ride takes its route from the recipient's request on that ride
+  assert public.notification_context(m1,dept,w,jsonb_build_object('ride_id',rid))->>'route' like '%'||dest_name||'%',
+    'R15B6: a ride-only notice names the route';
+
   raise notice 'placement_features.sql: all assertions passed';
 end $$;
 

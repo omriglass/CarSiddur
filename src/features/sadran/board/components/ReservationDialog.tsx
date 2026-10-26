@@ -46,9 +46,11 @@ export interface ReservationDialogProps {
   carLocationId?: string | null;
   onSave: () => void;
   saving: boolean;
+  /** R15M1: open the request form for this day, hours and car instead (filed for a member through its "who" choice). */
+  onNewRequest?: () => void;
 }
 
-export function ReservationDialog({ reservation, onChange, onOpenChange, selectedDay, cars, members, children, places, carLocationName, carLocationId, onSave, saving }: ReservationDialogProps) {
+export function ReservationDialog({ reservation, onChange, onOpenChange, selectedDay, cars, members, children, places, carLocationName, carLocationId, onSave, saving, onNewRequest }: ReservationDialogProps) {
   return (
     <Dialog open={!!reservation} onOpenChange={(open) => !open && onOpenChange(false)}>
       <PortalDialogContent><DialogHeader><DialogTitle>{reservation?.kind === "move" ? he.sadranBoard.carMove : he.sadranBoard.reservation}</DialogTitle><DialogDescription>{formatDayDate(`${selectedDay}T12:00:00Z`)}</DialogDescription></DialogHeader>
@@ -57,6 +59,7 @@ export function ReservationDialog({ reservation, onChange, onOpenChange, selecte
             <Button type="button" role="radio" aria-checked={reservation.kind === "reservation"} variant={reservation.kind === "reservation" ? "default" : "outline"} className="min-h-11 flex-1" data-testid="reservation-kind-reservation" onClick={() => onChange({ ...reservation, kind: "reservation" })}>{he.sadranBoard.reservation}</Button>
             <Button type="button" role="radio" aria-checked={reservation.kind === "move"} variant={reservation.kind === "move" ? "default" : "outline"} className="min-h-11 flex-1" data-testid="reservation-kind-move" onClick={() => onChange({ ...reservation, kind: "move" })}>{he.sadranBoard.carMove}</Button>
           </div>
+          {onNewRequest ? <Button type="button" variant="outline" className="min-h-11 w-full" data-testid="reservation-new-request" onClick={onNewRequest}>{he.sadranBoard.newRequestHere}</Button> : null}
           <Select value={reservation.carId} onValueChange={(carId) => onChange({ ...reservation, carId })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{cars.map((car) => <SelectItem key={car.id} value={car.id}>{car.name}</SelectItem>)}</SelectContent></Select>
           <div className="flex gap-2"><TimeField15 min="00:00" aria-label={he.sadranRideSheet.depart} value={reservation.start} onChange={(start) => onChange({ ...reservation, start })} /><TimeField15 min="00:00" max="23:59" aria-label={he.sadranRideSheet.return} value={reservation.end} onChange={(end) => onChange({ ...reservation, end })} /></div>
           {reservation.kind === "move" ? (

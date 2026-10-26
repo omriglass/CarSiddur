@@ -112,6 +112,8 @@ export const heSadran = {
     autoRelocation: "החזרת רכב — חסר/ה נהג/ת",
     carMoveLabel: "העברת רכב: {{from}} → {{to}}",
     carMove: "העברת רכב",
+    // R15M1 (owner 2026-10-27): the empty-slot double-click also offers a request, for a member or for yourself.
+    newRequestHere: "בקשה חדשה בשעות האלה (גם בשם חבר/ה)",
     carMoveHint: "מסמן שהרכב הועבר ממקום למקום; מרגע זה הוא נמצא ביעד.",
     carMoveFrom: "הרכב נמצא ב",
     carMoveFromUnknown: "מיקום הרכב אינו ידוע בשעה זו",

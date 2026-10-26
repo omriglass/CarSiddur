@@ -2,11 +2,12 @@ import { Car } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import type { MonthEventBlock } from "@/features/calendar/monthBlocks";
-import { he, tv } from "@/i18n/he";
+import { he } from "@/i18n/he";
 import { cn } from "@/lib/utils";
 
 import type { PlanningDay } from "../api";
 import { monthGridDates } from "../monthGrid";
+import { countLabel as dayCountLabel } from "../summary";
 import { planningPinchZoom } from "../zoom";
 import type { StarTier } from "../rank";
 
@@ -103,10 +104,10 @@ export function PlanningMonthGrid({ month, days, plannable, loadOf, stars, event
             const reservations = day?.reservationIds.length ?? 0;
             const shownCount = !day ? 0 : open ? reservations : day.rides > 0 || day.phase === "published" || day.phase === "live" || day.phase === "archived" ? day.rides : day.requests;
             const countLabel = !day ? "" : open
-              ? tv("planning.countReservations", { n: String(reservations) })
+              ? dayCountLabel("reservations", reservations)
               : day.rides > 0 || day.phase === "published" || day.phase === "live" || day.phase === "archived"
-                ? tv("planning.countRides", { n: String(day.rides) })
-                : tv("planning.countRequests", { n: String(day.requests) });
+                ? dayCountLabel("rides", day.rides)
+                : dayCountLabel("requests", day.requests);
             return (
               <button
                 key={date}

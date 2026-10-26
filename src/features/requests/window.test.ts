@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canEditRequest, isRequestWindowOpen, type RequestWindow } from "./window";
+import { canEditRequest, isOnUnpublishedDay, isRequestWindowOpen, type RequestWindow } from "./window";
 
 const window: RequestWindow = {
   phase: "open",
@@ -49,5 +49,26 @@ describe("canEditRequest on a published day (REQ §13.101 f)", () => {
   it("refuses a past day and a terminal status", () => {
     expect(canEditRequest({ ...base, departAt: "2026-09-08T06:00:00Z", returnAt: "2026-09-08T09:00:00Z" }, now)).toBe(false);
     expect(canEditRequest({ ...base, status: "withdrawn" }, now)).toBe(false);
+  });
+});
+
+describe("isOnUnpublishedDay (REQ §13.155, R15U1)", () => {
+  const partly: RequestWindow = { phase: "published", open_at: "2026-10-20T00:00:00Z", close_at: "2026-10-28T00:00:00Z", published_days: ["2026-11-03", "2026-11-06"] };
+  const at = (day: string, time: string) => `${day}T${time}:00+02:00`;
+
+  it("is true for a day of a partly published week that is not published", () => {
+    expect(isOnUnpublishedDay({ window: partly, departAt: at("2026-11-04", "09:00"), returnAt: at("2026-11-04", "12:00") })).toBe(true);
+  });
+
+  it("is false for a published day, a week nothing of which is published, and an open week", () => {
+    expect(isOnUnpublishedDay({ window: partly, departAt: at("2026-11-03", "09:00"), returnAt: at("2026-11-03", "12:00") })).toBe(false);
+    expect(isOnUnpublishedDay({ window: { ...partly, published_days: [] }, departAt: at("2026-11-04", "09:00") })).toBe(false);
+    expect(isOnUnpublishedDay({ window: { ...partly, phase: "open" }, departAt: at("2026-11-04", "09:00") })).toBe(false);
+  });
+
+  it("counts the last day of a multi-day request, and hides edit there", () => {
+    const row = { window: partly, departAt: at("2026-11-03", "09:00"), returnAt: at("2026-11-04", "12:00") };
+    expect(isOnUnpublishedDay(row)).toBe(true);
+    expect(canEditRequest({ ...row, status: "submitted" }, Date.parse("2026-10-27T12:00:00Z"))).toBe(false);
   });
 });

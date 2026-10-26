@@ -32,6 +32,10 @@ export const hePlanning = {
     countReservations: "{{n}} טיוטות בקשה",
     countRides: "{{n}} נסיעות",
     countRequests: "{{n}} בקשות",
+    // R15B3: the singular reads differently in Hebrew ("1 טיוטות בקשה" was wrong).
+    countReservationsOne: "טיוטת בקשה אחת",
+    countRidesOne: "נסיעה אחת",
+    countRequestsOne: "בקשה אחת",
     noReservations: "אין טיוטות בקשה ליום הזה",
     calendarTitle: "ביומן שלך",
     allDay: "כל היום",

@@ -712,6 +712,12 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
         carLocationId={dnd.reservationFromId}
         onSave={() => void dnd.saveReservation()}
         saving={dnd.editRideMutation.isPending || dnd.setRidePassengersMutation.isPending || dnd.markCarMoveMutation.isPending}
+        onNewRequest={() => {
+          const slot = dnd.reservation;
+          if (!slot) return;
+          dnd.setReservation(null);
+          navigate(paths.requests.new({ week: weekStart, day: board.selectedDay, time: slot.start, end: slot.end, car: slot.carId }));
+        }}
       />
       <ConfirmDialog
         open={leaveBlocker.state === "blocked"}

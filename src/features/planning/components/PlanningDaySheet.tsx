@@ -16,12 +16,13 @@ import type { MonthEventBlock } from "@/features/calendar/monthBlocks";
 
 import type { PlanningDay, PlanningReservation } from "../api";
 import { useCancelReservationMutation } from "../hooks";
-import { placeOf, reservationSummary } from "../summary";
+import { countLabel, placeOf, reservationSummary } from "../summary";
 
 const noonOf = (date: string) => `${date}T12:00:00Z`;
 
 function whenLine(r: PlanningReservation): string {
-  const times = [r.departAt, r.returnAt].filter((at): at is string => !!at).map((at) => formatTime(new Date(at))).join("–");
+  // R15B1: isolated left-to-right, or the range reads backwards inside the Hebrew line ("12:00–08:00").
+  const times = `⁦${[r.departAt, r.returnAt].filter((at): at is string => !!at).map((at) => formatTime(new Date(at))).join("–")}⁩`;
   const days = r.plannedUntil ? `${formatDayDate(noonOf(r.plannedDate))} – ${formatDayDate(noonOf(r.plannedUntil))}` : formatDayDate(noonOf(r.plannedDate));
   return `${days} · ${times}`;
 }
@@ -107,7 +108,7 @@ export function PlanningDaySheet({ departmentId, date, day, reservations, planna
         <SheetHeader className="text-start">
           <SheetTitle>{date ? formatDayDate(noonOf(date)) : ""}</SheetTitle>
           <SheetDescription>
-            {selected ? reservationSummary(selected) : isPast ? he.planning.dayPast : !plannable ? he.planning.dayOpenWeek : reservations.length === 0 ? he.planning.noReservations : tv("planning.countReservations", { n: String(reservations.length) })}
+            {selected ? reservationSummary(selected) : isPast ? he.planning.dayPast : !plannable ? he.planning.dayOpenWeek : reservations.length === 0 ? he.planning.noReservations : countLabel("reservations", reservations.length)}
           </SheetDescription>
         </SheetHeader>
         <div className="mt-3 space-y-3">

@@ -864,7 +864,8 @@ begin
     return false;
   end if;
   if coalesce(current_setting('app.flushing_held_notices', true), '') = 'on'
-     or coalesce(current_setting('app.publishing', true), '') = 'on' then
+     or coalesce(current_setting('app.publishing', true), '') = 'on'
+     or coalesce(current_setting('app.notify_now', true), '') = 'on' then   -- R15M2: a live-week cancellation
     return false;
   end if;
   if _event not in ('outcome_changed', 'car_swapped', 'waitlist_resolved') or _recipient = v_actor then
@@ -4895,7 +4896,7 @@ begin
     '{}'::jsonb, jsonb_build_object('ride_id', v_ride_id), format('claim_approved:%s', p_request_id))
   from public.requests q where q.id = p_request_id;
   perform public.enqueue_notification(fc.profile_id, 'claim_declined', v_offer.department_id, v_offer.week_start,
-    '{}'::jsonb, jsonb_build_object('offer_id', p_offer_id), format('claim_declined:%s:%s', p_offer_id, fc.profile_id))
+    '{}'::jsonb, jsonb_build_object('offer_id', p_offer_id, 'request_id', fc.request_id), format('claim_declined:%s:%s', p_offer_id, fc.profile_id))
   from public.freed_slot_claims fc where fc.offer_id = p_offer_id and fc.request_id <> p_request_id and fc.status = 'declined';
 
   return v_ride_id;
@@ -5456,8 +5457,15 @@ CREATE OR REPLACE FUNCTION "public"."cancel_ride"("p_ride_id" "uuid", "p_reason"
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
 declare v_series uuid; v_req uuid; v_reqs uuid[];
+  v_prev_notify text := coalesce(nullif(current_setting('app.notify_now', true), ''), 'off');
 begin
   select series_id into v_series from public.rides where id = p_ride_id;
+  -- R15M2 (owner 2026-10-27): in a live week a cancellation reaches the people on the ride at once, even when made on
+  -- the board (other board changes are still held for "שלח את כל ההצעות", REQ §13.138).
+  if exists (select 1 from public.rides r join public.weeks w on w.department_id = r.department_id and w.week_start = r.week_start
+             where r.id = p_ride_id and w.phase = 'live') then
+    perform set_config('app.notify_now', 'on', true);
+  end if;
   select array_agg(request_id) into v_reqs from public.ride_requests where ride_id = p_ride_id;
   perform public.cancel_ride_before_series(p_ride_id, p_reason, p_expected_version);
   if v_series is null then
@@ -5473,11 +5481,15 @@ begin
     loop
       perform public.release_request_booking(v_req);
     end loop;
+    perform set_config('app.notify_now', v_prev_notify, true);
     return;
   end if;
   -- A passenger removing only their own seat does not cancel the ride, and must not
   -- cancel the series either.
-  if not exists (select 1 from public.rides where id = p_ride_id and status = 'cancelled') then return; end if;
+  if not exists (select 1 from public.rides where id = p_ride_id and status = 'cancelled') then
+    perform set_config('app.notify_now', v_prev_notify, true);
+    return;
+  end if;
 
   perform set_config('app.audit_reason', coalesce(p_reason, 'series_cancelled'), true);
   perform set_config('app.system_status_transition', 'on', true);
@@ -5488,6 +5500,7 @@ begin
   update public.requests set status = 'cancelled', status_reason = 'RIDE_CANCELLED'
   where series_id = v_series and status not in ('cancelled', 'withdrawn');
   perform set_config('app.system_status_transition', 'off', true);
+  perform set_config('app.notify_now', v_prev_notify, true);
 end $$;
 
 
@@ -10619,6 +10632,12 @@ begin
   select * into q from public.requests where id=coalesce(nullif(_data->>'request_id','')::uuid,pr.request_id);
   select rd.* into r from public.rides rd where rd.id=coalesce(nullif(_data->>'ride_id','')::uuid,pr.ride_id,
     (select rr.ride_id from public.ride_requests rr join public.rides x on x.id=rr.ride_id where rr.request_id=q.id and x.status<>'cancelled' limit 1));
+  -- QA run 15 (R15B6): a notice that names only a ride ("the driver cancelled - you drive") takes its route and times
+  -- from the recipient's own request on that ride, else the first request it serves (before: "ל" with no place).
+  if q.id is null and r.id is not null then
+    select x.* into q from public.ride_requests rr join public.requests x on x.id=rr.request_id
+    where rr.ride_id=r.id order by (x.requester_id=_recipient) desc, x.created_at, x.id limit 1;
+  end if;
   select name into dest from public.destinations where id=q.destination_id;
   select full_name into fullname from public.profiles where id=coalesce(q.requester_id,_recipient);
   select name into carname from public.cars where id=r.car_id;
@@ -10760,6 +10779,21 @@ begin
 
   if v_ride_change_id is not null then
     return format('/inbox?change=%s', v_ride_change_id);
+  end if;
+
+  -- R15U13 (QA run 15): a week manager's own Sadran notices open the Sadran screens, not the member's /requests page:
+  -- a contested freed car its claims page, a late / changed / waitlisted / auto-approved request the board on its day.
+  select week_scoped, sadran_role into v_week_scoped, v_sadran_role
+  from public.notification_event_meta where event = _event;
+  if v_manager and coalesce(v_sadran_role, false) and _department_id is not null and _week_start is not null then
+    if _data ? 'offer_id' then
+      return format('/sadran/%s/%s/claims/%s', _department_id, _week_start, _data ->> 'offer_id');
+    end if;
+    if nullif(_data ->> 'request_id', '') is not null then
+      return format('/sadran/%s/%s/board?day=%s', _department_id, _week_start,
+        coalesce((select to_char(coalesce(q.depart_at, q.return_at) at time zone 'Asia/Jerusalem', 'YYYY-MM-DD')
+                  from public.requests q where q.id = (_data ->> 'request_id')::uuid), ''));
+    end if;
   end if;
 
   if v_request_id is not null then
@@ -15197,13 +15231,18 @@ begin
       insert into public.freed_slot_claims (offer_id, request_id, profile_id, status, offered_at)
       values (p_offer_id, (v_cand ->> 'request_id')::uuid, (v_cand ->> 'requester_id')::uuid, 'offered', now())
       on conflict (offer_id, request_id) do nothing;
+      -- R15B6: the car is named explicitly (the day and times come from the member's own request).
       perform public.enqueue_notification((v_cand ->> 'requester_id')::uuid, 'freed_slot', v_offer.department_id, v_offer.week_start,
-        '{}'::jsonb, jsonb_build_object('offer_id', p_offer_id, 'request_id', (v_cand ->> 'request_id')::uuid),
+        jsonb_build_object('car', coalesce((select name from public.cars where id = v_offer.car_id), '')),
+        jsonb_build_object('offer_id', p_offer_id, 'request_id', (v_cand ->> 'request_id')::uuid),
         format('freed_slot:%s:%s', p_offer_id, v_cand ->> 'request_id'));
     end loop;
     update public.freed_slot_offers set status = 'pending_approval' where id = p_offer_id;
     perform public.enqueue_notification(s.profile_id, 'claim_contested', v_offer.department_id, v_offer.week_start,
-      jsonb_build_object('count', v_count::text), jsonb_build_object('offer_id', p_offer_id), format('claim_contested:%s', p_offer_id))
+      jsonb_build_object('count', v_count::text, 'car', coalesce((select name from public.cars where id = v_offer.car_id), ''),
+        'day', public.day_date_label(v_offer.starts_at),
+        'timeRange', to_char(v_offer.starts_at at time zone 'Asia/Jerusalem', 'HH24:MI') || '–' || to_char(v_offer.ends_at at time zone 'Asia/Jerusalem', 'HH24:MI')),
+      jsonb_build_object('offer_id', p_offer_id), format('claim_contested:%s', p_offer_id))
     from public.sadranim_of(v_offer.department_id, v_offer.week_start) as s(profile_id);
   end if;
 end;
