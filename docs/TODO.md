@@ -158,6 +158,8 @@ Inventory of places that print a date with no weekday today:
 
 ### F6 — Feature (v1.2, **on hold**, owner 2026-09-15): "תכנון קדימה" — see the next two months and request a far week (weekends)
 
+**Superseded 2026-10-26 by REQ §13.154** (reservations as dated saved requests, month view, "מתי הכי פנוי?" helper; `docs/PLANNING_PLAN_2026-10.md`). The notes below are kept for history; A6 became the `plannedAhead` rule.
+
 Not in REQ today: members can only file for a week in phase `open` (REQ §4; the `upcoming` phase, §13.77, is materialized only for a multi-day series leg, invisible to members and closed to ordinary requests; a series may reach 6 weeks out). Needs a REQ §13 item first.
 - **Screen:** entry in the siddur context (kebab) menu → "תכנון קדימה": a compact 2-month calendar (9 weeks, Sunday-first, Asia/Jerusalem) showing per day the number of requests already filed (all statuses except withdrawn/cancelled/denied) and, lightly, how many shared cars the department has that day; tapping a day opens the request form for that week/day.
 - **Data:** one read RPC `planning_calendar(department_id, from_date, to_date)` (SECURITY DEFINER, `member_of`) returning `{day, requests, rides, shared_cars}` rows; no new table. Requests beyond the open horizon land in an `upcoming` week (reuse `ensure_upcoming_week()`), status `submitted`, editable/withdrawable like any open-week request, solved when the week reaches `open`→`solving` as usual. Members see `upcoming` weeks only through this calendar and their own request cards (the siddur/week switcher stays as is).
