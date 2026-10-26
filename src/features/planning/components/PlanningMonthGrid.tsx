@@ -78,10 +78,10 @@ export function PlanningMonthGrid({ month, days, plannable, loadOf, stars, event
                   {tier ? <span className="text-[10px] leading-none tracking-[-1px] text-orange-700 lg:text-base lg:tracking-normal dark:text-orange-400" aria-hidden="true">{STARS[tier]}</span> : null}
                 </span>
                 <span className="flex min-w-0 flex-col gap-0.5 px-0.5 pt-0.5 lg:gap-1 lg:px-1.5">
-                  {dayEvents.slice(0, 3).map((event, i) => (
+                  {dayEvents.slice(0, 2).map((event, i) => (
                     <span
                       key={`${event.id}-${i}`}
-                      className={cn("block truncate rounded bg-violet-100/90 px-1 text-[9px] leading-[13px] text-violet-900 dark:bg-violet-900/60 dark:text-violet-100 lg:text-xs lg:leading-[18px]", i === 2 && "hidden lg:block")}
+                      className="block truncate rounded bg-violet-100/90 px-1 text-[9px] leading-[13px] text-violet-900 dark:bg-violet-900/60 dark:text-violet-100 lg:text-xs lg:leading-[18px]"
                     >
                       {event.title}
                     </span>

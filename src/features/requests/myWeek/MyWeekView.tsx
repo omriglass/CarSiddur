@@ -15,6 +15,7 @@ import { useCars } from "@/features/fleet/hooks";
 import { useDepartmentSettings } from "@/features/sadran/hooks";
 import { parseTimeToMinutes } from "@/features/solverBridge/buildSolverInput";
 import { CalendarDialog } from "@/features/calendar/CalendarDialog";
+import { LongRangeMenu } from "@/features/planning/components/LongRangeMenu";
 import { useCalendar } from "@/features/calendar/useCalendar";
 import { useCalendarAmbientBlocks } from "@/features/calendar/useCalendarAmbientBlocks";
 import { useGoogleCalendar } from "@/features/calendar/useGoogleCalendar";
@@ -241,7 +242,8 @@ export function MyWeekView({ departmentId, homeDestinationId, profileId, request
                 <CalendarDays className="size-4" />
               </Button>
             ) : null}
-            <MyWeekDisplayMenu view="week" onViewChange={onViewChange} zoom={tableZoom} onZoomChange={setTableZoom} showKidsRides={showKidsRides} onShowKidsRidesChange={onShowKidsRidesChange} planningDepartmentId={departmentId} />
+            {departmentId ? <LongRangeMenu departmentId={departmentId} /> : null}
+            <MyWeekDisplayMenu view="week" onViewChange={onViewChange} zoom={tableZoom} onZoomChange={setTableZoom} showKidsRides={showKidsRides} onShowKidsRidesChange={onShowKidsRidesChange} />
           </div>
         ) : null}
       </div>
