@@ -359,6 +359,7 @@ export const heAdmin = {
     ruleNames: {
       rideType: "סוג הנסיעה", distance: "מרחק", publicTransport: "תחבורה ציבורית", peopleServed: "מספר הנוסעים",
       fairness: "חלוקה הוגנת", submissionTime: "מועד ההגשה", flexibilityOffered: "גמישות בשעות", manualBoost: "עדיפות ידנית",
+      plannedAhead: "תוכנן מראש",
     },
     ruleInfo: {
       rideType: "בקשות מקבלות עדיפות לפי החשיבות שהוגדרה לכל סוג נסיעה.",
@@ -369,8 +370,9 @@ export const heAdmin = {
       submissionTime: "בקשה שהוגשה מוקדם מקבלת יתרון קטן; בקשה מאוחרת מקבלת הפחתה.",
       flexibilityOffered: "יותר גמישות בשעות שהוצעו מעניקה יותר עדיפות.",
       manualBoost: "תוספת עדיפות חד-פעמית שהסדרן/ית קובע/ת לבקשה מסוימת.",
+      plannedAhead: "בקשה שהוגשה משריון בתכנון קדימה, שנעשה לפחות מספר הימים שהוגדר לפני הנסיעה, ובאחד הימים שסומנו.",
     },
-    paramNames: { alternativeServedWeight: "משקל בקשה שנענתה בתוכנית ב׳ (0 עד 1)", lookbackWeeks: "שבועות אחורה", maxKm: "מרחק מרבי (ק״מ)", cap: "תקרת נוסעים לחישוב", latePenalty: "הפחתה לבקשה מאוחרת", fullCreditMinutes: "דקות גמישות לניקוד מלא", weights: "עדיפות לכל סוג נסיעה", defaultWeight: "ברירת מחדל לסוג נסיעה ללא משקל" },
+    paramNames: { alternativeServedWeight: "משקל בקשה שנענתה בתוכנית ב׳ (0 עד 1)", lookbackWeeks: "שבועות אחורה", maxKm: "מרחק מרבי (ק״מ)", cap: "תקרת נוסעים לחישוב", latePenalty: "הפחתה לבקשה מאוחרת", fullCreditMinutes: "דקות גמישות לניקוד מלא", weights: "עדיפות לכל סוג נסיעה", defaultWeight: "ברירת מחדל לסוג נסיעה ללא משקל", days: "ימים", minLeadDays: "ימים לפחות מראש" },
     rideTypeUnused: "לא בשימוש",
     rideTypeRemove: "הסרה",
     versionNote: "הערת גרסה",

@@ -10,7 +10,7 @@ import type { ViewRule } from "./api";
 
 /** Fixed slot per rule type ("color follows the entity, never its rank"): `--chart-1..8` in `index.css`. */
 export const RULE_ORDER = [
-  "rideType", "distance", "publicTransport", "peopleServed", "fairness", "submissionTime", "flexibilityOffered", "manualBoost",
+  "rideType", "distance", "publicTransport", "peopleServed", "fairness", "submissionTime", "flexibilityOffered", "manualBoost", "plannedAhead",
 ] as const;
 type KnownRule = (typeof RULE_ORDER)[number];
 
@@ -67,6 +67,11 @@ export function ruleHow(rule: Pick<ViewRule, "type" | "params">, rideTypeNames: 
       return tv("policyView.how.submissionTime", { latePenalty: num("latePenalty") });
     case "flexibilityOffered":
       return tv("policyView.how.flexibilityOffered", { minutes: num("fullCreditMinutes") });
+    case "plannedAhead": {
+      const days = Array.isArray(params.days) ? (params.days as boolean[]) : [];
+      const weekdays = he.days.short.filter((_, i) => days[i]).join(", ");
+      return tv("policyView.how.plannedAhead", { days: num("minLeadDays"), weekdays });
+    }
     case "publicTransport":
     case "manualBoost":
       return he.policyView.how[rule.type];

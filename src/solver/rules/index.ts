@@ -9,6 +9,7 @@ import { fairness } from './fairness';
 import { flexibilityOffered } from './flexibilityOffered';
 import { manualBoost } from './manualBoost';
 import { peopleServed } from './peopleServed';
+import { plannedAhead } from './plannedAhead';
 import { publicTransport } from './publicTransport';
 import { rideType } from './rideType';
 import { submissionTime } from './submissionTime';
@@ -23,10 +24,11 @@ export const ruleRegistry = {
   submissionTime,
   flexibilityOffered,
   manualBoost,
+  plannedAhead,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- heterogeneous Rule<P> registry, see SOLVER.md §4.1
 } as const satisfies Record<string, Rule<any>>;
 
 export type RuleType = keyof typeof ruleRegistry;
 
 export type { Rule, RuleContext } from './types';
-export { distance, fairness, flexibilityOffered, manualBoost, peopleServed, publicTransport, rideType, submissionTime };
+export { distance, fairness, flexibilityOffered, manualBoost, peopleServed, plannedAhead, publicTransport, rideType, submissionTime };
