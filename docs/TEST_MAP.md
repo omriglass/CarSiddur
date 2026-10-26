@@ -215,7 +215,11 @@ migrations `*ride_car_neighbours*`, `supabase/tests/car_handover_notes.sql` ("be
 **Coverage gap**: no spec directly asserts the private-car-hidden-on-idle-days behavior on either
 grid (item 2) — `hideIdleTemporaryCars()` is unit-tested in `weekGridCars.test.ts` but not via e2e.
 
-**REQ**: §13.42, §13.56, §13.80, §13.92, §13.108.
+**Unpublished days (REQ §13.155)**: `e2e/unpublished-day.spec.ts`, SQL `unpublished_day_requests.sql` — in a partly published
+week an unpublished day is stamped "טרם פורסם" (phone list, desktop table, `/my` week column) and refuses a member's request
+(`day_not_published`).
+
+**REQ**: §13.42, §13.56, §13.80, §13.92, §13.108, §13.155.
 
 ### my-week — My rides week view (`/my?view=week`), profile default, experimental Google calendar
 
@@ -460,6 +464,26 @@ local replay stack and comparing it with the production solve — scripts/replay
    on refresh (device-setup flow feeding push permission).
 
 **REQ**: §13.30, §13.41, §13.61, §13.67, §13.68.
+
+### planning — Planning ahead (month view, draft requests, helper)
+
+**Paths**: `src/features/planning/**`, `src/pages/PlanningPage.tsx`, `src/pages/ReservationFormPage.tsx`, `src/features/calendar/monthBlocks.ts`,
+`useCalendarMonthEvents.ts`, `src/i18n/he.planning.ts`, `src/solver/rules/plannedAhead.ts`; migrations matching `*reservation*`,
+`*planned_ahead*`, `*template_schedule*`.
+
+**Automated**:
+- Vitest: `npx vitest run src/features/planning src/features/calendar/monthBlocks.test.ts src/solver/rules/__tests__/plannedAhead.test.ts src/features/requests/components/TemplateSuggestions.test.tsx`
+- SQL: `planning.sql`, `request_templates.sql`, `department_isolation.sql`
+- Playwright: `npx playwright test --grep @planning` (`e2e/planning.spec.ts`)
+
+**QA script**:
+1. From the telescope menu beside the eye open "תכנון קדימה"; tap a day ~6 weeks ahead and file a "טיוטת בקשה"; the day shows a count.
+2. As another member open that day: the draft request shows with its details, without edit/cancel.
+3. In "מתי הכי פנוי?" pick days: at least one day always gets a star; switch to "טיוטות + שימוש רגיל".
+4. When the draft's week opens it shows on /my as a suggestion: "לא צריך" cancels it, "הגש/י" files it.
+5. Zoom the month (− / +, pinch); with the experimental calendar on, tapping a day lists its events in full.
+
+**REQ**: §13.154.
 
 ### stats — Statistics
 

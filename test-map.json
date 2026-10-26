@@ -364,7 +364,11 @@
         "src/features/requests/rowHandover.test.ts",
         "supabase/migrations/**/*ride_car_neighbours*",
         "supabase/tests/car_handover_notes.sql",
-        "e2e/siddur-desktop.spec.ts"
+        "e2e/siddur-desktop.spec.ts",
+        "src/components/DraftWatermark.tsx",
+        "e2e/unpublished-day.spec.ts",
+        "supabase/migrations/**/*unpublished_day*",
+        "supabase/tests/unpublished_day_requests.sql"
       ],
       "vitest": [
         "src/features/rides/carHandover.test.ts",
@@ -377,7 +381,8 @@
       "sql": [
         "selected_day_publication.sql",
         "day_car_swap.sql",
-        "car_handover_notes.sql"
+        "car_handover_notes.sql",
+        "unpublished_day_requests.sql"
       ],
       "playwrightTags": [
         "@siddur"
@@ -387,14 +392,16 @@
         "13.56",
         "13.80",
         "13.92",
-        "13.108"
+        "13.108",
+        "13.155"
       ],
       "qaChecklist": [
         "Switch weeks/toggle table view/open the archive on the siddur (REQ §13.42)",
         "Confirm a private car's row appears only on days it has a ride (REQ §13.80)",
         "View another department's published siddur; confirm read-only, no lockbox code (REQ §13.52)",
         "Resize an owned ride and confirm shadow-collision requires explicit driver consent (REQ §13.42)",
-        "Give a ride on a published day a follow-up ride on the same car within the turnaround (min. 30 min): the driver/requester sees an amber \"!\" on /my, the Home card and the ride sheet, the next ride's driver sees the mirror note; an unpublished next day or the member's own next ride shows nothing (REQ §13.108 f)"
+        "Give a ride on a published day a follow-up ride on the same car within the turnaround (min. 30 min): the driver/requester sees an amber \"!\" on /my, the Home card and the ride sheet, the next ride's driver sees the mirror note; an unpublished next day or the member's own next ride shows nothing (REQ §13.108 f)",
+        "In a partly published week, an unpublished day is stamped 'טרם פורסם' all over (phone list, desktop table, /my week column); a member's request for that day is refused (REQ §13.155)"
       ]
     },
     {
@@ -894,6 +901,48 @@
         "Trigger a canonical event; confirm inbox row matches the seeded template and deep link (REQ §13.41)",
         "Mute a category; confirm no further inbox rows for it (REQ §13.41)",
         "Cancel a shared ride; confirm every served member is notified individually (REQ §13.68)"
+      ]
+    },
+    {
+      "id": "planning",
+      "title": "Planning ahead (month view, draft requests, helper)",
+      "paths": [
+        "src/features/planning/**",
+        "src/pages/PlanningPage.tsx",
+        "src/pages/ReservationFormPage.tsx",
+        "src/features/calendar/monthBlocks.ts",
+        "src/features/calendar/useCalendarMonthEvents.ts",
+        "src/i18n/he.planning.ts",
+        "src/solver/rules/plannedAhead.ts",
+        "supabase/migrations/**/*reservation*",
+        "supabase/migrations/**/*planned_ahead*",
+        "supabase/migrations/**/*template_schedule*",
+        "supabase/tests/planning.sql",
+        "e2e/planning.spec.ts"
+      ],
+      "vitest": [
+        "src/features/planning",
+        "src/features/calendar/monthBlocks.test.ts",
+        "src/solver/rules/__tests__/plannedAhead.test.ts",
+        "src/features/requests/components/TemplateSuggestions.test.tsx"
+      ],
+      "sql": [
+        "planning.sql",
+        "request_templates.sql",
+        "department_isolation.sql"
+      ],
+      "playwrightTags": [
+        "@planning"
+      ],
+      "reqRefs": [
+        "13.154"
+      ],
+      "qaChecklist": [
+        "From the telescope menu beside the eye open 'תכנון קדימה'; tap a day 6 weeks ahead, file a 'טיוטת בקשה'; the day shows a count (REQ §13.154 a/c)",
+        "As another member open that day: the draft request shows with its details, no edit/cancel (REQ §13.154 c)",
+        "Pick days in 'מתי הכי פנוי?': at least one day always gets a star; switch to 'טיוטות + שימוש רגיל' (REQ §13.154 e)",
+        "When the draft's week opens it shows on /my as a suggestion; 'לא צריך' cancels it, 'הגש/י' files it (REQ §13.154 b)",
+        "Zoom the month with − / + and pinch; with the experimental calendar on, tapping a day lists its events in full (REQ §13.154 d2/f)"
       ]
     },
     {
