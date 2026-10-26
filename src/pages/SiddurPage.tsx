@@ -272,6 +272,8 @@ export function SiddurPage() {
   // later, so a click there just prefills the normal form's day/time instead (below).
   const isLiveWeek = resolvedWeek?.phase === "live";
   const activeDayPublished = !!activeDay && (resolvedWeek?.published_days?.includes(activeDay) ?? true);
+  // REQ §13.155: the "טרם פורסם" stamp, only in a week some of which is published.
+  const stampUnpublished = !!activeDay && !activeDayPublished && (resolvedWeek?.published_days?.length ?? 0) > 0;
   const isLiveDay = isLiveWeek && activeDayPublished;
   const canEditWeek = isMyDepartment && activeDayPublished && (isLiveWeek || resolvedWeek?.phase === "published");
   // REQ §13.92 "Who": any department member may drag-swap car headers on a published day that
@@ -547,8 +549,8 @@ export function SiddurPage() {
           <div className={tableView ? "hidden" : "lg:hidden"}>
             <WeekStrip weekStart={weekStart as string} counts={dayCounts} selected={activeDay ?? ""} onSelect={setSelectedDay} />
             {/* Owner 2026-10-26: an unpublished day is stamped all over, not a banner one can scroll past. */}
-            <div className={cn("relative mt-3 space-y-2", !activeDayPublished && "min-h-[60vh]")}>
-              {!activeDayPublished ? <DraftWatermark /> : null}
+            <div className={cn("relative mt-3 space-y-2", stampUnpublished && "min-h-[60vh]")}>
+              {stampUnpublished ? <DraftWatermark /> : null}
               {isMyDepartment ? (
                 <div className="grid grid-cols-2 gap-2">
                   {departmentId ? <CarNowButton departmentId={departmentId} className="w-full" /> : null}
@@ -681,7 +683,7 @@ export function SiddurPage() {
                 onDiscussionClick={setSelectedGroupId}
                 canSwapCars={canSwapCarsOnActiveDay}
                 onCarSwap={(carA, carB) => setCarSwapPair({ carA, carB })}
-                watermark={!activeDayPublished}
+                watermark={stampUnpublished}
               />
             </div>
           </div>

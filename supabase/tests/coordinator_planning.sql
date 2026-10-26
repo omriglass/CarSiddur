@@ -70,13 +70,13 @@ begin
   assert (select status='draft' and planning_conflict from public.rides where id=r3),'new collision in published day became public';
   insert into planning_fixture_ids values('published',r2),('shadow',change_id),('draft',r3);
 
-  -- Exact end-of-day is allowed only as an end. No overflow flag bypasses it.
-  perform set_config('request.jwt.claims',jsonb_build_object('sub',member,'role','authenticated')::text,true);
-  q3:=(public.submit_request(request_payload||jsonb_build_object('depart_at',((w+2)+time '22:00') at time zone 'Asia/Jerusalem',
-    'return_at',((w+2)+time '23:59') at time zone 'Asia/Jerusalem'))->>'request_id')::uuid;
-  begin perform public.submit_request(request_payload||jsonb_build_object('return_at',((w+2)+time '01:00') at time zone 'Asia/Jerusalem'));
-    raise exception 'overnight request accepted';exception when raise_exception then if sqlerrm<>'ride_must_end_same_day' then raise;end if;end;
+  -- Exact end-of-day is allowed only as an end. No overflow flag bypasses it. Day w+2 is not published, so the
+  -- Sadran files it for the member (REQ §13.155: members cannot file on an unpublished day).
   perform set_config('request.jwt.claims',jsonb_build_object('sub',manager,'role','authenticated')::text,true);
+  q3:=(public.submit_request(request_payload||jsonb_build_object('requester_id',member,'depart_at',((w+2)+time '22:00') at time zone 'Asia/Jerusalem',
+    'return_at',((w+2)+time '23:59') at time zone 'Asia/Jerusalem'))->>'request_id')::uuid;
+  begin perform public.submit_request(request_payload||jsonb_build_object('requester_id',member,'return_at',((w+2)+time '01:00') at time zone 'Asia/Jerusalem'));
+    raise exception 'overnight request accepted';exception when raise_exception then if sqlerrm<>'ride_must_end_same_day' then raise;end if;end;
   select rd.id,rd.version into late,v from public.rides rd join public.ride_requests rr on rr.ride_id=rd.id where rr.request_id=q3 and rd.status<>'cancelled';
   perform public.edit_ride(jsonb_build_object('id',late,'department_id',dept,'week_start',w,'car_id',car2,'origin_id',home,'destination_id',home,
     'starts_at',((w+2)+time '22:00') at time zone 'Asia/Jerusalem','ends_at',((w+2)+time '23:59') at time zone 'Asia/Jerusalem','driver_id',member,

@@ -130,8 +130,7 @@ export const he = {
     partialHint: "רק הימים שנבחרו יפורסמו. אפשר להוסיף ימים בהמשך.",
     dayUnpublished: "הסידור ליום הזה עדיין לא פורסם",
     /** The diagonal stamp repeated over a day that is not published yet (owner 2026-10-26: not a banner one can ignore). */
-    watermark: "טיוטה · טרם פורסם",
-    watermarkShort: "טרם פורסם",
+    watermark: "טרם פורסם",
   },
   siddurCar: {
     replacementName: "{{name}} (חלופי)",
@@ -764,6 +763,7 @@ export const he = {
     ownCarRoundTripOnly: "אפשר לשבץ על הרכב הפרטי רק נסיעה הלוך-חזור",
     proposalDayPublic: "היום כבר פורסם — אפשר לשלוח רק הצעה להזזת שעה או לצירוף; בשאר המקרים מתאמים ישירות",
     carNowWeekNotLive: "רכב עכשיו אפשרי רק אחרי שהסידור של השבוע הנוכחי פורסם",
+    dayNotPublished: "הסידור ליום הזה טרם פורסם, ולכן אי אפשר עדיין להגיש או לשנות בקשה ליום הזה. אפשר לפנות לסדרן/ית.",
     carChainBroken: "לוח הזמנים של הרכב לא רציף",
     carAwayAtDayEnd: "הרכב לא חוזר הביתה בזמן",
     noHomeLocation: "לא הוגדר מיקום בית למחלקה",

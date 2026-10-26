@@ -1527,7 +1527,7 @@ export function WeekGrid({
             {car.locationBadge ? <span className="truncate text-center text-xs text-muted-foreground">{car.locationBadge}</span> : null}
             {car.baseBadge ? <span className="truncate text-center text-[10px] text-muted-foreground">{car.baseBadge}</span> : null}
             {car.weekEndAwayWarning ? <span className="truncate text-center text-[10px] font-medium text-amber-700">{car.weekEndAwayWarning}</span> : null}
-            {car.unpublished ? <span className="truncate text-center text-[10px] font-medium">{he.publicationFlow.watermarkShort}</span> : null}
+            {car.unpublished ? <span className="truncate text-center text-[10px] font-medium">{he.publicationFlow.watermark}</span> : null}
             {car.group === "temporary" ? <span className="truncate text-center text-[10px] text-booked">{he.car.type.temporary}</span> : null}
           </div>
           );

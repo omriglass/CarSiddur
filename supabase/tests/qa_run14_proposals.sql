@@ -2,7 +2,7 @@
 --   R14B5: a member who accepts a shift offer on an UNPUBLISHED day is told the result (time_changed notice), a
 --          re-offer reads "from" the booked ride's times (not the request's), and declining the re-offer leaves the
 --          request and ride exactly as the accepted shift left them.
---   R14B8: submit_request flags `outcome_hidden` for a member's request on a day that is not published (the form says only "sent", like /my).
+--   R14B8: (superseded by REQ §13.155) a member's request on a day that is not published is refused (`day_not_published`).
 begin;
 do $$
 declare dept uuid:='00000000-0000-0000-0000-000000000001'; manager uuid:='00000000-0000-0000-0000-000000000102';
@@ -52,11 +52,17 @@ begin
     'R14B5: the accepted shift stays booked';
   assert exists(select 1 from public.ride_requests where request_id=q and ride_id=r), 'R14B5: the request is still on the ride';
 
-  -- R14B8: a member's late request on an unpublished day is not answered "assigned"; a published day still is
+  -- R14B8, superseded by REQ §13.155 (owner 2026-10-26): a member's request on an unpublished day of a partly
+  -- published week is refused (day_not_published) instead of being filed with a hidden outcome; a published day still
+  -- answers with the outcome.
   dt:=((w+2)+time '09:00') at time zone 'Asia/Jerusalem';
-  res:=public.submit_request(jsonb_build_object('department_id',dept,'week_start',w,'destination_id',dest,'ride_type_id',typ,'trip_shape','round_trip',
-    'adults',1,'depart_at',dt,'return_at',dt+interval '2 hours'));
-  assert coalesce((res->>'outcome_hidden')::boolean,false), format('R14B8: unpublished day outcome is flagged hidden, got %s',res);
+  begin
+    perform public.submit_request(jsonb_build_object('department_id',dept,'week_start',w,'destination_id',dest,'ride_type_id',typ,'trip_shape','round_trip',
+      'adults',1,'depart_at',dt,'return_at',dt+interval '2 hours'));
+    raise exception 'R14B8: a member filed on an unpublished day';
+  exception when raise_exception then
+    if sqlerrm <> 'day_not_published' then raise; end if;
+  end;
   dt:=((w+4)+time '09:00') at time zone 'Asia/Jerusalem';
   res:=public.submit_request(jsonb_build_object('department_id',dept,'week_start',w,'destination_id',dest,'ride_type_id',typ,'trip_shape','round_trip',
     'adults',1,'depart_at',dt,'return_at',dt+interval '2 hours'));

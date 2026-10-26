@@ -14,13 +14,13 @@ function stampTile(label: string, width: number, height: number, fontSize: numbe
 }
 
 /**
- * A "top secret"-style stamp over a day that is not published yet (owner 2026-10-26): "טיוטה · טרם פורסם" repeated
+ * A "top secret"-style stamp over a day that is not published yet (owner 2026-10-26): "טרם פורסם" repeated
  * diagonally across the whole area the parent covers (the parent must be `relative`). Drawn as a mask over a theme
  * colour, so it follows light/dark mode. Taps pass through to what is underneath; screen readers get the sentence once.
  */
 export function DraftWatermark({ className, compact = false }: { className?: string; compact?: boolean }) {
-  const label = compact ? he.publicationFlow.watermarkShort : he.publicationFlow.watermark;
-  const tile = compact ? stampTile(label, 110, 150, 13) : stampTile(label, 300, 200, 24);
+  const label = he.publicationFlow.watermark;
+  const tile = compact ? stampTile(label, 110, 150, 13) : stampTile(label, 240, 170, 26);
   const mask: CSSProperties = { maskImage: tile, WebkitMaskImage: tile, maskRepeat: "repeat", WebkitMaskRepeat: "repeat" };
   return (
     <div className={cn("pointer-events-none absolute inset-0 z-[15]", className)} data-testid="draft-watermark">

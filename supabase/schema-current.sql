@@ -18090,6 +18090,13 @@ begin
      and v_depart_at >= now() - interval '1 hour' then
     raise exception 'car_now_week_not_live' using errcode = 'P0001';
   end if;
+  -- REQ §13.155 (owner 2026-10-26): in a partly published week a day the Sadran has not published yet takes no
+  -- member requests or edits (it was auto-approved onto a draft ride before); the week's Sadran still may.
+  if v_week.phase in ('published', 'live') and not v_can_manage and cardinality(v_week.published_days) > 0
+     and coalesce(v_depart_at, v_return_at) is not null
+     and not ((coalesce(v_depart_at, v_return_at) at time zone 'Asia/Jerusalem')::date = any(v_week.published_days)) then
+    raise exception 'day_not_published' using errcode = 'P0001';
+  end if;
   if not exists (select 1 from public.department_members where department_id=v_department_id and profile_id=v_requester_id and removed_at is null) then raise exception 'not_authorized'; end if;
 
   if v_trip_shape <> 'round_trip' then
