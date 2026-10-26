@@ -688,9 +688,9 @@ export const he = {
   statusReasonUnknown: "עדכון סטטוס ללא פירוט",
   // SQLSTATE / RPC-message → Hebrew toast (src/lib/rpc.ts `toAppError`).
   errors: {
-    reservationOutOfRange: "אפשר לשריין רק מחר והלאה, עד שלושה חודשים קדימה",
-    reservationWeekOpen: "השבוע הזה כבר פתוח לבקשות — הגש/י בקשה רגילה",
-    reservationSelfOnly: "שריון הוא תמיד בשמך",
+    reservationOutOfRange: "טיוטת בקשה אפשר להכין ממחר והלאה, עד שלושה חודשים קדימה",
+    reservationWeekOpen: "השבוע הזה כבר פתוח לבקשות: הגש/י בקשה רגילה",
+    reservationSelfOnly: "טיוטת בקשה היא תמיד בשמך",
     staleVersion: "מישהו אחר שינה את זה בינתיים — טען/י את הגרסה החדשה ונסה/י שוב",
     staleInput: "הבקשות או הנסיעות השתנו מאז הרצת הפתרון — יש להריץ את הפתרון מחדש",
     notAuthorized: "אין לך הרשאה לבצע פעולה זו",

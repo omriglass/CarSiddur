@@ -92,7 +92,7 @@ const RULE_DESCRIPTIONS: Record<string, string> = {
   RULE_SUBMISSIONTIME_DESC: 'מעניק יתרון קל להגשה מוקדמת וקנס להגשה מאוחרת',
   RULE_FLEXIBILITYOFFERED_DESC: 'מעניק בונוס להצהרת גמישות בזמנים',
   RULE_MANUALBOOST_DESC: 'בונוס חד-פעמי שניתן ידנית על ידי הסדרן/ית',
-  RULE_PLANNEDAHEAD_DESC: 'מעניק עדיפות לבקשה שהוגשה משריון שנעשה מספיק זמן מראש, בימים שנבחרו',
+  RULE_PLANNEDAHEAD_DESC: 'מעניק עדיפות לבקשה שהוגשה מטיוטת בקשה שהוכנה מספיק זמן מראש, בימים שנבחרו',
 };
 
 /** PolicyParamsError messages keyed by error code. */
